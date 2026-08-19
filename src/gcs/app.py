@@ -20,8 +20,8 @@ from PySide6.QtGui import (
     QAction, QActionGroup, QColor, QKeySequence, QMouseEvent, QPainter, QPaintEvent, QPen, QWheelEvent,
 )
 from PySide6.QtWidgets import (
-    QApplication, QDockWidget, QFileDialog, QInputDialog, QLabel, QListWidget, QListWidgetItem, QMainWindow,
-    QMessageBox, QToolBar, QWidget,
+    QApplication, QDockWidget, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QListWidget, QListWidgetItem,
+    QMainWindow, QMessageBox, QPushButton, QToolBar, QVBoxLayout, QWidget,
 )
 
 from gcs import constraints as C
@@ -50,6 +50,7 @@ COL_ROW_TEXT = QColor("#000000")
 COL_STATE = {"well": QColor("#2ca02c"), "under": QColor("#e69500"), "over": QColor("#d62728"),
              "conflict": QColor("#d62728")}
 COL_ROW_OVER = QColor("#e69500")
+COL_CONFLICT_GLYPH = QColor("#b3001b")
 
 
 class SketchView(QWidget):
@@ -247,6 +248,8 @@ class SketchView(QWidget):
             _draw_arc(qp, self.w2s(*a.center.xy), abs(a.radius.value) * self.scale, *a.angles())
         if self.pending:
             self._paint_preview(qp)
+        if self.diagnosis is not None and self.diagnosis.conflicts:
+            self._paint_conflicts(qp)
         for p in sk.points:
             s = self.w2s(*p.xy)
             col = (COL_SEL if p in sel else COL_HL if p in hl else COL_FIXED if p.is_fixed
@@ -264,6 +267,47 @@ class SketchView(QWidget):
                 qp.setBrush(Qt.BrushStyle.NoBrush)
                 qp.drawEllipse(self.w2s(*sp.xy), 7, 7)
         qp.end()
+
+    def _paint_conflicts(self, qp: QPainter) -> None:
+        """Dashed red halo on every entity referenced by a culprit constraint, and a ✗
+        glyph at each culprit's anchor — the culprits are what to remove, as opposed to
+        geometry that merely turned red because it touches them."""
+        assert self.diagnosis is not None
+        halo = QPen(COL_CONFLICT_GLYPH, 6, Qt.PenStyle.DashLine)
+        qp.setBrush(Qt.BrushStyle.NoBrush)
+        used: dict[tuple[int, int], int] = {}   # anchor cell → labels already placed there (stack them)
+        for c in self.diagnosis.conflicts or []:
+            xs: list[float] = []
+            ys: list[float] = []
+            for e in c.entities():
+                qp.setPen(halo)
+                if isinstance(e, Point):
+                    qp.drawEllipse(self.w2s(*e.xy), 9, 9)
+                    xs.append(e.x.value); ys.append(e.y.value)
+                elif isinstance(e, Line):
+                    qp.drawLine(self.w2s(*e.p1.xy), self.w2s(*e.p2.xy))
+                    xs += [e.p1.x.value, e.p2.x.value]; ys += [e.p1.y.value, e.p2.y.value]
+                elif isinstance(e, Circle):
+                    r = abs(e.radius.value) * self.scale
+                    qp.drawEllipse(self.w2s(*e.center.xy), r, r)
+                    xs.append(e.center.x.value); ys.append(e.center.y.value + e.radius.value)
+                elif isinstance(e, Arc):
+                    _draw_arc(qp, self.w2s(*e.center.xy), abs(e.radius.value) * self.scale, *e.angles())
+                    a0, a1 = e.angles()
+                    am = 0.5 * (a0 + a1)
+                    xs.append(e.center.x.value + e.radius.value * math.cos(am))
+                    ys.append(e.center.y.value + e.radius.value * math.sin(am))
+            if xs:
+                anchor = self.w2s(sum(xs) / len(xs), sum(ys) / len(ys))
+                cell = (int(anchor.x() // 40), int(anchor.y() // 40))
+                n = used.get(cell, 0)
+                used[cell] = n + 1
+                f = qp.font()
+                f.setPointSize(13)
+                f.setBold(True)
+                qp.setFont(f)
+                qp.setPen(QPen(COL_CONFLICT_GLYPH, 1))
+                qp.drawText(anchor + QPointF(8, -8 - 18 * n), f"✗ {io.describe(c, self.sketch)}")
 
     def _paint_preview(self, qp: QPainter) -> None:
         qp.setPen(QPen(COL_PREVIEW, 1, Qt.PenStyle.DashLine))
@@ -417,7 +461,28 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("gcs sketcher")
         self.resize(1200, 800)
         self.view = SketchView(sketch or Sketch())
-        self.setCentralWidget(self.view)
+        central = QWidget()
+        lay = QVBoxLayout(central)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        self.banner = QWidget()
+        self.banner.setStyleSheet("background:#fdecea; border-bottom:1px solid #d62728;")
+        bl = QHBoxLayout(self.banner)
+        bl.setContentsMargins(10, 4, 10, 4)
+        self.banner_text = QLabel()
+        self.banner_text.setStyleSheet("color:#8a0000; font-weight:bold;")
+        self.banner_text.setWordWrap(True)
+        bl.addWidget(self.banner_text, 1)
+        self.banner_select = QPushButton("Select culprits")
+        self.banner_select.clicked.connect(self.select_conflicts)
+        bl.addWidget(self.banner_select)
+        self.banner_details = QPushButton("Details…")
+        self.banner_details.clicked.connect(self.show_diagnosis)
+        bl.addWidget(self.banner_details)
+        self.banner.hide()
+        lay.addWidget(self.banner)
+        lay.addWidget(self.view, 1)
+        self.setCentralWidget(central)
         self.perm_status = QLabel()
         self.statusBar().addPermanentWidget(self.perm_status)
         self._rows: list[Constraint] = []   # constraints currently shown in the list, in order
@@ -536,13 +601,21 @@ class MainWindow(QMainWindow):
         d = self.view.diagnosis
         bad_ids = {id(c) for c in [*(d.conflicts or []), *d.violated]} if d else set()
         over_ids = {id(c) for c in d.over} if d else set()
+        culprit_ids = {id(c) for c in (d.conflicts or [])} if d else set()
         for i, c in enumerate(rows):
             item = self.clist.item(i)
-            if id(c) in bad_ids:
+            base = item.data(Qt.ItemDataRole.UserRole + 1)
+            if id(c) in culprit_ids:
+                item.setText(f"✗ {base}")
+                item.setForeground(COL_CONFLICT_GLYPH)
+            elif id(c) in bad_ids:
+                item.setText(base)
                 item.setForeground(COL_FIXED)
             elif id(c) in over_ids:
+                item.setText(f"≈ {base}")
                 item.setForeground(COL_ROW_OVER)
             else:
+                item.setText(base)
                 item.setForeground(COL_ROW_TEXT)
             hit = bool(sel_all) and (any(e in sel_all for e in c.entities())
                                      or any(e in sel_direct for e in expand(c.entities())))
@@ -565,6 +638,7 @@ class MainWindow(QMainWindow):
         if r is not None:
             msg += (f"   | {'solved' if r.success else 'NOT CONVERGED'}  max|r|={r.max_residual:.1e}  "
                     f"{r.time_s * 1e3:.1f} ms  nfev={r.nfev}  {r.method}")
+        self._refresh_banner(d)
         title = "gcs sketcher"
         if d is not None and d.status == "conflict":
             title += "  —  ⚠ conflicting constraints"
@@ -573,14 +647,56 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(title)
         self.perm_status.setText(msg)
 
+    def _refresh_banner(self, d: Diagnosis | None) -> None:
+        if d is None or d.status not in ("conflict", "over"):
+            self.banner.hide()
+            return
+        ix = io.Index(self.view.sketch)
+        if d.status == "conflict":
+            if d.conflicts:
+                names = ", ".join(io.describe(c, ix) for c in d.conflicts)
+                self.banner_text.setText(f"⚠ Conflicting constraints — remove one of: {names}")
+            else:
+                self.banner_text.setText(f"⚠ {len(d.violated)} constraint(s) cannot be satisfied")
+            self.banner.setStyleSheet("background:#fdecea; border-bottom:1px solid #d62728;")
+            self.banner_text.setStyleSheet("color:#8a0000; font-weight:bold;")
+        else:
+            names = ", ".join(io.describe(c, ix) for c in d.over)
+            self.banner_text.setText(f"⚠ {d.n_redundant} redundant equation(s) (consistent, but over-constrained) among: {names}")
+            self.banner.setStyleSheet("background:#fff4e0; border-bottom:1px solid #e69500;")
+            self.banner_text.setStyleSheet("color:#7a4a00; font-weight:bold;")
+        self.banner_select.setVisible(bool(d.conflicts) or d.status == "over")
+        self.banner.show()
+
+    def select_conflicts(self) -> None:
+        """Select the culprit rows in the list and their entities in the view."""
+        d = self.view.diagnosis
+        if d is None:
+            return
+        culprits = d.conflicts or d.over
+        ids = {id(c) for c in culprits}
+        self.clist.clearSelection()
+        for i in range(self.clist.count()):
+            item = self.clist.item(i)
+            item.setSelected(id(item.data(Qt.ItemDataRole.UserRole)) in ids)
+        first = next((i for i in range(self.clist.count())
+                      if id(self.clist.item(i).data(Qt.ItemDataRole.UserRole)) in ids), -1)
+        if first >= 0:
+            self.clist.setCurrentRow(first)
+        self.view.selected = list(dict.fromkeys(e for c in culprits for e in c.entities()))
+        self.view.update()
+        self.refresh()
+
     def _rebuild_rows(self, rows: list[Constraint]) -> None:
         cur = self.clist.currentItem().data(Qt.ItemDataRole.UserRole) if self.clist.currentItem() else None
         ix = io.Index(self.view.sketch)
         self.clist.blockSignals(True)
         self.clist.clear()
         for c in rows:
-            item = QListWidgetItem(io.describe(c, ix))
+            text = io.describe(c, ix)
+            item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, c)
+            item.setData(Qt.ItemDataRole.UserRole + 1, text)   # base text (prefixes are added by refresh)
             self.clist.addItem(item)
             if c is cur:
                 self.clist.setCurrentItem(item)

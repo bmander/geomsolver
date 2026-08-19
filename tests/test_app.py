@@ -166,3 +166,22 @@ def test_diagnosis_drives_colours_and_dialog_text(qapp: QApplication) -> None:
     v.remove_constraint(dist)
     assert v.diagnosis is not None and v.diagnosis.status == "under" and v.diagnosis.dof == 1
     assert any(v.state_of(e) == "under" for e in v.sketch.points)
+
+
+def test_conflict_banner_and_select_culprits(qapp: QApplication) -> None:
+    w = MainWindow(EXAMPLES["rect_fillets"]())
+    w.show()
+    v = w.view
+    assert not w.banner.isVisible()
+    l0 = v.sketch.lines[0]
+    bad = C.Distance(l0.p1, l0.p2, 50)
+    v.add_constraint(bad)
+    qapp.processEvents()
+    assert w.banner.isVisible() and "remove one of" in w.banner_text.text()
+    w.select_conflicts()
+    assert bad in v.selected or l0.p1 in v.selected
+    rows = [w.clist.item(i) for i in range(w.clist.count()) if w.clist.item(i).text().startswith("✗")]
+    assert len(rows) == 2
+    v.remove_constraint(bad)
+    qapp.processEvents()
+    assert not w.banner.isVisible()
