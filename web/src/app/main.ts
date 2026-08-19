@@ -1,6 +1,6 @@
 /* The sketcher shell: toolbars, the constraint list, the diagnosis banner and the dialogs.
  *
- *   tools     S select · P point · L line · C circle · A arc (centre, start, end)
+ *   tools     S select · P point · L line · R rectangle · C circle · A arc (centre, start, end)
  *             3 arc through two ends and a point on it
  *   Esc       stop a DOF animation, then drop the tool's pending points, then back out to Select
  *   select    click (shift = multi), or drag a box over empty canvas to take everything
@@ -48,7 +48,7 @@ view.onTool = (t) => {
 };
 for (const [label, tool, key] of [
   ['Select', 'select', 's'], ['Point', 'point', 'p'], ['Line', 'line', 'l'],
-  ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
+  ['Rect', 'rect', 'r'], ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
 ] as [string, Tool, string][]) {
   toolButtons.set(tool, addButton(barTools, { label, key, toggle: true, onClick: () => view.setTool(tool) }));
 }
@@ -114,9 +114,14 @@ const CONSTRAINT_BUTTONS: Applier[] = [
   ['Equal', () => cEqual()],
   ['Tangent', () => cTangent()],
   ['Radius', () => void cRadius()],
+  ['Symmetric', () => cSymmetric()],
 ];
 for (const [label, onClick] of CONSTRAINT_BUTTONS) addButton(barConstraints, { label, onClick });
 addButton(barConstraints, { label: 'Fix', key: 'f', onClick: () => view.toggleFixSelected() });
+addButton(barConstraints, {
+  label: 'Construction', key: 'g', onClick: () => view.toggleConstructionSelected(),
+  title: 'Draw the selected lines/circles/arcs dashed as reference geometry (they still constrain)',
+});
 
 /* -- selection helpers -------------------------------------------------------- */
 
@@ -189,6 +194,13 @@ function cEqual(): void {
   } else {
     need(false, 'two or more lines, or two or more circles/arcs (not a mix)');
   }
+}
+
+/** Two points mirrored across a line — pick the two points and the axis. */
+function cSymmetric(): void {
+  const { pts, lines } = sel();
+  if (!need(pts.length === 2 && lines.length === 1, 'two points and a line (the mirror axis)')) return;
+  view.addConstraints(new C.Symmetric(pts[0], pts[1], lines[0]));
 }
 
 function cTangent(): void {
@@ -500,7 +512,7 @@ bannerSelect.addEventListener('click', () => {
 /* -- keyboard ------------------------------------------------------------------- */
 
 const TOOL_KEYS: Record<string, Tool> = {
-  s: 'select', p: 'point', l: 'line', c: 'circle', a: 'arc', 3: 'arc3',
+  s: 'select', p: 'point', l: 'line', r: 'rect', c: 'circle', a: 'arc', 3: 'arc3',
 };
 
 window.addEventListener('keydown', (e) => {
@@ -524,6 +536,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (k === 'f') { view.toggleFixSelected(); return; }
+  if (k === 'g') { view.toggleConstructionSelected(); return; }
   if (TOOL_KEYS[k]) view.setTool(TOOL_KEYS[k]);
 });
 

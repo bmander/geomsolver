@@ -316,6 +316,39 @@ static void tangent_arc_line_jac(int n, const double *V, const double *K, double
     }
 }
 
+/* -- symmetry -------------------------------------------------------------- */
+
+/* (px,py,qx,qy,ax,ay,bx,by): p and q mirror each other across the line a->b.
+ * Two residuals: the midpoint lies on the line (written as p + q - 2a to avoid the halving),
+ * and p->q is perpendicular to it. */
+static void symmetric_res(int n, const double *V, const double *K, double *R)
+{
+    (void)K;
+    for (int i = 0; i < n; i++) {
+        const double *v = V + 8 * (size_t)i;
+        double dx = v[6] - v[4], dy = v[7] - v[5];
+        double mx = v[0] + v[2] - 2 * v[4], my = v[1] + v[3] - 2 * v[5];
+        R[2 * (size_t)i] = dx * my - dy * mx;
+        R[2 * (size_t)i + 1] = (v[2] - v[0]) * dx + (v[3] - v[1]) * dy;
+    }
+}
+
+static void symmetric_jac(int n, const double *V, const double *K, double *J)
+{
+    (void)K;
+    for (int i = 0; i < n; i++) {
+        const double *v = V + 8 * (size_t)i;
+        double *j = J + 16 * (size_t)i;
+        double dx = v[6] - v[4], dy = v[7] - v[5];
+        double mx = v[0] + v[2] - 2 * v[4], my = v[1] + v[3] - 2 * v[5];
+        double ex = v[2] - v[0], ey = v[3] - v[1];
+        j[0] = -dy; j[1] = dx; j[2] = -dy; j[3] = dx;
+        j[4] = 2 * dy - my; j[5] = mx - 2 * dx; j[6] = my; j[7] = -mx;
+        j[8] = -dx; j[9] = -dy; j[10] = dx; j[11] = dy;
+        j[12] = -ex; j[13] = -ey; j[14] = ex; j[15] = ey;
+    }
+}
+
 /* -- registry (order == kernel id, shared with the front end) --------------- */
 
 static const gcs_kernel KERNELS[GCS_N_KERNELS] = {
@@ -336,6 +369,7 @@ static const gcs_kernel KERNELS[GCS_N_KERNELS] = {
     {"tangent_line_circle", 1, 7, 1, tangent_line_circle_res, tangent_line_circle_jac, NULL},
     {"tangent_circle_circle", 1, 6, 1, tangent_circle_circle_res, tangent_circle_circle_jac, NULL},
     {"tangent_arc_line", 1, 8, 0, tangent_arc_line_res, tangent_arc_line_jac, NULL},
+    {"symmetric", 2, 8, 0, symmetric_res, symmetric_jac, NULL},
 };
 
 const gcs_kernel *gcs_kernels(void) { return KERNELS; }

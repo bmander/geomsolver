@@ -20,6 +20,7 @@ export const enum K {
   TangentLineCircle,
   TangentCircleCircle,
   TangentArcLine,
+  Symmetric,
 }
 
 export interface KernelInfo {
@@ -47,4 +48,5 @@ export const KERNELS: KernelInfo[] = [
   { name: 'tangent_line_circle', nRes: 1, nPar: 7, nConst: 1 },
   { name: 'tangent_circle_circle', nRes: 1, nPar: 6, nConst: 1 },
   { name: 'tangent_arc_line', nRes: 1, nPar: 8, nConst: 0 },
+  { name: 'symmetric', nRes: 2, nPar: 8, nConst: 0 },
 ];

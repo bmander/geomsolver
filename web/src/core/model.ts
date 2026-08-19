@@ -43,6 +43,8 @@ export class Point {
 
 export class Line {
   readonly kind = 'line' as const;
+  /** Reference geometry: drawn dashed, constrains like any other. */
+  construction = false;
   constructor(readonly p1: Point, readonly p2: Point) {}
 
   get children(): Point[] { return [this.p1, this.p2]; }
@@ -67,6 +69,7 @@ export class Line {
 
 export class Circle {
   readonly kind = 'circle' as const;
+  construction = false;
   constructor(readonly center: Point, readonly radius: Param) {}
 
   get children(): Point[] { return [this.center]; }
@@ -84,6 +87,7 @@ export class Circle {
  *  |start-center|^2 = r^2 and |end-center|^2 = r^2 are added by `Sketch.arc`. */
 export class Arc {
   readonly kind = 'arc' as const;
+  construction = false;
   constructor(readonly center: Point, readonly start: Point, readonly end: Point, readonly radius: Param) {}
 
   get children(): Point[] { return [this.center, this.start, this.end]; }
@@ -231,6 +235,29 @@ export class Sketch {
     return this.arc(centre, a, b, name);
   }
 
+  /** Four lines round the corners (x0, y0) and (x1, y1), sharing corner points, with three
+   *  perpendicular constraints.
+   *
+   *  Three, not four: the fourth follows (l3 ⟂ l2 ⟂ l1 ⟂ l0 already forces l3 ⟂ l0), so
+   *  adding it would make every rectangle over-constrained by one equation.  What is left is
+   *  the 5 DOF a rectangle has — position, rotation, width, height.  `a` is an existing
+   *  point, so a rectangle can start on geometry that is already there. */
+  rectangle(a: Point, x1: number, y1: number, name = ''): Line[] {
+    const [x0, y0] = a.xy;
+    const corners = [
+      a, this.point(x1, y0, false, `${name}.b`),
+      this.point(x1, y1, false, `${name}.c`), this.point(x0, y1, false, `${name}.d`),
+    ];
+    const lines = corners.map((c, i) => this.line(c, corners[(i + 1) % 4]));
+    for (let i = 0; i < 3; i++) this.add(makePerpendicular(lines[i], lines[i + 1]));
+    return lines;
+  }
+
+  /** `rectangle` starting from a fresh corner point — the `lineXY` of rectangles. */
+  rectangleXY(x0: number, y0: number, x1: number, y1: number, name = ''): Line[] {
+    return this.rectangle(this.point(x0, y0, false, `${name}.a`), x1, y1, name);
+  }
+
   add(...constraints: Constraint[]): void {
     this.constraints.push(...constraints);
   }
@@ -345,8 +372,19 @@ export class Sketch {
 /* `Sketch.arc` needs PointOnCircle, which lives in constraints.ts and imports this module
  * for its types.  Registering the constructor here keeps the runtime dependency one-way. */
 type PointOnCircleCtor = (p: Point, circle: Circle | Arc, intrinsic: boolean) => Constraint;
+type PerpendicularCtor = (l1: Line, l2: Line) => Constraint;
 let arcIntrinsicFactory: PointOnCircleCtor | null = null;
+let perpendicularFactory: PerpendicularCtor | null = null;
 
 export function registerArcIntrinsic(f: PointOnCircleCtor): void {
   arcIntrinsicFactory = f;
+}
+
+export function registerPerpendicular(f: PerpendicularCtor): void {
+  perpendicularFactory = f;
+}
+
+function makePerpendicular(l1: Line, l2: Line): Constraint {
+  if (!perpendicularFactory) throw new Error('Sketch.rectangle needs the Perpendicular constructor');
+  return perpendicularFactory(l1, l2);
 }

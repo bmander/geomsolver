@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from gcs import Coincident, Distance, DragTarget, Sketch, examples, solve
+from gcs import constraints as C
 from gcs.examples import perturb as _perturb
 from gcs.solve import METHODS, Drag, System
 
@@ -107,3 +108,25 @@ def test_coincident_chain() -> None:
     for c in sk.constraints:
         if isinstance(c, Coincident):
             assert c.error() < 1e-8
+
+
+def test_symmetric_mirrors_two_points_about_a_line() -> None:
+    """The midpoint lands on the axis and the connecting segment crosses it squarely."""
+    sk = Sketch()
+    a, b = sk.point(0, 0, fixed=True), sk.point(0, 10, fixed=True)     # the axis: x = 0
+    p, q = sk.point(-3, 4), sk.point(9, 1)
+    sk.add(C.Symmetric(p, q, sk.line(a, b)))
+    assert solve(sk).success
+    assert p.x.value == pytest.approx(-q.x.value, abs=1e-9)
+    assert p.y.value == pytest.approx(q.y.value, abs=1e-9)
+
+
+def test_symmetric_works_about_a_free_axis() -> None:
+    """The axis is geometry too: mirror about a diagonal and the constraint still holds."""
+    sk = Sketch()
+    a, b = sk.point(0, 0, fixed=True), sk.point(10, 10, fixed=True)    # the axis: y = x
+    p, q = sk.point(6, 1), sk.point(0, 5)
+    p.fix()
+    sk.add(C.Symmetric(p, q, sk.line(a, b)))
+    assert solve(sk).success
+    assert (q.x.value, q.y.value) == pytest.approx((1.0, 6.0), abs=1e-9)

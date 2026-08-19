@@ -84,16 +84,20 @@ graph algorithms, diagnosis, constraint graph, decomposition, witness analysis,
 homotopy, JSON I/O, examples), and `web/src/app/` is the sketcher —
 
 * **S**elect / **P**oint / **L**ine (polyline, snapping to existing points) /
-  **C**ircle / **A**rc (centre, start, end) / **3**-point arc (two ends, then a point the
-  arc passes through — `Sketch.arc_through`, which builds the circumcircle and picks the
-  sweep containing that point), wheel zoom, right-drag pan; Escape steps back one stage at a
+  **R**ectangle (`Sketch.rectangle` — four lines round shared corners with *three*
+  perpendiculars, since the fourth follows and would over-constrain it) / **C**ircle /
+  **A**rc (centre, start, end) / **3**-point arc (two ends, then a point the arc passes
+  through — `Sketch.arc_through`, which builds the circumcircle and picks the sweep
+  containing that point), wheel zoom, right-drag pan; Escape steps back one stage at a
   time — stop a DOF animation, drop the points a tool has collected, leave the tool;
 * select by clicking (shift = multi) or by dragging a box over empty canvas — window
   selection, so an entity comes along only if all of it is inside (a line's two
   endpoints, a circle's whole extent, every point of an arc's sweep), previewed live
   while you drag and shift-extendable;
 * the constraint toolbar (Coincident, Distance, Horizontal, Vertical, Parallel,
-  Perpendicular, On line, Midpoint, On circle, Angle, Equal, Tangent, Radius, Fix).
+  Perpendicular, On line, Midpoint, On circle, Angle, Equal, Tangent, Radius, Symmetric,
+  Fix, and **G** to mark lines/circles/arcs as construction geometry — drawn dashed, still
+  constraining, persisted with the document).
   Equal takes an equality *set*: n selected lines or n circles/arcs become n−1
   constraints against the first, added as one edit — one solve, one undo step;
 * entity colouring by constraint state, dashed halos and labels on the culprits of a

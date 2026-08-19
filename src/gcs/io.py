@@ -49,10 +49,12 @@ def to_dict(sk: Sketch) -> dict[str, Any]:
     return {
         "version": 1,
         "points": [{"x": p.x.value, "y": p.y.value, "fixed": p.is_fixed} for p in sk.points],
-        "lines": [[ix.ref(l.p1)[1], ix.ref(l.p2)[1]] for l in sk.lines],
-        "circles": [{"center": ix.ref(c.center)[1], "r": c.radius.value, "fixed": c.radius.fixed} for c in sk.circles],
+        "lines": [{"p1": ix.ref(l.p1)[1], "p2": ix.ref(l.p2)[1], "construction": l.construction}
+                  for l in sk.lines],
+        "circles": [{"center": ix.ref(c.center)[1], "r": c.radius.value, "fixed": c.radius.fixed,
+                     "construction": c.construction} for c in sk.circles],
         "arcs": [{"center": ix.ref(a.center)[1], "start": ix.ref(a.start)[1], "end": ix.ref(a.end)[1],
-                  "r": a.radius.value, "fixed": a.radius.fixed} for a in sk.arcs],
+                  "r": a.radius.value, "fixed": a.radius.fixed, "construction": a.construction} for a in sk.arcs],
         # user_constraints() is exactly "what the user added": no intrinsic ones (the
         # primitives recreate those) and no soft ones (a drag target or a RadiusDrag's pull
         # would come back as a real dimension, since `soft` is not part of the JSON)
@@ -69,15 +71,19 @@ def from_dict(d: dict[str, Any]) -> Sketch:
     sk = Sketch()
     for i, p in enumerate(d["points"]):
         sk.point(p["x"], p["y"], fixed=bool(p.get("fixed", False)), name=f"p{i}")
-    for a, b in d["lines"]:
-        sk.line(sk.points[a], sk.points[b])
+    for l in d["lines"]:
+        p1, p2 = (l["p1"], l["p2"]) if isinstance(l, dict) else l      # v1 stored a bare pair
+        ln = sk.line(sk.points[p1], sk.points[p2])
+        ln.construction = bool(l.get("construction", False)) if isinstance(l, dict) else False
     for c in d["circles"]:
         circ = sk.circle(sk.points[c["center"]], c["r"])
         circ.radius.fixed = bool(c.get("fixed", False))
+        circ.construction = bool(c.get("construction", False))
     for a in d["arcs"]:
         arc = sk.arc(sk.points[a["center"]], sk.points[a["start"]], sk.points[a["end"]])
         arc.radius.value = float(a["r"])
         arc.radius.fixed = bool(a.get("fixed", False))
+        arc.construction = bool(a.get("construction", False))
     for c in d["constraints"]:
         t = BY_NAME[c["type"]]
         args = [sk.entities(v[0])[v[1]] if kind in ENTITY_KINDS else v

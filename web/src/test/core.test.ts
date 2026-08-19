@@ -654,6 +654,47 @@ test('a three-point arc refuses collinear input', () => {
   assert.ok(sk.arcThrough(a, b, [5, 0.01]));             // a real, very flat arc is fine
 });
 
+test('a rectangle is rigid up to its five degrees of freedom', () => {
+  // three perpendiculars, not four: the fourth follows, so a fourth would leave every
+  // rectangle over-constrained by one equation
+  const sk = new Sketch();
+  const lines = sk.rectangleXY(0, 0, 40, 25);
+  assert.equal(lines.length, 4);
+  assert.equal(sk.points.length, 4);                 // corners are shared, not duplicated
+  const d = diagnose(sk);
+  assert.equal(d.nRedundant, 0);
+  assert.equal(d.dof, 5);                            // position, rotation, width, height
+  sk.perturb(3.0, 1);
+  assert.ok(solve(sk).success);
+  for (let i = 0; i < 4; i++) {
+    const u = lines[i].direction(), v = lines[(i + 1) % 4].direction();
+    assert.ok(Math.abs(u[0] * v[0] + u[1] * v[1]) < 1e-6, `corner ${i}`);
+  }
+});
+
+test('symmetric mirrors two points about a line', () => {
+  const sk = new Sketch();
+  const a = sk.point(0, 0, true), b = sk.point(0, 10, true);    // the axis: x = 0
+  const p = sk.point(-3, 4), q = sk.point(9, 1);
+  sk.add(new C.Symmetric(p, q, sk.line(a, b)));
+  assert.ok(solve(sk).success);
+  assert.ok(Math.abs(p.x.value + q.x.value) < 1e-9);
+  assert.ok(Math.abs(p.y.value - q.y.value) < 1e-9);
+});
+
+test('the construction flag round-trips', () => {
+  const sk = examples.slottedLink();
+  sk.lines[0].construction = true;
+  sk.arcs[0].construction = true;
+  sk.circles[0].construction = true;
+  const s = io.dumps(sk);
+  const back = io.loads(s);
+  assert.deepEqual(back.lines.map((l) => l.construction), sk.lines.map((l) => l.construction));
+  assert.deepEqual(back.arcs.map((a) => a.construction), sk.arcs.map((a) => a.construction));
+  assert.deepEqual(back.circles.map((c) => c.construction), sk.circles.map((c) => c.construction));
+  assert.equal(io.dumps(back), s);
+});
+
 test('describe reads the spec', () => {
   const sk = examples.rectFillets();
   const ix = new io.Index(sk);

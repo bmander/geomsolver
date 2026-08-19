@@ -253,3 +253,28 @@ def _tangent_arc_line_jac(V: Arr, K: Arr) -> Arr:
 
 
 tangent_arc_line = kernel("tangent_arc_line", 1, 8, 0, _tangent_arc_line_res, _tangent_arc_line_jac)
+
+
+# -- symmetry ---------------------------------------------------------------
+
+def _sym_parts(V: Arr) -> tuple[Arr, Arr, Arr, Arr]:   # (px,py,qx,qy,ax,ay,bx,by)
+    dx, dy = V[:, 6] - V[:, 4], V[:, 7] - V[:, 5]
+    mx, my = V[:, 0] + V[:, 2] - 2 * V[:, 4], V[:, 1] + V[:, 3] - 2 * V[:, 5]
+    return dx, dy, mx, my
+
+
+def _symmetric_res(V: Arr, K: Arr) -> Arr:
+    dx, dy, mx, my = _sym_parts(V)
+    return np.stack([dx * my - dy * mx,
+                     (V[:, 2] - V[:, 0]) * dx + (V[:, 3] - V[:, 1]) * dy], axis=1)
+
+
+def _symmetric_jac(V: Arr, K: Arr) -> Arr:
+    dx, dy, mx, my = _sym_parts(V)
+    ex, ey = V[:, 2] - V[:, 0], V[:, 3] - V[:, 1]
+    mid = np.stack([-dy, dx, -dy, dx, 2 * dy - my, mx - 2 * dx, my, -mx], axis=1)
+    perp = np.stack([-dx, -dy, dx, dy, -ex, -ey, ex, ey], axis=1)
+    return np.stack([mid, perp], axis=1)
+
+
+symmetric = kernel("symmetric", 2, 8, 0, _symmetric_res, _symmetric_jac)

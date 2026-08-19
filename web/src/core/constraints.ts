@@ -12,7 +12,7 @@
  * radius with a chirality flag fixed at construction.
  */
 import { K, KERNELS } from './kernels.js';
-import { Arc, Circle, Line, Param, Point, registerArcIntrinsic } from './model.js';
+import { Arc, Circle, Line, Param, Point, registerArcIntrinsic, registerPerpendicular } from './model.js';
 
 export type SpecKind =
   | 'point' | 'line' | 'circle' | 'arc' | 'circle_or_arc'
@@ -272,6 +272,17 @@ export class TangentArcLine extends Constraint {
   }
 }
 
+/** p and q mirror each other across `line`: their midpoint is on it and p->q crosses it at a
+ *  right angle.  Two residuals, and the line itself is free to move. */
+export class Symmetric extends Constraint {
+  readonly kernelId = K.Symmetric;
+  static readonly spec: Spec = [['p', 'point'], ['q', 'point'], ['line', 'line']];
+  constructor(readonly p: Point, readonly q: Point, readonly line: Line) {
+    super();
+    this.params = [...p.params, ...q.params, ...line.params];
+  }
+}
+
 /* -- registry --------------------------------------------------------------- */
 
 export type ConstraintCtor = (new (...args: never[]) => Constraint) & { spec: Spec };
@@ -279,7 +290,8 @@ export type ConstraintCtor = (new (...args: never[]) => Constraint) & { spec: Sp
 export const CONSTRAINT_TYPES: Record<string, ConstraintCtor> = {
   Coincident, Distance, Midpoint, DragTarget, Horizontal, Vertical, Parallel, Perpendicular,
   Angle, EqualLength, PointOnLine, PointOnCircle, Radius, EqualRadius, TangentLineCircle,
-  TangentCircleCircle, TangentArcLine,
+  TangentCircleCircle, TangentArcLine, Symmetric,
 } as unknown as Record<string, ConstraintCtor>;
 
 registerArcIntrinsic((p, circle, intrinsic) => new PointOnCircle(p, circle, intrinsic));
+registerPerpendicular((l1, l2) => new Perpendicular(l1, l2));

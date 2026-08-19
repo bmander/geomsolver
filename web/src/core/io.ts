@@ -10,9 +10,9 @@ export type Ref = [Kind, number];
 export interface SketchJSON {
   version: number;
   points: { x: number; y: number; fixed: boolean }[];
-  lines: [number, number][];
-  circles: { center: number; r: number; fixed: boolean }[];
-  arcs: { center: number; start: number; end: number; r: number; fixed: boolean }[];
+  lines: { p1: number; p2: number; construction: boolean }[];
+  circles: { center: number; r: number; fixed: boolean; construction: boolean }[];
+  arcs: { center: number; start: number; end: number; r: number; fixed: boolean; construction: boolean }[];
   constraints: { type: string; args: unknown[] }[];
   branches: Record<string, number>;
 }
@@ -44,11 +44,13 @@ export function toJSON(sk: Sketch): SketchJSON {
   return {
     version: 1,
     points: sk.points.map((p) => ({ x: p.x.value, y: p.y.value, fixed: p.isFixed })),
-    lines: sk.lines.map((l) => [ix.ref(l.p1)[1], ix.ref(l.p2)[1]] as [number, number]),
-    circles: sk.circles.map((c) => ({ center: ix.ref(c.center)[1], r: c.radius.value, fixed: c.radius.fixed })),
+    lines: sk.lines.map((l) => ({ p1: ix.ref(l.p1)[1], p2: ix.ref(l.p2)[1], construction: l.construction })),
+    circles: sk.circles.map((c) => ({
+      center: ix.ref(c.center)[1], r: c.radius.value, fixed: c.radius.fixed, construction: c.construction,
+    })),
     arcs: sk.arcs.map((a) => ({
       center: ix.ref(a.center)[1], start: ix.ref(a.start)[1], end: ix.ref(a.end)[1],
-      r: a.radius.value, fixed: a.radius.fixed,
+      r: a.radius.value, fixed: a.radius.fixed, construction: a.construction,
     })),
     // userConstraints() is exactly "what the user added": no intrinsic ones (the primitives
     // recreate those) and no soft ones (a drag target or a RadiusDrag's pull would come back
@@ -64,15 +66,22 @@ export function toJSON(sk: Sketch): SketchJSON {
 export function fromJSON(d: SketchJSON): Sketch {
   const sk = new Sketch();
   d.points.forEach((p, i) => sk.point(p.x, p.y, !!p.fixed, `p${i}`));
-  for (const [a, b] of d.lines) sk.line(sk.points[a], sk.points[b]);
+  for (const l of d.lines) {
+    const pair = l as unknown as [number, number];        // v1 stored a bare pair
+    const ln = Array.isArray(pair) ? sk.line(sk.points[pair[0]], sk.points[pair[1]])
+      : sk.line(sk.points[l.p1], sk.points[l.p2]);
+    ln.construction = !Array.isArray(pair) && !!l.construction;
+  }
   for (const c of d.circles) {
     const circ = sk.circle(sk.points[c.center], c.r);
     circ.radius.fixed = !!c.fixed;
+    circ.construction = !!c.construction;
   }
   for (const a of d.arcs) {
     const arc = sk.arc(sk.points[a.center], sk.points[a.start], sk.points[a.end]);
     arc.radius.value = a.r;
     arc.radius.fixed = !!a.fixed;
+    arc.construction = !!a.construction;
   }
   for (const c of d.constraints) {
     const T = CONSTRAINT_TYPES[c.type];

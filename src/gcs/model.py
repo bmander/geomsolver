@@ -76,6 +76,7 @@ class Point:
 class Line:
     p1: Point
     p2: Point
+    construction: bool = False   # reference geometry: drawn dashed, constrains like any other
 
     kind = "line"
 
@@ -102,6 +103,7 @@ class Line:
 class Circle:
     center: Point
     radius: Param
+    construction: bool = False
 
     kind = "circle"
 
@@ -133,6 +135,7 @@ class Arc:
     start: Point
     end: Point
     radius: Param
+    construction: bool = False
 
     kind = "arc"
 
@@ -284,6 +287,27 @@ class Sketch:
         centre = self.point(g.cx, g.cy, name=f"{name}.c")
         a, b = (end, start) if g.swapped else (start, end)
         return self.arc(centre, a, b, name=name)
+
+    def rectangle(self, a: Point, x1: float, y1: float, name: str = "") -> list[Line]:
+        """Four lines from corner `a` to the opposite corner (x1, y1), sharing corner points,
+        with three perpendicular constraints.  `a` is an existing point, so a rectangle can
+        start on geometry that is already there.
+
+        Three perpendiculars, not four: the fourth follows (l3 ⟂ l2 ⟂ l1 ⟂ l0 already forces
+        l3 ⟂ l0), so adding it would leave every rectangle over-constrained by one equation.
+        What is left is the 5 DOF a rectangle has — position, rotation, width, height."""
+        from gcs.constraints import Perpendicular
+
+        x0, y0 = a.xy
+        corners = [a, self.point(x1, y0, name=f"{name}.b"),
+                   self.point(x1, y1, name=f"{name}.c"), self.point(x0, y1, name=f"{name}.d")]
+        lines = [self.line(corners[i], corners[(i + 1) % 4]) for i in range(4)]
+        self.add(*(Perpendicular(lines[i], lines[i + 1]) for i in range(3)))
+        return lines
+
+    def rectangle_xy(self, x0: float, y0: float, x1: float, y1: float, name: str = "") -> list[Line]:
+        """`rectangle` starting from a fresh corner point — the `line_xy` of rectangles."""
+        return self.rectangle(self.point(x0, y0, name=f"{name}.a"), x1, y1, name)
 
     def add(self, *constraints: Constraint) -> None:
         self.constraints.extend(constraints)

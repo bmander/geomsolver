@@ -32,6 +32,9 @@ const COL_STATE: Record<string, string> = {
   well: '#2ca02c', under: '#e69500', over: '#d62728', conflict: '#d62728',
 };
 
+/** Reference geometry is drawn dashed; the dashes are screen px, so they do not zoom. */
+const CONSTRUCTION_DASH = [7, 4];
+
 const ANIM_DT = 0.03;        // seconds per animation tick
 const ANIM_PERIOD = 2.0;     // seconds spent on each degree of freedom
 
@@ -45,7 +48,7 @@ interface Animation {
   showing: number;
 }
 
-export type Tool = 'select' | 'point' | 'line' | 'circle' | 'arc' | 'arc3';
+export type Tool = 'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3';
 
 export class SketchView {
   sketch: Sketch;
@@ -313,6 +316,24 @@ export class SketchView {
     this.onStatus(`deleted ${n} entities`);
   }
 
+  /** Flip reference/normal on the selected lines, circles and arcs. */
+  toggleConstructionSelected(): void {
+    const ents = this.selected.filter(
+      (e): e is Line | Circle | Arc => e instanceof Line || e instanceof Circle || e instanceof Arc,
+    );
+    if (!ents.length) {
+      this.onStatus('select line(s), circle(s) or arc(s) to toggle construction geometry');
+      return;
+    }
+    this.pushUndo();
+    const all = ents.every((e) => e.construction);
+    for (const e of ents) e.construction = !all;
+    this.onStatus(`${ents.length} entit${ents.length === 1 ? 'y' : 'ies'} `
+      + `${all ? 'back to normal geometry' : 'marked as construction'}`);
+    this.onChanged();
+    this.draw();
+  }
+
   toggleFixSelected(): void {
     const pts = this.selected.filter((e): e is Point => e instanceof Point);
     if (!pts.length) return;
@@ -398,6 +419,7 @@ export class SketchView {
       const [col, lw] = strokeFor(COL.line, ln);
       ctx.strokeStyle = col;
       ctx.lineWidth = lw;
+      ctx.setLineDash(ln.construction ? CONSTRUCTION_DASH : []);
       ctx.beginPath();
       ctx.moveTo(...this.w2s(...ln.p1.xy));
       ctx.lineTo(...this.w2s(...ln.p2.xy));
@@ -407,6 +429,7 @@ export class SketchView {
       const [col, lw] = strokeFor(COL.circle, c);
       ctx.strokeStyle = col;
       ctx.lineWidth = lw;
+      ctx.setLineDash(c.construction ? CONSTRUCTION_DASH : []);
       const [cx, cy] = this.w2s(...c.center.xy);
       ctx.beginPath();
       ctx.arc(cx, cy, Math.abs(c.radius.value) * this.scale, 0, 2 * Math.PI);
@@ -416,9 +439,11 @@ export class SketchView {
       const [col, lw] = strokeFor(COL.arc, a);
       ctx.strokeStyle = col;
       ctx.lineWidth = lw;
+      ctx.setLineDash(a.construction ? CONSTRUCTION_DASH : []);
       this.arcPath(a.center.xy, Math.abs(a.radius.value) * this.scale, ...a.angles());
       ctx.stroke();
     }
+    ctx.setLineDash([]);
     if (this.pending.length) this.paintPreview();
     if (this.diagnosis?.conflicts?.length) this.paintConflicts();
 
@@ -529,6 +554,8 @@ export class SketchView {
     };
     if (this.tool === 'line') {
       rubber();
+    } else if (this.tool === 'rect') {
+      ctx.strokeRect(p0[0], p0[1], cur[0] - p0[0], cur[1] - p0[1]);
     } else if (this.tool === 'circle') {
       ctx.beginPath();
       ctx.arc(p0[0], p0[1], Math.hypot(cur[0] - p0[0], cur[1] - p0[1]), 0, 2 * Math.PI);
@@ -671,6 +698,14 @@ export class SketchView {
       const p = this.snapOrNew(sp);
       if (this.pending.length && p !== this.pending[this.pending.length - 1]) sk.line(this.pending[this.pending.length - 1], p);
       this.pending = [p];                            // continue the polyline
+    } else if (this.tool === 'rect') {
+      if (!this.pending.length) {
+        this.pending = [this.snapOrNew(sp)];
+      } else {
+        const [x1, y1] = this.s2w(sp[0], sp[1]);
+        sk.rectangle(this.pending[0], x1, y1);      // the first click's point is corner a
+        this.pending = [];
+      }
     } else if (this.tool === 'circle') {
       if (!this.pending.length) {
         this.pending = [this.snapOrNew(sp)];

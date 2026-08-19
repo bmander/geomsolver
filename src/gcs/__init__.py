@@ -21,6 +21,7 @@ from gcs.constraints import (
     PointOnCircle,
     PointOnLine,
     Radius,
+    Symmetric,
     TangentArcLine,
     TangentCircleCircle,
     TangentLineCircle,
@@ -32,6 +33,6 @@ __all__ = [
     "Angle", "Arc", "Circle", "Coincident", "Constraint", "Distance", "DragTarget",
     "EqualLength", "EqualRadius", "Horizontal", "Line", "Midpoint", "Parallel",
     "Param", "Perpendicular", "Point", "PointOnCircle", "PointOnLine", "Radius",
-    "Sketch", "SolveResult", "TangentArcLine", "TangentCircleCircle",
+    "Sketch", "SolveResult", "Symmetric", "TangentArcLine", "TangentCircleCircle",
     "TangentLineCircle", "Vertical", "solve",
 ]

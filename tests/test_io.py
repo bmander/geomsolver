@@ -141,3 +141,36 @@ def test_three_point_arc_refuses_collinear_input() -> None:
     assert sk.arc_through(a, b, (20.0, 1e-12)) is None     # the test is scale-free, not absolute
     assert len(sk.points) == n                             # nothing was created
     assert sk.arc_through(a, b, (5.0, 0.01)) is not None   # a real, very flat arc is fine
+
+
+def test_rectangle_is_rigid_up_to_its_five_degrees_of_freedom() -> None:
+    """Three perpendiculars, not four: the fourth follows from the other three, so adding it
+    would leave every rectangle over-constrained by one equation."""
+    from gcs.diagnose import diagnose
+
+    sk = Sketch()
+    lines = sk.rectangle_xy(0, 0, 40, 25)
+    assert len(lines) == 4
+    assert len(sk.points) == 4                      # corners are shared, not duplicated
+    d = diagnose(sk)
+    assert d.n_redundant == 0
+    assert d.dof == 5                               # position, rotation, width, height
+    # and it really is a rectangle after solving from a perturbed start
+    sk.perturb(3.0, seed=1)
+    assert solve(sk).success
+    for i in range(4):
+        u = lines[i].direction()
+        v = lines[(i + 1) % 4].direction()
+        assert u[0] * v[0] + u[1] * v[1] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_construction_flag_round_trips() -> None:
+    sk = examples.slotted_link()
+    sk.lines[0].construction = True
+    sk.arcs[0].construction = True
+    sk.circles[0].construction = True
+    back = io.loads(io.dumps(sk))
+    assert [l.construction for l in back.lines] == [l.construction for l in sk.lines]
+    assert [a.construction for a in back.arcs] == [a.construction for a in sk.arcs]
+    assert [c.construction for c in back.circles] == [c.construction for c in sk.circles]
+    assert io.dumps(back) == io.dumps(sk)

@@ -280,6 +280,18 @@ class TangentCircleCircle(Constraint):
         return np.array([1.0 if self.external else -1.0])
 
 
+class Symmetric(Constraint):
+    """p and q mirror each other across `line`: their midpoint is on it and p→q crosses it
+    at a right angle.  Two residuals, and the line itself is free to move."""
+
+    kernel = K.symmetric
+    spec = (("p", "point"), ("q", "point"), ("line", "line"))
+
+    def __init__(self, p: Point, q: Point, line: Line) -> None:
+        self.p, self.q, self.line = p, q, line
+        self.params = p.params + q.params + line.params
+
+
 class TangentArcLine(Constraint):
     """Line is tangent to the arc at the arc's `at` endpoint: (p − c)·(b − a) = 0.
 
