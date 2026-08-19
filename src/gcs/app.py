@@ -20,8 +20,8 @@ from PySide6.QtGui import (
     QAction, QActionGroup, QColor, QKeySequence, QMouseEvent, QPainter, QPaintEvent, QPen, QWheelEvent,
 )
 from PySide6.QtWidgets import (
-    QApplication, QDockWidget, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QListWidget, QListWidgetItem,
-    QMainWindow, QMessageBox, QPushButton, QToolBar, QVBoxLayout, QWidget,
+    QApplication, QComboBox, QDockWidget, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QListWidget,
+    QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QToolBar, QVBoxLayout, QWidget,
 )
 
 from gcs import constraints as C
@@ -29,7 +29,7 @@ from gcs import io
 from gcs.constraints import ENTITY_KINDS, Constraint
 from gcs.decompose import PlanResult, PlanSolver
 from gcs.diagnose import Diagnosis, diagnose
-from gcs.examples import EXAMPLES
+from gcs.examples import CASES, EXAMPLES
 from gcs.model import Arc, Circle, Line, Point, Primitive, Sketch, expand
 from gcs.solve import METHODS, Drag, Method, SolveResult, System
 
@@ -535,8 +535,8 @@ class MainWindow(QMainWindow):
         fm.addAction(self._act("&Save As…", self.save_sketch, "Ctrl+S"))
         fm.addSeparator()
         ex = fm.addMenu("&Examples")
-        for name in EXAMPLES:
-            ex.addAction(self._act(name, lambda _=False, n=name: self.view.set_sketch(EXAMPLES[n]())))
+        for name in CASES:
+            ex.addAction(self._act(name, lambda _=False, n=name: self.load_case(n)))
         fm.addSeparator()
         fm.addAction(self._act("&Quit", self.close, "Ctrl+Q"))
 
@@ -581,6 +581,16 @@ class MainWindow(QMainWindow):
             self.tool_group.addAction(a)
             tb.addAction(a)
         tb.addAction(self._act("Cancel", self.view.cancel_tool, "Escape"))
+        tb.addSeparator()
+        tb.addWidget(QLabel(" Case: "))
+        self.case_box = QComboBox()
+        self.case_box.setMinimumWidth(240)
+        self.case_box.addItem("— load a test case —")
+        for name, (_, desc) in CASES.items():
+            self.case_box.addItem(name)
+            self.case_box.setItemData(self.case_box.count() - 1, desc, Qt.ItemDataRole.ToolTipRole)
+        self.case_box.activated.connect(self._case_chosen)
+        tb.addWidget(self.case_box)
 
         self.addToolBarBreak()
         cb = QToolBar("Constraints")
@@ -736,6 +746,18 @@ class MainWindow(QMainWindow):
 
     def new_sketch(self) -> None:
         self.view.set_sketch(Sketch())
+
+    def load_case(self, name: str) -> None:
+        make, desc = CASES[name]
+        self.view.set_sketch(make())
+        i = self.case_box.findText(name)
+        if i >= 0:
+            self.case_box.setCurrentIndex(i)
+        self.statusBar().showMessage(f"{name}: {desc}", 8000)
+
+    def _case_chosen(self, index: int) -> None:
+        if index > 0:
+            self.load_case(self.case_box.itemText(index))
 
     def open_sketch(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Open sketch", "", "Sketch JSON (*.json)")

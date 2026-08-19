@@ -202,3 +202,16 @@ def test_plan_toggle_solves_examples(qapp: QApplication) -> None:
     assert v.last_plan is not None and v.last_plan.fell_back and v.last_result is not None and v.last_result.success
     w.toggle_plan(False)
     assert v.last_plan is None
+
+
+def test_case_dropdown_loads_every_case(qapp: QApplication) -> None:
+    from gcs.examples import CASES
+
+    w = MainWindow(Sketch())
+    w.show()
+    assert w.case_box.count() == len(CASES) + 1
+    for i, name in enumerate(CASES, start=1):
+        w._case_chosen(i)
+        assert w.case_box.currentText() == name
+        assert w.view.diagnosis is not None or not w.view.sketch.constraints
+        w.view.repaint()

@@ -36,20 +36,7 @@ def test_pebble_game_basics() -> None:
     assert bow.dof == 1 and sorted(map(sorted, bow.components)) == [[0, 1, 2], [2, 3, 4]]
 
 
-def henneberg(n: int, rng: random.Random) -> list[tuple[int, int]]:
-    """Random Laman graph on n >= 2 vertices by Henneberg I (add vertex + 2 edges) and
-    II (subdivide an edge and connect to a third vertex) moves — minimally rigid by construction."""
-    edges = [(0, 1)]
-    for v in range(2, n):
-        if v == 2 or rng.random() < 0.6:  # type I
-            a, b = rng.sample(range(v), 2)
-            edges += [(v, a), (v, b)]
-        else:  # type II
-            i = rng.randrange(len(edges))
-            a, b = edges.pop(i)
-            c = rng.choice([w for w in range(v) if w not in (a, b)])
-            edges += [(v, a), (v, b), (v, c)]
-    return edges
+from gcs.examples import henneberg_edges as henneberg  # noqa: E402
 
 
 @pytest.mark.parametrize("seed", range(6))

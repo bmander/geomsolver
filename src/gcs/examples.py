@@ -116,9 +116,135 @@ def polygon_chain(n: int = 12, radius: float = 50.0) -> Sketch:
     return sk
 
 
+def henneberg_edges(n: int, rng: random.Random) -> list[tuple[int, int]]:
+    """Random Laman graph on n >= 2 vertices by Henneberg I (add vertex + 2 edges) and
+    II (subdivide an edge and connect to a third vertex) moves — minimally rigid by construction."""
+    edges = [(0, 1)]
+    for v in range(2, n):
+        if v == 2 or rng.random() < 0.6:  # type I
+            a, b = rng.sample(range(v), 2)
+            edges += [(v, a), (v, b)]
+        else:  # type II
+            i = rng.randrange(len(edges))
+            a, b = edges.pop(i)
+            c = rng.choice([w for w in range(v) if w not in (a, b)])
+            edges += [(v, a), (v, b), (v, c)]
+    return edges
+
+
+def laman(n: int = 10, seed: int = 0, ground: bool = True) -> Sketch:
+    """Random minimally rigid framework (Henneberg construction) with a horizontal member and a
+    fixed node — fully constrained; Henneberg-II moves make some of them non-tree-decomposable."""
+    rng = random.Random(seed)
+    sk = Sketch()
+    pts = [sk.point(rng.uniform(0, 60), rng.uniform(0, 60), name=f"n{i}") for i in range(n)]
+    for a, b in henneberg_edges(n, rng):
+        sk.add(Distance(pts[a], pts[b], math.dist(pts[a].xy, pts[b].xy)))
+    if ground:
+        pts[0].fix()
+        sk.add(Horizontal(sk.line(pts[0], pts[1])))
+    return sk
+
+
+def k33(seed: int = 3) -> Sketch:
+    """K3,3 bar framework: minimally rigid but triangle-free — no pair/triple cluster merge
+    applies, the decomposition must isolate it as one core."""
+    rng = random.Random(seed)
+    sk = Sketch()
+    pts = [sk.point(rng.uniform(0, 40), rng.uniform(0, 40), name=f"k{i}") for i in range(6)]
+    pts[0].fix()
+    for a in range(3):
+        for b in range(3, 6):
+            sk.add(Distance(pts[a], pts[b], math.dist(pts[a].xy, pts[b].xy)))
+    sk.add(Horizontal(sk.line(pts[0], pts[3])))
+    return sk
+
+
+def rect_fillets_conflict() -> Sketch:
+    """Fillet rectangle with a second, contradicting width dimension (80 vs 50)."""
+    sk = rect_fillets()
+    sk.add(Distance(sk.lines[0].p1, sk.lines[0].p2, 50))
+    return sk
+
+
+def rect_fillets_under() -> Sketch:
+    """Fillet rectangle without its width dimension: the right side slides (1 DOF)."""
+    sk = rect_fillets()
+    sk.remove(next(c for c in sk.constraints if isinstance(c, Distance) and c.d == 80))
+    return sk
+
+
+def truss_redundant() -> Sketch:
+    """Truss with an extra, consistent member: structurally over-constrained but satisfiable."""
+    sk = truss(6)
+    p, q = sk.points[0], sk.points[2]
+    sk.add(Distance(p, q, math.dist(p.xy, q.xy)))
+    return sk
+
+
+def truss_conflict() -> Sketch:
+    """Truss with an impossible member length (999 between nearby nodes)."""
+    sk = truss(6)
+    sk.add(Distance(sk.points[0], sk.points[3], 999))
+    return sk
+
+
+def truss_floating(bays: int = 8) -> Sketch:
+    """Rigid truss with nothing fixed: a free rigid body (3 DOF) — drag it around."""
+    sk = truss(bays)
+    for prm in sk.params:
+        prm.fixed = False
+    sk.constraints = [c for c in sk.constraints if not isinstance(c, Horizontal)]
+    return sk
+
+
+def impossible_triangle() -> Sketch:
+    """Structurally fine, geometrically impossible: sides 10, 1, 1 (triangle inequality)."""
+    sk = Sketch()
+    a, b, c = sk.point(0, 0, fixed=True, name="a"), sk.point(10, 0, name="b"), sk.point(5, 5, name="c")
+    sk.add(Distance(a, b, 10), Distance(b, c, 1), Distance(a, c, 1), Horizontal(sk.line(a, b)))
+    return sk
+
+
+def parallels() -> Sketch:
+    """Parallel / perpendicular / vertical lines with a few distances — exercises direction classes."""
+    from gcs.constraints import Parallel, Perpendicular
+
+    sk = Sketch()
+    base = sk.line(sk.point(0, 0, fixed=True, name="o"), sk.point(40, 0, fixed=True, name="e"))
+    l2 = sk.line(sk.point(0, 15, name="a"), sk.point(40, 15, name="b"))
+    l3 = sk.line(sk.point(10, 15, name="c"), sk.point(10, 35, name="d"))
+    l4 = sk.line(sk.point(10, 35, name="f"), sk.point(30, 30, name="g"))
+    sk.add(Parallel(base, l2), Distance(base.p1, l2.p1, 15), Vertical(l3), Coincident(l3.p1, l2.p1),
+           Distance(l3.p1, l3.p2, 20), Distance(l2.p1, l2.p2, 40), Perpendicular(l3, l4),
+           Coincident(l4.p1, l3.p2), Distance(l4.p1, l4.p2, 20))
+    return sk
+
+
 EXAMPLES: dict[str, Callable[..., Sketch]] = {
     "rect_fillets": rect_fillets,
     "slotted_link": slotted_link,
     "truss": truss,
     "polygon_chain": polygon_chain,
+}
+
+# The case library shown in the app's dropdown: name → (factory, one-line description).
+CASES: dict[str, tuple[Callable[[], Sketch], str]] = {
+    "Rectangle with fillets": (rect_fillets, "fully constrained; tangent arcs, equal radii, two dimensions"),
+    "Slotted link": (slotted_link, "obround slot with two holes; fully constrained"),
+    "Truss (8 bays)": (lambda: truss(8), "~30-entity Warren truss, every member dimensioned"),
+    "Truss (50 bays)": (lambda: truss(50), "300 entities — drag a node"),
+    "Truss (200 bays)": (lambda: truss(200), "1200 entities — solver/plan timing"),
+    "Truss, floating": (lambda: truss_floating(8), "rigid body with nothing fixed: 3 DOF, drag it around"),
+    "Polygon chain (12)": (lambda: polygon_chain(12), "under-constrained equal-length ring; the EqualLength cycle is a redundancy the graph can't see"),
+    "Rect, missing width": (rect_fillets_under, "under-constrained: the right side slides (null-space colouring)"),
+    "Rect, conflicting width": (rect_fillets_conflict, "conflict: two contradicting width dimensions"),
+    "Truss, redundant member": (truss_redundant, "structurally over-constrained but consistent (amber)"),
+    "Truss, impossible member": (truss_conflict, "conflict: a 999-long member; minimal conflict set is a path + it"),
+    "Impossible triangle": (impossible_triangle, "structurally fine, geometrically impossible (triangle inequality)"),
+    "K3,3 framework": (k33, "rigid but triangle-free: decomposition needs a core merge"),
+    "Random Laman #0": (lambda: laman(10, 0), "Henneberg-built minimally rigid framework"),
+    "Random Laman #1": (lambda: laman(12, 1), "Henneberg-built; may need a core (Henneberg II)"),
+    "Random Laman #7": (lambda: laman(11, 507), "needs a 9-cluster core"),
+    "Parallels & perpendiculars": (parallels, "direction classes: parallel/perpendicular/vertical (1 DOF left: slide along the base)"),
 }
