@@ -13,6 +13,7 @@ from collections.abc import Callable
 
 import numpy as np
 
+from gcs.constraints import Horizontal
 from gcs.examples import EXAMPLES, perturb, truss
 from gcs.model import Sketch
 from gcs.solve import METHODS, Drag, Method, System
@@ -20,23 +21,29 @@ from gcs.solve import METHODS, Drag, Method, System
 MakeSketch = Callable[[], Sketch]
 
 
-def bench_solve(make: MakeSketch, method: Method, reps: int = 20, sigma: float = 1.0) -> tuple[float, float, bool, float]:
-    """(median compiled-solve ms, median compile ms, all ok, mean iterations)."""
-    ts, tc, ok, its = [], [], True, 0.0
+def bench_solve(make: MakeSketch, method: Method, reps: int = 20, sigma: float = 1.0) -> tuple[float, bool, float]:
+    """(median compiled-solve ms, all ok, mean iterations)."""
+    ts, ok, its = [], True, 0.0
     for i in range(reps):
         sk = make()
         perturb(sk, sigma, seed=i)
-        x0 = sk.get_x()
-        t0 = time.perf_counter()
         s = System(sk)
-        tc.append(time.perf_counter() - t0)
-        sk.set_x(x0)
         t0 = time.perf_counter()
         r = s.solve(method=method)
         ts.append(time.perf_counter() - t0)
         ok &= r.success
         its += r.iterations
-    return float(np.median(ts)) * 1e3, float(np.median(tc)) * 1e3, ok, its / reps
+    return float(np.median(ts)) * 1e3, ok, its / reps
+
+
+def bench_compile(make: MakeSketch, reps: int = 20) -> float:
+    sk = make()
+    ts = []
+    for _ in range(reps):
+        t0 = time.perf_counter()
+        System(sk)
+        ts.append(time.perf_counter() - t0)
+    return float(np.median(ts)) * 1e3
 
 
 def bench_drag(sk: Sketch, frames: int = 20) -> tuple[float, bool]:
@@ -54,7 +61,7 @@ def floating(sk: Sketch) -> Sketch:
     """Unfix everything and drop the orientation constraint → rigid body with 3 DOF."""
     for prm in sk.params:
         prm.fixed = False
-    sk.constraints = [c for c in sk.constraints if type(c).__name__ != "Horizontal"]
+    sk.constraints = [c for c in sk.constraints if not isinstance(c, Horizontal)]
     return sk
 
 
@@ -66,15 +73,16 @@ def main() -> None:
     print(f"{'sketch':<14}{'free':>5}{'res':>5} | " + " | ".join(f"{m:^16}" for m in METHODS) + " | compile")
     for name, make in cases.items():
         sk = make()
+        big = len(sk.params) > 100
         cells = []
-        comp = 0.0
         for m in METHODS:
-            if m.startswith("scipy") and len(sk.params) > 100:
+            if m.startswith("scipy") and big:
                 cells.append(f"{'(skipped)':^24}")   # scipy's dense LM/exact TR are O(n³) and very slow here
                 continue
-            ms, comp, ok, it = bench_solve(make, m, reps=5 if len(sk.params) > 100 else 20)
+            ms, ok, it = bench_solve(make, m, reps=5 if big else 20)
             cells.append(f"{ms:7.2f} ms {'' if ok else 'BAD'} it={it:4.1f}")
-        print(f"{name:<14}{len(sk.free_indices()):>5}{sk.n_residuals():>5} | " + " | ".join(cells) + f" | {comp:5.2f} ms", flush=True)
+        print(f"{name:<14}{len(sk.free_indices()):>5}{sk.n_residuals():>5} | " + " | ".join(cells)
+              + f" | {bench_compile(make):5.2f} ms", flush=True)
 
     print("\n== drag frame (pull + polish), dogleg ==")
     for bays in (30, 50, 100, 200):

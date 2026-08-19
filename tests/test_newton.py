@@ -35,11 +35,11 @@ def test_system_blocks_cover_every_constraint_once() -> None:
     s = System(sk)
     assert sum(len(b.constraints) for b in s.blocks) == len(sk.constraints)
     assert s.n_res == sk.n_residuals()
-    # residual rows are contiguous per constraint at row_of
+    # residual rows are contiguous per constraint at row_of(c)
     x = s.z0()
     r = s.residuals(x)
     for c in sk.constraints:
-        off = s.row_of[id(c)]
+        off = s.row_of(c)
         np.testing.assert_allclose(r[off : off + c.n_residuals], c.residual(c.local_values()))
 
 

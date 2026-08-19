@@ -21,6 +21,7 @@ import numpy as np
 import numpy.typing as npt
 
 Arr = npt.NDArray[np.float64]
+ArrLike = npt.ArrayLike
 
 
 class Kernel(NamedTuple):
@@ -33,11 +34,34 @@ class Kernel(NamedTuple):
     const_jac: Arr | None = None   # set when J is the same for every instance (linear constraints)
 
 
-def _const_jac(J: Arr) -> Callable[[Arr, Arr], Arr]:
+KERNELS: list[Kernel] = []          # registration order == kernel id
+KERNEL_ID: dict[str, int] = {}
+
+
+def _broadcast_jac(J: Arr) -> Callable[[Arr, Arr], Arr]:
     def jac(V: Arr, K: Arr) -> Arr:
         return np.broadcast_to(J, (V.shape[0],) + J.shape)
 
     return jac
+
+
+def kernel(name: str, n_res: int, n_par: int, n_const: int, res: Callable[[Arr, Arr], Arr],
+           jac: Callable[[Arr, Arr], Arr] | None = None, const_jac: ArrLike | None = None) -> Kernel:
+    """Register a kernel.  Pass `const_jac` (and no `jac`) when the Jacobian is constant."""
+    if const_jac is not None:
+        const_jac = np.asarray(const_jac, dtype=np.float64)
+        jac = _broadcast_jac(const_jac)
+    assert jac is not None
+    k = Kernel(name, n_res, n_par, n_const, res, jac, const_jac)
+    KERNEL_ID[name] = len(KERNELS)
+    KERNELS.append(k)
+    return k
+
+
+def linear_kernel(name: str, J: ArrLike) -> Kernel:
+    """Kernel for a linear constraint r = J·v: residual, Jacobian and shape all derive from J."""
+    J = np.asarray(J, dtype=np.float64)
+    return kernel(name, J.shape[0], J.shape[1], 0, lambda V, K: V @ J.T, const_jac=J)
 
 
 def _row1(*cols: Arr) -> Arr:
@@ -47,12 +71,7 @@ def _row1(*cols: Arr) -> Arr:
 
 # -- point / point ----------------------------------------------------------
 
-def _coincident_res(V: Arr, K: Arr) -> Arr:                # (px,py,qx,qy)
-    return np.stack([V[:, 0] - V[:, 2], V[:, 1] - V[:, 3]], axis=1)
-
-
-coincident = Kernel("coincident", 2, 4, 0, _coincident_res,
-                    _const_jac(np.array([[1.0, 0, -1, 0], [0, 1.0, 0, -1]])), np.array([[1.0, 0, -1, 0], [0, 1.0, 0, -1]]))
+coincident = linear_kernel("coincident", [[1, 0, -1, 0], [0, 1, 0, -1]])          # (px,py,qx,qy)
 
 
 def _distance_res(V: Arr, K: Arr) -> Arr:                  # (px,py,qx,qy) K=(d,)
@@ -61,19 +80,16 @@ def _distance_res(V: Arr, K: Arr) -> Arr:                  # (px,py,qx,qy) K=(d,
 
 
 def _distance_jac(V: Arr, K: Arr) -> Arr:
-    dx, dy = V[:, 0] - V[:, 2], V[:, 1] - V[:, 3]
-    return _row1(2 * dx, 2 * dy, -2 * dx, -2 * dy)
+    J = np.empty((V.shape[0], 1, 4))
+    d = 2 * (V[:, 0:2] - V[:, 2:4])
+    J[:, 0, 0:2] = d
+    J[:, 0, 2:4] = -d
+    return J
 
 
-distance = Kernel("distance", 1, 4, 1, _distance_res, _distance_jac)
+distance = kernel("distance", 1, 4, 1, _distance_res, _distance_jac)
 
-
-def _midpoint_res(V: Arr, K: Arr) -> Arr:                  # (px,py,ax,ay,bx,by)
-    return np.stack([2 * V[:, 0] - V[:, 2] - V[:, 4], 2 * V[:, 1] - V[:, 3] - V[:, 5]], axis=1)
-
-
-midpoint = Kernel("midpoint", 2, 6, 0, _midpoint_res,
-                  _const_jac(np.array([[2.0, 0, -1, 0, -1, 0], [0, 2.0, 0, -1, 0, -1]])), np.array([[2.0, 0, -1, 0, -1, 0], [0, 2.0, 0, -1, 0, -1]]))
+midpoint = linear_kernel("midpoint", [[2, 0, -1, 0, -1, 0], [0, 2, 0, -1, 0, -1]])   # (px,py,ax,ay,bx,by)
 
 
 def _drag_res(V: Arr, K: Arr) -> Arr:                      # (px,py) K=(tx,ty,w)
@@ -84,23 +100,13 @@ def _drag_jac(V: Arr, K: Arr) -> Arr:
     return K[:, 2][:, None, None] * np.eye(2)[None]
 
 
-drag = Kernel("drag", 2, 2, 3, _drag_res, _drag_jac)
+drag = kernel("drag", 2, 2, 3, _drag_res, _drag_jac)
 
 
 # -- line orientation -------------------------------------------------------
 
-def _horizontal_res(V: Arr, K: Arr) -> Arr:                # (ax,ay,bx,by)
-    return (V[:, 1] - V[:, 3])[:, None]
-
-
-horizontal = Kernel("horizontal", 1, 4, 0, _horizontal_res, _const_jac(np.array([[0.0, 1, 0, -1]])), np.array([[0.0, 1, 0, -1]]))
-
-
-def _vertical_res(V: Arr, K: Arr) -> Arr:
-    return (V[:, 0] - V[:, 2])[:, None]
-
-
-vertical = Kernel("vertical", 1, 4, 0, _vertical_res, _const_jac(np.array([[1.0, 0, -1, 0]])), np.array([[1.0, 0, -1, 0]]))
+horizontal = linear_kernel("horizontal", [[0, 1, 0, -1]])   # (ax,ay,bx,by): ay − by
+vertical = linear_kernel("vertical", [[1, 0, -1, 0]])       # ax − bx
 
 
 def _dirs(V: Arr) -> tuple[Arr, Arr, Arr, Arr]:            # (a1x,a1y,b1x,b1y,a2x,a2y,b2x,b2y)
@@ -127,8 +133,8 @@ def _dot_jac(V: Arr) -> Arr:
     return _row1(-d2x, -d2y, d2x, d2y, -d1x, -d1y, d1x, d1y)
 
 
-parallel = Kernel("parallel", 1, 8, 0, lambda V, K: _cross(V)[:, None], lambda V, K: _cross_jac(V))
-perpendicular = Kernel("perpendicular", 1, 8, 0, lambda V, K: _dot(V)[:, None], lambda V, K: _dot_jac(V))
+parallel = kernel("parallel", 1, 8, 0, lambda V, K: _cross(V)[:, None], lambda V, K: _cross_jac(V))
+perpendicular = kernel("perpendicular", 1, 8, 0, lambda V, K: _dot(V)[:, None], lambda V, K: _dot_jac(V))
 
 
 def _angle_res(V: Arr, K: Arr) -> Arr:                     # K=(sinθ, cosθ)
@@ -139,7 +145,7 @@ def _angle_jac(V: Arr, K: Arr) -> Arr:
     return _dot_jac(V) * K[:, 0][:, None, None] - _cross_jac(V) * K[:, 1][:, None, None]
 
 
-angle = Kernel("angle", 1, 8, 2, _angle_res, _angle_jac)
+angle = kernel("angle", 1, 8, 2, _angle_res, _angle_jac)
 
 
 def _equal_length_res(V: Arr, K: Arr) -> Arr:
@@ -152,7 +158,7 @@ def _equal_length_jac(V: Arr, K: Arr) -> Arr:
     return 2 * _row1(-d1x, -d1y, d1x, d1y, d2x, d2y, -d2x, -d2y)
 
 
-equal_length = Kernel("equal_length", 1, 8, 0, _equal_length_res, _equal_length_jac)
+equal_length = kernel("equal_length", 1, 8, 0, _equal_length_res, _equal_length_jac)
 
 
 # -- incidence --------------------------------------------------------------
@@ -169,7 +175,7 @@ def _point_on_line_jac(V: Arr, K: Arr) -> Arr:
     return _row1(-dy, dx, dy - wy, wx - dx, wy, -wx)
 
 
-point_on_line = Kernel("point_on_line", 1, 6, 0, _point_on_line_res, _point_on_line_jac)
+point_on_line = kernel("point_on_line", 1, 6, 0, _point_on_line_res, _point_on_line_jac)
 
 
 def _point_on_circle_res(V: Arr, K: Arr) -> Arr:           # (px,py,cx,cy,r)
@@ -182,14 +188,13 @@ def _point_on_circle_jac(V: Arr, K: Arr) -> Arr:
     return _row1(2 * ux, 2 * uy, -2 * ux, -2 * uy, -2 * V[:, 4])
 
 
-point_on_circle = Kernel("point_on_circle", 1, 5, 0, _point_on_circle_res, _point_on_circle_jac)
+point_on_circle = kernel("point_on_circle", 1, 5, 0, _point_on_circle_res, _point_on_circle_jac)
 
 
 # -- radii ------------------------------------------------------------------
 
-radius = Kernel("radius", 1, 1, 1, lambda V, K: (V[:, 0] - K[:, 0])[:, None], _const_jac(np.array([[1.0]])), np.array([[1.0]]))
-equal_radius = Kernel("equal_radius", 1, 2, 0, lambda V, K: (V[:, 0] - V[:, 1])[:, None],
-                      _const_jac(np.array([[1.0, -1.0]])), np.array([[1.0, -1.0]]))
+radius = kernel("radius", 1, 1, 1, lambda V, K: (V[:, 0] - K[:, 0])[:, None], const_jac=[[1.0]])
+equal_radius = linear_kernel("equal_radius", [[1, -1]])
 
 
 # -- tangency ---------------------------------------------------------------
@@ -217,7 +222,7 @@ def _tangent_line_circle_jac(V: Arr, K: Arr) -> Arr:
     return J[:, None, :]
 
 
-tangent_line_circle = Kernel("tangent_line_circle", 1, 7, 1, _tangent_line_circle_res, _tangent_line_circle_jac)
+tangent_line_circle = kernel("tangent_line_circle", 1, 7, 1, _tangent_line_circle_res, _tangent_line_circle_jac)
 
 
 def _tangent_circle_circle_res(V: Arr, K: Arr) -> Arr:     # (c1x,c1y,r1,c2x,c2y,r2) K=(sign,) +1 external
@@ -232,7 +237,7 @@ def _tangent_circle_circle_jac(V: Arr, K: Arr) -> Arr:
     return _row1(2 * ux, 2 * uy, -2 * R, -2 * ux, -2 * uy, -2 * R * K[:, 0])
 
 
-tangent_circle_circle = Kernel("tangent_circle_circle", 1, 6, 1, _tangent_circle_circle_res, _tangent_circle_circle_jac)
+tangent_circle_circle = kernel("tangent_circle_circle", 1, 6, 1, _tangent_circle_circle_res, _tangent_circle_circle_jac)
 
 
 def _tangent_arc_line_res(V: Arr, K: Arr) -> Arr:          # (px,py,cx,cy,ax,ay,bx,by)
@@ -247,12 +252,4 @@ def _tangent_arc_line_jac(V: Arr, K: Arr) -> Arr:
     return _row1(dx, dy, -dx, -dy, -ux, -uy, ux, uy)
 
 
-tangent_arc_line = Kernel("tangent_arc_line", 1, 8, 0, _tangent_arc_line_res, _tangent_arc_line_jac)
-
-
-KERNELS: tuple[Kernel, ...] = (
-    coincident, distance, midpoint, drag, horizontal, vertical, parallel, perpendicular, angle,
-    equal_length, point_on_line, point_on_circle, radius, equal_radius, tangent_line_circle,
-    tangent_circle_circle, tangent_arc_line,
-)
-KERNEL_ID: dict[str, int] = {k.name: i for i, k in enumerate(KERNELS)}
+tangent_arc_line = kernel("tangent_arc_line", 1, 8, 0, _tangent_arc_line_res, _tangent_arc_line_jac)

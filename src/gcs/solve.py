@@ -24,11 +24,13 @@ import scipy.sparse as sp
 
 from gcs import newton
 from gcs.constraints import Constraint, DragTarget
-from gcs.kernels import KERNELS, Kernel
+from gcs.kernels import KERNEL_ID, KERNELS, Kernel
 from gcs.model import Point, Sketch, Vec
+from gcs.newton import SOLVERS
 
 Method = Literal["dogleg", "lm", "scipy-dogbox", "scipy-trf", "scipy-lm"]
 METHODS: tuple[Method, ...] = get_args(Method)
+assert set(METHODS) == set(SOLVERS)
 DENSE_MAX = 120   # free params up to which J is dense (LAPACK dgelsy: exact min-norm step + rank); sparse SuperLU above
 
 
@@ -60,6 +62,7 @@ class Block(NamedTuple):
     gidx: npt.NDArray[np.intp]     # (n, k) global param index per local column
     consts: Vec                    # (n, m)
     row0: int                      # residual rows row0 .. row0 + n*n_res
+    jac_const: Vec | None          # ravelled Jacobian entries if the kernel's J is constant
 
 
 class System:
@@ -77,12 +80,11 @@ class System:
         self.col_of[self.free] = np.arange(self.n_free)
         self.extent = sketch.extent()
 
-        # -- group constraints by kernel (kernel order, then sketch order → deterministic) --
+        # -- group constraints by kernel (kernel id order, then sketch order → deterministic) --
         by_kernel: dict[int, list[Constraint]] = {}
         for c in self.constraints:
-            by_kernel.setdefault(KERNELS.index(c.kernel), []).append(c)
+            by_kernel.setdefault(KERNEL_ID[c.kernel.name], []).append(c)
         self.blocks: list[Block] = []
-        self.row_of: dict[int, int] = {}          # id(constraint) -> first residual row
         self._slot_of: dict[int, tuple[int, int]] = {}   # id(constraint) -> (block index, row in block)
         hard: list[bool] = []
         rows_l: list[npt.NDArray[np.intp]] = []
@@ -91,16 +93,16 @@ class System:
         for kid in sorted(by_kernel):
             cs = by_kernel[kid]
             k = KERNELS[kid]
-            gidx = np.array([[p.index for p in c.params] for c in cs], dtype=np.intp).reshape(len(cs), k.n_par)
-            consts = (np.array([c.consts() for c in cs], dtype=np.float64).reshape(len(cs), k.n_const)
-                      if k.n_const else np.zeros((len(cs), 0)))
-            self.blocks.append(Block(k, cs, gidx, consts, row0))
+            nb = len(cs)
+            gidx = np.array([[p.index for p in c.params] for c in cs], dtype=np.intp).reshape(nb, k.n_par)
+            consts = (np.array([c.consts() for c in cs], dtype=np.float64).reshape(nb, k.n_const)
+                      if k.n_const else np.zeros((nb, 0)))
+            jc = None if k.const_jac is None else np.broadcast_to(k.const_jac, (nb,) + k.const_jac.shape).ravel()
+            self.blocks.append(Block(k, cs, gidx, consts, row0, jc))
             for i, c in enumerate(cs):
-                self.row_of[id(c)] = row0 + i * k.n_res
                 self._slot_of[id(c)] = (len(self.blocks) - 1, i)
                 hard.extend([not c.soft] * k.n_res)
             # Jacobian entry (i, j, col) of this block → row row0 + i*n_res + j, col col_of[gidx[i, col]]
-            nb = len(cs)
             r = row0 + (np.arange(nb) * k.n_res)[:, None, None] + np.arange(k.n_res)[None, :, None]
             rows_l.append(np.broadcast_to(r, (nb, k.n_res, k.n_par)).ravel())
             cols_l.append(np.broadcast_to(self.col_of[gidx][:, None, :], (nb, k.n_res, k.n_par)).ravel())
@@ -109,24 +111,15 @@ class System:
         self.hard = np.array(hard, dtype=bool)
         rows = np.concatenate(rows_l) if rows_l else np.zeros(0, dtype=np.intp)
         cols = np.concatenate(cols_l) if cols_l else np.zeros(0, dtype=np.intp)
-        self._keep = cols >= 0                     # drop columns of fixed params
-        if self._keep.all():
-            self._keep = None  # type: ignore[assignment]
-        rows, cols = rows[cols >= 0], cols[cols >= 0]
-        self.jac_rows, self.jac_cols = rows, cols
-        # CSR structure with duplicates (shared params) merged: entry e → slot inv[e]
+        self._keep = np.flatnonzero(cols >= 0)     # entries whose column is a free param
+        rows, cols = rows[self._keep], cols[self._keep]
+        # CSR structure with duplicates (shared params) merged: entry e → slot _slot[e]
         ncols = max(self.n_free, 1)
-        key = rows * ncols + cols
-        uniq, self._slot = np.unique(key, return_inverse=True)
+        uniq, self._slot = np.unique(rows * ncols + cols, return_inverse=True)
+        self._nnz = len(uniq)
+        self._csr_flat = uniq                       # dense scatter index into J.ravel()
         self._csr_indices = (uniq % ncols).astype(np.int32)
         self._csr_indptr = np.searchsorted(uniq // ncols, np.arange(self.n_res + 1)).astype(np.int32)
-        self._csr_rows = (uniq // ncols).astype(np.intp)   # row of each CSR slot (dense scatter)
-        self._nnz = len(uniq)
-        # Blocks with constant Jacobians (linear constraints) are evaluated once, here.
-        self._jac_const: list[Vec | None] = [
-            None if b.kernel.const_jac is None else np.broadcast_to(b.kernel.const_jac, (b.gidx.shape[0],) + b.kernel.const_jac.shape).ravel()
-            for b in self.blocks
-        ]
         self._x = sketch.get_x()
 
     def update_consts(self, c: Constraint) -> None:
@@ -134,6 +127,11 @@ class System:
         drag target or an edited dimension.  Topology is unchanged, so no recompile."""
         b, i = self._slot_of[id(c)]
         self.blocks[b].consts[i] = c.consts()
+
+    def row_of(self, c: Constraint) -> int:
+        """First residual row of a constraint."""
+        b, i = self._slot_of[id(c)]
+        return self.blocks[b].row0 + i * self.blocks[b].kernel.n_res
 
     # -- evaluation ---------------------------------------------------------
 
@@ -149,17 +147,16 @@ class System:
     def residuals(self, z: Vec) -> Vec:
         x = self.full_x(z)
         r = np.empty(self.n_res)
-        for k, _, gidx, consts, row0 in self.blocks:
+        for k, _, gidx, consts, row0, _ in self.blocks:
             r[row0 : row0 + gidx.shape[0] * k.n_res] = k.res(x[gidx], consts).ravel()
         return r
 
     def _jac_data(self, z: Vec) -> Vec:
-        """Jacobian entries in (jac_rows, jac_cols) order (fixed-param columns dropped)."""
+        """Jacobian entries in block/row/col order, fixed-param columns dropped."""
         x = self.full_x(z)
-        parts = [cj if cj is not None else k.jac(x[gidx], consts).ravel()
-                 for (k, _, gidx, consts, _), cj in zip(self.blocks, self._jac_const, strict=True)]
-        data = np.concatenate(parts) if parts else np.zeros(0)
-        return data if self._keep is None else data[self._keep]
+        parts = [jc if jc is not None else k.jac(x[gidx], consts).ravel()
+                 for k, _, gidx, consts, _, jc in self.blocks]
+        return np.take(np.concatenate(parts), self._keep) if parts else np.zeros(0)
 
     def _csr_data(self, z: Vec) -> Vec:
         return np.bincount(self._slot, weights=self._jac_data(z), minlength=self._nnz)
@@ -168,17 +165,14 @@ class System:
         return sp.csr_matrix((self._csr_data(z), self._csr_indices, self._csr_indptr), shape=(self.n_res, self.n_free))
 
     def jacobian_dense(self, z: Vec) -> Vec:
-        J = np.zeros((self.n_res, max(self.n_free, 1)))
-        J[self._csr_rows, self._csr_indices] = self._csr_data(z)
-        return J[:, : self.n_free]
+        J = np.zeros(self.n_res * max(self.n_free, 1))
+        J[self._csr_flat] = self._csr_data(z)
+        return J.reshape(self.n_res, max(self.n_free, 1))[:, : self.n_free]
 
     def rank(self, z: Vec | None = None, rcond: float = 1e-10) -> int:
         """Numerical rank of the Jacobian at z (default: current sketch values) via
         rank-revealing QR — the workhorse of Stage 2/4 diagnosis."""
-        z = self.z0() if z is None else z
-        if self.n_free == 0 or self.n_res == 0:
-            return 0
-        return newton.min_norm_lstsq(self.jacobian_dense(z), np.zeros(self.n_res), rcond)[1]
+        return newton.rank_rrqr(self.jacobian_dense(self.z0() if z is None else z), rcond)
 
     # -- solving ------------------------------------------------------------
 
@@ -192,50 +186,24 @@ class System:
         dense: bool | None = None,   # force the dense/sparse Jacobian path (None = by DENSE_MAX)
     ) -> SolveResult:
         t0 = time.perf_counter()
-        z0 = self.z0()
-        if self.n_free == 0 or self.n_res == 0:
-            r = self.residuals(z0)
-            return SolveResult(True, 0, "nothing to solve", float(np.linalg.norm(r)),
-                               float(np.max(np.abs(r))) if r.size else 0.0, 1, 0,
-                               time.perf_counter() - t0, method)
+        z = self.z0()
         scale = max(1.0, self.extent) ** 2
-        if dense is None:
-            dense = self.n_free <= DENSE_MAX
-        jfun = self.jacobian_dense if dense else self.jacobian
-        rank: int | None = None
-        if method in ("dogleg", "lm"):
-            algo = newton.dogleg if method == "dogleg" else newton.levenberg_marquardt
-            z, info = algo(self.residuals, jfun, z0, ftol=tol * scale, xtol=1e-12, gtol=1e-16 * scale,
-                           max_iter=max_iter, max_nfev=max_nfev)
-            status, message, nfev, njev, iters, rank = info.status, info.message, info.nfev, info.njev, info.iterations, info.rank
-            r = self.residuals(z)
+        if self.n_free == 0 or self.n_res == 0:
+            info = newton.Info(0, 1, 0, 0, None, self.residuals(z))
         else:
-            z, status, message, nfev, njev, iters, r = self._solve_scipy(method, z0, tol, max_nfev, dense)
+            if dense is None:
+                dense = self.n_free <= DENSE_MAX
+            z, info = SOLVERS[method](self.residuals, self.jacobian_dense if dense else self.jacobian, z,
+                                      ftol=tol * scale, xtol=1e-12, gtol=1e-16 * scale,
+                                      max_iter=max_iter, max_nfev=max_nfev)
         if writeback:
             self.sketch.set_x(self.full_x(z))
+        r = info.r if info.r is not None else self.residuals(z)
         rh = r[self.hard]
         mx = float(np.max(np.abs(rh))) if rh.size else 0.0
-        ok = status >= 0 and mx < 1e-6 * scale
-        return SolveResult(ok, status, message, float(np.linalg.norm(r)), mx, nfev, njev,
-                           time.perf_counter() - t0, method, iters, rank)
-
-    def _solve_scipy(self, method: str, z0: Vec, tol: float, max_nfev: int | None, dense: bool) -> tuple[Any, ...]:
-        from scipy.optimize import least_squares as _ls
-
-        least_squares: Any = _ls  # scipy-stubs overloads are too narrow for our kwargs
-        kw: dict[str, Any] = dict(ftol=1e-12, xtol=1e-12, gtol=1e-12, max_nfev=max_nfev, x_scale="jac")
-        m = method.removeprefix("scipy-")
-        if m == "lm":
-            pad = max(0, self.n_free - self.n_res)  # MINPACK needs m >= n and a dense J
-            res = least_squares(lambda z: np.concatenate([self.residuals(z), np.zeros(pad)]), z0,
-                                jac=lambda z: np.vstack([self.jacobian_dense(z), np.zeros((pad, self.n_free))]),
-                                method="lm", **kw)
-            r = res.fun[: self.n_res]
-        else:
-            res = least_squares(self.residuals, z0, jac=self.jacobian_dense if dense else self.jacobian,
-                                method=m, tr_solver="exact" if dense else "lsmr", **kw)
-            r = res.fun
-        return res.x, int(res.status), str(res.message), int(res.nfev), int(res.njev or 0), int(res.nfev), r
+        ok = info.status >= 0 and mx < 1e-6 * scale
+        return SolveResult(ok, info.status, info.message, float(np.linalg.norm(r)), mx, info.nfev, info.njev,
+                           time.perf_counter() - t0, method, info.iterations, info.rank)
 
 
 def solve(sketch: Sketch, method: Method = "dogleg", **kw: object) -> SolveResult:
