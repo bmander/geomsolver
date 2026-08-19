@@ -52,32 +52,55 @@ class Info:
 # -- linear algebra primitives -----------------------------------------------
 
 _RCOND = 1e-12
-_lwork_cache: dict[tuple[int, int], int] = {}
+_lwork_cache: dict[tuple[int, int, int], int] = {}
 
 
 def min_norm_lstsq(J: Vec, b: Vec, rcond: float = _RCOND) -> tuple[Vec, int]:
     """Minimum-norm least-squares solution of J p = b via LAPACK dgelsy (rank-revealing
     QR with column pivoting).  Returns (p, numerical rank).  ~6× faster than
-    np.linalg.lstsq (SVD) at sketch sizes."""
+    np.linalg.lstsq (SVD) at sketch sizes.  `b` may be a matrix of right-hand sides —
+    they share the one factorisation, and `p` then has a column per right-hand side."""
     m, n = J.shape
-    lwork = _lwork_cache.get((m, n))
+    B = np.asarray(b)
+    vector = B.ndim == 1
+    B = B.reshape(m, -1)
+    nrhs = B.shape[1]
+    lwork = _lwork_cache.get((m, n, nrhs))
     if lwork is None:
-        lwork = _lwork_cache[(m, n)] = int(lapack.dgelsy_lwork(m, n, 1, rcond)[0].real)
-    bb = np.zeros((max(m, n), 1))     # LAPACK wants ldb >= max(m, n)
-    bb[:m, 0] = b
+        lwork = _lwork_cache[(m, n, nrhs)] = int(lapack.dgelsy_lwork(m, n, nrhs, rcond)[0].real)
+    bb = np.zeros((max(m, n), nrhs))     # LAPACK wants ldb >= max(m, n)
+    bb[:m] = B
     _, x, _, rank, info = lapack.dgelsy(J, bb, np.zeros(n, dtype=np.int32), rcond, lwork)
     if info != 0:
         raise np.linalg.LinAlgError(f"dgelsy failed: info={info}")
-    return x[:n, 0], int(rank)
+    return (x[:n, 0] if vector else x[:n]), int(rank)
+
+
+def rrqr(J: Vec, rcond: float = 1e-10) -> tuple[int, npt.NDArray[np.intp]]:
+    """Rank-revealing QR: (numerical rank, column pivots).  The first `rank` pivots index a
+    maximal independent set of columns — the codebase's one rank convention: |R_ii| > rcond·|R_00|."""
+    if J.size == 0:
+        return 0, np.zeros(0, dtype=np.intp)
+    R, piv = qr(J, mode="r", pivoting=True, check_finite=False)
+    d = np.abs(np.diag(R))
+    rank = int(np.count_nonzero(d > rcond * d[0])) if d.size and d[0] > 0 else 0
+    return rank, np.asarray(piv, dtype=np.intp)
 
 
 def rank_rrqr(J: Vec, rcond: float = 1e-10) -> int:
-    """Numerical rank via pivoted QR: count |R_ii| > rcond·|R_00|."""
+    """Numerical rank via pivoted QR."""
+    return rrqr(J, rcond)[0]
+
+
+def rank_and_nullspace(J: Vec, rcond: float = 1e-10) -> tuple[int, Vec, Vec]:
+    """(numerical rank, null-space basis, singular values) from a single SVD — the shared seam
+    for diagnosis, witness analysis and decomposition, so they agree on what "rank" means."""
+    m, n = J.shape
     if J.size == 0:
-        return 0
-    R = qr(J, mode="r", pivoting=True, check_finite=False)[0]
-    d = np.abs(np.diag(R))
-    return int(np.count_nonzero(d > rcond * d[0])) if d.size and d[0] > 0 else 0
+        return 0, np.eye(n), np.zeros(0)
+    _, sv, Vt = np.linalg.svd(J, full_matrices=True)
+    rank = int(np.count_nonzero(sv > rcond * sv[0])) if sv.size and sv[0] > 0 else 0
+    return rank, Vt[rank:].T, sv
 
 
 _EPS_REL = 1e-12

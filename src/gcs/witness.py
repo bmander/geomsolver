@@ -13,11 +13,17 @@ generic dimensions; the Jacobian there tells the truth about the system:
     modes localised for readability — animate them in the UI).
 
 The user's own sketch is often an adequate witness (it satisfies the incidences
-by construction).  We build one by randomising the metric constants and
-re-solving from the current geometry; if that cannot converge (over/conflicting
-sketch) we satisfy the incidence-type constraints alone from a perturbed start.
-Numerical rank needs care: columns are scaled by the sketch extent, the
-tolerance is relative, and RRQR is cross-checked against SVD.
+by construction).  We build one by jittering every dimension the constraints
+*declare* (`spec` kinds 'length'/'angle') and re-solving from the current
+geometry; if that cannot converge (over/conflicting sketch) we satisfy the
+incidence-type constraints alone from a perturbed start.
+
+Numerical rank needs care: the rank test is relative (to the largest singular
+value / |R₀₀|) and pivoted QR is cross-checked against the SVD, which disagree
+only on a near-degenerate witness.  Per-column balancing is *not* needed while
+every parameter is a length (coordinates and radii); a future angle- or
+scale-valued parameter would need it, and `System` is where that scale vector
+would live.
 """
 
 from __future__ import annotations
@@ -25,14 +31,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
-from scipy.linalg import qr, svd
+from scipy.linalg import svd
 
-from gcs import constraints as C
 from gcs.constraints import Constraint
 from gcs.model import Param, Sketch, Vec
+from gcs.newton import min_norm_lstsq, rrqr
 from gcs.solve import System
 
-METRIC = (C.Distance, C.Radius, C.Angle)      # constraints carrying a dimension value
+DIMENSION_KINDS = frozenset({"length", "angle"})
+
+
+def dimensions(c: Constraint) -> list[tuple[str, str]]:
+    """The (attribute, kind) pairs of a constraint's dimension values, from its own declaration."""
+    return [(name, kind) for name, kind in c.spec if kind in DIMENSION_KINDS]
 
 
 @dataclass
@@ -60,9 +71,9 @@ class WitnessReport:
     x_witness: Vec                  # the witness configuration (all params)
     used_current: bool              # the sketch itself served as witness (no re-solve needed)
     numeric_rank: int
-    structural_rank: int | None     # maximum matching size, if provided (for the theorem flag)
     dependencies: list[Dependency]
     motions: list[Motion]           # null-space basis: rigid modes first, then internal DOFs
+    movable: list[int]              # free-parameter indices that take part in some motion
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -84,108 +95,100 @@ class WitnessReport:
 
 # ---------------------------------------------------------------------------
 
-def make_witness(sketch: Sketch, seed: int = 0, jitter: float = 0.05, tol: float = 1e-8) -> tuple[Vec, bool]:
+def make_witness(sketch: Sketch, seed: int = 0, jitter: float = 0.05, tol: float = 1e-8) -> Vec:
     """A configuration with the sketch's incidence structure and generic dimensions.
-    Returns (x, used_current).  Leaves the sketch's values untouched."""
+    Leaves the sketch's values and dimensions untouched."""
     x0 = sketch.get_x()
     rng = np.random.default_rng(seed)
     hard = sketch.hard_constraints()
-    saved = {c: c.args() for c in hard if isinstance(c, METRIC)}
+    dimensioned = [(c, name, kind) for c in hard for name, kind in dimensions(c)]
+    saved = [(c, name, getattr(c, name)) for c, name, _ in dimensioned]
     saved_c = sketch.constraints
     try:
-        # 1. generic dimensions: multiplicative jitter on every metric value, re-solve
-        for c in saved:
-            if isinstance(c, C.Distance):
-                c.d *= 1 + jitter * rng.standard_normal()
-            elif isinstance(c, C.Radius):
-                c.r *= 1 + jitter * rng.standard_normal()
-            elif isinstance(c, C.Angle):
-                c.theta += jitter * rng.standard_normal()
+        # 1. generic dimensions (lengths scaled, angles offset), re-solved from the current geometry
+        for c, name, kind in dimensioned:
+            v = getattr(c, name)
+            setattr(c, name, v * (1 + jitter * rng.standard_normal()) if kind == "length"
+                    else v + jitter * rng.standard_normal())
         sketch.constraints = hard
         sys_ = System(sketch)
         res = sys_.solve(max_iter=60)
         if res.success and res.max_residual <= tol * sys_.scale:
-            xw = sketch.get_x()
-            return xw, False
+            return sketch.get_x()
         # 2. incidences only (always satisfiable) from a perturbed start
         sketch.set_x(x0)
-        sketch.constraints = [c for c in hard if not isinstance(c, METRIC)]
-        x = sketch.get_x()
-        free = sketch.free_indices()
-        x[free] += 0.02 * max(1.0, sketch.extent()) * rng.standard_normal(len(free))
-        sketch.set_x(x)
+        sketch.constraints = [c for c in hard if not dimensions(c)]
+        sketch.perturb(0.02 * max(1.0, sketch.extent()), seed)
         System(sketch).solve(max_iter=60)
-        return sketch.get_x(), False
+        return sketch.get_x()
     finally:
         sketch.constraints = saved_c
-        for c, args in saved.items():
-            for (name, _), v in zip(c.spec, args, strict=True):
-                setattr(c, name, v)
+        for c, name, v in saved:
+            setattr(c, name, v)
         sketch.set_x(x0)
 
 
-def analyze(sketch: Sketch, x_witness: Vec | None = None, *, structural_rank: int | None = None,
-            matched_constraints: set[int] | None = None, rtol: float = 1e-9, seed: int = 0) -> WitnessReport:
-    """Rank / dependencies / motions of the sketch's constraint system at a witness."""
+def analyze(sketch: Sketch, x_witness: Vec | None = None, *, system: System | None = None,
+            over_ids: frozenset[int] = frozenset(), rtol: float = 1e-9, seed: int = 0) -> WitnessReport:
+    """Rank / dependencies / motions of the sketch's constraint system at a witness.
+
+    `over_ids` are the constraints the structural analysis already put in its over-determined
+    block; a dependency outside that set is theorem-type — invisible to the graph.  Pass the
+    `System` you already compiled for this sketch to avoid a recompile."""
     x0 = sketch.get_x()
-    used_current = x_witness is None
     try:
+        sys_ = system if system is not None and system.sketch is sketch else System(sketch)
+        used_current = x_witness is None and sys_.max_hard_residual() <= 1e-9 * sys_.scale
         if x_witness is None:
-            # the current sketch is a witness iff it satisfies its constraints
-            s0 = System(sketch)
-            if s0.max_hard_residual() <= 1e-9 * s0.scale:
-                x_witness = x0
-            else:
-                x_witness, _ = make_witness(sketch, seed=seed)
-                used_current = False
+            x_witness = x0 if used_current else make_witness(sketch, seed=seed)
         sketch.set_x(x_witness)
-        sys_ = System(sketch)
         free_params = [sketch.params[i] for i in sys_.free]
-        z = sys_.z0()
-        J = sys_.jacobian_dense(z)[sys_.hard]
-        rows_c = [c for c in sys_.constraints if not c.soft for _ in range(c.n_residuals)]
+        J = sys_.jacobian_dense(sys_.z0())[sys_.hard]
+        _, rows_c = sys_.structure()          # row → constraint, in the Jacobian's own row order
         m, n = J.shape
         warnings: list[str] = []
         if m == 0 or n == 0:
-            return WitnessReport(x_witness, used_current, 0, structural_rank, [],
-                                 [Motion(np.eye(n)[:, i], False, free_params) for i in range(n)], warnings)
-        # column scaling: all params are lengths here (extent) — keeps radii/coords comparable
-        scale = max(1.0, sketch.extent())
-        Js = J / scale
-        # rank: RRQR on Jᵀ (pivots = a maximal independent row set), cross-checked with SVD
-        Q, R, piv = qr(Js.T, mode="economic", pivoting=True, check_finite=False)
-        d = np.abs(np.diag(R))
-        rank_qr = int(np.count_nonzero(d > rtol * d[0])) if d.size and d[0] > 0 else 0
-        sv = svd(Js, compute_uv=False)
+            motions = _classify_motions(np.eye(n), free_params, sketch)
+            return WitnessReport(x_witness, used_current, 0, [], motions, list(range(n)), warnings)
+        # rank: RRQR on Jᵀ (pivots = a maximal independent row set), cross-checked with the SVD
+        # that also yields the null space
+        rank_qr, piv = rrqr(J.T, rtol)
+        _, sv, Vt = svd(J, full_matrices=True)
         rank_svd = int(np.count_nonzero(sv > rtol * sv[0])) if sv.size and sv[0] > 0 else 0
         rank = rank_qr
         if rank_qr != rank_svd:
             warnings.append(f"rank ambiguous: QR {rank_qr} vs SVD {rank_svd} (near-degenerate witness)")
             rank = min(rank_qr, rank_svd)
-        # dependent rows: the non-pivot rows; each expressed in the pivot rows' span
+        # dependent rows: the non-pivot rows, each expressed in the pivot rows' span (one
+        # factorisation for all of them)
         indep = list(piv[:rank])
-        dep_rows = list(piv[rank:])
+        dep_rows = [r for r in piv[rank:] if rows_c[r] is not None]
         deps: list[Dependency] = []
-        seen: set[int] = set()
-        for r in dep_rows:
-            c = rows_c[r]
-            if id(c) in seen:
-                continue
-            seen.add(id(c))
-            coef, *_ = np.linalg.lstsq(Js[indep].T, Js[r], rcond=None)
-            support = [rows_c[indep[k]] for k in np.argsort(-np.abs(coef)) if abs(coef[k]) > 1e-6 * (np.abs(coef).max() or 1)]
-            implied = list(dict.fromkeys(s for s in support if s is not c))
-            theorem = matched_constraints is None or id(c) in matched_constraints
-            deps.append(Dependency(c, implied, theorem))
-        # motions: null space of Js (n − rank), rigid-body modes identified & separated
-        _, _, Vt = svd(Js, full_matrices=True)
-        N = Vt[rank:].T if n > rank else np.zeros((n, 0))
+        if dep_rows:
+            coefs, _ = min_norm_lstsq(J[indep].T, J[dep_rows].T)
+            for col, r in enumerate(dep_rows):
+                c = rows_c[r]
+                if any(d.constraint is c for d in deps):
+                    continue
+                coef = coefs[:, col]
+                lim = 1e-6 * (float(np.abs(coef).max()) or 1.0)
+                support = (rows_c[indep[k]] for k in np.argsort(-np.abs(coef)) if abs(coef[k]) > lim)
+                implied = list(dict.fromkeys(s for s in support if s is not c))
+                deps.append(Dependency(c, implied, id(c) not in over_ids))
+        N = Vt[rank:].T
         motions = _classify_motions(N, free_params, sketch)
-        if structural_rank is not None and rank < structural_rank:
-            warnings.append(f"structural rank {structural_rank} but witness rank {rank}: theorem-type dependency")
-        return WitnessReport(x_witness, used_current, rank, structural_rank, deps, motions, warnings)
+        return WitnessReport(x_witness, used_current, rank, deps, motions, movable_columns(N), warnings)
     finally:
         sketch.set_x(x0)
+
+
+def movable_columns(N: Vec, rtol: float = 1e-8) -> list[int]:
+    """Rows of the null-space basis that are nonzero: the parameters that take part in some
+    infinitesimal motion of the configuration."""
+    if N.size == 0:
+        return []
+    w = np.abs(N).max(axis=1)
+    return [int(i) for i in np.flatnonzero(w > rtol * w.max())]
 
 
 def _classify_motions(N: Vec, params: list[Param], sketch: Sketch) -> list[Motion]:
@@ -194,45 +197,34 @@ def _classify_motions(N: Vec, params: list[Param], sketch: Sketch) -> list[Motio
     n, d = N.shape
     if d == 0:
         return []
-    # rigid-body candidate velocities on the free params
-    is_x = np.array([p.name.endswith(".x") for p in params])
-    is_y = np.array([p.name.endswith(".y") for p in params])
-    xy: dict[int, tuple[float, float]] = {}
+    # rigid-body generators, from the model's own parameter identity (not from names)
+    axis: dict[int, tuple[int, tuple[float, float]]] = {}
     for pt in sketch.points:
-        xy[id(pt.x)] = xy[id(pt.y)] = pt.xy
-    cx, cy = (np.mean([p.xy for p in sketch.points], axis=0) if sketch.points else (0.0, 0.0))
-    tx = is_x.astype(float)
-    ty = is_y.astype(float)
-    rot = np.zeros(n)
+        axis[id(pt.x)] = (0, pt.xy)
+        axis[id(pt.y)] = (1, pt.xy)
+    cx, cy = np.mean([p.xy for p in sketch.points], axis=0) if sketch.points else (0.0, 0.0)
+    tx, ty, rot = np.zeros(n), np.zeros(n), np.zeros(n)
     for i, p in enumerate(params):
-        if id(p) in xy:
-            x, y = xy[id(p)]
-            rot[i] = -(y - cy) if is_x[i] else (x - cx) if is_y[i] else 0.0
-    rigid: list[Vec] = []
-    P = N @ N.T                                   # projector onto the null space
-    for v in (tx, ty, rot):
-        if not np.any(v):
-            continue
-        pv = P @ v
-        if np.linalg.norm(pv) > 1e-6 * np.linalg.norm(v) and np.linalg.norm(pv - v) < 1e-6 * np.linalg.norm(v):
-            rigid.append(v / (np.abs(v).max() or 1.0))
-    motions: list[Motion] = []
-    if rigid:
-        Rb = np.array(rigid).T
-        # orthonormalise rigid modes, then take the internal complement within the null space
-        Qr, _ = np.linalg.qr(Rb)
-        motions += [Motion(Rb[:, i], True, params) for i in range(Rb.shape[1])]
-        Ni = N - Qr @ (Qr.T @ N)
-        U, s, _ = np.linalg.svd(Ni, full_matrices=False)
-        Ni = U[:, s > 1e-6]                       # N is orthonormal: an absolute threshold is right
+        got = axis.get(id(p))
+        if got is None:
+            continue                       # a radius: invariant under rigid motions
+        which, (x, y) = got
+        (tx if which == 0 else ty)[i] = 1.0
+        rot[i] = -(y - cy) if which == 0 else (x - cx)
+    # a generator is a rigid mode iff it lies in the null space (N has orthonormal columns)
+    rigid = [v / (np.abs(v).max() or 1.0) for v in (tx, ty, rot)
+             if np.any(v) and np.linalg.norm(N.T @ v) >= (1 - 1e-6) * np.linalg.norm(v)]
+    motions = [Motion(v, True, params) for v in rigid]
+    if rigid:                              # internal DOFs = the null space minus the rigid span
+        Qr, _ = np.linalg.qr(np.array(rigid).T)
+        U, s, _ = np.linalg.svd(N - Qr @ (Qr.T @ N), full_matrices=False)
+        Ni = U[:, s > 1e-6]                # N is orthonormal: an absolute threshold is right
     else:
         Ni = N
-    # localise: sparse basis by rotating toward coordinate directions (greedy pivoted QR on rows)
     if Ni.shape[1]:
-        _, _, piv = qr(Ni.T, mode="economic", pivoting=True, check_finite=False)
-        B = np.linalg.solve(Ni[piv[: Ni.shape[1]]], np.eye(Ni.shape[1]))     # rows at pivots become identity
-        loc = Ni @ B
-        for i in range(loc.shape[1]):
-            v = loc[:, i]
-            motions.append(Motion(v / (np.abs(v).max() or 1.0), False, params))
+        # localise: rotate the basis so each mode is 1 at a pivot parameter and 0 at the others
+        k = Ni.shape[1]
+        piv = rrqr(Ni.T)[1]
+        loc = np.linalg.solve(Ni[piv[:k]].T, Ni.T).T
+        motions += [Motion(v / (np.abs(v).max() or 1.0), False, params) for v in loc.T]
     return motions

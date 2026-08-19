@@ -22,14 +22,12 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 import numpy as np
-from scipy.linalg import null_space
-
 from gcs import graph
 from gcs.constraints import Constraint, Distance
 from gcs.model import Param, Point, Primitive, Sketch, Vec
-from gcs.newton import rank_rrqr
+from gcs.newton import rank_and_nullspace
 from gcs.solve import Method, System
-from gcs.witness import WitnessReport, analyze
+from gcs.witness import WitnessReport, analyze, movable_columns
 
 State = Literal["well", "under", "over", "conflict"]
 _SEVERITY: dict[str, int] = {"well": 0, "under": 1, "over": 2, "conflict": 3}
@@ -132,6 +130,7 @@ def diagnose(sketch: Sketch, *, system: System | None = None, numeric: bool = Tr
     free_params = [sketch.params[i] for i in sys_.free]
 
     over_c = list(dict.fromkeys(row_c[r] for r in dm.over_rows))
+    over_ids = frozenset(id(c) for c in over_c)     # the structurally redundant block
     structural_under = [free_params[j] for j in dm.under_cols]
     under_params = structural_under
 
@@ -148,20 +147,28 @@ def diagnose(sketch: Sketch, *, system: System | None = None, numeric: bool = Tr
     components = [Component(comp_params[i], list(comp_cs[i]), comp_rank[i]) for i in range(n_comp)]
     components.sort(key=lambda c: -len(c.params))
 
-    # -- numeric cross-check --
-    numeric_rank: int | None = None
+    # -- witness analysis (Stage 4), on demand --
     warnings: list[str] = []
+    wit: WitnessReport | None = None
+    if witness and n_cols and sys_.n_res:
+        wit = analyze(sketch, system=sys_, over_ids=over_ids)
+
+    # -- numeric cross-check: rank and the parameters that can actually move --
+    numeric_rank: int | None = None
     if numeric and n_cols and sys_.n_res:
-        Jh = sys_.jacobian_dense(sys_.z0())[sys_.hard]
-        numeric_rank = rank_rrqr(Jh)
-        if numeric_rank < dm.rank:
-            warnings.append(f"structural rank {dm.rank} but numeric rank {numeric_rank}: "
-                            "a dependency the graph cannot see (theorem-induced or degenerate configuration) — Stage 4")
+        if wit is not None and wit.used_current:
+            numeric_rank, movable = wit.numeric_rank, wit.movable      # same J at the same x
+        else:
+            _, N, _ = rank_and_nullspace(sys_.jacobian_dense(sys_.z0())[sys_.hard])
+            numeric_rank, movable = n_cols - N.shape[1], movable_columns(N)
         # Which parameters can actually move: rows of the null space that are nonzero.
         # Sharper than the DM under-block (which counts a parameter as free if it *could*
         # be in some generic assignment); evaluated at the current configuration, so a
-        # degenerate placement can still fool it — Stage 4's witness step generalises this.
-        under_params = [free_params[j] for j in movable_params(Jh)]
+        # degenerate placement can still fool it — the witness step generalises this.
+        under_params = [free_params[j] for j in movable]
+        if numeric_rank < dm.rank:
+            warnings.append(f"structural rank {dm.rank} but numeric rank {numeric_rank}: "
+                            "a dependency the graph cannot see (theorem-induced or degenerate configuration) — Stage 4")
 
 
     # -- violated / conflicts --
@@ -180,7 +187,6 @@ def diagnose(sketch: Sketch, *, system: System | None = None, numeric: bool = Tr
     # -- entity states: own params under? touching constraints over/conflicting? then
     #    a line/circle/arc inherits the most severe state of its points --
     under_ids = {id(p) for p in under_params}
-    over_ids = {id(c) for c in over_c}
     conflict_ids = {id(c) for c in (conflict_set or violated)}
     touched: dict[int, list[Constraint]] = defaultdict(list)
     for c in sketch.hard_constraints():
@@ -204,25 +210,10 @@ def diagnose(sketch: Sketch, *, system: System | None = None, numeric: bool = Tr
             if _SEVERITY[state[id(ch)]] > _SEVERITY[state[id(e)]]:
                 state[id(e)] = state[id(ch)]
 
-    wit: WitnessReport | None = None
-    if witness and n_cols and sys_.n_res:
-        matched = {id(c) for c in sketch.hard_constraints() if id(c) not in over_ids}
-        wit = analyze(sketch, structural_rank=dm.rank, matched_constraints=matched)
-        warnings += [w for w in wit.warnings if w not in warnings]
+    if wit is not None:
+        warnings += wit.warnings
     return Diagnosis(n_cols, len(adj), dm.rank, numeric_rank, over_c, under_params, structural_under, components,
                      state, clusters, redundant_d, violated, conflict_set, warnings, wit)
-
-
-def movable_params(J: Vec, rtol: float = 1e-8) -> list[int]:
-    """Indices of columns with a nonzero component in null(J): the parameters that
-    take part in some infinitesimal motion of the configuration."""
-    if J.size == 0:
-        return list(range(J.shape[1])) if J.ndim == 2 else []
-    N = null_space(J)
-    if N.shape[1] == 0:
-        return []
-    w = np.abs(N).max(axis=1)
-    return [int(i) for i in np.flatnonzero(w > rtol * w.max())]
 
 
 # ---------------------------------------------------------------------------

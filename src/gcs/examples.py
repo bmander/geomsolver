@@ -9,18 +9,15 @@ from collections.abc import Callable
 import numpy as np
 
 from gcs.constraints import (
-    Coincident, Distance, EqualLength, EqualRadius, Horizontal, Radius, TangentArcLine, Vertical,
+    Coincident, Distance, EqualLength, EqualRadius, Horizontal, Parallel, Perpendicular, PointOnLine,
+    Radius, TangentArcLine, Vertical,
 )
 from gcs.model import Point, Sketch
 
 
 def perturb(sk: Sketch, sigma: float, seed: int = 0) -> None:
     """Add seeded Gaussian noise to every free parameter (tests/benchmarks warm-start from here)."""
-    rng = np.random.default_rng(seed)
-    x = sk.get_x()
-    free = sk.free_indices()
-    x[free] += rng.normal(0, sigma, len(free))
-    sk.set_x(x)
+    sk.perturb(sigma, seed)
 
 
 def rect_fillets(w: float = 100.0, h: float = 60.0, r: float = 10.0, perturb: float = 0.0) -> Sketch:
@@ -209,8 +206,6 @@ def impossible_triangle() -> Sketch:
 def altitudes() -> Sketch:
     """Fixed triangle, three altitudes and a point on all three: structurally the third incidence
     looks independent, but the altitudes concur — a theorem-type dependency only the witness sees."""
-    from gcs.constraints import Perpendicular, PointOnLine
-
     sk = Sketch()
     A, B, Cc = sk.point(0, 0, fixed=True, name="A"), sk.point(40, 0, fixed=True, name="B"), sk.point(15, 30, fixed=True, name="C")
     ab, bc, ca = sk.line(A, B), sk.line(B, Cc), sk.line(Cc, A)
@@ -224,8 +219,6 @@ def altitudes() -> Sketch:
 
 def parallels() -> Sketch:
     """Parallel / perpendicular / vertical lines with a few distances — exercises direction classes."""
-    from gcs.constraints import Parallel, Perpendicular
-
     sk = Sketch()
     base = sk.line(sk.point(0, 0, fixed=True, name="o"), sk.point(40, 0, fixed=True, name="e"))
     l2 = sk.line(sk.point(0, 15, name="a"), sk.point(40, 15, name="b"))

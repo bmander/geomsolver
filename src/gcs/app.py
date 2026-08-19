@@ -13,8 +13,11 @@ from __future__ import annotations
 import math
 import sys
 from collections import deque
+from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+import numpy.typing as npt
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction, QActionGroup, QColor, QKeySequence, QMouseEvent, QPainter, QPaintEvent, QPen, QWheelEvent,
@@ -34,7 +37,7 @@ from gcs.homotopy import apply_alternative, enumerate_step
 from gcs.examples import CASES, EXAMPLES
 from gcs.model import Arc, Circle, Line, Point, Primitive, Sketch, Vec, expand
 from gcs.solve import METHODS, Method, SolveResult, System
-from gcs.witness import WitnessReport
+from gcs.witness import Motion, WitnessReport, analyze
 
 PICK_PX = 8.0
 
@@ -57,6 +60,23 @@ COL_ROW_OVER = QColor("#e69500")
 COL_CONFLICT_GLYPH = QColor("#b3001b")
 
 
+_ANIM_DT = 0.03            # seconds per animation tick (also the timer interval)
+_ANIM_PERIOD = 2.0         # seconds spent on each degree of freedom
+
+
+@dataclass
+class _Animation:
+    """Everything a DOF-animation tick needs, computed once when it starts."""
+
+    modes: list[Motion]
+    x0: Vec
+    free: npt.NDArray[np.intp]
+    amp: float
+    labels: list[str]
+    t: float = 0.0
+    showing: int = -1
+
+
 class SketchView(QWidget):
     """World ↔ screen mapping, painting, hit-testing and the drawing tools."""
 
@@ -76,12 +96,12 @@ class SketchView(QWidget):
         self._plan_solver: PlanSolver | None = None
         self._plan_key: object = None
         self._flips_reported = 0
-        # Stage 4: animation of the remaining DOFs (witness null-space modes)
+        # Stage 4: witness analysis (cached per diagnosis) and DOF animation
+        self._witness: WitnessReport | None = None
+        self._witness_for: Diagnosis | None = None
         self.anim_timer = QTimer(self)
         self.anim_timer.timeout.connect(self._anim_tick)
-        self.anim_report: WitnessReport | None = None
-        self.anim_x0: Vec | None = None
-        self.anim_t = 0.0
+        self.anim: _Animation | None = None
         self.pending: list[Point] = []          # points clicked so far in a drawing tool
         self.cursor_s = QPointF(0, 0)           # screen coords of cursor
         self.selected: list[Primitive] = []
@@ -179,45 +199,50 @@ class SketchView(QWidget):
     # -- Stage 4: witness analysis and DOF animation --------------------------
 
     def witness_report(self) -> WitnessReport | None:
-        if not self.sketch.constraints:
+        """Witness analysis of the current sketch, cached until the next edit.  The structural
+        diagnosis is already in hand, so this only adds the Jacobian work — no second diagnose."""
+        d = self.diagnosis
+        if d is None:
             return None
-        d = diagnose(self.sketch, numeric=False, conflicts=False, witness=True)
-        self.diagnosis = d if self.diagnosis is None else self.diagnosis
-        return d.witness
+        if self._witness_for is not d:
+            self._witness_for = d
+            self._witness = analyze(self.sketch, over_ids=frozenset(id(c) for c in d.over))
+        return self._witness
 
     def start_animation(self) -> bool:
         """Animate the remaining internal DOFs (each null-space mode in turn); False if none."""
         rep = self.witness_report()
-        if rep is None or not [m for m in rep.motions if not m.rigid]:
+        modes = [m for m in rep.motions if not m.rigid] if rep is not None else []
+        if not modes:
             return False
-        self.anim_report, self.anim_x0, self.anim_t = rep, self.sketch.get_x(), 0.0
-        self.anim_timer.start(30)
-        self.status.emit(f"animating {rep.n_internal_dof} remaining DOF (click or Esc to stop)")
+        # everything the ticks need, computed once
+        self.anim = _Animation(modes, self.sketch.get_x(), self.sketch.free_indices(),
+                               0.06 * self.sketch.extent(),
+                               [", ".join(p.name for p in m.moving_params()[:8]) for m in modes])
+        self.anim_timer.start(int(_ANIM_DT * 1000))
+        self.status.emit(f"animating {len(modes)} remaining DOF (click or Esc to stop)")
         return True
 
     def stop_animation(self) -> None:
-        if self.anim_timer.isActive():
-            self.anim_timer.stop()
-        if self.anim_x0 is not None:
-            self.sketch.set_x(self.anim_x0)
-            self.anim_x0 = None
+        self.anim_timer.stop()
+        if self.anim is not None:
+            self.sketch.set_x(self.anim.x0)
+            self.anim = None
             self.update()
 
     def _anim_tick(self) -> None:
-        rep, x0 = self.anim_report, self.anim_x0
-        if rep is None or x0 is None:
+        a = self.anim
+        if a is None:
             return
-        modes = [m for m in rep.motions if not m.rigid]
-        self.anim_t += 0.03
-        period = 2.0                                     # seconds per mode
-        k = int(self.anim_t // period) % len(modes)
-        phase = math.sin(2 * math.pi * (self.anim_t % period) / period)
-        amp = 0.06 * self.sketch.extent()
-        x = x0.copy()
-        free = self.sketch.free_indices()
-        x[free] += amp * phase * modes[k].velocity
+        a.t += _ANIM_DT
+        k = int(a.t // _ANIM_PERIOD) % len(a.modes)
+        phase = math.sin(2 * math.pi * (a.t % _ANIM_PERIOD) / _ANIM_PERIOD)
+        x = a.x0.copy()
+        x[a.free] += a.amp * phase * a.modes[k].velocity
         self.sketch.set_x(x)
-        self.status.emit(f"DOF {k + 1}/{len(modes)}: " + ", ".join(p.name for p in modes[k].moving_params()[:8]))
+        if k != a.showing:
+            a.showing = k
+            self.status.emit(f"DOF {k + 1}/{len(a.modes)}: {a.labels[k]}")
         self.update()
 
     def state_of(self, e: Primitive) -> str:
@@ -968,7 +993,7 @@ class MainWindow(QMainWindow):
             if internal:
                 lines += ["   (View → Animate remaining DOF, Ctrl+M)"]
             lines += [""]
-        lines += [w for w in d.warnings if w not in (rep.warnings if rep else [])]
+        lines += d.warnings
         pr = self.view.last_plan
         if pr is not None:
             lines += ["", f"Decomposition: {pr.plan.summary()}" + (" — numeric fallback used" if pr.fell_back else "")]
@@ -989,13 +1014,12 @@ class MainWindow(QMainWindow):
         lay.addWidget(box)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(dlg.reject)
-        buttons.accepted.connect(dlg.accept)
         lay.addWidget(buttons)
         screen = (self.screen() or QApplication.primaryScreen()).availableGeometry()
-        fm = box.fontMetrics()
-        n_lines = text.count("\n") + 1
-        width = min(int(screen.width() * 0.9), max(520, fm.horizontalAdvance(max(text.split("\n"), key=len)) + 60))
-        height = min(int(screen.height() * 0.85), fm.lineSpacing() * (n_lines + 2) + 90)
+        fm = box.fontMetrics()                          # monospace (set above), so this measures right
+        lines = text.split("\n")
+        width = min(int(screen.width() * 0.9), max(520, fm.horizontalAdvance(max(lines, key=len)) + 60))
+        height = min(int(screen.height() * 0.85), fm.lineSpacing() * (len(lines) + 2) + 90)
         dlg.resize(width, height)
         dlg.exec()
 

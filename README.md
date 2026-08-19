@@ -97,15 +97,17 @@ DOF, convergence and solve time.
   only minimal non-tree-decomposable subsystems ever reach the numeric solver
   (K₃,₃ and Henneberg-II frameworks decompose fully).
 * `gcs.witness` — **witness configuration method** (Michelucci & Foufou):
-  `make_witness` (generic dimensions, re-solved from the current geometry —
-  or incidences alone from a perturbed start), `analyze` → rank (RRQR
-  cross-checked with SVD, scaled, relative tolerance), **dependent
-  constraints** with the constraints that imply them (pivoted QR on Jᵀ +
-  least-squares support; theorem-type flagged when structural analysis had
-  them matched), and the **null space as motions** (rigid-body modes
-  separated, internal DOFs localised).  `diagnose(..., witness=True)` attaches
-  it; the app's Diagnose dialog shows it and View → Animate remaining DOF
-  (Ctrl+M) plays the modes.
+  `make_witness` (every value a constraint *declares* as a dimension is
+  jittered — `spec` kinds `length`/`angle` — and re-solved from the current
+  geometry, or incidences alone from a perturbed start), `analyze` → rank
+  (pivoted QR cross-checked against the SVD that also yields the null space,
+  relative tolerance), **dependent constraints** with the constraints that
+  imply them (one batched least-squares fit for all of them; theorem-type
+  flagged when the structural analysis had them matched), and the **null space
+  as motions** (rigid-body generators built from the model's own parameter
+  identity, internal DOFs localised).  `diagnose(..., witness=True)` attaches
+  it and reuses its rank/null space; the app's Diagnose dialog shows it (cached
+  per diagnosis) and View → Animate remaining DOF (Ctrl+M) plays the modes.
 * `gcs.homotopy` — **homotopy continuation** on a merge system (a core or a
   triangle) in (c, s, tx, ty) form: linear rows fixed, total-degree start
   system on the quadratic rows with the γ-trick, complex predictor–corrector

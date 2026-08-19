@@ -232,6 +232,14 @@ class Sketch:
         ys = [p.y.value for p in self.points]
         return (min(xs), min(ys), max(xs), max(ys))
 
+    def perturb(self, sigma: float, seed: int = 0) -> None:
+        """Add seeded Gaussian noise to every free parameter (warm starts, witness construction)."""
+        rng = np.random.default_rng(seed)
+        x = self.get_x()
+        free = self.free_indices()
+        x[free] += rng.normal(0, sigma, len(free))
+        self.set_x(x)
+
     def extent(self) -> float:
         """Characteristic length of the sketch (for tolerances / drag weights)."""
         x0, y0, x1, y1 = self.bbox()

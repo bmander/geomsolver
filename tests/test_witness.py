@@ -5,11 +5,7 @@ import numpy as np
 from gcs import constraints as C
 from gcs import examples
 from gcs.diagnose import diagnose
-from gcs.model import Sketch
 from gcs.witness import analyze, make_witness
-
-
-altitudes_sketch = examples.altitudes
 
 
 def test_stage2_residue_is_diagnosed_with_culprit() -> None:
@@ -26,7 +22,7 @@ def test_stage2_residue_is_diagnosed_with_culprit() -> None:
 
 
 def test_concurrent_altitudes_theorem() -> None:
-    sk = altitudes_sketch()
+    sk = examples.altitudes()
     d = diagnose(sk, witness=True)
     rep = d.witness
     assert rep is not None
@@ -65,8 +61,42 @@ def test_make_witness_restores_sketch_and_generalises_dimensions() -> None:
     sk = examples.rect_fillets()
     x0 = sk.get_x()
     dims = [c.d for c in sk.constraints if isinstance(c, C.Distance)]
-    xw, used = make_witness(sk, seed=1)
+    xw = make_witness(sk, seed=1)
     assert np.array_equal(sk.get_x(), x0) and [c.d for c in sk.constraints if isinstance(c, C.Distance)] == dims
-    assert not used and not np.allclose(xw, x0)                # generic dimensions moved it
+    assert not np.allclose(xw, x0)                             # generic dimensions moved it
     rep = analyze(sk, xw)
     assert rep.numeric_rank == 26 and rep.n_dof == 0
+
+
+def test_reported_dependencies_are_genuinely_redundant() -> None:
+    """The row→constraint map must follow the Jacobian's own row order (kernel blocks), not
+    sketch order: every named dependency must be removable without changing the rank."""
+    from gcs.newton import rank_rrqr
+    from gcs.solve import System
+
+    for sk in (examples.polygon_chain(8), examples.altitudes(), examples.rect_fillets()):
+        rep = analyze(sk)
+        s = System(sk)
+        s.sketch.set_x(rep.x_witness)
+        J = s.jacobian_dense(s.z0())[s.hard]
+        _, rows_c = s.structure()
+        full = rank_rrqr(J)
+        for dep in rep.dependencies:
+            keep = [i for i, c in enumerate(rows_c) if c is not dep.constraint]
+            assert rank_rrqr(J[keep]) == full, f"{dep.constraint} is not actually redundant"
+            assert dep.constraint not in dep.implied_by
+
+
+def test_dimension_jitter_follows_the_constraint_declarations() -> None:
+    """make_witness generalises every value a constraint declares as a dimension (spec kinds
+    'length'/'angle') — a new dimensioned constraint type needs no change here."""
+    from gcs.witness import dimensions
+
+    sk = examples.rect_fillets()
+    dimensioned = [c for c in sk.hard_constraints() if dimensions(c)]
+    assert {type(c).__name__ for c in dimensioned} == {"Distance", "Radius"}
+    assert all(dimensions(c)[0][1] in ("length", "angle") for c in dimensioned)
+    before = [(c, n, getattr(c, n)) for c in dimensioned for n, _ in dimensions(c)]
+    xw = make_witness(sk, seed=3)
+    assert not np.allclose(xw, sk.get_x())                     # the witness is a different shape
+    assert all(getattr(c, n) == v for c, n, v in before)       # dimensions restored exactly
