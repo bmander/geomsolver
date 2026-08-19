@@ -1,0 +1,710 @@
+"""Desktop sketcher (PySide6).
+
+    python -m gcs.app [sketch.json]
+
+Draw points / lines / circles / arcs, select entities and apply constraints
+from the toolbar, drag points and watch the solver keep everything satisfied.
+Tools:  S select · P point · L line · C circle · A arc · Esc cancel
+        F fix/unfix point · Del delete · Ctrl+Z undo · wheel zoom · right/middle-drag pan
+"""
+
+from __future__ import annotations
+
+import math
+import sys
+from collections import deque
+from typing import Any
+
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import (
+    QAction, QActionGroup, QColor, QKeySequence, QMouseEvent, QPainter, QPaintEvent, QPen, QWheelEvent,
+)
+from PySide6.QtWidgets import (
+    QApplication, QDockWidget, QFileDialog, QInputDialog, QLabel, QListWidget, QListWidgetItem, QMainWindow,
+    QMessageBox, QToolBar, QWidget,
+)
+
+from gcs import constraints as C
+from gcs import io
+from gcs.constraints import ENTITY_KINDS, Constraint
+from gcs.examples import EXAMPLES
+from gcs.model import Arc, Circle, Line, Point, Primitive, Sketch, expand
+from gcs.solve import METHODS, Drag, Method, SolveResult, System
+
+PICK_PX = 8.0
+
+COL_BG = QColor("#fafafa")
+COL_AXIS = QColor("#dddddd")
+COL_LINE = QColor("#1f77b4")
+COL_CIRC = QColor("#2ca02c")
+COL_ARC = QColor("#ff7f0e")
+COL_PT = QColor("#222222")
+COL_FIXED = QColor("#d62728")
+COL_SEL = QColor("#e377c2")
+COL_PREVIEW = QColor("#999999")
+COL_HL = QColor("#9467bd")
+COL_ROW_SEL = QColor("#fce4f3")   # list rows whose constraint touches a selected entity
+COL_ROW_TEXT = QColor("#000000")
+
+
+class SketchView(QWidget):
+    """World ↔ screen mapping, painting, hit-testing and the drawing tools."""
+
+    changed = Signal()          # sketch topology/values changed (refresh lists, status)
+    status = Signal(str)        # transient message
+
+    def __init__(self, sketch: Sketch) -> None:
+        super().__init__()
+        self.sketch = sketch
+        self.scale = 6.0            # px per world unit
+        self.origin = QPointF(80, 500)  # screen position of world (0,0)
+        self.tool = "select"
+        self.method: Method = "dogbox"
+        self.auto_solve = True
+        self.pending: list[Point] = []          # points clicked so far in a drawing tool
+        self.cursor_s = QPointF(0, 0)           # screen coords of cursor
+        self.selected: list[Primitive] = []
+        self.highlight: list[Primitive] = []    # entities of the constraint selected in the list
+        self.undo_stack: deque[str] = deque(maxlen=100)
+        self.last_result: SolveResult | None = None
+        self.drag: Drag | None = None
+        self.pan_last: QPointF | None = None
+        self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setMinimumSize(400, 300)
+
+    # -- coordinates --------------------------------------------------------
+
+    def w2s(self, x: float, y: float) -> QPointF:
+        return QPointF(self.origin.x() + x * self.scale, self.origin.y() - y * self.scale)
+
+    def s2w(self, p: QPointF) -> tuple[float, float]:
+        return ((p.x() - self.origin.x()) / self.scale, (self.origin.y() - p.y()) / self.scale)
+
+    def fit(self) -> None:
+        if not self.sketch.points:
+            return
+        x0, y0, x1, y1 = self.sketch.bbox()
+        self.scale = 0.8 * min(self.width() / (x1 - x0 or 1.0), self.height() / (y1 - y0 or 1.0))
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        self.origin = QPointF(self.width() / 2 - cx * self.scale, self.height() / 2 + cy * self.scale)
+        self.update()
+
+    # -- sketch mutation ----------------------------------------------------
+
+    def set_sketch(self, sk: Sketch, *, fit: bool = True) -> None:
+        self.sketch = sk
+        self.selected, self.highlight, self.pending = [], [], []
+        self.drag = None
+        if fit:
+            self.fit()
+        self._after_edit()
+
+    def push_undo(self) -> None:
+        self.undo_stack.append(io.dumps(self.sketch))
+
+    def undo(self) -> None:
+        if self.undo_stack:
+            self.set_sketch(io.loads(self.undo_stack.pop()), fit=False)
+            self.status.emit("undo")
+
+    def solve_now(self) -> SolveResult:
+        self.last_result = System(self.sketch).solve(method=self.method)
+        self.changed.emit()
+        self.update()
+        return self.last_result
+
+    def _after_edit(self) -> SolveResult | None:
+        """Every mutation ends here: re-solve (if auto), then notify listeners once."""
+        if self.auto_solve:
+            self.last_result = System(self.sketch).solve(method=self.method)
+        self.changed.emit()
+        self.update()
+        return self.last_result
+
+    def add_constraint(self, c: Constraint) -> None:
+        self.push_undo()
+        self.sketch.add(c)
+        res = self._after_edit()
+        if res is not None and not res.success:
+            self.status.emit(f"added {type(c).__name__} — solver did NOT converge (over-constrained or conflicting?)")
+        else:
+            self.status.emit(f"added {type(c).__name__}")
+
+    def remove_constraint(self, c: Constraint) -> None:
+        self.push_undo()
+        self.sketch.remove(c)
+        self._after_edit()
+
+    def delete_selected(self) -> None:
+        if not self.selected:
+            return
+        self.push_undo()
+        n = len(self.selected)
+        self.set_sketch(io.without(self.sketch, entities=self.selected), fit=False)
+        self.status.emit(f"deleted {n} entities")
+
+    def toggle_fix_selected(self) -> None:
+        pts = [e for e in self.selected if isinstance(e, Point)]
+        if not pts:
+            return
+        self.push_undo()
+        all_fixed = all(p.is_fixed for p in pts)
+        for p in pts:
+            p.fix(not all_fixed)
+        self._after_edit()
+
+    # -- hit testing --------------------------------------------------------
+
+    def _pick_point(self, sp: QPointF, tol: float = PICK_PX) -> Point | None:
+        p, d = self.sketch.nearest_point(*self.s2w(sp))
+        return p if d * self.scale < tol else None
+
+    def pick(self, sp: QPointF) -> Primitive | None:
+        p = self._pick_point(sp)
+        if p is not None:
+            return p
+        best: Primitive | None = None
+        bd = PICK_PX
+        for ln in self.sketch.lines:
+            d = _seg_dist(sp, self.w2s(*ln.p1.xy), self.w2s(*ln.p2.xy))
+            if d < bd:
+                best, bd = ln, d
+        for c in self.sketch.circles:
+            d = abs(_dist(sp, self.w2s(*c.center.xy)) - abs(c.radius.value) * self.scale)
+            if d < bd:
+                best, bd = c, d
+        for a in self.sketch.arcs:
+            cs = self.w2s(*a.center.xy)
+            d = abs(_dist(sp, cs) - abs(a.radius.value) * self.scale)
+            if d < bd:
+                ang = math.atan2(-(sp.y() - cs.y()), sp.x() - cs.x())
+                a0, a1 = a.angles()
+                while ang < a0:
+                    ang += 2 * math.pi
+                if ang <= a1:
+                    best, bd = a, d
+        return best
+
+    # -- painting -----------------------------------------------------------
+
+    def paintEvent(self, _e: QPaintEvent) -> None:  # noqa: N802
+        qp = QPainter(self)
+        qp.setRenderHint(QPainter.RenderHint.Antialiasing)
+        qp.fillRect(self.rect(), COL_BG)
+        qp.setPen(QPen(COL_AXIS, 1))
+        o = self.w2s(0, 0)
+        qp.drawLine(QPointF(0, o.y()), QPointF(self.width(), o.y()))
+        qp.drawLine(QPointF(o.x(), 0), QPointF(o.x(), self.height()))
+        sk = self.sketch
+        sel, hl = set(self.selected), set(self.highlight)
+
+        def pen(col: QColor, ent: Primitive, w: float = 1.8) -> QPen:
+            if ent in sel:
+                return QPen(COL_SEL, w + 1.5)
+            if ent in hl:
+                return QPen(COL_HL, w + 1.0)
+            return QPen(col, w)
+
+        for ln in sk.lines:
+            qp.setPen(pen(COL_LINE, ln))
+            qp.drawLine(self.w2s(*ln.p1.xy), self.w2s(*ln.p2.xy))
+        for c in sk.circles:
+            qp.setPen(pen(COL_CIRC, c))
+            r = abs(c.radius.value) * self.scale
+            qp.drawEllipse(self.w2s(*c.center.xy), r, r)
+        for a in sk.arcs:
+            qp.setPen(pen(COL_ARC, a))
+            _draw_arc(qp, self.w2s(*a.center.xy), abs(a.radius.value) * self.scale, *a.angles())
+        if self.pending:
+            self._paint_preview(qp)
+        for p in sk.points:
+            s = self.w2s(*p.xy)
+            col = COL_SEL if p in sel else COL_HL if p in hl else COL_FIXED if p.is_fixed else COL_PT
+            qp.setPen(QPen(col, 1))
+            qp.setBrush(col)
+            if p.is_fixed:
+                qp.drawRect(QRectF(s.x() - 4, s.y() - 4, 8, 8))
+            else:
+                qp.drawEllipse(s, 3.5, 3.5)
+        if self.tool != "select":  # snap indicator
+            sp = self._pick_point(self.cursor_s)
+            if sp is not None:
+                qp.setPen(QPen(COL_SEL, 1.5))
+                qp.setBrush(Qt.BrushStyle.NoBrush)
+                qp.drawEllipse(self.w2s(*sp.xy), 7, 7)
+        qp.end()
+
+    def _paint_preview(self, qp: QPainter) -> None:
+        qp.setPen(QPen(COL_PREVIEW, 1, Qt.PenStyle.DashLine))
+        p0 = self.w2s(*self.pending[0].xy)
+        cur = self.cursor_s
+        if self.tool == "line":
+            qp.drawLine(self.w2s(*self.pending[-1].xy), cur)
+        elif self.tool == "circle":
+            r = _dist(p0, cur)
+            qp.drawEllipse(p0, r, r)
+        elif self.tool == "arc":
+            if len(self.pending) == 1:
+                qp.drawLine(p0, cur)
+            else:
+                ps = self.w2s(*self.pending[1].xy)
+                a0 = math.atan2(-(ps.y() - p0.y()), ps.x() - p0.x())
+                a1 = math.atan2(-(cur.y() - p0.y()), cur.x() - p0.x())
+                _draw_arc(qp, p0, _dist(p0, ps), a0, a1 if a1 > a0 else a1 + 2 * math.pi)
+
+    # -- mouse / keyboard ---------------------------------------------------
+
+    def mousePressEvent(self, e: QMouseEvent) -> None:  # noqa: N802
+        sp = e.position()
+        self.cursor_s = sp
+        if e.button() in (Qt.MouseButton.MiddleButton, Qt.MouseButton.RightButton):
+            if self.pending:
+                self.cancel_tool()
+            else:
+                self.pan_last = sp
+            return
+        if e.button() != Qt.MouseButton.LeftButton:
+            return
+        if self.tool != "select":
+            self._tool_click(sp)
+            return
+        ent = self.pick(sp)
+        shift = bool(e.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+        if ent is None:
+            if not shift:
+                self.selected = []
+        elif shift:
+            if ent in self.selected:
+                self.selected.remove(ent)
+            else:
+                self.selected.append(ent)
+        else:
+            if ent not in self.selected:
+                self.selected = [ent]
+            if isinstance(ent, Point) and not ent.is_fixed:
+                self.push_undo()
+                self.drag = Drag(self.sketch, ent, *self.s2w(sp), self.method)
+        self.changed.emit()
+        self.update()
+
+    def _snap_or_new(self, sp: QPointF) -> Point:
+        return self._pick_point(sp) or self.sketch.point(*self.s2w(sp))
+
+    def _tool_click(self, sp: QPointF) -> None:
+        sk = self.sketch
+        if not self.pending:
+            self.push_undo()
+        if self.tool == "point":
+            self._snap_or_new(sp)
+        elif self.tool == "line":
+            p = self._snap_or_new(sp)
+            if self.pending and p is not self.pending[-1]:
+                sk.line(self.pending[-1], p)
+            self.pending = [p]  # continue the polyline
+        elif self.tool == "circle":
+            if not self.pending:
+                self.pending = [self._snap_or_new(sp)]
+            else:
+                x, y = self.s2w(sp)
+                c = self.pending[0]
+                sk.circle(c, math.hypot(x - c.x.value, y - c.y.value) or 1.0)
+                self.pending = []
+        elif self.tool == "arc":
+            existing = self._pick_point(sp) is not None
+            self.pending.append(self._snap_or_new(sp))
+            if len(self.pending) == 3:
+                cpt, s, en = self.pending
+                if len({id(cpt), id(s), id(en)}) == 3:
+                    if not existing:  # freshly placed end point: put it exactly on the radius
+                        r = math.hypot(s.x.value - cpt.x.value, s.y.value - cpt.y.value)
+                        ang = math.atan2(en.y.value - cpt.y.value, en.x.value - cpt.x.value)
+                        en.x.value, en.y.value = cpt.x.value + r * math.cos(ang), cpt.y.value + r * math.sin(ang)
+                    sk.arc(cpt, s, en)
+                self.pending = []
+        self._after_edit()  # (an arc ending on an existing point is reconciled by the solve)
+
+    def cancel_tool(self) -> None:
+        self.pending = []
+        self.update()
+
+    def set_tool(self, tool: str) -> None:
+        self.tool = tool
+        self.pending = []
+        self.status.emit(f"tool: {tool}")
+        self.update()
+
+    def mouseMoveEvent(self, e: QMouseEvent) -> None:  # noqa: N802
+        sp = e.position()
+        self.cursor_s = sp
+        if self.pan_last is not None:
+            self.origin += sp - self.pan_last
+            self.pan_last = sp
+        elif self.drag is not None:
+            self.last_result = self.drag.move(*self.s2w(sp))
+            self.changed.emit()
+        self.update()
+
+    def mouseReleaseEvent(self, _e: QMouseEvent) -> None:  # noqa: N802
+        self.pan_last = None
+        if self.drag is not None:
+            self.drag.end()
+            self.drag = None
+            self.changed.emit()
+            self.update()
+
+    def wheelEvent(self, e: QWheelEvent) -> None:  # noqa: N802
+        f = 1.0015 ** e.angleDelta().y()
+        sp = e.position()
+        self.origin = sp + (self.origin - sp) * f
+        self.scale *= f
+        self.update()
+
+
+def _draw_arc(qp: QPainter, center: QPointF, r: float, a0: float, a1: float) -> None:
+    """CCW arc from angle a0 to a1 (radians, math convention) — Qt takes 1/16 degrees."""
+    qp.drawArc(QRectF(center.x() - r, center.y() - r, 2 * r, 2 * r),
+               int(math.degrees(a0) * 16), int(math.degrees(a1 - a0) * 16))
+
+
+def _dist(a: QPointF, b: QPointF) -> float:
+    return math.hypot(a.x() - b.x(), a.y() - b.y())
+
+
+def _seg_dist(p: QPointF, a: QPointF, b: QPointF) -> float:
+    ab = b - a
+    L2 = ab.x() ** 2 + ab.y() ** 2
+    t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((p.x() - a.x()) * ab.x() + (p.y() - a.y()) * ab.y()) / L2))
+    return _dist(p, a + ab * t)
+
+
+# ---------------------------------------------------------------------------
+
+
+class MainWindow(QMainWindow):
+    def __init__(self, sketch: Sketch | None = None) -> None:
+        super().__init__()
+        self.setWindowTitle("gcs sketcher")
+        self.resize(1200, 800)
+        self.view = SketchView(sketch or Sketch())
+        self.setCentralWidget(self.view)
+        self.perm_status = QLabel()
+        self.statusBar().addPermanentWidget(self.perm_status)
+        self._rows: list[Constraint] = []   # constraints currently shown in the list, in order
+        self._build_menus()
+        self._build_toolbar()
+        self._build_dock()
+        self.view.changed.connect(self.refresh)
+        self.view.status.connect(lambda m: self.statusBar().showMessage(m, 4000))
+        self.refresh()
+
+    # -- ui construction ----------------------------------------------------
+
+    def _act(self, text: str, slot: Any, key: str | None = None, checkable: bool = False) -> QAction:
+        a = QAction(text, self)
+        if key:
+            a.setShortcut(QKeySequence(key))
+        a.setCheckable(checkable)
+        a.triggered.connect(slot)
+        return a
+
+    def _build_menus(self) -> None:
+        mb = self.menuBar()
+        fm = mb.addMenu("&File")
+        fm.addAction(self._act("&New", self.new_sketch, "Ctrl+N"))
+        fm.addAction(self._act("&Open…", self.open_sketch, "Ctrl+O"))
+        fm.addAction(self._act("&Save As…", self.save_sketch, "Ctrl+S"))
+        fm.addSeparator()
+        ex = fm.addMenu("&Examples")
+        for name in EXAMPLES:
+            ex.addAction(self._act(name, lambda _=False, n=name: self.view.set_sketch(EXAMPLES[n]())))
+        fm.addSeparator()
+        fm.addAction(self._act("&Quit", self.close, "Ctrl+Q"))
+
+        em = mb.addMenu("&Edit")
+        em.addAction(self._act("&Undo", self.view.undo, "Ctrl+Z"))
+        em.addAction(self._act("&Delete selected", self.delete_pressed, "Backspace"))
+        em.addAction(self._act("Delete selected (Del)", self.delete_pressed, "Delete"))
+        em.addAction(self._act("Toggle &fix on selected points", self.view.toggle_fix_selected, "F"))
+        em.addAction(self._act("Select &all", self.select_all, "Ctrl+A"))
+
+        vm = mb.addMenu("&View")
+        vm.addAction(self._act("&Fit", self.view.fit, "Home"))
+
+        sm = mb.addMenu("&Solve")
+        sm.addAction(self._act("Solve &now", self.view.solve_now, "Return"))
+        auto = self._act("&Auto-solve", self.toggle_auto, checkable=True)
+        auto.setChecked(True)
+        sm.addAction(auto)
+        sm.addSeparator()
+        grp = QActionGroup(self)
+        for m in METHODS:
+            a = self._act(m, lambda _=False, mm=m: self.set_method(mm), checkable=True)
+            a.setChecked(m == self.view.method)
+            grp.addAction(a)
+            sm.addAction(a)
+
+    def _build_toolbar(self) -> None:
+        tb = QToolBar("Tools")
+        tb.setMovable(False)
+        self.addToolBar(tb)
+        self.tool_group = QActionGroup(self)
+        for text, tool, key in (("Select", "select", "S"), ("Point", "point", "P"), ("Line", "line", "L"),
+                                ("Circle", "circle", "C"), ("Arc", "arc", "A")):
+            a = self._act(text, lambda _=False, t=tool: self.view.set_tool(t), key, checkable=True)
+            a.setChecked(tool == "select")
+            self.tool_group.addAction(a)
+            tb.addAction(a)
+        tb.addAction(self._act("Cancel", self.view.cancel_tool, "Escape"))
+
+        self.addToolBarBreak()
+        cb = QToolBar("Constraints")
+        cb.setMovable(False)
+        self.addToolBar(cb)
+        # simple constraints: (label, class, needed points, lines, circles/arcs, apply to each line?)
+        simple: list[tuple[str, type[Constraint], int, int, int]] = [
+            ("Coincident", C.Coincident, 2, 0, 0), ("Horizontal", C.Horizontal, 0, 1, 0),
+            ("Vertical", C.Vertical, 0, 1, 0), ("Parallel", C.Parallel, 0, 2, 0),
+            ("Perpendicular", C.Perpendicular, 0, 2, 0), ("On line", C.PointOnLine, 1, 1, 0),
+            ("Midpoint", C.Midpoint, 1, 1, 0), ("On circle", C.PointOnCircle, 1, 0, 1),
+        ]
+        actions: list[tuple[str, Any]] = [
+            (label, lambda _=False, cls=cls, n=(np_, nl, nc): self._apply(cls, *n)) for label, cls, np_, nl, nc in simple
+        ]
+        actions[1:1] = [("Distance", self.c_distance)]
+        actions += [("Angle", self.c_angle), ("Equal", self.c_equal), ("Tangent", self.c_tangent),
+                    ("Radius", self.c_radius), ("Fix", self.view.toggle_fix_selected)]
+        for text, fn in actions:
+            cb.addAction(self._act(text, fn))
+
+    def _build_dock(self) -> None:
+        dock = QDockWidget("Constraints", self)
+        dock.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
+        self.clist = QListWidget()
+        self.clist.currentItemChanged.connect(self.on_constraint_selected)
+        self.clist.itemDoubleClicked.connect(self.edit_constraint_value)
+        dock.setWidget(self.clist)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+
+    # -- refresh ------------------------------------------------------------
+
+    def refresh(self) -> None:
+        """Sync the constraint list and status bar with the sketch.
+
+        Rows are rebuilt only when the set of user constraints changed; during a
+        drag (every mouse move) we just recolour rows and update the status text."""
+        sk = self.view.sketch
+        rows = sk.user_constraints()
+        if rows != self._rows:
+            self._rebuild_rows(rows)
+        sel_direct = set(self.view.selected)
+        sel_all = set(expand(self.view.selected))
+        for i, c in enumerate(rows):
+            item = self.clist.item(i)
+            item.setForeground(COL_FIXED if c.error() > 1e-6 else COL_ROW_TEXT)
+            hit = bool(sel_all) and (any(e in sel_all for e in c.entities())
+                                     or any(e in sel_direct for e in expand(c.entities())))
+            item.setBackground(COL_ROW_SEL if hit else Qt.GlobalColor.transparent)
+            f = item.font()
+            f.setBold(hit)
+            item.setFont(f)
+        r = self.view.last_result
+        msg = (f"points {len(sk.points)}  lines {len(sk.lines)}  circles {len(sk.circles)}  arcs {len(sk.arcs)}   "
+               f"| params {len(sk.params)} (free {len(sk.free_indices())})  equations {sk.n_residuals()}  "
+               f"DOF {sk.dof()}   | selected {len(self.view.selected)}")
+        if r is not None:
+            msg += (f"   | {'solved' if r.success else 'NOT CONVERGED'}  max|r|={r.max_residual:.1e}  "
+                    f"{r.time_s * 1e3:.1f} ms  nfev={r.nfev}  {r.method}")
+        self.setWindowTitle("gcs sketcher" + ("" if r is None or r.success else "  —  ⚠ not converged"))
+        self.perm_status.setText(msg)
+
+    def _rebuild_rows(self, rows: list[Constraint]) -> None:
+        cur = self.clist.currentItem().data(Qt.ItemDataRole.UserRole) if self.clist.currentItem() else None
+        ix = io.Index(self.view.sketch)
+        self.clist.blockSignals(True)
+        self.clist.clear()
+        for c in rows:
+            item = QListWidgetItem(io.describe(c, ix))
+            item.setData(Qt.ItemDataRole.UserRole, c)
+            self.clist.addItem(item)
+            if c is cur:
+                self.clist.setCurrentItem(item)
+        self.clist.blockSignals(False)
+        self._rows = list(rows)
+
+    # -- file ---------------------------------------------------------------
+
+    def new_sketch(self) -> None:
+        self.view.set_sketch(Sketch())
+
+    def open_sketch(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Open sketch", "", "Sketch JSON (*.json)")
+        if path:
+            try:
+                self.view.set_sketch(io.load(path))
+            except Exception as ex:  # noqa: BLE001
+                QMessageBox.critical(self, "Open failed", str(ex))
+
+    def save_sketch(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "Save sketch", "sketch.json", "Sketch JSON (*.json)")
+        if path:
+            io.save(self.view.sketch, path)
+            self.statusBar().showMessage(f"saved {path}", 4000)
+
+    def select_all(self) -> None:
+        sk = self.view.sketch
+        self.view.selected = [*sk.points, *sk.lines, *sk.circles, *sk.arcs]
+        self.view.update()
+        self.refresh()
+
+    def toggle_auto(self, on: bool) -> None:
+        self.view.auto_solve = on
+
+    def set_method(self, m: Method) -> None:
+        self.view.method = m
+        self.view.solve_now()
+
+    # -- constraint list ----------------------------------------------------
+
+    def on_constraint_selected(self, item: QListWidgetItem | None, _prev: Any = None) -> None:
+        self.view.highlight = [] if item is None else expand(item.data(Qt.ItemDataRole.UserRole).entities())
+        self.view.update()
+
+    def delete_pressed(self) -> None:
+        """Delete / Backspace: the constraint list has focus → remove that constraint;
+        otherwise delete the selected entities in the view."""
+        if self.clist.hasFocus() and self.clist.currentItem() is not None:
+            self.delete_constraint()
+        else:
+            self.view.delete_selected()
+
+    def delete_constraint(self) -> None:
+        item = self.clist.currentItem()
+        if item is None:
+            return
+        c = item.data(Qt.ItemDataRole.UserRole)
+        row = self.clist.currentRow()
+        self.view.remove_constraint(c)
+        self.statusBar().showMessage(f"removed {type(c).__name__}", 4000)
+        if self.clist.count():
+            self.clist.setCurrentRow(min(row, self.clist.count() - 1))
+
+    def edit_constraint_value(self, item: QListWidgetItem) -> None:
+        """Double-click: edit the constraint's dimension (first length/angle field in its spec)."""
+        c = item.data(Qt.ItemDataRole.UserRole)
+        for attr, kind in c.spec:
+            if kind in ("length", "angle"):
+                deg = kind == "angle"
+                label = f"{type(c).__name__} {attr}" + (" (deg)" if deg else "")
+                cur = math.degrees(getattr(c, attr)) if deg else getattr(c, attr)
+                v, ok = QInputDialog.getDouble(self, label, label, cur, -1e9, 1e9, 4)
+                if ok:
+                    self.view.push_undo()
+                    setattr(c, attr, math.radians(v) if deg else v)
+                    self._rows = []  # force row text rebuild
+                    self.view._after_edit()
+                return
+
+    # -- constraint actions (operate on the current selection) ---------------
+
+    def _sel(self) -> tuple[list[Point], list[Line], list[Circle | Arc]]:
+        s = self.view.selected
+        return ([e for e in s if isinstance(e, Point)], [e for e in s if isinstance(e, Line)],
+                [e for e in s if isinstance(e, (Circle, Arc))])
+
+    def _need(self, ok: bool, what: str) -> bool:
+        if not ok:
+            self.statusBar().showMessage(f"select {what} first", 4000)
+        return ok
+
+    def _apply(self, cls: type[Constraint], n_pts: int, n_lines: int, n_circ: int) -> None:
+        """Generic applier for constraints whose arguments are just entities: checks the
+        selection has the required counts and passes them in spec order (points, lines, circles).
+        Single-line constraints (Horizontal/Vertical) apply to every selected line."""
+        p, l, c = self._sel()
+        per_line = n_pts == 0 and n_lines == 1 and n_circ == 0
+        ok = len(p) == n_pts and len(c) == n_circ and (len(l) >= 1 if per_line else len(l) == n_lines)
+        what = ", ".join(f"{n} {w}" for n, w in ((n_pts, "point(s)"), (n_lines, "line(s)"), (n_circ, "circle(s)/arc(s)")) if n)
+        if not self._need(ok, what):
+            return
+        for ln in (l if per_line else [None]):
+            args: list[Any] = []
+            pi = li = ci = 0
+            for _, kind in cls.spec:
+                if kind == "point":
+                    args.append(p[pi]); pi += 1
+                elif kind == "line":
+                    args.append(ln if per_line else l[li]); li += 1
+                elif kind in ENTITY_KINDS:
+                    args.append(c[ci]); ci += 1
+            self.view.add_constraint(cls(*args))
+
+    def c_distance(self) -> None:
+        p, l, _ = self._sel()
+        if len(p) == 0 and len(l) == 1:
+            p = [l[0].p1, l[0].p2]
+        if self._need(len(p) == 2, "two points (or one line)"):
+            cur = math.hypot(p[0].x.value - p[1].x.value, p[0].y.value - p[1].y.value)
+            v, ok = QInputDialog.getDouble(self, "Distance", "Distance", cur, 0, 1e9, 4)
+            if ok:
+                self.view.add_constraint(C.Distance(p[0], p[1], v))
+
+    def c_angle(self) -> None:
+        _, l, _ = self._sel()
+        if self._need(len(l) == 2, "two lines"):
+            d1, d2 = l[0].direction(), l[1].direction()
+            cur = math.degrees(math.atan2(d1[0] * d2[1] - d1[1] * d2[0], d1[0] * d2[0] + d1[1] * d2[1]))
+            v, ok = QInputDialog.getDouble(self, "Angle", "Angle from first to second line (deg)", cur, -360, 360, 3)
+            if ok:
+                self.view.add_constraint(C.Angle(l[0], l[1], math.radians(v)))
+
+    def c_equal(self) -> None:
+        _, l, c = self._sel()
+        if len(l) == 2:
+            self.view.add_constraint(C.EqualLength(l[0], l[1]))
+        elif len(c) == 2:
+            self.view.add_constraint(C.EqualRadius(c[0], c[1]))
+        else:
+            self._need(False, "two lines or two circles/arcs")
+
+    def c_tangent(self) -> None:
+        _, l, c = self._sel()
+        if len(l) == 1 and len(c) == 1:
+            ln, cc = l[0], c[0]
+            if isinstance(cc, Arc):
+                ends = {ln.p1, ln.p2}
+                if cc.start in ends:
+                    self.view.add_constraint(C.TangentArcLine(cc, ln, "start"))
+                    return
+                if cc.end in ends:
+                    self.view.add_constraint(C.TangentArcLine(cc, ln, "end"))
+                    return
+            self.view.add_constraint(C.TangentLineCircle(ln, cc))
+        elif len(c) == 2 and not l:
+            a, b = c
+            d = math.hypot(a.center.x.value - b.center.x.value, a.center.y.value - b.center.y.value)
+            self.view.add_constraint(C.TangentCircleCircle(a, b, external=d > max(abs(a.radius.value), abs(b.radius.value))))
+        else:
+            self._need(False, "a line and a circle/arc, or two circles/arcs")
+
+    def c_radius(self) -> None:
+        _, _, c = self._sel()
+        if self._need(len(c) >= 1, "circle(s)/arc(s)"):
+            v, ok = QInputDialog.getDouble(self, "Radius", "Radius", abs(c[0].radius.value), 0, 1e9, 4)
+            if ok:
+                for cc in c:
+                    self.view.add_constraint(C.Radius(cc, v))
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv if argv is None else argv
+    app = QApplication(argv)
+    sk = io.load(argv[1]) if len(argv) > 1 else EXAMPLES["rect_fillets"]()
+    win = MainWindow(sk)
+    win.show()
+    win.view.fit()
+    return app.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

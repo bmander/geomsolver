@@ -1,0 +1,29 @@
+[project]
+name = "gcs"
+version = "0.0.1"
+description = "Geometric constraint solver — Stage 0 pure-Python prototype"
+requires-python = ">=3.14"
+dependencies = ["numpy>=2.0", "scipy>=1.14"]
+
+[project.optional-dependencies]
+ui = ["matplotlib>=3.9"]
+app = ["PySide6>=6.11"]
+dev = ["pytest", "hypothesis", "mypy", "scipy-stubs", "matplotlib>=3.9", "PySide6>=6.11"]
+
+[project.scripts]
+gcs-sketcher = "gcs.app:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+files = ["src/gcs"]
