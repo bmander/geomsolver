@@ -25,7 +25,7 @@ import numpy as np
 from scipy.linalg import null_space
 
 from gcs import graph
-from gcs.constraints import Coincident, Constraint, Distance
+from gcs.constraints import Constraint, Distance
 from gcs.model import Param, Point, Primitive, Sketch, Vec
 from gcs.newton import rank_rrqr
 from gcs.solve import Method, System
@@ -281,20 +281,13 @@ def distance_rigidity(sketch: Sketch) -> tuple[list[frozenset[Point]], list[Cons
     """(2,3) pebble game on the point-distance graph: vertices are points with
     Coincident points merged; edges are Distance constraints.  Returns rigid
     clusters (as sets of Points) and the redundant Distance constraints."""
-    pts = sketch.points
-    idx = {id(p): i for i, p in enumerate(pts)}
-    uf = graph.UnionFind(len(pts))
-    for c in sketch.constraints:
-        if isinstance(c, Coincident):
-            uf.union(idx[id(c.p)], idx[id(c.q)])
-    vert, n_vert = uf.labels()
+    from gcs.cgraph import coincident_classes
+
+    vert_of, members = coincident_classes(sketch)
     edge_c = [c for c in sketch.constraints if isinstance(c, Distance)]
     if not edge_c:
         return [], []
-    edges = [(vert[idx[id(c.p)]], vert[idx[id(c.q)]]) for c in edge_c]
-    res = graph.pebble_game(n_vert, edges)
-    members: dict[int, list[Point]] = defaultdict(list)
-    for i, p in enumerate(pts):
-        members[vert[i]].append(p)
+    edges = [(vert_of[id(c.p)], vert_of[id(c.q)]) for c in edge_c]
+    res = graph.pebble_game(len(members), edges)
     clusters = [frozenset(p for v in comp for p in members[v]) for comp in res.components]
     return clusters, [edge_c[i] for i in res.redundant]

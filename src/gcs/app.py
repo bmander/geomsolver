@@ -70,6 +70,8 @@ class SketchView(QWidget):
         self.auto_solve = True
         self.use_plan = False                   # Stage 3: decomposition plan (numeric fallback) for solves
         self.last_plan: PlanResult | None = None
+        self._plan_solver: PlanSolver | None = None
+        self._plan_key: object = None
         self.pending: list[Point] = []          # points clicked so far in a drawing tool
         self.cursor_s = QPointF(0, 0)           # screen coords of cursor
         self.selected: list[Primitive] = []
@@ -120,14 +122,22 @@ class SketchView(QWidget):
             self.set_sketch(io.loads(self.undo_stack.pop()), fit=False)
             self.status.emit("undo")
 
+    def _plan(self) -> PlanSolver:
+        """The decomposition plan, compiled once per topology (constraints, entities, fixed flags)
+        and replayed for dimension edits / drags."""
+        sk = self.sketch
+        key = (tuple(id(c) for c in sk.constraints), tuple(p.fixed for p in sk.params),
+               len(sk.points), len(sk.lines), len(sk.circles), len(sk.arcs))
+        if self._plan_solver is None or key != self._plan_key:
+            self._plan_solver, self._plan_key = PlanSolver(sk), key
+        return self._plan_solver
+
     def _solve(self) -> tuple[SolveResult, System]:
         """One solve by the selected path; returns the result and the compiled System."""
         if self.use_plan and self.sketch.constraints:
-            ps = PlanSolver(self.sketch)
+            ps = self._plan()
             self.last_plan = ps.solve(method=self.method)
-            res = self.last_plan.numeric or SolveResult(self.last_plan.success, 0, "plan", self.last_plan.max_residual,
-                                                        self.last_plan.max_residual, 0, 0, self.last_plan.time_s, "plan")
-            return res, ps.system
+            return self.last_plan.as_solve_result(), ps.system
         self.last_plan = None
         system = System(self.sketch)
         return system.solve(method=self.method), system

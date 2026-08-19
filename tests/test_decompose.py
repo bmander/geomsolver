@@ -61,11 +61,16 @@ def test_chirality_flags_follow_the_current_geometry() -> None:
     assert ps.plan.fully_decomposed
     r = ps.solve(fallback=False)
     assert r.success and c.y.value > 0
-    signs_up = dict(ps.plan.chirality)
+    signs_up = [st.branch for st in ps.plan.steps if st.ppp is not None]
     c.y.value = -4                                       # flip the sketch to the other root
     r = ps.solve(fallback=False)
     assert r.success and c.y.value < 0
-    assert signs_up and all(ps.plan.chirality[k] == -v for k, v in signs_up.items())
+    assert signs_up and [st.branch for st in ps.plan.steps if st.ppp is not None] == [-s for s in signs_up]
+    # sticky branches: the recorded root wins even if the sketch moved
+    ps.plan.sticky_branches = True
+    c.y.value = 4
+    ps.solve(fallback=False)
+    assert c.y.value < 0
 
 
 def test_k33_needs_a_core_and_decomposes() -> None:
@@ -125,8 +130,11 @@ def test_direction_classes_parallel_and_perpendicular() -> None:
 
 # -- regression: plan path vs monolithic numeric path ---------------------------
 
-def _all_satisfied(sk: Sketch, tol: float = 1e-6) -> bool:
-    return all(c.error() < tol for c in sk.hard_constraints())
+def _all_satisfied(sk: Sketch) -> bool:
+    from gcs.diagnose import violated_constraints
+    from gcs.solve import System
+
+    return not violated_constraints(System(sk))
 
 
 @pytest.mark.parametrize("name", list(examples.EXAMPLES))

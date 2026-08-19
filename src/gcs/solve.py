@@ -65,6 +65,12 @@ class Block(NamedTuple):
     jac_const: Vec | None          # ravelled Jacobian entries if the kernel's J is constant
 
 
+def _consts_of(k: Kernel, cs: list[Constraint]) -> Vec:
+    if not k.n_const:
+        return np.zeros((len(cs), 0))
+    return np.array([c.consts() for c in cs], dtype=np.float64).reshape(len(cs), k.n_const)
+
+
 class System:
     """Compiled evaluation plan for one sketch topology."""
 
@@ -79,6 +85,7 @@ class System:
         self.col_of = np.full(n, -1, dtype=np.intp)   # global param index -> free column, or -1
         self.col_of[self.free] = np.arange(self.n_free)
         self.extent = sketch.extent()
+        self.scale = max(1.0, self.extent) ** 2     # residual units for squared distances
 
         # -- group constraints by kernel (kernel id order, then sketch order → deterministic) --
         by_kernel: dict[int, list[Constraint]] = {}
@@ -95,8 +102,7 @@ class System:
             k = KERNELS[kid]
             nb = len(cs)
             gidx = np.array([[p.index for p in c.params] for c in cs], dtype=np.intp).reshape(nb, k.n_par)
-            consts = (np.array([c.consts() for c in cs], dtype=np.float64).reshape(nb, k.n_const)
-                      if k.n_const else np.zeros((nb, 0)))
+            consts = _consts_of(k, cs)
             jc = None if k.const_jac is None else np.broadcast_to(k.const_jac, (nb,) + k.const_jac.shape).ravel()
             self.blocks.append(Block(k, cs, gidx, consts, row0, jc))
             for i, c in enumerate(cs):
@@ -132,7 +138,13 @@ class System:
         """Re-read every constraint's constants (after arbitrary dimension edits)."""
         for k, cs, _, consts, _, _ in self.blocks:
             if k.n_const:
-                consts[:] = np.array([c.consts() for c in cs], dtype=np.float64).reshape(len(cs), k.n_const)
+                consts[:] = _consts_of(k, cs)
+
+    def max_hard_residual(self, z: Vec | None = None) -> float:
+        """max |r| over hard rows at z (default: current sketch values) — what "solved" means."""
+        r = self.residuals(self.z0() if z is None else z)
+        rh = r[self.hard]
+        return float(np.max(np.abs(rh))) if rh.size else 0.0
 
     def row_of(self, c: Constraint) -> int:
         """First residual row of a constraint."""
@@ -222,7 +234,7 @@ class System:
     ) -> SolveResult:
         t0 = time.perf_counter()
         z = self.z0()
-        scale = max(1.0, self.extent) ** 2
+        scale = self.scale
         if self.n_free == 0 or self.n_res == 0:
             info = newton.Info(0, 1, 0, 0, None, self.residuals(z))
         else:

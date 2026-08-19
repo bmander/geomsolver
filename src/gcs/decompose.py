@@ -1,4 +1,4 @@
-"""Stage 3a — cluster merging (Fudos–Hoffmann, generalised) and plan execution.
+"""Stage 3 — cluster merging (Fudos–Hoffmann, generalised) → plan → replay.
 
 Decomposition (once per topology):
   * every PP/PL edge seeds a 2-element rigid *cluster*; ground (fixed points +
@@ -12,19 +12,21 @@ Decomposition (once per topology):
     clusters (a lone point, parallel lines) accounted for — so parallels,
     perpendiculars and H/V need no special cases;
   * when pair/triple merging stalls, look for a small *core*: a minimal subset
-    of clusters that is rigid as a whole (Stage 3b — DR-planning / Owen's
-    idea of isolating the non-tree-decomposable part): grow from each seed by
+    of clusters that is rigid as a whole (Stage 3b — DR-planning / Owen's idea
+    of isolating the non-tree-decomposable part): grow from each seed by
     generic-rank deficiency, take the smallest rigid subset found (capped in
     size — the numeric cost is exponential in exactly this), merge it as one
     numeric step, resume tree merging;
-  * the merge sequence is the *plan*; the clusters left over are the roots.
+  * the merge sequence is the *plan*: each Step is lowered to flat data
+    (reference-first cluster ids, shared-element rows, direction rows, the
+    closed-form construction if any); the clusters left over are the roots.
 
 Execution (every solve / drag frame, no graph analysis):
   * leaf poses from the live dimension values, warm-started on the current
     geometry (this is also what picks roots close to what the user sees);
   * PPP triangle merges by ruler-and-compass (circle–circle intersection) with
-    an explicit chirality flag; other merges by a 3k-unknown DogLeg with
-    analytic Jacobian (k = movable clusters);
+    an explicit chirality flag; other merges by a small min-norm Newton
+    (DogLeg if it does not converge);
   * unfixed roots placed by least-change (Procrustes onto current positions);
   * write back; verify with the compiled System; numeric fallback if needed.
 """
@@ -33,18 +35,20 @@ from __future__ import annotations
 
 import math
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
 
 from gcs import newton
-from gcs.cgraph import ConstraintGraph, Edge, El, build, line_normal
+from gcs.cgraph import X_AXIS, ConstraintGraph, Edge, El, build, line_normal, normal_of
 from gcs.model import Arc, Circle, Sketch, Vec
 from gcs.solve import Method, SolveResult, System
 
 Pose = Vec  # point: (x, y); line: (nx, ny, c)
-_ID = np.array([1.0, 0.0, 0.0, 0.0])
+_X_POSE = np.array([0.0, 1.0, 0.0])
+Rel = tuple[list[tuple[int, int, El]], list[tuple[int, int, El, El, float]]]   # (pairs, dpairs) between clusters
 
 
 class Cluster:
@@ -59,13 +63,20 @@ class Cluster:
 
 @dataclass
 class Step:
-    """Merge of clusters `ids` into `out`.  shared[(i, j)] = elements shared by ids[i], ids[j];
-    dirs[(i, j)] = (line in i, line in j, phi) pairs with n_j = rot(phi)·n_i (direction classes)."""
+    """One merge, lowered for replay.  ids[0] is the reference cluster (identity transform);
+    pairs/dpairs use positions into `ids`; a PPP triangle carries its (x, y, z) construction
+    and `branch` (±1 chirality: orientation of (x, z, y)) — set by the replay from the sketch
+    when None, so a persisted plan replays the recorded root (Stage 5 substrate)."""
 
     ids: tuple[int, ...]
-    shared: dict[tuple[int, int], list[El]]
-    dirs: dict[tuple[int, int], list[tuple[El, El, float]]]
-    out: int
+    pairs: list[tuple[int, int, El]]
+    dpairs: list[tuple[int, int, El, El, float]]
+    ppp: tuple[El, El, El] | None = None
+    branch: int | None = None
+
+    @property
+    def out(self) -> int:
+        return self.ids[0]
 
 
 @dataclass
@@ -76,7 +87,7 @@ class Plan:
     singletons: list[tuple[int, El]]
     steps: list[Step]
     roots: list[int]
-    chirality: dict[int, int] = field(default_factory=dict)   # step index → ±1 (PPP merges)
+    sticky_branches: bool = False          # True: replay recorded chirality even if the sketch moved (Stage 5)
 
     @property
     def fully_decomposed(self) -> bool:
@@ -107,9 +118,8 @@ class _Dirs:
             path.append(e)
             e = self.parent[e]
         root = e
-        # path compression with potentials
         acc = 0.0
-        for x in reversed(path):
+        for x in reversed(path):                     # path compression with potentials
             acc += self.pot[x]
             self.parent[x] = root
             self.pot[x] = acc
@@ -121,7 +131,6 @@ class _Dirs:
         rb, pb = self.find(b)
         if ra == rb:
             return abs(math.remainder(pb - pa - phi, math.pi)) < 1e-9
-        # attach rb under ra: pot[rb] = angle(rb rel ra) = pa + phi − pb
         self.parent[rb] = ra
         self.pot[rb] = pa + phi - pb
         return True
@@ -149,6 +158,17 @@ def _T(theta: float, tx: float, ty: float) -> Vec:
     return np.array([math.cos(theta), math.sin(theta), tx, ty])
 
 
+def _pose_of(el: El, pose: Pose, th: float, tx: float, ty: float) -> Pose:
+    """Pose of `el` under (θ, t) — no Jacobian (residual evaluations)."""
+    c, s = math.cos(th), math.sin(th)
+    if el.kind == "P":
+        x, y = pose
+        return np.array([c * x - s * y + tx, s * x + c * y + ty])
+    nx, ny, cc = pose
+    n0, n1 = c * nx - s * ny, s * nx + c * ny
+    return np.array([n0, n1, cc + n0 * tx + n1 * ty])
+
+
 def _pose_jac(el: El, pose: Pose, th: float, tx: float, ty: float) -> tuple[Pose, Vec]:
     """Pose of `el` under (θ, t) and its Jacobian wrt (θ, tx, ty)."""
     c, s = math.cos(th), math.sin(th)
@@ -167,7 +187,7 @@ def _procrustes(src: Vec, dst: Vec) -> Vec:
     """Rigid transform (c, s, tx, ty) mapping points src (n,2) onto dst in least squares."""
     n = len(src)
     if n == 0:
-        return _ID.copy()
+        return np.array([1.0, 0.0, 0.0, 0.0])
     ms, md = src.mean(axis=0), dst.mean(axis=0)
     if n == 1:
         return np.array([1.0, 0.0, md[0] - ms[0], md[1] - ms[1]])
@@ -192,23 +212,25 @@ def _fit2(p: Pose, q: Pose, p2: Pose, q2: Pose) -> Vec:
 
 
 # ---------------------------------------------------------------------------
-# merge system (shared for the generic-rank decision and for execution)
+# merge system (shared by the generic-rank decision and by execution)
 
 def _merge_system(cl: list[Cluster], pairs: list[tuple[int, int, El]],
                   dpairs: list[tuple[int, int, El, El, float]], k_movable: int
                   ) -> tuple[Callable[[Vec], Vec], Callable[[Vec], Vec]]:
     """Residual/Jacobian callables for transforms of cl[1..] (cl[0] = reference, identity)."""
 
+    def pose(u: Vec, ci: int, el: El) -> Pose:
+        p = cl[ci].els[el]
+        return p if ci == 0 else _pose_of(el, p, *u[3 * (ci - 1): 3 * ci])
+
     def dpose(u: Vec, ci: int, el: El) -> tuple[Pose, Vec]:
-        pose = cl[ci].els[el]
-        if ci == 0:
-            return pose, np.zeros((pose.size, 3))
-        return _pose_jac(el, pose, *u[3 * (ci - 1): 3 * ci])
+        p = cl[ci].els[el]
+        return (p, np.zeros((p.size, 3))) if ci == 0 else _pose_jac(el, p, *u[3 * (ci - 1): 3 * ci])
 
     def fun(u: Vec) -> Vec:
-        parts = [dpose(u, i, e)[0] - dpose(u, j, e)[0] for i, j, e in pairs]
+        parts = [pose(u, i, e) - pose(u, j, e) for i, j, e in pairs]
         for i, j, la, lb, phi in dpairs:      # angle(n_a', n_b') = phi — scalar, linear in the θ's
-            na, nb = dpose(u, i, la)[0], dpose(u, j, lb)[0]
+            na, nb = pose(u, i, la), pose(u, j, lb)
             ang = math.atan2(na[0] * nb[1] - na[1] * nb[0], na[0] * nb[0] + na[1] * nb[1])
             parts.append(np.array([math.remainder(ang - phi, 2 * math.pi)]))
         return np.concatenate(parts) if parts else np.zeros(0)
@@ -237,19 +259,20 @@ def _merge_system(cl: list[Cluster], pairs: list[tuple[int, int, El]],
 
 
 def _newton_small(fun: Callable[[Vec], Vec], jac: Callable[[Vec], Vec], u: Vec,
-                  tol: float = 1e-13, max_iter: int = 40) -> Vec:
-    """Plain min-norm Newton for the tiny merge systems (3k unknowns, warm-started at
-    the identity).  No trust region: merges are near-linear from a warm start, and the
-    plan is verified afterwards anyway (numeric fallback if anything went wrong)."""
+                  tol: float = 1e-13, max_iter: int = 40) -> tuple[Vec, float]:
+    """Plain min-norm Newton for the tiny merge systems (3k unknowns, warm-started at the
+    identity).  Returns (u, max |residual|).  No trust region: merges are near-linear from a
+    warm start, and the caller falls back to DogLeg if this does not converge."""
+    r = fun(u)
     for _ in range(max_iter):
-        r = fun(u)
         if r.size == 0 or float(np.abs(r).max()) < tol:
             break
         p, _ = newton.min_norm_lstsq(jac(u), -r)
         u = u + p
+        r = fun(u)
         if float(np.abs(p).max()) < 1e-15:
             break
-    return u
+    return u, float(np.abs(r).max()) if r.size else 0.0
 
 
 def _self_motion(cl: Cluster) -> int:
@@ -275,6 +298,12 @@ def _self_motion(cl: Cluster) -> int:
     return 3 if first_n is None else 1
 
 
+def _order_ref_first(cl: dict[int, Cluster], ids: list[int]) -> list[int]:
+    """Cluster ids with the reference (fixed if any, else the largest) first."""
+    ref = next((i for i in ids if cl[i].fixed), max(ids, key=lambda i: len(cl[i].els)))
+    return [ref] + [i for i in ids if i != ref]
+
+
 # ---------------------------------------------------------------------------
 # decomposition (topology only)
 
@@ -283,30 +312,32 @@ def decompose(graph: ConstraintGraph, seed: int = 0, core_max: int = 12) -> Plan
     dirs = _Dirs()
     for d in graph.dirs:
         dirs.join(d.a, d.b, d.phi)
+    elements = graph.elements
     # generic (witness) poses: random points; lines get a random normal per direction class
     # (+ their class offset) and a random offset — merge decisions are structural, so they
     # must not depend on the user's possibly-degenerate geometry
     base_angle: dict[El, float] = {}
     generic: dict[El, Pose] = {}
-    for e in graph.elements:
+    droot: dict[El, El] = {}
+    for e in elements:
         if e.kind == "P":
             generic[e] = rng.uniform(-100, 100, 2)
         else:
             root, pot = dirs.find(e)
+            droot[e] = root
             ang = base_angle.setdefault(root, rng.uniform(0, 2 * math.pi)) + pot
             generic[e] = np.array([math.cos(ang), math.sin(ang), rng.uniform(-100, 100)])
 
     clusters: dict[int, Cluster] = {}
-    of: dict[El, set[int]] = {e: set() for e in graph.elements}
+    of: dict[El, set[int]] = {e: set() for e in elements}
     dir_of: dict[El, set[int]] = {}          # direction root → clusters containing a line of that class
     cdirs: dict[int, dict[El, El]] = {}      # cluster → {direction root: one of its lines}
-    droot: dict[El, El] = {e: dirs.find(e)[0] for e in graph.elements if e.kind == "L"}
     next_id = 0
 
     def register(cid: int, els: list[El]) -> None:
         for e in els:
             of[e].add(cid)
-            if e.kind == "L":
+            if e.kind != "P":
                 r = droot[e]
                 dir_of.setdefault(r, set()).add(cid)
                 cdirs[cid].setdefault(r, e)
@@ -326,40 +357,57 @@ def decompose(graph: ConstraintGraph, seed: int = 0, core_max: int = 12) -> Plan
             of[e].discard(cid)
         for r in cdirs.pop(cid):
             dir_of[r].discard(cid)
+        for key in rel_keys.pop(cid, ()):
+            rel_memo.pop(key, None)
         return c
 
-    ground = add({graph.X_AXIS, *(El("P", i) for i in graph.ground_points)}, True)
+    ground = add({X_AXIS, *(El("P", i) for i in graph.ground_points)}, True)
     leaves = [(add({e.a, e.b}, False), i) for i, e in enumerate(graph.edges)]
-    singletons = [(add({e}, False), e) for e in graph.elements if not of[e]]
+    singletons = [(add({e}, False), e) for e in elements if not of[e]]
     steps: list[Step] = []
 
-    def relations(ids: list[int]) -> tuple[list[tuple[int, int, El]], list[tuple[int, int, El, El, float]],
-                                           dict[tuple[int, int], list[El]], dict[tuple[int, int], list[tuple[El, El, float]]]]:
-        pairs, dpairs = [], []
-        shared: dict[tuple[int, int], list[El]] = {}
-        sdirs: dict[tuple[int, int], list[tuple[El, El, float]]] = {}
+    # -- what two clusters share (memoised; entries die with either cluster) --
+    rel_memo: dict[tuple[int, int], tuple[list[El], list[tuple[El, El, float]]]] = {}
+    rel_keys: dict[int, set[tuple[int, int]]] = {}
+
+    def pair_rel(a: int, b: int) -> tuple[list[El], list[tuple[El, El, float]]]:
+        key = (a, b) if a < b else (b, a)
+        hit = rel_memo.get(key)
+        if hit is not None:
+            return hit
+        A, B = clusters[key[0]], clusters[key[1]]
+        small, big = (A, B) if len(A.els) <= len(B.els) else (B, A)
+        common = sorted(e for e in small.els if e in big.els)      # O(min) with dict membership
+        seen = {droot[e] for e in common if e.kind != "P"}
+        da, db = cdirs[key[0]], cdirs[key[1]]
+        drels: list[tuple[El, El, float]] = []
+        for root, la in (da if len(da) <= len(db) else db).items():
+            if root in seen or root not in (db if len(da) <= len(db) else da):
+                continue
+            la_, lb_ = (la, db[root]) if la in A.els else (da[root], la)
+            phi = dirs.offset(la_, lb_)
+            assert phi is not None
+            drels.append((la_, lb_, phi))
+        rel_memo[key] = (common, drels)
+        rel_keys.setdefault(a, set()).add(key)
+        rel_keys.setdefault(b, set()).add(key)
+        return common, drels
+
+    def relations(ids: list[int]) -> Rel:
+        """Shared rows between clusters `ids` (positions into ids); (i, j) with i < j and the
+        direction relation oriented from ids[i]'s line to ids[j]'s line."""
+        pairs: list[tuple[int, int, El]] = []
+        dpairs: list[tuple[int, int, El, El, float]] = []
         for i in range(len(ids)):
             for j in range(i + 1, len(ids)):
-                A, B = clusters[ids[i]], clusters[ids[j]]
-                small, big = (A, B) if len(A.els) <= len(B.els) else (B, A)
-                common = sorted(e for e in small.els if e in big.els)      # O(min) with dict membership
-                if common:
-                    shared[(i, j)] = common
-                    pairs += [(i, j, e) for e in common]
-                # one representative line pair per direction class shared but not via a common line
-                seen = {droot[e] for e in common if e.kind == "L"}
-                da, db = cdirs[ids[i]], cdirs[ids[j]]
-                if len(da) > len(db):
-                    da, db = db, da
-                for root, la in da.items():
-                    if root in seen or root not in db:
-                        continue
-                    la, lb = (la, db[root]) if la in A.els else (db[root], la)
-                    phi = dirs.offset(la, lb)
-                    assert phi is not None
-                    sdirs.setdefault((i, j), []).append((la, lb, phi))
-                    dpairs.append((i, j, la, lb, phi))
-        return pairs, dpairs, shared, sdirs
+                common, drels = pair_rel(ids[i], ids[j])
+                pairs += [(i, j, e) for e in common]
+                for la, lb, phi in drels:
+                    if la in clusters[ids[i]].els:
+                        dpairs.append((i, j, la, lb, phi))
+                    else:
+                        dpairs.append((i, j, lb, la, -phi))
+        return pairs, dpairs
 
     selfm: dict[int, int] = {}
 
@@ -371,37 +419,37 @@ def decompose(graph: ConstraintGraph, seed: int = 0, core_max: int = 12) -> Plan
     def deficiency(ids: list[int]) -> int:
         """Relative rigid-transform DOF left after imposing everything the clusters share
         (0 ⇔ the merge is determined).  Generic rank of the merge Jacobian at witness poses."""
-        cl = [clusters[i] for i in ids]
-        ref = next((i for i, c in enumerate(cl) if c.fixed), max(range(len(cl)), key=lambda i: len(cl[i].els)))
-        order = [ref] + [i for i in range(len(cl)) if i != ref]
-        cl_o = [cl[i] for i in order]
-        pos = {pi: k for k, pi in enumerate(order)}
-        pairs, dpairs, _, _ = relations(ids)
-        k = len(cl_o) - 1
-        need = 3 * k - sum(self_motion(ids[i]) for i in order[1:])
+        ids = _order_ref_first(clusters, ids)
+        pairs, dpairs = relations(ids)
+        k = len(ids) - 1
+        need = 3 * k - sum(self_motion(i) for i in ids[1:])
         if need <= 0:
             return 0
-        if 2 * len(pairs) + len(dpairs) < need:       # cheap upper bound on the rank
-            return need - min(need, 2 * len(pairs) + len(dpairs))
-        pairs = [(pos[i], pos[j], e) for i, j, e in pairs]
-        dpairs = [(pos[i], pos[j], la, lb, phi) for i, j, la, lb, phi in dpairs]
-        _, jac = _merge_system(cl_o, pairs, dpairs, k)
+        bound = 2 * len(pairs) + len(dpairs)
+        if bound < need:                              # cheap upper bound on the rank
+            return need - bound
+        _, jac = _merge_system([clusters[i] for i in ids], pairs, dpairs, k)
         J = jac(np.zeros(3 * k))
-        rank = int(np.linalg.matrix_rank(J, tol=1e-7)) if J.size else 0
+        rank = newton.rank_rrqr(J, 1e-9) if J.size else 0
         return max(0, need - rank)
 
     def determined(ids: list[int]) -> bool:
         return deficiency(ids) == 0
 
     def merge(ids: list[int]) -> int:
-        _, _, shared, sdirs = relations(ids)
-        # small-into-large: keep the biggest (or fixed) cluster's dict, absorb the others
-        keep = next((i for i in ids if clusters[i].fixed), max(ids, key=lambda i: len(clusters[i].els)))
-        K = clusters[keep]
+        ids = _order_ref_first(clusters, ids)
+        pairs, dpairs = relations(ids)
+        ppp = None
+        if len(ids) == 3 and not dpairs and len(pairs) == 3 and all(e.kind == "P" for _, _, e in pairs) \
+                and len({(i, j) for i, j, _ in pairs}) == 3:
+            share = {(i, j): e for i, j, e in pairs}
+            ppp = (share[(0, 1)], share[(1, 2)], share[(0, 2)])          # x = ref∩B, y = B∩C, z = C∩ref
+        keep = ids[0]
+        K = clusters[keep]                                # small-into-large: absorb into the reference
         selfm.pop(keep, None)
-        for i in ids:
-            if i == keep:
-                continue
+        for key in rel_keys.pop(keep, ()):
+            rel_memo.pop(key, None)
+        for i in ids[1:]:
             c = remove(i)
             selfm.pop(i, None)
             new = [e for e in c.els if e not in K.els]
@@ -409,23 +457,25 @@ def decompose(graph: ConstraintGraph, seed: int = 0, core_max: int = 12) -> Plan
                 K.els[e] = c.els[e]
             register(keep, new)
             K.fixed = K.fixed or c.fixed
-        steps.append(Step(tuple(ids), shared, sdirs, keep))
+        steps.append(Step(tuple(ids), pairs, dpairs, ppp))
         return keep
 
-    def neighbours(a: int) -> list[int]:
-        A = clusters[a]
+    def neighbours(a: int) -> set[int]:
         nb: set[int] = set()
-        for e in A.els:
+        for e in clusters[a].els:
             nb |= of[e]
         for r in cdirs[a]:
             nb |= dir_of.get(r, set())
         nb.discard(a)
-        return sorted(nb)
+        return nb
 
-    # worklist: a cluster is re-examined when it is created or one of its neighbours changes
-    from collections import deque
+    def maximal_clusters() -> list[int]:
+        keys = {cid: set(c.els) for cid, c in clusters.items()}
+        return [cid for cid in sorted(clusters)
+                if not any(cid != o and keys[cid] < keys[o] for o in clusters)]
 
     def tree_merges(seed_ids: list[int]) -> None:
+        """Worklist: a cluster is re-examined when it is created or a neighbour changes."""
         work: deque[int] = deque(seed_ids)
         queued = set(work)
         while work:
@@ -433,7 +483,7 @@ def decompose(graph: ConstraintGraph, seed: int = 0, core_max: int = 12) -> Plan
             queued.discard(a)
             if a not in clusters:
                 continue
-            nbs = neighbours(a)
+            nbs = sorted(neighbours(a))
             out = -1
             for b in nbs:                                   # pair merges
                 if determined([a, b]):
@@ -441,7 +491,7 @@ def decompose(graph: ConstraintGraph, seed: int = 0, core_max: int = 12) -> Plan
                     break
             if out < 0:
                 for i, b in enumerate(nbs):                 # triple merges
-                    nb_b = set(neighbours(b))
+                    nb_b = neighbours(b)
                     for c in nbs[i + 1:]:
                         if c in nb_b and determined([a, b, c]):
                             out = merge([a, b, c])
@@ -449,7 +499,7 @@ def decompose(graph: ConstraintGraph, seed: int = 0, core_max: int = 12) -> Plan
                     if out >= 0:
                         break
             if out >= 0:
-                for x in [out, *neighbours(out)]:
+                for x in [out, *sorted(neighbours(out))]:
                     if x not in queued:
                         work.append(x)
                         queued.add(x)
@@ -458,23 +508,24 @@ def decompose(graph: ConstraintGraph, seed: int = 0, core_max: int = 12) -> Plan
         """Smallest rigid subset of ≥ 4 clusters found by greedy growth from every seed
         (pairs/triples are already exhausted).  None if nothing rigid within `core_max`."""
         best: list[int] | None = None
-        live = [cid for cid in sorted(clusters)
-                if not any(cid != o and set(clusters[cid].els) < set(clusters[o].els) for o in clusters)]
+        live = maximal_clusters()
         if len(live) > 400:
             return None
         for seed in live:
             S = [seed]
             inS = {seed}
             while len(S) < core_max and (best is None or len(S) + 1 < len(best)):
-                frontier = sorted({n for x in S for n in neighbours(x) if n not in inS})
+                frontier = set()
+                for x in S:
+                    frontier |= neighbours(x)
+                frontier -= inS
                 if not frontier:
                     break
-                scored = sorted(((deficiency(S + [n]), len(clusters[n].els), n) for n in frontier))
-                d, _, n = scored[0]
+                d, _, n = min((deficiency(S + [n]), len(clusters[n].els), n) for n in frontier)
                 S.append(n)
                 inS.add(n)
                 if d == 0:
-                    if len(S) >= 2 and (best is None or len(S) < len(best)):
+                    if best is None or len(S) < len(best):
                         best = list(S)
                     break
         return best
@@ -485,28 +536,23 @@ def decompose(graph: ConstraintGraph, seed: int = 0, core_max: int = 12) -> Plan
         if core is None:
             break
         out = merge(core)
-        tree_merges([out, *neighbours(out)])
-    roots = [cid for cid in sorted(clusters)
-             if not any(cid != o and set(clusters[cid].els) < set(clusters[o].els) for o in clusters)]
-    return Plan(graph, leaves, ground, singletons, steps, roots)
+        tree_merges([out, *sorted(neighbours(out))])
+    return Plan(graph, leaves, ground, singletons, steps, maximal_clusters())
 
 
 # ---------------------------------------------------------------------------
 # execution
 
 def _world_pose(graph: ConstraintGraph, e: El) -> Pose:
-    if e == graph.X_AXIS:
-        return np.array([0.0, 1.0, 0.0])
     if e.kind == "P":
         p = graph.members[e.idx][0]
         return np.array([p.x.value, p.y.value])
-    if e.idx < len(graph.lines):
+    if e == X_AXIS:
+        return _X_POSE
+    if e.kind == "L":
         return np.array(line_normal(graph.lines[e.idx]))
     a, b = (_world_pose(graph, q) for q in graph.virtual[e.idx])   # virtual line through two points
-    d = b - a
-    L = float(np.hypot(*d)) or 1.0
-    n = np.array([-d[1] / L, d[0] / L])
-    return np.array([n[0], n[1], float(n @ a)])
+    return np.array(normal_of(a[0], a[1], b[0], b[1]))
 
 
 def _leaf(graph: ConstraintGraph, edge: Edge) -> dict[El, Pose]:
@@ -523,11 +569,11 @@ def _leaf(graph: ConstraintGraph, edge: Edge) -> dict[El, Pose]:
     return {edge.a: np.array([a[0] - off * nx, a[1] - off * ny]), edge.b: b}
 
 
-def _merge_ppp(ref: Cluster, B: Cluster, Cc: Cluster, x: El, y: El, z: El, sign: int) -> tuple[Vec, Vec, int]:
+def _merge_ppp(ref: Cluster, B: Cluster, Cc: Cluster, x: El, y: El, z: El, sign: int) -> tuple[Vec, Vec]:
     """Triangle merge with all shared elements points: ref∩B = {x}, B∩C = {y}, C∩ref = {z}.
     In ref's frame y is a circle–circle intersection; `sign` (±1) is the chirality —
-    the orientation of the triangle (x, z, y) — taken from the current sketch, which is
-    invariant under rigid motions of the whole (unlike "nearest position")."""
+    the orientation of the triangle (x, z, y) — invariant under rigid motions of the whole
+    (unlike "nearest position")."""
     xa, za = ref.els[x], ref.els[z]
     bx, by, cz, cy = B.els[x], B.els[y], Cc.els[z], Cc.els[y]
     dB = math.hypot(by[0] - bx[0], by[1] - bx[1])
@@ -539,16 +585,15 @@ def _merge_ppp(ref: Cluster, B: Cluster, Cc: Cluster, x: El, y: El, z: El, sign:
     h2 = dB * dB - aa * aa
     h = math.sqrt(h2) if h2 > 0 else 0.0
     fx, fy = xa[0] + aa * ux, xa[1] + aa * uy
-    # orientation +1 ⇔ y lies to the left of x→z
-    ya = np.array((fx - h * uy, fy + h * ux) if sign > 0 else (fx + h * uy, fy - h * ux))
-    return _fit2(bx, by, xa, ya), _fit2(cz, cy, za, ya), sign
+    ya = np.array((fx - h * uy, fy + h * ux) if sign > 0 else (fx + h * uy, fy - h * ux))   # +1: y left of x→z
+    return _fit2(bx, by, xa, ya), _fit2(cz, cy, za, ya)
 
 
 def execute(plan: Plan) -> None:
     """Replay the plan on the current sketch values and write the result back."""
     g = plan.graph
     cl: dict[int, Cluster] = {}
-    gels = {g.X_AXIS: _world_pose(g, g.X_AXIS)}
+    gels = {X_AXIS: _X_POSE}
     for i in g.ground_points:
         gels[El("P", i)] = _world_pose(g, El("P", i))
     cl[plan.ground_id] = Cluster(plan.ground_id, gels, True)
@@ -557,43 +602,32 @@ def execute(plan: Plan) -> None:
     for cid, e in plan.singletons:
         cl[cid] = Cluster(cid, {e: _world_pose(g, e)}, False)
 
-    for si, st in enumerate(plan.steps):
+    for st in plan.steps:
         parts = [cl.pop(i) for i in st.ids]
-        ref_i = next((i for i, c in enumerate(parts) if c.fixed),
-                     max(range(len(parts)), key=lambda i: len(parts[i].els)))
-        order = [ref_i] + [i for i in range(len(parts)) if i != ref_i]
-        pos = {pi: k for k, pi in enumerate(order)}
-        cl_o = [parts[i] for i in order]
-        pairs = [(pos[i], pos[j], e) for (i, j), els in st.shared.items() for e in els]
-        dpairs = [(pos[i], pos[j], la, lb, phi) for (i, j), ds in st.dirs.items() for la, lb, phi in ds]
-        movable = cl_o[1:]
-        ppp = (len(parts) == 3 and not dpairs and len(pairs) == 3 and all(e.kind == "P" for _, _, e in pairs)
-               and len({frozenset((i, j)) for i, j, _ in pairs}) == 3)
-        if ppp:
-            share = {frozenset((i, j)): e for i, j, e in pairs}
-            x, z, y = share[frozenset((0, 1))], share[frozenset((0, 2))], share[frozenset((1, 2))]
-            xw, zw, yw = _world_pose(g, x), _world_pose(g, z), _world_pose(g, y)
-            orient = (zw[0] - xw[0]) * (yw[1] - xw[1]) - (zw[1] - xw[1]) * (yw[0] - xw[0])
-            sign = 1 if orient >= 0 else -1                 # sketch-guided chirality
-            TB, TC, sign = _merge_ppp(cl_o[0], cl_o[1], cl_o[2], x, y, z, sign)
-            plan.chirality[si] = sign
-            Ts = [TB, TC]
+        ref, movable = parts[0], parts[1:]
+        if st.ppp is not None:
+            x, y, z = st.ppp
+            if st.branch is None or not plan.sticky_branches:
+                xw, zw, yw = _world_pose(g, x), _world_pose(g, z), _world_pose(g, y)
+                orient = (zw[0] - xw[0]) * (yw[1] - xw[1]) - (zw[1] - xw[1]) * (yw[0] - xw[0])
+                st.branch = 1 if orient >= 0 else -1                # sketch-guided chirality
+            Ts = list(_merge_ppp(ref, movable[0], movable[1], x, y, z, st.branch))
         elif movable:
-            fun, jac = _merge_system(cl_o, pairs, dpairs, len(movable))
-            u = _newton_small(fun, jac, np.zeros(3 * len(movable)))
-            if float(np.abs(fun(u)).max(initial=0.0)) > 1e-9:
-                # cores (many clusters) or bad warm starts: use the globalised solver
+            fun, jac = _merge_system(parts, st.pairs, st.dpairs, len(movable))
+            u, res = _newton_small(fun, jac, np.zeros(3 * len(movable)))
+            if res > 1e-9:      # cores (many clusters) or bad warm starts: use the globalised solver
                 u, _ = newton.dogleg(fun, jac, np.zeros(3 * len(movable)), ftol=1e-13, xtol=1e-14,
                                      gtol=1e-18, max_iter=300)
             Ts = [_T(u[3 * i], u[3 * i + 1], u[3 * i + 2]) for i in range(len(movable))]
         else:
             Ts = []
-        els = dict(cl_o[0].els)
+        els = ref.els                                    # absorb in place (parts were popped)
         for c, T in zip(movable, Ts, strict=True):
             for e, pose in c.els.items():
                 if e not in els:
                     els[e] = _apply(T, e, pose)
-        cl[st.out] = Cluster(st.out, els, any(c.fixed for c in parts))
+            ref.fixed = ref.fixed or c.fixed
+        cl[st.out] = ref
 
     # -- place roots: fixed ones are in world frame; others least-change onto current geometry,
     #    aligning any element already placed by an earlier root exactly --
@@ -635,6 +669,13 @@ class PlanResult:
         return (f"PlanResult(ok={self.success}, max|r|={self.max_residual:.2e}, fallback={self.fell_back}, "
                 f"{self.time_s * 1e3:.2f} ms, {self.plan.summary()})")
 
+    def as_solve_result(self) -> SolveResult:
+        """The same outcome in the solver's common result type (method 'plan' or the fallback's)."""
+        if self.numeric is not None:
+            return self.numeric
+        return SolveResult(self.success, 0, "plan", self.max_residual, self.max_residual,
+                           len(self.plan.steps), 0, self.time_s, "plan")
+
 
 class PlanSolver:
     """Compile once per topology (graph + decomposition + System for verification);
@@ -651,18 +692,11 @@ class PlanSolver:
         t0 = time.perf_counter()
         execute(self.plan)
         self.system.refresh_consts()          # dimensions may have been edited since compile
-        r = self.system.residuals(self.system.z0())
-        rh = np.abs(r[self.system.hard])
-        mx = float(rh.max()) if rh.size else 0.0
-        scale = max(1.0, self.system.extent) ** 2
+        mx = self.system.max_hard_residual()
         num = None
         fell = False
-        if mx > tol * scale and fallback:
+        if mx > tol * self.system.scale and fallback:
             fell = True
             num = self.system.solve(method=method)
             mx = num.max_residual
-        return PlanResult(mx <= 1e-6 * scale, mx, fell, time.perf_counter() - t0, self.plan, num)
-
-
-def solve_plan(sketch: Sketch, **kw: object) -> PlanResult:
-    return PlanSolver(sketch).solve(**kw)  # type: ignore[arg-type]
+        return PlanResult(mx <= 1e-6 * self.system.scale, mx, fell, time.perf_counter() - t0, self.plan, num)

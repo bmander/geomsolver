@@ -107,7 +107,7 @@ DOF, convergence and solve time.
 | numeric fallback for non-constructible / unsupported | ✅ `PlanSolver.solve` verifies and falls back |
 | decomposition once per topology; drags/edits replay the cached plan | ✅ `PlanSolver` + live dimension values (`refresh_consts`) |
 | regression suite runs both paths and diffs | ✅ `tests/test_decompose.py::test_plan_and_numeric_agree` |
-| 1000-entity mostly-tree-decomposable sketch in low ms from the cached plan | ⚠ 1500-entity truss replays in ~50–90 ms in Python (≈ the vectorized numeric solve): per-merge Python overhead is the limit — the plan is what a C executor consumes |
+| 1000-entity mostly-tree-decomposable sketch in low ms from the cached plan | ⚠ 300-entity truss replays in ~4 ms, 1500-entity in ~22 ms in Python (≈ the vectorized numeric solve, 5 / 14 ms): per-merge Python overhead is the limit — the plan is flat data a C executor would consume |
 | non-tree-decomposable cores isolated into minimal numeric subsystems (Owen / DR-planning objective) | ✅ `find_core` in `decompose` — greedy minimal rigid subset, one numeric step, tree merging resumes; K₃,₃ + all random Laman frameworks decompose fully (an SPQR-tree split proper is not implemented — the rank-based core search plays that role) |
 
 ## Stage 2 status
