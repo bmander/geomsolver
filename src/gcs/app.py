@@ -759,9 +759,9 @@ class MainWindow(QMainWindow):
                 msg += f"  redundant {d.n_redundant}"
             if d.status == "conflict":
                 msg += "  ⚠ CONFLICT"
-            elif d.numeric_rank is not None and d.numeric_rank < d.structural_rank:
+            elif d.geometric_dependency:
                 msg += "  ⚠ geometric dependency"
-            elif d.numeric_rank is None and d.warnings:
+            elif d.numeric_skipped:
                 msg += "  (structural only)"
         msg += f"   | selected {len(self.view.selected)}"
         if r is not None:

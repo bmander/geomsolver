@@ -11,7 +11,7 @@ typedef struct {
 
 struct gcs_system {
     int n_params, n_free, n_blocks, n_res, n_cons;
-    int gidx_len, consts_len, jdata_len;
+    int consts_len;
     double *x;
     int32_t *free_idx, *col_of;
     gcs_block *blocks;
@@ -24,7 +24,6 @@ struct gcs_system {
     int n_ent, nnz;
     int32_t *ent_src, *ent_slot;
     int32_t *csr_indptr, *csr_indices;
-    int64_t *csr_flat;
     double *csr_data;
     gcs_ata *ata;     /* J^T J for the sparse path, built on first use */
 };

@@ -135,13 +135,6 @@ typedef struct {
 int gcs_system_solve(gcs_system *s, int method, double ftol, double xtol, double gtol,
                      int max_iter, int max_nfev, int dense, double *z, gcs_info *info);
 
-/* Free-standing solvers over caller-supplied callbacks — used for the tiny merge systems
- * of the decomposition, where the residual is not a compiled sketch. */
-typedef void (*gcs_fun)(void *ctx, const double *u, double *r);
-typedef void (*gcs_jacfn)(void *ctx, const double *u, double *J);
-int gcs_dogleg(void *ctx, gcs_fun fun, gcs_jacfn jac, int m, int n, double *u,
-               double ftol, double xtol, double gtol, int max_iter, gcs_info *info);
-
 #ifdef __cplusplus
 }
 #endif

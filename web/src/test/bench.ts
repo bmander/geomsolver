@@ -8,12 +8,13 @@ import { PlanDrag, PlanSolver } from '../core/decompose.js';
 import { diagnose } from '../core/diagnose.js';
 import * as examples from '../core/examples.js';
 import { Sketch } from '../core/model.js';
-import { Drag, METHODS, Method, System, solve } from '../core/system.js';
+import { Drag, METHODS, Method, System, now, solve } from '../core/system.js';
 import { initCore } from '../core/wasm.js';
 
 type Make = () => Sketch;
 
-const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+/** Milliseconds, from the core's seconds-based timer. */
+const ms = (): number => now() * 1000;
 
 function median(v: number[]): number {
   const s = [...v].sort((a, b) => a - b);
@@ -28,9 +29,9 @@ function benchSolve(make: Make, method: Method, reps = 20, sigma = 1.0): [number
     const sk = make();
     sk.perturb(sigma, i);
     const s = new System(sk);
-    const t0 = now();
+    const t0 = ms();
     const r = s.solve({ method });
-    ts.push(now() - t0);
+    ts.push(ms() - t0);
     ok &&= r.success;
     its += r.iterations;
     s.dispose();
@@ -42,9 +43,9 @@ function benchCompile(make: Make, reps = 20): number {
   const ts: number[] = [];
   for (let i = 0; i < reps; i++) {
     const sk = make();
-    const t0 = now();
+    const t0 = ms();
     const s = new System(sk);
-    ts.push(now() - t0);
+    ts.push(ms() - t0);
     s.dispose();
   }
   return median(ts);
@@ -58,9 +59,9 @@ function benchDrag(make: Make, plan: boolean, frames = 40): [number, boolean] {
   const d = plan ? new PlanDrag(sk, p, p.x.value, p.y.value) : new Drag(sk, p, p.x.value, p.y.value);
   const ts: number[] = [];
   for (let i = 0; i < frames; i++) {
-    const t0 = now();
+    const t0 = ms();
     d.move(p.x.value + 0.3 * Math.cos(i), p.y.value + 0.3 * Math.sin(i));
-    ts.push(now() - t0);
+    ts.push(ms() - t0);
   }
   const driven = d instanceof PlanDrag ? d.usable : false;
   d.end();
@@ -108,9 +109,9 @@ export function bench(): BenchLine[] {
       const ts: number[] = [];
       for (let i = 0; i < 10; i++) {
         sk.perturb(1.0, i);
-        const t0 = now();
+        const t0 = ms();
         ps.solve();
-        ts.push(now() - t0);
+        ts.push(ms() - t0);
       }
       planMs = median(ts);
       ps.dispose();
@@ -118,9 +119,9 @@ export function bench(): BenchLine[] {
     const [dragMs] = benchDrag(make, false, name.includes('200') ? 8 : 40);
     const [planDragMs, planDriven] = benchDrag(make, true, name.includes('200') ? 8 : 40);
     const dsk = make();
-    const t0 = now();
+    const t0 = ms();
     diagnose(dsk);
-    const diagnoseMs = now() - t0;
+    const diagnoseMs = ms() - t0;
     out.push({ name, free, res, compileMs: benchCompile(make, 10), solve: solveMs, planMs, dragMs, planDragMs, planDriven, diagnoseMs });
   }
   return out;

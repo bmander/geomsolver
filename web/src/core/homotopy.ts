@@ -16,9 +16,9 @@
  * exponential in the number of rotations, which is exactly the cost decomposition minimises.
  */
 import { El, elKind } from './cgraph.js';
-import { CMat, cabsmax, cmat, cmatvec, cmulReal, cnorm, csolve, freeColumns } from './complex.js';
+import { CMat, cmat, cmatvec, cmulReal, cnorm, csolve, freeColumns } from './complex.js';
 import { Cluster, Plan, Step, applyT, execute, makeT, writePoint } from './decompose.js';
-import { mat, rankRrqr } from './linalg.js';
+import { absmax, mat, rankRrqr } from './linalg.js';
 import { Rng } from './rng.js';
 
 export interface Alternative {
@@ -204,8 +204,8 @@ export function enumerateStep(plan: Plan, stepIndex: number, opts: EnumerateOpti
   const step = plan.steps[stepIndex];
   const P = new Poly(parts, step);
   const n = P.n, k = P.k;
-  const wIdR = new Float64Array(n), wIdI = new Float64Array(n);
-  for (let q = 0; q < k; q++) wIdR[4 * q] = 1;              // the current solution: identity
+  const wId = new Float64Array(n);
+  for (let q = 0; q < k; q++) wId[4 * q] = 1;               // the current solution: identity
 
   // -- square the system: Atilde w = btilde (rank r) and n - r combinations of the quadratic rows --
   const r = P.rowsA ? rankRrqr(mat(P.rowsA, n, P.A), 1e-9) : 0;
@@ -230,6 +230,24 @@ export function enumerateStep(plan: Plan, stepIndex: number, opts: EnumerateOpti
   const cmul = (ar: number, ai: number, br: number, bi: number): [number, number] =>
     [ar * br - ai * bi, ar * bi + ai * br];
 
+  /** Row q of the random combination M2 applied to the quadratic rows. */
+  const m2q = (q: number, qr: Float64Array, qi: Float64Array): [number, number] => {
+    let mr = 0, mi = 0;
+    for (let j = 0; j < P.mQ; j++) {
+      const ar = M2.re[q * P.mQ + j], ai = M2.im[q * P.mQ + j];
+      mr += ar * qr[j] - ai * qi[j];
+      mi += ar * qi[j] + ai * qr[j];
+    }
+    return [mr, mi];
+  };
+
+  /** The start system's row q: gamma * (w_sigma^2 - 1). */
+  const startRow = (wr: Float64Array, wi: Float64Array, q: number): [number, number] => {
+    const s = sigma[q];
+    const [g2r, g2i] = cmul(wr[s], wi[s], wr[s], wi[s]);
+    return cmul(gammaR, gammaI, g2r - 1, g2i);
+  };
+
   /** H(w, t) and its Jacobian — Poly's offset rows give value and gradient in one pass. */
   const HJ = (wr: Float64Array, wi: Float64Array, t: number): { hr: Float64Array; hi: Float64Array; J: CMat } => {
     const { qr, qi, J: jq } = P.QJ(wr, wi, true);
@@ -249,14 +267,8 @@ export function enumerateStep(plan: Plan, stepIndex: number, opts: EnumerateOpti
     for (let q = 0; q < nQ; q++) {
       // (1-t) * gamma * (w_s^2 - 1)  +  t * (M2 Q)
       const s = sigma[q];
-      const [g2r, g2i] = cmul(wr[s], wi[s], wr[s], wi[s]);
-      const [sr0, si0] = cmul(gammaR, gammaI, g2r - 1, g2i);
-      let mr = 0, mi = 0;
-      for (let j = 0; j < P.mQ; j++) {
-        const ar = M2.re[q * P.mQ + j], ai = M2.im[q * P.mQ + j];
-        mr += ar * qr[j] - ai * qi[j];
-        mi += ar * qi[j] + ai * qr[j];
-      }
+      const [sr0, si0] = startRow(wr, wi, q);
+      const [mr, mi] = m2q(q, qr, qi);
       hr[r + q] = (1 - t) * sr0 + t * mr;
       hi[r + q] = (1 - t) * si0 + t * mi;
       for (let j = 0; j < n; j++) {
@@ -282,15 +294,8 @@ export function enumerateStep(plan: Plan, stepIndex: number, opts: EnumerateOpti
     const { qr, qi } = P.QJ(wr, wi, false);
     const dr = new Float64Array(n), di = new Float64Array(n);
     for (let q = 0; q < nQ; q++) {
-      const s = sigma[q];
-      const [g2r, g2i] = cmul(wr[s], wi[s], wr[s], wi[s]);
-      const [sr0, si0] = cmul(gammaR, gammaI, g2r - 1, g2i);
-      let mr = 0, mi = 0;
-      for (let j = 0; j < P.mQ; j++) {
-        const ar = M2.re[q * P.mQ + j], ai = M2.im[q * P.mQ + j];
-        mr += ar * qr[j] - ai * qi[j];
-        mi += ar * qi[j] + ai * qr[j];
-      }
+      const [sr0, si0] = startRow(wr, wi, q);
+      const [mr, mi] = m2q(q, qr, qi);
       dr[r + q] = -sr0 + mr;
       di[r + q] = -si0 + mi;
     }
@@ -401,7 +406,7 @@ export function enumerateStep(plan: Plan, stepIndex: number, opts: EnumerateOpti
     for (let i = 1; i < parts.length; i++) if (parts[i].els.has(locate)) { qOf = i - 1; break; }
   }
   for (const [wr, wi] of ends) {
-    if (cabsmax(wi, new Float64Array(n)) > 1e-6 * (1 + cabsmax(wr, new Float64Array(n)))) continue;
+    if (absmax(wi) > 1e-6 * (1 + absmax(wr))) continue;
     const zero = new Float64Array(n);
     const [fr, fi] = P.F(wr, zero);
     if (cnorm(fr, fi) > 1e-6) continue;
@@ -418,8 +423,8 @@ export function enumerateStep(plan: Plan, stepIndex: number, opts: EnumerateOpti
       const pos = applyT(T, locate, parts[qOf + 1].els.get(locate)!);
       loc = [pos[0], pos[1]];
     }
-    let d = 0;
-    for (let i = 0; i < n; i++) d += (wr[i] - wIdR[i]) ** 2 + (wi[i] - wIdI[i]) ** 2;
+    let d = 0;                                             // the imaginary part is ~0 by now
+    for (let i = 0; i < n; i++) d += (wr[i] - wId[i]) ** 2 + wi[i] ** 2;
     out.push({ u, distance: Math.sqrt(d), location: loc });
   }
   out.sort((a, b) => a.distance - b.distance);

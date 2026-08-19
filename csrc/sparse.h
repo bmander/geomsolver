@@ -30,5 +30,7 @@ void gcs_ata_free(gcs_ata *a);
 void gcs_ata_fill(gcs_ata *a, const double *jdata);
 /* Solve (A + diag(damp)) x = b in place; returns 0 on success. */
 int gcs_ata_solve(gcs_ata *a, const double *damp, double *b);
+/* The diagonal of A, in original (unpermuted) order. */
+void gcs_ata_diag(const gcs_ata *a, double *d);
 
 #endif

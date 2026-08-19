@@ -17,7 +17,7 @@
  * start.  The rank test is relative, and pivoted QR is cross-checked against the SVD.
  */
 import { Constraint } from './constraints.js';
-import { Mat, mat, minNormLstsq, rrqr, selectRows, svd, transpose } from './linalg.js';
+import { Mat, absmax, mat, minNormLstsq, norm, orthonormalize, rrqr, selectRows, svd, transpose } from './linalg.js';
 import { Param, Sketch } from './model.js';
 import { Rng } from './rng.js';
 import { System } from './system.js';
@@ -36,9 +36,7 @@ export interface Motion {
 }
 
 export function movingParams(m: Motion, rel = 1e-3): Param[] {
-  let mx = 0;
-  for (const v of m.velocity) mx = Math.max(mx, Math.abs(v));
-  mx = mx || 1;
+  const mx = absmax(m.velocity) || 1;
   return m.params.filter((_, i) => Math.abs(m.velocity[i]) > rel * mx);
 }
 
@@ -119,10 +117,8 @@ export function movableColumns(N: Mat, rtol = 1e-8): number[] {
   const w = new Float64Array(N.rows);
   let wmax = 0;
   for (let i = 0; i < N.rows; i++) {
-    let m = 0;
-    for (let j = 0; j < N.cols; j++) m = Math.max(m, Math.abs(N.data[i * N.cols + j]));
-    w[i] = m;
-    wmax = Math.max(wmax, m);
+    w[i] = absmax(N.data.subarray(i * N.cols, (i + 1) * N.cols));
+    wmax = Math.max(wmax, w[i]);
   }
   const out: number[] = [];
   for (let i = 0; i < N.rows; i++) if (w[i] > rtol * wmax) out.push(i);
@@ -190,9 +186,7 @@ export function analyze(sketch: Sketch, xWitness: Float64Array | null = null, op
         const c = rowC[r];
         if (deps.some((d) => d.constraint === c)) return;
         const coef = Array.from({ length: rank }, (_, k) => coefs.data[k * coefs.cols + col]);
-        let mx = 0;
-        for (const v of coef) mx = Math.max(mx, Math.abs(v));
-        const lim = 1e-6 * (mx || 1);
+        const lim = 1e-6 * (absmax(coef) || 1);
         const order = coef.map((v, k) => [Math.abs(v), k] as const)
           .sort((a, b) => b[0] - a[0]).filter(([a]) => a > lim).map(([, k]) => k);
         const implied: Constraint[] = [];
@@ -241,7 +235,6 @@ function classifyMotions(N: Mat, params: Param[], sketch: Sketch): Motion[] {
     (which === 0 ? tx : ty)[i] = 1;
     rot[i] = which === 0 ? -(y - cy) : x - cx;
   });
-  const nrm = (v: Float64Array): number => Math.sqrt(v.reduce((s, a) => s + a * a, 0));
   const inNull = (v: Float64Array): boolean => {
     let s = 0;
     for (let j = 0; j < d; j++) {
@@ -249,13 +242,12 @@ function classifyMotions(N: Mat, params: Param[], sketch: Sketch): Motion[] {
       for (let i = 0; i < n; i++) acc += N.data[i * d + j] * v[i];
       s += acc * acc;
     }
-    return Math.sqrt(s) >= (1 - 1e-6) * nrm(v);   // N has orthonormal columns
+    return Math.sqrt(s) >= (1 - 1e-6) * norm(v);   // N has orthonormal columns
   };
   const scaled = (v: Float64Array): Float64Array => {
-    let mx = 0;
-    for (const a of v) mx = Math.max(mx, Math.abs(a));
+    const mx = absmax(v) || 1;
     const out = new Float64Array(n);
-    for (let i = 0; i < n; i++) out[i] = v[i] / (mx || 1);
+    for (let i = 0; i < n; i++) out[i] = v[i] / mx;
     return out;
   };
   const rigid: Float64Array[] = [];
@@ -264,7 +256,7 @@ function classifyMotions(N: Mat, params: Param[], sketch: Sketch): Motion[] {
 
   let Ni: Mat;
   if (rigid.length) {                             // internal DOFs = the null space minus the rigid span
-    const Q = orthonormalizeCols(rigid);
+    const Q = orthonormalize(rigid);
     const M = mat(n, d);
     for (let i = 0; i < n; i++) for (let j = 0; j < d; j++) M.data[i * d + j] = N.data[i * d + j];
     for (const q of Q) {
@@ -299,24 +291,4 @@ function classifyMotions(N: Mat, params: Param[], sketch: Sketch): Motion[] {
     }
   }
   return motions;
-}
-
-function orthonormalizeCols(cols: Float64Array[], tol = 1e-12): Float64Array[] {
-  const out: Float64Array[] = [];
-  for (const c of cols) {
-    const v = new Float64Array(c);
-    for (const q of out) {
-      let d = 0;
-      for (let i = 0; i < v.length; i++) d += q[i] * v[i];
-      for (let i = 0; i < v.length; i++) v[i] -= d * q[i];
-    }
-    let nv = 0;
-    for (const a of v) nv += a * a;
-    nv = Math.sqrt(nv);
-    if (nv > tol) {
-      for (let i = 0; i < v.length; i++) v[i] /= nv;
-      out.push(v);
-    }
-  }
-  return out;
 }

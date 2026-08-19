@@ -16,8 +16,10 @@ import numpy as np
 import pytest
 
 from gcs import examples
+from gcs import newton
 from gcs.kernels import KERNELS
 from gcs.newton import min_norm_lstsq, rank_and_nullspace, rank_rrqr
+from gcs.model import Sketch
 from gcs.solve import System
 
 _EXT = {"Darwin": ".dylib", "Windows": ".dll"}.get(platform.system(), ".so")
@@ -37,6 +39,7 @@ def _lib() -> ct.CDLL:
     lib = ct.CDLL(str(_LIB))
     lib.gcs_min_norm_lstsq.argtypes = [ct.c_int] * 3 + [F64, F64, ct.c_double, F64]
     lib.gcs_rrqr.argtypes = [ct.c_int, ct.c_int, F64, ct.c_double, I32]
+    lib.gcs_kernel_info.argtypes = [ct.c_int, I32]
     lib.gcs_svd.argtypes = [ct.c_int, ct.c_int, F64, F64, F64, F64]
     lib.gcs_rank_nullspace.argtypes = [ct.c_int, ct.c_int, F64, ct.c_double, F64, F64]
     lib.gcs_lu_solve.argtypes = [ct.c_int, F64, F64]
@@ -134,24 +137,6 @@ def test_rrqr_rank(seed: int) -> None:
     assert sorted(piv.tolist()) == list(range(n))
 
 
-@pytest.mark.parametrize("m,n", [(9, 5), (5, 9), (7, 7), (40, 6)])
-def test_svd_singular_values_and_nullspace(m: int, n: int) -> None:
-    rng = np.random.default_rng(m + n)
-    A = rng.standard_normal((m, n))
-    if n > 2:
-        A[:, -1] = A[:, 0]
-    S = np.zeros(min(m, n))
-    Vt = np.zeros((n, n))
-    U = np.zeros((m, min(m, n)))
-    LIB.gcs_svd(m, n, p64(np.ascontiguousarray(A)), p64(U), p64(S), p64(Vt))
-    want = np.linalg.svd(A, compute_uv=False)
-    assert np.allclose(S, want, atol=1e-10)
-    assert np.allclose(Vt @ Vt.T, np.eye(n), atol=1e-10)
-    k = int(np.count_nonzero(S > 1e-10 * S[0]))      # a zero singular value has no left vector
-    assert np.allclose(U[:, :k].T @ U[:, :k], np.eye(k), atol=1e-9)
-    assert np.allclose(U @ np.diag(S) @ Vt[: min(m, n)], A, atol=1e-9)
-
-
 @pytest.mark.parametrize("name", CASES)
 def test_system_residuals_and_jacobian(name: str) -> None:
     sk = examples.EXAMPLES[name]()
@@ -207,6 +192,8 @@ def test_solve_matches_python_solution() -> None:
         res = sys_.solve()
         assert res.success
         assert np.allclose(z, sys_.z0(), atol=1e-6)
+        assert info.status == res.status        # the stop-reason numbering is shared
+        assert info.status in newton.STATUS
     finally:
         LIB.gcs_system_free(h)
 
@@ -227,7 +214,8 @@ def test_sparse_path_on_a_big_truss() -> None:
         LIB.gcs_system_free(h)
 
 
-@pytest.mark.parametrize("m,n,rank", [(60, 40, 40), (40, 60, 35), (50, 50, 45), (100, 30, 12), (3, 9, 3)])
+@pytest.mark.parametrize("m,n,rank", [(9, 5, 5), (5, 9, 5), (7, 7, 7), (40, 6, 6),
+                                      (60, 40, 40), (40, 60, 35), (50, 50, 45), (100, 30, 12), (3, 9, 3)])
 def test_svd_reconstructs_and_gives_the_null_space(m: int, n: int, rank: int) -> None:
     """Singular values, orthonormal factors and reconstruction against numpy, including the
     rank-deficient cases the null space work depends on."""
@@ -259,3 +247,44 @@ def test_rank_nullspace_of_a_sketch_jacobian() -> None:
     nn = n - rank
     assert nn == want_N.shape[1] == 1
     assert np.allclose(J @ N[:, :nn], 0, atol=1e-8)
+
+
+def test_kernel_metadata_matches_the_c_registry() -> None:
+    """The kernel ids and their arities are the ABI between gcs.kernels and csrc/kernels.c;
+    adding a kernel to one and not the other must fail here rather than silently misalign a
+    compiled plan."""
+    out = np.zeros(4, dtype=np.int32)
+    assert LIB.gcs_kernel_count() == len(KERNELS)
+    for kid, k in enumerate(KERNELS):
+        LIB.gcs_kernel_info(kid, p32(out))
+        assert (int(out[0]), int(out[1]), int(out[2])) == (k.n_res, k.n_par, k.n_const), k.name
+        assert bool(out[3]) == (k.const_jac is not None), k.name
+
+
+def test_every_constraint_type_matches_the_c_kernel() -> None:
+    """Every constraint type, not just the ones the example sketches happen to use: one
+    single-constraint system per type, residuals and Jacobian compared with the Python
+    kernel at a random configuration."""
+    from tests.test_jacobians import all_constraints
+
+    seen = set()
+    for c in all_constraints(7):
+        seen.add(c.kernel.name)
+        sk = Sketch()
+        sk.params = [p for p in dict.fromkeys(c.params)]      # only what this constraint touches
+        for i, prm in enumerate(sk.params):
+            prm.index = i
+        sk.constraints = [c]
+        sys_ = System(sk)
+        h, _ = csystem(sys_)
+        try:
+            z = sys_.z0()
+            r = np.zeros(sys_.n_res)
+            LIB.gcs_system_residuals(h, p64(z), p64(r))
+            assert np.allclose(r, sys_.residuals(z), atol=1e-12), c
+            J = np.zeros((sys_.n_res, sys_.n_free))
+            LIB.gcs_system_jacobian_dense(h, p64(z), p64(J))
+            assert np.allclose(J, sys_.jacobian_dense(z), atol=1e-12), c
+        finally:
+            LIB.gcs_system_free(h)
+    assert seen == {k.name for k in KERNELS}, "a kernel has no constraint exercising it"

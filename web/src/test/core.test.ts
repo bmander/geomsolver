@@ -16,7 +16,8 @@ import { Sketch } from '../core/model.js';
 import { Rng } from '../core/rng.js';
 import { Drag, System, solve } from '../core/system.js';
 import { analyze } from '../core/witness.js';
-import { initCore } from '../core/wasm.js';
+import { IBuf, core, initCore } from '../core/wasm.js';
+import { KERNELS } from '../core/kernels.js';
 
 await initCore();
 
@@ -87,17 +88,25 @@ for (const name of Object.keys(examples.EXAMPLES)) {
   }
 }
 
-test('solve on a large truss uses the sparse path', () => {
-  const sk = examples.truss(60);
-  const sys = new System(sk);
-  try {
-    assert.ok(sys.nFree > 120);
-    sk.perturb(0.4, 1);
-    const res = sys.solve({});
-    assert.ok(res.success, `max|r| = ${res.maxResidual}`);
-  } finally {
-    sys.dispose();
+test('a large truss solves on either Jacobian path', () => {
+  // which path a size picks is the C core's business (newton.c); assert both work
+  for (const dense of [false, true]) {
+    const sk = examples.truss(60);
+    const sys = new System(sk);
+    try {
+      sk.perturb(0.4, 1);
+      const res = sys.solve({ dense });
+      assert.ok(res.success, `dense=${dense}: max|r| = ${res.maxResidual}`);
+    } finally {
+      sys.dispose();
+    }
   }
+});
+
+test('a disposed System refuses to be used again', () => {
+  const sys = new System(examples.truss(3));
+  sys.dispose();
+  assert.throws(() => sys.solve({}), /after dispose/);
 });
 
 test('a fully constrained sketch has rank equal to its free parameter count', () => {
@@ -499,4 +508,35 @@ test('deleting an entity removes what depends on it', () => {
   assert.equal(back.points.length, sk.points.length - 1);
   assert.ok(back.constraints.length < before);
   assert.ok(solve(back).success);
+});
+
+/* -- the ABI between TypeScript and the C core ---------------------------------- */
+
+test('the kernel table matches the C registry', () => {
+  // ids and arities are the contract: adding a kernel to one side only must fail here
+  // rather than silently misalign a compiled plan
+  const m = core();
+  assert.equal(m._gcs_kernel_count(), KERNELS.length);
+  const out = new IBuf(4);
+  try {
+    KERNELS.forEach((k, kid) => {
+      m._gcs_kernel_info(kid, out.ptr);
+      const [nRes, nPar, nConst] = out.view;
+      assert.deepEqual([nRes, nPar, nConst], [k.nRes, k.nPar, k.nConst], k.name);
+    });
+  } finally {
+    out.release();
+  }
+});
+
+test('every function gcs.d.ts declares is exported by the module', async () => {
+  // three hand-kept lists describe one API (csrc/gcs.h, the Makefile's EXPORTS, gcs.d.ts);
+  // this turns "forgot the Makefile" from a runtime failure into a test failure
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const decl = readFileSync(fileURLToPath(new URL('../../src/wasm/gcs.d.ts', import.meta.url)), 'utf8');
+  const names = [...new Set(decl.match(/_gcs_\w+/g) ?? [])];
+  assert.ok(names.length > 20, `expected the full API, found ${names.length}`);
+  const m = core() as unknown as Record<string, unknown>;
+  for (const n of names) assert.equal(typeof m[n], 'function', `${n} is declared but not exported`);
 });

@@ -53,6 +53,7 @@ class Diagnosis:
     n_equations: int                     # hard residual rows
     structural_rank: int                 # maximum matching size
     numeric_rank: int | None             # Jacobian rank at the current configuration (dense path only)
+    numeric_skipped: bool                # the cross-check was skipped: past the dense limit
     over: list[Constraint]               # constraints in the over-determined block (redundancy suspects)
     under_params: list[Param]            # parameters that can move: numeric (Jacobian null space) when
     #                                      available, else structural (DM under-block, which is generous)
@@ -77,6 +78,11 @@ class Diagnosis:
         return self.n_equations - self.structural_rank
 
     @property
+    def geometric_dependency(self) -> int:
+        """Dependencies only the numbers can see (0 when the cross-check did not run)."""
+        return 0 if self.numeric_rank is None else max(0, self.structural_rank - self.numeric_rank)
+
+    @property
     def status(self) -> State:
         if self.conflicts or self.violated:
             return "conflict"
@@ -89,9 +95,9 @@ class Diagnosis:
                  f"DOF {self.dof}"]
         if self.n_redundant:
             parts.append(f"{self.n_redundant} redundant equation(s) among {len(self.over)} constraint(s)")
-        if self.numeric_rank is not None and self.numeric_rank < self.structural_rank:
+        if self.geometric_dependency:
             parts.append(f"numeric rank {self.numeric_rank} < structural {self.structural_rank}: "
-                         f"{self.structural_rank - self.numeric_rank} geometric (theorem-type) dependency")
+                         f"{self.geometric_dependency} geometric (theorem-type) dependency")
         if self.conflicts:
             parts.append(f"CONFLICT — remove one of: {', '.join(type(c).__name__ for c in self.conflicts)}")
         elif self.violated:
@@ -164,7 +170,8 @@ def diagnose(sketch: Sketch, *, system: System | None = None, numeric: bool | No
     # -- numeric cross-check: rank and the parameters that can actually move --
     numeric_rank: int | None = None
     want_numeric = (n_cols <= numeric_max) if numeric is None else numeric
-    if not want_numeric and numeric is None and n_cols > numeric_max:
+    numeric_skipped = numeric is None and not want_numeric
+    if numeric_skipped:
         warnings.append(f"numeric cross-check skipped: {n_cols} free parameters is above the dense limit "
                         f"({numeric_max}) — the diagnosis below is structural only")
     if want_numeric and n_cols and sys_.n_res:
@@ -224,8 +231,9 @@ def diagnose(sketch: Sketch, *, system: System | None = None, numeric: bool | No
 
     if wit is not None:
         warnings += wit.warnings
-    return Diagnosis(n_cols, len(adj), dm.rank, numeric_rank, over_c, under_params, structural_under, components,
-                     state, clusters, redundant_d, violated, conflict_set, warnings, wit)
+    return Diagnosis(n_cols, len(adj), dm.rank, numeric_rank, numeric_skipped, over_c, under_params,
+                     structural_under, components, state, clusters, redundant_d, violated, conflict_set,
+                     warnings, wit)
 
 
 # ---------------------------------------------------------------------------

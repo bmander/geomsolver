@@ -1,8 +1,9 @@
 /* Loading the WebAssembly core and moving numbers across the boundary.
  *
- * The C library owns every number in the drag loop; this module is the only place that
- * knows about pointers.  Heap views are re-read on every access because the module grows
- * its memory on demand, which detaches the old typed arrays.
+ * The C library owns every number in the drag loop; `core/` is the only layer that knows
+ * about pointers (this module, `system.ts` and `linalg.ts`), and nothing under `app/` does.
+ * Heap views are re-read on every access because the module grows its memory on demand,
+ * which detaches the old typed arrays.
  */
 import factory, { GcsModule } from '../wasm/gcs.js';
 
@@ -20,81 +21,53 @@ export function core(): GcsModule {
   return mod;
 }
 
-export function malloc(bytes: number): number {
-  return core()._malloc(Math.max(bytes, 8));
-}
-
-export function free(ptr: number): void {
-  if (ptr) core()._free(ptr);
-}
-
-/** A block of doubles in the core's heap, with a matching JS view on demand. */
-export class Buf {
+/** A block of the core's heap with a matching JS view on demand.  `Buf` holds doubles and
+ *  `IBuf` 32-bit ints; both exist so callers never compute a byte offset themselves. */
+abstract class HeapArray<T extends Float64Array | Int32Array> {
   readonly ptr: number;
-  constructor(readonly len: number) {
-    this.ptr = malloc(len * 8);
+
+  constructor(readonly len: number, bytes: number) {
+    this.ptr = core()._malloc(Math.max(len * bytes, 8));
   }
-  get view(): Float64Array {
+
+  abstract get view(): T;
+
+  set(src: ArrayLike<number>): this {
+    this.view.set(src as T);
+    return this;
+  }
+
+  copy(): T {
+    return this.view.slice() as T;
+  }
+
+  release(): void {
+    if (this.ptr) core()._free(this.ptr);
+  }
+}
+
+export class Buf extends HeapArray<Float64Array> {
+  constructor(len: number) {
+    super(len, 8);
+  }
+  override get view(): Float64Array {
     return core().HEAPF64.subarray(this.ptr >> 3, (this.ptr >> 3) + this.len);
   }
-  set(src: ArrayLike<number>): this {
-    this.view.set(src as Float64Array);
-    return this;
-  }
-  copy(): Float64Array {
-    return new Float64Array(this.view);
-  }
-  release(): void {
-    free(this.ptr);
-  }
 }
 
-export class IBuf {
-  readonly ptr: number;
-  constructor(readonly len: number) {
-    this.ptr = malloc(len * 4);
+export class IBuf extends HeapArray<Int32Array> {
+  constructor(len: number) {
+    super(len, 4);
   }
-  get view(): Int32Array {
+  override get view(): Int32Array {
     return core().HEAP32.subarray(this.ptr >> 2, (this.ptr >> 2) + this.len);
   }
-  set(src: ArrayLike<number>): this {
-    this.view.set(src as Int32Array);
-    return this;
-  }
-  copy(): Int32Array {
-    return new Int32Array(this.view);
-  }
-  release(): void {
-    free(this.ptr);
-  }
-}
-
-/** Copy `a` into a fresh heap block; the caller releases it. */
-export function toHeapF64(a: ArrayLike<number>): Buf {
-  return new Buf(a.length).set(a);
-}
-
-export function toHeapI32(a: ArrayLike<number>): IBuf {
-  return new IBuf(a.length).set(a);
-}
-
-/** Run `fn` with temporary heap blocks, releasing them afterwards even on error. */
-export function withBufs<T>(bufs: { release(): void }[], fn: () => T): T {
-  try {
-    return fn();
-  } finally {
-    for (const b of bufs) b.release();
-  }
-}
-
-export function readF64(ptr: number, len: number): Float64Array {
-  return new Float64Array(core().HEAPF64.subarray(ptr >> 3, (ptr >> 3) + len));
 }
 
 export function readI32(ptr: number, len: number): Int32Array {
-  return new Int32Array(core().HEAP32.subarray(ptr >> 2, (ptr >> 2) + len));
+  return core().HEAP32.slice(ptr >> 2, (ptr >> 2) + len);
 }
 
 export function readU8(ptr: number, len: number): Uint8Array {
-  return new Uint8Array(core().HEAPU8.subarray(ptr, ptr + len));
+  return core().HEAPU8.slice(ptr, ptr + len);
 }

@@ -39,6 +39,10 @@ export interface Diagnosis {
   nEquations: number;              /* hard residual rows */
   structuralRank: number;          /* maximum matching size */
   numericRank: number | null;      /* Jacobian rank at the current configuration */
+  /** The numeric cross-check was skipped because the system is past the dense limit. */
+  numericSkipped: boolean;
+  /** How many dependencies only the numbers can see (0 when the check did not run). */
+  geometricDependency: number;
   over: Constraint[];              /* constraints in the over-determined block */
   underParams: Param[];            /* parameters that can move (numeric when available) */
   structuralUnderParams: Param[];
@@ -61,9 +65,9 @@ export function summary(d: Diagnosis): string {
     `DOF ${d.dof}`,
   ];
   if (d.nRedundant) parts.push(`${d.nRedundant} redundant equation(s) among ${d.over.length} constraint(s)`);
-  if (d.numericRank !== null && d.numericRank < d.structuralRank) {
+  if (d.geometricDependency) {
     parts.push(`numeric rank ${d.numericRank} < structural ${d.structuralRank}: `
-      + `${d.structuralRank - d.numericRank} geometric (theorem-type) dependency`);
+      + `${d.geometricDependency} geometric (theorem-type) dependency`);
   }
   if (d.conflicts && d.conflicts.length) {
     parts.push(`CONFLICT — remove one of: ${d.conflicts.map((c) => c.typeName).join(', ')}`);
@@ -152,7 +156,8 @@ export function diagnose(sketch: Sketch, opts: DiagnoseOptions = {}): Diagnosis 
     let numericRank: number | null = null;
     const numericMax = opts.numericMax ?? NUMERIC_MAX;
     const wantNumeric = opts.numeric ?? nCols <= numericMax;
-    if (!wantNumeric && opts.numeric === undefined && nCols > numericMax) {
+    const numericSkipped = opts.numeric === undefined && !wantNumeric;
+    if (numericSkipped) {
       warnings.push(`numeric cross-check skipped: ${nCols} free parameters is above the dense limit `
         + `(${numericMax}) — the diagnosis below is structural only`);
     }
@@ -183,7 +188,7 @@ export function diagnose(sketch: Sketch, opts: DiagnoseOptions = {}): Diagnosis 
     // -- violated / conflicts --
     const violated = violatedConstraints(sys, tol);
     let conflictSet: Constraint[] | null = null;
-    if (opts.conflicts || (opts.conflicts === undefined || opts.conflicts === null) && violated.length) {
+    if (opts.conflicts ?? violated.length > 0) {
       // Candidates = the structurally over-determined block (where a redundancy must live);
       // if the graph sees nothing wrong (e.g. the triangle inequality) fall back to the
       // violated constraints.  Everything else stays fixed, so the result is minimal "among
@@ -231,7 +236,8 @@ export function diagnose(sketch: Sketch, opts: DiagnoseOptions = {}): Diagnosis 
     const status: State = (conflictSet && conflictSet.length) || violated.length ? 'conflict'
       : nRedundant ? 'over' : dof > 0 ? 'under' : 'well';
     return {
-      nParams: nCols, nEquations: adj.length, structuralRank: dm.rank, numericRank,
+      nParams: nCols, nEquations: adj.length, structuralRank: dm.rank, numericRank, numericSkipped,
+      geometricDependency: numericRank === null ? 0 : Math.max(0, dm.rank - numericRank),
       over, underParams, structuralUnderParams: structuralUnder, components,
       entityState: state, rigidClusters: clusters, redundantDistances: redundant,
       violated, conflicts: conflictSet, warnings, witness: wit, dof, nRedundant, status,
@@ -253,7 +259,8 @@ export function minimalConflictSet(sketch: Sketch, candidates: Constraint[] | nu
   const x0 = sketch.getX();
   const hard = sketch.hardConstraints();
   const cands = (candidates ?? hard).filter((c) => !c.soft);
-  const others = hard.filter((c) => !cands.includes(c));
+  const candSet = new Set(cands);
+  const others = hard.filter((c) => !candSet.has(c));
   const lim = tolAbs(sketch, tol);
   const saved = sketch.constraints;
 

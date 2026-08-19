@@ -57,9 +57,7 @@ gcs_system *gcs_system_new(int n_params, const double *x0,
     }
     s->n_res = row0;
     s->n_cons = ncons;
-    s->gidx_len = goff;
     s->consts_len = coff;
-    s->jdata_len = joff;
     s->gidx = (int32_t *)malloc(sizeof(int32_t) * (size_t)(goff ? goff : 1));
     memcpy(s->gidx, gidx, sizeof(int32_t) * (size_t)goff);
     s->consts = (double *)malloc(sizeof(double) * (size_t)(coff ? coff : 1));
@@ -107,13 +105,11 @@ gcs_system *gcs_system_new(int n_params, const double *x0,
     s->ent_src = (int32_t *)malloc(sizeof(int32_t) * (size_t)(ne ? ne : 1));
     s->ent_slot = (int32_t *)malloc(sizeof(int32_t) * (size_t)(ne ? ne : 1));
     s->csr_indices = (int32_t *)malloc(sizeof(int32_t) * (size_t)(ne ? ne : 1));
-    s->csr_flat = (int64_t *)malloc(sizeof(int64_t) * (size_t)(ne ? ne : 1));
     s->csr_indptr = (int32_t *)calloc((size_t)row0 + 1, sizeof(int32_t));
     int nnz = 0;
     for (int e = 0; e < ne; e++) {
         if (e == 0 || es[e].key != es[e - 1].key) {
             s->csr_indices[nnz] = es[e].key % ncols;
-            s->csr_flat[nnz] = es[e].key;
             s->csr_indptr[es[e].key / ncols + 1] = nnz + 1;
             nnz++;
         }
@@ -133,7 +129,7 @@ void gcs_system_free(gcs_system *s)
     if (!s) return;
     free(s->x); free(s->free_idx); free(s->col_of); free(s->blocks);
     free(s->gidx); free(s->consts); free(s->V); free(s->jdata); free(s->r); free(s->hard);
-    free(s->ent_src); free(s->ent_slot); free(s->csr_indices); free(s->csr_flat);
+    free(s->ent_src); free(s->ent_slot); free(s->csr_indices);
     free(s->csr_indptr); free(s->csr_data);
     if (s->ata) gcs_ata_free(s->ata);
     free(s);
@@ -214,14 +210,12 @@ void gcs_system_csr_data(gcs_system *s, const double *z, double *data)
 
 void gcs_system_jacobian_dense(gcs_system *s, const double *z, double *J)
 {
-    gcs_system_csr_data(s, z, s->csr_data);
-    int ncols = s->n_free > 0 ? s->n_free : 1;
-    memset(J, 0, sizeof(double) * (size_t)s->n_res * (size_t)(s->n_free ? s->n_free : 1));
     if (!s->n_free) return;
-    for (int i = 0; i < s->nnz; i++) {
-        int64_t flat = s->csr_flat[i];
-        J[(size_t)(flat / ncols) * s->n_free + (flat % ncols)] = s->csr_data[i];
-    }
+    gcs_system_csr_data(s, z, s->csr_data);
+    memset(J, 0, sizeof(double) * (size_t)s->n_res * s->n_free);
+    for (int r = 0; r < s->n_res; r++)
+        for (int p = s->csr_indptr[r]; p < s->csr_indptr[r + 1]; p++)
+            J[(size_t)r * s->n_free + s->csr_indices[p]] = s->csr_data[p];
 }
 
 double gcs_system_max_hard_residual(gcs_system *s, const double *z)

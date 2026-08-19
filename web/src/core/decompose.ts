@@ -21,10 +21,10 @@
  */
 import { ConstraintGraph, Edge, El, X_AXIS, build, cmpEl, el, elIdx, elKind, lineNormal, normalOf, remainder, sortEls } from './cgraph.js';
 import { dulmageMendelsohn } from './graph.js';
-import { Mat, mat, minNormSolve, rankRrqr } from './linalg.js';
+import { Mat, absmax, dot, mat, minNormSolve, norm, rankRrqr } from './linalg.js';
 import { Arc, Circle, Point, Sketch } from './model.js';
 import { Rng } from './rng.js';
-import { Drag, Method, SolveResult, System, Triangle, increments, orientation } from './system.js';
+import { Drag, Method, SolveResult, System, Triangle, increments, now, orientation } from './system.js';
 
 /** point: (x, y); line: (nx, ny, c) */
 export type Pose = Float64Array;
@@ -46,6 +46,8 @@ export class Cluster {
  *  and `branch` (+-1 chirality: the orientation of (x, z, y)) — set by the replay from the
  *  sketch when null, so a persisted plan replays the recorded root. */
 export class Step {
+  private cachedKey: string | null | undefined;
+
   constructor(
     readonly ids: number[],
     readonly pairs: Pair[],
@@ -62,8 +64,10 @@ export class Step {
    *  Keyed by the sketch indices of the three points, not by compiled element indices, so it
    *  survives save/load and edits that renumber elements. */
   key(graph: ConstraintGraph): string | null {
-    if (!this.ppp) return null;
-    return 'ppp:' + this.ppp.map((e) => graph.pointIndex(e)).join('|');
+    if (this.cachedKey === undefined) {
+      this.cachedKey = this.ppp ? 'ppp:' + this.ppp.map((e) => graph.pointIndex(e)).join('|') : null;
+    }
+    return this.cachedKey;
   }
 }
 
@@ -122,7 +126,8 @@ export class Plan {
 
   /** Flip the root of every closed-form merge that constructs `e`; returns how many. */
   flip(e: El): number {
-    const sts = this.stepsPlacing(e).map(([, st]) => st).filter((st) => st.ppp !== null);
+    // stepsPlacing returns closed-form steps when there are any, numeric ones otherwise
+    const sts = this.stepsPlacing(e).map(([, st]) => st).filter((st) => st.ppp);
     for (const st of sts) st.branch = -(st.branch ?? 1);
     return sts.length;
   }
@@ -188,13 +193,6 @@ export function applyT(T: Float64Array, e: El, pose: Pose): Pose {
 
 export function makeT(theta: number, tx: number, ty: number): Float64Array {
   return Float64Array.of(Math.cos(theta), Math.sin(theta), tx, ty);
-}
-
-function poseOf(e: El, pose: Pose, th: number, tx: number, ty: number): Pose {
-  const c = Math.cos(th), s = Math.sin(th);
-  if (elKind(e) === 'P') return Float64Array.of(c * pose[0] - s * pose[1] + tx, s * pose[0] + c * pose[1] + ty);
-  const n0 = c * pose[0] - s * pose[1], n1 = s * pose[0] + c * pose[1];
-  return Float64Array.of(n0, n1, pose[2] + n0 * tx + n1 * ty);
 }
 
 /** Pose of `e` under (theta, t) and its Jacobian with respect to (theta, tx, ty). */
@@ -266,13 +264,11 @@ function mergeSystem(cl: Cluster[], pairs: Pair[], dpairs: DPair[], kMovable: nu
 
   const pose = (u: Float64Array, ci: number, e: El): Pose => {
     const p = cl[ci].els.get(e)!;
-    return ci === 0 ? p : poseOf(e, p, u[3 * (ci - 1)], u[3 * (ci - 1) + 1], u[3 * (ci - 1) + 2]);
+    return ci === 0 ? p : applyT(makeT(u[3 * (ci - 1)], u[3 * (ci - 1) + 1], u[3 * (ci - 1) + 2]), e, p);
   };
-  const dpose = (u: Float64Array, ci: number, e: El): [Pose, number[][]] => {
-    const p = cl[ci].els.get(e)!;
-    if (ci === 0) return [p, Array.from({ length: p.length }, () => [0, 0, 0])];
-    return poseJac(e, p, u[3 * (ci - 1)], u[3 * (ci - 1) + 1], u[3 * (ci - 1) + 2]);
-  };
+  /** Jacobian of a moving cluster's pose; null for the reference, whose block is skipped. */
+  const dpose = (u: Float64Array, ci: number, e: El): number[][] | null =>
+    ci === 0 ? null : poseJac(e, cl[ci].els.get(e)!, u[3 * (ci - 1)], u[3 * (ci - 1) + 1], u[3 * (ci - 1) + 2])[1];
 
   return {
     m, n,
@@ -294,11 +290,11 @@ function mergeSystem(cl: Cluster[], pairs: Pair[], dpairs: DPair[], kMovable: nu
       const J = mat(m, n);
       let r = 0;
       for (const [i, j, e] of pairs) {
-        const [pi, Ji] = dpose(u, i, e);
-        const [, Jj] = dpose(u, j, e);
-        for (let t = 0; t < pi.length; t++, r++) {
-          if (i > 0) for (let q = 0; q < 3; q++) J.data[r * n + 3 * (i - 1) + q] += Ji[t][q];
-          if (j > 0) for (let q = 0; q < 3; q++) J.data[r * n + 3 * (j - 1) + q] -= Jj[t][q];
+        const Ji = dpose(u, i, e);
+        const Jj = dpose(u, j, e);
+        for (let t = 0, rows = size(e); t < rows; t++, r++) {
+          if (Ji) for (let q = 0; q < 3; q++) J.data[r * n + 3 * (i - 1) + q] += Ji[t][q];
+          if (Jj) for (let q = 0; q < 3; q++) J.data[r * n + 3 * (j - 1) + q] -= Jj[t][q];
         }
       }
       for (const [i, j] of dpairs) {          // d angle / d theta_b = 1, / d theta_a = -1
@@ -318,15 +314,15 @@ function newtonSmall(sys: MergeSystem, u0: Float64Array, tol = 1e-13, maxIter = 
   let u = new Float64Array(u0);
   let r = sys.fun(u);
   for (let it = 0; it < maxIter; it++) {
-    if (!r.length || maxAbs(r) < tol) break;
+    if (!r.length || absmax(r) < tol) break;
     const neg = new Float64Array(r.length);
     for (let i = 0; i < r.length; i++) neg[i] = -r[i];
     const { x: p } = minNormSolve(sys.jac(u), neg);
     for (let i = 0; i < u.length; i++) u[i] += p[i];
     r = sys.fun(u);
-    if (maxAbs(p) < 1e-15) break;
+    if (absmax(p) < 1e-15) break;
   }
-  return [u, r.length ? maxAbs(r) : 0];
+  return [u, r.length ? absmax(r) : 0];
 }
 
 /** Globalised fallback: DogLeg on the same tiny system, in TypeScript because the residual
@@ -337,27 +333,27 @@ function doglegSmall(sys: MergeSystem, u0: Float64Array, maxIter = 300): Float64
   let delta = Infinity;
   const n = sys.n;
   for (let it = 0; it < maxIter; it++) {
-    if (maxAbs(r) < 1e-13) break;
+    if (absmax(r) < 1e-13) break;
     const J = sys.jac(u);
-    const f = 0.5 * dotf(r, r);
+    const f = 0.5 * dot(r, r);
     const g = new Float64Array(n);
     for (let i = 0; i < sys.m; i++) for (let j = 0; j < n; j++) g[j] += J.data[i * n + j] * r[i];
-    if (maxAbs(g) < 1e-18) break;
+    if (absmax(g) < 1e-18) break;
     const neg = new Float64Array(sys.m);
     for (let i = 0; i < sys.m; i++) neg[i] = -r[i];
     const { x: pGn } = minNormSolve(J, neg);
     let p: Float64Array;
-    const gnNorm = Math.hypot(...pGn);
+    const gnNorm = norm(pGn);
     if (gnNorm <= delta) {
       p = pGn;
     } else {
       const Jg = new Float64Array(sys.m);
       for (let i = 0; i < sys.m; i++) for (let j = 0; j < n; j++) Jg[i] += J.data[i * n + j] * g[j];
-      const jg = dotf(Jg, Jg);
-      const alpha = jg > 0 ? dotf(g, g) / jg : 0;
+      const jg = dot(Jg, Jg);
+      const alpha = jg > 0 ? dot(g, g) / jg : 0;
       const pSd = new Float64Array(n);
       for (let i = 0; i < n; i++) pSd[i] = -alpha * g[i];
-      const sdNorm = Math.sqrt(dotf(pSd, pSd));
+      const sdNorm = norm(pSd);
       if (sdNorm >= delta) {
         p = new Float64Array(n);
         for (let i = 0; i < n; i++) p[i] = (pSd[i] * delta) / (sdNorm || 1);
@@ -371,12 +367,12 @@ function doglegSmall(sys: MergeSystem, u0: Float64Array, maxIter = 300): Float64
         for (let i = 0; i < n; i++) p[i] = pSd[i] + tau * (pGn[i] - pSd[i]);
       }
     }
-    const pnorm = Math.sqrt(dotf(p, p));
-    if (pnorm < 1e-14 * (1 + Math.sqrt(dotf(u, u)))) break;
+    const pnorm = norm(p);
+    if (pnorm < 1e-14 * (1 + norm(u))) break;
     const uNew = new Float64Array(n);
     for (let i = 0; i < n; i++) uNew[i] = u[i] + p[i];
     const rNew = sys.fun(uNew);
-    const fNew = 0.5 * dotf(rNew, rNew);
+    const fNew = 0.5 * dot(rNew, rNew);
     let lin = 0;
     for (let i = 0; i < sys.m; i++) {
       let v = r[i];
@@ -392,21 +388,10 @@ function doglegSmall(sys: MergeSystem, u0: Float64Array, maxIter = 300): Float64
     } else {
       delta = 0.25 * pnorm;
     }
-    if (delta < 1e-15 * (1 + Math.sqrt(dotf(u, u)))) break;
+    if (delta < 1e-15 * (1 + norm(u))) break;
   }
   return u;
 }
-
-const maxAbs = (v: ArrayLike<number>): number => {
-  let m = 0;
-  for (let i = 0; i < v.length; i++) { const a = Math.abs(v[i]); if (a > m) m = a; }
-  return m;
-};
-const dotf = (a: ArrayLike<number>, b: ArrayLike<number>): number => {
-  let s = 0;
-  for (let i = 0; i < a.length; i++) s += a[i] * b[i];
-  return s;
-};
 
 /** Dimension of the rigid motions that leave every element of the cluster in place: empty 3,
  *  a lone point 1, lines only and all parallel 1, otherwise 0.  (Poses are generic, so two
@@ -875,8 +860,6 @@ export interface PlanResult {
   numeric: SolveResult | null;
 }
 
-const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
-
 /** The same outcome in the solver's common result type (method 'plan' or the fallback's). */
 export function asSolveResult(pr: PlanResult): SolveResult {
   if (pr.numeric) return pr.numeric;
@@ -893,6 +876,7 @@ export function asSolveResult(pr: PlanResult): SolveResult {
 export class PlanSolver {
   readonly graph: ConstraintGraph;
   readonly plan: Plan;
+  /** Owned by this PlanSolver — borrow it (diagnosis does), never dispose it. */
   readonly system: System;
 
   constructor(readonly sketch: Sketch, sticky = false) {

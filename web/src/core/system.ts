@@ -9,14 +9,10 @@
 import { Constraint, DragTarget } from './constraints.js';
 import { K, KERNELS } from './kernels.js';
 import { Point, Sketch } from './model.js';
-import { Buf, IBuf, core, readI32, readU8 } from './wasm.js';
+import { Buf, IBuf, core, readU8 } from './wasm.js';
 
 export type Method = 'dogleg' | 'lm';
 export const METHODS: Method[] = ['dogleg', 'lm'];
-
-/** Free parameters up to which the dense Jacobian path (exact minimum-norm step and a
- *  rank) is used; above it the sparse normal equations take over.  Mirrors the C default. */
-export const DENSE_MAX = 120;
 
 const STATUS: Record<number, string> = {
   0: 'residual tolerance reached',
@@ -45,10 +41,11 @@ export interface Block {
   kernelId: K;
   constraints: Constraint[];
   gidx: Int32Array;       /* (n * nPar) global parameter index per local column */
-  row0: number;
 }
 
-const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+/** Seconds, monotonic where available — the one timer the core uses. */
+export const now = (): number =>
+  (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
 
 export class System {
   readonly sketch: Sketch;
@@ -62,7 +59,7 @@ export class System {
   readonly scale: number;
   readonly hard: Uint8Array;
 
-  private handle: number;
+  private handle_: number;
   private slotOf = new Map<Constraint, [number, number]>();
   private bx: Buf;
   private bz: Buf;
@@ -70,7 +67,15 @@ export class System {
   private bJ: Buf | null = null;
   private bInfo: IBuf;
   private bConst: Buf;
+  private bScratch: Buf | null = null;
   private disposed = false;
+
+  /** The C handle.  Every entry point goes through here so a use-after-dispose throws
+   *  instead of calling into freed heap. */
+  private get handle(): number {
+    if (this.disposed) throw new Error('System used after dispose()');
+    return this.handle_;
+  }
 
   constructor(sketch: Sketch) {
     this.sketch = sketch;
@@ -108,7 +113,7 @@ export class System {
         if (k.nConst) constsAll.push(...cs[i].consts());
         soft.push(cs[i].soft ? 1 : 0);
       }
-      this.blocks.push({ kernelId: kid, constraints: cs, gidx, row0 });
+      this.blocks.push({ kernelId: kid, constraints: cs, gidx });
       gidxAll.push(...gidx);
       kernelId.push(kid);
       count.push(cs.length);
@@ -118,35 +123,36 @@ export class System {
 
     const x0 = sketch.getX();
     const bufs = [
-      new Buf(Math.max(n, 1)).set(x0),
-      new IBuf(Math.max(this.nFree, 1)).set(this.free),
-      new IBuf(Math.max(kernelId.length, 1)).set(kernelId),
-      new IBuf(Math.max(count.length, 1)).set(count),
-      new IBuf(Math.max(gidxAll.length, 1)).set(gidxAll),
-      new Buf(Math.max(constsAll.length, 1)).set(constsAll),
-      new IBuf(Math.max(soft.length, 1)).set(soft),
+      new Buf(n).set(x0),
+      new IBuf(this.nFree).set(this.free),
+      new IBuf(kernelId.length).set(kernelId),
+      new IBuf(count.length).set(count),
+      new IBuf(gidxAll.length).set(gidxAll),
+      new Buf(constsAll.length).set(constsAll),
+      new IBuf(soft.length).set(soft),
     ] as const;
-    this.handle = core()._gcs_system_new(
+    this.handle_ = core()._gcs_system_new(
       n, bufs[0].ptr, this.nFree, bufs[1].ptr, kernelId.length,
       bufs[2].ptr, bufs[3].ptr, bufs[4].ptr, bufs[5].ptr, bufs[6].ptr,
     );
     for (const b of bufs) b.release();
 
-    this.bx = new Buf(Math.max(n, 1));
-    this.bz = new Buf(Math.max(this.nFree, 1));
-    this.br = new Buf(Math.max(this.nRes, 1));
+    this.bx = new Buf(n);
+    this.bz = new Buf(this.nFree);
+    this.br = new Buf(this.nRes);
     this.bInfo = new IBuf(5);
-    this.bConst = new Buf(Math.max(constsAll.length, 1));
-    this.hard = readU8(core()._gcs_system_hard(this.handle), Math.max(this.nRes, 1)).subarray(0, this.nRes);
+    this.bConst = new Buf(constsAll.length);
+    this.hard = readU8(core()._gcs_system_hard(this.handle), this.nRes);
   }
 
   dispose(): void {
     if (this.disposed) return;
+    core()._gcs_system_free(this.handle_);
     this.disposed = true;
-    core()._gcs_system_free(this.handle);
+    this.handle_ = 0;
     this.bx.release(); this.bz.release(); this.br.release(); this.bInfo.release(); this.bConst.release();
-    if (this.bJ) this.bJ.release();
-    this.handle = 0;
+    this.bJ?.release();
+    this.bScratch?.release();
   }
 
   // -- constants -----------------------------------------------------------
@@ -158,9 +164,12 @@ export class System {
     if (!slot) return;
     const vals = c.consts();
     if (!vals.length) return;
-    const b = new Buf(vals.length).set(vals);
-    core()._gcs_system_set_consts(this.handle, slot[0], slot[1], b.ptr);
-    b.release();
+    if (!this.bScratch || this.bScratch.len < vals.length) {
+      this.bScratch?.release();
+      this.bScratch = new Buf(vals.length);       // reused: this runs once per drag frame
+    }
+    this.bScratch.view.set(vals);
+    core()._gcs_system_set_consts(this.handle, slot[0], slot[1], this.bScratch.ptr);
   }
 
   /** Re-read every constraint's constants (after arbitrary dimension edits). */
@@ -198,18 +207,10 @@ export class System {
   }
 
   jacobianDense(z: ArrayLike<number>): { rows: number; cols: number; data: Float64Array } {
-    if (!this.bJ) this.bJ = new Buf(Math.max(this.nRes * this.nFree, 1));
+    if (!this.bJ) this.bJ = new Buf(this.nRes * this.nFree);
     this.bz.set(z);
     core()._gcs_system_jacobian_dense(this.handle, this.bz.ptr, this.bJ.ptr);
     return { rows: this.nRes, cols: this.nFree, data: this.bJ.copy() };
-  }
-
-  csrIndptr(): Int32Array {
-    return readI32(core()._gcs_system_csr_indptr(this.handle), this.nRes + 1);
-  }
-
-  csrIndices(): Int32Array {
-    return readI32(core()._gcs_system_csr_indices(this.handle), core()._gcs_system_nnz(this.handle));
   }
 
   /** max |r| over hard rows at z (default: the current sketch values) — what "solved" means. */
@@ -220,8 +221,7 @@ export class System {
 
   /** max |residual| per constraint, from one vectorized evaluation. */
   constraintErrors(z?: ArrayLike<number>): Map<Constraint, number> {
-    const nCons = this.constraints.length;
-    const out = new Buf(Math.max(nCons, 1));
+    const out = new Buf(this.constraints.length);
     try {
       this.bz.set(z ?? this.z0());
       core()._gcs_system_constraint_errors(this.handle, this.bz.ptr, out.ptr);
@@ -241,26 +241,18 @@ export class System {
     return core()._gcs_system_rank(this.handle, this.bz.ptr, rcond, hardOnly ? 1 : 0);
   }
 
-  /** First residual row of a constraint. */
-  rowOf(c: Constraint): number {
-    const slot = this.slotOf.get(c);
-    if (!slot) return -1;
-    const blk = this.blocks[slot[0]];
-    return blk.row0 + slot[1] * KERNELS[blk.kernelId].nRes;
-  }
-
   /** Structural Jacobian as a bipartite graph: adj[row] = sorted free columns with a
    *  structural nonzero, plus row -> owning constraint.  The public surface for diagnosis
    *  and decomposition, derived from the compiled blocks so it stays in step with what the
-   *  solver actually evaluates. */
-  structure(hardOnly = true): { adj: number[][]; rowC: Constraint[] } {
+   *  solver actually evaluates.  Soft rows (drag targets) are never part of it. */
+  structure(): { adj: number[][]; rowC: Constraint[] } {
     const adj: number[][] = [];
     const rowC: Constraint[] = [];
     for (const blk of this.blocks) {
       const k = KERNELS[blk.kernelId];
       for (let i = 0; i < blk.constraints.length; i++) {
         const c = blk.constraints[i];
-        if (hardOnly && c.soft) continue;
+        if (c.soft) continue;
         const cols = new Set<number>();
         for (let t = 0; t < k.nPar; t++) {
           const col = this.colOf[blk.gidx[i * k.nPar + t]];
@@ -288,45 +280,39 @@ export class System {
     const maxIter = opts.maxIter ?? 100;
     const writeback = opts.writeback ?? true;
     const t0 = now();
-    const z = this.z0();
-    if (this.nFree === 0 || this.nRes === 0) {
-      const r = this.residuals(z);
-      let n2 = 0;
-      for (let i = 0; i < r.length; i++) n2 += r[i] * r[i];
-      return this.result(0, Math.sqrt(n2), this.maxHard(r), 1, 0, 0, now() - t0, method, null);
-    }
-    const dense = opts.dense === undefined || opts.dense === null ? this.nFree <= DENSE_MAX : opts.dense;
-    this.bz.set(z);
+    this.z0();                                    // leaves the free values in bz
+    // dense < 0 lets the C core pick by size; that threshold lives in one place, in newton.c
+    const dense = opts.dense === undefined || opts.dense === null ? -1 : Number(opts.dense);
     core()._gcs_system_solve(
       this.handle, method === 'lm' ? 1 : 0,
       tol * this.scale, 1e-12, 1e-16 * this.scale,
-      maxIter, opts.maxNfev ?? 0, dense ? 1 : 0, this.bz.ptr, this.bInfo.ptr,
+      maxIter, opts.maxNfev ?? 0, dense, this.bz.ptr, this.bInfo.ptr,
     );
-    const info = this.bInfo.copy();
-    const zs = this.bz.copy();
-    if (writeback) this.sketch.setX(this.fullX(zs));
-    const r = this.residuals(zs);
-    let nrm = 0;
-    for (let i = 0; i < r.length; i++) nrm += r[i] * r[i];
-    return this.result(info[0], Math.sqrt(nrm), this.maxHard(r), info[1], info[2], info[3],
-                       now() - t0, method, info[4] < 0 ? null : info[4]);
+    const info = this.bInfo.view;
+    if (writeback) {
+      core()._gcs_system_get_x(this.handle, this.bx.ptr);   // the solve wrote z back into x
+      this.sketch.setX(this.bx.view);
+    }
+    core()._gcs_system_residuals(this.handle, this.bz.ptr, this.br.ptr);
+    return this.result(info, this.br.view, now() - t0, method);
   }
 
-  private maxHard(r: Float64Array): number {
-    let mx = 0;
-    for (let i = 0; i < r.length; i++) if (this.hard[i]) { const a = Math.abs(r[i]); if (a > mx) mx = a; }
-    return mx;
-  }
-
-  private result(status: number, nrm: number, mx: number, nfev: number, njev: number,
-                 iterations: number, timeS: number, method: string, rank: number | null): SolveResult {
+  /** Build the result from the core's info block and the residual still sitting in `br`. */
+  private result(info: Int32Array, r: Float64Array, timeS: number, method: string): SolveResult {
+    let n2 = 0, mx = 0;
+    for (let i = 0; i < r.length; i++) {
+      n2 += r[i] * r[i];
+      if (this.hard[i]) { const a = Math.abs(r[i]); if (a > mx) mx = a; }
+    }
+    const [status, nfev, njev, iterations, rank] = info;
     return {
       success: status >= 0 && mx < 1e-6 * this.scale,
       status,
       message: STATUS[status] ?? 'unknown',
-      residualNorm: nrm,
+      residualNorm: Math.sqrt(n2),
       maxResidual: mx,
-      nfev, njev, timeS, method, iterations, rank,
+      nfev, njev, timeS, method, iterations,
+      rank: rank < 0 ? null : rank,
     };
   }
 }

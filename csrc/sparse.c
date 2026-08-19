@@ -52,15 +52,15 @@ static void rcm(int n, const int32_t *ap, const int32_t *ai, int32_t *perm, int3
 /* Davis's up-looking LDL^T: symbolic elimination tree and column counts. */
 static void ldl_symbolic(int n, const int32_t *ap, const int32_t *ai, int32_t *lp,
                          int32_t *parent, int32_t *lnz, int32_t *flag,
-                         const int32_t *perm, const int32_t *iperm)
+                         const int32_t *perm, const int32_t *iperm)   /* both required */
 {
     for (int k = 0; k < n; k++) {
         parent[k] = -1;
         flag[k] = k;
         lnz[k] = 0;
-        int kk = perm ? perm[k] : k;
+        int kk = perm[k];
         for (int p = ap[kk]; p < ap[kk + 1]; p++) {
-            int i = iperm ? iperm[ai[p]] : ai[p];
+            int i = iperm[ai[p]];
             if (i >= k) continue;
             for (; flag[i] != k; i = parent[i]) {
                 if (parent[i] == -1) parent[i] = k;
@@ -83,16 +83,16 @@ static int ldl_numeric(int n, const int32_t *ap, const int32_t *ai, const double
         int top = n;
         flag[k] = k;
         lnz[k] = 0;
-        int kk = perm ? perm[k] : k;
+        int kk = perm[k];
         for (int p = ap[kk]; p < ap[kk + 1]; p++) {
-            int i = iperm ? iperm[ai[p]] : ai[p];
+            int i = iperm[ai[p]];
             if (i > k) continue;
             y[i] += ax[p];
             int len = 0;
             for (; flag[i] != k; i = parent[i]) { pattern[len++] = i; flag[i] = k; }
             while (len > 0) pattern[--top] = pattern[--len];
         }
-        d[k] = y[k] + (damp ? damp[kk] : 0.0);
+        d[k] = y[k] + damp[kk];
         y[k] = 0.0;
         for (; top < n; top++) {
             int i = pattern[top];
@@ -146,7 +146,6 @@ gcs_ata *gcs_ata_new(int n_rows, int n_cols, const int32_t *indptr, const int32_
         }
         a->ta[t] = tr[t].a; a->tb[t] = tr[t].b; a->ts[t] = nnz - 1;
     }
-    for (int i = 0; i < a->n; i++) if (a->ap[i + 1] < a->ap[i]) a->ap[i + 1] = a->ap[i];
     for (int i = 1; i <= a->n; i++) if (a->ap[i] < a->ap[i - 1]) a->ap[i] = a->ap[i - 1];
     a->nnz = nnz;
     a->ai = (int32_t *)malloc(sizeof(int32_t) * (nnz ? nnz : 1));
@@ -194,6 +193,14 @@ void gcs_ata_fill(gcs_ata *a, const double *jdata)
 {
     memset(a->ax, 0, sizeof(double) * (size_t)(a->nnz ? a->nnz : 1));
     for (int t = 0; t < a->n_tri; t++) a->ax[a->ts[t]] += jdata[a->ta[t]] * jdata[a->tb[t]];
+}
+
+void gcs_ata_diag(const gcs_ata *a, double *d)
+{
+    for (int i = 0; i < a->n; i++) {
+        d[i] = 0.0;
+        for (int q = a->ap[i]; q < a->ap[i + 1]; q++) if (a->ai[q] == i) d[i] = a->ax[q];
+    }
 }
 
 int gcs_ata_solve(gcs_ata *a, const double *damp, double *b)

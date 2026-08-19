@@ -40,28 +40,23 @@ static double absmax(const double *v, int n)
 /* -- the Jacobian, dense or sparse, behind one interface -------------------- */
 
 typedef struct {
-    gcs_system *s;    /* NULL for the callback-driven path */
+    gcs_system *s;
     int dense, m, n;
     double *J;        /* dense m*n */
     double *data;     /* csr values (points at s->csr_data) */
-    double *work;     /* n scratch */
+    double *work;     /* n scratch, sparse path only */
     int rank;
-    void *cb_ctx;     /* callback path: caller-supplied residual/Jacobian */
-    gcs_fun cb_fun;
-    gcs_jacfn cb_jac;
 } jac_ctx;
 
 static void jac_eval(jac_ctx *c, const double *z)
 {
-    if (!c->s) c->cb_jac(c->cb_ctx, z, c->J);
-    else if (c->dense) gcs_system_jacobian_dense(c->s, z, c->J);
+    if (c->dense) gcs_system_jacobian_dense(c->s, z, c->J);
     else gcs_system_csr_data(c->s, z, c->data);
 }
 
 static void res_eval(jac_ctx *c, const double *z, double *out)
 {
-    if (!c->s) c->cb_fun(c->cb_ctx, z, out);
-    else gcs_system_residuals(c->s, z, out);
+    gcs_system_residuals(c->s, z, out);
 }
 
 /* out (n) <- J^T v (m) */
@@ -120,10 +115,9 @@ static int gn_step(jac_ctx *c, const double *r, const double *g, double *p)
     if (!c->s->ata) c->s->ata = gcs_ata_new(c->m, c->n, c->s->csr_indptr, c->s->csr_indices);
     gcs_ata *a = c->s->ata;
     gcs_ata_fill(a, c->data);
+    gcs_ata_diag(a, c->work);
     double dmax = 0.0;
-    for (int i = 0; i < a->n; i++)
-        for (int q = a->ap[i]; q < a->ap[i + 1]; q++)
-            if (a->ai[q] == i && a->ax[q] > dmax) dmax = a->ax[q];
+    for (int i = 0; i < c->n; i++) if (c->work[i] > dmax) dmax = c->work[i];
     double eps = EPS_REL * dmax;
     if (eps <= 0.0) eps = 1e-30;
     for (int i = 0; i < c->n; i++) { c->work[i] = eps; p[i] = -g[i]; }
@@ -241,10 +235,7 @@ static int lm_core(jac_ctx *c, double *z, double *r, double ftol, double xtol, d
         } else {
             if (!c->s->ata) c->s->ata = gcs_ata_new(m, n, c->s->csr_indptr, c->s->csr_indices);
             gcs_ata_fill(c->s->ata, c->data);
-            gcs_ata *a = c->s->ata;
-            for (int i = 0; i < n; i++) D[i] = 0.0;
-            for (int i = 0; i < a->n; i++)
-                for (int q = a->ap[i]; q < a->ap[i + 1]; q++) if (a->ai[q] == i) D[i] = a->ax[q];
+            gcs_ata_diag(c->s->ata, D);
         }
         double dmax = 0.0;
         for (int i = 0; i < n; i++) if (D[i] > dmax) dmax = D[i];
@@ -294,9 +285,7 @@ done:
     info->njev = njev;
     info->iterations = it;
     info->rank = -1;
-    free(g); free(p); free(D); free(damp); free(z_new); free(r_new);
-    if (A) free(A);
-    if (Ad) free(Ad);
+    free(g); free(p); free(D); free(damp); free(z_new); free(r_new); free(A); free(Ad);
     return status;
 }
 
@@ -314,32 +303,13 @@ int gcs_system_solve(gcs_system *s, int method, double ftol, double xtol, double
     c.s = s; c.dense = dense; c.m = s->n_res; c.n = s->n_free;
     c.J = dense ? (double *)malloc(sizeof(double) * (size_t)s->n_res * s->n_free) : NULL;
     c.data = s->csr_data;
-    c.work = (double *)malloc(sizeof(double) * (size_t)s->n_free);
-    c.rank = -1;
+    c.work = dense ? NULL : (double *)malloc(sizeof(double) * (size_t)s->n_free);
     double *r = (double *)malloc(sizeof(double) * (size_t)s->n_res);
     gcs_system_residuals(s, z, r);
     int st = (method == GCS_LM)
         ? lm_core(&c, z, r, ftol, xtol, gtol, max_iter, max_nfev, info)
         : dogleg_core(&c, z, r, ftol, xtol, gtol, max_iter, max_nfev, info);
     gcs_system_apply_z(s, z);
-    free(r); free(c.work);
-    if (c.J) free(c.J);
-    return st;
-}
-
-/* Callback-driven dense DogLeg for the decomposition's tiny merge systems. */
-int gcs_dogleg(void *ctx, gcs_fun fun, gcs_jacfn jac, int m, int n, double *u,
-               double ftol, double xtol, double gtol, int max_iter, gcs_info *info)
-{
-    jac_ctx c;
-    memset(&c, 0, sizeof(c));
-    c.dense = 1; c.m = m; c.n = n;
-    c.cb_ctx = ctx; c.cb_fun = fun; c.cb_jac = jac;
-    c.J = (double *)malloc(sizeof(double) * (size_t)(m ? m : 1) * (size_t)(n ? n : 1));
-    c.work = (double *)malloc(sizeof(double) * (size_t)(n ? n : 1));
-    double *r = (double *)malloc(sizeof(double) * (size_t)(m ? m : 1));
-    fun(ctx, u, r);
-    int st = dogleg_core(&c, u, r, ftol, xtol, gtol, max_iter, 4 * max_iter, info);
-    free(r); free(c.J); free(c.work);
+    free(r); free(c.work); free(c.J);
     return st;
 }

@@ -98,13 +98,18 @@ const SIMPLE: [string, C.ConstraintCtor, number, number, number][] = [
   ['Midpoint', C.Midpoint, 1, 1, 0],
   ['On circle', C.PointOnCircle, 1, 0, 1],
 ];
-addButton(barConstraints, { label: 'Coincident', onClick: () => applySimple(SIMPLE[0]) });
-addButton(barConstraints, { label: 'Distance', onClick: () => void cDistance() });
-for (const s of SIMPLE.slice(1)) addButton(barConstraints, { label: s[0], onClick: () => applySimple(s) });
-addButton(barConstraints, { label: 'Angle', onClick: () => void cAngle() });
-addButton(barConstraints, { label: 'Equal', onClick: () => cEqual() });
-addButton(barConstraints, { label: 'Tangent', onClick: () => cTangent() });
-addButton(barConstraints, { label: 'Radius', onClick: () => void cRadius() });
+/* the toolbar order interleaves the dimensioned constraints with the entity-only ones */
+type Applier = [string, () => void];
+const CONSTRAINT_BUTTONS: Applier[] = [
+  [SIMPLE[0][0], () => applySimple(SIMPLE[0])],
+  ['Distance', () => void cDistance()],
+  ...SIMPLE.slice(1).map(([label, ...rest]) => [label, () => applySimple([label, ...rest] as typeof SIMPLE[number])] as Applier),
+  ['Angle', () => void cAngle()],
+  ['Equal', () => cEqual()],
+  ['Tangent', () => cTangent()],
+  ['Radius', () => void cRadius()],
+];
+for (const [label, onClick] of CONSTRAINT_BUTTONS) addButton(barConstraints, { label, onClick });
 addButton(barConstraints, { label: 'Fix', key: 'f', onClick: () => view.toggleFixSelected() });
 
 /* -- selection helpers -------------------------------------------------------- */
@@ -125,7 +130,7 @@ function need(ok: boolean, what: string): boolean {
 
 /** Generic applier: checks the selection has the required counts and passes the entities in
  *  spec order.  Single-line constraints (Horizontal/Vertical) apply to every selected line. */
-function applySimple([label, cls, nPts, nLines, nCirc]: typeof SIMPLE[number]): void {
+function applySimple([, cls, nPts, nLines, nCirc]: typeof SIMPLE[number]): void {
   const { pts, lines, circles } = sel();
   const perLine = nPts === 0 && nLines === 1 && nCirc === 0;
   const ok = pts.length === nPts && circles.length === nCirc
@@ -143,13 +148,12 @@ function applySimple([label, cls, nPts, nLines, nCirc]: typeof SIMPLE[number]): 
     }
     view.addConstraint(new (cls as unknown as new (...a: unknown[]) => Constraint)(...args));
   }
-  void label;
 }
 
 async function cDistance(): Promise<void> {
   let { pts } = sel();
   const { lines } = sel();
-  if (pts.length === 0 && lines.length === 1) pts = [lines[0].p1, lines[0].p2];
+  if (!pts.length && lines.length === 1) pts = [lines[0].p1, lines[0].p2];
   if (!need(pts.length === 2, 'two points (or one line)')) return;
   const cur = Math.hypot(pts[0].x.value - pts[1].x.value, pts[0].y.value - pts[1].y.value);
   const v = await askNumber('Distance', 'Distance', cur);
@@ -390,7 +394,8 @@ function sameRows(a: Constraint[], b: Constraint[]): boolean {
   return a.length === b.length && a.every((c, i) => c === b[i]);
 }
 
-function refresh(): void {
+/** Rows and banner: everything that only changes when the sketch or the selection does. */
+function refreshRows(): void {
   const sk = view.sketch;
   const next = sk.userConstraints();
   if (!sameRows(next, rows)) rebuildRows(next);
@@ -400,7 +405,7 @@ function refresh(): void {
   const selDirect = new Set(view.selected);
   const selAll = new Set(expand(view.selected));
   const culprits = new Set(d?.conflicts ?? []);
-  const bad = new Set([...(d?.conflicts ?? []), ...(d?.violated ?? [])]);
+  const bad = new Set(d?.violated ?? []);          // culprits are handled first, below
   const over = new Set(d?.over ?? []);
   rows.forEach((c, i) => {
     const li = clist.children[i] as HTMLElement;
@@ -415,7 +420,13 @@ function refresh(): void {
     li.classList.toggle('touches', hit);
     li.setAttribute('aria-current', String(c === currentConstraint));
   });
+  refreshBanner();
+}
 
+/** The status line — the only thing that changes on every frame of a drag. */
+function refreshStatus(): void {
+  const sk = view.sketch;
+  const d = view.diagnosis;
   const r = view.lastResult;
   let msg = `points ${sk.points.length}  lines ${sk.lines.length}  circles ${sk.circles.length}  arcs ${sk.arcs.length}`
     + `   | params ${sk.params.length} (free ${sk.freeIndices().length})  equations ${sk.nResiduals()}`;
@@ -423,8 +434,8 @@ function refresh(): void {
     msg += `  DOF ${d.dof}`;
     if (d.nRedundant) msg += `  redundant ${d.nRedundant}`;
     if (d.status === 'conflict') msg += '  ⚠ CONFLICT';
-    else if (d.numericRank !== null && d.numericRank < d.structuralRank) msg += '  ⚠ geometric dependency';
-    else if (d.numericRank === null && d.warnings.length) msg += '  (structural only)';
+    else if (d.geometricDependency) msg += '  ⚠ geometric dependency';
+    else if (d.numericSkipped) msg += '  (structural only)';
   }
   msg += `   | selected ${view.selected.length}`;
   if (r) {
@@ -435,7 +446,11 @@ function refresh(): void {
     msg += `   | plan: ${view.lastPlan.plan.summary()}${view.lastPlan.fellBack ? ' (fell back)' : ''}`;
   }
   stats(msg);
-  refreshBanner();
+}
+
+function refresh(): void {
+  refreshRows();
+  refreshStatus();
 }
 
 function refreshBanner(): void {
@@ -498,6 +513,7 @@ window.addEventListener('keydown', (e) => {
 /* -- boot ------------------------------------------------------------------------- */
 
 view.onChanged = refresh;
+view.onDragFrame = refreshStatus;
 view.onStatus = toast;
 new ResizeObserver(() => view.resize()).observe(canvas);
 view.resize();

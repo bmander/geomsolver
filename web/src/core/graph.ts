@@ -187,7 +187,10 @@ export function pebbleGame(n: number, edges: readonly (readonly [number, number]
   const independent: number[] = [];
   const redundant: number[] = [];
   let components: number[][] = [];
-  const compsOf: Set<number>[] = Array.from({ length: n }, () => new Set());
+  // vertex -> the components containing it, by identity: keeping the component arrays (not
+  // their positions) means subsuming one only touches its own members, not all n vertices
+  const compsOf: Set<number[]>[] = Array.from({ length: n }, () => new Set());
+  const freePebbles = new Set<number>(Array.from({ length: n }, (_, i) => i));
 
   const orient = (a: number, b: number): void => { out[a].add(b); rev[b].add(a); };
   const unorient = (a: number, b: number): void => { out[a].delete(b); rev[b].delete(a); };
@@ -205,8 +208,9 @@ export function pebbleGame(n: number, edges: readonly (readonly [number, number]
         seen.add(w);
         parent.set(w, u);
         if (peb[w] > 0) {
-          peb[w]--;
+          if (--peb[w] === 0) freePebbles.delete(w);
           peb[src]++;
+          freePebbles.add(src);
           let x = w;
           while (x !== src) {
             const p = parent.get(x)!;
@@ -242,7 +246,7 @@ export function pebbleGame(n: number, edges: readonly (readonly [number, number]
     if (u === v || shareComponent(u, v)) { redundant.push(ei); continue; }
     while (peb[u] + peb[v] < 4) if (!(findPebble(u, v) || findPebble(v, u))) break;
     if (peb[u] + peb[v] < 4) { redundant.push(ei); continue; }
-    peb[u]--;
+    if (--peb[u] === 0) freePebbles.delete(u);
     orient(u, v);
     independent.push(ei);
     // component detection: u,v now hold exactly 3 pebbles.  If some other free pebble is
@@ -253,7 +257,7 @@ export function pebbleGame(n: number, edges: readonly (readonly [number, number]
     for (const w of R) if (w !== u && w !== v && peb[w] > 0) { other = true; break; }
     if (other) continue;
     const free: number[] = [];
-    for (let w = 0; w < n; w++) if (peb[w] > 0 && w !== u && w !== v) free.push(w);
+    for (const w of freePebbles) if (w !== u && w !== v) free.push(w);
     const canReachFree = new Set(free);
     const stack = [...free];
     while (stack.length) {
@@ -263,11 +267,15 @@ export function pebbleGame(n: number, edges: readonly (readonly [number, number]
     const comp: number[] = [];
     for (let w = 0; w < n; w++) if (!canReachFree.has(w)) comp.push(w);
     const cset = new Set(comp);
-    const subsumed = (c: number[]): boolean => c.every((w) => cset.has(w));
-    components = components.filter((c) => !subsumed(c));
-    components.push(comp);
-    for (let w = 0; w < n; w++) compsOf[w].clear();
-    components.forEach((c, ci) => { for (const w of c) compsOf[w].add(ci); });
+    // subsume the components contained in the new one, touching only their own vertices
+    const kept: number[][] = [];
+    for (const c of components) {
+      if (c.every((w) => cset.has(w))) for (const w of c) compsOf[w].delete(c);
+      else kept.push(c);
+    }
+    kept.push(comp);
+    components = kept;
+    for (const w of comp) compsOf[w].add(comp);
   }
   const dof = n >= 2 ? Math.max(0, 2 * n - 3 - independent.length) : 0;
   components.sort((a, b) => (a[0] - b[0]) || (a.length - b.length));

@@ -1,16 +1,15 @@
 /* The sketch view: world/screen mapping, canvas painting, hit testing, the drawing tools and
  * the drag.  Every mutation funnels through `afterEdit`, which re-solves (when auto-solve is
  * on), re-diagnoses and notifies the shell exactly once. */
-import * as C from '../core/constraints.js';
 import * as io from '../core/io.js';
 import { Constraint } from '../core/constraints.js';
 import { PlanDrag, PlanResult, PlanSolver, asSolveResult, pppTriangles } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
-import { Arc, Circle, Line, Point, Primitive, Sketch, expand } from '../core/model.js';
+import { Arc, Circle, Line, Point, Primitive, Sketch } from '../core/model.js';
 import { Method, SolveResult, System, Triangle } from '../core/system.js';
 import { Motion, WitnessReport, analyze, movingParams } from '../core/witness.js';
 
-export const PICK_PX = 8;
+const PICK_PX = 8;
 
 const COL = {
   bg: '#fafafa',
@@ -65,6 +64,8 @@ export class SketchView {
   lastPlan: PlanResult | null = null;
 
   onChanged: () => void = () => {};
+  /** Per drag frame: nothing but the numbers changed, so only the status line needs it. */
+  onDragFrame: () => void = () => {};
   onStatus: (msg: string) => void = () => {};
 
   private ctx: CanvasRenderingContext2D;
@@ -73,7 +74,6 @@ export class SketchView {
   private planSolver: PlanSolver | null = null;
   private planKey = '';
   private lastSystem: System | null = null;
-  private ownsSystem = false;
   private witness: WitnessReport | null = null;
   private witnessFor: Diagnosis | null = null;
   private anim: Animation | null = null;
@@ -87,7 +87,6 @@ export class SketchView {
     this.sketch = sketch;
     this.ctx = canvas.getContext('2d')!;
     this.bindEvents();
-    this.rediagnose(null);
   }
 
   // -- coordinates ---------------------------------------------------------
@@ -144,10 +143,10 @@ export class SketchView {
     this.planKey = '';
   }
 
+  /** The plan solver owns its System; anything else we compiled here is ours to free. */
   private releaseSystem(): void {
-    if (this.ownsSystem) this.lastSystem?.dispose();
+    if (this.lastSystem && this.lastSystem !== this.planSolver?.system) this.lastSystem.dispose();
     this.lastSystem = null;
-    this.ownsSystem = false;
   }
 
   /** The decomposition plan, compiled once per topology (constraints, entities, fixed flags)
@@ -173,14 +172,12 @@ export class SketchView {
     if (this.usePlan && this.sketch.constraints.length) {
       const ps = this.plan();
       this.lastPlan = ps.solve(1e-9, true, this.method);     // reads and records sketch.branches
-      this.lastSystem = ps.system;
-      this.ownsSystem = false;
+      this.lastSystem = ps.system;                           // borrowed, not ours to dispose
       return asSolveResult(this.lastPlan);
     }
     this.lastPlan = null;
     const sys = new System(this.sketch);
     this.lastSystem = sys;
-    this.ownsSystem = true;
     return sys.solve({ method: this.method });
   }
 
@@ -673,7 +670,7 @@ export class SketchView {
         this.flipsReported = this.drag.flips.length;
         this.onStatus(`⚠ solution branch flipped in ${this.flipsReported} triangle(s) during this drag`);
       }
-      this.onChanged();
+      this.onDragFrame();
     }
     this.draw();
   }
@@ -703,5 +700,3 @@ function segDist(p: [number, number], a: [number, number], b: [number, number]):
   t = Math.max(0, Math.min(1, t));
   return dist(p, [a[0] + t * vx, a[1] + t * vy]);
 }
-
-export { COL, COL_STATE, expand, C };

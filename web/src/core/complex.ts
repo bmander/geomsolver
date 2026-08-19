@@ -28,12 +28,6 @@ export const cnorm = (re: Float64Array, im: Float64Array): number => {
   return Math.sqrt(s);
 };
 
-export const cabsmax = (re: Float64Array, im: Float64Array): number => {
-  let m = 0;
-  for (let i = 0; i < re.length; i++) m = Math.max(m, Math.hypot(re[i], im[i]));
-  return m;
-};
-
 /** C = A * B with A complex and B real (row-major). */
 export function cmulReal(A: CMat, Bre: Float64Array, bRows: number, bCols: number): CMat {
   const C = cmat(A.rows, bCols);

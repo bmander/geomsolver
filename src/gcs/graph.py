@@ -203,7 +203,10 @@ def pebble_game(n: int, edges: Sequence[tuple[int, int]]) -> PebbleResult:
     independent: list[int] = []
     redundant: list[int] = []
     components: list[frozenset[int]] = []
-    comps_of: list[set[int]] = [set() for _ in range(n)]  # vertex → indices into `components`
+    # vertex → the components containing it, by identity: keeping the component objects (not
+    # their positions) means subsuming one only touches its own members, not all n vertices
+    comps_of: list[set[frozenset[int]]] = [set() for _ in range(n)]
+    free_pebbles = set(range(n))                        # {w : peb[w] > 0}, maintained in step
 
     def orient(a: int, b: int) -> None:
         out[a].add(b)
@@ -229,7 +232,10 @@ def pebble_game(n: int, edges: Sequence[tuple[int, int]]) -> PebbleResult:
                 if peb[w] > 0:
                     # reverse the path src → ... → w
                     peb[w] -= 1
+                    if not peb[w]:
+                        free_pebbles.discard(w)
                     peb[src] += 1
+                    free_pebbles.add(src)
                     x = w
                     while x != src:
                         p = parent[x]
@@ -264,6 +270,8 @@ def pebble_game(n: int, edges: Sequence[tuple[int, int]]) -> PebbleResult:
             continue
         # accept: orient u -> v, consuming a pebble from u
         peb[u] -= 1
+        if not peb[u]:
+            free_pebbles.discard(u)
         orient(u, v)
         independent.append(ei)
         # component detection: u,v now hold exactly 3 pebbles.  If some other free
@@ -272,7 +280,7 @@ def pebble_game(n: int, edges: Sequence[tuple[int, int]]) -> PebbleResult:
         R = reach([u, v])
         if any(peb[w] > 0 for w in R if w not in (u, v)):
             continue
-        free = [w for w in range(n) if peb[w] > 0 and w not in (u, v)]
+        free = [w for w in free_pebbles if w not in (u, v)]
         can_reach_free = set(free)
         stack = list(free)
         while stack:
@@ -282,13 +290,17 @@ def pebble_game(n: int, edges: Sequence[tuple[int, int]]) -> PebbleResult:
                     can_reach_free.add(a)
                     stack.append(a)
         comp = frozenset(w for w in range(n) if w not in can_reach_free)
-        # subsume old components contained in the new one; keep comps_of in sync
-        keep = [c for c in components if not c <= comp]
-        components = keep + [comp]
-        for w in range(n):
-            comps_of[w].clear()
-        for ci, c in enumerate(components):
-            for w in c:
-                comps_of[w].add(ci)
+        # subsume old components contained in the new one; keep comps_of in sync by touching
+        # only the vertices of the components that actually changed
+        kept: list[frozenset[int]] = []
+        for c in components:
+            if c <= comp:
+                for w in c:
+                    comps_of[w].discard(c)
+            else:
+                kept.append(c)
+        components = kept + [comp]
+        for w in comp:
+            comps_of[w].add(comp)
     dof = max(0, 2 * n - 3 - len(independent)) if n >= 2 else 0
     return PebbleResult(independent, redundant, sorted(components, key=lambda c: (min(c), len(c))), dof)
