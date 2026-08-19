@@ -114,14 +114,14 @@ def test_branches_survive_save_load_and_replay_sticky() -> None:
     sk.add(C.Distance(a, c, 6), C.Distance(b, c, 6))
     ps = PlanSolver(sk, sticky=True)
     ps.solve()
-    ps.plan.flip(ps.graph.P(c))
+    ps.flip(ps.graph.P(c))
     ps.solve()
     assert c.y.value < 0
     sk.branches.update(ps.plan.branches())
     sk2 = io.loads(io.dumps(sk))
     assert sk2.branches == sk.branches
     sk2.points[2].y.value = 4.0                                 # sketch moved to the other side...
-    PlanSolver(sk2, sk2.branches, sticky=True).solve()
+    PlanSolver(sk2, sticky=True).solve()
     assert sk2.points[2].y.value < 0                           # ...the recorded root wins
 
 
@@ -132,3 +132,21 @@ def test_continuation_subdivides_large_moves() -> None:
     res = d.move(p.xy[0] + 200, p.xy[1])                       # far beyond one increment
     d.end()
     assert res.success and res.nfev > 1                        # nfev = number of increments on the plan path
+
+
+def test_flip_survives_a_later_solve_by_the_same_cached_plan() -> None:
+    """Root choices are document state: a plan cached per topology must not replay the old
+    branch after a flip (the app keeps one PlanSolver per topology and re-solves on every edit)."""
+    sk = Sketch()
+    a, b = sk.point(0, 0, fixed=True), sk.point(10, 0, fixed=True)
+    c = sk.point(5, 4)
+    sk.add(C.Distance(a, c, 6), C.Distance(b, c, 6))
+    ps = PlanSolver(sk, sticky=True)          # the cached solver
+    ps.solve()
+    assert c.y.value > 0
+    assert ps.flip(ps.graph.P(c)) == 1
+    ps.solve()
+    assert c.y.value < 0 and sk.branches
+    for _ in range(3):                        # every later solve keeps the chosen root
+        ps.solve()
+        assert c.y.value < 0

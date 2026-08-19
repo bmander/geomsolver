@@ -28,8 +28,9 @@ from PySide6.QtWidgets import (
 from gcs import constraints as C
 from gcs import io
 from gcs.constraints import ENTITY_KINDS, Constraint
-from gcs.decompose import PlanDrag, PlanResult, PlanSolver
+from gcs.decompose import PlanDrag, PlanResult, PlanSolver, ppp_triangles
 from gcs.diagnose import Diagnosis, diagnose
+from gcs.homotopy import apply_alternative, enumerate_step
 from gcs.examples import CASES, EXAMPLES
 from gcs.model import Arc, Circle, Line, Point, Primitive, Sketch, Vec, expand
 from gcs.solve import METHODS, Method, SolveResult, System
@@ -74,6 +75,7 @@ class SketchView(QWidget):
         self.last_plan: PlanResult | None = None
         self._plan_solver: PlanSolver | None = None
         self._plan_key: object = None
+        self._flips_reported = 0
         # Stage 4: animation of the remaining DOFs (witness null-space modes)
         self.anim_timer = QTimer(self)
         self.anim_timer.timeout.connect(self._anim_tick)
@@ -137,15 +139,14 @@ class SketchView(QWidget):
         key = (tuple(id(c) for c in sk.constraints), tuple(p.fixed for p in sk.params),
                len(sk.points), len(sk.lines), len(sk.circles), len(sk.arcs))
         if self._plan_solver is None or key != self._plan_key:
-            self._plan_solver, self._plan_key = PlanSolver(sk, sk.branches, sticky=True), key
+            self._plan_solver, self._plan_key = PlanSolver(sk, sticky=True), key
         return self._plan_solver
 
     def _solve(self) -> tuple[SolveResult, System]:
         """One solve by the selected path; returns the result and the compiled System."""
         if self.use_plan and self.sketch.constraints:
             ps = self._plan()
-            self.last_plan = ps.solve(method=self.method)
-            self.sketch.branches.update(ps.plan.branches())
+            self.last_plan = ps.solve(method=self.method)     # reads/records sketch.branches
             return self.last_plan.as_solve_result(), ps.system
         self.last_plan = None
         system = System(self.sketch)
@@ -436,7 +437,10 @@ class SketchView(QWidget):
                 self.selected = [ent]
             if isinstance(ent, Point) and not ent.is_fixed:
                 self.push_undo()
-                self.drag = PlanDrag(self.sketch, ent, *self.s2w(sp), self.sketch.branches)
+                cached = self._plan_solver
+                guards = ppp_triangles(cached.plan) if cached is not None else None
+                self.drag = PlanDrag(self.sketch, ent, *self.s2w(sp), guards=guards)
+                self._flips_reported = 0
         self.changed.emit()
         self.update()
 
@@ -495,8 +499,9 @@ class SketchView(QWidget):
             self.pan_last = sp
         elif self.drag is not None:
             self.last_result = self.drag.move(*self.s2w(sp))
-            if self.drag.flips:
-                self.status.emit(f"⚠ solution branch flipped in {len(self.drag.flips)} triangle(s) during this drag")
+            if len(self.drag.flips) > self._flips_reported:      # only announce new ones
+                self._flips_reported = len(self.drag.flips)
+                self.status.emit(f"⚠ solution branch flipped in {self._flips_reported} triangle(s) during this drag")
             self.changed.emit()
         self.update()
 
@@ -870,57 +875,43 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("select a point (or a tangency row) to flip its solution branch", 4000)
             return
         sk = self.view.sketch
-        ps = PlanSolver(sk, sk.branches, sticky=True)
-        n = 0
-        for p in pts:
-            n += ps.plan.flip(ps.graph.P(p))
+        ps = self.view._plan()                    # the plan cached for this topology
+        self.view.push_undo()
+        n = sum(ps.flip(ps.graph.P(p)) for p in pts)
         if not n:
             self.statusBar().showMessage("no closed-form construction places the selected point(s)", 4000)
             return
-        self.view.push_undo()
         r = ps.solve()
-        sk.branches.update(ps.plan.branches())
         self.view._after_edit()
         self.statusBar().showMessage(f"flipped {n} construction(s)" + ("" if r.success else " — the other root is not reachable here"), 5000)
 
     def alternatives(self) -> None:
         """Stage 5: enumerate the real solutions of the construction that places the selected
         point (homotopy continuation on its merge system) and let the user pick one."""
-        from gcs.decompose import _apply, _T, execute
-        from gcs.homotopy import apply_alternative, enumerate_step
-
         pts = [e for e in self.view.selected if isinstance(e, Point)]
         if len(pts) != 1:
             self.statusBar().showMessage("select exactly one point", 4000)
             return
         sk = self.view.sketch
-        ps = PlanSolver(sk, sk.branches, sticky=True)
+        ps = self.view._plan()                    # the plan cached for this topology
         el = ps.graph.P(pts[0])
-        cands = [i for i, st in enumerate(ps.plan.steps)
-                 if (st.ppp is not None and st.ppp[1] == el) or (st.ppp is None and any(e == el for _, _, e in st.pairs))]
-        if not cands:
+        placing = ps.plan.steps_placing(el)
+        if not placing:
             self.statusBar().showMessage("no construction places that point (under-constrained or not decomposable)", 5000)
             return
-        idx = cands[0]
+        idx = placing[0][0]
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            alts = enumerate_step(ps.plan, idx)
-            parts = execute(ps.plan, capture=idx) or []
+            alts = enumerate_step(ps.plan, idx, locate=el)
         finally:
             QApplication.restoreOverrideCursor()
         if len(alts) < 2:
             self.statusBar().showMessage(f"{len(alts)} real solution(s) for this construction — nothing to choose", 5000)
             return
-        # where would the point land under each alternative?
-        q = next((k for k, c in enumerate(parts[1:]) if el in c.els), None)
-        labels = []
-        for a in alts:
-            if q is not None:
-                pos = _apply(_T(*a.u[3 * q: 3 * q + 3]), el, parts[q + 1].els[el])
-                where = f"point at ({pos[0]:.3g}, {pos[1]:.3g})"
-            else:
-                where = f"distance {a.distance:.3g}"
-            labels.append(("● current — " if a.is_current else "") + where)
+        labels = [("● current — " if a.is_current else "")
+                  + (f"point at ({a.location[0]:.3g}, {a.location[1]:.3g})" if a.location is not None
+                     else f"distance {a.distance:.3g}")
+                  for a in alts]
         choice, ok = QInputDialog.getItem(self, "Alternative solutions",
                                           f"{len(alts)} real solutions of this construction:", labels, 0, False)
         if not ok:
@@ -930,7 +921,6 @@ class MainWindow(QMainWindow):
             return
         self.view.push_undo()
         apply_alternative(ps.plan, idx, alt)
-        sk.branches.update(ps.plan.branches())
         self.view._after_edit()
         self.statusBar().showMessage("switched to the chosen solution", 4000)
 

@@ -20,14 +20,14 @@ of rotations, which is exactly the cost the decomposition minimises.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.linalg import qr
+from scipy.linalg import null_space, qr
 
 from gcs.cgraph import El
-from gcs.decompose import Cluster, Plan, Step, _apply, _T, execute
+from gcs.decompose import Cluster, Plan, Step, _apply, _T, execute, write_point
+from gcs.newton import rank_rrqr
 
 CVec = np.ndarray  # complex vectors
 
@@ -35,8 +35,12 @@ CVec = np.ndarray  # complex vectors
 @dataclass
 class Alternative:
     u: np.ndarray            # transform vector (θ, tx, ty) per movable cluster, relative to the current leaves
-    distance: float          # ‖w − w_identity‖
-    is_current: bool
+    distance: float          # ‖w − w_identity‖: 0 for the root the sketch is on
+    location: tuple[float, float] | None = None   # where a requested point element would land
+
+    @property
+    def is_current(self) -> bool:
+        return self.distance < 1e-6
 
 
 class _Poly:
@@ -51,23 +55,18 @@ class _Poly:
         self.offsets: list[tuple[int, int, El]] = []      # (i, j, line) pairs with a bilinear offset row
 
         def lin_pose(ci: int, el: El) -> tuple[np.ndarray, np.ndarray]:
-            """Affine part of the pose: rows × (n + 1) [coefficients | constant] for the linear rows."""
+            """Affine part of a pose (2 rows): coefficient matrix and constant vector.
+            Points contribute both coordinates; lines contribute their normal (the offset
+            coordinate is bilinear and lives in Q)."""
             p = np.asarray(parts[ci].els[el], dtype=float)
-            m = 2                                          # point: 2 rows; line: 2 normal rows (offset separate)
-            M = np.zeros((m, self.n + 1))
+            M = np.zeros((2, self.n))
             if ci == 0:
-                M[:, -1] = p[:2]
-                return M[:, :-1], M[:, -1]
+                return M, p[:2]
             o = 4 * (ci - 1)
-            if el.kind == "P":
-                x, y = p
-                M[0, o:o + 4] = [x, -y, 1, 0]
-                M[1, o:o + 4] = [y, x, 0, 1]
-            else:
-                nx, ny = p[0], p[1]
-                M[0, o:o + 4] = [nx, -ny, 0, 0]
-                M[1, o:o + 4] = [ny, nx, 0, 0]
-            return M[:, :-1], M[:, -1]
+            a, b = (p[0], p[1])
+            M[0, o:o + 4] = [a, -b, 1, 0] if el.kind == "P" else [a, -b, 0, 0]
+            M[1, o:o + 4] = [b, a, 0, 1] if el.kind == "P" else [b, a, 0, 0]
+            return M, np.zeros(2)
 
         for i, j, e in step.pairs:
             Ai, ci = lin_pose(i, e)
@@ -86,43 +85,52 @@ class _Poly:
         self.b = np.concatenate(rhs) if rhs else np.zeros(0)
         self.parts = parts
         self.m_q = len(self.offsets) + self.k
+        # per-offset constants, hoisted out of the tracking loops
+        self._off = [((i, *np.asarray(parts[i].els[e], dtype=float)),
+                      (j, *np.asarray(parts[j].els[e], dtype=float))) for i, j, e in self.offsets]
 
-    def _offset(self, w: CVec, ci: int, el: El) -> tuple[complex, CVec]:
-        """Offset coordinate of a line pose under cluster ci's transform, with its gradient."""
-        p = self.parts[ci].els[el]
-        g = np.zeros(self.n, dtype=complex)
+    def _offset(self, w: CVec, data: tuple[int, float, float, float], grad: CVec | None) -> complex:
+        """Offset coordinate of a line pose under a cluster's transform; fills `grad` if given."""
+        ci, nx, ny, cc = data
         if ci == 0:
-            return complex(p[2]), g
+            return complex(cc)
         c, s, tx, ty = w[4 * (ci - 1): 4 * ci]
-        nx, ny, cc = float(p[0]), float(p[1]), float(p[2])
         n0, n1 = c * nx - s * ny, s * nx + c * ny
-        o = 4 * (ci - 1)
-        g[o:o + 4] = [nx * tx + ny * ty, -ny * tx + nx * ty, n0, n1]
-        return cc + n0 * tx + n1 * ty, g
+        if grad is not None:
+            o = 4 * (ci - 1)
+            grad[o:o + 4] += np.array([nx * tx + ny * ty, -ny * tx + nx * ty, n0, n1])
+        return complex(cc + n0 * tx + n1 * ty)
 
-    def Q(self, w: CVec) -> CVec:
-        out = np.empty(self.m_q, dtype=complex)
-        for r, (i, j, e) in enumerate(self.offsets):
-            out[r] = self._offset(w, i, e)[0] - self._offset(w, j, e)[0]
+    def QJ(self, w: CVec, want_jac: bool = True) -> tuple[CVec, CVec | None]:
+        """Quadratic rows and (optionally) their Jacobian — one pass, since the offset rows
+        produce value and gradient together."""
+        q_ = np.empty(self.m_q, dtype=complex)
+        J = np.zeros((self.m_q, self.n), dtype=complex) if want_jac else None
+        n_off = len(self._off)
+        for r, (a, b) in enumerate(self._off):
+            ga = np.zeros(self.n, dtype=complex) if want_jac else None
+            gb = np.zeros(self.n, dtype=complex) if want_jac else None
+            q_[r] = self._offset(w, a, ga) - self._offset(w, b, gb)
+            if J is not None and ga is not None and gb is not None:
+                J[r] = ga - gb
         for q in range(self.k):
             c, s = w[4 * q], w[4 * q + 1]
-            out[len(self.offsets) + q] = c * c + s * s - 1
-        return out
+            q_[n_off + q] = c * c + s * s - 1
+            if J is not None:
+                J[n_off + q, 4 * q] = 2 * c
+                J[n_off + q, 4 * q + 1] = 2 * s
+        return q_, J
 
-    def JQ(self, w: CVec) -> CVec:
-        J = np.zeros((self.m_q, self.n), dtype=complex)
-        for r, (i, j, e) in enumerate(self.offsets):
-            J[r] = self._offset(w, i, e)[1] - self._offset(w, j, e)[1]
-        for q in range(self.k):
-            J[len(self.offsets) + q, 4 * q] = 2 * w[4 * q]
-            J[len(self.offsets) + q, 4 * q + 1] = 2 * w[4 * q + 1]
-        return J
+    def Q(self, w: CVec) -> CVec:
+        return self.QJ(w, want_jac=False)[0]
 
     def F(self, w: CVec) -> CVec:
         return np.concatenate([self.A @ w - self.b, self.Q(w)])
 
     def J(self, w: CVec) -> CVec:
-        return np.vstack([self.A.astype(complex), self.JQ(w)])
+        jq = self.QJ(w)[1]
+        assert jq is not None
+        return np.vstack([self.A.astype(complex), jq])
 
 
 def _w_to_u(w: CVec) -> np.ndarray:
@@ -134,10 +142,11 @@ def _w_to_u(w: CVec) -> np.ndarray:
     return u
 
 
-def enumerate_step(plan: Plan, step_index: int, *, seed: int = 0, max_paths: int = 256,
-                   max_steps: int = 400, diverge: float = 1e6) -> list[Alternative]:
+def enumerate_step(plan: Plan, step_index: int, *, locate: El | None = None, seed: int = 0,
+                   max_paths: int = 256, max_steps: int = 400, diverge_rel: float = 50.0) -> list[Alternative]:
     """Real solutions of the merge at `step_index` (the current one first).  Returns [] if the
-    merge is not isolated (under-determined) or too large (> max_paths)."""
+    merge is not isolated (under-determined) or too large (> max_paths).  `locate` asks where
+    that point element would land under each alternative."""
     rng = np.random.default_rng(seed)
     parts = execute(plan, capture=step_index)
     if parts is None or len(parts) < 2:
@@ -147,7 +156,7 @@ def enumerate_step(plan: Plan, step_index: int, *, seed: int = 0, max_paths: int
     n, k = P.n, P.k
     w_id = np.tile([1.0, 0.0, 0.0, 0.0], k).astype(complex)   # the current solution: identity
     # -- square the system: Ã w = b̃ (rank r) and n − r combinations of the quadratic rows --
-    r = int(np.linalg.matrix_rank(P.A, tol=1e-9)) if P.A.size else 0
+    r = rank_rrqr(P.A, 1e-9) if P.A.size else 0
     n_q = n - r
     if n_q <= 0 or P.m_q < n_q or 2 ** n_q > max_paths:
         return []
@@ -155,8 +164,7 @@ def enumerate_step(plan: Plan, step_index: int, *, seed: int = 0, max_paths: int
     M2 = rng.standard_normal((n_q, P.m_q)) + 1j * rng.standard_normal((n_q, P.m_q))
     At, bt = M1 @ P.A, M1 @ P.b
     # -- start system: the same linear rows + w_σ² − 1 on variables free w.r.t. the linear part --
-    _, _, Vh = np.linalg.svd(At) if At.size else (None, None, np.eye(n, dtype=complex))
-    N = Vh[r:].conj().T
+    N = null_space(At) if At.size else np.eye(n, dtype=complex)
     _, _, piv = qr(N.T, pivoting=True)
     sigma = [int(i) for i in piv[:n_q]]
     gamma = np.exp(2j * math.pi * rng.random())
@@ -170,48 +178,52 @@ def enumerate_step(plan: Plan, step_index: int, *, seed: int = 0, max_paths: int
             Jg[q, s] = 2 * w[s]
         return Jg
 
-    def H(w: CVec, t: float) -> CVec:
-        return np.concatenate([At @ w - bt, (1 - t) * gamma * G(w) + t * (M2 @ P.Q(w))])
-
-    def JH(w: CVec, t: float) -> CVec:
-        return np.vstack([At, (1 - t) * gamma * JG(w) + t * (M2 @ P.JQ(w))])
+    def HJ(w: CVec, t: float) -> tuple[CVec, CVec]:
+        """H(w, t) and its Jacobian — P's offset rows give value and gradient in one pass."""
+        q_, jq = P.QJ(w)
+        assert jq is not None
+        return (np.concatenate([At @ w - bt, (1 - t) * gamma * G(w) + t * (M2 @ q_)]),
+                np.vstack([At, (1 - t) * gamma * JG(w) + t * (M2 @ jq)]))
 
     def Ht(w: CVec) -> CVec:
         return np.concatenate([np.zeros(r, dtype=complex), -gamma * G(w) + M2 @ P.Q(w)])
 
-    E = np.zeros((n_q, n), dtype=complex)
-    for q, s in enumerate(sigma):
-        E[q, s] = 1.0
-    starts = []
-    for bits in range(2 ** n_q):
-        signs = np.array([1.0 if (bits >> q) & 1 else -1.0 for q in range(n_q)], dtype=complex)
-        starts.append(np.linalg.solve(np.vstack([At, E]), np.concatenate([bt, signs])))
+    # start points: every sign pattern on the σ variables; one factorisation, all right-hand sides
+    E = np.eye(n, dtype=complex)[sigma]
+    signs = np.array([[1.0 if (bits >> q) & 1 else -1.0 for q in range(n_q)] for bits in range(2 ** n_q)],
+                     dtype=complex)
+    rhs = np.concatenate([np.broadcast_to(bt[:, None], (r, len(signs))), signs.T])
+    starts = list(np.linalg.solve(np.vstack([At, E]), rhs).T)
 
     def newton(w: CVec, t: float, iters: int = 4, tol: float = 1e-10) -> tuple[CVec, bool]:
         for _ in range(iters):
-            h = H(w, t)
+            h, jh = HJ(w, t)
             if np.linalg.norm(h) < tol * (1 + np.linalg.norm(w)):
                 return w, True
             try:
-                w = w - np.linalg.solve(JH(w, t), h)
+                w = w - np.linalg.solve(jh, h)
             except np.linalg.LinAlgError:
                 return w, False
-        return w, bool(np.linalg.norm(H(w, t)) < 1e-6 * (1 + np.linalg.norm(w)))
+        return w, bool(np.linalg.norm(HJ(w, t)[0]) < 1e-6 * (1 + np.linalg.norm(w)))
 
+    # Paths that run off to infinity are dead ends: cut them at a multiple of the sketch scale
+    # (w holds cos/sin and translations, so an absolute bound would depend on the sketch size).
+    # Tighter is faster but eventually cuts live paths — on the K3,3 core, 50× keeps all four
+    # real roots at ~70 % of the cost of a loose bound, 25× is the measured cliff.
+    scale = max(1.0, float(np.abs(np.concatenate([P.b, [1.0]])).max()))
+    diverge = diverge_rel * scale
     ends: list[CVec] = []
     for w in starts:
         t, dt = 0.0, 0.02
-        ok_path = True
         for _ in range(max_steps):
-            if t >= 1.0:
+            if t >= 1.0 or np.linalg.norm(w) > diverge:
                 break
             t1 = min(1.0, t + dt)
             try:
-                dw = -np.linalg.solve(JH(w, t), Ht(w))          # Euler predictor
+                dw = -np.linalg.solve(HJ(w, t)[1], Ht(w))        # Euler predictor
             except np.linalg.LinAlgError:
                 dt *= 0.5
                 if dt < 1e-10:
-                    ok_path = False
                     break
                 continue
             w_new, ok = newton(w + dw * (t1 - t), t1)
@@ -221,14 +233,8 @@ def enumerate_step(plan: Plan, step_index: int, *, seed: int = 0, max_paths: int
             else:
                 dt *= 0.5
                 if dt < 1e-10:
-                    ok_path = False
                     break
-            if np.linalg.norm(w) > diverge:                      # a path to infinity: give up early
-                ok_path = False
-                break
-        else:
-            ok_path = False
-        if ok_path and t >= 1.0:
+        if t >= 1.0 and np.linalg.norm(w) <= diverge:
             for _ in range(5):                                   # polish on the original system
                 f = P.F(w)
                 if np.linalg.norm(f) < 1e-12:
@@ -236,27 +242,25 @@ def enumerate_step(plan: Plan, step_index: int, *, seed: int = 0, max_paths: int
                 w = w - np.linalg.lstsq(P.J(w), f, rcond=None)[0]
             ends.append(w)
     out: list[Alternative] = []
+    kept: list[CVec] = []
+    q_of = next((qi for qi, c in enumerate(parts[1:]) if locate is not None and locate in c.els), None)
     for w in ends:
         if np.abs(w.imag).max() > 1e-6 * (1 + np.abs(w.real).max()):
             continue
         wr = w.real.astype(complex)
         if np.linalg.norm(P.F(wr)) > 1e-6:
             continue
-        if any(np.linalg.norm(wr - a_w) < 1e-6 for a_w in (_u_to_w(a.u) for a in out)):
+        if any(np.linalg.norm(wr - k) < 1e-6 for k in kept):
             continue
-        d = float(np.linalg.norm(wr - w_id))
-        out.append(Alternative(_w_to_u(wr), d, d < 1e-6))
+        kept.append(wr)
+        u = _w_to_u(wr)
+        loc = None
+        if locate is not None and q_of is not None:
+            pos = _apply(_T(*u[3 * q_of: 3 * q_of + 3]), locate, parts[q_of + 1].els[locate])
+            loc = (float(pos[0]), float(pos[1]))
+        out.append(Alternative(u, float(np.linalg.norm(wr - w_id)), loc))
     out.sort(key=lambda a: a.distance)
     return out
-
-
-def _u_to_w(u: np.ndarray) -> CVec:
-    k = u.size // 3
-    w = np.zeros(4 * k, dtype=complex)
-    for q in range(k):
-        th, tx, ty = u[3 * q: 3 * q + 3]
-        w[4 * q: 4 * q + 4] = [math.cos(th), math.sin(th), tx, ty]
-    return w
 
 
 def apply_alternative(plan: Plan, step_index: int, alt: Alternative) -> None:
@@ -270,12 +274,10 @@ def apply_alternative(plan: Plan, step_index: int, alt: Alternative) -> None:
     st = plan.steps[step_index]
     if st.ppp is not None and not alt.is_current and st.branch is not None:
         st.branch = -st.branch
+        g.sketch.branches.update(plan.branches())      # document state: survives the next solve
     for q, c in enumerate(parts[1:]):
         T = _T(*alt.u[3 * q: 3 * q + 3])
         for e, pose in c.els.items():
-            if e.kind == "P":
-                p2 = _apply(T, e, pose)
-                for p in g.members[e.idx]:
-                    p.x.value, p.y.value = float(p2[0]), float(p2[1])
+            write_point(g, e, _apply(T, e, pose))
     plan.sticky_branches = True
     execute(plan)

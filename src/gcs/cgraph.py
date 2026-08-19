@@ -110,6 +110,12 @@ class ConstraintGraph:
             self.lines.append(ln)
         return El("L", i)
 
+    def point_index(self, e: El) -> int:
+        """Document-stable index of a point element: the smallest sketch index among the Points
+        of its coincidence class (element numbering itself depends on how the graph was built)."""
+        idx = {id(p): i for i, p in enumerate(self.sketch.points)}
+        return min(idx[id(p)] for p in self.members[e.idx])
+
     def virtual_line(self, a: El, b: El) -> El:
         """Line element through two point elements (e.g. an arc's radius at an endpoint)."""
         self.virtual.append((a, b))

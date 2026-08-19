@@ -44,7 +44,8 @@ import numpy as np
 from gcs import newton
 from gcs.cgraph import X_AXIS, ConstraintGraph, Edge, El, build, line_normal, normal_of
 from gcs.model import Arc, Circle, Point, Sketch, Vec
-from gcs.solve import Method, SolveResult, System
+from gcs.graph import dulmage_mendelsohn
+from gcs.solve import Drag, Method, SolveResult, System, increments, orientation
 
 Pose = Vec  # point: (x, y); line: (nx, ny, c)
 _X_POSE = np.array([0.0, 1.0, 0.0])
@@ -78,12 +79,16 @@ class Step:
     def out(self) -> int:
         return self.ids[0]
 
-    @property
-    def key(self) -> str:
-        """Stable identity across recompiles of the same topology: the shared elements."""
-        if self.ppp is not None:
-            return "ppp:" + "|".join(f"{e.kind}{e.idx}" for e in self.ppp)
-        return "merge:" + "|".join(sorted(f"{e.kind}{e.idx}" for _, _, e in self.pairs))
+    def key(self, graph: ConstraintGraph) -> str | None:
+        """Document-stable identity of a closed-form construction (None for numeric merges).
+
+        Keyed by the *sketch* indices of the three points, not by compiled element indices:
+        element numbering depends on coincidence merging and on how the graph was built, so a
+        key like "P3|P7|P5" would silently reattach to a different construction after an edit.
+        Sketch order is what `gcs.io` persists, so this survives save/load."""
+        if self.ppp is None:
+            return None
+        return "ppp:" + "|".join(str(graph.point_index(e)) for e in self.ppp)
 
 
 @dataclass
@@ -104,24 +109,33 @@ class Plan:
 
     def branches(self) -> dict[str, int]:
         """Recorded root choices of the closed-form merges, keyed stably for persistence."""
-        return {st.key: st.branch for st in self.steps if st.ppp is not None and st.branch is not None}
+        out: dict[str, int] = {}
+        for st in self.steps:
+            k = st.key(self.graph)
+            if k is not None and st.branch is not None:
+                out[k] = st.branch
+        return out
 
     def apply_branches(self, branches: dict[str, int]) -> int:
         """Install recorded root choices (e.g. from a document); returns how many matched."""
         n = 0
         for st in self.steps:
-            if st.ppp is not None and st.key in branches:
-                st.branch = 1 if branches[st.key] >= 0 else -1
+            k = st.key(self.graph)
+            if k is not None and k in branches:
+                st.branch = 1 if branches[k] >= 0 else -1
                 n += 1
         return n
 
-    def steps_placing(self, e: El) -> list[Step]:
-        """Closed-form merges whose constructed point is `e` (the apex of the triangle)."""
-        return [st for st in self.steps if st.ppp is not None and st.ppp[1] == e]
+    def steps_placing(self, e: El) -> list[tuple[int, Step]]:
+        """(index, step) of every merge that places `e`: closed-form ones where `e` is the
+        constructed apex, else numeric merges that share it."""
+        out = [(i, st) for i, st in enumerate(self.steps) if st.ppp is not None and st.ppp[1] == e]
+        return out or [(i, st) for i, st in enumerate(self.steps)
+                       if st.ppp is None and any(el == e for _, _, el in st.pairs)]
 
     def flip(self, e: El) -> int:
         """Flip the root of every closed-form merge that constructs `e`; returns how many."""
-        sts = self.steps_placing(e)
+        sts = [st for _, st in self.steps_placing(e) if st.ppp is not None]
         for st in sts:
             st.branch = -(st.branch or 1)
         return len(sts)
@@ -622,6 +636,13 @@ def _merge_ppp(ref: Cluster, B: Cluster, Cc: Cluster, x: El, y: El, z: El, sign:
     return _fit2(bx, by, xa, ya), _fit2(cz, cy, za, ya)
 
 
+def write_point(graph: ConstraintGraph, e: El, pose: Pose) -> None:
+    """Write a point element's pose back to every Point of its coincidence class."""
+    if e.kind == "P":
+        for p in graph.members[e.idx]:
+            p.x.value, p.y.value = float(pose[0]), float(pose[1])
+
+
 def _place_root(c: Cluster, placed: dict[El, Pose], g: ConstraintGraph) -> Vec:
     """Transform for an unfixed root: elements already placed by earlier roots are aligned
     exactly (≥ 2 shared points: rigid fit on them; 1 shared point: it pins the translation and
@@ -629,10 +650,10 @@ def _place_root(c: Cluster, placed: dict[El, Pose], g: ConstraintGraph) -> Vec:
     current geometry."""
     pts = [e for e in c.els if e.kind == "P"]
     shared = [e for e in pts if e in placed]
-    src_all = np.array([c.els[e] for e in pts]).reshape(-1, 2)
-    dst_all = np.array([placed[e] if e in placed else _world_pose(g, e) for e in pts]).reshape(-1, 2)
     if len(shared) >= 2:
         return _procrustes(np.array([c.els[e] for e in shared]), np.array([placed[e] for e in shared]))
+    src_all = np.array([c.els[e] for e in pts]).reshape(-1, 2)
+    dst_all = np.array([placed[e] if e in placed else _world_pose(g, e) for e in pts]).reshape(-1, 2)
     T = _procrustes(src_all, dst_all)
     if len(shared) == 1:
         e = shared[0]
@@ -665,9 +686,9 @@ def execute(plan: Plan, capture: int | None = None) -> list[Cluster] | None:
         if st.ppp is not None:
             x, y, z = st.ppp
             if st.branch is None or not plan.sticky_branches:
-                xw, zw, yw = _world_pose(g, x), _world_pose(g, z), _world_pose(g, y)
-                orient = (zw[0] - xw[0]) * (yw[1] - xw[1]) - (zw[1] - xw[1]) * (yw[0] - xw[0])
-                st.branch = 1 if orient >= 0 else -1                # sketch-guided chirality
+                # sketch-guided chirality: the same signed area the drag's order-type guards watch
+                tri = (g.members[x.idx][0], g.members[z.idx][0], g.members[y.idx][0])
+                st.branch = 1 if orientation(*tri) >= 0 else -1
             Ts = list(_merge_ppp(ref, movable[0], movable[1], x, y, z, st.branch))
         elif movable:
             # identity is the natural warm start: leaves are re-derived from the current geometry,
@@ -700,9 +721,7 @@ def execute(plan: Plan, capture: int | None = None) -> list[Cluster] | None:
         for e, pose in c.els.items():
             placed.setdefault(e, pose)
     for e, pose in placed.items():
-        if e.kind == "P":
-            for p in g.members[e.idx]:
-                p.x.value, p.y.value = float(pose[0]), float(pose[1])
+        write_point(g, e, pose)
     rounds: list[Circle | Arc] = [*g.sketch.circles, *g.sketch.arcs]
     for circle in rounds:
         r = g.known_radius.get(id(circle.radius))
@@ -739,17 +758,26 @@ class PlanSolver:
     `solve()` replays the plan and falls back to the numeric core when the residual
     says the plan did not (fully) determine the sketch."""
 
-    def __init__(self, sketch: Sketch, branches: dict[str, int] | None = None, sticky: bool = False) -> None:
+    def __init__(self, sketch: Sketch, sticky: bool = False) -> None:
         self.sketch = sketch
         self.graph = build(sketch)
         self.plan = decompose(self.graph)
         self.plan.sticky_branches = sticky
-        if branches:
-            self.plan.apply_branches(branches)
         self.system = System(sketch)
+
+    def flip(self, e: El) -> int:
+        """Flip the root of every closed-form construction that places `e`, recording the choice
+        in the sketch (root choices are document state — `solve()` reads them back)."""
+        n = self.plan.flip(e)
+        if n:
+            self.sketch.branches.update(self.plan.branches())
+        return n
 
     def solve(self, tol: float = 1e-9, fallback: bool = True, method: Method = "dogleg") -> PlanResult:
         t0 = time.perf_counter()
+        # root choices are *document* state, read every solve — a plan cached per topology must
+        # not replay a stale branch after the user flips one
+        self.plan.apply_branches(self.sketch.branches)
         execute(self.plan)
         self.system.refresh_consts()          # dimensions may have been edited since compile
         mx = self.system.max_hard_residual()
@@ -759,6 +787,7 @@ class PlanSolver:
             fell = True
             num = self.system.solve(method=method)
             mx = num.max_residual
+        self.sketch.branches.update(self.plan.branches())
         return PlanResult(mx <= 1e-6 * self.system.scale, mx, fell, time.perf_counter() - t0, self.plan, num)
 
 
@@ -779,43 +808,49 @@ class PlanDrag:
     under-constrained roots move least.  Large cursor jumps are taken in increments so the
     solution tracks its branch (continuation).  If the plan cannot determine the sketch with
     the point pinned (fully constrained sketches, unsupported constraints) the numeric
-    pull/polish `Drag` is used instead."""
+    pull/polish `Drag` is used instead — pass `guards` (from an already-compiled plan) to keep
+    graph analysis out of the drag entirely."""
 
-    def __init__(self, sketch: Sketch, point: Point, x: float, y: float, branches: dict[str, int] | None = None,
-                 max_step_rel: float = 0.05) -> None:
-        from gcs.solve import Drag
-
+    def __init__(self, sketch: Sketch, point: Point, x: float, y: float,
+                 guards: list[tuple[Point, Point, Point]] | None = None, max_step_rel: float = 0.05) -> None:
         self.sketch, self.point = sketch, point
         self.max_step = max_step_rel * max(1.0, sketch.extent())
-        self.x0 = sketch.get_x()
         self.numeric: Drag | None = None
+        self._guards = guards
+        x0 = sketch.get_x()
         was = point.is_fixed
         point.fix(True)
         try:
-            self.solver = PlanSolver(sketch, branches, sticky=True)
+            self.solver = PlanSolver(sketch, sticky=True)
+            # the plan can drive the drag iff it understands every constraint, pinning the point
+            # does not over-determine the sketch (the plan could only compromise then), and the
+            # replay reproduces the current configuration
+            usable = (not self.solver.graph.unsupported and not self._over_determined()
+                      and self._replay(*point.xy) <= 1e-9 * self.solver.system.scale)
         finally:
             point.fix(was)
-        # usable iff the plan understands every constraint and pinning the point does not
-        # over-determine the sketch structurally (then the plan could only compromise)
-        from gcs.diagnose import diagnose
+        if not usable:
+            sketch.set_x(x0)
+            self.numeric = Drag(sketch, point, x, y, guards=self.guard_triangles())
 
-        self.usable = not self.solver.graph.unsupported
-        if self.usable:
-            point.fix(True)
-            try:
-                self.usable = diagnose(sketch, numeric=False, conflicts=False).n_redundant == 0
-            finally:
-                point.fix(was)
-        if self.usable:                       # probe the replay at the current position
-            self.usable = self._replay(*point.xy) <= 1e-9 * self.solver.system.scale
-        if not self.usable:
-            sketch.set_x(self.x0)
-            self.numeric = Drag(sketch, point, x, y, guards=self._guards())
+    @property
+    def usable(self) -> bool:
+        """True while the cached plan is driving the drag (False once it handed over)."""
+        return self.numeric is None
 
-    def _guards(self) -> list[tuple[Point, Point, Point]]:
-        """Order-type invariants to watch on the numeric path: the closed-form triangles of the
-        sketch's own (unpinned) plan."""
-        return ppp_triangles(decompose(build(self.sketch)))
+    def _over_determined(self) -> bool:
+        """Structural redundancy of the *pinned* system — the cheap half of a diagnosis, on the
+        System the solver already compiled (a full `diagnose` here would cost ~5× as much)."""
+        sys_ = self.solver.system
+        adj, _ = sys_.structure()
+        return len(adj) > dulmage_mendelsohn(adj, sys_.n_free).rank
+
+    def guard_triangles(self) -> list[tuple[Point, Point, Point]]:
+        """Order-type invariants for the numeric path: the closed-form triangles of the sketch's
+        own (unpinned) plan.  Computed at most once per drag — never inside a move."""
+        if self._guards is None:
+            self._guards = ppp_triangles(decompose(build(self.sketch)))
+        return self._guards
 
     def _replay(self, x: float, y: float) -> float:
         self.point.x.value, self.point.y.value = x, y
@@ -825,23 +860,20 @@ class PlanDrag:
     def move(self, x: float, y: float) -> SolveResult:
         if self.numeric is not None:
             return self.numeric.move(x, y)
-        from gcs.solve import Drag
-
         t0 = time.perf_counter()
         x_prev = self.sketch.get_x()
         px, py = self.point.xy
-        d = math.hypot(x - px, y - py)
-        n = max(1, int(math.ceil(d / self.max_step)))   # continuation: never jump far in one replay
+        path = increments(px, py, x, y, self.max_step)
         mx = 0.0
-        for i in range(1, n + 1):
-            mx = self._replay(px + (x - px) * i / n, py + (y - py) * i / n)
+        for tx, ty in path:
+            mx = self._replay(tx, ty)
             if mx > 1e-6 * self.solver.system.scale:
                 # the plan cannot follow (a limit of the geometry was hit): hand over to the
                 # numeric drag from the last good state
                 self.sketch.set_x(x_prev)
-                self.numeric = Drag(self.sketch, self.point, px, py, guards=self._guards())
+                self.numeric = Drag(self.sketch, self.point, px, py, guards=self.guard_triangles())
                 return self.numeric.move(x, y)
-        return SolveResult(True, 0, "plan-drag", mx, mx, n, 0, time.perf_counter() - t0, "plan")
+        return SolveResult(True, 0, "plan-drag", mx, mx, len(path), 0, time.perf_counter() - t0, "plan")
 
     def end(self) -> None:
         if self.numeric is not None:

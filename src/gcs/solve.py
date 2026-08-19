@@ -267,6 +267,13 @@ def orientation(a: Point, b: Point, c: Point) -> float:
     return (b.x.value - a.x.value) * (c.y.value - a.y.value) - (b.y.value - a.y.value) * (c.x.value - a.x.value)
 
 
+def increments(x0: float, y0: float, x1: float, y1: float, max_step: float) -> list[tuple[float, float]]:
+    """Continuation path from (x0, y0) to (x1, y1): waypoints no farther apart than max_step, so
+    a solution tracks its branch instead of teleporting across it.  Always at least one point."""
+    n = max(1, int(math.ceil(math.hypot(x1 - x0, y1 - y0) / max_step)))
+    return [(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n) for i in range(1, n + 1)]
+
+
 class Drag:
     """Interactive drag of one point: pull toward the cursor with a soft target,
     then polish with the hard constraints only so they hold exactly.
@@ -298,6 +305,7 @@ class Drag:
         self.max_step = max_step_rel * max(1.0, sketch.extent())
         self.signs = [orientation(*t) >= 0 for t in self.guards]
         self.flips: list[Triangle] = []
+        self._last_good = sketch.get_x()
 
     def _step(self, x: float, y: float) -> SolveResult:
         self.target.set_target(x, y)
@@ -308,36 +316,41 @@ class Drag:
     def _flipped(self) -> list[int]:
         return [i for i, t in enumerate(self.guards) if (orientation(*t) >= 0) != self.signs[i]]
 
+    def _damped(self, tx: float, ty: float, budget: int) -> tuple[SolveResult, int]:
+        """One increment that would flip a guard: bisect the *remaining* interval from the last
+        good state, keeping whatever prefix stays on the branch, within a sub-step budget."""
+        res = self._step(tx, ty)
+        while self._flipped() and budget > 0:
+            self.sketch.set_x(self._last_good)
+            bx, by = self.point.xy
+            half = ((bx + tx) / 2, (by + ty) / 2)
+            res = self._step(*half)
+            budget -= 1
+            if self._flipped():
+                continue                       # the flip is in the first half: bisect that
+            self._last_good = self.sketch.get_x()
+            res = self._step(tx, ty)           # first half was clean: try the rest again
+            budget -= 1
+        return res, budget
+
     def move(self, x: float, y: float) -> SolveResult:
         t0 = time.perf_counter()
+        n_flips = len(self.flips)
+        budget = 12                            # cap the sub-steps a single frame may spend
         px, py = self.point.xy
-        n = max(1, int(math.ceil(math.hypot(x - px, y - py) / self.max_step)))
-        res = None
-        flipped_now: list[int] = []
-        for i in range(1, n + 1):
-            tx, ty = px + (x - px) * i / n, py + (y - py) * i / n
-            x_before = self.sketch.get_x()
+        self._last_good = self.sketch.get_x()
+        res = self._step(px, py)
+        for tx, ty in increments(px, py, x, y, self.max_step):
             res = self._step(tx, ty)
-            if self.guards:
-                bad = self._flipped()
-                halvings = 0
-                while bad and halvings < 4:          # damp: retry from the last good state in smaller steps
-                    self.sketch.set_x(x_before)
-                    halvings += 1
-                    m = 2 ** halvings
-                    bx, by = self.point.xy
-                    for j in range(1, m + 1):
-                        res = self._step(bx + (tx - bx) * j / m, by + (ty - by) * j / m)
-                    bad = self._flipped()
-                if bad:                              # unavoidable: accept, record, flag
-                    for k in bad:
-                        self.signs[k] = not self.signs[k]
-                        self.flips.append(self.guards[k])
-                    flipped_now += bad
-        assert res is not None
+            if self.guards and self._flipped():
+                res, budget = self._damped(tx, ty, budget)
+                for k in self._flipped():      # unavoidable: accept, record, flag
+                    self.signs[k] = not self.signs[k]
+                    self.flips.append(self.guards[k])
+            self._last_good = self.sketch.get_x()
         res.time_s = time.perf_counter() - t0
-        if flipped_now:
-            res.message = f"order-type flip in {len(flipped_now)} triangle(s)"
+        if len(self.flips) > n_flips:
+            res.message = f"order-type flip in {len(self.flips) - n_flips} triangle(s)"
         return res
 
     def end(self) -> None:
