@@ -194,7 +194,11 @@ def test_plan_toggle_solves_examples(qapp: QApplication) -> None:
     w.toggle_plan(True)
     assert v.last_plan is not None and v.last_plan.plan.fully_decomposed and not v.last_plan.fell_back
     assert "plan:" in w.perm_status.text()
-    v.set_sketch(EXAMPLES["polygon_chain"]())
+    sk = EXAMPLES["polygon_chain"]()
+    from gcs.examples import perturb
+
+    perturb(sk, 2.0)
+    v.set_sketch(sk)   # not decomposable (EqualLength): plan falls back to the numeric solve
     assert v.last_plan is not None and v.last_plan.fell_back and v.last_result is not None and v.last_result.success
     w.toggle_plan(False)
     assert v.last_plan is None
