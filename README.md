@@ -1,8 +1,9 @@
 # gcs — geometric constraint solver
 
-Stages 0–1 of [`gcs-solver-program.md`](gcs-solver-program.md): a
+Stages 0–2 of [`gcs-solver-program.md`](gcs-solver-program.md): a
 residual-formulation solver with vectorized numpy kernels, our own DogLeg/LM,
-and a PySide6 sketcher.  Python ≥ 3.14, numpy + scipy; C/Cython comes only
+structural diagnosis (matching / Dulmage–Mendelsohn / pebble game / minimal
+conflict sets), and a PySide6 sketcher.  Python ≥ 3.14, numpy + scipy; C/Cython comes only
 when profiling says so.
 
 ## Setup
@@ -59,10 +60,30 @@ DOF, convergence and solve time.
 * `gcs.fdcheck` — finite-difference verification harness (keep forever).
 * `gcs.examples` — rectangle-with-fillets, slotted link, truss (~30 entities),
   under-constrained polygon chain.
+* `gcs.graph` — Hopcroft–Karp matching, coarse Dulmage–Mendelsohn
+  decomposition, bipartite components, the (2,3) pebble game with rigid-component
+  detection (Lee–Streinu) — plain integer adjacency lists.
+* `gcs.diagnose` — `diagnose(sketch)` → `Diagnosis`: structural rank/DOF,
+  over-determined block (redundancy suspects), under-determined parameters,
+  per-component DOF, rigid clusters + redundant distances, violated
+  constraints, minimal conflict set (deletion filter), per-entity state
+  `well|under|over|conflict`, and a numeric-rank cross-check that logs
+  theorem-type dependencies structural analysis can't see (Stage 4 corpus).
 * `gcs.io` — JSON save/load; also deletion-by-rebuild (`without`).
 * `gcs.app` — PySide6 desktop sketcher (see above).
 * `gcs.canvas` — matplotlib click-drag testbed.  Dragging = soft `DragTarget`
   pull + hard-only polish, both compiled once per drag (same in the app).
+
+## Stage 2 status
+
+| criterion | status |
+|---|---|
+| DOF bookkeeping per component | ✅ `Diagnosis.components` |
+| Hopcroft–Karp + Dulmage–Mendelsohn → over / well / under | ✅ `gcs.graph`, `Diagnosis.over`, `.under_params` |
+| (2,3) pebble game: rigid clusters, redundant distances | ✅ `gcs.graph.pebble_game`, Henneberg/Laman property tests |
+| minimal conflict sets (deletion filter) | ✅ `minimal_conflict_set` — e.g. exactly the two contradicting widths |
+| structural-vs-numeric residue logged for Stage 4 | ✅ `Diagnosis.warnings` (`polygon_chain`'s EqualLength cycle is the first case) |
+| every failed solve → actionable diagnosis; trustworthy entity colouring | ✅ app status bar / list / colours / Diagnose dialog |
 
 ## Stage 1 status
 

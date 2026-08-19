@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from gcs import constraints as C
 from gcs import io
 from gcs.constraints import ENTITY_KINDS, Constraint
+from gcs.diagnose import Diagnosis, diagnose
 from gcs.examples import EXAMPLES
 from gcs.model import Arc, Circle, Line, Point, Primitive, Sketch, expand
 from gcs.solve import METHODS, Drag, Method, SolveResult, System
@@ -45,6 +46,10 @@ COL_PREVIEW = QColor("#999999")
 COL_HL = QColor("#9467bd")
 COL_ROW_SEL = QColor("#fce4f3")   # list rows whose constraint touches a selected entity
 COL_ROW_TEXT = QColor("#000000")
+# entity colouring by constraint state (FreeCAD-style, but from the DM decomposition + conflict set)
+COL_STATE = {"well": QColor("#2ca02c"), "under": QColor("#e69500"), "over": QColor("#d62728"),
+             "conflict": QColor("#d62728")}
+COL_ROW_OVER = QColor("#e69500")
 
 
 class SketchView(QWidget):
@@ -67,6 +72,8 @@ class SketchView(QWidget):
         self.highlight: list[Primitive] = []    # entities of the constraint selected in the list
         self.undo_stack: deque[str] = deque(maxlen=100)
         self.last_result: SolveResult | None = None
+        self.diagnosis: Diagnosis | None = diagnose(sketch) if sketch.constraints else None
+        self.color_by_state = True
         self.drag: Drag | None = None
         self.pan_last: QPointF | None = None
         self.setMouseTracking(True)
@@ -115,19 +122,29 @@ class SketchView(QWidget):
         return self.last_result
 
     def _after_edit(self) -> SolveResult | None:
-        """Every mutation ends here: re-solve (if auto), then notify listeners once."""
+        """Every mutation ends here: re-solve (if auto), re-diagnose, then notify listeners once."""
         if self.auto_solve:
             self.last_result = System(self.sketch).solve(method=self.method)
+        self.diagnosis = diagnose(self.sketch) if self.sketch.constraints else None
         self.changed.emit()
         self.update()
         return self.last_result
+
+    def state_of(self, e: Primitive) -> str:
+        return self.diagnosis.entity_state.get(id(e), "well") if self.diagnosis else "well"
 
     def add_constraint(self, c: Constraint) -> None:
         self.push_undo()
         self.sketch.add(c)
         res = self._after_edit()
-        if res is not None and not res.success:
-            self.status.emit(f"added {type(c).__name__} — solver did NOT converge (over-constrained or conflicting?)")
+        d = self.diagnosis
+        if d is not None and d.conflicts:
+            self.status.emit(f"added {type(c).__name__} — CONFLICT, remove one of: "
+                             + ", ".join(io.describe(k, self.sketch) for k in d.conflicts))
+        elif d is not None and d.n_redundant:
+            self.status.emit(f"added {type(c).__name__} — redundant (consistent) with existing constraints")
+        elif res is not None and not res.success:
+            self.status.emit(f"added {type(c).__name__} — solver did NOT converge")
         else:
             self.status.emit(f"added {type(c).__name__}")
 
@@ -204,7 +221,7 @@ class SketchView(QWidget):
                 return QPen(COL_SEL, w + 1.5)
             if ent in hl:
                 return QPen(COL_HL, w + 1.0)
-            return QPen(col, w)
+            return QPen(COL_STATE[self.state_of(ent)] if self.color_by_state else col, w)
 
         for ln in sk.lines:
             qp.setPen(pen(COL_LINE, ln))
@@ -220,7 +237,8 @@ class SketchView(QWidget):
             self._paint_preview(qp)
         for p in sk.points:
             s = self.w2s(*p.xy)
-            col = COL_SEL if p in sel else COL_HL if p in hl else COL_FIXED if p.is_fixed else COL_PT
+            col = (COL_SEL if p in sel else COL_HL if p in hl else COL_FIXED if p.is_fixed
+                   else COL_STATE[self.state_of(p)] if self.color_by_state else COL_PT)
             qp.setPen(QPen(col, 1))
             qp.setBrush(col)
             if p.is_fixed:
@@ -430,9 +448,13 @@ class MainWindow(QMainWindow):
 
         vm = mb.addMenu("&View")
         vm.addAction(self._act("&Fit", self.view.fit, "Home"))
+        col = self._act("Colour by &constraint state", self.toggle_colour, checkable=True)
+        col.setChecked(True)
+        vm.addAction(col)
 
         sm = mb.addMenu("&Solve")
         sm.addAction(self._act("Solve &now", self.view.solve_now, "Return"))
+        sm.addAction(self._act("&Diagnose…", self.show_diagnosis, "D"))
         auto = self._act("&Auto-solve", self.toggle_auto, checkable=True)
         auto.setChecked(True)
         sm.addAction(auto)
@@ -499,9 +521,17 @@ class MainWindow(QMainWindow):
             self._rebuild_rows(rows)
         sel_direct = set(self.view.selected)
         sel_all = set(expand(self.view.selected))
+        d = self.view.diagnosis
+        conflict_ids = {id(c) for c in (d.conflicts or [])} if d else set()
+        over_ids = {id(c) for c in d.over} if d else set()
         for i, c in enumerate(rows):
             item = self.clist.item(i)
-            item.setForeground(COL_FIXED if c.error() > 1e-6 else COL_ROW_TEXT)
+            if id(c) in conflict_ids or c.error() > 1e-6:
+                item.setForeground(COL_FIXED)
+            elif id(c) in over_ids:
+                item.setForeground(COL_ROW_OVER)
+            else:
+                item.setForeground(COL_ROW_TEXT)
             hit = bool(sel_all) and (any(e in sel_all for e in c.entities())
                                      or any(e in sel_direct for e in expand(c.entities())))
             item.setBackground(COL_ROW_SEL if hit else Qt.GlobalColor.transparent)
@@ -510,12 +540,25 @@ class MainWindow(QMainWindow):
             item.setFont(f)
         r = self.view.last_result
         msg = (f"points {len(sk.points)}  lines {len(sk.lines)}  circles {len(sk.circles)}  arcs {len(sk.arcs)}   "
-               f"| params {len(sk.params)} (free {len(sk.free_indices())})  equations {sk.n_residuals()}  "
-               f"DOF {sk.dof()}   | selected {len(self.view.selected)}")
+               f"| params {len(sk.params)} (free {len(sk.free_indices())})  equations {sk.n_residuals()}")
+        if d is not None:
+            msg += f"  DOF {d.dof}"
+            if d.n_redundant:
+                msg += f"  redundant {d.n_redundant}"
+            if d.conflicts:
+                msg += "  ⚠ CONFLICT"
+            elif d.warnings:
+                msg += "  ⚠ geometric dependency"
+        msg += f"   | selected {len(self.view.selected)}"
         if r is not None:
             msg += (f"   | {'solved' if r.success else 'NOT CONVERGED'}  max|r|={r.max_residual:.1e}  "
                     f"{r.time_s * 1e3:.1f} ms  nfev={r.nfev}  {r.method}")
-        self.setWindowTitle("gcs sketcher" + ("" if r is None or r.success else "  —  ⚠ not converged"))
+        title = "gcs sketcher"
+        if d is not None and d.status == "conflict":
+            title += "  —  ⚠ conflicting constraints"
+        elif r is not None and not r.success:
+            title += "  —  ⚠ not converged"
+        self.setWindowTitle(title)
         self.perm_status.setText(msg)
 
     def _rebuild_rows(self, rows: list[Constraint]) -> None:
@@ -559,6 +602,37 @@ class MainWindow(QMainWindow):
 
     def toggle_auto(self, on: bool) -> None:
         self.view.auto_solve = on
+
+    def toggle_colour(self, on: bool) -> None:
+        self.view.color_by_state = on
+        self.view.update()
+
+    def show_diagnosis(self) -> None:
+        d = self.view.diagnosis
+        if d is None:
+            QMessageBox.information(self, "Diagnosis", "No constraints.")
+            return
+        sk = self.view.sketch
+        ix = io.Index(sk)
+        lines = [d.summary(), ""]
+        if d.conflicts:
+            lines += ["Conflict — remove one of:"] + [f"   ✗ {io.describe(c, ix)}" for c in d.conflicts] + [""]
+        if d.over:
+            lines += [f"Structurally redundant block ({d.n_redundant} equation(s) too many):"]
+            lines += [f"   • {io.describe(c, ix)}" for c in d.over] + [""]
+        if d.under_params:
+            round_ents: list[Circle | Arc] = [*sk.circles, *sk.arcs]
+            names = sorted({ix.name(e) for e in sk.points if e.x in d.under_params or e.y in d.under_params}
+                           | {ix.name(e) for e in round_ents if e.radius in d.under_params})
+            lines += [f"Under-constrained ({d.dof} DOF): {', '.join(names)}", ""]
+        if len(d.components) > 1:
+            lines += ["Components: " + ", ".join(f"{len(c.params)} params / DOF {c.dof}" for c in d.components), ""]
+        big = [c for c in d.rigid_clusters if len(c) >= 3]
+        if big:
+            lines += ["Rigid clusters (distance graph): " + "; ".join(
+                "{" + ", ".join(sorted(ix.name(p) for p in c)) + "}" for c in big), ""]
+        lines += d.warnings
+        QMessageBox.information(self, "Diagnosis", "\n".join(lines))
 
     def set_method(self, m: Method) -> None:
         self.view.method = m

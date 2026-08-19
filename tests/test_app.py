@@ -142,3 +142,27 @@ def test_delete_key_removes_selected_constraint(qapp: QApplication) -> None:
     n = len(w.view.sketch.constraints)
     w.delete_pressed()
     assert len(w.view.sketch.constraints) == n
+
+
+def test_diagnosis_drives_colours_and_dialog_text(qapp: QApplication) -> None:
+    from gcs.app import COL_STATE
+
+    w = MainWindow(EXAMPLES["rect_fillets"]())
+    w.show()
+    v = w.view
+    assert v.diagnosis is not None and v.diagnosis.status == "well"
+    assert all(v.state_of(e) == "well" for e in v.sketch.points)
+    # add a conflicting width → conflict state on the bottom line, message names the culprits
+    l0 = v.sketch.lines[0]
+    v.add_constraint(C.Distance(l0.p1, l0.p2, 50))
+    assert v.diagnosis is not None and v.diagnosis.status == "conflict"
+    assert v.state_of(l0) == "conflict"
+    assert COL_STATE[v.state_of(l0)] == COL_STATE["conflict"]
+    assert "CONFLICT" in w.perm_status.text()
+    v.undo()
+    assert v.diagnosis is not None and v.diagnosis.status == "well"
+    # remove a dimension → under
+    dist = next(c for c in v.sketch.constraints if isinstance(c, C.Distance))
+    v.remove_constraint(dist)
+    assert v.diagnosis is not None and v.diagnosis.status == "under" and v.diagnosis.dof == 1
+    assert any(v.state_of(e) == "under" for e in v.sketch.points)
