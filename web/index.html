@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gcs sketcher</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --panel: #f4f4f5;
+    --line: #d8d8dc;
+    --text: #1b1b1f;
+    --muted: #6b6b74;
+    --accent: #1f77b4;
+    --accent-soft: #e6f0f7;
+    --danger: #b3001b;
+    --danger-bg: #fdecea;
+    --warn: #7a4a00;
+    --warn-bg: #fff4e0;
+    --row-sel: #fce4f3;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    overflow: hidden;
+  }
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  header { border-bottom: 1px solid var(--line); background: var(--panel); flex: none; }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px 8px; }
+  .bar > * { flex: none; }        /* wrap onto a new row rather than shrinking to a sliver */
+  .bar + .bar { border-top: 1px solid var(--line); }
+  .bar .sep { width: 1px; height: 20px; background: var(--line); margin: 0 6px; }
+  .bar label { color: var(--muted); margin-left: 4px; }
+
+  button, select {
+    font: inherit; color: inherit;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 3px 9px;
+    cursor: pointer;
+  }
+  button:hover, select:hover { border-color: var(--accent); }
+  button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .45; cursor: default; border-color: var(--line); }
+  button kbd { font: inherit; color: var(--muted); margin-left: 4px; }
+  label.check { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text); }
+
+  #banner { display: none; align-items: center; gap: 10px; padding: 7px 12px; font-weight: 600; flex: none; }
+  #banner.conflict { display: flex; background: var(--danger-bg); color: #8a0000; border-bottom: 1px solid #d62728; }
+  #banner.over { display: flex; background: var(--warn-bg); color: var(--warn); border-bottom: 1px solid #e69500; }
+  #banner-text { flex: 1; min-width: 0; }
+
+  main { flex: 1; display: flex; min-height: 0; }
+  #canvas-wrap { flex: 1; position: relative; min-width: 0; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+  canvas.select { cursor: default; }
+
+  aside {
+    width: 310px; flex: none; border-left: 1px solid var(--line);
+    display: flex; flex-direction: column; background: var(--panel); min-height: 0;
+  }
+  aside h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
+    margin: 0; padding: 8px 10px 6px; border-bottom: 1px solid var(--line);
+  }
+  #clist { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; font-family: var(--mono); font-size: 12px; }
+  #clist li { padding: 3px 10px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #clist li:hover { background: #e9e9ed; }
+  #clist li[aria-current="true"] { outline: 1px solid var(--accent); outline-offset: -1px; }
+  #clist li.touches { background: var(--row-sel); font-weight: 600; }
+  #clist li.culprit { color: var(--danger); }
+  #clist li.violated { color: #d62728; }
+  #clist li.over { color: #b06d00; }
+  #clist-hint { padding: 6px 10px; color: var(--muted); border-top: 1px solid var(--line); font-size: 11px; }
+
+  footer {
+    flex: none; border-top: 1px solid var(--line); background: var(--panel);
+    padding: 5px 10px; font-family: var(--mono); font-size: 11px; color: var(--muted);
+    white-space: nowrap; overflow-x: auto;
+  }
+  footer #toast { color: var(--text); }
+
+  dialog {
+    border: 1px solid var(--line); border-radius: 9px; padding: 0;
+    max-width: min(94vw, 900px); max-height: 86vh; color: var(--text); background: var(--bg);
+    box-shadow: 0 12px 40px rgba(0,0,0,.22);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.28); }
+  dialog h3 { margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  dialog .body { padding: 12px 16px; overflow: auto; max-height: 62vh; }
+  dialog pre { font-family: var(--mono); font-size: 12px; margin: 0; white-space: pre; }
+  dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); }
+  dialog input[type=number], dialog input[type=text] {
+    font: inherit; width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 5px;
+  }
+  dialog .choices { display: flex; flex-direction: column; gap: 4px; }
+  dialog .choices button { text-align: left; font-family: var(--mono); font-size: 12px; }
+
+  #loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); background: var(--bg); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="bar" id="bar-tools"></div>
+    <div class="bar" id="bar-constraints"></div>
+  </header>
+  <div id="banner"><span id="banner-text"></span><button id="banner-select">Select culprits</button></div>
+  <main>
+    <div id="canvas-wrap">
+      <canvas id="canvas"></canvas>
+      <div id="loading">loading solver…</div>
+    </div>
+    <aside>
+      <h2>Constraints</h2>
+      <ul id="clist"></ul>
+      <div id="clist-hint">click to highlight · double-click to edit a dimension · Del to remove</div>
+    </aside>
+  </main>
+  <footer><span id="toast"></span><span id="stats"></span></footer>
+</div>
+<dialog id="modal">
+  <h3 id="modal-title"></h3>
+  <div class="body" id="modal-body"></div>
+  <div class="actions" id="modal-actions"></div>
+</dialog>
+<script type="module" src="./dist/app/main.js"></script>
+</body>
+</html>

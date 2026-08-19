@@ -8,3 +8,5 @@ __pycache__/
 .hypothesis/
 papers/
 build/
+web/node_modules/
+web/dist/
