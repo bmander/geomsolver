@@ -179,3 +179,17 @@ def test_conflict_set_on_large_truss_from_good_geometry() -> None:
     sk.add(bad)
     d = diagnose(sk)
     assert bad in (d.conflicts or []) and 3 <= len(d.conflicts or []) <= 13
+
+
+def test_under_params_are_per_axis_not_per_point() -> None:
+    """A point sliding along a vertical line has its y free and its x pinned.  Anything asking
+    "can this point move?" has to look at the whole point, not one coordinate — the web app's
+    drag affordance does exactly that."""
+    sk = Sketch()
+    a = sk.point(0, 0, fixed=True)
+    b = sk.point(0, 10, fixed=True)
+    p = sk.point(0, 4)
+    sk.add(C.PointOnLine(p, sk.line(a, b)))
+    d = diagnose(sk)
+    names = {q.name for q in d.under_params}
+    assert p.y in d.under_params and p.x not in d.under_params, names

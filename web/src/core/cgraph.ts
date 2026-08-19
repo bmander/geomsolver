@@ -149,10 +149,11 @@ export function knownRadii(sketch: Sketch): Map<Param, number> {
   const ridx = new Map<Param, number>();
   radii.forEach((r, i) => ridx.set(r, i));
   const uf = new UnionFind(radii.length);
-  for (const c of sketch.constraints)
+  const hard = sketch.hardConstraints();       // a soft Radius (a live RadiusDrag) is not a dimension
+  for (const c of hard)
     if (c instanceof C.EqualRadius) uf.union(ridx.get(c.c1.radius)!, ridx.get(c.c2.radius)!);
   const known = new Map<number, number>();
-  for (const c of sketch.constraints)          // after all unions, so class roots are final
+  for (const c of hard)                        // after all unions, so class roots are final
     if (c instanceof C.Radius) known.set(uf.find(ridx.get(c.circle.radius)!), c.r);
   for (const r of radii) {
     const root = uf.find(ridx.get(r)!);

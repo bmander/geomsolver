@@ -53,10 +53,13 @@ def to_dict(sk: Sketch) -> dict[str, Any]:
         "circles": [{"center": ix.ref(c.center)[1], "r": c.radius.value, "fixed": c.radius.fixed} for c in sk.circles],
         "arcs": [{"center": ix.ref(a.center)[1], "start": ix.ref(a.start)[1], "end": ix.ref(a.end)[1],
                   "r": a.radius.value, "fixed": a.radius.fixed} for a in sk.arcs],
+        # user_constraints() is exactly "what the user added": no intrinsic ones (the
+        # primitives recreate those) and no soft ones (a drag target or a RadiusDrag's pull
+        # would come back as a real dimension, since `soft` is not part of the JSON)
         "constraints": [
             {"type": type(c).__name__,
              "args": [ix.ref(v) if kind in ENTITY_KINDS else v for v, (_, kind) in zip(c.args(), c.spec, strict=True)]}
-            for c in sk.constraints if not c.intrinsic
+            for c in sk.user_constraints()
         ],
         "branches": dict(sk.branches),
     }
@@ -117,7 +120,7 @@ def without(sk: Sketch, entities: Iterable[Primitive] = (), constraints: Iterabl
     tmp.lines = [l for l in sk.lines if alive(l)]
     tmp.circles = [c for c in sk.circles if alive(c)]
     tmp.arcs = [a for a in sk.arcs if alive(a)]
-    tmp.constraints = [c for c in sk.constraints if id(c) not in dead_c and not c.intrinsic
+    tmp.constraints = [c for c in sk.user_constraints() if id(c) not in dead_c
                        and all(id(e) not in dead for e in expand(c.entities()))]
     return from_dict(to_dict(tmp))
 

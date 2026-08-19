@@ -2,10 +2,11 @@
  * the drag.  Every mutation funnels through `afterEdit`, which re-solves (when auto-solve is
  * on), re-diagnoses and notifies the shell exactly once. */
 import * as io from '../core/io.js';
+import * as C from '../core/constraints.js';
 import { Constraint } from '../core/constraints.js';
 import { PlanDrag, PlanResult, PlanSolver, asSolveResult, pppTriangles } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
-import { Arc, Circle, Line, Point, Primitive, Sketch } from '../core/model.js';
+import { Arc, Circle, Line, Param, Point, Primitive, Sketch, threePointArc } from '../core/model.js';
 import { Method, RadiusDrag, SolveResult, System, Triangle } from '../core/system.js';
 import { Motion, WitnessReport, analyze, movingParams } from '../core/witness.js';
 
@@ -23,6 +24,7 @@ const COL = {
   preview: '#999999',
   highlight: '#9467bd',
   conflict: '#b3001b',
+  bandFill: 'rgba(227, 119, 194, 0.10)',
 };
 /* entity colouring by constraint state (FreeCAD-style, but from the DM decomposition and the
  * conflict set rather than from a guess) */
@@ -43,7 +45,7 @@ interface Animation {
   showing: number;
 }
 
-export type Tool = 'select' | 'point' | 'line' | 'circle' | 'arc';
+export type Tool = 'select' | 'point' | 'line' | 'circle' | 'arc' | 'arc3';
 
 export class SketchView {
   sketch: Sketch;
@@ -66,7 +68,8 @@ export class SketchView {
   onChanged: () => void = () => {};
   /** The active tool changed (including when Escape backs out of one). */
   onTool: (tool: Tool) => void = () => {};
-  /** Per drag frame: nothing but the numbers changed, so only the status line needs it. */
+  /** Per gesture frame: the sketch's structure and the constraint list are unchanged, so
+   *  only the status line needs updating (a drag's numbers, a band's selection count). */
   onDragFrame: () => void = () => {};
   onStatus: (msg: string) => void = () => {};
 
@@ -80,10 +83,14 @@ export class SketchView {
   private witnessFor: Diagnosis | null = null;
   private anim: Animation | null = null;
   private animTimer = 0;
-  private drag: PlanDrag | null = null;
-  private radiusDrag: RadiusDrag | null = null;
-  private flipsReported = 0;
-  private panLast: [number, number] | null = null;
+  /** The one gesture in progress, if any — pan, point drag, radius drag or rubber band.
+   *  One field rather than four means a new gesture cannot be forgotten in `setSketch`, and
+   *  the pointer handlers stay two lines each. */
+  private gesture: Gesture | null = null;
+  /** `underParams` as a set, rebuilt when the diagnosis it came from is replaced. */
+  private movable: { owner: Diagnosis; set: Set<Param> } | null = null;
+  /** A gesture moved geometry, so the null space no longer describes the pose on screen. */
+  private staleDiagnosis = false;
   private frame = 0;
 
   constructor(readonly canvas: HTMLCanvasElement, sketch: Sketch) {
@@ -107,7 +114,7 @@ export class SketchView {
 
   fit(): void {
     if (!this.sketch.points.length) return;
-    const [x0, y0, x1, y1] = this.sketch.bbox();
+    const [x0, y0, x1, y1] = this.sketch.drawnBounds();
     this.scale = 0.8 * Math.min(this.width / (x1 - x0 || 1), this.height / (y1 - y0 || 1));
     const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
     this.originX = this.width / 2 - cx * this.scale;
@@ -118,11 +125,11 @@ export class SketchView {
   // -- sketch mutation -----------------------------------------------------
 
   setSketch(sk: Sketch, fit = true): void {
+    this.abandonGesture();            // before the swap: `end` would commit into the new sketch
     this.sketch = sk;
     this.selected = [];
     this.highlight = [];
     this.pending = [];
-    this.drag = null;
     this.releasePlan();
     this.afterEdit();
     if (fit) this.fit();      // after the solve: loading a case can move the geometry a long way
@@ -193,6 +200,7 @@ export class SketchView {
 
   private rediagnose(system: System | null): void {
     this.diagnosis = this.sketch.constraints.length ? diagnose(this.sketch, { system }) : null;
+    this.staleDiagnosis = false;
   }
 
   /** Every mutation ends here.  A failed solve leaves the last good geometry on screen: the
@@ -284,16 +292,11 @@ export class SketchView {
     const st = d?.status ?? 'well';
     const kinds = [...new Set(cs.map((c) => c.typeName))].join(' + ');
     const what = cs.length === 1 ? kinds : `${cs.length} × ${kinds}`;
-    if (st === 'conflict' && d?.conflicts?.length) {
-      this.onStatus(`added ${what} — CONFLICT, remove one of: `
-        + d.conflicts.map((k) => io.describe(k, this.sketch)).join(', '));
-    } else if (st === 'over') {
-      this.onStatus(`added ${what} — redundant (consistent) with existing constraints`);
-    } else if (res && !res.success) {
-      this.onStatus(`added ${what} — solver did NOT converge`);
-    } else {
-      this.onStatus(`added ${what}`);
-    }
+    const why = st === 'conflict' && d?.conflicts?.length
+      ? ` — CONFLICT, remove one of: ${d.conflicts.map((k) => io.describe(k, this.sketch)).join(', ')}`
+      : st === 'over' ? ' — redundant (consistent) with existing constraints'
+      : res && !res.success ? ' — solver did NOT converge' : '';
+    this.onStatus(`added ${what}${why}`);
   }
 
   removeConstraint(c: Constraint): void {
@@ -432,6 +435,7 @@ export class SketchView {
         ctx.fill();
       }
     }
+    this.gesture?.paint?.(ctx);
     if (this.tool !== 'select') {                 // snap indicator
       const sp = this.pickPoint(...this.cursor);
       if (sp) {
@@ -516,21 +520,32 @@ export class SketchView {
     ctx.lineWidth = 1;
     const p0 = this.w2s(...this.pending[0].xy);
     const cur = this.cursor;
-    if (this.tool === 'line') {
+    /** A dashed line from the last point placed to the cursor. */
+    const rubber = (): void => {
       ctx.beginPath();
       ctx.moveTo(...this.w2s(...this.pending[this.pending.length - 1].xy));
       ctx.lineTo(cur[0], cur[1]);
       ctx.stroke();
+    };
+    if (this.tool === 'line') {
+      rubber();
     } else if (this.tool === 'circle') {
       ctx.beginPath();
       ctx.arc(p0[0], p0[1], Math.hypot(cur[0] - p0[0], cur[1] - p0[1]), 0, 2 * Math.PI);
       ctx.stroke();
+    } else if (this.tool === 'arc3') {
+      const g = this.pending.length === 2
+        ? threePointArc(...this.pending[0].xy, ...this.pending[1].xy, ...this.s2w(cur[0], cur[1]))
+        : null;
+      if (g) {
+        this.arcPath([g.cx, g.cy], g.r * this.scale, g.a0, g.a1);
+        ctx.stroke();
+      } else {
+        rubber();                                    // one end so far, or a collinear cursor
+      }
     } else if (this.tool === 'arc') {
       if (this.pending.length === 1) {
-        ctx.beginPath();
-        ctx.moveTo(p0[0], p0[1]);
-        ctx.lineTo(cur[0], cur[1]);
-        ctx.stroke();
+        rubber();
       } else {
         const ps = this.w2s(...this.pending[1].xy);
         const a0 = Math.atan2(-(ps[1] - p0[1]), ps[0] - p0[0]);
@@ -608,7 +623,7 @@ export class SketchView {
     this.cursor = sp;
     if (e.button === 1 || e.button === 2) {
       if (this.pending.length) this.cancelTool();
-      else this.panLast = sp;
+      else this.gesture = this.panGesture(sp);
       return;
     }
     if (e.button !== 0) return;
@@ -618,21 +633,25 @@ export class SketchView {
     }
     const ent = this.pick(sp[0], sp[1]);
     if (!ent) {
+      // nothing under the cursor: start a rubber band.  A press with no drag still just
+      // clears the selection, because an empty box selects nothing.
       if (!e.shiftKey) this.selected = [];
+      this.gesture = this.bandGesture(sp);
     } else if (e.shiftKey) {
       const i = this.selected.indexOf(ent);
       if (i >= 0) this.selected.splice(i, 1);
       else this.selected.push(ent);
     } else {
       if (!this.selected.includes(ent)) this.selected = [ent];
-      if (ent instanceof Point && !ent.isFixed) {
+      if (ent instanceof Point && this.canMove(ent)) {
         this.pushUndo();
         const guards: Triangle[] | null = this.planSolver ? pppTriangles(this.planSolver.plan) : null;
-        this.drag = new PlanDrag(this.sketch, ent, ...this.s2w(sp[0], sp[1]), guards);
-        this.flipsReported = 0;
-      } else if (isResizable(ent)) {
+        this.gesture = this.pointGesture(new PlanDrag(this.sketch, ent, ...this.s2w(sp[0], sp[1]), guards));
+      } else if (this.isResizable(ent)) {
         this.pushUndo();
-        this.radiusDrag = new RadiusDrag(this.sketch, ent, Math.abs(ent.radius.value));
+        this.gesture = this.radiusGesture(new RadiusDrag(this.sketch, ent, Math.abs(ent.radius.value)));
+      } else if (!this.canMove(ent)) {
+        this.onStatus(`${ent.kind} is fully constrained — nothing here is free to move`);
       }
     }
     this.onChanged();
@@ -661,6 +680,26 @@ export class SketchView {
         sk.circle(c, Math.hypot(x - c.x.value, y - c.y.value) || 1);
         this.pending = [];
       }
+    } else if (this.tool === 'arc3') {
+      // two endpoints, then a point the arc must pass through.  That third click is
+      // construction input, not a sketch point — the circumcircle is what it produces.
+      if (this.pending.length < 2) {
+        const p = this.snapOrNew(sp);
+        if (!this.pending.length || p !== this.pending[0]) this.pending.push(p);
+      } else {
+        // the snap indicator is painted for every drawing tool, so honour it here: landing
+        // the third click on a real point means the arc should stay on it, not merely start
+        // out near it
+        const [a, b] = this.pending;
+        const on = this.pickPoint(sp[0], sp[1]);
+        const arc = sk.arcThrough(a, b, on ? on.xy : this.s2w(sp[0], sp[1]));
+        if (!arc) {
+          this.onStatus('those three points are collinear — pick a point off the chord');
+          return;                                    // keep the two ends, let them try again
+        }
+        if (on) sk.add(new C.PointOnCircle(on, arc));
+        this.pending = [];
+      }
     } else if (this.tool === 'arc') {
       const existing = this.pickPoint(sp[0], sp[1]) !== null;
       this.pending.push(this.snapOrNew(sp));
@@ -685,58 +724,173 @@ export class SketchView {
   private onPointerMove(e: PointerEvent): void {
     const sp = this.local(e);
     this.cursor = sp;
-    if (this.panLast) {
-      this.originX += sp[0] - this.panLast[0];
-      this.originY += sp[1] - this.panLast[1];
-      this.panLast = sp;
-    } else if (this.drag) {
-      this.lastResult = this.drag.move(...this.s2w(sp[0], sp[1]));
-      if (this.drag.flips.length > this.flipsReported) {   // only announce new ones
-        this.flipsReported = this.drag.flips.length;
-        this.onStatus(`⚠ solution branch flipped in ${this.flipsReported} triangle(s) during this drag`);
-      }
-      this.onDragFrame();
-    } else if (this.radiusDrag) {
-      const [wx, wy] = this.s2w(sp[0], sp[1]);
-      const c = this.radiusDrag.circle.center;
-      this.lastResult = this.radiusDrag.move(Math.hypot(wx - c.x.value, wy - c.y.value));
-      this.onDragFrame();
-    } else {
-      this.hover(sp);
-    }
+    if (this.gesture) this.gesture.move(sp);
+    else this.hover(sp);
     this.draw();
+  }
+
+  private onPointerUp(): void {
+    this.endGesture();
+  }
+
+  /** The gesture finished: let it commit, then refresh — unless it changed nothing (a pan
+   *  moves the camera, not the sketch). */
+  private endGesture(): void {
+    const g = this.gesture;
+    if (!g) return;
+    this.gesture = null;
+    g.end?.();
+    if (g.movedGeometry) this.staleDiagnosis = true;
+    if (!g.transient) this.onChanged();
+    this.draw();
+  }
+
+  /** The sketch is being replaced under a live gesture: drop it without committing, since
+   *  `end` would write into a document the gesture never ran on. */
+  private abandonGesture(): void {
+    const g = this.gesture;
+    this.gesture = null;
+    g?.abandon?.();
+  }
+
+  /* -- the gestures.  Each owns its own state; `paint` is for the ones that draw. -- */
+
+  private panGesture(from: [number, number]): Gesture {
+    let last = from;
+    return {
+      transient: true,                 // the camera moved, not the sketch
+      move: (sp) => {
+        this.originX += sp[0] - last[0];
+        this.originY += sp[1] - last[1];
+        last = sp;
+      },
+    };
+  }
+
+  private pointGesture(drag: PlanDrag): Gesture {
+    let reported = 0;
+    return {
+      movedGeometry: true,
+      move: (sp) => {
+        this.lastResult = drag.move(...this.s2w(sp[0], sp[1]));
+        if (drag.flips.length > reported) {          // only announce new ones
+          reported = drag.flips.length;
+          this.onStatus(`⚠ solution branch flipped in ${reported} triangle(s) during this drag`);
+        }
+        this.onDragFrame();
+      },
+      end: () => {
+        drag.end();
+        for (const [k, v] of drag.branches()) drag.sketch.branches.set(k, v);
+        this.releasePlan();      // the drag's plan pinned the dragged point; recompile lazily
+      },
+      abandon: () => {
+        drag.end();              // disposes the compiled systems; no branches committed
+        this.releasePlan();
+      },
+    };
+  }
+
+  private radiusGesture(drag: RadiusDrag): Gesture {
+    return {
+      movedGeometry: true,
+      abandon: () => drag.end(),
+      move: (sp) => {
+        const [wx, wy] = this.s2w(sp[0], sp[1]);
+        const c = drag.circle.center;
+        this.lastResult = drag.move(Math.hypot(wx - c.x.value, wy - c.y.value));
+        this.onDragFrame();
+      },
+      end: () => drag.end(),
+    };
+  }
+
+  private bandGesture(from: [number, number]): Gesture {
+    const base = [...this.selected];
+    let to = from;                     // the gesture owns both corners, so paint reads no globals
+    return {
+      move: (sp) => {
+        to = sp;
+        // live preview: the canvas shows what would be selected, the status line the count
+        this.selected = [...new Set([...base, ...this.boxContents(from, sp)])];
+        this.onDragFrame();
+      },
+      paint: (ctx) => {
+        const [x0, y0] = from, [x1, y1] = to;
+        ctx.save();
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = COL.sel;
+        ctx.fillStyle = COL.bandFill;
+        ctx.lineWidth = 1;
+        const rx = Math.min(x0, x1), ry = Math.min(y0, y1);
+        ctx.fillRect(rx, ry, Math.abs(x1 - x0), Math.abs(y1 - y0));
+        ctx.strokeRect(rx + 0.5, ry + 0.5, Math.abs(x1 - x0), Math.abs(y1 - y0));
+        ctx.restore();
+      },
+    };
+  }
+
+  /** Entities lying entirely inside the box — "window" selection.  "All of it is inside"
+   *  is exactly "its bounds are inside", so this asks the model rather than re-deriving each
+   *  primitive's extent (a line's two endpoints, a circle's rim, an arc's sweep). */
+  private boxContents(from: [number, number], to: [number, number]): Primitive[] {
+    const a = this.s2w(from[0], from[1]);
+    const b = this.s2w(to[0], to[1]);
+    const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]);
+    const y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
+    return this.sketch.primitives().filter((e) => {
+      const bb = e.bounds();
+      return bb[0] >= x0 && bb[1] >= y0 && bb[2] <= x1 && bb[3] <= y1;
+    });
   }
 
   /** Cursor affordance: what a press here would grab. */
   private hover(sp: [number, number]): void {
     if (this.tool !== 'select') return;
     const ent = this.pick(sp[0], sp[1]);
-    this.canvas.style.cursor = ent instanceof Point && !ent.isFixed ? 'grab'
-      : isResizable(ent) ? 'ew-resize' : '';
+    this.canvas.style.cursor = ent instanceof Point && this.canMove(ent) ? 'grab'
+      : this.isResizable(ent) ? 'ew-resize' : '';
   }
 
-  private onPointerUp(): void {
-    this.panLast = null;
-    if (this.radiusDrag) {
-      this.radiusDrag.end();
-      this.radiusDrag = null;
-      this.onChanged();
-      this.draw();
+  /** Can any part of this entity actually move?  `Diagnosis.underParams` is the Jacobian
+   *  null space (or the structural under-block above NUMERIC_MAX), so the cursor promises
+   *  only what the solver will deliver rather than reading `fixed` and offering to drag
+   *  something a constraint has pinned.
+   *
+   *  The question is per entity, not per parameter — a point pinned in x but free in y still
+   *  slides.  And the null space belongs to the pose it was computed at, so a gesture that
+   *  moved geometry marks it stale: we then fall back to "yes", because refusing needs
+   *  positive knowledge and a hint should never be a lie in the strict direction. */
+  private canMove(e: Primitive): boolean {
+    const free = e.params.filter((p) => !p.fixed);
+    if (!free.length) return false;
+    if (!this.diagnosis || this.staleDiagnosis) return true;
+    if (this.movable?.owner !== this.diagnosis) {
+      this.movable = { owner: this.diagnosis, set: new Set(this.diagnosis.underParams) };
     }
-    if (this.drag) {
-      this.drag.end();
-      for (const [k, v] of this.drag.branches()) this.sketch.branches.set(k, v);
-      this.drag = null;
-      this.releasePlan();          // the drag's plan pinned the dragged point; recompile lazily
-      this.onChanged();
-      this.draw();
-    }
+    return free.some((p) => this.movable!.set.has(p));
+  }
+
+  /** A circle or arc whose radius is free to follow the cursor. */
+  private isResizable(e: Primitive | null): e is Circle | Arc {
+    return (e instanceof Circle || e instanceof Arc) && !e.radius.fixed
+      && (!this.diagnosis || this.staleDiagnosis || this.canMove(e));
   }
 }
 
-/** A circle or arc whose radius is free to follow the cursor. */
-function isResizable(e: Primitive | null): e is Circle | Arc {
-  return (e instanceof Circle || e instanceof Arc) && !e.radius.fixed;
+/** One pointer gesture in progress.  `move` gets canvas coordinates; `end` and `paint` are
+ *  optional because pan needs neither and the rubber band needs both. */
+interface Gesture {
+  move(sp: [number, number]): void;
+  /** Finish and commit whatever the gesture produced. */
+  end?(): void;
+  /** Drop it without committing — the sketch was replaced underneath. */
+  abandon?(): void;
+  paint?(ctx: CanvasRenderingContext2D): void;
+  /** Nothing about the sketch or the selection changed, so releasing needs no refresh. */
+  transient?: boolean;
+  /** The geometry moved, so the diagnosis no longer describes the pose on screen. */
+  movedGeometry?: boolean;
 }
 
 function dist(a: [number, number], b: [number, number]): number {

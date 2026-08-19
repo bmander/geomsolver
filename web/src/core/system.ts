@@ -343,22 +343,50 @@ export function increments(x0: number, y0: number, x1: number, y1: number, maxSt
   return out;
 }
 
-/** Interactive drag of one point: pull toward the cursor with a soft target, then polish
- *  with the hard constraints only so they hold exactly.
+/** The pull/polish protocol every interactive drag shares.
  *
- *  Both systems are compiled once at drag start and reused for every move — dragging never
- *  re-analyses the sketch.  Stage 5 robustness: continuation (a far cursor jump is taken in
- *  increments so the solution tracks its homotopy branch) and order-type guards (a step that
- *  would flip a guarded triangle's orientation is retried with smaller increments, and an
- *  unavoidable flip is recorded and flagged). */
-export class Drag {
-  readonly PULL_ITER = 4;
+ *  A soft constraint pulls the geometry toward what the cursor asks for; the hard
+ *  constraints are then polished on their own so they hold exactly.  Both systems are
+ *  compiled once, at drag start, and reused for every move — dragging never re-analyses the
+ *  sketch.  The compile order is load-bearing: `polish` must be built before the soft target
+ *  joins the sketch, so it contains the hard constraints only. */
+abstract class PullPolish<T extends Constraint> {
+  readonly PULL_ITER = 4;   // the pull is a soft compromise; polish makes it exact
   readonly POLISH_ITER = 20;
 
-  readonly target: DragTarget;
   readonly polish: System;
   readonly pull: System;
   active = true;
+
+  constructor(readonly sketch: Sketch, readonly target: T, readonly method: Method) {
+    this.polish = new System(sketch);
+    sketch.add(target);
+    this.pull = new System(sketch);
+  }
+
+  /** One frame: push the target's new value in, pull, then make the hard ones exact. */
+  protected pullPolish(): SolveResult {
+    this.pull.updateConsts(this.target);
+    this.pull.solve({ method: this.method, maxIter: this.PULL_ITER });
+    return this.polish.solve({ method: this.method, maxIter: this.POLISH_ITER });
+  }
+
+  end(): void {
+    if (!this.active) return;
+    this.sketch.remove(this.target);
+    this.active = false;
+    this.pull.dispose();
+    this.polish.dispose();
+  }
+}
+
+/** Interactive drag of one point: pull toward the cursor, then polish.
+ *
+ *  Stage 5 robustness: continuation (a far cursor jump is taken in increments so the solution
+ *  tracks its homotopy branch) and order-type guards (a step that would flip a guarded
+ *  triangle's orientation is retried with smaller increments, and an unavoidable flip is
+ *  recorded and flagged). */
+export class Drag extends PullPolish<DragTarget> {
   guards: Triangle[];
   flips: Triangle[] = [];
   private signs: boolean[];
@@ -366,19 +394,16 @@ export class Drag {
   private lastGood: Float64Array;
 
   constructor(
-    readonly sketch: Sketch,
+    sketch: Sketch,
     readonly point: Point,
     x: number,
     y: number,
-    readonly method: Method = 'dogleg',
+    method: Method = 'dogleg',
     weight = 1.0,
     guards: Triangle[] | null = null,
     maxStepRel = 0.05,
   ) {
-    this.polish = new System(sketch);
-    this.target = new DragTarget(point, x, y, weight);
-    sketch.add(this.target);
-    this.pull = new System(sketch);
+    super(sketch, new DragTarget(point, x, y, weight), method);
     this.guards = guards ?? [];
     this.maxStep = maxStepRel * Math.max(1, sketch.extent());
     this.signs = this.guards.map((t) => orientation(t[0], t[1], t[2]) >= 0);
@@ -387,9 +412,7 @@ export class Drag {
 
   private step(x: number, y: number): SolveResult {
     this.target.setTarget(x, y);
-    this.pull.updateConsts(this.target);
-    this.pull.solve({ method: this.method, maxIter: this.PULL_ITER });
-    return this.polish.solve({ method: this.method, maxIter: this.POLISH_ITER });
+    return this.pullPolish();
   }
 
   private flipped(): number[] {
@@ -440,58 +463,33 @@ export class Drag {
     if (this.flips.length > nFlips) res.message = `order-type flip in ${this.flips.length - nFlips} triangle(s)`;
     return res;
   }
+}
 
-  end(): void {
-    if (this.active) {
-      this.sketch.remove(this.target);
-      this.active = false;
-      this.pull.dispose();
-      this.polish.dispose();
-    }
-  }
+/** A `Radius` that does not have to hold: its residual is already exactly r - target, so the
+ *  scalar pull needs no kernel of its own. */
+function softRadius(circle: Circle | Arc, r: number): Radius {
+  const target = new Radius(circle, r);
+  target.soft = true;
+  return target;
 }
 
 /** Interactive drag of a circle's or arc's radius — the scalar counterpart of `Drag`.
  *
- *  Same shape: pull the radius toward the cursor's distance from the centre with a soft
- *  constraint, then polish with the hard constraints only, both systems compiled once at drag
- *  start.  The soft term is a `Radius` with its `soft` flag set: its residual is already
- *  exactly r - target, so the pull needs no kernel of its own.  A radius that is fixed,
- *  dimensioned or tied by EqualRadius simply does not move — the polish wins, the same way a
- *  point drag behaves on a fully constrained sketch. */
-export class RadiusDrag {
-  readonly PULL_ITER = 4;
-  readonly POLISH_ITER = 20;
-
-  readonly target: Radius;
-  readonly polish: System;
-  readonly pull: System;
-  active = true;
-
-  constructor(readonly sketch: Sketch, readonly circle: Circle | Arc, r: number,
-              readonly method: Method = 'dogleg') {
-    this.polish = new System(sketch);          // hard only: the soft target is not added yet
-    this.target = new Radius(circle, r);
-    this.target.soft = true;
-    sketch.add(this.target);
-    this.pull = new System(sketch);
+ *  A radius that is fixed or dimensioned simply does not move: the polish wins, exactly as a
+ *  point drag compromises on an over-constrained sketch.  An `EqualRadius` chain is a relation
+ *  rather than a dimension, so the whole chain resizes together.  (The web app additionally
+ *  refuses to *start* such a drag, using the diagnosis; that is a UI choice, not a property of
+ *  this class.) */
+export class RadiusDrag extends PullPolish<Radius> {
+  constructor(sketch: Sketch, readonly circle: Circle | Arc, r: number, method: Method = 'dogleg') {
+    super(sketch, softRadius(circle, r), method);
   }
 
   move(r: number): SolveResult {
     const t0 = now();
     this.target.r = Math.max(r, 1e-9);         // a radius through zero would flip the geometry
-    this.pull.updateConsts(this.target);
-    this.pull.solve({ method: this.method, maxIter: this.PULL_ITER });
-    const res = this.polish.solve({ method: this.method, maxIter: this.POLISH_ITER });
+    const res = this.pullPolish();
     res.timeS = now() - t0;
     return res;
-  }
-
-  end(): void {
-    if (!this.active) return;
-    this.sketch.remove(this.target);
-    this.active = false;
-    this.pull.dispose();
-    this.polish.dispose();
   }
 }

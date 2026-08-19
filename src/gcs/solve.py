@@ -274,12 +274,44 @@ def increments(x0: float, y0: float, x1: float, y1: float, max_step: float) -> l
     return [(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n) for i in range(1, n + 1)]
 
 
-class Drag:
+class _PullPolish[TargetT: Constraint]:
+    """The pull/polish protocol every interactive drag shares.
+
+    A soft constraint pulls the geometry toward what the cursor asks for; the hard
+    constraints are then polished on their own so they hold exactly.  Both systems are
+    compiled once, at drag start, and reused for every move — dragging never re-analyses
+    the sketch.  The compile order is load-bearing: `polish` must be built before the soft
+    target joins the sketch, so it contains the hard constraints only.
+    """
+
+    PULL_ITER = 4      # the pull is a soft compromise; a few GN steps suffice, polish makes it exact
+    POLISH_ITER = 20
+
+    def __init__(self, sketch: Sketch, target: TargetT, method: Method) -> None:
+        self.sketch, self.method = sketch, method
+        self.polish = System(sketch)
+        self.target = target
+        sketch.add(target)
+        self.pull = System(sketch)
+        self.active = True
+
+    def _pull_polish(self) -> SolveResult:
+        """One frame: push the target's new value in, pull, then make the hard ones exact."""
+        self.pull.update_consts(self.target)
+        self.pull.solve(method=self.method, max_iter=self.PULL_ITER)
+        return self.polish.solve(method=self.method, max_iter=self.POLISH_ITER)
+
+    def end(self) -> None:
+        if self.active:
+            self.sketch.remove(self.target)
+            self.active = False
+
+
+class Drag(_PullPolish[DragTarget]):
     """Interactive drag of one point: pull toward the cursor with a soft target,
     then polish with the hard constraints only so they hold exactly.
 
-    Both systems are compiled once at drag start and reused for every move —
-    dragging never re-analyses the sketch.  Stage 5 robustness:
+    Stage 5 robustness:
       * continuation — a far cursor jump is taken in increments (≤ max_step_rel
         of the sketch extent) so the solution tracks its homotopy branch instead
         of teleporting across it;
@@ -289,18 +321,11 @@ class Drag:
         recorded in `flips` and flagged in the result's message.
     """
 
-    PULL_ITER = 4      # the pull is a soft compromise; a few GN steps suffice, polish makes it exact
-    POLISH_ITER = 20
-
     def __init__(self, sketch: Sketch, point: Point, x: float, y: float,
                  method: Method = "dogleg", weight: float = 1.0,
                  guards: list[Triangle] | None = None, max_step_rel: float = 0.05) -> None:
-        self.sketch, self.point, self.method = sketch, point, method
-        self.polish = System(sketch)
-        self.target = DragTarget(point, x, y, weight=weight)
-        sketch.add(self.target)
-        self.pull = System(sketch)
-        self.active = True
+        super().__init__(sketch, DragTarget(point, x, y, weight=weight), method)
+        self.point = point
         self.guards = guards or []
         self.max_step = max_step_rel * max(1.0, sketch.extent())
         self.signs = [orientation(*t) >= 0 for t in self.guards]
@@ -309,9 +334,7 @@ class Drag:
 
     def _step(self, x: float, y: float) -> SolveResult:
         self.target.set_target(x, y)
-        self.pull.update_consts(self.target)
-        self.pull.solve(method=self.method, max_iter=self.PULL_ITER)
-        return self.polish.solve(method=self.method, max_iter=self.POLISH_ITER)
+        return self._pull_polish()
 
     def _flipped(self) -> list[int]:
         return [i for i, t in enumerate(self.guards) if (orientation(*t) >= 0) != self.signs[i]]
@@ -353,45 +376,32 @@ class Drag:
             res.message = f"order-type flip in {len(self.flips) - n_flips} triangle(s)"
         return res
 
-    def end(self) -> None:
-        if self.active:
-            self.sketch.remove(self.target)
-            self.active = False
+
+def _soft_radius(circle: Circle | Arc, r: float) -> Radius:
+    """A `Radius` that does not have to hold: its residual is already exactly r − target, so
+    the scalar pull needs no kernel of its own."""
+    target = Radius(circle, r)
+    target.soft = True
+    return target
 
 
-class RadiusDrag:
+class RadiusDrag(_PullPolish[Radius]):
     """Interactive drag of a circle's or arc's radius — the scalar counterpart of `Drag`.
 
-    Same shape: pull the radius toward the cursor's distance from the centre with a soft
-    constraint, then polish with the hard constraints only, both systems compiled once at
-    drag start.  The soft term is a `Radius` with its `soft` flag set: its residual is
-    already exactly r − target, so the pull needs no kernel of its own.  A radius that is
-    fixed, dimensioned or tied by EqualRadius simply does not move — the polish wins, which
-    is the same way a point drag behaves on a fully constrained sketch.
+    A radius that is fixed or dimensioned simply does not move: the polish wins, exactly as
+    a point drag compromises on an over-constrained sketch.  An `EqualRadius` chain is a
+    relation rather than a dimension, so the whole chain resizes together.  (The web app
+    additionally refuses to *start* such a drag, using the diagnosis; that is a UI choice,
+    not a property of this class.)
     """
 
-    PULL_ITER = 4
-    POLISH_ITER = 20
-
     def __init__(self, sketch: Sketch, circle: Circle | Arc, r: float, method: Method = "dogleg") -> None:
-        self.sketch, self.circle, self.method = sketch, circle, method
-        self.polish = System(sketch)          # hard only: the soft target is not added yet
-        self.target = Radius(circle, r)
-        self.target.soft = True
-        sketch.add(self.target)
-        self.pull = System(sketch)
-        self.active = True
+        super().__init__(sketch, _soft_radius(circle, r), method)
+        self.circle = circle
 
     def move(self, r: float) -> SolveResult:
         t0 = time.perf_counter()
         self.target.r = max(float(r), 1e-9)   # a radius through zero would flip the geometry
-        self.pull.update_consts(self.target)
-        self.pull.solve(method=self.method, max_iter=self.PULL_ITER)
-        res = self.polish.solve(method=self.method, max_iter=self.POLISH_ITER)
+        res = self._pull_polish()
         res.time_s = time.perf_counter() - t0
         return res
-
-    def end(self) -> None:
-        if self.active:
-            self.sketch.remove(self.target)
-            self.active = False

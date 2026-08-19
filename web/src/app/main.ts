@@ -1,7 +1,10 @@
 /* The sketcher shell: toolbars, the constraint list, the diagnosis banner and the dialogs.
  *
- *   tools     S select · P point · L line · C circle · A arc
+ *   tools     S select · P point · L line · C circle · A arc (centre, start, end)
+ *             3 arc through two ends and a point on it
  *   Esc       stop a DOF animation, then drop the tool's pending points, then back out to Select
+ *   select    click (shift = multi), or drag a box over empty canvas to take everything
+ *             that lies entirely inside it
  *   editing   F fix/unfix · Del delete · Ctrl+Z undo · wheel zoom · right-drag pan
  *
  * Everything below is presentation; the solver, diagnosis, decomposition and root selection
@@ -43,15 +46,13 @@ const toolButtons = new Map<Tool, HTMLButtonElement>();
 view.onTool = (t) => {
   for (const [k, b] of toolButtons) b.setAttribute('aria-pressed', String(k === t));
 };
-const setTool = (t: Tool): void => view.setTool(t);
-
 for (const [label, tool, key] of [
   ['Select', 'select', 's'], ['Point', 'point', 'p'], ['Line', 'line', 'l'],
-  ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'],
+  ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
 ] as [string, Tool, string][]) {
-  toolButtons.set(tool, addButton(barTools, { label, key, toggle: true, onClick: () => setTool(tool) }));
+  toolButtons.set(tool, addButton(barTools, { label, key, toggle: true, onClick: () => view.setTool(tool) }));
 }
-setTool('select');
+view.setTool('select');
 addButton(barTools, {
   label: 'Cancel', key: 'esc', onClick: () => view.cancelTool(),
   title: 'Discard the points collected so far; again to leave the tool for Select',
@@ -498,7 +499,9 @@ bannerSelect.addEventListener('click', () => {
 
 /* -- keyboard ------------------------------------------------------------------- */
 
-const TOOL_KEYS: Record<string, Tool> = { s: 'select', p: 'point', l: 'line', c: 'circle', a: 'arc' };
+const TOOL_KEYS: Record<string, Tool> = {
+  s: 'select', p: 'point', l: 'line', c: 'circle', a: 'arc', 3: 'arc3',
+};
 
 window.addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement | null;
@@ -521,7 +524,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (k === 'f') { view.toggleFixSelected(); return; }
-  if (TOOL_KEYS[k]) setTool(TOOL_KEYS[k]);
+  if (TOOL_KEYS[k]) view.setTool(TOOL_KEYS[k]);
 });
 
 /* -- boot ------------------------------------------------------------------------- */
@@ -533,4 +536,5 @@ new ResizeObserver(() => view.resize()).observe(canvas);
 view.resize();
 view.fit();
 view.afterEdit();
-toast('Rectangle with fillets — drag a point, or load another case from the toolbar', 12000);
+toast('Rectangle with fillets — fully constrained, so nothing here moves; load another case '
+  + 'from the toolbar to drag one', 12000);

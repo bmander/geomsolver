@@ -50,7 +50,10 @@ export function toJSON(sk: Sketch): SketchJSON {
       center: ix.ref(a.center)[1], start: ix.ref(a.start)[1], end: ix.ref(a.end)[1],
       r: a.radius.value, fixed: a.radius.fixed,
     })),
-    constraints: sk.constraints.filter((c) => !c.intrinsic).map((c) => ({
+    // userConstraints() is exactly "what the user added": no intrinsic ones (the primitives
+    // recreate those) and no soft ones (a drag target or a RadiusDrag's pull would come back
+    // as a real dimension, since `soft` is not part of the JSON)
+    constraints: sk.userConstraints().map((c) => ({
       type: c.typeName,
       args: c.args().map((v, i) => (ENTITY_KINDS.has(c.spec[i][1]) ? ix.ref(v as Primitive) : v)),
     })),
@@ -101,8 +104,8 @@ export function without(sk: Sketch, entities: Iterable<Primitive> = [], constrai
   tmp.lines = sk.lines.filter(alive);
   tmp.circles = sk.circles.filter(alive);
   tmp.arcs = sk.arcs.filter(alive);
-  tmp.constraints = sk.constraints.filter(
-    (c) => !deadC.has(c) && !c.intrinsic && !expand(c.entities()).some((e) => dead.has(e)),
+  tmp.constraints = sk.userConstraints().filter(
+    (c) => !deadC.has(c) && !expand(c.entities()).some((e) => dead.has(e)),
   );
   return fromJSON(toJSON(tmp));
 }

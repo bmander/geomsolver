@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Iterable, Sequence
+from typing import TYPE_CHECKING, Iterable, NamedTuple, Sequence
 
 import numpy as np
 import numpy.typing as npt
@@ -19,6 +19,15 @@ if TYPE_CHECKING:
     from gcs.constraints import Constraint
 
 Vec = npt.NDArray[np.float64]
+Box = tuple[float, float, float, float]      # (xmin, ymin, xmax, ymax)
+
+
+def _union(boxes: Iterable[Box]) -> Box | None:
+    lo_x, lo_y, hi_x, hi_y = math.inf, math.inf, -math.inf, -math.inf
+    for x0, y0, x1, y1 in boxes:
+        lo_x, lo_y = min(lo_x, x0), min(lo_y, y0)
+        hi_x, hi_y = max(hi_x, x1), max(hi_y, y1)
+    return None if lo_x is math.inf or lo_x > hi_x else (lo_x, lo_y, hi_x, hi_y)
 
 
 @dataclass(eq=False)
@@ -59,6 +68,9 @@ class Point:
         self.x.fixed = fixed
         self.y.fixed = fixed
 
+    def bounds(self) -> Box:
+        return (self.x.value, self.y.value, self.x.value, self.y.value)
+
 
 @dataclass(eq=False)
 class Line:
@@ -81,6 +93,10 @@ class Line:
     def length(self) -> float:
         return math.hypot(*self.direction())
 
+    def bounds(self) -> Box:
+        return (min(self.p1.x.value, self.p2.x.value), min(self.p1.y.value, self.p2.y.value),
+                max(self.p1.x.value, self.p2.x.value), max(self.p1.y.value, self.p2.y.value))
+
 
 @dataclass(eq=False)
 class Circle:
@@ -96,6 +112,11 @@ class Circle:
     @property
     def params(self) -> tuple[Param, ...]:
         return self.center.params + (self.radius,)
+
+    def bounds(self) -> Box:
+        cx, cy = self.center.xy
+        r = abs(self.radius.value)
+        return (cx - r, cy - r, cx + r, cy + r)
 
 
 @dataclass(eq=False)
@@ -131,8 +152,71 @@ class Arc:
             a1 += 2 * math.pi
         return a0, a1
 
+    def extremes(self) -> list[tuple[float, float]]:
+        """The points that bound the drawn sweep: its two ends, plus every quarter-turn
+        direction the sweep passes through.  Endpoints alone would under-report an arc that
+        bulges past them."""
+        cx, cy = self.center.xy
+        r = abs(self.radius.value)
+        a0, a1 = self.angles()
+        def at(th: float) -> tuple[float, float]:
+            return (cx + r * math.cos(th), cy + r * math.sin(th))
+
+        out = [at(a0), at(a1)]
+        quarter = math.pi / 2
+        k = math.ceil(a0 / quarter)
+        while k * quarter < a1:
+            out.append(at(k * quarter))
+            k += 1
+        return out
+
+    def bounds(self) -> Box:
+        xs = [p[0] for p in self.extremes()]
+        ys = [p[1] for p in self.extremes()]
+        return (min(xs), min(ys), max(xs), max(ys))
+
 
 Primitive = Point | Line | Circle | Arc
+
+
+class ThreePointArc(NamedTuple):
+    """The CCW arc through three points: centre, radius, and the sweep from `a0` to `a1`
+    that passes through the third point.  `swapped` is True when that sweep runs from the
+    *second* given point to the first."""
+
+    cx: float
+    cy: float
+    r: float
+    a0: float
+    a1: float
+    swapped: bool
+
+
+def three_point_arc(ax: float, ay: float, bx: float, by: float,
+                    cx: float, cy: float, tol: float = 1e-9) -> ThreePointArc | None:
+    """Arc from (ax, ay) to (bx, by) passing through (cx, cy) — the circumcircle of the
+    three, plus the sweep direction that actually contains the third point.  None if they
+    are collinear (the test is on the sine of the angle, so it is scale-free)."""
+    ux, uy = bx - ax, by - ay
+    vx, vy = cx - ax, cy - ay
+    cross = ux * vy - uy * vx
+    if abs(cross) <= tol * math.hypot(ux, uy) * math.hypot(vx, vy):
+        return None
+    d = 2 * cross
+    u2, v2 = ux * ux + uy * uy, vx * vx + vy * vy
+    ox = ax + (vy * u2 - uy * v2) / d
+    oy = ay + (ux * v2 - vx * u2) / d
+    r = math.hypot(ax - ox, ay - oy)
+    ta = math.atan2(ay - oy, ax - ox)
+    tb = math.atan2(by - oy, bx - ox)
+
+    def sweep(th: float) -> float:
+        return (th - ta) % (2 * math.pi)
+
+    to_b, to_c = sweep(tb), sweep(math.atan2(cy - oy, cx - ox))
+    if to_c < to_b:                                    # the third point is on the a → b sweep
+        return ThreePointArc(ox, oy, r, ta, ta + to_b, False)
+    return ThreePointArc(ox, oy, r, tb, tb + (2 * math.pi - to_b), True)
 
 
 def expand(ents: Iterable[Primitive]) -> list[Primitive]:
@@ -190,6 +274,17 @@ class Sketch:
         self.add(PointOnCircle(start, a, intrinsic=True), PointOnCircle(end, a, intrinsic=True))
         return a
 
+    def arc_through(self, start: Point, end: Point, through: tuple[float, float],
+                    name: str = "") -> Arc | None:
+        """Arc from `start` to `end` bulging through `through` — the three-point
+        construction.  Creates the centre point; None if the three are collinear."""
+        g = three_point_arc(*start.xy, *end.xy, *through)
+        if g is None:
+            return None
+        centre = self.point(g.cx, g.cy, name=f"{name}.c")
+        a, b = (end, start) if g.swapped else (start, end)
+        return self.arc(centre, a, b, name=name)
+
     def add(self, *constraints: Constraint) -> None:
         self.constraints.extend(constraints)
 
@@ -224,13 +319,21 @@ class Sketch:
                                                  "circle": self.circles, "arc": self.arcs}
         return lists[kind]
 
-    def bbox(self) -> tuple[float, float, float, float]:
-        """(xmin, ymin, xmax, ymax) over all points; unit box at the origin if empty."""
+    def bbox(self) -> Box:
+        """(xmin, ymin, xmax, ymax) over all points; unit box at the origin if empty.
+        Points only — this is what `extent()` (and through it the solver's residual scale)
+        is defined on.  For what is actually drawn, use `drawn_bounds()`."""
         if not self.points:
             return (0.0, 0.0, 1.0, 1.0)
         xs = [p.x.value for p in self.points]
         ys = [p.y.value for p in self.points]
         return (min(xs), min(ys), max(xs), max(ys))
+
+    def drawn_bounds(self) -> Box:
+        """Bounds of everything drawn, curves included — what a "fit the view" wants.  A
+        circle or arc reaches past its centre, so a points-only box clips it."""
+        ents: list[Primitive] = [*self.points, *self.lines, *self.circles, *self.arcs]
+        return _union(e.bounds() for e in ents) or self.bbox()
 
     def perturb(self, sigma: float, seed: int = 0) -> None:
         """Add seeded Gaussian noise to every free parameter (warm starts, witness construction)."""

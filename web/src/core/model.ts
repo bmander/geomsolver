@@ -8,6 +8,9 @@
 import { Rng } from './rng.js';
 import type { Constraint } from './constraints.js';
 
+/** (xmin, ymin, xmax, ymax) */
+export type Box = [number, number, number, number];
+
 export class Param {
   constructor(
     public value: number,
@@ -32,6 +35,10 @@ export class Point {
     this.x.fixed = fixed;
     this.y.fixed = fixed;
   }
+
+  bounds(): Box {
+    return [this.x.value, this.y.value, this.x.value, this.y.value];
+  }
 }
 
 export class Line {
@@ -49,6 +56,13 @@ export class Line {
     const [dx, dy] = this.direction();
     return Math.hypot(dx, dy);
   }
+
+  bounds(): Box {
+    return [
+      Math.min(this.p1.x.value, this.p2.x.value), Math.min(this.p1.y.value, this.p2.y.value),
+      Math.max(this.p1.x.value, this.p2.x.value), Math.max(this.p1.y.value, this.p2.y.value),
+    ];
+  }
 }
 
 export class Circle {
@@ -57,6 +71,12 @@ export class Circle {
 
   get children(): Point[] { return [this.center]; }
   get params(): Param[] { return [...this.center.params, this.radius]; }
+
+  bounds(): Box {
+    const [cx, cy] = this.center.xy;
+    const r = Math.abs(this.radius.value);
+    return [cx - r, cy - r, cx + r, cy + r];
+  }
 }
 
 /** CCW arc from `start` to `end` about `center`.  The radius is its own Param so Circle
@@ -78,9 +98,67 @@ export class Arc {
     if (a1 <= a0) a1 += 2 * Math.PI;
     return [a0, a1];
   }
+
+  /** The points that bound the drawn sweep: its two ends, plus every quarter-turn direction
+   *  the sweep passes through.  Endpoints alone would under-report an arc that bulges past
+   *  them. */
+  extremes(): [number, number][] {
+    const [cx, cy] = this.center.xy;
+    const r = Math.abs(this.radius.value);
+    const [a0, a1] = this.angles();
+    const at = (th: number): [number, number] => [cx + r * Math.cos(th), cy + r * Math.sin(th)];
+    const out: [number, number][] = [at(a0), at(a1)];
+    const quarter = Math.PI / 2;
+    for (let k = Math.ceil(a0 / quarter); k * quarter < a1; k++) out.push(at(k * quarter));
+    return out;
+  }
+
+  bounds(): Box {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of this.extremes()) {
+      x0 = Math.min(x0, x); y0 = Math.min(y0, y);
+      x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+    }
+    return [x0, y0, x1, y1];
+  }
 }
 
 export type Primitive = Point | Line | Circle | Arc;
+
+/** The CCW arc through three points: centre, radius, and the sweep from `a0` to `a1` that
+ *  passes through the third point.  `swapped` is true when that sweep runs from the *second*
+ *  given point to the first. */
+export interface ThreePointArc {
+  cx: number;
+  cy: number;
+  r: number;
+  a0: number;
+  a1: number;
+  swapped: boolean;
+}
+
+/** Arc from (ax, ay) to (bx, by) passing through (cx, cy) — the circumcircle of the three,
+ *  plus the sweep direction that actually contains the third point.  null if they are
+ *  collinear (the test is on the sine of the angle, so it is scale-free). */
+export function threePointArc(ax: number, ay: number, bx: number, by: number,
+                              cx: number, cy: number, tol = 1e-9): ThreePointArc | null {
+  const ux = bx - ax, uy = by - ay;
+  const vx = cx - ax, vy = cy - ay;
+  const cross = ux * vy - uy * vx;
+  if (Math.abs(cross) <= tol * Math.hypot(ux, uy) * Math.hypot(vx, vy)) return null;
+  const d = 2 * cross;
+  const u2 = ux * ux + uy * uy, v2 = vx * vx + vy * vy;
+  const ox = ax + (vy * u2 - uy * v2) / d;
+  const oy = ay + (ux * v2 - vx * u2) / d;
+  const r = Math.hypot(ax - ox, ay - oy);
+  const ta = Math.atan2(ay - oy, ax - ox);
+  const tb = Math.atan2(by - oy, bx - ox);
+  const sweep = (th: number): number => ((th - ta) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+  const toB = sweep(tb), toC = sweep(Math.atan2(cy - oy, cx - ox));
+  return toC < toB                                  // the third point is on the a -> b sweep
+    ? { cx: ox, cy: oy, r, a0: ta, a1: ta + toB, swapped: false }
+    : { cx: ox, cy: oy, r, a0: tb, a1: tb + (2 * Math.PI - toB), swapped: true };
+}
 
 /** Entities plus their sub-entities (a line's endpoints, an arc's centre and ends). */
 export function expand(ents: Iterable<Primitive>): Primitive[] {
@@ -143,6 +221,16 @@ export class Sketch {
     return a;
   }
 
+  /** Arc from `start` to `end` bulging through `through` — the three-point construction.
+   *  Creates the centre point; null if the three are collinear. */
+  arcThrough(start: Point, end: Point, through: [number, number], name = ''): Arc | null {
+    const g = threePointArc(...start.xy, ...end.xy, ...through);
+    if (!g) return null;
+    const centre = this.point(g.cx, g.cy, false, `${name}.c`);
+    const [a, b] = g.swapped ? [end, start] : [start, end];
+    return this.arc(centre, a, b, name);
+  }
+
   add(...constraints: Constraint[]): void {
     this.constraints.push(...constraints);
   }
@@ -192,7 +280,22 @@ export class Sketch {
       : kind === 'circle' ? this.circles : this.arcs;
   }
 
-  bbox(): [number, number, number, number] {
+  /** Every entity, in creation order per kind. */
+  primitives(): Primitive[] {
+    return [...this.points, ...this.lines, ...this.circles, ...this.arcs];
+  }
+
+  /** (xmin, ymin, xmax, ymax) over all points.
+   *
+   *  Points only, deliberately: `extent()` is built on this, and `extent()` scales the
+   *  solver's residual tolerances (`System.scale = max(1, extent)²`), the violated-constraint
+   *  threshold, the witness perturbation and the drag continuation step.  Folding radii in
+   *  would loosen every tolerance quadratically on a circle-heavy sketch and coarsen the very
+   *  drag increments Stage 5 uses to track a branch.  It costs little: the kernels that are
+   *  quadratic in r all put a point on or against the curve, so the points already track the
+   *  radius.  Only a lone circle with nothing on it falls back to extent 1 — the tightest
+   *  tolerance, which errs safe.  For what is drawn, use `drawnBounds()`. */
+  bbox(): Box {
     if (!this.points.length) return [0, 0, 1, 1];
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const p of this.points) {
@@ -200,6 +303,20 @@ export class Sketch {
       y0 = Math.min(y0, p.y.value); y1 = Math.max(y1, p.y.value);
     }
     return [x0, y0, x1, y1];
+  }
+
+  /** Bounds of everything drawn, curves included — what a "fit the view" wants.  A circle or
+   *  arc reaches past its centre, so a points-only box clips it. */
+  drawnBounds(): Box {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    let any = false;
+    for (const e of this.primitives()) {
+      const b = e.bounds();
+      any = true;
+      x0 = Math.min(x0, b[0]); y0 = Math.min(y0, b[1]);
+      x1 = Math.max(x1, b[2]); y1 = Math.max(y1, b[3]);
+    }
+    return any ? [x0, y0, x1, y1] : this.bbox();
   }
 
   /** Seeded Gaussian noise on every free parameter (warm starts, witness construction). */

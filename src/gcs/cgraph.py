@@ -157,11 +157,12 @@ def known_radii(sketch: Sketch) -> dict[int, float]:
     radii: list[Param] = [c.radius for c in rounds]
     ridx = {id(r): i for i, r in enumerate(radii)}
     ruf = UnionFind(len(radii))
-    for c in sketch.constraints:
+    hard = sketch.hard_constraints()        # a soft Radius (a live RadiusDrag) is not a dimension
+    for c in hard:
         if isinstance(c, C.EqualRadius):
             ruf.union(ridx[id(c.c1.radius)], ridx[id(c.c2.radius)])
     known: dict[int, float] = {}
-    for c in sketch.constraints:            # after all unions, so class roots are final
+    for c in hard:                          # after all unions, so class roots are final
         if isinstance(c, C.Radius):
             known[ruf.find(ridx[id(c.circle.radius)])] = c.r
     for r in radii:

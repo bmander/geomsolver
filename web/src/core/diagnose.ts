@@ -44,7 +44,10 @@ export interface Diagnosis {
   /** How many dependencies only the numbers can see (0 when the check did not run). */
   geometricDependency: number;
   over: Constraint[];              /* constraints in the over-determined block */
-  underParams: Param[];            /* parameters that can move (numeric when available) */
+  /** Parameters that can move *at the configuration diagnosed* — the Jacobian null space
+   *  when available, else the (generous) structural under-block.  The null space is a
+   *  property of the pose, so re-diagnose after moving geometry. */
+  underParams: Param[];
   structuralUnderParams: Param[];
   components: Component[];
   entityState: Map<Primitive, State>;

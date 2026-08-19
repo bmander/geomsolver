@@ -84,8 +84,14 @@ graph algorithms, diagnosis, constraint graph, decomposition, witness analysis,
 homotopy, JSON I/O, examples), and `web/src/app/` is the sketcher —
 
 * **S**elect / **P**oint / **L**ine (polyline, snapping to existing points) /
-  **C**ircle / **A**rc, wheel zoom, right-drag pan; Escape steps back one stage at a
+  **C**ircle / **A**rc (centre, start, end) / **3**-point arc (two ends, then a point the
+  arc passes through — `Sketch.arc_through`, which builds the circumcircle and picks the
+  sweep containing that point), wheel zoom, right-drag pan; Escape steps back one stage at a
   time — stop a DOF animation, drop the points a tool has collected, leave the tool;
+* select by clicking (shift = multi) or by dragging a box over empty canvas — window
+  selection, so an entity comes along only if all of it is inside (a line's two
+  endpoints, a circle's whole extent, every point of an arc's sweep), previewed live
+  while you drag and shift-extendable;
 * the constraint toolbar (Coincident, Distance, Horizontal, Vertical, Parallel,
   Perpendicular, On line, Midpoint, On circle, Angle, Equal, Tangent, Radius, Fix).
   Equal takes an equality *set*: n selected lines or n circles/arcs become n−1
@@ -93,9 +99,12 @@ homotopy, JSON I/O, examples), and `web/src/app/` is the sketcher —
 * entity colouring by constraint state, dashed halos and labels on the culprits of a
   conflict, a banner naming the minimal conflict set, and a constraint list that marks
   redundant (`≈`) and culprit (`✗`) rows;
-* drag a point with the cached decomposition plan (falling back to pull-and-polish), or
+* drag a point with the cached decomposition plan (falling back to pull-and-polish) — the
+  cursor offers a drag only where the diagnosis says something is actually free, so a fully
+  constrained sketch says so rather than moving nothing; or
   drag a circle's or arc's edge to resize it — a soft `Radius` pull with the same
-  polish, so a dimensioned or EqualRadius-tied radius simply does not follow; the
+  polish, so a dimensioned or fixed radius does not follow while an `EqualRadius` chain
+  resizes together (a relation, not a dimension); the
   Diagnose report (structural + witness), DOF animation, branch flipping and homotopy
   enumeration of alternative roots;
 * JSON save/load, undo, and the case library from `examples.ts`.

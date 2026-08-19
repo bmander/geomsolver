@@ -8,7 +8,7 @@ import * as C from '../core/constraints.js';
 import * as examples from '../core/examples.js';
 import * as graph from '../core/graph.js';
 import * as io from '../core/io.js';
-import { build } from '../core/cgraph.js';
+import { build, knownRadii } from '../core/cgraph.js';
 import { PlanDrag, PlanSolver, decompose } from '../core/decompose.js';
 import { diagnose, distanceRigidity, minimalConflictSet, violatedConstraints } from '../core/diagnose.js';
 import { enumerateStep } from '../core/homotopy.js';
@@ -552,6 +552,106 @@ test('every constraint type declares a spec that reconstructs it', () => {
   for (const [name, T] of Object.entries(C.CONSTRAINT_TYPES)) {
     assert.ok(T.spec.length > 0, name);
   }
+});
+
+test('a live drag never reaches the document', () => {
+  // `soft` is not part of the JSON, so a soft constraint saved mid-drag would come back as a
+  // real one — a drag target as geometry, a RadiusDrag's pull as a dimension nobody typed.
+  // Undo snapshots go through the same path.
+  const sk = examples.slottedLink();
+  const n = io.toJSON(sk).constraints.length;
+  const d = new Drag(sk, sk.points[1], 1, 2);
+  const r = new RadiusDrag(sk, sk.circles[0], 9);
+  try {
+    assert.equal(io.toJSON(sk).constraints.length, n);
+    assert.equal(io.loads(io.dumps(sk)).constraints.length, sk.constraints.length - 2);
+  } finally {
+    r.end();
+    d.end();
+  }
+});
+
+test('a soft radius is not a known dimension', () => {
+  const sk = new Sketch();
+  const c = sk.circle(sk.point(0, 0, true), 10);
+  const d = new RadiusDrag(sk, c, 10);
+  try {
+    assert.equal(knownRadii(sk).size, 0);
+  } finally {
+    d.end();
+  }
+});
+
+test('window selection is exactly "the entity bounds are inside the box"', () => {
+  // the view filters on bounds() rather than re-deriving each primitive's extent; this pins
+  // the two to the same answer for the case that motivated it — an arc bulging out of the box
+  const sk = new Sketch();
+  const centre = sk.point(0, 0);
+  const arc = sk.arc(centre, sk.point(5, 0), sk.point(-5, 0));   // half turn through the top
+  const inside = (box: number[], b: number[]): boolean =>
+    b[0] >= box[0] && b[1] >= box[1] && b[2] <= box[2] && b[3] <= box[3];
+  assert.ok(inside([-6, -1, 6, 6], arc.bounds()));               // the bulge fits
+  assert.ok(!inside([-6, -1, 6, 4], arc.bounds()));              // ...and is what excludes it
+  assert.ok(arc.extremes().every(([, y]) => y <= 5 + 1e-12));
+});
+
+test('drawn bounds cover curves, not just points', () => {
+  // bbox is points-only (it defines extent, and through it the solver's residual scale);
+  // drawnBounds is what "fit the view" wants
+  const sk = new Sketch();
+  sk.circle(sk.point(0, 0), 10);
+  assert.deepEqual(sk.bbox(), [0, 0, 0, 0]);
+  assert.deepEqual(sk.drawnBounds(), [-10, -10, 10, 10]);
+
+  const sk2 = new Sketch();
+  const centre = sk2.point(0, 0);
+  const arc = sk2.arc(centre, sk2.point(5, 0), sk2.point(0, 5));
+  const close = (b: number[], want: number[]): void => {
+    b.forEach((v, i) => assert.ok(Math.abs(v - want[i]) < 1e-9, `${b} != ${want}`));
+  };
+  close(arc.bounds(), [0, 0, 5, 5]);                 // a quarter turn: the ends bound it
+  arc.end.x.value = -5; arc.end.y.value = 0;
+  close(arc.bounds(), [-5, 0, 5, 5]);                // a half turn bulges through the top
+  arc.end.x.value = 5; arc.end.y.value = -1e-12;
+  close(arc.bounds(), [-5, -5, 5, 5]);               // nearly the whole circle
+});
+
+test('a three-point arc sweeps through the third point', () => {
+  const sk = new Sketch();
+  const a = sk.point(-5, 0), b = sk.point(5, 0);
+  const up = sk.arcThrough(a, b, [0, 5])!;
+  assert.ok(Math.hypot(...up.center.xy) < 1e-12);
+  assert.ok(Math.abs(up.radius.value - 5) < 1e-12);
+  // CCW from a = (-5,0) would sweep under, so a top-bulging arc has to start at b
+  assert.equal(up.start, b);
+  assert.equal(up.end, a);
+  const [a0, a1] = up.angles();
+  assert.ok(Math.abs(a0) < 1e-12 && Math.abs(a1 - Math.PI) < 1e-12);
+
+  const sk2 = new Sketch();
+  const c = sk2.point(-5, 0), d = sk2.point(5, 0);
+  const down = sk2.arcThrough(c, d, [0, -5])!;         // same chord, other side
+  assert.equal(down.start, c);
+  assert.equal(down.end, d);
+  assert.ok(Math.abs(down.radius.value - 5) < 1e-12);
+  const [b0, b1] = down.angles();
+  assert.ok(Math.abs(b0 - Math.PI) < 1e-12 && Math.abs(b1 - 2 * Math.PI) < 1e-12);
+  for (const arc of [up, down]) {
+    for (const p of [arc.start, arc.end]) {
+      const dist = Math.hypot(p.x.value - arc.center.x.value, p.y.value - arc.center.y.value);
+      assert.ok(Math.abs(dist - arc.radius.value) < 1e-12);
+    }
+  }
+});
+
+test('a three-point arc refuses collinear input', () => {
+  const sk = new Sketch();
+  const a = sk.point(0, 0), b = sk.point(10, 0);
+  const n = sk.points.length;
+  assert.equal(sk.arcThrough(a, b, [5, 0]), null);
+  assert.equal(sk.arcThrough(a, b, [20, 1e-12]), null);  // scale-free, not an absolute epsilon
+  assert.equal(sk.points.length, n);                     // nothing was created
+  assert.ok(sk.arcThrough(a, b, [5, 0.01]));             // a real, very flat arc is fine
 });
 
 test('describe reads the spec', () => {
