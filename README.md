@@ -1,10 +1,11 @@
 # gcs — geometric constraint solver
 
-Stages 0–3 of [`gcs-solver-program.md`](gcs-solver-program.md): a
+Stages 0–4 of [`gcs-solver-program.md`](gcs-solver-program.md): a
 residual-formulation solver with vectorized numpy kernels, our own DogLeg/LM,
 structural diagnosis (matching / Dulmage–Mendelsohn / pebble game / minimal
-conflict sets), Fudos–Hoffmann-style decomposition into cached solve plans, and
-a PySide6 sketcher.  Python ≥ 3.14, numpy + scipy; C/Cython comes only
+conflict sets), Fudos–Hoffmann-style decomposition into cached solve plans, the
+witness configuration method (theorem-type dependencies, animated remaining
+DOFs), and a PySide6 sketcher.  Python ≥ 3.14, numpy + scipy; C/Cython comes only
 when profiling says so.
 
 ## Setup
@@ -93,10 +94,31 @@ DOF, convergence and solve time.
   size-capped) — is merged as one numeric step and tree merging resumes, so
   only minimal non-tree-decomposable subsystems ever reach the numeric solver
   (K₃,₃ and Henneberg-II frameworks decompose fully).
+* `gcs.witness` — **witness configuration method** (Michelucci & Foufou):
+  `make_witness` (generic dimensions, re-solved from the current geometry —
+  or incidences alone from a perturbed start), `analyze` → rank (RRQR
+  cross-checked with SVD, scaled, relative tolerance), **dependent
+  constraints** with the constraints that imply them (pivoted QR on Jᵀ +
+  least-squares support; theorem-type flagged when structural analysis had
+  them matched), and the **null space as motions** (rigid-body modes
+  separated, internal DOFs localised).  `diagnose(..., witness=True)` attaches
+  it; the app's Diagnose dialog shows it and View → Animate remaining DOF
+  (Ctrl+M) plays the modes.
 * `gcs.io` — JSON save/load; also deletion-by-rebuild (`without`).
 * `gcs.app` — PySide6 desktop sketcher (see above).
 * `gcs.canvas` — matplotlib click-drag testbed.  Dragging = soft `DragTarget`
   pull + hard-only polish, both compiled once per drag (same in the app).
+
+## Stage 4 status
+
+| criterion | status |
+|---|---|
+| witness construction (generic dimensions, incidence structure kept) | ✅ `make_witness`; the user's sketch is used directly when it already satisfies its constraints |
+| rank-revealing analysis: dependent constraints incl. theorem-induced | ✅ `polygon_chain`'s EqualLength cycle and concurrent altitudes diagnosed with "implied by …" |
+| null space → which DOFs remain, what they look like, animated | ✅ `WitnessReport.motions`, Ctrl+M in the app |
+| numerical-rank care: scaling, relative tolerance, QR vs SVD cross-check | ✅ (a disagreement is reported as a warning) |
+| on demand for full diagnosis; automatically on Stage-3 cores | ✅ on demand (Diagnose dialog / `witness=True`); Stage-3 merge decisions already use generic-rank tests at witness poses |
+| Stage-2 residue correctly diagnosed | ✅ |
 
 ## Stage 3a status
 

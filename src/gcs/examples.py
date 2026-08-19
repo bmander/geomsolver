@@ -206,6 +206,22 @@ def impossible_triangle() -> Sketch:
     return sk
 
 
+def altitudes() -> Sketch:
+    """Fixed triangle, three altitudes and a point on all three: structurally the third incidence
+    looks independent, but the altitudes concur — a theorem-type dependency only the witness sees."""
+    from gcs.constraints import Perpendicular, PointOnLine
+
+    sk = Sketch()
+    A, B, Cc = sk.point(0, 0, fixed=True, name="A"), sk.point(40, 0, fixed=True, name="B"), sk.point(15, 30, fixed=True, name="C")
+    ab, bc, ca = sk.line(A, B), sk.line(B, Cc), sk.line(Cc, A)
+    QA, QB, QC = sk.point(15, 5, name="QA"), sk.point(20, 10, name="QB"), sk.point(15, -5, name="QC")
+    altA, altB, altC = sk.line(A, QA), sk.line(B, QB), sk.line(Cc, QC)
+    sk.add(Perpendicular(altA, bc), Perpendicular(altB, ca), Perpendicular(altC, ab))
+    P = sk.point(15, 8, name="P")
+    sk.add(PointOnLine(P, altA), PointOnLine(P, altB), PointOnLine(P, altC))
+    return sk
+
+
 def parallels() -> Sketch:
     """Parallel / perpendicular / vertical lines with a few distances — exercises direction classes."""
     from gcs.constraints import Parallel, Perpendicular
@@ -246,5 +262,6 @@ CASES: dict[str, tuple[Callable[[], Sketch], str]] = {
     "Random Laman #0": (lambda: laman(10, 0), "Henneberg-built minimally rigid framework"),
     "Random Laman #1": (lambda: laman(12, 1), "Henneberg-built; may need a core (Henneberg II)"),
     "Random Laman #7": (lambda: laman(11, 507), "needs a 9-cluster core"),
+    "Concurrent altitudes": (altitudes, "theorem-type dependency: the third incidence is implied (Diagnose → witness); 3 DOF to animate"),
     "Parallels & perpendiculars": (parallels, "direction classes: parallel/perpendicular/vertical (1 DOF left: slide along the base)"),
 }

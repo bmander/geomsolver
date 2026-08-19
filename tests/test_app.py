@@ -215,3 +215,23 @@ def test_case_dropdown_loads_every_case(qapp: QApplication) -> None:
         assert w.case_box.currentText() == name
         assert w.view.diagnosis is not None or not w.view.sketch.constraints
         w.view.repaint()
+
+
+def test_witness_dialog_data_and_animation(qapp: QApplication) -> None:
+    from gcs.examples import CASES
+
+    w = MainWindow(CASES["Concurrent altitudes"][0]())
+    w.show()
+    v = w.view
+    rep = v.witness_report()
+    assert rep is not None and rep.dependencies and rep.n_internal_dof == 3
+    x0 = v.sketch.get_x()
+    assert v.start_animation()
+    for _ in range(5):
+        v._anim_tick()
+    assert not (v.sketch.get_x() == x0).all()
+    v.stop_animation()
+    assert (v.sketch.get_x() == x0).all()
+    # nothing to animate on a fully constrained sketch
+    v.set_sketch(CASES["Rectangle with fillets"][0]())
+    assert not v.start_animation()

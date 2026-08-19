@@ -29,6 +29,7 @@ from gcs.constraints import Constraint, Distance
 from gcs.model import Param, Point, Primitive, Sketch, Vec
 from gcs.newton import rank_rrqr
 from gcs.solve import Method, System
+from gcs.witness import WitnessReport, analyze
 
 State = Literal["well", "under", "over", "conflict"]
 _SEVERITY: dict[str, int] = {"well": 0, "under": 1, "over": 2, "conflict": 3}
@@ -64,6 +65,7 @@ class Diagnosis:
     violated: list[Constraint]           # constraints with nonzero residual at the current configuration
     conflicts: list[Constraint] | None   # minimal conflict set (only computed when asked / infeasible)
     warnings: list[str] = field(default_factory=list)
+    witness: WitnessReport | None = None  # Stage 4 analysis (on demand): dependencies + motions
 
     @property
     def dof(self) -> int:
@@ -116,11 +118,13 @@ def violated_constraints(sys_: System, tol: float = 1e-6) -> list[Constraint]:
 
 
 def diagnose(sketch: Sketch, *, system: System | None = None, numeric: bool = True,
-             conflicts: bool | None = None, tol: float = 1e-6) -> Diagnosis:
+             conflicts: bool | None = None, witness: bool = False, tol: float = 1e-6) -> Diagnosis:
     """Structural (and optionally numeric) diagnosis of a sketch at its current configuration.
 
     Pass the `System` you just solved with to avoid a recompile.  conflicts=None
-    computes the minimal conflict set only when some constraint is violated."""
+    computes the minimal conflict set only when some constraint is violated.
+    witness=True adds the Stage-4 witness analysis (dependent constraints with what
+    implies them, and the remaining motions)."""
     sys_ = system if system is not None and system.sketch is sketch else System(sketch)
     adj, row_c = sys_.structure()
     n_cols = sys_.n_free
@@ -200,8 +204,13 @@ def diagnose(sketch: Sketch, *, system: System | None = None, numeric: bool = Tr
             if _SEVERITY[state[id(ch)]] > _SEVERITY[state[id(e)]]:
                 state[id(e)] = state[id(ch)]
 
+    wit: WitnessReport | None = None
+    if witness and n_cols and sys_.n_res:
+        matched = {id(c) for c in sketch.hard_constraints() if id(c) not in over_ids}
+        wit = analyze(sketch, structural_rank=dm.rank, matched_constraints=matched)
+        warnings += [w for w in wit.warnings if w not in warnings]
     return Diagnosis(n_cols, len(adj), dm.rank, numeric_rank, over_c, under_params, structural_under, components,
-                     state, clusters, redundant_d, violated, conflict_set, warnings)
+                     state, clusters, redundant_d, violated, conflict_set, warnings, wit)
 
 
 def movable_params(J: Vec, rtol: float = 1e-8) -> list[int]:

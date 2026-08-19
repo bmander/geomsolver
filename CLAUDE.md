@@ -1,9 +1,9 @@
 # geomsolver
 
 Geometric constraint solver built in stages per `gcs-solver-program.md` (read it first).
-Currently: **Stage 3a done** — vectorized numpy kernels (`gcs.kernels`), compile-to-plan `System`, own DogLeg/LM
+Currently: **Stage 4 done** — vectorized numpy kernels (`gcs.kernels`), compile-to-plan `System`, own DogLeg/LM
 (`gcs.newton`), structural diagnosis (`gcs.graph`, `gcs.diagnose`), decomposition into cached solve plans
-(`gcs.cgraph`, `gcs.decompose`); scipy kept only as `scipy-*` reference methods. Python ≥ 3.14 in `.venv/`.
+(`gcs.cgraph`, `gcs.decompose`), witness analysis (`gcs.witness`); scipy kept only as `scipy-*` reference methods. Python ≥ 3.14 in `.venv/`.
 
 Commands: `.venv/bin/pytest` (Qt tests run offscreen), `.venv/bin/mypy` (strict, must stay clean),
 `.venv/bin/python -m gcs.bench`, `.venv/bin/python -m gcs.app` (PySide6 sketcher), `.venv/bin/python -m gcs.canvas <example>`.
