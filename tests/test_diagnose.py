@@ -124,10 +124,26 @@ def test_under_constrained_reports_free_params_and_components() -> None:
     sk.constraints = [c for c in sk.constraints if not isinstance(c, C.Distance)]
     d = diagnose(sk)
     assert d.status == "under" and d.dof == 1
-    names = {p.name for p in d.under_params}
-    assert {"c2.x", "c2.y"} <= names and "c1.x" not in names
+    # numeric (null-space) view: only the x-coordinates of the right-hand side can move
+    assert {p.name for p in d.under_params} == {"c2.x", "t2.x", "b1.x"}
+    # structural (DM) view is generous: it also lists the y's and the left arc endpoints
+    assert {"c2.x", "c2.y"} <= {p.name for p in d.structural_under_params}
     assert sorted(c.dof for c in d.components) == [0, 0, 1]
     assert d.entity_state[id(sk.points[1])] == "under" and d.entity_state[id(sk.points[0])] == "well"
+
+
+def test_null_space_pins_left_side_of_undimensioned_rect() -> None:
+    """Remove the width: geometrically the fixed lower-left arc, the left edge and the
+    upper-left arc stay pinned; only the right side slides.  Structural analysis can't
+    see that (tangent equations mention the far endpoint), the null space can."""
+    sk = examples.rect_fillets()
+    sk.remove(next(c for c in sk.constraints if isinstance(c, C.Distance) and c.d == 80))
+    d = diagnose(sk)
+    assert d.dof == 1
+    assert {p.name for p in d.under_params} == {"b2.x", "r1.x", "r2.x", "t1.x", "c_br.x", "c_tr.x"}
+    st = {i: d.entity_state[id(e)] for i, e in enumerate([*sk.lines, *sk.arcs])}
+    assert st[3] == "well" and st[6] == "well" and st[7] == "well"      # left edge, A2, A3
+    assert st[0] == "under" and st[1] == "under" and st[2] == "under"    # bottom, right, top
 
 
 def test_theorem_type_dependency_is_logged() -> None:

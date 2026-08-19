@@ -66,9 +66,11 @@ DOF, convergence and solve time.
 * `gcs.diagnose` — `diagnose(sketch)` → `Diagnosis`: structural rank/DOF,
   over-determined block (redundancy suspects), under-determined parameters,
   per-component DOF, rigid clusters + redundant distances, violated
-  constraints, minimal conflict set (deletion filter), per-entity state
-  `well|under|over|conflict`, and a numeric-rank cross-check that logs
-  theorem-type dependencies structural analysis can't see (Stage 4 corpus).
+  constraints, minimal conflict set (grow-then-shrink filter), per-entity state
+  `well|under|over|conflict` — "which parameters can move" comes from the
+  Jacobian null space (sharper than the generous DM under-block), and a
+  numeric-rank cross-check logs theorem-type dependencies structural analysis
+  can't see (Stage 4 corpus).
 * `gcs.io` — JSON save/load; also deletion-by-rebuild (`without`).
 * `gcs.app` — PySide6 desktop sketcher (see above).
 * `gcs.canvas` — matplotlib click-drag testbed.  Dragging = soft `DragTarget`

@@ -21,9 +21,13 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Literal
 
+import numpy as np
+from scipy.linalg import null_space
+
 from gcs import graph
 from gcs.constraints import Coincident, Constraint, Distance
 from gcs.model import Param, Point, Primitive, Sketch, Vec
+from gcs.newton import rank_rrqr
 from gcs.solve import Method, System
 
 State = Literal["well", "under", "over", "conflict"]
@@ -50,7 +54,9 @@ class Diagnosis:
     structural_rank: int                 # maximum matching size
     numeric_rank: int | None             # Jacobian rank at the current configuration (dense path only)
     over: list[Constraint]               # constraints in the over-determined block (redundancy suspects)
-    under_params: list[Param]            # structurally free parameters
+    under_params: list[Param]            # parameters that can move: numeric (Jacobian null space) when
+    #                                      available, else structural (DM under-block, which is generous)
+    structural_under_params: list[Param]
     components: list[Component]
     entity_state: dict[int, State]       # id(entity) → state, for UI colouring
     rigid_clusters: list[frozenset[Point]]   # from the pebble game on the distance graph
@@ -122,7 +128,8 @@ def diagnose(sketch: Sketch, *, system: System | None = None, numeric: bool = Tr
     free_params = [sketch.params[i] for i in sys_.free]
 
     over_c = list(dict.fromkeys(row_c[r] for r in dm.over_rows))
-    under_params = [free_params[j] for j in dm.under_cols]
+    structural_under = [free_params[j] for j in dm.under_cols]
+    under_params = structural_under
 
     # -- components --
     comp_row, comp_col, n_comp = graph.bipartite_components(adj, n_cols)
@@ -141,10 +148,17 @@ def diagnose(sketch: Sketch, *, system: System | None = None, numeric: bool = Tr
     numeric_rank: int | None = None
     warnings: list[str] = []
     if numeric and n_cols and sys_.n_res:
-        numeric_rank = sys_.rank(hard_only=True)
+        Jh = sys_.jacobian_dense(sys_.z0())[sys_.hard]
+        numeric_rank = rank_rrqr(Jh)
         if numeric_rank < dm.rank:
             warnings.append(f"structural rank {dm.rank} but numeric rank {numeric_rank}: "
                             "a dependency the graph cannot see (theorem-induced or degenerate configuration) — Stage 4")
+        # Which parameters can actually move: rows of the null space that are nonzero.
+        # Sharper than the DM under-block (which counts a parameter as free if it *could*
+        # be in some generic assignment); evaluated at the current configuration, so a
+        # degenerate placement can still fool it — Stage 4's witness step generalises this.
+        under_params = [free_params[j] for j in movable_params(Jh)]
+
 
     # -- violated / conflicts --
     violated = violated_constraints(sys_, tol)
@@ -186,8 +200,20 @@ def diagnose(sketch: Sketch, *, system: System | None = None, numeric: bool = Tr
             if _SEVERITY[state[id(ch)]] > _SEVERITY[state[id(e)]]:
                 state[id(e)] = state[id(ch)]
 
-    return Diagnosis(n_cols, len(adj), dm.rank, numeric_rank, over_c, under_params, components, state,
-                     clusters, redundant_d, violated, conflict_set, warnings)
+    return Diagnosis(n_cols, len(adj), dm.rank, numeric_rank, over_c, under_params, structural_under, components,
+                     state, clusters, redundant_d, violated, conflict_set, warnings)
+
+
+def movable_params(J: Vec, rtol: float = 1e-8) -> list[int]:
+    """Indices of columns with a nonzero component in null(J): the parameters that
+    take part in some infinitesimal motion of the configuration."""
+    if J.size == 0:
+        return list(range(J.shape[1])) if J.ndim == 2 else []
+    N = null_space(J)
+    if N.shape[1] == 0:
+        return []
+    w = np.abs(N).max(axis=1)
+    return [int(i) for i in np.flatnonzero(w > rtol * w.max())]
 
 
 # ---------------------------------------------------------------------------
