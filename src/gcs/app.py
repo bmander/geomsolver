@@ -59,7 +59,7 @@ class SketchView(QWidget):
         self.scale = 6.0            # px per world unit
         self.origin = QPointF(80, 500)  # screen position of world (0,0)
         self.tool = "select"
-        self.method: Method = "dogbox"
+        self.method: Method = "dogleg"
         self.auto_solve = True
         self.pending: list[Point] = []          # points clicked so far in a drawing tool
         self.cursor_s = QPointF(0, 0)           # screen coords of cursor

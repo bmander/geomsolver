@@ -1,15 +1,20 @@
 # geomsolver
 
 Geometric constraint solver built in stages per `gcs-solver-program.md` (read it first).
-Currently: **Stage 0** — pure Python, scipy least-squares. Python ≥ 3.14 in `.venv/`.
+Currently: **Stage 1** — vectorized numpy kernels (`gcs.kernels`), compile-to-plan `System`, own DogLeg/LM
+(`gcs.newton`); scipy kept only as `scipy-*` reference methods. Python ≥ 3.14 in `.venv/`.
 
 Commands: `.venv/bin/pytest` (Qt tests run offscreen), `.venv/bin/mypy` (strict, must stay clean),
 `.venv/bin/python -m gcs.bench`, `.venv/bin/python -m gcs.app` (PySide6 sketcher), `.venv/bin/python -m gcs.canvas <example>`.
 
 Conventions:
-- Every new constraint type declares `spec` (constructor args as (attr, kind) pairs — drives JSON I/O, the app's
-  constraint list, value editing and the toolbar applier), has an analytic Jacobian, and gets a row in
-  `tests/test_jacobians.py::all_constraints` (which also checks spec round-trips).
+- Every new constraint type = a vectorized kernel in `gcs.kernels` (added to `KERNELS`), a class in
+  `gcs.constraints` declaring `kernel`, `params`, `consts()` and `spec` (constructor args as (attr, kind) pairs —
+  drives JSON I/O, the app's constraint list, value editing and the toolbar applier), and a row in
+  `tests/test_jacobians.py::all_constraints` (FD check, spec round-trip, vectorized-vs-scalar consistency).
+- Mutating a constraint's constants (drag target, edited dimension) must be followed by `System.update_consts(c)`
+  on any compiled system, or a recompile.
+- Benchmark on a quiet machine (`uptime`); this box often has a JVM indexer at 300% CPU.
 - `gcs.solve.Drag` is the one drag implementation (pull + polish); frontends only translate coordinates.
 - Determinism: ordered lists only, no set/dict-order-dependent iteration in the solve path.
 - `System` is the compile-once / evaluate-many seam; keep Python object model out of the hot loop.

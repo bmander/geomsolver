@@ -35,7 +35,7 @@ def test_deterministic() -> None:
     def run() -> np.ndarray:
         sk = examples.truss()
         _perturb(sk, 1.5, seed=3)
-        solve(sk, method="dogbox")
+        solve(sk, method="dogleg")
         return sk.get_x()
 
     a, b = run(), run()
@@ -64,7 +64,8 @@ def test_drag_reuses_compiled_system() -> None:
     sys_ = System(sk)
     for i in range(1, 6):
         drag.set_target(80 + i, 15 + 2 * i)
-        res = sys_.solve(method="dogbox")
+        sys_.update_consts(drag)   # the compiled plan holds its own copy of the constants
+        res = sys_.solve(method="dogleg")
         assert res.success
     assert tgt.x.value == pytest.approx(85, abs=1e-5)
     assert tgt.y.value == pytest.approx(25, abs=1e-5)
@@ -101,7 +102,7 @@ def test_overconstrained_conflict_reports_failure() -> None:
 def test_coincident_chain() -> None:
     sk = examples.polygon_chain(6)
     _perturb(sk, 4.0)
-    res = solve(sk, method="dogbox")
+    res = solve(sk, method="dogleg")
     assert res.success
     for c in sk.constraints:
         if isinstance(c, Coincident):

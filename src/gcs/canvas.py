@@ -30,7 +30,7 @@ from gcs.solve import METHODS, Drag, Method
 
 
 class Canvas:
-    def __init__(self, make_sketch: Callable[[], Sketch], method: Method = "dogbox", drag_weight: float = 1.0) -> None:
+    def __init__(self, make_sketch: Callable[[], Sketch], method: Method = "dogleg", drag_weight: float = 1.0) -> None:
         self.make_sketch = make_sketch
         self.sketch: Sketch = make_sketch()
         self.method_i = METHODS.index(method)
@@ -177,7 +177,7 @@ class Canvas:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("example", choices=sorted(EXAMPLES), nargs="?", default="rect_fillets")
-    ap.add_argument("--method", choices=METHODS, default="dogbox")
+    ap.add_argument("--method", choices=METHODS, default="dogleg")
     ap.add_argument("--bays", type=int, default=8, help="truss size")
     ap.add_argument("--n", type=int, default=12, help="polygon_chain size")
     ap.add_argument("--free", action="store_true", help="unfix all anchors so the sketch can float")

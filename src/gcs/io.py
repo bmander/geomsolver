@@ -24,7 +24,7 @@ def _register(cls: type[Constraint]) -> None:
         _register(sub)
 
 
-_register(Constraint)  # type: ignore[type-abstract]
+_register(Constraint)
 
 
 class Index:

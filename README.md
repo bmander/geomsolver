@@ -1,8 +1,9 @@
 # gcs — geometric constraint solver
 
-Stage 0 of [`gcs-solver-program.md`](gcs-solver-program.md): a pure-Python
-residual-formulation solver with an interactive drag canvas.  Python ≥ 3.14,
-numpy + scipy; C/Cython comes only when profiling says so (Stage 1).
+Stages 0–1 of [`gcs-solver-program.md`](gcs-solver-program.md): a
+residual-formulation solver with vectorized numpy kernels, our own DogLeg/LM,
+and a PySide6 sketcher.  Python ≥ 3.14, numpy + scipy; C/Cython comes only
+when profiling says so.
 
 ## Setup
 
@@ -34,16 +35,27 @@ DOF, convergence and solve time.
 
 * `gcs.model` — `Param` (one scalar DOF), `Point`, `Line`, `Circle`, `Arc`,
   and `Sketch` (ordered param + constraint lists ⇒ deterministic).
-* `gcs.constraints` — each constraint owns its `params`, `residual(v)`, an
-  analytic `jacobian(v)` on its local value vector, and a `spec` describing its
-  constructor arguments (drives serialization and the UI).  Squared distances,
-  no sqrt; tangency carries a chirality flag (`side`).
-* `gcs.solve.System` — compiles a sketch to a flat evaluation plan once,
-  evaluates `r(z)` / sparse `J(z)` many times, and calls
-  `scipy.optimize.least_squares` (`dogbox` default; `trf`, `lm` available).
-  This compile-once seam is what becomes the C core in Stage 1.  `Drag` is the
-  shared interactive-drag protocol (soft pull toward the cursor, then a
-  hard-constraints-only polish), used by both frontends.
+* `gcs.kernels` — one **vectorized kernel per constraint type**: `res(V, K)`,
+  `jac(V, K)` over `(n, k)` value arrays and `(n, m)` constants, evaluating all
+  constraints of a type in one numpy call.  Constant Jacobians are flagged and
+  evaluated once at compile time.
+* `gcs.constraints` — each constraint type is params + constants + a kernel
+  reference, plus a `spec` describing its constructor arguments (drives
+  serialization and the UI).  Squared distances, no sqrt; tangency carries a
+  chirality flag (`side`).  Scalar `residual/jacobian` are one-row views of the
+  kernel (what the FD checker tests).
+* `gcs.solve.System` — **compile-to-plan**: groups constraints into per-kernel
+  blocks of pure arrays (`gidx`, `consts`, row offsets) and precomputes the
+  Jacobian's CSR structure and duplicate-summing scatter map; each evaluation
+  refills `data` only.  `update_consts()` pushes a moved drag target / edited
+  dimension into the plan without recompiling.  This plan is exactly what a C
+  core would consume.  `Drag` is the shared interactive-drag protocol (soft
+  pull, then hard-only polish).
+* `gcs.newton` — our own **Powell DogLeg** (default) and **Levenberg–Marquardt**.
+  Gauss–Newton steps are minimum-norm (least-change under-constrained motion):
+  LAPACK `dgelsy` (rank-revealing QR — also reports the Jacobian rank) up to
+  120 free params, sparse SuperLU on regularized normal equations above.
+  scipy's `least_squares` methods remain as `scipy-*` references.
 * `gcs.fdcheck` — finite-difference verification harness (keep forever).
 * `gcs.examples` — rectangle-with-fillets, slotted link, truss (~30 entities),
   under-constrained polygon chain.
@@ -51,6 +63,19 @@ DOF, convergence and solve time.
 * `gcs.app` — PySide6 desktop sketcher (see above).
 * `gcs.canvas` — matplotlib click-drag testbed.  Dragging = soft `DragTarget`
   pull + hard-only polish, both compiled once per drag (same in the app).
+
+## Stage 1 status
+
+| criterion | status |
+|---|---|
+| compile-to-plan boundary (flat arrays, no Python objects in the loop) | ✅ `System.blocks` + precomputed CSR/scatter |
+| sparse Jacobian assembly, triplet→CSR | ✅ structure once, data per eval |
+| own LM + DogLeg (default) | ✅ `gcs.newton` |
+| under-constrained = min-norm GN step | ✅ `dgelsy` / regularized SuperLU |
+| rank-revealing QR at the solution | ✅ `SolveResult.rank`, `System.rank()` (already caught a redundant EqualLength cycle in `polygon_chain`) |
+| >10× scipy on the 30-entity sketch | ⚠ ~7.5× vs the Stage-0 scipy path (0.7 ms vs 5.3 ms, quiet machine); the rest is DogLeg's Python bookkeeping — C territory |
+| 60 fps drag on a 200-entity sketch | ✅ 180-entity fully constrained ~110–160 fps, 300-entity ~50–65 fps, 1200-entity floating ~75 fps (loaded machine) |
+| flat `slvs`-style C API, GIL release | ⏳ deferred to the C port — the plan arrays are the API |
 
 ## Stage 0 exit criteria
 
@@ -63,12 +88,15 @@ DOF, convergence and solve time.
 | Sketch → residuals/Jacobian → solve → writeback with clean seams | ✅ `System` |
 | analytic Jacobians verified vs FD | ✅ every constraint, every example |
 
-Benchmark (median, perturbed warm start, `python -m gcs.bench`):
+Benchmark (`python -m gcs.bench`, compiled solve from a perturbed warm start;
+measured on a heavily loaded machine — absolute numbers ~2.5× pessimistic):
 
 ```
-sketch           params  res |    trf     |  dogbox   |    lm
-rect_fillets         28   26 |   4.1 ms   |   3.7 ms  |   2.4 ms
-truss (8 bays)       34   32 |   4.7 ms   |   5.3 ms  |   2.5 ms
-polygon_chain        48   36 |  23.8 ms   |   3.5 ms  |   9.2 ms   (under-constrained)
-truss_50            202  200 | 119.9 ms   |  54.6 ms  |  36.7 ms   <- Python per-constraint overhead: Stage 1's motivation
+sketch         free  res |  dogleg   |    lm     | scipy-dogbox | scipy-trf | scipy-lm | compile
+rect_fillets     26   26 |  2.8 ms   |  5.5 ms   |   7.2 ms     |  6.3 ms   |  3.5 ms  | 1.1 ms
+truss            32   32 |  1.9 ms   |  5.7 ms   |   8.2 ms     |  8.0 ms   |  3.2 ms  | 0.9 ms
+polygon_chain    46   36 |  3.3 ms   |  4.3 ms   |   7.9 ms     | 71.5 ms   | 17.9 ms  | 0.9 ms
+truss_50        200  200 | 15.1 ms   | 47.0 ms   |      —       |    —      |    —     | 4.3 ms
+truss_100       400  400 | 25.5 ms   | 58.1 ms   |      —       |    —      |    —     | 5.0 ms
+(Stage 0, same truss: 5.3 ms scipy-dogbox on a quiet machine; Stage 1 dogleg: 0.7 ms.)
 ```

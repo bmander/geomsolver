@@ -99,7 +99,10 @@ def truss(bays: int = 8, span: float = 20.0, height: float = 15.0, dims: bool = 
 
 
 def polygon_chain(n: int = 12, radius: float = 50.0) -> Sketch:
-    """Under-constrained: closed n-gon of equal-length edges via Coincident joints."""
+    """Under-constrained: closed n-gon of equal-length edges via Coincident joints.
+
+    Deliberately closes the EqualLength cycle (e0=e1, ..., e_{n-1}=e0), so one
+    equation is redundant-but-consistent — a Stage 2 diagnosis test case."""
     sk = Sketch()
     lines = []
     for i in range(n):
