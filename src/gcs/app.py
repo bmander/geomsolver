@@ -20,8 +20,9 @@ from PySide6.QtGui import (
     QAction, QActionGroup, QColor, QKeySequence, QMouseEvent, QPainter, QPaintEvent, QPen, QWheelEvent,
 )
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QDockWidget, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QListWidget,
-    QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QToolBar, QVBoxLayout, QWidget,
+    QApplication, QComboBox, QDialog, QDialogButtonBox, QDockWidget, QFileDialog, QHBoxLayout, QInputDialog,
+    QLabel, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QToolBar,
+    QVBoxLayout, QWidget,
 )
 
 from gcs import constraints as C
@@ -888,7 +889,32 @@ class MainWindow(QMainWindow):
         pr = self.view.last_plan
         if pr is not None:
             lines += ["", f"Decomposition: {pr.plan.summary()}" + (" — numeric fallback used" if pr.fell_back else "")]
-        QMessageBox.information(self, "Diagnosis", "\n".join(lines))
+        self._show_report("Diagnosis", "\n".join(lines))
+
+    def _show_report(self, title: str, text: str) -> None:
+        """Scrollable read-only report, sized to its content but never taller than the screen
+        (a QMessageBox grows unboundedly and pushes its button off-screen)."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        lay = QVBoxLayout(dlg)
+        box = QPlainTextEdit(text)
+        box.setReadOnly(True)
+        box.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        f = box.font()
+        f.setFamily("Menlo")
+        box.setFont(f)
+        lay.addWidget(box)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dlg.reject)
+        buttons.accepted.connect(dlg.accept)
+        lay.addWidget(buttons)
+        screen = (self.screen() or QApplication.primaryScreen()).availableGeometry()
+        fm = box.fontMetrics()
+        n_lines = text.count("\n") + 1
+        width = min(int(screen.width() * 0.9), max(520, fm.horizontalAdvance(max(text.split("\n"), key=len)) + 60))
+        height = min(int(screen.height() * 0.85), fm.lineSpacing() * (n_lines + 2) + 90)
+        dlg.resize(width, height)
+        dlg.exec()
 
     def set_method(self, m: Method) -> None:
         self.view.method = m
