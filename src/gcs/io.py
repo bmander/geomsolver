@@ -58,6 +58,7 @@ def to_dict(sk: Sketch) -> dict[str, Any]:
              "args": [ix.ref(v) if kind in ENTITY_KINDS else v for v, (_, kind) in zip(c.args(), c.spec, strict=True)]}
             for c in sk.constraints if not c.intrinsic
         ],
+        "branches": dict(sk.branches),
     }
 
 
@@ -79,6 +80,7 @@ def from_dict(d: dict[str, Any]) -> Sketch:
         args = [sk.entities(v[0])[v[1]] if kind in ENTITY_KINDS else v
                 for v, (_, kind) in zip(c["args"], t.spec, strict=True)]
         sk.add(t(*args))
+    sk.branches = {k: int(v) for k, v in d.get("branches", {}).items()}
     return sk
 
 

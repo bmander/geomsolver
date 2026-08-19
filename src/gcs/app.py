@@ -28,11 +28,11 @@ from PySide6.QtWidgets import (
 from gcs import constraints as C
 from gcs import io
 from gcs.constraints import ENTITY_KINDS, Constraint
-from gcs.decompose import PlanResult, PlanSolver
+from gcs.decompose import PlanDrag, PlanResult, PlanSolver
 from gcs.diagnose import Diagnosis, diagnose
 from gcs.examples import CASES, EXAMPLES
 from gcs.model import Arc, Circle, Line, Point, Primitive, Sketch, Vec, expand
-from gcs.solve import METHODS, Drag, Method, SolveResult, System
+from gcs.solve import METHODS, Method, SolveResult, System
 from gcs.witness import WitnessReport
 
 PICK_PX = 8.0
@@ -89,7 +89,7 @@ class SketchView(QWidget):
         self.diagnosis: Diagnosis | None = None
         self.color_by_state = True
         self._rediagnose(None)
-        self.drag: Drag | None = None
+        self.drag: PlanDrag | None = None
         self.pan_last: QPointF | None = None
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -137,7 +137,7 @@ class SketchView(QWidget):
         key = (tuple(id(c) for c in sk.constraints), tuple(p.fixed for p in sk.params),
                len(sk.points), len(sk.lines), len(sk.circles), len(sk.arcs))
         if self._plan_solver is None or key != self._plan_key:
-            self._plan_solver, self._plan_key = PlanSolver(sk), key
+            self._plan_solver, self._plan_key = PlanSolver(sk, sk.branches, sticky=True), key
         return self._plan_solver
 
     def _solve(self) -> tuple[SolveResult, System]:
@@ -145,6 +145,7 @@ class SketchView(QWidget):
         if self.use_plan and self.sketch.constraints:
             ps = self._plan()
             self.last_plan = ps.solve(method=self.method)
+            self.sketch.branches.update(ps.plan.branches())
             return self.last_plan.as_solve_result(), ps.system
         self.last_plan = None
         system = System(self.sketch)
@@ -435,7 +436,7 @@ class SketchView(QWidget):
                 self.selected = [ent]
             if isinstance(ent, Point) and not ent.is_fixed:
                 self.push_undo()
-                self.drag = Drag(self.sketch, ent, *self.s2w(sp), self.method)
+                self.drag = PlanDrag(self.sketch, ent, *self.s2w(sp), self.sketch.branches)
         self.changed.emit()
         self.update()
 
@@ -494,6 +495,8 @@ class SketchView(QWidget):
             self.pan_last = sp
         elif self.drag is not None:
             self.last_result = self.drag.move(*self.s2w(sp))
+            if self.drag.flips:
+                self.status.emit(f"⚠ solution branch flipped in {len(self.drag.flips)} triangle(s) during this drag")
             self.changed.emit()
         self.update()
 
@@ -501,6 +504,7 @@ class SketchView(QWidget):
         self.pan_last = None
         if self.drag is not None:
             self.drag.end()
+            self.sketch.branches.update(self.drag.branches())
             self.drag = None
             self.changed.emit()
             self.update()
@@ -600,6 +604,8 @@ class MainWindow(QMainWindow):
         em.addAction(self._act("Delete selected (Del)", self.delete_pressed, "Delete"))
         em.addAction(self._act("Toggle &fix on selected points", self.view.toggle_fix_selected, "F"))
         em.addAction(self._act("Select &all", self.select_all, "Ctrl+A"))
+        em.addAction(self._act("Flip solution &branch", self.flip_branch, "Ctrl+F"))
+        em.addAction(self._act("Alternative &solutions for selected point…", self.alternatives, "Ctrl+Shift+F"))
 
         vm = mb.addMenu("&View")
         vm.addAction(self._act("&Fit", self.view.fit, "Home"))
@@ -840,6 +846,93 @@ class MainWindow(QMainWindow):
     def toggle_plan(self, on: bool) -> None:
         self.view.use_plan = on
         self.view.solve_now()
+
+    def flip_branch(self) -> None:
+        """Stage 5 root selection: a selected tangency row toggles its inside/outside flag; a
+        selected point flips the closed-form constructions that place it (the other circle–circle
+        intersection), recorded in the sketch's branches and replayed sticky."""
+        item = self.clist.currentItem()
+        c = item.data(Qt.ItemDataRole.UserRole) if item is not None and self.clist.hasFocus() else None
+        if isinstance(c, C.TangentLineCircle):
+            self.view.push_undo()
+            c.side = -c.side
+            self.view._after_edit()
+            self.statusBar().showMessage(f"flipped tangency side of {io.describe(c, self.view.sketch)}", 4000)
+            return
+        if isinstance(c, C.TangentCircleCircle):
+            self.view.push_undo()
+            c.external = not c.external
+            self.view._after_edit()
+            self.statusBar().showMessage(f"flipped {'external' if c.external else 'internal'} tangency", 4000)
+            return
+        pts = [e for e in self.view.selected if isinstance(e, Point)]
+        if not pts:
+            self.statusBar().showMessage("select a point (or a tangency row) to flip its solution branch", 4000)
+            return
+        sk = self.view.sketch
+        ps = PlanSolver(sk, sk.branches, sticky=True)
+        n = 0
+        for p in pts:
+            n += ps.plan.flip(ps.graph.P(p))
+        if not n:
+            self.statusBar().showMessage("no closed-form construction places the selected point(s)", 4000)
+            return
+        self.view.push_undo()
+        r = ps.solve()
+        sk.branches.update(ps.plan.branches())
+        self.view._after_edit()
+        self.statusBar().showMessage(f"flipped {n} construction(s)" + ("" if r.success else " — the other root is not reachable here"), 5000)
+
+    def alternatives(self) -> None:
+        """Stage 5: enumerate the real solutions of the construction that places the selected
+        point (homotopy continuation on its merge system) and let the user pick one."""
+        from gcs.decompose import _apply, _T, execute
+        from gcs.homotopy import apply_alternative, enumerate_step
+
+        pts = [e for e in self.view.selected if isinstance(e, Point)]
+        if len(pts) != 1:
+            self.statusBar().showMessage("select exactly one point", 4000)
+            return
+        sk = self.view.sketch
+        ps = PlanSolver(sk, sk.branches, sticky=True)
+        el = ps.graph.P(pts[0])
+        cands = [i for i, st in enumerate(ps.plan.steps)
+                 if (st.ppp is not None and st.ppp[1] == el) or (st.ppp is None and any(e == el for _, _, e in st.pairs))]
+        if not cands:
+            self.statusBar().showMessage("no construction places that point (under-constrained or not decomposable)", 5000)
+            return
+        idx = cands[0]
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            alts = enumerate_step(ps.plan, idx)
+            parts = execute(ps.plan, capture=idx) or []
+        finally:
+            QApplication.restoreOverrideCursor()
+        if len(alts) < 2:
+            self.statusBar().showMessage(f"{len(alts)} real solution(s) for this construction — nothing to choose", 5000)
+            return
+        # where would the point land under each alternative?
+        q = next((k for k, c in enumerate(parts[1:]) if el in c.els), None)
+        labels = []
+        for a in alts:
+            if q is not None:
+                pos = _apply(_T(*a.u[3 * q: 3 * q + 3]), el, parts[q + 1].els[el])
+                where = f"point at ({pos[0]:.3g}, {pos[1]:.3g})"
+            else:
+                where = f"distance {a.distance:.3g}"
+            labels.append(("● current — " if a.is_current else "") + where)
+        choice, ok = QInputDialog.getItem(self, "Alternative solutions",
+                                          f"{len(alts)} real solutions of this construction:", labels, 0, False)
+        if not ok:
+            return
+        alt = alts[labels.index(choice)]
+        if alt.is_current:
+            return
+        self.view.push_undo()
+        apply_alternative(ps.plan, idx, alt)
+        sk.branches.update(ps.plan.branches())
+        self.view._after_edit()
+        self.statusBar().showMessage("switched to the chosen solution", 4000)
 
     def animate_dof(self) -> None:
         if not self.view.start_animation():

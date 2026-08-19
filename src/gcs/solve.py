@@ -14,6 +14,7 @@ methods are kept as `scipy-*` references for benchmarking.
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass
 from typing import Any, Literal, NamedTuple, get_args
@@ -258,34 +259,85 @@ def solve(sketch: Sketch, method: Method = "dogleg", **kw: object) -> SolveResul
     return System(sketch).solve(method=method, **kw)  # type: ignore[arg-type]
 
 
+Triangle = tuple[Point, Point, Point]
+
+
+def orientation(a: Point, b: Point, c: Point) -> float:
+    """Twice the signed area of (a, b, c) — the order-type invariant we guard."""
+    return (b.x.value - a.x.value) * (c.y.value - a.y.value) - (b.y.value - a.y.value) * (c.x.value - a.x.value)
+
+
 class Drag:
     """Interactive drag of one point: pull toward the cursor with a soft target,
     then polish with the hard constraints only so they hold exactly.
 
     Both systems are compiled once at drag start and reused for every move —
-    dragging never re-analyses the sketch.  Frontends only translate cursor
-    coordinates; this is the home for Stage-5 continuation/root-tracking later.
+    dragging never re-analyses the sketch.  Stage 5 robustness:
+      * continuation — a far cursor jump is taken in increments (≤ max_step_rel
+        of the sketch extent) so the solution tracks its homotopy branch instead
+        of teleporting across it;
+      * order-type guards — the orientations of `guards` triangles (typically
+        the plan's closed-form triples) are watched; a step that would flip one
+        is retried with smaller increments, and if a flip is unavoidable it is
+        recorded in `flips` and flagged in the result's message.
     """
 
     PULL_ITER = 4      # the pull is a soft compromise; a few GN steps suffice, polish makes it exact
     POLISH_ITER = 20
 
     def __init__(self, sketch: Sketch, point: Point, x: float, y: float,
-                 method: Method = "dogleg", weight: float = 1.0) -> None:
+                 method: Method = "dogleg", weight: float = 1.0,
+                 guards: list[Triangle] | None = None, max_step_rel: float = 0.05) -> None:
         self.sketch, self.point, self.method = sketch, point, method
         self.polish = System(sketch)
         self.target = DragTarget(point, x, y, weight=weight)
         sketch.add(self.target)
         self.pull = System(sketch)
         self.active = True
+        self.guards = guards or []
+        self.max_step = max_step_rel * max(1.0, sketch.extent())
+        self.signs = [orientation(*t) >= 0 for t in self.guards]
+        self.flips: list[Triangle] = []
 
-    def move(self, x: float, y: float) -> SolveResult:
-        t0 = time.perf_counter()
+    def _step(self, x: float, y: float) -> SolveResult:
         self.target.set_target(x, y)
         self.pull.update_consts(self.target)
         self.pull.solve(method=self.method, max_iter=self.PULL_ITER)
-        res = self.polish.solve(method=self.method, max_iter=self.POLISH_ITER)
+        return self.polish.solve(method=self.method, max_iter=self.POLISH_ITER)
+
+    def _flipped(self) -> list[int]:
+        return [i for i, t in enumerate(self.guards) if (orientation(*t) >= 0) != self.signs[i]]
+
+    def move(self, x: float, y: float) -> SolveResult:
+        t0 = time.perf_counter()
+        px, py = self.point.xy
+        n = max(1, int(math.ceil(math.hypot(x - px, y - py) / self.max_step)))
+        res = None
+        flipped_now: list[int] = []
+        for i in range(1, n + 1):
+            tx, ty = px + (x - px) * i / n, py + (y - py) * i / n
+            x_before = self.sketch.get_x()
+            res = self._step(tx, ty)
+            if self.guards:
+                bad = self._flipped()
+                halvings = 0
+                while bad and halvings < 4:          # damp: retry from the last good state in smaller steps
+                    self.sketch.set_x(x_before)
+                    halvings += 1
+                    m = 2 ** halvings
+                    bx, by = self.point.xy
+                    for j in range(1, m + 1):
+                        res = self._step(bx + (tx - bx) * j / m, by + (ty - by) * j / m)
+                    bad = self._flipped()
+                if bad:                              # unavoidable: accept, record, flag
+                    for k in bad:
+                        self.signs[k] = not self.signs[k]
+                        self.flips.append(self.guards[k])
+                    flipped_now += bad
+        assert res is not None
         res.time_s = time.perf_counter() - t0
+        if flipped_now:
+            res.message = f"order-type flip in {len(flipped_now)} triangle(s)"
         return res
 
     def end(self) -> None:

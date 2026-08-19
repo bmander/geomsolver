@@ -152,6 +152,7 @@ class Sketch:
     lines: list[Line] = field(default_factory=list)
     circles: list[Circle] = field(default_factory=list)
     arcs: list[Arc] = field(default_factory=list)
+    branches: dict[str, int] = field(default_factory=dict)   # recorded root choices (Stage 5), persisted
 
     # -- construction -------------------------------------------------------
 

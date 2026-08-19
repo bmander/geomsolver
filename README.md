@@ -1,11 +1,13 @@
 # gcs — geometric constraint solver
 
-Stages 0–4 of [`gcs-solver-program.md`](gcs-solver-program.md): a
+Stages 0–5 of [`gcs-solver-program.md`](gcs-solver-program.md): a
 residual-formulation solver with vectorized numpy kernels, our own DogLeg/LM,
 structural diagnosis (matching / Dulmage–Mendelsohn / pebble game / minimal
 conflict sets), Fudos–Hoffmann-style decomposition into cached solve plans, the
 witness configuration method (theorem-type dependencies, animated remaining
-DOFs), and a PySide6 sketcher.  Python ≥ 3.14, numpy + scipy; C/Cython comes only
+DOFs), dragging robustness and solution management (sticky chirality, plan
+drag with continuation, order-type guards, homotopy enumeration of
+alternatives), and a PySide6 sketcher.  Python ≥ 3.14, numpy + scipy; C/Cython comes only
 when profiling says so.
 
 ## Setup
@@ -104,10 +106,25 @@ DOF, convergence and solve time.
   separated, internal DOFs localised).  `diagnose(..., witness=True)` attaches
   it; the app's Diagnose dialog shows it and View → Animate remaining DOF
   (Ctrl+M) plays the modes.
-* `gcs.io` — JSON save/load; also deletion-by-rebuild (`without`).
+* `gcs.homotopy` — **homotopy continuation** on a merge system (a core or a
+  triangle) in (c, s, tx, ty) form: linear rows fixed, total-degree start
+  system on the quadratic rows with the γ-trick, complex predictor–corrector
+  tracking, real endpoints polished and deduplicated → the construction's
+  real roots; `apply_alternative` puts the sketch on one (replays stay there).
+* `gcs.io` — JSON save/load (incl. recorded branches); deletion-by-rebuild (`without`).
 * `gcs.app` — PySide6 desktop sketcher (see above).
 * `gcs.canvas` — matplotlib click-drag testbed.  Dragging = soft `DragTarget`
   pull + hard-only polish, both compiled once per drag (same in the app).
+
+## Stage 5 status
+
+| criterion | status |
+|---|---|
+| chirality tracking: persisted per-construction roots, preferred on re-solve, "flip" per cluster | ✅ `Step.branch`/`Plan.branches()` keyed stably, saved in JSON (`Sketch.branches`), sticky replay; Ctrl+F flips triangle roots / tangency sides |
+| continuation-style dragging | ✅ `PlanDrag`/`Drag` subdivide far cursor jumps (≤ 5 % of extent per increment) |
+| order-type guards | ✅ numeric drag watches the plan's triangle orientations; retries with smaller steps, records/flags unavoidable flips |
+| homotopy continuation for enumeration on small cores | ✅ `gcs.homotopy.enumerate_step` (total-degree, γ-trick; K₃,₃ core → 4 real realizations); `Edit → Alternative solutions…` |
+| torture suite: recorded drag trajectories, zero solution jumps; branches survive save/load | ✅ `tests/test_drag.py` (floating truss, sliding rect, pinned apex never jumps, guard flags a forced crossing, continuity under far drags, JSON round-trip of branches) |
 
 ## Stage 4 status
 
