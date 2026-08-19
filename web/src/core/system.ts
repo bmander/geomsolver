@@ -6,9 +6,9 @@
  * compile-to-plan boundary is the architectural seam: the object model stays here, the
  * numbers live in WebAssembly.
  */
-import { Constraint, DragTarget } from './constraints.js';
+import { Constraint, DragTarget, Radius } from './constraints.js';
 import { K, KERNELS } from './kernels.js';
-import { Point, Sketch } from './model.js';
+import { Arc, Circle, Point, Sketch } from './model.js';
 import { Buf, IBuf, core, readU8 } from './wasm.js';
 
 export type Method = 'dogleg' | 'lm';
@@ -448,5 +448,50 @@ export class Drag {
       this.pull.dispose();
       this.polish.dispose();
     }
+  }
+}
+
+/** Interactive drag of a circle's or arc's radius — the scalar counterpart of `Drag`.
+ *
+ *  Same shape: pull the radius toward the cursor's distance from the centre with a soft
+ *  constraint, then polish with the hard constraints only, both systems compiled once at drag
+ *  start.  The soft term is a `Radius` with its `soft` flag set: its residual is already
+ *  exactly r - target, so the pull needs no kernel of its own.  A radius that is fixed,
+ *  dimensioned or tied by EqualRadius simply does not move — the polish wins, the same way a
+ *  point drag behaves on a fully constrained sketch. */
+export class RadiusDrag {
+  readonly PULL_ITER = 4;
+  readonly POLISH_ITER = 20;
+
+  readonly target: Radius;
+  readonly polish: System;
+  readonly pull: System;
+  active = true;
+
+  constructor(readonly sketch: Sketch, readonly circle: Circle | Arc, r: number,
+              readonly method: Method = 'dogleg') {
+    this.polish = new System(sketch);          // hard only: the soft target is not added yet
+    this.target = new Radius(circle, r);
+    this.target.soft = true;
+    sketch.add(this.target);
+    this.pull = new System(sketch);
+  }
+
+  move(r: number): SolveResult {
+    const t0 = now();
+    this.target.r = Math.max(r, 1e-9);         // a radius through zero would flip the geometry
+    this.pull.updateConsts(this.target);
+    this.pull.solve({ method: this.method, maxIter: this.PULL_ITER });
+    const res = this.polish.solve({ method: this.method, maxIter: this.POLISH_ITER });
+    res.timeS = now() - t0;
+    return res;
+  }
+
+  end(): void {
+    if (!this.active) return;
+    this.sketch.remove(this.target);
+    this.active = false;
+    this.pull.dispose();
+    this.polish.dispose();
   }
 }

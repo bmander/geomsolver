@@ -1,6 +1,7 @@
 /* The sketcher shell: toolbars, the constraint list, the diagnosis banner and the dialogs.
  *
- *   tools     S select · P point · L line · C circle · A arc · Esc cancel
+ *   tools     S select · P point · L line · C circle · A arc
+ *   Esc       stop a DOF animation, then drop the tool's pending points, then back out to Select
  *   editing   F fix/unfix · Del delete · Ctrl+Z undo · wheel zoom · right-drag pan
  *
  * Everything below is presentation; the solver, diagnosis, decomposition and root selection
@@ -38,10 +39,11 @@ const toolButtons = new Map<Tool, HTMLButtonElement>();
 
 /* -- toolbars ---------------------------------------------------------------- */
 
-function setTool(t: Tool): void {
-  view.setTool(t);
+/** The buttons follow the view, so Escape backing out of a tool updates them too. */
+view.onTool = (t) => {
   for (const [k, b] of toolButtons) b.setAttribute('aria-pressed', String(k === t));
-}
+};
+const setTool = (t: Tool): void => view.setTool(t);
 
 for (const [label, tool, key] of [
   ['Select', 'select', 's'], ['Point', 'point', 'p'], ['Line', 'line', 'l'],
@@ -50,7 +52,10 @@ for (const [label, tool, key] of [
   toolButtons.set(tool, addButton(barTools, { label, key, toggle: true, onClick: () => setTool(tool) }));
 }
 setTool('select');
-addButton(barTools, { label: 'Cancel', key: 'esc', onClick: () => view.cancelTool() });
+addButton(barTools, {
+  label: 'Cancel', key: 'esc', onClick: () => view.cancelTool(),
+  title: 'Discard the points collected so far; again to leave the tool for Select',
+});
 addSeparator(barTools);
 
 const caseBox = addSelect(barTools,
@@ -138,7 +143,7 @@ function applySimple([, cls, nPts, nLines, nCirc]: typeof SIMPLE[number]): void 
   const what = ([[nPts, 'point(s)'], [nLines, 'line(s)'], [nCirc, 'circle(s)/arc(s)']] as const)
     .filter(([n]) => n).map(([n, w]) => `${n} ${w}`).join(', ');
   if (!need(ok, what)) return;
-  for (const ln of perLine ? lines : [null]) {
+  const made = (perLine ? lines : [null]).map((ln) => {
     const args: unknown[] = [];
     let pi = 0, li = 0, ci = 0;
     for (const [, kind] of cls.spec) {
@@ -146,8 +151,9 @@ function applySimple([, cls, nPts, nLines, nCirc]: typeof SIMPLE[number]): void 
       else if (kind === 'line') args.push(perLine ? ln : lines[li++]);
       else if (ENTITY_KINDS.has(kind)) args.push(circles[ci++]);
     }
-    view.addConstraint(new (cls as unknown as new (...a: unknown[]) => Constraint)(...args));
-  }
+    return new (cls as unknown as new (...a: unknown[]) => Constraint)(...args);
+  });
+  view.addConstraints(...made);
 }
 
 async function cDistance(): Promise<void> {
@@ -157,7 +163,7 @@ async function cDistance(): Promise<void> {
   if (!need(pts.length === 2, 'two points (or one line)')) return;
   const cur = Math.hypot(pts[0].x.value - pts[1].x.value, pts[0].y.value - pts[1].y.value);
   const v = await askNumber('Distance', 'Distance', cur);
-  if (v !== null) view.addConstraint(new C.Distance(pts[0], pts[1], v));
+  if (v !== null) view.addConstraints(new C.Distance(pts[0], pts[1], v));
 }
 
 async function cAngle(): Promise<void> {
@@ -166,14 +172,22 @@ async function cAngle(): Promise<void> {
   const [d1, d2] = [lines[0].direction(), lines[1].direction()];
   const cur = (Math.atan2(d1[0] * d2[1] - d1[1] * d2[0], d1[0] * d2[0] + d1[1] * d2[1]) * 180) / Math.PI;
   const v = await askNumber('Angle', 'Angle from the first to the second line (degrees)', cur);
-  if (v !== null) view.addConstraint(new C.Angle(lines[0], lines[1], (v * Math.PI) / 180));
+  if (v !== null) view.addConstraints(new C.Angle(lines[0], lines[1], (v * Math.PI) / 180));
 }
 
+/** An equality set: every selected line the same length, or every selected circle/arc the
+ *  same radius.  n entities need n-1 constraints, all against the first — a star rather than
+ *  a cycle, since closing the loop would make one equation redundant (which is exactly what
+ *  `polygon_chain` does on purpose, to have a redundancy the graph cannot see). */
 function cEqual(): void {
   const { lines, circles } = sel();
-  if (lines.length === 2) view.addConstraint(new C.EqualLength(lines[0], lines[1]));
-  else if (circles.length === 2) view.addConstraint(new C.EqualRadius(circles[0], circles[1]));
-  else need(false, 'two lines or two circles/arcs');
+  if (lines.length >= 2 && !circles.length) {
+    view.addConstraints(...lines.slice(1).map((l) => new C.EqualLength(lines[0], l)));
+  } else if (circles.length >= 2 && !lines.length) {
+    view.addConstraints(...circles.slice(1).map((c) => new C.EqualRadius(circles[0], c)));
+  } else {
+    need(false, 'two or more lines, or two or more circles/arcs (not a mix)');
+  }
 }
 
 function cTangent(): void {
@@ -182,14 +196,14 @@ function cTangent(): void {
     const ln = lines[0], cc = circles[0];
     if (cc instanceof Arc) {
       const ends = new Set([ln.p1, ln.p2]);
-      if (ends.has(cc.start)) return view.addConstraint(new C.TangentArcLine(cc, ln, 'start'));
-      if (ends.has(cc.end)) return view.addConstraint(new C.TangentArcLine(cc, ln, 'end'));
+      if (ends.has(cc.start)) return view.addConstraints(new C.TangentArcLine(cc, ln, 'start'));
+      if (ends.has(cc.end)) return view.addConstraints(new C.TangentArcLine(cc, ln, 'end'));
     }
-    view.addConstraint(new C.TangentLineCircle(ln, cc));
+    view.addConstraints(new C.TangentLineCircle(ln, cc));
   } else if (circles.length === 2 && !lines.length) {
     const [a, b] = circles;
     const d = Math.hypot(a.center.x.value - b.center.x.value, a.center.y.value - b.center.y.value);
-    view.addConstraint(new C.TangentCircleCircle(a, b, d > Math.max(Math.abs(a.radius.value), Math.abs(b.radius.value))));
+    view.addConstraints(new C.TangentCircleCircle(a, b, d > Math.max(Math.abs(a.radius.value), Math.abs(b.radius.value))));
   } else {
     need(false, 'a line and a circle/arc, or two circles/arcs');
   }
@@ -200,7 +214,7 @@ async function cRadius(): Promise<void> {
   if (!need(circles.length >= 1, 'circle(s)/arc(s)')) return;
   const v = await askNumber('Radius', 'Radius', Math.abs(circles[0].radius.value));
   if (v === null) return;
-  for (const cc of circles) view.addConstraint(new C.Radius(cc, v));
+  view.addConstraints(...circles.map((cc) => new C.Radius(cc, v)));
 }
 
 /* -- Stage 5: root selection ---------------------------------------------------- */

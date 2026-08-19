@@ -84,13 +84,18 @@ graph algorithms, diagnosis, constraint graph, decomposition, witness analysis,
 homotopy, JSON I/O, examples), and `web/src/app/` is the sketcher —
 
 * **S**elect / **P**oint / **L**ine (polyline, snapping to existing points) /
-  **C**ircle / **A**rc, Esc to cancel, wheel zoom, right-drag pan;
+  **C**ircle / **A**rc, wheel zoom, right-drag pan; Escape steps back one stage at a
+  time — stop a DOF animation, drop the points a tool has collected, leave the tool;
 * the constraint toolbar (Coincident, Distance, Horizontal, Vertical, Parallel,
-  Perpendicular, On line, Midpoint, On circle, Angle, Equal, Tangent, Radius, Fix);
+  Perpendicular, On line, Midpoint, On circle, Angle, Equal, Tangent, Radius, Fix).
+  Equal takes an equality *set*: n selected lines or n circles/arcs become n−1
+  constraints against the first, added as one edit — one solve, one undo step;
 * entity colouring by constraint state, dashed halos and labels on the culprits of a
   conflict, a banner naming the minimal conflict set, and a constraint list that marks
   redundant (`≈`) and culprit (`✗`) rows;
-* drag with the cached decomposition plan (falling back to pull-and-polish), the
+* drag a point with the cached decomposition plan (falling back to pull-and-polish), or
+  drag a circle's or arc's edge to resize it — a soft `Radius` pull with the same
+  polish, so a dimensioned or EqualRadius-tied radius simply does not follow; the
   Diagnose report (structural + witness), DOF animation, branch flipping and homotopy
   enumeration of alternative roots;
 * JSON save/load, undo, and the case library from `examples.ts`.

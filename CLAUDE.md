@@ -49,8 +49,10 @@ Conventions:
   caching transforms.
 - Slow tests are gated by `GCS_SLOW=1`.
 - Benchmark on a quiet machine (`uptime`); this box often has a JVM indexer at 300% CPU.
-- `gcs.solve.Drag` / `web/src/core/system.ts` `Drag` is the one drag implementation (pull +
-  polish); the front end only translates coordinates.
+- `gcs.solve.Drag` / `web/src/core/system.ts` `Drag` is the one point-drag implementation
+  (pull + polish), `RadiusDrag` its scalar counterpart for circle/arc radii (a `Radius` with
+  `soft` set — its residual is already r − target, so no kernel of its own); the front end
+  only translates coordinates.
 - Determinism: ordered lists only, no set/dict-order-dependent iteration in the solve path.  The
   TypeScript port uses a seeded `Rng` (never `Math.random`) for the same reason.
 - No LAPACK/BLAS in `csrc/` — the QR, complete-orthogonal, SVD and LDLᵀ routines are ours, and

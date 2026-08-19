@@ -14,7 +14,7 @@ import { diagnose, distanceRigidity, minimalConflictSet, violatedConstraints } f
 import { enumerateStep } from '../core/homotopy.js';
 import { Sketch } from '../core/model.js';
 import { Rng } from '../core/rng.js';
-import { Drag, System, solve } from '../core/system.js';
+import { Drag, RadiusDrag, System, solve } from '../core/system.js';
 import { analyze } from '../core/witness.js';
 import { IBuf, core, initCore } from '../core/wasm.js';
 import { KERNELS } from '../core/kernels.js';
@@ -446,6 +446,66 @@ test('numeric drag keeps the constraints satisfied', () => {
   } finally {
     d.end();
   }
+});
+
+test('dragging the edge of a free circle changes its radius', () => {
+  const sk = new Sketch();
+  const c = sk.circle(sk.point(0, 0, true), 10);
+  const d = new RadiusDrag(sk, c, c.radius.value);
+  try {
+    for (const target of [25, 4, 12.5]) {
+      assert.ok(d.move(target).success);
+      assert.ok(Math.abs(c.radius.value - target) < 1e-6, `${c.radius.value} != ${target}`);
+    }
+  } finally {
+    d.end();
+  }
+  assert.ok(!sk.constraints.some((x) => x.soft));
+});
+
+test('a dimensioned radius does not follow the cursor', () => {
+  const sk = new Sketch();
+  const c = sk.circle(sk.point(0, 0, true), 10);
+  sk.add(new C.Radius(c, 10));
+  const d = new RadiusDrag(sk, c, c.radius.value);
+  try {
+    d.move(30);
+  } finally {
+    d.end();
+  }
+  assert.ok(Math.abs(c.radius.value - 10) < 1e-6);
+});
+
+test('resizing an arc carries its endpoints', () => {
+  const sk = new Sketch();
+  const centre = sk.point(0, 0, true);
+  const arc = sk.arc(centre, sk.point(10, 0), sk.point(0, 10));
+  solve(sk);
+  const d = new RadiusDrag(sk, arc, arc.radius.value);
+  try {
+    assert.ok(d.move(17).success);
+  } finally {
+    d.end();
+  }
+  assert.ok(Math.abs(arc.radius.value - 17) < 1e-6);
+  for (const p of [arc.start, arc.end]) {
+    assert.ok(Math.abs(Math.hypot(p.x.value, p.y.value) - 17) < 1e-6);
+  }
+});
+
+test('resizing one circle of an EqualRadius pair carries the other', () => {
+  const sk = new Sketch();
+  const a = sk.circle(sk.point(0, 0, true), 10);
+  const b = sk.circle(sk.point(40, 0, true), 10);
+  sk.add(new C.EqualRadius(a, b));
+  const d = new RadiusDrag(sk, a, a.radius.value);
+  try {
+    assert.ok(d.move(18).success);
+  } finally {
+    d.end();
+  }
+  assert.ok(Math.abs(a.radius.value - 18) < 1e-6);
+  assert.ok(Math.abs(b.radius.value - 18) < 1e-6);
 });
 
 test('plan drag replays the cached plan', () => {

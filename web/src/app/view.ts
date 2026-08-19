@@ -6,7 +6,7 @@ import { Constraint } from '../core/constraints.js';
 import { PlanDrag, PlanResult, PlanSolver, asSolveResult, pppTriangles } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
 import { Arc, Circle, Line, Point, Primitive, Sketch } from '../core/model.js';
-import { Method, SolveResult, System, Triangle } from '../core/system.js';
+import { Method, RadiusDrag, SolveResult, System, Triangle } from '../core/system.js';
 import { Motion, WitnessReport, analyze, movingParams } from '../core/witness.js';
 
 const PICK_PX = 8;
@@ -64,6 +64,8 @@ export class SketchView {
   lastPlan: PlanResult | null = null;
 
   onChanged: () => void = () => {};
+  /** The active tool changed (including when Escape backs out of one). */
+  onTool: (tool: Tool) => void = () => {};
   /** Per drag frame: nothing but the numbers changed, so only the status line needs it. */
   onDragFrame: () => void = () => {};
   onStatus: (msg: string) => void = () => {};
@@ -79,6 +81,7 @@ export class SketchView {
   private anim: Animation | null = null;
   private animTimer = 0;
   private drag: PlanDrag | null = null;
+  private radiusDrag: RadiusDrag | null = null;
   private flipsReported = 0;
   private panLast: [number, number] | null = null;
   private frame = 0;
@@ -269,21 +272,27 @@ export class SketchView {
     return this.diagnosis?.entityState.get(e) ?? 'well';
   }
 
-  addConstraint(c: Constraint): void {
+  /** Add one or more constraints as a single edit: one undo entry, one solve, one
+   *  diagnosis.  A multi-entity action (an equality set, Horizontal over several lines)
+   *  is one thing the user did, so it should take one Ctrl+Z to undo. */
+  addConstraints(...cs: Constraint[]): void {
+    if (!cs.length) return;
     this.pushUndo();
-    this.sketch.add(c);
+    this.sketch.add(...cs);
     const res = this.afterEdit();
     const d = this.diagnosis;
     const st = d?.status ?? 'well';
+    const kinds = [...new Set(cs.map((c) => c.typeName))].join(' + ');
+    const what = cs.length === 1 ? kinds : `${cs.length} × ${kinds}`;
     if (st === 'conflict' && d?.conflicts?.length) {
-      this.onStatus(`added ${c.typeName} — CONFLICT, remove one of: `
+      this.onStatus(`added ${what} — CONFLICT, remove one of: `
         + d.conflicts.map((k) => io.describe(k, this.sketch)).join(', '));
     } else if (st === 'over') {
-      this.onStatus(`added ${c.typeName} — redundant (consistent) with existing constraints`);
+      this.onStatus(`added ${what} — redundant (consistent) with existing constraints`);
     } else if (res && !res.success) {
-      this.onStatus(`added ${c.typeName} — solver did NOT converge`);
+      this.onStatus(`added ${what} — solver did NOT converge`);
     } else {
-      this.onStatus(`added ${c.typeName}`);
+      this.onStatus(`added ${what}`);
     }
   }
 
@@ -542,14 +551,27 @@ export class SketchView {
     this.tool = tool;
     this.pending = [];
     this.canvas.classList.toggle('select', tool === 'select');
+    this.canvas.style.cursor = '';                // drop any hover affordance
+    this.onTool(tool);
     this.onStatus(`tool: ${tool}`);
     this.draw();
   }
 
+  /** Escape, in stages: stop a DOF animation, then drop the points the active tool has
+   *  collected so far, then leave the tool for Select.  Repeated presses always end up
+   *  somewhere calmer rather than doing nothing. */
   cancelTool(): void {
-    this.stopAnimation();
-    this.pending = [];
-    this.draw();
+    if (this.anim) {
+      this.stopAnimation();
+      return;
+    }
+    if (this.pending.length) {
+      this.pending = [];
+      this.onStatus(`${this.tool}: cancelled — Esc again for Select`);
+      this.draw();
+      return;
+    }
+    if (this.tool !== 'select') this.setTool('select');
   }
 
   private local(e: PointerEvent | WheelEvent): [number, number] {
@@ -608,6 +630,9 @@ export class SketchView {
         const guards: Triangle[] | null = this.planSolver ? pppTriangles(this.planSolver.plan) : null;
         this.drag = new PlanDrag(this.sketch, ent, ...this.s2w(sp[0], sp[1]), guards);
         this.flipsReported = 0;
+      } else if (isResizable(ent)) {
+        this.pushUndo();
+        this.radiusDrag = new RadiusDrag(this.sketch, ent, Math.abs(ent.radius.value));
       }
     }
     this.onChanged();
@@ -671,12 +696,33 @@ export class SketchView {
         this.onStatus(`⚠ solution branch flipped in ${this.flipsReported} triangle(s) during this drag`);
       }
       this.onDragFrame();
+    } else if (this.radiusDrag) {
+      const [wx, wy] = this.s2w(sp[0], sp[1]);
+      const c = this.radiusDrag.circle.center;
+      this.lastResult = this.radiusDrag.move(Math.hypot(wx - c.x.value, wy - c.y.value));
+      this.onDragFrame();
+    } else {
+      this.hover(sp);
     }
     this.draw();
   }
 
+  /** Cursor affordance: what a press here would grab. */
+  private hover(sp: [number, number]): void {
+    if (this.tool !== 'select') return;
+    const ent = this.pick(sp[0], sp[1]);
+    this.canvas.style.cursor = ent instanceof Point && !ent.isFixed ? 'grab'
+      : isResizable(ent) ? 'ew-resize' : '';
+  }
+
   private onPointerUp(): void {
     this.panLast = null;
+    if (this.radiusDrag) {
+      this.radiusDrag.end();
+      this.radiusDrag = null;
+      this.onChanged();
+      this.draw();
+    }
     if (this.drag) {
       this.drag.end();
       for (const [k, v] of this.drag.branches()) this.sketch.branches.set(k, v);
@@ -686,6 +732,11 @@ export class SketchView {
       this.draw();
     }
   }
+}
+
+/** A circle or arc whose radius is free to follow the cursor. */
+function isResizable(e: Primitive | null): e is Circle | Arc {
+  return (e instanceof Circle || e instanceof Arc) && !e.radius.fixed;
 }
 
 function dist(a: [number, number], b: [number, number]): number {

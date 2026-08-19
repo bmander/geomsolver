@@ -24,9 +24,9 @@ import numpy.typing as npt
 import scipy.sparse as sp
 
 from gcs import newton
-from gcs.constraints import Constraint, DragTarget
+from gcs.constraints import Constraint, DragTarget, Radius
 from gcs.kernels import KERNEL_ID, KERNELS, Kernel
-from gcs.model import Point, Sketch, Vec
+from gcs.model import Arc, Circle, Point, Sketch, Vec
 from gcs.newton import SOLVERS
 
 Method = Literal["dogleg", "lm", "scipy-dogbox", "scipy-trf", "scipy-lm"]
@@ -351,6 +351,44 @@ class Drag:
         res.time_s = time.perf_counter() - t0
         if len(self.flips) > n_flips:
             res.message = f"order-type flip in {len(self.flips) - n_flips} triangle(s)"
+        return res
+
+    def end(self) -> None:
+        if self.active:
+            self.sketch.remove(self.target)
+            self.active = False
+
+
+class RadiusDrag:
+    """Interactive drag of a circle's or arc's radius — the scalar counterpart of `Drag`.
+
+    Same shape: pull the radius toward the cursor's distance from the centre with a soft
+    constraint, then polish with the hard constraints only, both systems compiled once at
+    drag start.  The soft term is a `Radius` with its `soft` flag set: its residual is
+    already exactly r − target, so the pull needs no kernel of its own.  A radius that is
+    fixed, dimensioned or tied by EqualRadius simply does not move — the polish wins, which
+    is the same way a point drag behaves on a fully constrained sketch.
+    """
+
+    PULL_ITER = 4
+    POLISH_ITER = 20
+
+    def __init__(self, sketch: Sketch, circle: Circle | Arc, r: float, method: Method = "dogleg") -> None:
+        self.sketch, self.circle, self.method = sketch, circle, method
+        self.polish = System(sketch)          # hard only: the soft target is not added yet
+        self.target = Radius(circle, r)
+        self.target.soft = True
+        sketch.add(self.target)
+        self.pull = System(sketch)
+        self.active = True
+
+    def move(self, r: float) -> SolveResult:
+        t0 = time.perf_counter()
+        self.target.r = max(float(r), 1e-9)   # a radius through zero would flip the geometry
+        self.pull.update_consts(self.target)
+        self.pull.solve(method=self.method, max_iter=self.PULL_ITER)
+        res = self.polish.solve(method=self.method, max_iter=self.POLISH_ITER)
+        res.time_s = time.perf_counter() - t0
         return res
 
     def end(self) -> None:

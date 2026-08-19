@@ -10,7 +10,7 @@ from gcs import constraints as C
 from gcs import examples, io
 from gcs.decompose import PlanDrag, PlanSolver
 from gcs.model import Point, Sketch
-from gcs.solve import Drag, System
+from gcs.solve import Drag, RadiusDrag, System, solve
 
 
 def circle_path(cx: float, cy: float, r: float, n: int = 40) -> list[tuple[float, float]]:
@@ -150,3 +150,63 @@ def test_flip_survives_a_later_solve_by_the_same_cached_plan() -> None:
     for _ in range(3):                        # every later solve keeps the chosen root
         ps.solve()
         assert c.y.value < 0
+
+
+def test_radius_drag_resizes_a_free_circle() -> None:
+    """Dragging the edge of an unconstrained circle changes its radius."""
+    sk = Sketch()
+    c = sk.circle(sk.point(0, 0, fixed=True), 10.0)
+    d = RadiusDrag(sk, c, c.radius.value)
+    try:
+        for target in (25.0, 4.0, 12.5):
+            res = d.move(target)
+            assert res.success
+            assert c.radius.value == pytest.approx(target, abs=1e-6)
+    finally:
+        d.end()
+    assert not any(x.soft for x in sk.constraints)
+
+
+def test_radius_drag_leaves_a_dimensioned_circle_alone() -> None:
+    """A dimensioned radius does not follow the cursor — the polish wins, as with points."""
+    sk = Sketch()
+    c = sk.circle(sk.point(0, 0, fixed=True), 10.0)
+    sk.add(C.Radius(c, 10.0))
+    d = RadiusDrag(sk, c, c.radius.value)
+    try:
+        d.move(30.0)
+    finally:
+        d.end()
+    assert c.radius.value == pytest.approx(10.0, abs=1e-6)
+
+
+def test_radius_drag_carries_the_geometry_that_depends_on_it() -> None:
+    """An arc's endpoints sit at its radius (intrinsic PointOnCircle), so resizing the arc
+    has to move them with it."""
+    sk = Sketch()
+    c = sk.point(0, 0, fixed=True)
+    arc = sk.arc(c, sk.point(10, 0), sk.point(0, 10))
+    solve(sk)
+    d = RadiusDrag(sk, arc, arc.radius.value)
+    try:
+        assert d.move(17.0).success
+    finally:
+        d.end()
+    assert arc.radius.value == pytest.approx(17.0, abs=1e-6)
+    for p in (arc.start, arc.end):
+        assert math.dist(p.xy, arc.center.xy) == pytest.approx(17.0, abs=1e-6)
+
+
+def test_radius_drag_respects_an_equal_radius_chain() -> None:
+    """EqualRadius makes the chain move together — the pull is soft, the chain is not."""
+    sk = Sketch()
+    a = sk.circle(sk.point(0, 0, fixed=True), 10.0)
+    b = sk.circle(sk.point(40, 0, fixed=True), 10.0)
+    sk.add(C.EqualRadius(a, b))
+    d = RadiusDrag(sk, a, a.radius.value)
+    try:
+        assert d.move(18.0).success
+    finally:
+        d.end()
+    assert a.radius.value == pytest.approx(18.0, abs=1e-6)
+    assert b.radius.value == pytest.approx(18.0, abs=1e-6)
