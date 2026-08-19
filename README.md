@@ -1,9 +1,10 @@
 # gcs — geometric constraint solver
 
-Stages 0–2 of [`gcs-solver-program.md`](gcs-solver-program.md): a
+Stages 0–3a of [`gcs-solver-program.md`](gcs-solver-program.md): a
 residual-formulation solver with vectorized numpy kernels, our own DogLeg/LM,
 structural diagnosis (matching / Dulmage–Mendelsohn / pebble game / minimal
-conflict sets), and a PySide6 sketcher.  Python ≥ 3.14, numpy + scipy; C/Cython comes only
+conflict sets), Fudos–Hoffmann-style decomposition into cached solve plans, and
+a PySide6 sketcher.  Python ≥ 3.14, numpy + scipy; C/Cython comes only
 when profiling says so.
 
 ## Setup
@@ -71,10 +72,38 @@ DOF, convergence and solve time.
   Jacobian null space (sharper than the generous DM under-block), and a
   numeric-rank cross-check logs theorem-type dependencies structural analysis
   can't see (Stage 4 corpus).
+* `gcs.cgraph` — the constraint graph for decomposition: point elements
+  (coincident points contracted), line elements, ground (fixed points + x-axis),
+  valency-1 edges (point–point distance, point–line signed distance), direction
+  relations (all angle-type constraints as a weighted union-find), known radii
+  via `Radius`/fixed/`EqualRadius` chains, virtual radius lines for arc-endpoint
+  tangency, passive lines dropped, unsupported constraints listed.
+* `gcs.decompose` — **cluster merging → plan → replay**: pair/triple merges are
+  accepted when the shared points/lines/directions determine the relative rigid
+  transforms (rank of the merge Jacobian at generic witness poses, self-motions
+  of degenerate clusters accounted for — F–H's triangle rule is the common
+  case, parallels/perpendiculars need no special-casing); the merge sequence is
+  the plan.  Replay: leaves from live dimension values, PPP triangle merges by
+  circle–circle intersection with a sketch-guided **chirality flag**
+  (orientation sign), other merges by a tiny min-norm Newton, unfixed roots
+  placed by Procrustes (least change), verify with the compiled `System`,
+  numeric fallback otherwise.  `PlanSolver` compiles once per topology.
 * `gcs.io` — JSON save/load; also deletion-by-rebuild (`without`).
 * `gcs.app` — PySide6 desktop sketcher (see above).
 * `gcs.canvas` — matplotlib click-drag testbed.  Dragging = soft `DragTarget`
   pull + hard-only polish, both compiled once per drag (same in the app).
+
+## Stage 3a status
+
+| criterion | status |
+|---|---|
+| bottom-up cluster merging (F–H), each merge a rigid placement from shared elements | ✅ `decompose.decompose` (generalised: generic-rank determination) |
+| ruler-and-compass closed forms with chirality flags | ✅ PPP triangle merge (circle–circle) with orientation flag; other merges numeric (tiny) — closed-form library to grow |
+| numeric fallback for non-constructible / unsupported | ✅ `PlanSolver.solve` verifies and falls back |
+| decomposition once per topology; drags/edits replay the cached plan | ✅ `PlanSolver` + live dimension values (`refresh_consts`) |
+| regression suite runs both paths and diffs | ✅ `tests/test_decompose.py::test_plan_and_numeric_agree` |
+| 1000-entity mostly-tree-decomposable sketch in low ms from the cached plan | ⚠ 1500-entity truss replays in ~50–90 ms in Python (≈ the vectorized numeric solve): per-merge Python overhead is the limit — the plan is what a C executor consumes |
+| Owen's triconnected split / DR-planning for non-tree-decomposable cores | ⏳ Stage 3b |
 
 ## Stage 2 status
 

@@ -185,3 +185,16 @@ def test_conflict_banner_and_select_culprits(qapp: QApplication) -> None:
     v.remove_constraint(bad)
     qapp.processEvents()
     assert not w.banner.isVisible()
+
+
+def test_plan_toggle_solves_examples(qapp: QApplication) -> None:
+    w = MainWindow(EXAMPLES["rect_fillets"]())
+    w.show()
+    v = w.view
+    w.toggle_plan(True)
+    assert v.last_plan is not None and v.last_plan.plan.fully_decomposed and not v.last_plan.fell_back
+    assert "plan:" in w.perm_status.text()
+    v.set_sketch(EXAMPLES["polygon_chain"]())
+    assert v.last_plan is not None and v.last_plan.fell_back and v.last_result is not None and v.last_result.success
+    w.toggle_plan(False)
+    assert v.last_plan is None

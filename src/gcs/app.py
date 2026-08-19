@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from gcs import constraints as C
 from gcs import io
 from gcs.constraints import ENTITY_KINDS, Constraint
+from gcs.decompose import PlanResult, PlanSolver
 from gcs.diagnose import Diagnosis, diagnose
 from gcs.examples import EXAMPLES
 from gcs.model import Arc, Circle, Line, Point, Primitive, Sketch, expand
@@ -67,6 +68,8 @@ class SketchView(QWidget):
         self.tool = "select"
         self.method: Method = "dogleg"
         self.auto_solve = True
+        self.use_plan = False                   # Stage 3: decomposition plan (numeric fallback) for solves
+        self.last_plan: PlanResult | None = None
         self.pending: list[Point] = []          # points clicked so far in a drawing tool
         self.cursor_s = QPointF(0, 0)           # screen coords of cursor
         self.selected: list[Primitive] = []
@@ -117,8 +120,20 @@ class SketchView(QWidget):
             self.set_sketch(io.loads(self.undo_stack.pop()), fit=False)
             self.status.emit("undo")
 
+    def _solve(self) -> tuple[SolveResult, System]:
+        """One solve by the selected path; returns the result and the compiled System."""
+        if self.use_plan and self.sketch.constraints:
+            ps = PlanSolver(self.sketch)
+            self.last_plan = ps.solve(method=self.method)
+            res = self.last_plan.numeric or SolveResult(self.last_plan.success, 0, "plan", self.last_plan.max_residual,
+                                                        self.last_plan.max_residual, 0, 0, self.last_plan.time_s, "plan")
+            return res, ps.system
+        self.last_plan = None
+        system = System(self.sketch)
+        return system.solve(method=self.method), system
+
     def solve_now(self) -> SolveResult:
-        self.last_result = System(self.sketch).solve(method=self.method)
+        self.last_result, _ = self._solve()
         self.changed.emit()
         self.update()
         return self.last_result
@@ -133,8 +148,7 @@ class SketchView(QWidget):
         system: System | None = None
         if self.auto_solve:
             x_before = self.sketch.get_x()
-            system = System(self.sketch)
-            self.last_result = system.solve(method=self.method)
+            self.last_result, system = self._solve()
             if not self.last_result.success:
                 self.sketch.set_x(x_before)
         self._rediagnose(system)   # reuses the compiled system when we have one
@@ -535,6 +549,8 @@ class MainWindow(QMainWindow):
         auto = self._act("&Auto-solve", self.toggle_auto, checkable=True)
         auto.setChecked(True)
         sm.addAction(auto)
+        plan = self._act("Use decomposition &plan (Stage 3)", self.toggle_plan, checkable=True)
+        sm.addAction(plan)
         sm.addSeparator()
         grp = QActionGroup(self)
         for m in METHODS:
@@ -638,6 +654,9 @@ class MainWindow(QMainWindow):
         if r is not None:
             msg += (f"   | {'solved' if r.success else 'NOT CONVERGED'}  max|r|={r.max_residual:.1e}  "
                     f"{r.time_s * 1e3:.1f} ms  nfev={r.nfev}  {r.method}")
+        pr = self.view.last_plan
+        if pr is not None:
+            msg += f"   | plan: {pr.plan.summary()}{' (fell back)' if pr.fell_back else ''}"
         self._refresh_banner(d)
         title = "gcs sketcher"
         if d is not None and d.status == "conflict":
@@ -731,6 +750,10 @@ class MainWindow(QMainWindow):
     def toggle_auto(self, on: bool) -> None:
         self.view.auto_solve = on
 
+    def toggle_plan(self, on: bool) -> None:
+        self.view.use_plan = on
+        self.view.solve_now()
+
     def toggle_colour(self, on: bool) -> None:
         self.view.color_by_state = on
         self.view.update()
@@ -759,6 +782,9 @@ class MainWindow(QMainWindow):
             lines += ["Rigid clusters (distance graph): " + "; ".join(
                 "{" + ", ".join(sorted(ix.name(p) for p in c)) + "}" for c in big), ""]
         lines += d.warnings
+        pr = self.view.last_plan
+        if pr is not None:
+            lines += ["", f"Decomposition: {pr.plan.summary()}" + (" — numeric fallback used" if pr.fell_back else "")]
         QMessageBox.information(self, "Diagnosis", "\n".join(lines))
 
     def set_method(self, m: Method) -> None:

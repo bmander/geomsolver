@@ -128,6 +128,12 @@ class System:
         b, i = self._slot_of[id(c)]
         self.blocks[b].consts[i] = c.consts()
 
+    def refresh_consts(self) -> None:
+        """Re-read every constraint's constants (after arbitrary dimension edits)."""
+        for k, cs, _, consts, _, _ in self.blocks:
+            if k.n_const:
+                consts[:] = np.array([c.consts() for c in cs], dtype=np.float64).reshape(len(cs), k.n_const)
+
     def row_of(self, c: Constraint) -> int:
         """First residual row of a constraint."""
         b, i = self._slot_of[id(c)]
