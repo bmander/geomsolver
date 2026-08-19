@@ -31,7 +31,7 @@ def test_pebble_game_basics() -> None:
     assert graph.pebble_game(3, [(0, 1), (1, 2), (2, 0)]).is_rigid()
     assert graph.pebble_game(4, [(0, 1), (1, 2), (2, 3), (3, 0)]).dof == 1
     k4 = graph.pebble_game(4, [(0, 1), (1, 2), (2, 3), (3, 0), (0, 2), (1, 3)])
-    assert k4.is_rigid() and len(k4.redundant) == 1
+    assert k4.is_rigid() and k4.redundant == [5]   # (1,3) is the 6th edge: dependent on the other five
     bow = graph.pebble_game(5, [(0, 1), (1, 2), (2, 0), (2, 3), (3, 4), (4, 2)])
     assert bow.dof == 1 and sorted(map(sorted, bow.components)) == [[0, 1, 2], [2, 3, 4]]
 
@@ -64,7 +64,7 @@ def test_pebble_game_recognises_laman_graphs(seed: int) -> None:
     # any extra edge is redundant
     extra = next((a, b) for a in range(n) for b in range(a + 1, n) if (a, b) not in edges and (b, a) not in edges)
     res2 = graph.pebble_game(n, edges + [extra])
-    assert res2.redundant == [extra] and res2.is_rigid()
+    assert res2.redundant == [len(edges)] and res2.is_rigid()
     # removing one edge leaves 1 DOF
     assert graph.pebble_game(n, edges[1:]).dof == 1
 
@@ -161,3 +161,18 @@ def test_distance_rigidity_merges_coincident_points() -> None:
         sk.add(C.Distance(l.p1, l.p2, l.length()))
     clusters, red = distance_rigidity(sk)
     assert len(clusters) == 1 and len(clusters[0]) == 6 and not red
+
+
+def test_conflict_set_on_large_truss_from_good_geometry() -> None:
+    """The culprit is found when diagnosing from the last good geometry (what the app does)."""
+    sk = examples.truss(30)
+    bad = C.Distance(sk.points[0], sk.points[3], 999)
+    sk.add(bad)
+    d = diagnose(sk)                       # geometry untouched: the truss is still sane
+    assert d.status == "conflict" and bad in (d.conflicts or [])
+    # a mild but real conflict: the whole bay cycle is the minimal infeasible set
+    sk = examples.truss(30)
+    bad = C.Distance(sk.points[0], sk.points[3], 21)
+    sk.add(bad)
+    d = diagnose(sk)
+    assert bad in (d.conflicts or []) and 3 <= len(d.conflicts or []) <= 13

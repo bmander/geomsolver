@@ -24,6 +24,7 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Arc as MplArc
 from matplotlib.patches import Circle as MplCircle
 
+from gcs.diagnose import diagnose
 from gcs.examples import EXAMPLES
 from gcs.model import Point, Sketch
 from gcs.solve import METHODS, Drag, Method
@@ -93,7 +94,8 @@ class Canvas:
     def _refresh_topology(self) -> None:
         """Topology-only counts; recomputed on structural edits, not per frame."""
         sk = self.sketch
-        self.topo = f"params={len(sk.params)} res={sk.n_residuals()} dof={sk.dof()}"
+        dof = diagnose(sk, numeric=False, conflicts=False).dof if sk.constraints else len(sk.free_indices())
+        self.topo = f"params={len(sk.params)} res={sk.n_residuals()} dof={dof}"
 
     def _fit_view(self) -> None:
         x0, y0, x1, y1 = self.sketch.bbox()
@@ -168,7 +170,7 @@ class Canvas:
             sk = self.sketch
             worst = max(sk.constraints, key=lambda c: c.error(), default=None)
             print(f"params={len(sk.params)} free={len(sk.free_indices())} residuals={sk.n_residuals()} "
-                  f"dof={sk.dof()} worst={worst} err={worst.error() if worst else 0:.2e}")
+                  f"{self.topo} worst={worst} err={worst.error() if worst else 0:.2e}")
 
     def show(self) -> None:
         plt.show()

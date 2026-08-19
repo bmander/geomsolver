@@ -11,7 +11,27 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Sequence
 
-INF = float("inf")
+
+class UnionFind:
+    def __init__(self, n: int) -> None:
+        self.parent = list(range(n))
+
+    def find(self, a: int) -> int:
+        p = self.parent
+        while p[a] != a:
+            p[a] = p[p[a]]
+            a = p[a]
+        return a
+
+    def union(self, a: int, b: int) -> None:
+        ra, rb = self.find(a), self.find(b)
+        if ra != rb:
+            self.parent[rb] = ra
+
+    def labels(self) -> tuple[list[int], int]:
+        """Dense component label per element (0..k−1 in first-seen order) and k."""
+        roots: dict[int, int] = {}
+        return [roots.setdefault(self.find(i), len(roots)) for i in range(len(self.parent))], len(roots)
 
 
 # ---------------------------------------------------------------------------
@@ -150,22 +170,12 @@ def bipartite_components(adj: Sequence[Sequence[int]], n_cols: int) -> tuple[lis
     """Union-find over rows and columns.  Returns (comp_of_row, comp_of_col, n_components);
     isolated columns get their own component."""
     n_rows = len(adj)
-    parent = list(range(n_rows + n_cols))
-
-    def find(a: int) -> int:
-        while parent[a] != a:
-            parent[a] = parent[parent[a]]
-            a = parent[a]
-        return a
-
+    uf = UnionFind(n_rows + n_cols)
     for r, cols in enumerate(adj):
         for c in cols:
-            ra, rb = find(r), find(n_rows + c)
-            if ra != rb:
-                parent[rb] = ra
-    roots: dict[int, int] = {}
-    comp = [roots.setdefault(find(i), len(roots)) for i in range(n_rows + n_cols)]
-    return comp[:n_rows], comp[n_rows:], len(roots)
+            uf.union(r, n_rows + c)
+    comp, k = uf.labels()
+    return comp[:n_rows], comp[n_rows:], k
 
 
 # ---------------------------------------------------------------------------
@@ -173,8 +183,8 @@ def bipartite_components(adj: Sequence[Sequence[int]], n_cols: int) -> tuple[lis
 
 @dataclass
 class PebbleResult:
-    independent: list[tuple[int, int]]      # edges accepted (in insertion order)
-    redundant: list[tuple[int, int]]        # edges rejected: dependent on earlier ones
+    independent: list[int]                  # indices of edges accepted (in insertion order)
+    redundant: list[int]                    # indices of edges rejected: dependent on earlier ones
     components: list[frozenset[int]]        # maximal rigid clusters (size ≥ 2)
     dof: int                                # 2n − 3 − |independent| for n ≥ 2 (0 if fully rigid)
 
@@ -189,9 +199,19 @@ def pebble_game(n: int, edges: Sequence[tuple[int, int]]) -> PebbleResult:
     after inserting an edge, no free pebble outside its endpoints is reachable."""
     peb = [2] * n
     out: list[set[int]] = [set() for _ in range(n)]
-    independent: list[tuple[int, int]] = []
-    redundant: list[tuple[int, int]] = []
+    rev: list[set[int]] = [set() for _ in range(n)]      # maintained alongside `out`
+    independent: list[int] = []
+    redundant: list[int] = []
     components: list[frozenset[int]] = []
+    comps_of: list[set[int]] = [set() for _ in range(n)]  # vertex → indices into `components`
+
+    def orient(a: int, b: int) -> None:
+        out[a].add(b)
+        rev[b].add(a)
+
+    def unorient(a: int, b: int) -> None:
+        out[a].discard(b)
+        rev[b].discard(a)
 
     def find_pebble(src: int, exclude: int) -> bool:
         """DFS from src for a vertex (≠ src, exclude) holding a pebble; on success move
@@ -213,8 +233,8 @@ def pebble_game(n: int, edges: Sequence[tuple[int, int]]) -> PebbleResult:
                     x = w
                     while x != src:
                         p = parent[x]
-                        out[p].discard(x)
-                        out[x].add(p)
+                        unorient(p, x)
+                        orient(x, p)
                         x = p
                     return True
                 stack.append(w)
@@ -231,36 +251,28 @@ def pebble_game(n: int, edges: Sequence[tuple[int, int]]) -> PebbleResult:
                     stack.append(w)
         return seen
 
-    for u, v in edges:
-        if u == v:
-            redundant.append((u, v))
-            continue
-        # skip work if the edge is already inside a rigid component (dependent)
-        if any(u in comp and v in comp for comp in components):
-            redundant.append((u, v))
+    for ei, (u, v) in enumerate(edges):
+        # an edge inside an existing rigid component is dependent — no pebble search needed
+        if u == v or comps_of[u] & comps_of[v]:
+            redundant.append(ei)
             continue
         while peb[u] + peb[v] < 4:
             if not (find_pebble(u, v) or find_pebble(v, u)):
                 break
         if peb[u] + peb[v] < 4:
-            redundant.append((u, v))
+            redundant.append(ei)
             continue
         # accept: orient u -> v, consuming a pebble from u
         peb[u] -= 1
-        out[u].add(v)
-        independent.append((u, v))
+        orient(u, v)
+        independent.append(ei)
         # component detection: u,v now hold exactly 3 pebbles.  If some other free
         # pebble is reachable, no new component; else the component is every vertex
         # that cannot reach a free pebble outside {u, v}.
         R = reach([u, v])
         if any(peb[w] > 0 for w in R if w not in (u, v)):
             continue
-        # backward search from free-pebble vertices (other than u, v)
         free = [w for w in range(n) if peb[w] > 0 and w not in (u, v)]
-        rev: list[list[int]] = [[] for _ in range(n)]
-        for a in range(n):
-            for b in out[a]:
-                rev[b].append(a)
         can_reach_free = set(free)
         stack = list(free)
         while stack:
@@ -270,6 +282,13 @@ def pebble_game(n: int, edges: Sequence[tuple[int, int]]) -> PebbleResult:
                     can_reach_free.add(a)
                     stack.append(a)
         comp = frozenset(w for w in range(n) if w not in can_reach_free)
-        components = [c for c in components if not c <= comp] + [comp]
+        # subsume old components contained in the new one; keep comps_of in sync
+        keep = [c for c in components if not c <= comp]
+        components = keep + [comp]
+        for w in range(n):
+            comps_of[w].clear()
+        for ci, c in enumerate(components):
+            for w in c:
+                comps_of[w].add(ci)
     dof = max(0, 2 * n - 3 - len(independent)) if n >= 2 else 0
     return PebbleResult(independent, redundant, sorted(components, key=lambda c: (min(c), len(c))), dof)

@@ -133,6 +133,34 @@ class System:
         b, i = self._slot_of[id(c)]
         return self.blocks[b].row0 + i * self.blocks[b].kernel.n_res
 
+    def structure(self, hard_only: bool = True) -> tuple[list[list[int]], list[Constraint]]:
+        """Structural Jacobian as a bipartite graph: adj[row] = sorted free columns with a
+        (structural) nonzero, plus row → owning constraint.  The public surface for
+        diagnosis/decomposition — derived from the compiled blocks, so it stays in step
+        with what the solver actually evaluates."""
+        adj: list[list[int]] = []
+        row_c: list[Constraint] = []
+        for k, cs, gidx, _, _, _ in self.blocks:
+            cols_all = self.col_of[gidx]
+            for i, c in enumerate(cs):
+                if hard_only and c.soft:
+                    continue
+                cols = sorted({int(j) for j in cols_all[i] if j >= 0})
+                for _ in range(k.n_res):
+                    adj.append(cols)
+                    row_c.append(c)
+        return adj, row_c
+
+    def constraint_errors(self, z: Vec | None = None) -> dict[int, float]:
+        """max |residual| per constraint (keyed by id) from one vectorized evaluation."""
+        r = np.abs(self.residuals(self.z0() if z is None else z))
+        out: dict[int, float] = {}
+        for k, cs, _, _, row0, _ in self.blocks:
+            m = r[row0 : row0 + len(cs) * k.n_res].reshape(len(cs), k.n_res).max(axis=1)
+            for c, e in zip(cs, m.tolist(), strict=True):
+                out[id(c)] = e
+        return out
+
     # -- evaluation ---------------------------------------------------------
 
     def full_x(self, z: Vec) -> Vec:
@@ -169,10 +197,11 @@ class System:
         J[self._csr_flat] = self._csr_data(z)
         return J.reshape(self.n_res, max(self.n_free, 1))[:, : self.n_free]
 
-    def rank(self, z: Vec | None = None, rcond: float = 1e-10) -> int:
+    def rank(self, z: Vec | None = None, rcond: float = 1e-10, hard_only: bool = False) -> int:
         """Numerical rank of the Jacobian at z (default: current sketch values) via
         rank-revealing QR — the workhorse of Stage 2/4 diagnosis."""
-        return newton.rank_rrqr(self.jacobian_dense(self.z0() if z is None else z), rcond)
+        J = self.jacobian_dense(self.z0() if z is None else z)
+        return newton.rank_rrqr(J[self.hard] if hard_only else J, rcond)
 
     # -- solving ------------------------------------------------------------
 

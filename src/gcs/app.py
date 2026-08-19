@@ -72,8 +72,9 @@ class SketchView(QWidget):
         self.highlight: list[Primitive] = []    # entities of the constraint selected in the list
         self.undo_stack: deque[str] = deque(maxlen=100)
         self.last_result: SolveResult | None = None
-        self.diagnosis: Diagnosis | None = diagnose(sketch) if sketch.constraints else None
+        self.diagnosis: Diagnosis | None = None
         self.color_by_state = True
+        self._rediagnose(None)
         self.drag: Drag | None = None
         self.pan_last: QPointF | None = None
         self.setMouseTracking(True)
@@ -121,11 +122,21 @@ class SketchView(QWidget):
         self.update()
         return self.last_result
 
+    def _rediagnose(self, system: System | None) -> None:
+        self.diagnosis = diagnose(self.sketch, system=system) if self.sketch.constraints else None
+
     def _after_edit(self) -> SolveResult | None:
-        """Every mutation ends here: re-solve (if auto), re-diagnose, then notify listeners once."""
+        """Every mutation ends here: re-solve (if auto), re-diagnose, then notify listeners once.
+        A failed solve leaves the last good geometry on screen (the failure is reported by
+        the diagnosis, not by exploded geometry — which would also mislead the conflict search)."""
+        system: System | None = None
         if self.auto_solve:
-            self.last_result = System(self.sketch).solve(method=self.method)
-        self.diagnosis = diagnose(self.sketch) if self.sketch.constraints else None
+            x_before = self.sketch.get_x()
+            system = System(self.sketch)
+            self.last_result = system.solve(method=self.method)
+            if not self.last_result.success:
+                self.sketch.set_x(x_before)
+        self._rediagnose(system)   # reuses the compiled system when we have one
         self.changed.emit()
         self.update()
         return self.last_result
@@ -138,10 +149,11 @@ class SketchView(QWidget):
         self.sketch.add(c)
         res = self._after_edit()
         d = self.diagnosis
-        if d is not None and d.conflicts:
+        st = d.status if d is not None else "well"
+        if st == "conflict" and d is not None and d.conflicts:
             self.status.emit(f"added {type(c).__name__} — CONFLICT, remove one of: "
                              + ", ".join(io.describe(k, self.sketch) for k in d.conflicts))
-        elif d is not None and d.n_redundant:
+        elif st == "over":
             self.status.emit(f"added {type(c).__name__} — redundant (consistent) with existing constraints")
         elif res is not None and not res.success:
             self.status.emit(f"added {type(c).__name__} — solver did NOT converge")
@@ -522,11 +534,11 @@ class MainWindow(QMainWindow):
         sel_direct = set(self.view.selected)
         sel_all = set(expand(self.view.selected))
         d = self.view.diagnosis
-        conflict_ids = {id(c) for c in (d.conflicts or [])} if d else set()
+        bad_ids = {id(c) for c in [*(d.conflicts or []), *d.violated]} if d else set()
         over_ids = {id(c) for c in d.over} if d else set()
         for i, c in enumerate(rows):
             item = self.clist.item(i)
-            if id(c) in conflict_ids or c.error() > 1e-6:
+            if id(c) in bad_ids:
                 item.setForeground(COL_FIXED)
             elif id(c) in over_ids:
                 item.setForeground(COL_ROW_OVER)
@@ -545,7 +557,7 @@ class MainWindow(QMainWindow):
             msg += f"  DOF {d.dof}"
             if d.n_redundant:
                 msg += f"  redundant {d.n_redundant}"
-            if d.conflicts:
+            if d.status == "conflict":
                 msg += "  ⚠ CONFLICT"
             elif d.warnings:
                 msg += "  ⚠ geometric dependency"
@@ -621,9 +633,8 @@ class MainWindow(QMainWindow):
             lines += [f"Structurally redundant block ({d.n_redundant} equation(s) too many):"]
             lines += [f"   • {io.describe(c, ix)}" for c in d.over] + [""]
         if d.under_params:
-            round_ents: list[Circle | Arc] = [*sk.circles, *sk.arcs]
-            names = sorted({ix.name(e) for e in sk.points if e.x in d.under_params or e.y in d.under_params}
-                           | {ix.name(e) for e in round_ents if e.radius in d.under_params})
+            names = sorted(ix.name(e) for kind in ("point", "circle", "arc") for e in sk.entities(kind)
+                           if d.entity_state[id(e)] == "under")
             lines += [f"Under-constrained ({d.dof} DOF): {', '.join(names)}", ""]
         if len(d.components) > 1:
             lines += ["Components: " + ", ".join(f"{len(c.params)} params / DOF {c.dof}" for c in d.components), ""]

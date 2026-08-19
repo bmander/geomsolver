@@ -2,7 +2,7 @@
 
 Turns "solver failed" into "these constraints conflict / this entity has 2 DOF":
 
-* Bipartite equations↔free-parameters graph from the compiled System, maximum
+* Bipartite equations↔free-parameters graph (`System.structure()`), maximum
   matching (Hopcroft–Karp) → structural rank; Dulmage–Mendelsohn coarse
   decomposition → over-determined (structurally redundant equations),
   under-determined (structurally free parameters) and well-determined parts;
@@ -21,12 +21,9 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Literal
 
-import numpy as np
-
 from gcs import graph
 from gcs.constraints import Coincident, Constraint, Distance
-from gcs.model import Arc, Circle, Param, Point, Primitive, Sketch, Vec
-from gcs.newton import rank_rrqr
+from gcs.model import Param, Point, Primitive, Sketch, Vec
 from gcs.solve import Method, System
 
 State = Literal["well", "under", "over", "conflict"]
@@ -39,7 +36,6 @@ class Component:
 
     params: list[Param]
     constraints: list[Constraint]
-    n_equations: int
     structural_rank: int
 
     @property
@@ -53,8 +49,6 @@ class Diagnosis:
     n_equations: int                     # hard residual rows
     structural_rank: int                 # maximum matching size
     numeric_rank: int | None             # Jacobian rank at the current configuration (dense path only)
-    dof: int                             # structural DOF = n_params − structural_rank
-    n_redundant: int                     # structurally redundant equations = n_equations − structural_rank
     over: list[Constraint]               # constraints in the over-determined block (redundancy suspects)
     under_params: list[Param]            # structurally free parameters
     components: list[Component]
@@ -64,6 +58,16 @@ class Diagnosis:
     violated: list[Constraint]           # constraints with nonzero residual at the current configuration
     conflicts: list[Constraint] | None   # minimal conflict set (only computed when asked / infeasible)
     warnings: list[str] = field(default_factory=list)
+
+    @property
+    def dof(self) -> int:
+        """Structural DOF (rigid-body motions included unless something is fixed)."""
+        return self.n_params - self.structural_rank
+
+    @property
+    def n_redundant(self) -> int:
+        """Structurally redundant equations."""
+        return self.n_equations - self.structural_rank
 
     @property
     def status(self) -> State:
@@ -94,159 +98,153 @@ class Diagnosis:
 
 # ---------------------------------------------------------------------------
 
-def _structural_graph(sys_: System) -> tuple[list[list[int]], list[Constraint], list[int]]:
-    """Rows = hard residual equations, cols = free params.  Returns (adj, row→constraint, row→param-count)."""
-    adj: list[list[int]] = []
-    row_c: list[Constraint] = []
-    for k, cs, gidx, _, _, _ in sys_.blocks:
-        cols_all = sys_.col_of[gidx]                       # (n, k) free-column or -1
-        for i, c in enumerate(cs):
-            if c.soft:
-                continue
-            cols = sorted({int(j) for j in cols_all[i] if j >= 0})
-            for _ in range(k.n_res):
-                adj.append(cols)
-                row_c.append(c)
-    return adj, row_c, [len(a) for a in adj]
+def _tol_abs(sketch: Sketch, tol: float) -> float:
+    return tol * max(1.0, sketch.extent()) ** 2
 
 
-def diagnose(sketch: Sketch, *, numeric: bool = True, conflicts: bool | None = None, tol: float = 1e-6) -> Diagnosis:
+def violated_constraints(sys_: System, tol: float = 1e-6) -> list[Constraint]:
+    """Hard constraints whose residual is not (numerically) zero at the current configuration."""
+    lim = _tol_abs(sys_.sketch, tol)
+    err = sys_.constraint_errors()
+    return [c for c in sys_.constraints if not c.soft and err[id(c)] > lim]
+
+
+def diagnose(sketch: Sketch, *, system: System | None = None, numeric: bool = True,
+             conflicts: bool | None = None, tol: float = 1e-6) -> Diagnosis:
     """Structural (and optionally numeric) diagnosis of a sketch at its current configuration.
 
-    conflicts=None computes the minimal conflict set only when some constraint is violated."""
-    sys_ = System(sketch)
-    adj, row_c, _ = _structural_graph(sys_)
+    Pass the `System` you just solved with to avoid a recompile.  conflicts=None
+    computes the minimal conflict set only when some constraint is violated."""
+    sys_ = system if system is not None and system.sketch is sketch else System(sketch)
+    adj, row_c = sys_.structure()
     n_cols = sys_.n_free
     dm = graph.dulmage_mendelsohn(adj, n_cols)
     free_params = [sketch.params[i] for i in sys_.free]
 
-    over_c: list[Constraint] = []
-    seen: set[int] = set()
-    for r in dm.over_rows:
-        c = row_c[r]
-        if id(c) not in seen:
-            seen.add(id(c))
-            over_c.append(c)
+    over_c = list(dict.fromkeys(row_c[r] for r in dm.over_rows))
     under_params = [free_params[j] for j in dm.under_cols]
 
     # -- components --
     comp_row, comp_col, n_comp = graph.bipartite_components(adj, n_cols)
     comp_params: list[list[Param]] = [[] for _ in range(n_comp)]
-    comp_cs: list[list[Constraint]] = [[] for _ in range(n_comp)]
-    comp_rows = [0] * n_comp
+    comp_cs: list[dict[Constraint, None]] = [{} for _ in range(n_comp)]
     comp_rank = [0] * n_comp
     for j, cid in enumerate(comp_col):
         comp_params[cid].append(free_params[j])
-        if dm.mate_col[j] >= 0:
-            comp_rank[cid] += 1
-    seen_c: set[int] = set()
+        comp_rank[cid] += dm.mate_col[j] >= 0
     for r, cid in enumerate(comp_row):
-        comp_rows[cid] += 1
-        if id(row_c[r]) not in seen_c:
-            seen_c.add(id(row_c[r]))
-            comp_cs[cid].append(row_c[r])
-    components = [Component(comp_params[i], comp_cs[i], comp_rows[i], comp_rank[i]) for i in range(n_comp)]
+        comp_cs[cid][row_c[r]] = None
+    components = [Component(comp_params[i], list(comp_cs[i]), comp_rank[i]) for i in range(n_comp)]
     components.sort(key=lambda c: -len(c.params))
 
     # -- numeric cross-check --
     numeric_rank: int | None = None
     warnings: list[str] = []
     if numeric and n_cols and sys_.n_res:
-        Jd = sys_.jacobian_dense(sys_.z0())[sys_.hard]
-        numeric_rank = graph_rank(Jd)
+        numeric_rank = sys_.rank(hard_only=True)
         if numeric_rank < dm.rank:
             warnings.append(f"structural rank {dm.rank} but numeric rank {numeric_rank}: "
                             "a dependency the graph cannot see (theorem-induced or degenerate configuration) — Stage 4")
 
     # -- violated / conflicts --
-    scale = max(1.0, sketch.extent()) ** 2
-    violated = [c for c in sketch.constraints if not c.soft and c.error() > tol * scale]
+    violated = violated_constraints(sys_, tol)
     conflict_set: list[Constraint] | None = None
     if conflicts or (conflicts is None and violated):
-        conflict_set = minimal_conflict_set(sketch, tol=tol)
+        # Candidates = the structurally over-determined block (where a redundancy must
+        # live); if the graph sees nothing wrong (e.g. triangle inequality) fall back to
+        # the violated constraints.  Everything else stays fixed, so the result is
+        # minimal "among the suspects" — and the filter costs |candidates| solves, not |all|.
+        conflict_set = minimal_conflict_set(sketch, over_c or violated, tol=tol)
 
     # -- pebble game on the point-distance graph --
     clusters, redundant_d = distance_rigidity(sketch)
 
-    # -- entity states --
+    # -- entity states: own params under? touching constraints over/conflicting? then
+    #    a line/circle/arc inherits the most severe state of its points --
     under_ids = {id(p) for p in under_params}
     over_ids = {id(c) for c in over_c}
     conflict_ids = {id(c) for c in (conflict_set or violated)}
-    state: dict[int, State] = {}
-    ents: list[Primitive] = [*sketch.points, *sketch.lines, *sketch.circles, *sketch.arcs]
     touched: dict[int, list[Constraint]] = defaultdict(list)
-    for c in sketch.constraints:
-        if c.soft:
-            continue
+    for c in sketch.hard_constraints():
         for e in c.entities():
             touched[id(e)].append(c)
             for ch in e.children:
                 touched[id(ch)].append(c)
+    ents: list[Primitive] = [*sketch.points, *sketch.lines, *sketch.circles, *sketch.arcs]
+    state: dict[int, State] = {}
     for e in ents:
-        own = _own_params(e)
         st: State = "well"
         if any(id(c) in conflict_ids for c in touched[id(e)]):
             st = "conflict"
         elif any(id(c) in over_ids for c in touched[id(e)]):
             st = "over"
-        elif any(id(p) in under_ids for p in own):
+        elif any(id(p) in under_ids for p in e.params):
             st = "under"
         state[id(e)] = st
-    # a line/circle/arc inherits the most severe state of its points
     for e in ents:
         for ch in e.children:
             if _SEVERITY[state[id(ch)]] > _SEVERITY[state[id(e)]]:
                 state[id(e)] = state[id(ch)]
 
-    return Diagnosis(n_cols, len(adj), dm.rank, numeric_rank, n_cols - dm.rank, dm.n_redundant, over_c,
-                     under_params, components, state, clusters, redundant_d, violated, conflict_set, warnings)
-
-
-def _own_params(e: Primitive) -> list[Param]:
-    if isinstance(e, Point):
-        return [e.x, e.y]
-    if isinstance(e, (Circle, Arc)):
-        return [e.radius]
-    return []
-
-
-def graph_rank(J: Vec, rcond: float = 1e-10) -> int:
-    return rank_rrqr(np.ascontiguousarray(J), rcond)
+    return Diagnosis(n_cols, len(adj), dm.rank, numeric_rank, over_c, under_params, components, state,
+                     clusters, redundant_d, violated, conflict_set, warnings)
 
 
 # ---------------------------------------------------------------------------
 
 def minimal_conflict_set(sketch: Sketch, candidates: list[Constraint] | None = None,
-                         tol: float = 1e-6, method: Method = "dogleg") -> list[Constraint]:
-    """Deletion filter: drop constraints one at a time, keeping a drop whenever the
-    rest is still infeasible.  What remains is a *minimal* infeasible subset (not
-    necessarily minimum) — "remove one of these".  Each step is one solve from
-    the current geometry, so ~1 ms per constraint at sketch sizes.  Returns []
-    if the full system is feasible."""
-    x0 = sketch.get_x()
-    hard = [c for c in sketch.constraints if not c.soft]
-    cands = [c for c in (candidates or hard) if not c.soft]
-    others = [c for c in hard if c not in cands]
-    scale = max(1.0, sketch.extent()) ** 2
+                         tol: float = 1e-6, method: Method = "dogleg", max_iter: int = 60) -> list[Constraint]:
+    """Minimal infeasible subset among `candidates` (default: all hard constraints);
+    non-candidates stay in the system throughout.  "Remove one of these."
 
-    def feasible(cs: list[Constraint]) -> bool:
-        sketch.set_x(x0)
-        saved = sketch.constraints
+    Grow-then-shrink: add candidates one at a time, each solve warm-started from
+    the previous *feasible* configuration, until one breaks feasibility (it is in
+    the conflict); then delete the earlier ones one at a time, keeping a deletion
+    whenever the rest is still infeasible.  Warm-starting from feasible states is
+    what makes the trials reliable — after a failed solve the sketch geometry can
+    be far from anything, and a trial solve from there may stall and masquerade
+    as "infeasible".  Returns [] if the system is feasible."""
+    x0 = sketch.get_x()
+    hard = sketch.hard_constraints()
+    cands = [c for c in (hard if candidates is None else candidates) if not c.soft]
+    others = [c for c in hard if c not in cands]
+    lim = _tol_abs(sketch, tol)
+    saved = sketch.constraints
+
+    def solve_with(cs: list[Constraint], x_start: Vec) -> tuple[bool, Vec]:
+        sketch.set_x(x_start)
         sketch.constraints = cs
         try:
-            System(sketch).solve(method=method, max_iter=60)
-            return all(c.error() <= tol * scale for c in cs)
+            ok = System(sketch).solve(method=method, max_iter=max_iter).max_residual <= lim
+            return ok, sketch.get_x()
         finally:
             sketch.constraints = saved
     try:
-        if feasible(others + cands):
-            return []
-        keep = list(cands)
+        ok, x_base = solve_with(others, x0)      # a state satisfying the non-candidates
+        if not ok:
+            x_base = x0
+        # grow
+        accepted: list[Constraint] = []
+        x_feas = x_base
+        culprit: Constraint | None = None
         for c in cands:
+            ok, x = solve_with(others + accepted + [c], x_feas)
+            if ok:
+                accepted.append(c)
+                x_feas = x
+            else:
+                culprit = c
+                break
+        if culprit is None:
+            return []
+        # shrink: which of the accepted ones are needed to make `culprit` infeasible?
+        keep = list(accepted)
+        for c in accepted:
             trial = [k for k in keep if k is not c]
-            if not feasible(others + trial):
-                keep = trial          # still infeasible without c → c is not needed for the conflict
-        return keep
+            ok, _ = solve_with(others + trial + [culprit], x_feas)
+            if not ok:
+                keep = trial
+        return keep + [culprit]
     finally:
         sketch.set_x(x0)
 
@@ -259,39 +257,18 @@ def distance_rigidity(sketch: Sketch) -> tuple[list[frozenset[Point]], list[Cons
     clusters (as sets of Points) and the redundant Distance constraints."""
     pts = sketch.points
     idx = {id(p): i for i, p in enumerate(pts)}
-    parent = list(range(len(pts)))
-
-    def find(a: int) -> int:
-        while parent[a] != a:
-            parent[a] = parent[parent[a]]
-            a = parent[a]
-        return a
-
+    uf = graph.UnionFind(len(pts))
     for c in sketch.constraints:
         if isinstance(c, Coincident):
-            a, b = find(idx[id(c.p)]), find(idx[id(c.q)])
-            if a != b:
-                parent[b] = a
-    verts: dict[int, int] = {}
-    for i in range(len(pts)):
-        verts.setdefault(find(i), len(verts))
-    edges: list[tuple[int, int]] = []
-    edge_c: list[Constraint] = []
-    for c in sketch.constraints:
-        if isinstance(c, Distance):
-            edges.append((verts[find(idx[id(c.p)])], verts[find(idx[id(c.q)])]))
-            edge_c.append(c)
-    if not edges:
+            uf.union(idx[id(c.p)], idx[id(c.q)])
+    vert, n_vert = uf.labels()
+    edge_c = [c for c in sketch.constraints if isinstance(c, Distance)]
+    if not edge_c:
         return [], []
-    res = graph.pebble_game(len(verts), edges)
+    edges = [(vert[idx[id(c.p)]], vert[idx[id(c.q)]]) for c in edge_c]
+    res = graph.pebble_game(n_vert, edges)
     members: dict[int, list[Point]] = defaultdict(list)
     for i, p in enumerate(pts):
-        members[verts[find(i)]].append(p)
+        members[vert[i]].append(p)
     clusters = [frozenset(p for v in comp for p in members[v]) for comp in res.components]
-    red_set = set()
-    redundant: list[Constraint] = []
-    for (u, v), c in zip(edges, edge_c, strict=True):
-        if (u, v) in res.redundant and (u, v) not in red_set:
-            red_set.add((u, v))
-            redundant.append(c)
-    return clusters, redundant
+    return clusters, [edge_c[i] for i in res.redundant]

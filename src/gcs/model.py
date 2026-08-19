@@ -214,9 +214,9 @@ class Sketch:
         """Constraints the user added (excludes intrinsic and soft/transient ones)."""
         return [c for c in self.constraints if not (c.intrinsic or c.soft)]
 
-    def dof(self) -> int:
-        """Naive DOF count: free params minus residual equations (Stage 2 refines this)."""
-        return sum(not p.fixed for p in self.params) - self.n_residuals()
+    def hard_constraints(self) -> list[Constraint]:
+        """Everything that must be satisfied (excludes soft/transient ones such as drag targets)."""
+        return [c for c in self.constraints if not c.soft]
 
     def entities(self, kind: str) -> Sequence[Primitive]:
         lists: dict[str, Sequence[Primitive]] = {"point": self.points, "line": self.lines,
