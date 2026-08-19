@@ -6,24 +6,24 @@ Currently: **Stage 5 done**, in two implementations that must stay in step —
 * **reference** (`src/gcs/`): numpy/scipy kernels, compile-to-plan `System`, own DogLeg/LM
   (`gcs.newton`), structural diagnosis (`gcs.graph`, `gcs.diagnose`), decomposition into cached
   solve plans (`gcs.cgraph`, `gcs.decompose`), witness analysis (`gcs.witness`), drag/solution
-  management (`PlanDrag`, `Drag` guards, `gcs.homotopy`), PySide6 sketcher (`gcs.app`).
-  scipy is kept only as `scipy-*` reference methods.  Python ≥ 3.14 in `.venv/`.
+  management (`PlanDrag`, `Drag` guards, `gcs.homotopy`).  A library with no UI — the web app is
+  the only front end.  scipy is kept only as `scipy-*` reference methods.  Python ≥ 3.14 in `.venv/`.
 * **web** (`csrc/` + `web/`): the numerics in C compiled to WebAssembly, everything above the
   numerics ported to TypeScript in `web/src/core/`, and an HTML5-canvas sketcher in
   `web/src/app/`.  `web/src/core/*.ts` is a file-for-file port of `src/gcs/*.py`.
 
 Commands:
-`.venv/bin/pytest` (Qt tests run offscreen; `tests/test_ccore.py` needs `make` first),
-`.venv/bin/mypy` (strict, must stay clean), `.venv/bin/python -m gcs.bench`,
-`.venv/bin/python -m gcs.app`, `.venv/bin/python -m gcs.canvas <example>`,
-`make` (native `build/libgcs.dylib`), `make wasm` (needs `source ~/emsdk/emsdk_env.sh`),
-`cd web && npm test` (tsc + `node --test`), `npm run bench`, `npm run serve`.
+`.venv/bin/pytest` (`tests/test_ccore.py` needs `make` first), `.venv/bin/mypy` (strict, must
+stay clean), `.venv/bin/python -m gcs.bench`, `make` (native `build/libgcs.dylib`),
+`make wasm` (needs `source ~/emsdk/emsdk_env.sh`), `cd web && npm test` (tsc + `node --test`),
+`npm run bench`, `npm run serve`.
 
 Conventions:
 - **Both implementations, or neither.**  A change to the model, a constraint type, diagnosis,
   decomposition or the solvers lands in Python *and* in `web/src/core/` (and `csrc/` when it is
   numerics), with the matching test in `tests/` and `web/src/test/core.test.ts`.  Divergence is
   the one failure mode this layout has; `tests/test_ccore.py` exists to catch it for the C part.
+  UI-only concerns (the case-library dropdown, colours, dialogs) live in `web/src/app/` alone.
 - Every new constraint type = a vectorized kernel in `gcs.kernels` (added to `KERNELS`) **and** in
   `csrc/kernels.c` (same registration order — the ids are the ABI, mirrored in
   `web/src/core/kernels.ts`), a class in `gcs.constraints` and `web/src/core/constraints.ts`
@@ -50,7 +50,7 @@ Conventions:
 - Slow tests are gated by `GCS_SLOW=1`.
 - Benchmark on a quiet machine (`uptime`); this box often has a JVM indexer at 300% CPU.
 - `gcs.solve.Drag` / `web/src/core/system.ts` `Drag` is the one drag implementation (pull +
-  polish); frontends only translate coordinates.
+  polish); the front end only translates coordinates.
 - Determinism: ordered lists only, no set/dict-order-dependent iteration in the solve path.  The
   TypeScript port uses a seeded `Rng` (never `Math.random`) for the same reason.
 - No LAPACK/BLAS in `csrc/` — the QR, complete-orthogonal, SVD and LDLᵀ routines are ours, and

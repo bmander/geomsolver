@@ -11,8 +11,11 @@ It exists twice, deliberately:
 
 | | numerics | object model, graphs, decomposition | front end |
 |---|---|---|---|
-| **reference** | numpy/scipy (`gcs.kernels`, `gcs.newton`) | Python (`src/gcs/`) | PySide6 (`python -m gcs.app`) |
+| **reference** | numpy/scipy (`gcs.kernels`, `gcs.newton`) | Python (`src/gcs/`) | none — a library |
 | **web** | C compiled to WebAssembly (`csrc/`) | TypeScript (`web/src/core/`) | HTML5 canvas (`web/index.html`) |
+
+There is one interactive front end, the web one.  The Python side is the reference
+implementation the port is checked against, and has no UI of its own.
 
 The two are held together by [`tests/test_ccore.py`](tests/test_ccore.py), which
 runs the C library against the Python implementation (kernels, the compiled plan's
@@ -28,8 +31,6 @@ make                        # the C core as a native shared library, for the tes
 .venv/bin/pytest            # FD Jacobian checks, solves, diagnosis, decomposition, C-vs-Python
 .venv/bin/mypy              # strict
 .venv/bin/python -m gcs.bench
-.venv/bin/python -m gcs.app                      # desktop sketcher (PySide6)
-.venv/bin/python -m gcs.canvas rect_fillets      # minimal matplotlib drag testbed
 ```
 
 ## Web build
@@ -48,21 +49,6 @@ will do.  The two build outputs (`web/src/wasm/gcs.js`, `gcs.wasm` — 70 kB tog
 checked in so the web app can be built, tested and served without emscripten; rerun
 `make wasm` after touching `csrc/`.  See [The C core](#the-c-core-csrc) and
 [Web app](#web-app) below.
-
-## Desktop app (`python -m gcs.app [sketch.json]`)
-
-PySide6 sketcher: draw **P**oints / **L**ines (polyline, snaps to existing
-points to share endpoints) / **C**ircles / **A**rcs (center, start, end);
-**S**elect entities (shift = multi) and apply constraints from the toolbar —
-Coincident, Distance, Horizontal, Vertical, Parallel, Perpendicular, Angle,
-Equal (length or radius), On line, Midpoint, On circle, Tangent (line–circle,
-arc–line at a shared endpoint, circle–circle), Radius, Fix.  Drag points and the
-solver keeps everything satisfied.  Right panel lists constraints (click to
-highlight, double-click to edit a value, Del to remove; red = violated).
-File → Examples loads the reference sketches; File → Save/Open is JSON
-(`gcs.io`).  Ctrl+Z undo, wheel zoom, right-drag pan, Home = fit,
-Solve menu picks dogbox / trf / lm.  Status bar shows params, equations, naive
-DOF, convergence and solve time.
 
 ## The C core (`csrc/`)
 
@@ -95,8 +81,7 @@ builds the browser module.  No LAPACK, no BLAS, no allocation in the inner loops
 `web/` is the same program with the numerics in WebAssembly and everything else in
 TypeScript: `web/src/core/` is a direct port of `src/gcs/` (model, constraints,
 graph algorithms, diagnosis, constraint graph, decomposition, witness analysis,
-homotopy, JSON I/O, examples), and `web/src/app/` is an HTML5-canvas sketcher with the
-desktop app's feature set —
+homotopy, JSON I/O, examples), and `web/src/app/` is the sketcher —
 
 * **S**elect / **P**oint / **L**ine (polyline, snapping to existing points) /
   **C**ircle / **A**rc, Esc to cancel, wheel zoom, right-drag pan;
@@ -120,7 +105,7 @@ overhead is gone:
 | truss(50), 300 entities | 200 | 0.11 | 1.12 | 0.68 | 0.18 | 3.9 |
 | truss(200), 1200 entities | 800 | 0.43 | 5.27 | 2.13 | 0.80 | 9.1 |
 
-One deliberate difference from a desktop app: `diagnose` runs after every edit, and a
+One thing worth knowing: `diagnose` runs after every edit, and a
 dense SVD of a 1000-entity sketch costs more than everything else put together, so the
 numeric rank / null-space cross-check is skipped above `NUMERIC_MAX` free parameters
 (300) and the diagnosis says so.  The full witness analysis is still available on
@@ -197,7 +182,7 @@ stay in step.
   flagged when the structural analysis had them matched), and the **null space
   as motions** (rigid-body generators built from the model's own parameter
   identity, internal DOFs localised).  `diagnose(..., witness=True)` attaches
-  it and reuses its rank/null space; the app's Diagnose dialog shows it (cached
+  it and reuses its rank/null space; the Diagnose report shows it (cached
   per diagnosis) and View → Animate remaining DOF (Ctrl+M) plays the modes.
 * `gcs.homotopy` — **homotopy continuation** on a merge system (a core or a
   triangle) in (c, s, tx, ty) form: linear rows fixed, total-degree start
@@ -205,9 +190,6 @@ stay in step.
   tracking, real endpoints polished and deduplicated → the construction's
   real roots; `apply_alternative` puts the sketch on one (replays stay there).
 * `gcs.io` — JSON save/load (incl. recorded branches); deletion-by-rebuild (`without`).
-* `gcs.app` — PySide6 desktop sketcher (see above).
-* `gcs.canvas` — matplotlib click-drag testbed.  Dragging = soft `DragTarget`
-  pull + hard-only polish, both compiled once per drag (same in the app).
 
 ## Stage 5 status
 
@@ -225,7 +207,7 @@ stay in step.
 |---|---|
 | witness construction (generic dimensions, incidence structure kept) | ✅ `make_witness`; the user's sketch is used directly when it already satisfies its constraints |
 | rank-revealing analysis: dependent constraints incl. theorem-induced | ✅ `polygon_chain`'s EqualLength cycle and concurrent altitudes diagnosed with "implied by …" |
-| null space → which DOFs remain, what they look like, animated | ✅ `WitnessReport.motions`, Ctrl+M in the app |
+| null space → which DOFs remain, what they look like, animated | ✅ `WitnessReport.motions`, "Animate DOF" in the app |
 | numerical-rank care: scaling, relative tolerance, QR vs SVD cross-check | ✅ (a disagreement is reported as a warning) |
 | on demand for full diagnosis; automatically on Stage-3 cores | ✅ on demand (Diagnose dialog / `witness=True`); Stage-3 merge decisions already use generic-rank tests at witness poses |
 | Stage-2 residue correctly diagnosed | ✅ |

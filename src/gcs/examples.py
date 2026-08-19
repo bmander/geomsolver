@@ -1,4 +1,5 @@
-"""Reference sketches used by tests, benchmarks and the canvas."""
+"""Reference sketches used by the tests and benchmarks, and mirrored in
+`web/src/core/examples.ts`, where the web app also lists them as its case library."""
 
 from __future__ import annotations
 
@@ -235,26 +236,4 @@ EXAMPLES: dict[str, Callable[..., Sketch]] = {
     "slotted_link": slotted_link,
     "truss": truss,
     "polygon_chain": polygon_chain,
-}
-
-# The case library shown in the app's dropdown: name → (factory, one-line description).
-CASES: dict[str, tuple[Callable[[], Sketch], str]] = {
-    "Rectangle with fillets": (rect_fillets, "fully constrained; tangent arcs, equal radii, two dimensions"),
-    "Slotted link": (slotted_link, "obround slot with two holes; fully constrained"),
-    "Truss (8 bays)": (lambda: truss(8), "~30-entity Warren truss, every member dimensioned"),
-    "Truss (50 bays)": (lambda: truss(50), "300 entities — drag a node"),
-    "Truss (200 bays)": (lambda: truss(200), "1200 entities — solver/plan timing"),
-    "Truss, floating": (lambda: truss_floating(8), "rigid body with nothing fixed: 3 DOF, drag it around"),
-    "Polygon chain (12)": (lambda: polygon_chain(12), "under-constrained equal-length ring; the EqualLength cycle is a redundancy the graph can't see"),
-    "Rect, missing width": (rect_fillets_under, "under-constrained: the right side slides (null-space colouring)"),
-    "Rect, conflicting width": (rect_fillets_conflict, "conflict: two contradicting width dimensions"),
-    "Truss, redundant member": (truss_redundant, "structurally over-constrained but consistent (amber)"),
-    "Truss, impossible member": (truss_conflict, "conflict: a 999-long member; minimal conflict set is a path + it"),
-    "Impossible triangle": (impossible_triangle, "structurally fine, geometrically impossible (triangle inequality)"),
-    "K3,3 framework": (k33, "rigid but triangle-free: decomposition needs a core merge"),
-    "Random Laman #0": (lambda: laman(10, 0), "Henneberg-built minimally rigid framework"),
-    "Random Laman #1": (lambda: laman(12, 1), "Henneberg-built; may need a core (Henneberg II)"),
-    "Random Laman #7": (lambda: laman(11, 507), "needs a 9-cluster core"),
-    "Concurrent altitudes": (altitudes, "theorem-type dependency: the third incidence is implied (Diagnose → witness); 3 DOF to animate"),
-    "Parallels & perpendiculars": (parallels, "direction classes: parallel/perpendicular/vertical (1 DOF left: slide along the base)"),
 }
