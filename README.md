@@ -1,25 +1,53 @@
 # gcs — geometric constraint solver
 
 Stages 0–5 of [`gcs-solver-program.md`](gcs-solver-program.md): a
-residual-formulation solver with vectorized numpy kernels, our own DogLeg/LM,
-structural diagnosis (matching / Dulmage–Mendelsohn / pebble game / minimal
-conflict sets), Fudos–Hoffmann-style decomposition into cached solve plans, the
-witness configuration method (theorem-type dependencies, animated remaining
-DOFs), dragging robustness and solution management (sticky chirality, plan
-drag with continuation, order-type guards, homotopy enumeration of
-alternatives), and a PySide6 sketcher.  Python ≥ 3.14, numpy + scipy; C/Cython comes only
-when profiling says so.
+residual-formulation solver, structural diagnosis (matching / Dulmage–Mendelsohn /
+pebble game / minimal conflict sets), Fudos–Hoffmann-style decomposition into cached
+solve plans, the witness configuration method (theorem-type dependencies, animated
+remaining DOFs), dragging robustness and solution management (sticky chirality, plan
+drag with continuation, order-type guards, homotopy enumeration of alternatives).
+
+It exists twice, deliberately:
+
+| | numerics | object model, graphs, decomposition | front end |
+|---|---|---|---|
+| **reference** | numpy/scipy (`gcs.kernels`, `gcs.newton`) | Python (`src/gcs/`) | PySide6 (`python -m gcs.app`) |
+| **web** | C compiled to WebAssembly (`csrc/`) | TypeScript (`web/src/core/`) | HTML5 canvas (`web/index.html`) |
+
+The two are held together by [`tests/test_ccore.py`](tests/test_ccore.py), which
+runs the C library against the Python implementation (kernels, the compiled plan's
+residuals / Jacobian / CSR structure, the dense linear algebra, both solvers), and by
+[`web/src/test/core.test.ts`](web/src/test/core.test.ts), which asserts the same
+properties of the port that the Python suite asserts of the reference.
 
 ## Setup
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
-.venv/bin/pytest            # 29 tests: FD Jacobian checks, solves, determinism
+make                        # the C core as a native shared library, for the tests below
+.venv/bin/pytest            # FD Jacobian checks, solves, diagnosis, decomposition, C-vs-Python
 .venv/bin/mypy              # strict
 .venv/bin/python -m gcs.bench
-.venv/bin/python -m gcs.app                     # desktop sketcher (PySide6)
+.venv/bin/python -m gcs.app                      # desktop sketcher (PySide6)
 .venv/bin/python -m gcs.canvas rect_fillets      # minimal matplotlib drag testbed
 ```
+
+## Web build
+
+```sh
+source ~/emsdk/emsdk_env.sh   # emscripten
+make wasm                     # csrc/ -> web/src/wasm/gcs.{js,wasm}   (~60 kB)
+cd web && npm install
+npm test                      # build + the TypeScript suite (node --test)
+npm run bench
+npm run serve                 # http://localhost:8123/
+```
+
+`make wasm` produces an ES module; the app is otherwise static files, so any static host
+will do.  The two build outputs (`web/src/wasm/gcs.js`, `gcs.wasm` — 70 kB together) are
+checked in so the web app can be built, tested and served without emscripten; rerun
+`make wasm` after touching `csrc/`.  See [The C core](#the-c-core-csrc) and
+[Web app](#web-app) below.
 
 ## Desktop app (`python -m gcs.app [sketch.json]`)
 
@@ -35,6 +63,69 @@ File → Examples loads the reference sketches; File → Save/Open is JSON
 (`gcs.io`).  Ctrl+Z undo, wheel zoom, right-drag pan, Home = fit,
 Solve menu picks dogbox / trf / lm.  Status bar shows params, equations, naive
 DOF, convergence and solve time.
+
+## The C core (`csrc/`)
+
+The flat, binding-agnostic API the program's Stage 1 calls for.  The caller owns the
+object model and compiles a sketch down to an evaluation plan — arrays of
+`(kernel id, parameter indices, constants)` — and this library owns every number that
+touches the drag loop.
+
+* `kernels.c` — one vectorized residual/Jacobian kernel per constraint type, evaluated
+  for a whole block of same-typed constraints per call.  The kernel ids are the
+  contract with the front end (`gcs.kernels` and `web/src/core/kernels.ts` mirror them).
+* `system.c` — the compiled plan: blocks, the Jacobian's CSR structure and its
+  duplicate-summing scatter map computed once, residual / dense-Jacobian / CSR-data
+  evaluation, per-constraint errors, numerical rank.
+* `linalg.c` — Householder QR with column pivoting (the rank convention
+  `|R_ii| > rcond·|R_00|`), the complete orthogonal decomposition behind the
+  minimum-norm least-squares step (LAPACK `dgelsy`'s algorithm), a Golub–Reinsch SVD
+  and an LU solve.
+* `sparse.c` — `JᵀJ` assembled from the fixed CSR structure, ordered by reverse
+  Cuthill–McKee and factored by an up-looking `LDLᵀ`, for sketches past the dense limit.
+* `newton.c` — Powell's DogLeg (default) and Levenberg–Marquardt over either path.  The
+  Gauss–Newton step is the *minimum-norm* least-squares solution, so under-constrained
+  sketches — the normal case while editing — move as little as possible.
+
+`make` builds `build/libgcs.dylib` for the Python-side comparison tests; `make wasm`
+builds the browser module.  No LAPACK, no BLAS, no allocation in the inner loops.
+
+## Web app
+
+`web/` is the same program with the numerics in WebAssembly and everything else in
+TypeScript: `web/src/core/` is a direct port of `src/gcs/` (model, constraints,
+graph algorithms, diagnosis, constraint graph, decomposition, witness analysis,
+homotopy, JSON I/O, examples), and `web/src/app/` is an HTML5-canvas sketcher with the
+desktop app's feature set —
+
+* **S**elect / **P**oint / **L**ine (polyline, snapping to existing points) /
+  **C**ircle / **A**rc, Esc to cancel, wheel zoom, right-drag pan;
+* the constraint toolbar (Coincident, Distance, Horizontal, Vertical, Parallel,
+  Perpendicular, On line, Midpoint, On circle, Angle, Equal, Tangent, Radius, Fix);
+* entity colouring by constraint state, dashed halos and labels on the culprits of a
+  conflict, a banner naming the minimal conflict set, and a constraint list that marks
+  redundant (`≈`) and culprit (`✗`) rows;
+* drag with the cached decomposition plan (falling back to pull-and-polish), the
+  Diagnose report (structural + witness), DOF animation, branch flipping and homotopy
+  enumeration of alternative roots;
+* JSON save/load, undo, and the case library from `examples.ts`.
+
+Measured in the browser (Chrome, Apple Silicon, median ms) — the WebAssembly core is
+faster than the numpy/scipy reference on every axis, because the per-constraint Python
+overhead is gone:
+
+| case | free | compile | dogleg | plan replay | drag frame | py drag frame |
+|---|---|---|---|---|---|---|
+| rect_fillets | 26 | 0.05 | 0.22 | 0.82 | 0.19 | — |
+| truss(50), 300 entities | 200 | 0.11 | 1.12 | 0.68 | 0.18 | 3.9 |
+| truss(200), 1200 entities | 800 | 0.43 | 5.27 | 2.13 | 0.80 | 9.1 |
+
+One deliberate difference from a desktop app: `diagnose` runs after every edit, and a
+dense SVD of a 1000-entity sketch costs more than everything else put together, so the
+numeric rank / null-space cross-check is skipped above `NUMERIC_MAX` free parameters
+(300) and the diagnosis says so.  The full witness analysis is still available on
+demand from the Diagnose button.  The Python reference has the same guard, so the two
+stay in step.
 
 ## Model
 
@@ -171,9 +262,9 @@ DOF, convergence and solve time.
 | own LM + DogLeg (default) | ✅ `gcs.newton` |
 | under-constrained = min-norm GN step | ✅ `dgelsy` / regularized SuperLU |
 | rank-revealing QR at the solution | ✅ `SolveResult.rank`, `System.rank()` (already caught a redundant EqualLength cycle in `polygon_chain`) |
-| >10× scipy on the 30-entity sketch | ⚠ ~7.5× vs the Stage-0 scipy path (0.7 ms vs 5.3 ms, quiet machine); the rest is DogLeg's Python bookkeeping — C territory |
-| 60 fps drag on a 200-entity sketch | ✅ 180-entity fully constrained ~110–160 fps, 300-entity ~50–65 fps, 1200-entity floating ~75 fps (loaded machine) |
-| flat `slvs`-style C API, GIL release | ⏳ deferred to the C port — the plan arrays are the API |
+| >10× scipy on the 30-entity sketch | ✅ 0.13 ms in the C core vs 2.9 ms for `scipy-dogbox` on `truss(8)` (~22×); the numpy path is ~7.5× and the remainder was DogLeg's Python bookkeeping |
+| 60 fps drag on a 200-entity sketch | ✅ C core: 0.18 ms/frame at 300 entities, 0.80 ms at 1200 (numpy path: 3.9 ms and 9.1 ms) |
+| flat `slvs`-style C API | ✅ [`csrc/gcs.h`](csrc/gcs.h) — `gcs_system_new` / `gcs_system_solve` / `gcs_system_residuals` …, consumed from WebAssembly and (in the tests) from ctypes |
 
 ## Stage 0 exit criteria
 

@@ -140,9 +140,9 @@ class SketchView(QWidget):
         self.sketch = sk
         self.selected, self.highlight, self.pending = [], [], []
         self.drag = None
-        if fit:
-            self.fit()
         self._after_edit()
+        if fit:
+            self.fit()      # after the solve: loading a case can move the geometry a long way
 
     def push_undo(self) -> None:
         self.undo_stack.append(io.dumps(self.sketch))
@@ -759,8 +759,10 @@ class MainWindow(QMainWindow):
                 msg += f"  redundant {d.n_redundant}"
             if d.status == "conflict":
                 msg += "  ⚠ CONFLICT"
-            elif d.warnings:
+            elif d.numeric_rank is not None and d.numeric_rank < d.structural_rank:
                 msg += "  ⚠ geometric dependency"
+            elif d.numeric_rank is None and d.warnings:
+                msg += "  (structural only)"
         msg += f"   | selected {len(self.view.selected)}"
         if r is not None:
             msg += (f"   | {'solved' if r.success else 'NOT CONVERGED'}  max|r|={r.max_residual:.1e}  "
@@ -946,8 +948,14 @@ class MainWindow(QMainWindow):
             return
         self.view.push_undo()
         apply_alternative(ps.plan, idx, alt)
-        self.view._after_edit()
-        self.statusBar().showMessage("switched to the chosen solution", 4000)
+        res = self.view._after_edit()
+        # a root of the isolated merge system is not always reachable through a whole-plan
+        # replay (the leaves are re-derived from the new geometry, and the surrounding merges
+        # may pull it back) — say so rather than leaving an unexplained conflict on screen
+        ok = res is None or res.success
+        self.statusBar().showMessage("switched to the chosen solution" if ok else
+                                     "that root is not reachable from here — the replay could not "
+                                     "keep it (Ctrl+Z to go back)", 6000)
 
     def animate_dof(self) -> None:
         if not self.view.start_animation():

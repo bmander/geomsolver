@@ -31,6 +31,7 @@ from gcs.witness import WitnessReport, analyze, movable_columns
 
 State = Literal["well", "under", "over", "conflict"]
 _SEVERITY: dict[str, int] = {"well": 0, "under": 1, "over": 2, "conflict": 3}
+NUMERIC_MAX = 300   # free params up to which the automatic numeric cross-check runs (dense SVD)
 
 
 @dataclass
@@ -115,14 +116,21 @@ def violated_constraints(sys_: System, tol: float = 1e-6) -> list[Constraint]:
     return [c for c in sys_.constraints if not c.soft and err[id(c)] > lim]
 
 
-def diagnose(sketch: Sketch, *, system: System | None = None, numeric: bool = True,
-             conflicts: bool | None = None, witness: bool = False, tol: float = 1e-6) -> Diagnosis:
+def diagnose(sketch: Sketch, *, system: System | None = None, numeric: bool | None = None,
+             conflicts: bool | None = None, witness: bool = False, tol: float = 1e-6,
+             numeric_max: int = NUMERIC_MAX) -> Diagnosis:
     """Structural (and optionally numeric) diagnosis of a sketch at its current configuration.
 
     Pass the `System` you just solved with to avoid a recompile.  conflicts=None
     computes the minimal conflict set only when some constraint is violated.
     witness=True adds the Stage-4 witness analysis (dependent constraints with what
-    implies them, and the remaining motions)."""
+    implies them, and the remaining motions).
+
+    numeric=None (the default) runs the Jacobian rank / null-space cross-check only while the
+    system is small enough for a dense SVD (`numeric_max` free parameters); above that the
+    diagnosis stays structural — which is what Stage 2 is for — and says so in `warnings`.
+    Diagnosis runs after every edit, and one dense SVD of a 1000-entity sketch costs more than
+    every other step put together.  Pass numeric=True to force it."""
     sys_ = system if system is not None and system.sketch is sketch else System(sketch)
     adj, row_c = sys_.structure()
     n_cols = sys_.n_free
@@ -155,7 +163,11 @@ def diagnose(sketch: Sketch, *, system: System | None = None, numeric: bool = Tr
 
     # -- numeric cross-check: rank and the parameters that can actually move --
     numeric_rank: int | None = None
-    if numeric and n_cols and sys_.n_res:
+    want_numeric = (n_cols <= numeric_max) if numeric is None else numeric
+    if not want_numeric and numeric is None and n_cols > numeric_max:
+        warnings.append(f"numeric cross-check skipped: {n_cols} free parameters is above the dense limit "
+                        f"({numeric_max}) — the diagnosis below is structural only")
+    if want_numeric and n_cols and sys_.n_res:
         if wit is not None and wit.used_current:
             numeric_rank, movable = wit.numeric_rank, wit.movable      # same J at the same x
         else:
