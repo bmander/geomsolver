@@ -668,11 +668,13 @@ class MainWindow(QMainWindow):
         if item is None:
             return
         c = item.data(Qt.ItemDataRole.UserRole)
-        row = self.clist.currentRow()
         self.view.remove_constraint(c)
+        # no auto-selection of the next row: a selected row highlights its entities in
+        # purple, which reads as "constrained" if it appears uninvited
+        self.clist.setCurrentRow(-1)
+        self.view.highlight = []
+        self.view.update()
         self.statusBar().showMessage(f"removed {type(c).__name__}", 4000)
-        if self.clist.count():
-            self.clist.setCurrentRow(min(row, self.clist.count() - 1))
 
     def edit_constraint_value(self, item: QListWidgetItem) -> None:
         """Double-click: edit the constraint's dimension (first length/angle field in its spec)."""

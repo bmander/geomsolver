@@ -135,7 +135,7 @@ def test_delete_key_removes_selected_constraint(qapp: QApplication) -> None:
         w.delete_pressed()
     assert len(w.view.sketch.constraints) == n - 1
     assert target not in w.view.sketch.constraints
-    assert w.clist.currentRow() == 0  # selection moves to the next row
+    assert w.clist.currentRow() == -1 and w.view.highlight == []  # nothing auto-selected/highlighted
     # with focus on the view and nothing selected, Delete is a no-op
     w.view.setFocus()
     w.view.selected = []
