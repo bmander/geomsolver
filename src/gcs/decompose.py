@@ -11,6 +11,12 @@ Decomposition (once per topology):
     Jacobian at generic (witness) poses, with self-motions of degenerate
     clusters (a lone point, parallel lines) accounted for — so parallels,
     perpendiculars and H/V need no special cases;
+  * when pair/triple merging stalls, look for a small *core*: a minimal subset
+    of clusters that is rigid as a whole (Stage 3b — DR-planning / Owen's
+    idea of isolating the non-tree-decomposable part): grow from each seed by
+    generic-rank deficiency, take the smallest rigid subset found (capped in
+    size — the numeric cost is exponential in exactly this), merge it as one
+    numeric step, resume tree merging;
   * the merge sequence is the *plan*; the clusters left over are the roots.
 
 Execution (every solve / drag frame, no graph analysis):
@@ -272,7 +278,7 @@ def _self_motion(cl: Cluster) -> int:
 # ---------------------------------------------------------------------------
 # decomposition (topology only)
 
-def decompose(graph: ConstraintGraph, seed: int = 0) -> Plan:
+def decompose(graph: ConstraintGraph, seed: int = 0, core_max: int = 12) -> Plan:
     rng = np.random.default_rng(seed)
     dirs = _Dirs()
     for d in graph.dirs:
@@ -362,7 +368,9 @@ def decompose(graph: ConstraintGraph, seed: int = 0) -> Plan:
             selfm[cid] = _self_motion(clusters[cid])
         return selfm[cid]
 
-    def determined(ids: list[int]) -> bool:
+    def deficiency(ids: list[int]) -> int:
+        """Relative rigid-transform DOF left after imposing everything the clusters share
+        (0 ⇔ the merge is determined).  Generic rank of the merge Jacobian at witness poses."""
         cl = [clusters[i] for i in ids]
         ref = next((i for i, c in enumerate(cl) if c.fixed), max(range(len(cl)), key=lambda i: len(cl[i].els)))
         order = [ref] + [i for i in range(len(cl)) if i != ref]
@@ -371,14 +379,19 @@ def decompose(graph: ConstraintGraph, seed: int = 0) -> Plan:
         pairs, dpairs, _, _ = relations(ids)
         k = len(cl_o) - 1
         need = 3 * k - sum(self_motion(ids[i]) for i in order[1:])
-        # cheap prefilter: an upper bound on the equation rank
-        if sum(2 for _ in pairs) + len(dpairs) < need:
-            return False
+        if need <= 0:
+            return 0
+        if 2 * len(pairs) + len(dpairs) < need:       # cheap upper bound on the rank
+            return need - min(need, 2 * len(pairs) + len(dpairs))
         pairs = [(pos[i], pos[j], e) for i, j, e in pairs]
         dpairs = [(pos[i], pos[j], la, lb, phi) for i, j, la, lb, phi in dpairs]
         _, jac = _merge_system(cl_o, pairs, dpairs, k)
         J = jac(np.zeros(3 * k))
-        return bool(np.linalg.matrix_rank(J, tol=1e-7) >= need) if J.size else need == 0
+        rank = int(np.linalg.matrix_rank(J, tol=1e-7)) if J.size else 0
+        return max(0, need - rank)
+
+    def determined(ids: list[int]) -> bool:
+        return deficiency(ids) == 0
 
     def merge(ids: list[int]) -> int:
         _, _, shared, sdirs = relations(ids)
@@ -412,33 +425,67 @@ def decompose(graph: ConstraintGraph, seed: int = 0) -> Plan:
     # worklist: a cluster is re-examined when it is created or one of its neighbours changes
     from collections import deque
 
-    work: deque[int] = deque(sorted(clusters))
-    queued = set(work)
-    while work:
-        a = work.popleft()
-        queued.discard(a)
-        if a not in clusters:
-            continue
-        nbs = neighbours(a)
-        out = -1
-        for b in nbs:                                   # pair merges
-            if determined([a, b]):
-                out = merge([a, b])
-                break
-        if out < 0:
-            for i, b in enumerate(nbs):                 # triple merges
-                nb_b = set(neighbours(b))
-                for c in nbs[i + 1:]:
-                    if c in nb_b and determined([a, b, c]):
-                        out = merge([a, b, c])
-                        break
-                if out >= 0:
+    def tree_merges(seed_ids: list[int]) -> None:
+        work: deque[int] = deque(seed_ids)
+        queued = set(work)
+        while work:
+            a = work.popleft()
+            queued.discard(a)
+            if a not in clusters:
+                continue
+            nbs = neighbours(a)
+            out = -1
+            for b in nbs:                                   # pair merges
+                if determined([a, b]):
+                    out = merge([a, b])
                     break
-        if out >= 0:
-            for x in [out, *neighbours(out)]:
-                if x not in queued:
-                    work.append(x)
-                    queued.add(x)
+            if out < 0:
+                for i, b in enumerate(nbs):                 # triple merges
+                    nb_b = set(neighbours(b))
+                    for c in nbs[i + 1:]:
+                        if c in nb_b and determined([a, b, c]):
+                            out = merge([a, b, c])
+                            break
+                    if out >= 0:
+                        break
+            if out >= 0:
+                for x in [out, *neighbours(out)]:
+                    if x not in queued:
+                        work.append(x)
+                        queued.add(x)
+
+    def find_core() -> list[int] | None:
+        """Smallest rigid subset of ≥ 4 clusters found by greedy growth from every seed
+        (pairs/triples are already exhausted).  None if nothing rigid within `core_max`."""
+        best: list[int] | None = None
+        live = [cid for cid in sorted(clusters)
+                if not any(cid != o and set(clusters[cid].els) < set(clusters[o].els) for o in clusters)]
+        if len(live) > 400:
+            return None
+        for seed in live:
+            S = [seed]
+            inS = {seed}
+            while len(S) < core_max and (best is None or len(S) + 1 < len(best)):
+                frontier = sorted({n for x in S for n in neighbours(x) if n not in inS})
+                if not frontier:
+                    break
+                scored = sorted(((deficiency(S + [n]), len(clusters[n].els), n) for n in frontier))
+                d, _, n = scored[0]
+                S.append(n)
+                inS.add(n)
+                if d == 0:
+                    if len(S) >= 2 and (best is None or len(S) < len(best)):
+                        best = list(S)
+                    break
+        return best
+
+    tree_merges(sorted(clusters))
+    while True:
+        core = find_core()
+        if core is None:
+            break
+        out = merge(core)
+        tree_merges([out, *neighbours(out)])
     roots = [cid for cid in sorted(clusters)
              if not any(cid != o and set(clusters[cid].els) < set(clusters[o].els) for o in clusters)]
     return Plan(graph, leaves, ground, singletons, steps, roots)
@@ -534,6 +581,10 @@ def execute(plan: Plan) -> None:
         elif movable:
             fun, jac = _merge_system(cl_o, pairs, dpairs, len(movable))
             u = _newton_small(fun, jac, np.zeros(3 * len(movable)))
+            if float(np.abs(fun(u)).max(initial=0.0)) > 1e-9:
+                # cores (many clusters) or bad warm starts: use the globalised solver
+                u, _ = newton.dogleg(fun, jac, np.zeros(3 * len(movable)), ftol=1e-13, xtol=1e-14,
+                                     gtol=1e-18, max_iter=300)
             Ts = [_T(u[3 * i], u[3 * i + 1], u[3 * i + 2]) for i in range(len(movable))]
         else:
             Ts = []

@@ -1,6 +1,6 @@
 # gcs — geometric constraint solver
 
-Stages 0–3a of [`gcs-solver-program.md`](gcs-solver-program.md): a
+Stages 0–3 of [`gcs-solver-program.md`](gcs-solver-program.md): a
 residual-formulation solver with vectorized numpy kernels, our own DogLeg/LM,
 structural diagnosis (matching / Dulmage–Mendelsohn / pebble game / minimal
 conflict sets), Fudos–Hoffmann-style decomposition into cached solve plans, and
@@ -88,6 +88,11 @@ DOF, convergence and solve time.
   (orientation sign), other merges by a tiny min-norm Newton, unfixed roots
   placed by Procrustes (least change), verify with the compiled `System`,
   numeric fallback otherwise.  `PlanSolver` compiles once per topology.
+  **3b**: when pair/triple merging stalls, a *core* — the smallest subset of
+  clusters that is rigid as a whole (greedy growth by generic-rank deficiency,
+  size-capped) — is merged as one numeric step and tree merging resumes, so
+  only minimal non-tree-decomposable subsystems ever reach the numeric solver
+  (K₃,₃ and Henneberg-II frameworks decompose fully).
 * `gcs.io` — JSON save/load; also deletion-by-rebuild (`without`).
 * `gcs.app` — PySide6 desktop sketcher (see above).
 * `gcs.canvas` — matplotlib click-drag testbed.  Dragging = soft `DragTarget`
@@ -103,7 +108,7 @@ DOF, convergence and solve time.
 | decomposition once per topology; drags/edits replay the cached plan | ✅ `PlanSolver` + live dimension values (`refresh_consts`) |
 | regression suite runs both paths and diffs | ✅ `tests/test_decompose.py::test_plan_and_numeric_agree` |
 | 1000-entity mostly-tree-decomposable sketch in low ms from the cached plan | ⚠ 1500-entity truss replays in ~50–90 ms in Python (≈ the vectorized numeric solve): per-merge Python overhead is the limit — the plan is what a C executor consumes |
-| Owen's triconnected split / DR-planning for non-tree-decomposable cores | ⏳ Stage 3b |
+| non-tree-decomposable cores isolated into minimal numeric subsystems (Owen / DR-planning objective) | ✅ `find_core` in `decompose` — greedy minimal rigid subset, one numeric step, tree merging resumes; K₃,₃ + all random Laman frameworks decompose fully (an SPQR-tree split proper is not implemented — the rank-based core search plays that role) |
 
 ## Stage 2 status
 

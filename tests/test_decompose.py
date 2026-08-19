@@ -68,8 +68,27 @@ def test_chirality_flags_follow_the_current_geometry() -> None:
     assert signs_up and all(ps.plan.chirality[k] == -v for k, v in signs_up.items())
 
 
-@pytest.mark.parametrize("seed", range(4))
-def test_laman_frameworks_decompose_by_triangle_merges(seed: int) -> None:
+def test_k33_needs_a_core_and_decomposes() -> None:
+    """K3,3 is minimally rigid but has no triangles: no pair/triple merge applies, so the
+    Stage-3b core search must merge (all of) it in one numeric step."""
+    rng = random.Random(3)
+    sk = Sketch()
+    pts = [sk.point(rng.uniform(0, 30), rng.uniform(0, 30)) for _ in range(6)]
+    pts[0].fix()
+    for a in range(3):
+        for b in range(3, 6):
+            sk.add(C.Distance(pts[a], pts[b], math.dist(pts[a].xy, pts[b].xy)))
+    sk.add(C.Horizontal(sk.line(pts[0], pts[3])))
+    ps = PlanSolver(sk)
+    assert ps.plan.fully_decomposed
+    assert max(len(st.ids) for st in ps.plan.steps) >= 4      # a core merge happened
+    examples.perturb(sk, 1.0, seed=1)
+    r = ps.solve(fallback=False)
+    assert r.success and r.max_residual < 1e-8
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_laman_frameworks_decompose_fully(seed: int) -> None:
     rng = random.Random(500 + seed)
     n = rng.randint(4, 12)
     edges = henneberg(n, rng)
@@ -79,11 +98,10 @@ def test_laman_frameworks_decompose_by_triangle_merges(seed: int) -> None:
     for a, b in edges:
         sk.add(C.Distance(pts[a], pts[b], math.dist(pts[a].xy, pts[b].xy)))
     sk.add(C.Horizontal(sk.line(pts[0], pts[1])))       # remove the rotation DOF
-    x_ref = sk.get_x()
     ps = PlanSolver(sk)
-    if not ps.plan.fully_decomposed:
-        # Henneberg-II moves can create non-tree-decomposable cores (needs 3b); numeric fallback then
-        pytest.skip("not tree-decomposable: " + ps.plan.summary())
+    # Henneberg-II moves can create non-tree-decomposable cores: Stage 3b merges those as one
+    # numeric step, so every Laman framework decomposes fully
+    assert ps.plan.fully_decomposed, ps.plan.summary()
     examples.perturb(sk, 1.0, seed=seed)
     r = ps.solve(fallback=False)
     assert r.success and r.max_residual < 1e-8
