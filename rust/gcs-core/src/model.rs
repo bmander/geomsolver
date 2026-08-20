@@ -461,12 +461,17 @@ impl Sketch {
         self.params.iter().map(|p| p.value).collect()
     }
 
-    pub fn set_x(&mut self, x: &[f64]) {
-        for (i, p) in self.params.iter_mut().enumerate() {
-            if i < x.len() {
-                p.value = x[i];
-            }
+    /// Write the parameter vector.  A vector of the wrong length is not this sketch's — writing
+    /// the overlapping prefix would scatter one sketch's coordinates over another's — so it is
+    /// refused; `false` says nothing was written.
+    pub fn set_x(&mut self, x: &[f64]) -> bool {
+        if x.len() != self.params.len() {
+            return false;
         }
+        for (i, p) in self.params.iter_mut().enumerate() {
+            p.value = x[i];
+        }
+        true
     }
 
     pub fn free_indices(&self) -> Vec<i32> {

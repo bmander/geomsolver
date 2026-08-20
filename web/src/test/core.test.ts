@@ -892,6 +892,17 @@ test('deleting an entity removes what depends on it', () => {
 
 /* -- the ABI between the binding and the core ----------------------------------- */
 
+test('setX refuses a vector that is not this sketch\'s', () => {
+  // Writing the overlapping prefix scattered one sketch's coordinates over another's — the DOF
+  // animation restoring its starting state into whatever sketch had replaced it, for one.
+  const a = new Sketch(), b = new Sketch();
+  a.point(1, 2);
+  a.point(3, 4);
+  b.point(9, 9);
+  assert.throws(() => b.setX(a.getX()), /params/);
+  assert.deepEqual(b.points[0].xy, [9, 9]);
+});
+
 test('the topology key distinguishes one constraint from another of the same type', () => {
   // A front end caches compiled plans against this.  Counts and type names alone are not enough:
   // delete one Distance and add another and both are identical, so the cache replays a plan that

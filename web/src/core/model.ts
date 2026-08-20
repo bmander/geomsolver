@@ -5,7 +5,7 @@
  * did while the data itself lives in the core.  Nothing is mirrored: every read goes through
  * the ABI.
  */
-import { Buf, core, takeStr, withBuf, withJson, withStr } from './wasm.js';
+import { Buf, core, lastError, takeStr, withBuf, withJson, withStr } from './wasm.js';
 import type { Constraint } from './constraints.js';
 // The constraint classes are generated from the core's registry and register themselves with
 // `initCore`; loading them here means every consumer of the model gets them, in any import order.
@@ -410,11 +410,14 @@ export class Sketch {
     });
   }
 
+  /** Write the parameter vector.  A vector of the wrong length belongs to some other sketch, and
+   *  is refused rather than written as far as it goes. */
   setX(x: ArrayLike<number>): void {
-    withBuf(Math.max(x.length, 1), 8, (b) => {
+    const ok = withBuf(Math.max(x.length, 1), 8, (b) => {
       b.set(x);
-      core().gcs_sketch_set_x(this.handle, b.ptr, x.length);
+      return core().gcs_sketch_set_x(this.handle, b.ptr, x.length) === 0;
     });
+    if (!ok) throw new Error(lastError() || 'setX: wrong length');
   }
 
   freeIndices(): Int32Array {

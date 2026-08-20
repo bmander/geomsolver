@@ -414,8 +414,11 @@ class Sketch:
         return out
 
     def set_x(self, x: Any) -> None:
+        """Write the parameter vector.  A vector of the wrong length belongs to some other
+        sketch, and is refused rather than written as far as it goes."""
         a = _ffi.as_f64(x)
-        lib.gcs_sketch_set_x(self._h, _ffi.pf(a), len(a))
+        if lib.gcs_sketch_set_x(self._h, _ffi.pf(a), len(a)) != 0:
+            raise ValueError(_ffi.last_error() or "set_x: wrong length")
 
     def free_indices(self) -> Any:
         return np.array([p.index for p in self.params if not p.fixed], dtype=np.intp)

@@ -337,10 +337,15 @@ pub unsafe extern "C" fn gcs_sketch_get_x(h: *mut Sketch, out: *mut f64) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn gcs_sketch_set_x(h: *mut Sketch, x: *const f64, n: usize) {
-    guard((), move || {
+pub unsafe extern "C" fn gcs_sketch_set_x(h: *mut Sketch, x: *const f64, n: usize) -> i32 {
+    guard(-1, move || {
         let s = sk(h);
-        s.set_x(std::slice::from_raw_parts(x, n));
+        if s.set_x(std::slice::from_raw_parts(x, n)) {
+            0
+        } else {
+            set_error(format!("set_x: {n} values for {} params", s.params.len()));
+            -1
+        }
     })
 }
 

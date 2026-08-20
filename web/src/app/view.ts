@@ -40,6 +40,9 @@ const ANIM_PERIOD = 2.0;     // seconds spent on each degree of freedom
 
 interface Animation {
   modes: Motion[];
+  /** The sketch it started on: the animation borrows that sketch's values and puts them back,
+   *  and neither the tick nor the restore may touch a sketch that replaced it. */
+  sketch: Sketch;
   x0: Float64Array;
   free: Int32Array;
   amp: number;
@@ -133,6 +136,7 @@ export class SketchView {
   // -- sketch mutation -----------------------------------------------------
 
   setSketch(sk: Sketch, fit = true): void {
+    this.stopAnimation();             // before the swap: it restores into the sketch it started on
     this.abandonGesture();            // before the swap: `end` would commit into the new sketch
     this.sketch = sk;
     this.selected = [];
@@ -243,11 +247,13 @@ export class SketchView {
 
   /** Animate the remaining internal DOFs (each null-space mode in turn); false if none. */
   startAnimation(): boolean {
+    this.stopAnimation();             // a second click would otherwise leak the running interval
     const rep = this.witnessReport();
     const modes = rep ? rep.motions.filter((m) => !m.rigid) : [];
     if (!modes.length) return false;
     this.anim = {
       modes,
+      sketch: this.sketch,
       x0: this.sketch.getX(),
       free: this.sketch.freeIndices(),
       amp: 0.06 * this.sketch.extent(),
@@ -263,14 +269,16 @@ export class SketchView {
   stopAnimation(): void {
     if (!this.anim) return;
     clearInterval(this.animTimer);
-    this.sketch.setX(this.anim.x0);
+    this.animTimer = 0;
+    const { x0, sketch } = this.anim;
     this.anim = null;
+    sketch.setX(x0);                  // the sketch it started on, whatever is on screen now
     this.draw();
   }
 
   private animTick(): void {
     const a = this.anim;
-    if (!a) return;
+    if (!a || a.sketch !== this.sketch) return;
     a.t += ANIM_DT;
     const k = Math.floor(a.t / ANIM_PERIOD) % a.modes.length;
     const phase = Math.sin((2 * Math.PI * (a.t % ANIM_PERIOD)) / ANIM_PERIOD);

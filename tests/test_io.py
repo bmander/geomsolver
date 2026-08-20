@@ -252,3 +252,13 @@ def test_topology_key_distinguishes_one_constraint_from_another_of_the_same_type
     assert sk.topology_key() == k2
     p[0].x.value = 99
     assert sk.topology_key() == k2       # moving geometry is not a topology change
+
+
+def test_set_x_refuses_a_vector_that_is_not_this_sketchs() -> None:
+    a, b = Sketch(), Sketch()
+    a.point(1, 2)
+    a.point(3, 4)
+    b.point(9, 9)
+    with pytest.raises(ValueError):
+        b.set_x(a.get_x())
+    assert b.points[0].xy == (9.0, 9.0)

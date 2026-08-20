@@ -307,3 +307,21 @@ fn the_topology_key_distinguishes_one_constraint_from_another_of_the_same_type()
     });
     assert_eq!(sk.topology_key(), k2, "moving geometry is not a topology change");
 }
+
+/// A parameter vector of the wrong length belongs to some other sketch.  Writing the overlapping
+/// prefix scattered one sketch's coordinates over another's — the DOF animation restoring its
+/// starting state into whatever sketch had replaced it, for one.
+#[test]
+fn set_x_refuses_a_vector_that_is_not_this_sketchs() {
+    let mut a = Sketch::new();
+    a.point(1.0, 2.0, false, "a");
+    a.point(3.0, 4.0, false, "b");
+    let mut b = Sketch::new();
+    b.point(9.0, 9.0, false, "only");
+
+    let xa = a.get_x();
+    assert!(!b.set_x(&xa), "a two-point vector was accepted by a one-point sketch");
+    assert_eq!(b.point_xy(0), (9.0, 9.0));
+    assert!(b.set_x(&[7.0, 8.0]));
+    assert_eq!(b.point_xy(0), (7.0, 8.0));
+}
