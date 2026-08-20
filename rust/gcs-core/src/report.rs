@@ -299,7 +299,7 @@ fn arg_json_value(a: &Arg) -> Json {
 }
 
 /// One constraint as the bindings see it: identity, type, spec-ordered arguments and flags.
-pub fn constraint_json(sk: &Sketch, c: &Constraint) -> Json {
+pub fn constraint_json(c: &Constraint) -> Json {
     let args: Vec<Json> = c
         .args
         .iter()
@@ -311,20 +311,21 @@ pub fn constraint_json(sk: &Sketch, c: &Constraint) -> Json {
             Arg::Str(s) => Json::Str(s.clone()),
         })
         .collect();
+    // Identity and arguments only.  This is the record both bindings rebuild their whole
+    // constraint list from after every edit; a `describe` string and an `error` that evaluates
+    // the kernel are work per constraint per edit that nothing above reads — `gcs_describe` and
+    // `gcs_constraint_error` are there for the one constraint someone is actually looking at.
     object([
         ("id", (c.id as i64).into()),
         ("type", c.type_name().into()),
         ("args", Json::Arr(args)),
         ("soft", c.soft.into()),
         ("intrinsic", c.intrinsic.into()),
-        ("nResiduals", (c.n_residuals() as i64).into()),
-        ("describe", describe(c).into()),
-        ("error", c.error(sk).into()),
     ])
 }
 
 pub fn constraints_json(sk: &Sketch) -> Json {
-    Json::Arr(sk.constraints.iter().map(|c| constraint_json(sk, c)).collect())
+    Json::Arr(sk.constraints.iter().map(constraint_json).collect())
 }
 
 /// The constraint-type registry: what a front end needs to build a toolbar, a constraint list and

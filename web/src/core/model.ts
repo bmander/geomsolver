@@ -523,9 +523,6 @@ export interface ConstraintRecord {
   args: unknown[];
   soft: boolean;
   intrinsic: boolean;
-  nResiduals: number;
-  describe: string;
-  error: number;
 }
 
 type Factory = (sk: Sketch, rec: ConstraintRecord) => Constraint;

@@ -2,7 +2,7 @@ use gcs_core::constraints::{same_constraint, Arg, CKind, Constraint};
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::examples;
 use gcs_core::io;
-use gcs_core::json::fmt_g;
+use gcs_core::json::{fmt_g, Json};
 use gcs_core::model::{distance_between, EntRef, Sketch};
 use gcs_core::solve::{solve, SolveOpts};
 
@@ -379,4 +379,23 @@ fn same_constraint_recognises_every_type_reflexively() {
         assert_eq!(same_constraint(&a, &b), want, "{:?}", a.kind);
         assert_eq!(same_constraint(&b, &a), want, "{:?} (reversed)", a.kind);
     }
+}
+
+/// Both bindings rebuild their whole constraint list from these records after every edit, and
+/// they read identity and arguments.  Anything else in there is work per constraint per edit that
+/// nobody asked for — a formatted description, or an `error` that evaluates the kernel.
+#[test]
+fn the_constraint_record_carries_identity_and_arguments_only() {
+    let sk = examples::rect_fillets(100.0, 60.0, 10.0, 0.0);
+    let Json::Arr(recs) = gcs_core::report::constraints_json(&sk) else { panic!("not an array") };
+    assert!(!recs.is_empty());
+    for rec in &recs {
+        let Json::Obj(kv) = rec else { panic!("not an object") };
+        let keys: Vec<&str> = kv.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(keys, ["id", "type", "args", "soft", "intrinsic"], "{keys:?}");
+    }
+    // and what was dropped is still reachable for the one constraint someone is looking at
+    let c = &sk.constraints[0];
+    assert!(!io::describe(c).is_empty());
+    assert!(c.error(&sk).is_finite());
 }

@@ -713,7 +713,7 @@ pub unsafe extern "C" fn gcs_constraint_json(h: *mut Sketch, id: i32) -> *mut u8
     guard(std::ptr::null_mut(), move || {
         let s = sk(h);
         match s.constraint(id as u32) {
-            Some(c) => out_json(report::constraint_json(s, c)),
+            Some(c) => out_json(report::constraint_json(c)),
             None => out_json(Json::Null),
         }
     })
