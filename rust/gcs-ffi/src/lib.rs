@@ -616,6 +616,33 @@ pub unsafe extern "C" fn gcs_signed_point_to_line(
 }
 
 /// The arc's CCW sweep (2 doubles).
+/// Signed CCW angle from line `a` to line `b`, in radians.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_angle_between(h: *mut Sketch, a: i32, b: i32) -> f64 {
+    guard(f64::NAN, move || {
+        model::angle_between(sk(h), EntRef::line(a as usize), EntRef::line(b as usize))
+    })
+}
+
+/// The point at distance `r` from (cx, cy) towards (tx, ty); 0 if the target is the centre.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_on_radius(
+    cx: f64,
+    cy: f64,
+    tx: f64,
+    ty: f64,
+    r: f64,
+    out: *mut f64,
+) -> i32 {
+    guard(0, move || match model::on_radius(cx, cy, tx, ty, r) {
+        Some((x, y)) => {
+            write(out, &[x, y]);
+            1
+        }
+        None => 0,
+    })
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn gcs_arc_angles(h: *mut Sketch, idx: i32, out: *mut f64) {
     guard((), move || {

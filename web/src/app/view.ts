@@ -6,7 +6,10 @@ import * as C from '../core/constraints.js';
 import { Constraint, sameConstraint } from '../core/constraints.js';
 import { PlanDrag, PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
-import { Arc, Box, Circle, Line, Param, Point, Primitive, Sketch, threePointArc } from '../core/model.js';
+import {
+  Arc, Box, Circle, Line, Param, Point, Primitive, Sketch, distanceBetween, onRadius,
+  threePointArc,
+} from '../core/model.js';
 import { Method, RadiusDrag, SolveResult, System, Triangle } from '../core/system.js';
 import { Motion, WitnessReport, analyze, movingParams } from '../core/witness.js';
 
@@ -610,14 +613,20 @@ export class SketchView {
       if (this.pending.length === 1) {
         rubber();
       } else {
-        const ps = this.w2s(...this.pending[1].xy);
-        const a0 = Math.atan2(-(ps[1] - p0[1]), ps[0] - p0[0]);
-        let a1 = Math.atan2(-(cur[1] - p0[1]), cur[0] - p0[0]);
-        if (a1 <= a0) a1 += 2 * Math.PI;
-        const r = Math.hypot(ps[0] - p0[0], ps[1] - p0[1]);
-        ctx.beginPath();
-        ctx.arc(p0[0], p0[1], r, -a0, -a1, true);
-        ctx.stroke();
+        // the same rule the third click will apply: the cursor gives a direction, the second
+        // point the radius
+        const [cx, cy] = this.pending[0].xy;
+        const [sx2, sy2] = this.pending[1].xy;
+        const rw = Math.hypot(sx2 - cx, sy2 - cy);
+        const q = onRadius(cx, cy, ...this.s2w(cur[0], cur[1]), rw);
+        if (q) {
+          const ps = this.w2s(sx2, sy2), pe = this.w2s(...q);
+          const a0 = Math.atan2(-(ps[1] - p0[1]), ps[0] - p0[0]);
+          let a1 = Math.atan2(-(pe[1] - p0[1]), pe[0] - p0[0]);
+          if (a1 <= a0) a1 += 2 * Math.PI;
+          this.arcPath(this.pending[0].xy, rw * this.scale, a0, a1);
+          ctx.stroke();
+        }
       }
     }
     ctx.restore();
@@ -798,10 +807,8 @@ export class SketchView {
         const [cpt, s, en] = this.pending;
         if (new Set([cpt, s, en]).size === 3) {
           if (!existing) {                           // freshly placed end point: put it on the radius
-            const r = Math.hypot(s.x.value - cpt.x.value, s.y.value - cpt.y.value);
-            const ang = Math.atan2(en.y.value - cpt.y.value, en.x.value - cpt.x.value);
-            en.x.value = cpt.x.value + r * Math.cos(ang);
-            en.y.value = cpt.y.value + r * Math.sin(ang);
+            const q = onRadius(...cpt.xy, ...en.xy, distanceBetween(cpt, s));
+            if (q) [en.x.value, en.y.value] = q;
           }
           sk.arc(cpt, s, en);
         }

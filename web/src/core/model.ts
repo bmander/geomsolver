@@ -499,6 +499,22 @@ export function signedPointToLine(px: number, py: number, ln: Line): number {
   return core().gcs_signed_point_to_line(ln.sketch.handle, px, py, ln.index);
 }
 
+/** Signed CCW angle from line `a` to line `b`, in radians — what an `Angle` constraint's value
+ *  means, and what a dimension dialog offers as the current value. */
+export function angleBetween(a: Line, b: Line): number {
+  return core().gcs_angle_between(a.sketch.handle, a.index, b.index);
+}
+
+/** The point at distance `r` from (cx, cy) towards (tx, ty).  The centre-start-end arc
+ *  construction: the third click gives a direction, and the radius comes from the second.
+ *  Null when the target is the centre, which names no direction. */
+export function onRadius(cx: number, cy: number, tx: number, ty: number, r: number)
+  : [number, number] | null {
+  return withBuf(2, 8, (b) => (core().gcs_on_radius(cx, cy, tx, ty, r, b.ptr)
+    ? [b.f64[0], b.f64[1]] as [number, number]
+    : null));
+}
+
 /** Shortest distance between two entities, as a sketcher measures it: lines are infinite, arcs
  *  are the whole circle they lie on. */
 export function distanceBetween(a: Primitive, b: Primitive): number {

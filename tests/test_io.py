@@ -262,3 +262,19 @@ def test_set_x_refuses_a_vector_that_is_not_this_sketchs() -> None:
     with pytest.raises(ValueError):
         b.set_x(a.get_x())
     assert b.points[0].xy == (9.0, 9.0)
+
+
+def test_angle_between_and_on_radius_are_the_core_s() -> None:
+    """Two pieces of geometry the front ends were each doing for themselves: the current angle a
+    dimension dialog offers, and where the third click of a centre-start-end arc lands."""
+    from gcs.model import angle_between, on_radius
+
+    sk = Sketch()
+    o = sk.point(0, 0)
+    east = sk.line(o, sk.point(10, 0))
+    north = sk.line(o, sk.point(0, 10))
+    assert angle_between(east, north) == pytest.approx(math.pi / 2)
+    assert angle_between(north, east) == pytest.approx(-math.pi / 2)     # signed
+
+    assert on_radius(0, 0, 3, 4, 10) == pytest.approx((6.0, 8.0))
+    assert on_radius(1, 1, 1, 1, 5) is None                              # no direction

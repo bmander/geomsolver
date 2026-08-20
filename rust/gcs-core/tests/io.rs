@@ -3,7 +3,7 @@ use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::examples;
 use gcs_core::io;
 use gcs_core::json::{fmt_g, Json};
-use gcs_core::model::{distance_between, EntRef, Sketch};
+use gcs_core::model::{angle_between, distance_between, on_radius, EntRef, Sketch};
 use gcs_core::solve::{solve, SolveOpts};
 
 #[test]
@@ -398,4 +398,25 @@ fn the_constraint_record_carries_identity_and_arguments_only() {
     let c = &sk.constraints[0];
     assert!(!io::describe(c).is_empty());
     assert!(c.error(&sk).is_finite());
+}
+
+/// Two pieces of geometry the front ends were each doing for themselves: the current angle a
+/// dimension dialog offers, and where the third click of a centre–start–end arc lands.
+#[test]
+fn angle_between_and_on_radius_are_the_core_s() {
+    let mut sk = Sketch::new();
+    let o = sk.point(0.0, 0.0, false, "o");
+    let e = sk.point(10.0, 0.0, false, "e");
+    let n = sk.point(0.0, 10.0, false, "n");
+    let east = sk.line(o, e);
+    let north = sk.line(o, n);
+    let a = angle_between(&sk, EntRef::line(east), EntRef::line(north));
+    assert!((a - std::f64::consts::FRAC_PI_2).abs() < 1e-12, "{a}");
+    let back = angle_between(&sk, EntRef::line(north), EntRef::line(east));
+    assert!((back + std::f64::consts::FRAC_PI_2).abs() < 1e-12, "{back}"); // signed, so CW
+
+    // the third click gives a direction; the radius comes from the second point
+    let (x, y) = on_radius(0.0, 0.0, 3.0, 4.0, 10.0).unwrap();
+    assert!((x - 6.0).abs() < 1e-12 && (y - 8.0).abs() < 1e-12, "{:?}", (x, y));
+    assert_eq!(on_radius(1.0, 1.0, 1.0, 1.0, 5.0), None); // the centre names no direction
 }

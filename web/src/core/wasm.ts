@@ -59,6 +59,9 @@ export interface Abi {
   gcs_entity_name(kind: number, idx: number): number;
   gcs_distance_between(h: number, ka: number, ia: number, kb: number, ib: number): number;
   gcs_signed_point_to_line(h: number, x: number, y: number, line: number): number;
+  gcs_angle_between(h: number, a: number, b: number): number;
+  gcs_on_radius(cx: number, cy: number, tx: number, ty: number, r: number,
+                out: number): number;
   gcs_arc_angles(h: number, idx: number, out: number): void;
   gcs_three_point_arc(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, out: number): number;
 

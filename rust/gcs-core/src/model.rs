@@ -665,6 +665,26 @@ fn measure_order(k: EntKind) -> u8 {
     }
 }
 
+/// Signed CCW angle from line `a` to line `b`, in radians — what an `Angle` constraint's value
+/// means, and what a dimension dialog should offer as the current value.
+pub fn angle_between(sk: &Sketch, a: EntRef, b: EntRef) -> f64 {
+    let (d1x, d1y) = sk.line_dir(a.i());
+    let (d2x, d2y) = sk.line_dir(b.i());
+    (d1x * d2y - d1y * d2x).atan2(d1x * d2x + d1y * d2y)
+}
+
+/// The point at distance `r` from (cx, cy) in the direction of (tx, ty).  The centre–start–end
+/// arc construction: the third click gives a direction, and the radius comes from the second.
+/// `None` when the target is the centre, which names no direction.
+pub fn on_radius(cx: f64, cy: f64, tx: f64, ty: f64, r: f64) -> Option<(f64, f64)> {
+    let (dx, dy) = (tx - cx, ty - cy);
+    let l = dx.hypot(dy);
+    if l <= 1e-12 {
+        return None;
+    }
+    Some((cx + r * dx / l, cy + r * dy / l))
+}
+
 /// Shortest distance between two entities, as a sketcher measures it.  Lines are treated as
 /// infinite; arcs are measured as the whole circle they lie on.
 pub fn distance_between(sk: &Sketch, first: EntRef, second: EntRef) -> f64 {

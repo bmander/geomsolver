@@ -892,6 +892,18 @@ test('deleting an entity removes what depends on it', () => {
 
 /* -- the ABI between the binding and the core ----------------------------------- */
 
+test('angleBetween and onRadius are the core\'s', async () => {
+  const { angleBetween, onRadius } = await import('../core/model.js');
+  const sk = new Sketch();
+  const o = sk.point(0, 0);
+  const east = sk.line(o, sk.point(10, 0)), north = sk.line(o, sk.point(0, 10));
+  assert.ok(Math.abs(angleBetween(east, north) - Math.PI / 2) < 1e-12);
+  assert.ok(Math.abs(angleBetween(north, east) + Math.PI / 2) < 1e-12);   // signed
+  const q = onRadius(0, 0, 3, 4, 10)!;
+  assert.ok(Math.abs(q[0] - 6) < 1e-12 && Math.abs(q[1] - 8) < 1e-12, `${q}`);
+  assert.equal(onRadius(1, 1, 1, 1, 5), null);                            // no direction
+});
+
 test('a heap view does not survive a call that grows the core\'s memory', async () => {
   // Why the readers copy their numbers out before touching the sketch again: the module grows
   // its memory on any call, and every typed-array view over the old buffer detaches when it does.

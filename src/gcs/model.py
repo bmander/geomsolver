@@ -481,6 +481,22 @@ def signed_point_to_line(p: tuple[float, float], ln: Line) -> float:
     return float(lib.gcs_signed_point_to_line(ln.sketch._h, float(p[0]), float(p[1]), ln.index))
 
 
+def angle_between(a: Line, b: Line) -> float:
+    """Signed CCW angle from line `a` to line `b`, in radians — what an `Angle` constraint's
+    value means, and what a dimension dialog offers as the current value."""
+    return float(lib.gcs_angle_between(a.sketch._h, a.index, b.index))
+
+
+def on_radius(cx: float, cy: float, tx: float, ty: float, r: float) -> tuple[float, float] | None:
+    """The point at distance `r` from (cx, cy) towards (tx, ty).  The centre-start-end arc
+    construction: the third click gives a direction, and the radius comes from the second.
+    None when the target is the centre, which names no direction."""
+    out = _ffi.f64(2)
+    if not lib.gcs_on_radius(float(cx), float(cy), float(tx), float(ty), float(r), _ffi.pf(out)):
+        return None
+    return float(out[0]), float(out[1])
+
+
 def distance_between(a: Primitive, b: Primitive) -> float:
     """Shortest distance between two entities, as a sketcher measures it."""
     return float(lib.gcs_distance_between(a.sketch._h, KIND_ID[a.kind], a.index,

@@ -15,7 +15,8 @@ import * as io from '../core/io.js';
 import { Constraint, ENTITY_KINDS } from '../core/constraints.js';
 import { applyAlternative, enumerateStep, isCurrent } from '../core/homotopy.js';
 import {
-  Arc, Circle, Line, Point, Primitive, Sketch, distanceBetween, expand, signedPointToLine,
+  Arc, Circle, Line, Point, Primitive, Sketch, angleBetween, distanceBetween, expand,
+  signedPointToLine,
 } from '../core/model.js';
 import { METHODS, Method } from '../core/system.js';
 import { initCore } from '../core/wasm.js';
@@ -224,12 +225,6 @@ async function cPointLineDistance(p: Point, line: Line): Promise<void> {
   if (v !== null) view.addConstraints(new C.PointLineDistance(p, line, v));
 }
 
-/** Signed CCW angle from l1 to l2 in degrees. */
-function angleDeg(l1: Line, l2: Line): number {
-  const [d1, d2] = [l1.direction(), l2.direction()];
-  return (Math.atan2(d1[0] * d2[1] - d1[1] * d2[0], d1[0] * d2[0] + d1[1] * d2[1]) * 180) / Math.PI;
-}
-
 /** Two circles or arcs: dimension the annulus between them.  Like the parallel gap it sizes
  *  the ring without centring it, so say so when the centres are not already together. */
 async function cAnnularDistance(c1: Circle | Arc, c2: Circle | Arc): Promise<void> {
@@ -247,7 +242,7 @@ async function cAnnularDistance(c1: Circle | Arc, c2: Circle | Arc): Promise<voi
 async function cAngle(): Promise<void> {
   const { lines } = sel();
   if (!need(lines.length === 2, 'two lines')) return;
-  const cur = angleDeg(lines[0], lines[1]);
+  const cur = (angleBetween(lines[0], lines[1]) * 180) / Math.PI;   // the core's rule, in degrees
   const v = await askNumber('Angle', 'Angle from the first to the second line (degrees)', cur);
   if (v !== null) view.addConstraints(new C.Angle(lines[0], lines[1], (v * Math.PI) / 180));
 }
@@ -605,7 +600,7 @@ function refreshMeasure(): void {
   if (a instanceof Point && b instanceof Point) {
     rows.push(`Δx ${io.fmt(b.x.value - a.x.value, 6)}   Δy ${io.fmt(b.y.value - a.y.value, 6)}`);
   } else if (a instanceof Line && b instanceof Line) {
-    rows.push(`angle     ${io.fmt(angleDeg(a, b), 4)}°`);
+    rows.push(`angle     ${io.fmt((angleBetween(a, b) * 180) / Math.PI, 4)}°`);
   }
   measureEl.innerHTML = rows.join('\n');
   measureEl.className = 'on';
