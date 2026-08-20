@@ -356,3 +356,23 @@ def test_lm_and_dogleg_agree_on_a_conflicting_soft_target() -> None:
         g = s.jacobian_dense(z).T @ s.residuals(z)
         assert np.abs(g).max() < 1e-6, method
         s.dispose()
+
+
+def test_constraint_errors_are_sized_from_the_plan_not_the_live_sketch() -> None:
+    """The core reports one entry per *compiled* constraint.  Sizing the buffers from the live
+    sketch's count writes past the end of them as soon as the sketch is edited."""
+    sk = Sketch()
+    a, b, c = sk.point(0, 0), sk.point(10, 0), sk.point(10, 10)
+    d1, d2 = Distance(a, b, 10), Distance(b, c, 10)
+    sk.add(d1)
+    sk.add(d2)
+    s = System(sk)
+    try:
+        assert s.n_constraints == 2
+        ids = {d1._id, d2._id}
+        sk.remove(d2)
+        errs = s.constraint_errors()
+        assert set(errs) == ids                        # the plan's constraints, not the sketch's
+        assert s.n_constraints == 2                    # unchanged: the plan did not recompile
+    finally:
+        s.dispose()

@@ -1045,17 +1045,31 @@ pub unsafe extern "C" fn gcs_system_constraint_errors(
     h: *mut Sketch,
     ids: *mut i32,
     out: *mut f64,
+    cap: i32,
 ) -> i32 {
     guard(-1, move || {
         let sys = &mut *s;
         let z = sys.z0(sk(h));
         let e = sys.constraint_errors(&z);
-        for (i, v) in e.iter().enumerate() {
-            *out.add(i) = *v;
+        // one entry per *compiled* constraint, which is not the live sketch's count once the
+        // sketch has been edited: never write past what the caller sized
+        let n = e.len().min(cap.max(0) as usize);
+        if n < e.len() {
+            set_error(format!("constraint_errors: {} entries need {} slots", e.len(), e.len()));
+        }
+        for i in 0..n {
+            *out.add(i) = e[i];
             *ids.add(i) = sys.cids[i] as i32;
         }
-        e.len() as i32
+        n as i32
     })
+}
+
+/// How many constraints the plan was compiled from — the size `gcs_system_constraint_errors`
+/// needs, which is the live sketch's count only until the sketch is edited.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_system_n_constraints(s: *mut System) -> i32 {
+    guard(-1, move || (*s).n_constraints() as i32)
 }
 
 #[no_mangle]

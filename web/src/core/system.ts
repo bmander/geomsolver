@@ -60,6 +60,8 @@ export class System {
   readonly nRes: number;
   readonly nFree: number;
   readonly nnz: number;
+  /** Constraints the plan was compiled from — not the live sketch's count once edited. */
+  readonly nConstraints: number;
   readonly scale: number;
   readonly extent: number;
   readonly hard: Uint8Array;
@@ -76,6 +78,7 @@ export class System {
     this.nRes = c.gcs_system_n_res(this.handle_);
     this.nFree = c.gcs_system_n_free(this.handle_);
     this.nnz = c.gcs_system_nnz(this.handle_);
+    this.nConstraints = c.gcs_system_n_constraints(this.handle_);
     this.scale = c.gcs_system_scale(this.handle_);
     this.extent = sketch.extent();
     this.hard = withBuf(Math.max(this.nRes, 1), 1, (b) => {
@@ -171,10 +174,10 @@ export class System {
 
   /** max |residual| per constraint, from one vectorized evaluation. */
   constraintErrors(): Map<Constraint, number> {
-    const n = this.sketch.constraints.length;
+    const n = this.nConstraints;
     return withBuf(Math.max(n, 1), 4, (ids) => withBuf(Math.max(n, 1), 8, (vals) => {
       const m = core().gcs_system_constraint_errors(this.handle, this.sketch.handle,
-                                                    ids.ptr, vals.ptr);
+                                                    ids.ptr, vals.ptr, n);
       const out = new Map<Constraint, number>();
       const ia = ids.i32, va = vals.f64;
       for (let i = 0; i < m; i++) {

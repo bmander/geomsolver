@@ -73,6 +73,8 @@ class System:
         self.n_res = int(lib.gcs_system_n_res(self._h))
         self.n_free = int(lib.gcs_system_n_free(self._h))
         self.nnz = int(lib.gcs_system_nnz(self._h))
+        #: constraints the plan was compiled from — not the live sketch's count once edited
+        self.n_constraints = int(lib.gcs_system_n_constraints(self._h))
         self.scale = float(lib.gcs_system_scale(self._h))
         self.extent = sketch.extent()
         hard = np.zeros(max(self.n_res, 1), dtype=np.uint8)
@@ -157,10 +159,11 @@ class System:
 
     def constraint_errors(self) -> dict[int, float]:
         """max |residual| per constraint, keyed by constraint id."""
-        n = len(self.sketch.constraints)
+        n = self.n_constraints
         ids = _ffi.i32(max(n, 1))
         vals = _ffi.f64(max(n, 1))
-        m = lib.gcs_system_constraint_errors(self._h, self.sketch._h, _ffi.pi(ids), _ffi.pf(vals))
+        m = lib.gcs_system_constraint_errors(self._h, self.sketch._h, _ffi.pi(ids),
+                                             _ffi.pf(vals), n)
         return {int(ids[i]): float(vals[i]) for i in range(m)}
 
     def rank(self, rcond: float = 1e-10, hard_only: bool = False) -> int:

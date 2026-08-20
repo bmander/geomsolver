@@ -332,6 +332,12 @@ impl System {
     }
 
     /// max |residual| per constraint, in block order (`self.cids`).
+    /// How many constraints this plan was compiled from — the length `constraint_errors`
+    /// reports, which is the sketch's count only until the sketch is edited.
+    pub fn n_constraints(&self) -> usize {
+        self.cids.len()
+    }
+
     pub fn constraint_errors(&mut self, z: &[f64]) -> Vec<f64> {
         let r = self.residuals(z);
         let mut out = Vec::with_capacity(self.cids.len());

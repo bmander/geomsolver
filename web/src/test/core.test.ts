@@ -893,6 +893,24 @@ test('deleting an entity removes what depends on it', () => {
 
 /* -- the ABI between the binding and the core ----------------------------------- */
 
+test('constraint errors are sized from the plan, not the live sketch', () => {
+  // The core reports one entry per *compiled* constraint; sizing from the live sketch's count
+  // writes past the end of the buffers as soon as the sketch is edited.
+  const sk = new Sketch();
+  const a = sk.point(0, 0), b = sk.point(10, 0), c = sk.point(10, 10);
+  const d1 = new C.Distance(a, b, 10), d2 = new C.Distance(b, c, 10);
+  sk.add(d1, d2);
+  const sys = new System(sk);
+  try {
+    assert.equal(sys.nConstraints, 2);
+    sk.remove(d2);
+    assert.equal(sys.constraintErrors().size, 1);   // d2's proxy is detached, d1's is not
+    assert.equal(sys.nConstraints, 2);              // the plan did not recompile
+  } finally {
+    sys.dispose();
+  }
+});
+
 test('a dangling reference in a document is an error, not a trap', () => {
   // A document is untrusted input; a bad index has to come back as a thrown error with the
   // wasm instance still usable afterwards.

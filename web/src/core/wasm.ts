@@ -94,7 +94,9 @@ export interface Abi {
   gcs_system_csr_structure(s: number, indptr: number, indices: number): void;
   gcs_system_csr_data(s: number, z: number, out: number): void;
   gcs_system_max_hard_residual(s: number, h: number): number;
-  gcs_system_constraint_errors(s: number, h: number, ids: number, out: number): number;
+  gcs_system_constraint_errors(s: number, h: number, ids: number, out: number,
+                               cap: number): number;
+  gcs_system_n_constraints(s: number): number;
   gcs_system_rank(s: number, h: number, rcond: number, hardOnly: number): number;
   gcs_system_update_consts(s: number, h: number, id: number): void;
   gcs_system_refresh_consts(s: number, h: number): void;
