@@ -35,7 +35,9 @@ def all_constraints(seed: int):
         C.TangentLineCircle(l1, c1), C.TangentLineCircle(l1, c1, side=-1),
         C.TangentCircleCircle(c1, c2, True), C.TangentCircleCircle(c1, c2, False),
         C.TangentArcLine(a, l1, "start"), C.TangentArcLine(a, l2, "end"),
-        C.Symmetric(p, q, l1),
+        C.Symmetric(p, q, l1), C.ParallelDistance(l1, l2, 4.0),
+        C.PointLineDistance(p, l1, 4.0),
+        C.AnnularDistance(c1, a, 1.5),
     ]
 
 

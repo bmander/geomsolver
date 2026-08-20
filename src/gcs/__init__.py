@@ -8,6 +8,7 @@ warm start.  See gcs-solver-program.md.
 from gcs.model import Arc, Circle, Line, Param, Point, Sketch
 from gcs.constraints import (
     Angle,
+    AnnularDistance,
     Coincident,
     Constraint,
     Distance,
@@ -17,7 +18,9 @@ from gcs.constraints import (
     Horizontal,
     Midpoint,
     Parallel,
+    ParallelDistance,
     Perpendicular,
+    PointLineDistance,
     PointOnCircle,
     PointOnLine,
     Radius,
@@ -30,9 +33,10 @@ from gcs.constraints import (
 from gcs.solve import SolveResult, solve
 
 __all__ = [
-    "Angle", "Arc", "Circle", "Coincident", "Constraint", "Distance", "DragTarget",
+    "Angle", "AnnularDistance", "Arc", "Circle", "Coincident", "Constraint", "Distance", "DragTarget",
     "EqualLength", "EqualRadius", "Horizontal", "Line", "Midpoint", "Parallel",
-    "Param", "Perpendicular", "Point", "PointOnCircle", "PointOnLine", "Radius",
+    "ParallelDistance", "Param", "Perpendicular", "Point", "PointLineDistance", "PointOnCircle",
+    "PointOnLine", "Radius",
     "Sketch", "SolveResult", "Symmetric", "TangentArcLine", "TangentCircleCircle",
     "TangentLineCircle", "Vertical", "solve",
 ]

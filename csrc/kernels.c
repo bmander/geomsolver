@@ -32,6 +32,14 @@ static void lin_jac(int n, const double *J, int n_res, int n_par, double *out)
         for (size_t t = 0; t < sz; t++) out[(size_t)i * sz + t] = J[t];
 }
 
+/* Jacobian of C/L from dC and dL — the quotient rule, shared by the signed
+ * distance-to-a-line kernels. */
+static void ratio_jac(int n, const double *dC, const double *dL, double L, double C, double *j)
+{
+    double f = C / (L * L);
+    for (int t = 0; t < n; t++) j[t] = dC[t] / L - f * dL[t];
+}
+
 #define LINEAR_KERNEL(name, NRES, NPAR, ...)                                              \
     static const double name##_J[(NRES) * (NPAR)] = {__VA_ARGS__};                        \
     static void name##_res(int n, const double *V, const double *K, double *R)            \
@@ -267,9 +275,8 @@ static void tangent_line_circle_jac(int n, const double *V, const double *K, dou
         double L = hypot(dx, dy), C = dx * wy - dy * wx;
         double dC[7] = {dy - wy, wx - dx, wy, -wx, -dy, dx, 0.0};
         double dL[7] = {-dx / L, -dy / L, dx / L, dy / L, 0.0, 0.0, 0.0};
-        double f = C / (L * L);
-        for (int t = 0; t < 7; t++) j[t] = dC[t] / L - f * dL[t];
-        j[6] = -K[i];
+        ratio_jac(7, dC, dL, L, C, j);
+        j[6] = -K[i];                       /* the radius column is not part of the ratio */
     }
 }
 
@@ -349,6 +356,82 @@ static void symmetric_jac(int n, const double *V, const double *K, double *J)
     }
 }
 
+/* (a1x,a1y,b1x,b1y,a2x,a2y,b2x,b2y), K = (d): signed perpendicular distance from l2's first
+ * endpoint to l1's infinite line.  For lines that are already parallel — which is how they
+ * usually get that way, through some other chain — this is exactly the gap between them.  It
+ * does NOT make them parallel: bundling that in duplicated a parallelism the rest of the
+ * sketch had almost always already implied, and the redundancy was invisible. */
+static void parallel_distance_res(int n, const double *V, const double *K, double *R)
+{
+    for (int i = 0; i < n; i++) {
+        const double *v = V + 8 * (size_t)i;
+        double d1x = v[2] - v[0], d1y = v[3] - v[1];
+        double wx = v[4] - v[0], wy = v[5] - v[1];
+        R[i] = (d1x * wy - d1y * wx) / hypot(d1x, d1y) - K[i];
+    }
+}
+
+static void parallel_distance_jac(int n, const double *V, const double *K, double *J)
+{
+    (void)K;
+    for (int i = 0; i < n; i++) {
+        const double *v = V + 8 * (size_t)i;
+        double *j = J + 8 * (size_t)i;
+        double d1x = v[2] - v[0], d1y = v[3] - v[1];
+        double wx = v[4] - v[0], wy = v[5] - v[1];
+        double L = hypot(d1x, d1y), C = d1x * wy - d1y * wx;
+        double dC[8] = {d1y - wy, wx - d1x, wy, -wx, -d1y, d1x, 0.0, 0.0};
+        double dL[8] = {-d1x / L, -d1y / L, d1x / L, d1y / L, 0.0, 0.0, 0.0, 0.0};
+        ratio_jac(8, dC, dL, L, C, j);
+    }
+}
+
+/* (px,py,ax,ay,bx,by), K = (d): signed perpendicular distance from p to the infinite line
+ * through a,b, positive to the left of a→b.  Signed rather than absolute so the residual has
+ * no kink at zero and negating d moves the point across, the way a tangency's side flag works.
+ * point_on_line is the d = 0 case, kept separate because it needs no division. */
+static void point_line_distance_res(int n, const double *V, const double *K, double *R)
+{
+    for (int i = 0; i < n; i++) {
+        const double *v = V + 6 * (size_t)i;
+        double dx = v[4] - v[2], dy = v[5] - v[3];
+        double wx = v[0] - v[2], wy = v[1] - v[3];
+        R[i] = (dx * wy - dy * wx) / hypot(dx, dy) - K[i];
+    }
+}
+static void point_line_distance_jac(int n, const double *V, const double *K, double *J)
+{
+    (void)K;
+    for (int i = 0; i < n; i++) {
+        const double *v = V + 6 * (size_t)i;
+        double *j = J + 6 * (size_t)i;
+        double dx = v[4] - v[2], dy = v[5] - v[3];
+        double wx = v[0] - v[2], wy = v[1] - v[3];
+        double L = hypot(dx, dy), C = dx * wy - dy * wx;
+        double dC[6] = {-dy, dx, dy - wy, wx - dx, wy, -wx};
+        double dL[6] = {0.0, 0.0, -dx / L, -dy / L, dx / L, dy / L};
+        ratio_jac(6, dC, dL, L, C, j);
+    }
+}
+
+/* (r1,r2), K = (d): r2 - r1 - d, the radial gap between two concentric circles — the
+ * thickness of the annulus between them, signed so that a negative d makes the first circle
+ * the outer one.  Like the other gap dimensions this does NOT place the centres; Coincident
+ * on the two centres is what makes the pair concentric, and doing both here would restate a
+ * constraint the sketch almost always already carries. */
+static const double annular_distance_J[2] = {-1.0, 1.0};
+
+static void annular_distance_res(int n, const double *V, const double *K, double *R)
+{
+    for (int i = 0; i < n; i++) R[i] = V[2 * (size_t)i + 1] - V[2 * (size_t)i] - K[i];
+}
+
+static void annular_distance_jac(int n, const double *V, const double *K, double *J)
+{
+    (void)V; (void)K;
+    lin_jac(n, annular_distance_J, 1, 2, J);
+}
+
 /* -- registry (order == kernel id, shared with the front end) --------------- */
 
 static const gcs_kernel KERNELS[GCS_N_KERNELS] = {
@@ -370,6 +453,9 @@ static const gcs_kernel KERNELS[GCS_N_KERNELS] = {
     {"tangent_circle_circle", 1, 6, 1, tangent_circle_circle_res, tangent_circle_circle_jac, NULL},
     {"tangent_arc_line", 1, 8, 0, tangent_arc_line_res, tangent_arc_line_jac, NULL},
     {"symmetric", 2, 8, 0, symmetric_res, symmetric_jac, NULL},
+    {"parallel_distance", 1, 8, 1, parallel_distance_res, parallel_distance_jac, NULL},
+    {"point_line_distance", 1, 6, 1, point_line_distance_res, point_line_distance_jac, NULL},
+    {"annular_distance", 1, 2, 1, annular_distance_res, annular_distance_jac, annular_distance_J},
 };
 
 const gcs_kernel *gcs_kernels(void) { return KERNELS; }

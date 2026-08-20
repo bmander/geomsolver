@@ -164,6 +164,69 @@ export function threePointArc(ax: number, ay: number, bx: number, by: number,
     : { cx: ox, cy: oy, r, a0: tb, a1: tb + (2 * Math.PI - toB), swapped: true };
 }
 
+/** Signed perpendicular offset from the *infinite* line through `ln`, positive to the left of
+ *  its direction — the convention `PointLineDistance` and `ParallelDistance` use, so the UI can
+ *  prefill their prompts with the value the sketch already shows, sign included.
+ *
+ *  A degenerate line has no side; it gives Infinity rather than a silent zero. */
+export function signedPointToLine(px: number, py: number, ln: Line): number {
+  const [ax, ay] = ln.p1.xy;
+  const [dx, dy] = ln.direction();
+  const length = Math.hypot(dx, dy);
+  if (length === 0) return Infinity;
+  return (dx * (py - ay) - dy * (px - ax)) / length;
+}
+
+/** Perpendicular distance from a point to the *infinite* line through `ln`. */
+function pointToLine(px: number, py: number, ln: Line): number {
+  const [dx, dy] = ln.direction();
+  if (dx === 0 && dy === 0) return Math.hypot(px - ln.p1.x.value, py - ln.p1.y.value);
+  return Math.abs(signedPointToLine(px, py, ln));
+}
+
+const MEASURE_ORDER: Record<Kind, number> = { point: 0, line: 1, circle: 2, arc: 2 };
+
+const isRound = (e: Primitive): e is Circle | Arc => e instanceof Circle || e instanceof Arc;
+
+/** Shortest distance between two entities, as a sketcher measures it.
+ *
+ *  Lines are treated as infinite — perpendicular distance to one, the gap between two
+ *  parallel ones — because that is what dimensioning them means; two lines that cross are 0
+ *  apart.  Arcs are measured as the whole circle they lie on, which is exact for the common
+ *  cases and an over-estimate of the true gap only when the nearest approach is off the swept
+ *  part. */
+export function distanceBetween(first: Primitive, second: Primitive): number {
+  // ordered so the simpler kind is `a`, which halves the cases and lets the checker narrow
+  const [a, b] = MEASURE_ORDER[first.kind] > MEASURE_ORDER[second.kind]
+    ? [second, first] : [first, second];
+  if (a instanceof Point) {
+    if (b instanceof Point) return Math.hypot(a.x.value - b.x.value, a.y.value - b.y.value);
+    if (b instanceof Line) return pointToLine(a.x.value, a.y.value, b);
+    if (!isRound(b)) return 0;
+    const [cx, cy] = b.center.xy;
+    return Math.abs(Math.hypot(a.x.value - cx, a.y.value - cy) - Math.abs(b.radius.value));
+  }
+  if (a instanceof Line) {
+    if (b instanceof Line) {
+      const [d1, d2] = [a.direction(), b.direction()];
+      const cross = d1[0] * d2[1] - d1[1] * d2[0];
+      if (Math.abs(cross) > 1e-9 * Math.hypot(...d1) * Math.hypot(...d2)) return 0;
+      return pointToLine(b.p1.x.value, b.p1.y.value, a);
+    }
+    if (!isRound(b)) return 0;                               // ordered above: b is a round
+    return Math.max(0, pointToLine(b.center.x.value, b.center.y.value, a) - Math.abs(b.radius.value));
+  }
+  return isRound(a) && isRound(b) ? roundGap(a, b) : 0;       // ordered above: both are rounds
+}
+
+/** Gap between two circles: outside each other, or one inside the other; overlapping give 0. */
+function roundGap(a: Circle | Arc, b: Circle | Arc): number {
+  const [ax, ay] = a.center.xy, [bx, by] = b.center.xy;
+  const gap = Math.hypot(ax - bx, ay - by);
+  const r1 = Math.abs(a.radius.value), r2 = Math.abs(b.radius.value);
+  return Math.max(0, gap - r1 - r2, Math.abs(r1 - r2) - gap);
+}
+
 /** Entities plus their sub-entities (a line's endpoints, an arc's centre and ends). */
 export function expand(ents: Iterable<Primitive>): Primitive[] {
   const out: Primitive[] = [];

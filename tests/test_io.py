@@ -174,3 +174,30 @@ def test_construction_flag_round_trips() -> None:
     assert [a.construction for a in back.arcs] == [a.construction for a in sk.arcs]
     assert [c.construction for c in back.circles] == [c.construction for c in sk.circles]
     assert io.dumps(back) == io.dumps(sk)
+
+
+def test_distance_between_covers_every_pair_of_kinds() -> None:
+    from gcs.model import distance_between as dist
+
+    sk = Sketch()
+    o, p = sk.point(0, 0), sk.point(3, 4)
+    horiz = sk.line(sk.point(0, 10), sk.point(20, 10))          # y = 10
+    slant = sk.line(sk.point(0, 0), sk.point(10, 10))           # y = x, crosses horiz
+    para = sk.line(sk.point(-5, 16), sk.point(5, 16))           # y = 16, parallel to horiz
+    c1 = sk.circle(sk.point(0, 0), 2.0)
+    c2 = sk.circle(sk.point(10, 0), 3.0)
+    inner = sk.circle(sk.point(0, 0), 0.5)
+
+    assert dist(o, p) == pytest.approx(5.0)
+    assert dist(p, o) == pytest.approx(5.0)                     # symmetric
+    assert dist(o, horiz) == pytest.approx(10.0)                # perpendicular to the line
+    assert dist(horiz, o) == pytest.approx(10.0)
+    assert dist(o, c2) == pytest.approx(7.0)                    # to the curve, not the centre
+    assert dist(sk.point(10, 0), c2) == pytest.approx(3.0)      # from inside, still the curve
+    assert dist(horiz, para) == pytest.approx(6.0)              # parallel gap
+    assert dist(horiz, slant) == pytest.approx(0.0)             # crossing lines meet
+    assert dist(horiz, c1) == pytest.approx(8.0)                # line to circle
+    assert dist(slant, c1) == pytest.approx(0.0)                # the line cuts it
+    assert dist(c1, c2) == pytest.approx(5.0)                   # outside each other
+    assert dist(c1, inner) == pytest.approx(1.5)                # one inside the other
+    assert dist(c1, sk.circle(sk.point(3, 0), 2.0)) == pytest.approx(0.0)   # overlapping

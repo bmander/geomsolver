@@ -90,6 +90,10 @@ homotopy, JSON I/O, examples), and `web/src/app/` is the sketcher —
   through — `Sketch.arc_through`, which builds the circumcircle and picks the sweep
   containing that point), wheel zoom, right-drag pan; Escape steps back one stage at a
   time — stop a DOF animation, drop the points a tool has collected, leave the tool;
+* a measurement readout in the canvas's lower right whenever exactly two entities are
+  selected: their distance from `distance_between` in the model (so the readout and any
+  constraint you then apply agree on what "distance" means), plus Δx/Δy for two points and
+  the angle for two lines;
 * select by clicking (shift = multi) or by dragging a box over empty canvas — window
   selection, so an entity comes along only if all of it is inside (a line's two
   endpoints, a circle's whole extent, every point of an arc's sweep), previewed live
@@ -97,7 +101,16 @@ homotopy, JSON I/O, examples), and `web/src/app/` is the sketcher —
 * the constraint toolbar (Coincident, Distance, Horizontal, Vertical, Parallel,
   Perpendicular, On line, Midpoint, On circle, Angle, Equal, Tangent, Radius, Symmetric,
   Fix, and **G** to mark lines/circles/arcs as construction geometry — drawn dashed, still
-  constraining, persisted with the document).
+  constraining, persisted with the document).  Distance with two lines selected dimensions
+  the gap between them, signed so it keeps the side you drew.  It dimensions the gap
+  only — pair it with Parallel unless the rest of the sketch already forces the two lines
+  parallel, which is usually the case and is why bundling the parallelism into it made
+  sketches quietly redundant.  A point and a line selected together give `PointLineDistance`:
+  the point's perpendicular offset from the line, also signed, and measured to the *infinite*
+  line so the foot may fall past the end of the segment.  Two circles or arcs give
+  `AnnularDistance`: the radial thickness of the ring between them.  None of the three creates
+  the alignment it dimensions — pair them with Parallel, or Coincident on the centres, when
+  nothing else in the sketch already implies it.
   Equal takes an equality *set*: n selected lines or n circles/arcs become n−1
   constraints against the first, added as one edit — one solve, one undo step;
 * entity colouring by constraint state, dashed halos and labels on the culprits of a

@@ -222,6 +222,65 @@ def three_point_arc(ax: float, ay: float, bx: float, by: float,
     return ThreePointArc(ox, oy, r, tb, tb + (2 * math.pi - to_b), True)
 
 
+def signed_point_to_line(p: tuple[float, float], ln: Line) -> float:
+    """Signed perpendicular offset from the *infinite* line through `ln`, positive to the left
+    of its direction — the convention `PointLineDistance` and `ParallelDistance` use, so the UI
+    can prefill their prompts with the value the sketch already shows, sign included.
+
+    A degenerate line has no side; it gives inf rather than a silent zero.
+    """
+    ax, ay = ln.p1.xy
+    dx, dy = ln.direction()
+    length = math.hypot(dx, dy)
+    if length == 0.0:
+        return math.inf
+    return (dx * (p[1] - ay) - dy * (p[0] - ax)) / length
+
+
+def _point_to_line(p: tuple[float, float], ln: Line) -> float:
+    """Perpendicular distance from a point to the *infinite* line through `ln`."""
+    if ln.direction() == (0.0, 0.0):
+        return math.dist(p, ln.p1.xy)
+    return abs(signed_point_to_line(p, ln))
+
+
+_MEASURE_ORDER = {"point": 0, "line": 1, "circle": 2, "arc": 2}
+
+
+def distance_between(a: Primitive, b: Primitive) -> float:
+    """Shortest distance between two entities, as a sketcher measures it.
+
+    Lines are treated as infinite — perpendicular distance to one, the gap between two
+    parallel ones — because that is what dimensioning them means; two lines that cross are
+    0 apart.  Arcs are measured as the whole circle they lie on, which is exact for the
+    common cases and an over-estimate of the true gap only when the nearest approach is off
+    the swept part.
+    """
+    if _MEASURE_ORDER[a.kind] > _MEASURE_ORDER[b.kind]:
+        a, b = b, a
+    if isinstance(a, Point):
+        if isinstance(b, Point):
+            return math.dist(a.xy, b.xy)
+        if isinstance(b, Line):
+            return _point_to_line(a.xy, b)
+        return abs(math.dist(a.xy, b.center.xy) - abs(b.radius.value))
+    if isinstance(a, Line):
+        if isinstance(b, Line):
+            d1, d2 = a.direction(), b.direction()
+            cross = d1[0] * d2[1] - d1[1] * d2[0]
+            if abs(cross) > 1e-9 * math.hypot(*d1) * math.hypot(*d2):
+                return 0.0                       # they meet somewhere
+            return _point_to_line(b.p1.xy, a)
+        if isinstance(b, (Circle, Arc)):
+            return max(0.0, _point_to_line(b.center.xy, a) - abs(b.radius.value))
+    if isinstance(a, (Circle, Arc)) and isinstance(b, (Circle, Arc)):
+        # outside each other, or one inside the other; overlapping rings give 0
+        gap = math.dist(a.center.xy, b.center.xy)
+        r1, r2 = abs(a.radius.value), abs(b.radius.value)
+        return max(0.0, gap - r1 - r2, abs(r1 - r2) - gap)
+    raise AssertionError(f"unordered pair: {a.kind}, {b.kind}")   # pragma: no cover
+
+
 def expand(ents: Iterable[Primitive]) -> list[Primitive]:
     """Entities plus their sub-entities (a line's endpoints, an arc's centre/ends)."""
     out: list[Primitive] = []

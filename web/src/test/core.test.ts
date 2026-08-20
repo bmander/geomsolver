@@ -12,7 +12,7 @@ import { build, knownRadii } from '../core/cgraph.js';
 import { PlanDrag, PlanSolver, decompose } from '../core/decompose.js';
 import { diagnose, distanceRigidity, minimalConflictSet, violatedConstraints } from '../core/diagnose.js';
 import { enumerateStep } from '../core/homotopy.js';
-import { Sketch } from '../core/model.js';
+import { Sketch, distanceBetween } from '../core/model.js';
 import { Rng } from '../core/rng.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
 import { analyze } from '../core/witness.js';
@@ -270,6 +270,28 @@ for (const name of ['rect_fillets', 'slotted_link', 'truss']) {
     }
   });
 }
+
+test('the two distance-to-a-line constraints are PL elements', () => {
+  // both are one residual — a signed offset from an infinite line — so a sketch that
+  // dimensions a gap still decomposes instead of falling back to the numeric core
+  const sk = new Sketch();
+  const base = sk.line(sk.point(0, 0, true), sk.point(10, 0, true));
+  const other = sk.line(sk.point(1, 3), sk.point(12, 9));
+  const p = sk.point(4, 9);
+  sk.add(new C.Parallel(base, other), new C.ParallelDistance(base, other, 5),
+         new C.Distance(base.p1, other.p1, 5), new C.Distance(other.p1, other.p2, 10),
+         new C.PointLineDistance(p, base, 3), new C.Distance(base.p1, p, 5));
+  assert.equal(build(sk).unsupported.length, 0);
+  const ps = new PlanSolver(sk);
+  try {
+    assert.ok(ps.plan.fullyDecomposed, ps.plan.summary());
+    const r = ps.solve(1e-9, false);
+    assert.ok(r.success && r.maxResidual < 1e-8);
+    assert.ok(Math.abs(other.p2.y.value - 5) < 1e-7 && Math.abs(p.y.value - 3) < 1e-7);
+  } finally {
+    ps.dispose();
+  }
+});
 
 test('unsupported constraints fall back to the numeric core', () => {
   const sk = examples.polygonChain(8);
@@ -652,6 +674,128 @@ test('a three-point arc refuses collinear input', () => {
   assert.equal(sk.arcThrough(a, b, [20, 1e-12]), null);  // scale-free, not an absolute epsilon
   assert.equal(sk.points.length, n);                     // nothing was created
   assert.ok(sk.arcThrough(a, b, [5, 0.01]));             // a real, very flat arc is fine
+});
+
+test('sameConstraint matches exact repeats', () => {
+  // a duplicate adds equations without adding rank, and the structural matching cannot see
+  // it — this is the check that keeps one out of a sketch
+  const sk = new Sketch();
+  const p = sk.point(0, 0), q = sk.point(3, 0), r = sk.point(0, 4);
+  const line = sk.line(p, q);
+  assert.ok(C.sameConstraint(new C.Coincident(p, q), new C.Coincident(p, q)));
+  assert.ok(!C.sameConstraint(new C.Coincident(p, q), new C.Coincident(p, r)));
+  assert.ok(!C.sameConstraint(new C.Coincident(p, q), new C.Midpoint(p, line)));
+  assert.ok(C.sameConstraint(new C.Distance(p, q, 5), new C.Distance(p, q, 5)));
+  assert.ok(!C.sameConstraint(new C.Distance(p, q, 5), new C.Distance(p, q, 6)));  // a conflict
+  assert.ok(C.sameConstraint(new C.Symmetric(p, q, line), new C.Symmetric(p, q, line)));
+});
+
+test('sameConstraint sees through a swapped pair, but only where that is a no-op', () => {
+  const sk = new Sketch();
+  const p = sk.point(0, 0), q = sk.point(3, 0);
+  const l1 = sk.line(p, q), l2 = sk.line(sk.point(0, 5), sk.point(3, 5));
+  const c1 = sk.circle(p, 2), c2 = sk.circle(q, 3);
+  assert.ok(C.sameConstraint(new C.Coincident(p, q), new C.Coincident(q, p)));
+  assert.ok(C.sameConstraint(new C.Parallel(l1, l2), new C.Parallel(l2, l1)));
+  assert.ok(C.sameConstraint(new C.Perpendicular(l1, l2), new C.Perpendicular(l2, l1)));
+  assert.ok(C.sameConstraint(new C.EqualLength(l1, l2), new C.EqualLength(l2, l1)));
+  assert.ok(C.sameConstraint(new C.EqualRadius(c1, c2), new C.EqualRadius(c2, c1)));
+  assert.ok(C.sameConstraint(new C.Distance(p, q, 5), new C.Distance(q, p, 5)));
+  assert.ok(C.sameConstraint(new C.Symmetric(p, q, l1), new C.Symmetric(q, p, l1)));
+  // the first argument is the reference for these, so a swap means something else
+  assert.ok(!C.sameConstraint(new C.Angle(l1, l2, 0.7), new C.Angle(l2, l1, 0.7)));
+  assert.ok(!C.sameConstraint(new C.ParallelDistance(l1, l2, 4), new C.ParallelDistance(l2, l1, 4)));
+  assert.ok(!C.sameConstraint(new C.AnnularDistance(c1, c2, 1), new C.AnnularDistance(c2, c1, 1)));
+});
+
+test('annular distance sets the ring thickness', () => {
+  const sk = new Sketch();
+  const c = sk.point(0, 0, true);
+  const inner = sk.circle(c, 10), outer = sk.circle(c, 12);
+  sk.add(new C.Radius(inner, 10), new C.AnnularDistance(inner, outer, 3));
+  assert.ok(solve(sk).success);
+  assert.ok(Math.abs(outer.radius.value - 13) < 1e-9);
+});
+
+test('annular distance is signed and drives either circle', () => {
+  const sk = new Sketch();
+  const c = sk.point(0, 0, true);
+  const inner = sk.circle(c, 10), outer = sk.circle(c, 12);
+  sk.add(new C.Radius(outer, 20), new C.AnnularDistance(inner, outer, -4));
+  assert.ok(solve(sk).success);
+  assert.ok(Math.abs(inner.radius.value - 24) < 1e-9);   // negative d flips which is outer
+});
+
+test('annular distance carries a known radius along a chain of rings', () => {
+  const sk = new Sketch();
+  const c = sk.point(0, 0, true);
+  const inner = sk.circle(c, 10), mid = sk.circle(c, 13), outer = sk.circle(c, 15);
+  sk.add(new C.Radius(inner, 10), new C.AnnularDistance(inner, mid, 3),
+         new C.AnnularDistance(mid, outer, 2));
+  const g = build(sk);
+  assert.equal(g.unsupported.length, 0);
+  assert.equal(g.knownRadius.get(mid.radius), 13);       // resolves from the one dimension
+  assert.equal(g.knownRadius.get(outer.radius), 15);
+});
+
+test('point-line distance offsets a point from a line', () => {
+  const sk = new Sketch();
+  const base = sk.line(sk.point(0, 0, true), sk.point(10, 0, true));
+  const p = sk.point(4, 9);
+  sk.add(new C.PointLineDistance(p, base, 3));
+  assert.ok(solve(sk).success);
+  assert.ok(Math.abs(p.y.value - 3) < 1e-7);          // left of a +x base is +y
+  assert.ok(Math.abs(p.x.value - 4) < 1e-7);          // it slides only perpendicular
+});
+
+test('the sign of a point-line distance picks the side', () => {
+  const sk = new Sketch();
+  const base = sk.line(sk.point(0, 0, true), sk.point(10, 0, true));
+  const p = sk.point(4, 9);
+  sk.add(new C.PointLineDistance(p, base, -3));
+  assert.ok(solve(sk).success);
+  assert.ok(Math.abs(p.y.value + 3) < 1e-7);
+});
+
+test('point-line distance measures to the infinite line', () => {
+  // the foot of the perpendicular may fall well outside the segment
+  const sk = new Sketch();
+  const base = sk.line(sk.point(0, 0, true), sk.point(1, 0, true));
+  const p = sk.point(50, 9);
+  sk.add(new C.PointLineDistance(p, base, 3));
+  assert.ok(solve(sk).success);
+  assert.ok(Math.abs(p.y.value - 3) < 1e-7 && Math.abs(p.x.value - 50) < 1e-7);
+});
+
+test('parallel distance dimensions the gap between parallel lines', () => {
+  const sk = new Sketch();
+  const base = sk.line(sk.point(0, 0, true), sk.point(10, 0, true));
+  const other = sk.line(sk.point(1, 3), sk.point(12, 9));
+  sk.add(new C.Parallel(base, other), new C.ParallelDistance(base, other, 5));
+  assert.ok(solve(sk).success);
+  for (const p of [other.p1, other.p2]) assert.ok(Math.abs(p.y.value - 5) < 1e-7);
+});
+
+test('parallel distance does not itself make lines parallel', () => {
+  // it dimensions a gap; `Parallel` creates the parallelism.  Bundling the two duplicated a
+  // constraint most sketches already imply.
+  const sk = new Sketch();
+  const base = sk.line(sk.point(0, 0, true), sk.point(10, 0, true));
+  const other = sk.line(sk.point(1, 3), sk.point(12, 9));
+  sk.add(new C.ParallelDistance(base, other, 5));
+  assert.ok(solve(sk).success);
+  assert.ok(Math.abs(other.p1.y.value - 5) < 1e-7);
+  const [d1, d2] = [base.direction(), other.direction()];
+  assert.ok(Math.abs(d1[0] * d2[1] - d1[1] * d2[0]) > 1e-6);   // still skew
+});
+
+test('the sign of a parallel distance picks the side', () => {
+  const sk = new Sketch();
+  const base = sk.line(sk.point(0, 0, true), sk.point(10, 0, true));
+  const other = sk.line(sk.point(1, 3), sk.point(12, 9));
+  sk.add(new C.Parallel(base, other), new C.ParallelDistance(base, other, -5));
+  assert.ok(solve(sk).success);
+  assert.ok(Math.abs(other.p1.y.value + 5) < 1e-7);
 });
 
 test('a rectangle is rigid up to its five degrees of freedom', () => {

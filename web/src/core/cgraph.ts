@@ -159,6 +159,19 @@ export function knownRadii(sketch: Sketch): Map<Param, number> {
     const root = uf.find(ridx.get(r)!);
     if (r.fixed && !known.has(root)) known.set(root, r.value);
   }
+  // an annular thickness carries a known radius across to the other circle; iterate so a
+  // chain of nested rings resolves from whichever one of them is dimensioned
+  const offsets = hard.filter((c): c is C.AnnularDistance => c instanceof C.AnnularDistance);
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const c of offsets) {
+      const a = uf.find(ridx.get(c.c1.radius)!), b = uf.find(ridx.get(c.c2.radius)!);
+      if (known.has(a) && !known.has(b)) known.set(b, known.get(a)! + c.d);
+      else if (known.has(b) && !known.has(a)) known.set(a, known.get(b)! - c.d);
+      else continue;
+      changed = true;
+    }
+  }
   const out = new Map<Param, number>();
   for (const r of radii) {
     const root = uf.find(ridx.get(r)!);
@@ -184,6 +197,11 @@ export function build(sketch: Sketch): ConstraintGraph {
       g.edges.push({ kind: 'PP', a: g.P(c.p), b: g.P(c.q), value: () => c.d, source: c });
     } else if (c instanceof C.PointOnLine) {
       g.edges.push({ kind: 'PL', a: g.P(c.p), b: g.L(c.line), value: zero, source: c });
+    } else if (c instanceof C.PointLineDistance) {
+      g.edges.push({ kind: 'PL', a: g.P(c.p), b: g.L(c.line), value: () => c.d, source: c });
+    } else if (c instanceof C.ParallelDistance) {
+      // one residual — l2's first endpoint offset from l1 — so it is the same PL element
+      g.edges.push({ kind: 'PL', a: g.P(c.l2.p1), b: g.L(c.l1), value: () => c.d, source: c });
     } else if (c instanceof C.Horizontal) {
       g.dirs.push({ a: X_AXIS, b: g.L(c.line), phi: branch([0, 1], lineNormal(c.line), 0), source: c });
     } else if (c instanceof C.Vertical) {
@@ -214,7 +232,7 @@ export function build(sketch: Sketch): ConstraintGraph {
       g.edges.push({ kind: 'PL', a: pe, b: R, value: zero, source: null });
       const nR = normalOf(c.arc.center.x.value, c.arc.center.y.value, pt.x.value, pt.y.value);
       g.dirs.push({ a: g.L(c.line), b: R, phi: branch(lineNormal(c.line), nR, Math.PI / 2), source: c });
-    } else if (c instanceof C.EqualRadius && rad(c.c1) !== undefined) {
+    } else if ((c instanceof C.EqualRadius || c instanceof C.AnnularDistance) && rad(c.c1) !== undefined) {
       // absorbed into the known radii
     } else {
       g.unsupported.push(c);

@@ -3,10 +3,10 @@
  * on), re-diagnoses and notifies the shell exactly once. */
 import * as io from '../core/io.js';
 import * as C from '../core/constraints.js';
-import { Constraint } from '../core/constraints.js';
+import { Constraint, sameConstraint } from '../core/constraints.js';
 import { PlanDrag, PlanResult, PlanSolver, asSolveResult, pppTriangles } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
-import { Arc, Circle, Line, Param, Point, Primitive, Sketch, threePointArc } from '../core/model.js';
+import { Arc, Box, Circle, Line, Param, Point, Primitive, Sketch, threePointArc } from '../core/model.js';
 import { Method, RadiusDrag, SolveResult, System, Triangle } from '../core/system.js';
 import { Motion, WitnessReport, analyze, movingParams } from '../core/witness.js';
 
@@ -71,6 +71,9 @@ export class SketchView {
   onChanged: () => void = () => {};
   /** The active tool changed (including when Escape backs out of one). */
   onTool: (tool: Tool) => void = () => {};
+  /** A pointer interaction changed the canvas selection — so the canvas now has the focus,
+   *  and whatever else was focused (a constraint row) no longer does. */
+  onSelect: () => void = () => {};
   /** Per gesture frame: the sketch's structure and the constraint list are unchanged, so
    *  only the status line needs updating (a drag's numbers, a band's selection count). */
   onDragFrame: () => void = () => {};
@@ -286,8 +289,27 @@ export class SketchView {
   /** Add one or more constraints as a single edit: one undo entry, one solve, one
    *  diagnosis.  A multi-entity action (an equality set, Horizontal over several lines)
    *  is one thing the user did, so it should take one Ctrl+Z to undo. */
+  /** Add constraints, silently dropping any that repeat one the sketch already has.
+   *
+   *  A duplicate is pure cost: it adds equations without adding rank, and the structural
+   *  check cannot see that, so it lurks until an unrelated edit tips its block into a
+   *  spurious over-constrained report — a long way from the click that caused it. */
   addConstraints(...cs: Constraint[]): void {
     if (!cs.length) return;
+    const have = this.sketch.userConstraints();
+    const fresh: Constraint[] = [];
+    for (const c of cs) {                        // ...against this batch too, not just the sketch
+      if (!have.some((e) => sameConstraint(e, c)) && !fresh.some((e) => sameConstraint(e, c))) {
+        fresh.push(c);
+      }
+    }
+    if (!fresh.length) {
+      const kinds = [...new Set(cs.map((c) => c.typeName))].join(' + ');
+      this.onStatus(`${kinds} is already on this selection — nothing added`);
+      return;
+    }
+    const skipped = cs.length - fresh.length;
+    cs = fresh;
     this.pushUndo();
     this.sketch.add(...cs);
     const res = this.afterEdit();
@@ -295,11 +317,12 @@ export class SketchView {
     const st = d?.status ?? 'well';
     const kinds = [...new Set(cs.map((c) => c.typeName))].join(' + ');
     const what = cs.length === 1 ? kinds : `${cs.length} × ${kinds}`;
+    const dup = skipped ? ` (${skipped} duplicate${skipped > 1 ? 's' : ''} skipped)` : '';
     const why = st === 'conflict' && d?.conflicts?.length
       ? ` — CONFLICT, remove one of: ${d.conflicts.map((k) => io.describe(k, this.sketch)).join(', ')}`
       : st === 'over' ? ' — redundant (consistent) with existing constraints'
       : res && !res.success ? ' — solver did NOT converge' : '';
-    this.onStatus(`added ${what}${why}`);
+    this.onStatus(`added ${what}${dup}${why}`);
   }
 
   removeConstraint(c: Constraint): void {
@@ -681,6 +704,7 @@ export class SketchView {
         this.onStatus(`${ent.kind} is fully constrained — nothing here is free to move`);
       }
     }
+    this.onSelect();
     this.onChanged();
     this.draw();
   }
@@ -843,11 +867,14 @@ export class SketchView {
   private bandGesture(from: [number, number]): Gesture {
     const base = [...this.selected];
     let to = from;                     // the gesture owns both corners, so paint reads no globals
+    // nothing moves during a selection drag, so the extents are computed once, not per frame
+    const extents = this.sketch.primitives().map((e) => [e, e.bounds()] as const);
     return {
       move: (sp) => {
         to = sp;
         // live preview: the canvas shows what would be selected, the status line the count
-        this.selected = [...new Set([...base, ...this.boxContents(from, sp)])];
+        this.selected = [...new Set([...base, ...this.boxContents(extents, from, sp)])];
+        this.onSelect();
         this.onDragFrame();
       },
       paint: (ctx) => {
@@ -865,18 +892,17 @@ export class SketchView {
     };
   }
 
-  /** Entities lying entirely inside the box — "window" selection.  "All of it is inside"
-   *  is exactly "its bounds are inside", so this asks the model rather than re-deriving each
-   *  primitive's extent (a line's two endpoints, a circle's rim, an arc's sweep). */
-  private boxContents(from: [number, number], to: [number, number]): Primitive[] {
+  /** Entities lying entirely inside the box — "window" selection.  "All of it is inside" is
+   *  exactly "its bounds are inside", so the caller asks the model for each primitive's extent
+   *  (a line's two endpoints, a circle's rim, an arc's sweep) once per gesture. */
+  private boxContents(extents: readonly (readonly [Primitive, Box])[],
+                      from: [number, number], to: [number, number]): Primitive[] {
     const a = this.s2w(from[0], from[1]);
     const b = this.s2w(to[0], to[1]);
     const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]);
     const y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
-    return this.sketch.primitives().filter((e) => {
-      const bb = e.bounds();
-      return bb[0] >= x0 && bb[1] >= y0 && bb[2] <= x1 && bb[3] <= y1;
-    });
+    return extents.filter(([, bb]) => bb[0] >= x0 && bb[1] >= y0 && bb[2] <= x1 && bb[3] <= y1)
+      .map(([e]) => e);
   }
 
   /** Cursor affordance: what a press here would grab. */

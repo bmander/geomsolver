@@ -168,6 +168,21 @@ def known_radii(sketch: Sketch) -> dict[int, float]:
     for r in radii:
         if r.fixed:
             known.setdefault(ruf.find(ridx[id(r)]), r.value)
+    # an annular thickness carries a known radius across to the other circle; iterate so a
+    # chain of nested rings resolves from whichever one of them is dimensioned
+    offsets = [c for c in hard if isinstance(c, C.AnnularDistance)]
+    changed = True
+    while changed:
+        changed = False
+        for c in offsets:
+            a, b = ruf.find(ridx[id(c.c1.radius)]), ruf.find(ridx[id(c.c2.radius)])
+            if a in known and b not in known:
+                known[b] = known[a] + c.d
+            elif b in known and a not in known:
+                known[a] = known[b] - c.d
+            else:
+                continue
+            changed = True
     return {id(r): known[ruf.find(ridx[id(r)])] for r in radii if ruf.find(ridx[id(r)]) in known}
 
 
@@ -188,6 +203,11 @@ def build(sketch: Sketch) -> ConstraintGraph:
             g.edges.append(Edge("PP", g.P(c.p), g.P(c.q), _attr(c, "d"), c))
         elif isinstance(c, C.PointOnLine):
             g.edges.append(Edge("PL", g.P(c.p), g.L(c.line), (lambda: 0.0), c))
+        elif isinstance(c, C.PointLineDistance):
+            g.edges.append(Edge("PL", g.P(c.p), g.L(c.line), _attr(c, "d"), c))
+        elif isinstance(c, C.ParallelDistance):
+            # one residual — l2's first endpoint offset from l1 — so it is the same PL element
+            g.edges.append(Edge("PL", g.P(c.l2.p1), g.L(c.l1), _attr(c, "d"), c))
         elif isinstance(c, C.Horizontal):
             g.dirs.append(DirRelation(X_AXIS, g.L(c.line), _branch((0.0, 1.0), line_normal(c.line), 0.0), c))
         elif isinstance(c, C.Vertical):
@@ -210,7 +230,7 @@ def build(sketch: Sketch) -> ConstraintGraph:
             g.edges.append(Edge("PL", pe, R, (lambda: 0.0), None))
             nR = normal_of(c.arc.center.x.value, c.arc.center.y.value, pt.x.value, pt.y.value)
             g.dirs.append(DirRelation(g.L(c.line), R, _branch(line_normal(c.line), nR, math.pi / 2), c))
-        elif isinstance(c, C.EqualRadius) and rad(c.c1) is not None:
+        elif isinstance(c, (C.EqualRadius, C.AnnularDistance)) and rad(c.c1) is not None:
             pass                                         # absorbed into known radii
         else:
             g.unsupported.append(c)

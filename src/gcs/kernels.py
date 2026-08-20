@@ -69,6 +69,12 @@ def _row1(*cols: Arr) -> Arr:
     return np.stack(cols, axis=1)[:, None, :]
 
 
+def _ratio_row(dC: Arr, dL: Arr, L: Arr, C: Arr) -> Arr:
+    """Jacobian row of C/L from dC and dL — the quotient rule, shared by the signed
+    distance-to-a-line kernels."""
+    return (dC / L[:, None] - (C / (L * L))[:, None] * dL)[:, None, :]
+
+
 # -- point / point ----------------------------------------------------------
 
 coincident = linear_kernel("coincident", [[1, 0, -1, 0], [0, 1, 0, -1]])          # (px,py,qx,qy)
@@ -163,15 +169,18 @@ equal_length = kernel("equal_length", 1, 8, 0, _equal_length_res, _equal_length_
 
 # -- incidence --------------------------------------------------------------
 
+def _pl_parts(V: Arr) -> tuple[Arr, Arr, Arr, Arr]:
+    """(px,py,ax,ay,bx,by) → the line's direction a→b and the offset a→p."""
+    return V[:, 4] - V[:, 2], V[:, 5] - V[:, 3], V[:, 0] - V[:, 2], V[:, 1] - V[:, 3]
+
+
 def _point_on_line_res(V: Arr, K: Arr) -> Arr:             # (px,py,ax,ay,bx,by)
-    dx, dy = V[:, 4] - V[:, 2], V[:, 5] - V[:, 3]
-    wx, wy = V[:, 0] - V[:, 2], V[:, 1] - V[:, 3]
+    dx, dy, wx, wy = _pl_parts(V)
     return (dx * wy - dy * wx)[:, None]
 
 
 def _point_on_line_jac(V: Arr, K: Arr) -> Arr:
-    dx, dy = V[:, 4] - V[:, 2], V[:, 5] - V[:, 3]
-    wx, wy = V[:, 0] - V[:, 2], V[:, 1] - V[:, 3]
+    dx, dy, wx, wy = _pl_parts(V)
     return _row1(-dy, dx, dy - wy, wx - dx, wy, -wx)
 
 
@@ -217,9 +226,9 @@ def _tangent_line_circle_jac(V: Arr, K: Arr) -> Arr:
     z = np.zeros_like(L)
     dC = np.stack([dy - wy, wx - dx, wy, -wx, -dy, dx, z], axis=1)
     dL = np.stack([-dx / L, -dy / L, dx / L, dy / L, z, z, z], axis=1)
-    J = dC / L[:, None] - (C / (L * L))[:, None] * dL
-    J[:, 6] = -K[:, 0]
-    return J[:, None, :]
+    J = _ratio_row(dC, dL, L, C)
+    J[:, 0, 6] = -K[:, 0]                                  # the radius column is not part of the ratio
+    return J
 
 
 tangent_line_circle = kernel("tangent_line_circle", 1, 7, 1, _tangent_line_circle_res, _tangent_line_circle_jac)
@@ -278,3 +287,48 @@ def _symmetric_jac(V: Arr, K: Arr) -> Arr:
 
 
 symmetric = kernel("symmetric", 2, 8, 0, _symmetric_res, _symmetric_jac)
+
+
+# -- parallel offset --------------------------------------------------------
+
+def _pd_parts(V: Arr) -> tuple[Arr, Arr, Arr, Arr]:
+    """(a1,b1,a2,b2) → l1's direction and the offset a1→a2.  Not `_dirs`: l2 contributes only
+    its first endpoint here, so l2's direction would be computed and thrown away."""
+    return V[:, 2] - V[:, 0], V[:, 3] - V[:, 1], V[:, 4] - V[:, 0], V[:, 5] - V[:, 1]
+
+
+def _parallel_distance_res(V: Arr, K: Arr) -> Arr:         # K=(d,)
+    d1x, d1y, wx, wy = _pd_parts(V)
+    return ((d1x * wy - d1y * wx) / np.hypot(d1x, d1y) - K[:, 0])[:, None]
+
+
+def _parallel_distance_jac(V: Arr, K: Arr) -> Arr:
+    d1x, d1y, wx, wy = _pd_parts(V)
+    L, z = np.hypot(d1x, d1y), np.zeros_like(d1x)
+    dC = np.stack([d1y - wy, wx - d1x, wy, -wx, -d1y, d1x, z, z], axis=1)
+    dL = np.stack([-d1x / L, -d1y / L, d1x / L, d1y / L, z, z, z, z], axis=1)
+    return _ratio_row(dC, dL, L, d1x * wy - d1y * wx)
+
+
+parallel_distance = kernel("parallel_distance", 1, 8, 1, _parallel_distance_res, _parallel_distance_jac)
+
+
+def _point_line_distance_res(V: Arr, K: Arr) -> Arr:       # (px,py,ax,ay,bx,by) K=(d,)
+    dx, dy, wx, wy = _pl_parts(V)
+    return ((dx * wy - dy * wx) / np.hypot(dx, dy) - K[:, 0])[:, None]
+
+
+def _point_line_distance_jac(V: Arr, K: Arr) -> Arr:
+    dx, dy, wx, wy = _pl_parts(V)
+    L, z = np.hypot(dx, dy), np.zeros_like(dx)
+    dC = np.stack([-dy, dx, dy - wy, wx - dx, wy, -wx], axis=1)
+    dL = np.stack([z, z, -dx / L, -dy / L, dx / L, dy / L], axis=1)
+    return _ratio_row(dC, dL, L, dx * wy - dy * wx)
+
+
+point_line_distance = kernel("point_line_distance", 1, 6, 1,
+                             _point_line_distance_res, _point_line_distance_jac)
+
+# (r1,r2) K=(d,): r2 − r1 − d — the annulus between two concentric circles
+annular_distance = kernel("annular_distance", 1, 2, 1,
+                          lambda V, K: (V[:, 1] - V[:, 0] - K[:, 0])[:, None], const_jac=[[-1.0, 1.0]])

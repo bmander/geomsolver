@@ -37,6 +37,7 @@ class Constraint:
     spec: tuple[tuple[str, str], ...] = ()
     soft: bool = False        # soft constraints (drag targets) don't count toward convergence
     intrinsic: bool = False   # implied by a primitive's definition (e.g. arc endpoints at radius)
+    commutative: ClassVar[bool] = False   # the first two spec entities may be swapped (see same_constraint)
 
     @property
     def n_residuals(self) -> int:
@@ -70,12 +71,45 @@ class Constraint:
         return f"{type(self).__name__}(n={self.n_residuals})"
 
 
+def _same_args(a: Constraint, b: Constraint, swap: bool) -> bool:
+    ents = [i for i, (_, kind) in enumerate(a.spec) if kind in ENTITY_KINDS]
+    order = list(range(len(a.spec)))
+    if swap:
+        if len(ents) < 2:
+            return False
+        order[ents[0]], order[ents[1]] = order[ents[1]], order[ents[0]]
+    av, bv = a.args(), b.args()
+    for i, (_, kind) in enumerate(a.spec):
+        x, y = av[i], bv[order[i]]
+        if (x is not y) if kind in ENTITY_KINDS else (x != y):
+            return False
+    return True
+
+
+def same_constraint(a: Constraint, b: Constraint) -> bool:
+    """True when two constraints say exactly the same thing: same type, the same entities in
+    the same roles, the same values.  `commutative` types also match with their first two
+    entities swapped, since picking the pair in the other order means the same relation.
+
+    Driven by `spec`, so a new constraint type is covered as soon as it declares one.
+
+    An exact duplicate is worth keeping out of a sketch: it adds equations without adding rank,
+    and a structural matching cannot see that — two identical rows still match two different
+    variables — so it stays invisible until some unrelated edit tips the block into a
+    (spurious) over-constrained report.
+    """
+    if type(a) is not type(b):
+        return False
+    return _same_args(a, b, swap=False) or (a.commutative and _same_args(a, b, swap=True))
+
+
 # ---------------------------------------------------------------------------
 # Point–point
 
 
 class Coincident(Constraint):
     kernel = K.coincident
+    commutative = True
     spec = (("p", "point"), ("q", "point"))
 
     def __init__(self, p: Point, q: Point) -> None:
@@ -87,6 +121,7 @@ class Distance(Constraint):
     """‖p − q‖² − d² = 0."""
 
     kernel = K.distance
+    commutative = True
     spec = (("p", "point"), ("q", "point"), ("d", "length"))
 
     def __init__(self, p: Point, q: Point, d: float) -> None:
@@ -158,12 +193,14 @@ class Parallel(_TwoLine):
     """d1 × d2 = 0."""
 
     kernel = K.parallel
+    commutative = True
 
 
 class Perpendicular(_TwoLine):
     """d1 · d2 = 0."""
 
     kernel = K.perpendicular
+    commutative = True
 
 
 class Angle(_TwoLine):
@@ -180,10 +217,32 @@ class Angle(_TwoLine):
         return np.array([math.sin(self.theta), math.cos(self.theta)])
 
 
+class ParallelDistance(_TwoLine):
+    """The gap between two parallel lines: l2's first endpoint sits a signed distance `d` from
+    l1's infinite line, positive to the left of l1's direction.
+
+    One residual.  It dimensions the gap; it does not *create* the parallelism — add
+    `Parallel` for that if nothing else already implies it.  Bundling both in duplicated a
+    parallelism that the rest of a sketch has usually already forced (a symmetry plus a chain
+    of perpendiculars is enough), and the resulting redundancy was hard to see.
+    """
+
+    kernel = K.parallel_distance
+    spec = (("l1", "line"), ("l2", "line"), ("d", "length"))
+
+    def __init__(self, l1: Line, l2: Line, d: float) -> None:
+        super().__init__(l1, l2)
+        self.d = float(d)
+
+    def consts(self) -> Vec:
+        return np.array([self.d])
+
+
 class EqualLength(_TwoLine):
     """|d1|² − |d2|² = 0."""
 
     kernel = K.equal_length
+    commutative = True
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +258,26 @@ class PointOnLine(Constraint):
     def __init__(self, p: Point, line: Line) -> None:
         self.p, self.line = p, line
         self.params = p.params + line.params
+
+
+class PointLineDistance(Constraint):
+    """Signed perpendicular distance from `p` to `line`'s infinite line equals `d`, positive to
+    the left of the line's direction.
+
+    Signed rather than absolute: the residual has no kink at zero, and negating `d` moves the
+    point to the other side the way a tangency's `side` flag does.  `PointOnLine` is the d = 0
+    case and stays separate — it is a polynomial and needs no division.
+    """
+
+    kernel = K.point_line_distance
+    spec = (("p", "point"), ("line", "line"), ("d", "length"))
+
+    def __init__(self, p: Point, line: Line, d: float) -> None:
+        self.p, self.line, self.d = p, line, float(d)
+        self.params = p.params + line.params
+
+    def consts(self) -> Vec:
+        return np.array([self.d])
 
 
 class PointOnCircle(Constraint):
@@ -231,11 +310,33 @@ class Radius(Constraint):
 
 class EqualRadius(Constraint):
     kernel = K.equal_radius
+    commutative = True
     spec = (("c1", "circle_or_arc"), ("c2", "circle_or_arc"))
 
     def __init__(self, c1: Circle | Arc, c2: Circle | Arc) -> None:
         self.c1, self.c2 = c1, c2
         self.params = (c1.radius, c2.radius)
+
+
+class AnnularDistance(Constraint):
+    """The annulus between two concentric circles: r2 − r1 = d, so `d` is the ring's radial
+    thickness, positive when `c2` is the outer one.
+
+    One residual, on the radii alone.  It does not make the pair concentric — `Coincident` on
+    the two centres does that, and folding it in here would restate a constraint the sketch
+    almost always already carries (the same trap `ParallelDistance` fell into).  Off-centre it
+    still means "r2 − r1", which is the eccentric-annulus reading, not a rim-to-rim gap.
+    """
+
+    kernel = K.annular_distance
+    spec = (("c1", "circle_or_arc"), ("c2", "circle_or_arc"), ("d", "length"))
+
+    def __init__(self, c1: Circle | Arc, c2: Circle | Arc, d: float) -> None:
+        self.c1, self.c2, self.d = c1, c2, float(d)
+        self.params = (c1.radius, c2.radius)
+
+    def consts(self) -> Vec:
+        return np.array([self.d])
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +371,7 @@ class TangentCircleCircle(Constraint):
     """‖c1 − c2‖² − (r1 ± r2)² = 0 (external: +, internal: −)."""
 
     kernel = K.tangent_circle_circle
+    commutative = True
     spec = (("c1", "circle_or_arc"), ("c2", "circle_or_arc"), ("external", "bool"))
 
     def __init__(self, c1: Circle | Arc, c2: Circle | Arc, external: bool = True) -> None:
@@ -285,6 +387,7 @@ class Symmetric(Constraint):
     at a right angle.  Two residuals, and the line itself is free to move."""
 
     kernel = K.symmetric
+    commutative = True
     spec = (("p", "point"), ("q", "point"), ("line", "line"))
 
     def __init__(self, p: Point, q: Point, line: Line) -> None:

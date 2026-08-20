@@ -14,7 +14,9 @@ import * as examples from '../core/examples.js';
 import * as io from '../core/io.js';
 import { Constraint, ENTITY_KINDS } from '../core/constraints.js';
 import { applyAlternative, enumerateStep, isCurrent } from '../core/homotopy.js';
-import { Arc, Circle, Line, Point, Primitive, Sketch, expand } from '../core/model.js';
+import {
+  Arc, Circle, Line, Point, Primitive, Sketch, distanceBetween, expand, signedPointToLine,
+} from '../core/model.js';
 import { METHODS, Method } from '../core/system.js';
 import { initCore } from '../core/wasm.js';
 import { movingParams, witnessSummary } from '../core/witness.js';
@@ -28,16 +30,32 @@ const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const barTools = document.getElementById('bar-tools') as HTMLElement;
 const barConstraints = document.getElementById('bar-constraints') as HTMLElement;
 const clist = document.getElementById('clist') as HTMLElement;
+const elist = document.getElementById('elist') as HTMLElement;
+const ccount = document.getElementById('ccount') as HTMLElement;
+const ecount = document.getElementById('ecount') as HTMLElement;
 const banner = document.getElementById('banner') as HTMLElement;
 const bannerText = document.getElementById('banner-text') as HTMLElement;
 const bannerSelect = document.getElementById('banner-select') as HTMLButtonElement;
+const measureEl = document.getElementById('measure') as HTMLElement;
 
 await initCore();
 (document.getElementById('loading') as HTMLElement).remove();
 
 const view = new SketchView(canvas, examples.rectFillets());
 let currentConstraint: Constraint | null = null;
+
+/** Move the keyboard focus onto a constraint row, or off it with null.  Delete acts on
+ *  whichever of the two selections holds the focus, so exactly one of `currentConstraint` and
+ *  `view.selected` is ever populated — that is the whole reason deleting a constraint stopped
+ *  taking the geometry with it, so every path that sets either one comes through here. */
+function focusConstraint(c: Constraint | null, highlight?: Primitive[]): void {
+  currentConstraint = c;
+  view.highlight = highlight ?? (c ? expand(c.entities()) : []);
+  if (c) view.selected = [];
+}
 let rows: Constraint[] = [];
+let erows: Primitive[] = [];
+let lastSelKey = '';
 const toolButtons = new Map<Tool, HTMLButtonElement>();
 
 /* -- toolbars ---------------------------------------------------------------- */
@@ -164,19 +182,70 @@ function applySimple([, cls, nPts, nLines, nCirc]: typeof SIMPLE[number]): void 
 
 async function cDistance(): Promise<void> {
   let { pts } = sel();
-  const { lines } = sel();
+  const { lines, circles } = sel();
+  if (!pts.length && lines.length === 2) return cParallelDistance(lines[0], lines[1]);
+  if (pts.length === 1 && lines.length === 1) return cPointLineDistance(pts[0], lines[0]);
+  if (!pts.length && !lines.length && circles.length === 2) return cAnnularDistance(circles[0], circles[1]);
   if (!pts.length && lines.length === 1) pts = [lines[0].p1, lines[0].p2];
-  if (!need(pts.length === 2, 'two points (or one line)')) return;
+  if (!need(pts.length === 2, 'two points, one line, a point and a line, two lines, or two circles')) return;
   const cur = Math.hypot(pts[0].x.value - pts[1].x.value, pts[0].y.value - pts[1].y.value);
   const v = await askNumber('Distance', 'Distance', cur);
   if (v !== null) view.addConstraints(new C.Distance(pts[0], pts[1], v));
 }
 
+/** Two lines: dimension the gap between them.  It does not make them parallel, so say so when
+ *  they are not already — otherwise the dimension pins only one endpoint and the result looks
+ *  arbitrary. */
+async function cParallelDistance(l1: Line, l2: Line): Promise<void> {
+  const [dx, dy] = l1.direction();
+  const [ex, ey] = l2.direction();
+  const len = Math.hypot(dx, dy);
+  if (!need(len > 0, 'a line with two distinct endpoints')) return;
+  const cur = signedPointToLine(l2.p1.x.value, l2.p1.y.value, l1);
+  const v = await askNumber('Parallel distance', 'Gap (negative puts the second line on the other side)', cur);
+  if (v === null) return;
+  view.addConstraints(new C.ParallelDistance(l1, l2, v));
+  if (Math.abs(dx * ey - dy * ex) > 1e-9 * len * Math.hypot(ex, ey)) {
+    toast('the gap is dimensioned, but these lines are not parallel — add Parallel if you want them to be');
+  }
+}
+
+/** A point and a line: dimension the point's perpendicular offset, signed so negating it moves
+ *  the point across.  Measured to the infinite line — the foot may fall off the end of the
+ *  segment, which is what a drawing means by "distance to this edge". */
+async function cPointLineDistance(p: Point, line: Line): Promise<void> {
+  const [dx, dy] = line.direction();
+  if (!need(Math.hypot(dx, dy) > 0, 'a line with two distinct endpoints')) return;
+  if (!need(p !== line.p1 && p !== line.p2, 'a point that is not an endpoint of the line')) return;
+  const v = await askNumber('Point-line distance', 'Offset (negative puts the point on the other side)',
+                            signedPointToLine(p.x.value, p.y.value, line));
+  if (v !== null) view.addConstraints(new C.PointLineDistance(p, line, v));
+}
+
+/** Signed CCW angle from l1 to l2 in degrees. */
+function angleDeg(l1: Line, l2: Line): number {
+  const [d1, d2] = [l1.direction(), l2.direction()];
+  return (Math.atan2(d1[0] * d2[1] - d1[1] * d2[0], d1[0] * d2[0] + d1[1] * d2[1]) * 180) / Math.PI;
+}
+
+/** Two circles or arcs: dimension the annulus between them.  Like the parallel gap it sizes
+ *  the ring without centring it, so say so when the centres are not already together. */
+async function cAnnularDistance(c1: Circle | Arc, c2: Circle | Arc): Promise<void> {
+  const cur = Math.abs(c2.radius.value) - Math.abs(c1.radius.value);
+  const v = await askNumber('Annular distance',
+                            'Ring thickness (negative makes the first circle the outer one)', cur);
+  if (v === null) return;
+  view.addConstraints(new C.AnnularDistance(c1, c2, v));
+  const [a, b] = [c1.center, c2.center];
+  if (Math.hypot(a.x.value - b.x.value, a.y.value - b.y.value) > 1e-9) {
+    toast('the ring is dimensioned, but these circles are not concentric — add Coincident on their centres');
+  }
+}
+
 async function cAngle(): Promise<void> {
   const { lines } = sel();
   if (!need(lines.length === 2, 'two lines')) return;
-  const [d1, d2] = [lines[0].direction(), lines[1].direction()];
-  const cur = (Math.atan2(d1[0] * d2[1] - d1[1] * d2[0], d1[0] * d2[0] + d1[1] * d2[1]) * 180) / Math.PI;
+  const cur = angleDeg(lines[0], lines[1]);
   const v = await askNumber('Angle', 'Angle from the first to the second line (degrees)', cur);
   if (v !== null) view.addConstraints(new C.Angle(lines[0], lines[1], (v * Math.PI) / 180));
 }
@@ -388,8 +457,7 @@ function rebuildRows(next: Constraint[]): void {
     li.dataset.base = io.describe(c, ix);
     li.textContent = li.dataset.base;
     li.addEventListener('click', () => {
-      currentConstraint = c;
-      view.highlight = expand(c.entities());
+      focusConstraint(c);
       refresh();
       view.draw();
     });
@@ -417,15 +485,81 @@ async function editValue(c: Constraint): Promise<void> {
   toast(`${c.typeName} has no editable dimension`);
 }
 
-function sameRows(a: Constraint[], b: Constraint[]): boolean {
+/** Same objects in the same order — the lists are rebuilt only when this fails, so rows keep
+ *  their DOM nodes (and the user's scroll position) across ordinary edits and drags. */
+function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
   return a.length === b.length && a.every((c, i) => c === b[i]);
+}
+
+/** A component row's fixed part: its short name, its type, and the points that define it, so
+ *  the list reads as the sketch's structure rather than as coordinates that churn on every
+ *  drag.  Live values belong in the measurement readout, not here. */
+function describeEntity(e: Primitive, ix: io.Index): string {
+  const n = ix.name(e).padEnd(4);
+  if (e instanceof Line) return `${n}line    ${ix.name(e.p1)}–${ix.name(e.p2)}`;
+  if (e instanceof Arc) return `${n}arc     @${ix.name(e.center)} ${ix.name(e.start)}–${ix.name(e.end)}`;
+  if (e instanceof Circle) return `${n}circle  @${ix.name(e.center)}`;
+  return `${n}point`;
+}
+
+function rebuildERows(next: Primitive[]): void {
+  const ix = new io.Index(view.sketch);
+  elist.replaceChildren();
+  next.forEach((e) => {
+    const li = document.createElement('li');
+    li.dataset.base = describeEntity(e, ix);
+    li.addEventListener('click', (ev) => {
+      if (ev.shiftKey) {
+        const i = view.selected.indexOf(e);
+        if (i >= 0) view.selected.splice(i, 1);
+        else view.selected.push(e);
+      } else {
+        view.selected = [e];
+      }
+      focusConstraint(null);          // the canvas selection has the focus, so Del means geometry
+      refresh();
+      view.draw();
+    });
+    elist.append(li);
+  });
+  erows = next;
+}
+
+/** The component list, mirrored from the constraint list above it: a row is marked when the
+ *  entity is selected, and softly marked when the focused constraint reaches it — so picking
+ *  either list shows you what it touches in the other. */
+function refreshERows(): void {
+  const next = view.sketch.primitives();
+  if (!sameList(next, erows)) rebuildERows(next);
+  ecount.textContent = String(erows.length);
+
+  const sel = new Set(view.selected);
+  const lit = new Set(view.highlight);
+  erows.forEach((e, i) => {
+    const li = elist.children[i] as HTMLElement;
+    const fixed = e instanceof Point && e.isFixed;
+    const constr = !(e instanceof Point) && e.construction;
+    li.textContent = `${li.dataset.base}${fixed ? '  ·fixed' : ''}${constr ? '  ·constr' : ''}`;
+    li.classList.toggle('sel', sel.has(e));
+    li.classList.toggle('touches', !sel.has(e) && lit.has(e));
+    li.classList.toggle('construction', constr);
+  });
+
+  // a highlight you cannot see is no highlight: bring the first selected row into view, but
+  // only when the selection actually changed, so the list stays put while you scroll it
+  const key = view.selected.map((e) => erows.indexOf(e)).join(',');
+  if (key !== lastSelKey) {
+    lastSelKey = key;
+    const first = erows.indexOf(view.selected[0]);
+    if (first >= 0) (elist.children[first] as HTMLElement).scrollIntoView({ block: 'nearest' });
+  }
 }
 
 /** Rows and banner: everything that only changes when the sketch or the selection does. */
 function refreshRows(): void {
   const sk = view.sketch;
   const next = sk.userConstraints();
-  if (!sameRows(next, rows)) rebuildRows(next);
+  if (!sameList(next, rows)) rebuildRows(next);
   if (currentConstraint && !rows.includes(currentConstraint)) currentConstraint = null;
 
   const d = view.diagnosis;
@@ -447,7 +581,33 @@ function refreshRows(): void {
     li.classList.toggle('touches', hit);
     li.setAttribute('aria-current', String(c === currentConstraint));
   });
+  ccount.textContent = String(rows.length);
+  refreshERows();
   refreshBanner();
+}
+
+/** Measurement readout: with exactly two entities picked, what separates them.
+ *
+ *  Distances come from `distanceBetween` in the model, so the readout and any constraint you
+ *  then apply agree on what "distance" means — lines are infinite, arcs are their circle.
+ *  Two lines also get their angle, which is the informative number when they are not
+ *  parallel and the distance is 0 by definition. */
+function refreshMeasure(): void {
+  const [a, b] = view.selected;
+  if (!b || view.selected.length !== 2) {
+    measureEl.className = '';
+    return;
+  }
+  const ix = new io.Index(view.sketch);
+  const rows = [`<b>${ix.name(a)} → ${ix.name(b)}</b>`];
+  rows.push(`distance  ${io.fmt(distanceBetween(a, b), 6)}`);
+  if (a instanceof Point && b instanceof Point) {
+    rows.push(`Δx ${io.fmt(b.x.value - a.x.value, 6)}   Δy ${io.fmt(b.y.value - a.y.value, 6)}`);
+  } else if (a instanceof Line && b instanceof Line) {
+    rows.push(`angle     ${io.fmt(angleDeg(a, b), 4)}°`);
+  }
+  measureEl.innerHTML = rows.join('\n');
+  measureEl.className = 'on';
 }
 
 /** The status line — the only thing that changes on every frame of a drag. */
@@ -473,6 +633,7 @@ function refreshStatus(): void {
     msg += `   | plan: ${view.lastPlan.plan.summary()}${view.lastPlan.fellBack ? ' (fell back)' : ''}`;
   }
   stats(msg);
+  refreshMeasure();
 }
 
 function refresh(): void {
@@ -502,9 +663,9 @@ bannerSelect.addEventListener('click', () => {
   const d = view.diagnosis;
   if (!d) return;
   const culprits = d.conflicts?.length ? d.conflicts : d.over;
-  view.selected = [...new Set(culprits.flatMap((c) => c.entities()))] as Primitive[];
-  currentConstraint = culprits[0] ?? null;
-  view.highlight = currentConstraint ? expand(currentConstraint.entities()) : [];
+  // the banner names a *set*, so show all of it — but the focus stays on the one constraint
+  // Delete would remove, rather than on the geometry the set happens to touch
+  focusConstraint(culprits[0] ?? null, expand(new Set(culprits.flatMap((c) => c.entities()))));
   refresh();
   view.draw();
 });
@@ -524,10 +685,9 @@ window.addEventListener('keydown', (e) => {
   if (k === 'escape') { view.cancelTool(); return; }
   if (k === 'delete' || k === 'backspace') {
     e.preventDefault();
-    if (currentConstraint && !view.selected.length) {
+    if (currentConstraint) {
       const c = currentConstraint;
-      currentConstraint = null;
-      view.highlight = [];
+      focusConstraint(null);
       view.removeConstraint(c);
       toast(`removed ${c.typeName}`);
     } else {
@@ -542,6 +702,7 @@ window.addEventListener('keydown', (e) => {
 
 /* -- boot ------------------------------------------------------------------------- */
 
+view.onSelect = () => { if (currentConstraint) focusConstraint(null); };
 view.onChanged = refresh;
 view.onDragFrame = refreshStatus;
 view.onStatus = toast;

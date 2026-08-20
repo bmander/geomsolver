@@ -42,6 +42,54 @@ def test_examples_fully_decompose_and_replay_exactly(name: str) -> None:
         assert r.success and max(p.x.value for p in sk.points) == pytest.approx(140.0, abs=1e-6)
 
 
+def test_point_line_distance_is_a_pl_element() -> None:
+    """It is the same F–H element as PointOnLine, just with a non-zero distance, so a point
+    placed by one distance to a point and one to a line still decomposes."""
+    sk = Sketch()
+    base = sk.line(sk.point(0, 0, fixed=True), sk.point(10, 0, fixed=True))
+    p = sk.point(4, 9)
+    sk.add(C.PointLineDistance(p, base, 3.0), C.Distance(base.p1, p, 5.0))
+    g = build(sk)
+    assert not g.unsupported and sum(e.kind == "PL" for e in g.edges) == 3   # + the two endpoints
+    ps = PlanSolver(sk)
+    assert ps.plan.fully_decomposed, ps.plan.summary()
+    r = ps.solve(fallback=False)
+    assert r.success and r.max_residual < 1e-8
+    assert p.y.value == pytest.approx(3.0, abs=1e-7) and p.x.value == pytest.approx(4.0, abs=1e-7)
+
+
+def test_annular_distance_carries_a_known_radius() -> None:
+    """Like EqualRadius it is absorbed into the known-radius map rather than becoming an
+    element, so a ring dimensioned on one circle still places geometry on the other."""
+    sk = Sketch()
+    c = sk.point(0, 0, fixed=True)
+    inner, mid, outer = sk.circle(c, 10.0), sk.circle(c, 13.0), sk.circle(c, 15.0)
+    sk.add(C.Radius(inner, 10.0), C.AnnularDistance(inner, mid, 3.0),
+           C.AnnularDistance(mid, outer, 2.0))
+    g = build(sk)
+    assert not g.unsupported
+    kr = g.known_radius                                  # the chain resolves from the one dimension
+    assert kr[id(mid.radius)] == pytest.approx(13.0) and kr[id(outer.radius)] == pytest.approx(15.0)
+
+
+def test_parallel_distance_is_a_pl_element() -> None:
+    """Now that it is one residual it is the same PL element as PointLineDistance, so a gap
+    dimension no longer forces the whole sketch onto the numeric fallback."""
+    sk = Sketch()
+    base = sk.line(sk.point(0, 0, fixed=True), sk.point(10, 0, fixed=True))
+    other = sk.line(sk.point(1, 3), sk.point(12, 9))
+    sk.add(C.Parallel(base, other), C.ParallelDistance(base, other, 5.0),
+           C.Distance(base.p1, other.p1, 5.0), C.Distance(other.p1, other.p2, 10.0))
+    g = build(sk)
+    assert not g.unsupported
+    ps = PlanSolver(sk)
+    assert ps.plan.fully_decomposed, ps.plan.summary()
+    r = ps.solve(fallback=False)
+    assert r.success and r.max_residual < 1e-8
+    for p in (other.p1, other.p2):
+        assert p.y.value == pytest.approx(5.0, abs=1e-7)
+
+
 def test_unsupported_constraints_fall_back_to_numeric() -> None:
     sk = examples.polygon_chain(8)
     ps = PlanSolver(sk)

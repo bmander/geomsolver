@@ -31,6 +31,12 @@ export abstract class Constraint {
   /** Implied by a primitive's definition (an arc's endpoints sit at its radius). */
   intrinsic = false;
 
+  /** The first two spec entities may be swapped without changing the relation — see
+   *  `sameConstraint`.  Read off the class, so subclasses declare it as a static. */
+  get commutative(): boolean {
+    return (this.constructor as typeof Constraint & { commutative?: boolean }).commutative ?? false;
+  }
+
   get spec(): Spec {
     return (this.constructor as typeof Constraint & { spec: Spec }).spec;
   }
@@ -71,9 +77,39 @@ export abstract class Constraint {
   }
 }
 
+function sameArgs(a: Constraint, b: Constraint, swap: boolean): boolean {
+  const spec = a.spec;
+  const order = spec.map((_, i) => i);
+  if (swap) {
+    const ents = spec.flatMap(([, k], i) => (ENTITY_KINDS.has(k) ? [i] : []));
+    if (ents.length < 2) return false;
+    [order[ents[0]], order[ents[1]]] = [order[ents[1]], order[ents[0]]];
+  }
+  const [av, bv] = [a.args(), b.args()];
+  return spec.every(([, kind], i) => (ENTITY_KINDS.has(kind)
+    ? av[i] === bv[order[i]]
+    : Object.is(av[i], bv[order[i]])));
+}
+
+/** True when two constraints say exactly the same thing: same type, the same entities in the
+ *  same roles, the same values.  `commutative` types also match with their first two entities
+ *  swapped, since picking the pair in the other order means the same relation.
+ *
+ *  Driven by `spec`, so a new constraint type is covered as soon as it declares one.
+ *
+ *  An exact duplicate is worth keeping out of a sketch: it adds equations without adding rank,
+ *  and a structural matching cannot see that — two identical rows still match two different
+ *  variables — so it stays invisible until some unrelated edit tips the block into a
+ *  (spurious) over-constrained report. */
+export function sameConstraint(a: Constraint, b: Constraint): boolean {
+  if (a.constructor !== b.constructor) return false;
+  return sameArgs(a, b, false) || (a.commutative && sameArgs(a, b, true));
+}
+
 /* -- point / point ---------------------------------------------------------- */
 
 export class Coincident extends Constraint {
+  static readonly commutative = true;
   readonly kernelId = K.Coincident;
   static readonly spec: Spec = [['p', 'point'], ['q', 'point']];
   constructor(readonly p: Point, readonly q: Point) {
@@ -84,6 +120,7 @@ export class Coincident extends Constraint {
 
 /** |p - q|^2 - d^2 = 0. */
 export class Distance extends Constraint {
+  static readonly commutative = true;
   readonly kernelId = K.Distance;
   static readonly spec: Spec = [['p', 'point'], ['q', 'point'], ['d', 'length']];
   d: number;
@@ -151,12 +188,14 @@ abstract class TwoLine extends Constraint {
 
 /** d1 x d2 = 0. */
 export class Parallel extends TwoLine {
+  static readonly commutative = true;
   readonly kernelId = K.Parallel;
   static override readonly spec: Spec = [['l1', 'line'], ['l2', 'line']];
 }
 
 /** d1 . d2 = 0. */
 export class Perpendicular extends TwoLine {
+  static readonly commutative = true;
   readonly kernelId = K.Perpendicular;
   static override readonly spec: Spec = [['l1', 'line'], ['l2', 'line']];
 }
@@ -173,8 +212,27 @@ export class Angle extends TwoLine {
   override consts(): number[] { return [Math.sin(this.theta), Math.cos(this.theta)]; }
 }
 
+/** The gap between two parallel lines: l2's first endpoint sits a signed distance `d` from
+ *  l1's infinite line, positive to the left of l1's direction.
+ *
+ *  One residual.  It dimensions the gap; it does not *create* the parallelism — add
+ *  `Parallel` for that if nothing else already implies it.  Bundling both in duplicated a
+ *  parallelism that the rest of a sketch has usually already forced (a symmetry plus a chain
+ *  of perpendiculars is enough), and the resulting redundancy was hard to see. */
+export class ParallelDistance extends TwoLine {
+  readonly kernelId = K.ParallelDistance;
+  static override readonly spec: Spec = [['l1', 'line'], ['l2', 'line'], ['d', 'length']];
+  d: number;
+  constructor(l1: Line, l2: Line, d: number) {
+    super(l1, l2);
+    this.d = d;
+  }
+  override consts(): number[] { return [this.d]; }
+}
+
 /** |d1|^2 - |d2|^2 = 0. */
 export class EqualLength extends TwoLine {
+  static readonly commutative = true;
   readonly kernelId = K.EqualLength;
   static override readonly spec: Spec = [['l1', 'line'], ['l2', 'line']];
 }
@@ -189,6 +247,24 @@ export class PointOnLine extends Constraint {
     super();
     this.params = [...p.params, ...line.params];
   }
+}
+
+/** Signed perpendicular distance from `p` to `line`'s infinite line equals `d`, positive to
+ *  the left of the line's direction.
+ *
+ *  Signed rather than absolute: the residual has no kink at zero, and negating `d` moves the
+ *  point to the other side the way a tangency's `side` flag does.  `PointOnLine` is the d = 0
+ *  case and stays separate — it is a polynomial and needs no division. */
+export class PointLineDistance extends Constraint {
+  readonly kernelId = K.PointLineDistance;
+  static readonly spec: Spec = [['p', 'point'], ['line', 'line'], ['d', 'length']];
+  d: number;
+  constructor(readonly p: Point, readonly line: Line, d: number) {
+    super();
+    this.d = d;
+    this.params = [...p.params, ...line.params];
+  }
+  override consts(): number[] { return [this.d]; }
 }
 
 /** |p - c|^2 - r^2 = 0. */
@@ -217,12 +293,32 @@ export class Radius extends Constraint {
 }
 
 export class EqualRadius extends Constraint {
+  static readonly commutative = true;
   readonly kernelId = K.EqualRadius;
   static readonly spec: Spec = [['c1', 'circle_or_arc'], ['c2', 'circle_or_arc']];
   constructor(readonly c1: Circle | Arc, readonly c2: Circle | Arc) {
     super();
     this.params = [c1.radius, c2.radius];
   }
+}
+
+/** The annulus between two concentric circles: r2 − r1 = d, so `d` is the ring's radial
+ *  thickness, positive when `c2` is the outer one.
+ *
+ *  One residual, on the radii alone.  It does not make the pair concentric — `Coincident` on
+ *  the two centres does that, and folding it in here would restate a constraint the sketch
+ *  almost always already carries (the same trap `ParallelDistance` fell into).  Off-centre it
+ *  still means "r2 − r1", which is the eccentric-annulus reading, not a rim-to-rim gap. */
+export class AnnularDistance extends Constraint {
+  readonly kernelId = K.AnnularDistance;
+  static readonly spec: Spec = [['c1', 'circle_or_arc'], ['c2', 'circle_or_arc'], ['d', 'length']];
+  d: number;
+  constructor(readonly c1: Circle | Arc, readonly c2: Circle | Arc, d: number) {
+    super();
+    this.d = d;
+    this.params = [c1.radius, c2.radius];
+  }
+  override consts(): number[] { return [this.d]; }
 }
 
 /* -- tangency --------------------------------------------------------------- */
@@ -249,6 +345,7 @@ export class TangentLineCircle extends Constraint {
 
 /** |c1 - c2|^2 - (r1 +- r2)^2 = 0 (external: +, internal: -). */
 export class TangentCircleCircle extends Constraint {
+  static readonly commutative = true;
   readonly kernelId = K.TangentCircleCircle;
   static readonly spec: Spec = [['c1', 'circle_or_arc'], ['c2', 'circle_or_arc'], ['external', 'bool']];
   external: boolean;
@@ -275,6 +372,7 @@ export class TangentArcLine extends Constraint {
 /** p and q mirror each other across `line`: their midpoint is on it and p->q crosses it at a
  *  right angle.  Two residuals, and the line itself is free to move. */
 export class Symmetric extends Constraint {
+  static readonly commutative = true;
   readonly kernelId = K.Symmetric;
   static readonly spec: Spec = [['p', 'point'], ['q', 'point'], ['line', 'line']];
   constructor(readonly p: Point, readonly q: Point, readonly line: Line) {
@@ -289,8 +387,8 @@ export type ConstraintCtor = (new (...args: never[]) => Constraint) & { spec: Sp
 
 export const CONSTRAINT_TYPES: Record<string, ConstraintCtor> = {
   Coincident, Distance, Midpoint, DragTarget, Horizontal, Vertical, Parallel, Perpendicular,
-  Angle, EqualLength, PointOnLine, PointOnCircle, Radius, EqualRadius, TangentLineCircle,
-  TangentCircleCircle, TangentArcLine, Symmetric,
+  Angle, ParallelDistance, EqualLength, PointOnLine, PointLineDistance, PointOnCircle, Radius,
+  EqualRadius, AnnularDistance, TangentLineCircle, TangentCircleCircle, TangentArcLine, Symmetric,
 } as unknown as Record<string, ConstraintCtor>;
 
 registerArcIntrinsic((p, circle, intrinsic) => new PointOnCircle(p, circle, intrinsic));
