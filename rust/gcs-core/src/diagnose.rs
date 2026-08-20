@@ -157,15 +157,21 @@ pub fn removable_constraints(sk: &Sketch, w: &Mat, row_c: &[u32], rtol: f64) -> 
         return Vec::new();
     }
     let mut rows: Vec<(u32, Vec<usize>)> = Vec::new();
+    let mut at: BTreeMap<u32, usize> = BTreeMap::new(); // constraint -> its slot in `rows`
     for (r, &c) in row_c.iter().enumerate() {
-        match rows.iter_mut().find(|(k, _)| *k == c) {
-            Some((_, v)) => v.push(r),
-            None => rows.push((c, vec![r])),
+        match at.get(&c) {
+            Some(&i) => rows[i].1.push(r),
+            None => {
+                at.insert(c, rows.len());
+                rows.push((c, vec![r]));
+            }
         }
     }
+    let intrinsic: BTreeSet<u32> =
+        sk.constraints.iter().filter(|c| c.intrinsic).map(|c| c.id).collect();
     let mut out = Vec::new();
     for (cid, rs) in rows {
-        if sk.constraint(cid).map(|c| c.intrinsic).unwrap_or(false) {
+        if intrinsic.contains(&cid) {
             continue;
         }
         let sub = w.select_rows(&rs);
@@ -186,10 +192,12 @@ pub fn removable_constraints(sk: &Sketch, w: &Mat, row_c: &[u32], rtol: f64) -> 
 pub fn violated_constraints(sk: &Sketch, sys: &mut System, tol: f64) -> Vec<u32> {
     let z = sys.z0(sk);
     let err = sys.constraint_errors(&z);
+    // one pass to collect the soft ids, rather than a linear scan of the constraint list per
+    // constraint — this runs after every edit
+    let soft: BTreeSet<u32> = sk.constraints.iter().filter(|c| c.soft).map(|c| c.id).collect();
     let mut out = Vec::new();
     for (i, &cid) in sys.cids.iter().enumerate() {
-        let soft = sk.constraint(cid).map(|c| c.soft).unwrap_or(false);
-        if !soft && !(err[i] <= tol * sys.constraint_scale(cid)) {
+        if !soft.contains(&cid) && !(err[i] <= tol * sys.constraint_scale(cid)) {
             out.push(cid);
         }
     }
@@ -257,11 +265,11 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
             comp_rank[comps.comp_col[j]] += 1;
         }
     }
+    let mut comp_seen: Vec<BTreeSet<u32>> = vec![BTreeSet::new(); n_comp];
     for r in 0..adj.len() {
-        let c = row_c[r];
-        let bucket = &mut comp_cs[comps.comp_row[r]];
-        if !bucket.contains(&c) {
-            bucket.push(c);
+        let (c, k) = (row_c[r], comps.comp_row[r]);
+        if comp_seen[k].insert(c) {
+            comp_cs[k].push(c); // in row order, deduplicated in constant time
         }
     }
     let mut components: Vec<Component> = (0..n_comp)
@@ -477,12 +485,9 @@ pub fn minimal_conflict_set(
 ) -> Vec<u32> {
     let x0 = sk.get_x();
     let hard: Vec<u32> = sk.hard_ids();
+    let hard_set: BTreeSet<u32> = hard.iter().copied().collect();
     let cands: Vec<u32> = match candidates {
-        Some(c) => c
-            .iter()
-            .copied()
-            .filter(|id| sk.constraint(*id).map(|k| !k.soft).unwrap_or(false))
-            .collect(),
+        Some(c) => c.iter().copied().filter(|id| hard_set.contains(id)).collect(),
         None => hard.clone(),
     };
     let cand_set: BTreeSet<u32> = cands.iter().copied().collect();

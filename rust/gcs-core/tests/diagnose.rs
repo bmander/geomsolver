@@ -286,3 +286,18 @@ fn the_conflict_search_is_not_confined_to_the_over_block() {
     // the over-block is still reported for what it is
     assert!(d.over.contains(&h1) || d.over.contains(&h2), "{:?}", d.over);
 }
+
+/// Diagnosis runs after every edit, so its bookkeeping has to stay linear in the constraint
+/// count.  This is the same answer as the small cases, at a size where a per-constraint scan of
+/// the constraint list would show.
+#[test]
+fn diagnosis_scales_to_a_large_sketch() {
+    let mut sk = examples::truss(40, 20.0, 15.0, true);
+    assert!(sk.constraints.len() > 150, "{}", sk.constraints.len());
+    let d = diagnose(&mut sk, DiagnoseOptions { numeric: Some(false), ..Default::default() });
+    assert_eq!(d.status, State::Well, "{}", gcs_core::diagnose::summary(&d));
+    assert_eq!(d.dof, 0);
+    assert!(d.violated.is_empty());
+    assert_eq!(d.components.len(), 1);
+    assert_eq!(d.components[0].constraints.len(), sk.hard_constraints().len());
+}
