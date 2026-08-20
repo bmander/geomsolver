@@ -197,7 +197,8 @@ pub fn violated_constraints(sk: &Sketch, sys: &mut System, tol: f64) -> Vec<u32>
     let soft: BTreeSet<u32> = sk.constraints.iter().filter(|c| c.soft).map(|c| c.id).collect();
     let mut out = Vec::new();
     for (i, &cid) in sys.cids.iter().enumerate() {
-        if !soft.contains(&cid) && !(err[i] <= tol * sys.constraint_scale(cid)) {
+        let lim = tol * sys.constraint_scale(cid);
+        if !soft.contains(&cid) && (err[i].is_nan() || err[i] > lim) {
             out.push(cid);
         }
     }

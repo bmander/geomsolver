@@ -1176,10 +1176,8 @@ pub unsafe extern "C" fn gcs_system_constraint_errors(
         if n < e.len() {
             set_error(format!("constraint_errors: {} entries need {} slots", e.len(), e.len()));
         }
-        for i in 0..n {
-            *out.add(i) = e[i];
-            *ids.add(i) = sys.cids[i] as i32;
-        }
+        write(out, &e[..n]);
+        write_map(ids, &sys.cids[..n], |&c| c as i32);
         n as i32
     })
 }

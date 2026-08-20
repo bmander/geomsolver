@@ -97,17 +97,23 @@ impl System {
         let mut n2 = 0.0;
         let mut mx = 0.0f64;
         let mut rel = 0.0f64;
+        // NaN is not "no error", and `f64::max` would drop it: track it and let it win at the end
+        let mut nan = false;
         for i in 0..r.len() {
             n2 += r[i] * r[i];
             if self.hard[i] {
                 let a = r[i].abs();
-                if !(a <= mx) {
-                    mx = a; // NaN wins: it is not "no error"
-                }
-                if !(a / self.row_scale[i] <= rel) {
-                    rel = a / self.row_scale[i];
+                if a.is_nan() {
+                    nan = true;
+                } else {
+                    mx = mx.max(a);
+                    rel = rel.max(a / self.row_scale[i]);
                 }
             }
+        }
+        if nan {
+            mx = f64::NAN;
+            rel = f64::NAN;
         }
         SolveResult {
             // relative, not absolute: a radius kernel's residual is a length and a distance
