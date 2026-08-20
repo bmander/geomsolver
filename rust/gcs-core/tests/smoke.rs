@@ -151,3 +151,54 @@ fn a_non_convergent_svd_is_reported_rather_than_read_as_rank_zero() {
     assert!(!rn.converged, "a NaN matrix was reported as a converged rank {}", rn.rank);
     assert!(!svd(&bad, false).converged);
 }
+
+/// The trust-region loop is written once and used twice: for the sketch's compiled `System` and
+/// for the tiny rigid-motion systems a cluster merge produces.  This exercises it directly on a
+/// third — Rosenbrock as a two-residual least-squares problem, whose curved valley is exactly what
+/// a globalised method is for (plain Gauss–Newton from here wanders).
+#[test]
+fn the_shared_dogleg_loop_solves_a_system_of_its_own() {
+    use gcs_core::linalg::Mat;
+    use gcs_core::newton::{dogleg, Tol, TrustRegion};
+
+    struct Rosenbrock {
+        j: Mat,
+    }
+    // r = (10(y - x²), 1 - x)
+    impl TrustRegion for Rosenbrock {
+        fn n(&self) -> usize {
+            2
+        }
+        fn m(&self) -> usize {
+            2
+        }
+        fn residuals_into(&mut self, z: &[f64], out: &mut [f64]) {
+            out[0] = 10.0 * (z[1] - z[0] * z[0]);
+            out[1] = 1.0 - z[0];
+        }
+        fn jacobian_at(&mut self, z: &[f64]) {
+            self.j = Mat::from_vec(2, 2, vec![-20.0 * z[0], 10.0, -1.0, 0.0]);
+        }
+        fn jt_mul(&mut self, v: &[f64], out: &mut [f64]) {
+            out.copy_from_slice(&self.j.mul_t_vec(v));
+        }
+        fn j_mul(&mut self, v: &[f64], out: &mut [f64]) {
+            out.copy_from_slice(&self.j.mul_vec(v));
+        }
+        fn gn_step(&mut self, r: &[f64], _g: &[f64], p: &mut [f64]) {
+            let neg: Vec<f64> = r.iter().map(|v| -v).collect();
+            let b = Mat::from_vec(2, 1, neg);
+            let (x, _) = gcs_core::linalg::min_norm_lstsq(&self.j, &b, 1e-12);
+            p.copy_from_slice(&x.data);
+        }
+    }
+
+    let mut t = Rosenbrock { j: Mat::zeros(0, 0) };
+    let mut z = vec![-1.2, 1.0];
+    let mut r = vec![0.0; 2];
+    t.residuals_into(&z, &mut r);
+    let info = dogleg(&mut t, &mut z, &mut r, Tol { ftol: 1e-12, xtol: 1e-14, gtol: 1e-16 },
+                      200, 800);
+    assert_eq!(info.status, 0, "{info:?}");
+    assert!((z[0] - 1.0).abs() < 1e-6 && (z[1] - 1.0).abs() < 1e-6, "{z:?}");
+}

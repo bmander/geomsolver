@@ -23,9 +23,9 @@ use crate::cgraph::{
     build, line_normal, normal_of, remainder, ConstraintGraph, Edge, EdgeKind, El, ElKind, X_AXIS,
 };
 use crate::graph::dulmage_mendelsohn;
-use crate::linalg::{absmax, dot, min_norm_solve, norm, rank_rrqr, Mat};
+use crate::linalg::{absmax, min_norm_solve, rank_rrqr, Mat};
 use crate::model::{increments, orientation, EntRef, Sketch};
-use crate::newton::Method;
+use crate::newton::{self, Method, Tol, TrustRegion};
 use crate::rng::Rng;
 use crate::solve::{Drag, SolveOpts, SolveResult, Triangle};
 use crate::system::System;
@@ -454,82 +454,50 @@ fn newton_small(sys: &MergeSystem, u0: &[f64], tol: f64, max_iter: usize) -> (Ve
     (u, res)
 }
 
+/// A merge system as a `TrustRegion`, so the globalised fallback is `newton::dogleg` rather
+/// than a second copy of it.  Dense and tiny: the Jacobian is rebuilt at each `jacobian_at` and
+/// the products are plain matrix–vector multiplies.
+struct MergeTr<'a, 'b> {
+    sys: &'a MergeSystem<'b>,
+    j: Mat,
+}
+
+impl TrustRegion for MergeTr<'_, '_> {
+    fn n(&self) -> usize {
+        self.sys.n
+    }
+    fn m(&self) -> usize {
+        self.sys.m
+    }
+    fn residuals_into(&mut self, z: &[f64], out: &mut [f64]) {
+        out.copy_from_slice(&self.sys.fun(z));
+    }
+    fn jacobian_at(&mut self, z: &[f64]) {
+        self.j = self.sys.jac(z);
+    }
+    fn jt_mul(&mut self, v: &[f64], out: &mut [f64]) {
+        out.copy_from_slice(&self.j.mul_t_vec(v));
+    }
+    fn j_mul(&mut self, v: &[f64], out: &mut [f64]) {
+        out.copy_from_slice(&self.j.mul_vec(v));
+    }
+    fn gn_step(&mut self, r: &[f64], _g: &[f64], p: &mut [f64]) {
+        let neg: Vec<f64> = r.iter().map(|v| -v).collect();
+        let (step, _) = min_norm_solve(&self.j, &neg, 1e-12);
+        p.copy_from_slice(&step);
+    }
+}
+
 /// Globalised fallback: DogLeg on the same tiny system.
 fn dogleg_small(sys: &MergeSystem, u0: &[f64], max_iter: usize) -> Vec<f64> {
-    let n = sys.n;
     let mut u = u0.to_vec();
     let mut r = sys.fun(&u);
-    let mut delta = f64::INFINITY;
-    for _ in 0..max_iter {
-        if absmax(&r) < 1e-13 {
-            break;
-        }
-        let j = sys.jac(&u);
-        let f = 0.5 * dot(&r, &r);
-        let g = j.mul_t_vec(&r);
-        if absmax(&g) < 1e-18 {
-            break;
-        }
-        let neg: Vec<f64> = r.iter().map(|v| -v).collect();
-        let (p_gn, _) = min_norm_solve(&j, &neg, 1e-12);
-        let gn_norm = norm(&p_gn);
-        let p: Vec<f64> = if gn_norm <= delta {
-            p_gn.clone()
-        } else {
-            let jg = j.mul_vec(&g);
-            let d = dot(&jg, &jg);
-            let alpha = if d > 0.0 { dot(&g, &g) / d } else { 0.0 };
-            let p_sd: Vec<f64> = g.iter().map(|v| -alpha * v).collect();
-            let sd_norm = norm(&p_sd);
-            if sd_norm >= delta {
-                let f2 = delta / if sd_norm == 0.0 { 1.0 } else { sd_norm };
-                p_sd.iter().map(|v| v * f2).collect()
-            } else {
-                let (mut aa, mut bb) = (0.0, 0.0);
-                for i in 0..n {
-                    let d = p_gn[i] - p_sd[i];
-                    aa += d * d;
-                    bb += 2.0 * p_sd[i] * d;
-                }
-                let cc = sd_norm * sd_norm - delta * delta;
-                let disc = (bb * bb - 4.0 * aa * cc).max(0.0);
-                let tau = if aa > 0.0 { (-bb + disc.sqrt()) / (2.0 * aa) } else { 0.0 };
-                (0..n).map(|i| p_sd[i] + tau * (p_gn[i] - p_sd[i])).collect()
-            }
-        };
-        let pnorm = norm(&p);
-        if pnorm < 1e-14 * (1.0 + norm(&u)) {
-            break;
-        }
-        let u_new: Vec<f64> = (0..n).map(|i| u[i] + p[i]).collect();
-        let r_new = sys.fun(&u_new);
-        let f_new = 0.5 * dot(&r_new, &r_new);
-        let jp = j.mul_vec(&p);
-        let mut lin = 0.0;
-        for i in 0..sys.m {
-            let v = r[i] + jp[i];
-            lin += v * v;
-        }
-        let pred = f - 0.5 * lin;
-        let rho =
-            if pred > 0.0 { (f - f_new) / pred } else if f_new < f { 1.0 } else { -1.0 };
-        if rho > 0.0 {
-            u = u_new;
-            r = r_new;
-            if rho > 0.75 {
-                if delta.is_finite() {
-                    delta = delta.max(3.0 * pnorm);
-                }
-            } else if rho < 0.25 {
-                delta = 0.5 * pnorm;
-            }
-        } else {
-            delta = 0.25 * pnorm;
-        }
-        if delta < 1e-15 * (1.0 + norm(&u)) {
-            break;
-        }
+    if r.is_empty() || u.is_empty() {
+        return u;
     }
+    let mut t = MergeTr { sys, j: Mat::zeros(0, 0) };
+    let tol = Tol { ftol: 1e-13, xtol: 1e-14, gtol: 1e-18 };
+    newton::dogleg(&mut t, &mut u, &mut r, tol, max_iter as i32, max_iter as i32 * 4);
     u
 }
 

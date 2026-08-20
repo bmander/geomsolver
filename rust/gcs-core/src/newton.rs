@@ -132,18 +132,54 @@ impl JacCtx {
     }
 }
 
-fn dogleg_core(
-    sys: &mut System,
-    c: &mut JacCtx,
+/// What DogLeg needs of a system, so the trust-region loop is written once.
+///
+/// Two quite different things are minimised by it: the sketch's compiled `System` (sparse or
+/// dense, thousands of rows) and the tiny rigid-motion systems a cluster merge produces (3k
+/// unknowns, dense).  The loop below is the same for both — the only thing that differs is how a
+/// Jacobian is applied and how a Gauss–Newton step is obtained.
+pub trait TrustRegion {
+    /// Unknowns.
+    fn n(&self) -> usize;
+    /// Residual rows.
+    fn m(&self) -> usize;
+    fn residuals_into(&mut self, z: &[f64], out: &mut [f64]);
+    /// Prepare the Jacobian at `z` for the three operations below.
+    fn jacobian_at(&mut self, z: &[f64]);
+    /// out <- Jᵀ v
+    fn jt_mul(&mut self, v: &[f64], out: &mut [f64]);
+    /// out <- J v
+    fn j_mul(&mut self, v: &[f64], out: &mut [f64]);
+    /// p <- the Gauss–Newton step solving J p ≈ −r (minimum norm where the path reports a rank).
+    fn gn_step(&mut self, r: &[f64], g: &[f64], p: &mut [f64]);
+    /// Numerical rank of J, or -1 where the path does not produce one.
+    fn rank(&self) -> i32 {
+        -1
+    }
+}
+
+/// The stopping tolerances a trust-region run is given.
+#[derive(Clone, Copy, Debug)]
+pub struct Tol {
+    /// max |r| below which the run has converged.
+    pub ftol: f64,
+    /// step norm, relative to ‖z‖, below which no progress is being made.
+    pub xtol: f64,
+    /// max |Jᵀr| below which the point is stationary.
+    pub gtol: f64,
+}
+
+/// Powell's DogLeg on any `TrustRegion`.  `z` and `r` are updated in place; `r` must hold the
+/// residuals at `z` on entry.
+pub fn dogleg<T: TrustRegion + ?Sized>(
+    t: &mut T,
     z: &mut [f64],
     r: &mut [f64],
-    ftol: f64,
-    xtol: f64,
-    gtol: f64,
+    tol: Tol,
     max_iter: i32,
     max_nfev: i32,
 ) -> Info {
-    let (m, n) = (c.m, c.n);
+    let (m, n) = (t.m(), t.n());
     let mut g = vec![0.0; n];
     let mut p = vec![0.0; n];
     let mut p_gn = vec![0.0; n];
@@ -155,26 +191,25 @@ fn dogleg_core(
     let mut status = 4;
     let mut it = 0i32;
     let mut delta = f64::INFINITY;
-    c.rank = -1;
     while it < max_iter {
-        if absmax(r) < ftol {
+        if absmax(&r[..m]) < tol.ftol {
             status = 0;
             break;
         }
-        c.eval(sys, z);
+        t.jacobian_at(z);
         njev += 1;
-        let f = 0.5 * dot(r, r);
-        c.jt_mul(sys, r, &mut g);
-        if absmax(&g) < gtol {
+        let f = 0.5 * dot(&r[..m], &r[..m]);
+        t.jt_mul(&r[..m], &mut g);
+        if absmax(&g) < tol.gtol {
             status = 2;
             break;
         }
-        c.gn_step(sys, r, &g, &mut p_gn);
+        t.gn_step(&r[..m], &g, &mut p_gn);
         let gn_norm = norm(&p_gn);
         if gn_norm <= delta {
             p.copy_from_slice(&p_gn);
         } else {
-            c.j_mul(sys, &g, &mut tmp);
+            t.j_mul(&g, &mut tmp);
             let jg = dot(&tmp[..m], &tmp[..m]);
             let alpha = if jg > 0.0 { dot(&g, &g) / jg } else { 0.0 };
             for i in 0..n {
@@ -203,17 +238,17 @@ fn dogleg_core(
             }
         }
         let pnorm = norm(&p);
-        if pnorm < xtol * (1.0 + norm(z)) {
+        if pnorm < tol.xtol * (1.0 + norm(z)) {
             status = 1;
             break;
         }
         for i in 0..n {
             z_new[i] = z[i] + p[i];
         }
-        sys.residuals_into(&z_new, &mut r_new[..m]);
+        t.residuals_into(&z_new, &mut r_new[..m]);
         nfev += 1;
         let f_new = 0.5 * dot(&r_new[..m], &r_new[..m]);
-        c.j_mul(sys, &p, &mut tmp);
+        t.j_mul(&p, &mut tmp);
         let mut lin = 0.0;
         for i in 0..m {
             let v = r[i] + tmp[i];
@@ -252,7 +287,40 @@ fn dogleg_core(
         }
         it += 1;
     }
-    Info { status, nfev, njev, iterations: it, rank: c.rank }
+    Info { status, nfev, njev, iterations: it, rank: t.rank() }
+}
+
+/// The sketch's compiled `System` as a `TrustRegion`: the Jacobian is sparse or dense by size.
+struct SysTr<'a> {
+    sys: &'a mut System,
+    c: JacCtx,
+}
+
+impl TrustRegion for SysTr<'_> {
+    fn n(&self) -> usize {
+        self.c.n
+    }
+    fn m(&self) -> usize {
+        self.c.m
+    }
+    fn residuals_into(&mut self, z: &[f64], out: &mut [f64]) {
+        self.sys.residuals_into(z, out);
+    }
+    fn jacobian_at(&mut self, z: &[f64]) {
+        self.c.eval(self.sys, z);
+    }
+    fn jt_mul(&mut self, v: &[f64], out: &mut [f64]) {
+        self.c.jt_mul(self.sys, v, out);
+    }
+    fn j_mul(&mut self, v: &[f64], out: &mut [f64]) {
+        self.c.j_mul(self.sys, v, out);
+    }
+    fn gn_step(&mut self, r: &[f64], g: &[f64], p: &mut [f64]) {
+        self.c.gn_step(self.sys, r, g, p);
+    }
+    fn rank(&self) -> i32 {
+        self.c.rank
+    }
 }
 
 fn lm_core(
@@ -417,7 +485,8 @@ pub fn solve_system(
     let info = if method == Method::Lm {
         lm_core(sys, &mut ctx, z, &mut r, ftol, xtol, gtol, max_iter, max_nfev)
     } else {
-        dogleg_core(sys, &mut ctx, z, &mut r, ftol, xtol, gtol, max_iter, max_nfev)
+        let mut t = SysTr { sys, c: ctx };
+        dogleg(&mut t, z, &mut r, Tol { ftol, xtol, gtol }, max_iter, max_nfev)
     };
     // leave the core's x in step with the returned z
     let _ = sys.residuals(z);
