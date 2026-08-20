@@ -63,10 +63,13 @@ def _result(out: Vec, message: str, method: str, t0: float) -> SolveResult:
 class System:
     """Compiled evaluation plan for one sketch topology."""
 
-    def __init__(self, sketch: Sketch, handle: Any = None, owned: bool = True) -> None:
+    def __init__(self, sketch: Sketch, handle: Any = None, owner: Any = None) -> None:
         self.sketch = sketch
-        self._h = handle if handle is not None else lib.gcs_system_new(sketch._h)
-        self._owned = owned
+        self._handle = handle if handle is not None else lib.gcs_system_new(sketch._h)
+        #: Whoever owns a borrowed handle (a PlanSolver's inner System), held so it cannot be
+        #: collected while we still point into its box.  None when the handle is ours.
+        self._owner = owner
+        self._disposed = False
         self.n_res = int(lib.gcs_system_n_res(self._h))
         self.n_free = int(lib.gcs_system_n_free(self._h))
         self.nnz = int(lib.gcs_system_nnz(self._h))
@@ -79,10 +82,22 @@ class System:
         lib.gcs_system_free_indices(self._h, _ffi.pi(free))
         self.free = free[: self.n_free].astype(np.intp)
 
+    @property
+    def _h(self) -> Any:
+        """The core handle.  Every entry point goes through here so a use-after-dispose raises
+        instead of calling into freed heap."""
+        if self._disposed:
+            raise RuntimeError("System used after dispose()")
+        return self._handle
+
     def dispose(self) -> None:
-        if self._owned and self._h:
-            lib.gcs_system_free(self._h)
-            self._h = None
+        if self._disposed:
+            return
+        self._disposed = True
+        if self._owner is None and self._handle:
+            lib.gcs_system_free(self._handle)
+        self._handle = None
+        self._owner = None
 
     def __del__(self) -> None:  # pragma: no cover - interpreter shutdown ordering
         try:

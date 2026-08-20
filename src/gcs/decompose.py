@@ -73,11 +73,13 @@ class PlanSolver:
     def __init__(self, sketch: Sketch, sticky: bool = False) -> None:
         self.sketch = sketch
         self._h = lib.gcs_plan_solver_new(sketch._h, 1 if sticky else 0)
-        #: Owned by this PlanSolver — borrow it (diagnosis does), never dispose it.
-        self.system = System(sketch, lib.gcs_plan_solver_system(self._h), owned=False)
+        #: Owned by this PlanSolver — borrow it (diagnosis does), never dispose it.  It holds a
+        #: reference back to us, so the box it points into outlives it.
+        self.system = System(sketch, lib.gcs_plan_solver_system(self._h), owner=self)
 
     def dispose(self) -> None:
         if self._h:
+            self.system.dispose()
             lib.gcs_plan_solver_free(self._h)
             self._h = None
 

@@ -183,3 +183,23 @@ def test_plan_and_numeric_agree(name: str) -> None:
         assert _all_satisfied(a) and _all_satisfied(b)
         if name != "polygon_chain":     # fully constrained: same solution
             np.testing.assert_allclose(a.get_x(), b.get_x(), atol=1e-5)
+
+
+def test_a_borrowed_system_outlives_the_plan_solver_that_lent_it() -> None:
+    """`PlanSolver.system` points into the PlanSolver's own box.  Holding only the System has to
+    keep that box alive — otherwise every call on it reads freed memory."""
+    import gc
+
+    sys = PlanSolver(examples.truss()).system     # the PlanSolver is a temporary
+    gc.collect()
+    z = sys.z0()
+    assert len(z) == sys.n_free
+    assert len(sys.residuals(z)) == sys.n_res
+
+
+def test_a_borrowed_system_raises_after_its_owner_is_disposed() -> None:
+    ps = PlanSolver(examples.truss())
+    sys = ps.system
+    ps.dispose()
+    with pytest.raises(RuntimeError, match="after dispose"):
+        sys.z0()
