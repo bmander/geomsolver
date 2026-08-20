@@ -1141,6 +1141,9 @@ fn place_root(
 /// Replay the plan on the current sketch values and write the result back.  `capture = Some(i)`
 /// returns copies of the clusters entering step i instead (no write-back).
 pub fn execute(plan: &mut Plan, sk: &mut Sketch, capture: Option<usize>) -> Option<Vec<Cluster>> {
+    // dimensions may have been edited since the plan was compiled; edge values are read from the
+    // sketch on every execution, and the radii have to be too
+    plan.graph.refresh_radii(sk);
     let mut cl: BTreeMap<usize, Cluster> = BTreeMap::new();
     {
         let g = &plan.graph;

@@ -1,5 +1,5 @@
 use gcs_core::cgraph::{build, El};
-use gcs_core::constraints::CKind;
+use gcs_core::constraints::{Arg, CKind};
 use gcs_core::constraints::Constraint;
 use gcs_core::decompose::{PlanDrag, PlanSolver};
 use gcs_core::model::{EntRef, Sketch};
@@ -247,4 +247,33 @@ fn deleting_a_point_carries_the_recorded_branches_with_the_renumbering() {
         let (bx, by) = before[i + 1];
         assert!((x - bx).hypot(y - by) < 1e-6, "point {i} moved from {:?} to {:?}", (bx, by), (x, y));
     }
+}
+
+/// A plan is compiled once per topology and replayed for dimension edits.  Known radii were
+/// snapshotted at build time, so every edit of a `Radius` replayed the old value: the residual
+/// check failed and the plan fell back to the numeric solver — a cached plan that never helped.
+#[test]
+fn editing_a_radius_replays_on_the_cached_plan() {
+    let mut sk = Sketch::new();
+    let o = sk.point(0.0, 0.0, true, "o");
+    let p = sk.point(10.0, 0.0, false, "p");
+    let ci = sk.circle(o, 10.0, "c");
+    let rc = sk.add(Constraint::radius(EntRef::circle(ci), 10.0));
+    sk.add(Constraint::new(
+        CKind::PointOnCircle,
+        vec![Arg::Ent(EntRef::point(p)), Arg::Ent(EntRef::circle(ci))],
+    ));
+
+    let mut ps = PlanSolver::new(&sk, false);
+    let r = ps.solve(&mut sk, 1e-6, true, Method::DogLeg);
+    assert!(r.success && !r.fell_back, "{r:?}");
+
+    // edit the dimension, keep the plan
+    sk.constraint_mut(rc).unwrap().set_num("r", 25.0);
+    let r = ps.solve(&mut sk, 1e-6, true, Method::DogLeg);
+    assert!(r.success, "{r:?}");
+    assert!(!r.fell_back, "the cached plan could not follow a radius edit: {r:?}");
+    assert!((sk.radius_value(EntRef::circle(ci)) - 25.0).abs() < 1e-9);
+    let (px, py) = sk.point_xy(p);
+    assert!((px.hypot(py) - 25.0).abs() < 1e-6, "the point did not follow: {:?}", (px, py));
 }

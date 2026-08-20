@@ -140,6 +140,23 @@ impl ConstraintGraph {
         self.ground_member.get(&class).copied().unwrap_or(self.members[class][0])
     }
 
+    /// Re-read the known radius values from the sketch.  `known_radius` is a value cache over a
+    /// structure fixed when the graph was built, and a plan is cached per topology and replayed
+    /// after dimension edits — so an edited `Radius` has to reach the replay, or every such edit
+    /// fails its residual check and falls back to the numeric solver.  Only radii already known
+    /// are refreshed: a change in *which* radii are known is a topology change, and recompiles.
+    pub fn refresh_radii(&mut self, sk: &Sketch) {
+        if self.known_radius.is_empty() {
+            return;
+        }
+        let fresh = known_radii(sk);
+        for (p, v) in self.known_radius.iter_mut() {
+            if let Some(&nv) = fresh.get(p) {
+                *v = nv;
+            }
+        }
+    }
+
     /// Line element for sketch line `ln`, registered on first use.
     fn line_el(&mut self, ln: usize) -> El {
         if let Some(&i) = self.line_of.get(&ln) {
