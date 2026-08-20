@@ -304,15 +304,28 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
                 let dense = sys.jacobian_dense(&z);
                 let hard_rows = sys.hard_rows();
                 let rn = rank_and_nullspace(&dense.select_rows(&hard_rows), 1e-10);
-                numeric_rank = Some(n_cols - rn.n.cols);
-                movable = movable_columns(&rn.n, 1e-8);
+                if rn.converged {
+                    numeric_rank = Some(n_cols - rn.n.cols);
+                    movable = movable_columns(&rn.n, 1e-8);
+                } else {
+                    // no rank at all, rather than the zero a failed SVD leaves behind — which
+                    // reads as "every constraint is redundant"
+                    warnings.push(
+                        "numeric rank unavailable: the SVD did not converge (a degenerate or \
+                         non-finite Jacobian) — the structural analysis stands alone"
+                            .to_string(),
+                    );
+                    movable = Vec::new();
+                }
             }
         }
         // Which parameters can actually move: rows of the null space that are nonzero.  Sharper
         // than the DM under-block (which counts a parameter as free if it could be in some generic
         // assignment); evaluated at the current configuration.
-        under_params = movable.iter().map(|&j| free_params[j]).collect();
-        if numeric_rank.unwrap() < dm.rank {
+        if numeric_rank.is_some() {
+            under_params = movable.iter().map(|&j| free_params[j]).collect();
+        }
+        if numeric_rank.is_some_and(|r| r < dm.rank) {
             // ...and name the constraints worth removing, or the report would say
             // "over-constrained" with nothing to point at.  One extra SVD, only on this path.
             let z = sys.z0(sk);

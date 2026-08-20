@@ -133,3 +133,21 @@ fn a_nan_residual_wins_the_max() {
     assert!(gcs_core::linalg::absmax(&[1.0, f64::NAN, 2.0]).is_nan());
     assert_eq!(gcs_core::linalg::absmax(&[1.0, -3.0, 2.0]), 3.0);
 }
+
+/// `gr_svd` gives up after a fixed number of QR sweeps.  Its `false` return used to be discarded,
+/// so a non-finite Jacobian came back as rank 0 with a full null space — read everywhere above as
+/// "every constraint is redundant and every parameter is free".
+#[test]
+fn a_non_convergent_svd_is_reported_rather_than_read_as_rank_zero() {
+    use gcs_core::linalg::{rank_and_nullspace, svd, Mat};
+
+    let good = Mat::from_vec(2, 2, vec![1.0, 0.0, 0.0, 1.0]);
+    let rn = rank_and_nullspace(&good, 1e-10);
+    assert!(rn.converged && rn.rank == 2);
+    assert!(svd(&good, false).converged);
+
+    let bad = Mat::from_vec(2, 2, vec![1.0, f64::NAN, 0.0, 1.0]);
+    let rn = rank_and_nullspace(&bad, 1e-10);
+    assert!(!rn.converged, "a NaN matrix was reported as a converged rank {}", rn.rank);
+    assert!(!svd(&bad, false).converged);
+}

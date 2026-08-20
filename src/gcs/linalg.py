@@ -55,7 +55,9 @@ def svd(J: Any, want_u: bool = True) -> tuple[Vec, Vec, Vec]:
     u = _ffi.f64(max(m * mn, 1))
     s = _ffi.f64(max(mn, 1))
     vt = _ffi.f64(max(n * n, 1))
-    lib.gcs_svd(m, n, _ffi.pf(A), _ffi.pf(u) if want_u else None, _ffi.pf(s), _ffi.pf(vt))
+    if lib.gcs_svd(m, n, _ffi.pf(A), _ffi.pf(u) if want_u else None,
+                   _ffi.pf(s), _ffi.pf(vt)) != 0:
+        raise np.linalg.LinAlgError(_ffi.last_error() or "SVD did not converge")
     U = u[: m * mn].reshape(m, mn) if want_u else np.zeros((m, 0))
     return U, s[:mn], vt[: n * n].reshape(n, n)
 
@@ -70,6 +72,8 @@ def rank_and_nullspace(J: Any, rcond: float = 1e-10) -> tuple[int, Vec, Vec]:
     N = _ffi.f64(max(n * n, 1))
     s = _ffi.f64(max(n, 1))
     rank = int(lib.gcs_rank_nullspace(m, n, _ffi.pf(A), rcond, _ffi.pf(N), _ffi.pf(s)))
+    if rank < 0:
+        raise np.linalg.LinAlgError(_ffi.last_error() or "SVD did not converge")
     nn = n - rank
     return rank, N[: n * nn].reshape(n, nn) if nn else np.zeros((n, 0)), s[: min(m, n)]
 

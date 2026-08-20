@@ -115,3 +115,14 @@ def test_jacobian_rank_agrees_with_numpy_on_a_real_sketch() -> None:
     J = s.jacobian_dense(s.z0())
     assert s.rank() == np.linalg.matrix_rank(J)
     s.dispose()
+
+
+def test_a_non_convergent_svd_raises_instead_of_reporting_rank_zero() -> None:
+    """`gr_svd` gives up after a fixed number of QR sweeps; discarding that return read a
+    non-finite Jacobian as rank 0 with a full null space."""
+    bad = np.array([[1.0, np.nan], [0.0, 1.0]])
+    with pytest.raises(np.linalg.LinAlgError):
+        rank_and_nullspace(bad)
+    with pytest.raises(np.linalg.LinAlgError):
+        svd(bad)
+    assert rank_and_nullspace(np.eye(2))[0] == 2

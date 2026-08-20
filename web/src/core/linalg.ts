@@ -3,7 +3,7 @@
  * Matrices are row-major `Mat { rows, cols, data }`.  There is no LAPACK/BLAS anywhere in the
  * project — the pivoted QR, the complete orthogonal decomposition, the SVD and the LU are ours,
  * and the Python suite checks them against numpy. */
-import { core, withBuf } from './wasm.js';
+import { core, lastError, withBuf } from './wasm.js';
 
 export interface Mat {
   rows: number;
@@ -97,7 +97,9 @@ export function svd(A: Mat, wantU = true): Svd {
   return withBuf(m * n, 8, (a) => withBuf(Math.max(m * mn, 1), 8, (u) =>
     withBuf(mn, 8, (s) => withBuf(n * n, 8, (vt) => {
       a.set(A.data);
-      core().gcs_svd(m, n, a.ptr, wantU ? u.ptr : 0, s.ptr, vt.ptr);
+      if (core().gcs_svd(m, n, a.ptr, wantU ? u.ptr : 0, s.ptr, vt.ptr) !== 0) {
+        throw new Error(lastError() || 'SVD did not converge');
+      }
       return {
         U: wantU ? mat(m, mn, u.f64) : mat(m, 0),
         s: s.f64.slice(),
@@ -115,6 +117,7 @@ export function rankAndNullspace(A: Mat, rcond = 1e-10):
   return withBuf(Math.max(m * n, 1), 8, (a) => withBuf(n * n, 8, (nb) => withBuf(n, 8, (s) => {
     a.set(A.data);
     const rank = core().gcs_rank_nullspace(m, n, a.ptr, rcond, nb.ptr, s.ptr);
+    if (rank < 0) throw new Error(lastError() || 'SVD did not converge');
     const nn = n - rank;
     return { rank, N: mat(n, nn, nb.f64.subarray(0, n * nn)), s: s.f64.slice(0, Math.min(m, n)) };
   })));

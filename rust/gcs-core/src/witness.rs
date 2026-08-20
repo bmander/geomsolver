@@ -237,6 +237,13 @@ pub fn analyze_with(
             }
         }
     }
+    if !d.converged {
+        warnings.push(
+            "the SVD did not converge: the null space and the rank below are the QR's alone"
+                .to_string(),
+        );
+        rank_svd = rank_qr; // do not let a failed factorisation drag the rank down to zero
+    }
     let mut rank = rank_qr;
     if rank_qr != rank_svd {
         warnings.push(format!(

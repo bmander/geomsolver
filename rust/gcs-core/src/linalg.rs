@@ -662,6 +662,9 @@ pub struct Svd {
     pub s: Vec<f64>,
     /// n x n right factor (rows are the right singular vectors).
     pub vt: Mat,
+    /// False if the QR sweeps ran out before every superdiagonal split — the factors are not to
+    /// be trusted, and a rank read off them is meaningless rather than merely approximate.
+    pub converged: bool,
 }
 
 /// Singular values (descending) and the full right factor.  A wide matrix is padded with zero
@@ -671,7 +674,7 @@ pub fn svd(a: &Mat, want_u: bool) -> Svd {
     let (m, n) = (a.rows, a.cols);
     let mn = m.min(n);
     if m == 0 || n == 0 {
-        return Svd { u: Mat::zeros(m, mn), s: vec![0.0; mn], vt: Mat::zeros(n, n) };
+        return Svd { u: Mat::zeros(m, mn), s: vec![0.0; mn], vt: Mat::zeros(n, n), converged: true };
     }
     let mm = m.max(n);
     let mut w = vec![0.0; mm * n];
@@ -680,7 +683,7 @@ pub fn svd(a: &Mat, want_u: bool) -> Svd {
     }
     let mut v = vec![0.0; n * n];
     let mut sv = vec![0.0; n];
-    gr_svd(mm, n, &mut w, &mut sv, &mut v, want_u);
+    let converged = gr_svd(mm, n, &mut w, &mut sv, &mut v, want_u);
 
     let mut ord: Vec<usize> = (0..n).collect();
     for i in 0..n.saturating_sub(1) {
@@ -713,7 +716,7 @@ pub fn svd(a: &Mat, want_u: bool) -> Svd {
     } else {
         Mat::zeros(0, 0)
     };
-    Svd { u, s, vt }
+    Svd { u, s, vt, converged }
 }
 
 pub struct RankNull {
@@ -721,6 +724,8 @@ pub struct RankNull {
     /// n x (n - rank) orthonormal basis of the null space.
     pub n: Mat,
     pub s: Vec<f64>,
+    /// False if the SVD behind this did not converge; `rank` then says nothing.
+    pub converged: bool,
 }
 
 /// `(rank, null-space basis, singular values)` from one SVD — the shared seam that keeps
@@ -728,10 +733,10 @@ pub struct RankNull {
 pub fn rank_and_nullspace(a: &Mat, rcond: f64) -> RankNull {
     let (m, n) = (a.rows, a.cols);
     if n == 0 {
-        return RankNull { rank: 0, n: Mat::zeros(0, 0), s: Vec::new() };
+        return RankNull { rank: 0, n: Mat::zeros(0, 0), s: Vec::new(), converged: true };
     }
     if m == 0 {
-        return RankNull { rank: 0, n: Mat::identity(n), s: Vec::new() };
+        return RankNull { rank: 0, n: Mat::identity(n), s: Vec::new(), converged: true };
     }
     let d = svd(a, false);
     let mn = m.min(n);
@@ -750,7 +755,7 @@ pub fn rank_and_nullspace(a: &Mat, rcond: f64) -> RankNull {
             null.data[i * nn.max(1) + j] = d.vt.data[(rank + j) * n + i];
         }
     }
-    RankNull { rank, n: null, s: d.s }
+    RankNull { rank, n: null, s: d.s, converged: d.converged }
 }
 
 /// Solve the n*n system `A x = b` in place (partial-pivoting LU).  `false` if A is singular.

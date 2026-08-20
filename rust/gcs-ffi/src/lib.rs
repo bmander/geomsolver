@@ -1342,7 +1342,12 @@ pub unsafe extern "C" fn gcs_svd(
                 *u.add(i) = *v;
             }
         }
-        0
+        if d.converged {
+            0
+        } else {
+            set_error("svd: the QR sweeps did not converge".to_string());
+            -1
+        }
     })
 }
 
@@ -1367,6 +1372,10 @@ pub unsafe extern "C" fn gcs_rank_nullspace(
             for (i, v) in rn.s.iter().enumerate() {
                 *s_out.add(i) = *v;
             }
+        }
+        if !rn.converged {
+            set_error("rank_nullspace: the SVD did not converge".to_string());
+            return -1;
         }
         rn.rank as i32
     })
