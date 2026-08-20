@@ -337,11 +337,19 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     let violated = violated_constraints(sk, sys, opts.tol);
     let mut conflict_set: Option<Vec<u32>> = None;
     if opts.conflicts.unwrap_or(!violated.is_empty()) {
-        // Candidates = the structurally over-determined block (where a redundancy must live); if
-        // the graph sees nothing wrong (e.g. the triangle inequality) fall back to the violated
-        // constraints.  Everything else stays fixed, so the result is minimal "among the suspects"
-        // — and the filter costs |candidates| solves, not |all|.
-        let cands = if !over.is_empty() { over.clone() } else { violated.clone() };
+        // Candidates = the structurally over-determined block (where a redundancy must live)
+        // *together with* whatever is actually violated.  Not just the over-block: a consistent
+        // duplicate (two Horizontals on one line) makes an over-block with nothing to do with an
+        // infeasibility elsewhere, and confining the search to it pins the blame on the harmless
+        // pair — the real conflict is then in the constraints held fixed, so no candidate can be
+        // satisfied and the first one tried wins.  Everything else stays fixed, so the result is
+        // minimal "among the suspects", and the filter costs |candidates| solves, not |all|.
+        let mut cands = over.clone();
+        for &c in &violated {
+            if !cands.contains(&c) {
+                cands.push(c);
+            }
+        }
         conflict_set = Some(minimal_conflict_set(sk, Some(&cands), opts.tol, Method::DogLeg, 60));
     }
 
@@ -487,6 +495,12 @@ pub fn minimal_conflict_set(
     // a state satisfying the non-candidates
     let (ok, xb) = solve_with(sk, &others, &x0);
     restore(sk, &saved);
+    if !ok && candidates.is_some() {
+        // the restriction does not hold: the conflict is not confined to the candidates, so every
+        // trial below would fail on whatever happened to be added first.  Search the whole system.
+        sk.set_x(&x0);
+        return minimal_conflict_set(sk, None, tol, method, max_iter);
+    }
     let x_base = if ok { xb } else { x0.clone() };
     let mut accepted: Vec<u32> = Vec::new();
     let mut x_feas = x_base;

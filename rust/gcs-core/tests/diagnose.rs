@@ -253,3 +253,36 @@ fn a_large_sketch_does_not_loosen_the_linear_constraints() {
     assert_eq!(d.violated.len(), 2, "{:?}", d.violated); // the solve split the difference
     assert!(d.conflicts.is_some(), "no minimal conflict set: {d:?}");
 }
+
+/// A consistent duplicate makes a structural over-block that has nothing to do with an
+/// infeasibility elsewhere.  Confining the conflict search to the over-block leaves the real
+/// conflict among the constraints held fixed, so no candidate can ever be satisfied and the first
+/// one tried is reported — here, a harmless second `Horizontal`.
+#[test]
+fn the_conflict_search_is_not_confined_to_the_over_block() {
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, false, "a");
+    let b = sk.point(10.0, 0.0, false, "b");
+    let ln = sk.line(a, b);
+    let h1 = sk.add(Constraint::one_line(CKind::Horizontal, EntRef::line(ln)));
+    let h2 = sk.add(Constraint::one_line(CKind::Horizontal, EntRef::line(ln)));
+
+    // an unrelated, genuinely impossible triangle: 1 + 1 < 10
+    let p = sk.point(100.0, 0.0, false, "p");
+    let q = sk.point(101.0, 0.0, false, "q");
+    let r = sk.point(100.5, 1.0, false, "r");
+    let d1 = sk.add(Constraint::distance(EntRef::point(p), EntRef::point(q), 1.0));
+    let d2 = sk.add(Constraint::distance(EntRef::point(q), EntRef::point(r), 1.0));
+    let d3 = sk.add(Constraint::distance(EntRef::point(p), EntRef::point(r), 10.0));
+
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.status, State::Conflict, "{d:?}");
+    let conflicts = d.conflicts.clone().expect("a conflict set");
+    assert!(!conflicts.is_empty(), "{d:?}");
+    for c in &conflicts {
+        assert!(*c != h1 && *c != h2, "blamed a harmless Horizontal: {conflicts:?}");
+        assert!([d1, d2, d3].contains(c), "unexpected culprit {c}: {conflicts:?}");
+    }
+    // the over-block is still reported for what it is
+    assert!(d.over.contains(&h1) || d.over.contains(&h2), "{:?}", d.over);
+}
