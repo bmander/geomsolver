@@ -1,9 +1,13 @@
+"""Document I/O, deletion by rebuild, and the model's own geometry helpers."""
+
+from __future__ import annotations
+
 import math
 
 import pytest
 
-from gcs import examples, io, solve
 from gcs import constraints as C
+from gcs import examples, io, solve
 from gcs.model import Sketch
 
 
@@ -35,7 +39,7 @@ def test_without_line_keeps_points() -> None:
 
 
 def test_every_constraint_type_has_spec_and_roundtrips() -> None:
-    """Every concrete Constraint subclass declares a spec that reconstructs it."""
+    """Every constraint type declares a spec that reconstructs it."""
     from tests.test_jacobians import all_constraints
 
     seen = set()
@@ -44,7 +48,7 @@ def test_every_constraint_type_has_spec_and_roundtrips() -> None:
         assert c.spec, type(c)
         c2 = type(c)(*c.args())
         assert c2.args() == c.args()
-    assert seen >= {t for t in io.BY_NAME.values() if not t.__name__.startswith("_") and t is not C.Constraint} - {C._TwoLine}
+    assert seen == set(io.BY_NAME.values())
 
 
 def test_describe() -> None:
@@ -53,9 +57,9 @@ def test_describe() -> None:
 
 
 def test_a_live_drag_never_reaches_the_document() -> None:
-    """`soft` is not part of the JSON, so a soft constraint saved mid-drag would come back
-    as a real one — a DragTarget as geometry, a RadiusDrag's pull as a dimension the user
-    never typed.  Snapshots (undo) go through the same path."""
+    """`soft` is not part of the JSON, so a soft constraint saved mid-drag would come back as a
+    real one — a DragTarget as geometry, a RadiusDrag's pull as a dimension the user never typed.
+    Snapshots (undo) go through the same path."""
     from gcs.solve import Drag, RadiusDrag
 
     sk = examples.slotted_link()
@@ -71,24 +75,23 @@ def test_a_live_drag_never_reaches_the_document() -> None:
 
 
 def test_a_soft_radius_is_not_a_known_dimension() -> None:
-    """The decomposition must not treat a RadiusDrag's pull as a dimensioned radius: that
-    would change which clusters are rigid while the user is mid-drag."""
-    from gcs.cgraph import known_radii
+    """The decomposition must not treat a RadiusDrag's pull as a dimensioned radius: that would
+    change which clusters are rigid while the user is mid-drag."""
+    from gcs.decompose import build_graph
     from gcs.solve import RadiusDrag
 
     sk = Sketch()
     c = sk.circle(sk.point(0, 0, fixed=True), 10.0)
     d = RadiusDrag(sk, c, 10.0)
     try:
-        assert known_radii(sk) == {}
+        assert build_graph(sk)["knownRadius"] == {}
     finally:
         d.end()
 
 
 def test_drawn_bounds_covers_curves_not_just_points() -> None:
-    """`bbox` is points-only (it defines `extent`, and through it the solver's residual
-    scale); `drawn_bounds` is what a "fit the view" wants — a circle reaches past its
-    centre, and an arc past its endpoints."""
+    """`bbox` is points-only (it defines `extent`, and through it the solver's residual scale);
+    `drawn_bounds` is what a "fit the view" wants."""
     sk = Sketch()
     sk.circle(sk.point(0, 0), 10.0)
     assert sk.bbox() == (0.0, 0.0, 0.0, 0.0)
@@ -96,7 +99,7 @@ def test_drawn_bounds_covers_curves_not_just_points() -> None:
 
     sk2 = Sketch()
     c = sk2.point(0, 0)
-    arc = sk2.arc(c, sk2.point(5, 0), sk2.point(0, 5))       # a quarter turn, no bulge past the ends
+    arc = sk2.arc(c, sk2.point(5, 0), sk2.point(0, 5))       # a quarter turn, no bulge past ends
     assert arc.bounds() == pytest.approx((0.0, 0.0, 5.0, 5.0), abs=1e-12)
     arc.end.x.value, arc.end.y.value = -5.0, 0.0             # now a half turn through the top
     assert arc.bounds() == pytest.approx((-5.0, 0.0, 5.0, 5.0), abs=1e-12)
@@ -127,7 +130,6 @@ def test_three_point_arc_takes_the_sweep_through_the_third_point() -> None:
     b0, b1 = down.angles()
     assert b0 == pytest.approx(math.pi, abs=1e-12) and b1 == pytest.approx(2 * math.pi, abs=1e-12)
 
-    # the arc it builds is consistent: both endpoints sit at the radius
     for arc in (up, down):
         for p in (arc.start, arc.end):
             assert math.dist(p.xy, arc.center.xy) == pytest.approx(arc.radius.value, abs=1e-12)
@@ -155,7 +157,6 @@ def test_rectangle_is_rigid_up_to_its_five_degrees_of_freedom() -> None:
     d = diagnose(sk)
     assert d.n_redundant == 0
     assert d.dof == 5                               # position, rotation, width, height
-    # and it really is a rectangle after solving from a perturbed start
     sk.perturb(3.0, seed=1)
     assert solve(sk).success
     for i in range(4):

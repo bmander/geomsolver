@@ -1,12 +1,12 @@
 [project]
 name = "gcs"
-version = "0.0.1"
-description = "Geometric constraint solver — the numpy/scipy reference implementation"
+version = "0.1.0"
+description = "Geometric constraint solver — a thin Python binding over the Rust core"
 requires-python = ">=3.14"
-dependencies = ["numpy>=2.0", "scipy>=1.14"]
+dependencies = ["numpy>=2.0"]
 
 [project.optional-dependencies]
-dev = ["pytest", "hypothesis", "mypy", "scipy-stubs"]
+dev = ["pytest", "hypothesis", "mypy"]
 
 [build-system]
 requires = ["setuptools>=68"]

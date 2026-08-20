@@ -78,14 +78,15 @@ addButton(barTools, {
 });
 addSeparator(barTools);
 
+const CASES = examples.cases();
 const caseBox = addSelect(barTools,
   [{ value: '', label: '— load a test case —' },
-   ...examples.CASES.map(([name, , desc]) => ({ value: name, label: name, title: desc }))],
+   ...CASES.map((c) => ({ value: c.label, label: c.label, title: c.description }))],
   (name) => {
-    const hit = examples.CASES.find(([n]) => n === name);
+    const hit = CASES.find((c) => c.label === name);
     if (!hit) return;
-    view.setSketch(hit[1]());
-    toast(`${hit[0]} — ${hit[2]}`, 12000);
+    view.setSketch(examples.build(hit.key));
+    toast(`${hit.label} — ${hit.description}`, 12000);
     caseBox.value = '';
   }, '230px');
 
@@ -307,18 +308,19 @@ async function cRadius(): Promise<void> {
  *  in the sketch's branches and replayed sticky. */
 function flipBranch(): void {
   const c = currentConstraint;
-  if (c instanceof C.TangentLineCircle) {
+  if (c && C.isType(c, 'TangentLineCircle')) {
     view.pushUndo();
-    c.side = -c.side;
+    c.setValue('side', -Number(c.side));
     view.afterEdit();
     toast(`flipped the tangency side of ${io.describe(c, view.sketch)}`);
     return;
   }
-  if (c instanceof C.TangentCircleCircle) {
+  if (c && C.isType(c, 'TangentCircleCircle')) {
     view.pushUndo();
-    c.external = !c.external;
+    const now = !c.external;
+    c.setValue('external', now);
     view.afterEdit();
-    toast(`flipped to ${c.external ? 'external' : 'internal'} tangency`);
+    toast(`flipped to ${now ? 'external' : 'internal'} tangency`);
     return;
   }
   const pts = view.selected.filter((e): e is Point => e instanceof Point);
@@ -328,7 +330,7 @@ function flipBranch(): void {
   }
   const ps = view.plan();
   view.pushUndo();
-  const n = pts.reduce((s, p) => s + ps.flip(ps.graph.P(p)), 0);
+  const n = pts.reduce((s, p) => s + ps.flip(p), 0);
   if (!n) {
     toast('no closed-form construction places the selected point(s)');
     return;
@@ -347,14 +349,13 @@ async function alternatives(): Promise<void> {
     return;
   }
   const ps = view.plan();
-  const el = ps.graph.P(pts[0]);
-  const placing = ps.plan.stepsPlacing(el);
+  const placing = ps.stepsPlacing(pts[0]);
   if (!placing.length) {
     toast('no construction places that point (under-constrained or not decomposable)');
     return;
   }
   const idx = placing[0][0];
-  const alts = enumerateStep(ps.plan, idx, { locate: el });
+  const alts = enumerateStep(ps, idx, { locate: pts[0] });
   if (alts.length < 2) {
     toast(`${alts.length} real solution(s) for this construction — nothing to choose`);
     return;
@@ -366,7 +367,7 @@ async function alternatives(): Promise<void> {
     `${alts.length} real solutions of this construction:`, labels);
   if (pick === null || isCurrent(alts[pick])) return;
   view.pushUndo();
-  applyAlternative(ps.plan, idx, alts[pick]);
+  applyAlternative(ps, idx, alts[pick]);
   const res = view.afterEdit();
   // a root of the isolated merge system is not always reachable through a whole-plan replay
   // (the leaves are re-derived from the new geometry, and the surrounding merges may pull it
@@ -431,7 +432,7 @@ async function showDiagnosis(): Promise<void> {
   }
   lines.push(...d.warnings);
   if (view.lastPlan) {
-    lines.push('', `Decomposition: ${view.lastPlan.plan.summary()}`
+    lines.push('', `Decomposition: ${view.lastPlan.plan.summary}`
       + (view.lastPlan.fellBack ? ' — numeric fallback used' : ''));
   }
   await showReport('Diagnosis', lines.join('\n'));
@@ -631,7 +632,7 @@ function refreshStatus(): void {
       + `${(r.timeS * 1e3).toFixed(1)} ms  nfev=${r.nfev}  ${r.method}`;
   }
   if (view.lastPlan) {
-    msg += `   | plan: ${view.lastPlan.plan.summary()}${view.lastPlan.fellBack ? ' (fell back)' : ''}`;
+    msg += `   | plan: ${view.lastPlan.plan.summary}${view.lastPlan.fellBack ? ' (fell back)' : ''}`;
   }
   // colour the whole bar when the drawing does not satisfy its constraints: every number
   // above is then describing a sketch that is not the one on screen

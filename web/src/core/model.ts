@@ -1,137 +1,201 @@
-/* Parameters, primitives and the Sketch container.
+/* Parameters, primitives and the Sketch container — proxies over the Rust model.
  *
- * Every scalar degree of freedom is a `Param`.  Primitives are thin bundles of Params;
- * the Sketch owns the ordered list of Params (its parameter vector) and the ordered list
- * of Constraints.  Ordering is deterministic by construction — insertion order, never
- * hashing — so identical edits give identical solves.
+ * A `Param` is an index, an entity is a `(kind, index)` pair and a constraint is a
+ * document-stable id; the objects here are interned per sketch, so `===` means what it always
+ * did while the data itself lives in the core.  Nothing is mirrored: every read goes through
+ * the ABI.
  */
-import { Rng } from './rng.js';
+import { Buf, core, takeStr, withBuf, withJson, withStr } from './wasm.js';
 import type { Constraint } from './constraints.js';
+// The constraint classes are generated from the core's registry and register themselves with
+// `initCore`; loading them here means every consumer of the model gets them, in any import order.
+import './constraints.js';
 
 /** (xmin, ymin, xmax, ymax) */
 export type Box = [number, number, number, number];
 
+export type Kind = 'point' | 'line' | 'circle' | 'arc';
+export const KINDS: Kind[] = ['point', 'line', 'circle', 'arc'];
+export const KIND_ID: Record<Kind, number> = { point: 0, line: 1, circle: 2, arc: 3 };
+
 export class Param {
-  constructor(
-    public value: number,
-    public fixed = false,
-    public index = -1,
-    public name = '',
-  ) {}
+  constructor(readonly sketch: Sketch, readonly index: number) {}
+
+  get value(): number {
+    return core().gcs_param_value(this.sketch.handle, this.index);
+  }
+
+  set value(v: number) {
+    core().gcs_param_set_value(this.sketch.handle, this.index, v);
+  }
+
+  get fixed(): boolean {
+    return core().gcs_param_fixed(this.sketch.handle, this.index) !== 0;
+  }
+
+  set fixed(v: boolean) {
+    core().gcs_param_set_fixed(this.sketch.handle, this.index, v ? 1 : 0);
+  }
+
+  get name(): string {
+    return takeStr(core().gcs_param_name(this.sketch.handle, this.index));
+  }
 }
 
-export type Kind = 'point' | 'line' | 'circle' | 'arc';
+export abstract class Entity {
+  abstract readonly kind: Kind;
 
-export class Point {
-  readonly kind = 'point' as const;
-  constructor(readonly x: Param, readonly y: Param) {}
+  constructor(readonly sketch: Sketch, readonly index: number) {}
 
-  get children(): Point[] { return []; }
-  get params(): Param[] { return [this.x, this.y]; }
-  get xy(): [number, number] { return [this.x.value, this.y.value]; }
-  get isFixed(): boolean { return this.x.fixed && this.y.fixed; }
+  get kindId(): number {
+    return KIND_ID[this.kind];
+  }
 
-  fix(fixed = true): void {
-    this.x.fixed = fixed;
-    this.y.fixed = fixed;
+  /** `['point', 3]` — the reference form the document and the ABI use. */
+  get ref(): [Kind, number] {
+    return [this.kind, this.index];
+  }
+
+  /** `P0` / `L3` / `C1` / `A2`. */
+  get name(): string {
+    return takeStr(core().gcs_entity_name(this.kindId, this.index));
+  }
+
+  get params(): Param[] {
+    return withBuf(8, 4, (b) => {
+      const n = core().gcs_entity_params(this.sketch.handle, this.kindId, this.index, b.ptr);
+      return [...b.i32.subarray(0, n)].map((i) => this.sketch.paramAt(i));
+    });
+  }
+
+  get children(): Point[] {
+    if (this.kind === 'point') return [];
+    return withBuf(4, 4, (b) => {
+      const n = core().gcs_entity_points(this.sketch.handle, this.kindId, this.index, b.ptr);
+      return [...b.i32.subarray(0, n)].map((i) => this.sketch.points[i]);
+    });
   }
 
   bounds(): Box {
-    return [this.x.value, this.y.value, this.x.value, this.y.value];
+    return withBuf(4, 8, (b) => {
+      core().gcs_entity_bounds(this.sketch.handle, this.kindId, this.index, b.ptr);
+      const v = b.f64;
+      return [v[0], v[1], v[2], v[3]] as Box;
+    });
   }
 }
 
-export class Line {
-  readonly kind = 'line' as const;
-  /** Reference geometry: drawn dashed, constrains like any other. */
-  construction = false;
-  constructor(readonly p1: Point, readonly p2: Point) {}
+/** Line, Circle and Arc carry the construction (reference geometry) flag. */
+abstract class Constructible extends Entity {
+  get construction(): boolean {
+    return core().gcs_entity_construction(this.sketch.handle, this.kindId, this.index) !== 0;
+  }
 
-  get children(): Point[] { return [this.p1, this.p2]; }
-  get params(): Param[] { return [...this.p1.params, ...this.p2.params]; }
+  set construction(v: boolean) {
+    core().gcs_entity_set_construction(this.sketch.handle, this.kindId, this.index, v ? 1 : 0);
+  }
+}
+
+export class Point extends Entity {
+  readonly kind = 'point' as const;
+
+  get x(): Param {
+    return this.params[0];
+  }
+
+  get y(): Param {
+    return this.params[1];
+  }
+
+  get xy(): [number, number] {
+    const p = this.params;
+    return [p[0].value, p[1].value];
+  }
+
+  get isFixed(): boolean {
+    const p = this.params;
+    return p[0].fixed && p[1].fixed;
+  }
+
+  fix(fixed = true): void {
+    for (const p of this.params) p.fixed = fixed;
+  }
+}
+
+export class Line extends Constructible {
+  readonly kind = 'line' as const;
+
+  get p1(): Point {
+    return this.children[0];
+  }
+
+  get p2(): Point {
+    return this.children[1];
+  }
 
   direction(): [number, number] {
-    return [this.p2.x.value - this.p1.x.value, this.p2.y.value - this.p1.y.value];
+    const [ax, ay] = this.p1.xy;
+    const [bx, by] = this.p2.xy;
+    return [bx - ax, by - ay];
   }
 
   length(): number {
     const [dx, dy] = this.direction();
     return Math.hypot(dx, dy);
   }
-
-  bounds(): Box {
-    return [
-      Math.min(this.p1.x.value, this.p2.x.value), Math.min(this.p1.y.value, this.p2.y.value),
-      Math.max(this.p1.x.value, this.p2.x.value), Math.max(this.p1.y.value, this.p2.y.value),
-    ];
-  }
 }
 
-export class Circle {
+export class Circle extends Constructible {
   readonly kind = 'circle' as const;
-  construction = false;
-  constructor(readonly center: Point, readonly radius: Param) {}
 
-  get children(): Point[] { return [this.center]; }
-  get params(): Param[] { return [...this.center.params, this.radius]; }
+  get center(): Point {
+    return this.children[0];
+  }
 
-  bounds(): Box {
-    const [cx, cy] = this.center.xy;
-    const r = Math.abs(this.radius.value);
-    return [cx - r, cy - r, cx + r, cy + r];
+  get radius(): Param {
+    return this.sketch.paramAt(
+      core().gcs_entity_radius_param(this.sketch.handle, this.kindId, this.index));
   }
 }
 
-/** CCW arc from `start` to `end` about `center`.  The radius is its own Param so Circle
- *  and Arc share every radius-based constraint; the two intrinsic constraints
- *  |start-center|^2 = r^2 and |end-center|^2 = r^2 are added by `Sketch.arc`. */
-export class Arc {
+/** CCW arc from `start` to `end` about `center`.  The radius is its own Param so Circle and Arc
+ *  share every radius-based constraint; the two intrinsic constraints |start-center|² = r² and
+ *  |end-center|² = r² are added by `Sketch.arc`. */
+export class Arc extends Constructible {
   readonly kind = 'arc' as const;
-  construction = false;
-  constructor(readonly center: Point, readonly start: Point, readonly end: Point, readonly radius: Param) {}
 
-  get children(): Point[] { return [this.center, this.start, this.end]; }
-  get params(): Param[] {
-    return [...this.center.params, ...this.start.params, ...this.end.params, this.radius];
+  get center(): Point {
+    return this.children[0];
+  }
+
+  get start(): Point {
+    return this.children[1];
+  }
+
+  get end(): Point {
+    return this.children[2];
+  }
+
+  get radius(): Param {
+    return this.sketch.paramAt(
+      core().gcs_entity_radius_param(this.sketch.handle, this.kindId, this.index));
   }
 
   angles(): [number, number] {
-    const [cx, cy] = this.center.xy;
-    const a0 = Math.atan2(this.start.y.value - cy, this.start.x.value - cx);
-    let a1 = Math.atan2(this.end.y.value - cy, this.end.x.value - cx);
-    if (a1 <= a0) a1 += 2 * Math.PI;
-    return [a0, a1];
-  }
-
-  /** The points that bound the drawn sweep: its two ends, plus every quarter-turn direction
-   *  the sweep passes through.  Endpoints alone would under-report an arc that bulges past
-   *  them. */
-  extremes(): [number, number][] {
-    const [cx, cy] = this.center.xy;
-    const r = Math.abs(this.radius.value);
-    const [a0, a1] = this.angles();
-    const at = (th: number): [number, number] => [cx + r * Math.cos(th), cy + r * Math.sin(th)];
-    const out: [number, number][] = [at(a0), at(a1)];
-    const quarter = Math.PI / 2;
-    for (let k = Math.ceil(a0 / quarter); k * quarter < a1; k++) out.push(at(k * quarter));
-    return out;
-  }
-
-  bounds(): Box {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const [x, y] of this.extremes()) {
-      x0 = Math.min(x0, x); y0 = Math.min(y0, y);
-      x1 = Math.max(x1, x); y1 = Math.max(y1, y);
-    }
-    return [x0, y0, x1, y1];
+    return withBuf(2, 8, (b) => {
+      core().gcs_arc_angles(this.sketch.handle, this.index, b.ptr);
+      const v = b.f64;
+      return [v[0], v[1]] as [number, number];
+    });
   }
 }
 
 export type Primitive = Point | Line | Circle | Arc;
 
-/** The CCW arc through three points: centre, radius, and the sweep from `a0` to `a1` that
- *  passes through the third point.  `swapped` is true when that sweep runs from the *second*
- *  given point to the first. */
+const CLASSES = { point: Point, line: Line, circle: Circle, arc: Arc } as const;
+
+/** The CCW arc through three points: centre, radius, and the sweep that passes through the
+ *  third point.  `swapped` is true when that sweep runs from the *second* given point. */
 export interface ThreePointArc {
   cx: number;
   cy: number;
@@ -141,130 +205,86 @@ export interface ThreePointArc {
   swapped: boolean;
 }
 
-/** Arc from (ax, ay) to (bx, by) passing through (cx, cy) — the circumcircle of the three,
- *  plus the sweep direction that actually contains the third point.  null if they are
- *  collinear (the test is on the sine of the angle, so it is scale-free). */
+/** null if the three points are collinear (the test is on the sine of the angle, so it is
+ *  scale-free). */
 export function threePointArc(ax: number, ay: number, bx: number, by: number,
-                              cx: number, cy: number, tol = 1e-9): ThreePointArc | null {
-  const ux = bx - ax, uy = by - ay;
-  const vx = cx - ax, vy = cy - ay;
-  const cross = ux * vy - uy * vx;
-  if (Math.abs(cross) <= tol * Math.hypot(ux, uy) * Math.hypot(vx, vy)) return null;
-  const d = 2 * cross;
-  const u2 = ux * ux + uy * uy, v2 = vx * vx + vy * vy;
-  const ox = ax + (vy * u2 - uy * v2) / d;
-  const oy = ay + (ux * v2 - vx * u2) / d;
-  const r = Math.hypot(ax - ox, ay - oy);
-  const ta = Math.atan2(ay - oy, ax - ox);
-  const tb = Math.atan2(by - oy, bx - ox);
-  const sweep = (th: number): number => ((th - ta) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
-  const toB = sweep(tb), toC = sweep(Math.atan2(cy - oy, cx - ox));
-  return toC < toB                                  // the third point is on the a -> b sweep
-    ? { cx: ox, cy: oy, r, a0: ta, a1: ta + toB, swapped: false }
-    : { cx: ox, cy: oy, r, a0: tb, a1: tb + (2 * Math.PI - toB), swapped: true };
-}
-
-/** Signed perpendicular offset from the *infinite* line through `ln`, positive to the left of
- *  its direction — the convention `PointLineDistance` and `ParallelDistance` use, so the UI can
- *  prefill their prompts with the value the sketch already shows, sign included.
- *
- *  A degenerate line has no side; it gives Infinity rather than a silent zero. */
-export function signedPointToLine(px: number, py: number, ln: Line): number {
-  const [ax, ay] = ln.p1.xy;
-  const [dx, dy] = ln.direction();
-  const length = Math.hypot(dx, dy);
-  if (length === 0) return Infinity;
-  return (dx * (py - ay) - dy * (px - ax)) / length;
-}
-
-/** Perpendicular distance from a point to the *infinite* line through `ln`. */
-function pointToLine(px: number, py: number, ln: Line): number {
-  const [dx, dy] = ln.direction();
-  if (dx === 0 && dy === 0) return Math.hypot(px - ln.p1.x.value, py - ln.p1.y.value);
-  return Math.abs(signedPointToLine(px, py, ln));
-}
-
-const MEASURE_ORDER: Record<Kind, number> = { point: 0, line: 1, circle: 2, arc: 2 };
-
-const isRound = (e: Primitive): e is Circle | Arc => e instanceof Circle || e instanceof Arc;
-
-/** Shortest distance between two entities, as a sketcher measures it.
- *
- *  Lines are treated as infinite — perpendicular distance to one, the gap between two
- *  parallel ones — because that is what dimensioning them means; two lines that cross are 0
- *  apart.  Arcs are measured as the whole circle they lie on, which is exact for the common
- *  cases and an over-estimate of the true gap only when the nearest approach is off the swept
- *  part. */
-export function distanceBetween(first: Primitive, second: Primitive): number {
-  // ordered so the simpler kind is `a`, which halves the cases and lets the checker narrow
-  const [a, b] = MEASURE_ORDER[first.kind] > MEASURE_ORDER[second.kind]
-    ? [second, first] : [first, second];
-  if (a instanceof Point) {
-    if (b instanceof Point) return Math.hypot(a.x.value - b.x.value, a.y.value - b.y.value);
-    if (b instanceof Line) return pointToLine(a.x.value, a.y.value, b);
-    if (!isRound(b)) return 0;
-    const [cx, cy] = b.center.xy;
-    return Math.abs(Math.hypot(a.x.value - cx, a.y.value - cy) - Math.abs(b.radius.value));
-  }
-  if (a instanceof Line) {
-    if (b instanceof Line) {
-      const [d1, d2] = [a.direction(), b.direction()];
-      const cross = d1[0] * d2[1] - d1[1] * d2[0];
-      if (Math.abs(cross) > 1e-9 * Math.hypot(...d1) * Math.hypot(...d2)) return 0;
-      return pointToLine(b.p1.x.value, b.p1.y.value, a);
-    }
-    if (!isRound(b)) return 0;                               // ordered above: b is a round
-    return Math.max(0, pointToLine(b.center.x.value, b.center.y.value, a) - Math.abs(b.radius.value));
-  }
-  return isRound(a) && isRound(b) ? roundGap(a, b) : 0;       // ordered above: both are rounds
-}
-
-/** Gap between two circles: outside each other, or one inside the other; overlapping give 0. */
-function roundGap(a: Circle | Arc, b: Circle | Arc): number {
-  const [ax, ay] = a.center.xy, [bx, by] = b.center.xy;
-  const gap = Math.hypot(ax - bx, ay - by);
-  const r1 = Math.abs(a.radius.value), r2 = Math.abs(b.radius.value);
-  return Math.max(0, gap - r1 - r2, Math.abs(r1 - r2) - gap);
-}
-
-/** Entities plus their sub-entities (a line's endpoints, an arc's centre and ends). */
-export function expand(ents: Iterable<Primitive>): Primitive[] {
-  const out: Primitive[] = [];
-  for (const e of ents) {
-    out.push(e);
-    out.push(...e.children);
-  }
-  return out;
+                              cx: number, cy: number): ThreePointArc | null {
+  return withBuf(6, 8, (b) => {
+    if (!core().gcs_three_point_arc(ax, ay, bx, by, cx, cy, b.ptr)) return null;
+    const v = b.f64;
+    return { cx: v[0], cy: v[1], r: v[2], a0: v[3], a1: v[4], swapped: v[5] !== 0 };
+  });
 }
 
 export class Sketch {
-  params: Param[] = [];
-  constraints: Constraint[] = [];
-  points: Point[] = [];
-  lines: Line[] = [];
-  circles: Circle[] = [];
-  arcs: Arc[] = [];
-  /** Recorded root choices (Stage 5), persisted with the document. */
-  branches: Map<string, number> = new Map();
+  readonly handle: number;
+  private params_: Param[] = [];
+  private ents: Record<Kind, Entity[]> = { point: [], line: [], circle: [], arc: [] };
+  private cons: Constraint[] = [];
+  /** Constraint id → its proxy, so identity survives every round trip. */
+  readonly byId = new Map<number, Constraint>();
+  private dirty = true;
+
+  constructor(handle?: number) {
+    this.handle = handle ?? core().gcs_sketch_new();
+  }
+
+  dispose(): void {
+    core().gcs_sketch_free(this.handle);
+  }
+
+  // -- interning ----------------------------------------------------------
+
+  private counts(): Int32Array {
+    return withBuf(6, 4, (b) => {
+      core().gcs_sketch_counts(this.handle, b.ptr);
+      return b.i32.slice();
+    });
+  }
+
+  paramAt(i: number): Param {
+    while (this.params_.length <= i) this.params_.push(new Param(this, this.params_.length));
+    return this.params_[i];
+  }
+
+  private list<T extends Entity>(kind: Kind, n: number): T[] {
+    const lst = this.ents[kind];
+    const Cls = CLASSES[kind];
+    while (lst.length < n) lst.push(new Cls(this, lst.length));
+    lst.length = n;
+    return lst as T[];
+  }
+
+  /** The constraint list changed in the core. */
+  touch(): void {
+    this.dirty = true;
+  }
+
+  private syncConstraints(): void {
+    if (!this.dirty) return;
+    this.dirty = false;
+    const records = takeJsonRecords(core().gcs_constraints_json(this.handle));
+    this.cons = records.map((rec) => {
+      let c = this.byId.get(rec.id);
+      if (!c) {
+        c = fromRecord(this, rec);
+        this.byId.set(rec.id, c);
+      }
+      return c;
+    });
+  }
 
   // -- construction -------------------------------------------------------
 
-  param(value: number, fixed = false, name = ''): Param {
-    const p = new Param(value, fixed, this.params.length, name);
-    this.params.push(p);
-    return p;
-  }
-
   point(x: number, y: number, fixed = false, name = ''): Point {
-    const pt = new Point(this.param(x, fixed, `${name}.x`), this.param(y, fixed, `${name}.y`));
-    this.points.push(pt);
-    return pt;
+    const i = withStr(name, (p, n) => core().gcs_sketch_point(this.handle, x, y, fixed ? 1 : 0, p, n));
+    return this.points[i];
   }
 
   line(p1: Point, p2: Point): Line {
-    const ln = new Line(p1, p2);
-    this.lines.push(ln);
-    return ln;
+    // the index first: `this.lines[...]` would evaluate the getter before the core has the line
+    const i = core().gcs_sketch_line(this.handle, p1.index, p2.index);
+    return this.lines[i];
   }
 
   lineXY(x1: number, y1: number, x2: number, y2: number, name = ''): Line {
@@ -272,87 +292,97 @@ export class Sketch {
   }
 
   circle(center: Point, radius: number, name = ''): Circle {
-    const c = new Circle(center, this.param(radius, false, `${name}.r`));
-    this.circles.push(c);
-    return c;
+    const i = withStr(name, (p, n) => core().gcs_sketch_circle(this.handle, center.index, radius, p, n));
+    return this.circles[i];
   }
 
-  arc(center: Point, start: Point, end: Point, name = '', PointOnCircleCls?: PointOnCircleCtor): Arc {
-    const [cx, cy] = center.xy;
-    const r = Math.hypot(start.x.value - cx, start.y.value - cy);
-    const a = new Arc(center, start, end, this.param(r, false, `${name}.r`));
-    this.arcs.push(a);
-    const POC = PointOnCircleCls ?? arcIntrinsicFactory;
-    if (!POC) throw new Error('Sketch.arc needs the PointOnCircle constructor');
-    this.add(POC(start, a, true), POC(end, a, true));   // intrinsic: endpoints at the radius
-    return a;
+  arc(center: Point, start: Point, end: Point, name = ''): Arc {
+    const i = withStr(name, (p, n) =>
+      core().gcs_sketch_arc(this.handle, center.index, start.index, end.index, p, n));
+    this.touch();     // the two intrinsic PointOnCircle constraints came with it
+    return this.arcs[i];
   }
 
-  /** Arc from `start` to `end` bulging through `through` — the three-point construction.
-   *  Creates the centre point; null if the three are collinear. */
+  /** Arc from `start` to `end` bulging through `through`; null if the three are collinear. */
   arcThrough(start: Point, end: Point, through: [number, number], name = ''): Arc | null {
-    const g = threePointArc(...start.xy, ...end.xy, ...through);
-    if (!g) return null;
-    const centre = this.point(g.cx, g.cy, false, `${name}.c`);
-    const [a, b] = g.swapped ? [end, start] : [start, end];
-    return this.arc(centre, a, b, name);
+    const i = withStr(name, (p, n) =>
+      core().gcs_sketch_arc_through(this.handle, start.index, end.index, through[0], through[1], p, n));
+    if (i < 0) return null;
+    this.touch();
+    return this.arcs[i];
   }
 
-  /** Four lines round the corners (x0, y0) and (x1, y1), sharing corner points, with three
-   *  perpendicular constraints.
-   *
-   *  Three, not four: the fourth follows (l3 ⟂ l2 ⟂ l1 ⟂ l0 already forces l3 ⟂ l0), so
-   *  adding it would make every rectangle over-constrained by one equation.  What is left is
-   *  the 5 DOF a rectangle has — position, rotation, width, height.  `a` is an existing
-   *  point, so a rectangle can start on geometry that is already there. */
+  /** Four lines round the corners, sharing corner points, with three perpendiculars — the fourth
+   *  follows, so adding it would over-constrain every rectangle by one equation. */
   rectangle(a: Point, x1: number, y1: number, name = ''): Line[] {
-    const [x0, y0] = a.xy;
-    const corners = [
-      a, this.point(x1, y0, false, `${name}.b`),
-      this.point(x1, y1, false, `${name}.c`), this.point(x0, y1, false, `${name}.d`),
-    ];
-    const lines = corners.map((c, i) => this.line(c, corners[(i + 1) % 4]));
-    for (let i = 0; i < 3; i++) this.add(makePerpendicular(lines[i], lines[i + 1]));
-    return lines;
+    const out = withBuf(4, 4, (b) => {
+      withStr(name, (p, n) => core().gcs_sketch_rectangle(this.handle, a.index, x1, y1, p, n, b.ptr));
+      return [...b.i32];
+    });
+    this.touch();
+    return out.map((i) => this.lines[i]);
   }
 
-  /** `rectangle` starting from a fresh corner point — the `lineXY` of rectangles. */
   rectangleXY(x0: number, y0: number, x1: number, y1: number, name = ''): Line[] {
     return this.rectangle(this.point(x0, y0, false, `${name}.a`), x1, y1, name);
   }
 
   add(...constraints: Constraint[]): void {
-    this.constraints.push(...constraints);
+    for (const c of constraints) c.bind(this);
+    this.touch();
   }
 
   remove(constraint: Constraint): void {
-    const i = this.constraints.indexOf(constraint);
-    if (i >= 0) this.constraints.splice(i, 1);
+    if (constraint.id < 0) return;
+    core().gcs_constraint_remove(this.handle, constraint.id);
+    this.byId.delete(constraint.id);
+    constraint.unbind();
+    this.touch();
   }
 
-  // -- parameter vector ---------------------------------------------------
+  // -- lists --------------------------------------------------------------
 
-  getX(): Float64Array {
-    const x = new Float64Array(this.params.length);
-    for (let i = 0; i < this.params.length; i++) x[i] = this.params[i].value;
-    return x;
+  get params(): Param[] {
+    const n = this.counts()[0];
+    if (n) this.paramAt(n - 1);
+    return this.params_.slice(0, n);
   }
 
-  setX(x: ArrayLike<number>): void {
-    for (let i = 0; i < this.params.length; i++) this.params[i].value = x[i];
+  get points(): Point[] {
+    return this.list<Point>('point', this.counts()[1]);
   }
 
-  freeIndices(): Int32Array {
-    const out: number[] = [];
-    for (let i = 0; i < this.params.length; i++) {
-      this.params[i].index = i;
-      if (!this.params[i].fixed) out.push(i);
-    }
-    return Int32Array.from(out);
+  get lines(): Line[] {
+    return this.list<Line>('line', this.counts()[2]);
   }
 
-  nResiduals(): number {
-    return this.constraints.reduce((s, c) => s + c.nResiduals, 0);
+  get circles(): Circle[] {
+    return this.list<Circle>('circle', this.counts()[3]);
+  }
+
+  get arcs(): Arc[] {
+    return this.list<Arc>('arc', this.counts()[4]);
+  }
+
+  get constraints(): Constraint[] {
+    this.syncConstraints();
+    return this.cons.slice();
+  }
+
+  set constraints(cs: Constraint[]) {
+    withJson(cs.filter((c) => c.id >= 0).map((c) => c.id),
+             (p, n) => core().gcs_sketch_set_constraints(this.handle, p, n));
+    this.touch();
+  }
+
+  entities(kind: Kind): Primitive[] {
+    return (kind === 'point' ? this.points : kind === 'line' ? this.lines
+      : kind === 'circle' ? this.circles : this.arcs) as Primitive[];
+  }
+
+  /** Every entity, in creation order per kind. */
+  primitives(): Primitive[] {
+    return [...this.points, ...this.lines, ...this.circles, ...this.arcs];
   }
 
   /** Constraints the user added (excludes intrinsic and soft/transient ones). */
@@ -365,89 +395,149 @@ export class Sketch {
     return this.constraints.filter((c) => !c.soft);
   }
 
-  entities(kind: Kind): Primitive[] {
-    return kind === 'point' ? this.points : kind === 'line' ? this.lines
-      : kind === 'circle' ? this.circles : this.arcs;
+  constraintById(id: number): Constraint | undefined {
+    this.syncConstraints();
+    return this.byId.get(id);
   }
 
-  /** Every entity, in creation order per kind. */
-  primitives(): Primitive[] {
-    return [...this.points, ...this.lines, ...this.circles, ...this.arcs];
+  // -- parameter vector ---------------------------------------------------
+
+  getX(): Float64Array {
+    const n = this.counts()[0];
+    return withBuf(Math.max(n, 1), 8, (b) => {
+      core().gcs_sketch_get_x(this.handle, b.ptr);
+      return b.f64.slice(0, n);
+    });
   }
 
-  /** (xmin, ymin, xmax, ymax) over all points.
-   *
-   *  Points only, deliberately: `extent()` is built on this, and `extent()` scales the
-   *  solver's residual tolerances (`System.scale = max(1, extent)²`), the violated-constraint
-   *  threshold, the witness perturbation and the drag continuation step.  Folding radii in
-   *  would loosen every tolerance quadratically on a circle-heavy sketch and coarsen the very
-   *  drag increments Stage 5 uses to track a branch.  It costs little: the kernels that are
-   *  quadratic in r all put a point on or against the curve, so the points already track the
-   *  radius.  Only a lone circle with nothing on it falls back to extent 1 — the tightest
-   *  tolerance, which errs safe.  For what is drawn, use `drawnBounds()`. */
+  setX(x: ArrayLike<number>): void {
+    withBuf(Math.max(x.length, 1), 8, (b) => {
+      b.set(x);
+      core().gcs_sketch_set_x(this.handle, b.ptr, x.length);
+    });
+  }
+
+  freeIndices(): Int32Array {
+    const out: number[] = [];
+    this.params.forEach((p, i) => {
+      if (!p.fixed) out.push(i);
+    });
+    return Int32Array.from(out);
+  }
+
+  nResiduals(): number {
+    return core().gcs_sketch_n_residuals(this.handle);
+  }
+
+  // -- geometry -----------------------------------------------------------
+
+  /** (xmin, ymin, xmax, ymax) over all points.  Points only, deliberately: `extent()` is built on
+   *  this, and `extent()` scales the solver's tolerances, the witness perturbation and the drag
+   *  continuation step.  For what is drawn, use `drawnBounds()`. */
   bbox(): Box {
-    if (!this.points.length) return [0, 0, 1, 1];
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const p of this.points) {
-      x0 = Math.min(x0, p.x.value); x1 = Math.max(x1, p.x.value);
-      y0 = Math.min(y0, p.y.value); y1 = Math.max(y1, p.y.value);
-    }
-    return [x0, y0, x1, y1];
+    return this.boundsOf(0);
   }
 
-  /** Bounds of everything drawn, curves included — what a "fit the view" wants.  A circle or
-   *  arc reaches past its centre, so a points-only box clips it. */
   drawnBounds(): Box {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    let any = false;
-    for (const e of this.primitives()) {
-      const b = e.bounds();
-      any = true;
-      x0 = Math.min(x0, b[0]); y0 = Math.min(y0, b[1]);
-      x1 = Math.max(x1, b[2]); y1 = Math.max(y1, b[3]);
-    }
-    return any ? [x0, y0, x1, y1] : this.bbox();
+    return this.boundsOf(1);
+  }
+
+  private boundsOf(drawn: number): Box {
+    return withBuf(4, 8, (b) => {
+      core().gcs_sketch_bounds(this.handle, drawn, b.ptr);
+      const v = b.f64;
+      return [v[0], v[1], v[2], v[3]] as Box;
+    });
+  }
+
+  extent(): number {
+    return core().gcs_sketch_extent(this.handle);
   }
 
   /** Seeded Gaussian noise on every free parameter (warm starts, witness construction). */
   perturb(sigma: number, seed = 0): void {
-    const rng = new Rng(seed);
-    for (const p of this.params) if (!p.fixed) p.value += rng.normal(0, sigma);
-  }
-
-  /** Characteristic length of the sketch (tolerances, drag weights). */
-  extent(): number {
-    const [x0, y0, x1, y1] = this.bbox();
-    return Math.max(x1 - x0, y1 - y0, 1);
+    core().gcs_sketch_perturb(this.handle, sigma, seed >>> 0);
   }
 
   nearestPoint(x: number, y: number): { point: Point | null; dist: number } {
-    let best: Point | null = null;
-    let bd = Infinity;
-    for (const p of this.points) {
-      const d = Math.hypot(p.x.value - x, p.y.value - y);
-      if (d < bd) { best = p; bd = d; }
-    }
-    return { point: best, dist: bd };
+    return withBuf(1, 8, (b) => {
+      const i = core().gcs_sketch_nearest_point(this.handle, x, y, b.ptr);
+      return { point: i >= 0 ? this.points[i] : null, dist: b.f64[0] };
+    });
+  }
+
+  // -- document state -----------------------------------------------------
+
+  /** Recorded root choices (Stage 5), persisted with the document. */
+  get branches(): Map<string, number> {
+    const o = takeJsonObj(core().gcs_branches_json(this.handle));
+    return new Map(Object.entries(o).map(([k, v]) => [k, Number(v)]));
+  }
+
+  set branches(b: Map<string, number>) {
+    withJson(Object.fromEntries(b), (p, n) => core().gcs_branches_set_json(this.handle, p, n));
+  }
+
+  clone(): Sketch {
+    return new Sketch(core().gcs_sketch_clone(this.handle));
   }
 }
 
-/* `Sketch.arc` needs PointOnCircle, which lives in constraints.ts and imports this module
- * for its types.  Registering the constructor here keeps the runtime dependency one-way. */
-type PointOnCircleCtor = (p: Point, circle: Circle | Arc, intrinsic: boolean) => Constraint;
-type PerpendicularCtor = (l1: Line, l2: Line) => Constraint;
-let arcIntrinsicFactory: PointOnCircleCtor | null = null;
-let perpendicularFactory: PerpendicularCtor | null = null;
-
-export function registerArcIntrinsic(f: PointOnCircleCtor): void {
-  arcIntrinsicFactory = f;
+/** Signed perpendicular offset from the *infinite* line, positive to the left of its direction;
+ *  Infinity when the line is degenerate. */
+export function signedPointToLine(px: number, py: number, ln: Line): number {
+  return core().gcs_signed_point_to_line(ln.sketch.handle, px, py, ln.index);
 }
 
-export function registerPerpendicular(f: PerpendicularCtor): void {
-  perpendicularFactory = f;
+/** Shortest distance between two entities, as a sketcher measures it: lines are infinite, arcs
+ *  are the whole circle they lie on. */
+export function distanceBetween(a: Primitive, b: Primitive): number {
+  return core().gcs_distance_between(a.sketch.handle, a.kindId, a.index, b.kindId, b.index);
 }
 
-function makePerpendicular(l1: Line, l2: Line): Constraint {
-  if (!perpendicularFactory) throw new Error('Sketch.rectangle needs the Perpendicular constructor');
-  return perpendicularFactory(l1, l2);
+/** Entities plus their sub-entities (a line's endpoints, an arc's centre and ends). */
+export function expand(ents: Iterable<Primitive>): Primitive[] {
+  const out: Primitive[] = [];
+  for (const e of ents) {
+    out.push(e);
+    out.push(...e.children);
+  }
+  return out;
 }
+
+/* `Sketch` needs to materialize constraint proxies, which live in constraints.ts and import this
+ * module for their types.  Registering the factory here keeps the runtime dependency one-way. */
+export interface ConstraintRecord {
+  id: number;
+  type: string;
+  args: unknown[];
+  soft: boolean;
+  intrinsic: boolean;
+  nResiduals: number;
+  describe: string;
+  error: number;
+}
+
+type Factory = (sk: Sketch, rec: ConstraintRecord) => Constraint;
+let factory: Factory | null = null;
+
+export function registerConstraintFactory(f: Factory): void {
+  factory = f;
+}
+
+function fromRecord(sk: Sketch, rec: ConstraintRecord): Constraint {
+  if (!factory) throw new Error('constraints.js was not loaded');
+  return factory(sk, rec);
+}
+
+function takeJsonRecords(handle: number): ConstraintRecord[] {
+  const s = takeStr(handle);
+  return s ? (JSON.parse(s) as ConstraintRecord[]) : [];
+}
+
+function takeJsonObj(handle: number): Record<string, unknown> {
+  const s = takeStr(handle);
+  return s ? (JSON.parse(s) as Record<string, unknown>) : {};
+}
+
+export { Buf };

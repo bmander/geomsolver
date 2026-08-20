@@ -1,27 +1,21 @@
-/* Compile a sketch to a flat evaluation plan, evaluate r(z) and J(z), solve.
+/* The compiled system, solving, and interactive dragging.
  *
- * `System` groups the sketch's constraints by kernel type into blocks — pure arrays of
- * (kernel id, global parameter indices, constants) — and hands them to the C core, which
- * owns the residual/Jacobian loop, the sparsity structure and the solve iteration.  This
- * compile-to-plan boundary is the architectural seam: the object model stays here, the
- * numbers live in WebAssembly.
+ * `System` is the compile-once / evaluate-many seam: it owns a handle to the core's evaluation
+ * plan, so the object model never enters the hot loop.  Call `dispose()` when you drop one (the
+ * drags, the plan solver and diagnosis all do).
  */
-import { Constraint, DragTarget, Radius } from './constraints.js';
-import { K, KERNELS } from './kernels.js';
-import { Arc, Circle, Point, Sketch } from './model.js';
-import { Buf, IBuf, core, readU8 } from './wasm.js';
+import { Constraint } from './constraints.js';
+import { Arc, Circle, KIND_ID, Point, Sketch } from './model.js';
+import { core, takeJson, takeStr, withBuf } from './wasm.js';
 
 export type Method = 'dogleg' | 'lm';
 export const METHODS: Method[] = ['dogleg', 'lm'];
+const METHOD_ID: Record<Method, number> = { dogleg: 0, lm: 1 };
 
-const STATUS: Record<number, string> = {
-  0: 'residual tolerance reached',
-  1: 'step size below xtol',
-  2: 'gradient below gtol',
-  3: 'trust region collapsed / damping exhausted',
-  4: 'max iterations reached',
-  [-1]: 'failed',
-};
+/** Free params up to which J is dense (exact minimum-norm step + rank); sparse above. */
+export const DENSE_MAX = 120;
+
+export type Triangle = [Point, Point, Point];
 
 export interface SolveResult {
   success: boolean;
@@ -37,459 +31,332 @@ export interface SolveResult {
   rank: number | null;    /* numerical rank of J at the solution (dense path) */
 }
 
-export interface Block {
-  kernelId: K;
-  constraints: Constraint[];
-  gidx: Int32Array;       /* (n * nPar) global parameter index per local column */
-}
-
-/** Seconds, monotonic where available — the one timer the core uses. */
+/** Seconds, monotonic where available — the one timer the front end uses. */
 export const now = (): number =>
   (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
 
+function readResult(out: Float64Array, message: string, method: string, t0: number): SolveResult {
+  return {
+    success: out[0] !== 0,
+    status: out[1],
+    message,
+    residualNorm: out[2],
+    maxResidual: out[3],
+    nfev: out[4],
+    njev: out[5],
+    iterations: out[6],
+    rank: out[7] < 0 ? null : out[7],
+    timeS: now() - t0,
+    method,
+  };
+}
+
+export interface Structure {
+  adj: number[][];
+  rowC: Constraint[];
+}
+
 export class System {
-  readonly sketch: Sketch;
-  readonly constraints: Constraint[];
-  readonly blocks: Block[] = [];
-  readonly free: Int32Array;
-  readonly nFree: number;
-  readonly colOf: Int32Array;
   readonly nRes: number;
-  readonly extent: number;
+  readonly nFree: number;
+  readonly nnz: number;
   readonly scale: number;
+  readonly extent: number;
   readonly hard: Uint8Array;
+  readonly free: Int32Array;
 
   private handle_: number;
-  private slotOf = new Map<Constraint, [number, number]>();
-  private bx: Buf;
-  private bz: Buf;
-  private br: Buf;
-  private bJ: Buf | null = null;
-  private bInfo: IBuf;
-  private bConst: Buf;
-  private bScratch: Buf | null = null;
+  private owned: boolean;
   private disposed = false;
 
-  /** The C handle.  Every entry point goes through here so a use-after-dispose throws
+  constructor(readonly sketch: Sketch, handle?: number, owned = true) {
+    this.handle_ = handle ?? core().gcs_system_new(sketch.handle);
+    this.owned = owned;
+    const c = core();
+    this.nRes = c.gcs_system_n_res(this.handle_);
+    this.nFree = c.gcs_system_n_free(this.handle_);
+    this.nnz = c.gcs_system_nnz(this.handle_);
+    this.scale = c.gcs_system_scale(this.handle_);
+    this.extent = sketch.extent();
+    this.hard = withBuf(Math.max(this.nRes, 1), 1, (b) => {
+      c.gcs_system_hard(this.handle_, b.ptr);
+      return b.u8.slice(0, this.nRes);
+    });
+    this.free = withBuf(Math.max(this.nFree, 1), 4, (b) => {
+      c.gcs_system_free_indices(this.handle_, b.ptr);
+      return b.i32.slice(0, this.nFree);
+    });
+  }
+
+  /** The core handle.  Every entry point goes through here so a use-after-dispose throws
    *  instead of calling into freed heap. */
-  private get handle(): number {
+  get handle(): number {
     if (this.disposed) throw new Error('System used after dispose()');
     return this.handle_;
   }
 
-  constructor(sketch: Sketch) {
-    this.sketch = sketch;
-    this.constraints = [...sketch.constraints];   // snapshot: the plan is fixed at compile time
-    const n = sketch.params.length;
-    this.free = sketch.freeIndices();
-    this.nFree = this.free.length;
-    this.colOf = new Int32Array(n).fill(-1);
-    for (let i = 0; i < this.nFree; i++) this.colOf[this.free[i]] = i;
-    this.extent = sketch.extent();
-    this.scale = Math.max(1, this.extent) ** 2;   // residual units for squared distances
-
-    // group by kernel id, then sketch order — deterministic
-    const byKernel = new Map<number, Constraint[]>();
-    for (const c of this.constraints) {
-      let l = byKernel.get(c.kernelId);
-      if (!l) byKernel.set(c.kernelId, (l = []));
-      l.push(c);
-    }
-    const kids = [...byKernel.keys()].sort((a, b) => a - b);
-    const kernelId: number[] = [];
-    const count: number[] = [];
-    const gidxAll: number[] = [];
-    const constsAll: number[] = [];
-    const soft: number[] = [];
-    let row0 = 0;
-    for (const kid of kids) {
-      const cs = byKernel.get(kid)!;
-      const k = KERNELS[kid];
-      const gidx = new Int32Array(cs.length * k.nPar);
-      for (let i = 0; i < cs.length; i++) {
-        const ps = cs[i].params;
-        for (let c = 0; c < k.nPar; c++) gidx[i * k.nPar + c] = ps[c].index;
-        this.slotOf.set(cs[i], [this.blocks.length, i]);
-        if (k.nConst) constsAll.push(...cs[i].consts());
-        soft.push(cs[i].soft ? 1 : 0);
-      }
-      this.blocks.push({ kernelId: kid, constraints: cs, gidx });
-      gidxAll.push(...gidx);
-      kernelId.push(kid);
-      count.push(cs.length);
-      row0 += cs.length * k.nRes;
-    }
-    this.nRes = row0;
-
-    const x0 = sketch.getX();
-    const bufs = [
-      new Buf(n).set(x0),
-      new IBuf(this.nFree).set(this.free),
-      new IBuf(kernelId.length).set(kernelId),
-      new IBuf(count.length).set(count),
-      new IBuf(gidxAll.length).set(gidxAll),
-      new Buf(constsAll.length).set(constsAll),
-      new IBuf(soft.length).set(soft),
-    ] as const;
-    this.handle_ = core()._gcs_system_new(
-      n, bufs[0].ptr, this.nFree, bufs[1].ptr, kernelId.length,
-      bufs[2].ptr, bufs[3].ptr, bufs[4].ptr, bufs[5].ptr, bufs[6].ptr,
-    );
-    for (const b of bufs) b.release();
-
-    this.bx = new Buf(n);
-    this.bz = new Buf(this.nFree);
-    this.br = new Buf(this.nRes);
-    this.bInfo = new IBuf(5);
-    this.bConst = new Buf(constsAll.length);
-    this.hard = readU8(core()._gcs_system_hard(this.handle), this.nRes);
-  }
-
   dispose(): void {
     if (this.disposed) return;
-    core()._gcs_system_free(this.handle_);
     this.disposed = true;
+    if (this.owned) core().gcs_system_free(this.handle_);
     this.handle_ = 0;
-    this.bx.release(); this.bz.release(); this.br.release(); this.bInfo.release(); this.bConst.release();
-    this.bJ?.release();
-    this.bScratch?.release();
   }
 
   // -- constants -----------------------------------------------------------
 
-  /** Push a constraint's (mutated) constants into the compiled plan — a moving drag target
-   *  or an edited dimension.  Topology is unchanged, so no recompile. */
+  /** Push a constraint's (mutated) constants into the compiled plan — a moving drag target or an
+   *  edited dimension.  Topology is unchanged, so no recompile. */
   updateConsts(c: Constraint): void {
-    const slot = this.slotOf.get(c);
-    if (!slot) return;
-    const vals = c.consts();
-    if (!vals.length) return;
-    if (!this.bScratch || this.bScratch.len < vals.length) {
-      this.bScratch?.release();
-      this.bScratch = new Buf(vals.length);       // reused: this runs once per drag frame
-    }
-    this.bScratch.view.set(vals);
-    core()._gcs_system_set_consts(this.handle, slot[0], slot[1], this.bScratch.ptr);
+    core().gcs_system_update_consts(this.handle, this.sketch.handle, c.id);
   }
 
   /** Re-read every constraint's constants (after arbitrary dimension edits). */
   refreshConsts(): void {
-    const all: number[] = [];
-    for (const blk of this.blocks) {
-      if (!KERNELS[blk.kernelId].nConst) continue;
-      for (const c of blk.constraints) all.push(...c.consts());
-    }
-    if (!all.length) return;
-    this.bConst.view.set(all);
-    core()._gcs_system_set_all_consts(this.handle, this.bConst.ptr);
+    core().gcs_system_refresh_consts(this.handle, this.sketch.handle);
+  }
+
+  /** First residual row of a constraint. */
+  rowOf(c: Constraint): number {
+    return core().gcs_system_row_of(this.handle, c.id);
   }
 
   // -- evaluation ----------------------------------------------------------
 
   /** Free values of the current sketch geometry (also refreshes the core's copy of x). */
   z0(): Float64Array {
-    this.bx.set(this.sketch.getX());
-    core()._gcs_system_set_x(this.handle, this.bx.ptr);
-    core()._gcs_system_get_z(this.handle, this.bz.ptr);
-    return this.bz.copy();
-  }
-
-  fullX(z: ArrayLike<number>): Float64Array {
-    this.bz.set(z);
-    core()._gcs_system_full_x(this.handle, this.bz.ptr, this.bx.ptr);
-    return this.bx.copy();
+    return withBuf(Math.max(this.nFree, 1), 8, (b) => {
+      core().gcs_system_z0(this.handle, this.sketch.handle, b.ptr);
+      return b.f64.slice(0, this.nFree);
+    });
   }
 
   residuals(z: ArrayLike<number>): Float64Array {
-    this.bz.set(z);
-    core()._gcs_system_residuals(this.handle, this.bz.ptr, this.br.ptr);
-    return this.br.copy();
+    return withBuf(Math.max(this.nFree, 1), 8, (zb) =>
+      withBuf(Math.max(this.nRes, 1), 8, (rb) => {
+        zb.set(z);
+        core().gcs_system_residuals(this.handle, zb.ptr, rb.ptr);
+        return rb.f64.slice(0, this.nRes);
+      }));
   }
 
   jacobianDense(z: ArrayLike<number>): { rows: number; cols: number; data: Float64Array } {
-    if (!this.bJ) this.bJ = new Buf(this.nRes * this.nFree);
-    this.bz.set(z);
-    core()._gcs_system_jacobian_dense(this.handle, this.bz.ptr, this.bJ.ptr);
-    return { rows: this.nRes, cols: this.nFree, data: this.bJ.copy() };
+    const n = Math.max(this.nRes * this.nFree, 1);
+    return withBuf(Math.max(this.nFree, 1), 8, (zb) => withBuf(n, 8, (jb) => {
+      zb.set(z);
+      core().gcs_system_jacobian_dense(this.handle, zb.ptr, jb.ptr);
+      return { rows: this.nRes, cols: this.nFree, data: jb.f64.slice(0, this.nRes * this.nFree) };
+    }));
   }
 
-  /** max |r| over hard rows at z (default: the current sketch values) — what "solved" means. */
-  maxHardResidual(z?: ArrayLike<number>): number {
-    this.bz.set(z ?? this.z0());
-    return core()._gcs_system_max_hard_residual(this.handle, this.bz.ptr);
+  /** The sparse Jacobian in CSR; the structure is fixed at compile time. */
+  csr(z: ArrayLike<number>): { data: Float64Array; indices: Int32Array; indptr: Int32Array } {
+    return withBuf(Math.max(this.nFree, 1), 8, (zb) =>
+      withBuf(this.nRes + 1, 4, (ip) => withBuf(Math.max(this.nnz, 1), 4, (ix) =>
+        withBuf(Math.max(this.nnz, 1), 8, (d) => {
+          zb.set(z);
+          core().gcs_system_csr_structure(this.handle, ip.ptr, ix.ptr);
+          core().gcs_system_csr_data(this.handle, zb.ptr, d.ptr);
+          return {
+            data: d.f64.slice(0, this.nnz),
+            indices: ix.i32.slice(0, this.nnz),
+            indptr: ip.i32.slice(),
+          };
+        }))));
+  }
+
+  /** max |r| over hard rows at the current sketch values — what "solved" means. */
+  maxHardResidual(): number {
+    return core().gcs_system_max_hard_residual(this.handle, this.sketch.handle);
   }
 
   /** max |residual| per constraint, from one vectorized evaluation. */
-  constraintErrors(z?: ArrayLike<number>): Map<Constraint, number> {
-    const out = new Buf(this.constraints.length);
-    try {
-      this.bz.set(z ?? this.z0());
-      core()._gcs_system_constraint_errors(this.handle, this.bz.ptr, out.ptr);
-      const v = out.view;
-      const m = new Map<Constraint, number>();
-      let i = 0;
-      for (const blk of this.blocks) for (const c of blk.constraints) m.set(c, v[i++]);
-      return m;
-    } finally {
-      out.release();
-    }
-  }
-
-  /** Numerical rank of the Jacobian at z — the workhorse of Stage 2/4 diagnosis. */
-  rank(z?: ArrayLike<number>, rcond = 1e-10, hardOnly = false): number {
-    this.bz.set(z ?? this.z0());
-    return core()._gcs_system_rank(this.handle, this.bz.ptr, rcond, hardOnly ? 1 : 0);
-  }
-
-  /** Structural Jacobian as a bipartite graph: adj[row] = sorted free columns with a
-   *  structural nonzero, plus row -> owning constraint.  The public surface for diagnosis
-   *  and decomposition, derived from the compiled blocks so it stays in step with what the
-   *  solver actually evaluates.  Soft rows (drag targets) are never part of it. */
-  structure(): { adj: number[][]; rowC: Constraint[] } {
-    const adj: number[][] = [];
-    const rowC: Constraint[] = [];
-    for (const blk of this.blocks) {
-      const k = KERNELS[blk.kernelId];
-      for (let i = 0; i < blk.constraints.length; i++) {
-        const c = blk.constraints[i];
-        if (c.soft) continue;
-        const cols = new Set<number>();
-        for (let t = 0; t < k.nPar; t++) {
-          const col = this.colOf[blk.gidx[i * k.nPar + t]];
-          if (col >= 0) cols.add(col);
-        }
-        const sorted = [...cols].sort((a, b) => a - b);
-        for (let t = 0; t < k.nRes; t++) { adj.push(sorted); rowC.push(c); }
+  constraintErrors(): Map<Constraint, number> {
+    const n = this.sketch.constraints.length;
+    return withBuf(Math.max(n, 1), 4, (ids) => withBuf(Math.max(n, 1), 8, (vals) => {
+      const m = core().gcs_system_constraint_errors(this.handle, this.sketch.handle,
+                                                    ids.ptr, vals.ptr);
+      const out = new Map<Constraint, number>();
+      const ia = ids.i32, va = vals.f64;
+      for (let i = 0; i < m; i++) {
+        const c = this.sketch.constraintById(ia[i]);
+        if (c) out.set(c, va[i]);
       }
-    }
-    return { adj, rowC };
+      return out;
+    }));
+  }
+
+  /** Numerical rank of the Jacobian — the workhorse of Stage 2/4 diagnosis. */
+  rank(rcond = 1e-10, hardOnly = false): number {
+    return core().gcs_system_rank(this.handle, this.sketch.handle, rcond, hardOnly ? 1 : 0);
+  }
+
+  /** Structural Jacobian as a bipartite graph: adj[row] = sorted free columns with a structural
+   *  nonzero, plus row → owning constraint.  Soft rows are never part of it. */
+  structure(): Structure {
+    const d = takeJson<{ adj: number[][]; rowC: number[] }>(
+      core().gcs_system_structure_json(this.handle));
+    const rowC = d.rowC.map((id) => this.sketch.constraintById(id)!);
+    return { adj: d.adj, rowC };
   }
 
   // -- solving --------------------------------------------------------------
 
   solve(opts: {
     method?: Method;
-    tol?: number;          /* relative to extent^2 */
+    tol?: number;          /* relative to extent² */
     maxNfev?: number;
     writeback?: boolean;
     maxIter?: number;
     dense?: boolean | null;
   } = {}): SolveResult {
     const method = opts.method ?? 'dogleg';
-    const tol = opts.tol ?? 1e-14;
-    const maxIter = opts.maxIter ?? 100;
-    const writeback = opts.writeback ?? true;
     const t0 = now();
-    this.z0();                                    // leaves the free values in bz
-    // dense < 0 lets the C core pick by size; that threshold lives in one place, in newton.c
-    const dense = opts.dense === undefined || opts.dense === null ? -1 : Number(opts.dense);
-    core()._gcs_system_solve(
-      this.handle, method === 'lm' ? 1 : 0,
-      tol * this.scale, 1e-12, 1e-16 * this.scale,
-      maxIter, opts.maxNfev ?? 0, dense, this.bz.ptr, this.bInfo.ptr,
-    );
-    const info = this.bInfo.view;
-    if (writeback) {
-      core()._gcs_system_get_x(this.handle, this.bx.ptr);   // the solve wrote z back into x
-      this.sketch.setX(this.bx.view);
-    }
-    core()._gcs_system_residuals(this.handle, this.bz.ptr, this.br.ptr);
-    return this.result(info, this.br.view, now() - t0, method);
-  }
-
-  /** Build the result from the core's info block and the residual still sitting in `br`. */
-  private result(info: Int32Array, r: Float64Array, timeS: number, method: string): SolveResult {
-    let n2 = 0, mx = 0;
-    for (let i = 0; i < r.length; i++) {
-      n2 += r[i] * r[i];
-      if (this.hard[i]) { const a = Math.abs(r[i]); if (a > mx) mx = a; }
-    }
-    const [status, nfev, njev, iterations, rank] = info;
-    return {
-      success: status >= 0 && mx < 1e-6 * this.scale,
-      status,
-      message: STATUS[status] ?? 'unknown',
-      residualNorm: Math.sqrt(n2),
-      maxResidual: mx,
-      nfev, njev, timeS, method, iterations,
-      rank: rank < 0 ? null : rank,
-    };
+    return withBuf(8, 8, (b) => {
+      const msg = takeStr(core().gcs_system_solve(
+        this.handle, this.sketch.handle, METHOD_ID[method], opts.tol ?? 1e-14,
+        opts.maxIter ?? 100, opts.maxNfev ?? 0,
+        opts.dense === undefined || opts.dense === null ? -1 : Number(opts.dense),
+        opts.writeback === false ? 0 : 1, b.ptr));
+      return readResult(b.f64, msg, method, t0);
+    });
   }
 }
 
 /** One-shot: compile and solve, writing the result back into the sketch. */
 export function solve(sketch: Sketch, opts: Parameters<System['solve']>[0] = {}): SolveResult {
-  const s = new System(sketch);
-  try {
-    return s.solve(opts);
-  } finally {
-    s.dispose();
-  }
+  const method = opts.method ?? 'dogleg';
+  const t0 = now();
+  return withBuf(8, 8, (b) => {
+    const msg = takeStr(core().gcs_solve(
+      sketch.handle, METHOD_ID[method], opts.tol ?? 1e-14, opts.maxIter ?? 100,
+      opts.maxNfev ?? 0,
+      opts.dense === undefined || opts.dense === null ? -1 : Number(opts.dense), b.ptr));
+    return readResult(b.f64, msg, method, t0);
+  });
 }
-
-export type Triangle = [Point, Point, Point];
 
 /** Twice the signed area of (a, b, c) — the order-type invariant the drag guards. */
 export function orientation(a: Point, b: Point, c: Point): number {
-  return (b.x.value - a.x.value) * (c.y.value - a.y.value) - (b.y.value - a.y.value) * (c.x.value - a.x.value);
+  const [ax, ay] = a.xy, [bx, by] = b.xy, [cx, cy] = c.xy;
+  return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
 }
 
 /** Continuation path from (x0,y0) to (x1,y1): waypoints no farther apart than maxStep, so a
  *  solution tracks its branch instead of teleporting across it.  Always at least one point. */
-export function increments(x0: number, y0: number, x1: number, y1: number, maxStep: number): [number, number][] {
+export function increments(x0: number, y0: number, x1: number, y1: number,
+                           maxStep: number): [number, number][] {
   const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / maxStep));
   const out: [number, number][] = [];
   for (let i = 1; i <= n; i++) out.push([x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n]);
   return out;
 }
 
-/** The pull/polish protocol every interactive drag shares.
- *
- *  A soft constraint pulls the geometry toward what the cursor asks for; the hard
- *  constraints are then polished on their own so they hold exactly.  Both systems are
- *  compiled once, at drag start, and reused for every move — dragging never re-analyses the
- *  sketch.  The compile order is load-bearing: `polish` must be built before the soft target
- *  joins the sketch, so it contains the hard constraints only. */
-abstract class PullPolish<T extends Constraint> {
-  readonly PULL_ITER = 4;   // the pull is a soft compromise; polish makes it exact
-  readonly POLISH_ITER = 20;
+export function guardBuffer<T>(guards: Triangle[] | null | undefined,
+                               fn: (ptr: number, n: number) => T): T {
+  if (!guards || !guards.length) return fn(0, guards ? 0 : -1);
+  return withBuf(3 * guards.length, 4, (b) => {
+    const v = b.i32;
+    guards.forEach((t, i) => {
+      v[3 * i] = t[0].index;
+      v[3 * i + 1] = t[1].index;
+      v[3 * i + 2] = t[2].index;
+    });
+    return fn(b.ptr, guards.length);
+  });
+}
 
-  readonly polish: System;
-  readonly pull: System;
-  active = true;
-
-  constructor(readonly sketch: Sketch, readonly target: T, readonly method: Method) {
-    this.polish = new System(sketch);
-    sketch.add(target);
-    this.pull = new System(sketch);
-  }
-
-  /** One frame: push the target's new value in, pull, then make the hard ones exact. */
-  protected pullPolish(): SolveResult {
-    this.pull.updateConsts(this.target);
-    this.pull.solve({ method: this.method, maxIter: this.PULL_ITER });
-    return this.polish.solve({ method: this.method, maxIter: this.POLISH_ITER });
-  }
-
-  end(): void {
-    if (!this.active) return;
-    this.sketch.remove(this.target);
-    this.active = false;
-    this.pull.dispose();
-    this.polish.dispose();
-  }
+export function readFlips(sketch: Sketch, list: (d: number, out: number) => number,
+                          handle: number, n: number): Triangle[] {
+  if (n <= 0) return [];
+  return withBuf(3 * n, 4, (b) => {
+    list(handle, b.ptr);
+    const v = b.i32;
+    const pts = sketch.points;
+    const out: Triangle[] = [];
+    for (let i = 0; i < n; i++) out.push([pts[v[3 * i]], pts[v[3 * i + 1]], pts[v[3 * i + 2]]]);
+    return out;
+  });
 }
 
 /** Interactive drag of one point: pull toward the cursor, then polish.
  *
  *  Stage 5 robustness: continuation (a far cursor jump is taken in increments so the solution
- *  tracks its homotopy branch) and order-type guards (a step that would flip a guarded
- *  triangle's orientation is retried with smaller increments, and an unavoidable flip is
- *  recorded and flagged). */
-export class Drag extends PullPolish<DragTarget> {
-  guards: Triangle[];
-  flips: Triangle[] = [];
-  private signs: boolean[];
-  private maxStep: number;
-  private lastGood: Float64Array;
+ *  tracks its homotopy branch) and order-type guards (a step that would flip a guarded triangle's
+ *  orientation is retried with smaller increments; an unavoidable flip is recorded and flagged). */
+export class Drag {
+  private handle: number;
+  active = true;
 
   constructor(
-    sketch: Sketch,
+    readonly sketch: Sketch,
     readonly point: Point,
     x: number,
     y: number,
-    method: Method = 'dogleg',
+    readonly method: Method = 'dogleg',
     weight = 1.0,
-    guards: Triangle[] | null = null,
+    readonly guards: Triangle[] = [],
     maxStepRel = 0.05,
   ) {
-    super(sketch, new DragTarget(point, x, y, weight), method);
-    this.guards = guards ?? [];
-    this.maxStep = maxStepRel * Math.max(1, sketch.extent());
-    this.signs = this.guards.map((t) => orientation(t[0], t[1], t[2]) >= 0);
-    this.lastGood = sketch.getX();
+    this.handle = guardBuffer(guards, (ptr, n) => core().gcs_drag_new(
+      sketch.handle, point.index, x, y, METHOD_ID[method], weight, ptr, Math.max(n, 0),
+      maxStepRel));
+    sketch.touch();
   }
 
-  private step(x: number, y: number): SolveResult {
-    this.target.setTarget(x, y);
-    return this.pullPolish();
-  }
-
-  private flipped(): number[] {
-    const out: number[] = [];
-    for (let i = 0; i < this.guards.length; i++) {
-      const t = this.guards[i];
-      if ((orientation(t[0], t[1], t[2]) >= 0) !== this.signs[i]) out.push(i);
-    }
-    return out;
-  }
-
-  /** One increment that would flip a guard: bisect the remaining interval from the last good
-   *  state, keeping whatever prefix stays on the branch, within a sub-step budget. */
-  private damped(tx: number, ty: number, budget: number): [SolveResult, number] {
-    let res = this.step(tx, ty);
-    while (this.flipped().length && budget > 0) {
-      this.sketch.setX(this.lastGood);
-      const [bx, by] = this.point.xy;
-      res = this.step((bx + tx) / 2, (by + ty) / 2);
-      budget--;
-      if (this.flipped().length) continue;      // the flip is in the first half: bisect that
-      this.lastGood = this.sketch.getX();
-      res = this.step(tx, ty);                  // first half was clean: try the rest again
-      budget--;
-    }
-    return [res, budget];
+  get flips(): Triangle[] {
+    const c = core();
+    return readFlips(this.sketch, (d, o) => c.gcs_drag_flip_list(d, o), this.handle,
+                     c.gcs_drag_flips(this.handle));
   }
 
   move(x: number, y: number): SolveResult {
     const t0 = now();
-    const nFlips = this.flips.length;
-    let budget = 12;                            // cap the sub-steps a single frame may spend
-    const [px, py] = this.point.xy;
-    this.lastGood = this.sketch.getX();
-    let res = this.step(px, py);
-    for (const [tx, ty] of increments(px, py, x, y, this.maxStep)) {
-      res = this.step(tx, ty);
-      if (this.guards.length && this.flipped().length) {
-        [res, budget] = this.damped(tx, ty, budget);
-        for (const k of this.flipped()) {       // unavoidable: accept, record, flag
-          this.signs[k] = !this.signs[k];
-          this.flips.push(this.guards[k]);
-        }
-      }
-      this.lastGood = this.sketch.getX();
-    }
-    res.timeS = now() - t0;
-    if (this.flips.length > nFlips) res.message = `order-type flip in ${this.flips.length - nFlips} triangle(s)`;
-    return res;
+    return withBuf(8, 8, (b) => {
+      const msg = takeStr(core().gcs_drag_move(this.handle, this.sketch.handle, x, y, b.ptr));
+      return readResult(b.f64, msg, this.method, t0);
+    });
   }
-}
 
-/** A `Radius` that does not have to hold: its residual is already exactly r - target, so the
- *  scalar pull needs no kernel of its own. */
-function softRadius(circle: Circle | Arc, r: number): Radius {
-  const target = new Radius(circle, r);
-  target.soft = true;
-  return target;
+  end(): void {
+    if (!this.active) return;
+    this.active = false;
+    core().gcs_drag_end(this.handle, this.sketch.handle);
+    this.sketch.touch();
+    core().gcs_drag_free(this.handle);
+    this.handle = 0;
+  }
 }
 
 /** Interactive drag of a circle's or arc's radius — the scalar counterpart of `Drag`.
  *
- *  A radius that is fixed or dimensioned simply does not move: the polish wins, exactly as a
- *  point drag compromises on an over-constrained sketch.  An `EqualRadius` chain is a relation
- *  rather than a dimension, so the whole chain resizes together.  (The web app additionally
- *  refuses to *start* such a drag, using the diagnosis; that is a UI choice, not a property of
- *  this class.) */
-export class RadiusDrag extends PullPolish<Radius> {
-  constructor(sketch: Sketch, readonly circle: Circle | Arc, r: number, method: Method = 'dogleg') {
-    super(sketch, softRadius(circle, r), method);
+ *  A radius that is fixed or dimensioned simply does not move: the polish wins, exactly as a point
+ *  drag compromises on an over-constrained sketch.  An `EqualRadius` chain is a relation rather
+ *  than a dimension, so the whole chain resizes together. */
+export class RadiusDrag {
+  private handle: number;
+  active = true;
+
+  constructor(readonly sketch: Sketch, readonly circle: Circle | Arc, r: number,
+              readonly method: Method = 'dogleg') {
+    this.handle = core().gcs_radius_drag_new(sketch.handle, KIND_ID[circle.kind], circle.index,
+                                             r, METHOD_ID[method]);
+    sketch.touch();
   }
 
   move(r: number): SolveResult {
     const t0 = now();
-    this.target.r = Math.max(r, 1e-9);         // a radius through zero would flip the geometry
-    const res = this.pullPolish();
-    res.timeS = now() - t0;
-    return res;
+    return withBuf(8, 8, (b) => {
+      const msg = takeStr(core().gcs_radius_drag_move(this.handle, this.sketch.handle, r, b.ptr));
+      return readResult(b.f64, msg, this.method, t0);
+    });
+  }
+
+  end(): void {
+    if (!this.active) return;
+    this.active = false;
+    core().gcs_radius_drag_end(this.handle, this.sketch.handle);
+    this.sketch.touch();
+    core().gcs_radius_drag_free(this.handle);
+    this.handle = 0;
   }
 }

@@ -1,14 +1,17 @@
 """Every constraint's analytic Jacobian must agree with finite differences at random points."""
 
+from __future__ import annotations
+
 import math
 
 import numpy as np
 import pytest
 
 from gcs import constraints as C
+from gcs import examples
+from gcs.constraints import CONSTRAINT_TYPES
 from gcs.fdcheck import check_constraint, check_sketch
 from gcs.model import Sketch
-from gcs import examples
 from gcs.solve import System
 
 
@@ -26,13 +29,14 @@ def _sketch_with_stuff(seed: int):
 
 
 def all_constraints(seed: int):
+    """One instance of every constraint type, on a sketch of every kind of entity."""
     sk, p, q, s, l1, l2, c1, c2, a = _sketch_with_stuff(seed)
     return [
         C.Coincident(p, q), C.Distance(p, q, 3.0), C.Midpoint(p, l1), C.DragTarget(p, 1, 2, 0.3),
         C.Horizontal(l1), C.Vertical(l1), C.Parallel(l1, l2), C.Perpendicular(l1, l2),
         C.Angle(l1, l2, 0.7), C.EqualLength(l1, l2), C.PointOnLine(p, l1), C.PointOnCircle(p, c1),
         C.PointOnCircle(p, a), C.Radius(c1, 2.0), C.EqualRadius(c1, a),
-        C.TangentLineCircle(l1, c1), C.TangentLineCircle(l1, c1, side=-1),
+        C.TangentLineCircle(l1, c1), C.TangentLineCircle(l1, c1, -1),
         C.TangentCircleCircle(c1, c2, True), C.TangentCircleCircle(c1, c2, False),
         C.TangentArcLine(a, l1, "start"), C.TangentArcLine(a, l2, "end"),
         C.Symmetric(p, q, l1), C.ParallelDistance(l1, l2, 4.0),
@@ -46,6 +50,25 @@ def test_every_constraint_jacobian(seed: int) -> None:
     for c in all_constraints(seed):
         err = check_constraint(c)
         assert math.isfinite(err)
+
+
+def test_every_constraint_type_is_covered() -> None:
+    """The registry is the authority: a new type in the core shows up here and must be exercised."""
+    covered = {type(c).__name__ for c in all_constraints(0)}
+    assert covered == set(CONSTRAINT_TYPES)
+
+
+def test_scalar_kernel_matches_the_compiled_system() -> None:
+    """The one-row view of a kernel and the vectorized block must agree."""
+    sk = examples.rect_fillets()
+    s = System(sk)
+    z = s.z0()
+    r = s.residuals(z)
+    for c in sk.constraints:
+        off = s.row_of(c)
+        np.testing.assert_allclose(r[off : off + c.n_residuals],
+                                   c.residual(c.local_values()), atol=1e-12)
+    s.dispose()
 
 
 def test_shared_param_assembly() -> None:
@@ -66,4 +89,5 @@ def test_fixed_params_dropped_from_jacobian() -> None:
     sk = examples.rect_fillets()
     sys_ = System(sk)
     assert sys_.n_free == len(sk.params) - 2
-    assert sys_.jacobian(sys_.z0()).shape == (sk.n_residuals(), sys_.n_free)
+    assert sys_.jacobian_dense(sys_.z0()).shape == (sk.n_residuals(), sys_.n_free)
+    sys_.dispose()

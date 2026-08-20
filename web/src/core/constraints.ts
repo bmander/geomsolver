@@ -1,395 +1,372 @@
-/* Constraint types: entities -> a local parameter tuple, constants and a kernel.
+/* Constraint types — generated from the core's own registry.
  *
- * Each class declares
- *   * `kernelId` — its vectorized residual/Jacobian kernel in the C core,
- *   * `params`   — the ordered Params the kernel's columns refer to,
- *   * `consts()` — the per-constraint constants (dimension values, chirality flags),
- *   * `spec`     — its constructor arguments as (attribute, kind) pairs; serialization,
- *                  the constraint list, value editing and the toolbar applier all read it.
+ * The core declares every type's `spec` (its constructor arguments as (attribute, kind) pairs);
+ * this module turns that declaration into classes, so adding a constraint type in Rust makes it
+ * appear here with its attributes, its JSON form and its value editing, with nothing to change.
  *
- * Residual forms follow the program: distance uses |p-q|^2 - d^2 (no sqrt), parallel is a
- * 2x2 determinant, angle a dot/cross combination, tangency a signed distance minus the
- * radius with a chirality flag fixed at construction.
+ * A constraint can be built before it belongs to a sketch: until `Sketch.add` binds it, its
+ * arguments live locally; afterwards every read and write goes through the core.
  */
-import { K, KERNELS } from './kernels.js';
-import { Arc, Circle, Line, Param, Point, registerArcIntrinsic, registerPerpendicular } from './model.js';
+import {
+  ConstraintRecord, Entity, Kind, Param, Primitive, Sketch, registerConstraintFactory,
+} from './model.js';
+import { core, lastError, onInit, takeJson, takeStr, withBuf, withJson, withStr } from './wasm.js';
 
 export type SpecKind =
   | 'point' | 'line' | 'circle' | 'arc' | 'circle_or_arc'
   | 'length' | 'angle' | 'float' | 'int' | 'str' | 'bool';
 
-export const ENTITY_KINDS: ReadonlySet<string> = new Set(['point', 'line', 'circle', 'arc', 'circle_or_arc']);
+export const ENTITY_KINDS: ReadonlySet<string> =
+  new Set(['point', 'line', 'circle', 'arc', 'circle_or_arc']);
 export const DIMENSION_KINDS: ReadonlySet<string> = new Set(['length', 'angle']);
 
 export type Spec = readonly (readonly [string, SpecKind])[];
-export type Entity = Point | Line | Circle | Arc;
+export type Entity_ = Primitive;
+
+interface TypeEntry {
+  name: string;
+  spec: [string, SpecKind][];
+  defaults: unknown[];
+  soft: boolean;
+  commutative: boolean;
+  kernel: number;
+}
+
+interface KernelEntry {
+  name: string;
+  nRes: number;
+  nPar: number;
+  nConst: number;
+}
+
+interface Registry {
+  types: TypeEntry[];
+  kernels: KernelEntry[];
+}
+
+let registry: Registry | null = null;
+
+/** The core's constraint-type and kernel registry.  Read once, after `initCore`. */
+export function REGISTRY(): Registry {
+  if (!registry) registry = takeJson<Registry>(core().gcs_registry_json());
+  return registry;
+}
+
+const MAX_PAR = 16;   // the widest kernel takes 8; a little headroom costs nothing
 
 export abstract class Constraint {
-  abstract readonly kernelId: K;
-  params: Param[] = [];
-  soft = false;
-  /** Implied by a primitive's definition (an arc's endpoints sit at its radius). */
-  intrinsic = false;
+  static readonly spec: Spec = [];
+  static readonly defaults: readonly unknown[] = [];
+  static readonly commutative: boolean = false;
+  static readonly softByDefault: boolean = false;
+  static readonly kernelId: number = -1;
 
-  /** The first two spec entities may be swapped without changing the relation — see
-   *  `sameConstraint`.  Read off the class, so subclasses declare it as a static. */
-  get commutative(): boolean {
-    return (this.constructor as typeof Constraint & { commutative?: boolean }).commutative ?? false;
-  }
+  /* Spec-declared arguments are also exposed as properties (`c.d`, `c.side`, `c.external`),
+   * defined by the generated subclass — hence the index signature. */
+  [key: string]: unknown;
+
+  args: unknown[] = [];
+  soft = false;
+  intrinsic = false;
+  /** Document-stable identity, -1 until a sketch adopts it. */
+  id = -1;
+  sketch: Sketch | null = null;
 
   get spec(): Spec {
-    return (this.constructor as typeof Constraint & { spec: Spec }).spec;
+    return (this.constructor as typeof Constraint).spec;
+  }
+
+  get commutative(): boolean {
+    return (this.constructor as typeof Constraint).commutative;
+  }
+
+  get kernelId(): number {
+    return (this.constructor as typeof Constraint).kernelId;
   }
 
   get typeName(): string {
-    return (this.constructor as { ctorName?: string } & Function).name;
+    return this.constructor.name;
   }
 
   get nResiduals(): number {
-    return KERNELS[this.kernelId].nRes;
-  }
-
-  consts(): number[] {
-    return [];
+    return REGISTRY().kernels[this.kernelId].nRes;
   }
 
   /** Entities this constraint references directly, in spec order. */
-  entities(): Entity[] {
-    const self = this as unknown as Record<string, unknown>;
-    return this.spec.filter(([, k]) => ENTITY_KINDS.has(k)).map(([n]) => self[n] as Entity);
-  }
-
-  /** Constructor arguments in spec order (round-trips through `new Type(...args)`). */
-  args(): unknown[] {
-    const self = this as unknown as Record<string, unknown>;
-    return this.spec.map(([n]) => self[n]);
-  }
-
-  localValues(): Float64Array {
-    const v = new Float64Array(this.params.length);
-    for (let i = 0; i < this.params.length; i++) v[i] = this.params[i].value;
-    return v;
+  entities(): Primitive[] {
+    return this.spec.flatMap(([, k], i) =>
+      (ENTITY_KINDS.has(k) ? [this.args[i] as Primitive] : []));
   }
 
   /** The (attribute, kind) pairs of this constraint's dimension values. */
   dimensions(): (readonly [string, SpecKind])[] {
     return this.spec.filter(([, k]) => DIMENSION_KINDS.has(k));
   }
-}
 
-function sameArgs(a: Constraint, b: Constraint, swap: boolean): boolean {
-  const spec = a.spec;
-  const order = spec.map((_, i) => i);
-  if (swap) {
-    const ents = spec.flatMap(([, k], i) => (ENTITY_KINDS.has(k) ? [i] : []));
-    if (ents.length < 2) return false;
-    [order[ents[0]], order[ents[1]]] = [order[ents[1]], order[ents[0]]];
+  /** The sketch this constraint belongs to, or the one its entities come from. */
+  get owner(): Sketch {
+    if (this.sketch) return this.sketch;
+    for (const e of this.entities()) if (e) return e.sketch;
+    throw new Error(`${this.typeName} references no sketch`);
   }
-  const [av, bv] = [a.args(), b.args()];
-  return spec.every(([, kind], i) => (ENTITY_KINDS.has(kind)
-    ? av[i] === bv[order[i]]
-    : Object.is(av[i], bv[order[i]])));
+
+  toRecord(): { type: string; args: unknown[]; soft: boolean; intrinsic: boolean } {
+    const args = this.spec.map(([, kind], i) => {
+      const v = this.args[i];
+      return ENTITY_KINDS.has(kind) && v instanceof Entity ? (v as Primitive).ref : v;
+    });
+    return { type: this.typeName, args, soft: this.soft, intrinsic: this.intrinsic };
+  }
+
+  bind(sk: Sketch): void {
+    if (this.id >= 0 && this.sketch === sk) return;
+    const id = withJson(this.toRecord(), (p, n) => core().gcs_constraint_add(sk.handle, p, n));
+    if (id < 0) throw new Error(lastError() || 'constraint rejected');
+    this.sketch = sk;
+    this.id = id;
+    sk.byId.set(id, this);
+    // the core may have filled in a value we left to the geometry (a tangency's side)
+    const rec = takeJson<ConstraintRecord>(core().gcs_constraint_json(sk.handle, id));
+    if (rec) this.absorb(sk, rec);
+  }
+
+  unbind(): void {
+    this.id = -1;
+  }
+
+  absorb(sk: Sketch, rec: ConstraintRecord): void {
+    this.sketch = sk;
+    this.id = rec.id;
+    this.soft = rec.soft;
+    this.intrinsic = rec.intrinsic;
+    this.args = this.spec.map(([, kind], i) => fromJson(sk, rec.args[i], kind));
+  }
+
+  setValue(name: string, v: unknown): void {
+    const i = this.spec.findIndex(([n]) => n === name);
+    if (i < 0) return;
+    const kind = this.spec[i][1];
+    this.args[i] = v;
+    if (this.id >= 0 && this.sketch && !ENTITY_KINDS.has(kind)) {
+      withStr(name, (p, n) =>
+        core().gcs_constraint_set_num(this.sketch!.handle, this.id, p, n, Number(v)));
+    }
+  }
+
+  /** The values of the params the kernel's columns refer to. */
+  localValues(): Float64Array {
+    return this.evaluated((sk, id) => withBuf(MAX_PAR, 8, (b) => {
+      const n = core().gcs_constraint_local_values(sk.handle, id, b.ptr);
+      return b.f64.slice(0, n);
+    }));
+  }
+
+  /** The global Param indices the kernel's columns refer to. */
+  paramIndices(): number[] {
+    return this.evaluated((sk, id) => withBuf(MAX_PAR, 4, (b) => {
+      const n = core().gcs_constraint_params(sk.handle, id, b.ptr);
+      return [...b.i32.subarray(0, n)];
+    }));
+  }
+
+  residual(v: ArrayLike<number>): Float64Array {
+    return this.eval(v).r;
+  }
+
+  /** nResiduals x nParams, row-major, as the kernel computes it. */
+  jacobian(v: ArrayLike<number>): { rows: number; cols: number; data: Float64Array } {
+    const { r, j, nPar } = this.eval(v);
+    return { rows: r.length, cols: nPar, data: j };
+  }
+
+  private eval(v: ArrayLike<number>): { r: Float64Array; j: Float64Array; nPar: number } {
+    const nRes = this.nResiduals;
+    return this.evaluated((sk, id) => withBuf(v.length, 8, (vb) => withBuf(nRes, 8, (rb) =>
+      withBuf(nRes * MAX_PAR, 8, (jb) => {
+        vb.set(v);
+        const nPar = core().gcs_constraint_eval(sk.handle, id, vb.ptr, rb.ptr, jb.ptr);
+        return { r: rb.f64.slice(), j: jb.f64.slice(0, nRes * nPar), nPar };
+      }))));
+  }
+
+  /** Current residual norm (convenience for reporting). */
+  error(): number {
+    return this.evaluated((sk, id) => core().gcs_constraint_error(sk.handle, id));
+  }
+
+  describe(): string {
+    return this.evaluated((sk, id) => takeStr(core().gcs_describe(sk.handle, id)));
+  }
+
+  /** Run against the core.  A constraint the user has not added yet is placed in its entities'
+   *  sketch for the call and taken out again. */
+  private evaluated<T>(fn: (sk: Sketch, id: number) => T): T {
+    if (this.id >= 0 && this.sketch) return fn(this.sketch, this.id);
+    const sk = this.owner;
+    const temp = new (this.constructor as new (...a: never[]) => Constraint)();
+    temp.args = this.args.slice();
+    temp.soft = this.soft;
+    temp.intrinsic = this.intrinsic;
+    temp.bind(sk);
+    try {
+      this.args = temp.args.slice();   // a value the core filled in belongs to the original too
+      return fn(sk, temp.id);
+    } finally {
+      sk.remove(temp);
+    }
+  }
 }
 
-/** True when two constraints say exactly the same thing: same type, the same entities in the
- *  same roles, the same values.  `commutative` types also match with their first two entities
- *  swapped, since picking the pair in the other order means the same relation.
+function fromJson(sk: Sketch, v: unknown, kind: SpecKind): unknown {
+  if (ENTITY_KINDS.has(kind) && Array.isArray(v)) {
+    const [k, i] = v as [Kind, number];
+    return sk.entities(k)[i];
+  }
+  return v;
+}
+
+/** True when two constraints say exactly the same thing: same type, the same entities in the same
+ *  roles, the same values.  `commutative` types also match with their first two entities swapped.
  *
- *  Driven by `spec`, so a new constraint type is covered as soon as it declares one.
- *
- *  An exact duplicate is worth keeping out of a sketch: it adds equations without adding rank,
- *  and a structural matching cannot see that — two identical rows still match two different
- *  variables — so it stays invisible until some unrelated edit tips the block into a
- *  (spurious) over-constrained report. */
+ *  A duplicate adds equations without adding rank, and a structural matching cannot see that, so
+ *  it stays invisible until some unrelated edit tips the block into a spurious over-constrained
+ *  report — which is why it is worth keeping out. */
 export function sameConstraint(a: Constraint, b: Constraint): boolean {
   if (a.constructor !== b.constructor) return false;
-  return sameArgs(a, b, false) || (a.commutative && sameArgs(a, b, true));
-}
-
-/* -- point / point ---------------------------------------------------------- */
-
-export class Coincident extends Constraint {
-  static readonly commutative = true;
-  readonly kernelId = K.Coincident;
-  static readonly spec: Spec = [['p', 'point'], ['q', 'point']];
-  constructor(readonly p: Point, readonly q: Point) {
-    super();
-    this.params = [...p.params, ...q.params];
-  }
-}
-
-/** |p - q|^2 - d^2 = 0. */
-export class Distance extends Constraint {
-  static readonly commutative = true;
-  readonly kernelId = K.Distance;
-  static readonly spec: Spec = [['p', 'point'], ['q', 'point'], ['d', 'length']];
-  d: number;
-  constructor(readonly p: Point, readonly q: Point, d: number) {
-    super();
-    this.d = d;
-    this.params = [...p.params, ...q.params];
-  }
-  override consts(): number[] { return [this.d]; }
-}
-
-export class Midpoint extends Constraint {
-  readonly kernelId = K.Midpoint;
-  static readonly spec: Spec = [['p', 'point'], ['line', 'line']];
-  constructor(readonly p: Point, readonly line: Line) {
-    super();
-    this.params = [...p.params, ...line.params];
-  }
-}
-
-/** Soft constraint pulling `p` toward a (mutable) target; the drag. */
-export class DragTarget extends Constraint {
-  readonly kernelId = K.Drag;
-  static readonly spec: Spec = [['p', 'point'], ['tx', 'float'], ['ty', 'float'], ['weight', 'float']];
-  tx: number;
-  ty: number;
-  weight: number;
-  constructor(readonly p: Point, tx: number, ty: number, weight = 1.0) {
-    super();
-    this.tx = tx; this.ty = ty; this.weight = weight;
-    this.soft = true;
-    this.params = [...p.params];
-  }
-  setTarget(tx: number, ty: number): void { this.tx = tx; this.ty = ty; }
-  override consts(): number[] { return [this.tx, this.ty, this.weight]; }
-}
-
-/* -- line orientation ------------------------------------------------------- */
-
-export class Horizontal extends Constraint {
-  readonly kernelId = K.Horizontal;
-  static readonly spec: Spec = [['line', 'line']];
-  constructor(readonly line: Line) {
-    super();
-    this.params = [...line.params];
-  }
-}
-
-export class Vertical extends Constraint {
-  readonly kernelId = K.Vertical;
-  static readonly spec: Spec = [['line', 'line']];
-  constructor(readonly line: Line) {
-    super();
-    this.params = [...line.params];
-  }
-}
-
-abstract class TwoLine extends Constraint {
-  static readonly spec: Spec = [['l1', 'line'], ['l2', 'line']];
-  constructor(readonly l1: Line, readonly l2: Line) {
-    super();
-    this.params = [...l1.params, ...l2.params];
-  }
-}
-
-/** d1 x d2 = 0. */
-export class Parallel extends TwoLine {
-  static readonly commutative = true;
-  readonly kernelId = K.Parallel;
-  static override readonly spec: Spec = [['l1', 'line'], ['l2', 'line']];
-}
-
-/** d1 . d2 = 0. */
-export class Perpendicular extends TwoLine {
-  static readonly commutative = true;
-  readonly kernelId = K.Perpendicular;
-  static override readonly spec: Spec = [['l1', 'line'], ['l2', 'line']];
-}
-
-/** CCW angle from l1 to l2 equals theta (mod pi): dot*sin - cross*cos = 0. */
-export class Angle extends TwoLine {
-  readonly kernelId = K.Angle;
-  static override readonly spec: Spec = [['l1', 'line'], ['l2', 'line'], ['theta', 'angle']];
-  theta: number;
-  constructor(l1: Line, l2: Line, theta: number) {
-    super(l1, l2);
-    this.theta = theta;
-  }
-  override consts(): number[] { return [Math.sin(this.theta), Math.cos(this.theta)]; }
-}
-
-/** The gap between two parallel lines: l2's first endpoint sits a signed distance `d` from
- *  l1's infinite line, positive to the left of l1's direction.
- *
- *  One residual.  It dimensions the gap; it does not *create* the parallelism — add
- *  `Parallel` for that if nothing else already implies it.  Bundling both in duplicated a
- *  parallelism that the rest of a sketch has usually already forced (a symmetry plus a chain
- *  of perpendiculars is enough), and the resulting redundancy was hard to see. */
-export class ParallelDistance extends TwoLine {
-  readonly kernelId = K.ParallelDistance;
-  static override readonly spec: Spec = [['l1', 'line'], ['l2', 'line'], ['d', 'length']];
-  d: number;
-  constructor(l1: Line, l2: Line, d: number) {
-    super(l1, l2);
-    this.d = d;
-  }
-  override consts(): number[] { return [this.d]; }
-}
-
-/** |d1|^2 - |d2|^2 = 0. */
-export class EqualLength extends TwoLine {
-  static readonly commutative = true;
-  readonly kernelId = K.EqualLength;
-  static override readonly spec: Spec = [['l1', 'line'], ['l2', 'line']];
-}
-
-/* -- incidence -------------------------------------------------------------- */
-
-/** (b-a) x (p-a) = 0. */
-export class PointOnLine extends Constraint {
-  readonly kernelId = K.PointOnLine;
-  static readonly spec: Spec = [['p', 'point'], ['line', 'line']];
-  constructor(readonly p: Point, readonly line: Line) {
-    super();
-    this.params = [...p.params, ...line.params];
-  }
-}
-
-/** Signed perpendicular distance from `p` to `line`'s infinite line equals `d`, positive to
- *  the left of the line's direction.
- *
- *  Signed rather than absolute: the residual has no kink at zero, and negating `d` moves the
- *  point to the other side the way a tangency's `side` flag does.  `PointOnLine` is the d = 0
- *  case and stays separate — it is a polynomial and needs no division. */
-export class PointLineDistance extends Constraint {
-  readonly kernelId = K.PointLineDistance;
-  static readonly spec: Spec = [['p', 'point'], ['line', 'line'], ['d', 'length']];
-  d: number;
-  constructor(readonly p: Point, readonly line: Line, d: number) {
-    super();
-    this.d = d;
-    this.params = [...p.params, ...line.params];
-  }
-  override consts(): number[] { return [this.d]; }
-}
-
-/** |p - c|^2 - r^2 = 0. */
-export class PointOnCircle extends Constraint {
-  readonly kernelId = K.PointOnCircle;
-  static readonly spec: Spec = [['p', 'point'], ['circle', 'circle_or_arc']];
-  constructor(readonly p: Point, readonly circle: Circle | Arc, intrinsic = false) {
-    super();
-    this.params = [...p.params, ...circle.center.params, circle.radius];
-    this.intrinsic = intrinsic;
-  }
-}
-
-/* -- radii ------------------------------------------------------------------ */
-
-export class Radius extends Constraint {
-  readonly kernelId = K.Radius;
-  static readonly spec: Spec = [['circle', 'circle_or_arc'], ['r', 'length']];
-  r: number;
-  constructor(readonly circle: Circle | Arc, r: number) {
-    super();
-    this.r = r;
-    this.params = [circle.radius];
-  }
-  override consts(): number[] { return [this.r]; }
-}
-
-export class EqualRadius extends Constraint {
-  static readonly commutative = true;
-  readonly kernelId = K.EqualRadius;
-  static readonly spec: Spec = [['c1', 'circle_or_arc'], ['c2', 'circle_or_arc']];
-  constructor(readonly c1: Circle | Arc, readonly c2: Circle | Arc) {
-    super();
-    this.params = [c1.radius, c2.radius];
-  }
-}
-
-/** The annulus between two concentric circles: r2 − r1 = d, so `d` is the ring's radial
- *  thickness, positive when `c2` is the outer one.
- *
- *  One residual, on the radii alone.  It does not make the pair concentric — `Coincident` on
- *  the two centres does that, and folding it in here would restate a constraint the sketch
- *  almost always already carries (the same trap `ParallelDistance` fell into).  Off-centre it
- *  still means "r2 − r1", which is the eccentric-annulus reading, not a rim-to-rim gap. */
-export class AnnularDistance extends Constraint {
-  readonly kernelId = K.AnnularDistance;
-  static readonly spec: Spec = [['c1', 'circle_or_arc'], ['c2', 'circle_or_arc'], ['d', 'length']];
-  d: number;
-  constructor(readonly c1: Circle | Arc, readonly c2: Circle | Arc, d: number) {
-    super();
-    this.d = d;
-    this.params = [c1.radius, c2.radius];
-  }
-  override consts(): number[] { return [this.d]; }
-}
-
-/* -- tangency --------------------------------------------------------------- */
-
-/** Signed distance from the centre to the line equals +-r.  `side` is a chirality flag;
- *  when omitted it is read off the current geometry, so the solver keeps the circle on the
- *  side it already is. */
-export class TangentLineCircle extends Constraint {
-  readonly kernelId = K.TangentLineCircle;
-  static readonly spec: Spec = [['line', 'line'], ['circle', 'circle_or_arc'], ['side', 'int']];
-  side: number;
-  constructor(readonly line: Line, readonly circle: Circle | Arc, side: number | null = null) {
-    super();
-    this.params = [...line.params, ...circle.center.params, circle.radius];
-    if (side === null || side === undefined) {
-      const v = this.localValues();
-      const dx = v[2] - v[0], dy = v[3] - v[1], wx = v[4] - v[0], wy = v[5] - v[1];
-      side = dx * wy - dy * wx >= 0 ? 1 : -1;
+  const match = (swap: boolean): boolean => {
+    const order = a.spec.map((_, i) => i);
+    if (swap) {
+      const ents = a.spec.flatMap(([, k], i) => (ENTITY_KINDS.has(k) ? [i] : []));
+      if (ents.length < 2) return false;
+      [order[ents[0]], order[ents[1]]] = [order[ents[1]], order[ents[0]]];
     }
-    this.side = side;
-  }
-  override consts(): number[] { return [this.side]; }
+    return a.spec.every(([, kind], i) => (ENTITY_KINDS.has(kind)
+      ? a.args[i] === b.args[order[i]]
+      : Object.is(a.args[i], b.args[order[i]])));
+  };
+  return match(false) || (a.commutative && match(true));
 }
 
-/** |c1 - c2|^2 - (r1 +- r2)^2 = 0 (external: +, internal: -). */
-export class TangentCircleCircle extends Constraint {
-  static readonly commutative = true;
-  readonly kernelId = K.TangentCircleCircle;
-  static readonly spec: Spec = [['c1', 'circle_or_arc'], ['c2', 'circle_or_arc'], ['external', 'bool']];
-  external: boolean;
-  constructor(readonly c1: Circle | Arc, readonly c2: Circle | Arc, external = true) {
-    super();
-    this.external = external;
-    this.params = [...c1.center.params, c1.radius, ...c2.center.params, c2.radius];
-  }
-  override consts(): number[] { return [this.external ? 1 : -1]; }
+/* -- generated types --------------------------------------------------------- */
+
+export type ConstraintCtor = (new (...args: any[]) => Constraint) & {
+  spec: Spec;
+  defaults: readonly unknown[];
+  commutative: boolean;
+  softByDefault: boolean;
+  kernelId: number;
+};
+
+export const CONSTRAINT_TYPES: Record<string, ConstraintCtor> = {};
+
+function make(entry: TypeEntry): ConstraintCtor {
+  const spec = entry.spec.map(([n, k]) => [n, k] as const);
+  const cls = class extends Constraint {
+    constructor(...args: unknown[]) {
+      super();
+      // an omitted value takes the core's own default (a drag weight of 1, an external tangency,
+      // a tangency side read off the geometry)
+      this.args = spec.map((_, i) => (args[i] === undefined ? entry.defaults[i] : args[i]));
+      this.soft = entry.soft;
+    }
+  };
+  Object.defineProperty(cls, 'name', { value: entry.name });
+  Object.defineProperties(cls, {
+    spec: { value: spec },
+    defaults: { value: entry.defaults },
+    commutative: { value: entry.commutative },
+    softByDefault: { value: entry.soft },
+    kernelId: { value: entry.kernel },
+  });
+  spec.forEach(([attr], i) => {
+    Object.defineProperty(cls.prototype, attr, {
+      get(this: Constraint) {
+        return this.args[i];
+      },
+      set(this: Constraint, v: unknown) {
+        this.setValue(attr, v);
+      },
+    });
+  });
+  return cls as unknown as ConstraintCtor;
 }
 
-/** The line is tangent to the arc at the arc's `at` endpoint: (p - c).(b - a) = 0.
- *  Pair this with a Coincident between the arc endpoint and a line endpoint (the fillet). */
-export class TangentArcLine extends Constraint {
-  readonly kernelId = K.TangentArcLine;
-  static readonly spec: Spec = [['arc', 'arc'], ['line', 'line'], ['at', 'str']];
-  constructor(readonly arc: Arc, readonly line: Line, readonly at: 'start' | 'end') {
-    super();
-    const p = at === 'start' ? arc.start : arc.end;
-    this.params = [...p.params, ...arc.center.params, ...line.params];
-  }
+/** Build the classes from the core's registry.  Idempotent; run by `initCore`. */
+export function initTypes(): Record<string, ConstraintCtor> {
+  if (Object.keys(CONSTRAINT_TYPES).length) return CONSTRAINT_TYPES;
+  for (const entry of REGISTRY().types) CONSTRAINT_TYPES[entry.name] = make(entry);
+  registerConstraintFactory((sk, rec) => {
+    const Cls = CONSTRAINT_TYPES[rec.type];
+    const c = Object.create(Cls.prototype) as Constraint;
+    c.args = [];
+    c.soft = false;
+    c.intrinsic = false;
+    c.id = -1;
+    c.sketch = sk;
+    c.absorb(sk, rec);
+    return c;
+  });
+  ({
+    Coincident, Distance, Midpoint, DragTarget, Horizontal, Vertical, Parallel, Perpendicular,
+    Angle, ParallelDistance, EqualLength, PointOnLine, PointLineDistance, PointOnCircle, Radius,
+    EqualRadius, AnnularDistance, TangentLineCircle, TangentCircleCircle, TangentArcLine,
+    Symmetric,
+  } = CONSTRAINT_TYPES);
+  return CONSTRAINT_TYPES;
 }
 
-/** p and q mirror each other across `line`: their midpoint is on it and p->q crosses it at a
- *  right angle.  Two residuals, and the line itself is free to move. */
-export class Symmetric extends Constraint {
-  static readonly commutative = true;
-  readonly kernelId = K.Symmetric;
-  static readonly spec: Spec = [['p', 'point'], ['q', 'point'], ['line', 'line']];
-  constructor(readonly p: Point, readonly q: Point, readonly line: Line) {
-    super();
-    this.params = [...p.params, ...q.params, ...line.params];
-  }
+/* The types themselves.  They are live bindings, filled in by `initTypes` once the core is up —
+ * the registry is the core's, so there is nothing to declare twice. */
+export let Coincident: ConstraintCtor;
+export let Distance: ConstraintCtor;
+export let Midpoint: ConstraintCtor;
+export let DragTarget: ConstraintCtor;
+export let Horizontal: ConstraintCtor;
+export let Vertical: ConstraintCtor;
+export let Parallel: ConstraintCtor;
+export let Perpendicular: ConstraintCtor;
+export let Angle: ConstraintCtor;
+export let ParallelDistance: ConstraintCtor;
+export let EqualLength: ConstraintCtor;
+export let PointOnLine: ConstraintCtor;
+export let PointLineDistance: ConstraintCtor;
+export let PointOnCircle: ConstraintCtor;
+export let Radius: ConstraintCtor;
+export let EqualRadius: ConstraintCtor;
+export let AnnularDistance: ConstraintCtor;
+export let TangentLineCircle: ConstraintCtor;
+export let TangentCircleCircle: ConstraintCtor;
+export let TangentArcLine: ConstraintCtor;
+export let Symmetric: ConstraintCtor;
+
+onInit(() => {
+  initTypes();
+});
+
+/** Type test by name.  `instanceof` on a generated class narrows both branches to `Constraint`,
+ *  which makes a chain of checks collapse to `never`; asking the constraint what it is keeps the
+ *  chain readable and needs no per-type declaration. */
+export function isType(c: Constraint | null | undefined, name: string): boolean {
+  return !!c && c.typeName === name;
 }
 
-/* -- registry --------------------------------------------------------------- */
+/** A constraint type by name — the generic path the toolbar applier and I/O use. */
+export function type(name: string): ConstraintCtor {
+  const t = initTypes()[name];
+  if (!t) throw new Error(`unknown constraint type: ${name}`);
+  return t;
+}
 
-export type ConstraintCtor = (new (...args: never[]) => Constraint) & { spec: Spec };
+export function build(name: string, args: unknown[]): Constraint {
+  const Cls = type(name) as unknown as new (...a: unknown[]) => Constraint;
+  return new Cls(...args);
+}
 
-export const CONSTRAINT_TYPES: Record<string, ConstraintCtor> = {
-  Coincident, Distance, Midpoint, DragTarget, Horizontal, Vertical, Parallel, Perpendicular,
-  Angle, ParallelDistance, EqualLength, PointOnLine, PointLineDistance, PointOnCircle, Radius,
-  EqualRadius, AnnularDistance, TangentLineCircle, TangentCircleCircle, TangentArcLine, Symmetric,
-} as unknown as Record<string, ConstraintCtor>;
+/** DragTarget's mutable target — the one write the hot path performs. */
+export function setTarget(c: Constraint, tx: number, ty: number): void {
+  c.args[1] = tx;
+  c.args[2] = ty;
+  if (c.id >= 0 && c.sketch) core().gcs_constraint_set_target(c.sketch.handle, c.id, tx, ty);
+}
 
-registerArcIntrinsic((p, circle, intrinsic) => new PointOnCircle(p, circle, intrinsic));
-registerPerpendicular((l1, l2) => new Perpendicular(l1, l2));
+export type { Param, Primitive };

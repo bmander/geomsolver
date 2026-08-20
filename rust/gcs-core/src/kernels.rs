@@ -1,0 +1,546 @@
+//! Residual / Jacobian kernels — one per constraint type, evaluated for a whole block of
+//! same-typed constraints per call.
+//!
+//! `v` is (n * n_par) local parameter values, `k` is (n * n_const) constants, `r` is (n * n_res)
+//! residuals and `j` is (n * n_res * n_par).  Column conventions match the `params` tuples the
+//! model builds; see the comment above each kernel.  Residual forms follow the program: squared
+//! distances (no sqrt), a determinant for parallel, dot/cross for angle, signed distance minus
+//! radius for tangency.
+//!
+//! The order of `KERNELS` **is** the kernel id and is part of the plan ABI.
+
+/// Kernel ids, in registration order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum K {
+    Coincident = 0,
+    Distance,
+    Midpoint,
+    Drag,
+    Horizontal,
+    Vertical,
+    Parallel,
+    Perpendicular,
+    Angle,
+    EqualLength,
+    PointOnLine,
+    PointOnCircle,
+    Radius,
+    EqualRadius,
+    TangentLineCircle,
+    TangentCircleCircle,
+    TangentArcLine,
+    Symmetric,
+    ParallelDistance,
+    PointLineDistance,
+    AnnularDistance,
+}
+
+pub const N_KERNELS: usize = 21;
+
+pub struct Kernel {
+    pub name: &'static str,
+    pub n_res: usize,
+    pub n_par: usize,
+    pub n_const: usize,
+    pub res: fn(n: usize, v: &[f64], k: &[f64], r: &mut [f64]),
+    pub jac: fn(n: usize, v: &[f64], k: &[f64], j: &mut [f64]),
+    /// n_res*n_par entries when the Jacobian is instance-independent.
+    pub const_jac: Option<&'static [f64]>,
+}
+
+pub fn kernel(id: K) -> &'static Kernel {
+    &KERNELS[id as usize]
+}
+
+pub fn kernel_by_id(id: usize) -> &'static Kernel {
+    &KERNELS[id]
+}
+
+/* -- linear kernels: r = J v with a constant J ----------------------------- */
+
+fn lin_res(n: usize, v: &[f64], j: &'static [f64], n_res: usize, n_par: usize, r: &mut [f64]) {
+    for i in 0..n {
+        let vv = &v[i * n_par..(i + 1) * n_par];
+        for t in 0..n_res {
+            let mut s = 0.0;
+            for c in 0..n_par {
+                s += j[t * n_par + c] * vv[c];
+            }
+            r[i * n_res + t] = s;
+        }
+    }
+}
+
+fn lin_jac(n: usize, j: &'static [f64], out: &mut [f64]) {
+    let sz = j.len();
+    for i in 0..n {
+        out[i * sz..(i + 1) * sz].copy_from_slice(j);
+    }
+}
+
+/// Jacobian of C/L from dC and dL — the quotient rule, shared by the signed distance-to-a-line
+/// kernels.
+fn ratio_jac(dc: &[f64], dl: &[f64], l: f64, c: f64, j: &mut [f64]) {
+    let f = c / (l * l);
+    for t in 0..dc.len() {
+        j[t] = dc[t] / l - f * dl[t];
+    }
+}
+
+/// `r = J v` with a compile-time constant J: the residual, the Jacobian and the shapes all
+/// derive from J, exactly as in the reference `linear_kernel`.
+macro_rules! linear_kernel {
+    ($name:ident, $nres:expr, $npar:expr, [$($x:expr),*]) => {
+        pub mod $name {
+            pub const J: &[f64] = &[$($x as f64),*];
+            pub fn res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+                super::lin_res(n, v, J, $nres, $npar, r)
+            }
+            pub fn jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
+                super::lin_jac(n, J, j)
+            }
+        }
+    };
+}
+
+// (px,py,qx,qy)
+linear_kernel!(coincident, 2, 4, [1, 0, -1, 0, 0, 1, 0, -1]);
+// (px,py,ax,ay,bx,by)
+linear_kernel!(midpoint, 2, 6, [2, 0, -1, 0, -1, 0, 0, 2, 0, -1, 0, -1]);
+// (ax,ay,bx,by): ay - by
+linear_kernel!(horizontal, 1, 4, [0, 1, 0, -1]);
+// (ax,ay,bx,by): ax - bx
+linear_kernel!(vertical, 1, 4, [1, 0, -1, 0]);
+// (r1,r2)
+linear_kernel!(equal_radius, 1, 2, [1, -1]);
+
+/* -- point / point --------------------------------------------------------- */
+
+/// (px,py,qx,qy), K = (d): |p-q|² - d²
+fn distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 4 * i;
+        let (dx, dy, d) = (v[o] - v[o + 2], v[o + 1] - v[o + 3], k[i]);
+        r[i] = dx * dx + dy * dy - d * d;
+    }
+}
+
+fn distance_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 4 * i;
+        let dx = 2.0 * (v[o] - v[o + 2]);
+        let dy = 2.0 * (v[o + 1] - v[o + 3]);
+        j[o] = dx;
+        j[o + 1] = dy;
+        j[o + 2] = -dx;
+        j[o + 3] = -dy;
+    }
+}
+
+/// (px,py), K = (tx,ty,w): the soft drag target
+fn drag_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let (o, ko) = (2 * i, 3 * i);
+        r[2 * i] = k[ko + 2] * (v[o] - k[ko]);
+        r[2 * i + 1] = k[ko + 2] * (v[o + 1] - k[ko + 1]);
+    }
+}
+
+fn drag_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let w = k[3 * i + 2];
+        let o = 4 * i;
+        j[o] = w;
+        j[o + 1] = 0.0;
+        j[o + 2] = 0.0;
+        j[o + 3] = w;
+    }
+}
+
+/* -- line orientation ------------------------------------------------------ */
+/* (a1x,a1y,b1x,b1y,a2x,a2y,b2x,b2y) */
+
+#[inline]
+fn dirs(v: &[f64]) -> (f64, f64, f64, f64) {
+    (v[2] - v[0], v[3] - v[1], v[6] - v[4], v[7] - v[5])
+}
+
+fn cross_jac(v: &[f64], j: &mut [f64]) {
+    let (d1x, d1y, d2x, d2y) = dirs(v);
+    j[0] = -d2y;
+    j[1] = d2x;
+    j[2] = d2y;
+    j[3] = -d2x;
+    j[4] = d1y;
+    j[5] = -d1x;
+    j[6] = -d1y;
+    j[7] = d1x;
+}
+
+fn dot_jac(v: &[f64], j: &mut [f64]) {
+    let (d1x, d1y, d2x, d2y) = dirs(v);
+    j[0] = -d2x;
+    j[1] = -d2y;
+    j[2] = d2x;
+    j[3] = d2y;
+    j[4] = -d1x;
+    j[5] = -d1y;
+    j[6] = d1x;
+    j[7] = d1y;
+}
+
+fn parallel_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let (d1x, d1y, d2x, d2y) = dirs(&v[8 * i..8 * i + 8]);
+        r[i] = d1x * d2y - d1y * d2x;
+    }
+}
+
+fn parallel_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let mut tmp = [0.0f64; 8];
+        cross_jac(&v[8 * i..8 * i + 8], &mut tmp);
+        j[8 * i..8 * i + 8].copy_from_slice(&tmp);
+    }
+}
+
+fn perpendicular_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let (d1x, d1y, d2x, d2y) = dirs(&v[8 * i..8 * i + 8]);
+        r[i] = d1x * d2x + d1y * d2y;
+    }
+}
+
+fn perpendicular_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let mut tmp = [0.0f64; 8];
+        dot_jac(&v[8 * i..8 * i + 8], &mut tmp);
+        j[8 * i..8 * i + 8].copy_from_slice(&tmp);
+    }
+}
+
+/// K = (sin theta, cos theta): dot*sin - cross*cos
+fn angle_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let (d1x, d1y, d2x, d2y) = dirs(&v[8 * i..8 * i + 8]);
+        r[i] = (d1x * d2x + d1y * d2y) * k[2 * i] - (d1x * d2y - d1y * d2x) * k[2 * i + 1];
+    }
+}
+
+fn angle_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let mut jd = [0.0f64; 8];
+    let mut jc = [0.0f64; 8];
+    for i in 0..n {
+        let vs = &v[8 * i..8 * i + 8];
+        let (s, c) = (k[2 * i], k[2 * i + 1]);
+        dot_jac(vs, &mut jd);
+        cross_jac(vs, &mut jc);
+        for t in 0..8 {
+            j[8 * i + t] = jd[t] * s - jc[t] * c;
+        }
+    }
+}
+
+fn equal_length_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let (d1x, d1y, d2x, d2y) = dirs(&v[8 * i..8 * i + 8]);
+        r[i] = d1x * d1x + d1y * d1y - d2x * d2x - d2y * d2y;
+    }
+}
+
+fn equal_length_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let (d1x, d1y, d2x, d2y) = dirs(&v[8 * i..8 * i + 8]);
+        let o = 8 * i;
+        j[o] = -2.0 * d1x;
+        j[o + 1] = -2.0 * d1y;
+        j[o + 2] = 2.0 * d1x;
+        j[o + 3] = 2.0 * d1y;
+        j[o + 4] = 2.0 * d2x;
+        j[o + 5] = 2.0 * d2y;
+        j[o + 6] = -2.0 * d2x;
+        j[o + 7] = -2.0 * d2y;
+    }
+}
+
+/* -- incidence ------------------------------------------------------------- */
+
+/// (px,py,ax,ay,bx,by): (b-a) x (p-a)
+fn point_on_line_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 6 * i;
+        let (dx, dy) = (v[o + 4] - v[o + 2], v[o + 5] - v[o + 3]);
+        let (wx, wy) = (v[o] - v[o + 2], v[o + 1] - v[o + 3]);
+        r[i] = dx * wy - dy * wx;
+    }
+}
+
+fn point_on_line_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 6 * i;
+        let (dx, dy) = (v[o + 4] - v[o + 2], v[o + 5] - v[o + 3]);
+        let (wx, wy) = (v[o] - v[o + 2], v[o + 1] - v[o + 3]);
+        j[o] = -dy;
+        j[o + 1] = dx;
+        j[o + 2] = dy - wy;
+        j[o + 3] = wx - dx;
+        j[o + 4] = wy;
+        j[o + 5] = -wx;
+    }
+}
+
+/// (px,py,cx,cy,r): |p-c|² - r²
+fn point_on_circle_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 5 * i;
+        let (ux, uy) = (v[o] - v[o + 2], v[o + 1] - v[o + 3]);
+        r[i] = ux * ux + uy * uy - v[o + 4] * v[o + 4];
+    }
+}
+
+fn point_on_circle_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 5 * i;
+        let (ux, uy) = (v[o] - v[o + 2], v[o + 1] - v[o + 3]);
+        j[o] = 2.0 * ux;
+        j[o + 1] = 2.0 * uy;
+        j[o + 2] = -2.0 * ux;
+        j[o + 3] = -2.0 * uy;
+        j[o + 4] = -2.0 * v[o + 4];
+    }
+}
+
+/* -- radii ----------------------------------------------------------------- */
+
+const RADIUS_J: &[f64] = &[1.0];
+
+fn radius_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        r[i] = v[i] - k[i];
+    }
+}
+
+fn radius_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        j[i] = 1.0;
+    }
+}
+
+/* -- tangency -------------------------------------------------------------- */
+
+/// (ax,ay,bx,by,cx,cy,r), K = (side): cross(b-a, c-a)/|b-a| - side*r
+fn tangent_line_circle_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 7 * i;
+        let (dx, dy) = (v[o + 2] - v[o], v[o + 3] - v[o + 1]);
+        let (wx, wy) = (v[o + 4] - v[o], v[o + 5] - v[o + 1]);
+        let l = dx.hypot(dy);
+        let c = dx * wy - dy * wx;
+        r[i] = c / l - k[i] * v[o + 6];
+    }
+}
+
+fn tangent_line_circle_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 7 * i;
+        let (dx, dy) = (v[o + 2] - v[o], v[o + 3] - v[o + 1]);
+        let (wx, wy) = (v[o + 4] - v[o], v[o + 5] - v[o + 1]);
+        let l = dx.hypot(dy);
+        let c = dx * wy - dy * wx;
+        let dc = [dy - wy, wx - dx, wy, -wx, -dy, dx, 0.0];
+        let dl = [-dx / l, -dy / l, dx / l, dy / l, 0.0, 0.0, 0.0];
+        ratio_jac(&dc, &dl, l, c, &mut j[o..o + 7]);
+        j[o + 6] = -k[i]; // the radius column is not part of the ratio
+    }
+}
+
+/// (c1x,c1y,r1,c2x,c2y,r2), K = (sign): +1 external, -1 internal
+fn tangent_circle_circle_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 6 * i;
+        let (ux, uy) = (v[o] - v[o + 3], v[o + 1] - v[o + 4]);
+        let rr = v[o + 2] + k[i] * v[o + 5];
+        r[i] = ux * ux + uy * uy - rr * rr;
+    }
+}
+
+fn tangent_circle_circle_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 6 * i;
+        let (ux, uy) = (v[o] - v[o + 3], v[o + 1] - v[o + 4]);
+        let rr = v[o + 2] + k[i] * v[o + 5];
+        j[o] = 2.0 * ux;
+        j[o + 1] = 2.0 * uy;
+        j[o + 2] = -2.0 * rr;
+        j[o + 3] = -2.0 * ux;
+        j[o + 4] = -2.0 * uy;
+        j[o + 5] = -2.0 * rr * k[i];
+    }
+}
+
+/// (px,py,cx,cy,ax,ay,bx,by): (p-c)·(b-a)
+fn tangent_arc_line_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 8 * i;
+        r[i] = (v[o] - v[o + 2]) * (v[o + 6] - v[o + 4])
+            + (v[o + 1] - v[o + 3]) * (v[o + 7] - v[o + 5]);
+    }
+}
+
+fn tangent_arc_line_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 8 * i;
+        let (ux, uy) = (v[o] - v[o + 2], v[o + 1] - v[o + 3]);
+        let (dx, dy) = (v[o + 6] - v[o + 4], v[o + 7] - v[o + 5]);
+        j[o] = dx;
+        j[o + 1] = dy;
+        j[o + 2] = -dx;
+        j[o + 3] = -dy;
+        j[o + 4] = -ux;
+        j[o + 5] = -uy;
+        j[o + 6] = ux;
+        j[o + 7] = uy;
+    }
+}
+
+/* -- symmetry -------------------------------------------------------------- */
+
+/// (px,py,qx,qy,ax,ay,bx,by): p and q mirror each other across the line a->b.  Two residuals:
+/// the midpoint lies on the line (written as p + q - 2a to avoid the halving), and p->q is
+/// perpendicular to it.
+fn symmetric_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 8 * i;
+        let (dx, dy) = (v[o + 6] - v[o + 4], v[o + 7] - v[o + 5]);
+        let mx = v[o] + v[o + 2] - 2.0 * v[o + 4];
+        let my = v[o + 1] + v[o + 3] - 2.0 * v[o + 5];
+        r[2 * i] = dx * my - dy * mx;
+        r[2 * i + 1] = (v[o + 2] - v[o]) * dx + (v[o + 3] - v[o + 1]) * dy;
+    }
+}
+
+fn symmetric_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 8 * i;
+        let jo = 16 * i;
+        let (dx, dy) = (v[o + 6] - v[o + 4], v[o + 7] - v[o + 5]);
+        let mx = v[o] + v[o + 2] - 2.0 * v[o + 4];
+        let my = v[o + 1] + v[o + 3] - 2.0 * v[o + 5];
+        let (ex, ey) = (v[o + 2] - v[o], v[o + 3] - v[o + 1]);
+        j[jo] = -dy;
+        j[jo + 1] = dx;
+        j[jo + 2] = -dy;
+        j[jo + 3] = dx;
+        j[jo + 4] = 2.0 * dy - my;
+        j[jo + 5] = mx - 2.0 * dx;
+        j[jo + 6] = my;
+        j[jo + 7] = -mx;
+        j[jo + 8] = -dx;
+        j[jo + 9] = -dy;
+        j[jo + 10] = dx;
+        j[jo + 11] = dy;
+        j[jo + 12] = -ex;
+        j[jo + 13] = -ey;
+        j[jo + 14] = ex;
+        j[jo + 15] = ey;
+    }
+}
+
+/// (a1x,a1y,b1x,b1y,a2x,a2y,b2x,b2y), K = (d): signed perpendicular distance from l2's first
+/// endpoint to l1's infinite line.  It does NOT make them parallel.
+fn parallel_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 8 * i;
+        let (d1x, d1y) = (v[o + 2] - v[o], v[o + 3] - v[o + 1]);
+        let (wx, wy) = (v[o + 4] - v[o], v[o + 5] - v[o + 1]);
+        r[i] = (d1x * wy - d1y * wx) / d1x.hypot(d1y) - k[i];
+    }
+}
+
+fn parallel_distance_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 8 * i;
+        let (d1x, d1y) = (v[o + 2] - v[o], v[o + 3] - v[o + 1]);
+        let (wx, wy) = (v[o + 4] - v[o], v[o + 5] - v[o + 1]);
+        let l = d1x.hypot(d1y);
+        let c = d1x * wy - d1y * wx;
+        let dc = [d1y - wy, wx - d1x, wy, -wx, -d1y, d1x, 0.0, 0.0];
+        let dl = [-d1x / l, -d1y / l, d1x / l, d1y / l, 0.0, 0.0, 0.0, 0.0];
+        ratio_jac(&dc, &dl, l, c, &mut j[o..o + 8]);
+    }
+}
+
+/// (px,py,ax,ay,bx,by), K = (d): signed perpendicular distance from p to the infinite line
+/// through a,b, positive to the left of a→b.
+fn point_line_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 6 * i;
+        let (dx, dy) = (v[o + 4] - v[o + 2], v[o + 5] - v[o + 3]);
+        let (wx, wy) = (v[o] - v[o + 2], v[o + 1] - v[o + 3]);
+        r[i] = (dx * wy - dy * wx) / dx.hypot(dy) - k[i];
+    }
+}
+
+fn point_line_distance_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 6 * i;
+        let (dx, dy) = (v[o + 4] - v[o + 2], v[o + 5] - v[o + 3]);
+        let (wx, wy) = (v[o] - v[o + 2], v[o + 1] - v[o + 3]);
+        let l = dx.hypot(dy);
+        let c = dx * wy - dy * wx;
+        let dc = [-dy, dx, dy - wy, wx - dx, wy, -wx];
+        let dl = [0.0, 0.0, -dx / l, -dy / l, dx / l, dy / l];
+        ratio_jac(&dc, &dl, l, c, &mut j[o..o + 6]);
+    }
+}
+
+/// (r1,r2), K = (d): r2 - r1 - d, the radial gap between two concentric circles.
+const ANNULAR_DISTANCE_J: &[f64] = &[-1.0, 1.0];
+
+fn annular_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        r[i] = v[2 * i + 1] - v[2 * i] - k[i];
+    }
+}
+
+fn annular_distance_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
+    lin_jac(n, ANNULAR_DISTANCE_J, j)
+}
+
+/* -- registry (order == kernel id, shared with the bindings) --------------- */
+
+pub static KERNELS: [Kernel; N_KERNELS] = [
+    Kernel { name: "coincident", n_res: 2, n_par: 4, n_const: 0, res: coincident::res, jac: coincident::jac, const_jac: Some(coincident::J) },
+    Kernel { name: "distance", n_res: 1, n_par: 4, n_const: 1, res: distance_res, jac: distance_jac, const_jac: None },
+    Kernel { name: "midpoint", n_res: 2, n_par: 6, n_const: 0, res: midpoint::res, jac: midpoint::jac, const_jac: Some(midpoint::J) },
+    Kernel { name: "drag", n_res: 2, n_par: 2, n_const: 3, res: drag_res, jac: drag_jac, const_jac: None },
+    Kernel { name: "horizontal", n_res: 1, n_par: 4, n_const: 0, res: horizontal::res, jac: horizontal::jac, const_jac: Some(horizontal::J) },
+    Kernel { name: "vertical", n_res: 1, n_par: 4, n_const: 0, res: vertical::res, jac: vertical::jac, const_jac: Some(vertical::J) },
+    Kernel { name: "parallel", n_res: 1, n_par: 8, n_const: 0, res: parallel_res, jac: parallel_jac, const_jac: None },
+    Kernel { name: "perpendicular", n_res: 1, n_par: 8, n_const: 0, res: perpendicular_res, jac: perpendicular_jac, const_jac: None },
+    Kernel { name: "angle", n_res: 1, n_par: 8, n_const: 2, res: angle_res, jac: angle_jac, const_jac: None },
+    Kernel { name: "equal_length", n_res: 1, n_par: 8, n_const: 0, res: equal_length_res, jac: equal_length_jac, const_jac: None },
+    Kernel { name: "point_on_line", n_res: 1, n_par: 6, n_const: 0, res: point_on_line_res, jac: point_on_line_jac, const_jac: None },
+    Kernel { name: "point_on_circle", n_res: 1, n_par: 5, n_const: 0, res: point_on_circle_res, jac: point_on_circle_jac, const_jac: None },
+    Kernel { name: "radius", n_res: 1, n_par: 1, n_const: 1, res: radius_res, jac: radius_jac, const_jac: Some(RADIUS_J) },
+    Kernel { name: "equal_radius", n_res: 1, n_par: 2, n_const: 0, res: equal_radius::res, jac: equal_radius::jac, const_jac: Some(equal_radius::J) },
+    Kernel { name: "tangent_line_circle", n_res: 1, n_par: 7, n_const: 1, res: tangent_line_circle_res, jac: tangent_line_circle_jac, const_jac: None },
+    Kernel { name: "tangent_circle_circle", n_res: 1, n_par: 6, n_const: 1, res: tangent_circle_circle_res, jac: tangent_circle_circle_jac, const_jac: None },
+    Kernel { name: "tangent_arc_line", n_res: 1, n_par: 8, n_const: 0, res: tangent_arc_line_res, jac: tangent_arc_line_jac, const_jac: None },
+    Kernel { name: "symmetric", n_res: 2, n_par: 8, n_const: 0, res: symmetric_res, jac: symmetric_jac, const_jac: None },
+    Kernel { name: "parallel_distance", n_res: 1, n_par: 8, n_const: 1, res: parallel_distance_res, jac: parallel_distance_jac, const_jac: None },
+    Kernel { name: "point_line_distance", n_res: 1, n_par: 6, n_const: 1, res: point_line_distance_res, jac: point_line_distance_jac, const_jac: None },
+    Kernel { name: "annular_distance", n_res: 1, n_par: 2, n_const: 1, res: annular_distance_res, jac: annular_distance_jac, const_jac: Some(ANNULAR_DISTANCE_J) },
+];
+
+/// One row of a kernel: residual and Jacobian for a single constraint's local values.  The
+/// scalar view of the vectorized kernels, kept for the finite-difference checker and reporting.
+pub fn eval_one(id: usize, v: &[f64], c: &[f64]) -> (Vec<f64>, Vec<f64>) {
+    let k = &KERNELS[id];
+    let mut r = vec![0.0; k.n_res];
+    let mut j = vec![0.0; k.n_res * k.n_par];
+    (k.res)(1, v, c, &mut r);
+    (k.jac)(1, v, c, &mut j);
+    (r, j)
+}

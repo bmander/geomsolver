@@ -1,192 +1,215 @@
-"""Parameters, primitives and the Sketch container.
+"""Parameters, primitives and the Sketch container — proxies over the Rust model.
 
-Every scalar degree of freedom is a `Param`.  Primitives are thin bundles of
-Params; the Sketch owns the ordered list of Params (its parameter vector) and
-the ordered list of Constraints.  Ordering is deterministic by construction —
-insertion order, never hashing — so identical edits give bit-identical solves.
+A `Param` is an index, an entity is a `(kind, index)` pair and a constraint is a document-stable
+id; the objects here are interned per sketch, so `is` and `id()` mean what they always did while
+the data itself lives in the core.  Nothing is mirrored: every read goes through the ABI.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Iterable, NamedTuple, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, NamedTuple, Sequence
 
 import numpy as np
-import numpy.typing as npt
+
+from gcs import _ffi
+from gcs._ffi import Vec, lib
 
 if TYPE_CHECKING:
     from gcs.constraints import Constraint
 
-Vec = npt.NDArray[np.float64]
-Box = tuple[float, float, float, float]      # (xmin, ymin, xmax, ymax)
+Box = tuple[float, float, float, float]  # (xmin, ymin, xmax, ymax)
+
+KIND_ID = {"point": 0, "line": 1, "circle": 2, "arc": 3}
+KINDS = ("point", "line", "circle", "arc")
 
 
-def _union(boxes: Iterable[Box]) -> Box | None:
-    lo_x, lo_y, hi_x, hi_y = math.inf, math.inf, -math.inf, -math.inf
-    for x0, y0, x1, y1 in boxes:
-        lo_x, lo_y = min(lo_x, x0), min(lo_y, y0)
-        hi_x, hi_y = max(hi_x, x1), max(hi_y, y1)
-    return None if lo_x is math.inf or lo_x > hi_x else (lo_x, lo_y, hi_x, hi_y)
-
-
-@dataclass(eq=False)
 class Param:
-    """One scalar unknown. `index` is its slot in the sketch's parameter vector."""
+    """One scalar unknown.  `index` is its slot in the sketch's parameter vector."""
 
-    value: float
-    fixed: bool = False
-    index: int = -1
-    name: str = ""
+    __slots__ = ("sketch", "index")
+
+    def __init__(self, sketch: Sketch, index: int) -> None:
+        self.sketch = sketch
+        self.index = index
+
+    @property
+    def value(self) -> float:
+        return float(lib.gcs_param_value(self.sketch._h, self.index))
+
+    @value.setter
+    def value(self, v: float) -> None:
+        lib.gcs_param_set_value(self.sketch._h, self.index, float(v))
+
+    @property
+    def fixed(self) -> bool:
+        return bool(lib.gcs_param_fixed(self.sketch._h, self.index))
+
+    @fixed.setter
+    def fixed(self, v: bool) -> None:
+        lib.gcs_param_set_fixed(self.sketch._h, self.index, 1 if v else 0)
+
+    @property
+    def name(self) -> str:
+        return _ffi.take_str(lib.gcs_param_name(self.sketch._h, self.index))
 
     def __repr__(self) -> str:
         f = " fixed" if self.fixed else ""
         return f"Param({self.name or self.index}={self.value:.6g}{f})"
 
 
-@dataclass(eq=False)
-class Point:
-    x: Param
-    y: Param
+class Entity:
+    """A primitive: its kind and its index in the sketch's ordered list for that kind."""
 
-    kind = "point"
-    children: tuple[Point, ...] = ()
+    kind: str = ""
+    __slots__ = ("sketch", "index")
+
+    def __init__(self, sketch: Sketch, index: int) -> None:
+        self.sketch = sketch
+        self.index = index
+
+    @property
+    def _k(self) -> int:
+        return KIND_ID[self.kind]
+
+    @property
+    def ref(self) -> list[Any]:
+        return [self.kind, self.index]
 
     @property
     def params(self) -> tuple[Param, ...]:
-        return (self.x, self.y)
-
-    @property
-    def xy(self) -> tuple[float, float]:
-        return (self.x.value, self.y.value)
-
-    @property
-    def is_fixed(self) -> bool:
-        return self.x.fixed and self.y.fixed
-
-    def fix(self, fixed: bool = True) -> None:
-        self.x.fixed = fixed
-        self.y.fixed = fixed
-
-    def bounds(self) -> Box:
-        return (self.x.value, self.y.value, self.x.value, self.y.value)
-
-
-@dataclass(eq=False)
-class Line:
-    p1: Point
-    p2: Point
-    construction: bool = False   # reference geometry: drawn dashed, constrains like any other
-
-    kind = "line"
+        buf = _ffi.i32(8)
+        n = lib.gcs_entity_params(self.sketch._h, self._k, self.index, _ffi.pi(buf))
+        return tuple(self.sketch.param_at(int(i)) for i in buf[:n])
 
     @property
     def children(self) -> tuple[Point, ...]:
-        return (self.p1, self.p2)
+        if self.kind == "point":
+            return ()
+        buf = _ffi.i32(4)
+        n = lib.gcs_entity_points(self.sketch._h, self._k, self.index, _ffi.pi(buf))
+        return tuple(self.sketch.points[int(i)] for i in buf[:n])
+
+    def bounds(self) -> Box:
+        out = _ffi.f64(4)
+        lib.gcs_entity_bounds(self.sketch._h, self._k, self.index, _ffi.pf(out))
+        return (float(out[0]), float(out[1]), float(out[2]), float(out[3]))
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self.index})"
+
+
+class _Constructible(Entity):
+    """Line, Circle and Arc carry the construction (reference geometry) flag."""
+
+    __slots__ = ()
 
     @property
-    def params(self) -> tuple[Param, ...]:
-        return self.p1.params + self.p2.params
+    def construction(self) -> bool:
+        return bool(lib.gcs_entity_construction(self.sketch._h, self._k, self.index))
+
+    @construction.setter
+    def construction(self, v: bool) -> None:
+        lib.gcs_entity_set_construction(self.sketch._h, self._k, self.index, 1 if v else 0)
+
+
+class Point(Entity):
+    kind = "point"
+    __slots__ = ()
+
+    @property
+    def x(self) -> Param:
+        return self.params[0]
+
+    @property
+    def y(self) -> Param:
+        return self.params[1]
+
+    @property
+    def xy(self) -> tuple[float, float]:
+        p = self.params
+        return (p[0].value, p[1].value)
+
+    @property
+    def is_fixed(self) -> bool:
+        p = self.params
+        return p[0].fixed and p[1].fixed
+
+    def fix(self, fixed: bool = True) -> None:
+        for p in self.params:
+            p.fixed = fixed
+
+
+class Line(_Constructible):
+    kind = "line"
+    __slots__ = ()
+
+    @property
+    def p1(self) -> Point:
+        return self.children[0]
+
+    @property
+    def p2(self) -> Point:
+        return self.children[1]
 
     def direction(self) -> tuple[float, float]:
-        return (self.p2.x.value - self.p1.x.value, self.p2.y.value - self.p1.y.value)
+        (ax, ay), (bx, by) = self.p1.xy, self.p2.xy
+        return (bx - ax, by - ay)
 
     def length(self) -> float:
         return math.hypot(*self.direction())
 
-    def bounds(self) -> Box:
-        return (min(self.p1.x.value, self.p2.x.value), min(self.p1.y.value, self.p2.y.value),
-                max(self.p1.x.value, self.p2.x.value), max(self.p1.y.value, self.p2.y.value))
 
-
-@dataclass(eq=False)
-class Circle:
-    center: Point
-    radius: Param
-    construction: bool = False
-
+class Circle(_Constructible):
     kind = "circle"
+    __slots__ = ()
 
     @property
-    def children(self) -> tuple[Point, ...]:
-        return (self.center,)
+    def center(self) -> Point:
+        return self.children[0]
 
     @property
-    def params(self) -> tuple[Param, ...]:
-        return self.center.params + (self.radius,)
-
-    def bounds(self) -> Box:
-        cx, cy = self.center.xy
-        r = abs(self.radius.value)
-        return (cx - r, cy - r, cx + r, cy + r)
+    def radius(self) -> Param:
+        i = lib.gcs_entity_radius_param(self.sketch._h, self._k, self.index)
+        return self.sketch.param_at(int(i))
 
 
-@dataclass(eq=False)
-class Arc:
-    """CCW arc from `start` to `end` about `center` with radius `radius`.
-
-    Storing the radius as its own Param (rather than deriving it) lets Circle
-    and Arc share every radius-based constraint.  The two intrinsic constraints
-    |start-center|² = r² and |end-center|² = r² are added by Sketch.arc().
-    Net DOF: 7 params - 2 = 5.
-    """
-
-    center: Point
-    start: Point
-    end: Point
-    radius: Param
-    construction: bool = False
+class Arc(_Constructible):
+    """CCW arc from `start` to `end` about `center`.  The radius is its own Param so Circle and
+    Arc share every radius-based constraint; the two intrinsic constraints |start-center|² = r²
+    and |end-center|² = r² are added by `Sketch.arc`."""
 
     kind = "arc"
+    __slots__ = ()
 
     @property
-    def children(self) -> tuple[Point, ...]:
-        return (self.center, self.start, self.end)
+    def center(self) -> Point:
+        return self.children[0]
 
     @property
-    def params(self) -> tuple[Param, ...]:
-        return self.center.params + self.start.params + self.end.params + (self.radius,)
+    def start(self) -> Point:
+        return self.children[1]
+
+    @property
+    def end(self) -> Point:
+        return self.children[2]
+
+    @property
+    def radius(self) -> Param:
+        i = lib.gcs_entity_radius_param(self.sketch._h, self._k, self.index)
+        return self.sketch.param_at(int(i))
 
     def angles(self) -> tuple[float, float]:
-        cx, cy = self.center.xy
-        a0 = math.atan2(self.start.y.value - cy, self.start.x.value - cx)
-        a1 = math.atan2(self.end.y.value - cy, self.end.x.value - cx)
-        if a1 <= a0:
-            a1 += 2 * math.pi
-        return a0, a1
-
-    def extremes(self) -> list[tuple[float, float]]:
-        """The points that bound the drawn sweep: its two ends, plus every quarter-turn
-        direction the sweep passes through.  Endpoints alone would under-report an arc that
-        bulges past them."""
-        cx, cy = self.center.xy
-        r = abs(self.radius.value)
-        a0, a1 = self.angles()
-        def at(th: float) -> tuple[float, float]:
-            return (cx + r * math.cos(th), cy + r * math.sin(th))
-
-        out = [at(a0), at(a1)]
-        quarter = math.pi / 2
-        k = math.ceil(a0 / quarter)
-        while k * quarter < a1:
-            out.append(at(k * quarter))
-            k += 1
-        return out
-
-    def bounds(self) -> Box:
-        xs = [p[0] for p in self.extremes()]
-        ys = [p[1] for p in self.extremes()]
-        return (min(xs), min(ys), max(xs), max(ys))
+        out = _ffi.f64(2)
+        lib.gcs_arc_angles(self.sketch._h, self.index, _ffi.pf(out))
+        return (float(out[0]), float(out[1]))
 
 
 Primitive = Point | Line | Circle | Arc
+_CLASSES: dict[str, type[Entity]] = {"point": Point, "line": Line, "circle": Circle, "arc": Arc}
 
 
 class ThreePointArc(NamedTuple):
-    """The CCW arc through three points: centre, radius, and the sweep from `a0` to `a1`
-    that passes through the third point.  `swapped` is True when that sweep runs from the
-    *second* given point to the first."""
-
     cx: float
     cy: float
     r: float
@@ -195,247 +218,271 @@ class ThreePointArc(NamedTuple):
     swapped: bool
 
 
-def three_point_arc(ax: float, ay: float, bx: float, by: float,
-                    cx: float, cy: float, tol: float = 1e-9) -> ThreePointArc | None:
-    """Arc from (ax, ay) to (bx, by) passing through (cx, cy) — the circumcircle of the
-    three, plus the sweep direction that actually contains the third point.  None if they
-    are collinear (the test is on the sine of the angle, so it is scale-free)."""
-    ux, uy = bx - ax, by - ay
-    vx, vy = cx - ax, cy - ay
-    cross = ux * vy - uy * vx
-    if abs(cross) <= tol * math.hypot(ux, uy) * math.hypot(vx, vy):
+def three_point_arc(ax: float, ay: float, bx: float, by: float, cx: float, cy: float,
+                    tol: float = 1e-9) -> ThreePointArc | None:
+    """The circumcircle of three points plus the sweep direction that contains the third.
+    None if they are collinear (the test is on the sine of the angle, so it is scale-free)."""
+    out = _ffi.f64(6)
+    ok = lib.gcs_three_point_arc(ax, ay, bx, by, cx, cy, _ffi.pf(out))
+    if not ok:
         return None
-    d = 2 * cross
-    u2, v2 = ux * ux + uy * uy, vx * vx + vy * vy
-    ox = ax + (vy * u2 - uy * v2) / d
-    oy = ay + (ux * v2 - vx * u2) / d
-    r = math.hypot(ax - ox, ay - oy)
-    ta = math.atan2(ay - oy, ax - ox)
-    tb = math.atan2(by - oy, bx - ox)
+    return ThreePointArc(float(out[0]), float(out[1]), float(out[2]),
+                         float(out[3]), float(out[4]), bool(out[5]))
 
-    def sweep(th: float) -> float:
-        return (th - ta) % (2 * math.pi)
 
-    to_b, to_c = sweep(tb), sweep(math.atan2(cy - oy, cx - ox))
-    if to_c < to_b:                                    # the third point is on the a → b sweep
-        return ThreePointArc(ox, oy, r, ta, ta + to_b, False)
-    return ThreePointArc(ox, oy, r, tb, tb + (2 * math.pi - to_b), True)
+class Sketch:
+    """The ordered parameter vector and constraint list, owned by the core."""
+
+    def __init__(self, handle: Any = None) -> None:
+        self._h = handle if handle is not None else lib.gcs_sketch_new()
+        self._params: list[Param] = []
+        self._ents: dict[str, list[Any]] = {k: [] for k in KINDS}
+        self._cons: list[Constraint] = []
+        self._by_id: dict[int, Constraint] = {}
+        self._cdirty = True
+
+    def __del__(self) -> None:  # pragma: no cover - interpreter shutdown ordering
+        try:
+            lib.gcs_sketch_free(self._h)
+        except Exception:
+            pass
+
+    # -- interning ----------------------------------------------------------
+
+    def _counts(self) -> list[int]:
+        buf = _ffi.i32(6)
+        lib.gcs_sketch_counts(self._h, _ffi.pi(buf))
+        return [int(v) for v in buf]
+
+    def param_at(self, i: int) -> Param:
+        while len(self._params) <= i:
+            self._params.append(Param(self, len(self._params)))
+        return self._params[i]
+
+    def _entities(self, kind: str, n: int) -> list[Any]:
+        lst = self._ents[kind]
+        cls = _CLASSES[kind]
+        while len(lst) < n:
+            lst.append(cls(self, len(lst)))
+        del lst[n:]
+        return lst
+
+    def _sync_constraints(self) -> None:
+        if not self._cdirty:
+            return
+        from gcs.constraints import from_record
+
+        self._cdirty = False
+        records = _ffi.take_json(lib.gcs_constraints_json(self._h)) or []
+        out: list[Constraint] = []
+        for rec in records:
+            c = self._by_id.get(rec["id"])
+            if c is None:
+                c = from_record(self, rec)
+                self._by_id[rec["id"]] = c
+            out.append(c)
+        self._cons = out
+
+    def touch(self) -> None:
+        """The constraint list changed in the core."""
+        self._cdirty = True
+
+    # -- construction -------------------------------------------------------
+
+    def point(self, x: float, y: float, *, fixed: bool = False, name: str = "") -> Point:
+        p, n = _ffi.send(name)
+        i = lib.gcs_sketch_point(self._h, float(x), float(y), 1 if fixed else 0, p, n)
+        return self.points[int(i)]
+
+    def line(self, p1: Point, p2: Point) -> Line:
+        i = lib.gcs_sketch_line(self._h, p1.index, p2.index)
+        return self.lines[int(i)]
+
+    def line_xy(self, x1: float, y1: float, x2: float, y2: float, name: str = "") -> Line:
+        return self.line(self.point(x1, y1, name=f"{name}.p1"),
+                         self.point(x2, y2, name=f"{name}.p2"))
+
+    def circle(self, center: Point, radius: float, name: str = "") -> Circle:
+        p, n = _ffi.send(name)
+        i = lib.gcs_sketch_circle(self._h, center.index, float(radius), p, n)
+        return self.circles[int(i)]
+
+    def arc(self, center: Point, start: Point, end: Point, name: str = "") -> Arc:
+        p, n = _ffi.send(name)
+        i = lib.gcs_sketch_arc(self._h, center.index, start.index, end.index, p, n)
+        self.touch()  # the two intrinsic PointOnCircle constraints came with it
+        return self.arcs[int(i)]
+
+    def arc_through(self, start: Point, end: Point, through: tuple[float, float],
+                    name: str = "") -> Arc | None:
+        """Arc from `start` to `end` bulging through `through`.  None if the three are collinear."""
+        p, n = _ffi.send(name)
+        i = lib.gcs_sketch_arc_through(self._h, start.index, end.index,
+                                       float(through[0]), float(through[1]), p, n)
+        if i < 0:
+            return None
+        self.touch()
+        return self.arcs[int(i)]
+
+    def rectangle(self, a: Point, x1: float, y1: float, name: str = "") -> list[Line]:
+        """Four lines round the corners, sharing corner points, with three perpendiculars — the
+        fourth follows, so adding it would over-constrain every rectangle by one equation."""
+        p, n = _ffi.send(name)
+        out = _ffi.i32(4)
+        lib.gcs_sketch_rectangle(self._h, a.index, float(x1), float(y1), p, n, _ffi.pi(out))
+        self.touch()
+        return [self.lines[int(i)] for i in out]
+
+    def rectangle_xy(self, x0: float, y0: float, x1: float, y1: float, name: str = "") -> list[Line]:
+        return self.rectangle(self.point(x0, y0, name=f"{name}.a"), x1, y1, name)
+
+    def add(self, *constraints: Constraint) -> None:
+        for c in constraints:
+            c._bind(self)
+        self.touch()
+
+    def remove(self, constraint: Constraint) -> None:
+        if constraint._id >= 0:
+            lib.gcs_constraint_remove(self._h, constraint._id)
+            self._by_id.pop(constraint._id, None)
+            constraint._id = -1
+            self.touch()
+
+    # -- lists --------------------------------------------------------------
+
+    @property
+    def params(self) -> list[Param]:
+        n = self._counts()[0]
+        self.param_at(max(n - 1, 0))
+        return self._params[:n]
+
+    @property
+    def points(self) -> list[Point]:
+        return self._entities("point", self._counts()[1])
+
+    @property
+    def lines(self) -> list[Line]:
+        return self._entities("line", self._counts()[2])
+
+    @property
+    def circles(self) -> list[Circle]:
+        return self._entities("circle", self._counts()[3])
+
+    @property
+    def arcs(self) -> list[Arc]:
+        return self._entities("arc", self._counts()[4])
+
+    @property
+    def constraints(self) -> list[Constraint]:
+        self._sync_constraints()
+        return list(self._cons)
+
+    @constraints.setter
+    def constraints(self, cs: Sequence[Constraint]) -> None:
+        p, n = _ffi.send_json([c._id for c in cs if c._id >= 0])
+        lib.gcs_sketch_set_constraints(self._h, p, n)
+        self.touch()
+
+    def entities(self, kind: str) -> Sequence[Primitive]:
+        if kind == "point":
+            return self.points
+        if kind == "line":
+            return self.lines
+        if kind == "circle":
+            return self.circles
+        return self.arcs
+
+    def primitives(self) -> list[Primitive]:
+        return [*self.points, *self.lines, *self.circles, *self.arcs]
+
+    def user_constraints(self) -> list[Constraint]:
+        """What the user added: no intrinsic ones, no soft ones."""
+        return [c for c in self.constraints if not (c.intrinsic or c.soft)]
+
+    def hard_constraints(self) -> list[Constraint]:
+        return [c for c in self.constraints if not c.soft]
+
+    def constraint_by_id(self, cid: int) -> Constraint | None:
+        self._sync_constraints()
+        return self._by_id.get(cid)
+
+    # -- parameter vector ---------------------------------------------------
+
+    def get_x(self) -> Vec:
+        out = _ffi.f64(self._counts()[0])
+        lib.gcs_sketch_get_x(self._h, _ffi.pf(out))
+        return out
+
+    def set_x(self, x: Any) -> None:
+        a = _ffi.as_f64(x)
+        lib.gcs_sketch_set_x(self._h, _ffi.pf(a), len(a))
+
+    def free_indices(self) -> Any:
+        return np.array([p.index for p in self.params if not p.fixed], dtype=np.intp)
+
+    def n_residuals(self) -> int:
+        return int(lib.gcs_sketch_n_residuals(self._h))
+
+    # -- geometry -----------------------------------------------------------
+
+    def bbox(self) -> Box:
+        out = _ffi.f64(4)
+        lib.gcs_sketch_bounds(self._h, 0, _ffi.pf(out))
+        return (float(out[0]), float(out[1]), float(out[2]), float(out[3]))
+
+    def drawn_bounds(self) -> Box:
+        out = _ffi.f64(4)
+        lib.gcs_sketch_bounds(self._h, 1, _ffi.pf(out))
+        return (float(out[0]), float(out[1]), float(out[2]), float(out[3]))
+
+    def extent(self) -> float:
+        return float(lib.gcs_sketch_extent(self._h))
+
+    def perturb(self, sigma: float, seed: int = 0) -> None:
+        lib.gcs_sketch_perturb(self._h, float(sigma), int(seed) & 0xFFFFFFFF)
+
+    def nearest_point(self, x: float, y: float) -> tuple[Point | None, float]:
+        out = _ffi.f64(1)
+        i = lib.gcs_sketch_nearest_point(self._h, float(x), float(y), _ffi.pf(out))
+        return (self.points[int(i)] if i >= 0 else None, float(out[0]))
+
+    # -- document state -----------------------------------------------------
+
+    @property
+    def branches(self) -> dict[str, int]:
+        return {k: int(v) for k, v in
+                (_ffi.take_json(lib.gcs_branches_json(self._h)) or {}).items()}
+
+    @branches.setter
+    def branches(self, b: dict[str, int]) -> None:
+        p, n = _ffi.send_json({k: int(v) for k, v in b.items()})
+        lib.gcs_branches_set_json(self._h, p, n)
+
+    def update_branches(self, b: dict[str, int]) -> None:
+        merged = self.branches
+        merged.update(b)
+        self.branches = merged
+
+    def copy(self) -> Sketch:
+        return Sketch(lib.gcs_sketch_clone(self._h))
 
 
 def signed_point_to_line(p: tuple[float, float], ln: Line) -> float:
-    """Signed perpendicular offset from the *infinite* line through `ln`, positive to the left
-    of its direction — the convention `PointLineDistance` and `ParallelDistance` use, so the UI
-    can prefill their prompts with the value the sketch already shows, sign included.
-
-    A degenerate line has no side; it gives inf rather than a silent zero.
-    """
-    ax, ay = ln.p1.xy
-    dx, dy = ln.direction()
-    length = math.hypot(dx, dy)
-    if length == 0.0:
-        return math.inf
-    return (dx * (p[1] - ay) - dy * (p[0] - ax)) / length
-
-
-def _point_to_line(p: tuple[float, float], ln: Line) -> float:
-    """Perpendicular distance from a point to the *infinite* line through `ln`."""
-    if ln.direction() == (0.0, 0.0):
-        return math.dist(p, ln.p1.xy)
-    return abs(signed_point_to_line(p, ln))
-
-
-_MEASURE_ORDER = {"point": 0, "line": 1, "circle": 2, "arc": 2}
+    """Signed perpendicular offset from the *infinite* line, positive to its left; inf when the
+    line is degenerate."""
+    return float(lib.gcs_signed_point_to_line(ln.sketch._h, float(p[0]), float(p[1]), ln.index))
 
 
 def distance_between(a: Primitive, b: Primitive) -> float:
-    """Shortest distance between two entities, as a sketcher measures it.
-
-    Lines are treated as infinite — perpendicular distance to one, the gap between two
-    parallel ones — because that is what dimensioning them means; two lines that cross are
-    0 apart.  Arcs are measured as the whole circle they lie on, which is exact for the
-    common cases and an over-estimate of the true gap only when the nearest approach is off
-    the swept part.
-    """
-    if _MEASURE_ORDER[a.kind] > _MEASURE_ORDER[b.kind]:
-        a, b = b, a
-    if isinstance(a, Point):
-        if isinstance(b, Point):
-            return math.dist(a.xy, b.xy)
-        if isinstance(b, Line):
-            return _point_to_line(a.xy, b)
-        return abs(math.dist(a.xy, b.center.xy) - abs(b.radius.value))
-    if isinstance(a, Line):
-        if isinstance(b, Line):
-            d1, d2 = a.direction(), b.direction()
-            cross = d1[0] * d2[1] - d1[1] * d2[0]
-            if abs(cross) > 1e-9 * math.hypot(*d1) * math.hypot(*d2):
-                return 0.0                       # they meet somewhere
-            return _point_to_line(b.p1.xy, a)
-        if isinstance(b, (Circle, Arc)):
-            return max(0.0, _point_to_line(b.center.xy, a) - abs(b.radius.value))
-    if isinstance(a, (Circle, Arc)) and isinstance(b, (Circle, Arc)):
-        # outside each other, or one inside the other; overlapping rings give 0
-        gap = math.dist(a.center.xy, b.center.xy)
-        r1, r2 = abs(a.radius.value), abs(b.radius.value)
-        return max(0.0, gap - r1 - r2, abs(r1 - r2) - gap)
-    raise AssertionError(f"unordered pair: {a.kind}, {b.kind}")   # pragma: no cover
+    """Shortest distance between two entities, as a sketcher measures it."""
+    return float(lib.gcs_distance_between(a.sketch._h, KIND_ID[a.kind], a.index,
+                                          KIND_ID[b.kind], b.index))
 
 
 def expand(ents: Iterable[Primitive]) -> list[Primitive]:
-    """Entities plus their sub-entities (a line's endpoints, an arc's centre/ends)."""
+    """Entities plus their sub-entities."""
     out: list[Primitive] = []
     for e in ents:
         out.append(e)
         out.extend(e.children)
     return out
-
-
-@dataclass(eq=False)
-class Sketch:
-    params: list[Param] = field(default_factory=list)
-    constraints: list[Constraint] = field(default_factory=list)
-    points: list[Point] = field(default_factory=list)
-    lines: list[Line] = field(default_factory=list)
-    circles: list[Circle] = field(default_factory=list)
-    arcs: list[Arc] = field(default_factory=list)
-    branches: dict[str, int] = field(default_factory=dict)   # recorded root choices (Stage 5), persisted
-
-    # -- construction -------------------------------------------------------
-
-    def param(self, value: float, *, fixed: bool = False, name: str = "") -> Param:
-        p = Param(float(value), fixed, len(self.params), name)
-        self.params.append(p)
-        return p
-
-    def point(self, x: float, y: float, *, fixed: bool = False, name: str = "") -> Point:
-        pt = Point(self.param(x, fixed=fixed, name=f"{name}.x"), self.param(y, fixed=fixed, name=f"{name}.y"))
-        self.points.append(pt)
-        return pt
-
-    def line(self, p1: Point, p2: Point) -> Line:
-        ln = Line(p1, p2)
-        self.lines.append(ln)
-        return ln
-
-    def line_xy(self, x1: float, y1: float, x2: float, y2: float, name: str = "") -> Line:
-        return self.line(self.point(x1, y1, name=f"{name}.p1"), self.point(x2, y2, name=f"{name}.p2"))
-
-    def circle(self, center: Point, radius: float, name: str = "") -> Circle:
-        c = Circle(center, self.param(radius, name=f"{name}.r"))
-        self.circles.append(c)
-        return c
-
-    def arc(self, center: Point, start: Point, end: Point, name: str = "") -> Arc:
-        from gcs.constraints import PointOnCircle
-
-        cx, cy = center.xy
-        r = math.hypot(start.x.value - cx, start.y.value - cy)
-        a = Arc(center, start, end, self.param(r, name=f"{name}.r"))
-        self.arcs.append(a)
-        # intrinsic: both endpoints lie at the arc's radius
-        self.add(PointOnCircle(start, a, intrinsic=True), PointOnCircle(end, a, intrinsic=True))
-        return a
-
-    def arc_through(self, start: Point, end: Point, through: tuple[float, float],
-                    name: str = "") -> Arc | None:
-        """Arc from `start` to `end` bulging through `through` — the three-point
-        construction.  Creates the centre point; None if the three are collinear."""
-        g = three_point_arc(*start.xy, *end.xy, *through)
-        if g is None:
-            return None
-        centre = self.point(g.cx, g.cy, name=f"{name}.c")
-        a, b = (end, start) if g.swapped else (start, end)
-        return self.arc(centre, a, b, name=name)
-
-    def rectangle(self, a: Point, x1: float, y1: float, name: str = "") -> list[Line]:
-        """Four lines from corner `a` to the opposite corner (x1, y1), sharing corner points,
-        with three perpendicular constraints.  `a` is an existing point, so a rectangle can
-        start on geometry that is already there.
-
-        Three perpendiculars, not four: the fourth follows (l3 ⟂ l2 ⟂ l1 ⟂ l0 already forces
-        l3 ⟂ l0), so adding it would leave every rectangle over-constrained by one equation.
-        What is left is the 5 DOF a rectangle has — position, rotation, width, height."""
-        from gcs.constraints import Perpendicular
-
-        x0, y0 = a.xy
-        corners = [a, self.point(x1, y0, name=f"{name}.b"),
-                   self.point(x1, y1, name=f"{name}.c"), self.point(x0, y1, name=f"{name}.d")]
-        lines = [self.line(corners[i], corners[(i + 1) % 4]) for i in range(4)]
-        self.add(*(Perpendicular(lines[i], lines[i + 1]) for i in range(3)))
-        return lines
-
-    def rectangle_xy(self, x0: float, y0: float, x1: float, y1: float, name: str = "") -> list[Line]:
-        """`rectangle` starting from a fresh corner point — the `line_xy` of rectangles."""
-        return self.rectangle(self.point(x0, y0, name=f"{name}.a"), x1, y1, name)
-
-    def add(self, *constraints: Constraint) -> None:
-        self.constraints.extend(constraints)
-
-    def remove(self, constraint: Constraint) -> None:
-        self.constraints.remove(constraint)
-
-    # -- parameter vector ---------------------------------------------------
-
-    def get_x(self) -> Vec:
-        return np.array([p.value for p in self.params], dtype=np.float64)
-
-    def set_x(self, x: Vec) -> None:
-        for p, v in zip(self.params, x, strict=True):
-            p.value = float(v)
-
-    def free_indices(self) -> npt.NDArray[np.intp]:
-        return np.array([p.index for p in self.params if not p.fixed], dtype=np.intp)
-
-    def n_residuals(self) -> int:
-        return sum(c.n_residuals for c in self.constraints)
-
-    def user_constraints(self) -> list[Constraint]:
-        """Constraints the user added (excludes intrinsic and soft/transient ones)."""
-        return [c for c in self.constraints if not (c.intrinsic or c.soft)]
-
-    def hard_constraints(self) -> list[Constraint]:
-        """Everything that must be satisfied (excludes soft/transient ones such as drag targets)."""
-        return [c for c in self.constraints if not c.soft]
-
-    def entities(self, kind: str) -> Sequence[Primitive]:
-        lists: dict[str, Sequence[Primitive]] = {"point": self.points, "line": self.lines,
-                                                 "circle": self.circles, "arc": self.arcs}
-        return lists[kind]
-
-    def bbox(self) -> Box:
-        """(xmin, ymin, xmax, ymax) over all points; unit box at the origin if empty.
-        Points only — this is what `extent()` (and through it the solver's residual scale)
-        is defined on.  For what is actually drawn, use `drawn_bounds()`."""
-        if not self.points:
-            return (0.0, 0.0, 1.0, 1.0)
-        xs = [p.x.value for p in self.points]
-        ys = [p.y.value for p in self.points]
-        return (min(xs), min(ys), max(xs), max(ys))
-
-    def drawn_bounds(self) -> Box:
-        """Bounds of everything drawn, curves included — what a "fit the view" wants.  A
-        circle or arc reaches past its centre, so a points-only box clips it."""
-        ents: list[Primitive] = [*self.points, *self.lines, *self.circles, *self.arcs]
-        return _union(e.bounds() for e in ents) or self.bbox()
-
-    def perturb(self, sigma: float, seed: int = 0) -> None:
-        """Add seeded Gaussian noise to every free parameter (warm starts, witness construction)."""
-        rng = np.random.default_rng(seed)
-        x = self.get_x()
-        free = self.free_indices()
-        x[free] += rng.normal(0, sigma, len(free))
-        self.set_x(x)
-
-    def extent(self) -> float:
-        """Characteristic length of the sketch (for tolerances / drag weights)."""
-        x0, y0, x1, y1 = self.bbox()
-        return max(x1 - x0, y1 - y0, 1.0)
-
-    def nearest_point(self, x: float, y: float) -> tuple[Point | None, float]:
-        """Closest point to (x, y) and its distance (None, inf if the sketch has no points)."""
-        best, bd = None, math.inf
-        for p in self.points:
-            d = math.hypot(p.x.value - x, p.y.value - y)
-            if d < bd:
-                best, bd = p, d
-        return best, bd

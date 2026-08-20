@@ -8,5 +8,7 @@ __pycache__/
 .hypothesis/
 papers/
 build/
+rust/target/
 web/node_modules/
 web/dist/
+web/src/wasm/gcs.wasm

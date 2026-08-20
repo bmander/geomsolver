@@ -1,38 +1,31 @@
-"""Compile a sketch to a flat evaluation plan; evaluate r(z), J(z); solve.
+"""The compiled system, solving, and interactive dragging.
 
-`System` groups the sketch's constraints by kernel type into *blocks* — pure
-arrays: (kernel id, global param indices (n, k), constants (n, m), row
-offset).  Evaluating the whole sketch is one kernel call per block, and the
-Jacobian's sparsity structure (CSR indices, duplicate-summing scatter map) is
-computed once at compile time; each evaluation only refills `data`.  This
-plan is exactly what a C core would consume — the compile-to-plan boundary
-from the program's Stage 1.
-
-Solvers: our own DogLeg (default) and LM (gcs.newton); scipy's least_squares
-methods are kept as `scipy-*` references for benchmarking.
+`System` is the compile-once / evaluate-many seam: it owns a handle to the core's evaluation plan,
+so the object model never enters the hot loop.  Call `dispose()` when you drop one (the drags, the
+plan solver and diagnosis all do).
 """
 
 from __future__ import annotations
 
-import math
 import time
 from dataclasses import dataclass
-from typing import Any, Literal, NamedTuple, get_args
+from typing import Any, Literal, Sequence, get_args
 
 import numpy as np
 import numpy.typing as npt
-import scipy.sparse as sp
 
-from gcs import newton
-from gcs.constraints import Constraint, DragTarget, Radius
-from gcs.kernels import KERNEL_ID, KERNELS, Kernel
-from gcs.model import Arc, Circle, Point, Sketch, Vec
-from gcs.newton import SOLVERS
+from gcs import _ffi
+from gcs._ffi import Vec, lib
+from gcs.constraints import Constraint
+from gcs.model import Arc, Circle, KIND_ID, Point, Sketch
 
-Method = Literal["dogleg", "lm", "scipy-dogbox", "scipy-trf", "scipy-lm"]
+Method = Literal["dogleg", "lm"]
 METHODS: tuple[Method, ...] = get_args(Method)
-assert set(METHODS) == set(SOLVERS)
-DENSE_MAX = 120   # free params up to which J is dense (LAPACK dgelsy: exact min-norm step + rank); sparse SuperLU above
+_METHOD_ID = {"dogleg": 0, "lm": 1}
+Triangle = tuple[Point, Point, Point]
+
+#: Free params up to which J is dense (exact minimum-norm step + rank); sparse above.
+DENSE_MAX = 120
 
 
 @dataclass
@@ -40,368 +33,265 @@ class SolveResult:
     success: bool
     status: int
     message: str
-    residual_norm: float      # over all residuals, soft ones included
-    max_residual: float       # over hard residuals only (what "solved" means)
+    residual_norm: float       # over all residuals, soft ones included
+    max_residual: float        # over hard residuals only (what "solved" means)
     nfev: int
     njev: int
     time_s: float
     method: str
     iterations: int = 0
-    rank: int | None = None   # numerical rank of J at the solution (dense path)
+    rank: int | None = None    # numerical rank of J at the solution (dense path)
 
     def __repr__(self) -> str:
         return (
             f"SolveResult(ok={self.success}, |r|={self.residual_norm:.3e}, "
-            f"max={self.max_residual:.3e}, it={self.iterations}, nfev={self.nfev}, njev={self.njev}, "
-            f"{self.time_s * 1e3:.2f} ms, {self.method})"
+            f"max={self.max_residual:.3e}, it={self.iterations}, nfev={self.nfev}, "
+            f"njev={self.njev}, {self.time_s * 1e3:.2f} ms, {self.method})"
         )
 
 
-class Block(NamedTuple):
-    kernel: Kernel
-    constraints: list[Constraint]
-    gidx: npt.NDArray[np.intp]     # (n, k) global param index per local column
-    consts: Vec                    # (n, m)
-    row0: int                      # residual rows row0 .. row0 + n*n_res
-    jac_const: Vec | None          # ravelled Jacobian entries if the kernel's J is constant
-
-
-def _consts_of(k: Kernel, cs: list[Constraint]) -> Vec:
-    if not k.n_const:
-        return np.zeros((len(cs), 0))
-    return np.array([c.consts() for c in cs], dtype=np.float64).reshape(len(cs), k.n_const)
+def _result(out: Vec, message: str, method: str, t0: float) -> SolveResult:
+    rank = int(out[7])
+    return SolveResult(
+        success=bool(out[0]), status=int(out[1]), message=message,
+        residual_norm=float(out[2]), max_residual=float(out[3]),
+        nfev=int(out[4]), njev=int(out[5]), time_s=time.perf_counter() - t0,
+        method=method, iterations=int(out[6]), rank=None if rank < 0 else rank,
+    )
 
 
 class System:
     """Compiled evaluation plan for one sketch topology."""
 
-    def __init__(self, sketch: Sketch) -> None:
+    def __init__(self, sketch: Sketch, handle: Any = None, owned: bool = True) -> None:
         self.sketch = sketch
-        self.constraints: list[Constraint] = list(sketch.constraints)  # snapshot: the plan is fixed at compile time
-        n = len(sketch.params)
-        for i, p in enumerate(sketch.params):
-            p.index = i  # keep indices honest even if the list was edited
-        self.free = sketch.free_indices()
-        self.n_free = len(self.free)
-        self.col_of = np.full(n, -1, dtype=np.intp)   # global param index -> free column, or -1
-        self.col_of[self.free] = np.arange(self.n_free)
+        self._h = handle if handle is not None else lib.gcs_system_new(sketch._h)
+        self._owned = owned
+        self.n_res = int(lib.gcs_system_n_res(self._h))
+        self.n_free = int(lib.gcs_system_n_free(self._h))
+        self.nnz = int(lib.gcs_system_nnz(self._h))
+        self.scale = float(lib.gcs_system_scale(self._h))
         self.extent = sketch.extent()
-        self.scale = max(1.0, self.extent) ** 2     # residual units for squared distances
+        hard = np.zeros(max(self.n_res, 1), dtype=np.uint8)
+        lib.gcs_system_hard(self._h, _ffi.pu8(hard))
+        self.hard = hard[: self.n_res].astype(bool)
+        free = _ffi.i32(max(self.n_free, 1))
+        lib.gcs_system_free_indices(self._h, _ffi.pi(free))
+        self.free = free[: self.n_free].astype(np.intp)
 
-        # -- group constraints by kernel (kernel id order, then sketch order → deterministic) --
-        by_kernel: dict[int, list[Constraint]] = {}
-        for c in self.constraints:
-            by_kernel.setdefault(KERNEL_ID[c.kernel.name], []).append(c)
-        self.blocks: list[Block] = []
-        self._slot_of: dict[int, tuple[int, int]] = {}   # id(constraint) -> (block index, row in block)
-        hard: list[bool] = []
-        rows_l: list[npt.NDArray[np.intp]] = []
-        cols_l: list[npt.NDArray[np.intp]] = []
-        row0 = 0
-        for kid in sorted(by_kernel):
-            cs = by_kernel[kid]
-            k = KERNELS[kid]
-            nb = len(cs)
-            gidx = np.array([[p.index for p in c.params] for c in cs], dtype=np.intp).reshape(nb, k.n_par)
-            consts = _consts_of(k, cs)
-            jc = None if k.const_jac is None else np.broadcast_to(k.const_jac, (nb,) + k.const_jac.shape).ravel()
-            self.blocks.append(Block(k, cs, gidx, consts, row0, jc))
-            for i, c in enumerate(cs):
-                self._slot_of[id(c)] = (len(self.blocks) - 1, i)
-                hard.extend([not c.soft] * k.n_res)
-            # Jacobian entry (i, j, col) of this block → row row0 + i*n_res + j, col col_of[gidx[i, col]]
-            r = row0 + (np.arange(nb) * k.n_res)[:, None, None] + np.arange(k.n_res)[None, :, None]
-            rows_l.append(np.broadcast_to(r, (nb, k.n_res, k.n_par)).ravel())
-            cols_l.append(np.broadcast_to(self.col_of[gidx][:, None, :], (nb, k.n_res, k.n_par)).ravel())
-            row0 += nb * k.n_res
-        self.n_res = row0
-        self.hard = np.array(hard, dtype=bool)
-        rows = np.concatenate(rows_l) if rows_l else np.zeros(0, dtype=np.intp)
-        cols = np.concatenate(cols_l) if cols_l else np.zeros(0, dtype=np.intp)
-        self._keep = np.flatnonzero(cols >= 0)     # entries whose column is a free param
-        rows, cols = rows[self._keep], cols[self._keep]
-        # CSR structure with duplicates (shared params) merged: entry e → slot _slot[e]
-        ncols = max(self.n_free, 1)
-        uniq, self._slot = np.unique(rows * ncols + cols, return_inverse=True)
-        self._nnz = len(uniq)
-        self._csr_flat = uniq                       # dense scatter index into J.ravel()
-        self._csr_indices = (uniq % ncols).astype(np.int32)
-        self._csr_indptr = np.searchsorted(uniq // ncols, np.arange(self.n_res + 1)).astype(np.int32)
-        self._x = sketch.get_x()
+    def dispose(self) -> None:
+        if self._owned and self._h:
+            lib.gcs_system_free(self._h)
+            self._h = None
+
+    def __del__(self) -> None:  # pragma: no cover - interpreter shutdown ordering
+        try:
+            self.dispose()
+        except Exception:
+            pass
+
+    # -- constants ----------------------------------------------------------
 
     def update_consts(self, c: Constraint) -> None:
-        """Push a constraint's (mutated) constants into the compiled plan — e.g. a moving
-        drag target or an edited dimension.  Topology is unchanged, so no recompile."""
-        b, i = self._slot_of[id(c)]
-        self.blocks[b].consts[i] = c.consts()
+        """Push a constraint's (mutated) constants into the compiled plan.  Topology is
+        unchanged, so no recompile."""
+        lib.gcs_system_update_consts(self._h, self.sketch._h, c._id)
 
     def refresh_consts(self) -> None:
-        """Re-read every constraint's constants (after arbitrary dimension edits)."""
-        for k, cs, _, consts, _, _ in self.blocks:
-            if k.n_const:
-                consts[:] = _consts_of(k, cs)
-
-    def max_hard_residual(self, z: Vec | None = None) -> float:
-        """max |r| over hard rows at z (default: current sketch values) — what "solved" means."""
-        r = self.residuals(self.z0() if z is None else z)
-        rh = r[self.hard]
-        return float(np.max(np.abs(rh))) if rh.size else 0.0
+        lib.gcs_system_refresh_consts(self._h, self.sketch._h)
 
     def row_of(self, c: Constraint) -> int:
         """First residual row of a constraint."""
-        b, i = self._slot_of[id(c)]
-        return self.blocks[b].row0 + i * self.blocks[b].kernel.n_res
+        return int(lib.gcs_system_row_of(self._h, c._id))
 
-    def structure(self, hard_only: bool = True) -> tuple[list[list[int]], list[Constraint]]:
-        """Structural Jacobian as a bipartite graph: adj[row] = sorted free columns with a
-        (structural) nonzero, plus row → owning constraint.  The public surface for
-        diagnosis/decomposition — derived from the compiled blocks, so it stays in step
-        with what the solver actually evaluates."""
-        adj: list[list[int]] = []
-        row_c: list[Constraint] = []
-        for k, cs, gidx, _, _, _ in self.blocks:
-            cols_all = self.col_of[gidx]
-            for i, c in enumerate(cs):
-                if hard_only and c.soft:
-                    continue
-                cols = sorted({int(j) for j in cols_all[i] if j >= 0})
-                for _ in range(k.n_res):
-                    adj.append(cols)
-                    row_c.append(c)
-        return adj, row_c
-
-    def constraint_errors(self, z: Vec | None = None) -> dict[int, float]:
-        """max |residual| per constraint (keyed by id) from one vectorized evaluation."""
-        r = np.abs(self.residuals(self.z0() if z is None else z))
-        out: dict[int, float] = {}
-        for k, cs, _, _, row0, _ in self.blocks:
-            m = r[row0 : row0 + len(cs) * k.n_res].reshape(len(cs), k.n_res).max(axis=1)
-            for c, e in zip(cs, m.tolist(), strict=True):
-                out[id(c)] = e
-        return out
+    def constraint_params(self, c: Constraint) -> list[int]:
+        return c.param_indices()
 
     # -- evaluation ---------------------------------------------------------
 
-    def full_x(self, z: Vec) -> Vec:
-        x = self._x.copy()
-        x[self.free] = z
-        return x
-
     def z0(self) -> Vec:
-        self._x = self.sketch.get_x()
-        return self._x[self.free].copy()
+        out = _ffi.f64(max(self.n_free, 1))
+        lib.gcs_system_z0(self._h, self.sketch._h, _ffi.pf(out))
+        return out[: self.n_free]
 
-    def residuals(self, z: Vec) -> Vec:
-        x = self.full_x(z)
-        r = np.empty(self.n_res)
-        for k, _, gidx, consts, row0, _ in self.blocks:
-            r[row0 : row0 + gidx.shape[0] * k.n_res] = k.res(x[gidx], consts).ravel()
-        return r
+    def residuals(self, z: Any) -> Vec:
+        zz = _ffi.as_f64(z)
+        out = _ffi.f64(max(self.n_res, 1))
+        lib.gcs_system_residuals(self._h, _ffi.pf(zz), _ffi.pf(out))
+        return out[: self.n_res]
 
-    def _jac_data(self, z: Vec) -> Vec:
-        """Jacobian entries in block/row/col order, fixed-param columns dropped."""
-        x = self.full_x(z)
-        parts = [jc if jc is not None else k.jac(x[gidx], consts).ravel()
-                 for k, _, gidx, consts, _, jc in self.blocks]
-        return np.take(np.concatenate(parts), self._keep) if parts else np.zeros(0)
+    def jacobian_dense(self, z: Any) -> Vec:
+        zz = _ffi.as_f64(z)
+        out = _ffi.f64(max(self.n_res * self.n_free, 1))
+        lib.gcs_system_jacobian_dense(self._h, _ffi.pf(zz), _ffi.pf(out))
+        return out[: self.n_res * self.n_free].reshape(self.n_res, self.n_free)
 
-    def _csr_data(self, z: Vec) -> Vec:
-        return np.bincount(self._slot, weights=self._jac_data(z), minlength=self._nnz)
+    def csr(self, z: Any) -> tuple[Vec, npt.NDArray[np.int32], npt.NDArray[np.int32]]:
+        """(data, indices, indptr) — the sparse Jacobian in CSR, structure fixed at compile time."""
+        zz = _ffi.as_f64(z)
+        indptr = _ffi.i32(self.n_res + 1)
+        indices = _ffi.i32(max(self.nnz, 1))
+        lib.gcs_system_csr_structure(self._h, _ffi.pi(indptr), _ffi.pi(indices))
+        data = _ffi.f64(max(self.nnz, 1))
+        lib.gcs_system_csr_data(self._h, _ffi.pf(zz), _ffi.pf(data))
+        return data[: self.nnz], indices[: self.nnz], indptr
 
-    def jacobian(self, z: Vec) -> sp.csr_matrix:
-        return sp.csr_matrix((self._csr_data(z), self._csr_indices, self._csr_indptr), shape=(self.n_res, self.n_free))
+    def max_hard_residual(self) -> float:
+        """max |r| over hard rows at the current sketch values — what "solved" means."""
+        return float(lib.gcs_system_max_hard_residual(self._h, self.sketch._h))
 
-    def jacobian_dense(self, z: Vec) -> Vec:
-        J = np.zeros(self.n_res * max(self.n_free, 1))
-        J[self._csr_flat] = self._csr_data(z)
-        return J.reshape(self.n_res, max(self.n_free, 1))[:, : self.n_free]
+    def constraint_errors(self) -> dict[int, float]:
+        """max |residual| per constraint, keyed by constraint id."""
+        n = len(self.sketch.constraints)
+        ids = _ffi.i32(max(n, 1))
+        vals = _ffi.f64(max(n, 1))
+        m = lib.gcs_system_constraint_errors(self._h, self.sketch._h, _ffi.pi(ids), _ffi.pf(vals))
+        return {int(ids[i]): float(vals[i]) for i in range(m)}
 
-    def rank(self, z: Vec | None = None, rcond: float = 1e-10, hard_only: bool = False) -> int:
-        """Numerical rank of the Jacobian at z (default: current sketch values) via
-        rank-revealing QR — the workhorse of Stage 2/4 diagnosis."""
-        J = self.jacobian_dense(self.z0() if z is None else z)
-        return newton.rank_rrqr(J[self.hard] if hard_only else J, rcond)
+    def rank(self, rcond: float = 1e-10, hard_only: bool = False) -> int:
+        return int(lib.gcs_system_rank(self._h, self.sketch._h, rcond, 1 if hard_only else 0))
+
+    def structure(self) -> tuple[list[list[int]], list[Constraint]]:
+        """Structural Jacobian as a bipartite graph, plus row → owning constraint.  Soft rows
+        (drag targets) are never part of it."""
+        d = _ffi.take_json(lib.gcs_system_structure_json(self._h))
+        self.sketch._sync_constraints()
+        rows = [self.sketch._by_id[i] for i in d["rowC"]]
+        return d["adj"], rows
 
     # -- solving ------------------------------------------------------------
 
-    def solve(
-        self,
-        method: Method = "dogleg",
-        tol: float = 1e-14,          # relative to extent² (residual units for squared distances)
-        max_nfev: int | None = None,
-        writeback: bool = True,
-        max_iter: int = 100,
-        dense: bool | None = None,   # force the dense/sparse Jacobian path (None = by DENSE_MAX)
-    ) -> SolveResult:
+    def solve(self, method: Method = "dogleg", tol: float = 1e-14, max_nfev: int | None = None,
+              writeback: bool = True, max_iter: int = 100,
+              dense: bool | None = None) -> SolveResult:
         t0 = time.perf_counter()
-        z = self.z0()
-        scale = self.scale
-        if self.n_free == 0 or self.n_res == 0:
-            info = newton.Info(0, 1, 0, 0, None, self.residuals(z))
-        else:
-            if dense is None:
-                dense = self.n_free <= DENSE_MAX
-            z, info = SOLVERS[method](self.residuals, self.jacobian_dense if dense else self.jacobian, z,
-                                      ftol=tol * scale, xtol=1e-12, gtol=1e-16 * scale,
-                                      max_iter=max_iter, max_nfev=max_nfev)
-        if writeback:
-            self.sketch.set_x(self.full_x(z))
-        r = info.r if info.r is not None else self.residuals(z)
-        rh = r[self.hard]
-        mx = float(np.max(np.abs(rh))) if rh.size else 0.0
-        ok = info.status >= 0 and mx < 1e-6 * scale
-        return SolveResult(ok, info.status, info.message, float(np.linalg.norm(r)), mx, info.nfev, info.njev,
-                           time.perf_counter() - t0, method, info.iterations, info.rank)
+        out = _ffi.f64(8)
+        msg = _ffi.take_str(lib.gcs_system_solve(
+            self._h, self.sketch._h, _METHOD_ID[method], tol, max_iter, max_nfev or 0,
+            -1 if dense is None else int(dense), 1 if writeback else 0, _ffi.pf(out)))
+        return _result(out, msg, method, t0)
 
 
-def solve(sketch: Sketch, method: Method = "dogleg", **kw: object) -> SolveResult:
+def solve(sketch: Sketch, method: Method = "dogleg", tol: float = 1e-14,
+          max_iter: int = 100, max_nfev: int | None = None,
+          dense: bool | None = None) -> SolveResult:
     """One-shot: compile and solve, writing results back into the sketch."""
-    return System(sketch).solve(method=method, **kw)  # type: ignore[arg-type]
-
-
-Triangle = tuple[Point, Point, Point]
+    t0 = time.perf_counter()
+    out = _ffi.f64(8)
+    msg = _ffi.take_str(lib.gcs_solve(
+        sketch._h, _METHOD_ID[method], tol, max_iter, max_nfev or 0,
+        -1 if dense is None else int(dense), _ffi.pf(out)))
+    return _result(out, msg, method, t0)
 
 
 def orientation(a: Point, b: Point, c: Point) -> float:
-    """Twice the signed area of (a, b, c) — the order-type invariant we guard."""
-    return (b.x.value - a.x.value) * (c.y.value - a.y.value) - (b.y.value - a.y.value) * (c.x.value - a.x.value)
+    """Twice the signed area of (a, b, c) — the order-type invariant the drag guards."""
+    (ax, ay), (bx, by), (cx, cy) = a.xy, b.xy, c.xy
+    return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
 
 
-def increments(x0: float, y0: float, x1: float, y1: float, max_step: float) -> list[tuple[float, float]]:
-    """Continuation path from (x0, y0) to (x1, y1): waypoints no farther apart than max_step, so
-    a solution tracks its branch instead of teleporting across it.  Always at least one point."""
-    n = max(1, int(math.ceil(math.hypot(x1 - x0, y1 - y0) / max_step)))
-    return [(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n) for i in range(1, n + 1)]
+def _read_flips(sketch: Sketch, fn: Any, handle: Any, n: int) -> list[Triangle]:
+    if n <= 0:
+        return []
+    buf = _ffi.i32(3 * n)
+    fn(handle, _ffi.pi(buf))
+    pts = sketch.points
+    return [(pts[int(buf[3 * i])], pts[int(buf[3 * i + 1])], pts[int(buf[3 * i + 2])])
+            for i in range(n)]
 
 
-class _PullPolish[TargetT: Constraint]:
-    """The pull/polish protocol every interactive drag shares.
-
-    A soft constraint pulls the geometry toward what the cursor asks for; the hard
-    constraints are then polished on their own so they hold exactly.  Both systems are
-    compiled once, at drag start, and reused for every move — dragging never re-analyses
-    the sketch.  The compile order is load-bearing: `polish` must be built before the soft
-    target joins the sketch, so it contains the hard constraints only.
-    """
-
-    PULL_ITER = 4      # the pull is a soft compromise; a few GN steps suffice, polish makes it exact
-    POLISH_ITER = 20
-
-    def __init__(self, sketch: Sketch, target: TargetT, method: Method) -> None:
-        self.sketch, self.method = sketch, method
-        self.polish = System(sketch)
-        self.target = target
-        sketch.add(target)
-        self.pull = System(sketch)
-        self.active = True
-
-    def _pull_polish(self) -> SolveResult:
-        """One frame: push the target's new value in, pull, then make the hard ones exact."""
-        self.pull.update_consts(self.target)
-        self.pull.solve(method=self.method, max_iter=self.PULL_ITER)
-        return self.polish.solve(method=self.method, max_iter=self.POLISH_ITER)
-
-    def end(self) -> None:
-        if self.active:
-            self.sketch.remove(self.target)
-            self.active = False
+def _guard_buffer(guards: Sequence[Triangle] | None) -> tuple[Any, int]:
+    if not guards:
+        return None, 0
+    flat = _ffi.i32(3 * len(guards))
+    for i, t in enumerate(guards):
+        flat[3 * i], flat[3 * i + 1], flat[3 * i + 2] = t[0].index, t[1].index, t[2].index
+    return _ffi.pi(flat), len(guards)
 
 
-class Drag(_PullPolish[DragTarget]):
-    """Interactive drag of one point: pull toward the cursor with a soft target,
-    then polish with the hard constraints only so they hold exactly.
+class Drag:
+    """Interactive drag of one point: pull toward the cursor with a soft target, then polish with
+    the hard constraints only so they hold exactly.
 
-    Stage 5 robustness:
-      * continuation — a far cursor jump is taken in increments (≤ max_step_rel
-        of the sketch extent) so the solution tracks its homotopy branch instead
-        of teleporting across it;
-      * order-type guards — the orientations of `guards` triangles (typically
-        the plan's closed-form triples) are watched; a step that would flip one
-        is retried with smaller increments, and if a flip is unavoidable it is
-        recorded in `flips` and flagged in the result's message.
-    """
+    Stage 5 robustness: continuation (a far cursor jump is taken in increments so the solution
+    tracks its homotopy branch) and order-type guards (a step that would flip a guarded triangle is
+    retried with smaller increments; an unavoidable flip is recorded and flagged)."""
 
     def __init__(self, sketch: Sketch, point: Point, x: float, y: float,
                  method: Method = "dogleg", weight: float = 1.0,
-                 guards: list[Triangle] | None = None, max_step_rel: float = 0.05) -> None:
-        super().__init__(sketch, DragTarget(point, x, y, weight=weight), method)
+                 guards: Sequence[Triangle] | None = None, max_step_rel: float = 0.05) -> None:
+        self.sketch = sketch
         self.point = point
-        self.guards = guards or []
-        self.max_step = max_step_rel * max(1.0, sketch.extent())
-        self.signs = [orientation(*t) >= 0 for t in self.guards]
-        self.flips: list[Triangle] = []
-        self._last_good = sketch.get_x()
+        self.method = method
+        self.guards = list(guards or [])
+        ptr, n = _guard_buffer(self.guards)
+        self._h = lib.gcs_drag_new(sketch._h, point.index, float(x), float(y),
+                                   _METHOD_ID[method], weight, ptr, n, max_step_rel)
+        sketch.touch()
+        self.active = True
 
-    def _step(self, x: float, y: float) -> SolveResult:
-        self.target.set_target(x, y)
-        return self._pull_polish()
-
-    def _flipped(self) -> list[int]:
-        return [i for i, t in enumerate(self.guards) if (orientation(*t) >= 0) != self.signs[i]]
-
-    def _damped(self, tx: float, ty: float, budget: int) -> tuple[SolveResult, int]:
-        """One increment that would flip a guard: bisect the *remaining* interval from the last
-        good state, keeping whatever prefix stays on the branch, within a sub-step budget."""
-        res = self._step(tx, ty)
-        while self._flipped() and budget > 0:
-            self.sketch.set_x(self._last_good)
-            bx, by = self.point.xy
-            half = ((bx + tx) / 2, (by + ty) / 2)
-            res = self._step(*half)
-            budget -= 1
-            if self._flipped():
-                continue                       # the flip is in the first half: bisect that
-            self._last_good = self.sketch.get_x()
-            res = self._step(tx, ty)           # first half was clean: try the rest again
-            budget -= 1
-        return res, budget
+    @property
+    def flips(self) -> list[Triangle]:
+        """The guarded triangles whose orientation the drag could not preserve."""
+        return _read_flips(self.sketch, lib.gcs_drag_flip_list, self._h,
+                           int(lib.gcs_drag_flips(self._h)))
 
     def move(self, x: float, y: float) -> SolveResult:
         t0 = time.perf_counter()
-        n_flips = len(self.flips)
-        budget = 12                            # cap the sub-steps a single frame may spend
-        px, py = self.point.xy
-        self._last_good = self.sketch.get_x()
-        res = self._step(px, py)
-        for tx, ty in increments(px, py, x, y, self.max_step):
-            res = self._step(tx, ty)
-            if self.guards and self._flipped():
-                res, budget = self._damped(tx, ty, budget)
-                for k in self._flipped():      # unavoidable: accept, record, flag
-                    self.signs[k] = not self.signs[k]
-                    self.flips.append(self.guards[k])
-            self._last_good = self.sketch.get_x()
-        res.time_s = time.perf_counter() - t0
-        if len(self.flips) > n_flips:
-            res.message = f"order-type flip in {len(self.flips) - n_flips} triangle(s)"
-        return res
+        out = _ffi.f64(8)
+        msg = _ffi.take_str(lib.gcs_drag_move(self._h, self.sketch._h, float(x), float(y),
+                                              _ffi.pf(out)))
+        return _result(out, msg, self.method, t0)
+
+    def end(self) -> None:
+        if self.active:
+            lib.gcs_drag_end(self._h, self.sketch._h)
+            self.sketch.touch()
+            self.active = False
+
+    def __del__(self) -> None:  # pragma: no cover
+        try:
+            lib.gcs_drag_free(self._h)
+        except Exception:
+            pass
 
 
-def _soft_radius(circle: Circle | Arc, r: float) -> Radius:
-    """A `Radius` that does not have to hold: its residual is already exactly r − target, so
-    the scalar pull needs no kernel of its own."""
-    target = Radius(circle, r)
-    target.soft = True
-    return target
-
-
-class RadiusDrag(_PullPolish[Radius]):
+class RadiusDrag:
     """Interactive drag of a circle's or arc's radius — the scalar counterpart of `Drag`.
 
-    A radius that is fixed or dimensioned simply does not move: the polish wins, exactly as
-    a point drag compromises on an over-constrained sketch.  An `EqualRadius` chain is a
-    relation rather than a dimension, so the whole chain resizes together.  (The web app
-    additionally refuses to *start* such a drag, using the diagnosis; that is a UI choice,
-    not a property of this class.)
-    """
+    A radius that is fixed or dimensioned simply does not move: the polish wins, exactly as a point
+    drag compromises on an over-constrained sketch.  An `EqualRadius` chain is a relation rather
+    than a dimension, so the whole chain resizes together."""
 
-    def __init__(self, sketch: Sketch, circle: Circle | Arc, r: float, method: Method = "dogleg") -> None:
-        super().__init__(sketch, _soft_radius(circle, r), method)
+    def __init__(self, sketch: Sketch, circle: Circle | Arc, r: float,
+                 method: Method = "dogleg") -> None:
+        self.sketch = sketch
         self.circle = circle
+        self.method = method
+        self._h = lib.gcs_radius_drag_new(sketch._h, KIND_ID[circle.kind], circle.index,
+                                          float(r), _METHOD_ID[method])
+        sketch.touch()
+        self.active = True
 
     def move(self, r: float) -> SolveResult:
         t0 = time.perf_counter()
-        self.target.r = max(float(r), 1e-9)   # a radius through zero would flip the geometry
-        res = self._pull_polish()
-        res.time_s = time.perf_counter() - t0
-        return res
+        out = _ffi.f64(8)
+        msg = _ffi.take_str(lib.gcs_radius_drag_move(self._h, self.sketch._h, float(r),
+                                                     _ffi.pf(out)))
+        return _result(out, msg, self.method, t0)
+
+    def end(self) -> None:
+        if self.active:
+            lib.gcs_radius_drag_end(self._h, self.sketch._h)
+            self.sketch.touch()
+            self.active = False
+
+    def __del__(self) -> None:  # pragma: no cover
+        try:
+            lib.gcs_radius_drag_free(self._h)
+        except Exception:
+            pass
+
+
+__all__ = ["DENSE_MAX", "Drag", "METHODS", "Method", "RadiusDrag", "SolveResult", "System",
+           "Triangle", "orientation", "solve"]

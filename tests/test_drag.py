@@ -1,6 +1,8 @@
 """Stage 5 torture suite: recorded drag trajectories must keep constraints satisfied, move
 continuously (no solution jumps), keep/flag chirality, and branches must survive save/load."""
 
+from __future__ import annotations
+
 import math
 
 import numpy as np
@@ -14,11 +16,12 @@ from gcs.solve import Drag, RadiusDrag, System, solve
 
 
 def circle_path(cx: float, cy: float, r: float, n: int = 40) -> list[tuple[float, float]]:
-    return [(cx + r * math.cos(2 * math.pi * i / n), cy + r * math.sin(2 * math.pi * i / n)) for i in range(n + 1)]
+    return [(cx + r * math.cos(2 * math.pi * i / n), cy + r * math.sin(2 * math.pi * i / n))
+            for i in range(n + 1)]
 
 
-def run_trajectory(sk: Sketch, p: Point, path: list[tuple[float, float]], jump_factor: float = 10.0,
-                   plan: bool = True) -> dict:
+def run_trajectory(sk: Sketch, p: Point, path: list[tuple[float, float]],
+                   jump_factor: float = 10.0, plan: bool = True) -> dict:
     """Drag p along path; assert constraints hold after every frame and nothing teleports."""
     sys_ = System(sk)
     drag = PlanDrag(sk, p, *p.xy) if plan else Drag(sk, p, *p.xy)
@@ -34,10 +37,14 @@ def run_trajectory(sk: Sketch, p: Point, path: list[tuple[float, float]], jump_f
         moved = float(np.abs(now - prev).max())
         if cursor_step > 1e-9:
             max_ratio = max(max_ratio, moved / cursor_step)
-            assert moved <= jump_factor * cursor_step + 1e-9, f"jump: moved {moved:.3g} for cursor step {cursor_step:.3g}"
+            assert moved <= jump_factor * cursor_step + 1e-9, \
+                f"jump: moved {moved:.3g} for cursor step {cursor_step:.3g}"
         prev = now
+    on_plan = plan and drag.usable
+    flips = list(drag.flips)
     drag.end()
-    return {"max_ratio": max_ratio, "flips": list(drag.flips), "plan": plan and drag.numeric is None}
+    sys_.dispose()
+    return {"max_ratio": max_ratio, "flips": flips, "plan": on_plan}
 
 
 def test_floating_truss_rides_along_with_the_cursor() -> None:
@@ -70,25 +77,27 @@ def test_polygon_vertex_far_drag_is_continuous() -> None:
     p = sk.points[5]
     path = [(p.xy[0] + 60 * t, p.xy[1] + 30 * t) for t in np.linspace(0, 1, 12)]
     info = run_trajectory(sk, p, path, jump_factor=6.0)
-    assert not info["plan"]            # EqualLength is not decomposable: numeric path with continuation
+    assert not info["plan"]     # EqualLength is not decomposable: numeric path with continuation
 
 
 def test_fully_constrained_apex_never_jumps_across_the_base() -> None:
     """Dragging a rigid triangle's apex 'through' the base must not teleport it to the mirror
-    root: the point is fully constrained, it stays on its branch (flipping is an explicit
-    action, not a drag side effect)."""
+    root: the point is fully constrained, it stays on its branch (flipping is an explicit action,
+    not a drag side effect)."""
     sk = Sketch()
     a, b = sk.point(0, 0, fixed=True), sk.point(10, 0, fixed=True)
     c = sk.point(5, 4)
     sk.add(C.Distance(a, c, 6), C.Distance(b, c, 6))
     d = PlanDrag(sk, c, *c.xy)
-    assert d.numeric is not None and d.numeric.guards          # pinned apex over-determines: numeric + guards
+    # pinning the apex over-determines the sketch: the numeric path with guards takes over
+    assert d.numeric and d.guard_triangles()
     ys = []
     for y in np.linspace(4, -4, 17):
         d.move(5, float(y))
         ys.append(c.y.value)
+    flips = list(d.flips)
     d.end()
-    assert not d.flips and min(ys) > 3.0 and max(ys) < 3.5
+    assert not flips and min(ys) > 3.0 and max(ys) < 3.5
 
 
 def test_guard_flags_an_unavoidable_crossing() -> None:
@@ -102,8 +111,9 @@ def test_guard_flags_an_unavoidable_crossing() -> None:
     msgs = []
     for y in np.linspace(4, -4, 9):
         msgs.append(d.move(5, float(y)).message)
+    flips = list(d.flips)
     d.end()
-    assert d.flips == [(a, b, c)] and any("flip" in m for m in msgs)
+    assert flips == [(a, b, c)] and any("flip" in m for m in msgs)
     assert c.y.value < 0
 
 
@@ -114,15 +124,15 @@ def test_branches_survive_save_load_and_replay_sticky() -> None:
     sk.add(C.Distance(a, c, 6), C.Distance(b, c, 6))
     ps = PlanSolver(sk, sticky=True)
     ps.solve()
-    ps.flip(ps.graph.P(c))
+    ps.flip(c)
     ps.solve()
     assert c.y.value < 0
-    sk.branches.update(ps.plan.branches())
+    sk.update_branches(ps.branches())
     sk2 = io.loads(io.dumps(sk))
     assert sk2.branches == sk.branches
     sk2.points[2].y.value = 4.0                                 # sketch moved to the other side...
     PlanSolver(sk2, sticky=True).solve()
-    assert sk2.points[2].y.value < 0                           # ...the recorded root wins
+    assert sk2.points[2].y.value < 0                            # ...the recorded root wins
 
 
 def test_continuation_subdivides_large_moves() -> None:
@@ -131,12 +141,12 @@ def test_continuation_subdivides_large_moves() -> None:
     d = PlanDrag(sk, p, *p.xy)
     res = d.move(p.xy[0] + 200, p.xy[1])                       # far beyond one increment
     d.end()
-    assert res.success and res.nfev > 1                        # nfev = number of increments on the plan path
+    assert res.success and res.nfev > 1     # nfev = number of increments on the plan path
 
 
 def test_flip_survives_a_later_solve_by_the_same_cached_plan() -> None:
-    """Root choices are document state: a plan cached per topology must not replay the old
-    branch after a flip (the app keeps one PlanSolver per topology and re-solves on every edit)."""
+    """Root choices are document state: a plan cached per topology must not replay the old branch
+    after a flip (the app keeps one PlanSolver per topology and re-solves on every edit)."""
     sk = Sketch()
     a, b = sk.point(0, 0, fixed=True), sk.point(10, 0, fixed=True)
     c = sk.point(5, 4)
@@ -144,7 +154,7 @@ def test_flip_survives_a_later_solve_by_the_same_cached_plan() -> None:
     ps = PlanSolver(sk, sticky=True)          # the cached solver
     ps.solve()
     assert c.y.value > 0
-    assert ps.flip(ps.graph.P(c)) == 1
+    assert ps.flip(c) == 1
     ps.solve()
     assert c.y.value < 0 and sk.branches
     for _ in range(3):                        # every later solve keeps the chosen root
@@ -181,8 +191,8 @@ def test_radius_drag_leaves_a_dimensioned_circle_alone() -> None:
 
 
 def test_radius_drag_carries_the_geometry_that_depends_on_it() -> None:
-    """An arc's endpoints sit at its radius (intrinsic PointOnCircle), so resizing the arc
-    has to move them with it."""
+    """An arc's endpoints sit at its radius (intrinsic PointOnCircle), so resizing the arc has to
+    move them with it."""
     sk = Sketch()
     c = sk.point(0, 0, fixed=True)
     arc = sk.arc(c, sk.point(10, 0), sk.point(0, 10))

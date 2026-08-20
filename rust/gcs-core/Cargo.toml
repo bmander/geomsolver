@@ -1,0 +1,11 @@
+[package]
+name = "gcs-core"
+version = "0.1.0"
+edition = "2021"
+description = "Geometric constraint solver: model, numerics, diagnosis, decomposition — the whole engine."
+
+[dependencies]
+
+[lib]
+name = "gcs_core"
+path = "src/lib.rs"

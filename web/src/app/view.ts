@@ -4,7 +4,7 @@
 import * as io from '../core/io.js';
 import * as C from '../core/constraints.js';
 import { Constraint, sameConstraint } from '../core/constraints.js';
-import { PlanDrag, PlanResult, PlanSolver, asSolveResult, pppTriangles } from '../core/decompose.js';
+import { PlanDrag, PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
 import { Arc, Box, Circle, Line, Param, Point, Primitive, Sketch, threePointArc } from '../core/model.js';
 import { Method, RadiusDrag, SolveResult, System, Triangle } from '../core/system.js';
@@ -233,7 +233,7 @@ export class SketchView {
     if (!d) return null;
     if (this.witnessFor !== d) {
       this.witnessFor = d;
-      this.witness = analyze(this.sketch, null, { overIds: new Set(d.over) });
+      this.witness = analyze(this.sketch);
     }
     return this.witness;
   }
@@ -695,7 +695,7 @@ export class SketchView {
       if (!this.selected.includes(ent)) this.selected = [ent];
       if (ent instanceof Point && this.canMove(ent)) {
         this.pushUndo();
-        const guards: Triangle[] | null = this.planSolver ? pppTriangles(this.planSolver.plan) : null;
+        const guards: Triangle[] | null = this.planSolver ? this.planSolver.pppTriangles() : null;
         this.gesture = this.pointGesture(new PlanDrag(this.sketch, ent, ...this.s2w(sp[0], sp[1]), guards));
       } else if (this.isResizable(ent)) {
         this.pushUndo();
@@ -840,7 +840,9 @@ export class SketchView {
       },
       end: () => {
         drag.end();
-        for (const [k, v] of drag.branches()) drag.sketch.branches.set(k, v);
+        const b = drag.sketch.branches;                 // document state: merge, then write back
+        for (const [k, v] of drag.branches()) b.set(k, v);
+        drag.sketch.branches = b;
         this.releasePlan();      // the drag's plan pinned the dragged point; recompile lazily
       },
       abandon: () => {

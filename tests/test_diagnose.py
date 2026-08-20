@@ -1,14 +1,15 @@
 """Stage 2: structural diagnosis — matching/DM, pebble game, conflict sets, Laman property test."""
 
-import math
-import random
+from __future__ import annotations
 
-import numpy as np
+import math
+
 import pytest
 
 from gcs import constraints as C
 from gcs import examples, graph, io, solve
 from gcs.diagnose import diagnose, distance_rigidity, minimal_conflict_set
+from gcs.examples import henneberg_edges as henneberg
 from gcs.model import Sketch
 
 
@@ -31,25 +32,22 @@ def test_pebble_game_basics() -> None:
     assert graph.pebble_game(3, [(0, 1), (1, 2), (2, 0)]).is_rigid()
     assert graph.pebble_game(4, [(0, 1), (1, 2), (2, 3), (3, 0)]).dof == 1
     k4 = graph.pebble_game(4, [(0, 1), (1, 2), (2, 3), (3, 0), (0, 2), (1, 3)])
-    assert k4.is_rigid() and k4.redundant == [5]   # (1,3) is the 6th edge: dependent on the other five
+    assert k4.is_rigid() and k4.redundant == [5]   # (1,3) is the 6th edge: dependent on the rest
     bow = graph.pebble_game(5, [(0, 1), (1, 2), (2, 0), (2, 3), (3, 4), (4, 2)])
     assert bow.dof == 1 and sorted(map(sorted, bow.components)) == [[0, 1, 2], [2, 3, 4]]
 
 
-from gcs.examples import henneberg_edges as henneberg  # noqa: E402
-
-
 @pytest.mark.parametrize("seed", range(6))
 def test_pebble_game_recognises_laman_graphs(seed: int) -> None:
-    rng = random.Random(seed)
-    n = rng.randint(4, 14)
-    edges = henneberg(n, rng)
+    n = 4 + seed
+    edges = henneberg(n, seed + 1)
     assert len(edges) == 2 * n - 3
     res = graph.pebble_game(n, edges)
     assert res.is_rigid() and not res.redundant
     assert res.components == [frozenset(range(n))]
     # any extra edge is redundant
-    extra = next((a, b) for a in range(n) for b in range(a + 1, n) if (a, b) not in edges and (b, a) not in edges)
+    extra = next((a, b) for a in range(n) for b in range(a + 1, n)
+                 if (a, b) not in edges and (b, a) not in edges)
     res2 = graph.pebble_game(n, edges + [extra])
     assert res2.redundant == [len(edges)] and res2.is_rigid()
     # removing one edge leaves 1 DOF
@@ -58,15 +56,14 @@ def test_pebble_game_recognises_laman_graphs(seed: int) -> None:
 
 @pytest.mark.parametrize("seed", range(4))
 def test_laman_framework_solves_and_agrees_with_pebble_game(seed: int) -> None:
-    """Property test from the plan: random Laman graph, random lengths from a random
-    realization → solver finds a realization; pebble game says rigid; DM says 3 DOF (rigid motions)."""
-    rng = random.Random(100 + seed)
-    n = rng.randint(4, 10)
-    edges = henneberg(n, rng)
-    sk = Sketch()
-    pts = [sk.point(rng.uniform(0, 50), rng.uniform(0, 50)) for _ in range(n)]
-    for a, b in edges:
-        sk.add(C.Distance(pts[a], pts[b], math.dist(pts[a].xy, pts[b].xy)))
+    """Property test from the plan: random Laman graph, random lengths from a random realization →
+    the solver finds a realization; the pebble game says rigid; DM says 3 DOF (rigid motions)."""
+    n = 4 + seed
+    sk = examples.laman(n, 100 + seed)
+    # `laman` grounds the framework; strip that to see the bare rigid body
+    sk.constraints = [c for c in sk.constraints if not isinstance(c, C.Horizontal)]
+    for p in sk.params:
+        p.fixed = False
     d0 = diagnose(sk)
     assert len(d0.rigid_clusters) == 1 and len(d0.rigid_clusters[0]) == n
     assert d0.dof == 3 and d0.n_redundant == 0     # rigid body: 2 translations + rotation
@@ -78,10 +75,9 @@ def test_laman_framework_solves_and_agrees_with_pebble_game(seed: int) -> None:
 # -- sketch-level diagnosis ---------------------------------------------------
 
 def test_dof_counts_what_can_actually_move_not_what_the_matching_sees() -> None:
-    """A matching cannot tell that two equations say the same thing — it counts both and calls
-    the sketch rigid while the geometry still moves.  `dof` therefore reports the numeric rank
-    when the cross-check ran; `structural_dof` keeps the matching's generous answer.
-    """
+    """A matching cannot tell that two equations say the same thing — it counts both and calls the
+    sketch rigid while the geometry still moves.  `dof` therefore reports the numeric rank when the
+    cross-check ran; `structural_dof` keeps the matching's generous answer."""
     sk = examples.altitudes()          # the altitudes concur: a dependency only the numbers see
     solve(sk)
     d = diagnose(sk)
@@ -95,31 +91,28 @@ def test_dof_counts_what_can_actually_move_not_what_the_matching_sees() -> None:
 def test_redundancy_the_matching_cannot_see_is_counted_and_named() -> None:
     """The altitudes concur, so one of the six constraints is implied by the other five.  The
     matching sees six independent equations and calls the sketch merely under-constrained; the
-    numeric rank sees the dependency, and the report has to name a culprit or the banner points
-    at nothing.
-    """
+    numeric rank sees the dependency, and the report has to name a culprit."""
     sk = examples.altitudes()
     solve(sk)
     d = diagnose(sk)
     assert d.structural_n_redundant == 0        # what the matching alone believes
     assert d.n_redundant == 1 and d.status == "over"
-    named = {io.describe(c, sk) for c in d.over}
+    named = {io.describe(c) for c in d.over}
     assert named == {"Perpendicular(L3, L1)", "Perpendicular(L4, L2)", "Perpendicular(L5, L0)",
                      "PointOnLine(P6, L3)", "PointOnLine(P6, L4)", "PointOnLine(P6, L5)"}
     # the same set the Stage-4 witness reaches independently
     w = diagnose(sk, witness=True).witness
     assert w is not None and w.dependencies
     dep = w.dependencies[0]
-    assert {io.describe(c, sk) for c in [dep.constraint, *dep.implied_by]} <= named
+    assert {io.describe(c) for c in [dep.constraint, *dep.implied_by]} <= named
 
 
 def test_a_dependency_with_nothing_to_remove_is_not_called_over_constrained() -> None:
     """An arc centred on a line endpoint, its two endpoints mirrored about that line.  The two
-    intrinsic radius equations plus "the chord is perpendicular to the line" already force
-    "the chord's midpoint is on the line", so one of `Symmetric`'s two residuals is implied —
-    a real rank deficiency.  But `Symmetric` still carries the perpendicularity, and the
-    intrinsic equations cannot be deleted, so there is nothing to tell the user to remove.
-    """
+    intrinsic radius equations plus "the chord is perpendicular to the line" already force "the
+    chord's midpoint is on the line", so one of `Symmetric`'s two residuals is implied — a real
+    rank deficiency.  But `Symmetric` still carries the perpendicularity, and the intrinsic
+    equations cannot be deleted, so there is nothing to tell the user to remove."""
     sk = Sketch()
     a = sk.point(0.0, 0.0)
     centre = sk.point(10.0, 0.0)
@@ -135,8 +128,8 @@ def test_a_dependency_with_nothing_to_remove_is_not_called_over_constrained() ->
 
 
 def test_a_wholly_implied_constraint_is_still_named() -> None:
-    """The other side of the same test: when a constraint really is redundant on its own, it
-    has to be named — otherwise the check above would just silence every report."""
+    """The other side of the same test: when a constraint really is redundant on its own, it has
+    to be named — otherwise the check above would just silence every report."""
     sk = examples.truss(4)
     p, q = sk.points[0], sk.points[2]
     extra = C.Distance(p, q, math.dist(p.xy, q.xy))
@@ -149,8 +142,8 @@ def test_a_wholly_implied_constraint_is_still_named() -> None:
 
 def test_the_named_culprits_use_the_system_row_order_not_the_sketch_order() -> None:
     """`System` compiles to a plan that batches rows by kernel, so row i is not the i-th
-    constraint.  Mapping a dependent row back through the sketch's own ordering names the
-    wrong constraints — this pins the mapping to `structure()`, which is the authority."""
+    constraint.  Mapping a dependent row back through the sketch's own ordering names the wrong
+    constraints — this pins the mapping to `structure()`, which is the authority."""
     from gcs.solve import System
 
     sk = Sketch()                                  # interleave two kernels so batching reorders
@@ -188,8 +181,8 @@ def test_conflict_set_is_the_two_distances() -> None:
     assert d.status == "conflict"
     assert d.n_redundant == 1
     width = next(c for c in sk.constraints if isinstance(c, C.Distance) and c.d == 80)
-    assert set(map(id, d.conflicts or [])) == {id(extra), id(width)}
-    assert d.entity_state[id(sk.lines[0])] == "conflict"
+    assert set(d.conflicts or []) == {extra, width}
+    assert d.entity_state[sk.lines[0]] == "conflict"
 
 
 def test_redundant_but_consistent_is_over_not_conflict() -> None:
@@ -211,21 +204,21 @@ def test_under_constrained_reports_free_params_and_components() -> None:
     # structural (DM) view is generous: it also lists the y's and the left arc endpoints
     assert {"c2.x", "c2.y"} <= {p.name for p in d.structural_under_params}
     assert sorted(c.dof for c in d.components) == [0, 0, 1]
-    assert d.entity_state[id(sk.points[1])] == "under" and d.entity_state[id(sk.points[0])] == "well"
+    assert d.entity_state[sk.points[1]] == "under" and d.entity_state[sk.points[0]] == "well"
 
 
 def test_null_space_pins_left_side_of_undimensioned_rect() -> None:
-    """Remove the width: geometrically the fixed lower-left arc, the left edge and the
-    upper-left arc stay pinned; only the right side slides.  Structural analysis can't
-    see that (tangent equations mention the far endpoint), the null space can."""
+    """Remove the width: geometrically the fixed lower-left arc, the left edge and the upper-left
+    arc stay pinned; only the right side slides.  Structural analysis can't see that (tangent
+    equations mention the far endpoint), the null space can."""
     sk = examples.rect_fillets()
     sk.remove(next(c for c in sk.constraints if isinstance(c, C.Distance) and c.d == 80))
     d = diagnose(sk)
     assert d.dof == 1
     assert {p.name for p in d.under_params} == {"b2.x", "r1.x", "r2.x", "t1.x", "c_br.x", "c_tr.x"}
-    st = {i: d.entity_state[id(e)] for i, e in enumerate([*sk.lines, *sk.arcs])}
+    st = {i: d.entity_state[e] for i, e in enumerate([*sk.lines, *sk.arcs])}
     assert st[3] == "well" and st[6] == "well" and st[7] == "well"      # left edge, A2, A3
-    assert st[0] == "under" and st[1] == "under" and st[2] == "under"    # bottom, right, top
+    assert st[0] == "under" and st[1] == "under" and st[2] == "under"   # bottom, right, top
 
 
 def test_theorem_type_dependency_is_logged() -> None:
@@ -236,9 +229,7 @@ def test_theorem_type_dependency_is_logged() -> None:
 
 def test_minimal_conflict_set_infeasible_triangle() -> None:
     """Structurally well-determined but geometrically impossible (triangle inequality)."""
-    sk = Sketch()
-    a, b, c = sk.point(0, 0, fixed=True), sk.point(10, 0), sk.point(5, 5)
-    sk.add(C.Distance(a, b, 10), C.Distance(b, c, 1), C.Distance(a, c, 1), C.Horizontal(sk.line(a, b)))
+    sk = examples.impossible_triangle()
     solve(sk)
     d = diagnose(sk)
     assert d.n_redundant == 0            # the graph sees nothing wrong...
@@ -255,8 +246,8 @@ def test_distance_rigidity_merges_coincident_points() -> None:
     l2 = sk.line_xy(10, 0, 5, 8)
     l3 = sk.line_xy(5, 8, 0, 0)
     sk.add(C.Coincident(l1.p2, l2.p1), C.Coincident(l2.p2, l3.p1), C.Coincident(l3.p2, l1.p1))
-    for l in (l1, l2, l3):
-        sk.add(C.Distance(l.p1, l.p2, l.length()))
+    for ln in (l1, l2, l3):
+        sk.add(C.Distance(ln.p1, ln.p2, ln.length()))
     clusters, red = distance_rigidity(sk)
     assert len(clusters) == 1 and len(clusters[0]) == 6 and not red
 
@@ -278,8 +269,7 @@ def test_conflict_set_on_large_truss_from_good_geometry() -> None:
 
 def test_under_params_are_per_axis_not_per_point() -> None:
     """A point sliding along a vertical line has its y free and its x pinned.  Anything asking
-    "can this point move?" has to look at the whole point, not one coordinate — the web app's
-    drag affordance does exactly that."""
+    "can this point move?" has to look at the whole point, not one coordinate."""
     sk = Sketch()
     a = sk.point(0, 0, fixed=True)
     b = sk.point(0, 10, fixed=True)

@@ -295,3 +295,64 @@ def test_parallel_distance_alongside_parallel_is_not_redundant() -> None:
     d = diagnose(sk)
     assert d.n_redundant == 0
     assert d.geometric_dependency == 0
+
+
+def test_solvers_converge_from_a_perturbed_start() -> None:
+    """Both of our own solvers, on every example (the scipy references are gone with scipy)."""
+    for name in examples.EXAMPLES:
+        for method in METHODS:
+            sk = examples.EXAMPLES[name]()
+            _perturb(sk, 3.0, seed=7)
+            res = solve(sk, method=method)
+            assert res.success, (name, method, res)
+            assert res.max_residual < 1e-8
+            assert res.iterations <= 30
+
+
+def test_rank_reported_on_dense_path() -> None:
+    sk = examples.rect_fillets()
+    _perturb(sk, 1.0)
+    res = solve(sk)
+    assert res.rank == sk.n_residuals()          # fully constrained: full row rank
+    assert System(sk).rank() == sk.n_residuals()
+    sk = examples.polygon_chain(8)
+    assert System(sk).rank() < len(sk.free_indices())   # under-constrained: rank-deficient
+    # ...and one redundant equation: the EqualLength cycle e0=e1=...=e7=e0 closes on itself
+    assert System(sk).rank() == sk.n_residuals() - 1
+
+
+def test_sparse_path_matches_dense_solution() -> None:
+    sk1, sk2 = examples.truss(30), examples.truss(30)
+    _perturb(sk1, 1.0, seed=3)
+    _perturb(sk2, 1.0, seed=3)
+    r1 = System(sk1).solve(dense=True)
+    r2 = System(sk2).solve(dense=False)
+    assert r1.success and r2.success
+    np.testing.assert_allclose(sk1.get_x(), sk2.get_x(), atol=1e-6)
+
+
+def test_update_consts_moves_drag_target_without_recompile() -> None:
+    sk = examples.polygon_chain(6)
+    p = sk.lines[2].p1
+    tgt = C.DragTarget(p, *p.xy)
+    sk.add(tgt)
+    s = System(sk)
+    tgt.set_target(p.xy[0] + 3, p.xy[1] + 4)
+    s.update_consts(tgt)
+    res = s.solve()
+    assert res.success
+    assert p.xy == pytest.approx((tgt.tx, tgt.ty), abs=1e-6)
+
+
+def test_lm_and_dogleg_agree_on_a_conflicting_soft_target() -> None:
+    """Fully constrained sketch + soft target: both converge to a stationary point of ½‖r‖²."""
+    sk = examples.rect_fillets()
+    p = sk.lines[0].p2
+    sk.add(C.DragTarget(p, p.xy[0] + 5, p.xy[1] + 5))
+    for method in METHODS:
+        s = System(sk)
+        s.solve(method=method, tol=1e-20, max_iter=100)
+        z = s.z0()
+        g = s.jacobian_dense(z).T @ s.residuals(z)
+        assert np.abs(g).max() < 1e-6, method
+        s.dispose()

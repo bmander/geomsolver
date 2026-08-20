@@ -1,150 +1,79 @@
-"""JSON (de)serialization of sketches.
+"""JSON (de)serialization of sketches, and deletion by rebuild.
 
-Entities are referenced by [kind, index] into the sketch's ordered lists;
-constraints serialize their constructor arguments per `Constraint.spec`.
-Intrinsic constraints are not stored — the primitives recreate them.
+The document format lives in the core; this module only moves strings.
 """
 
 from __future__ import annotations
 
 import json
-import math
-from collections.abc import Iterable
-from typing import Any
+from typing import Any, Iterable
 
-from gcs.constraints import ENTITY_KINDS, Constraint
-from gcs.model import Primitive, Sketch, expand
-
-BY_NAME: dict[str, type[Constraint]] = {}
-
-
-def _register(cls: type[Constraint]) -> None:
-    BY_NAME[cls.__name__] = cls
-    for sub in cls.__subclasses__():
-        _register(sub)
-
-
-_register(Constraint)
-
-
-class Index:
-    """(kind, index) lookup by identity — O(1) instead of list.index per reference."""
-
-    def __init__(self, sk: Sketch) -> None:
-        self.of: dict[int, tuple[str, int]] = {}
-        for kind in ("point", "line", "circle", "arc"):
-            for i, e in enumerate(sk.entities(kind)):
-                self.of[id(e)] = (kind, i)
-
-    def ref(self, e: Primitive) -> list[Any]:
-        return list(self.of[id(e)])
-
-    def name(self, e: Primitive) -> str:
-        kind, i = self.of[id(e)]
-        return f"{kind[0].upper()}{i}"
+from gcs import _ffi
+from gcs._ffi import lib
+from gcs.constraints import Constraint, ENTITY_KINDS
+from gcs.model import Primitive, Sketch, expand  # noqa: F401  (expand is part of the public API)
 
 
 def to_dict(sk: Sketch) -> dict[str, Any]:
-    ix = Index(sk)
-    return {
-        "version": 1,
-        "points": [{"x": p.x.value, "y": p.y.value, "fixed": p.is_fixed} for p in sk.points],
-        "lines": [{"p1": ix.ref(l.p1)[1], "p2": ix.ref(l.p2)[1], "construction": l.construction}
-                  for l in sk.lines],
-        "circles": [{"center": ix.ref(c.center)[1], "r": c.radius.value, "fixed": c.radius.fixed,
-                     "construction": c.construction} for c in sk.circles],
-        "arcs": [{"center": ix.ref(a.center)[1], "start": ix.ref(a.start)[1], "end": ix.ref(a.end)[1],
-                  "r": a.radius.value, "fixed": a.radius.fixed, "construction": a.construction} for a in sk.arcs],
-        # user_constraints() is exactly "what the user added": no intrinsic ones (the
-        # primitives recreate those) and no soft ones (a drag target or a RadiusDrag's pull
-        # would come back as a real dimension, since `soft` is not part of the JSON)
-        "constraints": [
-            {"type": type(c).__name__,
-             "args": [ix.ref(v) if kind in ENTITY_KINDS else v for v, (_, kind) in zip(c.args(), c.spec, strict=True)]}
-            for c in sk.user_constraints()
-        ],
-        "branches": dict(sk.branches),
-    }
+    d: dict[str, Any] = json.loads(_ffi.take_str(lib.gcs_sketch_to_json(sk._h, -1)))
+    return d
 
 
 def from_dict(d: dict[str, Any]) -> Sketch:
-    sk = Sketch()
-    for i, p in enumerate(d["points"]):
-        sk.point(p["x"], p["y"], fixed=bool(p.get("fixed", False)), name=f"p{i}")
-    for l in d["lines"]:
-        p1, p2 = (l["p1"], l["p2"]) if isinstance(l, dict) else l      # v1 stored a bare pair
-        ln = sk.line(sk.points[p1], sk.points[p2])
-        ln.construction = bool(l.get("construction", False)) if isinstance(l, dict) else False
-    for c in d["circles"]:
-        circ = sk.circle(sk.points[c["center"]], c["r"])
-        circ.radius.fixed = bool(c.get("fixed", False))
-        circ.construction = bool(c.get("construction", False))
-    for a in d["arcs"]:
-        arc = sk.arc(sk.points[a["center"]], sk.points[a["start"]], sk.points[a["end"]])
-        arc.radius.value = float(a["r"])
-        arc.radius.fixed = bool(a.get("fixed", False))
-        arc.construction = bool(a.get("construction", False))
-    for c in d["constraints"]:
-        t = BY_NAME[c["type"]]
-        args = [sk.entities(v[0])[v[1]] if kind in ENTITY_KINDS else v
-                for v, (_, kind) in zip(c["args"], t.spec, strict=True)]
-        sk.add(t(*args))
-    sk.branches = {k: int(v) for k, v in d.get("branches", {}).items()}
-    return sk
+    return loads(json.dumps(d))
 
 
-def dumps(sk: Sketch, **kw: Any) -> str:
-    return json.dumps(to_dict(sk), **kw)
+def dumps(sk: Sketch, indent: int | None = None) -> str:
+    return _ffi.take_str(lib.gcs_sketch_to_json(sk._h, -1 if indent is None else int(indent)))
 
 
 def loads(s: str) -> Sketch:
-    return from_dict(json.loads(s))
+    p, n = _ffi.send(s)
+    h = lib.gcs_sketch_from_json(p, n)
+    if not h:
+        raise ValueError(_ffi.last_error() or "bad sketch document")
+    return Sketch(h)
 
 
 def save(sk: Sketch, path: str) -> None:
     with open(path, "w") as f:
-        json.dump(to_dict(sk), f, indent=1)
+        f.write(dumps(sk, indent=1))
 
 
 def load(path: str) -> Sketch:
     with open(path) as f:
-        return from_dict(json.load(f))
+        return loads(f.read())
 
 
-def without(sk: Sketch, entities: Iterable[Primitive] = (), constraints: Iterable[Constraint] = ()) -> Sketch:
-    """Copy of the sketch with the given entities/constraints removed, plus every
-    entity or constraint that depends on a removed entity.  Deletion by rebuild —
-    simple, and keeps Sketch's invariants trivially true."""
-    dead = {id(e) for e in entities}
-    dead_c = {id(c) for c in constraints}
-
-    def alive(e: Primitive) -> bool:
-        return id(e) not in dead and not any(id(ch) in dead for ch in e.children)
-
-    tmp = Sketch()
-    tmp.points = [p for p in sk.points if alive(p)]
-    tmp.lines = [l for l in sk.lines if alive(l)]
-    tmp.circles = [c for c in sk.circles if alive(c)]
-    tmp.arcs = [a for a in sk.arcs if alive(a)]
-    tmp.constraints = [c for c in sk.user_constraints() if id(c) not in dead_c
-                       and all(id(e) not in dead for e in expand(c.entities()))]
-    return from_dict(to_dict(tmp))
+def without(sk: Sketch, entities: Iterable[Primitive] = (),
+            constraints: Iterable[Constraint] = ()) -> Sketch:
+    """Copy of the sketch with the given entities/constraints removed, plus everything that
+    depends on a removed entity.  Deletion by rebuild — simple, and keeps the invariants
+    trivially true."""
+    ep, en = _ffi.send_json([e.ref for e in entities])
+    cp, cn = _ffi.send_json([c._id for c in constraints if c._id >= 0])
+    return Sketch(lib.gcs_without(sk._h, ep, en, cp, cn))
 
 
-def describe(c: Constraint, ix: Index | Sketch) -> str:
-    """Human-readable one-liner: `Distance(P0, P1, 80)`; angles shown in degrees.
-    Pass a prebuilt `Index` when describing many constraints of one sketch."""
-    if isinstance(ix, Sketch):
-        ix = Index(ix)
-    parts = []
-    for v, (_, kind) in zip(c.args(), c.spec, strict=True):
-        if kind in ENTITY_KINDS:
-            parts.append(ix.name(v))
-        elif kind == "angle":
-            parts.append(f"{math.degrees(v):.3g}°")
-        elif kind in ("length", "float"):
-            parts.append(f"{v:.4g}")
-        else:
-            parts.append(str(v))
-    return f"{type(c).__name__}({', '.join(parts)})"
+def describe(c: Constraint, ix: Sketch | None = None) -> str:
+    """Human-readable one-liner: `Distance(P0, P1, 80)`; angles shown in degrees."""
+    return c.describe()
 
+
+def fmt(v: float, sig: int = 4) -> str:
+    """Python's %g-style formatting: `sig` significant digits, trailing zeros dropped."""
+    return _ffi.take_str(lib.gcs_fmt_g(float(v), int(sig)))
+
+
+def name_of(e: Primitive) -> str:
+    """`P0` / `L3` / `C1` / `A2` — the short label the constraint list uses."""
+    return f"{e.kind[0].upper()}{e.index}"
+
+
+BY_NAME = {}  # populated below from the registry, for compatibility with the reference API
+from gcs.constraints import CONSTRAINT_TYPES as _TYPES  # noqa: E402
+
+BY_NAME.update(_TYPES)
+
+__all__ = ["BY_NAME", "describe", "dumps", "fmt", "from_dict", "load", "loads", "name_of",
+           "save", "to_dict", "without", "ENTITY_KINDS", "expand"]

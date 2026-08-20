@@ -1,0 +1,13 @@
+[package]
+name = "gcs-ffi"
+version = "0.1.0"
+edition = "2021"
+description = "Flat C ABI over gcs-core: one library for the Python and WebAssembly bindings."
+
+[dependencies]
+gcs-core = { path = "../gcs-core" }
+
+[lib]
+name = "gcs"
+crate-type = ["cdylib", "staticlib"]
+path = "src/lib.rs"

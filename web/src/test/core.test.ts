@@ -1,6 +1,9 @@
-/* The TypeScript front end against the WebAssembly core — the same properties the Python
- * suite asserts: kernels and the compiled plan, both solvers, structural diagnosis, the
- * decomposition plan, witness analysis, homotopy enumeration, dragging and JSON I/O. */
+/* The TypeScript binding against the Rust core — the same properties the Python suite asserts:
+ * the compiled plan, both solvers, structural diagnosis, the decomposition plan, witness
+ * analysis, homotopy enumeration, dragging and JSON I/O.
+ *
+ * There is one implementation of all of it now; these tests check that the binding reaches it
+ * faithfully, and that the ABI the two sides share stays in step. */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -8,16 +11,16 @@ import * as C from '../core/constraints.js';
 import * as examples from '../core/examples.js';
 import * as graph from '../core/graph.js';
 import * as io from '../core/io.js';
-import { build, knownRadii } from '../core/cgraph.js';
-import { PlanDrag, PlanSolver, decompose } from '../core/decompose.js';
-import { diagnose, distanceRigidity, minimalConflictSet, violatedConstraints } from '../core/diagnose.js';
+import { PlanDrag, PlanSolver, buildGraph } from '../core/decompose.js';
+import {
+  diagnose, distanceRigidity, minimalConflictSet, violatedConstraints,
+} from '../core/diagnose.js';
+import { checkSketch } from '../core/fdcheck.js';
 import { enumerateStep } from '../core/homotopy.js';
-import { Sketch, distanceBetween } from '../core/model.js';
-import { Rng } from '../core/rng.js';
+import { Sketch } from '../core/model.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
 import { analyze } from '../core/witness.js';
-import { IBuf, core, initCore } from '../core/wasm.js';
-import { KERNELS } from '../core/kernels.js';
+import { core, initCore } from '../core/wasm.js';
 
 await initCore();
 
@@ -29,6 +32,8 @@ const allSatisfied = (sk: Sketch): boolean => {
     s.dispose();
   }
 };
+
+const num = (v: unknown): number => Number(v);
 
 /* -- graph algorithms ------------------------------------------------------- */
 
@@ -62,9 +67,8 @@ test('(2,3) pebble game basics', () => {
 
 test('pebble game recognises random Laman graphs', () => {
   for (let seed = 0; seed < 6; seed++) {
-    const rng = new Rng(seed);
-    const n = 4 + rng.int(11);
-    const edges = examples.hennebergEdges(n, rng);
+    const n = 4 + seed;
+    const edges = examples.hennebergEdges(n, seed + 1);
     assert.equal(edges.length, 2 * n - 3);
     const res = graph.pebbleGame(n, edges);
     assert.equal(res.dof, 0, `seed ${seed}`);
@@ -89,7 +93,6 @@ for (const name of Object.keys(examples.EXAMPLES)) {
 }
 
 test('a large truss solves on either Jacobian path', () => {
-  // which path a size picks is the C core's business (newton.c); assert both work
   for (const dense of [false, true]) {
     const sk = examples.truss(60);
     const sys = new System(sk);
@@ -113,9 +116,15 @@ test('a fully constrained sketch has rank equal to its free parameter count', ()
   const sk = examples.rectFillets();
   const sys = new System(sk);
   try {
-    assert.equal(sys.rank(undefined, 1e-10, true), sys.nFree);
+    assert.equal(sys.rank(1e-10, true), sys.nFree);
   } finally {
     sys.dispose();
+  }
+});
+
+test('every example Jacobian agrees with finite differences', () => {
+  for (const name of Object.keys(examples.EXAMPLES)) {
+    assert.ok(checkSketch(examples.EXAMPLES[name]()) >= 0, name);
   }
 });
 
@@ -140,7 +149,7 @@ test('two contradicting widths give a two-constraint conflict set', () => {
   const d = diagnose(sk);
   assert.equal(d.status, 'conflict');
   assert.equal(d.nRedundant, 1);
-  const width = sk.constraints.find((c) => c instanceof C.Distance && c.d === 80)!;
+  const width = sk.constraints.find((c) => c instanceof C.Distance && num(c.d) === 80)!;
   assert.deepEqual(new Set(d.conflicts ?? []), new Set([extra, width]));
   assert.equal(d.entityState.get(sk.lines[0]), 'conflict');
 });
@@ -172,7 +181,7 @@ test('under-constrained slot reports the free parameters the null space sees', (
 
 test('the null space pins the left side of an undimensioned rectangle', () => {
   const sk = examples.rectFillets();
-  const c = sk.constraints.find((k) => k instanceof C.Distance && k.d === 80)!;
+  const c = sk.constraints.find((k) => k instanceof C.Distance && num(k.d) === 80)!;
   sk.remove(c);
   const d = diagnose(sk);
   assert.equal(d.dof, 1);
@@ -213,7 +222,8 @@ test('distance rigidity merges coincident points', () => {
   const l1 = sk.lineXY(0, 0, 10, 0);
   const l2 = sk.lineXY(10, 0, 5, 8);
   const l3 = sk.lineXY(5, 8, 0, 0);
-  sk.add(new C.Coincident(l1.p2, l2.p1), new C.Coincident(l2.p2, l3.p1), new C.Coincident(l3.p2, l1.p1));
+  sk.add(new C.Coincident(l1.p2, l2.p1), new C.Coincident(l2.p2, l3.p1),
+         new C.Coincident(l3.p2, l1.p1));
   for (const l of [l1, l2, l3]) sk.add(new C.Distance(l.p1, l.p2, l.length()));
   const { clusters, redundant } = distanceRigidity(sk);
   assert.equal(clusters.length, 1);
@@ -233,16 +243,16 @@ test('the culprit member is found on a large truss', () => {
 /* -- decomposition ----------------------------------------------------------- */
 
 test('the constraint graph maps the examples', () => {
-  let g = build(examples.rectFillets());
+  let g = buildGraph(examples.rectFillets());
   assert.equal(g.nPoints, 12);
   assert.equal(g.lines.length, 4);
   assert.equal(g.unsupported.length, 0);
-  assert.equal(g.virtual.length, 8);          // one radius line per arc-endpoint tangency
+  assert.equal(g.virtuals.length, 8);         // one radius line per arc-endpoint tangency
   assert.equal(g.dirs.length, 4 + 8);         // H/V plus the tangency perpendiculars
-  g = build(examples.truss());
+  g = buildGraph(examples.truss());
   assert.equal(g.passive.length, 30);
   assert.equal(g.lines.length, 1);            // only the horizontal member is an element
-  g = build(examples.polygonChain(6));
+  g = buildGraph(examples.polygonChain(6));
   assert.equal(g.unsupported.length, 6);      // EqualLength is not an F-H constraint
 });
 
@@ -251,7 +261,7 @@ for (const name of ['rect_fillets', 'slotted_link', 'truss']) {
     const sk = examples.EXAMPLES[name]();
     const ps = new PlanSolver(sk);
     try {
-      assert.ok(ps.plan.fullyDecomposed, ps.plan.summary());
+      assert.ok(ps.plan.fullyDecomposed, ps.plan.summary);
       for (let seed = 0; seed < 3; seed++) {
         sk.perturb(2.0, seed);
         const r = ps.solve(1e-9, false);
@@ -259,8 +269,8 @@ for (const name of ['rect_fillets', 'slotted_link', 'truss']) {
                   `${name} seed ${seed}: max|r| = ${r.maxResidual}`);
       }
       if (name === 'rect_fillets') {
-        const d = sk.constraints.find((c) => c instanceof C.Distance && c.d === 80) as C.Distance;
-        d.d = 120;                            // dimensions are read live: replay, no recompile
+        const d = sk.constraints.find((c) => c instanceof C.Distance && num(c.d) === 80)!;
+        d.setValue('d', 120);                 // dimensions are read live: replay, no recompile
         const r = ps.solve(1e-9, false);
         assert.ok(r.success);
         assert.ok(Math.abs(Math.max(...sk.points.map((p) => p.x.value)) - 140) < 1e-6);
@@ -272,8 +282,6 @@ for (const name of ['rect_fillets', 'slotted_link', 'truss']) {
 }
 
 test('the two distance-to-a-line constraints are PL elements', () => {
-  // both are one residual — a signed offset from an infinite line — so a sketch that
-  // dimensions a gap still decomposes instead of falling back to the numeric core
   const sk = new Sketch();
   const base = sk.line(sk.point(0, 0, true), sk.point(10, 0, true));
   const other = sk.line(sk.point(1, 3), sk.point(12, 9));
@@ -281,10 +289,10 @@ test('the two distance-to-a-line constraints are PL elements', () => {
   sk.add(new C.Parallel(base, other), new C.ParallelDistance(base, other, 5),
          new C.Distance(base.p1, other.p1, 5), new C.Distance(other.p1, other.p2, 10),
          new C.PointLineDistance(p, base, 3), new C.Distance(base.p1, p, 5));
-  assert.equal(build(sk).unsupported.length, 0);
+  assert.equal(buildGraph(sk).unsupported.length, 0);
   const ps = new PlanSolver(sk);
   try {
-    assert.ok(ps.plan.fullyDecomposed, ps.plan.summary());
+    assert.ok(ps.plan.fullyDecomposed, ps.plan.summary);
     const r = ps.solve(1e-9, false);
     assert.ok(r.success && r.maxResidual < 1e-8);
     assert.ok(Math.abs(other.p2.y.value - 5) < 1e-7 && Math.abs(p.y.value - 3) < 1e-7);
@@ -322,7 +330,7 @@ test('chirality flags follow the current geometry', () => {
     assert.ok(r.success && c.y.value < 0);
     assert.ok(up.length);
     assert.deepEqual(ps.plan.steps.filter((s) => s.ppp).map((s) => s.branch), up.map((s) => -s!));
-    ps.plan.stickyBranches = true;             // the recorded root wins even if the sketch moved
+    ps.stickyBranches = true;                  // the recorded root wins even if the sketch moved
     c.y.value = 4;
     ps.solve(1e-9, false);
     assert.ok(c.y.value < 0);
@@ -335,7 +343,7 @@ test('K3,3 needs a core merge and still decomposes', () => {
   const sk = examples.k33();
   const ps = new PlanSolver(sk);
   try {
-    assert.ok(ps.plan.fullyDecomposed, ps.plan.summary());
+    assert.ok(ps.plan.fullyDecomposed, ps.plan.summary);
     assert.ok(Math.max(...ps.plan.steps.map((s) => s.ids.length)) >= 4);
     sk.perturb(1.0, 1);
     const r = ps.solve(1e-9, false);
@@ -347,20 +355,10 @@ test('K3,3 needs a core merge and still decomposes', () => {
 
 test('random Laman frameworks decompose fully', () => {
   for (let seed = 0; seed < 8; seed++) {
-    const rng = new Rng(500 + seed);
-    const n = 4 + rng.int(9);
-    const edges = examples.hennebergEdges(n, rng);
-    const sk = new Sketch();
-    const pts = Array.from({ length: n }, () => sk.point(rng.uniform(0, 50), rng.uniform(0, 50)));
-    pts[0].fix();
-    for (const [a, b] of edges) {
-      sk.add(new C.Distance(pts[a], pts[b],
-        Math.hypot(pts[a].x.value - pts[b].x.value, pts[a].y.value - pts[b].y.value)));
-    }
-    sk.add(new C.Horizontal(sk.line(pts[0], pts[1])));
+    const sk = examples.laman(4 + (seed % 9), 500 + seed);
     const ps = new PlanSolver(sk);
     try {
-      assert.ok(ps.plan.fullyDecomposed, `seed ${seed}: ${ps.plan.summary()}`);
+      assert.ok(ps.plan.fullyDecomposed, `seed ${seed}: ${ps.plan.summary}`);
       sk.perturb(1.0, seed);
       const r = ps.solve(1e-9, false);
       assert.ok(r.success && r.maxResidual < 1e-8, `seed ${seed}: max|r| = ${r.maxResidual}`);
@@ -376,7 +374,8 @@ test('direction classes: a parallel pair is not a rigid pair', () => {
   const l2 = sk.line(sk.point(0, 5), sk.point(10, 5));
   const l3 = sk.line(sk.point(3, 5), sk.point(3, 12));
   sk.add(new C.Parallel(l1, l2), new C.Distance(l1.p1, l2.p1, 5), new C.Vertical(l3),
-         new C.Coincident(l3.p1, l2.p1), new C.Distance(l3.p1, l3.p2, 7), new C.Distance(l2.p1, l2.p2, 10));
+         new C.Coincident(l3.p1, l2.p1), new C.Distance(l3.p1, l3.p2, 7),
+         new C.Distance(l2.p1, l2.p2, 10));
   const ps = new PlanSolver(sk);
   try {
     sk.perturb(1.0, 0);
@@ -445,7 +444,7 @@ test('homotopy enumerates alternative roots of a triangle merge', () => {
     ps.solve(1e-9, false);
     const idx = ps.plan.steps.findIndex((s) => s.ppp !== null);
     assert.ok(idx >= 0);
-    const alts = enumerateStep(ps.plan, idx);
+    const alts = enumerateStep(ps, idx);
     assert.ok(alts.length >= 2, `expected both roots, got ${alts.length}`);
     assert.ok(alts[0].distance < 1e-6);
   } finally {
@@ -458,12 +457,15 @@ test('homotopy enumerates alternative roots of a triangle merge', () => {
 test('numeric drag keeps the constraints satisfied', () => {
   const sk = examples.rectFillets();
   solve(sk);
+  const sys = new System(sk);
+  const scale = sys.scale;
+  sys.dispose();
   const p = sk.lines[1].p2;
   const d = new Drag(sk, p, p.x.value, p.y.value);
   try {
     for (let i = 0; i < 8; i++) {
       const r = d.move(p.x.value + 3, p.y.value + 1);
-      assert.ok(r.maxResidual < 1e-6 * d.polish.scale, `frame ${i}: ${r.maxResidual}`);
+      assert.ok(r.maxResidual < 1e-6 * scale, `frame ${i}: ${r.maxResidual}`);
     }
   } finally {
     d.end();
@@ -553,8 +555,6 @@ test('JSON round-trips every example', () => {
     const sk = examples.EXAMPLES[name]();
     const s = io.dumps(sk);
     const back = io.loads(s);
-    // a second dump is byte-identical: the document round-trips, not the parameter order
-    // (rebuilding creates every point before the arc radii, so the vector is laid out differently)
     assert.equal(io.dumps(back), s, name);
     assert.equal(back.constraints.length, sk.constraints.length, name);
     assert.ok(solve(back).success, name);
@@ -573,13 +573,11 @@ test('removing an arc centre removes the arc and its tangencies', () => {
 test('every constraint type declares a spec that reconstructs it', () => {
   for (const [name, T] of Object.entries(C.CONSTRAINT_TYPES)) {
     assert.ok(T.spec.length > 0, name);
+    assert.equal(T.defaults.length, T.spec.length, name);
   }
 });
 
 test('a live drag never reaches the document', () => {
-  // `soft` is not part of the JSON, so a soft constraint saved mid-drag would come back as a
-  // real one — a drag target as geometry, a RadiusDrag's pull as a dimension nobody typed.
-  // Undo snapshots go through the same path.
   const sk = examples.slottedLink();
   const n = io.toJSON(sk).constraints.length;
   const d = new Drag(sk, sk.points[1], 1, 2);
@@ -598,15 +596,13 @@ test('a soft radius is not a known dimension', () => {
   const c = sk.circle(sk.point(0, 0, true), 10);
   const d = new RadiusDrag(sk, c, 10);
   try {
-    assert.equal(knownRadii(sk).size, 0);
+    assert.equal(Object.keys(buildGraph(sk).knownRadius).length, 0);
   } finally {
     d.end();
   }
 });
 
 test('window selection is exactly "the entity bounds are inside the box"', () => {
-  // the view filters on bounds() rather than re-deriving each primitive's extent; this pins
-  // the two to the same answer for the case that motivated it — an arc bulging out of the box
   const sk = new Sketch();
   const centre = sk.point(0, 0);
   const arc = sk.arc(centre, sk.point(5, 0), sk.point(-5, 0));   // half turn through the top
@@ -614,12 +610,9 @@ test('window selection is exactly "the entity bounds are inside the box"', () =>
     b[0] >= box[0] && b[1] >= box[1] && b[2] <= box[2] && b[3] <= box[3];
   assert.ok(inside([-6, -1, 6, 6], arc.bounds()));               // the bulge fits
   assert.ok(!inside([-6, -1, 6, 4], arc.bounds()));              // ...and is what excludes it
-  assert.ok(arc.extremes().every(([, y]) => y <= 5 + 1e-12));
 });
 
 test('drawn bounds cover curves, not just points', () => {
-  // bbox is points-only (it defines extent, and through it the solver's residual scale);
-  // drawnBounds is what "fit the view" wants
   const sk = new Sketch();
   sk.circle(sk.point(0, 0), 10);
   assert.deepEqual(sk.bbox(), [0, 0, 0, 0]);
@@ -644,7 +637,6 @@ test('a three-point arc sweeps through the third point', () => {
   const up = sk.arcThrough(a, b, [0, 5])!;
   assert.ok(Math.hypot(...up.center.xy) < 1e-12);
   assert.ok(Math.abs(up.radius.value - 5) < 1e-12);
-  // CCW from a = (-5,0) would sweep under, so a top-bulging arc has to start at b
   assert.equal(up.start, b);
   assert.equal(up.end, a);
   const [a0, a1] = up.angles();
@@ -677,8 +669,6 @@ test('a three-point arc refuses collinear input', () => {
 });
 
 test('DOF counts what can actually move, not what the matching sees', () => {
-  // a matching cannot tell that two equations say the same thing — it counts both and calls
-  // the sketch rigid while the geometry still moves
   const sk = examples.altitudes();            // the altitudes concur: only the numbers see it
   solve(sk);
   const d = diagnose(sk);
@@ -690,10 +680,6 @@ test('DOF counts what can actually move, not what the matching sees', () => {
 });
 
 test('a dependency with nothing to remove is not called over-constrained', () => {
-  // arc centred on a line endpoint, its endpoints mirrored about that line: the two intrinsic
-  // radius equations plus "chord perpendicular to the line" already force "chord midpoint on
-  // the line", so one of Symmetric's residuals is implied — but Symmetric still carries the
-  // perpendicularity, and the intrinsic equations cannot be deleted
   const sk = new Sketch();
   const a = sk.point(0, 0);
   const centre = sk.point(10, 0);
@@ -710,15 +696,13 @@ test('a dependency with nothing to remove is not called over-constrained', () =>
 });
 
 test('redundancy the matching cannot see is counted and named', () => {
-  // the altitudes concur, so one of the six constraints is implied by the other five; the
-  // matching sees six independent equations and would call the sketch merely under-constrained
   const sk = examples.altitudes();
   solve(sk);
   const d = diagnose(sk);
   assert.equal(d.structuralNRedundant, 0);       // what the matching alone believes
   assert.equal(d.nRedundant, 1);
   assert.equal(d.status, 'over');
-  const named = new Set(d.over.map((c) => io.describe(c, sk)));
+  const named = new Set(d.over.map((c) => io.describe(c)));
   assert.deepEqual([...named].sort(), [
     'Perpendicular(L3, L1)', 'Perpendicular(L4, L2)', 'Perpendicular(L5, L0)',
     'PointOnLine(P6, L3)', 'PointOnLine(P6, L4)', 'PointOnLine(P6, L5)',
@@ -737,8 +721,6 @@ test('DOF is unchanged when the two ranks agree', () => {
 });
 
 test('sameConstraint matches exact repeats', () => {
-  // a duplicate adds equations without adding rank, and the structural matching cannot see
-  // it — this is the check that keeps one out of a sketch
   const sk = new Sketch();
   const p = sk.point(0, 0), q = sk.point(3, 0), r = sk.point(0, 4);
   const line = sk.line(p, q);
@@ -792,10 +774,10 @@ test('annular distance carries a known radius along a chain of rings', () => {
   const inner = sk.circle(c, 10), mid = sk.circle(c, 13), outer = sk.circle(c, 15);
   sk.add(new C.Radius(inner, 10), new C.AnnularDistance(inner, mid, 3),
          new C.AnnularDistance(mid, outer, 2));
-  const g = build(sk);
+  const g = buildGraph(sk);
   assert.equal(g.unsupported.length, 0);
-  assert.equal(g.knownRadius.get(mid.radius), 13);       // resolves from the one dimension
-  assert.equal(g.knownRadius.get(outer.radius), 15);
+  assert.equal(g.knownRadius[String(mid.radius.index)], 13);   // resolves from the one dimension
+  assert.equal(g.knownRadius[String(outer.radius.index)], 15);
 });
 
 test('point-line distance offsets a point from a line', () => {
@@ -818,7 +800,6 @@ test('the sign of a point-line distance picks the side', () => {
 });
 
 test('point-line distance measures to the infinite line', () => {
-  // the foot of the perpendicular may fall well outside the segment
   const sk = new Sketch();
   const base = sk.line(sk.point(0, 0, true), sk.point(1, 0, true));
   const p = sk.point(50, 9);
@@ -837,8 +818,6 @@ test('parallel distance dimensions the gap between parallel lines', () => {
 });
 
 test('parallel distance does not itself make lines parallel', () => {
-  // it dimensions a gap; `Parallel` creates the parallelism.  Bundling the two duplicated a
-  // constraint most sketches already imply.
   const sk = new Sketch();
   const base = sk.line(sk.point(0, 0, true), sk.point(10, 0, true));
   const other = sk.line(sk.point(1, 3), sk.point(12, 9));
@@ -859,8 +838,6 @@ test('the sign of a parallel distance picks the side', () => {
 });
 
 test('a rectangle is rigid up to its five degrees of freedom', () => {
-  // three perpendiculars, not four: the fourth follows, so a fourth would leave every
-  // rectangle over-constrained by one equation
   const sk = new Sketch();
   const lines = sk.rectangleXY(0, 0, 40, 25);
   assert.equal(lines.length, 4);
@@ -901,9 +878,8 @@ test('the construction flag round-trips', () => {
 
 test('describe reads the spec', () => {
   const sk = examples.rectFillets();
-  const ix = new io.Index(sk);
-  const d = sk.constraints.find((c) => c instanceof C.Distance) as C.Distance;
-  assert.match(io.describe(d, ix), /^Distance\(P\d+, P\d+, 80\)$/);
+  const d = sk.constraints.find((c) => c instanceof C.Distance)!;
+  assert.match(io.describe(d), /^Distance\(P\d+, P\d+, 80\)$/);
 });
 
 test('deleting an entity removes what depends on it', () => {
@@ -915,33 +891,27 @@ test('deleting an entity removes what depends on it', () => {
   assert.ok(solve(back).success);
 });
 
-/* -- the ABI between TypeScript and the C core ---------------------------------- */
+/* -- the ABI between the binding and the core ----------------------------------- */
 
-test('the kernel table matches the C registry', () => {
-  // ids and arities are the contract: adding a kernel to one side only must fail here
-  // rather than silently misalign a compiled plan
-  const m = core();
-  assert.equal(m._gcs_kernel_count(), KERNELS.length);
-  const out = new IBuf(4);
-  try {
-    KERNELS.forEach((k, kid) => {
-      m._gcs_kernel_info(kid, out.ptr);
-      const [nRes, nPar, nConst] = out.view;
-      assert.deepEqual([nRes, nPar, nConst], [k.nRes, k.nPar, k.nConst], k.name);
-    });
-  } finally {
-    out.release();
-  }
-});
-
-test('every function gcs.d.ts declares is exported by the module', async () => {
-  // three hand-kept lists describe one API (csrc/gcs.h, the Makefile's EXPORTS, gcs.d.ts);
-  // this turns "forgot the Makefile" from a runtime failure into a test failure
+test('every function the Abi interface declares is exported by the module', async () => {
+  // one hand-kept list describes the boundary now (the `Abi` interface); this turns a
+  // rename in Rust from a runtime failure into a test failure
   const { readFileSync } = await import('node:fs');
   const { fileURLToPath } = await import('node:url');
-  const decl = readFileSync(fileURLToPath(new URL('../../src/wasm/gcs.d.ts', import.meta.url)), 'utf8');
-  const names = [...new Set(decl.match(/_gcs_\w+/g) ?? [])];
-  assert.ok(names.length > 20, `expected the full API, found ${names.length}`);
+  const src = readFileSync(fileURLToPath(new URL('../../src/core/wasm.ts', import.meta.url)), 'utf8');
+  const decl = src.slice(src.indexOf('export interface Abi'), src.indexOf('let abi:'));
+  const names = [...new Set(decl.match(/\bgcs_\w+/g) ?? [])];
+  assert.ok(names.length > 80, `expected the full API, found ${names.length}`);
   const m = core() as unknown as Record<string, unknown>;
   for (const n of names) assert.equal(typeof m[n], 'function', `${n} is declared but not exported`);
+});
+
+test('the registry the binding generates its classes from matches the kernels', () => {
+  const reg = C.REGISTRY();
+  assert.equal(reg.kernels.length, core().gcs_kernel_count());
+  assert.equal(reg.types.length, Object.keys(C.CONSTRAINT_TYPES).length);
+  for (const t of reg.types) {
+    assert.ok(t.kernel >= 0 && t.kernel < reg.kernels.length, t.name);
+    assert.equal(C.CONSTRAINT_TYPES[t.name].kernelId, t.kernel);
+  }
 });
