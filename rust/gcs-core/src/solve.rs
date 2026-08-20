@@ -232,17 +232,24 @@ impl Drag {
     /// state, keeping whatever prefix stays on the branch, within a sub-step budget.
     fn damped(&mut self, sk: &mut Sketch, tx: f64, ty: f64, mut budget: i32) -> (SolveResult, i32) {
         let mut res = self.step(sk, tx, ty);
+        // (fx, fy) is the far end of the interval still under suspicion, measured from the last
+        // good state.  Halving it *is* the bisection: without that the midpoint below is the same
+        // point every time round, and the budget goes on re-testing it.
+        let (mut fx, mut fy) = (tx, ty);
         while !self.flipped(sk).is_empty() && budget > 0 {
             let lg = self.last_good.clone();
             sk.set_x(&lg);
             let (bx, by) = sk.point_xy(self.point);
-            res = self.step(sk, (bx + tx) / 2.0, (by + ty) / 2.0);
+            let (mx, my) = ((bx + fx) / 2.0, (by + fy) / 2.0);
+            res = self.step(sk, mx, my);
             budget -= 1;
             if !self.flipped(sk).is_empty() {
-                continue; // the flip is in the first half: bisect that
+                (fx, fy) = (mx, my); // the flip is in the first half: bisect that
+                continue;
             }
-            self.last_good = sk.get_x();
-            res = self.step(sk, tx, ty); // first half was clean: try the rest again
+            self.last_good = sk.get_x(); // the whole first half is on the branch: keep it
+            (fx, fy) = (tx, ty);
+            res = self.step(sk, tx, ty); // and try the rest again
             budget -= 1;
         }
         (res, budget)

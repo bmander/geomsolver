@@ -252,3 +252,27 @@ fn radius_drag_respects_an_equal_radius_chain() {
     assert!((sk.radius_value(EntRef::circle(a)) - 18.0).abs() < 1e-6);
     assert!((sk.radius_value(EntRef::circle(b)) - 18.0).abs() < 1e-6);
 }
+
+/// When a cursor jump would flip a guard, the drag bisects the interval to keep as much of it as
+/// stays on the branch.  Bisecting means halving the *suspect* end each time: re-testing the same
+/// midpoint just spends the sub-step budget, and the point lands wherever that one midpoint put
+/// it — a long way past the crossing it was supposed to stop at.
+#[test]
+fn a_flip_in_the_first_half_is_bisected_not_re_tested() {
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, true, "a");
+    let b = sk.point(10.0, 0.0, true, "b");
+    let c = sk.point(5.9875, 0.3873, false, "c"); // on the circle |ac| = 6, just above a→b
+    sk.add(Constraint::distance(EntRef::point(a), EntRef::point(c), 6.0));
+
+    let (x, y) = sk.point_xy(c);
+    // one frame, one increment, and the midpoint of it is already across the guard
+    let mut d = Drag::new(&mut sk, c, x, y, Method::DogLeg, 1.0, vec![(a, b, c)], 10.0);
+    d.move_to(&mut sk, 6.0, -20.0);
+    d.end(&mut sk);
+
+    assert_eq!(d.flips, vec![(a, b, c)], "the crossing is unavoidable and has to be reported");
+    let (cx, cy) = sk.point_xy(c);
+    assert!(cy < 0.0, "it did not cross at all: {:?}", (cx, cy));
+    assert!(cy > -1.0, "it overshot the crossing: {:?}", (cx, cy));
+}
