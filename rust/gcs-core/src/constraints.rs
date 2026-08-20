@@ -407,9 +407,15 @@ impl Constraint {
         }
     }
 
-    pub fn set_target(&mut self, tx: f64, ty: f64) {
+    /// Move a `DragTarget`'s target point.  No other kind has one, and several are shorter than
+    /// three arguments, so the kind is checked rather than the write being attempted blind.
+    pub fn set_target(&mut self, tx: f64, ty: f64) -> bool {
+        if self.kind != CKind::DragTarget {
+            return false;
+        }
         self.args[1] = Arg::Num(tx);
         self.args[2] = Arg::Num(ty);
+        true
     }
 
     /// The per-constraint constants the kernel needs (dimension values, chirality flags).

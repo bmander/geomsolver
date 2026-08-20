@@ -202,3 +202,32 @@ def test_distance_between_covers_every_pair_of_kinds() -> None:
     assert dist(c1, c2) == pytest.approx(5.0)                   # outside each other
     assert dist(c1, inner) == pytest.approx(1.5)                # one inside the other
     assert dist(c1, sk.circle(sk.point(3, 0), 2.0)) == pytest.approx(0.0)   # overlapping
+
+
+def test_a_dangling_reference_is_an_error_not_a_crash() -> None:
+    """A document is untrusted input: a bad index has to come back as an exception, with the
+    interpreter still standing."""
+    for bad in [
+        '{"points":[{"x":0,"y":0}],"arcs":[{"center":7,"start":0,"end":0,"r":1}]}',
+        '{"points":[{"x":0,"y":0}],"lines":[{"p1":0,"p2":4}]}',
+        '{"points":[{"x":0,"y":0}],"circles":[{"center":-1,"r":1}]}',
+        '{"points":[{"x":0,"y":0}],'
+        '"constraints":[{"type":"Horizontal","args":[["line",0]]}]}',
+    ]:
+        with pytest.raises(ValueError, match="out of range"):
+            io.loads(bad)
+    assert io.loads('{"points":[{"x":1,"y":2}]}').points[0].xy == (1.0, 2.0)
+
+
+def test_a_core_panic_comes_back_as_an_error() -> None:
+    """`guard` in the FFI is the panic boundary: a bad index sets the last error and returns a
+    neutral value, rather than aborting the host process."""
+    from gcs import _ffi
+    from gcs._ffi import lib
+
+    sk = Sketch()
+    sk.point(0, 0)
+    v = lib.gcs_param_value(sk._h, 99)
+    assert math.isnan(v)
+    assert "out of range" in _ffi.last_error()
+    assert sk.points[0].xy == (0.0, 0.0)          # the sketch is untouched and still usable

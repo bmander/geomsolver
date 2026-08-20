@@ -893,6 +893,38 @@ test('deleting an entity removes what depends on it', () => {
 
 /* -- the ABI between the binding and the core ----------------------------------- */
 
+test('a dangling reference in a document is an error, not a trap', () => {
+  // A document is untrusted input; a bad index has to come back as a thrown error with the
+  // wasm instance still usable afterwards.
+  for (const bad of [
+    '{"points":[{"x":0,"y":0}],"arcs":[{"center":7,"start":0,"end":0,"r":1}]}',
+    '{"points":[{"x":0,"y":0}],"lines":[{"p1":0,"p2":4}]}',
+    '{"points":[{"x":0,"y":0}],"circles":[{"center":-1,"r":1}]}',
+    '{"points":[{"x":0,"y":0}],"constraints":[{"type":"Horizontal","args":[["line",0]]}]}',
+  ]) {
+    assert.throws(() => io.loads(bad), /out of range/);
+  }
+  const sk = io.loads('{"points":[{"x":1,"y":2}]}');
+  assert.deepEqual(sk.points[0].xy, [1, 2]);
+});
+
+test('rowOf an uncompiled constraint is -1, not a trap', () => {
+  const sk = new Sketch();
+  const a = sk.point(0, 0), b = sk.point(10, 0);
+  sk.line(a, b);
+  const d = new C.Distance(a, b, 10);
+  sk.add(d);
+  const sys = new System(sk);
+  try {
+    assert.ok(sys.rowOf(d) >= 0);
+    const later = new C.Horizontal(sk.lines[0]);
+    sk.add(later);
+    assert.equal(sys.rowOf(later), -1);
+  } finally {
+    sys.dispose();
+  }
+});
+
 test('every function the Abi interface declares is exported by the module', async () => {
   // one hand-kept list describes the boundary now (the `Abi` interface); this turns a
   // rename in Rust from a runtime failure into a test failure

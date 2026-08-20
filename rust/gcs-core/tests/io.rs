@@ -219,3 +219,59 @@ fn every_constraint_type_round_trips_through_its_spec() {
         assert_eq!(CKind::from_name(kind.name()), Some(kind));
     }
 }
+
+/// A document is untrusted input.  Every stored index is checked on load, so a hand-edited or
+/// truncated file is an `Err` the caller can show — not an out-of-bounds index inside the model.
+#[test]
+fn a_dangling_reference_is_an_error_not_a_panic() {
+    let bad = [
+        r#"{"points":[{"x":0,"y":0}],"arcs":[{"center":7,"start":0,"end":0,"r":1}]}"#,
+        r#"{"points":[{"x":0,"y":0}],"lines":[{"p1":0,"p2":4}]}"#,
+        r#"{"points":[{"x":0,"y":0}],"lines":[[0,4]]}"#,
+        r#"{"points":[{"x":0,"y":0}],"circles":[{"center":-1,"r":1}]}"#,
+        r#"{"points":[{"x":0,"y":0}],"constraints":[{"type":"Horizontal","args":[["line",0]]}]}"#,
+        r#"{"points":[{"x":0,"y":0},{"x":1,"y":0}],
+            "constraints":[{"type":"Distance","args":[["point",0],["point",9],1]}]}"#,
+    ];
+    for s in bad {
+        let e = io::loads(s).unwrap_err();
+        assert!(e.contains("out of range"), "{s} gave {e}");
+    }
+}
+
+#[test]
+fn a_load_that_is_in_range_still_works() {
+    let sk = io::loads(
+        r#"{"points":[{"x":0,"y":0},{"x":3,"y":4}],"lines":[{"p1":0,"p2":1}],
+            "constraints":[{"type":"Distance","args":[["point",0],["point",1],5]}]}"#,
+    )
+    .unwrap();
+    assert_eq!(sk.points.len(), 2);
+    assert_eq!(sk.lines.len(), 1);
+    assert_eq!(sk.user_constraints().len(), 1);
+}
+
+/// `row_of` is asked about ids that need not be in the plan (a constraint added after compile).
+#[test]
+fn row_of_an_uncompiled_constraint_is_none() {
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, false, "a");
+    let b = sk.point(10.0, 0.0, false, "b");
+    sk.line(a, b);
+    let d = sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 10.0));
+    let sys = gcs_core::system::System::new(&sk);
+    assert!(sys.row_of(d).is_some());
+    let later = sk.add(Constraint::new(CKind::Horizontal, vec![Arg::Ent(EntRef::line(0))]));
+    assert_eq!(sys.row_of(later), None);
+}
+
+/// Only a `DragTarget` has a target; the shorter argument lists must not be written past.
+#[test]
+fn set_target_refuses_a_constraint_without_one() {
+    let mut c = Constraint::new(CKind::Radius, vec![Arg::Ent(EntRef::circle(0)), Arg::Num(5.0)]);
+    assert!(!c.set_target(1.0, 2.0));
+    assert_eq!(c.args.len(), 2);
+    let mut d = Constraint::drag_target(EntRef::point(0), 1.0, 2.0, 1.0);
+    assert!(d.set_target(3.0, 4.0));
+    assert_eq!(d.consts()[0], 3.0);
+}

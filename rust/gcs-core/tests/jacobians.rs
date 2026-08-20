@@ -132,7 +132,7 @@ fn system_blocks_cover_every_constraint_once() {
     let z = s.z0(&sk);
     let r = s.residuals(&z);
     for c in &sk.constraints {
-        let off = s.row_of(c.id);
+        let off = s.row_of(c.id).expect("compiled constraint has a row");
         let expect = c.residual(&c.local_values(&sk));
         for (i, v) in expect.iter().enumerate() {
             assert!((r[off + i] - v).abs() < 1e-12);

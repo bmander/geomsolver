@@ -220,10 +220,10 @@ impl System {
         }
     }
 
-    /// First residual row of a constraint.
-    pub fn row_of(&self, cid: u32) -> usize {
-        let (b, i) = self.slot_of[&cid];
-        self.blocks[b].row0 + i * k(self.blocks[b].kid).n_res
+    /// First residual row of a constraint — `None` for one this plan was not compiled from.
+    pub fn row_of(&self, cid: u32) -> Option<usize> {
+        let &(b, i) = self.slot_of.get(&cid)?;
+        Some(self.blocks[b].row0 + i * k(self.blocks[b].kid).n_res)
     }
 
     // -- evaluation ----------------------------------------------------------
