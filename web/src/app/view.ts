@@ -98,6 +98,8 @@ export class SketchView {
    *  One field rather than four means a new gesture cannot be forgotten in `setSketch`, and
    *  the pointer handlers stay two lines each. */
   private gesture: Gesture | null = null;
+  /** The pointer that owns `gesture`; a second one is ignored until it lets go. */
+  private gesturePointer: number | null = null;
   /** `underParams` as a set, rebuilt when the diagnosis it came from is replaced. */
   private movable: { owner: Diagnosis; set: Set<Param> } | null = null;
   /** A gesture moved geometry, so the null space no longer describes the pose on screen. */
@@ -657,15 +659,34 @@ export class SketchView {
 
   private bindEvents(): void {
     const cv = this.canvas;
+    // One pointer owns the gesture until it lets go.  A second finger starting one on top would
+    // drop the live gesture on the floor: its `end` never runs, so the core's drag handle leaks
+    // and the soft drag target it added stays in the sketch, quietly compromising every later
+    // solve.  And a gesture can end without a `pointerup` — a cancelled touch, or capture lost
+    // to a system gesture — so those have to finish it too.
     cv.addEventListener('pointerdown', (e) => {
+      if (this.gesture) return;
       cv.setPointerCapture(e.pointerId);
+      this.gesturePointer = e.pointerId;
       this.onPointerDown(e);
     });
-    cv.addEventListener('pointermove', (e) => this.onPointerMove(e));
-    cv.addEventListener('pointerup', (e) => {
-      cv.releasePointerCapture(e.pointerId);
-      this.onPointerUp();
+    cv.addEventListener('pointermove', (e) => {
+      if (this.gesture && e.pointerId !== this.gesturePointer) return;
+      this.onPointerMove(e);
     });
+    const finish = (e: PointerEvent): void => {
+      if (this.gesturePointer !== null && e.pointerId !== this.gesturePointer) return;
+      this.gesturePointer = null;
+      this.onPointerUp();
+    };
+    cv.addEventListener('pointerup', (e) => {
+      if (this.gesturePointer === null || e.pointerId === this.gesturePointer) {
+        cv.releasePointerCapture(e.pointerId);
+      }
+      finish(e);
+    });
+    cv.addEventListener('pointercancel', finish);
+    cv.addEventListener('lostpointercapture', finish);
     cv.addEventListener('contextmenu', (e) => e.preventDefault());
     cv.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -820,6 +841,7 @@ export class SketchView {
   private abandonGesture(): void {
     const g = this.gesture;
     this.gesture = null;
+    this.gesturePointer = null;
     g?.abandon?.();
   }
 
