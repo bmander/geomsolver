@@ -184,8 +184,10 @@ export class System {
     return withBuf(Math.max(n, 1), 4, (ids) => withBuf(Math.max(n, 1), 8, (vals) => {
       const m = core().gcs_system_constraint_errors(this.handle, this.sketch.handle,
                                                     ids.ptr, vals.ptr, n);
+      // copied out of the heap first: `constraintById` calls into the core, the core's memory
+      // can grow on any call, and every view over it detaches when it does
+      const ia = Int32Array.from(ids.i32), va = Float64Array.from(vals.f64);
       const out = new Map<Constraint, number>();
-      const ia = ids.i32, va = vals.f64;
       for (let i = 0; i < m; i++) {
         const c = this.sketch.constraintById(ia[i]);
         if (c) out.set(c, va[i]);
@@ -279,7 +281,7 @@ export function readFlips(sketch: Sketch, list: (d: number, out: number) => numb
   if (n <= 0) return [];
   return withBuf(3 * n, 4, (b) => {
     list(handle, b.ptr);
-    const v = b.i32;
+    const v = Int32Array.from(b.i32);   // before `sketch.points`, which can grow the heap
     const pts = sketch.points;
     const out: Triangle[] = [];
     for (let i = 0; i < n; i++) out.push([pts[v[3 * i]], pts[v[3 * i + 1]], pts[v[3 * i + 2]]]);

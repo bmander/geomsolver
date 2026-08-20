@@ -197,7 +197,7 @@ export class PlanDrag {
   guardTriangles(): Triangle[] {
     return withBuf(3 * 4096, 4, (b) => {
       const n = core().gcs_plan_drag_guards(this.handle, this.sketch.handle, b.ptr);
-      const v = b.i32;
+      const v = Int32Array.from(b.i32);   // before `sketch.points`, which can grow the heap
       const pts = this.sketch.points;
       const out: Triangle[] = [];
       for (let i = 0; i < n; i++) out.push([pts[v[3 * i]], pts[v[3 * i + 1]], pts[v[3 * i + 2]]]);

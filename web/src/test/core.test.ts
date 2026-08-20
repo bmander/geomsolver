@@ -892,6 +892,41 @@ test('deleting an entity removes what depends on it', () => {
 
 /* -- the ABI between the binding and the core ----------------------------------- */
 
+test('a heap view does not survive a call that grows the core\'s memory', async () => {
+  // Why the readers copy their numbers out before touching the sketch again: the module grows
+  // its memory on any call, and every typed-array view over the old buffer detaches when it does.
+  const { Buf } = await import('../core/wasm.js');
+  const b = new Buf(4, 4);
+  try {
+    const view = b.i32;
+    view[0] = 42;
+    const copy = Int32Array.from(view);
+    const big = core().gcs_malloc(64 * 1024 * 1024);   // enough to force a grow
+    core().gcs_free(big, 64 * 1024 * 1024);
+    assert.equal(copy[0], 42);                          // the copy is still readable
+    assert.equal(b.i32[0], 42);                         // and a freshly taken view still is
+  } finally {
+    b.release();
+  }
+});
+
+test('flip and guard readers survive a growing sketch', () => {
+  // The same readers, exercised end to end: a sketch big enough that `points` allocates while
+  // the buffer is still in hand.
+  const sk = new Sketch();
+  for (let i = 0; i < 400; i++) sk.point(i, (i * 7) % 13);
+  const a = sk.point(0, 0, true), bb = sk.point(10, 0, true);
+  const c = sk.point(5, 4);
+  sk.add(new C.Distance(a, c, 6));
+  const d = new Drag(sk, c, 5, 4, 'dogleg', 1.0, [[a, bb, c]], 1.0);
+  try {
+    d.move(5, -4);
+    for (const t of d.flips) assert.ok(t.every((p) => p !== undefined));
+  } finally {
+    d.end();
+  }
+});
+
 test('every argument a proxy holds reaches the core', () => {
   // A proxy showing one value while the core holds another is a sketch that solves to something
   // other than what the UI says.  `Number('start')` is NaN, and sending that replaced the string.

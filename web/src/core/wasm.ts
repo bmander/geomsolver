@@ -222,6 +222,11 @@ export const i32 = (): Int32Array => new Int32Array(core().memory.buffer);
 export const f64 = (): Float64Array => new Float64Array(core().memory.buffer);
 
 /** A block of the core's heap with a matching view on demand. */
+/** A scratch block in the core's heap.
+ *
+ *  The typed-array getters below build a *view* over the module's memory.  That memory grows on
+ *  any core call, and growing detaches every view over the old buffer — so a view must never be
+ *  held across a call into the core.  Read it, or copy out of it, first. */
 export class Buf {
   readonly ptr: number;
   readonly bytes: number;
