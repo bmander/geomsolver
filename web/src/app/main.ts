@@ -37,6 +37,7 @@ const banner = document.getElementById('banner') as HTMLElement;
 const bannerText = document.getElementById('banner-text') as HTMLElement;
 const bannerSelect = document.getElementById('banner-select') as HTMLButtonElement;
 const measureEl = document.getElementById('measure') as HTMLElement;
+const footerEl = document.querySelector('footer') as HTMLElement;
 
 await initCore();
 (document.getElementById('loading') as HTMLElement).remove();
@@ -632,6 +633,9 @@ function refreshStatus(): void {
   if (view.lastPlan) {
     msg += `   | plan: ${view.lastPlan.plan.summary()}${view.lastPlan.fellBack ? ' (fell back)' : ''}`;
   }
+  // colour the whole bar when the drawing does not satisfy its constraints: every number
+  // above is then describing a sketch that is not the one on screen
+  footerEl.classList.toggle('unsolved', (!!r && !r.success) || d?.status === 'conflict');
   stats(msg);
   refreshMeasure();
 }

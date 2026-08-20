@@ -96,6 +96,10 @@
     white-space: nowrap; overflow-x: auto;
   }
   footer #toast { color: var(--text); }
+  /* the geometry on screen does not satisfy the constraints — the numbers in the status
+     line are describing a sketch you are not actually looking at */
+  footer.unsolved { background: var(--danger-bg); border-top-color: #d62728; color: #a03b46; }
+  footer.unsolved #toast { color: #8a0000; }
 
   dialog {
     border: 1px solid var(--line); border-radius: 9px; padding: 0;
