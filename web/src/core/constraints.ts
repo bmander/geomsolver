@@ -147,9 +147,13 @@ export abstract class Constraint {
     if (i < 0) return;
     const kind = this.spec[i][1];
     this.args[i] = v;
+    // a string argument is not a number: `Number('start')` is NaN, and sending that replaced the
+    // string in the core with NaN while the proxy went on showing 'start'
     if (this.id >= 0 && this.sketch && !ENTITY_KINDS.has(kind)) {
-      withStr(name, (p, n) =>
-        core().gcs_constraint_set_num(this.sketch!.handle, this.id, p, n, Number(v)));
+      withStr(name, (p, n) => (kind === 'str'
+        ? withStr(String(v), (vp, vn) =>
+          core().gcs_constraint_set_str(this.sketch!.handle, this.id, p, n, vp, vn))
+        : core().gcs_constraint_set_num(this.sketch!.handle, this.id, p, n, Number(v))));
     }
   }
 

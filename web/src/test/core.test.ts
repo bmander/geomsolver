@@ -892,6 +892,34 @@ test('deleting an entity removes what depends on it', () => {
 
 /* -- the ABI between the binding and the core ----------------------------------- */
 
+test('every argument a proxy holds reaches the core', () => {
+  // A proxy showing one value while the core holds another is a sketch that solves to something
+  // other than what the UI says.  `Number('start')` is NaN, and sending that replaced the string.
+  const sk = new Sketch();
+  const line = sk.line(sk.point(0, 0, true), sk.point(10, 0, true));
+  const circle = sk.circle(sk.point(5, 3), 1);
+  const t = new C.TangentLineCircle(line, circle);
+  sk.add(t);
+  t.side = -1;
+  const stored = () => JSON.parse(io.dumps(sk)).constraints as { type: string; args: unknown[] }[];
+  assert.equal(stored()[0].args[2], -1);
+
+  const c2 = sk.circle(sk.point(30, 0), 2), c3 = sk.circle(sk.point(31, 0), 1);
+  const tc = new C.TangentCircleCircle(c2, c3);
+  sk.add(tc);
+  const before = tc.external as boolean;
+  tc.external = !before;
+  assert.equal(stored()[1].args[2], !before);
+  assert.equal(tc.external, !before);
+
+  const arc = sk.arc(sk.point(0, 50), sk.point(6, 50), sk.point(0, 56));
+  const ta = new C.TangentArcLine(arc, line, 'start');
+  sk.add(ta);
+  ta.at = 'end';
+  assert.equal(stored().find((c) => c.type === 'TangentArcLine')!.args[2], 'end');
+  assert.equal(ta.at, 'end');
+});
+
 test('setX refuses a vector that is not this sketch\'s', () => {
   // Writing the overlapping prefix scattered one sketch's coordinates over another's — the DOF
   // animation restoring its starting state into whatever sketch had replaced it, for one.

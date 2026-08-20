@@ -1,7 +1,9 @@
+import json
+
 import numpy as np
 import pytest
 
-from gcs import Coincident, Distance, DragTarget, Sketch, examples, solve
+from gcs import Coincident, Distance, DragTarget, Sketch, examples, io, solve
 from gcs import constraints as C
 from gcs.examples import perturb as _perturb
 from gcs.solve import METHODS, Drag, System
@@ -408,3 +410,33 @@ def test_a_circle_circle_tangency_left_open_keeps_the_arrangement() -> None:
     sk.add(a)
     sk.add(b)
     assert (a.external, b.external) == (False, True)
+
+
+def test_every_argument_a_proxy_holds_reaches_the_core() -> None:
+    """A proxy that shows one value while the core holds another is a sketch that solves to
+    something other than what the UI says."""
+    sk = Sketch()
+    line = sk.line(sk.point(0, 0, fixed=True), sk.point(10, 0, fixed=True))
+    circle = sk.circle(sk.point(5, 3), 1.0)
+    t = C.TangentLineCircle(line, circle)
+    sk.add(t)
+    assert t.side == 1
+
+    t.side = -1                                    # int
+    assert json.loads(io.dumps(sk))["constraints"][0]["args"][2] == -1
+
+    c2 = sk.circle(sk.point(30, 0), 2.0)
+    c3 = sk.circle(sk.point(31, 0), 1.0)
+    tc = C.TangentCircleCircle(c2, c3)
+    sk.add(tc)
+    before = tc.external
+    tc.external = not before                       # bool: used to update the proxy only
+    stored = json.loads(io.dumps(sk))["constraints"][1]["args"][2]
+    assert stored == (not before) and tc.external == (not before)
+
+    arc = sk.arc(sk.point(0, 50), sk.point(6, 50), sk.point(0, 56))
+    ta = C.TangentArcLine(arc, line, "start")
+    sk.add(ta)
+    ta.at = "end"                                  # str: used to reach the core as NaN, or not
+    stored = [c for c in json.loads(io.dumps(sk))["constraints"] if c["type"] == "TangentArcLine"]
+    assert stored[0]["args"][2] == "end" and ta.at == "end"

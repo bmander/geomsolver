@@ -427,14 +427,29 @@ impl Constraint {
         self.arg_index(name).map(|i| self.args[i].num())
     }
 
-    pub fn set_num(&mut self, name: &str, v: f64) {
-        if let Some(i) = self.arg_index(name) {
-            self.args[i] = match self.args[i] {
-                Arg::Int(_) => Arg::Int(v as i64),
-                Arg::Bool(_) => Arg::Bool(v != 0.0),
-                _ => Arg::Num(v),
-            };
+    /// Set a numeric-ish argument by name — a dimension, a flag, a count.  `false` if there is no
+    /// such argument or it is not one a number can express, rather than overwriting a string
+    /// argument with `NaN`.
+    pub fn set_num(&mut self, name: &str, v: f64) -> bool {
+        let Some(i) = self.arg_index(name) else { return false };
+        self.args[i] = match self.args[i] {
+            Arg::Int(_) => Arg::Int(v as i64),
+            Arg::Bool(_) => Arg::Bool(v != 0.0),
+            Arg::Num(_) => Arg::Num(v),
+            _ => return false,
+        };
+        true
+    }
+
+    /// Set a string argument by name (an arc tangency's end).  `false` if there is no such
+    /// argument or it is not a string.
+    pub fn set_str(&mut self, name: &str, v: &str) -> bool {
+        let Some(i) = self.arg_index(name) else { return false };
+        if !matches!(self.args[i], Arg::Str(_)) {
+            return false;
         }
+        self.args[i] = Arg::Str(v.to_string());
+        true
     }
 
     /// Move a `DragTarget`'s target point.  No other kind has one, and several are shorter than

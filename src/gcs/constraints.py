@@ -122,10 +122,16 @@ class Constraint:
         i = next(k for k, (n, _) in enumerate(self.spec) if n == name)
         kind = self.spec[i][1]
         self._args[i] = self._coerce(v, kind)
+        # every non-entity argument reaches the core, bools and strings included: a proxy holding
+        # a value the core does not have is a sketch that solves to something else
         if self._id >= 0 and self._sketch is not None and kind not in ENTITY_KINDS:
-            if kind in ("length", "angle", "float", "int"):
-                p, n = _ffi.send(name)
-                lib.gcs_constraint_set_num(self._sketch._h, self._id, p, n, float(self._args[i]))
+            p, n = _ffi.send(name)
+            if kind == "str":
+                sp, sn = _ffi.send(str(self._args[i]))
+                lib.gcs_constraint_set_str(self._sketch._h, self._id, p, n, sp, sn)
+            else:
+                lib.gcs_constraint_set_num(self._sketch._h, self._id, p, n,
+                                           float(self._args[i]))
 
     # -- evaluation ---------------------------------------------------------
 

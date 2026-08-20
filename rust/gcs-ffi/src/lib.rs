@@ -697,11 +697,52 @@ pub unsafe extern "C" fn gcs_constraint_set_num(
     name: *const u8,
     name_len: usize,
     v: f64,
-) {
-    guard((), move || {
+) -> i32 {
+    guard(-1, move || {
         let n = as_str(name, name_len).to_string();
-        if let Some(c) = sk(h).constraint_mut(id as u32) {
-            c.set_num(&n, v);
+        match sk(h).constraint_mut(id as u32) {
+            None => {
+                set_error(format!("no constraint {id}"));
+                -1
+            }
+            Some(c) => {
+                if c.set_num(&n, v) {
+                    0
+                } else {
+                    set_error(format!("{n} is not an argument a number can set"));
+                    -1
+                }
+            }
+        }
+    })
+}
+
+/// Set a string argument by name (an arc tangency's end).
+#[no_mangle]
+pub unsafe extern "C" fn gcs_constraint_set_str(
+    h: *mut Sketch,
+    id: i32,
+    name: *const u8,
+    name_len: usize,
+    v: *const u8,
+    v_len: usize,
+) -> i32 {
+    guard(-1, move || {
+        let n = as_str(name, name_len).to_string();
+        let val = as_str(v, v_len).to_string();
+        match sk(h).constraint_mut(id as u32) {
+            None => {
+                set_error(format!("no constraint {id}"));
+                -1
+            }
+            Some(c) => {
+                if c.set_str(&n, &val) {
+                    0
+                } else {
+                    set_error(format!("{n} is not a string argument"));
+                    -1
+                }
+            }
         }
     })
 }
