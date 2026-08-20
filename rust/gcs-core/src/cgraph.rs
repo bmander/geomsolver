@@ -120,6 +120,8 @@ pub struct ConstraintGraph {
     pub dirs: Vec<DirRelation>,
     pub unsupported: Vec<u32>,
     pub ground_points: Vec<usize>,
+    /// coincidence class → the member point that pinned it to the ground
+    pub ground_member: BTreeMap<usize, usize>,
     /// radius Param index → its known value
     pub known_radius: BTreeMap<u32, f64>,
     pub passive: Vec<usize>,
@@ -128,6 +130,14 @@ pub struct ConstraintGraph {
 impl ConstraintGraph {
     pub fn point_el(&self, p: usize) -> El {
         El::p(self.point_of[p])
+    }
+
+    /// The point of a coincidence class whose coordinates *are* the class's pose: the member that
+    /// pinned the class to the ground if it has one — a fixed point, or the point a drag has
+    /// pinned — otherwise the lowest-numbered member.  Every member agrees once the sketch is
+    /// satisfied; while it is not, this is the one that has to win.
+    pub fn class_pose_point(&self, class: usize) -> usize {
+        self.ground_member.get(&class).copied().unwrap_or(self.members[class][0])
     }
 
     /// Line element for sketch line `ln`, registered on first use.
@@ -321,9 +331,12 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
     let mut g = ConstraintGraph::default();
     let (of, members) = coincident_classes(sk);
     g.point_of = of;
-    g.ground_points = (0..members.len())
-        .filter(|&k| members[k].iter().any(|&p| sk.point_fixed(p)))
-        .collect();
+    for (k, ms) in members.iter().enumerate() {
+        if let Some(&p) = ms.iter().find(|&&p| sk.point_fixed(p)) {
+            g.ground_points.push(k);
+            g.ground_member.insert(k, p);
+        }
+    }
     g.members = members;
     g.known_radius = known_radii(sk);
 

@@ -993,8 +993,7 @@ pub fn decompose(graph: ConstraintGraph, seed: u32, core_max: usize) -> Plan {
 fn world_pose(g: &ConstraintGraph, sk: &Sketch, e: El) -> Pose {
     match e.kind {
         ElKind::P => {
-            let p = g.members[e.i()][0];
-            let (x, y) = sk.point_xy(p);
+            let (x, y) = sk.point_xy(g.class_pose_point(e.i()));
             vec![x, y]
         }
         ElKind::L => {
@@ -1077,9 +1076,15 @@ pub fn write_point(g: &ConstraintGraph, sk: &mut Sketch, e: El, pose: &[f64]) {
         return;
     }
     for &p in &g.members[e.i()] {
+        // a class can hold a fixed point as well as free ones; the pose came *from* the fixed
+        // one, and writing it back over a fixed param would move geometry the user pinned
         let (px, py) = (sk.points[p].x as usize, sk.points[p].y as usize);
-        sk.params[px].value = pose[0];
-        sk.params[py].value = pose[1];
+        if !sk.params[px].fixed {
+            sk.params[px].value = pose[0];
+        }
+        if !sk.params[py].fixed {
+            sk.params[py].value = pose[1];
+        }
     }
 }
 

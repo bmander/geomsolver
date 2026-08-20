@@ -1,6 +1,8 @@
 use gcs_core::cgraph::{build, El};
 use gcs_core::constraints::CKind;
-use gcs_core::decompose::PlanSolver;
+use gcs_core::constraints::Constraint;
+use gcs_core::decompose::{PlanDrag, PlanSolver};
+use gcs_core::model::{EntRef, Sketch};
 use gcs_core::examples;
 use gcs_core::newton::Method;
 
@@ -153,4 +155,48 @@ fn flipping_a_construction_survives_later_solves() {
         ps.solve(&mut sk, 1e-9, true, Method::DogLeg);
         assert!(sk.point_xy(c).1 < 0.0);
     }
+}
+
+/// A coincidence class can mix a fixed point with free ones.  The class's pose has to be read
+/// from the fixed member, and write-back has to leave that member's params alone — otherwise
+/// replay "solves" the sketch by moving the point the user pinned.
+#[test]
+fn replay_does_not_move_a_fixed_point_it_shares_a_class_with() {
+    let mut sk = Sketch::new();
+    let p0 = sk.point(5.0, 5.0, false, "p0");
+    let p1 = sk.point(0.0, 0.0, true, "p1");
+    let p2 = sk.point(3.0, 0.0, false, "p2");
+    sk.add(Constraint::coincident(EntRef::point(p0), EntRef::point(p1)));
+    sk.add(Constraint::distance(EntRef::point(p1), EntRef::point(p2), 10.0));
+
+    let mut ps = PlanSolver::new(&sk, false);
+    let r = ps.solve(&mut sk, 1e-6, false, Method::DogLeg);
+    assert!(r.success, "{r:?}");
+    assert_eq!(sk.point_xy(p1), (0.0, 0.0), "the fixed point moved");
+    assert_eq!(sk.point_xy(p0), (0.0, 0.0), "the free point did not join it");
+    let (x2, y2) = sk.point_xy(p2);
+    assert!((x2.hypot(y2) - 10.0).abs() < 1e-9);
+}
+
+/// Dragging a point whose coincidence class holds a lower-numbered member: the plan pins the
+/// dragged point, so the class's pose must be read from *it*, not from whichever member happens
+/// to sort first — otherwise the replay reads a stale position and the drag does nothing.
+#[test]
+fn a_plan_drag_on_a_coincident_point_actually_moves_it() {
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, true, "a");
+    let b = sk.point(10.0, 0.0, false, "b");
+    let c = sk.point(10.0, 0.0, false, "c");
+    let d = sk.point(20.0, 0.0, false, "d");
+    sk.line(a, b);
+    sk.line(c, d);
+    sk.add(Constraint::coincident(EntRef::point(c), EntRef::point(b)));
+
+    let mut drag = PlanDrag::new(&mut sk, c, 10.0, 0.0, None, 1.0);
+    assert!(drag.usable(), "the plan should be able to drive this drag");
+    let r = drag.move_to(&mut sk, 20.0, 5.0);
+    assert!(r.success, "{r:?}");
+    let (cx, cy) = sk.point_xy(c);
+    assert!((cx - 20.0).hypot(cy - 5.0) < 1e-6, "c stayed at {:?}", (cx, cy));
+    assert_eq!(sk.point_xy(b), sk.point_xy(c), "the coincidence broke");
 }
