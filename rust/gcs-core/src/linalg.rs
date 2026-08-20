@@ -108,9 +108,14 @@ pub fn norm(a: &[f64]) -> f64 {
     dot(a, a).sqrt()
 }
 
+/// max |a|, with NaN winning.  `x > m` would skip a NaN, and a residual vector with a NaN in it
+/// would then pass the convergence test — a broken sketch reported as solved on iteration zero.
 pub fn absmax(a: &[f64]) -> f64 {
     let mut m = 0.0f64;
     for &v in a {
+        if v.is_nan() {
+            return f64::NAN;
+        }
         let x = v.abs();
         if x > m {
             m = x;

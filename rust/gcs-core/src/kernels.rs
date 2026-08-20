@@ -81,6 +81,17 @@ fn lin_jac(n: usize, j: &'static [f64], out: &mut [f64]) {
 
 /// Jacobian of C/L from dC and dL — the quotient rule, shared by the signed distance-to-a-line
 /// kernels.
+/// A line's length, floored.  A line whose endpoints have collapsed has no direction; dividing
+/// by its length would put a NaN in the residual vector, and a NaN reads as "no error" at every
+/// max we take downstream — the sketch would be reported solved on iteration zero.  The floor
+/// keeps the residual finite (a degenerate line is at distance 0 from everything, so the error is
+/// the whole target) and the Jacobian large, which is what pushes the endpoints back apart.
+pub const MIN_LINE_LEN: f64 = 1e-12;
+
+fn line_len(dx: f64, dy: f64) -> f64 {
+    dx.hypot(dy).max(MIN_LINE_LEN)
+}
+
 fn ratio_jac(dc: &[f64], dl: &[f64], l: f64, c: f64, j: &mut [f64]) {
     let f = c / (l * l);
     for t in 0..dc.len() {
@@ -335,7 +346,7 @@ fn tangent_line_circle_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
         let o = 7 * i;
         let (dx, dy) = (v[o + 2] - v[o], v[o + 3] - v[o + 1]);
         let (wx, wy) = (v[o + 4] - v[o], v[o + 5] - v[o + 1]);
-        let l = dx.hypot(dy);
+        let l = line_len(dx, dy);
         let c = dx * wy - dy * wx;
         r[i] = c / l - k[i] * v[o + 6];
     }
@@ -346,7 +357,7 @@ fn tangent_line_circle_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
         let o = 7 * i;
         let (dx, dy) = (v[o + 2] - v[o], v[o + 3] - v[o + 1]);
         let (wx, wy) = (v[o + 4] - v[o], v[o + 5] - v[o + 1]);
-        let l = dx.hypot(dy);
+        let l = line_len(dx, dy);
         let c = dx * wy - dy * wx;
         let dc = [dy - wy, wx - dx, wy, -wx, -dy, dx, 0.0];
         let dl = [-dx / l, -dy / l, dx / l, dy / l, 0.0, 0.0, 0.0];
@@ -454,7 +465,7 @@ fn parallel_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
         let o = 8 * i;
         let (d1x, d1y) = (v[o + 2] - v[o], v[o + 3] - v[o + 1]);
         let (wx, wy) = (v[o + 4] - v[o], v[o + 5] - v[o + 1]);
-        r[i] = (d1x * wy - d1y * wx) / d1x.hypot(d1y) - k[i];
+        r[i] = (d1x * wy - d1y * wx) / line_len(d1x, d1y) - k[i];
     }
 }
 
@@ -463,7 +474,7 @@ fn parallel_distance_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
         let o = 8 * i;
         let (d1x, d1y) = (v[o + 2] - v[o], v[o + 3] - v[o + 1]);
         let (wx, wy) = (v[o + 4] - v[o], v[o + 5] - v[o + 1]);
-        let l = d1x.hypot(d1y);
+        let l = line_len(d1x, d1y);
         let c = d1x * wy - d1y * wx;
         let dc = [d1y - wy, wx - d1x, wy, -wx, -d1y, d1x, 0.0, 0.0];
         let dl = [-d1x / l, -d1y / l, d1x / l, d1y / l, 0.0, 0.0, 0.0, 0.0];
@@ -478,7 +489,7 @@ fn point_line_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
         let o = 6 * i;
         let (dx, dy) = (v[o + 4] - v[o + 2], v[o + 5] - v[o + 3]);
         let (wx, wy) = (v[o] - v[o + 2], v[o + 1] - v[o + 3]);
-        r[i] = (dx * wy - dy * wx) / dx.hypot(dy) - k[i];
+        r[i] = (dx * wy - dy * wx) / line_len(dx, dy) - k[i];
     }
 }
 
@@ -487,7 +498,7 @@ fn point_line_distance_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
         let o = 6 * i;
         let (dx, dy) = (v[o + 4] - v[o + 2], v[o + 5] - v[o + 3]);
         let (wx, wy) = (v[o] - v[o + 2], v[o + 1] - v[o + 3]);
-        let l = dx.hypot(dy);
+        let l = line_len(dx, dy);
         let c = dx * wy - dy * wx;
         let dc = [-dy, dx, dy - wy, wx - dx, wy, -wx];
         let dl = [0.0, 0.0, -dx / l, -dy / l, dx / l, dy / l];

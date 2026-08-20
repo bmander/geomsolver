@@ -322,6 +322,9 @@ impl System {
         let mut mx = 0.0f64;
         for i in 0..self.n_res {
             if self.hard[i] {
+                if r[i].is_nan() {
+                    return f64::NAN; // NaN is not "no error": it must not read as converged
+                }
                 let a = r[i].abs();
                 if a > mx {
                     mx = a;
@@ -346,9 +349,13 @@ impl System {
             for i in 0..b.count {
                 let mut mx = 0.0f64;
                 for t in 0..kn.n_res {
-                    let a = r[b.row0 + i * kn.n_res + t].abs();
-                    if a > mx {
-                        mx = a;
+                    let v = r[b.row0 + i * kn.n_res + t];
+                    if v.is_nan() {
+                        mx = f64::NAN;
+                        break;
+                    }
+                    if v.abs() > mx {
+                        mx = v.abs();
                     }
                 }
                 out.push(mx);

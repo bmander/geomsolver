@@ -1,4 +1,6 @@
+use gcs_core::constraints::{Arg, CKind, Constraint};
 use gcs_core::examples;
+use gcs_core::model::{EntRef, Sketch};
 use gcs_core::newton::Method;
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::system::System;
@@ -94,4 +96,40 @@ fn pebble_game_recognises_laman_graphs() {
         assert_eq!(res.components, vec![(0..n).collect::<Vec<_>>()]);
         assert_eq!(graph::pebble_game(n, &edges[1..]).dof, 1);
     }
+}
+
+/// A line whose endpoints have collapsed has no direction.  Dividing by its length put a NaN in
+/// the residual vector, and every max we take skipped it — the solver stopped on iteration zero
+/// and called an unsatisfiable sketch solved.
+#[test]
+fn a_degenerate_line_does_not_read_as_solved() {
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, true, "a");
+    let b = sk.point(0.0, 0.0, true, "b"); // coincident with a: the line has no direction
+    let p = sk.point(1.0, 1.0, true, "p");
+    let ln = sk.line(a, b);
+    let c = sk.add(Constraint::new(
+        CKind::PointLineDistance,
+        vec![Arg::Ent(EntRef::point(p)), Arg::Ent(EntRef::line(ln)), Arg::Num(3.0)],
+    ));
+
+    let mut sys = System::new(&sk);
+    let z = sys.z0(&sk);
+    let r = sys.residuals(&z).to_vec();
+    assert!(r.iter().all(|v| v.is_finite()), "residuals went non-finite: {r:?}");
+    assert!(sys.max_hard_residual(&z) > 1.0, "the unmet 3-unit offset vanished");
+    let errs = sys.constraint_errors(&z);
+    let i = sys.cids.iter().position(|&id| id == c).unwrap();
+    assert!(errs[i] > 1.0, "constraint_errors reported {}", errs[i]);
+
+    let res = solve(&mut sk, SolveOpts::default());
+    assert!(!res.success, "an unsatisfiable sketch reported solved: {res:?}");
+}
+
+/// Defence in depth for the same thing: a NaN anywhere in a residual vector has to win the max,
+/// not be skipped by `x > m`.
+#[test]
+fn a_nan_residual_wins_the_max() {
+    assert!(gcs_core::linalg::absmax(&[1.0, f64::NAN, 2.0]).is_nan());
+    assert_eq!(gcs_core::linalg::absmax(&[1.0, -3.0, 2.0]), 3.0);
 }
