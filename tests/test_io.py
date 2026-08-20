@@ -231,3 +231,24 @@ def test_a_core_panic_comes_back_as_an_error() -> None:
     assert math.isnan(v)
     assert "out of range" in _ffi.last_error()
     assert sk.points[0].xy == (0.0, 0.0)          # the sketch is untouched and still usable
+
+
+def test_topology_key_distinguishes_one_constraint_from_another_of_the_same_type() -> None:
+    """A front end caches compiled plans against this.  Counts and type names alone are not
+    enough: delete one Distance and add another and both are identical."""
+    sk = Sketch()
+    p = [sk.point(i * 10, 0) for i in range(4)]
+    a = C.Distance(p[0], p[1], 50)
+    sk.add(a)
+    k1 = sk.topology_key()
+    sk.remove(a)
+    sk.add(C.Distance(p[2], p[3], 20))
+    assert sk.topology_key() != k1
+
+    k2 = sk.topology_key()
+    p[0].fix(True)
+    assert sk.topology_key() != k2
+    p[0].fix(False)
+    assert sk.topology_key() == k2
+    p[0].x.value = 99
+    assert sk.topology_key() == k2       # moving geometry is not a topology change

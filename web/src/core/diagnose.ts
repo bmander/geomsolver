@@ -89,7 +89,10 @@ interface RawDiagnosis {
 }
 
 function fromRaw(sk: Sketch, d: RawDiagnosis): Diagnosis {
-  const con = (i: number): Constraint => sk.constraintById(i)!;
+  // a diagnosis run against a System compiled before the last edit can name a constraint the
+  // sketch no longer has; drop those rather than handing `undefined` on as a Constraint
+  const cons = (v: number[]): Constraint[] =>
+    v.map((i) => sk.constraintById(i)).filter((c): c is Constraint => c !== undefined);
   const prm = (v: number[]): Param[] => v.map((i) => sk.paramAt(i));
   const ents = new Map<string, Primitive>();
   for (const e of sk.primitives()) ents.set(`${e.kind}:${e.index}`, e);
@@ -100,20 +103,20 @@ function fromRaw(sk: Sketch, d: RawDiagnosis): Diagnosis {
     numericRank: d.numericRank,
     numericSkipped: d.numericSkipped,
     geometricDependency: d.geometricDependency,
-    over: d.over.map(con),
+    over: cons(d.over),
     underParams: prm(d.underParams),
     structuralUnderParams: prm(d.structuralUnderParams),
     components: d.components.map((c) => ({
       params: prm(c.params),
-      constraints: c.constraints.map(con),
+      constraints: cons(c.constraints),
       structuralRank: c.structuralRank,
       dof: c.dof,
     })),
     entityState: new Map(d.entityState.map(([k, i, s]) => [ents.get(`${k}:${i}`)!, s])),
     rigidClusters: d.rigidClusters.map((c) => c.map((i) => sk.points[i])),
-    redundantDistances: d.redundantDistances.map(con),
-    violated: d.violated.map(con),
-    conflicts: d.conflicts === null ? null : d.conflicts.map(con),
+    redundantDistances: cons(d.redundantDistances),
+    violated: cons(d.violated),
+    conflicts: d.conflicts === null ? null : cons(d.conflicts),
     warnings: d.warnings,
     witness: d.witness ? reportFrom(sk, d.witness) : null,
     dof: d.dof,

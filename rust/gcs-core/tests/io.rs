@@ -275,3 +275,35 @@ fn set_target_refuses_a_constraint_without_one() {
     assert!(d.set_target(3.0, 4.0));
     assert_eq!(d.consts()[0], 3.0);
 }
+
+/// A front end caches compiled plans against this.  Counts and type names alone are not enough:
+/// deleting one `Distance` and adding another leaves both identical, and the cache then replays a
+/// plan that still enforces the old dimension and ignores the new one.
+#[test]
+fn the_topology_key_distinguishes_one_constraint_from_another_of_the_same_type() {
+    let mut sk = Sketch::new();
+    for i in 0..4 {
+        sk.point(i as f64 * 10.0, 0.0, false, &format!("p{i}"));
+    }
+    let a = sk.add(Constraint::distance(EntRef::point(0), EntRef::point(1), 50.0));
+    let k1 = sk.topology_key();
+
+    sk.remove(a);
+    sk.add(Constraint::distance(EntRef::point(2), EntRef::point(3), 20.0));
+    assert_ne!(sk.topology_key(), k1, "swapping one Distance for another kept the key");
+
+    // and it does move with the things a compiled plan actually depends on
+    let k2 = sk.topology_key();
+    sk.fix_point(0, true);
+    assert_ne!(sk.topology_key(), k2);
+    sk.fix_point(0, false);
+    assert_eq!(sk.topology_key(), k2);
+    let (x, y) = sk.point_xy(0);
+    sk.set_x(&{
+        let mut v = sk.get_x();
+        v[0] = x + 5.0;
+        v[1] = y + 5.0;
+        v
+    });
+    assert_eq!(sk.topology_key(), k2, "moving geometry is not a topology change");
+}

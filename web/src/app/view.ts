@@ -84,6 +84,8 @@ export class SketchView {
   private undoStack: string[] = [];
   private planSolver: PlanSolver | null = null;
   private planKey = '';
+  /** The topology `lastSystem` was compiled from, so a stale one is not diagnosed against. */
+  private systemKey = '';
   private lastSystem: System | null = null;
   private witness: WitnessReport | null = null;
   private witnessFor: Diagnosis | null = null;
@@ -154,6 +156,7 @@ export class SketchView {
   }
 
   private releasePlan(): void {
+    if (this.lastSystem === this.planSolver?.system) this.lastSystem = null;
     this.planSolver?.dispose();
     this.planSolver = null;
     this.planKey = '';
@@ -165,18 +168,13 @@ export class SketchView {
     this.lastSystem = null;
   }
 
-  /** The decomposition plan, compiled once per topology (constraints, entities, fixed flags)
-   *  and replayed for dimension edits and drags. */
+  /** The decomposition plan, compiled once per topology and replayed for dimension edits and
+   *  drags. */
   plan(): PlanSolver {
-    const sk = this.sketch;
-    const key = [
-      sk.constraints.length, sk.points.length, sk.lines.length, sk.circles.length, sk.arcs.length,
-      sk.constraints.map((c) => c.typeName).join(','),
-      sk.params.map((p) => (p.fixed ? 1 : 0)).join(''),
-    ].join('|');
+    const key = this.sketch.topologyKey();
     if (!this.planSolver || key !== this.planKey) {
       this.releasePlan();
-      this.planSolver = new PlanSolver(sk, true);
+      this.planSolver = new PlanSolver(this.sketch, true);
       this.planKey = key;
     }
     return this.planSolver;
@@ -185,6 +183,7 @@ export class SketchView {
   /** One solve by the selected path; keeps the compiled System for the diagnosis that follows. */
   private solveOnce(): SolveResult {
     this.releaseSystem();
+    this.systemKey = this.sketch.topologyKey();
     if (this.usePlan && this.sketch.constraints.length) {
       const ps = this.plan();
       this.lastPlan = ps.solve(1e-9, true, this.method);     // reads and records sketch.branches
@@ -218,7 +217,11 @@ export class SketchView {
       this.lastResult = this.solveOnce();
       if (!this.lastResult.success) this.sketch.setX(xBefore);
     }
-    this.rediagnose(this.lastSystem);
+    // with auto-solve off nothing has recompiled since the edit, so the System we still hold was
+    // built from a sketch that no longer exists: diagnosing against it names dead constraints
+    const fresh = this.systemKey === this.sketch.topologyKey();
+    if (!fresh) this.releaseSystem();
+    this.rediagnose(fresh ? this.lastSystem : null);
     this.onChanged();
     this.draw();
     return this.lastResult;

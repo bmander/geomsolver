@@ -226,6 +226,9 @@ pub fn diagnose(sk: &mut Sketch, opts: DiagnoseOptions) -> Diagnosis {
 }
 
 pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -> Diagnosis {
+    // the caller hands us the System it solved with; dimensions may have been edited since, and
+    // the residuals we are about to judge are read from the compiled constants
+    sys.refresh_consts(sk);
     let (adj, row_c) = sys.structure();
     let n_cols = sys.n_free;
     let dm = graph::dulmage_mendelsohn(&adj, n_cols);

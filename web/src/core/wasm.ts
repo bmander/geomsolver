@@ -37,6 +37,7 @@ export interface Abi {
   gcs_sketch_get_x(h: number, out: number): void;
   gcs_sketch_set_x(h: number, x: number, n: number): void;
   gcs_sketch_perturb(h: number, sigma: number, seed: number): void;
+  gcs_sketch_topology_key(h: number): number;
   gcs_sketch_extent(h: number): number;
   gcs_sketch_bounds(h: number, drawn: number, out: number): void;
   gcs_sketch_nearest_point(h: number, x: number, y: number, outDist: number): number;

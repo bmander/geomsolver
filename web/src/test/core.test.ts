@@ -892,6 +892,47 @@ test('deleting an entity removes what depends on it', () => {
 
 /* -- the ABI between the binding and the core ----------------------------------- */
 
+test('the topology key distinguishes one constraint from another of the same type', () => {
+  // A front end caches compiled plans against this.  Counts and type names alone are not enough:
+  // delete one Distance and add another and both are identical, so the cache replays a plan that
+  // still enforces the old dimension and ignores the new one.
+  const sk = new Sketch();
+  const p = [0, 1, 2, 3].map((i) => sk.point(i * 10, 0));
+  const a = new C.Distance(p[0], p[1], 50);
+  sk.add(a);
+  const k1 = sk.topologyKey();
+  sk.remove(a);
+  sk.add(new C.Distance(p[2], p[3], 20));
+  assert.notEqual(sk.topologyKey(), k1);
+
+  const k2 = sk.topologyKey();
+  p[0].fix(true);
+  assert.notEqual(sk.topologyKey(), k2);
+  p[0].fix(false);
+  assert.equal(sk.topologyKey(), k2);
+  p[0].x.value = 99;
+  assert.equal(sk.topologyKey(), k2);   // moving geometry is not a topology change
+});
+
+test('a diagnosis run against a stale System does not name dead constraints', () => {
+  // With auto-solve off the app can still be holding the System it last solved with.  A
+  // constraint removed since must not come back as an `undefined` proxy.
+  const sk = new Sketch();
+  const a = sk.point(0, 0, true), b = sk.point(10, 0), c = sk.point(10, 10);
+  const d1 = new C.Distance(a, b, 10), d2 = new C.Distance(b, c, 10);
+  sk.add(d1, d2);
+  const sys = new System(sk);
+  try {
+    sk.remove(d2);
+    const d = diagnose(sk, { system: sys });
+    for (const con of [...d.over, ...d.violated, ...(d.conflicts ?? [])]) {
+      assert.ok(con !== undefined, 'diagnosis named a constraint the sketch no longer has');
+    }
+  } finally {
+    sys.dispose();
+  }
+});
+
 test('a tangency left open takes its branch from the geometry', () => {
   // The core reads a tangency's branch off the current sketch.  Substituting the registry's
   // constant for an omitted argument picks the branch in the binding — and the wrong one, so the

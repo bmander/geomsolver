@@ -75,6 +75,7 @@ _SIGNATURES: list[tuple[str, Any, list[Any]]] = [
     ("gcs_sketch_get_x", None, [PTR, F64]),
     ("gcs_sketch_set_x", None, [PTR, F64, ct.c_size_t]),
     ("gcs_sketch_perturb", None, [PTR, ct.c_double, ct.c_uint32]),
+    ("gcs_sketch_topology_key", STR, [PTR]),
     ("gcs_sketch_extent", ct.c_double, [PTR]),
     ("gcs_sketch_bounds", None, [PTR, ct.c_int32, F64]),
     ("gcs_sketch_nearest_point", ct.c_int32, [PTR, ct.c_double, ct.c_double, F64]),

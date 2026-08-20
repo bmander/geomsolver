@@ -351,6 +351,13 @@ pub unsafe extern "C" fn gcs_sketch_perturb(h: *mut Sketch, sigma: f64, seed: u3
     })
 }
 
+/// What a compiled plan or System depends on — entity counts, constraint ids and types, fixed
+/// flags.  A front end caching a compiled artefact keys on this.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_topology_key(h: *mut Sketch) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || out_str(sk(h).topology_key()))
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_extent(h: *mut Sketch) -> f64 {
     guard(f64::NAN, move || {

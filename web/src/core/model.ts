@@ -454,6 +454,13 @@ export class Sketch {
     return core().gcs_sketch_extent(this.handle);
   }
 
+  /** What a compiled plan or System depends on: which entities exist, which constraints (by id,
+   *  so swapping one Distance for another shows up — counts and type names alone do not) and
+   *  which params are fixed.  A cache over compiled artefacts keys on this. */
+  topologyKey(): string {
+    return takeStr(core().gcs_sketch_topology_key(this.handle));
+  }
+
   /** Seeded Gaussian noise on every free parameter (warm starts, witness construction). */
   perturb(sigma: number, seed = 0): void {
     core().gcs_sketch_perturb(this.handle, sigma, seed >>> 0);

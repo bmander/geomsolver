@@ -413,6 +413,28 @@ impl Sketch {
         }
     }
 
+    /// What a compiled plan or `System` depends on: which entities exist, which constraints (by
+    /// id, so swapping one Distance for another shows up — counts and type names alone do not)
+    /// and which params are fixed.  A cache over compiled artefacts keys on this.
+    pub fn topology_key(&self) -> String {
+        use std::fmt::Write;
+        let mut s = format!(
+            "{}|{}|{}|{}|",
+            self.points.len(),
+            self.lines.len(),
+            self.circles.len(),
+            self.arcs.len()
+        );
+        for c in &self.constraints {
+            let _ = write!(s, "{}:{},", c.id, c.type_name());
+        }
+        s.push('|');
+        for p in &self.params {
+            s.push(if p.fixed { '1' } else { '0' });
+        }
+        s
+    }
+
     pub fn count(&self, kind: EntKind) -> usize {
         match kind {
             EntKind::Point => self.points.len(),

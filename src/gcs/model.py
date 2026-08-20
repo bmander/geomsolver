@@ -438,6 +438,11 @@ class Sketch:
     def extent(self) -> float:
         return float(lib.gcs_sketch_extent(self._h))
 
+    def topology_key(self) -> str:
+        """What a compiled plan or System depends on: which entities exist, which constraints
+        (by id) and which params are fixed.  A cache over compiled artefacts keys on this."""
+        return _ffi.take_str(lib.gcs_sketch_topology_key(self._h))
+
     def perturb(self, sigma: float, seed: int = 0) -> None:
         lib.gcs_sketch_perturb(self._h, float(sigma), int(seed) & 0xFFFFFFFF)
 
