@@ -376,3 +376,35 @@ def test_constraint_errors_are_sized_from_the_plan_not_the_live_sketch() -> None
         assert s.n_constraints == 2                    # unchanged: the plan did not recompile
     finally:
         s.dispose()
+
+
+def test_a_tangency_left_open_takes_its_branch_from_the_geometry() -> None:
+    """The core reads a tangency's branch off the current sketch.  A binding that substituted the
+    registry's constant for an omitted argument picked the branch itself — and the wrong one, so
+    the solve dragged the circle through the line to reach the other side."""
+    sk = Sketch()
+    line = sk.line(sk.point(0, 0, fixed=True), sk.point(10, 0, fixed=True))
+    circle = sk.circle(sk.point(5, -3), 1.0)      # below the line: side -1
+    sk.add(C.Radius(circle, 1.0))
+
+    t = C.TangentLineCircle(line, circle)
+    assert t.side is None                          # nothing decided before there is a sketch
+    sk.add(t)
+    assert t.side == -1
+
+    res = solve(sk)
+    assert res.success, res
+    assert circle.center.y.value == pytest.approx(-1.0, abs=1e-6)   # the side it was drawn on
+
+
+def test_a_circle_circle_tangency_left_open_keeps_the_arrangement() -> None:
+    sk = Sketch()
+    big = sk.circle(sk.point(0, 0), 5.0)
+    inside = sk.circle(sk.point(1, 0), 1.0)        # inside big: an internal tangency
+    apart = sk.circle(sk.point(20, 0), 2.0)        # clear of big: an external one
+
+    a = C.TangentCircleCircle(big, inside)
+    b = C.TangentCircleCircle(big, apart)
+    sk.add(a)
+    sk.add(b)
+    assert (a.external, b.external) == (False, True)

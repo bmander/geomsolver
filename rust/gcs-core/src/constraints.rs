@@ -191,6 +191,14 @@ impl CKind {
         }
     }
 
+    /// Arguments the core reads off the current geometry when the caller leaves them out: which
+    /// side of a line a circle is tangent to, and whether two circles touch outside or inside.
+    /// The registry publishes a null default for these so a binding cannot substitute a constant
+    /// and quietly pick the wrong branch — `default_arg` is the fallback when there is no sketch.
+    pub fn infers_arg(self, i: usize) -> bool {
+        matches!((self, i), (CKind::TangentLineCircle, 2) | (CKind::TangentCircleCircle, 2))
+    }
+
     /// Types that do not have to be satisfied — a drag target compromises, it does not hold.
     pub fn soft_by_default(self) -> bool {
         self == CKind::DragTarget
@@ -348,6 +356,28 @@ impl Constraint {
         Constraint::new(
             CKind::TangentLineCircle,
             vec![Arg::Ent(line), Arg::Ent(circle), Arg::Int(s)],
+        )
+    }
+
+    /// `TangentCircleCircle` with the sense read off the current geometry when `external` is
+    /// `None`: whichever of |c1−c2| = r1+r2 (outside) and |c1−c2| = |r1−r2| (inside) the circles
+    /// are already nearer to, so the solver keeps the arrangement the user drew.
+    pub fn tangent_circle_circle(
+        sk: &Sketch,
+        c1: EntRef,
+        c2: EntRef,
+        external: Option<bool>,
+    ) -> Constraint {
+        let e = external.unwrap_or_else(|| {
+            let (ax, ay) = sk.point_xy(sk.round_center(c1));
+            let (bx, by) = sk.point_xy(sk.round_center(c2));
+            let d = (ax - bx).hypot(ay - by);
+            let (r1, r2) = (sk.radius_value(c1).abs(), sk.radius_value(c2).abs());
+            (d - (r1 + r2)).abs() <= (d - (r1 - r2).abs()).abs()
+        });
+        Constraint::new(
+            CKind::TangentCircleCircle,
+            vec![Arg::Ent(c1), Arg::Ent(c2), Arg::Bool(e)],
         )
     }
 

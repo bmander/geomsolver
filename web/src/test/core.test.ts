@@ -892,6 +892,31 @@ test('deleting an entity removes what depends on it', () => {
 
 /* -- the ABI between the binding and the core ----------------------------------- */
 
+test('a tangency left open takes its branch from the geometry', () => {
+  // The core reads a tangency's branch off the current sketch.  Substituting the registry's
+  // constant for an omitted argument picks the branch in the binding — and the wrong one, so the
+  // solve drags the circle through the line to reach the other side.
+  const sk = new Sketch();
+  const line = sk.line(sk.point(0, 0, true), sk.point(10, 0, true));
+  const circle = sk.circle(sk.point(5, -3), 1);
+  sk.add(new C.Radius(circle, 1));
+
+  const t = new C.TangentLineCircle(line, circle);
+  assert.equal(t.side, null);            // nothing decided before there is a sketch
+  sk.add(t);
+  assert.equal(t.side, -1);
+
+  assert.ok(solve(sk).success);
+  assert.ok(Math.abs(circle.center.y.value + 1) < 1e-6, `${circle.center.y.value}`);
+
+  const big = sk.circle(sk.point(100, 0), 5);
+  const inside = sk.circle(sk.point(101, 0), 1);
+  const apart = sk.circle(sk.point(200, 0), 2);
+  const a = new C.TangentCircleCircle(big, inside), b = new C.TangentCircleCircle(big, apart);
+  sk.add(a, b);
+  assert.deepEqual([a.external, b.external], [false, true]);
+});
+
 test('constraint errors are sized from the plan, not the live sketch', () => {
   // The core reports one entry per *compiled* constraint; sizing from the live sketch's count
   // writes past the end of the buffers as soon as the sketch is edited.

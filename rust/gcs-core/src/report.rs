@@ -340,9 +340,12 @@ pub fn registry_json() -> Json {
                     Json::Arr(vec![Json::Str(n.to_string()), Json::Str(sk.as_str().to_string())])
                 })
                 .collect();
+            // null for an entity, and for an argument the core reads off the geometry — a
+            // binding that substituted a constant for one of those would pick the branch itself
             let defaults: Vec<Json> = (0..k.spec().len())
                 .map(|i| match k.spec()[i].1 {
                     s if s.is_entity() => Json::Null,
+                    _ if k.infers_arg(i) => Json::Null,
                     _ => arg_json_value(&k.default_arg(i)),
                 })
                 .collect();
@@ -395,11 +398,13 @@ pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String>
             _ => Arg::Num(a.as_f64()),
         });
     }
-    // TangentLineCircle reads its chirality off the sketch when none was supplied
-    if kind == CKind::TangentLineCircle && raw.get(2).map(|x| matches!(x, Json::Null)).unwrap_or(true)
-    {
-        let c = Constraint::tangent_line_circle(sk, args[0].ent(), args[1].ent(), None);
-        return Ok(c);
+    // the tangencies read their branch off the sketch when none was supplied
+    let omitted = raw.get(2).map(|x| matches!(x, Json::Null)).unwrap_or(true);
+    if omitted && kind == CKind::TangentLineCircle {
+        return Ok(Constraint::tangent_line_circle(sk, args[0].ent(), args[1].ent(), None));
+    }
+    if omitted && kind == CKind::TangentCircleCircle {
+        return Ok(Constraint::tangent_circle_circle(sk, args[0].ent(), args[1].ent(), None));
     }
     let mut c = Constraint::new(kind, args);
     c.soft = v.get("soft").map(|x| x.as_bool()).unwrap_or(false) || kind.soft_by_default();

@@ -285,9 +285,8 @@ function cTangent(): void {
     }
     view.addConstraints(new C.TangentLineCircle(ln, cc));
   } else if (circles.length === 2 && !lines.length) {
-    const [a, b] = circles;
-    const d = Math.hypot(a.center.x.value - b.center.x.value, a.center.y.value - b.center.y.value);
-    view.addConstraints(new C.TangentCircleCircle(a, b, d > Math.max(Math.abs(a.radius.value), Math.abs(b.radius.value))));
+    // the sense is left out: the core reads it off the geometry, the same rule everywhere
+    view.addConstraints(new C.TangentCircleCircle(circles[0], circles[1]));
   } else {
     need(false, 'a line and a circle/arc, or two circles/arcs');
   }
