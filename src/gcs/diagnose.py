@@ -54,7 +54,8 @@ class Diagnosis:
     structural_rank: int                 # maximum matching size
     numeric_rank: int | None             # Jacobian rank at the current configuration (dense path only)
     numeric_skipped: bool                # the cross-check was skipped: past the dense limit
-    over: list[Constraint]               # constraints in the over-determined block (redundancy suspects)
+    over: list[Constraint]               # redundancy suspects: the structural over-determined block,
+    #                                      plus the rows sharing a numeric-only dependency
     under_params: list[Param]            # parameters that can move: numeric (Jacobian null space) when
     #                                      available, else structural (DM under-block, which is generous)
     structural_under_params: list[Param]
@@ -68,13 +69,36 @@ class Diagnosis:
     witness: WitnessReport | None = None  # Stage 4 analysis (on demand): dependencies + motions
 
     @property
+    def effective_rank(self) -> int:
+        """The rank the solver actually sees.  The structural matching is a *generic* upper
+        bound; when the numeric cross-check ran, it is the truth at this configuration."""
+        return self.structural_rank if self.numeric_rank is None else self.numeric_rank
+
+    @property
     def dof(self) -> int:
-        """Structural DOF (rigid-body motions included unless something is fixed)."""
+        """Degrees of freedom left at the current configuration — what can still be dragged.
+
+        Uses the numeric rank when the cross-check ran, because a matching cannot tell that
+        two equations say the same thing: it counts them both and calls the sketch rigid while
+        the geometry moves freely.  `structural_dof` is the matching's generous answer.
+        """
+        return self.n_params - self.effective_rank
+
+    @property
+    def structural_dof(self) -> int:
+        """DOF the matching alone sees — an upper bound on the rank, so a lower bound on DOF."""
         return self.n_params - self.structural_rank
 
     @property
     def n_redundant(self) -> int:
-        """Structurally redundant equations."""
+        """Equations beyond the rank — the ones carrying no information.  Numeric when the
+        cross-check ran, for the same reason as `dof`: a matching counts two equations that say
+        the same thing as two."""
+        return self.n_equations - self.effective_rank
+
+    @property
+    def structural_n_redundant(self) -> int:
+        """What the matching alone sees."""
         return self.n_equations - self.structural_rank
 
     @property
@@ -84,15 +108,22 @@ class Diagnosis:
 
     @property
     def status(self) -> State:
+        """`over` only when something is actually worth removing.  A rank deficiency alone is
+        not enough: a dependency can be shared between a user constraint that is still doing
+        work and a primitive's own definition, and there is nothing to delete.  `n_redundant`
+        still counts it, and the summary still says so."""
         if self.conflicts or self.violated:
             return "conflict"
-        if self.n_redundant:
+        if self.over:
             return "over"
         return "under" if self.dof > 0 else "well"
 
     def summary(self) -> str:
         parts = [f"{self.n_params} params, {self.n_equations} equations, structural rank {self.structural_rank}",
                  f"DOF {self.dof}"]
+        if self.dof != self.structural_dof:
+            parts.append(f"the matching alone would say DOF {self.structural_dof} — "
+                         f"{self.geometric_dependency} equation(s) carry no information")
         if self.n_redundant:
             parts.append(f"{self.n_redundant} redundant equation(s) among {len(self.over)} constraint(s)")
         if self.geometric_dependency:
@@ -110,6 +141,37 @@ class Diagnosis:
 
 
 # ---------------------------------------------------------------------------
+
+def removable_constraints(W: Vec, row_c: list[Constraint], rtol: float = 1e-8) -> list[Constraint]:
+    """Constraints that could be deleted without losing any information, given `W`, a basis of
+    the left null space of the Jacobian (one column per dependency).
+
+    With W orthonormal, dropping a set of rows R gives
+        rank(J minus R) = rank(J) − |R| + rank(W[R]),
+    so a constraint is free to delete exactly when its own rows are *independent* in W.  That
+    distinction is the whole point: an arc whose endpoints are mirrored about a line through
+    its centre makes one of `Symmetric`'s two residuals implied by the arc's radius equations,
+    but `Symmetric` still carries the perpendicularity — its two rows are dependent in W, it is
+    doing real work, and telling the user to remove it would be wrong.  Only a constraint that
+    is *wholly* implied is worth naming.
+
+    Intrinsic constraints are skipped: they come with the primitive and there is no way to
+    delete one, so naming them is noise.
+    """
+    if W.size == 0:
+        return []
+    rows: dict[int, tuple[Constraint, list[int]]] = {}
+    for r, c in enumerate(row_c):
+        rows.setdefault(id(c), (c, []))[1].append(r)
+    out = []
+    for c, rs in rows.values():
+        sub = np.asarray(W)[rs]
+        if c.intrinsic or not np.abs(sub).max() > rtol:
+            continue
+        if int(np.linalg.matrix_rank(sub, tol=rtol)) == len(rs):
+            out.append(c)
+    return out
+
 
 def _tol_abs(sketch: Sketch, tol: float) -> float:
     return tol * max(1.0, sketch.extent()) ** 2
@@ -188,6 +250,11 @@ def diagnose(sketch: Sketch, *, system: System | None = None, numeric: bool | No
         if numeric_rank < dm.rank:
             warnings.append(f"structural rank {dm.rank} but numeric rank {numeric_rank}: "
                             "a dependency the graph cannot see (theorem-induced or degenerate configuration) — Stage 4")
+            # ...and name the constraints worth removing, or the report would say
+            # "over-constrained" with nothing to point at.  One extra SVD, only on this path:
+            # a healthy sketch never reaches it.
+            _, W, _ = rank_and_nullspace(sys_.jacobian_dense(sys_.z0())[sys_.hard].T)
+            over_c = list(dict.fromkeys([*over_c, *removable_constraints(W, row_c)]))
 
 
     # -- violated / conflicts --

@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from gcs import constraints as C
-from gcs import examples, graph, solve
+from gcs import examples, graph, io, solve
 from gcs.diagnose import diagnose, distance_rigidity, minimal_conflict_set
 from gcs.model import Sketch
 
@@ -76,6 +76,101 @@ def test_laman_framework_solves_and_agrees_with_pebble_game(seed: int) -> None:
 
 
 # -- sketch-level diagnosis ---------------------------------------------------
+
+def test_dof_counts_what_can_actually_move_not_what_the_matching_sees() -> None:
+    """A matching cannot tell that two equations say the same thing — it counts both and calls
+    the sketch rigid while the geometry still moves.  `dof` therefore reports the numeric rank
+    when the cross-check ran; `structural_dof` keeps the matching's generous answer.
+    """
+    sk = examples.altitudes()          # the altitudes concur: a dependency only the numbers see
+    solve(sk)
+    d = diagnose(sk)
+    assert d.geometric_dependency == 1
+    assert d.structural_dof == 2                       # what the matching alone believes
+    assert d.dof == 3                                  # what is actually free to move
+    assert d.dof == d.n_params - d.numeric_rank
+    assert len(d.under_params) >= d.dof                # and dragging agrees with the count
+
+
+def test_redundancy_the_matching_cannot_see_is_counted_and_named() -> None:
+    """The altitudes concur, so one of the six constraints is implied by the other five.  The
+    matching sees six independent equations and calls the sketch merely under-constrained; the
+    numeric rank sees the dependency, and the report has to name a culprit or the banner points
+    at nothing.
+    """
+    sk = examples.altitudes()
+    solve(sk)
+    d = diagnose(sk)
+    assert d.structural_n_redundant == 0        # what the matching alone believes
+    assert d.n_redundant == 1 and d.status == "over"
+    named = {io.describe(c, sk) for c in d.over}
+    assert named == {"Perpendicular(L3, L1)", "Perpendicular(L4, L2)", "Perpendicular(L5, L0)",
+                     "PointOnLine(P6, L3)", "PointOnLine(P6, L4)", "PointOnLine(P6, L5)"}
+    # the same set the Stage-4 witness reaches independently
+    w = diagnose(sk, witness=True).witness
+    assert w is not None and w.dependencies
+    dep = w.dependencies[0]
+    assert {io.describe(c, sk) for c in [dep.constraint, *dep.implied_by]} <= named
+
+
+def test_a_dependency_with_nothing_to_remove_is_not_called_over_constrained() -> None:
+    """An arc centred on a line endpoint, its two endpoints mirrored about that line.  The two
+    intrinsic radius equations plus "the chord is perpendicular to the line" already force
+    "the chord's midpoint is on the line", so one of `Symmetric`'s two residuals is implied —
+    a real rank deficiency.  But `Symmetric` still carries the perpendicularity, and the
+    intrinsic equations cannot be deleted, so there is nothing to tell the user to remove.
+    """
+    sk = Sketch()
+    a = sk.point(0.0, 0.0)
+    centre = sk.point(10.0, 0.0)
+    line = sk.line(a, centre)
+    arc = sk.arc(centre, sk.point(13.0, 4.0), sk.point(13.0, -4.0))
+    sk.add(C.Symmetric(arc.start, arc.end, line))
+    solve(sk)
+    d = diagnose(sk)
+    assert d.geometric_dependency == 1 and d.n_redundant == 1     # the deficiency is real...
+    assert d.over == []                                           # ...but nothing is removable
+    assert d.status == "under" and d.dof > 0
+    assert all(st != "over" for st in d.entity_state.values())
+
+
+def test_a_wholly_implied_constraint_is_still_named() -> None:
+    """The other side of the same test: when a constraint really is redundant on its own, it
+    has to be named — otherwise the check above would just silence every report."""
+    sk = examples.truss(4)
+    p, q = sk.points[0], sk.points[2]
+    extra = C.Distance(p, q, math.dist(p.xy, q.xy))
+    sk.add(extra)
+    solve(sk)
+    d = diagnose(sk)
+    assert d.status == "over" and d.n_redundant == 1
+    assert any(c is extra for c in d.over)
+
+
+def test_the_named_culprits_use_the_system_row_order_not_the_sketch_order() -> None:
+    """`System` compiles to a plan that batches rows by kernel, so row i is not the i-th
+    constraint.  Mapping a dependent row back through the sketch's own ordering names the
+    wrong constraints — this pins the mapping to `structure()`, which is the authority."""
+    from gcs.solve import System
+
+    sk = Sketch()                                  # interleave two kernels so batching reorders
+    a, b, c = sk.point(0, 0, fixed=True), sk.point(3, 0), sk.point(0, 4)
+    sk.add(C.Distance(a, b, 3.0), C.Coincident(b, c), C.Distance(a, c, 4.0))
+    _, row_c = System(sk).structure()
+    naive = [k for k in sk.hard_constraints() for _ in range(k.n_residuals)]
+    assert not all(x is y for x, y in zip(row_c, naive)), "kernel batching should reorder rows"
+    assert {type(k).__name__ for k in row_c} == {"Distance", "Coincident"}
+
+
+def test_dof_is_unchanged_when_the_two_ranks_agree() -> None:
+    """The common case: no theorem-type dependency, so nothing about the report moves."""
+    sk = examples.rect_fillets()
+    solve(sk)
+    d = diagnose(sk)
+    assert d.geometric_dependency == 0
+    assert d.dof == d.structural_dof == 0 and d.status == "well"
+    assert not d.under_params
+
 
 def test_well_constrained_examples() -> None:
     for name in ("rect_fillets", "slotted_link", "truss"):

@@ -16,7 +16,7 @@
 import { Constraint, Distance } from './constraints.js';
 import { coincidentClasses } from './cgraph.js';
 import * as graph from './graph.js';
-import { rankAndNullspace, selectRows } from './linalg.js';
+import { Mat, rankAndNullspace, selectRows, transpose } from './linalg.js';
 import { Param, Point, Primitive, Sketch } from './model.js';
 import { Method, System } from './system.js';
 import { WitnessReport, analyze, movableColumns } from './witness.js';
@@ -57,8 +57,16 @@ export interface Diagnosis {
   conflicts: Constraint[] | null;  /* minimal conflict set */
   warnings: string[];
   witness: WitnessReport | null;   /* Stage 4 analysis, on demand */
+  /** Degrees of freedom left at the current configuration — what can still be dragged.  Uses
+   *  the numeric rank when the cross-check ran, because a matching cannot tell that two
+   *  equations say the same thing: it counts them both and calls the sketch rigid while the
+   *  geometry moves freely. */
   dof: number;
+  /** DOF the matching alone sees — it bounds the rank from above, so it bounds DOF below. */
+  structuralDof: number;
   nRedundant: number;
+  /** Redundant equations the matching alone sees. */
+  structuralNRedundant: number;
   status: State;
 }
 
@@ -67,6 +75,10 @@ export function summary(d: Diagnosis): string {
     `${d.nParams} params, ${d.nEquations} equations, structural rank ${d.structuralRank}`,
     `DOF ${d.dof}`,
   ];
+  if (d.dof !== d.structuralDof) {
+    parts.push(`the matching alone would say DOF ${d.structuralDof} — `
+      + `${d.geometricDependency} equation(s) carry no information`);
+  }
   if (d.nRedundant) parts.push(`${d.nRedundant} redundant equation(s) among ${d.over.length} constraint(s)`);
   if (d.geometricDependency) {
     parts.push(`numeric rank ${d.numericRank} < structural ${d.structuralRank}: `
@@ -82,6 +94,35 @@ export function summary(d: Diagnosis): string {
   }
   if (d.rigidClusters.length) parts.push(`${d.rigidClusters.length} rigid cluster(s) in the distance graph`);
   return parts.join('; ');
+}
+
+/** Constraints that could be deleted without losing any information, given `W`, a basis of the
+ *  left null space of the Jacobian (one column per dependency).
+ *
+ *  With W orthonormal, dropping a set of rows R gives
+ *      rank(J minus R) = rank(J) - |R| + rank(W[R]),
+ *  so a constraint is free to delete exactly when its own rows are *independent* in W.  That
+ *  distinction is the whole point: an arc whose endpoints are mirrored about a line through its
+ *  centre makes one of `Symmetric`'s two residuals implied by the arc's radius equations, but
+ *  `Symmetric` still carries the perpendicularity — its two rows are dependent in W, it is doing
+ *  real work, and telling the user to remove it would be wrong.  Only a wholly implied
+ *  constraint is worth naming.
+ *
+ *  Intrinsic constraints are skipped: they come with the primitive and cannot be deleted. */
+export function removableConstraints(W: Mat, rowC: Constraint[], rtol = 1e-8): Constraint[] {
+  if (W.rows === 0 || W.cols === 0) return [];
+  const rows = new Map<Constraint, number[]>();
+  rowC.forEach((c, r) => { const v = rows.get(c); if (v) v.push(r); else rows.set(c, [r]); });
+  const out: Constraint[] = [];
+  for (const [c, rs] of rows) {
+    if (c.intrinsic) continue;
+    const sub = selectRows(W, rs);
+    let peak = 0;
+    for (const v of sub.data) peak = Math.max(peak, Math.abs(v));
+    if (!(peak > rtol)) continue;
+    if (rankAndNullspace(sub, rtol).rank === rs.length) out.push(c);
+  }
+  return out;
 }
 
 const tolAbs = (sketch: Sketch, tol: number): number => tol * Math.max(1, sketch.extent()) ** 2;
@@ -183,6 +224,16 @@ export function diagnose(sketch: Sketch, opts: DiagnoseOptions = {}): Diagnosis 
       // can still fool it — the witness step generalises this.
       underParams = movable.map((j) => freeParams[j]);
       if (numericRank < dm.rank) {
+        // ...and name the constraints worth removing, or the report would say
+        // "over-constrained" with nothing to point at.  One extra SVD, only on this path: a
+        // healthy sketch never reaches it.
+        const dense = sys.jacobianDense(sys.z0());
+        const hardRows: number[] = [];
+        for (let i = 0; i < sys.nRes; i++) if (sys.hard[i]) hardRows.push(i);
+        const { N: W } = rankAndNullspace(transpose(selectRows(dense, hardRows)));
+        for (const c of removableConstraints(W, rowC)) {
+          if (!overSet.has(c)) { overSet.add(c); over.push(c); }
+        }
         warnings.push(`structural rank ${dm.rank} but numeric rank ${numericRank}: `
           + 'a dependency the graph cannot see (theorem-induced or degenerate configuration) — Stage 4');
       }
@@ -234,16 +285,26 @@ export function diagnose(sketch: Sketch, opts: DiagnoseOptions = {}): Diagnosis 
     }
     if (wit) warnings.push(...wit.warnings);
 
-    const dof = nCols - dm.rank;
-    const nRedundant = adj.length - dm.rank;
+    // the structural matching is a *generic* upper bound on the rank; where the numeric
+    // cross-check ran it is the truth at this configuration, and it is what decides what moves
+    const effectiveRank = numericRank === null ? dm.rank : numericRank;
+    const dof = nCols - effectiveRank;
+    const structuralDof = nCols - dm.rank;
+    // beyond the rank = carrying no information; numeric when the cross-check ran, for the
+    // same reason as `dof` — a matching counts two equations that say the same thing as two
+    const nRedundant = adj.length - effectiveRank;
+    const structuralNRedundant = adj.length - dm.rank;
+    // `over` only when something is actually worth removing: a rank deficiency alone is not
+    // enough, since a dependency can be shared between a user constraint that is still doing
+    // work and a primitive's own definition, leaving nothing to delete
     const status: State = (conflictSet && conflictSet.length) || violated.length ? 'conflict'
-      : nRedundant ? 'over' : dof > 0 ? 'under' : 'well';
+      : over.length ? 'over' : dof > 0 ? 'under' : 'well';
     return {
       nParams: nCols, nEquations: adj.length, structuralRank: dm.rank, numericRank, numericSkipped,
       geometricDependency: numericRank === null ? 0 : Math.max(0, dm.rank - numericRank),
       over, underParams, structuralUnderParams: structuralUnder, components,
       entityState: state, rigidClusters: clusters, redundantDistances: redundant,
-      violated, conflicts: conflictSet, warnings, witness: wit, dof, nRedundant, status,
+      violated, conflicts: conflictSet, warnings, witness: wit, dof, structuralDof, nRedundant, structuralNRedundant, status,
     };
   } finally {
     if (own) sys.dispose();

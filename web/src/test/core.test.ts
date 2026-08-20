@@ -676,6 +676,66 @@ test('a three-point arc refuses collinear input', () => {
   assert.ok(sk.arcThrough(a, b, [5, 0.01]));             // a real, very flat arc is fine
 });
 
+test('DOF counts what can actually move, not what the matching sees', () => {
+  // a matching cannot tell that two equations say the same thing — it counts both and calls
+  // the sketch rigid while the geometry still moves
+  const sk = examples.altitudes();            // the altitudes concur: only the numbers see it
+  solve(sk);
+  const d = diagnose(sk);
+  assert.equal(d.geometricDependency, 1);
+  assert.equal(d.structuralDof, 2);           // what the matching alone believes
+  assert.equal(d.dof, 3);                     // what is actually free to move
+  assert.equal(d.dof, d.nParams - (d.numericRank ?? 0));
+  assert.ok(d.underParams.length >= d.dof);   // and dragging agrees with the count
+});
+
+test('a dependency with nothing to remove is not called over-constrained', () => {
+  // arc centred on a line endpoint, its endpoints mirrored about that line: the two intrinsic
+  // radius equations plus "chord perpendicular to the line" already force "chord midpoint on
+  // the line", so one of Symmetric's residuals is implied — but Symmetric still carries the
+  // perpendicularity, and the intrinsic equations cannot be deleted
+  const sk = new Sketch();
+  const a = sk.point(0, 0);
+  const centre = sk.point(10, 0);
+  const line = sk.line(a, centre);
+  const arc = sk.arc(centre, sk.point(13, 4), sk.point(13, -4));
+  sk.add(new C.Symmetric(arc.start, arc.end, line));
+  solve(sk);
+  const d = diagnose(sk);
+  assert.equal(d.geometricDependency, 1);       // the deficiency is real...
+  assert.equal(d.nRedundant, 1);
+  assert.deepEqual(d.over, []);                 // ...but nothing is removable
+  assert.equal(d.status, 'under');
+  assert.ok(d.dof > 0);
+});
+
+test('redundancy the matching cannot see is counted and named', () => {
+  // the altitudes concur, so one of the six constraints is implied by the other five; the
+  // matching sees six independent equations and would call the sketch merely under-constrained
+  const sk = examples.altitudes();
+  solve(sk);
+  const d = diagnose(sk);
+  assert.equal(d.structuralNRedundant, 0);       // what the matching alone believes
+  assert.equal(d.nRedundant, 1);
+  assert.equal(d.status, 'over');
+  const named = new Set(d.over.map((c) => io.describe(c, sk)));
+  assert.deepEqual([...named].sort(), [
+    'Perpendicular(L3, L1)', 'Perpendicular(L4, L2)', 'Perpendicular(L5, L0)',
+    'PointOnLine(P6, L3)', 'PointOnLine(P6, L4)', 'PointOnLine(P6, L5)',
+  ]);
+});
+
+test('DOF is unchanged when the two ranks agree', () => {
+  const sk = examples.rectFillets();
+  solve(sk);
+  const d = diagnose(sk);
+  assert.equal(d.geometricDependency, 0);
+  assert.equal(d.dof, 0);
+  assert.equal(d.structuralDof, 0);
+  assert.equal(d.status, 'well');
+  assert.equal(d.underParams.length, 0);
+});
+
 test('sameConstraint matches exact repeats', () => {
   // a duplicate adds equations without adding rank, and the structural matching cannot see
   // it — this is the check that keeps one out of a sketch
