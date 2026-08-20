@@ -4,6 +4,7 @@ use gcs_core::constraints::Constraint;
 use gcs_core::decompose::{PlanDrag, PlanSolver};
 use gcs_core::model::{EntRef, Sketch};
 use gcs_core::examples;
+use gcs_core::io;
 use gcs_core::newton::Method;
 
 #[test]
@@ -199,4 +200,51 @@ fn a_plan_drag_on_a_coincident_point_actually_moves_it() {
     let (cx, cy) = sk.point_xy(c);
     assert!((cx - 20.0).hypot(cy - 5.0) < 1e-6, "c stayed at {:?}", (cx, cy));
     assert_eq!(sk.point_xy(b), sk.point_xy(c), "the coincidence broke");
+}
+
+/// Recorded root choices are keyed by sketch point index.  Deleting an entity renumbers points,
+/// so the keys have to travel with them — otherwise a chirality recorded for one triangle is
+/// replayed on whatever triangle inherited those indices, and the sketch flips.
+#[test]
+fn deleting_a_point_carries_the_recorded_branches_with_the_renumbering() {
+    let make = || {
+        let mut sk = Sketch::new();
+        sk.point(100.0, 100.0, false, "spare");
+        let p1 = sk.point(0.0, 0.0, true, "p1");
+        let p2 = sk.point(10.0, 0.0, true, "p2");
+        let p3 = sk.point(5.0, 8.0, false, "p3");
+        let p4 = sk.point(15.0, 8.0, false, "p4");
+        let d = |a: usize, b: usize, v: f64| {
+            Constraint::distance(EntRef::point(a), EntRef::point(b), v)
+        };
+        sk.add(d(p1, p3, 9.434));
+        sk.add(d(p2, p3, 9.434));
+        sk.add(d(p2, p4, 9.434));
+        sk.add(d(p3, p4, 10.0));
+        sk
+    };
+
+    let mut sk = make();
+    let mut ps = PlanSolver::new(&sk, true);
+    assert!(ps.solve(&mut sk, 1e-6, false, Method::DogLeg).success);
+    assert!(!sk.branches.is_empty(), "the solve recorded no root choice");
+    let before: Vec<(f64, f64)> = (0..sk.points.len()).map(|i| sk.point_xy(i)).collect();
+
+    let cut = io::without(&sk, &[EntRef::point(0)], &[]);
+    assert_eq!(cut.points.len(), 4);
+    // every key now names points that exist, shifted down by the one that went
+    for k in cut.branches.keys() {
+        let pts = gcs_core::decompose::branch_key_points(k).expect("a key we wrote");
+        assert!(pts.iter().all(|&p| p < cut.points.len()), "{k} points past the end");
+    }
+
+    let mut cut2 = cut.clone();
+    let mut ps2 = PlanSolver::new(&cut2, true);
+    let r = ps2.solve(&mut cut2, 1e-6, false, Method::DogLeg);
+    assert!(r.success, "{r:?}");
+    for i in 0..cut2.points.len() {
+        let (x, y) = cut2.point_xy(i);
+        let (bx, by) = before[i + 1];
+        assert!((x - bx).hypot(y - by) < 1e-6, "point {i} moved from {:?} to {:?}", (bx, by), (x, y));
+    }
 }

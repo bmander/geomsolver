@@ -70,15 +70,30 @@ impl Step {
     /// by the sketch indices of the three points, not by compiled element indices, so it survives
     /// save/load and edits that renumber elements.
     pub fn key(&self, g: &ConstraintGraph) -> Option<String> {
-        self.ppp.map(|(a, b, c)| {
-            format!(
-                "ppp:{}|{}|{}",
-                g.point_index(a),
-                g.point_index(b),
-                g.point_index(c)
-            )
-        })
+        self.ppp
+            .map(|(a, b, c)| branch_key([g.point_index(a), g.point_index(b), g.point_index(c)]))
     }
+}
+
+/// A recorded root choice is keyed by the three sketch points of its closed-form construction —
+/// document-stable identity, so a choice survives a recompile.  It names points, so anything that
+/// renumbers points has to carry the key with them: see `branch_key_points`.
+pub fn branch_key(pts: [usize; 3]) -> String {
+    format!("ppp:{}|{}|{}", pts[0], pts[1], pts[2])
+}
+
+/// The three sketch points a branch key names, or `None` if the key is not one we wrote.
+pub fn branch_key_points(k: &str) -> Option<[usize; 3]> {
+    let rest = k.strip_prefix("ppp:")?;
+    let mut it = rest.split('|');
+    let mut out = [0usize; 3];
+    for slot in out.iter_mut() {
+        *slot = it.next()?.parse().ok()?;
+    }
+    if it.next().is_some() {
+        return None;
+    }
+    Some(out)
 }
 
 pub struct Plan {

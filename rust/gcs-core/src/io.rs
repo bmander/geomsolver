@@ -6,6 +6,7 @@
 //! back as geometry the user never drew).
 
 use crate::constraints::{Arg, CKind, Constraint, SpecKind};
+use crate::decompose;
 use crate::json::{fmt_g, object, parse, Json};
 use crate::model::{expand, EntKind, EntRef, Sketch};
 
@@ -295,7 +296,22 @@ pub fn without(sk: &Sketch, entities: &[EntRef], constraints: &[u32]) -> Sketch 
             tmp.add(Constraint::new(c.kind, args));
         }
     }
-    tmp.branches = sk.branches.clone();
+    // recorded root choices are keyed by sketch point index; deletion renumbers points, so the
+    // keys travel with them.  One naming a point that is gone is dropped — replaying it would
+    // apply a chirality to whatever triangle inherited those indices.
+    for (k, &v) in &sk.branches {
+        match decompose::branch_key_points(k) {
+            None => {
+                tmp.branches.insert(k.clone(), v);
+            }
+            Some(pts) => {
+                let mapped: Option<Vec<usize>> = pts.iter().map(|&p| pt_index(p)).collect();
+                if let Some(m) = mapped {
+                    tmp.branches.insert(decompose::branch_key([m[0], m[1], m[2]]), v);
+                }
+            }
+        }
+    }
     tmp
 }
 
