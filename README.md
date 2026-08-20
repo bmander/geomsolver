@@ -1,282 +1,78 @@
 # gcs — geometric constraint solver
 
-Stages 0–5 of [`gcs-solver-program.md`](gcs-solver-program.md): a residual-formulation solver,
-structural diagnosis (matching / Dulmage–Mendelsohn / pebble game / minimal conflict sets),
-Fudos–Hoffmann-style decomposition into cached solve plans, the witness configuration method
-(theorem-type dependencies, animated remaining DOFs), dragging robustness and solution management
-(sticky chirality, plan drag with continuation, order-type guards, homotopy enumeration of
-alternatives).
+A 2D geometric constraint solver — points, lines, circles and arcs under dimensional and
+relational constraints — with structural diagnosis, decomposition into cached solve plans, and
+robust dragging, packaged for Python and the browser.
 
-It exists **once**:
+## Implementation
 
-| | where | what |
-|---|---|---|
-| **core** | [`rust/gcs-core/`](rust/gcs-core/) | the whole engine — model, kernels, solvers, linear algebra, diagnosis, decomposition, witness analysis, homotopy, document I/O.  No dependencies. |
-| **ABI** | [`rust/gcs-ffi/`](rust/gcs-ffi/) | one flat C ABI, built twice: a native `cdylib` and a self-contained `wasm32-unknown-unknown` module |
-| **Python** | [`src/gcs/`](src/gcs/) | a thin `ctypes` binding — proxies over handles, numpy buffers for hot-path numbers, JSON for ragged results |
-| **TypeScript** | [`web/src/core/`](web/src/core/) | the same binding over WebAssembly |
-| **app** | [`web/src/app/`](web/src/app/) | an HTML5-canvas sketcher, the only front end |
+The whole engine is one dependency-free Rust crate ([`rust/gcs-core/`](rust/gcs-core/)) behind a
+flat C ABI ([`rust/gcs-ffi/`](rust/gcs-ffi/)), built as a native library for the Python binding
+([`src/gcs/`](src/gcs/), `ctypes`) and as WebAssembly for the TypeScript binding
+([`web/src/core/`](web/src/core/)).  Both bindings are thin proxies with no algorithms of their
+own; [`web/src/app/`](web/src/app/) is an HTML5-canvas sketcher on top.  Stages 0–5 of
+[`gcs-solver-program.md`](gcs-solver-program.md) are done — see
+[`docs/implementation-status.md`](docs/implementation-status.md) for what that covers, the module
+map, benchmarks and per-stage status.
 
-Neither binding contains an algorithm.  Both generate their constraint classes from the core's own
-registry, so a new constraint type appears in Python and in the browser with nothing to change on
-either side.  The one place two implementations are still compared is
-[`tests/test_linalg.py`](tests/test_linalg.py), which checks our QR / complete-orthogonal / SVD /
-LU against numpy — on purpose, because there is no LAPACK anywhere in the project.
-
-## Setup
+## Building
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
-make                        # rust/ -> build/libgcs.dylib, what the Python package loads
-make wasm                   # rust/ -> web/src/wasm/gcs.wasm, what the browser instantiates
+make            # build/libgcs.dylib (Python)
+make wasm       # web/src/wasm/gcs.wasm (browser); adds the wasm32 target if needed
 cd web && npm install
-
-make test                   # cargo + pytest + mypy + the web suite
-make bench
-cd web && npm run serve     # http://localhost:8123/
+make test       # cargo + pytest + mypy + web suite
 ```
 
-`make wasm` needs the `wasm32-unknown-unknown` target (the Makefile adds it).  The module has no
-imports and no JavaScript glue: the loader is `WebAssembly.instantiate` and the exports.  It is a
-build artifact and is not checked in — `make wasm` after touching `rust/`, and `npm run build`
-will tell you if you have not.  The app is otherwise static files, so any static host will do.
-
-## The core (`rust/gcs-core/`)
-
-* `model.rs`, `constraints.rs` — `Param` (one scalar DOF), `Point` / `Line` / `Circle` / `Arc`,
-  and `Sketch` (ordered param and constraint lists ⇒ deterministic).  A constraint is
-  `(kind, args)` where the args follow the type's `spec` — (attribute, kind) pairs that drive
-  JSON I/O, the constraint list, value editing, the toolbar applier, duplicate detection and the
-  witness's dimension jitter.  Identity is an integer everywhere (a Param is its index, an entity
-  is `(kind, index)`, a constraint is a monotonic id), which is what lets the bindings intern
-  proxies and keep `is` / `===` meaning what they always did.
-* `kernels.rs` — one **vectorized residual/Jacobian kernel per constraint type**, evaluated for a
-  whole block of same-typed constraints per call.  Registration order **is** the kernel id.
-  Squared distances, no sqrt; a determinant for parallel; dot/cross for angle; signed distance
-  minus the radius for tangency, with a chirality flag fixed at construction.
-* `system.rs` — **compile-to-plan**: constraints grouped into per-kernel blocks of flat arrays,
-  the Jacobian's CSR structure and duplicate-summing scatter map computed once; each evaluation
-  refills `data` only.  `update_consts` pushes a moved drag target or an edited dimension into the
-  plan without recompiling.
-* `newton.rs` — our own **Powell DogLeg** (default) and **Levenberg–Marquardt**.  Gauss–Newton
-  steps are minimum-norm, so under-constrained sketches — the normal case while editing — move as
-  little as possible.  Dense path up to 120 free params; regularized sparse normal equations above.
-* `linalg.rs` — Householder QR with column pivoting (the rank convention
-  `|R_ii| > rcond·|R_00|`), the complete orthogonal decomposition behind the minimum-norm
-  least-squares step (LAPACK `dgelsy`'s algorithm), a Golub–Reinsch SVD and an LU solve.
-* `sparse.rs` — `JᵀJ` assembled from the fixed CSR structure, ordered by reverse Cuthill–McKee and
-  factored by an up-looking `LDLᵀ`, for sketches past the dense limit.
-* `graph.rs` — Hopcroft–Karp matching, coarse Dulmage–Mendelsohn decomposition, bipartite
-  components, and the (2,3) pebble game with rigid-component detection (Lee–Streinu) — plain
-  integer adjacency lists.
-* `diagnose.rs` — `diagnose(sketch)` → `Diagnosis`: structural rank/DOF, the over-determined block
-  (redundancy suspects), under-determined parameters, per-component DOF, rigid clusters and
-  redundant distances, violated constraints, the minimal conflict set (grow-then-shrink filter),
-  per-entity state `well|under|over|conflict`.  "Which parameters can move" comes from the
-  Jacobian null space (sharper than the generous DM under-block), and a numeric-rank cross-check
-  logs theorem-type dependencies structural analysis cannot see.
-* `cgraph.rs` — the constraint graph for decomposition: point elements (coincident points
-  contracted), line elements, ground (fixed points + x-axis), valency-1 edges (point–point
-  distance, point–line signed distance), direction relations (all angle-type constraints as a
-  weighted union-find), known radii via `Radius`/fixed/`EqualRadius`/`AnnularDistance` chains,
-  virtual radius lines for arc-endpoint tangency, passive lines dropped, unsupported constraints
-  listed.
-* `decompose.rs` — **cluster merging → plan → replay**: pair/triple merges are accepted when the
-  shared points/lines/directions determine the relative rigid transforms (rank of the merge
-  Jacobian at generic witness poses, self-motions of degenerate clusters accounted for — F–H's
-  triangle rule is the common case, parallels and perpendiculars need no special-casing); the
-  merge sequence is the plan.  Replay: leaves from live dimension values, PPP triangle merges by
-  circle–circle intersection with a sketch-guided **chirality flag**, other merges by a tiny
-  min-norm Newton, unfixed roots placed by Procrustes (least change), verified against the
-  compiled `System` with a numeric fallback.  **Stage 3b**: when pair/triple merging stalls, a
-  *core* — the smallest subset of clusters that is rigid as a whole — is merged as one numeric
-  step and tree merging resumes, so only minimal non-tree-decomposable subsystems ever reach the
-  numeric solver (K₃,₃ and Henneberg-II frameworks decompose fully).
-* `witness.rs` — the **witness configuration method** (Michelucci & Foufou): `make_witness`
-  (every value a constraint *declares* as a dimension is jittered and re-solved from the current
-  geometry, or incidences alone from a perturbed start), `analyze` → rank (pivoted QR
-  cross-checked against the SVD that also yields the null space), **dependent constraints** with
-  what implies them, and the **null space as motions** (rigid-body generators built from the
-  model's own parameter identity, internal DOFs localised).
-* `solve.rs` — `Drag` (soft pull, then a hard-only polish; continuation increments and order-type
-  guards) and `RadiusDrag`, its scalar counterpart.
-* `homotopy.rs`, `complex.rs` — **homotopy continuation** on a merge system in (c, s, tx, ty)
-  form: linear rows fixed, a total-degree start system on the quadratic rows with the γ-trick,
-  complex predictor–corrector tracking, real endpoints polished and deduplicated → the
-  construction's real roots.
-* `io.rs`, `json.rs` — JSON save/load (including recorded branches), deletion-by-rebuild
-  (`without`), `describe`, and a small dependency-free JSON reader/writer.
-* `report.rs` — the JSON views of diagnosis, witness reports, plans and constraint graphs that
-  keep the bindings thin, plus the constraint-type registry they generate their classes from.
-* `examples.rs` — rectangle-with-fillets, slotted link, truss, under-constrained polygon chain,
-  K₃,₃, random Laman frameworks, and the conflict/redundancy cases the app's library shows.
-
-## The bindings
-
-Both are the same shape.  A `Sketch` is a handle; `Param`, `Point`, `Line`, `Circle`, `Arc` and
-the constraint classes are interned proxies over `(handle, index)`; hot-path numbers (residuals,
-Jacobians, drag frames) cross as raw buffers; everything ragged crosses as one JSON document.
-The constraint classes themselves are generated at load time from `gcs_registry_json`, which is
-why `src/gcs/constraints.py` and `web/src/core/constraints.ts` know no type by name.
+## Python quickstart
 
 ```python
 from gcs import Sketch, Distance, solve
 sk = Sketch()
 p, q = sk.point(0, 0), sk.point(12, 0)
 sk.add(Distance(p, q, 10))
-solve(sk)                      # p -> (1, 0), q -> (11, 0): least change
+solve(sk)          # p -> (1, 0), q -> (11, 0): least change
 ```
 
-## Web app
+## TypeScript quickstart
 
+```ts
+import { initCore } from './core/wasm.js';
+import { Sketch } from './core/model.js';
+import { solve } from './core/system.js';
+import * as C from './core/constraints.js';
 
-`web/src/core/` is the TypeScript binding; `web/src/app/` is the sketcher —
-
-* **S**elect / **P**oint / **L**ine (polyline, snapping to existing points) /
-  **R**ectangle (`Sketch.rectangle` — four lines round shared corners with *three*
-  perpendiculars, since the fourth follows and would over-constrain it) / **C**ircle /
-  **A**rc (centre, start, end) / **3**-point arc (two ends, then a point the arc passes
-  through — `Sketch.arcThrough`, which builds the circumcircle and picks the sweep
-  containing that point), wheel zoom, right-drag pan; Escape steps back one stage at a
-  time — stop a DOF animation, drop the points a tool has collected, leave the tool;
-* a measurement readout in the canvas's lower right whenever exactly two entities are
-  selected: their distance from `distanceBetween` in the model (so the readout and any
-  constraint you then apply agree on what "distance" means), plus Δx/Δy for two points and
-  the angle for two lines;
-* select by clicking (shift = multi) or by dragging a box over empty canvas — window
-  selection, so an entity comes along only if all of it is inside (a line's two
-  endpoints, a circle's whole extent, every point of an arc's sweep), previewed live
-  while you drag and shift-extendable;
-* the constraint toolbar (Coincident, Distance, Horizontal, Vertical, Parallel,
-  Perpendicular, On line, Midpoint, On circle, Angle, Equal, Tangent, Radius, Symmetric,
-  Fix, and **G** to mark lines/circles/arcs as construction geometry — drawn dashed, still
-  constraining, persisted with the document).  Distance with two lines selected dimensions
-  the gap between them, signed so it keeps the side you drew.  It dimensions the gap
-  only — pair it with Parallel unless the rest of the sketch already forces the two lines
-  parallel, which is usually the case and is why bundling the parallelism into it made
-  sketches quietly redundant.  A point and a line selected together give `PointLineDistance`:
-  the point's perpendicular offset from the line, also signed, and measured to the *infinite*
-  line so the foot may fall past the end of the segment.  Two circles or arcs give
-  `AnnularDistance`: the radial thickness of the ring between them.  None of the three creates
-  the alignment it dimensions — pair them with Parallel, or Coincident on the centres, when
-  nothing else in the sketch already implies it.
-  Equal takes an equality *set*: n selected lines or n circles/arcs become n−1
-  constraints against the first, added as one edit — one solve, one undo step;
-* entity colouring by constraint state, dashed halos and labels on the culprits of a
-  conflict, a banner naming the minimal conflict set, and a constraint list that marks
-  redundant (`≈`) and culprit (`✗`) rows;
-* drag a point with the cached decomposition plan (falling back to pull-and-polish) — the
-  cursor offers a drag only where the diagnosis says something is actually free, so a fully
-  constrained sketch says so rather than moving nothing; or
-  drag a circle's or arc's edge to resize it — a soft `Radius` pull with the same
-  polish, so a dimensioned or fixed radius does not follow while an `EqualRadius` chain
-  resizes together (a relation, not a dimension); the
-  Diagnose report (structural + witness), DOF animation, branch flipping and homotopy
-  enumeration of alternative roots;
-* JSON save/load, undo, and the case library from `examples.ts`.
-
-Measured through both bindings on the same machine (median ms) — the two are the same code, so
-they are the same numbers; the Python column is no longer a slower reference implementation but
-the same core reached through `ctypes`:
-
-| case | free | compile | dogleg | plan replay | drag frame (browser) | drag frame (Python) |
-|---|---|---|---|---|---|---|
-| rect_fillets | 26 | 0.02 | 0.33 | 0.26 | 0.21 | 0.2 |
-| truss(50), 300 entities | 200 | 0.11 | 0.60 | 0.87 | 0.30 | 0.3 |
-| truss(200), 1200 entities | 800 | 0.27 | 1.77 | 2.98 | 1.21 | 1.6 |
-
-For scale, the Python reference implementation this replaced solved `truss(100)` in 25.5 ms and
-dragged a 1200-entity truss at 9.1 ms/frame; the same work is now 0.61 ms and 1.6 ms.
-
-One thing worth knowing: `diagnose` runs after every edit, and a dense SVD of a 1000-entity sketch
-costs more than everything else put together, so the numeric rank / null-space cross-check is
-skipped above `NUMERIC_MAX` free parameters (300) and the diagnosis says so.  The full witness
-analysis is still available on demand from the Diagnose button.
-
-## Stage 5 status
-
-| criterion | status |
-|---|---|
-| chirality tracking: persisted per-construction roots, preferred on re-solve, "flip" per cluster | ✅ `Step.branch` / `Plan::branches` keyed stably, saved in JSON (`Sketch.branches`), sticky replay; the app's `Flip branch` flips triangle roots and tangency sides |
-| continuation-style dragging | ✅ `PlanDrag`/`Drag` subdivide far cursor jumps (≤ 5 % of extent per increment) |
-| order-type guards | ✅ numeric drag watches the plan's triangle orientations; retries with smaller steps, records/flags unavoidable flips |
-| homotopy continuation for enumeration on small cores | ✅ `homotopy::enumerate_step` (total-degree, γ-trick; the K₃,₃ core enumerates its real realizations in ~3 s of 256 tracked paths); the app's `Alternatives…` button |
-| torture suite: recorded drag trajectories, zero solution jumps; branches survive save/load | ✅ `rust/gcs-core/tests/drag.rs` and `tests/test_drag.py` (floating truss, sliding rect, pinned apex never jumps, guard flags a forced crossing, continuity under far drags, JSON round-trip of branches) |
-
-## Stage 4 status
-
-| criterion | status |
-|---|---|
-| witness construction (generic dimensions, incidence structure kept) | ✅ `make_witness`; the user's sketch is used directly when it already satisfies its constraints |
-| rank-revealing analysis: dependent constraints incl. theorem-induced | ✅ `polygon_chain`'s EqualLength cycle and concurrent altitudes diagnosed with "implied by …" |
-| null space → which DOFs remain, what they look like, animated | ✅ `WitnessReport.motions`, "Animate DOF" in the app |
-| numerical-rank care: scaling, relative tolerance, QR vs SVD cross-check | ✅ (a disagreement is reported as a warning) |
-| on demand for full diagnosis; automatically on Stage-3 cores | ✅ on demand (Diagnose dialog / `witness=True`); Stage-3 merge decisions already use generic-rank tests at witness poses |
-| Stage-2 residue correctly diagnosed | ✅ |
-
-## Stage 3a status
-
-| criterion | status |
-|---|---|
-| bottom-up cluster merging (F–H), each merge a rigid placement from shared elements | ✅ `decompose.decompose` (generalised: generic-rank determination) |
-| ruler-and-compass closed forms with chirality flags | ✅ PPP triangle merge (circle–circle) with orientation flag; other merges numeric (tiny) — closed-form library to grow |
-| numeric fallback for non-constructible / unsupported | ✅ `PlanSolver.solve` verifies and falls back |
-| decomposition once per topology; drags/edits replay the cached plan | ✅ `PlanSolver` + live dimension values (`refresh_consts`) |
-| regression suite runs both paths and diffs | ✅ `tests/test_decompose.py::test_plan_and_numeric_agree` |
-| 1000-entity mostly-tree-decomposable sketch in low ms from the cached plan | ✅ a 300-entity truss replays in 0.21 ms and a 600-entity one in 0.39 ms; the plan executes entirely in the core |
-| non-tree-decomposable cores isolated into minimal numeric subsystems (Owen / DR-planning objective) | ✅ `find_core` in `decompose` — greedy minimal rigid subset, one numeric step, tree merging resumes; K₃,₃ + all random Laman frameworks decompose fully (an SPQR-tree split proper is not implemented — the rank-based core search plays that role) |
-
-## Stage 2 status
-
-| criterion | status |
-|---|---|
-| DOF bookkeeping per component | ✅ `Diagnosis.components` |
-| Hopcroft–Karp + Dulmage–Mendelsohn → over / well / under | ✅ `graph.rs`, `Diagnosis.over`, `.under_params` |
-| (2,3) pebble game: rigid clusters, redundant distances | ✅ `graph::pebble_game`, Henneberg/Laman property tests |
-| minimal conflict sets (deletion filter) | ✅ `diagnose::minimal_conflict_set` — e.g. exactly the two contradicting widths |
-| structural-vs-numeric residue logged for Stage 4 | ✅ `Diagnosis.warnings` (`polygon_chain`'s EqualLength cycle is the first case) |
-| every failed solve → actionable diagnosis; trustworthy entity colouring | ✅ app status bar / list / colours / Diagnose dialog |
-
-## Stage 1 status
-
-| criterion | status |
-|---|---|
-| compile-to-plan boundary (flat arrays, no Python objects in the loop) | ✅ `System.blocks` + precomputed CSR/scatter |
-| sparse Jacobian assembly, triplet→CSR | ✅ structure once, data per eval |
-| own LM + DogLeg (default) | ✅ `newton.rs` |
-| under-constrained = min-norm GN step | ✅ our complete orthogonal decomposition / regularized `LDLᵀ` |
-| rank-revealing QR at the solution | ✅ `SolveResult.rank`, `System.rank()` (already caught a redundant EqualLength cycle in `polygon_chain`) |
-| >10× scipy on the 30-entity sketch | ✅ 0.15 ms on `truss(8)` vs 2.9 ms for `scipy-dogbox` in the Stage-0 prototype (~20×) |
-| 60 fps drag on a 200-entity sketch | ✅ 0.3 ms/frame at 300 entities, 1.6 ms at 1200 |
-| flat `slvs`-style C API | ✅ [`rust/gcs-ffi/src/lib.rs`](rust/gcs-ffi/src/lib.rs) — `gcs_system_new` / `gcs_system_solve` / `gcs_system_residuals` …, consumed from WebAssembly and from `ctypes` |
-
-## Stage 0 exit criteria
-
-| criterion | status |
-|---|---|
-| rectangle-with-fillets solves | ✅ `examples.rect_fillets`, 0 DOF, |r| ~1e-24 |
-| slotted link solves | ✅ `examples.slotted_link` |
-| ~30-entity sketch solves | ✅ `examples.truss(8)`: 17 pts + 31 lines, ~5 ms |
-| dragging feels alive | ✅ 8–20 ms per mouse-move on the examples |
-| Sketch → residuals/Jacobian → solve → writeback with clean seams | ✅ `System` |
-| analytic Jacobians verified vs FD | ✅ every constraint, every example |
-
-Benchmark (`make bench`, compiled solve from a perturbed warm start):
-
-```
-sketch         free  res |  dogleg  |    lm    | compile
-rect_fillets     26   26 |  0.12 ms |  0.22 ms |  0.04 ms
-slotted_link     14   14 |  0.04 ms |  0.07 ms |  0.03 ms
-truss            32   32 |  0.15 ms |  0.31 ms |  0.03 ms
-polygon_chain    46   36 |  0.30 ms |  0.51 ms |  0.03 ms
-truss_50        200  200 |  0.34 ms |  0.56 ms |  0.09 ms
-truss_100       400  400 |  0.61 ms |  1.17 ms |  0.16 ms
+await initCore();                       // loads gcs.wasm once
+const sk = new Sketch();
+const p = sk.point(0, 0), q = sk.point(12, 0);
+sk.add(new C.Distance(p, q, 10));
+solve(sk);
 ```
 
-## Tests
+## Running the web app
 
-| suite | what it covers |
-|---|---|
-| `cargo test --manifest-path rust/Cargo.toml` | the engine: FD Jacobian checks on every constraint type, both solvers, the graph algorithms against the reference cases, diagnosis, decomposition and replay, witness analysis, homotopy, the drag torture suite, document I/O |
-| `.venv/bin/pytest` | the Python binding reaching all of it, plus `test_linalg.py` — our QR / SVD / LU against numpy |
-| `cd web && npm test` | the TypeScript binding reaching all of it, plus the ABI surface check |
+```sh
+make wasm && cd web && npm run serve    # http://localhost:8123/
+```
+
+Static files only — any static host serves `web/` after `npm run build`.
+
+## Bibliography
+
+The methods the core implements:
+
+- Owen, *Algebraic solution for geometry from dimensional constraints*, SMA 1991.
+- Bouma, Fudos, Hoffmann, Cai, Paige, *Geometric constraint solver*, CAD 27(6), 1995.
+- Fudos & Hoffmann, *A graph-constructive approach to solving systems of geometric constraints*, ACM TOG 16(2), 1997.
+- Hoffmann, Lomonosov, Sitharam, *Decomposition plans for geometric constraint systems*, I & II, J. Symbolic Computation 31, 2001.
+- Pothen & Fan, *Computing the block triangular form of a sparse matrix*, ACM TOMS 16(4), 1990.
+- Jacobs & Hendrickson, *An algorithm for two-dimensional rigidity percolation: the pebble game*, J. Comput. Phys. 137, 1997.
+- Michelucci & Foufou, *Geometric constraint solving: the witness configuration method*, CAD 38(4), 2006.
+- Durand & Hoffmann, *A systematic framework for solving geometric constraints analytically*, J. Symbolic Computation 30, 2000.
+- Sitharam, Arbree, Zhou, Kohareswaran, *Solution space navigation for geometric constraint systems*, ACM TOG 25(2), 2006.
+- Zou et al., *A review on geometric constraint solving*, arXiv:2202.13795, 2022.
+
+## License
+
+[MIT](LICENSE).

@@ -2,6 +2,7 @@
   "name": "gcs-web",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Geometric constraint solver in the browser: C core compiled to WebAssembly, TypeScript front end, HTML5-canvas sketcher.",
   "scripts": {

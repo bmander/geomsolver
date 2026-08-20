@@ -3,6 +3,7 @@ name = "gcs"
 version = "0.1.0"
 description = "Geometric constraint solver — a thin Python binding over the Rust core"
 requires-python = ">=3.14"
+license = "MIT"
 dependencies = ["numpy>=2.0"]
 
 [project.optional-dependencies]
