@@ -1,4 +1,5 @@
-use gcs_core::constraints::CKind;
+use gcs_core::constraints::{CKind, Constraint};
+use gcs_core::model::{EntRef, Sketch};
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::examples;
 use gcs_core::linalg::{absmax, rank_rrqr};
@@ -139,4 +140,26 @@ fn dimension_jitter_follows_the_constraint_declarations() {
         .collect();
     let uniq: std::collections::BTreeSet<&str> = dimensioned.into_iter().collect();
     assert_eq!(uniq, ["Distance", "Radius"].into_iter().collect());
+}
+
+/// `analyze` standing alone used to pass an empty over-block, so every dependency it found came
+/// back `theorem: true` — "invisible to the graph" — including ones the matching sees perfectly
+/// well.  The app's witness panel reads this report, so it labelled everything theorem-type.
+#[test]
+fn a_dependency_the_graph_can_see_is_not_called_theorem_type() {
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, true, "a");
+    let b = sk.point(10.0, 0.0, false, "b");
+    sk.add(Constraint::coincident(EntRef::point(a), EntRef::point(b)));
+    sk.add(Constraint::coincident(EntRef::point(b), EntRef::point(a))); // a plain duplicate
+
+    let rep = analyze(&mut sk, None, 0);
+    assert_eq!(rep.dependencies.len(), 1, "{:?}", rep.dependencies);
+    assert!(!rep.dependencies[0].theorem, "a duplicate is not a theorem");
+
+    // and a genuinely theorem-type one still is
+    let mut alt = examples::altitudes();
+    let rep = analyze(&mut alt, None, 0);
+    assert_eq!(rep.dependencies.len(), 1);
+    assert!(rep.dependencies[0].theorem);
 }

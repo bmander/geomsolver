@@ -301,7 +301,19 @@ pub fn analyze_with(
 
 pub fn analyze(sk: &mut Sketch, x_witness: Option<Vec<f64>>, seed: u32) -> WitnessReport {
     let mut sys = System::new(sk);
-    analyze_with(sk, &mut sys, x_witness, &BTreeSet::new(), 1e-9, seed)
+    // the structural over-block, so a dependency the graph *can* see is not reported as
+    // theorem-type.  `diagnose_with` passes the set it already has; standing alone we compute it,
+    // rather than passing an empty set and labelling every dependency invisible to the graph.
+    let over = structural_over(&mut sys);
+    analyze_with(sk, &mut sys, x_witness, &over, 1e-9, seed)
+}
+
+/// Constraints in the Dulmage–Mendelsohn over-determined block — the redundancy structural
+/// analysis can see for itself.
+pub fn structural_over(sys: &mut System) -> BTreeSet<u32> {
+    let (adj, row_c) = sys.structure();
+    let dm = crate::graph::dulmage_mendelsohn(&adj, sys.n_free);
+    dm.over_rows.iter().map(|&r| row_c[r]).collect()
 }
 
 /// Split the null space into rigid-body modes (translations/rotation of everything that can move
