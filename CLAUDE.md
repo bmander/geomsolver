@@ -29,10 +29,18 @@ Conventions:
   `rust/gcs-core/tests/`.  A binding changes only when the *surface* changes.  If you find
   yourself writing geometry or numerics in Python or TypeScript, it belongs in Rust instead.
 - Every new constraint type = a vectorized kernel in `kernels.rs` (added to `KERNELS`; the
-  registration order **is** the kernel id), a `CKind` variant in `constraints.rs` declaring its
-  `spec` (constructor args as (attr, kind) pairs), `params()`, `consts()` and `default_arg()`,
-  and a row in `rust/gcs-core/tests/jacobians.rs` (FD check, spec round-trip).  Both bindings
-  generate their classes from `report::registry_json`, so neither needs touching.
+  registration order **is** the kernel id) declaring its `degree` — the power of length its
+  residual carries, 1 for a signed distance and 2 for a squared one — a `CKind` variant in
+  `constraints.rs` declaring its `spec` (constructor args as (attr, kind) pairs), `params()`,
+  `consts()` and `default_arg()`, and a row in `rust/gcs-core/tests/jacobians.rs` (FD check,
+  spec round-trip).  Both bindings generate their classes from `report::registry_json`, so
+  neither needs touching.
+- "Solved" is `System::max_relative_residual <= 1e-6`: each row's residual over its own units
+  (`extent^degree`).  Never one absolute threshold for the whole system — half the kernels are
+  linear in length and half quadratic, so one threshold is wrong for one of the halves.
+- An argument the core reads off the geometry (a tangency's side or sense) declares
+  `CKind::infers_arg`; the registry publishes a null default for it so a binding leaves it
+  omitted and the core fills it in.  A binding that substitutes a constant picks the branch.
 - Mutating a constraint's constants (drag target, edited dimension) must be followed by
   `System::update_consts` / `refresh_consts` on any compiled system, or a recompile.
 - `System` is the compile-once / evaluate-many seam; keep the object model out of the hot loop.
@@ -54,8 +62,16 @@ Conventions:
 - `solve::Drag` is the one point-drag implementation (pull + polish), `RadiusDrag` its scalar
   counterpart for circle/arc radii (a `Radius` with `soft` set — its residual is already
   r − target, so no kernel of its own); the front end only translates coordinates.
+- The ABI is a panic boundary: every entry point runs inside `guard`, so a core panic becomes
+  `gcs_last_error()` and a neutral return.  That needs `panic = "unwind"` in the release profile.
+  `wasm32-unknown-unknown` aborts whatever the profile says, so untrusted input (a document) is
+  bounds-checked in the core as well.
 - Determinism: ordered containers only (`Vec`, `BTreeMap`/`BTreeSet`), never `HashMap` iteration
   in the solve path.  Every random draw comes from the seeded `rng::Rng`.
+- The trust-region loop is `newton::dogleg` over a `TrustRegion`; a new thing to minimise
+  implements the trait rather than copying the loop.
+- Nothing in the project is auto-formatted: there is no `rustfmt.toml`, and `cargo fmt` would
+  reformat every file.  Match the surrounding style by hand (100 columns).
 - No LAPACK/BLAS: the QR, complete-orthogonal, SVD and LDLᵀ routines are ours, and
   `tests/test_linalg.py` checks them against numpy — the one place two implementations are still
   compared, on purpose.
