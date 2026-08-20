@@ -458,17 +458,16 @@ test('numeric drag keeps the constraints satisfied', () => {
   const sk = examples.rectFillets();
   solve(sk);
   const sys = new System(sk);
-  const scale = sys.scale;
-  sys.dispose();
   const p = sk.lines[1].p2;
   const d = new Drag(sk, p, p.x.value, p.y.value);
   try {
     for (let i = 0; i < 8; i++) {
       const r = d.move(p.x.value + 3, p.y.value + 1);
-      assert.ok(r.maxResidual < 1e-6 * scale, `frame ${i}: ${r.maxResidual}`);
+      assert.ok(sys.maxRelativeResidual() < 1e-6, `frame ${i}: ${r.maxResidual}`);
     }
   } finally {
     d.end();
+    sys.dispose();
   }
 });
 

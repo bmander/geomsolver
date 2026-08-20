@@ -135,9 +135,9 @@ pub fn make_witness(sk: &mut Sketch, seed: u32, jitter: f64, tol: f64) -> Vec<f6
     }
     sk.constraints.retain(|c| !c.soft);
     let mut sys = System::new(sk);
-    let scale = sys.scale;
     let res = sys.solve(sk, SolveOpts { max_iter: 60, ..SolveOpts::default() });
-    if res.success && res.max_residual <= tol * scale {
+    let z = sys.z0(sk);
+    if res.success && sys.max_relative_residual(&z) <= tol {
         let xw = sk.get_x();
         sk.constraints = saved_constraints;
         sk.set_x(&x0);
@@ -186,7 +186,7 @@ pub fn analyze_with(
     let x0 = sk.get_x();
     let used_current = if x_witness.is_none() {
         let z = sys.z0(sk);
-        sys.max_hard_residual(&z) <= 1e-9 * sys.scale
+        sys.max_relative_residual(&z) <= 1e-9
     } else {
         false
     };

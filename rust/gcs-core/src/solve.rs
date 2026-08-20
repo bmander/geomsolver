@@ -81,7 +81,7 @@ impl System {
         let info: Info = newton::solve_system(
             self,
             opts.method,
-            opts.tol * self.scale,
+            opts.tol * self.min_hard_scale,
             1e-12,
             1e-16 * self.scale,
             opts.max_iter,
@@ -96,17 +96,23 @@ impl System {
         let r = self.residuals(&z);
         let mut n2 = 0.0;
         let mut mx = 0.0f64;
+        let mut rel = 0.0f64;
         for i in 0..r.len() {
             n2 += r[i] * r[i];
             if self.hard[i] {
                 let a = r[i].abs();
-                if a > mx {
-                    mx = a;
+                if !(a <= mx) {
+                    mx = a; // NaN wins: it is not "no error"
+                }
+                if !(a / self.row_scale[i] <= rel) {
+                    rel = a / self.row_scale[i];
                 }
             }
         }
         SolveResult {
-            success: info.status >= 0 && mx < 1e-6 * self.scale,
+            // relative, not absolute: a radius kernel's residual is a length and a distance
+            // kernel's is a length squared, so one absolute threshold cannot judge both
+            success: info.status >= 0 && rel < 1e-6,
             status: info.status,
             message: newton::status_message(info.status).to_string(),
             residual_norm: n2.sqrt(),

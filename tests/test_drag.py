@@ -32,7 +32,7 @@ def run_trajectory(sk: Sketch, p: Point, path: list[tuple[float, float]],
         res = drag.move(x, y)
         assert res.success, res
         sys_.refresh_consts()
-        assert sys_.max_hard_residual() <= 1e-6 * sys_.scale
+        assert sys_.max_relative_residual() <= 1e-6
         now = sk.get_x()
         moved = float(np.abs(now - prev).max())
         if cursor_step > 1e-9:

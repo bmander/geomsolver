@@ -43,6 +43,12 @@ pub struct Kernel {
     pub n_res: usize,
     pub n_par: usize,
     pub n_const: usize,
+    /// Power of length the residual carries: 1 for the ones written as a signed distance
+    /// (coincident, radius, the distance-to-a-line family), 2 for the ones written squared
+    /// (distance, the dot/cross forms, tangency).  A residual of 1e-6 means something quite
+    /// different in the two, so the tolerance a row is judged against is `tol * extent^degree`
+    /// rather than one threshold for the whole system.
+    pub degree: u32,
     pub res: fn(n: usize, v: &[f64], k: &[f64], r: &mut [f64]),
     pub jac: fn(n: usize, v: &[f64], k: &[f64], j: &mut [f64]),
     /// n_res*n_par entries when the Jacobian is instance-independent.
@@ -79,8 +85,6 @@ fn lin_jac(n: usize, j: &'static [f64], out: &mut [f64]) {
     }
 }
 
-/// Jacobian of C/L from dC and dL — the quotient rule, shared by the signed distance-to-a-line
-/// kernels.
 /// A line's length, floored.  A line whose endpoints have collapsed has no direction; dividing
 /// by its length would put a NaN in the residual vector, and a NaN reads as "no error" at every
 /// max we take downstream — the sketch would be reported solved on iteration zero.  The floor
@@ -92,6 +96,8 @@ fn line_len(dx: f64, dy: f64) -> f64 {
     dx.hypot(dy).max(MIN_LINE_LEN)
 }
 
+/// Jacobian of C/L from dC and dL — the quotient rule, shared by the signed distance-to-a-line
+/// kernels.
 fn ratio_jac(dc: &[f64], dl: &[f64], l: f64, c: f64, j: &mut [f64]) {
     let f = c / (l * l);
     for t in 0..dc.len() {
@@ -522,27 +528,27 @@ fn annular_distance_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
 /* -- registry (order == kernel id, shared with the bindings) --------------- */
 
 pub static KERNELS: [Kernel; N_KERNELS] = [
-    Kernel { name: "coincident", n_res: 2, n_par: 4, n_const: 0, res: coincident::res, jac: coincident::jac, const_jac: Some(coincident::J) },
-    Kernel { name: "distance", n_res: 1, n_par: 4, n_const: 1, res: distance_res, jac: distance_jac, const_jac: None },
-    Kernel { name: "midpoint", n_res: 2, n_par: 6, n_const: 0, res: midpoint::res, jac: midpoint::jac, const_jac: Some(midpoint::J) },
-    Kernel { name: "drag", n_res: 2, n_par: 2, n_const: 3, res: drag_res, jac: drag_jac, const_jac: None },
-    Kernel { name: "horizontal", n_res: 1, n_par: 4, n_const: 0, res: horizontal::res, jac: horizontal::jac, const_jac: Some(horizontal::J) },
-    Kernel { name: "vertical", n_res: 1, n_par: 4, n_const: 0, res: vertical::res, jac: vertical::jac, const_jac: Some(vertical::J) },
-    Kernel { name: "parallel", n_res: 1, n_par: 8, n_const: 0, res: parallel_res, jac: parallel_jac, const_jac: None },
-    Kernel { name: "perpendicular", n_res: 1, n_par: 8, n_const: 0, res: perpendicular_res, jac: perpendicular_jac, const_jac: None },
-    Kernel { name: "angle", n_res: 1, n_par: 8, n_const: 2, res: angle_res, jac: angle_jac, const_jac: None },
-    Kernel { name: "equal_length", n_res: 1, n_par: 8, n_const: 0, res: equal_length_res, jac: equal_length_jac, const_jac: None },
-    Kernel { name: "point_on_line", n_res: 1, n_par: 6, n_const: 0, res: point_on_line_res, jac: point_on_line_jac, const_jac: None },
-    Kernel { name: "point_on_circle", n_res: 1, n_par: 5, n_const: 0, res: point_on_circle_res, jac: point_on_circle_jac, const_jac: None },
-    Kernel { name: "radius", n_res: 1, n_par: 1, n_const: 1, res: radius_res, jac: radius_jac, const_jac: Some(RADIUS_J) },
-    Kernel { name: "equal_radius", n_res: 1, n_par: 2, n_const: 0, res: equal_radius::res, jac: equal_radius::jac, const_jac: Some(equal_radius::J) },
-    Kernel { name: "tangent_line_circle", n_res: 1, n_par: 7, n_const: 1, res: tangent_line_circle_res, jac: tangent_line_circle_jac, const_jac: None },
-    Kernel { name: "tangent_circle_circle", n_res: 1, n_par: 6, n_const: 1, res: tangent_circle_circle_res, jac: tangent_circle_circle_jac, const_jac: None },
-    Kernel { name: "tangent_arc_line", n_res: 1, n_par: 8, n_const: 0, res: tangent_arc_line_res, jac: tangent_arc_line_jac, const_jac: None },
-    Kernel { name: "symmetric", n_res: 2, n_par: 8, n_const: 0, res: symmetric_res, jac: symmetric_jac, const_jac: None },
-    Kernel { name: "parallel_distance", n_res: 1, n_par: 8, n_const: 1, res: parallel_distance_res, jac: parallel_distance_jac, const_jac: None },
-    Kernel { name: "point_line_distance", n_res: 1, n_par: 6, n_const: 1, res: point_line_distance_res, jac: point_line_distance_jac, const_jac: None },
-    Kernel { name: "annular_distance", n_res: 1, n_par: 2, n_const: 1, res: annular_distance_res, jac: annular_distance_jac, const_jac: Some(ANNULAR_DISTANCE_J) },
+    Kernel { name: "coincident", n_res: 2, n_par: 4, degree: 1, n_const: 0, res: coincident::res, jac: coincident::jac, const_jac: Some(coincident::J) },
+    Kernel { name: "distance", n_res: 1, n_par: 4, degree: 2, n_const: 1, res: distance_res, jac: distance_jac, const_jac: None },
+    Kernel { name: "midpoint", n_res: 2, n_par: 6, degree: 1, n_const: 0, res: midpoint::res, jac: midpoint::jac, const_jac: Some(midpoint::J) },
+    Kernel { name: "drag", n_res: 2, n_par: 2, degree: 1, n_const: 3, res: drag_res, jac: drag_jac, const_jac: None },
+    Kernel { name: "horizontal", n_res: 1, n_par: 4, degree: 1, n_const: 0, res: horizontal::res, jac: horizontal::jac, const_jac: Some(horizontal::J) },
+    Kernel { name: "vertical", n_res: 1, n_par: 4, degree: 1, n_const: 0, res: vertical::res, jac: vertical::jac, const_jac: Some(vertical::J) },
+    Kernel { name: "parallel", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: parallel_res, jac: parallel_jac, const_jac: None },
+    Kernel { name: "perpendicular", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: perpendicular_res, jac: perpendicular_jac, const_jac: None },
+    Kernel { name: "angle", n_res: 1, n_par: 8, degree: 2, n_const: 2, res: angle_res, jac: angle_jac, const_jac: None },
+    Kernel { name: "equal_length", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: equal_length_res, jac: equal_length_jac, const_jac: None },
+    Kernel { name: "point_on_line", n_res: 1, n_par: 6, degree: 2, n_const: 0, res: point_on_line_res, jac: point_on_line_jac, const_jac: None },
+    Kernel { name: "point_on_circle", n_res: 1, n_par: 5, degree: 2, n_const: 0, res: point_on_circle_res, jac: point_on_circle_jac, const_jac: None },
+    Kernel { name: "radius", n_res: 1, n_par: 1, degree: 1, n_const: 1, res: radius_res, jac: radius_jac, const_jac: Some(RADIUS_J) },
+    Kernel { name: "equal_radius", n_res: 1, n_par: 2, degree: 1, n_const: 0, res: equal_radius::res, jac: equal_radius::jac, const_jac: Some(equal_radius::J) },
+    Kernel { name: "tangent_line_circle", n_res: 1, n_par: 7, degree: 1, n_const: 1, res: tangent_line_circle_res, jac: tangent_line_circle_jac, const_jac: None },
+    Kernel { name: "tangent_circle_circle", n_res: 1, n_par: 6, degree: 2, n_const: 1, res: tangent_circle_circle_res, jac: tangent_circle_circle_jac, const_jac: None },
+    Kernel { name: "tangent_arc_line", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: tangent_arc_line_res, jac: tangent_arc_line_jac, const_jac: None },
+    Kernel { name: "symmetric", n_res: 2, n_par: 8, degree: 2, n_const: 0, res: symmetric_res, jac: symmetric_jac, const_jac: None },
+    Kernel { name: "parallel_distance", n_res: 1, n_par: 8, degree: 1, n_const: 1, res: parallel_distance_res, jac: parallel_distance_jac, const_jac: None },
+    Kernel { name: "point_line_distance", n_res: 1, n_par: 6, degree: 1, n_const: 1, res: point_line_distance_res, jac: point_line_distance_jac, const_jac: None },
+    Kernel { name: "annular_distance", n_res: 1, n_par: 2, degree: 1, n_const: 1, res: annular_distance_res, jac: annular_distance_jac, const_jac: Some(ANNULAR_DISTANCE_J) },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

@@ -229,3 +229,27 @@ fn conflict_set_on_a_large_truss_from_good_geometry() {
     let c = d.conflicts.clone().unwrap();
     assert!(c.contains(&bad) && (3..=13).contains(&c.len()), "{}", c.len());
 }
+
+/// Kernels are not all written to the same power of length: a `Radius` residual is a length, a
+/// `Distance` residual a length squared.  Judging both against one `1e-6 * extent²` threshold
+/// makes every linear constraint's tolerance grow with the sketch, so on a large sketch two
+/// contradictory radii are "solved" and diagnosis sees no conflict.
+#[test]
+fn a_large_sketch_does_not_loosen_the_linear_constraints() {
+    let mut sk = Sketch::new();
+    sk.point(0.0, 0.0, true, "a");
+    sk.point(1000.0, 1000.0, true, "b"); // extent 1000: scale² would be 1e6
+    let c = sk.point(500.0, 500.0, false, "c");
+    let ci = sk.circle(c, 50.0, "circle");
+    sk.add(Constraint::radius(EntRef::circle(ci), 50.0));
+    sk.add(Constraint::radius(EntRef::circle(ci), 50.9));
+
+    let r = solve(&mut sk, SolveOpts::default());
+    assert!(!r.success, "contradictory radii reported solved: {r:?}");
+    assert!(r.max_residual > 0.4, "{r:?}");
+
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.status, State::Conflict, "{d:?}");
+    assert_eq!(d.violated.len(), 2, "{:?}", d.violated); // the solve split the difference
+    assert!(d.conflicts.is_some(), "no minimal conflict set: {d:?}");
+}

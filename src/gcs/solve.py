@@ -154,8 +154,13 @@ class System:
         return data[: self.nnz], indices[: self.nnz], indptr
 
     def max_hard_residual(self) -> float:
-        """max |r| over hard rows at the current sketch values — what "solved" means."""
+        """max |r| over hard rows at the current sketch values, in the residuals' own units."""
         return float(lib.gcs_system_max_hard_residual(self._h, self.sketch._h))
+
+    def max_relative_residual(self) -> float:
+        """max |r| / that row's units over the hard rows — dimensionless, so one threshold judges
+        every kernel.  This, not `max_hard_residual`, is what "solved" means."""
+        return float(lib.gcs_system_max_relative_residual(self._h, self.sketch._h))
 
     def constraint_errors(self) -> dict[int, float]:
         """max |residual| per constraint, keyed by constraint id."""

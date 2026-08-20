@@ -167,9 +167,15 @@ export class System {
         }))));
   }
 
-  /** max |r| over hard rows at the current sketch values — what "solved" means. */
+  /** max |r| over hard rows at the current sketch values, in the residuals' own units. */
   maxHardResidual(): number {
     return core().gcs_system_max_hard_residual(this.handle, this.sketch.handle);
+  }
+
+  /** max |r| / that row's units over the hard rows — dimensionless, so one threshold judges every
+   *  kernel.  This, not `maxHardResidual`, is what "solved" means. */
+  maxRelativeResidual(): number {
+    return core().gcs_system_max_relative_residual(this.handle, this.sketch.handle);
   }
 
   /** max |residual| per constraint, from one vectorized evaluation. */

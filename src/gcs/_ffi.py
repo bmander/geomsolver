@@ -135,6 +135,7 @@ _SIGNATURES: list[tuple[str, Any, list[Any]]] = [
     ("gcs_system_max_hard_residual", ct.c_double, [PTR, PTR]),
     ("gcs_system_constraint_errors", ct.c_int32, [PTR, PTR, I32, F64, ct.c_int32]),
     ("gcs_system_n_constraints", ct.c_int32, [PTR]),
+    ("gcs_system_max_relative_residual", ct.c_double, [PTR, PTR]),
     ("gcs_system_rank", ct.c_int32, [PTR, PTR, ct.c_double, ct.c_int32]),
     ("gcs_system_update_consts", None, [PTR, PTR, ct.c_int32]),
     ("gcs_system_refresh_consts", None, [PTR, PTR]),

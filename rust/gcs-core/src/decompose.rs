@@ -1312,19 +1312,22 @@ impl PlanSolver {
         self.system.refresh_consts(sk);
         let z = self.system.z0(sk);
         let mut mx = self.system.max_hard_residual(&z);
+        let mut rel = self.system.max_relative_residual(&z);
         let mut numeric = None;
         let mut fell_back = false;
-        if mx > tol * self.system.scale && fallback {
+        if rel > tol && fallback {
             fell_back = true;
             let r = self.system.solve(sk, SolveOpts { method, ..SolveOpts::default() });
             mx = r.max_residual;
+            let z = self.system.z0(sk);
+            rel = self.system.max_relative_residual(&z);
             numeric = Some(r);
         }
         for (k, v) in self.plan.branches() {
             sk.branches.insert(k, v);
         }
         PlanResult {
-            success: mx <= 1e-6 * self.system.scale,
+            success: rel <= 1e-6,
             max_residual: mx,
             fell_back,
             numeric,
@@ -1379,7 +1382,7 @@ impl PlanDrag {
         let (px, py) = sk.point_xy(point);
         let usable = solver.plan.graph.unsupported.is_empty()
             && !over
-            && replay(&mut solver, sk, point, px, py) <= 1e-9 * solver.system.scale;
+            && replay(&mut solver, sk, point, px, py) <= 1e-9;
         sk.fix_point(point, was);
         let mut d = PlanDrag { solver, numeric: None, point, max_step, guards };
         if !usable {
@@ -1415,7 +1418,7 @@ impl PlanDrag {
         let mut mx = 0.0;
         for &(tx, ty) in &path {
             mx = replay(&mut self.solver, sk, self.point, tx, ty);
-            if mx > 1e-6 * self.solver.system.scale {
+            if mx > 1e-6 {
                 // the plan cannot follow (a limit of the geometry was hit): hand over to the
                 // numeric drag from the last good state
                 sk.set_x(&x_prev);
@@ -1446,11 +1449,13 @@ impl PlanDrag {
     }
 }
 
+/// Replay the plan with `point` pinned at (x, y); the worst hard residual, relative to its own
+/// row's units, so one threshold judges every kernel.
 fn replay(solver: &mut PlanSolver, sk: &mut Sketch, point: usize, x: f64, y: f64) -> f64 {
     let (px, py) = (sk.points[point].x as usize, sk.points[point].y as usize);
     sk.params[px].value = x;
     sk.params[py].value = y;
     execute(&mut solver.plan, sk, None);
     let z = solver.system.z0(sk);
-    solver.system.max_hard_residual(&z)
+    solver.system.max_relative_residual(&z)
 }

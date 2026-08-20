@@ -39,6 +39,13 @@ pub struct System {
     pub extent: f64,
     /// Residual units for squared distances: `max(1, extent)²`.
     pub scale: f64,
+    /// Residual units per row: `max(1, extent)^degree` for the row's kernel.  Kernels are not
+    /// all written to the same power of length, so one system-wide scale judges half of them
+    /// against a tolerance meant for the other half.
+    pub row_scale: Vec<f64>,
+    /// The smallest `row_scale` over hard rows — the strictest tolerance in the system, which is
+    /// what the inner solver has to iterate to for every row to come in under its own.
+    pub min_hard_scale: f64,
     /// One flag per residual row: rows that must be satisfied.
     pub hard: Vec<bool>,
     pub blocks: Vec<Block>,
@@ -166,6 +173,24 @@ impl System {
             }
         }
 
+        let mut row_scale = vec![1.0; n_res];
+        for b in &blocks {
+            let kn = k(b.kid);
+            let sc = extent.max(1.0).powi(kn.degree as i32);
+            for r in b.row0..b.row0 + b.count * kn.n_res {
+                row_scale[r] = sc;
+            }
+        }
+        let mut min_hard_scale = f64::INFINITY;
+        for r in 0..n_res {
+            if hard[r] {
+                min_hard_scale = min_hard_scale.min(row_scale[r]);
+            }
+        }
+        if !min_hard_scale.is_finite() {
+            min_hard_scale = extent.max(1.0);
+        }
+
         System {
             n_params: n,
             free,
@@ -174,6 +199,8 @@ impl System {
             n_res,
             extent,
             scale,
+            row_scale,
+            min_hard_scale,
             hard,
             blocks,
             cids,
@@ -332,6 +359,33 @@ impl System {
             }
         }
         mx
+    }
+
+    /// max |residual| / (that row's units) over the hard rows — dimensionless, so one threshold
+    /// judges every kernel.  This, not `max_hard_residual`, is what "solved" means.
+    pub fn max_relative_residual(&mut self, z: &[f64]) -> f64 {
+        let r = self.residuals(z);
+        let mut mx = 0.0f64;
+        for i in 0..self.n_res {
+            if self.hard[i] {
+                if r[i].is_nan() {
+                    return f64::NAN;
+                }
+                let a = r[i].abs() / self.row_scale[i];
+                if a > mx {
+                    mx = a;
+                }
+            }
+        }
+        mx
+    }
+
+    /// The units of a constraint's residual, for judging `constraint_errors` against.
+    pub fn constraint_scale(&self, cid: u32) -> f64 {
+        match self.slot_of.get(&cid) {
+            Some(&(b, _)) => self.extent.max(1.0).powi(k(self.blocks[b].kid).degree as i32),
+            None => self.scale,
+        }
     }
 
     /// max |residual| per constraint, in block order (`self.cids`).

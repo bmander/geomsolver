@@ -180,19 +180,16 @@ pub fn removable_constraints(sk: &Sketch, w: &Mat, row_c: &[u32], rtol: f64) -> 
     out
 }
 
-fn tol_abs(sk: &Sketch, tol: f64) -> f64 {
-    tol * sk.extent().max(1.0).powi(2)
-}
-
 /// Hard constraints whose residual is not (numerically) zero at the current configuration.
+/// Each is judged against its own kernel's units — a radius error is a length, a distance error a
+/// length squared, and one absolute threshold for both calls half of them satisfied.
 pub fn violated_constraints(sk: &Sketch, sys: &mut System, tol: f64) -> Vec<u32> {
-    let lim = tol_abs(sk, tol);
     let z = sys.z0(sk);
     let err = sys.constraint_errors(&z);
     let mut out = Vec::new();
     for (i, &cid) in sys.cids.iter().enumerate() {
         let soft = sk.constraint(cid).map(|c| c.soft).unwrap_or(false);
-        if !soft && err[i] > lim {
+        if !soft && !(err[i] <= tol * sys.constraint_scale(cid)) {
             out.push(cid);
         }
     }
@@ -466,7 +463,6 @@ pub fn minimal_conflict_set(
     };
     let cand_set: BTreeSet<u32> = cands.iter().copied().collect();
     let others: Vec<u32> = hard.iter().copied().filter(|c| !cand_set.contains(c)).collect();
-    let lim = tol_abs(sk, tol);
     let saved = sk.constraints.clone();
 
     let solve_with = |sk: &mut Sketch, ids: &[u32], x_start: &[f64]| -> (bool, Vec<f64>) {
@@ -474,10 +470,9 @@ pub fn minimal_conflict_set(
         let keep: BTreeSet<u32> = ids.iter().copied().collect();
         sk.constraints.retain(|c| keep.contains(&c.id));
         let mut sys = System::new(sk);
-        let ok = sys
-            .solve(sk, SolveOpts { method, max_iter, ..SolveOpts::default() })
-            .max_residual
-            <= lim;
+        sys.solve(sk, SolveOpts { method, max_iter, ..SolveOpts::default() });
+        let z = sys.z0(sk);
+        let ok = sys.max_relative_residual(&z) <= tol;
         let x = sk.get_x();
         (ok, x)
     };

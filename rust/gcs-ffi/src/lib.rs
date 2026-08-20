@@ -1065,6 +1065,17 @@ pub unsafe extern "C" fn gcs_system_constraint_errors(
     })
 }
 
+/// max |residual| / that row's units over the hard rows — dimensionless, so one threshold judges
+/// every kernel.  This, not `gcs_system_max_hard_residual`, is what "solved" means.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_system_max_relative_residual(s: *mut System, h: *mut Sketch) -> f64 {
+    guard(f64::NAN, move || {
+        let sys = &mut *s;
+        let z = sys.z0(sk(h));
+        sys.max_relative_residual(&z)
+    })
+}
+
 /// How many constraints the plan was compiled from — the size `gcs_system_constraint_errors`
 /// needs, which is the live sketch's count only until the sketch is edited.
 #[no_mangle]
