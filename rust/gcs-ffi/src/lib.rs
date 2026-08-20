@@ -151,6 +151,27 @@ fn param_mut(s: &mut Sketch, i: i32) -> &mut Param {
     s.params.get_mut(i as usize).unwrap_or_else(|| panic!("param index {i} out of range (0..{n})"))
 }
 
+/* -- writing into caller buffers ------------------------------------------- */
+
+/// Copy a slice into a caller-owned buffer.  Every hot-path result crosses this way, and writing
+/// the loop out at each of them is a chance to get the length or the pointer arithmetic wrong.
+unsafe fn write<T: Copy>(out: *mut T, src: &[T]) {
+    if out.is_null() {
+        return;
+    }
+    std::ptr::copy_nonoverlapping(src.as_ptr(), out, src.len());
+}
+
+/// The same, mapping each element on the way (`bool` flags, `usize` indices).
+unsafe fn write_map<S, T>(out: *mut T, src: &[S], f: impl Fn(&S) -> T) {
+    if out.is_null() {
+        return;
+    }
+    for (i, v) in src.iter().enumerate() {
+        *out.add(i) = f(v);
+    }
+}
+
 /* -- library metadata ------------------------------------------------------ */
 
 /// The constraint-type and kernel registry — everything a front end needs to be generic.
@@ -1041,9 +1062,7 @@ pub unsafe extern "C" fn gcs_system_scale(s: *mut System) -> f64 {
 #[no_mangle]
 pub unsafe extern "C" fn gcs_system_hard(s: *mut System, out: *mut u8) {
     guard((), move || {
-        for (i, &b) in (*s).hard.iter().enumerate() {
-            *out.add(i) = b as u8;
-        }
+        write_map(out, &(*s).hard, |&b| b as u8);
     })
 }
 
@@ -1052,9 +1071,7 @@ pub unsafe extern "C" fn gcs_system_hard(s: *mut System, out: *mut u8) {
 pub unsafe extern "C" fn gcs_system_z0(s: *mut System, h: *mut Sketch, out: *mut f64) {
     guard((), move || {
         let z = (*s).z0(sk(h));
-        for (i, v) in z.iter().enumerate() {
-            *out.add(i) = *v;
-        }
+        write(out, &z);
     })
 }
 
@@ -1064,9 +1081,7 @@ pub unsafe extern "C" fn gcs_system_residuals(s: *mut System, z: *const f64, out
         let sys = &mut *s;
         let zz = std::slice::from_raw_parts(z, sys.n_free);
         let r = sys.residuals(zz);
-        for (i, v) in r.iter().enumerate() {
-            *out.add(i) = *v;
-        }
+        write(out, &r);
     })
 }
 
@@ -1076,9 +1091,7 @@ pub unsafe extern "C" fn gcs_system_jacobian_dense(s: *mut System, z: *const f64
         let sys = &mut *s;
         let zz = std::slice::from_raw_parts(z, sys.n_free);
         let j = sys.jacobian_dense(zz);
-        for (i, v) in j.data.iter().enumerate() {
-            *out.add(i) = *v;
-        }
+        write(out, &j.data);
     })
 }
 
@@ -1090,12 +1103,8 @@ pub unsafe extern "C" fn gcs_system_csr_structure(
 ) {
     guard((), move || {
         let sys = &*s;
-        for (i, v) in sys.csr_indptr.iter().enumerate() {
-            *indptr.add(i) = *v;
-        }
-        for (i, v) in sys.csr_indices.iter().enumerate() {
-            *indices.add(i) = *v;
-        }
+        write(indptr, &sys.csr_indptr);
+        write(indices, &sys.csr_indices);
     })
 }
 
@@ -1105,9 +1114,7 @@ pub unsafe extern "C" fn gcs_system_csr_data(s: *mut System, z: *const f64, out:
         let sys = &mut *s;
         let zz = std::slice::from_raw_parts(z, sys.n_free);
         let d = sys.compute_csr(zz).to_vec();
-        for (i, v) in d.iter().enumerate() {
-            *out.add(i) = *v;
-        }
+        write(out, &d);
     })
 }
 
@@ -1220,9 +1227,7 @@ pub unsafe extern "C" fn gcs_system_structure_json(s: *mut System) -> *mut u8 {
 #[no_mangle]
 pub unsafe extern "C" fn gcs_system_free_indices(s: *mut System, out: *mut i32) {
     guard((), move || {
-        for (i, v) in (*s).free.iter().enumerate() {
-            *out.add(i) = *v;
-        }
+        write(out, &(*s).free);
     })
 }
 
@@ -1322,9 +1327,7 @@ pub unsafe extern "C" fn gcs_min_norm_lstsq(
         let am = linalg::Mat::from_vec(m, n, std::slice::from_raw_parts(a, m * n).to_vec());
         let bm = linalg::Mat::from_vec(m, nrhs, std::slice::from_raw_parts(b, m * nrhs).to_vec());
         let (xm, rank) = linalg::min_norm_lstsq(&am, &bm, rcond);
-        for (i, v) in xm.data.iter().enumerate() {
-            *x.add(i) = *v;
-        }
+        write(x, &xm.data);
         rank as i32
     })
 }
@@ -1342,9 +1345,7 @@ pub unsafe extern "C" fn gcs_rrqr(
         let am = linalg::Mat::from_vec(m, n, std::slice::from_raw_parts(a, m * n).to_vec());
         let (rank, p) = linalg::rrqr(&am, rcond);
         if !piv.is_null() {
-            for (i, v) in p.iter().enumerate() {
-                *piv.add(i) = *v;
-            }
+            write(piv, &p);
         }
         rank as i32
     })
@@ -1363,16 +1364,10 @@ pub unsafe extern "C" fn gcs_svd(
         let (mm, nn) = (m as usize, n as usize);
         let am = linalg::Mat::from_vec(mm, nn, std::slice::from_raw_parts(a, mm * nn).to_vec());
         let d = linalg::svd(&am, !u.is_null());
-        for (i, v) in d.s.iter().enumerate() {
-            *s.add(i) = *v;
-        }
-        for (i, v) in d.vt.data.iter().enumerate() {
-            *vt.add(i) = *v;
-        }
+        write(s, &d.s);
+        write(vt, &d.vt.data);
         if !u.is_null() {
-            for (i, v) in d.u.data.iter().enumerate() {
-                *u.add(i) = *v;
-            }
+            write(u, &d.u.data);
         }
         if d.converged {
             0
@@ -1397,13 +1392,9 @@ pub unsafe extern "C" fn gcs_rank_nullspace(
         let (mm, nn) = (m as usize, n as usize);
         let am = linalg::Mat::from_vec(mm, nn, std::slice::from_raw_parts(a, mm * nn).to_vec());
         let rn = linalg::rank_and_nullspace(&am, rcond);
-        for (i, v) in rn.n.data.iter().enumerate() {
-            *n_out.add(i) = *v;
-        }
+        write(n_out, &rn.n.data);
         if !s_out.is_null() {
-            for (i, v) in rn.s.iter().enumerate() {
-                *s_out.add(i) = *v;
-            }
+            write(s_out, &rn.s);
         }
         if !rn.converged {
             set_error("rank_nullspace: the SVD did not converge".to_string());
@@ -1698,9 +1689,7 @@ pub unsafe extern "C" fn gcs_witness_json(h: *mut Sketch, seed: u32) -> *mut u8 
 pub unsafe extern "C" fn gcs_make_witness(h: *mut Sketch, seed: u32, out: *mut f64) {
     guard((), move || {
         let x = witness::make_witness(sk(h), seed, 0.05, 1e-8);
-        for (i, v) in x.iter().enumerate() {
-            *out.add(i) = *v;
-        }
+        write(out, &x);
     })
 }
 
@@ -1817,9 +1806,7 @@ pub unsafe extern "C" fn gcs_plan_steps_placing(
         let ps = &*p;
         let Some(&cls) = ps.plan.graph.point_of.get(point as usize) else { return 0 };
         let idxs = ps.plan.steps_placing(El::p(cls));
-        for (i, &s) in idxs.iter().enumerate() {
-            *out.add(i) = s as i32;
-        }
+        write_map(out, &idxs, |&s| s as i32);
         idxs.len() as i32
     })
 }
