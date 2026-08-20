@@ -209,8 +209,7 @@ def solve(sketch: Sketch, method: Method = "dogleg", tol: float = 1e-14,
 
 def orientation(a: Point, b: Point, c: Point) -> float:
     """Twice the signed area of (a, b, c) — the order-type invariant the drag guards."""
-    (ax, ay), (bx, by), (cx, cy) = a.xy, b.xy, c.xy
-    return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+    return float(lib.gcs_orientation(a.sketch._h, a.index, b.index, c.index))
 
 
 def _read_flips(sketch: Sketch, fn: Any, handle: Any, n: int) -> list[Triangle]:

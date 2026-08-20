@@ -246,22 +246,6 @@ export function solve(sketch: Sketch, opts: Parameters<System['solve']>[0] = {})
   });
 }
 
-/** Twice the signed area of (a, b, c) — the order-type invariant the drag guards. */
-export function orientation(a: Point, b: Point, c: Point): number {
-  const [ax, ay] = a.xy, [bx, by] = b.xy, [cx, cy] = c.xy;
-  return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
-}
-
-/** Continuation path from (x0,y0) to (x1,y1): waypoints no farther apart than maxStep, so a
- *  solution tracks its branch instead of teleporting across it.  Always at least one point. */
-export function increments(x0: number, y0: number, x1: number, y1: number,
-                           maxStep: number): [number, number][] {
-  const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / maxStep));
-  const out: [number, number][] = [];
-  for (let i = 1; i <= n; i++) out.push([x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n]);
-  return out;
-}
-
 export function guardBuffer<T>(guards: Triangle[] | null | undefined,
                                fn: (ptr: number, n: number) => T): T {
   if (!guards || !guards.length) return fn(0, guards ? 0 : -1);

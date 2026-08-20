@@ -96,6 +96,7 @@ _SIGNATURES: list[tuple[str, Any, list[Any]]] = [
     ("gcs_entity_bounds", None, [PTR, ct.c_int32, ct.c_int32, F64]),
     ("gcs_entity_name", STR, [ct.c_int32, ct.c_int32]),
     ("gcs_distance_between", ct.c_double, [PTR, ct.c_int32, ct.c_int32, ct.c_int32, ct.c_int32]),
+    ("gcs_orientation", ct.c_double, [PTR, ct.c_int32, ct.c_int32, ct.c_int32]),
     ("gcs_signed_point_to_line", ct.c_double, [PTR, ct.c_double, ct.c_double, ct.c_int32]),
     ("gcs_arc_angles", None, [PTR, ct.c_int32, F64]),
     ("gcs_three_point_arc", ct.c_int32,

@@ -574,6 +574,14 @@ pub unsafe extern "C" fn gcs_distance_between(
     })
 }
 
+/// Twice the signed area of (a, b, c) — the order-type invariant the drag guards.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_orientation(h: *mut Sketch, a: i32, b: i32, c: i32) -> f64 {
+    guard(f64::NAN, move || {
+        model::orientation(sk(h), a as usize, b as usize, c as usize)
+    })
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn gcs_signed_point_to_line(
     h: *mut Sketch,

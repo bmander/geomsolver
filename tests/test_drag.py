@@ -12,7 +12,7 @@ from gcs import constraints as C
 from gcs import examples, io
 from gcs.decompose import PlanDrag, PlanSolver
 from gcs.model import Point, Sketch
-from gcs.solve import Drag, RadiusDrag, System, solve
+from gcs.solve import Drag, RadiusDrag, System, orientation, solve
 
 
 def circle_path(cx: float, cy: float, r: float, n: int = 40) -> list[tuple[float, float]]:
@@ -220,3 +220,15 @@ def test_radius_drag_respects_an_equal_radius_chain() -> None:
         d.end()
     assert a.radius.value == pytest.approx(18.0, abs=1e-6)
     assert b.radius.value == pytest.approx(18.0, abs=1e-6)
+
+
+def test_orientation_is_the_core_s_signed_area() -> None:
+    """The order-type invariant the drag guards.  It is the core's rule, not a copy in the
+    binding: a second implementation is a second thing that can disagree with the guards."""
+    sk = Sketch()
+    a, b = sk.point(0, 0), sk.point(10, 0)
+    left, right = sk.point(5, 4), sk.point(5, -4)
+    assert orientation(a, b, left) > 0
+    assert orientation(a, b, right) < 0
+    assert orientation(a, b, sk.point(5, 0)) == 0.0
+    assert orientation(a, b, left) == pytest.approx(40.0)   # twice the area of a 10x4/2 triangle
