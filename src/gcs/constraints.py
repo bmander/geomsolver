@@ -209,25 +209,20 @@ def _bound(c: Constraint) -> Iterator[tuple[Sketch, int]]:
 def same_constraint(a: Constraint, b: Constraint) -> bool:
     """True when two constraints say exactly the same thing: same type, the same entities in the
     same roles, the same values.  `commutative` types also match with their first two entities
-    swapped, since picking the pair in the other order means the same relation."""
+    swapped, since picking the pair in the other order means the same relation.
+
+    The rule is the core's; this only marshals.  Either constraint may still be unbound — that is
+    the interesting case, since the question is usually "should this one be added at all?"."""
     if type(a) is not type(b):
         return False
-
-    def match(swap: bool) -> bool:
-        order = list(range(len(a.spec)))
-        if swap:
-            ents = [i for i, (_, k) in enumerate(a.spec) if k in ENTITY_KINDS]
-            if len(ents) < 2:
-                return False
-            order[ents[0]], order[ents[1]] = order[ents[1]], order[ents[0]]
-        av, bv = a.args(), b.args()
-        for i, (_, kind) in enumerate(a.spec):
-            x, y = av[i], bv[order[i]]
-            if (x is not y) if kind in ENTITY_KINDS else (x != y):
-                return False
-        return True
-
-    return match(False) or (a.commutative and match(True))
+    ea, eb = a.entities(), b.entities()
+    if not ea or not eb:                           # every type has one, but do not assume it
+        return a.args() == b.args()
+    if ea[0].sketch is not eb[0].sketch:           # references into different documents
+        return False
+    ap, an = _ffi.send_json(a.to_record())
+    bp, bn = _ffi.send_json(b.to_record())
+    return int(lib.gcs_same_constraint(ea[0].sketch._h, ap, an, bp, bn)) == 1
 
 
 # ---------------------------------------------------------------------------

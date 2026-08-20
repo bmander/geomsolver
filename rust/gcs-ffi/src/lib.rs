@@ -838,6 +838,30 @@ pub unsafe extern "C" fn gcs_constraint_error(h: *mut Sketch, id: i32) -> f64 {
     })
 }
 
+/// Whether two constraint records say exactly the same thing — same type, same entities in the
+/// same roles, same values, up to the swap a commutative type allows.  The rule lives in the
+/// core; both bindings ask here rather than each keeping a copy of it.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_same_constraint(
+    h: *mut Sketch,
+    a_ptr: *const u8,
+    a_len: usize,
+    b_ptr: *const u8,
+    b_len: usize,
+) -> i32 {
+    guard(-1, move || {
+        let s = sk(h);
+        let (av, bv) = (as_json(a_ptr, a_len), as_json(b_ptr, b_len));
+        let (Ok(a), Ok(b)) = (
+            report::constraint_from_json(s, &av),
+            report::constraint_from_json(s, &bv),
+        ) else {
+            return -1;
+        };
+        gcs_core::constraints::same_constraint(&a, &b) as i32
+    })
+}
+
 /// The id of an existing constraint that says exactly the same thing, or -1.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_constraint_duplicate(

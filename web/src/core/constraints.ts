@@ -237,18 +237,11 @@ function fromJson(sk: Sketch, v: unknown, kind: SpecKind): unknown {
  *  report — which is why it is worth keeping out. */
 export function sameConstraint(a: Constraint, b: Constraint): boolean {
   if (a.constructor !== b.constructor) return false;
-  const match = (swap: boolean): boolean => {
-    const order = a.spec.map((_, i) => i);
-    if (swap) {
-      const ents = a.spec.flatMap(([, k], i) => (ENTITY_KINDS.has(k) ? [i] : []));
-      if (ents.length < 2) return false;
-      [order[ents[0]], order[ents[1]]] = [order[ents[1]], order[ents[0]]];
-    }
-    return a.spec.every(([, kind], i) => (ENTITY_KINDS.has(kind)
-      ? a.args[i] === b.args[order[i]]
-      : Object.is(a.args[i], b.args[order[i]])));
-  };
-  return match(false) || (a.commutative && match(true));
+  const ea = a.entities(), eb = b.entities();
+  if (!ea.length || !eb.length) return false;      // every type has one, but do not assume it
+  if (ea[0].sketch !== eb[0].sketch) return false; // references into different documents
+  return withJson(a.toRecord(), (ap, an) => withJson(b.toRecord(), (bp, bn) =>
+    core().gcs_same_constraint(ea[0].sketch.handle, ap, an, bp, bn) === 1));
 }
 
 /* -- generated types --------------------------------------------------------- */

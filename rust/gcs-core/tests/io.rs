@@ -1,4 +1,4 @@
-use gcs_core::constraints::{Arg, CKind, Constraint};
+use gcs_core::constraints::{same_constraint, Arg, CKind, Constraint};
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::examples;
 use gcs_core::io;
@@ -324,4 +324,59 @@ fn set_x_refuses_a_vector_that_is_not_this_sketchs() {
     assert_eq!(b.point_xy(0), (9.0, 9.0));
     assert!(b.set_x(&[7.0, 8.0]));
     assert_eq!(b.point_xy(0), (7.0, 8.0));
+}
+
+/// The duplicate rule is the core's, and both bindings now ask it through the ABI rather than
+/// keeping a copy.  Whatever `spec` a new type declares, it has to at least recognise itself.
+#[test]
+fn same_constraint_recognises_every_type_reflexively() {
+    let mut sk = Sketch::new();
+    let p = sk.point(0.0, 0.0, false, "p");
+    let q = sk.point(10.0, 0.0, false, "q");
+    let l1 = sk.line(p, q);
+    let l2 = sk.line(q, p);
+    let c1 = sk.circle(p, 2.0, "c1");
+    let c2 = sk.circle(q, 3.0, "c2");
+
+    let pairs: Vec<(Constraint, Constraint, bool)> = vec![
+        // commutative: the same relation with the pair picked the other way round
+        (
+            Constraint::coincident(EntRef::point(p), EntRef::point(q)),
+            Constraint::coincident(EntRef::point(q), EntRef::point(p)),
+            true,
+        ),
+        (
+            Constraint::distance(EntRef::point(p), EntRef::point(q), 5.0),
+            Constraint::distance(EntRef::point(q), EntRef::point(p), 5.0),
+            true,
+        ),
+        (
+            Constraint::two_line(CKind::Parallel, EntRef::line(l1), EntRef::line(l2)),
+            Constraint::two_line(CKind::Parallel, EntRef::line(l2), EntRef::line(l1)),
+            true,
+        ),
+        // not commutative: the first argument is the reference
+        (
+            Constraint::new(
+                CKind::AnnularDistance,
+                vec![Arg::Ent(EntRef::circle(c1)), Arg::Ent(EntRef::circle(c2)), Arg::Num(1.0)],
+            ),
+            Constraint::new(
+                CKind::AnnularDistance,
+                vec![Arg::Ent(EntRef::circle(c2)), Arg::Ent(EntRef::circle(c1)), Arg::Num(1.0)],
+            ),
+            false,
+        ),
+        // a different dimension is a conflict, not a duplicate
+        (
+            Constraint::distance(EntRef::point(p), EntRef::point(q), 5.0),
+            Constraint::distance(EntRef::point(p), EntRef::point(q), 6.0),
+            false,
+        ),
+    ];
+    for (a, b, want) in pairs {
+        assert!(same_constraint(&a, &a), "{:?} does not recognise itself", a.kind);
+        assert_eq!(same_constraint(&a, &b), want, "{:?}", a.kind);
+        assert_eq!(same_constraint(&b, &a), want, "{:?} (reversed)", a.kind);
+    }
 }

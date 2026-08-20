@@ -75,6 +75,8 @@ export interface Abi {
   gcs_constraint_params(h: number, id: number, out: number): number;
   gcs_constraint_local_values(h: number, id: number, out: number): number;
   gcs_constraint_eval(h: number, id: number, v: number, r: number, j: number): number;
+  gcs_same_constraint(h: number, a: number, aLen: number, b: number,
+                      bLen: number): number;
   gcs_constraint_duplicate(h: number, p: number, n: number): number;
   gcs_describe(h: number, id: number): number;
   gcs_fmt_g(v: number, sig: number): number;
