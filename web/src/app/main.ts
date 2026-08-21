@@ -38,7 +38,7 @@ import { expressions } from '../core/expr.js';
 import { SketchView, Tool } from './view.js';
 import {
   MenuItem, ToolbarButton, addButton, addCheckbox, addLink, addMenu, addSelect, addSeparator,
-  askChoice, askNumber, askText, closeMenus, download, openFile, showReport, showSheet, stats,
+  askChoice, askText, closeMenus, download, openFile, showReport, showSheet, stats,
   toast,
 } from './ui.js';
 
@@ -303,6 +303,17 @@ function cCoincident(): void {
   applySimple(hit as Simple);
 }
 
+/** What a new dimension's number is: text, like an edit of one — a bare number, or an
+ *  expression (`w = 80` names it, `h = w / 2` reads a name).  The core applies the rule when
+ *  the constraint is added (a literal is a constant, in degrees for an angle), so the text goes
+ *  straight into the constructor.  `current` is the measured value offered as the default. */
+async function askDimension(title: string, label: string, current: number): Promise<string | null> {
+  const text = await askText(title, label, String(Number(current.toPrecision(10))),
+    'a number, or an expression: “w = 80” names it, “h = w / 2”, “sin(h * 10)” use names; '
+    + 'trigonometry in degrees');
+  return text == null || !text.trim() ? null : text;
+}
+
 /** The one dimension button: what it puts a number on is the selection's business.  Two points
  *  or a single line take a length, a point and a line a signed offset, a circle its radius and
  *  two of them the ring between them — and two lines take the gap between them when they are
@@ -332,7 +343,7 @@ async function cDimension(): Promise<void> {
   if (!need(pts.length === 2, 'two points, one line, a point and a line, two lines, '
                             + 'or one or more circles/arcs')) return;
   const cur = Math.hypot(pts[0].x.value - pts[1].x.value, pts[0].y.value - pts[1].y.value);
-  const v = await askNumber('Distance', 'Distance', cur);
+  const v = await askDimension('Distance', 'Distance', cur);
   if (v !== null) view.addConstraints(new C.Distance(pts[0], pts[1], v));
 }
 
@@ -341,7 +352,7 @@ async function cDimension(): Promise<void> {
  *  "gap" between converging lines pins one endpoint's offset and reads as arbitrary. */
 async function cParallelDistance(l1: Line, l2: Line): Promise<void> {
   const cur = signedPointToLine(l2.p1.x.value, l2.p1.y.value, l1);
-  const v = await askNumber('Parallel distance', 'Gap (negative puts the second line on the other side)', cur);
+  const v = await askDimension('Parallel distance', 'Gap (negative puts the second line on the other side)', cur);
   if (v !== null) view.addConstraints(new C.ParallelDistance(l1, l2, v));
 }
 
@@ -352,8 +363,8 @@ async function cPointLineDistance(p: Point, line: Line): Promise<void> {
   const [dx, dy] = line.direction();
   if (!need(Math.hypot(dx, dy) > 0, 'a line with two distinct endpoints')) return;
   if (!need(p !== line.p1 && p !== line.p2, 'a point that is not an endpoint of the line')) return;
-  const v = await askNumber('Point-line distance', 'Offset (negative puts the point on the other side)',
-                            signedPointToLine(p.x.value, p.y.value, line));
+  const v = await askDimension('Point-line distance', 'Offset (negative puts the point on the other side)',
+                               signedPointToLine(p.x.value, p.y.value, line));
   if (v !== null) view.addConstraints(new C.PointLineDistance(p, line, v));
 }
 
@@ -361,8 +372,8 @@ async function cPointLineDistance(p: Point, line: Line): Promise<void> {
  *  the ring without centring it, so say so when the centres are not already together. */
 async function cAnnularDistance(c1: Circle | Arc, c2: Circle | Arc): Promise<void> {
   const cur = Math.abs(c2.radius.value) - Math.abs(c1.radius.value);
-  const v = await askNumber('Annular distance',
-                            'Ring thickness (negative makes the first circle the outer one)', cur);
+  const v = await askDimension('Annular distance',
+                               'Ring thickness (negative makes the first circle the outer one)', cur);
   if (v === null) return;
   view.addConstraints(new C.AnnularDistance(c1, c2, v));
   const [a, b] = [c1.center, c2.center];
@@ -374,8 +385,8 @@ async function cAnnularDistance(c1: Circle | Arc, c2: Circle | Arc): Promise<voi
 /** Two lines that meet at a corner: dimension the corner. */
 async function cAngle(l1: Line, l2: Line): Promise<void> {
   const cur = (angleBetween(l1, l2) * 180) / Math.PI;   // the core's rule, in degrees
-  const v = await askNumber('Angle', 'Angle from the first to the second line (degrees)', cur);
-  if (v !== null) view.addConstraints(new C.Angle(l1, l2, (v * Math.PI) / 180));
+  const v = await askDimension('Angle', 'Angle from the first to the second line (degrees)', cur);
+  if (v !== null) view.addConstraints(new C.Angle(l1, l2, v));   // text is degrees; the core converts
 }
 
 /** An equality set: every selected line the same length, or every selected circle/arc the
@@ -420,7 +431,7 @@ function cTangent(): void {
 
 /** One circle or arc takes its radius; several are all given the same one. */
 async function cRadius(circles: (Circle | Arc)[]): Promise<void> {
-  const v = await askNumber('Radius', 'Radius', Math.abs(circles[0].radius.value));
+  const v = await askDimension('Radius', 'Radius', Math.abs(circles[0].radius.value));
   if (v === null) return;
   view.addConstraints(...circles.map((cc) => new C.Radius(cc, v)));
 }
@@ -872,9 +883,11 @@ window.addEventListener('keydown', (e) => {
     }
     return;
   }
-  // shift is part of the token, so ⇧L is Perpendicular and never the Line tool
+  // shift is part of the token, so ⇧L is Perpendicular and never the Line tool.  The key is
+  // taken: an action that opens a dialog has focused its text field by the time the browser
+  // would insert the character, and would find a stray letter in it
   const action = ACTION_KEYS.get(e.shiftKey ? `⇧${k}` : k);
-  if (action) { action(); return; }
+  if (action) { e.preventDefault(); action(); return; }
   if (!e.shiftKey && TOOL_KEYS[k]) view.setTool(TOOL_KEYS[k]);
 });
 

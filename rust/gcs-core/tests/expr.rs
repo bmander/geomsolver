@@ -288,6 +288,23 @@ fn the_binding_record_keeps_numbers_and_adds_the_text() {
     let bad = gcs_core::json::parse(
         r#"{"type": "Distance", "args": [["point", 0], ["point", 1], "w +"]}"#).unwrap();
     assert!(report::constraint_from_json(&sk, &bad).is_err());
+    // a bare number as text is a constant, in the units a person writes — the rule a dimension
+    // typed into the app at creation follows, the same as `set_dimension`'s
+    let num = gcs_core::json::parse(
+        r#"{"type": "Distance", "args": [["point", 0], ["point", 1], " 7 "]}"#).unwrap();
+    assert_eq!(report::constraint_from_json(&sk, &num).unwrap().args[2], Arg::Num(7.0));
+    let mut sk2 = Sketch::new();
+    let l1 = sk2.line_xy(0.0, 0.0, 10.0, 0.0, "l1");
+    let l2 = sk2.line_xy(0.0, 0.0, 10.0, 5.0, "l2");
+    let ang = gcs_core::json::parse(
+        r#"{"type": "Angle", "args": [["line", 0], ["line", 1], "30"]}"#).unwrap();
+    let _ = (l1, l2);
+    assert_eq!(report::constraint_from_json(&sk2, &ang).unwrap().args[2],
+               Arg::Num(30f64.to_radians()));
+    let ang = gcs_core::json::parse(
+        r#"{"type": "Angle", "args": [["line", 0], ["line", 1], "a = 30"]}"#).unwrap();
+    let id = sk2.add(report::constraint_from_json(&sk2, &ang).unwrap());
+    assert!((value(&sk2, id) - 30f64.to_radians()).abs() < 1e-12);
     // the report lists them in evaluation order
     let items = report::exprs_json(&mut sk);
     let texts: Vec<&str> = items.arr().iter().map(|it| it.get("text").unwrap().as_str()).collect();

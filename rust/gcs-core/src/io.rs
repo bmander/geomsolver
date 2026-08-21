@@ -40,7 +40,10 @@ fn arg_from_json(sk: &Sketch, kind: SpecKind, v: &Json) -> Result<Arg, String> {
         k if k.is_dimension() && !matches!(v, Json::Num(_) | Json::Int(_)) => {
             // `{"expr": text, "value": n}` as saved, or a bare string as a person writes one
             let (text, value) = match v {
-                Json::Str(s) => (s.clone(), 0.0),
+                Json::Str(s) => match expr::literal(s) {
+                    Some(n) => return Ok(Arg::Num(expr::to_arg_units(k, n))),   // `"30"`: a number
+                    None => (s.trim().to_string(), 0.0),
+                },
                 Json::Obj(_) => match v.get("expr") {
                     Some(Json::Str(s)) => (s.clone(), v.get("value").map(|x| x.as_f64()).unwrap_or(0.0)),
                     _ => return Err("a dimension is a number, a string or {\"expr\": ...}".into()),

@@ -1220,11 +1220,14 @@ test('editing one dimension moves every proxy that reads it', () => {
   // a cycle is named
   cs[0].setDimension('d', 'w = h');
   assert.match(expressions(sk).find((it) => it.id === cs[0].id)?.error ?? '', /circular/);
-  // angles are written in degrees
+  // angles are written in degrees — as text at construction too, where a bare number is a
+  // constant under the same rule (what the Dimension tool sends)
   const sk2 = new Sketch();
   const l1 = sk2.lineXY(0, 0, 10, 0), l2 = sk2.lineXY(0, 0, 10, 5);
-  const ang = new C.Angle(l1, l2, 0);
+  const ang = new C.Angle(l1, l2, '30');
   sk2.add(ang);
+  assert.ok(Math.abs(num(ang.theta) - Math.PI / 6) < 1e-12);
+  assert.equal(ang.expr('theta'), null);
   ang.setDimension('theta', 'a = 30');
   assert.ok(Math.abs(num(ang.theta) - Math.PI / 6) < 1e-12);
   assert.equal(expressions(sk2)[0].value, 30);

@@ -488,11 +488,16 @@ pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String>
             (crate::constraints::SpecKind::Int, _) => Arg::Int(a.as_i64()),
             (crate::constraints::SpecKind::Bool, _) => Arg::Bool(a.as_bool()),
             (crate::constraints::SpecKind::Str, _) => Arg::Str(a.as_str().to_string()),
-            // a dimension may arrive as text — `"w = 1"` — and is evaluated once it is added
-            (k, Json::Str(text)) if k.is_dimension() => {
-                crate::expr::parse(text)?;
-                Arg::Expr(crate::expr::Expr { text: text.clone(), value: 0.0 })
-            }
+            // a dimension may arrive as text, under `set_dimension`'s rule: a bare number is a
+            // constant in the units a person writes (degrees for an angle), anything else an
+            // expression — `"w = 1"` — evaluated once it is added
+            (k, Json::Str(text)) if k.is_dimension() => match crate::expr::literal(text) {
+                Some(v) => Arg::Num(crate::expr::to_arg_units(*k, v)),
+                None => {
+                    crate::expr::parse(text)?;
+                    Arg::Expr(crate::expr::Expr { text: text.trim().to_string(), value: 0.0 })
+                }
+            },
             _ => Arg::Num(a.as_f64()),
         });
     }
