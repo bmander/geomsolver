@@ -165,8 +165,14 @@ export function pppTriangles(solver: PlanSolver): Triangle[] {
 /** DCM-style drag: the dragged point joins the ground and the cached plan replays per frame — no
  *  graph analysis while dragging, recorded roots are sticky, and under-constrained roots move
  *  least.  If the plan cannot determine the sketch with the point pinned (fully constrained
- *  sketches, unsupported constraints) the numeric pull/polish `Drag` takes over. */
+ *  sketches, unsupported constraints) the numeric pull/polish `Drag` takes over.
+ *
+ *  The core builds all of it on the dragged point's *part* of the document — what is connected to
+ *  it — and writes each frame back, so the document is never restructured by a drag and figures
+ *  unrelated to the point cost it nothing. */
 export class PlanDrag {
+  /** Drags made and not yet ended — a handle that outlives its gesture shows up here. */
+  static live = 0;
   private handle: number;
   active = true;
 
@@ -174,7 +180,7 @@ export class PlanDrag {
               guards: Triangle[] | null = null, maxStepRel = 0.05) {
     this.handle = guardBuffer(guards, (ptr, n) =>
       core().gcs_plan_drag_new(sketch.handle, point.index, x, y, ptr, n, maxStepRel));
-    sketch.touch();
+    PlanDrag.live += 1;
   }
 
   /** True while the cached plan is driving the drag (false once it handed over). */
@@ -226,8 +232,8 @@ export class PlanDrag {
   end(): void {
     if (!this.active) return;
     this.active = false;
+    PlanDrag.live -= 1;
     core().gcs_plan_drag_end(this.handle, this.sketch.handle);
-    this.sketch.touch();
     core().gcs_plan_drag_free(this.handle);
     this.handle = 0;
   }

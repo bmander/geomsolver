@@ -195,7 +195,8 @@ pub struct Drag {
     pub guards: Vec<Triangle>,
     pub flips: Vec<Triangle>,
     signs: Vec<bool>,
-    max_step: f64,
+    /// Continuation increment; `PlanDrag` sets it from the document rather than the part.
+    pub(crate) max_step: f64,
     last_good: Vec<f64>,
 }
 

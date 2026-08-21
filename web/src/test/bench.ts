@@ -75,6 +75,8 @@ const CASES: [string, Make][] = [
   ['truss(50)', () => examples.truss(50)],
   ['truss(200)', () => examples.truss(200)],
   ['polygon_chain(12)', () => examples.polygonChain(12)],
+  ['zigzag(32)', () => examples.zigzag(32, 1)],
+  ['zigzag(32x3)', () => examples.zigzag(32, 3)],
 ];
 
 export interface BenchLine {

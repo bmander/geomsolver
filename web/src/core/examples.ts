@@ -25,6 +25,8 @@ export const altitudes = (): Sketch => build('altitudes');
 export const parallels = (): Sketch => build('parallels');
 export const k33 = (seed = 3): Sketch => build(`k33:${seed}`);
 export const laman = (n = 10, seed = 0): Sketch => build(`laman:${n}:${seed}`);
+/** `copies` separate staircases of `n` free-length H/V segments: a drag must cost one figure. */
+export const zigzag = (n = 32, copies = 1): Sketch => build(`zigzag:${n}:${copies}`);
 
 /** A random Laman graph's edges by Henneberg construction — the property-test generator. */
 export function hennebergEdges(n: number, seed = 0): [number, number][] {

@@ -11,6 +11,7 @@ import { Constraint } from '../core/constraints.js';
 import * as io from '../core/io.js';
 import { Sketch } from '../core/model.js';
 import { callouts } from '../core/callout.js';
+import { PlanDrag } from '../core/decompose.js';
 import { SketchView } from '../app/view.js';
 import { initCore } from '../core/wasm.js';
 import { fakeCanvas, pointer } from './canvas.js';
@@ -23,7 +24,7 @@ import { fakeCanvas, pointer } from './canvas.js';
 await initCore();
 
 /** A fixed base with one free apex, over-determined once the apex is pinned — so a drag on it
- *  takes the numeric path, which adds a soft drag target to the sketch. */
+ *  takes the numeric path, with a core handle of its own to keep alive and to free. */
 function pinnedApex(): Sketch {
   const sk = new Sketch();
   const a = sk.point(0, 0, true), b = sk.point(10, 0, true), c = sk.point(5, 4);
@@ -37,7 +38,6 @@ function viewOn(sk: Sketch): SketchView {
   return view;
 }
 
-const softCount = (sk: Sketch): number => sk.constraints.filter((c) => c.soft).length;
 
 test('a second pointer does not take over a live drag', () => {
   const sk = pinnedApex();
@@ -48,7 +48,7 @@ test('a second pointer does not take over a live drag', () => {
 
   cv.fire('pointerdown', pointer(sx, sy, { pointerId: 1 }));
   assert.deepEqual(view.selected, [apex]);
-  assert.equal(softCount(sk), 1, 'the drag should have added its target');
+  assert.equal(PlanDrag.live, 1, 'the drag should have a live handle');
 
   // a second finger, far from anything: on its own that would clear the selection and start a
   // rubber band, dropping the live drag with its core handle and its target still in the sketch
@@ -56,10 +56,10 @@ test('a second pointer does not take over a live drag', () => {
   cv.fire('pointermove', pointer(sx + 320, sy + 320, { pointerId: 2 }));
   cv.fire('pointerup', pointer(sx + 320, sy + 320, { pointerId: 2 }));
   assert.deepEqual(view.selected, [apex], 'the second pointer took over');
-  assert.equal(softCount(sk), 1, 'the first drag was dropped without ending');
+  assert.equal(PlanDrag.live, 1, 'the first drag was dropped without ending');
 
   cv.fire('pointerup', pointer(sx, sy, { pointerId: 1 }));
-  assert.equal(softCount(sk), 0, 'ending the drag has to take its target with it');
+  assert.equal(PlanDrag.live, 0, 'ending the drag has to free its handle');
 });
 
 test('a cancelled pointer ends the drag it owned', () => {
@@ -69,15 +69,15 @@ test('a cancelled pointer ends the drag it owned', () => {
   const [sx, sy] = view.w2s(...sk.points[2].xy);
 
   cv.fire('pointerdown', pointer(sx, sy, { pointerId: 1 }));
-  assert.equal(softCount(sk), 1);
+  assert.equal(PlanDrag.live, 1);
   cv.fire('pointercancel', pointer(sx, sy, { pointerId: 1 }));
-  assert.equal(softCount(sk), 0, 'a cancelled touch left the drag target behind');
+  assert.equal(PlanDrag.live, 0, 'a cancelled touch left the drag behind');
 
   // and the view is usable afterwards: a fresh press starts a fresh drag
   cv.fire('pointerdown', pointer(sx, sy, { pointerId: 3 }));
-  assert.equal(softCount(sk), 1);
+  assert.equal(PlanDrag.live, 1);
   cv.fire('pointerup', pointer(sx, sy, { pointerId: 3 }));
-  assert.equal(softCount(sk), 0);
+  assert.equal(PlanDrag.live, 0);
 });
 
 test('losing pointer capture ends the drag too', () => {
@@ -87,9 +87,9 @@ test('losing pointer capture ends the drag too', () => {
   const [sx, sy] = view.w2s(...sk.points[2].xy);
 
   cv.fire('pointerdown', pointer(sx, sy, { pointerId: 1 }));
-  assert.equal(softCount(sk), 1);
+  assert.equal(PlanDrag.live, 1);
   cv.fire('lostpointercapture', pointer(sx, sy, { pointerId: 1 }));
-  assert.equal(softCount(sk), 0);
+  assert.equal(PlanDrag.live, 0);
 });
 
 /* -- dimension callouts ---------------------------------------------------------------- */

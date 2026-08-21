@@ -56,6 +56,13 @@ def truss_floating(bays: int = 8) -> Sketch:
     return build(f"truss_floating:{bays}")
 
 
+def zigzag(n: int = 32, copies: int = 1) -> Sketch:
+    """`copies` separate staircases of `n` points, every segment alternately vertical and
+    horizontal and nothing else: the sketch that finds any cost going with the document rather
+    than with the figure being dragged."""
+    return build(f"zigzag:{n}:{copies}")
+
+
 def impossible_triangle() -> Sketch:
     return build("impossible_triangle")
 
@@ -103,4 +110,4 @@ def cases() -> list[dict[str, Any]]:
 __all__ = ["EXAMPLES", "altitudes", "henneberg_edges", "build", "cases", "impossible_triangle", "k33", "laman",
            "parallels", "perturb", "polygon_chain", "rect_fillets", "rect_fillets_conflict",
            "rect_fillets_under", "slotted_link", "truss", "truss_conflict", "truss_floating",
-           "truss_redundant"]
+           "truss_redundant", "zigzag"]

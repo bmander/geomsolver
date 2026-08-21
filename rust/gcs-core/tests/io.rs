@@ -571,3 +571,56 @@ fn a_clipboard_is_a_document() {
     assert_eq!(fresh.points.len(), sk.points.len());
     assert_eq!(fresh.user_constraints().len(), sk.user_constraints().len());
 }
+
+/// The part around a point is what a drag of it can move: reached through shared points and
+/// constraints, and stopping at fixed entities — a wall comes along (a constraint naming it keeps
+/// all of its entities) but nothing is reached through it.  What it exchanges by point index
+/// crosses through its maps, and writing back moves only what it holds.
+#[test]
+fn a_part_stops_at_a_wall_and_writes_back_only_itself() {
+    use gcs_core::decompose::branch_key;
+    use gcs_core::io::Part;
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, false, "a");
+    let w = sk.point(10.0, 0.0, true, "w");
+    let b = sk.point(20.0, 0.0, false, "b");
+    let c = sk.point(30.0, 5.0, false, "c");
+    let lone = sk.point(50.0, 50.0, false, "lone");
+    let l1 = sk.line(a, w);
+    sk.line(w, b);
+    sk.add(Constraint::one_line(CKind::Horizontal, EntRef::line(l1)));
+    sk.add(Constraint::distance(EntRef::point(b), EntRef::point(c), 7.0));
+    sk.branches.insert(branch_key([w, b, c]), -1);
+
+    let left = Part::around(&sk, EntRef::point(a));
+    assert_eq!((left.sketch.points.len(), left.sketch.lines.len()), (2, 1));
+    assert_eq!(left.sketch.user_constraints().len(), 1);
+    assert!(left.sketch.point_fixed(left.point_in(w).unwrap()));
+    assert_eq!(left.point_in(b), None);
+    assert_eq!(left.point_out(left.point_in(a).unwrap()), a);
+    assert!(left.sketch.branches.is_empty());
+
+    let mut right = Part::around(&sk, EntRef::point(b));
+    assert_eq!((right.sketch.points.len(), right.sketch.lines.len()), (3, 1));
+    assert_eq!(right.sketch.user_constraints()[0].kind, CKind::Distance);
+    assert_eq!(right.point_in(a), None);
+    assert_eq!(right.point_in(lone), None);
+    assert_eq!(right.sketch.lines[0].p2 as usize, right.point_in(b).unwrap());
+    assert_eq!(right.triangle_in((a, b, c)), None);
+    let t = right.triangle_in((w, b, c)).unwrap();
+    assert_eq!(right.triangle_out(t), (w, b, c));
+    assert_eq!(right.sketch.branches.len(), 1);
+    assert_eq!(right.branches_out(&right.sketch.branches), sk.branches);
+
+    let pb = right.point_in(b).unwrap();
+    let px = right.sketch.points[pb].x as usize;
+    right.sketch.params[px].value = 99.0;
+    let before = sk.get_x();
+    right.write_back(&mut sk);
+    assert_eq!(sk.point_xy(b).0, 99.0);
+    let bx = sk.points[b].x as usize;
+    for (i, (p, q)) in before.iter().zip(sk.get_x()).enumerate() {
+        assert!(i == bx || *p == q, "param {i} moved");
+    }
+    assert_eq!(sk.points.len(), 5, "the document was restructured");
+}

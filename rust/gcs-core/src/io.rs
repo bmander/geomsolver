@@ -9,7 +9,7 @@ use crate::constraints::{Arg, CKind, Constraint, SpecKind};
 use crate::decompose;
 use crate::json::{fmt_g, object, parse, Json};
 use crate::model::{expand, EntKind, EntRef, Sketch};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// `P0` / `L3` / `C1` / `A2` — the short label the UI and `describe` use.
 pub fn entity_name(e: EntRef) -> String {
@@ -238,12 +238,14 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     let fresh = base == 0;   // a rebuild owns the whole document; a paste only adds to it
     let mut made = Vec::new();
     let mut keep_pts = Vec::new();
+    let mut pt_map: Vec<Option<usize>> = vec![None; src.points.len()];
     for i in 0..src.points.len() {
         if keep(EntRef::point(i)) {
+            pt_map[i] = Some(base + keep_pts.len());
             keep_pts.push(i);
         }
     }
-    let pt_index = |i: usize| keep_pts.iter().position(|&p| p == i).map(|n| base + n);
+    let pt_index = |i: usize| pt_map[i];
     for &i in &keep_pts {
         let (x, y) = src.point_xy(i);
         let n = dst.point(x + offset.0, y + offset.1, src.point_fixed(i),
@@ -378,6 +380,126 @@ pub fn copy(sk: &Sketch, entities: &[EntRef]) -> Sketch {
 /// there, so it can be put where it belongs before being tied down.
 pub fn paste(sk: &mut Sketch, clip: &Sketch, dx: f64, dy: f64) -> Vec<EntRef> {
     graft(sk, clip, &|_| true, &[], (dx, dy))
+}
+
+/// The part of a sketch one gesture can move, as a sketch of its own.
+///
+/// Dragging a point can only move what is connected to it: the entities it belongs to, what
+/// shares their points, what a constraint ties to those — and nothing past a fixed entity,
+/// which does not move whatever is done on its other side.  Everything else in the document is
+/// unaffected by the drag, so it is not worth compiling, decomposing or solving for it; a drag
+/// on a sketch of many separate figures costs what the one figure costs.
+///
+/// The part is made by the same rebuild walk as deletion, copying and pasting (`graft`), so it is
+/// an ordinary sketch: the plan and the systems are built on it unchanged, and the gesture writes
+/// the moved parameters back through `write_back`.  Point indices differ between the two, so the
+/// things a drag exchanges with its caller by point index — guard triangles, recorded flips,
+/// branch keys — go through `point_in` / `point_out`.
+pub struct Part {
+    pub sketch: Sketch,
+    /// part point index → document point index
+    to_doc: Vec<usize>,
+    /// document point index → part point index, where it came along
+    to_part: Vec<Option<usize>>,
+    /// (part param, document param) for every parameter of the part
+    params: Vec<(usize, usize)>,
+}
+
+impl Part {
+    /// The part around `seed`.  A fixed entity is a wall: it comes along (a constraint naming
+    /// it must keep all of its entities) but nothing is reached through it.
+    pub fn around(sk: &Sketch, seed: EntRef) -> Part {
+        let prims = sk.primitives();
+        // who contains a point, and which constraints name an entity
+        let mut parents: Vec<Vec<EntRef>> = vec![Vec::new(); sk.points.len()];
+        for &e in &prims {
+            for c in sk.children(e) {
+                parents[c.i()].push(e);
+            }
+        }
+        let mut named: BTreeMap<EntRef, Vec<usize>> = BTreeMap::new();
+        for (ci, c) in sk.constraints.iter().enumerate() {
+            for e in c.entities() {
+                named.entry(e).or_default().push(ci);
+            }
+        }
+        let wall = |e: EntRef| sk.entity_params(e).iter().all(|&p| sk.params[p as usize].fixed);
+        let mut keep: BTreeSet<EntRef> = BTreeSet::new();
+        let mut queue = vec![seed];
+        keep.insert(seed);
+        while let Some(e) = queue.pop() {
+            if wall(e) {
+                continue;
+            }
+            let mut next = sk.children(e);
+            if e.kind == EntKind::Point {
+                next.extend(parents[e.i()].iter().copied());
+            }
+            for &ci in named.get(&e).map(|v| v.as_slice()).unwrap_or(&[]) {
+                next.extend(sk.constraints[ci].entities());
+            }
+            for n in next {
+                if keep.insert(n) {
+                    queue.push(n);
+                }
+            }
+        }
+        let mut sketch = Sketch::new();
+        let made = graft(&mut sketch, sk, &|e| keep.contains(&e), &[], (0.0, 0.0));
+        // `graft` makes entities kind by kind in document order, which is `primitives` order
+        let srcs: Vec<EntRef> = prims.into_iter().filter(|e| keep.contains(e)).collect();
+        debug_assert_eq!(srcs.len(), made.len());
+        let mut to_doc = Vec::new();
+        let mut to_part = vec![None; sk.points.len()];
+        let mut params = Vec::new();
+        for (&s, &m) in srcs.iter().zip(&made) {
+            if s.kind == EntKind::Point {
+                to_part[s.i()] = Some(m.i());
+                to_doc.push(s.i());
+            }
+            for (a, b) in sketch.entity_params(m).into_iter().zip(sk.entity_params(s)) {
+                params.push((a as usize, b as usize));
+            }
+        }
+        Part { sketch, to_doc, to_part, params }
+    }
+
+    /// A document point's index in the part, if it came along.
+    pub fn point_in(&self, doc: usize) -> Option<usize> {
+        self.to_part.get(doc).copied().flatten()
+    }
+
+    /// A part point's index in the document.
+    pub fn point_out(&self, part: usize) -> usize {
+        self.to_doc[part]
+    }
+
+    /// A triangle of document points as part points — `None` if any did not come along.
+    pub fn triangle_in(&self, t: (usize, usize, usize)) -> Option<(usize, usize, usize)> {
+        Some((self.point_in(t.0)?, self.point_in(t.1)?, self.point_in(t.2)?))
+    }
+
+    pub fn triangle_out(&self, t: (usize, usize, usize)) -> (usize, usize, usize) {
+        (self.point_out(t.0), self.point_out(t.1), self.point_out(t.2))
+    }
+
+    /// Recorded root choices of the part, keyed as the document keys them.
+    pub fn branches_out(&self, b: &BTreeMap<String, i32>) -> BTreeMap<String, i32> {
+        b.iter()
+            .map(|(k, &v)| match decompose::branch_key_points(k) {
+                Some(p) => (decompose::branch_key([self.point_out(p[0]), self.point_out(p[1]),
+                                                   self.point_out(p[2])]), v),
+                None => (k.clone(), v),
+            })
+            .collect()
+    }
+
+    /// Copy the part's parameter values back into the document it came from.
+    pub fn write_back(&self, sk: &mut Sketch) {
+        for &(a, b) in &self.params {
+            sk.params[b].value = self.sketch.params[a].value;
+        }
+    }
 }
 
 /// One argument as a person reads it: an entity by name, an angle in degrees, everything else as

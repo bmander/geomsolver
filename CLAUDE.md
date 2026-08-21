@@ -82,6 +82,18 @@ Conventions:
   into the constraint list (ids are not stable across a load).  The number a dimension states
   comes from `io::dimension_text`, so the drawing and the constraint list cannot print it
   differently.
+- A drag is an operation on the dragged point's *part* of the document (`io::Part`): what is
+  reached from it through shared points and constraints, stopping at fixed entities.  `PlanDrag`
+  builds its plan, systems and numeric fallback on that part alone and writes each frame back, so
+  a drag costs the figure, never the document, and separate figures cost it nothing; anything a
+  drag exchanges by point index (guards, flips, branch keys) crosses through the part's maps.
+- In `decompose`, a direction class is a *relation*, not an *adjacency*: merge candidates, the
+  worklist refresh and the core frontier come from shared elements (`neighbours`), and the class
+  counts toward a candidate's rank once it is on the table (`pair_rel`, `relation_bound`).
+  `Horizontal`/`Vertical` put every levelled line in one class, so counting it as adjacency made
+  every cluster a neighbour of every other.  `relation_bound` must stay an upper bound on the
+  merge rank (an under-count loses a determined merge to the numeric fallback): validate a change
+  by forcing the factorisation on every call and asserting `rank <= bound` across the cases.
 - `solve::Drag` is the one point-drag implementation (pull + polish), `RadiusDrag` its scalar
   counterpart for circle/arc radii (a `Radius` with `soft` set — its residual is already
   r − target, so no kernel of its own); the front end only translates coordinates.

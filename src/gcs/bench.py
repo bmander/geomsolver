@@ -13,8 +13,8 @@ from collections.abc import Callable
 
 import numpy as np
 
-from gcs.decompose import PlanSolver
-from gcs.examples import EXAMPLES, perturb, truss, truss_floating
+from gcs.decompose import PlanDrag, PlanSolver
+from gcs.examples import EXAMPLES, perturb, truss, truss_floating, zigzag
 from gcs.model import Sketch
 from gcs.solve import METHODS, Drag, Method, System
 
@@ -58,6 +58,22 @@ def bench_drag(sk: Sketch, frames: int = 20) -> tuple[float, bool]:
         ts.append(res.time_s)
     d.end()
     return float(np.median(ts)) * 1e3, bool(res and res.success)
+
+
+def bench_plan_drag(sk: Sketch, point_index: int, frames: int = 20) -> tuple[float, float]:
+    """(drag start ms, median frame ms) of the app's drag on `point_index`."""
+    p = sk.points[point_index]
+    x, y = p.xy
+    t0 = time.perf_counter()
+    d = PlanDrag(sk, p, x, y)
+    start = time.perf_counter() - t0
+    ts = []
+    for i in range(frames):
+        t0 = time.perf_counter()
+        d.move(x + 2.0 * np.cos(0.3 * i), y + 2.0 * np.sin(0.3 * i))
+        ts.append(time.perf_counter() - t0)
+    d.end()
+    return start * 1e3, float(np.median(ts)) * 1e3
 
 
 def main() -> None:
@@ -104,6 +120,13 @@ def main() -> None:
         print(f"truss({bays:3d}) {ents:5d} entities: fully constrained {ms:6.1f} ms "
               f"({1e3 / ms:4.0f} fps) | floating rigid {ms2:6.1f} ms ({1e3 / ms2:4.0f} fps) "
               f"{'ok' if ok and ok2 else 'BAD'}", flush=True)
+
+    print("\n== drag of one figure among many (PlanDrag start + frame): the cost of the figure ==")
+    for n, copies in ((32, 1), (32, 3), (32, 30), (128, 1)):
+        sk = zigzag(n, copies)
+        start, frame = bench_plan_drag(sk, n // 2)   # a point of the first staircase
+        print(f"zigzag {n:3d} x {copies:2d} ({len(sk.points):5d} points): start {start:6.2f} ms | "
+              f"frame {frame:6.3f} ms", flush=True)
 
 
 if __name__ == "__main__":

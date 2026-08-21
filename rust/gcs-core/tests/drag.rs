@@ -54,7 +54,7 @@ fn run_trajectory(
         prev = now;
     }
     let info = TrajectoryInfo { flips: drag.flips().len(), on_plan: drag.usable() };
-    drag.end(sk);
+    drag.end();
     info
 }
 
@@ -117,7 +117,7 @@ fn a_fully_constrained_apex_never_jumps_across_the_base() {
     sk.add(Constraint::distance(EntRef::point(a), EntRef::point(c), 6.0));
     sk.add(Constraint::distance(EntRef::point(b), EntRef::point(c), 6.0));
     let (x, y) = sk.point_xy(c);
-    let mut d = PlanDrag::new(&mut sk, c, x, y, None, 0.05);
+    let mut d = PlanDrag::new(&sk, c, x, y, None, 0.05);
     // pinning the apex over-determines the sketch: the numeric path with guards takes over
     assert!(d.numeric.is_some());
     assert!(!d.numeric.as_ref().unwrap().guards.is_empty());
@@ -127,7 +127,7 @@ fn a_fully_constrained_apex_never_jumps_across_the_base() {
         d.move_to(&mut sk, 5.0, yy);
         ys.push(sk.point_xy(c).1);
     }
-    d.end(&mut sk);
+    d.end();
     assert!(d.flips().is_empty());
     assert!(ys.iter().cloned().fold(f64::INFINITY, f64::min) > 3.0);
     assert!(ys.iter().cloned().fold(f64::NEG_INFINITY, f64::max) < 3.5);
@@ -180,9 +180,9 @@ fn continuation_subdivides_large_moves() {
     let mut sk = examples::truss_floating(4);
     let p = 2;
     let (x, y) = sk.point_xy(p);
-    let mut d = PlanDrag::new(&mut sk, p, x, y, None, 0.05);
+    let mut d = PlanDrag::new(&sk, p, x, y, None, 0.05);
     let res = d.move_to(&mut sk, x + 200.0, y); // far beyond one increment
-    d.end(&mut sk);
+    d.end();
     assert!(res.success && res.nfev > 1);
 }
 
@@ -275,4 +275,46 @@ fn a_flip_in_the_first_half_is_bisected_not_re_tested() {
     let (cx, cy) = sk.point_xy(c);
     assert!(cy < 0.0, "it did not cross at all: {:?}", (cx, cy));
     assert!(cy > -1.0, "it overshot the crossing: {:?}", (cx, cy));
+}
+
+/// A drag is built on the dragged point's part of the document — what is connected to it — and
+/// solves, decomposes and writes only that.  Dragging a point of the middle of three separate
+/// staircases is, parameter for parameter, dragging a lone staircase: the other two are never
+/// touched, and the systems are the lone one's size.
+#[test]
+fn a_drag_costs_the_figure_not_the_document() {
+    let n = 16;
+    let mut one = examples::zigzag(n, 1);
+    let mut three = examples::zigzag(n, 3);
+    let (p1, p3) = (n / 2, n + n / 2); // the same point of the lone chain and of the middle one
+    let dx = three.point_xy(p3).0 - one.point_xy(p1).0;
+    let (x0, y0) = one.point_xy(p1);
+    let before = three.get_x();
+    let mut d1 = PlanDrag::new(&one, p1, x0, y0, None, 0.05);
+    let mut d3 = PlanDrag::new(&three, p3, x0 + dx, y0, None, 0.05);
+    assert_eq!(d3.part.sketch.points.len(), n);
+    assert_eq!(d3.solver.system.n_free, d1.solver.system.n_free);
+    assert_eq!(d3.solver.plan.steps.len(), d1.solver.plan.steps.len());
+    for i in 1..=12 {
+        let t = i as f64 * 0.4;
+        let (x, y) = (x0 + 6.0 * t.cos(), y0 + 4.0 * t.sin());
+        let r1 = d1.move_to(&mut one, x, y);
+        let r3 = d3.move_to(&mut three, x + dx, y);
+        assert_eq!(r1.success, r3.success);
+        for k in 0..n {
+            let (ax, ay) = one.point_xy(k);
+            let (bx, by) = three.point_xy(n + k);
+            assert!((ax + dx - bx).abs() < 1e-9 && (ay - by).abs() < 1e-9, "point {k} frame {i}");
+        }
+    }
+    d1.end();
+    d3.end();
+    let after = three.get_x();
+    let middle: Vec<u32> = (n..2 * n).flat_map(|k| three.point_params(k)).collect();
+    for (i, (a, b)) in before.iter().zip(&after).enumerate() {
+        if !middle.contains(&(i as u32)) {
+            assert_eq!(a, b, "param {i} outside the dragged figure was written");
+        }
+    }
+    assert!(three.constraints.len() == 3 * (n - 1), "the document itself was restructured");
 }

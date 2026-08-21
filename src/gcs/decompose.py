@@ -146,7 +146,8 @@ class PlanDrag:
     """DCM-style drag: the dragged point joins the ground and the cached plan replays per frame —
     no graph analysis while dragging, recorded roots are sticky, and under-constrained roots move
     least.  If the plan cannot determine the sketch with the point pinned, the numeric pull/polish
-    `Drag` takes over."""
+    `Drag` takes over.  The core builds all of it on the dragged point's part of the document —
+    what is connected to it — and writes each frame back, so unrelated figures cost it nothing."""
 
     def __init__(self, sketch: Sketch, point: Point, x: float, y: float,
                  guards: Sequence[Triangle] | None = None, max_step_rel: float = 0.05) -> None:

@@ -2164,11 +2164,11 @@ pub unsafe extern "C" fn gcs_plan_drag_branches_json(d: *mut PlanDrag) -> *mut u
 #[no_mangle]
 pub unsafe extern "C" fn gcs_plan_drag_guards(
     d: *mut PlanDrag,
-    h: *mut Sketch,
+    _h: *mut Sketch,
     out: *mut i32,
 ) -> i32 {
     guard(-1, move || {
-        let g = (*d).guard_triangles(sk(h));
+        let g = (*d).guard_triangles();
         for (i, t) in g.iter().enumerate() {
             *out.add(3 * i) = t.0 as i32;
             *out.add(3 * i + 1) = t.1 as i32;
@@ -2179,9 +2179,9 @@ pub unsafe extern "C" fn gcs_plan_drag_guards(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn gcs_plan_drag_end(d: *mut PlanDrag, h: *mut Sketch) {
+pub unsafe extern "C" fn gcs_plan_drag_end(d: *mut PlanDrag, _h: *mut Sketch) {
     guard((), move || {
-        (*d).end(sk(h));
+        (*d).end();
     })
 }
 

@@ -24,6 +24,7 @@ use crate::cgraph::{
 };
 use crate::graph::dulmage_mendelsohn;
 use crate::linalg::{absmax, min_norm_solve, rank_rrqr, Mat};
+use crate::io::Part;
 use crate::model::{increments, orientation, EntRef, Sketch};
 use crate::newton::{self, Method, Tol, TrustRegion};
 use crate::rng::Rng;
@@ -553,7 +554,6 @@ struct Decomposer {
     droot: BTreeMap<El, El>,
     clusters: BTreeMap<usize, Cluster>,
     of: BTreeMap<El, BTreeSet<usize>>,
-    dir_of: BTreeMap<El, BTreeSet<usize>>,
     cdirs: BTreeMap<usize, BTreeMap<El, El>>,
     next_id: usize,
     rel_memo: BTreeMap<(usize, usize), (Vec<El>, Vec<(El, El, f64)>)>,
@@ -571,7 +571,6 @@ impl Decomposer {
             self.of.entry(e).or_default().insert(cid);
             if !e.is_point() {
                 let r = self.droot[&e];
-                self.dir_of.entry(r).or_default().insert(cid);
                 let cd = self.cdirs.entry(cid).or_default();
                 cd.entry(r).or_insert(e);
             }
@@ -600,13 +599,7 @@ impl Decomposer {
                 s.remove(&cid);
             }
         }
-        if let Some(cd) = self.cdirs.remove(&cid) {
-            for r in cd.keys() {
-                if let Some(s) = self.dir_of.get_mut(r) {
-                    s.remove(&cid);
-                }
-            }
-        }
+        self.cdirs.remove(&cid);
         for key in self.rel_keys.remove(&cid).unwrap_or_default() {
             self.rel_memo.remove(&key);
         }
@@ -695,17 +688,24 @@ impl Decomposer {
     /// An upper bound on the rank of the merge system for `ids`, without building it.
     ///
     /// Both kinds of relation are transitive, and `relations` counts them pair by pair.  An
-    /// element that `m` of the clusters hold is one place, so it pins `2(m-1)` degrees of
-    /// freedom — not two for each of the `m(m-1)/2` pairs that mention it.  A direction class
-    /// that `n` of them carry pins `n-1` rotations, for the same reason: `Horizontal` and
-    /// `Vertical` tie a line to the ground x-axis, so every levelled line in a sketch lands in
-    /// one class, and `n` of them look like `n²/2` independent facts when they are `n`
-    /// restatements of "this line lies along that axis".
+    /// element that `m` of the clusters hold is one place, so it pins its degrees of freedom
+    /// `m-1` times over — not once for each of the `m(m-1)/2` pairs that mention it.  A shared
+    /// point pins two: its position.  A shared line pins its offset, one — its *direction* is
+    /// counted with its direction class, because that is what the relation is: a class that `n`
+    /// of the clusters carry pins `n-1` rotations whether they carry it as the same line or as
+    /// parallel ones.  `Horizontal` and `Vertical` tie a line to the ground x-axis, so every
+    /// levelled line in a sketch lands in one class, and `n` of them look like `n²/2` independent
+    /// facts when they are `n` restatements of "this line lies along that axis".
     ///
-    /// Not the tightest bound available: where two clusters share a *line*, its direction is
-    /// counted here as well as its position, which `pair_rel` knows to drop.  That makes the
-    /// bound generous, never small — a bound that under-counted would report a determined merge
-    /// as undetermined and silently lose it to the numeric fallback.
+    /// The bound must never be small: one that under-counted would report a determined merge as
+    /// undetermined and silently lose it to the numeric fallback.  It is not, because the merge
+    /// Jacobian's rows fall into exactly these three groups — point rows, line-offset rows,
+    /// direction rows — and the rank of a union of row sets is at most the sum of their ranks.
+    /// Within a group the rows of an element (or class) telescope: the pair rows for (i, k) are
+    /// the sum of those for (i, j) and (j, k), so `m` holders give at most `m-1` independent ones.
+    /// It is also tight where it matters: two clusters sharing one line and nothing else get 2
+    /// of the 3 they need, and are never worth a factorisation — which is every pair along a
+    /// levelled chain.
     fn relation_bound(&mut self, ids: &[usize]) -> usize {
         // scratch, kept between calls: this runs tens of thousands of times per decomposition
         let (mut els, mut roots) = (take(&mut self.el_buf), take(&mut self.root_buf));
@@ -715,7 +715,13 @@ impl Decomposer {
             els.extend(self.clusters[id].els.keys());
             roots.extend(self.cdirs[id].keys());
         }
-        let bound = 2 * repeats(&mut els) + repeats(&mut roots);
+        els.sort_unstable();
+        let mut bound = repeats(&mut roots);
+        for w in els.windows(2) {
+            if w[0] == w[1] {
+                bound += if w[0].is_point() { 2 } else { 1 };
+            }
+        }
         (self.el_buf, self.root_buf) = (els, roots);
         bound
     }
@@ -820,6 +826,18 @@ impl Decomposer {
         keep
     }
 
+    /// The clusters that share an *element* with `a` — the only ones a merge with `a` can ever
+    /// be determined with.
+    ///
+    /// Sharing a direction class alone does not make a neighbour.  Directions are translation
+    /// invariant, so a cluster whose only tie to the others is "my line is parallel to yours"
+    /// keeps both of its translations whatever else the set pins: it can never be part of a
+    /// determined merge, and is never worth proposing as one.  The relation still counts once
+    /// such a cluster *is* a candidate — `pair_rel` reads it off `cdirs` — it just does not
+    /// nominate candidates.  Counting it as adjacency did, and was ruinous: `Horizontal` and
+    /// `Vertical` put every levelled line in the ground x-axis's class, so in a levelled sketch
+    /// every cluster was a neighbour of every other, disjoint components included, and the
+    /// worklist tried O(N²) triples per cluster and re-queued the whole sketch after each merge.
     fn neighbours(&self, a: usize) -> BTreeSet<usize> {
         let mut nb = BTreeSet::new();
         for e in self.clusters[&a].els.keys() {
@@ -827,24 +845,21 @@ impl Decomposer {
                 nb.extend(s.iter().copied());
             }
         }
-        if let Some(cd) = self.cdirs.get(&a) {
-            for r in cd.keys() {
-                if let Some(s) = self.dir_of.get(r) {
-                    nb.extend(s.iter().copied());
-                }
-            }
-        }
         nb.remove(&a);
         nb
     }
 
+    /// The clusters no other cluster strictly contains.  A container holds every element of
+    /// the contained, so it is among the holders of its first one — `of` knows those, and the
+    /// check is local rather than a pass over every cluster for every cluster.
     fn maximal_clusters(&self) -> Vec<usize> {
-        let ids: Vec<usize> = self.clusters.keys().copied().collect();
-        ids.iter()
+        self.clusters
+            .keys()
             .copied()
             .filter(|&cid| {
                 let a = &self.clusters[&cid].els;
-                !ids.iter().any(|&o| {
+                let Some(first) = a.keys().next() else { return true };
+                !self.of[first].iter().any(|&o| {
                     if o == cid {
                         return false;
                     }
@@ -989,7 +1004,6 @@ pub fn decompose(graph: ConstraintGraph, seed: u32, core_max: usize) -> Plan {
         droot,
         clusters: BTreeMap::new(),
         of: elements.iter().map(|&e| (e, BTreeSet::new())).collect(),
-        dir_of: BTreeMap::new(),
         cdirs: BTreeMap::new(),
         next_id: 0,
         rel_memo: BTreeMap::new(),
@@ -1376,9 +1390,16 @@ pub fn ppp_triangles(plan: &Plan) -> Vec<Triangle> {
 /// under-constrained roots move least.  Large cursor jumps are taken in increments so the solution
 /// tracks its branch.  If the plan cannot determine the sketch with the point pinned (fully
 /// constrained sketches, unsupported constraints) the numeric pull/polish `Drag` takes over.
+///
+/// Everything here — the plan, the systems, the numeric fallback — is built on the dragged
+/// point's *part* of the document (`io::Part`), which is all a drag can move.  Each frame's
+/// result is written back into the document; the document itself is never recompiled or
+/// restructured by a drag, and its unrelated figures cost the drag nothing.
 pub struct PlanDrag {
+    pub part: Part,
     pub solver: PlanSolver,
     pub numeric: Option<Drag>,
+    /// The dragged point, as the part numbers it.
     pub point: usize,
     max_step: f64,
     guards: Option<Vec<Triangle>>,
@@ -1386,14 +1407,21 @@ pub struct PlanDrag {
 
 impl PlanDrag {
     pub fn new(
-        sk: &mut Sketch,
+        doc: &Sketch,
         point: usize,
         x: f64,
         y: f64,
         guards: Option<Vec<Triangle>>,
         max_step_rel: f64,
     ) -> PlanDrag {
-        let max_step = max_step_rel * sk.extent().max(1.0);
+        // continuation increments are cursor motion relative to the drawing, so the document's
+        // extent sets them, whatever the part's own size
+        let max_step = max_step_rel * doc.extent().max(1.0);
+        let mut part = Part::around(doc, EntRef::point(point));
+        let guards: Option<Vec<Triangle>> =
+            guards.map(|g| g.iter().filter_map(|&t| part.triangle_in(t)).collect());
+        let point = part.point_in(point).expect("the dragged point is in its own part");
+        let sk = &mut part.sketch;
         let x0 = sk.get_x();
         let was = sk.point_fixed(point);
         sk.fix_point(point, true);
@@ -1409,14 +1437,21 @@ impl PlanDrag {
             && !over
             && replay(&mut solver, sk, point, px, py) <= 1e-9;
         sk.fix_point(point, was);
-        let mut d = PlanDrag { solver, numeric: None, point, max_step, guards };
+        let mut d = PlanDrag { part, solver, numeric: None, point, max_step, guards };
         if !usable {
-            sk.set_x(&x0);
-            let g = d.guard_triangles(sk);
-            d.numeric =
-                Some(Drag::new(sk, point, x, y, Method::DogLeg, 1.0, g, 0.05));
+            d.part.sketch.set_x(&x0);
+            let g = d.guard_triangles();
+            d.numeric = Some(d.numeric_drag(x, y, g));
         }
         d
+    }
+
+    /// The pull/polish drag over the part, stepping as the document's size asks.
+    fn numeric_drag(&mut self, x: f64, y: f64, guards: Vec<Triangle>) -> Drag {
+        let mut n =
+            Drag::new(&mut self.part.sketch, self.point, x, y, Method::DogLeg, 1.0, guards, 0.05);
+        n.max_step = self.max_step;
+        n
     }
 
     /// True while the cached plan is driving the drag (false once it handed over).
@@ -1424,16 +1459,25 @@ impl PlanDrag {
         self.numeric.is_none()
     }
 
-    /// Order-type invariants for the numeric path: the closed-form triangles of the sketch's own
-    /// (unpinned) plan.  Computed at most once per drag — never inside a move.
-    pub fn guard_triangles(&mut self, sk: &Sketch) -> Vec<Triangle> {
+    /// Order-type invariants for the numeric path: the closed-form triangles of the part's own
+    /// (unpinned) plan, as the part numbers them.  Computed at most once per drag — never inside
+    /// a move.
+    pub fn guard_triangles(&mut self) -> Vec<Triangle> {
         if self.guards.is_none() {
-            self.guards = Some(ppp_triangles(&decompose(build(sk), 0, 12)));
+            self.guards = Some(ppp_triangles(&decompose(build(&self.part.sketch), 0, 12)));
         }
         self.guards.clone().unwrap()
     }
 
-    pub fn move_to(&mut self, sk: &mut Sketch, x: f64, y: f64) -> SolveResult {
+    /// One frame: move the part, then write what moved back into the document.
+    pub fn move_to(&mut self, doc: &mut Sketch, x: f64, y: f64) -> SolveResult {
+        let r = self.move_part(x, y);
+        self.part.write_back(doc);
+        r
+    }
+
+    fn move_part(&mut self, x: f64, y: f64) -> SolveResult {
+        let sk = &mut self.part.sketch;
         if let Some(n) = &mut self.numeric {
             return n.move_to(sk, x, y);
         }
@@ -1447,9 +1491,9 @@ impl PlanDrag {
                 // the plan cannot follow (a limit of the geometry was hit): hand over to the
                 // numeric drag from the last good state
                 sk.set_x(&x_prev);
-                let g = self.guard_triangles(sk);
-                let mut d = Drag::new(sk, self.point, px, py, Method::DogLeg, 1.0, g, 0.05);
-                let r = d.move_to(sk, x, y);
+                let g = self.guard_triangles();
+                let mut d = self.numeric_drag(px, py, g);
+                let r = d.move_to(&mut self.part.sketch, x, y);
                 self.numeric = Some(d);
                 return r;
             }
@@ -1459,18 +1503,23 @@ impl PlanDrag {
         r
     }
 
-    pub fn end(&mut self, sk: &mut Sketch) {
+    pub fn end(&mut self) {
         if let Some(n) = &mut self.numeric {
-            n.end(sk);
+            n.end(&mut self.part.sketch);
         }
     }
 
+    /// Triangles whose orientation flipped during the drag, as the document numbers them.
     pub fn flips(&self) -> Vec<Triangle> {
-        self.numeric.as_ref().map(|n| n.flips.clone()).unwrap_or_default()
+        match &self.numeric {
+            Some(n) => n.flips.iter().map(|&t| self.part.triangle_out(t)).collect(),
+            None => Vec::new(),
+        }
     }
 
+    /// The plan's recorded root choices, keyed as the document keys them.
     pub fn branches(&self) -> BTreeMap<String, i32> {
-        self.solver.plan.branches()
+        self.part.branches_out(&self.solver.plan.branches())
     }
 }
 

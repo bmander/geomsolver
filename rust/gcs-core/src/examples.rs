@@ -378,6 +378,29 @@ pub fn parallels() -> Sketch {
 pub const EXAMPLES: [&str; 4] = ["rect_fillets", "slotted_link", "truss", "polygon_chain"];
 
 /// Build a named example.  `None` for an unknown name.
+/// `copies` disjoint chains of `n` points each, every segment alternately Vertical and Horizontal
+/// and nothing else: a staircase with all its lengths free.  Every levelled line is in the ground
+/// x-axis's direction class, which makes it the sketch that finds any cost that goes with the
+/// *class* rather than with the geometry — and `copies` of it find any cost that goes with the
+/// document rather than with the figure being dragged.
+pub fn zigzag(n: usize, copies: usize) -> Sketch {
+    let mut sk = Sketch::new();
+    for c in 0..copies {
+        let ox = c as f64 * (4.0 * n as f64);
+        let mut prev = sk.point(ox, 0.0, false, &format!("z{c}_0"));
+        for i in 1..n {
+            let (px, py) = sk.point_xy(prev);
+            let (x, y) = if i % 2 == 1 { (px, py + 5.0) } else { (px + 3.0, py) };
+            let p = sk.point(x, y, false, &format!("z{c}_{i}"));
+            let l = sk.line(prev, p);
+            let kind = if i % 2 == 1 { CKind::Vertical } else { CKind::Horizontal };
+            add(&mut sk, Constraint::one_line(kind, EntRef::line(l)));
+            prev = p;
+        }
+    }
+    sk
+}
+
 pub fn example(name: &str) -> Option<Sketch> {
     Some(match name {
         "rect_fillets" => rect_fillets(100.0, 60.0, 10.0, 0.0),
@@ -394,12 +417,13 @@ pub fn example(name: &str) -> Option<Sketch> {
         "parallels" => parallels(),
         "k33" => k33(3),
         "laman" => laman(10, 0, true),
+        "zigzag" => zigzag(32, 3),
         _ => return None,
     })
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 17] = [
+pub const CASES: [(&str, &str, &str); 18] = [
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Slotted link", "slotted_link", "obround slot with two holes; fully constrained"),
     ("Truss (8 bays)", "truss", "~30-entity Warren truss, every member dimensioned"),
@@ -417,6 +441,7 @@ pub const CASES: [(&str, &str, &str); 17] = [
     ("Random Laman #1", "laman1", "Henneberg-built; may need a core (Henneberg II)"),
     ("Concurrent altitudes", "altitudes", "theorem-type dependency: the third incidence is implied (Diagnose → witness); 3 DOF to animate"),
     ("Parallels & perpendiculars", "parallels", "direction classes: parallel/perpendicular/vertical (1 DOF left: slide along the base)"),
+    ("Levelled zigzags (3×32)", "zigzag", "three separate staircases of free-length H/V segments — a drag costs one staircase, not three"),
 ];
 
 /// The case library's factory.  Keys are either a plain name or `name:arg[:arg]`, so a front end
@@ -437,6 +462,7 @@ pub fn case(key: &str) -> Option<Sketch> {
         "polygon_chain" if !args.is_empty() => polygon_chain(n(0, 12), 50.0),
         "k33" if !args.is_empty() => k33(u(0, 3)),
         "laman" => laman(n(0, 10), u(1, 0), true),
+        "zigzag" if !args.is_empty() => zigzag(n(0, 32), n(1, 1)),
         "rect_fillets" if args.len() >= 3 => rect_fillets(args[0], args[1], args[2], 0.0),
         _ => return example(name),
     })

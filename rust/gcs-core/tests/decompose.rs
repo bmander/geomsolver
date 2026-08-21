@@ -193,7 +193,7 @@ fn a_plan_drag_on_a_coincident_point_actually_moves_it() {
     sk.line(c, d);
     sk.add(Constraint::coincident(EntRef::point(c), EntRef::point(b)));
 
-    let mut drag = PlanDrag::new(&mut sk, c, 10.0, 0.0, None, 1.0);
+    let mut drag = PlanDrag::new(&sk, c, 10.0, 0.0, None, 1.0);
     assert!(drag.usable(), "the plan should be able to drive this drag");
     let r = drag.move_to(&mut sk, 20.0, 5.0);
     assert!(r.success, "{r:?}");
@@ -340,4 +340,18 @@ fn parallels_that_determine_a_shape_still_merge() {
     sk.add(Constraint::distance(EntRef::point(b), EntRef::point(c), 25.0));
     let ps = PlanSolver::new(&sk, false);
     assert!(ps.plan.fully_decomposed(), "{}", ps.plan.summary());
+}
+
+/// Every levelled line is in the ground x-axis's direction class.  That is a relation between
+/// clusters that already share an element, not an adjacency that makes one: separate figures
+/// decompose as the sum of their decompositions, and a long chain decomposes into its corners.
+#[test]
+fn levelled_chains_decompose_separately_and_into_corners() {
+    let one = decompose(build(&examples::zigzag(12, 1)), 0, 12);
+    let two = decompose(build(&examples::zigzag(12, 2)), 0, 12);
+    assert_eq!(two.steps.len(), 2 * one.steps.len());
+    assert_eq!(two.roots.len(), 2 * one.roots.len() - 1); // the ground is one root, shared
+    // a chain of n points: a corner {p, L, L'} at each interior point, made by one pair merge
+    assert_eq!(one.steps.len(), 10);
+    assert!(one.steps.iter().all(|s| s.ids.len() == 2));
 }
