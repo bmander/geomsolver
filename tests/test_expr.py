@@ -8,7 +8,8 @@ import math
 import pytest
 
 from gcs import constraints as C
-from gcs import io, solve
+from gcs import examples, io, solve
+from gcs.diagnose import diagnose
 from gcs.expr import expressions
 from gcs.model import Sketch
 
@@ -91,3 +92,24 @@ def test_documents_and_rebuilds_keep_the_text() -> None:
     assert expressions(sk3)[0].error == "`w` is not defined"
     # the callouts print the name and value, or a leading = for an unnamed expression
     assert [k["text"] for k in io.callouts(sk, 1.0)["items"]] == ["w=3", "h=6", "=7"]
+
+
+def test_pythagoras_drawn_with_expressions_holds_and_stays_true_when_a_leg_is_edited() -> None:
+    """Four a×b right triangles in a square of side a + b leave a square dimensioned
+    `c = hypot(a, b)`: redundant and consistent, and still so after a leg is edited."""
+    sk = examples.pythagoras(30, 40)
+
+    def check(a: float, b: float) -> None:
+        assert solve(sk).success
+        c = math.hypot(a, b)
+        for ln in sk.lines[-4:]:                       # the hypotenuses are the inner square
+            assert math.hypot(ln.p1.x.value - ln.p2.x.value, ln.p1.y.value - ln.p2.y.value) == pytest.approx(c, abs=1e-6)
+        cc = next(k for k in sk.constraints if k.expr("d") == "c = hypot(a, b)")
+        assert cc.d == pytest.approx(c)
+        d = diagnose(sk)
+        assert d.dof == 0 and d.n_redundant == 1 and not d.violated and not d.conflicts
+
+    check(30, 40)
+    a = next(k for k in sk.constraints if k.expr("d") == "a = 30")
+    assert a.set_dimension("d", "a = 50") is None
+    check(50, 40)

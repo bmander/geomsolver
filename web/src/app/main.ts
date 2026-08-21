@@ -59,7 +59,23 @@ const footerEl = document.querySelector('footer') as HTMLElement;
 await initCore();
 (document.getElementById('loading') as HTMLElement).remove();
 
-const view = new SketchView(canvas, examples.rectFillets());
+/** The sketch the page opens on: the case named in the URL — `?example=pythagoras`, or an
+ *  `…/example/<slug>` path the server handed to the page — else the default.  The slug is a case
+ *  key, arguments and all (`truss:50`); one nothing answers to is said and the default shown. */
+function initialSketch(): Sketch {
+  const url = new URL(location.href);
+  const slug = url.searchParams.get('example') ?? /\/example\/([^/]+)\/?$/.exec(url.pathname)?.[1];
+  if (slug) {
+    try {
+      return examples.build(decodeURIComponent(slug));
+    } catch (err) {
+      setTimeout(() => toast(`no example “${slug}”: ${(err as Error).message}`, 12000), 0);
+    }
+  }
+  return examples.rectFillets();
+}
+
+const view = new SketchView(canvas, initialSketch());
 let currentConstraint: Constraint | null = null;
 
 /** Move the keyboard focus onto a constraint row, or off it with null.  Delete acts on

@@ -374,6 +374,68 @@ pub fn parallels() -> Sketch {
     sk
 }
 
+fn expr_distance(p: usize, q: usize, text: &str) -> Constraint {
+    Constraint::new(
+        CKind::Distance,
+        vec![
+            Arg::Ent(EntRef::point(p)),
+            Arg::Ent(EntRef::point(q)),
+            Arg::Expr(crate::expr::Expr { text: text.to_string(), value: 0.0 }),
+        ],
+    )
+}
+
+/// The graphical proof of the Pythagorean theorem, drawn with expressions.
+///
+/// A square of side `a + b` holds four copies of the right triangle with legs `a` and `b`, one
+/// in each corner, turned a quarter each time; what they leave in the middle is a square on
+/// their hypotenuses.  So (a + b)² = 4 · ab/2 + c², which is c² = a² + b².  The sketch states
+/// `a` and `b` once, as named dimensions on the first triangle, and every other leg reads the
+/// name; the inner square's side is dimensioned `c = hypot(a, b)` — an equation the figure
+/// already satisfies, so the diagnosis reports it as redundant and consistent.  That is the
+/// theorem: the dimension is true without being imposed, and stays true when `a` or `b` is
+/// edited.  Corner O is fixed; everything else is determined (0 DOF).
+pub fn pythagoras(a: f64, b: f64) -> Sketch {
+    let mut sk = Sketch::new();
+    let s = a + b;
+    let o = sk.point(0.0, 0.0, true, "O");
+    let lines = sk.rectangle(o, s, s, "sq");   // bottom, right, top, left; O, E, F, G round it
+    let corner = |sk: &Sketch, i: usize| sk.lines[lines[i]].p1 as usize;
+    let (e, f, g) = (corner(&sk, 1), corner(&sk, 2), corner(&sk, 3));
+    add(&mut sk, Constraint::one_line(CKind::Horizontal, EntRef::line(lines[0])));
+    add(
+        &mut sk,
+        Constraint::two_line(CKind::EqualLength, EntRef::line(lines[0]), EntRef::line(lines[3])),
+    );
+    // one point on each side, `a` from the corner it follows going round, so each corner holds
+    // a triangle with legs a and b: P1 on the bottom, P2 on the right, P3 on the top, P4 on the left
+    let p1 = sk.point(a, 0.0, false, "P1");
+    let p2 = sk.point(s, a, false, "P2");
+    let p3 = sk.point(b, s, false, "P3");
+    let p4 = sk.point(0.0, b, false, "P4");
+    for (p, l) in [(p1, lines[0]), (p2, lines[1]), (p3, lines[2]), (p4, lines[3])] {
+        add(
+            &mut sk,
+            Constraint::new(
+                CKind::PointOnLine,
+                vec![Arg::Ent(EntRef::point(p)), Arg::Ent(EntRef::line(l))],
+            ),
+        );
+    }
+    add(&mut sk, expr_distance(o, p1, &format!("a = {}", crate::json::fmt_g(a, 6))));
+    add(&mut sk, expr_distance(p1, e, &format!("b = {}", crate::json::fmt_g(b, 6))));
+    add(&mut sk, expr_distance(e, p2, "a"));
+    add(&mut sk, expr_distance(f, p3, "a"));
+    add(&mut sk, expr_distance(g, p4, "a"));
+    // the hypotenuses, which are the inner square
+    sk.line(p1, p2);
+    sk.line(p2, p3);
+    sk.line(p3, p4);
+    sk.line(p4, p1);
+    add(&mut sk, expr_distance(p1, p2, "c = hypot(a, b)"));
+    sk
+}
+
 /// The four sketches the regression suite parametrises over.
 pub const EXAMPLES: [&str; 4] = ["rect_fillets", "slotted_link", "truss", "polygon_chain"];
 
@@ -415,6 +477,7 @@ pub fn example(name: &str) -> Option<Sketch> {
         "impossible_triangle" => impossible_triangle(),
         "altitudes" => altitudes(),
         "parallels" => parallels(),
+        "pythagoras" => pythagoras(30.0, 40.0),
         "k33" => k33(3),
         "laman" => laman(10, 0, true),
         "zigzag" => zigzag(32, 3),
@@ -423,7 +486,7 @@ pub fn example(name: &str) -> Option<Sketch> {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 18] = [
+pub const CASES: [(&str, &str, &str); 19] = [
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Slotted link", "slotted_link", "obround slot with two holes; fully constrained"),
     ("Truss (8 bays)", "truss", "~30-entity Warren truss, every member dimensioned"),
@@ -441,6 +504,7 @@ pub const CASES: [(&str, &str, &str); 18] = [
     ("Random Laman #1", "laman1", "Henneberg-built; may need a core (Henneberg II)"),
     ("Concurrent altitudes", "altitudes", "theorem-type dependency: the third incidence is implied (Diagnose → witness); 3 DOF to animate"),
     ("Parallels & perpendiculars", "parallels", "direction classes: parallel/perpendicular/vertical (1 DOF left: slide along the base)"),
+    ("Pythagoras, graphically", "pythagoras", "four a×b right triangles in a square of side a + b leave a square of side c; `c = hypot(a, b)` is redundant and consistent — edit a or b and it stays so"),
     ("Levelled zigzags (3×32)", "zigzag", "three separate staircases of free-length H/V segments — a drag costs one staircase, not three"),
 ];
 
@@ -464,6 +528,7 @@ pub fn case(key: &str) -> Option<Sketch> {
         "laman" => laman(n(0, 10), u(1, 0), true),
         "zigzag" if !args.is_empty() => zigzag(n(0, 32), n(1, 1)),
         "rect_fillets" if args.len() >= 3 => rect_fillets(args[0], args[1], args[2], 0.0),
+        "pythagoras" if args.len() >= 2 => pythagoras(args[0], args[1]),
         _ => return example(name),
     })
 }

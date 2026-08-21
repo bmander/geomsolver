@@ -75,6 +75,13 @@ def parallels() -> Sketch:
     return build("parallels")
 
 
+def pythagoras(a: float = 30.0, b: float = 40.0) -> Sketch:
+    """The graphical proof of the Pythagorean theorem: four a×b right triangles in a square of
+    side a + b leave a square of side c, dimensioned `c = hypot(a, b)` — redundant and
+    consistent."""
+    return build(f"pythagoras:{a}:{b}")
+
+
 def k33(seed: int = 3) -> Sketch:
     return build(f"k33:{seed}")
 
@@ -107,7 +114,7 @@ def cases() -> list[dict[str, Any]]:
     return _ffi.take_json(lib.gcs_cases_json()) or []
 
 
-__all__ = ["EXAMPLES", "altitudes", "henneberg_edges", "build", "cases", "impossible_triangle", "k33", "laman",
+__all__ = ["EXAMPLES", "altitudes", "henneberg_edges", "build", "cases", "impossible_triangle", "k33", "laman", "pythagoras",
            "parallels", "perturb", "polygon_chain", "rect_fillets", "rect_fillets_conflict",
            "rect_fillets_under", "slotted_link", "truss", "truss_conflict", "truss_floating",
            "truss_redundant", "zigzag"]

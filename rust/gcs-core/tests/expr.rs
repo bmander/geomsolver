@@ -1,6 +1,8 @@
 //! Dimension expressions: the language, the document's evaluation order, its errors, and how
 //! an expression travels through the document's I/O and rebuilds.
 use gcs_core::constraints::{Arg, CKind, Constraint};
+use gcs_core::diagnose::{diagnose, DiagnoseOptions};
+use gcs_core::examples;
 use gcs_core::expr::{self, eval, parse, Expr};
 use gcs_core::io;
 use gcs_core::model::{EntRef, Sketch};
@@ -345,4 +347,45 @@ fn expressions_survive_rebuilds_and_a_paste_reports_its_duplicates() {
     // the part a drag works on is a rebuild too: its expressions come along as numbers
     let part = io::Part::around(&sk, EntRef::point(2));
     assert_eq!(part.sketch.constraints[0].args[2].num(), 6.0);
+}
+
+/// The graphical proof of the Pythagorean theorem, as a sketch: four a×b right triangles in a
+/// square of side a + b leave a square whose side is dimensioned `c = hypot(a, b)`.  The figure
+/// satisfies that equation without being made to — it is redundant and consistent — and goes on
+/// satisfying it when a leg is edited, which is what makes it a proof and not a coincidence.
+#[test]
+fn pythagoras_drawn_with_expressions_holds_and_stays_true_when_a_leg_is_edited() {
+    let mut sk = examples::pythagoras(30.0, 40.0);
+    let hypotenuses = |sk: &Sketch| -> Vec<f64> {
+        let n = sk.lines.len();
+        (n - 4..n).map(|i| sk.line_length(i)).collect()
+    };
+    let by_text = |sk: &Sketch, t: &str| sk.constraints.iter().find(|c| c.expr_text("d") == Some(t)).unwrap().id;
+    let check = |sk: &mut Sketch, a: f64, b: f64| {
+        assert!(solve(sk, SolveOpts::default()).success);
+        let c = a.hypot(b);
+        for h in hypotenuses(sk) {
+            assert!((h - c).abs() < 1e-6, "hypotenuse {h} for legs {a}, {b}");
+        }
+        let cc = sk.constraint(by_text(sk, "c = hypot(a, b)")).unwrap();
+        assert!((cc.args[2].num() - c).abs() < 1e-9);   // the expression computed it
+        assert!(cc.error(sk) < 1e-6);                      // and the figure agrees
+        assert_eq!(io::dimension_text(cc).unwrap(), format!("c={}", gcs_core::json::fmt_g(c, 4)));
+        let d = diagnose(sk, DiagnoseOptions::default());
+        assert_eq!(d.dof, 0);
+        assert_eq!(d.n_redundant, 1, "the theorem is one equation the construction already holds");
+        assert!(d.violated.is_empty() && d.conflicts.as_deref().unwrap_or(&[]).is_empty(),
+                "redundant but consistent");
+    };
+    check(&mut sk, 30.0, 40.0);
+    // edit a leg: everything that reads `a` follows, and the theorem still holds
+    let a_id = by_text(&sk, "a = 30");
+    assert_eq!(expr::set_dimension(&mut sk, a_id, "d", "a = 50").unwrap(), None);
+    check(&mut sk, 50.0, 40.0);
+    let b_id = by_text(&sk, "b = 40");
+    assert_eq!(expr::set_dimension(&mut sk, b_id, "d", "b = 12").unwrap(), None);
+    check(&mut sk, 50.0, 12.0);
+    // and the case library builds it with any legs
+    let sk2 = examples::case("pythagoras:5:12").unwrap();
+    assert!((hypotenuses(&sk2)[0] - 13.0).abs() < 1e-9);
 }

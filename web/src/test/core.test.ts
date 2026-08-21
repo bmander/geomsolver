@@ -1252,3 +1252,28 @@ test('expressions round-trip through the document and survive a rebuild', () => 
   sk2.dispose();
   sk3.dispose();
 });
+
+test('pythagoras drawn with expressions holds, and stays true when a leg is edited', () => {
+  // four a×b right triangles in a square of side a + b leave a square dimensioned
+  // `c = hypot(a, b)`: redundant and consistent, and still so after a leg is edited
+  const sk = examples.pythagoras(30, 40);
+  const check = (a: number, b: number): void => {
+    assert.ok(solve(sk).success);
+    const c = Math.hypot(a, b);
+    for (const ln of sk.lines.slice(-4)) {             // the hypotenuses are the inner square
+      assert.ok(Math.abs(Math.hypot(ln.p1.x.value - ln.p2.x.value, ln.p1.y.value - ln.p2.y.value) - c) < 1e-6);
+    }
+    const cc = sk.constraints.find((k) => k.expr('d') === 'c = hypot(a, b)')!;
+    assert.ok(Math.abs(num(cc.d) - c) < 1e-9);
+    const d = diagnose(sk);
+    assert.equal(d.dof, 0);
+    assert.equal(d.nRedundant, 1);
+    assert.equal(d.violated.length, 0);
+    assert.equal(d.conflicts?.length ?? 0, 0);
+  };
+  check(30, 40);
+  const a = sk.constraints.find((k) => k.expr('d') === 'a = 30')!;
+  assert.equal(a.setDimension('d', 'a = 50'), null);
+  check(50, 40);
+  sk.dispose();
+});

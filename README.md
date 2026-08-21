@@ -62,6 +62,15 @@ locally:
 make wasm && cd web && npm run serve    # http://localhost:8123/
 ```
 
+`…/example/<slug>` opens the sketcher on a case from the library — `/example/pythagoras`,
+`/example/truss:50` — by redirecting to `/?example=<slug>`, which the page reads at boot; under
+a mount such as `/geomsolver/`, `/geomsolver/example/pythagoras` lands on
+`/geomsolver/?example=pythagoras`.  The dev server redirects itself; on GitHub Pages (and any
+static host that serves `404.html` for a missing path) `web/404.html` does it client-side.
+
+```
+```
+
 Static files only — any static host serves `web/` after `npm run build`, and every path the page
 loads is relative, so it works from a subdirectory as happily as from a domain root.
 

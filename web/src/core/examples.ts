@@ -23,6 +23,9 @@ export const trussFloating = (bays = 8): Sketch => build(`truss_floating:${bays}
 export const impossibleTriangle = (): Sketch => build('impossible_triangle');
 export const altitudes = (): Sketch => build('altitudes');
 export const parallels = (): Sketch => build('parallels');
+/** The graphical proof of the Pythagorean theorem: four a×b right triangles in a square of side
+ *  a + b leave a square of side c, dimensioned `c = hypot(a, b)` — redundant and consistent. */
+export const pythagoras = (a = 30, b = 40): Sketch => build(`pythagoras:${a}:${b}`);
 export const k33 = (seed = 3): Sketch => build(`k33:${seed}`);
 export const laman = (n = 10, seed = 0): Sketch => build(`laman:${n}:${seed}`);
 /** `copies` separate staircases of `n` free-length H/V segments: a drag must cost one figure. */

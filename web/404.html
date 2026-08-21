@@ -1,0 +1,17 @@
+<!doctype html>
+<!-- The example route on a static host.  `…/example/<slug>` is no file, so GitHub Pages (and
+     any host with the same convention) serves this page for it; it sends the browser to the
+     sketcher at the same mount with the slug as a query — `/geomsolver/example/pythagoras`
+     lands on `/geomsolver/?example=pythagoras`, which the app reads at boot.  Anything else
+     that is not found stays not found. -->
+<meta charset="utf-8">
+<title>gcs sketcher</title>
+<script>
+  (function () {
+    var m = /^(.*)\/example\/([^/]+)\/?$/.exec(location.pathname);
+    if (m) location.replace(m[1] + '/?example=' + m[2] + location.hash);
+    else document.addEventListener('DOMContentLoaded', function () {
+      document.body.textContent = 'not found: ' + location.pathname;
+    });
+  })();
+</script>
