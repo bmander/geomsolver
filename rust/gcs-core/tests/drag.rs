@@ -37,7 +37,7 @@ fn run_trajectory(
     for &(x, y) in path {
         let (px, py) = sk.point_xy(p);
         let cursor_step = (x - px).hypot(y - py);
-        let res = drag.move_to(sk, x, y);
+        let res = drag.move_to(sk, None, x, y);
         assert!(res.success, "{res:?}");
         sys.refresh_consts(sk);
         let z = sys.z0(sk);
@@ -124,7 +124,7 @@ fn a_fully_constrained_apex_never_jumps_across_the_base() {
     let mut ys = Vec::new();
     for i in 0..17 {
         let yy = 4.0 - 8.0 * i as f64 / 16.0;
-        let r = d.move_to(&mut sk, 5.0, yy);
+        let r = d.move_to(&mut sk, None, 5.0, yy);
         assert!(r.success && r.message.contains("held"), "{r:?}");
         ys.push(sk.point_xy(c).1);
     }
@@ -147,7 +147,7 @@ fn a_drag_on_a_levelled_chain_moves_three_corners_and_leaves_the_rest_untouched(
     let before = sk.get_x();
     let mut d = PlanDrag::new(&sk, p, x0, y0, None, 0.05);
     assert!(d.usable());
-    let r = d.move_to(&mut sk, x0 + 1.5, y0 - 2.5);
+    let r = d.move_to(&mut sk, None, x0 + 1.5, y0 - 2.5);
     assert!(r.success && r.message == "plan-drag", "{r:?}");
     assert_eq!(sk.point_xy(p), (x0 + 1.5, y0 - 2.5));
     d.end();
@@ -174,7 +174,7 @@ fn a_point_held_on_a_circle_goes_round_it() {
     sk.add(Constraint::distance(EntRef::point(c), EntRef::point(p), 10.0));
     let mut d = PlanDrag::new(&sk, p, 10.0, 0.0, None, 1.0);
     assert!(d.usable());
-    let r = d.move_to(&mut sk, 0.0, 20.0);
+    let r = d.move_to(&mut sk, None, 0.0, 20.0);
     assert!(r.success && r.message.contains("held"), "{r:?}");
     let (x, y) = sk.point_xy(p);
     assert!((x.hypot(y) - 10.0).abs() < 1e-9 && y > 9.0, "{:?}", (x, y));
@@ -229,7 +229,7 @@ fn continuation_subdivides_large_moves() {
     let p = 2;
     let (x, y) = sk.point_xy(p);
     let mut d = PlanDrag::new(&sk, p, x, y, None, 0.05);
-    let res = d.move_to(&mut sk, x + 200.0, y); // far beyond one increment
+    let res = d.move_to(&mut sk, None, x + 200.0, y); // far beyond one increment
     d.end();
     assert!(res.success && res.nfev > 1);
 }
@@ -340,14 +340,15 @@ fn a_drag_costs_the_figure_not_the_document() {
     let before = three.get_x();
     let mut d1 = PlanDrag::new(&one, p1, x0, y0, None, 0.05);
     let mut d3 = PlanDrag::new(&three, p3, x0 + dx, y0, None, 0.05);
-    assert_eq!(d3.part.sketch.points.len(), n);
-    assert_eq!(d3.solver.system.n_free, d1.solver.system.n_free);
-    assert_eq!(d3.solver.plan.steps.len(), d1.solver.plan.steps.len());
+    assert_eq!(d3.part().unwrap().sketch.points.len(), n);
+    let (p1, p3) = (d1.own_plan().unwrap(), d3.own_plan().unwrap());
+    assert_eq!(p3.system.n_free, p1.system.n_free);
+    assert_eq!(p3.plan.steps.len(), p1.plan.steps.len());
     for i in 1..=12 {
         let t = i as f64 * 0.4;
         let (x, y) = (x0 + 6.0 * t.cos(), y0 + 4.0 * t.sin());
-        let r1 = d1.move_to(&mut one, x, y);
-        let r3 = d3.move_to(&mut three, x + dx, y);
+        let r1 = d1.move_to(&mut one, None, x, y);
+        let r3 = d3.move_to(&mut three, None, x + dx, y);
         assert_eq!(r1.success, r3.success);
         for k in 0..n {
             let (ax, ay) = one.point_xy(k);
@@ -377,7 +378,7 @@ fn a_free_body_slides_rather_than_spins() {
     let before = sk.get_x();
     let mut d = PlanDrag::new(&sk, p, x, y, None, 1.0);
     assert!(d.usable());
-    d.move_to(&mut sk, x + 10.0, y + 4.0);
+    d.move_to(&mut sk, None, x + 10.0, y + 4.0);
     d.end();
     let after = sk.get_x();
     for k in 0..sk.points.len() {
@@ -397,7 +398,7 @@ fn a_long_drag_does_not_drift() {
     let mut d = PlanDrag::new(&sk, p, x, y, None, 0.05);
     for i in 0..3000 {
         let a = 0.05 * i as f64;
-        let r = d.move_to(&mut sk, x + 2.0 * a.cos(), y + 1.5 * (1.7 * a).sin());
+        let r = d.move_to(&mut sk, None, x + 2.0 * a.cos(), y + 1.5 * (1.7 * a).sin());
         assert!(r.success && r.message == "plan-drag", "frame {i}: {r:?}");
     }
     assert!(d.usable());
@@ -405,4 +406,47 @@ fn a_long_drag_does_not_drift() {
     let mut sys = System::new(&sk);
     let z = sys.z0(&sk);
     assert!(sys.max_relative_residual(&z) < 1e-10, "{:e}", sys.max_relative_residual(&z));
+}
+
+/// Made on the document's own plan — the one its owner caches per topology — a drag starts with
+/// nothing more than a pass over the residuals, runs on the document itself, and moves exactly
+/// what a drag of its own would: the roots are the same bodies either way.
+#[test]
+fn a_drag_on_the_documents_plan_does_what_a_drag_of_its_own_does() {
+    let n = 24;
+    let mut a = examples::zigzag(n, 2);
+    let mut b = examples::zigzag(n, 2);
+    let p = n + n / 2; // in the second chain
+    let (x0, y0) = a.point_xy(p);
+    let mut own = PlanDrag::new(&a, p, x0, y0, None, 0.05);
+    let mut ps = PlanSolver::new(&b, true);
+    ps.solve(&mut b, 1e-9, true, Method::DogLeg);
+    let mut on = PlanDrag::on(&mut b, &mut ps, p, x0, y0, None, 0.05);
+    assert!(own.usable() && on.usable());
+    for i in 1..=10 {
+        let t = i as f64 * 0.5;
+        let (x, y) = (x0 + 4.0 * t.cos(), y0 + 3.0 * t.sin());
+        let r1 = own.move_to(&mut a, None, x, y);
+        let r2 = on.move_to(&mut b, Some(&ps), x, y);
+        assert_eq!(r1.message, r2.message);
+        for (u, v) in a.get_x().iter().zip(b.get_x()) {
+            assert!((u - v).abs() < 1e-9);
+        }
+    }
+    assert_eq!(own.branches(None), on.branches(Some(&ps)));
+    own.end();
+    on.end();
+    // an unsolved document is solved before the bodies are read — the drag keeps the geometry
+    // consistent, it cannot make it so
+    let mut c = examples::rect_fillets(100.0, 60.0, 10.0, 2.0);
+    let mut ps = PlanSolver::new(&c, true);
+    let q = c.lines[0].p2 as usize;
+    let (qx, qy) = c.point_xy(q);
+    let mut d = PlanDrag::on(&mut c, &mut ps, q, qx, qy, None, 0.05);
+    let r = d.move_to(&mut c, Some(&ps), qx + 5.0, qy);
+    assert!(r.success && d.usable(), "{r:?}");
+    let mut sys = System::new(&c);
+    let z = sys.z0(&c);
+    assert!(sys.max_relative_residual(&z) < 1e-9);
+    d.end();
 }

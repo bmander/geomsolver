@@ -78,7 +78,8 @@ export function buildGraph(sketch: Sketch): Graph {
  *  the plan and falls back to the numeric core when the residual says the plan did not (fully)
  *  determine the sketch. */
 export class PlanSolver {
-  private handle: number;
+  /** The core handle — a drag made on this plan passes it through, and never outlives it. */
+  handle: number;
   /** Owned by this PlanSolver — borrow it (diagnosis does), never dispose it. */
   readonly system: System;
 
@@ -168,8 +169,10 @@ export function pppTriangles(solver: PlanSolver): Triangle[] {
  *  drag (unsupported constraints, a region too large for the rigid-body solve) the numeric
  *  pull/polish `Drag` takes over.
  *
- *  The core builds all of it on the dragged point's *part* of the document — what is connected to
- *  it — and writes each frame back, so the document is never restructured by a drag and figures
+ *  Given the sketch's own `PlanSolver` — the one its owner caches per topology, which must
+ *  outlive the drag — it starts at once and runs on the sketch directly.  Without one, the core
+ *  builds a plan over the dragged point's *part* of the document — what is connected to it — and
+ *  writes each frame back.  Either way the document is never restructured by a drag, and figures
  *  unrelated to the point cost it nothing. */
 export class PlanDrag {
   /** Drags made and not yet ended — a handle that outlives its gesture shows up here. */
@@ -178,9 +181,10 @@ export class PlanDrag {
   active = true;
 
   constructor(readonly sketch: Sketch, readonly point: Point, x: number, y: number,
-              guards: Triangle[] | null = null, maxStepRel = 0.05) {
+              guards: Triangle[] | null = null, maxStepRel = 0.05, plan: PlanSolver | null = null) {
     this.handle = guardBuffer(guards, (ptr, n) =>
-      core().gcs_plan_drag_new(sketch.handle, point.index, x, y, ptr, n, maxStepRel));
+      core().gcs_plan_drag_new(sketch.handle, plan ? plan.handle : 0, point.index, x, y, ptr, n,
+                               maxStepRel));
     PlanDrag.live += 1;
   }
 

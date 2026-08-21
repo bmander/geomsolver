@@ -195,7 +195,7 @@ fn a_plan_drag_on_a_coincident_point_actually_moves_it() {
 
     let mut drag = PlanDrag::new(&sk, c, 10.0, 0.0, None, 1.0);
     assert!(drag.usable(), "the plan should be able to drive this drag");
-    let r = drag.move_to(&mut sk, 20.0, 5.0);
+    let r = drag.move_to(&mut sk, None, 20.0, 5.0);
     assert!(r.success, "{r:?}");
     let (cx, cy) = sk.point_xy(c);
     assert!((cx - 20.0).hypot(cy - 5.0) < 1e-6, "c stayed at {:?}", (cx, cy));

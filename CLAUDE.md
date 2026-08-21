@@ -87,6 +87,10 @@ Conventions:
   builds its plan, systems and numeric fallback on that part alone and writes each frame back, so
   a drag costs the figure, never the document, and separate figures cost it nothing; anything a
   drag exchanges by point index (guards, flips, branch keys) crosses through the part's maps.
+- Made `PlanDrag::on` the document's own `PlanSolver` (the app passes `view.plan()`, cached per
+  topology and kept alive through the drag), a drag starts with one pass over the residuals and
+  runs on the document itself; `PlanDrag::new` is the self-contained form over a part.  The plan
+  comes back with every `move_to`/`guard_triangles`/`branches` (`None` for a drag of its own).
 - Within the part, a frame costs the *region*, not the figure: `decompose::Wave` moves the plan's
   roots as rigid bodies — the ones holding the dragged point, growing by shared elements only
   while the cursor is out of reach — with every element shared with the rest held as an anchor

@@ -60,12 +60,14 @@ def bench_drag(sk: Sketch, frames: int = 20) -> tuple[float, bool]:
     return float(np.median(ts)) * 1e3, bool(res and res.success)
 
 
-def bench_plan_drag(sk: Sketch, point_index: int, frames: int = 20) -> tuple[float, float]:
-    """(drag start ms, median frame ms) of the app's drag on `point_index`."""
+def bench_plan_drag(sk: Sketch, point_index: int, frames: int = 20,
+                    plan: PlanSolver | None = None) -> tuple[float, float]:
+    """(drag start ms, median frame ms) of the app's drag on `point_index` — on the sketch's
+    cached plan when given one, as the app drags, else with a plan of its own."""
     p = sk.points[point_index]
     x, y = p.xy
     t0 = time.perf_counter()
-    d = PlanDrag(sk, p, x, y)
+    d = PlanDrag(sk, p, x, y, plan=plan)
     start = time.perf_counter() - t0
     ts = []
     for i in range(frames):
@@ -121,12 +123,18 @@ def main() -> None:
               f"({1e3 / ms:4.0f} fps) | floating rigid {ms2:6.1f} ms ({1e3 / ms2:4.0f} fps) "
               f"{'ok' if ok and ok2 else 'BAD'}", flush=True)
 
-    print("\n== drag of one figure among many (PlanDrag start + frame): the cost of the figure ==")
-    for n, copies in ((32, 1), (32, 3), (32, 30), (128, 1)):
+    print("\n== drag of one figure among many (PlanDrag start + frame): the cost of the region ==")
+    print("   own plan: the drag decomposes the figure | cached plan: as the app drags")
+    for n, copies in ((32, 1), (32, 3), (32, 30), (128, 1), (2048, 1)):
         sk = zigzag(n, copies)
         start, frame = bench_plan_drag(sk, n // 2)   # a point of the first staircase
-        print(f"zigzag {n:3d} x {copies:2d} ({len(sk.points):5d} points): start {start:6.2f} ms | "
-              f"frame {frame:6.3f} ms", flush=True)
+        ps = PlanSolver(sk, sticky=True)
+        ps.solve()
+        start2, frame2 = bench_plan_drag(sk, n // 2, plan=ps)
+        ps.dispose()
+        print(f"zigzag {n:4d} x {copies:2d} ({len(sk.points):5d} points): own plan start {start:7.2f} ms "
+              f"frame {frame:6.3f} ms | cached plan start {start2:6.2f} ms frame {frame2:6.3f} ms",
+              flush=True)
 
 
 if __name__ == "__main__":

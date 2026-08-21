@@ -152,13 +152,17 @@ class PlanDrag:
     nothing."""
 
     def __init__(self, sketch: Sketch, point: Point, x: float, y: float,
-                 guards: Sequence[Triangle] | None = None, max_step_rel: float = 0.05) -> None:
+                 guards: Sequence[Triangle] | None = None, max_step_rel: float = 0.05,
+                 plan: PlanSolver | None = None) -> None:
+        """`plan`, the sketch's own `PlanSolver` (cached per topology by whoever owns the sketch),
+        lets the drag start at once and run on the sketch directly; it must outlive the drag."""
         self.sketch = sketch
         self.point = point
+        self.plan = plan
         ptr, n = _guard_buffer(guards)
-        self._h = lib.gcs_plan_drag_new(sketch._h, point.index, float(x), float(y),
-                                        ptr, n if guards is not None else -1, max_step_rel)
-        sketch.touch()
+        self._h = lib.gcs_plan_drag_new(sketch._h, plan._h if plan else None, point.index,
+                                        float(x), float(y), ptr,
+                                        n if guards is not None else -1, max_step_rel)
         self.active = True
 
     @property
@@ -197,7 +201,6 @@ class PlanDrag:
     def end(self) -> None:
         if self.active:
             lib.gcs_plan_drag_end(self._h, self.sketch._h)
-            self.sketch.touch()
             self.active = False
 
     def __del__(self) -> None:  # pragma: no cover

@@ -224,7 +224,7 @@ _SIGNATURES: list[tuple[str, Any, list[Any]]] = [
     ("gcs_radius_drag_end", None, [PTR, PTR]),
     ("gcs_radius_drag_free", None, [PTR]),
     ("gcs_plan_drag_new", PTR,
-     [PTR, ct.c_int32, ct.c_double, ct.c_double, I32, ct.c_int32, ct.c_double]),
+     [PTR, PTR, ct.c_int32, ct.c_double, ct.c_double, I32, ct.c_int32, ct.c_double]),
     ("gcs_plan_drag_move", STR, [PTR, PTR, ct.c_double, ct.c_double, F64]),
     ("gcs_plan_drag_usable", ct.c_int32, [PTR]),
     ("gcs_plan_drag_flips", ct.c_int32, [PTR]),

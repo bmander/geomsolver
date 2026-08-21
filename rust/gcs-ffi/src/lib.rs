@@ -2094,55 +2094,80 @@ pub unsafe extern "C" fn gcs_radius_drag_free(d: *mut RadiusDrag) {
     })
 }
 
+/// A `PlanDrag` and the plan it was made on, if any: the caller keeps that plan alive for as long
+/// as the drag, and it comes back to the core with every call.
+pub struct PlanDragH {
+    d: PlanDrag,
+    ps: *mut PlanSolver,
+}
+
+unsafe fn plan_of(h: *mut PlanDragH) -> Option<&'static PlanSolver> {
+    let ps = (*h).ps;
+    if ps.is_null() {
+        None
+    } else {
+        Some(&*ps)
+    }
+}
+
+/// `ps` may be null: the drag then makes a plan of its own over the dragged point's part.
 #[no_mangle]
+#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn gcs_plan_drag_new(
     h: *mut Sketch,
+    ps: *mut PlanSolver,
     point: i32,
     x: f64,
     y: f64,
     guards: *const i32,
     n_guards: i32,
     max_step_rel: f64,
-) -> *mut PlanDrag {
+) -> *mut PlanDragH {
     guard(std::ptr::null_mut(), move || {
         let g = if n_guards < 0 { None } else { Some(guards_from(guards, n_guards)) };
-        Box::into_raw(Box::new(PlanDrag::new(sk(h), point as usize, x, y, g, max_step_rel)))
+        let d = if ps.is_null() {
+            PlanDrag::new(sk(h), point as usize, x, y, g, max_step_rel)
+        } else {
+            PlanDrag::on(sk(h), &mut *ps, point as usize, x, y, g, max_step_rel)
+        };
+        Box::into_raw(Box::new(PlanDragH { d, ps }))
     })
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_plan_drag_move(
-    d: *mut PlanDrag,
+    d: *mut PlanDragH,
     h: *mut Sketch,
     x: f64,
     y: f64,
     out: *mut f64,
 ) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        let r = (*d).move_to(sk(h), x, y);
+        let plan = plan_of(d);
+        let r = (*d).d.move_to(sk(h), plan, x, y);
         write_result(&r, out);
         out_str(r.message)
     })
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn gcs_plan_drag_usable(d: *mut PlanDrag) -> i32 {
+pub unsafe extern "C" fn gcs_plan_drag_usable(d: *mut PlanDragH) -> i32 {
     guard(-1, move || {
-        (*d).usable() as i32
+        (*d).d.usable() as i32
     })
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn gcs_plan_drag_flips(d: *mut PlanDrag) -> i32 {
+pub unsafe extern "C" fn gcs_plan_drag_flips(d: *mut PlanDragH) -> i32 {
     guard(-1, move || {
-        (*d).flips().len() as i32
+        (*d).d.flips().len() as i32
     })
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn gcs_plan_drag_flip_list(d: *mut PlanDrag, out: *mut i32) -> i32 {
+pub unsafe extern "C" fn gcs_plan_drag_flip_list(d: *mut PlanDragH, out: *mut i32) -> i32 {
     guard(-1, move || {
-        let f = (*d).flips();
+        let f = (*d).d.flips();
         for (i, t) in f.iter().enumerate() {
             *out.add(3 * i) = t.0 as i32;
             *out.add(3 * i + 1) = t.1 as i32;
@@ -2153,9 +2178,10 @@ pub unsafe extern "C" fn gcs_plan_drag_flip_list(d: *mut PlanDrag, out: *mut i32
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn gcs_plan_drag_branches_json(d: *mut PlanDrag) -> *mut u8 {
+pub unsafe extern "C" fn gcs_plan_drag_branches_json(d: *mut PlanDragH) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        let b: BTreeMap<String, i32> = (*d).branches();
+        let plan = plan_of(d);
+        let b: BTreeMap<String, i32> = (*d).d.branches(plan);
         out_json(Json::Obj(b.into_iter().map(|(k, v)| (k, Json::Int(v as i64))).collect()))
     })
 }
@@ -2163,12 +2189,13 @@ pub unsafe extern "C" fn gcs_plan_drag_branches_json(d: *mut PlanDrag) -> *mut u
 /// The order-type triangles a numeric fallback would guard (3 point indices each).
 #[no_mangle]
 pub unsafe extern "C" fn gcs_plan_drag_guards(
-    d: *mut PlanDrag,
+    d: *mut PlanDragH,
     _h: *mut Sketch,
     out: *mut i32,
 ) -> i32 {
     guard(-1, move || {
-        let g = (*d).guard_triangles();
+        let plan = plan_of(d);
+        let g = (*d).d.guard_triangles(plan);
         for (i, t) in g.iter().enumerate() {
             *out.add(3 * i) = t.0 as i32;
             *out.add(3 * i + 1) = t.1 as i32;
@@ -2179,14 +2206,14 @@ pub unsafe extern "C" fn gcs_plan_drag_guards(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn gcs_plan_drag_end(d: *mut PlanDrag, _h: *mut Sketch) {
+pub unsafe extern "C" fn gcs_plan_drag_end(d: *mut PlanDragH, _h: *mut Sketch) {
     guard((), move || {
-        (*d).end();
+        (*d).d.end();
     })
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn gcs_plan_drag_free(d: *mut PlanDrag) {
+pub unsafe extern "C" fn gcs_plan_drag_free(d: *mut PlanDragH) {
     guard((), move || {
         if !d.is_null() {
             drop(Box::from_raw(d));

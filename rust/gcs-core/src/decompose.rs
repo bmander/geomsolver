@@ -1750,6 +1750,20 @@ impl Wave {
     }
 }
 
+/// The drag's own copy of what it moves — the dragged point's part of the document and a plan
+/// over it — when it was not made on the document's plan.
+struct Own {
+    part: Part,
+    solver: PlanSolver,
+}
+
+/// The numeric fallback: the pull/polish drag, over a part of the document of its own when the
+/// wave was running on the document itself.
+struct Numeric {
+    part: Option<Part>,
+    drag: Drag,
+}
+
 /// DCM-style drag: the plan's roots move as rigid bodies (`Wave`), so a frame costs the region
 /// of the sketch the drag reaches and nothing else — no graph analysis while dragging, recorded
 /// roots stay as they are, and under-constrained bodies move least.  Large cursor jumps are taken
@@ -1757,15 +1771,16 @@ impl Wave {
 /// (unsupported constraints, a region past `WAVE_MAX`, a body solve that does not converge) the
 /// numeric pull/polish `Drag` takes over.
 ///
-/// Everything here is built on the dragged point's *part* of the document (`io::Part`), which is
-/// all a drag can move.  Each frame's result is written back into the document; the document
-/// itself is never recompiled or restructured by a drag, and its unrelated figures cost the drag
-/// nothing.
+/// Made `on` the document's own plan — cached per topology by whoever owns the document — a drag
+/// starts in the time it takes to find the roots holding the point, and runs on the document
+/// directly.  Made with `new`, it builds its own: the dragged point's *part* of the document
+/// (`io::Part`), which is all a drag can move, and a plan over that, writing each frame back —
+/// so the document is never recompiled or restructured by a drag either way, and its unrelated
+/// figures cost the drag nothing.
 pub struct PlanDrag {
-    pub part: Part,
-    pub solver: PlanSolver,
-    pub numeric: Option<Drag>,
-    /// The dragged point, as the part numbers it.
+    own: Option<Own>,
+    numeric: Option<Numeric>,
+    /// The dragged point, as the sketch the wave runs on numbers it.
     pub point: usize,
     wave: Wave,
     max_step: f64,
@@ -1773,6 +1788,7 @@ pub struct PlanDrag {
 }
 
 impl PlanDrag {
+    /// A drag with a plan of its own, over the dragged point's part of the document.
     pub fn new(
         doc: &Sketch,
         point: usize,
@@ -1795,20 +1811,57 @@ impl PlanDrag {
         let start = solver.solve(sk, 1e-9, true, Method::DogLeg);
         let usable = start.success && solver.plan.graph.unsupported.is_empty();
         let wave = Wave::new(&solver.plan, solver.plan.graph.point_el(point), sk.extent());
-        let mut d = PlanDrag { part, solver, numeric: None, point, wave, max_step, guards };
+        let own = Some(Own { part, solver });
+        let mut d = PlanDrag { own, numeric: None, point, wave, max_step, guards };
         if !usable {
-            let g = d.guard_triangles();
-            d.numeric = Some(d.numeric_drag(x, y, g));
+            d.hand_over(None, x, y);
         }
         d
     }
 
-    /// The pull/polish drag over the part, stepping as the document's size asks.
-    fn numeric_drag(&mut self, x: f64, y: f64, guards: Vec<Triangle>) -> Drag {
-        let mut n =
-            Drag::new(&mut self.part.sketch, self.point, x, y, Method::DogLeg, 1.0, guards, 0.05);
-        n.max_step = self.max_step;
-        n
+    /// A drag on the document's own plan, which must be the plan of the document as it is.  The
+    /// same plan has to come back with every `move_to`, `guard_triangles` and `branches`.
+    pub fn on(
+        doc: &mut Sketch,
+        plan: &mut PlanSolver,
+        point: usize,
+        x: f64,
+        y: f64,
+        guards: Option<Vec<Triangle>>,
+        max_step_rel: f64,
+    ) -> PlanDrag {
+        let max_step = max_step_rel * doc.extent().max(1.0);
+        // a solved configuration to start from — the usual case, since the document is solved
+        // after every edit, and then this is one pass over the residuals
+        plan.system.refresh_consts(doc);
+        let z = plan.system.z0(doc);
+        let solved = plan.system.max_relative_residual(&z) <= 1e-9
+            || plan.solve(doc, 1e-9, true, Method::DogLeg).success;
+        let usable = solved && plan.plan.graph.unsupported.is_empty();
+        let wave = Wave::new(&plan.plan, plan.plan.graph.point_el(point), doc.extent());
+        let mut d = PlanDrag { own: None, numeric: None, point, wave, max_step, guards };
+        if !usable {
+            d.hand_over_on(doc, Some(plan), x, y);
+        }
+        d
+    }
+
+    /// The plan the wave runs on: the drag's own, else the one it was made on.
+    fn plan<'a>(&'a self, given: Option<&'a PlanSolver>) -> &'a Plan {
+        match &self.own {
+            Some(o) => &o.solver.plan,
+            None => &given.expect("a drag made on the document's plan needs it back").plan,
+        }
+    }
+
+    /// The drag's own plan, when it has one (`new`, not `on`).
+    pub fn own_plan(&self) -> Option<&PlanSolver> {
+        self.own.as_ref().map(|o| &o.solver)
+    }
+
+    /// The drag's own part of the document, when it has one (`new`, not `on`).
+    pub fn part(&self) -> Option<&Part> {
+        self.own.as_ref().map(|o| &o.part)
     }
 
     /// True while the plan is driving the drag (false once it handed over).
@@ -1816,65 +1869,129 @@ impl PlanDrag {
         self.numeric.is_none()
     }
 
-    /// Order-type invariants for the numeric path: the closed-form triangles of the part's plan,
-    /// as the part numbers them.
-    pub fn guard_triangles(&mut self) -> Vec<Triangle> {
+    /// Order-type invariants for the numeric path: the closed-form triangles of the plan, as the
+    /// sketch the wave runs on numbers them.
+    pub fn guard_triangles(&mut self, plan: Option<&PlanSolver>) -> Vec<Triangle> {
         if self.guards.is_none() {
-            self.guards = Some(ppp_triangles(&self.solver.plan));
+            self.guards = Some(ppp_triangles(self.plan(plan)));
         }
         self.guards.clone().unwrap()
     }
 
-    /// One frame: move the part, then write what moved back into the document.
-    pub fn move_to(&mut self, doc: &mut Sketch, x: f64, y: f64) -> SolveResult {
-        let r = self.move_part(x, y);
-        self.part.write_back(doc);
-        r
+    /// Hand over to the numeric drag, from where the geometry is now.  A drag of its own works
+    /// on its part; one on the document takes a part of the document for the numeric drag.
+    fn hand_over_on(&mut self, doc: &mut Sketch, plan: Option<&PlanSolver>, x: f64, y: f64) {
+        if self.own.is_some() {
+            self.hand_over(plan, x, y);
+            return;
+        }
+        let guards = self.guard_triangles(plan);
+        let mut part = Part::around(doc, EntRef::point(self.point));
+        let g: Vec<Triangle> = guards.iter().filter_map(|&t| part.triangle_in(t)).collect();
+        let p = part.point_in(self.point).expect("the dragged point is in its own part");
+        let mut drag = Drag::new(&mut part.sketch, p, x, y, Method::DogLeg, 1.0, g, 0.05);
+        drag.max_step = self.max_step;
+        self.numeric = Some(Numeric { part: Some(part), drag });
     }
 
-    fn move_part(&mut self, x: f64, y: f64) -> SolveResult {
-        let sk = &mut self.part.sketch;
-        if let Some(n) = &mut self.numeric {
-            return n.move_to(sk, x, y);
+    fn hand_over(&mut self, plan: Option<&PlanSolver>, x: f64, y: f64) {
+        let g = self.guard_triangles(plan);
+        let own = self.own.as_mut().expect("a drag of its own");
+        let mut drag =
+            Drag::new(&mut own.part.sketch, self.point, x, y, Method::DogLeg, 1.0, g, 0.05);
+        drag.max_step = self.max_step;
+        self.numeric = Some(Numeric { part: None, drag });
+    }
+
+    /// One frame.  `plan` is the one the drag was made `on`, or `None` for a drag of its own.
+    pub fn move_to(
+        &mut self,
+        doc: &mut Sketch,
+        plan: Option<&PlanSolver>,
+        x: f64,
+        y: f64,
+    ) -> SolveResult {
+        if self.numeric.is_some() {
+            return self.numeric_move(doc, x, y);
         }
+        let (sk, pl): (&mut Sketch, &Plan) = match &mut self.own {
+            Some(Own { part, solver }) => (&mut part.sketch, &solver.plan),
+            None => (doc, &plan.expect("a drag made on the document's plan needs it back").plan),
+        };
         let (px, py) = sk.point_xy(self.point);
         let path = increments(px, py, x, y, self.max_step);
         let mut reached = true;
+        let mut failed_from: Option<Vec<f64>> = None;
         for &(tx, ty) in &path {
             let x_prev = sk.get_x();
-            let out = self.wave.step(&self.solver.plan, sk, tx, ty);
+            let out = self.wave.step(pl, sk, tx, ty);
             reached = out.reached;
             if out.failed {
-                // hand over to the numeric drag from the last good state
-                sk.set_x(&x_prev);
-                let g = self.guard_triangles();
-                let mut d = self.numeric_drag(px, py, g);
-                let r = d.move_to(&mut self.part.sketch, x, y);
-                self.numeric = Some(d);
-                return r;
+                failed_from = Some(x_prev);
+                break;
             }
+        }
+        if let Some(x_prev) = failed_from {
+            // hand over to the numeric drag from the last good state
+            sk.set_x(&x_prev);
+            if let Some(o) = &self.own {
+                o.part.write_back(doc);
+            }
+            self.hand_over_on(doc, plan, px, py);
+            return self.numeric_move(doc, x, y);
+        }
+        if let Some(o) = &self.own {
+            o.part.write_back(doc);
         }
         let mut r = SolveResult::plain("plan", true, 0.0, path.len() as i32);
         r.message = if reached { "plan-drag" } else { "plan-drag: held by constraints" }.to_string();
         r
     }
 
+    fn numeric_move(&mut self, doc: &mut Sketch, x: f64, y: f64) -> SolveResult {
+        let n = self.numeric.as_mut().expect("the numeric drag");
+        match (&mut n.part, &mut self.own) {
+            (Some(part), _) => {
+                let r = n.drag.move_to(&mut part.sketch, x, y);
+                part.write_back(doc);
+                r
+            }
+            (None, Some(o)) => {
+                let r = n.drag.move_to(&mut o.part.sketch, x, y);
+                o.part.write_back(doc);
+                r
+            }
+            (None, None) => unreachable!("a numeric drag runs on a part"),
+        }
+    }
+
     pub fn end(&mut self) {
         if let Some(n) = &mut self.numeric {
-            n.end(&mut self.part.sketch);
+            match (&mut n.part, &mut self.own) {
+                (Some(part), _) => n.drag.end(&mut part.sketch),
+                (None, Some(o)) => n.drag.end(&mut o.part.sketch),
+                (None, None) => {}
+            }
         }
     }
 
     /// Triangles whose orientation flipped during the drag, as the document numbers them.
     pub fn flips(&self) -> Vec<Triangle> {
-        match &self.numeric {
-            Some(n) => n.flips.iter().map(|&t| self.part.triangle_out(t)).collect(),
-            None => Vec::new(),
-        }
+        let Some(n) = &self.numeric else { return Vec::new() };
+        let part = n.part.as_ref().or(self.own.as_ref().map(|o| &o.part));
+        n.drag
+            .flips
+            .iter()
+            .map(|&t| part.map(|p| p.triangle_out(t)).unwrap_or(t))
+            .collect()
     }
 
     /// The plan's recorded root choices, keyed as the document keys them.
-    pub fn branches(&self) -> BTreeMap<String, i32> {
-        self.part.branches_out(&self.solver.plan.branches())
+    pub fn branches(&self, plan: Option<&PlanSolver>) -> BTreeMap<String, i32> {
+        let b = self.plan(plan).branches();
+        match &self.own {
+            Some(o) => o.part.branches_out(&b),
+            None => b,
+        }
     }
 }

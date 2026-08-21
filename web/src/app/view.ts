@@ -956,8 +956,9 @@ export class SketchView {
       if (!this.selected.includes(ent)) this.selected = [ent];
       if (ent instanceof Point && this.canMove(ent)) {
         this.pushUndo();
-        const guards: Triangle[] | null = this.planSolver ? this.planSolver.pppTriangles() : null;
-        this.gesture = this.pointGesture(new PlanDrag(this.sketch, ent, ...this.s2w(sp[0], sp[1]), guards));
+        // on the sketch's own plan, compiled once per topology: the drag starts at once
+        const drag = new PlanDrag(this.sketch, ent, ...this.s2w(sp[0], sp[1]), null, 0.05, this.plan());
+        this.gesture = this.pointGesture(drag);
       } else if (this.isResizable(ent)) {
         this.pushUndo();
         this.gesture = this.radiusGesture(new RadiusDrag(this.sketch, ent, Math.abs(ent.radius.value)));
@@ -1101,11 +1102,9 @@ export class SketchView {
         const b = drag.sketch.branches;                 // document state: merge, then write back
         for (const [k, v] of drag.branches()) b.set(k, v);
         drag.sketch.branches = b;
-        this.releasePlan();      // the drag's plan pinned the dragged point; recompile lazily
       },
       abandon: () => {
-        drag.end();              // disposes the compiled systems; no branches committed
-        this.releasePlan();
+        drag.end();              // disposes the drag's own handles; no branches committed
       },
     };
   }
