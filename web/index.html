@@ -66,6 +66,11 @@
     box-shadow: 0 8px 24px rgba(0,0,0,.18);
   }
   .menu:has(> button[aria-expanded="true"]) ul { display: block; }
+  .menubar .brand {
+    padding: 2px 7px; margin-right: 4px; font-weight: 600; letter-spacing: .04em;
+    background: none; color: var(--accent); border-color: var(--accent);
+  }
+  .menubar .brand:hover { background: var(--accent-soft); }
   .menu li.sep { height: 1px; margin: 4px 2px; background: var(--line); }
   .menu li > button {
     display: flex; width: 100%; gap: 24px; justify-content: space-between;
@@ -93,16 +98,13 @@
   aside section + section { border-top: 1px solid var(--line); }
   aside h2 {
     font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
-    margin: 0; padding: 8px 10px 6px; border-bottom: 1px solid var(--line);
-    display: flex; justify-content: space-between; flex: none;
+    margin: 0; padding: 8px 10px 6px; border-bottom: 1px solid var(--line); flex: none;
   }
-  aside h2 span { font-weight: 400; }
   aside ul { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; font-family: var(--mono); font-size: 12px; }
   aside li { padding: 3px 10px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   aside li:hover { background: #e9e9ed; }
   aside li[aria-current="true"] { outline: 1px solid var(--accent); outline-offset: -1px; }
   aside li.touches { background: var(--row-sel); font-weight: 600; }
-  .hint { padding: 6px 10px; color: var(--muted); border-top: 1px solid var(--line); font-size: 11px; flex: none; }
   #clist li.culprit { color: var(--danger); }
   #clist li.violated { color: #d62728; }
   #clist li.over { color: #b06d00; }
@@ -133,6 +135,16 @@
   dialog h3 { margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 14px; }
   dialog .body { padding: 12px 16px; overflow: auto; max-height: 62vh; }
   dialog pre { font-family: var(--mono); font-size: 12px; margin: 0; white-space: pre; }
+  dialog p { margin: 0 0 8px; }
+  dialog p:last-child { margin-bottom: 0; }
+  dialog a { color: var(--accent); text-decoration: none; }
+  dialog a:hover { text-decoration: underline; }
+  /* the About diagram: what the sketcher is made of, in the order it was made */
+  .dag { display: block; width: 360px; max-width: 100%; height: auto; margin: 12px auto; }
+  .dag rect { fill: var(--accent-soft); stroke: var(--accent); }
+  .dag text { fill: var(--text); font: 11px system-ui, -apple-system, sans-serif; }
+  .dag path { fill: none; stroke: var(--muted); stroke-width: 1.2; }
+  .dag marker path { fill: var(--muted); stroke: none; }
   dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); }
   dialog input[type=number], dialog input[type=text] {
     font: inherit; width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 5px;
@@ -161,7 +173,9 @@
 <body>
 <div id="app">
   <header>
-    <div class="bar menubar" id="menubar"></div>
+    <div class="bar menubar" id="menubar">
+      <button class="brand" id="about" title="About this project">gcs</button>
+    </div>
     <div class="bar" id="bar-tools"></div>
     <div class="bar" id="bar-constraints"></div>
   </header>
@@ -174,14 +188,12 @@
     </div>
     <aside>
       <section>
-        <h2>Constraints<span id="ccount"></span></h2>
+        <h2>Constraints</h2>
         <ul id="clist"></ul>
-        <div class="hint">click to highlight · double-click to edit a dimension · Del to remove</div>
       </section>
       <section>
-        <h2>Components<span id="ecount"></span></h2>
+        <h2>Components</h2>
         <ul id="elist"></ul>
-        <div class="hint">click to select · shift-click to add · Del to remove</div>
       </section>
     </aside>
   </main>
@@ -192,6 +204,31 @@
   <div class="body" id="modal-body"></div>
   <div class="actions" id="modal-actions"></div>
 </dialog>
+<template id="about-dag">
+  <svg class="dag" viewBox="0 0 360 228" role="img"
+       aria-label="Thirty-five years of research, to a mechanical implementation, to Rust, to the WASM/TypeScript and Python bindings">
+    <defs>
+      <marker id="dag-arrow" viewBox="0 0 8 8" refX="7" refY="4"
+              markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0 0 L8 4 L0 8 z"/>
+      </marker>
+    </defs>
+    <rect x="105" y="8" width="150" height="30" rx="6"/>
+    <text x="180" y="27" text-anchor="middle">35 years of research</text>
+    <rect x="90" y="66" width="180" height="30" rx="6"/>
+    <text x="180" y="85" text-anchor="middle">Mechanical implementation</text>
+    <rect x="145" y="124" width="70" height="30" rx="6"/>
+    <text x="180" y="143" text-anchor="middle">Rust</text>
+    <rect x="5" y="190" width="175" height="30" rx="6"/>
+    <text x="92" y="209" text-anchor="middle">WASM/TypeScript bindings</text>
+    <rect x="240" y="190" width="120" height="30" rx="6"/>
+    <text x="300" y="209" text-anchor="middle">Python bindings</text>
+    <path d="M180 38 V64" marker-end="url(#dag-arrow)"/>
+    <path d="M180 96 V122" marker-end="url(#dag-arrow)"/>
+    <path d="M180 154 L92 188" marker-end="url(#dag-arrow)"/>
+    <path d="M180 154 L300 188" marker-end="url(#dag-arrow)"/>
+  </svg>
+</template>
 <script type="module" src="./dist/app/main.js"></script>
 </body>
 </html>

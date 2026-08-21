@@ -10,8 +10,8 @@
  *   constrain I coincident · D dimension — length, radius, offset, ring, or a corner's angle
  *             H horizontal · V vertical · B parallel · ⇧L perpendicular · ⇧M midpoint
  *             E equal · T tangent · ⇧Q symmetric
- *   editing   F fix/unfix · G construction · Del delete · Ctrl+Z undo · wheel zoom ·
- *             right-drag pan
+ *   editing   F fix/unfix · G construction · Del delete · Ctrl+Z undo · ⇧Ctrl+Z redo ·
+ *             wheel zoom · right-drag pan
  *   menus     File/Edit/Solution hold everything that is not a tool or a constraint; the
  *             solver's own switches are behind Solution ▸ Options
  *
@@ -31,18 +31,18 @@ import { initCore } from '../core/wasm.js';
 import { movingParams, witnessSummary } from '../core/witness.js';
 import { SketchView, Tool } from './view.js';
 import {
-  MenuItem, ToolbarButton, addButton, addCheckbox, addMenu, addSelect, addSeparator, askChoice,
-  askNumber, closeMenus, download, openFile, showReport, showSheet, stats, toast,
+  MenuItem, ToolbarButton, addButton, addCheckbox, addLink, addMenu, addSelect, addSeparator,
+  askChoice, askNumber, closeMenus, download, openFile, showReport, showSheet, stats, toast,
 } from './ui.js';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const menubar = document.getElementById('menubar') as HTMLElement;
+const aboutBadge = document.getElementById('about') as HTMLButtonElement;
+const aboutDag = document.getElementById('about-dag') as HTMLTemplateElement;
 const barTools = document.getElementById('bar-tools') as HTMLElement;
 const barConstraints = document.getElementById('bar-constraints') as HTMLElement;
 const clist = document.getElementById('clist') as HTMLElement;
 const elist = document.getElementById('elist') as HTMLElement;
-const ccount = document.getElementById('ccount') as HTMLElement;
-const ecount = document.getElementById('ecount') as HTMLElement;
 const banner = document.getElementById('banner') as HTMLElement;
 const bannerText = document.getElementById('banner-text') as HTMLElement;
 const bannerSelect = document.getElementById('banner-select') as HTMLButtonElement;
@@ -88,7 +88,14 @@ for (const [label, tool, key] of [
 }
 view.setTool('select');
 addSeparator(barTools);
-addButton(barTools, { label: 'Fit', onClick: () => view.fit() });
+/* Beside the tools, past the divider: what the geometry you drew is *for*, as against the
+ * constraints that hold it.  A table like the constraints bar's, so the chip and the
+ * accelerator stay one string — see ACTION_KEYS. */
+const TOOL_BUTTONS: ToolbarButton[] = [
+  { label: 'Construction', key: 'g', onClick: () => view.toggleConstructionSelected(),
+    title: 'Draw the selected lines/circles/arcs dashed as reference geometry (they still constrain)' },
+];
+for (const b of TOOL_BUTTONS) addButton(barTools, b);
 
 /* -- menu bar ------------------------------------------------------------------- */
 
@@ -105,6 +112,9 @@ const MENUS: [string, (MenuItem | null)[]][] = [
   ]],
   ['Edit', [
     { label: 'Undo', key: '⌘z', onClick: () => view.undo() },
+    { label: 'Redo', key: '⇧⌘z', onClick: () => view.redo() },
+    null,
+    { label: 'Fit to screen', onClick: () => view.fit() },
   ]],
   ['Solution', [
     { label: 'Solve', onClick: () => { view.solveNow(); reportSolve(); } },
@@ -120,6 +130,19 @@ const MENUS: [string, (MenuItem | null)[]][] = [
   ]],
 ];
 for (const [label, items] of MENUS) addMenu(menubar, label, items);
+aboutBadge.addEventListener('click', () => void about());
+
+/** What the wordmark on the bar opens.  The diagram lives in the page as a template, since a
+ *  fixed drawing is markup rather than something to build an element at a time. */
+function about(): Promise<void> {
+  return showSheet('Geometric Constraint Solver', (body) => {
+    const by = document.createElement('p');
+    by.textContent = 'A project by Brandon Martin-Anderson';
+    const where = document.createElement('p');
+    addLink(where, 'GitHub →', 'https://github.com/bmander/geomsolver');
+    body.append(by, aboutDag.content.cloneNode(true), where);
+  });
+}
 
 /** The reference sketches, each with the one line that says what it is there to show.  Asked
  *  for the first time the menu item is picked, so booting costs nothing for a list most
@@ -188,8 +211,6 @@ const CONSTRAINT_BUTTONS: ToolbarButton[] = [
   { label: 'Tangent', key: 't', onClick: () => cTangent() },
   { label: 'Symmetric', key: '⇧q', onClick: () => cSymmetric() },
   { label: 'Fix', key: 'f', onClick: () => view.toggleFixSelected() },
-  { label: 'Construction', key: 'g', onClick: () => view.toggleConstructionSelected(),
-    title: 'Draw the selected lines/circles/arcs dashed as reference geometry (they still constrain)' },
 ];
 for (const b of CONSTRAINT_BUTTONS) addButton(barConstraints, b);
 
@@ -595,7 +616,6 @@ function rebuildERows(next: Primitive[]): void {
 function refreshERows(): void {
   const next = view.sketch.primitives();
   if (!sameList(next, erows)) rebuildERows(next);
-  ecount.textContent = String(erows.length);
 
   const sel = new Set(view.selected);
   const lit = new Set(view.highlight);
@@ -652,7 +672,6 @@ function refreshRows(): void {
     li.classList.toggle('touches', hit);
     li.setAttribute('aria-current', String(c === currentConstraint));
   });
-  ccount.textContent = String(rows.length);
   refreshERows();
   refreshBanner();
 }
@@ -681,34 +700,18 @@ function refreshMeasure(): void {
   measureEl.className = 'on';
 }
 
-/** The status line — the only thing that changes on every frame of a drag. */
+/** The status line — the only thing that changes on every frame of a drag.  How much freedom
+ *  is left is the one number worth watching while you work; anything that stops the drawing
+ *  satisfying its constraints displaces it, since then no count on screen is describing the
+ *  sketch you are looking at.  The detail lives in Solve and Diagnose. */
 function refreshStatus(): void {
-  const sk = view.sketch;
   const d = view.diagnosis;
   const r = view.lastResult;
-  let msg = `points ${sk.points.length}  lines ${sk.lines.length}  circles ${sk.circles.length}  arcs ${sk.arcs.length}`
-    + `   | params ${sk.params.length} (free ${sk.freeIndices().length})  equations ${sk.nResiduals()}`;
-  if (d) {
-    msg += `  DOF ${d.dof}`;
-    // a relation-only theorem (mirrored arc endpoints making EqualRadius follow) is an
-    // equation that says nothing new, not a redundancy to go and fix — say so in those words
-    const fixable = d.status === 'conflict' || d.status === 'over';
-    if (d.nRedundant) msg += `  ${fixable ? 'redundant' : 'implied'} ${d.nRedundant}`;
-    if (d.status === 'conflict') msg += '  ⚠ CONFLICT';
-    if (d.numericSkipped) msg += '  (structural only)';
-  }
-  msg += `   | selected ${view.selected.length}`;
-  if (r) {
-    msg += `   | ${r.success ? 'solved' : 'NOT CONVERGED'}  max|r|=${r.maxResidual.toExponential(1)}  `
-      + `${(r.timeS * 1e3).toFixed(1)} ms  nfev=${r.nfev}  ${r.method}`;
-  }
-  if (view.lastPlan) {
-    msg += `   | plan: ${view.lastPlan.plan.summary}${view.lastPlan.fellBack ? ' (fell back)' : ''}`;
-  }
-  // colour the whole bar when the drawing does not satisfy its constraints: every number
-  // above is then describing a sketch that is not the one on screen
-  footerEl.classList.toggle('unsolved', (!!r && !r.success) || d?.status === 'conflict');
-  stats(msg);
+  const conflict = d?.status === 'conflict';
+  footerEl.classList.toggle('unsolved', conflict || (!!r && !r.success));
+  stats(conflict ? '⚠ CONFLICT'
+      : r && !r.success ? `⚠ NOT CONVERGED  max|r|=${r.maxResidual.toExponential(1)}`
+      : d ? `DOF ${d.dof}` : '');
   refreshMeasure();
 }
 
@@ -754,14 +757,15 @@ const TOOL_KEYS: Record<string, Tool> = {
 /** Every accelerator in the app, read off the buttons and menu items themselves so there is
  *  one list and not two.  The token is the chip the control prints, lowercased: '⇧l', '⌘z'. */
 const ACTION_KEYS = new Map<string, () => void>(
-  [...CONSTRAINT_BUTTONS, ...MENUS.flatMap(([, items]) => items)]
+  [...TOOL_BUTTONS, ...CONSTRAINT_BUTTONS, ...MENUS.flatMap(([, items]) => items)]
     .flatMap((b) => (b?.key ? [[b.key, b.onClick] as [string, () => void]] : [])));
 
 window.addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement | null;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
   if (e.metaKey || e.ctrlKey || e.altKey) {
-    const cmd = e.altKey ? undefined : ACTION_KEYS.get(`⌘${e.key.toLowerCase()}`);
+    const cmd = e.altKey ? undefined
+              : ACTION_KEYS.get(`${e.shiftKey ? '⇧' : ''}⌘${e.key.toLowerCase()}`);
     if (cmd) { e.preventDefault(); cmd(); }
     return;
   }
@@ -795,5 +799,3 @@ new ResizeObserver(() => view.resize()).observe(canvas);
 view.resize();
 view.fit();
 view.afterEdit();
-toast('Rectangle with fillets — fully constrained, so nothing here moves; File ▸ Open test '
-  + 'case for one you can drag', 12000);

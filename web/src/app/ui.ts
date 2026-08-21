@@ -93,7 +93,6 @@ export function askChoice(title: string, label: string, options: string[]): Prom
   return open<number | null>(title, (resolve) => {
     const p = document.createElement('p');
     p.textContent = label;
-    p.style.margin = '0 0 8px';
     const box = document.createElement('div');
     box.className = 'choices';
     options.forEach((o, i) => box.append(button(o, () => resolve(i))));
@@ -123,6 +122,17 @@ export function addButton(bar: HTMLElement, spec: ToolbarButton): HTMLButtonElem
   b.addEventListener('click', spec.onClick);
   bar.append(b);
   return b;
+}
+
+/** An outbound link on a bar.  Its own tab, because following it leaves the sketch behind. */
+export function addLink(bar: HTMLElement, label: string, href: string): HTMLAnchorElement {
+  const a = document.createElement('a');
+  a.textContent = label;
+  a.href = href;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  bar.append(a);
+  return a;
 }
 
 export function addSeparator(bar: HTMLElement): void {

@@ -87,7 +87,10 @@ export class SketchView {
 
   private ctx: CanvasRenderingContext2D;
   private cursor: [number, number] = [0, 0];
+  /** Both histories hold serialised sketches: `undoStack` the states an edit moved away from,
+   *  `redoStack` the ones an undo moved away from. */
   private undoStack: string[] = [];
+  private redoStack: string[] = [];
   private planSolver: PlanSolver | null = null;
   private planKey = '';
   /** The topology `lastSystem` was compiled from, so a stale one is not diagnosed against. */
@@ -140,7 +143,14 @@ export class SketchView {
 
   // -- sketch mutation -----------------------------------------------------
 
+  /** Show a different sketch.  Loading one is not a step along the history — there is no
+   *  future to return to any more — so it drops the redo stack; stepping uses `swap`. */
   setSketch(sk: Sketch, fit = true): void {
+    this.redoStack = [];
+    this.swap(sk, fit);
+  }
+
+  private swap(sk: Sketch, fit: boolean): void {
     this.stopAnimation();             // before the swap: it restores into the sketch it started on
     this.abandonGesture();            // before the swap: `end` would commit into the new sketch
     this.sketch = sk;
@@ -155,13 +165,21 @@ export class SketchView {
   pushUndo(): void {
     this.undoStack.push(io.dumps(this.sketch));
     if (this.undoStack.length > 100) this.undoStack.shift();
+    this.redoStack = [];              // a fresh edit is a new branch: the old future is gone
   }
 
-  undo(): void {
-    const s = this.undoStack.pop();
-    if (!s) return;
-    this.setSketch(io.loads(s), false);
-    this.onStatus('undo');
+  undo(): void { this.step(this.undoStack, this.redoStack, 'undo'); }
+
+  redo(): void { this.step(this.redoStack, this.undoStack, 'redo'); }
+
+  /** One step along the history.  The state being left goes onto the other stack, so the two
+   *  are mirror images and the pair walks the same line in both directions. */
+  private step(from: string[], to: string[], what: string): void {
+    const s = from.pop();
+    if (!s) return this.onStatus(`nothing to ${what}`);
+    to.push(io.dumps(this.sketch));
+    this.swap(io.loads(s), false);
+    this.onStatus(what);
   }
 
   private releasePlan(): void {
@@ -267,7 +285,6 @@ export class SketchView {
       showing: -1,
     };
     this.animTimer = window.setInterval(() => this.animTick(), ANIM_DT * 1000);
-    this.onStatus(`animating ${modes.length} remaining DOF (click or Esc to stop)`);
     return true;
   }
 
@@ -647,7 +664,6 @@ export class SketchView {
     this.canvas.classList.toggle('select', tool === 'select');
     this.canvas.style.cursor = '';                // drop any hover affordance
     this.onTool(tool);
-    this.onStatus(`tool: ${tool}`);
     this.draw();
   }
 
@@ -661,7 +677,6 @@ export class SketchView {
     }
     if (this.pending.length) {
       this.pending = [];
-      this.onStatus(`${this.tool}: cancelled — Esc again for Select`);
       this.draw();
       return;
     }
@@ -748,8 +763,6 @@ export class SketchView {
       } else if (this.isResizable(ent)) {
         this.pushUndo();
         this.gesture = this.radiusGesture(new RadiusDrag(this.sketch, ent, Math.abs(ent.radius.value)));
-      } else if (!this.canMove(ent)) {
-        this.onStatus(`${ent.kind} is fully constrained — nothing here is free to move`);
       }
     }
     this.onSelect();
