@@ -104,7 +104,7 @@ for (const b of TOOL_BUTTONS) addButton(barTools, b);
  * keyboard handler matches — see ACTION_KEYS. */
 const MENUS: [string, (MenuItem | null)[]][] = [
   ['File', [
-    { label: 'New', onClick: () => view.setSketch(new Sketch()) },
+    { label: 'New', onClick: () => view.setSketch(newSketch()) },
     { label: 'Open…', onClick: () => void doOpen() },
     { label: 'Open test case…', onClick: () => void openCase() },
     null,
@@ -142,6 +142,16 @@ function about(): Promise<void> {
     addLink(where, 'GitHub →', 'https://github.com/bmander/geomsolver');
     body.append(by, aboutDag.content.cloneNode(true), where);
   });
+}
+
+/** A fresh sheet, which is not quite empty.  With nothing fixed on it the first shape drawn
+ *  is free to float — it satisfies its constraints just as well anywhere on the canvas, so a
+ *  drag slides the whole thing rather than working against anything.  One fixed point at the
+ *  origin gives the drawing somewhere to be. */
+function newSketch(): Sketch {
+  const sk = new Sketch();
+  sk.point(0, 0, true);
+  return sk;
 }
 
 /** The reference sketches, each with the one line that says what it is there to show.  Asked
@@ -709,9 +719,11 @@ function refreshStatus(): void {
   const r = view.lastResult;
   const conflict = d?.status === 'conflict';
   footerEl.classList.toggle('unsolved', conflict || (!!r && !r.success));
+  // nothing is diagnosed until there is a constraint to diagnose, and until then the freedom
+  // left is simply every free parameter — there are no equations for one to be spent on
   stats(conflict ? '⚠ CONFLICT'
       : r && !r.success ? `⚠ NOT CONVERGED  max|r|=${r.maxResidual.toExponential(1)}`
-      : d ? `DOF ${d.dof}` : '');
+      : `DOF ${d ? d.dof : view.sketch.freeIndices().length}`);
   refreshMeasure();
 }
 
