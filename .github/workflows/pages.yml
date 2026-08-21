@@ -75,11 +75,12 @@ jobs:
           rm -rf _site/src/wasm         # dist/wasm already has the module the page fetches
           du -sh _site
 
-      # first run turns Pages on for the repository and points it at this workflow
+      # Pages has to already be on, with its source set to GitHub Actions — the workflow token
+      # may deploy to a site but not create one.  Once per repository:
+      #     gh api -X POST repos/OWNER/REPO/pages -f build_type=workflow
+      # or Settings -> Pages -> Source: GitHub Actions.
       - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
