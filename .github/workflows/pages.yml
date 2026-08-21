@@ -1,0 +1,96 @@
+# Publish the browser sketcher to GitHub Pages.
+#
+# The demo is static files and nothing else: `make wasm` compiles the Rust core to WebAssembly,
+# `npm run build` compiles the TypeScript around it, and everything the page loads is a relative
+# path — so the same tree serves unchanged from a project path (/geomsolver/) or a domain root.
+name: pages
+
+on:
+  push:
+    branches: [main]
+    # the demo is the core, the binding and the app; nothing else changes what it does
+    paths:
+      - 'rust/**'
+      - 'web/**'
+      - 'Makefile'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+# One deploy at a time, and never cancel one part-way: a half-published site is worse than a
+# stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # `make wasm` is the slow step; the registry and the target directory are what make a
+      # rebuild cheap when only the front end changed.
+      - name: Cache the Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: wasm-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
+          restore-keys: wasm-${{ runner.os }}-
+
+      # adds the wasm32 target itself if the runner has not got it
+      - name: Build the core as WebAssembly
+        run: make wasm
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # `npm test` compiles first and then runs the suite, so this both produces web/dist and
+      # refuses to publish a demo whose own tests do not pass.
+      - name: Build and test the sketcher
+        run: |
+          npm ci
+          npm test
+        working-directory: web
+
+      - name: Stage the site
+        run: |
+          mkdir -p _site
+          cp web/index.html _site/
+          cp -R web/dist _site/dist
+          rm -rf _site/dist/test        # the test suite is not part of the demo
+          # the compiled modules carry source maps pointing at ../../src, so shipping the
+          # TypeScript makes devtools work on the live demo
+          cp -R web/src _site/src
+          rm -rf _site/src/wasm         # dist/wasm already has the module the page fetches
+          du -sh _site
+
+      # first run turns Pages on for the repository and points it at this workflow
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

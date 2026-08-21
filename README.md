@@ -4,6 +4,8 @@ A 2D geometric constraint solver — points, lines, circles and arcs under dimen
 relational constraints — with structural diagnosis, decomposition into cached solve plans, and
 robust dragging, packaged for Python and the browser.
 
+**[Try the sketcher in your browser →](https://bmander.github.io/geomsolver/)**
+
 ## Implementation
 
 The whole engine is one dependency-free Rust crate ([`rust/gcs-core/`](rust/gcs-core/)) behind a
@@ -52,11 +54,16 @@ solve(sk);
 
 ## Running the web app
 
+The sketcher is live at **[bmander.github.io/geomsolver](https://bmander.github.io/geomsolver/)**,
+built from `main` by [`.github/workflows/pages.yml`](.github/workflows/pages.yml).  To run it
+locally:
+
 ```sh
 make wasm && cd web && npm run serve    # http://localhost:8123/
 ```
 
-Static files only — any static host serves `web/` after `npm run build`.
+Static files only — any static host serves `web/` after `npm run build`, and every path the page
+loads is relative, so it works from a subdirectory as happily as from a domain root.
 
 ## Bibliography
 
