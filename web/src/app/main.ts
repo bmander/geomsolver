@@ -1,11 +1,17 @@
 /* The sketcher shell: toolbars, the constraint list, the diagnosis banner and the dialogs.
  *
- *   tools     S select · P point · L line · R rectangle · C circle · A arc (centre, start, end)
+ *   tools     P point · L line · R rectangle · C circle · A arc (centre, start, end)
  *             3 arc through two ends and a point on it
- *   Esc       stop a DOF animation, then drop the tool's pending points, then back out to Select
+ *   Esc       stop a DOF animation, then drop the tool's pending points, then put the tool
+ *             down — Select is not a tool, it is what no tool being held looks like, so it
+ *             is also where clicking the pressed toolbar button leaves you
  *   select    click (shift = multi), or drag a box over empty canvas to take everything
  *             that lies entirely inside it
- *   editing   F fix/unfix · Del delete · Ctrl+Z undo · wheel zoom · right-drag pan
+ *   constrain I coincident · D dimension — length, radius, offset, ring, or a corner's angle
+ *             H horizontal · V vertical · B parallel · ⇧L perpendicular · ⇧M midpoint
+ *             E equal · T tangent · ⇧Q symmetric
+ *   editing   F fix/unfix · G construction · Del delete · Ctrl+Z undo · wheel zoom ·
+ *             right-drag pan
  *
  * Everything below is presentation; the solver, diagnosis, decomposition and root selection
  * all live in core/ and are shared with the test suite. */
@@ -23,8 +29,8 @@ import { initCore } from '../core/wasm.js';
 import { movingParams, witnessSummary } from '../core/witness.js';
 import { SketchView, Tool } from './view.js';
 import {
-  addButton, addCheckbox, addSelect, addSeparator, askChoice, askNumber, download, openFile,
-  showReport, stats, toast,
+  ToolbarButton, addButton, addCheckbox, addSelect, addSeparator, askChoice, askNumber,
+  download, openFile, showReport, stats, toast,
 } from './ui.js';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
@@ -62,21 +68,22 @@ const toolButtons = new Map<Tool, HTMLButtonElement>();
 
 /* -- toolbars ---------------------------------------------------------------- */
 
-/** The buttons follow the view, so Escape backing out of a tool updates them too. */
+/** The buttons follow the view, so Escape backing out of a tool updates them too.  Select is
+ *  not a button: it is what the toolbar looks like with nothing pressed, so clicking the
+ *  pressed tool puts it down and lands you back there. */
 view.onTool = (t) => {
   for (const [k, b] of toolButtons) b.setAttribute('aria-pressed', String(k === t));
 };
 for (const [label, tool, key] of [
-  ['Select', 'select', 's'], ['Point', 'point', 'p'], ['Line', 'line', 'l'],
-  ['Rect', 'rect', 'r'], ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
+  ['Point', 'point', 'p'], ['Line', 'line', 'l'], ['Rect', 'rect', 'r'],
+  ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
 ] as [string, Tool, string][]) {
-  toolButtons.set(tool, addButton(barTools, { label, key, toggle: true, onClick: () => view.setTool(tool) }));
+  toolButtons.set(tool, addButton(barTools, {
+    label, key, toggle: true, title: 'Click again to put the tool down and go back to selecting',
+    onClick: () => view.setTool(view.tool === tool ? 'select' : tool),
+  }));
 }
 view.setTool('select');
-addButton(barTools, {
-  label: 'Cancel', key: 'esc', onClick: () => view.cancelTool(),
-  title: 'Discard the points collected so far; again to leave the tool for Select',
-});
 addSeparator(barTools);
 
 const CASES = examples.cases();
@@ -114,35 +121,42 @@ addSelect(barTools, METHODS.map((m) => ({ value: m, label: m })), (m) => {
   view.solveNow();
 });
 
-/* constraints whose arguments are just entities: (label, class, points, lines, circles/arcs) */
-const SIMPLE: [string, C.ConstraintCtor, number, number, number][] = [
+/* constraints whose arguments are just entities:
+ * (label, class, points, lines, circles/arcs, shortcut) */
+type Simple = [string, C.ConstraintCtor, number, number, number, string?];
+const SIMPLE: Simple[] = [
+  ['Horizontal', C.Horizontal, 0, 1, 0, 'h'],
+  ['Vertical', C.Vertical, 0, 1, 0, 'v'],
+  ['Parallel', C.Parallel, 0, 2, 0, 'b'],
+  ['Perpendicular', C.Perpendicular, 0, 2, 0, '⇧l'],
+  ['Midpoint', C.Midpoint, 1, 1, 0, '⇧m'],
+];
+/* One "these touch" button.  Which incidence it means is the selection's business, not the
+ * user's: two points meet, a point sits on a line, a point sits on a circle or arc. */
+const INCIDENCE: Simple[] = [
   ['Coincident', C.Coincident, 2, 0, 0],
-  ['Horizontal', C.Horizontal, 0, 1, 0],
-  ['Vertical', C.Vertical, 0, 1, 0],
-  ['Parallel', C.Parallel, 0, 2, 0],
-  ['Perpendicular', C.Perpendicular, 0, 2, 0],
   ['On line', C.PointOnLine, 1, 1, 0],
-  ['Midpoint', C.Midpoint, 1, 1, 0],
   ['On circle', C.PointOnCircle, 1, 0, 1],
 ];
-/* the toolbar order interleaves the dimensioned constraints with the entity-only ones */
-type Applier = [string, () => void];
-const CONSTRAINT_BUTTONS: Applier[] = [
-  [SIMPLE[0][0], () => applySimple(SIMPLE[0])],
-  ['Distance', () => void cDistance()],
-  ...SIMPLE.slice(1).map(([label, ...rest]) => [label, () => applySimple([label, ...rest] as typeof SIMPLE[number])] as Applier),
-  ['Angle', () => void cAngle()],
-  ['Equal', () => cEqual()],
-  ['Tangent', () => cTangent()],
-  ['Radius', () => void cRadius()],
-  ['Symmetric', () => cSymmetric()],
+/* The constraints bar, in an order that interleaves the dimensioned constraints with the
+ * entity-only ones.  `key` is both the chip printed on the button and the token the keyboard
+ * handler matches — '⇧l' prints as ⇧L and fires on shift-L — so a button and its shortcut
+ * cannot drift apart. */
+const CONSTRAINT_BUTTONS: ToolbarButton[] = [
+  { label: 'Coincident', key: 'i', onClick: () => cCoincident(),
+    title: 'Two points meet · a point on a line · a point on a circle or arc' },
+  { label: 'Dimension', key: 'd', onClick: () => void cDimension(),
+    title: 'Put a number on the selection · a length, a radius, an offset, a ring '
+         + '· two lines take their gap when parallel and their angle when not' },
+  ...SIMPLE.map((c): ToolbarButton => ({ label: c[0], key: c[5], onClick: () => applySimple(c) })),
+  { label: 'Equal', key: 'e', onClick: () => cEqual() },
+  { label: 'Tangent', key: 't', onClick: () => cTangent() },
+  { label: 'Symmetric', key: '⇧q', onClick: () => cSymmetric() },
+  { label: 'Fix', key: 'f', onClick: () => view.toggleFixSelected() },
+  { label: 'Construction', key: 'g', onClick: () => view.toggleConstructionSelected(),
+    title: 'Draw the selected lines/circles/arcs dashed as reference geometry (they still constrain)' },
 ];
-for (const [label, onClick] of CONSTRAINT_BUTTONS) addButton(barConstraints, { label, onClick });
-addButton(barConstraints, { label: 'Fix', key: 'f', onClick: () => view.toggleFixSelected() });
-addButton(barConstraints, {
-  label: 'Construction', key: 'g', onClick: () => view.toggleConstructionSelected(),
-  title: 'Draw the selected lines/circles/arcs dashed as reference geometry (they still constrain)',
-});
+for (const b of CONSTRAINT_BUTTONS) addButton(barConstraints, b);
 
 /* -- selection helpers -------------------------------------------------------- */
 
@@ -162,7 +176,7 @@ function need(ok: boolean, what: string): boolean {
 
 /** Generic applier: checks the selection has the required counts and passes the entities in
  *  spec order.  Single-line constraints (Horizontal/Vertical) apply to every selected line. */
-function applySimple([, cls, nPts, nLines, nCirc]: typeof SIMPLE[number]): void {
+function applySimple([, cls, nPts, nLines, nCirc]: Simple): void {
   const { pts, lines, circles } = sel();
   const perLine = nPts === 0 && nLines === 1 && nCirc === 0;
   const ok = pts.length === nPts && circles.length === nCirc
@@ -183,34 +197,55 @@ function applySimple([, cls, nPts, nLines, nCirc]: typeof SIMPLE[number]): void 
   view.addConstraints(...made);
 }
 
-async function cDistance(): Promise<void> {
+/** The single incidence button: read the selection and pick the constraint that fits it. */
+function cCoincident(): void {
+  const { pts, lines, circles } = sel();
+  const hit = INCIDENCE.find(([, , nPts, nLines, nCirc]) =>
+    pts.length === nPts && lines.length === nLines && circles.length === nCirc);
+  if (!need(!!hit, 'two points, a point and a line, or a point and a circle/arc')) return;
+  applySimple(hit as Simple);
+}
+
+/** The one dimension button: what it puts a number on is the selection's business.  Two points
+ *  or a single line take a length, a point and a line a signed offset, a circle its radius and
+ *  two of them the ring between them — and two lines take the gap between them when they are
+ *  parallel, the angle at their corner when they are not. */
+async function cDimension(): Promise<void> {
   let { pts } = sel();
   const { lines, circles } = sel();
-  if (!pts.length && lines.length === 2) return cParallelDistance(lines[0], lines[1]);
+  if (!pts.length && lines.length === 2) {
+    const [a, b] = lines;
+    const [ax, ay] = a.direction();
+    const [bx, by] = b.direction();
+    const s = Math.hypot(ax, ay) * Math.hypot(bx, by);
+    if (!need(s > 0, 'lines with two distinct endpoints')) return;
+    // "Parallel" here means the sketch makes them so, not that they merely look it: a solved
+    // Parallel sits within a residual scaled to the sketch's extent, which on a short line is
+    // a few ten-thousandths of a radian.  Anything looser is a corner, and what a drawing
+    // dimensions on a corner is its angle.
+    return Math.abs(ax * by - ay * bx) <= 1e-3 * s ? cParallelDistance(a, b) : cAngle(a, b);
+  }
   if (pts.length === 1 && lines.length === 1) return cPointLineDistance(pts[0], lines[0]);
-  if (!pts.length && !lines.length && circles.length === 2) return cAnnularDistance(circles[0], circles[1]);
+  // a dimension *between* two circles is the ring; on any other number of them it is the
+  // radius they are each to have
+  if (!pts.length && !lines.length && circles.length) {
+    return circles.length === 2 ? cAnnularDistance(circles[0], circles[1]) : cRadius(circles);
+  }
   if (!pts.length && lines.length === 1) pts = [lines[0].p1, lines[0].p2];
-  if (!need(pts.length === 2, 'two points, one line, a point and a line, two lines, or two circles')) return;
+  if (!need(pts.length === 2, 'two points, one line, a point and a line, two lines, '
+                            + 'or one or more circles/arcs')) return;
   const cur = Math.hypot(pts[0].x.value - pts[1].x.value, pts[0].y.value - pts[1].y.value);
   const v = await askNumber('Distance', 'Distance', cur);
   if (v !== null) view.addConstraints(new C.Distance(pts[0], pts[1], v));
 }
 
-/** Two lines: dimension the gap between them.  It does not make them parallel, so say so when
- *  they are not already — otherwise the dimension pins only one endpoint and the result looks
- *  arbitrary. */
+/** Two parallel lines: dimension the gap between them.  It does not make them parallel — the
+ *  caller has already established that they are, and sent the other case to Angle, because a
+ *  "gap" between converging lines pins one endpoint's offset and reads as arbitrary. */
 async function cParallelDistance(l1: Line, l2: Line): Promise<void> {
-  const [dx, dy] = l1.direction();
-  const [ex, ey] = l2.direction();
-  const len = Math.hypot(dx, dy);
-  if (!need(len > 0, 'a line with two distinct endpoints')) return;
   const cur = signedPointToLine(l2.p1.x.value, l2.p1.y.value, l1);
   const v = await askNumber('Parallel distance', 'Gap (negative puts the second line on the other side)', cur);
-  if (v === null) return;
-  view.addConstraints(new C.ParallelDistance(l1, l2, v));
-  if (Math.abs(dx * ey - dy * ex) > 1e-9 * len * Math.hypot(ex, ey)) {
-    toast('the gap is dimensioned, but these lines are not parallel — add Parallel if you want them to be');
-  }
+  if (v !== null) view.addConstraints(new C.ParallelDistance(l1, l2, v));
 }
 
 /** A point and a line: dimension the point's perpendicular offset, signed so negating it moves
@@ -239,12 +274,11 @@ async function cAnnularDistance(c1: Circle | Arc, c2: Circle | Arc): Promise<voi
   }
 }
 
-async function cAngle(): Promise<void> {
-  const { lines } = sel();
-  if (!need(lines.length === 2, 'two lines')) return;
-  const cur = (angleBetween(lines[0], lines[1]) * 180) / Math.PI;   // the core's rule, in degrees
+/** Two lines that meet at a corner: dimension the corner. */
+async function cAngle(l1: Line, l2: Line): Promise<void> {
+  const cur = (angleBetween(l1, l2) * 180) / Math.PI;   // the core's rule, in degrees
   const v = await askNumber('Angle', 'Angle from the first to the second line (degrees)', cur);
-  if (v !== null) view.addConstraints(new C.Angle(lines[0], lines[1], (v * Math.PI) / 180));
+  if (v !== null) view.addConstraints(new C.Angle(l1, l2, (v * Math.PI) / 180));
 }
 
 /** An equality set: every selected line the same length, or every selected circle/arc the
@@ -287,9 +321,8 @@ function cTangent(): void {
   }
 }
 
-async function cRadius(): Promise<void> {
-  const { circles } = sel();
-  if (!need(circles.length >= 1, 'circle(s)/arc(s)')) return;
+/** One circle or arc takes its radius; several are all given the same one. */
+async function cRadius(circles: (Circle | Arc)[]): Promise<void> {
   const v = await askNumber('Radius', 'Radius', Math.abs(circles[0].radius.value));
   if (v === null) return;
   view.addConstraints(...circles.map((cc) => new C.Radius(cc, v)));
@@ -681,8 +714,11 @@ bannerSelect.addEventListener('click', () => {
 /* -- keyboard ------------------------------------------------------------------- */
 
 const TOOL_KEYS: Record<string, Tool> = {
-  s: 'select', p: 'point', l: 'line', r: 'rect', c: 'circle', a: 'arc', 3: 'arc3',
+  p: 'point', l: 'line', r: 'rect', c: 'circle', a: 'arc', 3: 'arc3',
 };
+/** The constraints bar's accelerators, read off the buttons so there is one list, not two. */
+const ACTION_KEYS = new Map<string, () => void>(
+  CONSTRAINT_BUTTONS.flatMap((b) => (b.key ? [[b.key, b.onClick] as [string, () => void]] : [])));
 
 window.addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement | null;
@@ -703,9 +739,10 @@ window.addEventListener('keydown', (e) => {
     }
     return;
   }
-  if (k === 'f') { view.toggleFixSelected(); return; }
-  if (k === 'g') { view.toggleConstructionSelected(); return; }
-  if (TOOL_KEYS[k]) view.setTool(TOOL_KEYS[k]);
+  // shift is part of the token, so ⇧L is Perpendicular and never the Line tool
+  const action = ACTION_KEYS.get(e.shiftKey ? `⇧${k}` : k);
+  if (action) { action(); return; }
+  if (!e.shiftKey && TOOL_KEYS[k]) view.setTool(TOOL_KEYS[k]);
 });
 
 /* -- boot ------------------------------------------------------------------------- */
