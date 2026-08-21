@@ -93,6 +93,8 @@ export interface Abi {
   gcs_branches_json(h: number): number;
   gcs_branches_set_json(h: number, p: number, n: number): void;
   gcs_without(h: number, ep: number, en: number, cp: number, cn: number): number;
+  gcs_copy(h: number, ep: number, en: number): number;
+  gcs_paste(h: number, clip: number, dx: number, dy: number): number;
   gcs_example(name: number, len: number): number;
   gcs_cases_json(): number;
 

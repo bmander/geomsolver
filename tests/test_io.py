@@ -335,3 +335,22 @@ def test_callout_pick_finds_the_dimension_under_a_point() -> None:
         hit = io.callout_pick(sk, 0.2, k["anchor"][0], k["anchor"][1], 4.0)
         assert hit is not None and hit._id == k["id"]
     assert io.callout_pick(sk, 0.2, -1e4, -1e4, 4.0) is None
+
+
+def test_copy_and_paste_round_trip() -> None:
+    """A clipboard is a sketch: what a copy keeps is what deleting the rest would have kept."""
+    sk = examples.rect_fillets()
+    picked = [sk.lines[0], sk.arcs[0]]
+    clip = io.copy(sk, picked)
+    rest = [e for e in sk.primitives() if e not in io.expand(picked)]
+    assert io.dumps(clip) == io.dumps(io.without(sk, entities=rest))
+
+    n_pts, n_cons = len(sk.points), len(sk.user_constraints())
+    made = io.paste(sk, clip, 5.0, -3.0)
+    assert len(made) == len(clip.primitives())
+    assert len(sk.points) == n_pts + len(clip.points)
+    assert len(sk.user_constraints()) == n_cons + len(clip.user_constraints())
+    # moved by exactly the offset asked for, and independent of what it was copied from
+    assert sk.points[n_pts].xy == pytest.approx((clip.points[0].x.value + 5.0,
+                                                 clip.points[0].y.value - 3.0))
+    assert solve(sk).success

@@ -244,3 +244,117 @@ test('re-placing puts a dragged callout back', () => {
   view.resetCallouts();
   assert.ok(Math.abs(dimY(view, sk) - before) < 1e-9);
 });
+
+/* -- copy and paste -------------------------------------------------------------------- */
+
+/** Two points and a line between them, with a length on it. */
+function oneLine(): Sketch {
+  const sk = new Sketch();
+  const a = sk.point(0, 0, true), b = sk.point(60, 0);
+  sk.line(a, b);
+  sk.add(new C.Distance(a, b, 60));
+  return sk;
+}
+
+test('copying a line takes its points and its dimension', () => {
+  const sk = oneLine();
+  const view = viewOn(sk);
+  view.selected = [sk.lines[0]];
+  assert.equal(view.copySelected(), 3, 'the line and its two ends');
+
+  assert.equal(view.pasteClipboard(), 3);
+  assert.equal(sk.points.length, 4);
+  assert.equal(sk.lines.length, 2);
+  assert.equal(sk.userConstraints().length, 2, 'the copy brought its own Distance');
+});
+
+test('a paste is selected, and lands clear of what it came from', () => {
+  const sk = oneLine();
+  const view = viewOn(sk);
+  view.selected = [sk.lines[0]];
+  view.copySelected();
+  view.pasteClipboard();
+
+  assert.deepEqual(view.selected, [sk.points[2], sk.points[3], sk.lines[1]]);
+  const [x0, y0] = sk.points[0].xy;
+  const [x1, y1] = sk.points[2].xy;
+  assert.ok(x1 > x0 && y1 < y0, `the copy should be nudged clear: ${x1},${y1} vs ${x0},${y0}`);
+});
+
+test('successive pastes cascade instead of piling up', () => {
+  const sk = oneLine();
+  const view = viewOn(sk);
+  view.selected = [sk.lines[0]];
+  view.copySelected();
+  view.pasteClipboard();
+  const first = sk.points[2].xy;
+  view.pasteClipboard();
+  const second = sk.points[4].xy;
+  assert.notDeepEqual(second, first, 'the second paste landed on the first');
+  assert.ok(second[0] > first[0]);
+});
+
+test('a pasted copy is independent of the original', () => {
+  const sk = oneLine();
+  const view = viewOn(sk);
+  view.selected = [sk.lines[0]];
+  view.copySelected();
+  view.pasteClipboard();
+
+  // the pasted Distance names the pasted points and nothing else
+  const pasted = sk.userConstraints()[1];
+  assert.deepEqual(pasted.entities(), [sk.points[2], sk.points[3]]);
+});
+
+test('copying nothing leaves the clipboard as it was', () => {
+  const sk = oneLine();
+  const view = viewOn(sk);
+  view.selected = [sk.lines[0]];
+  assert.equal(view.copySelected(), 3);
+  view.selected = [];
+  assert.equal(view.copySelected(), 0, 'an empty selection is not a copy');
+  assert.equal(view.pasteClipboard(), 3, 'the earlier copy should still be there');
+});
+
+test('pasting with an empty clipboard changes nothing', () => {
+  const sk = oneLine();
+  const view = viewOn(sk);
+  const before = io.dumps(sk);
+  assert.equal(view.pasteClipboard(), 0);
+  assert.equal(io.dumps(sk), before);
+  view.undo();
+  assert.equal(io.dumps(sk), before, 'the no-op went onto the undo stack');
+});
+
+test('a paste undoes in one step', () => {
+  const sk = oneLine();
+  const view = viewOn(sk);
+  const before = io.dumps(sk);
+  view.selected = [sk.lines[0]];
+  view.copySelected();
+  view.pasteClipboard();
+  assert.notEqual(io.dumps(view.sketch), before);
+  view.undo();
+  assert.equal(io.dumps(view.sketch), before);
+});
+
+test('cut takes the selection out and keeps it', () => {
+  const sk = oneLine();
+  const view = viewOn(sk);
+  view.selected = [sk.lines[0]];
+  assert.equal(view.cutSelected(), 3);
+  assert.equal(view.sketch.lines.length, 0, 'the line should be gone');
+  assert.equal(view.pasteClipboard(), 3, 'and still on the clipboard');
+  assert.equal(view.sketch.lines.length, 1);
+});
+
+test('the clipboard outlives the sketch it came from', () => {
+  const sk = oneLine();
+  const view = viewOn(sk);
+  view.selected = [sk.lines[0]];
+  view.copySelected();
+  view.setSketch(new Sketch());          // a fresh sheet
+  assert.equal(view.pasteClipboard(), 3);
+  assert.equal(view.sketch.lines.length, 1);
+  assert.equal(view.sketch.userConstraints().length, 1);
+});

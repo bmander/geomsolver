@@ -45,6 +45,11 @@ const CONSTRUCTION_DASH = [7, 4];
  *  they are annotation rather than something the sketch is made of. */
 const WITNESS_DASH = [4, 3];
 
+/** How far a paste lands from what it was copied from, in screen px — far enough to see, near
+ *  enough to drag.  Screen-constant, so a paste looks the same at any zoom, and successive
+ *  pastes cascade rather than pile up. */
+const PASTE_PX = 24;
+
 const ANIM_DT = 0.03;        // seconds per animation tick
 const ANIM_PERIOD = 2.0;     // seconds spent on each degree of freedom
 
@@ -115,6 +120,12 @@ export class SketchView {
   private witnessFor: Diagnosis | null = null;
   private anim: Animation | null = null;
   private animTimer = 0;
+  /** The last copy, as a sketch of its own.  A clipboard is a document, which is what lets one
+   *  outlive the selection — and the sketch — it came from. */
+  private clipboard: Sketch | null = null;
+  /** How many times the clipboard has been pasted since it was filled, so pastes cascade
+   *  instead of landing on each other. */
+  private pastes = 0;
   /** The one gesture in progress, if any — pan, point drag, radius drag or rubber band.
    *  One field rather than four means a new gesture cannot be forgotten in `setSketch`, and
    *  the pointer handlers stay two lines each. */
@@ -177,6 +188,7 @@ export class SketchView {
     this.selected = [];
     this.highlight = [];
     this.litConstraint = null;
+    this.pastes = 0;              // a fresh sheet: the next paste starts its cascade over
     this.pending = [];
     this.releasePlan();
     this.afterEdit();
@@ -418,6 +430,47 @@ export class SketchView {
       + `${all ? 'back to normal geometry' : 'marked as construction'}`);
     this.onChanged();
     this.draw();
+  }
+
+  /** Copy the selection.  Returns what went onto the clipboard, so the caller can say so; a
+   *  selection nothing came of leaves the previous clipboard alone. */
+  copySelected(): number {
+    if (!this.selected.length) return 0;
+    const clip = io.copy(this.sketch, this.selected);
+    const n = clip.primitives().length;
+    if (!n) {
+      clip.dispose();
+      return 0;
+    }
+    this.clipboard?.dispose();
+    this.clipboard = clip;
+    this.pastes = 0;
+    return n;
+  }
+
+  /** Copy the selection and take it out of the sketch. */
+  cutSelected(): number {
+    const n = this.copySelected();
+    if (n) this.deleteSelected();
+    return n;
+  }
+
+  /** Paste the clipboard, nudged clear of whatever it landed on and left selected, so it can be
+   *  dragged where it belongs straight away.  The copy is independent: it brings its own
+   *  constraints and is joined to nothing. */
+  pasteClipboard(): number {
+    const clip = this.clipboard;
+    if (!clip?.primitives().length) return 0;
+    this.pushUndo();
+    const d = (PASTE_PX * ++this.pastes) / this.scale;
+    const made = io.paste(this.sketch, clip, d, -d);
+    this.selected = made;
+    this.litConstraint = null;
+    this.highlight = [];
+    this.releasePlan();
+    this.afterEdit();
+    this.onSelect();
+    return made.length;
   }
 
   /** Put dimension callouts back where the layout would place them: one of them, or all of

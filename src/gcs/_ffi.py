@@ -136,6 +136,8 @@ _SIGNATURES: list[tuple[str, Any, list[Any]]] = [
     ("gcs_branches_json", STR, [PTR]),
     ("gcs_branches_set_json", None, [PTR, PTR, ct.c_size_t]),
     ("gcs_without", PTR, [PTR, PTR, ct.c_size_t, PTR, ct.c_size_t]),
+    ("gcs_copy", PTR, [PTR, PTR, ct.c_size_t]),
+    ("gcs_paste", STR, [PTR, PTR, ct.c_double, ct.c_double]),
     ("gcs_example", PTR, [PTR, ct.c_size_t]),
     ("gcs_cases_json", STR, []),
     # system

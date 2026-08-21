@@ -55,6 +55,25 @@ def without(sk: Sketch, entities: Iterable[Primitive] = (),
     return Sketch(lib.gcs_without(sk._h, ep, en, cp, cn))
 
 
+def copy(sk: Sketch, entities: Iterable[Primitive]) -> Sketch:
+    """The selection as a sketch of its own: the entities picked, the points that define them
+    and the constraints all of whose entities came along.  It is an ordinary sketch, so a
+    clipboard is a document — `dumps` it and it saves, `loads` it and it pastes."""
+    p, n = _ffi.send_json([e.ref for e in entities])
+    return Sketch(lib.gcs_copy(sk._h, p, n))
+
+
+def paste(sk: Sketch, clip: Sketch, dx: float = 0.0, dy: float = 0.0) -> list[Primitive]:
+    """Add everything in `clip` to `sk`, moved by (dx, dy), and return what that made."""
+    made: list[list[Any]] = _ffi.take_json(lib.gcs_paste(sk._h, clip._h, float(dx), float(dy)))
+    sk.touch()    # the pasted constraints arrived behind the proxy's back
+    of: dict[str, list[Primitive]] = {
+        "point": list(sk.points), "line": list(sk.lines),
+        "circle": list(sk.circles), "arc": list(sk.arcs),
+    }
+    return [of[kind][i] for kind, i in made or []]
+
+
 def describe(c: Constraint, ix: Sketch | None = None) -> str:
     """Human-readable one-liner: `Distance(P0, P1, 80)`; angles shown in degrees."""
     return c.describe()
@@ -116,5 +135,5 @@ from gcs.constraints import CONSTRAINT_TYPES as _TYPES  # noqa: E402
 BY_NAME.update(_TYPES)
 
 __all__ = ["BY_NAME", "callout_drag", "callout_grab", "callout_pick", "callout_reset",
-           "callouts", "describe", "dumps", "fmt", "from_dict", "load", "loads", "name_of",
-           "save", "to_dict", "without", "ENTITY_KINDS", "expand"]
+           "callouts", "copy", "describe", "dumps", "fmt", "from_dict", "load", "loads",
+           "name_of", "paste", "save", "to_dict", "without", "ENTITY_KINDS", "expand"]

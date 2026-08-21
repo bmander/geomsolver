@@ -9,6 +9,7 @@ use crate::constraints::{Arg, CKind, Constraint, SpecKind};
 use crate::decompose;
 use crate::json::{fmt_g, object, parse, Json};
 use crate::model::{expand, EntKind, EntRef, Sketch};
+use std::collections::BTreeSet;
 
 /// `P0` / `L3` / `C1` / `A2` — the short label the UI and `describe` use.
 pub fn entity_name(e: EntRef) -> String {
@@ -223,71 +224,80 @@ pub fn loads(s: &str) -> Result<Sketch, String> {
     from_json(&parse(s)?)
 }
 
-/// Copy of the sketch with the given entities/constraints removed, plus everything that depends on
-/// a removed entity.  Deletion by rebuild — simple, and keeps `Sketch`'s invariants trivially true.
-pub fn without(sk: &Sketch, entities: &[EntRef], constraints: &[u32]) -> Sketch {
-    let dead: Vec<EntRef> = entities.to_vec();
-    let alive = |e: EntRef| !dead.contains(&e) && !sk.children(e).iter().any(|c| dead.contains(c));
-
-    let mut tmp = Sketch::new();
-    // rebuild through the JSON shape: the surviving entities are renumbered, and every reference
-    // follows, which is exactly what "delete by rebuild" means
+/// Graft the entities of `src` that `keep` accepts onto `dst`, moved by `offset`, and return
+/// what that made, in `src` order.
+///
+/// This is the one rebuild walk in the project: every surviving entity is renumbered into `dst`
+/// and every reference to it follows — which is what deletion, copying and pasting all are,
+/// differing only in what they keep, where they land and what they land on.  A constraint comes
+/// along exactly when every entity it names came along, so the three operations cannot disagree
+/// about what a constraint belongs to.
+fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: &[u32],
+         offset: (f64, f64)) -> Vec<EntRef> {
+    let base = dst.points.len();
+    let fresh = base == 0;   // a rebuild owns the whole document; a paste only adds to it
+    let mut made = Vec::new();
     let mut keep_pts = Vec::new();
-    for i in 0..sk.points.len() {
-        if alive(EntRef::point(i)) {
+    for i in 0..src.points.len() {
+        if keep(EntRef::point(i)) {
             keep_pts.push(i);
         }
     }
-    let pt_index = |i: usize| keep_pts.iter().position(|&p| p == i);
+    let pt_index = |i: usize| keep_pts.iter().position(|&p| p == i).map(|n| base + n);
     for &i in &keep_pts {
-        let (x, y) = sk.point_xy(i);
-        tmp.point(x, y, sk.point_fixed(i), &format!("p{}", tmp.points.len()));
+        let (x, y) = src.point_xy(i);
+        let n = dst.point(x + offset.0, y + offset.1, src.point_fixed(i),
+                          &format!("p{}", dst.points.len()));
+        made.push(EntRef::point(n));
     }
-    let mut line_map: Vec<Option<usize>> = vec![None; sk.lines.len()];
-    for i in 0..sk.lines.len() {
-        if !alive(EntRef::line(i)) {
+    let mut line_map: Vec<Option<usize>> = vec![None; src.lines.len()];
+    for i in 0..src.lines.len() {
+        if !keep(EntRef::line(i)) {
             continue;
         }
-        let l = &sk.lines[i];
+        let l = &src.lines[i];
         let (Some(p1), Some(p2)) = (pt_index(l.p1 as usize), pt_index(l.p2 as usize)) else {
             continue;
         };
-        let ni = tmp.line(p1, p2);
-        tmp.lines[ni].construction = l.construction;
+        let ni = dst.line(p1, p2);
+        dst.lines[ni].construction = l.construction;
         line_map[i] = Some(ni);
+        made.push(EntRef::line(ni));
     }
-    let mut circle_map: Vec<Option<usize>> = vec![None; sk.circles.len()];
-    for i in 0..sk.circles.len() {
-        if !alive(EntRef::circle(i)) {
+    let mut circle_map: Vec<Option<usize>> = vec![None; src.circles.len()];
+    for i in 0..src.circles.len() {
+        if !keep(EntRef::circle(i)) {
             continue;
         }
-        let c = &sk.circles[i];
+        let c = &src.circles[i];
         let Some(centre) = pt_index(c.center as usize) else { continue };
-        let ni = tmp.circle(centre, sk.params[c.radius as usize].value, "");
-        let rp = tmp.circles[ni].radius as usize;
-        tmp.params[rp].fixed = sk.params[c.radius as usize].fixed;
-        tmp.circles[ni].construction = c.construction;
+        let ni = dst.circle(centre, src.params[c.radius as usize].value, "");
+        let rp = dst.circles[ni].radius as usize;
+        dst.params[rp].fixed = src.params[c.radius as usize].fixed;
+        dst.circles[ni].construction = c.construction;
         circle_map[i] = Some(ni);
+        made.push(EntRef::circle(ni));
     }
-    let mut arc_map: Vec<Option<usize>> = vec![None; sk.arcs.len()];
-    for i in 0..sk.arcs.len() {
-        if !alive(EntRef::arc(i)) {
+    let mut arc_map: Vec<Option<usize>> = vec![None; src.arcs.len()];
+    for i in 0..src.arcs.len() {
+        if !keep(EntRef::arc(i)) {
             continue;
         }
-        let a = &sk.arcs[i];
-        let (Some(c), Some(s), Some(e)) = (
+        let a = &src.arcs[i];
+        let (Some(c), Some(st), Some(e)) = (
             pt_index(a.center as usize),
             pt_index(a.start as usize),
             pt_index(a.end as usize),
         ) else {
             continue;
         };
-        let ni = tmp.arc(c, s, e, "");
-        let rp = tmp.arcs[ni].radius as usize;
-        tmp.params[rp].value = sk.params[a.radius as usize].value;
-        tmp.params[rp].fixed = sk.params[a.radius as usize].fixed;
-        tmp.arcs[ni].construction = a.construction;
+        let ni = dst.arc(c, st, e, "");
+        let rp = dst.arcs[ni].radius as usize;
+        dst.params[rp].value = src.params[a.radius as usize].value;
+        dst.params[rp].fixed = src.params[a.radius as usize].fixed;
+        dst.arcs[ni].construction = a.construction;
         arc_map[i] = Some(ni);
+        made.push(EntRef::arc(ni));
     }
     let remap = |e: EntRef| -> Option<EntRef> {
         match e.kind {
@@ -297,11 +307,8 @@ pub fn without(sk: &Sketch, entities: &[EntRef], constraints: &[u32]) -> Sketch 
             EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
         }
     };
-    for c in sk.user_constraints() {
-        if constraints.contains(&c.id) {
-            continue;
-        }
-        if expand(sk, &c.entities()).iter().any(|e| dead.contains(e)) {
+    for c in src.user_constraints() {
+        if drop_c.contains(&c.id) {
             continue;
         }
         let mut args = Vec::with_capacity(c.args.len());
@@ -319,29 +326,58 @@ pub fn without(sk: &Sketch, entities: &[EntRef], constraints: &[u32]) -> Sketch 
             }
         }
         if ok {
-            let id = tmp.add(Constraint::new(c.kind, args));
-            if let Some(&place) = sk.placements.get(&c.id) {
-                tmp.placements.insert(id, place);   // a dimension keeps where it was dragged to
+            let id = dst.add(Constraint::new(c.kind, args));
+            if let Some(&place) = src.placements.get(&c.id) {
+                dst.placements.insert(id, place);   // a dimension keeps where it was dragged to
             }
         }
     }
-    // recorded root choices are keyed by sketch point index; deletion renumbers points, so the
-    // keys travel with them.  One naming a point that is gone is dropped — replaying it would
-    // apply a chirality to whatever triangle inherited those indices.
-    for (k, &v) in &sk.branches {
+    // recorded root choices are keyed by sketch point index; grafting renumbers points, so the
+    // keys travel with them.  One naming a point that did not come is dropped — replaying it
+    // would apply a chirality to whatever triangle inherited those indices.
+    for (k, &v) in &src.branches {
         match decompose::branch_key_points(k) {
             None => {
-                tmp.branches.insert(k.clone(), v);
+                if fresh {
+                    dst.branches.insert(k.clone(), v);   // not a triangle: nothing to renumber
+                }
             }
             Some(pts) => {
                 let mapped: Option<Vec<usize>> = pts.iter().map(|&p| pt_index(p)).collect();
                 if let Some(m) = mapped {
-                    tmp.branches.insert(decompose::branch_key([m[0], m[1], m[2]]), v);
+                    dst.branches.insert(decompose::branch_key([m[0], m[1], m[2]]), v);
                 }
             }
         }
     }
+    made
+}
+
+/// Copy of the sketch with the given entities/constraints removed, plus everything that depends on
+/// a removed entity.  Deletion by rebuild — simple, and keeps `Sketch`'s invariants trivially true.
+pub fn without(sk: &Sketch, entities: &[EntRef], constraints: &[u32]) -> Sketch {
+    let dead: Vec<EntRef> = entities.to_vec();
+    let alive = |e: EntRef| !dead.contains(&e) && !sk.children(e).iter().any(|c| dead.contains(c));
+    let mut tmp = Sketch::new();
+    graft(&mut tmp, sk, &alive, constraints, (0.0, 0.0));
     tmp
+}
+
+/// The selection as a sketch of its own: every entity picked, the points that define it, and
+/// every constraint all of whose entities came along.  Copying is keeping, which is deleting
+/// everything else — so it goes through the same rule, and a constraint that survives a copy is
+/// exactly one that would have survived deleting the rest.
+pub fn copy(sk: &Sketch, entities: &[EntRef]) -> Sketch {
+    let keep: BTreeSet<EntRef> = expand(sk, entities).into_iter().collect();
+    let drop: Vec<EntRef> = sk.primitives().into_iter().filter(|e| !keep.contains(e)).collect();
+    without(sk, &drop, &[])
+}
+
+/// Add everything in `clip` to `sk`, moved by (dx, dy), and return what that made.  The pasted
+/// geometry brings its own constraints and nothing else: it is not joined to what is already
+/// there, so it can be put where it belongs before being tied down.
+pub fn paste(sk: &mut Sketch, clip: &Sketch, dx: f64, dy: f64) -> Vec<EntRef> {
+    graft(sk, clip, &|_| true, &[], (dx, dy))
 }
 
 /// One argument as a person reads it: an entity by name, an angle in degrees, everything else as

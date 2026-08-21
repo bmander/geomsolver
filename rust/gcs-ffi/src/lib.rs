@@ -136,6 +136,19 @@ unsafe fn as_json(ptr: *const u8, len: usize) -> Json {
     json::parse(as_str(ptr, len)).unwrap_or(Json::Null)
 }
 
+/// `[[kind, idx], ...]` as the entities it names, skipping any the model does not know.
+unsafe fn ent_list(p: *const u8, len: usize) -> Vec<EntRef> {
+    as_json(p, len)
+        .arr()
+        .iter()
+        .filter_map(|v| {
+            let a = v.arr();
+            EntKind::parse(a.first().map(|x| x.as_str()).unwrap_or(""))
+                .map(|k| EntRef::new(k, a.get(1).map(|x| x.as_i64()).unwrap_or(0) as usize))
+        })
+        .collect()
+}
+
 unsafe fn sk<'a>(h: *mut Sketch) -> &'a mut Sketch {
     &mut *h
 }
@@ -1041,19 +1054,29 @@ pub unsafe extern "C" fn gcs_without(
 ) -> *mut Sketch {
     guard(std::ptr::null_mut(), move || {
         let s = sk(h);
-        let ev = as_json(ents, ents_len);
-        let entities: Vec<EntRef> = ev
-            .arr()
-            .iter()
-            .filter_map(|v| {
-                let a = v.arr();
-                EntKind::parse(a.first().map(|x| x.as_str()).unwrap_or(""))
-                    .map(|k| EntRef::new(k, a.get(1).map(|x| x.as_i64()).unwrap_or(0) as usize))
-            })
-            .collect();
         let cv = as_json(cids, cids_len);
         let constraints: Vec<u32> = cv.arr().iter().map(|v| v.as_i64() as u32).collect();
-        Box::into_raw(Box::new(io::without(s, &entities, &constraints)))
+        Box::into_raw(Box::new(io::without(s, &ent_list(ents, ents_len), &constraints)))
+    })
+}
+
+/// A fresh sketch holding just `entities` (`[[kind, idx], ...]`), the points that define them and
+/// the constraints all of whose entities came along — what a copy puts on the clipboard.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_copy(h: *mut Sketch, ents: *const u8, ents_len: usize) -> *mut Sketch {
+    guard(std::ptr::null_mut(), move || {
+        Box::into_raw(Box::new(io::copy(sk(h), &ent_list(ents, ents_len))))
+    })
+}
+
+/// Add everything in `clip` to the sketch, moved by (dx, dy).  Returns what it made, as
+/// `[[kind, idx], ...]` in the order the clipboard held them.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_paste(h: *mut Sketch, clip: *mut Sketch, dx: f64,
+                                   dy: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let made = io::paste(sk(h), &*clip, dx, dy);
+        out_json(Json::Arr(made.into_iter().map(report::ent_json).collect()))
     })
 }
 

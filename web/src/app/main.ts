@@ -14,7 +14,7 @@
  *             it, drag it where you want it, double-click it to change its number.  Edit ▸
  *             Re-place dimensions undoes the arranging; Options turns the lot off
  *   editing   F fix/unfix · G construction · Del delete · Ctrl+Z undo · ⇧Ctrl+Z redo ·
- *             wheel zoom · right-drag pan
+ *             Ctrl+X/C/V cut, copy, paste the selection · wheel zoom · right-drag pan
  *   menus     File/Edit/Solution hold everything that is not a tool or a constraint; the
  *             solver's own switches are behind Solution ▸ Options
  *
@@ -118,6 +118,13 @@ const MENUS: [string, (MenuItem | null)[]][] = [
     { label: 'Undo', key: '⌘z', onClick: () => view.undo() },
     { label: 'Redo', key: '⇧⌘z', onClick: () => view.redo() },
     null,
+    { label: 'Cut', key: '⌘x', onClick: () => report(view.cutSelected(), 'cut'),
+      title: 'Take the selection out of the sketch and onto the clipboard' },
+    { label: 'Copy', key: '⌘c', onClick: () => report(view.copySelected(), 'copied'),
+      title: 'The selection, the points that define it, and every constraint that stays inside' },
+    { label: 'Paste', key: '⌘v', onClick: () => report(view.pasteClipboard(), 'pasted'),
+      title: 'A copy of the clipboard, nudged clear and selected, joined to nothing' },
+    null,
     { label: 'Fit to screen', onClick: () => view.fit() },
     { label: 'Re-place dimensions', onClick: () => {
       // the focused dimension if there is one, otherwise every dimension on the drawing
@@ -151,6 +158,13 @@ function about(): Promise<void> {
     addLink(where, 'GitHub →', 'https://github.com/bmander/geomsolver');
     body.append(by, aboutDag.content.cloneNode(true), where);
   });
+}
+
+/** Say what a clipboard command did.  Nothing to copy and nothing to paste are both ordinary
+ *  outcomes, not failures, so they say so rather than going quiet. */
+function report(n: number, did: string): void {
+  toast(n ? `${did} ${n} ${n === 1 ? 'entity' : 'entities'}`
+          : did === 'pasted' ? 'nothing on the clipboard' : 'select something first');
 }
 
 /** A fresh sheet, which is not quite empty.  With nothing fixed on it the first shape drawn
@@ -789,7 +803,11 @@ window.addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement | null;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
   if (e.metaKey || e.ctrlKey || e.altKey) {
-    const cmd = e.altKey ? undefined
+    // ⌘C and ⌘X belong to the page while there is text selected in it: taking those would stop
+    // anyone copying a constraint out of the list
+    const text = window.getSelection();
+    const takingText = !!text && !text.isCollapsed && (e.key === 'c' || e.key === 'x');
+    const cmd = e.altKey || takingText ? undefined
               : ACTION_KEYS.get(`${e.shiftKey ? '⇧' : ''}⌘${e.key.toLowerCase()}`);
     if (cmd) { e.preventDefault(); cmd(); }
     return;

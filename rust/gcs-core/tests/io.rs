@@ -3,7 +3,7 @@ use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::examples;
 use gcs_core::io;
 use gcs_core::json::{fmt_g, Json};
-use gcs_core::model::{angle_between, distance_between, on_radius, EntRef, Sketch};
+use gcs_core::model::{self, angle_between, distance_between, on_radius, EntKind, EntRef, Sketch};
 use gcs_core::solve::{solve, SolveOpts};
 
 #[test]
@@ -419,4 +419,155 @@ fn angle_between_and_on_radius_are_the_core_s() {
     let (x, y) = on_radius(0.0, 0.0, 3.0, 4.0, 10.0).unwrap();
     assert!((x - 6.0).abs() < 1e-12 && (y - 8.0).abs() < 1e-12, "{:?}", (x, y));
     assert_eq!(on_radius(1.0, 1.0, 1.0, 1.0, 5.0), None); // the centre names no direction
+}
+
+/* -- copy and paste ------------------------------------------------------------------ */
+
+#[test]
+fn copy_takes_the_points_that_define_what_was_picked() {
+    let sk = examples::rect_fillets(100.0, 60.0, 10.0, 0.0);
+    // one line, nothing else: its two endpoints have to come with it or it is not a line
+    let clip = io::copy(&sk, &[EntRef::line(0)]);
+    assert_eq!(clip.lines.len(), 1);
+    assert_eq!(clip.points.len(), 2);
+    assert!(clip.circles.is_empty() && clip.arcs.is_empty());
+}
+
+#[test]
+fn copy_keeps_a_constraint_only_when_both_ends_came() {
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, false, "");
+    let b = sk.point(10.0, 0.0, false, "");
+    let c = sk.point(10.0, 8.0, false, "");
+    let l1 = sk.line(a, b);
+    let l2 = sk.line(b, c);
+    sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 10.0));
+    sk.add(Constraint::one_line(CKind::Horizontal, EntRef::line(l1)));
+    sk.add(Constraint::two_line(CKind::Perpendicular, EntRef::line(l1), EntRef::line(l2)));
+
+    let clip = io::copy(&sk, &[EntRef::line(l1)]);
+    let kinds: Vec<CKind> = clip.user_constraints().iter().map(|c| c.kind).collect();
+    // Distance and Horizontal live entirely on l1; Perpendicular reaches l2, which did not come
+    assert_eq!(kinds, vec![CKind::Distance, CKind::Horizontal]);
+
+    let both = io::copy(&sk, &[EntRef::line(l1), EntRef::line(l2)]);
+    assert_eq!(both.user_constraints().len(), 3);
+}
+
+#[test]
+fn copy_is_the_other_half_of_deleting_the_rest() {
+    // the two operations share one rule, so what a copy keeps is what deleting everything else
+    // would have kept — checked on a sketch with arcs, tangencies and dimensions on it
+    let sk = examples::rect_fillets(100.0, 60.0, 10.0, 0.0);
+    let picked = [EntRef::line(0), EntRef::arc(0)];
+    let rest: Vec<EntRef> = sk
+        .primitives()
+        .into_iter()
+        .filter(|e| !model::expand(&sk, &picked).contains(e))
+        .collect();
+    assert_eq!(io::dumps(&io::copy(&sk, &picked), Some(1)),
+               io::dumps(&io::without(&sk, &rest, &[]), Some(1)));
+}
+
+#[test]
+fn copy_carries_the_flags_and_the_dimension_placements() {
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, true, "");
+    let b = sk.point(10.0, 0.0, false, "");
+    let l = sk.line(a, b);
+    sk.lines[l].construction = true;
+    let id = sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 10.0));
+    sk.placements.insert(id, (1.5, -7.0));
+
+    let clip = io::copy(&sk, &[EntRef::line(l)]);
+    assert!(clip.point_fixed(0), "a fixed point stays fixed");
+    assert!(clip.lines[0].construction, "reference geometry stays reference geometry");
+    let kept = clip.user_constraints()[0].id;
+    assert_eq!(clip.placements.get(&kept), Some(&(1.5, -7.0)));
+}
+
+#[test]
+fn paste_lands_beside_what_was_copied_and_brings_its_constraints() {
+    let mut sk = examples::rect_fillets(100.0, 60.0, 10.0, 0.0);
+    let before = (sk.points.len(), sk.lines.len(), sk.arcs.len(), sk.user_constraints().len());
+    let clip = io::copy(&sk, &sk.primitives());
+    let made = io::paste(&mut sk, &clip, 5.0, -3.0);
+
+    assert_eq!(sk.points.len(), 2 * before.0);
+    assert_eq!(sk.lines.len(), 2 * before.1);
+    assert_eq!(sk.arcs.len(), 2 * before.2);
+    assert_eq!(sk.user_constraints().len(), 2 * before.3);
+    // the new entities come back in clipboard order, so the caller can select what it pasted
+    assert_eq!(made.len(), clip.primitives().len());
+    assert!(made.iter().all(|e| match e.kind {
+        EntKind::Point => e.i() >= before.0,
+        EntKind::Line => e.i() >= before.1,
+        _ => true,
+    }));
+    // moved by exactly the offset asked for
+    let (x0, y0) = sk.point_xy(0);
+    let (x1, y1) = sk.point_xy(before.0);
+    assert!((x1 - x0 - 5.0).abs() < 1e-9 && (y1 - y0 + 3.0).abs() < 1e-9, "{x1} {y1}");
+    // and the copy holds together on its own
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+}
+
+#[test]
+fn a_pasted_copy_is_independent_of_the_original() {
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, false, "");
+    let b = sk.point(10.0, 0.0, false, "");
+    sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 10.0));
+    let clip = io::copy(&sk, &sk.primitives());
+    io::paste(&mut sk, &clip, 0.0, 20.0);
+
+    // the pasted Distance names the pasted points and nothing else
+    let pasted = &sk.user_constraints()[1];
+    assert_eq!(pasted.entities(), vec![EntRef::point(2), EntRef::point(3)]);
+    // moving the original leaves the copy where it is
+    let mut x = sk.get_x();
+    x[0] += 100.0;
+    sk.set_x(&x);
+    assert_eq!(sk.point_xy(2), (0.0, 20.0));
+}
+
+#[test]
+fn pasting_twice_gives_two_copies() {
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, false, "");
+    let b = sk.point(10.0, 0.0, false, "");
+    sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 10.0));
+    let clip = io::copy(&sk, &sk.primitives());
+    io::paste(&mut sk, &clip, 0.0, 20.0);
+    io::paste(&mut sk, &clip, 0.0, 40.0);
+    assert_eq!(sk.points.len(), 6);
+    assert_eq!(sk.user_constraints().len(), 3);
+    assert_eq!(sk.point_xy(4), (0.0, 40.0));
+    io::dumps(&sk, Some(1)); // every constraint still references a live entity
+}
+
+#[test]
+fn copying_nothing_gives_an_empty_sketch_and_pastes_as_nothing() {
+    let mut sk = examples::rect_fillets(100.0, 60.0, 10.0, 0.0);
+    let before = io::dumps(&sk, Some(1));
+    let clip = io::copy(&sk, &[]);
+    assert!(clip.primitives().is_empty() && clip.constraints.is_empty());
+    assert!(io::paste(&mut sk, &clip, 5.0, 5.0).is_empty());
+    assert_eq!(io::dumps(&sk, Some(1)), before);
+}
+
+#[test]
+fn a_clipboard_is_a_document() {
+    // the fragment is an ordinary sketch, so it saves, loads and pastes like one — which is what
+    // makes a copied selection something you can keep
+    let sk = examples::slotted_link(80.0, 15.0, 6.0);
+    let clip = io::copy(&sk, &sk.primitives());
+    let text = io::dumps(&clip, Some(1));
+    let reloaded = io::loads(&text).unwrap();
+    assert_eq!(io::dumps(&reloaded, Some(1)), text);
+
+    let mut fresh = Sketch::new();
+    io::paste(&mut fresh, &reloaded, 0.0, 0.0);
+    assert_eq!(fresh.points.len(), sk.points.len());
+    assert_eq!(fresh.user_constraints().len(), sk.user_constraints().len());
 }

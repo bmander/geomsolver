@@ -1,9 +1,9 @@
-/* JSON (de)serialization of sketches, and deletion by rebuild.
+/* JSON (de)serialization of sketches, and the rebuild operations: deletion, copy, paste.
  *
  * The document format lives in the core; this module only moves strings. */
 import { Constraint, ENTITY_KINDS } from './constraints.js';
 import { Primitive, Sketch, expand } from './model.js';
-import { core, lastError, takeStr, withJson, withStr } from './wasm.js';
+import { core, lastError, takeJson, takeStr, withJson, withStr } from './wasm.js';
 
 export type Ref = [string, number];
 
@@ -43,6 +43,28 @@ export function without(sk: Sketch, entities: Iterable<Primitive> = [],
   const cids = [...constraints].filter((c) => c.id >= 0).map((c) => c.id);
   return withJson(ents, (ep, en) => withJson(cids, (cp, cn) =>
     new Sketch(core().gcs_without(sk.handle, ep, en, cp, cn))));
+}
+
+/** The selection as a sketch of its own: the entities picked, the points that define them and
+ *  the constraints all of whose entities came along.  It is an ordinary sketch, so a clipboard
+ *  is a document — `dumps` it and it saves, `loads` it and it pastes. */
+export function copy(sk: Sketch, entities: Iterable<Primitive>): Sketch {
+  const ents = [...entities].map((e) => e.ref);
+  return withJson(ents, (p, n) => new Sketch(core().gcs_copy(sk.handle, p, n)));
+}
+
+/** Add everything in `clip` to `sk`, moved by (dx, dy), and return what that made — so the
+ *  caller can select the copy it just pasted. */
+export function paste(sk: Sketch, clip: Sketch, dx: number, dy: number): Primitive[] {
+  const made = takeJson<Ref[]>(core().gcs_paste(sk.handle, clip.handle, dx, dy)) ?? [];
+  sk.touch();   // the pasted constraints arrived behind the proxy's back
+  const of: Record<string, () => Primitive[]> = {
+    point: () => sk.points, line: () => sk.lines, circle: () => sk.circles, arc: () => sk.arcs,
+  };
+  return made.flatMap(([kind, i]) => {
+    const e = of[kind]?.()[i];
+    return e ? [e] : [];
+  });
 }
 
 /** (kind, index) lookup — the short entity labels the lists and reports use. */

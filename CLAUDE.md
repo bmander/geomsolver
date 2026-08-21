@@ -58,6 +58,12 @@ Conventions:
   dimension takes part in it — editing that dimension is the next conflict; one among pure
   relations is a theorem that nothing can break, so its wholly-implied constraints are
   `implied`: noted, never painted as an error.
+- Deletion, copy and paste are one rebuild walk (`io::graft`): every surviving entity is
+  renumbered into the destination and every reference follows, and a constraint comes along
+  exactly when all its entities did.  `without` keeps what is not deleted, `copy` keeps the
+  selection (so a clipboard is an ordinary sketch document), `paste` grafts one sketch onto
+  another at an offset.  A new thing that travels with a constraint or an entity — a flag, a
+  placement — belongs in `graft`, or the three will disagree.
 - Decomposition maps constraints onto F–H elements in `cgraph::build`; a new constraint type is
   either an edge (PP/PL), a direction relation, or `unsupported` (numeric residual).  Merge
   decisions use generic-rank at witness poses; chirality of PPP merges is the triangle
