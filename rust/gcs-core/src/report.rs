@@ -5,6 +5,7 @@
 //! parse one document instead of reimplementing a dozen accessors, and both see exactly the same
 //! field names.  Hot-path numbers (residuals, Jacobians, drag frames) never go through here.
 
+use crate::callout::{self, Callout, Seg};
 use crate::cgraph::{ConstraintGraph, El, ElKind};
 use crate::constraints::{Arg, CKind, Constraint, ALL_KINDS};
 use crate::decompose::{Plan, PlanResult};
@@ -322,6 +323,69 @@ pub fn constraint_json(c: &Constraint) -> Json {
         ("args", Json::Arr(args)),
         ("soft", c.soft.into()),
         ("intrinsic", c.intrinsic.into()),
+    ])
+}
+
+fn pt(p: (f64, f64)) -> Json {
+    floats(&[p.0, p.1])
+}
+
+fn segs(v: &[Seg]) -> Json {
+    Json::Arr(v.iter().map(|s| Json::Arr(vec![pt(s.0), pt(s.1)])).collect())
+}
+
+/// One dimension callout, ready to paint.  Everything is in world coordinates; the front end
+/// maps them to the screen with the same transform it draws the geometry through.  What a click
+/// on it can land on is deliberately not here: `callout::pick` answers that question in the
+/// core, which keeps this payload to what is actually drawn — it is rebuilt every frame.
+fn callout_json(k: &Callout) -> Json {
+    object([
+        ("id", (k.id as i64).into()),
+        ("text", k.text.as_str().into()),
+        ("anchor", pt(k.anchor)),
+        ("angle", Json::Num(k.angle)),
+        ("label", Json::Arr(k.label.iter().map(|&p| pt(p)).collect())),
+        ("solid", segs(&k.solid)),
+        ("thin", segs(&k.thin)),
+        (
+            "arcs",
+            Json::Arr(
+                k.arcs
+                    .iter()
+                    .map(|a| {
+                        object([
+                            ("c", pt(a.c)),
+                            ("r", Json::Num(a.r)),
+                            ("a0", Json::Num(a.a0)),
+                            ("a1", Json::Num(a.a1)),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        (
+            "arrows",
+            Json::Arr(
+                k.arrows
+                    .iter()
+                    .map(|a| object([("at", pt(a.at)), ("dir", pt(a.dir))]))
+                    .collect(),
+            ),
+        ),
+    ])
+}
+
+/// Every dimensioned constraint as a drafting figure.  `unit` is the world length of one screen
+/// pixel, which is what makes the stand-offs, arrowheads and characters come out the same size at
+/// any zoom; `font`, `arrow` and `barb` come back so the front end draws the text and the heads
+/// at exactly the size and shape the layout reserved for them.
+pub fn callouts_json(sk: &Sketch, unit: f64) -> Json {
+    let items: Vec<Json> = callout::layout(sk, unit).iter().map(callout_json).collect();
+    object([
+        ("font", Json::Num(callout::FONT_PX)),
+        ("arrow", Json::Num(callout::ARROW_PX)),
+        ("barb", Json::Num(callout::BARB)),
+        ("items", Json::Arr(items)),
     ])
 }
 

@@ -10,6 +10,9 @@
  *   constrain I coincident · D dimension — length, radius, offset, ring, or a corner's angle
  *             H horizontal · V vertical · B parallel · ⇧L perpendicular · ⇧M midpoint
  *             E equal · T tangent · ⇧Q symmetric
+ *   dimension every dimensioned constraint is called out on the drawing: click one to select
+ *             it, drag it where you want it, double-click it to change its number.  Edit ▸
+ *             Re-place dimensions undoes the arranging; Options turns the lot off
  *   editing   F fix/unfix · G construction · Del delete · Ctrl+Z undo · ⇧Ctrl+Z redo ·
  *             wheel zoom · right-drag pan
  *   menus     File/Edit/Solution hold everything that is not a tool or a constraint; the
@@ -61,6 +64,7 @@ let currentConstraint: Constraint | null = null;
  *  taking the geometry with it, so every path that sets either one comes through here. */
 function focusConstraint(c: Constraint | null, highlight?: Primitive[]): void {
   currentConstraint = c;
+  view.litConstraint = c;             // so its callout on the drawing says so too
   view.highlight = highlight ?? (c ? expand(c.entities()) : []);
   if (c) view.selected = [];
 }
@@ -115,6 +119,11 @@ const MENUS: [string, (MenuItem | null)[]][] = [
     { label: 'Redo', key: '⇧⌘z', onClick: () => view.redo() },
     null,
     { label: 'Fit to screen', onClick: () => view.fit() },
+    { label: 'Re-place dimensions', onClick: () => {
+      // the focused dimension if there is one, otherwise every dimension on the drawing
+      const n = view.resetCallouts(currentConstraint);
+      toast(n ? `${n} dimension(s) put back` : 'no dimension has been moved');
+    } },
   ]],
   ['Solution', [
     { label: 'Solve', onClick: () => { view.solveNow(); reportSolve(); } },
@@ -181,6 +190,10 @@ function options(): Promise<void> {
               + 'over the whole sketch');
     addCheckbox(box, 'colour by state', view.colorByState, (v) => { view.colorByState = v; view.draw(); },
                 'Paint each entity by what diagnosis makes of it');
+    addCheckbox(box, 'dimensions', view.showDimensions,
+                (v) => { view.showDimensions = v; view.draw(); },
+                'Call out every dimensioned constraint on the drawing — click one to select it, '
+              + 'drag it where you want it, double-click to change its number');
     addSelect(box, 'method', [...METHODS], view.method, (m) => {
       view.method = m as Method;
       view.solveNow();
@@ -804,6 +817,10 @@ window.addEventListener('keydown', (e) => {
 /* -- boot ------------------------------------------------------------------------- */
 
 view.onSelect = () => { if (currentConstraint) focusConstraint(null); };
+/* A dimension on the drawing and its row in the list are the same constraint, so clicking
+ * either does the same thing — and double-clicking either opens the same number. */
+view.onPickConstraint = (c) => { focusConstraint(c); refresh(); view.draw(); };
+view.onEditConstraint = (c) => void editValue(c);
 view.onChanged = refresh;
 view.onDragFrame = refreshStatus;
 view.onStatus = toast;

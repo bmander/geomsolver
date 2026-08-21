@@ -102,8 +102,10 @@ pub fn to_json(sk: &Sketch) -> Json {
             ])
         })
         .collect();
-    let constraints: Vec<Json> = sk
-        .user_constraints()
+    // one list, walked twice: the placements below are keyed by position in it, so they and the
+    // constraints they name have to be the same walk
+    let user = sk.user_constraints();
+    let constraints: Vec<Json> = user
         .iter()
         .map(|c| {
             object([
@@ -114,6 +116,18 @@ pub fn to_json(sk: &Sketch) -> Json {
         .collect();
     let branches: Vec<(String, Json)> =
         sk.branches.iter().map(|(k, &v)| (k.clone(), Json::Int(v as i64))).collect();
+    // Callout placements travel by position in the constraint list above, not by constraint id:
+    // loading a document assigns fresh ids in that order, so the index is the only name for a
+    // constraint that both sides of a save agree on.
+    let placements: Vec<(String, Json)> = user
+        .iter()
+        .enumerate()
+        .filter_map(|(i, c)| {
+            sk.placements
+                .get(&c.id)
+                .map(|&(t, r)| (i.to_string(), Json::Arr(vec![Json::Num(t), Json::Num(r)])))
+        })
+        .collect();
     object([
         ("version", Json::Int(1)),
         ("points", Json::Arr(points)),
@@ -122,6 +136,7 @@ pub fn to_json(sk: &Sketch) -> Json {
         ("arcs", Json::Arr(arcs)),
         ("constraints", Json::Arr(constraints)),
         ("branches", Json::Obj(branches)),
+        ("placements", Json::Obj(placements)),
     ])
 }
 
@@ -166,6 +181,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         sk.params[rp].fixed = a.get("fixed").map(|v| v.as_bool()).unwrap_or(false);
         sk.arcs[ai].construction = a.get("construction").map(|v| v.as_bool()).unwrap_or(false);
     }
+    let mut ids = Vec::new();
     for c in d.get("constraints").unwrap_or(&empty).arr() {
         let name = c.get("type").map(|v| v.as_str().to_string()).unwrap_or_default();
         let kind = CKind::from_name(&name)
@@ -179,7 +195,17 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         for (i, (_, k)) in spec.iter().enumerate() {
             args.push(arg_from_json(&sk, *k, &raw[i])?);
         }
-        sk.add(Constraint::new(kind, args));
+        ids.push(sk.add(Constraint::new(kind, args)));
+    }
+    if let Some(Json::Obj(kv)) = d.get("placements") {
+        for (k, v) in kv {
+            let a = v.arr();
+            if let (Ok(i), 2) = (k.parse::<usize>(), a.len()) {
+                if let Some(&id) = ids.get(i) {
+                    sk.placements.insert(id, (a[0].as_f64(), a[1].as_f64()));
+                }
+            }
+        }
     }
     if let Some(Json::Obj(kv)) = d.get("branches") {
         for (k, v) in kv {
@@ -293,7 +319,10 @@ pub fn without(sk: &Sketch, entities: &[EntRef], constraints: &[u32]) -> Sketch 
             }
         }
         if ok {
-            tmp.add(Constraint::new(c.kind, args));
+            let id = tmp.add(Constraint::new(c.kind, args));
+            if let Some(&place) = sk.placements.get(&c.id) {
+                tmp.placements.insert(id, place);   // a dimension keeps where it was dragged to
+            }
         }
     }
     // recorded root choices are keyed by sketch point index; deletion renumbers points, so the
@@ -315,6 +344,29 @@ pub fn without(sk: &Sketch, entities: &[EntRef], constraints: &[u32]) -> Sketch 
     tmp
 }
 
+/// One argument as a person reads it: an entity by name, an angle in degrees, everything else as
+/// a number.  The constraint list, the reports and the dimension callouts on the drawing all
+/// print the same value the same way because they all come through here.
+pub fn arg_text(kind: SpecKind, a: &Arg) -> String {
+    match (kind, a) {
+        (k, Arg::Ent(e)) if k.is_entity() => entity_name(*e),
+        (SpecKind::Angle, a) => format!("{}°", fmt_g(a.num().to_degrees(), 3)),
+        (SpecKind::Length, a) | (SpecKind::Float, a) => fmt_g(a.num(), 4),
+        (_, Arg::Bool(b)) => if *b { "True" } else { "False" }.to_string(),
+        (_, Arg::Int(i)) => format!("{i}"),
+        (_, Arg::Str(s)) => s.clone(),
+        (_, a) => fmt_g(a.num(), 4),
+    }
+}
+
+/// The number a dimensioned constraint states, as its callout prints it — the first Length or
+/// Angle in its spec, whichever argument that happens to be.  `None` for a constraint that
+/// states no number.
+pub fn dimension_text(c: &Constraint) -> Option<String> {
+    let (i, _, kind) = c.dimensions().into_iter().next()?;
+    Some(arg_text(kind, &c.args[i]))
+}
+
 /// Human-readable one-liner: `Distance(P0, P1, 80)`; angles shown in degrees.
 pub fn describe(c: &Constraint) -> String {
     let parts: Vec<String> = c
@@ -322,15 +374,7 @@ pub fn describe(c: &Constraint) -> String {
         .spec()
         .iter()
         .zip(&c.args)
-        .map(|((_, kind), v)| match (kind, v) {
-            (k, Arg::Ent(e)) if k.is_entity() => entity_name(*e),
-            (SpecKind::Angle, a) => format!("{}°", fmt_g(a.num().to_degrees(), 3)),
-            (SpecKind::Length, a) | (SpecKind::Float, a) => fmt_g(a.num(), 4),
-            (_, Arg::Bool(b)) => if *b { "True" } else { "False" }.to_string(),
-            (_, Arg::Int(i)) => format!("{i}"),
-            (_, Arg::Str(s)) => s.clone(),
-            (_, a) => fmt_g(a.num(), 4),
-        })
+        .map(|((_, kind), v)| arg_text(*kind, v))
         .collect();
     format!("{}({})", c.type_name(), parts.join(", "))
 }

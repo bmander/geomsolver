@@ -14,6 +14,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+use gcs_core::callout;
 use gcs_core::cgraph::{self, El};
 use gcs_core::constraints::Constraint;
 use gcs_core::decompose::{self, PlanDrag, PlanSolver};
@@ -943,6 +944,56 @@ pub unsafe extern "C" fn gcs_describe(h: *mut Sketch, id: i32) -> *mut u8 {
         let s = sk(h);
         out_str(s.constraint(id as u32).map(io::describe).unwrap_or_default())
     })
+}
+
+/// The dimension callouts for the whole sketch.  `unit` is the world length of one screen pixel;
+/// the layout is screen-constant through it.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_callouts_json(h: *mut Sketch, unit: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        out_json(report::callouts_json(sk(h), unit))
+    })
+}
+
+/// The dimension whose callout the world point (x, y) lands on, within `tol_px` screen pixels of
+/// it, or -1.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_callout_pick(h: *mut Sketch, unit: f64, x: f64, y: f64,
+                                          tol_px: f64) -> i32 {
+    guard(-1, move || {
+        callout::pick(sk(h), unit, (x, y), tol_px).map_or(-1, |id| id as i32)
+    })
+}
+
+/// Take hold of dimension `id`'s callout at the world point (x, y): writes the two numbers the
+/// caller hands back to `gcs_callout_drag` for the rest of the gesture, so the callout moves with
+/// the pointer rather than jumping to it.  0 if the dimension has no callout to grab.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_callout_grab(h: *mut Sketch, id: i32, unit: f64, x: f64, y: f64,
+                                          out: *mut f64) -> i32 {
+    guard(0, move || match callout::grab(sk(h), unit, id as u32, (x, y)) {
+        Some((a, b)) => {
+            let o = std::slice::from_raw_parts_mut(out, 2);
+            o[0] = a;
+            o[1] = b;
+            1
+        }
+        None => 0,
+    })
+}
+
+/// Move dimension `id`'s callout so the point it was grabbed at follows the pointer to (x, y).
+#[no_mangle]
+pub unsafe extern "C" fn gcs_callout_drag(h: *mut Sketch, id: i32, x: f64, y: f64,
+                                          gu: f64, gv: f64) -> i32 {
+    guard(0, move || callout::drag(sk(h), id as u32, (x, y), (gu, gv)) as i32)
+}
+
+/// Put dimension `id`'s callout back wherever the layout would have put it; 1 if it had been
+/// moved at all.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_callout_reset(h: *mut Sketch, id: i32) -> i32 {
+    guard(0, move || callout::reset(sk(h), id as u32) as i32)
 }
 
 #[no_mangle]

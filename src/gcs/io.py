@@ -60,6 +60,46 @@ def describe(c: Constraint, ix: Sketch | None = None) -> str:
     return c.describe()
 
 
+def callouts(sk: Sketch, unit: float = 1.0) -> dict[str, Any]:
+    """Every dimensioned constraint as a drafting figure, in world coordinates.
+
+    Extension lines, a dimension line between two arrowheads, a radial leader, an angular arc
+    and the number beside it are all geometry, so the whole layout comes from the core.  `unit`
+    is the world length of one screen pixel: pass it and the stand-offs, arrowheads and
+    characters come out the same size at any zoom.  The result carries `font`, `arrow` and
+    `barb` (the size and shape the layout reserved, in pixels) and `items`, one per dimension.
+    """
+    d: dict[str, Any] = _ffi.take_json(lib.gcs_callouts_json(sk._h, float(unit)))
+    return d
+
+
+def callout_pick(sk: Sketch, unit: float, x: float, y: float,
+                 tol_px: float) -> Constraint | None:
+    """The dimension whose callout the world point (x, y) lands on, within `tol_px` pixels."""
+    cid = int(lib.gcs_callout_pick(sk._h, float(unit), float(x), float(y), float(tol_px)))
+    return None if cid < 0 else sk.constraint_by_id(cid)
+
+
+def callout_grab(c: Constraint, unit: float, x: float, y: float) -> tuple[float, float] | None:
+    """Take hold of `c`'s callout at a world point: the grip to hand back to `callout_drag` for
+    the rest of the gesture, so the callout moves with the pointer instead of jumping to it."""
+    out = _ffi.f64(2)
+    ok = lib.gcs_callout_grab(c.sketch._h, c._id, float(unit), float(x), float(y), _ffi.pf(out))
+    return (float(out[0]), float(out[1])) if ok else None
+
+
+def callout_drag(c: Constraint, x: float, y: float, grip: tuple[float, float]) -> bool:
+    """Move `c`'s callout so the point it was grabbed at follows the pointer to (x, y)."""
+    return bool(lib.gcs_callout_drag(c.sketch._h, c._id, float(x), float(y),
+                                     float(grip[0]), float(grip[1])))
+
+
+def callout_reset(c: Constraint) -> bool:
+    """Put `c`'s callout back wherever the layout would have put it; True if it had been moved
+    at all, so a caller can tell an edit from a no-op."""
+    return bool(lib.gcs_callout_reset(c.sketch._h, c._id))
+
+
 def fmt(v: float, sig: int = 4) -> str:
     """Python's %g-style formatting: `sig` significant digits, trailing zeros dropped."""
     return _ffi.take_str(lib.gcs_fmt_g(float(v), int(sig)))
@@ -75,5 +115,6 @@ from gcs.constraints import CONSTRAINT_TYPES as _TYPES  # noqa: E402
 
 BY_NAME.update(_TYPES)
 
-__all__ = ["BY_NAME", "describe", "dumps", "fmt", "from_dict", "load", "loads", "name_of",
+__all__ = ["BY_NAME", "callout_drag", "callout_grab", "callout_pick", "callout_reset",
+           "callouts", "describe", "dumps", "fmt", "from_dict", "load", "loads", "name_of",
            "save", "to_dict", "without", "ENTITY_KINDS", "expand"]

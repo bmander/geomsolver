@@ -169,6 +169,11 @@ pub struct Sketch {
     pub constraints: Vec<Constraint>,
     /// Recorded root choices (Stage 5), persisted with the document.
     pub branches: BTreeMap<String, i32>,
+    /// Where a dimension's callout has been dragged to, by constraint id, in the frame that
+    /// callout hangs off — see `callout::Frame`.  Document state, like `branches`: an entry
+    /// only exists for a dimension somebody has moved, and dropping one puts that callout back
+    /// where the layout would have placed it.
+    pub placements: BTreeMap<u32, (f64, f64)>,
     next_cid: u32,
 }
 
@@ -292,6 +297,7 @@ impl Sketch {
 
     pub fn remove(&mut self, id: u32) {
         self.constraints.retain(|c| c.id != id);
+        self.placements.remove(&id);
     }
 
     pub fn constraint(&self, id: u32) -> Option<&Constraint> {

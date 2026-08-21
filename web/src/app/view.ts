@@ -3,6 +3,8 @@
  * on), re-diagnoses and notifies the shell exactly once. */
 import * as io from '../core/io.js';
 import * as C from '../core/constraints.js';
+import * as dim from '../core/callout.js';
+import type { Callout, Pt, Seg } from '../core/callout.js';
 import { Constraint, sameConstraint } from '../core/constraints.js';
 import { PlanDrag, PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
@@ -28,6 +30,7 @@ const COL = {
   highlight: '#9467bd',
   conflict: '#b3001b',
   bandFill: 'rgba(227, 119, 194, 0.10)',
+  dim: '#0f6f7a',
 };
 /* entity colouring by constraint state (FreeCAD-style, but from the DM decomposition and the
  * conflict set rather than from a guess) */
@@ -37,6 +40,10 @@ const COL_STATE: Record<string, string> = {
 
 /** Reference geometry is drawn dashed; the dashes are screen px, so they do not zoom. */
 const CONSTRUCTION_DASH = [7, 4];
+
+/** A dimension's extension and witness lines: finer dashes than construction geometry, since
+ *  they are annotation rather than something the sketch is made of. */
+const WITNESS_DASH = [4, 3];
 
 const ANIM_DT = 0.03;        // seconds per animation tick
 const ANIM_PERIOD = 2.0;     // seconds spent on each degree of freedom
@@ -66,11 +73,15 @@ export class SketchView {
   autoSolve = true;
   usePlan = false;
   colorByState = true;
+  /** Paint the dimensioned constraints on the drawing as callouts. */
+  showDimensions = true;
 
   selected: Primitive[] = [];
   highlight: Primitive[] = [];
   pending: Point[] = [];
   diagnosis: Diagnosis | null = null;
+  /** The constraint the shell has the focus on, so its callout can say so. */
+  litConstraint: Constraint | null = null;
   lastResult: SolveResult | null = null;
   lastPlan: PlanResult | null = null;
 
@@ -84,6 +95,10 @@ export class SketchView {
    *  only the status line needs updating (a drag's numbers, a band's selection count). */
   onDragFrame: () => void = () => {};
   onStatus: (msg: string) => void = () => {};
+  /** A dimension callout was clicked: the shell puts the focus on that constraint. */
+  onPickConstraint: (c: Constraint) => void = () => {};
+  /** And double-clicked: the shell opens its value for editing. */
+  onEditConstraint: (c: Constraint) => void = () => {};
 
   private ctx: CanvasRenderingContext2D;
   private cursor: [number, number] = [0, 0];
@@ -128,6 +143,11 @@ export class SketchView {
     return [(sx - this.originX) / this.scale, (this.originY - sy) / this.scale];
   }
 
+  /** The world length of one screen pixel — what the core sizes annotation through. */
+  private get unit(): number {
+    return 1 / this.scale;
+  }
+
   get width(): number { return this.canvas.clientWidth; }
   get height(): number { return this.canvas.clientHeight; }
 
@@ -156,14 +176,17 @@ export class SketchView {
     this.sketch = sk;
     this.selected = [];
     this.highlight = [];
+    this.litConstraint = null;
     this.pending = [];
     this.releasePlan();
     this.afterEdit();
     if (fit) this.fit();      // after the solve: loading a case can move the geometry a long way
   }
 
-  pushUndo(): void {
-    this.undoStack.push(io.dumps(this.sketch));
+  /** Remember a state to come back to — the current one, or an earlier one a caller took a
+   *  snapshot of before it knew whether the edit would come to anything. */
+  pushUndo(state: string = io.dumps(this.sketch)): void {
+    this.undoStack.push(state);
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.redoStack = [];              // a fresh edit is a new branch: the old future is gone
   }
@@ -397,6 +420,19 @@ export class SketchView {
     this.draw();
   }
 
+  /** Put dimension callouts back where the layout would place them: one of them, or all of
+   *  them.  A drawing that has been rearranged by hand and then edited into a mess needs a way
+   *  back, and this is it. */
+  resetCallouts(c?: Constraint | null): number {
+    const cs = c ? [c] : this.sketch.userConstraints();
+    const before = io.dumps(this.sketch);
+    const n = cs.filter((k) => dim.reset(this.sketch, k.id)).length;
+    if (!n) return 0;             // nothing was out of place: no edit, and no history entry
+    this.pushUndo(before);
+    this.draw();
+    return n;
+  }
+
   toggleFixSelected(): void {
     const pts = this.selected.filter((e): e is Point => e instanceof Point);
     if (!pts.length) return;
@@ -523,6 +559,7 @@ export class SketchView {
         ctx.fill();
       }
     }
+    this.paintCallouts();
     this.gesture?.paint?.(ctx);
     if (this.tool !== 'select') {                 // snap indicator
       const sp = this.pickPoint(...this.cursor);
@@ -538,12 +575,105 @@ export class SketchView {
     ctx.restore();
   }
 
+  /** The dimensions, as a drawing states them.
+   *
+   *  The whole figure — where a dimension line stands off, which side of the shape a leader
+   *  comes out on, how a short span puts its arrowheads outside — is laid out by the core in
+   *  world coordinates; here it is only mapped to the screen and stroked.  Two passes, because
+   *  every label clears the background behind itself: one dimension's number must not rub out
+   *  the next one's line. */
+  private paintCallouts(): void {
+    if (!this.showDimensions) return;
+    const ctx = this.ctx;
+    const cs = dim.callouts(this.sketch, this.unit);
+    const conflicts = new Set(this.diagnosis?.conflicts ?? []);
+    const lit = this.litConstraint;
+    // the colour rule reaches for a constraint by id, so it runs once per callout rather than
+    // once per callout per pass
+    const painted = cs.items.map((k) => {
+      const c = this.sketch.constraintById(k.id);
+      const col = c && conflicts.has(c) ? COL.conflict
+        : c && c === lit ? COL.highlight : COL.dim;
+      return { k, col };
+    });
+    const path = (segs: Seg[]): void => {
+      ctx.beginPath();
+      for (const [a, b] of segs) {
+        ctx.moveTo(...this.w2s(a[0], a[1]));
+        ctx.lineTo(...this.w2s(b[0], b[1]));
+      }
+      ctx.stroke();
+    };
+
+    ctx.save();
+    ctx.lineCap = 'butt';
+    ctx.lineWidth = 1;
+    for (const { k, col } of painted) {
+      ctx.strokeStyle = ctx.fillStyle = col;
+      ctx.setLineDash(WITNESS_DASH);
+      path(k.thin);
+      ctx.setLineDash([]);
+      path(k.solid);
+      for (const a of k.arcs) {
+        this.arcPath(a.c, a.r * this.scale, a.a0, a.a1, a.a1 > a.a0);
+        ctx.stroke();
+      }
+      for (const a of k.arrows) this.paintArrow(a.at, a.dir, cs.arrow, cs.barb);
+    }
+    ctx.font = `${cs.font}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const { k, col } of painted) {
+      const q = k.label.map((p) => this.w2s(p[0], p[1]));
+      ctx.fillStyle = COL.bg;
+      ctx.beginPath();
+      ctx.moveTo(...q[0]);
+      for (let i = 1; i < q.length; i++) ctx.lineTo(...q[i]);
+      ctx.closePath();
+      ctx.fill();
+      ctx.save();
+      ctx.translate(...this.w2s(k.anchor[0], k.anchor[1]));
+      ctx.rotate(-k.angle);      // the layout turns counterclockwise; the canvas turns the other
+      ctx.fillStyle = col;       // way, because its y axis points down
+      ctx.fillText(k.text, 0, 0);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  /** A solid head: the tip at `at`, pointing along `dir`, filling `size` screen px back, with
+   *  barbs `barb` of that half-width.  Both numbers come from the layout, so the drawing style
+   *  is the core's and not this front end's. */
+  private paintArrow(at: Pt, dir: Pt, size: number, barb: number): void {
+    const ctx = this.ctx;
+    const [tx, ty] = this.w2s(at[0], at[1]);
+    const [dx, dy] = [dir[0], -dir[1]];            // world direction, on a screen with y down
+    const [bx, by] = [tx - dx * size, ty - dy * size];
+    const [px, py] = [-dy * size * barb, dx * size * barb];
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(bx + px, by + py);
+    ctx.lineTo(bx - px, by - py);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  /** The dimension whose callout is under the cursor, if any.  Callouts are painted over the
+   *  geometry and are what a click on them means, so they are picked before it.  The core does
+   *  the test against the same layout it drew, so what is picked is what is on screen. */
+  pickCallout(sx: number, sy: number): Constraint | null {
+    if (!this.showDimensions) return null;
+    const id = dim.pick(this.sketch, this.unit, ...this.s2w(sx, sy), PICK_PX);
+    return id < 0 ? null : this.sketch.constraintById(id) ?? null;
+  }
+
   /** CCW world arc from a0 to a1; screen y is flipped, so the canvas angles are negated and
    *  the sweep runs counterclockwise in canvas terms. */
-  private arcPath(centerXY: [number, number], r: number, a0: number, a1: number): void {
+  private arcPath(centerXY: [number, number], r: number, a0: number, a1: number,
+                  ccw = true): void {
     const [cx, cy] = this.w2s(...centerXY);
     this.ctx.beginPath();
-    this.ctx.arc(cx, cy, r, -a0, -a1, true);
+    this.ctx.arc(cx, cy, r, -a0, -a1, ccw);
   }
 
   /** Dashed red halo on every entity a culprit constraint references, and a label at each
@@ -683,7 +813,7 @@ export class SketchView {
     if (this.tool !== 'select') this.setTool('select');
   }
 
-  private local(e: PointerEvent | WheelEvent): [number, number] {
+  private local(e: MouseEvent): [number, number] {
     const r = this.canvas.getBoundingClientRect();
     return [e.clientX - r.left, e.clientY - r.top];
   }
@@ -718,6 +848,11 @@ export class SketchView {
     });
     cv.addEventListener('pointercancel', finish);
     cv.addEventListener('lostpointercapture', finish);
+    cv.addEventListener('dblclick', (e) => {
+      // the same gesture the constraint list uses: double-click a dimension, type a new number
+      const c = this.pickCallout(...this.local(e));
+      if (c) this.onEditConstraint(c);
+    });
     cv.addEventListener('contextmenu', (e) => e.preventDefault());
     cv.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -742,6 +877,16 @@ export class SketchView {
     if (e.button !== 0) return;
     if (this.tool !== 'select') {
       this.toolClick(sp);
+      return;
+    }
+    // a dimension is painted over the geometry, so a press that lands on one takes hold of it:
+    // it selects the constraint, and dragging moves the callout rather than the sketch
+    const callout = this.pickCallout(sp[0], sp[1]);
+    if (callout) {
+      this.selected = [];
+      this.onPickConstraint(callout);
+      this.gesture = this.calloutGesture(callout, sp);
+      this.draw();
       return;
     }
     const ent = this.pick(sp[0], sp[1]);
@@ -926,6 +1071,26 @@ export class SketchView {
     };
   }
 
+  /** Move a dimension's callout.  The number and its line go where they are put — where the
+   *  layout would have placed it is only a first guess — so this is what settles a crowded
+   *  drawing.  The placement is document state, so it undoes and saves with everything else; a
+   *  press that never moves leaves nothing behind, and puts nothing on the undo stack. */
+  private calloutGesture(c: Constraint, from: [number, number]): Gesture {
+    const grip = dim.grab(this.sketch, this.unit, c.id, ...this.s2w(from[0], from[1]));
+    let moved = false;
+    return {
+      transient: true,               // the annotation moved, not the geometry
+      move: (sp) => {
+        if (!grip) return;
+        if (!moved) {                // the first movement is the edit; a bare click is not one
+          moved = true;
+          this.pushUndo();
+        }
+        dim.drag(this.sketch, c.id, ...this.s2w(sp[0], sp[1]), grip);
+      },
+    };
+  }
+
   private bandGesture(from: [number, number]): Gesture {
     const base = [...this.selected];
     let to = from;                     // the gesture owns both corners, so paint reads no globals
@@ -970,6 +1135,10 @@ export class SketchView {
   /** Cursor affordance: what a press here would grab. */
   private hover(sp: [number, number]): void {
     if (this.tool !== 'select') return;
+    if (this.pickCallout(sp[0], sp[1])) {
+      this.canvas.style.cursor = 'move';
+      return;
+    }
     const ent = this.pick(sp[0], sp[1]);
     this.canvas.style.cursor = ent instanceof Point && this.canMove(ent) ? 'grab'
       : this.isResizable(ent) ? 'ew-resize' : '';

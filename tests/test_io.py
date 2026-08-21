@@ -56,6 +56,30 @@ def test_describe() -> None:
     assert io.describe(sk.constraints[-1], sk) == "Distance(P6, P7, 40)"
 
 
+def test_callouts_cover_every_dimension() -> None:
+    """Every constraint carrying a Length or an Angle comes back as a drafting figure."""
+    for name, make in examples.EXAMPLES.items():
+        sk = make()
+        cs = io.callouts(sk, 0.2)
+        dims = [c for c in sk.user_constraints() if c.dimensions()]
+        assert len(cs["items"]) == len(dims), name
+        assert cs["font"] > 0 and cs["arrow"] > 0 and cs["barb"] > 0, name
+        assert {k["id"] for k in cs["items"]} == {c._id for c in dims}, name
+        for k in cs["items"]:
+            assert k["text"], name
+            assert k["solid"] or k["arcs"], name       # something for the number to ride on
+            assert all(math.isfinite(v) for v in k["anchor"]), name
+
+
+def test_callouts_are_screen_constant() -> None:
+    """`unit` is the world length of a pixel, so halving the zoom doubles the stand-off."""
+    sk = Sketch()
+    a, b = sk.point(0, 0, fixed=True), sk.point(60, 0)
+    sk.add(C.Distance(a, b, 60))
+    off = [io.callouts(sk, u)["items"][0]["solid"][0][0][1] for u in (1.0, 2.0)]
+    assert off[1] == pytest.approx(2 * off[0])
+
+
 def test_a_live_drag_never_reaches_the_document() -> None:
     """`soft` is not part of the JSON, so a soft constraint saved mid-drag would come back as a
     real one — a DragTarget as geometry, a RadiusDrag's pull as a dimension the user never typed.
@@ -278,3 +302,36 @@ def test_angle_between_and_on_radius_are_the_core_s() -> None:
 
     assert on_radius(0, 0, 3, 4, 10) == pytest.approx((6.0, 8.0))
     assert on_radius(1, 1, 1, 1, 5) is None                              # no direction
+
+
+def test_callout_placements_survive_a_save() -> None:
+    """A dimension dragged into place stays there through a save, and can be put back."""
+    sk = examples.rect_fillets()
+    dim = next(c for c in sk.user_constraints() if isinstance(c, C.Radius))
+
+    def anchor(s: Sketch, c: C.Constraint) -> list[float]:
+        return next(k for k in io.callouts(s, 0.2)["items"] if k["id"] == c._id)["anchor"]
+
+    home = anchor(sk, dim)
+    # take hold of the callout where it is, and put it down a good way off
+    grip = io.callout_grab(dim, 0.2, home[0], home[1])
+    assert grip is not None
+    assert io.callout_drag(dim, home[0] + 30.0, home[1] + 25.0, grip)
+    moved = anchor(sk, dim)
+    assert moved != pytest.approx(home, abs=1e-6)
+
+    sk2 = io.loads(io.dumps(sk))
+    dim2 = next(c for c in sk2.user_constraints() if isinstance(c, C.Radius))
+    assert anchor(sk2, dim2) == pytest.approx(moved, abs=1e-9)
+
+    io.callout_reset(dim)
+    assert anchor(sk, dim) == pytest.approx(home, abs=1e-9)
+
+
+def test_callout_pick_finds_the_dimension_under_a_point() -> None:
+    """The tolerance is in screen pixels, like every other size crossing this seam."""
+    sk = examples.rect_fillets()
+    for k in io.callouts(sk, 0.2)["items"]:
+        hit = io.callout_pick(sk, 0.2, k["anchor"][0], k["anchor"][1], 4.0)
+        assert hit is not None and hit._id == k["id"]
+    assert io.callout_pick(sk, 0.2, -1e4, -1e4, 4.0) is None

@@ -8,8 +8,8 @@ Currently: **Stage 5 done**, in **one** implementation —
   (`kernels.rs`, `system.rs`), our own DogLeg/LM plus the dense and sparse linear algebra
   (`newton.rs`, `linalg.rs`, `sparse.rs`), structural diagnosis (`graph.rs`, `diagnose.rs`),
   decomposition into cached solve plans (`cgraph.rs`, `decompose.rs`), witness analysis
-  (`witness.rs`), drag/solution management (`solve.rs`, `homotopy.rs`), document I/O (`io.rs`,
-  `json.rs`) and the reference sketches (`examples.rs`).
+  (`witness.rs`), drag/solution management (`solve.rs`, `homotopy.rs`), dimension callouts
+  (`callout.rs`), document I/O (`io.rs`, `json.rs`) and the reference sketches (`examples.rs`).
 * **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built twice — a native `cdylib` for
   Python and a self-contained `wasm32-unknown-unknown` module for the browser.
 * **bindings**: `src/gcs/` (Python, `ctypes`) and `web/src/core/` (TypeScript, WebAssembly).
@@ -35,6 +35,11 @@ Conventions:
   `consts()` and `default_arg()`, and a row in `rust/gcs-core/tests/jacobians.rs` (FD check,
   spec round-trip).  Both bindings generate their classes from `report::registry_json`, so
   neither needs touching.
+- A type whose spec carries a `Length` or an `Angle` is a *dimension*, and dimensions are drawn.
+  `callout.rs` matches `CKind` exhaustively in two places, so adding any type stops the build
+  there: give it a `Pen` arm (its drafting figure) and a `frame` arm (the `Frame` its placement
+  is written in), or list it in `undrawn!`.  `every_dimension_is_drawn` then checks the arm you
+  wrote actually produces a figure.
 - "Solved" is `System::max_relative_residual <= 1e-6`: each row's residual over its own units
   (`extent^degree`).  Never one absolute threshold for the whole system — half the kernels are
   linear in length and half quadratic, so one threshold is wrong for one of the halves.
@@ -62,6 +67,15 @@ Conventions:
   caching transforms.
 - Slow tests are gated by `GCS_SLOW=1` (Python) and `#[ignore]` (cargo).
 - Benchmark on a quiet machine (`uptime`); this box often has a JVM indexer at 300% CPU.
+- Dimension callouts (`callout.rs`) are geometry, so the whole figure — extension lines, heads,
+  radial leaders, angular arcs, the label's box and the hit test — is laid out in the core and
+  the front end only strokes what it is handed.  Sizes are screen-constant through `unit`, the
+  world length of one screen pixel — as is the pick tolerance, so a front end never converts.
+  Where a callout sits is a *placement*: two numbers in a frame that follows the geometry,
+  automatic until someone drags it and then `Sketch.placements` document state, saved by index
+  into the constraint list (ids are not stable across a load).  The number a dimension states
+  comes from `io::dimension_text`, so the drawing and the constraint list cannot print it
+  differently.
 - `solve::Drag` is the one point-drag implementation (pull + polish), `RadiusDrag` its scalar
   counterpart for circle/arc radii (a `Radius` with `soft` set — its residual is already
   r − target, so no kernel of its own); the front end only translates coordinates.

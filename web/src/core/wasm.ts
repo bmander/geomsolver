@@ -82,6 +82,12 @@ export interface Abi {
                       bLen: number): number;
   gcs_constraint_duplicate(h: number, p: number, n: number): number;
   gcs_describe(h: number, id: number): number;
+  gcs_callouts_json(h: number, unit: number): number;
+  gcs_callout_pick(h: number, unit: number, x: number, y: number, tolPx: number): number;
+  gcs_callout_grab(h: number, id: number, unit: number, x: number, y: number,
+                   out: number): number;
+  gcs_callout_drag(h: number, id: number, x: number, y: number, gu: number, gv: number): number;
+  gcs_callout_reset(h: number, id: number): number;
   gcs_fmt_g(v: number, sig: number): number;
 
   gcs_branches_json(h: number): number;
