@@ -49,7 +49,10 @@ Conventions:
 - Diagnosis is structural (matching/DM); numeric rank cross-check is the only thing that sees
   theorem-type dependencies — that residue is Stage 4's corpus, keep logging it
   (`Diagnosis.warnings`).  It is skipped above `NUMERIC_MAX` (300) free parameters because it
-  runs after every edit.
+  runs after every edit.  A consistent dependency is `over` ("remove one") only when a
+  dimension takes part in it — editing that dimension is the next conflict; one among pure
+  relations is a theorem that nothing can break, so its wholly-implied constraints are
+  `implied`: noted, never painted as an error.
 - Decomposition maps constraints onto F–H elements in `cgraph::build`; a new constraint type is
   either an edge (PP/PL), a direction relation, or `unsupported` (numeric residual).  Merge
   decisions use generic-rank at witness poses; chirality of PPP merges is the triangle

@@ -564,13 +564,20 @@ function refreshRows(): void {
   const culprits = new Set(d?.conflicts ?? []);
   const bad = new Set(d?.violated ?? []);          // culprits are handled first, below
   const over = new Set(d?.over ?? []);
+  const implied = new Set(d?.implied ?? []);   // a theorem made it follow: a note, not a fault
   rows.forEach((c, i) => {
     const li = clist.children[i] as HTMLElement;
     const base = li.dataset.base ?? '';
     li.className = '';
+    li.removeAttribute('title');
     if (culprits.has(c)) { li.textContent = `✗ ${base}`; li.classList.add('culprit'); }
     else if (bad.has(c)) { li.textContent = base; li.classList.add('violated'); }
     else if (over.has(c)) { li.textContent = `≈ ${base}`; li.classList.add('over'); }
+    else if (implied.has(c)) {
+      li.textContent = `≡ ${base}`;
+      li.classList.add('implied');
+      li.title = 'already implied by the other constraints — consistent, nothing to fix';
+    }
     else li.textContent = base;
     const hit = selAll.size > 0 && (c.entities().some((e) => selAll.has(e))
       || expand(c.entities()).some((e) => selDirect.has(e)));
@@ -615,10 +622,12 @@ function refreshStatus(): void {
     + `   | params ${sk.params.length} (free ${sk.freeIndices().length})  equations ${sk.nResiduals()}`;
   if (d) {
     msg += `  DOF ${d.dof}`;
-    if (d.nRedundant) msg += `  redundant ${d.nRedundant}`;
+    // a relation-only theorem (mirrored arc endpoints making EqualRadius follow) is an
+    // equation that says nothing new, not a redundancy to go and fix — say so in those words
+    const fixable = d.status === 'conflict' || d.status === 'over';
+    if (d.nRedundant) msg += `  ${fixable ? 'redundant' : 'implied'} ${d.nRedundant}`;
     if (d.status === 'conflict') msg += '  ⚠ CONFLICT';
-    else if (d.geometricDependency) msg += '  ⚠ geometric dependency';
-    else if (d.numericSkipped) msg += '  (structural only)';
+    if (d.numericSkipped) msg += '  (structural only)';
   }
   msg += `   | selected ${view.selected.length}`;
   if (r) {

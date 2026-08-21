@@ -156,6 +156,7 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
         ("numericSkipped", d.numeric_skipped.into()),
         ("geometricDependency", (d.geometric_dependency as i64).into()),
         ("over", ids(&d.over)),
+        ("implied", ids(&d.implied)),
         ("underParams", ids(&d.under_params)),
         ("structuralUnderParams", ids(&d.structural_under_params)),
         ("components", Json::Arr(components)),

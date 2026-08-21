@@ -1,4 +1,4 @@
-use gcs_core::constraints::{CKind, Constraint};
+use gcs_core::constraints::{Arg, CKind, Constraint};
 use gcs_core::diagnose::{diagnose, distance_rigidity, minimal_conflict_set, DiagnoseOptions, State};
 use gcs_core::examples;
 use gcs_core::model::{EntRef, Sketch};
@@ -24,24 +24,142 @@ fn dof_counts_what_can_actually_move_not_what_the_matching_sees() {
 }
 
 #[test]
-fn redundancy_the_matching_cannot_see_is_counted_and_named() {
+fn redundancy_the_matching_cannot_see_is_counted_and_named_as_implied() {
+    // the altitudes concur: a theorem among pure relations.  Counted (DOF is the truth), named
+    // (any of the six could go), but not `over` — nothing can ever break it, so there is nothing
+    // to fix and no reason to paint the sketch red
     let mut sk = examples::altitudes();
     solve(&mut sk, SolveOpts::default());
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     assert_eq!(d.structural_n_redundant, 0);
     assert_eq!(d.n_redundant, 1);
-    assert_eq!(d.status, State::Over);
-    assert_eq!(d.over.len(), 6);
+    assert_eq!(d.status, State::Under);
+    assert!(d.over.is_empty());
+    assert_eq!(d.implied.len(), 6);
     let mut kinds: Vec<&str> =
-        d.over.iter().map(|&c| sk.constraint(c).unwrap().type_name()).collect();
+        d.implied.iter().map(|&c| sk.constraint(c).unwrap().type_name()).collect();
     kinds.sort();
     assert_eq!(kinds, ["Perpendicular", "Perpendicular", "Perpendicular", "PointOnLine", "PointOnLine", "PointOnLine"]);
-    let over: std::collections::BTreeSet<u32> = d.over.iter().copied().collect();
+    assert!(d.entity_state.values().all(|&s| s != State::Over));
+    let implied: std::collections::BTreeSet<u32> = d.implied.iter().copied().collect();
     let w = diagnose(&mut sk, DiagnoseOptions { witness: true, ..Default::default() }).witness.unwrap();
     assert!(!w.dependencies.is_empty());
     let dep = &w.dependencies[0];
-    assert!(over.contains(&dep.constraint));
-    assert!(dep.implied_by.iter().all(|c| over.contains(c)));
+    assert!(implied.contains(&dep.constraint));
+    assert!(dep.implied_by.iter().all(|c| implied.contains(c)));
+}
+
+#[test]
+fn a_relation_only_theorem_is_implied_not_over() {
+    // two arcs on one centre, the centre on a line, equal radii, and an endpoint of each mirrored
+    // about the line.  Mirroring about a line through the centre preserves distance to it, so
+    // EqualRadius follows — and so does the centre being on the line (it is on the chord's
+    // perpendicular bisector).  Each is wholly implied, neither involves a dimension: the user
+    // can drag the sketch anywhere and it stays consistent, so this is a remark, not a fault.
+    let mut sk = Sketch::new();
+    let a = sk.point(-20.0, 0.0, false, "a");
+    let b = sk.point(40.0, 0.0, false, "b");
+    let line = sk.line(a, b);
+    let centre = sk.point(10.0, 0.0, true, "c");
+    let (s1, e1) = (sk.point(18.0, 6.0, false, "s1"), sk.point(4.0, 8.0, false, "e1"));
+    let (s2, e2) = (sk.point(4.0, -8.0, false, "s2"), sk.point(18.0, -6.0, false, "e2"));
+    let arc1 = sk.arc(centre, s1, e1, "arc1");
+    let arc2 = sk.arc(centre, s2, e2, "arc2");
+    let on_line = sk.add(Constraint::new(
+        CKind::PointOnLine,
+        vec![Arg::Ent(EntRef::point(centre)), Arg::Ent(EntRef::line(line))],
+    ));
+    let equal = sk.add(Constraint::new(
+        CKind::EqualRadius,
+        vec![Arg::Ent(EntRef::arc(arc1)), Arg::Ent(EntRef::arc(arc2))],
+    ));
+    sk.add(Constraint::new(
+        CKind::Symmetric,
+        vec![
+            Arg::Ent(EntRef::point(s2)),
+            Arg::Ent(EntRef::point(e1)),
+            Arg::Ent(EntRef::line(line)),
+        ],
+    ));
+    solve(&mut sk, SolveOpts::default());
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.geometric_dependency, 1);
+    assert_eq!(d.n_redundant, 1);
+    assert_eq!(d.status, State::Under);
+    assert!(d.over.is_empty());
+    let implied: std::collections::BTreeSet<u32> = d.implied.iter().copied().collect();
+    assert_eq!(implied, [on_line, equal].into_iter().collect());
+    assert!(d.violated.is_empty());
+    assert!(d.entity_state.values().all(|&s| s != State::Over));
+}
+
+#[test]
+fn a_dependency_that_involves_a_dimension_is_still_over() {
+    // the same kind of theorem — two equal distances make EqualLength follow — but the rows
+    // that take part carry dimensions, and editing either of them is a conflict.  That is worth
+    // flagging now, and the relation the dimensions imply is named along with them.
+    let mut sk = Sketch::new();
+    let p = sk.point(0.0, 0.0, true, "p");
+    let q = sk.point(5.0, 0.0, false, "q");
+    let r = sk.point(5.0, 5.0, false, "r");
+    let (l1, l2) = (sk.line(p, q), sk.line(q, r));
+    sk.add(Constraint::distance(EntRef::point(p), EntRef::point(q), 5.0));
+    sk.add(Constraint::distance(EntRef::point(q), EntRef::point(r), 5.0));
+    let equal =
+        sk.add(Constraint::two_line(CKind::EqualLength, EntRef::line(l1), EntRef::line(l2)));
+    solve(&mut sk, SolveOpts::default());
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.geometric_dependency, 1);
+    assert_eq!(d.status, State::Over);
+    assert_eq!(d.over.len(), 3);
+    assert!(d.over.contains(&equal));
+    assert!(d.implied.is_empty());
+}
+
+#[test]
+fn implied_and_over_are_told_apart_per_constraint_not_per_sketch() {
+    // both of the above in one sketch: the left null space then mixes a theorem with a fragile
+    // dependency, and each constraint still has to land on its own side
+    let mut sk = Sketch::new();
+    let a = sk.point(-20.0, 0.0, false, "a");
+    let b = sk.point(40.0, 0.0, false, "b");
+    let line = sk.line(a, b);
+    let centre = sk.point(10.0, 0.0, true, "c");
+    let (s1, e1) = (sk.point(18.0, 6.0, false, "s1"), sk.point(4.0, 8.0, false, "e1"));
+    let (s2, e2) = (sk.point(4.0, -8.0, false, "s2"), sk.point(18.0, -6.0, false, "e2"));
+    let arc1 = sk.arc(centre, s1, e1, "arc1");
+    let arc2 = sk.arc(centre, s2, e2, "arc2");
+    let on_line = sk.add(Constraint::new(
+        CKind::PointOnLine,
+        vec![Arg::Ent(EntRef::point(centre)), Arg::Ent(EntRef::line(line))],
+    ));
+    let equal_r = sk.add(Constraint::new(
+        CKind::EqualRadius,
+        vec![Arg::Ent(EntRef::arc(arc1)), Arg::Ent(EntRef::arc(arc2))],
+    ));
+    sk.add(Constraint::new(
+        CKind::Symmetric,
+        vec![
+            Arg::Ent(EntRef::point(s2)),
+            Arg::Ent(EntRef::point(e1)),
+            Arg::Ent(EntRef::line(line)),
+        ],
+    ));
+    let p = sk.point(100.0, 0.0, true, "p");
+    let q = sk.point(105.0, 0.0, false, "q");
+    let r = sk.point(105.0, 5.0, false, "r");
+    let (l1, l2) = (sk.line(p, q), sk.line(q, r));
+    let d1 = sk.add(Constraint::distance(EntRef::point(p), EntRef::point(q), 5.0));
+    let d2 = sk.add(Constraint::distance(EntRef::point(q), EntRef::point(r), 5.0));
+    let equal_l =
+        sk.add(Constraint::two_line(CKind::EqualLength, EntRef::line(l1), EntRef::line(l2)));
+    solve(&mut sk, SolveOpts::default());
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.geometric_dependency, 2);
+    assert_eq!(d.status, State::Over);
+    let set = |v: &[u32]| v.iter().copied().collect::<std::collections::BTreeSet<u32>>();
+    assert_eq!(set(&d.implied), set(&[on_line, equal_r]));
+    assert_eq!(set(&d.over), set(&[d1, d2, equal_l]));
 }
 
 #[test]
@@ -57,9 +175,9 @@ fn a_dependency_with_nothing_to_remove_is_not_called_over_constrained() {
     sk.add(Constraint::new(
         CKind::Symmetric,
         vec![
-            gcs_core::constraints::Arg::Ent(EntRef::point(s)),
-            gcs_core::constraints::Arg::Ent(EntRef::point(e)),
-            gcs_core::constraints::Arg::Ent(EntRef::line(line)),
+            Arg::Ent(EntRef::point(s)),
+            Arg::Ent(EntRef::point(e)),
+            Arg::Ent(EntRef::line(line)),
         ],
     ));
     solve(&mut sk, SolveOpts::default());
@@ -207,8 +325,8 @@ fn under_params_are_per_axis_not_per_point() {
     sk.add(Constraint::new(
         CKind::PointOnLine,
         vec![
-            gcs_core::constraints::Arg::Ent(EntRef::point(p)),
-            gcs_core::constraints::Arg::Ent(EntRef::line(l)),
+            Arg::Ent(EntRef::point(p)),
+            Arg::Ent(EntRef::line(l)),
         ],
     ));
     let d = diagnose(&mut sk, DiagnoseOptions::default());

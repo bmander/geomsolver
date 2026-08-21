@@ -694,18 +694,63 @@ test('a dependency with nothing to remove is not called over-constrained', () =>
   assert.ok(d.dof > 0);
 });
 
-test('redundancy the matching cannot see is counted and named', () => {
+test('redundancy the matching cannot see is counted and named as implied', () => {
+  // a theorem among pure relations: counted, named (any of the six could go), but not `over`
+  // — nothing can ever break it, so there is nothing to fix and no reason to paint it red
   const sk = examples.altitudes();
   solve(sk);
   const d = diagnose(sk);
   assert.equal(d.structuralNRedundant, 0);       // what the matching alone believes
   assert.equal(d.nRedundant, 1);
-  assert.equal(d.status, 'over');
-  const named = new Set(d.over.map((c) => io.describe(c)));
+  assert.equal(d.status, 'under');
+  assert.deepEqual(d.over, []);
+  const named = new Set(d.implied.map((c) => io.describe(c)));
   assert.deepEqual([...named].sort(), [
     'Perpendicular(L3, L1)', 'Perpendicular(L4, L2)', 'Perpendicular(L5, L0)',
     'PointOnLine(P6, L3)', 'PointOnLine(P6, L4)', 'PointOnLine(P6, L5)',
   ]);
+  assert.ok([...d.entityState.values()].every((s) => s !== 'over'));
+});
+
+test('a relation-only theorem is implied, not over', () => {
+  // two arcs on one centre, the centre on a line, equal radii, an endpoint of each mirrored
+  // about the line: mirroring about a line through the centre preserves the distance to it, so
+  // EqualRadius follows, and so does the centre being on the line.  No dimension takes part,
+  // the sketch stays consistent wherever it is dragged — a remark, not a fault
+  const sk = new Sketch();
+  const a = sk.point(-20, 0), b = sk.point(40, 0);
+  const line = sk.line(a, b);
+  const c = sk.point(10, 0, true);
+  const arc1 = sk.arc(c, sk.point(18, 6), sk.point(4, 8));
+  const arc2 = sk.arc(c, sk.point(4, -8), sk.point(18, -6));
+  const onLine = new C.PointOnLine(c, line), equal = new C.EqualRadius(arc1, arc2);
+  sk.add(onLine, equal, new C.Symmetric(arc2.start, arc1.end, line));
+  solve(sk);
+  const d = diagnose(sk);
+  assert.equal(d.geometricDependency, 1);
+  assert.equal(d.nRedundant, 1);
+  assert.equal(d.status, 'under');
+  assert.deepEqual(d.over, []);
+  assert.deepEqual(d.violated, []);
+  assert.deepEqual(d.implied.map((k) => io.describe(k)).sort(),
+                   [io.describe(onLine), io.describe(equal)].sort());
+  assert.ok([...d.entityState.values()].every((s) => s !== 'over'));
+});
+
+test('a dependency that involves a dimension is still over', () => {
+  // the same kind of theorem — two equal distances make EqualLength follow — but the rows that
+  // take part carry dimensions, and editing either is a conflict: worth flagging now
+  const sk = new Sketch();
+  const p = sk.point(0, 0, true), q = sk.point(5, 0), r = sk.point(5, 5);
+  const equal = new C.EqualLength(sk.line(p, q), sk.line(q, r));
+  sk.add(new C.Distance(p, q, 5), new C.Distance(q, r, 5), equal);
+  solve(sk);
+  const d = diagnose(sk);
+  assert.equal(d.geometricDependency, 1);
+  assert.equal(d.status, 'over');
+  assert.equal(d.over.length, 3);
+  assert.ok(d.over.includes(equal));
+  assert.deepEqual(d.implied, []);
 });
 
 test('DOF is unchanged when the two ranks agree', () => {

@@ -88,23 +88,63 @@ def test_dof_counts_what_can_actually_move_not_what_the_matching_sees() -> None:
     assert len(d.under_params) >= d.dof                # and dragging agrees with the count
 
 
-def test_redundancy_the_matching_cannot_see_is_counted_and_named() -> None:
+def test_redundancy_the_matching_cannot_see_is_counted_and_named_as_implied() -> None:
     """The altitudes concur, so one of the six constraints is implied by the other five.  The
     matching sees six independent equations and calls the sketch merely under-constrained; the
-    numeric rank sees the dependency, and the report has to name a culprit."""
+    numeric rank sees the dependency, and the report names every constraint that could go.  But
+    it is a theorem among pure relations — nothing can ever break it — so they are `implied`, not
+    `over`: the sketch stays merely under-constrained, and nothing is painted as a fault."""
     sk = examples.altitudes()
     solve(sk)
     d = diagnose(sk)
     assert d.structural_n_redundant == 0        # what the matching alone believes
-    assert d.n_redundant == 1 and d.status == "over"
-    named = {io.describe(c) for c in d.over}
+    assert d.n_redundant == 1 and d.status == "under"
+    assert d.over == []
+    named = {io.describe(c) for c in d.implied}
     assert named == {"Perpendicular(L3, L1)", "Perpendicular(L4, L2)", "Perpendicular(L5, L0)",
                      "PointOnLine(P6, L3)", "PointOnLine(P6, L4)", "PointOnLine(P6, L5)"}
+    assert all(st != "over" for st in d.entity_state.values())
     # the same set the Stage-4 witness reaches independently
     w = diagnose(sk, witness=True).witness
     assert w is not None and w.dependencies
     dep = w.dependencies[0]
     assert {io.describe(c) for c in [dep.constraint, *dep.implied_by]} <= named
+
+
+def test_a_relation_only_theorem_is_implied_not_over() -> None:
+    """Two arcs on one centre, the centre on a line, equal radii, an endpoint of each mirrored
+    about the line.  Mirroring about a line through the centre preserves the distance to it, so
+    EqualRadius follows — and so does the centre being on the line (the chord's perpendicular
+    bisector).  Each is wholly implied and neither carries a dimension: the user can drag the
+    sketch anywhere and it stays consistent, so the report remarks on it rather than flagging it."""
+    sk = Sketch()
+    a, b = sk.point(-20, 0), sk.point(40, 0)
+    line = sk.line(a, b)
+    c = sk.point(10, 0, fixed=True)
+    arc1 = sk.arc(c, sk.point(18, 6), sk.point(4, 8))
+    arc2 = sk.arc(c, sk.point(4, -8), sk.point(18, -6))
+    on_line, equal = C.PointOnLine(c, line), C.EqualRadius(arc1, arc2)
+    sk.add(on_line, equal, C.Symmetric(arc2.start, arc1.end, line))
+    solve(sk)
+    d = diagnose(sk)
+    assert d.geometric_dependency == 1 and d.n_redundant == 1
+    assert d.status == "under" and d.over == [] and not d.violated
+    assert {io.describe(k) for k in d.implied} == {io.describe(on_line), io.describe(equal)}
+    assert all(st != "over" for st in d.entity_state.values())
+
+
+def test_a_dependency_that_involves_a_dimension_is_still_over() -> None:
+    """The same kind of theorem — two equal distances make EqualLength follow — but the rows
+    that take part carry dimensions, and editing either is a conflict.  Worth flagging now."""
+    sk = Sketch()
+    p, q, r = sk.point(0, 0, fixed=True), sk.point(5, 0), sk.point(5, 5)
+    equal = C.EqualLength(sk.line(p, q), sk.line(q, r))
+    sk.add(C.Distance(p, q, 5), C.Distance(q, r, 5), equal)
+    solve(sk)
+    d = diagnose(sk)
+    assert d.geometric_dependency == 1 and d.status == "over"
+    assert len(d.over) == 3 and equal in d.over
+    assert d.implied == []
 
 
 def test_a_dependency_with_nothing_to_remove_is_not_called_over_constrained() -> None:

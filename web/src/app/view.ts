@@ -327,6 +327,7 @@ export class SketchView {
     const skipped = cs.length - fresh.length;
     cs = fresh;
     this.pushUndo();
+    const impliedBefore = new Set(this.diagnosis?.implied ?? []);
     this.sketch.add(...cs);
     const res = this.afterEdit();
     const d = this.diagnosis;
@@ -334,10 +335,16 @@ export class SketchView {
     const kinds = [...new Set(cs.map((c) => c.typeName))].join(' + ');
     const what = cs.length === 1 ? kinds : `${cs.length} × ${kinds}`;
     const dup = skipped ? ` (${skipped} duplicate${skipped > 1 ? 's' : ''} skipped)` : '';
+    // a new theorem is worth a word (the user may not have seen it coming), in the register of
+    // a remark rather than a warning: the sketch is consistent and nothing needs doing
+    const newlyImplied = (d?.implied ?? []).filter((k) => !impliedBefore.has(k));
     const why = st === 'conflict' && d?.conflicts?.length
       ? ` — CONFLICT, remove one of: ${d.conflicts.map((k) => io.describe(k, this.sketch)).join(', ')}`
       : st === 'over' ? ' — redundant (consistent) with existing constraints'
-      : res && !res.success ? ' — solver did NOT converge' : '';
+      : res && !res.success ? ' — solver did NOT converge'
+      : newlyImplied.length
+      ? ` — consistent; ${newlyImplied.map((k) => io.describe(k, this.sketch)).join(', ')} now follow from the rest`
+      : '';
     this.onStatus(`added ${what}${dup}${why}`);
   }
 

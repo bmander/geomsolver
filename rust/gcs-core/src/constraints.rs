@@ -199,6 +199,13 @@ impl CKind {
         matches!((self, i), (CKind::TangentLineCircle, 2) | (CKind::TangentCircleCircle, 2))
     }
 
+    /// Carries a dimension — a length or angle the user can edit.  A redundancy among dimensioned
+    /// constraints is fragile (the next edit makes it a conflict); one among pure relations is a
+    /// theorem that holds on every solution and can never be broken.
+    pub fn has_dimension(self) -> bool {
+        self.spec().iter().any(|&(_, k)| k.is_dimension())
+    }
+
     /// Types that do not have to be satisfied — a drag target compromises, it does not hold.
     pub fn soft_by_default(self) -> bool {
         self == CKind::DragTarget

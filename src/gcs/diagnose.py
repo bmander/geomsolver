@@ -41,7 +41,8 @@ class Diagnosis:
     numeric_rank: int | None            # Jacobian rank at the current configuration
     numeric_skipped: bool
     geometric_dependency: int           # dependencies only the numbers can see
-    over: list[Constraint]
+    over: list[Constraint]              # "remove one of these"
+    implied: list[Constraint]           # implied by a relation-only theorem: consistent, no fix
     under_params: list[Param]           # what can move at the configuration diagnosed
     structural_under_params: list[Param]
     components: list[Component]
@@ -83,6 +84,7 @@ def _from_json(sk: Sketch, d: dict[str, Any]) -> Diagnosis:
         numeric_rank=d["numericRank"], numeric_skipped=bool(d["numericSkipped"]),
         geometric_dependency=d["geometricDependency"],
         over=cons(d["over"]),
+        implied=cons(d["implied"]),
         under_params=prm(d["underParams"]),
         structural_under_params=prm(d["structuralUnderParams"]),
         components=[Component(prm(c["params"]), cons(c["constraints"]),

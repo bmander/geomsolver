@@ -13,7 +13,7 @@
 //!   that residue is Stage 4's motivation.
 
 use crate::cgraph::coincident_classes;
-use crate::constraints::CKind;
+use crate::constraints::{same_constraint, CKind};
 use crate::graph;
 use crate::linalg::{rank_and_nullspace, Mat};
 use crate::model::{EntRef, Sketch};
@@ -45,6 +45,9 @@ impl State {
 /// Free parameters up to which the automatic numeric cross-check (a dense SVD) runs.
 pub const NUMERIC_MAX: usize = 300;
 
+/// A null-space entry below this is zero: the parameter does not move, the row takes no part.
+const RTOL: f64 = 1e-8;
+
 /// A connected component of the constraint graph with its own DOF accounting.
 #[derive(Clone, Debug)]
 pub struct Component {
@@ -68,8 +71,13 @@ pub struct Diagnosis {
     pub numeric_skipped: bool,
     /// How many dependencies only the numbers can see (0 when the check did not run).
     pub geometric_dependency: usize,
-    /// Constraints in the over-determined block.
+    /// Constraints in the over-determined block, plus — when the numeric cross-check ran —
+    /// those wholly implied by a dependency that involves a dimension.  "Remove one of these."
     pub over: Vec<u32>,
+    /// Constraints wholly implied by a dependency among pure relations — a theorem (the altitudes
+    /// concur) rather than a surplus.  Consistent on every solution, nothing to fix; each could be
+    /// deleted without changing the sketch, but none has to be.
+    pub implied: Vec<u32>,
     /// Parameters that can move *at the configuration diagnosed*.
     pub under_params: Vec<u32>,
     pub structural_under_params: Vec<u32>,
@@ -107,7 +115,7 @@ pub fn summary(d: &Diagnosis) -> String {
             d.structural_dof, d.geometric_dependency
         ));
     }
-    if d.n_redundant != 0 {
+    if d.n_redundant != 0 && !d.over.is_empty() {
         parts.push(format!(
             "{} redundant equation(s) among {} constraint(s)",
             d.n_redundant,
@@ -120,6 +128,13 @@ pub fn summary(d: &Diagnosis) -> String {
             d.numeric_rank.unwrap_or(0),
             d.structural_rank,
             d.geometric_dependency
+        ));
+    }
+    if !d.implied.is_empty() {
+        parts.push(format!(
+            "{} constraint(s) implied by the others (a relation-only dependency: consistent, \
+             nothing to fix)",
+            d.implied.len()
         ));
     }
     if d.conflicts.as_ref().map(|c| !c.is_empty()).unwrap_or(false) {
@@ -245,6 +260,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
 
     let mut over_set: BTreeSet<u32> = BTreeSet::new();
     let mut over: Vec<u32> = Vec::new();
+    let mut implied: Vec<u32> = Vec::new();
     for &r in &dm.over_rows {
         let c = row_c[r];
         if over_set.insert(c) {
@@ -315,7 +331,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
                 let rn = rank_and_nullspace(&dense.select_rows(&hard_rows), 1e-10);
                 if rn.converged {
                     numeric_rank = Some(n_cols - rn.n.cols);
-                    movable = movable_columns(&rn.n, 1e-8);
+                    movable = movable_columns(&rn.n, RTOL);
                 } else {
                     // no rank at all, rather than the zero a failed SVD leaves behind — which
                     // reads as "every constraint is redundant"
@@ -340,9 +356,35 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
             let z = sys.z0(sk);
             let dense = sys.jacobian_dense(&z);
             let hard_rows = sys.hard_rows();
-            let w = rank_and_nullspace(&dense.select_rows(&hard_rows).transpose(), 1e-10).n;
-            for c in removable_constraints(sk, &w, &row_c, 1e-8) {
-                if over_set.insert(c) {
+            let j = dense.select_rows(&hard_rows);
+            let w = rank_and_nullspace(&j.transpose(), 1e-10).n;
+            // `implied` is what the relations alone already say: the same test on the left null
+            // space of the relation-only rows (a dependency there embeds in W, so this is a subset
+            // of the removable set).  Whatever is removable only with a dimension's help is `over`.
+            // The static "carries a dimension" test stands in for the witness criterion (the
+            // deficiency survives jittered dimensions) because this runs after every edit.  An
+            // exact duplicate is never a theorem: two Horizontals on one line match two variables,
+            // so the graph passes them, but a copy is a surplus whatever it is made of.
+            let rel_rows: Vec<usize> = (0..hard_rows.len())
+                .filter(|&r| sk.constraint(row_c[r]).is_some_and(|c| !c.kind.has_dimension()))
+                .collect();
+            let w_rel = if rel_rows.len() == hard_rows.len() {
+                w.clone()
+            } else {
+                rank_and_nullspace(&j.select_rows(&rel_rows).transpose(), 1e-10).n
+            };
+            let row_c_rel: Vec<u32> = rel_rows.iter().map(|&r| row_c[r]).collect();
+            let duplicated = |c: u32| {
+                sk.constraint(c).is_some_and(|m| {
+                    sk.constraints.iter().any(|o| o.id != c && same_constraint(o, m))
+                })
+            };
+            implied = removable_constraints(sk, &w_rel, &row_c_rel, RTOL)
+                .into_iter()
+                .filter(|&c| !duplicated(c))
+                .collect();
+            for c in removable_constraints(sk, &w, &row_c, RTOL) {
+                if !implied.contains(&c) && over_set.insert(c) {
                     over.push(c);
                 }
             }
@@ -430,7 +472,8 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     let structural_n_redundant = adj.len() as i64 - dm.rank as i64;
     // `over` only when something is actually worth removing: a rank deficiency alone is not
     // enough, since a dependency can be shared between a user constraint that is still doing work
-    // and a primitive's own definition, leaving nothing to delete
+    // and a primitive's own definition, leaving nothing to delete — and a relation-only theorem
+    // leaves `implied` constraints that *could* go but need not, which is not "over" either
     let status = if conflict_set.as_ref().map(|c| !c.is_empty()).unwrap_or(false)
         || !violated.is_empty()
     {
@@ -452,6 +495,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
             .map(|nr| dm.rank.saturating_sub(nr))
             .unwrap_or(0),
         over,
+        implied,
         under_params,
         structural_under_params: structural_under,
         components,
