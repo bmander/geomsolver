@@ -158,11 +158,6 @@ export class PlanSolver {
   }
 }
 
-/** The closed-form triangles of a freshly decomposed sketch. */
-export function pppTriangles(solver: PlanSolver): Triangle[] {
-  return solver.pppTriangles();
-}
-
 /** DCM-style drag: the plan's roots move as rigid bodies, so a frame costs the region of the
  *  sketch the drag reaches and nothing else — no graph analysis while dragging, recorded roots
  *  stay as they are, and under-constrained bodies move least.  Where the plan cannot carry the
@@ -180,8 +175,13 @@ export class PlanDrag {
   private handle: number;
   active = true;
 
+  /** Held, not just read: the core keeps this plan's pointer for the drag's lifetime, so the
+   *  drag has to keep the plan from being collected or disposed under it. */
+  readonly plan: PlanSolver | null;
+
   constructor(readonly sketch: Sketch, readonly point: Point, x: number, y: number,
               guards: Triangle[] | null = null, maxStepRel = 0.05, plan: PlanSolver | null = null) {
+    this.plan = plan;
     this.handle = guardBuffer(guards, (ptr, n) =>
       core().gcs_plan_drag_new(sketch.handle, plan ? plan.handle : 0, point.index, x, y, ptr, n,
                                maxStepRel));

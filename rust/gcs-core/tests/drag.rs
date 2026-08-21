@@ -341,9 +341,8 @@ fn a_drag_costs_the_figure_not_the_document() {
     let mut d1 = PlanDrag::new(&one, p1, x0, y0, None, 0.05);
     let mut d3 = PlanDrag::new(&three, p3, x0 + dx, y0, None, 0.05);
     assert_eq!(d3.part().unwrap().sketch.points.len(), n);
-    let (p1, p3) = (d1.own_plan().unwrap(), d3.own_plan().unwrap());
-    assert_eq!(p3.system.n_free, p1.system.n_free);
-    assert_eq!(p3.plan.steps.len(), p1.plan.steps.len());
+    assert_eq!(d3.own_plan().unwrap().system.n_free, d1.own_plan().unwrap().system.n_free);
+    assert_eq!(d3.own_plan().unwrap().plan.steps.len(), d1.own_plan().unwrap().plan.steps.len());
     for i in 1..=12 {
         let t = i as f64 * 0.4;
         let (x, y) = (x0 + 6.0 * t.cos(), y0 + 4.0 * t.sin());
@@ -427,26 +426,59 @@ fn a_drag_on_the_documents_plan_does_what_a_drag_of_its_own_does() {
         let t = i as f64 * 0.5;
         let (x, y) = (x0 + 4.0 * t.cos(), y0 + 3.0 * t.sin());
         let r1 = own.move_to(&mut a, None, x, y);
-        let r2 = on.move_to(&mut b, Some(&ps), x, y);
+        let r2 = on.move_to(&mut b, Some(&ps.plan), x, y);
         assert_eq!(r1.message, r2.message);
-        for (u, v) in a.get_x().iter().zip(b.get_x()) {
-            assert!((u - v).abs() < 1e-9);
+        for (k, (u, v)) in a.get_x().iter().zip(b.get_x()).enumerate() {
+            assert!((u - v).abs() < 1e-9, "param {k} differs on frame {i}");
         }
     }
-    assert_eq!(own.branches(None), on.branches(Some(&ps)));
+    assert_eq!(own.branches(None), on.branches(Some(&ps.plan)));
     own.end();
     on.end();
-    // an unsolved document is solved before the bodies are read — the drag keeps the geometry
-    // consistent, it cannot make it so
-    let mut c = examples::rect_fillets(100.0, 60.0, 10.0, 2.0);
-    let mut ps = PlanSolver::new(&c, true);
-    let q = c.lines[0].p2 as usize;
-    let (qx, qy) = c.point_xy(q);
-    let mut d = PlanDrag::on(&mut c, &mut ps, q, qx, qy, None, 0.05);
-    let r = d.move_to(&mut c, Some(&ps), qx + 5.0, qy);
+}
+
+/// A drag keeps the geometry consistent; it cannot make it so.  Made on a plan whose document
+/// does not satisfy its constraints, it solves first, and then drives as usual.
+#[test]
+fn a_drag_on_an_unsolved_document_solves_it_first() {
+    let mut sk = examples::rect_fillets(100.0, 60.0, 10.0, 2.0);
+    let mut ps = PlanSolver::new(&sk, true);
+    let p = sk.lines[0].p2 as usize;
+    let (x, y) = sk.point_xy(p);
+    let mut d = PlanDrag::on(&mut sk, &mut ps, p, x, y, None, 0.05);
+    let r = d.move_to(&mut sk, Some(&ps.plan), x + 5.0, y);
     assert!(r.success && d.usable(), "{r:?}");
-    let mut sys = System::new(&c);
-    let z = sys.z0(&c);
+    d.end();
+    let mut sys = System::new(&sk);
+    let z = sys.z0(&sk);
     assert!(sys.max_relative_residual(&z) < 1e-9);
+}
+
+/// Guards are the document's triangles, and a drag that works on a part has to renumber them
+/// into it: one whose points did not come along names geometry this drag cannot move, so it is
+/// dropped rather than guarding whatever inherited those indices.  Given none, the drag derives
+/// them from its own plan instead — lazily, so a drag the plan carries never pays for them.
+#[test]
+fn guards_are_renumbered_into_the_part_or_dropped() {
+    let n = 12;
+    let sk = examples::zigzag(n, 2);
+    let p = n + 1; // in the second chain, so the part is that chain alone
+    let (x, y) = sk.point_xy(p);
+    let mine = (p, p + 1, p + 2);
+    let theirs = (0, 1, 2); // the other chain: not in this drag's part
+    let mut d = PlanDrag::new(&sk, p, x, y, Some(vec![mine, theirs]), 0.05);
+    let want = d.part().expect("a drag of its own works on a part").triangle_in(mine).unwrap();
+    assert_eq!(d.guard_triangles(None), vec![want]);
+    d.end();
+
+    // none given: derived from the drag's own plan, in the same numbering
+    let mut sk = examples::truss_floating(6);
+    let (x, y) = sk.point_xy(3);
+    let mut d = PlanDrag::new(&sk, 3, x, y, None, 0.05);
+    let derived = d.guard_triangles(None);
+    assert!(!derived.is_empty(), "a truss decomposes by closed-form merges");
+    let np = d.part().unwrap().sketch.points.len();
+    assert!(derived.iter().all(|t| t.0 < np && t.1 < np && t.2 < np));
+    d.move_to(&mut sk, None, x + 1.0, y);
     d.end();
 }

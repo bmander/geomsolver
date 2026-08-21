@@ -217,7 +217,12 @@ export class SketchView {
     this.onStatus(what);
   }
 
+  /** Free the compiled plan.  A live point drag holds the core's pointer to it, so the gesture
+   *  goes first — freeing a plan out from under one would leave the drag stepping freed memory,
+   *  and on wasm that aborts rather than raising.  Every caller gets this, so no caller has to
+   *  remember the order. */
   private releasePlan(): void {
+    if (this.planSolver && this.gesture) this.abandonGesture();
     if (this.lastSystem === this.planSolver?.system) this.lastSystem = null;
     this.planSolver?.dispose();
     this.planSolver = null;
@@ -957,7 +962,8 @@ export class SketchView {
       if (ent instanceof Point && this.canMove(ent)) {
         this.pushUndo();
         // on the sketch's own plan, compiled once per topology: the drag starts at once
-        const drag = new PlanDrag(this.sketch, ent, ...this.s2w(sp[0], sp[1]), null, 0.05, this.plan());
+        const drag = new PlanDrag(this.sketch, ent, ...this.s2w(sp[0], sp[1]), null, 0.05,
+                                  this.plan());
         this.gesture = this.pointGesture(drag);
       } else if (this.isResizable(ent)) {
         this.pushUndo();

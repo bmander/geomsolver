@@ -8,6 +8,7 @@
 //! This compile-once / evaluate-many seam is the architectural boundary the program's Stage 1
 //! calls for: the object model stays out of the hot loop.
 
+use crate::constraints::Constraint;
 use crate::kernels::{self, Kernel};
 use crate::linalg::Mat;
 use crate::model::Sketch;
@@ -233,14 +234,19 @@ impl System {
     }
 
     /// Re-read every constraint's constants (after arbitrary dimension edits).
+    ///
+    /// One pass over the sketch's constraints, not a `Sketch::constraint` lookup per slot: that
+    /// is a linear scan, so looking each one up would make refreshing quadratic in the
+    /// constraint count — and this runs on every plan solve and at every drag start.
     pub fn refresh_consts(&mut self, sk: &Sketch) {
+        let by_id: BTreeMap<u32, &Constraint> = sk.constraints.iter().map(|c| (c.id, c)).collect();
         for b in self.blocks.iter_mut() {
             let kn = k(b.kid);
             if kn.n_const == 0 {
                 continue;
             }
             for (i, &cid) in b.cids.iter().enumerate() {
-                if let Some(c) = sk.constraint(cid) {
+                if let Some(c) = by_id.get(&cid) {
                     b.consts[i * kn.n_const..(i + 1) * kn.n_const].copy_from_slice(&c.consts());
                 }
             }

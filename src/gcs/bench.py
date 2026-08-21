@@ -126,15 +126,16 @@ def main() -> None:
     print("\n== drag of one figure among many (PlanDrag start + frame): the cost of the region ==")
     print("   own plan: the drag decomposes the figure | cached plan: as the app drags")
     for n, copies in ((32, 1), (32, 3), (32, 30), (128, 1), (2048, 1)):
-        sk = zigzag(n, copies)
-        start, frame = bench_plan_drag(sk, n // 2)   # a point of the first staircase
+        sk = zigzag(n, copies)                      # a point of the first staircase
+        start, frame = bench_plan_drag(sk, n // 2)
+        sk = zigzag(n, copies)                      # from the same geometry as the row above
         ps = PlanSolver(sk, sticky=True)
         ps.solve()
         start2, frame2 = bench_plan_drag(sk, n // 2, plan=ps)
         ps.dispose()
-        print(f"zigzag {n:4d} x {copies:2d} ({len(sk.points):5d} points): own plan start {start:7.2f} ms "
-              f"frame {frame:6.3f} ms | cached plan start {start2:6.2f} ms frame {frame2:6.3f} ms",
-              flush=True)
+        print(f"zigzag {n:4d} x {copies:2d} ({len(sk.points):5d} points): own plan start "
+              f"{start:7.2f} ms frame {frame:6.3f} ms | cached plan start {start2:6.2f} ms "
+              f"frame {frame2:6.3f} ms", flush=True)
 
 
 if __name__ == "__main__":

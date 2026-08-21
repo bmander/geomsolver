@@ -17,7 +17,7 @@
 use gcs_core::callout;
 use gcs_core::cgraph::{self, El};
 use gcs_core::constraints::Constraint;
-use gcs_core::decompose::{self, PlanDrag, PlanSolver};
+use gcs_core::decompose::{self, Plan, PlanDrag, PlanSolver};
 use gcs_core::diagnose::{self, DiagnoseOptions};
 use gcs_core::homotopy::{self, EnumerateOptions};
 use gcs_core::io;
@@ -2101,13 +2101,9 @@ pub struct PlanDragH {
     ps: *mut PlanSolver,
 }
 
-unsafe fn plan_of(h: *mut PlanDragH) -> Option<&'static PlanSolver> {
-    let ps = (*h).ps;
-    if ps.is_null() {
-        None
-    } else {
-        Some(&*ps)
-    }
+/// The plan the drag was made on, handed back to the core with every call.
+unsafe fn plan_of<'a>(h: *mut PlanDragH) -> Option<&'a Plan> {
+    (*h).ps.as_ref().map(|p| &p.plan)
 }
 
 /// `ps` may be null: the drag then makes a plan of its own over the dragged point's part.

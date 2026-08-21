@@ -147,9 +147,10 @@ class PlanDrag:
     sketch the drag reaches and nothing else — no graph analysis while dragging, recorded roots
     stay as they are, and under-constrained bodies move least.  Where the plan cannot carry the
     drag (unsupported constraints, a region too large for the rigid-body solve) the numeric
-    pull/polish `Drag` takes over.  The core builds all of it on the dragged point's part of the
-    document — what is connected to it — and writes each frame back, so unrelated figures cost it
-    nothing."""
+    pull/polish `Drag` takes over.  Given the sketch's own `PlanSolver` the drag runs on the
+    sketch directly; without one the core builds a plan over the dragged point's part of the
+    document — what is connected to it — and writes each frame back.  Either way, figures
+    unrelated to the point cost it nothing."""
 
     def __init__(self, sketch: Sketch, point: Point, x: float, y: float,
                  guards: Sequence[Triangle] | None = None, max_step_rel: float = 0.05,
@@ -158,7 +159,7 @@ class PlanDrag:
         lets the drag start at once and run on the sketch directly; it must outlive the drag."""
         self.sketch = sketch
         self.point = point
-        self.plan = plan
+        self.plan = plan            # held: the core keeps its pointer for the drag's lifetime
         ptr, n = _guard_buffer(guards)
         self._h = lib.gcs_plan_drag_new(sketch._h, plan._h if plan else None, point.index,
                                         float(x), float(y), ptr,

@@ -479,6 +479,12 @@ impl Part {
         Some((self.point_in(t.0)?, self.point_in(t.1)?, self.point_in(t.2)?))
     }
 
+    /// The triangles of `ts` that came along, as part points.  One that did not is dropped: it
+    /// names geometry this part cannot move, so there is no orientation here for it to guard.
+    pub fn triangles_in(&self, ts: &[(usize, usize, usize)]) -> Vec<(usize, usize, usize)> {
+        ts.iter().filter_map(|&t| self.triangle_in(t)).collect()
+    }
+
     pub fn triangle_out(&self, t: (usize, usize, usize)) -> (usize, usize, usize) {
         (self.point_out(t.0), self.point_out(t.1), self.point_out(t.2))
     }
