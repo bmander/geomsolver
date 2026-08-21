@@ -1,7 +1,7 @@
 use gcs_core::cgraph::{build, El};
 use gcs_core::constraints::{Arg, CKind};
 use gcs_core::constraints::Constraint;
-use gcs_core::decompose::{PlanDrag, PlanSolver};
+use gcs_core::decompose::{decompose, PlanDrag, PlanSolver};
 use gcs_core::model::{EntRef, Sketch};
 use gcs_core::examples;
 use gcs_core::io;
@@ -276,4 +276,68 @@ fn editing_a_radius_replays_on_the_cached_plan() {
     assert!((sk.radius_value(EntRef::circle(ci)) - 25.0).abs() < 1e-9);
     let (px, py) = sk.point_xy(p);
     assert!((px.hypot(py) - 25.0).abs() < 1e-6, "the point did not follow: {:?}", (px, py));
+}
+
+/// A chain of alternating horizontal and vertical segments with no dimensions on it: nothing is
+/// rigid, so the core search has to prove there is nothing to merge.
+///
+/// `Horizontal` and `Vertical` tie a line to the ground x-axis, so every one of these lands in
+/// the *same* direction class.  Counting the relations pair by pair then makes a candidate set
+/// of n of them look like n²/2 independent facts when it is n restatements of "this line lies
+/// along that axis", the cheap rank bound never fires, and every candidate goes to a
+/// rank-revealing factorisation to be told what transitivity already knew.
+#[test]
+fn a_comb_of_parallels_does_not_blow_up_the_core_search() {
+    let mut sk = Sketch::new();
+    let (mut x, mut y) = (0.0, 0.0);
+    let mut prev = sk.point(x, y, false, "");
+    for i in 0..31 {
+        let vertical = i % 2 == 0;
+        if vertical {
+            y += 10.0;
+        } else {
+            x += 10.0;
+        }
+        let next = sk.point(x, y, false, "");
+        let l = sk.line(prev, next);
+        let kind = if vertical { CKind::Vertical } else { CKind::Horizontal };
+        sk.add(Constraint::one_line(kind, EntRef::line(l)));
+        prev = next;
+    }
+    let t = std::time::Instant::now();
+    let plan = decompose(build(&sk), 0, 12);
+    let ms = t.elapsed().as_secs_f64() * 1e3;
+
+    // with no dimension anywhere, no subset is rigid: every segment stays its own root
+    assert!(!plan.fully_decomposed(), "{}", plan.summary());
+    assert_eq!(plan.roots.len(), 33, "{}", plan.summary());
+
+    // A guard against the blow-up returning, not a measurement — and `cargo test` builds debug,
+    // so these are debug numbers: ~0.4 s here, ~3.7 s when the relations were counted pair by
+    // pair.  31 segments is about the shortest comb that still separates the two: at 21 the
+    // regressed time falls under any threshold loose enough not to flake.
+    assert!(ms < 1500.0, "the core search took {ms:.0} ms on 31 segments");
+}
+
+/// The relation count must not be so tight that it hides a merge: parallels that really do pin a
+/// shape still have to decompose all the way down.
+#[test]
+fn parallels_that_determine_a_shape_still_merge() {
+    // a rectangle: two horizontals, two verticals, a width and a height, one corner pinned
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, true, "");
+    let b = sk.point(40.0, 0.0, false, "");
+    let c = sk.point(40.0, 25.0, false, "");
+    let d = sk.point(0.0, 25.0, false, "");
+    let (l0, l1, l2, l3) = (sk.line(a, b), sk.line(b, c), sk.line(c, d), sk.line(d, a));
+    for l in [l0, l2] {
+        sk.add(Constraint::one_line(CKind::Horizontal, EntRef::line(l)));
+    }
+    for l in [l1, l3] {
+        sk.add(Constraint::one_line(CKind::Vertical, EntRef::line(l)));
+    }
+    sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 40.0));
+    sk.add(Constraint::distance(EntRef::point(b), EntRef::point(c), 25.0));
+    let ps = PlanSolver::new(&sk, false);
+    assert!(ps.plan.fully_decomposed(), "{}", ps.plan.summary());
 }

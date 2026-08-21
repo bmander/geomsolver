@@ -29,6 +29,7 @@ use crate::newton::{self, Method, Tol, TrustRegion};
 use crate::rng::Rng;
 use crate::solve::{Drag, SolveOpts, SolveResult, Triangle};
 use crate::system::System;
+use std::mem::take;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// point: (x, y); line: (nx, ny, c)
@@ -181,6 +182,13 @@ impl Plan {
             self.graph.unsupported.len()
         )
     }
+}
+
+/// How many entries repeat one already seen — the sum of `m-1` over the distinct values, which
+/// is what a transitive relation held by `m` clusters is worth.  Sorts in place.
+fn repeats(v: &mut [El]) -> usize {
+    v.sort_unstable();
+    v.windows(2).filter(|w| w[0] == w[1]).count()
 }
 
 /* -- direction classes: weighted union-find, potential = angle relative to the root ------- */
@@ -549,6 +557,9 @@ struct Decomposer {
     cdirs: BTreeMap<usize, BTreeMap<El, El>>,
     next_id: usize,
     rel_memo: BTreeMap<(usize, usize), (Vec<El>, Vec<(El, El, f64)>)>,
+    /// Scratch for `relation_bound`, which runs tens of thousands of times per decomposition.
+    el_buf: Vec<El>,
+    root_buf: Vec<El>,
     rel_keys: BTreeMap<usize, BTreeSet<(usize, usize)>>,
     selfm: BTreeMap<usize, usize>,
     steps: Vec<Step>,
@@ -674,43 +685,84 @@ impl Decomposer {
     }
 
     fn order_ref_first(&self, ids: &[usize]) -> Vec<usize> {
-        let mut r = ids.iter().copied().find(|i| self.clusters[i].fixed);
-        if r.is_none() {
-            let mut best = ids[0];
-            for &i in ids {
-                if self.clusters[&i].els.len() > self.clusters[&best].els.len() {
-                    best = i;
-                }
-            }
-            r = Some(best);
-        }
-        let refc = r.unwrap();
-        let mut out = vec![refc];
+        let refc = self.ref_of(ids);
+        let mut out = Vec::with_capacity(ids.len());
+        out.push(refc);
         out.extend(ids.iter().copied().filter(|&i| i != refc));
         out
     }
 
+    /// An upper bound on the rank of the merge system for `ids`, without building it.
+    ///
+    /// Both kinds of relation are transitive, and `relations` counts them pair by pair.  An
+    /// element that `m` of the clusters hold is one place, so it pins `2(m-1)` degrees of
+    /// freedom — not two for each of the `m(m-1)/2` pairs that mention it.  A direction class
+    /// that `n` of them carry pins `n-1` rotations, for the same reason: `Horizontal` and
+    /// `Vertical` tie a line to the ground x-axis, so every levelled line in a sketch lands in
+    /// one class, and `n` of them look like `n²/2` independent facts when they are `n`
+    /// restatements of "this line lies along that axis".
+    ///
+    /// Not the tightest bound available: where two clusters share a *line*, its direction is
+    /// counted here as well as its position, which `pair_rel` knows to drop.  That makes the
+    /// bound generous, never small — a bound that under-counted would report a determined merge
+    /// as undetermined and silently lose it to the numeric fallback.
+    fn relation_bound(&mut self, ids: &[usize]) -> usize {
+        // scratch, kept between calls: this runs tens of thousands of times per decomposition
+        let (mut els, mut roots) = (take(&mut self.el_buf), take(&mut self.root_buf));
+        els.clear();
+        roots.clear();
+        for id in ids {
+            els.extend(self.clusters[id].els.keys());
+            roots.extend(self.cdirs[id].keys());
+        }
+        let bound = 2 * repeats(&mut els) + repeats(&mut roots);
+        (self.el_buf, self.root_buf) = (els, roots);
+        bound
+    }
+
+    /// The reference cluster of a merge: the fixed one, else the biggest.  Everything else is
+    /// placed relative to it, so it is the one that keeps its pose.
+    fn ref_of(&self, ids: &[usize]) -> usize {
+        if let Some(f) = ids.iter().copied().find(|i| self.clusters[i].fixed) {
+            return f;
+        }
+        let mut best = ids[0];
+        for &i in ids {
+            if self.clusters[&i].els.len() > self.clusters[&best].els.len() {
+                best = i;
+            }
+        }
+        best
+    }
+
     /// Relative rigid-transform DOF left after imposing everything the clusters share
     /// (0 ⟺ the merge is determined).  Generic rank of the merge Jacobian at witness poses.
-    fn deficiency(&mut self, ids_in: &[usize]) -> usize {
-        let ids = self.order_ref_first(ids_in);
-        let (pairs, dpairs) = self.relations(&ids);
+    ///
+    /// The cheap bound goes first and answers almost every call; only what it cannot rule out
+    /// is worth ordering the clusters and building the system for.
+    fn deficiency(&mut self, ids: &[usize]) -> usize {
+        let refc = self.ref_of(ids);
         let k = ids.len() - 1;
         let mut need = 3 * k;
-        for &i in &ids[1..] {
-            need = need.saturating_sub(self.self_motion_of(i));
+        for &i in ids {
+            if i != refc {
+                need = need.saturating_sub(self.self_motion_of(i));
+            }
         }
         if need == 0 {
             return 0;
         }
-        let bound = 2 * pairs.len() + dpairs.len();
+        let bound = self.relation_bound(ids);
         if bound < need {
-            return need - bound; // cheap upper bound on the rank
+            return need - bound; // cannot reach `need`; no point building the system
         }
+        let ids = self.order_ref_first(ids);
+        let (pairs, dpairs) = self.relations(&ids);
         let cl: Vec<Cluster> = ids.iter().map(|i| self.clusters[i].clone()).collect();
         let sys = MergeSystem::new(&cl, &pairs, &dpairs, k);
         let j = sys.jac(&vec![0.0; 3 * k]);
         let rank = if j.rows > 0 && j.cols > 0 { rank_rrqr(&j, 1e-9) } else { 0 };
+        debug_assert!(rank <= bound, "relation_bound {bound} under the rank {rank}");
         need.saturating_sub(rank)
     }
 
@@ -880,9 +932,9 @@ impl Decomposer {
                 let mut best_d = usize::MAX;
                 let mut best_size = usize::MAX;
                 for nb in frontier {
-                    let mut trial = s.clone();
-                    trial.push(nb);
-                    let d = self.deficiency(&trial);
+                    s.push(nb);
+                    let d = self.deficiency(&s);
+                    s.pop();
                     let size = self.clusters[&nb].els.len();
                     if d < best_d || (d == best_d && size < best_size) {
                         best_d = d;
@@ -941,6 +993,8 @@ pub fn decompose(graph: ConstraintGraph, seed: u32, core_max: usize) -> Plan {
         cdirs: BTreeMap::new(),
         next_id: 0,
         rel_memo: BTreeMap::new(),
+        el_buf: Vec::new(),
+        root_buf: Vec::new(),
         rel_keys: BTreeMap::new(),
         selfm: BTreeMap::new(),
         steps: Vec::new(),
