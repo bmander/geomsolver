@@ -15,6 +15,7 @@ pub mod constraints;
 pub mod decompose;
 pub mod diagnose;
 pub mod examples;
+pub mod expr;
 pub mod fdcheck;
 pub mod graph;
 pub mod homotopy;

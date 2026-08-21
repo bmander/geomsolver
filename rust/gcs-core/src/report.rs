@@ -297,33 +297,60 @@ fn arg_json_value(a: &Arg) -> Json {
         Arg::Int(v) => Json::Int(*v),
         Arg::Bool(b) => Json::Bool(*b),
         Arg::Str(s) => Json::Str(s.clone()),
+        Arg::Expr(e) => Json::Num(e.value),
     }
 }
 
 /// One constraint as the bindings see it: identity, type, spec-ordered arguments and flags.
+/// An argument written as an expression is its number here, like any other dimension, with the
+/// text beside it under `exprs` (attribute → text) — a proxy's `c.d` stays a number and the
+/// formula is there for whoever asks.
 pub fn constraint_json(c: &Constraint) -> Json {
-    let args: Vec<Json> = c
-        .args
+    let args: Vec<Json> = c.args.iter().map(arg_json_value).collect();
+    let exprs: Vec<(String, Json)> = c
+        .spec()
         .iter()
-        .map(|a| match a {
-            Arg::Ent(e) => ent_json(*e),
-            Arg::Num(v) => Json::Num(*v),
-            Arg::Int(v) => Json::Int(*v),
-            Arg::Bool(b) => Json::Bool(*b),
-            Arg::Str(s) => Json::Str(s.clone()),
+        .zip(&c.args)
+        .filter_map(|((n, _), a)| match a {
+            Arg::Expr(e) => Some((n.to_string(), Json::Str(e.text.clone()))),
+            _ => None,
         })
         .collect();
     // Identity and arguments only.  This is the record both bindings rebuild their whole
     // constraint list from after every edit; a `describe` string and an `error` that evaluates
     // the kernel are work per constraint per edit that nothing above reads — `gcs_describe` and
     // `gcs_constraint_error` are there for the one constraint someone is actually looking at.
-    object([
+    let mut v = object([
         ("id", (c.id as i64).into()),
         ("type", c.type_name().into()),
         ("args", Json::Arr(args)),
         ("soft", c.soft.into()),
         ("intrinsic", c.intrinsic.into()),
-    ])
+    ]);
+    if !exprs.is_empty() {
+        v.set("exprs", Json::Obj(exprs));
+    }
+    v
+}
+
+/// The document's expressions, in evaluation order — see `expr::evaluate`.
+pub fn exprs_json(sk: &mut Sketch) -> Json {
+    Json::Arr(
+        crate::expr::evaluate(sk)
+            .into_iter()
+            .map(|it| {
+                object([
+                    ("id", (it.id as i64).into()),
+                    ("attr", it.attr.into()),
+                    ("text", it.text.as_str().into()),
+                    ("name", it.name.map(Json::Str).unwrap_or(Json::Null)),
+                    ("value", it.value.into()),
+                    ("deps", Json::Arr(it.deps.iter().map(|d| Json::Str(d.clone())).collect())),
+                    ("error", it.error.map(Json::Str).unwrap_or(Json::Null)),
+                ])
+            })
+            .collect(),
+    )
 }
 
 fn pt(p: (f64, f64)) -> Json {
@@ -461,6 +488,11 @@ pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String>
             (crate::constraints::SpecKind::Int, _) => Arg::Int(a.as_i64()),
             (crate::constraints::SpecKind::Bool, _) => Arg::Bool(a.as_bool()),
             (crate::constraints::SpecKind::Str, _) => Arg::Str(a.as_str().to_string()),
+            // a dimension may arrive as text — `"w = 1"` — and is evaluated once it is added
+            (k, Json::Str(text)) if k.is_dimension() => {
+                crate::expr::parse(text)?;
+                Arg::Expr(crate::expr::Expr { text: text.clone(), value: 0.0 })
+            }
             _ => Arg::Num(a.as_f64()),
         });
     }

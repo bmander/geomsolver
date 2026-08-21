@@ -12,7 +12,9 @@
  *             E equal · T tangent · ⇧Q symmetric
  *   dimension every dimensioned constraint is called out on the drawing: click one to select
  *             it, drag it where you want it, double-click it to change its number.  Edit ▸
- *             Re-place dimensions undoes the arranging; Options turns the lot off
+ *             Re-place dimensions undoes the arranging; Options turns the lot off.  A number
+ *             may be an expression — `w = 80` names it, `h = w / 2` and `sin(h * 10)` use it —
+ *             and the core evaluates them in dependency order (Solution ▸ Diagnose lists them)
  *   editing   F fix/unfix · G construction · Del delete · Ctrl+Z undo · ⇧Ctrl+Z redo ·
  *             Ctrl+X/C/V cut, copy, paste the selection · wheel zoom · right-drag pan
  *   menus     File/Edit/Solution hold everything that is not a tool or a constraint; the
@@ -32,10 +34,12 @@ import {
 import { METHODS, Method } from '../core/system.js';
 import { initCore } from '../core/wasm.js';
 import { movingParams, witnessSummary } from '../core/witness.js';
+import { expressions } from '../core/expr.js';
 import { SketchView, Tool } from './view.js';
 import {
   MenuItem, ToolbarButton, addButton, addCheckbox, addLink, addMenu, addSelect, addSeparator,
-  askChoice, askNumber, closeMenus, download, openFile, showReport, showSheet, stats, toast,
+  askChoice, askNumber, askText, closeMenus, download, openFile, showReport, showSheet, stats,
+  toast,
 } from './ui.js';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
@@ -550,6 +554,19 @@ async function showDiagnosis(): Promise<void> {
     if (internal.length) lines.push('   (use “Animate DOF” to see them move)');
     lines.push('');
   }
+  const exprs = expressions(sk);
+  if (exprs.length) {
+    lines.push('Expressions (in evaluation order):');
+    for (const it of exprs) {
+      const c = sk.constraintById(it.id);
+      const where = c ? `${c.typeName}.${it.attr}` : `#${it.id}.${it.attr}`;
+      const reads = it.deps.length ? `  ← ${it.deps.join(', ')}` : '';
+      lines.push(it.error
+        ? `   ✗ ${it.text}   [${where}]  ${it.error} — last value ${io.fmt(it.value, 6)} stands`
+        : `   ${it.name ? `${it.name} = ` : ''}${io.fmt(it.value, 6)}   [${where}: ${it.text}]${reads}`);
+    }
+    lines.push('');
+  }
   lines.push(...d.warnings);
   if (view.lastPlan) {
     lines.push('', `Decomposition: ${view.lastPlan.plan.summary}`
@@ -589,19 +606,34 @@ function rebuildRows(next: Constraint[]): void {
   rows = next;
 }
 
+/** A dimension's number is text to the core: a bare number, or an expression that may name
+ *  its value (`w = 80`) or read names other dimensions define (`h = w / 2`).  Angles are in
+ *  degrees either way.  The text that does not parse is refused and nothing changes; one that
+ *  reads a name nothing defines yet is kept, and the row says so until the name appears. */
 async function editValue(c: Constraint): Promise<void> {
   for (const [attr, kind] of c.spec) {
     if (kind !== 'length' && kind !== 'angle') continue;
     const deg = kind === 'angle';
     const rec = c as unknown as Record<string, number>;
     const label = `${c.typeName} ${attr}${deg ? ' (degrees)' : ''}`;
-    const v = await askNumber(label, label, deg ? (rec[attr] * 180) / Math.PI : rec[attr]);
-    if (v !== null) {
-      view.pushUndo();
-      rec[attr] = deg ? (v * Math.PI) / 180 : v;
-      rows = [];                        // force the row text to rebuild
-      view.afterEdit();
+    const current = c.expr(attr)
+      ?? String(Number((deg ? (rec[attr] * 180) / Math.PI : rec[attr]).toPrecision(10)));
+    const text = await askText(label, label, current,
+      'a number, or an expression: “w = 80” names it, “h = w / 2”, “sin(h * 10)” use names; '
+      + 'trigonometry in degrees');
+    if (text == null || !text.trim()) return;   // cancelled, dismissed, or left empty
+    const before = io.dumps(view.sketch);   // remembered only if the text is taken
+    let why: string | null;
+    try {
+      why = c.setDimension(attr, text);
+    } catch (err) {
+      toast(`not a dimension: ${(err as Error).message}`);
+      return;
     }
+    view.pushUndo(before);
+    if (why) toast(`stored, but ${why}`);
+    rows = [];                        // force the row text to rebuild
+    view.afterEdit();
     return;
   }
   toast(`${c.typeName} has no editable dimension`);
@@ -690,12 +722,26 @@ function refreshRows(): void {
   const bad = new Set(d?.violated ?? []);          // culprits are handled first, below
   const over = new Set(d?.over ?? []);
   const implied = new Set(d?.implied ?? []);   // a theorem made it follow: a note, not a fault
+  // an expression that could not be computed: its constraint holds the number it last had
+  const exprError = new Map<number, string>();
+  for (const it of expressions(sk)) if (it.error) exprError.set(it.id, it.error);
+  if (exprError.size || rows.some((c) => Object.keys(c.exprs).length)) {
+    // an expression's number moves when a name it reads does, without the list changing — so
+    // the rows' text is re-read while any expression is about
+    const ix = new io.Index(sk);
+    rows.forEach((c, i) => { (clist.children[i] as HTMLElement).dataset.base = io.describe(c, ix); });
+  }
   rows.forEach((c, i) => {
     const li = clist.children[i] as HTMLElement;
     const base = li.dataset.base ?? '';
     li.className = '';
     li.removeAttribute('title');
-    if (culprits.has(c)) { li.textContent = `✗ ${base}`; li.classList.add('culprit'); }
+    if (exprError.has(c.id)) {
+      li.textContent = `ƒ ${base}`;
+      li.classList.add('expr-error');
+      li.title = `expression: ${exprError.get(c.id)} — the last number stands`;
+    }
+    else if (culprits.has(c)) { li.textContent = `✗ ${base}`; li.classList.add('culprit'); }
     else if (bad.has(c)) { li.textContent = base; li.classList.add('violated'); }
     else if (over.has(c)) { li.textContent = `≈ ${base}`; li.classList.add('over'); }
     else if (implied.has(c)) {

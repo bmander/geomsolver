@@ -291,7 +291,11 @@ impl Sketch {
             self.next_cid = self.next_cid.max(c.id);
         }
         let id = c.id;
+        let expr = crate::expr::has_expr(&c.args);
         self.constraints.push(c);
+        if expr {
+            crate::expr::evaluate(self);   // its text may read names, or define one others read
+        }
         id
     }
 

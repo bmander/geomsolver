@@ -32,6 +32,16 @@ LU against numpy — on purpose, because there is no LAPACK anywhere in the proj
   witness's dimension jitter.  Identity is an integer everywhere (a Param is its index, an entity
   is `(kind, index)`, a constraint is a monotonic id), which is what lets the bindings intern
   proxies and keep `is` / `===` meaning what they always did.
+* `expr.rs` — **dimension expressions**: a `Length`/`Angle` argument may be text — `w = 80`
+  names its value, `h = w / 2` and `sin(h * 10)` read names — parsed by a small recursive-descent
+  parser (`+ - * / ^`, parentheses, `pi`, the usual functions; trigonometry in degrees, like
+  every angle a person reads here).  The names make a graph over the document's dimensions and
+  `evaluate` is a topological (Kahn) walk of it, earliest in the document first among the ready
+  ones: every value is written into its argument (radians for an angle) and the report lists
+  each expression with its name, what it reads, and its error — defined twice, not defined, on a
+  cycle, not a number.  One that cannot be computed keeps its last number, so the solver always
+  has a constant; the report says what is wrong.  Documents save `{"expr", "value"}`; the
+  callout shows `h=40` or `=0.342`, the constraint list `h = w / 2 = 40`.
 * `kernels.rs` — one **vectorized residual/Jacobian kernel per constraint type**, evaluated for a
   whole block of same-typed constraints per call.  Registration order **is** the kernel id.
   Squared distances, no sqrt; a determinant for parallel; dot/cross for angle; signed distance
@@ -121,6 +131,10 @@ solve(sk)                      # p -> (1, 0), q -> (11, 0): least change
   through — `Sketch.arcThrough`, which builds the circumcircle and picks the sweep
   containing that point), wheel zoom, right-drag pan; Escape steps back one stage at a
   time — stop a DOF animation, drop the points a tool has collected, leave the tool;
+* every dimension's number is editable as text (double-click its callout or its row): a
+  number, or an expression — `w = 80` names it, `h = w / 2` uses it — evaluated by the core
+  in dependency order; a row whose expression cannot be computed is marked `ƒ` with why, and
+  Solution ▸ Diagnose lists every expression in evaluation order;
 * a measurement readout in the canvas's lower right whenever exactly two entities are
   selected: their distance from `distanceBetween` in the model (so the readout and any
   constraint you then apply agree on what "distance" means), plus Δx/Δy for two points and

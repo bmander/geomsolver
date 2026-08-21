@@ -260,6 +260,13 @@ export class Sketch {
     this.dirty = true;
   }
 
+  /** Bring the proxies up to date with the core if anything has changed since they last were —
+   *  what a proxy does before handing out a value, since an expression's number can move with
+   *  an edit made elsewhere. */
+  sync(): void {
+    this.syncConstraints();
+  }
+
   private syncConstraints(): void {
     if (!this.dirty) return;
     this.dirty = false;
@@ -269,6 +276,10 @@ export class Sketch {
       if (!c) {
         c = fromRecord(this, rec);
         this.byId.set(rec.id, c);
+      } else {
+        // the core is the authority on a value: a dimension written as an expression changes
+        // when a name it reads does, with nothing said to this proxy
+        c.absorb(this, rec);
       }
       return c;
     });
@@ -539,6 +550,8 @@ export interface ConstraintRecord {
   args: unknown[];
   soft: boolean;
   intrinsic: boolean;
+  /** attribute → the expression text behind it, for a dimension written as one */
+  exprs?: Record<string, string>;
 }
 
 type Factory = (sk: Sketch, rec: ConstraintRecord) => Constraint;

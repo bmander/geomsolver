@@ -261,6 +261,9 @@ pub enum Arg {
     Int(i64),
     Bool(bool),
     Str(String),
+    /// A dimension written as text (`w = 1`, `h = w * 2`), carrying the number it evaluates to —
+    /// see `expr`.  Only a `Length` or `Angle` slot holds one.
+    Expr(crate::expr::Expr),
 }
 
 impl Arg {
@@ -281,6 +284,7 @@ impl Arg {
                     0.0
                 }
             }
+            Arg::Expr(e) => e.value,
             _ => panic!("argument is not a number"),
         }
     }
@@ -436,16 +440,25 @@ impl Constraint {
 
     /// Set a numeric-ish argument by name — a dimension, a flag, a count.  `false` if there is no
     /// such argument or it is not one a number can express, rather than overwriting a string
-    /// argument with `NaN`.
+    /// argument with `NaN`.  A dimension written as an expression becomes this plain number:
+    /// whoever sets a number means the number, not the formula it replaces.
     pub fn set_num(&mut self, name: &str, v: f64) -> bool {
         let Some(i) = self.arg_index(name) else { return false };
         self.args[i] = match self.args[i] {
             Arg::Int(_) => Arg::Int(v as i64),
             Arg::Bool(_) => Arg::Bool(v != 0.0),
-            Arg::Num(_) => Arg::Num(v),
+            Arg::Num(_) | Arg::Expr(_) => Arg::Num(v),
             _ => return false,
         };
         true
+    }
+
+    /// The expression text behind a dimension argument, if it was written as one.
+    pub fn expr_text(&self, name: &str) -> Option<&str> {
+        match self.arg_index(name).map(|i| &self.args[i]) {
+            Some(Arg::Expr(e)) => Some(&e.text),
+            _ => None,
+        }
     }
 
     /// Set a string argument by name (an arc tangency's end).  `false` if there is no such

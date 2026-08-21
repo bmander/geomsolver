@@ -9,7 +9,8 @@ Currently: **Stage 5 done**, in **one** implementation —
   (`newton.rs`, `linalg.rs`, `sparse.rs`), structural diagnosis (`graph.rs`, `diagnose.rs`),
   decomposition into cached solve plans (`cgraph.rs`, `decompose.rs`), witness analysis
   (`witness.rs`), drag/solution management (`solve.rs`, `homotopy.rs`), dimension callouts
-  (`callout.rs`), document I/O (`io.rs`, `json.rs`) and the reference sketches (`examples.rs`).
+  (`callout.rs`), dimension expressions (`expr.rs`), document I/O (`io.rs`, `json.rs`) and the
+  reference sketches (`examples.rs`).
 * **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built twice — a native `cdylib` for
   Python and a self-contained `wasm32-unknown-unknown` module for the browser.
 * **bindings**: `src/gcs/` (Python, `ctypes`) and `web/src/core/` (TypeScript, WebAssembly).
@@ -82,6 +83,19 @@ Conventions:
   into the constraint list (ids are not stable across a load).  The number a dimension states
   comes from `io::dimension_text`, so the drawing and the constraint list cannot print it
   differently.
+- A dimension's number may be an *expression* (`expr.rs`): `Arg::Expr { text, value }` in a
+  `Length`/`Angle` slot, where `value` is what the kernels read (arg units — radians for an
+  angle) and `text` is what a person wrote, in the units they read (degrees).  `w = 80` names
+  its value, `h = w / 2` reads one; the names make a graph over the document's dimensions and
+  `expr::evaluate` is a Kahn walk of it (earliest in the document first among the ready ones),
+  writing every value and reporting, per expression, its name, deps and error — a name defined
+  twice, one nothing defines, a cycle, a non-number.  An expression that cannot be computed
+  keeps its last number, so the solver always has a constant.  Trigonometry is in degrees.
+  `expr::set_dimension` is the one write path for text (a bare number becomes `Arg::Num`, with
+  the angle conversion — the app converts nothing); `Sketch::add` and `io::from_json` evaluate;
+  `set_num` on an expression drops it.  Documents save `{"expr", "value"}` and accept a bare
+  string; the bindings' records keep the number in `args` and put the text under `exprs`, and
+  their proxies `sync()` before handing out a value, since an edit elsewhere can move it.
 - A drag is an operation on the dragged point's *part* of the document (`io::Part`): what is
   reached from it through shared points and constraints, stopping at fixed entities.  `PlanDrag`
   builds its plan, systems and numeric fallback on that part alone and writes each frame back, so

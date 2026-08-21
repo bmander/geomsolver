@@ -48,6 +48,7 @@ class Constraint:
         # tangency, a tangency side read off the geometry)
         vals = [self.defaults[i] if v is None else v for i, v in enumerate(vals)]
         self._args: list[Any] = [self._coerce(v, kind) for v, (_, kind) in zip(vals, self.spec)]
+        self._exprs: dict[str, str] = {}
         self._sketch: Sketch | None = None
         self._id: int = -1
         self.soft = self.soft_by_default
@@ -61,6 +62,8 @@ class Constraint:
             return v
         if kind == "int":
             return int(v)
+        if kind in DIMENSION_KINDS and isinstance(v, str):
+            return v        # an expression — `"w = 1"` — the core evaluates once it is added
         return float(v)
 
     def args(self) -> list[Any]:
@@ -73,6 +76,27 @@ class Constraint:
 
     def dimensions(self) -> list[tuple[str, str]]:
         return [(n, k) for n, k in self.spec if k in DIMENSION_KINDS]
+
+    def expr(self, name: str) -> str | None:
+        """The expression text behind a dimension, or None when it is a plain number."""
+        if self._sketch is not None:
+            self._sketch._sync_constraints()
+        return self._exprs.get(name)
+
+    def set_dimension(self, name: str, text: str) -> str | None:
+        """Write a dimension from text: a bare number is a constant, anything else an
+        expression (`w = 1`, `h = w * 2`) the core evaluates with the rest of the document's.
+        Raises ValueError when the text does not parse (nothing changes); returns why it could
+        not be computed yet (a name nothing defines), or None when it did."""
+        if self._id < 0 or self._sketch is None:
+            raise ValueError("constraint is not in a sketch")
+        p, n = _ffi.send(name)
+        tp, tn = _ffi.send(text)
+        r = int(lib.gcs_constraint_set_dimension(self._sketch._h, self._id, p, n, tp, tn))
+        if r < 0:
+            raise ValueError(_ffi.last_error() or "bad expression")
+        self._sketch.touch()   # every proxy re-reads its numbers: whatever read this name moved
+        return (_ffi.last_error() or "could not be evaluated") if r > 0 else None
 
     @property
     def n_residuals(self) -> int:
@@ -117,6 +141,7 @@ class Constraint:
         self.soft = bool(rec["soft"])
         self.intrinsic = bool(rec["intrinsic"])
         self._args = [_from_json(sk, v, kind) for v, (_, kind) in zip(rec["args"], self.spec)]
+        self._exprs = dict(rec.get("exprs") or {})
 
     def _set_value(self, name: str, v: Any) -> None:
         i = next(k for k, (n, _) in enumerate(self.spec) if n == name)
@@ -243,6 +268,8 @@ def _make(entry: dict[str, Any]) -> type[Constraint]:
     }
     for i, (attr, kind) in enumerate(spec):
         def getter(self: Constraint, _i: int = i) -> Any:
+            if self._sketch is not None:
+                self._sketch._sync_constraints()   # a dimension's number may have moved
             return self._args[_i]
 
         def setter(self: Constraint, v: Any, _n: str = attr) -> None:

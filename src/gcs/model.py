@@ -280,6 +280,10 @@ class Sketch:
             if c is None:
                 c = from_record(self, rec)
                 self._by_id[rec["id"]] = c
+            else:
+                # the core is the authority on a value: a dimension written as an expression
+                # changes when a name it reads does, with nothing said to this proxy
+                c._absorb(self, rec)
             out.append(c)
         self._cons = out
 

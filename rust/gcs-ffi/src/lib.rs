@@ -19,6 +19,7 @@ use gcs_core::cgraph::{self, El};
 use gcs_core::constraints::Constraint;
 use gcs_core::decompose::{self, Plan, PlanDrag, PlanSolver};
 use gcs_core::diagnose::{self, DiagnoseOptions};
+use gcs_core::expr;
 use gcs_core::homotopy::{self, EnumerateOptions};
 use gcs_core::io;
 use gcs_core::json::{self, Json};
@@ -815,6 +816,45 @@ pub unsafe extern "C" fn gcs_constraint_set_str(
             }
         }
     })
+}
+
+/// Write a dimension from text: a bare number is a constant, anything else an expression
+/// (`w = 1`, `h = w * 2`), evaluated with the rest of the document's — see `gcs_core::expr`.
+/// 0 when it was stored and computed; 1 when it was stored but could not be computed yet (a name
+/// nothing defines), with why in `gcs_last_error()`; -1 when it was rejected (it does not parse,
+/// or `name` is no dimension) and nothing changed.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_constraint_set_dimension(
+    h: *mut Sketch,
+    id: i32,
+    name: *const u8,
+    name_len: usize,
+    text: *const u8,
+    text_len: usize,
+) -> i32 {
+    guard(-1, move || {
+        let n = as_str(name, name_len).to_string();
+        let t = as_str(text, text_len).to_string();
+        match expr::set_dimension(sk(h), id as u32, &n, &t) {
+            Ok(None) => 0,
+            Ok(Some(why)) => {
+                set_error(why);
+                1
+            }
+            Err(e) => {
+                set_error(e);
+                -1
+            }
+        }
+    })
+}
+
+/// Every dimension expression in the document, evaluated and in evaluation order: each with its
+/// constraint id and attribute, its text, the name it defines, its value (degrees for an angle),
+/// the names it reads and its error if it could not be computed.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_exprs_json(h: *mut Sketch) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || out_json(report::exprs_json(sk(h))))
 }
 
 /// A drag target's (tx, ty) — the one mutation the hot path performs.

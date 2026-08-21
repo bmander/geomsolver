@@ -66,6 +66,9 @@ export abstract class Constraint {
   [key: string]: unknown;
 
   args: unknown[] = [];
+  /** attribute → expression text, for each dimension written as one (`w = 1`, `h = w * 2`).
+   *  The attribute itself is the number it evaluates to, like any other dimension. */
+  exprs: Record<string, string> = {};
   soft = false;
   intrinsic = false;
   /** Document-stable identity, -1 until a sketch adopts it. */
@@ -140,6 +143,27 @@ export abstract class Constraint {
     this.soft = rec.soft;
     this.intrinsic = rec.intrinsic;
     this.args = this.spec.map(([, kind], i) => fromJson(sk, rec.args[i], kind));
+    this.exprs = rec.exprs ?? {};
+  }
+
+  /** The expression text behind a dimension, or null when it is a plain number. */
+  expr(name: string): string | null {
+    this.sketch?.sync();
+    return this.exprs[name] ?? null;
+  }
+
+  /** Write a dimension from text: a bare number is a constant, anything else an expression
+   *  (`w = 1`, `h = w * 2`) the core evaluates with the rest of the document's.  Throws when
+   *  the text does not parse (nothing changes); returns why it could not be computed yet (a
+   *  name nothing defines), or null when it did. */
+  setDimension(name: string, text: string): string | null {
+    if (this.id < 0 || !this.sketch) throw new Error('constraint is not in a sketch');
+    const sk = this.sketch;
+    const r = withStr(name, (p, n) => withStr(text, (tp, tn) =>
+      core().gcs_constraint_set_dimension(sk.handle, this.id, p, n, tp, tn)));
+    if (r < 0) throw new Error(lastError() || 'bad expression');
+    sk.touch();   // every proxy re-reads its numbers: whatever read this name moved too
+    return r > 0 ? (lastError() || 'could not be evaluated') : null;
   }
 
   setValue(name: string, v: unknown): void {
@@ -278,6 +302,7 @@ function make(entry: TypeEntry): ConstraintCtor {
   spec.forEach(([attr], i) => {
     Object.defineProperty(cls.prototype, attr, {
       get(this: Constraint) {
+        this.sketch?.sync();   // a dimension's number may have moved with another's edit
         return this.args[i];
       },
       set(this: Constraint, v: unknown) {

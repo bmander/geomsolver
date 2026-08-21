@@ -7,6 +7,7 @@
 
 use crate::constraints::{Arg, CKind, Constraint, SpecKind};
 use crate::decompose;
+use crate::expr;
 use crate::json::{fmt_g, object, parse, Json};
 use crate::model::{expand, EntKind, EntRef, Sketch};
 use std::collections::{BTreeMap, BTreeSet};
@@ -28,11 +29,29 @@ fn arg_json(a: &Arg) -> Json {
         Arg::Int(v) => Json::Int(*v),
         Arg::Bool(b) => Json::Bool(*b),
         Arg::Str(s) => Json::Str(s.clone()),
+        // the text and the number it last made: a document whose expression no longer computes
+        // (a name deleted from it by hand) still loads with every dimension a number
+        Arg::Expr(e) => object([("expr", Json::Str(e.text.clone())), ("value", Json::Num(e.value))]),
     }
 }
 
 fn arg_from_json(sk: &Sketch, kind: SpecKind, v: &Json) -> Result<Arg, String> {
     Ok(match kind {
+        k if k.is_dimension() && !matches!(v, Json::Num(_) | Json::Int(_)) => {
+            // `{"expr": text, "value": n}` as saved, or a bare string as a person writes one
+            let (text, value) = match v {
+                Json::Str(s) => (s.clone(), 0.0),
+                Json::Obj(_) => match v.get("expr") {
+                    Some(Json::Str(s)) => (s.clone(), v.get("value").map(|x| x.as_f64()).unwrap_or(0.0)),
+                    _ => return Err("a dimension is a number, a string or {\"expr\": ...}".into()),
+                },
+                _ => return Err("a dimension is a number, a string or {\"expr\": ...}".into()),
+            };
+            if text.len() > expr::MAX_TEXT {
+                return Err(format!("expression longer than {} characters", expr::MAX_TEXT));
+            }
+            Arg::Expr(expr::Expr { text, value })
+        }
         k if k.is_entity() => {
             let a = v.arr();
             if a.len() != 2 {
@@ -198,6 +217,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         }
         ids.push(sk.add(Constraint::new(kind, args)));
     }
+    expr::evaluate(&mut sk);   // every expression against the whole document, in order
     if let Some(Json::Obj(kv)) = d.get("placements") {
         for (k, v) in kv {
             let a = v.arr();
@@ -514,6 +534,8 @@ impl Part {
 pub fn arg_text(kind: SpecKind, a: &Arg) -> String {
     match (kind, a) {
         (k, Arg::Ent(e)) if k.is_entity() => entity_name(*e),
+        // the formula and what it came to: `h = w * 2 = 80`, `sin(h * 10) = 0.342`
+        (k, Arg::Expr(e)) => format!("{} = {}", e.text, arg_text(k, &Arg::Num(e.value))),
         (SpecKind::Angle, a) => format!("{}°", fmt_g(a.num().to_degrees(), 3)),
         (SpecKind::Length, a) | (SpecKind::Float, a) => fmt_g(a.num(), 4),
         (_, Arg::Bool(b)) => if *b { "True" } else { "False" }.to_string(),
@@ -525,10 +547,20 @@ pub fn arg_text(kind: SpecKind, a: &Arg) -> String {
 
 /// The number a dimensioned constraint states, as its callout prints it — the first Length or
 /// Angle in its spec, whichever argument that happens to be.  `None` for a constraint that
-/// states no number.
+/// states no number.  A dimension written as an expression shows its name and value (`h=80`),
+/// or a leading `=` when it has no name — the formula itself is in the constraint list.
 pub fn dimension_text(c: &Constraint) -> Option<String> {
     let (i, _, kind) = c.dimensions().into_iter().next()?;
-    Some(arg_text(kind, &c.args[i]))
+    Some(match &c.args[i] {
+        Arg::Expr(e) => {
+            let v = arg_text(kind, &Arg::Num(e.value));
+            match expr::name_of(&e.text) {
+                Some(n) => format!("{n}={v}"),
+                None => format!("={v}"),
+            }
+        }
+        a => arg_text(kind, a),
+    })
 }
 
 /// Human-readable one-liner: `Distance(P0, P1, 80)`; angles shown in degrees.

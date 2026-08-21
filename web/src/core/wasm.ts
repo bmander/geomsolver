@@ -73,6 +73,9 @@ export interface Abi {
                          v: number): number;
   gcs_constraint_set_str(h: number, id: number, name: number, nameLen: number,
                          v: number, vLen: number): number;
+  gcs_constraint_set_dimension(h: number, id: number, name: number, nameLen: number,
+                               text: number, textLen: number): number;
+  gcs_exprs_json(h: number): number;
   gcs_constraint_set_target(h: number, id: number, tx: number, ty: number): void;
   gcs_constraint_error(h: number, id: number): number;
   gcs_constraint_params(h: number, id: number, out: number): number;

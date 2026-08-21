@@ -8,7 +8,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as C from '../core/constraints.js';
+import { Constraint } from '../core/constraints.js';
 import * as examples from '../core/examples.js';
+import { callouts } from '../core/callout.js';
+import { expressions } from '../core/expr.js';
 import * as graph from '../core/graph.js';
 import * as io from '../core/io.js';
 import { PlanDrag, PlanSolver, buildGraph } from '../core/decompose.js';
@@ -1160,4 +1163,89 @@ test('the registry the binding generates its classes from matches the kernels', 
     assert.ok(t.kernel >= 0 && t.kernel < reg.kernels.length, t.name);
     assert.equal(C.CONSTRAINT_TYPES[t.name].kernelId, t.kernel);
   }
+});
+
+/* -- dimension expressions ----------------------------------------------------- */
+
+/** Three free segments, each dimensioned by the text given. */
+function threeDims(texts: [string, string, string]): { sk: Sketch; cs: Constraint[] } {
+  const sk = new Sketch();
+  const cs = texts.map((t, i) => {
+    const a = sk.point(10 * i, 0), b = sk.point(10 * i + 5, 0);
+    const c = new C.Distance(a, b, t);
+    sk.add(c);
+    return c;
+  });
+  return { sk, cs };
+}
+
+test('dimensions written as expressions are evaluated in dependency order', () => {
+  // the reader comes first in the document, the definition last
+  const { sk, cs } = threeDims(['sin(h * 10)', 'h = w * 2', 'w = 1']);
+  assert.equal(num(cs[2].d), 1);
+  assert.equal(num(cs[1].d), 2);
+  assert.ok(Math.abs(num(cs[0].d) - Math.sin((20 * Math.PI) / 180)) < 1e-12);
+  assert.equal(cs[1].expr('d'), 'h = w * 2');
+  assert.equal(cs[1].describe(), 'Distance(P2, P3, h = w * 2 = 2)');
+  const items = expressions(sk);
+  assert.deepEqual(items.map((it) => it.id), [cs[2].id, cs[1].id, cs[0].id]);
+  assert.deepEqual(items[1].deps, ['w']);
+  assert.equal(items[1].name, 'h');
+  assert.ok(items.every((it) => it.error === null));
+  // the solver sees the numbers
+  assert.ok(solve(sk).success);
+  const [p, q] = cs[1].entities() as [import('../core/model.js').Point, import('../core/model.js').Point];
+  assert.ok(Math.abs(Math.hypot(p.x.value - q.x.value, p.y.value - q.y.value) - 2) < 1e-9);
+});
+
+test('editing one dimension moves every proxy that reads it', () => {
+  const { sk, cs } = threeDims(['w = 3', 'h = w * 2', 'h + 1']);
+  assert.equal(cs[2].d, 7);
+  assert.equal(cs[0].setDimension('d', 'w = 5'), null);
+  assert.equal(cs[1].d, 10);                  // re-read from the core, nothing told this proxy
+  assert.equal(cs[2].d, 11);
+  // a bare number is a constant again; whatever read the name says so and keeps its number
+  assert.equal(cs[0].setDimension('d', '4'), null);
+  assert.equal(cs[0].expr('d'), null);
+  assert.equal(cs[1].d, 10);
+  const bad = expressions(sk).filter((it) => it.error);
+  assert.equal(bad.length, 2);
+  assert.equal(bad[0].error, '`w` is not defined');
+  // text that does not parse is refused and changes nothing
+  assert.throws(() => cs[0].setDimension('d', '1 +'));
+  assert.equal(cs[0].d, 4);
+  // text that reads a name nothing defines is kept, and says why
+  assert.match(cs[0].setDimension('d', 'q * 2') ?? '', /`q` is not defined/);
+  assert.equal(cs[0].d, 4);
+  // a cycle is named
+  cs[0].setDimension('d', 'w = h');
+  assert.match(expressions(sk).find((it) => it.id === cs[0].id)?.error ?? '', /circular/);
+  // angles are written in degrees
+  const sk2 = new Sketch();
+  const l1 = sk2.lineXY(0, 0, 10, 0), l2 = sk2.lineXY(0, 0, 10, 5);
+  const ang = new C.Angle(l1, l2, 0);
+  sk2.add(ang);
+  ang.setDimension('theta', 'a = 30');
+  assert.ok(Math.abs(num(ang.theta) - Math.PI / 6) < 1e-12);
+  assert.equal(expressions(sk2)[0].value, 30);
+  sk.dispose();
+  sk2.dispose();
+});
+
+test('expressions round-trip through the document and survive a rebuild', () => {
+  const { sk, cs } = threeDims(['w = 3', 'h = w * 2', 'h + 1']);
+  const sk2 = io.loads(io.dumps(sk));
+  assert.equal(io.dumps(sk2), io.dumps(sk));
+  assert.equal(sk2.constraints[1].expr('d'), 'h = w * 2');
+  assert.equal(sk2.constraints[1].d, 6);
+  // deleting the definition: readers keep their numbers and say what is missing
+  const sk3 = io.without(sk, [], [cs[0]]);
+  assert.equal(sk3.constraints[0].d, 6);
+  assert.equal(expressions(sk3)[0].error, '`w` is not defined');
+  // the callout shows the name and value, or a leading = for an unnamed expression
+  const texts = callouts(sk, 1).items.map((k) => k.text);
+  assert.deepEqual(texts, ['w=3', 'h=6', '=7']);
+  sk.dispose();
+  sk2.dispose();
+  sk3.dispose();
 });

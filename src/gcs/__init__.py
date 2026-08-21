@@ -32,13 +32,14 @@ from gcs.constraints import (
     Vertical,
     same_constraint,
 )
+from gcs.expr import ExprItem, expressions
 from gcs.solve import Drag, RadiusDrag, SolveResult, System, solve
 
 __all__ = [
     "Angle", "AnnularDistance", "Arc", "Circle", "Coincident", "Constraint", "Distance",
-    "DragTarget", "Drag", "EqualLength", "EqualRadius", "Horizontal", "Line", "Midpoint",
+    "DragTarget", "Drag", "EqualLength", "EqualRadius", "ExprItem", "Horizontal", "Line", "Midpoint",
     "Parallel", "ParallelDistance", "Param", "Perpendicular", "Point", "PointLineDistance",
     "PointOnCircle", "PointOnLine", "Radius", "RadiusDrag", "Sketch", "SolveResult", "Symmetric",
     "System", "TangentArcLine", "TangentCircleCircle", "TangentLineCircle", "Vertical",
-    "distance_between", "expand", "same_constraint", "solve",
+    "distance_between", "expand", "expressions", "same_constraint", "solve",
 ]
