@@ -12,6 +12,8 @@
  *             E equal · T tangent · ⇧Q symmetric
  *   editing   F fix/unfix · G construction · Del delete · Ctrl+Z undo · wheel zoom ·
  *             right-drag pan
+ *   menus     File/Edit/Solution hold everything that is not a tool or a constraint; the
+ *             solver's own switches are behind Solution ▸ Options
  *
  * Everything below is presentation; the solver, diagnosis, decomposition and root selection
  * all live in core/ and are shared with the test suite. */
@@ -29,11 +31,12 @@ import { initCore } from '../core/wasm.js';
 import { movingParams, witnessSummary } from '../core/witness.js';
 import { SketchView, Tool } from './view.js';
 import {
-  ToolbarButton, addButton, addCheckbox, addSelect, addSeparator, askChoice, askNumber,
-  download, openFile, showReport, stats, toast,
+  MenuItem, ToolbarButton, addButton, addCheckbox, addMenu, addSelect, addSeparator, askChoice,
+  askNumber, closeMenus, download, openFile, showReport, showSheet, stats, toast,
 } from './ui.js';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
+const menubar = document.getElementById('menubar') as HTMLElement;
 const barTools = document.getElementById('bar-tools') as HTMLElement;
 const barConstraints = document.getElementById('bar-constraints') as HTMLElement;
 const clist = document.getElementById('clist') as HTMLElement;
@@ -85,41 +88,73 @@ for (const [label, tool, key] of [
 }
 view.setTool('select');
 addSeparator(barTools);
-
-const CASES = examples.cases();
-const caseBox = addSelect(barTools,
-  [{ value: '', label: '— load a test case —' },
-   ...CASES.map((c) => ({ value: c.label, label: c.label, title: c.description }))],
-  (name) => {
-    const hit = CASES.find((c) => c.label === name);
-    if (!hit) return;
-    view.setSketch(examples.build(hit.key));
-    toast(`${hit.label} — ${hit.description}`, 12000);
-    caseBox.value = '';
-  }, '230px');
-
-addSeparator(barTools);
-addButton(barTools, { label: 'New', onClick: () => view.setSketch(new Sketch()) });
-addButton(barTools, { label: 'Open', onClick: () => void doOpen() });
-addButton(barTools, { label: 'Save', onClick: () => download('sketch.json', io.dumps(view.sketch)) });
-addButton(barTools, { label: 'Undo', key: '⌘Z', onClick: () => view.undo() });
 addButton(barTools, { label: 'Fit', onClick: () => view.fit() });
-addSeparator(barTools);
-addButton(barTools, { label: 'Solve', onClick: () => { view.solveNow(); reportSolve(); } });
-addButton(barTools, { label: 'Diagnose', onClick: () => void showDiagnosis() });
-addButton(barTools, { label: 'Animate DOF', onClick: () => {
-  if (!view.startAnimation()) toast('no remaining internal DOF to animate');
-} });
-addButton(barTools, { label: 'Flip branch', onClick: () => flipBranch() });
-addButton(barTools, { label: 'Alternatives…', onClick: () => void alternatives() });
-addSeparator(barTools);
-addCheckbox(barTools, 'auto-solve', true, (v) => { view.autoSolve = v; });
-addCheckbox(barTools, 'plan', false, (v) => { view.usePlan = v; view.solveNow(); });
-addCheckbox(barTools, 'colour by state', true, (v) => { view.colorByState = v; view.draw(); });
-addSelect(barTools, METHODS.map((m) => ({ value: m, label: m })), (m) => {
-  view.method = m as Method;
-  view.solveNow();
-});
+
+/* -- menu bar ------------------------------------------------------------------- */
+
+/* Everything that is neither a tool nor a constraint.  Like the constraints bar these are
+ * tables rather than calls, so the accelerator printed beside an item is the same string the
+ * keyboard handler matches — see ACTION_KEYS. */
+const MENUS: [string, (MenuItem | null)[]][] = [
+  ['File', [
+    { label: 'New', onClick: () => view.setSketch(new Sketch()) },
+    { label: 'Open…', onClick: () => void doOpen() },
+    { label: 'Open test case…', onClick: () => void openCase() },
+    null,
+    { label: 'Save', onClick: () => download('sketch.json', io.dumps(view.sketch)) },
+  ]],
+  ['Edit', [
+    { label: 'Undo', key: '⌘z', onClick: () => view.undo() },
+  ]],
+  ['Solution', [
+    { label: 'Solve', onClick: () => { view.solveNow(); reportSolve(); } },
+    { label: 'Diagnose…', onClick: () => void showDiagnosis() },
+    null,
+    { label: 'Animate DOF', onClick: () => {
+      if (!view.startAnimation()) toast('no remaining internal DOF to animate');
+    } },
+    { label: 'Flip branch', onClick: () => flipBranch() },
+    { label: 'Alternatives…', onClick: () => void alternatives() },
+    null,
+    { label: 'Options…', onClick: () => void options() },
+  ]],
+];
+for (const [label, items] of MENUS) addMenu(menubar, label, items);
+
+/** The reference sketches, each with the one line that says what it is there to show.  Asked
+ *  for the first time the menu item is picked, so booting costs nothing for a list most
+ *  sessions never open. */
+let cases: ReturnType<typeof examples.cases> | null = null;
+async function openCase(): Promise<void> {
+  cases ??= examples.cases();
+  const i = await askChoice('Open test case', 'The sketches the solver is exercised on:',
+                            cases.map((c) => `${c.label} — ${c.description}`));
+  if (i === null) return;
+  view.setSketch(examples.build(cases[i].key));
+  toast(`${cases[i].label} — ${cases[i].description}`, 12000);
+}
+
+/** Everything that changes how the solve runs, gathered behind one item.  The controls are
+ *  built from the view each time the sheet opens, so none of them can go stale, and each
+ *  takes effect as it is switched. */
+function options(): Promise<void> {
+  return showSheet('Options', (body) => {
+    const box = document.createElement('div');
+    box.className = 'fields';
+    addCheckbox(box, 'auto-solve', view.autoSolve, (v) => { view.autoSolve = v; },
+                'Solve after every edit, rather than on demand');
+    addCheckbox(box, 'plan', view.usePlan, (v) => { view.usePlan = v; view.solveNow(); },
+                'Solve through the cached decomposition plan instead of one Newton system '
+              + 'over the whole sketch');
+    addCheckbox(box, 'colour by state', view.colorByState, (v) => { view.colorByState = v; view.draw(); },
+                'Paint each entity by what diagnosis makes of it');
+    addSelect(box, 'method', [...METHODS], view.method, (m) => {
+      view.method = m as Method;
+      view.solveNow();
+    }, 'The trust-region method the solver runs');
+    body.append(box);
+  });
+}
 
 /* constraints whose arguments are just entities:
  * (label, class, points, lines, circles/arcs, shortcut) */
@@ -716,17 +751,22 @@ bannerSelect.addEventListener('click', () => {
 const TOOL_KEYS: Record<string, Tool> = {
   p: 'point', l: 'line', r: 'rect', c: 'circle', a: 'arc', 3: 'arc3',
 };
-/** The constraints bar's accelerators, read off the buttons so there is one list, not two. */
+/** Every accelerator in the app, read off the buttons and menu items themselves so there is
+ *  one list and not two.  The token is the chip the control prints, lowercased: '⇧l', '⌘z'. */
 const ACTION_KEYS = new Map<string, () => void>(
-  CONSTRAINT_BUTTONS.flatMap((b) => (b.key ? [[b.key, b.onClick] as [string, () => void]] : [])));
+  [...CONSTRAINT_BUTTONS, ...MENUS.flatMap(([, items]) => items)]
+    .flatMap((b) => (b?.key ? [[b.key, b.onClick] as [string, () => void]] : [])));
 
 window.addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement | null;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); view.undo(); return; }
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) {
+    const cmd = e.altKey ? undefined : ACTION_KEYS.get(`⌘${e.key.toLowerCase()}`);
+    if (cmd) { e.preventDefault(); cmd(); }
+    return;
+  }
   const k = e.key.toLowerCase();
-  if (k === 'escape') { view.cancelTool(); return; }
+  if (k === 'escape') { if (!closeMenus()) view.cancelTool(); return; }
   if (k === 'delete' || k === 'backspace') {
     e.preventDefault();
     if (currentConstraint) {
@@ -755,5 +795,5 @@ new ResizeObserver(() => view.resize()).observe(canvas);
 view.resize();
 view.fit();
 view.afterEdit();
-toast('Rectangle with fillets — fully constrained, so nothing here moves; load another case '
-  + 'from the toolbar to drag one', 12000);
+toast('Rectangle with fillets — fully constrained, so nothing here moves; File ▸ Open test '
+  + 'case for one you can drag', 12000);

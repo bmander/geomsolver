@@ -47,13 +47,22 @@ export function button(label: string, onClick: () => void, primary = false): HTM
   return b;
 }
 
+/** A modal whose only action is Close: the caller fills the body.  Nothing in one is
+ *  confirmed — a report has nothing to confirm, and a sheet of switches has already taken
+ *  effect by the time you read them. */
+export function showSheet(title: string, build: (body: HTMLElement) => void): Promise<void> {
+  return open<void>(title, (resolve) => {
+    build(modalBody);
+    modalActions.append(button('Close', () => resolve(), true));
+  });
+}
+
 /** Scrollable read-only report. */
 export function showReport(title: string, text: string): Promise<void> {
-  return open<void>(title, (resolve) => {
+  return showSheet(title, (body) => {
     const pre = document.createElement('pre');
     pre.textContent = text;
-    modalBody.append(pre);
-    modalActions.append(button('Close', () => resolve(), true));
+    body.append(pre);
   });
 }
 
@@ -122,34 +131,98 @@ export function addSeparator(bar: HTMLElement): void {
   bar.append(s);
 }
 
-export function addCheckbox(bar: HTMLElement, label: string, checked: boolean,
-                            onChange: (v: boolean) => void): HTMLInputElement {
+/** The wrapper a labelled control sits in, so the text is part of the control's hit area and
+ *  the tooltip covers both.  Callers append in the order the control reads: a checkbox before
+ *  its label, a select after it. */
+function field(bar: HTMLElement, title?: string): HTMLLabelElement {
   const l = document.createElement('label');
   l.className = 'check';
+  if (title) l.title = title;
+  bar.append(l);
+  return l;
+}
+
+export function addCheckbox(bar: HTMLElement, label: string, checked: boolean,
+                            onChange: (v: boolean) => void, title?: string): HTMLInputElement {
   const c = document.createElement('input');
   c.type = 'checkbox';
   c.checked = checked;
   c.addEventListener('change', () => onChange(c.checked));
-  l.append(c, document.createTextNode(label));
-  bar.append(l);
+  field(bar, title).append(c, document.createTextNode(label));
   return c;
 }
 
-export function addSelect(bar: HTMLElement, options: { value: string; label: string; title?: string }[],
-                          onChange: (v: string) => void, width?: string): HTMLSelectElement {
+export function addSelect(bar: HTMLElement, label: string, options: string[], value: string,
+                          onChange: (v: string) => void, title?: string): HTMLSelectElement {
   const s = document.createElement('select');
   for (const o of options) {
     const opt = document.createElement('option');
-    opt.value = o.value;
-    opt.textContent = o.label;
-    if (o.title) opt.title = o.title;
+    opt.value = o;
+    opt.textContent = o;
     s.append(opt);
   }
-  if (width) s.style.minWidth = width;
+  s.value = value;
   s.addEventListener('change', () => onChange(s.value));
-  bar.append(s);
+  field(bar, title).append(document.createTextNode(label), s);
   return s;
 }
+
+/* -- menu bar ------------------------------------------------------------------- */
+
+/** A menu item is a button that happens to live in a list, so it is described the same way —
+ *  `toggle` is the one thing a menu has no use for. */
+export type MenuItem = Omit<ToolbarButton, 'toggle'>;
+
+/** The one menu that is down, if any: its top button, whose `aria-expanded` is what the CSS
+ *  drops the list on.  One variable, so nothing can disagree about what is open. */
+let openMenu: HTMLButtonElement | null = null;
+
+/** Shut the open menu; true if there was one, which is how Escape knows whether it has
+ *  already done something before it goes on to back out of the tool. */
+export function closeMenus(): boolean {
+  if (!openMenu) return false;
+  openMenu.setAttribute('aria-expanded', 'false');
+  openMenu = null;
+  return true;
+}
+
+/** One menu on the bar: a name, and the items under it with `null` for a dividing rule.
+ *  Once one menu is open the others take over on hover, the way a desktop menu bar behaves. */
+export function addMenu(bar: HTMLElement, label: string, items: (MenuItem | null)[]): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'menu';
+  const top = document.createElement('button');
+  top.textContent = label;
+  top.setAttribute('aria-expanded', 'false');
+  const drop = (): void => {
+    closeMenus();
+    top.setAttribute('aria-expanded', 'true');
+    openMenu = top;
+  };
+  // pointerdown rather than click, so the menu is up under the finger that opened it, and
+  // default-prevented so the focus stays wherever it was and the key handler keeps working
+  top.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (openMenu === top) closeMenus();
+    else drop();
+  });
+  top.addEventListener('pointerenter', () => { if (openMenu && openMenu !== top) drop(); });
+  const list = document.createElement('ul');
+  for (const item of items) {
+    const li = document.createElement('li');
+    if (!item) li.className = 'sep';
+    else addButton(li, { ...item, onClick: () => { closeMenus(); item.onClick(); } });
+    list.append(li);
+  }
+  wrap.append(top, list);
+  bar.append(wrap);
+}
+
+/* A press anywhere else puts the menu away — including on the canvas, where the same press
+ * goes on to do whatever it was going to do. */
+document.addEventListener('pointerdown', (e) => {
+  if (openMenu && !(e.target as HTMLElement).closest('.menu')) closeMenus();
+});
 
 /** Download a string as a file (used by Save). */
 export function download(name: string, text: string): void {

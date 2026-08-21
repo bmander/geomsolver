@@ -35,7 +35,6 @@
   .bar > * { flex: none; }        /* wrap onto a new row rather than shrinking to a sliver */
   .bar + .bar { border-top: 1px solid var(--line); }
   .bar .sep { width: 1px; height: 20px; background: var(--line); margin: 0 6px; }
-  .bar label { color: var(--muted); margin-left: 4px; }
 
   button, select {
     font: inherit; color: inherit;
@@ -50,6 +49,29 @@
   button:disabled { opacity: .45; cursor: default; border-color: var(--line); }
   button kbd { font: inherit; color: var(--muted); margin-left: 4px; }
   label.check { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text); }
+
+  /* the menu bar.  It behaves like a desktop one: a click opens a menu, and while any menu
+     is open the others take over on hover.  Which one is down is recorded once, in the top
+     button's aria-expanded, and the list is dropped off that. */
+  .menubar { gap: 2px; padding: 2px 6px; }
+  .menu { position: relative; }
+  .menu > button { background: none; border: 1px solid transparent; padding: 3px 10px; }
+  .menu > button:hover, .menu > button[aria-expanded="true"] {
+    background: var(--accent-soft); border-color: transparent; color: var(--accent);
+  }
+  .menu ul {
+    display: none; position: absolute; top: calc(100% + 2px); left: 0; z-index: 20;
+    min-width: 200px; margin: 0; padding: 4px; list-style: none;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 7px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  }
+  .menu:has(> button[aria-expanded="true"]) ul { display: block; }
+  .menu li.sep { height: 1px; margin: 4px 2px; background: var(--line); }
+  .menu li > button {
+    display: flex; width: 100%; gap: 24px; justify-content: space-between;
+    background: none; border: 0; padding: 4px 8px; white-space: nowrap;
+  }
+  .menu li > button:hover { background: var(--accent-soft); color: var(--accent); }
 
   #banner { display: none; align-items: center; gap: 10px; padding: 7px 12px; font-weight: 600; flex: none; }
   #banner.conflict { display: flex; background: var(--danger-bg); color: #8a0000; border-bottom: 1px solid #d62728; }
@@ -116,6 +138,9 @@
     font: inherit; width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 5px;
   }
   dialog .choices { display: flex; flex-direction: column; gap: 4px; }
+  /* a settings sheet: one control per row, each taking effect as it is switched */
+  dialog .fields { display: flex; flex-direction: column; gap: 10px; }
+  dialog .fields label.check { display: flex; }
   dialog .choices button { text-align: left; font-family: var(--mono); font-size: 12px; }
 
   #loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); background: var(--bg); }
@@ -136,6 +161,7 @@
 <body>
 <div id="app">
   <header>
+    <div class="bar menubar" id="menubar"></div>
     <div class="bar" id="bar-tools"></div>
     <div class="bar" id="bar-constraints"></div>
   </header>
