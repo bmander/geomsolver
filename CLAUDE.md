@@ -87,6 +87,16 @@ Conventions:
   builds its plan, systems and numeric fallback on that part alone and writes each frame back, so
   a drag costs the figure, never the document, and separate figures cost it nothing; anything a
   drag exchanges by point index (guards, flips, branch keys) crosses through the part's maps.
+- Within the part, a frame costs the *region*, not the figure: `decompose::Wave` moves the plan's
+  roots as rigid bodies — the ones holding the dragged point, growing by shared elements only
+  while the cursor is out of reach — with every element shared with the rest held as an anchor
+  and every direction class the rest carries pinning a rotation.  Pull (cursor row) then polish
+  (anchors only, min-norm from the pulled pose) on the tiny merge system, rotations about each
+  body's centroid scaled by `TURN_COST` × its gyration radius so least-norm is least motion and a
+  free body slides rather than spins.  The wave keeps its bodies' and anchors' poses and never
+  re-reads what it moved, so nothing compounds over a long gesture; it starts from a solved
+  configuration (`PlanDrag::new` solves first) and hands over to the numeric `Drag` only for
+  unsupported constraints, a region past `WAVE_MAX`, or a body solve that will not converge.
 - In `decompose`, a direction class is a *relation*, not an *adjacency*: merge candidates, the
   worklist refresh and the core frontier come from shared elements (`neighbours`), and the class
   counts toward a candidate's rank once it is on the table (`pair_rel`, `relation_bound`).

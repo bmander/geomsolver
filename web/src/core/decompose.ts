@@ -162,10 +162,11 @@ export function pppTriangles(solver: PlanSolver): Triangle[] {
   return solver.pppTriangles();
 }
 
-/** DCM-style drag: the dragged point joins the ground and the cached plan replays per frame — no
- *  graph analysis while dragging, recorded roots are sticky, and under-constrained roots move
- *  least.  If the plan cannot determine the sketch with the point pinned (fully constrained
- *  sketches, unsupported constraints) the numeric pull/polish `Drag` takes over.
+/** DCM-style drag: the plan's roots move as rigid bodies, so a frame costs the region of the
+ *  sketch the drag reaches and nothing else — no graph analysis while dragging, recorded roots
+ *  stay as they are, and under-constrained bodies move least.  Where the plan cannot carry the
+ *  drag (unsupported constraints, a region too large for the rigid-body solve) the numeric
+ *  pull/polish `Drag` takes over.
  *
  *  The core builds all of it on the dragged point's *part* of the document — what is connected to
  *  it — and writes each frame back, so the document is never restructured by a drag and figures

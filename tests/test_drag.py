@@ -89,15 +89,18 @@ def test_fully_constrained_apex_never_jumps_across_the_base() -> None:
     c = sk.point(5, 4)
     sk.add(C.Distance(a, c, 6), C.Distance(b, c, 6))
     d = PlanDrag(sk, c, *c.xy)
-    # pinning the apex over-determines the sketch: the numeric path with guards takes over
-    assert d.numeric and d.guard_triangles()
+    # the apex is determined by its two distances: it belongs to the ground's rigid body, and
+    # the drag starts from the solved configuration and then has nothing it may move
+    assert d.usable
     ys = []
     for y in np.linspace(4, -4, 17):
-        d.move(5, float(y))
+        r = d.move(5, float(y))
+        assert r.success and "held" in r.message
         ys.append(c.y.value)
     flips = list(d.flips)
     d.end()
-    assert not flips and min(ys) > 3.0 and max(ys) < 3.5
+    y_solved = (36.0 - 25.0) ** 0.5
+    assert not flips and all(abs(v - y_solved) < 1e-9 for v in ys)
 
 
 def test_guard_flags_an_unavoidable_crossing() -> None:

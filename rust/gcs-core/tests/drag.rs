@@ -118,19 +118,67 @@ fn a_fully_constrained_apex_never_jumps_across_the_base() {
     sk.add(Constraint::distance(EntRef::point(b), EntRef::point(c), 6.0));
     let (x, y) = sk.point_xy(c);
     let mut d = PlanDrag::new(&sk, c, x, y, None, 0.05);
-    // pinning the apex over-determines the sketch: the numeric path with guards takes over
-    assert!(d.numeric.is_some());
-    assert!(!d.numeric.as_ref().unwrap().guards.is_empty());
+    // the apex is determined by its two distances: it is part of the ground's rigid body, and
+    // the drag starts from the solved configuration and then has nothing it may move
+    assert!(d.usable());
     let mut ys = Vec::new();
     for i in 0..17 {
         let yy = 4.0 - 8.0 * i as f64 / 16.0;
-        d.move_to(&mut sk, 5.0, yy);
+        let r = d.move_to(&mut sk, 5.0, yy);
+        assert!(r.success && r.message.contains("held"), "{r:?}");
         ys.push(sk.point_xy(c).1);
     }
     d.end();
     assert!(d.flips().is_empty());
-    assert!(ys.iter().cloned().fold(f64::INFINITY, f64::min) > 3.0);
-    assert!(ys.iter().cloned().fold(f64::NEG_INFINITY, f64::max) < 3.5);
+    let y_solved = (36.0f64 - 25.0).sqrt();
+    assert!(ys.iter().all(|&v| (v - y_solved).abs() < 1e-9), "{ys:?}");
+}
+
+/// A drag moves the plan's roots as rigid bodies, and only the ones it has to: on a chain of
+/// levelled segments the dragged corner, and the two next to it sliding along their own lines.
+/// Everything further along is not computed, let alone written — the cost of a frame is the
+/// region, not the chain.
+#[test]
+fn a_drag_on_a_levelled_chain_moves_three_corners_and_leaves_the_rest_untouched() {
+    let n = 64;
+    let mut sk = examples::zigzag(n, 1);
+    let p = n / 2;
+    let (x0, y0) = sk.point_xy(p);
+    let before = sk.get_x();
+    let mut d = PlanDrag::new(&sk, p, x0, y0, None, 0.05);
+    assert!(d.usable());
+    let r = d.move_to(&mut sk, x0 + 1.5, y0 - 2.5);
+    assert!(r.success && r.message == "plan-drag", "{r:?}");
+    assert_eq!(sk.point_xy(p), (x0 + 1.5, y0 - 2.5));
+    d.end();
+    let after = sk.get_x();
+    for k in 0..n {
+        let [ix, iy] = sk.point_params(k);
+        let moved = before[ix as usize] != after[ix as usize] || before[iy as usize] != after[iy as usize];
+        // the neighbours slide: one along the vertical line into p, one along the horizontal
+        assert_eq!(moved, (k as i64 - p as i64).abs() <= 1, "point {k}");
+    }
+    // and the constraints hold exactly
+    let mut sys = System::new(&sk);
+    let z = sys.z0(&sk);
+    assert!(sys.max_relative_residual(&z) < 1e-9);
+}
+
+/// A point on a circle about a fixed centre is a body with one degree of freedom: pulled away
+/// from the circle it goes round it, as near the cursor as it may, and says so.
+#[test]
+fn a_point_held_on_a_circle_goes_round_it() {
+    let mut sk = Sketch::new();
+    let c = sk.point(0.0, 0.0, true, "c");
+    let p = sk.point(10.0, 0.0, false, "p");
+    sk.add(Constraint::distance(EntRef::point(c), EntRef::point(p), 10.0));
+    let mut d = PlanDrag::new(&sk, p, 10.0, 0.0, None, 1.0);
+    assert!(d.usable());
+    let r = d.move_to(&mut sk, 0.0, 20.0);
+    assert!(r.success && r.message.contains("held"), "{r:?}");
+    let (x, y) = sk.point_xy(p);
+    assert!((x.hypot(y) - 10.0).abs() < 1e-9 && y > 9.0, "{:?}", (x, y));
+    d.end();
 }
 
 #[test]
@@ -317,4 +365,44 @@ fn a_drag_costs_the_figure_not_the_document() {
         }
     }
     assert!(three.constraints.len() == 3 * (n - 1), "the document itself was restructured");
+}
+
+/// A body nothing holds rides along with the cursor: it slides, it does not spin about its own
+/// centre — turning is the dear way to move a point, taken only when an anchor leaves no other.
+#[test]
+fn a_free_body_slides_rather_than_spins() {
+    let mut sk = examples::truss_floating(6);
+    let p = 3;
+    let (x, y) = sk.point_xy(p);
+    let before = sk.get_x();
+    let mut d = PlanDrag::new(&sk, p, x, y, None, 1.0);
+    assert!(d.usable());
+    d.move_to(&mut sk, x + 10.0, y + 4.0);
+    d.end();
+    let after = sk.get_x();
+    for k in 0..sk.points.len() {
+        let [ix, iy] = sk.point_params(k);
+        let (dx, dy) = (after[ix as usize] - before[ix as usize], after[iy as usize] - before[iy as usize]);
+        assert!((dx - 10.0).abs() < 0.2 && (dy - 4.0).abs() < 0.2, "point {k} moved by {:?}", (dx, dy));
+    }
+}
+
+/// The wave never re-reads what it moved: a long drag that goes round and round leaves the
+/// constraints as exactly satisfied as it found them, and stays on the plan throughout.
+#[test]
+fn a_long_drag_does_not_drift() {
+    let mut sk = examples::zigzag(32, 1);
+    let p = 16;
+    let (x, y) = sk.point_xy(p);
+    let mut d = PlanDrag::new(&sk, p, x, y, None, 0.05);
+    for i in 0..3000 {
+        let a = 0.05 * i as f64;
+        let r = d.move_to(&mut sk, x + 2.0 * a.cos(), y + 1.5 * (1.7 * a).sin());
+        assert!(r.success && r.message == "plan-drag", "frame {i}: {r:?}");
+    }
+    assert!(d.usable());
+    d.end();
+    let mut sys = System::new(&sk);
+    let z = sys.z0(&sk);
+    assert!(sys.max_relative_residual(&z) < 1e-10, "{:e}", sys.max_relative_residual(&z));
 }

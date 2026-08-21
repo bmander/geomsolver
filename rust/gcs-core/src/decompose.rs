@@ -22,7 +22,6 @@
 use crate::cgraph::{
     build, line_normal, normal_of, remainder, ConstraintGraph, Edge, EdgeKind, El, ElKind, X_AXIS,
 };
-use crate::graph::dulmage_mendelsohn;
 use crate::linalg::{absmax, min_norm_solve, rank_rrqr, Mat};
 use crate::io::Part;
 use crate::model::{increments, orientation, EntRef, Sketch};
@@ -107,6 +106,16 @@ pub struct Plan {
     pub roots: Vec<usize>,
     /// True: replay the recorded chirality even if the sketch moved (Stage 5).
     pub sticky_branches: bool,
+    /// What each root holds — the rigid bodies a drag moves (`Wave`).
+    pub root_els: BTreeMap<usize, Vec<El>>,
+    /// Per root, one line of each direction class it carries, by class root.
+    pub root_dirs: BTreeMap<usize, BTreeMap<El, El>>,
+    /// The roots holding each element.
+    pub roots_of: BTreeMap<El, Vec<usize>>,
+    /// Every non-point element's direction class: (class root, angle relative to it).
+    pub droot: BTreeMap<El, (El, f64)>,
+    /// The roots carrying a line of each direction class, by class root.
+    pub class_roots: BTreeMap<El, Vec<usize>>,
 }
 
 impl Plan {
@@ -344,13 +353,33 @@ fn fit2(p: &[f64], q: &[f64], p2: &[f64], q2: &[f64]) -> [f64; 4] {
 
 /* -- the merge system (shared by the generic-rank decision and by execution) -------------- */
 
+/// A pose moved by (cx, cy): what `apply_t` sees when a transform is taken about a centre.
+fn shift(e: El, pose: &[f64], cx: f64, cy: f64) -> Pose {
+    if e.is_point() {
+        vec![pose[0] + cx, pose[1] + cy]
+    } else {
+        vec![pose[0], pose[1], pose[2] + pose[0] * cx + pose[1] * cy]
+    }
+}
+
 /// Residual/Jacobian for the transforms of `cl[1..]` (`cl[0]` is the reference, identity).
+///
+/// Each moving cluster's (θ, tx, ty) rotates it about its own `centre` (the origin unless set):
+/// for the determined merges of a replay that is immaterial, but where the system is
+/// under-determined and the minimum-norm step decides, it is what makes "least change" mean
+/// the least rigid motion of *that body* — about the world origin a body far from it would
+/// rather swing than slide, since a small θ moves it a long way for a small norm.
 pub struct MergeSystem<'a> {
     pub cl: &'a [Cluster],
     pub pairs: &'a [Pair],
     pub dpairs: &'a [DPair],
     pub m: usize,
     pub n: usize,
+    centres: Vec<[f64; 2]>,
+    /// The rotation unknown of each cluster is an arc length: θ = u / radius.  At 1 it is the
+    /// angle itself; at a body's radius of gyration a unit of it displaces the body as much as
+    /// a unit of translation does, which is the norm "least change" ought to be measured in.
+    radii: Vec<f64>,
 }
 
 impl<'a> MergeSystem<'a> {
@@ -361,17 +390,37 @@ impl<'a> MergeSystem<'a> {
         k_movable: usize,
     ) -> MergeSystem<'a> {
         let m = pairs.iter().map(|&(_, _, e)| e.size()).sum::<usize>() + dpairs.len();
-        MergeSystem { cl, pairs, dpairs, m, n: 3 * k_movable }
+        MergeSystem {
+            cl,
+            pairs,
+            dpairs,
+            m,
+            n: 3 * k_movable,
+            centres: vec![[0.0; 2]; cl.len()],
+            radii: vec![1.0; cl.len()],
+        }
     }
 
-    fn pose(&self, u: &[f64], ci: usize, e: El) -> Pose {
+    /// The same system with each moving cluster turning about its own centre, its rotation
+    /// measured as arc length at `radii`.
+    pub fn about(mut self, centres: Vec<[f64; 2]>, radii: Vec<f64>) -> MergeSystem<'a> {
+        debug_assert_eq!(centres.len(), self.cl.len());
+        debug_assert_eq!(radii.len(), self.cl.len());
+        self.centres = centres;
+        self.radii = radii;
+        self
+    }
+
+    pub fn pose(&self, u: &[f64], ci: usize, e: El) -> Pose {
         let p = &self.cl[ci].els[&e];
         if ci == 0 {
-            p.clone()
-        } else {
-            let o = 3 * (ci - 1);
-            apply_t(&make_t(u[o], u[o + 1], u[o + 2]), e, p)
+            return p.clone();
         }
+        let o = 3 * (ci - 1);
+        let [cx, cy] = self.centres[ci];
+        let th = u[o] / self.radii[ci];
+        // rotate about the centre: R(p - c) + c + t
+        apply_t(&make_t(th, u[o + 1] + cx, u[o + 2] + cy), e, &shift(e, p, -cx, -cy))
     }
 
     /// Jacobian of a moving cluster's pose; `None` for the reference, whose block is skipped.
@@ -380,7 +429,14 @@ impl<'a> MergeSystem<'a> {
             return None;
         }
         let o = 3 * (ci - 1);
-        Some(pose_jac(e, &self.cl[ci].els[&e], u[o], u[o + 1], u[o + 2]))
+        let [cx, cy] = self.centres[ci];
+        let r = self.radii[ci];
+        let p = shift(e, &self.cl[ci].els[&e], -cx, -cy);
+        let mut j = pose_jac(e, &p, u[o] / r, u[o + 1] + cx, u[o + 2] + cy);
+        for row in j.iter_mut() {
+            row[0] /= r;
+        }
+        Some(j)
     }
 
     pub fn fun(&self, u: &[f64]) -> Vec<f64> {
@@ -1036,7 +1092,39 @@ pub fn decompose(graph: ConstraintGraph, seed: u32, core_max: usize) -> Plan {
         d.tree_merges(&next);
     }
     let roots = d.maximal_clusters();
-    Plan { graph, leaves, ground_id: ground, singletons, steps: d.steps, roots, sticky_branches: false }
+    let mut root_els = BTreeMap::new();
+    let mut root_dirs = BTreeMap::new();
+    let mut roots_of: BTreeMap<El, Vec<usize>> = BTreeMap::new();
+    for &r in &roots {
+        let els: Vec<El> = d.clusters[&r].els.keys().copied().collect();
+        for &e in &els {
+            roots_of.entry(e).or_default().push(r);
+        }
+        root_els.insert(r, els);
+        root_dirs.insert(r, d.cdirs[&r].clone());
+    }
+    let droot: BTreeMap<El, (El, f64)> =
+        elements.iter().filter(|e| !e.is_point()).map(|&e| (e, d.dirs.find(e))).collect();
+    let mut class_roots: BTreeMap<El, Vec<usize>> = BTreeMap::new();
+    for (&r, dirs) in &root_dirs {
+        for class in dirs.keys() {
+            class_roots.entry(*class).or_default().push(r);
+        }
+    }
+    Plan {
+        graph,
+        leaves,
+        ground_id: ground,
+        singletons,
+        steps: d.steps,
+        roots,
+        sticky_branches: false,
+        root_els,
+        root_dirs,
+        roots_of,
+        droot,
+        class_roots,
+    }
 }
 
 /* -- execution ---------------------------------------------------------------------------- */
@@ -1385,22 +1473,301 @@ pub fn ppp_triangles(plan: &Plan) -> Vec<Triangle> {
         .collect()
 }
 
-/// DCM-style drag: the dragged point joins the ground (fixed at the cursor) and the cached plan
-/// replays per frame — no graph analysis while dragging, recorded roots are sticky, and
-/// under-constrained roots move least.  Large cursor jumps are taken in increments so the solution
-/// tracks its branch.  If the plan cannot determine the sketch with the point pinned (fully
-/// constrained sketches, unsupported constraints) the numeric pull/polish `Drag` takes over.
+/* -- the wave: dragging as rigid motion of the plan's roots ------------------------------- */
+
+/// Shared rows between rigid bodies: every element two of them hold, and one direction relation
+/// per direction class two of them carry without holding a common line of it (a shared line
+/// already says what the relation says).  `dirs[i]` is body `i`'s line per class root.
+fn body_relations(
+    cl: &[Cluster],
+    dirs: &[BTreeMap<El, El>],
+    droot: &BTreeMap<El, (El, f64)>,
+) -> (Vec<Pair>, Vec<DPair>) {
+    let mut pairs = Vec::new();
+    let mut dpairs = Vec::new();
+    for i in 0..cl.len() {
+        for j in i + 1..cl.len() {
+            let (small, big) =
+                if cl[i].els.len() <= cl[j].els.len() { (&cl[i], &cl[j]) } else { (&cl[j], &cl[i]) };
+            let mut seen: BTreeSet<El> = BTreeSet::new();
+            for e in small.els.keys() {
+                if big.els.contains_key(e) {
+                    pairs.push((i, j, *e));
+                    if !e.is_point() {
+                        seen.insert(droot[e].0);
+                    }
+                }
+            }
+            for (class, &la) in &dirs[i] {
+                if seen.contains(class) {
+                    continue;
+                }
+                if let Some(&lb) = dirs[j].get(class) {
+                    dpairs.push((i, j, la, lb, droot[&lb].1 - droot[&la].1));
+                }
+            }
+        }
+    }
+    (pairs, dpairs)
+}
+
+/// How far turning is from sliding: a body's rotation is measured as arc length at this many
+/// radii of gyration, so a free body pulled at one point rides along with the cursor rather
+/// than spinning about its centre — a turn that displaces the body as much as a slide would
+/// costs this much more in the norm — while a body whose anchors leave it no other way still
+/// turns, and exactly.
+const TURN_COST: f64 = 16.0;
+
+/// Where a body turns and what its turning is measured at: the mean of its points and
+/// `TURN_COST` times their radius of gyration; a body without points turns about the foot of
+/// its first line, at unit scale.
+fn centre_and_radius(c: &Cluster) -> ([f64; 2], f64) {
+    let (mut x, mut y, mut n) = (0.0, 0.0, 0usize);
+    for (e, p) in &c.els {
+        if e.is_point() {
+            x += p[0];
+            y += p[1];
+            n += 1;
+        }
+    }
+    if n == 0 {
+        return match c.els.iter().find(|(e, _)| !e.is_point()) {
+            Some((_, p)) => ([p[0] * p[2], p[1] * p[2]], 1.0),
+            None => ([0.0, 0.0], 1.0),
+        };
+    }
+    let (cx, cy) = (x / n as f64, y / n as f64);
+    let mut r2 = 0.0;
+    for (e, p) in &c.els {
+        if e.is_point() {
+            r2 += (p[0] - cx).powi(2) + (p[1] - cy).powi(2);
+        }
+    }
+    let r = (r2 / n as f64).sqrt();
+    ([cx, cy], if r > 0.0 { TURN_COST * r } else { 1.0 })
+}
+
+/// How many roots a frame may move as rigid bodies before the dense merge system stops being
+/// tiny and the numeric drag on the part is the better tool.
+const WAVE_MAX: usize = 48;
+
+/// What one wave step did.
+struct WaveOutcome {
+    /// The dragged point landed on the cursor.
+    reached: bool,
+    /// A rigid-body solve failed to make the region consistent (nonlinearity), or the region
+    /// outgrew `WAVE_MAX`: the numeric drag has to take over.
+    failed: bool,
+}
+
+/// A drag as the plan sees it: the roots are rigid bodies, and moving one is a rigid motion.
 ///
-/// Everything here — the plan, the systems, the numeric fallback — is built on the dragged
-/// point's *part* of the document (`io::Part`), which is all a drag can move.  Each frame's
-/// result is written back into the document; the document itself is never recompiled or
-/// restructured by a drag, and its unrelated figures cost the drag nothing.
+/// The roots holding the dragged point form the *region*.  Every element a region root shares
+/// with a root outside it is an anchor, held where it is; every direction class a region root
+/// carries that some outside root carries too is an anchor on its rotation.  The region's bodies
+/// are moved by the tiny merge system over them — pull (the cursor is a row) then polish (anchors
+/// only, minimum-norm from the pulled pose, so it is least-change and exact) — and if the cursor
+/// is not reached and a neighbouring root is free to help, the region grows by it and the solve
+/// is repeated.  That is where the locality is: a frame costs the region, which on a chain of
+/// levelled segments is three corners however long the chain, and a body that nothing pulls on
+/// is never looked at.  The region is kept across frames; within a gesture it only grows.
+struct Wave {
+    el: El,
+    region: BTreeSet<usize>,
+    /// The region's bodies, posed.  Read from the sketch when a root joins the region and
+    /// advanced by each frame's transforms after that — never re-read, so a body stays the
+    /// exact rigid copy of what the solve made it, and nothing compounds.
+    bodies: BTreeMap<usize, Cluster>,
+    /// What the region shares with the rest, at the pose it had when it became shared — held
+    /// there, and never re-read either: a line through a region point would otherwise tilt by
+    /// the tolerance every frame and the region would follow its own error.
+    anchors: BTreeMap<El, Pose>,
+    /// How close to the cursor is "on it".
+    reach: f64,
+    /// How small a body-system residual is "consistent" — in the part's own units, since the
+    /// rows mix unit normals with offsets and positions that are lengths.
+    tol: f64,
+}
+
+impl Wave {
+    fn new(plan: &Plan, el: El, extent: f64) -> Wave {
+        let extent = extent.max(1.0);
+        let mut w = Wave {
+            el,
+            region: BTreeSet::new(),
+            bodies: BTreeMap::new(),
+            anchors: BTreeMap::new(),
+            reach: 1e-7 * extent,
+            tol: 1e-9 * extent,
+        };
+        w.region = w.seed(plan);
+        w
+    }
+
+    /// The roots the dragged point is in, less the ground (which does not move).
+    fn seed(&self, plan: &Plan) -> BTreeSet<usize> {
+        plan.roots_of
+            .get(&self.el)
+            .map(|v| v.iter().copied().filter(|&r| r != plan.ground_id).collect())
+            .unwrap_or_default()
+    }
+
+    /// The free roots next to the region: those holding an element of it.  A root tied to the
+    /// region by a direction class alone is not one — it stays where it is and pins the
+    /// rotation of what it is tied to, the way the ground's x-axis pins every levelled body.
+    fn frontier(&self, plan: &Plan) -> BTreeSet<usize> {
+        let mut out = BTreeSet::new();
+        for &r in &self.region {
+            for e in &plan.root_els[&r] {
+                out.extend(plan.roots_of[e].iter().copied());
+            }
+        }
+        out.remove(&plan.ground_id);
+        for r in &self.region {
+            out.remove(r);
+        }
+        out
+    }
+
+    /// Move the region toward the cursor, growing it as needed, and write the result.
+    fn step(&mut self, plan: &Plan, sk: &mut Sketch, x: f64, y: f64) -> WaveOutcome {
+        let g = &plan.graph;
+        if self.region.is_empty() {
+            return WaveOutcome { reached: false, failed: false };
+        }
+        loop {
+            if self.region.len() > WAVE_MAX {
+                return WaveOutcome { reached: false, failed: true };
+            }
+            let ids: Vec<usize> = self.region.iter().copied().collect();
+            // the bodies: a root joining the region is read from the sketch, where nothing has
+            // moved it yet — except what it shared with the region, which is held at the anchor
+            let mut cl: Vec<Cluster> = Vec::with_capacity(ids.len() + 1);
+            let mut dirs: Vec<BTreeMap<El, El>> = Vec::with_capacity(ids.len() + 1);
+            cl.push(Cluster { id: usize::MAX, els: BTreeMap::new(), fixed: true });
+            dirs.push(BTreeMap::new());
+            for &r in &ids {
+                let body = self.bodies.entry(r).or_insert_with(|| {
+                    let els = plan.root_els[&r].iter().map(|&e| {
+                        (e, self.anchors.get(&e).cloned().unwrap_or_else(|| world_pose(g, sk, e)))
+                    });
+                    Cluster { id: r, els: els.collect(), fixed: false }
+                });
+                cl.push(body.clone());
+                dirs.push(plan.root_dirs[&r].clone());
+            }
+            // the anchors: what the region shares with the rest, held where it is
+            let mut shared: BTreeSet<El> = BTreeSet::new();
+            for &r in &ids {
+                for &e in &plan.root_els[&r] {
+                    if plan.roots_of[&e].iter().any(|o| !self.region.contains(o)) {
+                        shared.insert(e);
+                    }
+                }
+            }
+            self.anchors.retain(|e, _| shared.contains(e));
+            for &e in &shared {
+                let pose = self.anchors.entry(e).or_insert_with(|| world_pose(g, sk, e)).clone();
+                cl[0].els.insert(e, pose);
+                if !e.is_point() {
+                    dirs[0].entry(plan.droot[&e].0).or_insert(e);
+                }
+            }
+            for &r in &ids {
+                for class in plan.root_dirs[&r].keys() {
+                    if dirs[0].contains_key(class) {
+                        continue;
+                    }
+                    // a direction the rest of the sketch carries: one outside line stands for it
+                    let outside = plan.class_roots[class]
+                        .iter()
+                        .find(|o| !self.region.contains(o))
+                        .map(|o| plan.root_dirs[o][class]);
+                    if let Some(l) = outside {
+                        cl[0].els.entry(l).or_insert_with(|| world_pose(g, sk, l));
+                        dirs[0].insert(*class, l);
+                    }
+                }
+            }
+            let k = ids.len();
+            let (pairs, dpairs) = body_relations(&cl, &dirs, &plan.droot);
+            // pull: the cursor is one more row, on every body holding the point
+            let mut pull = cl.clone();
+            pull[0].els.insert(self.el, vec![x, y]);
+            let mut ppairs = pairs.clone();
+            for (i, &r) in ids.iter().enumerate() {
+                if plan.root_els[&r].contains(&self.el) {
+                    ppairs.push((0, i + 1, self.el));
+                }
+            }
+            // each body turns about its own centroid, so least-norm is least motion of it
+            let (centres, radii): (Vec<[f64; 2]>, Vec<f64>) =
+                cl.iter().map(centre_and_radius).unzip();
+            let u0 = vec![0.0; 3 * k];
+            let u = {
+                let sys = MergeSystem::new(&pull, &ppairs, &dpairs, k)
+                    .about(centres.clone(), radii.clone());
+                let (u, res) = newton_small(&sys, &u0, self.tol * 1e-4, 40);
+                if res > self.tol { dogleg_small(&sys, &u0, 200) } else { u }
+            };
+            // polish: the anchors exactly, least change from the pulled pose
+            let sys = MergeSystem::new(&cl, &pairs, &dpairs, k).about(centres, radii);
+            let (u, res) = newton_small(&sys, &u, self.tol * 1e-4, 40);
+            let u = if res > self.tol {
+                let u2 = dogleg_small(&sys, &u, 200);
+                if absmax(&sys.fun(&u2)) > self.tol {
+                    return WaveOutcome { reached: false, failed: true };
+                }
+                u2
+            } else {
+                u
+            };
+            let reached = ids.iter().enumerate().all(|(i, &r)| {
+                !plan.root_els[&r].contains(&self.el) || {
+                    let p = sys.pose(&u, i + 1, self.el);
+                    (p[0] - x).hypot(p[1] - y) <= self.reach
+                }
+            });
+            if !reached {
+                let more = self.frontier(plan);
+                if !more.is_empty() {
+                    self.region.extend(more);
+                    continue;
+                }
+            }
+            // advance the bodies and write what moved; an anchor is held, not written
+            for (i, &r) in ids.iter().enumerate() {
+                let body = self.bodies.get_mut(&r).unwrap();
+                for (e, pose) in body.els.iter_mut() {
+                    *pose = sys.pose(&u, i + 1, *e);
+                    if e.is_point() && !cl[0].els.contains_key(e) {
+                        write_point(g, sk, *e, pose);
+                    }
+                }
+            }
+            return WaveOutcome { reached, failed: false };
+        }
+    }
+}
+
+/// DCM-style drag: the plan's roots move as rigid bodies (`Wave`), so a frame costs the region
+/// of the sketch the drag reaches and nothing else — no graph analysis while dragging, recorded
+/// roots stay as they are, and under-constrained bodies move least.  Large cursor jumps are taken
+/// in increments so the solution tracks its branch.  Where the plan cannot carry the drag
+/// (unsupported constraints, a region past `WAVE_MAX`, a body solve that does not converge) the
+/// numeric pull/polish `Drag` takes over.
+///
+/// Everything here is built on the dragged point's *part* of the document (`io::Part`), which is
+/// all a drag can move.  Each frame's result is written back into the document; the document
+/// itself is never recompiled or restructured by a drag, and its unrelated figures cost the drag
+/// nothing.
 pub struct PlanDrag {
     pub part: Part,
     pub solver: PlanSolver,
     pub numeric: Option<Drag>,
     /// The dragged point, as the part numbers it.
     pub point: usize,
+    wave: Wave,
     max_step: f64,
     guards: Option<Vec<Triangle>>,
 }
@@ -1422,24 +1789,14 @@ impl PlanDrag {
             guards.map(|g| g.iter().filter_map(|&t| part.triangle_in(t)).collect());
         let point = part.point_in(point).expect("the dragged point is in its own part");
         let sk = &mut part.sketch;
-        let x0 = sk.get_x();
-        let was = sk.point_fixed(point);
-        sk.fix_point(point, true);
         let mut solver = PlanSolver::new(sk, true);
-        // the plan can drive the drag iff it understands every constraint, pinning the point does
-        // not over-determine the sketch, and the replay reproduces the configuration
-        let over = {
-            let (adj, _) = solver.system.structure();
-            adj.len() > dulmage_mendelsohn(&adj, solver.system.n_free).rank
-        };
-        let (px, py) = sk.point_xy(point);
-        let usable = solver.plan.graph.unsupported.is_empty()
-            && !over
-            && replay(&mut solver, sk, point, px, py) <= 1e-9;
-        sk.fix_point(point, was);
-        let mut d = PlanDrag { part, solver, numeric: None, point, max_step, guards };
+        // a drag starts from a solved configuration: the bodies are consistent, so moving them
+        // rigidly keeps them so
+        let start = solver.solve(sk, 1e-9, true, Method::DogLeg);
+        let usable = start.success && solver.plan.graph.unsupported.is_empty();
+        let wave = Wave::new(&solver.plan, solver.plan.graph.point_el(point), sk.extent());
+        let mut d = PlanDrag { part, solver, numeric: None, point, wave, max_step, guards };
         if !usable {
-            d.part.sketch.set_x(&x0);
             let g = d.guard_triangles();
             d.numeric = Some(d.numeric_drag(x, y, g));
         }
@@ -1454,17 +1811,16 @@ impl PlanDrag {
         n
     }
 
-    /// True while the cached plan is driving the drag (false once it handed over).
+    /// True while the plan is driving the drag (false once it handed over).
     pub fn usable(&self) -> bool {
         self.numeric.is_none()
     }
 
-    /// Order-type invariants for the numeric path: the closed-form triangles of the part's own
-    /// (unpinned) plan, as the part numbers them.  Computed at most once per drag — never inside
-    /// a move.
+    /// Order-type invariants for the numeric path: the closed-form triangles of the part's plan,
+    /// as the part numbers them.
     pub fn guard_triangles(&mut self) -> Vec<Triangle> {
         if self.guards.is_none() {
-            self.guards = Some(ppp_triangles(&decompose(build(&self.part.sketch), 0, 12)));
+            self.guards = Some(ppp_triangles(&self.solver.plan));
         }
         self.guards.clone().unwrap()
     }
@@ -1481,15 +1837,15 @@ impl PlanDrag {
         if let Some(n) = &mut self.numeric {
             return n.move_to(sk, x, y);
         }
-        let x_prev = sk.get_x();
         let (px, py) = sk.point_xy(self.point);
         let path = increments(px, py, x, y, self.max_step);
-        let mut mx = 0.0;
+        let mut reached = true;
         for &(tx, ty) in &path {
-            mx = replay(&mut self.solver, sk, self.point, tx, ty);
-            if mx > 1e-6 {
-                // the plan cannot follow (a limit of the geometry was hit): hand over to the
-                // numeric drag from the last good state
+            let x_prev = sk.get_x();
+            let out = self.wave.step(&self.solver.plan, sk, tx, ty);
+            reached = out.reached;
+            if out.failed {
+                // hand over to the numeric drag from the last good state
                 sk.set_x(&x_prev);
                 let g = self.guard_triangles();
                 let mut d = self.numeric_drag(px, py, g);
@@ -1498,8 +1854,8 @@ impl PlanDrag {
                 return r;
             }
         }
-        let mut r = SolveResult::plain("plan", true, mx, path.len() as i32);
-        r.message = "plan-drag".to_string();
+        let mut r = SolveResult::plain("plan", true, 0.0, path.len() as i32);
+        r.message = if reached { "plan-drag" } else { "plan-drag: held by constraints" }.to_string();
         r
     }
 
@@ -1521,15 +1877,4 @@ impl PlanDrag {
     pub fn branches(&self) -> BTreeMap<String, i32> {
         self.part.branches_out(&self.solver.plan.branches())
     }
-}
-
-/// Replay the plan with `point` pinned at (x, y); the worst hard residual, relative to its own
-/// row's units, so one threshold judges every kernel.
-fn replay(solver: &mut PlanSolver, sk: &mut Sketch, point: usize, x: f64, y: f64) -> f64 {
-    let (px, py) = (sk.points[point].x as usize, sk.points[point].y as usize);
-    sk.params[px].value = x;
-    sk.params[py].value = y;
-    execute(&mut solver.plan, sk, None);
-    let z = solver.system.z0(sk);
-    solver.system.max_relative_residual(&z)
 }
