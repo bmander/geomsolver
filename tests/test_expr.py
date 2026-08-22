@@ -116,19 +116,31 @@ def test_pythagoras_drawn_with_expressions_holds_and_stays_true_when_a_leg_is_ed
 
 
 def test_a_dimension_may_be_written_as_a_mixed_fraction() -> None:
-    """`3 1/2` is a number, not an expression — so it is stored as one and stays editable as
-    one.  What the language accepts is the core's business; this is that the binding reaches it
-    and that the number comes back through the proxy."""
+    """`3 1/2` keeps the way it was written: the proxy hands back the number for the graph and
+    the text for the drawing.  What the language accepts is the core's business; this is that
+    the binding reaches it and both halves come back."""
     sk = examples.rect_fillets()
     d = next(c for c in sk.constraints if type(c).__name__ == "Distance")
     assert d.set_dimension("d", "3 1/2") is None
     assert d.d == pytest.approx(3.5)
-    assert d.expr("d") is None, "a mixed number is a constant, not text to keep"
+    assert d.expr("d") == "3 1/2", "the fraction was collapsed to its value"
     assert solve(sk).success
 
-    # and it composes like any other number when it names something
+    # and it composes like any other written dimension when it names something
     assert d.set_dimension("d", "w = 12 3/8") is None
     assert d.d == pytest.approx(12.375)
     assert d.expr("d") == "w = 12 3/8"
     with pytest.raises(ValueError):
         d.set_dimension("d", "3 1/0")
+
+
+def test_a_fraction_reaches_the_callout() -> None:
+    """The point of keeping the text: the drawing says what was typed."""
+    from gcs.io import callouts
+
+    sk = examples.rect_fillets()
+    d = next(c for c in sk.constraints if type(c).__name__ == "Distance")
+    d.set_dimension("d", "3 1/8")
+    assert solve(sk).success
+    texts = [k["text"] for k in callouts(sk, 0.1)["items"]]
+    assert "3 1/8" in texts, texts

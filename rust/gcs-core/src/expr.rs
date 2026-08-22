@@ -428,14 +428,31 @@ pub fn name_of(text: &str) -> Option<String> {
     parse(text).ok().and_then(|p| p.name)
 }
 
-/// A bare number — `5`, `-2.5`, `1e3`, `3 1/2` — is a constant, not an expression.  `None` for
+/// A bare number in digits — `5`, `-2.5`, `1e3` — is a constant, not an expression.  `None` for
 /// anything else (names, operators, or a non-finite literal such as `inf`).
 ///
-/// Read with the same tokenizer the expressions use, so every form of number a person can write
-/// counts as one here too; a mixed fraction would otherwise parse as an expression and be stored
-/// as text nobody can edit as a number.
+/// A mixed fraction is deliberately *not* one.  `3 1/8` is a number, but it is a number written
+/// a particular way, and collapsing it to 3.125 throws away the way — see `notation`.
 pub fn literal(text: &str) -> Option<f64> {
-    let toks = tokenize(text).ok()?;
+    text.trim().parse::<f64>().ok().filter(|v| v.is_finite())
+}
+
+/// A text that is a *number*, written in a notation rather than in digits — `3 1/8`.
+///
+/// This is what lets a dimension keep the form it was typed in.  `literal` does not claim such a
+/// text, so it is stored as text with the value it came to, like any other written dimension;
+/// what `notation` adds is that it is a notation and not a computation, so the drawing and the
+/// constraint list print it as written rather than as "what it came to".  `3 1/8` on a callout
+/// tells a reader something 3.125 does not, and it is what they typed.
+///
+/// `None` for an ordinary decimal, which prints as itself and has nothing to remember, and for
+/// anything carrying a name, an operator or a function.
+pub fn notation(text: &str) -> Option<f64> {
+    let t = text.trim();
+    if t.parse::<f64>().is_ok() {
+        return None;
+    }
+    let toks = tokenize(t).ok()?;
     let v = match toks.as_slice() {
         [(Tok::Num(v), _), (Tok::End, _)] => *v,
         [(Tok::Op('-'), _), (Tok::Num(v), _), (Tok::End, _)] => -*v,

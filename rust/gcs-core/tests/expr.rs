@@ -434,13 +434,59 @@ fn what_only_looks_like_a_mixed_number_is_read_the_ordinary_way() {
 }
 
 #[test]
-fn a_mixed_number_is_a_constant_not_an_expression() {
-    // `literal` is what decides whether a typed dimension is stored as a number or as text
-    assert_eq!(expr::literal("3 1/2"), Some(3.5));
-    assert_eq!(expr::literal("-2 3/8"), Some(-2.375));
+fn a_mixed_number_is_kept_as_written_rather_than_collapsed() {
+    // `literal` decides whether typed text is stored as a bare number or kept as text.  A mixed
+    // fraction is deliberately kept: it is a number, but written a particular way, and the way
+    // is worth having.
+    assert_eq!(expr::literal("3 1/2"), None);
     assert_eq!(expr::literal("  5  "), Some(5.0));
+    assert_eq!(expr::literal("-2.5"), Some(-2.5));
     assert_eq!(expr::literal("1e3"), Some(1000.0));
-    assert_eq!(expr::literal("w = 3 1/2"), None);
-    assert_eq!(expr::literal("3 1/2 + w"), None);
     assert_eq!(expr::literal("inf"), None);
+
+    // `notation` is what says the kept text is a number and not a computation, so the drawing
+    // prints it as written
+    assert_eq!(expr::notation("3 1/2"), Some(3.5));
+    assert_eq!(expr::notation("-2 3/8"), Some(-2.375));
+    assert_eq!(expr::notation("  12 15/16 "), Some(12.9375));
+    assert_eq!(expr::notation("5"), None, "digits already; nothing to remember");
+    assert_eq!(expr::notation("-2.5"), None);
+    assert_eq!(expr::notation("w = 3 1/2"), None, "a name is not a notation");
+    assert_eq!(expr::notation("3 1/2 + w"), None);
+    assert_eq!(expr::notation("1/2"), None, "a division is a computation");
+}
+
+#[test]
+fn a_dimension_written_as_a_fraction_is_drawn_as_one() {
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, true, "a");
+    let b = sk.point(3.125, 0.0, false, "b");
+    let id = sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 1.0));
+    expr::set_dimension(&mut sk, id, "d", "3 1/8").unwrap();
+    let c = sk.constraint(id).unwrap();
+
+    assert_eq!(io::dimension_text(c).as_deref(), Some("3 1/8"), "the callout lost the fraction");
+    assert_eq!(io::describe(c), "Distance(P0, P1, 3 1/8)");
+    assert_eq!(c.args[2].num(), 3.125, "and the graph still has the number");
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+
+    // a formula still shows what it came to, because that is the part a reader cannot work out
+    expr::set_dimension(&mut sk, id, "d", "w = 2 1/4").unwrap();
+    assert_eq!(io::dimension_text(sk.constraint(id).unwrap()).as_deref(), Some("w=2.25"));
+}
+
+#[test]
+fn an_angle_written_as_a_fraction_keeps_its_degrees() {
+    let mut sk = Sketch::new();
+    let l1 = sk.line_xy(0.0, 0.0, 10.0, 0.0, "l1");
+    let l2 = sk.line_xy(0.0, 0.0, 10.0, 1.0, "l2");
+    let id = sk.add(Constraint::new(
+        CKind::Angle,
+        vec![Arg::Ent(EntRef::line(l1)), Arg::Ent(EntRef::line(l2)), Arg::Num(0.1)],
+    ));
+    expr::set_dimension(&mut sk, id, "theta", "22 1/2").unwrap();
+    let c = sk.constraint(id).unwrap();
+    assert_eq!(io::dimension_text(c).as_deref(), Some("22 1/2°"));
+    // the text is degrees, the value is radians, as for every other written angle
+    assert!((c.args[2].num() - 22.5_f64.to_radians()).abs() < 1e-12);
 }

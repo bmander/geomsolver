@@ -169,8 +169,10 @@ Conventions:
   A number may be written as a mixed fraction — `3 1/2` is three and a half, the way a drawing
   writes it — which the tokenizer folds into one `Num`.  The space is what tells the readings
   apart, so `31/2` and a bare `1/2` are still divisions, and the fraction itself is written
-  tight; `expr::literal` reads with that same tokenizer, which is what makes a mixed number a
-  *constant* rather than text nobody can edit as a number.
+  tight.  `expr::literal` deliberately does *not* claim it, so it is kept as text with the value
+  it came to: `expr::notation` says that text is a number written a particular way rather than a
+  computation, and `arg_text`/`dimension_text` print such a dimension **as written** where a
+  formula prints what it came to — `3 1/8` on a callout tells a reader what 3.125 does not.
   `expr::set_dimension` is the one write path for text (a bare number becomes `Arg::Num`, with
   the angle conversion — the app converts nothing); `Sketch::add` and `io::from_json` evaluate;
   `set_num` on an expression drops it.  Documents save `{"expr", "value"}` and accept a bare

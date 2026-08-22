@@ -653,6 +653,16 @@ pub fn arg_text(kind: SpecKind, a: &Arg) -> String {
     match (kind, a) {
         (k, Arg::Ent(e)) if k.is_entity() => entity_name(*e),
         (_, Arg::Param(i)) => format!("@{i}"),
+        // a number written a particular way keeps the way: `3 1/8` says more than 3.125 does,
+        // and it is what somebody typed.  A *formula* still shows what it came to.
+        (k, Arg::Expr(e)) if expr::notation(&e.text).is_some() => {
+            let t = e.text.trim();
+            if k == SpecKind::Angle {
+                format!("{t}°")
+            } else {
+                t.to_string()
+            }
+        }
         // the formula and what it came to: `h = w * 2 = 80`, `sin(h * 10) = 0.342`
         (k, Arg::Expr(e)) => format!("{} = {}", e.text, arg_text(k, &Arg::Num(e.value))),
         (SpecKind::Angle, a) => format!("{}°", fmt_g(a.num().to_degrees(), 3)),
@@ -671,6 +681,8 @@ pub fn arg_text(kind: SpecKind, a: &Arg) -> String {
 pub fn dimension_text(c: &Constraint) -> Option<String> {
     let (i, _, kind) = c.dimensions().into_iter().next()?;
     Some(match &c.args[i] {
+        // a notation is what the drawing should say: the number, written as it was written
+        Arg::Expr(e) if expr::notation(&e.text).is_some() => arg_text(kind, &c.args[i]),
         Arg::Expr(e) => {
             let v = arg_text(kind, &Arg::Num(e.value));
             match expr::name_of(&e.text) {

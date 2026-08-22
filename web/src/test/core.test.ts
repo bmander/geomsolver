@@ -1440,15 +1440,17 @@ test('the binding can fit a curve through points, and hold it to them', () => {
   held.dispose();
 });
 
-test('a dimension may be written as a mixed fraction', () => {
-  // `3 1/2` is a number, not an expression — what the language accepts is the core's business;
-  // this is that the binding reaches it and the number comes back through the proxy
+test('a dimension written as a mixed fraction keeps the way it was written', () => {
+  // the number is for the graph and the text is for the drawing; what the language accepts is
+  // the core's business, this is that the binding reaches it and both halves come back
   const sk = examples.rectFillets();
   const d = sk.constraints.find((c) => c.typeName === 'Distance')!;
-  assert.equal(d.setDimension('d', '3 1/2'), null);
-  assert.ok(Math.abs(num(d.d) - 3.5) < 1e-12);
-  assert.equal(d.expr('d'), null, 'a mixed number is a constant, not text to keep');
+  assert.equal(d.setDimension('d', '3 1/8'), null);
+  assert.ok(Math.abs(num(d.d) - 3.125) < 1e-12);
+  assert.equal(d.expr('d'), '3 1/8', 'the fraction was collapsed to its value');
   assert.ok(solve(sk).success);
+  // and it reaches the drawing, which is the point of keeping it
+  assert.ok(callouts(sk, 0.1).items.some((k) => k.text === '3 1/8'));
 
   assert.equal(d.setDimension('d', 'w = 12 3/8'), null);
   assert.ok(Math.abs(num(d.d) - 12.375) < 1e-12);
