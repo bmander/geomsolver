@@ -481,7 +481,6 @@ export class SketchView {
     this.liveDim = { targets, fresh, alt, before, placing: fresh.length > 0 };
     this.litConstraint = targets[0];
     if (this.liveDim.placing) this.moveDimension(this.cursor);
-    this.tellDimension();
     this.draw();
     return true;
   }
@@ -497,7 +496,6 @@ export class SketchView {
     if (live.alt) this.retarget(live, at);
     const c = live.targets[0];
     if (c.id >= 0) dim.drag(this.sketch, c.id, at[0], at[1], [0, 0]);
-    this.tellDimension();
   }
 
   /** Say the same thing as a different kind of dimension, because the number was put where that
@@ -512,7 +510,7 @@ export class SketchView {
     const c = make(want);
     this.sketch.add(c);
     live.targets[0] = c;
-    live.fresh = [c];
+    live.fresh = [c];           // an alternative is only offered when the whole of it is fresh
     this.litConstraint = c;
     this.afterEdit();          // a different constraint: the list, the DOF and the diagnosis move
   }
@@ -540,13 +538,15 @@ export class SketchView {
     this.onDimension(null, null);
   }
 
-  /** Where the live dimension's number is on the screen, so the shell can put its editor
-   *  there.  Clamped into the canvas: a callout can be laid out off the edge, and an editor
-   *  nobody can see is worse than one a little out of place. */
-  private tellDimension(): void {
+  /** Where the live dimension's number was just painted, so the shell can put its editor on
+   *  it.  Told off the paint's own layout rather than one of its own: the editor then sits
+   *  exactly where the label is, and a placement gesture lays the callouts out once a frame
+   *  instead of twice.  Clamped into the canvas — a callout can be laid out off the edge, and
+   *  an editor nobody can see is worse than one a little out of place. */
+  private tellDimension(items: Callout[]): void {
     const live = this.liveDim;
     if (!live) return;
-    const k = dim.callouts(this.sketch, this.unit).items.find((i) => i.id === live.targets[0].id);
+    const k = items.find((i) => i.id === live.targets[0].id);
     if (!k) return this.onDimension(live, null);
     const [x, y] = this.w2s(k.anchor[0], k.anchor[1]);
     const pad = 24;
@@ -869,6 +869,7 @@ export class SketchView {
       ctx.restore();
     }
     ctx.restore();
+    if (this.liveDim) this.tellDimension(cs.items);   // the layout this frame already made
   }
 
   /** A solid head: the tip at `at`, pointing along `dir`, filling `size` screen px back, with

@@ -364,12 +364,11 @@ function cCoincident(): void {
  *  The pair is ordered so the number reads positive: a run or a rise is signed from the first
  *  point to the second, so which of the two comes first is what its sign says. */
 function pairDim(kind: string, a: Point, b: Point): Constraint {
-  const [p, q] = kind === 'HorizontalDistance' ? (b.x.value < a.x.value ? [b, a] : [a, b])
-               : kind === 'VerticalDistance' ? (b.y.value < a.y.value ? [b, a] : [a, b])
-               : [a, b];
-  const v = kind === 'HorizontalDistance' ? q.x.value - p.x.value
-          : kind === 'VerticalDistance' ? q.y.value - p.y.value
-          : Math.hypot(q.x.value - p.x.value, q.y.value - p.y.value);
+  // a run measures x and a rise measures y; a length has no axis of its own, and no sign
+  const axis = kind === 'HorizontalDistance' ? 0 : kind === 'VerticalDistance' ? 1 : null;
+  const [p, q] = axis !== null && b.xy[axis] < a.xy[axis] ? [b, a] : [a, b];
+  const v = axis !== null ? q.xy[axis] - p.xy[axis]
+                          : Math.hypot(q.x.value - p.x.value, q.y.value - p.y.value);
   return C.build(kind, [p, q, v]);
 }
 
