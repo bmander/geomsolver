@@ -276,10 +276,10 @@ fn documents_carry_text_and_value_and_accept_bare_strings() {
 fn the_binding_record_keeps_numbers_and_adds_the_text() {
     let (mut sk, ids) = three(["w = 3", "h = w * 2", "5"]);
     expr::set_dimension(&mut sk, ids[2], "d", "5").unwrap();   // a bare number: no expression
-    let j = report::constraint_json(sk.constraint(ids[1]).unwrap());
+    let j = report::constraint_json(&sk, sk.constraint(ids[1]).unwrap());
     assert_eq!(j.get("args").unwrap().arr()[2].as_f64(), 6.0);
     assert_eq!(j.get("exprs").unwrap().get("d").unwrap().as_str(), "h = w * 2");
-    let j = report::constraint_json(sk.constraint(ids[2]).unwrap());
+    let j = report::constraint_json(&sk, sk.constraint(ids[2]).unwrap());
     assert!(j.get("exprs").is_none());
     // a binding may also add a constraint with a text dimension
     let v = gcs_core::json::parse(

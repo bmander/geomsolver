@@ -28,7 +28,7 @@ import * as io from '../core/io.js';
 import { Constraint, ENTITY_KINDS } from '../core/constraints.js';
 import { applyAlternative, enumerateStep, isCurrent } from '../core/homotopy.js';
 import {
-  Arc, Circle, Line, Point, Primitive, Sketch, angleBetween, distanceBetween, expand,
+  Arc, Circle, Line, Point, Primitive, Sketch, Spline, angleBetween, distanceBetween, expand,
   signedPointToLine,
 } from '../core/model.js';
 import { METHODS, Method } from '../core/system.js';
@@ -104,6 +104,7 @@ view.onTool = (t) => {
 for (const [label, tool, key] of [
   ['Point', 'point', 'p'], ['Line', 'line', 'l'], ['Rect', 'rect', 'r'],
   ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
+  ['Spline', 'spline', 's'],
 ] as [string, Tool, string][]) {
   toolButtons.set(tool, addButton(barTools, {
     label, key, toggle: true, title: 'Click again to put the tool down and go back to selecting',
@@ -259,7 +260,7 @@ const INCIDENCE: Simple[] = [
  * cannot drift apart. */
 const CONSTRAINT_BUTTONS: ToolbarButton[] = [
   { label: 'Coincident', key: 'i', onClick: () => cCoincident(),
-    title: 'Two points meet · a point on a line · a point on a circle or arc' },
+    title: 'Two points meet · a point on a line · a point on a circle, arc or curve' },
   { label: 'Dimension', key: 'd', onClick: () => void cDimension(),
     title: 'Put a number on the selection · a length, a radius, an offset, a ring '
          + '· two lines take their gap when parallel and their angle when not' },
@@ -273,12 +274,15 @@ for (const b of CONSTRAINT_BUTTONS) addButton(barConstraints, b);
 
 /* -- selection helpers -------------------------------------------------------- */
 
-function sel(): { pts: Point[]; lines: Line[]; circles: (Circle | Arc)[] } {
+function sel(): {
+  pts: Point[]; lines: Line[]; circles: (Circle | Arc)[]; splines: Spline[];
+} {
   const s = view.selected;
   return {
     pts: s.filter((e): e is Point => e instanceof Point),
     lines: s.filter((e): e is Line => e instanceof Line),
     circles: s.filter((e): e is Circle | Arc => e instanceof Circle || e instanceof Arc),
+    splines: s.filter((e): e is Spline => e instanceof Spline),
   };
 }
 
@@ -312,10 +316,16 @@ function applySimple([, cls, nPts, nLines, nCirc]: Simple): void {
 
 /** The single incidence button: read the selection and pick the constraint that fits it. */
 function cCoincident(): void {
-  const { pts, lines, circles } = sel();
-  const hit = INCIDENCE.find(([, , nPts, nLines, nCirc]) =>
+  const { pts, lines, circles, splines } = sel();
+  // a curve takes the same button: the parameter the contact sits at is the core's to seed —
+  // it starts wherever the curve already comes nearest the point
+  if (pts.length === 1 && splines.length === 1 && !lines.length && !circles.length) {
+    view.addConstraints(new C.PointOnSpline(pts[0], splines[0]));
+    return;
+  }
+  const hit = splines.length ? undefined : INCIDENCE.find(([, , nPts, nLines, nCirc]) =>
     pts.length === nPts && lines.length === nLines && circles.length === nCirc);
-  if (!need(!!hit, 'two points, a point and a line, or a point and a circle/arc')) return;
+  if (!need(!!hit, 'two points, a point and a line, or a point and a circle/arc/curve')) return;
   applySimple(hit as Simple);
 }
 
@@ -428,7 +438,17 @@ function cSymmetric(): void {
 }
 
 function cTangent(): void {
-  const { lines, circles } = sel();
+  const { lines, circles, splines } = sel();
+  if (lines.length === 1 && splines.length === 1 && !circles.length) {
+    // one constraint owning one parameter, not two: split in half it would be a point on the
+    // curve and a direction somewhere else on it
+    view.addConstraints(new C.SplineTangentLine(splines[0], lines[0]));
+    return;
+  }
+  if (splines.length) {
+    need(false, 'a line and a curve');
+    return;
+  }
   if (lines.length === 1 && circles.length === 1) {
     const ln = lines[0], cc = circles[0];
     if (cc instanceof Arc) {
@@ -441,7 +461,7 @@ function cTangent(): void {
     // the sense is left out: the core reads it off the geometry, the same rule everywhere
     view.addConstraints(new C.TangentCircleCircle(circles[0], circles[1]));
   } else {
-    need(false, 'a line and a circle/arc, or two circles/arcs');
+    need(false, 'a line and a circle/arc/curve, or two circles/arcs');
   }
 }
 
@@ -680,6 +700,8 @@ function describeEntity(e: Primitive, ix: io.Index): string {
   if (e instanceof Line) return `${n}line    ${ix.name(e.p1)}–${ix.name(e.p2)}`;
   if (e instanceof Arc) return `${n}arc     @${ix.name(e.center)} ${ix.name(e.start)}–${ix.name(e.end)}`;
   if (e instanceof Circle) return `${n}circle  @${ix.name(e.center)}`;
+  // a curve reads as its control polygon: that is what it is made of and what edits it
+  if (e instanceof Spline) return `${n}spline  ${e.ctrl.map((p) => ix.name(p)).join('–')}`;
   return `${n}point`;
 }
 
@@ -864,7 +886,7 @@ bannerSelect.addEventListener('click', () => {
 /* -- keyboard ------------------------------------------------------------------- */
 
 const TOOL_KEYS: Record<string, Tool> = {
-  p: 'point', l: 'line', r: 'rect', c: 'circle', a: 'arc', 3: 'arc3',
+  p: 'point', l: 'line', r: 'rect', c: 'circle', a: 'arc', 3: 'arc3', s: 'spline',
 };
 /** Every accelerator in the app, read off the buttons and menu items themselves so there is
  *  one list and not two.  The token is the chip the control prints, lowercased: '⇧l', '⌘z'. */
@@ -887,6 +909,9 @@ window.addEventListener('keydown', (e) => {
   }
   const k = e.key.toLowerCase();
   if (k === 'escape') { if (!closeMenus()) view.cancelTool(); return; }
+  // the spline tool collects as many control points as the user wants, so it needs a way to
+  // say "that is the curve" — the one tool whose click count is not known in advance
+  if (k === 'enter' && view.tool === 'spline') { e.preventDefault(); view.finishSpline(); return; }
   if (k === 'delete' || k === 'backspace') {
     e.preventDefault();
     if (currentConstraint) {

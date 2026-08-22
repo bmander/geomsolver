@@ -9,8 +9,8 @@ Currently: **Stage 5 done**, in **one** implementation —
   (`newton.rs`, `linalg.rs`, `sparse.rs`), structural diagnosis (`graph.rs`, `diagnose.rs`),
   decomposition into cached solve plans (`cgraph.rs`, `decompose.rs`), witness analysis
   (`witness.rs`), drag/solution management (`solve.rs`, `homotopy.rs`), dimension callouts
-  (`callout.rs`), dimension expressions (`expr.rs`), document I/O (`io.rs`, `json.rs`) and the
-  reference sketches (`examples.rs`).
+  (`callout.rs`), dimension expressions (`expr.rs`), parametric curves (`curve.rs`), document
+  I/O (`io.rs`, `json.rs`) and the reference sketches (`examples.rs`).
 * **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built twice — a native `cdylib` for
   Python and a self-contained `wasm32-unknown-unknown` module for the browser.
 * **bindings**: `src/gcs/` (Python, `ctypes`) and `web/src/core/` (TypeScript, WebAssembly).
@@ -25,10 +25,24 @@ Commands:
 `make bench`, `cd web && npm run serve`.
 
 Conventions:
+- A constraint may own *unknowns* of its own: a `SpecKind::Param` slot in its `spec`, allocated
+  by `Sketch::add` and moved by the solver like any other parameter.  The slot holds a seed
+  number on the way in — which is what a document stores, what `graft` copies, and what
+  `constraints::seed_param` supplies when a caller omits it (the `Param` counterpart of
+  `infers_arg`) — and an index into `Sketch::params` once added.  It is not a value anyone
+  states: `describe` leaves it out, both bindings publish it read-only, and `same_constraint`
+  ignores it, since two contacts of the same point on the same curve say the same thing however
+  far apart their seeds started.  `Sketch::remove` retires an orphaned one to `fixed` (a free
+  parameter no equation mentions is a DOF the sketch does not have); the rebuild walk reclaims
+  the slot outright.
 - **The core owns every algorithm.**  A change to the model, a constraint type, diagnosis,
   decomposition or the solvers lands in `rust/gcs-core/` with a Rust test in
   `rust/gcs-core/tests/`.  A binding changes only when the *surface* changes.  If you find
   yourself writing geometry or numerics in Python or TypeScript, it belongs in Rust instead.
+- A new *entity* kind stops the build in the exhaustive `match e.kind` arms — `model.rs`
+  (`entity_params`, `children`, `count`, `bounds`, `distance_between`), `io::graft`'s remap and
+  the FFI's `ent`.  Give it an arm in each; `primitives()` and `topology_key` are where it joins
+  the document.
 - Every new constraint type = a vectorized kernel in `kernels.rs` (added to `KERNELS`; the
   registration order **is** the kernel id) declaring its `degree` — the power of length its
   residual carries, 1 for a signed distance and 2 for a squared one — a `CKind` variant in
@@ -41,6 +55,31 @@ Conventions:
   there: give it a `Pen` arm (its drafting figure) and a `frame` arm (the `Frame` its placement
   is written in), or list it in `undrawn!`.  `every_dimension_is_drawn` then checks the arm you
   wrote actually produces a figure.
+- A parametric curve (`curve.rs`) is one that is *linear in its control points*, `C(t) = Σ Bᵢ(t) Pᵢ`
+  — every B-spline, so every Bézier.  It has no usable implicit form, so a contact with one
+  carries its own curve parameter as a `Param` slot and says `p − C(t) = 0`: two residuals, one
+  new unknown, the net one equation the contact is worth.  A contact kernel needs the basis
+  values and their first two t-derivatives and nothing else about the curve, which is the whole
+  extension point — a second curve family is a second basis, not a second constraint family.
+  Control points are ordinary `Point`s, so they drag, snap and constrain with the tools that
+  already exist, the same trick as an arc being a centre and two real points.  Local support is
+  what keeps the plan's fixed-width blocks: only `DEGREE + 1` control points are non-zero at any
+  t, so a contact addresses one *span*, whichever span t is in.  The span is derived from t, not
+  stored, and `Sketch::topology_key` carries it — a contact walking past a knot is a recompile,
+  the same event as any other topology change.
+- A curve parameter is bounded (`t0 <= t <= t1`) and a least-squares problem cannot say so: left
+  alone the solver puts a tangency on the phantom polynomial past the end of the drawn curve.
+  `curve::clamp_contacts` says it instead, and every path that owns a compile re-homes and solves
+  again — `solve::solve`, `PullPolish` (which lifts its drag target out to rebuild), the plan
+  solver's fallback, and the app's `solveOnce`.  A clamped parameter is *pinned* for the retry:
+  free, the next solve walks straight back off the end.  All of it is behind
+  `curve::has_contacts`, so a sketch with no curves pays nothing.
+- `Param::scale` is the world length one unit of a parameter is worth — 1 for a coordinate or a
+  radius, the curve's mean speed |C'| for a curve parameter.  `System` gathers it into
+  `col_scale` and solves in `z = x * col_scale`, so the trust region and the minimum-norm step
+  measure motion in world units.  It is not a nicety: unscaled, a tangency that converges in nine
+  iterations at one size stalls at ten times the size, because the t column is wrong by a factor
+  of the curve's length.  Systems where every scale is 1 take the untouched path.
 - "Solved" is `System::max_relative_residual <= 1e-6`: each row's residual over its own units
   (`extent^degree`).  Never one absolute threshold for the whole system — half the kernels are
   linear in length and half quadratic, so one threshold is wrong for one of the halves.
@@ -124,6 +163,11 @@ Conventions:
   every cluster a neighbour of every other.  `relation_bound` must stay an upper bound on the
   merge rank (an under-count loses a determined merge to the numeric fallback): validate a change
   by forcing the factorisation on every call and asserting `rank <= bound` across the cases.
+- A curve is *geometry*, so like a dimension callout it is laid out in the core and the front end
+  only strokes what it is handed: `curve::tessellate` refines to `FLATNESS_PX` screen pixels
+  through `unit` (the world length of one screen pixel), and `curve::closest` is the pick test
+  and the seed for a fresh contact, so the two agree about where "on the curve" is.  No binding
+  evaluates a basis function.
 - `solve::Drag` is the one point-drag implementation (pull + polish), `RadiusDrag` its scalar
   counterpart for circle/arc radii (a `Radius` with `soft` set — its residual is already
   r − target, so no kernel of its own); the front end only translates coordinates.

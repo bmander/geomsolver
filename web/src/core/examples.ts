@@ -28,6 +28,8 @@ export const parallels = (): Sketch => build('parallels');
 export const pythagoras = (a = 30, b = 40): Sketch => build(`pythagoras:${a}:${b}`);
 export const k33 = (seed = 3): Sketch => build(`k33:${seed}`);
 export const laman = (n = 10, seed = 0): Sketch => build(`laman:${n}:${seed}`);
+/** A cubic B-spline with a face held tangent to it and a point riding on it. */
+export const splineFollower = (n = 7): Sketch => build(`spline_follower:${n}`);
 /** `copies` separate staircases of `n` free-length H/V segments: a drag must cost one figure. */
 export const zigzag = (n = 32, copies = 1): Sketch => build(`zigzag:${n}:${copies}`);
 
@@ -41,6 +43,7 @@ export const EXAMPLES: Record<string, () => Sketch> = {
   slotted_link: () => slottedLink(),
   truss: () => truss(),
   polygon_chain: () => polygonChain(),
+  spline_follower: () => splineFollower(),
 };
 
 export interface Case {

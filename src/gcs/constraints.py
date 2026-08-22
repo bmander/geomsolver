@@ -18,8 +18,11 @@ from gcs import _ffi
 from gcs._ffi import Vec, lib
 from gcs.model import Entity, Sketch
 
-ENTITY_KINDS = frozenset({"point", "line", "circle", "arc", "circle_or_arc"})
+ENTITY_KINDS = frozenset({"point", "line", "circle", "arc", "circle_or_arc", "spline"})
 DIMENSION_KINDS = frozenset({"length", "angle"})
+# A hidden unknown the constraint owns — where along a curve a contact sits.  It reads as the
+# number the solver currently has it at and cannot be written: it is not a value anyone states.
+PARAM_KINDS = frozenset({"param"})
 
 _REGISTRY: dict[str, Any] = _ffi.take_json(lib.gcs_registry_json())
 KERNEL_NAMES: list[str] = [k["name"] for k in _REGISTRY["kernels"]]
@@ -76,6 +79,11 @@ class Constraint:
 
     def dimensions(self) -> list[tuple[str, str]]:
         return [(n, k) for n, k in self.spec if k in DIMENSION_KINDS]
+
+    def owned_params(self) -> list[str]:
+        """Attributes that are unknowns of this constraint's own — a curve contact's parameter.
+        They read as numbers and are read-only: the solver moves them, nobody states them."""
+        return [n for n, k in self.spec if k in PARAM_KINDS]
 
     def expr(self, name: str) -> str | None:
         """The expression text behind a dimension, or None when it is a plain number."""
@@ -208,7 +216,7 @@ def _from_json(sk: Sketch, v: Any, kind: str) -> Any:
     return v
 
 
-_MAX_PAR = 16  # the widest kernel takes 8; a little headroom costs nothing
+_MAX_PAR = 24  # the widest kernel takes 13; a little headroom costs nothing
 
 
 @contextmanager
@@ -275,7 +283,7 @@ def _make(entry: dict[str, Any]) -> type[Constraint]:
         def setter(self: Constraint, v: Any, _n: str = attr) -> None:
             self._set_value(_n, v)
 
-        ns[attr] = property(getter, setter)
+        ns[attr] = property(getter) if kind in PARAM_KINDS else property(getter, setter)
     return type(name, (Constraint,), ns)
 
 

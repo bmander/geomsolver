@@ -10,6 +10,7 @@ import pytest
 from gcs import constraints as C
 from gcs import examples, solve
 from gcs.decompose import PlanSolver, build_graph
+from gcs.diagnose import diagnose
 from gcs.model import Sketch
 
 
@@ -181,7 +182,10 @@ def test_plan_and_numeric_agree(name: str) -> None:
         rb = solve(b)
         assert ra.success and rb.success
         assert _all_satisfied(a) and _all_satisfied(b)
-        if name != "polygon_chain":     # fully constrained: same solution
+        # Where the answer is unique the two paths must reach the same one.  Where it is not,
+        # they need not: both are minimum-norm, but the plan has already moved the geometry
+        # before its solver starts, so the two are least-change from different places.
+        if diagnose(b).dof == 0:
             np.testing.assert_allclose(a.get_x(), b.get_x(), atol=1e-5)
 
 

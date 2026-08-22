@@ -20,7 +20,7 @@ import {
 } from '../core/diagnose.js';
 import { checkSketch } from '../core/fdcheck.js';
 import { enumerateStep } from '../core/homotopy.js';
-import { Sketch } from '../core/model.js';
+import { Point, Sketch, Spline } from '../core/model.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
 import { analyze } from '../core/witness.js';
 import { core, initCore } from '../core/wasm.js';
@@ -403,7 +403,10 @@ test('the plan and the numeric path agree', () => {
       }
       assert.ok(solve(b).success, name);
       assert.ok(allSatisfied(a) && allSatisfied(b), name);
-      if (name !== 'polygon_chain') {
+      // Where the answer is unique the two paths must reach the same one.  Where it is not,
+      // they need not: both are minimum-norm, but the plan has already moved the geometry
+      // before its solver starts, so the two are least-change from different places.
+      if (diagnose(b).dof === 0) {
         const xa = a.getX(), xb = b.getX();
         for (let i = 0; i < xa.length; i++) assert.ok(Math.abs(xa[i] - xb[i]) < 1e-4, `${name}[${i}]`);
       }
@@ -1275,5 +1278,127 @@ test('pythagoras drawn with expressions holds, and stays true when a leg is edit
   const a = sk.constraints.find((k) => k.expr('d') === 'a = 30')!;
   assert.equal(a.setDimension('d', 'a = 50'), null);
   check(50, 40);
+  sk.dispose();
+});
+
+/* -- parametric curves --------------------------------------------------------- */
+
+function wave(n = 6): { sk: Sketch; sp: Spline } {
+  const sk = new Sketch();
+  const ctrl = Array.from({ length: n }, (_, i) => sk.point(i * 10, i % 2 ? 12 : 0));
+  const sp = sk.spline(ctrl);
+  assert.ok(sp, 'six control points make a cubic');
+  return { sk, sp: sp! };
+}
+
+test('a spline is a control polygon of ordinary points', () => {
+  const { sk, sp } = wave();
+  assert.deepEqual(sp.ctrl.map((p) => p.index), sk.points.map((p) => p.index));
+  assert.deepEqual(sp.knots, [0, 0, 0, 0, 1, 2, 3, 3, 3, 3]);
+  assert.deepEqual(sp.domain, [0, 3]);
+  // a clamped curve starts at its first control point and ends at its last
+  for (const [t, p] of [[0, sk.points[0]], [3, sk.points[5]]] as [number, Point][]) {
+    const [x, y] = sp.pointAt(t);
+    assert.ok(Math.abs(x - p.x.value) < 1e-12 && Math.abs(y - p.y.value) < 1e-12);
+  }
+  sk.dispose();
+});
+
+test('too few control points is not a curve', () => {
+  const sk = new Sketch();
+  assert.equal(sk.spline([sk.point(0, 0), sk.point(1, 1), sk.point(2, 0)]), null);
+  assert.equal(sk.splines.length, 0);
+  sk.dispose();
+});
+
+test('the polyline the core hands over lands on the curve and follows the zoom', () => {
+  const { sk, sp } = wave();
+  const coarse = sp.polyline(1), fine = sp.polyline(0.01);
+  assert.ok(fine.length > coarse.length);
+  for (const [x, y] of fine) assert.ok(sp.closest(x, y).distance < 1e-6);
+  sk.dispose();
+});
+
+test('a curve contact owns one unknown, reads as a number and cannot be written', () => {
+  const { sk, sp } = wave();
+  const p = sk.point(21, 30);
+  const before = sk.params.length;
+  const c = new C.PointOnSpline(p, sp);
+  sk.add(c);
+  assert.equal(sk.params.length, before + 1);
+  assert.equal(typeof c.t, 'number');
+  // no setter: the solver moves a curve parameter, nobody states one
+  assert.throws(() => { (c as unknown as { t: number }).t = 0.5; }, TypeError);
+  sk.dispose();
+});
+
+test('a point is pulled onto the curve and a line is made tangent to it', () => {
+  const { sk, sp } = wave();
+  for (const q of sp.ctrl) { q.x.fixed = true; q.y.fixed = true; }
+  const p = sk.point(21, 30);
+  sk.add(new C.PointOnSpline(p, sp));
+  assert.ok(solve(sk).success);
+  assert.ok(sp.closest(p.x.value, p.y.value).distance < 1e-9);
+
+  const a = sk.point(0, -20), b = sk.point(50, -20);
+  const ln = sk.line(a, b);
+  const c = new C.SplineTangentLine(sp, ln);
+  sk.add(c);
+  assert.ok(solve(sk).success);
+  const f = sp.eval(c.t as number);
+  const [ex, ey] = [b.x.value - a.x.value, b.y.value - a.y.value];
+  const len = Math.hypot(ex, ey);
+  assert.ok(Math.abs(ex * (f.p[1] - a.y.value) - ey * (f.p[0] - a.x.value)) / len < 1e-6);
+  assert.ok(Math.abs(f.d1[0] * ey - f.d1[1] * ex) / (Math.hypot(...f.d1) * len) < 1e-6);
+  sk.dispose();
+});
+
+test('a contact settles on the drawn curve, not on the polynomial past its end', () => {
+  const sk = new Sketch();
+  const ctrl = ([[0, 0], [0, 10], [10, 10], [10, 0]] as [number, number][])
+    .map(([x, y]) => sk.point(x, y));
+  const sp = sk.spline(ctrl)!;
+  for (const q of sp.ctrl) { q.x.fixed = true; q.y.fixed = true; }
+  const ln = sk.line(sk.point(-6, 0), sk.point(-6, 10));
+  const c = new C.SplineTangentLine(sp, ln);
+  sk.add(c);
+  assert.ok(solve(sk).success);
+  const [t0, t1] = sp.domain;
+  assert.ok((c.t as number) >= t0 - 1e-12 && (c.t as number) <= t1 + 1e-12, `t = ${c.t}`);
+  sk.dispose();
+});
+
+test('a document keeps its curves and where they are touched', () => {
+  const { sk, sp } = wave(7);
+  const p = sk.point(21, 30);
+  const c = new C.PointOnSpline(p, sp);
+  sk.add(c);
+  assert.ok(solve(sk).success);
+  const text = io.dumps(sk);
+  const back = io.loads(text);
+  assert.equal(back.splines.length, 1);
+  assert.deepEqual(back.splines[0].knots, sp.knots);
+  const c2 = back.constraints.find((k) => k.typeName === 'PointOnSpline')!;
+  assert.ok(Math.abs((c2.t as number) - (c.t as number)) < 1e-12);
+  assert.equal(io.dumps(back), text);
+  sk.dispose();
+  back.dispose();
+});
+
+test('dragging a point along a curve carries it across a knot', () => {
+  const { sk, sp } = wave(7);
+  for (const q of sp.ctrl) { q.x.fixed = true; q.y.fixed = true; }
+  const p = sk.point(2, 4);
+  const c = new C.PointOnSpline(p, sp);
+  sk.add(c);
+  assert.ok(solve(sk).success);
+  const first = Math.floor(c.t as number);
+  const [, t1] = sp.domain;
+  const far = sp.pointAt(t1 - 0.2);
+  const d = new Drag(sk, p, p.x.value, p.y.value);
+  d.move(far[0], far[1]);
+  d.end();
+  assert.ok(Math.floor(c.t as number) > first, `the contact never left span ${first}`);
+  assert.ok(sp.closest(p.x.value, p.y.value).distance < 1e-6);
   sk.dispose();
 });

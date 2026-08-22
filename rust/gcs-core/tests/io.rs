@@ -273,7 +273,7 @@ fn set_target_refuses_a_constraint_without_one() {
     assert_eq!(c.args.len(), 2);
     let mut d = Constraint::drag_target(EntRef::point(0), 1.0, 2.0, 1.0);
     assert!(d.set_target(3.0, 4.0));
-    assert_eq!(d.consts()[0], 3.0);
+    assert_eq!(d.consts(&Sketch::new())[0], 3.0);
 }
 
 /// A front end caches compiled plans against this.  Counts and type names alone are not enough:

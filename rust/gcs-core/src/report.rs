@@ -298,6 +298,8 @@ fn arg_json_value(a: &Arg) -> Json {
         Arg::Bool(b) => Json::Bool(*b),
         Arg::Str(s) => Json::Str(s.clone()),
         Arg::Expr(e) => Json::Num(e.value),
+        // only a sketch can say what an owned unknown currently holds; `constraint_json` does
+        Arg::Param(_) => Json::Null,
     }
 }
 
@@ -305,8 +307,17 @@ fn arg_json_value(a: &Arg) -> Json {
 /// An argument written as an expression is its number here, like any other dimension, with the
 /// text beside it under `exprs` (attribute → text) — a proxy's `c.d` stays a number and the
 /// formula is there for whoever asks.
-pub fn constraint_json(c: &Constraint) -> Json {
-    let args: Vec<Json> = c.args.iter().map(arg_json_value).collect();
+pub fn constraint_json(sk: &Sketch, c: &Constraint) -> Json {
+    let args: Vec<Json> = c
+        .args
+        .iter()
+        .map(|a| match a {
+            // a hidden unknown reads as the number it holds, like any other argument: a proxy's
+            // `c.t` is the parameter's current value, and the solver moves it between edits
+            Arg::Param(i) => Json::Num(sk.params[*i as usize].value),
+            a => arg_json_value(a),
+        })
+        .collect();
     let exprs: Vec<(String, Json)> = c
         .spec()
         .iter()
@@ -417,7 +428,7 @@ pub fn callouts_json(sk: &Sketch, unit: f64) -> Json {
 }
 
 pub fn constraints_json(sk: &Sketch) -> Json {
-    Json::Arr(sk.constraints.iter().map(constraint_json).collect())
+    Json::Arr(sk.constraints.iter().map(|c| constraint_json(sk, c)).collect())
 }
 
 /// The constraint-type registry: what a front end needs to build a toolbar, a constraint list and
@@ -500,6 +511,12 @@ pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String>
             },
             _ => Arg::Num(a.as_f64()),
         });
+    }
+    // a hidden unknown nobody supplied starts where the geometry puts it
+    for (i, _) in Constraint::new(kind, args.clone()).param_slots() {
+        if raw.get(i).map(|x| matches!(x, Json::Null)).unwrap_or(true) {
+            args[i] = Arg::Num(crate::constraints::seed_param(sk, kind, &args, i));
+        }
     }
     // the tangencies read their branch off the sketch when none was supplied
     let omitted = raw.get(2).map(|x| matches!(x, Json::Null)).unwrap_or(true);

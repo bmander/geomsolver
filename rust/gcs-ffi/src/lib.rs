@@ -17,6 +17,7 @@
 use gcs_core::callout;
 use gcs_core::cgraph::{self, El};
 use gcs_core::constraints::Constraint;
+use gcs_core::curve;
 use gcs_core::decompose::{self, Plan, PlanDrag, PlanSolver};
 use gcs_core::diagnose::{self, DiagnoseOptions};
 use gcs_core::expr;
@@ -257,7 +258,7 @@ pub unsafe extern "C" fn gcs_sketch_to_json(h: *mut Sketch, indent: i32) -> *mut
     })
 }
 
-/// `[n_params, n_points, n_lines, n_circles, n_arcs, n_constraints]`
+/// `[n_params, n_points, n_lines, n_circles, n_arcs, n_constraints, n_splines]`
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
     guard((), move || {
@@ -269,6 +270,7 @@ pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
             s.circles.len(),
             s.arcs.len(),
             s.constraints.len(),
+            s.splines.len(),
         ];
         for (i, x) in v.iter().enumerate() {
             *out.add(i) = *x as i32;
@@ -321,6 +323,114 @@ pub unsafe extern "C" fn gcs_sketch_arc(
 ) -> i32 {
     guard(-1, move || {
         sk(h).arc(center as usize, start as usize, end as usize, as_str(name, name_len)) as i32
+    })
+}
+
+/// A cubic B-spline over `n` control points, with the clamped uniform knot vector; -1 when
+/// there are too few of them for a cubic.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_spline(h: *mut Sketch, ctrl: *const i32, n: usize) -> i32 {
+    guard(-1, move || {
+        let ids: Vec<usize> =
+            std::slice::from_raw_parts(ctrl, n).iter().map(|&i| i as usize).collect();
+        sk(h).spline(&ids).map(|i| i as i32).unwrap_or(-1)
+    })
+}
+
+/// A cubic B-spline with a knot vector of its own; -1 when it does not fit the control polygon.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_spline_knots(
+    h: *mut Sketch,
+    ctrl: *const i32,
+    n: usize,
+    knots: *const f64,
+    nk: usize,
+) -> i32 {
+    guard(-1, move || {
+        let ids: Vec<usize> =
+            std::slice::from_raw_parts(ctrl, n).iter().map(|&i| i as usize).collect();
+        let ks = std::slice::from_raw_parts(knots, nk).to_vec();
+        sk(h).spline_with(&ids, Some(ks)).map(|i| i as i32).unwrap_or(-1)
+    })
+}
+
+/// A spline's knot vector; returns how many were written.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_spline_knots(h: *mut Sketch, idx: i32, out: *mut f64) -> i32 {
+    guard(-1, move || {
+        let k = &sk(h).splines[idx as usize].knots;
+        for (i, v) in k.iter().enumerate() {
+            *out.add(i) = *v;
+        }
+        k.len() as i32
+    })
+}
+
+/// The parameter interval a spline is drawn over (2 doubles).
+#[no_mangle]
+pub unsafe extern "C" fn gcs_spline_domain(h: *mut Sketch, idx: i32, out: *mut f64) {
+    guard((), move || {
+        let (a, b) = curve::domain(sk(h), idx as usize);
+        *out = a;
+        *out.add(1) = b;
+    })
+}
+
+/// C(t), C'(t) and C''(t) at one parameter (6 doubles).
+#[no_mangle]
+pub unsafe extern "C" fn gcs_spline_eval(h: *mut Sketch, idx: i32, t: f64, out: *mut f64) {
+    guard((), move || {
+        let f = curve::eval(sk(h), idx as usize, t);
+        let v = [f.p.0, f.p.1, f.d1.0, f.d1.1, f.d2.0, f.d2.1];
+        for (i, x) in v.iter().enumerate() {
+            *out.add(i) = *x;
+        }
+    })
+}
+
+/// How many points `gcs_spline_polyline` would write for this `unit` — call it first, then
+/// hand back a buffer of twice that many doubles.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_spline_polyline_len(h: *mut Sketch, idx: i32, unit: f64) -> i32 {
+    guard(-1, move || curve::tessellate(sk(h), idx as usize, unit).len() as i32)
+}
+
+/// The curve as a polyline, refined to `unit` (the world length of one screen pixel) exactly as
+/// the callouts are: the core lays the figure out and the front end strokes what it is handed.
+/// Writes x, y pairs and returns the number of points.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_spline_polyline(
+    h: *mut Sketch,
+    idx: i32,
+    unit: f64,
+    out: *mut f64,
+    cap: i32,
+) -> i32 {
+    guard(-1, move || {
+        let pts = curve::tessellate(sk(h), idx as usize, unit);
+        let n = pts.len().min(cap.max(0) as usize);
+        for (i, p) in pts.iter().take(n).enumerate() {
+            *out.add(2 * i) = p.0;
+            *out.add(2 * i + 1) = p.1;
+        }
+        n as i32
+    })
+}
+
+/// The parameter of the curve point nearest (x, y), and how far that is (2 doubles) — the pick
+/// test, so a front end never converts a tolerance or evaluates a basis function.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_spline_closest(
+    h: *mut Sketch,
+    idx: i32,
+    x: f64,
+    y: f64,
+    out: *mut f64,
+) {
+    guard((), move || {
+        let (t, d) = curve::closest(sk(h), idx as usize, x, y);
+        *out = t;
+        *out.add(1) = d;
     })
 }
 
@@ -485,7 +595,8 @@ fn ent(kind: i32, idx: i32) -> EntRef {
         0 => EntKind::Point,
         1 => EntKind::Line,
         2 => EntKind::Circle,
-        _ => EntKind::Arc,
+        3 => EntKind::Arc,
+        _ => EntKind::Spline,
     };
     EntRef::new(k, idx as usize)
 }
@@ -525,6 +636,7 @@ pub unsafe extern "C" fn gcs_entity_points(
                 let a = &s.arcs[idx as usize];
                 vec![a.center as usize, a.start as usize, a.end as usize]
             }
+            4 => s.splines[idx as usize].ctrl.iter().map(|&c| c as usize).collect(),
             _ => vec![idx as usize],
         };
         for (i, p) in v.iter().enumerate() {
@@ -553,6 +665,7 @@ pub unsafe extern "C" fn gcs_entity_construction(h: *mut Sketch, kind: i32, idx:
             1 => s.lines[idx as usize].construction,
             2 => s.circles[idx as usize].construction,
             3 => s.arcs[idx as usize].construction,
+            4 => s.splines[idx as usize].construction,
             _ => false,
         }) as i32
     })
@@ -572,6 +685,7 @@ pub unsafe extern "C" fn gcs_entity_set_construction(
             1 => s.lines[idx as usize].construction = b,
             2 => s.circles[idx as usize].construction = b,
             3 => s.arcs[idx as usize].construction = b,
+            4 => s.splines[idx as usize].construction = b,
             _ => {}
         }
     })
@@ -755,7 +869,7 @@ pub unsafe extern "C" fn gcs_constraint_json(h: *mut Sketch, id: i32) -> *mut u8
     guard(std::ptr::null_mut(), move || {
         let s = sk(h);
         match s.constraint(id as u32) {
-            Some(c) => out_json(report::constraint_json(c)),
+            Some(c) => out_json(report::constraint_json(s, c)),
             None => out_json(Json::Null),
         }
     })
@@ -920,8 +1034,8 @@ pub unsafe extern "C" fn gcs_constraint_eval(
         let Some(c) = s.constraint(id as u32) else { return 0 };
         let k = kernels::kernel_by_id(c.kernel_id());
         let vals = std::slice::from_raw_parts(v, k.n_par);
-        let r = c.residual(vals);
-        let j = c.jacobian(vals);
+        let r = c.residual(s, vals);
+        let j = c.jacobian(s, vals);
         for (i, x) in r.iter().enumerate() {
             *r_out.add(i) = *x;
         }

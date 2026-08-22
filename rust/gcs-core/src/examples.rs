@@ -437,7 +437,62 @@ pub fn pythagoras(a: f64, b: f64) -> Sketch {
 }
 
 /// The four sketches the regression suite parametrises over.
-pub const EXAMPLES: [&str; 4] = ["rect_fillets", "slotted_link", "truss", "polygon_chain"];
+pub const EXAMPLES: [&str; 5] =
+    ["rect_fillets", "slotted_link", "truss", "polygon_chain", "spline_follower"];
+
+/// A cubic B-spline with a straight follower held tangent to it and a point riding on it.
+///
+/// What it is for is the two things a curve adds that no implicit primitive has.  The tangency
+/// owns the parameter it touches at, so dragging a control point slides the contact along the
+/// curve rather than breaking it — and it slides *past knots*, which changes which control
+/// points the constraint's columns name and quietly recompiles.  The point on the curve is
+/// dimensioned to a fixed anchor, so it has somewhere to be and the curve is not free to
+/// swallow it.
+pub fn spline_follower(n: usize) -> Sketch {
+    let mut sk = Sketch::new();
+    let n = n.max(4);
+    let ctrl: Vec<usize> = (0..n)
+        .map(|i| {
+            let x = i as f64 * 20.0;
+            let y = if i % 2 == 0 { 26.0 } else { 0.0 };
+            sk.point(x, y, false, &format!("k{i}"))
+        })
+        .collect();
+    sk.fix_point(ctrl[0], true);
+    let sp = sk.spline(&ctrl).expect("four control points is a cubic");
+    let spe = EntRef::spline(sp);
+
+    // Both halves start where they already belong, so opening the case shows the curve as it is
+    // drawn rather than the nearest configuration to it.  The follower rides where the curve
+    // already dips lowest — an interior dip, not an end, so the contact has curve on both sides
+    // of it to slide along.
+    let (t0, t1) = crate::curve::domain(&sk, sp);
+    let mut low = (t0, f64::INFINITY);
+    for k in 1..200 {
+        let t = t0 + (t1 - t0) * k as f64 / 200.0;
+        let p = crate::curve::point_at(&sk, sp, t);
+        if p.1 < low.1 {
+            low = (t, p.1);
+        }
+    }
+    let span = (n - 1) as f64 * 20.0;
+    let a = sk.point(0.0, low.1, false, "f1");
+    let b = sk.point(span, low.1, false, "f2");
+    let face = sk.line(a, b);
+    add(&mut sk, Constraint::one_line(CKind::Horizontal, EntRef::line(face)));
+    let tangent = Constraint::spline_tangent_line(&sk, spe, EntRef::line(face));
+    add(&mut sk, tangent);
+
+    // and a point riding on the curve, held at a distance from a fixed anchor above it, so the
+    // curve is not free to shrug it off
+    let mid = crate::curve::point_at(&sk, sp, 0.5 * (t0 + t1));
+    let rider = sk.point(mid.0, mid.1, false, "rider");
+    let anchor = sk.point(mid.0, mid.1 + 60.0, true, "anchor");
+    let on = Constraint::point_on_spline(&sk, EntRef::point(rider), spe);
+    add(&mut sk, on);
+    add(&mut sk, Constraint::distance(EntRef::point(anchor), EntRef::point(rider), 60.0));
+    sk
+}
 
 /// Build a named example.  `None` for an unknown name.
 /// `copies` disjoint chains of `n` points each, every segment alternately Vertical and Horizontal
@@ -481,12 +536,13 @@ pub fn example(name: &str) -> Option<Sketch> {
         "k33" => k33(3),
         "laman" => laman(10, 0, true),
         "zigzag" => zigzag(32, 3),
+        "spline_follower" => spline_follower(7),
         _ => return None,
     })
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 19] = [
+pub const CASES: [(&str, &str, &str); 20] = [
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Slotted link", "slotted_link", "obround slot with two holes; fully constrained"),
     ("Truss (8 bays)", "truss", "~30-entity Warren truss, every member dimensioned"),
@@ -505,6 +561,7 @@ pub const CASES: [(&str, &str, &str); 19] = [
     ("Concurrent altitudes", "altitudes", "theorem-type dependency: the third incidence is implied (Diagnose → witness); 3 DOF to animate"),
     ("Parallels & perpendiculars", "parallels", "direction classes: parallel/perpendicular/vertical (1 DOF left: slide along the base)"),
     ("Pythagoras, graphically", "pythagoras", "four a×b right triangles in a square of side a + b leave a square of side c; `c = hypot(a, b)` is redundant and consistent — edit a or b and it stays so"),
+    ("Curve and follower", "spline_follower", "a cubic B-spline with a face held tangent to it and a point riding on it — drag a control point and the contact slides along the curve, across knots and all"),
     ("Levelled zigzags (3×32)", "zigzag", "three separate staircases of free-length H/V segments — a drag costs one staircase, not three"),
 ];
 
@@ -527,6 +584,7 @@ pub fn case(key: &str) -> Option<Sketch> {
         "k33" if !args.is_empty() => k33(u(0, 3)),
         "laman" => laman(n(0, 10), u(1, 0), true),
         "zigzag" if !args.is_empty() => zigzag(n(0, 32), n(1, 1)),
+        "spline_follower" if !args.is_empty() => spline_follower(n(0, 7)),
         "rect_fillets" if args.len() >= 3 => rect_fillets(args[0], args[1], args[2], 0.0),
         "pythagoras" if args.len() >= 2 => pythagoras(args[0], args[1]),
         _ => return example(name),

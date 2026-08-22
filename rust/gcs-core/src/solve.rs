@@ -10,6 +10,7 @@
 //! an unavoidable flip is recorded and flagged).
 
 use crate::constraints::{CKind, Constraint};
+use crate::curve;
 use crate::model::{increments, orientation, EntRef, Sketch};
 use crate::newton::{self, Info, Method};
 use crate::system::System;
@@ -134,9 +135,41 @@ impl System {
 }
 
 /// One-shot: compile and solve, writing the result back into the sketch.
+///
+/// A sketch with curve contacts in it solves in rounds.  A compiled system names one span of a
+/// spline in its columns, and the parameter that chose that span is itself an unknown the solve
+/// moves — so a contact can finish the solve on a different piece of the curve than it started
+/// on, or off the end of it entirely.  Both are re-homed and the system built again; neither can
+/// happen many times, and `curve::MAX_REHOME` bounds it regardless.  A sketch with no curves in
+/// it never enters the loop.
 pub fn solve(sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
-    let mut s = System::new(sk);
-    s.solve(sk, opts)
+    if !curve::has_contacts(sk) {
+        return System::new(sk).solve(sk, opts);
+    }
+    curve::refresh_scales(sk);
+    let mut spans = curve::contact_spans(sk);
+    let mut res = System::new(sk).solve(sk, opts);
+    if !opts.writeback {
+        return res;
+    }
+    for _ in 0..curve::MAX_REHOME {
+        // a parameter pinned to the end of its curve is held for the retry: with it free the
+        // next solve walks straight back off the end and nothing is learned
+        let pinned = curve::clamp_contacts(sk);
+        let now = curve::contact_spans(sk);
+        if pinned.is_empty() && now == spans {
+            break;
+        }
+        spans = now;
+        for &t in &pinned {
+            sk.params[t as usize].fixed = true;
+        }
+        res = System::new(sk).solve(sk, opts);
+        for &t in &pinned {
+            sk.params[t as usize].fixed = false;
+        }
+    }
+    res
 }
 
 pub type Triangle = (usize, usize, usize);
@@ -154,6 +187,11 @@ pub struct PullPolish {
     pub target: u32,
     pub method: Method,
     pub active: bool,
+    /// The spans the two systems were compiled from, empty when the sketch has no curves.  A
+    /// contact sliding past a knot mid-gesture changes which control points the columns name,
+    /// so the pair is built again — the one place a drag ever re-analyses anything, and only
+    /// for the drags that touch a curve.
+    spans: Vec<(u32, usize)>,
 }
 
 const PULL_ITER: i32 = 4; // the pull is a soft compromise; polish makes it exact
@@ -161,10 +199,37 @@ const POLISH_ITER: i32 = 20;
 
 impl PullPolish {
     pub fn new(sk: &mut Sketch, target: Constraint, method: Method) -> PullPolish {
+        if curve::has_contacts(sk) {
+            curve::refresh_scales(sk);
+        }
         let polish = System::new(sk);
         let id = sk.add(target);
         let pull = System::new(sk);
-        PullPolish { polish, pull, target: id, method, active: true }
+        let spans = curve::contact_spans(sk);
+        PullPolish { polish, pull, target: id, method, active: true, spans }
+    }
+
+    /// Rebuild both systems around the target that is already in the sketch — `polish` has to
+    /// see the hard constraints alone, so the target comes out for the length of the compile.
+    fn recompile(&mut self, sk: &mut Sketch) {
+        let Some(target) = sk.constraint(self.target).cloned() else { return };
+        sk.remove(self.target);
+        self.polish = System::new(sk);
+        sk.add(target);
+        self.pull = System::new(sk);
+    }
+
+    /// Put every contact back on the curve, and rebuild if one has moved to another span.
+    fn rehome(&mut self, sk: &mut Sketch) {
+        if self.spans.is_empty() {
+            return;
+        }
+        curve::clamp_contacts(sk);
+        let now = curve::contact_spans(sk);
+        if now != self.spans {
+            self.spans = now;
+            self.recompile(sk);
+        }
     }
 
     /// One frame: push the target's new value in, pull, then make the hard ones exact.
@@ -174,10 +239,12 @@ impl PullPolish {
             sk,
             SolveOpts { method: self.method, max_iter: PULL_ITER, ..SolveOpts::default() },
         );
-        self.polish.solve(
+        let r = self.polish.solve(
             sk,
             SolveOpts { method: self.method, max_iter: POLISH_ITER, ..SolveOpts::default() },
-        )
+        );
+        self.rehome(sk);
+        r
     }
 
     pub fn end(&mut self, sk: &mut Sketch) {

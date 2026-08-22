@@ -34,9 +34,11 @@ pub enum K {
     ParallelDistance,
     PointLineDistance,
     AnnularDistance,
+    PointOnSpline,
+    SplineTangentLine,
 }
 
-pub const N_KERNELS: usize = 21;
+pub const N_KERNELS: usize = 23;
 
 pub struct Kernel {
     pub name: &'static str,
@@ -525,6 +527,176 @@ fn annular_distance_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
     lin_jac(n, ANNULAR_DISTANCE_J, j)
 }
 
+/* -- parametric curves ----------------------------------------------------- */
+/*
+ * The two contact kernels.  Both are written against the basis alone — the values `b`, the
+ * first derivatives `d` and the second derivatives `dd` of the `SPAN_N` functions that are
+ * non-zero at t — so they say nothing about which curve family they are evaluating.  A second
+ * curve type is a second `Basis` implementation, not a second constraint family.
+ *
+ * The curve's columns are one span's control points, `SPAN_N` of them, whichever span t is in;
+ * the span itself is chosen at compile time and carried in `Sketch::topology_key`.  The local
+ * knot window is the constants.
+ */
+
+use crate::curve::{self, SPAN_K, SPAN_N};
+
+/// Columns of `point_on_spline`: (px, py, t, c0x, c0y, ... c3x, c3y).
+pub const N_PAR_ON_SPLINE: usize = 3 + 2 * SPAN_N;
+/// Columns of `spline_tangent_line`: (t, c0x, c0y, ... c3x, c3y, ax, ay, bx, by).
+pub const N_PAR_SPLINE_LINE: usize = 1 + 2 * SPAN_N + 4;
+
+/// `r = p − C(t)`.  Two residuals against one new unknown: the net one equation a point lying
+/// on a curve is worth.  A signed displacement, so degree 1.
+fn point_on_spline_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let (mut b, mut d, mut dd) = ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
+    for i in 0..n {
+        let o = N_PAR_ON_SPLINE * i;
+        curve::basis(curve::DEGREE, v[o + 2], &k[SPAN_K * i..SPAN_K * (i + 1)], &mut b, &mut d,
+                     &mut dd);
+        let (mut cx, mut cy) = (0.0, 0.0);
+        for a in 0..SPAN_N {
+            cx += b[a] * v[o + 3 + 2 * a];
+            cy += b[a] * v[o + 4 + 2 * a];
+        }
+        r[2 * i] = v[o] - cx;
+        r[2 * i + 1] = v[o + 1] - cy;
+    }
+}
+
+fn point_on_spline_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let (mut b, mut d, mut dd) = ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
+    for i in 0..n {
+        let o = N_PAR_ON_SPLINE * i;
+        let jo = 2 * N_PAR_ON_SPLINE * i;
+        curve::basis(curve::DEGREE, v[o + 2], &k[SPAN_K * i..SPAN_K * (i + 1)], &mut b, &mut d,
+                     &mut dd);
+        let (mut tx, mut ty) = (0.0, 0.0);
+        for a in 0..SPAN_N {
+            tx += d[a] * v[o + 3 + 2 * a];
+            ty += d[a] * v[o + 4 + 2 * a];
+        }
+        let row1 = jo + N_PAR_ON_SPLINE;
+        for t in 0..2 * N_PAR_ON_SPLINE {
+            j[jo + t] = 0.0;
+        }
+        j[jo] = 1.0;
+        j[row1 + 1] = 1.0;
+        j[jo + 2] = -tx;
+        j[row1 + 2] = -ty;
+        for a in 0..SPAN_N {
+            j[jo + 3 + 2 * a] = -b[a];
+            j[row1 + 4 + 2 * a] = -b[a];
+        }
+    }
+}
+
+/// Tangency of a curve and an infinite line, as one constraint owning one parameter: the point
+/// at t lies on the line, and the curve's direction there is the line's.  Two residuals against
+/// one new unknown, so the net one equation a tangency is worth.
+///
+/// It has to be one constraint.  Split into "a point is on the curve" and "the direction
+/// matches" it would be two contacts with two parameters of their own, tangent to each other
+/// only if something else made the parameters agree.
+///
+/// Both rows are divided by the line's length, which is what makes them mean something: row 0 is
+/// then the distance from the contact to the line and row 1 is |C'| sin θ, both signed lengths,
+/// so the kernel is degree 1.  Without the division a line whose endpoints had collapsed would
+/// satisfy the pair exactly — a cross product with a zero vector is zero — and the solver is
+/// perfectly happy to find that.  `line_len`'s floor is what keeps the residual finite and the
+/// Jacobian large there, exactly as in the line/circle tangency.
+///
+/// (t, c0x, c0y ... c3x, c3y, ax, ay, bx, by)
+fn spline_tangent_line_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let (mut b, mut d, mut dd) = ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
+    for i in 0..n {
+        let o = N_PAR_SPLINE_LINE * i;
+        let l = o + 1 + 2 * SPAN_N;
+        curve::basis(curve::DEGREE, v[o], &k[SPAN_K * i..SPAN_K * (i + 1)], &mut b, &mut d,
+                     &mut dd);
+        let (mut cx, mut cy, mut tx, mut ty) = (0.0, 0.0, 0.0, 0.0);
+        for a in 0..SPAN_N {
+            cx += b[a] * v[o + 1 + 2 * a];
+            cy += b[a] * v[o + 2 + 2 * a];
+            tx += d[a] * v[o + 1 + 2 * a];
+            ty += d[a] * v[o + 2 + 2 * a];
+        }
+        let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
+        let (wx, wy) = (cx - v[l], cy - v[l + 1]);
+        let len = line_len(dx, dy);
+        r[2 * i] = (dx * wy - dy * wx) / len;
+        r[2 * i + 1] = (tx * dy - ty * dx) / len;
+    }
+}
+
+fn spline_tangent_line_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let (mut b, mut d, mut dd) = ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
+    let mut dc = [0.0f64; N_PAR_SPLINE_LINE];
+    let mut dl = [0.0f64; N_PAR_SPLINE_LINE];
+    for i in 0..n {
+        let o = N_PAR_SPLINE_LINE * i;
+        let l = o + 1 + 2 * SPAN_N;
+        let jo = 2 * N_PAR_SPLINE_LINE * i;
+        let row1 = jo + N_PAR_SPLINE_LINE;
+        curve::basis(curve::DEGREE, v[o], &k[SPAN_K * i..SPAN_K * (i + 1)], &mut b, &mut d,
+                     &mut dd);
+        let (mut cx, mut cy) = (0.0, 0.0);
+        let (mut tx, mut ty) = (0.0, 0.0);
+        let (mut sx, mut sy) = (0.0, 0.0); // C''(t)
+        for a in 0..SPAN_N {
+            let (px, py) = (v[o + 1 + 2 * a], v[o + 2 + 2 * a]);
+            cx += b[a] * px;
+            cy += b[a] * py;
+            tx += d[a] * px;
+            ty += d[a] * py;
+            sx += dd[a] * px;
+            sy += dd[a] * py;
+        }
+        let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
+        let (wx, wy) = (cx - v[l], cy - v[l + 1]);
+        let len = line_len(dx, dy);
+        let ll = l - o; // first line column
+        // |b - a| moves with the line's endpoints only
+        for t in 0..N_PAR_SPLINE_LINE {
+            dl[t] = 0.0;
+        }
+        dl[ll] = -dx / len;
+        dl[ll + 1] = -dy / len;
+        dl[ll + 2] = dx / len;
+        dl[ll + 3] = dy / len;
+
+        // row 0: cross(b - a, C(t) - a)
+        for t in 0..N_PAR_SPLINE_LINE {
+            dc[t] = 0.0;
+        }
+        dc[0] = dx * ty - dy * tx;
+        for a in 0..SPAN_N {
+            dc[1 + 2 * a] = -dy * b[a];
+            dc[2 + 2 * a] = dx * b[a];
+        }
+        dc[ll] = dy - wy;
+        dc[ll + 1] = wx - dx;
+        dc[ll + 2] = wy;
+        dc[ll + 3] = -wx;
+        ratio_jac(&dc, &dl, len, dx * wy - dy * wx, &mut j[jo..jo + N_PAR_SPLINE_LINE]);
+
+        // row 1: cross(C'(t), b - a)
+        for t in 0..N_PAR_SPLINE_LINE {
+            dc[t] = 0.0;
+        }
+        dc[0] = sx * dy - sy * dx;
+        for a in 0..SPAN_N {
+            dc[1 + 2 * a] = d[a] * dy;
+            dc[2 + 2 * a] = -d[a] * dx;
+        }
+        dc[ll] = ty;
+        dc[ll + 1] = -tx;
+        dc[ll + 2] = -ty;
+        dc[ll + 3] = tx;
+        ratio_jac(&dc, &dl, len, tx * dy - ty * dx, &mut j[row1..row1 + N_PAR_SPLINE_LINE]);
+    }
+}
+
 /* -- registry (order == kernel id, shared with the bindings) --------------- */
 
 pub static KERNELS: [Kernel; N_KERNELS] = [
@@ -549,6 +721,8 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "parallel_distance", n_res: 1, n_par: 8, degree: 1, n_const: 1, res: parallel_distance_res, jac: parallel_distance_jac, const_jac: None },
     Kernel { name: "point_line_distance", n_res: 1, n_par: 6, degree: 1, n_const: 1, res: point_line_distance_res, jac: point_line_distance_jac, const_jac: None },
     Kernel { name: "annular_distance", n_res: 1, n_par: 2, degree: 1, n_const: 1, res: annular_distance_res, jac: annular_distance_jac, const_jac: Some(ANNULAR_DISTANCE_J) },
+    Kernel { name: "point_on_spline", n_res: 2, n_par: N_PAR_ON_SPLINE, degree: 1, n_const: SPAN_K, res: point_on_spline_res, jac: point_on_spline_jac, const_jac: None },
+    Kernel { name: "spline_tangent_line", n_res: 2, n_par: N_PAR_SPLINE_LINE, degree: 1, n_const: SPAN_K, res: spline_tangent_line_res, jac: spline_tangent_line_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

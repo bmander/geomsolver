@@ -13,12 +13,16 @@ import {
 import { core, lastError, onInit, takeJson, takeStr, withBuf, withJson, withStr } from './wasm.js';
 
 export type SpecKind =
-  | 'point' | 'line' | 'circle' | 'arc' | 'circle_or_arc'
-  | 'length' | 'angle' | 'float' | 'int' | 'str' | 'bool';
+  | 'point' | 'line' | 'circle' | 'arc' | 'circle_or_arc' | 'spline'
+  | 'length' | 'angle' | 'float' | 'int' | 'str' | 'bool' | 'param';
 
 export const ENTITY_KINDS: ReadonlySet<string> =
-  new Set(['point', 'line', 'circle', 'arc', 'circle_or_arc']);
+  new Set(['point', 'line', 'circle', 'arc', 'circle_or_arc', 'spline']);
 export const DIMENSION_KINDS: ReadonlySet<string> = new Set(['length', 'angle']);
+/** A hidden unknown the constraint owns — where along a curve a contact sits.  It reads as the
+ *  number the solver currently has it at and cannot be written: nobody states a curve
+ *  parameter, and the core refuses the write anyway. */
+export const PARAM_KINDS: ReadonlySet<string> = new Set(['param']);
 
 export type Spec = readonly (readonly [string, SpecKind])[];
 export type Entity_ = Primitive;
@@ -52,7 +56,7 @@ export function REGISTRY(): Registry {
   return registry;
 }
 
-const MAX_PAR = 16;   // the widest kernel takes 8; a little headroom costs nothing
+const MAX_PAR = 24;   // the widest kernel takes 13; a little headroom costs nothing
 
 export abstract class Constraint {
   static readonly spec: Spec = [];
@@ -299,15 +303,17 @@ function make(entry: TypeEntry): ConstraintCtor {
     softByDefault: { value: entry.soft },
     kernelId: { value: entry.kernel },
   });
-  spec.forEach(([attr], i) => {
+  spec.forEach(([attr, kind], i) => {
     Object.defineProperty(cls.prototype, attr, {
       get(this: Constraint) {
         this.sketch?.sync();   // a dimension's number may have moved with another's edit
         return this.args[i];
       },
-      set(this: Constraint, v: unknown) {
-        this.setValue(attr, v);
-      },
+      ...(PARAM_KINDS.has(kind) ? {} : {
+        set(this: Constraint, v: unknown) {
+          this.setValue(attr, v);
+        },
+      }),
     });
   });
   return cls as unknown as ConstraintCtor;
@@ -332,7 +338,7 @@ export function initTypes(): Record<string, ConstraintCtor> {
     Coincident, Distance, Midpoint, DragTarget, Horizontal, Vertical, Parallel, Perpendicular,
     Angle, ParallelDistance, EqualLength, PointOnLine, PointLineDistance, PointOnCircle, Radius,
     EqualRadius, AnnularDistance, TangentLineCircle, TangentCircleCircle, TangentArcLine,
-    Symmetric,
+    Symmetric, PointOnSpline, SplineTangentLine,
   } = CONSTRAINT_TYPES);
   return CONSTRAINT_TYPES;
 }
@@ -360,6 +366,8 @@ export let TangentLineCircle: ConstraintCtor;
 export let TangentCircleCircle: ConstraintCtor;
 export let TangentArcLine: ConstraintCtor;
 export let Symmetric: ConstraintCtor;
+export let PointOnSpline: ConstraintCtor;
+export let SplineTangentLine: ConstraintCtor;
 
 onInit(() => {
   initTypes();

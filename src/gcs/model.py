@@ -20,8 +20,8 @@ if TYPE_CHECKING:
 
 Box = tuple[float, float, float, float]  # (xmin, ymin, xmax, ymax)
 
-KIND_ID = {"point": 0, "line": 1, "circle": 2, "arc": 3}
-KINDS = ("point", "line", "circle", "arc")
+KIND_ID = {"point": 0, "line": 1, "circle": 2, "arc": 3, "spline": 4}
+KINDS = ("point", "line", "circle", "arc", "spline")
 
 
 class Param:
@@ -78,7 +78,7 @@ class Entity:
 
     @property
     def params(self) -> tuple[Param, ...]:
-        buf = _ffi.i32(8)
+        buf = _ffi.i32(max(8, 2 * len(self.sketch.points)))
         n = lib.gcs_entity_params(self.sketch._h, self._k, self.index, _ffi.pi(buf))
         return tuple(self.sketch.param_at(int(i)) for i in buf[:n])
 
@@ -86,7 +86,7 @@ class Entity:
     def children(self) -> tuple[Point, ...]:
         if self.kind == "point":
             return ()
-        buf = _ffi.i32(4)
+        buf = _ffi.i32(max(4, len(self.sketch.points)))
         n = lib.gcs_entity_points(self.sketch._h, self._k, self.index, _ffi.pi(buf))
         return tuple(self.sketch.points[int(i)] for i in buf[:n])
 
@@ -205,8 +205,67 @@ class Arc(_Constructible):
         return (float(out[0]), float(out[1]))
 
 
-Primitive = Point | Line | Circle | Arc
-_CLASSES: dict[str, type[Entity]] = {"point": Point, "line": Line, "circle": Circle, "arc": Arc}
+class Spline(_Constructible):
+    """A cubic B-spline over an ordered control polygon.
+
+    The control points are ordinary sketch Points, so they drag, snap and take constraints like
+    any others.  Everything about the curve itself — where a parameter lands, the polyline it is
+    drawn as, the distance to it — is computed in the core; nothing here evaluates a basis
+    function."""
+
+    kind = "spline"
+    __slots__ = ()
+
+    @property
+    def ctrl(self) -> tuple[Point, ...]:
+        return self.children
+
+    @property
+    def knots(self) -> tuple[float, ...]:
+        buf = _ffi.f64(len(self.children) + 8)
+        n = lib.gcs_spline_knots(self.sketch._h, self.index, _ffi.pf(buf))
+        return tuple(float(v) for v in buf[:n])
+
+    @property
+    def domain(self) -> tuple[float, float]:
+        """The parameter interval the curve is drawn over."""
+        out = _ffi.f64(2)
+        lib.gcs_spline_domain(self.sketch._h, self.index, _ffi.pf(out))
+        return (float(out[0]), float(out[1]))
+
+    def eval(self, t: float) -> tuple[tuple[float, float], tuple[float, float],
+                                      tuple[float, float]]:
+        """C(t), C'(t) and C''(t)."""
+        out = _ffi.f64(6)
+        lib.gcs_spline_eval(self.sketch._h, self.index, float(t), _ffi.pf(out))
+        return ((float(out[0]), float(out[1])), (float(out[2]), float(out[3])),
+                (float(out[4]), float(out[5])))
+
+    def point_at(self, t: float) -> tuple[float, float]:
+        return self.eval(t)[0]
+
+    def polyline(self, unit: float = 0.01) -> list[tuple[float, float]]:
+        """The curve refined until a chord strays less than a fraction of a pixel from it.
+        `unit` is the world length of one screen pixel, as everywhere else in the drawing."""
+        n = int(lib.gcs_spline_polyline_len(self.sketch._h, self.index, float(unit)))
+        if n <= 0:
+            return []
+        buf = _ffi.f64(2 * n)
+        n = int(lib.gcs_spline_polyline(self.sketch._h, self.index, float(unit),
+                                        _ffi.pf(buf), n))
+        return [(float(buf[2 * i]), float(buf[2 * i + 1])) for i in range(n)]
+
+    def closest(self, x: float, y: float) -> tuple[float, float]:
+        """The parameter of the nearest curve point, and how far that is."""
+        out = _ffi.f64(2)
+        lib.gcs_spline_closest(self.sketch._h, self.index, float(x), float(y), _ffi.pf(out))
+        return (float(out[0]), float(out[1]))
+
+
+_CLASSES: dict[str, type[Entity]] = {"point": Point, "line": Line, "circle": Circle,
+                                     "arc": Arc, "spline": Spline}
+
+Primitive = Point | Line | Circle | Arc | Spline
 
 
 class ThreePointArc(NamedTuple):
@@ -250,7 +309,7 @@ class Sketch:
     # -- interning ----------------------------------------------------------
 
     def _counts(self) -> list[int]:
-        buf = _ffi.i32(6)
+        buf = _ffi.i32(7)
         lib.gcs_sketch_counts(self._h, _ffi.pi(buf))
         return [int(v) for v in buf]
 
@@ -328,6 +387,25 @@ class Sketch:
         self.touch()
         return self.arcs[int(i)]
 
+    def spline(self, ctrl: Sequence[Point],
+               knots: Sequence[float] | None = None) -> Spline | None:
+        """A cubic B-spline over `ctrl`.  `None` if there are too few control points for a cubic,
+        or the knot vector given does not fit them."""
+        ids = _ffi.i32(max(1, len(ctrl)))
+        for k, p in enumerate(ctrl):
+            ids[k] = p.index
+        if knots is None:
+            i = lib.gcs_sketch_spline(self._h, _ffi.pi(ids), len(ctrl))
+        else:
+            ks = _ffi.f64(max(1, len(knots)))
+            for k, v in enumerate(knots):
+                ks[k] = float(v)
+            i = lib.gcs_sketch_spline_knots(self._h, _ffi.pi(ids), len(ctrl),
+                                            _ffi.pf(ks), len(knots))
+        if i < 0:
+            return None
+        return self.splines[int(i)]
+
     def rectangle(self, a: Point, x1: float, y1: float, name: str = "") -> list[Line]:
         """Four lines round the corners, sharing corner points, with three perpendiculars — the
         fourth follows, so adding it would over-constrain every rectangle by one equation."""
@@ -377,6 +455,10 @@ class Sketch:
         return self._entities("arc", self._counts()[4])
 
     @property
+    def splines(self) -> list[Spline]:
+        return self._entities("spline", self._counts()[6])
+
+    @property
     def constraints(self) -> list[Constraint]:
         self._sync_constraints()
         return list(self._cons)
@@ -394,10 +476,12 @@ class Sketch:
             return self.lines
         if kind == "circle":
             return self.circles
+        if kind == "spline":
+            return self.splines
         return self.arcs
 
     def primitives(self) -> list[Primitive]:
-        return [*self.points, *self.lines, *self.circles, *self.arcs]
+        return [*self.points, *self.lines, *self.circles, *self.arcs, *self.splines]
 
     def user_constraints(self) -> list[Constraint]:
         """What the user added: no intrinsic ones, no soft ones."""

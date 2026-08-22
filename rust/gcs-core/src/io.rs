@@ -22,9 +22,12 @@ fn ref_json(e: EntRef) -> Json {
     Json::Arr(vec![Json::Str(e.kind.as_str().to_string()), Json::Int(e.idx as i64)])
 }
 
-fn arg_json(a: &Arg) -> Json {
+fn arg_json(sk: &Sketch, a: &Arg) -> Json {
     match a {
         Arg::Ent(e) => ref_json(*e),
+        // a hidden unknown saves as the number it currently holds: Param indices are not stable
+        // across a load, and the value is what a reload wants to start from anyway
+        Arg::Param(i) => Json::Num(sk.params[*i as usize].value),
         Arg::Num(v) => Json::Num(*v),
         Arg::Int(v) => Json::Int(*v),
         Arg::Bool(b) => Json::Bool(*b),
@@ -70,6 +73,15 @@ fn arg_from_json(sk: &Sketch, kind: SpecKind, v: &Json) -> Result<Arg, String> {
         _ => Arg::Num(v.as_f64()),
     })
 }
+
+/// Whether a stored argument says nothing, so the core should read it off the geometry.
+fn omitted(v: Option<&Json>) -> bool {
+    matches!(v, None | Some(Json::Null))
+}
+
+/// A cap on how long a control polygon a document may declare.  A document is untrusted input
+/// and `wasm32-unknown-unknown` aborts rather than unwinding, so the size is checked here.
+pub const MAX_CTRL: usize = 4096;
 
 /// A stored index, checked against what the document has actually declared so far.  A document is
 /// untrusted input: every reference is validated here so a bad one is an `Err` the caller can show,
@@ -125,6 +137,17 @@ pub fn to_json(sk: &Sketch) -> Json {
             ])
         })
         .collect();
+    let splines: Vec<Json> = sk
+        .splines
+        .iter()
+        .map(|s| {
+            object([
+                ("ctrl", Json::Arr(s.ctrl.iter().map(|&c| Json::Int(c as i64)).collect())),
+                ("knots", Json::Arr(s.knots.iter().map(|&k| Json::Num(k)).collect())),
+                ("construction", s.construction.into()),
+            ])
+        })
+        .collect();
     // one list, walked twice: the placements below are keyed by position in it, so they and the
     // constraints they name have to be the same walk
     let user = sk.user_constraints();
@@ -133,7 +156,7 @@ pub fn to_json(sk: &Sketch) -> Json {
         .map(|c| {
             object([
                 ("type", c.type_name().into()),
-                ("args", Json::Arr(c.args.iter().map(arg_json).collect())),
+                ("args", Json::Arr(c.args.iter().map(|a| arg_json(sk, a)).collect())),
             ])
         })
         .collect();
@@ -157,6 +180,7 @@ pub fn to_json(sk: &Sketch) -> Json {
         ("lines", Json::Arr(lines)),
         ("circles", Json::Arr(circles)),
         ("arcs", Json::Arr(arcs)),
+        ("splines", Json::Arr(splines)),
         ("constraints", Json::Arr(constraints)),
         ("branches", Json::Obj(branches)),
         ("placements", Json::Obj(placements)),
@@ -204,6 +228,27 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         sk.params[rp].fixed = a.get("fixed").map(|v| v.as_bool()).unwrap_or(false);
         sk.arcs[ai].construction = a.get("construction").map(|v| v.as_bool()).unwrap_or(false);
     }
+    for s in d.get("splines").unwrap_or(&empty).arr() {
+        let raw = s.get("ctrl").map(|v| v.arr().to_vec()).unwrap_or_default();
+        if raw.len() > MAX_CTRL {
+            return Err(format!("spline has more than {MAX_CTRL} control points"));
+        }
+        let mut ctrl = Vec::with_capacity(raw.len());
+        for c in &raw {
+            ctrl.push(index(c.as_i64(), np, "spline.ctrl")?);
+        }
+        let knots = s
+            .get("knots")
+            .map(|v| v.arr().iter().map(|k| k.as_f64()).collect::<Vec<f64>>())
+            .filter(|k| !k.is_empty());
+        let si = sk.spline_with(&ctrl, knots).ok_or_else(|| {
+            format!(
+                "a spline needs more than {} control points and a matching knot vector",
+                crate::curve::DEGREE
+            )
+        })?;
+        sk.splines[si].construction = s.get("construction").map(|v| v.as_bool()).unwrap_or(false);
+    }
     let mut ids = Vec::new();
     for c in d.get("constraints").unwrap_or(&empty).arr() {
         let name = c.get("type").map(|v| v.as_str().to_string()).unwrap_or_default();
@@ -217,6 +262,13 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         let mut args = Vec::with_capacity(spec.len());
         for (i, (_, k)) in spec.iter().enumerate() {
             args.push(arg_from_json(&sk, *k, &raw[i])?);
+        }
+        // a document that left a hidden unknown out gets it read off its geometry, exactly as a
+        // binding that omits one does
+        for (i, _) in Constraint::new(kind, args.clone()).param_slots() {
+            if omitted(raw.get(i)) {
+                args[i] = Arg::Num(crate::constraints::seed_param(&sk, kind, &args, i));
+            }
         }
         ids.push(sk.add(Constraint::new(kind, args)));
     }
@@ -324,12 +376,27 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         arc_map[i] = Some(ni);
         made.push(EntRef::arc(ni));
     }
+    let mut spline_map: Vec<Option<usize>> = vec![None; src.splines.len()];
+    for i in 0..src.splines.len() {
+        if !keep(EntRef::spline(i)) {
+            continue;
+        }
+        let sp = &src.splines[i];
+        let ctrl: Option<Vec<usize>> = sp.ctrl.iter().map(|&c| pt_index(c as usize)).collect();
+        let (Some(ctrl), knots) = (ctrl, sp.knots.clone()) else { continue };
+        let construction = sp.construction;
+        let Some(ni) = dst.spline_with(&ctrl, Some(knots)) else { continue };
+        dst.splines[ni].construction = construction;
+        spline_map[i] = Some(ni);
+        made.push(EntRef::spline(ni));
+    }
     let remap = |e: EntRef| -> Option<EntRef> {
         match e.kind {
             EntKind::Point => pt_index(e.i()).map(EntRef::point),
             EntKind::Line => line_map[e.i()].map(EntRef::line),
             EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
             EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
+            EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
         }
     };
     for c in src.user_constraints() {
@@ -347,6 +414,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                         break;
                     }
                 },
+                // the destination allocates its own: a Param index is this sketch's name for it
+                Arg::Param(i) => args.push(Arg::Num(src.params[*i as usize].value)),
                 other => args.push(other.clone()),
             }
         }
@@ -537,6 +606,7 @@ impl Part {
 pub fn arg_text(kind: SpecKind, a: &Arg) -> String {
     match (kind, a) {
         (k, Arg::Ent(e)) if k.is_entity() => entity_name(*e),
+        (_, Arg::Param(i)) => format!("@{i}"),
         // the formula and what it came to: `h = w * 2 = 80`, `sin(h * 10) = 0.342`
         (k, Arg::Expr(e)) => format!("{} = {}", e.text, arg_text(k, &Arg::Num(e.value))),
         (SpecKind::Angle, a) => format!("{}°", fmt_g(a.num().to_degrees(), 3)),
@@ -568,11 +638,13 @@ pub fn dimension_text(c: &Constraint) -> Option<String> {
 
 /// Human-readable one-liner: `Distance(P0, P1, 80)`; angles shown in degrees.
 pub fn describe(c: &Constraint) -> String {
+    // hidden unknowns are left out: a curve parameter is the solver's business, not a reader's
     let parts: Vec<String> = c
         .kind
         .spec()
         .iter()
         .zip(&c.args)
+        .filter(|((_, kind), _)| !kind.is_param())
         .map(|((_, kind), v)| arg_text(*kind, v))
         .collect();
     format!("{}({})", c.type_name(), parts.join(", "))

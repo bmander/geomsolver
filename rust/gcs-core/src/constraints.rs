@@ -35,10 +35,12 @@ pub enum CKind {
     TangentCircleCircle,
     TangentArcLine,
     Symmetric,
+    PointOnSpline,
+    SplineTangentLine,
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 21] = [
+pub const ALL_KINDS: [CKind; 23] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -60,6 +62,8 @@ pub const ALL_KINDS: [CKind; 21] = [
     CKind::TangentCircleCircle,
     CKind::TangentArcLine,
     CKind::Symmetric,
+    CKind::PointOnSpline,
+    CKind::SplineTangentLine,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -69,24 +73,39 @@ pub enum SpecKind {
     Circle,
     Arc,
     CircleOrArc,
+    Spline,
     Length,
     Angle,
     Float,
     Int,
     Str,
     Bool,
+    /// A hidden unknown the constraint owns — the curve parameter a contact sits at.  It is not
+    /// a value a person writes: the slot holds a seed number until `Sketch::add` allocates the
+    /// Param and rewrites it to `Arg::Param`, after which the solver moves it like any other.
+    Param,
 }
 
 impl SpecKind {
     pub fn is_entity(self) -> bool {
         matches!(
             self,
-            SpecKind::Point | SpecKind::Line | SpecKind::Circle | SpecKind::Arc | SpecKind::CircleOrArc
+            SpecKind::Point
+                | SpecKind::Line
+                | SpecKind::Circle
+                | SpecKind::Arc
+                | SpecKind::CircleOrArc
+                | SpecKind::Spline
         )
     }
 
     pub fn is_dimension(self) -> bool {
         matches!(self, SpecKind::Length | SpecKind::Angle)
+    }
+
+    /// A slot holding an unknown of the constraint's own.
+    pub fn is_param(self) -> bool {
+        self == SpecKind::Param
     }
 
     pub fn as_str(self) -> &'static str {
@@ -96,12 +115,14 @@ impl SpecKind {
             SpecKind::Circle => "circle",
             SpecKind::Arc => "arc",
             SpecKind::CircleOrArc => "circle_or_arc",
+            SpecKind::Spline => "spline",
             SpecKind::Length => "length",
             SpecKind::Angle => "angle",
             SpecKind::Float => "float",
             SpecKind::Int => "int",
             SpecKind::Str => "str",
             SpecKind::Bool => "bool",
+            SpecKind::Param => "param",
         }
     }
 }
@@ -134,6 +155,8 @@ impl CKind {
             CKind::TangentCircleCircle => "TangentCircleCircle",
             CKind::TangentArcLine => "TangentArcLine",
             CKind::Symmetric => "Symmetric",
+            CKind::PointOnSpline => "PointOnSpline",
+            CKind::SplineTangentLine => "SplineTangentLine",
         }
     }
 
@@ -171,6 +194,10 @@ impl CKind {
             }
             CKind::TangentArcLine => &[("arc", S::Arc), ("line", S::Line), ("at", S::Str)],
             CKind::Symmetric => &[("p", S::Point), ("q", S::Point), ("line", S::Line)],
+            CKind::PointOnSpline => &[("p", S::Point), ("spline", S::Spline), ("t", S::Param)],
+            CKind::SplineTangentLine => {
+                &[("spline", S::Spline), ("line", S::Line), ("t", S::Param)]
+            }
         }
     }
 
@@ -196,7 +223,9 @@ impl CKind {
     /// The registry publishes a null default for these so a binding cannot substitute a constant
     /// and quietly pick the wrong branch — `default_arg` is the fallback when there is no sketch.
     pub fn infers_arg(self, i: usize) -> bool {
-        matches!((self, i), (CKind::TangentLineCircle, 2) | (CKind::TangentCircleCircle, 2))
+        // a hidden unknown is always read off the geometry: nobody types a curve parameter
+        self.spec()[i].1.is_param()
+            || matches!((self, i), (CKind::TangentLineCircle, 2) | (CKind::TangentCircleCircle, 2))
     }
 
     /// Carries a dimension — a length or angle the user can edit.  A redundancy among dimensioned
@@ -249,6 +278,8 @@ impl CKind {
             CKind::TangentCircleCircle => K::TangentCircleCircle,
             CKind::TangentArcLine => K::TangentArcLine,
             CKind::Symmetric => K::Symmetric,
+            CKind::PointOnSpline => K::PointOnSpline,
+            CKind::SplineTangentLine => K::SplineTangentLine,
         }
     }
 }
@@ -264,6 +295,10 @@ pub enum Arg {
     /// A dimension written as text (`w = 1`, `h = w * 2`), carrying the number it evaluates to —
     /// see `expr`.  Only a `Length` or `Angle` slot holds one.
     Expr(crate::expr::Expr),
+    /// An index into `Sketch::params`: the unknown this constraint owns, filled in by
+    /// `Sketch::add`.  Only a `Param` slot holds one, and only after the constraint has been
+    /// added — before that the slot carries the seed value as an `Arg::Num`.
+    Param(u32),
 }
 
 impl Arg {
@@ -271,6 +306,13 @@ impl Arg {
         match self {
             Arg::Ent(e) => *e,
             _ => panic!("argument is not an entity"),
+        }
+    }
+    /// The Param index of an allocated unknown.
+    pub fn param(&self) -> u32 {
+        match self {
+            Arg::Param(i) => *i,
+            _ => panic!("argument is not an allocated parameter"),
         }
     }
     pub fn num(&self) -> f64 {
@@ -392,6 +434,21 @@ impl Constraint {
         )
     }
 
+    /// A point on a curve, starting at the curve parameter nearest where the point already is.
+    pub fn point_on_spline(sk: &Sketch, p: EntRef, spline: EntRef) -> Constraint {
+        let args = vec![Arg::Ent(p), Arg::Ent(spline), Arg::Num(0.0)];
+        let t = seed_param(sk, CKind::PointOnSpline, &args, 2);
+        Constraint::new(CKind::PointOnSpline, vec![Arg::Ent(p), Arg::Ent(spline), Arg::Num(t)])
+    }
+
+    /// A line tangent to a curve, starting where the curve already comes nearest that line.
+    pub fn spline_tangent_line(sk: &Sketch, spline: EntRef, line: EntRef) -> Constraint {
+        let args = vec![Arg::Ent(spline), Arg::Ent(line), Arg::Num(0.0)];
+        let t = seed_param(sk, CKind::SplineTangentLine, &args, 2);
+        Constraint::new(CKind::SplineTangentLine, vec![Arg::Ent(spline), Arg::Ent(line),
+                                                       Arg::Num(t)])
+    }
+
     pub fn kernel_id(&self) -> usize {
         self.kind.kernel() as usize
     }
@@ -416,6 +473,28 @@ impl Constraint {
             .zip(&self.args)
             .filter(|((_, k), _)| k.is_entity())
             .map(|(_, a)| a.ent())
+            .collect()
+    }
+
+    /// The spec slots holding an unknown of this constraint's own, as (index, name).
+    pub fn param_slots(&self) -> Vec<(usize, &'static str)> {
+        self.kind
+            .spec()
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, k))| k.is_param())
+            .map(|(i, (n, _))| (i, *n))
+            .collect()
+    }
+
+    /// The Params this constraint owns — empty until `Sketch::add` has allocated them.
+    pub fn aux_params(&self) -> Vec<u32> {
+        self.param_slots()
+            .iter()
+            .filter_map(|&(i, _)| match self.args[i] {
+                Arg::Param(p) => Some(p),
+                _ => None,
+            })
             .collect()
     }
 
@@ -483,8 +562,18 @@ impl Constraint {
         true
     }
 
-    /// The per-constraint constants the kernel needs (dimension values, chirality flags).
-    pub fn consts(&self) -> Vec<f64> {
+    /// The per-constraint constants the kernel needs (dimension values, chirality flags, and
+    /// the local knot window of the span a curve contact sits on).
+    pub fn consts(&self, sk: &Sketch) -> Vec<f64> {
+        self.consts_on(sk, None)
+    }
+
+    /// The same, for a curve contact read on a *given* span rather than the one its parameter
+    /// is in now.  A compiled block's columns name one span's control points, and its constants
+    /// are that span's knots: refreshing the constants from a parameter that has since moved to
+    /// another span would put one span's knots against another's columns.  `System` remembers
+    /// what it compiled and asks for that.
+    pub fn consts_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<f64> {
         match self.kind {
             CKind::Distance => vec![self.args[2].num()],
             CKind::DragTarget => {
@@ -502,8 +591,42 @@ impl Constraint {
             CKind::TangentCircleCircle => {
                 vec![if matches!(self.args[2], Arg::Bool(true)) { 1.0 } else { -1.0 }]
             }
+            CKind::PointOnSpline | CKind::SplineTangentLine => {
+                let (sp, t) = self.spline_contact(sk);
+                let span = span.unwrap_or_else(|| crate::curve::span_of(sk, sp, t));
+                crate::curve::local_knots(&sk.splines[sp].knots, span).to_vec()
+            }
             _ => Vec::new(),
         }
+    }
+
+    /// The spline this constraint touches and the Param holding where on it — `None` for
+    /// anything that is not a curve contact, and for one that has not been added yet (its
+    /// parameter is still the seed number, not a Param).
+    pub fn curve_contact(&self) -> Option<(usize, u32)> {
+        let e = match self.kind {
+            CKind::PointOnSpline => self.args[1].ent(),
+            CKind::SplineTangentLine => self.args[0].ent(),
+            _ => return None,
+        };
+        match self.args[2] {
+            Arg::Param(p) => Some((e.i(), p)),
+            _ => None,
+        }
+    }
+
+    /// The spline a curve contact touches and the parameter it currently sits at.
+    fn spline_contact(&self, sk: &Sketch) -> (usize, f64) {
+        let (e, t) = match self.kind {
+            CKind::PointOnSpline => (self.args[1].ent(), &self.args[2]),
+            CKind::SplineTangentLine => (self.args[0].ent(), &self.args[2]),
+            _ => panic!("not a curve contact"),
+        };
+        let t = match t {
+            Arg::Param(i) => sk.params[*i as usize].value,
+            a => a.num(),
+        };
+        (e.i(), t)
     }
 
     /// The ordered Params the kernel's columns refer to.
@@ -542,6 +665,18 @@ impl Constraint {
                 [vec![p.x, p.y], sk.point_params(a.center as usize).to_vec(), ln(1)].concat()
             }
             CKind::Symmetric => [pt(0), pt(1), ln(2)].concat(),
+            // the curve columns are one span's control points — whichever span t is in now, which
+            // is what keeps the column count fixed however long the spline is
+            CKind::PointOnSpline => {
+                let (sp, t) = self.spline_contact(sk);
+                let span = crate::curve::span_of(sk, sp, t);
+                [pt(0), vec![self.args[2].param()], sk.spline_span_params(sp, span)].concat()
+            }
+            CKind::SplineTangentLine => {
+                let (sp, t) = self.spline_contact(sk);
+                let span = crate::curve::span_of(sk, sp, t);
+                [vec![self.args[2].param()], sk.spline_span_params(sp, span), ln(1)].concat()
+            }
         }
     }
 
@@ -552,17 +687,48 @@ impl Constraint {
     /// Current residual norm — convenience for reporting and tests.
     pub fn error(&self, sk: &Sketch) -> f64 {
         let v = self.local_values(sk);
-        let (r, _) = kernels::eval_one(self.kernel_id(), &v, &self.consts());
+        let (r, _) = kernels::eval_one(self.kernel_id(), &v, &self.consts(sk));
         crate::linalg::norm(&r)
     }
 
-    pub fn residual(&self, v: &[f64]) -> Vec<f64> {
-        kernels::eval_one(self.kernel_id(), v, &self.consts()).0
+    pub fn residual(&self, sk: &Sketch, v: &[f64]) -> Vec<f64> {
+        kernels::eval_one(self.kernel_id(), v, &self.consts(sk)).0
     }
 
     /// n_res x n_par, row-major.
-    pub fn jacobian(&self, v: &[f64]) -> Vec<f64> {
-        kernels::eval_one(self.kernel_id(), v, &self.consts()).1
+    pub fn jacobian(&self, sk: &Sketch, v: &[f64]) -> Vec<f64> {
+        kernels::eval_one(self.kernel_id(), v, &self.consts(sk)).1
+    }
+}
+
+/// Where a hidden unknown starts when the caller leaves it out — the `Param` counterpart of
+/// `infers_arg`: the core reads it off the geometry, so no binding ever has to name a curve
+/// parameter.  A document that saved one passes the saved number instead and never comes here.
+pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
+    match (kind, i) {
+        // where the curve already comes nearest the thing it is being tied to: a curve can meet
+        // a point or a line in several places, and the nearest is the branch the user drew
+        (CKind::PointOnSpline, 2) => {
+            let (x, y) = sk.point_xy(args[0].ent().i());
+            crate::curve::closest(sk, args[1].ent().i(), x, y).0
+        }
+        (CKind::SplineTangentLine, 2) => {
+            let [ax, ay, bx, by] = sk.line_params(args[1].ent().i());
+            let g = |p: u32| sk.params[p as usize].value;
+            crate::curve::nearest_to_line(sk, args[0].ent().i(), g(ax), g(ay), g(bx), g(by))
+        }
+        _ => 0.0,
+    }
+}
+
+/// The world length one unit of a hidden unknown is worth — see `Param::scale`.  Read off the
+/// geometry at the moment the constraint is added; it preconditions the step, so an estimate
+/// that drifts as the sketch moves costs convergence rate, never correctness.
+pub fn param_scale(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
+    match (kind, i) {
+        (CKind::PointOnSpline, 2) => crate::curve::speed(sk, args[1].ent().i()),
+        (CKind::SplineTangentLine, 2) => crate::curve::speed(sk, args[0].ent().i()),
+        _ => 1.0,
     }
 }
 
@@ -577,7 +743,12 @@ fn same_args(a: &Constraint, b: &Constraint, swap: bool) -> bool {
         }
         order.swap(ents[0], ents[1]);
     }
-    (0..spec.len()).all(|i| a.args[i] == b.args[order[i]])
+    // A hidden unknown is never part of what a constraint *says*: two contacts of the same point
+    // on the same curve are the same statement however far apart their two seeds started, and a
+    // duplicate that slipped through would add rank-free rows the matching cannot see.
+    (0..spec.len())
+        .filter(|&i| !spec[i].1.is_param())
+        .all(|i| a.args[i] == b.args[order[i]])
 }
 
 /// True when two constraints say exactly the same thing: same type, the same entities in the same
@@ -602,6 +773,7 @@ pub fn kind_matches(spec: SpecKind, ent: EntKind) -> bool {
         SpecKind::Circle => ent == EntKind::Circle,
         SpecKind::Arc => ent == EntKind::Arc,
         SpecKind::CircleOrArc => ent == EntKind::Circle || ent == EntKind::Arc,
+        SpecKind::Spline => ent == EntKind::Spline,
         _ => false,
     }
 }

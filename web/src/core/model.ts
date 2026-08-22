@@ -14,9 +14,10 @@ import './constraints.js';
 /** (xmin, ymin, xmax, ymax) */
 export type Box = [number, number, number, number];
 
-export type Kind = 'point' | 'line' | 'circle' | 'arc';
-export const KINDS: Kind[] = ['point', 'line', 'circle', 'arc'];
-export const KIND_ID: Record<Kind, number> = { point: 0, line: 1, circle: 2, arc: 3 };
+export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline';
+export const KINDS: Kind[] = ['point', 'line', 'circle', 'arc', 'spline'];
+export const KIND_ID: Record<Kind, number> =
+  { point: 0, line: 1, circle: 2, arc: 3, spline: 4 };
 
 export class Param {
   constructor(readonly sketch: Sketch, readonly index: number) {}
@@ -62,7 +63,9 @@ export abstract class Entity {
   }
 
   get params(): Param[] {
-    return withBuf(8, 4, (b) => {
+    // a spline's control polygon is as long as it is, so the buffer follows the document
+    const cap = Math.max(8, 2 * this.sketch.pointCount);
+    return withBuf(cap, 4, (b) => {
       const n = core().gcs_entity_params(this.sketch.handle, this.kindId, this.index, b.ptr);
       return [...b.i32.subarray(0, n)].map((i) => this.sketch.paramAt(i));
     });
@@ -70,7 +73,8 @@ export abstract class Entity {
 
   get children(): Point[] {
     if (this.kind === 'point') return [];
-    return withBuf(4, 4, (b) => {
+    const cap = Math.max(4, this.sketch.pointCount);
+    return withBuf(cap, 4, (b) => {
       const n = core().gcs_entity_points(this.sketch.handle, this.kindId, this.index, b.ptr);
       return [...b.i32.subarray(0, n)].map((i) => this.sketch.points[i]);
     });
@@ -190,9 +194,77 @@ export class Arc extends Constructible {
   }
 }
 
-export type Primitive = Point | Line | Circle | Arc;
+/** A cubic B-spline over an ordered control polygon.
+ *
+ *  The control points are ordinary sketch Points, so they drag, snap and take constraints like
+ *  any others.  Everything about the curve itself — where a parameter lands, the polyline it is
+ *  drawn as, the distance to it — is computed in the core: nothing here evaluates a basis
+ *  function, exactly as nothing here lays out a dimension callout. */
+export class Spline extends Constructible {
+  readonly kind = 'spline' as const;
 
-const CLASSES = { point: Point, line: Line, circle: Circle, arc: Arc } as const;
+  get ctrl(): Point[] {
+    return this.children;
+  }
+
+  get knots(): number[] {
+    const cap = this.ctrl.length + 8;
+    return withBuf(cap, 8, (b) => {
+      const n = core().gcs_spline_knots(this.sketch.handle, this.index, b.ptr);
+      return [...b.f64.subarray(0, n)];
+    });
+  }
+
+  /** The parameter interval the curve is drawn over. */
+  get domain(): [number, number] {
+    return withBuf(2, 8, (b) => {
+      core().gcs_spline_domain(this.sketch.handle, this.index, b.ptr);
+      const v = b.f64;
+      return [v[0], v[1]] as [number, number];
+    });
+  }
+
+  /** C(t), C'(t) and C''(t). */
+  eval(t: number): { p: [number, number]; d1: [number, number]; d2: [number, number] } {
+    return withBuf(6, 8, (b) => {
+      core().gcs_spline_eval(this.sketch.handle, this.index, t, b.ptr);
+      const v = b.f64;
+      return { p: [v[0], v[1]], d1: [v[2], v[3]], d2: [v[4], v[5]] };
+    });
+  }
+
+  pointAt(t: number): [number, number] {
+    return this.eval(t).p;
+  }
+
+  /** The curve as a polyline, refined until a chord strays less than a fraction of a pixel from
+   *  it.  `unit` is the world length of one screen pixel, as everywhere else in the drawing. */
+  polyline(unit: number): [number, number][] {
+    const n = core().gcs_spline_polyline_len(this.sketch.handle, this.index, unit);
+    if (n <= 0) return [];
+    return withBuf(2 * n, 8, (b) => {
+      const got = core().gcs_spline_polyline(this.sketch.handle, this.index, unit, b.ptr, n);
+      const v = b.f64;
+      const out: [number, number][] = [];
+      for (let i = 0; i < got; i++) out.push([v[2 * i], v[2 * i + 1]]);
+      return out;
+    });
+  }
+
+  /** The parameter of the nearest curve point, and how far that is — the pick test. */
+  closest(x: number, y: number): { t: number; distance: number } {
+    return withBuf(2, 8, (b) => {
+      core().gcs_spline_closest(this.sketch.handle, this.index, x, y, b.ptr);
+      const v = b.f64;
+      return { t: v[0], distance: v[1] };
+    });
+  }
+}
+
+export type Primitive = Point | Line | Circle | Arc | Spline;
+
+const CLASSES =
+  { point: Point, line: Line, circle: Circle, arc: Arc, spline: Spline } as const;
 
 /** The CCW arc through three points: centre, radius, and the sweep that passes through the
  *  third point.  `swapped` is true when that sweep runs from the *second* given point. */
@@ -219,7 +291,8 @@ export function threePointArc(ax: number, ay: number, bx: number, by: number,
 export class Sketch {
   readonly handle: number;
   private params_: Param[] = [];
-  private ents: Record<Kind, Entity[]> = { point: [], line: [], circle: [], arc: [] };
+  private ents: Record<Kind, Entity[]> =
+    { point: [], line: [], circle: [], arc: [], spline: [] };
   private cons: Constraint[] = [];
   /** Constraint id → its proxy, so identity survives every round trip. */
   readonly byId = new Map<number, Constraint>();
@@ -236,7 +309,7 @@ export class Sketch {
   // -- interning ----------------------------------------------------------
 
   private counts(): Int32Array {
-    return withBuf(6, 4, (b) => {
+    return withBuf(7, 4, (b) => {
       core().gcs_sketch_counts(this.handle, b.ptr);
       return b.i32.slice();
     });
@@ -307,6 +380,21 @@ export class Sketch {
     return this.circles[i];
   }
 
+  /** A cubic B-spline over `ctrl`.  null when there are too few control points for a cubic, or
+   *  the knot vector given does not fit them. */
+  spline(ctrl: Point[], knots?: number[]): Spline | null {
+    const i = withBuf(Math.max(1, ctrl.length), 4, (b) => {
+      b.i32.set(ctrl.map((p) => p.index));
+      if (!knots) return core().gcs_sketch_spline(this.handle, b.ptr, ctrl.length);
+      return withBuf(Math.max(1, knots.length), 8, (k) => {
+        k.f64.set(knots);
+        return core().gcs_sketch_spline_knots(
+          this.handle, b.ptr, ctrl.length, k.ptr, knots.length);
+      });
+    });
+    return i < 0 ? null : this.splines[i];
+  }
+
   arc(center: Point, start: Point, end: Point, name = ''): Arc {
     const i = withStr(name, (p, n) =>
       core().gcs_sketch_arc(this.handle, center.index, start.index, end.index, p, n));
@@ -375,6 +463,15 @@ export class Sketch {
     return this.list<Arc>('arc', this.counts()[4]);
   }
 
+  get splines(): Spline[] {
+    return this.list<Spline>('spline', this.counts()[6]);
+  }
+
+  /** How many points the document has — the size a control-polygon buffer has to allow for. */
+  get pointCount(): number {
+    return this.counts()[1];
+  }
+
   get constraints(): Constraint[] {
     this.syncConstraints();
     return this.cons.slice();
@@ -388,12 +485,13 @@ export class Sketch {
 
   entities(kind: Kind): Primitive[] {
     return (kind === 'point' ? this.points : kind === 'line' ? this.lines
-      : kind === 'circle' ? this.circles : this.arcs) as Primitive[];
+      : kind === 'circle' ? this.circles : kind === 'spline' ? this.splines
+      : this.arcs) as Primitive[];
   }
 
   /** Every entity, in creation order per kind. */
   primitives(): Primitive[] {
-    return [...this.points, ...this.lines, ...this.circles, ...this.arcs];
+    return [...this.points, ...this.lines, ...this.circles, ...this.arcs, ...this.splines];
   }
 
   /** Constraints the user added (excludes intrinsic and soft/transient ones). */

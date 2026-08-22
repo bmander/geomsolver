@@ -37,6 +37,15 @@ pub struct System {
     pub n_free: usize,
     pub col_of: Vec<i32>,
     pub n_res: usize,
+    /// World length one unit of each free column is worth — `Param::scale`, gathered.  The
+    /// solver's variables are `z = x * col_scale`, so a step of a given size means the same
+    /// amount of motion whichever column it is in.  Without it a dimensionless unknown (a curve
+    /// parameter, whose one unit is a whole span of curve) and a coordinate share one trust
+    /// region and one minimum-norm objective, and the conditioning that follows is bad enough
+    /// to stall a tangency that solves perfectly at a tenth the size.
+    pub col_scale: Vec<f64>,
+    /// False when every scale is 1 — the ordinary sketch, which then pays nothing for any of it.
+    scaled: bool,
     pub extent: f64,
     /// Residual units for squared distances: `max(1, extent)²`.
     pub scale: f64,
@@ -52,6 +61,11 @@ pub struct System {
     pub blocks: Vec<Block>,
     /// Constraint ids in block order (the order `constraint_errors` reports in).
     pub cids: Vec<u32>,
+    /// The span of a spline each curve contact was compiled on — which control points its
+    /// columns name.  Its constants are that span's knots, so a refresh reads them from here
+    /// and not from a parameter that may since have moved to another span.  Empty for a sketch
+    /// with no curves in it, which is the check every curve path is behind.
+    spans: BTreeMap<u32, usize>,
     pub csr_indptr: Vec<i32>,
     pub csr_indices: Vec<i32>,
     pub nnz: usize,
@@ -77,6 +91,18 @@ impl System {
         for (i, &p) in free.iter().enumerate() {
             col_of[p as usize] = i as i32;
         }
+        let col_scale: Vec<f64> = free
+            .iter()
+            .map(|&p| {
+                let s = sk.params[p as usize].scale;
+                if s.is_finite() && s > 0.0 {
+                    s
+                } else {
+                    1.0
+                }
+            })
+            .collect();
+        let scaled = col_scale.iter().any(|&s| s != 1.0);
         let extent = sk.extent();
         let scale = extent.max(1.0).powi(2);
 
@@ -89,6 +115,7 @@ impl System {
         let mut blocks: Vec<Block> = Vec::new();
         let mut slot_of = BTreeMap::new();
         let mut cids: Vec<u32> = Vec::new();
+        let spans: BTreeMap<u32, usize> = crate::curve::contact_spans(sk).into_iter().collect();
         let mut hard: Vec<bool> = Vec::new();
         let mut row0 = 0usize;
         let mut joff = 0usize;
@@ -106,7 +133,7 @@ impl System {
                     gidx.push(p as i32);
                 }
                 if kn.n_const > 0 {
-                    consts.extend(c.consts());
+                    consts.extend(c.consts_on(sk, spans.get(&c.id).copied()));
                 }
                 bcids.push(c.id);
                 slot_of.insert(c.id, (blocks.len(), i));
@@ -198,6 +225,8 @@ impl System {
             n_free,
             col_of,
             n_res,
+            col_scale,
+            scaled,
             extent,
             scale,
             row_scale,
@@ -205,6 +234,7 @@ impl System {
             hard,
             blocks,
             cids,
+            spans,
             csr_indptr,
             csr_indices,
             nnz,
@@ -229,7 +259,7 @@ impl System {
             return;
         }
         let Some(c) = sk.constraint(cid) else { return };
-        let vals = c.consts();
+        let vals = c.consts_on(sk, self.spans.get(&cid).copied());
         self.blocks[b].consts[i * kn.n_const..(i + 1) * kn.n_const].copy_from_slice(&vals);
     }
 
@@ -240,6 +270,7 @@ impl System {
     /// constraint count — and this runs on every plan solve and at every drag start.
     pub fn refresh_consts(&mut self, sk: &Sketch) {
         let by_id: BTreeMap<u32, &Constraint> = sk.constraints.iter().map(|c| (c.id, c)).collect();
+        let spans = &self.spans;
         for b in self.blocks.iter_mut() {
             let kn = k(b.kid);
             if kn.n_const == 0 {
@@ -247,7 +278,8 @@ impl System {
             }
             for (i, &cid) in b.cids.iter().enumerate() {
                 if let Some(c) = by_id.get(&cid) {
-                    b.consts[i * kn.n_const..(i + 1) * kn.n_const].copy_from_slice(&c.consts());
+                    let v = c.consts_on(sk, spans.get(&cid).copied());
+                    b.consts[i * kn.n_const..(i + 1) * kn.n_const].copy_from_slice(&v);
                 }
             }
         }
@@ -261,23 +293,31 @@ impl System {
 
     // -- evaluation ----------------------------------------------------------
 
-    /// Free values of the current sketch geometry (also refreshes our copy of x).
+    /// Free values of the current sketch geometry, in the solver's scaled units (also refreshes
+    /// our copy of x).
     pub fn z0(&mut self, sk: &Sketch) -> Vec<f64> {
         self.x = sk.get_x();
-        self.free.iter().map(|&i| self.x[i as usize]).collect()
+        if !self.scaled {
+            return self.free.iter().map(|&i| self.x[i as usize]).collect();
+        }
+        self.free
+            .iter()
+            .enumerate()
+            .map(|(i, &p)| self.x[p as usize] * self.col_scale[i])
+            .collect()
     }
 
     pub fn full_x(&self, z: &[f64]) -> Vec<f64> {
         let mut x = self.x.clone();
         for (i, &p) in self.free.iter().enumerate() {
-            x[p as usize] = z[i];
+            x[p as usize] = if self.scaled { z[i] / self.col_scale[i] } else { z[i] };
         }
         x
     }
 
     fn apply_z(&mut self, z: &[f64]) {
         for (i, &p) in self.free.iter().enumerate() {
-            self.x[p as usize] = z[i];
+            self.x[p as usize] = if self.scaled { z[i] / self.col_scale[i] } else { z[i] };
         }
     }
 
@@ -330,6 +370,15 @@ impl System {
         }
         for e in 0..self.ent_src.len() {
             self.csr_data[self.ent_slot[e] as usize] += self.jdata[self.ent_src[e] as usize];
+        }
+        // dr/dz = (dr/dx) / col_scale: the same chain rule that turned x into z above
+        if self.scaled {
+            for r in 0..self.n_res {
+                for p in self.csr_indptr[r]..self.csr_indptr[r + 1] {
+                    let p = p as usize;
+                    self.csr_data[p] /= self.col_scale[self.csr_indices[p] as usize];
+                }
+            }
         }
         &self.csr_data
     }

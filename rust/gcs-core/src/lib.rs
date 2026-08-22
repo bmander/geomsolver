@@ -12,6 +12,7 @@ pub mod callout;
 pub mod cgraph;
 pub mod complex;
 pub mod constraints;
+pub mod curve;
 pub mod decompose;
 pub mod diagnose;
 pub mod examples;

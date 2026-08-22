@@ -69,7 +69,7 @@ def paste(sk: Sketch, clip: Sketch, dx: float = 0.0, dy: float = 0.0) -> list[Pr
     sk.touch()    # the pasted constraints arrived behind the proxy's back
     of: dict[str, list[Primitive]] = {
         "point": list(sk.points), "line": list(sk.lines),
-        "circle": list(sk.circles), "arc": list(sk.arcs),
+        "circle": list(sk.circles), "arc": list(sk.arcs), "spline": list(sk.splines),
     }
     return [of[kind][i] for kind, i in made or []]
 

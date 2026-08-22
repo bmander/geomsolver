@@ -9,10 +9,10 @@ import { Constraint, sameConstraint } from '../core/constraints.js';
 import { PlanDrag, PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
 import {
-  Arc, Box, Circle, Line, Param, Point, Primitive, Sketch, distanceBetween, onRadius,
+  Arc, Box, Circle, Line, Param, Point, Primitive, Sketch, Spline, distanceBetween, onRadius,
   threePointArc,
 } from '../core/model.js';
-import { Method, RadiusDrag, SolveResult, System, Triangle } from '../core/system.js';
+import { Method, RadiusDrag, SolveResult, System, Triangle, solve } from '../core/system.js';
 import { Motion, WitnessReport, analyze, movingParams } from '../core/witness.js';
 
 const PICK_PX = 8;
@@ -23,6 +23,7 @@ const COL = {
   line: '#1f77b4',
   circle: '#2ca02c',
   arc: '#ff7f0e',
+  spline: '#8c564b',
   point: '#222222',
   fixed: '#d62728',
   sel: '#e377c2',
@@ -66,7 +67,11 @@ interface Animation {
   showing: number;
 }
 
-export type Tool = 'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3';
+export type Tool =
+  'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline';
+
+/** A cubic B-spline needs at least this many control points before there is a curve to draw. */
+const SPLINE_MIN = 4;
 
 export class SketchView {
   sketch: Sketch;
@@ -258,6 +263,17 @@ export class SketchView {
       return asSolveResult(this.lastPlan);
     }
     this.lastPlan = null;
+    // A sketch with a curve in it solves in rounds: a contact's parameter is itself an unknown,
+    // so the solve can finish it on a different span of the spline than it started on — and a
+    // compiled system names one span's control points in its columns.  That loop belongs to the
+    // core, so the one-shot solve runs it and the system for the diagnosis is built afterwards.
+    // The dispatch is on whether the document has curves at all, so nothing else pays for it.
+    if (this.sketch.splines.length) {
+      const r = solve(this.sketch, { method: this.method });
+      this.lastSystem = new System(this.sketch);
+      this.systemKey = this.sketch.topologyKey();
+      return r;
+    }
     const sys = new System(this.sketch);
     this.lastSystem = sys;
     return sys.solve({ method: this.method });
@@ -530,6 +546,14 @@ export class SketchView {
       while (ang < a0) ang += 2 * Math.PI;
       if (ang <= a1) { best = a; bd = d; }
     }
+    // a curve has no closed form to test against, so the core does it: `closest` is the same
+    // projection the constraints seed from, which is what makes clicking a curve and putting a
+    // point on it agree about where "on it" is
+    const [wx, wy] = this.s2w(sx, sy);
+    for (const sp of this.sketch.splines) {
+      const d = sp.closest(wx, wy).distance * this.scale;
+      if (d < bd) { best = sp; bd = d; }
+    }
     return best;
   }
 
@@ -599,6 +623,30 @@ export class SketchView {
       ctx.setLineDash(a.construction ? CONSTRUCTION_DASH : []);
       this.arcPath(a.center.xy, Math.abs(a.radius.value) * this.scale, ...a.angles());
       ctx.stroke();
+    }
+    for (const sp of sk.splines) {
+      const [col, lw] = strokeFor(COL.spline, sp);
+      // the curve arrives as a polyline already refined to this zoom: `unit` is the world
+      // length of one screen pixel, the same number the callouts are laid out against, so the
+      // front end strokes what the core hands it and never evaluates a basis function
+      ctx.strokeStyle = col;
+      ctx.lineWidth = lw;
+      ctx.setLineDash(sp.construction ? CONSTRUCTION_DASH : []);
+      this.polyPath(sp.polyline(this.unit));
+      ctx.stroke();
+      // the control polygon, only while the curve or one of its points is in play: it is how
+      // the shape is edited, and clutter the rest of the time
+      const live = sel.has(sp) || hl.has(sp)
+        || sp.ctrl.some((p) => sel.has(p) || hl.has(p));
+      if (live) {
+        ctx.save();
+        ctx.strokeStyle = COL.preview;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        this.polyPath(sp.ctrl.map((p) => p.xy));
+        ctx.stroke();
+        ctx.restore();
+      }
     }
     ctx.setLineDash([]);
     if (this.pending.length) this.paintPreview();
@@ -771,6 +819,13 @@ export class SketchView {
           const am = 0.5 * (a0 + a1);
           xs.push(e.center.x.value + e.radius.value * Math.cos(am));
           ys.push(e.center.y.value + e.radius.value * Math.sin(am));
+        } else if (e instanceof Spline) {
+          this.polyPath(e.polyline(this.unit));
+          ctx.stroke();
+          const [t0, t1] = e.domain;
+          const [mx, my] = e.pointAt(0.5 * (t0 + t1));
+          xs.push(mx);
+          ys.push(my);
         }
       }
       if (!xs.length) continue;
@@ -804,6 +859,12 @@ export class SketchView {
       ctx.stroke();
     };
     if (this.tool === 'line') {
+      rubber();
+    } else if (this.tool === 'spline') {
+      // the control polygon so far, then a rubber band to the cursor: what is being placed is
+      // the polygon, and the curve only exists once there are enough points for a cubic
+      this.polyPath(this.pending.map((p) => p.xy));
+      ctx.stroke();
       rubber();
     } else if (this.tool === 'rect') {
       ctx.strokeRect(p0[0], p0[1], cur[0] - p0[0], cur[1] - p0[1]);
@@ -844,6 +905,17 @@ export class SketchView {
     ctx.restore();
   }
 
+  /** A world-coordinate polyline as a screen path. */
+  private polyPath(pts: readonly (readonly [number, number])[]): void {
+    const ctx = this.ctx;
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const s = this.w2s(p[0], p[1]);
+      if (i) ctx.lineTo(s[0], s[1]);
+      else ctx.moveTo(s[0], s[1]);
+    });
+  }
+
   // -- interaction ---------------------------------------------------------
 
   setTool(tool: Tool): void {
@@ -853,6 +925,23 @@ export class SketchView {
     this.canvas.style.cursor = '';                // drop any hover affordance
     this.onTool(tool);
     this.draw();
+  }
+
+  /** Turn the control points the spline tool has collected into a curve.  Fewer than a cubic
+   *  needs is not an error: the points stay, so one more click finishes it. */
+  finishSpline(): void {
+    if (this.tool !== 'spline') return;
+    if (this.pending.length < SPLINE_MIN) {
+      this.onStatus(`a cubic needs ${SPLINE_MIN} control points; ${this.pending.length} placed`);
+      return;
+    }
+    if (!this.sketch.spline(this.pending)) {
+      this.onStatus('those control points do not make a curve');
+      return;
+    }
+    this.pending = [];
+    this.releasePlan();
+    this.afterEdit();
   }
 
   /** Escape, in stages: stop a DOF animation, then drop the points the active tool has
@@ -1025,6 +1114,20 @@ export class SketchView {
         if (on) sk.add(new C.PointOnCircle(on, arc));
         this.pending = [];
       }
+    } else if (this.tool === 'spline') {
+      // a control polygon is as long as the user wants it, so the tool collects points until
+      // it is finished — Enter, or a click back on the last one
+      const p = this.snapOrNew(sp);
+      if (p === this.pending[this.pending.length - 1]) {
+        this.finishSpline();
+        return;
+      }
+      this.pending.push(p);
+      this.onStatus(this.pending.length < SPLINE_MIN
+        ? `${SPLINE_MIN - this.pending.length} more control point(s) for a cubic`
+        : 'Enter, or click the last point again, to finish the curve');
+      this.draw();
+      return;                                        // still collecting: nothing to solve yet
     } else if (this.tool === 'arc') {
       const existing = this.pickPoint(sp[0], sp[1]) !== null;
       this.pending.push(this.snapOrNew(sp));

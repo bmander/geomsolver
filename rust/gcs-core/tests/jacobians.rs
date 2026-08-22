@@ -29,10 +29,14 @@ fn all_constraints(seed: u32) -> Sketch {
     let c2 = sk.circle(cc2, rng.uniform(1.0, 11.0), "c2");
     let (ac, as_, ae) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
     let arc = sk.arc(ac, as_, ae, "a");
+    // six control points: three spans, so a contact is checked on an interior span too
+    let ctrl: Vec<usize> = (0..6).map(|_| pt(&mut sk, &mut rng)).collect();
+    let sp = sk.spline(&ctrl).unwrap();
 
     let (pe, qe) = (EntRef::point(p), EntRef::point(q));
     let (le1, le2) = (EntRef::line(l1), EntRef::line(l2));
     let (ce1, ce2, ae) = (EntRef::circle(c1), EntRef::circle(c2), EntRef::arc(arc));
+    let spe = EntRef::spline(sp);
     let e = |x: EntRef| Arg::Ent(x);
     let cs = vec![
         Constraint::coincident(pe, qe),
@@ -60,6 +64,10 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::ParallelDistance, vec![e(le1), e(le2), Arg::Num(4.0)]),
         Constraint::new(CKind::PointLineDistance, vec![e(pe), e(le1), Arg::Num(4.0)]),
         Constraint::new(CKind::AnnularDistance, vec![e(ce1), e(ae), Arg::Num(1.5)]),
+        Constraint::point_on_spline(&sk, pe, spe),
+        Constraint::point_on_spline(&sk, qe, spe),
+        Constraint::spline_tangent_line(&sk, spe, le1),
+        Constraint::spline_tangent_line(&sk, spe, le2),
     ];
     // the two intrinsic PointOnCircle constraints the arc brought with it stay in the sketch
     sk.constraints.clear();
@@ -133,7 +141,7 @@ fn system_blocks_cover_every_constraint_once() {
     let r = s.residuals(&z);
     for c in &sk.constraints {
         let off = s.row_of(c.id).expect("compiled constraint has a row");
-        let expect = c.residual(&c.local_values(&sk));
+        let expect = c.residual(&sk, &c.local_values(&sk));
         for (i, v) in expect.iter().enumerate() {
             assert!((r[off + i] - v).abs() < 1e-12);
         }

@@ -90,6 +90,11 @@ def laman(n: int = 10, seed: int = 0) -> Sketch:
     return build(f"laman:{n}:{seed}")
 
 
+def spline_follower(n: int = 7) -> Sketch:
+    """A cubic B-spline with a face held tangent to it and a point riding on it."""
+    return build(f"spline_follower:{n}")
+
+
 def perturb(sk: Sketch, sigma: float, seed: int = 0) -> None:
     sk.perturb(sigma, seed)
 
@@ -106,6 +111,7 @@ EXAMPLES: dict[str, Callable[[], Sketch]] = {
     "slotted_link": slotted_link,
     "truss": truss,
     "polygon_chain": polygon_chain,
+    "spline_follower": spline_follower,
 }
 
 
@@ -117,4 +123,4 @@ def cases() -> list[dict[str, Any]]:
 __all__ = ["EXAMPLES", "altitudes", "henneberg_edges", "build", "cases", "impossible_triangle", "k33", "laman", "pythagoras",
            "parallels", "perturb", "polygon_chain", "rect_fillets", "rect_fillets_conflict",
            "rect_fillets_under", "slotted_link", "truss", "truss_conflict", "truss_floating",
-           "truss_redundant", "zigzag"]
+           "spline_follower", "truss_redundant", "zigzag"]

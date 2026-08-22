@@ -49,8 +49,8 @@ pub fn check_constraint(
 ) -> Result<f64, String> {
     let v = c.local_values(sk);
     let n_par = v.len();
-    let ja = Mat::from_vec(c.n_residuals(), n_par, c.jacobian(&v));
-    let jn = fd_jacobian(|w| c.residual(w), &v, 1e-6);
+    let ja = Mat::from_vec(c.n_residuals(), n_par, c.jacobian(sk, &v));
+    let jn = fd_jacobian(|w| c.residual(sk, w), &v, 1e-6);
     max_err(&ja, &jn, rtol, atol, c.type_name())
 }
 

@@ -9,7 +9,7 @@
 //! constraint is a monotonic `id`.  The bindings intern their proxies on those, so `is` / `===`
 //! keep working across the FFI without any pointer ever leaving the core.
 
-use crate::constraints::Constraint;
+use crate::constraints::{Arg, Constraint};
 use crate::rng::Rng;
 use std::collections::BTreeMap;
 
@@ -20,6 +20,13 @@ pub struct Param {
     pub value: f64,
     pub fixed: bool,
     pub name: String,
+    /// World length one unit of this parameter is worth.  A coordinate or a radius is a length
+    /// already, so 1; a curve parameter is dimensionless, and one unit of it moves a point by
+    /// roughly the curve's length.  Everything that measures motion in world units — the
+    /// witness perturbation, the warm-start jitter, and the minimum-norm step's column
+    /// weighting — divides by it, so a dimensionless unknown is neither shoved across its whole
+    /// range by a jitter meant for coordinates nor left immovable by a step that is.
+    pub scale: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -28,6 +35,7 @@ pub enum EntKind {
     Line,
     Circle,
     Arc,
+    Spline,
 }
 
 impl EntKind {
@@ -37,6 +45,7 @@ impl EntKind {
             EntKind::Line => "line",
             EntKind::Circle => "circle",
             EntKind::Arc => "arc",
+            EntKind::Spline => "spline",
         }
     }
 
@@ -46,6 +55,7 @@ impl EntKind {
             "line" => EntKind::Line,
             "circle" => EntKind::Circle,
             "arc" => EntKind::Arc,
+            "spline" => EntKind::Spline,
             _ => return None,
         })
     }
@@ -72,6 +82,9 @@ impl EntRef {
     }
     pub fn arc(idx: usize) -> EntRef {
         EntRef::new(EntKind::Arc, idx)
+    }
+    pub fn spline(idx: usize) -> EntRef {
+        EntRef::new(EntKind::Spline, idx)
     }
     pub fn i(self) -> usize {
         self.idx as usize
@@ -108,6 +121,22 @@ pub struct ArcE {
     pub start: u32,
     pub end: u32,
     pub radius: u32,
+    pub construction: bool,
+}
+
+/// A cubic B-spline over an ordered control polygon.
+///
+/// The control points are ordinary sketch Points — they drag, snap and take constraints like any
+/// others, which is what makes a spline's shape editable with the tools that already exist, the
+/// same trick as an arc being a centre and two real points plus its two intrinsic constraints.
+/// The knot vector is document data, not unknowns: a repeated interior knot is a corner, and the
+/// clamped uniform default runs the curve from the first control point to the last.  Four
+/// control points and no interior knot is exactly a cubic Bézier.
+#[derive(Clone, Debug)]
+pub struct SplineE {
+    pub ctrl: Vec<u32>,
+    /// `ctrl.len() + curve::DEGREE + 1` non-decreasing values.
+    pub knots: Vec<f64>,
     pub construction: bool,
 }
 
@@ -166,6 +195,7 @@ pub struct Sketch {
     pub lines: Vec<LineE>,
     pub circles: Vec<CircleE>,
     pub arcs: Vec<ArcE>,
+    pub splines: Vec<SplineE>,
     pub constraints: Vec<Constraint>,
     /// Recorded root choices (Stage 5), persisted with the document.
     pub branches: BTreeMap<String, i32>,
@@ -185,7 +215,12 @@ impl Sketch {
     // -- construction -------------------------------------------------------
 
     pub fn param(&mut self, value: f64, fixed: bool, name: &str) -> usize {
-        self.params.push(Param { value, fixed, name: name.to_string() });
+        self.param_scaled(value, fixed, name, 1.0)
+    }
+
+    /// A parameter that is not a length: `scale` is the world length one unit of it is worth.
+    pub fn param_scaled(&mut self, value: f64, fixed: bool, name: &str, scale: f64) -> usize {
+        self.params.push(Param { value, fixed, name: name.to_string(), scale });
         self.params.len() - 1
     }
 
@@ -252,6 +287,30 @@ impl Sketch {
         Some(self.arc(centre, a, b, name))
     }
 
+    /// A cubic B-spline over `ctrl`, with the clamped uniform knot vector.  `None` if there are
+    /// too few control points for a cubic — the curve would have no span to live on.
+    pub fn spline(&mut self, ctrl: &[usize]) -> Option<usize> {
+        self.spline_with(ctrl, None)
+    }
+
+    /// A cubic B-spline with a knot vector of its own — a repeated interior knot is a corner.
+    /// `None` if the knots are not ones this control polygon can be drawn with.
+    pub fn spline_with(&mut self, ctrl: &[usize], knots: Option<Vec<f64>>) -> Option<usize> {
+        if ctrl.iter().any(|&c| c >= self.points.len()) {
+            return None;
+        }
+        let knots = knots.unwrap_or_else(|| crate::curve::clamped_uniform(ctrl.len()));
+        if !crate::curve::knots_valid(&knots, ctrl.len()) {
+            return None;
+        }
+        self.splines.push(SplineE {
+            ctrl: ctrl.iter().map(|&c| c as u32).collect(),
+            knots,
+            construction: false,
+        });
+        Some(self.splines.len() - 1)
+    }
+
     /// Four lines round the corners `a` and (x1, y1), sharing corner points, with three
     /// perpendicular constraints.  Three, not four: the fourth follows, so adding it would make
     /// every rectangle over-constrained by one equation.  What is left is the 5 DOF a rectangle
@@ -283,6 +342,12 @@ impl Sketch {
     }
 
     /// Append a constraint, assigning it a fresh document-stable id.
+    ///
+    /// This is also where a constraint's own hidden unknowns become real Params: a `Param` slot
+    /// arrives holding the seed number (from `constraints::seed_param`, from a document, or from
+    /// the caller) and leaves holding the index of the Param that now carries it.  Doing it here
+    /// and only here means a constraint is a number on the way in — which is what a document
+    /// stores and what `graft` copies — and an index everywhere the solver looks at it.
     pub fn add(&mut self, mut c: Constraint) -> u32 {
         if c.id == 0 {
             self.next_cid += 1;
@@ -291,6 +356,15 @@ impl Sketch {
             self.next_cid = self.next_cid.max(c.id);
         }
         let id = c.id;
+        for (i, name) in c.param_slots() {
+            if matches!(c.args[i], Arg::Param(_)) {
+                continue;   // already allocated (a constraint moved between sketches)
+            }
+            let v = c.args[i].num();
+            let scale = crate::constraints::param_scale(self, c.kind, &c.args, i);
+            let p = self.param_scaled(v, false, &format!("c{id}.{name}"), scale);
+            c.args[i] = Arg::Param(p as u32);
+        }
         let expr = crate::expr::has_expr(&c.args);
         self.constraints.push(c);
         if expr {
@@ -299,7 +373,16 @@ impl Sketch {
         id
     }
 
+    /// Drop a constraint.  Its own unknowns stay in the parameter vector — every index above
+    /// them names something — but are retired to `fixed`, since a free parameter no equation
+    /// mentions is a degree of freedom the sketch does not actually have, and diagnosis would
+    /// report it.  The rebuild walk (`io::without`) is the path that reclaims the slots.
     pub fn remove(&mut self, id: u32) {
+        if let Some(c) = self.constraint(id) {
+            for p in c.aux_params() {
+                self.params[p as usize].fixed = true;
+            }
+        }
         self.constraints.retain(|c| c.id != id);
         self.placements.remove(&id);
     }
@@ -357,6 +440,25 @@ impl Sketch {
         dx.hypot(dy)
     }
 
+    /// The control points one span of a spline reads — `ctrl[span-p ..= span]`, the only ones
+    /// whose basis functions are non-zero there.  This is what keeps a contact's column count
+    /// fixed however long the spline is.
+    pub fn spline_span_points(&self, i: usize, span: usize) -> Vec<usize> {
+        let s = &self.splines[i];
+        (0..crate::curve::SPAN_N).map(|a| s.ctrl[span - crate::curve::DEGREE + a] as usize).collect()
+    }
+
+    /// Those control points' Params, in (x, y) order — a contact's curve columns.
+    pub fn spline_span_params(&self, i: usize, span: usize) -> Vec<u32> {
+        let mut v = Vec::with_capacity(2 * crate::curve::SPAN_N);
+        for p in self.spline_span_points(i, span) {
+            let pt = &self.points[p];
+            v.push(pt.x);
+            v.push(pt.y);
+        }
+        v
+    }
+
     /// Centre point index of a circle or arc.
     pub fn round_center(&self, e: EntRef) -> usize {
         match e.kind {
@@ -400,6 +502,16 @@ impl Sketch {
                 v.push(a.radius);
                 v
             }
+            EntKind::Spline => {
+                let s = &self.splines[e.i()];
+                let mut v = Vec::with_capacity(2 * s.ctrl.len());
+                for &c in &s.ctrl {
+                    let p = &self.points[c as usize];
+                    v.push(p.x);
+                    v.push(p.y);
+                }
+                v
+            }
         }
     }
 
@@ -420,6 +532,9 @@ impl Sketch {
                     EntRef::point(a.end as usize),
                 ]
             }
+            EntKind::Spline => {
+                self.splines[e.i()].ctrl.iter().map(|&c| EntRef::point(c as usize)).collect()
+            }
         }
     }
 
@@ -435,8 +550,23 @@ impl Sketch {
             self.circles.len(),
             self.arcs.len()
         );
+        for sp in &self.splines {
+            let _ = write!(s, "s{}:", sp.ctrl.len());
+            for k in &sp.knots {
+                let _ = write!(s, "{k},");
+            }
+        }
+        s.push('|');
         for c in &self.constraints {
             let _ = write!(s, "{}:{},", c.id, c.type_name());
+            // A constraint that owns unknowns chooses its columns from where they currently are
+            // — which span of a spline a contact sits on.  That choice is compiled into the
+            // plan, so it belongs in the key: a contact walking past a knot is a recompile.
+            if !c.param_slots().is_empty() {
+                for p in c.params(self) {
+                    let _ = write!(s, "{p}.");
+                }
+            }
         }
         s.push('|');
         for p in &self.params {
@@ -451,13 +581,15 @@ impl Sketch {
             EntKind::Line => self.lines.len(),
             EntKind::Circle => self.circles.len(),
             EntKind::Arc => self.arcs.len(),
+            EntKind::Spline => self.splines.len(),
         }
     }
 
     /// Every entity, in creation order per kind.
     pub fn primitives(&self) -> Vec<EntRef> {
         let mut out = Vec::new();
-        for kind in [EntKind::Point, EntKind::Line, EntKind::Circle, EntKind::Arc] {
+        for kind in [EntKind::Point, EntKind::Line, EntKind::Circle, EntKind::Arc, EntKind::Spline]
+        {
             for i in 0..self.count(kind) {
                 out.push(EntRef::new(kind, i));
             }
@@ -562,8 +694,12 @@ impl Sketch {
                 let r = self.params[c.radius as usize].value.abs();
                 (cx - r, cy - r, cx + r, cy + r)
             }
-            EntKind::Arc => {
-                let pts = self.arc_extremes(e.i());
+            EntKind::Arc | EntKind::Spline => {
+                let pts = if e.kind == EntKind::Arc {
+                    self.arc_extremes(e.i())
+                } else {
+                    crate::curve::sample(self, e.i(), 16)
+                };
                 let mut b = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
                 for (x, y) in pts {
                     b.0 = b.0.min(x);
@@ -624,7 +760,7 @@ impl Sketch {
         let mut rng = Rng::new(seed);
         for p in self.params.iter_mut() {
             if !p.fixed {
-                p.value += rng.normal(0.0, sigma);
+                p.value += rng.normal(0.0, sigma) / p.scale;
             }
         }
     }
@@ -672,6 +808,7 @@ fn measure_order(k: EntKind) -> u8 {
         EntKind::Point => 0,
         EntKind::Line => 1,
         EntKind::Circle | EntKind::Arc => 2,
+        EntKind::Spline => 3,
     }
 }
 
@@ -703,6 +840,33 @@ pub fn distance_between(sk: &Sketch, first: EntRef, second: EntRef) -> f64 {
     } else {
         (first, second)
     };
+    // A curve has no closed form against any of the others and sorts last, so `b` is the curve
+    // whenever there is one.  A point is measured exactly — the projection is a Newton solve the
+    // core does anyway, and this number is what a reader checks the drawing against.  The rest
+    // is a sweep: close enough to measure by, and honestly the best a sampled answer can be.
+    if b.kind == EntKind::Spline {
+        if a.kind == EntKind::Point {
+            let (x, y) = sk.point_xy(a.i());
+            return crate::curve::distance_to(sk, b.i(), x, y);
+        }
+        let mut best = f64::INFINITY;
+        for (x, y) in crate::curve::sample(sk, b.i(), 64) {
+            let d = match a.kind {
+                EntKind::Point => {
+                    let (ax, ay) = sk.point_xy(a.i());
+                    (ax - x).hypot(ay - y)
+                }
+                EntKind::Line => point_to_line(sk, x, y, a.i()),
+                EntKind::Circle | EntKind::Arc => {
+                    let (cx, cy) = sk.point_xy(sk.round_center(a));
+                    ((x - cx).hypot(y - cy) - sk.radius_value(a).abs()).abs()
+                }
+                EntKind::Spline => crate::curve::distance_to(sk, a.i(), x, y),
+            };
+            best = best.min(d);
+        }
+        return best;
+    }
     match a.kind {
         EntKind::Point => {
             let (ax, ay) = sk.point_xy(a.i());

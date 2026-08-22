@@ -126,7 +126,11 @@ fn the_plan_and_the_numeric_path_agree() {
             let ra = PlanSolver::new(&a, false).solve(&mut a, 1e-9, true, Method::DogLeg);
             let rb = solve(&mut b, SolveOpts::default());
             assert!(ra.success && rb.success, "{name}");
-            if name != "polygon_chain" {
+            // Where the answer is unique the two paths must reach the same one.  Where it is
+            // not, they need not: both are minimum-norm, but the plan has already moved the
+            // geometry before its solver starts, so the two are least-change from different
+            // places and land on neighbouring points of the same solution set.
+            if gcs_core::diagnose::diagnose(&mut b.clone(), Default::default()).dof == 0 {
                 for (x, y) in a.get_x().iter().zip(b.get_x()) {
                     assert!((x - y).abs() < 1e-5, "{name}: {x} vs {y}");
                 }
