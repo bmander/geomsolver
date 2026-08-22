@@ -159,6 +159,11 @@ Conventions:
   writing every value and reporting, per expression, its name, deps and error — a name defined
   twice, one nothing defines, a cycle, a non-number.  An expression that cannot be computed
   keeps its last number, so the solver always has a constant.  Trigonometry is in degrees.
+  A number may be written as a mixed fraction — `3 1/2` is three and a half, the way a drawing
+  writes it — which the tokenizer folds into one `Num`.  The space is what tells the readings
+  apart, so `31/2` and a bare `1/2` are still divisions, and the fraction itself is written
+  tight; `expr::literal` reads with that same tokenizer, which is what makes a mixed number a
+  *constant* rather than text nobody can edit as a number.
   `expr::set_dimension` is the one write path for text (a bare number becomes `Arg::Num`, with
   the angle conversion — the app converts nothing); `Sketch::add` and `io::from_json` evaluate;
   `set_num` on an expression drops it.  Documents save `{"expr", "value"}` and accept a bare

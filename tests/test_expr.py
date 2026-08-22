@@ -113,3 +113,22 @@ def test_pythagoras_drawn_with_expressions_holds_and_stays_true_when_a_leg_is_ed
     a = next(k for k in sk.constraints if k.expr("d") == "a = 30")
     assert a.set_dimension("d", "a = 50") is None
     check(50, 40)
+
+
+def test_a_dimension_may_be_written_as_a_mixed_fraction() -> None:
+    """`3 1/2` is a number, not an expression — so it is stored as one and stays editable as
+    one.  What the language accepts is the core's business; this is that the binding reaches it
+    and that the number comes back through the proxy."""
+    sk = examples.rect_fillets()
+    d = next(c for c in sk.constraints if type(c).__name__ == "Distance")
+    assert d.set_dimension("d", "3 1/2") is None
+    assert d.d == pytest.approx(3.5)
+    assert d.expr("d") is None, "a mixed number is a constant, not text to keep"
+    assert solve(sk).success
+
+    # and it composes like any other number when it names something
+    assert d.set_dimension("d", "w = 12 3/8") is None
+    assert d.d == pytest.approx(12.375)
+    assert d.expr("d") == "w = 12 3/8"
+    with pytest.raises(ValueError):
+        d.set_dimension("d", "3 1/0")

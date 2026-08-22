@@ -389,3 +389,58 @@ fn pythagoras_drawn_with_expressions_holds_and_stays_true_when_a_leg_is_edited()
     let sk2 = examples::case("pythagoras:5:12").unwrap();
     assert!((hypotenuses(&sk2)[0] - 13.0).abs() < 1e-9);
 }
+
+/* -- mixed numbers ------------------------------------------------------------ */
+
+fn val(text: &str) -> f64 {
+    let p = expr::parse(text).unwrap_or_else(|e| panic!("{text}: {e}"));
+    expr::eval(&p.body, &BTreeMap::new()).unwrap_or_else(|e| panic!("{text}: {e}"))
+}
+
+#[test]
+fn a_number_may_be_written_as_a_mixed_fraction() {
+    for (text, want) in [
+        ("3 1/2", 3.5),
+        ("0 3/4", 0.75),
+        ("12 15/16", 12.9375),
+        ("3   1/2", 3.5),          // any run of space
+        ("-3 1/2", -3.5),          // the sign is the parser's, as for any number
+        ("2 * 3 1/2", 7.0),        // it is one number, so it multiplies as one
+        ("3 1/2 + 1/4", 3.75),
+        ("(1 1/2) * 4", 6.0),
+    ] {
+        assert!((val(text) - want).abs() < 1e-12, "{text} came to {}", val(text));
+    }
+}
+
+#[test]
+fn a_fraction_without_a_whole_number_is_still_a_division() {
+    assert_eq!(val("1/2"), 0.5);
+    assert_eq!(val("31/2"), 15.5); // no space: not three-and-a-bit
+    assert_eq!(val("3.5/2"), 1.75); // a decimal takes no fraction
+}
+
+#[test]
+fn what_only_looks_like_a_mixed_number_is_read_the_ordinary_way() {
+    // a name is not a numerator, so this stays three, x, over two — and juxtaposition is an error
+    assert!(expr::parse("3 x/2").is_err());
+    assert!(expr::parse("3 1/").is_err());
+    assert!(expr::parse("3 1/0").is_err(), "a fraction over nothing is not a number");
+    // a whole number followed by another whole number is not a number either
+    assert!(expr::parse("3 1").is_err());
+    // the fraction is written tight, the way a drawing writes it; loosening it would only
+    // widen what can be mistaken for a mixed number
+    assert!(expr::parse("3 1 / 2").is_err());
+}
+
+#[test]
+fn a_mixed_number_is_a_constant_not_an_expression() {
+    // `literal` is what decides whether a typed dimension is stored as a number or as text
+    assert_eq!(expr::literal("3 1/2"), Some(3.5));
+    assert_eq!(expr::literal("-2 3/8"), Some(-2.375));
+    assert_eq!(expr::literal("  5  "), Some(5.0));
+    assert_eq!(expr::literal("1e3"), Some(1000.0));
+    assert_eq!(expr::literal("w = 3 1/2"), None);
+    assert_eq!(expr::literal("3 1/2 + w"), None);
+    assert_eq!(expr::literal("inf"), None);
+}

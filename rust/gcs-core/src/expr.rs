@@ -129,6 +129,38 @@ enum Tok {
     End,
 }
 
+/// The `n/d` of a mixed number, if one follows `from` across at least one space: the digits,
+/// the slash and the digits, written tight the way a drawing writes them.  `None` for anything
+/// else, which leaves the tokens to be read the ordinary way — `3 x/2` is still three, x, over
+/// two, and `3 1 / 2` is the juxtaposition it looks like.
+fn mixed_fraction(chars: &[char], from: usize) -> Option<(f64, f64, usize)> {
+    let mut i = from;
+    while chars.get(i).is_some_and(|c| c.is_whitespace()) {
+        i += 1;
+    }
+    if i == from {
+        return None; // no space: `31/2` is a division, not three and a half
+    }
+    let digits = |i: &mut usize| {
+        let start = *i;
+        while chars.get(*i).is_some_and(|c| c.is_ascii_digit()) {
+            *i += 1;
+        }
+        chars[start..*i].iter().collect::<String>().parse::<f64>().ok()
+    };
+    let num = digits(&mut i)?;
+    if chars.get(i) != Some(&'/') {
+        return None;
+    }
+    i += 1;
+    let den = digits(&mut i)?;
+    // a decimal point or another slash means this was not a mixed number after all
+    if chars.get(i).is_some_and(|&c| c == '.' || c.is_ascii_digit()) {
+        return None;
+    }
+    Some((num, den, i))
+}
+
 fn tokenize(text: &str) -> Result<Vec<(Tok, usize)>, String> {
     let chars: Vec<char> = text.chars().collect();
     let mut out = Vec::new();
@@ -158,7 +190,19 @@ fn tokenize(text: &str) -> Result<Vec<(Tok, usize)>, String> {
                 }
             }
             let s: String = chars[start..i].iter().collect();
-            let v: f64 = s.parse().map_err(|_| format!("bad number `{s}` at {}", start + 1))?;
+            let mut v: f64 = s.parse().map_err(|_| format!("bad number `{s}` at {}", start + 1))?;
+            // `3 1/2` is three and a half, the way a drawing writes it.  Only a whole number
+            // takes a fraction, and only across a space: `31/2` is still a division, and so is
+            // a bare `1/2`.
+            if !s.contains(['.', 'e', 'E']) {
+                if let Some((num, den, end)) = mixed_fraction(&chars, i) {
+                    if den == 0.0 {
+                        return Err(format!("`/0` in the fraction at {}", start + 1));
+                    }
+                    v += num / den;
+                    i = end;
+                }
+            }
             out.push((Tok::Num(v), at));
             continue;
         }
@@ -384,10 +428,21 @@ pub fn name_of(text: &str) -> Option<String> {
     parse(text).ok().and_then(|p| p.name)
 }
 
-/// A bare number — `5`, `-2.5`, `1e3` — is a constant, not an expression.  `None` for
+/// A bare number — `5`, `-2.5`, `1e3`, `3 1/2` — is a constant, not an expression.  `None` for
 /// anything else (names, operators, or a non-finite literal such as `inf`).
+///
+/// Read with the same tokenizer the expressions use, so every form of number a person can write
+/// counts as one here too; a mixed fraction would otherwise parse as an expression and be stored
+/// as text nobody can edit as a number.
 pub fn literal(text: &str) -> Option<f64> {
-    text.trim().parse::<f64>().ok().filter(|v| v.is_finite())
+    let toks = tokenize(text).ok()?;
+    let v = match toks.as_slice() {
+        [(Tok::Num(v), _), (Tok::End, _)] => *v,
+        [(Tok::Op('-'), _), (Tok::Num(v), _), (Tok::End, _)] => -*v,
+        [(Tok::Op('+'), _), (Tok::Num(v), _), (Tok::End, _)] => *v,
+        _ => return None,
+    };
+    Some(v).filter(|v| v.is_finite())
 }
 
 /* -- evaluation --------------------------------------------------------------- */
