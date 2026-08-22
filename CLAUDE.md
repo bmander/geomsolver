@@ -119,6 +119,12 @@ Conventions:
 - "Solved" is `System::max_relative_residual <= 1e-6`: each row's residual over its own units
   (`extent^degree`).  Never one absolute threshold for the whole system — half the kernels are
   linear in length and half quadratic, so one threshold is wrong for one of the halves.
+- `Horizontal`/`Vertical` level a line; `HorizontalPoints`/`VerticalPoints` level a *pair of
+  points*, which is the same statement about the segment between them and needs no line drawn
+  there.  They reuse the line kernels unchanged — those four columns were always two points'
+  coordinates — and `cgraph` gives them a `virtual_line` in the ground x-axis's direction class,
+  the same trick arc-endpoint tangency uses, so a levelled pair decomposes rather than falling to
+  the numeric residue.
 - `same_constraint` is "says exactly the same thing"; `same_relation` is the same *without* the
   numbers — same type, same entities, same flags.  A duplicate is the first and is refused; a
   second dimension on a pair that already has one is the second, and is an *edit*, since it is

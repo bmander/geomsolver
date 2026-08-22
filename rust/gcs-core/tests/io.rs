@@ -653,3 +653,55 @@ fn a_relation_is_the_same_whatever_number_it_states() {
     let right = Constraint::tangent_line_circle(&sk, le, ce, Some(-1));
     assert!(!same_relation(&left, &right), "the two sides are two relations");
 }
+
+#[test]
+fn two_points_can_be_levelled_without_a_line_between_them() {
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, true, "a");
+    let b = sk.point(10.0, 4.0, false, "b");
+    let c = sk.point(3.0, 9.0, false, "c");
+    let (pa, pb, pc) = (EntRef::point(a), EntRef::point(b), EntRef::point(c));
+    sk.add(Constraint::new(CKind::HorizontalPoints, vec![Arg::Ent(pa), Arg::Ent(pb)]));
+    sk.add(Constraint::new(CKind::VerticalPoints, vec![Arg::Ent(pa), Arg::Ent(pc)]));
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    assert!((sk.point_xy(b).1 - sk.point_xy(a).1).abs() < 1e-9, "not level");
+    assert!((sk.point_xy(c).0 - sk.point_xy(a).0).abs() < 1e-9, "not plumb");
+    // one equation each, as for a levelled line
+    assert_eq!(diagnose(&mut sk, DiagnoseOptions::default()).dof, 4 - 2);
+}
+
+#[test]
+fn levelling_a_pair_is_the_same_statement_either_way_round() {
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, false, "a");
+    let b = sk.point(10.0, 4.0, false, "b");
+    let (pa, pb) = (EntRef::point(a), EntRef::point(b));
+    let ab = Constraint::new(CKind::HorizontalPoints, vec![Arg::Ent(pa), Arg::Ent(pb)]);
+    let ba = Constraint::new(CKind::HorizontalPoints, vec![Arg::Ent(pb), Arg::Ent(pa)]);
+    assert!(same_constraint(&ab, &ba), "a duplicate the other way round is still a duplicate");
+    // and it is not the same as the plumb one
+    let v = Constraint::new(CKind::VerticalPoints, vec![Arg::Ent(pa), Arg::Ent(pb)]);
+    assert!(!same_constraint(&ab, &v));
+}
+
+#[test]
+fn a_levelled_pair_decomposes_like_a_levelled_line() {
+    use gcs_core::cgraph;
+    // it must not fall to the numeric residue: a drag touching one would then cost the document
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, true, "a");
+    let b = sk.point(10.0, 4.0, false, "b");
+    sk.add(Constraint::new(
+        CKind::HorizontalPoints,
+        vec![Arg::Ent(EntRef::point(a)), Arg::Ent(EntRef::point(b))],
+    ));
+    sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 10.0));
+    let g = cgraph::build(&sk);
+    assert!(g.unsupported.is_empty(), "the levelled pair went to the numeric fallback");
+    let mut ps = gcs_core::decompose::PlanSolver::new(&sk, false);
+    assert!(ps.plan.fully_decomposed(), "{}", ps.plan.summary());
+    let r = ps.solve(&mut sk, 1e-9, false, gcs_core::newton::Method::DogLeg);
+    assert!(r.success && !r.fell_back, "{r:?}");
+    assert!((sk.point_xy(b).1).abs() < 1e-9);
+    assert!((sk.point_xy(b).0 - 10.0).abs() < 1e-9);
+}

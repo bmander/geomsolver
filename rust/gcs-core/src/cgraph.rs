@@ -421,6 +421,38 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
                 let phi = branch(&[0.0, 1.0, 0.0], &line_normal(sk, ln), target);
                 g.dirs.push(DirRelation { a: X_AXIS, b, phi, source: c.id });
             }
+            // A levelled pair of points says exactly what a levelled line does, about the
+            // segment between them — so it decomposes the same way: a virtual line through the
+            // two, in the ground x-axis's direction class.  Without this it would be an
+            // unsupported constraint and every drag touching it would take the numeric path.
+            CKind::HorizontalPoints | CKind::VerticalPoints => {
+                let (i1, i2) = (c.args[0].ent().i(), c.args[1].ent().i());
+                let (p, q) = (g.point_el(i1), g.point_el(i2));
+                if p == q {
+                    // already the same point: the constraint says nothing the graph can use
+                    g.unsupported.push(c.id);
+                    continue;
+                }
+                let v = g.virtual_line(p, q);
+                for e in [p, q] {
+                    g.edges.push(Edge {
+                        kind: EdgeKind::Pl,
+                        a: e,
+                        b: v,
+                        value: EdgeVal::Zero,
+                        source: None,
+                    });
+                }
+                let target = if c.kind == CKind::VerticalPoints {
+                    std::f64::consts::FRAC_PI_2
+                } else {
+                    0.0
+                };
+                let (ax, ay) = sk.point_xy(i1);
+                let (bx, by) = sk.point_xy(i2);
+                let phi = branch(&[0.0, 1.0, 0.0], &normal_of(ax, ay, bx, by), target);
+                g.dirs.push(DirRelation { a: X_AXIS, b: v, phi, source: c.id });
+            }
             CKind::Parallel | CKind::Perpendicular | CKind::Angle => {
                 let (i1, i2) = (c.args[0].ent().i(), c.args[1].ent().i());
                 let target = match c.kind {

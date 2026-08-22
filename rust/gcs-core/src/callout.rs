@@ -73,6 +73,8 @@ macro_rules! undrawn {
             | CKind::PointOnSpline
             | CKind::SplineTangentLine
             | CKind::SplineCurvature
+            | CKind::HorizontalPoints
+            | CKind::VerticalPoints
     };
 }
 

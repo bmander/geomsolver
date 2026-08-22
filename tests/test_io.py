@@ -354,3 +354,16 @@ def test_copy_and_paste_round_trip() -> None:
     assert sk.points[n_pts].xy == pytest.approx((clip.points[0].x.value + 5.0,
                                                  clip.points[0].y.value - 3.0))
     assert solve(sk).success
+
+
+def test_two_points_can_be_levelled_without_a_line() -> None:
+    """The binding reaches the point-pair forms; what they mean is the Rust test's business."""
+    sk = Sketch()
+    a = sk.point(0.0, 0.0, fixed=True)
+    b = sk.point(10.0, 4.0)
+    c = sk.point(3.0, 9.0)
+    sk.add(C.HorizontalPoints(a, b), C.VerticalPoints(a, c))
+    assert solve(sk).success
+    assert b.xy[1] == pytest.approx(a.xy[1])
+    assert c.xy[0] == pytest.approx(a.xy[0])
+    assert io.dumps(io.loads(io.dumps(sk))) == io.dumps(sk)

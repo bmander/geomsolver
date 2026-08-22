@@ -241,12 +241,29 @@ function options(): Promise<void> {
  * (label, class, points, lines, circles/arcs, shortcut) */
 type Simple = [string, C.ConstraintCtor, number, number, number, string?, number?];
 const SIMPLE: Simple[] = [
-  ['Horizontal', C.Horizontal, 0, 1, 0, 'h'],
-  ['Vertical', C.Vertical, 0, 1, 0, 'v'],
   ['Parallel', C.Parallel, 0, 2, 0, 'b'],
   ['Perpendicular', C.Perpendicular, 0, 2, 0, '⇧l'],
   ['Midpoint', C.Midpoint, 1, 1, 0, '⇧m'],
 ];
+/* Level and plumb read the selection too.  A pair of points says exactly what a line through
+ * them would — that the segment between them is level — and wanting that without drawing the
+ * line is the common case: two corners of a shape that share no edge. */
+const LEVEL: Simple[] = [
+  ['Horizontal', C.Horizontal, 0, 1, 0],
+  ['Horizontal', C.HorizontalPoints, 2, 0, 0],
+  ['Vertical', C.Vertical, 0, 1, 0],
+  ['Vertical', C.VerticalPoints, 2, 0, 0],
+];
+
+function cLevel(label: 'Horizontal' | 'Vertical'): void {
+  const { pts, lines, circles } = sel();
+  const hit = LEVEL.find(([l, , nPts, nLines, nCirc]) =>
+    l === label && circles.length === nCirc && pts.length === nPts
+    && (nLines === 1 ? lines.length >= 1 : lines.length === nLines));
+  if (!need(!!hit, 'one or more lines, or two points')) return;
+  applySimple(hit as Simple);
+}
+
 /* One "these touch" button.  Which incidence it means is the selection's business, not the
  * user's: two points meet, a point sits on a line, a point sits on a circle or arc. */
 const INCIDENCE: Simple[] = [
@@ -267,6 +284,10 @@ const CONSTRAINT_BUTTONS: ToolbarButton[] = [
   { label: 'Dimension', key: 'd', onClick: () => void cDimension(),
     title: 'Put a number on the selection · a length, a radius, an offset, a ring '
          + '· two lines take their gap when parallel and their angle when not' },
+  { label: 'Horizontal', key: 'h', onClick: () => cLevel('Horizontal'),
+    title: 'Level: one or more lines, or a pair of points with no line between them' },
+  { label: 'Vertical', key: 'v', onClick: () => cLevel('Vertical'),
+    title: 'Plumb: one or more lines, or a pair of points with no line between them' },
   ...SIMPLE.map((c): ToolbarButton => ({ label: c[0], key: c[5], onClick: () => applySimple(c) })),
   { label: 'Equal', key: 'e', onClick: () => cEqual() },
   { label: 'Tangent', key: 't', onClick: () => cTangent(),

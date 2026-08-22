@@ -45,6 +45,8 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::drag_target(pe, 1.0, 2.0, 0.3),
         Constraint::one_line(CKind::Horizontal, le1),
         Constraint::one_line(CKind::Vertical, le1),
+        Constraint::new(CKind::HorizontalPoints, vec![e(pe), e(qe)]),
+        Constraint::new(CKind::VerticalPoints, vec![e(pe), e(qe)]),
         Constraint::two_line(CKind::Parallel, le1, le2),
         Constraint::two_line(CKind::Perpendicular, le1, le2),
         Constraint::new(CKind::Angle, vec![e(le1), e(le2), Arg::Num(0.7)]),

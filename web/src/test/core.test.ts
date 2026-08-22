@@ -1474,3 +1474,17 @@ test('a circle against a curve is a curvature constraint', () => {
   assert.ok(Math.abs(Math.hypot(o.x.value - p[0], o.y.value - p[1]) - r) < 1e-6 * r);
   sk.dispose();
 });
+
+test('two points can be levelled without a line between them', () => {
+  const sk = new Sketch();
+  const a = sk.point(0, 0), b = sk.point(10, 4), c = sk.point(3, 9);
+  a.x.fixed = true;
+  a.y.fixed = true;
+  sk.add(new C.HorizontalPoints(a, b), new C.VerticalPoints(a, c));
+  assert.ok(solve(sk).success);
+  assert.ok(Math.abs(b.y.value - a.y.value) < 1e-9);
+  assert.ok(Math.abs(c.x.value - a.x.value) < 1e-9);
+  // and it is the same statement either way round, so a duplicate is caught
+  assert.ok(C.sameConstraint(new C.HorizontalPoints(a, b), new C.HorizontalPoints(b, a)));
+  sk.dispose();
+});

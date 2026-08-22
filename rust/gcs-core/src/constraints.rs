@@ -38,10 +38,12 @@ pub enum CKind {
     PointOnSpline,
     SplineTangentLine,
     SplineCurvature,
+    HorizontalPoints,
+    VerticalPoints,
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 24] = [
+pub const ALL_KINDS: [CKind; 26] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -66,6 +68,8 @@ pub const ALL_KINDS: [CKind; 24] = [
     CKind::PointOnSpline,
     CKind::SplineTangentLine,
     CKind::SplineCurvature,
+    CKind::HorizontalPoints,
+    CKind::VerticalPoints,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -160,6 +164,8 @@ impl CKind {
             CKind::PointOnSpline => "PointOnSpline",
             CKind::SplineTangentLine => "SplineTangentLine",
             CKind::SplineCurvature => "SplineCurvature",
+            CKind::HorizontalPoints => "HorizontalPoints",
+            CKind::VerticalPoints => "VerticalPoints",
         }
     }
 
@@ -176,6 +182,10 @@ impl CKind {
                 &[("p", S::Point), ("tx", S::Float), ("ty", S::Float), ("weight", S::Float)]
             }
             CKind::Horizontal | CKind::Vertical => &[("line", S::Line)],
+            // the same statement about the segment between two points, with no line drawn there
+            CKind::HorizontalPoints | CKind::VerticalPoints => {
+                &[("p", S::Point), ("q", S::Point)]
+            }
             CKind::Parallel | CKind::Perpendicular | CKind::EqualLength => {
                 &[("l1", S::Line), ("l2", S::Line)]
             }
@@ -279,6 +289,8 @@ impl CKind {
                 | CKind::EqualRadius
                 | CKind::TangentCircleCircle
                 | CKind::Symmetric
+                | CKind::HorizontalPoints
+                | CKind::VerticalPoints
         )
     }
 
@@ -308,6 +320,9 @@ impl CKind {
             CKind::PointOnSpline => K::PointOnSpline,
             CKind::SplineTangentLine => K::SplineTangentLine,
             CKind::SplineCurvature => K::SplineCurvature,
+            // the same kernels: their four columns are already two points' coordinates
+            CKind::HorizontalPoints => K::Horizontal,
+            CKind::VerticalPoints => K::Vertical,
         }
     }
 }
@@ -675,7 +690,10 @@ impl Constraint {
         let centre = |i: usize| sk.point_params(sk.round_center(e(i))).to_vec();
         let rad = |i: usize| sk.round_radius(e(i)) as u32;
         match self.kind {
-            CKind::Coincident | CKind::Distance => [pt(0), pt(1)].concat(),
+            CKind::Coincident
+            | CKind::Distance
+            | CKind::HorizontalPoints
+            | CKind::VerticalPoints => [pt(0), pt(1)].concat(),
             CKind::Midpoint | CKind::PointOnLine | CKind::PointLineDistance => {
                 [pt(0), ln(1)].concat()
             }
