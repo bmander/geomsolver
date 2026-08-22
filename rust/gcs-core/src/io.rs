@@ -33,6 +33,9 @@ fn arg_json(sk: &Sketch, a: &Arg) -> Json {
             object([("value", Json::Num(a.value(sk))), ("pinned", Json::Bool(true))])
         }
         Arg::Param(_) => Json::Num(a.value(sk)),
+        // a seed only exists before `Sketch::add`, so a document never sees one; writing the
+        // number keeps `describe`/`arg_text` honest for a constraint someone built by hand
+        Arg::Seed { value, .. } => Json::Num(*value),
         Arg::Num(v) => Json::Num(*v),
         Arg::Int(v) => Json::Int(*v),
         Arg::Bool(b) => Json::Bool(*b),
@@ -75,31 +78,14 @@ fn arg_from_json(sk: &Sketch, kind: SpecKind, v: &Json) -> Result<Arg, String> {
         SpecKind::Int => Arg::Int(v.as_i64()),
         SpecKind::Bool => Arg::Bool(v.as_bool()),
         SpecKind::Str => Arg::Str(v.as_str().to_string()),
-        // a pinned unknown arrives as `{"value": t, "pinned": true}`; the pin is applied once
-        // `Sketch::add` has made the Param, by `pin_params` below
-        SpecKind::Param => Arg::Num(v.get("value").map(|x| x.as_f64()).unwrap_or_else(|| v.as_f64())),
+        // a hidden unknown arrives as its number, or `{"value", "pinned"}` when the document
+        // said it was worked out rather than solved for; `Sketch::add` consumes both halves
+        SpecKind::Param => Arg::Seed {
+            value: v.get("value").map(|x| x.as_f64()).unwrap_or_else(|| v.as_f64()),
+            pinned: v.get("pinned").map(|x| x.as_bool()).unwrap_or(false),
+        },
         _ => Arg::Num(v.as_f64()),
     })
-}
-
-/// Apply the pins a stored constraint declared, now that its Params exist.  Kept beside the
-/// seeding above because it is the other half of the same rule: a hidden unknown is a number on
-/// the way in, and everything about it that is not the number has to be put back by hand.
-fn pin_params(sk: &mut Sketch, id: u32, pinned: &dyn Fn(usize) -> bool) {
-    let Some(c) = sk.constraint(id) else { return };
-    let slots: Vec<(usize, u32)> = c
-        .kind
-        .param_slots()
-        .iter()
-        .filter(|&&(i, _)| pinned(i))
-        .filter_map(|&(i, _)| match c.args[i] {
-            Arg::Param(p) => Some((i, p)),
-            _ => None,
-        })
-        .collect();
-    for (_, p) in slots {
-        sk.params[p as usize].fixed = true;
-    }
 }
 
 /// Whether a stored argument says nothing, so the core should read it off the geometry.
@@ -307,11 +293,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             args.push(arg_from_json(&sk, *k, &raw[i])?);
         }
         seed_omitted(&sk, kind, &mut args, |i| omitted(raw.get(i)));
-        let id = sk.add(Constraint::new(kind, args));
-        pin_params(&mut sk, id, &|i| {
-            raw.get(i).and_then(|v| v.get("pinned")).map(|v| v.as_bool()).unwrap_or(false)
-        });
-        ids.push(id);
+        ids.push(sk.add(Constraint::new(kind, args)));
     }
     expr::evaluate(&mut sk);   // every expression against the whole document, in order
     if let Some(Json::Obj(kv)) = d.get("placements") {
@@ -465,27 +447,17 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                         break;
                     }
                 },
-                // the destination allocates its own: a Param index is this sketch's name for it
-                Arg::Param(_) => args.push(Arg::Num(a.value(src))),
-                // (the pin travels separately, below — the value is all an Arg can carry)
+                // the destination allocates its own: a Param index is this sketch's name for
+                // it, and the pin rides along in the seed
+                Arg::Param(p) => args.push(Arg::Seed {
+                    value: a.value(src),
+                    pinned: src.params[*p as usize].fixed,
+                }),
                 other => args.push(other.clone()),
             }
         }
         if ok {
             let id = dst.add(Constraint::new(c.kind, args));
-            // a pinned unknown stays pinned through a copy, a paste and a rebuild: it is part of
-            // what the constraint says, not of where its Param happened to be
-            let pinned: Vec<usize> = c
-                .kind
-                .param_slots()
-                .iter()
-                .filter(|&&(i, _)| match c.args[i] {
-                    Arg::Param(p) => src.params[p as usize].fixed,
-                    _ => false,
-                })
-                .map(|&(i, _)| i)
-                .collect();
-            pin_params(dst, id, &|i| pinned.contains(&i));
             if let Some(&place) = src.placements.get(&c.id) {
                 dst.placements.insert(id, place);   // a dimension keeps where it was dragged to
             }

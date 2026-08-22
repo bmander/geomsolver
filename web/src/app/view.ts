@@ -67,6 +67,12 @@ interface Animation {
   showing: number;
 }
 
+/** A place a click asked for, and the Point it came from if it came from one. */
+export interface Place {
+  at: [number, number];
+  on: Point | null;
+}
+
 export type Tool =
   'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit';
 
@@ -88,11 +94,10 @@ export class SketchView {
   selected: Primitive[] = [];
   highlight: Primitive[] = [];
   pending: Point[] = [];
-  /** Where the fit tool has been told the curve must pass, before there is a curve — and, when
-   *  a click landed on one, the Point it landed on.  Places rather than Points, so the tool
-   *  leaves nothing in the sketch if it is abandoned; a place that *is* a point becomes a
-   *  constraint once there is a curve to name. */
-  pendingFit: { at: [number, number]; on: Point | null }[] = [];
+  /** Where the fit tool has been told the curve must pass, before there is a curve.  Places
+   *  rather than Points, so the tool leaves nothing in the sketch if it is abandoned; one that
+   *  came from a Point becomes a constraint once there is a curve to name. */
+  pendingFit: Place[] = [];
   diagnosis: Diagnosis | null = null;
   /** The constraint the shell has the focus on, so its callout can say so. */
   litConstraint: Constraint | null = null;
@@ -1074,7 +1079,10 @@ export class SketchView {
       }
       // and on a curve it asks for another handle where you clicked: the insertion is
       // shape-preserving, so nothing moves — the new control point comes out selected, ready
-      // to be dragged, which is the whole reason you asked for it
+      // to be dragged, which is the whole reason you asked for it.  Only while selecting: with
+      // a tool down a double-click is two clicks of that tool, and talking over it would put a
+      // knot in whatever curve happened to be under the second one.
+      if (this.tool !== 'select') return;
       const hit = this.pick(...sp);
       if (hit instanceof Spline) this.insertControl(hit, ...this.s2w(sp[0], sp[1]));
     });
@@ -1146,6 +1154,14 @@ export class SketchView {
     return this.pickPoint(sp[0], sp[1]) ?? this.sketch.point(...this.s2w(sp[0], sp[1]));
   }
 
+  /** Where a click asks for, and the Point it landed on if it landed on one.  Both curve tools
+   *  and the three-point arc share this rule: a click that found a point *meant* that point, so
+   *  the geometry should be held to it rather than merely built near it. */
+  private pickPlace(sp: [number, number]): Place {
+    const on = this.pickPoint(sp[0], sp[1]);
+    return { at: on ? on.xy : this.s2w(sp[0], sp[1]), on };
+  }
+
   private toolClick(sp: [number, number]): void {
     const sk = this.sketch;
     if (!this.pending.length) this.pushUndo();
@@ -1183,8 +1199,8 @@ export class SketchView {
         // the third click on a real point means the arc should stay on it, not merely start
         // out near it
         const [a, b] = this.pending;
-        const on = this.pickPoint(sp[0], sp[1]);
-        const arc = sk.arcThrough(a, b, on ? on.xy : this.s2w(sp[0], sp[1]));
+        const { at, on } = this.pickPlace(sp);
+        const arc = sk.arcThrough(a, b, at);
         if (!arc) {
           this.onStatus('those three points are collinear — pick a point off the chord');
           return;                                    // keep the two ends, let them try again
@@ -1195,14 +1211,15 @@ export class SketchView {
     } else if (this.tool === 'splinefit') {
       // places the curve must pass through, not points of the sketch: snapping still works, but
       // what is recorded is where, so the tool leaves nothing behind if it is abandoned
-      const on = this.pickPoint(sp[0], sp[1]);
-      const at: [number, number] = on ? on.xy : this.s2w(sp[0], sp[1]);
+      const place = this.pickPlace(sp);
       const last = this.pendingFit[this.pendingFit.length - 1];
-      if (last && Math.hypot(at[0] - last.at[0], at[1] - last.at[1]) * this.scale < PICK_PX) {
+      const near = last
+        && Math.hypot(place.at[0] - last.at[0], place.at[1] - last.at[1]) * this.scale < PICK_PX;
+      if (near) {
         this.finishSplineFit();
         return;
       }
-      this.pendingFit.push({ at, on });
+      this.pendingFit.push(place);
       const min = C.curveInfo().minCtrl;
       const held = this.pendingFit.filter((f) => f.on).length;
       this.onStatus(this.pendingFit.length < min

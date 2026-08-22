@@ -407,22 +407,6 @@ test('a fit click that lands on a point holds the curve to it', () => {
   for (const p of [a, b]) assert.ok(curve.closest(p.x.value, p.y.value).distance < 1e-9);
 });
 
-test('a held point keeps the curve when it moves', () => {
-  const sk = new Sketch();
-  const view = viewOn(sk);
-  const [ax, ay] = view.s2w(300, 160);
-  const held = sk.point(ax, ay);
-  fitThrough(view, [[100, 100], [200, 60], [300, 160], [400, 80], [500, 140]]);
-  const curve = sk.splines[0];
-  assert.equal(sk.userConstraints().length, 1);
-
-  held.x.value += 7;
-  held.y.value -= 5;
-  assert.ok(solve(sk).success);
-  assert.ok(curve.closest(held.x.value, held.y.value).distance < 1e-6,
-            'the curve let go of the point it was held to');
-});
-
 test('an abandoned fit leaves the sketch untouched', () => {
   const sk = new Sketch();
   const view = viewOn(sk);

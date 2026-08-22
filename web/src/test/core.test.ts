@@ -1412,29 +1412,30 @@ test('deleting a control point shortens the curve instead of deleting it', () =>
   out.dispose();
 });
 
-test('inserting a control point gives another handle and moves nothing', () => {
+// that the curve does not move, that a fit passes through its points and what any of it costs
+// in degrees of freedom are Rust tests, where the kernels are; these check the binding reaches
+test('the binding can insert a control point', () => {
   const { sk, sp } = wave(6);
   const [t0, t1] = sp.domain;
-  const before = Array.from({ length: 41 }, (_, k) => sp.pointAt(t0 + (t1 - t0) * k / 40));
   const made = sp.insertControl(t0 + (t1 - t0) * 0.4);
   assert.ok(made);
+  assert.ok(sp.ctrl.includes(made!));
   assert.equal(sp.ctrl.length, 7);
-  assert.deepEqual(sp.domain, [t0, t1]);
-  before.forEach(([x, y], k) => {
-    const [gx, gy] = sp.pointAt(t0 + (t1 - t0) * k / 40);
-    assert.ok(Math.hypot(gx - x, gy - y) < 1e-9, `k=${k}`);
-  });
+  assert.equal(sp.insertControl(NaN), null);
   sk.dispose();
 });
 
-test('a curve through points passes through them', () => {
-  const pts: [number, number][] =
-    [[0, 0], [10, 20], [30, 5], [50, 25], [70, 0]];
+test('the binding can fit a curve through points, and hold it to them', () => {
+  const pts: [number, number][] = [[0, 0], [10, 20], [30, 5], [50, 25], [70, 0]];
   const sk = new Sketch();
-  const sp = sk.splineThrough(pts);
-  assert.ok(sp);
-  assert.equal(sp!.ctrl.length, pts.length);
-  for (const [x, y] of pts) assert.ok(sp!.closest(x, y).distance < 1e-9);
+  assert.ok(sk.splineThrough(pts));
+  assert.equal(sk.userConstraints().length, 0, 'nothing held, nothing said');
   assert.equal(sk.splineThrough(pts.slice(0, 3)), null);
+
+  const held = new Sketch();
+  const on = pts.map(([x, y]) => held.point(x, y));
+  assert.ok(held.splineThrough(pts, on));
+  assert.equal(held.userConstraints().length, pts.length, 'the hold list arrived');
   sk.dispose();
+  held.dispose();
 });

@@ -298,6 +298,7 @@ fn arg_json_value(a: &Arg) -> Json {
         Arg::Bool(b) => Json::Bool(*b),
         Arg::Str(s) => Json::Str(s.clone()),
         Arg::Expr(e) => Json::Num(e.value),
+        Arg::Seed { value, .. } => Json::Num(*value),
         // only a sketch can say what an owned unknown currently holds; `constraint_json` does
         Arg::Param(_) => Json::Null,
     }
@@ -481,7 +482,7 @@ pub fn registry_json() -> Json {
         // control points make one, so its tool and its messages cannot drift from `spline_with`
         ("curve", object([
             ("degree", (crate::curve::DEGREE as i64).into()),
-            ("minCtrl", (crate::curve::DEGREE as i64 + 1).into()),
+            ("minCtrl", (crate::curve::MIN_CTRL as i64).into()),
         ])),
     ])
 }
@@ -505,6 +506,12 @@ pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String>
                     .ok_or_else(|| "bad entity reference".to_string())?;
                 Arg::Ent(EntRef::new(ek, arr.get(1).map(|x| x.as_i64()).unwrap_or(0) as usize))
             }
+            // a hidden unknown arrives as its number, or `{"value", "pinned"}` when whoever
+            // computed it means it to stay — the same form the document uses
+            (crate::constraints::SpecKind::Param, _) => Arg::Seed {
+                value: a.get("value").map(|x| x.as_f64()).unwrap_or_else(|| a.as_f64()),
+                pinned: a.get("pinned").map(|x| x.as_bool()).unwrap_or(false),
+            },
             (crate::constraints::SpecKind::Int, _) => Arg::Int(a.as_i64()),
             (crate::constraints::SpecKind::Bool, _) => Arg::Bool(a.as_bool()),
             (crate::constraints::SpecKind::Str, _) => Arg::Str(a.as_str().to_string()),

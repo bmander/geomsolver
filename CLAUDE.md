@@ -84,8 +84,11 @@ Conventions:
   "the curve meets this point somewhere along its length", so without it a curve through m points
   keeps m degrees of freedom and could slide along itself, and a fit to fully constrained points
   would come out under-constrained.  The fit knows where along, so that is knowledge and not an
-  unknown.  A pinned Param is document state — `io` saves it as `{"value", "pinned"}` and `graft`
-  carries it, because an unpinned reload is a document with freedom nobody drew.
+  unknown.  A pin travels in the seed: `Arg::Seed { value, pinned }` is what a `Param` slot holds on the
+  way in, and `Sketch::add` consumes both halves at the one seam that turns a number into a
+  Param — so a document, a paste, a rebuild and a constructor all carry it without knowing pins
+  exist.  `clamp_contacts` leaves a pinned parameter alone: somebody said where along, and the
+  solver is not to argue.
 - A curve parameter is bounded (`t0 <= t <= t1`) and a least-squares problem cannot say so: left
   alone the solver puts a tangency on the phantom polynomial past the end of the drawn curve.
   `System::solve` says it instead — clamp, compare `curve::contact_spans` against the spans it was

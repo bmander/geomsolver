@@ -29,8 +29,12 @@ use std::collections::BTreeMap;
 /// stores a knot vector (any shape of cubic) but not a degree.
 pub const DEGREE: usize = 3;
 
-/// Control points one span reads — the number of non-zero basis functions.
+/// Control points one span reads — the number of non-zero basis functions, and equally the
+/// fewest a curve can be drawn with.  `knots_valid`, `Sketch::min_children` and the registry's
+/// `curve.minCtrl` all read it here, so what `spline_with` will accept, what survives a
+/// deletion and what a front end tells the user cannot disagree.
 pub const SPAN_N: usize = DEGREE + 1;
+pub const MIN_CTRL: usize = SPAN_N;
 
 /// The local knot window one span needs: u[span-p ..= span+p+1].
 pub const SPAN_K: usize = 2 * DEGREE + 2;
@@ -148,7 +152,7 @@ pub fn clamped_uniform(n: usize) -> Vec<f64> {
 /// Whether a knot vector is one `n` control points of degree `DEGREE` can be drawn with:
 /// the right length, non-decreasing, and with a non-empty parameter domain.
 pub fn knots_valid(u: &[f64], n: usize) -> bool {
-    n > DEGREE
+    n >= MIN_CTRL
         && u.len() == n + DEGREE + 1
         && u.iter().all(|x| x.is_finite())
         && u.windows(2).all(|w| w[0] <= w[1])
@@ -158,8 +162,12 @@ pub fn knots_valid(u: &[f64], n: usize) -> bool {
 /// The knot vector for a control polygon that has lost the control points at `gone`.
 ///
 /// One interior knot goes with each, so a curve shaped by knot insertion degrades back toward
-/// what it was rather than being re-spaced from scratch — deleting a control point is very
-/// nearly the inverse of inserting one.  Falls back to the clamped uniform vector when what is
+/// what it was rather than being re-spaced from scratch.  Note that this is *not* the inverse
+/// of `insert_control`: the curve changes shape, which it must, and dropping a knot
+/// re-parameterises what is left — so a contact keeps its number but not the place on the
+/// drawing that number named.  A free one solves its way back; a pinned one now names
+/// somewhere slightly else, which is the price of having said where along on a curve that has
+/// since lost a span.  Falls back to the clamped uniform vector when what is
 /// left is not a knot vector at all.
 pub fn knots_without(u: &[f64], gone: &[usize], n_left: usize) -> Vec<f64> {
     let mut v = u.to_vec();
@@ -485,26 +493,19 @@ pub fn interpolating_ctrl(
             n[k * m + span - p + a] = b[a];
         }
     }
-    let mut out = vec![(0.0, 0.0); m];
-    for coord in 0..2 {
-        let mut a = n.clone();
-        let mut rhs: Vec<f64> =
-            pts.iter().map(|q| if coord == 0 { q.0 } else { q.1 }).collect();
-        if !crate::linalg::lu_solve(m, &mut a, &mut rhs) {
-            return None;
-        }
-        for k in 0..m {
-            if !rhs[k].is_finite() {
-                return None;
-            }
-            if coord == 0 {
-                out[k].0 = rhs[k];
-            } else {
-                out[k].1 = rhs[k];
-            }
-        }
+    // one factorisation per coordinate, since `lu_solve` has no factor/solve split — but the
+    // second takes `n` itself rather than a third copy of it
+    let mut xs: Vec<f64> = pts.iter().map(|q| q.0).collect();
+    let mut ys: Vec<f64> = pts.iter().map(|q| q.1).collect();
+    let mut lu = n.clone();
+    if !crate::linalg::lu_solve(m, &mut lu, &mut xs) || !crate::linalg::lu_solve(m, &mut n, &mut ys)
+    {
+        return None;
     }
-    Some((out, u, t))
+    if xs.iter().chain(&ys).any(|v| !v.is_finite()) {
+        return None;
+    }
+    Some((xs.into_iter().zip(ys).collect(), u, t))
 }
 
 /// Give the curve one more control point at `t`, without changing its shape.
@@ -601,6 +602,9 @@ pub fn clamp_contacts(sk: &mut Sketch) -> Vec<u32> {
     let mut moved = Vec::new();
     for i in 0..sk.constraints.len() {
         let Some((s, t)) = sk.constraints[i].curve_contact() else { continue };
+        if sk.params[t as usize].fixed {
+            continue;   // pinned: somebody said where along, and the solver is not to argue
+        }
         let (t0, t1) = domain(sk, s);
         let v = sk.params[t as usize].value;
         let c = if v.is_finite() { v.clamp(t0, t1) } else { 0.5 * (t0 + t1) };

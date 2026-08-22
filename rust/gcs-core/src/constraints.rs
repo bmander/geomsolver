@@ -318,8 +318,18 @@ pub enum Arg {
     Expr(crate::expr::Expr),
     /// An index into `Sketch::params`: the unknown this constraint owns, filled in by
     /// `Sketch::add`.  Only a `Param` slot holds one, and only after the constraint has been
-    /// added — before that the slot carries the seed value as an `Arg::Num`.
+    /// added — before that the slot carries an `Arg::Seed` (or a bare `Arg::Num`).
     Param(u32),
+    /// What a `Param` slot holds on the way in: the number the unknown starts at, and whether
+    /// the caller means it to *stay* there.  A pinned unknown is one somebody has already
+    /// worked out — a fit knows where along the curve each of its points sits — so the solver
+    /// is not to move it.
+    ///
+    /// Both halves travel together and are consumed together by `Sketch::add`, which is the one
+    /// seam that turns a number into a Param.  That is the point of the variant: a path that
+    /// carries the value cannot drop the pin, so a document, a paste, a rebuild and a
+    /// constructor are all correct without knowing pins exist.
+    Seed { value: f64, pinned: bool },
 }
 
 impl Arg {
@@ -348,6 +358,7 @@ impl Arg {
     pub fn num(&self) -> f64 {
         match self {
             Arg::Num(v) => *v,
+            Arg::Seed { value, .. } => *value,
             Arg::Int(v) => *v as f64,
             Arg::Bool(b) => {
                 if *b {

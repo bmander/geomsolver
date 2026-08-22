@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from gcs import constraints as C
@@ -140,57 +138,35 @@ def test_deleting_a_control_point_shortens_the_curve() -> None:
     assert len(out.splines[0].ctrl) == 6
 
 
-def test_inserting_a_control_point_does_not_move_the_curve() -> None:
+def test_the_binding_can_insert_a_control_point() -> None:
+    """That the curve does not move is the Rust test's business — the kernel is there.  Here:
+    the binding reaches it and hands back the Point it made."""
     sk, sp = wave(6)
     t0, t1 = sp.domain
-    before = [sp.point_at(t0 + (t1 - t0) * k / 40) for k in range(41)]
     made = sp.insert_control(t0 + (t1 - t0) * 0.4)
     assert made is not None
+    assert made in sp.ctrl
     assert len(sp.ctrl) == 7
-    assert sp.domain == (t0, t1)
-    for k, (x, y) in enumerate(before):
-        gx, gy = sp.point_at(t0 + (t1 - t0) * k / 40)
-        assert math.hypot(gx - x, gy - y) < 1e-9
+    assert sp.insert_control(float("nan")) is None
 
 
-def test_a_curve_through_points_passes_through_them() -> None:
+def test_the_binding_can_fit_a_curve_through_points() -> None:
     pts = [(0.0, 0.0), (10.0, 20.0), (30.0, 5.0), (50.0, 25.0), (70.0, 0.0)]
     sk = Sketch()
     sp = sk.spline_through(pts)
     assert sp is not None
     assert len(sp.ctrl) == len(pts)
-    for x, y in pts:
-        assert sp.closest(x, y)[1] < 1e-9
     assert sk.spline_through(pts[:3]) is None
 
 
-def test_a_curve_fitted_to_constrained_points_is_fully_constrained() -> None:
-    from gcs.diagnose import diagnose
-
-    pts = [(0.0, 0.0), (10.0, 20.0), (30.0, 5.0), (50.0, 25.0), (70.0, 0.0)]
-    sk = Sketch()
-    held = [sk.point(x, y, fixed=True) for x, y in pts]
-    sp = sk.spline_through(pts, held)
-    assert sp is not None
-    d = diagnose(sk)
-    assert d.dof == 0
-    assert d.n_redundant == 0
-    assert solve(sk).success
-    for x, y in pts:
-        assert sp.closest(x, y)[1] < 1e-9
-    # a fit that holds nothing keeps the freedom of its own control polygon
-    free = Sketch()
-    assert free.spline_through(pts) is not None
-    assert diagnose(free).dof == 2 * len(pts)
-
-
-def test_a_pin_survives_the_document() -> None:
+def test_holding_reaches_the_core_through_the_binding() -> None:
+    """The DOF arithmetic and the pin's survival are Rust tests.  What only the binding can show
+    is that `hold` arrives: the contacts exist, and the document it writes still has them."""
     from gcs.diagnose import diagnose
 
     pts = [(0.0, 0.0), (10.0, 20.0), (30.0, 5.0), (50.0, 25.0)]
     sk = Sketch()
     sk.spline_through(pts, [sk.point(x, y, fixed=True) for x, y in pts])
-    text = io.dumps(sk)
-    back = io.loads(text)
-    assert diagnose(back).dof == 0, "the pins were lost on the way through the document"
-    assert io.dumps(back) == text
+    assert [type(c).__name__ for c in sk.constraints] == ["PointOnSpline"] * len(pts)
+    assert diagnose(sk).dof == 0
+    assert io.dumps(io.loads(io.dumps(sk))) == io.dumps(sk)

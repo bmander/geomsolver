@@ -345,14 +345,17 @@ impl Sketch {
         let s = self.spline_with(&ids, Some(knots))?;
         for (i, &held) in hold.iter().enumerate() {
             let Some(p) = held else { continue };
+            // pinned: the fit worked out where along the curve this point sits, so that is
+            // knowledge and not something to solve for
             let c = Constraint::new(
                 crate::constraints::CKind::PointOnSpline,
-                vec![Arg::Ent(EntRef::point(p)), Arg::Ent(EntRef::spline(s)), Arg::Num(at[i])],
+                vec![
+                    Arg::Ent(EntRef::point(p)),
+                    Arg::Ent(EntRef::spline(s)),
+                    Arg::Seed { value: at[i], pinned: true },
+                ],
             );
-            let id = self.add(c);
-            for t in self.constraint(id).map(|c| c.aux_params()).unwrap_or_default() {
-                self.params[t as usize].fixed = true;
-            }
+            self.add(c);
         }
         Some(s)
     }
@@ -406,9 +409,12 @@ impl Sketch {
             if matches!(c.args[i], Arg::Param(_)) {
                 continue;   // already allocated (a constraint moved between sketches)
             }
-            let v = c.args[i].num();
+            let (v, pinned) = match c.args[i] {
+                Arg::Seed { value, pinned } => (value, pinned),
+                ref a => (a.num(), false),
+            };
             let scale = crate::constraints::param_scale(self, c.kind, &c.args, i);
-            let p = self.param_scaled(v, false, &format!("c{id}.{name}"), scale);
+            let p = self.param_scaled(v, pinned, &format!("c{id}.{name}"), scale);
             c.args[i] = Arg::Param(p as u32);
         }
         let expr = crate::expr::has_expr(&c.args);
@@ -584,9 +590,13 @@ impl Sketch {
     /// spline is defined by a *list*, so it survives losing one control point while enough are
     /// left to draw a curve with.
     pub fn min_children(&self, e: EntRef) -> usize {
+        // exhaustive on purpose: a new list-shaped entity must stop the build here, or it would
+        // inherit the point-shaped answer and be deleted whole instead of shortened
         match e.kind {
-            EntKind::Spline => crate::curve::DEGREE + 1,
-            _ => self.children(e).len(),
+            EntKind::Spline => crate::curve::MIN_CTRL,
+            EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc => {
+                self.children(e).len()
+            }
         }
     }
 
