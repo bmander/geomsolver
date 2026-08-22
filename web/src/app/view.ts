@@ -88,9 +88,11 @@ export class SketchView {
   selected: Primitive[] = [];
   highlight: Primitive[] = [];
   pending: Point[] = [];
-  /** Where the fit tool has been told the curve must pass, before there is a curve.  Places,
-   *  not Points: the tool leaves nothing in the sketch if it is abandoned. */
-  pendingXY: [number, number][] = [];
+  /** Where the fit tool has been told the curve must pass, before there is a curve — and, when
+   *  a click landed on one, the Point it landed on.  Places rather than Points, so the tool
+   *  leaves nothing in the sketch if it is abandoned; a place that *is* a point becomes a
+   *  constraint once there is a curve to name. */
+  pendingFit: { at: [number, number]; on: Point | null }[] = [];
   diagnosis: Diagnosis | null = null;
   /** The constraint the shell has the focus on, so its callout can say so. */
   litConstraint: Constraint | null = null;
@@ -640,7 +642,7 @@ export class SketchView {
       }
     }
     ctx.setLineDash([]);
-    if (this.pending.length || this.pendingXY.length) this.paintPreview();
+    if (this.pending.length || this.pendingFit.length) this.paintPreview();
     if (this.diagnosis?.conflicts?.length) this.paintConflicts();
 
     for (const p of sk.points) {
@@ -841,14 +843,21 @@ export class SketchView {
     if (this.tool === 'splinefit') {
       // the places given so far, joined in order, and a band to the cursor.  Not the fitted
       // curve: that is a solve, and a preview that lags the cursor is worse than an honest one
-      this.polyPath(this.pendingXY);
+      this.polyPath(this.pendingFit.map((f) => f.at));
       ctx.lineTo(cur[0], cur[1]);
       ctx.stroke();
-      for (const q of this.pendingXY) {
-        const [sx, sy] = this.w2s(q[0], q[1]);
+      for (const f of this.pendingFit) {
+        // a place that landed on a real point is drawn filled: it is the one the finished curve
+        // will be *held* to, not merely fitted through
+        const [sx, sy] = this.w2s(f.at[0], f.at[1]);
         ctx.beginPath();
         ctx.arc(sx, sy, 3, 0, 2 * Math.PI);
-        ctx.stroke();
+        if (f.on) {
+          ctx.fillStyle = COL.preview;
+          ctx.fill();
+        } else {
+          ctx.stroke();
+        }
       }
       ctx.restore();
       return;
@@ -925,7 +934,7 @@ export class SketchView {
   setTool(tool: Tool): void {
     this.tool = tool;
     this.pending = [];
-    this.pendingXY = [];
+    this.pendingFit = [];
     this.canvas.classList.toggle('select', tool === 'select');
     this.canvas.style.cursor = '';                // drop any hover affordance
     this.onTool(tool);
@@ -960,15 +969,27 @@ export class SketchView {
   finishSplineFit(): void {
     if (this.tool !== 'splinefit') return;
     const min = C.curveInfo().minCtrl;
-    if (this.pendingXY.length < min) {
-      this.onStatus(`a curve needs ${min} points; ${this.pendingXY.length} placed`);
+    if (this.pendingFit.length < min) {
+      this.onStatus(`a curve needs ${min} points; ${this.pendingFit.length} placed`);
       return;
     }
-    if (!this.sketch.splineThrough(this.pendingXY)) {
+    this.pushUndo();
+    // A click that landed on a point meant that point, not a place that happens to be under it:
+    // the curve should *stay* through it when either is moved.  The core makes those contacts,
+    // because it is the one that knows where along the curve each point ended up — and pinning
+    // that is what leaves a curve fitted to constrained points fully constrained.
+    const made = this.sketch.splineThrough(this.pendingFit.map((f) => f.at),
+                                           this.pendingFit.map((f) => f.on));
+    if (!made) {
+      this.undoStack.pop();
       this.onStatus('no curve passes through those points — are any of them on top of another?');
       return;
     }
-    this.pendingXY = [];
+    const held = this.pendingFit.filter((f) => f.on).length;
+    if (held) {
+      this.onStatus(`curve through ${this.pendingFit.length} points, ${held} held`);
+    }
+    this.pendingFit = [];
     this.releasePlan();
     this.afterEdit();
   }
@@ -999,9 +1020,9 @@ export class SketchView {
       this.stopAnimation();
       return;
     }
-    if (this.pending.length || this.pendingXY.length) {
+    if (this.pending.length || this.pendingFit.length) {
       this.pending = [];
-      this.pendingXY = [];
+      this.pendingFit = [];
       this.draw();
       return;
     }
@@ -1176,16 +1197,17 @@ export class SketchView {
       // what is recorded is where, so the tool leaves nothing behind if it is abandoned
       const on = this.pickPoint(sp[0], sp[1]);
       const at: [number, number] = on ? on.xy : this.s2w(sp[0], sp[1]);
-      const last = this.pendingXY[this.pendingXY.length - 1];
-      if (last && Math.hypot(at[0] - last[0], at[1] - last[1]) * this.scale < PICK_PX) {
+      const last = this.pendingFit[this.pendingFit.length - 1];
+      if (last && Math.hypot(at[0] - last.at[0], at[1] - last.at[1]) * this.scale < PICK_PX) {
         this.finishSplineFit();
         return;
       }
-      this.pendingXY.push(at);
+      this.pendingFit.push({ at, on });
       const min = C.curveInfo().minCtrl;
-      this.onStatus(this.pendingXY.length < min
-        ? `${min - this.pendingXY.length} more point(s) for a curve`
-        : 'Enter, or click the last point again, to finish the curve');
+      const held = this.pendingFit.filter((f) => f.on).length;
+      this.onStatus(this.pendingFit.length < min
+        ? `${min - this.pendingFit.length} more point(s) for a curve`
+        : `Enter to finish${held ? `; ${held} held by a point` : ''}`);
       this.draw();
       return;
     } else if (this.tool === 'spline') {

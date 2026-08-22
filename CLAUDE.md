@@ -75,11 +75,17 @@ Conventions:
   one shortens the curve rather than destroying it: `Sketch::min_children` is the general rule
   (an entity survives while enough children do — for a line or an arc that is all of them), and
   `curve::knots_without` gives up one interior knot per lost control point, so deletion is very
-  nearly the inverse of insertion.  *Interpolating* is `Sketch::spline_through`: chord-length
+  nearly the inverse of insertion.  *Interpolating* is `Sketch::spline_through_held`: chord-length
   parameters, averaged knots and one collocation solve give a control polygon whose curve passes
-  through the given places.  It is a construction, not a set of constraints — the same bargain
-  `arc_through` strikes with its third click — so what comes back is an ordinary curve, and a
-  user who wants it to *stay* through somewhere says so with a `PointOnSpline`.
+  through the given places.  A place that came from empty space is construction input and leaves
+  nothing behind — the same bargain `arc_through` strikes with its third click; a place that came
+  from a Point is *held*, by a `PointOnSpline` whose parameter is **pinned** at the value the fit
+  chose.  The pin is what makes the answer determinate: a contact with a free parameter says only
+  "the curve meets this point somewhere along its length", so without it a curve through m points
+  keeps m degrees of freedom and could slide along itself, and a fit to fully constrained points
+  would come out under-constrained.  The fit knows where along, so that is knowledge and not an
+  unknown.  A pinned Param is document state — `io` saves it as `{"value", "pinned"}` and `graft`
+  carries it, because an unpinned reload is a document with freedom nobody drew.
 - A curve parameter is bounded (`t0 <= t <= t1`) and a least-squares problem cannot say so: left
   alone the solver puts a tangency on the phantom polynomial past the end of the drawn curve.
   `System::solve` says it instead — clamp, compare `curve::contact_spans` against the spans it was

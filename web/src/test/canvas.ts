@@ -28,6 +28,8 @@ export function fakeCanvas(width = 800, height = 600): HTMLCanvasElement & FakeC
     width,
     height,
     style: {},
+    // `setTool` marks the canvas so the cursor can change; nothing is being looked at
+    classList: { toggle: () => {}, add: () => {}, remove: () => {}, contains: () => false },
     handlers,
     getContext: () => context,
     getBoundingClientRect: () => ({ left: 0, top: 0, width, height }),

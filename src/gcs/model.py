@@ -437,14 +437,27 @@ class Sketch:
             return None
         return self.splines[int(i)]
 
-    def spline_through(self, pts: Sequence[tuple[float, float]]) -> Spline | None:
+    def spline_through(self, pts: Sequence[tuple[float, float]],
+                       hold: Sequence[Point | None] | None = None) -> Spline | None:
         """A cubic B-spline through `pts`, in order.  The control points are computed, not given
-        — the same bargain `arc_through` strikes.  `None` if there are too few for a cubic, or
-        they give no parameterisation."""
-        buf = _ffi.f64(max(2, 2 * len(pts)))
+        — the same bargain `arc_through` strikes.
+
+        `hold[i]`, where given, is a Point the place came from rather than empty space: the curve
+        is held to it by a `PointOnSpline` pinned at the parameter the fit chose, so a curve
+        fitted to constrained points is itself fully constrained.  `None` if there are too few
+        points for a cubic, or they give no parameterisation."""
+        n = max(1, len(pts))
+        buf = _ffi.f64(2 * n)
         for k, (x, y) in enumerate(pts):
             buf[2 * k], buf[2 * k + 1] = float(x), float(y)
-        i = lib.gcs_sketch_spline_through(self._h, _ffi.pf(buf), len(pts))
+        held = None
+        if hold and any(h is not None for h in hold):
+            held = _ffi.i32(n)
+            for k in range(len(pts)):
+                h = hold[k] if k < len(hold) else None
+                held[k] = h.index if h is not None else -1
+        i = lib.gcs_sketch_spline_through(self._h, _ffi.pf(buf), len(pts),
+                                          _ffi.pi(held) if held is not None else None)
         return self.splines[int(i)] if i >= 0 else None
 
     def rectangle(self, a: Point, x1: float, y1: float, name: str = "") -> list[Line]:

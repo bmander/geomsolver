@@ -12,6 +12,7 @@ import * as io from '../core/io.js';
 import { Sketch } from '../core/model.js';
 import { callouts } from '../core/callout.js';
 import { PlanDrag } from '../core/decompose.js';
+import { solve } from '../core/system.js';
 import { SketchView } from '../app/view.js';
 import { initCore } from '../core/wasm.js';
 import { fakeCanvas, pointer } from './canvas.js';
@@ -357,4 +358,81 @@ test('the clipboard outlives the sketch it came from', () => {
   assert.equal(view.pasteClipboard(), 3);
   assert.equal(view.sketch.lines.length, 1);
   assert.equal(view.sketch.userConstraints().length, 1);
+});
+
+/* -- the spline fit tool ------------------------------------------------------- */
+
+/** Click the fit tool at each screen position, then finish. */
+function fitThrough(view: SketchView, at: [number, number][]): void {
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  view.setTool('splinefit');
+  for (const [x, y] of at) {
+    cv.fire('pointerdown', pointer(x, y));
+    cv.fire('pointerup', pointer(x, y));
+  }
+  view.finishSplineFit();
+}
+
+test('a curve fitted through free clicks leaves no points behind and no constraints', () => {
+  const view = viewOn(new Sketch());
+  fitThrough(view, [[100, 100], [200, 60], [300, 160], [400, 80], [500, 140]]);
+  const sk = view.sketch;
+  assert.equal(sk.splines.length, 1);
+  assert.equal(sk.points.length, 5, 'the control polygon, and nothing else');
+  assert.deepEqual(sk.points.map((p) => p.index), sk.splines[0].ctrl.map((p) => p.index));
+  assert.equal(sk.userConstraints().length, 0, 'a free click is a place, not a promise');
+});
+
+test('a fit click that lands on a point holds the curve to it', () => {
+  const sk = new Sketch();
+  const view = viewOn(sk);
+  // two points already in the sketch, at screen positions the tool will snap to
+  const [ax, ay] = view.s2w(200, 60);
+  const [bx, by] = view.s2w(400, 80);
+  const a = sk.point(ax, ay), b = sk.point(bx, by);
+  fitThrough(view, [[100, 100], [200, 60], [300, 160], [400, 80], [500, 140]]);
+
+  assert.equal(sk.splines.length, 1);
+  const curve = sk.splines[0];
+  const held = sk.userConstraints().filter((c) => c.typeName === 'PointOnSpline');
+  assert.equal(held.length, 2, 'both snapped clicks became constraints');
+  assert.deepEqual(held.map((c) => (c.args[0] as { index: number }).index).sort(),
+                   [a.index, b.index].sort());
+  // the snapped points are not control points: they were already in the sketch
+  assert.equal(curve.ctrl.length, 5);
+  assert.ok(!curve.ctrl.some((p) => p === a || p === b));
+  // and the curve already passes through them, so the constraints hold with nothing to solve
+  for (const p of [a, b]) assert.ok(curve.closest(p.x.value, p.y.value).distance < 1e-9);
+  assert.ok(solve(sk).success);
+  for (const p of [a, b]) assert.ok(curve.closest(p.x.value, p.y.value).distance < 1e-9);
+});
+
+test('a held point keeps the curve when it moves', () => {
+  const sk = new Sketch();
+  const view = viewOn(sk);
+  const [ax, ay] = view.s2w(300, 160);
+  const held = sk.point(ax, ay);
+  fitThrough(view, [[100, 100], [200, 60], [300, 160], [400, 80], [500, 140]]);
+  const curve = sk.splines[0];
+  assert.equal(sk.userConstraints().length, 1);
+
+  held.x.value += 7;
+  held.y.value -= 5;
+  assert.ok(solve(sk).success);
+  assert.ok(curve.closest(held.x.value, held.y.value).distance < 1e-6,
+            'the curve let go of the point it was held to');
+});
+
+test('an abandoned fit leaves the sketch untouched', () => {
+  const sk = new Sketch();
+  const view = viewOn(sk);
+  const before = io.dumps(sk);
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  view.setTool('splinefit');
+  for (const [x, y] of [[100, 100], [200, 60], [300, 160]] as [number, number][]) {
+    cv.fire('pointerdown', pointer(x, y));
+    cv.fire('pointerup', pointer(x, y));
+  }
+  view.cancelTool();
+  assert.equal(io.dumps(view.sketch), before, 'the tool left something behind');
 });

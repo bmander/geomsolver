@@ -338,17 +338,30 @@ pub unsafe extern "C" fn gcs_sketch_spline(h: *mut Sketch, ctrl: *const i32, n: 
 }
 
 /// A cubic B-spline through `n` (x, y) pairs, in order — the control points are computed.
+///
+/// `hold` is `n` point indices, `-1` for a place that came from empty space; the rest become
+/// `PointOnSpline` contacts pinned at the parameter the fit chose, so a curve fitted to
+/// constrained points is itself fully constrained.  Pass null to hold none of them.
 /// -1 when there are too few for a cubic, or they give no parameterisation.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_spline_through(
     h: *mut Sketch,
     pts: *const f64,
     n: usize,
+    hold: *const i32,
 ) -> i32 {
     guard(-1, move || {
         let v = std::slice::from_raw_parts(pts, 2 * n);
         let q: Vec<(f64, f64)> = (0..n).map(|i| (v[2 * i], v[2 * i + 1])).collect();
-        sk(h).spline_through(&q).map(|i| i as i32).unwrap_or(-1)
+        let held: Vec<Option<usize>> = if hold.is_null() {
+            vec![None; n]
+        } else {
+            std::slice::from_raw_parts(hold, n)
+                .iter()
+                .map(|&i| if i < 0 { None } else { Some(i as usize) })
+                .collect()
+        };
+        sk(h).spline_through_held(&q, &held).map(|i| i as i32).unwrap_or(-1)
     })
 }
 

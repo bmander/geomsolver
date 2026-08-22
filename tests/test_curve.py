@@ -162,3 +162,35 @@ def test_a_curve_through_points_passes_through_them() -> None:
     for x, y in pts:
         assert sp.closest(x, y)[1] < 1e-9
     assert sk.spline_through(pts[:3]) is None
+
+
+def test_a_curve_fitted_to_constrained_points_is_fully_constrained() -> None:
+    from gcs.diagnose import diagnose
+
+    pts = [(0.0, 0.0), (10.0, 20.0), (30.0, 5.0), (50.0, 25.0), (70.0, 0.0)]
+    sk = Sketch()
+    held = [sk.point(x, y, fixed=True) for x, y in pts]
+    sp = sk.spline_through(pts, held)
+    assert sp is not None
+    d = diagnose(sk)
+    assert d.dof == 0
+    assert d.n_redundant == 0
+    assert solve(sk).success
+    for x, y in pts:
+        assert sp.closest(x, y)[1] < 1e-9
+    # a fit that holds nothing keeps the freedom of its own control polygon
+    free = Sketch()
+    assert free.spline_through(pts) is not None
+    assert diagnose(free).dof == 2 * len(pts)
+
+
+def test_a_pin_survives_the_document() -> None:
+    from gcs.diagnose import diagnose
+
+    pts = [(0.0, 0.0), (10.0, 20.0), (30.0, 5.0), (50.0, 25.0)]
+    sk = Sketch()
+    sk.spline_through(pts, [sk.point(x, y, fixed=True) for x, y in pts])
+    text = io.dumps(sk)
+    back = io.loads(text)
+    assert diagnose(back).dof == 0, "the pins were lost on the way through the document"
+    assert io.dumps(back) == text

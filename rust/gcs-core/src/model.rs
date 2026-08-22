@@ -316,13 +316,45 @@ impl Sketch {
     /// arc is construction input, not a sketch point.  `None` if there are too few points for a
     /// cubic, or they give no parameterisation.
     pub fn spline_through(&mut self, pts: &[(f64, f64)]) -> Option<usize> {
-        let (ctrl, knots) = crate::curve::interpolating_ctrl(pts)?;
+        self.spline_through_held(pts, &vec![None; pts.len()])
+    }
+
+    /// The same, holding the curve to the places that came from a Point rather than from empty
+    /// space: each becomes a `PointOnSpline` whose parameter is *pinned* at the value the fit
+    /// chose for it.
+    ///
+    /// The pin is what makes the answer determinate.  A contact whose parameter is free says
+    /// only "the curve passes through here somewhere along its length", so a curve through m
+    /// points keeps m degrees of freedom — it can slide along itself and still meet every one of
+    /// them.  The fit already worked out where along, so that is knowledge and not an unknown,
+    /// and a curve fitted to fully constrained points comes out fully constrained.
+    pub fn spline_through_held(
+        &mut self,
+        pts: &[(f64, f64)],
+        hold: &[Option<usize>],
+    ) -> Option<usize> {
+        if hold.len() != pts.len() || hold.iter().flatten().any(|&p| p >= self.points.len()) {
+            return None;
+        }
+        let (ctrl, knots, at) = crate::curve::interpolating_ctrl(pts)?;
         let ids: Vec<usize> = ctrl
             .iter()
             .enumerate()
             .map(|(i, &(x, y))| self.point(x, y, false, &format!("k{i}")))
             .collect();
-        self.spline_with(&ids, Some(knots))
+        let s = self.spline_with(&ids, Some(knots))?;
+        for (i, &held) in hold.iter().enumerate() {
+            let Some(p) = held else { continue };
+            let c = Constraint::new(
+                crate::constraints::CKind::PointOnSpline,
+                vec![Arg::Ent(EntRef::point(p)), Arg::Ent(EntRef::spline(s)), Arg::Num(at[i])],
+            );
+            let id = self.add(c);
+            for t in self.constraint(id).map(|c| c.aux_params()).unwrap_or_default() {
+                self.params[t as usize].fixed = true;
+            }
+        }
+        Some(s)
     }
 
     /// Four lines round the corners `a` and (x1, y1), sharing corner points, with three

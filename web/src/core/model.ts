@@ -420,12 +420,25 @@ export class Sketch {
   }
 
   /** A cubic B-spline through `pts`, in order.  The control points are computed, not clicked —
-   *  the same bargain `arcThrough` strikes.  null if there are too few for a cubic, or they give
-   *  no parameterisation. */
-  splineThrough(pts: readonly (readonly [number, number])[]): Spline | null {
-    const i = withBuf(Math.max(2, 2 * pts.length), 8, (b) => {
+   *  the same bargain `arcThrough` strikes.
+   *
+   *  `hold[i]`, where given, is a Point the place came from rather than empty space: the curve
+   *  is held to it by a `PointOnSpline` pinned at the parameter the fit chose, so a curve fitted
+   *  to constrained points is itself fully constrained.  null if there are too few points for a
+   *  cubic, or they give no parameterisation. */
+  splineThrough(pts: readonly (readonly [number, number])[],
+                hold?: readonly (Point | null)[]): Spline | null {
+    const n = Math.max(1, pts.length);
+    const i = withBuf(2 * n, 8, (b) => {
       b.f64.set(pts.flatMap((p) => [p[0], p[1]]));
-      return core().gcs_sketch_spline_through(this.handle, b.ptr, pts.length);
+      const xy = b.ptr;
+      if (!hold?.some(Boolean)) {
+        return core().gcs_sketch_spline_through(this.handle, xy, pts.length, 0);
+      }
+      return withBuf(n, 4, (h) => {
+        h.i32.set(pts.map((_, k) => hold[k]?.index ?? -1));
+        return core().gcs_sketch_spline_through(this.handle, xy, pts.length, h.ptr);
+      });
     });
     return i < 0 ? null : this.splines[i];
   }

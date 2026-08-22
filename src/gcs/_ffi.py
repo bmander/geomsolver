@@ -72,7 +72,7 @@ _SIGNATURES: list[tuple[str, Any, list[Any]]] = [
      [PTR, ct.c_int32, ct.c_int32, ct.c_double, ct.c_double, PTR, ct.c_size_t]),
     ("gcs_sketch_spline", ct.c_int32, [PTR, I32, ct.c_size_t]),
     ("gcs_sketch_spline_knots", ct.c_int32, [PTR, I32, ct.c_size_t, F64, ct.c_size_t]),
-    ("gcs_sketch_spline_through", ct.c_int32, [PTR, F64, ct.c_size_t]),
+    ("gcs_sketch_spline_through", ct.c_int32, [PTR, F64, ct.c_size_t, I32]),
     ("gcs_sketch_rectangle", None,
      [PTR, ct.c_int32, ct.c_double, ct.c_double, PTR, ct.c_size_t, I32]),
     ("gcs_sketch_get_x", None, [PTR, F64]),

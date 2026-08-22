@@ -439,9 +439,15 @@ pub fn distance_to(sk: &Sketch, i: usize, x: f64, y: f64) -> f64 {
 /// `Sketch::arc_through` strikes for the three-point arc.  A user who wants the curve to *stay*
 /// through a point says so with a `PointOnSpline`.
 ///
+/// Returns the control points, the knot vector, and the parameter each given point sits at —
+/// that last one matters: the fit *chose* where along the curve each point is, so a contact made
+/// from it knows its parameter rather than having to solve for it.
+///
 /// `None` if there are too few points for a cubic, or if they are too close together to give a
 /// parameterisation.
-pub fn interpolating_ctrl(pts: &[(f64, f64)]) -> Option<(Vec<(f64, f64)>, Vec<f64>)> {
+pub fn interpolating_ctrl(
+    pts: &[(f64, f64)],
+) -> Option<(Vec<(f64, f64)>, Vec<f64>, Vec<f64>)> {
     let m = pts.len();
     let p = DEGREE;
     if m < p + 1 || pts.iter().any(|q| !q.0.is_finite() || !q.1.is_finite()) {
@@ -498,7 +504,7 @@ pub fn interpolating_ctrl(pts: &[(f64, f64)]) -> Option<(Vec<(f64, f64)>, Vec<f6
             }
         }
     }
-    Some((out, u))
+    Some((out, u, t))
 }
 
 /// Give the curve one more control point at `t`, without changing its shape.

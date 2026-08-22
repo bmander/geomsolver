@@ -590,3 +590,84 @@ fn too_few_or_too_bunched_points_make_no_curve() {
     assert!(sk.spline_through(&[(1.0, 1.0); 5]).is_none());
     assert!(sk.points.is_empty(), "a refused curve left points behind");
 }
+
+#[test]
+fn a_curve_fitted_to_constrained_points_is_fully_constrained() {
+    let pts = [(0.0, 0.0), (10.0, 20.0), (30.0, 5.0), (50.0, 25.0), (70.0, 0.0)];
+    let mut sk = Sketch::new();
+    let held: Vec<Option<usize>> =
+        pts.iter().map(|&(x, y)| Some(sk.point(x, y, true, "q"))).collect();
+    let s = sk.spline_through_held(&pts, &held).unwrap();
+
+    let d = gcs_core::diagnose::diagnose(&mut sk, Default::default());
+    assert_eq!(d.dof, 0, "the curve kept freedom its points did not give it");
+    assert_eq!(d.n_redundant, 0, "and paid for it with equations that say nothing");
+    assert!(d.conflicts.unwrap_or_default().is_empty());
+    assert!(solved(&mut sk));
+    for &(x, y) in &pts {
+        assert!(curve::distance_to(&sk, s, x, y) < 1e-9);
+    }
+}
+
+#[test]
+fn a_curve_fitted_to_free_points_has_exactly_their_freedom() {
+    // with the parameters pinned the curve is *determined* by the points: what is left to move
+    // is the points themselves, and nothing else
+    let pts = [(0.0, 0.0), (10.0, 20.0), (30.0, 5.0), (50.0, 25.0), (70.0, 0.0)];
+    let mut sk = Sketch::new();
+    let held: Vec<Option<usize>> =
+        pts.iter().map(|&(x, y)| Some(sk.point(x, y, false, "q"))).collect();
+    sk.spline_through_held(&pts, &held).unwrap();
+    assert_eq!(gcs_core::diagnose::diagnose(&mut sk, Default::default()).dof, 2 * pts.len() as i64);
+}
+
+#[test]
+fn moving_a_held_point_takes_the_curve_with_it() {
+    // the points are the constrained thing and the curve is what gives: this is the fit above
+    // after somebody drags one of the points it was fitted to
+    let pts = [(0.0, 0.0), (10.0, 20.0), (30.0, 5.0), (50.0, 25.0), (70.0, 0.0)];
+    let mut sk = Sketch::new();
+    let held: Vec<Option<usize>> =
+        pts.iter().map(|&(x, y)| Some(sk.point(x, y, true, "q"))).collect();
+    let s = sk.spline_through_held(&pts, &held).unwrap();
+    let moved = held[2].unwrap();
+    let (px, py) = sk.point_xy(moved);
+    let py_param = sk.point_params(moved)[1] as usize;
+    sk.params[py_param].value = py + 18.0;
+    assert!(solved(&mut sk));
+    assert!(curve::distance_to(&sk, s, px, py + 18.0) < 1e-6, "the curve let the point go");
+    for (i, &(x, y)) in pts.iter().enumerate() {
+        if i != 2 {
+            assert!(curve::distance_to(&sk, s, x, y) < 1e-6, "it dropped one of the others");
+        }
+    }
+    // and it is still determinate afterwards
+    assert_eq!(gcs_core::diagnose::diagnose(&mut sk, Default::default()).dof, 0);
+}
+
+#[test]
+fn a_pin_survives_a_save_a_load_and_a_copy() {
+    let pts = [(0.0, 0.0), (10.0, 20.0), (30.0, 5.0), (50.0, 25.0)];
+    let mut sk = Sketch::new();
+    let held: Vec<Option<usize>> =
+        pts.iter().map(|&(x, y)| Some(sk.point(x, y, true, "q"))).collect();
+    sk.spline_through_held(&pts, &held).unwrap();
+    let pinned = |d: &Sketch| -> usize {
+        d.constraints
+            .iter()
+            .filter(|c| c.kind == CKind::PointOnSpline)
+            .filter(|c| c.aux_params().iter().all(|&t| d.params[t as usize].fixed))
+            .count()
+    };
+    assert_eq!(pinned(&sk), pts.len());
+
+    let text = gcs_core::io::dumps(&sk, None);
+    let back = gcs_core::io::loads(&text).unwrap();
+    assert_eq!(pinned(&back), pts.len(), "the pins were lost on the way through the document");
+    assert_eq!(gcs_core::io::dumps(&back, None), text);
+    assert_eq!(gcs_core::diagnose::diagnose(&mut back.clone(), Default::default()).dof, 0);
+
+    let all: Vec<EntRef> = sk.primitives();
+    let clip = gcs_core::io::copy(&sk, &all);
+    assert_eq!(pinned(&clip), pts.len(), "the pins were lost on the way through a copy");
+}
