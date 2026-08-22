@@ -337,6 +337,21 @@ pub unsafe extern "C" fn gcs_sketch_spline(h: *mut Sketch, ctrl: *const i32, n: 
     })
 }
 
+/// A cubic B-spline through `n` (x, y) pairs, in order — the control points are computed.
+/// -1 when there are too few for a cubic, or they give no parameterisation.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_spline_through(
+    h: *mut Sketch,
+    pts: *const f64,
+    n: usize,
+) -> i32 {
+    guard(-1, move || {
+        let v = std::slice::from_raw_parts(pts, 2 * n);
+        let q: Vec<(f64, f64)> = (0..n).map(|i| (v[2 * i], v[2 * i + 1])).collect();
+        sk(h).spline_through(&q).map(|i| i as i32).unwrap_or(-1)
+    })
+}
+
 /// A cubic B-spline with a knot vector of its own; -1 when it does not fit the control polygon.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_spline_knots(
@@ -410,6 +425,15 @@ pub unsafe extern "C" fn gcs_spline_polyline(
             *out.add(2 * i + 1) = p.1;
         }
         pts.len() as i32
+    })
+}
+
+/// Give the curve one more control point at `t`, without changing its shape — Boehm's knot
+/// insertion.  Returns the new control Point's index, or -1 if `t` is not a place a knot can go.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_spline_insert_control(h: *mut Sketch, idx: i32, t: f64) -> i32 {
+    guard(-1, move || {
+        curve::insert_control(sk(h), idx as usize, t).map(|p| p as i32).unwrap_or(-1)
     })
 }
 

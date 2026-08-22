@@ -268,6 +268,13 @@ export class Spline extends Constructible {
     return typeof first === 'number' ? (read(first) as [number, number][]) : first;
   }
 
+  /** Give the curve one more control point at `t`, without changing its shape.  Every contact
+   *  keeps its parameter and its place; null if `t` is not a place a knot can go. */
+  insertControl(t: number): Point | null {
+    const i = core().gcs_spline_insert_control(this.sketch.handle, this.index, t);
+    return i < 0 ? null : this.sketch.points[i];
+  }
+
   /** The parameter of the nearest curve point, and how far that is — the pick test. */
   closest(x: number, y: number): { t: number; distance: number } {
     return withBuf(2, 8, (b) => {
@@ -408,6 +415,17 @@ export class Sketch {
         return core().gcs_sketch_spline_knots(
           this.handle, b.ptr, ctrl.length, k.ptr, knots.length);
       });
+    });
+    return i < 0 ? null : this.splines[i];
+  }
+
+  /** A cubic B-spline through `pts`, in order.  The control points are computed, not clicked —
+   *  the same bargain `arcThrough` strikes.  null if there are too few for a cubic, or they give
+   *  no parameterisation. */
+  splineThrough(pts: readonly (readonly [number, number])[]): Spline | null {
+    const i = withBuf(Math.max(2, 2 * pts.length), 8, (b) => {
+      b.f64.set(pts.flatMap((p) => [p[0], p[1]]));
+      return core().gcs_sketch_spline_through(this.handle, b.ptr, pts.length);
     });
     return i < 0 ? null : this.splines[i];
   }

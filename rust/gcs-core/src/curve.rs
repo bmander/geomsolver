@@ -155,6 +155,30 @@ pub fn knots_valid(u: &[f64], n: usize) -> bool {
         && u[DEGREE] < u[n]
 }
 
+/// The knot vector for a control polygon that has lost the control points at `gone`.
+///
+/// One interior knot goes with each, so a curve shaped by knot insertion degrades back toward
+/// what it was rather than being re-spaced from scratch — deleting a control point is very
+/// nearly the inverse of inserting one.  Falls back to the clamped uniform vector when what is
+/// left is not a knot vector at all.
+pub fn knots_without(u: &[f64], gone: &[usize], n_left: usize) -> Vec<f64> {
+    let mut v = u.to_vec();
+    // highest first, so a removal never shifts an index still to come
+    for &j in gone.iter().rev() {
+        let lo = DEGREE + 1;
+        let hi = v.len().saturating_sub(DEGREE + 2);
+        if lo > hi {
+            break; // no interior knots left to give up
+        }
+        v.remove((j + DEGREE + 1).clamp(lo, hi));
+    }
+    if knots_valid(&v, n_left) {
+        v
+    } else {
+        clamped_uniform(n_left)
+    }
+}
+
 /// The span `t` falls in — an index into the knot vector with `u[s] <= t < u[s+1]`, skipping the
 /// empty spans a repeated knot makes, and clamped to the ends of the domain.
 pub fn span_index(u: &[f64], n: usize, t: f64) -> usize {
@@ -400,6 +424,134 @@ pub fn nearest_to_line(sk: &Sketch, i: usize, ax: f64, ay: f64, bx: f64, by: f64
 /// Distance from (x, y) to the curve — the pick test, and what `distance_between` measures.
 pub fn distance_to(sk: &Sketch, i: usize, x: f64, y: f64) -> f64 {
     closest(sk, i, x, y).1
+}
+
+/* -- editing the control polygon -------------------------------------------- */
+
+/// The control polygon and knot vector of the cubic B-spline that passes exactly through
+/// `pts`, in order — the interpolation problem, which is the one most people mean when they
+/// say "a curve through these points".
+///
+/// Chord-length parameters, an averaged knot vector, and the collocation system `N P = Q`
+/// solved once (Piegl & Tiller, global curve interpolation).  It is a *construction*, not a
+/// set of constraints: the answer is a control polygon like any other, so the curve it makes
+/// drags, constrains and saves exactly as a drawn one does — the same bargain
+/// `Sketch::arc_through` strikes for the three-point arc.  A user who wants the curve to *stay*
+/// through a point says so with a `PointOnSpline`.
+///
+/// `None` if there are too few points for a cubic, or if they are too close together to give a
+/// parameterisation.
+pub fn interpolating_ctrl(pts: &[(f64, f64)]) -> Option<(Vec<(f64, f64)>, Vec<f64>)> {
+    let m = pts.len();
+    let p = DEGREE;
+    if m < p + 1 || pts.iter().any(|q| !q.0.is_finite() || !q.1.is_finite()) {
+        return None;
+    }
+    // chord-length parameters: points that are far apart get more of the curve
+    let chords: Vec<f64> =
+        (1..m).map(|k| (pts[k].0 - pts[k - 1].0).hypot(pts[k].1 - pts[k - 1].1)).collect();
+    let total: f64 = chords.iter().sum();
+    if !total.is_finite() || total <= 0.0 {
+        return None;
+    }
+    let mut t = vec![0.0; m];
+    for k in 1..m {
+        t[k] = t[k - 1] + chords[k - 1] / total;
+    }
+    t[m - 1] = 1.0;
+    // averaged knots: each interior knot is the mean of the p parameters it spans, which is
+    // what keeps the collocation system well conditioned
+    let mut u = vec![0.0; p + 1];
+    for j in 1..m.saturating_sub(p) {
+        u.push(t[j..j + p].iter().sum::<f64>() / p as f64);
+    }
+    u.extend(std::iter::repeat_n(1.0, p + 1));
+    if !knots_valid(&u, m) {
+        return None;
+    }
+    // N P = Q, one m*m solve per coordinate
+    let mut n = vec![0.0; m * m];
+    let (mut b, mut d, mut dd) = ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
+    for k in 0..m {
+        let span = span_index(&u, m, t[k]);
+        basis(t[k], &local_knots(&u, span), &mut b, &mut d, &mut dd);
+        for a in 0..SPAN_N {
+            n[k * m + span - p + a] = b[a];
+        }
+    }
+    let mut out = vec![(0.0, 0.0); m];
+    for coord in 0..2 {
+        let mut a = n.clone();
+        let mut rhs: Vec<f64> =
+            pts.iter().map(|q| if coord == 0 { q.0 } else { q.1 }).collect();
+        if !crate::linalg::lu_solve(m, &mut a, &mut rhs) {
+            return None;
+        }
+        for k in 0..m {
+            if !rhs[k].is_finite() {
+                return None;
+            }
+            if coord == 0 {
+                out[k].0 = rhs[k];
+            } else {
+                out[k].1 = rhs[k];
+            }
+        }
+    }
+    Some((out, u))
+}
+
+/// Give the curve one more control point at `t`, without changing its shape.
+///
+/// This is Boehm's knot insertion, and shape preservation is the whole point of it: C(t) is
+/// *identical* afterwards for every t, so a contact keeps both its parameter and the place on
+/// the drawing it sits at.  Splicing a point into the control polygon by hand does not do that,
+/// and a curve that squirms when you ask it for another handle is the thing that makes spline
+/// editing feel arbitrary.
+///
+/// `DEGREE - 1` of the control points already there move (to convex combinations of themselves
+/// and their neighbours) and one new one appears between them; everything else is untouched.
+/// The moved ones keep their identity, so whatever was constrained to them still is — and if
+/// one of them *is* constrained, the next solve honours that instead, which is a stronger thing
+/// than "keep the shape" and the user said it first.
+///
+/// Returns the new control Point, or `None` if `t` is not a place a knot can go.
+pub fn insert_control(sk: &mut Sketch, i: usize, t: f64) -> Option<usize> {
+    if !t.is_finite() {
+        return None;
+    }
+    let (t0, t1) = domain(sk, i);
+    // never at the very ends: another knot on top of the clamp raises its multiplicity rather
+    // than adding a span, and a control point at the endpoint is what extending is for
+    let edge = (t1 - t0) * 1e-6;
+    let t = t.clamp(t0 + edge, t1 - edge);
+    let n = sk.splines[i].ctrl.len();
+    let u = sk.splines[i].knots.clone();
+    let ctrl = sk.splines[i].ctrl.clone();
+    let k = span_index(&u, n, t);
+    if k < DEGREE || k + DEGREE >= u.len() {
+        return None;
+    }
+    // every combination is taken from the original positions, before any of them move
+    let mut q: Vec<(usize, (f64, f64))> = Vec::with_capacity(DEGREE);
+    for idx in (k + 1 - DEGREE)..=k {
+        let den = u[idx + DEGREE] - u[idx];
+        let a = if den != 0.0 { (t - u[idx]) / den } else { 0.0 };
+        let (x1, y1) = sk.point_xy(ctrl[idx] as usize);
+        let (x0, y0) = sk.point_xy(ctrl[idx - 1] as usize);
+        q.push((idx, (a * x1 + (1.0 - a) * x0, a * y1 + (1.0 - a) * y0)));
+    }
+    let &(_, (nx, ny)) = q.last()?;
+    let fresh = sk.point(nx, ny, false, &format!("k{}", sk.points.len()));
+    for &(idx, (x, y)) in &q[..q.len() - 1] {
+        let [px, py] = sk.point_params(ctrl[idx] as usize);
+        sk.params[px as usize].value = x;
+        sk.params[py as usize].value = y;
+    }
+    let s = &mut sk.splines[i];
+    s.ctrl.insert(k, fresh as u32);
+    s.knots.insert(k + 1, t);
+    Some(fresh)
 }
 
 /* -- keeping a contact on the curve ----------------------------------------- */

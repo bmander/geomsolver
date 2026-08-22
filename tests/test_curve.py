@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from gcs import constraints as C
@@ -128,3 +130,35 @@ def test_the_follower_example_solves_and_diagnoses() -> None:
     d = diagnose(sk)
     assert not d.conflicts
     assert d.dof > 0            # a curve carries its own shape: there is plenty left to drag
+
+
+def test_deleting_a_control_point_shortens_the_curve() -> None:
+    sk, sp = wave(7)
+    victim = sp.ctrl[3]
+    out = io.without(sk, entities=[victim])
+    assert len(out.splines) == 1
+    assert len(out.splines[0].ctrl) == 6
+
+
+def test_inserting_a_control_point_does_not_move_the_curve() -> None:
+    sk, sp = wave(6)
+    t0, t1 = sp.domain
+    before = [sp.point_at(t0 + (t1 - t0) * k / 40) for k in range(41)]
+    made = sp.insert_control(t0 + (t1 - t0) * 0.4)
+    assert made is not None
+    assert len(sp.ctrl) == 7
+    assert sp.domain == (t0, t1)
+    for k, (x, y) in enumerate(before):
+        gx, gy = sp.point_at(t0 + (t1 - t0) * k / 40)
+        assert math.hypot(gx - x, gy - y) < 1e-9
+
+
+def test_a_curve_through_points_passes_through_them() -> None:
+    pts = [(0.0, 0.0), (10.0, 20.0), (30.0, 5.0), (50.0, 25.0), (70.0, 0.0)]
+    sk = Sketch()
+    sp = sk.spline_through(pts)
+    assert sp is not None
+    assert len(sp.ctrl) == len(pts)
+    for x, y in pts:
+        assert sp.closest(x, y)[1] < 1e-9
+    assert sk.spline_through(pts[:3]) is None

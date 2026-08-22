@@ -104,7 +104,7 @@ view.onTool = (t) => {
 for (const [label, tool, key] of [
   ['Point', 'point', 'p'], ['Line', 'line', 'l'], ['Rect', 'rect', 'r'],
   ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
-  ['Spline', 'spline', 's'],
+  ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'],
 ] as [string, Tool, string][]) {
   toolButtons.set(tool, addButton(barTools, {
     label, key, toggle: true, title: 'Click again to put the tool down and go back to selecting',
@@ -888,6 +888,7 @@ bannerSelect.addEventListener('click', () => {
 
 const TOOL_KEYS: Record<string, Tool> = {
   p: 'point', l: 'line', r: 'rect', c: 'circle', a: 'arc', 3: 'arc3', s: 'spline',
+  w: 'splinefit',
 };
 /** Every accelerator in the app, read off the buttons and menu items themselves so there is
  *  one list and not two.  The token is the chip the control prints, lowercased: '⇧l', '⌘z'. */
@@ -910,9 +911,14 @@ window.addEventListener('keydown', (e) => {
   }
   const k = e.key.toLowerCase();
   if (k === 'escape') { if (!closeMenus()) view.cancelTool(); return; }
-  // the spline tool collects as many control points as the user wants, so it needs a way to
-  // say "that is the curve" — the one tool whose click count is not known in advance
+  // the curve tools collect as many points as the user wants, so they need a way to say "that
+  // is the curve" — the only tools whose click count is not known in advance
   if (k === 'enter' && view.tool === 'spline') { e.preventDefault(); view.finishSpline(); return; }
+  if (k === 'enter' && view.tool === 'splinefit') {
+    e.preventDefault();
+    view.finishSplineFit();
+    return;
+  }
   if (k === 'delete' || k === 'backspace') {
     e.preventDefault();
     if (currentConstraint) {

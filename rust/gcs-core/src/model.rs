@@ -311,6 +311,20 @@ impl Sketch {
         Some(self.splines.len() - 1)
     }
 
+    /// A cubic B-spline that passes through `pts`, in order.  The control points are computed,
+    /// not clicked — the same bargain `arc_through` strikes: the third click of a three-point
+    /// arc is construction input, not a sketch point.  `None` if there are too few points for a
+    /// cubic, or they give no parameterisation.
+    pub fn spline_through(&mut self, pts: &[(f64, f64)]) -> Option<usize> {
+        let (ctrl, knots) = crate::curve::interpolating_ctrl(pts)?;
+        let ids: Vec<usize> = ctrl
+            .iter()
+            .enumerate()
+            .map(|(i, &(x, y))| self.point(x, y, false, &format!("k{i}")))
+            .collect();
+        self.spline_with(&ids, Some(knots))
+    }
+
     /// Four lines round the corners `a` and (x1, y1), sharing corner points, with three
     /// perpendicular constraints.  Three, not four: the fourth follows, so adding it would make
     /// every rectangle over-constrained by one equation.  What is left is the 5 DOF a rectangle
@@ -530,6 +544,17 @@ impl Sketch {
             EntKind::Spline => {
                 self.splines[e.i()].ctrl.iter().map(|&c| EntRef::point(c as usize)).collect()
             }
+        }
+    }
+
+    /// The fewest children an entity can still be rebuilt from.  For everything defined by a
+    /// fixed set of points that is all of them — a line without an endpoint is nothing.  A
+    /// spline is defined by a *list*, so it survives losing one control point while enough are
+    /// left to draw a curve with.
+    pub fn min_children(&self, e: EntRef) -> usize {
+        match e.kind {
+            EntKind::Spline => crate::curve::DEGREE + 1,
+            _ => self.children(e).len(),
         }
     }
 

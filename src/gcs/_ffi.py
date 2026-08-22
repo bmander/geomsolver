@@ -72,6 +72,7 @@ _SIGNATURES: list[tuple[str, Any, list[Any]]] = [
      [PTR, ct.c_int32, ct.c_int32, ct.c_double, ct.c_double, PTR, ct.c_size_t]),
     ("gcs_sketch_spline", ct.c_int32, [PTR, I32, ct.c_size_t]),
     ("gcs_sketch_spline_knots", ct.c_int32, [PTR, I32, ct.c_size_t, F64, ct.c_size_t]),
+    ("gcs_sketch_spline_through", ct.c_int32, [PTR, F64, ct.c_size_t]),
     ("gcs_sketch_rectangle", None,
      [PTR, ct.c_int32, ct.c_double, ct.c_double, PTR, ct.c_size_t, I32]),
     ("gcs_sketch_get_x", None, [PTR, F64]),
@@ -109,6 +110,7 @@ _SIGNATURES: list[tuple[str, Any, list[Any]]] = [
     ("gcs_spline_eval", None, [PTR, ct.c_int32, ct.c_double, F64]),
     ("gcs_spline_polyline", ct.c_int32, [PTR, ct.c_int32, ct.c_double, F64, ct.c_int32]),
     ("gcs_spline_closest", None, [PTR, ct.c_int32, ct.c_double, ct.c_double, F64]),
+    ("gcs_spline_insert_control", ct.c_int32, [PTR, ct.c_int32, ct.c_double]),
     ("gcs_three_point_arc", ct.c_int32,
      [ct.c_double] * 6 + [F64]),
     # constraints

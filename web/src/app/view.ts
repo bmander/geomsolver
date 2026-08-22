@@ -68,7 +68,7 @@ interface Animation {
 }
 
 export type Tool =
-  'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline';
+  'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit';
 
 
 
@@ -88,6 +88,9 @@ export class SketchView {
   selected: Primitive[] = [];
   highlight: Primitive[] = [];
   pending: Point[] = [];
+  /** Where the fit tool has been told the curve must pass, before there is a curve.  Places,
+   *  not Points: the tool leaves nothing in the sketch if it is abandoned. */
+  pendingXY: [number, number][] = [];
   diagnosis: Diagnosis | null = null;
   /** The constraint the shell has the focus on, so its callout can say so. */
   litConstraint: Constraint | null = null;
@@ -637,7 +640,7 @@ export class SketchView {
       }
     }
     ctx.setLineDash([]);
-    if (this.pending.length) this.paintPreview();
+    if (this.pending.length || this.pendingXY.length) this.paintPreview();
     if (this.diagnosis?.conflicts?.length) this.paintConflicts();
 
     for (const p of sk.points) {
@@ -834,8 +837,23 @@ export class SketchView {
     ctx.setLineDash([5, 4]);
     ctx.strokeStyle = COL.preview;
     ctx.lineWidth = 1;
-    const p0 = this.w2s(...this.pending[0].xy);
     const cur = this.cursor;
+    if (this.tool === 'splinefit') {
+      // the places given so far, joined in order, and a band to the cursor.  Not the fitted
+      // curve: that is a solve, and a preview that lags the cursor is worse than an honest one
+      this.polyPath(this.pendingXY);
+      ctx.lineTo(cur[0], cur[1]);
+      ctx.stroke();
+      for (const q of this.pendingXY) {
+        const [sx, sy] = this.w2s(q[0], q[1]);
+        ctx.beginPath();
+        ctx.arc(sx, sy, 3, 0, 2 * Math.PI);
+        ctx.stroke();
+      }
+      ctx.restore();
+      return;
+    }
+    const p0 = this.w2s(...this.pending[0].xy);
     /** A dashed line from the last point placed to the cursor. */
     const rubber = (): void => {
       ctx.beginPath();
@@ -907,10 +925,52 @@ export class SketchView {
   setTool(tool: Tool): void {
     this.tool = tool;
     this.pending = [];
+    this.pendingXY = [];
     this.canvas.classList.toggle('select', tool === 'select');
     this.canvas.style.cursor = '';                // drop any hover affordance
     this.onTool(tool);
     this.draw();
+  }
+
+  /** Another control point on `curve`, nearest (x, y).  The curve does not move: this is knot
+   *  insertion, so every contact keeps its parameter and its place, and the sketch stays solved.
+   *  It is `closest` that turns the click into a parameter — the same projection the pick test
+   *  used to decide the click was on this curve at all. */
+  insertControl(curve: Spline, x: number, y: number): void {
+    this.pushUndo();
+    const made = curve.insertControl(curve.closest(x, y).t);
+    if (!made) {
+      this.undoStack.pop();
+      this.onStatus('no room for another control point there');
+      return;
+    }
+    this.selected = [made];
+    this.releasePlan();
+    this.afterEdit();
+    this.onSelect();
+    this.onStatus(`${curve.name} now has ${curve.ctrl.length} control points`);
+  }
+
+  /** Turn the places the fit tool has collected into a curve through them.
+   *
+   *  Those places are construction input, not sketch points — the same bargain the three-point
+   *  arc strikes with its third click.  What comes back is an ordinary curve with an ordinary
+   *  control polygon, so everything that edits a drawn one edits this one; a user who wants it
+   *  to *keep* passing through somewhere says so with a point and the Coincident button. */
+  finishSplineFit(): void {
+    if (this.tool !== 'splinefit') return;
+    const min = C.curveInfo().minCtrl;
+    if (this.pendingXY.length < min) {
+      this.onStatus(`a curve needs ${min} points; ${this.pendingXY.length} placed`);
+      return;
+    }
+    if (!this.sketch.splineThrough(this.pendingXY)) {
+      this.onStatus('no curve passes through those points — are any of them on top of another?');
+      return;
+    }
+    this.pendingXY = [];
+    this.releasePlan();
+    this.afterEdit();
   }
 
   /** Turn the control points the spline tool has collected into a curve.  Fewer than a cubic
@@ -939,8 +999,9 @@ export class SketchView {
       this.stopAnimation();
       return;
     }
-    if (this.pending.length) {
+    if (this.pending.length || this.pendingXY.length) {
       this.pending = [];
+      this.pendingXY = [];
       this.draw();
       return;
     }
@@ -984,8 +1045,17 @@ export class SketchView {
     cv.addEventListener('lostpointercapture', finish);
     cv.addEventListener('dblclick', (e) => {
       // the same gesture the constraint list uses: double-click a dimension, type a new number
-      const c = this.pickCallout(...this.local(e));
-      if (c) this.onEditConstraint(c);
+      const sp = this.local(e);
+      const c = this.pickCallout(...sp);
+      if (c) {
+        this.onEditConstraint(c);
+        return;
+      }
+      // and on a curve it asks for another handle where you clicked: the insertion is
+      // shape-preserving, so nothing moves — the new control point comes out selected, ready
+      // to be dragged, which is the whole reason you asked for it
+      const hit = this.pick(...sp);
+      if (hit instanceof Spline) this.insertControl(hit, ...this.s2w(sp[0], sp[1]));
     });
     cv.addEventListener('contextmenu', (e) => e.preventDefault());
     cv.addEventListener('wheel', (e) => {
@@ -1101,6 +1171,23 @@ export class SketchView {
         if (on) sk.add(new C.PointOnCircle(on, arc));
         this.pending = [];
       }
+    } else if (this.tool === 'splinefit') {
+      // places the curve must pass through, not points of the sketch: snapping still works, but
+      // what is recorded is where, so the tool leaves nothing behind if it is abandoned
+      const on = this.pickPoint(sp[0], sp[1]);
+      const at: [number, number] = on ? on.xy : this.s2w(sp[0], sp[1]);
+      const last = this.pendingXY[this.pendingXY.length - 1];
+      if (last && Math.hypot(at[0] - last[0], at[1] - last[1]) * this.scale < PICK_PX) {
+        this.finishSplineFit();
+        return;
+      }
+      this.pendingXY.push(at);
+      const min = C.curveInfo().minCtrl;
+      this.onStatus(this.pendingXY.length < min
+        ? `${min - this.pendingXY.length} more point(s) for a curve`
+        : 'Enter, or click the last point again, to finish the curve');
+      this.draw();
+      return;
     } else if (this.tool === 'spline') {
       // a control polygon is as long as the user wants it, so the tool collects points until
       // it is finished — Enter, or a click back on the last one

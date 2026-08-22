@@ -438,3 +438,155 @@ fn a_compiled_system_keeps_the_span_it_was_built_from() {
                 "refreshed constants came from the parameter's new span, not the compiled one");
     }
 }
+
+/* -- editing the control polygon -------------------------------------------- */
+
+#[test]
+fn deleting_a_control_point_shortens_the_curve_instead_of_deleting_it() {
+    let mut sk = Sketch::new();
+    let s = wave(&mut sk, 7);
+    let p = sk.point(21.0, 30.0, false, "p");
+    add(&mut sk, |doc| Constraint::point_on_spline(doc, EntRef::point(p), EntRef::spline(s)));
+    let victim = sk.splines[s].ctrl[3] as usize;
+
+    let out = gcs_core::io::without(&sk, &[EntRef::point(victim)], &[]);
+    assert_eq!(out.splines.len(), 1, "the curve went with its control point");
+    assert_eq!(out.splines[0].ctrl.len(), 6);
+    assert!(curve::knots_valid(&out.splines[0].knots, 6));
+    // and the contact came along, because the curve it names did
+    assert_eq!(out.constraints.iter().filter(|c| c.kind == CKind::PointOnSpline).count(), 1);
+}
+
+#[test]
+fn a_curve_dies_when_too_few_control_points_are_left_to_draw_it() {
+    let mut sk = Sketch::new();
+    let s = wave(&mut sk, 5);
+    let doomed: Vec<EntRef> =
+        (0..2).map(|i| EntRef::point(sk.splines[s].ctrl[i] as usize)).collect();
+    let out = gcs_core::io::without(&sk, &doomed, &[]);
+    assert!(out.splines.is_empty(), "three control points cannot be a cubic");
+}
+
+#[test]
+fn what_is_left_of_a_shortened_curve_still_solves() {
+    let mut sk = Sketch::new();
+    let s = wave(&mut sk, 8);
+    for c in 0..sk.points.len() {
+        sk.fix_point(c, true);
+    }
+    let p = sk.point(35.0, 30.0, false, "p");
+    add(&mut sk, |doc| Constraint::point_on_spline(doc, EntRef::point(p), EntRef::spline(s)));
+    assert!(solved(&mut sk));
+    // drop a control point from the far end: the contact's parameter may now be past the end
+    let victim = sk.splines[s].ctrl[7] as usize;
+    let mut out = gcs_core::io::without(&sk, &[EntRef::point(victim)], &[]);
+    assert_eq!(out.splines[0].ctrl.len(), 7);
+    assert!(solved(&mut out), "a shortened curve left the sketch unsolvable");
+    let (x, y) = out.point_xy(out.points.len() - 1);
+    assert!(curve::distance_to(&out, 0, x, y) < 1e-6);
+}
+
+#[test]
+fn inserting_a_control_point_does_not_move_the_curve() {
+    for n in [4usize, 5, 7, 11] {
+        let mut sk = Sketch::new();
+        let s = wave(&mut sk, n);
+        let (t0, t1) = curve::domain(&sk, s);
+        let before: Vec<(f64, f64)> =
+            (0..=80).map(|k| curve::point_at(&sk, s, t0 + (t1 - t0) * k as f64 / 80.0)).collect();
+        let at = t0 + (t1 - t0) * 0.37;
+        let fresh = curve::insert_control(&mut sk, s, at).expect("a curve takes another handle");
+
+        assert_eq!(sk.splines[s].ctrl.len(), n + 1);
+        assert_eq!(sk.splines[s].knots.len(), n + curve::DEGREE + 2);
+        assert!(curve::knots_valid(&sk.splines[s].knots, n + 1));
+        assert!(sk.splines[s].ctrl.contains(&(fresh as u32)));
+        assert_eq!(curve::domain(&sk, s), (t0, t1), "the parameterisation is untouched");
+        for (k, &(x, y)) in before.iter().enumerate() {
+            let p = curve::point_at(&sk, s, t0 + (t1 - t0) * k as f64 / 80.0);
+            assert!((p.0 - x).hypot(p.1 - y) < 1e-9, "n={n} k={k}: curve moved");
+        }
+    }
+}
+
+#[test]
+fn a_contact_keeps_its_parameter_and_its_place_through_an_insertion() {
+    let mut sk = Sketch::new();
+    let s = wave(&mut sk, 7);
+    for c in 0..sk.points.len() {
+        sk.fix_point(c, true);
+    }
+    let p = sk.point(28.0, 20.0, false, "p");
+    let id = add(&mut sk, |doc| {
+        Constraint::point_on_spline(doc, EntRef::point(p), EntRef::spline(s))
+    });
+    assert!(solved(&mut sk));
+    let tp = sk.constraint(id).unwrap().aux_params()[0] as usize;
+    let (t, xy) = (sk.params[tp].value, sk.point_xy(p));
+
+    // insert *below* the contact, so its span index shifts as well as everything around it
+    curve::insert_control(&mut sk, s, t * 0.5).unwrap();
+    assert_eq!(sk.params[tp].value, t, "the contact was reparameterised");
+    let f = curve::eval(&sk, s, t);
+    assert!((f.p.0 - xy.0).hypot(f.p.1 - xy.1) < 1e-9, "the contact moved along the curve");
+    // and the sketch is still solved, with no work to do
+    assert!(solved(&mut sk));
+    assert!((sk.point_xy(p).0 - xy.0).hypot(sk.point_xy(p).1 - xy.1) < 1e-9);
+}
+
+#[test]
+fn an_insertion_adds_two_degrees_of_freedom_and_nothing_else() {
+    let mut sk = Sketch::new();
+    let s = wave(&mut sk, 6);
+    let before = gcs_core::diagnose::diagnose(&mut sk.clone(), Default::default()).dof;
+    curve::insert_control(&mut sk, s, 1.5).unwrap();
+    assert_eq!(gcs_core::diagnose::diagnose(&mut sk, Default::default()).dof, before + 2);
+}
+
+/* -- a curve through given points -------------------------------------------- */
+
+#[test]
+fn a_curve_through_points_passes_through_them() {
+    let shapes: [&[(f64, f64)]; 3] = [
+        &[(0.0, 0.0), (10.0, 20.0), (30.0, 5.0), (50.0, 25.0)],
+        &[(0.0, 0.0), (10.0, 20.0), (30.0, 5.0), (50.0, 25.0), (70.0, 0.0), (90.0, 15.0)],
+        &[(0.0, 0.0), (5.0, 40.0), (40.0, 40.0), (45.0, 0.0), (20.0, -20.0)],
+    ];
+    for pts in shapes {
+        let mut sk = Sketch::new();
+        let s = sk.spline_through(pts).expect("four points make a cubic");
+        assert_eq!(sk.splines[s].ctrl.len(), pts.len());
+        for &(x, y) in pts {
+            assert!(curve::distance_to(&sk, s, x, y) < 1e-9, "({x}, {y}) is not on the curve");
+        }
+        // and it runs through them in order: the first and last are the ends
+        let (t0, t1) = curve::domain(&sk, s);
+        for (t, want) in [(t0, pts[0]), (t1, *pts.last().unwrap())] {
+            let p = curve::point_at(&sk, s, t);
+            assert!((p.0 - want.0).hypot(p.1 - want.1) < 1e-9);
+        }
+    }
+}
+
+#[test]
+fn a_curve_through_points_is_an_ordinary_curve() {
+    let pts = [(0.0, 0.0), (10.0, 20.0), (30.0, 5.0), (50.0, 25.0), (70.0, 0.0)];
+    let mut sk = Sketch::new();
+    let s = sk.spline_through(&pts).unwrap();
+    // it drags, constrains, saves and loads like a drawn one
+    let p = sk.point(25.0, 30.0, false, "p");
+    add(&mut sk, |doc| Constraint::point_on_spline(doc, EntRef::point(p), EntRef::spline(s)));
+    assert!(solved(&mut sk));
+    let text = gcs_core::io::dumps(&sk, None);
+    let back = gcs_core::io::loads(&text).unwrap();
+    assert_eq!(back.splines[0].knots, sk.splines[0].knots);
+    assert_eq!(gcs_core::io::dumps(&back, None), text);
+}
+
+#[test]
+fn too_few_or_too_bunched_points_make_no_curve() {
+    let mut sk = Sketch::new();
+    assert!(sk.spline_through(&[(0.0, 0.0), (1.0, 1.0), (2.0, 0.0)]).is_none());
+    assert!(sk.spline_through(&[(1.0, 1.0); 5]).is_none());
+    assert!(sk.points.is_empty(), "a refused curve left points behind");
+}

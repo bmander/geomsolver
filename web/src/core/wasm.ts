@@ -35,6 +35,7 @@ export interface Abi {
   gcs_sketch_arc_through(h: number, s: number, e: number, tx: number, ty: number, name: number, nameLen: number): number;
   gcs_sketch_spline(h: number, ctrl: number, n: number): number;
   gcs_sketch_spline_knots(h: number, ctrl: number, n: number, knots: number, nk: number): number;
+  gcs_sketch_spline_through(h: number, pts: number, n: number): number;
   gcs_sketch_rectangle(h: number, a: number, x1: number, y1: number, name: number, nameLen: number, out: number): void;
   gcs_sketch_get_x(h: number, out: number): void;
   gcs_sketch_set_x(h: number, x: number, n: number): number;
@@ -70,6 +71,7 @@ export interface Abi {
   gcs_spline_eval(h: number, idx: number, t: number, out: number): void;
   gcs_spline_polyline(h: number, idx: number, unit: number, out: number, cap: number): number;
   gcs_spline_closest(h: number, idx: number, x: number, y: number, out: number): void;
+  gcs_spline_insert_control(h: number, idx: number, t: number): number;
   gcs_three_point_arc(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, out: number): number;
 
   gcs_constraint_add(h: number, p: number, n: number): number;

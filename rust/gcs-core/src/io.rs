@@ -391,8 +391,18 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             continue;
         }
         let sp = &src.splines[i];
-        let ctrl: Option<Vec<usize>> = sp.ctrl.iter().map(|&c| pt_index(c as usize)).collect();
-        let (Some(ctrl), knots) = (ctrl, sp.knots.clone()) else { continue };
+        // the control points that came along, and the ones that did not: a curve that has lost
+        // some is shortened, one interior knot going with each, and only dies when too few are
+        // left to draw with
+        let ctrl: Vec<usize> = sp.ctrl.iter().filter_map(|&c| pt_index(c as usize)).collect();
+        let gone: Vec<usize> = (0..sp.ctrl.len())
+            .filter(|&k| pt_index(sp.ctrl[k] as usize).is_none())
+            .collect();
+        let knots = if gone.is_empty() {
+            sp.knots.clone()
+        } else {
+            crate::curve::knots_without(&sp.knots, &gone, ctrl.len())
+        };
         let construction = sp.construction;
         let Some(ni) = dst.spline_with(&ctrl, Some(knots)) else { continue };
         dst.splines[ni].construction = construction;
@@ -460,7 +470,13 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
 /// a removed entity.  Deletion by rebuild — simple, and keeps `Sketch`'s invariants trivially true.
 pub fn without(sk: &Sketch, entities: &[EntRef], constraints: &[u32]) -> Sketch {
     let dead: Vec<EntRef> = entities.to_vec();
-    let alive = |e: EntRef| !dead.contains(&e) && !sk.children(e).iter().any(|c| dead.contains(c));
+    // An entity survives while enough of its children do.  For a line, a circle or an arc that
+    // is all of them, which is the old rule; a spline is defined by a list, so losing one
+    // control point shortens the curve rather than deleting it.
+    let alive = |e: EntRef| {
+        !dead.contains(&e)
+            && sk.children(e).iter().filter(|c| !dead.contains(c)).count() >= sk.min_children(e)
+    };
     let mut tmp = Sketch::new();
     graft(&mut tmp, sk, &alive, constraints, (0.0, 0.0));
     tmp

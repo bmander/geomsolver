@@ -1402,3 +1402,39 @@ test('dragging a point along a curve carries it across a knot', () => {
   assert.ok(sp.closest(p.x.value, p.y.value).distance < 1e-6);
   sk.dispose();
 });
+
+test('deleting a control point shortens the curve instead of deleting it', () => {
+  const { sk, sp } = wave(7);
+  const out = io.without(sk, [sp.ctrl[3]]);
+  assert.equal(out.splines.length, 1);
+  assert.equal(out.splines[0].ctrl.length, 6);
+  sk.dispose();
+  out.dispose();
+});
+
+test('inserting a control point gives another handle and moves nothing', () => {
+  const { sk, sp } = wave(6);
+  const [t0, t1] = sp.domain;
+  const before = Array.from({ length: 41 }, (_, k) => sp.pointAt(t0 + (t1 - t0) * k / 40));
+  const made = sp.insertControl(t0 + (t1 - t0) * 0.4);
+  assert.ok(made);
+  assert.equal(sp.ctrl.length, 7);
+  assert.deepEqual(sp.domain, [t0, t1]);
+  before.forEach(([x, y], k) => {
+    const [gx, gy] = sp.pointAt(t0 + (t1 - t0) * k / 40);
+    assert.ok(Math.hypot(gx - x, gy - y) < 1e-9, `k=${k}`);
+  });
+  sk.dispose();
+});
+
+test('a curve through points passes through them', () => {
+  const pts: [number, number][] =
+    [[0, 0], [10, 20], [30, 5], [50, 25], [70, 0]];
+  const sk = new Sketch();
+  const sp = sk.splineThrough(pts);
+  assert.ok(sp);
+  assert.equal(sp!.ctrl.length, pts.length);
+  for (const [x, y] of pts) assert.ok(sp!.closest(x, y).distance < 1e-9);
+  assert.equal(sk.splineThrough(pts.slice(0, 3)), null);
+  sk.dispose();
+});

@@ -67,6 +67,19 @@ Conventions:
   t, so a contact addresses one *span*, whichever span t is in.  The span is derived from t, not
   stored, and `Sketch::topology_key` carries it — a contact walking past a knot is a recompile,
   the same event as any other topology change.
+- A control polygon is edited by three operations, and they are not the same shape of thing.
+  *Inserting* a control point is `curve::insert_control` — Boehm's knot insertion, so C(t) is
+  identical afterwards and every contact keeps both its parameter and its place on the drawing;
+  `DEGREE - 1` neighbours move, keeping their identity, and if one of them is constrained the
+  next solve honours that instead, which is a stronger thing than "keep the shape".  *Deleting*
+  one shortens the curve rather than destroying it: `Sketch::min_children` is the general rule
+  (an entity survives while enough children do — for a line or an arc that is all of them), and
+  `curve::knots_without` gives up one interior knot per lost control point, so deletion is very
+  nearly the inverse of insertion.  *Interpolating* is `Sketch::spline_through`: chord-length
+  parameters, averaged knots and one collocation solve give a control polygon whose curve passes
+  through the given places.  It is a construction, not a set of constraints — the same bargain
+  `arc_through` strikes with its third click — so what comes back is an ordinary curve, and a
+  user who wants it to *stay* through somewhere says so with a `PointOnSpline`.
 - A curve parameter is bounded (`t0 <= t <= t1`) and a least-squares problem cannot say so: left
   alone the solver puts a tangency on the phantom polynomial past the end of the drawn curve.
   `System::solve` says it instead — clamp, compare `curve::contact_spans` against the spans it was

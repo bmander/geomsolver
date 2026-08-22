@@ -280,6 +280,12 @@ class Spline(_Constructible):
             need, buf = read(cap)
         return [(float(buf[2 * i]), float(buf[2 * i + 1])) for i in range(max(0, need))]
 
+    def insert_control(self, t: float) -> Point | None:
+        """Give the curve one more control point at `t`, without changing its shape.  Every
+        contact keeps its parameter and its place; None if `t` is not a place a knot can go."""
+        i = int(lib.gcs_spline_insert_control(self.sketch._h, self.index, float(t)))
+        return self.sketch.points[i] if i >= 0 else None
+
     def closest(self, x: float, y: float) -> tuple[float, float]:
         """The parameter of the nearest curve point, and how far that is."""
         out = _ffi.f64(2)
@@ -430,6 +436,16 @@ class Sketch:
         if i < 0:
             return None
         return self.splines[int(i)]
+
+    def spline_through(self, pts: Sequence[tuple[float, float]]) -> Spline | None:
+        """A cubic B-spline through `pts`, in order.  The control points are computed, not given
+        — the same bargain `arc_through` strikes.  `None` if there are too few for a cubic, or
+        they give no parameterisation."""
+        buf = _ffi.f64(max(2, 2 * len(pts)))
+        for k, (x, y) in enumerate(pts):
+            buf[2 * k], buf[2 * k + 1] = float(x), float(y)
+        i = lib.gcs_sketch_spline_through(self._h, _ffi.pf(buf), len(pts))
+        return self.splines[int(i)] if i >= 0 else None
 
     def rectangle(self, a: Point, x1: float, y1: float, name: str = "") -> list[Line]:
         """Four lines round the corners, sharing corner points, with three perpendiculars — the
