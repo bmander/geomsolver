@@ -467,17 +467,10 @@ pub fn spline_follower(n: usize) -> Sketch {
     // already dips lowest — an interior dip, not an end, so the contact has curve on both sides
     // of it to slide along.
     let (t0, t1) = crate::curve::domain(&sk, sp);
-    let mut low = (t0, f64::INFINITY);
-    for k in 1..200 {
-        let t = t0 + (t1 - t0) * k as f64 / 200.0;
-        let p = crate::curve::point_at(&sk, sp, t);
-        if p.1 < low.1 {
-            low = (t, p.1);
-        }
-    }
+    let low = crate::curve::sample(&sk, sp, 64).into_iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
     let span = (n - 1) as f64 * 20.0;
-    let a = sk.point(0.0, low.1, false, "f1");
-    let b = sk.point(span, low.1, false, "f2");
+    let a = sk.point(0.0, low, false, "f1");
+    let b = sk.point(span, low, false, "f2");
     let face = sk.line(a, b);
     add(&mut sk, Constraint::one_line(CKind::Horizontal, EntRef::line(face)));
     let tangent = Constraint::spline_tangent_line(&sk, spe, EntRef::line(face));

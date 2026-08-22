@@ -531,8 +531,10 @@ fn annular_distance_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
 /*
  * The two contact kernels.  Both are written against the basis alone — the values `b`, the
  * first derivatives `d` and the second derivatives `dd` of the `SPAN_N` functions that are
- * non-zero at t — so they say nothing about which curve family they are evaluating.  A second
- * curve type is a second `Basis` implementation, not a second constraint family.
+ * non-zero at t — so they say nothing about the curve beyond that it is a linear combination of
+ * its control points.  Their column counts are sized from `SPAN_N`, so a second degree costs a
+ * kernel pair and a `CKind` that selects it; a second curve family of the same degree costs
+ * neither.
  *
  * The curve's columns are one span's control points, `SPAN_N` of them, whichever span t is in;
  * the span itself is chosen at compile time and carried in `Sketch::topology_key`.  The local
@@ -540,6 +542,44 @@ fn annular_distance_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
  */
 
 use crate::curve::{self, SPAN_K, SPAN_N};
+
+/// One span evaluated at t: the basis, and the curve point and derivatives its control points
+/// give.  Both kernels' residual and Jacobian need some part of this, and they differ only in
+/// where their columns put t and the control points — which is the whole of what makes them two
+/// kernels rather than one.
+struct Span {
+    b: [f64; SPAN_N],
+    d: [f64; SPAN_N],
+    dd: [f64; SPAN_N],
+    p: (f64, f64),
+    d1: (f64, f64),
+    d2: (f64, f64),
+}
+
+/// `v` is one instance's columns; `t` and `ctrl` are the offsets into it of the parameter and of
+/// the first control point.
+fn span_frame(v: &[f64], t: usize, ctrl: usize, k: &[f64; SPAN_K]) -> Span {
+    let mut f =
+        Span { b: [0.0; SPAN_N], d: [0.0; SPAN_N], dd: [0.0; SPAN_N], p: (0.0, 0.0),
+               d1: (0.0, 0.0), d2: (0.0, 0.0) };
+    curve::basis(v[t], k, &mut f.b, &mut f.d, &mut f.dd);
+    for a in 0..SPAN_N {
+        let (x, y) = (v[ctrl + 2 * a], v[ctrl + 2 * a + 1]);
+        f.p.0 += f.b[a] * x;
+        f.p.1 += f.b[a] * y;
+        f.d1.0 += f.d[a] * x;
+        f.d1.1 += f.d[a] * y;
+        f.d2.0 += f.dd[a] * x;
+        f.d2.1 += f.dd[a] * y;
+    }
+    f
+}
+
+/// The i-th instance's local knot window out of a block's constants.
+#[inline]
+fn span_knots(k: &[f64], i: usize) -> &[f64; SPAN_K] {
+    k[SPAN_K * i..SPAN_K * (i + 1)].try_into().expect("a block's constants are SPAN_K per row")
+}
 
 /// Columns of `point_on_spline`: (px, py, t, c0x, c0y, ... c3x, c3y).
 pub const N_PAR_ON_SPLINE: usize = 3 + 2 * SPAN_N;
@@ -549,44 +589,30 @@ pub const N_PAR_SPLINE_LINE: usize = 1 + 2 * SPAN_N + 4;
 /// `r = p − C(t)`.  Two residuals against one new unknown: the net one equation a point lying
 /// on a curve is worth.  A signed displacement, so degree 1.
 fn point_on_spline_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    let (mut b, mut d, mut dd) = ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
     for i in 0..n {
         let o = N_PAR_ON_SPLINE * i;
-        curve::basis(curve::DEGREE, v[o + 2], &k[SPAN_K * i..SPAN_K * (i + 1)], &mut b, &mut d,
-                     &mut dd);
-        let (mut cx, mut cy) = (0.0, 0.0);
-        for a in 0..SPAN_N {
-            cx += b[a] * v[o + 3 + 2 * a];
-            cy += b[a] * v[o + 4 + 2 * a];
-        }
-        r[2 * i] = v[o] - cx;
-        r[2 * i + 1] = v[o + 1] - cy;
+        let f = span_frame(&v[o..], 2, 3, span_knots(k, i));
+        r[2 * i] = v[o] - f.p.0;
+        r[2 * i + 1] = v[o + 1] - f.p.1;
     }
 }
 
 fn point_on_spline_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    let (mut b, mut d, mut dd) = ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
     for i in 0..n {
         let o = N_PAR_ON_SPLINE * i;
         let jo = 2 * N_PAR_ON_SPLINE * i;
-        curve::basis(curve::DEGREE, v[o + 2], &k[SPAN_K * i..SPAN_K * (i + 1)], &mut b, &mut d,
-                     &mut dd);
-        let (mut tx, mut ty) = (0.0, 0.0);
-        for a in 0..SPAN_N {
-            tx += d[a] * v[o + 3 + 2 * a];
-            ty += d[a] * v[o + 4 + 2 * a];
-        }
         let row1 = jo + N_PAR_ON_SPLINE;
+        let f = span_frame(&v[o..], 2, 3, span_knots(k, i));
         for t in 0..2 * N_PAR_ON_SPLINE {
             j[jo + t] = 0.0;
         }
         j[jo] = 1.0;
         j[row1 + 1] = 1.0;
-        j[jo + 2] = -tx;
-        j[row1 + 2] = -ty;
+        j[jo + 2] = -f.d1.0;
+        j[row1 + 2] = -f.d1.1;
         for a in 0..SPAN_N {
-            j[jo + 3 + 2 * a] = -b[a];
-            j[row1 + 4 + 2 * a] = -b[a];
+            j[jo + 3 + 2 * a] = -f.b[a];
+            j[row1 + 4 + 2 * a] = -f.b[a];
         }
     }
 }
@@ -608,29 +634,19 @@ fn point_on_spline_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 ///
 /// (t, c0x, c0y ... c3x, c3y, ax, ay, bx, by)
 fn spline_tangent_line_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    let (mut b, mut d, mut dd) = ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
     for i in 0..n {
         let o = N_PAR_SPLINE_LINE * i;
         let l = o + 1 + 2 * SPAN_N;
-        curve::basis(curve::DEGREE, v[o], &k[SPAN_K * i..SPAN_K * (i + 1)], &mut b, &mut d,
-                     &mut dd);
-        let (mut cx, mut cy, mut tx, mut ty) = (0.0, 0.0, 0.0, 0.0);
-        for a in 0..SPAN_N {
-            cx += b[a] * v[o + 1 + 2 * a];
-            cy += b[a] * v[o + 2 + 2 * a];
-            tx += d[a] * v[o + 1 + 2 * a];
-            ty += d[a] * v[o + 2 + 2 * a];
-        }
+        let f = span_frame(&v[o..], 0, 1, span_knots(k, i));
         let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
-        let (wx, wy) = (cx - v[l], cy - v[l + 1]);
+        let (wx, wy) = (f.p.0 - v[l], f.p.1 - v[l + 1]);
         let len = line_len(dx, dy);
         r[2 * i] = (dx * wy - dy * wx) / len;
-        r[2 * i + 1] = (tx * dy - ty * dx) / len;
+        r[2 * i + 1] = (f.d1.0 * dy - f.d1.1 * dx) / len;
     }
 }
 
 fn spline_tangent_line_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    let (mut b, mut d, mut dd) = ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
     let mut dc = [0.0f64; N_PAR_SPLINE_LINE];
     let mut dl = [0.0f64; N_PAR_SPLINE_LINE];
     for i in 0..n {
@@ -638,22 +654,10 @@ fn spline_tangent_line_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
         let l = o + 1 + 2 * SPAN_N;
         let jo = 2 * N_PAR_SPLINE_LINE * i;
         let row1 = jo + N_PAR_SPLINE_LINE;
-        curve::basis(curve::DEGREE, v[o], &k[SPAN_K * i..SPAN_K * (i + 1)], &mut b, &mut d,
-                     &mut dd);
-        let (mut cx, mut cy) = (0.0, 0.0);
-        let (mut tx, mut ty) = (0.0, 0.0);
-        let (mut sx, mut sy) = (0.0, 0.0); // C''(t)
-        for a in 0..SPAN_N {
-            let (px, py) = (v[o + 1 + 2 * a], v[o + 2 + 2 * a]);
-            cx += b[a] * px;
-            cy += b[a] * py;
-            tx += d[a] * px;
-            ty += d[a] * py;
-            sx += dd[a] * px;
-            sy += dd[a] * py;
-        }
+        let f = span_frame(&v[o..], 0, 1, span_knots(k, i));
+        let (tx, ty) = f.d1;
         let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
-        let (wx, wy) = (cx - v[l], cy - v[l + 1]);
+        let (wx, wy) = (f.p.0 - v[l], f.p.1 - v[l + 1]);
         let len = line_len(dx, dy);
         let ll = l - o; // first line column
         // |b - a| moves with the line's endpoints only
@@ -671,8 +675,8 @@ fn spline_tangent_line_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
         }
         dc[0] = dx * ty - dy * tx;
         for a in 0..SPAN_N {
-            dc[1 + 2 * a] = -dy * b[a];
-            dc[2 + 2 * a] = dx * b[a];
+            dc[1 + 2 * a] = -dy * f.b[a];
+            dc[2 + 2 * a] = dx * f.b[a];
         }
         dc[ll] = dy - wy;
         dc[ll + 1] = wx - dx;
@@ -684,10 +688,10 @@ fn spline_tangent_line_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
         for t in 0..N_PAR_SPLINE_LINE {
             dc[t] = 0.0;
         }
-        dc[0] = sx * dy - sy * dx;
+        dc[0] = f.d2.0 * dy - f.d2.1 * dx;
         for a in 0..SPAN_N {
-            dc[1 + 2 * a] = d[a] * dy;
-            dc[2 + 2 * a] = -d[a] * dx;
+            dc[1 + 2 * a] = f.d[a] * dy;
+            dc[2 + 2 * a] = -f.d[a] * dx;
         }
         dc[ll] = ty;
         dc[ll + 1] = -tx;

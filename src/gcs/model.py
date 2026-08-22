@@ -77,8 +77,14 @@ class Entity:
         return [self.kind, self.index]
 
     @property
+    def _slots(self) -> int:
+        """How many indices `params`/`children` have to make room for.  Every kind but a spline
+        has a width fixed by its shape; a spline's is its control polygon, so only it asks."""
+        return 8
+
+    @property
     def params(self) -> tuple[Param, ...]:
-        buf = _ffi.i32(max(8, 2 * len(self.sketch.points)))
+        buf = _ffi.i32(self._slots)
         n = lib.gcs_entity_params(self.sketch._h, self._k, self.index, _ffi.pi(buf))
         return tuple(self.sketch.param_at(int(i)) for i in buf[:n])
 
@@ -86,9 +92,10 @@ class Entity:
     def children(self) -> tuple[Point, ...]:
         if self.kind == "point":
             return ()
-        buf = _ffi.i32(max(4, len(self.sketch.points)))
+        buf = _ffi.i32(self._slots)
         n = lib.gcs_entity_points(self.sketch._h, self._k, self.index, _ffi.pi(buf))
-        return tuple(self.sketch.points[int(i)] for i in buf[:n])
+        pts = self.sketch.points
+        return tuple(pts[int(i)] for i in buf[:n])
 
     def bounds(self) -> Box:
         out = _ffi.f64(4)
@@ -111,6 +118,11 @@ class _Constructible(Entity):
     @construction.setter
     def construction(self, v: bool) -> None:
         lib.gcs_entity_set_construction(self.sketch._h, self._k, self.index, 1 if v else 0)
+
+
+#: Points a curve's polyline is expected to need; enough for any ordinary curve at any ordinary
+#: zoom, and only a miss costs a second tessellation.
+POLYLINE_CAP = 512
 
 
 class Point(Entity):
@@ -217,12 +229,18 @@ class Spline(_Constructible):
     __slots__ = ()
 
     @property
+    def _slots(self) -> int:
+        """A control polygon is as long as it is, so this is the one kind whose width follows
+        the document — every other kind keeps the fixed buffer and never asks for a count."""
+        return max(8, 2 * len(self.sketch.points))
+
+    @property
     def ctrl(self) -> tuple[Point, ...]:
         return self.children
 
     @property
     def knots(self) -> tuple[float, ...]:
-        buf = _ffi.f64(len(self.children) + 8)
+        buf = _ffi.f64(self._slots + 8)
         n = lib.gcs_spline_knots(self.sketch._h, self.index, _ffi.pf(buf))
         return tuple(float(v) for v in buf[:n])
 
@@ -246,14 +264,21 @@ class Spline(_Constructible):
 
     def polyline(self, unit: float = 0.01) -> list[tuple[float, float]]:
         """The curve refined until a chord strays less than a fraction of a pixel from it.
-        `unit` is the world length of one screen pixel, as everywhere else in the drawing."""
-        n = int(lib.gcs_spline_polyline_len(self.sketch._h, self.index, float(unit)))
-        if n <= 0:
-            return []
-        buf = _ffi.f64(2 * n)
-        n = int(lib.gcs_spline_polyline(self.sketch._h, self.index, float(unit),
-                                        _ffi.pf(buf), n))
-        return [(float(buf[2 * i]), float(buf[2 * i + 1])) for i in range(n)]
+        `unit` is the world length of one screen pixel, as everywhere else in the drawing.
+
+        One tessellation in almost every case: the core reports how many points it wanted, so a
+        buffer that was too small costs a second pass and nothing else."""
+        def read(cap: int) -> tuple[int, Vec]:
+            buf = _ffi.f64(2 * cap)
+            need = int(lib.gcs_spline_polyline(self.sketch._h, self.index, float(unit),
+                                               _ffi.pf(buf), cap))
+            return need, buf
+        cap = POLYLINE_CAP
+        need, buf = read(cap)
+        if need > cap:
+            cap = need
+            need, buf = read(cap)
+        return [(float(buf[2 * i]), float(buf[2 * i + 1])) for i in range(max(0, need))]
 
     def closest(self, x: float, y: float) -> tuple[float, float]:
         """The parameter of the nearest curve point, and how far that is."""

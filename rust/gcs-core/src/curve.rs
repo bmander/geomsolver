@@ -22,6 +22,7 @@
 //! same event as any other topology change and about as rare.
 
 use crate::model::Sketch;
+use std::collections::BTreeMap;
 
 /// The one degree the kernels are compiled for.  The basis below is written for general `p`; a
 /// second degree costs a kernel pair and a `CKind` that selects it, which is why the model
@@ -33,9 +34,6 @@ pub const SPAN_N: usize = DEGREE + 1;
 
 /// The local knot window one span needs: u[span-p ..= span+p+1].
 pub const SPAN_K: usize = 2 * DEGREE + 2;
-
-/// Highest degree `basis` will evaluate — the size of its working buffers.
-pub const MAX_DEGREE: usize = 5;
 
 /// How far a tessellated chord may stray from the curve, in screen pixels.
 pub const FLATNESS_PX: f64 = 0.3;
@@ -88,25 +86,30 @@ impl Jet {
 
 /* -- the basis -------------------------------------------------------------- */
 
-/// The `p+1` basis functions that are non-zero on one span, and their first two derivatives in
-/// t.  `lk` is the span's local knot window — `u[span-p ..= span+p+1]`, `2p+2` values — and
-/// `b`, `d` and `dd` are filled for the control points `P[span-p ..= span]`, in that order.
+/// The `DEGREE + 1` basis functions that are non-zero on one span, and their first two
+/// derivatives in t.  `lk` is the span's local knot window and `b`, `d` and `dd` are filled for
+/// the control points `P[span-p ..= span]`, in that order.
 ///
 /// This is Cox–de Boor run over jets.  A zero denominator is a knot repeated enough times to
 /// collapse a span, and the basis function it divides is zero there: the convention is that the
 /// whole term is zero, which is also what keeps a clamped knot vector (where `u[p] == u[0]`)
 /// from putting a NaN in the Jacobian.
-pub fn basis(p: usize, t: f64, lk: &[f64], b: &mut [f64], d: &mut [f64], dd: &mut [f64]) {
-    debug_assert!(p <= MAX_DEGREE && lk.len() >= 2 * p + 2);
+///
+/// The recurrence is written for a general degree, but the buffers and the kernels' column
+/// counts are sized from `DEGREE`, so a second degree costs a kernel pair and a `CKind` that
+/// selects it — see the module docs.
+pub fn basis(t: f64, lk: &[f64; SPAN_K], b: &mut [f64; SPAN_N], d: &mut [f64; SPAN_N],
+             dd: &mut [f64; SPAN_N]) {
+    const P: usize = DEGREE;
     // cur[a] holds N_{span-p+a, deg}; the slot at p+1 stays zero so the recurrence can read it
-    let mut cur = [Jet::ZERO; MAX_DEGREE + 2];
-    let mut next = [Jet::ZERO; MAX_DEGREE + 2];
-    cur[p] = Jet::ONE; // N_{span,0} = 1 on this span, every other degree-0 function 0
-    for deg in 1..=p {
+    let mut cur = [Jet::ZERO; P + 2];
+    let mut next = [Jet::ZERO; P + 2];
+    cur[P] = Jet::ONE; // N_{span,0} = 1 on this span, every other degree-0 function 0
+    for deg in 1..=P {
         for slot in next.iter_mut() {
             *slot = Jet::ZERO;
         }
-        for a in (p - deg)..=p {
+        for a in (P - deg)..=P {
             let mut acc = Jet::ZERO;
             let den = lk[a + deg] - lk[a];
             if den != 0.0 {
@@ -120,7 +123,7 @@ pub fn basis(p: usize, t: f64, lk: &[f64], b: &mut [f64], d: &mut [f64], dd: &mu
         }
         cur = next;
     }
-    for a in 0..=p {
+    for a in 0..=P {
         b[a] = cur[a].v;
         d[a] = cur[a].d;
         dd[a] = cur[a].dd;
@@ -200,10 +203,17 @@ pub fn span_of(sk: &Sketch, i: usize, t: f64) -> usize {
 /// C(t), C'(t) and C''(t).
 pub fn eval(sk: &Sketch, i: usize, t: f64) -> Frame {
     let s = &sk.splines[i];
-    let span = span_index(&s.knots, s.ctrl.len(), t);
+    eval_on(sk, i, span_index(&s.knots, s.ctrl.len(), t), t)
+}
+
+/// The same on a span the caller already knows.  Every sweep below walks span by span, so
+/// finding the span again per sample would make each of them quadratic in the span count — and
+/// `closest` is on the pick path, which runs for every curve on every pointer move.
+pub fn eval_on(sk: &Sketch, i: usize, span: usize, t: f64) -> Frame {
+    let s = &sk.splines[i];
     let lk = local_knots(&s.knots, span);
     let (mut b, mut d, mut dd) = ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
-    basis(DEGREE, t, &lk, &mut b, &mut d, &mut dd);
+    basis(t, &lk, &mut b, &mut d, &mut dd);
     let mut f = Frame { p: (0.0, 0.0), d1: (0.0, 0.0), d2: (0.0, 0.0) };
     for a in 0..SPAN_N {
         let (x, y) = sk.point_xy(s.ctrl[span - DEGREE + a] as usize);
@@ -221,25 +231,27 @@ pub fn point_at(sk: &Sketch, i: usize, t: f64) -> (f64, f64) {
     eval(sk, i, t).p
 }
 
-/// The parameter values that bound the non-empty spans — every knot is a vertex of the drawn
-/// polyline, so a repeated knot's corner is drawn as a corner and not smoothed across.
-fn span_bounds(sk: &Sketch, i: usize) -> Vec<f64> {
+/// The non-empty spans and the parameter interval of each, in order.  Every knot is therefore a
+/// vertex of a drawn polyline, so a repeated knot's corner is drawn as a corner and not smoothed
+/// across — and every sweep below gets the span index for free rather than finding it again per
+/// sample.
+fn spans_with_bounds(sk: &Sketch, i: usize) -> Vec<(usize, f64, f64)> {
     let s = &sk.splines[i];
-    let (t0, t1) = domain(sk, i);
-    let mut out = vec![t0];
-    for k in DEGREE + 1..s.ctrl.len() {
-        let u = s.knots[k];
-        if u > t0 && u < t1 && *out.last().unwrap() < u {
-            out.push(u);
+    let mut out = Vec::new();
+    for span in DEGREE..s.ctrl.len() {
+        let (a, b) = (s.knots[span], s.knots[span + 1]);
+        if a < b {
+            out.push((span, a, b));
         }
     }
-    out.push(t1);
     out
 }
+
 
 fn refine(
     sk: &Sketch,
     i: usize,
+    span: usize,
     a: f64,
     pa: (f64, f64),
     b: f64,
@@ -249,14 +261,14 @@ fn refine(
     out: &mut Vec<(f64, f64)>,
 ) {
     let m = 0.5 * (a + b);
-    let pm = point_at(sk, i, m);
+    let pm = eval_on(sk, i, span, m).p;
     let (cx, cy) = (0.5 * (pa.0 + pb.0), 0.5 * (pa.1 + pb.1));
     if depth == 0 || (pm.0 - cx).hypot(pm.1 - cy) <= tol {
         out.push(pb);
         return;
     }
-    refine(sk, i, a, pa, m, pm, tol, depth - 1, out);
-    refine(sk, i, m, pm, b, pb, tol, depth - 1, out);
+    refine(sk, i, span, a, pa, m, pm, tol, depth - 1, out);
+    refine(sk, i, span, m, pm, b, pb, tol, depth - 1, out);
 }
 
 /// The curve as a polyline, refined until a chord strays less than `FLATNESS_PX` screen pixels
@@ -265,11 +277,12 @@ fn refine(
 /// never evaluates a basis function.
 pub fn tessellate(sk: &Sketch, i: usize, unit: f64) -> Vec<(f64, f64)> {
     let tol = (unit.abs() * FLATNESS_PX).max(1e-12);
-    let bounds = span_bounds(sk, i);
-    let mut out = vec![point_at(sk, i, bounds[0])];
-    for w in bounds.windows(2) {
-        let (pa, pb) = (point_at(sk, i, w[0]), point_at(sk, i, w[1]));
-        refine(sk, i, w[0], pa, w[1], pb, tol, MAX_DEPTH, &mut out);
+    let spans = spans_with_bounds(sk, i);
+    let start = spans.first().map(|&(s, a, _)| eval_on(sk, i, s, a).p).unwrap_or((0.0, 0.0));
+    let mut out = vec![start];
+    for &(span, a, b) in &spans {
+        let (pa, pb) = (eval_on(sk, i, span, a).p, eval_on(sk, i, span, b).p);
+        refine(sk, i, span, a, pa, b, pb, tol, MAX_DEPTH, &mut out);
     }
     out
 }
@@ -278,30 +291,38 @@ pub fn tessellate(sk: &Sketch, i: usize, unit: f64) -> Vec<(f64, f64)> {
 /// What a bounding box or a coarse sweep wants, where an adaptive tessellation would be both
 /// more work and less predictable.
 pub fn sample(sk: &Sketch, i: usize, per_span: usize) -> Vec<(f64, f64)> {
+    samples(sk, i, per_span).map(|(_, p)| p).collect()
+}
+
+/// The same walk with the parameter alongside each point, which is what a sweep looking for a
+/// *place* on the curve needs.  One implementation: the bounding box, the arc length, the
+/// nearest-point basin and the nearest-to-a-line basin are all this walk at different
+/// resolutions.  Every sample carries the span it came from, so none of them re-derives it.
+pub fn samples(
+    sk: &Sketch,
+    i: usize,
+    per_span: usize,
+) -> impl Iterator<Item = (f64, (f64, f64))> + '_ {
     let per_span = per_span.max(1);
-    let bounds = span_bounds(sk, i);
-    let mut out = vec![point_at(sk, i, bounds[0])];
-    for w in bounds.windows(2) {
-        for k in 1..=per_span {
-            let t = w[0] + (w[1] - w[0]) * k as f64 / per_span as f64;
-            out.push(point_at(sk, i, t));
-        }
-    }
-    out
+    let spans = spans_with_bounds(sk, i);
+    let first = spans.first().map(|&(s, a, _)| (a, eval_on(sk, i, s, a).p));
+    first.into_iter().chain(spans.into_iter().flat_map(move |(span, a, b)| {
+        (1..=per_span).map(move |k| {
+            let t = a + (b - a) * k as f64 / per_span as f64;
+            (t, eval_on(sk, i, span, t).p)
+        })
+    }))
 }
 
 /// Arc length, from a fixed sampling — a characteristic size, not a measurement.
-pub fn length(sk: &Sketch, i: usize) -> f64 {
-    let bounds = span_bounds(sk, i);
+fn length(sk: &Sketch, i: usize) -> f64 {
     let mut total = 0.0;
-    for w in bounds.windows(2) {
-        let mut prev = point_at(sk, i, w[0]);
-        for k in 1..=8 {
-            let t = w[0] + (w[1] - w[0]) * k as f64 / 8.0;
-            let p = point_at(sk, i, t);
-            total += (p.0 - prev.0).hypot(p.1 - prev.1);
-            prev = p;
+    let mut prev: Option<(f64, f64)> = None;
+    for (_, p) in samples(sk, i, 8) {
+        if let Some(q) = prev {
+            total += (p.0 - q.0).hypot(p.1 - q.1);
         }
+        prev = Some(p);
     }
     total
 }
@@ -324,17 +345,12 @@ pub fn speed(sk: &Sketch, i: usize) -> f64 {
 /// the basin — a curve can be nearest a point in several places, and the nearest one is the
 /// branch a fresh contact should start on — then Newton on (C(t) − q)·C'(t) = 0 to land on it.
 pub fn closest(sk: &Sketch, i: usize, x: f64, y: f64) -> (f64, f64) {
-    let bounds = span_bounds(sk, i);
-    let (t0, t1) = (bounds[0], *bounds.last().unwrap());
+    let (t0, t1) = domain(sk, i);
     let mut best = (t0, f64::INFINITY);
-    for w in bounds.windows(2) {
-        for k in 0..=16 {
-            let t = w[0] + (w[1] - w[0]) * k as f64 / 16.0;
-            let p = point_at(sk, i, t);
-            let d = (p.0 - x).hypot(p.1 - y);
-            if d < best.1 {
-                best = (t, d);
-            }
+    for (t, p) in samples(sk, i, 16) {
+        let d = (p.0 - x).hypot(p.1 - y);
+        if d < best.1 {
+            best = (t, d);
         }
     }
     let mut t = best.0;
@@ -371,16 +387,11 @@ pub fn nearest_to_line(sk: &Sketch, i: usize, ax: f64, ay: f64, bx: f64, by: f64
     if l <= 1e-12 {
         return closest(sk, i, ax, ay).0;
     }
-    let bounds = span_bounds(sk, i);
-    let mut best = (bounds[0], f64::INFINITY);
-    for w in bounds.windows(2) {
-        for k in 0..=32 {
-            let t = w[0] + (w[1] - w[0]) * k as f64 / 32.0;
-            let p = point_at(sk, i, t);
-            let d = ((dx * (p.1 - ay) - dy * (p.0 - ax)) / l).abs();
-            if d < best.1 {
-                best = (t, d);
-            }
+    let mut best = (domain(sk, i).0, f64::INFINITY);
+    for (t, p) in samples(sk, i, 32) {
+        let d = ((dx * (p.1 - ay) - dy * (p.0 - ax)) / l).abs();
+        if d < best.1 {
+            best = (t, d);
         }
     }
     best.0
@@ -410,7 +421,7 @@ pub fn has_contacts(sk: &Sketch) -> bool {
 /// A compiled system names one span's control points in its columns, so this *is* the part of
 /// the topology a curve adds: when it changes, the plan has to be built again.  Comparing it
 /// across a solve is how a caller finds out.
-pub fn contact_spans(sk: &Sketch) -> Vec<(u32, usize)> {
+pub fn contact_spans(sk: &Sketch) -> BTreeMap<u32, usize> {
     sk.constraints
         .iter()
         .filter_map(|c| {
@@ -441,15 +452,4 @@ pub fn clamp_contacts(sk: &mut Sketch) -> Vec<u32> {
         }
     }
     moved
-}
-
-/// Re-read every contact's `Param::scale` from the curve it is on.  The scale preconditions the
-/// solver's columns, and a curve that has been dragged to twice its length has twice the speed;
-/// left stale it costs convergence rate, never correctness, so this runs where a system is being
-/// built anyway rather than on every frame.
-pub fn refresh_scales(sk: &mut Sketch) {
-    for i in 0..sk.constraints.len() {
-        let Some((s, t)) = sk.constraints[i].curve_contact() else { continue };
-        sk.params[t as usize].scale = speed(sk, s);
-    }
 }

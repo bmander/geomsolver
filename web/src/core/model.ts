@@ -62,10 +62,14 @@ export abstract class Entity {
     return takeStr(core().gcs_entity_name(this.kindId, this.index));
   }
 
+  /** How many indices `params`/`children` have to make room for.  Every kind but a spline has a
+   *  width fixed by its shape; a spline's is its control polygon, so only it pays to ask. */
+  protected get slots(): number {
+    return 8;
+  }
+
   get params(): Param[] {
-    // a spline's control polygon is as long as it is, so the buffer follows the document
-    const cap = Math.max(8, 2 * this.sketch.pointCount);
-    return withBuf(cap, 4, (b) => {
+    return withBuf(this.slots, 4, (b) => {
       const n = core().gcs_entity_params(this.sketch.handle, this.kindId, this.index, b.ptr);
       return [...b.i32.subarray(0, n)].map((i) => this.sketch.paramAt(i));
     });
@@ -73,10 +77,10 @@ export abstract class Entity {
 
   get children(): Point[] {
     if (this.kind === 'point') return [];
-    const cap = Math.max(4, this.sketch.pointCount);
-    return withBuf(cap, 4, (b) => {
+    return withBuf(this.slots, 4, (b) => {
       const n = core().gcs_entity_points(this.sketch.handle, this.kindId, this.index, b.ptr);
-      return [...b.i32.subarray(0, n)].map((i) => this.sketch.points[i]);
+      const pts = this.sketch.points;
+      return [...b.i32.subarray(0, n)].map((i) => pts[i]);
     });
   }
 
@@ -99,6 +103,10 @@ abstract class Constructible extends Entity {
     core().gcs_entity_set_construction(this.sketch.handle, this.kindId, this.index, v ? 1 : 0);
   }
 }
+
+/** Points a curve's polyline is expected to need; enough for any ordinary curve at any ordinary
+ *  zoom, and only a miss costs a second tessellation. */
+const POLYLINE_CAP = 512;
 
 export class Point extends Entity {
   readonly kind = 'point' as const;
@@ -203,13 +211,18 @@ export class Arc extends Constructible {
 export class Spline extends Constructible {
   readonly kind = 'spline' as const;
 
+  /** A control polygon is as long as it is, so this is the one kind whose width follows the
+   *  document — every other kind keeps the fixed buffer and never asks for a count. */
+  protected override get slots(): number {
+    return Math.max(8, 2 * this.sketch.pointCount);
+  }
+
   get ctrl(): Point[] {
     return this.children;
   }
 
   get knots(): number[] {
-    const cap = this.ctrl.length + 8;
-    return withBuf(cap, 8, (b) => {
+    return withBuf(this.slots + 8, 8, (b) => {
       const n = core().gcs_spline_knots(this.sketch.handle, this.index, b.ptr);
       return [...b.f64.subarray(0, n)];
     });
@@ -240,15 +253,19 @@ export class Spline extends Constructible {
   /** The curve as a polyline, refined until a chord strays less than a fraction of a pixel from
    *  it.  `unit` is the world length of one screen pixel, as everywhere else in the drawing. */
   polyline(unit: number): [number, number][] {
-    const n = core().gcs_spline_polyline_len(this.sketch.handle, this.index, unit);
-    if (n <= 0) return [];
-    return withBuf(2 * n, 8, (b) => {
-      const got = core().gcs_spline_polyline(this.sketch.handle, this.index, unit, b.ptr, n);
+    // One tessellation in almost every case.  The core reports how many points it wanted, so a
+    // buffer that was too small costs a second pass and nothing else — asking the length first
+    // would tessellate the curve twice, every time.
+    const read = (cap: number): [number, number][] | number => withBuf(2 * cap, 8, (b) => {
+      const need = core().gcs_spline_polyline(this.sketch.handle, this.index, unit, b.ptr, cap);
+      if (need > cap) return need;
       const v = b.f64;
       const out: [number, number][] = [];
-      for (let i = 0; i < got; i++) out.push([v[2 * i], v[2 * i + 1]]);
+      for (let i = 0; i < need; i++) out.push([v[2 * i], v[2 * i + 1]]);
       return out;
     });
+    const first = read(POLYLINE_CAP);
+    return typeof first === 'number' ? (read(first) as [number, number][]) : first;
   }
 
   /** The parameter of the nearest curve point, and how far that is — the pick test. */

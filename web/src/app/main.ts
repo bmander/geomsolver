@@ -239,7 +239,7 @@ function options(): Promise<void> {
 
 /* constraints whose arguments are just entities:
  * (label, class, points, lines, circles/arcs, shortcut) */
-type Simple = [string, C.ConstraintCtor, number, number, number, string?];
+type Simple = [string, C.ConstraintCtor, number, number, number, string?, number?];
 const SIMPLE: Simple[] = [
   ['Horizontal', C.Horizontal, 0, 1, 0, 'h'],
   ['Vertical', C.Vertical, 0, 1, 0, 'v'],
@@ -253,6 +253,9 @@ const INCIDENCE: Simple[] = [
   ['Coincident', C.Coincident, 2, 0, 0],
   ['On line', C.PointOnLine, 1, 1, 0],
   ['On circle', C.PointOnCircle, 1, 0, 1],
+  // a curve is one more row, not a branch: `applySimple` fills the spec's slots by kind, and
+  // the contact's hidden parameter is not an entity slot so it is left for the core to seed
+  ['On curve', C.PointOnSpline, 1, 0, 0, undefined, 1],
 ];
 /* The constraints bar, in an order that interleaves the dimensioned constraints with the
  * entity-only ones.  `key` is both the chip printed on the button and the token the keyboard
@@ -293,21 +296,24 @@ function need(ok: boolean, what: string): boolean {
 
 /** Generic applier: checks the selection has the required counts and passes the entities in
  *  spec order.  Single-line constraints (Horizontal/Vertical) apply to every selected line. */
-function applySimple([, cls, nPts, nLines, nCirc]: Simple): void {
-  const { pts, lines, circles } = sel();
+function applySimple([, cls, nPts, nLines, nCirc, , nSpl = 0]: Simple): void {
+  const { pts, lines, circles, splines } = sel();
   const perLine = nPts === 0 && nLines === 1 && nCirc === 0;
-  const ok = pts.length === nPts && circles.length === nCirc
+  const ok = pts.length === nPts && circles.length === nCirc && splines.length === nSpl
     && (perLine ? lines.length >= 1 : lines.length === nLines);
-  const what = ([[nPts, 'point(s)'], [nLines, 'line(s)'], [nCirc, 'circle(s)/arc(s)']] as const)
+  const what = ([[nPts, 'point(s)'], [nLines, 'line(s)'], [nCirc, 'circle(s)/arc(s)'],
+                 [nSpl, 'curve(s)']] as const)
     .filter(([n]) => n).map(([n, w]) => `${n} ${w}`).join(', ');
   if (!need(ok, what)) return;
   const made = (perLine ? lines : [null]).map((ln) => {
     const args: unknown[] = [];
-    let pi = 0, li = 0, ci = 0;
+    let pi = 0, li = 0, ci = 0, si = 0;
     for (const [, kind] of cls.spec) {
       if (kind === 'point') args.push(pts[pi++]);
       else if (kind === 'line') args.push(perLine ? ln : lines[li++]);
+      else if (kind === 'spline') args.push(splines[si++]);
       else if (ENTITY_KINDS.has(kind)) args.push(circles[ci++]);
+      // a `param` slot is not an entity: it is left out, and the core seeds it off the geometry
     }
     return new (cls as unknown as new (...a: unknown[]) => Constraint)(...args);
   });
@@ -317,14 +323,9 @@ function applySimple([, cls, nPts, nLines, nCirc]: Simple): void {
 /** The single incidence button: read the selection and pick the constraint that fits it. */
 function cCoincident(): void {
   const { pts, lines, circles, splines } = sel();
-  // a curve takes the same button: the parameter the contact sits at is the core's to seed —
-  // it starts wherever the curve already comes nearest the point
-  if (pts.length === 1 && splines.length === 1 && !lines.length && !circles.length) {
-    view.addConstraints(new C.PointOnSpline(pts[0], splines[0]));
-    return;
-  }
-  const hit = splines.length ? undefined : INCIDENCE.find(([, , nPts, nLines, nCirc]) =>
-    pts.length === nPts && lines.length === nLines && circles.length === nCirc);
+  const hit = INCIDENCE.find(([, , nPts, nLines, nCirc, , nSpl = 0]) =>
+    pts.length === nPts && lines.length === nLines && circles.length === nCirc
+    && splines.length === nSpl);
   if (!need(!!hit, 'two points, a point and a line, or a point and a circle/arc/curve')) return;
   applySimple(hit as Simple);
 }

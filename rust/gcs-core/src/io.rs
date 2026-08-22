@@ -27,7 +27,7 @@ fn arg_json(sk: &Sketch, a: &Arg) -> Json {
         Arg::Ent(e) => ref_json(*e),
         // a hidden unknown saves as the number it currently holds: Param indices are not stable
         // across a load, and the value is what a reload wants to start from anyway
-        Arg::Param(i) => Json::Num(sk.params[*i as usize].value),
+        Arg::Param(_) => Json::Num(a.value(sk)),
         Arg::Num(v) => Json::Num(*v),
         Arg::Int(v) => Json::Int(*v),
         Arg::Bool(b) => Json::Bool(*b),
@@ -75,8 +75,23 @@ fn arg_from_json(sk: &Sketch, kind: SpecKind, v: &Json) -> Result<Arg, String> {
 }
 
 /// Whether a stored argument says nothing, so the core should read it off the geometry.
-fn omitted(v: Option<&Json>) -> bool {
+pub(crate) fn omitted(v: Option<&Json>) -> bool {
     matches!(v, None | Some(Json::Null))
+}
+
+/// Fill in the hidden unknowns the caller left out, from the geometry — the one place the rule
+/// lives, shared by the document reader and the bindings' constraint records.
+pub(crate) fn seed_omitted(
+    sk: &Sketch,
+    kind: CKind,
+    args: &mut [Arg],
+    left_out: impl Fn(usize) -> bool,
+) {
+    for (i, _) in kind.param_slots() {
+        if left_out(i) {
+            args[i] = Arg::Num(crate::constraints::seed_param(sk, kind, args, i));
+        }
+    }
 }
 
 /// A cap on how long a control polygon a document may declare.  A document is untrusted input
@@ -263,13 +278,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         for (i, (_, k)) in spec.iter().enumerate() {
             args.push(arg_from_json(&sk, *k, &raw[i])?);
         }
-        // a document that left a hidden unknown out gets it read off its geometry, exactly as a
-        // binding that omits one does
-        for (i, _) in Constraint::new(kind, args.clone()).param_slots() {
-            if omitted(raw.get(i)) {
-                args[i] = Arg::Num(crate::constraints::seed_param(&sk, kind, &args, i));
-            }
-        }
+        seed_omitted(&sk, kind, &mut args, |i| omitted(raw.get(i)));
         ids.push(sk.add(Constraint::new(kind, args)));
     }
     expr::evaluate(&mut sk);   // every expression against the whole document, in order
@@ -415,7 +424,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     }
                 },
                 // the destination allocates its own: a Param index is this sketch's name for it
-                Arg::Param(i) => args.push(Arg::Num(src.params[*i as usize].value)),
+                Arg::Param(_) => args.push(Arg::Num(a.value(src))),
                 other => args.push(other.clone()),
             }
         }

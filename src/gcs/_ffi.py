@@ -107,7 +107,6 @@ _SIGNATURES: list[tuple[str, Any, list[Any]]] = [
     ("gcs_spline_knots", ct.c_int32, [PTR, ct.c_int32, F64]),
     ("gcs_spline_domain", None, [PTR, ct.c_int32, F64]),
     ("gcs_spline_eval", None, [PTR, ct.c_int32, ct.c_double, F64]),
-    ("gcs_spline_polyline_len", ct.c_int32, [PTR, ct.c_int32, ct.c_double]),
     ("gcs_spline_polyline", ct.c_int32, [PTR, ct.c_int32, ct.c_double, F64, ct.c_int32]),
     ("gcs_spline_closest", None, [PTR, ct.c_int32, ct.c_double, ct.c_double, F64]),
     ("gcs_three_point_arc", ct.c_int32,

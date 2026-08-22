@@ -314,7 +314,7 @@ pub fn constraint_json(sk: &Sketch, c: &Constraint) -> Json {
         .map(|a| match a {
             // a hidden unknown reads as the number it holds, like any other argument: a proxy's
             // `c.t` is the parameter's current value, and the solver moves it between edits
-            Arg::Param(i) => Json::Num(sk.params[*i as usize].value),
+            Arg::Param(_) => Json::Num(a.value(sk)),
             a => arg_json_value(a),
         })
         .collect();
@@ -474,7 +474,16 @@ pub fn registry_json() -> Json {
             ])
         })
         .collect();
-    object([("types", Json::Arr(types)), ("kernels", Json::Arr(kernels))])
+    object([
+        ("types", Json::Arr(types)),
+        ("kernels", Json::Arr(kernels)),
+        // what a front end needs to know about the curves without knowing the degree: how many
+        // control points make one, so its tool and its messages cannot drift from `spline_with`
+        ("curve", object([
+            ("degree", (crate::curve::DEGREE as i64).into()),
+            ("minCtrl", (crate::curve::DEGREE as i64 + 1).into()),
+        ])),
+    ])
 }
 
 /// Build a constraint from `{"type": ..., "args": [...], "soft": ?, "intrinsic": ?}`.
@@ -513,11 +522,7 @@ pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String>
         });
     }
     // a hidden unknown nobody supplied starts where the geometry puts it
-    for (i, _) in Constraint::new(kind, args.clone()).param_slots() {
-        if raw.get(i).map(|x| matches!(x, Json::Null)).unwrap_or(true) {
-            args[i] = Arg::Num(crate::constraints::seed_param(sk, kind, &args, i));
-        }
-    }
+    crate::io::seed_omitted(sk, kind, &mut args, |i| crate::io::omitted(raw.get(i)));
     // the tangencies read their branch off the sketch when none was supplied
     let omitted = raw.get(2).map(|x| matches!(x, Json::Null)).unwrap_or(true);
     if omitted && kind == CKind::TangentLineCircle {

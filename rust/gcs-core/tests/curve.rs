@@ -5,6 +5,14 @@ use gcs_core::kernels;
 use gcs_core::model::{EntRef, Sketch};
 use gcs_core::system::System;
 
+/// Add a constraint built from the sketch it is going into.  A curve contact reads the geometry
+/// to seed its parameter, so the constructor needs `&Sketch` while `add` needs `&mut` — taking
+/// the builder as a closure ends the shared borrow before the mutable one begins.
+fn add(sk: &mut Sketch, make: impl FnOnce(&Sketch) -> Constraint) -> u32 {
+    let c = make(sk);
+    sk.add(c)
+}
+
 fn bernstein(t: f64) -> [f64; 4] {
     let u = 1.0 - t;
     [u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t]
@@ -14,7 +22,7 @@ fn at(t: f64, u: &[f64], n: usize) -> ([f64; SPAN_N], [f64; SPAN_N], [f64; SPAN_
     let span = curve::span_index(u, n, t);
     let lk = curve::local_knots(u, span);
     let (mut b, mut d, mut dd) = ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
-    curve::basis(DEGREE, t, &lk, &mut b, &mut d, &mut dd);
+    curve::basis(t, &lk, &mut b, &mut d, &mut dd);
     (b, d, dd)
 }
 
@@ -182,7 +190,7 @@ fn a_point_is_pulled_onto_the_curve() {
         sk.fix_point(c, true); // hold the curve still: only the point may move
     }
     let p = sk.point(21.0, 30.0, false, "p");
-    sk.add(Constraint::point_on_spline(&sk.clone(), EntRef::point(p), EntRef::spline(s)));
+    add(&mut sk, |doc| Constraint::point_on_spline(doc, EntRef::point(p), EntRef::spline(s)));
     assert!(solved(&mut sk));
     let (x, y) = sk.point_xy(p);
     assert!(curve::distance_to(&sk, s, x, y) < 1e-9, "point is off the curve");
@@ -193,7 +201,7 @@ fn the_curve_comes_to_the_point_when_the_point_is_the_fixed_one() {
     let mut sk = Sketch::new();
     let s = wave(&mut sk, 5);
     let p = sk.point(21.0, 30.0, true, "p");
-    sk.add(Constraint::point_on_spline(&sk.clone(), EntRef::point(p), EntRef::spline(s)));
+    add(&mut sk, |doc| Constraint::point_on_spline(doc, EntRef::point(p), EntRef::spline(s)));
     assert!(solved(&mut sk));
     assert!(curve::distance_to(&sk, s, 21.0, 30.0) < 1e-9);
 }
@@ -208,7 +216,7 @@ fn a_line_is_made_tangent_to_a_curve() {
     let a = sk.point(0.0, -20.0, false, "a");
     let b = sk.point(50.0, -20.0, false, "b");
     let l = sk.line(a, b);
-    let id = sk.add(Constraint::spline_tangent_line(&sk.clone(), EntRef::spline(s),
+    let id = add(&mut sk, |doc| Constraint::spline_tangent_line(doc, EntRef::spline(s),
                                                     EntRef::line(l)));
     assert!(solved(&mut sk));
     let t = sk.params[sk.constraint(id).unwrap().aux_params()[0] as usize].value;
@@ -231,7 +239,7 @@ fn a_tangency_costs_one_degree_of_freedom() {
     let b = sk.point(50.0, -20.0, false, "b");
     let l = sk.line(a, b);
     let before = gcs_core::diagnose::diagnose(&mut sk.clone(), Default::default()).dof;
-    sk.add(Constraint::spline_tangent_line(&sk.clone(), EntRef::spline(s), EntRef::line(l)));
+    add(&mut sk, |doc| Constraint::spline_tangent_line(doc, EntRef::spline(s), EntRef::line(l)));
     // the constraint brings one unknown of its own and two equations: net one
     assert_eq!(gcs_core::diagnose::diagnose(&mut sk, Default::default()).dof, before - 1 + 1 - 2 + 1);
 }
@@ -241,7 +249,7 @@ fn a_contact_survives_save_and_load() {
     let mut sk = Sketch::new();
     let s = wave(&mut sk, 7);
     let p = sk.point(21.0, 30.0, false, "p");
-    let id = sk.add(Constraint::point_on_spline(&sk.clone(), EntRef::point(p), EntRef::spline(s)));
+    let id = add(&mut sk, |doc| Constraint::point_on_spline(doc, EntRef::point(p), EntRef::spline(s)));
     assert!(solved(&mut sk));
     let t = sk.params[sk.constraint(id).unwrap().aux_params()[0] as usize].value;
     let text = gcs_core::io::dumps(&sk, None);
@@ -259,7 +267,7 @@ fn copying_a_spline_takes_its_contacts_and_gives_them_their_own_unknowns() {
     let mut sk = Sketch::new();
     let s = wave(&mut sk, 5);
     let p = sk.point(21.0, 30.0, false, "p");
-    sk.add(Constraint::point_on_spline(&sk.clone(), EntRef::point(p), EntRef::spline(s)));
+    add(&mut sk, |doc| Constraint::point_on_spline(doc, EntRef::point(p), EntRef::spline(s)));
     let sel: Vec<EntRef> = vec![EntRef::spline(s), EntRef::point(p)];
     let clip = gcs_core::io::copy(&sk, &sel);
     assert_eq!(clip.splines.len(), 1);
@@ -276,7 +284,7 @@ fn deleting_a_contact_takes_its_unknown_out_of_the_count() {
     let mut sk = Sketch::new();
     let s = wave(&mut sk, 5);
     let p = sk.point(21.0, 30.0, false, "p");
-    let id = sk.add(Constraint::point_on_spline(&sk.clone(), EntRef::point(p), EntRef::spline(s)));
+    let id = add(&mut sk, |doc| Constraint::point_on_spline(doc, EntRef::point(p), EntRef::spline(s)));
     let free = sk.free_indices().len();
     sk.remove(id);
     assert_eq!(sk.free_indices().len(), free - 1, "an orphaned unknown is not a spare DOF");
@@ -314,7 +322,7 @@ fn a_contact_will_not_settle_on_the_phantom_extension_of_a_curve() {
     let a = sk.point(-6.0, 0.0, false, "a");
     let b = sk.point(-6.0, 10.0, false, "b");
     let l = sk.line(a, b);
-    let id = sk.add(Constraint::spline_tangent_line(&sk.clone(), EntRef::spline(s),
+    let id = add(&mut sk, |doc| Constraint::spline_tangent_line(doc, EntRef::spline(s),
                                                     EntRef::line(l)));
     assert!(solved(&mut sk));
     let t = sk.params[sk.constraint(id).unwrap().aux_params()[0] as usize].value;
@@ -330,7 +338,7 @@ fn dragging_a_point_along_a_curve_carries_it_across_a_knot() {
         sk.fix_point(c, true);
     }
     let p = sk.point(2.0, 4.0, false, "p");
-    let id = sk.add(Constraint::point_on_spline(&sk.clone(), EntRef::point(p),
+    let id = add(&mut sk, |doc| Constraint::point_on_spline(doc, EntRef::point(p),
                                                 EntRef::spline(s)));
     assert!(solved(&mut sk));
     let tp = sk.constraint(id).unwrap().aux_params()[0] as usize;
@@ -369,7 +377,7 @@ fn a_tangency_converges_the_same_at_any_size() {
         let a = sk.point(0.0, -20.0 * k, false, "a");
         let b = sk.point(50.0 * k, -20.0 * k, false, "b");
         let l = sk.line(a, b);
-        let id = sk.add(Constraint::spline_tangent_line(&sk.clone(), EntRef::spline(s),
+        let id = add(&mut sk, |doc| Constraint::spline_tangent_line(doc, EntRef::spline(s),
                                                         EntRef::line(l)));
         assert!(solved(&mut sk), "failed at size {k}");
         answers.push(sk.params[sk.constraint(id).unwrap().aux_params()[0] as usize].value);
@@ -384,7 +392,7 @@ fn a_sketch_with_a_curve_in_it_still_diagnoses_and_reports() {
     let mut sk = Sketch::new();
     let s = wave(&mut sk, 5);
     let p = sk.point(21.0, 30.0, false, "p");
-    sk.add(Constraint::point_on_spline(&sk.clone(), EntRef::point(p), EntRef::spline(s)));
+    add(&mut sk, |doc| Constraint::point_on_spline(doc, EntRef::point(p), EntRef::spline(s)));
     let d = gcs_core::diagnose::diagnose(&mut sk, Default::default());
     assert!(d.conflicts.unwrap_or_default().is_empty());
     assert!(d.entity_state.contains_key(&EntRef::spline(s)));
@@ -403,7 +411,7 @@ fn a_compiled_system_keeps_the_span_it_was_built_from() {
     let mut sk = Sketch::new();
     let s = wave(&mut sk, 7);
     let p = sk.point(2.0, 4.0, false, "p");
-    let id = sk.add(Constraint::point_on_spline(&sk.clone(), EntRef::point(p),
+    let id = add(&mut sk, |doc| Constraint::point_on_spline(doc, EntRef::point(p),
                                                 EntRef::spline(s)));
     let mut sys = System::new(&sk);
     let tp = sk.constraint(id).unwrap().aux_params()[0] as usize;
@@ -413,11 +421,10 @@ fn a_compiled_system_keeps_the_span_it_was_built_from() {
     assert_ne!(curve::span_of(&sk, s, sk.params[tp].value), compiled);
     sys.refresh_consts(&sk);
 
-    // the columns the block still names: the point, the parameter, and the compiled span's
-    // control points — `local_values` would give the span the parameter has moved to
+    // the columns the block still names — `params()` would give the span the parameter moved to
     let c = sk.constraint(id).unwrap();
-    let cols: Vec<u32> = [sk.point_params(p).to_vec(), vec![c.aux_params()[0]],
-                          sk.spline_span_params(s, compiled)].concat();
+    let cols = c.params_on(&sk, Some(compiled));
+    assert_ne!(cols, c.params(&sk), "the two spans have to disagree for this to be a test");
     let v: Vec<f64> = cols.iter().map(|&i| sk.params[i as usize].value).collect();
     let want = kernels::eval_one(c.kernel_id(), &v, &c.consts_on(&sk, Some(compiled))).0;
     let moved = kernels::eval_one(c.kernel_id(), &v, &c.consts(&sk)).0;

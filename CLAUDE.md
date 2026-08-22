@@ -69,13 +69,20 @@ Conventions:
   the same event as any other topology change.
 - A curve parameter is bounded (`t0 <= t <= t1`) and a least-squares problem cannot say so: left
   alone the solver puts a tangency on the phantom polynomial past the end of the drawn curve.
-  `curve::clamp_contacts` says it instead, and every path that owns a compile re-homes and solves
-  again — `solve::solve`, `PullPolish` (which lifts its drag target out to rebuild), the plan
-  solver's fallback, and the app's `solveOnce`.  A clamped parameter is *pinned* for the retry:
-  free, the next solve walks straight back off the end.  All of it is behind
-  `curve::has_contacts`, so a sketch with no curves pays nothing.
+  `System::solve` says it instead — clamp, compare `curve::contact_spans` against the spans it was
+  compiled from, rebuild itself when one moved — so *every* caller gets it: the one-shot `solve`,
+  the plan solver's fallback and a front end that compiled a system for itself alike.  A clamped
+  parameter is *pinned* for the retry: free, the next solve walks straight back off the end.
+  `SolveOpts::rehome` turns it off for the one caller owning a *pair* of systems that must stay
+  in step — `PullPolish`, which re-homes both together, lifting its drag target out to rebuild.
+  All of it is behind an empty span map, so a sketch with no curves pays nothing.
+- A block's columns and its constants are ONE compile-time choice: which span of a spline a
+  contact sits on.  `System::new` makes it once and passes it to both `params_on` and
+  `consts_on`, and remembers it — so `refresh_consts` skips curve contacts outright (their knots
+  are document data no solve moves) rather than re-deriving a span that may since have walked.
 - `Param::scale` is the world length one unit of a parameter is worth — 1 for a coordinate or a
-  radius, the curve's mean speed |C'| for a curve parameter.  `System` gathers it into
+  radius, the curve's mean speed |C'| for a curve parameter, which `System::new` reads off the
+  curve itself so it is a fact about the compile and cannot go stale.  `System` gathers it into
   `col_scale` and solves in `z = x * col_scale`, so the trust region and the minimum-norm step
   measure motion in world units.  It is not a nicety: unscaled, a tangency that converges in nine
   iterations at one size stalls at ten times the size, because the t column is wrong by a factor
@@ -167,7 +174,9 @@ Conventions:
   only strokes what it is handed: `curve::tessellate` refines to `FLATNESS_PX` screen pixels
   through `unit` (the world length of one screen pixel), and `curve::closest` is the pick test
   and the seed for a fresh contact, so the two agree about where "on the curve" is.  No binding
-  evaluates a basis function.
+  evaluates a basis function, and none writes the degree down: `report::registry_json` publishes
+  `curve.minCtrl`, so a front end's tool and its messages cannot drift from what
+  `Sketch::spline_with` will accept.
 - `solve::Drag` is the one point-drag implementation (pull + polish), `RadiusDrag` its scalar
   counterpart for circle/arc radii (a `Radius` with `soft` set — its residual is already
   r − target, so no kernel of its own); the front end only translates coordinates.

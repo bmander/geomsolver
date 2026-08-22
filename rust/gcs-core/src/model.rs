@@ -356,7 +356,7 @@ impl Sketch {
             self.next_cid = self.next_cid.max(c.id);
         }
         let id = c.id;
-        for (i, name) in c.param_slots() {
+        for (i, name) in c.kind.param_slots() {
             if matches!(c.args[i], Arg::Param(_)) {
                 continue;   // already allocated (a constraint moved between sketches)
             }
@@ -440,19 +440,14 @@ impl Sketch {
         dx.hypot(dy)
     }
 
-    /// The control points one span of a spline reads — `ctrl[span-p ..= span]`, the only ones
-    /// whose basis functions are non-zero there.  This is what keeps a contact's column count
-    /// fixed however long the spline is.
-    pub fn spline_span_points(&self, i: usize, span: usize) -> Vec<usize> {
-        let s = &self.splines[i];
-        (0..crate::curve::SPAN_N).map(|a| s.ctrl[span - crate::curve::DEGREE + a] as usize).collect()
-    }
-
-    /// Those control points' Params, in (x, y) order — a contact's curve columns.
+    /// The Params of the control points one span of a spline reads — `ctrl[span-p ..= span]`,
+    /// the only ones whose basis functions are non-zero there, in (x, y) order.  This is what
+    /// keeps a contact's column count fixed however long the spline is.
     pub fn spline_span_params(&self, i: usize, span: usize) -> Vec<u32> {
+        let s = &self.splines[i];
         let mut v = Vec::with_capacity(2 * crate::curve::SPAN_N);
-        for p in self.spline_span_points(i, span) {
-            let pt = &self.points[p];
+        for a in 0..crate::curve::SPAN_N {
+            let pt = &self.points[s.ctrl[span - crate::curve::DEGREE + a] as usize];
             v.push(pt.x);
             v.push(pt.y);
         }
@@ -562,7 +557,7 @@ impl Sketch {
             // A constraint that owns unknowns chooses its columns from where they currently are
             // — which span of a spline a contact sits on.  That choice is compiled into the
             // plan, so it belongs in the key: a contact walking past a knot is a recompile.
-            if !c.param_slots().is_empty() {
+            if c.kind.contact_slots().is_some() {
                 for p in c.params(self) {
                     let _ = write!(s, "{p}.");
                 }
@@ -793,6 +788,25 @@ pub fn signed_point_to_line(sk: &Sketch, px: f64, py: f64, line: usize) -> f64 {
     (dx * (py - ay) - dy * (px - ax)) / length
 }
 
+/// How far (px, py) is from an entity — the one implementation, so the pair dispatch below and
+/// the sweep along a curve cannot drift apart.  A point against a curve is exact: the projection
+/// is a Newton solve the core does anyway, and this is the number a reader checks the drawing
+/// against.
+fn point_to(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
+    match e.kind {
+        EntKind::Point => {
+            let (x, y) = sk.point_xy(e.i());
+            (px - x).hypot(py - y)
+        }
+        EntKind::Line => point_to_line(sk, px, py, e.i()),
+        EntKind::Circle | EntKind::Arc => {
+            let (cx, cy) = sk.point_xy(sk.round_center(e));
+            ((px - cx).hypot(py - cy) - sk.radius_value(e).abs()).abs()
+        }
+        EntKind::Spline => crate::curve::distance_to(sk, e.i(), px, py),
+    }
+}
+
 fn point_to_line(sk: &Sketch, px: f64, py: f64, line: usize) -> f64 {
     let (dx, dy) = sk.line_dir(line);
     if dx == 0.0 && dy == 0.0 {
@@ -840,47 +854,10 @@ pub fn distance_between(sk: &Sketch, first: EntRef, second: EntRef) -> f64 {
     } else {
         (first, second)
     };
-    // A curve has no closed form against any of the others and sorts last, so `b` is the curve
-    // whenever there is one.  A point is measured exactly — the projection is a Newton solve the
-    // core does anyway, and this number is what a reader checks the drawing against.  The rest
-    // is a sweep: close enough to measure by, and honestly the best a sampled answer can be.
-    if b.kind == EntKind::Spline {
-        if a.kind == EntKind::Point {
-            let (x, y) = sk.point_xy(a.i());
-            return crate::curve::distance_to(sk, b.i(), x, y);
-        }
-        let mut best = f64::INFINITY;
-        for (x, y) in crate::curve::sample(sk, b.i(), 64) {
-            let d = match a.kind {
-                EntKind::Point => {
-                    let (ax, ay) = sk.point_xy(a.i());
-                    (ax - x).hypot(ay - y)
-                }
-                EntKind::Line => point_to_line(sk, x, y, a.i()),
-                EntKind::Circle | EntKind::Arc => {
-                    let (cx, cy) = sk.point_xy(sk.round_center(a));
-                    ((x - cx).hypot(y - cy) - sk.radius_value(a).abs()).abs()
-                }
-                EntKind::Spline => crate::curve::distance_to(sk, a.i(), x, y),
-            };
-            best = best.min(d);
-        }
-        return best;
-    }
     match a.kind {
         EntKind::Point => {
             let (ax, ay) = sk.point_xy(a.i());
-            match b.kind {
-                EntKind::Point => {
-                    let (bx, by) = sk.point_xy(b.i());
-                    (ax - bx).hypot(ay - by)
-                }
-                EntKind::Line => point_to_line(sk, ax, ay, b.i()),
-                _ => {
-                    let (cx, cy) = sk.point_xy(sk.round_center(b));
-                    ((ax - cx).hypot(ay - cy) - sk.radius_value(b).abs()).abs()
-                }
-            }
+            point_to(sk, ax, ay, b)
         }
         EntKind::Line => match b.kind {
             EntKind::Line => {
@@ -899,6 +876,14 @@ pub fn distance_between(sk: &Sketch, first: EntRef, second: EntRef) -> f64 {
                 (point_to_line(sk, cx, cy, a.i()) - sk.radius_value(b).abs()).max(0.0)
             }
         },
+        // A curve has no closed form against any of the others, so it is measured by sweeping
+        // it — close enough to measure by, and honestly the best a sampled answer can be.  It
+        // sorts last, so it is `b` unless both are curves, and the exact point case has already
+        // short-circuited above.
+        _ if b.kind == EntKind::Spline => crate::curve::sample(sk, b.i(), 64)
+            .into_iter()
+            .map(|(x, y)| point_to(sk, x, y, a))
+            .fold(f64::INFINITY, f64::min),
         _ => {
             // outside each other, or one inside the other; overlapping rings give 0
             let (ax, ay) = sk.point_xy(sk.round_center(a));

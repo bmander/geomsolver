@@ -1461,18 +1461,10 @@ impl PlanSolver {
         let mut fell_back = false;
         if rel > tol && fallback {
             fell_back = true;
-            // curve contacts go through the free solver, which re-homes them: a contact that
-            // finishes on another span invalidates the columns this plan's system was built
-            // from, so the sketch is solved from scratch and this system re-read afterwards
-            let r = if crate::curve::has_contacts(sk) {
-                crate::solve::solve(sk, SolveOpts { method, ..SolveOpts::default() })
-            } else {
-                self.system.solve(sk, SolveOpts { method, ..SolveOpts::default() })
-            };
+            // `System::solve` re-homes any curve contact and rebuilds itself if one moved to
+            // another span, so this system is current whatever the fallback did
+            let r = self.system.solve(sk, SolveOpts { method, ..SolveOpts::default() });
             mx = r.max_residual;
-            if crate::curve::has_contacts(sk) {
-                self.system = System::new(sk);
-            }
             let z = self.system.z0(sk);
             rel = self.system.max_relative_residual(&z);
             numeric = Some(r);

@@ -388,16 +388,13 @@ pub unsafe extern "C" fn gcs_spline_eval(h: *mut Sketch, idx: i32, t: f64, out: 
     })
 }
 
-/// How many points `gcs_spline_polyline` would write for this `unit` — call it first, then
-/// hand back a buffer of twice that many doubles.
-#[no_mangle]
-pub unsafe extern "C" fn gcs_spline_polyline_len(h: *mut Sketch, idx: i32, unit: f64) -> i32 {
-    guard(-1, move || curve::tessellate(sk(h), idx as usize, unit).len() as i32)
-}
-
 /// The curve as a polyline, refined to `unit` (the world length of one screen pixel) exactly as
 /// the callouts are: the core lays the figure out and the front end strokes what it is handed.
-/// Writes x, y pairs and returns the number of points.
+///
+/// Returns how many points the curve *needs*, and writes x, y pairs for as many as `cap` allows.
+/// A caller that guessed big enough is done in one call; one that did not sees a number larger
+/// than its `cap` and calls again — which beats asking the length first, since that would
+/// tessellate the curve twice on every call rather than on the rare miss.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_spline_polyline(
     h: *mut Sketch,
@@ -408,12 +405,11 @@ pub unsafe extern "C" fn gcs_spline_polyline(
 ) -> i32 {
     guard(-1, move || {
         let pts = curve::tessellate(sk(h), idx as usize, unit);
-        let n = pts.len().min(cap.max(0) as usize);
-        for (i, p) in pts.iter().take(n).enumerate() {
+        for (i, p) in pts.iter().take(cap.max(0) as usize).enumerate() {
             *out.add(2 * i) = p.0;
             *out.add(2 * i + 1) = p.1;
         }
-        n as i32
+        pts.len() as i32
     })
 }
 
@@ -1513,6 +1509,7 @@ fn opts_from(method: i32, tol: f64, max_iter: i32, max_nfev: i32, dense: i32, wr
         writeback: writeback != 0,
         max_iter,
         dense: if dense < 0 { None } else { Some(dense != 0) },
+        ..SolveOpts::default()
     }
 }
 

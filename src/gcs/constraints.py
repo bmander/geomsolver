@@ -26,6 +26,9 @@ PARAM_KINDS = frozenset({"param"})
 
 _REGISTRY: dict[str, Any] = _ffi.take_json(lib.gcs_registry_json())
 KERNEL_NAMES: list[str] = [k["name"] for k in _REGISTRY["kernels"]]
+#: What the core says about its parametric curves: the degree it compiles kernels for, and the
+#: fewest control points that make one.  Read it rather than writing the number down again.
+CURVE: dict[str, int] = {k: int(v) for k, v in _REGISTRY["curve"].items()}
 
 
 class Constraint:

@@ -91,10 +91,21 @@ impl System {
         for (i, &p) in free.iter().enumerate() {
             col_of[p as usize] = i as i32;
         }
+        // A curve parameter's scale is read off the curve here rather than off the Param, so it
+        // is a fact about this compile and cannot be stale — and once per spline, not once per
+        // contact, since the arc-length walk is the expensive part.
+        let mut speed: BTreeMap<usize, f64> = BTreeMap::new();
+        let mut scale_of: BTreeMap<u32, f64> = BTreeMap::new();
+        for c in &sk.constraints {
+            if let Some((spline, t)) = c.curve_contact() {
+                let v = *speed.entry(spline).or_insert_with(|| crate::curve::speed(sk, spline));
+                scale_of.insert(t, v);
+            }
+        }
         let col_scale: Vec<f64> = free
             .iter()
             .map(|&p| {
-                let s = sk.params[p as usize].scale;
+                let s = scale_of.get(&(p as u32)).copied().unwrap_or(sk.params[p as usize].scale);
                 if s.is_finite() && s > 0.0 {
                     s
                 } else {
@@ -115,7 +126,7 @@ impl System {
         let mut blocks: Vec<Block> = Vec::new();
         let mut slot_of = BTreeMap::new();
         let mut cids: Vec<u32> = Vec::new();
-        let spans: BTreeMap<u32, usize> = crate::curve::contact_spans(sk).into_iter().collect();
+        let spans = crate::curve::contact_spans(sk);
         let mut hard: Vec<bool> = Vec::new();
         let mut row0 = 0usize;
         let mut joff = 0usize;
@@ -127,13 +138,15 @@ impl System {
             let mut bcids = Vec::with_capacity(nb);
             for (i, &ci) in idxs.iter().enumerate() {
                 let c = &sk.constraints[ci];
-                let ps = c.params(sk);
+                // one span for the block: the columns it names and the knots it carries
+                let span = spans.get(&c.id).copied();
+                let ps = c.params_on(sk, span);
                 debug_assert_eq!(ps.len(), kn.n_par, "{:?} params", c.kind);
                 for p in ps {
                     gidx.push(p as i32);
                 }
                 if kn.n_const > 0 {
-                    consts.extend(c.consts_on(sk, spans.get(&c.id).copied()));
+                    consts.extend(c.consts_on(sk, span));
                 }
                 bcids.push(c.id);
                 slot_of.insert(c.id, (blocks.len(), i));
@@ -248,6 +261,13 @@ impl System {
         }
     }
 
+    /// The span of a spline each curve contact was compiled on — which control points its
+    /// columns name.  Empty for a sketch with no curves in it, which is the check every curve
+    /// path is behind.
+    pub fn spans(&self) -> &BTreeMap<u32, usize> {
+        &self.spans
+    }
+
     // -- constants -----------------------------------------------------------
 
     /// Push a constraint's (mutated) constants into the compiled plan — a moving drag target or
@@ -258,12 +278,16 @@ impl System {
         if kn.n_const == 0 {
             return;
         }
+        if self.spans.contains_key(&cid) {
+            return; // a curve contact's constants are invariant for this system — see below
+        }
         let Some(c) = sk.constraint(cid) else { return };
-        let vals = c.consts_on(sk, self.spans.get(&cid).copied());
+        let vals = c.consts_on(sk, None);
         self.blocks[b].consts[i * kn.n_const..(i + 1) * kn.n_const].copy_from_slice(&vals);
     }
 
-    /// Re-read every constraint's constants (after arbitrary dimension edits).
+    /// Re-read every constraint's constants (after arbitrary dimension edits).  Curve contacts
+    /// are skipped: see below.
     ///
     /// One pass over the sketch's constraints, not a `Sketch::constraint` lookup per slot: that
     /// is a linear scan, so looking each one up would make refreshing quadratic in the
@@ -278,7 +302,13 @@ impl System {
             }
             for (i, &cid) in b.cids.iter().enumerate() {
                 if let Some(c) = by_id.get(&cid) {
-                    let v = c.consts_on(sk, spans.get(&cid).copied());
+                    // a curve contact's constants are its compiled span's knots — document data
+                    // no solve moves, and the span is pinned for this system's life, so there is
+                    // nothing here that could have changed
+                    if spans.contains_key(&cid) {
+                        continue;
+                    }
+                    let v = c.consts_on(sk, None);
                     b.consts[i * kn.n_const..(i + 1) * kn.n_const].copy_from_slice(&v);
                 }
             }

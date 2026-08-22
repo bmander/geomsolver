@@ -68,7 +68,6 @@ export interface Abi {
   gcs_spline_knots(h: number, idx: number, out: number): number;
   gcs_spline_domain(h: number, idx: number, out: number): void;
   gcs_spline_eval(h: number, idx: number, t: number, out: number): void;
-  gcs_spline_polyline_len(h: number, idx: number, unit: number): number;
   gcs_spline_polyline(h: number, idx: number, unit: number, out: number, cap: number): number;
   gcs_spline_closest(h: number, idx: number, x: number, y: number, out: number): void;
   gcs_three_point_arc(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, out: number): number;

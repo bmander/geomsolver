@@ -12,7 +12,7 @@ import {
   Arc, Box, Circle, Line, Param, Point, Primitive, Sketch, Spline, distanceBetween, onRadius,
   threePointArc,
 } from '../core/model.js';
-import { Method, RadiusDrag, SolveResult, System, Triangle, solve } from '../core/system.js';
+import { Method, RadiusDrag, SolveResult, System, Triangle } from '../core/system.js';
 import { Motion, WitnessReport, analyze, movingParams } from '../core/witness.js';
 
 const PICK_PX = 8;
@@ -70,8 +70,7 @@ interface Animation {
 export type Tool =
   'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline';
 
-/** A cubic B-spline needs at least this many control points before there is a curve to draw. */
-const SPLINE_MIN = 4;
+
 
 export class SketchView {
   sketch: Sketch;
@@ -263,17 +262,6 @@ export class SketchView {
       return asSolveResult(this.lastPlan);
     }
     this.lastPlan = null;
-    // A sketch with a curve in it solves in rounds: a contact's parameter is itself an unknown,
-    // so the solve can finish it on a different span of the spline than it started on — and a
-    // compiled system names one span's control points in its columns.  That loop belongs to the
-    // core, so the one-shot solve runs it and the system for the diagnosis is built afterwards.
-    // The dispatch is on whether the document has curves at all, so nothing else pays for it.
-    if (this.sketch.splines.length) {
-      const r = solve(this.sketch, { method: this.method });
-      this.lastSystem = new System(this.sketch);
-      this.systemKey = this.sketch.topologyKey();
-      return r;
-    }
     const sys = new System(this.sketch);
     this.lastSystem = sys;
     return sys.solve({ method: this.method });
@@ -730,11 +718,8 @@ export class SketchView {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const { k, col } of painted) {
-      const q = k.label.map((p) => this.w2s(p[0], p[1]));
       ctx.fillStyle = COL.bg;
-      ctx.beginPath();
-      ctx.moveTo(...q[0]);
-      for (let i = 1; i < q.length; i++) ctx.lineTo(...q[i]);
+      this.polyPath(k.label);
       ctx.closePath();
       ctx.fill();
       ctx.save();
@@ -905,7 +890,8 @@ export class SketchView {
     ctx.restore();
   }
 
-  /** A world-coordinate polyline as a screen path. */
+  /** A world-coordinate polyline as a screen path — a curve's tessellation, a control polygon,
+   *  a callout label's box. */
   private polyPath(pts: readonly (readonly [number, number])[]): void {
     const ctx = this.ctx;
     ctx.beginPath();
@@ -931,8 +917,9 @@ export class SketchView {
    *  needs is not an error: the points stay, so one more click finishes it. */
   finishSpline(): void {
     if (this.tool !== 'spline') return;
-    if (this.pending.length < SPLINE_MIN) {
-      this.onStatus(`a cubic needs ${SPLINE_MIN} control points; ${this.pending.length} placed`);
+    const min = C.curveInfo().minCtrl;
+    if (this.pending.length < min) {
+      this.onStatus(`a curve needs ${min} control points; ${this.pending.length} placed`);
       return;
     }
     if (!this.sketch.spline(this.pending)) {
@@ -1123,8 +1110,9 @@ export class SketchView {
         return;
       }
       this.pending.push(p);
-      this.onStatus(this.pending.length < SPLINE_MIN
-        ? `${SPLINE_MIN - this.pending.length} more control point(s) for a cubic`
+      const min = C.curveInfo().minCtrl;
+      this.onStatus(this.pending.length < min
+        ? `${min - this.pending.length} more control point(s) for a curve`
         : 'Enter, or click the last point again, to finish the curve');
       this.draw();
       return;                                        // still collecting: nothing to solve yet

@@ -61,6 +61,10 @@ pub struct SolveOpts {
     pub writeback: bool,
     pub max_iter: i32,
     pub dense: Option<bool>,
+    /// Put curve contacts back on their curves and rebuild when one has moved to another span.
+    /// True everywhere except where the caller owns a *pair* of systems that have to stay in
+    /// step — `PullPolish`, which re-homes both of its own.
+    pub rehome: bool,
 }
 
 impl Default for SolveOpts {
@@ -72,12 +76,50 @@ impl Default for SolveOpts {
             writeback: true,
             max_iter: 100,
             dense: None,
+            rehome: true,
         }
     }
 }
 
 impl System {
+    /// Solve, and put any curve contact back on the curve it names.
+    ///
+    /// A compiled system names one span of a spline in its columns, and the parameter that chose
+    /// that span is itself an unknown the solve moves — so a contact can finish on a different
+    /// piece of the curve than it started on, or off the end of it entirely.  Either way the
+    /// columns are no longer the ones the answer belongs to, and the system rebuilds itself; a
+    /// parameter pinned to the end of its curve is held for the retry, since free it walks
+    /// straight back off the end and nothing is learned.  Neither can happen many times and
+    /// `curve::MAX_REHOME` bounds it regardless.
+    ///
+    /// This is the one place the rule lives, so every caller gets it — the one-shot `solve`, the
+    /// plan solver's fallback and a front end that compiled a system for itself alike.
     pub fn solve(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
+        let mut res = self.solve_compiled(sk, opts);
+        if !opts.rehome || !opts.writeback || self.spans().is_empty() {
+            return res;
+        }
+        for _ in 0..curve::MAX_REHOME {
+            let pinned = curve::clamp_contacts(sk);
+            if pinned.is_empty() && curve::contact_spans(sk) == *self.spans() {
+                break;
+            }
+            for &t in &pinned {
+                sk.params[t as usize].fixed = true;
+            }
+            *self = System::new(sk);
+            res = self.solve_compiled(sk, opts);
+            if !pinned.is_empty() {
+                for &t in &pinned {
+                    sk.params[t as usize].fixed = false;
+                }
+                *self = System::new(sk); // the caller's system has to match the sketch it left
+            }
+        }
+        res
+    }
+
+    fn solve_compiled(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
         let mut z = self.z0(sk);
         let info: Info = newton::solve_system(
             self,
@@ -143,33 +185,7 @@ impl System {
 /// happen many times, and `curve::MAX_REHOME` bounds it regardless.  A sketch with no curves in
 /// it never enters the loop.
 pub fn solve(sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
-    if !curve::has_contacts(sk) {
-        return System::new(sk).solve(sk, opts);
-    }
-    curve::refresh_scales(sk);
-    let mut spans = curve::contact_spans(sk);
-    let mut res = System::new(sk).solve(sk, opts);
-    if !opts.writeback {
-        return res;
-    }
-    for _ in 0..curve::MAX_REHOME {
-        // a parameter pinned to the end of its curve is held for the retry: with it free the
-        // next solve walks straight back off the end and nothing is learned
-        let pinned = curve::clamp_contacts(sk);
-        let now = curve::contact_spans(sk);
-        if pinned.is_empty() && now == spans {
-            break;
-        }
-        spans = now;
-        for &t in &pinned {
-            sk.params[t as usize].fixed = true;
-        }
-        res = System::new(sk).solve(sk, opts);
-        for &t in &pinned {
-            sk.params[t as usize].fixed = false;
-        }
-    }
-    res
+    System::new(sk).solve(sk, opts)
 }
 
 pub type Triangle = (usize, usize, usize);
@@ -187,26 +203,31 @@ pub struct PullPolish {
     pub target: u32,
     pub method: Method,
     pub active: bool,
-    /// The spans the two systems were compiled from, empty when the sketch has no curves.  A
-    /// contact sliding past a knot mid-gesture changes which control points the columns name,
-    /// so the pair is built again — the one place a drag ever re-analyses anything, and only
-    /// for the drags that touch a curve.
-    spans: Vec<(u32, usize)>,
 }
+
+/// A drag's two systems have to stay in step, so neither re-homes on its own: `pull` rebuilding
+/// itself would leave `polish` on the old span, and `polish` rebuilding itself would pick up the
+/// soft drag target it is compiled to exclude.  The pair is re-homed together, below.
+const PAIRED: SolveOpts = SolveOpts { rehome: false, ..NO_REHOME };
+const NO_REHOME: SolveOpts = SolveOpts {
+    method: Method::DogLeg,
+    tol: 1e-14,
+    max_nfev: 0,
+    writeback: true,
+    max_iter: 100,
+    dense: None,
+    rehome: false,
+};
 
 const PULL_ITER: i32 = 4; // the pull is a soft compromise; polish makes it exact
 const POLISH_ITER: i32 = 20;
 
 impl PullPolish {
     pub fn new(sk: &mut Sketch, target: Constraint, method: Method) -> PullPolish {
-        if curve::has_contacts(sk) {
-            curve::refresh_scales(sk);
-        }
         let polish = System::new(sk);
         let id = sk.add(target);
         let pull = System::new(sk);
-        let spans = curve::contact_spans(sk);
-        PullPolish { polish, pull, target: id, method, active: true, spans }
+        PullPolish { polish, pull, target: id, method, active: true }
     }
 
     /// Rebuild both systems around the target that is already in the sketch — `polish` has to
@@ -219,15 +240,16 @@ impl PullPolish {
         self.pull = System::new(sk);
     }
 
-    /// Put every contact back on the curve, and rebuild if one has moved to another span.
+    /// Put every contact back on the curve, and rebuild the pair if one has moved to another
+    /// span — the one place a drag ever re-analyses anything, and only for the drags that touch
+    /// a curve.  `polish` is the authority on which spans were compiled: it is the system built
+    /// from the hard constraints alone.
     fn rehome(&mut self, sk: &mut Sketch) {
-        if self.spans.is_empty() {
+        if self.polish.spans().is_empty() {
             return;
         }
         curve::clamp_contacts(sk);
-        let now = curve::contact_spans(sk);
-        if now != self.spans {
-            self.spans = now;
+        if curve::contact_spans(sk) != *self.polish.spans() {
             self.recompile(sk);
         }
     }
@@ -235,14 +257,9 @@ impl PullPolish {
     /// One frame: push the target's new value in, pull, then make the hard ones exact.
     pub fn pull_polish(&mut self, sk: &mut Sketch) -> SolveResult {
         self.pull.update_consts(sk, self.target);
-        self.pull.solve(
-            sk,
-            SolveOpts { method: self.method, max_iter: PULL_ITER, ..SolveOpts::default() },
-        );
-        let r = self.polish.solve(
-            sk,
-            SolveOpts { method: self.method, max_iter: POLISH_ITER, ..SolveOpts::default() },
-        );
+        self.pull.solve(sk, SolveOpts { method: self.method, max_iter: PULL_ITER, ..PAIRED });
+        let r =
+            self.polish.solve(sk, SolveOpts { method: self.method, max_iter: POLISH_ITER, ..PAIRED });
         self.rehome(sk);
         r
     }

@@ -43,9 +43,18 @@ interface KernelEntry {
   nConst: number;
 }
 
+/** What the core says about its parametric curves — the degree it compiles kernels for, and the
+ *  fewest control points that make one.  The app reads `minCtrl` rather than writing the number
+ *  down again. */
+export interface CurveInfo {
+  degree: number;
+  minCtrl: number;
+}
+
 interface Registry {
   types: TypeEntry[];
   kernels: KernelEntry[];
+  curve: CurveInfo;
 }
 
 let registry: Registry | null = null;
@@ -54,6 +63,11 @@ let registry: Registry | null = null;
 export function REGISTRY(): Registry {
   if (!registry) registry = takeJson<Registry>(core().gcs_registry_json());
   return registry;
+}
+
+/** The core's parametric-curve facts, so a front end never writes the degree down again. */
+export function curveInfo(): CurveInfo {
+  return REGISTRY().curve;
 }
 
 const MAX_PAR = 24;   // the widest kernel takes 13; a little headroom costs nothing
