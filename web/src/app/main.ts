@@ -13,6 +13,7 @@
  *             E equal · T tangent · ⇧Q symmetric
  *   dimension D states one at once and opens its number where it will be read: move it where
  *             you want it and click to plant it, type, Enter — Esc takes the whole thing back.
+ *             The drawing holds still while you carry it: nothing is solved until it lands.
  *             On two points, where you put it is *which* dimension it is: above or below them
  *             the run between them, out to either side the rise, across them their length.
  *             Every dimension is called out on the drawing: click one to select it, drag it
@@ -812,10 +813,18 @@ function finishDim(commit: boolean, keepOpen = false): void {
 view.onDimension = (live, at) => {
   if (!live) return closeDimBox();
   const box = dimBox ?? openDimBox();
+  // while it is being carried the number sits under the pointer, so a click meant to plant it
+  // would land on the editor and plant nothing: the box lets the pointer through until the
+  // placement is settled.  It keeps the focus throughout — carrying it and typing in it are
+  // two different things, and the click that ends the first must not end the second.
+  box.classList.toggle('carried', live.placing);
   if (!dimTyped) {
-    box.value = dimensionField(live.targets[0])?.text ?? '';
-    sizeDimBox(box);
-    box.select();
+    const text = dimensionField(live.targets[0])?.text ?? '';
+    if (box.value !== text) {         // only when the number itself moved: re-selecting the
+      box.value = text;               // text every frame would fight a caret put in by hand
+      sizeDimBox(box);
+      box.select();
+    }
   }
   if (at) {
     box.style.left = `${at[0]}px`;

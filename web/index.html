@@ -181,6 +181,8 @@
     box-shadow: 0 1px 6px rgba(0,0,0,.18);
   }
   #canvas-wrap input.dim:focus { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+  /* still being carried: the click that settles where it goes belongs to the canvas under it */
+  #canvas-wrap input.dim.carried { pointer-events: none; }
 </style>
 </head>
 <body>

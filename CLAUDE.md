@@ -185,7 +185,12 @@ Conventions:
   `SketchView.startDimension`, which is also the seam where a dimension is written at all: it
   is stated at once, at what it measures, and its number is edited on the drawing where it
   will be read.  Nothing reaches the undo stack until the number is accepted, and Escape takes
-  the constraint back out.  The run and the rise are signed from the first point to the second
+  the constraint back out.  *Nothing is solved while it is being carried* either — `afterEdit`
+  skips the solve while `liveDim.placing`, so stating it, swapping it for another kind and
+  moving it about leave the geometry alone; `placeDimension` (the click that plants it, and
+  the release that ends a later drag of it) is the one solve, and the editor stays open past
+  it because where it sits and what it says are settled separately.
+  The run and the rise are signed from the first point to the second
   (`(qx - px) - d`, a constant Jacobian — the best-conditioned row there is, and still so with
   the two points one above the other, which is the pose someone reaches for a run in).  So
   they do not commute, and a front end orders the pair to make the number read positive.  In

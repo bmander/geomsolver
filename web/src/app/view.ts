@@ -85,6 +85,9 @@ export interface LiveDim {
   fresh: Constraint[];
   alt: DimAlt | null;
   before: string;
+  /** The theorems the sketch already held, so that when the dimension lands the report can say
+   *  which ones it brought with it: the sketch is not diagnosed while the number is carried. */
+  impliedBefore: Set<Constraint>;
   /** Still following the pointer: the click that plants it is what ends this. */
   placing: boolean;
 }
@@ -324,6 +327,16 @@ export class SketchView {
    *  failure is reported by the diagnosis, not by exploded geometry (which would also mislead
    *  the conflict search). */
   afterEdit(): SolveResult | null {
+    // A dimension still being laid down is being *said*, not solved, and the drawing holds
+    // still under the number while somebody decides where to put it and which one it is: no
+    // solve, and no re-diagnosis either — nothing changes colour, no banner appears and
+    // disappears under the pointer, and the constraint list does not rebuild on every kind the
+    // number passes through.  The click that plants it is when all of it happens, once, and
+    // when what it came to is reported — see `placeDimension`.
+    if (this.liveDim?.placing) {
+      this.draw();
+      return this.lastResult;
+    }
     if (this.autoSolve) {
       const xBefore = this.sketch.getX();
       this.lastResult = this.solveOnce();
@@ -438,6 +451,16 @@ export class SketchView {
     const impliedBefore = new Set(this.diagnosis?.implied ?? []);
     this.sketch.add(...cs);
     const res = this.afterEdit();
+    // a dimension still being carried has not been judged — `afterEdit` did not diagnose it —
+    // so what it came to is reported when it lands instead of now
+    if (!this.liveDim?.placing) this.reportAdded(cs, skipped, impliedBefore, res);
+    return cs;
+  }
+
+  /** What the sketch made of what was just added.  Said once, from a fresh diagnosis: which is
+   *  why a dimension being placed waits until it lands to hear it. */
+  private reportAdded(cs: Constraint[], skipped: number, impliedBefore: Set<Constraint>,
+                      res: SolveResult | null): void {
     const d = this.diagnosis;
     const st = d?.status ?? 'well';
     const kinds = [...new Set(cs.map((c) => c.typeName))].join(' + ');
@@ -454,7 +477,6 @@ export class SketchView {
       ? ` — consistent; ${newlyImplied.map((k) => io.describe(k, this.sketch)).join(', ')} now follow from the rest`
       : '';
     this.onStatus(`added ${what}${dup}${why}`);
-    return cs;
   }
 
   removeConstraint(c: Constraint): void {
@@ -477,9 +499,20 @@ export class SketchView {
     this.endDimension(false);
     if (!targets.length) return false;
     const before = io.dumps(this.sketch);
-    if (fresh.length && !this.applyConstraints(...fresh).length) return false;
-    this.liveDim = { targets, fresh, alt, before, placing: fresh.length > 0 };
+    const impliedBefore = new Set(this.diagnosis?.implied ?? []);
+    // the record goes in first: stating the constraint is part of the gesture, so it must not
+    // solve or diagnose either — the sketch it lands in is the one the pointer is still
+    // choosing over
+    this.liveDim = { targets, fresh, alt, before, impliedBefore, placing: fresh.length > 0 };
+    if (fresh.length && !this.applyConstraints(...fresh).length) {
+      this.liveDim = null;
+      return false;
+    }
     this.litConstraint = targets[0];
+    if (this.liveDim.placing) {
+      this.onStatus('place the dimension, then type its number — Enter to accept, Esc to take '
+                  + 'it back');
+    }
     if (this.liveDim.placing) this.moveDimension(this.cursor);
     this.draw();
     return true;
@@ -516,9 +549,15 @@ export class SketchView {
   }
 
   /** The click that plants it: the number stops following the pointer and stays where it was
-   *  put, a placement like any other.  What it says is still open. */
+   *  put, a placement like any other — and *now* the sketch is solved, once, because now there
+   *  is something settled to solve.  What it says is still open: the editor stays up until the
+   *  number is accepted. */
   placeDimension(): void {
-    if (this.liveDim) this.liveDim.placing = false;
+    const live = this.liveDim;
+    if (!live?.placing) return;
+    live.placing = false;
+    const res = this.afterEdit();
+    if (live.fresh.length) this.reportAdded(live.fresh, 0, live.impliedBefore, res);
   }
 
   /** Done writing.  Accepted, what was there before goes on the undo stack, so the constraint,
@@ -1259,7 +1298,12 @@ export class SketchView {
     const live = this.liveDim;
     if (live?.alt && this.pickCallout(sp[0], sp[1]) === live.targets[0]) {
       e.preventDefault();                       // the focus stays in the editor
-      this.gesture = { transient: true, move: (at) => this.moveDimension(at) };
+      live.placing = true;                      // carried again, so held still again
+      this.gesture = {
+        transient: true,
+        move: (at) => this.moveDimension(at),
+        end: () => this.placeDimension(),       // and solved again when it lands
+      };
       return;
     }
     // a dimension is painted over the geometry, so a press that lands on one takes hold of it:

@@ -10,6 +10,7 @@ import * as C from '../core/constraints.js';
 import { Constraint } from '../core/constraints.js';
 import * as io from '../core/io.js';
 import { Sketch } from '../core/model.js';
+import type { Diagnosis } from '../core/diagnose.js';
 import { callouts } from '../core/callout.js';
 import { PlanDrag } from '../core/decompose.js';
 import { solve } from '../core/system.js';
@@ -539,4 +540,47 @@ test('a dimension already on the drawing is opened, not stated twice', () => {
   assert.equal(view.liveDim!.placing, false, 'an existing dimension is not being placed');
   view.endDimension(false);
   assert.equal(sk.userConstraints().length, 1, 'refusing an edit must not remove it');
+});
+
+test('nothing is solved or judged while a dimension is being laid down', () => {
+  // a sketch with an unsatisfied constraint waiting in it, so any solve is visible: the free
+  // point moves out to 50 the moment one runs
+  const sk = new Sketch();
+  const a = sk.point(0, 0, true), b = sk.point(40, 40), c = sk.point(10, 0);
+  sk.add(new C.Distance(a, c, 50));
+  const view = new SketchView(fakeCanvas(), sk);   // auto-solve on, as the app has it
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  let refreshes = 0;
+  view.onChanged = () => { refreshes += 1; };
+  const still = c.xy;
+  const judged = (): Diagnosis | null => view.diagnosis;
+  const make = (kind: string): Constraint => C.build(kind, [a, b, kind === 'HorizontalDistance'
+    ? b.x.value - a.x.value : kind === 'VerticalDistance' ? b.y.value - a.y.value
+    : Math.hypot(b.x.value - a.x.value, b.y.value - a.y.value)]);
+
+  const first = make('Distance');
+  const was = judged();
+  view.startDimension([first], [first], { a, b, make });
+  assert.deepEqual(c.xy, still, 'stating the dimension solved the sketch');
+  cv.fire('pointermove', pointer(...view.w2s(20, 60)));
+  cv.fire('pointermove', pointer(...view.w2s(60, 20)));
+  assert.deepEqual(c.xy, still, 'carrying the number about solved the sketch');
+  // nor is it judged while it is carried: no re-diagnosis, so nothing changes colour and the
+  // banner does not come and go under the pointer
+  assert.equal(was, judged(), 'the sketch was re-diagnosed while the number was carried');
+  assert.equal(refreshes, 0, 'the shell was told to rebuild while the number was carried');
+  assert.ok(!said.some((m) => m.startsWith('added ')), 'it was reported before it landed');
+
+  // the click that plants it is when it takes effect
+  cv.fire('pointerdown', pointer(...view.w2s(60, 20)));
+  cv.fire('pointerup', pointer(...view.w2s(60, 20)));
+  assert.ok(Math.abs(c.xy[0] - 50) < 1e-6, `the plant did not solve: ${c.xy}`);
+  assert.ok(said.some((m) => m.startsWith('added ')), `what it came to was never said: ${said}`);
+
+  // and the editor is still open: what it says has not been settled by planting it
+  assert.ok(view.liveDim && !view.liveDim.placing);
+  view.endDimension(true);
+  sk.dispose();
 });
