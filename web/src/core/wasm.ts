@@ -93,6 +93,7 @@ export interface Abi {
   gcs_same_constraint(h: number, a: number, aLen: number, b: number,
                       bLen: number): number;
   gcs_constraint_duplicate(h: number, p: number, n: number): number;
+  gcs_constraint_stating(h: number, p: number, n: number): number;
   gcs_describe(h: number, id: number): number;
   gcs_callouts_json(h: number, unit: number): number;
   gcs_callout_pick(h: number, unit: number, x: number, y: number, tolPx: number): number;

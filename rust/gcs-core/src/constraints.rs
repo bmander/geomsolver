@@ -784,7 +784,9 @@ pub fn param_scale(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
     }
 }
 
-fn same_args(a: &Constraint, b: &Constraint, swap: bool) -> bool {
+fn same_args(a: &Constraint, b: &Constraint, swap: bool, want: impl Fn(SpecKind) -> bool)
+    -> bool
+{
     let spec = a.kind.spec();
     let mut order: Vec<usize> = (0..spec.len()).collect();
     if swap {
@@ -798,9 +800,7 @@ fn same_args(a: &Constraint, b: &Constraint, swap: bool) -> bool {
     // A hidden unknown is never part of what a constraint *says*: two contacts of the same point
     // on the same curve are the same statement however far apart their two seeds started, and a
     // duplicate that slipped through would add rank-free rows the matching cannot see.
-    (0..spec.len())
-        .filter(|&i| !spec[i].1.is_param())
-        .all(|i| a.args[i] == b.args[order[i]])
+    (0..spec.len()).filter(|&i| want(spec[i].1)).all(|i| a.args[i] == b.args[order[i]])
 }
 
 /// True when two constraints say exactly the same thing: same type, the same entities in the same
@@ -811,10 +811,26 @@ fn same_args(a: &Constraint, b: &Constraint, swap: bool) -> bool {
 /// — so it stays invisible until some unrelated edit tips the block into a (spurious)
 /// over-constrained report.
 pub fn same_constraint(a: &Constraint, b: &Constraint) -> bool {
+    matches(a, b, |k| !k.is_param())
+}
+
+/// True when two constraints relate the same things in the same way, *whatever numbers they
+/// state*: same type, same entities in the same roles, same flags, dimensions ignored.
+///
+/// `same_constraint` is this plus the values, which is what a duplicate is.  This is what an
+/// *edit* is.  A second `Distance` on a pair that already has one is not a second fact about
+/// them, it is the same fact written twice, and the only thing that can come of adding it is a
+/// conflict — so a front end that is about to state a dimension should ask this first and edit
+/// what it finds.
+pub fn same_relation(a: &Constraint, b: &Constraint) -> bool {
+    matches(a, b, |k| !k.is_param() && !k.is_dimension())
+}
+
+fn matches(a: &Constraint, b: &Constraint, want: impl Fn(SpecKind) -> bool + Copy) -> bool {
     if a.kind != b.kind {
         return false;
     }
-    same_args(a, b, false) || (a.kind.commutative() && same_args(a, b, true))
+    same_args(a, b, false, want) || (a.kind.commutative() && same_args(a, b, true, want))
 }
 
 /// Whether an entity can fill a spec slot of this kind.

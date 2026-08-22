@@ -134,6 +134,7 @@ _SIGNATURES: list[tuple[str, Any, list[Any]]] = [
     ("gcs_same_constraint", ct.c_int32,
      [PTR, PTR, ct.c_size_t, PTR, ct.c_size_t]),
     ("gcs_constraint_duplicate", ct.c_int32, [PTR, PTR, ct.c_size_t]),
+    ("gcs_constraint_stating", ct.c_int32, [PTR, PTR, ct.c_size_t]),
     ("gcs_describe", STR, [PTR, ct.c_int32]),
     ("gcs_callouts_json", STR, [PTR, ct.c_double]),
     ("gcs_callout_pick", ct.c_int32,

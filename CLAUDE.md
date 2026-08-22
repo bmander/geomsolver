@@ -119,6 +119,11 @@ Conventions:
 - "Solved" is `System::max_relative_residual <= 1e-6`: each row's residual over its own units
   (`extent^degree`).  Never one absolute threshold for the whole system — half the kernels are
   linear in length and half quadratic, so one threshold is wrong for one of the halves.
+- `same_constraint` is "says exactly the same thing"; `same_relation` is the same *without* the
+  numbers — same type, same entities, same flags.  A duplicate is the first and is refused; a
+  second dimension on a pair that already has one is the second, and is an *edit*, since it is
+  one fact written twice and only a conflict can come of adding it.  The dimension buttons ask
+  `gcs_constraint_stating` before they state anything.
 - An argument the core reads off the geometry (a tangency's side or sense) declares
   `CKind::infers_arg`; the registry publishes a null default for it so a binding leaves it
   omitted and the core fills it in.  A binding that substitutes a constant picks the branch.

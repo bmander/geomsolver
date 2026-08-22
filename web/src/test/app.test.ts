@@ -420,3 +420,18 @@ test('an abandoned fit leaves the sketch untouched', () => {
   view.cancelTool();
   assert.equal(io.dumps(view.sketch), before, 'the tool left something behind');
 });
+
+/* -- dimensioning something already dimensioned -------------------------------- */
+
+test('a dimension already on the selection is edited, not stated twice', () => {
+  // the core's half of it: what a second Distance on the same pair would collide with
+  const sk = new Sketch();
+  const a = sk.point(0, 0), b = sk.point(10, 0);
+  const first = new C.Distance(a, b, 80);
+  sk.add(first);
+  assert.equal(C.stating(sk, new C.Distance(a, b, 60)), first, 'a different number, one relation');
+  assert.equal(C.stating(sk, new C.Distance(b, a, 60)), first, 'and either way round');
+  assert.equal(C.stating(sk, new C.Distance(a, sk.point(0, 10), 80)), null, 'a different pair');
+  assert.equal(C.stating(sk, new C.Horizontal(sk.line(a, b))), null, 'a different type');
+  sk.dispose();
+});

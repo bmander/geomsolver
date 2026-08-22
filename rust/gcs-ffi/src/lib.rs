@@ -1119,6 +1119,29 @@ pub unsafe extern "C" fn gcs_same_constraint(
     })
 }
 
+/// The id of a constraint already stating the same *relation* as the one described — the same
+/// type on the same entities, whatever number it states — or -1.  What a front end asks before
+/// putting a dimension on a selection, so it edits the one that is there instead of adding a
+/// second and making a conflict.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_constraint_stating(
+    h: *mut Sketch,
+    ptr: *const u8,
+    len: usize,
+) -> i32 {
+    guard(-1, move || {
+        let s = sk(h);
+        let v = as_json(ptr, len);
+        let Ok(c) = report::constraint_from_json(s, &v) else { return -1 };
+        s.constraints
+            .iter()
+            .filter(|k| !(k.intrinsic || k.soft))
+            .find(|k| gcs_core::constraints::same_relation(k, &c))
+            .map(|k| k.id as i32)
+            .unwrap_or(-1)
+    })
+}
+
 /// The id of an existing constraint that says exactly the same thing, or -1.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_constraint_duplicate(

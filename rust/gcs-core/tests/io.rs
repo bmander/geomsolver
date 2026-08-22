@@ -624,3 +624,32 @@ fn a_part_stops_at_a_wall_and_writes_back_only_itself() {
     }
     assert_eq!(sk.points.len(), 5, "the document was restructured");
 }
+
+#[test]
+fn a_relation_is_the_same_whatever_number_it_states() {
+    use gcs_core::constraints::same_relation;
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, false, "a");
+    let b = sk.point(10.0, 0.0, false, "b");
+    let c = sk.point(0.0, 10.0, false, "c");
+    let (pa, pb, pc) = (EntRef::point(a), EntRef::point(b), EntRef::point(c));
+
+    let d80 = Constraint::distance(pa, pb, 80.0);
+    let d60 = Constraint::distance(pa, pb, 60.0);
+    assert!(same_relation(&d80, &d60), "two widths on one pair are one relation");
+    assert!(!same_constraint(&d80, &d60), "but not the same constraint — the numbers differ");
+    // commutative, like `same_constraint`
+    assert!(same_relation(&d80, &Constraint::distance(pb, pa, 1.0)));
+    // a different pair is a different relation, and so is a different type
+    assert!(!same_relation(&d80, &Constraint::distance(pa, pc, 80.0)));
+    assert!(!same_relation(&d80, &Constraint::new(CKind::Coincident,
+                                                  vec![Arg::Ent(pa), Arg::Ent(pb)])));
+
+    // a flag is part of what a constraint says, so it still separates two of them
+    let l = sk.line(a, b);
+    let circle = sk.circle(c, 4.0, "c0");
+    let (le, ce) = (EntRef::line(l), EntRef::circle(circle));
+    let left = Constraint::tangent_line_circle(&sk, le, ce, Some(1));
+    let right = Constraint::tangent_line_circle(&sk, le, ce, Some(-1));
+    assert!(!same_relation(&left, &right), "the two sides are two relations");
+}
