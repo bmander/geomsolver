@@ -316,7 +316,7 @@ impl Sketch {
     /// arc is construction input, not a sketch point.  `None` if there are too few points for a
     /// cubic, or they give no parameterisation.
     pub fn spline_through(&mut self, pts: &[(f64, f64)]) -> Option<usize> {
-        self.spline_through_held(pts, &vec![None; pts.len()])
+        self.spline_through_held(pts, &[])
     }
 
     /// The same, holding the curve to the places that came from a Point rather than from empty
@@ -333,7 +333,8 @@ impl Sketch {
         pts: &[(f64, f64)],
         hold: &[Option<usize>],
     ) -> Option<usize> {
-        if hold.len() != pts.len() || hold.iter().flatten().any(|&p| p >= self.points.len()) {
+        // a short `hold` holds nothing further: the two lists are one-to-one as far as it goes
+        if hold.len() > pts.len() || hold.iter().flatten().any(|&p| p >= self.points.len()) {
             return None;
         }
         let (ctrl, knots, at) = crate::curve::interpolating_ctrl(pts)?;
@@ -343,8 +344,8 @@ impl Sketch {
             .map(|(i, &(x, y))| self.point(x, y, false, &format!("k{i}")))
             .collect();
         let s = self.spline_with(&ids, Some(knots))?;
-        for (i, &held) in hold.iter().enumerate() {
-            let Some(p) = held else { continue };
+        for (i, held) in hold.iter().enumerate() {
+            let Some(p) = *held else { continue };
             // pinned: the fit worked out where along the curve this point sits, so that is
             // knowledge and not something to solve for
             let c = Constraint::new(
@@ -589,14 +590,14 @@ impl Sketch {
     /// fixed set of points that is all of them — a line without an endpoint is nothing.  A
     /// spline is defined by a *list*, so it survives losing one control point while enough are
     /// left to draw a curve with.
-    pub fn min_children(&self, e: EntRef) -> usize {
+    /// Takes the children rather than fetching them, because the one caller has just built the
+    /// list to count the survivors in and would otherwise allocate it twice per entity.
+    pub fn min_children(&self, e: EntRef, children: &[EntRef]) -> usize {
         // exhaustive on purpose: a new list-shaped entity must stop the build here, or it would
         // inherit the point-shaped answer and be deleted whole instead of shortened
         match e.kind {
             EntKind::Spline => crate::curve::MIN_CTRL,
-            EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc => {
-                self.children(e).len()
-            }
+            EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc => children.len(),
         }
     }
 

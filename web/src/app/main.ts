@@ -921,12 +921,7 @@ window.addEventListener('keydown', (e) => {
   if (k === 'escape') { if (!closeMenus()) view.cancelTool(); return; }
   // the curve tools collect as many points as the user wants, so they need a way to say "that
   // is the curve" — the only tools whose click count is not known in advance
-  if (k === 'enter' && view.tool === 'spline') { e.preventDefault(); view.finishSpline(); return; }
-  if (k === 'enter' && view.tool === 'splinefit') {
-    e.preventDefault();
-    view.finishSplineFit();
-    return;
-  }
+  if (k === 'enter') { e.preventDefault(); view.finishCurve(); return; }
   if (k === 'delete' || k === 'backspace') {
     e.preventDefault();
     if (currentConstraint) {

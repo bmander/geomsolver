@@ -554,17 +554,20 @@ pub fn insert_control(sk: &mut Sketch, i: usize, t: f64) -> Option<usize> {
         return None;
     }
     // every combination is taken from the original positions, before any of them move
-    let mut q: Vec<(usize, (f64, f64))> = Vec::with_capacity(DEGREE);
-    for idx in (k + 1 - DEGREE)..=k {
-        let den = u[idx + DEGREE] - u[idx];
-        let a = if den != 0.0 { (t - u[idx]) / den } else { 0.0 };
-        let (x1, y1) = sk.point_xy(ctrl[idx] as usize);
-        let (x0, y0) = sk.point_xy(ctrl[idx - 1] as usize);
-        q.push((idx, (a * x1 + (1.0 - a) * x0, a * y1 + (1.0 - a) * y0)));
-    }
-    let &(_, (nx, ny)) = q.last()?;
+    let lo = k + 1 - DEGREE;
+    let q: Vec<(f64, f64)> = (lo..=k)
+        .map(|idx| {
+            let den = u[idx + DEGREE] - u[idx];
+            let a = if den != 0.0 { (t - u[idx]) / den } else { 0.0 };
+            let (x1, y1) = sk.point_xy(ctrl[idx] as usize);
+            let (x0, y0) = sk.point_xy(ctrl[idx - 1] as usize);
+            (a * x1 + (1.0 - a) * x0, a * y1 + (1.0 - a) * y0)
+        })
+        .collect();
+    // the last combination becomes the new control point; the rest move the ones already there
+    let (nx, ny) = q[DEGREE - 1];
     let fresh = sk.point(nx, ny, false, &format!("k{}", sk.points.len()));
-    for &(idx, (x, y)) in &q[..q.len() - 1] {
+    for (idx, &(x, y)) in (lo..k).zip(&q) {
         let [px, py] = sk.point_params(ctrl[idx] as usize);
         sk.params[px as usize].value = x;
         sk.params[py as usize].value = y;

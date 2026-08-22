@@ -845,6 +845,15 @@ export class SketchView {
     ctx.strokeStyle = COL.preview;
     ctx.lineWidth = 1;
     const cur = this.cursor;
+    // the fit tool collects places rather than points, so `pending` may be empty here
+    const p0 = this.pending.length ? this.w2s(...this.pending[0].xy) : ([0, 0] as [number, number]);
+    /** A dashed line from the last point placed to the cursor. */
+    const rubber = (): void => {
+      ctx.beginPath();
+      ctx.moveTo(...this.w2s(...this.pending[this.pending.length - 1].xy));
+      ctx.lineTo(cur[0], cur[1]);
+      ctx.stroke();
+    };
     if (this.tool === 'splinefit') {
       // the places given so far, joined in order, and a band to the cursor.  Not the fitted
       // curve: that is a solve, and a preview that lags the cursor is worse than an honest one
@@ -864,18 +873,7 @@ export class SketchView {
           ctx.stroke();
         }
       }
-      ctx.restore();
-      return;
-    }
-    const p0 = this.w2s(...this.pending[0].xy);
-    /** A dashed line from the last point placed to the cursor. */
-    const rubber = (): void => {
-      ctx.beginPath();
-      ctx.moveTo(...this.w2s(...this.pending[this.pending.length - 1].xy));
-      ctx.lineTo(cur[0], cur[1]);
-      ctx.stroke();
-    };
-    if (this.tool === 'line') {
+    } else if (this.tool === 'line') {
       rubber();
     } else if (this.tool === 'spline') {
       // the control polygon so far, then a rubber band to the cursor: what is being placed is
@@ -971,6 +969,13 @@ export class SketchView {
    *  arc strikes with its third click.  What comes back is an ordinary curve with an ordinary
    *  control polygon, so everything that edits a drawn one edits this one; a user who wants it
    *  to *keep* passing through somewhere says so with a point and the Coincident button. */
+  /** Commit whichever curve tool is collecting — Enter, for the two tools whose click count is
+   *  not known in advance.  Which one it is lives here, with the pending state. */
+  finishCurve(): void {
+    if (this.tool === 'spline') this.finishSpline();
+    else if (this.tool === 'splinefit') this.finishSplineFit();
+  }
+
   finishSplineFit(): void {
     if (this.tool !== 'splinefit') return;
     const min = C.curveInfo().minCtrl;
@@ -1164,7 +1169,10 @@ export class SketchView {
 
   private toolClick(sp: [number, number]): void {
     const sk = this.sketch;
-    if (!this.pending.length) this.pushUndo();
+    // Tools that make geometry as they go take their snapshot on the first click of a run.  The
+    // fit tool makes nothing until it finishes and takes its own there, so pushing here would
+    // leave an undo entry — and a whole document serialised — per click that changed nothing.
+    if (this.tool !== 'splinefit' && !this.pending.length) this.pushUndo();
     if (this.tool === 'point') {
       this.snapOrNew(sp);
     } else if (this.tool === 'line') {

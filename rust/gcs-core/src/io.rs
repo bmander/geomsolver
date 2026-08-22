@@ -408,15 +408,15 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         // the control points that came along, and the ones that did not: a curve that has lost
         // some is shortened, one interior knot going with each, and only dies when too few are
         // left to draw with
-        let ctrl: Vec<usize> = sp.ctrl.iter().filter_map(|&c| pt_index(c as usize)).collect();
-        let gone: Vec<usize> = (0..sp.ctrl.len())
-            .filter(|&k| pt_index(sp.ctrl[k] as usize).is_none())
-            .collect();
-        let knots = if gone.is_empty() {
-            sp.knots.clone()
-        } else {
-            crate::curve::knots_without(&sp.knots, &gone, ctrl.len())
-        };
+        let (mut ctrl, mut gone) = (Vec::new(), Vec::new());
+        for (k, &c) in sp.ctrl.iter().enumerate() {
+            match pt_index(c as usize) {
+                Some(n) => ctrl.push(n),
+                None => gone.push(k),
+            }
+        }
+        // with nothing gone this gives back the knots unchanged, so there is no case to split
+        let knots = crate::curve::knots_without(&sp.knots, &gone, ctrl.len());
         let construction = sp.construction;
         let Some(ni) = dst.spline_with(&ctrl, Some(knots)) else { continue };
         dst.splines[ni].construction = construction;
@@ -492,8 +492,11 @@ pub fn without(sk: &Sketch, entities: &[EntRef], constraints: &[u32]) -> Sketch 
     // is all of them, which is the old rule; a spline is defined by a list, so losing one
     // control point shortens the curve rather than deleting it.
     let alive = |e: EntRef| {
-        !dead.contains(&e)
-            && sk.children(e).iter().filter(|c| !dead.contains(c)).count() >= sk.min_children(e)
+        if dead.contains(&e) {
+            return false;
+        }
+        let kids = sk.children(e);
+        kids.iter().filter(|c| !dead.contains(c)).count() >= sk.min_children(e, &kids)
     };
     let mut tmp = Sketch::new();
     graft(&mut tmp, sk, &alive, constraints, (0.0, 0.0));

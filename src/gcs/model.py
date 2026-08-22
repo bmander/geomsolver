@@ -450,14 +450,11 @@ class Sketch:
         buf = _ffi.f64(2 * n)
         for k, (x, y) in enumerate(pts):
             buf[2 * k], buf[2 * k + 1] = float(x), float(y)
-        held = None
-        if hold and any(h is not None for h in hold):
-            held = _ffi.i32(n)
-            for k in range(len(pts)):
-                h = hold[k] if k < len(hold) else None
-                held[k] = h.index if h is not None else -1
-        i = lib.gcs_sketch_spline_through(self._h, _ffi.pf(buf), len(pts),
-                                          _ffi.pi(held) if held is not None else None)
+        held = _ffi.i32(n)
+        for k in range(len(pts)):
+            h = hold[k] if hold and k < len(hold) else None
+            held[k] = h.index if h is not None else -1
+        i = lib.gcs_sketch_spline_through(self._h, _ffi.pf(buf), len(pts), _ffi.pi(held))
         return self.splines[int(i)] if i >= 0 else None
 
     def rectangle(self, a: Point, x1: float, y1: float, name: str = "") -> list[Line]:

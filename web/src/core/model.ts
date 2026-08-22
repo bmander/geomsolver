@@ -427,17 +427,13 @@ export class Sketch {
    *  to constrained points is itself fully constrained.  null if there are too few points for a
    *  cubic, or they give no parameterisation. */
   splineThrough(pts: readonly (readonly [number, number])[],
-                hold?: readonly (Point | null)[]): Spline | null {
+                hold: readonly (Point | null)[] = []): Spline | null {
     const n = Math.max(1, pts.length);
     const i = withBuf(2 * n, 8, (b) => {
       b.f64.set(pts.flatMap((p) => [p[0], p[1]]));
-      const xy = b.ptr;
-      if (!hold?.some(Boolean)) {
-        return core().gcs_sketch_spline_through(this.handle, xy, pts.length, 0);
-      }
       return withBuf(n, 4, (h) => {
         h.i32.set(pts.map((_, k) => hold[k]?.index ?? -1));
-        return core().gcs_sketch_spline_through(this.handle, xy, pts.length, h.ptr);
+        return core().gcs_sketch_spline_through(this.handle, b.ptr, pts.length, h.ptr);
       });
     });
     return i < 0 ? null : this.splines[i];
