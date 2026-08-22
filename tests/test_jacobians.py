@@ -45,6 +45,7 @@ def all_constraints(seed: int):
         C.PointLineDistance(p, l1, 4.0),
         C.AnnularDistance(c1, a, 1.5),
         C.PointOnSpline(p, sp), C.SplineTangentLine(sp, l1),
+        C.SplineCurvature(sp, c1), C.SplineCurvature(sp, a),
     ]
 
 

@@ -68,6 +68,8 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::point_on_spline(&sk, qe, spe),
         Constraint::spline_tangent_line(&sk, spe, le1),
         Constraint::spline_tangent_line(&sk, spe, le2),
+        Constraint::spline_curvature(&sk, spe, ce1),
+        Constraint::spline_curvature(&sk, spe, ae),
     ];
     // the two intrinsic PointOnCircle constraints the arc brought with it stay in the sketch
     sk.constraints.clear();

@@ -269,7 +269,9 @@ const CONSTRAINT_BUTTONS: ToolbarButton[] = [
          + '· two lines take their gap when parallel and their angle when not' },
   ...SIMPLE.map((c): ToolbarButton => ({ label: c[0], key: c[5], onClick: () => applySimple(c) })),
   { label: 'Equal', key: 'e', onClick: () => cEqual() },
-  { label: 'Tangent', key: 't', onClick: () => cTangent() },
+  { label: 'Tangent', key: 't', onClick: () => cTangent(),
+    title: 'A line or a circle tangent to a circle/arc · a line tangent to a curve '
+         + '· a circle taking a curve\'s own radius where it touches' },
   { label: 'Symmetric', key: '⇧q', onClick: () => cSymmetric() },
   { label: 'Fix', key: 'f', onClick: () => view.toggleFixSelected() },
 ];
@@ -446,8 +448,14 @@ function cTangent(): void {
     view.addConstraints(new C.SplineTangentLine(splines[0], lines[0]));
     return;
   }
+  if (circles.length === 1 && splines.length === 1 && !lines.length) {
+    // a circle against a curve says more than a line does: not just the direction there but how
+    // hard it turns, so the circle becomes the curve's own radius — its osculating circle
+    view.addConstraints(new C.SplineCurvature(splines[0], circles[0]));
+    return;
+  }
   if (splines.length) {
-    need(false, 'a line and a curve');
+    need(false, 'a curve and either a line or a circle');
     return;
   }
   if (lines.length === 1 && circles.length === 1) {
@@ -462,7 +470,7 @@ function cTangent(): void {
     // the sense is left out: the core reads it off the geometry, the same rule everywhere
     view.addConstraints(new C.TangentCircleCircle(circles[0], circles[1]));
   } else {
-    need(false, 'a line and a circle/arc/curve, or two circles/arcs');
+    need(false, 'a line and a circle/arc/curve, a curve and a circle, or two circles/arcs');
   }
 }
 

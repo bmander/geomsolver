@@ -352,7 +352,7 @@ export function initTypes(): Record<string, ConstraintCtor> {
     Coincident, Distance, Midpoint, DragTarget, Horizontal, Vertical, Parallel, Perpendicular,
     Angle, ParallelDistance, EqualLength, PointOnLine, PointLineDistance, PointOnCircle, Radius,
     EqualRadius, AnnularDistance, TangentLineCircle, TangentCircleCircle, TangentArcLine,
-    Symmetric, PointOnSpline, SplineTangentLine,
+    Symmetric, PointOnSpline, SplineTangentLine, SplineCurvature,
   } = CONSTRAINT_TYPES);
   return CONSTRAINT_TYPES;
 }
@@ -382,6 +382,7 @@ export let TangentArcLine: ConstraintCtor;
 export let Symmetric: ConstraintCtor;
 export let PointOnSpline: ConstraintCtor;
 export let SplineTangentLine: ConstraintCtor;
+export let SplineCurvature: ConstraintCtor;
 
 onInit(() => {
   initTypes();

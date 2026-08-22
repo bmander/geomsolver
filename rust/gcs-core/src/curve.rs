@@ -47,32 +47,42 @@ const MAX_DEPTH: u32 = 10;
 
 /* -- second-order jets ------------------------------------------------------ */
 
-/// A value and its first two derivatives in t.  The Cox–de Boor recurrence is a handful of
+/// A value and its first three derivatives in t.  The Cox–de Boor recurrence is a handful of
 /// sums and products of these, so differentiating the basis is the recurrence itself run over
 /// jets rather than a second algorithm to keep in step with the first.
+///
+/// Three, not two, because curvature is written in C″ and a curvature residual differentiated
+/// in t therefore needs C‴.  The extra order costs four multiplies in `mul` and nothing at all
+/// to the kernels that ignore it.
 #[derive(Clone, Copy, Debug)]
 struct Jet {
     v: f64,
     d: f64,
     dd: f64,
+    d3: f64,
 }
 
 impl Jet {
-    const ZERO: Jet = Jet { v: 0.0, d: 0.0, dd: 0.0 };
-    const ONE: Jet = Jet { v: 1.0, d: 0.0, dd: 0.0 };
+    const ZERO: Jet = Jet { v: 0.0, d: 0.0, dd: 0.0, d3: 0.0 };
+    const ONE: Jet = Jet { v: 1.0, d: 0.0, dd: 0.0, d3: 0.0 };
 
     /// `t - c`, as a function of t.
     fn rise(t: f64, c: f64) -> Jet {
-        Jet { v: t - c, d: 1.0, dd: 0.0 }
+        Jet { v: t - c, d: 1.0, dd: 0.0, d3: 0.0 }
     }
 
     /// `c - t`, as a function of t.
     fn fall(c: f64, t: f64) -> Jet {
-        Jet { v: c - t, d: -1.0, dd: 0.0 }
+        Jet { v: c - t, d: -1.0, dd: 0.0, d3: 0.0 }
     }
 
     fn add(self, o: Jet) -> Jet {
-        Jet { v: self.v + o.v, d: self.d + o.d, dd: self.dd + o.dd }
+        Jet {
+            v: self.v + o.v,
+            d: self.d + o.d,
+            dd: self.dd + o.dd,
+            d3: self.d3 + o.d3,
+        }
     }
 
     fn mul(self, o: Jet) -> Jet {
@@ -80,11 +90,12 @@ impl Jet {
             v: self.v * o.v,
             d: self.d * o.v + self.v * o.d,
             dd: self.dd * o.v + 2.0 * self.d * o.d + self.v * o.dd,
+            d3: self.d3 * o.v + 3.0 * self.dd * o.d + 3.0 * self.d * o.dd + self.v * o.d3,
         }
     }
 
     fn scale(self, s: f64) -> Jet {
-        Jet { v: self.v * s, d: self.d * s, dd: self.dd * s }
+        Jet { v: self.v * s, d: self.d * s, dd: self.dd * s, d3: self.d3 * s }
     }
 }
 
@@ -103,7 +114,7 @@ impl Jet {
 /// counts are sized from `DEGREE`, so a second degree costs a kernel pair and a `CKind` that
 /// selects it — see the module docs.
 pub fn basis(t: f64, lk: &[f64; SPAN_K], b: &mut [f64; SPAN_N], d: &mut [f64; SPAN_N],
-             dd: &mut [f64; SPAN_N]) {
+             dd: &mut [f64; SPAN_N], d3: &mut [f64; SPAN_N]) {
     const P: usize = DEGREE;
     // cur[a] holds N_{span-p+a, deg}; the slot at p+1 stays zero so the recurrence can read it
     let mut cur = [Jet::ZERO; P + 2];
@@ -131,6 +142,7 @@ pub fn basis(t: f64, lk: &[f64; SPAN_K], b: &mut [f64; SPAN_N], d: &mut [f64; SP
         b[a] = cur[a].v;
         d[a] = cur[a].d;
         dd[a] = cur[a].dd;
+        d3[a] = cur[a].d3;
     }
 }
 
@@ -244,8 +256,9 @@ pub fn eval(sk: &Sketch, i: usize, t: f64) -> Frame {
 pub fn eval_on(sk: &Sketch, i: usize, span: usize, t: f64) -> Frame {
     let s = &sk.splines[i];
     let lk = local_knots(&s.knots, span);
-    let (mut b, mut d, mut dd) = ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
-    basis(t, &lk, &mut b, &mut d, &mut dd);
+    let (mut b, mut d, mut dd, mut d3) =
+        ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
+    basis(t, &lk, &mut b, &mut d, &mut dd, &mut d3);
     let mut f = Frame { p: (0.0, 0.0), d1: (0.0, 0.0), d2: (0.0, 0.0) };
     for a in 0..SPAN_N {
         let (x, y) = sk.point_xy(s.ctrl[span - DEGREE + a] as usize);
@@ -485,10 +498,11 @@ pub fn interpolating_ctrl(
     }
     // N P = Q, one m*m solve per coordinate
     let mut n = vec![0.0; m * m];
-    let (mut b, mut d, mut dd) = ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
+    let (mut b, mut d, mut dd, mut d3) =
+        ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
     for k in 0..m {
         let span = span_index(&u, m, t[k]);
-        basis(t[k], &local_knots(&u, span), &mut b, &mut d, &mut dd);
+        basis(t[k], &local_knots(&u, span), &mut b, &mut d, &mut dd, &mut d3);
         for a in 0..SPAN_N {
             n[k * m + span - p + a] = b[a];
         }

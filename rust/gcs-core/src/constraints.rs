@@ -37,10 +37,11 @@ pub enum CKind {
     Symmetric,
     PointOnSpline,
     SplineTangentLine,
+    SplineCurvature,
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 23] = [
+pub const ALL_KINDS: [CKind; 24] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -64,6 +65,7 @@ pub const ALL_KINDS: [CKind; 23] = [
     CKind::Symmetric,
     CKind::PointOnSpline,
     CKind::SplineTangentLine,
+    CKind::SplineCurvature,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -157,6 +159,7 @@ impl CKind {
             CKind::Symmetric => "Symmetric",
             CKind::PointOnSpline => "PointOnSpline",
             CKind::SplineTangentLine => "SplineTangentLine",
+            CKind::SplineCurvature => "SplineCurvature",
         }
     }
 
@@ -197,6 +200,9 @@ impl CKind {
             CKind::PointOnSpline => &[("p", S::Point), ("spline", S::Spline), ("t", S::Param)],
             CKind::SplineTangentLine => {
                 &[("spline", S::Spline), ("line", S::Line), ("t", S::Param)]
+            }
+            CKind::SplineCurvature => {
+                &[("spline", S::Spline), ("circle", S::CircleOrArc), ("t", S::Param)]
             }
         }
     }
@@ -301,6 +307,7 @@ impl CKind {
             CKind::Symmetric => K::Symmetric,
             CKind::PointOnSpline => K::PointOnSpline,
             CKind::SplineTangentLine => K::SplineTangentLine,
+            CKind::SplineCurvature => K::SplineCurvature,
         }
     }
 }
@@ -483,6 +490,12 @@ impl Constraint {
     /// A line tangent to a curve, starting where the curve already comes nearest that line.
     pub fn spline_tangent_line(sk: &Sketch, spline: EntRef, line: EntRef) -> Constraint {
         Constraint::contact(sk, CKind::SplineTangentLine, Arg::Ent(spline), Arg::Ent(line))
+    }
+
+    /// A circle that osculates a curve — the curve's own radius there — starting at the place
+    /// the circle's centre is already nearest.
+    pub fn spline_curvature(sk: &Sketch, spline: EntRef, circle: EntRef) -> Constraint {
+        Constraint::contact(sk, CKind::SplineCurvature, Arg::Ent(spline), Arg::Ent(circle))
     }
 
     /// A two-entity curve contact whose parameter starts where the geometry puts it.
@@ -698,6 +711,13 @@ impl Constraint {
             CKind::SplineTangentLine => {
                 [vec![self.args[2].param()], self.span_params(sk, span), ln(1)].concat()
             }
+            CKind::SplineCurvature => [
+                vec![self.args[2].param()],
+                self.span_params(sk, span),
+                centre(1),
+                vec![rad(1)],
+            ]
+            .concat(),
         }
     }
 
@@ -743,6 +763,12 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
             let [ax, ay, bx, by] = sk.line_params(args[1].ent().i());
             let g = |p: u32| sk.params[p as usize].value;
             crate::curve::nearest_to_line(sk, args[0].ent().i(), g(ax), g(ay), g(bx), g(by))
+        }
+        // an osculating circle sits centred a radius off the curve, so the curve point nearest
+        // the centre it already has is the place it is asking about
+        (CKind::SplineCurvature, 2) => {
+            let (cx, cy) = sk.point_xy(sk.round_center(args[1].ent()));
+            crate::curve::closest(sk, args[0].ent().i(), cx, cy).0
         }
         _ => 0.0,
     }

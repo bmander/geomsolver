@@ -21,8 +21,9 @@ fn bernstein(t: f64) -> [f64; 4] {
 fn at(t: f64, u: &[f64], n: usize) -> ([f64; SPAN_N], [f64; SPAN_N], [f64; SPAN_N]) {
     let span = curve::span_index(u, n, t);
     let lk = curve::local_knots(u, span);
-    let (mut b, mut d, mut dd) = ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
-    curve::basis(t, &lk, &mut b, &mut d, &mut dd);
+    let (mut b, mut d, mut dd, mut d3) =
+        ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
+    curve::basis(t, &lk, &mut b, &mut d, &mut dd, &mut d3);
     (b, d, dd)
 }
 
@@ -670,4 +671,129 @@ fn a_pin_survives_a_save_a_load_and_a_copy() {
     let all: Vec<EntRef> = sk.primitives();
     let clip = gcs_core::io::copy(&sk, &all);
     assert_eq!(pinned(&clip), pts.len(), "the pins were lost on the way through a copy");
+}
+
+/* -- curvature --------------------------------------------------------------- */
+
+/// The curve's own radius at t, and the centre it turns about.
+fn osculating(sk: &Sketch, s: usize, t: f64) -> (f64, (f64, f64)) {
+    let f = curve::eval(sk, s, t);
+    let k = f.d1.0 * f.d2.1 - f.d1.1 * f.d2.0;
+    let q = f.d1.0 * f.d1.0 + f.d1.1 * f.d1.1;
+    let rho = q * q.sqrt() / k.abs();
+    let scale = q / k;
+    (rho, (f.p.0 - scale * f.d1.1, f.p.1 + scale * f.d1.0))
+}
+
+#[test]
+fn a_circle_takes_the_curve_s_own_radius() {
+    let mut sk = Sketch::new();
+    let s = wave(&mut sk, 6);
+    for c in 0..sk.points.len() {
+        sk.fix_point(c, true);
+    }
+    let centre = sk.point(24.0, 30.0, false, "o");
+    let circle = sk.circle(centre, 9.0, "c");
+    let id = add(&mut sk, |doc| {
+        Constraint::spline_curvature(doc, EntRef::spline(s), EntRef::circle(circle))
+    });
+    assert!(solved(&mut sk));
+
+    let t = sk.params[sk.constraint(id).unwrap().aux_params()[0] as usize].value;
+    let (rho, at) = osculating(&sk, s, t);
+    let (cx, cy) = sk.point_xy(centre);
+    let r = sk.radius_value(EntRef::circle(circle)).abs();
+    assert!((r - rho).abs() < 1e-6 * rho, "radius {r} is not the curve's {rho}");
+    assert!((cx - at.0).hypot(cy - at.1) < 1e-6 * rho, "the centre is not the centre of curvature");
+    // and it touches the curve at t.  Not necessarily *nearest* there — the centre of
+    // curvature of one lobe can sit closer to another — which is why this measures the contact
+    // rather than asking the curve for its nearest point.
+    let f = curve::eval(&sk, s, t);
+    assert!(((cx - f.p.0).hypot(cy - f.p.1) - r).abs() < 1e-6 * rho);
+}
+
+#[test]
+fn an_osculating_circle_costs_two_degrees_of_freedom_and_keeps_one() {
+    let mut sk = Sketch::new();
+    let s = wave(&mut sk, 6);
+    for c in 0..sk.points.len() {
+        sk.fix_point(c, true);
+    }
+    let o = sk.point(24.0, 30.0, false, "o");
+    let circle = sk.circle(o, 9.0, "c");
+    let before = gcs_core::diagnose::diagnose(&mut sk.clone(), Default::default()).dof;
+    assert_eq!(before, 3, "a free circle on a fixed curve");
+    add(&mut sk, |doc| {
+        Constraint::spline_curvature(doc, EntRef::spline(s), EntRef::circle(circle))
+    });
+    // the contact brings one unknown of its own and three equations: net two, and what is left
+    // is the one freedom an osculating circle has — it can slide along the curve
+    assert_eq!(gcs_core::diagnose::diagnose(&mut sk, Default::default()).dof, 1);
+}
+
+#[test]
+fn a_dimensioned_circle_drives_the_curve_instead() {
+    // the other way round: pin the radius and let the curve bend to it
+    let mut sk = Sketch::new();
+    let s = wave(&mut sk, 6);
+    let o = sk.point(24.0, 30.0, true, "o");
+    let circle = sk.circle(o, 9.0, "c");
+    let ce = EntRef::circle(circle);
+    let rp = sk.round_radius(ce);
+    sk.params[rp].fixed = true;
+    let id = add(&mut sk, |doc| Constraint::spline_curvature(doc, EntRef::spline(s), ce));
+    assert!(solved(&mut sk));
+    let t = sk.params[sk.constraint(id).unwrap().aux_params()[0] as usize].value;
+    let (rho, _) = osculating(&sk, s, t);
+    assert!((rho - 9.0).abs() < 1e-5, "the curve bends at {rho}, not 9");
+}
+
+#[test]
+fn a_curvature_contact_survives_the_document() {
+    let mut sk = Sketch::new();
+    let s = wave(&mut sk, 6);
+    let o = sk.point(24.0, 30.0, false, "o");
+    let circle = sk.circle(o, 9.0, "c");
+    add(&mut sk, |doc| {
+        Constraint::spline_curvature(doc, EntRef::spline(s), EntRef::circle(circle))
+    });
+    assert!(solved(&mut sk));
+    let text = gcs_core::io::dumps(&sk, None);
+    let back = gcs_core::io::loads(&text).unwrap();
+    assert!(back.constraints.iter().any(|c| c.kind == CKind::SplineCurvature));
+    assert_eq!(gcs_core::io::dumps(&back, None), text);
+    // an arc serves as well as a circle: both carry a radius
+    let mut sk2 = Sketch::new();
+    let s2 = wave(&mut sk2, 6);
+    let (c, a, b) = (sk2.point(24.0, 30.0, false, "c"), sk2.point(33.0, 30.0, false, "a"),
+                     sk2.point(24.0, 39.0, false, "b"));
+    let arc = sk2.arc(c, a, b, "arc");
+    add(&mut sk2, |doc| {
+        Constraint::spline_curvature(doc, EntRef::spline(s2), EntRef::arc(arc))
+    });
+    assert!(solved(&mut sk2));
+}
+
+#[test]
+fn a_curve_bends_to_the_circle_rather_than_collapsing_to_it() {
+    // The failure this residual is shaped to avoid: written the other way up, every row of it
+    // vanishes as C' does, so a curve with control points to spare can satisfy a curvature
+    // constraint by bunching them until the parameterisation collapses.  It looks solved and
+    // the curve is nonsense.
+    let mut sk = Sketch::new();
+    let s = wave(&mut sk, 6);
+    let o = sk.point(24.0, 30.0, true, "o");
+    let circle = sk.circle(o, 9.0, "c");
+    let ce = EntRef::circle(circle);
+    let rp = sk.round_radius(ce);
+    sk.params[rp].fixed = true;
+    let id = add(&mut sk, |doc| Constraint::spline_curvature(doc, EntRef::spline(s), ce));
+    assert!(solved(&mut sk));
+
+    let t = sk.params[sk.constraint(id).unwrap().aux_params()[0] as usize].value;
+    let f = curve::eval(&sk, s, t);
+    let speed = f.d1.0.hypot(f.d1.1);
+    assert!(speed > 1.0, "the parameterisation collapsed: |C'| = {speed}");
+    let (rho, _) = osculating(&sk, s, t);
+    assert!((rho - 9.0).abs() < 1e-5, "the curve bends at {rho}, not 9");
 }

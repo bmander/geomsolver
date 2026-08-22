@@ -1456,3 +1456,19 @@ test('a dimension may be written as a mixed fraction', () => {
   assert.throws(() => d.setDimension('d', '3 1/0'));
   sk.dispose();
 });
+
+test('a circle against a curve is a curvature constraint', () => {
+  const { sk, sp } = wave(6);
+  for (const q of sp.ctrl) { q.x.fixed = true; q.y.fixed = true; }
+  const o = sk.point(24, 30);
+  const circle = sk.circle(o, 9);
+  const c = new C.SplineCurvature(sp, circle);
+  sk.add(c);
+  assert.ok(solve(sk).success);
+  assert.ok(allSatisfied(sk));
+  // it ends up the curve's own circle there: touching, at the radius it now has
+  const { p } = sp.eval(c.t as number);
+  const r = Math.abs(circle.radius.value);
+  assert.ok(Math.abs(Math.hypot(o.x.value - p[0], o.y.value - p[1]) - r) < 1e-6 * r);
+  sk.dispose();
+});

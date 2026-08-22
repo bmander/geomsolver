@@ -61,6 +61,13 @@ Conventions:
   new unknown, the net one equation the contact is worth.  A contact kernel needs the basis
   values and their first two t-derivatives and nothing else about the curve, which is the whole
   extension point — a second curve family is a second basis, not a second constraint family.
+  A line against a curve is a tangency; a *circle* against one is a curvature constraint —
+  `SplineCurvature` makes it the curve's osculating circle, which is the circle a draughtsman
+  would call the radius there.  It is written as "the centre is the centre of curvature", which
+  says touching, tangent and equally-bent all at once and needs no `side` to infer.  Dividing by
+  the turning rather than multiplying by it is load-bearing: multiplied through, every row would
+  vanish as `C'` did and the solver would satisfy the constraint by bunching the control points
+  until the parameterisation collapsed, which it promptly does given the freedom.
   Control points are ordinary `Point`s, so they drag, snap and constrain with the tools that
   already exist, the same trick as an arc being a centre and two real points.  Local support is
   what keeps the plan's fixed-width blocks: only `DEGREE + 1` control points are non-zero at any

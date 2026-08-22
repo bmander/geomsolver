@@ -36,9 +36,10 @@ pub enum K {
     AnnularDistance,
     PointOnSpline,
     SplineTangentLine,
+    SplineCurvature,
 }
 
-pub const N_KERNELS: usize = 23;
+pub const N_KERNELS: usize = 24;
 
 pub struct Kernel {
     pub name: &'static str,
@@ -551,18 +552,27 @@ struct Span {
     b: [f64; SPAN_N],
     d: [f64; SPAN_N],
     dd: [f64; SPAN_N],
+    d3: [f64; SPAN_N],
     p: (f64, f64),
     d1: (f64, f64),
     d2: (f64, f64),
+    d3v: (f64, f64),
 }
 
 /// `v` is one instance's columns; `t` and `ctrl` are the offsets into it of the parameter and of
 /// the first control point.
 fn span_frame(v: &[f64], t: usize, ctrl: usize, k: &[f64; SPAN_K]) -> Span {
-    let mut f =
-        Span { b: [0.0; SPAN_N], d: [0.0; SPAN_N], dd: [0.0; SPAN_N], p: (0.0, 0.0),
-               d1: (0.0, 0.0), d2: (0.0, 0.0) };
-    curve::basis(v[t], k, &mut f.b, &mut f.d, &mut f.dd);
+    let mut f = Span {
+        b: [0.0; SPAN_N],
+        d: [0.0; SPAN_N],
+        dd: [0.0; SPAN_N],
+        d3: [0.0; SPAN_N],
+        p: (0.0, 0.0),
+        d1: (0.0, 0.0),
+        d2: (0.0, 0.0),
+        d3v: (0.0, 0.0),
+    };
+    curve::basis(v[t], k, &mut f.b, &mut f.d, &mut f.dd, &mut f.d3);
     for a in 0..SPAN_N {
         let (x, y) = (v[ctrl + 2 * a], v[ctrl + 2 * a + 1]);
         f.p.0 += f.b[a] * x;
@@ -571,6 +581,8 @@ fn span_frame(v: &[f64], t: usize, ctrl: usize, k: &[f64; SPAN_K]) -> Span {
         f.d1.1 += f.d[a] * y;
         f.d2.0 += f.dd[a] * x;
         f.d2.1 += f.dd[a] * y;
+        f.d3v.0 += f.d3[a] * x;
+        f.d3v.1 += f.d3[a] * y;
     }
     f
 }
@@ -701,6 +713,102 @@ fn spline_tangent_line_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
+/// Columns of `spline_curvature`: (t, c0x, c0y ... c3x, c3y, cx, cy, r).
+pub const N_PAR_SPLINE_CURVE: usize = 1 + 2 * SPAN_N + 3;
+
+/// `cross(C', C'')`, floored.  It is the curve's turning, and the osculating circle's centre is
+/// a whole `(C'·C')/turn` away along the normal — so where the curve does not turn there is no
+/// finite circle to be had, and the floor keeps that as a very large residual rather than an
+/// infinity.  Same bargain as `MIN_LINE_LEN`, for the same reason.
+const MIN_TURN: f64 = 1e-12;
+
+fn turn(k: f64) -> f64 {
+    if k.abs() < MIN_TURN {
+        MIN_TURN.copysign(if k == 0.0 { 1.0 } else { k })
+    } else {
+        k
+    }
+}
+
+/// A circle that osculates the curve: it touches, shares the tangent, and bends by the same
+/// amount — the circle a draughtsman would call the radius *of* the curve there.
+///
+/// Written as "the centre is the centre of curvature", which says all three at once and leaves
+/// no branch to choose: that centre is `C + ((C'·C')/cross(C',C'')) · perp(C')`, and the first
+/// two rows are the two components of `centre − C` minus that offset.  Placing the centre
+/// exactly is what makes a `side` argument unnecessary — the sign of the turning already says
+/// which way the curve bends.  The third row is the radius, so all three are signed lengths and
+/// the kernel is degree 1.
+///
+/// Dividing by the turning rather than multiplying by it is load-bearing.  Multiplied through,
+/// every row would vanish as `C'` did, and the solver could satisfy the constraint by bunching
+/// the control points until the parameterisation collapsed instead of by bending the curve —
+/// which it promptly does, given the freedom.  Divided, a collapsing curve leaves `centre − C`
+/// standing at nearly the whole radius, and the residual pushes back.
+///
+/// Three residuals against one new unknown: net two, which is what an osculating circle costs.
+/// It keeps the one degree of freedom it should — it can slide along the curve.
+fn spline_curvature_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_SPLINE_CURVE * i;
+        let c = o + 1 + 2 * SPAN_N;
+        let f = span_frame(&v[o..], 0, 1, span_knots(k, i));
+        let (tx, ty) = f.d1;
+        let (dx, dy) = (v[c] - f.p.0, v[c + 1] - f.p.1);
+        let g = (tx * tx + ty * ty) / turn(tx * f.d2.1 - ty * f.d2.0);
+        r[3 * i] = dx + g * ty;
+        r[3 * i + 1] = dy - g * tx;
+        r[3 * i + 2] = line_len(dx, dy) - v[c + 2];
+    }
+}
+
+fn spline_curvature_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_SPLINE_CURVE * i;
+        let c = o + 1 + 2 * SPAN_N;
+        let cc = c - o; // first circle column, relative to this instance
+        let jo = 3 * N_PAR_SPLINE_CURVE * i;
+        let (row1, row2) = (jo + N_PAR_SPLINE_CURVE, jo + 2 * N_PAR_SPLINE_CURVE);
+        let f = span_frame(&v[o..], 0, 1, span_knots(k, i));
+        let (tx, ty) = f.d1;
+        let (sx, sy) = f.d2;
+        let (ux, uy) = f.d3v;
+        let (dx, dy) = (v[c] - f.p.0, v[c + 1] - f.p.1);
+        let q = tx * tx + ty * ty;
+        let kk = turn(tx * sy - ty * sx);
+        let g = q / kk;
+        let len = line_len(dx, dy);
+        for s in 0..3 * N_PAR_SPLINE_CURVE {
+            j[jo + s] = 0.0;
+        }
+
+        // t: C moves along C', C' along C'', and the turning along cross(C', C''')
+        let dq = 2.0 * (tx * sx + ty * sy);
+        let dg = (dq * kk - q * (tx * uy - ty * ux)) / (kk * kk);
+        j[jo] = -tx + dg * ty + g * sy;
+        j[row1] = -ty - dg * tx - g * sx;
+        j[row2] = (dx * -tx + dy * -ty) / len;
+
+        for a in 0..SPAN_N {
+            // a control point moves C, C' and C'' at once, each by its own basis function
+            let dgx = (2.0 * tx * f.d[a] * kk - q * (f.d[a] * sy - ty * f.dd[a])) / (kk * kk);
+            let dgy = (2.0 * ty * f.d[a] * kk - q * (tx * f.dd[a] - f.d[a] * sx)) / (kk * kk);
+            j[jo + 1 + 2 * a] = -f.b[a] + dgx * ty;
+            j[jo + 2 + 2 * a] = dgy * ty + g * f.d[a];
+            j[row1 + 1 + 2 * a] = -dgx * tx - g * f.d[a];
+            j[row1 + 2 + 2 * a] = -f.b[a] - dgy * tx;
+            j[row2 + 1 + 2 * a] = -dx * f.b[a] / len;
+            j[row2 + 2 + 2 * a] = -dy * f.b[a] / len;
+        }
+
+        j[jo + cc] = 1.0;
+        j[row1 + cc + 1] = 1.0;
+        j[row2 + cc] = dx / len;
+        j[row2 + cc + 1] = dy / len;
+        j[row2 + cc + 2] = -1.0;
+    }
+}
+
 /* -- registry (order == kernel id, shared with the bindings) --------------- */
 
 pub static KERNELS: [Kernel; N_KERNELS] = [
@@ -727,6 +835,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "annular_distance", n_res: 1, n_par: 2, degree: 1, n_const: 1, res: annular_distance_res, jac: annular_distance_jac, const_jac: Some(ANNULAR_DISTANCE_J) },
     Kernel { name: "point_on_spline", n_res: 2, n_par: N_PAR_ON_SPLINE, degree: 1, n_const: SPAN_K, res: point_on_spline_res, jac: point_on_spline_jac, const_jac: None },
     Kernel { name: "spline_tangent_line", n_res: 2, n_par: N_PAR_SPLINE_LINE, degree: 1, n_const: SPAN_K, res: spline_tangent_line_res, jac: spline_tangent_line_jac, const_jac: None },
+    Kernel { name: "spline_curvature", n_res: 3, n_par: N_PAR_SPLINE_CURVE, degree: 1, n_const: SPAN_K, res: spline_curvature_res, jac: spline_curvature_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

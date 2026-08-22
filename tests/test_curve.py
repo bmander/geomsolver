@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from gcs import constraints as C
@@ -170,3 +172,19 @@ def test_holding_reaches_the_core_through_the_binding() -> None:
     assert [type(c).__name__ for c in sk.constraints] == ["PointOnSpline"] * len(pts)
     assert diagnose(sk).dof == 0
     assert io.dumps(io.loads(io.dumps(sk))) == io.dumps(sk)
+
+
+def test_a_circle_takes_the_curve_s_own_radius() -> None:
+    """A circle against a curve is a curvature constraint: it becomes the osculating circle.
+    What that means is the Rust test's business; this is that the binding reaches it."""
+    sk, sp = wave(6)
+    for q in sp.ctrl:
+        q.fix()
+    o = sk.point(24.0, 30.0)
+    circle = sk.circle(o, 9.0)
+    c = C.SplineCurvature(sp, circle)
+    sk.add(c)
+    assert solve(sk).success
+    assert c.error() < 1e-6
+    (px, py), _, _ = sp.eval(c.t)
+    assert math.hypot(o.xy[0] - px, o.xy[1] - py) == pytest.approx(abs(circle.radius.value))

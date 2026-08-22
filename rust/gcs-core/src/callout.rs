@@ -72,6 +72,7 @@ macro_rules! undrawn {
             | CKind::Symmetric
             | CKind::PointOnSpline
             | CKind::SplineTangentLine
+            | CKind::SplineCurvature
     };
 }
 
