@@ -655,14 +655,7 @@ pub fn arg_text(kind: SpecKind, a: &Arg) -> String {
         (_, Arg::Param(i)) => format!("@{i}"),
         // a number written a particular way keeps the way: `3 1/8` says more than 3.125 does,
         // and it is what somebody typed.  A *formula* still shows what it came to.
-        (k, Arg::Expr(e)) if expr::notation(&e.text).is_some() => {
-            let t = e.text.trim();
-            if k == SpecKind::Angle {
-                format!("{t}°")
-            } else {
-                t.to_string()
-            }
-        }
+        (k, Arg::Expr(e)) if expr::notation(&e.text).is_some() => as_written(k, &e.text),
         // the formula and what it came to: `h = w * 2 = 80`, `sin(h * 10) = 0.342`
         (k, Arg::Expr(e)) => format!("{} = {}", e.text, arg_text(k, &Arg::Num(e.value))),
         (SpecKind::Angle, a) => format!("{}°", fmt_g(a.num().to_degrees(), 3)),
@@ -674,22 +667,25 @@ pub fn arg_text(kind: SpecKind, a: &Arg) -> String {
     }
 }
 
+/// A dimension as it was written: the text somebody typed, carrying the degree sign an angle is
+/// read in.  Trimming is all the tidying there is — their spacing is theirs.
+fn as_written(kind: SpecKind, text: &str) -> String {
+    let t = text.trim();
+    if kind == SpecKind::Angle { format!("{t}°") } else { t.to_string() }
+}
+
 /// The number a dimensioned constraint states, as its callout prints it — the first Length or
 /// Angle in its spec, whichever argument that happens to be.  `None` for a constraint that
-/// states no number.  A dimension written as an expression shows its name and value (`h=80`),
-/// or a leading `=` when it has no name — the formula itself is in the constraint list.
+/// states no number.
+///
+/// A dimension written as an expression is drawn **as written**: `h = w / 2` on the callout says
+/// what `40` does not, the same bargain `3 1/8` strikes, and it is what somebody typed.  What it
+/// came to can be measured off the drawing; where it came from cannot.  `arg_text` — the
+/// constraint list — is where a formula prints both.
 pub fn dimension_text(c: &Constraint) -> Option<String> {
     let (i, _, kind) = c.dimensions().into_iter().next()?;
     Some(match &c.args[i] {
-        // a notation is what the drawing should say: the number, written as it was written
-        Arg::Expr(e) if expr::notation(&e.text).is_some() => arg_text(kind, &c.args[i]),
-        Arg::Expr(e) => {
-            let v = arg_text(kind, &Arg::Num(e.value));
-            match expr::name_of(&e.text) {
-                Some(n) => format!("{n}={v}"),
-                None => format!("={v}"),
-            }
-        }
+        Arg::Expr(e) => as_written(kind, &e.text),
         a => arg_text(kind, a),
     })
 }

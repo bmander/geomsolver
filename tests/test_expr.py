@@ -90,8 +90,8 @@ def test_documents_and_rebuilds_keep_the_text() -> None:
     sk3 = io.without(sk, constraints=[cs[0]])
     assert sk3.constraints[0].d == 6
     assert expressions(sk3)[0].error == "`w` is not defined"
-    # the callouts print the name and value, or a leading = for an unnamed expression
-    assert [k["text"] for k in io.callouts(sk, 1.0)["items"]] == ["w=3", "h=6", "=7"]
+    # the callouts carry the expression itself, not what it came to
+    assert [k["text"] for k in io.callouts(sk, 1.0)["items"]] == ["w = 3", "h = w * 2", "h + 1"]
 
 
 def test_pythagoras_drawn_with_expressions_holds_and_stays_true_when_a_leg_is_edited() -> None:

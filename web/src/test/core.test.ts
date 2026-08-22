@@ -1248,9 +1248,9 @@ test('expressions round-trip through the document and survive a rebuild', () => 
   const sk3 = io.without(sk, [], [cs[0]]);
   assert.equal(sk3.constraints[0].d, 6);
   assert.equal(expressions(sk3)[0].error, '`w` is not defined');
-  // the callout shows the name and value, or a leading = for an unnamed expression
+  // the callout carries the expression itself, not what it came to
   const texts = callouts(sk, 1).items.map((k) => k.text);
-  assert.deepEqual(texts, ['w=3', 'h=6', '=7']);
+  assert.deepEqual(texts, ['w = 3', 'h = w * 2', 'h + 1']);
   sk.dispose();
   sk2.dispose();
   sk3.dispose();

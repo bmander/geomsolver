@@ -165,7 +165,7 @@ fn angles_are_written_in_degrees() {
     assert_eq!(value(&sk, d), 60.0);
     let items = expr::evaluate(&mut sk);
     assert_eq!(items[0].value, 30.0);
-    assert_eq!(io::dimension_text(sk.constraint(ang).unwrap()).unwrap(), "a=30°");
+    assert_eq!(io::dimension_text(sk.constraint(ang).unwrap()).unwrap(), "a = 30°");
     assert_eq!(io::describe(sk.constraint(d).unwrap()), "Distance(P4, P5, a * 2 = 60)");
 }
 
@@ -320,9 +320,10 @@ fn describe_and_callout_text() {
     assert_eq!(io::describe(c(0)), "Distance(P0, P1, w = 3 = 3)");
     assert_eq!(io::describe(c(1)), "Distance(P2, P3, h = w * 2 = 6)");
     assert_eq!(io::describe(c(2)), "Distance(P4, P5, sin(h * 5) = 0.5)");
-    assert_eq!(io::dimension_text(c(0)).unwrap(), "w=3");
-    assert_eq!(io::dimension_text(c(1)).unwrap(), "h=6");
-    assert_eq!(io::dimension_text(c(2)).unwrap(), "=0.5");
+    // the drawing carries the expression; what it came to is in the list, above
+    assert_eq!(io::dimension_text(c(0)).unwrap(), "w = 3");
+    assert_eq!(io::dimension_text(c(1)).unwrap(), "h = w * 2");
+    assert_eq!(io::dimension_text(c(2)).unwrap(), "sin(h * 5)");
 }
 
 #[test]
@@ -370,7 +371,7 @@ fn pythagoras_drawn_with_expressions_holds_and_stays_true_when_a_leg_is_edited()
         let cc = sk.constraint(by_text(sk, "c = hypot(a, b)")).unwrap();
         assert!((cc.args[2].num() - c).abs() < 1e-9);   // the expression computed it
         assert!(cc.error(sk) < 1e-6);                      // and the figure agrees
-        assert_eq!(io::dimension_text(cc).unwrap(), format!("c={}", gcs_core::json::fmt_g(c, 4)));
+        assert_eq!(io::dimension_text(cc).unwrap(), "c = hypot(a, b)");   // drawn as written
         let d = diagnose(sk, DiagnoseOptions::default());
         assert_eq!(d.dof, 0);
         assert_eq!(d.n_redundant, 1, "the theorem is one equation the construction already holds");
@@ -470,9 +471,9 @@ fn a_dimension_written_as_a_fraction_is_drawn_as_one() {
     assert_eq!(c.args[2].num(), 3.125, "and the graph still has the number");
     assert!(solve(&mut sk, SolveOpts::default()).success);
 
-    // a formula still shows what it came to, because that is the part a reader cannot work out
+    // and a named one keeps both halves of what was typed
     expr::set_dimension(&mut sk, id, "d", "w = 2 1/4").unwrap();
-    assert_eq!(io::dimension_text(sk.constraint(id).unwrap()).as_deref(), Some("w=2.25"));
+    assert_eq!(io::dimension_text(sk.constraint(id).unwrap()).as_deref(), Some("w = 2 1/4"));
 }
 
 #[test]

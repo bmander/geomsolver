@@ -182,8 +182,11 @@ Conventions:
   apart, so `31/2` and a bare `1/2` are still divisions, and the fraction itself is written
   tight.  `expr::literal` deliberately does *not* claim it, so it is kept as text with the value
   it came to: `expr::notation` says that text is a number written a particular way rather than a
-  computation, and `arg_text`/`dimension_text` print such a dimension **as written** where a
-  formula prints what it came to — `3 1/8` on a callout tells a reader what 3.125 does not.
+  computation, so `arg_text` — the constraint list — prints it as written where a *formula* there
+  prints the text and what it came to (`h = w * 2 = 80`).  A **callout carries the expression**:
+  `io::dimension_text` draws every written dimension as written, since `h = w / 2` and `3 1/8`
+  each tell a reader what 40 and 3.125 do not, and what a dimension came to is the one thing a
+  reader can measure off the drawing.
   `expr::set_dimension` is the one write path for text (a bare number becomes `Arg::Num`, with
   the angle conversion — the app converts nothing); `Sketch::add` and `io::from_json` evaluate;
   `set_num` on an expression drops it.  Documents save `{"expr", "value"}` and accept a bare
