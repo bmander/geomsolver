@@ -66,6 +66,8 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::ParallelDistance, vec![e(le1), e(le2), Arg::Num(4.0)]),
         Constraint::new(CKind::PointLineDistance, vec![e(pe), e(le1), Arg::Num(4.0)]),
         Constraint::new(CKind::AnnularDistance, vec![e(ce1), e(ae), Arg::Num(1.5)]),
+        Constraint::new(CKind::HorizontalDistance, vec![e(pe), e(qe), Arg::Num(2.5)]),
+        Constraint::new(CKind::VerticalDistance, vec![e(pe), e(qe), Arg::Num(-1.5)]),
         Constraint::point_on_spline(&sk, pe, spe),
         Constraint::point_on_spline(&sk, qe, spe),
         Constraint::spline_tangent_line(&sk, spe, le1),

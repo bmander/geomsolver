@@ -144,6 +144,7 @@ _SIGNATURES: list[tuple[str, Any, list[Any]]] = [
     ("gcs_callout_drag", ct.c_int32,
      [PTR, ct.c_int32, ct.c_double, ct.c_double, ct.c_double, ct.c_double]),
     ("gcs_callout_reset", ct.c_int32, [PTR, ct.c_int32]),
+    ("gcs_dimension_pair_kind", ct.c_int32, [ct.c_double] * 6),
     ("gcs_fmt_g", STR, [ct.c_double, ct.c_int32]),
     # branches / io / examples
     ("gcs_branches_json", STR, [PTR]),

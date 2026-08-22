@@ -367,3 +367,18 @@ def test_two_points_can_be_levelled_without_a_line() -> None:
     assert b.xy[1] == pytest.approx(a.xy[1])
     assert c.xy[0] == pytest.approx(a.xy[0])
     assert io.dumps(io.loads(io.dumps(sk))) == io.dumps(sk)
+
+
+def test_the_run_and_the_rise_are_dimensions_of_their_own() -> None:
+    """The binding reaches them, and the rule that says which one a callout states."""
+    sk = Sketch()
+    a = sk.point(0.0, 0.0, fixed=True)
+    b = sk.point(10.0, 4.0)
+    sk.add(C.HorizontalDistance(a, b, 30.0), C.VerticalDistance(a, b, -5.0))
+    assert solve(sk).success
+    assert b.xy == pytest.approx((30.0, -5.0))
+    assert io.dumps(io.loads(io.dumps(sk))) == io.dumps(sk)
+    # where the number is put is which of the three dimensions it is
+    assert io.pair_dimension((0, 0), (40, 40), (-10, 50)) == "Distance"
+    assert io.pair_dimension((0, 0), (40, 40), (20, 60)) == "HorizontalDistance"
+    assert io.pair_dimension((0, 0), (40, 40), (60, 20)) == "VerticalDistance"

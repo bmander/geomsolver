@@ -10,7 +10,7 @@ import test from 'node:test';
 import * as C from '../core/constraints.js';
 import { Constraint } from '../core/constraints.js';
 import * as examples from '../core/examples.js';
-import { callouts } from '../core/callout.js';
+import { callouts, pairDimension } from '../core/callout.js';
 import { expressions } from '../core/expr.js';
 import * as graph from '../core/graph.js';
 import * as io from '../core/io.js';
@@ -1486,5 +1486,24 @@ test('two points can be levelled without a line between them', () => {
   assert.ok(Math.abs(c.x.value - a.x.value) < 1e-9);
   // and it is the same statement either way round, so a duplicate is caught
   assert.ok(C.sameConstraint(new C.HorizontalPoints(a, b), new C.HorizontalPoints(b, a)));
+  sk.dispose();
+});
+
+test('the run and the rise between two points are dimensions of their own', () => {
+  const sk = new Sketch();
+  const a = sk.point(0, 0), b = sk.point(10, 4);
+  a.x.fixed = true;
+  a.y.fixed = true;
+  sk.add(new C.HorizontalDistance(a, b, 30), new C.VerticalDistance(a, b, -5));
+  assert.ok(solve(sk).success);
+  assert.ok(Math.abs(b.x.value - 30) < 1e-9, `x ${b.x.value}`);
+  assert.ok(Math.abs(b.y.value + 5) < 1e-9, `y ${b.y.value}`);
+  // signed from the first point to the second, so the pair does not commute
+  assert.ok(!C.sameConstraint(new C.HorizontalDistance(a, b, 30),
+                              new C.HorizontalDistance(b, a, 30)));
+  // and which of the three a callout states comes from where it is put
+  assert.equal(pairDimension([0, 0], [40, 40], [-10, 50]), 'Distance');
+  assert.equal(pairDimension([0, 0], [40, 40], [20, 60]), 'HorizontalDistance');
+  assert.equal(pairDimension([0, 0], [40, 40], [60, 20]), 'VerticalDistance');
   sk.dispose();
 });

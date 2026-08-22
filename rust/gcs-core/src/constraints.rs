@@ -40,10 +40,12 @@ pub enum CKind {
     SplineCurvature,
     HorizontalPoints,
     VerticalPoints,
+    HorizontalDistance,
+    VerticalDistance,
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 26] = [
+pub const ALL_KINDS: [CKind; 28] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -70,6 +72,8 @@ pub const ALL_KINDS: [CKind; 26] = [
     CKind::SplineCurvature,
     CKind::HorizontalPoints,
     CKind::VerticalPoints,
+    CKind::HorizontalDistance,
+    CKind::VerticalDistance,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,6 +170,8 @@ impl CKind {
             CKind::SplineCurvature => "SplineCurvature",
             CKind::HorizontalPoints => "HorizontalPoints",
             CKind::VerticalPoints => "VerticalPoints",
+            CKind::HorizontalDistance => "HorizontalDistance",
+            CKind::VerticalDistance => "VerticalDistance",
         }
     }
 
@@ -185,6 +191,12 @@ impl CKind {
             // the same statement about the segment between two points, with no line drawn there
             CKind::HorizontalPoints | CKind::VerticalPoints => {
                 &[("p", S::Point), ("q", S::Point)]
+            }
+            // the run and the rise between two points: what a drawing dimensions when it wants
+            // an ordinate rather than a length.  Signed from p to q, so the pair is not
+            // commutative — swapping the points negates the number.
+            CKind::HorizontalDistance | CKind::VerticalDistance => {
+                &[("p", S::Point), ("q", S::Point), ("d", S::Length)]
             }
             CKind::Parallel | CKind::Perpendicular | CKind::EqualLength => {
                 &[("l1", S::Line), ("l2", S::Line)]
@@ -323,6 +335,8 @@ impl CKind {
             // the same kernels: their four columns are already two points' coordinates
             CKind::HorizontalPoints => K::Horizontal,
             CKind::VerticalPoints => K::Vertical,
+            CKind::HorizontalDistance => K::HorizontalDistance,
+            CKind::VerticalDistance => K::VerticalDistance,
         }
     }
 }
@@ -636,7 +650,9 @@ impl Constraint {
             return crate::curve::local_knots(&sk.splines[sp].knots, span).to_vec();
         }
         match self.kind {
-            CKind::Distance => vec![self.args[2].num()],
+            CKind::Distance | CKind::HorizontalDistance | CKind::VerticalDistance => {
+                vec![self.args[2].num()]
+            }
             CKind::DragTarget => {
                 vec![self.args[1].num(), self.args[2].num(), self.args[3].num()]
             }
@@ -693,7 +709,9 @@ impl Constraint {
             CKind::Coincident
             | CKind::Distance
             | CKind::HorizontalPoints
-            | CKind::VerticalPoints => [pt(0), pt(1)].concat(),
+            | CKind::VerticalPoints
+            | CKind::HorizontalDistance
+            | CKind::VerticalDistance => [pt(0), pt(1)].concat(),
             CKind::Midpoint | CKind::PointOnLine | CKind::PointLineDistance => {
                 [pt(0), ln(1)].concat()
             }

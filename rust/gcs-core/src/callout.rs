@@ -327,6 +327,13 @@ pub fn frame(sk: &Sketch, c: &Constraint) -> Option<Frame> {
             let d = unit(sub(b, a))?;
             Some(Frame::Linear { o: mid(a, b), d, n: perp(d) })
         }
+        // a run or a rise is written in the page's frame, not the pair's: the number does not
+        // turn with the two points, which is the whole of what makes it a different dimension
+        CKind::HorizontalDistance | CKind::VerticalDistance => {
+            let (a, b) = ends(sk, c)?;
+            let d = axis_of(c.kind);
+            Some(Frame::Linear { o: mid(a, b), d, n: perp(d) })
+        }
         CKind::Radius | CKind::AnnularDistance => {
             let e = c.args[0].ent();
             Some(Frame::Polar { o: sk.point_xy(sk.round_center(e)), th0: sweep_start(sk, e) })
@@ -339,11 +346,45 @@ pub fn frame(sk: &Sketch, c: &Constraint) -> Option<Frame> {
     }
 }
 
+/// The direction a run or a rise is measured along: the page's own axes.
+fn axis_of(k: CKind) -> P {
+    if k == CKind::VerticalDistance { (0.0, 1.0) } else { (1.0, 0.0) }
+}
+
+/// Which of the three dimensions between two points a callout dropped at `at` states.
+///
+/// A dimension line stands off *across* what it measures, so where the number is put is what
+/// says which measurement was meant: the direction from the middle of the pair out to `at`
+/// picks the nearest of the three lines a dimension line could lie along — the pair's own (a
+/// length), the page's x (the run between them) or the page's y (the rise).  Nearest, not a
+/// threshold: the borders are the bisectors, so every direction belongs to exactly one region
+/// and the three meet where they should.  A tie goes to the length, which is the dimension the
+/// pair already looked like it wanted.
+///
+/// This is how a dimension is chosen by putting it somewhere rather than by being asked, so it
+/// has to agree with the figure that then gets drawn — which is why it is here, beside the
+/// frames, and not in a front end.
+pub fn pair_dimension(a: P, b: P, at: P) -> CKind {
+    let (Some(d), Some(off)) = (unit(sub(b, a)), unit(sub(at, mid(a, b)))) else {
+        return CKind::Distance;
+    };
+    // |dot| and not dot: a dimension line and its reverse are the same line
+    let mut best = (dot(off, perp(d)).abs(), CKind::Distance);
+    for (k, across) in [(CKind::HorizontalDistance, (0.0, 1.0)),
+                        (CKind::VerticalDistance, (1.0, 0.0))] {
+        let s = dot(off, across).abs();
+        if s > best.0 + 1e-12 {
+            best = (s, k);
+        }
+    }
+    best.1
+}
+
 /// The two points a straight dimension's arrowheads land on.  The layout and the frame have to
 /// agree about these, so both ask here.
 fn ends(sk: &Sketch, c: &Constraint) -> Option<(P, P)> {
     match c.kind {
-        CKind::Distance => {
+        CKind::Distance | CKind::HorizontalDistance | CKind::VerticalDistance => {
             Some((sk.point_xy(c.args[0].ent().i()), sk.point_xy(c.args[1].ent().i())))
         }
         CKind::PointLineDistance => {
@@ -493,6 +534,7 @@ impl Pen<'_> {
     fn one(&mut self, c: &Constraint) -> Option<Callout> {
         match c.kind {
             CKind::Distance => self.distance(c),
+            CKind::HorizontalDistance | CKind::VerticalDistance => self.axis_distance(c),
             CKind::PointLineDistance => self.point_line(c),
             CKind::ParallelDistance => self.parallel(c),
             CKind::Radius => self.radius(c),
@@ -584,44 +626,60 @@ impl Pen<'_> {
 
     /* -- the shared figures -------------------------------------------------- */
 
-    /// "The distance from `a` to `b` is `text`", with the dimension line standing `off` to the
-    /// left of `a`→`b` (negative puts it on the right) and the number `shift` along it from the
-    /// middle.  Extension lines spring back to the two points whenever the line stands off at
-    /// all.  Too short a span puts the heads outside and the number past the far end, which is
-    /// what a drawing does rather than shrink either.
-    fn linear(&self, id: u32, a: P, b: P, place: (f64, f64), text: &str) -> Callout {
+    /// "The distance from `a` to `b` is `text`", measured along `a`→`b` itself — the figure a
+    /// length is drawn as.  Two points in the same place have no direction to measure along, so
+    /// the number gets a leader instead.
+    fn aligned(&self, id: u32, a: P, b: P, place: (f64, f64), text: &str) -> Callout {
+        match unit(sub(b, a)) {
+            Some(d) => self.linear(id, a, b, d, place, text),
+            None => self.note(id, CalloutKind::Linear, a, text),
+        }
+    }
+
+    /// The same figure, measured along a direction of its own: the dimension line lies along
+    /// `d`, standing `off` to its left of the middle of the two points (negative puts it on the
+    /// right), with the number `shift` along it.  The heads land where the two points *fall* on
+    /// that line and each extension line runs out to its own point from wherever it is — which
+    /// is the whole difference between a length, whose `d` is the pair's own direction and whose
+    /// two extension lines are therefore the same length, and a run across the page.  Too short
+    /// a span puts the heads outside and the number past the far end, which is what a drawing
+    /// does rather than shrink either.
+    fn linear(&self, id: u32, a: P, b: P, d: P, place: (f64, f64), text: &str) -> Callout {
         let (shift, off) = place;
-        let Some(d) = unit(sub(b, a)) else {
-            return self.note(id, CalloutKind::Linear, a, text);
-        };
         let n = perp(d);
         let s = if off < 0.0 { -1.0 } else { 1.0 };
-        let (a1, b1) = (along(a, n, off), along(b, n, off));
+        let lvl = dot(n, mid(a, b)) + off;                  // the dimension line's own level
+        let (ra, rb) = (lvl - dot(n, a), lvl - dot(n, b));  // and how far each point is from it
+        let (a1, b1) = (along(a, n, ra), along(b, n, rb));
         let (tw, th) = (self.px(FONT_PX * text_em(text)), self.px(FONT_PX));
         let head = self.px(ARROW_PX);
         let mut k = Callout::new(id, CalloutKind::Linear, text);
         k.solid.push(Seg(a1, b1));
-        if off.abs() > 1e-12 {
-            let g = s * self.px(GAP_PX).min(off.abs());
-            let o = off + s * self.px(OVER_PX);
-            k.thin.push(Seg(along(a, n, g), along(a, n, o)));
-            k.thin.push(Seg(along(b, n, g), along(b, n, o)));
+        for (p, r) in [(a, ra), (b, rb)] {
+            if r.abs() > 1e-12 {
+                let sr = r.signum();
+                let g = sr * self.px(GAP_PX).min(r.abs());
+                k.thin.push(Seg(along(p, n, g), along(p, n, r + sr * self.px(OVER_PX))));
+            }
         }
-        k.angle = readable(d.1.atan2(d.0));
+        // the heads face along the dimension line, which runs backwards when the second point
+        // is behind the first across the page — a run of -30 is drawn, and reads, right to left
+        let dd = unit(sub(b1, a1)).unwrap_or(d);
+        k.angle = readable(dd.1.atan2(dd.0));
         let over = s * (self.px(TEXT_GAP_PX) + 0.5 * th);
-        if len(sub(b, a)) >= tw + 2.2 * head {
-            k.arrows.push(Arrow { at: a1, dir: mul(d, -1.0) });
-            k.arrows.push(Arrow { at: b1, dir: d });
-            k.anchor = along(along(mid(a1, b1), d, shift), n, over);
+        if len(sub(b1, a1)) >= tw + 2.2 * head {
+            k.arrows.push(Arrow { at: a1, dir: mul(dd, -1.0) });
+            k.arrows.push(Arrow { at: b1, dir: dd });
+            k.anchor = along(along(mid(a1, b1), dd, shift), n, over);
         } else {
             // no room between the points: the heads close in from outside and the number sits
             // beyond the far end, on a line stretched out to carry it
-            k.arrows.push(Arrow { at: a1, dir: d });
-            k.arrows.push(Arrow { at: b1, dir: mul(d, -1.0) });
+            k.arrows.push(Arrow { at: a1, dir: dd });
+            k.arrows.push(Arrow { at: b1, dir: mul(dd, -1.0) });
             let stub = 2.5 * head;
-            k.solid.push(Seg(along(a1, d, -stub), a1));
-            k.solid.push(Seg(b1, along(b1, d, stub + tw)));
-            k.anchor = along(along(b1, d, stub + 0.5 * tw + shift), n, over);
+            k.solid.push(Seg(along(a1, dd, -stub), a1));
+            k.solid.push(Seg(b1, along(b1, dd, stub + tw)));
+            k.anchor = along(along(b1, dd, stub + 0.5 * tw + shift), n, over);
         }
         k.place = place;
         self.seal(&mut k);
@@ -674,7 +732,24 @@ impl Pen<'_> {
             let s = if dot(n, sub(mid(a, b), self.hub)) < 0.0 { -1.0 } else { 1.0 };
             (0.0, s * (self.px(OFFSET_PX) + self.lane(a, b, d, mul(n, s), &text)))
         });
-        Some(self.linear(c.id, a, b, place, &text))
+        Some(self.aligned(c.id, a, b, place, &text))
+    }
+
+    /// A run or a rise between two points: the dimension line lies along the page's own axis,
+    /// the heads where the two points fall on it, and an extension line out to each of them from
+    /// wherever it happens to be.  Left where it fell it stands off past the further of the two,
+    /// so the figure clears the pair however the pair is turned.
+    fn axis_distance(&mut self, c: &Constraint) -> Option<Callout> {
+        let (a, b) = ends(self.sk, c)?;
+        let text = dimension_text(c)?;
+        let d = axis_of(c.kind);
+        let n = perp(d);
+        let place = self.placed(c).unwrap_or_else(|| {
+            let s = if dot(n, sub(mid(a, b), self.hub)) < 0.0 { -1.0 } else { 1.0 };
+            let clear = 0.5 * (dot(n, b) - dot(n, a)).abs();
+            (0.0, s * (clear + self.px(OFFSET_PX) + self.lane(a, b, d, mul(n, s), &text)))
+        });
+        Some(self.linear(c.id, a, b, d, place, &text))
     }
 
     /// A point and a line: measured along the perpendicular, right where it is measured, since
@@ -688,7 +763,7 @@ impl Pen<'_> {
         let (a0, a1) = seg(self.sk, i);
         let text = dimension_text(c)?;
         let place = self.placed(c).unwrap_or((0.0, 0.0));
-        let mut k = self.linear(c.id, foot, p, place, &text);
+        let mut k = self.aligned(c.id, foot, p, place, &text);
         witness(&mut k, a0, a1, a0, d, dot(sub(p, a0), d), foot);
         // and a witness through the point, parallel to the line, so the measurement reads as an
         // offset from that edge rather than as a stray segment
@@ -707,7 +782,7 @@ impl Pen<'_> {
         let (p2, q2) = seg(self.sk, i2);
         let text = dimension_text(c)?;
         let place = self.placed(c).unwrap_or((0.0, 0.0));
-        let mut k = self.linear(c.id, a, b, place, &text);
+        let mut k = self.aligned(c.id, a, b, place, &text);
         let t = dot(sub(a, p1), d);
         witness(&mut k, p1, q1, p1, d, t, a);
         witness(&mut k, p2, q2, p1, d, t, b);
@@ -752,7 +827,7 @@ impl Pen<'_> {
         // the ray fixes where on the ring it is measured; what is left of the placement slides
         // the number along that ray, out of the middle of the gap
         let shift = place.1 - len(sub(mid(a, b), c1));
-        let mut k = self.linear(c.id, a, b, (shift, 0.0), &text);
+        let mut k = self.aligned(c.id, a, b, (shift, 0.0), &text);
         k.place = place;   // the ring is drawn as a straight gap but placed round its centre
         k.thin.push(Seg(c1, a)); // the radius the ring is measured out from
         Some(k)

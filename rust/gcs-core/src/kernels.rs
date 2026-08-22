@@ -37,9 +37,11 @@ pub enum K {
     PointOnSpline,
     SplineTangentLine,
     SplineCurvature,
+    HorizontalDistance,
+    VerticalDistance,
 }
 
-pub const N_KERNELS: usize = 24;
+pub const N_KERNELS: usize = 26;
 
 pub struct Kernel {
     pub name: &'static str,
@@ -156,6 +158,38 @@ fn distance_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
         j[o + 2] = -dx;
         j[o + 3] = -dy;
     }
+}
+
+/// (px,py,qx,qy), K = (d): the run from p to q across the page, signed — (qx - px) - d.
+/// Nothing is squared and nothing is divided, so the Jacobian below is a constant: this is the
+/// best-conditioned row in the system, and it stays that way with the two points one directly
+/// above the other, which is exactly the pose someone reaches for a horizontal dimension in.
+/// The sign is the price: negating `d` moves the second point across, as it does for the other
+/// dimensions written as a signed distance.
+fn horizontal_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 4 * i;
+        r[i] = v[o + 2] - v[o] - k[i];
+    }
+}
+
+/// And the rise: (qy - py) - d.
+fn vertical_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 4 * i;
+        r[i] = v[o + 3] - v[o + 1] - k[i];
+    }
+}
+
+static HORIZONTAL_DISTANCE_J: &[f64] = &[-1.0, 0.0, 1.0, 0.0];
+static VERTICAL_DISTANCE_J: &[f64] = &[0.0, -1.0, 0.0, 1.0];
+
+fn horizontal_distance_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
+    lin_jac(n, HORIZONTAL_DISTANCE_J, j)
+}
+
+fn vertical_distance_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
+    lin_jac(n, VERTICAL_DISTANCE_J, j)
 }
 
 /// (px,py), K = (tx,ty,w): the soft drag target
@@ -836,6 +870,8 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "point_on_spline", n_res: 2, n_par: N_PAR_ON_SPLINE, degree: 1, n_const: SPAN_K, res: point_on_spline_res, jac: point_on_spline_jac, const_jac: None },
     Kernel { name: "spline_tangent_line", n_res: 2, n_par: N_PAR_SPLINE_LINE, degree: 1, n_const: SPAN_K, res: spline_tangent_line_res, jac: spline_tangent_line_jac, const_jac: None },
     Kernel { name: "spline_curvature", n_res: 3, n_par: N_PAR_SPLINE_CURVE, degree: 1, n_const: SPAN_K, res: spline_curvature_res, jac: spline_curvature_jac, const_jac: None },
+    Kernel { name: "horizontal_distance", n_res: 1, n_par: 4, degree: 1, n_const: 1, res: horizontal_distance_res, jac: horizontal_distance_jac, const_jac: Some(HORIZONTAL_DISTANCE_J) },
+    Kernel { name: "vertical_distance", n_res: 1, n_par: 4, degree: 1, n_const: 1, res: vertical_distance_res, jac: vertical_distance_jac, const_jac: Some(VERTICAL_DISTANCE_J) },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

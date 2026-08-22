@@ -67,6 +67,28 @@ interface Animation {
   showing: number;
 }
 
+/** The other dimensions a selection could have taken, and how to say the same thing as one of
+ *  them.  Two points can be measured three ways — the length between them, the run, or the rise
+ *  — and which one is meant is decided by where the number is put, so the alternatives have to
+ *  outlive the click that started the dimension. */
+export interface DimAlt {
+  a: Point;
+  b: Point;
+  make(kind: string): Constraint;
+}
+
+/** A dimension being written: the constraints the number will land on, the ones that had to be
+ *  added to say it, what else it could have been, and the document as it was before any of it —
+ *  which is what Escape puts back. */
+export interface LiveDim {
+  targets: Constraint[];
+  fresh: Constraint[];
+  alt: DimAlt | null;
+  before: string;
+  /** Still following the pointer: the click that plants it is what ends this. */
+  placing: boolean;
+}
+
 /** A place a click asked for, and the Point it came from if it came from one. */
 export interface Place {
   at: [number, number];
@@ -118,6 +140,13 @@ export class SketchView {
   onPickConstraint: (c: Constraint) => void = () => {};
   /** And double-clicked: the shell opens its value for editing. */
   onEditConstraint: (c: Constraint) => void = () => {};
+  /** A dimension is being written, and this is where its number is on screen — the shell puts
+   *  an editor there.  Called again whenever the callout moves or turns into another kind, and
+   *  with nulls when there is no longer one being written. */
+  onDimension: (live: LiveDim | null, at: [number, number] | null) => void = () => {};
+
+  /** The dimension being written, if any — see `startDimension`. */
+  liveDim: LiveDim | null = null;
 
   private ctx: CanvasRenderingContext2D;
   private cursor: [number, number] = [0, 0];
@@ -198,6 +227,8 @@ export class SketchView {
   private swap(sk: Sketch, fit: boolean): void {
     this.stopAnimation();             // before the swap: it restores into the sketch it started on
     this.abandonGesture();            // before the swap: `end` would commit into the new sketch
+    this.liveDim = null;              // and a dimension half-written belongs to the old document
+    this.onDimension(null, null);
     this.sketch = sk;
     this.selected = [];
     this.highlight = [];
@@ -382,7 +413,14 @@ export class SketchView {
    *  check cannot see that, so it lurks until an unrelated edit tips its block into a
    *  spurious over-constrained report — a long way from the click that caused it. */
   addConstraints(...cs: Constraint[]): void {
-    if (!cs.length) return;
+    if (cs.length) this.pushUndo();
+    this.applyConstraints(...cs);
+  }
+
+  /** The same, without the undo entry: for an edit that is still being made, and so does not
+   *  know yet whether it will come to anything.  Returns the ones that were actually added. */
+  applyConstraints(...cs: Constraint[]): Constraint[] {
+    if (!cs.length) return [];
     const have = this.sketch.userConstraints();
     const fresh: Constraint[] = [];
     for (const c of cs) {                        // ...against this batch too, not just the sketch
@@ -393,11 +431,10 @@ export class SketchView {
     if (!fresh.length) {
       const kinds = [...new Set(cs.map((c) => c.typeName))].join(' + ');
       this.onStatus(`${kinds} is already on this selection — nothing added`);
-      return;
+      return [];
     }
     const skipped = cs.length - fresh.length;
     cs = fresh;
-    this.pushUndo();
     const impliedBefore = new Set(this.diagnosis?.implied ?? []);
     this.sketch.add(...cs);
     const res = this.afterEdit();
@@ -417,12 +454,104 @@ export class SketchView {
       ? ` — consistent; ${newlyImplied.map((k) => io.describe(k, this.sketch)).join(', ')} now follow from the rest`
       : '';
     this.onStatus(`added ${what}${dup}${why}`);
+    return cs;
   }
 
   removeConstraint(c: Constraint): void {
     this.pushUndo();
     this.sketch.remove(c);
     this.afterEdit();
+  }
+
+  /* -- writing a dimension ------------------------------------------------ */
+
+  /** Start writing a dimension: the constraints are stated at once, at what they measure now,
+   *  and the number goes on the drawing where it will stay rather than into a box in the middle
+   *  of the screen.  `fresh` is the part of `targets` that had to be added — while there is any,
+   *  the callout follows the pointer until a click plants it, and on a point pair (`alt`) where
+   *  it is put decides *which* of the three dimensions it states.  Nothing reaches the undo
+   *  stack until the number is accepted; Escape takes the whole thing back out.
+   *
+   *  False if the constraints could not be added, in which case there is nothing to write. */
+  startDimension(targets: Constraint[], fresh: Constraint[], alt: DimAlt | null): boolean {
+    this.endDimension(false);
+    if (!targets.length) return false;
+    const before = io.dumps(this.sketch);
+    if (fresh.length && !this.applyConstraints(...fresh).length) return false;
+    this.liveDim = { targets, fresh, alt, before, placing: fresh.length > 0 };
+    this.litConstraint = targets[0];
+    if (this.liveDim.placing) this.moveDimension(this.cursor);
+    this.tellDimension();
+    this.draw();
+    return true;
+  }
+
+  /** The number follows the pointer while it is being placed, and on a point pair it changes
+   *  what it says as it goes: a dimension line stands off across what it measures, so putting
+   *  the number above a pair asks for the run and out to the side asks for the rise.  The rule
+   *  is the core's — the same one that then draws the figure. */
+  private moveDimension(sp: [number, number]): void {
+    const live = this.liveDim;
+    if (!live) return;
+    const at = this.s2w(sp[0], sp[1]);
+    if (live.alt) this.retarget(live, at);
+    const c = live.targets[0];
+    if (c.id >= 0) dim.drag(this.sketch, c.id, at[0], at[1], [0, 0]);
+    this.tellDimension();
+  }
+
+  /** Say the same thing as a different kind of dimension, because the number was put where that
+   *  is what it means.  The old one goes and the new one takes its place: it is the same edit,
+   *  still unfinished, so it makes no undo entry of its own. */
+  private retarget(live: LiveDim, at: [number, number]): void {
+    const { a, b, make } = live.alt!;
+    const want = dim.pairDimension([a.x.value, a.y.value], [b.x.value, b.y.value], at);
+    const was = live.targets[0];
+    if (was.typeName === want) return;
+    this.sketch.remove(was);
+    const c = make(want);
+    this.sketch.add(c);
+    live.targets[0] = c;
+    live.fresh = [c];
+    this.litConstraint = c;
+    this.afterEdit();          // a different constraint: the list, the DOF and the diagnosis move
+  }
+
+  /** The click that plants it: the number stops following the pointer and stays where it was
+   *  put, a placement like any other.  What it says is still open. */
+  placeDimension(): void {
+    if (this.liveDim) this.liveDim.placing = false;
+  }
+
+  /** Done writing.  Accepted, what was there before goes on the undo stack, so the constraint,
+   *  where it was put and what it says are one step back together; refused, the constraints
+   *  that were added to say it come out again and nothing happened at all. */
+  endDimension(commit: boolean): void {
+    const live = this.liveDim;
+    if (!live) return;
+    this.liveDim = null;
+    this.litConstraint = null;
+    if (commit) {
+      this.pushUndo(live.before);
+    } else {
+      for (const c of live.fresh) this.sketch.remove(c);
+    }
+    this.afterEdit();
+    this.onDimension(null, null);
+  }
+
+  /** Where the live dimension's number is on the screen, so the shell can put its editor
+   *  there.  Clamped into the canvas: a callout can be laid out off the edge, and an editor
+   *  nobody can see is worse than one a little out of place. */
+  private tellDimension(): void {
+    const live = this.liveDim;
+    if (!live) return;
+    const k = dim.callouts(this.sketch, this.unit).items.find((i) => i.id === live.targets[0].id);
+    if (!k) return this.onDimension(live, null);
+    const [x, y] = this.w2s(k.anchor[0], k.anchor[1]);
+    const pad = 24;
+    this.onDimension(live, [Math.min(Math.max(x, pad), this.width - pad),
+                            Math.min(Math.max(y, pad), this.height - pad)]);
   }
 
   deleteSelected(): void {
@@ -1113,8 +1242,23 @@ export class SketchView {
       return;
     }
     if (e.button !== 0) return;
+    // a dimension still following the pointer: this click is what plants it.  The default is
+    // refused so the focus stays in its editor — the number is still being typed
+    if (this.liveDim?.placing) {
+      e.preventDefault();
+      this.placeDimension();
+      return;
+    }
     if (this.tool !== 'select') {
       this.toolClick(sp);
+      return;
+    }
+    // a number still being written, on a pair that can be measured three ways: taking hold of
+    // it goes on choosing which, exactly as it did before the click that planted it
+    const live = this.liveDim;
+    if (live?.alt && this.pickCallout(sp[0], sp[1]) === live.targets[0]) {
+      e.preventDefault();                       // the focus stays in the editor
+      this.gesture = { transient: true, move: (at) => this.moveDimension(at) };
       return;
     }
     // a dimension is painted over the geometry, so a press that lands on one takes hold of it:
@@ -1272,7 +1416,8 @@ export class SketchView {
   private onPointerMove(e: PointerEvent): void {
     const sp = this.local(e);
     this.cursor = sp;
-    if (this.gesture) this.gesture.move(sp);
+    if (this.liveDim?.placing) this.moveDimension(sp);
+    else if (this.gesture) this.gesture.move(sp);
     else this.hover(sp);
     this.draw();
   }

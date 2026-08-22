@@ -13,7 +13,7 @@ import { Sketch } from '../core/model.js';
 import { callouts } from '../core/callout.js';
 import { PlanDrag } from '../core/decompose.js';
 import { solve } from '../core/system.js';
-import { SketchView } from '../app/view.js';
+import { DimAlt, SketchView } from '../app/view.js';
 import { initCore } from '../core/wasm.js';
 import { fakeCanvas, pointer } from './canvas.js';
 
@@ -434,4 +434,109 @@ test('a dimension already on the selection is edited, not stated twice', () => {
   assert.equal(C.stating(sk, new C.Distance(a, sk.point(0, 10), 80)), null, 'a different pair');
   assert.equal(C.stating(sk, new C.Horizontal(sk.line(a, b))), null, 'a different type');
   sk.dispose();
+});
+
+/* -- writing a dimension --------------------------------------------------------------- */
+
+/** Two free points on a diagonal, and the three dimensions they could take — the same
+ *  alternatives the Dimension button builds. */
+function pairToDimension(): { view: SketchView; sk: Sketch; alt: DimAlt } {
+  const sk = new Sketch();
+  const a = sk.point(0, 0, true), b = sk.point(40, 40);
+  const view = viewOn(sk);
+  const make = (kind: string): Constraint => {
+    const v = kind === 'HorizontalDistance' ? b.x.value - a.x.value
+            : kind === 'VerticalDistance' ? b.y.value - a.y.value
+            : Math.hypot(b.x.value - a.x.value, b.y.value - a.y.value);
+    return C.build(kind, [a, b, v]);
+  };
+  return { view, sk, alt: { a, b, make } };
+}
+
+test('where the number is put is which dimension it is', () => {
+  const { view, sk, alt } = pairToDimension();
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const first = alt.make('Distance');
+  assert.ok(view.startDimension([first], [first], alt));
+  assert.equal(sk.userConstraints().length, 1, 'stated at once, not after a dialog');
+
+  const at = (dx: number, dy: number): [number, number] => view.w2s(20 + dx, 20 + dy);
+  const kind = (): string => view.liveDim!.targets[0].typeName;
+  cv.fire('pointermove', pointer(...at(-30, 30)));      // across the pair: its own length
+  assert.equal(kind(), 'Distance');
+  cv.fire('pointermove', pointer(...at(0, 40)));        // above it: the run
+  assert.equal(kind(), 'HorizontalDistance');
+  assert.equal(view.sketch.userConstraints().length, 1, 'the old one should have gone');
+  assert.equal((view.liveDim!.targets[0] as unknown as { d: number }).d, 40);
+  cv.fire('pointermove', pointer(...at(40, 0)));        // out to the side: the rise
+  assert.equal(kind(), 'VerticalDistance');
+
+  // the number goes where it is put: the callout's placement follows the pointer
+  const k = callouts(sk, 1 / view.scale).items[0];
+  const [sx, sy] = view.w2s(...k.anchor);
+  const [px, py] = at(40, 0);
+  assert.ok(Math.hypot(sx - px, sy - py) < 30, `the callout stayed behind: ${sx}, ${sy}`);
+});
+
+test('a dimension being written is one edit, and Escape takes all of it back', () => {
+  const { view, sk, alt } = pairToDimension();
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const before = io.dumps(sk);
+  const first = alt.make('Distance');
+  view.startDimension([first], [first], alt);
+  cv.fire('pointermove', pointer(...view.w2s(20, 60)));
+  view.endDimension(false);
+  assert.equal(sk.userConstraints().length, 0, 'the constraint should have come back out');
+  assert.equal(io.dumps(sk), before, 'and its placement with it');
+  assert.equal(view.liveDim, null);
+
+  // accepted, it is one step back — the constraint, where it was put and what it says together
+  const c = alt.make('Distance');
+  view.startDimension([c], [c], alt);
+  cv.fire('pointermove', pointer(...view.w2s(20, 60)));
+  view.endDimension(true);
+  assert.equal(sk.userConstraints().length, 1);
+  view.undo();
+  assert.equal(view.sketch.userConstraints().length, 0);
+});
+
+test('a click plants the number, and the pointer stops carrying it', () => {
+  const { view, sk, alt } = pairToDimension();
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const c = alt.make('Distance');
+  view.startDimension([c], [c], alt);
+  cv.fire('pointermove', pointer(...view.w2s(-20, 20)));
+  const kind = view.liveDim!.targets[0].typeName;
+  cv.fire('pointerdown', pointer(...view.w2s(-20, 20)));
+  cv.fire('pointerup', pointer(...view.w2s(-20, 20)));
+  assert.equal(view.liveDim!.placing, false);
+  const where = callouts(sk, 1 / view.scale).items[0].anchor;
+
+  // moving on now leaves it where it was put, and does not turn it into a different dimension
+  cv.fire('pointermove', pointer(...view.w2s(20, 60)));
+  assert.equal(view.liveDim!.targets[0].typeName, kind);
+  assert.deepEqual(callouts(sk, 1 / view.scale).items[0].anchor, where);
+
+  // but it is still being written, so taking hold of it goes on choosing which one it is
+  const on = view.w2s(...callouts(sk, 1 / view.scale).items[0].anchor);
+  cv.fire('pointerdown', pointer(...on));
+  cv.fire('pointermove', pointer(...view.w2s(20, 60)));
+  assert.equal(view.liveDim!.targets[0].typeName, 'HorizontalDistance');
+  cv.fire('pointerup', pointer(...view.w2s(20, 60)));
+  view.endDimension(true);
+});
+
+test('a dimension already on the drawing is opened, not stated twice', () => {
+  const { view, sk, alt } = pairToDimension();
+  const c = alt.make('Distance');
+  view.startDimension([c], [c], alt);
+  view.endDimension(true);
+  const there = sk.userConstraints()[0];
+
+  // the shell finds it with `stating` and passes it as a target with nothing fresh
+  assert.ok(view.startDimension([there], [], null));
+  assert.equal(sk.userConstraints().length, 1);
+  assert.equal(view.liveDim!.placing, false, 'an existing dimension is not being placed');
+  view.endDimension(false);
+  assert.equal(sk.userConstraints().length, 1, 'refusing an edit must not remove it');
 });

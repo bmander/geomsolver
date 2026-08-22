@@ -1212,6 +1212,25 @@ pub unsafe extern "C" fn gcs_callout_drag(h: *mut Sketch, id: i32, x: f64, y: f6
     guard(0, move || callout::drag(sk(h), id as u32, (x, y), (gu, gv)) as i32)
 }
 
+/// Which of the three dimensions between two points a callout dropped at (px, py) states: a
+/// length, the run between them or the rise.  The answer is an index into the registry's type
+/// list, so a front end names it the way it names every other constraint type; -1 if the core
+/// has no such type, which cannot happen.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_dimension_pair_kind(
+    ax: f64,
+    ay: f64,
+    bx: f64,
+    by: f64,
+    px: f64,
+    py: f64,
+) -> i32 {
+    guard(-1, move || {
+        let k = callout::pair_dimension((ax, ay), (bx, by), (px, py));
+        gcs_core::constraints::ALL_KINDS.iter().position(|&e| e == k).map_or(-1, |i| i as i32)
+    })
+}
+
 /// Put dimension `id`'s callout back wherever the layout would have put it; 1 if it had been
 /// moved at all.
 #[no_mangle]

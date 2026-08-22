@@ -88,35 +88,6 @@ export function askNumber(title: string, label: string, value: number, step = 'a
   });
 }
 
-/** Text prompt; resolves null on cancel.  `hint` is shown under the field. */
-export function askText(title: string, label: string, value: string, hint = ''): Promise<string | null> {
-  return open<string | null>(title, (resolve) => {
-    const l = document.createElement('label');
-    l.textContent = label;
-    l.style.display = 'block';
-    l.style.marginBottom = '6px';
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.value = value;
-    input.spellcheck = false;
-    input.style.width = '100%';
-    input.style.boxSizing = 'border-box';
-    const submit = (): void => resolve(input.value);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
-    modalBody.append(l, input);
-    if (hint) {
-      const h = document.createElement('p');
-      h.textContent = hint;
-      h.style.opacity = '0.7';
-      h.style.fontSize = '90%';
-      h.style.marginTop = '8px';
-      modalBody.append(h);
-    }
-    modalActions.append(button('Cancel', () => resolve(null)), button('OK', submit, true));
-    setTimeout(() => { input.focus(); input.select(); }, 0);
-  });
-}
-
 /** Pick one of a list; resolves null on cancel. */
 export function askChoice(title: string, label: string, options: string[]): Promise<number | null> {
   return open<number | null>(title, (resolve) => {

@@ -169,6 +169,18 @@
   }
   #measure.on { display: block; }
   #measure b { color: var(--muted); font-weight: 600; }
+
+  /* a dimension's number, edited where it is drawn: the box sits on the callout's own label,
+     so what is being typed is in the place it will be read */
+  #canvas-wrap input.dim {
+    position: absolute; transform: translate(-50%, -50%); z-index: 5;
+    padding: 1px 3px; text-align: center;
+    font-family: var(--mono); font-size: 12px; line-height: 1.2;
+    color: var(--accent); background: var(--bg);
+    border: 1px solid var(--accent); border-radius: 4px;
+    box-shadow: 0 1px 6px rgba(0,0,0,.18);
+  }
+  #canvas-wrap input.dim:focus { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
 </style>
 </head>
 <body>

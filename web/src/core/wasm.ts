@@ -101,6 +101,8 @@ export interface Abi {
                    out: number): number;
   gcs_callout_drag(h: number, id: number, x: number, y: number, gu: number, gv: number): number;
   gcs_callout_reset(h: number, id: number): number;
+  gcs_dimension_pair_kind(ax: number, ay: number, bx: number, by: number,
+                          px: number, py: number): number;
   gcs_fmt_g(v: number, sig: number): number;
 
   gcs_branches_json(h: number): number;

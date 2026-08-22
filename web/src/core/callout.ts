@@ -4,6 +4,7 @@
  * the number beside it are all geometry, so all of it comes from `gcs-core/src/callout.rs` in
  * world coordinates.  This module is a proxy over that one call; the view maps the points to the
  * screen with the same transform it draws the sketch through. */
+import { REGISTRY } from './constraints.js';
 import { Sketch } from './model.js';
 import { core, takeJson, withBuf } from './wasm.js';
 
@@ -82,4 +83,14 @@ export function drag(sk: Sketch, id: number, x: number, y: number,
  *  so a caller can tell an edit from a no-op. */
 export function reset(sk: Sketch, id: number): boolean {
   return core().gcs_callout_reset(sk.handle, id) !== 0;
+}
+
+/** Which of the three dimensions between two points a callout dropped at `at` states: the
+ *  length between them, the run, or the rise.  Where the number is put is what says which
+ *  measurement was meant — see `callout::pair_dimension`, which is also what draws the figure
+ *  that results, so the two cannot disagree.  The answer is a constraint type name. */
+export function pairDimension(a: readonly [number, number], b: readonly [number, number],
+                              at: readonly [number, number]): string {
+  const i = core().gcs_dimension_pair_kind(a[0], a[1], b[0], b[1], at[0], at[1]);
+  return REGISTRY().types[i].name;
 }

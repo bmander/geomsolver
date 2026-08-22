@@ -12,7 +12,8 @@ use std::f64::consts::PI;
 ///
 /// Distance across the slot, PointLineDistance from the free point to its floor,
 /// ParallelDistance between floor and ceiling, Angle at the shoulder, Radius on the outer
-/// circle and AnnularDistance between the two.
+/// circle, AnnularDistance between the two, and the run and rise from the free point to the
+/// shoulder.
 fn all_dimensions() -> Sketch {
     let mut sk = Sketch::new();
     let a = sk.point(0.0, 0.0, true, "");
@@ -45,6 +46,15 @@ fn all_dimensions() -> Sketch {
     sk.add(Constraint::new(
         CKind::AnnularDistance,
         vec![Arg::Ent(ci), Arg::Ent(co), Arg::Num(10.0)],
+    ));
+    // the run and the rise from the free point up to the shoulder
+    sk.add(Constraint::new(
+        CKind::HorizontalDistance,
+        vec![Arg::Ent(EntRef::point(e)), Arg::Ent(EntRef::point(c)), Arg::Num(50.0)],
+    ));
+    sk.add(Constraint::new(
+        CKind::VerticalDistance,
+        vec![Arg::Ent(EntRef::point(e)), Arg::Ent(EntRef::point(c)), Arg::Num(15.0)],
     ));
     sk
 }
@@ -592,4 +602,66 @@ fn grabbing_a_constraint_that_has_no_callout_is_not_a_trap() {
     assert_eq!(grab(&sk, 1.0, 9999, (0.0, 0.0)), None);
     assert!(!drag(&mut sk, 9999, (0.0, 0.0), (0.0, 0.0)));
     assert!(!reset(&mut sk, 9999));
+}
+
+/// Two points, dimensioned three ways: which one it is comes from where the number is put.
+#[test]
+fn where_a_dimension_is_put_is_which_dimension_it_is() {
+    use gcs_core::callout::pair_dimension;
+    let (a, b) = ((0.0, 0.0), (40.0, 40.0));   // a diagonal pair, so all three are reachable
+    let mid = (20.0, 20.0);
+    let out = |dx: f64, dy: f64| (mid.0 + dx, mid.1 + dy);
+    // across the pair is the length it already looked like it wanted
+    assert_eq!(pair_dimension(a, b, out(-30.0, 30.0)), CKind::Distance);
+    assert_eq!(pair_dimension(a, b, out(30.0, -30.0)), CKind::Distance, "and on the other side");
+    // above or below it, the dimension line lies along the page's x: the run between them
+    assert_eq!(pair_dimension(a, b, out(0.0, 40.0)), CKind::HorizontalDistance);
+    assert_eq!(pair_dimension(a, b, out(3.0, -40.0)), CKind::HorizontalDistance);
+    // out to either side, along y: the rise
+    assert_eq!(pair_dimension(a, b, out(40.0, 0.0)), CKind::VerticalDistance);
+    assert_eq!(pair_dimension(a, b, out(-40.0, -3.0)), CKind::VerticalDistance);
+    // the borders are the bisectors, and nothing degenerate is an error
+    assert_eq!(pair_dimension(a, b, mid), CKind::Distance, "nowhere in particular");
+    assert_eq!(pair_dimension(a, a, out(0.0, 40.0)), CKind::Distance, "no pair to measure");
+    // a level pair reads the same either way, so the length wins the tie
+    assert_eq!(pair_dimension((0.0, 0.0), (40.0, 0.0), (20.0, 30.0)), CKind::Distance);
+    assert_eq!(pair_dimension((0.0, 0.0), (40.0, 0.0), (60.0, 0.0)), CKind::VerticalDistance);
+}
+
+/// A run is drawn along the page, whatever the pair is doing: the dimension line is horizontal
+/// and each extension line reaches its own point, however far apart across it the two are.
+#[test]
+fn a_run_is_drawn_along_the_page_and_reaches_both_points() {
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, true, "");
+    let b = sk.point(30.0, 20.0, false, "");
+    let (pa, pb) = (EntRef::point(a), EntRef::point(b));
+    let run = sk.add(Constraint::new(CKind::HorizontalDistance, vec![Arg::Ent(pa), Arg::Ent(pb),
+                                                                     Arg::Num(30.0)]));
+    let rise = sk.add(Constraint::new(CKind::VerticalDistance, vec![Arg::Ent(pa), Arg::Ent(pb),
+                                                                    Arg::Num(20.0)]));
+    let of = |sk: &Sketch, id: u32| layout(sk, 1.0).into_iter().find(|k| k.id == id).unwrap();
+
+    let k = of(&sk, run);
+    assert_eq!(k.text, "30");
+    let Seg(p, q) = k.solid[0];
+    assert!((p.1 - q.1).abs() < 1e-9, "the dimension line is not level: {p:?} {q:?}");
+    assert!((p.0 - 0.0).abs() < 1e-9 && (q.0 - 30.0).abs() < 1e-9, "heads not over the points");
+    // an extension line springs from each point and ends past the dimension line
+    for pt in [(0.0, 0.0), (30.0, 20.0)] {
+        assert!(k.thin.iter().any(|s| (s.0 .0 - pt.0).abs() < 1e-9 && (s.0 .1 - pt.1).abs() < 6.0),
+                "nothing reaches {pt:?}: {:?}", k.thin);
+    }
+
+    let k = of(&sk, rise);
+    assert_eq!(k.text, "20");
+    let Seg(p, q) = k.solid[0];
+    assert!((p.0 - q.0).abs() < 1e-9, "the dimension line is not plumb");
+    assert!((p.1 - 0.0).abs() < 1e-9 && (q.1 - 20.0).abs() < 1e-9);
+
+    // and they hold what they say: the run is set to 50 and only x moves
+    sk.constraints.iter_mut().find(|c| c.id == run).unwrap().args[2] = Arg::Num(50.0);
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    assert!((sk.point_xy(b).0 - 50.0).abs() < 1e-9, "{:?}", sk.point_xy(b));
+    assert!((sk.point_xy(b).1 - 20.0).abs() < 1e-9, "the rise moved with the run");
 }

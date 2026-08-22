@@ -37,6 +37,7 @@ def all_constraints(seed: int):
         C.Coincident(p, q), C.Distance(p, q, 3.0), C.Midpoint(p, l1), C.DragTarget(p, 1, 2, 0.3),
         C.Horizontal(l1), C.Vertical(l1), C.Parallel(l1, l2), C.Perpendicular(l1, l2),
         C.HorizontalPoints(p, q), C.VerticalPoints(p, q),
+        C.HorizontalDistance(p, q, 2.5), C.VerticalDistance(p, q, -1.5),
         C.Angle(l1, l2, 0.7), C.EqualLength(l1, l2), C.PointOnLine(p, l1), C.PointOnCircle(p, c1),
         C.PointOnCircle(p, a), C.Radius(c1, 2.0), C.EqualRadius(c1, a),
         C.TangentLineCircle(l1, c1), C.TangentLineCircle(l1, c1, -1),

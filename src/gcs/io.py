@@ -119,6 +119,17 @@ def callout_reset(c: Constraint) -> bool:
     return bool(lib.gcs_callout_reset(c.sketch._h, c._id))
 
 
+def pair_dimension(a: tuple[float, float], b: tuple[float, float],
+                   at: tuple[float, float]) -> str:
+    """Which of the three dimensions between two points a callout dropped at `at` states: the
+    length between them, the run, or the rise.  Where the number is put is what says which
+    measurement was meant — and the same rule draws the figure, so the two cannot disagree."""
+    from gcs.constraints import _REGISTRY
+
+    i = int(lib.gcs_dimension_pair_kind(a[0], a[1], b[0], b[1], at[0], at[1]))
+    return str(_REGISTRY["types"][i]["name"])
+
+
 def fmt(v: float, sig: int = 4) -> str:
     """Python's %g-style formatting: `sig` significant digits, trailing zeros dropped."""
     return _ffi.take_str(lib.gcs_fmt_g(float(v), int(sig)))
@@ -136,4 +147,5 @@ BY_NAME.update(_TYPES)
 
 __all__ = ["BY_NAME", "callout_drag", "callout_grab", "callout_pick", "callout_reset",
            "callouts", "copy", "describe", "dumps", "fmt", "from_dict", "load", "loads",
-           "name_of", "paste", "save", "to_dict", "without", "ENTITY_KINDS", "expand"]
+           "name_of", "pair_dimension", "paste", "save", "to_dict", "without",
+           "ENTITY_KINDS", "expand"]

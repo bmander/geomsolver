@@ -61,6 +61,28 @@ fn unsupported_constraints_fall_back_to_numeric() {
     assert!(r.success && r.fell_back, "{r:?}");
 }
 
+/// A run or a rise is not a cluster relation — there is no line element to measure it from —
+/// so it goes to the numeric residue on purpose, and the plan solver still comes out with it.
+#[test]
+fn a_run_is_numeric_residue_and_still_solves() {
+    use gcs_core::constraints::{Arg, CKind, Constraint};
+    use gcs_core::model::{EntRef, Sketch};
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, true, "a");
+    let b = sk.point(3.0, 1.0, false, "b");
+    let id = sk.add(Constraint::new(
+        CKind::HorizontalDistance,
+        vec![Arg::Ent(EntRef::point(a)), Arg::Ent(EntRef::point(b)), Arg::Num(30.0)],
+    ));
+    let g = gcs_core::cgraph::build(&sk);
+    assert_eq!(g.unsupported, vec![id]);
+    let mut ps = PlanSolver::new(&sk, false);
+    assert!(!ps.plan.fully_decomposed());
+    let r = ps.solve(&mut sk, 1e-9, true, Method::DogLeg);
+    assert!(r.success, "{r:?}");
+    assert!((sk.point_xy(b).0 - 30.0).abs() < 1e-6, "{:?}", sk.point_xy(b));
+}
+
 #[test]
 fn chirality_flags_follow_the_current_geometry() {
     use gcs_core::constraints::Constraint;

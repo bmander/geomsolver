@@ -169,6 +169,28 @@ Conventions:
   into the constraint list (ids are not stable across a load).  The number a dimension states
   comes from `io::dimension_text`, so the drawing and the constraint list cannot print it
   differently.
+- One straight dimension figure, `Pen::linear`, draws them all: it measures along a *given*
+  direction, puts a head where each point falls on that line and runs an extension line out to
+  each point from wherever it is.  `Pen::aligned` is the case where the direction is the pair's
+  own (a length: both extension lines come out the same); a run or a rise passes a page axis
+  instead, and everything else follows.
+- A dimension between two points is three dimensions — `Distance`, `HorizontalDistance`,
+  `VerticalDistance` — and which one is *stated by where the number is put*.
+  `callout::pair_dimension` picks the nearest of the three lines a dimension line could lie
+  along (the pair's own, the page's x, the page's y) to the direction from the middle of the
+  pair out to the placement.  Nearest, so the borders are the bisectors and there is no
+  threshold; a tie goes to the length.  It lives beside the frames because it has to agree
+  with the figure that then gets drawn.  The front end asks (`gcs_dimension_pair_kind` → a
+  registry index) and swaps the constraint for another as the pointer moves — see
+  `SketchView.startDimension`, which is also the seam where a dimension is written at all: it
+  is stated at once, at what it measures, and its number is edited on the drawing where it
+  will be read.  Nothing reaches the undo stack until the number is accepted, and Escape takes
+  the constraint back out.  The run and the rise are signed from the first point to the second
+  (`(qx - px) - d`, a constant Jacobian — the best-conditioned row there is, and still so with
+  the two points one above the other, which is the pose someone reaches for a run in).  So
+  they do not commute, and a front end orders the pair to make the number read positive.  In
+  `cgraph` they are `unsupported` on purpose: the cluster vocabulary has no element for the
+  line they are really measured from.
 - A dimension's number may be an *expression* (`expr.rs`): `Arg::Expr { text, value }` in a
   `Length`/`Angle` slot, where `value` is what the kernels read (arg units — radians for an
   angle) and `text` is what a person wrote, in the units they read (degrees).  `w = 80` names

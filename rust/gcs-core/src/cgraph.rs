@@ -533,6 +533,13 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
             {
                 // absorbed into the known radii
             }
+            // A run or a rise is neither: it holds one *coordinate* of a pair against the page,
+            // and the cluster vocabulary — a distance between two points, an offset from a point
+            // to a line — has no element to name the line it is really measured from (one
+            // through the first point, along a ground axis).  So it goes to the numeric
+            // residue, deliberately: an edge that said "distance" here would be a lie the merge
+            // ranks would believe.
+            CKind::HorizontalDistance | CKind::VerticalDistance => g.unsupported.push(c.id),
             _ => g.unsupported.push(c.id),
         }
     }

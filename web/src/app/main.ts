@@ -7,14 +7,19 @@
  *             is also where clicking the pressed toolbar button leaves you
  *   select    click (shift = multi), or drag a box over empty canvas to take everything
  *             that lies entirely inside it
- *   constrain I coincident · D dimension — length, radius, offset, ring, or a corner's angle
+ *   constrain I coincident · D dimension — length, run, rise, radius, offset, ring, or a
+ *             corner's angle
  *             H horizontal · V vertical · B parallel · ⇧L perpendicular · ⇧M midpoint
  *             E equal · T tangent · ⇧Q symmetric
- *   dimension every dimensioned constraint is called out on the drawing: click one to select
- *             it, drag it where you want it, double-click it to change its number.  Edit ▸
- *             Re-place dimensions undoes the arranging; Options turns the lot off.  A number
- *             may be an expression — `w = 80` names it, `h = w / 2` and `sin(h * 10)` use it —
- *             and the core evaluates them in dependency order (Solution ▸ Diagnose lists them)
+ *   dimension D states one at once and opens its number where it will be read: move it where
+ *             you want it and click to plant it, type, Enter — Esc takes the whole thing back.
+ *             On two points, where you put it is *which* dimension it is: above or below them
+ *             the run between them, out to either side the rise, across them their length.
+ *             Every dimension is called out on the drawing: click one to select it, drag it
+ *             where you want it, double-click it to change its number.  Edit ▸ Re-place
+ *             dimensions undoes the arranging; Options turns the lot off.  A number may be an
+ *             expression — `w = 80` names it, `h = w / 2` and `sin(h * 10)` use it — and the
+ *             core evaluates them in dependency order (Solution ▸ Diagnose lists them)
  *   editing   F fix/unfix · G construction · Del delete · Ctrl+Z undo · ⇧Ctrl+Z redo ·
  *             Ctrl+X/C/V cut, copy, paste the selection · wheel zoom · right-drag pan
  *   menus     File/Edit/Solution hold everything that is not a tool or a constraint; the
@@ -35,10 +40,10 @@ import { METHODS, Method } from '../core/system.js';
 import { initCore } from '../core/wasm.js';
 import { movingParams, witnessSummary } from '../core/witness.js';
 import { expressions } from '../core/expr.js';
-import { SketchView, Tool } from './view.js';
+import { DimAlt, SketchView, Tool } from './view.js';
 import {
   MenuItem, ToolbarButton, addButton, addCheckbox, addLink, addMenu, addSelect, addSeparator,
-  askChoice, askText, closeMenus, download, openFile, showReport, showSheet, stats,
+  askChoice, closeMenus, download, openFile, showReport, showSheet, stats,
   toast,
 } from './ui.js';
 
@@ -228,7 +233,8 @@ function options(): Promise<void> {
     addCheckbox(box, 'dimensions', view.showDimensions,
                 (v) => { view.showDimensions = v; view.draw(); },
                 'Call out every dimensioned constraint on the drawing — click one to select it, '
-              + 'drag it where you want it, double-click to change its number');
+              + 'drag it where you want it, double-click to change its number.  Asking for a '
+              + 'dimension turns them back on: the number is edited where it is drawn');
     addSelect(box, 'method', [...METHODS], view.method, (m) => {
       view.method = m as Method;
       view.solveNow();
@@ -281,8 +287,9 @@ const INCIDENCE: Simple[] = [
 const CONSTRAINT_BUTTONS: ToolbarButton[] = [
   { label: 'Coincident', key: 'i', onClick: () => cCoincident(),
     title: 'Two points meet · a point on a line · a point on a circle, arc or curve' },
-  { label: 'Dimension', key: 'd', onClick: () => void cDimension(),
-    title: 'Put a number on the selection · a length, a radius, an offset, a ring '
+  { label: 'Dimension', key: 'd', onClick: () => cDimension(),
+    title: 'Put a number on the selection, then place it and type · a length, a radius, an '
+         + 'offset, a ring · on two points, above them is the run and beside them the rise '
          + '· two lines take their gap when parallel and their angle when not' },
   { label: 'Horizontal', key: 'h', onClick: () => cLevel('Horizontal'),
     title: 'Level: one or more lines, or a pair of points with no line between them' },
@@ -353,61 +360,52 @@ function cCoincident(): void {
   applySimple(hit as Simple);
 }
 
-/** What a new dimension's number is: text, like an edit of one — a bare number, or an
- *  expression (`w = 80` names it, `h = w / 2` reads a name).  The core applies the rule when
- *  the constraint is added (a literal is a constant, in degrees for an angle), so the text goes
- *  straight into the constructor.  `current` is the measured value offered as the default. */
-async function askDimension(title: string, label: string, current: number | string)
-  : Promise<string | null> {
-  const shown = typeof current === 'string' ? current
-                                            : String(Number(current.toPrecision(10)));
-  const text = await askText(title, label, shown,
-    'a number, or an expression: “w = 80” names it, “h = w / 2”, “sin(h * 10)” use names; '
-    + 'trigonometry in degrees');
-  return text == null || !text.trim() ? null : text;
+/** One of the three dimensions between two points, stated at what the sketch measures now.
+ *  The pair is ordered so the number reads positive: a run or a rise is signed from the first
+ *  point to the second, so which of the two comes first is what its sign says. */
+function pairDim(kind: string, a: Point, b: Point): Constraint {
+  const [p, q] = kind === 'HorizontalDistance' ? (b.x.value < a.x.value ? [b, a] : [a, b])
+               : kind === 'VerticalDistance' ? (b.y.value < a.y.value ? [b, a] : [a, b])
+               : [a, b];
+  const v = kind === 'HorizontalDistance' ? q.x.value - p.x.value
+          : kind === 'VerticalDistance' ? q.y.value - p.y.value
+          : Math.hypot(q.x.value - p.x.value, q.y.value - p.y.value);
+  return C.build(kind, [p, q, v]);
 }
 
-/** Ask for a dimension and put it on the selection — the one path all six dimension buttons
- *  take.
+/** Put a dimension on the selection — the one path all six dimension buttons take.
+ *
+ *  It is stated at once, at what it measures now, and its number is opened on the drawing
+ *  where it will stay: no box in the middle of the screen, and nothing to accept before the
+ *  drawing shows what was asked for.  `alt` is what else the same selection could have meant,
+ *  which is then settled by where the number is put.
  *
  *  A relation the selection *already states* is edited rather than stated again: a second
- *  Distance on the same pair is not a second fact about them, it is the same fact written twice,
- *  and the only thing that can come of adding it is a conflict.  So the prompt starts from what
- *  is written there already — the text, so `60 3/8` comes back as `60 3/8` and not as 60.375 —
- *  and the answer is set on the constraints that exist and added as the ones that do not.  The
- *  mixed case is real: dimensioning three circles when one of them already has a radius. */
-async function dimension(title: string, label: string, current: number, attr: string,
-                         make: (v: string) => Constraint[]): Promise<void> {
-  const want = make(String(current));
-  const found = want.map((c) => C.stating(view.sketch, c));
-  const shown = found.find(Boolean)?.expr(attr) ?? current;
-  const text = await askDimension(title, label, shown);
-  if (text === null) return;
-
-  const before = io.dumps(view.sketch);
-  const built = make(text);
-  const fresh = built.filter((_, i) => !found[i]);
-  let edited = 0;
-  try {
-    for (const c of found) if (c) { c.setDimension(attr, text); edited++; }
-  } catch (err) {
-    toast(`not a dimension: ${(err as Error).message}`);
-    return;
+ *  Distance on the same pair is not a second fact about them, it is the same fact written
+ *  twice, and the only thing that can come of adding it is a conflict.  So the ones that are
+ *  there are opened for editing and only the ones that are not get added — the mixed case is
+ *  real: dimensioning three circles when one of them already has a radius. */
+function dimension(cs: Constraint[], alt: DimAlt | null = null): void {
+  // a number is written where it is read, so there has to be somewhere to write it: asking for
+  // a dimension with the callouts turned off turns them back on rather than refusing
+  if (!view.showDimensions) {
+    view.showDimensions = true;
+    toast('dimensions turned back on — a number is edited on the drawing');
   }
-  if (edited) {
-    view.pushUndo(before);
-    rows = [];                       // the row text states the number, so it has to rebuild
-    view.afterEdit();
-    toast(`${edited} dimension(s) set to ${text}`);
-  }
-  if (fresh.length) view.addConstraints(...fresh);
+  const found = cs.map((c) => C.stating(view.sketch, c));
+  const targets = cs.map((c, i) => found[i] ?? c);
+  const fresh = cs.filter((_, i) => !found[i]);
+  // an alternative is a choice about a dimension being written; one already on the drawing is
+  // being edited, and moving it about must not silently make it a different constraint
+  view.startDimension(targets, fresh, fresh.length === cs.length ? alt : null);
 }
 
 /** The one dimension button: what it puts a number on is the selection's business.  Two points
- *  or a single line take a length, a point and a line a signed offset, a circle its radius and
- *  two of them the ring between them — and two lines take the gap between them when they are
- *  parallel, the angle at their corner when they are not. */
-async function cDimension(): Promise<void> {
+ *  or a single line take a length — or the run or the rise between them, whichever the number
+ *  is put where — a point and a line a signed offset, a circle its radius and two of them the
+ *  ring between them, and two lines take the gap between them when they are parallel, the angle
+ *  at their corner when they are not. */
+function cDimension(): void {
   let { pts } = sel();
   const { lines, circles } = sel();
   if (!pts.length && lines.length === 2) {
@@ -431,41 +429,32 @@ async function cDimension(): Promise<void> {
   if (!pts.length && lines.length === 1) pts = [lines[0].p1, lines[0].p2];
   if (!need(pts.length === 2, 'two points, one line, a point and a line, two lines, '
                             + 'or one or more circles/arcs')) return;
-  const cur = Math.hypot(pts[0].x.value - pts[1].x.value, pts[0].y.value - pts[1].y.value);
   const [a, b] = pts;
-  return dimension('Distance', 'Distance', cur, 'd', (v) => [new C.Distance(a, b, v)]);
+  dimension([pairDim('Distance', a, b)], { a, b, make: (k: string) => pairDim(k, a, b) });
 }
 
 /** Two parallel lines: dimension the gap between them.  It does not make them parallel — the
  *  caller has already established that they are, and sent the other case to Angle, because a
  *  "gap" between converging lines pins one endpoint's offset and reads as arbitrary. */
-async function cParallelDistance(l1: Line, l2: Line): Promise<void> {
+function cParallelDistance(l1: Line, l2: Line): void {
   const cur = signedPointToLine(l2.p1.x.value, l2.p1.y.value, l1);
-  return dimension('Parallel distance',
-                   'Gap (negative puts the second line on the other side)', cur, 'd',
-                   (v) => [new C.ParallelDistance(l1, l2, v)]);
+  dimension([new C.ParallelDistance(l1, l2, cur)]);
 }
 
 /** A point and a line: dimension the point's perpendicular offset, signed so negating it moves
  *  the point across.  Measured to the infinite line — the foot may fall off the end of the
  *  segment, which is what a drawing means by "distance to this edge". */
-async function cPointLineDistance(p: Point, line: Line): Promise<void> {
+function cPointLineDistance(p: Point, line: Line): void {
   const [dx, dy] = line.direction();
   if (!need(Math.hypot(dx, dy) > 0, 'a line with two distinct endpoints')) return;
   if (!need(p !== line.p1 && p !== line.p2, 'a point that is not an endpoint of the line')) return;
-  return dimension('Point-line distance',
-                   'Offset (negative puts the point on the other side)',
-                   signedPointToLine(p.x.value, p.y.value, line), 'd',
-                   (v) => [new C.PointLineDistance(p, line, v)]);
+  dimension([new C.PointLineDistance(p, line, signedPointToLine(p.x.value, p.y.value, line))]);
 }
 
 /** Two circles or arcs: dimension the annulus between them.  Like the parallel gap it sizes
  *  the ring without centring it, so say so when the centres are not already together. */
-async function cAnnularDistance(c1: Circle | Arc, c2: Circle | Arc): Promise<void> {
-  const cur = Math.abs(c2.radius.value) - Math.abs(c1.radius.value);
-  await dimension('Annular distance',
-                  'Ring thickness (negative makes the first circle the outer one)', cur, 'd',
-                  (v) => [new C.AnnularDistance(c1, c2, v)]);
+function cAnnularDistance(c1: Circle | Arc, c2: Circle | Arc): void {
+  dimension([new C.AnnularDistance(c1, c2, Math.abs(c2.radius.value) - Math.abs(c1.radius.value))]);
   const [a, b] = [c1.center, c2.center];
   if (Math.hypot(a.x.value - b.x.value, a.y.value - b.y.value) > 1e-9) {
     toast('the ring is dimensioned, but these circles are not concentric — add Coincident on their centres');
@@ -473,11 +462,9 @@ async function cAnnularDistance(c1: Circle | Arc, c2: Circle | Arc): Promise<voi
 }
 
 /** Two lines that meet at a corner: dimension the corner. */
-async function cAngle(l1: Line, l2: Line): Promise<void> {
-  const cur = (angleBetween(l1, l2) * 180) / Math.PI;   // the core's rule, in degrees
-  // text is degrees; the core converts
-  return dimension('Angle', 'Angle from the first to the second line (degrees)', cur, 'theta',
-                   (v) => [new C.Angle(l1, l2, v)]);
+function cAngle(l1: Line, l2: Line): void {
+  // the constructor takes radians, as the kernels do; only what a person writes is in degrees
+  dimension([new C.Angle(l1, l2, angleBetween(l1, l2))]);
 }
 
 /** An equality set: every selected line the same length, or every selected circle/arc the
@@ -536,10 +523,10 @@ function cTangent(): void {
   }
 }
 
-/** One circle or arc takes its radius; several are all given the same one. */
-async function cRadius(circles: (Circle | Arc)[]): Promise<void> {
-  return dimension('Radius', 'Radius', Math.abs(circles[0].radius.value), 'r',
-                   (v) => circles.map((cc) => new C.Radius(cc, v)));
+/** One circle or arc takes its radius; several are opened together and all take the number
+ *  that is typed, whichever of their callouts it is typed on. */
+function cRadius(circles: (Circle | Arc)[]): void {
+  dimension(circles.map((cc) => new C.Radius(cc, Math.abs(cc.radius.value))));
 }
 
 /* -- Stage 5: root selection ---------------------------------------------------- */
@@ -717,44 +704,125 @@ function rebuildRows(next: Constraint[]): void {
       refresh();
       view.draw();
     });
-    li.addEventListener('dblclick', () => void editValue(c));
+    li.addEventListener('dblclick', () => editValue(c));
     clist.append(li);
   });
   rows = next;
 }
 
-/** A dimension's number is text to the core: a bare number, or an expression that may name
- *  its value (`w = 80`) or read names other dimensions define (`h = w / 2`).  Angles are in
- *  degrees either way.  The text that does not parse is refused and nothing changes; one that
- *  reads a name nothing defines yet is kept, and the row says so until the name appears. */
-async function editValue(c: Constraint): Promise<void> {
-  for (const [attr, kind] of c.spec) {
-    if (kind !== 'length' && kind !== 'angle') continue;
-    const deg = kind === 'angle';
-    const rec = c as unknown as Record<string, number>;
-    const label = `${c.typeName} ${attr}${deg ? ' (degrees)' : ''}`;
-    const current = c.expr(attr)
-      ?? String(Number((deg ? (rec[attr] * 180) / Math.PI : rec[attr]).toPrecision(10)));
-    const text = await askText(label, label, current,
-      'a number, or an expression: “w = 80” names it, “h = w / 2”, “sin(h * 10)” use names; '
-      + 'trigonometry in degrees');
-    if (text == null || !text.trim()) return;   // cancelled, dismissed, or left empty
-    const before = io.dumps(view.sketch);   // remembered only if the text is taken
-    let why: string | null;
-    try {
-      why = c.setDimension(attr, text);
-    } catch (err) {
-      toast(`not a dimension: ${(err as Error).message}`);
-      return;
-    }
-    view.pushUndo(before);
-    if (why) toast(`stored, but ${why}`);
-    rows = [];                        // force the row text to rebuild
-    view.afterEdit();
-    return;
-  }
-  toast(`${c.typeName} has no editable dimension`);
+/** A dimension's number as a person reads and writes it: what it was written as if it was
+ *  written, else what the drawing says it is — the same rounding, so the editor that sits on a
+ *  callout shows the callout's own number rather than a longer one that means the same.  In
+ *  degrees for an angle, which is the unit the core takes text in either way.
+ *
+ *  Nothing is written back unless somebody types, so the rounding here costs no precision: a
+ *  dimension nobody edits keeps the measurement it was stated at, to the last figure. */
+function dimensionField(c: Constraint): { attr: string; text: string } | null {
+  const [d] = c.dimensions();
+  if (!d) return null;
+  const [attr, kind] = d;
+  const v = (c as unknown as Record<string, number>)[attr];
+  return { attr, text: c.expr(attr) ?? io.fmt(kind === 'angle' ? (v * 180) / Math.PI : v, 4) };
 }
+
+/** Open a dimension's number for editing, on the drawing where it is drawn. */
+function editValue(c: Constraint): void {
+  if (!dimensionField(c)) return toast(`${c.typeName} has no editable dimension`);
+  dimension([c]);              // already stated: nothing to add and nothing to place
+}
+
+/** Write `text` on every constraint being edited; false if the core would not have it, which
+ *  leaves them all as they were.  A text that reads a name nothing defines *is* taken — the
+ *  row says so until the name appears — since that is a document half-written, not a mistake. */
+function setDimension(cs: Constraint[], text: string): boolean {
+  try {
+    let why: string | null = null;
+    for (const c of cs) {
+      const f = dimensionField(c);
+      if (f) why = c.setDimension(f.attr, text) ?? why;
+    }
+    if (why) toast(`stored, but ${why}`);
+    return true;
+  } catch (err) {
+    toast(`not a dimension: ${(err as Error).message}`);
+    return false;
+  }
+}
+
+/* -- the number on the drawing -------------------------------------------------- */
+
+/* A dimension's number is edited where it is drawn.  One input, moved to whichever callout is
+ * being written and filled in by the view, so the figure, where it sits, which of the three it
+ * is and what it says are one gesture — and every part of it is on the drawing while it
+ * happens, rather than behind a box in the middle of the screen. */
+let dimBox: HTMLInputElement | null = null;
+/** Whether anybody has typed in it: until they have, it keeps showing what the dimension
+ *  measures, which changes under it as the callout is moved from one kind to another. */
+let dimTyped = false;
+
+function sizeDimBox(box: HTMLInputElement): void {
+  box.style.width = `${Math.max(4, box.value.length + 1)}ch`;
+}
+
+function openDimBox(): HTMLInputElement {
+  const box = document.createElement('input');
+  box.type = 'text';
+  box.className = 'dim';
+  box.spellcheck = false;
+  box.title = 'a number, or an expression — Enter to accept, Esc to take it back';
+  dimTyped = false;
+  box.addEventListener('input', () => { dimTyped = true; sizeDimBox(box); });
+  box.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); finishDim(true, true); }
+    if (e.key === 'Escape') { e.preventDefault(); finishDim(false); }
+  });
+  // clicking away accepts it, the way a cell in a sheet does.  The click that *plants* the
+  // callout is not a click away: the canvas refuses the focus for exactly that reason
+  box.addEventListener('blur', () => finishDim(true));
+  (document.getElementById('canvas-wrap') as HTMLElement).append(box);
+  dimBox = box;
+  box.focus();
+  return box;
+}
+
+function closeDimBox(): void {
+  const box = dimBox;
+  dimBox = null;                    // first, so the blur that removing it may fire does nothing
+  box?.remove();
+}
+
+/** Done typing.  Accepted, the text goes on every constraint the dimension was opened on;
+ *  refused, the whole thing comes back out.  A text the core will not have keeps the editor
+ *  open when there is somebody still typing in it to correct it. */
+function finishDim(commit: boolean, keepOpen = false): void {
+  const live = view.liveDim;
+  if (!live || !dimBox) return;
+  // an untouched number is not written: the dimension keeps the measurement it was stated at,
+  // which is exact, rather than the rounded one the editor showed
+  const text = dimTyped ? dimBox.value.trim() : '';
+  if (commit && text && !setDimension(live.targets, text)) {
+    if (keepOpen) return;
+    commit = false;
+  }
+  closeDimBox();
+  rows = [];                        // the row text states the number, so it has to rebuild
+  view.endDimension(commit);
+}
+
+view.onDimension = (live, at) => {
+  if (!live) return closeDimBox();
+  const box = dimBox ?? openDimBox();
+  if (!dimTyped) {
+    box.value = dimensionField(live.targets[0])?.text ?? '';
+    sizeDimBox(box);
+    box.select();
+  }
+  if (at) {
+    box.style.left = `${at[0]}px`;
+    box.style.top = `${at[1]}px`;
+  }
+};
 
 /** Same objects in the same order — the lists are rebuilt only when this fails, so rows keep
  *  their DOM nodes (and the user's scroll position) across ordinary edits and drags. */
@@ -1009,7 +1077,7 @@ view.onSelect = () => { if (currentConstraint) focusConstraint(null); };
 /* A dimension on the drawing and its row in the list are the same constraint, so clicking
  * either does the same thing — and double-clicking either opens the same number. */
 view.onPickConstraint = (c) => { focusConstraint(c); refresh(); view.draw(); };
-view.onEditConstraint = (c) => void editValue(c);
+view.onEditConstraint = (c) => editValue(c);
 view.onChanged = refresh;
 view.onDragFrame = refreshStatus;
 view.onStatus = toast;
