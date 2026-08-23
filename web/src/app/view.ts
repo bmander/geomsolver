@@ -1,55 +1,33 @@
-/* The sketch view: world/screen mapping, canvas painting, hit testing, the drawing tools and
- * the drag.  Every mutation funnels through `afterEdit`, which re-solves (when auto-solve is
- * on), re-diagnoses and notifies the shell exactly once. */
+/* The sketch view: the object the whole front end holds, and the state every part of it reads
+ * — the camera, the selection, the tool, the compiled plan and the last diagnosis.  What is
+ * *done* to it lives in the modules beside this one: `paint` strokes it, `gesture` drives it
+ * from the pointer, `tools` draws into it, `dimension` writes a number on it and `edit` changes
+ * the document.  They take the view as their first argument, so this file stays the state and
+ * the seams — the coordinates, the history, the solve and the hit tests everything else calls.
+ *
+ * Every mutation funnels through `afterEdit`, which re-solves (when auto-solve is on),
+ * re-diagnoses and notifies the shell exactly once. */
 import * as io from '../core/io.js';
-import * as C from '../core/constraints.js';
 import * as dim from '../core/callout.js';
-import type { Callout, Pt, Seg } from '../core/callout.js';
-import { Constraint, sameConstraint } from '../core/constraints.js';
-import { PlanDrag, PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
+import { Constraint } from '../core/constraints.js';
+import { PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
-import {
-  Arc, Box, Circle, Line, Param, Point, Primitive, Sketch, Spline, distanceBetween, onRadius,
-  threePointArc,
-} from '../core/model.js';
-import { Method, RadiusDrag, SolveResult, System, Triangle } from '../core/system.js';
+import { Param, Point, Primitive, Sketch } from '../core/model.js';
+import { Method, SolveResult, System } from '../core/system.js';
 import { Motion, WitnessReport, analyze, movingParams } from '../core/witness.js';
+import * as edit from './edit.js';
+import * as dimension from './dimension.js';
+import { abandonGesture, bindEvents } from './gesture.js';
+import type { Gesture } from './gesture.js';
+import type { DimAlt, LiveDim } from './dimension.js';
+import { paint } from './paint.js';
+import * as tools from './tools.js';
 
-const PICK_PX = 8;
+/* A dimension being written belongs to `dimension`, but it is the view a caller holds, so the
+ * two types are published from here as well. */
+export type { DimAlt, LiveDim } from './dimension.js';
 
-const COL = {
-  bg: '#fafafa',
-  axis: '#dddddd',
-  line: '#1f77b4',
-  circle: '#2ca02c',
-  arc: '#ff7f0e',
-  spline: '#8c564b',
-  point: '#222222',
-  fixed: '#d62728',
-  sel: '#e377c2',
-  preview: '#999999',
-  highlight: '#9467bd',
-  conflict: '#b3001b',
-  bandFill: 'rgba(227, 119, 194, 0.10)',
-  dim: '#0f6f7a',
-};
-/* entity colouring by constraint state (FreeCAD-style, but from the DM decomposition and the
- * conflict set rather than from a guess) */
-const COL_STATE: Record<string, string> = {
-  well: '#2ca02c', under: '#e69500', over: '#d62728', conflict: '#d62728',
-};
-
-/** Reference geometry is drawn dashed; the dashes are screen px, so they do not zoom. */
-const CONSTRUCTION_DASH = [7, 4];
-
-/** A dimension's extension and witness lines: finer dashes than construction geometry, since
- *  they are annotation rather than something the sketch is made of. */
-const WITNESS_DASH = [4, 3];
-
-/** How far a paste lands from what it was copied from, in screen px — far enough to see, near
- *  enough to drag.  Screen-constant, so a paste looks the same at any zoom, and successive
- *  pastes cascade rather than pile up. */
-const PASTE_PX = 24;
+export const PICK_PX = 8;
 
 const ANIM_DT = 0.03;        // seconds per animation tick
 const ANIM_PERIOD = 2.0;     // seconds spent on each degree of freedom
@@ -65,31 +43,6 @@ interface Animation {
   labels: string[];
   t: number;
   showing: number;
-}
-
-/** The other dimensions a selection could have taken, and how to say the same thing as one of
- *  them.  Two points can be measured three ways — the length between them, the run, or the rise
- *  — and which one is meant is decided by where the number is put, so the alternatives have to
- *  outlive the click that started the dimension. */
-export interface DimAlt {
-  a: Point;
-  b: Point;
-  make(kind: string): Constraint;
-}
-
-/** A dimension being written: the constraints the number will land on, the ones that had to be
- *  added to say it, what else it could have been, and the document as it was before any of it —
- *  which is what Escape puts back. */
-export interface LiveDim {
-  targets: Constraint[];
-  fresh: Constraint[];
-  alt: DimAlt | null;
-  before: string;
-  /** The theorems the sketch already held, so that when the dimension lands the report can say
-   *  which ones it brought with it: the sketch is not diagnosed while the number is carried. */
-  impliedBefore: Set<Constraint>;
-  /** Still following the pointer: the click that plants it is what ends this. */
-  placing: boolean;
 }
 
 /** A place a click asked for, and the Point it came from if it came from one. */
@@ -151,8 +104,13 @@ export class SketchView {
   /** The dimension being written, if any — see `startDimension`. */
   liveDim: LiveDim | null = null;
 
-  private ctx: CanvasRenderingContext2D;
-  private cursor: [number, number] = [0, 0];
+  /* -- the view's own workings.  What is not `private` here is read by the modules beside
+   * this file — they are as much the view as this class is, and TypeScript has no way to say
+   * "private to these five files".  Nothing outside `app/` touches them. */
+
+  ctx: CanvasRenderingContext2D;
+  /** Where the pointer last was, in canvas coordinates. */
+  cursor: [number, number] = [0, 0];
   /** Both histories hold serialised sketches: `undoStack` the states an edit moved away from,
    *  `redoStack` the ones an undo moved away from. */
   private undoStack: string[] = [];
@@ -164,30 +122,30 @@ export class SketchView {
   private lastSystem: System | null = null;
   private witness: WitnessReport | null = null;
   private witnessFor: Diagnosis | null = null;
-  private anim: Animation | null = null;
+  anim: Animation | null = null;
   private animTimer = 0;
   /** The last copy, as a sketch of its own.  A clipboard is a document, which is what lets one
    *  outlive the selection — and the sketch — it came from. */
-  private clipboard: Sketch | null = null;
+  clipboard: Sketch | null = null;
   /** How many times the clipboard has been pasted since it was filled, so pastes cascade
    *  instead of landing on each other. */
-  private pastes = 0;
+  pastes = 0;
   /** The one gesture in progress, if any — pan, point drag, radius drag or rubber band.
    *  One field rather than four means a new gesture cannot be forgotten in `setSketch`, and
    *  the pointer handlers stay two lines each. */
-  private gesture: Gesture | null = null;
+  gesture: Gesture | null = null;
   /** The pointer that owns `gesture`; a second one is ignored until it lets go. */
-  private gesturePointer: number | null = null;
+  gesturePointer: number | null = null;
   /** `underParams` as a set, rebuilt when the diagnosis it came from is replaced. */
-  private movable: { owner: Diagnosis; set: Set<Param> } | null = null;
+  movable: { owner: Diagnosis; set: Set<Param> } | null = null;
   /** A gesture moved geometry, so the null space no longer describes the pose on screen. */
-  private staleDiagnosis = false;
+  staleDiagnosis = false;
   private frame = 0;
 
   constructor(readonly canvas: HTMLCanvasElement, sketch: Sketch) {
     this.sketch = sketch;
     this.ctx = canvas.getContext('2d')!;
-    this.bindEvents();
+    bindEvents(this);
   }
 
   // -- coordinates ---------------------------------------------------------
@@ -201,7 +159,7 @@ export class SketchView {
   }
 
   /** The world length of one screen pixel — what the core sizes annotation through. */
-  private get unit(): number {
+  get unit(): number {
     return 1 / this.scale;
   }
 
@@ -229,7 +187,7 @@ export class SketchView {
 
   private swap(sk: Sketch, fit: boolean): void {
     this.stopAnimation();             // before the swap: it restores into the sketch it started on
-    this.abandonGesture();            // before the swap: `end` would commit into the new sketch
+    abandonGesture(this);            // before the swap: `end` would commit into the new sketch
     this.liveDim = null;              // and a dimension half-written belongs to the old document
     this.onDimension(null, null);
     this.sketch = sk;
@@ -251,6 +209,12 @@ export class SketchView {
     this.redoStack = [];              // a fresh edit is a new branch: the old future is gone
   }
 
+  /** The edit that snapshot was taken for came to nothing, so take the snapshot back —
+   *  for an edit that cannot know whether it will happen until it has tried. */
+  dropUndo(): void {
+    this.undoStack.pop();
+  }
+
   undo(): void { this.step(this.undoStack, this.redoStack, 'undo'); }
 
   redo(): void { this.step(this.redoStack, this.undoStack, 'redo'); }
@@ -269,8 +233,8 @@ export class SketchView {
    *  goes first — freeing a plan out from under one would leave the drag stepping freed memory,
    *  and on wasm that aborts rather than raising.  Every caller gets this, so no caller has to
    *  remember the order. */
-  private releasePlan(): void {
-    if (this.planSolver && this.gesture) this.abandonGesture();
+  releasePlan(): void {
+    if (this.planSolver && this.gesture) abandonGesture(this);
     if (this.lastSystem === this.planSolver?.system) this.lastSystem = null;
     this.planSolver?.dispose();
     this.planSolver = null;
@@ -332,7 +296,7 @@ export class SketchView {
     // solve, and no re-diagnosis either — nothing changes colour, no banner appears and
     // disappears under the pointer, and the constraint list does not rebuild on every kind the
     // number passes through.  The click that plants it is when all of it happens, once, and
-    // when what it came to is reported — see `placeDimension`.
+    // when what it came to is reported — see `dimension.placeDimension`.
     if (this.liveDim?.placing) {
       this.draw();
       return this.lastResult;
@@ -416,275 +380,9 @@ export class SketchView {
   stateOf(e: Primitive): string {
     return this.diagnosis?.entityState.get(e) ?? 'well';
   }
-
-  /** Add one or more constraints as a single edit: one undo entry, one solve, one
-   *  diagnosis.  A multi-entity action (an equality set, Horizontal over several lines)
-   *  is one thing the user did, so it should take one Ctrl+Z to undo. */
-  /** Add constraints, silently dropping any that repeat one the sketch already has.
-   *
-   *  A duplicate is pure cost: it adds equations without adding rank, and the structural
-   *  check cannot see that, so it lurks until an unrelated edit tips its block into a
-   *  spurious over-constrained report — a long way from the click that caused it. */
-  addConstraints(...cs: Constraint[]): void {
-    if (cs.length) this.pushUndo();
-    this.applyConstraints(...cs);
-  }
-
-  /** The same, without the undo entry: for an edit that is still being made, and so does not
-   *  know yet whether it will come to anything.  Returns the ones that were actually added. */
-  applyConstraints(...cs: Constraint[]): Constraint[] {
-    if (!cs.length) return [];
-    const have = this.sketch.userConstraints();
-    const fresh: Constraint[] = [];
-    for (const c of cs) {                        // ...against this batch too, not just the sketch
-      if (!have.some((e) => sameConstraint(e, c)) && !fresh.some((e) => sameConstraint(e, c))) {
-        fresh.push(c);
-      }
-    }
-    if (!fresh.length) {
-      const kinds = [...new Set(cs.map((c) => c.typeName))].join(' + ');
-      this.onStatus(`${kinds} is already on this selection — nothing added`);
-      return [];
-    }
-    const skipped = cs.length - fresh.length;
-    cs = fresh;
-    const impliedBefore = new Set(this.diagnosis?.implied ?? []);
-    this.sketch.add(...cs);
-    const res = this.afterEdit();
-    // a dimension still being carried has not been judged — `afterEdit` did not diagnose it —
-    // so what it came to is reported when it lands instead of now
-    if (!this.liveDim?.placing) this.reportAdded(cs, skipped, impliedBefore, res);
-    return cs;
-  }
-
-  /** What the sketch made of what was just added.  Said once, from a fresh diagnosis: which is
-   *  why a dimension being placed waits until it lands to hear it. */
-  private reportAdded(cs: Constraint[], skipped: number, impliedBefore: Set<Constraint>,
-                      res: SolveResult | null): void {
-    const d = this.diagnosis;
-    const st = d?.status ?? 'well';
-    const kinds = [...new Set(cs.map((c) => c.typeName))].join(' + ');
-    const what = cs.length === 1 ? kinds : `${cs.length} × ${kinds}`;
-    const dup = skipped ? ` (${skipped} duplicate${skipped > 1 ? 's' : ''} skipped)` : '';
-    // a new theorem is worth a word (the user may not have seen it coming), in the register of
-    // a remark rather than a warning: the sketch is consistent and nothing needs doing
-    const newlyImplied = (d?.implied ?? []).filter((k) => !impliedBefore.has(k));
-    const why = st === 'conflict' && d?.conflicts?.length
-      ? ` — CONFLICT, remove one of: ${d.conflicts.map((k) => io.describe(k, this.sketch)).join(', ')}`
-      : st === 'over' ? ' — redundant (consistent) with existing constraints'
-      : res && !res.success ? ' — solver did NOT converge'
-      : newlyImplied.length
-      ? ` — consistent; ${newlyImplied.map((k) => io.describe(k, this.sketch)).join(', ')} now follow from the rest`
-      : '';
-    this.onStatus(`added ${what}${dup}${why}`);
-  }
-
-  removeConstraint(c: Constraint): void {
-    this.pushUndo();
-    this.sketch.remove(c);
-    this.afterEdit();
-  }
-
-  /* -- writing a dimension ------------------------------------------------ */
-
-  /** Start writing a dimension: the constraints are stated at once, at what they measure now,
-   *  and the number goes on the drawing where it will stay rather than into a box in the middle
-   *  of the screen.  `fresh` is the part of `targets` that had to be added — while there is any,
-   *  the callout follows the pointer until a click plants it, and on a point pair (`alt`) where
-   *  it is put decides *which* of the three dimensions it states.  Nothing reaches the undo
-   *  stack until the number is accepted; Escape takes the whole thing back out.
-   *
-   *  False if the constraints could not be added, in which case there is nothing to write. */
-  startDimension(targets: Constraint[], fresh: Constraint[], alt: DimAlt | null): boolean {
-    this.endDimension(false);
-    if (!targets.length) return false;
-    const before = io.dumps(this.sketch);
-    const impliedBefore = new Set(this.diagnosis?.implied ?? []);
-    // the record goes in first: stating the constraint is part of the gesture, so it must not
-    // solve or diagnose either — the sketch it lands in is the one the pointer is still
-    // choosing over
-    this.liveDim = { targets, fresh, alt, before, impliedBefore, placing: fresh.length > 0 };
-    if (fresh.length && !this.applyConstraints(...fresh).length) {
-      this.liveDim = null;
-      return false;
-    }
-    this.litConstraint = targets[0];
-    if (this.liveDim.placing) {
-      this.onStatus('place the dimension, then type its number — Enter to accept, Esc to take '
-                  + 'it back');
-    }
-    if (this.liveDim.placing) this.moveDimension(this.cursor);
-    this.draw();
-    return true;
-  }
-
-  /** The number follows the pointer while it is being placed, and on a point pair it changes
-   *  what it says as it goes: a dimension line stands off across what it measures, so putting
-   *  the number above a pair asks for the run and out to the side asks for the rise.  The rule
-   *  is the core's — the same one that then draws the figure. */
-  private moveDimension(sp: [number, number]): void {
-    const live = this.liveDim;
-    if (!live) return;
-    const at = this.s2w(sp[0], sp[1]);
-    if (live.alt) this.retarget(live, at);
-    const c = live.targets[0];
-    if (c.id >= 0) dim.drag(this.sketch, c.id, at[0], at[1], [0, 0]);
-  }
-
-  /** Say the same thing as a different kind of dimension, because the number was put where that
-   *  is what it means.  The old one goes and the new one takes its place: it is the same edit,
-   *  still unfinished, so it makes no undo entry of its own. */
-  private retarget(live: LiveDim, at: [number, number]): void {
-    const { a, b, make } = live.alt!;
-    const want = dim.pairDimension([a.x.value, a.y.value], [b.x.value, b.y.value], at);
-    const was = live.targets[0];
-    if (was.typeName === want) return;
-    this.sketch.remove(was);
-    const c = make(want);
-    this.sketch.add(c);
-    live.targets[0] = c;
-    live.fresh = [c];           // an alternative is only offered when the whole of it is fresh
-    this.litConstraint = c;
-    this.afterEdit();          // a different constraint: the list, the DOF and the diagnosis move
-  }
-
-  /** The click that plants it: the number stops following the pointer and stays where it was
-   *  put, a placement like any other — and *now* the sketch is solved, once, because now there
-   *  is something settled to solve.  What it says is still open: the editor stays up until the
-   *  number is accepted. */
-  placeDimension(): void {
-    const live = this.liveDim;
-    if (!live?.placing) return;
-    live.placing = false;
-    const res = this.afterEdit();
-    if (live.fresh.length) this.reportAdded(live.fresh, 0, live.impliedBefore, res);
-  }
-
-  /** Done writing.  Accepted, what was there before goes on the undo stack, so the constraint,
-   *  where it was put and what it says are one step back together; refused, the constraints
-   *  that were added to say it come out again and nothing happened at all. */
-  endDimension(commit: boolean): void {
-    const live = this.liveDim;
-    if (!live) return;
-    this.liveDim = null;
-    this.litConstraint = null;
-    if (commit) {
-      this.pushUndo(live.before);
-    } else {
-      for (const c of live.fresh) this.sketch.remove(c);
-    }
-    this.afterEdit();
-    this.onDimension(null, null);
-  }
-
-  /** Where the live dimension's number was just painted, so the shell can put its editor on
-   *  it.  Told off the paint's own layout rather than one of its own: the editor then sits
-   *  exactly where the label is, and a placement gesture lays the callouts out once a frame
-   *  instead of twice.  Clamped into the canvas — a callout can be laid out off the edge, and
-   *  an editor nobody can see is worse than one a little out of place. */
-  private tellDimension(items: Callout[]): void {
-    const live = this.liveDim;
-    if (!live) return;
-    const k = items.find((i) => i.id === live.targets[0].id);
-    if (!k) return this.onDimension(live, null);
-    const [x, y] = this.w2s(k.anchor[0], k.anchor[1]);
-    const pad = 24;
-    this.onDimension(live, [Math.min(Math.max(x, pad), this.width - pad),
-                            Math.min(Math.max(y, pad), this.height - pad)]);
-  }
-
-  deleteSelected(): void {
-    if (!this.selected.length) return;
-    this.pushUndo();
-    const n = this.selected.length;
-    this.setSketch(io.without(this.sketch, this.selected), false);
-    this.onStatus(`deleted ${n} entities`);
-  }
-
-  /** Flip reference/normal on the selected lines, circles and arcs. */
-  toggleConstructionSelected(): void {
-    const ents = this.selected.filter(
-      (e): e is Line | Circle | Arc => e instanceof Line || e instanceof Circle || e instanceof Arc,
-    );
-    if (!ents.length) {
-      this.onStatus('select line(s), circle(s) or arc(s) to toggle construction geometry');
-      return;
-    }
-    this.pushUndo();
-    const all = ents.every((e) => e.construction);
-    for (const e of ents) e.construction = !all;
-    this.onStatus(`${ents.length} entit${ents.length === 1 ? 'y' : 'ies'} `
-      + `${all ? 'back to normal geometry' : 'marked as construction'}`);
-    this.onChanged();
-    this.draw();
-  }
-
-  /** Copy the selection.  Returns what went onto the clipboard, so the caller can say so; a
-   *  selection nothing came of leaves the previous clipboard alone. */
-  copySelected(): number {
-    if (!this.selected.length) return 0;
-    const clip = io.copy(this.sketch, this.selected);
-    const n = clip.primitives().length;
-    if (!n) {
-      clip.dispose();
-      return 0;
-    }
-    this.clipboard?.dispose();
-    this.clipboard = clip;
-    this.pastes = 0;
-    return n;
-  }
-
-  /** Copy the selection and take it out of the sketch. */
-  cutSelected(): number {
-    const n = this.copySelected();
-    if (n) this.deleteSelected();
-    return n;
-  }
-
-  /** Paste the clipboard, nudged clear of whatever it landed on and left selected, so it can be
-   *  dragged where it belongs straight away.  The copy is independent: it brings its own
-   *  constraints and is joined to nothing. */
-  pasteClipboard(): number {
-    const clip = this.clipboard;
-    if (!clip?.primitives().length) return 0;
-    this.pushUndo();
-    const d = (PASTE_PX * ++this.pastes) / this.scale;
-    const made = io.paste(this.sketch, clip, d, -d);
-    this.selected = made;
-    this.litConstraint = null;
-    this.highlight = [];
-    this.releasePlan();
-    this.afterEdit();
-    this.onSelect();
-    return made.length;
-  }
-
-  /** Put dimension callouts back where the layout would place them: one of them, or all of
-   *  them.  A drawing that has been rearranged by hand and then edited into a mess needs a way
-   *  back, and this is it. */
-  resetCallouts(c?: Constraint | null): number {
-    const cs = c ? [c] : this.sketch.userConstraints();
-    const before = io.dumps(this.sketch);
-    const n = cs.filter((k) => dim.reset(this.sketch, k.id)).length;
-    if (!n) return 0;             // nothing was out of place: no edit, and no history entry
-    this.pushUndo(before);
-    this.draw();
-    return n;
-  }
-
-  toggleFixSelected(): void {
-    const pts = this.selected.filter((e): e is Point => e instanceof Point);
-    if (!pts.length) return;
-    this.pushUndo();
-    const allFixed = pts.every((p) => p.isFixed);
-    for (const p of pts) p.fix(!allFixed);
-    this.afterEdit();
-  }
-
   // -- hit testing ---------------------------------------------------------
 
-  private pickPoint(sx: number, sy: number, tol = PICK_PX): Point | null {
+  pickPoint(sx: number, sy: number, tol = PICK_PX): Point | null {
     const { point, dist } = this.sketch.nearestPoint(...this.s2w(sx, sy));
     return point && dist * this.scale < tol ? point : null;
   }
@@ -727,7 +425,7 @@ export class SketchView {
 
   draw(): void {
     if (this.frame) return;
-    this.frame = requestAnimationFrame(() => { this.frame = 0; this.paint(); });
+    this.frame = requestAnimationFrame(() => { this.frame = 0; paint(this); });
   }
 
   resize(): void {
@@ -735,197 +433,7 @@ export class SketchView {
     this.canvas.width = Math.round(this.width * dpr);
     this.canvas.height = Math.round(this.height * dpr);
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.paint();
-  }
-
-  private paint(): void {
-    const ctx = this.ctx;
-    const w = this.width, h = this.height;
-    ctx.save();
-    ctx.fillStyle = COL.bg;
-    ctx.fillRect(0, 0, w, h);
-    ctx.lineCap = 'round';
-    const [ox, oy] = this.w2s(0, 0);
-    ctx.strokeStyle = COL.axis;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, oy + 0.5); ctx.lineTo(w, oy + 0.5);
-    ctx.moveTo(ox + 0.5, 0); ctx.lineTo(ox + 0.5, h);
-    ctx.stroke();
-
-    const sk = this.sketch;
-    const sel = new Set(this.selected);
-    const hl = new Set(this.highlight);
-    const strokeFor = (base: string, ent: Primitive, lw = 1.8): [string, number] => {
-      if (sel.has(ent)) return [COL.sel, lw + 1.5];
-      if (hl.has(ent)) return [COL.highlight, lw + 1];
-      return [this.colorByState ? COL_STATE[this.stateOf(ent)] : base, lw];
-    };
-
-    for (const ln of sk.lines) {
-      const [col, lw] = strokeFor(COL.line, ln);
-      ctx.strokeStyle = col;
-      ctx.lineWidth = lw;
-      ctx.setLineDash(ln.construction ? CONSTRUCTION_DASH : []);
-      ctx.beginPath();
-      ctx.moveTo(...this.w2s(...ln.p1.xy));
-      ctx.lineTo(...this.w2s(...ln.p2.xy));
-      ctx.stroke();
-    }
-    for (const c of sk.circles) {
-      const [col, lw] = strokeFor(COL.circle, c);
-      ctx.strokeStyle = col;
-      ctx.lineWidth = lw;
-      ctx.setLineDash(c.construction ? CONSTRUCTION_DASH : []);
-      const [cx, cy] = this.w2s(...c.center.xy);
-      ctx.beginPath();
-      ctx.arc(cx, cy, Math.abs(c.radius.value) * this.scale, 0, 2 * Math.PI);
-      ctx.stroke();
-    }
-    for (const a of sk.arcs) {
-      const [col, lw] = strokeFor(COL.arc, a);
-      ctx.strokeStyle = col;
-      ctx.lineWidth = lw;
-      ctx.setLineDash(a.construction ? CONSTRUCTION_DASH : []);
-      this.arcPath(a.center.xy, Math.abs(a.radius.value) * this.scale, ...a.angles());
-      ctx.stroke();
-    }
-    for (const sp of sk.splines) {
-      const [col, lw] = strokeFor(COL.spline, sp);
-      // the curve arrives as a polyline already refined to this zoom: `unit` is the world
-      // length of one screen pixel, the same number the callouts are laid out against, so the
-      // front end strokes what the core hands it and never evaluates a basis function
-      ctx.strokeStyle = col;
-      ctx.lineWidth = lw;
-      ctx.setLineDash(sp.construction ? CONSTRUCTION_DASH : []);
-      this.polyPath(sp.polyline(this.unit));
-      ctx.stroke();
-      // the control polygon, only while the curve or one of its points is in play: it is how
-      // the shape is edited, and clutter the rest of the time
-      const live = sel.has(sp) || hl.has(sp)
-        || sp.ctrl.some((p) => sel.has(p) || hl.has(p));
-      if (live) {
-        ctx.save();
-        ctx.strokeStyle = COL.preview;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 3]);
-        this.polyPath(sp.ctrl.map((p) => p.xy));
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-    ctx.setLineDash([]);
-    if (this.pending.length || this.pendingFit.length) this.paintPreview();
-    if (this.diagnosis?.conflicts?.length) this.paintConflicts();
-
-    for (const p of sk.points) {
-      const [sx, sy] = this.w2s(...p.xy);
-      const col = sel.has(p) ? COL.sel : hl.has(p) ? COL.highlight : p.isFixed ? COL.fixed
-        : this.colorByState ? COL_STATE[this.stateOf(p)] : COL.point;
-      ctx.fillStyle = col;
-      if (p.isFixed) {
-        ctx.fillRect(sx - 4, sy - 4, 8, 8);
-      } else {
-        ctx.beginPath();
-        ctx.arc(sx, sy, 3.5, 0, 2 * Math.PI);
-        ctx.fill();
-      }
-    }
-    this.paintCallouts();
-    this.gesture?.paint?.(ctx);
-    if (this.tool !== 'select') {                 // snap indicator
-      const sp = this.pickPoint(...this.cursor);
-      if (sp) {
-        const [sx, sy] = this.w2s(...sp.xy);
-        ctx.strokeStyle = COL.sel;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(sx, sy, 7, 0, 2 * Math.PI);
-        ctx.stroke();
-      }
-    }
-    ctx.restore();
-  }
-
-  /** The dimensions, as a drawing states them.
-   *
-   *  The whole figure — where a dimension line stands off, which side of the shape a leader
-   *  comes out on, how a short span puts its arrowheads outside — is laid out by the core in
-   *  world coordinates; here it is only mapped to the screen and stroked.  Two passes, because
-   *  every label clears the background behind itself: one dimension's number must not rub out
-   *  the next one's line. */
-  private paintCallouts(): void {
-    if (!this.showDimensions) return;
-    const ctx = this.ctx;
-    const cs = dim.callouts(this.sketch, this.unit);
-    const conflicts = new Set(this.diagnosis?.conflicts ?? []);
-    const lit = this.litConstraint;
-    // the colour rule reaches for a constraint by id, so it runs once per callout rather than
-    // once per callout per pass
-    const painted = cs.items.map((k) => {
-      const c = this.sketch.constraintById(k.id);
-      const col = c && conflicts.has(c) ? COL.conflict
-        : c && c === lit ? COL.highlight : COL.dim;
-      return { k, col };
-    });
-    const path = (segs: Seg[]): void => {
-      ctx.beginPath();
-      for (const [a, b] of segs) {
-        ctx.moveTo(...this.w2s(a[0], a[1]));
-        ctx.lineTo(...this.w2s(b[0], b[1]));
-      }
-      ctx.stroke();
-    };
-
-    ctx.save();
-    ctx.lineCap = 'butt';
-    ctx.lineWidth = 1;
-    for (const { k, col } of painted) {
-      ctx.strokeStyle = ctx.fillStyle = col;
-      ctx.setLineDash(WITNESS_DASH);
-      path(k.thin);
-      ctx.setLineDash([]);
-      path(k.solid);
-      for (const a of k.arcs) {
-        this.arcPath(a.c, a.r * this.scale, a.a0, a.a1, a.a1 > a.a0);
-        ctx.stroke();
-      }
-      for (const a of k.arrows) this.paintArrow(a.at, a.dir, cs.arrow, cs.barb);
-    }
-    ctx.font = `${cs.font}px system-ui, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    for (const { k, col } of painted) {
-      ctx.fillStyle = COL.bg;
-      this.polyPath(k.label);
-      ctx.closePath();
-      ctx.fill();
-      ctx.save();
-      ctx.translate(...this.w2s(k.anchor[0], k.anchor[1]));
-      ctx.rotate(-k.angle);      // the layout turns counterclockwise; the canvas turns the other
-      ctx.fillStyle = col;       // way, because its y axis points down
-      ctx.fillText(k.text, 0, 0);
-      ctx.restore();
-    }
-    ctx.restore();
-    if (this.liveDim) this.tellDimension(cs.items);   // the layout this frame already made
-  }
-
-  /** A solid head: the tip at `at`, pointing along `dir`, filling `size` screen px back, with
-   *  barbs `barb` of that half-width.  Both numbers come from the layout, so the drawing style
-   *  is the core's and not this front end's. */
-  private paintArrow(at: Pt, dir: Pt, size: number, barb: number): void {
-    const ctx = this.ctx;
-    const [tx, ty] = this.w2s(at[0], at[1]);
-    const [dx, dy] = [dir[0], -dir[1]];            // world direction, on a screen with y down
-    const [bx, by] = [tx - dx * size, ty - dy * size];
-    const [px, py] = [-dy * size * barb, dx * size * barb];
-    ctx.beginPath();
-    ctx.moveTo(tx, ty);
-    ctx.lineTo(bx + px, by + py);
-    ctx.lineTo(bx - px, by - py);
-    ctx.closePath();
-    ctx.fill();
+    paint(this);
   }
 
   /** The dimension whose callout is under the cursor, if any.  Callouts are painted over the
@@ -937,725 +445,30 @@ export class SketchView {
     return id < 0 ? null : this.sketch.constraintById(id) ?? null;
   }
 
-  /** CCW world arc from a0 to a1; screen y is flipped, so the canvas angles are negated and
-   *  the sweep runs counterclockwise in canvas terms. */
-  private arcPath(centerXY: [number, number], r: number, a0: number, a1: number,
-                  ccw = true): void {
-    const [cx, cy] = this.w2s(...centerXY);
-    this.ctx.beginPath();
-    this.ctx.arc(cx, cy, r, -a0, -a1, ccw);
-  }
-
-  /** Dashed red halo on every entity a culprit constraint references, and a label at each
-   *  culprit's anchor — the culprits are what to remove, as opposed to geometry that merely
-   *  turned red because it touches them. */
-  private paintConflicts(): void {
-    const ctx = this.ctx;
-    const d = this.diagnosis!;
-    const used = new Map<string, number>();
-    ctx.save();
-    ctx.setLineDash([7, 5]);
-    ctx.lineWidth = 5;
-    ctx.strokeStyle = COL.conflict;
-    ctx.font = 'bold 13px system-ui, sans-serif';
-    for (const c of d.conflicts ?? []) {
-      const xs: number[] = [], ys: number[] = [];
-      for (const e of c.entities()) {
-        if (e instanceof Point) {
-          const [sx, sy] = this.w2s(...e.xy);
-          ctx.beginPath(); ctx.arc(sx, sy, 9, 0, 2 * Math.PI); ctx.stroke();
-          xs.push(e.x.value); ys.push(e.y.value);
-        } else if (e instanceof Line) {
-          ctx.beginPath();
-          ctx.moveTo(...this.w2s(...e.p1.xy));
-          ctx.lineTo(...this.w2s(...e.p2.xy));
-          ctx.stroke();
-          xs.push(e.p1.x.value, e.p2.x.value);
-          ys.push(e.p1.y.value, e.p2.y.value);
-        } else if (e instanceof Circle) {
-          const [sx, sy] = this.w2s(...e.center.xy);
-          ctx.beginPath(); ctx.arc(sx, sy, Math.abs(e.radius.value) * this.scale, 0, 2 * Math.PI); ctx.stroke();
-          xs.push(e.center.x.value); ys.push(e.center.y.value + e.radius.value);
-        } else if (e instanceof Arc) {
-          const [a0, a1] = e.angles();
-          this.arcPath(e.center.xy, Math.abs(e.radius.value) * this.scale, a0, a1);
-          ctx.stroke();
-          const am = 0.5 * (a0 + a1);
-          xs.push(e.center.x.value + e.radius.value * Math.cos(am));
-          ys.push(e.center.y.value + e.radius.value * Math.sin(am));
-        } else if (e instanceof Spline) {
-          this.polyPath(e.polyline(this.unit));
-          ctx.stroke();
-          const [t0, t1] = e.domain;
-          const [mx, my] = e.pointAt(0.5 * (t0 + t1));
-          xs.push(mx);
-          ys.push(my);
-        }
-      }
-      if (!xs.length) continue;
-      const [ax, ay] = this.w2s(xs.reduce((a, b) => a + b, 0) / xs.length,
-                                ys.reduce((a, b) => a + b, 0) / ys.length);
-      const cell = `${Math.floor(ax / 40)},${Math.floor(ay / 40)}`;
-      const n = used.get(cell) ?? 0;
-      used.set(cell, n + 1);
-      ctx.save();
-      ctx.setLineDash([]);
-      ctx.fillStyle = COL.conflict;
-      ctx.fillText(`✗ ${io.describe(c, this.sketch)}`, ax + 8, ay - 8 - 18 * n);
-      ctx.restore();
-    }
-    ctx.restore();
-  }
-
-  private paintPreview(): void {
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.setLineDash([5, 4]);
-    ctx.strokeStyle = COL.preview;
-    ctx.lineWidth = 1;
-    const cur = this.cursor;
-    // the fit tool collects places rather than points, so `pending` may be empty here
-    const p0 = this.pending.length ? this.w2s(...this.pending[0].xy) : ([0, 0] as [number, number]);
-    /** A dashed line from the last point placed to the cursor. */
-    const rubber = (): void => {
-      ctx.beginPath();
-      ctx.moveTo(...this.w2s(...this.pending[this.pending.length - 1].xy));
-      ctx.lineTo(cur[0], cur[1]);
-      ctx.stroke();
-    };
-    if (this.tool === 'splinefit') {
-      // the places given so far, joined in order, and a band to the cursor.  Not the fitted
-      // curve: that is a solve, and a preview that lags the cursor is worse than an honest one
-      this.polyPath(this.pendingFit.map((f) => f.at));
-      ctx.lineTo(cur[0], cur[1]);
-      ctx.stroke();
-      for (const f of this.pendingFit) {
-        // a place that landed on a real point is drawn filled: it is the one the finished curve
-        // will be *held* to, not merely fitted through
-        const [sx, sy] = this.w2s(f.at[0], f.at[1]);
-        ctx.beginPath();
-        ctx.arc(sx, sy, 3, 0, 2 * Math.PI);
-        if (f.on) {
-          ctx.fillStyle = COL.preview;
-          ctx.fill();
-        } else {
-          ctx.stroke();
-        }
-      }
-    } else if (this.tool === 'line') {
-      rubber();
-    } else if (this.tool === 'spline') {
-      // the control polygon so far, then a rubber band to the cursor: what is being placed is
-      // the polygon, and the curve only exists once there are enough points for a cubic
-      this.polyPath(this.pending.map((p) => p.xy));
-      ctx.stroke();
-      rubber();
-    } else if (this.tool === 'rect') {
-      ctx.strokeRect(p0[0], p0[1], cur[0] - p0[0], cur[1] - p0[1]);
-    } else if (this.tool === 'circle') {
-      ctx.beginPath();
-      ctx.arc(p0[0], p0[1], Math.hypot(cur[0] - p0[0], cur[1] - p0[1]), 0, 2 * Math.PI);
-      ctx.stroke();
-    } else if (this.tool === 'arc3') {
-      const g = this.pending.length === 2
-        ? threePointArc(...this.pending[0].xy, ...this.pending[1].xy, ...this.s2w(cur[0], cur[1]))
-        : null;
-      if (g) {
-        this.arcPath([g.cx, g.cy], g.r * this.scale, g.a0, g.a1);
-        ctx.stroke();
-      } else {
-        rubber();                                    // one end so far, or a collinear cursor
-      }
-    } else if (this.tool === 'arc') {
-      if (this.pending.length === 1) {
-        rubber();
-      } else {
-        // the same rule the third click will apply: the cursor gives a direction, the second
-        // point the radius
-        const [cx, cy] = this.pending[0].xy;
-        const [sx2, sy2] = this.pending[1].xy;
-        const rw = Math.hypot(sx2 - cx, sy2 - cy);
-        const q = onRadius(cx, cy, ...this.s2w(cur[0], cur[1]), rw);
-        if (q) {
-          const ps = this.w2s(sx2, sy2), pe = this.w2s(...q);
-          const a0 = Math.atan2(-(ps[1] - p0[1]), ps[0] - p0[0]);
-          let a1 = Math.atan2(-(pe[1] - p0[1]), pe[0] - p0[0]);
-          if (a1 <= a0) a1 += 2 * Math.PI;
-          this.arcPath(this.pending[0].xy, rw * this.scale, a0, a1);
-          ctx.stroke();
-        }
-      }
-    }
-    ctx.restore();
-  }
-
-  /** A world-coordinate polyline as a screen path — a curve's tessellation, a control polygon,
-   *  a callout label's box. */
-  private polyPath(pts: readonly (readonly [number, number])[]): void {
-    const ctx = this.ctx;
-    ctx.beginPath();
-    pts.forEach((p, i) => {
-      const s = this.w2s(p[0], p[1]);
-      if (i) ctx.lineTo(s[0], s[1]);
-      else ctx.moveTo(s[0], s[1]);
-    });
-  }
-
-  // -- interaction ---------------------------------------------------------
-
-  setTool(tool: Tool): void {
-    this.tool = tool;
-    this.pending = [];
-    this.pendingFit = [];
-    this.canvas.classList.toggle('select', tool === 'select');
-    this.canvas.style.cursor = '';                // drop any hover affordance
-    this.onTool(tool);
-    this.draw();
-  }
-
-  /** Another control point on `curve`, nearest (x, y).  The curve does not move: this is knot
-   *  insertion, so every contact keeps its parameter and its place, and the sketch stays solved.
-   *  It is `closest` that turns the click into a parameter — the same projection the pick test
-   *  used to decide the click was on this curve at all. */
-  insertControl(curve: Spline, x: number, y: number): void {
-    this.pushUndo();
-    const made = curve.insertControl(curve.closest(x, y).t);
-    if (!made) {
-      this.undoStack.pop();
-      this.onStatus('no room for another control point there');
-      return;
-    }
-    this.selected = [made];
-    this.releasePlan();
-    this.afterEdit();
-    this.onSelect();
-    this.onStatus(`${curve.name} now has ${curve.ctrl.length} control points`);
-  }
-
-  /** Turn the places the fit tool has collected into a curve through them.
+  /* -- what the shell asks the view to do ---------------------------------
    *
-   *  Those places are construction input, not sketch points — the same bargain the three-point
-   *  arc strikes with its third click.  What comes back is an ordinary curve with an ordinary
-   *  control polygon, so everything that edits a drawn one edits this one; a user who wants it
-   *  to *keep* passing through somewhere says so with a point and the Coincident button. */
-  /** Commit whichever curve tool is collecting — Enter, for the two tools whose click count is
-   *  not known in advance.  Which one it is lives here, with the pending state. */
-  finishCurve(): void {
-    if (this.tool === 'spline') this.finishSpline();
-    else if (this.tool === 'splinefit') this.finishSplineFit();
+   * The work is next door; these are the names the rest of the app knows it by, so a caller
+   * holds one object and never has to know which module a verb lives in. */
+
+  setTool(tool: Tool): void { tools.setTool(this, tool); }
+  cancelTool(): void { tools.cancelTool(this); }
+  finishCurve(): void { tools.finishCurve(this); }
+  finishSplineFit(): void { tools.finishSplineFit(this); }
+
+  startDimension(targets: Constraint[], fresh: Constraint[], alt: DimAlt | null): boolean {
+    return dimension.startDimension(this, targets, fresh, alt);
   }
+  endDimension(commit: boolean): void { dimension.endDimension(this, commit); }
 
-  finishSplineFit(): void {
-    if (this.tool !== 'splinefit') return;
-    const min = C.curveInfo().minCtrl;
-    if (this.pendingFit.length < min) {
-      this.onStatus(`a curve needs ${min} points; ${this.pendingFit.length} placed`);
-      return;
-    }
-    this.pushUndo();
-    // A click that landed on a point meant that point, not a place that happens to be under it:
-    // the curve should *stay* through it when either is moved.  The core makes those contacts,
-    // because it is the one that knows where along the curve each point ended up — and pinning
-    // that is what leaves a curve fitted to constrained points fully constrained.
-    const made = this.sketch.splineThrough(this.pendingFit.map((f) => f.at),
-                                           this.pendingFit.map((f) => f.on));
-    if (!made) {
-      this.undoStack.pop();
-      this.onStatus('no curve passes through those points — are any of them on top of another?');
-      return;
-    }
-    const held = this.pendingFit.filter((f) => f.on).length;
-    if (held) {
-      this.onStatus(`curve through ${this.pendingFit.length} points, ${held} held`);
-    }
-    this.pendingFit = [];
-    this.releasePlan();
-    this.afterEdit();
-  }
-
-  /** Turn the control points the spline tool has collected into a curve.  Fewer than a cubic
-   *  needs is not an error: the points stay, so one more click finishes it. */
-  finishSpline(): void {
-    if (this.tool !== 'spline') return;
-    const min = C.curveInfo().minCtrl;
-    if (this.pending.length < min) {
-      this.onStatus(`a curve needs ${min} control points; ${this.pending.length} placed`);
-      return;
-    }
-    if (!this.sketch.spline(this.pending)) {
-      this.onStatus('those control points do not make a curve');
-      return;
-    }
-    this.pending = [];
-    this.releasePlan();
-    this.afterEdit();
-  }
-
-  /** Escape, in stages: stop a DOF animation, then drop the points the active tool has
-   *  collected so far, then leave the tool for Select.  Repeated presses always end up
-   *  somewhere calmer rather than doing nothing. */
-  cancelTool(): void {
-    if (this.anim) {
-      this.stopAnimation();
-      return;
-    }
-    if (this.pending.length || this.pendingFit.length) {
-      this.pending = [];
-      this.pendingFit = [];
-      this.draw();
-      return;
-    }
-    if (this.tool !== 'select') this.setTool('select');
-  }
-
-  private local(e: MouseEvent): [number, number] {
-    const r = this.canvas.getBoundingClientRect();
-    return [e.clientX - r.left, e.clientY - r.top];
-  }
-
-  private bindEvents(): void {
-    const cv = this.canvas;
-    // One pointer owns the gesture until it lets go.  A second finger starting one on top would
-    // drop the live gesture on the floor: its `end` never runs, so the core's drag handle leaks
-    // and the soft drag target it added stays in the sketch, quietly compromising every later
-    // solve.  And a gesture can end without a `pointerup` — a cancelled touch, or capture lost
-    // to a system gesture — so those have to finish it too.
-    cv.addEventListener('pointerdown', (e) => {
-      if (this.gesture) return;
-      cv.setPointerCapture(e.pointerId);
-      this.gesturePointer = e.pointerId;
-      this.onPointerDown(e);
-    });
-    cv.addEventListener('pointermove', (e) => {
-      if (this.gesture && e.pointerId !== this.gesturePointer) return;
-      this.onPointerMove(e);
-    });
-    const finish = (e: PointerEvent): void => {
-      if (this.gesturePointer !== null && e.pointerId !== this.gesturePointer) return;
-      this.gesturePointer = null;
-      this.onPointerUp();
-    };
-    cv.addEventListener('pointerup', (e) => {
-      if (this.gesturePointer === null || e.pointerId === this.gesturePointer) {
-        cv.releasePointerCapture(e.pointerId);
-      }
-      finish(e);
-    });
-    cv.addEventListener('pointercancel', finish);
-    cv.addEventListener('lostpointercapture', finish);
-    cv.addEventListener('dblclick', (e) => {
-      // the same gesture the constraint list uses: double-click a dimension, type a new number
-      const sp = this.local(e);
-      const c = this.pickCallout(...sp);
-      if (c) {
-        this.onEditConstraint(c);
-        return;
-      }
-      // and on a curve it asks for another handle where you clicked: the insertion is
-      // shape-preserving, so nothing moves — the new control point comes out selected, ready
-      // to be dragged, which is the whole reason you asked for it.  Only while selecting: with
-      // a tool down a double-click is two clicks of that tool, and talking over it would put a
-      // knot in whatever curve happened to be under the second one.
-      if (this.tool !== 'select') return;
-      const hit = this.pick(...sp);
-      if (hit instanceof Spline) this.insertControl(hit, ...this.s2w(sp[0], sp[1]));
-    });
-    cv.addEventListener('contextmenu', (e) => e.preventDefault());
-    cv.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const [sx, sy] = this.local(e);
-      const f = 1.0015 ** (-e.deltaY * (e.deltaMode === 1 ? 16 : 1));
-      this.originX = sx + (this.originX - sx) * f;
-      this.originY = sy + (this.originY - sy) * f;
-      this.scale *= f;
-      this.draw();
-    }, { passive: false });
-  }
-
-  private onPointerDown(e: PointerEvent): void {
-    this.stopAnimation();
-    const sp = this.local(e);
-    this.cursor = sp;
-    if (e.button === 1 || e.button === 2) {
-      if (this.pending.length) this.cancelTool();
-      else this.gesture = this.panGesture(sp);
-      return;
-    }
-    if (e.button !== 0) return;
-    // a dimension still following the pointer: this click is what plants it.  The default is
-    // refused so the focus stays in its editor — the number is still being typed
-    if (this.liveDim?.placing) {
-      e.preventDefault();
-      this.placeDimension();
-      return;
-    }
-    if (this.tool !== 'select') {
-      this.toolClick(sp);
-      return;
-    }
-    // a number still being written, on a pair that can be measured three ways: taking hold of
-    // it goes on choosing which, exactly as it did before the click that planted it
-    const live = this.liveDim;
-    if (live?.alt && this.pickCallout(sp[0], sp[1]) === live.targets[0]) {
-      e.preventDefault();                       // the focus stays in the editor
-      live.placing = true;                      // carried again, so held still again
-      this.gesture = {
-        transient: true,
-        move: (at) => this.moveDimension(at),
-        end: () => this.placeDimension(),       // and solved again when it lands
-      };
-      return;
-    }
-    // a dimension is painted over the geometry, so a press that lands on one takes hold of it:
-    // it selects the constraint, and dragging moves the callout rather than the sketch
-    const callout = this.pickCallout(sp[0], sp[1]);
-    if (callout) {
-      this.selected = [];
-      this.onPickConstraint(callout);
-      this.gesture = this.calloutGesture(callout, sp);
-      this.draw();
-      return;
-    }
-    const ent = this.pick(sp[0], sp[1]);
-    if (!ent) {
-      // nothing under the cursor: start a rubber band.  A press with no drag still just
-      // clears the selection, because an empty box selects nothing.
-      if (!e.shiftKey) this.selected = [];
-      this.gesture = this.bandGesture(sp);
-    } else if (e.shiftKey) {
-      const i = this.selected.indexOf(ent);
-      if (i >= 0) this.selected.splice(i, 1);
-      else this.selected.push(ent);
-    } else {
-      if (!this.selected.includes(ent)) this.selected = [ent];
-      if (ent instanceof Point && this.canMove(ent)) {
-        this.pushUndo();
-        // on the sketch's own plan, compiled once per topology: the drag starts at once
-        const drag = new PlanDrag(this.sketch, ent, ...this.s2w(sp[0], sp[1]), null, 0.05,
-                                  this.plan());
-        this.gesture = this.pointGesture(drag);
-      } else if (this.isResizable(ent)) {
-        this.pushUndo();
-        this.gesture = this.radiusGesture(new RadiusDrag(this.sketch, ent, Math.abs(ent.radius.value)));
-      }
-    }
-    this.onSelect();
-    this.onChanged();
-    this.draw();
-  }
-
-  private snapOrNew(sp: [number, number]): Point {
-    return this.pickPoint(sp[0], sp[1]) ?? this.sketch.point(...this.s2w(sp[0], sp[1]));
-  }
-
-  /** Where a click asks for, and the Point it landed on if it landed on one.  Both curve tools
-   *  and the three-point arc share this rule: a click that found a point *meant* that point, so
-   *  the geometry should be held to it rather than merely built near it. */
-  private pickPlace(sp: [number, number]): Place {
-    const on = this.pickPoint(sp[0], sp[1]);
-    return { at: on ? on.xy : this.s2w(sp[0], sp[1]), on };
-  }
-
-  private toolClick(sp: [number, number]): void {
-    const sk = this.sketch;
-    // Tools that make geometry as they go take their snapshot on the first click of a run.  The
-    // fit tool makes nothing until it finishes and takes its own there, so pushing here would
-    // leave an undo entry — and a whole document serialised — per click that changed nothing.
-    if (this.tool !== 'splinefit' && !this.pending.length) this.pushUndo();
-    if (this.tool === 'point') {
-      this.snapOrNew(sp);
-    } else if (this.tool === 'line') {
-      const p = this.snapOrNew(sp);
-      if (this.pending.length && p !== this.pending[this.pending.length - 1]) sk.line(this.pending[this.pending.length - 1], p);
-      this.pending = [p];                            // continue the polyline
-    } else if (this.tool === 'rect') {
-      if (!this.pending.length) {
-        this.pending = [this.snapOrNew(sp)];
-      } else {
-        const [x1, y1] = this.s2w(sp[0], sp[1]);
-        sk.rectangle(this.pending[0], x1, y1);      // the first click's point is corner a
-        this.pending = [];
-      }
-    } else if (this.tool === 'circle') {
-      if (!this.pending.length) {
-        this.pending = [this.snapOrNew(sp)];
-      } else {
-        const [x, y] = this.s2w(sp[0], sp[1]);
-        const c = this.pending[0];
-        sk.circle(c, Math.hypot(x - c.x.value, y - c.y.value) || 1);
-        this.pending = [];
-      }
-    } else if (this.tool === 'arc3') {
-      // two endpoints, then a point the arc must pass through.  That third click is
-      // construction input, not a sketch point — the circumcircle is what it produces.
-      if (this.pending.length < 2) {
-        const p = this.snapOrNew(sp);
-        if (!this.pending.length || p !== this.pending[0]) this.pending.push(p);
-      } else {
-        // the snap indicator is painted for every drawing tool, so honour it here: landing
-        // the third click on a real point means the arc should stay on it, not merely start
-        // out near it
-        const [a, b] = this.pending;
-        const { at, on } = this.pickPlace(sp);
-        const arc = sk.arcThrough(a, b, at);
-        if (!arc) {
-          this.onStatus('those three points are collinear — pick a point off the chord');
-          return;                                    // keep the two ends, let them try again
-        }
-        if (on) sk.add(new C.PointOnCircle(on, arc));
-        this.pending = [];
-      }
-    } else if (this.tool === 'splinefit') {
-      // places the curve must pass through, not points of the sketch: snapping still works, but
-      // what is recorded is where, so the tool leaves nothing behind if it is abandoned
-      const place = this.pickPlace(sp);
-      const last = this.pendingFit[this.pendingFit.length - 1];
-      const near = last
-        && Math.hypot(place.at[0] - last.at[0], place.at[1] - last.at[1]) * this.scale < PICK_PX;
-      if (near) {
-        this.finishSplineFit();
-        return;
-      }
-      this.pendingFit.push(place);
-      const min = C.curveInfo().minCtrl;
-      const held = this.pendingFit.filter((f) => f.on).length;
-      this.onStatus(this.pendingFit.length < min
-        ? `${min - this.pendingFit.length} more point(s) for a curve`
-        : `Enter to finish${held ? `; ${held} held by a point` : ''}`);
-      this.draw();
-      return;
-    } else if (this.tool === 'spline') {
-      // a control polygon is as long as the user wants it, so the tool collects points until
-      // it is finished — Enter, or a click back on the last one
-      const p = this.snapOrNew(sp);
-      if (p === this.pending[this.pending.length - 1]) {
-        this.finishSpline();
-        return;
-      }
-      this.pending.push(p);
-      const min = C.curveInfo().minCtrl;
-      this.onStatus(this.pending.length < min
-        ? `${min - this.pending.length} more control point(s) for a curve`
-        : 'Enter, or click the last point again, to finish the curve');
-      this.draw();
-      return;                                        // still collecting: nothing to solve yet
-    } else if (this.tool === 'arc') {
-      const existing = this.pickPoint(sp[0], sp[1]) !== null;
-      this.pending.push(this.snapOrNew(sp));
-      if (this.pending.length === 3) {
-        const [cpt, s, en] = this.pending;
-        if (new Set([cpt, s, en]).size === 3) {
-          if (!existing) {                           // freshly placed end point: put it on the radius
-            const q = onRadius(...cpt.xy, ...en.xy, distanceBetween(cpt, s));
-            if (q) [en.x.value, en.y.value] = q;
-          }
-          sk.arc(cpt, s, en);
-        }
-        this.pending = [];
-      }
-    }
-    this.releasePlan();
-    this.afterEdit();
-  }
-
-  private onPointerMove(e: PointerEvent): void {
-    const sp = this.local(e);
-    this.cursor = sp;
-    if (this.liveDim?.placing) this.moveDimension(sp);
-    else if (this.gesture) this.gesture.move(sp);
-    else this.hover(sp);
-    this.draw();
-  }
-
-  private onPointerUp(): void {
-    this.endGesture();
-  }
-
-  /** The gesture finished: let it commit, then refresh — unless it changed nothing (a pan
-   *  moves the camera, not the sketch). */
-  private endGesture(): void {
-    const g = this.gesture;
-    if (!g) return;
-    this.gesture = null;
-    g.end?.();
-    if (g.movedGeometry) this.staleDiagnosis = true;
-    if (!g.transient) this.onChanged();
-    this.draw();
-  }
-
-  /** The sketch is being replaced under a live gesture: drop it without committing, since
-   *  `end` would write into a document the gesture never ran on. */
-  private abandonGesture(): void {
-    const g = this.gesture;
-    this.gesture = null;
-    this.gesturePointer = null;
-    g?.abandon?.();
-  }
-
-  /* -- the gestures.  Each owns its own state; `paint` is for the ones that draw. -- */
-
-  private panGesture(from: [number, number]): Gesture {
-    let last = from;
-    return {
-      transient: true,                 // the camera moved, not the sketch
-      move: (sp) => {
-        this.originX += sp[0] - last[0];
-        this.originY += sp[1] - last[1];
-        last = sp;
-      },
-    };
-  }
-
-  private pointGesture(drag: PlanDrag): Gesture {
-    let reported = 0;
-    return {
-      movedGeometry: true,
-      move: (sp) => {
-        this.lastResult = drag.move(...this.s2w(sp[0], sp[1]));
-        if (drag.flips.length > reported) {          // only announce new ones
-          reported = drag.flips.length;
-          this.onStatus(`⚠ solution branch flipped in ${reported} triangle(s) during this drag`);
-        }
-        this.onDragFrame();
-      },
-      end: () => {
-        drag.end();
-        const b = drag.sketch.branches;                 // document state: merge, then write back
-        for (const [k, v] of drag.branches()) b.set(k, v);
-        drag.sketch.branches = b;
-      },
-      abandon: () => {
-        drag.end();              // disposes the drag's own handles; no branches committed
-      },
-    };
-  }
-
-  private radiusGesture(drag: RadiusDrag): Gesture {
-    return {
-      movedGeometry: true,
-      abandon: () => drag.end(),
-      move: (sp) => {
-        const [wx, wy] = this.s2w(sp[0], sp[1]);
-        const c = drag.circle.center;
-        this.lastResult = drag.move(Math.hypot(wx - c.x.value, wy - c.y.value));
-        this.onDragFrame();
-      },
-      end: () => drag.end(),
-    };
-  }
-
-  /** Move a dimension's callout.  The number and its line go where they are put — where the
-   *  layout would have placed it is only a first guess — so this is what settles a crowded
-   *  drawing.  The placement is document state, so it undoes and saves with everything else; a
-   *  press that never moves leaves nothing behind, and puts nothing on the undo stack. */
-  private calloutGesture(c: Constraint, from: [number, number]): Gesture {
-    const grip = dim.grab(this.sketch, this.unit, c.id, ...this.s2w(from[0], from[1]));
-    let moved = false;
-    return {
-      transient: true,               // the annotation moved, not the geometry
-      move: (sp) => {
-        if (!grip) return;
-        if (!moved) {                // the first movement is the edit; a bare click is not one
-          moved = true;
-          this.pushUndo();
-        }
-        dim.drag(this.sketch, c.id, ...this.s2w(sp[0], sp[1]), grip);
-      },
-    };
-  }
-
-  private bandGesture(from: [number, number]): Gesture {
-    const base = [...this.selected];
-    let to = from;                     // the gesture owns both corners, so paint reads no globals
-    // nothing moves during a selection drag, so the extents are computed once, not per frame
-    const extents = this.sketch.primitives().map((e) => [e, e.bounds()] as const);
-    return {
-      move: (sp) => {
-        to = sp;
-        // live preview: the canvas shows what would be selected, the status line the count
-        this.selected = [...new Set([...base, ...this.boxContents(extents, from, sp)])];
-        this.onSelect();
-        this.onDragFrame();
-      },
-      paint: (ctx) => {
-        const [x0, y0] = from, [x1, y1] = to;
-        ctx.save();
-        ctx.setLineDash([5, 4]);
-        ctx.strokeStyle = COL.sel;
-        ctx.fillStyle = COL.bandFill;
-        ctx.lineWidth = 1;
-        const rx = Math.min(x0, x1), ry = Math.min(y0, y1);
-        ctx.fillRect(rx, ry, Math.abs(x1 - x0), Math.abs(y1 - y0));
-        ctx.strokeRect(rx + 0.5, ry + 0.5, Math.abs(x1 - x0), Math.abs(y1 - y0));
-        ctx.restore();
-      },
-    };
-  }
-
-  /** Entities lying entirely inside the box — "window" selection.  "All of it is inside" is
-   *  exactly "its bounds are inside", so the caller asks the model for each primitive's extent
-   *  (a line's two endpoints, a circle's rim, an arc's sweep) once per gesture. */
-  private boxContents(extents: readonly (readonly [Primitive, Box])[],
-                      from: [number, number], to: [number, number]): Primitive[] {
-    const a = this.s2w(from[0], from[1]);
-    const b = this.s2w(to[0], to[1]);
-    const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]);
-    const y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
-    return extents.filter(([, bb]) => bb[0] >= x0 && bb[1] >= y0 && bb[2] <= x1 && bb[3] <= y1)
-      .map(([e]) => e);
-  }
-
-  /** Cursor affordance: what a press here would grab. */
-  private hover(sp: [number, number]): void {
-    if (this.tool !== 'select') return;
-    if (this.pickCallout(sp[0], sp[1])) {
-      this.canvas.style.cursor = 'move';
-      return;
-    }
-    const ent = this.pick(sp[0], sp[1]);
-    this.canvas.style.cursor = ent instanceof Point && this.canMove(ent) ? 'grab'
-      : this.isResizable(ent) ? 'ew-resize' : '';
-  }
-
-  /** Can any part of this entity actually move?  `Diagnosis.underParams` is the Jacobian
-   *  null space (or the structural under-block above NUMERIC_MAX), so the cursor promises
-   *  only what the solver will deliver rather than reading `fixed` and offering to drag
-   *  something a constraint has pinned.
-   *
-   *  The question is per entity, not per parameter — a point pinned in x but free in y still
-   *  slides.  And the null space belongs to the pose it was computed at, so a gesture that
-   *  moved geometry marks it stale: we then fall back to "yes", because refusing needs
-   *  positive knowledge and a hint should never be a lie in the strict direction. */
-  private canMove(e: Primitive): boolean {
-    const free = e.params.filter((p) => !p.fixed);
-    if (!free.length) return false;
-    if (!this.diagnosis || this.staleDiagnosis) return true;
-    if (this.movable?.owner !== this.diagnosis) {
-      this.movable = { owner: this.diagnosis, set: new Set(this.diagnosis.underParams) };
-    }
-    return free.some((p) => this.movable!.set.has(p));
-  }
-
-  /** A circle or arc whose radius is free to follow the cursor. */
-  private isResizable(e: Primitive | null): e is Circle | Arc {
-    return (e instanceof Circle || e instanceof Arc) && !e.radius.fixed
-      && (!this.diagnosis || this.staleDiagnosis || this.canMove(e));
-  }
-}
-
-/** One pointer gesture in progress.  `move` gets canvas coordinates; `end` and `paint` are
- *  optional because pan needs neither and the rubber band needs both. */
-interface Gesture {
-  move(sp: [number, number]): void;
-  /** Finish and commit whatever the gesture produced. */
-  end?(): void;
-  /** Drop it without committing — the sketch was replaced underneath. */
-  abandon?(): void;
-  paint?(ctx: CanvasRenderingContext2D): void;
-  /** Nothing about the sketch or the selection changed, so releasing needs no refresh. */
-  transient?: boolean;
-  /** The geometry moved, so the diagnosis no longer describes the pose on screen. */
-  movedGeometry?: boolean;
+  addConstraints(...cs: Constraint[]): void { edit.addConstraints(this, ...cs); }
+  removeConstraint(c: Constraint): void { edit.removeConstraint(this, c); }
+  deleteSelected(): void { edit.deleteSelected(this); }
+  toggleConstructionSelected(): void { edit.toggleConstructionSelected(this); }
+  toggleFixSelected(): void { edit.toggleFixSelected(this); }
+  copySelected(): number { return edit.copySelected(this); }
+  cutSelected(): number { return edit.cutSelected(this); }
+  pasteClipboard(): number { return edit.pasteClipboard(this); }
+  resetCallouts(c?: Constraint | null): number { return edit.resetCallouts(this, c); }
 }
 
 function dist(a: [number, number], b: [number, number]): number {

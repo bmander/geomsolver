@@ -16,13 +16,30 @@ Currently: **Stage 5 done**, in **one** implementation —
 * **bindings**: `src/gcs/` (Python, `ctypes`) and `web/src/core/` (TypeScript, WebAssembly).
   Both are *thin*: proxies over handles, buffers for hot-path numbers, JSON for ragged results.
   Neither contains an algorithm.
-* **app** (`web/src/app/`): an HTML5-canvas sketcher, the only front end.
+* **app** (`web/src/app/`): an HTML5-canvas sketcher, the only front end.  Two halves, each
+  a handful of modules rather than one slab.  The *view* is the canvas: `view.ts` holds the
+  state — camera, selection, tool, plan, diagnosis — and the modules beside it take that view
+  as their first argument and do the work (`paint`, `gesture`, `tools`, `dimension`, `edit`);
+  `SketchView` keeps a one-line delegator for each verb the shell calls, so a caller holds one
+  object.  The *shell* is the page around it: `shell.ts` (the elements, the view, the focused
+  constraint, and where the core is started), `commands` (the constraints bar), `dialogs` (what
+  the menus open), `lists` (sidebar, banner, status line), `dimbox` (a dimension's number,
+  edited on the drawing), `ui` (dialogs and bar widgets), and `main.ts`, which is only wiring.
+  `index.html` is structure and `app.css` is the whole of the styling.
 
 Commands:
 `make` (native `build/libgcs.dylib`), `make wasm` (`web/src/wasm/gcs.wasm`),
 `make test` (cargo + pytest + mypy + the web suite), `cargo test --manifest-path rust/Cargo.toml`,
 `.venv/bin/pytest`, `.venv/bin/mypy` (strict, must stay clean), `cd web && npm test`,
 `make bench`, `cd web && npm run serve`.
+
+`npm run build` is `tsc` (module per file, which is what `node --test` and the test suite run
+against) then esbuild, which rolls `dist/app/main.js` and everything it reaches into one
+`dist/app/bundle.js` — what the page loads, so splitting a module further costs the browser
+nothing.  The bundle stands in for the entry module, so it is written *beside* it: `core/wasm.ts`
+finds the core at `../wasm/gcs.wasm` relative to `import.meta.url`, which under bundling is the
+bundle's own URL, and a bundle written anywhere else would look for it somewhere else.  The
+node-only fallback imports in `wasm.ts` are left external; a browser never evaluates them.
 
 Conventions:
 - A constraint may own *unknowns* of its own: a `SpecKind::Param` slot in its `spec`, allocated

@@ -6,14 +6,16 @@
   "type": "module",
   "description": "Geometric constraint solver in the browser: C core compiled to WebAssembly, TypeScript front end, HTML5-canvas sketcher.",
   "scripts": {
-    "build": "tsc -p tsconfig.json && node tools/copy-wasm.js",
+    "build": "tsc -p tsconfig.json && node tools/copy-wasm.js && npm run bundle",
     "watch": "tsc -p tsconfig.json --watch",
     "test": "npm run build && node --test \"dist/test/*.test.js\"",
     "serve": "node tools/serve.js",
-    "bench": "npm run build && node dist/test/bench.js"
+    "bench": "npm run build && node dist/test/bench.js",
+    "bundle": "esbuild dist/app/main.js --bundle --format=esm --target=es2022 --sourcemap --outfile=dist/app/bundle.js --external:node:fs/promises --external:node:url"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "@types/node": "^22.10.0"
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.7.0"
   }
 }

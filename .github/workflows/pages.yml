@@ -1,8 +1,10 @@
 # Publish the browser sketcher to GitHub Pages.
 #
 # The demo is static files and nothing else: `make wasm` compiles the Rust core to WebAssembly,
-# `npm run build` compiles the TypeScript around it, and everything the page loads is a relative
-# path — so the same tree serves unchanged from a project path (/geomsolver/) or a domain root.
+# `npm run build` compiles the TypeScript around it and bundles the app, and everything the page
+# loads is a relative path — so the same tree serves unchanged from a project path
+# (/geomsolver/) or a domain root.  The page loads three things: index.html, app.css, and
+# dist/app/bundle.js, which fetches dist/wasm/gcs.wasm beside itself.
 name: pages
 
 on:
@@ -66,7 +68,7 @@ jobs:
       - name: Stage the site
         run: |
           mkdir -p _site
-          cp web/index.html web/404.html _site/   # 404.html is the /example/<slug> route
+          cp web/index.html web/404.html web/app.css _site/   # 404.html is the /example/<slug> route
           cp -R web/dist _site/dist
           rm -rf _site/dist/test        # the test suite is not part of the demo
           # the compiled modules carry source maps pointing at ../../src, so shipping the
