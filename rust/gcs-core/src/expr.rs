@@ -14,7 +14,7 @@
 //! angle expression's value is degrees — the stored argument (radians) is converted on the way
 //! in, exactly as the callout converts on the way out.
 
-use crate::constraints::{Arg, SpecKind};
+use crate::constraints::{Arg, Constraint, SpecKind};
 use crate::model::Sketch;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -24,6 +24,38 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct Expr {
     pub text: String,
     pub value: f64,
+}
+
+/// A dimension written in terms of a *free* variable: a name no expression defines, which is
+/// therefore an unknown of the sketch rather than a number.  Two dimensions reading the same
+/// free name say the same thing about themselves, so they are tied to each other and the value
+/// they share is left to the solver — one degree of freedom where two stated numbers would have
+/// been none.
+///
+/// The tie is affine, and that is not a simplification for its own sake: `value = m * a + c` is
+/// the whole of what a fixed-width kernel block can carry, one extra column and two constants.
+/// `m` and `c` are in the argument's own units (radians for an angle) so a kernel needs no
+/// conversion; the unknown itself is in the units a person writes, like every expression value
+/// here.
+///
+/// It hangs off the `Constraint`, not off the `Expr`, because that is where the rest of the code
+/// already assumes it: one free column appended by `params_on`, one `(m, c)` pair from
+/// `consts_on`, one twin kernel.  Derived state, and the only writer is `evaluate` — so a
+/// document, a paste and a rebuild carry the text and the number, and let the next evaluation
+/// work the rest out again rather than inheriting an index into somebody else's parameters.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Free {
+    /// The unknown, as an index into `Sketch::params`.
+    pub param: u32,
+    pub m: f64,
+    pub c: f64,
+}
+
+impl Expr {
+    /// A dimension written as text, standing at the number it is worth until it is evaluated.
+    pub fn new(text: impl Into<String>, value: f64) -> Expr {
+        Expr { text: text.into(), value }
+    }
 }
 
 /// Longest expression a document may carry; the parser is linear and depth-limited, this just
@@ -488,34 +520,118 @@ fn call(name: &str, a: &[f64]) -> f64 {
     }
 }
 
-/// Evaluate with the given names.  `Err` names the first name the environment lacks; a result
-/// that is not a number (`sqrt(-1)`, `1/0`) comes back as is, for the caller to judge.
-pub fn eval(ast: &Ast, env: &BTreeMap<String, f64>) -> Result<f64, String> {
+/// What an expression comes to: a number, or `m` times the one free name it reads plus `c`.
+///
+/// Ordinary evaluation is the `free: None` case, and everything that is not a bare number is
+/// written as a number here — so there is one evaluator, not two, and the rule that a free name
+/// may only be scaled and offset falls out of the arithmetic rather than being checked for.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Aff {
+    /// The free name this stands in terms of; `None` for a plain number.
+    pub free: Option<String>,
+    pub m: f64,
+    pub c: f64,
+}
+
+impl Aff {
+    pub fn num(v: f64) -> Aff {
+        Aff { free: None, m: 0.0, c: v }
+    }
+
+    fn of(name: &str) -> Aff {
+        Aff { free: Some(name.to_string()), m: 1.0, c: 0.0 }
+    }
+
+    /// The number this is worth when the free name stands at `a`.
+    pub fn at(&self, a: f64) -> f64 {
+        self.m * a + self.c
+    }
+
+    /// The plain number, if it is one.
+    pub fn number(&self) -> Option<f64> {
+        self.free.is_none().then_some(self.c)
+    }
+}
+
+/// Which free name a combination of two is in terms of.  One of them being a plain number is
+/// what makes a product or a quotient legal; two different free names are not something an
+/// affine form can hold, and neither is a second-degree one.
+fn together(a: &Aff, b: &Aff) -> Result<Option<String>, String> {
+    match (&a.free, &b.free) {
+        (None, f) | (f, None) => Ok(f.clone()),
+        (Some(x), Some(y)) if x == y => Ok(Some(x.clone())),
+        (Some(x), Some(y)) => Err(free_pair(x, y)),
+    }
+}
+
+fn free_pair(x: &str, y: &str) -> String {
+    format!("`{x}` and `{y}` are both free, and a dimension can only follow one")
+}
+
+fn not_affine(name: &str) -> String {
+    format!("`{name}` is free, so it can only be scaled and offset here")
+}
+
+/// Evaluate with the given names.  A name the environment lacks is *free* — an unknown the
+/// solver moves rather than an error — so the result may be an affine form in it; `Err` is for
+/// a free name used in a way an affine form cannot hold.  A result that is not a number
+/// (`sqrt(-1)`, `1/0`) comes back as is, for the caller to judge.
+pub fn eval(ast: &Ast, env: &BTreeMap<String, Aff>) -> Result<Aff, String> {
     Ok(match ast {
-        Ast::Num(v) => *v,
+        Ast::Num(v) => Aff::num(*v),
         Ast::Var(name) => match CONSTANTS.iter().find(|&&(n, _)| n == name) {
-            Some(&(_, v)) => v,
-            None => *env.get(name).ok_or_else(|| format!("`{name}` is not defined"))?,
+            Some(&(_, v)) => Aff::num(v),
+            None => match env.get(name) {
+                Some(a) => a.clone(),
+                None => Aff::of(name),
+            },
         },
-        Ast::Neg(a) => -eval(a, env)?,
+        Ast::Neg(a) => {
+            let x = eval(a, env)?;
+            Aff { free: x.free, m: -x.m, c: -x.c }
+        }
         Ast::Bin(op, a, b) => {
             let (x, y) = (eval(a, env)?, eval(b, env)?);
             match op {
-                Op::Add => x + y,
-                Op::Sub => x - y,
-                Op::Mul => x * y,
-                Op::Div => x / y,
-                Op::Pow => x.powf(y),
+                Op::Add => Aff { free: together(&x, &y)?, m: x.m + y.m, c: x.c + y.c },
+                Op::Sub => Aff { free: together(&x, &y)?, m: x.m - y.m, c: x.c - y.c },
+                Op::Mul => match (x.number(), y.number()) {
+                    (Some(k), _) => Aff { free: y.free, m: k * y.m, c: k * y.c },
+                    (_, Some(k)) => Aff { free: x.free, m: k * x.m, c: k * x.c },
+                    _ => return Err(free_pair_of(&x, &y)),
+                },
+                Op::Div => match y.number() {
+                    Some(k) => Aff { free: x.free, m: x.m / k, c: x.c / k },
+                    None => return Err(not_affine(y.free.as_deref().unwrap_or(""))),
+                },
+                Op::Pow => match (x.number(), y.number()) {
+                    (Some(p), Some(q)) => Aff::num(p.powf(q)),
+                    _ => return Err(free_pair_of(&x, &y)),
+                },
             }
         }
         Ast::Call(name, args) => {
             let mut vals = Vec::with_capacity(args.len());
             for a in args {
-                vals.push(eval(a, env)?);
+                let v = eval(a, env)?;
+                match v.number() {
+                    Some(n) => vals.push(n),
+                    None => return Err(not_affine(v.free.as_deref().unwrap_or(""))),
+                }
             }
-            call(name, &vals)
+            Aff::num(call(name, &vals))
         }
     })
+}
+
+/// The complaint about a pair neither of which is a plain number: two free names cannot be
+/// followed at once, and one free name cannot be multiplied by itself.
+fn free_pair_of(x: &Aff, y: &Aff) -> String {
+    match (&x.free, &y.free) {
+        (Some(a), Some(b)) if a != b => free_pair(a, b),
+        (Some(a), _) | (_, Some(a)) => not_affine(a),
+        _ => "not a number".to_string(),
+    }
 }
 
 /// Expression values are in the units a person writes: degrees for an angle.
@@ -551,6 +667,10 @@ pub struct ExprItem {
     pub value: f64,
     /// The names it reads.
     pub deps: Vec<String>,
+    /// The free names among them — the ones nothing defines, which are unknowns the solver
+    /// moves rather than numbers.  At most one, since a dimension can only follow one; a list
+    /// because that is what a reader wants to be handed, and because the deps beside it are one.
+    pub free: Vec<String>,
     pub error: Option<String>,
 }
 
@@ -570,8 +690,14 @@ struct Node {
 /// and reads naturally; what is never ready is on a cycle.
 pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     let mut nodes: Vec<Node> = Vec::new();
-    for (ci, c) in sk.constraints.iter().enumerate() {
-        for (ai, (_, kind)) in c.spec().iter().enumerate() {
+    // Every binding to a free variable is worked out again from here, so a text that has stopped
+    // reading one — or stopped parsing, or stopped being text at all — cannot leave a column
+    // behind naming an unknown it no longer has anything to say about.  Clearing all of them and
+    // not just the ones still carrying an expression is the point: the constraint that lost its
+    // expression is exactly the one whose binding has to go.
+    for (ci, c) in sk.constraints.iter_mut().enumerate() {
+        c.free = None;
+        for (ai, (_, kind)) in c.kind.spec().iter().enumerate() {
             if let Arg::Expr(e) = &c.args[ai] {
                 nodes.push(Node { ci, ai, kind: *kind, parsed: parse(&e.text) });
             }
@@ -601,7 +727,9 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
             }
         }
     }
-    // edges: reader ← definer
+    // edges: reader ← definer.  A name nothing defines at all is neither an edge nor an error:
+    // it is a free variable, and what it is worth is the solver's business.  A name several
+    // definitions claim is still an error — it is not undefined, it is ambiguous.
     let deps: Vec<Vec<String>> = nodes
         .iter()
         .map(|nd| match &nd.parsed {
@@ -619,12 +747,8 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
                     indeg[i] += 1;
                 }
                 None => {
-                    if errors[i].is_none() {
-                        errors[i] = Some(if definers.contains_key(name) {
-                            format!("`{name}` is defined more than once")
-                        } else {
-                            format!("`{name}` is not defined")
-                        });
+                    if errors[i].is_none() && definers.contains_key(name) {
+                        errors[i] = Some(format!("`{name}` is defined more than once"));
                     }
                 }
             }
@@ -633,35 +757,37 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     // the walk
     let mut ready: BTreeSet<usize> = (0..n).filter(|&i| indeg[i] == 0).collect();
     let mut order: Vec<usize> = Vec::with_capacity(n);
-    let mut env: BTreeMap<String, f64> = BTreeMap::new();
+    let mut env: BTreeMap<String, Aff> = BTreeMap::new();
     let mut values: Vec<f64> = nodes
         .iter()
         .map(|nd| to_user_units(nd.kind, sk.constraints[nd.ci].args[nd.ai].num()))
         .collect();
+    let mut free_of: Vec<Vec<String>> = vec![Vec::new(); n];
+    // the free names actually bound this time round, and what one unit of each is worth in world
+    // length — the largest any of its readers makes it, since that is the motion a step buys
+    let mut bound: BTreeMap<String, f64> = BTreeMap::new();
     while let Some(&i) = ready.iter().next() {
         ready.remove(&i);
         order.push(i);
         let nd = &nodes[i];
         if errors[i].is_none() {
             let parsed = nd.parsed.as_ref().unwrap();
-            let unready = deps[i].iter().find(|d| !env.contains_key(*d));
+            let unready =
+                deps[i].iter().filter(|d| def.contains_key(*d)).find(|d| !env.contains_key(*d));
             if let Some(name) = unready {
                 errors[i] = Some(format!("`{name}` could not be evaluated"));
             } else {
                 match eval(&parsed.body, &env) {
-                    Ok(v) if v.is_finite() => {
-                        values[i] = v;
-                        if let Some(name) = &parsed.name {
-                            env.insert(name.clone(), v);
+                    Ok(a) => match write_value(sk, nd, &a, &mut bound) {
+                        Ok(v) => {
+                            values[i] = v;
+                            free_of[i] = a.free.iter().cloned().collect();
+                            if let Some(name) = &parsed.name {
+                                env.insert(name.clone(), a);
+                            }
                         }
-                        let text = match &sk.constraints[nd.ci].args[nd.ai] {
-                            Arg::Expr(e) => e.text.clone(),
-                            _ => unreachable!(),
-                        };
-                        sk.constraints[nd.ci].args[nd.ai] =
-                            Arg::Expr(Expr { text, value: to_arg_units(nd.kind, v) });
-                    }
-                    Ok(_) => errors[i] = Some("does not evaluate to a number".to_string()),
+                        Err(e) => errors[i] = Some(e),
+                    },
                     Err(e) => errors[i] = Some(e),
                 }
             }
@@ -673,6 +799,7 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
             }
         }
     }
+    retire_free(sk, &bound);
     // whatever never became ready is on a cycle, or downstream of one
     let stuck: Vec<usize> = (0..n).filter(|&i| indeg[i] > 0).collect();
     for &i in &stuck {
@@ -696,10 +823,190 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
                 name: nd.parsed.as_ref().ok().and_then(|p| p.name.clone()),
                 value: values[i],
                 deps: deps[i].clone(),
+                free: free_of[i].clone(),
                 error: errors[i].clone(),
             }
         })
         .collect()
+}
+
+/// Write what one expression came to into its argument, and return it in the units a person
+/// reads.  A plain number is stored as one; a form in a free name binds the argument to that
+/// unknown, allocating it if this is the first expression to read it.
+///
+/// The seed is the obvious one: the dimension keeps the number it already stated, so writing `a`
+/// over a dimension of 30 makes 30 what `a` is worth and nothing moves.  A dimension that states
+/// *nothing* — one written as a name from the start, `Distance(p, q, "a")`, which arrives at
+/// zero because there was never a number — takes what the geometry reads instead; see `settle`.
+///
+/// Only the *first* reader seeds it.  A second dimension saying `a / 2` is stating a relation,
+/// and it is the geometry that must move to meet it, not the variable that must bend to keep the
+/// geometry still.
+fn write_value(
+    sk: &mut Sketch,
+    nd: &Node,
+    a: &Aff,
+    bound: &mut BTreeMap<String, f64>,
+) -> Result<f64, String> {
+    let (ci, ai, kind) = (nd.ci, nd.ai, nd.kind);
+    let text = match &sk.constraints[ci].args[ai] {
+        Arg::Expr(e) => e.text.clone(),
+        _ => unreachable!("a node is an expression argument"),
+    };
+    let Some(name) = a.free.clone() else {
+        if !a.c.is_finite() {
+            return Err("does not evaluate to a number".to_string());
+        }
+        sk.constraints[ci].args[ai] = Arg::Expr(Expr::new(text, to_arg_units(kind, a.c)));
+        return Ok(a.c);
+    };
+    if !a.m.is_finite() || !a.c.is_finite() {
+        return Err("does not evaluate to a number".to_string());
+    }
+    // only a stated number can become an unknown, and only where there is a kernel to read it as
+    // a column.  The two go together — `every_dimension_can_be_written_free` — so this is the
+    // belt to that braces: an expression somewhere it was never meant to be says so rather than
+    // selecting a kernel that does not exist.
+    if !kind.is_dimension() || sk.constraints[ci].kind.free_kernel().is_none() {
+        return Err(format!("`{name}` is free, and this is not a dimension it can be"));
+    }
+    // a form that does not actually move with the variable states nothing about it, and there
+    // would be no way back from the dimension to a value for it
+    if a.m == 0.0 {
+        return Err(format!("`{name}` does not affect this dimension"));
+    }
+    let stated = sk.constraints[ci].args[ai].num();
+    let seed = (to_user_units(kind, stated) - a.c) / a.m;
+    let (param, fresh) = free_param(sk, &name, seed);
+    let (m, c) = (to_arg_units(kind, a.m), to_arg_units(kind, a.c));
+    // one unit of the variable is worth this much world length through this dimension: an angle
+    // in degrees moves the drawing by the arm it turns, everything else is a length already
+    let reach = m.abs() * if kind == SpecKind::Angle { sk.extent().max(1.0) } else { 1.0 };
+    let was = bound.entry(name).or_insert(0.0);
+    *was = was.max(reach);
+    let free = Free { param, m, c };
+    if fresh && stated == 0.0 {
+        // the bound copy is what `settle` measures through: the columns and the constants it
+        // asks for are the ones this constraint selects once the binding is in
+        let mut bound_copy = sk.constraints[ci].clone();
+        bound_copy.free = Some(free);
+        settle(sk, &bound_copy, param, reach);
+    }
+    let value = a.at(sk.params[param as usize].value);
+    sk.constraints[ci].free = Some(free);
+    sk.constraints[ci].args[ai] = Arg::Expr(Expr::new(text, to_arg_units(kind, value)));
+    Ok(value)
+}
+
+/// Move a newly allocated free variable to where the dimension it first appears on is satisfied
+/// at the current geometry.  This is for the dimension that states no number to seed from — one
+/// written as a name from the start — and the answer it wants is "leave the drawing alone".
+///
+/// That row is a function of the one unknown, and Newton on it is the whole method.  It asks the
+/// kernel and nothing else, so a new dimension type is seeded correctly by declaring one, with no
+/// table here to extend — and since the seed is only a starting point, an ill-conditioned row
+/// costs the best value found and never correctness.
+///
+/// Starting from nothing is exactly where the derivative can vanish: a distance is written
+/// squared, so at zero the row is flat and Newton has nowhere to go.  A step that is not a number
+/// is answered by moving the dimension one extent instead, which `reach` — the world length one
+/// unit of the variable is worth — converts into a step in the variable.
+fn settle(sk: &mut Sketch, c: &Constraint, param: u32, reach: f64) {
+    let kid = c.kernel_id();
+    if crate::kernels::kernel_by_id(kid).n_res != 1 {
+        return;
+    }
+    let ps = c.params(sk);
+    let col = ps.len() - 1;   // the free column comes last — see `Constraint::params_on`
+    let consts = c.consts(sk);
+    let kick = sk.extent().max(1.0) / if reach.is_finite() && reach > 0.0 { reach } else { 1.0 };
+    let err = |sk: &Sketch| {
+        let v: Vec<f64> = ps.iter().map(|&p| sk.params[p as usize].value).collect();
+        let (r, j) = crate::kernels::eval_one(kid, &v, &consts);
+        (r[0], j[col])
+    };
+    let start = sk.params[param as usize].value;
+    let start_err = err(sk).0.abs();
+    for _ in 0..24 {
+        let (r, dr) = err(sk);
+        let here = sk.params[param as usize].value;
+        let step = r / dr;
+        sk.params[param as usize].value = if step.is_finite() { here - step } else { here + kick };
+        if step.is_finite() && step.abs() <= 1e-12 * (1.0 + here.abs()) {
+            break;
+        }
+    }
+    // a seed is only a starting point, so a walk that ended worse than it began is discarded
+    if !(err(sk).0.abs() < start_err) {
+        sk.params[param as usize].value = start;
+    }
+}
+
+/// The unknown a free name stands for, and whether this is the first expression to read it since
+/// it last meant anything — which is what decides whether it takes a seed.  A name still in use
+/// keeps both its unknown and its value, so an edit elsewhere in the document does not disturb it.
+///
+/// A name that had been retired gets its old slot back rather than a new one.  Reusing it is what
+/// keeps `Sketch::params` from growing every time a dimension is toggled between `q` and a
+/// number: the slot is the sketch's name for the variable, and the parameter *count* is part of
+/// `topology_key`, so allocating a fresh one would also miss the plan cache on the way back to a
+/// shape already compiled.  It is still seeded, since as far as the document is concerned the
+/// variable is new.
+fn free_param(sk: &mut Sketch, name: &str, seed: f64) -> (u32, bool) {
+    if let Some(&p) = sk.free_vars.get(name) {
+        let retired = sk.params[p as usize].fixed;
+        sk.params[p as usize].fixed = false;
+        if retired {
+            sk.params[p as usize].value = seed;
+        }
+        return (p, retired);
+    }
+    let p = sk.param(seed, false, &format!("${name}")) as u32;
+    sk.free_vars.insert(name.to_string(), p);
+    (p, true)
+}
+
+/// Retire the free variables nothing reads any more and give the rest their step scale.
+///
+/// Retiring is to `fixed`, as it is for a constraint's own unknowns: every index above a
+/// parameter names something, so the slot stays and stops being an unknown.  A free parameter no
+/// equation mentions is a degree of freedom the sketch does not have, and diagnosis would say so.
+/// The *name* keeps the slot too, so that reading it again reuses the unknown instead of leaking
+/// a new one — see `free_param`.  The rebuild walk is what reclaims both.
+fn retire_free(sk: &mut Sketch, bound: &BTreeMap<String, f64>) {
+    let gone: Vec<u32> = sk
+        .free_vars
+        .iter()
+        .filter(|(n, _)| !bound.contains_key(*n))
+        .map(|(_, &p)| p)
+        .collect();
+    for p in gone {
+        sk.params[p as usize].fixed = true;
+    }
+    for (name, &reach) in bound {
+        if let Some(&p) = sk.free_vars.get(name) {
+            sk.params[p as usize].scale = if reach.is_finite() && reach > 0.0 { reach } else { 1.0 };
+        }
+    }
+}
+
+/// Bring every dimension written in terms of a free variable up to the number that variable now
+/// stands at.  The binding is what the kernels read, so a solve needs nothing from this; the
+/// *text* of a dimension does, and so does anyone asking what it says without a sketch in hand.
+pub fn sync_free(sk: &mut Sketch) {
+    if sk.free_vars.is_empty() {
+        return;   // a document with no free variable in it pays nothing
+    }
+    let Sketch { constraints, params, .. } = sk;
+    for c in constraints {
+        let Some(f) = c.free else { continue };
+        let v = f.m * params[f.param as usize].value + f.c;
+        // a constraint carrying a binding has exactly one dimension, and it is written as text —
+        // that is what having one means
+        if let Some(Arg::Expr(e)) = c.args.iter_mut().find(|a| matches!(a, Arg::Expr(_))) {
+            e.value = v;
+        }
+    }
 }
 
 /// `circular: w → h → w`, found by walking definitions from `i` through the stuck nodes; or,
@@ -769,7 +1076,7 @@ pub fn set_dimension(sk: &mut Sketch, id: u32, attr: &str, text: &str) -> Result
         return Ok(None);
     }
     parse(text)?;
-    sk.constraint_mut(id).unwrap().args[i] = Arg::Expr(Expr { text: text.to_string(), value });
+    sk.constraint_mut(id).unwrap().args[i] = Arg::Expr(Expr::new(text, value));
     let mine = evaluate(sk).into_iter().find(|it| it.id == id && it.attr == attr);
     Ok(mine.and_then(|it| it.error))
 }

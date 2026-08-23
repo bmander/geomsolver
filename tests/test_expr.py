@@ -47,17 +47,18 @@ def test_editing_one_dimension_moves_every_reader() -> None:
     assert cs[2].d == 7
     assert cs[0].set_dimension("d", "w = 5") is None
     assert cs[1].d == 10 and cs[2].d == 11       # re-read from the core
-    # a bare number is a constant again; the readers say so and keep their numbers
+    # a bare number is a constant again; nothing defines `w` now, so it is a free variable and
+    # the readers keep their numbers and their relation to each other
     assert cs[0].set_dimension("d", "4") is None
     assert cs[0].expr("d") is None and cs[1].d == 10
-    bad = [it for it in expressions(sk) if it.error]
-    assert [it.error for it in bad] == ["`w` is not defined", "`h` could not be evaluated"]
+    assert [it.error for it in expressions(sk) if it.error] == []
+    assert [it.free for it in expressions(sk)] == [["w"], ["w"]]
     # text that does not parse is refused and changes nothing
     with pytest.raises(ValueError):
         cs[0].set_dimension("d", "1 +")
     assert cs[0].d == 4
-    # text that reads a name nothing defines is kept, and says why
-    assert "`q` is not defined" in (cs[0].set_dimension("d", "q * 2") or "")
+    # a free name used in a way an affine form cannot hold is kept, and says why
+    assert "`q` is free" in (cs[0].set_dimension("d", "q * q") or "")
     assert cs[0].d == 4
     # a cycle is named
     cs[0].set_dimension("d", "w = h")
@@ -89,7 +90,10 @@ def test_documents_and_rebuilds_keep_the_text() -> None:
     # deleting the definition: readers keep their numbers and say what is missing
     sk3 = io.without(sk, constraints=[cs[0]])
     assert sk3.constraints[0].d == 6
-    assert expressions(sk3)[0].error == "`w` is not defined"
+    # nothing defines `w` any more, so it is a free variable: the relation outlives its
+    # definition, and `h` is still twice whatever `w` comes to
+    assert expressions(sk3)[0].error is None
+    assert expressions(sk3)[0].free == ["w"]
     # the callouts carry the expression itself, not what it came to
     assert [k["text"] for k in io.callouts(sk, 1.0)["items"]] == ["w = 3", "h = w * 2", "h + 1"]
 
@@ -144,3 +148,31 @@ def test_a_fraction_reaches_the_callout() -> None:
     assert solve(sk).success
     texts = [k["text"] for k in callouts(sk, 0.1)["items"]]
     assert "3 1/8" in texts, texts
+
+
+def test_a_free_variable_ties_two_dimensions_and_leaves_one_open() -> None:
+    """A name nothing defines is an unknown the solver moves: the dimensions reading it are tied
+    to each other, and what they come to is one degree of freedom nobody stated."""
+    sk = Sketch()
+    a, b = sk.point(0, 0, fixed=True), sk.point(30, 0)
+    c, d = sk.point(0, 10, fixed=True), sk.point(12, 10)
+    d1, d2 = C.Distance(a, b, "q"), C.Distance(c, d, "q / 2")
+    sk.add(d1)
+    sk.add(d2)
+    items = expressions(sk)
+    assert [it.error for it in items] == [None, None]
+    assert [it.free for it in items] == [["q"], ["q"]]
+    assert solve(sk).success
+    l1 = math.hypot(b.x.value - a.x.value, b.y.value - a.y.value)  # type: ignore[attr-defined]
+    l2 = math.hypot(d.x.value - c.x.value, d.y.value - c.y.value)  # type: ignore[attr-defined]
+    assert l2 == pytest.approx(l1 / 2)
+    # the drawing says what was written; the list says that and where it stands, marked free
+    assert io.callouts(sk, 1.0)["items"][0]["text"] == "q"
+    assert "(free)" in d1.describe()
+    # one degree of freedom more than the same drawing with the numbers stated
+    free = diagnose(sk).dof
+    d1.d = 20
+    d2.d = 10
+    assert diagnose(sk).dof == free - 1
+    # a free name can be scaled and offset and no more
+    assert "`q` is free" in (d1.set_dimension("d", "sin(q)") or "")

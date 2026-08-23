@@ -1207,18 +1207,18 @@ test('editing one dimension moves every proxy that reads it', () => {
   assert.equal(cs[0].setDimension('d', 'w = 5'), null);
   assert.equal(cs[1].d, 10);                  // re-read from the core, nothing told this proxy
   assert.equal(cs[2].d, 11);
-  // a bare number is a constant again; whatever read the name says so and keeps its number
+  // a bare number is a constant again; nothing defines `w` now, so it becomes a free variable
+  // and the two readers keep both their numbers and their relation to each other
   assert.equal(cs[0].setDimension('d', '4'), null);
   assert.equal(cs[0].expr('d'), null);
   assert.equal(cs[1].d, 10);
-  const bad = expressions(sk).filter((it) => it.error);
-  assert.equal(bad.length, 2);
-  assert.equal(bad[0].error, '`w` is not defined');
+  assert.equal(expressions(sk).filter((it) => it.error).length, 0);
+  assert.deepEqual(expressions(sk).map((it) => it.free), [['w'], ['w']]);
   // text that does not parse is refused and changes nothing
   assert.throws(() => cs[0].setDimension('d', '1 +'));
   assert.equal(cs[0].d, 4);
-  // text that reads a name nothing defines is kept, and says why
-  assert.match(cs[0].setDimension('d', 'q * 2') ?? '', /`q` is not defined/);
+  // a free name used in a way an affine form cannot hold is kept, and says why
+  assert.match(cs[0].setDimension('d', 'q * q') ?? '', /`q` is free/);
   assert.equal(cs[0].d, 4);
   // a cycle is named
   cs[0].setDimension('d', 'w = h');
@@ -1244,10 +1244,12 @@ test('expressions round-trip through the document and survive a rebuild', () => 
   assert.equal(io.dumps(sk2), io.dumps(sk));
   assert.equal(sk2.constraints[1].expr('d'), 'h = w * 2');
   assert.equal(sk2.constraints[1].d, 6);
-  // deleting the definition: readers keep their numbers and say what is missing
+  // deleting the definition: nothing defines `w` any more, so it is a free variable — the
+  // relation outlives its definition and the readers keep their numbers
   const sk3 = io.without(sk, [], [cs[0]]);
   assert.equal(sk3.constraints[0].d, 6);
-  assert.equal(expressions(sk3)[0].error, '`w` is not defined');
+  assert.equal(expressions(sk3)[0].error, null);
+  assert.deepEqual(expressions(sk3)[0].free, ['w']);
   // the callout carries the expression itself, not what it came to
   const texts = callouts(sk, 1).items.map((k) => k.text);
   assert.deepEqual(texts, ['w = 3', 'h = w * 2', 'h + 1']);
@@ -1505,5 +1507,34 @@ test('the run and the rise between two points are dimensions of their own', () =
   assert.equal(pairDimension([0, 0], [40, 40], [-10, 50]), 'Distance');
   assert.equal(pairDimension([0, 0], [40, 40], [20, 60]), 'HorizontalDistance');
   assert.equal(pairDimension([0, 0], [40, 40], [60, 20]), 'VerticalDistance');
+  sk.dispose();
+});
+
+test('a name nothing defines is a free variable that ties the dimensions reading it', () => {
+  // an unknown the solver moves, not a number: the two dimensions are tied to each other and
+  // what they come to is one degree of freedom nobody stated
+  const sk = new Sketch();
+  const a = sk.point(0, 0, true), b = sk.point(30, 0);
+  const c = sk.point(0, 10, true), d = sk.point(12, 10);
+  const d1 = new C.Distance(a, b, 'q');
+  const d2 = new C.Distance(c, d, 'q / 2');
+  sk.add(d1);
+  sk.add(d2);
+  const items = expressions(sk);
+  assert.deepEqual(items.map((it) => it.error), [null, null]);
+  assert.deepEqual(items.map((it) => it.free), [['q'], ['q']]);
+  assert.ok(solve(sk).success);
+  const len = (p: Point, q: Point) => Math.hypot(q.x.value - p.x.value, q.y.value - p.y.value);
+  assert.ok(Math.abs(len(c, d) - len(a, b) / 2) < 1e-6, `${len(a, b)} ${len(c, d)}`);
+  // the drawing carries what was written; the list adds where it stands, marked as free
+  assert.equal(callouts(sk, 1).items[0].text, 'q');
+  assert.match(d1.describe(), /\(free\)/);
+  // one degree of freedom more than the same drawing with the numbers stated
+  const open = diagnose(sk).dof;
+  d1.d = 20;
+  d2.d = 10;
+  assert.equal(diagnose(sk).dof, open - 1);
+  // a free name can be scaled and offset and no more
+  assert.match(d1.setDimension('d', 'sin(q)') ?? '', /`q` is free/);
   sk.dispose();
 });

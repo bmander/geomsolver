@@ -20,7 +20,9 @@
  *             where you want it, double-click it to change its number.  Edit ▸ Re-place
  *             dimensions undoes the arranging; Options turns the lot off.  A number may be an
  *             expression — `w = 80` names it, `h = w / 2` and `sin(h * 10)` use it — and the
- *             core evaluates them in dependency order (Solution ▸ Diagnose lists them)
+ *             core evaluates them in dependency order (Solution ▸ Diagnose lists them).  A name
+ *             *nothing* defines is a free variable: `a` on two dimensions ties them to each
+ *             other and leaves what they are worth to the solver
  *   editing   F fix/unfix · G construction · Del delete · Ctrl+Z undo · ⇧Ctrl+Z redo ·
  *             Ctrl+X/C/V cut, copy, paste the selection · wheel zoom · right-drag pan
  *   menus     File/Edit/Solution hold everything that is not a tool or a constraint; the
@@ -665,9 +667,11 @@ async function showDiagnosis(): Promise<void> {
       const c = sk.constraintById(it.id);
       const where = c ? `${c.typeName}.${it.attr}` : `#${it.id}.${it.attr}`;
       const reads = it.deps.length ? `  ← ${it.deps.join(', ')}` : '';
+      // a free name is an unknown the solver moves, so what it is worth is where it stands now
+      const free = it.free.length ? `  (${it.free.join(', ')} free)` : '';
       lines.push(it.error
         ? `   ✗ ${it.text}   [${where}]  ${it.error} — last value ${io.fmt(it.value, 6)} stands`
-        : `   ${it.name ? `${it.name} = ` : ''}${io.fmt(it.value, 6)}   [${where}: ${it.text}]${reads}`);
+        : `   ${it.name ? `${it.name} = ` : ''}${io.fmt(it.value, 6)}   [${where}: ${it.text}]${reads}${free}`);
     }
     lines.push('');
   }
@@ -769,7 +773,7 @@ function openDimBox(): HTMLInputElement {
   box.type = 'text';
   box.className = 'dim';
   box.spellcheck = false;
-  box.title = 'a number, or an expression — Enter to accept, Esc to take it back';
+  box.title = 'a number, or an expression — `w = 80` names one, `w / 2` reads it, and a name\nnothing defines ties the dimensions that read it and leaves what they are worth open.\nEnter to accept, Esc to take it back';
   dimTyped = false;
   box.addEventListener('input', () => { dimTyped = true; sizeDimBox(box); });
   box.addEventListener('keydown', (e) => {

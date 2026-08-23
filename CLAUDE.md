@@ -216,9 +216,44 @@ Conventions:
   reader can measure off the drawing.
   `expr::set_dimension` is the one write path for text (a bare number becomes `Arg::Num`, with
   the angle conversion — the app converts nothing); `Sketch::add` and `io::from_json` evaluate;
-  `set_num` on an expression drops it.  Documents save `{"expr", "value"}` and accept a bare
+  `Sketch::set_constraint_num` is the write path for a number, and re-evaluates when it dropped
+  an expression.  Documents save `{"expr", "value"}` and accept a bare
   string; the bindings' records keep the number in `args` and put the text under `exprs`, and
   their proxies `sync()` before handing out a value, since an edit elsewhere can move it.
+- A name **nothing defines is a free variable** (`expr::Free`): an unknown of the sketch rather
+  than an error, so the dimensions reading it are tied to each other and what they come to is
+  left to the solver — one degree of freedom where two stated numbers would have been none.
+  `expr::evaluate` owns them: it allocates one Param per free name into `Sketch::free_vars`,
+  retires it to `fixed` when the last reader stops reading it — keeping the *slot*, so reading the
+  name again reuses the unknown rather than leaking a new one and moving the parameter count that
+  `topology_key` ends with — and rewrites every binding (`Constraint::free`, at most one, which is
+  why it is on the constraint and not the argument) from scratch each run, so a document, a paste
+  and a rebuild carry only the text and the number and let the next evaluation work the rest out
+  again.  It runs on every edit that can touch one: `Sketch::add`, `remove`, `set_constraint_num`,
+  `set_dimension`, `from_json`, `report::exprs_json`.  A caller adding a *whole document* one
+  constraint at a time uses `Sketch::add_quiet` and evaluates once at the end (`io::graft`,
+  `io::from_json`): per-add evaluation is quadratic in the expression count, and would make a
+  dimension whose definition has not arrived yet briefly a free variable.
+  The tie is **affine in one free name** — `a`, `a / 2`, `2 * a + 5` — because `value = m*a + c`
+  is the whole of what a fixed-width block can carry: `expr::eval` works in `Aff`, so ordinary
+  evaluation is the `free: None` case and "a free name may only be scaled and offset" falls out
+  of the arithmetic rather than being checked for.  `a * a`, `sin(a)` and two free names in one
+  dimension are errors, and an erroring dimension keeps its last number like any other.
+  Every type carrying a `Length` or an `Angle` therefore needs a *second* kernel, its free twin
+  — the same rows and one more column, the unknown where the constant was, with (m, c) as the
+  constants — declared in `CKind::free_kernel`, which matches `CKind` exhaustively so a new
+  dimension type stops the build there; `every_dimension_can_be_written_free` checks the shape.
+  Nothing else in the solve path is per-type: `params_on` appends the free column (it is always
+  last), `consts_on` returns `[m, c]`, `kernel_id` picks the twin.  A fresh free variable seeds
+  from the number the dimension already stated, or — when it states none — from the geometry, by
+  Newton on that one row (`expr::settle`), which asks the kernel and no table.  A free dimension
+  is `unsupported` in `cgraph` (the cluster vocabulary has no element for a relation *between*
+  dimensions), is never jittered by the witness (it states no number to make generic), is part of
+  `topology_key` (which unknown it names is a column), and joins `io::Part`'s walk (two dimensions
+  sharing an unknown move together, which is as real a tie as a shared point).  `expr::sync_free`
+  brings the numbers they *show* back into step with the unknown, from every seam that writes
+  parameters without going through the others — `Sketch::set_x`, `io::Part::write_back` and the
+  wave's direct writes — since a solve moves the unknown and a stale callout is a wrong drawing.
 - A drag is an operation on the dragged point's *part* of the document (`io::Part`): what is
   reached from it through shared points and constraints, stopping at fixed entities.  `PlanDrag`
   builds its plan, systems and numeric fallback on that part alone and writes each frame back, so

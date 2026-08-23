@@ -358,6 +358,7 @@ pub fn exprs_json(sk: &mut Sketch) -> Json {
                     ("name", it.name.map(Json::Str).unwrap_or(Json::Null)),
                     ("value", it.value.into()),
                     ("deps", Json::Arr(it.deps.iter().map(|d| Json::Str(d.clone())).collect())),
+                    ("free", Json::Arr(it.free.iter().map(|d| Json::Str(d.clone())).collect())),
                     ("error", it.error.map(Json::Str).unwrap_or(Json::Null)),
                 ])
             })
@@ -522,7 +523,7 @@ pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String>
                 Some(v) => Arg::Num(crate::expr::to_arg_units(*k, v)),
                 None => {
                     crate::expr::parse(text)?;
-                    Arg::Expr(crate::expr::Expr { text: text.trim().to_string(), value: 0.0 })
+                    Arg::Expr(crate::expr::Expr::new(text.trim(), 0.0))
                 }
             },
             _ => Arg::Num(a.as_f64()),

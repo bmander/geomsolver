@@ -1,9 +1,11 @@
-/* Dimension expressions: `w = 1`, `h = w * 2`, `sin(h * 10)`.
+/* Dimension expressions: `w = 1`, `h = w * 2`, `sin(h * 10)`, `a`.
  *
  * A dimension may be written as an arithmetic expression naming values other dimensions
  * define; the core parses them, orders them by what they read and evaluates them — see
- * `gcs_core::expr` for the language (trigonometry in degrees, like every angle here).  This
- * module only reads the report. */
+ * `gcs_core::expr` for the language (trigonometry in degrees, like every angle here).  A name
+ * *nothing* defines is a free variable: an unknown the solver moves, so the dimensions reading
+ * it are tied to each other and the value they share is left open.  This module only reads the
+ * report. */
 import { Sketch } from './model.js';
 import { core, takeJson } from './wasm.js';
 
@@ -19,6 +21,9 @@ export interface ExprItem {
   value: number;
   /** The names it reads. */
   deps: string[];
+  /** The free names among them — the ones nothing defines, which are unknowns the solver moves
+   *  rather than numbers.  At most one: a dimension can only follow one free variable. */
+  free: string[];
   error: string | null;
 }
 

@@ -9,6 +9,7 @@
 //! determinant, angle a dot/cross combination, tangency a signed distance minus the radius with
 //! a chirality flag fixed at construction.
 
+use crate::expr::Free;
 use crate::kernels::{self, K};
 use crate::model::{EntKind, EntRef, Sketch};
 
@@ -339,6 +340,46 @@ impl CKind {
             CKind::VerticalDistance => K::VerticalDistance,
         }
     }
+
+    /// The kernel for this type when the number it states is not stated but *shared* — written
+    /// in terms of a free variable, so the dimension's value is an unknown the solver moves
+    /// rather than a constant.  See `expr::Free`.
+    ///
+    /// The match is exhaustive on purpose: a new type carrying a `Length` or an `Angle` stops
+    /// the build here, and `every_dimension_can_be_written_free` checks the arm is the right
+    /// one.  Everything that states no number says `None`, and can never be asked.
+    pub fn free_kernel(self) -> Option<K> {
+        Some(match self {
+            CKind::Distance => K::DistanceFree,
+            CKind::Angle => K::AngleFree,
+            CKind::Radius => K::RadiusFree,
+            CKind::ParallelDistance => K::ParallelDistanceFree,
+            CKind::PointLineDistance => K::PointLineDistanceFree,
+            CKind::AnnularDistance => K::AnnularDistanceFree,
+            CKind::HorizontalDistance => K::HorizontalDistanceFree,
+            CKind::VerticalDistance => K::VerticalDistanceFree,
+            CKind::Coincident
+            | CKind::Midpoint
+            | CKind::DragTarget
+            | CKind::Horizontal
+            | CKind::Vertical
+            | CKind::Parallel
+            | CKind::Perpendicular
+            | CKind::EqualLength
+            | CKind::PointOnLine
+            | CKind::PointOnCircle
+            | CKind::EqualRadius
+            | CKind::TangentLineCircle
+            | CKind::TangentCircleCircle
+            | CKind::TangentArcLine
+            | CKind::Symmetric
+            | CKind::PointOnSpline
+            | CKind::SplineTangentLine
+            | CKind::SplineCurvature
+            | CKind::HorizontalPoints
+            | CKind::VerticalPoints => return None,
+        })
+    }
 }
 
 /// One constructor argument, in `spec` order.
@@ -419,12 +460,17 @@ pub struct Constraint {
     pub soft: bool,
     /// Implied by a primitive's definition (an arc's endpoints sit at its radius).
     pub intrinsic: bool,
+    /// The unknown this constraint's number is written in terms of, when its dimension names a
+    /// free variable — see `expr::Free`.  At most one, which is why it lives here and not on the
+    /// argument: one appended column, one `(m, c)` pair, one twin kernel.  Derived state, written
+    /// only by `expr::evaluate`, so `Constraint::new` and every rebuild leave it empty.
+    pub free: Option<Free>,
 }
 
 impl Constraint {
     pub fn new(kind: CKind, args: Vec<Arg>) -> Constraint {
         debug_assert_eq!(args.len(), kind.spec().len(), "{:?} arity", kind);
-        Constraint { id: 0, kind, args, soft: false, intrinsic: false }
+        Constraint { id: 0, kind, args, soft: false, intrinsic: false, free: None }
     }
 
     pub fn coincident(p: EntRef, q: EntRef) -> Constraint {
@@ -535,11 +581,20 @@ impl Constraint {
     }
 
     pub fn kernel_id(&self) -> usize {
-        self.kind.kernel() as usize
+        self.kernel() as usize
+    }
+
+    /// Which kernel evaluates this constraint: its type's, or the free-variable twin when the
+    /// number it states is an unknown rather than a constant.
+    fn kernel(&self) -> K {
+        match self.free {
+            Some(_) => self.kind.free_kernel().expect("a dimension has a free kernel"),
+            None => self.kind.kernel(),
+        }
     }
 
     pub fn n_residuals(&self) -> usize {
-        kernels::kernel(self.kind.kernel()).n_res
+        kernels::kernel(self.kernel()).n_res
     }
 
     pub fn spec(&self) -> Spec {
@@ -596,6 +651,12 @@ impl Constraint {
     /// such argument or it is not one a number can express, rather than overwriting a string
     /// argument with `NaN`.  A dimension written as an expression becomes this plain number:
     /// whoever sets a number means the number, not the formula it replaces.
+    ///
+    /// This is the write on the constraint alone, and dropping an expression is a change to the
+    /// *document*: the name it defined and the free variable it read are other constraints'
+    /// business.  `Sketch::set_constraint_num` is the path that settles them, and is what a
+    /// caller holding a sketch should use; this one is for a constraint that has no document
+    /// behind it yet, or an argument no expression can reach (a soft drag target's own number).
     pub fn set_num(&mut self, name: &str, v: f64) -> bool {
         let Some(i) = self.arg_index(name) else { return false };
         self.args[i] = match self.args[i] {
@@ -604,6 +665,10 @@ impl Constraint {
             Arg::Num(_) | Arg::Expr(_) => Arg::Num(v),
             _ => return false,
         };
+        // no expression left to read a name, so no unknown to be written in terms of: a binding
+        // that outlived its text would have this constraint compiled against a column it no
+        // longer has anything to say about
+        self.free = None;
         true
     }
 
@@ -645,6 +710,12 @@ impl Constraint {
 
     /// The same, for a curve contact read on a *given* span — see `params_on`.
     pub fn consts_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<f64> {
+        // a dimension written in terms of a free variable states no number, so what its kernel
+        // wants is the map onto the unknown instead: every free twin takes (m, c) and nothing
+        // else, which is why this is one branch and not eight
+        if let Some(f) = self.free {
+            return vec![f.m, f.c];
+        }
         if let Some((sp, t)) = self.spline_contact(sk) {
             let span = span.unwrap_or_else(|| crate::curve::span_of(sk, sp, t));
             return crate::curve::local_knots(&sk.splines[sp].knots, span).to_vec();
@@ -700,6 +771,16 @@ impl Constraint {
     /// choice, not two: `System::new` makes it once and passes it here and to `consts_on`, so a
     /// compiled block cannot end up with one span's columns and another's knots.
     pub fn params_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<u32> {
+        let mut ps = self.own_params_on(sk, span);
+        // the free column always comes last, so appending it is the whole of what a free twin
+        // needs from here — see `expr::Free`
+        if let Some(f) = self.free {
+            ps.push(f.param);
+        }
+        ps
+    }
+
+    fn own_params_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<u32> {
         let e = |i: usize| self.args[i].ent();
         let pt = |i: usize| sk.point_params(e(i).i()).to_vec();
         let ln = |i: usize| sk.line_params(e(i).i()).to_vec();

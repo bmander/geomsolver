@@ -204,6 +204,11 @@ pub struct Sketch {
     /// only exists for a dimension somebody has moved, and dropping one puts that callout back
     /// where the layout would have placed it.
     pub placements: BTreeMap<u32, (f64, f64)>,
+    /// The free variables the document's dimension expressions read, by name, each an index
+    /// into `params` — see `expr::Free`.  Derived state, owned by `expr::evaluate`: it allocates
+    /// one the first time a name nothing defines is read and retires it when the last reader
+    /// stops reading it, so nothing else in the document has to know they exist.
+    pub free_vars: BTreeMap<String, u32>,
     next_cid: u32,
 }
 
@@ -398,7 +403,22 @@ impl Sketch {
     /// the caller) and leaves holding the index of the Param that now carries it.  Doing it here
     /// and only here means a constraint is a number on the way in — which is what a document
     /// stores and what `graft` copies — and an index everywhere the solver looks at it.
-    pub fn add(&mut self, mut c: Constraint) -> u32 {
+    pub fn add(&mut self, c: Constraint) -> u32 {
+        let expr = crate::expr::has_expr(&c.args);
+        let id = self.add_quiet(c);
+        if expr {
+            crate::expr::evaluate(self);   // its text may read names, or define one others read
+        }
+        id
+    }
+
+    /// `add` without the expression pass, for a caller adding a whole document one constraint at
+    /// a time and evaluating once at the end — `io::graft`, the rebuild walk behind deletion,
+    /// copying, pasting and the part a drag works on.  Evaluating per add would parse every
+    /// expression in the document again for each one that carries text, and would make a
+    /// dimension whose definition has not been grafted yet briefly a free variable — allocating
+    /// an unknown the next pass immediately retires.
+    pub(crate) fn add_quiet(&mut self, mut c: Constraint) -> u32 {
         if c.id == 0 {
             self.next_cid += 1;
             c.id = self.next_cid;
@@ -418,11 +438,7 @@ impl Sketch {
             let p = self.param_scaled(v, pinned, &format!("c{id}.{name}"), scale);
             c.args[i] = Arg::Param(p as u32);
         }
-        let expr = crate::expr::has_expr(&c.args);
         self.constraints.push(c);
-        if expr {
-            crate::expr::evaluate(self);   // its text may read names, or define one others read
-        }
         id
     }
 
@@ -431,17 +447,41 @@ impl Sketch {
     /// mentions is a degree of freedom the sketch does not actually have, and diagnosis would
     /// report it.  The rebuild walk (`io::without`) is the path that reclaims the slots.
     pub fn remove(&mut self, id: u32) {
+        let mut expr = false;
         if let Some(c) = self.constraint(id) {
+            expr = crate::expr::has_expr(&c.args);
             for p in c.aux_params() {
                 self.params[p as usize].fixed = true;
             }
         }
         self.constraints.retain(|c| c.id != id);
         self.placements.remove(&id);
+        if expr {
+            // it may have defined a name others read, or been the last reader of a free one
+            crate::expr::evaluate(self);
+        }
     }
 
     pub fn constraint(&self, id: u32) -> Option<&Constraint> {
         self.constraints.iter().find(|c| c.id == id)
+    }
+
+    /// Set a numeric argument on one constraint — a dimension, a flag, a count — and bring the
+    /// document's expressions back into step when the write replaced one.  Whoever sets a number
+    /// means the number, so the expression goes; but it may have defined a name others read, or
+    /// have been the last reader of a free variable, and neither can be left as it was.
+    ///
+    /// `false` when there is no such constraint or no such argument, exactly as `set_num`.
+    pub fn set_constraint_num(&mut self, id: u32, name: &str, v: f64) -> bool {
+        let Some(c) = self.constraint_mut(id) else { return false };
+        let was = c.arg_index(name).is_some_and(|i| matches!(c.args[i], Arg::Expr(_)));
+        if !c.set_num(name, v) {
+            return false;
+        }
+        if was {
+            crate::expr::evaluate(self);
+        }
+        true
     }
 
     pub fn constraint_mut(&mut self, id: u32) -> Option<&mut Constraint> {
@@ -622,10 +662,14 @@ impl Sketch {
         s.push('|');
         for c in &self.constraints {
             let _ = write!(s, "{}:{},", c.id, c.type_name());
-            // A constraint that owns unknowns chooses its columns from where they currently are
-            // — which span of a spline a contact sits on.  That choice is compiled into the
-            // plan, so it belongs in the key: a contact walking past a knot is a recompile.
-            if c.kind.contact_slots().is_some() {
+            // A constraint whose columns are not fixed by its entities alone writes them out:
+            // which span of a spline a contact sits on, and which unknown a dimension written in
+            // terms of a free variable is tied to.  Both are compiled into the plan, so both
+            // belong in the key — a contact walking past a knot is a recompile, and so is
+            // swapping one free name for another, which leaves the parameter vector exactly as
+            // it was.  Not the constants (a dimension's `m` and `c`): a compiled system re-reads
+            // those without being rebuilt.
+            if c.kind.contact_slots().is_some() || c.free.is_some() {
                 for p in c.params(self) {
                     let _ = write!(s, "{p}.");
                 }
@@ -669,6 +713,10 @@ impl Sketch {
     /// Write the parameter vector.  A vector of the wrong length is not this sketch's — writing
     /// the overlapping prefix would scatter one sketch's coordinates over another's — so it is
     /// refused; `false` says nothing was written.
+    /// Write a whole parameter vector back — the one seam every solve and every drag comes
+    /// through, which is why the dimensions written in terms of a free variable are brought up
+    /// to date here: their number is that unknown's, and a reader of the drawing must not be
+    /// shown the one it had before the solve moved it.
     pub fn set_x(&mut self, x: &[f64]) -> bool {
         if x.len() != self.params.len() {
             return false;
@@ -676,6 +724,7 @@ impl Sketch {
         for (i, p) in self.params.iter_mut().enumerate() {
             p.value = x[i];
         }
+        crate::expr::sync_free(self);
         true
     }
 

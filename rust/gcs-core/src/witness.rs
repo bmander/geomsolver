@@ -117,7 +117,9 @@ pub fn make_witness(sk: &mut Sketch, seed: u32, jitter: f64, tol: f64) -> Vec<f6
     // 1. generic dimensions (lengths scaled, angles offset), re-solved from current geometry
     let mut edits: Vec<(usize, usize, f64)> = Vec::new(); // (constraint index, arg, new value)
     for (ci, c) in sk.constraints.iter().enumerate() {
-        if c.soft {
+        // a dimension written in terms of a free variable states no number, so there is no
+        // number to make generic: it is structure, and it stays exactly as it is
+        if c.soft || c.free.is_some() {
             continue;
         }
         for (ai, _, kind) in c.dimensions() {
@@ -145,7 +147,9 @@ pub fn make_witness(sk: &mut Sketch, seed: u32, jitter: f64, tol: f64) -> Vec<f6
     }
     // 2. incidences only (always satisfiable) from a perturbed start
     sk.set_x(&x0);
-    sk.constraints.retain(|c| c.dimensions().is_empty());
+    // the free ones stay for the same reason, and because dropping them would leave the
+    // unknowns they name in the parameter vector with no equation mentioning them
+    sk.constraints.retain(|c| c.dimensions().is_empty() || c.free.is_some());
     let sigma = 0.02 * sk.extent().max(1.0);
     sk.perturb(sigma, seed);
     let mut sys2 = System::new(sk);

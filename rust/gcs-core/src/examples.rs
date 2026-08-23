@@ -380,7 +380,7 @@ fn expr_distance(p: usize, q: usize, text: &str) -> Constraint {
         vec![
             Arg::Ent(EntRef::point(p)),
             Arg::Ent(EntRef::point(q)),
-            Arg::Expr(crate::expr::Expr { text: text.to_string(), value: 0.0 }),
+            Arg::Expr(crate::expr::Expr::new(text, 0.0)),
         ],
     )
 }

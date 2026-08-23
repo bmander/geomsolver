@@ -1907,8 +1907,11 @@ impl PlanDrag {
 
     /// Copy what moved into the document — a no-op when the drag moves it directly.
     fn write_back(&self, doc: &mut Sketch) {
-        if let Some(p) = &self.part {
-            p.write_back(doc);
+        match &self.part {
+            Some(p) => p.write_back(doc),
+            // the wave moved the document itself, parameter by parameter, so nothing has been
+            // through `Sketch::set_x` — see `Part::write_back` for the same reason
+            None => crate::expr::sync_free(doc),
         }
     }
 

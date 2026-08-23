@@ -1,6 +1,7 @@
 //! Every constraint's analytic Jacobian must agree with finite differences at random points.
 use gcs_core::constraints::{Arg, CKind, Constraint};
 use gcs_core::examples;
+use gcs_core::expr::Expr;
 use gcs_core::fdcheck::{check_constraint, check_sketch};
 use gcs_core::model::{EntRef, Sketch};
 use gcs_core::rng::Rng;
@@ -38,6 +39,12 @@ fn all_constraints(seed: u32) -> Sketch {
     let (ce1, ce2, ae) = (EntRef::circle(c1), EntRef::circle(c2), EntRef::arc(arc));
     let spe = EntRef::spline(sp);
     let e = |x: EntRef| Arg::Ent(x);
+    // a dimension written as an expression, standing at the number it is worth until it is
+    // evaluated: `Sketch::add` binds it to the free variable it names
+    let fx = |kind: CKind, mut args: Vec<Arg>, text: &str, value: f64| {
+        args.push(Arg::Expr(Expr::new(text, value)));
+        Constraint::new(kind, args)
+    };
     let cs = vec![
         Constraint::coincident(pe, qe),
         Constraint::distance(pe, qe, 3.0),
@@ -74,6 +81,18 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::spline_tangent_line(&sk, spe, le2),
         Constraint::spline_curvature(&sk, spe, ce1),
         Constraint::spline_curvature(&sk, spe, ae),
+        // every dimension again with its number written in terms of a free variable, which is
+        // an unknown of the sketch rather than a constant — one more column, and (m, c) where
+        // the number was.  A different name each time, so no two of them are tied together, and
+        // a scale, an offset and a sign among them so the map is not always the identity.
+        fx(CKind::Distance, vec![e(pe), e(qe)], "u", 3.0),
+        fx(CKind::Angle, vec![e(le1), e(le2)], "2 * v + 5", 0.7),
+        fx(CKind::Radius, vec![e(ce1)], "w", 2.0),
+        fx(CKind::ParallelDistance, vec![e(le1), e(le2)], "x / 2", 4.0),
+        fx(CKind::PointLineDistance, vec![e(pe), e(le1)], "y", 4.0),
+        fx(CKind::AnnularDistance, vec![e(ce1), e(ae)], "z + 1", 1.5),
+        fx(CKind::HorizontalDistance, vec![e(pe), e(qe)], "g", 2.5),
+        fx(CKind::VerticalDistance, vec![e(pe), e(qe)], "-k", -1.5),
     ];
     // the two intrinsic PointOnCircle constraints the arc brought with it stay in the sketch
     sk.constraints.clear();
@@ -151,5 +170,23 @@ fn system_blocks_cover_every_constraint_once() {
         for (i, v) in expect.iter().enumerate() {
             assert!((r[off + i] - v).abs() < 1e-12);
         }
+    }
+}
+
+/// Every type that states a number can have that number written in terms of a free variable, and
+/// its free twin is the same kernel with one more column: the unknown, where the constant was.
+/// The row count is the same on purpose — a binding sizes its buffers off the type's kernel, and
+/// a free constraint is still one of that type.
+#[test]
+fn every_dimension_can_be_written_free() {
+    use gcs_core::kernels;
+    for k in gcs_core::constraints::ALL_KINDS {
+        assert_eq!(k.has_dimension(), k.free_kernel().is_some(), "{k:?}");
+        let Some(free) = k.free_kernel() else { continue };
+        let (stated, free) = (kernels::kernel(k.kernel()), kernels::kernel(free));
+        assert_eq!(free.n_par, stated.n_par + 1, "{k:?}");
+        assert_eq!(free.n_const, 2, "{k:?}");          // the affine map, m and c
+        assert_eq!(free.n_res, stated.n_res, "{k:?}");
+        assert_eq!(free.degree, stated.degree, "{k:?}");
     }
 }

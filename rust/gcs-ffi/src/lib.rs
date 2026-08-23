@@ -918,13 +918,13 @@ pub unsafe extern "C" fn gcs_constraint_set_num(
 ) -> i32 {
     guard(-1, move || {
         let n = as_str(name, name_len).to_string();
-        match sk(h).constraint_mut(id as u32) {
+        match sk(h).constraint(id as u32) {
             None => {
                 set_error(format!("no constraint {id}"));
                 -1
             }
-            Some(c) => {
-                if c.set_num(&n, v) {
+            Some(_) => {
+                if sk(h).set_constraint_num(id as u32, &n, v) {
                     0
                 } else {
                     set_error(format!("{n} is not an argument a number can set"));

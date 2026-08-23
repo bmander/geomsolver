@@ -64,7 +64,7 @@ fn arg_from_json(sk: &Sketch, kind: SpecKind, v: &Json) -> Result<Arg, String> {
             if text.len() > expr::MAX_TEXT {
                 return Err(format!("expression longer than {} characters", expr::MAX_TEXT));
             }
-            Arg::Expr(expr::Expr { text, value })
+            Arg::Expr(expr::Expr::new(text, value))
         }
         k if k.is_entity() => {
             let a = v.arr();
@@ -293,7 +293,11 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             args.push(arg_from_json(&sk, *k, &raw[i])?);
         }
         seed_omitted(&sk, kind, &mut args, |i| omitted(raw.get(i)));
-        ids.push(sk.add(Constraint::new(kind, args)));
+        // `add_quiet`, because the evaluation below is the document's: adding one at a time
+        // would parse every expression again for each, and would make a dimension whose
+        // definition is further down the file briefly a free variable — allocating an unknown
+        // this pass then retires, in a document that has no free variables in it at all
+        ids.push(sk.add_quiet(Constraint::new(kind, args)));
     }
     expr::evaluate(&mut sk);   // every expression against the whole document, in order
     if let Some(Json::Obj(kv)) = d.get("placements") {
@@ -432,6 +436,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
         }
     };
+    let mut expr = false;
     for c in src.user_constraints() {
         if drop_c.contains(&c.id) {
             continue;
@@ -457,11 +462,18 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             }
         }
         if ok {
-            let id = dst.add(Constraint::new(c.kind, args));
+            expr |= crate::expr::has_expr(&args);
+            // `add_quiet`: the walk evaluates once at the end, not once per constraint — a
+            // dimension whose definition has not been grafted yet is not a free variable, it is
+            // one whose turn has not come
+            let id = dst.add_quiet(Constraint::new(c.kind, args));
             if let Some(&place) = src.placements.get(&c.id) {
                 dst.placements.insert(id, place);   // a dimension keeps where it was dragged to
             }
         }
+    }
+    if expr {
+        expr::evaluate(dst);
     }
     // recorded root choices are keyed by sketch point index; grafting renumbers points, so the
     // keys travel with them.  One naming a point that did not come is dropped — replaying it
@@ -555,14 +567,23 @@ impl Part {
                 parents[c.i()].push(e);
             }
         }
+        // Which constraints name an entity, and — because two dimensions written in terms of the
+        // same free variable share an unknown, which is as real a tie as a shared point — which
+        // of them read each free variable.  The walk follows both, so a part that reaches one of
+        // a tied group reaches all of it.
         let mut named: BTreeMap<EntRef, Vec<usize>> = BTreeMap::new();
+        let mut by_free: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
         for (ci, c) in sk.constraints.iter().enumerate() {
             for e in c.entities() {
                 named.entry(e).or_default().push(ci);
             }
+            if let Some(f) = c.free {
+                by_free.entry(f.param).or_default().push(ci);
+            }
         }
         let wall = |e: EntRef| sk.entity_params(e).iter().all(|&p| sk.params[p as usize].fixed);
         let mut keep: BTreeSet<EntRef> = BTreeSet::new();
+        let mut followed: BTreeSet<u32> = BTreeSet::new();
         let mut queue = vec![seed];
         keep.insert(seed);
         while let Some(e) = queue.pop() {
@@ -575,6 +596,13 @@ impl Part {
             }
             for &ci in named.get(&e).map(|v| v.as_slice()).unwrap_or(&[]) {
                 next.extend(sk.constraints[ci].entities());
+                // a tied group only has to be opened once, however many of its dimensions the
+                // walk arrives at
+                if let Some(f) = sk.constraints[ci].free.filter(|f| followed.insert(f.param)) {
+                    for &cj in by_free.get(&f.param).map(|v| v.as_slice()).unwrap_or(&[]) {
+                        next.extend(sk.constraints[cj].entities());
+                    }
+                }
             }
             for n in next {
                 if keep.insert(n) {
@@ -597,6 +625,13 @@ impl Part {
             }
             for (a, b) in sketch.entity_params(m).into_iter().zip(sk.entity_params(s)) {
                 params.push((a as usize, b as usize));
+            }
+        }
+        // the free variables came along by name: the rebuild allocated the part's own unknown
+        // for each, seeded off the number the dimension carried, so the two are already in step
+        for (name, &doc) in &sk.free_vars {
+            if let Some(&mine) = sketch.free_vars.get(name) {
+                params.push((mine as usize, doc as usize));
             }
         }
         Part { sketch, to_doc, to_part, params }
@@ -643,6 +678,10 @@ impl Part {
         for &(a, b) in &self.params {
             sk.params[b].value = self.sketch.params[a].value;
         }
+        // this is a parameter write of its own — it does not go through `Sketch::set_x` — so the
+        // dimensions written in terms of a free variable are brought up to date here too, or a
+        // plan drag would leave the constraint list reading the number from before the gesture
+        expr::sync_free(sk);
     }
 }
 
@@ -699,7 +738,17 @@ pub fn describe(c: &Constraint) -> String {
         .iter()
         .zip(&c.args)
         .filter(|((_, kind), _)| !kind.is_param())
-        .map(|((_, kind), v)| arg_text(*kind, v))
+        .map(|((_, kind), v)| {
+            let t = arg_text(*kind, v);
+            // a dimension written in terms of a free variable states no number: what it says is
+            // which other dimensions it is tied to, and the number beside the formula is only
+            // where the solver has currently put it — so it is marked as the reading it is
+            if c.free.is_some() && kind.is_dimension() {
+                format!("{t} (free)")
+            } else {
+                t
+            }
+        })
         .collect();
     format!("{}({})", c.type_name(), parts.join(", "))
 }

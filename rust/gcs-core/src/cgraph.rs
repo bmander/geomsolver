@@ -254,8 +254,10 @@ pub fn known_radii(sk: &Sketch) -> BTreeMap<u32, f64> {
     }
     let ridx: BTreeMap<u32, usize> = radii.iter().enumerate().map(|(i, &r)| (r, i)).collect();
     let mut uf = UnionFind::new(radii.len());
-    // a soft Radius (a live RadiusDrag) is not a dimension
-    let hard: Vec<&crate::constraints::Constraint> = sk.hard_constraints();
+    // a soft Radius (a live RadiusDrag) is not a dimension, and neither is one whose number is
+    // a free variable — it states which radius this is the same as, not what it is
+    let hard: Vec<&crate::constraints::Constraint> =
+        sk.hard_constraints().into_iter().filter(|c| c.free.is_none()).collect();
     for c in &hard {
         if c.kind == CKind::EqualRadius {
             let a = ridx[&(sk.round_radius(c.args[0].ent()) as u32)];
@@ -362,6 +364,14 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
     };
 
     for c in &sk.constraints {
+        // A dimension written in terms of a free variable states no length: it states a
+        // *relation* between dimensions, and the cluster vocabulary has no element for that —
+        // an edge carrying it would be read as a rigid distance somebody had fixed.  So it goes
+        // to the numeric residual, on the same grounds as the run and the rise.
+        if c.free.is_some() {
+            g.unsupported.push(c.id);
+            continue;
+        }
         // contracted / absorbed
         if c.soft || c.kind == CKind::Coincident || c.kind == CKind::Radius {
             continue;

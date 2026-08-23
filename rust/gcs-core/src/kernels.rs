@@ -39,9 +39,18 @@ pub enum K {
     SplineCurvature,
     HorizontalDistance,
     VerticalDistance,
+    // the same dimensions again, with the number they state left to the solver
+    DistanceFree,
+    AngleFree,
+    RadiusFree,
+    ParallelDistanceFree,
+    PointLineDistanceFree,
+    AnnularDistanceFree,
+    HorizontalDistanceFree,
+    VerticalDistanceFree,
 }
 
-pub const N_KERNELS: usize = 26;
+pub const N_KERNELS: usize = 34;
 
 pub struct Kernel {
     pub name: &'static str,
@@ -139,24 +148,39 @@ linear_kernel!(equal_radius, 1, 2, [1, -1]);
 
 /* -- point / point --------------------------------------------------------- */
 
+/* The geometry each dimension measures, written once for the two forms that measure it: the
+ * number it is compared against may be stated (a constant) or free (a column), and that is the
+ * only difference between a kernel and its free twin — see `expr::Free`. */
+
+/// |p-q|², from (px,py,qx,qy).
+#[inline]
+fn dist_sq(v: &[f64]) -> f64 {
+    let (dx, dy) = (v[0] - v[2], v[1] - v[3]);
+    dx * dx + dy * dy
+}
+
+/// Its gradient in those four columns.
+#[inline]
+fn dist_sq_jac(v: &[f64], j: &mut [f64]) {
+    let dx = 2.0 * (v[0] - v[2]);
+    let dy = 2.0 * (v[1] - v[3]);
+    j[0] = dx;
+    j[1] = dy;
+    j[2] = -dx;
+    j[3] = -dy;
+}
+
 /// (px,py,qx,qy), K = (d): |p-q|² - d²
 fn distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     for i in 0..n {
-        let o = 4 * i;
-        let (dx, dy, d) = (v[o] - v[o + 2], v[o + 1] - v[o + 3], k[i]);
-        r[i] = dx * dx + dy * dy - d * d;
+        r[i] = dist_sq(&v[4 * i..]) - k[i] * k[i];
     }
 }
 
 fn distance_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 4 * i;
-        let dx = 2.0 * (v[o] - v[o + 2]);
-        let dy = 2.0 * (v[o + 1] - v[o + 3]);
-        j[o] = dx;
-        j[o + 1] = dy;
-        j[o + 2] = -dx;
-        j[o + 3] = -dy;
+        dist_sq_jac(&v[o..], &mut j[o..o + 4]);
     }
 }
 
@@ -274,25 +298,44 @@ fn perpendicular_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     }
 }
 
+/// The dot and the cross of the two directions — what every angle form is written from.
+#[inline]
+fn dot_cross(v: &[f64]) -> (f64, f64) {
+    let (d1x, d1y, d2x, d2y) = dirs(v);
+    (d1x * d2x + d1y * d2y, d1x * d2y - d1y * d2x)
+}
+
+/// `dot·sin θ − cross·cos θ`: zero exactly when the angle from l1 to l2 is θ, whether θ is a
+/// stated number or an unknown.  The caller passes its sine and cosine, which is where the two
+/// forms differ — one has them precomputed as constants, the other takes them of a column.
+#[inline]
+fn angle_gap(v: &[f64], s: f64, c: f64) -> f64 {
+    let (dot, cross) = dot_cross(v);
+    dot * s - cross * c
+}
+
+/// Its gradient in the eight direction columns.
+#[inline]
+fn angle_gap_jac(v: &[f64], s: f64, c: f64, j: &mut [f64]) {
+    let (mut jd, mut jc) = ([0.0f64; 8], [0.0f64; 8]);
+    dot_jac(v, &mut jd);
+    cross_jac(v, &mut jc);
+    for t in 0..8 {
+        j[t] = jd[t] * s - jc[t] * c;
+    }
+}
+
 /// K = (sin theta, cos theta): dot*sin - cross*cos
 fn angle_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     for i in 0..n {
-        let (d1x, d1y, d2x, d2y) = dirs(&v[8 * i..8 * i + 8]);
-        r[i] = (d1x * d2x + d1y * d2y) * k[2 * i] - (d1x * d2y - d1y * d2x) * k[2 * i + 1];
+        r[i] = angle_gap(&v[8 * i..], k[2 * i], k[2 * i + 1]);
     }
 }
 
 fn angle_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    let mut jd = [0.0f64; 8];
-    let mut jc = [0.0f64; 8];
     for i in 0..n {
-        let vs = &v[8 * i..8 * i + 8];
-        let (s, c) = (k[2 * i], k[2 * i + 1]);
-        dot_jac(vs, &mut jd);
-        cross_jac(vs, &mut jc);
-        for t in 0..8 {
-            j[8 * i + t] = jd[t] * s - jc[t] * c;
-        }
+        let o = 8 * i;
+        angle_gap_jac(&v[o..], k[2 * i], k[2 * i + 1], &mut j[o..o + 8]);
     }
 }
 
@@ -501,51 +544,75 @@ fn symmetric_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     }
 }
 
+/// The signed perpendicular distance from l2's first endpoint to l1's infinite line, from
+/// (a1x,a1y,b1x,b1y,a2x,a2y,b2x,b2y).
+#[inline]
+fn parallel_gap(v: &[f64]) -> f64 {
+    let (d1x, d1y) = (v[2] - v[0], v[3] - v[1]);
+    let (wx, wy) = (v[4] - v[0], v[5] - v[1]);
+    (d1x * wy - d1y * wx) / line_len(d1x, d1y)
+}
+
+/// Its gradient in those eight columns.
+#[inline]
+fn parallel_gap_jac(v: &[f64], j: &mut [f64]) {
+    let (d1x, d1y) = (v[2] - v[0], v[3] - v[1]);
+    let (wx, wy) = (v[4] - v[0], v[5] - v[1]);
+    let l = line_len(d1x, d1y);
+    let c = d1x * wy - d1y * wx;
+    let dc = [d1y - wy, wx - d1x, wy, -wx, -d1y, d1x, 0.0, 0.0];
+    let dl = [-d1x / l, -d1y / l, d1x / l, d1y / l, 0.0, 0.0, 0.0, 0.0];
+    ratio_jac(&dc, &dl, l, c, j);
+}
+
 /// (a1x,a1y,b1x,b1y,a2x,a2y,b2x,b2y), K = (d): signed perpendicular distance from l2's first
 /// endpoint to l1's infinite line.  It does NOT make them parallel.
 fn parallel_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     for i in 0..n {
-        let o = 8 * i;
-        let (d1x, d1y) = (v[o + 2] - v[o], v[o + 3] - v[o + 1]);
-        let (wx, wy) = (v[o + 4] - v[o], v[o + 5] - v[o + 1]);
-        r[i] = (d1x * wy - d1y * wx) / line_len(d1x, d1y) - k[i];
+        r[i] = parallel_gap(&v[8 * i..]) - k[i];
     }
 }
 
 fn parallel_distance_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 8 * i;
-        let (d1x, d1y) = (v[o + 2] - v[o], v[o + 3] - v[o + 1]);
-        let (wx, wy) = (v[o + 4] - v[o], v[o + 5] - v[o + 1]);
-        let l = line_len(d1x, d1y);
-        let c = d1x * wy - d1y * wx;
-        let dc = [d1y - wy, wx - d1x, wy, -wx, -d1y, d1x, 0.0, 0.0];
-        let dl = [-d1x / l, -d1y / l, d1x / l, d1y / l, 0.0, 0.0, 0.0, 0.0];
-        ratio_jac(&dc, &dl, l, c, &mut j[o..o + 8]);
+        parallel_gap_jac(&v[o..], &mut j[o..o + 8]);
     }
+}
+
+/// The signed perpendicular distance from p to the infinite line through a,b, positive to the
+/// left of a→b, from (px,py,ax,ay,bx,by).
+#[inline]
+fn point_line_gap(v: &[f64]) -> f64 {
+    let (dx, dy) = (v[4] - v[2], v[5] - v[3]);
+    let (wx, wy) = (v[0] - v[2], v[1] - v[3]);
+    (dx * wy - dy * wx) / line_len(dx, dy)
+}
+
+/// Its gradient in those six columns.
+#[inline]
+fn point_line_gap_jac(v: &[f64], j: &mut [f64]) {
+    let (dx, dy) = (v[4] - v[2], v[5] - v[3]);
+    let (wx, wy) = (v[0] - v[2], v[1] - v[3]);
+    let l = line_len(dx, dy);
+    let c = dx * wy - dy * wx;
+    let dc = [-dy, dx, dy - wy, wx - dx, wy, -wx];
+    let dl = [0.0, 0.0, -dx / l, -dy / l, dx / l, dy / l];
+    ratio_jac(&dc, &dl, l, c, j);
 }
 
 /// (px,py,ax,ay,bx,by), K = (d): signed perpendicular distance from p to the infinite line
 /// through a,b, positive to the left of a→b.
 fn point_line_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     for i in 0..n {
-        let o = 6 * i;
-        let (dx, dy) = (v[o + 4] - v[o + 2], v[o + 5] - v[o + 3]);
-        let (wx, wy) = (v[o] - v[o + 2], v[o + 1] - v[o + 3]);
-        r[i] = (dx * wy - dy * wx) / line_len(dx, dy) - k[i];
+        r[i] = point_line_gap(&v[6 * i..]) - k[i];
     }
 }
 
 fn point_line_distance_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 6 * i;
-        let (dx, dy) = (v[o + 4] - v[o + 2], v[o + 5] - v[o + 3]);
-        let (wx, wy) = (v[o] - v[o + 2], v[o + 1] - v[o + 3]);
-        let l = line_len(dx, dy);
-        let c = dx * wy - dy * wx;
-        let dc = [-dy, dx, dy - wy, wx - dx, wy, -wx];
-        let dl = [0.0, 0.0, -dx / l, -dy / l, dx / l, dy / l];
-        ratio_jac(&dc, &dl, l, c, &mut j[o..o + 6]);
+        point_line_gap_jac(&v[o..], &mut j[o..o + 6]);
     }
 }
 
@@ -843,6 +910,164 @@ fn spline_curvature_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
+/* -- dimensions written in terms of a free variable ------------------------ */
+/*
+ * A dimension whose number is not stated but *shared* — `a` on two of them, `a / 2` on a third —
+ * has an unknown where its constant was.  These are the same kernels again with that one change:
+ * the value comes off the end of the columns as `m * a + c` rather than out of the constants, and
+ * `m` and `c` are what the constants now hold.  See `expr::Free` for why the tie is affine: one
+ * column and two constants is the whole of what a fixed-width block can carry, and it is enough
+ * for everything a draughtsman writes — the same length again, half of it, ten more than it.
+ *
+ * The free column always comes last, so `Constraint::params_on` appends it and needs to know
+ * nothing else about which kernel it is feeding.
+ */
+
+/// The value the free column stands for, and how fast it moves with it.
+#[inline]
+fn free_dim(v: &[f64], k: &[f64], i: usize, at: usize) -> (f64, f64) {
+    let (m, c) = (k[2 * i], k[2 * i + 1]);
+    (m * v[at] + c, m)
+}
+
+/// (px,py,qx,qy,a), K = (m,c): |p-q|² - d², d = m*a + c
+fn distance_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 5 * i;
+        let (d, _) = free_dim(v, k, i, o + 4);
+        r[i] = dist_sq(&v[o..]) - d * d;
+    }
+}
+
+fn distance_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 5 * i;
+        let (d, m) = free_dim(v, k, i, o + 4);
+        dist_sq_jac(&v[o..], &mut j[o..o + 4]);
+        j[o + 4] = -2.0 * d * m;
+    }
+}
+
+/// (px,py,qx,qy,a), K = (m,c): (qx - px) - (m*a + c)
+fn horizontal_distance_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 5 * i;
+        r[i] = v[o + 2] - v[o] - free_dim(v, k, i, o + 4).0;
+    }
+}
+
+fn horizontal_distance_free_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 5 * i;
+        j[o..o + 4].copy_from_slice(HORIZONTAL_DISTANCE_J);
+        j[o + 4] = -k[2 * i];
+    }
+}
+
+/// (px,py,qx,qy,a), K = (m,c): (qy - py) - (m*a + c)
+fn vertical_distance_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 5 * i;
+        r[i] = v[o + 3] - v[o + 1] - free_dim(v, k, i, o + 4).0;
+    }
+}
+
+fn vertical_distance_free_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 5 * i;
+        j[o..o + 4].copy_from_slice(VERTICAL_DISTANCE_J);
+        j[o + 4] = -k[2 * i];
+    }
+}
+
+/// (a1x,a1y,b1x,b1y,a2x,a2y,b2x,b2y,a), K = (m,c): dot*sin θ - cross*cos θ, θ = m*a + c.
+/// The angle itself is the unknown here rather than its sine and cosine, so the two constants
+/// the stated form carries precomputed are the affine map instead and the trigonometry moves
+/// into the kernel — which is what lets the column carry a derivative at all.
+fn angle_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        let (t, _) = free_dim(v, k, i, o + 8);
+        r[i] = angle_gap(&v[o..], t.sin(), t.cos());
+    }
+}
+
+fn angle_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        let (t, m) = free_dim(v, k, i, o + 8);
+        let (s, c) = (t.sin(), t.cos());
+        angle_gap_jac(&v[o..], s, c, &mut j[o..o + 8]);
+        // d/dθ of (dot·sin θ − cross·cos θ), through the affine map
+        let (dot, cross) = dot_cross(&v[o..]);
+        j[o + 8] = (dot * c + cross * s) * m;
+    }
+}
+
+/// (a1x,a1y,b1x,b1y,a2x,a2y,b2x,b2y,a), K = (m,c): the signed gap, less m*a + c
+fn parallel_distance_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        r[i] = parallel_gap(&v[o..]) - free_dim(v, k, i, o + 8).0;
+    }
+}
+
+fn parallel_distance_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        parallel_gap_jac(&v[o..], &mut j[o..o + 8]);
+        j[o + 8] = -k[2 * i];
+    }
+}
+
+/// (px,py,ax,ay,bx,by,a), K = (m,c): the signed distance to the line, less m*a + c
+fn point_line_distance_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 7 * i;
+        r[i] = point_line_gap(&v[o..]) - free_dim(v, k, i, o + 6).0;
+    }
+}
+
+fn point_line_distance_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 7 * i;
+        point_line_gap_jac(&v[o..], &mut j[o..o + 6]);
+        j[o + 6] = -k[2 * i];
+    }
+}
+
+/// (r1,r2,a), K = (m,c): r2 - r1 - (m*a + c)
+fn annular_distance_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 3 * i;
+        r[i] = v[o + 1] - v[o] - free_dim(v, k, i, o + 2).0;
+    }
+}
+
+fn annular_distance_free_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 3 * i;
+        j[o..o + 2].copy_from_slice(ANNULAR_DISTANCE_J);
+        j[o + 2] = -k[2 * i];
+    }
+}
+
+/// (r,a), K = (m,c): r - (m*a + c)
+fn radius_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 2 * i;
+        r[i] = v[o] - free_dim(v, k, i, o + 1).0;
+    }
+}
+
+fn radius_free_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 2 * i;
+        j[o..o + 1].copy_from_slice(RADIUS_J);
+        j[o + 1] = -k[2 * i];
+    }
+}
+
 /* -- registry (order == kernel id, shared with the bindings) --------------- */
 
 pub static KERNELS: [Kernel; N_KERNELS] = [
@@ -872,6 +1097,14 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "spline_curvature", n_res: 3, n_par: N_PAR_SPLINE_CURVE, degree: 1, n_const: SPAN_K, res: spline_curvature_res, jac: spline_curvature_jac, const_jac: None },
     Kernel { name: "horizontal_distance", n_res: 1, n_par: 4, degree: 1, n_const: 1, res: horizontal_distance_res, jac: horizontal_distance_jac, const_jac: Some(HORIZONTAL_DISTANCE_J) },
     Kernel { name: "vertical_distance", n_res: 1, n_par: 4, degree: 1, n_const: 1, res: vertical_distance_res, jac: vertical_distance_jac, const_jac: Some(VERTICAL_DISTANCE_J) },
+    Kernel { name: "distance_free", n_res: 1, n_par: 5, degree: 2, n_const: 2, res: distance_free_res, jac: distance_free_jac, const_jac: None },
+    Kernel { name: "angle_free", n_res: 1, n_par: 9, degree: 2, n_const: 2, res: angle_free_res, jac: angle_free_jac, const_jac: None },
+    Kernel { name: "radius_free", n_res: 1, n_par: 2, degree: 1, n_const: 2, res: radius_free_res, jac: radius_free_jac, const_jac: None },
+    Kernel { name: "parallel_distance_free", n_res: 1, n_par: 9, degree: 1, n_const: 2, res: parallel_distance_free_res, jac: parallel_distance_free_jac, const_jac: None },
+    Kernel { name: "point_line_distance_free", n_res: 1, n_par: 7, degree: 1, n_const: 2, res: point_line_distance_free_res, jac: point_line_distance_free_jac, const_jac: None },
+    Kernel { name: "annular_distance_free", n_res: 1, n_par: 3, degree: 1, n_const: 2, res: annular_distance_free_res, jac: annular_distance_free_jac, const_jac: None },
+    Kernel { name: "horizontal_distance_free", n_res: 1, n_par: 5, degree: 1, n_const: 2, res: horizontal_distance_free_res, jac: horizontal_distance_free_jac, const_jac: None },
+    Kernel { name: "vertical_distance_free", n_res: 1, n_par: 5, degree: 1, n_const: 2, res: vertical_distance_free_res, jac: vertical_distance_free_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

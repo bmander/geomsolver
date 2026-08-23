@@ -11,7 +11,7 @@ use gcs_core::solve::{solve, SolveOpts};
 use std::collections::BTreeMap;
 
 fn ev(text: &str) -> f64 {
-    eval(&parse(text).unwrap().body, &BTreeMap::new()).unwrap()
+    eval(&parse(text).unwrap().body, &BTreeMap::new()).unwrap().number().expect("a number")
 }
 
 fn close(a: f64, b: f64) -> bool {
@@ -89,7 +89,7 @@ fn three(exprs: [&str; 3]) -> (Sketch, [u32; 3]) {
             vec![
                 Arg::Ent(EntRef::point(a)),
                 Arg::Ent(EntRef::point(b)),
-                Arg::Expr(Expr { text: text.to_string(), value: 0.0 }),
+                Arg::Expr(Expr::new(*text, 0.0)),
             ],
         );
         ids[i] = sk.add(c);
@@ -150,7 +150,7 @@ fn angles_are_written_in_degrees() {
         vec![
             Arg::Ent(EntRef::line(l1)),
             Arg::Ent(EntRef::line(l2)),
-            Arg::Expr(Expr { text: "a = 30".to_string(), value: 0.0 }),
+            Arg::Expr(Expr::new("a = 30", 0.0)),
         ],
     ));
     let p = sk.point(0.0, 0.0, false, "p");
@@ -158,7 +158,7 @@ fn angles_are_written_in_degrees() {
     let d = sk.add(Constraint::new(
         CKind::Distance,
         vec![Arg::Ent(EntRef::point(p)), Arg::Ent(EntRef::point(q)),
-             Arg::Expr(Expr { text: "a * 2".to_string(), value: 0.0 })],
+             Arg::Expr(Expr::new("a * 2", 0.0))],
     ));
     // the argument holds radians; the name is the degrees a person wrote
     assert!(close(value(&sk, ang), 30f64.to_radians()));
@@ -171,28 +171,29 @@ fn angles_are_written_in_degrees() {
 
 #[test]
 fn errors_name_the_problem_and_keep_the_last_value() {
-    let (mut sk, ids) = three(["w = 1", "h = q * 2", "h + 1"]);
+    // `q * q` is not a thing a free name can be: it can be scaled and offset and no more
+    let (mut sk, ids) = three(["w = 1", "h = q * q", "h + 1"]);
     let items = expr::evaluate(&mut sk);
     let by_id = |id: u32| items.iter().find(|it| it.id == id).unwrap();
     assert!(by_id(ids[0]).error.is_none());
-    assert_eq!(by_id(ids[1]).error.as_deref(), Some("`q` is not defined"));
+    assert!(by_id(ids[1]).error.as_deref().unwrap().contains("`q` is free"));
     assert_eq!(by_id(ids[2]).error.as_deref(), Some("`h` could not be evaluated"));
     assert_eq!(value(&sk, ids[1]), 0.0);   // what it had
 
     // define q elsewhere and everything downstream computes
     assert_eq!(expr::set_dimension(&mut sk, ids[0], "d", "q = 5").unwrap(), None);
-    assert_eq!(value(&sk, ids[1]), 10.0);
-    assert_eq!(value(&sk, ids[2]), 11.0);
+    assert_eq!(value(&sk, ids[1]), 25.0);
+    assert_eq!(value(&sk, ids[2]), 26.0);
     // change q: the change flows
     expr::set_dimension(&mut sk, ids[0], "d", "q = 6").unwrap();
-    assert_eq!(value(&sk, ids[2]), 13.0);
+    assert_eq!(value(&sk, ids[2]), 37.0);
     // a plain number drops the definition, and the readers say so but keep their numbers
     assert_eq!(expr::set_dimension(&mut sk, ids[0], "d", "7").unwrap(), None);
     assert_eq!(sk.constraint(ids[0]).unwrap().args[2], Arg::Num(7.0));
-    assert_eq!(value(&sk, ids[1]), 12.0);
+    assert_eq!(value(&sk, ids[1]), 36.0);
     let items = expr::evaluate(&mut sk);
-    assert_eq!(items.iter().find(|it| it.id == ids[1]).unwrap().error.as_deref(),
-               Some("`q` is not defined"));
+    assert!(items.iter().find(|it| it.id == ids[1]).unwrap()
+        .error.as_deref().unwrap().contains("`q` is free"));
 }
 
 #[test]
@@ -226,9 +227,9 @@ fn set_dimension_rejects_what_does_not_parse_and_reports_what_cannot_compute() {
     assert_eq!(value(&sk, ids[0]), 1.0);
     assert!(expr::set_dimension(&mut sk, ids[0], "p", "1").unwrap_err().contains("not a dimension"));
     assert!(expr::set_dimension(&mut sk, 999, "d", "1").is_err());
-    assert_eq!(expr::set_dimension(&mut sk, ids[0], "d", "w * 2").unwrap().as_deref(),
-               Some("`w` is not defined"));
-    assert_eq!(sk.constraint(ids[0]).unwrap().expr_text("d"), Some("w * 2"));
+    assert!(expr::set_dimension(&mut sk, ids[0], "d", "sin(w)").unwrap().unwrap()
+        .contains("`w` is free"));
+    assert_eq!(sk.constraint(ids[0]).unwrap().expr_text("d"), Some("sin(w)"));
     assert_eq!(value(&sk, ids[0]), 1.0);   // the old number stands until it computes
     // a bare number for an angle is degrees, like the expression would be
     let mut sk2 = Sketch::new();
@@ -254,7 +255,7 @@ fn documents_carry_text_and_value_and_accept_bare_strings() {
     let sk2 = io::loads(&s).unwrap();
     assert_eq!(io::dumps(&sk2, Some(1)), s);
     assert_eq!(sk2.constraint(ids[1]).unwrap().args[2],
-               Arg::Expr(Expr { text: "h = w * 2".to_string(), value: 6.0 }));
+               Arg::Expr(Expr::new("h = w * 2", 6.0)));
     // a hand-written document: a string is an expression, evaluated on load
     let hand = r#"{"points": [{"x": 0, "y": 0}, {"x": 5, "y": 0}],
                    "constraints": [{"type": "Distance", "args": [["point", 0], ["point", 1], "w = 2 + 2"]}]}"#;
@@ -335,7 +336,11 @@ fn expressions_survive_rebuilds_and_a_paste_reports_its_duplicates() {
     assert_eq!(sk2.constraints[0].args[2].num(), 6.0);
     let mut sk2 = sk2;
     let items = expr::evaluate(&mut sk2);
-    assert_eq!(items[0].error.as_deref(), Some("`w` is not defined"));
+    // nothing defines `w` any more, so it is a free variable and `h` is still twice it: the
+    // relation survives its definition, and the drawing does not move
+    assert_eq!(items[0].error, None);
+    assert_eq!(items[0].free, vec!["w".to_string()]);
+    assert_eq!(items[0].value, 6.0);
     // a copy of everything pasted back: every name is now defined twice
     let clip = io::copy(&sk, &sk.primitives());
     let mut doc = sk.clone();
@@ -395,7 +400,10 @@ fn pythagoras_drawn_with_expressions_holds_and_stays_true_when_a_leg_is_edited()
 
 fn val(text: &str) -> f64 {
     let p = expr::parse(text).unwrap_or_else(|e| panic!("{text}: {e}"));
-    expr::eval(&p.body, &BTreeMap::new()).unwrap_or_else(|e| panic!("{text}: {e}"))
+    expr::eval(&p.body, &BTreeMap::new())
+        .unwrap_or_else(|e| panic!("{text}: {e}"))
+        .number()
+        .unwrap_or_else(|| panic!("{text}: not a number"))
 }
 
 #[test]
@@ -490,4 +498,250 @@ fn an_angle_written_as_a_fraction_keeps_its_degrees() {
     assert_eq!(io::dimension_text(c).as_deref(), Some("22 1/2°"));
     // the text is degrees, the value is radians, as for every other written angle
     assert!((c.args[2].num() - 22.5_f64.to_radians()).abs() < 1e-12);
+}
+
+/* -- free variables ------------------------------------------------------------- */
+
+/// Two segments whose lengths are written in terms of the same free variable, with the first
+/// point of each pinned so only the lengths are in question.
+fn tied(first: &str, second: &str, l1: f64, l2: f64) -> (Sketch, [u32; 2]) {
+    let mut sk = Sketch::new();
+    let mut ids = [0u32; 2];
+    for (i, (text, len)) in [(first, l1), (second, l2)].into_iter().enumerate() {
+        let a = sk.point(0.0, 10.0 * i as f64, true, "a");
+        let b = sk.point(len, 10.0 * i as f64, false, "b");
+        ids[i] = sk.add(Constraint::new(
+            CKind::Distance,
+            vec![
+                Arg::Ent(EntRef::point(a)),
+                Arg::Ent(EntRef::point(b)),
+                Arg::Expr(Expr::new(text, len)),
+            ],
+        ));
+    }
+    (sk, ids)
+}
+
+fn length(sk: &Sketch, i: usize) -> f64 {
+    let (ax, ay) = sk.point_xy(2 * i);
+    let (bx, by) = sk.point_xy(2 * i + 1);
+    (bx - ax).hypot(by - ay)
+}
+
+/// A name nothing defines is a *free variable*: an unknown of the sketch.  Two dimensions
+/// reading it say the same thing about themselves, so they are tied to each other — and what
+/// they come to is left open, which is one degree of freedom two stated numbers would not have
+/// left.
+#[test]
+fn a_name_nothing_defines_ties_the_dimensions_that_read_it() {
+    let (mut sk, ids) = tied("q", "q", 30.0, 12.0);
+    let items = expr::evaluate(&mut sk);
+    assert!(items.iter().all(|it| it.error.is_none()), "{items:?}");
+    assert_eq!(items[0].free, vec!["q".to_string()]);
+    assert_eq!(sk.free_vars.len(), 1);
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    assert!(close(length(&sk, 0), length(&sk, 1)), "{} {}", length(&sk, 0), length(&sk, 1));
+
+    // one degree of freedom more than the same drawing with the numbers stated
+    let free = diagnose(&mut sk, DiagnoseOptions::default()).dof;
+    for &id in &ids {
+        assert!(sk.set_constraint_num(id, "d", 20.0));
+    }
+    // retired with its last reader: it keeps its slot, so reading the name again reuses the
+    // unknown rather than leaking a new one, but it is no longer a degree of freedom
+    let q = sk.free_vars["q"] as usize;
+    assert!(sk.params[q].fixed);
+    assert!(sk.constraints.iter().all(|c| c.free.is_none()));
+    assert_eq!(free, diagnose(&mut sk, DiagnoseOptions::default()).dof + 1);
+}
+
+/// The tie may be scaled and offset — `q / 2` is half of `q`, `q + 10` ten more than it — which
+/// is the whole of what an affine form can carry, and what a drawing actually asks for.
+#[test]
+fn a_free_variable_may_be_scaled_and_offset() {
+    let (mut sk, _) = tied("q", "q / 2 + 4", 30.0, 12.0);
+    expr::evaluate(&mut sk);
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    assert!(close(length(&sk, 1), length(&sk, 0) / 2.0 + 4.0),
+            "{} {}", length(&sk, 0), length(&sk, 1));
+    // and it stays tied when the drawing moves: pull the first segment out and the second follows
+    let bx = sk.points[1].x as usize;
+    sk.params[bx].value = 60.0;
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    assert!(close(length(&sk, 1), length(&sk, 0) / 2.0 + 4.0),
+            "{} {}", length(&sk, 0), length(&sk, 1));
+}
+
+/// The first dimension to read a free name seeds it with the number it already stated, so
+/// writing a name over a number does not move the drawing.  A second one reading it is stating a
+/// relation, and it is the geometry that gives way.
+#[test]
+fn a_free_variable_starts_at_the_number_the_dimension_already_stated() {
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, true, "a");
+    let b = sk.point(30.0, 0.0, false, "b");
+    let id = sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 30.0));
+    assert_eq!(expr::set_dimension(&mut sk, id, "d", "q").unwrap(), None);
+    assert_eq!(value(&sk, id), 30.0);
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    assert!(close(length(&sk, 0), 30.0));
+}
+
+/// What a free dimension is worth moves with the solve, and the number a reader is shown moves
+/// with it: `set_x` is the seam every solve and every drag comes through.
+#[test]
+fn the_number_a_free_dimension_shows_follows_the_solver() {
+    let (mut sk, ids) = tied("q", "q", 30.0, 12.0);
+    expr::evaluate(&mut sk);
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let settled = length(&sk, 0);
+    assert!(close(value(&sk, ids[0]), settled), "{} {settled}", value(&sk, ids[0]));
+    // the drawing says what was written; the list says that and where it stands, marked as the
+    // reading it is rather than a number anybody stated
+    assert_eq!(io::dimension_text(sk.constraint(ids[0]).unwrap()).unwrap(), "q");
+    assert!(io::describe(sk.constraint(ids[0]).unwrap()).contains("q = 20.17 (free)"),
+            "{}", io::describe(sk.constraint(ids[0]).unwrap()));
+}
+
+/// A free variable is not document state: the text and the number are, and evaluating them
+/// again works out the rest — so a save, a load, a copy and a paste all carry the tie.
+#[test]
+fn a_free_variable_survives_the_document_and_a_rebuild() {
+    let (mut sk, _) = tied("q", "q / 2", 30.0, 12.0);
+    expr::evaluate(&mut sk);
+    solve(&mut sk, SolveOpts::default());
+    let (l0, l1) = (length(&sk, 0), length(&sk, 1));
+    let text = io::dumps(&sk, Some(1));
+    let mut back = io::loads(&text).unwrap();
+    assert_eq!(io::dumps(&back, Some(1)), text);
+    assert_eq!(back.free_vars.len(), 1);
+    assert!(close(length(&back, 0), l0) && close(length(&back, 1), l1));
+    // and it is still a tie, not two numbers that happen to agree
+    let bx = back.points[1].x as usize;
+    back.params[bx].value = 50.0;
+    assert!(solve(&mut back, SolveOpts::default()).success);
+    assert!(close(length(&back, 1), length(&back, 0) / 2.0));
+}
+
+/// The part a drag works on follows a free variable the way it follows a shared point: the two
+/// dimensions move together, so they must be in the part together.
+#[test]
+fn the_part_a_drag_works_on_follows_a_free_variable() {
+    let (mut sk, _) = tied("q", "q", 30.0, 12.0);
+    expr::evaluate(&mut sk);
+    // the second segment shares no point with the first, and comes along regardless
+    let mut part = io::Part::around(&sk, EntRef::point(1));
+    assert_eq!(part.sketch.points.len(), 4);
+    assert_eq!(part.sketch.free_vars.len(), 1);
+    // the part starts where the document is, and what its solve makes of the variable comes back
+    let q = |s: &Sketch| s.params[*s.free_vars.get("q").unwrap() as usize].value;
+    assert!(close(q(&part.sketch), q(&sk)));
+    assert!(solve(&mut part.sketch, SolveOpts::default()).success);
+    let moved = q(&part.sketch);
+    assert!(!close(moved, q(&sk)), "the part's solve should have moved it");
+    part.write_back(&mut sk);
+    assert!(close(q(&sk), moved));
+    // writing a part back is a parameter write of its own, so the number the dimensions carry
+    // has to come with it: a plan drag goes through here and nowhere near `Sketch::set_x`
+    assert!(close(value(&sk, sk.constraints[0].id), moved),
+            "{} {moved}", value(&sk, sk.constraints[0].id));
+}
+
+/// A free name can be scaled and offset and no more, and a dimension can only follow one of
+/// them.  Anything else keeps the number it had and says what is wrong.
+#[test]
+fn a_free_name_used_in_a_way_an_affine_form_cannot_hold() {
+    let bad = |text: &str, want: &str| {
+        let (mut sk, ids) = three([text, "1", "2"]);
+        let items = expr::evaluate(&mut sk);
+        let mine = items.iter().find(|it| it.id == ids[0]).unwrap();
+        assert!(mine.error.as_deref().unwrap_or("").contains(want), "{text}: {mine:?}");
+        assert!(sk.constraint(ids[0]).unwrap().free.is_none(), "{text}");
+    };
+    bad("q * q", "`q` is free");
+    bad("sin(q)", "`q` is free");
+    bad("2 ^ q", "`q` is free");
+    bad("1 / q", "`q` is free");
+    bad("q * r", "both free");
+    bad("q + r", "both free");
+    // a form that does not move with the variable says nothing about it, and there would be no
+    // way back from the dimension to a value for it
+    bad("q * 0", "does not affect");
+}
+
+/// A drag through a free variable: the two dimensions are tied by an unknown, not by a shared
+/// point, so pulling one segment has to move the other.  A free dimension is `unsupported` in
+/// the cluster graph — the vocabulary has no element for a relation between dimensions — so this
+/// is also the check that the numeric fallback picks it up.
+#[test]
+fn dragging_one_of_two_tied_segments_moves_the_other() {
+    use gcs_core::decompose::PlanDrag;
+    let (mut sk, _) = tied("q", "q / 2", 30.0, 15.0);
+    expr::evaluate(&mut sk);
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let (x0, y0) = sk.point_xy(1);
+    let mut drag = PlanDrag::new(&mut sk, 1, x0, y0, None, 0.05);
+    for i in 1..=8 {
+        let res = drag.move_to(&mut sk, None, x0 + 5.0 * i as f64, y0);
+        assert!(res.success, "{res:?}");
+        assert!(close(length(&sk, 1), length(&sk, 0) / 2.0),
+                "frame {i}: {} {}", length(&sk, 0), length(&sk, 1));
+    }
+    assert!(length(&sk, 0) > 50.0, "the drag should have made it longer: {}", length(&sk, 0));
+}
+
+/// An angle written in terms of a free variable.  Expression values are degrees and the argument
+/// is radians, so the map onto the unknown carries the conversion — and the unknown itself is in
+/// the units a person writes, like every other expression value here.
+#[test]
+fn an_angle_may_be_written_in_terms_of_a_free_variable() {
+    let mut sk = Sketch::new();
+    let l1 = sk.line_xy(0.0, 0.0, 10.0, 0.0, "l1");
+    let l2 = sk.line_xy(0.0, 0.0, 10.0, 5.0, "l2");
+    let l3 = sk.line_xy(0.0, 0.0, 10.0, 1.0, "l3");
+    let a1 = sk.add(Constraint::new(
+        CKind::Angle,
+        vec![Arg::Ent(EntRef::line(l1)), Arg::Ent(EntRef::line(l2)), Arg::Expr(Expr::new("q", 0.0))],
+    ));
+    sk.add(Constraint::new(
+        CKind::Angle,
+        vec![
+            Arg::Ent(EntRef::line(l1)),
+            Arg::Ent(EntRef::line(l3)),
+            Arg::Expr(Expr::new("q / 2", 0.0)),
+        ],
+    ));
+    let items = expr::evaluate(&mut sk);
+    assert!(items.iter().all(|it| it.error.is_none()), "{items:?}");
+    // nothing was stated, so the variable started at what the drawing already read: l1 to l2
+    let drawn = (5.0f64 / 10.0).atan().to_degrees();
+    assert!(close(items[0].value, drawn), "{} {drawn}", items[0].value);
+    assert!(close(value(&sk, a1), drawn.to_radians()));
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let ang = |l: usize| {
+        let [ax, ay, bx, by] = sk.line_params(l);
+        let g = |p: u32| sk.params[p as usize].value;
+        (g(by) - g(ay)).atan2(g(bx) - g(ax)).to_degrees()
+    };
+    assert!(close(ang(l3) - ang(l1), (ang(l2) - ang(l1)) / 2.0),
+            "{} {} {}", ang(l1), ang(l2), ang(l3));
+}
+
+/// A document whose expressions are loaded is evaluated once, when all of them are there.  A
+/// reader that arrives before its definer is not a free variable — it is one whose turn has not
+/// come — so a document with no free variables in it comes back with none, and with no unknown
+/// allocated and retired along the way.
+#[test]
+fn a_reader_loaded_before_its_definer_is_not_a_free_variable() {
+    let (sk, _) = three(["h = w * 2", "w = 3", "1"]);
+    // built one at a time, `w` really was free for as long as it took its definition to arrive,
+    // and the slot it took is retired — which the rebuild walk is what reclaims
+    let names = |s: &Sketch| -> Vec<String> {
+        s.params.iter().filter(|p| p.name.starts_with('$')).map(|p| p.name.clone()).collect()
+    };
+    assert_eq!(names(&sk), vec!["$w".to_string()]);
+    for back in [io::loads(&io::dumps(&sk, Some(1))).unwrap(), io::without(&sk, &[], &[])] {
+        assert!(back.free_vars.is_empty(), "{:?}", back.free_vars);
+        assert!(names(&back).is_empty(), "a batch walk allocated an unknown it then retired");
+    }
 }
