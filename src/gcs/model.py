@@ -593,6 +593,16 @@ class Sketch:
         i = lib.gcs_sketch_nearest_point(self._h, float(x), float(y), _ffi.pf(out))
         return (self.points[int(i)] if i >= 0 else None, float(out[0]))
 
+    def pick(self, x: float, y: float, tol: float) -> Primitive | None:
+        """What a click at (x, y) picks: the nearest entity whose *drawn* figure comes within
+        `tol`, a world length — so a front end passes what one screen pixel is worth and keeps
+        no geometry of its own.  Drawn, so a line is its segment and an arc its sweep, unlike
+        `distance_between`, which measures the entity a dimension means."""
+        out = _ffi.f64(2)
+        if not lib.gcs_sketch_pick(self._h, float(x), float(y), float(tol), _ffi.pf(out)):
+            return None
+        return self.entities(KINDS[int(out[0])])[int(out[1])]
+
     # -- document state -----------------------------------------------------
 
     @property

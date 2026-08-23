@@ -136,7 +136,7 @@ export function pasteClipboard(v: SketchView): number {
   const clip = v.clipboard;
   if (!clip?.primitives().length) return 0;
   v.pushUndo();
-  const d = (PASTE_PX * ++v.pastes) / v.scale;
+  const d = v.world(PASTE_PX * ++v.pastes);
   const made = io.paste(v.sketch, clip, d, -d);
   v.selected = made;
   v.litConstraint = null;

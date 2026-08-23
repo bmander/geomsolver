@@ -44,6 +44,7 @@ export interface Abi {
   gcs_sketch_extent(h: number): number;
   gcs_sketch_bounds(h: number, drawn: number, out: number): void;
   gcs_sketch_nearest_point(h: number, x: number, y: number, outDist: number): number;
+  gcs_sketch_pick(h: number, x: number, y: number, tol: number, out: number): number;
   gcs_sketch_n_residuals(h: number): number;
   gcs_sketch_set_constraints(h: number, p: number, n: number): void;
 

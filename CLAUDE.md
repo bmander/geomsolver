@@ -18,8 +18,9 @@ Currently: **Stage 5 done**, in **one** implementation —
   Neither contains an algorithm.
 * **app** (`web/src/app/`): an HTML5-canvas sketcher, the only front end.  Two halves, each
   a handful of modules rather than one slab.  The *view* is the canvas: `view.ts` holds the
-  state — camera, selection, tool, plan, diagnosis — and the modules beside it take that view
-  as their first argument and do the work (`paint`, `gesture`, `tools`, `dimension`, `edit`);
+  state — the camera, selection, tool, plan, diagnosis — and the modules beside it take that
+  view as their first argument and do the work (`paint`, `gesture`, `tools`, `dimension`,
+  `edit`), with `camera` the one that holds where the drawing sits on the canvas;
   `SketchView` keeps a one-line delegator for each verb the shell calls, so a caller holds one
   object.  The *shell* is the page around it: `shell.ts` (the elements, the view, the focused
   constraint, and where the core is started), `commands` (the constraints bar), `dialogs` (what
@@ -57,9 +58,9 @@ Conventions:
   `rust/gcs-core/tests/`.  A binding changes only when the *surface* changes.  If you find
   yourself writing geometry or numerics in Python or TypeScript, it belongs in Rust instead.
 - A new *entity* kind stops the build in the exhaustive `match e.kind` arms — `model.rs`
-  (`entity_params`, `children`, `count`, `bounds`, `distance_between`), `io::graft`'s remap and
-  the FFI's `ent`.  Give it an arm in each; `primitives()` and `topology_key` are where it joins
-  the document.
+  (`entity_params`, `children`, `count`, `bounds`, `distance_between`, `point_to_drawn`),
+  `io::graft`'s remap and the FFI's `ent`/`kind_id`.  Give it an arm in each; `primitives()`
+  and `topology_key` are where it joins the document.
 - Every new constraint type = a vectorized kernel in `kernels.rs` (added to `KERNELS`; the
   registration order **is** the kernel id) declaring its `degree` — the power of length its
   residual carries, 1 for a signed distance and 2 for a squared one — a `CKind` variant in
@@ -177,6 +178,18 @@ Conventions:
   caching transforms.
 - Slow tests are gated by `GCS_SLOW=1` (Python) and `#[ignore]` (cargo).
 - Benchmark on a quiet machine (`uptime`); this box often has a JVM indexer at 300% CPU.
+- The front end is two layers and they are kept orthogonal.  *Geometry* is the core's, and it
+  is asked in world coordinates: what a click picks is `model::pick` (which measures what is
+  *drawn* — a line's segment, an arc's sweep, the curve itself — as against `point_to`, which
+  measures the idealised entity a dimension means, an infinite line and a whole circle), a
+  callout is laid out and hit-tested by `callout.rs`, a curve is tessellated by `curve.rs`.
+  *Linear algebra* is the front end's, and the whole of it is `app/camera.ts`: a similarity —
+  uniform scale, translation, and the flip that comes of the canvas putting y downwards — so it
+  carries lengths and angles faithfully, which is exactly what lets every geometric question be
+  asked out where the geometry is.  A tolerance therefore travels as a world length
+  (`PICK_PX * unit`, the same `unit` the callouts are sized through) and never as pixels.
+  Nothing outside `camera.ts` multiplies by `scale` or writes a minus sign in front of a y, and
+  nothing in `app/` measures a distance to an entity itself.
 - Dimension callouts (`callout.rs`) are geometry, so the whole figure — extension lines, heads,
   radial leaders, angular arcs, the label's box and the hit test — is laid out in the core and
   the front end only strokes what it is handed.  Sizes are screen-constant through `unit`, the

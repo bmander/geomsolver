@@ -79,9 +79,7 @@ export function paint(v: SketchView): void {
     ctx.strokeStyle = col;
     ctx.lineWidth = lw;
     ctx.setLineDash(c.construction ? CONSTRUCTION_DASH : []);
-    const [cx, cy] = v.w2s(...c.center.xy);
-    ctx.beginPath();
-    ctx.arc(cx, cy, Math.abs(c.radius.value) * v.scale, 0, 2 * Math.PI);
+    circlePath(v, c.center.xy, Math.abs(c.radius.value));
     ctx.stroke();
   }
   for (const a of sk.arcs) {
@@ -89,7 +87,7 @@ export function paint(v: SketchView): void {
     ctx.strokeStyle = col;
     ctx.lineWidth = lw;
     ctx.setLineDash(a.construction ? CONSTRUCTION_DASH : []);
-    arcPath(v, a.center.xy, Math.abs(a.radius.value) * v.scale, ...a.angles());
+    arcPath(v, a.center.xy, Math.abs(a.radius.value), ...a.angles());
     ctx.stroke();
   }
   for (const sp of sk.splines) {
@@ -189,7 +187,7 @@ export function paintCallouts(v: SketchView): void {
     ctx.setLineDash([]);
     path(k.solid);
     for (const a of k.arcs) {
-      arcPath(v, a.c, a.r * v.scale, a.a0, a.a1, a.a1 > a.a0);
+      arcPath(v, a.c, a.r, a.a0, a.a1, a.a1 > a.a0);
       ctx.stroke();
     }
     for (const a of k.arrows) paintArrow(v, a.at, a.dir, cs.arrow, cs.barb);
@@ -219,7 +217,7 @@ export function paintCallouts(v: SketchView): void {
 export function paintArrow(v: SketchView, at: Pt, dir: Pt, size: number, barb: number): void {
   const ctx = v.ctx;
   const [tx, ty] = v.w2s(at[0], at[1]);
-  const [dx, dy] = [dir[0], -dir[1]];            // world direction, on a screen with y down
+  const [dx, dy] = v.cam.dir(dir[0], dir[1]);
   const [bx, by] = [tx - dx * size, ty - dy * size];
   const [px, py] = [-dy * size * barb, dx * size * barb];
   ctx.beginPath();
@@ -229,13 +227,21 @@ export function paintArrow(v: SketchView, at: Pt, dir: Pt, size: number, barb: n
   ctx.closePath();
   ctx.fill();
 }
-/** CCW world arc from a0 to a1; screen y is flipped, so the canvas angles are negated and
- *  the sweep runs counterclockwise in canvas terms. */
-export function arcPath(v: SketchView, centerXY: [number, number], r: number, a0: number,
-                        a1: number, ccw = true): void {
+/** A CCW world arc, from a0 to a1 about `centerXY` with world radius `r`.  Everything here is
+ *  in world terms and the camera turns all of it — including the angles, which run the other
+ *  way on a canvas whose y points down, so the sweep is counterclockwise in canvas terms. */
+export function arcPath(v: SketchView, centerXY: readonly [number, number], r: number,
+                        a0: number, a1: number, ccw = true): void {
   const [cx, cy] = v.w2s(...centerXY);
   v.ctx.beginPath();
-  v.ctx.arc(cx, cy, r, -a0, -a1, ccw);
+  v.ctx.arc(cx, cy, v.len(r), v.cam.angle(a0), v.cam.angle(a1), ccw);
+}
+
+/** The whole circle of world radius `r` about a world centre. */
+export function circlePath(v: SketchView, centerXY: readonly [number, number], r: number): void {
+  const [cx, cy] = v.w2s(...centerXY);
+  v.ctx.beginPath();
+  v.ctx.arc(cx, cy, v.len(r), 0, 2 * Math.PI);
 }
 
 /** Dashed red halo on every entity a culprit constraint references, and a label at each
@@ -265,12 +271,12 @@ export function paintConflicts(v: SketchView): void {
         xs.push(e.p1.x.value, e.p2.x.value);
         ys.push(e.p1.y.value, e.p2.y.value);
       } else if (e instanceof Circle) {
-        const [sx, sy] = v.w2s(...e.center.xy);
-        ctx.beginPath(); ctx.arc(sx, sy, Math.abs(e.radius.value) * v.scale, 0, 2 * Math.PI); ctx.stroke();
+        circlePath(v, e.center.xy, Math.abs(e.radius.value));
+        ctx.stroke();
         xs.push(e.center.x.value); ys.push(e.center.y.value + e.radius.value);
       } else if (e instanceof Arc) {
         const [a0, a1] = e.angles();
-        arcPath(v, e.center.xy, Math.abs(e.radius.value) * v.scale, a0, a1);
+        arcPath(v, e.center.xy, Math.abs(e.radius.value), a0, a1);
         ctx.stroke();
         const am = 0.5 * (a0 + a1);
         xs.push(e.center.x.value + e.radius.value * Math.cos(am));
@@ -345,15 +351,16 @@ export function paintPreview(v: SketchView): void {
   } else if (v.tool === 'rect') {
     ctx.strokeRect(p0[0], p0[1], cur[0] - p0[0], cur[1] - p0[1]);
   } else if (v.tool === 'circle') {
-    ctx.beginPath();
-    ctx.arc(p0[0], p0[1], Math.hypot(cur[0] - p0[0], cur[1] - p0[1]), 0, 2 * Math.PI);
+    const c = v.pending[0].xy;
+    const w = v.s2w(cur[0], cur[1]);
+    circlePath(v, c, Math.hypot(w[0] - c[0], w[1] - c[1]));
     ctx.stroke();
   } else if (v.tool === 'arc3') {
     const g = v.pending.length === 2
       ? threePointArc(...v.pending[0].xy, ...v.pending[1].xy, ...v.s2w(cur[0], cur[1]))
       : null;
     if (g) {
-      arcPath(v, [g.cx, g.cy], g.r * v.scale, g.a0, g.a1);
+      arcPath(v, [g.cx, g.cy], g.r, g.a0, g.a1);
       ctx.stroke();
     } else {
       rubber();                                    // one end so far, or a collinear cursor
@@ -365,15 +372,15 @@ export function paintPreview(v: SketchView): void {
       // the same rule the third click will apply: the cursor gives a direction, the second
       // point the radius
       const [cx, cy] = v.pending[0].xy;
-      const [sx2, sy2] = v.pending[1].xy;
-      const rw = Math.hypot(sx2 - cx, sy2 - cy);
+      const [ex, ey] = v.pending[1].xy;
+      const rw = Math.hypot(ex - cx, ey - cy);
       const q = onRadius(cx, cy, ...v.s2w(cur[0], cur[1]), rw);
       if (q) {
-        const ps = v.w2s(sx2, sy2), pe = v.w2s(...q);
-        const a0 = Math.atan2(-(ps[1] - p0[1]), ps[0] - p0[0]);
-        let a1 = Math.atan2(-(pe[1] - p0[1]), pe[0] - p0[0]);
+        // the sweep is measured where the arc will be, the same way the model measures one
+        const a0 = Math.atan2(ey - cy, ex - cx);
+        let a1 = Math.atan2(q[1] - cy, q[0] - cx);
         if (a1 <= a0) a1 += 2 * Math.PI;
-        arcPath(v, v.pending[0].xy, rw * v.scale, a0, a1);
+        arcPath(v, v.pending[0].xy, rw, a0, a1);
         ctx.stroke();
       }
     }

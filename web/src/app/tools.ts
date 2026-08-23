@@ -158,7 +158,7 @@ export function toolClick(v: SketchView, sp: [number, number]): void {
     const place = pickPlace(v, sp);
     const last = v.pendingFit[v.pendingFit.length - 1];
     const near = last
-      && Math.hypot(place.at[0] - last.at[0], place.at[1] - last.at[1]) * v.scale < PICK_PX;
+      && Math.hypot(place.at[0] - last.at[0], place.at[1] - last.at[1]) < v.world(PICK_PX);
     if (near) {
       finishSplineFit(v);
       return;

@@ -4,7 +4,7 @@
 import * as C from '../core/constraints.js';
 import { Constraint, ENTITY_KINDS } from '../core/constraints.js';
 import {
-  Arc, Circle, Line, Point, Spline, angleBetween, signedPointToLine,
+  Arc, Circle, Line, Point, Spline, angleBetween, distanceBetween, signedPointToLine,
 } from '../core/model.js';
 import { view } from './shell.js';
 import { ToolbarButton, toast } from './ui.js';
@@ -133,8 +133,7 @@ function pairDim(kind: string, a: Point, b: Point): Constraint {
   // a run measures x and a rise measures y; a length has no axis of its own, and no sign
   const axis = kind === 'HorizontalDistance' ? 0 : kind === 'VerticalDistance' ? 1 : null;
   const [p, q] = axis !== null && b.xy[axis] < a.xy[axis] ? [b, a] : [a, b];
-  const v = axis !== null ? q.xy[axis] - p.xy[axis]
-                          : Math.hypot(q.x.value - p.x.value, q.y.value - p.y.value);
+  const v = axis !== null ? q.xy[axis] - p.xy[axis] : distanceBetween(p, q);
   return C.build(kind, [p, q, v]);
 }
 
@@ -175,15 +174,14 @@ function cDimension(): void {
   const { lines, circles } = sel();
   if (!pts.length && lines.length === 2) {
     const [a, b] = lines;
-    const [ax, ay] = a.direction();
-    const [bx, by] = b.direction();
-    const s = Math.hypot(ax, ay) * Math.hypot(bx, by);
-    if (!need(s > 0, 'lines with two distinct endpoints')) return;
+    if (!need(a.length() > 0 && b.length() > 0, 'lines with two distinct endpoints')) return;
     // "Parallel" here means the sketch makes them so, not that they merely look it: a solved
     // Parallel sits within a residual scaled to the sketch's extent, which on a short line is
     // a few ten-thousandths of a radian.  Anything looser is a corner, and what a drawing
-    // dimensions on a corner is its angle.
-    return Math.abs(ax * by - ay * bx) <= 1e-3 * s ? cParallelDistance(a, b) : cAngle(a, b);
+    // dimensions on a corner is its angle.  The angle is the core's, so the test is on the
+    // same number the constraint would be given.
+    return Math.abs(Math.sin(angleBetween(a, b))) <= 1e-3 ? cParallelDistance(a, b)
+                                                          : cAngle(a, b);
   }
   if (pts.length === 1 && lines.length === 1) return cPointLineDistance(pts[0], lines[0]);
   // a dimension *between* two circles is the ring; on any other number of them it is the
@@ -210,8 +208,7 @@ function cParallelDistance(l1: Line, l2: Line): void {
  *  the point across.  Measured to the infinite line — the foot may fall off the end of the
  *  segment, which is what a drawing means by "distance to this edge". */
 function cPointLineDistance(p: Point, line: Line): void {
-  const [dx, dy] = line.direction();
-  if (!need(Math.hypot(dx, dy) > 0, 'a line with two distinct endpoints')) return;
+  if (!need(line.length() > 0, 'a line with two distinct endpoints')) return;
   if (!need(p !== line.p1 && p !== line.p2, 'a point that is not an endpoint of the line')) return;
   dimension([new C.PointLineDistance(p, line, signedPointToLine(p.x.value, p.y.value, line))]);
 }
@@ -220,8 +217,7 @@ function cPointLineDistance(p: Point, line: Line): void {
  *  the ring without centring it, so say so when the centres are not already together. */
 function cAnnularDistance(c1: Circle | Arc, c2: Circle | Arc): void {
   dimension([new C.AnnularDistance(c1, c2, Math.abs(c2.radius.value) - Math.abs(c1.radius.value))]);
-  const [a, b] = [c1.center, c2.center];
-  if (Math.hypot(a.x.value - b.x.value, a.y.value - b.y.value) > 1e-9) {
+  if (distanceBetween(c1.center, c2.center) > 1e-9) {
     toast('the ring is dimensioned, but these circles are not concentric — add Coincident on their centres');
   }
 }

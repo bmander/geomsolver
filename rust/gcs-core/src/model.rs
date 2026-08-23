@@ -934,6 +934,76 @@ fn point_to_line(sk: &Sketch, px: f64, py: f64, line: usize) -> f64 {
     signed_point_to_line(sk, px, py, line).abs()
 }
 
+/// How far (px, py) is from what is *drawn* of `e`: the segment a line is drawn as, the sweep an
+/// arc is drawn as, the curve itself.  `point_to` measures the entity a *dimension* means — a
+/// line is infinite, an arc is the whole circle it lies on — which is not what a pointer hits.
+pub fn point_to_drawn(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
+    match e.kind {
+        EntKind::Line => {
+            let l = &sk.lines[e.i()];
+            let (a, b) = (sk.point_xy(l.p1 as usize), sk.point_xy(l.p2 as usize));
+            seg_distance((px, py), a, b)
+        }
+        EntKind::Arc => {
+            let (cx, cy) = sk.point_xy(sk.round_center(e));
+            let r = sk.radius_value(e).abs();
+            let (a0, a1) = sk.arc_angles(e.i());
+            let mut th = (py - cy).atan2(px - cx);
+            if th < a0 {
+                th += 2.0 * std::f64::consts::PI;     // arc_angles keeps a1 within one turn of a0
+            }
+            if th <= a1 {
+                return ((px - cx).hypot(py - cy) - r).abs();
+            }
+            // off the ends of the sweep: the nearer end of what was drawn, not the phantom
+            // remainder of the circle
+            let at = |t: f64| (cx + r * t.cos(), cy + r * t.sin());
+            let (sx, sy) = at(a0);
+            let (ex, ey) = at(a1);
+            (px - sx).hypot(py - sy).min((px - ex).hypot(py - ey))
+        }
+        // the three whose drawn figure *is* the entity: a point, a whole ring, and a curve
+        // that `curve::distance_to` already keeps between its own knots
+        EntKind::Point | EntKind::Circle | EntKind::Spline => point_to(sk, px, py, e),
+    }
+}
+
+/// Distance from a point to a segment — the drawn figure of a line, and the flat side of every
+/// callout box, so both ask here rather than each keeping the projection formula.
+pub fn seg_distance(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
+    let (vx, vy) = (b.0 - a.0, b.1 - a.1);
+    let l2 = vx * vx + vy * vy;
+    if l2 <= 0.0 {
+        return (p.0 - a.0).hypot(p.1 - a.1);
+    }
+    let t = (((p.0 - a.0) * vx + (p.1 - a.1) * vy) / l2).clamp(0.0, 1.0);
+    (p.0 - (a.0 + t * vx)).hypot(p.1 - (a.1 + t * vy))
+}
+
+/// What a click at (x, y) picks: the nearest entity whose drawn figure comes within `tol`, or
+/// nothing.  A point within reach wins outright, however much nearer an edge passes — a point is
+/// what most of a sketcher's verbs are about, and it is the smaller target of the two.  The
+/// tolerance is a world length, so a front end scales it by what one screen pixel is worth and
+/// keeps no geometry of its own.
+pub fn pick(sk: &Sketch, x: f64, y: f64, tol: f64) -> Option<EntRef> {
+    if let (Some(i), d) = sk.nearest_point(x, y) {
+        if d <= tol {
+            return Some(EntRef::point(i));
+        }
+    }
+    let mut best: Option<(EntRef, f64)> = None;
+    for e in sk.primitives() {
+        if e.kind == EntKind::Point {
+            continue;
+        }
+        let d = point_to_drawn(sk, x, y, e);
+        if d <= tol && best.map_or(true, |(_, bd)| d < bd) {
+            best = Some((e, d));
+        }
+    }
+    best.map(|(e, _)| e)
+}
+
 fn measure_order(k: EntKind) -> u8 {
     match k {
         EntKind::Point => 0,

@@ -622,6 +622,17 @@ export class Sketch {
     core().gcs_sketch_perturb(this.handle, sigma, seed >>> 0);
   }
 
+  /** What a click at (x, y) picks: the nearest entity whose *drawn* figure comes within `tol`,
+   *  a world length — so a front end passes `PICK_PX * unit` and keeps no geometry of its own.
+   *  The core measures against what it drew, which is what makes clicking a thing and
+   *  constraining it agree about where it is. */
+  pick(x: number, y: number, tol: number): Primitive | null {
+    return withBuf(2, 8, (b) => {
+      if (!core().gcs_sketch_pick(this.handle, x, y, tol, b.ptr)) return null;
+      return this.entities(KINDS[b.f64[0]])[b.f64[1]];
+    });
+  }
+
   nearestPoint(x: number, y: number): { point: Point | null; dist: number } {
     return withBuf(1, 8, (b) => {
       const i = core().gcs_sketch_nearest_point(this.handle, x, y, b.ptr);

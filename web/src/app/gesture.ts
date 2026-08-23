@@ -85,9 +85,7 @@ export function bindEvents(v: SketchView): void {
     e.preventDefault();
     const [sx, sy] = local(v, e);
     const f = 1.0015 ** (-e.deltaY * (e.deltaMode === 1 ? 16 : 1));
-    v.originX = sx + (v.originX - sx) * f;
-    v.originY = sy + (v.originY - sy) * f;
-    v.scale *= f;
+    v.cam.zoomAt(sx, sy, f);       // about the cursor, so what is under it stays under it
     v.draw();
   }, { passive: false });
 }
@@ -204,8 +202,7 @@ export function panGesture(v: SketchView, from: [number, number]): Gesture {
   return {
     transient: true,                 // the camera moved, not the sketch
     move: (sp) => {
-      v.originX += sp[0] - last[0];
-      v.originY += sp[1] - last[1];
+      v.cam.panBy(sp[0] - last[0], sp[1] - last[1]);
       last = sp;
     },
   };

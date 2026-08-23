@@ -3,7 +3,10 @@
  * *done* to it lives in the modules beside this one: `paint` strokes it, `gesture` drives it
  * from the pointer, `tools` draws into it, `dimension` writes a number on it and `edit` changes
  * the document.  They take the view as their first argument, so this file stays the state and
- * the seams — the coordinates, the history, the solve and the hit tests everything else calls.
+ * the seams — the history, the solve, and the two one-line questions everything else asks:
+ * where a world place is on the canvas (`camera`) and what is under the cursor (the core).
+ * Neither answer is worked out here: the camera is the front end's only linear algebra and the
+ * geometry is all the core's, which is what keeps the two apart.
  *
  * Every mutation funnels through `afterEdit`, which re-solves (when auto-solve is on),
  * re-diagnoses and notifies the shell exactly once. */
@@ -15,6 +18,7 @@ import { Diagnosis, diagnose } from '../core/diagnose.js';
 import { Param, Point, Primitive, Sketch } from '../core/model.js';
 import { Method, SolveResult, System } from '../core/system.js';
 import { Motion, WitnessReport, analyze, movingParams } from '../core/witness.js';
+import { Camera } from './camera.js';
 import * as edit from './edit.js';
 import * as dimension from './dimension.js';
 import { abandonGesture, bindEvents } from './gesture.js';
@@ -58,9 +62,9 @@ export type Tool =
 
 export class SketchView {
   sketch: Sketch;
-  scale = 6;
-  originX = 80;
-  originY = 500;
+  /** Where the drawing sits on the canvas — and the whole of the front end's linear algebra:
+   *  every world/screen conversion in `app/` goes through it (see `camera.ts`). */
+  readonly cam = new Camera();
   tool: Tool = 'select';
   method: Method = 'dogleg';
   autoSolve = true;
@@ -150,29 +154,29 @@ export class SketchView {
 
   // -- coordinates ---------------------------------------------------------
 
-  w2s(x: number, y: number): [number, number] {
-    return [this.originX + x * this.scale, this.originY - y * this.scale];
-  }
+  /* The camera's own verbs, on the object everyone holds — moving it is asked of `cam`. */
 
-  s2w(sx: number, sy: number): [number, number] {
-    return [(sx - this.originX) / this.scale, (this.originY - sy) / this.scale];
-  }
+  w2s(x: number, y: number): [number, number] { return this.cam.w2s(x, y); }
 
-  /** The world length of one screen pixel — what the core sizes annotation through. */
-  get unit(): number {
-    return 1 / this.scale;
-  }
+  s2w(sx: number, sy: number): [number, number] { return this.cam.s2w(sx, sy); }
+
+  /** A world length in screen pixels. */
+  len(w: number): number { return this.cam.len(w); }
+
+  /** The world length of one screen pixel — what the core sizes annotation and pick
+   *  tolerances through. */
+  get unit(): number { return this.cam.unit; }
+
+  /** A screen length as the world length it stands for — what a tolerance in pixels is worth
+   *  where the geometry lives, since every measurement is the core's and made out there. */
+  world(px: number): number { return this.cam.world(px); }
 
   get width(): number { return this.canvas.clientWidth; }
   get height(): number { return this.canvas.clientHeight; }
 
   fit(): void {
     if (!this.sketch.points.length) return;
-    const [x0, y0, x1, y1] = this.sketch.drawnBounds();
-    this.scale = 0.8 * Math.min(this.width / (x1 - x0 || 1), this.height / (y1 - y0 || 1));
-    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-    this.originX = this.width / 2 - cx * this.scale;
-    this.originY = this.height / 2 + cy * this.scale;
+    this.cam.fitTo(this.sketch.drawnBounds(), this.width, this.height);
     this.draw();
   }
 
@@ -382,43 +386,18 @@ export class SketchView {
   }
   // -- hit testing ---------------------------------------------------------
 
+  /* Both of these are the core's answer to a question asked in world coordinates: the camera
+   * turns the click into a place and the pixel tolerance into a length, and the geometry
+   * happens out there.  It is what makes clicking a thing and constraining it agree about
+   * where it is — the pick measures the same figure the core drew. */
+
   pickPoint(sx: number, sy: number, tol = PICK_PX): Point | null {
     const { point, dist } = this.sketch.nearestPoint(...this.s2w(sx, sy));
-    return point && dist * this.scale < tol ? point : null;
+    return point && dist < this.world(tol) ? point : null;
   }
 
   pick(sx: number, sy: number): Primitive | null {
-    const p = this.pickPoint(sx, sy);
-    if (p) return p;
-    let best: Primitive | null = null;
-    let bd = PICK_PX;
-    for (const ln of this.sketch.lines) {
-      const d = segDist([sx, sy], this.w2s(...ln.p1.xy), this.w2s(...ln.p2.xy));
-      if (d < bd) { best = ln; bd = d; }
-    }
-    for (const c of this.sketch.circles) {
-      const cs = this.w2s(...c.center.xy);
-      const d = Math.abs(Math.hypot(sx - cs[0], sy - cs[1]) - Math.abs(c.radius.value) * this.scale);
-      if (d < bd) { best = c; bd = d; }
-    }
-    for (const a of this.sketch.arcs) {
-      const cs = this.w2s(...a.center.xy);
-      const d = Math.abs(Math.hypot(sx - cs[0], sy - cs[1]) - Math.abs(a.radius.value) * this.scale);
-      if (d >= bd) continue;
-      let ang = Math.atan2(-(sy - cs[1]), sx - cs[0]);
-      const [a0, a1] = a.angles();
-      while (ang < a0) ang += 2 * Math.PI;
-      if (ang <= a1) { best = a; bd = d; }
-    }
-    // a curve has no closed form to test against, so the core does it: `closest` is the same
-    // projection the constraints seed from, which is what makes clicking a curve and putting a
-    // point on it agree about where "on it" is
-    const [wx, wy] = this.s2w(sx, sy);
-    for (const sp of this.sketch.splines) {
-      const d = sp.closest(wx, wy).distance * this.scale;
-      if (d < bd) { best = sp; bd = d; }
-    }
-    return best;
+    return this.sketch.pick(...this.s2w(sx, sy), this.world(PICK_PX));
   }
 
   // -- painting ------------------------------------------------------------
@@ -469,17 +448,4 @@ export class SketchView {
   cutSelected(): number { return edit.cutSelected(this); }
   pasteClipboard(): number { return edit.pasteClipboard(this); }
   resetCallouts(c?: Constraint | null): number { return edit.resetCallouts(this, c); }
-}
-
-function dist(a: [number, number], b: [number, number]): number {
-  return Math.hypot(a[0] - b[0], a[1] - b[1]);
-}
-
-function segDist(p: [number, number], a: [number, number], b: [number, number]): number {
-  const vx = b[0] - a[0], vy = b[1] - a[1];
-  const L2 = vx * vx + vy * vy;
-  if (L2 === 0) return dist(p, a);
-  let t = ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / L2;
-  t = Math.max(0, Math.min(1, t));
-  return dist(p, [a[0] + t * vx, a[1] + t * vy]);
 }

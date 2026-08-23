@@ -19,7 +19,7 @@
 
 use crate::constraints::{CKind, Constraint};
 use crate::io::dimension_text;
-use crate::model::{angle_between, signed_point_to_line, EntKind, EntRef, Sketch};
+use crate::model::{angle_between, seg_distance, signed_point_to_line, EntKind, EntRef, Sketch};
 use std::collections::BTreeMap;
 use std::f64::consts::{FRAC_PI_4, PI};
 
@@ -159,7 +159,7 @@ impl Callout {
         let edges: [Seg; 4] = std::array::from_fn(|i| Seg(self.label[i], self.label[(i + 1) % 4]));
         let mut best = f64::INFINITY;
         for s in self.solid.iter().chain(&edges) {
-            best = best.min(seg_dist(p, s.0, s.1));
+            best = best.min(seg_distance(p, s.0, s.1));
         }
         for a in &self.arcs {
             let n = 16;
@@ -167,7 +167,7 @@ impl Callout {
             for i in 1..=n {
                 let t = a.a0 + (a.a1 - a.a0) * (i as f64 / n as f64);
                 let cur = along(a.c, ray(t), a.r);
-                best = best.min(seg_dist(p, prev, cur));
+                best = best.min(seg_distance(p, prev, cur));
                 prev = cur;
             }
         }
@@ -489,16 +489,6 @@ pub fn pick(sk: &Sketch, unit: f64, at: P, tol_px: f64) -> Option<u32> {
 fn inside(q: &[P; 4], p: P) -> bool {
     let side = |i: usize| cross(sub(q[(i + 1) % 4], q[i]), sub(p, q[i]));
     (0..4).all(|i| side(i) >= 0.0) || (0..4).all(|i| side(i) <= 0.0)
-}
-
-fn seg_dist(p: P, a: P, b: P) -> f64 {
-    let v = sub(b, a);
-    let l2 = dot(v, v);
-    if l2 <= 0.0 {
-        return len(sub(p, a));
-    }
-    let t = (dot(sub(p, a), v) / l2).clamp(0.0, 1.0);
-    len(sub(p, along(a, v, t)))
 }
 
 /* -- the layout -------------------------------------------------------------- */

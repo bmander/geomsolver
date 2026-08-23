@@ -108,7 +108,7 @@ test('the drawing calls out every dimension it has', () => {
   const sk = dimensioned();
   const view = viewOn(sk);
   view.draw();                     // paint them too, so the painter is exercised as well
-  const cs = callouts(sk, 1 / view.scale);
+  const cs = callouts(sk, view.unit);
   assert.equal(cs.items.length, 1);
   assert.equal(cs.items[0].text, '60');
   assert.equal(cs.items[0].id, sk.userConstraints()[0].id);
@@ -172,7 +172,7 @@ test('switching the dimensions off leaves nothing to click on', () => {
 
 /** Where the dimension line sits, in screen y — what dragging a linear callout moves. */
 function dimY(view: SketchView, sk: Sketch): number {
-  const k = callouts(sk, 1 / view.scale).items[0];
+  const k = callouts(sk, view.unit).items[0];
   return view.w2s(k.solid[0][0][0], k.solid[0][0][1])[1];
 }
 
@@ -195,9 +195,7 @@ test('dragging a callout moves it, and it stays moved', () => {
   assert.ok(Math.abs(dimY(view, sk) - after) < 1e-6, 'a solve moved the callout');
   const reloaded = io.loads(io.dumps(sk));
   const view2 = viewOn(reloaded);
-  view2.scale = view.scale;
-  view2.originX = view.originX;
-  view2.originY = view.originY;
+  Object.assign(view2.cam, view.cam);       // the same camera, so the same screen positions
   assert.ok(Math.abs(dimY(view2, reloaded) - after) < 1e-6, 'the placement did not save');
 });
 
@@ -473,7 +471,7 @@ test('where the number is put is which dimension it is', () => {
   assert.equal(kind(), 'VerticalDistance');
 
   // the number goes where it is put: the callout's placement follows the pointer
-  const k = callouts(sk, 1 / view.scale).items[0];
+  const k = callouts(sk, view.unit).items[0];
   const [sx, sy] = view.w2s(...k.anchor);
   const [px, py] = at(40, 0);
   assert.ok(Math.hypot(sx - px, sy - py) < 30, `the callout stayed behind: ${sx}, ${sy}`);
@@ -511,15 +509,15 @@ test('a click plants the number, and the pointer stops carrying it', () => {
   cv.fire('pointerdown', pointer(...view.w2s(-20, 20)));
   cv.fire('pointerup', pointer(...view.w2s(-20, 20)));
   assert.equal(view.liveDim!.placing, false);
-  const where = callouts(sk, 1 / view.scale).items[0].anchor;
+  const where = callouts(sk, view.unit).items[0].anchor;
 
   // moving on now leaves it where it was put, and does not turn it into a different dimension
   cv.fire('pointermove', pointer(...view.w2s(20, 60)));
   assert.equal(view.liveDim!.targets[0].typeName, kind);
-  assert.deepEqual(callouts(sk, 1 / view.scale).items[0].anchor, where);
+  assert.deepEqual(callouts(sk, view.unit).items[0].anchor, where);
 
   // but it is still being written, so taking hold of it goes on choosing which one it is
-  const on = view.w2s(...callouts(sk, 1 / view.scale).items[0].anchor);
+  const on = view.w2s(...callouts(sk, view.unit).items[0].anchor);
   cv.fire('pointerdown', pointer(...on));
   cv.fire('pointermove', pointer(...view.w2s(20, 60)));
   assert.equal(view.liveDim!.targets[0].typeName, 'HorizontalDistance');
@@ -583,4 +581,46 @@ test('nothing is solved or judged while a dimension is being laid down', () => {
   assert.ok(view.liveDim && !view.liveDim.placing);
   view.endDimension(true);
   sk.dispose();
+});
+
+/* -- the two layers ------------------------------------------------------------------------
+ *
+ * The camera is the front end's whole linear algebra and the core is its whole geometry, so
+ * what these check is the seam between them: a click becomes a world place and a pixel
+ * tolerance becomes a world length, and the answer comes back from the core. */
+
+test('the camera carries a length whichever way it is measured', () => {
+  const view = viewOn(new Sketch());
+  view.cam.zoomAt(300, 200, 1.7);            // an ordinary pan-and-zoom, not the default pose
+  view.cam.panBy(-40, 25);
+  const [sx, sy] = view.w2s(3, -7);
+  const back = view.s2w(sx, sy);
+  assert.ok(Math.hypot(back[0] - 3, back[1] + 7) < 1e-9, 'w2s and s2w are inverses');
+  assert.ok(Math.abs(view.len(view.world(12)) - 12) < 1e-9, 'len and world are inverses');
+  // a similarity carries lengths, which is what lets a pick tolerance travel in world units
+  const [ax, ay] = view.w2s(0, 0);
+  const [bx, by] = view.w2s(5, 12);
+  assert.ok(Math.abs(Math.hypot(bx - ax, by - ay) - view.len(13)) < 1e-9);
+  // and turns angles into the canvas's, which run the other way
+  assert.equal(view.cam.dir(1, 2)[1], -2);
+  assert.equal(view.cam.angle(Math.PI / 4), -Math.PI / 4);
+});
+
+test('picking measures what is drawn, and does it in the core', () => {
+  const sk = new Sketch();
+  const a = sk.point(0, 0), b = sk.point(10, 0);
+  const line = sk.line(a, b);
+  const view = viewOn(sk);
+  const at = (x: number, y: number): [number, number] => view.w2s(x, y);
+  assert.equal(view.pick(...at(5, 0)), line);
+  assert.equal(view.pick(...at(5, 0.2)), line, 'within a few pixels of the segment');
+  // the infinite line a dimension would measure to reaches out here; what is drawn does not
+  assert.equal(view.pick(...at(30, 0)), null);
+  // a point within reach wins over the edge it is an end of
+  assert.equal(view.pick(...at(9.95, 0)), b);
+  // the tolerance is in pixels, so it covers less of the drawing the further in you zoom
+  const off = view.world(6);                 // six pixels off the segment
+  assert.equal(view.pick(...at(5, off)), line);
+  view.cam.zoomAt(0, 0, 4);
+  assert.equal(view.pick(...at(5, off)), null, 'zoomed in, the same place is well clear of it');
 });

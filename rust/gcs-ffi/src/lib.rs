@@ -577,6 +577,25 @@ pub unsafe extern "C" fn gcs_sketch_nearest_point(
     })
 }
 
+/// What a click at (x, y) picks within `tol` (a world length): writes [kind, index] and
+/// returns 1, or returns 0 when nothing drawn is within reach.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_pick(
+    h: *mut Sketch,
+    x: f64,
+    y: f64,
+    tol: f64,
+    out: *mut f64,
+) -> i32 {
+    guard(0, move || match model::pick(sk(h), x, y, tol) {
+        Some(e) => {
+            write(out, &[kind_id(e.kind) as f64, e.i() as f64]);
+            1
+        }
+        None => 0,
+    })
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_n_residuals(h: *mut Sketch) -> i32 {
     guard(-1, move || {
@@ -622,6 +641,16 @@ pub unsafe extern "C" fn gcs_param_name(h: *mut Sketch, i: i32) -> *mut u8 {
 }
 
 /* -- entities -------------------------------------------------------------- */
+
+fn kind_id(k: EntKind) -> i32 {
+    match k {
+        EntKind::Point => 0,
+        EntKind::Line => 1,
+        EntKind::Circle => 2,
+        EntKind::Arc => 3,
+        EntKind::Spline => 4,
+    }
+}
 
 fn ent(kind: i32, idx: i32) -> EntRef {
     let k = match kind {

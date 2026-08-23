@@ -82,6 +82,7 @@ _SIGNATURES: list[tuple[str, Any, list[Any]]] = [
     ("gcs_sketch_extent", ct.c_double, [PTR]),
     ("gcs_sketch_bounds", None, [PTR, ct.c_int32, F64]),
     ("gcs_sketch_nearest_point", ct.c_int32, [PTR, ct.c_double, ct.c_double, F64]),
+    ("gcs_sketch_pick", ct.c_int32, [PTR, ct.c_double, ct.c_double, ct.c_double, F64]),
     ("gcs_sketch_n_residuals", ct.c_int32, [PTR]),
     ("gcs_sketch_set_constraints", None, [PTR, PTR, ct.c_size_t]),
     # params
