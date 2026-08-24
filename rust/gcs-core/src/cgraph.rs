@@ -504,75 +504,33 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
                     source: Some(c.id),
                 });
             }
-            CKind::TangentArcLine if known(&g, c.args[0].ent()).is_some() => {
-                // tangent at endpoint p ⟺ radius c−p perpendicular to the line (p on the line and
-                // |c − p| = r come from elsewhere)
-                let arc = &sk.arcs[c.args[0].ent().i()];
-                let at = match &c.args[2] {
-                    crate::constraints::Arg::Str(s) if s == "start" => arc.start,
-                    _ => arc.end,
-                } as usize;
-                let centre_pt = arc.center as usize;
+            // tangent at a contact point p ⟺ the radius c−p is perpendicular to the line
+            // (p on the line and |c − p| = r come from elsewhere).  One encoding for the arc's
+            // own endpoint and for a line end held on a circle: the same statement, and
+            // `relation_bound` has to count it the same way for both.
+            CKind::TangentArcLine | CKind::TangentLineCircleAt
+                if known(&g, c.args[if c.kind == CKind::TangentArcLine { 0 } else { 1 }].ent())
+                    .is_some() =>
+            {
+                let arc = c.kind == CKind::TangentArcLine;
+                let round = c.args[if arc { 0 } else { 1 }].ent();
+                let ln = c.args[if arc { 1 } else { 0 }].ent().i();
+                let Some(at) = c.contact_point(sk) else { continue };
+                let centre_pt = sk.round_center(round);
                 let cen = g.point_el(centre_pt);
                 let pe = g.point_el(at);
                 let vr = g.virtual_line(cen, pe);
-                g.edges.push(Edge {
-                    kind: EdgeKind::Pl,
-                    a: cen,
-                    b: vr,
-                    value: EdgeVal::Zero,
-                    source: None,
-                });
-                g.edges.push(Edge {
-                    kind: EdgeKind::Pl,
-                    a: pe,
-                    b: vr,
-                    value: EdgeVal::Zero,
-                    source: None,
-                });
+                for a in [cen, pe] {
+                    g.edges.push(Edge { kind: EdgeKind::Pl, a, b: vr, value: EdgeVal::Zero, source: None });
+                }
                 let (cx, cy) = sk.point_xy(centre_pt);
                 let (px, py) = sk.point_xy(at);
                 let n_r = normal_of(cx, cy, px, py);
-                let ln = c.args[1].ent().i();
                 let a = g.line_el(ln);
                 let phi = branch(&line_normal(sk, ln), &n_r, std::f64::consts::FRAC_PI_2);
                 g.dirs.push(DirRelation { a, b: vr, phi, source: c.id });
             }
-            CKind::TangentLineCircleAt if known(&g, c.args[1].ent()).is_some() => {
-                // the arc rule for a full circle: tangent at the line's own endpoint p ⟺ the
-                // radius c−p is perpendicular to the line (p on the line is the endpoint itself,
-                // |c − p| = r is the user's PointOnCircle)
-                let l = &sk.lines[c.args[0].ent().i()];
-                let at = match &c.args[2] {
-                    crate::constraints::Arg::Str(s) if s == "p2" => l.p2,
-                    _ => l.p1,
-                } as usize;
-                let centre_pt = sk.round_center(c.args[1].ent());
-                let cen = g.point_el(centre_pt);
-                let pe = g.point_el(at);
-                let vr = g.virtual_line(cen, pe);
-                g.edges.push(Edge {
-                    kind: EdgeKind::Pl,
-                    a: cen,
-                    b: vr,
-                    value: EdgeVal::Zero,
-                    source: None,
-                });
-                g.edges.push(Edge {
-                    kind: EdgeKind::Pl,
-                    a: pe,
-                    b: vr,
-                    value: EdgeVal::Zero,
-                    source: None,
-                });
-                let (cx, cy) = sk.point_xy(centre_pt);
-                let (px, py) = sk.point_xy(at);
-                let n_r = normal_of(cx, cy, px, py);
-                let ln = c.args[0].ent().i();
-                let a = g.line_el(ln);
-                let phi = branch(&line_normal(sk, ln), &n_r, std::f64::consts::FRAC_PI_2);
-                g.dirs.push(DirRelation { a, b: vr, phi, source: c.id });
-            }
+
             CKind::EqualRadius | CKind::AnnularDistance
                 if known(&g, c.args[0].ent()).is_some() =>
             {

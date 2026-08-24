@@ -145,9 +145,12 @@ Conventions:
   `system::RANK_TOL`.  Never a raw `J`, and never relative to `σ₀`: `σ₀` belongs to whichever
   row is largest, and that row may be a dimension in another figure entirely, so a relative
   rule lets an unrelated part of the drawing decide whether two constraints on a circle are
-  dependent.  `Conditioned` is the only matrix the rank routines will take, and its methods
-  take only an absolute tolerance, so the comparison cannot be written the other way.
-  `jacobian_dense` stays the raw `∂r/∂z` for the solvers and the finite-difference checks.
+  dependent.  `Conditioned` is the only matrix the *diagnosis* will judge, and its methods take
+  only an absolute tolerance, so the comparison cannot be written the other way — the `Tol`-taking
+  factorisations are `pub(crate)` for the same reason.  (`decompose::deficiency` and `homotopy`
+  keep their own relative rank on their own synthetic matrices, which are neither the sketch's
+  Jacobian nor in the sketch's units.)  `jacobian_dense` stays the raw `∂r/∂z` for the solvers
+  and the finite-difference checks.
 - A tangency whose contact is a point the drawing already holds to the curve is stated *at*
   that point, or it is a double root: `PointOnCircle(p, C)` + `TangentLineCircle(L, C)` with p
   an endpoint of L say "tangent at p" with a Jacobian that is rank-deficient at *every*
@@ -161,8 +164,16 @@ Conventions:
   witness settle-test the surplus motions: step along a null direction, let the solver settle,
   and a motion that walks back (a double root has no solution out there) is `shaky` — counted
   out of the DOF, reported as "blocked at second order", never painted as under- or
-  over-constrained.  The screen runs only for motions the matching cannot account for, only at
-  a solved pose, and never more than `witness::SCREEN_MAX` solves.
+  over-constrained.  `numeric_rank` already includes them, so nothing downstream adds `shaky`
+  back.  Every guard is inside `witness::screen`, because a caller that writes one itself will
+  write it differently: the sketch must be at a solution (or the settle measures the solve, not
+  the geometry), it must contain a tangency at all (the only thing a double root is made of —
+  which is what keeps the solves off the ordinary theorem-type dependency, `polygon_chain`
+  paying eight solves an edit for a freedom that is perfectly real), the removals are capped at
+  what the matching cannot account for (so a settle that lands short can never eat a genuine
+  DOF), and there are never more than `SCREEN_MAX` of them.  A candidate cannot be recognised
+  more cheaply than by trying it: reached exactly, a double root's singular value is as small as
+  a real freedom's, so there is nothing in the spectrum to sort on.
 - `Horizontal`/`Vertical` level a line; `HorizontalPoints`/`VerticalPoints` level a *pair of
   points*, which is the same statement about the segment between them and needs no line drawn
   there.  They reuse the line kernels unchanged — those four columns were always two points'

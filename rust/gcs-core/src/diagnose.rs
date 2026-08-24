@@ -21,7 +21,7 @@ use crate::model::{EntRef, Sketch};
 use crate::newton::Method;
 use crate::solve::SolveOpts;
 use crate::system::System;
-use crate::witness::{analyze_with, movable_columns, screen_null, without_columns, WitnessReport};
+use crate::witness::{analyze_with, movable_columns, screen, shaky_warning, WitnessReport};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -67,14 +67,17 @@ pub struct Diagnosis {
     /// Maximum matching size.
     pub structural_rank: usize,
     /// Jacobian rank at the current configuration.
+    /// Jacobian rank at the current configuration, second order included — `shaky` is already
+    /// counted in it, so no consumer adds anything back.
     pub numeric_rank: Option<usize>,
     /// The numeric cross-check was skipped because the system is past the dense limit.
     pub numeric_skipped: bool,
     /// How many dependencies only the numbers can see (0 when the check did not run).
     pub geometric_dependency: usize,
-    /// First-order motions blocked at second order — a tangency evaluated at its own contact
-    /// point (a double root: the contact "swims" along the line to first order and is pulled
-    /// back at second).  Counted out of the DOF: the sketch is rigid there in practice.  The
+    /// How many of `numeric_rank` the settle test contributed: first-order motions blocked at
+    /// second order — a tangency evaluated at its own contact point (a double root: the contact
+    /// "swims" along the line to first order and is pulled back at second).  Reported so the
+    /// correction is visible; never added to anything, since the rank already carries it.  The
     /// term of art is a *shaky* framework — infinitesimally flexible, rigid.
     pub shaky: usize,
     /// Constraints in the over-determined block, plus — when the numeric cross-check ran —
@@ -333,6 +336,10 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     }
     if want_numeric && n_cols > 0 && sys.n_res > 0 {
         let movable: Vec<usize>;
+        // the conditioned Jacobian at z, kept for the over/implied block below rather than
+        // built a second time at the same pose — the screen leaves both sketch and system as
+        // it found them, so it is still the right matrix afterwards
+        let mut cond: Option<crate::system::Conditioned> = None;
         match &wit {
             Some(w) if w.used_current => {
                 numeric_rank = Some(w.numeric_rank); // same J at the same x, screened already
@@ -341,23 +348,20 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
             }
             _ => {
                 let z = sys.z0(sk);
-                let rn = sys.conditioned(&z).rank_and_nullspace(RANK_TOL);
+                let c = sys.conditioned(&z);
+                let rn = c.rank_and_nullspace(RANK_TOL);
+                cond = Some(c);
                 if rn.converged {
-                    let nr = n_cols - rn.n.cols;
-                    numeric_rank = Some(nr);
-                    let mut null = rn.n;
                     // where the Jacobian claims motions the matching cannot account for, settle-
                     // test them: a tangency at its own contact is a double root whose "motion"
-                    // walks back.  Only at a solved pose (a settle from an unsolved one measures
-                    // the solve, not the geometry), and never more tests than the discrepancy —
-                    // a motion the matching also sees is genuine and not suspect.
-                    let deficit = dm.rank.saturating_sub(nr);
-                    if deficit > 0 && sys.max_relative_residual(&z) <= 1e-6 {
-                        let bs = screen_null(sk, sys, &z, &null, deficit);
-                        if !bs.is_empty() {
-                            shaky = bs.len();
-                            null = without_columns(&null, &bs);
-                        }
+                    // walks back.  `screen` owns both guards — only at a solution, and never
+                    // more than the discrepancy, so a motion the matching also sees is safe.
+                    let deficit = dm.rank.saturating_sub(rn.rank);
+                    let (null, blocked) = screen(sk, sys, &z, rn.null(), deficit);
+                    shaky = blocked;
+                    numeric_rank = Some(rn.rank + blocked);
+                    if blocked > 0 {
+                        warnings.push(shaky_warning(blocked));
                     }
                     movable = movable_columns(&null, RTOL);
                 } else {
@@ -378,12 +382,14 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         if numeric_rank.is_some() {
             under_params = movable.iter().map(|&j| free_params[j]).collect();
         }
-        if numeric_rank.is_some_and(|r| r + shaky < dm.rank) {
+        if numeric_rank.is_some_and(|r| r < dm.rank) {
             // ...and name the constraints worth removing, or the report would say
             // "over-constrained" with nothing to point at.  One extra SVD, only on this path.
-            let z = sys.z0(sk);
-            let j = sys.conditioned(&z);
-            let w = j.left_nullspace(RANK_TOL).n;
+            let j = cond.unwrap_or_else(|| {
+                let z = sys.z0(sk);
+                sys.conditioned(&z)
+            });
+            let w = j.left_nullspace(RANK_TOL).null();
             // `implied` is what the relations alone already say: the same test on the left null
             // space of the relation-only rows (a dependency there embeds in W, so this is a subset
             // of the removable set).  Whatever is removable only with a dimension's help is `over`.
@@ -397,7 +403,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
             let w_rel = if rel_rows.len() == j.rows() {
                 w.clone()
             } else {
-                j.select_rows(&rel_rows).left_nullspace(RANK_TOL).n
+                j.select_rows(&rel_rows).left_nullspace(RANK_TOL).null()
             };
             let row_c_rel: Vec<u32> = rel_rows.iter().map(|&r| row_c[r]).collect();
             let duplicated = |c: u32| {
@@ -418,13 +424,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
                 "structural rank {} but numeric rank {}: a dependency the graph cannot see \
                  (theorem-induced or degenerate configuration) — Stage 4",
                 dm.rank,
-                numeric_rank.unwrap() + shaky
-            ));
-        }
-        if shaky > 0 {
-            warnings.push(format!(
-                "{shaky} first-order motion(s) blocked at second order (a tangency at its own \
-                 contact): rigid in practice, not counted in the DOF"
+                numeric_rank.unwrap()
             ));
         }
     }
@@ -497,7 +497,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
 
     // the structural matching is a *generic* upper bound on the rank; where the numeric
     // cross-check ran it is the truth at this configuration, and it is what decides what moves
-    let effective_rank = numeric_rank.map(|r| (r + shaky).min(dm.rank)).unwrap_or(dm.rank);
+    let effective_rank = numeric_rank.unwrap_or(dm.rank);
     let dof = n_cols as i64 - effective_rank as i64;
     let structural_dof = n_cols as i64 - dm.rank as i64;
     let n_redundant = adj.len() as i64 - effective_rank as i64;
@@ -524,7 +524,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         numeric_rank,
         numeric_skipped,
         geometric_dependency: numeric_rank
-            .map(|nr| dm.rank.saturating_sub(nr + shaky))
+            .map(|nr| dm.rank.saturating_sub(nr))
             .unwrap_or(0),
         shaky,
         over,

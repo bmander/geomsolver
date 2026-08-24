@@ -556,33 +556,11 @@ fn tangency_stated_at_its_contact_is_regular() {
     assert_eq!(d.dof, 2);
 }
 
-/// Two fixed circles and a belt segment stated the degenerate way: each end on its circle, the
-/// line tangent to each circle — every contact a double root, rank-deficient at every solution.
-fn belt_over_two_circles() -> Sketch {
-    let mut sk = Sketch::new();
-    let c1 = sk.point(0.0, 0.0, true, "c1");
-    let c2 = sk.point(50.0, 0.0, true, "c2");
-    let k1 = sk.circle(c1, 10.0, "k1");
-    let k2 = sk.circle(c2, 10.0, "k2");
-    let p = sk.point(0.0, 10.0, false, "p");
-    let q = sk.point(50.0, 10.0, false, "q");
-    let line = sk.line(p, q);
-    sk.add(Constraint::new(CKind::Radius, vec![Arg::Ent(EntRef::circle(k1)), Arg::Num(10.0)]));
-    sk.add(Constraint::new(CKind::Radius, vec![Arg::Ent(EntRef::circle(k2)), Arg::Num(10.0)]));
-    sk.add(Constraint::point_on_circle(EntRef::point(p), EntRef::circle(k1), false));
-    sk.add(Constraint::point_on_circle(EntRef::point(q), EntRef::circle(k2), false));
-    let t1 = Constraint::tangent_line_circle(&sk, EntRef::line(line), EntRef::circle(k1), None);
-    sk.add(t1);
-    let t2 = Constraint::tangent_line_circle(&sk, EntRef::line(line), EntRef::circle(k2), None);
-    sk.add(t2);
-    sk
-}
-
 #[test]
 fn a_tangential_contact_is_rigid_not_under() {
     // each first-order "motion" is an endpoint swimming along the line — blocked at second
     // order, so the settle test counts it out and the sketch reads as what it is: rigid
-    let mut sk = belt_over_two_circles();
+    let mut sk = examples::belt_tangency();
     solve(&mut sk, SolveOpts::default());
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     assert_eq!(d.dof, 0, "shaky={} numeric={:?} structural={}", d.shaky, d.numeric_rank, d.structural_rank);

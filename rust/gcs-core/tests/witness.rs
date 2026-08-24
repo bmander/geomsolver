@@ -165,25 +165,9 @@ fn a_dependency_the_graph_can_see_is_not_called_theorem_type() {
 
 #[test]
 fn a_blocked_motion_is_not_a_witness_dof() {
-    // two fixed circles, a belt segment stated the degenerate way (each end on its circle, the
-    // line tangent to both): the Jacobian is rank-deficient at every solution, yet nothing can
-    // move — the settle test walks each first-order motion straight back
-    let mut sk = Sketch::new();
-    let c1 = sk.point(0.0, 0.0, true, "c1");
-    let c2 = sk.point(50.0, 0.0, true, "c2");
-    let k1 = sk.circle(c1, 10.0, "k1");
-    let k2 = sk.circle(c2, 10.0, "k2");
-    let p = sk.point(0.0, 10.0, false, "p");
-    let q = sk.point(50.0, 10.0, false, "q");
-    let line = sk.line(p, q);
-    sk.add(Constraint::new(CKind::Radius, vec![Arg::Ent(EntRef::circle(k1)), Arg::Num(10.0)]));
-    sk.add(Constraint::new(CKind::Radius, vec![Arg::Ent(EntRef::circle(k2)), Arg::Num(10.0)]));
-    sk.add(Constraint::point_on_circle(EntRef::point(p), EntRef::circle(k1), false));
-    sk.add(Constraint::point_on_circle(EntRef::point(q), EntRef::circle(k2), false));
-    let t1 = Constraint::tangent_line_circle(&sk, EntRef::line(line), EntRef::circle(k1), None);
-    sk.add(t1);
-    let t2 = Constraint::tangent_line_circle(&sk, EntRef::line(line), EntRef::circle(k2), None);
-    sk.add(t2);
+    // the belt figure: the Jacobian is rank-deficient at every solution, yet nothing can move
+    // — the settle test walks each first-order motion straight back
+    let mut sk = examples::belt_tangency();
     let rep = analyze(&mut sk, None, 0);
     assert!(rep.used_current);
     assert_eq!(rep.n_dof(), 0, "blocked={} rank={}", rep.blocked, rep.numeric_rank);

@@ -71,6 +71,12 @@ def altitudes() -> Sketch:
     return build("altitudes")
 
 
+def belt_tangency() -> Sketch:
+    """A belt over two pulleys, each end held on its circle and the line tangent to it: a double
+    root — rank-deficient at every solution, yet nothing can move."""
+    return build("belt_tangency")
+
+
 def parallels() -> Sketch:
     return build("parallels")
 
@@ -123,4 +129,5 @@ def cases() -> list[dict[str, Any]]:
 __all__ = ["EXAMPLES", "altitudes", "henneberg_edges", "build", "cases", "impossible_triangle", "k33", "laman", "pythagoras",
            "parallels", "perturb", "polygon_chain", "rect_fillets", "rect_fillets_conflict",
            "rect_fillets_under", "slotted_link", "truss", "truss_conflict", "truss_floating",
+           "belt_tangency",
            "spline_follower", "truss_redundant", "zigzag"]

@@ -118,7 +118,6 @@ pub fn witness_json(sk: &Sketch, w: &WitnessReport) -> Json {
         ("dependencies", Json::Arr(deps)),
         ("motions", Json::Arr(motions)),
         ("movable", idx(&w.movable)),
-        ("params", ids(&w.params)),
         ("warnings", Json::Arr(w.warnings.iter().map(|s| Json::Str(s.clone())).collect())),
         ("nDof", (w.n_dof() as i64).into()),
         ("nInternalDof", (w.n_internal_dof() as i64).into()),

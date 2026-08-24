@@ -22,6 +22,9 @@ export const trussConflict = (): Sketch => build('truss_conflict');
 export const trussFloating = (bays = 8): Sketch => build(`truss_floating:${bays}`);
 export const impossibleTriangle = (): Sketch => build('impossible_triangle');
 export const altitudes = (): Sketch => build('altitudes');
+/** A belt over two pulleys, each end held on its circle and the line tangent to it: a double
+ *  root — rank-deficient at every solution, yet nothing can move. */
+export const beltTangency = (): Sketch => build('belt_tangency');
 export const parallels = (): Sketch => build('parallels');
 /** The graphical proof of the Pythagorean theorem: four a×b right triangles in a square of side
  *  a + b leave a square of side c, dimensioned `c = hypot(a, b)` — redundant and consistent. */

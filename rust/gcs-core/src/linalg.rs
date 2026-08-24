@@ -20,12 +20,12 @@ pub enum Tol {
 }
 
 impl Tol {
-    /// The value a pivot must exceed, given the largest one.  Relative to a zero largest is
-    /// "no rank at all", which `INFINITY` says without a special case in the loop.
+    /// The value a pivot must exceed, given the largest one — which both callers can supply,
+    /// since pivoting puts the largest `|R_ii|` first and the SVD sorts descending.  A zero
+    /// largest needs no case of its own: nothing is then `> 0.0`, which is rank 0 already.
     fn cut(self, largest: f64) -> f64 {
         match self {
-            Tol::Rel(r) if largest > 0.0 => r * largest,
-            Tol::Rel(_) => f64::INFINITY,
+            Tol::Rel(r) => r * largest,
             Tol::Abs(t) => t,
         }
     }
@@ -89,6 +89,23 @@ impl Mat {
                 .copy_from_slice(&self.data[r * self.cols..(r + 1) * self.cols]);
         }
         out
+    }
+
+    /// Columns `keep` of this matrix, in the given order — the counterpart of `select_rows`,
+    /// for the null-space bases whose columns are the motions.
+    pub fn select_cols(&self, keep: &[usize]) -> Mat {
+        let mut out = Mat::zeros(self.rows, keep.len());
+        for i in 0..self.rows {
+            for (j, &c) in keep.iter().enumerate() {
+                out.data[i * keep.len().max(1) + j] = self.data[i * self.cols + c];
+            }
+        }
+        out
+    }
+
+    /// Column `j` as a vector.
+    pub fn col(&self, j: usize) -> Vec<f64> {
+        (0..self.rows).map(|i| self.data[i * self.cols + j]).collect()
     }
 
     /// y = A x
@@ -358,7 +375,7 @@ pub fn rrqr(a: &Mat, rcond: f64) -> (usize, Vec<i32>) {
     rrqr_with(a, Tol::Rel(rcond))
 }
 
-pub fn rrqr_with(a: &Mat, tol: Tol) -> (usize, Vec<i32>) {
+pub(crate) fn rrqr_with(a: &Mat, tol: Tol) -> (usize, Vec<i32>) {
     let (m, n) = (a.rows, a.cols);
     if m == 0 || n == 0 {
         return (0, Vec::new());
@@ -749,15 +766,20 @@ pub fn svd(a: &Mat, want_u: bool) -> Svd {
 
 pub struct RankNull {
     pub rank: usize,
-    /// n x (n - rank) orthonormal basis of the null space.
-    pub n: Mat,
     pub s: Vec<f64>,
-    /// The n x n right singular vectors, rows in singular-value order — `n` is their tail, and
-    /// a caller that settles on a different rank (the witness, when the QR disagrees) takes
-    /// its own tail from here rather than factoring again.
+    /// The n x n right singular vectors, rows in singular-value order.  The null space is their
+    /// tail — `null()` for this rank, `null_tail` for a caller that settled on another (the
+    /// witness, when the QR disagrees), so there is one answer here and not two to keep in step.
     pub vt: Mat,
     /// False if the SVD behind this did not converge; `rank` then says nothing.
     pub converged: bool,
+}
+
+impl RankNull {
+    /// n x (n - rank) orthonormal basis of the null space.
+    pub fn null(&self) -> Mat {
+        null_tail(&self.vt, self.rank)
+    }
 }
 
 /// `(rank, null-space basis, singular values)` from one SVD — the shared seam that keeps
@@ -766,15 +788,13 @@ pub fn rank_and_nullspace(a: &Mat, rcond: f64) -> RankNull {
     rank_and_nullspace_with(a, Tol::Rel(rcond))
 }
 
-pub fn rank_and_nullspace_with(a: &Mat, tol: Tol) -> RankNull {
+pub(crate) fn rank_and_nullspace_with(a: &Mat, tol: Tol) -> RankNull {
     let (m, n) = (a.rows, a.cols);
     if n == 0 {
-        let e = Mat::zeros(0, 0);
-        return RankNull { rank: 0, n: e.clone(), s: Vec::new(), vt: e, converged: true };
+        return RankNull { rank: 0, s: Vec::new(), vt: Mat::zeros(0, 0), converged: true };
     }
     if m == 0 {
-        let i = Mat::identity(n);
-        return RankNull { rank: 0, n: i.clone(), s: Vec::new(), vt: i, converged: true };
+        return RankNull { rank: 0, s: Vec::new(), vt: Mat::identity(n), converged: true };
     }
     let d = svd(a, false);
     let mn = m.min(n);
@@ -787,22 +807,13 @@ pub fn rank_and_nullspace_with(a: &Mat, tol: Tol) -> RankNull {
             }
         }
     }
-    let null = null_tail(&d.vt, rank);
-    RankNull { rank, n: null, s: d.s, vt: d.vt, converged: d.converged }
+    RankNull { rank, s: d.s, vt: d.vt, converged: d.converged }
 }
 
 /// The last `n - rank` right singular vectors as columns: the null space an SVD of rank `rank`
-/// implies.
+/// implies.  `vt`'s rows are those vectors, so the tail of them transposed is the basis.
 pub fn null_tail(vt: &Mat, rank: usize) -> Mat {
-    let n = vt.cols;
-    let nn = n - rank;
-    let mut null = Mat::zeros(n, nn);
-    for i in 0..n {
-        for j in 0..nn {
-            null.data[i * nn.max(1) + j] = vt.data[(rank + j) * n + i];
-        }
-    }
-    null
+    vt.select_rows(&(rank..vt.rows).collect::<Vec<_>>()).transpose()
 }
 
 /// Solve the n*n system `A x = b` in place (partial-pivoting LU).  `false` if A is singular.

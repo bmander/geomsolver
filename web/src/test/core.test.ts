@@ -119,7 +119,8 @@ test('a fully constrained sketch has rank equal to its free parameter count', ()
   const sk = examples.rectFillets();
   const sys = new System(sk);
   try {
-    assert.equal(sys.rank(1e-10, true), sys.nFree);
+    // the core's own tolerance, not a second rank rule written here
+    assert.equal(sys.rank(undefined, true), sys.nFree);
   } finally {
     sys.dispose();
   }
@@ -226,13 +227,7 @@ test('a tangency at a line end on the circle is stated regular', () => {
 test('a tangential contact stated the old way is rigid, not under', () => {
   // each end on its circle plus the line tangent to it: rank-deficient at every solution, and
   // the settle test counts the swimming motions out of the DOF
-  const sk = new Sketch();
-  const k1 = sk.circle(sk.point(0, 0, true), 10);
-  const k2 = sk.circle(sk.point(50, 0, true), 10);
-  const ln = sk.line(sk.point(0, 10), sk.point(50, 10));
-  sk.add(new C.Radius(k1, 10), new C.Radius(k2, 10),
-         new C.PointOnCircle(ln.p1, k1), new C.PointOnCircle(ln.p2, k2),
-         new C.TangentLineCircle(ln, k1), new C.TangentLineCircle(ln, k2));
+  const sk = examples.beltTangency();
   solve(sk);
   const d = diagnose(sk);
   assert.equal(d.dof, 0);

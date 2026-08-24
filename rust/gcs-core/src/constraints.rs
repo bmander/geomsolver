@@ -298,6 +298,47 @@ impl CKind {
         self.spec().iter().any(|&(_, k)| k.is_dimension())
     }
 
+    /// Holds two things in *contact*.  Where the contact point is also pinned — a line end on
+    /// the circle its line is tangent to — the pair is a double root: rank-deficient at every
+    /// solution though nothing can move.  That is the one thing the second-order screen looks
+    /// for, so a sketch with no tangency in it can skip the screen and its solves entirely.
+    ///
+    /// Exhaustive on purpose: a new contact type stops the build here and has to say whether
+    /// the screen should look at it.
+    pub fn is_tangency(self) -> bool {
+        match self {
+            CKind::TangentLineCircle
+            | CKind::TangentCircleCircle
+            | CKind::TangentArcLine
+            | CKind::TangentLineCircleAt
+            | CKind::SplineTangentLine
+            | CKind::SplineCurvature => true,
+            CKind::Coincident
+            | CKind::Distance
+            | CKind::Midpoint
+            | CKind::DragTarget
+            | CKind::Horizontal
+            | CKind::Vertical
+            | CKind::Parallel
+            | CKind::Perpendicular
+            | CKind::Angle
+            | CKind::ParallelDistance
+            | CKind::EqualLength
+            | CKind::PointOnLine
+            | CKind::PointLineDistance
+            | CKind::PointOnCircle
+            | CKind::Radius
+            | CKind::EqualRadius
+            | CKind::AnnularDistance
+            | CKind::Symmetric
+            | CKind::PointOnSpline
+            | CKind::HorizontalPoints
+            | CKind::VerticalPoints
+            | CKind::HorizontalDistance
+            | CKind::VerticalDistance => false,
+        }
+    }
+
     /// Types that do not have to be satisfied — a drag target compromises, it does not hold.
     pub fn soft_by_default(self) -> bool {
         self == CKind::DragTarget
@@ -760,6 +801,28 @@ impl Constraint {
         }
     }
 
+    /// The point a tangency-at-a-contact touches its round entity at: the arc endpoint or the
+    /// line endpoint the `at` slot names.  One decode, because `params_on` picks the kernel's
+    /// *columns* from it and `cgraph` picks the *cluster element* from it — two readings that
+    /// have to name the same point or the plan and the kernel address different geometry.
+    pub fn contact_point(&self, sk: &Sketch) -> Option<usize> {
+        let at = |i: usize| match &self.args[2] {
+            Arg::Str(s) => s.as_str() == ["start", "p1"][i],
+            _ => true,
+        };
+        match self.kind {
+            CKind::TangentArcLine => {
+                let a = &sk.arcs[self.args[0].ent().i()];
+                Some(if at(0) { a.start } else { a.end } as usize)
+            }
+            CKind::TangentLineCircleAt => {
+                let l = &sk.lines[self.args[0].ent().i()];
+                Some(if at(1) { l.p1 } else { l.p2 } as usize)
+            }
+            _ => None,
+        }
+    }
+
     /// The spline this constraint touches and the Param holding where on it — `None` for
     /// anything that is not a curve contact, and for one that has not been added yet (its
     /// parameter is still the seed number, not a Param).
@@ -827,23 +890,13 @@ impl Constraint {
             CKind::TangentCircleCircle => {
                 [centre(0), vec![rad(0)], centre(1), vec![rad(1)]].concat()
             }
-            CKind::TangentArcLine => {
-                let a = &sk.arcs[e(0).i()];
-                let at = match &self.args[2] {
-                    Arg::Str(s) if s == "start" => a.start,
-                    _ => a.end,
-                };
-                let p = &sk.points[at as usize];
-                [vec![p.x, p.y], sk.point_params(a.center as usize).to_vec(), ln(1)].concat()
-            }
-            CKind::TangentLineCircleAt => {
-                let l = &sk.lines[e(0).i()];
-                let at = match &self.args[2] {
-                    Arg::Str(s) if s == "p2" => l.p2,
-                    _ => l.p1,
-                };
-                let p = &sk.points[at as usize];
-                [vec![p.x, p.y], centre(1), ln(0)].concat()
+            // both say "the radius is perpendicular to the line at the contact", so both are
+            // [contact point, centre, line] — the arc names the line second, the circle first
+            CKind::TangentArcLine | CKind::TangentLineCircleAt => {
+                let at = self.contact_point(sk).unwrap();
+                let line = if self.kind == CKind::TangentArcLine { 1 } else { 0 };
+                [sk.point_params(at).to_vec(), centre(if line == 1 { 0 } else { 1 }), ln(line)]
+                    .concat()
             }
             CKind::Symmetric => [pt(0), pt(1), ln(2)].concat(),
             // the curve columns are one span's control points, which is what keeps the column

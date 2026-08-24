@@ -205,8 +205,7 @@ export class System {
   /** The hard rows of the Jacobian with their units divided out — the matrix every rank and null
    *  space in the core is judged on.  One row per row of `structure()`, in its order. */
   conditioned(): { rows: number; cols: number; data: Float64Array } {
-    let nHard = 0;
-    for (const h of this.hard) if (h) nHard++;
+    const nHard = this.hard.reduce((n, h) => n + h, 0);
     return withBuf(Math.max(nHard * this.nFree, 1), 8, (b) => {
       const rows = core().gcs_system_conditioned(this.handle, this.sketch.handle, b.ptr);
       return { rows, cols: this.nFree, data: b.f64.slice(0, rows * this.nFree) };

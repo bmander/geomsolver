@@ -1774,7 +1774,7 @@ pub unsafe extern "C" fn gcs_rank_nullspace(
         let (mm, nn) = (m as usize, n as usize);
         let am = linalg::Mat::from_vec(mm, nn, std::slice::from_raw_parts(a, mm * nn).to_vec());
         let rn = linalg::rank_and_nullspace(&am, rcond);
-        write(n_out, &rn.n.data);
+        write(n_out, &rn.null().data);
         if !s_out.is_null() {
             write(s_out, &rn.s);
         }

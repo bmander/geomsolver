@@ -282,11 +282,10 @@ function cTangent(): void {
     } else {
       // a line end the user has already put on this circle is where the tangency will land, so
       // it is stated *at* that point — the pair (PointOnCircle, TangentLineCircle) says the
-      // same thing as a double root, rank-deficient at every solution
-      const on = (p: Point) => view.sketch.userConstraints().some((k) =>
-        k instanceof C.PointOnCircle
-        && (k as unknown as { p: Point; circle: Circle | Arc }).p === p
-        && (k as unknown as { p: Point; circle: Circle | Arc }).circle === cc);
+      // same thing as a double root, rank-deficient at every solution.  Whether the sketch
+      // already says a point is on the circle is the core's question, the same one the
+      // constraints bar asks before offering to edit a dimension.
+      const on = (p: Point) => C.stating(view.sketch, new C.PointOnCircle(p, cc)) !== null;
       if (on(ln.p1)) return view.addConstraints(new C.TangentLineCircleAt(ln, cc, 'p1'));
       if (on(ln.p2)) return view.addConstraints(new C.TangentLineCircleAt(ln, cc, 'p2'));
     }

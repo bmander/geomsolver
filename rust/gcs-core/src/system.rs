@@ -487,18 +487,26 @@ impl System {
     /// Its rows are in the residuals' own units and not comparable with each other: a rank or
     /// a null space is asked of `conditioned`, never of this.
     pub fn jacobian_dense(&mut self, z: &[f64]) -> Mat {
-        let mut j = Mat::zeros(self.n_res, self.n_free);
-        if self.n_free == 0 {
-            return j;
+        let rows: Vec<usize> = (0..self.n_res).collect();
+        self.scatter(z, &rows, false)
+    }
+
+    /// The chosen rows of the CSR Jacobian, filled into a dense matrix — optionally with each
+    /// row divided by its units (`jac_scale`), which is the whole of what `Conditioned` is.
+    fn scatter(&mut self, z: &[f64], rows: &[usize], condition: bool) -> Mat {
+        let mut m = Mat::zeros(rows.len(), self.n_free);
+        if self.n_free == 0 || rows.is_empty() {
+            return m;
         }
         self.compute_csr(z);
-        for r in 0..self.n_res {
+        for (i, &r) in rows.iter().enumerate() {
+            let inv = if condition { 1.0 / self.jac_scale[r] } else { 1.0 };
             for p in self.csr_indptr[r]..self.csr_indptr[r + 1] {
-                j.data[r * self.n_free + self.csr_indices[p as usize] as usize] =
-                    self.csr_data[p as usize];
+                m.data[i * self.n_free + self.csr_indices[p as usize] as usize] =
+                    self.csr_data[p as usize] * inv;
             }
         }
-        j
+        m
     }
 
     /// max |r| over hard rows at z — what "solved" means.
@@ -594,19 +602,7 @@ impl System {
     }
 
     fn condition(&mut self, z: &[f64], rows: &[usize]) -> Conditioned {
-        let mut m = Mat::zeros(rows.len(), self.n_free);
-        if self.n_free == 0 || rows.is_empty() {
-            return Conditioned { m };
-        }
-        self.compute_csr(z);
-        for (i, &r) in rows.iter().enumerate() {
-            let inv = 1.0 / self.jac_scale[r];
-            for p in self.csr_indptr[r]..self.csr_indptr[r + 1] {
-                m.data[i * self.n_free + self.csr_indices[p as usize] as usize] =
-                    self.csr_data[p as usize] * inv;
-            }
-        }
-        Conditioned { m }
+        Conditioned { m: self.scatter(z, rows, true) }
     }
 
     /// Structural Jacobian as a bipartite graph: `adj[row]` = sorted free columns with a

@@ -511,6 +511,32 @@ pub fn zigzag(n: usize, copies: usize) -> Sketch {
     sk
 }
 
+/// A belt segment over two pulleys, stated the way a draughtsman reaches for it: each end held
+/// on its circle, the line tangent to each.  That pair says "tangent at the endpoint" as a
+/// *double root* — the Jacobian is rank-deficient at every solution because each contact can
+/// swim along the line to first order — so the figure is rigid while the numbers alone say it
+/// has two degrees of freedom.  What the second-order screen is for; `TangentLineCircleAt` is
+/// how the app states it now.
+pub fn belt_tangency() -> Sketch {
+    let mut sk = Sketch::new();
+    let c1 = sk.point(0.0, 0.0, true, "c1");
+    let c2 = sk.point(50.0, 0.0, true, "c2");
+    let k1 = sk.circle(c1, 10.0, "k1");
+    let k2 = sk.circle(c2, 10.0, "k2");
+    let p = sk.point(0.0, 10.0, false, "p");
+    let q = sk.point(50.0, 10.0, false, "q");
+    let line = sk.line(p, q);
+    sk.add(Constraint::radius(EntRef::circle(k1), 10.0));
+    sk.add(Constraint::radius(EntRef::circle(k2), 10.0));
+    sk.add(Constraint::point_on_circle(EntRef::point(p), EntRef::circle(k1), false));
+    sk.add(Constraint::point_on_circle(EntRef::point(q), EntRef::circle(k2), false));
+    for k in [k1, k2] {
+        let t = Constraint::tangent_line_circle(&sk, EntRef::line(line), EntRef::circle(k), None);
+        sk.add(t);
+    }
+    sk
+}
+
 pub fn example(name: &str) -> Option<Sketch> {
     Some(match name {
         "rect_fillets" => rect_fillets(100.0, 60.0, 10.0, 0.0),
@@ -530,12 +556,13 @@ pub fn example(name: &str) -> Option<Sketch> {
         "laman" => laman(10, 0, true),
         "zigzag" => zigzag(32, 3),
         "spline_follower" => spline_follower(7),
+        "belt_tangency" => belt_tangency(),
         _ => return None,
     })
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 20] = [
+pub const CASES: [(&str, &str, &str); 21] = [
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Slotted link", "slotted_link", "obround slot with two holes; fully constrained"),
     ("Truss (8 bays)", "truss", "~30-entity Warren truss, every member dimensioned"),
@@ -555,6 +582,7 @@ pub const CASES: [(&str, &str, &str); 20] = [
     ("Parallels & perpendiculars", "parallels", "direction classes: parallel/perpendicular/vertical (1 DOF left: slide along the base)"),
     ("Pythagoras, graphically", "pythagoras", "four a×b right triangles in a square of side a + b leave a square of side c; `c = hypot(a, b)` is redundant and consistent — edit a or b and it stays so"),
     ("Curve and follower", "spline_follower", "a cubic B-spline with a face held tangent to it and a point riding on it — drag a control point and the contact slides along the curve, across knots and all"),
+    ("Belt over two pulleys", "belt_tangency", "each end on its circle and the line tangent to it — a double root: rank-deficient at every solution, yet nothing can move.  The second-order screen calls it rigid rather than 2 DOF"),
     ("Levelled zigzags (3×32)", "zigzag", "three separate staircases of free-length H/V segments — a drag costs one staircase, not three"),
 ];
 
