@@ -432,6 +432,19 @@ test('a floating rigid truss has exactly three rigid-body motions', () => {
   assert.equal(w.motions.filter((m) => !m.rigid).length, 0);
 });
 
+test('a motion says which params it moves, and the core is what says so', () => {
+  // the same case the Python suite checks, so the two bindings cannot drift from each other
+  // or from `witness::moving_params` — which they would if either read the velocities itself
+  const sk = examples.rectFilletsUnder();
+  const w = analyze(sk);
+  assert.equal(w.motions.length, 1);
+  const m = w.motions[0];
+  assert.deepEqual(new Set(m.moving.map((p) => p.name)),
+                   new Set(['b2.x', 'r1.x', 'r2.x', 't1.x', 'c_br.x', 'c_tr.x']));
+  // every param it names is one the velocity actually moves, and the rest are still
+  assert.ok(m.moving.length < m.velocity.length);
+});
+
 test('witness analysis of the equal-length ring finds the cycle redundancy', () => {
   const sk = examples.polygonChain(6);
   const w = analyze(sk);

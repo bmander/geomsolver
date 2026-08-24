@@ -53,9 +53,11 @@ LU against numpy — on purpose, because there is no LAPACK anywhere in the proj
 * `newton.rs` — our own **Powell DogLeg** (default) and **Levenberg–Marquardt**.  Gauss–Newton
   steps are minimum-norm, so under-constrained sketches — the normal case while editing — move as
   little as possible.  Dense path up to 120 free params; regularized sparse normal equations above.
-* `linalg.rs` — Householder QR with column pivoting (the rank convention
-  `|R_ii| > rcond·|R_00|`), the complete orthogonal decomposition behind the minimum-norm
-  least-squares step (LAPACK `dgelsy`'s algorithm), a Golub–Reinsch SVD and an LU solve.
+* `linalg.rs` — Householder QR with column pivoting, the complete orthogonal decomposition
+  behind the minimum-norm least-squares step (LAPACK `dgelsy`'s algorithm), a Golub–Reinsch SVD
+  and an LU solve.  A rank is decided by a `Tol`: relative (`|R_ii| > rcond·|R_00|`,
+  `σ_i > rcond·σ_0`) for a matrix in unknown units, absolute for the dimensionless
+  `system::Conditioned` Jacobian that every rank and null space in the core is judged on.
 * `sparse.rs` — `JᵀJ` assembled from the fixed CSR structure, ordered by reverse Cuthill–McKee and
   factored by an up-looking `LDLᵀ`, for sketches past the dense limit.
 * `graph.rs` — Hopcroft–Karp matching, coarse Dulmage–Mendelsohn decomposition, bipartite
@@ -66,7 +68,10 @@ LU against numpy — on purpose, because there is no LAPACK anywhere in the proj
   redundant distances, violated constraints, the minimal conflict set (grow-then-shrink filter),
   per-entity state `well|under|over|conflict`.  "Which parameters can move" comes from the
   Jacobian null space (sharper than the generous DM under-block), and a numeric-rank cross-check
-  logs theorem-type dependencies structural analysis cannot see.
+  logs theorem-type dependencies structural analysis cannot see.  Both are judged on the
+  conditioned Jacobian (rows over `extent^(degree−1)`, columns in world length) at the one
+  absolute `RANK_TOL`, so the verdict on a figure is the figure's alone and not the drawing's
+  size or another figure's dimensions.
 * `cgraph.rs` — the constraint graph for decomposition: point elements (coincident points
   contracted), line elements, ground (fixed points + x-axis), valency-1 edges (point–point
   distance, point–line signed distance), direction relations (all angle-type constraints as a

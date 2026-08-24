@@ -173,6 +173,8 @@ _SIGNATURES: list[tuple[str, Any, list[Any]]] = [
     ("gcs_system_n_constraints", ct.c_int32, [PTR]),
     ("gcs_system_max_relative_residual", ct.c_double, [PTR, PTR]),
     ("gcs_system_rank", ct.c_int32, [PTR, PTR, ct.c_double, ct.c_int32]),
+    ("gcs_system_conditioned", ct.c_int32, [PTR, PTR, F64]),
+    ("gcs_rank_tol", ct.c_double, []),
     ("gcs_system_update_consts", None, [PTR, PTR, ct.c_int32]),
     ("gcs_system_refresh_consts", None, [PTR, PTR]),
     ("gcs_system_structure_json", STR, [PTR]),

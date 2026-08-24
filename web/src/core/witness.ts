@@ -17,14 +17,10 @@ export interface Dependency {
 export interface Motion {
   velocity: Float64Array;
   rigid: boolean;                /* a rigid-body motion of the whole sketch */
-  params: Param[];
-}
-
-export function movingParams(m: Motion, rel = 1e-3): Param[] {
-  let mx = 0;
-  for (const v of m.velocity) mx = Math.max(mx, Math.abs(v));
-  const lim = rel * (mx || 1);
-  return m.params.filter((_, i) => Math.abs(m.velocity[i]) > lim);
+  /** The Params this motion actually moves — the core's own reading of its velocities, since
+   *  which of them count as moving is a fact about the analysis and not about how a caller
+   *  chooses to print it. */
+  moving: Param[];
 }
 
 export interface WitnessReport {
@@ -53,15 +49,13 @@ interface RawReport {
   usedCurrent: boolean;
   numericRank: number;
   dependencies: RawDep[];
-  motions: { velocity: number[]; rigid: boolean }[];
+  motions: { velocity: number[]; rigid: boolean; movingParams: number[] }[];
   movable: number[];
-  params: number[];
   warnings: string[];
   summary: string;
 }
 
 export function reportFrom(sk: Sketch, d: RawReport): WitnessReport {
-  const params = d.params.map((i) => sk.paramAt(i));
   const con = (i: number): Constraint => sk.constraintById(i)!;
   return {
     xWitness: Float64Array.from(d.xWitness),
@@ -73,7 +67,9 @@ export function reportFrom(sk: Sketch, d: RawReport): WitnessReport {
       theorem: x.theorem,
     })),
     motions: d.motions.map((m) => ({
-      velocity: Float64Array.from(m.velocity), rigid: m.rigid, params,
+      velocity: Float64Array.from(m.velocity),
+      rigid: m.rigid,
+      moving: m.movingParams.map((i) => sk.paramAt(i)),
     })),
     movable: d.movable,
     warnings: d.warnings,

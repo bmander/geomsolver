@@ -4,7 +4,7 @@
  * happens, rather than behind a box in the middle of the screen. */
 import * as io from '../core/io.js';
 import { Constraint } from '../core/constraints.js';
-import { dimension } from './commands.js';
+import { editDimension } from './commands.js';
 import { invalidateRows } from './lists.js';
 import { view } from './shell.js';
 import { toast } from './ui.js';
@@ -28,7 +28,7 @@ function dimensionField(c: Constraint): { attr: string; text: string } | null {
 /** Open a dimension's number for editing, on the drawing where it is drawn. */
 export function editValue(c: Constraint): void {
   if (!dimensionField(c)) return toast(`${c.typeName} has no editable dimension`);
-  dimension([c]);              // already stated: nothing to add and nothing to place
+  editDimension(c);            // already stated: nothing to add and nothing to place
 }
 
 /** Write `text` on every constraint being edited; false if the core would not have it, which

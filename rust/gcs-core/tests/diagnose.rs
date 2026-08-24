@@ -1,4 +1,4 @@
-use gcs_core::constraints::{Arg, CKind, Constraint};
+use gcs_core::constraints::{Arg, CKind, Constraint, SpecKind};
 use gcs_core::diagnose::{diagnose, distance_rigidity, minimal_conflict_set, DiagnoseOptions, State};
 use gcs_core::examples;
 use gcs_core::model::{EntRef, Sketch};
@@ -418,4 +418,110 @@ fn diagnosis_scales_to_a_large_sketch() {
     assert!(d.violated.is_empty());
     assert_eq!(d.components.len(), 1);
     assert_eq!(d.components[0].constraints.len(), sk.hard_constraints().len());
+}
+
+/// A line through a point on a circle touches it there, at a maximum of the distance from the
+/// centre — so `PointOnCircle` and `TangentLineCircle` are first-order dependent at every
+/// solution (a double root), and the singular value that says so measures how far the solve
+/// stopped from the exact pose, nothing about the rest of the drawing.
+fn tangent_at_a_point_on_the_circle(far_dimension: bool) -> Sketch {
+    let mut sk = Sketch::new();
+    let c = sk.point(0.0, 0.0, true, "C");
+    let circle = sk.circle(c, 17.0, "circle");
+    let p = sk.point(17.0, 0.0, false, "P");
+    let q = sk.point(17.0, 30.0, false, "Q");
+    let line = sk.line(p, q);
+    sk.add(Constraint::new(
+        CKind::Radius,
+        vec![Arg::Ent(EntRef::circle(circle)), Arg::Num(17.0)],
+    ));
+    sk.add(Constraint::point_on_circle(EntRef::point(p), EntRef::circle(circle), false));
+    sk.add(Constraint::new(
+        CKind::TangentLineCircle,
+        vec![Arg::Ent(EntRef::line(line)), Arg::Ent(EntRef::circle(circle)), Arg::Int(1)],
+    ));
+    if far_dimension {
+        // a separate figure: one point held at a distance from the centre, touching nothing
+        let far = sk.point(60.0, 0.0, false, "far");
+        sk.add(Constraint::distance(EntRef::point(far), EntRef::point(c), 60.0));
+    }
+    sk
+}
+
+#[test]
+fn an_unrelated_dimension_cannot_change_the_verdict() {
+    // a rank relative to the largest singular value read the circle as over-constrained when
+    // the far dimension's row (a squared distance: gradient 2·60) was in the matrix and as fine
+    // without it.  The conditioned Jacobian is dimensionless, the tolerance absolute, and the
+    // verdict on the circle is the circle's alone.
+    let mut reads = Vec::new();
+    for far in [false, true] {
+        let mut sk = tangent_at_a_point_on_the_circle(far);
+        solve(&mut sk, SolveOpts::default());
+        let d = diagnose(&mut sk, DiagnoseOptions::default());
+        assert!(d.over.is_empty(), "far={far}: {:?}", d.over);
+        assert_ne!(d.status, State::Over, "far={far}");
+        reads.push((d.geometric_dependency, d.implied.len(), d.n_redundant));
+    }
+    assert_eq!(reads[0], reads[1]);
+}
+
+/// Every coordinate, radius and length dimension times `k`: the same drawing, `k` times the
+/// size, and still solved.
+fn scaled(sk: &Sketch, k: f64) -> Sketch {
+    let mut s = sk.clone();
+    for p in s.params.iter_mut() {
+        p.value *= k;
+    }
+    let lengths: Vec<(u32, &'static str)> = s
+        .constraints
+        .iter()
+        .flat_map(|c| {
+            c.dimensions()
+                .into_iter()
+                .filter(|&(_, _, kind)| kind == SpecKind::Length)
+                .map(move |(_, name, _)| (c.id, name))
+        })
+        .collect();
+    for (id, name) in lengths {
+        let v = s.constraint(id).unwrap().get_num(name).unwrap();
+        assert!(s.set_constraint_num(id, name, v * k));
+    }
+    s
+}
+
+#[test]
+fn the_verdict_does_not_depend_on_the_drawing_s_size() {
+    // the conditioned Jacobian is invariant under a uniform rescale of the drawing, so what the
+    // numeric cross-check finds — and files as `over` or `implied` — is the figure's, at any
+    // size it is drawn
+    let mut over = Sketch::new();
+    {
+        let p = over.point(0.0, 0.0, true, "p");
+        let q = over.point(5.0, 0.0, false, "q");
+        let r = over.point(5.0, 5.0, false, "r");
+        let (l1, l2) = (over.line(p, q), over.line(q, r));
+        over.add(Constraint::distance(EntRef::point(p), EntRef::point(q), 5.0));
+        over.add(Constraint::distance(EntRef::point(q), EntRef::point(r), 5.0));
+        over.add(Constraint::two_line(CKind::EqualLength, EntRef::line(l1), EntRef::line(l2)));
+    }
+    let cases = [
+        ("altitudes", examples::altitudes()),
+        ("rect_fillets", examples::rect_fillets(100.0, 60.0, 10.0, 0.0)),
+        ("polygon_chain", examples::polygon_chain(8, 50.0)),
+        ("equal_length_over", over),
+        ("tangent", tangent_at_a_point_on_the_circle(true)),
+    ];
+    let verdict = |sk: &mut Sketch| {
+        let d = diagnose(sk, DiagnoseOptions::default());
+        (d.numeric_rank, d.geometric_dependency, d.over, d.implied, d.status)
+    };
+    for (name, mut sk) in cases {
+        solve(&mut sk, SolveOpts::default());
+        let base = verdict(&mut sk);
+        for k in [1e3, 0.1] {
+            let mut s = scaled(&sk, k);
+            assert_eq!(verdict(&mut s), base, "{name} x{k}");
+        }
+    }
 }

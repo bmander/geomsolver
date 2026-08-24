@@ -20,12 +20,14 @@ export interface DimAlt {
   make(kind: string): Constraint;
 }
 
-/** A dimension being written: the constraints the number will land on, the ones that had to be
- *  added to say it, what else it could have been, and the document as it was before any of it —
- *  which is what Escape puts back. */
+/** A dimension being written: the constraints the number will land on, whether writing it is
+ *  what put them there, what else it could have been, and the document as it was before any of
+ *  it — which is what Escape puts back. */
 export interface LiveDim {
   targets: Constraint[];
-  fresh: Constraint[];
+  /** They were stated to write this number, so refusing it takes them back out.  False when the
+   *  number being written is one the drawing already carried. */
+  fresh: boolean;
   alt: DimAlt | null;
   before: string;
   /** The theorems the sketch already held, so that when the dimension lands the report can say
@@ -35,15 +37,16 @@ export interface LiveDim {
   placing: boolean;
 }
 
-/** Start writing a dimension: the constraints are stated at once, at what they measure now,
- *  and the number goes on the drawing where it will stay rather than into a box in the middle
- *  of the screen.  `fresh` is the part of `targets` that had to be added — while there is any,
- *  the callout follows the pointer until a click plants it, and on a point pair (`alt`) where
- *  it is put decides *which* of the three dimensions it states.  Nothing reaches the undo
- *  stack until the number is accepted; Escape takes the whole thing back out.
+/** Start writing a dimension: `fresh` says whether the constraints are being stated now, at
+ *  what they measure — in which case the callout follows the pointer until a click plants it,
+ *  and on a point pair (`alt`) where it is put decides *which* of the three dimensions it
+ *  states — or are already on the drawing and only their number is being written.  A stated
+ *  one goes on the drawing where it will stay rather than into a box in the middle of the
+ *  screen.  Nothing reaches the undo stack until the number is accepted; Escape takes the
+ *  whole thing back out.
  *
  *  False if the constraints could not be added, in which case there is nothing to write. */
-export function startDimension(v: SketchView, targets: Constraint[], fresh: Constraint[],
+export function startDimension(v: SketchView, targets: Constraint[], fresh: boolean,
                                alt: DimAlt | null): boolean {
   endDimension(v, false);
   if (!targets.length) return false;
@@ -52,8 +55,8 @@ export function startDimension(v: SketchView, targets: Constraint[], fresh: Cons
   // the record goes in first: stating the constraint is part of the gesture, so it must not
   // solve or diagnose either — the sketch it lands in is the one the pointer is still
   // choosing over
-  v.liveDim = { targets, fresh, alt, before, impliedBefore, placing: fresh.length > 0 };
-  if (fresh.length && !applyConstraints(v, ...fresh).length) {
+  v.liveDim = { targets, fresh, alt, before, impliedBefore, placing: fresh };
+  if (fresh && !applyConstraints(v, ...targets).length) {
     v.liveDim = null;
     return false;
   }
@@ -92,7 +95,6 @@ export function retarget(v: SketchView, live: LiveDim, at: [number, number]): vo
   const c = make(want);
   v.sketch.add(c);
   live.targets[0] = c;
-  live.fresh = [c];           // an alternative is only offered when the whole of it is fresh
   v.litConstraint = c;
   v.afterEdit();          // a different constraint: the list, the DOF and the diagnosis move
 }
@@ -106,12 +108,13 @@ export function placeDimension(v: SketchView): void {
   if (!live?.placing) return;
   live.placing = false;
   const res = v.afterEdit();
-  if (live.fresh.length) reportAdded(v, live.fresh, 0, live.impliedBefore, res);
+  if (live.fresh) reportAdded(v, live.targets, 0, live.impliedBefore, res);
 }
 
 /** Done writing.  Accepted, what was there before goes on the undo stack, so the constraint,
- *  where it was put and what it says are one step back together; refused, the constraints
- *  that were added to say it come out again and nothing happened at all. */
+ *  where it was put and what it says are one step back together; refused, the constraints that
+ *  were added to say it come out again and nothing happened at all — a number that was only
+ *  being *edited* stays where it was found, since refusing an edit must not delete it. */
 export function endDimension(v: SketchView, commit: boolean): void {
   const live = v.liveDim;
   if (!live) return;
@@ -119,8 +122,8 @@ export function endDimension(v: SketchView, commit: boolean): void {
   v.litConstraint = null;
   if (commit) {
     v.pushUndo(live.before);
-  } else {
-    for (const c of live.fresh) v.sketch.remove(c);
+  } else if (live.fresh) {
+    for (const c of live.targets) v.sketch.remove(c);
   }
   v.afterEdit();
   v.onDimension(null, null);

@@ -16,12 +16,12 @@
 //! that cannot converge we satisfy the incidence-type constraints alone from a perturbed start.
 //! The rank test is relative, and pivoted QR is cross-checked against the SVD.
 
-use crate::linalg::{absmax, min_norm_lstsq, norm, orthonormalize, rrqr, svd, Mat};
+use crate::linalg::{absmax, min_norm_lstsq, norm, null_tail, orthonormalize, rrqr, svd, Mat};
 use crate::model::Sketch;
 use crate::newton::Method;
 use crate::rng::Rng;
 use crate::solve::SolveOpts;
-use crate::system::System;
+use crate::system::{System, RANK_TOL};
 use std::collections::BTreeSet;
 
 #[derive(Clone, Debug)]
@@ -184,7 +184,7 @@ pub fn analyze_with(
     sys: &mut System,
     x_witness: Option<Vec<f64>>,
     over_ids: &BTreeSet<u32>,
-    rtol: f64,
+    tol: f64,
     seed: u32,
 ) -> WitnessReport {
     let x0 = sk.get_x();
@@ -207,11 +207,9 @@ pub fn analyze_with(
     sk.set_x(&xw);
     let free_params: Vec<u32> = sys.free.iter().map(|&i| i as u32).collect();
     let z = sys.z0(sk);
-    let dense = sys.jacobian_dense(&z);
-    let hard_rows = sys.hard_rows();
-    let j = dense.select_rows(&hard_rows);
+    let j = sys.conditioned(&z);
     let (_, row_c) = sys.structure();
-    let (m, n) = (j.rows, j.cols);
+    let (m, n) = (j.rows(), j.cols());
     let mut warnings: Vec<String> = Vec::new();
     if m == 0 || n == 0 {
         let identity = Mat::identity(n);
@@ -230,17 +228,9 @@ pub fn analyze_with(
     }
     // rank: RRQR on Jᵀ (pivots = a maximal independent row set), cross-checked with the SVD that
     // also yields the null space
-    let (rank_qr, piv) = rrqr(&j.transpose(), rtol);
-    let d = svd(&j, false);
-    let mn = m.min(n);
-    let mut rank_svd = 0;
-    if mn > 0 && d.s[0] > 0.0 {
-        for i in 0..mn {
-            if d.s[i] > rtol * d.s[0] {
-                rank_svd += 1;
-            }
-        }
-    }
+    let (rank_qr, piv) = j.independent_rows(tol);
+    let d = j.rank_and_nullspace(tol);
+    let mut rank_svd = d.rank;
     if !d.converged {
         warnings.push(
             "the SVD did not converge: the null space and the rank below are the QR's alone"
@@ -262,8 +252,8 @@ pub fn analyze_with(
         piv[rank..].iter().map(|&x| x as usize).filter(|&r| r < row_c.len()).collect();
     let mut deps: Vec<Dependency> = Vec::new();
     if !dep_rows.is_empty() && !indep.is_empty() {
-        let a = j.select_rows(&indep).transpose(); // n x rank
-        let b = j.select_rows(&dep_rows).transpose(); // n x |dep|
+        let a = j.select_rows(&indep).as_mat().transpose(); // n x rank
+        let b = j.select_rows(&dep_rows).as_mat().transpose(); // n x |dep|
         let (coefs, _) = min_norm_lstsq(&a, &b, 1e-12); // rank x |dep|
         for (col, &r) in dep_rows.iter().enumerate() {
             let c = row_c[r];
@@ -288,13 +278,7 @@ pub fn analyze_with(
             deps.push(Dependency { constraint: c, implied_by: implied, theorem: !over_ids.contains(&c) });
         }
     }
-    let nn = n - rank;
-    let mut null = Mat::zeros(n, nn);
-    for i in 0..n {
-        for jj in 0..nn {
-            null.data[i * nn.max(1) + jj] = d.vt.data[(rank + jj) * n + i];
-        }
-    }
+    let null = if rank == d.rank { d.n } else { null_tail(&d.vt, rank) };
     let motions = classify_motions(&null, &free_params, sk);
     let movable = movable_columns(&null, 1e-8);
     sk.set_x(&x0);
@@ -316,7 +300,7 @@ pub fn analyze(sk: &mut Sketch, x_witness: Option<Vec<f64>>, seed: u32) -> Witne
     // theorem-type.  `diagnose_with` passes the set it already has; standing alone we compute it,
     // rather than passing an empty set and labelling every dependency invisible to the graph.
     let over = structural_over(&mut sys);
-    analyze_with(sk, &mut sys, x_witness, &over, 1e-9, seed)
+    analyze_with(sk, &mut sys, x_witness, &over, RANK_TOL, seed)
 }
 
 /// Constraints in the Dulmage–Mendelsohn over-determined block — the redundancy structural

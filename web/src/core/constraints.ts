@@ -272,11 +272,9 @@ function fromJson(sk: Sketch, v: unknown, kind: SpecKind): unknown {
 }
 
 /** The constraint in `sk` already stating the same *relation* as `c` — the same type on the same
- *  entities, whatever number it states — or null.
- *
- *  What to ask before putting a dimension on a selection.  A second `Distance` on a pair that
- *  already has one is not a second fact about them, it is the same fact written twice, and the
- *  only thing that can come of adding it is a conflict; so the button edits what it finds. */
+ *  entities, whatever number it states — or null: what an *edit* of a dimension would land on,
+ *  for a caller that wants to offer one.  The app does not: it states the second dimension and
+ *  lets the diagnosis say what came of it. */
 export function stating(sk: Sketch, c: Constraint): Constraint | null {
   const id = withJson(c.toRecord(), (p, n) => core().gcs_constraint_stating(sk.handle, p, n));
   return (id < 0 ? null : sk.constraintById(id)) ?? null;

@@ -16,6 +16,7 @@ use crate::cgraph::coincident_classes;
 use crate::constraints::{same_constraint, CKind};
 use crate::graph;
 use crate::linalg::{rank_and_nullspace, Mat};
+use crate::system::RANK_TOL;
 use crate::model::{EntRef, Sketch};
 use crate::newton::Method;
 use crate::solve::SolveOpts;
@@ -189,6 +190,7 @@ pub fn removable_constraints(sk: &Sketch, w: &Mat, row_c: &[u32], rtol: f64) -> 
         if intrinsic.contains(&cid) {
             continue;
         }
+        // W is orthonormal, so both tests here are absolute and fair to every row alike
         let sub = w.select_rows(&rs);
         let peak = crate::linalg::absmax(&sub.data);
         if peak <= rtol {
@@ -303,7 +305,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     let mut warnings: Vec<String> = Vec::new();
     let mut wit: Option<WitnessReport> = None;
     if opts.witness && n_cols > 0 && sys.n_res > 0 {
-        wit = Some(analyze_with(sk, sys, None, &over_set, 1e-9, 0));
+        wit = Some(analyze_with(sk, sys, None, &over_set, RANK_TOL, 0));
     }
 
     // -- numeric cross-check: rank and the parameters that can actually move --
@@ -326,9 +328,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
             }
             _ => {
                 let z = sys.z0(sk);
-                let dense = sys.jacobian_dense(&z);
-                let hard_rows = sys.hard_rows();
-                let rn = rank_and_nullspace(&dense.select_rows(&hard_rows), 1e-10);
+                let rn = sys.conditioned(&z).rank_and_nullspace(RANK_TOL);
                 if rn.converged {
                     numeric_rank = Some(n_cols - rn.n.cols);
                     movable = movable_columns(&rn.n, RTOL);
@@ -354,10 +354,8 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
             // ...and name the constraints worth removing, or the report would say
             // "over-constrained" with nothing to point at.  One extra SVD, only on this path.
             let z = sys.z0(sk);
-            let dense = sys.jacobian_dense(&z);
-            let hard_rows = sys.hard_rows();
-            let j = dense.select_rows(&hard_rows);
-            let w = rank_and_nullspace(&j.transpose(), 1e-10).n;
+            let j = sys.conditioned(&z);
+            let w = j.left_nullspace(RANK_TOL).n;
             // `implied` is what the relations alone already say: the same test on the left null
             // space of the relation-only rows (a dependency there embeds in W, so this is a subset
             // of the removable set).  Whatever is removable only with a dimension's help is `over`.
@@ -365,13 +363,13 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
             // deficiency survives jittered dimensions) because this runs after every edit.  An
             // exact duplicate is never a theorem: two Horizontals on one line match two variables,
             // so the graph passes them, but a copy is a surplus whatever it is made of.
-            let rel_rows: Vec<usize> = (0..hard_rows.len())
+            let rel_rows: Vec<usize> = (0..j.rows())
                 .filter(|&r| sk.constraint(row_c[r]).is_some_and(|c| !c.kind.has_dimension()))
                 .collect();
-            let w_rel = if rel_rows.len() == hard_rows.len() {
+            let w_rel = if rel_rows.len() == j.rows() {
                 w.clone()
             } else {
-                rank_and_nullspace(&j.select_rows(&rel_rows).transpose(), 1e-10).n
+                j.select_rows(&rel_rows).left_nullspace(RANK_TOL).n
             };
             let row_c_rel: Vec<u32> = rel_rows.iter().map(|&r| row_c[r]).collect();
             let duplicated = |c: u32| {

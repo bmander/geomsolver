@@ -146,6 +146,31 @@ test('a click that misses every callout still reaches the sketch', () => {
   assert.deepEqual(view.selected, [sk.points[1]]);
 });
 
+test("a radius's leader does not shadow the centre it comes out of", () => {
+  // the figure runs from the centre to the rim, so the one point a circle has lies on the
+  // callout: a press there means the point, which is the thing the next constraint is about
+  const sk = new Sketch();
+  const c = sk.point(0, 0);
+  const circle = sk.circle(c, 20);
+  sk.add(new C.Radius(circle, 20));
+  const view = viewOn(sk);
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  view.draw();
+  let picked = 0;
+  view.onPickConstraint = () => { picked += 1; };
+
+  const [cx, cy] = view.w2s(...c.xy);
+  assert.equal(view.pickCallout(cx, cy), null, 'the callout claimed the centre');
+  cv.fire('pointerdown', pointer(cx, cy));
+  cv.fire('pointerup', pointer(cx, cy));
+  assert.equal(picked, 0);
+  assert.deepEqual(view.selected, [c]);
+
+  // and the callout is still there to be taken hold of, out along the leader
+  const k = callouts(sk, view.unit).items[0];
+  assert.ok(view.pickCallout(...view.w2s(k.arrows[0].at[0], k.arrows[0].at[1])));
+});
+
 test('double-clicking a callout opens its value', () => {
   const sk = dimensioned();
   const view = viewOn(sk);
@@ -422,8 +447,9 @@ test('an abandoned fit leaves the sketch untouched', () => {
 
 /* -- dimensioning something already dimensioned -------------------------------- */
 
-test('a dimension already on the selection is edited, not stated twice', () => {
-  // the core's half of it: what a second Distance on the same pair would collide with
+test('the core says which constraint states the same relation', () => {
+  // a question the core answers; the front end no longer asks it before writing a dimension,
+  // since what a second number on a pair comes to is the diagnosis's reading and not a button's
   const sk = new Sketch();
   const a = sk.point(0, 0), b = sk.point(10, 0);
   const first = new C.Distance(a, b, 80);
@@ -433,6 +459,25 @@ test('a dimension already on the selection is edited, not stated twice', () => {
   assert.equal(C.stating(sk, new C.Distance(a, sk.point(0, 10), 80)), null, 'a different pair');
   assert.equal(C.stating(sk, new C.Horizontal(sk.line(a, b))), null, 'a different type');
   sk.dispose();
+});
+
+test('a repeated relation is dropped, a repeated dimension is not', () => {
+  const sk = new Sketch();
+  const a = sk.point(0, 0, true), b = sk.point(60, 0);
+  const line = sk.line(a, b);
+  const view = viewOn(sk);
+  view.addConstraints(new C.Horizontal(line));
+  view.addConstraints(new C.Horizontal(line));
+  assert.equal(sk.userConstraints().length, 1, 'the same relation twice says nothing new');
+
+  // the same number twice is a claim about the drawing, so it is written and then judged
+  const d1 = new C.Distance(a, b, 60), d2 = new C.Distance(a, b, 60);
+  view.addConstraints(d1);
+  view.addConstraints(d2);
+  assert.equal(sk.userConstraints().length, 3, 'the second dimension was refused');
+  assert.equal(view.diagnosis?.status, 'over', 'nobody said the sketch was over-constrained');
+  const over = view.diagnosis?.over ?? [];
+  assert.ok(over.includes(d1) && over.includes(d2), 'and did not name what to choose between');
 });
 
 /* -- writing a dimension --------------------------------------------------------------- */
@@ -456,7 +501,7 @@ test('where the number is put is which dimension it is', () => {
   const { view, sk, alt } = pairToDimension();
   const cv = view.canvas as ReturnType<typeof fakeCanvas>;
   const first = alt.make('Distance');
-  assert.ok(view.startDimension([first], [first], alt));
+  assert.ok(view.startDimension([first], true, alt));
   assert.equal(sk.userConstraints().length, 1, 'stated at once, not after a dialog');
 
   const at = (dx: number, dy: number): [number, number] => view.w2s(20 + dx, 20 + dy);
@@ -482,7 +527,7 @@ test('a dimension being written is one edit, and Escape takes all of it back', (
   const cv = view.canvas as ReturnType<typeof fakeCanvas>;
   const before = io.dumps(sk);
   const first = alt.make('Distance');
-  view.startDimension([first], [first], alt);
+  view.startDimension([first], true, alt);
   cv.fire('pointermove', pointer(...view.w2s(20, 60)));
   view.endDimension(false);
   assert.equal(sk.userConstraints().length, 0, 'the constraint should have come back out');
@@ -491,7 +536,7 @@ test('a dimension being written is one edit, and Escape takes all of it back', (
 
   // accepted, it is one step back — the constraint, where it was put and what it says together
   const c = alt.make('Distance');
-  view.startDimension([c], [c], alt);
+  view.startDimension([c], true, alt);
   cv.fire('pointermove', pointer(...view.w2s(20, 60)));
   view.endDimension(true);
   assert.equal(sk.userConstraints().length, 1);
@@ -503,7 +548,7 @@ test('a click plants the number, and the pointer stops carrying it', () => {
   const { view, sk, alt } = pairToDimension();
   const cv = view.canvas as ReturnType<typeof fakeCanvas>;
   const c = alt.make('Distance');
-  view.startDimension([c], [c], alt);
+  view.startDimension([c], true, alt);
   cv.fire('pointermove', pointer(...view.w2s(-20, 20)));
   const kind = view.liveDim!.targets[0].typeName;
   cv.fire('pointerdown', pointer(...view.w2s(-20, 20)));
@@ -525,15 +570,35 @@ test('a click plants the number, and the pointer stops carrying it', () => {
   view.endDimension(true);
 });
 
+test('a pair with a length on it can still be given its run', () => {
+  const { view, sk, alt } = pairToDimension();
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const first = alt.make('Distance');
+  view.startDimension([first], true, alt);
+  cv.fire('pointermove', pointer(...view.w2s(-10, 50)));    // across the pair: its own length
+  view.endDimension(true);
+  assert.equal(sk.userConstraints().length, 1);
+
+  // asking again writes a second dimension rather than reopening the first, so the pointer
+  // still gets to say which of the three it is — the run, which is a fact the length is not
+  const second = alt.make('Distance');
+  assert.ok(view.startDimension([second], true, alt), 'a second dimension was refused');
+  cv.fire('pointermove', pointer(...view.w2s(20, 60)));     // above it: the run
+  assert.equal(view.liveDim!.targets[0].typeName, 'HorizontalDistance');
+  view.endDimension(true);
+  assert.deepEqual(sk.userConstraints().map((c) => c.typeName).sort(),
+                   ['Distance', 'HorizontalDistance']);
+});
+
 test('a dimension already on the drawing is opened, not stated twice', () => {
   const { view, sk, alt } = pairToDimension();
   const c = alt.make('Distance');
-  view.startDimension([c], [c], alt);
+  view.startDimension([c], true, alt);
   view.endDimension(true);
   const there = sk.userConstraints()[0];
 
-  // the shell finds it with `stating` and passes it as a target with nothing fresh
-  assert.ok(view.startDimension([there], [], null));
+  // what `commands::editDimension` does: a target that is already in the sketch, nothing fresh
+  assert.ok(view.startDimension([there], false, null));
   assert.equal(sk.userConstraints().length, 1);
   assert.equal(view.liveDim!.placing, false, 'an existing dimension is not being placed');
   view.endDimension(false);
@@ -560,7 +625,7 @@ test('nothing is solved or judged while a dimension is being laid down', () => {
 
   const first = make('Distance');
   const was = judged();
-  view.startDimension([first], [first], { a, b, make });
+  view.startDimension([first], true, { a, b, make });
   assert.deepEqual(c.xy, still, 'stating the dimension solved the sketch');
   cv.fire('pointermove', pointer(...view.w2s(20, 60)));
   cv.fire('pointermove', pointer(...view.w2s(60, 20)));

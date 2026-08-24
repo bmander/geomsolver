@@ -591,6 +591,32 @@ fn a_click_picks_the_callout_it_lands_on() {
     assert_eq!(pick(&sk, 1.0, (-500.0, -500.0), 1.0), None);
 }
 
+/// A radius runs its leader out of the centre, so the figure passes straight through the one
+/// point a circle has.  The point is the smaller target and the thing most verbs are about, so
+/// it wins there — but not under the number itself, which is painted solid.
+#[test]
+fn a_point_outranks_the_figure_drawn_over_it() {
+    let mut sk = Sketch::new();
+    let ctr = sk.point(0.0, 0.0, false, "");
+    let circle = sk.circle(ctr, 25.0, "");
+    let id = sk.add(Constraint::radius(EntRef::circle(circle), 25.0));
+    let k = layout(&sk, 1.0).into_iter().next().unwrap();
+
+    // out along the leader the callout is picked, and at the centre it is not
+    let leader = k.solid[0];
+    let along = (0.5 * (leader.0 .0 + leader.1 .0), 0.5 * (leader.0 .1 + leader.1 .1));
+    assert_eq!(pick(&sk, 1.0, along, 6.0), Some(id));
+    assert_eq!(pick(&sk, 1.0, (0.0, 0.0), 6.0), None, "the leader shadowed its own centre");
+    assert_eq!(pick(&sk, 1.0, (7.0, 0.0), 6.0), Some(id), "a point out of reach vetoed it");
+
+    // and where the number is put over a point, the number is what is there to be clicked
+    sk.placements.insert(id, (0.0, 40.0));
+    let k = layout(&sk, 1.0).into_iter().next().unwrap();
+    let under = sk.point(k.anchor.0, k.anchor.1, false, "");
+    assert_eq!(sk.nearest_point(k.anchor.0, k.anchor.1).0, Some(under));
+    assert_eq!(pick(&sk, 1.0, k.anchor, 6.0), Some(id), "a point behind the label hid it");
+}
+
 #[test]
 fn grabbing_a_constraint_that_has_no_callout_is_not_a_trap() {
     let mut sk = Sketch::new();

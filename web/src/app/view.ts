@@ -17,7 +17,7 @@ import { PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
 import { Param, Point, Primitive, Sketch } from '../core/model.js';
 import { Method, SolveResult, System } from '../core/system.js';
-import { Motion, WitnessReport, analyze, movingParams } from '../core/witness.js';
+import { Motion, WitnessReport, analyze } from '../core/witness.js';
 import { Camera } from './camera.js';
 import * as edit from './edit.js';
 import * as dimension from './dimension.js';
@@ -346,7 +346,7 @@ export class SketchView {
       x0: this.sketch.getX(),
       free: this.sketch.freeIndices(),
       amp: 0.06 * this.sketch.extent(),
-      labels: modes.map((m) => movingParams(m).slice(0, 8).map((p) => p.name).join(', ')),
+      labels: modes.map((m) => m.moving.slice(0, 8).map((p) => p.name).join(', ')),
       t: 0,
       showing: -1,
     };
@@ -417,7 +417,8 @@ export class SketchView {
 
   /** The dimension whose callout is under the cursor, if any.  Callouts are painted over the
    *  geometry and are what a click on them means, so they are picked before it.  The core does
-   *  the test against the same layout it drew, so what is picked is what is on screen. */
+   *  the test against the same layout it drew — including what a point in reach outranks — so
+   *  what is picked is what is on screen. */
   pickCallout(sx: number, sy: number): Constraint | null {
     if (!this.showDimensions) return null;
     const id = dim.pick(this.sketch, this.unit, ...this.s2w(sx, sy), PICK_PX);
@@ -434,7 +435,7 @@ export class SketchView {
   finishCurve(): void { tools.finishCurve(this); }
   finishSplineFit(): void { tools.finishSplineFit(this); }
 
-  startDimension(targets: Constraint[], fresh: Constraint[], alt: DimAlt | null): boolean {
+  startDimension(targets: Constraint[], fresh: boolean, alt: DimAlt | null): boolean {
     return dimension.startDimension(this, targets, fresh, alt);
   }
   endDimension(commit: boolean): void { dimension.endDimension(this, commit); }

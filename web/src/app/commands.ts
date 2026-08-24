@@ -144,24 +144,29 @@ function pairDim(kind: string, a: Point, b: Point): Constraint {
  *  drawing shows what was asked for.  `alt` is what else the same selection could have meant,
  *  which is then settled by where the number is put.
  *
- *  A relation the selection *already states* is edited rather than stated again: a second
- *  Distance on the same pair is not a second fact about them, it is the same fact written
- *  twice, and the only thing that can come of adding it is a conflict.  So the ones that are
- *  there are opened for editing and only the ones that are not get added — the mixed case is
- *  real: dimensioning three circles when one of them already has a radius. */
+ *  Nothing here asks what the selection is already dimensioned by: a second dimension is
+ *  written like a first, and what comes of it is the diagnosis's to say — see
+ *  `edit::applyConstraints`. */
 export function dimension(cs: Constraint[], alt: DimAlt | null = null): void {
-  // a number is written where it is read, so there has to be somewhere to write it: asking for
-  // a dimension with the callouts turned off turns them back on rather than refusing
-  if (!view.showDimensions) {
-    view.showDimensions = true;
-    toast('dimensions turned back on — a number is edited on the drawing');
-  }
-  const found = cs.map((c) => C.stating(view.sketch, c));
-  const targets = cs.map((c, i) => found[i] ?? c);
-  const fresh = cs.filter((_, i) => !found[i]);
-  // an alternative is a choice about a dimension being written; one already on the drawing is
-  // being edited, and moving it about must not silently make it a different constraint
-  view.startDimension(targets, fresh, fresh.length === cs.length ? alt : null);
+  showCallouts();
+  view.startDimension(cs, true, alt);
+}
+
+/** Open a dimension the drawing already carries: it is in the sketch, so there is nothing to
+ *  add and nothing to place, only the number to write.  `dimbox::editValue` is the way in —
+ *  the constraint list's double-click and a callout's both land there, and it is what checks
+ *  there is a number to edit at all. */
+export function editDimension(c: Constraint): void {
+  showCallouts();
+  view.startDimension([c], false, null);
+}
+
+/** A number is written where it is read, so there has to be somewhere to write it: asking for
+ *  a dimension with the callouts turned off turns them back on rather than refusing. */
+function showCallouts(): void {
+  if (view.showDimensions) return;
+  view.showDimensions = true;
+  toast('dimensions turned back on — a number is edited on the drawing');
 }
 
 /** The one dimension button: what it puts a number on is the selection's business.  Two points

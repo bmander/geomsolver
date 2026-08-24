@@ -32,8 +32,8 @@
  * all live in core/ and are shared with the test suite.  This file is the wiring: what is on
  * the bars, what the keys do, and what the view calls back into.  The rest of the shell is
  * next door — `shell` holds the page and the view, `commands` the constraints bar, `dialogs`
- * what the menus open, `lists` the sidebar and the status line, and `dimbox` the number a
- * dimension is edited in. */
+ * what the menus open, `lists` the constraints window and the status line, and `dimbox` the
+ * number a dimension is edited in. */
 import * as io from '../core/io.js';
 import { CONSTRAINT_BUTTONS } from './commands.js';
 import {
@@ -41,7 +41,7 @@ import {
   showDiagnosis,
 } from './dialogs.js';
 import { editValue, onDimension } from './dimbox.js';
-import { refresh, refreshStatus } from './lists.js';
+import { closePanel, openPanel, refresh, refreshStatus } from './lists.js';
 import {
   aboutBadge, barConstraints, barTools, canvas, currentConstraint, focusConstraint, menubar, view,
 } from './shell.js';
@@ -181,10 +181,21 @@ window.addEventListener('keydown', (e) => {
 
 /* -- boot ------------------------------------------------------------------------- */
 
-view.onSelect = () => { if (currentConstraint) focusConstraint(null); };
-/* A dimension on the drawing and its row in the list are the same constraint, so clicking
- * either does the same thing — and double-clicking either opens the same number. */
-view.onPickConstraint = (c) => { focusConstraint(c); refresh(); view.draw(); };
+/* A canvas press takes the selection over from the constraint that had the focus — and one
+ * that picked nothing shuts the constraints window, which is the only thing that does. */
+view.onSelect = () => {
+  if (currentConstraint) focusConstraint(null);
+  if (!view.selected.length) closePanel();
+};
+/* A dimension on the drawing and its row in the window are the same constraint, so clicking
+ * either does the same thing — and double-clicking either opens the same number.  One clicked
+ * on the drawing takes no selection with it, so it opens the window on what it holds. */
+view.onPickConstraint = (c) => {
+  focusConstraint(c);
+  openPanel(view.highlight);
+  refresh();
+  view.draw();
+};
 view.onEditConstraint = (c) => editValue(c);
 view.onDimension = onDimension;
 view.onChanged = refresh;

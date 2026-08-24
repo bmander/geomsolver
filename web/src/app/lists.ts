@@ -1,7 +1,11 @@
-/* The sidebar, the banner and the status line: everything the shell says about the sketch
- * rather than draws of it.  The two lists mirror each other — picking a row in either marks
- * what it touches in the other — and they are rebuilt only when their contents change, so rows
- * keep their DOM nodes, and the scroll position, across ordinary edits and drags. */
+/* The constraints window, the banner and the status line: everything the shell says about the
+ * sketch rather than draws of it.
+ *
+ * The window belongs to what is picked.  It lists what holds the selected component and
+ * nothing else, and the status line says in words which component that is — the two are the
+ * one answer to "what have I got hold of", one as a list and one as a line.  The list is
+ * rebuilt only when its contents change, so rows keep their DOM nodes, and the scroll
+ * position, across ordinary edits and drags. */
 import * as io from '../core/io.js';
 import { Constraint } from '../core/constraints.js';
 import {
@@ -9,17 +13,17 @@ import {
 } from '../core/model.js';
 import { expressions } from '../core/expr.js';
 import {
-  banner, bannerSelect, bannerText, clearFocus, clist, currentConstraint, elist, focusConstraint,
-  footerEl, measureEl, view,
+  banner, bannerSelect, bannerText, clearFocus, clist, componentEl, cpanel, cpanelTitle,
+  currentConstraint, focusConstraint, footerEl, measureEl, view,
 } from './shell.js';
-import { stats } from './ui.js';
+import { dragWindow, stats } from './ui.js';
 
-/** The constraints and the components the two lists were last built from, and which entities
- *  were selected when the component list last scrolled itself: a list is rebuilt only when
- *  what it holds actually changed. */
+/** The constraints the window was last built from, and the components it is open on: the list
+ *  is rebuilt only when what it holds actually changed, or when `invalidateRows` says a number
+ *  in it moved under the same constraints. */
 let rows: Constraint[] = [];
-let erows: Primitive[] = [];
-let lastSelKey = '';
+let subject: Primitive[] = [];
+let stale = false;
 
 function rebuildRows(next: Constraint[]): void {
   const ix = new io.Index(view.sketch);
@@ -46,81 +50,71 @@ function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
   return a.length === b.length && a.every((c, i) => c === b[i]);
 }
 
-/** A component row's fixed part: its short name, its type, and the points that define it, so
- *  the list reads as the sketch's structure rather than as coordinates that churn on every
+/** A component in words: its short name, its type, and the points that define it, so what the
+ *  status line says is the sketch's structure rather than coordinates that churn on every
  *  drag.  Live values belong in the measurement readout, not here. */
 function describeEntity(e: Primitive, ix: io.Index): string {
   const n = ix.name(e).padEnd(4);
-  if (e instanceof Line) return `${n}line    ${ix.name(e.p1)}–${ix.name(e.p2)}`;
-  if (e instanceof Arc) return `${n}arc     @${ix.name(e.center)} ${ix.name(e.start)}–${ix.name(e.end)}`;
-  if (e instanceof Circle) return `${n}circle  @${ix.name(e.center)}`;
-  // a curve reads as its control polygon: that is what it is made of and what edits it
-  if (e instanceof Spline) return `${n}spline  ${e.ctrl.map((p) => ix.name(p)).join('–')}`;
-  return `${n}point`;
+  const tag = e instanceof Point ? (e.isFixed ? '  ·fixed' : '')
+            : e.construction ? '  ·constr' : '';
+  const body = e instanceof Line ? `line    ${ix.name(e.p1)}–${ix.name(e.p2)}`
+    : e instanceof Arc ? `arc     @${ix.name(e.center)} ${ix.name(e.start)}–${ix.name(e.end)}`
+    : e instanceof Circle ? `circle  @${ix.name(e.center)}`
+    // a curve reads as its control polygon: that is what it is made of and what edits it
+    : e instanceof Spline ? `spline  ${e.ctrl.map((p) => ix.name(p)).join('–')}`
+    : 'point';
+  return `${n}${body}${tag}`;
 }
 
-function rebuildERows(next: Primitive[]): void {
-  const ix = new io.Index(view.sketch);
-  elist.replaceChildren();
-  next.forEach((e) => {
-    const li = document.createElement('li');
-    li.dataset.base = describeEntity(e, ix);
-    li.addEventListener('click', (ev) => {
-      if (ev.shiftKey) {
-        const i = view.selected.indexOf(e);
-        if (i >= 0) view.selected.splice(i, 1);
-        else view.selected.push(e);
-      } else {
-        view.selected = [e];
-      }
-      focusConstraint(null);          // the canvas selection has the focus, so Del means geometry
-      refresh();
-      view.draw();
-    });
-    elist.append(li);
-  });
-  erows = next;
+/** What the window is open on: the selection while there is one, and otherwise whatever it was
+ *  last opened on, minus anything that has since left the document.  Staying put is the whole
+ *  point of the second clause — focusing a constraint empties the selection, so a row of the
+ *  window would otherwise pull the window out from under the pointer that clicked it.
+ *
+ *  Nothing here infers where a focus came from; `openPanel` and `closePanel` are how the two
+ *  other things that pick — a callout on the drawing, the banner's button, a press that hits
+ *  nothing — say what they picked. */
+function panelSubject(live: Set<Primitive>): Primitive[] {
+  if (view.selected.length) return view.selected;
+  return subject.filter((e) => live.has(e));
 }
 
-/** The component list, mirrored from the constraint list above it: a row is marked when the
- *  entity is selected, and softly marked when the focused constraint reaches it — so picking
- *  either list shows you what it touches in the other. */
-function refreshERows(): void {
-  const next = view.sketch.primitives();
-  if (!sameList(next, erows)) rebuildERows(next);
-
-  const sel = new Set(view.selected);
-  const lit = new Set(view.highlight);
-  erows.forEach((e, i) => {
-    const li = elist.children[i] as HTMLElement;
-    const fixed = e instanceof Point && e.isFixed;
-    const constr = !(e instanceof Point) && e.construction;
-    li.textContent = `${li.dataset.base}${fixed ? '  ·fixed' : ''}${constr ? '  ·constr' : ''}`;
-    li.classList.toggle('sel', sel.has(e));
-    li.classList.toggle('touches', !sel.has(e) && lit.has(e));
-    li.classList.toggle('construction', constr);
-  });
-
-  // a highlight you cannot see is no highlight: bring the first selected row into view, but
-  // only when the selection actually changed, so the list stays put while you scroll it
-  const key = view.selected.map((e) => erows.indexOf(e)).join(',');
-  if (key !== lastSelKey) {
-    lastSelKey = key;
-    const first = erows.indexOf(view.selected[0]);
-    if (first >= 0) (elist.children[first] as HTMLElement).scrollIntoView({ block: 'nearest' });
-  }
+/** Every constraint that reaches the window's subject: one stated *on* it, and one stated on
+ *  a point that defines it.  The same test the constraint rows were marked with when they were
+ *  a list of the whole sketch. */
+function holding(cs: readonly Constraint[], on: readonly Primitive[]): Constraint[] {
+  if (!on.length) return [];
+  const direct = new Set(on);
+  const all = new Set(expand(on));
+  return cs.filter((c) => c.entities().some((e) => all.has(e))
+    || expand(c.entities()).some((e) => direct.has(e)));
 }
 
-/** Rows and banner: everything that only changes when the sketch or the selection does. */
+/** Open the window on some geometry nothing has *selected* — the constraint behind a callout
+ *  clicked on the drawing, the culprits the banner names.  What it holds is what there is to
+ *  look at then, and there is no selection to say it. */
+export function openPanel(on: readonly Primitive[]): void {
+  subject = [...new Set(on)];
+}
+
+/** A press that picked nothing: the window has nothing to be open on, so it shuts. */
+export function closePanel(): void {
+  subject = [];
+}
+
+/** The window, the status line's component and the banner: everything that only changes when
+ *  the sketch or the selection does. */
 export function refreshRows(): void {
   const sk = view.sketch;
-  const next = sk.userConstraints();
-  if (!sameList(next, rows)) rebuildRows(next);
-  if (currentConstraint && !rows.includes(currentConstraint)) clearFocus();
+  const all = sk.userConstraints();
+  // the focused constraint has left the document — a row of the window is not where that is
+  // noticed any more, since the window holds only the ones reaching what is picked
+  if (currentConstraint && !all.includes(currentConstraint)) clearFocus();
+  subject = panelSubject(new Set(sk.primitives()));
+  const next = holding(all, subject);
+  if (stale || !sameList(next, rows)) { stale = false; rebuildRows(next); }
 
   const d = view.diagnosis;
-  const selDirect = new Set(view.selected);
-  const selAll = new Set(expand(view.selected));
   const culprits = new Set(d?.conflicts ?? []);
   const bad = new Set(d?.violated ?? []);          // culprits are handled first, below
   const over = new Set(d?.over ?? []);
@@ -153,14 +147,31 @@ export function refreshRows(): void {
       li.title = 'already implied by the other constraints — consistent, nothing to fix';
     }
     else li.textContent = base;
-    const hit = selAll.size > 0 && (c.entities().some((e) => selAll.has(e))
-      || expand(c.entities()).some((e) => selDirect.has(e)));
-    li.classList.toggle('touches', hit);
     li.setAttribute('aria-current', String(c === currentConstraint));
   });
-  refreshERows();
+  refreshPanel();
   refreshBanner();
 }
+
+/** The window's heading and whether it is up at all, and the same answer in the status line:
+ *  what is picked, said the way the old sidebar's row said it. */
+function refreshPanel(): void {
+  cpanel.hidden = subject.length === 0;
+  if (!subject.length) {
+    componentEl.textContent = '';
+    return;
+  }
+  const ix = new io.Index(view.sketch);
+  const names = subject.map((e) => ix.name(e)).join(' ');
+  const n = rows.length;
+  cpanelTitle.textContent = `${names} — ${n || 'no'} constraint${n === 1 ? '' : 's'}`;
+  // one thing picked reads as its sidebar row did; several read as a list of names, because a
+  // status line is one line and the descriptions do not fit across it
+  componentEl.textContent = `${subject.length === 1 ? describeEntity(subject[0], ix)
+    : `${subject.length} components: ${names}`}   |   `;
+}
+// where the window sits is the user's, not the layout's
+dragWindow(cpanel, cpanelTitle);
 
 /** Measurement readout: with exactly two entities picked, what separates them.
  *
@@ -232,13 +243,17 @@ bannerSelect.addEventListener('click', () => {
   const culprits = d.conflicts?.length ? d.conflicts : d.over;
   // the banner names a *set*, so show all of it — but the focus stays on the one constraint
   // Delete would remove, rather than on the geometry the set happens to touch
-  focusConstraint(culprits[0] ?? null, expand(new Set(culprits.flatMap((c) => c.entities()))));
+  const lit = expand(new Set(culprits.flatMap((c) => c.entities())));
+  focusConstraint(culprits[0] ?? null, lit);
+  openPanel(lit);
   refresh();
   view.draw();
 });
 
 /** The rows state their constraints' numbers, so a number that changed under them means the
- *  list has to be rebuilt even though it holds the same constraints in the same order. */
+ *  list has to be rebuilt even though it holds the same constraints in the same order.  A flag
+ *  rather than an emptied list: `rows` is also how the window knows a focused constraint came
+ *  from one of its own rows. */
 export function invalidateRows(): void {
-  rows = [];
+  stale = true;
 }

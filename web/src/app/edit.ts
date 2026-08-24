@@ -16,26 +16,31 @@ const PASTE_PX = 24;
 /** Add one or more constraints as a single edit: one undo entry, one solve, one
  *  diagnosis.  A multi-entity action (an equality set, Horizontal over several lines)
  *  is one thing the user did, so it should take one Ctrl+Z to undo. */
-/** Add constraints, silently dropping any that repeat one the sketch already has.
- *
- *  A duplicate is pure cost: it adds equations without adding rank, and the structural
- *  check cannot see that, so it lurks until an unrelated edit tips its block into a
- *  spurious over-constrained report — a long way from the click that caused it. */
 export function addConstraints(v: SketchView, ...cs: Constraint[]): void {
   if (cs.length) v.pushUndo();
   applyConstraints(v, ...cs);
 }
 
 /** The same, without the undo entry: for an edit that is still being made, and so does not
- *  know yet whether it will come to anything.  Returns the ones that were actually added. */
+ *  know yet whether it will come to anything.  Returns the ones that were actually added.
+ *
+ *  A *relation* that repeats one the sketch already has is dropped: it says nothing the sketch
+ *  does not already say, and it adds equations without adding rank, which the structural check
+ *  cannot see — so it lurks until an unrelated edit tips its block into a spurious
+ *  over-constrained report, a long way from the click that caused it.
+ *
+ *  A *dimension* is not dropped, even an identical one.  It states a number, and whether a
+ *  second number on the same feature is redundant or a contradiction is what the solve and the
+ *  diagnosis are for: it comes back as `over` with both named, which is something the drawing
+ *  can show and the user can act on.  Refusing it here would decide that quietly instead. */
 export function applyConstraints(v: SketchView, ...cs: Constraint[]): Constraint[] {
   if (!cs.length) return [];
   const have = v.sketch.userConstraints();
   const fresh: Constraint[] = [];
   for (const c of cs) {                        // ...against this batch too, not just the sketch
-    if (!have.some((e) => sameConstraint(e, c)) && !fresh.some((e) => sameConstraint(e, c))) {
-      fresh.push(c);
-    }
+    const dup = !c.dimensions().length
+      && (have.some((e) => sameConstraint(e, c)) || fresh.some((e) => sameConstraint(e, c)));
+    if (!dup) fresh.push(c);
   }
   if (!fresh.length) {
     const kinds = [...new Set(cs.map((c) => c.typeName))].join(' + ');

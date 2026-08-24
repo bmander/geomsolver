@@ -34,11 +34,10 @@ class Motion:
 
     velocity: Vec
     rigid: bool                     # a rigid-body motion of the whole sketch
-    params: list[Param]
-
-    def moving_params(self, rel: float = 1e-3) -> list[Param]:
-        mx = float(np.abs(self.velocity).max()) or 1.0
-        return [p for p, v in zip(self.params, self.velocity) if abs(v) > rel * mx]
+    #: The Params this motion actually moves — the core's own reading of its velocities, since
+    #: which of them count as moving is a fact about the analysis and not about how a caller
+    #: chooses to print it.
+    moving: list[Param]
 
 
 @dataclass
@@ -63,7 +62,6 @@ class WitnessReport:
 
 def report_from(sk: Sketch, d: dict[str, Any]) -> WitnessReport:
     sk._sync_constraints()
-    params = [sk.param_at(i) for i in d["params"]]
 
     def con(i: int) -> Constraint:
         c = sk.constraint_by_id(i)
@@ -79,7 +77,8 @@ def report_from(sk: Sketch, d: dict[str, Any]) -> WitnessReport:
             for x in d["dependencies"]
         ],
         motions=[
-            Motion(np.array(m["velocity"], dtype=np.float64), bool(m["rigid"]), params)
+            Motion(np.array(m["velocity"], dtype=np.float64), bool(m["rigid"]),
+                   [sk.param_at(int(i)) for i in m["movingParams"]])
             for m in d["motions"]
         ],
         movable=[int(i) for i in d["movable"]],

@@ -472,16 +472,27 @@ pub fn reset(sk: &mut Sketch, id: u32) -> bool {
 
 /// The dimension whose callout `at` lands on, within `tol_px` screen pixels of it, or `None`.
 /// Nearest wins, so two callouts crossing each other still pick apart.
+///
+/// A *point* within reach beats the figure's lines, the way it beats an edge in `model::pick`:
+/// a radius runs its leader out of the centre it measures from, so without this the one point a
+/// circle has could not be clicked once it was dimensioned.  It does not beat the number's own
+/// box, which is painted solid over whatever is behind it — what is under the label is the
+/// label, and picking something the drawing is covering up would be a lie about the drawing.
 pub fn pick(sk: &Sketch, unit: f64, at: P, tol_px: f64) -> Option<u32> {
     let tol = tol_px * unit;
-    let mut best: Option<(f64, u32)> = None;
+    let mut best: Option<(f64, u32, bool)> = None;
     for k in layout(sk, unit) {
         let d = k.near(at);
-        if d <= tol && best.is_none_or(|(bd, _)| d < bd) {
-            best = Some((d, k.id));
+        if d <= tol && best.is_none_or(|(bd, _, _)| d < bd) {
+            best = Some((d, k.id, inside(&k.label, at)));
         }
     }
-    best.map(|(_, id)| id)
+    let (_, id, on_label) = best?;
+    let (near, d) = sk.nearest_point(at.0, at.1);
+    if !on_label && near.is_some() && d <= tol {
+        return None;
+    }
+    Some(id)
 }
 
 /// Is `p` within the convex quad `q`?  Its corners run round in order, so every edge has the

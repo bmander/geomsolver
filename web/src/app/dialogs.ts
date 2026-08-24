@@ -6,7 +6,7 @@ import * as io from '../core/io.js';
 import { applyAlternative, enumerateStep, isCurrent } from '../core/homotopy.js';
 import { Point, Sketch } from '../core/model.js';
 import { METHODS, Method } from '../core/system.js';
-import { movingParams, witnessSummary } from '../core/witness.js';
+import { witnessSummary } from '../core/witness.js';
 import { expressions } from '../core/expr.js';
 import { aboutDag, currentConstraint, view } from './shell.js';
 import {
@@ -206,7 +206,7 @@ export async function showDiagnosis(): Promise<void> {
     }
     const internal = rep.motions.filter((m) => !m.rigid);
     internal.slice(0, 8).forEach((m, i) => {
-      lines.push(`   DOF ${i + 1}: ` + movingParams(m).slice(0, 10).map((p) => p.name).join(', '));
+      lines.push(`   DOF ${i + 1}: ` + m.moving.slice(0, 10).map((p) => p.name).join(', '));
     });
     if (internal.length) lines.push('   (use “Animate DOF” to see them move)');
     lines.push('');

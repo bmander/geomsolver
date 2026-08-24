@@ -15,7 +15,9 @@ Currently: **Stage 5 done**, in **one** implementation —
   Python and a self-contained `wasm32-unknown-unknown` module for the browser.
 * **bindings**: `src/gcs/` (Python, `ctypes`) and `web/src/core/` (TypeScript, WebAssembly).
   Both are *thin*: proxies over handles, buffers for hot-path numbers, JSON for ragged results.
-  Neither contains an algorithm.
+  Neither contains an algorithm — and neither re-derives a number the report already carries
+  (a motion's `movingParams` is the core's reading of its own velocities, not a threshold each
+  binding picks), since two copies of a rule are two rules the moment one of them is edited.
 * **app** (`web/src/app/`): an HTML5-canvas sketcher, the only front end.  Two halves, each
   a handful of modules rather than one slab.  The *view* is the canvas: `view.ts` holds the
   state — the camera, selection, tool, plan, diagnosis — and the modules beside it take that
@@ -24,9 +26,9 @@ Currently: **Stage 5 done**, in **one** implementation —
   `SketchView` keeps a one-line delegator for each verb the shell calls, so a caller holds one
   object.  The *shell* is the page around it: `shell.ts` (the elements, the view, the focused
   constraint, and where the core is started), `commands` (the constraints bar), `dialogs` (what
-  the menus open), `lists` (sidebar, banner, status line), `dimbox` (a dimension's number,
-  edited on the drawing), `ui` (dialogs and bar widgets), and `main.ts`, which is only wiring.
-  `index.html` is structure and `app.css` is the whole of the styling.
+  the menus open), `lists` (the constraints window, the banner and the status line), `dimbox`
+  (a dimension's number, edited on the drawing), `ui` (dialogs and bar widgets), and `main.ts`,
+  which is only wiring.  `index.html` is structure and `app.css` is the whole of the styling.
 
 Commands:
 `make` (native `build/libgcs.dylib`), `make wasm` (`web/src/wasm/gcs.wasm`),
@@ -137,6 +139,15 @@ Conventions:
 - "Solved" is `System::max_relative_residual <= 1e-6`: each row's residual over its own units
   (`extent^degree`).  Never one absolute threshold for the whole system — half the kernels are
   linear in length and half quadratic, so one threshold is wrong for one of the halves.
+- Its Jacobian twin: a rank or a null space is judged on `System::conditioned` — the hard rows
+  over `extent^(degree−1)` (a degree-`d` residual's derivative with respect to a length carries
+  one power fewer), columns already in world length — against one absolute, dimensionless
+  `system::RANK_TOL`.  Never a raw `J`, and never relative to `σ₀`: `σ₀` belongs to whichever
+  row is largest, and that row may be a dimension in another figure entirely, so a relative
+  rule lets an unrelated part of the drawing decide whether two constraints on a circle are
+  dependent.  `Conditioned` is the only matrix the rank routines will take, and its methods
+  take only an absolute tolerance, so the comparison cannot be written the other way.
+  `jacobian_dense` stays the raw `∂r/∂z` for the solvers and the finite-difference checks.
 - `Horizontal`/`Vertical` level a line; `HorizontalPoints`/`VerticalPoints` level a *pair of
   points*, which is the same statement about the segment between them and needs no line drawn
   there.  They reuse the line kernels unchanged — those four columns were always two points'
@@ -144,10 +155,17 @@ Conventions:
   the same trick arc-endpoint tangency uses, so a levelled pair decomposes rather than falling to
   the numeric residue.
 - `same_constraint` is "says exactly the same thing"; `same_relation` is the same *without* the
-  numbers — same type, same entities, same flags.  A duplicate is the first and is refused; a
-  second dimension on a pair that already has one is the second, and is an *edit*, since it is
-  one fact written twice and only a conflict can come of adding it.  The dimension buttons ask
-  `gcs_constraint_stating` before they state anything.
+  numbers — same type, same entities, same flags.  A repeated *relation* is refused by the app
+  (`edit::applyConstraints`): it says nothing the sketch does not already say and adds equations
+  without adding rank, which the structural check cannot see.  A **dimension is never deduped by
+  the UI** — not a run on a pair that already has a length, and not the same number stated twice.
+  Whether a second number is redundant or a contradiction is the solve and the diagnosis's
+  reading, and it comes back as `over` naming both, which is something the drawing can show and
+  the user can act on; a button that guessed would instead decide it silently, and would have to
+  decide from the type alone that the run somebody asked for is an edit of the length they had.
+  So `gcs_constraint_stating` is a question the core answers and the front end no longer asks:
+  `commands::dimension` states, `commands::editDimension` opens one already on the drawing (the
+  constraint list's and the callout's double-click), and that is the whole of the distinction.
 - An argument the core reads off the geometry (a tangency's side or sense) declares
   `CKind::infers_arg`; the registry publishes a null default for it so a binding leaves it
   omitted and the core fills it in.  A binding that substitutes a constant picks the branch.
@@ -198,7 +216,12 @@ Conventions:
   automatic until someone drags it and then `Sketch.placements` document state, saved by index
   into the constraint list (ids are not stable across a load).  The number a dimension states
   comes from `io::dimension_text`, so the drawing and the constraint list cannot print it
-  differently.
+  differently.  A callout is painted *over* the geometry, so `callout::pick` also owns what
+  outranks it: a point within the same tolerance beats the figure's lines — a radius runs its
+  leader out of the centre it measures from, and the one point a circle has has to stay
+  clickable once it is dimensioned — but not the number's own box, which is filled solid, and
+  picking through a thing the drawing covers up would be a lie about the drawing.  The rule is
+  the core's because the figure is, so a front end asks once and every front end agrees.
 - One straight dimension figure, `Pen::linear`, draws them all: it measures along a *given*
   direction, puts a head where each point falls on that line and runs an extension line out to
   each point from wherever it is.  `Pen::aligned` is the case where the direction is the pair's
@@ -284,6 +307,15 @@ Conventions:
   brings the numbers they *show* back into step with the unknown, from every seam that writes
   parameters without going through the others — `Sketch::set_x`, `io::Part::write_back` and the
   wave's direct writes — since a solve moves the unknown and a stale callout is a wrong drawing.
+- The page is the drawing: there is no sidebar, and what the shell has to *say* is said beside
+  what is picked.  A component selected names itself in the status line (`describeEntity`) and
+  brings up one floating window listing the constraints that reach it, and only those.  The
+  window is open on a `subject` — the selection while there is one, and otherwise whatever it
+  was last opened on, so focusing a constraint (which empties the selection) does not pull the
+  window out from under the pointer that clicked the row.  Nothing infers where a pick came
+  from: `openPanel` is how the two things that pick without selecting say so — a callout
+  clicked on the drawing, the banner's culprits — and `closePanel`, wired to `onSelect`, is a
+  press that hit nothing.
 - A drag is an operation on the dragged point's *part* of the document (`io::Part`): what is
   reached from it through shared points and constraints, stopping at fixed entities.  `PlanDrag`
   builds its plan, systems and numeric fallback on that part alone and writes each frame back, so

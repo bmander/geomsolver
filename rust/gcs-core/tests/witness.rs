@@ -2,8 +2,8 @@ use gcs_core::constraints::{CKind, Constraint};
 use gcs_core::model::{EntRef, Sketch};
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::examples;
-use gcs_core::linalg::{absmax, rank_rrqr};
-use gcs_core::system::System;
+use gcs_core::linalg::absmax;
+use gcs_core::system::{System, RANK_TOL};
 use gcs_core::witness::{analyze, make_witness};
 
 #[test]
@@ -115,15 +115,14 @@ fn reported_dependencies_are_genuinely_redundant() {
         sk.set_x(&xw);
         let mut s = System::new(&sk);
         let z = s.z0(&sk);
-        let dense = s.jacobian_dense(&z);
-        let hard = s.hard_rows();
-        let j = dense.select_rows(&hard);
+        // the matrix the core judged, at the tolerance it judged it — not a raw Jacobian
+        let j = s.conditioned(&z);
         let (_, rows_c) = s.structure();
-        let full = rank_rrqr(&j, 1e-10);
+        let full = j.rank_rrqr(RANK_TOL);
         for dep in &rep.dependencies {
             let keep: Vec<usize> =
                 (0..rows_c.len()).filter(|&i| rows_c[i] != dep.constraint).collect();
-            assert_eq!(rank_rrqr(&j.select_rows(&keep), 1e-10), full);
+            assert_eq!(j.select_rows(&keep).rank_rrqr(RANK_TOL), full);
             assert!(!dep.implied_by.contains(&dep.constraint));
         }
     }

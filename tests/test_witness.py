@@ -57,8 +57,7 @@ def test_motions_are_localised_and_unit_scaled() -> None:
     assert rep.n_dof == 1 and rep.n_internal_dof == 1
     m = rep.motions[0]
     assert np.abs(m.velocity).max() == 1.0
-    assert {p.name for p in m.moving_params()} == {"b2.x", "r1.x", "r2.x", "t1.x",
-                                                   "c_br.x", "c_tr.x"}
+    assert {p.name for p in m.moving} == {"b2.x", "r1.x", "r2.x", "t1.x", "c_br.x", "c_tr.x"}
 
 
 def test_make_witness_restores_sketch_and_generalises_dimensions() -> None:
@@ -76,19 +75,20 @@ def test_make_witness_restores_sketch_and_generalises_dimensions() -> None:
 def test_reported_dependencies_are_genuinely_redundant() -> None:
     """The row→constraint map must follow the Jacobian's own row order (kernel blocks), not sketch
     order: every named dependency must be removable without changing the rank."""
-    from gcs.linalg import rank_rrqr
-    from gcs.solve import System
+    from gcs.solve import RANK_TOL, System
 
     for sk in (examples.polygon_chain(8), examples.altitudes(), examples.rect_fillets()):
         rep = analyze(sk)
         sk.set_x(rep.x_witness)
         s = System(sk)
-        J = s.jacobian_dense(s.z0())[s.hard]
+        # the matrix the core judged, at the tolerance it judged it — not a raw Jacobian
+        J = s.conditioned()
         _, rows_c = s.structure()
-        full = rank_rrqr(J)
+        full = np.linalg.matrix_rank(J, tol=RANK_TOL)
         for dep in rep.dependencies:
             keep = [i for i, c in enumerate(rows_c) if c is not dep.constraint]
-            assert rank_rrqr(J[keep]) == full, f"{dep.constraint} is not actually redundant"
+            assert np.linalg.matrix_rank(J[keep], tol=RANK_TOL) == full, \
+                f"{dep.constraint} is not actually redundant"
             assert dep.constraint not in dep.implied_by
         s.dispose()
 

@@ -12,7 +12,7 @@ import pytest
 
 from gcs import examples
 from gcs.linalg import lu_solve, min_norm_lstsq, rank_and_nullspace, rank_rrqr, rrqr, svd
-from gcs.solve import System
+from gcs.solve import RANK_TOL, System
 
 
 def _rng(seed: int) -> np.random.Generator:
@@ -109,11 +109,13 @@ def test_sparse_and_dense_jacobians_agree() -> None:
 
 
 def test_jacobian_rank_agrees_with_numpy_on_a_real_sketch() -> None:
+    # numpy judges the same matrix by the same rule: the conditioned Jacobian, an absolute tol
     sk = examples.rect_fillets()
     examples.perturb(sk, 1.0)
     s = System(sk)
-    J = s.jacobian_dense(s.z0())
-    assert s.rank() == np.linalg.matrix_rank(J)
+    C = s.conditioned()
+    assert C.shape == (int(s.hard.sum()), s.n_free)
+    assert s.rank(hard_only=True) == np.linalg.matrix_rank(C, tol=RANK_TOL)
     s.dispose()
 
 

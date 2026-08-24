@@ -935,10 +935,9 @@ pub fn same_constraint(a: &Constraint, b: &Constraint) -> bool {
 /// state*: same type, same entities in the same roles, same flags, dimensions ignored.
 ///
 /// `same_constraint` is this plus the values, which is what a duplicate is.  This is what an
-/// *edit* is.  A second `Distance` on a pair that already has one is not a second fact about
-/// them, it is the same fact written twice, and the only thing that can come of adding it is a
-/// conflict — so a front end that is about to state a dimension should ask this first and edit
-/// what it finds.
+/// *edit* would land on: the constraint a second `Distance` on the same pair would be rewriting
+/// rather than adding to.  Whether that is what a caller wants is the caller's business — the
+/// app states the second one and lets the diagnosis judge the pair.
 pub fn same_relation(a: &Constraint, b: &Constraint) -> bool {
     matches(a, b, |k| !k.is_param() && !k.is_dimension())
 }

@@ -196,9 +196,21 @@ export class System {
     }));
   }
 
-  /** Numerical rank of the Jacobian — the workhorse of Stage 2/4 diagnosis. */
-  rank(rcond = 1e-10, hardOnly = false): number {
-    return core().gcs_system_rank(this.handle, this.sketch.handle, rcond, hardOnly ? 1 : 0);
+  /** Numerical rank of the Jacobian — the workhorse of Stage 2/4 diagnosis.  `tol` is absolute
+   *  and dimensionless: it is judged on `conditioned()`, not on `jacobianDense`. */
+  rank(tol = rankTol(), hardOnly = false): number {
+    return core().gcs_system_rank(this.handle, this.sketch.handle, tol, hardOnly ? 1 : 0);
+  }
+
+  /** The hard rows of the Jacobian with their units divided out — the matrix every rank and null
+   *  space in the core is judged on.  One row per row of `structure()`, in its order. */
+  conditioned(): { rows: number; cols: number; data: Float64Array } {
+    let nHard = 0;
+    for (const h of this.hard) if (h) nHard++;
+    return withBuf(Math.max(nHard * this.nFree, 1), 8, (b) => {
+      const rows = core().gcs_system_conditioned(this.handle, this.sketch.handle, b.ptr);
+      return { rows, cols: this.nFree, data: b.f64.slice(0, rows * this.nFree) };
+    });
   }
 
   /** Structural Jacobian as a bipartite graph: adj[row] = sorted free columns with a structural
@@ -234,6 +246,11 @@ export class System {
 }
 
 /** One-shot: compile and solve, writing the result back into the sketch. */
+/** The tolerance a rank is judged at: the core's `RANK_TOL`, absolute and dimensionless. */
+export function rankTol(): number {
+  return core().gcs_rank_tol();
+}
+
 export function solve(sketch: Sketch, opts: Parameters<System['solve']>[0] = {}): SolveResult {
   const method = opts.method ?? 'dogleg';
   const t0 = now();

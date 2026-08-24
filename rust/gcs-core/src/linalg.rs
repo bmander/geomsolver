@@ -1,9 +1,35 @@
 //! Dense linear algebra: rank-revealing QR, the complete orthogonal decomposition behind the
 //! minimum-norm least-squares step, a Golub–Reinsch SVD and an LU solve.
 //!
-//! Everything is row-major.  The rank convention is the codebase's single one:
-//! `|R_ii| > rcond * |R_00|` after a pivoted QR, and `sigma_i > rcond * sigma_0` after an SVD.
+//! Everything is row-major.  A rank is decided by a `Tol`: relative — `|R_ii| > rcond * |R_00|`
+//! after a pivoted QR, `sigma_i > rcond * sigma_0` after an SVD — for a matrix whose scale nobody
+//! knows, which is what the plain `rcond` entry points take; absolute for one whose entries are
+//! dimensionless (`system::Conditioned`), where a magnitude is a statement on its own.
 //! No LAPACK/BLAS: these routines are ours, and `tests/test_linalg.py` checks them against numpy.
+
+/// How a factorisation decides that a pivot or a singular value is zero.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Tol {
+    /// Relative to the largest: the convention for a matrix in unknown units.  Any two rows
+    /// vote on the verdict through `|R_00|` / `sigma_0`, so it is only fit for a matrix that is
+    /// all of one thing.
+    Rel(f64),
+    /// Absolute: for a matrix whose entries are dimensionless and O(1), where the threshold is
+    /// a statement about one pivot alone and nothing else in the matrix can move it.
+    Abs(f64),
+}
+
+impl Tol {
+    /// The value a pivot must exceed, given the largest one.  Relative to a zero largest is
+    /// "no rank at all", which `INFINITY` says without a special case in the loop.
+    fn cut(self, largest: f64) -> f64 {
+        match self {
+            Tol::Rel(r) if largest > 0.0 => r * largest,
+            Tol::Rel(_) => f64::INFINITY,
+            Tol::Abs(t) => t,
+        }
+    }
+}
 
 /// Row-major dense matrix.
 #[derive(Clone, Debug, PartialEq)]
@@ -158,7 +184,7 @@ fn house_gen(a: &mut [f64], off: usize, len: usize, stride: usize) -> (f64, f64)
 
 /// Householder QR with column pivoting.  `a` (m*n row-major) is overwritten: R in the upper
 /// triangle, the reflectors below it.  Returns (tau, pivots, rank).
-fn qrp(m: usize, n: usize, a: &mut [f64], rcond: f64) -> (Vec<f64>, Vec<i32>, usize) {
+fn qrp(m: usize, n: usize, a: &mut [f64], tol: Tol) -> (Vec<f64>, Vec<i32>, usize) {
     let k = m.min(n);
     let mut tau = vec![0.0; k];
     let mut piv: Vec<i32> = (0..n as i32).collect();
@@ -230,12 +256,10 @@ fn qrp(m: usize, n: usize, a: &mut [f64], rcond: f64) -> (Vec<f64>, Vec<i32>, us
     }
     let mut rank = 0;
     if k > 0 {
-        let d0 = a[0].abs();
-        if d0 > 0.0 {
-            for i in 0..k {
-                if a[i * n + i].abs() > rcond * d0 {
-                    rank += 1;
-                }
+        let cut = tol.cut(a[0].abs());
+        for i in 0..k {
+            if a[i * n + i].abs() > cut {
+                rank += 1;
             }
         }
     }
@@ -331,12 +355,16 @@ fn apply_zt(k: usize, n: usize, a: &[f64], ztau: &[f64], y: &mut [f64]) {
 /// Rank-revealing QR: `(rank, column pivots)`.  The first `rank` pivots index a maximal
 /// independent set of columns.
 pub fn rrqr(a: &Mat, rcond: f64) -> (usize, Vec<i32>) {
+    rrqr_with(a, Tol::Rel(rcond))
+}
+
+pub fn rrqr_with(a: &Mat, tol: Tol) -> (usize, Vec<i32>) {
     let (m, n) = (a.rows, a.cols);
     if m == 0 || n == 0 {
         return (0, Vec::new());
     }
     let mut w = a.data.clone();
-    let (_, piv, rank) = qrp(m, n, &mut w, rcond);
+    let (_, piv, rank) = qrp(m, n, &mut w, tol);
     (rank, piv)
 }
 
@@ -355,7 +383,7 @@ pub fn min_norm_lstsq(a: &Mat, b: &Mat, rcond: f64) -> (Mat, usize) {
     let k = m.min(n);
     let mut aw = a.data.clone();
     let mut bw = b.data.clone();
-    let (tau, piv, rank) = qrp(m, n, &mut aw, rcond);
+    let (tau, piv, rank) = qrp(m, n, &mut aw, Tol::Rel(rcond));
     apply_qt(m, n, k, &aw, &tau, &mut bw, nrhs);
     if rank > 0 {
         let ztau = tzrz(rank, n, &mut aw);
@@ -724,6 +752,10 @@ pub struct RankNull {
     /// n x (n - rank) orthonormal basis of the null space.
     pub n: Mat,
     pub s: Vec<f64>,
+    /// The n x n right singular vectors, rows in singular-value order — `n` is their tail, and
+    /// a caller that settles on a different rank (the witness, when the QR disagrees) takes
+    /// its own tail from here rather than factoring again.
+    pub vt: Mat,
     /// False if the SVD behind this did not converge; `rank` then says nothing.
     pub converged: bool,
 }
@@ -731,31 +763,46 @@ pub struct RankNull {
 /// `(rank, null-space basis, singular values)` from one SVD — the shared seam that keeps
 /// diagnosis, witness analysis and decomposition agreeing on what "rank" means.
 pub fn rank_and_nullspace(a: &Mat, rcond: f64) -> RankNull {
+    rank_and_nullspace_with(a, Tol::Rel(rcond))
+}
+
+pub fn rank_and_nullspace_with(a: &Mat, tol: Tol) -> RankNull {
     let (m, n) = (a.rows, a.cols);
     if n == 0 {
-        return RankNull { rank: 0, n: Mat::zeros(0, 0), s: Vec::new(), converged: true };
+        let e = Mat::zeros(0, 0);
+        return RankNull { rank: 0, n: e.clone(), s: Vec::new(), vt: e, converged: true };
     }
     if m == 0 {
-        return RankNull { rank: 0, n: Mat::identity(n), s: Vec::new(), converged: true };
+        let i = Mat::identity(n);
+        return RankNull { rank: 0, n: i.clone(), s: Vec::new(), vt: i, converged: true };
     }
     let d = svd(a, false);
     let mn = m.min(n);
     let mut rank = 0;
-    if mn > 0 && d.s[0] > 0.0 {
+    if mn > 0 {
+        let cut = tol.cut(d.s[0]);
         for i in 0..mn {
-            if d.s[i] > rcond * d.s[0] {
+            if d.s[i] > cut {
                 rank += 1;
             }
         }
     }
+    let null = null_tail(&d.vt, rank);
+    RankNull { rank, n: null, s: d.s, vt: d.vt, converged: d.converged }
+}
+
+/// The last `n - rank` right singular vectors as columns: the null space an SVD of rank `rank`
+/// implies.
+pub fn null_tail(vt: &Mat, rank: usize) -> Mat {
+    let n = vt.cols;
     let nn = n - rank;
     let mut null = Mat::zeros(n, nn);
     for i in 0..n {
         for j in 0..nn {
-            null.data[i * nn.max(1) + j] = d.vt.data[(rank + j) * n + i];
+            null.data[i * nn.max(1) + j] = vt.data[(rank + j) * n + i];
         }
     }
-    RankNull { rank, n: null, s: d.s, converged: d.converged }
+    null
 }
 
 /// Solve the n*n system `A x = b` in place (partial-pivoting LU).  `false` if A is singular.

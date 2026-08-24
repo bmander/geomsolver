@@ -60,6 +60,10 @@ def _result(out: Vec, message: str, method: str, t0: float) -> SolveResult:
     )
 
 
+#: The tolerance a rank is judged at: the core's `RANK_TOL`, absolute and dimensionless.
+RANK_TOL: float = float(lib.gcs_rank_tol())
+
+
 class System:
     """Compiled evaluation plan for one sketch topology."""
 
@@ -171,8 +175,19 @@ class System:
                                              _ffi.pf(vals), n)
         return {int(ids[i]): float(vals[i]) for i in range(m)}
 
-    def rank(self, rcond: float = 1e-10, hard_only: bool = False) -> int:
-        return int(lib.gcs_system_rank(self._h, self.sketch._h, rcond, 1 if hard_only else 0))
+    def rank(self, tol: float = RANK_TOL, hard_only: bool = False) -> int:
+        """Numerical rank of the Jacobian at the current sketch values.  `tol` is absolute and
+        dimensionless: it is judged on `conditioned()`, not on `jacobian_dense`."""
+        return int(lib.gcs_system_rank(self._h, self.sketch._h, tol, 1 if hard_only else 0))
+
+    def conditioned(self) -> Vec:
+        """The hard rows of the Jacobian at the current sketch values with their units divided
+        out — the matrix every rank and null space in the core is judged on.  One row per row
+        of `structure()`, in its order."""
+        n_hard = int(self.hard.sum())
+        out = _ffi.f64(max(n_hard * self.n_free, 1))
+        m = lib.gcs_system_conditioned(self._h, self.sketch._h, _ffi.pf(out))
+        return out[: m * self.n_free].reshape(m, self.n_free)
 
     def structure(self) -> tuple[list[list[int]], list[Constraint]]:
         """Structural Jacobian as a bipartite graph, plus row → owning constraint.  Soft rows

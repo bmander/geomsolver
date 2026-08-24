@@ -10,7 +10,7 @@
 
 use crate::constraints::Constraint;
 use crate::kernels::{self, Kernel};
-use crate::linalg::Mat;
+use crate::linalg::{rank_and_nullspace_with, rrqr_with, Mat, RankNull, Tol};
 use crate::model::Sketch;
 use crate::sparse::Ata;
 use std::collections::BTreeMap;
@@ -29,6 +29,68 @@ pub struct Block {
     pub consts: Vec<f64>,
     pub cids: Vec<u32>,
     jac_off: usize,
+}
+
+/// The tolerance a rank is judged at: a singular value of a `Conditioned` Jacobian below this
+/// is zero.  Dimensionless and absolute — "a motion the size of the drawing changes this
+/// residual by less than `RANK_TOL` of its own units" — so it is the same statement in every
+/// sketch at every size.  The one number the diagnosis, the witness and `System::rank` share.
+pub const RANK_TOL: f64 = 1e-9;
+
+/// Rows of the Jacobian at z with the units divided out: row r over
+/// `max(1, extent)^(degree - 1)`, columns already in world length (`z = x * col_scale`).  Every
+/// entry is dimensionless and O(1) for a well-posed row, so a singular value is an absolute
+/// statement and one tolerance judges every sketch at every size.
+///
+/// This is the only matrix a rank or a null space is ever asked of, and it is why: a raw row
+/// is in its residual's units, a squared distance's gradient is `2d` next to a unit normal's
+/// `1`, and a threshold relative to the largest singular value then belongs to whichever row
+/// is largest — which may be a dimension in another figure entirely.  A relative tolerance is
+/// not on offer here; the methods take an absolute one.  Only `System` builds one.
+pub struct Conditioned {
+    m: Mat,
+}
+
+impl Conditioned {
+    pub fn rows(&self) -> usize {
+        self.m.rows
+    }
+
+    pub fn cols(&self) -> usize {
+        self.m.cols
+    }
+
+    /// The given rows, in the given order.
+    pub fn select_rows(&self, rows: &[usize]) -> Conditioned {
+        Conditioned { m: self.m.select_rows(rows) }
+    }
+
+    /// Rank and right null space (the motions) from one SVD.
+    pub fn rank_and_nullspace(&self, tol: f64) -> RankNull {
+        rank_and_nullspace_with(&self.m, Tol::Abs(tol))
+    }
+
+    /// Rank and left null space (the dependencies among rows) from one SVD.
+    pub fn left_nullspace(&self, tol: f64) -> RankNull {
+        rank_and_nullspace_with(&self.m.transpose(), Tol::Abs(tol))
+    }
+
+    /// Rank by pivoted QR of the transpose: `(rank, pivots)`, the first `rank` pivots indexing
+    /// a maximal independent set of rows.
+    pub fn independent_rows(&self, tol: f64) -> (usize, Vec<i32>) {
+        rrqr_with(&self.m.transpose(), Tol::Abs(tol))
+    }
+
+    pub fn rank_rrqr(&self, tol: f64) -> usize {
+        rrqr_with(&self.m, Tol::Abs(tol)).0
+    }
+
+    /// The numbers, for handing across the ABI and for the witness's dependency coefficients.
+    /// Not for a rank: that is the methods above, with the tolerance they insist on.
+    #[doc(hidden)]
+    pub fn as_mat(&self) -> &Mat {
+        &self.m
+    }
 }
 
 pub struct System {
@@ -53,6 +115,10 @@ pub struct System {
     /// all written to the same power of length, so one system-wide scale judges half of them
     /// against a tolerance meant for the other half.
     pub row_scale: Vec<f64>,
+    /// Units of a row of the Jacobian: `max(1, extent)^(degree - 1)`, since the derivative of a
+    /// degree-`d` residual with respect to a world length carries one power of length fewer.
+    /// What `conditioned` divides each row by.
+    jac_scale: Vec<f64>,
     /// The smallest `row_scale` over hard rows — the strictest tolerance in the system, which is
     /// what the inner solver has to iterate to for every row to come in under its own.
     pub min_hard_scale: f64,
@@ -215,11 +281,14 @@ impl System {
         }
 
         let mut row_scale = vec![1.0; n_res];
+        let mut jac_scale = vec![1.0; n_res];
         for b in &blocks {
             let kn = k(b.kid);
             let sc = extent.max(1.0).powi(kn.degree as i32);
+            let jsc = extent.max(1.0).powi(kn.degree as i32 - 1);
             for r in b.row0..b.row0 + b.count * kn.n_res {
                 row_scale[r] = sc;
+                jac_scale[r] = jsc;
             }
         }
         let mut min_hard_scale = f64::INFINITY;
@@ -243,6 +312,7 @@ impl System {
             extent,
             scale,
             row_scale,
+            jac_scale,
             min_hard_scale,
             hard,
             blocks,
@@ -413,6 +483,9 @@ impl System {
         &self.csr_data
     }
 
+    /// The raw `dr/dz` — what the solvers step on and what a finite-difference check has to see.
+    /// Its rows are in the residuals' own units and not comparable with each other: a rank or
+    /// a null space is asked of `conditioned`, never of this.
     pub fn jacobian_dense(&mut self, z: &[f64]) -> Mat {
         let mut j = Mat::zeros(self.n_res, self.n_free);
         if self.n_free == 0 {
@@ -503,19 +576,37 @@ impl System {
         out
     }
 
-    /// Numerical rank of the Jacobian at z — the workhorse of Stage 2/4 diagnosis.
-    pub fn rank(&mut self, z: &[f64], rcond: f64, hard_only: bool) -> usize {
+    /// Numerical rank of the Jacobian at z — the workhorse of Stage 2/4 diagnosis.  `tol` is
+    /// absolute and dimensionless (`RANK_TOL` is the one the diagnosis uses).
+    pub fn rank(&mut self, z: &[f64], tol: f64, hard_only: bool) -> usize {
         if self.n_free == 0 || self.n_res == 0 {
             return 0;
         }
-        let j = self.jacobian_dense(z);
-        let m = if hard_only {
-            let keep: Vec<usize> = (0..self.n_res).filter(|&i| self.hard[i]).collect();
-            j.select_rows(&keep)
-        } else {
-            j
-        };
-        crate::linalg::rank_rrqr(&m, rcond)
+        let rows: Vec<usize> = if hard_only { self.hard_rows() } else { (0..self.n_res).collect() };
+        self.condition(z, &rows).rank_rrqr(tol)
+    }
+
+    /// The hard rows of the Jacobian at z with their units divided out — see `Conditioned`.
+    /// Rows are in `structure()`'s order, so its `row_c[i]` names row `i` here.
+    pub fn conditioned(&mut self, z: &[f64]) -> Conditioned {
+        let rows = self.hard_rows();
+        self.condition(z, &rows)
+    }
+
+    fn condition(&mut self, z: &[f64], rows: &[usize]) -> Conditioned {
+        let mut m = Mat::zeros(rows.len(), self.n_free);
+        if self.n_free == 0 || rows.is_empty() {
+            return Conditioned { m };
+        }
+        self.compute_csr(z);
+        for (i, &r) in rows.iter().enumerate() {
+            let inv = 1.0 / self.jac_scale[r];
+            for p in self.csr_indptr[r]..self.csr_indptr[r + 1] {
+                m.data[i * self.n_free + self.csr_indices[p as usize] as usize] =
+                    self.csr_data[p as usize] * inv;
+            }
+        }
+        Conditioned { m }
     }
 
     /// Structural Jacobian as a bipartite graph: `adj[row]` = sorted free columns with a

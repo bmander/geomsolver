@@ -260,3 +260,28 @@ export function openFile(accept = '.json'): Promise<string | null> {
     input.click();
   });
 }
+
+/** Make a floating window draggable by a handle inside it, kept inside its offset parent.
+ *  Where it sits is the user's, so it is written into `left`/`top` once and the CSS corner it
+ *  started in is dropped — nothing re-places it afterwards. */
+export function dragWindow(win: HTMLElement, handle: HTMLElement): void {
+  handle.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const box = win.getBoundingClientRect();
+    const par = (win.offsetParent ?? document.body).getBoundingClientRect();
+    const dx = e.clientX - box.left;
+    const dy = e.clientY - box.top;
+    const move = (m: PointerEvent): void => {
+      const x = Math.max(0, Math.min(par.width - box.width, m.clientX - par.left - dx));
+      const y = Math.max(0, Math.min(par.height - box.height, m.clientY - par.top - dy));
+      win.style.left = `${x}px`;
+      win.style.top = `${y}px`;
+      win.style.right = 'auto';
+    };
+    handle.setPointerCapture(e.pointerId);
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', () => handle.removeEventListener('pointermove', move),
+                            { once: true });
+  });
+}

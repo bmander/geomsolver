@@ -1,5 +1,5 @@
-/* The sketcher's page: the bars, the sidebar, the banner and the sheets.  The canvas draws
- * itself — nothing about the drawing is styled here. */
+/* The sketcher's page: the bars, the banner, the constraints window and the sheets.  The
+ * canvas draws itself — nothing about the drawing is styled here. */
 :root {
   --bg: #ffffff;
   --panel: #f4f4f5;
@@ -83,33 +83,33 @@ main { flex: 1; display: flex; min-height: 0; }
 canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
 canvas.select { cursor: default; }
 
-aside {
-  width: 310px; flex: none; border-left: 1px solid var(--line);
-  display: flex; flex-direction: column; background: var(--panel); min-height: 0;
+/* what holds the selected component: a small window over the drawing rather than a column
+   beside it, so the page is the drawing.  It comes up where it was last put — its header is
+   a handle — and only while something is picked, so it costs nothing when nothing is. */
+#cpanel {
+  position: absolute; top: 12px; right: 12px; z-index: 6;
+  display: flex; flex-direction: column;
+  width: 300px; max-width: calc(100% - 24px); max-height: calc(100% - 24px);
+  border: 1px solid var(--line); border-radius: 7px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: 0 4px 18px rgba(0,0,0,.16);
 }
-/* the two panes split the sidebar and scroll independently, so a long constraint list
-   never pushes the component list off the bottom */
-aside section { display: flex; flex-direction: column; min-height: 0; flex: 1 1 0; }
-aside section + section { border-top: 1px solid var(--line); }
-aside h2 {
+#cpanel[hidden] { display: none; }
+#cpanel h2 {
   font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
-  margin: 0; padding: 8px 10px 6px; border-bottom: 1px solid var(--line); flex: none;
+  margin: 0; padding: 7px 10px 6px; border-bottom: 1px solid var(--line); flex: none;
+  cursor: move; user-select: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-aside ul { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; font-family: var(--mono); font-size: 12px; }
-aside li { padding: 3px 10px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-aside li:hover { background: #e9e9ed; }
-aside li[aria-current="true"] { outline: 1px solid var(--accent); outline-offset: -1px; }
-aside li.touches { background: var(--row-sel); font-weight: 600; }
+#clist { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; font-family: var(--mono); font-size: 12px; }
+#clist li { padding: 3px 10px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#clist li:hover { background: #e9e9ed; }
+#clist li[aria-current="true"] { outline: 1px solid var(--accent); outline-offset: -1px; background: var(--row-sel); }
 #clist li.culprit { color: var(--danger); }
 #clist li.violated { color: #d62728; }
 #clist li.over { color: #b06d00; }
 #clist li.implied { color: var(--muted); font-style: italic; }
 #clist li.expr-error { color: #b06d00; text-decoration: underline dotted; }
-/* the component list mirrors the constraint list: strong for what is selected, soft for
-   what the focused constraint reaches */
-#elist li.touches { background: var(--accent-soft); font-weight: 400; }
-#elist li.sel { background: var(--row-sel); font-weight: 600; }
-#elist li.construction { font-style: italic; color: var(--muted); }
 
 footer {
   flex: none; border-top: 1px solid var(--line); background: var(--panel);
@@ -117,6 +117,8 @@ footer {
   white-space: nowrap; overflow-x: auto;
 }
 footer #toast { color: var(--text); }
+/* what is picked, said in words: the same line the constraints window is headed by */
+footer #component { color: var(--text); }
 /* the geometry on screen does not satisfy the constraints — the numbers in the status
    line are describing a sketch you are not actually looking at */
 footer.unsolved { background: var(--danger-bg); border-top-color: #d62728; color: #a03b46; }

@@ -202,3 +202,35 @@ fn the_shared_dogleg_loop_solves_a_system_of_its_own() {
     assert_eq!(info.status, 0, "{info:?}");
     assert!((z[0] - 1.0).abs() < 1e-6 && (z[1] - 1.0).abs() < 1e-6, "{z:?}");
 }
+
+#[test]
+fn the_conditioned_jacobian_is_dimensionless() {
+    // each row of `conditioned` is the raw row over `extent^(degree - 1)`: a degree-1 row is a
+    // unit-free gradient already, a degree-2 row carries one power of length.  Every row then
+    // sits within a couple of orders of 1 — which is what lets one absolute tolerance judge them
+    // all, and what a kernel declaring the wrong `degree` would break.
+    use gcs_core::kernels::KERNELS;
+    for name in examples::EXAMPLES {
+        let sk = examples::example(name).unwrap();
+        let mut sys = System::new(&sk);
+        let z = sys.z0(&sk);
+        let raw = sys.jacobian_dense(&z);
+        let hard = sys.hard_rows();
+        let c = sys.conditioned(&z);
+        let (_, row_c) = sys.structure();
+        assert_eq!((c.rows(), c.cols()), (hard.len(), sys.n_free), "{name}");
+        let extent = sk.extent().max(1.0);
+        for (i, &r) in hard.iter().enumerate() {
+            let degree = KERNELS[sk.constraint(row_c[i]).unwrap().kernel_id()].degree;
+            let unit = extent.powi(degree as i32 - 1);
+            let mut norm = 0.0f64;
+            for j in 0..sys.n_free {
+                let want = raw.at(r, j) / unit;
+                assert!((c.as_mat().at(i, j) - want).abs() <= 1e-12 * want.abs().max(1.0));
+                norm += want * want;
+            }
+            let norm = norm.sqrt();
+            assert!((1e-3..=1e2).contains(&norm), "{name} row {i}: |row| = {norm}");
+        }
+    }
+}

@@ -1149,9 +1149,8 @@ pub unsafe extern "C" fn gcs_same_constraint(
 }
 
 /// The id of a constraint already stating the same *relation* as the one described — the same
-/// type on the same entities, whatever number it states — or -1.  What a front end asks before
-/// putting a dimension on a selection, so it edits the one that is there instead of adding a
-/// second and making a conflict.
+/// type on the same entities, whatever number it states — or -1.  What an *edit* of a dimension
+/// would land on, for a caller that wants to offer one.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_constraint_stating(
     h: *mut Sketch,
@@ -1532,17 +1531,42 @@ pub unsafe extern "C" fn gcs_system_n_constraints(s: *mut System) -> i32 {
     guard(-1, move || (*s).n_constraints() as i32)
 }
 
+/// Numerical rank of the Jacobian at the sketch's current values; `tol` is absolute and
+/// dimensionless (`gcs_rank_tol()` is the diagnosis's own).
 #[no_mangle]
 pub unsafe extern "C" fn gcs_system_rank(
     s: *mut System,
     h: *mut Sketch,
-    rcond: f64,
+    tol: f64,
     hard_only: i32,
 ) -> i32 {
     guard(-1, move || {
         let sys = &mut *s;
         let z = sys.z0(sk(h));
-        sys.rank(&z, rcond, hard_only != 0) as i32
+        sys.rank(&z, tol, hard_only != 0) as i32
+    })
+}
+
+/// The tolerance a rank is judged at — `system::RANK_TOL`, so a binding's default is the
+/// core's and not a second number.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_rank_tol() -> f64 {
+    gcs_core::system::RANK_TOL
+}
+
+/// The hard rows of the Jacobian at the sketch's current values with their units divided out
+/// — the matrix every rank and null space in the core is judged on (`System::conditioned`).
+/// Row-major, one row per hard row in `gcs_system_structure_json`'s order, `n_free` columns;
+/// returns the row count.  A getter, so a test can check a verdict against the matrix the
+/// core actually judged.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_system_conditioned(s: *mut System, h: *mut Sketch, out: *mut f64) -> i32 {
+    guard(-1, move || {
+        let sys = &mut *s;
+        let z = sys.z0(sk(h));
+        let c = sys.conditioned(&z);
+        write(out, &c.as_mat().data);
+        c.rows() as i32
     })
 }
 

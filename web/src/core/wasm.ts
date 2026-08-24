@@ -131,7 +131,9 @@ export interface Abi {
                                cap: number): number;
   gcs_system_n_constraints(s: number): number;
   gcs_system_max_relative_residual(s: number, h: number): number;
-  gcs_system_rank(s: number, h: number, rcond: number, hardOnly: number): number;
+  gcs_system_rank(s: number, h: number, tol: number, hardOnly: number): number;
+  gcs_system_conditioned(s: number, h: number, out: number): number;
+  gcs_rank_tol(): number;
   gcs_system_update_consts(s: number, h: number, id: number): void;
   gcs_system_refresh_consts(s: number, h: number): void;
   gcs_system_structure_json(s: number): number;

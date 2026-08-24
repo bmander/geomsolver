@@ -14,12 +14,14 @@ export const aboutBadge = document.getElementById('about') as HTMLButtonElement;
 export const aboutDag = document.getElementById('about-dag') as HTMLTemplateElement;
 export const barTools = document.getElementById('bar-tools') as HTMLElement;
 export const barConstraints = document.getElementById('bar-constraints') as HTMLElement;
+export const cpanel = document.getElementById('cpanel') as HTMLElement;
+export const cpanelTitle = document.getElementById('cpanel-title') as HTMLElement;
 export const clist = document.getElementById('clist') as HTMLElement;
-export const elist = document.getElementById('elist') as HTMLElement;
 export const banner = document.getElementById('banner') as HTMLElement;
 export const bannerText = document.getElementById('banner-text') as HTMLElement;
 export const bannerSelect = document.getElementById('banner-select') as HTMLButtonElement;
 export const measureEl = document.getElementById('measure') as HTMLElement;
+export const componentEl = document.getElementById('component') as HTMLElement;
 export const footerEl = document.querySelector('footer') as HTMLElement;
 
 await initCore();
