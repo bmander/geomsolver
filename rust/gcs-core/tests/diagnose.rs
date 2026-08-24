@@ -163,6 +163,44 @@ fn implied_and_over_are_told_apart_per_constraint_not_per_sketch() {
 }
 
 #[test]
+fn a_theorem_that_tips_the_matching_still_reads_implied_not_over() {
+    // A rectangle drawn with three perpendiculars *and* two horizontals and two verticals —
+    // three of the seven follow from the others.  With one side dimensioned the matching still
+    // places every equation, so the theorem is caught numerically; dimensioning the second side
+    // tips the count (nine equations on eight coordinates), and the structural over-block blames
+    // the whole rectangle, both side lengths included.  The dependency the numbers see lives on
+    // the seven angular relations alone: a theorem, so nothing is over, neither dimension is
+    // named, and the sketch stays under — it can still translate.
+    let mut sk = Sketch::new();
+    let a = sk.point(167.7, 4.83, false, "a");
+    let b = sk.point(175.3, 4.83, false, "b");
+    let c = sk.point(175.3, -35.2, false, "c");
+    let d = sk.point(167.7, -35.2, false, "d");
+    let (top, right, bottom, left) = (sk.line(a, b), sk.line(b, c), sk.line(c, d), sk.line(d, a));
+    let mut angular = Vec::new();
+    for (l1, l2) in [(top, right), (right, bottom), (bottom, left)] {
+        let pp = Constraint::two_line(CKind::Perpendicular, EntRef::line(l1), EntRef::line(l2));
+        angular.push(sk.add(pp));
+    }
+    angular.push(sk.add(Constraint::one_line(CKind::Vertical, EntRef::line(left))));
+    angular.push(sk.add(Constraint::one_line(CKind::Vertical, EntRef::line(right))));
+    angular.push(sk.add(Constraint::one_line(CKind::Horizontal, EntRef::line(bottom))));
+    angular.push(sk.add(Constraint::one_line(CKind::Horizontal, EntRef::line(top))));
+    sk.add(Constraint::distance(EntRef::point(b), EntRef::point(c), 40.0));
+    sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 25.0));
+    let res = solve(&mut sk, SolveOpts::default());
+    assert!(res.success, "{}", res.message);
+    let dg = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(dg.status, State::Under);
+    assert!(dg.over.is_empty());
+    assert_eq!(dg.geometric_dependency, 2);
+    assert_eq!(dg.n_redundant, 3);
+    let implied: std::collections::BTreeSet<u32> = dg.implied.iter().copied().collect();
+    assert_eq!(implied, angular.iter().copied().collect());
+    assert!(dg.entity_state.values().all(|&s| s != State::Over));
+}
+
+#[test]
 fn a_dependency_with_nothing_to_remove_is_not_called_over_constrained() {
     let mut sk = Sketch::new();
     let a = sk.point(0.0, 0.0, false, "a");

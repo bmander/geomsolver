@@ -80,8 +80,8 @@ pub struct Diagnosis {
     /// correction is visible; never added to anything, since the rank already carries it.  The
     /// term of art is a *shaky* framework — infinitesimally flexible, rigid.
     pub shaky: usize,
-    /// Constraints in the over-determined block, plus — when the numeric cross-check ran —
-    /// those wholly implied by a dependency that involves a dimension.  "Remove one of these."
+    /// "Remove one of these."  Where the numeric cross-check saw the dependency, the constraints
+    /// wholly implied by one that involves a dimension; otherwise the structural over-block.
     pub over: Vec<u32>,
     /// Constraints wholly implied by a dependency among pure relations — a theorem (the altitudes
     /// concur) rather than a surplus.  Consistent on every solution, nothing to fix; each could be
@@ -415,6 +415,13 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
                 .into_iter()
                 .filter(|&c| !duplicated(c))
                 .collect();
+            // W is every dependency at this configuration, so it outranks the matching here
+            // exactly as the numeric rank does below: the structural over-block is generic, and
+            // where a theorem tips the count it blames a whole block — a rectangle with three
+            // surplus perpendiculars indicts its two side lengths.  Rebuild `over` from W's
+            // reading alone; the structural seeds stand only where no W was computed.
+            over.clear();
+            over_set.clear();
             for c in removable_constraints(sk, &w, &row_c, RTOL) {
                 if !implied.contains(&c) && over_set.insert(c) {
                     over.push(c);
