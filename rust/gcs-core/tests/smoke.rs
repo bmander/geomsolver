@@ -126,6 +126,41 @@ fn a_degenerate_line_does_not_read_as_solved() {
     assert!(!res.success, "an unsatisfiable sketch reported solved: {res:?}");
 }
 
+/// DogLeg's first full Gauss–Newton step can overshoot clean out of the solution's basin and
+/// stall in a residual minimum that solves nothing — this rectangle, carrying its redundant
+/// perpendiculars and asked to widen from 7.6 to 25, does exactly that.  The one-shot solve
+/// retries the same start on the damped path and succeeds.  If the first half of this test ever
+/// fails, DogLeg has learned to solve the trap itself and the pinned failure can retire.
+#[test]
+fn an_unconverged_dogleg_retries_on_the_damped_path() {
+    let build = || {
+        let mut sk = Sketch::new();
+        let a = sk.point(167.7, 4.83, false, "a");
+        let b = sk.point(175.3, 4.83, false, "b");
+        let c = sk.point(175.3, -35.2, false, "c");
+        let d = sk.point(167.7, -35.2, false, "d");
+        let (top, right, bottom, left) =
+            (sk.line(a, b), sk.line(b, c), sk.line(c, d), sk.line(d, a));
+        for (l1, l2) in [(top, right), (right, bottom), (bottom, left)] {
+            sk.add(Constraint::two_line(CKind::Perpendicular, EntRef::line(l1), EntRef::line(l2)));
+        }
+        for l in [left, right] {
+            sk.add(Constraint::one_line(CKind::Vertical, EntRef::line(l)));
+        }
+        for l in [bottom, top] {
+            sk.add(Constraint::one_line(CKind::Horizontal, EntRef::line(l)));
+        }
+        sk.add(Constraint::distance(EntRef::point(b), EntRef::point(c), 40.0));
+        sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 25.0));
+        sk
+    };
+    let bare = solve(&mut build(), SolveOpts { retry: false, ..SolveOpts::default() });
+    assert!(!bare.success, "DogLeg now solves this on its own: {bare:?}");
+    let res = solve(&mut build(), SolveOpts::default());
+    assert!(res.success, "{}: max residual {}", res.message, res.max_residual);
+    assert_eq!(res.method, "lm");
+}
+
 /// Defence in depth for the same thing: a NaN anywhere in a residual vector has to win the max,
 /// not be skipped by `x > m`.
 #[test]

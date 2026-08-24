@@ -65,6 +65,11 @@ pub struct SolveOpts {
     /// True everywhere except where the caller owns a *pair* of systems that have to stay in
     /// step — `PullPolish`, which re-homes both of its own.
     pub rehome: bool,
+    /// Rerun an unconverged DogLeg solve with LM, from the start it had — a stall is a
+    /// stationary point, so restarting *there* learns nothing on either method.  True except in
+    /// the per-frame drag systems, whose cost per frame is bounded on purpose (and whose pull is
+    /// a compromise that rarely "converges" by the hard rows' measure anyway).
+    pub retry: bool,
 }
 
 impl Default for SolveOpts {
@@ -77,6 +82,7 @@ impl Default for SolveOpts {
             max_iter: 100,
             dense: None,
             rehome: true,
+            retry: true,
         }
     }
 }
@@ -120,23 +126,46 @@ impl System {
     }
 
     fn solve_compiled(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
-        let mut z = self.z0(sk);
+        let z0 = self.z0(sk);
+        let mut z = z0.clone();
+        let (mut res, rel) = self.minimise(&mut z, opts.method, &opts);
+        // DogLeg is a local method, and a squared kernel's full Gauss–Newton step can overshoot
+        // clean out of the solution's basin — a rectangle carrying its redundant perpendiculars,
+        // asked for its second side length, stalls in a residual minimum that is no solution.
+        // LM's damping takes the gradient path and converges; the stall itself is a stationary
+        // point, so the retry is from the start the first run had, and the better pose is kept.
+        if opts.retry && opts.method == Method::DogLeg && !res.success {
+            let mut z2 = z0;
+            let (res2, rel2) = self.minimise(&mut z2, Method::Lm, &opts);
+            if res2.success || rel2 < rel || rel.is_nan() {
+                z = z2;
+                res = res2;
+            } else {
+                let _ = self.residuals(&z); // the core's x back in step with the pose kept
+            }
+        }
+        if opts.writeback {
+            let x = self.full_x(&z);
+            sk.set_x(&x);
+        }
+        res
+    }
+
+    /// One minimisation from `z`, updated in place, measured on the hard rows: the result and
+    /// the max residual relative to each row's own units, which is what "solved" means.
+    fn minimise(&mut self, z: &mut [f64], method: Method, opts: &SolveOpts) -> (SolveResult, f64) {
         let info: Info = newton::solve_system(
             self,
-            opts.method,
+            method,
             opts.tol * self.min_hard_scale,
             1e-12,
             1e-16 * self.scale,
             opts.max_iter,
             opts.max_nfev,
             opts.dense,
-            &mut z,
+            z,
         );
-        if opts.writeback {
-            let x = self.full_x(&z);
-            sk.set_x(&x);
-        }
-        let r = self.residuals(&z);
+        let r = self.residuals(z);
         let mut n2 = 0.0;
         let mut mx = 0.0f64;
         let mut rel = 0.0f64;
@@ -158,7 +187,7 @@ impl System {
             mx = f64::NAN;
             rel = f64::NAN;
         }
-        SolveResult {
+        let res = SolveResult {
             // relative, not absolute: a radius kernel's residual is a length and a distance
             // kernel's is a length squared, so one absolute threshold cannot judge both
             success: info.status >= 0 && rel < 1e-6,
@@ -169,10 +198,11 @@ impl System {
             nfev: info.nfev,
             njev: info.njev,
             time_s: 0.0,
-            method: opts.method.as_str().to_string(),
+            method: method.as_str().to_string(),
             iterations: info.iterations,
             rank: if info.rank < 0 { None } else { Some(info.rank) },
-        }
+        };
+        (res, rel)
     }
 }
 
@@ -217,6 +247,7 @@ const NO_REHOME: SolveOpts = SolveOpts {
     max_iter: 100,
     dense: None,
     rehome: false,
+    retry: false,
 };
 
 const PULL_ITER: i32 = 4; // the pull is a soft compromise; polish makes it exact
