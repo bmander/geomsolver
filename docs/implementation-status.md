@@ -71,7 +71,9 @@ LU against numpy — on purpose, because there is no LAPACK anywhere in the proj
   logs theorem-type dependencies structural analysis cannot see.  Both are judged on the
   conditioned Jacobian (rows over `extent^(degree−1)`, columns in world length) at the one
   absolute `RANK_TOL`, so the verdict on a figure is the figure's alone and not the drawing's
-  size or another figure's dimensions.
+  size or another figure's dimensions.  First-order motions the matching cannot account for are
+  settle-tested (step along the null direction, re-solve): one that walks back is a double root
+  — a tangency at its own contact — and is `shaky`, not DOF.
 * `cgraph.rs` — the constraint graph for decomposition: point elements (coincident points
   contracted), line elements, ground (fixed points + x-axis), valency-1 edges (point–point
   distance, point–line signed distance), direction relations (all angle-type constraints as a

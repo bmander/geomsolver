@@ -35,6 +35,7 @@ pub enum CKind {
     TangentLineCircle,
     TangentCircleCircle,
     TangentArcLine,
+    TangentLineCircleAt,
     Symmetric,
     PointOnSpline,
     SplineTangentLine,
@@ -46,7 +47,7 @@ pub enum CKind {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 28] = [
+pub const ALL_KINDS: [CKind; 29] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -67,6 +68,7 @@ pub const ALL_KINDS: [CKind; 28] = [
     CKind::TangentLineCircle,
     CKind::TangentCircleCircle,
     CKind::TangentArcLine,
+    CKind::TangentLineCircleAt,
     CKind::Symmetric,
     CKind::PointOnSpline,
     CKind::SplineTangentLine,
@@ -165,6 +167,7 @@ impl CKind {
             CKind::TangentLineCircle => "TangentLineCircle",
             CKind::TangentCircleCircle => "TangentCircleCircle",
             CKind::TangentArcLine => "TangentArcLine",
+            CKind::TangentLineCircleAt => "TangentLineCircleAt",
             CKind::Symmetric => "Symmetric",
             CKind::PointOnSpline => "PointOnSpline",
             CKind::SplineTangentLine => "SplineTangentLine",
@@ -219,6 +222,15 @@ impl CKind {
                 &[("c1", S::CircleOrArc), ("c2", S::CircleOrArc), ("external", S::Bool)]
             }
             CKind::TangentArcLine => &[("arc", S::Arc), ("line", S::Line), ("at", S::Str)],
+            // tangency *at* the line's own endpoint ("p1" or "p2"), for an endpoint the user
+            // has put on the circle: the radius is perpendicular to the line there.  The pair
+            // (PointOnCircle, TangentLineCircle) says the same thing with a double root — its
+            // Jacobian is rank-deficient at every solution, and the contact "swims" along the
+            // line to first order — so the app states this instead whenever the tangency's
+            // contact is a line end that is already on the circle.
+            CKind::TangentLineCircleAt => {
+                &[("line", S::Line), ("circle", S::CircleOrArc), ("at", S::Str)]
+            }
             CKind::Symmetric => &[("p", S::Point), ("q", S::Point), ("line", S::Line)],
             CKind::PointOnSpline => &[("p", S::Point), ("spline", S::Spline), ("t", S::Param)],
             CKind::SplineTangentLine => {
@@ -237,6 +249,7 @@ impl CKind {
             (CKind::DragTarget, 3) => Arg::Num(1.0),
             (CKind::TangentCircleCircle, 2) => Arg::Bool(true),
             (CKind::TangentArcLine, 2) => Arg::Str("start".to_string()),
+            (CKind::TangentLineCircleAt, 2) => Arg::Str("p1".to_string()),
             (CKind::TangentLineCircle, 2) => Arg::Int(1),
             _ => match self.spec()[i].1 {
                 SpecKind::Int => Arg::Int(0),
@@ -329,6 +342,9 @@ impl CKind {
             CKind::TangentLineCircle => K::TangentLineCircle,
             CKind::TangentCircleCircle => K::TangentCircleCircle,
             CKind::TangentArcLine => K::TangentArcLine,
+            // the arc kernel unchanged: its columns were always a contact point, a centre and a
+            // line, and a circle's contact is the line's own endpoint
+            CKind::TangentLineCircleAt => K::TangentArcLine,
             CKind::Symmetric => K::Symmetric,
             CKind::PointOnSpline => K::PointOnSpline,
             CKind::SplineTangentLine => K::SplineTangentLine,
@@ -372,6 +388,7 @@ impl CKind {
             | CKind::TangentLineCircle
             | CKind::TangentCircleCircle
             | CKind::TangentArcLine
+            | CKind::TangentLineCircleAt
             | CKind::Symmetric
             | CKind::PointOnSpline
             | CKind::SplineTangentLine
@@ -818,6 +835,15 @@ impl Constraint {
                 };
                 let p = &sk.points[at as usize];
                 [vec![p.x, p.y], sk.point_params(a.center as usize).to_vec(), ln(1)].concat()
+            }
+            CKind::TangentLineCircleAt => {
+                let l = &sk.lines[e(0).i()];
+                let at = match &self.args[2] {
+                    Arg::Str(s) if s == "p2" => l.p2,
+                    _ => l.p1,
+                };
+                let p = &sk.points[at as usize];
+                [vec![p.x, p.y], centre(1), ln(0)].concat()
             }
             CKind::Symmetric => [pt(0), pt(1), ln(2)].concat(),
             // the curve columns are one span's control points, which is what keeps the column

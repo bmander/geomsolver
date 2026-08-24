@@ -206,6 +206,40 @@ test('a theorem-type dependency is logged', () => {
   assert.ok(d.warnings.length);
 });
 
+test('a tangency at a line end on the circle is stated regular', () => {
+  // the pair (PointOnCircle, TangentLineCircle) at one point is a double root; TangentLineCircleAt
+  // says it as one regular statement, so the numeric rank agrees with the matching
+  const sk = new Sketch();
+  const c = sk.point(0, 0, true);
+  const k = sk.circle(c, 17);
+  const ln = sk.line(sk.point(17, 0), sk.point(17, 30));
+  sk.add(new C.Radius(k, 17), new C.PointOnCircle(ln.p1, k),
+         new C.TangentLineCircleAt(ln, k, 'p1'));
+  solve(sk);
+  const d = diagnose(sk);
+  assert.equal(d.numericRank, d.structuralRank);
+  assert.equal(d.shaky, 0);
+  assert.equal(d.dof, 2);
+  assert.equal(d.warnings.length, 0);
+});
+
+test('a tangential contact stated the old way is rigid, not under', () => {
+  // each end on its circle plus the line tangent to it: rank-deficient at every solution, and
+  // the settle test counts the swimming motions out of the DOF
+  const sk = new Sketch();
+  const k1 = sk.circle(sk.point(0, 0, true), 10);
+  const k2 = sk.circle(sk.point(50, 0, true), 10);
+  const ln = sk.line(sk.point(0, 10), sk.point(50, 10));
+  sk.add(new C.Radius(k1, 10), new C.Radius(k2, 10),
+         new C.PointOnCircle(ln.p1, k1), new C.PointOnCircle(ln.p2, k2),
+         new C.TangentLineCircle(ln, k1), new C.TangentLineCircle(ln, k2));
+  solve(sk);
+  const d = diagnose(sk);
+  assert.equal(d.dof, 0);
+  assert.equal(d.status, 'well');
+  assert.equal(d.over.length + d.implied.length, 0);
+});
+
 test('minimal conflict set of an impossible triangle', () => {
   const sk = examples.impossibleTriangle();
   solve(sk);

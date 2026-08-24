@@ -30,6 +30,9 @@ export interface WitnessReport {
   dependencies: Dependency[];
   motions: Motion[];             /* null-space basis: rigid modes first, then internal DOFs */
   movable: number[];             /* free-parameter indices taking part in some motion */
+  /** First-order motions blocked at second order (a tangency at its own contact): rigid in
+   *  practice, not in `motions` and not DOF. */
+  blocked: number;
   warnings: string[];
   summary: string;
 }
@@ -51,6 +54,7 @@ interface RawReport {
   dependencies: RawDep[];
   motions: { velocity: number[]; rigid: boolean; movingParams: number[] }[];
   movable: number[];
+  blocked: number;
   warnings: string[];
   summary: string;
 }
@@ -72,6 +76,7 @@ export function reportFrom(sk: Sketch, d: RawReport): WitnessReport {
       moving: m.movingParams.map((i) => sk.paramAt(i)),
     })),
     movable: d.movable,
+    blocked: d.blocked,
     warnings: d.warnings,
     summary: d.summary,
   };

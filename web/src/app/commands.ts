@@ -279,6 +279,16 @@ function cTangent(): void {
       const ends = new Set([ln.p1, ln.p2]);
       if (ends.has(cc.start)) return view.addConstraints(new C.TangentArcLine(cc, ln, 'start'));
       if (ends.has(cc.end)) return view.addConstraints(new C.TangentArcLine(cc, ln, 'end'));
+    } else {
+      // a line end the user has already put on this circle is where the tangency will land, so
+      // it is stated *at* that point — the pair (PointOnCircle, TangentLineCircle) says the
+      // same thing as a double root, rank-deficient at every solution
+      const on = (p: Point) => view.sketch.userConstraints().some((k) =>
+        k instanceof C.PointOnCircle
+        && (k as unknown as { p: Point; circle: Circle | Arc }).p === p
+        && (k as unknown as { p: Point; circle: Circle | Arc }).circle === cc);
+      if (on(ln.p1)) return view.addConstraints(new C.TangentLineCircleAt(ln, cc, 'p1'));
+      if (on(ln.p2)) return view.addConstraints(new C.TangentLineCircleAt(ln, cc, 'p2'));
     }
     view.addConstraints(new C.TangentLineCircle(ln, cc));
   } else if (circles.length === 2 && !lines.length) {

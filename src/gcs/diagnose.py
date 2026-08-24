@@ -41,6 +41,7 @@ class Diagnosis:
     numeric_rank: int | None            # Jacobian rank at the current configuration
     numeric_skipped: bool
     geometric_dependency: int           # dependencies only the numbers can see
+    shaky: int                          # motions blocked at second order: rigid, not DOF
     over: list[Constraint]              # "remove one of these"
     implied: list[Constraint]           # implied by a relation-only theorem: consistent, no fix
     under_params: list[Param]           # what can move at the configuration diagnosed
@@ -83,6 +84,7 @@ def _from_json(sk: Sketch, d: dict[str, Any]) -> Diagnosis:
         n_params=d["nParams"], n_equations=d["nEquations"], structural_rank=d["structuralRank"],
         numeric_rank=d["numericRank"], numeric_skipped=bool(d["numericSkipped"]),
         geometric_dependency=d["geometricDependency"],
+        shaky=d["shaky"],
         over=cons(d["over"]),
         implied=cons(d["implied"]),
         under_params=prm(d["underParams"]),

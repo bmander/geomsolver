@@ -48,6 +48,9 @@ class WitnessReport:
     dependencies: list[Dependency]
     motions: list[Motion]           # rigid modes first, then internal DOFs
     movable: list[int]              # free-parameter indices taking part in some motion
+    #: First-order motions blocked at second order (a tangency at its own contact): rigid in
+    #: practice, not in `motions` and not DOF.
+    blocked: int = 0
     warnings: list[str] = field(default_factory=list)
     summary: str = ""
 
@@ -82,6 +85,7 @@ def report_from(sk: Sketch, d: dict[str, Any]) -> WitnessReport:
             for m in d["motions"]
         ],
         movable=[int(i) for i in d["movable"]],
+        blocked=int(d["blocked"]),
         warnings=list(d["warnings"]),
         summary=str(d["summary"]),
     )

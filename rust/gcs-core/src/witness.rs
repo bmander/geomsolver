@@ -53,6 +53,10 @@ pub struct WitnessReport {
     pub motions: Vec<Motion>,
     /// Free-parameter indices taking part in some motion.
     pub movable: Vec<usize>,
+    /// First-order motions the settle test showed to be blocked at second order — a tangency
+    /// evaluated at its own contact point is a double root, and its "motion" walks straight
+    /// back when the solver settles.  Not in `motions` and not DOF.
+    pub blocked: usize,
     /// The sketch Param index behind each column of a motion's velocity.
     pub params: Vec<u32>,
     pub warnings: Vec<String>,
@@ -177,6 +181,67 @@ pub fn movable_columns(n: &Mat, rtol: f64) -> Vec<usize> {
 
 /// Rank, dependencies and motions of the sketch's constraint system at a witness.
 ///
+/// How far the second-order settle test steps along a candidate motion, as a fraction of the
+/// sketch's extent: far enough that a blocked contact's quadratic residual stands well clear of
+/// the solve tolerance, small enough that a genuine motion stays in its own branch.
+const SCREEN_STEP: f64 = 1e-2;
+/// At most this many null directions are settle-tested per analysis — each test is a solve.
+/// The columns come ordered by descending singular value, and a blocked contact's sigma is
+/// set by how far the last solve stopped from the double root (~1e-9) where a genuine motion's
+/// is roundoff (~1e-16), so the blocked ones are at the front and a cap loses nothing.
+const SCREEN_MAX: usize = 8;
+
+/// Whether a first-order motion is blocked at second order: step the sketch a visible distance
+/// along `v` (a unit null direction in z) and let the solver settle.  A genuine motion settles
+/// near where it stepped; a double root — a tangency evaluated at its own contact point — has
+/// no solution out there, and the settle walks back to where it started.  Only meaningful at a
+/// solved configuration; the sketch is restored either way.
+pub fn blocked_at_second_order(sk: &mut Sketch, sys: &mut System, z0: &[f64], v: &[f64]) -> bool {
+    let h = SCREEN_STEP * sys.extent.max(1.0);
+    let x0 = sk.get_x();
+    let z: Vec<f64> = z0.iter().zip(v).map(|(a, b)| a + h * b).collect();
+    sk.set_x(&sys.full_x(&z));
+    let res = sys.solve(sk, SolveOpts { max_iter: 40, ..SolveOpts::default() });
+    let zs = sys.z0(sk);
+    let moved = zs.iter().zip(z0).map(|(a, b)| (a - b) * (a - b)).sum::<f64>().sqrt();
+    sk.set_x(&x0);
+    res.success && moved < 0.5 * h
+}
+
+/// Settle-test the leading columns of a null-space basis; the indices of the blocked ones, at
+/// most `cap` (a caller that knows how many rows the matching cannot account for stops there).
+pub fn screen_null(
+    sk: &mut Sketch,
+    sys: &mut System,
+    z0: &[f64],
+    null: &Mat,
+    cap: usize,
+) -> Vec<usize> {
+    let mut out = Vec::new();
+    for j in 0..null.cols.min(SCREEN_MAX) {
+        if out.len() == cap {
+            break;
+        }
+        let v: Vec<f64> = (0..null.rows).map(|i| null.data[i * null.cols + j]).collect();
+        if blocked_at_second_order(sk, sys, z0, &v) {
+            out.push(j);
+        }
+    }
+    out
+}
+
+/// The matrix without the given columns.
+pub fn without_columns(m: &Mat, cols: &[usize]) -> Mat {
+    let keep: Vec<usize> = (0..m.cols).filter(|c| !cols.contains(c)).collect();
+    let mut out = Mat::zeros(m.rows, keep.len());
+    for i in 0..m.rows {
+        for (c, &j) in keep.iter().enumerate() {
+            out.data[i * keep.len().max(1) + c] = m.data[i * m.cols + j];
+        }
+    }
+    out
+}
+
 /// `over_ids` are the constraints the structural analysis already put in its over-determined
 /// block; a dependency outside that set is theorem-type — invisible to the graph.
 pub fn analyze_with(
@@ -222,6 +287,7 @@ pub fn analyze_with(
             dependencies: Vec::new(),
             motions,
             movable: (0..n).collect(),
+            blocked: 0,
             params: free_params,
             warnings,
         };
@@ -278,7 +344,21 @@ pub fn analyze_with(
             deps.push(Dependency { constraint: c, implied_by: implied, theorem: !over_ids.contains(&c) });
         }
     }
-    let null = if rank == d.rank { d.n } else { null_tail(&d.vt, rank) };
+    let mut null = if rank == d.rank { d.n } else { null_tail(&d.vt, rank) };
+    // second-order screen, only where it means something: the sketch at a solved pose serving
+    // as its own witness.  A jittered witness carries the original dimensions, so "settle" has
+    // nowhere honest to settle to there.
+    let mut blocked = 0;
+    if used_current && null.cols > 0 {
+        let bs = screen_null(sk, sys, &z, &null, null.cols);
+        if !bs.is_empty() {
+            blocked = bs.len();
+            null = without_columns(&null, &bs);
+            warnings.push(format!(
+                "{blocked} first-order motion(s) blocked at second order (a tangency at its own                  contact): rigid in practice, not shown"
+            ));
+        }
+    }
     let motions = classify_motions(&null, &free_params, sk);
     let movable = movable_columns(&null, 1e-8);
     sk.set_x(&x0);
@@ -289,6 +369,7 @@ pub fn analyze_with(
         dependencies: deps,
         motions,
         movable,
+        blocked,
         params: free_params,
         warnings,
     }

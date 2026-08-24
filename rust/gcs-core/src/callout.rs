@@ -69,6 +69,7 @@ macro_rules! undrawn {
             | CKind::TangentLineCircle
             | CKind::TangentCircleCircle
             | CKind::TangentArcLine
+            | CKind::TangentLineCircleAt
             | CKind::Symmetric
             | CKind::PointOnSpline
             | CKind::SplineTangentLine

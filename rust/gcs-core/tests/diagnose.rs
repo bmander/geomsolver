@@ -525,3 +525,69 @@ fn the_verdict_does_not_depend_on_the_drawing_s_size() {
         }
     }
 }
+
+#[test]
+fn tangency_stated_at_its_contact_is_regular() {
+    // the same figure as `tangent_at_a_point_on_the_circle`, stated the new way: the endpoint on
+    // the circle, and the tangency *at* that endpoint (the radius perpendicular there).  No
+    // double root: full numeric rank, honest DOF, nothing to warn about.
+    let mut sk = Sketch::new();
+    let c = sk.point(0.0, 0.0, true, "C");
+    let circle = sk.circle(c, 17.0, "circle");
+    let p = sk.point(17.0, 0.0, false, "P");
+    let q = sk.point(17.0, 30.0, false, "Q");
+    let line = sk.line(p, q);
+    sk.add(Constraint::new(
+        CKind::Radius,
+        vec![Arg::Ent(EntRef::circle(circle)), Arg::Num(17.0)],
+    ));
+    sk.add(Constraint::point_on_circle(EntRef::point(p), EntRef::circle(circle), false));
+    sk.add(Constraint::new(
+        CKind::TangentLineCircleAt,
+        vec![Arg::Ent(EntRef::line(line)), Arg::Ent(EntRef::circle(circle)), Arg::Str("p1".into())],
+    ));
+    solve(&mut sk, SolveOpts::default());
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.numeric_rank, Some(d.structural_rank));
+    assert_eq!(d.geometric_dependency, 0);
+    assert_eq!(d.shaky, 0);
+    assert!(d.warnings.is_empty(), "{:?}", d.warnings);
+    // the contact slides around the circle, and the far end slides along the line
+    assert_eq!(d.dof, 2);
+}
+
+/// Two fixed circles and a belt segment stated the degenerate way: each end on its circle, the
+/// line tangent to each circle — every contact a double root, rank-deficient at every solution.
+fn belt_over_two_circles() -> Sketch {
+    let mut sk = Sketch::new();
+    let c1 = sk.point(0.0, 0.0, true, "c1");
+    let c2 = sk.point(50.0, 0.0, true, "c2");
+    let k1 = sk.circle(c1, 10.0, "k1");
+    let k2 = sk.circle(c2, 10.0, "k2");
+    let p = sk.point(0.0, 10.0, false, "p");
+    let q = sk.point(50.0, 10.0, false, "q");
+    let line = sk.line(p, q);
+    sk.add(Constraint::new(CKind::Radius, vec![Arg::Ent(EntRef::circle(k1)), Arg::Num(10.0)]));
+    sk.add(Constraint::new(CKind::Radius, vec![Arg::Ent(EntRef::circle(k2)), Arg::Num(10.0)]));
+    sk.add(Constraint::point_on_circle(EntRef::point(p), EntRef::circle(k1), false));
+    sk.add(Constraint::point_on_circle(EntRef::point(q), EntRef::circle(k2), false));
+    let t1 = Constraint::tangent_line_circle(&sk, EntRef::line(line), EntRef::circle(k1), None);
+    sk.add(t1);
+    let t2 = Constraint::tangent_line_circle(&sk, EntRef::line(line), EntRef::circle(k2), None);
+    sk.add(t2);
+    sk
+}
+
+#[test]
+fn a_tangential_contact_is_rigid_not_under() {
+    // each first-order "motion" is an endpoint swimming along the line — blocked at second
+    // order, so the settle test counts it out and the sketch reads as what it is: rigid
+    let mut sk = belt_over_two_circles();
+    solve(&mut sk, SolveOpts::default());
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.dof, 0, "shaky={} numeric={:?} structural={}", d.shaky, d.numeric_rank, d.structural_rank);
+    assert_eq!(d.status, State::Well);
+    assert!(d.over.is_empty() && d.implied.is_empty());
+    assert_eq!(d.geometric_dependency, 0);
+    assert!(d.under_params.is_empty(), "{:?}", d.under_params);
+}

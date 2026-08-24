@@ -21,7 +21,7 @@ use crate::model::{EntRef, Sketch};
 use crate::newton::Method;
 use crate::solve::SolveOpts;
 use crate::system::System;
-use crate::witness::{analyze_with, movable_columns, WitnessReport};
+use crate::witness::{analyze_with, movable_columns, screen_null, without_columns, WitnessReport};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -72,6 +72,11 @@ pub struct Diagnosis {
     pub numeric_skipped: bool,
     /// How many dependencies only the numbers can see (0 when the check did not run).
     pub geometric_dependency: usize,
+    /// First-order motions blocked at second order — a tangency evaluated at its own contact
+    /// point (a double root: the contact "swims" along the line to first order and is pulled
+    /// back at second).  Counted out of the DOF: the sketch is rigid there in practice.  The
+    /// term of art is a *shaky* framework — infinitesimally flexible, rigid.
+    pub shaky: usize,
     /// Constraints in the over-determined block, plus — when the numeric cross-check ran —
     /// those wholly implied by a dependency that involves a dimension.  "Remove one of these."
     pub over: Vec<u32>,
@@ -129,6 +134,12 @@ pub fn summary(d: &Diagnosis) -> String {
             d.numeric_rank.unwrap_or(0),
             d.structural_rank,
             d.geometric_dependency
+        ));
+    }
+    if d.shaky > 0 {
+        parts.push(format!(
+            "{} motion(s) blocked at second order (a tangency at its contact) — not DOF",
+            d.shaky
         ));
     }
     if !d.implied.is_empty() {
@@ -310,6 +321,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
 
     // -- numeric cross-check: rank and the parameters that can actually move --
     let mut numeric_rank: Option<usize> = None;
+    let mut shaky = 0usize;
     let want_numeric = opts.numeric.unwrap_or(n_cols <= opts.numeric_max);
     let numeric_skipped = opts.numeric.is_none() && !want_numeric;
     if numeric_skipped {
@@ -323,15 +335,31 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         let movable: Vec<usize>;
         match &wit {
             Some(w) if w.used_current => {
-                numeric_rank = Some(w.numeric_rank); // same J at the same x
+                numeric_rank = Some(w.numeric_rank); // same J at the same x, screened already
                 movable = w.movable.clone();
+                shaky = w.blocked;
             }
             _ => {
                 let z = sys.z0(sk);
                 let rn = sys.conditioned(&z).rank_and_nullspace(RANK_TOL);
                 if rn.converged {
-                    numeric_rank = Some(n_cols - rn.n.cols);
-                    movable = movable_columns(&rn.n, RTOL);
+                    let nr = n_cols - rn.n.cols;
+                    numeric_rank = Some(nr);
+                    let mut null = rn.n;
+                    // where the Jacobian claims motions the matching cannot account for, settle-
+                    // test them: a tangency at its own contact is a double root whose "motion"
+                    // walks back.  Only at a solved pose (a settle from an unsolved one measures
+                    // the solve, not the geometry), and never more tests than the discrepancy —
+                    // a motion the matching also sees is genuine and not suspect.
+                    let deficit = dm.rank.saturating_sub(nr);
+                    if deficit > 0 && sys.max_relative_residual(&z) <= 1e-6 {
+                        let bs = screen_null(sk, sys, &z, &null, deficit);
+                        if !bs.is_empty() {
+                            shaky = bs.len();
+                            null = without_columns(&null, &bs);
+                        }
+                    }
+                    movable = movable_columns(&null, RTOL);
                 } else {
                     // no rank at all, rather than the zero a failed SVD leaves behind — which
                     // reads as "every constraint is redundant"
@@ -350,7 +378,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         if numeric_rank.is_some() {
             under_params = movable.iter().map(|&j| free_params[j]).collect();
         }
-        if numeric_rank.is_some_and(|r| r < dm.rank) {
+        if numeric_rank.is_some_and(|r| r + shaky < dm.rank) {
             // ...and name the constraints worth removing, or the report would say
             // "over-constrained" with nothing to point at.  One extra SVD, only on this path.
             let z = sys.z0(sk);
@@ -390,7 +418,13 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
                 "structural rank {} but numeric rank {}: a dependency the graph cannot see \
                  (theorem-induced or degenerate configuration) — Stage 4",
                 dm.rank,
-                numeric_rank.unwrap()
+                numeric_rank.unwrap() + shaky
+            ));
+        }
+        if shaky > 0 {
+            warnings.push(format!(
+                "{shaky} first-order motion(s) blocked at second order (a tangency at its own \
+                 contact): rigid in practice, not counted in the DOF"
             ));
         }
     }
@@ -463,7 +497,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
 
     // the structural matching is a *generic* upper bound on the rank; where the numeric
     // cross-check ran it is the truth at this configuration, and it is what decides what moves
-    let effective_rank = numeric_rank.unwrap_or(dm.rank);
+    let effective_rank = numeric_rank.map(|r| (r + shaky).min(dm.rank)).unwrap_or(dm.rank);
     let dof = n_cols as i64 - effective_rank as i64;
     let structural_dof = n_cols as i64 - dm.rank as i64;
     let n_redundant = adj.len() as i64 - effective_rank as i64;
@@ -490,8 +524,9 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         numeric_rank,
         numeric_skipped,
         geometric_dependency: numeric_rank
-            .map(|nr| dm.rank.saturating_sub(nr))
+            .map(|nr| dm.rank.saturating_sub(nr + shaky))
             .unwrap_or(0),
+        shaky,
         over,
         implied,
         under_params,

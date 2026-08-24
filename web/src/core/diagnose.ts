@@ -29,6 +29,7 @@ export interface Diagnosis {
   numericRank: number | null;      /* Jacobian rank at the current configuration */
   numericSkipped: boolean;
   geometricDependency: number;     /* dependencies only the numbers can see */
+  shaky: number;                   /* motions blocked at second order: rigid, not DOF */
   over: Constraint[];              /* "remove one of these" */
   implied: Constraint[];           /* implied by a relation-only theorem: consistent, no fix */
   underParams: Param[];            /* what can move at the configuration diagnosed */
@@ -70,6 +71,7 @@ interface RawDiagnosis {
   numericRank: number | null;
   numericSkipped: boolean;
   geometricDependency: number;
+  shaky: number;
   over: number[];
   implied: number[];
   underParams: number[];
@@ -105,6 +107,7 @@ function fromRaw(sk: Sketch, d: RawDiagnosis): Diagnosis {
     numericRank: d.numericRank,
     numericSkipped: d.numericSkipped,
     geometricDependency: d.geometricDependency,
+    shaky: d.shaky,
     over: cons(d.over),
     implied: cons(d.implied),
     underParams: prm(d.underParams),

@@ -148,6 +148,21 @@ Conventions:
   dependent.  `Conditioned` is the only matrix the rank routines will take, and its methods
   take only an absolute tolerance, so the comparison cannot be written the other way.
   `jacobian_dense` stays the raw `∂r/∂z` for the solvers and the finite-difference checks.
+- A tangency whose contact is a point the drawing already holds to the curve is stated *at*
+  that point, or it is a double root: `PointOnCircle(p, C)` + `TangentLineCircle(L, C)` with p
+  an endpoint of L say "tangent at p" with a Jacobian that is rank-deficient at *every*
+  solution (the contact "swims" along the line to first order, blocked at second), which no
+  rank tolerance can read correctly.  `TangentLineCircleAt(line, circle, at)` — the
+  `tangent_arc_line` kernel reused, the radius perpendicular to the line at the named endpoint
+  — is regular, and `commands::cTangent` states it whenever the picked line has an end already
+  on the circle, exactly as it already did for an arc's own endpoints.  The on-circle stays the
+  user's constraint; the pair is the statement.  For the degenerate pairs that still arise (an
+  old document, a tangency applied before the endpoint was snapped on), the diagnosis and the
+  witness settle-test the surplus motions: step along a null direction, let the solver settle,
+  and a motion that walks back (a double root has no solution out there) is `shaky` — counted
+  out of the DOF, reported as "blocked at second order", never painted as under- or
+  over-constrained.  The screen runs only for motions the matching cannot account for, only at
+  a solved pose, and never more than `witness::SCREEN_MAX` solves.
 - `Horizontal`/`Vertical` level a line; `HorizontalPoints`/`VerticalPoints` level a *pair of
   points*, which is the same statement about the segment between them and needs no line drawn
   there.  They reuse the line kernels unchanged — those four columns were always two points'

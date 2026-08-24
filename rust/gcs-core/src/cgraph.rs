@@ -538,6 +538,41 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
                 let phi = branch(&line_normal(sk, ln), &n_r, std::f64::consts::FRAC_PI_2);
                 g.dirs.push(DirRelation { a, b: vr, phi, source: c.id });
             }
+            CKind::TangentLineCircleAt if known(&g, c.args[1].ent()).is_some() => {
+                // the arc rule for a full circle: tangent at the line's own endpoint p ⟺ the
+                // radius c−p is perpendicular to the line (p on the line is the endpoint itself,
+                // |c − p| = r is the user's PointOnCircle)
+                let l = &sk.lines[c.args[0].ent().i()];
+                let at = match &c.args[2] {
+                    crate::constraints::Arg::Str(s) if s == "p2" => l.p2,
+                    _ => l.p1,
+                } as usize;
+                let centre_pt = sk.round_center(c.args[1].ent());
+                let cen = g.point_el(centre_pt);
+                let pe = g.point_el(at);
+                let vr = g.virtual_line(cen, pe);
+                g.edges.push(Edge {
+                    kind: EdgeKind::Pl,
+                    a: cen,
+                    b: vr,
+                    value: EdgeVal::Zero,
+                    source: None,
+                });
+                g.edges.push(Edge {
+                    kind: EdgeKind::Pl,
+                    a: pe,
+                    b: vr,
+                    value: EdgeVal::Zero,
+                    source: None,
+                });
+                let (cx, cy) = sk.point_xy(centre_pt);
+                let (px, py) = sk.point_xy(at);
+                let n_r = normal_of(cx, cy, px, py);
+                let ln = c.args[0].ent().i();
+                let a = g.line_el(ln);
+                let phi = branch(&line_normal(sk, ln), &n_r, std::f64::consts::FRAC_PI_2);
+                g.dirs.push(DirRelation { a, b: vr, phi, source: c.id });
+            }
             CKind::EqualRadius | CKind::AnnularDistance
                 if known(&g, c.args[0].ent()).is_some() =>
             {
