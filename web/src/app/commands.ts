@@ -4,15 +4,15 @@
 import * as C from '../core/constraints.js';
 import { Constraint, ENTITY_KINDS } from '../core/constraints.js';
 import {
-  Arc, Circle, Line, Point, Spline, angleBetween, distanceBetween, signedPointToLine,
+  Arc, Circle, Ellipse, Line, Point, Spline, angleBetween, distanceBetween, signedPointToLine,
 } from '../core/model.js';
 import { view } from './shell.js';
 import { ToolbarButton, toast } from './ui.js';
 import type { DimAlt } from './view.js';
 
 /* constraints whose arguments are just entities:
- * (label, class, points, lines, circles/arcs, shortcut) */
-type Simple = [string, C.ConstraintCtor, number, number, number, string?, number?];
+ * (label, class, points, lines, circles/arcs, shortcut, splines, ellipses) */
+type Simple = [string, C.ConstraintCtor, number, number, number, string?, number?, number?];
 const SIMPLE: Simple[] = [
   ['Parallel', C.Parallel, 0, 2, 0, 'b'],
   ['Perpendicular', C.Perpendicular, 0, 2, 0, '⇧l'],
@@ -46,6 +46,7 @@ const INCIDENCE: Simple[] = [
   // a curve is one more row, not a branch: `applySimple` fills the spec's slots by kind, and
   // the contact's hidden parameter is not an entity slot so it is left for the core to seed
   ['On curve', C.PointOnSpline, 1, 0, 0, undefined, 1],
+  ['On ellipse', C.PointOnEllipse, 1, 0, 0, undefined, 0, 1],
 ];
 /* The constraints bar, in an order that interleaves the dimensioned constraints with the
  * entity-only ones.  `key` is both the chip printed on the button and the token the keyboard
@@ -53,7 +54,7 @@ const INCIDENCE: Simple[] = [
  * cannot drift apart. */
 export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
   { label: 'Coincident', key: 'i', onClick: () => cCoincident(),
-    title: 'Two points meet · a point on a line · a point on a circle, arc or curve' },
+    title: 'Two points meet · a point on a line · a point on a circle, arc, curve or ellipse' },
   { label: 'Dimension', key: 'd', onClick: () => cDimension(),
     title: 'Put a number on the selection, then place it and type · a length, a radius, an '
          + 'offset, a ring · on two points, above them is the run and beside them the rise '
@@ -65,8 +66,8 @@ export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
   ...SIMPLE.map((c): ToolbarButton => ({ label: c[0], key: c[5], onClick: () => applySimple(c) })),
   { label: 'Equal', key: 'e', onClick: () => cEqual() },
   { label: 'Tangent', key: 't', onClick: () => cTangent(),
-    title: 'A line or a circle tangent to a circle/arc · a line tangent to a curve '
-         + '· a circle taking a curve\'s own radius where it touches' },
+    title: 'A line or a circle tangent to a circle/arc · a line tangent to a curve or ellipse '
+         + '· a circle taking a curve\'s or an ellipse\'s own radius where it touches' },
   { label: 'Symmetric', key: '⇧q', onClick: () => cSymmetric() },
   { label: 'Fix', key: 'f', onClick: () => view.toggleFixSelected() },
 ];
@@ -75,6 +76,7 @@ export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
 
 function sel(): {
   pts: Point[]; lines: Line[]; circles: (Circle | Arc)[]; splines: Spline[];
+  ellipses: Ellipse[];
 } {
   const s = view.selected;
   return {
@@ -82,6 +84,7 @@ function sel(): {
     lines: s.filter((e): e is Line => e instanceof Line),
     circles: s.filter((e): e is Circle | Arc => e instanceof Circle || e instanceof Arc),
     splines: s.filter((e): e is Spline => e instanceof Spline),
+    ellipses: s.filter((e): e is Ellipse => e instanceof Ellipse),
   };
 }
 
@@ -92,22 +95,24 @@ function need(ok: boolean, what: string): boolean {
 
 /** Generic applier: checks the selection has the required counts and passes the entities in
  *  spec order.  Single-line constraints (Horizontal/Vertical) apply to every selected line. */
-function applySimple([, cls, nPts, nLines, nCirc, , nSpl = 0]: Simple): void {
-  const { pts, lines, circles, splines } = sel();
+function applySimple([, cls, nPts, nLines, nCirc, , nSpl = 0, nEll = 0]: Simple): void {
+  const { pts, lines, circles, splines, ellipses } = sel();
   const perLine = nPts === 0 && nLines === 1 && nCirc === 0;
   const ok = pts.length === nPts && circles.length === nCirc && splines.length === nSpl
+    && ellipses.length === nEll
     && (perLine ? lines.length >= 1 : lines.length === nLines);
   const what = ([[nPts, 'point(s)'], [nLines, 'line(s)'], [nCirc, 'circle(s)/arc(s)'],
-                 [nSpl, 'curve(s)']] as const)
+                 [nSpl, 'curve(s)'], [nEll, 'ellipse(s)']] as const)
     .filter(([n]) => n).map(([n, w]) => `${n} ${w}`).join(', ');
   if (!need(ok, what)) return;
   const made = (perLine ? lines : [null]).map((ln) => {
     const args: unknown[] = [];
-    let pi = 0, li = 0, ci = 0, si = 0;
+    let pi = 0, li = 0, ci = 0, si = 0, ei = 0;
     for (const [, kind] of cls.spec) {
       if (kind === 'point') args.push(pts[pi++]);
       else if (kind === 'line') args.push(perLine ? ln : lines[li++]);
       else if (kind === 'spline') args.push(splines[si++]);
+      else if (kind === 'ellipse') args.push(ellipses[ei++]);
       else if (ENTITY_KINDS.has(kind)) args.push(circles[ci++]);
       // a `param` slot is not an entity: it is left out, and the core seeds it off the geometry
     }
@@ -118,11 +123,12 @@ function applySimple([, cls, nPts, nLines, nCirc, , nSpl = 0]: Simple): void {
 
 /** The single incidence button: read the selection and pick the constraint that fits it. */
 function cCoincident(): void {
-  const { pts, lines, circles, splines } = sel();
-  const hit = INCIDENCE.find(([, , nPts, nLines, nCirc, , nSpl = 0]) =>
+  const { pts, lines, circles, splines, ellipses } = sel();
+  const hit = INCIDENCE.find(([, , nPts, nLines, nCirc, , nSpl = 0, nEll = 0]) =>
     pts.length === nPts && lines.length === nLines && circles.length === nCirc
-    && splines.length === nSpl);
-  if (!need(!!hit, 'two points, a point and a line, or a point and a circle/arc/curve')) return;
+    && splines.length === nSpl && ellipses.length === nEll);
+  if (!need(!!hit,
+            'two points, a point and a line, or a point and a circle/arc/curve/ellipse')) return;
   applySimple(hit as Simple);
 }
 
@@ -256,21 +262,27 @@ function cSymmetric(): void {
 }
 
 function cTangent(): void {
-  const { lines, circles, splines } = sel();
-  if (lines.length === 1 && splines.length === 1 && !circles.length) {
-    // one constraint owning one parameter, not two: split in half it would be a point on the
-    // curve and a direction somewhere else on it
-    view.addConstraints(new C.SplineTangentLine(splines[0], lines[0]));
-    return;
-  }
-  if (circles.length === 1 && splines.length === 1 && !lines.length) {
-    // a circle against a curve says more than a line does: not just the direction there but how
-    // hard it turns, so the circle becomes the curve's own radius — its osculating circle
-    view.addConstraints(new C.SplineCurvature(splines[0], circles[0]));
-    return;
-  }
-  if (splines.length) {
-    need(false, 'a curve and either a line or a circle');
+  const { lines, circles, splines, ellipses } = sel();
+  /* The two parametric families take the same pair of contacts, for the same reasons, so they
+   * are one table and not two blocks: against a line it is a tangency — one constraint owning
+   * one parameter, since split in half it would be a point on the rim and a direction somewhere
+   * else on it — and against a circle it is a curvature, which says not just the direction there
+   * but how hard it turns, so the circle becomes that rim's own radius where it touches. */
+  const RIMS: [Spline[] | Ellipse[], C.ConstraintCtor, C.ConstraintCtor, string][] = [
+    [splines, C.SplineTangentLine, C.SplineCurvature, 'a curve'],
+    [ellipses, C.EllipseTangentLine, C.EllipseCurvature, 'an ellipse'],
+  ];
+  const picked = RIMS.filter(([rims]) => rims.length);
+  if (picked.length) {
+    const [rims, tangent, curvature, what] = picked[0];
+    const make = (cls: C.ConstraintCtor, other: Line | Circle | Arc): void => view.addConstraints(
+      new (cls as unknown as new (...a: unknown[]) => Constraint)(rims[0], other));
+    // exactly one rim, and exactly one thing for it to touch
+    if (picked.length === 1 && rims.length === 1) {
+      if (lines.length === 1 && !circles.length) return make(tangent, lines[0]);
+      if (circles.length === 1 && !lines.length) return make(curvature, circles[0]);
+    }
+    need(false, `${what} and either a line or a circle`);
     return;
   }
   if (lines.length === 1 && circles.length === 1) {

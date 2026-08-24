@@ -48,9 +48,12 @@ pub enum K {
     AnnularDistanceFree,
     HorizontalDistanceFree,
     VerticalDistanceFree,
+    PointOnEllipse,
+    EllipseTangentLine,
+    EllipseCurvature,
 }
 
-pub const N_KERNELS: usize = 34;
+pub const N_KERNELS: usize = 37;
 
 pub struct Kernel {
     pub name: &'static str,
@@ -910,6 +913,220 @@ fn spline_curvature_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
+/* -- ellipse --------------------------------------------------------------- */
+/*
+ * The three ellipse contacts.  All are written against `E(t) = c + cos t·u + sin t·b·perp(u)/|u|`
+ * with `u = m − c` — the rim as a parametric curve, the same shape as a spline contact: each
+ * carries its own parameter as one new unknown, so a point on the rim is net one equation, a
+ * tangency net one, an osculating circle net two.  The parameter is periodic, so unlike a spline
+ * contact none of them needs a clamp or addresses a span, and their six ellipse columns
+ * (t, cx, cy, mx, my, b) never move at compile time.  `line_len`'s floor keeps a collapsed axis
+ * a large finite residual rather than a NaN that reads as "solved".
+ */
+
+/// One ellipse evaluated at t: E, E' and E''.
+///
+/// The parametrization itself is `ellipse::Geom`'s and not written again here — the pick test,
+/// the bounds and these kernels all ask the same object, so the rim the solver drives a contact
+/// onto is the rim the drawing draws.  `t` and the five numbers are at `v[o..o+6]`.
+fn ellipse_at(v: &[f64], o: usize) -> (crate::ellipse::Geom, (f64, f64), (f64, f64), (f64, f64)) {
+    let g = crate::ellipse::Geom::new(v[o + 1], v[o + 2], v[o + 3], v[o + 4], v[o + 5]);
+    let (d1, d2) = g.derivs(v[o]);
+    (g, g.point_at(v[o]), d1, d2)
+}
+
+/// The same, plus how E, E' and E'' move with each of the six columns — what a Jacobian needs
+/// and a residual does not.  Kept apart from `ellipse_at` because an ellipse is not linear in
+/// its five numbers, so this table is real extra arithmetic: a rejected trust-region step
+/// evaluates residuals without ever asking for it.
+struct EllFrame {
+    e: (f64, f64),
+    d1: (f64, f64),
+    d2: (f64, f64),
+    /// per column, in column order: (∂E, ∂E', ∂E'')
+    dq: [[(f64, f64); 3]; 6],
+}
+
+fn ellipse_frame(v: &[f64], o: usize) -> EllFrame {
+    let (g, e, d1, d2) = ellipse_at(v, o);
+    let (s, co) = v[o].sin_cos();
+    let (nx, ny) = g.normal();
+    let (ux, uy, b, l) = (g.ux, g.uy, g.b, g.a);
+    // how the unit normal moves as the axis endpoints do: the quotient rule, with dl = ±u/l
+    let l3 = l * l * l;
+    let (uxx, uxy, uyy) = (ux * ux / l3, ux * uy / l3, uy * uy / l3);
+    let dn = [(-uxy, -uyy), (uxx, uxy), (uxy, uyy), (-uxx, -uxy)]; // per cx, cy, mx, my
+    let du = [(-1.0, 0.0), (0.0, -1.0), (1.0, 0.0), (0.0, 1.0)];
+    let dc = [(1.0, 0.0), (0.0, 1.0), (0.0, 0.0), (0.0, 0.0)];
+    let mut dq = [[(0.0, 0.0); 3]; 6];
+    // t: the derivatives shift along — E‴ is −E′, since E − c turns as a whole
+    dq[0] = [d1, d2, (-d1.0, -d1.1)];
+    for k in 0..4 {
+        let ((dux, duy), (dnx, dny), (dcx, dcy)) = (du[k], dn[k], dc[k]);
+        dq[1 + k] = [
+            (dcx + co * dux + b * s * dnx, dcy + co * duy + b * s * dny),
+            (-s * dux + b * co * dnx, -s * duy + b * co * dny),
+            (-co * dux - b * s * dnx, -co * duy - b * s * dny),
+        ];
+    }
+    dq[5] = [(s * nx, s * ny), (co * nx, co * ny), (-s * nx, -s * ny)]; // b
+    EllFrame { e, d1, d2, dq }
+}
+
+/// Columns of `point_on_ellipse`: (px, py, t, cx, cy, mx, my, b).
+pub const N_PAR_ON_ELLIPSE: usize = 8;
+
+/// `r = p − E(t)`: two residuals against one new unknown, the net one equation a point on a rim
+/// is worth, and a signed displacement, so degree 1.
+fn point_on_ellipse_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_ON_ELLIPSE * i;
+        let (_, e, _, _) = ellipse_at(v, o + 2);
+        r[2 * i] = v[o] - e.0;
+        r[2 * i + 1] = v[o + 1] - e.1;
+    }
+}
+
+fn point_on_ellipse_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_ON_ELLIPSE * i;
+        let jo = 2 * N_PAR_ON_ELLIPSE * i;
+        let row1 = jo + N_PAR_ON_ELLIPSE;
+        let f = ellipse_frame(v, o + 2);
+        for t in 0..2 * N_PAR_ON_ELLIPSE {
+            j[jo + t] = 0.0;
+        }
+        j[jo] = 1.0;
+        j[row1 + 1] = 1.0;
+        for k in 0..6 {
+            j[jo + 2 + k] = -f.dq[k][0].0;
+            j[row1 + 2 + k] = -f.dq[k][0].1;
+        }
+    }
+}
+
+/// Columns of `ellipse_tangent_line`: (t, cx, cy, mx, my, b, ax, ay, bx, by).
+pub const N_PAR_ELLIPSE_LINE: usize = 10;
+
+/// Tangency of the rim and an infinite line, as one constraint owning one parameter: the rim
+/// point at t lies on the line, and the rim's direction there is the line's.  The same shape as
+/// `spline_tangent_line`, for the same reasons: split in half it would be two contacts tangent
+/// only if something else made their parameters agree, and both rows are divided by the line's
+/// length so they are signed lengths (degree 1) and a collapsed line cannot satisfy them.
+fn ellipse_tangent_line_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_ELLIPSE_LINE * i;
+        let l = o + 6;
+        let (_, e, d1, _) = ellipse_at(v, o);
+        let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
+        let (wx, wy) = (e.0 - v[l], e.1 - v[l + 1]);
+        let len = line_len(dx, dy);
+        r[2 * i] = (dx * wy - dy * wx) / len;
+        r[2 * i + 1] = (d1.0 * dy - d1.1 * dx) / len;
+    }
+}
+
+fn ellipse_tangent_line_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    let mut dc = [0.0f64; N_PAR_ELLIPSE_LINE];
+    let mut dl = [0.0f64; N_PAR_ELLIPSE_LINE];
+    for i in 0..n {
+        let o = N_PAR_ELLIPSE_LINE * i;
+        let l = o + 6;
+        let jo = 2 * N_PAR_ELLIPSE_LINE * i;
+        let row1 = jo + N_PAR_ELLIPSE_LINE;
+        let f = ellipse_frame(v, o);
+        let (tx, ty) = f.d1;
+        let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
+        let (wx, wy) = (f.e.0 - v[l], f.e.1 - v[l + 1]);
+        let len = line_len(dx, dy);
+        // |b - a| moves with the line's endpoints only
+        for t in 0..N_PAR_ELLIPSE_LINE {
+            dl[t] = 0.0;
+        }
+        dl[6] = -dx / len;
+        dl[7] = -dy / len;
+        dl[8] = dx / len;
+        dl[9] = dy / len;
+
+        // row 0: cross(b - a, E(t) - a)
+        for k in 0..6 {
+            dc[k] = dx * f.dq[k][0].1 - dy * f.dq[k][0].0;
+        }
+        dc[6] = dy - wy;
+        dc[7] = wx - dx;
+        dc[8] = wy;
+        dc[9] = -wx;
+        ratio_jac(&dc, &dl, len, dx * wy - dy * wx, &mut j[jo..jo + N_PAR_ELLIPSE_LINE]);
+
+        // row 1: cross(E'(t), b - a)
+        for k in 0..6 {
+            dc[k] = f.dq[k][1].0 * dy - f.dq[k][1].1 * dx;
+        }
+        dc[6] = ty;
+        dc[7] = -tx;
+        dc[8] = -ty;
+        dc[9] = tx;
+        ratio_jac(&dc, &dl, len, tx * dy - ty * dx, &mut j[row1..row1 + N_PAR_ELLIPSE_LINE]);
+    }
+}
+
+/// Columns of `ellipse_curvature`: (t, cx, cy, mx, my, b, ox, oy, r).
+pub const N_PAR_ELLIPSE_CURVE: usize = 9;
+
+/// A circle that osculates the rim, written exactly as `spline_curvature` writes it: "the centre
+/// is the centre of curvature", `E + ((E'·E')/cross(E', E''))·perp(E')`, which says touching,
+/// tangent and equally-bent all at once and leaves no branch to choose.  Three residuals against
+/// one new unknown: net two, and all three signed lengths, so degree 1.  The rim's turning
+/// `cross(E', E'')` is exactly b·|u| — never zero on a drawn ellipse — but `turn`'s floor stays,
+/// against an axis or a minor radius the solver has collapsed on the way.
+fn ellipse_curvature_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_ELLIPSE_CURVE * i;
+        let c = o + 6;
+        let (_, e, d1, d2) = ellipse_at(v, o);
+        let (tx, ty) = d1;
+        let (dx, dy) = (v[c] - e.0, v[c + 1] - e.1);
+        let g = (tx * tx + ty * ty) / turn(tx * d2.1 - ty * d2.0);
+        r[3 * i] = dx + g * ty;
+        r[3 * i + 1] = dy - g * tx;
+        r[3 * i + 2] = line_len(dx, dy) - v[c + 2];
+    }
+}
+
+fn ellipse_curvature_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_ELLIPSE_CURVE * i;
+        let c = o + 6;
+        let jo = 3 * N_PAR_ELLIPSE_CURVE * i;
+        let (row1, row2) = (jo + N_PAR_ELLIPSE_CURVE, jo + 2 * N_PAR_ELLIPSE_CURVE);
+        let f = ellipse_frame(v, o);
+        let (tx, ty) = f.d1;
+        let (sx, sy) = f.d2;
+        let (dx, dy) = (v[c] - f.e.0, v[c + 1] - f.e.1);
+        let q = tx * tx + ty * ty;
+        let kk = turn(tx * sy - ty * sx);
+        let g = q / kk;
+        let len = line_len(dx, dy);
+        for s in 0..3 * N_PAR_ELLIPSE_CURVE {
+            j[jo + s] = 0.0;
+        }
+        for k in 0..6 {
+            let [de, dd1, dd2] = f.dq[k];
+            let dq = 2.0 * (tx * dd1.0 + ty * dd1.1);
+            let dkk = dd1.0 * sy - dd1.1 * sx + tx * dd2.1 - ty * dd2.0;
+            let dg = (dq * kk - q * dkk) / (kk * kk);
+            j[jo + k] = -de.0 + dg * ty + g * dd1.1;
+            j[row1 + k] = -de.1 - dg * tx - g * dd1.0;
+            j[row2 + k] = (dx * -de.0 + dy * -de.1) / len;
+        }
+        j[jo + 6] = 1.0;
+        j[row1 + 7] = 1.0;
+        j[row2 + 6] = dx / len;
+        j[row2 + 7] = dy / len;
+        j[row2 + 8] = -1.0;
+    }
+}
+
 /* -- dimensions written in terms of a free variable ------------------------ */
 /*
  * A dimension whose number is not stated but *shared* — `a` on two of them, `a / 2` on a third —
@@ -1105,6 +1322,9 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "annular_distance_free", n_res: 1, n_par: 3, degree: 1, n_const: 2, res: annular_distance_free_res, jac: annular_distance_free_jac, const_jac: None },
     Kernel { name: "horizontal_distance_free", n_res: 1, n_par: 5, degree: 1, n_const: 2, res: horizontal_distance_free_res, jac: horizontal_distance_free_jac, const_jac: None },
     Kernel { name: "vertical_distance_free", n_res: 1, n_par: 5, degree: 1, n_const: 2, res: vertical_distance_free_res, jac: vertical_distance_free_jac, const_jac: None },
+    Kernel { name: "point_on_ellipse", n_res: 2, n_par: N_PAR_ON_ELLIPSE, degree: 1, n_const: 0, res: point_on_ellipse_res, jac: point_on_ellipse_jac, const_jac: None },
+    Kernel { name: "ellipse_tangent_line", n_res: 2, n_par: N_PAR_ELLIPSE_LINE, degree: 1, n_const: 0, res: ellipse_tangent_line_res, jac: ellipse_tangent_line_jac, const_jac: None },
+    Kernel { name: "ellipse_curvature", n_res: 3, n_par: N_PAR_ELLIPSE_CURVE, degree: 1, n_const: 0, res: ellipse_curvature_res, jac: ellipse_curvature_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

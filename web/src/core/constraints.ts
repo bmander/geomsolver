@@ -13,11 +13,11 @@ import {
 import { core, lastError, onInit, takeJson, takeStr, withBuf, withJson, withStr } from './wasm.js';
 
 export type SpecKind =
-  | 'point' | 'line' | 'circle' | 'arc' | 'circle_or_arc' | 'spline'
+  | 'point' | 'line' | 'circle' | 'arc' | 'circle_or_arc' | 'spline' | 'ellipse'
   | 'length' | 'angle' | 'float' | 'int' | 'str' | 'bool' | 'param';
 
 export const ENTITY_KINDS: ReadonlySet<string> =
-  new Set(['point', 'line', 'circle', 'arc', 'circle_or_arc', 'spline']);
+  new Set(['point', 'line', 'circle', 'arc', 'circle_or_arc', 'spline', 'ellipse']);
 export const DIMENSION_KINDS: ReadonlySet<string> = new Set(['length', 'angle']);
 /** A hidden unknown the constraint owns — where along a curve a contact sits.  It reads as the
  *  number the solver currently has it at and cannot be written: nobody states a curve
@@ -362,7 +362,8 @@ export function initTypes(): Record<string, ConstraintCtor> {
     Angle, ParallelDistance, EqualLength, PointOnLine, PointLineDistance, PointOnCircle, Radius,
     EqualRadius, AnnularDistance, TangentLineCircle, TangentCircleCircle, TangentArcLine,
     TangentLineCircleAt, Symmetric, PointOnSpline, SplineTangentLine, SplineCurvature,
-    HorizontalPoints, VerticalPoints, HorizontalDistance, VerticalDistance,
+    HorizontalPoints, VerticalPoints, HorizontalDistance, VerticalDistance, PointOnEllipse,
+    EllipseTangentLine, EllipseCurvature,
   } = CONSTRAINT_TYPES);
   return CONSTRAINT_TYPES;
 }
@@ -398,6 +399,9 @@ export let HorizontalPoints: ConstraintCtor;
 export let VerticalPoints: ConstraintCtor;
 export let HorizontalDistance: ConstraintCtor;
 export let VerticalDistance: ConstraintCtor;
+export let PointOnEllipse: ConstraintCtor;
+export let EllipseTangentLine: ConstraintCtor;
+export let EllipseCurvature: ConstraintCtor;
 
 onInit(() => {
   initTypes();

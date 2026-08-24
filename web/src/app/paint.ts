@@ -6,7 +6,7 @@ import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
 import type { Pt, Seg } from '../core/callout.js';
 import {
-  Arc, Circle, Line, Point, Primitive, Spline, onRadius, threePointArc,
+  Arc, Circle, Ellipse, Line, Point, Primitive, Spline, ellipseMinor, onRadius, threePointArc,
 } from '../core/model.js';
 import { tellDimension } from './dimension.js';
 import type { SketchView } from './view.js';
@@ -18,6 +18,7 @@ export const COL = {
   circle: '#2ca02c',
   arc: '#ff7f0e',
   spline: '#8c564b',
+  ellipse: '#17becf',
   point: '#222222',
   fixed: '#d62728',
   sel: '#e377c2',
@@ -88,6 +89,14 @@ export function paint(v: SketchView): void {
     ctx.lineWidth = lw;
     ctx.setLineDash(a.construction ? CONSTRUCTION_DASH : []);
     arcPath(v, a.center.xy, Math.abs(a.radius.value), ...a.angles());
+    ctx.stroke();
+  }
+  for (const el of sk.ellipses) {
+    const [col, lw] = strokeFor(COL.ellipse, el);
+    ctx.strokeStyle = col;
+    ctx.lineWidth = lw;
+    ctx.setLineDash(el.construction ? CONSTRUCTION_DASH : []);
+    ellipsePath(v, el.center.xy, el.major.xy, Math.abs(el.minor.value));
     ctx.stroke();
   }
   for (const sp of sk.splines) {
@@ -244,6 +253,18 @@ export function circlePath(v: SketchView, centerXY: readonly [number, number], r
   v.ctx.arc(cx, cy, v.len(r), 0, 2 * Math.PI);
 }
 
+/** The whole rim of an ellipse, from the same five numbers the model keeps: the centre, the
+ *  major-axis endpoint, and the minor radius.  The camera is a similarity, so the axis lengths
+ *  scale together and the rotation is one world angle turned the canvas's way. */
+export function ellipsePath(v: SketchView, centerXY: readonly [number, number],
+                            majorXY: readonly [number, number], b: number): void {
+  const [cx, cy] = v.w2s(...centerXY);
+  const [ux, uy] = [majorXY[0] - centerXY[0], majorXY[1] - centerXY[1]];
+  v.ctx.beginPath();
+  v.ctx.ellipse(cx, cy, v.len(Math.hypot(ux, uy)), v.len(Math.abs(b)),
+                v.cam.angle(Math.atan2(uy, ux)), 0, 2 * Math.PI);
+}
+
 /** Dashed red halo on every entity a culprit constraint references, and a label at each
  *  culprit's anchor — the culprits are what to remove, as opposed to geometry that merely
  *  turned red because it touches them. */
@@ -288,6 +309,11 @@ export function paintConflicts(v: SketchView): void {
         const [mx, my] = e.pointAt(0.5 * (t0 + t1));
         xs.push(mx);
         ys.push(my);
+      } else if (e instanceof Ellipse) {
+        ellipsePath(v, e.center.xy, e.major.xy, Math.abs(e.minor.value));
+        ctx.stroke();
+        xs.push(e.major.x.value);
+        ys.push(e.major.y.value);
       }
     }
     if (!xs.length) continue;
@@ -355,6 +381,19 @@ export function paintPreview(v: SketchView): void {
     const w = v.s2w(cur[0], cur[1]);
     circlePath(v, c, Math.hypot(w[0] - c[0], w[1] - c[1]));
     ctx.stroke();
+  } else if (v.tool === 'ellipse') {
+    if (v.pending.length === 1) {
+      rubber();                                    // the major axis being laid down
+    } else {
+      // the same rule the third click will apply: the rim passes through the cursor
+      const c = v.pending[0].xy;
+      const m = v.pending[1].xy;
+      const b = ellipseMinor(...c, ...m, ...v.s2w(cur[0], cur[1]));
+      if (b !== null) {
+        ellipsePath(v, c, m, b);
+        ctx.stroke();
+      }
+    }
   } else if (v.tool === 'arc3') {
     const g = v.pending.length === 2
       ? threePointArc(...v.pending[0].xy, ...v.pending[1].xy, ...v.s2w(cur[0], cur[1]))

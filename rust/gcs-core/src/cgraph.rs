@@ -258,19 +258,28 @@ pub fn known_radii(sk: &Sketch) -> BTreeMap<u32, f64> {
     // a free variable — it states which radius this is the same as, not what it is
     let hard: Vec<&crate::constraints::Constraint> =
         sk.hard_constraints().into_iter().filter(|c| c.free.is_none()).collect();
+    // The radius Param an argument names, if it is one of the radii above.  Only circles and
+    // arcs are: a document is untrusted input and can name an ellipse in a `circle_or_arc` slot,
+    // and an ellipse's minor radius is a semi-axis rather than the distance to every rim point —
+    // so it is not a radius this table can carry, and the entry is skipped rather than indexed.
+    let of = |c: &crate::constraints::Constraint, i: usize| -> Option<usize> {
+        let e = c.args[i].ent();
+        is_round(e).then(|| ridx.get(&(sk.round_radius(e) as u32)).copied())?
+    };
     for c in &hard {
         if c.kind == CKind::EqualRadius {
-            let a = ridx[&(sk.round_radius(c.args[0].ent()) as u32)];
-            let b = ridx[&(sk.round_radius(c.args[1].ent()) as u32)];
-            uf.union(a, b);
+            if let (Some(a), Some(b)) = (of(c, 0), of(c, 1)) {
+                uf.union(a, b);
+            }
         }
     }
     let mut known: BTreeMap<usize, f64> = BTreeMap::new();
     for c in &hard {
         // after all unions, so class roots are final
         if c.kind == CKind::Radius {
-            let root = uf.find(ridx[&(sk.round_radius(c.args[0].ent()) as u32)]);
-            known.insert(root, c.args[1].num());
+            if let Some(i) = of(c, 0) {
+                known.insert(uf.find(i), c.args[1].num());
+            }
         }
     }
     for &r in &radii {
@@ -285,8 +294,8 @@ pub fn known_radii(sk: &Sketch) -> BTreeMap<u32, f64> {
     while changed {
         changed = false;
         for c in &offsets {
-            let a = uf.find(ridx[&(sk.round_radius(c.args[0].ent()) as u32)]);
-            let b = uf.find(ridx[&(sk.round_radius(c.args[1].ent()) as u32)]);
+            let (Some(a), Some(b)) = (of(c, 0), of(c, 1)) else { continue };
+            let (a, b) = (uf.find(a), uf.find(b));
             let d = c.args[2].num();
             if known.contains_key(&a) && !known.contains_key(&b) {
                 let v = known[&a] + d;

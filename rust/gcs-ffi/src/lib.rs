@@ -258,7 +258,7 @@ pub unsafe extern "C" fn gcs_sketch_to_json(h: *mut Sketch, indent: i32) -> *mut
     })
 }
 
-/// `[n_params, n_points, n_lines, n_circles, n_arcs, n_constraints, n_splines]`
+/// `[n_params, n_points, n_lines, n_circles, n_arcs, n_constraints, n_splines, n_ellipses]`
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
     guard((), move || {
@@ -271,6 +271,7 @@ pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
             s.arcs.len(),
             s.constraints.len(),
             s.splines.len(),
+            s.ellipses.len(),
         ];
         for (i, x) in v.iter().enumerate() {
             *out.add(i) = *x as i32;
@@ -323,6 +324,38 @@ pub unsafe extern "C" fn gcs_sketch_arc(
 ) -> i32 {
     guard(-1, move || {
         sk(h).arc(center as usize, start as usize, end as usize, as_str(name, name_len)) as i32
+    })
+}
+
+/// An ellipse about `center` whose major axis ends at `major`, with minor radius `b`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_ellipse(
+    h: *mut Sketch,
+    center: i32,
+    major: i32,
+    b: f64,
+    name: *const u8,
+    name_len: usize,
+) -> i32 {
+    guard(-1, move || {
+        sk(h).ellipse(center as usize, major as usize, b, as_str(name, name_len)) as i32
+    })
+}
+
+/// The minor radius that puts the rim of the ellipse (centre c, major end m) through (tx, ty)
+/// — the ellipse tool's third click, and where a rim drag holds the rim to the cursor.
+/// Negative when centre and major end coincide, which names no axis.
+#[no_mangle]
+pub extern "C" fn gcs_ellipse_minor(
+    cx: f64,
+    cy: f64,
+    mx: f64,
+    my: f64,
+    tx: f64,
+    ty: f64,
+) -> f64 {
+    guard(-1.0, move || {
+        gcs_core::ellipse::minor_to(cx, cy, mx, my, tx, ty).unwrap_or(-1.0)
     })
 }
 
@@ -649,6 +682,7 @@ fn kind_id(k: EntKind) -> i32 {
         EntKind::Circle => 2,
         EntKind::Arc => 3,
         EntKind::Spline => 4,
+        EntKind::Ellipse => 5,
     }
 }
 
@@ -658,6 +692,7 @@ fn ent(kind: i32, idx: i32) -> EntRef {
         1 => EntKind::Line,
         2 => EntKind::Circle,
         3 => EntKind::Arc,
+        5 => EntKind::Ellipse,
         _ => EntKind::Spline,
     };
     EntRef::new(k, idx as usize)
@@ -681,7 +716,7 @@ pub unsafe extern "C" fn gcs_entity_params(
 }
 
 /// The point indices an entity is built from: line → (p1, p2); circle → (centre); arc →
-/// (centre, start, end).  Returns how many were written.
+/// (centre, start, end); ellipse → (centre, major end).  Returns how many were written.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_entity_points(
     h: *mut Sketch,
@@ -699,6 +734,10 @@ pub unsafe extern "C" fn gcs_entity_points(
                 vec![a.center as usize, a.start as usize, a.end as usize]
             }
             4 => s.splines[idx as usize].ctrl.iter().map(|&c| c as usize).collect(),
+            5 => {
+                let e = &s.ellipses[idx as usize];
+                vec![e.center as usize, e.major as usize]
+            }
             _ => vec![idx as usize],
         };
         for (i, p) in v.iter().enumerate() {
@@ -708,11 +747,11 @@ pub unsafe extern "C" fn gcs_entity_points(
     })
 }
 
-/// The radius Param index of a circle or arc (-1 for anything else).
+/// The radius Param index of a circle or arc, or an ellipse's minor radius (-1 otherwise).
 #[no_mangle]
 pub unsafe extern "C" fn gcs_entity_radius_param(h: *mut Sketch, kind: i32, idx: i32) -> i32 {
     guard(-1, move || {
-        if kind != 2 && kind != 3 {
+        if kind != 2 && kind != 3 && kind != 5 {
             return -1;
         }
         sk(h).round_radius(ent(kind, idx)) as i32
@@ -728,6 +767,7 @@ pub unsafe extern "C" fn gcs_entity_construction(h: *mut Sketch, kind: i32, idx:
             2 => s.circles[idx as usize].construction,
             3 => s.arcs[idx as usize].construction,
             4 => s.splines[idx as usize].construction,
+            5 => s.ellipses[idx as usize].construction,
             _ => false,
         }) as i32
     })
@@ -748,6 +788,7 @@ pub unsafe extern "C" fn gcs_entity_set_construction(
             2 => s.circles[idx as usize].construction = b,
             3 => s.arcs[idx as usize].construction = b,
             4 => s.splines[idx as usize].construction = b,
+            5 => s.ellipses[idx as usize].construction = b,
             _ => {}
         }
     })

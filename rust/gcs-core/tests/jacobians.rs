@@ -33,6 +33,8 @@ fn all_constraints(seed: u32) -> Sketch {
     // six control points: three spans, so a contact is checked on an interior span too
     let ctrl: Vec<usize> = (0..6).map(|_| pt(&mut sk, &mut rng)).collect();
     let sp = sk.spline(&ctrl).unwrap();
+    let (ec, em) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
+    let el = sk.ellipse(ec, em, rng.uniform(1.0, 11.0), "el");
 
     let (pe, qe) = (EntRef::point(p), EntRef::point(q));
     let (le1, le2) = (EntRef::line(l1), EntRef::line(l2));
@@ -83,6 +85,12 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::spline_tangent_line(&sk, spe, le2),
         Constraint::spline_curvature(&sk, spe, ce1),
         Constraint::spline_curvature(&sk, spe, ae),
+        Constraint::point_on_ellipse(&sk, pe, EntRef::ellipse(el)),
+        Constraint::point_on_ellipse(&sk, qe, EntRef::ellipse(el)),
+        Constraint::ellipse_tangent_line(&sk, EntRef::ellipse(el), le1),
+        Constraint::ellipse_tangent_line(&sk, EntRef::ellipse(el), le2),
+        Constraint::ellipse_curvature(&sk, EntRef::ellipse(el), ce1),
+        Constraint::ellipse_curvature(&sk, EntRef::ellipse(el), ae),
         // every dimension again with its number written in terms of a free variable, which is
         // an unknown of the sketch rather than a constant — one more column, and (m, c) where
         // the number was.  A different name each time, so no two of them are tied together, and

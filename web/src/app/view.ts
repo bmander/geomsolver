@@ -56,7 +56,8 @@ export interface Place {
 }
 
 export type Tool =
-  'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit';
+  'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit'
+  | 'ellipse';
 
 
 

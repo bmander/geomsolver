@@ -5,7 +5,7 @@
  * drags, the plan solver and diagnosis all do).
  */
 import { Constraint } from './constraints.js';
-import { Arc, Circle, KIND_ID, Point, Sketch } from './model.js';
+import { Arc, Circle, Ellipse, KIND_ID, Point, Sketch } from './model.js';
 import { core, takeJson, takeStr, withBuf } from './wasm.js';
 
 export type Method = 'dogleg' | 'lm';
@@ -338,7 +338,8 @@ export class Drag {
   }
 }
 
-/** Interactive drag of a circle's or arc's radius — the scalar counterpart of `Drag`.
+/** Interactive drag of a circle's or arc's radius — or an ellipse's minor radius — the
+ *  scalar counterpart of `Drag`.
  *
  *  A radius that is fixed or dimensioned simply does not move: the polish wins, exactly as a point
  *  drag compromises on an over-constrained sketch.  An `EqualRadius` chain is a relation rather
@@ -347,7 +348,7 @@ export class RadiusDrag {
   private handle: number;
   active = true;
 
-  constructor(readonly sketch: Sketch, readonly circle: Circle | Arc, r: number,
+  constructor(readonly sketch: Sketch, readonly circle: Circle | Arc | Ellipse, r: number,
               readonly method: Method = 'dogleg') {
     this.handle = core().gcs_radius_drag_new(sketch.handle, KIND_ID[circle.kind], circle.index,
                                              r, METHOD_ID[method]);

@@ -18,7 +18,8 @@ from gcs import _ffi
 from gcs._ffi import Vec, lib
 from gcs.model import Entity, Sketch
 
-ENTITY_KINDS = frozenset({"point", "line", "circle", "arc", "circle_or_arc", "spline"})
+ENTITY_KINDS = frozenset({"point", "line", "circle", "arc", "circle_or_arc", "spline",
+                          "ellipse"})
 DIMENSION_KINDS = frozenset({"length", "angle"})
 # A hidden unknown the constraint owns — where along a curve a contact sits.  It reads as the
 # number the solver currently has it at and cannot be written: it is not a value anyone states.

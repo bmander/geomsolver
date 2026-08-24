@@ -20,8 +20,8 @@ if TYPE_CHECKING:
 
 Box = tuple[float, float, float, float]  # (xmin, ymin, xmax, ymax)
 
-KIND_ID = {"point": 0, "line": 1, "circle": 2, "arc": 3, "spline": 4}
-KINDS = ("point", "line", "circle", "arc", "spline")
+KIND_ID = {"point": 0, "line": 1, "circle": 2, "arc": 3, "spline": 4, "ellipse": 5}
+KINDS = ("point", "line", "circle", "arc", "spline", "ellipse")
 
 
 class Param:
@@ -293,10 +293,32 @@ class Spline(_Constructible):
         return (float(out[0]), float(out[1]))
 
 
-_CLASSES: dict[str, type[Entity]] = {"point": Point, "line": Line, "circle": Circle,
-                                     "arc": Arc, "spline": Spline}
+class Ellipse(_Constructible):
+    """Centre, one end of the major axis, and a minor radius of its own.  Five numbers — the
+    5 DOF an ellipse has — so unlike an arc it carries no intrinsic constraint; the major point
+    is a real rim point and drags, snaps and constrains like any other."""
 
-Primitive = Point | Line | Circle | Arc | Spline
+    kind = "ellipse"
+    __slots__ = ()
+
+    @property
+    def center(self) -> Point:
+        return self.children[0]
+
+    @property
+    def major(self) -> Point:
+        return self.children[1]
+
+    @property
+    def minor(self) -> Param:
+        i = lib.gcs_entity_radius_param(self.sketch._h, self._k, self.index)
+        return self.sketch.param_at(int(i))
+
+
+_CLASSES: dict[str, type[Entity]] = {"point": Point, "line": Line, "circle": Circle,
+                                     "arc": Arc, "spline": Spline, "ellipse": Ellipse}
+
+Primitive = Point | Line | Circle | Arc | Spline | Ellipse
 
 
 class ThreePointArc(NamedTuple):
@@ -340,7 +362,7 @@ class Sketch:
     # -- interning ----------------------------------------------------------
 
     def _counts(self) -> list[int]:
-        buf = _ffi.i32(7)
+        buf = _ffi.i32(8)
         lib.gcs_sketch_counts(self._h, _ffi.pi(buf))
         return [int(v) for v in buf]
 
@@ -400,6 +422,12 @@ class Sketch:
         p, n = _ffi.send(name)
         i = lib.gcs_sketch_circle(self._h, center.index, float(radius), p, n)
         return self.circles[int(i)]
+
+    def ellipse(self, center: Point, major: Point, b: float, name: str = "") -> Ellipse:
+        """An ellipse about `center` whose major axis ends at `major`, with minor radius `b`."""
+        p, n = _ffi.send(name)
+        i = lib.gcs_sketch_ellipse(self._h, center.index, major.index, float(b), p, n)
+        return self.ellipses[int(i)]
 
     def arc(self, center: Point, start: Point, end: Point, name: str = "") -> Arc:
         p, n = _ffi.send(name)
@@ -510,6 +538,10 @@ class Sketch:
         return self._entities("spline", self._counts()[6])
 
     @property
+    def ellipses(self) -> list[Ellipse]:
+        return self._entities("ellipse", self._counts()[7])
+
+    @property
     def constraints(self) -> list[Constraint]:
         self._sync_constraints()
         return list(self._cons)
@@ -529,10 +561,13 @@ class Sketch:
             return self.circles
         if kind == "spline":
             return self.splines
+        if kind == "ellipse":
+            return self.ellipses
         return self.arcs
 
     def primitives(self) -> list[Primitive]:
-        return [*self.points, *self.lines, *self.circles, *self.arcs, *self.splines]
+        return [*self.points, *self.lines, *self.circles, *self.arcs, *self.splines,
+                *self.ellipses]
 
     def user_constraints(self) -> list[Constraint]:
         """What the user added: no intrinsic ones, no soft ones."""

@@ -14,10 +14,10 @@ import './constraints.js';
 /** (xmin, ymin, xmax, ymax) */
 export type Box = [number, number, number, number];
 
-export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline';
-export const KINDS: Kind[] = ['point', 'line', 'circle', 'arc', 'spline'];
+export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline' | 'ellipse';
+export const KINDS: Kind[] = ['point', 'line', 'circle', 'arc', 'spline', 'ellipse'];
 export const KIND_ID: Record<Kind, number> =
-  { point: 0, line: 1, circle: 2, arc: 3, spline: 4 };
+  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, ellipse: 5 };
 
 export class Param {
   constructor(readonly sketch: Sketch, readonly index: number) {}
@@ -285,10 +285,31 @@ export class Spline extends Constructible {
   }
 }
 
-export type Primitive = Point | Line | Circle | Arc | Spline;
+/** Centre, one end of the major axis, and a minor radius of its own.  Five numbers — the 5 DOF
+ *  an ellipse has — so unlike an arc it carries no intrinsic constraint; the major point is a
+ *  real rim point and drags, snaps and constrains like any other. */
+export class Ellipse extends Constructible {
+  readonly kind = 'ellipse' as const;
+
+  get center(): Point {
+    return this.children[0];
+  }
+
+  get major(): Point {
+    return this.children[1];
+  }
+
+  get minor(): Param {
+    return this.sketch.paramAt(
+      core().gcs_entity_radius_param(this.sketch.handle, this.kindId, this.index));
+  }
+}
+
+export type Primitive = Point | Line | Circle | Arc | Spline | Ellipse;
 
 const CLASSES =
-  { point: Point, line: Line, circle: Circle, arc: Arc, spline: Spline } as const;
+  { point: Point, line: Line, circle: Circle, arc: Arc, spline: Spline,
+    ellipse: Ellipse } as const;
 
 /** The CCW arc through three points: centre, radius, and the sweep that passes through the
  *  third point.  `swapped` is true when that sweep runs from the *second* given point. */
@@ -316,7 +337,7 @@ export class Sketch {
   readonly handle: number;
   private params_: Param[] = [];
   private ents: Record<Kind, Entity[]> =
-    { point: [], line: [], circle: [], arc: [], spline: [] };
+    { point: [], line: [], circle: [], arc: [], spline: [], ellipse: [] };
   private cons: Constraint[] = [];
   /** Constraint id → its proxy, so identity survives every round trip. */
   readonly byId = new Map<number, Constraint>();
@@ -333,7 +354,7 @@ export class Sketch {
   // -- interning ----------------------------------------------------------
 
   private counts(): Int32Array {
-    return withBuf(7, 4, (b) => {
+    return withBuf(8, 4, (b) => {
       core().gcs_sketch_counts(this.handle, b.ptr);
       return b.i32.slice();
     });
@@ -402,6 +423,13 @@ export class Sketch {
   circle(center: Point, radius: number, name = ''): Circle {
     const i = withStr(name, (p, n) => core().gcs_sketch_circle(this.handle, center.index, radius, p, n));
     return this.circles[i];
+  }
+
+  /** An ellipse about `center` whose major axis ends at `major`, with minor radius `b`. */
+  ellipse(center: Point, major: Point, b: number, name = ''): Ellipse {
+    const i = withStr(name, (p, n) =>
+      core().gcs_sketch_ellipse(this.handle, center.index, major.index, b, p, n));
+    return this.ellipses[i];
   }
 
   /** A cubic B-spline over `ctrl`.  null when there are too few control points for a cubic, or
@@ -511,6 +539,10 @@ export class Sketch {
     return this.list<Spline>('spline', this.counts()[6]);
   }
 
+  get ellipses(): Ellipse[] {
+    return this.list<Ellipse>('ellipse', this.counts()[7]);
+  }
+
   /** How many points the document has — the size a control-polygon buffer has to allow for. */
   get pointCount(): number {
     return this.counts()[1];
@@ -530,12 +562,13 @@ export class Sketch {
   entities(kind: Kind): Primitive[] {
     return (kind === 'point' ? this.points : kind === 'line' ? this.lines
       : kind === 'circle' ? this.circles : kind === 'spline' ? this.splines
-      : this.arcs) as Primitive[];
+      : kind === 'ellipse' ? this.ellipses : this.arcs) as Primitive[];
   }
 
   /** Every entity, in creation order per kind. */
   primitives(): Primitive[] {
-    return [...this.points, ...this.lines, ...this.circles, ...this.arcs, ...this.splines];
+    return [...this.points, ...this.lines, ...this.circles, ...this.arcs, ...this.splines,
+            ...this.ellipses];
   }
 
   /** Constraints the user added (excludes intrinsic and soft/transient ones). */
@@ -677,6 +710,15 @@ export function onRadius(cx: number, cy: number, tx: number, ty: number, r: numb
   return withBuf(2, 8, (b) => (core().gcs_on_radius(cx, cy, tx, ty, r, b.ptr)
     ? [b.f64[0], b.f64[1]] as [number, number]
     : null));
+}
+
+/** The minor radius that puts the rim of the ellipse (centre c, major end m) through (tx, ty)
+ *  — the ellipse tool's third click, and where a rim drag holds the rim to the cursor.  Null
+ *  when centre and major end coincide, which names no axis. */
+export function ellipseMinor(cx: number, cy: number, mx: number, my: number,
+                             tx: number, ty: number): number | null {
+  const b = core().gcs_ellipse_minor(cx, cy, mx, my, tx, ty);
+  return b < 0 ? null : b;
 }
 
 /** Shortest distance between two entities, as a sketcher measures it: lines are infinite, arcs

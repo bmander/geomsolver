@@ -44,10 +44,13 @@ pub enum CKind {
     VerticalPoints,
     HorizontalDistance,
     VerticalDistance,
+    PointOnEllipse,
+    EllipseTangentLine,
+    EllipseCurvature,
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 29] = [
+pub const ALL_KINDS: [CKind; 32] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -77,6 +80,9 @@ pub const ALL_KINDS: [CKind; 29] = [
     CKind::VerticalPoints,
     CKind::HorizontalDistance,
     CKind::VerticalDistance,
+    CKind::PointOnEllipse,
+    CKind::EllipseTangentLine,
+    CKind::EllipseCurvature,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,6 +93,7 @@ pub enum SpecKind {
     Arc,
     CircleOrArc,
     Spline,
+    Ellipse,
     Length,
     Angle,
     Float,
@@ -109,6 +116,7 @@ impl SpecKind {
                 | SpecKind::Arc
                 | SpecKind::CircleOrArc
                 | SpecKind::Spline
+                | SpecKind::Ellipse
         )
     }
 
@@ -129,6 +137,7 @@ impl SpecKind {
             SpecKind::Arc => "arc",
             SpecKind::CircleOrArc => "circle_or_arc",
             SpecKind::Spline => "spline",
+            SpecKind::Ellipse => "ellipse",
             SpecKind::Length => "length",
             SpecKind::Angle => "angle",
             SpecKind::Float => "float",
@@ -176,6 +185,9 @@ impl CKind {
             CKind::VerticalPoints => "VerticalPoints",
             CKind::HorizontalDistance => "HorizontalDistance",
             CKind::VerticalDistance => "VerticalDistance",
+            CKind::PointOnEllipse => "PointOnEllipse",
+            CKind::EllipseTangentLine => "EllipseTangentLine",
+            CKind::EllipseCurvature => "EllipseCurvature",
         }
     }
 
@@ -239,6 +251,15 @@ impl CKind {
             CKind::SplineCurvature => {
                 &[("spline", S::Spline), ("circle", S::CircleOrArc), ("t", S::Param)]
             }
+            CKind::PointOnEllipse => {
+                &[("p", S::Point), ("ellipse", S::Ellipse), ("t", S::Param)]
+            }
+            CKind::EllipseTangentLine => {
+                &[("ellipse", S::Ellipse), ("line", S::Line), ("t", S::Param)]
+            }
+            CKind::EllipseCurvature => {
+                &[("ellipse", S::Ellipse), ("circle", S::CircleOrArc), ("t", S::Param)]
+            }
         }
     }
 
@@ -281,14 +302,29 @@ impl CKind {
             .collect()
     }
 
-    /// The spec slots a curve contact is made of: which argument names the curve and which
-    /// holds the parameter along it.  Read off the spec, so a new kind of contact is covered by
-    /// declaring one — there is no table of kinds here to forget to extend.
-    pub fn contact_slots(self) -> Option<(usize, usize)> {
+    /// The spec slots a contact on a parametric entity of kind `of` is made of: which argument
+    /// names the entity and which holds the parameter along it.  Read off the spec, so a new
+    /// kind of contact is covered by declaring one — there is no table of kinds here to forget
+    /// to extend.
+    fn contact_on(self, of: SpecKind) -> Option<(usize, usize)> {
         let spec = self.spec();
-        let curve = spec.iter().position(|&(_, k)| k == SpecKind::Spline)?;
+        let e = spec.iter().position(|&(_, k)| k == of)?;
         let t = spec.iter().position(|&(_, k)| k.is_param())?;
-        Some((curve, t))
+        Some((e, t))
+    }
+
+    /// A contact on a *spline*.  The two families are asked separately on purpose, and this is
+    /// the one that gates the span machinery: a spline contact addresses a span, is clamped to
+    /// its knots and carries its span in the topology key, and an ellipse contact must do none
+    /// of those — its parameter is periodic and its columns never move at compile time.  A
+    /// caller wanting only "does this run along something, and how fast" asks `param_scale`.
+    pub fn contact_slots(self) -> Option<(usize, usize)> {
+        self.contact_on(SpecKind::Spline)
+    }
+
+    /// A contact on an *ellipse* — see `contact_slots` for why the two are not one question.
+    pub fn ellipse_contact_slots(self) -> Option<(usize, usize)> {
+        self.contact_on(SpecKind::Ellipse)
     }
 
     /// Carries a dimension — a length or angle the user can edit.  A redundancy among dimensioned
@@ -312,7 +348,9 @@ impl CKind {
             | CKind::TangentArcLine
             | CKind::TangentLineCircleAt
             | CKind::SplineTangentLine
-            | CKind::SplineCurvature => true,
+            | CKind::SplineCurvature
+            | CKind::EllipseTangentLine
+            | CKind::EllipseCurvature => true,
             CKind::Coincident
             | CKind::Distance
             | CKind::Midpoint
@@ -332,6 +370,7 @@ impl CKind {
             | CKind::AnnularDistance
             | CKind::Symmetric
             | CKind::PointOnSpline
+            | CKind::PointOnEllipse
             | CKind::HorizontalPoints
             | CKind::VerticalPoints
             | CKind::HorizontalDistance
@@ -395,6 +434,9 @@ impl CKind {
             CKind::VerticalPoints => K::Vertical,
             CKind::HorizontalDistance => K::HorizontalDistance,
             CKind::VerticalDistance => K::VerticalDistance,
+            CKind::PointOnEllipse => K::PointOnEllipse,
+            CKind::EllipseTangentLine => K::EllipseTangentLine,
+            CKind::EllipseCurvature => K::EllipseCurvature,
         }
     }
 
@@ -432,6 +474,9 @@ impl CKind {
             | CKind::TangentLineCircleAt
             | CKind::Symmetric
             | CKind::PointOnSpline
+            | CKind::PointOnEllipse
+            | CKind::EllipseTangentLine
+            | CKind::EllipseCurvature
             | CKind::SplineTangentLine
             | CKind::SplineCurvature
             | CKind::HorizontalPoints
@@ -629,6 +674,24 @@ impl Constraint {
     /// the circle's centre is already nearest.
     pub fn spline_curvature(sk: &Sketch, spline: EntRef, circle: EntRef) -> Constraint {
         Constraint::contact(sk, CKind::SplineCurvature, Arg::Ent(spline), Arg::Ent(circle))
+    }
+
+    /// A point on an ellipse's rim, starting at the rim parameter nearest where the point
+    /// already is.
+    pub fn point_on_ellipse(sk: &Sketch, p: EntRef, ellipse: EntRef) -> Constraint {
+        Constraint::contact(sk, CKind::PointOnEllipse, Arg::Ent(p), Arg::Ent(ellipse))
+    }
+
+    /// A line tangent to an ellipse's rim, starting where the rim already comes nearest that
+    /// line.
+    pub fn ellipse_tangent_line(sk: &Sketch, ellipse: EntRef, line: EntRef) -> Constraint {
+        Constraint::contact(sk, CKind::EllipseTangentLine, Arg::Ent(ellipse), Arg::Ent(line))
+    }
+
+    /// A circle that osculates an ellipse's rim — the rim's own radius there — starting at the
+    /// place the circle's centre is already nearest.
+    pub fn ellipse_curvature(sk: &Sketch, ellipse: EntRef, circle: EntRef) -> Constraint {
+        Constraint::contact(sk, CKind::EllipseCurvature, Arg::Ent(ellipse), Arg::Ent(circle))
     }
 
     /// A two-entity curve contact whose parameter starts where the geometry puts it.
@@ -834,6 +897,19 @@ impl Constraint {
         }
     }
 
+    /// The parametric entity this constraint runs along, of *either* family, and the Param
+    /// holding where along it.  `curve_contact` is the spline-only reading, and stays that way
+    /// because it gates the span machinery; this is the reading for questions about the
+    /// parameter itself — chiefly what one unit of it is worth in world length.
+    pub fn parametric_contact(&self) -> Option<(EntRef, u32)> {
+        let (e, t) =
+            self.kind.contact_slots().or_else(|| self.kind.ellipse_contact_slots())?;
+        match self.args[t] {
+            Arg::Param(p) => Some((self.args[e].ent(), p)),
+            _ => None,
+        }
+    }
+
     /// The spline a curve contact touches and the parameter it currently sits at — also before
     /// `Sketch::add`, while the slot still holds the seed number rather than a Param.
     fn spline_contact(&self, sk: &Sketch) -> Option<(usize, f64)> {
@@ -914,7 +990,30 @@ impl Constraint {
                 vec![rad(1)],
             ]
             .concat(),
+            // the ellipse contacts: where along the rim, then the five numbers the ellipse is
+            // drawn from, then whatever it touches
+            CKind::PointOnEllipse => {
+                [pt(0), vec![self.args[2].param()], self.ellipse_params(sk, 1)].concat()
+            }
+            CKind::EllipseTangentLine => {
+                [vec![self.args[2].param()], self.ellipse_params(sk, 0), ln(1)].concat()
+            }
+            CKind::EllipseCurvature => [
+                vec![self.args[2].param()],
+                self.ellipse_params(sk, 0),
+                centre(1),
+                vec![rad(1)],
+            ]
+            .concat(),
         }
+    }
+
+    /// The (cx, cy, mx, my, b) columns of the ellipse in spec slot `i` — every ellipse kernel
+    /// reads them in this order, after the contact's own parameter.  That order is the model's
+    /// canonical one, so it is asked for rather than rebuilt: the kernels and `entity_params`
+    /// would otherwise be two statements of the same column layout.
+    fn ellipse_params(&self, sk: &Sketch, i: usize) -> Vec<u32> {
+        sk.entity_params(self.args[i].ent())
     }
 
     /// The Params of the span given, or of the one this contact currently sits on.
@@ -966,6 +1065,21 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
             let (cx, cy) = sk.point_xy(sk.round_center(args[1].ent()));
             crate::curve::closest(sk, args[0].ent().i(), cx, cy).0
         }
+        (CKind::PointOnEllipse, 2) => {
+            let (x, y) = sk.point_xy(args[0].ent().i());
+            crate::ellipse::closest(sk, args[1].ent().i(), x, y).0
+        }
+        (CKind::EllipseTangentLine, 2) => {
+            let [ax, ay, bx, by] = sk.line_params(args[1].ent().i());
+            let g = |p: u32| sk.params[p as usize].value;
+            crate::ellipse::nearest_to_line(sk, args[0].ent().i(), g(ax), g(ay), g(bx), g(by))
+        }
+        // an osculating circle sits centred off the rim, so the rim point nearest the centre it
+        // already has is the place it is asking about — the same reading as `SplineCurvature`
+        (CKind::EllipseCurvature, 2) => {
+            let (cx, cy) = sk.point_xy(sk.round_center(args[1].ent()));
+            crate::ellipse::closest(sk, args[0].ent().i(), cx, cy).0
+        }
         _ => 0.0,
     }
 }
@@ -974,9 +1088,23 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
 /// geometry at the moment the constraint is added; it preconditions the step, so an estimate
 /// that drifts as the sketch moves costs convergence rate, never correctness.
 pub fn param_scale(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
-    match kind.contact_slots() {
-        Some((curve, t)) if t == i => crate::curve::speed(sk, args[curve].ent().i()),
+    // Whichever family the contact runs along, the question is the same one, so it is asked once
+    // and answered by the entity the slot actually names.  A hidden unknown that runs along
+    // nothing is a length already.
+    let slots = kind.contact_slots().or_else(|| kind.ellipse_contact_slots());
+    match slots {
+        Some((e, t)) if t == i => contact_speed(sk, args[e].ent()),
         _ => 1.0,
+    }
+}
+
+/// The world length one unit of a contact's parameter is worth, whichever family it runs along
+/// — the one answer, so the seed `Sketch::add` records and the scale `System::new` compiles
+/// against cannot come from two different rules.
+pub fn contact_speed(sk: &Sketch, e: EntRef) -> f64 {
+    match e.kind {
+        EntKind::Ellipse => crate::ellipse::speed(sk, e.i()),
+        _ => crate::curve::speed(sk, e.i()),
     }
 }
 
@@ -1037,6 +1165,7 @@ pub fn kind_matches(spec: SpecKind, ent: EntKind) -> bool {
         SpecKind::Arc => ent == EntKind::Arc,
         SpecKind::CircleOrArc => ent == EntKind::Circle || ent == EntKind::Arc,
         SpecKind::Spline => ent == EntKind::Spline,
+        SpecKind::Ellipse => ent == EntKind::Ellipse,
         _ => false,
     }
 }

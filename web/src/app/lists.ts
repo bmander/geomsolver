@@ -9,7 +9,7 @@
 import * as io from '../core/io.js';
 import { Constraint } from '../core/constraints.js';
 import {
-  Arc, Circle, Line, Point, Primitive, Spline, angleBetween, distanceBetween, expand,
+  Arc, Circle, Ellipse, Line, Point, Primitive, Spline, angleBetween, distanceBetween, expand,
 } from '../core/model.js';
 import { expressions } from '../core/expr.js';
 import {
@@ -62,6 +62,7 @@ function describeEntity(e: Primitive, ix: io.Index): string {
     : e instanceof Circle ? `circle  @${ix.name(e.center)}`
     // a curve reads as its control polygon: that is what it is made of and what edits it
     : e instanceof Spline ? `spline  ${e.ctrl.map((p) => ix.name(p)).join('–')}`
+    : e instanceof Ellipse ? `ellipse @${ix.name(e.center)} →${ix.name(e.major)}`
     : 'point';
   return `${n}${body}${tag}`;
 }

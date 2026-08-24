@@ -27,12 +27,13 @@ def _sketch_with_stuff(seed: int):
     a = sk.arc(sk.point(r(), r()), sk.point(r(), r()), sk.point(r(), r()))
     sp = sk.spline([sk.point(r(), r()) for _ in range(6)])
     assert sp is not None
-    return sk, p, q, s, l1, l2, c1, c2, a, sp
+    el = sk.ellipse(sk.point(r(), r()), sk.point(r(), r()), abs(r()) + 1)
+    return sk, p, q, s, l1, l2, c1, c2, a, sp, el
 
 
 def all_constraints(seed: int):
     """One instance of every constraint type, on a sketch of every kind of entity."""
-    sk, p, q, s, l1, l2, c1, c2, a, sp = _sketch_with_stuff(seed)
+    sk, p, q, s, l1, l2, c1, c2, a, sp, el = _sketch_with_stuff(seed)
     return [
         C.Coincident(p, q), C.Distance(p, q, 3.0), C.Midpoint(p, l1), C.DragTarget(p, 1, 2, 0.3),
         C.Horizontal(l1), C.Vertical(l1), C.Parallel(l1, l2), C.Perpendicular(l1, l2),
@@ -49,6 +50,9 @@ def all_constraints(seed: int):
         C.AnnularDistance(c1, a, 1.5),
         C.PointOnSpline(p, sp), C.SplineTangentLine(sp, l1),
         C.SplineCurvature(sp, c1), C.SplineCurvature(sp, a),
+        C.PointOnEllipse(p, el), C.PointOnEllipse(q, el),
+        C.EllipseTangentLine(el, l1), C.EllipseTangentLine(el, l2),
+        C.EllipseCurvature(el, c1), C.EllipseCurvature(el, a),
     ]
 
 

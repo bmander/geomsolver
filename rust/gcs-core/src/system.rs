@@ -11,7 +11,7 @@
 use crate::constraints::Constraint;
 use crate::kernels::{self, Kernel};
 use crate::linalg::{rank_and_nullspace_with, rrqr_with, Mat, RankNull, Tol};
-use crate::model::Sketch;
+use crate::model::{EntRef, Sketch};
 use crate::sparse::Ata;
 use std::collections::BTreeMap;
 
@@ -157,14 +157,18 @@ impl System {
         for (i, &p) in free.iter().enumerate() {
             col_of[p as usize] = i as i32;
         }
-        // A curve parameter's scale is read off the curve here rather than off the Param, so it
-        // is a fact about this compile and cannot be stale — and once per spline, not once per
-        // contact, since the arc-length walk is the expensive part.
-        let mut speed: BTreeMap<usize, f64> = BTreeMap::new();
+        // A contact parameter's scale is read off the thing it runs along here rather than off
+        // the Param, so it is a fact about this compile and cannot be stale — and once per
+        // entity, not once per contact, since the arc-length walk is the expensive part.  Either
+        // family: an ellipse resized since its contact was added would otherwise keep the scale
+        // the seed recorded, which is the stall the scaling exists to prevent.
+        let mut speed: BTreeMap<EntRef, f64> = BTreeMap::new();
         let mut scale_of: BTreeMap<u32, f64> = BTreeMap::new();
         for c in &sk.constraints {
-            if let Some((spline, t)) = c.curve_contact() {
-                let v = *speed.entry(spline).or_insert_with(|| crate::curve::speed(sk, spline));
+            if let Some((e, t)) = c.parametric_contact() {
+                let v = *speed
+                    .entry(e)
+                    .or_insert_with(|| crate::constraints::contact_speed(sk, e));
                 scale_of.insert(t, v);
             }
         }

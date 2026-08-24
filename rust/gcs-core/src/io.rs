@@ -177,6 +177,19 @@ pub fn to_json(sk: &Sketch) -> Json {
             ])
         })
         .collect();
+    let ellipses: Vec<Json> = sk
+        .ellipses
+        .iter()
+        .map(|e| {
+            object([
+                ("center", (e.center as i64).into()),
+                ("major", (e.major as i64).into()),
+                ("b", sk.params[e.minor as usize].value.into()),
+                ("fixed", sk.params[e.minor as usize].fixed.into()),
+                ("construction", e.construction.into()),
+            ])
+        })
+        .collect();
     // one list, walked twice: the placements below are keyed by position in it, so they and the
     // constraints they name have to be the same walk
     let user = sk.user_constraints();
@@ -210,6 +223,7 @@ pub fn to_json(sk: &Sketch) -> Json {
         ("circles", Json::Arr(circles)),
         ("arcs", Json::Arr(arcs)),
         ("splines", Json::Arr(splines)),
+        ("ellipses", Json::Arr(ellipses)),
         ("constraints", Json::Arr(constraints)),
         ("branches", Json::Obj(branches)),
         ("placements", Json::Obj(placements)),
@@ -277,6 +291,13 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             )
         })?;
         sk.splines[si].construction = s.get("construction").map(|v| v.as_bool()).unwrap_or(false);
+    }
+    for e in d.get("ellipses").unwrap_or(&empty).arr() {
+        let g = |k: &str| index(e.get(k).map(|v| v.as_i64()).unwrap_or(0), np, k);
+        let ei = sk.ellipse(g("center")?, g("major")?, e.get("b").map(|v| v.as_f64()).unwrap_or(0.0), "");
+        let bp = sk.ellipses[ei].minor as usize;
+        sk.params[bp].fixed = e.get("fixed").map(|v| v.as_bool()).unwrap_or(false);
+        sk.ellipses[ei].construction = e.get("construction").map(|v| v.as_bool()).unwrap_or(false);
     }
     let mut ids = Vec::new();
     for c in d.get("constraints").unwrap_or(&empty).arr() {
@@ -427,6 +448,23 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         spline_map[i] = Some(ni);
         made.push(EntRef::spline(ni));
     }
+    let mut ellipse_map: Vec<Option<usize>> = vec![None; src.ellipses.len()];
+    for i in 0..src.ellipses.len() {
+        if !keep(EntRef::ellipse(i)) {
+            continue;
+        }
+        let el = &src.ellipses[i];
+        let (Some(c), Some(m)) = (pt_index(el.center as usize), pt_index(el.major as usize))
+        else {
+            continue;
+        };
+        let ni = dst.ellipse(c, m, src.params[el.minor as usize].value, "");
+        let bp = dst.ellipses[ni].minor as usize;
+        dst.params[bp].fixed = src.params[el.minor as usize].fixed;
+        dst.ellipses[ni].construction = el.construction;
+        ellipse_map[i] = Some(ni);
+        made.push(EntRef::ellipse(ni));
+    }
     let remap = |e: EntRef| -> Option<EntRef> {
         match e.kind {
             EntKind::Point => pt_index(e.i()).map(EntRef::point),
@@ -434,6 +472,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
             EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
             EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
+            EntKind::Ellipse => ellipse_map[e.i()].map(EntRef::ellipse),
         }
     };
     let mut expr = false;

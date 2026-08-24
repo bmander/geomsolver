@@ -1580,3 +1580,78 @@ test('a name nothing defines is a free variable that ties the dimensions reading
   assert.match(d1.setDimension('d', 'sin(q)') ?? '', /`q` is free/);
   sk.dispose();
 });
+
+/* -- ellipses --------------------------------------------------------------- */
+
+test('an ellipse is a centre, a major end and a minor radius of its own', () => {
+  const sk = new Sketch();
+  const c = sk.point(10, 5);
+  const m = sk.point(18, 5);
+  const el = sk.ellipse(c, m, 3);
+  assert.equal(el.center, c);
+  assert.equal(el.major, m);
+  assert.equal(el.minor.value, 3);
+  assert.equal(el.name, 'E0');
+  // the rim is what a click picks; the inside is empty space
+  assert.equal(sk.pick(10, 8.05, 0.2), el);
+  assert.equal(sk.pick(12, 5.8, 0.2), null);
+  // the bounds are the rotated rim's, which here is axis-aligned
+  assert.deepEqual(el.bounds(), [2, 2, 18, 8]);
+  sk.dispose();
+});
+
+test('a point is pulled onto the rim, and the document keeps the ellipse', () => {
+  const sk = new Sketch();
+  const c = sk.point(10, 5, true);
+  const m = sk.point(18, 5, true);
+  const el = sk.ellipse(c, m, 3);
+  el.minor.fixed = true;
+  el.construction = true;
+  const p = sk.point(11, 9);
+  sk.add(new C.PointOnEllipse(p, el));
+  assert.ok(solve(sk).success);
+  // in the ellipse's frame the rim satisfies (x/a)² + (y/b)² = 1
+  const [x, y] = [p.x.value - 10, p.y.value - 5];
+  assert.ok(Math.abs((x / 8) ** 2 + (y / 3) ** 2 - 1) < 1e-6);
+  const back = io.loads(io.dumps(sk));
+  assert.equal(back.ellipses.length, 1);
+  assert.ok(back.ellipses[0].construction);
+  assert.ok(back.ellipses[0].minor.fixed);
+  assert.equal(back.ellipses[0].minor.value, 3);
+  assert.equal(back.constraints.filter((k) => k.typeName === 'PointOnEllipse').length, 1);
+  sk.dispose();
+  back.dispose();
+});
+
+test('a rim drag resizes the minor radius through the same question the tool asks', () => {
+  const sk = new Sketch();
+  const el = sk.ellipse(sk.point(0, 0, true), sk.point(8, 0, true), 3);
+  // the minor radius that puts the rim through (4, 4): b = 4 / sqrt(1 - (4/8)²)
+  const want = num(core().gcs_ellipse_minor(0, 0, 8, 0, 4, 4));
+  assert.ok(Math.abs(want - 4 / Math.sqrt(0.75)) < 1e-12);
+  const drag = new RadiusDrag(sk, el, el.minor.value);
+  assert.ok(drag.move(want).success);
+  drag.end();
+  assert.ok(Math.abs(el.minor.value - want) < 1e-6);
+  sk.dispose();
+});
+
+test('a line solves tangent to the rim, and a circle takes its curvature', () => {
+  const sk = new Sketch();
+  const el = sk.ellipse(sk.point(10, 5, true), sk.point(18, 5, true), 3);
+  el.minor.fixed = true;
+  const ln = sk.line(sk.point(4, 10), sk.point(16, 10));
+  sk.add(new C.EllipseTangentLine(el, ln));
+  const cc = sk.circle(sk.point(16, 5.5), 2);
+  sk.add(new C.EllipseCurvature(el, cc));
+  assert.ok(solve(sk).success);
+  assert.ok(allSatisfied(sk));
+  // the level line above the ellipse rests on top of the rim: y = 5 + b = 8
+  assert.ok(Math.abs(ln.p1.y.value - 8) < 1e-6, `line landed at y=${ln.p1.y.value}`);
+  // an axis-aligned check: at the major end the rim's radius of curvature is b²/a
+  const t = num(sk.constraints.find((k) => k.typeName === 'EllipseCurvature')!.args[2]);
+  if (Math.abs(Math.sin(t)) < 1e-3) {
+    assert.ok(Math.abs(Math.abs(cc.radius.value) - 9 / 8) < 1e-3);
+  }
+  sk.dispose();
+});

@@ -36,6 +36,7 @@ pub enum EntKind {
     Circle,
     Arc,
     Spline,
+    Ellipse,
 }
 
 impl EntKind {
@@ -46,6 +47,7 @@ impl EntKind {
             EntKind::Circle => "circle",
             EntKind::Arc => "arc",
             EntKind::Spline => "spline",
+            EntKind::Ellipse => "ellipse",
         }
     }
 
@@ -56,6 +58,7 @@ impl EntKind {
             "circle" => EntKind::Circle,
             "arc" => EntKind::Arc,
             "spline" => EntKind::Spline,
+            "ellipse" => EntKind::Ellipse,
             _ => return None,
         })
     }
@@ -85,6 +88,9 @@ impl EntRef {
     }
     pub fn spline(idx: usize) -> EntRef {
         EntRef::new(EntKind::Spline, idx)
+    }
+    pub fn ellipse(idx: usize) -> EntRef {
+        EntRef::new(EntKind::Ellipse, idx)
     }
     pub fn i(self) -> usize {
         self.idx as usize
@@ -137,6 +143,18 @@ pub struct SplineE {
     pub ctrl: Vec<u32>,
     /// `ctrl.len() + curve::DEGREE + 1` non-decreasing values.
     pub knots: Vec<f64>,
+    pub construction: bool,
+}
+
+/// Centre, one end of the major axis, and a minor radius of its own.  Five numbers — exactly
+/// the 5 DOF an ellipse has — so unlike an arc it needs no intrinsic constraint.  The major
+/// point is a real rim point at the end of the long axis, so it drags, snaps and constrains
+/// like any other point; only the minor radius is the ellipse's own.
+#[derive(Clone, Debug)]
+pub struct EllipseE {
+    pub center: u32,
+    pub major: u32,
+    pub minor: u32,
     pub construction: bool,
 }
 
@@ -196,6 +214,7 @@ pub struct Sketch {
     pub circles: Vec<CircleE>,
     pub arcs: Vec<ArcE>,
     pub splines: Vec<SplineE>,
+    pub ellipses: Vec<EllipseE>,
     pub constraints: Vec<Constraint>,
     /// Recorded root choices (Stage 5), persisted with the document.
     pub branches: BTreeMap<String, i32>,
@@ -290,6 +309,18 @@ impl Sketch {
         let centre = self.point(g.cx, g.cy, false, &format!("{name}.c"));
         let (a, b) = if g.swapped { (end, start) } else { (start, end) };
         Some(self.arc(centre, a, b, name))
+    }
+
+    /// An ellipse about `center` whose major axis ends at `major`, with minor radius `b`.
+    pub fn ellipse(&mut self, center: usize, major: usize, b: f64, name: &str) -> usize {
+        let bp = self.param(b, false, &format!("{name}.b"));
+        self.ellipses.push(EllipseE {
+            center: center as u32,
+            major: major as u32,
+            minor: bp as u32,
+            construction: false,
+        });
+        self.ellipses.len() - 1
     }
 
     /// A cubic B-spline over `ctrl`, with the clamped uniform knot vector.  `None` if there are
@@ -547,20 +578,23 @@ impl Sketch {
         v
     }
 
-    /// Centre point index of a circle or arc.
+    /// Centre point index of a circle, arc or ellipse.
     pub fn round_center(&self, e: EntRef) -> usize {
         match e.kind {
             EntKind::Circle => self.circles[e.i()].center as usize,
             EntKind::Arc => self.arcs[e.i()].center as usize,
+            EntKind::Ellipse => self.ellipses[e.i()].center as usize,
             _ => panic!("not a round entity"),
         }
     }
 
-    /// Radius Param index of a circle or arc.
+    /// Radius Param index of a circle or arc — and an ellipse's minor radius, which is what its
+    /// one scalar drag resizes.
     pub fn round_radius(&self, e: EntRef) -> usize {
         match e.kind {
             EntKind::Circle => self.circles[e.i()].radius as usize,
             EntKind::Arc => self.arcs[e.i()].radius as usize,
+            EntKind::Ellipse => self.ellipses[e.i()].minor as usize,
             _ => panic!("not a round entity"),
         }
     }
@@ -600,6 +634,17 @@ impl Sketch {
                 }
                 v
             }
+            EntKind::Ellipse => {
+                let el = &self.ellipses[e.i()];
+                let mut v = Vec::with_capacity(5);
+                for pi in [el.center, el.major] {
+                    let p = &self.points[pi as usize];
+                    v.push(p.x);
+                    v.push(p.y);
+                }
+                v.push(el.minor);
+                v
+            }
         }
     }
 
@@ -623,6 +668,10 @@ impl Sketch {
             EntKind::Spline => {
                 self.splines[e.i()].ctrl.iter().map(|&c| EntRef::point(c as usize)).collect()
             }
+            EntKind::Ellipse => {
+                let el = &self.ellipses[e.i()];
+                vec![EntRef::point(el.center as usize), EntRef::point(el.major as usize)]
+            }
         }
     }
 
@@ -637,7 +686,8 @@ impl Sketch {
         // inherit the point-shaped answer and be deleted whole instead of shortened
         match e.kind {
             EntKind::Spline => crate::curve::MIN_CTRL,
-            EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc => children.len(),
+            EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc
+            | EntKind::Ellipse => children.len(),
         }
     }
 
@@ -647,11 +697,12 @@ impl Sketch {
     pub fn topology_key(&self) -> String {
         use std::fmt::Write;
         let mut s = format!(
-            "{}|{}|{}|{}|",
+            "{}|{}|{}|{}|{}|",
             self.points.len(),
             self.lines.len(),
             self.circles.len(),
-            self.arcs.len()
+            self.arcs.len(),
+            self.ellipses.len()
         );
         for sp in &self.splines {
             let _ = write!(s, "s{}:", sp.ctrl.len());
@@ -689,14 +740,21 @@ impl Sketch {
             EntKind::Circle => self.circles.len(),
             EntKind::Arc => self.arcs.len(),
             EntKind::Spline => self.splines.len(),
+            EntKind::Ellipse => self.ellipses.len(),
         }
     }
 
     /// Every entity, in creation order per kind.
     pub fn primitives(&self) -> Vec<EntRef> {
         let mut out = Vec::new();
-        for kind in [EntKind::Point, EntKind::Line, EntKind::Circle, EntKind::Arc, EntKind::Spline]
-        {
+        for kind in [
+            EntKind::Point,
+            EntKind::Line,
+            EntKind::Circle,
+            EntKind::Arc,
+            EntKind::Spline,
+            EntKind::Ellipse,
+        ] {
             for i in 0..self.count(kind) {
                 out.push(EntRef::new(kind, i));
             }
@@ -806,6 +864,7 @@ impl Sketch {
                 let r = self.params[c.radius as usize].value.abs();
                 (cx - r, cy - r, cx + r, cy + r)
             }
+            EntKind::Ellipse => crate::ellipse::bounds(self, e.i()),
             EntKind::Arc | EntKind::Spline => {
                 let pts = if e.kind == EntKind::Arc {
                     self.arc_extremes(e.i())
@@ -921,6 +980,7 @@ fn point_to(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
             ((px - cx).hypot(py - cy) - sk.radius_value(e).abs()).abs()
         }
         EntKind::Spline => crate::curve::distance_to(sk, e.i(), px, py),
+        EntKind::Ellipse => crate::ellipse::distance_to(sk, e.i(), px, py),
     }
 }
 
@@ -962,9 +1022,11 @@ pub fn point_to_drawn(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
             let (ex, ey) = at(a1);
             (px - sx).hypot(py - sy).min((px - ex).hypot(py - ey))
         }
-        // the three whose drawn figure *is* the entity: a point, a whole ring, and a curve
-        // that `curve::distance_to` already keeps between its own knots
-        EntKind::Point | EntKind::Circle | EntKind::Spline => point_to(sk, px, py, e),
+        // the kinds whose drawn figure *is* the entity: a point, a whole ring or rim, and a
+        // curve that `curve::distance_to` already keeps between its own knots
+        EntKind::Point | EntKind::Circle | EntKind::Spline | EntKind::Ellipse => {
+            point_to(sk, px, py, e)
+        }
     }
 }
 
@@ -1010,6 +1072,7 @@ fn measure_order(k: EntKind) -> u8 {
         EntKind::Line => 1,
         EntKind::Circle | EntKind::Arc => 2,
         EntKind::Spline => 3,
+        EntKind::Ellipse => 4,
     }
 }
 
@@ -1033,6 +1096,17 @@ pub fn on_radius(cx: f64, cy: f64, tx: f64, ty: f64, r: f64) -> Option<(f64, f64
     Some((cx + r * dx / l, cy + r * dy / l))
 }
 
+/// Points along whatever is drawn of a kind that has no closed form to measure against — a
+/// curve's tessellation, an ellipse's rim.  One reader, so the arm in `distance_between` that
+/// sweeps is one arm and does not have to know which family it is sweeping.
+fn swept(sk: &Sketch, e: EntRef) -> Vec<(f64, f64)> {
+    match e.kind {
+        EntKind::Spline => crate::curve::sample(sk, e.i(), 64),
+        EntKind::Ellipse => crate::ellipse::sample(sk, e.i(), 64),
+        _ => Vec::new(),
+    }
+}
+
 /// Shortest distance between two entities, as a sketcher measures it.  Lines are treated as
 /// infinite; arcs are measured as the whole circle they lie on.
 pub fn distance_between(sk: &Sketch, first: EntRef, second: EntRef) -> f64 {
@@ -1046,6 +1120,18 @@ pub fn distance_between(sk: &Sketch, first: EntRef, second: EntRef) -> f64 {
             let (ax, ay) = sk.point_xy(a.i());
             point_to(sk, ax, ay, b)
         }
+        // A curve and an ellipse have no closed form against any of the others, so both are
+        // measured by sweeping what is drawn — close enough to measure by, and honestly the best
+        // a sampled answer can be.  Both sort after everything they could be paired with, so the
+        // swept one is always `b`, and the exact point case has already short-circuited above.
+        //
+        // This sits *above* the arms that reach for a centre and a radius, which is the whole
+        // reason it is one arm and not one per family: a sampled kind that fell through to them
+        // would ask a curve for a centre it does not have.
+        _ if matches!(b.kind, EntKind::Spline | EntKind::Ellipse) => swept(sk, b)
+            .into_iter()
+            .map(|(x, y)| point_to(sk, x, y, a))
+            .fold(f64::INFINITY, f64::min),
         EntKind::Line => match b.kind {
             EntKind::Line => {
                 let d1 = sk.line_dir(a.i());
@@ -1063,14 +1149,6 @@ pub fn distance_between(sk: &Sketch, first: EntRef, second: EntRef) -> f64 {
                 (point_to_line(sk, cx, cy, a.i()) - sk.radius_value(b).abs()).max(0.0)
             }
         },
-        // A curve has no closed form against any of the others, so it is measured by sweeping
-        // it — close enough to measure by, and honestly the best a sampled answer can be.  It
-        // sorts last, so it is `b` unless both are curves, and the exact point case has already
-        // short-circuited above.
-        _ if b.kind == EntKind::Spline => crate::curve::sample(sk, b.i(), 64)
-            .into_iter()
-            .map(|(x, y)| point_to(sk, x, y, a))
-            .fold(f64::INFINITY, f64::min),
         _ => {
             // outside each other, or one inside the other; overlapping rings give 0
             let (ax, ay) = sk.point_xy(sk.round_center(a));
