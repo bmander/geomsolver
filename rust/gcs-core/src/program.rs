@@ -227,36 +227,14 @@ impl Elaborated {
     /// Returns false, changing nothing, if the new text does not parse or has lost a statement
     /// this map still names; the caller then re-elaborates, which is always correct.
     pub fn retext(&mut self, text: &str) -> bool {
-        let (prog, errs) = crate::syntax::parse(text);
-        if !errs.is_empty() {
+        let Some(prog) = reparse(text) else { return false };
+        let at = spans(&prog);
+        // "the same statements" is the caller's claim; if it is false, refuse rather than quietly
+        // dropping what the map knows.  The caller then elaborates, which is always correct.
+        if !self.sites().all(|s| at.contains_key(&s.stmt)) {
             return false;
         }
-        let mut at: BTreeMap<StmtId, Span> = BTreeMap::new();
-        for c in prog.components.iter() {
-            for st in c.body.iter() {
-                stamp(st, &mut at);
-            }
-        }
-        let restamp = |site: &mut Site| -> bool {
-            match at.get(&site.stmt) {
-                Some(&sp) => {
-                    site.span = sp;
-                    true
-                }
-                None => false,
-            }
-        };
-        if !self.map.of_entity.values().all(|s| at.contains_key(&s.stmt))
-            || !self.map.of_constraint.values().all(|s| at.contains_key(&s.stmt))
-        {
-            return false;
-        }
-        for s in self.map.of_entity.values_mut() {
-            restamp(s);
-        }
-        for s in self.map.of_constraint.values_mut() {
-            restamp(s);
-        }
+        self.restamp(&at, Keep::All);
         self.program = prog;
         true
     }
@@ -273,30 +251,14 @@ impl Elaborated {
     /// which is the order they now sit in at the end of the root body.  False, changing nothing,
     /// if the new text does not parse or does not end with them.
     pub fn adopt(&mut self, text: &str, made: &[Made]) -> bool {
-        let (prog, errs) = crate::syntax::parse(text);
-        if !errs.is_empty() {
-            return false;
-        }
+        let Some(prog) = reparse(text) else { return false };
         let body = &prog.root().body;
         if body.len() < made.len() {
             return false;
         }
         let tail = &body[body.len() - made.len()..];
-        // the statements that went away take their entries with them
-        let mut live: BTreeMap<StmtId, Span> = BTreeMap::new();
-        for c in prog.components.iter() {
-            for st in c.body.iter() {
-                stamp(st, &mut live);
-            }
-        }
-        self.map.of_entity.retain(|_, s| live.contains_key(&s.stmt));
-        self.map.of_constraint.retain(|_, s| live.contains_key(&s.stmt));
-        for s in self.map.of_entity.values_mut() {
-            s.span = live[&s.stmt];
-        }
-        for s in self.map.of_constraint.values_mut() {
-            s.span = live[&s.stmt];
-        }
+        // a statement may have gone as well as arrived, and one that went takes its entries with it
+        self.restamp(&spans(&prog), Keep::Live);
         for (st, m) in tail.iter().zip(made) {
             let site = Site { stmt: st.id, span: st.span, path: InstPath::default() };
             match *m {
@@ -315,6 +277,25 @@ impl Elaborated {
         }
         self.program = prog;
         true
+    }
+
+    /// Every site in the map: what the drawing was made from, entities and constraints alike.
+    fn sites(&self) -> impl Iterator<Item = &Site> {
+        self.map.of_entity.values().chain(self.map.of_constraint.values())
+    }
+
+    /// Point every site at where its statement now is.  The one mechanism `retext` and `adopt`
+    /// share: both take a source the core spliced and have to bring the map onto it.
+    fn restamp(&mut self, at: &BTreeMap<StmtId, Span>, keep: Keep) {
+        if keep == Keep::Live {
+            self.map.of_entity.retain(|_, s| at.contains_key(&s.stmt));
+            self.map.of_constraint.retain(|_, s| at.contains_key(&s.stmt));
+        }
+        for s in self.map.of_entity.values_mut().chain(self.map.of_constraint.values_mut()) {
+            if let Some(&sp) = at.get(&s.stmt) {
+                s.span = sp;
+            }
+        }
     }
 
     /// Whether the program said anything the elaborator could not honour.  A warning does not
@@ -397,14 +378,41 @@ fn follow(sk: &Sketch, mut e: EntRef, path: &[Seg]) -> Result<EntRef, String> {
     Ok(e)
 }
 
-/// Every statement's span, blocks included — a statement inside one is still reached by its id.
-fn stamp(st: &Stmt, out: &mut BTreeMap<StmtId, Span>) {
-    out.insert(st.id, st.span);
-    if let StmtKind::Block(b) = &st.kind {
-        for inner in b.body.iter() {
-            stamp(inner, out);
+/// What to do with a site whose statement is no longer in the program.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Keep {
+    /// Every site's statement is expected to still be there; the caller has already checked.
+    All,
+    /// A statement may have been deleted, and its sites go with it.
+    Live,
+}
+
+/// Parse a source that is expected to be good.  `None` when it is not: both callers are taking a
+/// text the core itself just spliced, so a parse error means the splice was wrong, and the answer
+/// is to refuse and let the caller elaborate from scratch.
+fn reparse(text: &str) -> Option<Program> {
+    let (prog, errs) = crate::syntax::parse(text);
+    errs.is_empty().then_some(prog)
+}
+
+/// Where every statement in a program sits, blocks included — a statement inside one is still
+/// reached by its id.
+fn spans(prog: &Program) -> BTreeMap<StmtId, Span> {
+    fn stamp(st: &Stmt, out: &mut BTreeMap<StmtId, Span>) {
+        out.insert(st.id, st.span);
+        if let StmtKind::Block(b) = &st.kind {
+            for inner in b.body.iter() {
+                stamp(inner, out);
+            }
         }
     }
+    let mut out = BTreeMap::new();
+    for c in prog.components.iter() {
+        for st in c.body.iter() {
+            stamp(st, &mut out);
+        }
+    }
+    out
 }
 
 pub fn elaborate(p: &Program) -> Elaborated {

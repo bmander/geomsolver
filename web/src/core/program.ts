@@ -15,9 +15,25 @@
  * variable is a column.
  */
 import { Constraint } from './constraints.js';
-import { Diagnostic, SourceMap } from './io.js';
 import { Kind, KINDS, Primitive, Sketch } from './model.js';
 import { core, lastError, takeJson, takeStr, withJson, withStr } from './wasm.js';
+
+/** Where a statement sits in the program text — byte offsets, plus the line and column the core
+ *  worked out, so nothing here scans the text a second time. */
+export interface Span { lo: number; hi: number; line: number; col: number }
+
+export interface Diagnostic extends Span {
+  severity: 'error' | 'warning' | 'note';
+  code: string;
+  message: string;
+}
+
+/** Which statement made which part of the drawing, and the other way round.  Byte offsets into
+ *  the same text the panel holds, so a click on either end finds the other. */
+export interface SourceMap {
+  entities: { kind: string; index: number; name: string; lo: number; hi: number }[];
+  constraints: { id: number; lo: number; hi: number }[];
+}
 
 /** What an edit costs. */
 export type EditKind = 'structural' | 'numeric' | 'none';

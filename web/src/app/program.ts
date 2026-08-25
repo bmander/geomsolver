@@ -13,7 +13,7 @@
  * rows only when the contents actually changed, so a caret and a scroll position survive an edit
  * made elsewhere; `dimbox.ts` will not overwrite a box somebody is in.  A panel that reprinted on
  * every solve would take the line out from under the cursor. */
-import type { Diagnostic, Ref, SourceMap } from '../core/io.js';
+import type { Diagnostic, SourceMap } from '../core/program.js';
 import { pdiags, ppanel, ppanelState, ptext, view } from './shell.js';
 import { toast } from './ui.js';
 

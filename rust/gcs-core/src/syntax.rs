@@ -460,8 +460,26 @@ impl Program {
         id
     }
 
+    /// The statement with this id, blocks and all.
+    ///
+    /// A direct walk rather than `stmts().find(…)`: this is asked once per entity by
+    /// `edit::commit_seeds` and once per entity again by `reconcile`, and `stmts` builds a `Vec`
+    /// of the whole program to hand back.  Here it short-circuits and allocates nothing.
     pub fn stmt(&self, id: StmtId) -> Option<&Stmt> {
-        self.stmts().find(|s| s.id == id)
+        fn find(body: &[Stmt], id: StmtId) -> Option<&Stmt> {
+            for st in body.iter() {
+                if st.id == id {
+                    return Some(st);
+                }
+                if let StmtKind::Block(b) = &st.kind {
+                    if let Some(hit) = find(&b.body, id) {
+                        return Some(hit);
+                    }
+                }
+            }
+            None
+        }
+        self.components.iter().find_map(|c| find(&c.body, id))
     }
 
     /// The innermost statement covering a byte offset — a caret, turned into what it is written

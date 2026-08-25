@@ -207,6 +207,13 @@ export class SketchView {
    *  A program that will not elaborate leaves the drawing alone and says so: a half-written
    *  source is a thing somebody is in the middle of typing, not a reason to lose their work. */
   setProgram(text: string, fit = true): boolean {
+    return this.reread(text, fit, false);
+  }
+
+  /** Read a source afresh and make it the document — the one place `Document.read` is called, so
+   *  a program that will not elaborate is refused in exactly one way.  `carry` says whether the
+   *  selection is the same drawing's (an edit) or another's (a load). */
+  private reread(text: string, fit: boolean, carry: boolean): boolean {
     let next: Document;
     try {
       next = Document.read(text);
@@ -215,7 +222,7 @@ export class SketchView {
       return false;
     }
     this.redoStack = [];
-    this.swap(next, fit);
+    this.swap(next, fit, carry);
     return true;
   }
 
@@ -279,28 +286,29 @@ export class SketchView {
       return false;
     }
     if (e.kind === 'none') return false;
-    if (e.kind === 'structural') {
-      this.pushUndo();
-      let next: Document;
-      try {
-        next = Document.read(e.text);
-      } catch {
-        this.dropUndo();
-        this.onStatus('the edit could not be read back');
-        return false;
-      }
-      this.redoStack = [];
-      this.swap(next, false, true);
-    } else {
-      this.pushUndo();
-      this.redoStack = [];
-      // if the core would rather be re-elaborated, do that: correct always, slower sometimes
-      if (!this.doc.retext(e.text)) return this.setProgram(e.text, false);
-      this.afterEdit();
-      this.onProgram();
+    this.pushUndo();
+    if (!this.take(e.text, e.kind === 'numeric')) {
+      this.dropUndo();
+      return false;
     }
     if (what) this.onStatus(what);
     return true;
+  }
+
+  /** Take a new source as the document.
+   *
+   *  `numeric` is the core's word that the topology cannot have moved, so the drawing stands and
+   *  the compiled plan and the selection with it — which is what keeps editing a dimension
+   *  instant.  When the core would rather be re-elaborated it says so by refusing `retext`, and
+   *  re-reading is always correct and only slower. */
+  private take(text: string, numeric: boolean): boolean {
+    if (numeric && this.doc.retext(text)) {
+      this.redoStack = [];
+      this.afterEdit();
+      this.onProgram();
+      return true;
+    }
+    return this.reread(text, false, true);
   }
 
   /** Bring the source back into step with a drawing a gesture changed.
@@ -332,8 +340,13 @@ export class SketchView {
   syncSeeds(): void {
     if (this.anim) return;      // a wobble is not where the drawing is; freezing it in would lie
     const e = this.doc.commitSeeds();
-    if (e.kind === 'none' || !this.doc.retext(e.text)) return;
-    this.onProgram();
+    if (e.kind === 'none') return;
+    if (this.doc.retext(e.text)) return this.onProgram();
+    // the core would rather be re-elaborated.  Re-read rather than drop it: dropping would leave
+    // the source quietly describing where the drawing *was*, which is the one failure this whole
+    // design exists to prevent.  No solve here — the drag has already done it, and `endGesture`
+    // is about to tell the shell.
+    this.reread(e.text, false, true);
   }
 
 

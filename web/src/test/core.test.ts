@@ -21,7 +21,7 @@ import {
 import { checkSketch } from '../core/fdcheck.js';
 import { enumerateStep } from '../core/homotopy.js';
 import { Point, Sketch, Spline } from '../core/model.js';
-import { Document } from '../core/program.js';
+import { Document, fromSketch } from '../core/program.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
 import { analyze } from '../core/witness.js';
 import { core, initCore } from '../core/wasm.js';
@@ -1669,19 +1669,18 @@ test('a line solves tangent to the rim, and a circle takes its curvature', () =>
 test('a sketch prints as a program and reads back the same', () => {
   for (const name of ['rect_fillets', 'slotted_link', 'truss', 'pythagoras']) {
     const sk = examples.build(name);
-    const text = io.toProgram(sk);
+    const text = fromSketch(sk);
     assert.ok(text.length > 0, name);
-    const e = io.fromProgram(text);
-    assert.ok(e.ok, `${name}: ${JSON.stringify(e.diagnostics)}`);
-    assert.ok(e.sketch);
-    assert.equal(io.dumps(e.sketch!, 1), io.dumps(sk, 1), name);
-    e.sketch!.dispose();
+    const d = Document.read(text);
+    assert.ok(d.ok, `${name}: ${JSON.stringify(d.diagnostics)}`);
+    assert.equal(io.dumps(d.sketch, 1), io.dumps(sk, 1), name);
+    d.dispose();
     sk.dispose();
   }
 });
 
 test('a program written by hand draws', () => {
-  const e = io.fromProgram([
+  const d = Document.read([
     'point a at (0, 0)',
     'point b at (100, 0)',
     'line  ab(a, b)',
@@ -1689,30 +1688,30 @@ test('a program written by hand draws', () => {
     'horizontal(ab)',
     'ground(a)',
   ].join('\n'));
-  assert.ok(e.ok, JSON.stringify(e.diagnostics));
-  assert.equal(e.sketch!.points.length, 2);
-  assert.equal(e.sketch!.lines.length, 1);
-  e.sketch!.dispose();
+  assert.ok(d.ok, JSON.stringify(d.diagnostics));
+  assert.equal(d.sketch.points.length, 2);
+  assert.equal(d.sketch.lines.length, 1);
+  d.dispose();
 });
 
 test('a program with a bad line reports it and draws the rest', () => {
-  const e = io.fromProgram('point a at (0, 0)\nnonsense here\npoint b at (5, 5)\n');
-  assert.ok(!e.ok);
-  assert.ok(e.diagnostics.length > 0);
-  assert.ok(e.diagnostics[0].line >= 1 && e.diagnostics[0].code.length === 4);
-  assert.equal(e.sketch!.points.length, 2, 'one bad line costs one line');
-  e.sketch!.dispose();
+  const d = Document.read('point a at (0, 0)\nnonsense here\npoint b at (5, 5)\n');
+  assert.ok(!d.ok);
+  assert.ok(d.diagnostics.length > 0);
+  assert.ok(d.diagnostics[0].line >= 1 && d.diagnostics[0].code.length === 4);
+  assert.equal(d.sketch.points.length, 2, 'one bad line costs one line');
+  d.dispose();
 });
 
 test('the source map says where each entity was written', () => {
   const sk = examples.build('slotted_link');
-  const text = io.toProgram(sk);
-  const e = io.fromProgram(text);
-  assert.ok(e.map.entities.length >= sk.points.length);
-  const p0 = e.map.entities.find((x) => x.name === 'p0')!;
+  const text = fromSketch(sk);
+  const d = Document.read(text);
+  assert.ok(d.map.entities.length >= sk.points.length);
+  const p0 = d.map.entities.find((x) => x.name === 'p0')!;
   assert.ok(p0, 'p0 is in the map');
   assert.ok(text.slice(p0.lo, p0.hi).startsWith('point'), text.slice(p0.lo, p0.hi));
-  e.sketch!.dispose();
+  d.dispose();
   sk.dispose();
 });
 
