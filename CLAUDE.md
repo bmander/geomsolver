@@ -488,9 +488,15 @@ Conventions:
   the flat form), so `System` only picks `trace_kernel` over `curve_kernel` per definition and
   the bindings are untouched.  Chirality — which way the string unwinds — is a *branch*, and no
   regular residual can state one (a residual zero at exactly one direction has a vanishing
-  gradient there): the block's `at (…)` seeds are expressions over `(u, θ)` that pick it, and
-  continuity carries it — evaluation seeds at the target parameter and falls back to marching
-  from the instance's domain, warm-started step to step, the same way the polyline sweep walks.
+  gradient there): the block's `at` seeds pick it, and continuity carries it — evaluation seeds
+  at the target parameter and falls back to marching from the instance's domain, warm-started
+  step to step, the same way the polyline sweep walks.  A seed is a *place*, and a place is
+  named geometrically where it can be: `at c bearing (u + phase)` is the point at the edge of
+  the circle, `at t` is where another point starts (`program::at_seed` lowers both to the tapes
+  the coordinate spelling would be), and `at (xexpr, yexpr)` remains for a place with no name.
+  Prefer signed statements over seeds wherever the vocabulary has them — `point_line_distance`
+  is signed, so "taut" written against the radius line makes the winding algebraic in the sign
+  of the roll and leaves the string end with no seed at all.
   A block must be square — as many rows as inner coordinates — or elaboration refuses it.
   `tests/trace.rs` holds the taut-string involute checked against the closed form it never
   states (with seeds wrong by 3× on purpose), and a gear run on traced flanks.

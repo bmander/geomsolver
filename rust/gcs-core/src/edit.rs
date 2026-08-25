@@ -205,6 +205,7 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
         values: Vec::new(),
         domain: None,
         construction: false,
+        seed_at: None,
     };
     append(prog, StmtKind::Decl(d), vec![name])
 }
@@ -245,6 +246,7 @@ pub fn add_entity(prog: &Program, kind: EntKind, args: &[String], seed: &[f64]) 
         values: Vec::new(),
         domain: None,
         construction: false,
+        seed_at: None,
     };
     append(prog, StmtKind::Decl(d), vec![name])
 }

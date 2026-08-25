@@ -686,6 +686,9 @@ fn compile_trace(
     let mut seeds: Vec<Tape> = Vec::new();
     for st in body {
         let StmtKind::Decl(d) = &st.kind else { continue };
+        if d.seed_at.is_some() && d.kind != EntKind::Point {
+            return Err((st.span, "only a point takes a geometric seed".to_string()));
+        }
         let seed_tape = |i: usize| -> Result<Tape, (Span, String)> {
             match d.seed_text.get(i).and_then(|t| t.as_ref()) {
                 Some(t) => tape(t, *d.seed_spans.get(i).unwrap_or(&st.span)),
@@ -708,7 +711,10 @@ fn compile_trace(
         };
         let e = match d.kind {
             EntKind::Point => {
-                let (sx, sy) = (seed_tape(0)?, seed_tape(1)?);
+                let (sx, sy) = match &d.seed_at {
+                    Some(a) => at_seed(&sk, &scope, &slot, vars, &seeds, n_outer, a, st.span)?,
+                    None => (seed_tape(0)?, seed_tape(1)?),
+                };
                 let e = EntRef::point(sk.point(0.0, 0.0, false, &d.name.text));
                 seeds.push(sx);
                 seeds.push(sy);
@@ -893,6 +899,86 @@ fn compile_trace(
     Locus::new(n_outer, n_theta, n_q, traced, w, seeds, rows).map_err(|m| (f.span, m))
 }
 
+/// A seed named geometrically, compiled to the tapes a written pair would be: the place a point
+/// already names, or **the point at the edge of a circle** at a bearing from the page's x-axis —
+/// `at c bearing (u + phase)`, which is what that place is called in this language rather than
+/// the trigonometry it comes to.
+fn at_seed(
+    sk: &Sketch,
+    scope: &BTreeMap<String, EntRef>,
+    slot: &BTreeMap<u32, usize>,
+    vars: &[String],
+    seeds: &[crate::tape::Tape],
+    n_outer: usize,
+    a: &crate::syntax::AtRef,
+    span: Span,
+) -> Result<(crate::tape::Tape, crate::tape::Tape), (Span, String)> {
+    use crate::expr::{Ast, Op};
+    use crate::tape::Tape;
+    let e = scope
+        .get(&a.what.root.text)
+        .copied()
+        .ok_or((a.what.span, format!("no such entity: `{}`", a.what.root.text)))?;
+    let e = follow(sk, e, &a.what.path).map_err(|m| (a.what.span, m))?;
+    // what one scratch parameter is seeded from: a formal's coordinate is a variable of the
+    // family; an inner point's is whatever seeded it, which is why declaration order matters
+    let of = |p: u32| -> Result<Tape, (Span, String)> {
+        let s = *slot.get(&p).ok_or((span, "trace lowering lost a column".to_string()))?;
+        if s < n_outer {
+            Tape::compile(&Ast::Var(vars[s].clone()), vars).map_err(|m| (span, m))
+        } else {
+            seeds.get(s - n_outer).cloned().ok_or((
+                a.what.span,
+                format!("`{}` is declared after this point", a.what.root.text),
+            ))
+        }
+    };
+    match (e.kind, &a.bearing) {
+        (EntKind::Point, None) => {
+            let ps = sk.point_params(e.i());
+            Ok((of(ps[0])?, of(ps[1])?))
+        }
+        (EntKind::Point, Some(_)) => {
+            Err((span, "a point is already a place; a bearing needs a circle".to_string()))
+        }
+        (EntKind::Circle, Some((text, bsp))) => {
+            let c = &sk.circles[e.i()];
+            // the edge of an *inner* circle would need its seed tapes composed with the
+            // bearing's; the case nobody has asked for yet
+            let name = |p: u32| -> Result<String, (Span, String)> {
+                match slot.get(&p) {
+                    Some(&s) if s < n_outer => Ok(vars[s].clone()),
+                    _ => Err((
+                        a.what.span,
+                        "the circle must be one the family is written over".to_string(),
+                    )),
+                }
+            };
+            let ctr = sk.point_params(c.center as usize);
+            let (cx, cy, r) = (name(ctr[0])?, name(ctr[1])?, name(c.radius)?);
+            let beta = crate::expr::parse(text).map_err(|m| (*bsp, m))?.body;
+            let coord = |centre: &str, trig: &str| -> Result<Tape, (Span, String)> {
+                let ast = Ast::Bin(
+                    Op::Add,
+                    Box::new(Ast::Var(centre.to_string())),
+                    Box::new(Ast::Bin(
+                        Op::Mul,
+                        Box::new(Ast::Var(r.clone())),
+                        Box::new(Ast::Call(trig.to_string(), vec![beta.clone()])),
+                    )),
+                );
+                Tape::compile(&ast, vars).map_err(|m| (*bsp, m))
+            };
+            Ok((coord(&cx, "cos")?, coord(&cy, "sin")?))
+        }
+        (EntKind::Circle, None) => Err((
+            span,
+            "where on the edge?  `at c bearing (…)` says the bearing".to_string(),
+        )),
+        (k, _) => Err((a.what.span, format!("a seed cannot be at a {}", k.as_str()))),
+    }
+}
+
 fn build(
     sk: &mut Sketch,
     res: &Resolver,
@@ -904,6 +990,17 @@ fn build(
     // walk that insists they are
     if d.kind == EntKind::Curve {
         return build_curve(sk, res, d, st, diags);
+    }
+    // a geometric seed reads geometry that a trace block's variable table names; out here a
+    // drawing's seed is a number a solve writes back, which a place named by reference is not
+    if d.seed_at.is_some() {
+        diags.push(Diag {
+            code: Code::E103,
+            span: st.span,
+            stmt: Some(st.id),
+            message: "a seed named geometrically (`at c bearing (…)`) lives in a trace block"
+                .to_string(),
+        });
     }
     // every child a declaration names, flattened in field order and checked to be a Point —
     // which every other child of every other kind is, and which is what an alias class must
@@ -1408,6 +1505,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         domain: None,
         knots,
         construction: construction_of(sk, e),
+        seed_at: None,
     }
 }
 

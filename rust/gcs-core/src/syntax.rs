@@ -296,6 +296,17 @@ pub struct Decl {
     /// The interval a curve instance is drawn over, as written.
     pub domain: Option<(String, String)>,
     pub construction: bool,
+    /// A seed named *geometrically* rather than by coordinates: `at t`, `at c.center`,
+    /// `at c bearing (u + phase)`.  What it may name is the elaborator's question.
+    pub seed_at: Option<AtRef>,
+}
+
+/// `at c bearing (u + phase)` — a place given as geometry: at a point, or at the edge of a
+/// circle at a bearing from the page's x-axis.
+#[derive(Clone, Debug)]
+pub struct AtRef {
+    pub what: Ref,
+    pub bearing: Option<(String, Span)>,
 }
 
 /// A constraint statement: `distance(p0, p1) == 80 at (12, -4)`.
@@ -1066,7 +1077,7 @@ const BLOCKS: [&str; 3] = ["repeat", "cycle", "ring"];
 
 /// The words that shape a statement without naming anything — a modifier the parser eats where it
 /// stands.  `as` binds a name after it, which is why `highlight` treats that one specially.
-const MODIFIERS: [&str; 6] = ["over", "as", "at", "about", "construction", "where"];
+const MODIFIERS: [&str; 7] = ["over", "as", "at", "about", "construction", "where", "bearing"];
 
 /// What the word *after* this one is expected to be — the whole of the state the colouring carries
 /// from one token to the next, and four states rather than the four independent flags that would
@@ -1903,6 +1914,7 @@ impl<'a> P<'a> {
                 values,
                 domain,
                 construction,
+                seed_at: None,
             });
         }
         let mut children: Vec<Vec<Ref>> = Vec::new();
@@ -1972,14 +1984,32 @@ impl<'a> P<'a> {
                 }
             }
         }
-        // trailing clauses, in any order: `at (x, y)`, `knots [...]`, `construction`
+        // trailing clauses, in any order: `at (x, y)` or `at REF [bearing (…)]`, `knots [...]`,
+        // `construction`
         let mut knots = None;
         let mut construction = false;
+        let mut seed_at = None;
         loop {
             if self.eat_word("at") {
-                if !self.want_p('(') {
-                    return None;
+                // a place named geometrically: `at t`, `at c bearing (u + phase)`
+                if self.peek() != Some(&Tok::P('(')) {
+                    let what = self.refr()?;
+                    let bearing = if self.eat_word("bearing") {
+                        if !self.want_p('(') {
+                            return None;
+                        }
+                        let (t, sp) = self.expr_until(')')?;
+                        if !self.want_p(')') {
+                            return None;
+                        }
+                        Some((t, sp))
+                    } else {
+                        None
+                    };
+                    seed_at = Some(AtRef { what, bearing });
+                    continue;
                 }
+                self.i += 1; // `(`
                 let (x, xt, xs) = self.value_text()?;
                 if !self.want_p(',') {
                     return None;
@@ -2027,6 +2057,7 @@ impl<'a> P<'a> {
             values,
             domain,
             construction,
+            seed_at,
         })
     }
 

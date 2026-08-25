@@ -429,3 +429,95 @@ fn a_blocks_mistakes_are_named() {
         );
     }
 }
+
+/// **A seed is a place, and a place is named geometrically.**  `at c bearing (u)` is the point
+/// at the edge of the circle — said the way a draughtsman says it, lowered to the same tapes the
+/// trigonometry would be — and `at t` is wherever another point starts.  The bearing may read
+/// `u`, which is what lets one seed follow the whole rim.
+#[test]
+fn a_seed_is_a_place_named_geometrically() {
+    let src = "\
+curve rim(c: circle, datum: line)(u) over (0, 350) =
+  trace p where {
+    point t at c bearing (u)
+    point p at t
+    line rad(c.center, t)
+    point_on_circle(t, c)
+    angle(datum, rad) == u
+    coincident(p, t)
+  }
+point  o at (2, 1)
+point  ax at (3, 1)
+line   datum(o, ax) construction
+circle base(center: o, r: 7)
+curve  w = rim(base, datum)
+";
+    let e = build(src);
+    assert!(
+        e.ok(),
+        "{:?}",
+        e.errors().map(|d| (d.code.as_str(), &d.message)).collect::<Vec<_>>()
+    );
+    // the full circle, mod-180 branch and all: the bearing seed reads u, so every sample starts
+    // on the right side
+    for u in [0.0f64, 90.0, 200.0, 350.0] {
+        let want = (2.0 + 7.0 * u.to_radians().cos(), 1.0 + 7.0 * u.to_radians().sin());
+        let got = e.sketch.curve_point(0, u);
+        assert!(
+            (got.0 - want.0).abs() < 1e-8 && (got.1 - want.1).abs() < 1e-8,
+            "at u = {u}: rim {want:?}, trace {got:?}",
+        );
+    }
+}
+
+/// A geometric seed's own mistakes each say what is wrong.
+#[test]
+fn a_geometric_seeds_mistakes_are_named() {
+    let cases = [
+        ("trace p where {\n  point q\n  point p at q bearing (0)\n\
+          coincident(p, c.center)\n  coincident(q, c.center)\n}",
+         "a bearing needs a circle"),
+        ("trace p where {\n  point p at c\n  coincident(p, c.center)\n}",
+         "says the bearing"),
+        ("trace p where {\n  point p\n  point q\n  line l(p, q) at c\n\
+          coincident(p, c.center)\n  coincident(q, c.center)\n}",
+         "only a point takes a geometric seed"),
+        ("trace p where {\n  point p at zzz\n  coincident(p, c.center)\n}",
+         "no such entity"),
+        // a point may only seed at one already declared: names enter scope in order
+        ("trace p where {\n  point p at q\n  point q\n\
+          coincident(p, c.center)\n  coincident(q, c.center)\n}",
+         "no such entity: `q`"),
+    ];
+    for (body, want) in cases {
+        let src = format!(
+            "curve b(c: circle)(u) =\n  {body}\npoint o at (0, 0)\n\
+             circle base(center: o, r: 5)\ncurve w = b(base)\n"
+        );
+        let (prog, errs) = parse(&src);
+        assert!(errs.is_empty(), "{want}: {errs:?}");
+        let e = elaborate(&prog);
+        assert!(!e.ok(), "{want}: elaborated cleanly");
+        assert!(
+            e.errors().any(|d| d.message.contains(want)),
+            "wanted `{want}` in {:?}",
+            e.errors().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+}
+
+/// Outside a trace block a seed is a number a solve writes back, which a place named by
+/// reference is not — so the geometric form is refused there, and says where it belongs.
+#[test]
+fn a_geometric_seed_outside_a_trace_block_is_refused() {
+    let src = "point o at (0, 0)\ncircle c0(center: o, r: 5)\npoint q at c0 bearing (30)\n";
+    let (prog, errs) = parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = elaborate(&prog);
+    assert!(!e.ok());
+    assert!(
+        e.errors().any(|d| d.message.contains("lives in a trace block")),
+        "{:?}",
+        e.errors().map(|d| &d.message).collect::<Vec<_>>()
+    );
+}

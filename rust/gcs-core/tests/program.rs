@@ -315,6 +315,7 @@ fn a_name_declared_twice_is_an_error() {
             values: Vec::new(),
             domain: None,
             construction: false,
+            seed_at: None,
         }));
     }
     render(&mut p);

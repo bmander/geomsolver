@@ -168,6 +168,7 @@ impl<'a> Walk<'a> {
                             values: Vec::new(),
                             domain: None,
                             construction: false,
+                            seed_at: None,
                         };
                         self.emit(StmtKind::Decl(d), st, scope, path);
                     } else if let Some(r) = &p.alias {
