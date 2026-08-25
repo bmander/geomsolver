@@ -27,6 +27,14 @@ export interface Abi {
   gcs_sketch_clone(h: number): number;
   gcs_sketch_from_json(p: number, n: number): number;
   gcs_sketch_to_json(h: number, indent: number): number;
+  gcs_sketch_to_program(h: number): number;
+  gcs_curve_polyline(h: number, idx: number, out: number, cap: number): number;
+  gcs_counts_len(): number;
+  gcs_program_elaborate(p: number, n: number): number;
+  gcs_elab_free(h: number): void;
+  gcs_elab_take_sketch(h: number): number;
+  gcs_elab_text(h: number): number;
+  gcs_elab_report(h: number): number;
   gcs_sketch_counts(h: number, out: number): void;
   gcs_sketch_point(h: number, x: number, y: number, fixed: number, name: number, nameLen: number): number;
   gcs_sketch_line(h: number, p1: number, p2: number): number;

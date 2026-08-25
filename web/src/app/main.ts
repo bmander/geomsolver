@@ -42,6 +42,7 @@ import {
   showDiagnosis,
 } from './dialogs.js';
 import { editValue, onDimension } from './dimbox.js';
+import { bindProgramPanel, refreshProgram, showStatementFor, toggleProgramPanel } from './program.js';
 import { closePanel, openPanel, refresh, refreshStatus } from './lists.js';
 import {
   aboutBadge, barConstraints, barTools, canvas, currentConstraint, focusConstraint, menubar, view,
@@ -108,6 +109,8 @@ const MENUS: [string, (MenuItem | null)[]][] = [
       title: 'A copy of the clipboard, nudged clear and selected, joined to nothing' },
     null,
     { label: 'Fit to screen', onClick: () => view.fit() },
+    { label: 'Program', key: '⌘p', onClick: () => toggleProgramPanel(),
+      title: 'The program this drawing is written as — edit it and the drawing follows' },
     { label: 'Re-place dimensions', onClick: () => {
       // the focused dimension if there is one, otherwise every dimension on the drawing
       const n = view.resetCallouts(currentConstraint);
@@ -187,6 +190,7 @@ window.addEventListener('keydown', (e) => {
 view.onSelect = () => {
   if (currentConstraint) focusConstraint(null);
   if (!view.selected.length) closePanel();
+  showStatementFor();
 };
 /* A dimension on the drawing and its row in the window are the same constraint, so clicking
  * either does the same thing — and double-clicking either opens the same number.  One clicked
@@ -199,9 +203,10 @@ view.onPickConstraint = (c) => {
 };
 view.onEditConstraint = (c) => editValue(c);
 view.onDimension = onDimension;
-view.onChanged = refresh;
+view.onChanged = () => { refresh(); refreshProgram(); };
 view.onDragFrame = refreshStatus;
 view.onStatus = toast;
+bindProgramPanel();
 new ResizeObserver(() => view.resize()).observe(canvas);
 view.resize();
 view.fit();

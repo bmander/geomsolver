@@ -1205,7 +1205,14 @@ test('the registry the binding generates its classes from matches the kernels', 
   assert.equal(reg.kernels.length, core().gcs_kernel_count());
   assert.equal(reg.types.length, Object.keys(C.CONSTRAINT_TYPES).length);
   for (const t of reg.types) {
-    assert.ok(t.kernel >= 0 && t.kernel < reg.kernels.length, t.name);
+    // -1 means the kernel belongs to the curve *definition* rather than to the type: two curve
+    // families read different numbers of coordinates, so they cannot share one.  Every other
+    // type names a static kernel, and must.
+    if (t.kernel === -1) {
+      assert.equal(t.name, 'PointOnCurve', `${t.name} has no static kernel`);
+    } else {
+      assert.ok(t.kernel >= 0 && t.kernel < reg.kernels.length, t.name);
+    }
     assert.equal(C.CONSTRAINT_TYPES[t.name].kernelId, t.kernel);
   }
 });
@@ -1652,6 +1659,98 @@ test('a line solves tangent to the rim, and a circle takes its curvature', () =>
   const t = num(sk.constraints.find((k) => k.typeName === 'EllipseCurvature')!.args[2]);
   if (Math.abs(Math.sin(t)) < 1e-3) {
     assert.ok(Math.abs(Math.abs(cc.radius.value) - 9 / 8) < 1e-3);
+  }
+  sk.dispose();
+});
+
+/* -- Solvent: the program a sketch is written as ---------------------------------- */
+
+test('a sketch prints as a program and reads back the same', () => {
+  for (const name of ['rect_fillets', 'slotted_link', 'truss', 'pythagoras']) {
+    const sk = examples.build(name);
+    const text = io.toProgram(sk);
+    assert.ok(text.length > 0, name);
+    const e = io.fromProgram(text);
+    assert.ok(e.ok, `${name}: ${JSON.stringify(e.diagnostics)}`);
+    assert.ok(e.sketch);
+    assert.equal(io.dumps(e.sketch!, 1), io.dumps(sk, 1), name);
+    e.sketch!.dispose();
+    sk.dispose();
+  }
+});
+
+test('a program written by hand draws', () => {
+  const e = io.fromProgram([
+    'point a at (0, 0)',
+    'point b at (100, 0)',
+    'line  ab(a, b)',
+    'distance(a, b) == w = 60',
+    'horizontal(ab)',
+    'ground(a)',
+  ].join('\n'));
+  assert.ok(e.ok, JSON.stringify(e.diagnostics));
+  assert.equal(e.sketch!.points.length, 2);
+  assert.equal(e.sketch!.lines.length, 1);
+  e.sketch!.dispose();
+});
+
+test('a program with a bad line reports it and draws the rest', () => {
+  const e = io.fromProgram('point a at (0, 0)\nnonsense here\npoint b at (5, 5)\n');
+  assert.ok(!e.ok);
+  assert.ok(e.diagnostics.length > 0);
+  assert.ok(e.diagnostics[0].line >= 1 && e.diagnostics[0].code.length === 4);
+  assert.equal(e.sketch!.points.length, 2, 'one bad line costs one line');
+  e.sketch!.dispose();
+});
+
+test('the source map says where each entity was written', () => {
+  const sk = examples.build('slotted_link');
+  const text = io.toProgram(sk);
+  const e = io.fromProgram(text);
+  assert.ok(e.map.entities.length >= sk.points.length);
+  const p0 = e.map.entities.find((x) => x.name === 'p0')!;
+  assert.ok(p0, 'p0 is in the map');
+  assert.ok(text.slice(p0.lo, p0.hi).startsWith('point'), text.slice(p0.lo, p0.hi));
+  e.sketch!.dispose();
+  sk.dispose();
+});
+
+test('the gear is a program, and its flanks are involutes the language defines', () => {
+  const sk = examples.build('gear');
+  const n = 30;
+  assert.equal(sk.circles.length, 3, 'the base, root and tip circles');
+  assert.equal(sk.curves.length, 2 * n, 'two involute flanks per tooth');
+  assert.equal(sk.points.length, 1 + 4 * n, 'a centre, and two ends per flank');
+  const r = solve(sk);
+  assert.ok(r.success, r.message);
+
+  // every flank end is on the circle its statement named, and nothing said where
+  const [rr, rt] = [42, 48];
+  let onRoot = 0;
+  let onTip = 0;
+  for (let i = 1; i < sk.points.length; i++) {
+    const p = sk.points[i];
+    const rad = Math.hypot(p.x.value, p.y.value);
+    if (Math.abs(rad - rr) < 1e-6) onRoot++;
+    else if (Math.abs(rad - rt) < 1e-6) onTip++;
+    else assert.fail(`a flank end at radius ${rad}`);
+  }
+  assert.equal(onRoot, 2 * n);
+  assert.equal(onTip, 2 * n);
+
+  // and the drawn curve really is an involute: sampled along the polyline the core hands the
+  // painter, every point is `rb` from the centre plus a string as long as the arc it unwound
+  const rb = 45 * Math.cos((25 * Math.PI) / 180);
+  for (const cv of sk.curves.slice(0, 4)) {
+    const poly = cv.polyline();
+    assert.ok(poly.length > 32, 'the core laid out a polyline');
+    for (const [x, y] of poly) {
+      const d = Math.hypot(x, y);
+      // a point of an involute of radius rb is at distance sqrt(rb^2 + s^2) for a string s
+      const s = Math.sqrt(Math.max(0, d * d - rb * rb));
+      assert.ok(d >= rb - 1e-6, `inside the base circle at ${d}`);
+      assert.ok(s <= rt, `absurd string length ${s}`);
+    }
   }
   sk.dispose();
 });

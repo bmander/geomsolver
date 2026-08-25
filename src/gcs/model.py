@@ -15,6 +15,9 @@ import numpy as np
 from gcs import _ffi
 from gcs._ffi import Vec, lib
 
+#: How many integers `gcs_sketch_counts` writes.  Asked of the core so the two cannot drift.
+_COUNTS_LEN: int = int(lib.gcs_counts_len())
+
 if TYPE_CHECKING:
     from gcs.constraints import Constraint
 
@@ -362,7 +365,9 @@ class Sketch:
     # -- interning ----------------------------------------------------------
 
     def _counts(self) -> list[int]:
-        buf = _ffi.i32(8)
+        # sized by the core, not by a number written here: a buffer short by one entity kind is
+        # an overflow rather than a truncation, and it surfaces as a crash somewhere else
+        buf = _ffi.i32(_COUNTS_LEN)
         lib.gcs_sketch_counts(self._h, _ffi.pi(buf))
         return [int(v) for v in buf]
 

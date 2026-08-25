@@ -15,6 +15,12 @@ use std::collections::BTreeMap;
 
 pub type Box2 = (f64, f64, f64, f64); // (xmin, ymin, xmax, ymax)
 
+/// How many steps a user-written curve is sampled at for measuring, picking and bounding.  A
+/// B-spline is refined adaptively against its own basis; a curve written in the language has no
+/// basis to refine against, so it is sampled evenly and finely enough that a pick test does not
+/// lie about what the drawing shows.
+pub const CURVE_STEPS: usize = 128;
+
 #[derive(Clone, Debug)]
 pub struct Param {
     pub value: f64,
@@ -37,6 +43,11 @@ pub enum EntKind {
     Arc,
     Spline,
     Ellipse,
+    /// A curve written in the language: `C(u)` as an expression over the geometry it is drawn
+    /// from.  Unlike every other kind it holds no coordinates of its own — it *is* the two
+    /// expressions plus whatever it reads — so it moves when its arguments do and never
+    /// otherwise.  See `CurveDef`.
+    Curve,
 }
 
 impl EntKind {
@@ -48,6 +59,7 @@ impl EntKind {
             EntKind::Arc => "arc",
             EntKind::Spline => "spline",
             EntKind::Ellipse => "ellipse",
+            EntKind::Curve => "curve",
         }
     }
 
@@ -59,9 +71,75 @@ impl EntKind {
             "arc" => EntKind::Arc,
             "spline" => EntKind::Spline,
             "ellipse" => EntKind::Ellipse,
+            "curve" => EntKind::Curve,
             _ => return None,
         })
     }
+
+    /// What an entity's declaration names, in order.  A `Child` is a sub-entity and binds by
+    /// aliasing; a `Scalar` is a number the entity owns.  `List` is a child field that is a
+    /// *list* — a control polygon — and is the reason a spline survives losing one of them.
+    ///
+    /// One table, so a new entity kind is named the same way wherever one has to be written
+    /// down.  The names are the document's own keys (`io::to_json`), which
+    /// `tests/io.rs::the_document_uses_the_field_names` holds them to.
+    pub fn fields(self) -> &'static [(&'static str, Field)] {
+        use Field::{Child as C, List as L, Scalar as S};
+        match self {
+            EntKind::Point => &[("x", S), ("y", S)],
+            EntKind::Line => &[("p1", C), ("p2", C)],
+            EntKind::Circle => &[("center", C), ("r", S)],
+            EntKind::Arc => &[("center", C), ("start", C), ("end", C), ("r", S)],
+            EntKind::Spline => &[("ctrl", L)],
+            EntKind::Ellipse => &[("center", C), ("major", C), ("b", S)],
+            // as many arguments as its definition takes, and none of them need be points — the
+            // first kind for which that is true
+            EntKind::Curve => &[("args", L)],
+        }
+    }
+
+    /// The names a curve written over an entity of this kind reads its coordinates by, in
+    /// **`Sketch::entity_params` order** — `c.center.x`, `c.center.y`, `c.r` for a circle.
+    ///
+    /// That order is the whole contract: it is the order a definition's tapes are compiled
+    /// against and the order `params_on` hands the kernel its columns, so a tape's gradient is a
+    /// row of the Jacobian with nothing to rearrange.  The two are held together by
+    /// `tests/curvedef.rs::the_names_match_the_parameters`.
+    ///
+    /// `None` for a kind whose parameter count is not fixed — a spline's control polygon is as
+    /// long as somebody drew it, so a curve cannot be written over one by name.
+    pub fn scalar_names(self, n: &str) -> Option<Vec<String>> {
+        let pt = |f: &str| vec![format!("{n}.{f}.x"), format!("{n}.{f}.y")];
+        Some(match self {
+            EntKind::Point => vec![format!("{n}.x"), format!("{n}.y")],
+            EntKind::Line => [pt("p1"), pt("p2")].concat(),
+            EntKind::Circle => [pt("center"), vec![format!("{n}.r")]].concat(),
+            EntKind::Arc => {
+                [pt("center"), pt("start"), pt("end"), vec![format!("{n}.r")]].concat()
+            }
+            EntKind::Ellipse => [pt("center"), pt("major"), vec![format!("{n}.b")]].concat(),
+            EntKind::Spline | EntKind::Curve => return None,
+        })
+    }
+
+    /// How many sub-entities a declaration names — `None` for a kind whose children are a *list*,
+    /// which is a control polygon and is as long as somebody drew it.
+    pub fn children_arity(self) -> Option<usize> {
+        let f = self.fields();
+        (!f.iter().any(|(_, k)| *k == Field::List))
+            .then(|| f.iter().filter(|(_, k)| *k == Field::Child).count())
+    }
+}
+
+/// What one field of an entity declaration holds — see `EntKind::fields`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Field {
+    /// One sub-entity, bound by aliasing.
+    Child,
+    /// A list of sub-entities: a control polygon.
+    List,
+    /// A number the entity owns — a coordinate, a radius, a minor axis.
+    Scalar,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -158,6 +236,48 @@ pub struct EllipseE {
     pub construction: bool,
 }
 
+/// A curve family, written in the language: `C(u)` as a pair of expressions over the geometry
+/// the curve is drawn from.
+///
+/// This is what makes an involute — or a cycloid, or a spiral — *library code* rather than
+/// another entity kind with another pair of kernels.  A definition names the entities it is
+/// written over, the compile-time values it takes, and the parameter it runs on; the two tapes
+/// are compiled against one variable table, which is the parameter followed by every scalar its
+/// arguments contribute, in `entity_params` order.  That order is the kernel's column order, so
+/// a tape's gradient *is* the Jacobian row.
+#[derive(Clone, Debug)]
+pub struct CurveDef {
+    pub name: String,
+    /// The entity arguments, in order: what an instance must supply, and of what kind.
+    pub formals: Vec<(String, EntKind)>,
+    /// The compile-time value parameters, in order.
+    pub values: Vec<String>,
+    /// What the curve runs on — `u`.
+    pub param: String,
+    /// The variable table both tapes were compiled over: `param` first, then one name per scalar
+    /// the formals contribute.  Kept so a definition can be re-read and printed.
+    pub vars: Vec<String>,
+    pub x: crate::tape::Tape,
+    pub y: crate::tape::Tape,
+    /// The interval the curve is drawn over.
+    pub domain: (f64, f64),
+}
+
+/// One curve, drawn: a definition, the entities it is written over, and the numbers it was
+/// given.  It holds no parameters of its own — it *is* its expressions — so it moves exactly
+/// when its arguments do.
+#[derive(Clone, Debug)]
+pub struct CurveE {
+    pub def: u32,
+    pub args: Vec<EntRef>,
+    pub values: Vec<f64>,
+    /// The interval *this* curve is drawn over.  A family has a default; an instance narrows it,
+    /// which is how a gear flank is the piece of an involute between two circles rather than the
+    /// whole spiral.
+    pub domain: (f64, f64),
+    pub construction: bool,
+}
+
 /// The CCW arc through three points.
 #[derive(Clone, Copy, Debug)]
 pub struct ThreePointArc {
@@ -215,6 +335,10 @@ pub struct Sketch {
     pub arcs: Vec<ArcE>,
     pub splines: Vec<SplineE>,
     pub ellipses: Vec<EllipseE>,
+    pub curves: Vec<CurveE>,
+    /// The curve families this document defines.  Document state like `branches`: a curve
+    /// instance names one by index.
+    pub curve_defs: Vec<CurveDef>,
     pub constraints: Vec<Constraint>,
     /// Recorded root choices (Stage 5), persisted with the document.
     pub branches: BTreeMap<String, i32>,
@@ -645,6 +769,34 @@ impl Sketch {
                 v.push(el.minor);
                 v
             }
+            // whatever its arguments contribute, in argument order — which is the order its
+            // tapes were compiled against and so the order of the Jacobian's columns
+            EntKind::Curve => {
+                let mut v = Vec::new();
+                for &a in &self.curves[e.i()].args {
+                    v.extend(self.entity_params(a));
+                }
+                v
+            }
+        }
+    }
+
+    /// The parameters an entity owns *itself*: the ones `entity_params` has that its children do
+    /// not.  A point's coordinates, a circle's or an arc's radius, an ellipse's minor — exactly
+    /// the `Scalar` fields of `EntKind::fields`, and exactly what a declaration seeds and a solve
+    /// may write back into one.
+    ///
+    /// Exhaustive on purpose, like `min_children`: a new entity kind with a number of its own
+    /// must stop the build here, or its number would be a value nothing ever writes down.
+    pub fn own_params(&self, e: EntRef) -> Vec<u32> {
+        match e.kind {
+            EntKind::Point => self.point_params(e.i()).to_vec(),
+            EntKind::Circle => vec![self.circles[e.i()].radius],
+            EntKind::Arc => vec![self.arcs[e.i()].radius],
+            EntKind::Ellipse => vec![self.ellipses[e.i()].minor],
+            // a curve holds no number of its own: it is its expressions, and they read
+            // the geometry rather than owning any
+            EntKind::Line | EntKind::Spline | EntKind::Curve => Vec::new(),
         }
     }
 
@@ -672,6 +824,8 @@ impl Sketch {
                 let el = &self.ellipses[e.i()];
                 vec![EntRef::point(el.center as usize), EntRef::point(el.major as usize)]
             }
+            // the one kind whose children need not be points
+            EntKind::Curve => self.curves[e.i()].args.clone(),
         }
     }
 
@@ -687,7 +841,7 @@ impl Sketch {
         match e.kind {
             EntKind::Spline => crate::curve::MIN_CTRL,
             EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc
-            | EntKind::Ellipse => children.len(),
+            | EntKind::Ellipse | EntKind::Curve => children.len(),
         }
     }
 
@@ -733,6 +887,51 @@ impl Sketch {
         s
     }
 
+    /// The variable vector a curve's tapes are evaluated at: the parameter, then every scalar
+    /// its arguments contribute in `entity_params` order, then the numbers it was given.
+    ///
+    /// That order is the kernel's column order too, which is what lets a tape's gradient *be* a
+    /// row of the Jacobian rather than something a kernel has to rearrange.  The instance's own
+    /// values come last precisely because they are not columns: they are constants of this
+    /// curve, and the gradient in them is computed and ignored.
+    pub fn curve_vars(&self, i: usize, u: f64) -> Vec<f64> {
+        let mut v = Vec::with_capacity(8);
+        v.push(u);
+        for p in self.entity_params(EntRef::new(EntKind::Curve, i)) {
+            v.push(self.params[p as usize].value);
+        }
+        v.extend(self.curves[i].values.iter().copied());
+        v
+    }
+
+    /// Where a curve is at `u`.
+    pub fn curve_point(&self, i: usize, u: f64) -> (f64, f64) {
+        let d = &self.curve_defs[self.curves[i].def as usize];
+        let x = self.curve_vars(i, u);
+        let mut s = crate::tape::Scratch::new();
+        (d.x.eval(&x, &mut s).v, d.y.eval(&x, &mut s).v)
+    }
+
+    pub fn curve_domain(&self, i: usize) -> (f64, f64) {
+        self.curves[i].domain
+    }
+
+    /// The curve as a polyline, for measuring and for drawing.  Uniform in the parameter: a
+    /// user-written curve has no basis to refine against, so evenly is the only honest default,
+    /// and `CURVE_STEPS` is chosen fine enough that a pick test does not lie.
+    pub fn curve_polyline(&self, i: usize) -> Vec<(f64, f64)> {
+        let (a, b) = self.curve_domain(i);
+        let d = &self.curve_defs[self.curves[i].def as usize];
+        let mut s = crate::tape::Scratch::new();
+        (0..=CURVE_STEPS)
+            .map(|k| {
+                let u = a + (b - a) * k as f64 / CURVE_STEPS as f64;
+                let x = self.curve_vars(i, u);
+                (d.x.eval(&x, &mut s).v, d.y.eval(&x, &mut s).v)
+            })
+            .collect()
+    }
+
     pub fn count(&self, kind: EntKind) -> usize {
         match kind {
             EntKind::Point => self.points.len(),
@@ -741,6 +940,7 @@ impl Sketch {
             EntKind::Arc => self.arcs.len(),
             EntKind::Spline => self.splines.len(),
             EntKind::Ellipse => self.ellipses.len(),
+            EntKind::Curve => self.curves.len(),
         }
     }
 
@@ -848,6 +1048,13 @@ impl Sketch {
 
     pub fn bounds(&self, e: EntRef) -> Box2 {
         match e.kind {
+            EntKind::Curve => {
+                let mut b = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+                for (x, y) in self.curve_polyline(e.i()) {
+                    b = (b.0.min(x), b.1.min(y), b.2.max(x), b.3.max(y));
+                }
+                b
+            }
             EntKind::Point => {
                 let (x, y) = self.point_xy(e.i());
                 (x, y, x, y)
@@ -970,6 +1177,9 @@ pub fn signed_point_to_line(sk: &Sketch, px: f64, py: f64, line: usize) -> f64 {
 /// against.
 fn point_to(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
     match e.kind {
+        // a curve has no idealised form a dimension could mean beyond the curve itself, so this
+        // measurement and `point_to_drawn`'s are the same one
+        EntKind::Curve => polyline_distance(&sk.curve_polyline(e.i()), px, py),
         EntKind::Point => {
             let (x, y) = sk.point_xy(e.i());
             (px - x).hypot(py - y)
@@ -999,6 +1209,7 @@ fn point_to_line(sk: &Sketch, px: f64, py: f64, line: usize) -> f64 {
 /// line is infinite, an arc is the whole circle it lies on — which is not what a pointer hits.
 pub fn point_to_drawn(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
     match e.kind {
+        EntKind::Curve => polyline_distance(&sk.curve_polyline(e.i()), px, py),
         EntKind::Line => {
             let l = &sk.lines[e.i()];
             let (a, b) = (sk.point_xy(l.p1 as usize), sk.point_xy(l.p2 as usize));
@@ -1073,7 +1284,20 @@ fn measure_order(k: EntKind) -> u8 {
         EntKind::Circle | EntKind::Arc => 2,
         EntKind::Spline => 3,
         EntKind::Ellipse => 4,
+        EntKind::Curve => 5,
     }
+}
+
+/// The nearest a polyline comes to a point.
+fn polyline_distance(pts: &[(f64, f64)], px: f64, py: f64) -> f64 {
+    let mut best = f64::MAX;
+    for w in pts.windows(2) {
+        best = best.min(seg_distance((px, py), w[0], w[1]));
+    }
+    if pts.len() == 1 {
+        best = best.min((px - pts[0].0).hypot(py - pts[0].1));
+    }
+    best
 }
 
 /// Signed CCW angle from line `a` to line `b`, in radians — what an `Angle` constraint's value

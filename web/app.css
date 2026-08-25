@@ -180,3 +180,35 @@ dialog .choices button { text-align: left; font-family: var(--mono); font-size: 
 #canvas-wrap input.dim:focus { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
 /* still being carried: the click that settles where it goes belongs to the canvas under it */
 #canvas-wrap input.dim.carried { pointer-events: none; }
+
+/* The program the drawing came from, shown beside it.  A column and not a floating window like
+   #cpanel: the constraints window is a *remark* about what is picked and goes away with it, but
+   the program is what the drawing IS — permanently present, and typed into.  A window big enough
+   to edit a program in would cover the thing it describes. */
+#ppanel {
+  flex: none; width: 380px; min-width: 240px; max-width: 60%;
+  display: flex; flex-direction: column;
+  border-left: 1px solid var(--line); background: var(--panel);
+}
+#ppanel[hidden] { display: none; }
+#ppanel h2 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
+  margin: 0; padding: 7px 10px 6px; border-bottom: 1px solid var(--line); flex: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: none;
+}
+#ppanel.dirty h2 { color: var(--accent); }
+#ppanel-state { text-transform: none; letter-spacing: 0; }
+#ptext {
+  flex: 1; resize: none; border: 0; outline: none; padding: 8px 10px;
+  font-family: var(--mono); font-size: 12px; line-height: 1.45; tab-size: 2;
+  color: var(--text); background: var(--bg); white-space: pre; overflow: auto;
+}
+#ptext:focus { box-shadow: inset 2px 0 0 var(--accent); }
+#pdiags {
+  flex: none; max-height: 34%; overflow: auto; list-style: none; margin: 0; padding: 0;
+  border-top: 1px solid var(--line); font-family: var(--mono); font-size: 11px;
+}
+#pdiags:empty { display: none; }
+#pdiags li { padding: 3px 10px; cursor: pointer; white-space: pre; }
+#pdiags li.error { color: var(--danger); background: var(--danger-bg); }
+#pdiags li.warn { color: var(--warn); background: var(--warn-bg); }

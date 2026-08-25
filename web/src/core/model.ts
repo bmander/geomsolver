@@ -14,10 +14,11 @@ import './constraints.js';
 /** (xmin, ymin, xmax, ymax) */
 export type Box = [number, number, number, number];
 
-export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline' | 'ellipse';
-export const KINDS: Kind[] = ['point', 'line', 'circle', 'arc', 'spline', 'ellipse'];
+export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline' | 'ellipse' | 'curve';
+export const KINDS: Kind[] =
+  ['point', 'line', 'circle', 'arc', 'spline', 'ellipse', 'curve'];
 export const KIND_ID: Record<Kind, number> =
-  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, ellipse: 5 };
+  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, ellipse: 5, curve: 6 };
 
 export class Param {
   constructor(readonly sketch: Sketch, readonly index: number) {}
@@ -305,11 +306,38 @@ export class Ellipse extends Constructible {
   }
 }
 
-export type Primitive = Point | Line | Circle | Arc | Spline | Ellipse;
+/** A curve written in the language: `C(u)` as a pair of expressions over the geometry it is
+ *  drawn from.  It owns no coordinates — it *is* its expressions — so it moves exactly when its
+ *  arguments do, and the core lays out the polyline the front end strokes. */
+export class Curve extends Constructible {
+  readonly kind = 'curve' as const;
+
+  /** As many arguments as its family takes, of whatever kinds. */
+  protected override get slots(): number {
+    return Math.max(8, 2 * this.sketch.pointCount);
+  }
+
+  /** The curve as a polyline, laid out by the core.  Asked once for the count, then once for
+   *  the points — the same buffer-size-then-retry a control polygon uses. */
+  polyline(): [number, number][] {
+    const c = core();
+    const n = c.gcs_curve_polyline(this.sketch.handle, this.index, 0, 0);
+    if (n <= 0) return [];
+    return withBuf(2 * n, 8, (b) => {
+      c.gcs_curve_polyline(this.sketch.handle, this.index, b.ptr, n);
+      const v = b.f64;
+      const out: [number, number][] = [];
+      for (let i = 0; i < n; i++) out.push([v[2 * i], v[2 * i + 1]]);
+      return out;
+    });
+  }
+}
+
+export type Primitive = Point | Line | Circle | Arc | Spline | Ellipse | Curve;
 
 const CLASSES =
   { point: Point, line: Line, circle: Circle, arc: Arc, spline: Spline,
-    ellipse: Ellipse } as const;
+    ellipse: Ellipse, curve: Curve } as const;
 
 /** The CCW arc through three points: centre, radius, and the sweep that passes through the
  *  third point.  `swapped` is true when that sweep runs from the *second* given point. */
@@ -337,7 +365,7 @@ export class Sketch {
   readonly handle: number;
   private params_: Param[] = [];
   private ents: Record<Kind, Entity[]> =
-    { point: [], line: [], circle: [], arc: [], spline: [], ellipse: [] };
+    { point: [], line: [], circle: [], arc: [], spline: [], ellipse: [], curve: [] };
   private cons: Constraint[] = [];
   /** Constraint id → its proxy, so identity survives every round trip. */
   readonly byId = new Map<number, Constraint>();
@@ -354,7 +382,9 @@ export class Sketch {
   // -- interning ----------------------------------------------------------
 
   private counts(): Int32Array {
-    return withBuf(8, 4, (b) => {
+    // sized by the core, not by a number written here: a buffer short by one entity kind is an
+    // overflow rather than a truncation, and it surfaces as a crash somewhere else entirely
+    return withBuf(core().gcs_counts_len(), 4, (b) => {
       core().gcs_sketch_counts(this.handle, b.ptr);
       return b.i32.slice();
     });
@@ -543,6 +573,10 @@ export class Sketch {
     return this.list<Ellipse>('ellipse', this.counts()[7]);
   }
 
+  get curves(): Curve[] {
+    return this.list<Curve>('curve', this.counts()[8]);
+  }
+
   /** How many points the document has — the size a control-polygon buffer has to allow for. */
   get pointCount(): number {
     return this.counts()[1];
@@ -562,7 +596,8 @@ export class Sketch {
   entities(kind: Kind): Primitive[] {
     return (kind === 'point' ? this.points : kind === 'line' ? this.lines
       : kind === 'circle' ? this.circles : kind === 'spline' ? this.splines
-      : kind === 'ellipse' ? this.ellipses : this.arcs) as Primitive[];
+      : kind === 'ellipse' ? this.ellipses
+      : kind === 'curve' ? this.curves : this.arcs) as Primitive[];
   }
 
   /** Every entity, in creation order per kind. */

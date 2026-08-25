@@ -243,6 +243,19 @@ fn tokenize(text: &str) -> Result<Vec<(Tok, usize)>, String> {
             while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
                 i += 1;
             }
+            // A dot *between* identifier characters is part of the name: `c.center.x` is one
+            // coordinate a curve is written over, not a name and a decimal point.  Only there —
+            // `a.5` and a trailing `a.` are left alone, so `.5` is still the number it always was
+            // and nothing that used to parse now parses differently.
+            while i + 1 < chars.len()
+                && chars[i] == '.'
+                && (chars[i + 1].is_ascii_alphabetic() || chars[i + 1] == '_')
+            {
+                i += 1;
+                while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
+                    i += 1;
+                }
+            }
             out.push((Tok::Ident(chars[start..i].iter().collect()), at));
             continue;
         }

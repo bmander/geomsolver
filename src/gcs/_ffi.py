@@ -63,6 +63,7 @@ _SIGNATURES: list[tuple[str, Any, list[Any]]] = [
     ("gcs_sketch_clone", PTR, [PTR]),
     ("gcs_sketch_from_json", PTR, [PTR, ct.c_size_t]),
     ("gcs_sketch_to_json", STR, [PTR, ct.c_int32]),
+    ("gcs_counts_len", ct.c_int32, []),
     ("gcs_sketch_counts", None, [PTR, I32]),
     ("gcs_sketch_point", ct.c_int32, [PTR, ct.c_double, ct.c_double, ct.c_int32, PTR, ct.c_size_t]),
     ("gcs_sketch_line", ct.c_int32, [PTR, ct.c_int32, ct.c_int32]),

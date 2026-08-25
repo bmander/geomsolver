@@ -122,6 +122,31 @@ fn index(i: i64, n: usize, what: &str) -> Result<usize, String> {
     Ok(i as usize)
 }
 
+/// The same lookup `graft`'s `remap` makes, for the one pass that has to run before it exists:
+/// a curve's arguments, which may be of any other kind and so must be resolved once every other
+/// kind has been grafted.
+#[allow(clippy::too_many_arguments)]
+fn remap_early(
+    pt_index: &dyn Fn(usize) -> Option<usize>,
+    line_map: &[Option<usize>],
+    circle_map: &[Option<usize>],
+    arc_map: &[Option<usize>],
+    spline_map: &[Option<usize>],
+    ellipse_map: &[Option<usize>],
+    e: EntRef,
+) -> Option<EntRef> {
+    match e.kind {
+        EntKind::Point => pt_index(e.i()).map(EntRef::point),
+        EntKind::Line => line_map[e.i()].map(EntRef::line),
+        EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
+        EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
+        EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
+        EntKind::Ellipse => ellipse_map[e.i()].map(EntRef::ellipse),
+        // a curve is never another curve's argument: nothing in the language says so
+        EntKind::Curve => None,
+    }
+}
+
 pub fn to_json(sk: &Sketch) -> Json {
     let points: Vec<Json> = (0..sk.points.len())
         .map(|i| {
@@ -465,6 +490,41 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         ellipse_map[i] = Some(ni);
         made.push(EntRef::ellipse(ni));
     }
+    // curves last: a curve's arguments may be of any other kind, so every map it reads has to
+    // be filled before this one is built.  The *definition* travels with it — a document that
+    // came apart from the curve family it is written in would be a document that cannot be drawn.
+    let mut curve_map: Vec<Option<usize>> = vec![None; src.curves.len()];
+    for (i, cv) in src.curves.iter().enumerate() {
+        let mut args = Vec::with_capacity(cv.args.len());
+        let mut whole = true;
+        for &a in &cv.args {
+            match remap_early(&pt_index, &line_map, &circle_map, &arc_map, &spline_map,
+                              &ellipse_map, a) {
+                Some(r) => args.push(r),
+                None => whole = false,
+            }
+        }
+        if !whole || !keep(EntRef::new(EntKind::Curve, i)) {
+            continue;
+        }
+        let def = &src.curve_defs[cv.def as usize];
+        let at = match dst.curve_defs.iter().position(|d| d.name == def.name) {
+            Some(k) => k,
+            None => {
+                dst.curve_defs.push(def.clone());
+                dst.curve_defs.len() - 1
+            }
+        };
+        dst.curves.push(crate::model::CurveE {
+            def: at as u32,
+            args,
+            values: cv.values.clone(),
+            domain: cv.domain,
+            construction: cv.construction,
+        });
+        curve_map[i] = Some(dst.curves.len() - 1);
+        made.push(EntRef::new(EntKind::Curve, dst.curves.len() - 1));
+    }
     let remap = |e: EntRef| -> Option<EntRef> {
         match e.kind {
             EntKind::Point => pt_index(e.i()).map(EntRef::point),
@@ -473,6 +533,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
             EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
             EntKind::Ellipse => ellipse_map[e.i()].map(EntRef::ellipse),
+            EntKind::Curve => curve_map[e.i()].map(|i| EntRef::new(EntKind::Curve, i)),
         }
     };
     let mut expr = false;

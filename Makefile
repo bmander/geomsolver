@@ -8,7 +8,8 @@
 UNAME := $(shell uname -s)
 EXT := $(if $(filter Darwin,$(UNAME)),.dylib,$(if $(filter Windows_NT,$(OS)),.dll,.so))
 CARGO := cargo
-RUST_SRC := $(shell find rust/gcs-core/src rust/gcs-ffi/src -name '*.rs')
+# `.sv` too: the gear is a Solvent program compiled in with `include_str!`, so it is source
+RUST_SRC := $(shell find rust/gcs-core/src rust/gcs-ffi/src -name '*.rs' -o -name '*.sv')
 WASM_TARGET := wasm32-unknown-unknown
 
 .PHONY: all wasm test test-rust test-py test-web bench fmt clippy clean

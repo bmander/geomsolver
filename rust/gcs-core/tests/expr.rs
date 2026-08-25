@@ -745,3 +745,25 @@ fn a_reader_loaded_before_its_definer_is_not_a_free_variable() {
         assert!(names(&back).is_empty(), "a batch walk allocated an unknown it then retired");
     }
 }
+
+/// A dot *between* identifier characters is part of the name, so a curve can be written over
+/// `c.center.x`.  Everything a dot used to mean it still means: `.5` is a number, `3 1/2` is a
+/// mixed fraction, and a trailing dot is still not a name.
+#[test]
+fn a_dotted_name_is_one_name_and_a_decimal_point_is_not() {
+    assert_eq!(
+        expr::parse("c.center.x + 1").unwrap().body,
+        expr::Ast::Bin(
+            expr::Op::Add,
+            Box::new(expr::Ast::Var("c.center.x".to_string())),
+            Box::new(expr::Ast::Num(1.0)),
+        ),
+    );
+    // and the numbers a dot has always started or split
+    for (text, want) in [(".5", 0.5), ("1.5", 1.5), ("2 * .25", 0.5), ("3 1/2", 3.5),
+                         ("31/2", 15.5), ("1e3", 1000.0)] {
+        let p = expr::parse(text).unwrap();
+        let got = expr::eval(&p.body, &std::collections::BTreeMap::new()).unwrap().number();
+        assert_eq!(got, Some(want), "{text}");
+    }
+}

@@ -142,14 +142,29 @@ pub struct System {
     csr_data: Vec<f64>,
     slot_of: BTreeMap<u32, (usize, usize)>,
     ata: Option<Ata>,
+    /// The static kernels plus one per curve definition — see `kernel_table`.
+    kernels: Vec<Kernel>,
 }
 
-fn k(kid: usize) -> &'static Kernel {
-    kernels::kernel_by_id(kid)
+/// Every kernel this system may evaluate: the static table, then one per curve definition the
+/// document holds.
+///
+/// A curve family's kernel is not in `KERNELS` because there is no fixed number of them, and its
+/// width is the family's rather than the type's.  Building the table here — once, at compile
+/// time, like everything else about a block — is what lets two different curves have different
+/// column counts while each block keeps a fixed one.
+fn kernel_table(sk: &Sketch) -> Vec<Kernel> {
+    let mut t: Vec<Kernel> = kernels::KERNELS.to_vec();
+    for d in &sk.curve_defs {
+        let n_theta = d.vars.len().saturating_sub(1 + d.values.len());
+        t.push(kernels::curve_kernel(n_theta, 3 + d.x.flat.len() + d.y.flat.len() + d.values.len()));
+    }
+    t
 }
 
 impl System {
     pub fn new(sk: &Sketch) -> System {
+        let table = kernel_table(sk);
         let n = sk.params.len();
         let free = sk.free_indices();
         let n_free = free.len();
@@ -190,7 +205,7 @@ impl System {
         // group by kernel id, then sketch order — deterministic
         let mut by_kernel: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
         for (i, c) in sk.constraints.iter().enumerate() {
-            by_kernel.entry(c.kernel_id()).or_default().push(i);
+            by_kernel.entry(c.kernel_id_in(sk)).or_default().push(i);
         }
 
         let mut blocks: Vec<Block> = Vec::new();
@@ -201,7 +216,7 @@ impl System {
         let mut row0 = 0usize;
         let mut joff = 0usize;
         for (&kid, idxs) in by_kernel.iter() {
-            let kn = k(kid);
+            let kn = table[kid];
             let nb = idxs.len();
             let mut gidx = Vec::with_capacity(nb * kn.n_par);
             let mut consts = Vec::with_capacity(nb * kn.n_const);
@@ -234,7 +249,7 @@ impl System {
         let mut jdata = vec![0.0; joff.max(1)];
         // constant Jacobians are filled once and never recomputed
         for b in &blocks {
-            let kn = k(b.kid);
+            let kn = table[b.kid];
             if let Some(cj) = kn.const_jac {
                 let sz = kn.n_res * kn.n_par;
                 for i in 0..b.count {
@@ -247,7 +262,7 @@ impl System {
         let ncols = n_free.max(1) as i64;
         let mut es: Vec<(i64, i32)> = Vec::with_capacity(joff);
         for b in &blocks {
-            let kn = k(b.kid);
+            let kn = table[b.kid];
             for i in 0..b.count {
                 for t in 0..kn.n_res {
                     for c in 0..kn.n_par {
@@ -287,7 +302,7 @@ impl System {
         let mut row_scale = vec![1.0; n_res];
         let mut jac_scale = vec![1.0; n_res];
         for b in &blocks {
-            let kn = k(b.kid);
+            let kn = table[b.kid];
             let sc = extent.max(1.0).powi(kn.degree as i32);
             let jsc = extent.max(1.0).powi(kn.degree as i32 - 1);
             for r in b.row0..b.row0 + b.count * kn.n_res {
@@ -332,6 +347,7 @@ impl System {
             csr_data: vec![0.0; nnz.max(1)],
             slot_of,
             ata: None,
+            kernels: table,
         }
     }
 
@@ -348,7 +364,7 @@ impl System {
     /// an edited dimension.  Topology is unchanged, so no recompile.
     pub fn update_consts(&mut self, sk: &Sketch, cid: u32) {
         let Some(&(b, i)) = self.slot_of.get(&cid) else { return };
-        let kn = k(self.blocks[b].kid);
+        let kn = self.kernels[self.blocks[b].kid];
         if kn.n_const == 0 {
             return;
         }
@@ -370,7 +386,7 @@ impl System {
         let by_id: BTreeMap<u32, &Constraint> = sk.constraints.iter().map(|c| (c.id, c)).collect();
         let spans = &self.spans;
         for b in self.blocks.iter_mut() {
-            let kn = k(b.kid);
+            let kn = self.kernels[b.kid];
             if kn.n_const == 0 {
                 continue;
             }
@@ -392,7 +408,7 @@ impl System {
     /// First residual row of a constraint — `None` for one this plan was not compiled from.
     pub fn row_of(&self, cid: u32) -> Option<usize> {
         let &(b, i) = self.slot_of.get(&cid)?;
-        Some(self.blocks[b].row0 + i * k(self.blocks[b].kid).n_res)
+        Some(self.blocks[b].row0 + i * self.kernels[self.blocks[b].kid].n_res)
     }
 
     // -- evaluation ----------------------------------------------------------
@@ -429,7 +445,7 @@ impl System {
         self.apply_z(z);
         let mut v: Vec<f64> = Vec::new();
         for b in &self.blocks {
-            let kn = k(b.kid);
+            let kn = self.kernels[b.kid];
             let len = b.count * kn.n_par;
             v.clear();
             v.reserve(len);
@@ -451,7 +467,7 @@ impl System {
         self.apply_z(z);
         let mut v: Vec<f64> = Vec::new();
         for b in &self.blocks {
-            let kn = k(b.kid);
+            let kn = self.kernels[b.kid];
             if kn.const_jac.is_some() {
                 continue;
             }
@@ -553,7 +569,7 @@ impl System {
     /// The units of a constraint's residual, for judging `constraint_errors` against.
     pub fn constraint_scale(&self, cid: u32) -> f64 {
         match self.slot_of.get(&cid) {
-            Some(&(b, _)) => self.extent.max(1.0).powi(k(self.blocks[b].kid).degree as i32),
+            Some(&(b, _)) => self.extent.max(1.0).powi(self.kernels[self.blocks[b].kid].degree as i32),
             None => self.scale,
         }
     }
@@ -569,7 +585,7 @@ impl System {
         let r = self.residuals(z);
         let mut out = Vec::with_capacity(self.cids.len());
         for b in &self.blocks {
-            let kn = k(b.kid);
+            let kn = self.kernels[b.kid];
             for i in 0..b.count {
                 let mut mx = 0.0f64;
                 for t in 0..kn.n_res {
@@ -617,7 +633,7 @@ impl System {
         let mut adj = Vec::new();
         let mut row_c = Vec::new();
         for b in &self.blocks {
-            let kn = k(b.kid);
+            let kn = self.kernels[b.kid];
             for i in 0..b.count {
                 let cid = b.cids[i];
                 // a soft constraint has no hard rows; `hard` is per row, so consult row0

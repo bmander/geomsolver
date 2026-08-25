@@ -26,7 +26,9 @@ use gcs_core::io;
 use gcs_core::json::{self, Json};
 use gcs_core::model::{self, EntKind, EntRef, Param, Sketch};
 use gcs_core::newton::{self, Method};
+use gcs_core::program::{self, Elaborated};
 use gcs_core::report;
+use gcs_core::syntax;
 use gcs_core::solve::{Drag, RadiusDrag, SolveOpts, SolveResult, Triangle};
 use gcs_core::system::System;
 use gcs_core::{examples, fdcheck, kernels, linalg, witness};
@@ -260,6 +262,18 @@ pub unsafe extern "C" fn gcs_sketch_to_json(h: *mut Sketch, indent: i32) -> *mut
 
 /// `[n_params, n_points, n_lines, n_circles, n_arcs, n_constraints, n_splines, n_ellipses]`
 #[no_mangle]
+/// How many integers `gcs_sketch_counts` writes.
+///
+/// Asked rather than assumed: a binding that hard-codes the width writes past its buffer the day
+/// a new entity kind is added, and the damage shows up as a crash somewhere else entirely.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_counts_len() -> i32 {
+    N_COUNTS as i32
+}
+
+const N_COUNTS: usize = 9;
+
+#[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
     guard((), move || {
         let s = sk(h);
@@ -272,7 +286,9 @@ pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
             s.constraints.len(),
             s.splines.len(),
             s.ellipses.len(),
+            s.curves.len(),
         ];
+        debug_assert_eq!(v.len(), N_COUNTS, "gcs_counts_len is what callers size their buffer by");
         for (i, x) in v.iter().enumerate() {
             *out.add(i) = *x as i32;
         }
@@ -683,6 +699,7 @@ fn kind_id(k: EntKind) -> i32 {
         EntKind::Arc => 3,
         EntKind::Spline => 4,
         EntKind::Ellipse => 5,
+        EntKind::Curve => 6,
     }
 }
 
@@ -693,6 +710,7 @@ fn ent(kind: i32, idx: i32) -> EntRef {
         2 => EntKind::Circle,
         3 => EntKind::Arc,
         5 => EntKind::Ellipse,
+        6 => EntKind::Curve,
         _ => EntKind::Spline,
     };
     EntRef::new(k, idx as usize)
@@ -2553,4 +2571,162 @@ pub unsafe extern "C" fn gcs_ppp_triangles(p: *mut PlanSolver, out: *mut i32) ->
         }
         t.len() as i32
     })
+}
+
+/* -- Solvent: the program a sketch is written as ----------------------------------- */
+
+/// Read and elaborate a program.
+///
+/// Never null except when there is no memory: a program full of errors still comes back, with
+/// whatever geometry it could build and the diagnostics beside it, because a panel has to show
+/// the drawing *and* the error.  Whether to adopt the result is the caller's, from the report.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_program_elaborate(ptr: *const u8, len: usize) -> *mut Elaborated {
+    guard(std::ptr::null_mut(), move || {
+        let src = as_str(ptr, len);
+        let (prog, errs) = syntax::parse(src);
+        let mut e = program::elaborate(&prog);
+        // the parser's complaints come first, in the order they were found: they are about the
+        // text, and everything after them is about a text that was already wrong
+        let mut all: Vec<program::Diag> = errs
+            .iter()
+            .map(|s| program::Diag {
+                code: program::Code::E100,
+                span: s.span,
+                stmt: None,
+                message: s.message.clone(),
+            })
+            .collect();
+        all.append(&mut e.diags);
+        e.diags = all;
+        e.text = prog.text().to_string();
+        Box::into_raw(Box::new(e))
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_free(h: *mut Elaborated) {
+    if !h.is_null() {
+        drop(Box::from_raw(h));
+    }
+}
+
+/// Take the sketch out.  The caller owns it and frees it with `gcs_sketch_free`; a second call
+/// returns null, because there was only ever one.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_take_sketch(h: *mut Elaborated) -> *mut Sketch {
+    guard(std::ptr::null_mut(), move || {
+        let e = &mut *h;
+        match e.taken {
+            true => std::ptr::null_mut(),
+            false => {
+                e.taken = true;
+                Box::into_raw(Box::new(std::mem::take(&mut e.sketch)))
+            }
+        }
+    })
+}
+
+/// The text the program was read from — which a splice may have moved on.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_text(h: *mut Elaborated) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || out_str((*h).text.clone()))
+}
+
+/// `{"ok": bool, "diagnostics": [{severity, code, message, lo, hi, line, col}], "map": {...}}`
+///
+/// Line and column are computed here, so no binding scans the text a second time and the two
+/// cannot disagree about where line 12 is.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_report(h: *mut Elaborated) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let e = &*h;
+        let diags: Vec<Json> = e
+            .diags
+            .iter()
+            .map(|d| {
+                let (line, col) = d.at(&e.text);
+                json::object([
+                    ("severity", Json::Str(format!("{:?}", d.severity()).to_lowercase())),
+                    ("code", Json::Str(d.code.as_str().to_string())),
+                    ("message", Json::Str(d.message.clone())),
+                    ("lo", Json::Int(d.span.lo as i64)),
+                    ("hi", Json::Int(d.span.hi as i64)),
+                    ("line", Json::Int(line as i64)),
+                    ("col", Json::Int(col as i64)),
+                ])
+            })
+            .collect();
+        let ents: Vec<Json> = e
+            .map
+            .of_entity
+            .iter()
+            .map(|(r, site)| {
+                Json::Arr(vec![
+                    Json::Str(r.kind.as_str().to_string()),
+                    Json::Int(r.idx as i64),
+                    Json::Str(
+                        e.map.names.get(r).and_then(|v| v.first()).cloned().unwrap_or_default(),
+                    ),
+                    Json::Int(site.span.lo as i64),
+                    Json::Int(site.span.hi as i64),
+                ])
+            })
+            .collect();
+        let cons: Vec<Json> = e
+            .map
+            .of_constraint
+            .iter()
+            .map(|(id, site)| {
+                Json::Arr(vec![
+                    Json::Int(*id as i64),
+                    Json::Int(site.span.lo as i64),
+                    Json::Int(site.span.hi as i64),
+                ])
+            })
+            .collect();
+        out_json(json::object([
+            ("ok", Json::Bool(e.ok())),
+            ("diagnostics", Json::Arr(diags)),
+            ("entities", Json::Arr(ents)),
+            ("constraints", Json::Arr(cons)),
+        ]))
+    })
+}
+
+/// One curve as a polyline, over the interval that curve is drawn on.
+///
+/// The core lays it out: a curve is geometry, so where it goes is the core's answer and a front
+/// end only strokes what it is handed — the same bargain a dimension callout and a B-spline
+/// already strike.  Writes `2n` doubles and returns `n`; when `cap` is too small it writes
+/// nothing and still returns the count it wanted, so a caller sizes its buffer by asking once.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_curve_polyline(
+    h: *mut Sketch,
+    idx: i32,
+    out: *mut f64,
+    cap: i32,
+) -> i32 {
+    guard(-1, move || {
+        let s = sk(h);
+        let i = idx as usize;
+        if i >= s.curves.len() {
+            return -1;
+        }
+        let pts = s.curve_polyline(i);
+        if (pts.len() as i32) <= cap && !out.is_null() {
+            for (k, (x, y)) in pts.iter().enumerate() {
+                *out.add(2 * k) = *x;
+                *out.add(2 * k + 1) = *y;
+            }
+        }
+        pts.len() as i32
+    })
+}
+
+/// A sketch as a program — the lift, and the whole of the migration: every document ever saved
+/// becomes text through this.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_to_program(h: *mut Sketch) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || out_str(program::dumps(sk(h))))
 }

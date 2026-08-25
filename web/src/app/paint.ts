@@ -99,6 +99,17 @@ export function paint(v: SketchView): void {
     ellipsePath(v, el.center.xy, el.major.xy, Math.abs(el.minor.value));
     ctx.stroke();
   }
+  // curves written in the language: the core lays out the polyline, exactly as it does for a
+  // B-spline, so the front end strokes what it is handed and evaluates no expression of its own
+  for (const cv of sk.curves) {
+    const [col, lw] = strokeFor(COL.spline, cv);
+    ctx.strokeStyle = col;
+    ctx.lineWidth = lw;
+    ctx.setLineDash(cv.construction ? CONSTRUCTION_DASH : []);
+    polyPath(v, cv.polyline());
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
   for (const sp of sk.splines) {
     const [col, lw] = strokeFor(COL.spline, sp);
     // the curve arrives as a polyline already refined to this zoom: `unit` is the world

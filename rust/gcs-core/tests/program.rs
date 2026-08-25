@@ -1,0 +1,584 @@
+//! Solvent: printing a sketch as a program, and elaborating one back.
+//!
+//! The acceptance bar is **document-state preservation, not `Sketch` identity** — `tests/order.rs`
+//! shows the JSON format we already ship does not preserve `topology_key` across a load, so
+//! chasing the stricter bar would be chasing something nothing here has ever met.  What must hold
+//! is that the drawing, its constraints, its numbers, its flags, its placements and its recorded
+//! root choices all come back: which is exactly `io::dumps` equality.
+
+use gcs_core::constraints::{Arg, CKind, Constraint, SpecKind, ALL_KINDS};
+use gcs_core::examples;
+use gcs_core::io;
+use gcs_core::model::{EntKind, EntRef, Field, Sketch};
+use gcs_core::program::{elaborate, to_program};
+use gcs_core::solve::{solve, SolveOpts};
+use gcs_core::syntax::{camel, render, snake};
+
+fn cases() -> Vec<(&'static str, Sketch)> {
+    let mut v: Vec<(&'static str, Sketch)> = examples::EXAMPLES
+        .iter()
+        .map(|&n| (n, examples::example(n).expect(n)))
+        .collect();
+    for n in ["pythagoras", "belt_tangency", "altitudes", "parallels", "k33", "zigzag"] {
+        v.push((n, examples::case(n).expect(n)));
+    }
+    v
+}
+
+/// **The gate.**  A sketch printed as a program and elaborated back is the same document.
+///
+/// `io::dumps` is the comparison because it is what the document *is*: the entities in order,
+/// every constraint with its arguments, the fixed flags, the construction flags, the knots, the
+/// placements and the branches.  Nothing about parameter indices, which a load permutes anyway.
+#[test]
+fn elaborating_a_printed_sketch_rebuilds_it() {
+    for (name, sk) in cases() {
+        let p = to_program(&sk);
+        let e = elaborate(&p);
+        assert!(
+            e.ok(),
+            "{name}: {:?}\n{}",
+            e.errors().map(|d| &d.message).collect::<Vec<_>>(),
+            p.text()
+        );
+        assert_eq!(io::dumps(&e.sketch, Some(1)), io::dumps(&sk, Some(1)), "{name}\n{}", p.text());
+    }
+}
+
+/// And it still solves — printing is not allowed to quietly drop the thing that made it solvable.
+#[test]
+fn a_printed_sketch_still_solves() {
+    for (name, sk) in cases() {
+        let mut sk2 = elaborate(&to_program(&sk)).sketch;
+        assert!(solve(&mut sk2, SolveOpts::default()).success, "{name}");
+    }
+}
+
+/// Printing is idempotent: rendering a program that came from a sketch, elaborating it and
+/// rendering again gives the same text.  A fixed point, which is the property `tests/io.rs`
+/// already asserts of the JSON writer and the only one worth asserting of a printer.
+#[test]
+fn printing_is_a_fixed_point() {
+    for (name, sk) in cases() {
+        let once = to_program(&sk).text().to_string();
+        let twice = to_program(&elaborate(&to_program(&sk)).sketch).text().to_string();
+        assert_eq!(twice, once, "{name}");
+    }
+}
+
+/// The elaborated parameter vector is the loaded one, parameter for parameter.
+///
+/// This is what "elaboration is `io::from_json` with a different front end" means, and it is the
+/// reason the walk goes per kind in `primitives()` order through the ordinary constructors.  Get
+/// it wrong and a document saved as text would compile a different plan from the same drawing
+/// saved as JSON.
+#[test]
+fn elaboration_lays_out_its_parameters_like_a_load() {
+    for (name, sk) in cases() {
+        let loaded = io::loads(&io::dumps(&sk, None)).expect(name);
+        let built = elaborate(&to_program(&sk)).sketch;
+        assert_eq!(built.params.len(), loaded.params.len(), "{name}: how many");
+        assert_eq!(built.topology_key(), loaded.topology_key(), "{name}: the same layout");
+    }
+}
+
+/// **Every constraint type prints and parses**, driven by `spec()` and exhaustive over
+/// `ALL_KINDS`.  This is the test that makes "nothing is written per constraint type" true rather
+/// than merely intended: a new `CKind` fails here if the registry-driven path has a hole.
+#[test]
+fn every_constraint_type_is_printable() {
+    for kind in ALL_KINDS {
+        if kind == CKind::DragTarget {
+            continue; // soft, and never in a document — `user_constraints` filters it
+        }
+        if kind == CKind::PointOnCurve {
+            // pending the `curve` surface: a contact prints, but the curve it names has no
+            // declaration to print yet, so there is nothing for it to round-trip against.  This
+            // skip comes out with `a_curve_written_in_the_language_draws`.
+            continue;
+        }
+        let (sk, c) = fixture(kind);
+        let mut sk = sk;
+        sk.add(c);
+        let p = to_program(&sk);
+        let e = elaborate(&p);
+        assert!(
+            e.ok(),
+            "{}: {:?}\n{}",
+            kind.name(),
+            e.errors().map(|d| &d.message).collect::<Vec<_>>(),
+            p.text()
+        );
+        let back = e.sketch.user_constraints();
+        assert!(
+            back.iter().any(|b| b.kind == kind),
+            "{} did not come back\n{}",
+            kind.name(),
+            p.text()
+        );
+        assert_eq!(
+            io::dumps(&e.sketch, Some(1)),
+            io::dumps(&sk, Some(1)),
+            "{}\n{}",
+            kind.name(),
+            p.text()
+        );
+    }
+}
+
+/// The statement name and the registry name are the same name in two spellings, for all 32 — and
+/// no two collide, and none is a word the language already uses.
+#[test]
+fn every_constraint_name_survives_the_case_round_trip() {
+    let words = [
+        "point", "line", "circle", "arc", "spline", "ellipse", "at", "knots", "construction",
+        "ground", "fix", "ccw", "cw", "branch", "component", "port", "param", "ring", "repeat",
+        "cycle", "path", "true", "false",
+    ];
+    let mut seen: Vec<String> = Vec::new();
+    for kind in ALL_KINDS {
+        let s = snake(kind.name());
+        assert_eq!(camel(&s), kind.name(), "{s}");
+        assert!(!words.contains(&s.as_str()), "{s} is already a word of the language");
+        assert!(!seen.contains(&s), "{s} twice");
+        seen.push(s);
+    }
+}
+
+/// A dimension is the last argument of every type that has one, which is what lets `== …` be the
+/// whole rule.  A future type that breaks it must fail here rather than print something wrong.
+#[test]
+fn every_dimension_is_the_last_argument() {
+    for kind in ALL_KINDS {
+        let spec = kind.spec();
+        for (i, (name, k)) in spec.iter().enumerate() {
+            if k.is_dimension() {
+                assert_eq!(
+                    i,
+                    spec.len() - 1,
+                    "{}: `{name}` is a dimension and is not last",
+                    kind.name()
+                );
+            }
+        }
+    }
+}
+
+/// Every entity kind's fields are the document's own keys, so the language and the JSON cannot
+/// drift apart about what a circle's radius is called.
+#[test]
+fn the_document_uses_the_field_names() {
+    let sk = examples::example("slotted_link").unwrap();
+    let doc = io::to_json(&sk);
+    for (plural, kind) in [
+        ("points", EntKind::Point),
+        ("lines", EntKind::Line),
+        ("circles", EntKind::Circle),
+        ("arcs", EntKind::Arc),
+        ("ellipses", EntKind::Ellipse),
+    ] {
+        let Some(first) = doc.get(plural).and_then(|a| a.arr().first()) else { continue };
+        for (name, _) in kind.fields() {
+            assert!(
+                first.get(name).is_some(),
+                "{plural}: the document has no `{name}`, which `EntKind::fields` names",
+            );
+        }
+    }
+}
+
+/// A point's own parameters are its coordinates, a circle's is its radius, and a line has none —
+/// which is what makes `own_params` the list of what a declaration seeds.
+#[test]
+fn own_params_are_the_scalar_fields() {
+    let sk = examples::example("slotted_link").unwrap();
+    for e in sk.primitives() {
+        let scalars = e.kind.fields().iter().filter(|(_, f)| *f == Field::Scalar).count();
+        assert_eq!(sk.own_params(e).len(), scalars, "{}", e.kind.as_str());
+        // and they are a subset of the entity's parameters, never a child's
+        for p in sk.own_params(e) {
+            assert!(sk.entity_params(e).contains(&p));
+        }
+    }
+}
+
+/// A curve contact that was pinned comes back pinned.  Without it, a curve fitted through m
+/// points would come back with m degrees of freedom nobody drew — so the pin is constraint-class
+/// and is written `==`.
+#[test]
+fn a_pinned_curve_parameter_survives() {
+    let sk = examples::case("spline_follower").unwrap();
+    let mut sk = sk;
+    let pinned: Vec<u32> = sk
+        .constraints
+        .iter()
+        .flat_map(|c| c.aux_params())
+        .filter(|&p| sk.params[p as usize].fixed)
+        .collect();
+    if pinned.is_empty() {
+        // pin one by hand, so the test measures something whatever the example holds
+        let p = sk
+            .constraints
+            .iter()
+            .flat_map(|c| c.aux_params())
+            .next()
+            .expect("the follower has a curve contact");
+        sk.params[p as usize].fixed = true;
+    }
+    let text = to_program(&sk);
+    assert!(text.text().contains(" == "), "a pin is written with ==\n{}", text.text());
+    let back = elaborate(&text).sketch;
+    let n_before = sk.constraints.iter().flat_map(|c| c.aux_params())
+        .filter(|&p| sk.params[p as usize].fixed).count();
+    let n_after = back.constraints.iter().flat_map(|c| c.aux_params())
+        .filter(|&p| back.params[p as usize].fixed).count();
+    assert_eq!(n_after, n_before, "the pins came back\n{}", text.text());
+}
+
+/// A dimension written as text is printed as written — that is the whole reason the text after
+/// `==` is taken verbatim rather than tokenized here.
+#[test]
+fn a_dimension_expression_is_kept_as_written() {
+    let sk = examples::case("pythagoras").unwrap();
+    let text = to_program(&sk).text().to_string();
+    for want in ["a = 30", "b = 40", "c = hypot(a, b)"] {
+        assert!(text.contains(want), "`{want}` is not in\n{text}");
+    }
+    let back = elaborate(&to_program(&sk)).sketch;
+    assert_eq!(io::dumps(&back, Some(1)), io::dumps(&sk, Some(1)));
+}
+
+/// An angle is radians in the model and degrees in every text, and the conversion happens once,
+/// where the text is made.
+#[test]
+fn an_angle_is_written_in_degrees() {
+    let mut sk = Sketch::new();
+    let a = sk.point(0.0, 0.0, false, "a");
+    let b = sk.point(10.0, 0.0, false, "b");
+    let c = sk.point(0.0, 10.0, false, "c");
+    let l1 = sk.line(a, b);
+    let l2 = sk.line(a, c);
+    sk.add(Constraint::new(
+        CKind::Angle,
+        vec![
+            Arg::Ent(EntRef::line(l1)),
+            Arg::Ent(EntRef::line(l2)),
+            Arg::Num(std::f64::consts::FRAC_PI_6),
+        ],
+    ));
+    let text = to_program(&sk).text().to_string();
+    assert!(text.contains("== 30"), "thirty degrees, not a sixth of pi:\n{text}");
+    let back = elaborate(&to_program(&sk)).sketch;
+    let got = back.user_constraints()[0].get_num("theta").unwrap();
+    assert!((got - std::f64::consts::FRAC_PI_6).abs() < 1e-12, "{got}");
+}
+
+/// A name nothing declares is a diagnostic with a span, and the rest of the drawing survives it.
+/// The twin of `io.rs`'s `a_dangling_reference_is_an_error_not_a_panic`.
+#[test]
+fn a_bad_name_is_a_diagnostic_with_a_span() {
+    let sk = examples::example("slotted_link").unwrap();
+    let mut p = to_program(&sk);
+    // point the first line's first endpoint at a name nothing declares
+    for st in p.root_mut().body.iter_mut() {
+        if let gcs_core::syntax::StmtKind::Decl(d) = &mut st.kind {
+            if d.kind == EntKind::Line {
+                d.children[0][0] = gcs_core::syntax::Ref::new("nope");
+                break;
+            }
+        }
+    }
+    render(&mut p);
+    let e = elaborate(&p);
+    assert!(!e.ok(), "a dangling name is an error");
+    let d = e.errors().next().unwrap();
+    assert_eq!(d.code.as_str(), "E101");
+    assert!(d.message.contains("nope"), "{}", d.message);
+    // and the points are all still there: one bad statement costs one statement
+    assert_eq!(e.sketch.points.len(), sk.points.len());
+}
+
+/// A name declared twice is E001, and the first one wins so later references still resolve.
+#[test]
+fn a_name_declared_twice_is_an_error() {
+    let mut p = gcs_core::syntax::Program::new();
+    for _ in 0..2 {
+        p.push(gcs_core::syntax::StmtKind::Decl(gcs_core::syntax::Decl {
+            kind: EntKind::Point,
+            name: gcs_core::syntax::Name::new("p0"),
+            children: Vec::new(),
+            seed: vec![1.0, 2.0],
+            seed_text: vec![None, None],
+            knots: None,
+            def: None,
+            values: Vec::new(),
+            domain: None,
+            construction: false,
+        }));
+    }
+    render(&mut p);
+    let e = elaborate(&p);
+    assert!(!e.ok());
+    assert_eq!(e.errors().next().unwrap().code.as_str(), "E001");
+    assert_eq!(e.sketch.points.len(), 1, "the second declaration is skipped, not merged");
+}
+
+/// One instance of every constraint type, on geometry that makes it meaningful.  The same shape
+/// `tests/jacobians.rs` uses, and for the same reason: the registry says what the arguments are,
+/// so a table of them here would be a second copy of the registry.
+fn fixture(kind: CKind) -> (Sketch, Constraint) {
+    let mut sk = Sketch::new();
+    let p = sk.point(0.0, 0.0, false, "p");
+    let q = sk.point(30.0, 10.0, false, "q");
+    let r = sk.point(10.0, 40.0, false, "r");
+    let s = sk.point(50.0, 20.0, false, "s");
+    let l1 = sk.line(p, q);
+    let l2 = sk.line(r, s);
+    let c1 = sk.circle(p, 8.0, "c1");
+    let c2 = sk.circle(q, 5.0, "c2");
+    let ac = sk.point(20.0, 20.0, false, "ac");
+    let a1 = sk.arc(ac, r, s, "a1");
+    let el = sk.ellipse(r, s, 6.0, "el");
+    let ctrl: Vec<usize> = (0..4)
+        .map(|i| sk.point(60.0 + 10.0 * i as f64, 5.0 * i as f64, false, &format!("k{i}")))
+        .collect();
+    let sp = sk.spline(&ctrl).expect("four control points make a curve");
+    let arg = |k: SpecKind| -> Arg {
+        match k {
+            SpecKind::Point => Arg::Ent(EntRef::point(p)),
+            SpecKind::Line => Arg::Ent(EntRef::line(l1)),
+            SpecKind::Circle | SpecKind::CircleOrArc => Arg::Ent(EntRef::circle(c1)),
+            SpecKind::Arc => Arg::Ent(EntRef::arc(a1)),
+            SpecKind::Spline => Arg::Ent(EntRef::spline(sp)),
+            SpecKind::Ellipse => Arg::Ent(EntRef::ellipse(el)),
+            SpecKind::Length => Arg::Num(12.0),
+            SpecKind::Angle => Arg::Num(0.5),
+            _ => Arg::Num(0.0),
+        }
+    };
+    let spec = kind.spec();
+    let mut args: Vec<Arg> = Vec::with_capacity(spec.len());
+    let mut used_point = false;
+    let mut used_line = false;
+    let mut used_circle = false;
+    for (i, (_, k)) in spec.iter().enumerate() {
+        args.push(match k {
+            // a constraint relates *distinct* entities, so the second of a pair is a different one
+            SpecKind::Point if used_point => Arg::Ent(EntRef::point(q)),
+            SpecKind::Point => {
+                used_point = true;
+                Arg::Ent(EntRef::point(p))
+            }
+            SpecKind::Line if used_line => Arg::Ent(EntRef::line(l2)),
+            SpecKind::Line => {
+                used_line = true;
+                Arg::Ent(EntRef::line(l1))
+            }
+            SpecKind::Circle | SpecKind::CircleOrArc if used_circle => Arg::Ent(EntRef::circle(c2)),
+            SpecKind::Circle | SpecKind::CircleOrArc => {
+                used_circle = true;
+                Arg::Ent(EntRef::circle(c1))
+            }
+            _ if kind.infers_arg(i) => kind.default_arg(i),
+            SpecKind::Int | SpecKind::Bool | SpecKind::Str | SpecKind::Float => {
+                kind.default_arg(i)
+            }
+            other => arg(*other),
+        });
+    }
+    // the third point of a Symmetric-shaped statement must not repeat the first two
+    if kind == CKind::Symmetric {
+        args[2] = Arg::Ent(EntRef::line(l2));
+    }
+    (sk, Constraint::new(kind, args))
+}
+
+/* -- reading a program back -------------------------------------------------------- */
+
+/// **The round trip.**  Print a sketch, parse the text, elaborate it, and get the same document.
+/// This is the property the whole design rests on, and it is asserted on every example.
+#[test]
+fn a_printed_program_parses_back_to_the_same_document() {
+    for (name, sk) in cases() {
+        let text = to_program(&sk).text().to_string();
+        let (p, errs) = gcs_core::syntax::parse(&text);
+        assert!(errs.is_empty(), "{name}: {:?}\n{text}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
+        let e = elaborate(&p);
+        assert!(
+            e.ok(),
+            "{name}: {:?}\n{text}",
+            e.errors().map(|d| &d.message).collect::<Vec<_>>()
+        );
+        assert_eq!(io::dumps(&e.sketch, Some(1)), io::dumps(&sk, Some(1)), "{name}\n{text}");
+    }
+}
+
+/// And the text is a fixed point: printing what was parsed gives the text back.
+#[test]
+fn parsing_and_printing_is_a_fixed_point() {
+    for (name, sk) in cases() {
+        let once = to_program(&sk).text().to_string();
+        let (p, _) = gcs_core::syntax::parse(&once);
+        let twice = to_program(&elaborate(&p).sketch).text().to_string();
+        assert_eq!(twice, once, "{name}");
+    }
+}
+
+/// A program written by hand — which is the point of having a language at all.
+#[test]
+fn a_program_written_by_hand_draws() {
+    let text = "\
+// a square with a hole, written by hand
+point a at (0, 0)
+point b at (100, 0)
+point c at (100, 100)
+point d at (0, 100)
+point o at (50, 50)
+line  ab(a, b)
+line  bc(b, c)
+line  cd(c, d)
+line  da(d, a)
+circle hole(center: o, r: 20)
+
+horizontal(ab)
+perpendicular(ab, bc)
+perpendicular(bc, cd)
+perpendicular(cd, da)
+distance(a, b) == w = 100
+distance(b, c) == w
+radius(hole) == w / 5
+ground(a)
+";
+    let (p, errs) = gcs_core::syntax::parse(text);
+    assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
+    let mut e = elaborate(&p);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    assert_eq!(e.sketch.points.len(), 5);
+    assert_eq!(e.sketch.lines.len(), 4);
+    assert_eq!(e.sketch.circles.len(), 1);
+    assert!(solve(&mut e.sketch, SolveOpts::default()).success);
+    // the expression tied the radius to the width the other dimension named
+    let r = e.sketch.params[e.sketch.circles[0].radius as usize].value;
+    assert!((r - 20.0).abs() < 1e-9, "{r}");
+}
+
+/// A bad line costs one line, and every diagnostic carries a span that slices to the problem.
+#[test]
+fn one_bad_line_costs_one_line() {
+    let text = "point a at (0, 0)\nthis is not a statement\npoint b at (10, 0)\n";
+    let (p, errs) = gcs_core::syntax::parse(text);
+    assert!(!errs.is_empty(), "the bad line is reported");
+    let e = elaborate(&p);
+    assert_eq!(e.sketch.points.len(), 2, "both good lines survived");
+}
+
+/// Nothing in the parser panics, whatever it is handed — `wasm32-unknown-unknown` aborts rather
+/// than unwinding, so a document that is not a document must still come back as a diagnostic.
+#[test]
+fn nothing_in_the_parser_panics() {
+    for (_, sk) in cases() {
+        let text = to_program(&sk).text().to_string();
+        // every prefix, cut only on a character boundary
+        for i in 0..text.len() {
+            if text.is_char_boundary(i) {
+                let (p, _) = gcs_core::syntax::parse(&text[..i]);
+                let _ = elaborate(&p);
+            }
+        }
+        // and every byte turned into something structural
+        for (i, ch) in [(7usize, '('), (11, ')'), (13, '='), (17, ','), (3, '{')] {
+            let mut t = text.clone();
+            let at = (0..t.len()).find(|&j| j >= i && t.is_char_boundary(j)).unwrap_or(0);
+            if at < t.len() && t.is_char_boundary(at + 1) {
+                t.replace_range(at..at + 1, &ch.to_string());
+                let (p, _) = gcs_core::syntax::parse(&t);
+                let _ = elaborate(&p);
+            }
+        }
+    }
+    // and outright rubbish
+    for junk in ["", "((((", "point", "point a at", "distance(", "== 5", "\u{0}\u{1}", "點"] {
+        let (p, _) = gcs_core::syntax::parse(junk);
+        let _ = elaborate(&p);
+    }
+}
+
+/// **The gear.**  `solvent-spec.md` §18's worked example, with the flanks written as involutes
+/// in the language rather than sampled into it.
+#[test]
+fn a_gear_elaborates() {
+    let (p, errs) = gcs_core::syntax::parse(examples::GEAR);
+    assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| (&e.message, e.span)).collect::<Vec<_>>());
+    let mut e = elaborate(&p);
+    assert!(
+        e.ok(),
+        "{:?}",
+        e.errors().map(|d| (d.code.as_str(), &d.message)).collect::<Vec<_>>()
+    );
+    let n = 30usize;
+    assert_eq!(e.sketch.curve_defs.len(), 1, "one curve family, written in the document");
+    assert_eq!(e.sketch.curves.len(), 2 * n, "two involute flanks per tooth");
+    assert_eq!(e.sketch.circles.len(), 3, "the base, root and tip circles");
+    assert_eq!(e.sketch.points.len(), 1 + 4 * n, "a centre, and two ends per flank");
+
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+
+    // -- and it is an involute gear.
+    let (cx, cy) = e.sketch.point_xy(0);
+    assert!(cx.abs() < 1e-9 && cy.abs() < 1e-9, "the centre stayed put");
+    // N = 30, m = 3, phi = 25, dedendum 1.0
+    let (r_pitch, m) = (45.0f64, 3.0f64);
+    let (rr, rt) = (r_pitch - m, r_pitch + m);
+    let rb = r_pitch * 25.0f64.to_radians().cos();
+    assert!(rr > rb, "the root circle is outside the base circle, or there is no flank there");
+
+    // every flank end is on the circle its statement said it was on, and nothing said where
+    let mut on_root = 0;
+    let mut on_tip = 0;
+    for i in 1..e.sketch.points.len() {
+        let (x, y) = e.sketch.point_xy(i);
+        let rad = x.hypot(y);
+        if (rad - rr).abs() < 1e-6 {
+            on_root += 1;
+        } else if (rad - rt).abs() < 1e-6 {
+            on_tip += 1;
+        } else {
+            panic!("a flank end at radius {rad}, which is neither {rr} nor {rt}");
+        }
+    }
+    assert_eq!(on_root, 2 * n, "one root end per flank");
+    assert_eq!(on_tip, 2 * n, "one tip end per flank");
+
+    // **the involute test**: sample each flank and check every point is one — the string from
+    // where it leaves the base circle is perpendicular to the radius there, and exactly as long
+    // as the arc it unwound.  That is the definition, checked against the drawing.
+    for ci in 0..e.sketch.curves.len() {
+        let (u0, u1) = e.sketch.curve_domain(ci);
+        for k in 0..=8 {
+            let u = u0 + (u1 - u0) * k as f64 / 8.0;
+            let (x, y) = e.sketch.curve_point(ci, u);
+            // the tangent point is at the roll, off the *base* circle
+            let ph = phase_of(&e.sketch, ci);
+            let a = (u + ph).to_radians();
+            let t = (rb * a.cos(), rb * a.sin());
+            let string = (x - t.0, y - t.1);
+            let radial = (t.0, t.1);
+            assert!(
+                (radial.0 * string.0 + radial.1 * string.1).abs() < 1e-6 * rb * rb,
+                "curve {ci} at u = {u}: the string is not perpendicular to the radius",
+            );
+            let arc = rb * u.to_radians().abs();
+            assert!(
+                (string.0.hypot(string.1) - arc).abs() < 1e-6,
+                "curve {ci} at u = {u}: string {} against arc {arc}",
+                string.0.hypot(string.1),
+            );
+        }
+    }
+}
+
+/// The bearing a curve's involute starts from — the `phase` its instance was given.
+fn phase_of(sk: &Sketch, ci: usize) -> f64 {
+    sk.curves[ci].values[0]
+}

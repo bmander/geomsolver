@@ -47,10 +47,15 @@ pub enum CKind {
     PointOnEllipse,
     EllipseTangentLine,
     EllipseCurvature,
+    /// A point on a curve written in the language.  The same shape as `PointOnSpline` — two
+    /// residuals against one owned parameter, so the net one equation "a point lies on a curve"
+    /// is worth — but the curve is an expression rather than a basis, so the kernel that
+    /// evaluates it is chosen per *definition*, not per type.
+    PointOnCurve,
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 32] = [
+pub const ALL_KINDS: [CKind; 33] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -83,6 +88,7 @@ pub const ALL_KINDS: [CKind; 32] = [
     CKind::PointOnEllipse,
     CKind::EllipseTangentLine,
     CKind::EllipseCurvature,
+    CKind::PointOnCurve,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -94,6 +100,8 @@ pub enum SpecKind {
     CircleOrArc,
     Spline,
     Ellipse,
+    /// A curve written in the language — see `model::CurveDef`.
+    Curve,
     Length,
     Angle,
     Float,
@@ -117,6 +125,7 @@ impl SpecKind {
                 | SpecKind::CircleOrArc
                 | SpecKind::Spline
                 | SpecKind::Ellipse
+                | SpecKind::Curve
         )
     }
 
@@ -138,6 +147,7 @@ impl SpecKind {
             SpecKind::CircleOrArc => "circle_or_arc",
             SpecKind::Spline => "spline",
             SpecKind::Ellipse => "ellipse",
+            SpecKind::Curve => "curve",
             SpecKind::Length => "length",
             SpecKind::Angle => "angle",
             SpecKind::Float => "float",
@@ -188,6 +198,7 @@ impl CKind {
             CKind::PointOnEllipse => "PointOnEllipse",
             CKind::EllipseTangentLine => "EllipseTangentLine",
             CKind::EllipseCurvature => "EllipseCurvature",
+            CKind::PointOnCurve => "PointOnCurve",
         }
     }
 
@@ -245,6 +256,7 @@ impl CKind {
             }
             CKind::Symmetric => &[("p", S::Point), ("q", S::Point), ("line", S::Line)],
             CKind::PointOnSpline => &[("p", S::Point), ("spline", S::Spline), ("t", S::Param)],
+            CKind::PointOnCurve => &[("p", S::Point), ("curve", S::Curve), ("u", S::Param)],
             CKind::SplineTangentLine => {
                 &[("spline", S::Spline), ("line", S::Line), ("t", S::Param)]
             }
@@ -370,6 +382,9 @@ impl CKind {
             | CKind::AnnularDistance
             | CKind::Symmetric
             | CKind::PointOnSpline
+            // a point on a curve is a contact, not a tangency: it has no double root for the
+            // second-order screen to look for
+            | CKind::PointOnCurve
             | CKind::PointOnEllipse
             | CKind::HorizontalPoints
             | CKind::VerticalPoints
@@ -400,8 +415,17 @@ impl CKind {
         )
     }
 
+    /// The static kernel a type evaluates through.
+    ///
+    /// A curve contact has none: the expressions it runs are the *definition's*, so its kernel is
+    /// synthesised per definition by `kernels::curve_kernel` and chosen by
+    /// `Constraint::kernel_id_in`, which — unlike this — can see the sketch.  Asking here is a
+    /// mistake the type system cannot catch, so it says so.
     pub fn kernel(self) -> K {
         match self {
+            CKind::PointOnCurve => {
+                panic!("a curve contact's kernel belongs to its definition, not its type")
+            }
             CKind::Coincident => K::Coincident,
             CKind::Distance => K::Distance,
             CKind::Midpoint => K::Midpoint,
@@ -474,6 +498,7 @@ impl CKind {
             | CKind::TangentLineCircleAt
             | CKind::Symmetric
             | CKind::PointOnSpline
+            | CKind::PointOnCurve
             | CKind::PointOnEllipse
             | CKind::EllipseTangentLine
             | CKind::EllipseCurvature
@@ -705,6 +730,22 @@ impl Constraint {
         self.kernel() as usize
     }
 
+    /// Which kernel evaluates this constraint, when the sketch is at hand.
+    ///
+    /// The same as `kernel_id` for every type but one.  A curve contact's kernel belongs to the
+    /// curve's *definition* — different families read different numbers of coordinates, so they
+    /// cannot share a block — and the definition is only reachable through the sketch.  The ids
+    /// run on past the static ones, which is what lets `System` hold a table of both.
+    pub fn kernel_id_in(&self, sk: &Sketch) -> usize {
+        match self.kind {
+            CKind::PointOnCurve => {
+                let e = self.args[1].ent();
+                kernels::N_KERNELS + sk.curves[e.i()].def as usize
+            }
+            _ => self.kernel_id(),
+        }
+    }
+
     /// Which kernel evaluates this constraint: its type's, or the free-variable twin when the
     /// number it states is an unknown rather than a constant.
     fn kernel(&self) -> K {
@@ -715,7 +756,12 @@ impl Constraint {
     }
 
     pub fn n_residuals(&self) -> usize {
-        kernels::kernel(self.kernel()).n_res
+        match self.kind {
+            // two, like every parametric contact: `p - C(u) = 0`.  Not asked of the kernel,
+            // because a curve's belongs to its definition and this is a fact about the type.
+            CKind::PointOnCurve => 2,
+            _ => kernels::kernel(self.kernel()).n_res,
+        }
     }
 
     pub fn spec(&self) -> Spec {
@@ -840,6 +886,22 @@ impl Constraint {
         if let Some((sp, t)) = self.spline_contact(sk) {
             let span = span.unwrap_or_else(|| crate::curve::span_of(sk, sp, t));
             return crate::curve::local_knots(&sk.splines[sp].knots, span).to_vec();
+        }
+        // a curve contact carries its family's two tapes and the numbers the instance was given.
+        // They are the same for every contact with the same curve, and duplicated per constraint
+        // because that is where a block already has room for numbers — which is what keeps the
+        // kernel table `fn`-pointered and ignorant of curves.
+        if self.kind == CKind::PointOnCurve {
+            let cv = &sk.curves[self.args[1].ent().i()];
+            let d = &sk.curve_defs[cv.def as usize];
+            let mut k = Vec::with_capacity(3 + d.x.flat.len() + d.y.flat.len() + cv.values.len());
+            k.push(d.vars.len() as f64);
+            k.push(d.x.flat.len() as f64);
+            k.push(d.y.flat.len() as f64);
+            k.extend_from_slice(&d.x.flat);
+            k.extend_from_slice(&d.y.flat);
+            k.extend_from_slice(&cv.values);
+            return k;
         }
         match self.kind {
             CKind::Distance | CKind::HorizontalDistance | CKind::VerticalDistance => {
@@ -979,6 +1041,12 @@ impl Constraint {
             // count fixed however long the spline is
             CKind::PointOnSpline => {
                 [pt(0), vec![self.args[2].param()], self.span_params(sk, span)].concat()
+            }
+            // the point, the parameter it sits at, and every coordinate the curve reads — in
+            // `entity_params` order, which is the order the definition's tapes were compiled
+            // against, so the gradient that comes back needs no rearranging
+            CKind::PointOnCurve => {
+                [pt(0), vec![self.args[2].param()], sk.entity_params(e(1))].concat()
             }
             CKind::SplineTangentLine => {
                 [vec![self.args[2].param()], self.span_params(sk, span), ln(1)].concat()
@@ -1166,6 +1234,7 @@ pub fn kind_matches(spec: SpecKind, ent: EntKind) -> bool {
         SpecKind::CircleOrArc => ent == EntKind::Circle || ent == EntKind::Arc,
         SpecKind::Spline => ent == EntKind::Spline,
         SpecKind::Ellipse => ent == EntKind::Ellipse,
+        SpecKind::Curve => ent == EntKind::Curve,
         _ => false,
     }
 }

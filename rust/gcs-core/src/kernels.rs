@@ -55,6 +55,7 @@ pub enum K {
 
 pub const N_KERNELS: usize = 37;
 
+#[derive(Clone, Copy)]
 pub struct Kernel {
     pub name: &'static str,
     pub n_res: usize,
@@ -78,6 +79,25 @@ pub fn kernel(id: K) -> &'static Kernel {
 
 pub fn kernel_by_id(id: usize) -> &'static Kernel {
     &KERNELS[id]
+}
+
+/// The kernel for one curve definition: `point_on_curve` at that definition's widths.
+///
+/// Not in `KERNELS` because there is no fixed number of them — a document defines as many curve
+/// families as it likes.  `System` builds its own table of the static ones plus one of these per
+/// definition, which is what keeps a block's columns a fixed width while letting two different
+/// curves have different ones.
+pub fn curve_kernel(n_theta: usize, n_const: usize) -> Kernel {
+    Kernel {
+        name: "point_on_curve",
+        n_res: 2,
+        n_par: 3 + n_theta,
+        n_const,
+        degree: 1,
+        res: point_on_curve_res,
+        jac: point_on_curve_jac,
+        const_jac: None,
+    }
 }
 
 /* -- linear kernels: r = J v with a constant J ----------------------------- */
@@ -1286,6 +1306,111 @@ fn radius_free_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
 }
 
 /* -- registry (order == kernel id, shared with the bindings) --------------- */
+
+/* -- curves written in the language ------------------------------------------------
+ *
+ * One point on one curve: `p - C(u) = 0`, two residuals against the one parameter the contact
+ * owns — the same bargain `point_on_spline` strikes, and the same net one equation.
+ *
+ * What differs is where `C` comes from.  A spline has a basis the kernel knows; a curve written
+ * in the language is a pair of *expressions*, so the compiled tapes ride in the constraint's
+ * constants and `tape::eval_flat` runs them.  The gradient that comes back is already in the
+ * kernel's column order — the parameter, then every scalar the curve's arguments contribute —
+ * because `Sketch::curve_vars` and `Constraint::params_on` are written against the same order.
+ * So the tape's gradient *is* the Jacobian row, with nothing to rearrange.
+ *
+ * The constants are `[n_vars, len_x, len_y, x…, y…, values…]`: two tapes and whatever numbers
+ * the instance was given, which the expressions read as constants and whose gradients are
+ * computed and ignored.
+ */
+
+thread_local! {
+    /// Scratch the tapes run in.  A kernel is a `fn` and cannot own state, and allocating per
+    /// residual is the one thing the compile-to-plan seam exists to prevent.
+    static CURVE_SCRATCH: std::cell::RefCell<crate::tape::Scratch> =
+        std::cell::RefCell::new(crate::tape::Scratch::new());
+}
+
+/// Split a curve contact's constants into its two tapes and the numbers it was given.
+fn curve_parts(k: &[f64]) -> (usize, &[f64], &[f64], &[f64]) {
+    let n_vars = k[0] as usize;
+    let (lx, ly) = (k[1] as usize, k[2] as usize);
+    let x = &k[3..3 + lx];
+    let y = &k[3 + lx..3 + lx + ly];
+    (n_vars, x, y, &k[3 + lx + ly..])
+}
+
+/// The variable vector a tape is evaluated at, from the columns and the constants: the parameter,
+/// then the curve's coordinates, then its given numbers.
+fn curve_x(v: &[f64], n_par: usize, values: &[f64], out: &mut [f64]) -> usize {
+    out[0] = v[2];
+    let theta = n_par - 3;
+    out[1..1 + theta].copy_from_slice(&v[3..3 + theta]);
+    out[1 + theta..1 + theta + values.len()].copy_from_slice(values);
+    1 + theta + values.len()
+}
+
+/// The block's widths, read off the slices it was handed.
+///
+/// A kernel `fn` is not told its own `n_par` and `n_const` — every other kernel knows them as
+/// constants of its own type.  A curve kernel's are per *definition*, so they are recovered here
+/// from the lengths the block passed, which are `count * n_par` and `count * n_const` exactly.
+fn curve_widths(n: usize, v: &[f64], k: &[f64]) -> (usize, usize) {
+    if n == 0 {
+        return (0, 0);
+    }
+    (v.len() / n, k.len() / n)
+}
+
+fn point_on_curve_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let (n_par, n_const) = curve_widths(n, v, k);
+    if n_par < 3 || n_const < 3 {
+        return;
+    }
+    CURVE_SCRATCH.with(|sc| {
+        let mut sc = sc.borrow_mut();
+        let mut x = [0.0f64; crate::tape::MAX_VARS];
+        for i in 0..n {
+            let (o, ko) = (n_par * i, n_const * i);
+            let (n_vars, tx, ty, values) = curve_parts(&k[ko..ko + n_const]);
+            curve_x(&v[o..], n_par, values, &mut x);
+            let cx = crate::tape::eval_flat(tx, n_vars, &x, &mut sc);
+            let cy = crate::tape::eval_flat(ty, n_vars, &x, &mut sc);
+            r[2 * i] = v[o] - cx.v;
+            r[2 * i + 1] = v[o + 1] - cy.v;
+        }
+    });
+}
+
+fn point_on_curve_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let (n_par, n_const) = curve_widths(n, v, k);
+    if n_par < 3 || n_const < 3 {
+        return;
+    }
+    CURVE_SCRATCH.with(|sc| {
+        let mut sc = sc.borrow_mut();
+        let mut x = [0.0f64; crate::tape::MAX_VARS];
+        for i in 0..n {
+            let (o, ko) = (n_par * i, n_const * i);
+            let jo = 2 * n_par * i;
+            let row1 = jo + n_par;
+            let (n_vars, tx, ty, values) = curve_parts(&k[ko..ko + n_const]);
+            curve_x(&v[o..], n_par, values, &mut x);
+            let cx = crate::tape::eval_flat(tx, n_vars, &x, &mut sc);
+            let cy = crate::tape::eval_flat(ty, n_vars, &x, &mut sc);
+            for t in 0..2 * n_par {
+                j[jo + t] = 0.0;
+            }
+            j[jo] = 1.0;
+            j[row1 + 1] = 1.0;
+            // the parameter, then every coordinate the curve reads — the tape's own order
+            for c in 0..n_par - 2 {
+                j[jo + 2 + c] = -cx.d[c];
+                j[row1 + 2 + c] = -cy.d[c];
+            }
+        }
+    });
+}
 
 pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "coincident", n_res: 2, n_par: 4, degree: 1, n_const: 0, res: coincident::res, jac: coincident::jac, const_jac: Some(coincident::J) },

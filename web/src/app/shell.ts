@@ -21,6 +21,10 @@ export const banner = document.getElementById('banner') as HTMLElement;
 export const bannerText = document.getElementById('banner-text') as HTMLElement;
 export const bannerSelect = document.getElementById('banner-select') as HTMLButtonElement;
 export const measureEl = document.getElementById('measure') as HTMLElement;
+export const ppanel = document.getElementById('ppanel') as HTMLElement;
+export const ppanelState = document.getElementById('ppanel-state') as HTMLElement;
+export const ptext = document.getElementById('ptext') as HTMLTextAreaElement;
+export const pdiags = document.getElementById('pdiags') as HTMLElement;
 export const componentEl = document.getElementById('component') as HTMLElement;
 export const footerEl = document.querySelector('footer') as HTMLElement;
 

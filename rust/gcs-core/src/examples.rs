@@ -562,7 +562,7 @@ pub fn example(name: &str) -> Option<Sketch> {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 21] = [
+pub const CASES: [(&str, &str, &str); 22] = [
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Slotted link", "slotted_link", "obround slot with two holes; fully constrained"),
     ("Truss (8 bays)", "truss", "~30-entity Warren truss, every member dimensioned"),
@@ -583,8 +583,26 @@ pub const CASES: [(&str, &str, &str); 21] = [
     ("Pythagoras, graphically", "pythagoras", "four a×b right triangles in a square of side a + b leave a square of side c; `c = hypot(a, b)` is redundant and consistent — edit a or b and it stays so"),
     ("Curve and follower", "spline_follower", "a cubic B-spline with a face held tangent to it and a point riding on it — drag a control point and the contact slides along the curve, across knots and all"),
     ("Belt over two pulleys", "belt_tangency", "each end on its circle and the line tangent to it — a double root: rank-deficient at every solution, yet nothing can move.  The second-order screen calls it rigid rather than 2 DOF"),
+    ("Spur gear (12 teeth)", "gear", "written as a Solvent program: one tooth as a component, repeated round a cycle — open the Program panel (Edit ▸ Program) to read it"),
     ("Levelled zigzags (3×32)", "zigzag", "three separate staircases of free-length H/V segments — a drag costs one staircase, not three"),
 ];
+
+/// A spur gear, written as a Solvent program rather than built here.
+///
+/// The one case in the library that is a *document* and not a function: a tooth is a component
+/// and the wheel is that component round a cycle, which is what the language is for and what no
+/// amount of `Sketch::add` says as clearly.  It is also the regression test for elaboration —
+/// components, instances, parameters, `next`, and expressions worked out at elaboration time all
+/// have to hold for it to come out round.
+pub const GEAR: &str = include_str!("gear.sv");
+
+pub fn gear() -> Sketch {
+    let (p, errs) = crate::syntax::parse(GEAR);
+    debug_assert!(errs.is_empty(), "the gear does not parse: {errs:?}");
+    let e = crate::program::elaborate(&p);
+    debug_assert!(e.ok(), "the gear does not elaborate");
+    e.sketch
+}
 
 /// The case library's factory.  Keys are either a plain name or `name:arg[:arg]`, so a front end
 /// can ask for `truss:50` or `laman:12:1` without a table of its own.
@@ -603,6 +621,7 @@ pub fn case(key: &str) -> Option<Sketch> {
         "truss_floating" if !args.is_empty() => truss_floating(n(0, 8)),
         "polygon_chain" if !args.is_empty() => polygon_chain(n(0, 12), 50.0),
         "k33" if !args.is_empty() => k33(u(0, 3)),
+        "gear" => gear(),
         "laman" => laman(n(0, 10), u(1, 0), true),
         "zigzag" if !args.is_empty() => zigzag(n(0, 32), n(1, 1)),
         "spline_follower" if !args.is_empty() => spline_follower(n(0, 7)),

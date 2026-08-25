@@ -370,6 +370,24 @@ Conventions:
   every cluster a neighbour of every other.  `relation_bound` must stay an upper bound on the
   merge rank (an under-count loses a determined merge to the numeric fallback): validate a change
   by forcing the factorisation on every call and asserting `rank <= bound` across the cases.
+- A **curve family is written in the document**, not in the core.  `curve involute(c: circle,
+  phase: Angle)(u) = ( xexpr, yexpr )` is a `CurveDef`: two `expr.rs` expressions over the
+  geometry the curve is drawn from, compiled to a `tape.rs` tape and differentiated forward in
+  `u` *and* in every coordinate they read.  `∂C/∂u` is which way a contact may slide; `∂C/∂θ` is
+  how the curve moves when its geometry does, and without it a point solves once and falls off
+  the moment the circle is dragged.  An involute, a cycloid and a spiral are then library code,
+  not three entity kinds.
+  The variable table is the parameter, then every scalar the arguments contribute **in
+  `entity_params` order** (`EntKind::scalar_names`), then the numbers the instance was given —
+  which is also `params_on`'s column order, so a tape's gradient *is* a row of the Jacobian.
+  `EntKind::Curve` is the one kind whose children need not be points, and the one that must be
+  built and grafted **last**, since its arguments may be of any other kind.
+  A curve's kernel belongs to its **definition**, not its type: two families read different
+  numbers of coordinates and cannot share a fixed-width block.  So `CKind::kernel()` panics for
+  `PointOnCurve`, `kernel_id_in(sk)` returns `N_KERNELS + def`, `System` owns a table of the
+  static kernels plus one per family, and the registry publishes `kernel: -1` — which the
+  bindings' exhaustive tests key on rather than on a name.  The tapes ride in the constraint's
+  `consts`, so no kernel signature learns about curves and `KERNELS` stays `'static`.
 - A curve is *geometry*, so like a dimension callout it is laid out in the core and the front end
   only strokes what it is handed: `curve::tessellate` refines to `FLATNESS_PX` screen pixels
   through `unit` (the world length of one screen pixel), and `curve::closest` is the pick test
