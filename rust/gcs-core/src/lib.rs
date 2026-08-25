@@ -27,6 +27,7 @@ pub mod io;
 pub mod json;
 pub mod kernels;
 pub mod linalg;
+pub mod locus;
 pub mod model;
 pub mod newton;
 pub mod program;

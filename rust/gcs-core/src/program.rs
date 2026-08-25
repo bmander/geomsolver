@@ -16,7 +16,7 @@
 //! already strikes — an expression that will not compute keeps its last number, and the report
 //! says what is wrong.  Whether to adopt the result is the caller's to decide, from `ok()`.
 
-use crate::constraints::{Arg as CArg, Constraint, SpecKind};
+use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
 use crate::curve;
 use crate::decompose;
 use crate::expr;
@@ -562,7 +562,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
 /// `entity_params` order* (`EntKind::scalar_names`), then the numbers it takes.  That order is
 /// the kernel's column order, which is what makes a tape's gradient a row of the Jacobian.
 fn compile_family(f: &crate::syntax::CurveFamily) -> Result<crate::model::CurveDef, (Span, String)> {
-    use crate::syntax::Ty;
+    use crate::syntax::{FamilyBody, Ty};
     let mut vars = vec![f.param.text.clone()];
     let mut formals = Vec::new();
     let mut values = Vec::new();
@@ -585,12 +585,23 @@ fn compile_family(f: &crate::syntax::CurveFamily) -> Result<crate::model::CurveD
         }
     }
     vars.extend(values.iter().cloned());
-    let tape = |text: &str, span: Span| -> Result<crate::tape::Tape, (Span, String)> {
-        let ast = crate::expr::parse(text).map_err(|e| (span, e))?;
-        crate::tape::Tape::compile(&ast.body, &vars).map_err(|e| (span, e))
+    let body = match &f.body {
+        FamilyBody::Exprs { x, y, xspan, yspan } => {
+            let tape = |text: &str, span: Span| -> Result<crate::tape::Tape, (Span, String)> {
+                let ast = crate::expr::parse(text).map_err(|e| (span, e))?;
+                crate::tape::Tape::compile(&ast.body, &vars).map_err(|e| (span, e))
+            };
+            crate::model::CurveBody::Exprs { x: tape(x, *xspan)?, y: tape(y, *yspan)? }
+        }
+        FamilyBody::Trace { point, body } => crate::model::CurveBody::Trace(compile_trace(
+            f,
+            point,
+            body,
+            &vars,
+            &formals,
+            values.len(),
+        )?),
     };
-    let x = tape(&f.x, f.xspan)?;
-    let y = tape(&f.y, f.yspan)?;
     let num = |t: &str| crate::expr::literal(t).unwrap_or(0.0);
     let domain = match &f.domain {
         Some((a, b)) => (num(a), num(b)),
@@ -602,10 +613,284 @@ fn compile_family(f: &crate::syntax::CurveFamily) -> Result<crate::model::CurveD
         values,
         param: f.param.text.clone(),
         vars,
-        x,
-        y,
+        body,
         domain,
     })
+}
+
+/// A trace block, lowered.
+///
+/// The block is elaborated into a *scratch sketch* — the formals materialised as default-shaped
+/// entities, the block's declarations built beside them — and each constraint is then read back
+/// out through `Constraint::params_on`, the same column-mapping every compiled system uses, so
+/// there is no second copy of which coordinates a kernel reads.  What leaves here is pure data:
+/// rows over one variable table, ready to ride in a contact's constants (`locus`).
+///
+/// A dimension whose value is written over `u` and the geometry is carried by its *free twin*
+/// kernel: the value becomes a derived variable `w`, defined by a tape, read as the twin's last
+/// column with `(m, c)` the unit conversion — so `∂r/∂u` comes from the kernel and the tape and
+/// nowhere else.
+fn compile_trace(
+    f: &crate::syntax::CurveFamily,
+    point: &crate::syntax::Name,
+    body: &[Stmt],
+    vars: &[String],
+    formals: &[(String, EntKind)],
+    n_values: usize,
+) -> Result<crate::locus::Locus, (Span, String)> {
+    use crate::locus::{Locus, Row};
+    use crate::tape::Tape;
+    let mut sk = Sketch::new();
+    let mut scope: BTreeMap<String, EntRef> = BTreeMap::new();
+    // scratch parameter index -> variable-table slot
+    let mut slot: BTreeMap<u32, usize> = BTreeMap::new();
+    let mut next = 1usize; // slot 0 is the parameter
+    for (name, kind) in formals {
+        let e = match kind {
+            EntKind::Point => EntRef::point(sk.point(0.0, 0.0, false, name)),
+            EntKind::Line => {
+                let a = sk.point(0.0, 0.0, false, name);
+                let b = sk.point(1.0, 0.0, false, name);
+                EntRef::line(sk.line(a, b))
+            }
+            EntKind::Circle => {
+                let c = sk.point(0.0, 0.0, false, name);
+                EntRef::circle(sk.circle(c, 1.0, name))
+            }
+            other => {
+                return Err((
+                    f.span,
+                    format!("a trace cannot yet be written over a {}", other.as_str()),
+                ))
+            }
+        };
+        for p in sk.entity_params(e) {
+            slot.insert(p, next);
+            next += 1;
+        }
+        scope.insert(name.clone(), e);
+    }
+    let n_theta = next - 1;
+    let n_outer = vars.len();
+    debug_assert_eq!(n_outer, 1 + n_theta + n_values, "variable table shape");
+    let tape = |text: &str, span: Span| -> Result<Tape, (Span, String)> {
+        let ast = crate::expr::parse(text).map_err(|e| (span, e))?;
+        Tape::compile(&ast.body, vars).map_err(|e| (span, e))
+    };
+    let constant = |v: f64| -> Tape {
+        Tape::compile(&crate::expr::Ast::Num(v), vars).expect("a number always compiles")
+    };
+
+    // -- pass 1: declarations, so a statement may read a point declared after it --------
+    let mut n_q = 0usize;
+    let mut seeds: Vec<Tape> = Vec::new();
+    for st in body {
+        let StmtKind::Decl(d) = &st.kind else { continue };
+        let seed_tape = |i: usize| -> Result<Tape, (Span, String)> {
+            match d.seed_text.get(i).and_then(|t| t.as_ref()) {
+                Some(t) => tape(t, *d.seed_spans.get(i).unwrap_or(&st.span)),
+                None => Ok(constant(d.seed.get(i).copied().unwrap_or(0.0))),
+            }
+        };
+        let child = |sk: &Sketch, scope: &BTreeMap<String, EntRef>, g: usize|
+            -> Result<EntRef, (Span, String)>
+        {
+            let r = d
+                .children
+                .get(g)
+                .and_then(|v| v.first())
+                .ok_or((st.span, format!("`{}` needs its points named", d.name.text)))?;
+            let e = scope
+                .get(&r.root.text)
+                .copied()
+                .ok_or((r.span, format!("no such entity: `{}`", r.root.text)))?;
+            follow(sk, e, &r.path).map_err(|m| (r.span, m))
+        };
+        let e = match d.kind {
+            EntKind::Point => {
+                let (sx, sy) = (seed_tape(0)?, seed_tape(1)?);
+                let e = EntRef::point(sk.point(0.0, 0.0, false, &d.name.text));
+                seeds.push(sx);
+                seeds.push(sy);
+                for p in sk.entity_params(e) {
+                    slot.insert(p, n_outer + n_q);
+                    n_q += 1;
+                }
+                e
+            }
+            EntKind::Line => {
+                let a = child(&sk, &scope, 0)?;
+                let b = child(&sk, &scope, 1)?;
+                if a.kind != EntKind::Point || b.kind != EntKind::Point {
+                    return Err((st.span, "a line runs between points".to_string()));
+                }
+                EntRef::line(sk.line(a.i(), b.i()))
+            }
+            EntKind::Circle => {
+                let c = child(&sk, &scope, 0)?;
+                if c.kind != EntKind::Point {
+                    return Err((st.span, "a circle's centre is a point".to_string()));
+                }
+                let sr = seed_tape(0)?;
+                let e = EntRef::circle(sk.circle(c.i(), 0.0, &d.name.text));
+                seeds.push(sr);
+                slot.insert(sk.circles[e.i()].radius, n_outer + n_q);
+                n_q += 1;
+                e
+            }
+            other => {
+                return Err((
+                    st.span,
+                    format!("a trace block cannot yet draw a {}", other.as_str()),
+                ))
+            }
+        };
+        if scope.insert(d.name.text.clone(), e).is_some() {
+            return Err((st.span, format!("`{}` is declared twice", d.name.text)));
+        }
+    }
+
+    // checked here and not left to `Locus::new`: the provisional w-column numbering below is
+    // only sound while q fits under `MAX_Q`
+    if n_q > crate::locus::MAX_Q {
+        return Err((
+            f.span,
+            format!("a trace block declares at most {} unknowns", crate::locus::MAX_Q),
+        ));
+    }
+
+    // -- pass 2: constraints, lowered to rows ------------------------------------------
+    let mut w: Vec<Tape> = Vec::new();
+    let mut rows: Vec<Row> = Vec::new();
+    for st in body {
+        let r = match &st.kind {
+            StmtKind::Decl(_) => continue,
+            StmtKind::Relation(r) => r,
+            _ => {
+                return Err((
+                    st.span,
+                    "a trace block holds declarations and constraints only".to_string(),
+                ))
+            }
+        };
+        let spec = r.kind.spec();
+        if r.kind == CKind::DragTarget || spec.iter().any(|(_, k)| k.is_param()) {
+            return Err((
+                st.span,
+                format!("{} cannot appear in a trace block", r.kind.name()),
+            ));
+        }
+        let mut cargs: Vec<CArg> = Vec::with_capacity(spec.len());
+        let mut dim: Option<(SpecKind, Tape)> = None;
+        for (i, (name, kind)) in spec.iter().enumerate() {
+            let given = r.args.get(i).and_then(|a| a.as_ref());
+            match (kind, given) {
+                (k, Some(Arg::Ref(rf))) if k.is_entity() => {
+                    let e = scope
+                        .get(&rf.root.text)
+                        .copied()
+                        .ok_or((rf.span, format!("no such entity: `{}`", rf.root.text)))?;
+                    let e = follow(&sk, e, &rf.path).map_err(|m| (rf.span, m))?;
+                    if !crate::constraints::kind_matches(*k, e.kind) {
+                        return Err((
+                            rf.span,
+                            format!(
+                                "`{}` is a {}, and a {} is wanted here",
+                                rf.root.text,
+                                e.kind.as_str(),
+                                k.as_str()
+                            ),
+                        ));
+                    }
+                    cargs.push(CArg::Ent(e));
+                }
+                (k, Some(Arg::Dim { text, span })) if k.is_dimension() => {
+                    dim = Some((*k, tape(text, *span)?));
+                    cargs.push(CArg::Num(0.0));
+                }
+                // a slot the core would read off the geometry (a tangency's side or sense) is
+                // required too: there is no drawn geometry here to read it from, and a default
+                // would silently pick the branch
+                (k, None) if k.is_dimension() || k.is_entity() || r.kind.infers_arg(i) => {
+                    return Err((
+                        st.span,
+                        format!("`{name}` must be stated: a trace block infers nothing"),
+                    ));
+                }
+                (_, None) => cargs.push(r.kind.default_arg(i)),
+                (k, Some(a)) => match scalar_arg(*k, a) {
+                    Some(v) => cargs.push(v),
+                    None => {
+                        return Err((
+                            st.span,
+                            format!("`{name}`: a {} is wanted here, not {a:?}", k.as_str()),
+                        ))
+                    }
+                },
+            }
+        }
+        let c = Constraint::new(r.kind, cargs);
+        let mut cols: Vec<u32> = Vec::new();
+        for p in c.params(&sk) {
+            let Some(&s) = slot.get(&p) else {
+                return Err((st.span, "trace lowering lost a column".to_string()));
+            };
+            cols.push(s as u32);
+        }
+        let kid = match dim {
+            Some((k, t)) => {
+                let twin = r.kind.free_kernel().ok_or((
+                    st.span,
+                    format!("a {} cannot be stated over `u` here", r.kind.name()),
+                ))?;
+                cols.push((n_outer + crate::locus::MAX_Q + w.len()) as u32);
+                w.push(t);
+                // the tape works in the units a person writes (degrees); (m, c) are the
+                // conversion to what the kernel reads, the same seam `expr::set_dimension` is
+                rows.push(Row {
+                    kid: twin as usize,
+                    cols,
+                    consts: vec![crate::expr::to_arg_units(k, 1.0), 0.0],
+                });
+                continue;
+            }
+            None => c.kernel_id(),
+        };
+        let consts = c.consts_on(&sk, None);
+        rows.push(Row { kid, cols, consts });
+    }
+    // the w columns were provisionally numbered past MAX_Q; now that the unknown count is
+    // final, renumber them to sit just after q — sound because q was bounded above
+    for row in rows.iter_mut() {
+        for col in row.cols.iter_mut() {
+            let cv = *col as usize;
+            if cv >= n_outer + crate::locus::MAX_Q {
+                *col = (cv - crate::locus::MAX_Q + n_q) as u32;
+            }
+        }
+    }
+
+    let traced = match scope.get(&point.text) {
+        Some(e) if e.kind == EntKind::Point => {
+            let p = sk.point_params(e.i())[0];
+            match slot.get(&p) {
+                Some(&s) if s >= n_outer => s - n_outer,
+                _ => {
+                    return Err((
+                        point.span,
+                        format!("`{}` must be a point the block declares", point.text),
+                    ))
+                }
+            }
+        }
+        _ => {
+            return Err((
+                point.span,
+                format!("`{}` must be a point the block declares", point.text),
+            ))
+        }
+    };
+    Locus::new(n_outer, n_theta, n_q, traced, w, seeds, rows).map_err(|m| (f.span, m))
 }
 
 fn build(
@@ -874,7 +1159,25 @@ fn arg_span(a: &Arg) -> Option<Span> {
     }
 }
 
+/// The written forms of a plain value argument — an int, a flag, a word, a float.  One table,
+/// read by `to_arg` and by `compile_trace`, so an integer in a `Float` slot means the same thing
+/// in a component body and in a trace block.
+fn scalar_arg(kind: SpecKind, a: &Arg) -> Option<CArg> {
+    Some(match (kind, a) {
+        (SpecKind::Int, Arg::Int(v)) => CArg::Int(*v),
+        (SpecKind::Int, Arg::Num(v)) => CArg::Int(*v as i64),
+        (SpecKind::Bool, Arg::Bool(b)) => CArg::Bool(*b),
+        (SpecKind::Str, Arg::Word(w)) => CArg::Str(w.clone()),
+        (SpecKind::Float, Arg::Num(v)) => CArg::Num(*v),
+        (SpecKind::Float, Arg::Int(v)) => CArg::Num(*v as f64),
+        _ => return None,
+    })
+}
+
 fn to_arg(sk: &Sketch, res: &Resolver, kind: SpecKind, a: &Arg) -> Result<CArg, String> {
+    if let Some(v) = scalar_arg(kind, a) {
+        return Ok(v);
+    }
     Ok(match (kind, a) {
         (k, Arg::Ref(r)) if k.is_entity() => {
             let e = res
@@ -915,12 +1218,6 @@ fn to_arg(sk: &Sketch, res: &Resolver, kind: SpecKind, a: &Arg) -> Result<CArg, 
                 .ok_or_else(|| format!("`{text}` is not a number this contact can start at"))?,
             pinned: *pinned,
         },
-        (SpecKind::Int, Arg::Int(v)) => CArg::Int(*v),
-        (SpecKind::Int, Arg::Num(v)) => CArg::Int(*v as i64),
-        (SpecKind::Bool, Arg::Bool(b)) => CArg::Bool(*b),
-        (SpecKind::Str, Arg::Word(w)) => CArg::Str(w.clone()),
-        (SpecKind::Float, Arg::Num(v)) => CArg::Num(*v),
-        (SpecKind::Float, Arg::Int(v)) => CArg::Num(*v as f64),
         (k, other) => return Err(format!("a {} is wanted here, not {other:?}", k.as_str())),
     })
 }

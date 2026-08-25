@@ -100,6 +100,23 @@ pub fn curve_kernel(n_theta: usize, n_const: usize) -> Kernel {
     }
 }
 
+/// The kernel for one *trace* definition: the same contact — `p − C(u) = 0`, the same columns —
+/// with `C` and its derivatives found by solving the family's block (`locus::eval_flat`) rather
+/// than by running a pair of tapes.  The whole compiled block rides in the constants, so this is
+/// still a plain `fn` and `System` still knows nothing about curves.
+pub fn trace_kernel(n_theta: usize, n_const: usize) -> Kernel {
+    Kernel {
+        name: "point_on_trace",
+        n_res: 2,
+        n_par: 3 + n_theta,
+        n_const,
+        degree: 1,
+        res: point_on_trace_res,
+        jac: point_on_trace_jac,
+        const_jac: None,
+    }
+}
+
 /* -- linear kernels: r = J v with a constant J ----------------------------- */
 
 fn lin_res(n: usize, v: &[f64], j: &'static [f64], n_res: usize, n_par: usize, r: &mut [f64]) {
@@ -1410,6 +1427,43 @@ fn point_on_curve_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
             }
         }
     });
+}
+
+fn point_on_trace_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let (n_par, n_const) = curve_widths(n, v, k);
+    if n_par < 3 || n_const < 2 {
+        return;
+    }
+    for i in 0..n {
+        let (o, ko) = (n_par * i, n_const * i);
+        let c = crate::locus::kernel_eval(&k[ko..ko + n_const], &v[o..o + n_par], n_par);
+        r[2 * i] = v[o] - c.x;
+        r[2 * i + 1] = v[o + 1] - c.y;
+    }
+}
+
+fn point_on_trace_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let (n_par, n_const) = curve_widths(n, v, k);
+    if n_par < 3 || n_const < 2 {
+        return;
+    }
+    for i in 0..n {
+        let (o, ko) = (n_par * i, n_const * i);
+        let jo = 2 * n_par * i;
+        let row1 = jo + n_par;
+        let c = crate::locus::kernel_eval(&k[ko..ko + n_const], &v[o..o + n_par], n_par);
+        for t in 0..2 * n_par {
+            j[jo + t] = 0.0;
+        }
+        j[jo] = 1.0;
+        j[row1 + 1] = 1.0;
+        // the parameter, then every coordinate the curve reads — the block's own order, which
+        // is the tape order, which is the column order
+        for t in 0..n_par - 2 {
+            j[jo + 2 + t] = -c.dx[t];
+            j[row1 + 2 + t] = -c.dy[t];
+        }
+    }
 }
 
 pub static KERNELS: [Kernel; N_KERNELS] = [

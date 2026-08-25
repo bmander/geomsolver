@@ -105,6 +105,18 @@ fn a_curve_family_is_a_declaration() {
     assert_eq!(tint_of(src, "180"), Some(Tint::Num));
 }
 
+/// A trace family reads as what it is: `trace` and `where` are keywords, the traced point is a
+/// name the family declares, and the block's statements colour like any other statements.
+#[test]
+fn a_trace_family_is_coloured() {
+    let src = "curve unwind(c: circle)(u) =\n  trace p where {\n\
+               point p\n    point_on_circle(p, c)\n  }";
+    assert_eq!(tint_of(src, "trace"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "p where"), Some(Tint::Def));
+    assert_eq!(tint_of(src, "where"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "point_on_circle"), Some(Tint::Relation));
+}
+
 /// The reference document, coloured.  A cheap guard that the rules above reach the real thing:
 /// the gear names a component, a curve family, a cycle and half a dozen relations.
 #[test]

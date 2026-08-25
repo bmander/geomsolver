@@ -110,7 +110,7 @@ pub struct Program {
 
 /// `curve involute(c: circle, phase: Angle)(u) over (0, 90) = ( xexpr, yexpr )`
 ///
-/// The two halves are kept as *text* and compiled by `program::elaborate`, exactly as a
+/// The expressions are kept as *text* and compiled by `program::elaborate`, exactly as a
 /// dimension's is: the little language they are written in is `expr.rs`'s, and reading it a
 /// second time here would be a second copy of rules like the one that makes `3 1/8` a number.
 #[derive(Clone, Debug)]
@@ -122,11 +122,18 @@ pub struct CurveFamily {
     pub param: Name,
     /// The interval it is drawn over unless an instance narrows it.
     pub domain: Option<(String, String)>,
-    pub x: String,
-    pub y: String,
-    pub xspan: Span,
-    pub yspan: Span,
+    pub body: FamilyBody,
     pub span: Span,
+}
+
+/// What follows a family's `=`: a pair of expressions, or `trace p where { … }` — a point and
+/// the constraints that force it, the curve then being wherever they put the point as the
+/// parameter runs.  The block's statements are ordinary statements; what may appear in one is
+/// `program::compile_trace`'s question, not the parser's.
+#[derive(Clone, Debug)]
+pub enum FamilyBody {
+    Exprs { x: String, y: String, xspan: Span, yspan: Span },
+    Trace { point: Name, body: Vec<Stmt> },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1059,7 +1066,7 @@ const BLOCKS: [&str; 3] = ["repeat", "cycle", "ring"];
 
 /// The words that shape a statement without naming anything — a modifier the parser eats where it
 /// stands.  `as` binds a name after it, which is why `highlight` treats that one specially.
-const MODIFIERS: [&str; 5] = ["over", "as", "at", "about", "construction"];
+const MODIFIERS: [&str; 6] = ["over", "as", "at", "about", "construction", "where"];
 
 /// What the word *after* this one is expected to be — the whole of the state the colouring carries
 /// from one token to the next, and four states rather than the four independent flags that would
@@ -1162,6 +1169,10 @@ fn tint_word(w: &str, prev: Option<&Tok>, next: Option<&Tok>, at: Next) -> (Opti
             if next == Some(&Tok::P(':')) {
                 return (Some(Tint::Def), Next::Inst);
             }
+            // `trace p where { … }` — a family body usually starts its own line
+            if w == "trace" {
+                return (Some(Tint::Word), Next::Def);
+            }
             (CKind::from_name(&camel(w)).is_some().then_some(Tint::Relation), Next::Word)
         }
         Next::Word => {
@@ -1175,6 +1186,10 @@ fn tint_word(w: &str, prev: Option<&Tok>, next: Option<&Tok>, at: Next) -> (Opti
             if MODIFIERS.contains(&w) {
                 // `cycle N as i` — the binder is a name the block declares
                 return (Some(Tint::Word), if w == "as" { Next::Def } else { Next::Word });
+            }
+            // `= trace p where { … }` — the traced point is a name the family declares
+            if w == "trace" && prev == Some(&Tok::Eq) {
+                return (Some(Tint::Word), Next::Def);
             }
             (None, Next::Word)
         }
@@ -1237,7 +1252,7 @@ pub fn parse(src: &str) -> (Program, Vec<SynErr>) {
         // `curve name(` defines a *family*; `curve name =` draws one.  Which it is is settled by
         // the token after the name, and nowhere else.
         if st.peek_word("curve") && st.curve_is_family() {
-            match st.curve_family() {
+            match st.curve_family(&mut next_id) {
                 Some(c) => families.push(c),
                 None => st.resync(),
             }
@@ -1570,8 +1585,9 @@ impl<'a> P<'a> {
         matches!(self.t.get(self.i + 2).map(|(t, _)| t), Some(Tok::P('(')))
     }
 
-    /// `curve NAME(formals)(param) [over (a, b)] = ( xexpr, yexpr )`
-    fn curve_family(&mut self) -> Option<CurveFamily> {
+    /// `curve NAME(formals)(param) [over (a, b)] = ( xexpr, yexpr )`, or
+    /// `… = trace NAME where { … }`.
+    fn curve_family(&mut self, next_id: &mut u32) -> Option<CurveFamily> {
         let lo = self.here().lo as usize;
         self.i += 1; // `curve`
         let name = self.ident()?;
@@ -1616,6 +1632,23 @@ impl<'a> P<'a> {
         self.i += 1;
         // a family is usually too long for one line, and the `=` is where it breaks
         self.skip_ends();
+        // `trace p where { … }` — the locus form
+        if self.eat_word("trace") {
+            let point = self.ident()?;
+            if !self.eat_word("where") {
+                self.fail("a trace is `trace point where { ... }`");
+                return None;
+            }
+            let body = self.braced_body(next_id)?;
+            return Some(CurveFamily {
+                name,
+                formals,
+                param,
+                domain,
+                body: FamilyBody::Trace { point, body },
+                span: Span::new(lo, self.prev_hi()),
+            });
+        }
         if !self.want_p('(') {
             return None;
         }
@@ -1633,10 +1666,7 @@ impl<'a> P<'a> {
             formals,
             param,
             domain,
-            x,
-            y,
-            xspan,
-            yspan,
+            body: FamilyBody::Exprs { x, y, xspan, yspan },
             span: Span::new(lo, self.prev_hi()),
         })
     }

@@ -254,13 +254,22 @@ pub struct CurveDef {
     pub values: Vec<String>,
     /// What the curve runs on — `u`.
     pub param: String,
-    /// The variable table both tapes were compiled over: `param` first, then one name per scalar
-    /// the formals contribute.  Kept so a definition can be re-read and printed.
+    /// The variable table the body was compiled over: `param` first, then one name per scalar
+    /// the formals contribute, then the value parameters.  Kept so a definition can be re-read
+    /// and printed.
     pub vars: Vec<String>,
-    pub x: crate::tape::Tape,
-    pub y: crate::tape::Tape,
+    pub body: CurveBody,
     /// The interval the curve is drawn over.
     pub domain: (f64, f64),
+}
+
+/// How a family says where `C(u)` is: as two expressions, or as the constraints that force it.
+/// The second is the Wikipedia sentence — "the curve traced by the end of a taut string as it
+/// unwinds" — with the working left to the solver; see `locus`.
+#[derive(Clone, Debug)]
+pub enum CurveBody {
+    Exprs { x: crate::tape::Tape, y: crate::tape::Tape },
+    Trace(crate::locus::Locus),
 }
 
 /// One curve, drawn: a definition, the entities it is written over, and the numbers it was
@@ -908,8 +917,17 @@ impl Sketch {
     pub fn curve_point(&self, i: usize, u: f64) -> (f64, f64) {
         let d = &self.curve_defs[self.curves[i].def as usize];
         let x = self.curve_vars(i, u);
-        let mut s = crate::tape::Scratch::new();
-        (d.x.eval(&x, &mut s).v, d.y.eval(&x, &mut s).v)
+        match &d.body {
+            CurveBody::Exprs { x: tx, y: ty } => {
+                let mut s = crate::tape::Scratch::new();
+                (tx.eval(&x, &mut s).v, ty.eval(&x, &mut s).v)
+            }
+            CurveBody::Trace(l) => {
+                let mut s = crate::locus::Scratch::new();
+                let v = crate::locus::eval_flat(&l.flat, &x, self.curves[i].domain.0, &mut s);
+                (v.x, v.y)
+            }
+        }
     }
 
     pub fn curve_domain(&self, i: usize) -> (f64, f64) {
@@ -918,18 +936,28 @@ impl Sketch {
 
     /// The curve as a polyline, for measuring and for drawing.  Uniform in the parameter: a
     /// user-written curve has no basis to refine against, so evenly is the only honest default,
-    /// and `CURVE_STEPS` is chosen fine enough that a pick test does not lie.
+    /// and `CURVE_STEPS` is chosen fine enough that a pick test does not lie.  A trace family is
+    /// one march across the domain, each sample warm-started from the last — which is also what
+    /// carries its branch along the curve.
     pub fn curve_polyline(&self, i: usize) -> Vec<(f64, f64)> {
         let (a, b) = self.curve_domain(i);
         let d = &self.curve_defs[self.curves[i].def as usize];
-        let mut s = crate::tape::Scratch::new();
-        (0..=CURVE_STEPS)
-            .map(|k| {
-                let u = a + (b - a) * k as f64 / CURVE_STEPS as f64;
-                let x = self.curve_vars(i, u);
-                (d.x.eval(&x, &mut s).v, d.y.eval(&x, &mut s).v)
-            })
-            .collect()
+        match &d.body {
+            CurveBody::Exprs { x: tx, y: ty } => {
+                let mut s = crate::tape::Scratch::new();
+                (0..=CURVE_STEPS)
+                    .map(|k| {
+                        let u = a + (b - a) * k as f64 / CURVE_STEPS as f64;
+                        let x = self.curve_vars(i, u);
+                        (tx.eval(&x, &mut s).v, ty.eval(&x, &mut s).v)
+                    })
+                    .collect()
+            }
+            CurveBody::Trace(l) => {
+                let mut s = crate::locus::Scratch::new();
+                crate::locus::sweep(&l.flat, &self.curve_vars(i, a), a, b, CURVE_STEPS, &mut s)
+            }
+        }
     }
 
     pub fn count(&self, kind: EntKind) -> usize {

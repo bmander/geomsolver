@@ -471,6 +471,29 @@ Conventions:
   static kernels plus one per family, and the registry publishes `kernel: -1` — which the
   bindings' exhaustive tests key on rather than on a name.  The tapes ride in the constraint's
   `consts`, so no kernel signature learns about curves and `KERNELS` stays `'static`.
+- A family's body may be a **locus** instead of a formula: `curve name(…)(u) = trace p where
+  { … }` (spec §6.5.1, `locus.rs`) — the curve is wherever the block's constraints put `p`,
+  which is how a person states an involute ("the end of a taut string as it unwinds") without
+  ever deriving it.  The block is lowered once, at family compile time
+  (`program::compile_trace`), through a scratch sketch and `Constraint::params_on` — the real
+  column mapping, never a second copy — into rows of the static kernels over one variable table
+  `[u, θ, values, q, w]`: `q` the block's own coordinates, `w` a dimension written over `u` and
+  the geometry, computed by a tape and read by the dimension's **free twin** kernel with
+  `(m, c)` the unit conversion, so no new derivative code exists anywhere.  Evaluating `C(u)`
+  is a small damped Newton solve of the rows and its derivatives are the implicit function
+  theorem at the solution — `∂C/∂u` and `∂C/∂θ` from one factorisation of the inner Jacobian —
+  which is what keeps a contact on the curve when the geometry it is written over is dragged.
+  The whole compiled block encodes to flat `f64` and rides in the contact's consts exactly as
+  the tapes do (`locus::eval_flat` is the one evaluator: kernel, tessellation and tests all run
+  the flat form), so `System` only picks `trace_kernel` over `curve_kernel` per definition and
+  the bindings are untouched.  Chirality — which way the string unwinds — is a *branch*, and no
+  regular residual can state one (a residual zero at exactly one direction has a vanishing
+  gradient there): the block's `at (…)` seeds are expressions over `(u, θ)` that pick it, and
+  continuity carries it — evaluation seeds at the target parameter and falls back to marching
+  from the instance's domain, warm-started step to step, the same way the polyline sweep walks.
+  A block must be square — as many rows as inner coordinates — or elaboration refuses it.
+  `tests/trace.rs` holds the taut-string involute checked against the closed form it never
+  states (with seeds wrong by 3× on purpose), and a gear run on traced flanks.
 - A curve is *geometry*, so like a dimension callout it is laid out in the core and the front end
   only strokes what it is handed: `curve::tessellate` refines to `FLATNESS_PX` screen pixels
   through `unit` (the world length of one screen pixel), and `curve::closest` is the pick test

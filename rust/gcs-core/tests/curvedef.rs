@@ -11,7 +11,7 @@
 
 use gcs_core::constraints::{Arg, CKind, Constraint};
 use gcs_core::expr;
-use gcs_core::model::{CurveDef, CurveE, EntKind, EntRef, Sketch};
+use gcs_core::model::{CurveBody, CurveDef, CurveE, EntKind, EntRef, Sketch};
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::system::System;
 use gcs_core::tape::Tape;
@@ -30,8 +30,10 @@ fn involute_def() -> CurveDef {
         formals: vec![("c".to_string(), EntKind::Circle)],
         values: Vec::new(),
         param: "u".to_string(),
-        x: Tape::compile(&expr::parse(x).unwrap().body, &vars).unwrap(),
-        y: Tape::compile(&expr::parse(y).unwrap().body, &vars).unwrap(),
+        body: CurveBody::Exprs {
+            x: Tape::compile(&expr::parse(x).unwrap().body, &vars).unwrap(),
+            y: Tape::compile(&expr::parse(y).unwrap().body, &vars).unwrap(),
+        },
         vars,
         domain: (0.0, 90.0),
     }
@@ -189,8 +191,12 @@ fn two_curve_families_get_their_own_kernels() {
         formals: vec![("c".to_string(), EntKind::Circle)],
         values: Vec::new(),
         param: "u".to_string(),
-        x: Tape::compile(&expr::parse("c.center.x + c.r * cos(u)").unwrap().body, &vars).unwrap(),
-        y: Tape::compile(&expr::parse("c.center.y + c.r * sin(u)").unwrap().body, &vars).unwrap(),
+        body: CurveBody::Exprs {
+            x: Tape::compile(&expr::parse("c.center.x + c.r * cos(u)").unwrap().body, &vars)
+                .unwrap(),
+            y: Tape::compile(&expr::parse("c.center.y + c.r * sin(u)").unwrap().body, &vars)
+                .unwrap(),
+        },
         vars,
         domain: (0.0, 360.0),
     });

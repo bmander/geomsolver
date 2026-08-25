@@ -887,21 +887,37 @@ impl Constraint {
             let span = span.unwrap_or_else(|| crate::curve::span_of(sk, sp, t));
             return crate::curve::local_knots(&sk.splines[sp].knots, span).to_vec();
         }
-        // a curve contact carries its family's two tapes and the numbers the instance was given.
-        // They are the same for every contact with the same curve, and duplicated per constraint
-        // because that is where a block already has room for numbers — which is what keeps the
-        // kernel table `fn`-pointered and ignorant of curves.
+        // a curve contact carries its family's compiled body — two tapes, or a whole trace
+        // block — and the numbers the instance was given.  They are the same for every contact
+        // with the same curve, and duplicated per constraint because that is where a block
+        // already has room for numbers — which is what keeps the kernel table `fn`-pointered and
+        // ignorant of curves.
         if self.kind == CKind::PointOnCurve {
             let cv = &sk.curves[self.args[1].ent().i()];
             let d = &sk.curve_defs[cv.def as usize];
-            let mut k = Vec::with_capacity(3 + d.x.flat.len() + d.y.flat.len() + cv.values.len());
-            k.push(d.vars.len() as f64);
-            k.push(d.x.flat.len() as f64);
-            k.push(d.y.flat.len() as f64);
-            k.extend_from_slice(&d.x.flat);
-            k.extend_from_slice(&d.y.flat);
-            k.extend_from_slice(&cv.values);
-            return k;
+            return match &d.body {
+                crate::model::CurveBody::Exprs { x, y } => {
+                    let mut k =
+                        Vec::with_capacity(3 + x.flat.len() + y.flat.len() + cv.values.len());
+                    k.push(d.vars.len() as f64);
+                    k.push(x.flat.len() as f64);
+                    k.push(y.flat.len() as f64);
+                    k.extend_from_slice(&x.flat);
+                    k.extend_from_slice(&y.flat);
+                    k.extend_from_slice(&cv.values);
+                    k
+                }
+                // a trace contact adds where its instance's domain begins — the march's home,
+                // which is instance data the way the values are
+                crate::model::CurveBody::Trace(l) => {
+                    let mut k = Vec::with_capacity(2 + cv.values.len() + l.flat.len());
+                    k.push(cv.domain.0);
+                    k.push(cv.values.len() as f64);
+                    k.extend_from_slice(&cv.values);
+                    k.extend_from_slice(&l.flat);
+                    k
+                }
+            };
         }
         match self.kind {
             CKind::Distance | CKind::HorizontalDistance | CKind::VerticalDistance => {

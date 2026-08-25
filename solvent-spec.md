@@ -261,6 +261,28 @@ A name a family's expressions cannot reach is an error (**E016**), not a free va
 
 **Why a declaration and not an entity kind.** 0.1 deferred this to §17.2 as "curve entities ... as first-class entities," which reads as one entity kind per family: an involute kind, a cycloid kind, a trochoid kind, each with its own constraints and its own place in every exhaustive match. Written as a declaration they are library code instead, and a second family is a second pair of expressions rather than a second constraint family. The gear in §18 is the case that makes the difference plain: its flanks are involutes because the document says what an involute is, and nothing in the solver knows the word.
 
+### 6.5.1 Trace families **[0.3]**
+
+A family's body may be a **locus** instead of a formula: `curve NAME(FORMALS)(PARAM) [over (A, B)] = trace POINT where { BODY }`. The block's statements are ordinary declarations and constraints; `C(u)` is the position they force on the traced point, given the parameter and the geometry the family is written over. This is the form a definition takes when a person states it — an involute is "the curve traced by the end of a taut string as it unwinds", and that sentence is the block:
+
+```
+curve involute(c: circle, datum: line, phase: Angle)(u) =
+  trace p where {
+    point t at (c.center.x + c.r * cos(u + phase), c.center.y + c.r * sin(u + phase))
+    point p at (…)                          // a seed; see below
+    line rad(c.center, t)
+    line s(t, p)
+    point_on_circle(t, c)                   // the string leaves the circle...
+    perpendicular(rad, s)                   // ...perpendicular to the radius there,
+    angle(datum, rad) == u + phase          // at bearing u,
+    distance(t, p) == c.r * u * pi / 180    // and taut: let out == arc unwound
+  }
+```
+
+A dimension in the block may be an expression over the parameter, the formals' coordinates and the value formals. The block MUST determine its points — as many equations as inner coordinates — or the definition is an error: an under- or over-constrained locus is a curve that does not exist, and it must not elaborate quietly. Instances, contacts and `over` behave exactly as for an expression family, and the derivative requirement above stands unchanged: `∂C/∂u` and `∂C/∂θ` now come from the implicit function theorem at the block's solution rather than from the expressions, but a contact must still follow the curve when the geometry it is written over is dragged.
+
+**Branches.** A locus generically has several solutions — a taut string unwinds either way, and no regular residual can state a chirality. A seed is where the search starts, and here that is a statement of *which branch*: the block's `at (…)` seeds are expressions over the parameter and the formals, evaluation starts from them, and away from the seeds continuity governs — an implementation MUST evaluate the curve as one continuation along the parameter (marching from the instance's domain when a direct solve fails), so the branch the seeds pick at one end is the branch the whole curve is on. Deleting the seeds still traces *a* branch, from a worse start — the same bargain a contact's `u = …` seed strikes in §4.3.
+
 ---
 
 ## 7. Ports

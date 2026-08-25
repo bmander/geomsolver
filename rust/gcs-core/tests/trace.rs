@@ -1,0 +1,498 @@
+//! A curve family defined by constraints — `trace p where { … }` — solved against.
+//!
+//! The involute here is written the way Wikipedia writes it: a point `t` on the base circle at
+//! bearing `u`, the string leaving perpendicular to the radius there, and taut — as long as the
+//! arc it unwound.  No closed form appears in any constraint; the seeds carry one, because a
+//! seed is where the search starts and which winding the string takes, and that is all a seed
+//! is ever trusted with.  The tests below check the block against the closed form it never
+//! states, check the kernel's implicit-function-theorem Jacobian against a finite difference of
+//! the assembled system, and check that an ill-posed block is a diagnostic rather than a curve.
+
+use gcs_core::program::elaborate;
+use gcs_core::solve::{solve, SolveOpts};
+use gcs_core::syntax::parse;
+use gcs_core::system::System;
+
+/// The taut-string involute, and its closed form beside it, both over one base circle.  The
+/// trace's seeds are deliberately *wrong by a factor of three* in the string term: a seed picks
+/// the branch, and the constraints do the rest — if the block were decoration, `p` would stay
+/// where the seed put it and every comparison below would fail.
+const DOC: &str = "\
+curve involute(c: circle, phase: Angle)(u) over (5, 90) =
+  ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
+    c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)) )
+
+curve unwind(c: circle, datum: line, phase: Angle)(u) over (5, 90) =
+  trace p where {
+    point t at (c.center.x + c.r * cos(u + phase), c.center.y + c.r * sin(u + phase))
+    point p at (c.center.x + c.r * (cos(u + phase) + 3 * u * pi / 180 * sin(u + phase)), \
+                c.center.y + c.r * (sin(u + phase) - 3 * u * pi / 180 * cos(u + phase)))
+    line rad(c.center, t)
+    line s(t, p)
+    point_on_circle(t, c)
+    perpendicular(rad, s)
+    angle(datum, rad) == u + phase
+    distance(t, p) == c.r * u * pi / 180
+  }
+
+point  o at (0, 0)
+point  ax at (1, 0)
+line   datum(o, ax) construction
+circle base(center: o, r: 20) construction
+
+curve  formula = involute(base, phase: 0) over (5, 60)
+curve  string = unwind(base, datum, phase: 0) over (5, 60)
+
+radius(base) == 20
+ground(o)
+ground(ax)
+";
+
+fn build(src: &str) -> gcs_core::program::Elaborated {
+    let (prog, errs) = parse(src);
+    assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
+    elaborate(&prog)
+}
+
+/// Where the involute is at `u`, worked out here rather than asked of the core.
+fn involute_at(cx: f64, cy: f64, rb: f64, u_deg: f64) -> (f64, f64) {
+    let r = u_deg.to_radians();
+    (cx + rb * (r.cos() + r * r.sin()), cy + rb * (r.sin() - r * r.cos()))
+}
+
+/// **The taut string traces the involute.**  Nothing in the `unwind` family states the closed
+/// form (its seeds are wrong by design), yet the curve it draws is the involute to solver
+/// precision, everywhere along the domain.
+#[test]
+fn the_taut_string_traces_the_involute() {
+    let e = build(DOC);
+    assert!(
+        e.ok(),
+        "{:?}",
+        e.errors().map(|d| (d.code.as_str(), &d.message)).collect::<Vec<_>>()
+    );
+    assert_eq!(e.sketch.curve_defs.len(), 2);
+    assert_eq!(e.sketch.curves.len(), 2);
+    for k in 0..=10 {
+        let u = 5.0 + 55.0 * k as f64 / 10.0;
+        let want = e.sketch.curve_point(0, u);
+        let got = e.sketch.curve_point(1, u);
+        assert!(
+            (got.0 - want.0).abs() < 1e-8 && (got.1 - want.1).abs() < 1e-8,
+            "at u = {u}: formula {want:?}, trace {got:?}",
+        );
+    }
+    // and the drawn polyline runs along it too — the sweep is one march, not many cold solves
+    let poly = e.sketch.curve_polyline(1);
+    assert!(poly.len() > 32);
+    let last = poly[poly.len() - 1];
+    let end = involute_at(0.0, 0.0, 20.0, 60.0);
+    assert!((last.0 - end.0).abs() < 1e-8 && (last.1 - end.1).abs() < 1e-8);
+}
+
+/// **A point solves onto the traced curve**, and what it lands on really is the taut string:
+/// perpendicular to the radius at the tangent point, as long as the arc unwound.
+#[test]
+fn a_point_lands_on_a_traced_curve() {
+    let src = format!("{DOC}point q at (28, 22)\npoint_on_curve(q, string, u = 30)\n");
+    let mut e = build(&src);
+    assert!(e.ok());
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let q = e.map.ent_named("q").unwrap();
+    let got = e.sketch.point_xy(q.i());
+    let c = e.sketch.constraints.iter().find(|c| !c.aux_params().is_empty()).unwrap();
+    let u = e.sketch.params[c.aux_params()[0] as usize].value;
+    let want = involute_at(0.0, 0.0, 20.0, u);
+    assert!(
+        (got.0 - want.0).abs() < 1e-7 && (got.1 - want.1).abs() < 1e-7,
+        "at u = {u}: involute {want:?}, point {got:?}",
+    );
+    // the string, measured directly: t is on the circle at bearing u, the string is
+    // perpendicular to the radius there and as long as the arc unwound
+    let t = (20.0 * u.to_radians().cos(), 20.0 * u.to_radians().sin());
+    let string = (got.0 - t.0, got.1 - t.1);
+    assert!((t.0 * string.0 + t.1 * string.1).abs() < 1e-5, "perpendicular at the tangent point");
+    let arc = 20.0 * u.to_radians();
+    assert!((string.0.hypot(string.1) - arc).abs() < 1e-6, "taut: |string| = arc unwound");
+}
+
+/// **The implicit-function-theorem Jacobian is the system's own derivative.**  A finite
+/// difference of the assembled residuals against the assembled Jacobian, so the inner solve,
+/// the IFT, the chain through the derived value's tape and `params_on`'s column order are all
+/// checked at once.
+#[test]
+fn the_trace_jacobian_matches_a_finite_difference() {
+    let src = format!("{DOC}point q at (28, 22)\npoint_on_curve(q, string, u = 30)\n");
+    let e = build(&src);
+    assert!(e.ok());
+    let mut sys = System::new(&e.sketch);
+    let z = sys.z0(&e.sketch);
+    // only the contact's rows: the radius row is exact and unrelated
+    let dense = sys.jacobian_dense(&z);
+    let m = sys.n_res;
+    let n = z.len();
+    for j in 0..n {
+        let h = 1e-6 * z[j].abs().max(1.0);
+        let (mut lo, mut hi) = (z.clone(), z.clone());
+        lo[j] -= h;
+        hi[j] += h;
+        let (a, b) = (sys.residuals(&lo), sys.residuals(&hi));
+        for i in 0..m {
+            let fd = (b[i] - a[i]) / (2.0 * h);
+            let got = dense.at(i, j);
+            assert!(
+                (got - fd).abs() <= 1e-4 * fd.abs().max(1.0),
+                "d r{i} / d z{j}: kernel {got}, finite difference {fd}",
+            );
+        }
+    }
+}
+
+/// The curve moves when the geometry it is written over does, and the point comes with it —
+/// `∂C/∂θ` through the inner solve.  Note the centre is also the datum line's root, so its
+/// columns are reached down *two* formal paths and the merged Jacobian must still be right.
+#[test]
+fn moving_the_circle_carries_the_traced_curve() {
+    let doc = DOC.replace("radius(base) == 20", "radius(base) == 26");
+    let src = format!("{doc}point q at (28, 22)\npoint_on_curve(q, string, u = 30)\n");
+    let mut e = build(&src);
+    assert!(e.ok());
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let q = e.map.ent_named("q").unwrap();
+    let c = e.sketch.constraints.iter().find(|c| !c.aux_params().is_empty()).unwrap();
+    let u = e.sketch.params[c.aux_params()[0] as usize].value;
+    let want = involute_at(0.0, 0.0, 26.0, u);
+    let got = e.sketch.point_xy(q.i());
+    assert!(
+        (got.0 - want.0).abs() < 1e-6 && (got.1 - want.1).abs() < 1e-6,
+        "the point followed the resized circle: {got:?} against {want:?}",
+    );
+}
+
+/// A block that does not determine its points is a diagnostic naming the family — an
+/// under-constrained locus is a curve that does not exist, and it must not elaborate quietly.
+#[test]
+fn an_underconstrained_block_is_refused() {
+    let src = "\
+curve wander(c: circle)(u) over (0, 90) =
+  trace p where {
+    point t
+    point p
+    point_on_circle(t, c)
+    distance(t, p) == c.r * u * pi / 180
+  }
+point  o at (0, 0)
+circle base(center: o, r: 20)
+curve  w = wander(base)
+";
+    let (prog, errs) = parse(src);
+    assert!(errs.is_empty());
+    let e = elaborate(&prog);
+    assert!(!e.ok());
+    assert!(
+        e.errors().any(|d| d.message.contains("must determine")),
+        "{:?}",
+        e.errors().map(|d| &d.message).collect::<Vec<_>>()
+    );
+}
+
+/// The statements a block cannot hold are refused with a reason, not elaborated into nonsense.
+#[test]
+fn a_block_holds_declarations_and_constraints_only() {
+    let src = "\
+curve odd(c: circle)(u) =
+  trace p where {
+    point p
+    ground(p)
+    coincident(p, c.center)
+  }
+point  o at (0, 0)
+circle base(center: o, r: 20)
+curve  w = odd(base)
+";
+    let (prog, errs) = parse(src);
+    assert!(errs.is_empty());
+    let e = elaborate(&prog);
+    assert!(!e.ok());
+    assert!(
+        e.errors().any(|d| d.message.contains("declarations and constraints")),
+        "{:?}",
+        e.errors().map(|d| &d.message).collect::<Vec<_>>()
+    );
+}
+
+/// **A gear whose flanks are traced, not computed.**  The document below is `gear.sv` with the
+/// involute family swapped for the taut-string trace: the flank is "the curve the string end
+/// draws", the solver finds the two rolls where it crosses the root and tip circles, and the
+/// whole wheel solves and diagnoses fully constrained.  Eight teeth, so the test also runs in
+/// the stub-tooth regime where the root stands clear of the base circle.
+#[test]
+fn a_gear_runs_on_a_traced_involute() {
+    let src = "\
+curve involute(c: circle, datum: line, phase: Angle)(u) =
+  trace p where {
+    point t at (c.center.x + c.r * cos(u + phase), c.center.y + c.r * sin(u + phase))
+    point p at (c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)), \
+                c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
+    line rad(c.center, t)
+    line s(t, p)
+    point_on_circle(t, c)
+    perpendicular(rad, s)
+    angle(datum, rad) == u + phase
+    distance(t, p) == c.r * u * pi / 180
+  }
+
+component Flank(base: circle, datum: line, root: circle, tip: circle,
+                phase: Angle, u0: Angle, u1: Angle) {
+  curve e = involute(base, datum, phase: phase) over (u0, u1)
+  port lo: point
+  port hi: point
+
+  point_on_curve(lo, e, u = u0)
+  point_on_curve(hi, e, u = u1)
+  point_on_circle(lo, root)
+  point_on_circle(hi, tip)
+}
+
+component Tooth(base: circle, datum: line, root: circle, tip: circle,
+                a0: Angle, half: Angle, u0: Angle, u1: Angle) {
+  r: Flank(base, datum, root, tip, phase: a0 - half, u0: u0, u1: u1)
+  l: Flank(base, datum, root, tip, phase: a0 + half, u0: -u0, u1: -u1)
+
+  line crown(r.hi, l.hi)
+}
+
+component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
+  param R = m * N / 2
+  param Rt = R + m
+  param Rb = R * cos(phi)
+  param clear = 0.02
+  param Rr = max(R - ded * m, Rb * (1 + clear))
+  param pitch = tau / N
+  param ivp = tan(phi) * 180 / pi - phi
+  param half = 90 / N + ivp
+  param u0 = sqrt((Rr / Rb) ^ 2 - 1) * 180 / pi
+  param u1 = sqrt((Rt / Rb) ^ 2 - 1) * 180 / pi
+
+  point center at (0, 0)
+  point anchor at (R, 0)
+  line  datum(center, anchor) construction
+  circle base(center: center, r: Rb) construction
+  circle root(center: center, r: Rr) construction
+  circle tip(center: center, r: Rt) construction
+
+  radius(base) == Rb
+  radius(root) == Rr
+  radius(tip) == Rt
+  ground(center)
+  ground(anchor)
+
+  cycle N as i {
+    t: Tooth(base, datum, root, tip, a0: i * pitch, half: half, u0: u0, u1: u1)
+    line gap(t.l.lo, next.t.r.lo)
+  }
+}
+
+g: Gear(N: 8, m: 3, phi: 25, ded: 1)
+";
+    let n = 8usize;
+    let mut e = build(src);
+    assert!(
+        e.ok(),
+        "{:?}",
+        e.errors().map(|d| (d.code.as_str(), &d.message)).collect::<Vec<_>>()
+    );
+    assert_eq!(e.sketch.curves.len(), 2 * n, "two traced flanks per tooth");
+
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+
+    // the wheel's numbers, worked out here rather than asked of the core
+    let (m, ded, phi) = (3.0f64, 1.0f64, 25.0f64);
+    let r_pitch = m * n as f64 / 2.0;
+    let rb = r_pitch * phi.to_radians().cos();
+    let rt = r_pitch + m;
+    let rr = (r_pitch - ded * m).max(rb * 1.02);
+
+    // every flank end landed on the circle its statement named — the rolls are the solver's
+    let (mut on_root, mut on_tip) = (0, 0);
+    for i in 2..e.sketch.points.len() {
+        let (x, y) = e.sketch.point_xy(i);
+        let rad = x.hypot(y);
+        if (rad - rr).abs() < 1e-6 {
+            on_root += 1;
+        } else if (rad - rt).abs() < 1e-6 {
+            on_tip += 1;
+        } else {
+            panic!("a flank end at radius {rad}, which is neither {rr} nor {rt}");
+        }
+    }
+    assert_eq!(on_root, 2 * n);
+    assert_eq!(on_tip, 2 * n);
+
+    // and every flank is an involute: the string test, sampled along each traced curve
+    for ci in 0..e.sketch.curves.len() {
+        let ph = e.sketch.curves[ci].values[0];
+        let (u0, u1) = e.sketch.curve_domain(ci);
+        for k in 0..=6 {
+            let u = u0 + (u1 - u0) * k as f64 / 6.0;
+            let (x, y) = e.sketch.curve_point(ci, u);
+            let a = (u + ph).to_radians();
+            let t = (rb * a.cos(), rb * a.sin());
+            let string = (x - t.0, y - t.1);
+            assert!(
+                (t.0 * string.0 + t.1 * string.1).abs() < 1e-6 * rb * rb,
+                "curve {ci} at u = {u}: the string is not perpendicular to the radius",
+            );
+            let arc = rb * u.to_radians().abs();
+            assert!(
+                (string.0.hypot(string.1) - arc).abs() < 1e-6,
+                "curve {ci} at u = {u}: string {} against arc {arc}",
+                string.0.hypot(string.1),
+            );
+        }
+    }
+
+    // fully constrained: the wheel has no freedom left, and nothing is over- or under-drawn
+    let d = gcs_core::diagnose::diagnose(
+        &mut e.sketch,
+        gcs_core::diagnose::DiagnoseOptions::default(),
+    );
+    assert_eq!(d.status, gcs_core::diagnose::State::Well, "{:?}", d.status);
+    assert_eq!(d.dof, 0, "no degree of freedom is left");
+}
+
+/// **The march is the fallback, and it carries the branch.**  This family's seeds collapse onto
+/// the circle's centre past `u = 30` — where `point_on_circle`'s gradient vanishes and the
+/// direct solve cannot even factorise — so evaluating at `u = 60` *must* march from the domain's
+/// low end, where the seeds still stand, warm-starting step by step.  The curve still comes out
+/// the involute.
+#[test]
+fn the_march_carries_a_branch_past_bad_seeds() {
+    let src = "\
+curve limp(c: circle, datum: line, phase: Angle)(u) over (5, 60) =
+  trace p where {
+    point t at (c.center.x + c.r * cos(u + phase) * max(0, 1 - u / 30), \
+                c.center.y + c.r * sin(u + phase) * max(0, 1 - u / 30))
+    point p at (c.center.x + c.r * cos(u + phase) * max(0, 1 - u / 30), \
+                c.center.y + c.r * (sin(u + phase) - u * pi / 90) * max(0, 1 - u / 30))
+    line rad(c.center, t)
+    line s(t, p)
+    point_on_circle(t, c)
+    perpendicular(rad, s)
+    angle(datum, rad) == u + phase
+    distance(t, p) == c.r * u * pi / 180
+  }
+
+point  o at (0, 0)
+point  ax at (1, 0)
+line   datum(o, ax) construction
+circle base(center: o, r: 20) construction
+curve  w = limp(base, datum, phase: 0) over (5, 60)
+";
+    let e = build(src);
+    assert!(
+        e.ok(),
+        "{:?}",
+        e.errors().map(|d| (d.code.as_str(), &d.message)).collect::<Vec<_>>()
+    );
+    let want = involute_at(0.0, 0.0, 20.0, 60.0);
+    let got = e.sketch.curve_point(0, 60.0);
+    assert!(
+        (got.0 - want.0).abs() < 1e-8 && (got.1 - want.1).abs() < 1e-8,
+        "marched to u = 60: involute {want:?}, trace {got:?}",
+    );
+}
+
+/// A flat form that cannot be read comes back NaN and not-ok — a residual through it must never
+/// read as satisfied, and `System` treats NaN as "not converged", never as "no error".
+#[test]
+fn a_malformed_flat_is_nan_not_a_curve() {
+    let mut s = gcs_core::locus::Scratch::new();
+    for junk in [&[][..], &[3.0, 1.0][..], &[f64::NAN; 8][..], &[1e300; 12][..]] {
+        let v = gcs_core::locus::eval_flat(junk, &[0.0; 4], 0.0, &mut s);
+        assert!(!v.ok && v.x.is_nan() && v.y.is_nan(), "{junk:?}");
+    }
+}
+
+/// Over-determined is refused the same way under-determined is: a locus with more equations
+/// than coordinates is a curve that does not exist.
+#[test]
+fn an_overconstrained_block_is_refused() {
+    let doc = DOC.replace(
+        "    distance(t, p) == c.r * u * pi / 180",
+        "    distance(t, p) == c.r * u * pi / 180\n    point_on_line(p, datum)",
+    );
+    let (prog, errs) = parse(&doc);
+    assert!(errs.is_empty());
+    let e = elaborate(&prog);
+    assert!(!e.ok());
+    assert!(
+        e.errors().any(|d| d.message.contains("must determine")),
+        "{:?}",
+        e.errors().map(|d| &d.message).collect::<Vec<_>>()
+    );
+}
+
+/// A circle declared inside a block: its radius is an unknown of the block like a coordinate,
+/// and a dimension may tie it to `u` through the free twin.
+#[test]
+fn a_block_may_draw_a_circle_of_its_own() {
+    let src = "\
+curve dot(c: circle)(u) over (0, 10) =
+  trace p where {
+    point p at (1, 1)
+    circle k(center: p, r: 2)
+    coincident(p, c.center)
+    radius(k) == 5 + u
+  }
+point  o at (3, -2)
+circle base(center: o, r: 20)
+curve  w = dot(base)
+";
+    let e = build(src);
+    assert!(
+        e.ok(),
+        "{:?}",
+        e.errors().map(|d| (d.code.as_str(), &d.message)).collect::<Vec<_>>()
+    );
+    // the traced point is the centre at every u; the circle's radius is the block's own affair
+    for u in [0.0, 4.0, 10.0] {
+        let got = e.sketch.curve_point(0, u);
+        assert!((got.0 - 3.0).abs() < 1e-9 && (got.1 + 2.0).abs() < 1e-9, "at u = {u}: {got:?}");
+    }
+}
+
+/// The block's own mistakes each say what is wrong: a traced point that is not the block's, a
+/// name declared twice, a reference to nothing, and an inferred flag left unstated.
+#[test]
+fn a_blocks_mistakes_are_named() {
+    let cases = [
+        ("trace c where {\n  point p\n  coincident(p, c.center)\n}",
+         "must be a point the block declares"),
+        ("trace p where {\n  point p\n  point p\n  coincident(p, c.center)\n}",
+         "declared twice"),
+        ("trace p where {\n  point p\n  line l(p, zzz)\n  coincident(p, c.center)\n}",
+         "no such entity"),
+        ("trace p where {\n  point p\n  point q\n  line l(p, q)\n\
+          tangent_line_circle(l, c)\n  coincident(p, c.center)\n}",
+         "must be stated"),
+    ];
+    for (body, want) in cases {
+        let src = format!(
+            "curve b(c: circle)(u) =\n  {body}\npoint o at (0, 0)\n\
+             circle base(center: o, r: 5)\ncurve w = b(base)\n"
+        );
+        let (prog, errs) = parse(&src);
+        assert!(errs.is_empty(), "{want}: {errs:?}");
+        let e = elaborate(&prog);
+        assert!(!e.ok(), "{want}: elaborated cleanly");
+        assert!(
+            e.errors().any(|d| d.message.contains(want)),
+            "wanted `{want}` in {:?}",
+            e.errors().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+}

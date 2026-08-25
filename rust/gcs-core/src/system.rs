@@ -157,7 +157,14 @@ fn kernel_table(sk: &Sketch) -> Vec<Kernel> {
     let mut t: Vec<Kernel> = kernels::KERNELS.to_vec();
     for d in &sk.curve_defs {
         let n_theta = d.vars.len().saturating_sub(1 + d.values.len());
-        t.push(kernels::curve_kernel(n_theta, 3 + d.x.flat.len() + d.y.flat.len() + d.values.len()));
+        t.push(match &d.body {
+            crate::model::CurveBody::Exprs { x, y } => {
+                kernels::curve_kernel(n_theta, 3 + x.flat.len() + y.flat.len() + d.values.len())
+            }
+            crate::model::CurveBody::Trace(l) => {
+                kernels::trace_kernel(n_theta, 2 + d.values.len() + l.flat.len())
+            }
+        });
     }
     t
 }
