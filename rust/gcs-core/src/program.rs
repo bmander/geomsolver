@@ -752,15 +752,6 @@ fn compile_trace(
         }
     }
 
-    // checked here and not left to `Locus::new`: the provisional w-column numbering below is
-    // only sound while q fits under `MAX_Q`
-    if n_q > crate::locus::MAX_Q {
-        return Err((
-            f.span,
-            format!("a trace block declares at most {} unknowns", crate::locus::MAX_Q),
-        ));
-    }
-
     // -- pass 2: constraints and orientations, lowered to rows and predicates ----------
     let mut w: Vec<Tape> = Vec::new();
     let mut rows: Vec<Row> = Vec::new();
@@ -825,23 +816,8 @@ fn compile_trace(
             let given = r.args.get(i).and_then(|a| a.as_ref());
             match (kind, given) {
                 (k, Some(Arg::Ref(rf))) if k.is_entity() => {
-                    let e = scope
-                        .get(&rf.root.text)
-                        .copied()
-                        .ok_or((rf.span, format!("no such entity: `{}`", rf.root.text)))?;
-                    let e = follow(&sk, e, &rf.path).map_err(|m| (rf.span, m))?;
-                    if !crate::constraints::kind_matches(*k, e.kind) {
-                        return Err((
-                            rf.span,
-                            format!(
-                                "`{}` is a {}, and a {} is wanted here",
-                                rf.root.text,
-                                e.kind.as_str(),
-                                k.as_str()
-                            ),
-                        ));
-                    }
-                    cargs.push(CArg::Ent(e));
+                    let found = scope.get(&rf.root.text).copied();
+                    cargs.push(ent_arg(&sk, found, *k, rf).map_err(|m| (rf.span, m))?);
                 }
                 (k, Some(Arg::Dim { text, span })) if k.is_dimension() => {
                     dim = Some((*k, tape(text, *span)?));
@@ -882,7 +858,8 @@ fn compile_trace(
                     st.span,
                     format!("a {} cannot be stated over `u` here", r.kind.name()),
                 ))?;
-                cols.push((n_outer + crate::locus::MAX_Q + w.len()) as u32);
+                // every declaration was consumed in pass 1, so `n_q` is final here
+                cols.push((n_outer + n_q + w.len()) as u32);
                 w.push(t);
                 // the tape works in the units a person writes (degrees); (m, c) are the
                 // conversion to what the kernel reads, the same seam `expr::set_dimension` is
@@ -898,17 +875,6 @@ fn compile_trace(
         let consts = c.consts_on(&sk, None);
         rows.push(Row { kid, cols, consts });
     }
-    // the w columns were provisionally numbered past MAX_Q; now that the unknown count is
-    // final, renumber them to sit just after q — sound because q was bounded above
-    for row in rows.iter_mut() {
-        for col in row.cols.iter_mut() {
-            let cv = *col as usize;
-            if cv >= n_outer + crate::locus::MAX_Q {
-                *col = (cv - crate::locus::MAX_Q + n_q) as u32;
-            }
-        }
-    }
-
     let traced = match scope.get(&point.text) {
         Some(e) if e.kind == EntKind::Point => {
             let p = sk.point_params(e.i())[0];
@@ -1309,26 +1275,34 @@ fn scalar_arg(kind: SpecKind, a: &Arg) -> Option<CArg> {
     })
 }
 
+/// An entity argument, resolved: follow the reference's path and check the kind — one statement
+/// of the rule, shared by `to_arg` and `compile_trace`, so the two readers of a spec cannot
+/// drift on what an entity slot accepts or how it says no.
+fn ent_arg(
+    sk: &Sketch,
+    found: Option<EntRef>,
+    kind: SpecKind,
+    r: &Ref,
+) -> Result<CArg, String> {
+    let e = found.ok_or_else(|| format!("no such entity: `{}`", r.root.text))?;
+    let e = follow(sk, e, &r.path)?;
+    if !crate::constraints::kind_matches(kind, e.kind) {
+        return Err(format!(
+            "`{}` is a {}, and a {} is wanted here",
+            r.root.text,
+            e.kind.as_str(),
+            kind.as_str()
+        ));
+    }
+    Ok(CArg::Ent(e))
+}
+
 fn to_arg(sk: &Sketch, res: &Resolver, kind: SpecKind, a: &Arg) -> Result<CArg, String> {
     if let Some(v) = scalar_arg(kind, a) {
         return Ok(v);
     }
     Ok(match (kind, a) {
-        (k, Arg::Ref(r)) if k.is_entity() => {
-            let e = res
-                .lookup(r)
-                .ok_or_else(|| format!("no such entity: `{}`", r.root.text))?;
-            let e = follow(sk, e, &r.path)?;
-            if !crate::constraints::kind_matches(k, e.kind) {
-                return Err(format!(
-                    "`{}` is a {}, and a {} is wanted here",
-                    r.root.text,
-                    e.kind.as_str(),
-                    k.as_str()
-                ));
-            }
-            CArg::Ent(e)
-        }
+        (k, Arg::Ref(r)) if k.is_entity() => ent_arg(sk, res.lookup(r), k, r)?,
         // a dimension: the text as written, handed to `expr.rs`, which owns that little language
         (k, Arg::Dim { text, .. }) if k.is_dimension() => {
             if text.len() > expr::MAX_TEXT {

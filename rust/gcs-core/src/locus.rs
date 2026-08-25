@@ -75,36 +75,18 @@ pub struct Pred {
     pub cols: [u32; 6],
 }
 
-/// A compiled trace block.  The variable table its rows index is
+/// A compiled trace block, held only as its encoding — what rides in a contact's constants and
+/// what `eval_flat` runs.  Nothing ever reads the structured pieces back after `new`, so keeping
+/// them would be a second representation waiting to drift.  The variable table the rows index is
 /// `[u, θ…, values…] ++ q ++ w`: the outer variables in the family's tape order (so `n_outer`
 /// is `CurveDef::vars.len()`), then the inner unknowns, then the derived values.
 #[derive(Clone, Debug)]
 pub struct Locus {
-    pub n_outer: usize,
-    pub n_theta: usize,
-    pub n_q: usize,
-    /// The q slot of the traced point's x; its y is the slot after.
-    pub traced: usize,
-    /// One tape per derived value, over the outer variables.
-    pub w: Vec<Tape>,
-    /// One seed tape per q slot, over the outer variables — where the search starts.  A slot
-    /// nobody seeded holds a constant-zero tape, and a block with predicates needs none: the
-    /// cold start restarts deterministically until a solve lands, and the predicates say which
-    /// component it must land in.
-    pub seeds: Vec<Tape>,
-    pub rows: Vec<Row>,
-    pub preds: Vec<Pred>,
-    /// Where evaluation is anchored — `trace p from (expr) where { … }`, a tape over the outer
-    /// variables (the parameter read as 0).  The one place the predicates are read, chosen so
-    /// they read unambiguously; absent, the instance's domain begins the march as before.
-    pub home: Option<Tape>,
-    /// The encoding, built once — what rides in a contact's constants and what `eval_flat` runs.
     pub flat: Vec<f64>,
 }
 
 impl Locus {
-    /// Assemble and encode.  Validates the shape the evaluator depends on; an `Err` is a
-    /// diagnostic for the family, not a panic.
+    /// Validate and encode.  An `Err` is a diagnostic for the family, not a panic.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         n_outer: usize,
@@ -146,48 +128,41 @@ impl Locus {
                 return Err("an orientation names a column the block does not have".to_string());
             }
         }
-        let mut l =
-            Locus { n_outer, n_theta, n_q, traced, w, seeds, rows, preds, home, flat: Vec::new() };
-        l.flat = l.encode();
-        Ok(l)
-    }
-
-    /// The instructions as plain numbers — see the module docs and `Tape::flat`.
-    fn encode(&self) -> Vec<f64> {
+        // the instructions as plain numbers — see the module docs and `Tape::flat`
         let mut f = vec![
-            self.n_outer as f64,
-            self.n_theta as f64,
-            self.n_q as f64,
-            self.w.len() as f64,
-            self.rows.len() as f64,
-            self.traced as f64,
-            self.preds.len() as f64,
-            self.home.is_some() as u8 as f64,
+            n_outer as f64,
+            n_theta as f64,
+            n_q as f64,
+            w.len() as f64,
+            rows.len() as f64,
+            traced as f64,
+            preds.len() as f64,
+            home.is_some() as u8 as f64,
         ];
-        for t in &self.w {
+        for t in &w {
             f.push(t.flat.len() as f64);
             f.extend_from_slice(&t.flat);
         }
-        for r in &self.rows {
+        for r in &rows {
             f.push(r.kid as f64);
             f.push(r.cols.len() as f64);
             f.push(r.consts.len() as f64);
             f.extend(r.cols.iter().map(|&c| c as f64));
             f.extend_from_slice(&r.consts);
         }
-        for t in &self.seeds {
+        for t in &seeds {
             f.push(t.flat.len() as f64);
             f.extend_from_slice(&t.flat);
         }
-        for p in &self.preds {
+        for p in &preds {
             f.push(if p.ccw { 1.0 } else { 0.0 });
             f.extend(p.cols.iter().map(|&c| c as f64));
         }
-        if let Some(t) = &self.home {
+        if let Some(t) = &home {
             f.push(t.flat.len() as f64);
             f.extend_from_slice(&t.flat);
         }
-        f
+        Ok(Locus { flat: f })
     }
 }
 
@@ -221,7 +196,9 @@ impl Default for Val {
 }
 
 /// Scratch an evaluation runs in — held by the caller and reused, like `tape::Scratch`, because
-/// a kernel evaluates the same locus for every constraint in its block.
+/// a kernel evaluates the same locus for every constraint in its block.  It also carries the
+/// kernel path's one-entry memo: `System` always asks for the Jacobian at the point it just
+/// asked the residual of, and each of those would otherwise solve the block again.
 pub struct Scratch {
     ts: tape::Scratch,
     xv: Vec<f64>,
@@ -229,11 +206,14 @@ pub struct Scratch {
     jq: Vec<f64>,
     b: Vec<f64>,
     lu: Vec<f64>,
+    piv: Vec<usize>,
     rhs: Vec<f64>,
     q: Vec<f64>,
     wd: Vec<[f64; tape::MAX_VARS]>,
     v: Vec<f64>,
     jrow: Vec<f64>,
+    memo_key: (usize, usize, Vec<f64>),
+    memo: Option<Val>,
 }
 
 impl Scratch {
@@ -245,11 +225,14 @@ impl Scratch {
             jq: Vec::new(),
             b: Vec::new(),
             lu: Vec::new(),
+            piv: Vec::new(),
             rhs: Vec::new(),
             q: Vec::new(),
             wd: Vec::new(),
             v: Vec::new(),
             jrow: Vec::new(),
+            memo_key: (0, 0, Vec::new()),
+            memo: None,
         }
     }
 }
@@ -366,19 +349,37 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
     Some(View { n_outer, n_theta, n_q, traced, w, rows, seeds, preds, home })
 }
 
+/// Below this relative residual the block is solved outright.
+const TOL_DONE: f64 = 1e-12;
+/// A solve that ran out of downhill or of step is still *accepted* under this — comfortably
+/// inside the outer system's own 1e-6, so a contact never reads as satisfied off the back of a
+/// sloppy inner solve.
+const TOL_OK: f64 = 1e-8;
+/// A stall above this is a failure; at or below it the point is as solved as it need be.
+const TOL_STALL: f64 = 1e-10;
+/// A step smaller than this fraction of the pose is no step.
+const STEP_MIN: f64 = 1e-14;
+
 /// One Newton solve of the block at the parameter already written into `s.xv[0]`, from the `q`
 /// already in `s.xv`.  Residual rows are judged against their own kernel's power of length over
 /// the magnitude of what they read — the same reasoning as `System::max_relative_residual`, in
 /// miniature — so one tolerance serves a block at any size.
+///
+/// Deliberately not `newton::dogleg`: the block is square, so the plain Newton step *is* the
+/// Gauss–Newton step; this runs per residual evaluation inside a kernel, where dogleg's
+/// per-call allocations are the thing the scratch exists to avoid; and the convergence test is
+/// unit-relative where dogleg's is absolute.  A second inner square solve is the point at which
+/// this loop moves to `newton.rs` rather than being copied.
 fn newton(v: &View, s: &mut Scratch) -> bool {
     let (n_q, q0) = (v.n_q, v.n_outer);
     let mut last = f64::INFINITY;
     for _ in 0..NEWTON_MAX {
-        let norm = assemble(v, s, false);
+        // the one full assembly per iteration; the trial steps below need only residuals
+        let norm = assemble(v, s, Fill::Jac);
         if !norm.is_finite() {
             return false;
         }
-        if norm <= 1e-12 {
+        if norm <= TOL_DONE {
             return true;
         }
         // solve Jq Δ = -r
@@ -386,9 +387,10 @@ fn newton(v: &View, s: &mut Scratch) -> bool {
         s.lu.extend_from_slice(&s.jq);
         s.rhs.clear();
         s.rhs.extend(s.r.iter().map(|&x| -x));
-        if !crate::linalg::lu_solve(n_q, &mut s.lu, &mut s.rhs) {
+        if !crate::linalg::lu_factor(n_q, &mut s.lu, &mut s.piv) {
             return false;
         }
+        crate::linalg::lu_apply(n_q, &s.lu, &s.piv, &mut s.rhs);
         // backtrack when a full step overshoots — the block is tiny, so a residual evaluation
         // costs less than a wasted outer iteration
         s.q.clear();
@@ -399,7 +401,7 @@ fn newton(v: &View, s: &mut Scratch) -> bool {
             for i in 0..n_q {
                 s.xv[q0 + i] = s.q[i] + step * s.rhs[i];
             }
-            let nn = assemble(v, s, false);
+            let nn = assemble(v, s, Fill::Res);
             if nn.is_finite() && nn < norm {
                 best = nn;
                 break;
@@ -411,35 +413,47 @@ fn newton(v: &View, s: &mut Scratch) -> bool {
             for i in 0..n_q {
                 s.xv[q0 + i] = s.q[i];
             }
-            return norm <= 1e-8;
+            return norm <= TOL_OK;
         }
         let dq: f64 = s.rhs.iter().map(|d| d * d * step * step).sum::<f64>().sqrt();
         let qn: f64 = s.q.iter().map(|x| x * x).sum::<f64>().sqrt();
-        if dq <= 1e-14 * (1.0 + qn) {
-            return assemble(v, s, false) <= 1e-8;
+        if dq <= STEP_MIN * (1.0 + qn) {
+            return best <= TOL_OK;
         }
-        if best >= last * 0.999999 && best > 1e-10 {
+        if best >= last * 0.999999 && best > TOL_STALL {
             // stalled without converging
             return false;
         }
         last = best;
     }
-    assemble(v, s, false) <= 1e-10
+    last <= TOL_STALL
 }
 
-/// Residuals and Jacobian of the block at `s.xv`.  Fills `s.r` and `s.jq`, and `s.b` — the
-/// columns for `[u, θ…]`, with a derived value's contribution chained through its tape — when
-/// `with_b`.  Returns the worst residual over its own row's units, which is dimensionless, so
-/// one tolerance judges a block at any size.
-fn assemble(v: &View, s: &mut Scratch, with_b: bool) -> f64 {
+/// How much of the block `assemble` is asked for: residuals alone (a trial step needs only the
+/// norm), the Jacobian in `q` too (a Newton iteration), or additionally `b` — the columns for
+/// `[u, θ…]`, with a derived value's contribution chained through its tape (the implicit
+/// function theorem at the end).
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
+enum Fill {
+    Res,
+    Jac,
+    JacB,
+}
+
+/// Residuals — and per `fill`, the Jacobian — of the block at `s.xv`.  Returns the worst
+/// residual over its own row's units, which is dimensionless, so one tolerance judges a block
+/// at any size.
+fn assemble(v: &View, s: &mut Scratch, fill: Fill) -> f64 {
     let n_q = v.n_q;
     let n_dc = 1 + v.n_theta;
     let (q0, w0) = (v.n_outer, v.n_outer + n_q);
     s.r.clear();
     s.r.resize(n_q, 0.0);
-    s.jq.clear();
-    s.jq.resize(n_q * n_q, 0.0);
-    if with_b {
+    if fill >= Fill::Jac {
+        s.jq.clear();
+        s.jq.resize(n_q * n_q, 0.0);
+    }
+    if fill == Fill::JacB {
         s.b.clear();
         s.b.resize(n_q * n_dc, 0.0);
     }
@@ -463,36 +477,40 @@ fn assemble(v: &View, s: &mut Scratch, with_b: bool) -> f64 {
             return f64::NAN;
         }
         (kn.res)(1, &s.v, consts, &mut s.r[row0..row0 + kn.n_res]);
-        s.jrow.clear();
-        s.jrow.resize(kn.n_res * kn.n_par, 0.0);
-        if let Some(cj) = kn.const_jac {
-            s.jrow.copy_from_slice(cj);
-        } else {
-            (kn.jac)(1, &s.v, consts, &mut s.jrow);
-        }
         let unit = mag.powi(kn.degree as i32);
         for t in 0..kn.n_res {
             worst = worst.max(s.r[row0 + t].abs() / unit);
-            for (c, &col) in cols.iter().enumerate() {
-                let g = s.jrow[t * kn.n_par + c];
-                if g == 0.0 {
-                    continue;
-                }
-                let col = col as usize;
-                if col >= w0 {
-                    if with_b {
-                        let wd = &s.wd[col - w0];
-                        for d in 0..n_dc {
-                            s.b[(row0 + t) * n_dc + d] += g * wd[d];
-                        }
+        }
+        if fill >= Fill::Jac {
+            s.jrow.clear();
+            s.jrow.resize(kn.n_res * kn.n_par, 0.0);
+            if let Some(cj) = kn.const_jac {
+                s.jrow.copy_from_slice(cj);
+            } else {
+                (kn.jac)(1, &s.v, consts, &mut s.jrow);
+            }
+            for t in 0..kn.n_res {
+                for (c, &col) in cols.iter().enumerate() {
+                    let g = s.jrow[t * kn.n_par + c];
+                    if g == 0.0 {
+                        continue;
                     }
-                } else if col >= q0 {
-                    s.jq[(row0 + t) * n_q + (col - q0)] += g;
-                } else if with_b && col < n_dc {
-                    s.b[(row0 + t) * n_dc + col] += g;
+                    let col = col as usize;
+                    if col >= w0 {
+                        if fill == Fill::JacB {
+                            let wd = &s.wd[col - w0];
+                            for d in 0..n_dc {
+                                s.b[(row0 + t) * n_dc + d] += g * wd[d];
+                            }
+                        }
+                    } else if col >= q0 {
+                        s.jq[(row0 + t) * n_q + (col - q0)] += g;
+                    } else if fill == Fill::JacB && col < n_dc {
+                        s.b[(row0 + t) * n_dc + col] += g;
+                    }
+                    // an outer column past the θ block is one of the instance's given numbers:
+                    // a constant of this curve, whose gradient nobody is owed
                 }
-                // an outer column past the θ block is one of the instance's given numbers: a
-                // constant of this curve, whose gradient nobody is owed
             }
         }
         row0 += kn.n_res;
@@ -524,24 +542,43 @@ fn seed(v: &View, s: &mut Scratch) {
     }
 }
 
+/// Decode the flat form and size the scratch for it — the shared preamble of `eval_flat` and
+/// `sweep`, so the two cannot disagree about what a well-formed encoding is.
+fn prepare<'a>(flat: &'a [f64], outer: &[f64], s: &mut Scratch) -> Option<View<'a>> {
+    let v = view(flat)?;
+    if outer.len() < v.n_outer {
+        return None;
+    }
+    s.xv.clear();
+    s.xv.resize(v.n_outer + v.n_q + v.w.len(), 0.0);
+    s.wd.clear();
+    s.wd.resize(v.w.len(), [0.0; tape::MAX_VARS]);
+    Some(v)
+}
+
+/// Walk the parameter from `from` to `to` in `MARCH` steps, each warm-started from the last —
+/// the continuation that carries a branch.  `keep_going` is the sweep's policy: a failed step
+/// keeps the last answer as its seed and carries on, so a genuinely impossible block draws a
+/// stationary run rather than nothing; evaluation stops instead, and the residual says the rest.
+fn march(v: &View, s: &mut Scratch, outer: &[f64], from: f64, to: f64, keep_going: bool) -> bool {
+    for k in 1..=MARCH {
+        let uk = from + (to - from) * k as f64 / MARCH as f64;
+        refresh(v, s, uk, outer);
+        if !newton(v, s) && !keep_going {
+            return false;
+        }
+    }
+    true
+}
+
 /// Evaluate the locus at `outer = [u, θ…, values…]`: solve the block, then the implicit function
 /// theorem for the derivatives.  A block without predicates tries the seeds at the target
 /// parameter first, and marches from the home when that fails; one *with* predicates always
 /// marches — they are read at the home and carried by continuity, and a direct solve at the
 /// target could land in a component they forbid.
 pub fn eval_flat(flat: &[f64], outer: &[f64], u_start: f64, s: &mut Scratch) -> Val {
-    let Some(v) = view(flat) else { return Val::default() };
-    if outer.len() < v.n_outer {
-        return Val::default();
-    }
-    let width = v.n_outer + v.n_q + v.w.len();
-    s.xv.clear();
-    s.xv.resize(width, 0.0);
-    s.wd.clear();
-    s.wd.resize(v.w.len(), [0.0; tape::MAX_VARS]);
+    let Some(v) = prepare(flat, outer, s) else { return Val::default() };
     let u = outer[0];
-    let u_home = home_of(&v, s, outer, u_start);
-
     if v.preds.is_empty() {
         refresh(&v, s, u, outer);
         seed(&v, s);
@@ -549,16 +586,10 @@ pub fn eval_flat(flat: &[f64], outer: &[f64], u_start: f64, s: &mut Scratch) -> 
             return finish(&v, s, true);
         }
     }
+    let u_home = home_of(&v, s, outer, u_start);
     let mut ok = cold_start(&v, s, outer, u_home);
     if ok && u != u_home {
-        for k in 1..=MARCH {
-            let uk = u_home + (u - u_home) * k as f64 / MARCH as f64;
-            refresh(&v, s, uk, outer);
-            ok = newton(&v, s);
-            if !ok {
-                break;
-            }
-        }
+        ok = march(&v, s, outer, u_home, u, false);
     }
     finish(&v, s, ok)
 }
@@ -626,7 +657,7 @@ fn cold_start(v: &View, s: &mut Scratch, outer: &[f64], u_home: f64) -> bool {
 /// predicate read exactly on its boundary has nothing to say.
 fn holds(s: &Scratch, ccw: bool, cols: [usize; 6]) -> bool {
     let g = |i: usize| s.xv[cols[i]];
-    let cross = (g(2) - g(0)) * (g(5) - g(1)) - (g(3) - g(1)) * (g(4) - g(0));
+    let cross = crate::model::orientation_xy(g(0), g(1), g(2), g(3), g(4), g(5));
     if ccw {
         cross >= 0.0
     } else {
@@ -665,19 +696,21 @@ fn finish(v: &View, s: &mut Scratch, ok: bool) -> Val {
     if !ok {
         return out;
     }
-    if !assemble(v, s, true).is_finite() {
+    if !assemble(v, s, Fill::JacB).is_finite() {
+        out.ok = false;
+        return out;
+    }
+    // one factorisation for every derivative direction
+    s.lu.clear();
+    s.lu.extend_from_slice(&s.jq);
+    if !crate::linalg::lu_factor(n_q, &mut s.lu, &mut s.piv) {
         out.ok = false;
         return out;
     }
     for d in 0..n_dc {
-        s.lu.clear();
-        s.lu.extend_from_slice(&s.jq);
         s.rhs.clear();
         s.rhs.extend((0..n_q).map(|i| -s.b[i * n_dc + d]));
-        if !crate::linalg::lu_solve(n_q, &mut s.lu, &mut s.rhs) {
-            out.ok = false;
-            return out;
-        }
+        crate::linalg::lu_apply(n_q, &s.lu, &s.piv, &mut s.rhs);
         out.dx[d] = s.rhs[v.traced];
         out.dy[d] = s.rhs[v.traced + 1];
     }
@@ -689,29 +722,18 @@ fn finish(v: &View, s: &mut Scratch, ok: bool) -> Val {
 pub fn sweep(flat: &[f64], outer: &[f64], u0: f64, u1: f64, n: usize, s: &mut Scratch)
     -> Vec<(f64, f64)>
 {
-    let Some(v) = view(flat) else { return Vec::new() };
-    if outer.len() < v.n_outer || n == 0 {
+    let Some(v) = prepare(flat, outer, s) else { return Vec::new() };
+    if n == 0 {
         return Vec::new();
     }
-    let width = v.n_outer + v.n_q + v.w.len();
-    s.xv.clear();
-    s.xv.resize(width, 0.0);
-    s.wd.clear();
-    s.wd.resize(v.w.len(), [0.0; tape::MAX_VARS]);
     let q0 = v.n_outer;
     let mut out = Vec::with_capacity(n + 1);
     // anchor at the home, walk to the near end, then sample — one continuation throughout, so
-    // the branch the home picks is the branch the whole polyline is on.  A failed step keeps
-    // the last answer as its seed and carries on: the drawn point is the best available, and a
-    // genuinely impossible block draws a stationary run rather than nothing.
+    // the branch the home picks is the branch the whole polyline is on
     let u_home = home_of(&v, s, outer, u0);
     let _ = cold_start(&v, s, outer, u_home);
     if u_home != u0 {
-        for k in 1..=MARCH {
-            let uk = u_home + (u0 - u_home) * k as f64 / MARCH as f64;
-            refresh(&v, s, uk, outer);
-            let _ = newton(&v, s);
-        }
+        let _ = march(&v, s, outer, u_home, u0, true);
     }
     for k in 0..=n {
         let u = u0 + (u1 - u0) * k as f64 / n as f64;
@@ -723,7 +745,10 @@ pub fn sweep(flat: &[f64], outer: &[f64], u0: f64, u1: f64, n: usize, s: &mut Sc
 }
 
 /// The two derivative-carrying evaluations a contact kernel makes, bundled: `kernels` calls this
-/// so the residual and the Jacobian read one code path.
+/// so the residual and the Jacobian read one code path.  A one-entry memo sits in front of the
+/// solve, because `System` always asks for the Jacobian at the point it just asked the residual
+/// of: the answer is a pure function of the constants and the columns past the contact point, so
+/// remembering the last one is deterministic and halves the block solves.
 pub fn kernel_eval(consts: &[f64], v: &[f64], n_par: usize) -> Val {
     // the contact's constants: [u_start, n_values, values…, locus flat…]
     let Some(&u_start) = consts.first() else { return Val::default() };
@@ -746,7 +771,25 @@ pub fn kernel_eval(consts: &[f64], v: &[f64], n_par: usize) -> Val {
     outer[0] = v[2];
     outer[1..1 + theta].copy_from_slice(&v[3..3 + theta]);
     outer[1 + theta..1 + theta + nv].copy_from_slice(values);
-    LOCUS_SCRATCH.with(|s| eval_flat(flat, &outer[..1 + theta + nv], u_start, &mut s.borrow_mut()))
+    let outer = &outer[..1 + theta + nv];
+    LOCUS_SCRATCH.with(|s| {
+        let s = &mut *s.borrow_mut();
+        // the constants live in a compiled block and are only ever rewritten in place with the
+        // same values, so (address, length) identifies them; the outer values carry the rest
+        let key = (flat.as_ptr() as usize, flat.len());
+        if let Some(val) = s.memo {
+            if (s.memo_key.0, s.memo_key.1) == key && s.memo_key.2 == outer {
+                return val;
+            }
+        }
+        let val = eval_flat(flat, outer, u_start, s);
+        s.memo_key.0 = key.0;
+        s.memo_key.1 = key.1;
+        s.memo_key.2.clear();
+        s.memo_key.2.extend_from_slice(outer);
+        s.memo = Some(val);
+        val
+    })
 }
 
 thread_local! {

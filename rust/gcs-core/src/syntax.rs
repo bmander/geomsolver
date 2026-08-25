@@ -1649,18 +1649,8 @@ impl<'a> P<'a> {
         // `trace p [from (expr)] where { … }` — the locus form
         if self.eat_word("trace") {
             let point = self.ident()?;
-            let home = if self.eat_word("from") {
-                if !self.want_p('(') {
-                    return None;
-                }
-                let (t, sp) = self.expr_until(')')?;
-                if !self.want_p(')') {
-                    return None;
-                }
-                Some((t, sp))
-            } else {
-                None
-            };
+            let home =
+                if self.eat_word("from") { Some(self.paren_expr()?) } else { None };
             if !self.eat_word("where") {
                 self.fail("a trace is `trace point [from (...)] where { ... }`");
                 return None;
@@ -1695,6 +1685,18 @@ impl<'a> P<'a> {
             body: FamilyBody::Exprs { x, y, xspan, yspan },
             span: Span::new(lo, self.prev_hi()),
         })
+    }
+
+    /// `( expr )` — the parenthesised expression `from` and `bearing` both carry.
+    fn paren_expr(&mut self) -> Option<(String, Span)> {
+        if !self.want_p('(') {
+            return None;
+        }
+        let e = self.expr_until(')')?;
+        if !self.want_p(')') {
+            return None;
+        }
+        Some(e)
     }
 
     /// `over (a, b)` — two expressions over whatever parameters are in scope.
@@ -2009,18 +2011,8 @@ impl<'a> P<'a> {
                 // a place named geometrically: `at t`, `at c bearing (u + phase)`
                 if self.peek() != Some(&Tok::P('(')) {
                     let what = self.refr()?;
-                    let bearing = if self.eat_word("bearing") {
-                        if !self.want_p('(') {
-                            return None;
-                        }
-                        let (t, sp) = self.expr_until(')')?;
-                        if !self.want_p(')') {
-                            return None;
-                        }
-                        Some((t, sp))
-                    } else {
-                        None
-                    };
+                    let bearing =
+                        if self.eat_word("bearing") { Some(self.paren_expr()?) } else { None };
                     seed_at = Some(AtRef { what, bearing });
                     continue;
                 }

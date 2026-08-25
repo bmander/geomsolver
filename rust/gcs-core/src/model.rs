@@ -15,6 +15,14 @@ use std::collections::BTreeMap;
 
 pub type Box2 = (f64, f64, f64, f64); // (xmin, ymin, xmax, ymax)
 
+thread_local! {
+    /// Scratch the model-side locus paths run in — a pick, a paint and a bounds query each
+    /// evaluate every trace curve they touch, and building a fresh scratch per question would
+    /// be an allocation per hover.
+    static MODEL_LOCUS: std::cell::RefCell<crate::locus::Scratch> =
+        std::cell::RefCell::new(crate::locus::Scratch::new());
+}
+
 /// How many steps a user-written curve is sampled at for measuring, picking and bounding.  A
 /// B-spline is refined adaptively against its own basis; a curve written in the language has no
 /// basis to refine against, so it is sampled evenly and finely enough that a pick test does not
@@ -922,11 +930,11 @@ impl Sketch {
                 let mut s = crate::tape::Scratch::new();
                 (tx.eval(&x, &mut s).v, ty.eval(&x, &mut s).v)
             }
-            CurveBody::Trace(l) => {
-                let mut s = crate::locus::Scratch::new();
-                let v = crate::locus::eval_flat(&l.flat, &x, self.curves[i].domain.0, &mut s);
+            CurveBody::Trace(l) => MODEL_LOCUS.with(|s| {
+                let s = &mut *s.borrow_mut();
+                let v = crate::locus::eval_flat(&l.flat, &x, self.curves[i].domain.0, s);
                 (v.x, v.y)
-            }
+            }),
         }
     }
 
@@ -953,10 +961,10 @@ impl Sketch {
                     })
                     .collect()
             }
-            CurveBody::Trace(l) => {
-                let mut s = crate::locus::Scratch::new();
-                crate::locus::sweep(&l.flat, &self.curve_vars(i, a), a, b, CURVE_STEPS, &mut s)
-            }
+            CurveBody::Trace(l) => MODEL_LOCUS.with(|s| {
+                crate::locus::sweep(&l.flat, &self.curve_vars(i, a), a, b, CURVE_STEPS,
+                                    &mut s.borrow_mut())
+            }),
         }
     }
 
@@ -1427,6 +1435,12 @@ pub fn orientation(sk: &Sketch, a: usize, b: usize, c: usize) -> f64 {
     let (ax, ay) = sk.point_xy(a);
     let (bx, by) = sk.point_xy(b);
     let (cx, cy) = sk.point_xy(c);
+    orientation_xy(ax, ay, bx, by, cx, cy)
+}
+
+/// The same from bare coordinates — one formula, so this reading and a trace predicate's
+/// (`locus::holds`) cannot fork on the sign convention.
+pub fn orientation_xy(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64) -> f64 {
     (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
 }
 

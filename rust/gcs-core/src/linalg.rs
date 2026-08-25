@@ -816,8 +816,11 @@ pub fn null_tail(vt: &Mat, rank: usize) -> Mat {
     vt.select_rows(&(rank..vt.rows).collect::<Vec<_>>()).transpose()
 }
 
-/// Solve the n*n system `A x = b` in place (partial-pivoting LU).  `false` if A is singular.
-pub fn lu_solve(n: usize, a: &mut [f64], b: &mut [f64]) -> bool {
+/// Factor the n*n matrix `A = P·L·U` in place (partial pivoting): the multipliers stay in the
+/// lower triangle and the row swaps go to `piv`, so one factorisation serves any number of
+/// right-hand sides through `lu_apply`.  `false` if A is singular.
+pub fn lu_factor(n: usize, a: &mut [f64], piv: &mut Vec<usize>) -> bool {
+    piv.clear();
     for k in 0..n {
         let mut p = k;
         for i in k + 1..n {
@@ -832,19 +835,39 @@ pub fn lu_solve(n: usize, a: &mut [f64], b: &mut [f64]) -> bool {
             for j in 0..n {
                 a.swap(k * n + j, p * n + j);
             }
-            b.swap(k, p);
         }
-        let piv = a[k * n + k];
+        piv.push(p);
+        let d = a[k * n + k];
         for i in k + 1..n {
-            let f = a[i * n + k] / piv;
+            let f = a[i * n + k] / d;
+            a[i * n + k] = f;
             if f == 0.0 {
                 continue;
             }
-            a[i * n + k] = 0.0;
             for j in k + 1..n {
                 a[i * n + j] -= f * a[k * n + j];
             }
-            b[i] -= f * b[k];
+        }
+    }
+    true
+}
+
+/// Solve one right-hand side with a factorisation from `lu_factor`.
+///
+/// The row swaps are applied *before* the elimination, all of them: during factorisation a
+/// swapped row carries its multipliers with it, but `b` carries no such provenance, so
+/// interleaving its swaps with the forward solve mixes rows at different stages of elimination.
+pub fn lu_apply(n: usize, a: &[f64], piv: &[usize], b: &mut [f64]) {
+    for k in 0..n {
+        b.swap(k, piv[k]);
+    }
+    for k in 0..n {
+        let bk = b[k];
+        if bk == 0.0 {
+            continue;
+        }
+        for i in k + 1..n {
+            b[i] -= a[i * n + k] * bk;
         }
     }
     for i in (0..n).rev() {
@@ -854,6 +877,16 @@ pub fn lu_solve(n: usize, a: &mut [f64], b: &mut [f64]) -> bool {
         }
         b[i] = s / a[i * n + i];
     }
+}
+
+/// Solve the n*n system `A x = b` in place — `lu_factor` and `lu_apply` for the caller with one
+/// right-hand side.  `false` if A is singular.
+pub fn lu_solve(n: usize, a: &mut [f64], b: &mut [f64]) -> bool {
+    let mut piv = Vec::with_capacity(n);
+    if !lu_factor(n, a, &mut piv) {
+        return false;
+    }
+    lu_apply(n, a, &piv, b);
     true
 }
 

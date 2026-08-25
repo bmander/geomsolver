@@ -556,6 +556,8 @@ impl System {
 
     /// max |residual| / (that row's units) over the hard rows — dimensionless, so one threshold
     /// judges every kernel.  This, not `max_hard_residual`, is what "solved" means.
+    /// `locus::assemble` states the same rule in miniature for a trace block's inner rows; an
+    /// edit to what counts toward a row's units has a twin there.
     pub fn max_relative_residual(&mut self, z: &[f64]) -> f64 {
         let r = self.residuals(z);
         let mut mx = 0.0f64;

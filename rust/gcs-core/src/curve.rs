@@ -507,15 +507,15 @@ pub fn interpolating_ctrl(
             n[k * m + span - p + a] = b[a];
         }
     }
-    // one factorisation per coordinate, since `lu_solve` has no factor/solve split — but the
-    // second takes `n` itself rather than a third copy of it
+    // one factorisation, two right-hand sides
     let mut xs: Vec<f64> = pts.iter().map(|q| q.0).collect();
     let mut ys: Vec<f64> = pts.iter().map(|q| q.1).collect();
-    let mut lu = n.clone();
-    if !crate::linalg::lu_solve(m, &mut lu, &mut xs) || !crate::linalg::lu_solve(m, &mut n, &mut ys)
-    {
+    let mut piv = Vec::with_capacity(m);
+    if !crate::linalg::lu_factor(m, &mut n, &mut piv) {
         return None;
     }
+    crate::linalg::lu_apply(m, &n, &piv, &mut xs);
+    crate::linalg::lu_apply(m, &n, &piv, &mut ys);
     if xs.iter().chain(&ys).any(|v| !v.is_finite()) {
         return None;
     }
