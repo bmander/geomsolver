@@ -562,7 +562,7 @@ pub fn example(name: &str) -> Option<Sketch> {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 22] = [
+pub const CASES: [(&str, &str, &str); 23] = [
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Slotted link", "slotted_link", "obround slot with two holes; fully constrained"),
     ("Truss (8 bays)", "truss", "~30-entity Warren truss, every member dimensioned"),
@@ -584,6 +584,7 @@ pub const CASES: [(&str, &str, &str); 22] = [
     ("Curve and follower", "spline_follower", "a cubic B-spline with a face held tangent to it and a point riding on it — drag a control point and the contact slides along the curve, across knots and all"),
     ("Belt over two pulleys", "belt_tangency", "each end on its circle and the line tangent to it — a double root: rank-deficient at every solution, yet nothing can move.  The second-order screen calls it rigid rather than 2 DOF"),
     ("Spur gear (30 teeth)", "gear", "written as a Solvent program: a curve family the document itself defines, one flank as a component, repeated round a cycle — open the Program panel (Edit ▸ Program) to read it"),
+    ("Spur gear, traced (12 teeth)", "gear_trace", "the same wheel with the involute *traced* rather than computed: `trace p where { … }` states the taut string — on the circle, perpendicular to the radius, as long as the arc unwound — and the solver finds every point of the flank"),
     ("Levelled zigzags (3×32)", "zigzag", "three separate staircases of free-length H/V segments — a drag costs one staircase, not three"),
 ];
 
@@ -596,11 +597,24 @@ pub const CASES: [(&str, &str, &str); 22] = [
 /// have to hold for it to come out round.
 pub const GEAR: &str = include_str!("gear.sv");
 
+/// The same wheel with the involute *traced* rather than computed — the family's body is
+/// `trace p where { … }` (spec §6.5.1), the taut string stated as constraints, and the solver
+/// finds every point of the flank.  Twelve teeth, so it also lives in the stub-tooth regime.
+pub const GEAR_TRACE: &str = include_str!("gear_trace.sv");
+
 pub fn gear() -> Sketch {
-    let (p, errs) = crate::syntax::parse(GEAR);
-    debug_assert!(errs.is_empty(), "the gear does not parse: {errs:?}");
+    document(GEAR, "gear")
+}
+
+pub fn gear_trace() -> Sketch {
+    document(GEAR_TRACE, "gear_trace")
+}
+
+fn document(src: &str, name: &str) -> Sketch {
+    let (p, errs) = crate::syntax::parse(src);
+    debug_assert!(errs.is_empty(), "the {name} does not parse: {errs:?}");
     let e = crate::program::elaborate(&p);
-    debug_assert!(e.ok(), "the gear does not elaborate");
+    debug_assert!(e.ok(), "the {name} does not elaborate");
     e.sketch
 }
 
@@ -614,6 +628,7 @@ pub fn gear() -> Sketch {
 pub fn source(key: &str) -> Option<&'static str> {
     match key.split(':').next().unwrap_or("") {
         "gear" => Some(GEAR),
+        "gear_trace" => Some(GEAR_TRACE),
         _ => None,
     }
 }
@@ -636,6 +651,7 @@ pub fn case(key: &str) -> Option<Sketch> {
         "polygon_chain" if !args.is_empty() => polygon_chain(n(0, 12), 50.0),
         "k33" if !args.is_empty() => k33(u(0, 3)),
         "gear" => gear(),
+        "gear_trace" => gear_trace(),
         "laman" => laman(n(0, 10), u(1, 0), true),
         "zigzag" if !args.is_empty() => zigzag(n(0, 32), n(1, 1)),
         "spline_follower" if !args.is_empty() => spline_follower(n(0, 7)),

@@ -223,82 +223,15 @@ curve  w = odd(base)
     );
 }
 
-/// **A gear whose flanks are traced, not computed.**  The document below is `gear.sv` with the
-/// involute family swapped for the taut-string trace: the flank is "the curve the string end
-/// draws", the solver finds the two rolls where it crosses the root and tip circles, and the
-/// whole wheel solves and diagnoses fully constrained.  Eight teeth, so the test also runs in
-/// the stub-tooth regime where the root stands clear of the base circle.
+/// **A gear whose flanks are traced, not computed.**  The shipped example document: `gear.sv`
+/// with the involute family swapped for the taut-string trace — the solver finds the two rolls
+/// where each flank crosses the root and tip circles, and every point of the flank in between.
+/// Twelve teeth, so the test also runs in the stub-tooth regime where the root stands clear of
+/// the base circle.
 #[test]
 fn a_gear_runs_on_a_traced_involute() {
-    let src = "\
-curve involute(c: circle, datum: line, phase: Angle)(u) =
-  trace p where {
-    point t at (c.center.x + c.r * cos(u + phase), c.center.y + c.r * sin(u + phase))
-    point p at (c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)), \
-                c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
-    line rad(c.center, t)
-    line s(t, p)
-    point_on_circle(t, c)
-    perpendicular(rad, s)
-    angle(datum, rad) == u + phase
-    distance(t, p) == c.r * u * pi / 180
-  }
-
-component Flank(base: circle, datum: line, root: circle, tip: circle,
-                phase: Angle, u0: Angle, u1: Angle) {
-  curve e = involute(base, datum, phase: phase) over (u0, u1)
-  port lo: point
-  port hi: point
-
-  point_on_curve(lo, e, u = u0)
-  point_on_curve(hi, e, u = u1)
-  point_on_circle(lo, root)
-  point_on_circle(hi, tip)
-}
-
-component Tooth(base: circle, datum: line, root: circle, tip: circle,
-                a0: Angle, half: Angle, u0: Angle, u1: Angle) {
-  r: Flank(base, datum, root, tip, phase: a0 - half, u0: u0, u1: u1)
-  l: Flank(base, datum, root, tip, phase: a0 + half, u0: -u0, u1: -u1)
-
-  line crown(r.hi, l.hi)
-}
-
-component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
-  param R = m * N / 2
-  param Rt = R + m
-  param Rb = R * cos(phi)
-  param clear = 0.02
-  param Rr = max(R - ded * m, Rb * (1 + clear))
-  param pitch = tau / N
-  param ivp = tan(phi) * 180 / pi - phi
-  param half = 90 / N + ivp
-  param u0 = sqrt((Rr / Rb) ^ 2 - 1) * 180 / pi
-  param u1 = sqrt((Rt / Rb) ^ 2 - 1) * 180 / pi
-
-  point center at (0, 0)
-  point anchor at (R, 0)
-  line  datum(center, anchor) construction
-  circle base(center: center, r: Rb) construction
-  circle root(center: center, r: Rr) construction
-  circle tip(center: center, r: Rt) construction
-
-  radius(base) == Rb
-  radius(root) == Rr
-  radius(tip) == Rt
-  ground(center)
-  ground(anchor)
-
-  cycle N as i {
-    t: Tooth(base, datum, root, tip, a0: i * pitch, half: half, u0: u0, u1: u1)
-    line gap(t.l.lo, next.t.r.lo)
-  }
-}
-
-g: Gear(N: 8, m: 3, phi: 25, ded: 1)
-";
-    let n = 8usize;
-    let mut e = build(src);
+    let n = 12usize;
+    let mut e = build(gcs_core::examples::GEAR_TRACE);
     assert!(
         e.ok(),
         "{:?}",
