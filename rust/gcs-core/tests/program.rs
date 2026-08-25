@@ -583,3 +583,117 @@ fn a_gear_elaborates() {
 fn phase_of(sk: &Sketch, ci: usize) -> f64 {
     sk.curves[ci].values[0]
 }
+
+/// **A gear with few teeth.**  The flank is an involute of the base circle, and an involute of a
+/// circle does not exist inside it — so a root circle asked to go there is asking for a curve that
+/// is not there.  `Rr = R - ded*m` falls inside `Rb = R cos(phi)` once `N < 2*ded/(1 - cos phi)`,
+/// which at the reference proportions is 21.35: hence the gear that would not read below 22 teeth,
+/// with `u0` coming to the square root of a negative number.
+///
+/// The document answers it the way a real gear does — the tooth gets *shallower* rather than
+/// growing a flank that does not exist — so what is checked here is that every count still draws,
+/// still solves, and is still made of involutes.  A count that merely elaborates is not enough:
+/// clamping the root onto the base circle exactly would put the contact on the involute's cusp,
+/// where `C'` vanishes, and the solve crawls to its iteration limit instead of failing outright.
+#[test]
+fn a_gear_with_few_teeth() {
+    for n in [22usize, 21, 18, 12, 8, 5, 4, 3, 2] {
+        let src = examples::GEAR.replace("g: Gear(N: 30,", &format!("g: Gear(N: {n},"));
+        let (p, errs) = gcs_core::syntax::parse(&src);
+        assert!(errs.is_empty(), "N = {n}: {errs:?}");
+        let mut e = elaborate(&p);
+        assert!(
+            e.ok(),
+            "N = {n}: {:?}",
+            e.errors().map(|d| (d.code.as_str(), &d.message)).collect::<Vec<_>>()
+        );
+        assert_eq!(e.sketch.curves.len(), 2 * n, "N = {n}: two flanks per tooth");
+
+        let r = solve(&mut e.sketch, SolveOpts::default());
+        assert!(r.success, "N = {n}: {}", r.message);
+
+        let (m, ded, phi) = (3.0f64, 1.0f64, 25.0f64);
+        let r_pitch = m * n as f64 / 2.0;
+        let rb = r_pitch * phi.to_radians().cos();
+        let rt = r_pitch + m;
+        // the root never goes inside the base circle, and stands clear of the cusp on it
+        let rr = (r_pitch - ded * m).max(rb * 1.02);
+        assert!(rr > rb, "N = {n}: the root is outside the base circle");
+        assert!(rt > rr, "N = {n}: there is a tooth to speak of");
+
+        // every flank end is on the circle its statement said it was on
+        let (mut tips, mut roots) = (Vec::new(), Vec::new());
+        for i in 1..e.sketch.points.len() {
+            let (x, y) = e.sketch.point_xy(i);
+            let rad = x.hypot(y);
+            if (rad - rr).abs() < 1e-6 {
+                roots.push(y.atan2(x));
+            } else if (rad - rt).abs() < 1e-6 {
+                tips.push(y.atan2(x));
+            } else {
+                panic!("N = {n}: a flank end at radius {rad}, which is neither {rr} nor {rt}");
+            }
+        }
+        assert_eq!(tips.len(), 2 * n, "N = {n}: two tip ends per tooth");
+        assert_eq!(roots.len(), 2 * n, "N = {n}: two root ends per tooth");
+
+        // **the teeth do not run into each other.**  Each tooth's ends belong to the bearing its
+        // instance was given, so grouping them by nearest `k * pitch` says how wide that tooth
+        // actually came out — and a tooth as wide as the pitch is one touching its neighbour.
+        // This is what the involute test cannot see: both flanks can be perfect involutes while
+        // the pair of them has stopped being a tooth.  Sorting the ends and looking for two that
+        // are close would *not* see it, because two overlapping teeth still have their four ends
+        // comfortably apart; it is the width that has to be measured.
+        let pitch = std::f64::consts::TAU / n as f64;
+        for (what, ends) in [("tip", tips), ("root", roots)] {
+            let mut by_tooth = vec![Vec::new(); n];
+            for b in ends {
+                // the bearing this end is nearest to, as a tooth index
+                let k = (b / pitch).round().rem_euclid(n as f64) as usize;
+                // measured from that tooth's own bearing and wrapped into (-pi, pi], so a tooth
+                // lying across the cut at +/-pi is still one tooth and not two half ones
+                let pi = std::f64::consts::PI;
+                by_tooth[k].push((b - k as f64 * pitch + pi).rem_euclid(std::f64::consts::TAU) - pi);
+            }
+            for (k, mut w) in by_tooth.into_iter().enumerate() {
+                assert_eq!(w.len(), 2, "N = {n}: tooth {k} has {} {what} ends, not two", w.len());
+                w.sort_by(|a, b| a.partial_cmp(b).expect("a bearing is a number"));
+                let width = w[1] - w[0];
+                assert!(
+                    width > 0.0,
+                    "N = {n}: tooth {k} has no width at the {what} — its flanks have crossed",
+                );
+                assert!(
+                    width < pitch,
+                    "N = {n}: tooth {k} is {}° wide at the {what}, wider than the {}° pitch — \
+                     it has run into its neighbour",
+                    width.to_degrees(),
+                    pitch.to_degrees(),
+                );
+            }
+        }
+
+        // and every flank is still an involute: the string from where it leaves the base circle
+        // is perpendicular to the radius there and as long as the arc it unwound
+        for ci in 0..e.sketch.curves.len() {
+            let (u0, u1) = e.sketch.curve_domain(ci);
+            for k in 0..=8 {
+                let u = u0 + (u1 - u0) * k as f64 / 8.0;
+                let (x, y) = e.sketch.curve_point(ci, u);
+                let a = (u + phase_of(&e.sketch, ci)).to_radians();
+                let t = (rb * a.cos(), rb * a.sin());
+                let string = (x - t.0, y - t.1);
+                assert!(
+                    (t.0 * string.0 + t.1 * string.1).abs() < 1e-6 * rb * rb,
+                    "N = {n}, curve {ci} at u = {u}: the string is not perpendicular to the radius",
+                );
+                let arc = rb * u.to_radians().abs();
+                assert!(
+                    (string.0.hypot(string.1) - arc).abs() < 1e-6,
+                    "N = {n}, curve {ci} at u = {u}: string {} against arc {arc}",
+                    string.0.hypot(string.1),
+                );
+            }
+        }
+    }
+}

@@ -51,14 +51,29 @@ component Tooth(base: circle, root: circle, tip: circle,
 component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   param R = m * N / 2            // the pitch circle: where a tooth is half the pitch thick
   param Rt = R + m               // the tip
-  param Rr = R - ded * m         // the root
   param Rb = R * cos(phi)        // the base circle the involute unwinds from
 
   // **Below the base circle there is no involute.**  A tooth's flank is only a flank down to
   // `Rb`; under that a real gear runs a fillet, which is a different curve for a different
-  // reason.  So the proportions here are chosen to put the root circle *outside* the base
-  // circle — a shallower dedendum and more teeth than a textbook 1.25 — and the flank is an
-  // involute the whole way, with nothing fudged at the bottom.
+  // reason.  This drawing has no fillet, so it does the other thing available to it: the root
+  // never goes inside the base circle.  Asked for a deeper tooth than the involute reaches, the
+  // gear gives a *shallower* one — the stub tooth a low count really does need — rather than a
+  // curve that does not exist.
+  //
+  // It stops a little *clear* of the base circle rather than exactly on it, and a real gear does
+  // the same — the fillet meets the flank at the form diameter, which is above `Rb`, never at it.
+  // Here the reason is sharper than convention.  At the base circle the involute has a **cusp**:
+  // `C'(u) = Rb u (cos u, sin u)` vanishes at `u = 0`, so a contact there has no direction to
+  // slide along.  Worse than the point itself is its neighbourhood — `Param::scale` is the curve's
+  // *mean* speed, and a flank that starts at the cusp runs an order of magnitude slower at one end
+  // than the other, so the t column is wrong by that factor wherever the contact actually sits and
+  // the solver crawls.  Two percent of `Rb` puts the flank's first roll near 11°, which keeps the
+  // speed along it within a small factor and the solve at nine iterations.
+  //
+  // Where the dedendum fits — every count from about 22 up, at these proportions — `Rr` is the
+  // textbook root and none of this is doing anything at all.
+  param clear = 0.02
+  param Rr = max(R - ded * m, Rb * (1 + clear))
 
   param pitch = tau / N
   // half a tooth's angular thickness, measured from the base circle.  `inv(u) = u - atan(u)`,
