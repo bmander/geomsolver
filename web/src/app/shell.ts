@@ -5,7 +5,8 @@ import * as examples from '../core/examples.js';
 import { Constraint } from '../core/constraints.js';
 import { Primitive, Sketch, expand } from '../core/model.js';
 import { initCore } from '../core/wasm.js';
-import { Document, fromSketch } from '../core/program.js';
+import { Document, fromSketch, highlight } from '../core/program.js';
+import { CodeEditor } from './editor.js';
 import { SketchView } from './view.js';
 import { toast } from './ui.js';
 
@@ -24,7 +25,9 @@ export const bannerSelect = document.getElementById('banner-select') as HTMLButt
 export const measureEl = document.getElementById('measure') as HTMLElement;
 export const ppanel = document.getElementById('ppanel') as HTMLElement;
 export const ppanelState = document.getElementById('ppanel-state') as HTMLElement;
-export const ptext = document.getElementById('ptext') as HTMLTextAreaElement;
+/** The program panel's code box — the two layers, built into `#pcode` by `app/editor.ts`.  It is
+ *  handed the core's colouring and knows nothing else about Solvent. */
+export const ped = new CodeEditor(document.getElementById('pcode') as HTMLElement, highlight);
 export const pdiags = document.getElementById('pdiags') as HTMLElement;
 export const componentEl = document.getElementById('component') as HTMLElement;
 export const footerEl = document.querySelector('footer') as HTMLElement;

@@ -21,7 +21,7 @@ import {
 import { checkSketch } from '../core/fdcheck.js';
 import { enumerateStep } from '../core/homotopy.js';
 import { Point, Sketch, Spline } from '../core/model.js';
-import { Document, fromSketch } from '../core/program.js';
+import { Document, fromSketch, highlight } from '../core/program.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
 import { analyze } from '../core/witness.js';
 import { core, initCore } from '../core/wasm.js';
@@ -1879,6 +1879,34 @@ test('deleting a point takes the statements that named it', () => {
   assert.equal(next.sketch.lines.length, 1);
   next.dispose();
   d.dispose();
+});
+
+/* The colouring is the core's scan, so what a class *means* is tested in Rust.  What is worth
+ * testing here is the seam: the offsets arrive in bytes and index a JS string on this side, and
+ * the gear has an em dash in its second line. */
+test('the coloured runs index the string, not the core\'s bytes', () => {
+  const text = examples.source('gear');
+  assert.ok(text.length !== Buffer.byteLength(text), 'the gear is not all ASCII');
+  const runs = highlight(text);
+  assert.ok(runs.length > 100);
+  let end = 0;
+  for (const r of runs) {
+    assert.ok(r.lo >= end && r.hi > r.lo && r.hi <= text.length, `${r.cls} at ${r.lo}`);
+    end = r.hi;
+  }
+  // the first run is the comment the file opens with, and it is one run and not one per line
+  assert.equal(runs[0].cls, 'comment');
+  assert.equal(text.slice(runs[0].lo, runs[0].hi), '// A spur gear with involute flanks, after solvent-spec.md §18.');
+  // and a run past the em dash still lands on the word it names
+  const family = runs.find((r) => r.cls === 'def' && text.slice(r.lo, r.hi) === 'involute');
+  assert.ok(family, 'the curve family names itself');
+  assert.ok(text.slice(0, family.lo).includes('—'), 'which is past the first non-ASCII character');
+});
+
+test('a program half-typed is still coloured', () => {
+  const runs = highlight('point p at (0,\ncircle c(center: p, r');
+  assert.equal(runs[0].cls, 'word');
+  assert.ok(runs.some((r) => r.cls === 'label'), 'the labels of an unfinished call');
 });
 
 test('dragging the gear does not rewrite the gear', () => {

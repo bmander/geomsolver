@@ -219,6 +219,45 @@ export class Document {
   }
 }
 
+/** A run of the source and what it is.  `cls` is the core's own name for the class — a stylesheet
+ *  says what it looks like, and nothing here says what it means.
+ *
+ *  `lo`/`hi` index the **string**, not the core's bytes: a caller here slices a JS string with
+ *  them, and one that had to remember which of the two it was holding would get it wrong. */
+export interface Run { cls: string; lo: number; hi: number }
+
+/** Colour a program.  The classified runs only, in order: whatever falls between two of them is
+ *  ordinary text, so a caller writes the gaps out plainly and never has to describe whitespace.
+ *
+ *  A function of the *text*, not of a `Document`: the program being looked at is usually the one
+ *  half-typed, which does not elaborate.  The core's own scan, so what a colour says a word is and
+ *  what the parser makes of it are the same answer. */
+export function highlight(text: string): Run[] {
+  const runs = withStr(text, (p, n) => core().gcs_program_highlight(p, n));
+  if (!runs) throw new Error(lastError() || 'the program could not be coloured');
+  return onto(text, takeJson<[string, number, number][]>(runs));
+}
+
+/** Byte offsets, as the core counts them, onto the string the browser holds.
+ *
+ *  The core measures a source in UTF-8 bytes and a JS string is UTF-16 code units.  The two agree
+ *  exactly while the text is ASCII and part company at the first character that is not — an em
+ *  dash in a comment, a `π` in one — after which every span would be short by however many bytes
+ *  had gone by.  The runs arrive in order and never overlap, so one walk of the string converts
+ *  all of them, and an all-ASCII program pays one pass and no arithmetic. */
+function onto(text: string, runs: [string, number, number][]): Run[] {
+  let byte = 0, unit = 0;
+  const at = (off: number): number => {
+    while (byte < off && unit < text.length) {
+      const c = text.codePointAt(unit) as number;
+      byte += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4;
+      unit += c < 0x10000 ? 1 : 2;
+    }
+    return unit;
+  };
+  return runs.map(([cls, lo, hi]) => ({ cls, lo: at(lo), hi: at(hi) }));
+}
+
 /** The canonical program for a sketch — the lift, and how a JSON document becomes a source one. */
 export function fromSketch(sk: Sketch): string {
   return takeStr(core().gcs_sketch_to_program(sk.handle));

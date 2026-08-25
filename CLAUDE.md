@@ -30,7 +30,8 @@ Currently: **Stage 5 done**, in **one** implementation —
   constraint, and where the core is started), `commands` (the constraints bar), `dialogs` (what
   the menus open), `lists` (the constraints window, the banner and the status line), `dimbox`
   (a dimension's number, edited on the drawing), `program` (the source, beside the drawing it
-  makes), `ui` (dialogs and bar widgets), and `main.ts`, which is only wiring.  `index.html` is structure and `app.css` is the whole of the styling.
+  makes) over `editor` (the code box it is typed in, which knows nothing of Solvent),
+  `ui` (dialogs and bar widgets), and `main.ts`, which is only wiring.  `index.html` is structure and `app.css` is the whole of the styling.
 
 Commands:
 `make` (native `build/libgcs.dylib`), `make wasm` (`web/src/wasm/gcs.wasm`),
@@ -382,6 +383,34 @@ Conventions:
   from: `openPanel` is how the two things that pick without selecting say so — a callout
   clicked on the drawing, the banner's culprits — and `closePanel`, wired to `onSelect`, is a
   press that hit nothing.
+- **The colouring is the parser's own scan** (`syntax::highlight`), not a second lexer in
+  TypeScript: told to keep the comments and to say what each token turned out to be, so what a
+  colour says a word is and what the parser makes of it cannot disagree — and a regex highlighter
+  would part company on the first thing the language learned (`==` against `=`, a mixed fraction,
+  a block comment, a new constraint's name, which `CKind::from_name` supplies here for free).
+  `Tint` names the classes and the stylesheet says what they look like; the front end writes one
+  element per run with the gaps between them plain, so it describes no whitespace and parses
+  nothing.  A function of the *text* and not of an `Elaborated`, since the program being looked at
+  is usually the one half-typed.  Offsets cross the ABI in **bytes** and index a JS string on the
+  other side: `core/program.ts::onto` is that conversion, and `gear.sv` has an em dash in its
+  second line.
+- The box it is typed in is `app/editor.ts` — a `CodeEditor`, which knows nothing of Solvent and is
+  handed the text and a function saying which runs of it are what.  It is a `<textarea>` over a
+  `<pre>` of the same text, because a textarea cannot colour its contents and a `contenteditable`
+  gets the caret, undo and the platform's keys wrong.  Everything hard about that is one sentence:
+  **the two layers must put every character in the same place**, or the caret sits somewhere other
+  than the text it is in front of — and sharing the CSS is necessary and not sufficient, because
+  the box is one run per line where the copy is one element per colour.  Four rules, each of which
+  has already been the bug: the line height is a whole number of pixels; kerning and ligatures are
+  off; a run may change the colour and **never the face** (an italic or a bold is a different font,
+  and the box has no spans to match it); and the copy is **translated** to follow the box, never
+  scrolled — the box carries scrollbars and the copy does not, so its scroll *range* is a
+  scrollbar shorter and an assignment clamps at the bottom of a long file, which is precisely a
+  caret that is fine at the top and a line out at the end.  None of it is visible to a unit test,
+  so `npm run overlay` (`web/tools/overlay.mjs`) drives headless Chrome against the *real*
+  `CodeEditor` and checks the three things that can break: the metrics agree, the colouring moves
+  no glyph off where the plain text puts it, and the copy follows the box to both ends.  It is not
+  in `npm test` because it needs Chrome, and `make test` must not.
 - `SketchView` holds a `Document` (`core/program.ts`), not a `Sketch`: `view.sketch` is a getter
   for what the source came to and `view.source` is the document.  Undo is program text, so it
   restores what somebody wrote, comments and all.  A selection crosses a re-elaboration **by

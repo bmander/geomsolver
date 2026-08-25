@@ -2610,6 +2610,27 @@ pub unsafe extern "C" fn gcs_program_elaborate(ptr: *const u8, len: usize) -> *m
     })
 }
 
+/// Colour a program: `[[class, lo, hi], …]`, in order, over the classified runs only.
+///
+/// A function of the *text* and nothing else, so a panel colours what somebody is halfway through
+/// typing — which never elaborates and is exactly the program being looked at.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_program_highlight(ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let runs: Vec<Json> = syntax::highlight(as_str(ptr, len))
+            .into_iter()
+            .map(|(t, s)| {
+                Json::Arr(vec![
+                    Json::Str(t.as_str().to_string()),
+                    Json::Int(s.lo as i64),
+                    Json::Int(s.hi as i64),
+                ])
+            })
+            .collect();
+        out_json(Json::Arr(runs))
+    })
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_free(h: *mut Elaborated) {
     if !h.is_null() {

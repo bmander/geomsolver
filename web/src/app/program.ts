@@ -14,8 +14,12 @@
  * made elsewhere; `dimbox.ts` will not overwrite a box somebody is in.  A panel that reprinted on
  * every solve would take the line out from under the cursor. */
 import type { Diagnostic, SourceMap } from '../core/program.js';
-import { pdiags, ppanel, ppanelState, ptext, view } from './shell.js';
+import { pdiags, ped, ppanel, ppanelState, view } from './shell.js';
 import { toast } from './ui.js';
+
+/** The box somebody types in.  `app/editor.ts` owns the two layers and the colouring; this module
+ *  owns what the text *means* — which document it came from and what applying it does. */
+const ptext = ped.box;
 
 /** The text the panel last put there.  An identical reprint is one string compare and no write,
  *  which is what makes refreshing on every change affordable. */
@@ -49,11 +53,8 @@ export function refreshProgram(): void {
   }
   const text = view.source;
   if (text === shown) return;
-  const { selectionStart, selectionEnd, scrollTop } = ptext;
   shown = text;
-  ptext.value = text;
-  ptext.setSelectionRange(selectionStart, selectionEnd);
-  ptext.scrollTop = scrollTop;
+  ped.setText(text);
   ppanel.classList.remove('dirty');
   ppanelState.textContent = '';
   showDiags(view.doc.diagnostics);
@@ -124,8 +125,7 @@ export function showStatementFor(): void {
   if (!found) return;
   ptext.setSelectionRange(found.lo, found.hi);
   // scroll it into view without stealing the focus from the canvas
-  const line = shown.slice(0, found.lo).split('\n').length - 1;
-  ptext.scrollTop = Math.max(0, (line - 4) * 12 * 1.45);
+  ped.scrollToLine(shown.slice(0, found.lo).split('\n').length - 1);
 }
 
 /** Wire the box up.  Called once, from `main`, so this module is reached the way `lists` is and
@@ -133,6 +133,9 @@ export function showStatementFor(): void {
 export function bindProgramPanel(): void {
   ptext.addEventListener('input', () => {
     typed = true;
+    // colour what was just typed, not what the drawing came from: half a statement is still the
+    // program somebody is looking at, and the core colours it as far as it goes
+    ped.repaint();
     ppanel.classList.add('dirty');
     ppanelState.textContent = ' — edited, ⌘↵ to apply';
   });

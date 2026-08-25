@@ -12,3 +12,5 @@ rust/target/
 web/node_modules/
 web/dist/
 web/src/wasm/gcs.wasm
+# what tools/overlay.mjs generates for a run (kept only with --keep)
+web/tools/.overlay-*

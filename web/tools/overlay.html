@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>code box: overlay alignment</title>
+<link rel="stylesheet" href="../app.css">
+<style>
+  /* the program panel's own column, so the box is the shape it really is, with nothing else on
+     the page to move it around */
+  body { margin: 0; }
+  #panel { display: flex; flex-direction: column; height: 600px; width: 380px; }
+  #out { font: 11px/1.4 var(--mono); white-space: pre; padding: 8px; }
+</style>
+</head>
+<body>
+<div id="panel"><div id="pcode" class="code-host"></div></div>
+<pre id="out"></pre>
+<!-- the case, then the measuring script: both written in by `tools/overlay.mjs` -->
+<script src="./.overlay-case.js"></script>
+<script src="./.overlay-page.js"></script>
+</body>
+</html>

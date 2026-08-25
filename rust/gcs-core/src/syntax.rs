@@ -154,6 +154,21 @@ pub enum Ty {
     Ent(EntKind),
 }
 
+impl Ty {
+    /// The word a type is written as.  One table: a formal's type, a curve family's, and the
+    /// colouring of the word are the same question, and a second copy of the list would be a
+    /// second answer the moment a type is added.
+    pub fn parse(s: &str) -> Option<Ty> {
+        Some(match s {
+            "Int" => Ty::Int,
+            "Scalar" => Ty::Scalar,
+            "Length" => Ty::Length,
+            "Angle" => Ty::Angle,
+            other => Ty::Ent(EntKind::parse(&other.to_lowercase())?),
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Stmt {
     pub id: StmtId,
@@ -842,6 +857,9 @@ enum Tok {
 
 struct Lexed {
     toks: Vec<(Tok, Span)>,
+    /// Where the comments were.  The parser has no use for them — they are not the program — but
+    /// they *are* the document, and `highlight` is the one reader that has to show them.
+    comments: Vec<Span>,
 }
 
 /// Tokenize.  Errors are collected rather than thrown: one bad character costs one statement, and
@@ -849,6 +867,7 @@ struct Lexed {
 fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
     let b = src.as_bytes();
     let mut toks: Vec<(Tok, Span)> = Vec::new();
+    let mut comments: Vec<Span> = Vec::new();
     let mut errs: Vec<SynErr> = Vec::new();
     let mut i = 0usize;
     // A newline ends a statement, but not inside brackets: an argument list may be written across
@@ -874,6 +893,7 @@ fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
                 while i < b.len() && b[i] != b'\n' {
                     i += 1;
                 }
+                comments.push(Span::new(lo, i));
             }
             '/' if b.get(i + 1) == Some(&b'*') => {
                 i += 2;
@@ -881,6 +901,7 @@ fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
                     i += 1;
                 }
                 i = (i + 2).min(b.len());
+                comments.push(Span::new(lo, i));
             }
             '=' => {
                 if b.get(i + 1) == Some(&b'=') {
@@ -974,7 +995,190 @@ fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
             }
         }
     }
-    (Lexed { toks }, errs)
+    (Lexed { toks, comments }, errs)
+}
+
+/* -- colouring --------------------------------------------------------------------- */
+
+/// What a run of the source *is*, for somebody reading it.
+///
+/// Lexical, and only lexical: this is the parser's own scan, told to keep the comments and to say
+/// what each token turned out to be.  A front end colouring a program therefore cannot disagree
+/// with the one reading it — a second lexer in TypeScript would be a second language, and would
+/// drift on the first thing this one learned (`==` against `=`, a mixed fraction, a block comment).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tint {
+    Comment,
+    Str,
+    Num,
+    /// `component`, `param`, `port`, `cycle`, `point`, `over`, `construction` — a word that starts
+    /// a statement or shapes one
+    Word,
+    /// `Angle`, `circle`, `Tooth` — a word in the place a type is written
+    Type,
+    /// a constraint's name, where the statement is one: `distance`, `ground`, `point_on_circle`
+    Relation,
+    /// the name a statement gives what it declares, and the binder a block counts by
+    Def,
+    /// `r:` — a slot named where it is filled
+    Label,
+    /// `=`, a seed the solver may move
+    Seed,
+    /// `==`, a claim it may not
+    Claim,
+}
+
+impl Tint {
+    /// The class a front end styles it by.  Named here so the core says what the colours are *of*
+    /// and a stylesheet only says what they look like.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Tint::Comment => "comment",
+            Tint::Str => "string",
+            Tint::Num => "number",
+            Tint::Word => "word",
+            Tint::Type => "type",
+            Tint::Relation => "relation",
+            Tint::Def => "def",
+            Tint::Label => "label",
+            Tint::Seed => "seed",
+            Tint::Claim => "claim",
+        }
+    }
+}
+
+/* The words a statement may open with, where more than one word opens the same kind.  `stmt`
+ * dispatches on these and `highlight` colours from them, so each group is written down once and a
+ * word added to the language reaches the colouring without anybody remembering to add it twice.
+ * (The kinds only one word opens — `component`, `param`, `port`, `branch` — are still a literal in
+ * each place; a `match` on `&str` cannot be made exhaustive, so this is as far as the linkage
+ * goes.) */
+const GAUGES: [&str; 2] = ["ground", "fix"];
+const ORIENTS: [&str; 2] = ["ccw", "cw"];
+const BLOCKS: [&str; 3] = ["repeat", "cycle", "ring"];
+
+/// The words that shape a statement without naming anything — a modifier the parser eats where it
+/// stands.  `as` binds a name after it, which is why `highlight` treats that one specially.
+const MODIFIERS: [&str; 5] = ["over", "as", "at", "about", "construction"];
+
+/// What the word *after* this one is expected to be — the whole of the state the colouring carries
+/// from one token to the next, and four states rather than the four independent flags that would
+/// spell out twelve combinations the language never reaches.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Next {
+    /// begins a statement, so it is the word that says what the statement *is*
+    Start,
+    /// names what the statement declares
+    Def,
+    /// names the component an instance is of — the one type written without a `:` before it
+    Inst,
+    /// nothing in particular
+    Word,
+}
+
+/// Colour a program.
+///
+/// Spans, in order, over the classified runs only: whatever falls between two of them is ordinary
+/// text and a caller writes it plainly, so nothing here has to describe whitespace.  Never fails —
+/// a program half-typed is exactly the one being looked at, and it is coloured as far as it goes.
+pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
+    if src.len() > MAX_TEXT {
+        return Vec::new();
+    }
+    let (lexed, _) = lex(src);
+    let mut out: Vec<(Tint, Span)> = Vec::with_capacity(lexed.toks.len());
+    let mut at = Next::Start;
+    for (i, (t, span)) in lexed.toks.iter().enumerate() {
+        let prev = i.checked_sub(1).map(|j| &lexed.toks[j].0);
+        let next = lexed.toks.get(i + 1).map(|(t, _)| t);
+        let tint = match t {
+            Tok::Nl => {
+                at = Next::Start;
+                continue;
+            }
+            Tok::Str(_) => Some(Tint::Str),
+            Tok::Num(_) => Some(Tint::Num),
+            Tok::Eq => Some(Tint::Seed),
+            Tok::EqEq => Some(Tint::Claim),
+            // a body is made of statements, so a brace begins one the way a newline does
+            Tok::P('{') | Tok::P('}') => {
+                at = Next::Start;
+                None
+            }
+            Tok::P(_) => None,
+            Tok::Ident(w) => {
+                let (tint, then) = tint_word(w, prev, next, at);
+                at = then;
+                tint
+            }
+        };
+        // anything at all leaves the opening word behind; a name the statement is still owed
+        // (`Def`, `Inst`) survives the punctuation in between, which is why only `Start` lapses
+        if at == Next::Start && !matches!(t, Tok::P('{') | Tok::P('}')) {
+            at = Next::Word;
+        }
+        if let Some(tint) = tint {
+            out.push((tint, *span));
+        }
+    }
+    if lexed.comments.is_empty() {
+        return out;
+    }
+    // the comments were never tokens; put them back where they were written.  Both runs are
+    // already in order — the tokens by the walk above and the comments by the lexer — so this is
+    // a merge, and sorting the two together would be throwing that away and buying it back.
+    let mut merged = Vec::with_capacity(out.len() + lexed.comments.len());
+    let mut cs = lexed.comments.into_iter().peekable();
+    for run in out {
+        while cs.peek().is_some_and(|c| c.lo < run.1.lo) {
+            merged.push((Tint::Comment, cs.next().expect("just peeked")));
+        }
+        merged.push(run);
+    }
+    merged.extend(cs.map(|c| (Tint::Comment, c)));
+    merged
+}
+
+/// What one word is, given where in its statement it fell, and what the word after it will be.
+/// Split out because it is the whole of the rule and the loop around it is only bookkeeping.
+fn tint_word(w: &str, prev: Option<&Tok>, next: Option<&Tok>, at: Next) -> (Option<Tint>, Next) {
+    match at {
+        Next::Def => (Some(Tint::Def), Next::Word),
+        Next::Inst => (Some(Tint::Type), Next::Word),
+        Next::Start => {
+            // `point p`, `component Gear(…)`, `curve involute(…)`, `param R = …`, `port lo: point`
+            if EntKind::parse(w).is_some() || matches!(w, "component" | "param" | "port") {
+                return (Some(Tint::Word), Next::Def);
+            }
+            if BLOCKS.contains(&w) {
+                return (Some(Tint::Word), Next::Word);
+            }
+            // the gauges and the orientations: statements the parser knows by name, which are
+            // relations in everything but where they are written down
+            if GAUGES.contains(&w) || ORIENTS.contains(&w) || w == "branch" {
+                return (Some(Tint::Relation), Next::Word);
+            }
+            // `t: Tooth(…)` — a name, a colon and a component
+            if next == Some(&Tok::P(':')) {
+                return (Some(Tint::Def), Next::Inst);
+            }
+            (CKind::from_name(&camel(w)).is_some().then_some(Tint::Relation), Next::Word)
+        }
+        Next::Word => {
+            // `c: circle`, `phase: Angle` — the one place a bare word is a type
+            if prev == Some(&Tok::P(':')) && Ty::parse(w).is_some() {
+                return (Some(Tint::Type), Next::Word);
+            }
+            if next == Some(&Tok::P(':')) {
+                return (Some(Tint::Label), Next::Word);
+            }
+            if MODIFIERS.contains(&w) {
+                // `cycle N as i` — the binder is a name the block declares
+                return (Some(Tint::Word), if w == "as" { Next::Def } else { Next::Word });
+            }
+            (None, Next::Word)
+        }
+    }
 }
 
 /* -- parsing ----------------------------------------------------------------------- */
@@ -1234,7 +1438,7 @@ impl<'a> P<'a> {
             return self.decl(kind).map(StmtKind::Decl);
         }
         match w.as_str() {
-            "ground" | "fix" => {
+            g if GAUGES.contains(&g) => {
                 self.i += 1;
                 let ground = w == "ground";
                 if !self.want_p('(') {
@@ -1246,7 +1450,7 @@ impl<'a> P<'a> {
                 }
                 Some(StmtKind::Gauge(if ground { Gauge::Ground(r) } else { Gauge::Fix(r) }))
             }
-            "ccw" | "cw" => {
+            o if ORIENTS.contains(&o) => {
                 self.i += 1;
                 let ccw = w == "ccw";
                 if !self.want_p('(') {
@@ -1322,7 +1526,7 @@ impl<'a> P<'a> {
                 }
                 Some(StmtKind::Param(ParamDecl { name, text, span }))
             }
-            "repeat" | "cycle" | "ring" => {
+            b if BLOCKS.contains(&b) => {
                 self.i += 1;
                 let kind = match w.as_str() {
                     "repeat" => BlockKind::Repeat,
@@ -1379,21 +1583,12 @@ impl<'a> P<'a> {
                     return None;
                 }
                 let tname = self.ident()?;
-                let ty = match tname.text.as_str() {
-                    "Int" => Ty::Int,
-                    "Scalar" => Ty::Scalar,
-                    "Length" => Ty::Length,
-                    "Angle" => Ty::Angle,
-                    other => match EntKind::parse(&other.to_lowercase()) {
-                        Some(k) => Ty::Ent(k),
-                        None => {
-                            self.errs.push(SynErr {
-                                span: tname.span,
-                                message: format!("`{other}` is not a type"),
-                            });
-                            return None;
-                        }
-                    },
+                let Some(ty) = Ty::parse(&tname.text) else {
+                    self.errs.push(SynErr {
+                        span: tname.span,
+                        message: format!("`{}` is not a type", tname.text),
+                    });
+                    return None;
                 };
                 let span = Span::new(fname.span.lo as usize, self.prev_hi());
                 formals.push(Formal { name: fname, ty, span });
@@ -1502,21 +1697,12 @@ impl<'a> P<'a> {
                     return None;
                 }
                 let tname = self.ident()?;
-                let ty = match tname.text.as_str() {
-                    "Int" => Ty::Int,
-                    "Scalar" => Ty::Scalar,
-                    "Length" => Ty::Length,
-                    "Angle" => Ty::Angle,
-                    other => match EntKind::parse(&other.to_lowercase()) {
-                        Some(k) => Ty::Ent(k),
-                        None => {
-                            self.errs.push(SynErr {
-                                span: tname.span,
-                                message: format!("`{other}` is not a type"),
-                            });
-                            return None;
-                        }
-                    },
+                let Some(ty) = Ty::parse(&tname.text) else {
+                    self.errs.push(SynErr {
+                        span: tname.span,
+                        message: format!("`{}` is not a type", tname.text),
+                    });
+                    return None;
                 };
                 let span = Span::new(fname.span.lo as usize, self.prev_hi());
                 formals.push(Formal { name: fname, ty, span });

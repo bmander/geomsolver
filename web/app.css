@@ -14,6 +14,23 @@
   --warn-bg: #fff4e0;
   --row-sel: #fce4f3;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* the program's colours.  The core says what class a run of the source is; these say what the
+     classes look like, and that is the whole of the division. */
+  --syn-comment: #6a8759aa;
+  --syn-word: #7d3fbf;
+  --syn-type: #0f6f6f;
+  --syn-label: #8a6d00;
+  --syn-number: #a03000;
+  --syn-string: #2f7d32;
+  /* a declared name.  Its own ink rather than the body's, since colour is the only thing a run
+     here may carry — the weight that used to tell it apart moved the text out from under the
+     caret */
+  --syn-def: #0d3b66;
+  /* two of them are colours the page already has, and are named rather than repeated: a relation
+     is what the drawing accents and a claim is what a conflict is drawn in, so retuning the
+     palette carries the program panel with it */
+  --syn-relation: var(--accent);
+  --syn-claim: var(--danger);
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -198,12 +215,61 @@ dialog .choices button { text-align: left; font-family: var(--mono); font-size: 
 }
 #ppanel.dirty h2 { color: var(--accent); }
 #ppanel-state { text-transform: none; letter-spacing: 0; }
-#ptext {
-  flex: 1; resize: none; border: 0; outline: none; padding: 8px 10px;
-  font-family: var(--mono); font-size: 12px; line-height: 1.45; tab-size: 2;
-  color: var(--text); background: var(--bg); white-space: pre; overflow: auto;
+/* The code box (`app/editor.ts`): the source drawn twice, the coloured copy behind and the box
+   somebody types in over it with its own glyphs invisible.  Every rule that decides where a
+   character lands is therefore shared, and written once, on both.
+
+   Sharing the declarations is necessary and not sufficient, because the two layers do not lay the
+   *same* text out: the box is one uninterrupted run per line, the copy is one element per coloured
+   run.  Hence the two rules below that look like fussiness and are not.
+
+   `line-height` is a whole number of pixels.  1.45 of 12px is 17.4, and a textarea's internal
+   layout and a `<pre>`'s round a fractional line box independently — a fifth of a pixel a line,
+   invisible at the top of a file and a whole line out at the bottom.
+
+   Kerning and ligatures are off.  Both form across a *run*, and the runs differ, so `//` or `==`
+   set as a pair on one layer and as two glyphs on the other puts the rest of that line out of
+   step.
+
+   The third rule cannot be written here because it is about every class further down: a run may
+   change the colour and never the face.  See `app/editor.ts`. */
+/* the host clips; the copy is moved inside it and is therefore free to be as big as the text */
+.code-host { position: relative; flex: 1; min-height: 0; overflow: hidden; background: var(--bg); }
+.code-copy, .code-box {
+  position: absolute; top: 0; left: 0; margin: 0; border: 0; padding: 8px 10px;
+  font: 400 12px/17px var(--mono); tab-size: 2;
+  letter-spacing: normal; word-spacing: normal; white-space: pre;
+  font-kerning: none; font-variant-ligatures: none;
 }
-#ptext:focus { box-shadow: inset 2px 0 0 var(--accent); }
+/* Moved by script, from the box in front of it — never scrolled.  It has no scrollbars where the
+   box has them, so its scroll *range* is shorter and an assignment would clamp at the bottom of a
+   long file; a transform has no range.  See `follow()` in app/editor.ts.  It sizes to its text
+   rather than to the host, which is what gives the transform something to reveal. */
+.code-copy {
+  width: max-content; min-width: 100%; height: max-content; min-height: 100%;
+  color: var(--text); will-change: transform;
+}
+.code-box {
+  right: 0; bottom: 0; resize: none; outline: none; overflow: auto;
+  background: transparent; color: transparent; caret-color: var(--text);
+}
+.code-box:focus { box-shadow: inset 2px 0 0 var(--accent); }
+/* Colour only.  A weight or a style here picks a different font face, whose advances the regular
+   face makes no promise about — and the box, which has no spans to style, stays regular
+   throughout, so the text would slide out from under the caret on every line that used one. */
+.code-copy .comment { color: var(--syn-comment); }
+.code-copy .word { color: var(--syn-word); }
+.code-copy .type { color: var(--syn-type); }
+.code-copy .relation { color: var(--syn-relation); }
+.code-copy .def { color: var(--syn-def); }
+.code-copy .label { color: var(--syn-label); }
+.code-copy .number { color: var(--syn-number); }
+.code-copy .string { color: var(--syn-string); }
+/* a seed is where a solve starts and a claim is what it must honour: the one difference in the
+   language a reader most needs to see at a glance */
+.code-copy .seed { color: var(--muted); }
+.code-copy .claim { color: var(--syn-claim); }
+
 #pdiags {
   flex: none; max-height: 34%; overflow: auto; list-style: none; margin: 0; padding: 0;
   border-top: 1px solid var(--line); font-family: var(--mono); font-size: 11px;
