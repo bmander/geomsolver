@@ -268,20 +268,21 @@ A family's body may be a **locus** instead of a formula: `curve NAME(FORMALS)(PA
 ```
 curve involute(c: circle, datum: line, phase: Angle)(u) =
   trace p where {
-    point t at (c.center.x + c.r * cos(u + phase), c.center.y + c.r * sin(u + phase))
-    point p at (…)                          // a seed; see below
+    point t at (c.center.x + c.r * cos(u + phase),
+                c.center.y + c.r * sin(u + phase))       // a seed; see below
+    point p
     line rad(c.center, t)
     line s(t, p)
-    point_on_circle(t, c)                   // the string leaves the circle...
-    perpendicular(rad, s)                   // ...perpendicular to the radius there,
-    angle(datum, rad) == u + phase          // at bearing u,
-    distance(t, p) == c.r * u * pi / 180    // and taut: let out == arc unwound
+    point_on_circle(t, c)                                // the string leaves the circle...
+    angle(datum, rad) == u + phase                       // ...at bearing u,
+    perpendicular(rad, s)                                // perpendicular to the radius there,
+    point_line_distance(p, rad) == -(c.r * u * pi / 180) // and taut: let out == arc unwound
   }
 ```
 
 A dimension in the block may be an expression over the parameter, the formals' coordinates and the value formals. The block MUST determine its points — as many equations as inner coordinates — or the definition is an error: an under- or over-constrained locus is a curve that does not exist, and it must not elaborate quietly. Instances, contacts and `over` behave exactly as for an expression family, and the derivative requirement above stands unchanged: `∂C/∂u` and `∂C/∂θ` now come from the implicit function theorem at the block's solution rather than from the expressions, but a contact must still follow the curve when the geometry it is written over is dragged.
 
-**Branches.** A locus generically has several solutions — a taut string unwinds either way, and no regular residual can state a chirality. A seed is where the search starts, and here that is a statement of *which branch*: the block's `at (…)` seeds are expressions over the parameter and the formals, evaluation starts from them, and away from the seeds continuity governs — an implementation MUST evaluate the curve as one continuation along the parameter (marching from the instance's domain when a direct solve fails), so the branch the seeds pick at one end is the branch the whole curve is on. Deleting the seeds still traces *a* branch, from a worse start — the same bargain a contact's `u = …` seed strikes in §4.3.
+**Branches.** A locus generically has several solutions, and a block SHOULD state its way onto one *in the constraints* wherever the vocabulary can say it: above, the taut string's winding is not a branch at all, because `point_line_distance` is signed — one equation unwinds the string one way for positive roll and the other for negative, where an unsigned `distance` would have left a mirror pair for something else to break. What the constraints cannot say, a seed says. A seed is where the search starts, and here that is a statement of *which branch*: the block's `at (…)` seeds are expressions over the parameter and the formals (above, they pick between `t` at the bearing and opposite it — `angle` is a statement mod 180°), evaluation starts from them, and away from the seeds continuity governs — an implementation MUST evaluate the curve as one continuation along the parameter (marching from the instance's domain when a direct solve fails), so the branch the seeds pick at one end is the branch the whole curve is on. Deleting the seeds still traces *a* branch, from a worse start — the same bargain a contact's `u = …` seed strikes in §4.3.
 
 ---
 

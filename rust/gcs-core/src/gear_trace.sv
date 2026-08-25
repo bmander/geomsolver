@@ -8,10 +8,19 @@
 // perpendicular to the radius there; and taut, exactly as long as the arc it has unwound.  No
 // closed form appears in any of them.
 //
-// The seeds (`at …`) do carry the formula, because a seed is where the search starts and *which
-// winding the string takes* — chirality is discrete, and no equation can state it.  They are
-// seeds, not claims: delete them and the curve still traces, from a worse start; write them
-// wrong and the constraints pull the trace back to the true involute regardless.
+// Note what is *not* here: the string end has no seed at all.  Given `t`, the two statements
+// about `p` — on the perpendicular through the tangent point, a signed arc's-worth from the
+// radius — are linear in `p` and meet in exactly one place, so there is no branch to pick and
+// nothing for a seed to say.  The sign is the winding: `point_line_distance` is positive to the
+// left of the line, so one signed equation unwinds the string one way for positive roll and the
+// other way for negative — which is how one family below serves both flanks of a tooth, where
+// the closed form needs the sign threaded through every term.
+//
+// The tangent point keeps one seed, and it is the one honest residue of arithmetic: `angle` is a
+// statement mod 180°, so `t` could sit at the bearing or opposite it, and a seed is how a branch
+// is picked (spec §6.5.1).  The line of trigonometry below says only "the point of the circle at
+// that bearing" — a phrase the language could one day own — and it is a seed, not a claim:
+// perturb it and the constraints put `t` back exactly.
 //
 // The datum line is the bearing's zero.  It is called `datum` in every component that hands it
 // down, exactly as `base`, `root` and `tip` keep their names — a formal renamed between levels
@@ -21,14 +30,13 @@ curve involute(c: circle, datum: line, phase: Angle)(u) =
   trace p where {
     point t at (c.center.x + c.r * cos(u + phase),
                 c.center.y + c.r * sin(u + phase))
-    point p at (c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
-                c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
+    point p
     line rad(c.center, t)
     line s(t, p)
-    point_on_circle(t, c)                   // the string leaves the circle...
-    perpendicular(rad, s)                   // ...perpendicular to the radius there,
-    angle(datum, rad) == u + phase          // at bearing u from the datum,
-    distance(t, p) == c.r * u * pi / 180    // and taut: let out == arc unwound
+    point_on_circle(t, c)                        // the string leaves the circle...
+    angle(datum, rad) == u + phase               // ...at bearing u from the datum,
+    perpendicular(rad, s)                        // perpendicular to the radius there,
+    point_line_distance(p, rad) == -(c.r * u * pi / 180)   // and taut: let out == arc unwound
   }
 
 // From here down the wheel is `gear.sv` unchanged — a flank between two circles, a tooth as two
