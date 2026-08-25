@@ -1,6 +1,14 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.1 — August 2026**
+**Specification, Draft 0.2 — August 2026**
+
+*Draft 0.2 amends 0.1 in seven places, from implementing 0.1 end to end (bmander/geomsolver#2).
+Marked **[0.2]** where they appear. In summary: the `=` / `==` seed mark (§4.3) that makes
+Invariant H checkable by looking; seeds written inline (§6.4, §11); document state attached to its
+statement, which is what makes P2 true rather than merely asserted (§13.1); the identity of a
+statement under expansion (§12.7); curve families as a document declaration, promoted out of §17
+(§6.5); a reporting duty on an implementation that unrolls a `ring` (§12.3); and `Line` cut back to
+a segment whose infinite carrier is what constraints read (§3.1).*
 
 *"Solvent" is a placeholder name; nothing in this document depends on it.*
 
@@ -20,14 +28,18 @@ Binding a port, passing an entity as an instance argument, or writing `port x = 
 **P2 — Component bodies are unordered.**
 Statements within a component body form a set. Reordering the statements of a body MUST NOT change the meaning of a program. Statements interact only through the entities they name. The only ordered contexts in the language are the interiors of single statements where order is semantic (path traversals, argument lists).
 
+**[0.2]** P2 binds the *document* as well as the program text: every piece of state a document carries MUST be attached to the statement it qualifies, and MUST NOT be keyed by a statement's position in a body or by an entity's index (§13.1). Without that rule P2 is an assertion an implementation can satisfy in the parser and lose in the file format — and it fails silently, which is the worst way for it to fail.
+
 **P3 — Hints are semantically inert.**
-Deleting every `hint` statement from a program MUST NOT change its solution set. Hints may change which solution a solver finds, or whether it converges, but never what counts as a solution. Any annotation that changes the solution set (orientation predicates, arc branch selection, tangency side) is a **constraint** and is classified as such by the implementation, regardless of surface syntax.
+Deleting every seed from a program MUST NOT change its solution set. Seeds may change which solution a solver finds, or whether it converges, but never what counts as a solution. Any annotation that changes the solution set (orientation predicates, arc branch selection, tangency side) is a **constraint** and is classified as such by the implementation, regardless of surface syntax.
+
+**[0.2]** The two are told apart by one mark, not by analysis: a number written with `=` is a seed and a solver may rewrite it; a number written with `==` is a constraint and a solver MUST NOT (§4.3). This is what makes Invariant H (§11) checkable *syntactically*, as that section already requires.
 
 **P4 — Component boundaries are decomposition structure.**
 A component is solvable against its ports. Implementations SHOULD exploit the component instance tree as a decomposition plan (solve interiors against port entities; solve the inter-component system over ports).
 
 **P5 — Symmetry is a claim, not a macro.**
-The `ring` construct asserts cyclic symmetry. Its solution set contains exactly the symmetric solutions of the corresponding unrolled system. Implementations SHOULD solve in the fundamental domain.
+The `ring` construct asserts cyclic symmetry. Its solution set contains exactly the symmetric solutions of the corresponding unrolled system. Implementations SHOULD solve in the fundamental domain, and one that does not MUST say so (§12.3).
 
 ### 1.2 Scope of this draft
 
@@ -42,7 +54,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `port`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`.
+- **Keywords:** `component`, `port`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `ellipse`, `spline`, `construction`.
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
 - **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . = -> ~`
@@ -61,10 +73,14 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 | `Length` | real with length dimension | 1 |
 | `Angle` | real with angle dimension | 1 |
 | `Point` | position in the plane | 2 |
-| `Line` | undirected infinite line | 2 |
+| `Line` | segment between two `Point`s; its infinite carrier is what constraints read **[0.2]** | 0 of its own (4 through its ends) |
 | `Circle` | center + radius | 3 |
 | `Frame` | origin + orientation | 3 |
 | `Path` | directed piecewise boundary curve | 0 (derived object) |
+
+**[0.2] `Line` was a 2-DOF undirected infinite line with a `.dir` field in 0.1.** It is now a segment between two points, and every constraint that reads a line reads the infinite carrier through those points — which is what `parallel`, `perpendicular`, `on` and `angle` mean by a line anyway.
+
+The change is a concession to cost. A 2-DOF line is a second representation of a line alongside the one every constraint already works in, so it needs its own column layout and its own kernel for roughly fourteen constraint types, and the whole return is that §16.3's ledger comes out differently. Where a drawing wants a line with no ends — a datum, an axis — it says so with a construction segment.
 
 ### 3.2 Sub-entities
 
@@ -76,7 +92,7 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 | `Circle` | `.r` | `Length` |
 | `Frame` | `.origin` | `Point` |
 | `Frame` | `.angle` | `Angle` |
-| `Line` | `.dir` | `Angle` (mod π) |
+| `Line` | `.p1`, `.p2` | `Point` **[0.2]** |
 
 ### 3.3 Dimensional analysis
 
@@ -104,10 +120,50 @@ Every statement belongs to exactly one class. The classification is normative be
 
 | Class | Statements | Affects solution set? |
 |---|---|---|
-| **Declaration** | entity declarations, `param`, `port`, instance declarations | introduces entities/aliases |
-| **Constraint** | predicate calls, `==` equations, orientation predicates, arc-branch and tangency-side decorations, `ring` symmetry, gauge statements | **yes** |
-| **Hint** | `hint ... at ...` | **no (P3)** |
+| **Declaration** | entity declarations, `param`, `port`, `curve` family definitions, instance declarations | introduces entities/aliases |
+| **Constraint** | predicate calls, `==` equations, **pinned seeds (`==`, §4.3) [0.2]**, orientation predicates, arc-branch and tangency-side decorations, `ring` symmetry, gauge statements | **yes** |
+| **Seed** *(was Hint)* | `hint ... at ...`, **and every `=` seed written inline in a declaration (§6.4) [0.2]** | **no (P3)** |
 | **Structure** | `repeat`/`cycle` blocks, `path` declarations (net of their derived constraints, §10.4) | organizational |
+
+### 4.3 Seeds and pins: `=` and `==` **[0.2]**
+
+> **A number written with `=` is a seed. A number written with `==` is a constraint.**
+
+This is the only distinction between the two classes, and it is lexical on purpose. §11 requires an implementation to verify Invariant H *syntactically*; a mark you can see does that, and no analysis of what a number "is really doing" does.
+
+```
+point p at (0, 0)                    // seed: a solve may move it
+circle c(center: o, r: 25)           // seed: a solve may move the radius
+distance(a, b) == 80                 // constraint: a solve must not move it
+point_on_spline(p, s, t = 0.37)      // seed: the contact may slide along the curve
+point_on_spline(p, s, t == 0.37)     // constraint: the contact is pinned there
+```
+
+The last pair is why the rule is needed at all. A curve contact carries its own parameter, and
+whether that parameter is free is not a fact about how it looks — it is a fact about the solution
+set. A curve fitted through *m* points whose contacts are unpinned keeps *m* degrees of freedom and
+can slide along itself; pin them and it does not. In 0.1 both forms would have been written the
+same way and classified by intent.
+
+**Consequences, all normative.**
+
+1. A solver MUST NOT rewrite a `==` number. It MAY rewrite an `=` number, and doing so is how a
+   drawing records where it ended up (§13.1).
+2. A statement's class is decidable by inspection. An implementation MUST NOT need to consult the
+   solution set, the solver, or the geometry to classify one.
+3. Deleting every `=` number from a program leaves its solution set unchanged (P3). Deleting a
+   `==` number generally does not.
+
+**Non-normative.** The mark also settles seed *writeback*, which is what an implementation needs
+when the drawing is edited by drawing on it rather than by typing:
+
+> A seed is writable iff it is written with `=` and not `==`, is a literal and not an expression,
+> and is reached by exactly one instance path.
+
+The first clause is this section. The second keeps a radius written as a component's parameter
+(`r: Rr`) from being overwritten with the number it happened to come to — the author said what it
+*is*, not where it starts. The third is §12.7: thirty instances share one statement, and there is
+no one pose to record.
 
 ---
 
@@ -142,9 +198,19 @@ frame  f0 = frame(center, ray(center, t.lead))
 Constructor arguments have two behaviors, by type:
 
 - An argument of **entity type** *aliases* the corresponding sub-entity (P1). `circle pitch(center, R)` makes `pitch.center` and `center` one entity.
-- An argument of **value type** *defines* the corresponding coordinate: it introduces a definitional equality `pitch.r == R` that the implementation MUST treat as a substitution, not a residual (see §14.2).
+- **[0.2]** An argument of **value type** *seeds* the corresponding coordinate. It is an unknown of the sketch with a starting value, not a substitution.
 
 The `name = expr` form declares an entity wholly defined by an expression; all its coordinates are definitional.
+
+**[0.2] The value-type rule is reversed from 0.1**, which made such an argument definitional — `circle pitch(center, R)` introducing `pitch.r == R` as a substitution. That cannot stand beside §4.3, and it is wrong on its own terms: a radius is a coordinate a user drags. Under 0.1's reading, taking hold of a rim and pulling would be an *edit of what the program means* rather than a move within its solution set, and every direct-manipulation gesture on a scalar would be a different kind of event from the same gesture on a point.
+
+A radius that is meant to be *held* says so:
+
+```
+circle c(center: o, r: 25)     // 25 is where it starts
+radius(c) == 25                // 25 is what it is
+fix(c.r)                       // 25 is what it is, without a dimension on the drawing
+```
 
 ### 6.3 `param`
 
@@ -153,6 +219,47 @@ param R = m * N / 2
 ```
 
 Introduces a named definitional value. `param` values are evaluated at elaboration time when all inputs are `Int`/literal, otherwise they are definitional scalars.
+
+### 6.4 Seeds written inline **[0.2]**
+
+A declaration MAY carry the starting values of its own coordinates:
+
+```
+point   p  at (0, 0)
+circle  c(center: o, r: 25)
+ellipse e(center: q, major: m, b: 12)
+```
+
+These are seed-class (§4.2, §4.3) and semantically inert (P3). They are the primitive form; §11's `hint` statement remains, for the case it is actually good at.
+
+**Why inline is the primitive.** A seed's job is to say where a coordinate starts, and the place a reader looks for that is the declaration of the thing that has the coordinate. It matters more than taste once a drawing is edited by drawing on it: a solve that wants to record where a point ended up rewrites six characters of a declaration that already exists, where under 0.1 it would have to locate that point's `hint` statement among the body's statements, or synthesise one and decide where to put it. The first is a splice; the second is a program transformation, and it is performed on every drag.
+
+`hint` keeps the cases inline cannot express — seeding an entity declared elsewhere, and seeding from an expression over other geometry (`hint t.lead at center + polar(root.r, 0)`).
+
+### 6.5 Curve families **[0.2]**
+
+```
+curve involute(c: circle, phase: Angle)(u) =
+  ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
+    c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)) )
+```
+
+`curve NAME(FORMALS)(PARAM) [over (A, B)] = ( XEXPR, YEXPR )` declares a **family**: a map from a parameter and some geometry to a point in the plane. It declares no entity and no unknown — a family is a *kind* of curve, and several drawings may be written from one.
+
+An instance is a declaration like any other, and takes contacts like any other curve:
+
+```
+curve e = involute(base, phase: a0) over (u0, u1)
+point_on_curve(p, e, u = u0)
+```
+
+`point_on_curve(p, C, u)` says `p − C(u) = 0`: two residuals, one new unknown (the parameter, seed-class per §4.3), and so one equation net — the same arithmetic as a contact with any other curve.
+
+**Requirements.** An implementation MUST differentiate a family's expressions with respect to the parameter *and* with respect to every coordinate they read. `∂C/∂u` is which way a contact may slide; `∂C/∂θ` is how the curve moves when the geometry it is written over moves, and an implementation that computes only the first will solve a contact once and drop it the moment that geometry is dragged. Both are mechanical from the expression, so this is a requirement on effort, not on ingenuity.
+
+A name a family's expressions cannot reach is an error (**E016**), not a free variable. A dimension may name an unknown of the drawing; a curve is written over geometry that exists, and a misspelling there would quietly add a degree of freedom to every point on the curve.
+
+**Why a declaration and not an entity kind.** 0.1 deferred this to §17.2 as "curve entities ... as first-class entities," which reads as one entity kind per family: an involute kind, a cycloid kind, a trochoid kind, each with its own constraints and its own place in every exhaustive match. Written as a declaration they are library code instead, and a second family is a second pair of expressions rather than a second constraint family. The gear in §18 is the case that makes the difference plain: its flanks are involutes because the document says what an involute is, and nothing in the solver knows the word.
 
 ---
 
@@ -286,13 +393,17 @@ Path fragments compose by **endpoint identity**: two fragments whose end and sta
 
 ## 11. Hints
 
+**[0.2]** A hint is one of the two seed forms; the other, and the primitive, is the inline seed of §6.4. Everything in this section applies to both, and "hint" below should be read as "seed". Use `hint` when inline cannot say it: seeding an entity declared elsewhere, or seeding from an expression over other geometry.
+
 ```
 hint t.lead at center + polar(root.r, 0)
 ```
 
 `hint REF at EXPR` seeds the entity `REF` at the value of `EXPR` (evaluated with whatever definitional values and previously seeded values are available; unseeded quantities in a hint expression are an error **E014**).
 
-Normative invariant (**Invariant H**): *for every program P, sol(P) = sol(P minus all hint statements).* Implementations MUST maintain a statement classification sufficient to verify Invariant H syntactically — i.e., the hint class is closed under everything the grammar allows in a hint, and nothing in the hint class can generate residuals or alter aliasing.
+Normative invariant (**Invariant H**): *for every program P, sol(P) = sol(P minus all seeds).* Implementations MUST maintain a statement classification sufficient to verify Invariant H syntactically — i.e., the seed class is closed under everything the grammar allows in a seed, and nothing in the seed class can generate residuals or alter aliasing.
+
+**[0.2]** §4.3 is how that classification is meant to be maintained: `=` is seed-class and `==` is constraint-class, so the check is a look at the mark rather than an argument about the statement.
 
 Hints on entities inside a `ring` seed the fundamental-domain representative (§12.4). Hints MAY use block indices in `repeat`/`cycle` (where each instance is a distinct variable) and MUST NOT use them in `ring` (**E015**: there is only one representative to seed).
 
@@ -330,6 +441,8 @@ ring N about center as i { ... }
 
 That is, `ring` ≡ `cycle` + symmetry constraints. `ring` is constraint-class: it restricts the solution set to the C_N-symmetric solutions. This is a normative equivalence — an implementation MAY literally elaborate to `cycle` plus per-instance rotation equalities and MUST get the same solution set as one that solves in the quotient.
 
+**[0.2] An implementation that unrolls MUST report that it did**, per `ring`, wherever it reports the DOF ledger (§16.3). The solution sets match; nothing else does. A `ring` states symmetry so that an implementation can *exploit* it, and an unrolled one gives every bit of that back: measured on a 30-tooth gear, unrolling put the wheel outside the cluster vocabulary entirely (so it fell to a numeric residual), past the size at which a drag can be answered by moving rigid bodies, and past the size at which the numeric rank cross-check runs at all — so the dependency reporting of §16 silently switched off. None of that is visible in the solution set, and all of it is visible to a user. 0.1 let an implementation take the licence in §12.3 and skip the SHOULD in §12.4 without ever saying so; that is the gap this closes.
+
 **The `about` clause is mandatory.** The axis point MUST be an entity invariant under g — which for a rotation means the axis point itself (trivially) — and MUST be declared outside the ring.
 
 ### 12.4 Fundamental-domain solving (SHOULD)
@@ -353,6 +466,18 @@ An entity declared **outside** a ring and referenced **inside** it MUST be invar
 
 Nested `repeat`/`cycle` inside `ring` (and vice versa) is legal. Nested `ring` inside `ring` requires the inner axis to be invariant under the outer generator; implementations MAY reject nested `ring` in this draft (**E022**, "nested ring not supported") and MUST NOT silently mis-solve it. Full nested-group semantics is deferred (§17).
 
+### 12.7 The identity of a statement under expansion **[0.2]**
+
+> **A statement inside a `repeat`, `cycle` or `ring` body is ONE statement, however many things it makes.** What tells its instances apart is the **instance path**, not the statement.
+
+A `cycle` of thirty makes thirty entities from one line of source. That line is the statement: it is what a span points at, what a caret lands on, what a diagnostic names and what an edit rewrites. The thirty are distinguished by the sequence of block indices reached to get to each — outermost first — which an implementation MUST record alongside whatever it records about where an entity came from.
+
+An implementation MUST NOT give each expanded copy a statement identity of its own.
+
+**Why this is normative rather than an implementation detail.** It decides whether the language can be edited at all. Give each copy its own identity and every entity a `cycle` or a component produced names a statement that appears nowhere in the source — so a caret in the text cannot find what it draws, a diagnostic cannot point at the line that caused it, and an edit computed against a span has nothing to splice. It also hides exactly the fact a seed writeback needs (§4.3): a statement reached thirty times has thirty poses and no single one to record, and that is visible only if the thirty agree on which statement they are.
+
+An implementation MAY still need a per-instance key for its own tables. That key is `(statement, path)`, and it is not a statement.
+
 ---
 
 ## 13. Gauge fixing
@@ -366,6 +491,19 @@ fix(<scalar expr>)                    // pins any 1-DOF quantity at its hinted/c
 ```
 
 `ground` and `fix` are constraint-class. `fix(e)` constrains `e` to the value obtained from hints/definitions at elaboration; if no such value is determined, error **E030**. Implementations MUST report residual gauge freedom (rank deficiency whose null space is spanned by rigid motions) with the suggestion to add `ground`/`fix` (**W103**), and MUST distinguish it from genuine under-constraint.
+
+### 13.1 Document state travels on its statement **[0.2]**
+
+A document generally carries more than the program: where an annotation was dragged to, which of several solutions the drawing is on, and whatever else a tool needs to reopen a drawing as its author left it.
+
+> **Every such datum MUST be attached to the statement it qualifies, and MUST NOT be keyed by a statement's position in a body or by an entity's index.**
+
+This is P2 applied to the document rather than to the program text, and it is stated separately because it is the half implementations get wrong. Reordering a body is required to preserve meaning (P2); a body can be reordered by an editor, by a code formatter, or by an implementation's own printer. Two keys make that reordering destructive:
+
+- **position in a list.** An annotation stored as "the 7th constraint's placement" follows the 7th position when the 7th statement moves, so it silently reappears on some other statement's annotation.
+- **an entity's index.** A recorded solution branch stored as a triple of point indices goes *inert* when the points are renumbered: the document still carries it, a reader still loads it, and fewer of them apply. Nothing reports anything.
+
+Both failures are silent, and both are invisible to any test that checks only the solution set — which is why 0.1 could assert P2 in the parser and lose it in the file format. Where a datum has no statement to ride on, it MUST name what it qualifies (an entity by name, a solution branch by the names of the points that orient it) rather than by index.
 
 ---
 
@@ -464,7 +602,7 @@ Implementations SHOULD emit, on request, a degrees-of-freedom ledger: per alias 
 ## 17. Deferred and open issues (non-normative)
 
 1. **3D lift.** `Frame` generalizes; `ring` generalizes to rotation about a line; the arc-branch rule needs a replacement (no global winding in 3D). Joint library grows (revolute gains an axis argument, add prismatic/cylindrical/spherical).
-2. **Curve entities.** Involutes, splines, conics as first-class entities with `on`/`tangent` support. The gear's flanks become `involute(base_circle)` segments; the path grammar already has the slot (`~inv~`).
+2. ~~**Curve entities.**~~ **[0.2] Settled — see §6.5.** A curve is a *family declared in the document*, two expressions over the geometry it is drawn from, rather than an entity kind per curve. Involute, cycloid and trochoid are library code. What remains open is `tangent` against such a curve (one more order in the parameter, and what a *mating* gear needs) and the path grammar's slot for a curve segment.
 3. **Nested symmetry groups.** Semantics of `ring` in `ring` beyond the reject-or-elaborate rule of §12.6 (planetary sets are the motivating case: carrier symmetry ≠ sun symmetry).
 4. **Constraint strengths.** A Cassowary-style required/strong/weak hierarchy for graceful over-constraint. Interacts with P3 (a weak constraint changes the solution set; it is constraint-class) and with diagnostics (W105 becomes resolution, not warning).
 5. **Reflection symmetry.** `mirror about <line>` as a second group kind; the kernel's group table already permits it.
@@ -474,6 +612,37 @@ Implementations SHOULD emit, on request, a degrees-of-freedom ledger: per alias 
 ---
 
 ## 18. Worked example: spur gear with revolute teeth
+
+**[0.2]** The tooth below is drawn with straight `->` flank segments, because 0.1 had no way to say
+what an involute is (§17.2). §6.5 now does, and a flank written that way is a curve rather than a
+chord across one:
+
+```
+curve involute(c: circle, phase: Angle)(u) =
+  ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
+    c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)) )
+
+component Flank(base: circle, root: circle, tip: circle,
+                phase: Angle, u0: Angle, u1: Angle) {
+  curve e = involute(base, phase: phase) over (u0, u1)
+  port lo: point
+  port hi: point
+  point_on_curve(lo, e, u = u0)      point_on_circle(lo, root)
+  point_on_curve(hi, e, u = u1)      point_on_circle(hi, tip)
+}
+```
+
+Nothing there says *where* the flank goes. It says the curve is the involute of the base circle at
+this bearing, that it begins where it crosses the root circle and ends where it crosses the tip —
+and the solver finds the two rolls that satisfy it. There is no closed form for either, which is
+the point: the shape of the tooth is a solve, not arithmetic performed in a `param` block.
+
+One caution the geometry imposes and the language cannot: **below the base circle there is no
+involute.** A textbook 1.25·m dedendum on a small tooth count puts the root circle inside the base
+circle, where `u0` has no real value; a conforming implementation reports that rather than fudging
+it.
+
+The 0.1 source is kept below as written, since §18.2 and §18.3 walk through it.
 
 ### 18.1 Source
 
@@ -557,11 +726,17 @@ type           = "Int" | "Scalar" | "Length" | "Angle"
 
 statement      = decl | constraint | hint | gauge | block | path_decl | frag ;
 
-decl           = entity_decl | param_decl | port_decl | instance_decl ;
+decl           = entity_decl | param_decl | port_decl | curve_def | instance_decl ;
 entity_decl    = ekw binder { "," binder }
                | ekw IDENT "=" expr ;
-ekw            = "point" | "circle" | "line" | "frame" ;
-binder         = IDENT [ "(" expr { "," expr } ")" ] ;
+ekw            = "point" | "circle" | "line" | "frame" | "ellipse" | "spline" | "curve" ;
+binder         = IDENT [ "(" ctor_arg { "," ctor_arg } ")" ] [ "at" "(" expr "," expr ")" ] ;
+ctor_arg       = [ IDENT ":" ] expr ;                      (* value args are SEEDS, §6.2 *)
+
+(* a curve FAMILY, §6.5; an instance is an ordinary entity_decl *)
+curve_def      = "curve" IDENT "(" [ params ] ")" "(" IDENT ")"
+                 [ "over" "(" expr "," expr ")" ]
+                 "=" "(" expr "," expr ")" ;
 param_decl     = "param" IDENT "=" expr ;
 port_decl      = "port" IDENT ":" type
                | "port" IDENT "=" ref ;
@@ -570,8 +745,14 @@ args           = arg { "," arg } ;
 arg            = [ IDENT ":" ] expr ;
 
 constraint     = expr "==" expr
-               | pred [ "." IDENT ] "(" args ")" ;        (* decoration e.g. tangent.ext *)
+               | pred [ "." IDENT ] "(" args ")" [ "==" expr ] ;  (* decoration e.g. tangent.ext *)
 pred           = IDENT ;
+
+(* §4.3: inside an argument list, `=` seeds and `==` pins.  The two are the whole of the
+   seed/constraint classification, and they are told apart by the mark alone. *)
+arg            = [ IDENT ":" ] expr
+               | IDENT "=" expr                            (* seed: a solve may move it *)
+               | IDENT "==" expr ;                         (* pin:  a solve may not *)
 
 path_decl      = "path" IDENT ":" orient "=" path_expr ;
 frag           = path_expr ;                               (* statement-level fragment *)
@@ -596,7 +777,9 @@ addop          = "+" | "-" ;
 mulop          = "*" | "/" ;
 ```
 
-Parsing note: a statement beginning with an expression is disambiguated by the token following the first `ref`/`expr`: `==` → constraint; `->` or `~` → fragment; otherwise error. `ccw`/`cw` appear both as orientation keywords (after `:` in `path`) and as predicates; context disambiguates.
+Parsing note: a statement beginning with an expression is disambiguated by the token following the first `ref`/`expr`: `==` → constraint; `->` or `~` → fragment; otherwise error. `ccw`/`cw` appear both as orientation keywords (after `:` in `path`) and as predicates; context disambiguates. **[0.2]** `curve NAME(` opens a family definition and `curve NAME =` an instance; the token after the name settles which.
+
+**[0.2] Note on the trailing `==`.** After the `==` that follows a predicate's closing parenthesis, an implementation MAY take the rest of the logical line verbatim rather than tokenizing it, and hand that text to whatever evaluates dimension expressions. This is not laziness: `3 1/2` is three and a half and `31/2` is a division, and that rule belongs to one tokenizer. Two copies of it are two rules the moment one is edited. An `==` *inside* an argument list is the pin of §4.3 and is lexed normally; the two never meet.
 
 ---
 
@@ -604,10 +787,11 @@ Parsing note: a statement beginning with an expression is disambiguated by the t
 
 A minimal conforming implementation provides:
 
-1. Parser for §19; classifier assigning every statement to §4.2 classes; Invariant H enforced by construction.
-2. Elaborator: instance expansion, union-find aliasing, definitional substitution, dedup store, `ring` lowering (quotient form or cycle-plus-symmetry — either, per §12.3).
+1. Parser for §19; classifier assigning every statement to §4.2 classes **by the `=` / `==` mark (§4.3)**; Invariant H enforced by construction.
+2. Elaborator: instance expansion **preserving statement identity (§12.7)**, union-find aliasing, definitional substitution, dedup store, `ring` lowering (quotient form or cycle-plus-symmetry — either, per §12.3, **and reported if unrolled**).
 3. Invariance check §12.5 (syntactic criterion), gauge analysis (W103), DOF ledger (§16.3).
 4. A numeric backend satisfying §15 — Newton on the quotient system seeded by hints is sufficient — with rank-deficiency reporting attributed to source spans.
 5. Path assembly and closed-boundary export (the solved gear outline as a polyline+arc sequence).
+6. **[0.2]** Document state attached to its statement, never to a list position or an entity index (§13.1).
 
-Deliberately *not* required for v0: 3D, curves beyond line/circle, nested rings, constraint strengths, decomposition planning (P4 is a SHOULD).
+Deliberately *not* required for v0: 3D, nested rings, constraint strengths, decomposition planning (P4 is a SHOULD). **[0.2]** Curve families (§6.5) are not required either, but they are no longer deferred: an implementation that wants involute or cycloid geometry has a way to say it, and needs no new entity kind to do so.
