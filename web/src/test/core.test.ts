@@ -1903,6 +1903,34 @@ test('the coloured runs index the string, not the core\'s bytes', () => {
   assert.ok(text.slice(0, family.lo).includes('—'), 'which is past the first non-ASCII character');
 });
 
+test('a diagnostic and a source map index the string, not the core\'s bytes', () => {
+  // `gear.sv` has an em dash in its second line, so every offset past it differs between the two
+  const text = examples.source('gear');
+  assert.ok(text.length !== Buffer.byteLength(text), 'the gear is not all ASCII');
+  const dash = text.indexOf('\u2014');
+  assert.ok(dash > 0 && dash < 300, 'the em dash is near the top, so most spans are past it');
+  const d = Document.read(text);
+  // the gear's centre is declared well past the em dash, so its span is only right if converted
+  const centre = d.map.entities.find((x) => x.name === 'g.center')!;
+  assert.ok(centre && centre.lo > dash, 'the centre is in the map, past the em dash');
+  assert.equal(text.slice(centre.lo, centre.hi), 'point center at (0, 0)');
+  const port = d.map.entities.find((x) => x.name.endsWith('.t.r.lo'))!;
+  assert.ok(port, 'a flank port is in the map');
+  assert.equal(text.slice(port.lo, port.hi), 'port lo: point');
+  d.dispose();
+
+  // and a diagnostic points at the words it is about, on a line past the em dash
+  const broken = `${text}\nnonsense here\n`;
+  const b = Document.read(broken);
+  const err = b.diagnostics.find((x) => x.severity === 'error')!;
+  assert.ok(err, JSON.stringify(b.diagnostics));
+  assert.ok(broken.slice(err.lo, err.hi).startsWith('nonsense'),
+            `the diagnostic covers ${JSON.stringify(broken.slice(err.lo, err.hi))}`);
+  // the line the core counted and the line the string has agree
+  assert.equal(broken.slice(0, err.lo).split('\n').length, err.line);
+  b.dispose();
+});
+
 test('a program half-typed is still coloured', () => {
   const runs = highlight('point p at (0,\ncircle c(center: p, r');
   assert.equal(runs[0].cls, 'word');

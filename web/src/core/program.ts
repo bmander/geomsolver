@@ -18,8 +18,13 @@ import { Constraint } from './constraints.js';
 import { Kind, KINDS, Primitive, Sketch } from './model.js';
 import { core, lastError, takeJson, takeStr, withJson, withStr } from './wasm.js';
 
-/** Where a statement sits in the program text — byte offsets, plus the line and column the core
- *  worked out, so nothing here scans the text a second time. */
+/** Where a statement sits in the program text, plus the line and column the core worked out, so
+ *  nothing here scans the text a second time.
+ *
+ *  `lo`/`hi` index the **string**: every offset the core reports is brought onto the text the
+ *  browser holds at the one seam it crosses (see `Offsets`), so nothing downstream has to remember
+ *  which of the two units it is holding.  A caller slices with them and hands them to
+ *  `setSelectionRange`. */
 export interface Span { lo: number; hi: number; line: number; col: number }
 
 export interface Diagnostic extends Span {
@@ -28,8 +33,8 @@ export interface Diagnostic extends Span {
   message: string;
 }
 
-/** Which statement made which part of the drawing, and the other way round.  Byte offsets into
- *  the same text the panel holds, so a click on either end finds the other. */
+/** Which statement made which part of the drawing, and the other way round.  Offsets into the
+ *  same text the panel holds, so a click on either end finds the other. */
 export interface SourceMap {
   entities: { kind: string; index: number; name: string; lo: number; hi: number }[];
   constraints: { id: number; lo: number; hi: number }[];
@@ -48,6 +53,15 @@ export interface Edit {
   refused: string | null;
 }
 
+/** What `gcs_elab_report` hands back.  The offsets in it are the core's **bytes**; `Document.adopt`
+ *  is the only thing that reads them, and brings them onto the string as it goes. */
+interface Report {
+  ok: boolean;
+  diagnostics: Diagnostic[];
+  entities: [string, number, string, number, number][];
+  constraints: [number, number, number][];
+}
+
 function edit(handle: number): Edit {
   if (!handle) throw new Error(lastError() || 'the edit could not be made');
   return takeJson<Edit>(handle);
@@ -58,7 +72,7 @@ export class Document {
   text: string;
   readonly sketch: Sketch;
   readonly ok: boolean;
-  readonly diagnostics: Diagnostic[];
+  diagnostics: Diagnostic[];
   map: SourceMap;
   private h: number;
   private byName = new Map<string, Primitive>();
@@ -67,12 +81,7 @@ export class Document {
     const c = core();
     this.h = h;
     this.text = text;
-    const r = takeJson<{
-      ok: boolean;
-      diagnostics: Diagnostic[];
-      entities: [string, number, string, number, number][];
-      constraints: [number, number, number][];
-    }>(c.gcs_elab_report(h));
+    const r = takeJson<Report>(c.gcs_elab_report(h));
     const sh = c.gcs_elab_take_sketch(h);
     if (!sh) {
       c.gcs_elab_free(h);
@@ -81,11 +90,24 @@ export class Document {
     }
     this.sketch = new Sketch(sh);
     this.ok = r.ok;
-    this.diagnostics = r.diagnostics;
+    this.diagnostics = [];
+    this.map = { entities: [], constraints: [] };
+    this.adopt(r);
+  }
+
+  /** Take a report: the offsets onto the string, the map, and the names it gives the drawing.
+   *
+   *  The one place a report is read, so the conversion happens exactly once and a diagnostic, a
+   *  statement's span and a coloured run are all in the same units by the time anyone sees them. */
+  private adopt(r: Report): void {
+    const at = new Offsets(this.text);
+    this.diagnostics = r.diagnostics.map((d) => ({ ...d, lo: at.at(d.lo), hi: at.at(d.hi) }));
     this.map = {
-      entities: r.entities.map(([kind, index, name, lo, hi]) => ({ kind, index, name, lo, hi })),
-      constraints: r.constraints.map(([id, lo, hi]) => ({ id, lo, hi })),
+      entities: r.entities.map(([kind, index, name, lo, hi]) =>
+        ({ kind, index, name, lo: at.at(lo), hi: at.at(hi) })),
+      constraints: r.constraints.map(([id, lo, hi]) => ({ id, lo: at.at(lo), hi: at.at(hi) })),
     };
+    this.byName.clear();
     for (const e of this.map.entities) {
       if (!KINDS.includes(e.kind as Kind)) continue;
       const of = this.sketch.entities(e.kind as Kind)[e.index];
@@ -163,22 +185,10 @@ export class Document {
     return e;
   }
 
-  /** The names this elaboration now gives the drawing, after it took an edit of its own. */
+  /** The names this elaboration now gives the drawing, after it took an edit of its own.  Read
+   *  against `this.text`, which `reconcile` has already moved on to the spliced source. */
   private remap(): void {
-    const r = takeJson<{
-      entities: [string, number, string, number, number][];
-      constraints: [number, number, number][];
-    }>(core().gcs_elab_report(this.h));
-    this.map = {
-      entities: r.entities.map(([kind, index, name, lo, hi]) => ({ kind, index, name, lo, hi })),
-      constraints: r.constraints.map(([id, lo, hi]) => ({ id, lo, hi })),
-    };
-    this.byName.clear();
-    for (const e of this.map.entities) {
-      if (!KINDS.includes(e.kind as Kind)) continue;
-      const of = this.sketch.entities(e.kind as Kind)[e.index];
-      if (of) this.byName.set(e.name, of);
-    }
+    this.adopt(takeJson<Report>(core().gcs_elab_report(this.h)));
   }
 
   addPoint(x: number, y: number): Edit {
@@ -235,27 +245,65 @@ export interface Run { cls: string; lo: number; hi: number }
 export function highlight(text: string): Run[] {
   const runs = withStr(text, (p, n) => core().gcs_program_highlight(p, n));
   if (!runs) throw new Error(lastError() || 'the program could not be coloured');
-  return onto(text, takeJson<[string, number, number][]>(runs));
+  const at = new Offsets(text);
+  return takeJson<[string, number, number][]>(runs)
+    .map(([cls, lo, hi]) => ({ cls, lo: at.at(lo), hi: at.at(hi) }));
 }
 
 /** Byte offsets, as the core counts them, onto the string the browser holds.
  *
  *  The core measures a source in UTF-8 bytes and a JS string is UTF-16 code units.  The two agree
  *  exactly while the text is ASCII and part company at the first character that is not — an em
- *  dash in a comment, a `π` in one — after which every span would be short by however many bytes
- *  had gone by.  The runs arrive in order and never overlap, so one walk of the string converts
- *  all of them, and an all-ASCII program pays one pass and no arithmetic. */
-function onto(text: string, runs: [string, number, number][]): Run[] {
-  let byte = 0, unit = 0;
-  const at = (off: number): number => {
-    while (byte < off && unit < text.length) {
+ *  dash in a comment, a `π` in one — after which every offset is long by however many extra bytes
+ *  have gone by.  `gear.sv` has an em dash in its second line, so this is not a corner case: left
+ *  unconverted, clicking a diagnostic selects the wrong words and a statement lights the wrong
+ *  part of the drawing.
+ *
+ *  **This is the one seam.**  Every offset the core reports crosses it — the highlighting, the
+ *  diagnostics and the source map alike — so no consumer has to know the difference, and no two of
+ *  them can disagree about which unit they hold.
+ *
+ *  A program that is all ASCII builds nothing and answers in one comparison, which is the usual
+ *  case.  Otherwise one walk records where each wider-than-one-byte character ends, and a lookup
+ *  is a binary search of that — so offsets need not arrive in any order, which the source map's
+ *  do not. */
+class Offsets {
+  /** Byte offset just past each character whose UTF-8 length differs from its UTF-16 length. */
+  private readonly ends: number[] = [];
+  /** The string index just past that same character. */
+  private readonly units: number[] = [];
+
+  constructor(text: string) {
+    let byte = 0, unit = 0;
+    while (unit < text.length) {
       const c = text.codePointAt(unit) as number;
-      byte += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4;
-      unit += c < 0x10000 ? 1 : 2;
+      const bytes = c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4;
+      const wide = c < 0x10000 ? 1 : 2;
+      byte += bytes;
+      unit += wide;
+      if (bytes !== wide) {
+        this.ends.push(byte);
+        this.units.push(unit);
+      }
     }
-    return unit;
-  };
-  return runs.map(([cls, lo, hi]) => ({ cls, lo: at(lo), hi: at(hi) }));
+  }
+
+  /** True when the two agree everywhere, so nothing has to be converted at all. */
+  get plain(): boolean {
+    return this.ends.length === 0;
+  }
+
+  at(off: number): number {
+    if (this.plain) return off;
+    // the last wide character that ends at or before `off`; everything after it is one-to-one
+    let lo = 0, hi = this.ends.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.ends[mid] <= off) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo === 0 ? off : this.units[lo - 1] + (off - this.ends[lo - 1]);
+  }
 }
 
 /** The canonical program for a sketch — the lift, and how a JSON document becomes a source one. */

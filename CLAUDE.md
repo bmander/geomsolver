@@ -391,9 +391,14 @@ Conventions:
   `Tint` names the classes and the stylesheet says what they look like; the front end writes one
   element per run with the gaps between them plain, so it describes no whitespace and parses
   nothing.  A function of the *text* and not of an `Elaborated`, since the program being looked at
-  is usually the one half-typed.  Offsets cross the ABI in **bytes** and index a JS string on the
-  other side: `core/program.ts::onto` is that conversion, and `gear.sv` has an em dash in its
-  second line.
+  is usually the one half-typed.
+- Offsets cross the ABI in **UTF-8 bytes** and index a **UTF-16 string** on the other side, and
+  `gear.sv` has an em dash in its second line — so this is not a corner case but the ordinary one.
+  `core/program.ts::Offsets` is the conversion and `Document.adopt` is the **one seam** every
+  report crosses: the diagnostics, the source map and the coloured runs are all string indices by
+  the time anyone sees them, so no consumer holds the wrong unit and no two of them disagree.  A
+  wholly-ASCII program builds nothing and answers in a comparison; otherwise it is a binary search,
+  since a source map's offsets do not arrive in order.  Nothing sends an offset back the other way.
 - The box it is typed in is `app/editor.ts` — a `CodeEditor`, which knows nothing of Solvent and is
   handed the text and a function saying which runs of it are what.  It is a `<textarea>` over a
   `<pre>` of the same text, because a textarea cannot colour its contents and a `contenteditable`
