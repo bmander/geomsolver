@@ -16,19 +16,22 @@
 // other way for negative — which is how one family below serves both flanks of a tooth, where
 // the closed form needs the sign threaded through every term.
 //
-// The tangent point keeps one seed, because `angle` is a statement mod 180°: `t` could sit at
-// the bearing or opposite it, and a seed is how a branch is picked (spec §6.5.1).  But a seed is
-// a *place*, and this language names places geometrically: `at c bearing (u + phase)` is the
-// point at the edge of circle `c`, said the way a draughtsman says it.  It is a seed, not a
-// claim: perturb the bearing and the constraints put `t` back exactly.
+// The remaining branch — `angle` is a statement mod 180°, so `t` could sit at the bearing or
+// opposite it — is a *stated fact*, not a starting point: `ccw(datum.p1, datum.p2, t)` selects
+// the solution component, the way an orientation predicate always does (spec §9.6).  A ccw is
+// read where it is unambiguous, and `from (90 - phase)` says where that is: the roll at which
+// the string points straight up the page, squarely on the datum's counter-clockwise side.
+// Everywhere else the answer is *carried* — evaluation is one continuation from that home, so
+// the component the predicate picks there is the component the whole curve is on, even where
+// the flank itself has wound past the datum and the ccw no longer reads true.
 //
 // The datum line is the bearing's zero.  It is called `datum` in every component that hands it
 // down, exactly as `base`, `root` and `tip` keep their names — a formal renamed between levels
 // does not resolve (issue #4).
 
 curve involute(c: circle, datum: line, phase: Angle)(u) =
-  trace p where {
-    point t at c bearing (u + phase)
+  trace p from (90 - phase) where {
+    point t
     point p
     line rad(c.center, t)
     line s(t, p)
@@ -36,6 +39,7 @@ curve involute(c: circle, datum: line, phase: Angle)(u) =
     angle(datum, rad) == u + phase               // ...at bearing u from the datum,
     perpendicular(rad, s)                        // perpendicular to the radius there,
     point_line_distance(p, rad) == -(c.r * u * pi / 180)   // and taut: let out == arc unwound
+    ccw(datum.p1, datum.p2, t)                   // which of the two bearings mod 180: this one
   }
 
 // From here down the wheel is `gear.sv` unchanged — a flank between two circles, a tooth as two

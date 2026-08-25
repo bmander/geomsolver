@@ -126,14 +126,16 @@ pub struct CurveFamily {
     pub span: Span,
 }
 
-/// What follows a family's `=`: a pair of expressions, or `trace p where { … }` — a point and
-/// the constraints that force it, the curve then being wherever they put the point as the
-/// parameter runs.  The block's statements are ordinary statements; what may appear in one is
+/// What follows a family's `=`: a pair of expressions, or `trace p [from (expr)] where { … }` —
+/// a point and the constraints that force it, the curve then being wherever they put the point
+/// as the parameter runs.  `from` names the parameter value evaluation is anchored at: the one
+/// place the block's orientation predicates are read, chosen so they read unambiguously.  The
+/// block's statements are ordinary statements; what may appear in one is
 /// `program::compile_trace`'s question, not the parser's.
 #[derive(Clone, Debug)]
 pub enum FamilyBody {
     Exprs { x: String, y: String, xspan: Span, yspan: Span },
-    Trace { point: Name, body: Vec<Stmt> },
+    Trace { point: Name, home: Option<(String, Span)>, body: Vec<Stmt> },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1077,7 +1079,8 @@ const BLOCKS: [&str; 3] = ["repeat", "cycle", "ring"];
 
 /// The words that shape a statement without naming anything — a modifier the parser eats where it
 /// stands.  `as` binds a name after it, which is why `highlight` treats that one specially.
-const MODIFIERS: [&str; 7] = ["over", "as", "at", "about", "construction", "where", "bearing"];
+const MODIFIERS: [&str; 8] =
+    ["over", "as", "at", "about", "construction", "where", "bearing", "from"];
 
 /// What the word *after* this one is expected to be — the whole of the state the colouring carries
 /// from one token to the next, and four states rather than the four independent flags that would
@@ -1643,11 +1646,23 @@ impl<'a> P<'a> {
         self.i += 1;
         // a family is usually too long for one line, and the `=` is where it breaks
         self.skip_ends();
-        // `trace p where { … }` — the locus form
+        // `trace p [from (expr)] where { … }` — the locus form
         if self.eat_word("trace") {
             let point = self.ident()?;
+            let home = if self.eat_word("from") {
+                if !self.want_p('(') {
+                    return None;
+                }
+                let (t, sp) = self.expr_until(')')?;
+                if !self.want_p(')') {
+                    return None;
+                }
+                Some((t, sp))
+            } else {
+                None
+            };
             if !self.eat_word("where") {
-                self.fail("a trace is `trace point where { ... }`");
+                self.fail("a trace is `trace point [from (...)] where { ... }`");
                 return None;
             }
             let body = self.braced_body(next_id)?;
@@ -1656,7 +1671,7 @@ impl<'a> P<'a> {
                 formals,
                 param,
                 domain,
-                body: FamilyBody::Trace { point, body },
+                body: FamilyBody::Trace { point, home, body },
                 span: Span::new(lo, self.prev_hi()),
             });
         }

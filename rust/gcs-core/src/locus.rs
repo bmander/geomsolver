@@ -39,11 +39,17 @@ use crate::tape::{self, Tape};
 pub const MAX_Q: usize = 32;
 pub const MAX_ROWS: usize = 64;
 pub const MAX_W: usize = 16;
+pub const MAX_PREDS: usize = 8;
 
-/// Continuation steps when the direct solve fails: the parameter walks from the domain's low end
-/// to the target, each step seeded with the last step's answer.
+/// Continuation steps when the answer is carried rather than found in place: the parameter walks
+/// from the home to the target, each step seeded with the last step's answer.
 const MARCH: usize = 32;
 const NEWTON_MAX: usize = 30;
+/// Deterministic retries when the seeds are no use — a block with no seeds starts every point at
+/// the origin, which for a point on a circle is the one singular spot.
+const RESTARTS: usize = 8;
+/// Rounds of predicate enforcement at the home: reflect, re-solve, re-read.
+const PRED_ROUNDS: usize = 4;
 
 /* -- the compiled form -------------------------------------------------------------- */
 
@@ -58,6 +64,17 @@ pub struct Row {
     pub consts: Vec<f64>,
 }
 
+/// An orientation predicate — `ccw(a, b, x)` in the block.  It contributes no residual: it
+/// *selects among the discrete solution components* (spec §9.6), which is exactly what a branch
+/// is.  Enforced at the home solve only — reflect the placed point across the oriented line and
+/// solve again — and carried everywhere else by continuity, since along a march the components
+/// never meet.  Six columns: a, b, then the point the block places.
+#[derive(Clone, Debug)]
+pub struct Pred {
+    pub ccw: bool,
+    pub cols: [u32; 6],
+}
+
 /// A compiled trace block.  The variable table its rows index is
 /// `[u, θ…, values…] ++ q ++ w`: the outer variables in the family's tape order (so `n_outer`
 /// is `CurveDef::vars.len()`), then the inner unknowns, then the derived values.
@@ -70,10 +87,17 @@ pub struct Locus {
     pub traced: usize,
     /// One tape per derived value, over the outer variables.
     pub w: Vec<Tape>,
-    /// One seed tape per q slot, over the outer variables — where the search starts, and the
-    /// whole of how a branch is stated.  A slot nobody seeded holds a constant-zero tape.
+    /// One seed tape per q slot, over the outer variables — where the search starts.  A slot
+    /// nobody seeded holds a constant-zero tape, and a block with predicates needs none: the
+    /// cold start restarts deterministically until a solve lands, and the predicates say which
+    /// component it must land in.
     pub seeds: Vec<Tape>,
     pub rows: Vec<Row>,
+    pub preds: Vec<Pred>,
+    /// Where evaluation is anchored — `trace p from (expr) where { … }`, a tape over the outer
+    /// variables (the parameter read as 0).  The one place the predicates are read, chosen so
+    /// they read unambiguously; absent, the instance's domain begins the march as before.
+    pub home: Option<Tape>,
     /// The encoding, built once — what rides in a contact's constants and what `eval_flat` runs.
     pub flat: Vec<f64>,
 }
@@ -81,6 +105,7 @@ pub struct Locus {
 impl Locus {
     /// Assemble and encode.  Validates the shape the evaluator depends on; an `Err` is a
     /// diagnostic for the family, not a panic.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         n_outer: usize,
         n_theta: usize,
@@ -89,13 +114,16 @@ impl Locus {
         w: Vec<Tape>,
         seeds: Vec<Tape>,
         rows: Vec<Row>,
+        preds: Vec<Pred>,
+        home: Option<Tape>,
     ) -> Result<Locus, String> {
         if n_q == 0 || n_q > MAX_Q {
             return Err(format!("a trace block declares between 1 and {MAX_Q} unknowns"));
         }
-        if rows.len() > MAX_ROWS || w.len() > MAX_W {
+        if rows.len() > MAX_ROWS || w.len() > MAX_W || preds.len() > MAX_PREDS {
             return Err(format!(
-                "a trace block may state at most {MAX_ROWS} constraints and {MAX_W} expressions"
+                "a trace block may state at most {MAX_ROWS} constraints, {MAX_W} expressions \
+                 and {MAX_PREDS} orientations"
             ));
         }
         if seeds.len() != n_q || traced + 2 > n_q {
@@ -113,7 +141,13 @@ impl Locus {
                 return Err("trace row shape mismatch".to_string());
             }
         }
-        let mut l = Locus { n_outer, n_theta, n_q, traced, w, seeds, rows, flat: Vec::new() };
+        for p in &preds {
+            if p.cols.iter().any(|&c| c as usize >= n_outer + n_q) {
+                return Err("an orientation names a column the block does not have".to_string());
+            }
+        }
+        let mut l =
+            Locus { n_outer, n_theta, n_q, traced, w, seeds, rows, preds, home, flat: Vec::new() };
         l.flat = l.encode();
         Ok(l)
     }
@@ -127,6 +161,8 @@ impl Locus {
             self.w.len() as f64,
             self.rows.len() as f64,
             self.traced as f64,
+            self.preds.len() as f64,
+            self.home.is_some() as u8 as f64,
         ];
         for t in &self.w {
             f.push(t.flat.len() as f64);
@@ -140,6 +176,14 @@ impl Locus {
             f.extend_from_slice(&r.consts);
         }
         for t in &self.seeds {
+            f.push(t.flat.len() as f64);
+            f.extend_from_slice(&t.flat);
+        }
+        for p in &self.preds {
+            f.push(if p.ccw { 1.0 } else { 0.0 });
+            f.extend(p.cols.iter().map(|&c| c as f64));
+        }
+        if let Some(t) = &self.home {
             f.push(t.flat.len() as f64);
             f.extend_from_slice(&t.flat);
         }
@@ -229,6 +273,8 @@ struct View<'a> {
     w: Vec<&'a [f64]>,
     rows: Vec<(usize, &'a [f64], &'a [f64])>,
     seeds: Vec<&'a [f64]>,
+    preds: Vec<(bool, [usize; 6])>,
+    home: Option<&'a [f64]>,
 }
 
 fn view(flat: &[f64]) -> Option<View<'_>> {
@@ -239,6 +285,8 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
     let n_w = g(3)? as usize;
     let n_rows = g(4)? as usize;
     let traced = g(5)? as usize;
+    let n_preds = g(6)? as usize;
+    let has_home = g(7)? as usize;
     if n_outer == 0
         || n_outer > tape::MAX_VARS
         || 1 + n_theta > n_outer
@@ -246,11 +294,13 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
         || n_q > MAX_Q
         || n_w > MAX_W
         || n_rows > MAX_ROWS
+        || n_preds > MAX_PREDS
+        || has_home > 1
         || traced + 2 > n_q
     {
         return None;
     }
-    let mut at = 6usize;
+    let mut at = 8usize;
     // a length is bounded by the whole encoding before it indexes anything, so a corrupt one
     // is a `None` and never an overflow
     let take = |at: &mut usize, len: usize| -> Option<&[f64]> {
@@ -291,7 +341,29 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
         at += 1;
         seeds.push(take(&mut at, len)?);
     }
-    Some(View { n_outer, n_theta, n_q, traced, w, rows, seeds })
+    let mut preds = Vec::with_capacity(n_preds);
+    for _ in 0..n_preds {
+        let ccw = g(at)? != 0.0;
+        at += 1;
+        let mut cols = [0usize; 6];
+        for c in cols.iter_mut() {
+            let s = g(at)? as usize;
+            if s >= n_outer + n_q {
+                return None;
+            }
+            *c = s;
+            at += 1;
+        }
+        preds.push((ccw, cols));
+    }
+    let home = if has_home == 1 {
+        let len = g(at)? as usize;
+        at += 1;
+        Some(take(&mut at, len)?)
+    } else {
+        None
+    };
+    Some(View { n_outer, n_theta, n_q, traced, w, rows, seeds, preds, home })
 }
 
 /// One Newton solve of the block at the parameter already written into `s.xv[0]`, from the `q`
@@ -453,9 +525,10 @@ fn seed(v: &View, s: &mut Scratch) {
 }
 
 /// Evaluate the locus at `outer = [u, θ…, values…]`: solve the block, then the implicit function
-/// theorem for the derivatives.  Tries the seeds at the target parameter first; when that solve
-/// fails it marches from `u_start` (the low end of the instance's domain), each step seeded with
-/// the last — which is what carries a branch along the curve.
+/// theorem for the derivatives.  A block without predicates tries the seeds at the target
+/// parameter first, and marches from the home when that fails; one *with* predicates always
+/// marches — they are read at the home and carried by continuity, and a direct solve at the
+/// target could land in a component they forbid.
 pub fn eval_flat(flat: &[f64], outer: &[f64], u_start: f64, s: &mut Scratch) -> Val {
     let Some(v) = view(flat) else { return Val::default() };
     if outer.len() < v.n_outer {
@@ -467,27 +540,113 @@ pub fn eval_flat(flat: &[f64], outer: &[f64], u_start: f64, s: &mut Scratch) -> 
     s.wd.clear();
     s.wd.resize(v.w.len(), [0.0; tape::MAX_VARS]);
     let u = outer[0];
+    let u_home = home_of(&v, s, outer, u_start);
 
-    refresh(&v, s, u, outer);
-    seed(&v, s);
-    let mut ok = newton(&v, s);
-    if !ok && u != u_start {
-        // continuation: start where the seeds are trusted and walk to the target
-        refresh(&v, s, u_start, outer);
+    if v.preds.is_empty() {
+        refresh(&v, s, u, outer);
         seed(&v, s);
-        ok = newton(&v, s);
-        if ok {
-            for k in 1..=MARCH {
-                let uk = u_start + (u - u_start) * k as f64 / MARCH as f64;
-                refresh(&v, s, uk, outer);
-                ok = newton(&v, s);
-                if !ok {
-                    break;
-                }
+        if newton(&v, s) {
+            return finish(&v, s, true);
+        }
+    }
+    let mut ok = cold_start(&v, s, outer, u_home);
+    if ok && u != u_home {
+        for k in 1..=MARCH {
+            let uk = u_home + (u - u_home) * k as f64 / MARCH as f64;
+            refresh(&v, s, uk, outer);
+            ok = newton(&v, s);
+            if !ok {
+                break;
             }
         }
     }
     finish(&v, s, ok)
+}
+
+/// Where evaluation is anchored: the family's `from` expression, read with the parameter as 0,
+/// or the given start (the instance's domain) when it declares none.
+fn home_of(v: &View, s: &mut Scratch, outer: &[f64], u_start: f64) -> f64 {
+    match v.home {
+        Some(t) => {
+            let mut x = [0.0f64; tape::MAX_VARS];
+            x[..v.n_outer].copy_from_slice(&outer[..v.n_outer]);
+            x[0] = 0.0;
+            let h = tape::eval_flat(t, v.n_outer, &x[..v.n_outer], &mut s.ts).v;
+            if h.is_finite() {
+                h
+            } else {
+                u_start
+            }
+        }
+        None => u_start,
+    }
+}
+
+/// The solve everything else is carried from: seeds (or restarts) at the home, then the
+/// predicates.  The restarts are drawn from a *fixed* seed, so every evaluation tries the same
+/// starts and the answer cannot depend on history — and each violated predicate reflects its
+/// point across the oriented line and solves again, which is the move between the two components
+/// with Newton finishing it.
+fn cold_start(v: &View, s: &mut Scratch, outer: &[f64], u_home: f64) -> bool {
+    refresh(v, s, u_home, outer);
+    seed(v, s);
+    let mut ok = newton(v, s);
+    if !ok {
+        let mut rng = crate::rng::Rng::new(0x7ace);
+        let scale = outer[..v.n_outer].iter().fold(1.0f64, |m, &x| m.max(x.abs()));
+        for _ in 0..RESTARTS {
+            seed(v, s);
+            for i in 0..v.n_q {
+                s.xv[v.n_outer + i] += rng.uniform(-scale, scale);
+            }
+            ok = newton(v, s);
+            if ok {
+                break;
+            }
+        }
+    }
+    if !ok {
+        return false;
+    }
+    for _ in 0..PRED_ROUNDS {
+        let Some(&(_, cols)) =
+            v.preds.iter().find(|&&(ccw, cols)| !holds(s, ccw, cols))
+        else {
+            return true;
+        };
+        reflect(s, cols);
+        if !newton(v, s) {
+            return false;
+        }
+    }
+    v.preds.iter().all(|&(ccw, cols)| holds(s, ccw, cols))
+}
+
+/// Whether `ccw(a, b, x)` holds at the current solution.  Collinear passes either way: a
+/// predicate read exactly on its boundary has nothing to say.
+fn holds(s: &Scratch, ccw: bool, cols: [usize; 6]) -> bool {
+    let g = |i: usize| s.xv[cols[i]];
+    let cross = (g(2) - g(0)) * (g(5) - g(1)) - (g(3) - g(1)) * (g(4) - g(0));
+    if ccw {
+        cross >= 0.0
+    } else {
+        cross <= 0.0
+    }
+}
+
+/// Reflect the predicate's placed point across the oriented line through its first two.
+fn reflect(s: &mut Scratch, cols: [usize; 6]) {
+    let (ax, ay) = (s.xv[cols[0]], s.xv[cols[1]]);
+    let (dx, dy) = (s.xv[cols[2]] - ax, s.xv[cols[3]] - ay);
+    let l2 = dx * dx + dy * dy;
+    if l2 <= 1e-30 {
+        return;
+    }
+    let (wx, wy) = (s.xv[cols[4]] - ax, s.xv[cols[5]] - ay);
+    let t = (wx * dx + wy * dy) / l2;
+    let (fx, fy) = (ax + t * dx, ay + t * dy);
+    s.xv[cols[4]] = 2.0 * fx - s.xv[cols[4]];
+    s.xv[cols[5]] = 2.0 * fy - s.xv[cols[5]];
 }
 
 /// The implicit function theorem at the solution in `s.xv`: `Jq · S = −B`, and the traced
@@ -541,18 +700,23 @@ pub fn sweep(flat: &[f64], outer: &[f64], u0: f64, u1: f64, n: usize, s: &mut Sc
     s.wd.resize(v.w.len(), [0.0; tape::MAX_VARS]);
     let q0 = v.n_outer;
     let mut out = Vec::with_capacity(n + 1);
-    refresh(&v, s, u0, outer);
-    seed(&v, s);
+    // anchor at the home, walk to the near end, then sample — one continuation throughout, so
+    // the branch the home picks is the branch the whole polyline is on.  A failed step keeps
+    // the last answer as its seed and carries on: the drawn point is the best available, and a
+    // genuinely impossible block draws a stationary run rather than nothing.
+    let u_home = home_of(&v, s, outer, u0);
+    let _ = cold_start(&v, s, outer, u_home);
+    if u_home != u0 {
+        for k in 1..=MARCH {
+            let uk = u_home + (u0 - u_home) * k as f64 / MARCH as f64;
+            refresh(&v, s, uk, outer);
+            let _ = newton(&v, s);
+        }
+    }
     for k in 0..=n {
         let u = u0 + (u1 - u0) * k as f64 / n as f64;
         refresh(&v, s, u, outer);
-        if !newton(&v, s) {
-            // a failed step falls back to the written seeds and tries once more; the drawn
-            // point is then the best available, and a genuinely impossible block draws a
-            // stationary run rather than nothing
-            seed(&v, s);
-            let _ = newton(&v, s);
-        }
+        let _ = newton(&v, s);
         out.push((s.xv[q0 + v.traced], s.xv[q0 + v.traced + 1]));
     }
     out

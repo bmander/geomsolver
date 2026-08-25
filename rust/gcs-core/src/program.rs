@@ -593,14 +593,9 @@ fn compile_family(f: &crate::syntax::CurveFamily) -> Result<crate::model::CurveD
             };
             crate::model::CurveBody::Exprs { x: tape(x, *xspan)?, y: tape(y, *yspan)? }
         }
-        FamilyBody::Trace { point, body } => crate::model::CurveBody::Trace(compile_trace(
-            f,
-            point,
-            body,
-            &vars,
-            &formals,
-            values.len(),
-        )?),
+        FamilyBody::Trace { point, home, body } => crate::model::CurveBody::Trace(
+            compile_trace(f, point, home.as_ref(), body, &vars, &formals, values.len())?,
+        ),
     };
     let num = |t: &str| crate::expr::literal(t).unwrap_or(0.0);
     let domain = match &f.domain {
@@ -633,12 +628,13 @@ fn compile_family(f: &crate::syntax::CurveFamily) -> Result<crate::model::CurveD
 fn compile_trace(
     f: &crate::syntax::CurveFamily,
     point: &crate::syntax::Name,
+    home: Option<&(String, Span)>,
     body: &[Stmt],
     vars: &[String],
     formals: &[(String, EntKind)],
     n_values: usize,
 ) -> Result<crate::locus::Locus, (Span, String)> {
-    use crate::locus::{Locus, Row};
+    use crate::locus::{Locus, Pred, Row};
     use crate::tape::Tape;
     let mut sk = Sketch::new();
     let mut scope: BTreeMap<String, EntRef> = BTreeMap::new();
@@ -765,12 +761,49 @@ fn compile_trace(
         ));
     }
 
-    // -- pass 2: constraints, lowered to rows ------------------------------------------
+    // -- pass 2: constraints and orientations, lowered to rows and predicates ----------
     let mut w: Vec<Tape> = Vec::new();
     let mut rows: Vec<Row> = Vec::new();
+    let mut preds: Vec<Pred> = Vec::new();
     for st in body {
         let r = match &st.kind {
             StmtKind::Decl(_) => continue,
+            // `ccw(a, b, x)` — no residual: it selects among the discrete solution components,
+            // which is what a branch is, and it is how a block says one *as a fact* rather than
+            // as a place to start looking
+            StmtKind::Orient(o) => {
+                if o.pts.len() != 3 {
+                    return Err((st.span, "an orientation names three points".to_string()));
+                }
+                let mut cols = [0u32; 6];
+                for (k, rf) in o.pts.iter().enumerate() {
+                    let e = scope
+                        .get(&rf.root.text)
+                        .copied()
+                        .ok_or((rf.span, format!("no such entity: `{}`", rf.root.text)))?;
+                    let e = follow(&sk, e, &rf.path).map_err(|m| (rf.span, m))?;
+                    if e.kind != EntKind::Point {
+                        return Err((rf.span, "an orientation is about points".to_string()));
+                    }
+                    let ps = sk.point_params(e.i());
+                    for (j, &p) in ps.iter().enumerate() {
+                        let Some(&s) = slot.get(&p) else {
+                            return Err((st.span, "trace lowering lost a column".to_string()));
+                        };
+                        cols[2 * k + j] = s as u32;
+                    }
+                }
+                // the placed point is the one a violated predicate reflects, so it must be one
+                // the block actually places
+                if (cols[4] as usize) < n_outer {
+                    return Err((
+                        o.pts[2].span,
+                        "the third point must be one the block places".to_string(),
+                    ));
+                }
+                preds.push(Pred { ccw: o.ccw, cols });
+                continue;
+            }
             StmtKind::Relation(r) => r,
             _ => {
                 return Err((
@@ -896,7 +929,12 @@ fn compile_trace(
             ))
         }
     };
-    Locus::new(n_outer, n_theta, n_q, traced, w, seeds, rows).map_err(|m| (f.span, m))
+    let home_tape = match home {
+        Some((text, sp)) => Some(tape(text, *sp)?),
+        None => None,
+    };
+    Locus::new(n_outer, n_theta, n_q, traced, w, seeds, rows, preds, home_tape)
+        .map_err(|m| (f.span, m))
 }
 
 /// A seed named geometrically, compiled to the tapes a written pair would be: the place a point

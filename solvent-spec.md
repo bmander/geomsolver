@@ -267,8 +267,8 @@ A family's body may be a **locus** instead of a formula: `curve NAME(FORMALS)(PA
 
 ```
 curve involute(c: circle, datum: line, phase: Angle)(u) =
-  trace p where {
-    point t at c bearing (u + phase)                     // a seed; see below
+  trace p from (90 - phase) where {
+    point t
     point p
     line rad(c.center, t)
     line s(t, p)
@@ -276,12 +276,17 @@ curve involute(c: circle, datum: line, phase: Angle)(u) =
     angle(datum, rad) == u + phase                       // ...at bearing u,
     perpendicular(rad, s)                                // perpendicular to the radius there,
     point_line_distance(p, rad) == -(c.r * u * pi / 180) // and taut: let out == arc unwound
+    ccw(datum.p1, datum.p2, t)                           // which bearing mod 180: this one
   }
 ```
 
 A dimension in the block may be an expression over the parameter, the formals' coordinates and the value formals. The block MUST determine its points — as many equations as inner coordinates — or the definition is an error: an under- or over-constrained locus is a curve that does not exist, and it must not elaborate quietly. Instances, contacts and `over` behave exactly as for an expression family, and the derivative requirement above stands unchanged: `∂C/∂u` and `∂C/∂θ` now come from the implicit function theorem at the block's solution rather than from the expressions, but a contact must still follow the curve when the geometry it is written over is dragged.
 
-**Branches.** A locus generically has several solutions, and a block SHOULD state its way onto one *in the constraints* wherever the vocabulary can say it: above, the taut string's winding is not a branch at all, because `point_line_distance` is signed — one equation unwinds the string one way for positive roll and the other for negative, where an unsigned `distance` would have left a mirror pair for something else to break. What the constraints cannot say, a seed says. A seed is where the search starts, and here that is a statement of *which branch*: the block's `at` seeds are places over the parameter and the formals (above, `t`'s picks between the bearing and opposite it — `angle` is a statement mod 180°), evaluation starts from them, and away from the seeds continuity governs — an implementation MUST evaluate the curve as one continuation along the parameter (marching from the instance's domain when a direct solve fails), so the branch the seeds pick at one end is the branch the whole curve is on. Deleting the seeds still traces *a* branch, from a worse start — the same bargain a contact's `u = …` seed strikes in §4.3.
+**Branches.** A locus generically has several solutions, and a block states its way onto one — three instruments, in order of strength:
+
+1. **A signed constraint,** wherever the vocabulary can say it. Above, the taut string's winding is not a branch at all, because `point_line_distance` is signed: one equation unwinds the string one way for positive roll and the other for negative, where an unsigned `distance` would have left a mirror pair for something else to break.
+2. **An orientation predicate.** `ccw(a, b, x)` / `cw(a, b, x)` in a block is §9.6's statement doing §9.6's job: it contributes no residual and *selects among the discrete solution components*. Its third point MUST be one the block places. Above, it settles the one branch a residual cannot — `angle` is a statement mod 180°, so `t` could sit at the bearing or opposite it, and the ccw says which. A predicate is read **at the home** — the parameter value `from (expr)` names (the expression is over the formals and the family's values; absent, the instance's domain begins evaluation) — and an implementation MUST enforce it there (reflect the placed point across the oriented line and solve again) and MUST NOT re-enforce it elsewhere: away from the home, continuity governs, and the component the predicate picks at the home is the component the whole curve is on, even where the curve has since wound to where the predicate no longer reads true. Choose the home so the predicates read unambiguously — above, the roll at which the string points squarely to the datum's counter-clockwise side. A block with predicates needs no seeds at all: an implementation MUST fall back to deterministic restarts when the seeds (or their absence) leave the home solve nowhere to start.
+3. **A seed.** What neither an equation nor a predicate says, a seed says: the block's `at` seeds are places over the parameter and the formals, evaluation starts from them, and away from them continuity governs — an implementation MUST evaluate the curve as one continuation along the parameter, so the branch picked at the home is the branch everywhere. Deleting a seed still traces *a* branch, from a worse start — the same bargain a contact's `u = …` seed strikes in §4.3.
 
 **Places, not coordinates.** Inside a trace block a seed is a *place*, and this language names places geometrically: `point t at c bearing (u + phase)` is the point at the edge of circle `c` at that bearing from the page's x-axis, and `point p at t` is wherever `t` starts (a point already named must be declared first). Both lower to exactly what the coordinate spelling would — the bearing form is `centre + r·(cos β, sin β)` said the way a draughtsman says it — so the coordinate form `at (xexpr, yexpr)` remains available and means the same thing. Outside a trace block a seed is a number a solve writes back, which a place named by reference is not, so the geometric forms are trace-block-only (**E103** elsewhere).
 
@@ -762,7 +767,8 @@ ctor_arg       = [ IDENT ":" ] expr ;                      (* value args are SEE
 (* a curve FAMILY, §6.5; an instance is an ordinary entity_decl *)
 curve_def      = "curve" IDENT "(" [ params ] ")" "(" IDENT ")"
                  [ "over" "(" expr "," expr ")" ]
-                 "=" "(" expr "," expr ")" ;
+                 "=" ( "(" expr "," expr ")"
+                     | "trace" IDENT [ "from" "(" expr ")" ] "where" "{" { stmt } "}" ) ;
 param_decl     = "param" IDENT "=" expr ;
 port_decl      = "port" IDENT ":" type
                | "port" IDENT "=" ref ;

@@ -521,3 +521,81 @@ fn a_geometric_seed_outside_a_trace_block_is_refused() {
         e.errors().map(|d| &d.message).collect::<Vec<_>>()
     );
 }
+
+/// **A branch is a stated fact.**  No seed anywhere: the block's points start wherever the
+/// deterministic restarts land them, and `ccw(datum.p1, datum.p2, t)` — an orientation
+/// predicate, the spec's own instrument for selecting among discrete solution components —
+/// says which of the two bearings mod 180 the solve must be in.  `from (90)` anchors the
+/// reading where the predicate is unambiguous; continuity carries it round the full circle,
+/// including the half where the ccw itself no longer reads true.
+#[test]
+fn a_branch_is_a_stated_fact() {
+    let family = "\
+curve rim(c: circle, datum: line)(u) over (0, 350) =
+  trace p from (90) where {
+    point t
+    point p
+    line rad(c.center, t)
+    point_on_circle(t, c)
+    angle(datum, rad) == u
+    coincident(p, t)
+    ccw(datum.p1, datum.p2, t)
+  }
+";
+    let doc = "\
+point  o at (2, 1)
+point  ax at (3, 1)
+line   datum(o, ax) construction
+circle base(center: o, r: 7)
+curve  w = rim(base, datum)
+";
+    for (pred, flip) in [("ccw", 0.0f64), ("cw", 180.0)] {
+        let src = format!("{}{doc}", family.replace("ccw(", &format!("{pred}(")));
+        let e = build(&src);
+        assert!(
+            e.ok(),
+            "{pred}: {:?}",
+            e.errors().map(|d| (d.code.as_str(), &d.message)).collect::<Vec<_>>()
+        );
+        // the whole circle, on the component the predicate names: cw is the mirror reading,
+        // and picks the opposite bearing
+        for u in [0.0f64, 90.0, 200.0, 350.0] {
+            let b = (u + flip).to_radians();
+            let want = (2.0 + 7.0 * b.cos(), 1.0 + 7.0 * b.sin());
+            let got = e.sketch.curve_point(0, u);
+            assert!(
+                (got.0 - want.0).abs() < 1e-8 && (got.1 - want.1).abs() < 1e-8,
+                "{pred} at u = {u}: rim {want:?}, trace {got:?}",
+            );
+        }
+    }
+}
+
+/// An orientation's own mistakes each say what is wrong.
+#[test]
+fn an_orientations_mistakes_are_named() {
+    let cases = [
+        ("trace p where {\n  point p\n  ccw(c.center, p)\n  coincident(p, c.center)\n}",
+         "names three points"),
+        ("trace p where {\n  point p\n  ccw(c, c.center, p)\n  coincident(p, c.center)\n}",
+         "about points"),
+        ("trace p where {\n  point p\n  ccw(p, c.center, c.center)\n\
+          coincident(p, c.center)\n}",
+         "must be one the block places"),
+    ];
+    for (body, want) in cases {
+        let src = format!(
+            "curve b(c: circle)(u) =\n  {body}\npoint o at (0, 0)\n\
+             circle base(center: o, r: 5)\ncurve w = b(base)\n"
+        );
+        let (prog, errs) = parse(&src);
+        assert!(errs.is_empty(), "{want}: {errs:?}");
+        let e = elaborate(&prog);
+        assert!(!e.ok(), "{want}: elaborated cleanly");
+        assert!(
+            e.errors().any(|d| d.message.contains(want)),
+            "wanted `{want}` in {:?}",
+            e.errors().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+}
