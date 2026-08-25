@@ -2,13 +2,30 @@
  *
  * The sketches themselves are built in the core; this is the lookup and the case list. */
 import { Sketch } from './model.js';
-import { core, lastError, takeJson, withStr } from './wasm.js';
+import { fromSketch } from './program.js';
+import { core, lastError, takeJson, takeStr, withStr } from './wasm.js';
 
 /** Build a named example.  Keys are a plain name or `name:arg[:arg]` — `truss:50`, `laman:12:1`. */
 export function build(key: string): Sketch {
   const h = withStr(key, (p, n) => core().gcs_example(p, n));
   if (!h) throw new Error(lastError() || `unknown example: ${key}`);
   return new Sketch(h);
+}
+
+/** A named example as a *program* — which is what the document is.
+ *
+ *  A case written as a document has a source somebody wrote, comments and components and all, and
+ *  that source is the case.  One built by a function has none, so it is lifted; either way the
+ *  caller gets a program and never has to know which kind it was. */
+export function source(key: string): string {
+  const h = withStr(key, (p, n) => core().gcs_example_source(p, n));
+  if (h) return takeStr(h);
+  const sk = build(key);
+  try {
+    return fromSketch(sk);
+  } finally {
+    sk.dispose();
+  }
 }
 
 export const rectFillets = (w = 100, h = 60, r = 10): Sketch => build(`rect_fillets:${w}:${h}:${r}`);

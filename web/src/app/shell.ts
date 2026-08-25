@@ -5,6 +5,7 @@ import * as examples from '../core/examples.js';
 import { Constraint } from '../core/constraints.js';
 import { Primitive, Sketch, expand } from '../core/model.js';
 import { initCore } from '../core/wasm.js';
+import { Document, fromSketch } from '../core/program.js';
 import { SketchView } from './view.js';
 import { toast } from './ui.js';
 
@@ -31,23 +32,29 @@ export const footerEl = document.querySelector('footer') as HTMLElement;
 await initCore();
 (document.getElementById('loading') as HTMLElement).remove();
 
-/** The sketch the page opens on: the case named in the URL — `?example=pythagoras`, or an
+/** The document the page opens on: the case named in the URL — `?example=pythagoras`, or an
  *  `…/example/<slug>` path the server handed to the page — else the default.  The slug is a case
- *  key, arguments and all (`truss:50`); one nothing answers to is said and the default shown. */
-function initialSketch(): Sketch {
+ *  key, arguments and all (`truss:50`); one nothing answers to is said and the default shown.
+ *
+ *  A *program*, not a sketch, because that is what a document is: a case written as one comes
+ *  with the source somebody wrote — the gear's curve family, its components, the reasons in the
+ *  comments — and lifting the drawing instead would open a hundred and twenty point declarations
+ *  about the same shape.  One built by a function has no source and is lifted, which is the only
+ *  place `examples.source` differs from `examples.build`. */
+function initialProgram(): string {
   const url = new URL(location.href);
   const slug = url.searchParams.get('example') ?? /\/example\/([^/]+)\/?$/.exec(url.pathname)?.[1];
   if (slug) {
     try {
-      return examples.build(decodeURIComponent(slug));
+      return examples.source(decodeURIComponent(slug));
     } catch (err) {
       setTimeout(() => toast(`no example “${slug}”: ${(err as Error).message}`, 12000), 0);
     }
   }
-  return examples.rectFillets();
+  return examples.source('rect_fillets:100:60:10');
 }
 
-export const view = new SketchView(canvas, initialSketch());
+export const view = new SketchView(canvas, Document.read(initialProgram()));
 export let currentConstraint: Constraint | null = null;
 
 /** Move the keyboard focus onto a constraint row, or off it with null.  Delete acts on

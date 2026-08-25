@@ -9,8 +9,10 @@ Currently: **Stage 5 done**, in **one** implementation —
   (`newton.rs`, `linalg.rs`, `sparse.rs`), structural diagnosis (`graph.rs`, `diagnose.rs`),
   decomposition into cached solve plans (`cgraph.rs`, `decompose.rs`), witness analysis
   (`witness.rs`), drag/solution management (`solve.rs`, `homotopy.rs`), dimension callouts
-  (`callout.rs`), dimension expressions (`expr.rs`), parametric curves (`curve.rs`), document
-  I/O (`io.rs`, `json.rs`) and the reference sketches (`examples.rs`).
+  (`callout.rs`), dimension expressions (`expr.rs`), parametric curves (`curve.rs`), the
+  **Solvent** language the document is written in (`syntax.rs`, `flatten.rs`, `program.rs`,
+  `edit.rs`, `tape.rs`), JSON export (`io.rs`, `json.rs`) and the reference sketches
+  (`examples.rs`, `gear.sv`).
 * **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built twice — a native `cdylib` for
   Python and a self-contained `wasm32-unknown-unknown` module for the browser.
 * **bindings**: `src/gcs/` (Python, `ctypes`) and `web/src/core/` (TypeScript, WebAssembly).
@@ -27,8 +29,8 @@ Currently: **Stage 5 done**, in **one** implementation —
   object.  The *shell* is the page around it: `shell.ts` (the elements, the view, the focused
   constraint, and where the core is started), `commands` (the constraints bar), `dialogs` (what
   the menus open), `lists` (the constraints window, the banner and the status line), `dimbox`
-  (a dimension's number, edited on the drawing), `ui` (dialogs and bar widgets), and `main.ts`,
-  which is only wiring.  `index.html` is structure and `app.css` is the whole of the styling.
+  (a dimension's number, edited on the drawing), `program` (the source, beside the drawing it
+  makes), `ui` (dialogs and bar widgets), and `main.ts`, which is only wiring.  `index.html` is structure and `app.css` is the whole of the styling.
 
 Commands:
 `make` (native `build/libgcs.dylib`), `make wasm` (`web/src/wasm/gcs.wasm`),
@@ -207,12 +209,43 @@ Conventions:
   dimension takes part in it — editing that dimension is the next conflict; one among pure
   relations is a theorem that nothing can break, so its wholly-implied constraints are
   `implied`: noted, never painted as an error.
+- **The document is the Solvent source (`gear.sv`, `syntax.rs`, `program.rs`, `edit.rs`).**  The
+  drawing is what elaborating it produces, and drawing is a way to edit it.  So *every* edit is a
+  **splice** — a few characters replaced in the text somebody wrote — and **never a reprint**: a
+  reprint would flatten a hand-written `component` into the entities it elaborates to, throw away
+  every comment and reflow every line, on the first drag.  A gear written as thirty instances of
+  one tooth stays written that way while its hundred and twenty points are dragged.
+  `edit.rs` is the whole of it: `commit_seeds` (a solve), `reconcile` (a gesture), `remove`,
+  `set_dimension`, `add_point`/`add_entity`/`add_relation`, and `mint` for a name.
+  Three edit classes, and **the core says which — the front end never guesses**: `Structural`
+  (statements added or removed), `Numeric` (only numbers a solve may move, so a compiled plan
+  survives — which is what keeps editing a dimension instant), `None`.
+  Writeback is one lexical rule: *a seed is writable iff it is written with `=` and not `==`, is
+  a literal and not an expression, and is reached by exactly one instance path.*
+  `reconcile` and `retext` **apply themselves to the `Elaborated` and do not rebuild the
+  drawing** — nothing about the drawing changed, the source is only catching up, and rebuilding
+  would invalidate every proxy a half-finished tool is holding.  `retext` re-parses (same
+  statements, same ids); `adopt` extends the map onto the statements just written.
+  `reconcile` reads only the *append*: entities and constraints are appended to their vectors, so
+  past the map's high-water mark is new and anything the map names that is gone was removed.  A
+  mutation that **renumbers** is not something it can follow, which is why deletion is
+  `edit::remove` and not `io::without`.
 - Deletion, copy and paste are one rebuild walk (`io::graft`): every surviving entity is
   renumbered into the destination and every reference follows, and a constraint comes along
   exactly when all its entities did.  `without` keeps what is not deleted, `copy` keeps the
   selection (so a clipboard is an ordinary sketch document), `paste` grafts one sketch onto
   another at an offset.  A new thing that travels with a constraint or an entity — a flag, a
-  placement — belongs in `graft`, or the three will disagree.
+  placement — belongs in `graft`, or the three will disagree.  JSON is now the *export* format,
+  derived rather than canonical; `io::dumps` is still what the Rust tests, the Python binding and
+  the benchmarks compare against.
+- A statement expanded by `flatten` **keeps the id of the statement it came from**: a `cycle` of
+  thirty makes thirty things from one line, and the line is what a span points at, a caret lands
+  on and a splice edits.  What tells the thirty apart is the `path` every `Site` carries.  Minting
+  an id per copy made each look like a statement of its own, so every consumer that turns an id
+  back into source found nothing there — and the multiplicity a fresh id hid is exactly what
+  `commit_seeds` needs to see.  `Program::stmts` walks into block bodies for the same reason;
+  whether a statement is one the *root* may splice on its own is a different question, asked
+  against `root().body` (`edit::in_root`).
 - Decomposition maps constraints onto F–H elements in `cgraph::build`; a new constraint type is
   either an edge (PP/PL), a direction relation, or `unsupported` (numeric residual).  Merge
   decisions use generic-rank at witness poses; chirality of PPP merges is the triangle
@@ -333,8 +366,10 @@ Conventions:
   brings the numbers they *show* back into step with the unknown, from every seam that writes
   parameters without going through the others — `Sketch::set_x`, `io::Part::write_back` and the
   wave's direct writes — since a solve moves the unknown and a stale callout is a wrong drawing.
-- The page is the drawing: there is no sidebar, and what the shell has to *say* is said beside
-  what is picked.  A component selected names itself in the status line (`describeEntity`) and
+- The page is the drawing *and the source it is written as*: the program panel is a permanent
+  second child of `<main>`, because the source is not a remark about the drawing — it is what the
+  drawing **is**.  Everything else the shell has to *say* is still said beside what is picked, and
+  there is no other sidebar.  A component selected names itself in the status line (`describeEntity`) and
   brings up one floating window listing the constraints that reach it, and only those.  The
   window is open on a `subject` — the selection while there is one, and otherwise whatever it
   was last opened on, so focusing a constraint (which empties the selection) does not pull the
@@ -342,6 +377,15 @@ Conventions:
   from: `openPanel` is how the two things that pick without selecting say so — a callout
   clicked on the drawing, the banner's culprits — and `closePanel`, wired to `onSelect`, is a
   press that hit nothing.
+- `SketchView` holds a `Document` (`core/program.ts`), not a `Sketch`: `view.sketch` is a getter
+  for what the source came to and `view.source` is the document.  Undo is program text, so it
+  restores what somebody wrote, comments and all.  A selection crosses a re-elaboration **by
+  name** (`Document.nameOf` / `Document.entity`) — a proxy is interned per `Sketch` and dies with
+  it; a name is what the source calls the thing.  `swap` is the one seam that replaces the
+  drawing, and it disposes the outgoing document.
+  The source catches up at exactly two seams and **never per frame**: `syncSeeds` at the end of a
+  drag (`gesture::endGesture`, guaranteed numeric) and `syncSource` at the end of `afterEdit`.
+  The panel is wired to `onProgram`, never to `onDragFrame`.
 - A drag is an operation on the dragged point's *part* of the document (`io::Part`): what is
   reached from it through shared points and constraints, stopping at fixed entities.  `PlanDrag`
   builds its plan, systems and numeric fallback on that part alone and writes each frame back, so

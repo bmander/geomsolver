@@ -183,7 +183,12 @@ export function endGesture(v: SketchView): void {
   if (!g) return;
   v.gesture = null;
   g.end?.();
-  if (g.movedGeometry) v.staleDiagnosis = true;
+  if (g.movedGeometry) {
+    v.staleDiagnosis = true;
+    // **the gesture becomes a source edit.**  One writeback, here, at the moment it is let go:
+    // during the drag the text is stale and that is correct — a drag is one edit, not sixty.
+    v.syncSeeds();
+  }
   if (!g.transient) v.onChanged();
   v.draw();
 }

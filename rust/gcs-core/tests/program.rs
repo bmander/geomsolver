@@ -309,6 +309,7 @@ fn a_name_declared_twice_is_an_error() {
             children: Vec::new(),
             seed: vec![1.0, 2.0],
             seed_text: vec![None, None],
+            seed_spans: vec![Default::default(); 2],
             knots: None,
             def: None,
             values: Vec::new(),

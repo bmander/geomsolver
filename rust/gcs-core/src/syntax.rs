@@ -258,6 +258,13 @@ pub struct Decl {
     /// parameters (`circle root(center: c, r: Rr)`).  Worked out during expansion and `None` from
     /// then on, so a printed program only ever carries numbers.
     pub seed_text: Vec<Option<String>>,
+    /// Where each seed sits in the source, so a solve can write one back **without reprinting
+    /// the statement around it**.  That is the whole difference between a program that is the
+    /// document and a program that is a view of one: a drag rewrites six characters and leaves
+    /// every comment, every blank line and every hand-written component exactly as it was.
+    ///
+    /// Empty for a declaration that was built rather than parsed — there is no text to splice.
+    pub seed_spans: Vec<Span>,
     /// Document data no solve moves, so not a seed and never written back.
     pub knots: Option<Vec<f64>>,
     /// A curve instance: the family it belongs to.  `None` for every other kind.
@@ -454,21 +461,38 @@ impl Program {
     }
 
     pub fn stmt(&self, id: StmtId) -> Option<&Stmt> {
-        self.components.iter().flat_map(|c| &c.body).find(|s| s.id == id)
+        self.stmts().find(|s| s.id == id)
     }
 
     /// The innermost statement covering a byte offset — a caret, turned into what it is written
     /// on.  A linear scan: this runs on a click, never on a frame.
     pub fn at_offset(&self, off: u32) -> Option<&Stmt> {
-        self.components
-            .iter()
-            .flat_map(|c| &c.body)
-            .filter(|s| s.span.contains(off))
-            .min_by_key(|s| s.span.len())
+        self.stmts().filter(|s| s.span.contains(off)).min_by_key(|s| s.span.len())
     }
 
+    /// Every statement in the program, blocks and all.
+    ///
+    /// **Including a block's body**, because a statement inside a `cycle` is a statement: it is
+    /// what a span points at, what a caret lands on and what an expanded entity names.  Stopping
+    /// at the block would make a gear's hundred and twenty points come from nothing findable.
+    /// Whether a statement is one the *root* may splice on its own is a different question, asked
+    /// against `root().body` where it belongs.
     pub fn stmts(&self) -> impl Iterator<Item = &Stmt> {
-        self.components.iter().flat_map(|c| &c.body)
+        fn walk<'a>(st: &'a Stmt, out: &mut Vec<&'a Stmt>) {
+            out.push(st);
+            if let StmtKind::Block(b) = &st.kind {
+                for inner in b.body.iter() {
+                    walk(inner, out);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        for c in self.components.iter() {
+            for st in c.body.iter() {
+                walk(st, &mut out);
+            }
+        }
+        out.into_iter()
     }
 }
 
@@ -520,6 +544,12 @@ pub fn render(p: &mut Program) -> &str {
     }
     p.text = out;
     &p.text
+}
+
+/// One statement, as text.  The one place a statement is written down, so an edit that appends
+/// one and a printer that prints a whole program cannot disagree about how it reads.
+pub fn write_stmt_to(out: &mut String, k: &StmtKind) {
+    write_stmt(out, k)
 }
 
 fn write_stmt(out: &mut String, k: &StmtKind) {
@@ -1133,7 +1163,7 @@ impl<'a> P<'a> {
     /// A value written where a number goes.  Plain digits come back as the number they are;
     /// anything else — `Rr`, `R + m`, `tau / N` — comes back as text for expansion to work out
     /// against the parameters in scope.
-    fn value_text(&mut self) -> Option<(Option<f64>, String)> {
+    fn value_text(&mut self) -> Option<(Option<f64>, String, Span)> {
         let from = self.here().lo as usize;
         let mut depth = 0i32;
         while !self.done() {
@@ -1152,7 +1182,8 @@ impl<'a> P<'a> {
             self.fail("expected a number");
             return None;
         }
-        Some((text.parse::<f64>().ok().filter(|v| v.is_finite()), text))
+        let span = Span::new(from, self.prev_hi());
+        Some((text.parse::<f64>().ok().filter(|v| v.is_finite()), text, span))
     }
 
     fn refr(&mut self) -> Option<Ref> {
@@ -1632,6 +1663,7 @@ impl<'a> P<'a> {
                 children: args,
                 seed: Vec::new(),
                 seed_text: Vec::new(),
+                seed_spans: Vec::new(),
                 knots: None,
                 def,
                 values,
@@ -1652,6 +1684,7 @@ impl<'a> P<'a> {
             fields.iter().filter(|(_, f)| *f == Field::Scalar).map(|(n, _)| *n).collect();
         seed.resize(scalars.len(), 0.0);
         let mut seed_text: Vec<Option<String>> = vec![None; scalars.len()];
+        let mut seed_spans: Vec<Span> = vec![Span::default(); scalars.len()];
         if self.eat_p('(') {
             let mut positional = 0usize;
             while !self.eat_p(')') {
@@ -1665,10 +1698,11 @@ impl<'a> P<'a> {
                 };
                 match label {
                     Some(l) if scalars.contains(&l.as_str()) => {
-                        let (v, t) = self.value_text()?;
+                        let (v, t, sp) = self.value_text()?;
                         if let Some(i) = scalars.iter().position(|&s| s == l) {
                             seed[i] = v.unwrap_or(0.0);
                             seed_text[i] = (v.is_none()).then_some(t);
+                            seed_spans[i] = sp;
                         }
                     }
                     _ => {
@@ -1712,18 +1746,19 @@ impl<'a> P<'a> {
                 if !self.want_p('(') {
                     return None;
                 }
-                let (x, xt) = self.value_text()?;
+                let (x, xt, xs) = self.value_text()?;
                 if !self.want_p(',') {
                     return None;
                 }
-                let (y, yt) = self.value_text()?;
+                let (y, yt, ys) = self.value_text()?;
                 if !self.want_p(')') {
                     return None;
                 }
-                for (i, (v, t)) in [(x, xt), (y, yt)].into_iter().enumerate() {
+                for (i, (v, t, sp)) in [(x, xt, xs), (y, yt, ys)].into_iter().enumerate() {
                     if i < scalars.len() {
                         seed[i] = v.unwrap_or(0.0);
                         seed_text[i] = (v.is_none()).then_some(t);
+                        seed_spans[i] = sp;
                     }
                 }
             } else if self.eat_word("knots") {
@@ -1746,7 +1781,19 @@ impl<'a> P<'a> {
             }
         }
         self.end_of_stmt();
-        Some(Decl { kind, name, children, seed, seed_text, knots, def, values, domain, construction })
+        Some(Decl {
+            kind,
+            name,
+            children,
+            seed,
+            seed_text,
+            seed_spans,
+            knots,
+            def,
+            values,
+            domain,
+            construction,
+        })
     }
 
     fn relation(&mut self) -> Option<Relation> {
@@ -1877,8 +1924,12 @@ impl<'a> P<'a> {
                 }
             }
         }
-        let span = Span::new(from, from + text.len());
-        (text.trim().to_string(), span, place, end)
+        // the span of the *trimmed* text, not of the slice it was cut from: an edit splices
+        // this, and a span that included the space after `==` would eat it and write `==140`
+        let lead = text.len() - text.trim_start().len();
+        let trimmed = text.trim();
+        let span = Span::new(from + lead, from + lead + trimmed.len());
+        (trimmed.to_string(), span, place, end)
     }
 
     fn arg(&mut self, kind: SpecKind) -> Option<Arg> {
@@ -1893,7 +1944,8 @@ impl<'a> P<'a> {
                 }
             }
             let lo = self.here();
-            let (v, text) = self.value_text()?;
+            let (v, text, sp) = self.value_text()?;
+            let _ = sp;
             return Some(match v {
                 Some(value) => Arg::Seed { value, pinned },
                 None => Arg::SeedExpr { text, pinned, span: Span::new(lo.lo as usize, self.prev_hi()) },

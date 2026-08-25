@@ -15,6 +15,7 @@ pub mod constraints;
 pub mod curve;
 pub mod decompose;
 pub mod diagnose;
+pub mod edit;
 pub mod ellipse;
 pub mod examples;
 pub mod expr;

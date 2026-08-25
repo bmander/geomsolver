@@ -85,12 +85,17 @@ export function removeConstraint(v: SketchView, c: Constraint): void {
   v.sketch.remove(c);
   v.afterEdit();
 }
+/** Delete what is selected — as a **source edit**: the statements that declare them go, and every
+ *  statement that named one goes with them, which is the rule `io::without` follows on a sketch
+ *  said about text instead.  A rebuild would have been simpler and would have flattened the
+ *  document to a list of points on the first deletion; this leaves everything else written.
+ *
+ *  Refused when what is selected came out of a component: there is no one statement to delete, and
+ *  taking the component out is a far larger edit than the gesture asked for. */
 export function deleteSelected(v: SketchView): void {
   if (!v.selected.length) return;
-  v.pushUndo();
   const n = v.selected.length;
-  v.setSketch(io.without(v.sketch, v.selected), false);
-  v.onStatus(`deleted ${n} entities`);
+  if (v.apply(v.doc.remove(v.selected), `deleted ${n} entities`)) v.onSelect();
 }
 
 /** Flip reference/normal on the selected lines, circles, arcs and ellipses. */
@@ -108,6 +113,7 @@ export function toggleConstructionSelected(v: SketchView): void {
   for (const e of ents) e.construction = !all;
   v.onStatus(`${ents.length} entit${ents.length === 1 ? 'y' : 'ies'} `
     + `${all ? 'back to normal geometry' : 'marked as construction'}`);
+  v.syncSource();      // a flag is document state, so the source has to say so
   v.onChanged();
   v.draw();
 }

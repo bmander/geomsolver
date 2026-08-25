@@ -16,6 +16,7 @@ import { Constraint } from '../core/constraints.js';
 import { PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
 import { Param, Point, Primitive, Sketch } from '../core/model.js';
+import { Document, Edit, fromSketch } from '../core/program.js';
 import { Method, SolveResult, System } from '../core/system.js';
 import { Motion, WitnessReport, analyze } from '../core/witness.js';
 import { Camera } from './camera.js';
@@ -62,7 +63,10 @@ export type Tool =
 
 
 export class SketchView {
-  sketch: Sketch;
+  /** **The document.**  The source somebody wrote, the drawing it elaborates to, and where each
+   *  part of the drawing was written.  Every edit is an edit of this text; the drawing is what
+   *  the text came to, and is replaced whole whenever the text changes structurally. */
+  doc: Document;
   /** Where the drawing sits on the canvas — and the whole of the front end's linear algebra:
    *  every world/screen conversion in `app/` goes through it (see `camera.ts`). */
   readonly cam = new Camera();
@@ -93,6 +97,9 @@ export class SketchView {
   /** A pointer interaction changed the canvas selection — so the canvas now has the focus,
    *  and whatever else was focused (a constraint row) no longer does. */
   onSelect: () => void = () => {};
+  /** The source changed — a structural edit, a seed writeback, an undo.  What the panel is
+   *  wired to, and **never** `onDragFrame`: a drag writes the source once, when it is let go. */
+  onProgram: () => void = () => {};
   /** Per gesture frame: the sketch's structure and the constraint list are unchanged, so
    *  only the status line needs updating (a drag's numbers, a band's selection count). */
   onDragFrame: () => void = () => {};
@@ -146,12 +153,23 @@ export class SketchView {
   /** A gesture moved geometry, so the null space no longer describes the pose on screen. */
   staleDiagnosis = false;
   private frame = 0;
+  /** A source sync is running: `swap` re-enters `afterEdit`, and the second pass has nothing
+   *  left to write.  One flag rather than a subtle argument about termination. */
+  private syncing = false;
 
-  constructor(readonly canvas: HTMLCanvasElement, sketch: Sketch) {
-    this.sketch = sketch;
+  constructor(readonly canvas: HTMLCanvasElement, doc: Document) {
+    this.doc = doc;
     this.ctx = canvas.getContext('2d')!;
     bindEvents(this);
   }
+
+  /** The drawing the source came to.  Read everywhere and written nowhere: a new drawing is a
+   *  new elaboration, which is `setProgram`. */
+  get sketch(): Sketch { return this.doc.sketch; }
+
+  /** The source.  This is the document — what Save writes, what undo remembers, and what the
+   *  panel shows. */
+  get source(): string { return this.doc.text; }
 
   // -- coordinates ---------------------------------------------------------
 
@@ -183,32 +201,146 @@ export class SketchView {
 
   // -- sketch mutation -----------------------------------------------------
 
-  /** Show a different sketch.  Loading one is not a step along the history — there is no
-   *  future to return to any more — so it drops the redo stack; stepping uses `swap`. */
-  setSketch(sk: Sketch, fit = true): void {
+  /** Show a different document.  Loading one is not a step along the history — there is no
+   *  future to return to any more — so it drops the redo stack; stepping uses `swap`.
+   *
+   *  A program that will not elaborate leaves the drawing alone and says so: a half-written
+   *  source is a thing somebody is in the middle of typing, not a reason to lose their work. */
+  setProgram(text: string, fit = true): boolean {
+    let next: Document;
+    try {
+      next = Document.read(text);
+    } catch {
+      this.onStatus('the program could not be read');
+      return false;
+    }
     this.redoStack = [];
-    this.swap(sk, fit);
+    this.swap(next, fit);
+    return true;
   }
 
-  private swap(sk: Sketch, fit: boolean): void {
+  /** Adopt a sketch built some other way — an example, a JSON file, a fresh sheet — by lifting
+   *  it into the program it is written as.  **The one migration seam**: past it, everything is
+   *  a document.  The sketch is consumed. */
+  setSketch(sk: Sketch, fit = true): void {
+    let text: string;
+    try {
+      text = fromSketch(sk);
+    } finally {
+      sk.dispose();
+    }
+    this.setProgram(text, fit);
+  }
+
+  /** Adopt an elaboration already in hand — the seam every structural edit goes through, so
+   *  there is exactly one place where the drawing is replaced. */
+  private swap(next: Document, fit: boolean, carry = false): void {
     this.stopAnimation();             // before the swap: it restores into the sketch it started on
     abandonGesture(this);            // before the swap: `end` would commit into the new sketch
     this.liveDim = null;              // and a dimension half-written belongs to the old document
     this.onDimension(null, null);
-    this.sketch = sk;
-    this.selected = [];
+    const held = carry ? this.namesOf(this.selected) : [];
+    const old = this.doc;
+    this.doc = next;
+    // the outgoing elaboration owns a core sketch, and a wasm heap only grows
+    if (old !== next) old.dispose();
+    this.selected = carry ? this.rebind(held) : [];
     this.highlight = [];
     this.litConstraint = null;
     this.pastes = 0;              // a fresh sheet: the next paste starts its cascade over
     this.pending = [];
     this.releasePlan();
     this.afterEdit();
+    this.onProgram();
     if (fit) this.fit();      // after the solve: loading a case can move the geometry a long way
   }
 
+  /* -- a selection across a re-elaboration --------------------------------
+   *
+   * A proxy is interned on `(kind, index)` in one `Sketch`, so it dies with the elaboration that
+   * made it.  A **name** does not: it is what the source calls the thing, and the source is what
+   * survives an edit.  So a selection crosses by name, and the lookup is the source map's — the
+   * front end does no indexing of its own. */
+
+  private namesOf(ps: Primitive[]): string[] {
+    return ps.map((p) => this.doc.nameOf(p)).filter((n): n is string => !!n);
+  }
+
+  private rebind(names: string[]): Primitive[] {
+    return names.map((n) => this.doc.entity(n)).filter((p): p is Primitive => !!p);
+  }
+
+  /** Apply an edit the core computed.  `structural` re-elaborates and carries the selection
+   *  across by name; `numeric` and `none` leave the drawing standing, because the core has said
+   *  the topology cannot have moved and a compiled plan is still good. */
+  apply(e: Edit, what?: string): boolean {
+    if (e.refused) {
+      this.onStatus(e.refused);
+      return false;
+    }
+    if (e.kind === 'none') return false;
+    if (e.kind === 'structural') {
+      this.pushUndo();
+      let next: Document;
+      try {
+        next = Document.read(e.text);
+      } catch {
+        this.dropUndo();
+        this.onStatus('the edit could not be read back');
+        return false;
+      }
+      this.redoStack = [];
+      this.swap(next, false, true);
+    } else {
+      this.pushUndo();
+      this.redoStack = [];
+      // if the core would rather be re-elaborated, do that: correct always, slower sometimes
+      if (!this.doc.retext(e.text)) return this.setProgram(e.text, false);
+      this.afterEdit();
+      this.onProgram();
+    }
+    if (what) this.onStatus(what);
+    return true;
+  }
+
+  /** Bring the source back into step with a drawing a gesture changed.
+   *
+   *  A tool draws by mutating the elaborated sketch — that is how it gets to snap and solve with
+   *  the pointer still down — so this is where the document catches up: a splice appending what
+   *  was drawn, taking out what was deleted, and committing the seeds.  Everything somebody wrote
+   *  is left alone, which is the difference between a document and a print-out of the drawing.
+   *
+   *  Safe mid-tool: `reconcile` extends the elaboration rather than replacing it, so a chaining
+   *  tool's half-built polyline keeps the proxies it is holding.  Held off only while a *drag* is
+   *  live (`syncSeeds` is the seam for that, once, at release) and while a dimension is being
+   *  carried, which is a thing being said rather than a thing yet done. */
+  syncSource(): void {
+    if (this.syncing || this.anim || this.gesture || this.liveDim) return;
+    this.syncing = true;
+    try {
+      const e = this.doc.reconcile();
+      if (e.refused) return this.onStatus(e.refused);
+      if (e.kind !== 'none') this.onProgram();
+    } finally {
+      this.syncing = false;
+    }
+  }
+
+  /** Put where the drawing *is* back into the seeds it came from.  Run at the end of a gesture,
+   *  never per frame: during a drag the text is stale, and that is correct — a drag is one edit,
+   *  at the moment it is let go. */
+  syncSeeds(): void {
+    if (this.anim) return;      // a wobble is not where the drawing is; freezing it in would lie
+    const e = this.doc.commitSeeds();
+    if (e.kind === 'none' || !this.doc.retext(e.text)) return;
+    this.onProgram();
+  }
+
+
   /** Remember a state to come back to — the current one, or an earlier one a caller took a
-   *  snapshot of before it knew whether the edit would come to anything. */
-  pushUndo(state: string = io.dumps(this.sketch)): void {
+   *  snapshot of before it knew whether the edit would come to anything.  A state is program
+   *  text, so undo is exact: it restores what somebody wrote, comments and all. */
+  pushUndo(state: string = this.source): void {
     this.undoStack.push(state);
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.redoStack = [];              // a fresh edit is a new branch: the old future is gone
@@ -229,8 +361,14 @@ export class SketchView {
   private step(from: string[], to: string[], what: string): void {
     const s = from.pop();
     if (!s) return this.onStatus(`nothing to ${what}`);
-    to.push(io.dumps(this.sketch));
-    this.swap(io.loads(s), false);
+    let next: Document;
+    try {
+      next = Document.read(s);
+    } catch {
+      return this.onStatus(`could not ${what}`);
+    }
+    to.push(this.source);
+    this.swap(next, false);
     this.onStatus(what);
   }
 
@@ -316,6 +454,7 @@ export class SketchView {
     const fresh = this.systemKey === this.sketch.topologyKey();
     if (!fresh) this.releaseSystem();
     this.rediagnose(fresh ? this.lastSystem : null);
+    this.syncSource();        // the drawing changed, so the document has to say what it now says
     this.onChanged();
     this.draw();
     return this.lastResult;

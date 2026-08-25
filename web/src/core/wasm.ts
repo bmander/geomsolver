@@ -35,6 +35,15 @@ export interface Abi {
   gcs_elab_take_sketch(h: number): number;
   gcs_elab_text(h: number): number;
   gcs_elab_report(h: number): number;
+  gcs_elab_retext(h: number, p: number, n: number): number;
+  gcs_elab_commit_seeds(h: number, sk: number): number;
+  gcs_elab_reconcile(h: number, sk: number): number;
+  gcs_elab_add_point(h: number, x: number, y: number): number;
+  gcs_elab_add_entity(h: number, p: number, n: number): number;
+  gcs_elab_add_relation(h: number, p: number, n: number): number;
+  gcs_elab_remove(h: number, p: number, n: number): number;
+  gcs_elab_set_dimension(h: number, cid: number, ap: number, an: number,
+                         tp: number, tn: number): number;
   gcs_sketch_counts(h: number, out: number): void;
   gcs_sketch_point(h: number, x: number, y: number, fixed: number, name: number, nameLen: number): number;
   gcs_sketch_line(h: number, p1: number, p2: number): number;
@@ -124,6 +133,7 @@ export interface Abi {
   gcs_copy(h: number, ep: number, en: number): number;
   gcs_paste(h: number, clip: number, dx: number, dy: number): number;
   gcs_example(name: number, len: number): number;
+  gcs_example_source(name: number, len: number): number;
   gcs_cases_json(): number;
 
   gcs_system_new(h: number): number;

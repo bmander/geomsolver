@@ -51,7 +51,7 @@ export async function openCase(): Promise<void> {
   const i = await askChoice('Open test case', 'The sketches the solver is exercised on:',
                             cases.map((c) => `${c.label} — ${c.description}`));
   if (i === null) return;
-  view.setSketch(examples.build(cases[i].key));
+  view.setProgram(examples.source(cases[i].key));
   toast(`${cases[i].label} — ${cases[i].description}`, 12000);
 }
 

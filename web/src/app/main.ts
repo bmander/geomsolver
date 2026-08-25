@@ -204,6 +204,9 @@ view.onPickConstraint = (c) => {
 view.onEditConstraint = (c) => editValue(c);
 view.onDimension = onDimension;
 view.onChanged = () => { refresh(); refreshProgram(); };
+// the source changed without the drawing's structure doing so — a drag wrote its seeds back, or a
+// number was spliced.  Never per frame: `onDragFrame` is the frame seam and this is not wired to it
+view.onProgram = () => { refreshProgram(); };
 view.onDragFrame = refreshStatus;
 view.onStatus = toast;
 bindProgramPanel();

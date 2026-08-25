@@ -583,7 +583,7 @@ pub const CASES: [(&str, &str, &str); 22] = [
     ("Pythagoras, graphically", "pythagoras", "four a×b right triangles in a square of side a + b leave a square of side c; `c = hypot(a, b)` is redundant and consistent — edit a or b and it stays so"),
     ("Curve and follower", "spline_follower", "a cubic B-spline with a face held tangent to it and a point riding on it — drag a control point and the contact slides along the curve, across knots and all"),
     ("Belt over two pulleys", "belt_tangency", "each end on its circle and the line tangent to it — a double root: rank-deficient at every solution, yet nothing can move.  The second-order screen calls it rigid rather than 2 DOF"),
-    ("Spur gear (12 teeth)", "gear", "written as a Solvent program: one tooth as a component, repeated round a cycle — open the Program panel (Edit ▸ Program) to read it"),
+    ("Spur gear (30 teeth)", "gear", "written as a Solvent program: a curve family the document itself defines, one flank as a component, repeated round a cycle — open the Program panel (Edit ▸ Program) to read it"),
     ("Levelled zigzags (3×32)", "zigzag", "three separate staircases of free-length H/V segments — a drag costs one staircase, not three"),
 ];
 
@@ -602,6 +602,20 @@ pub fn gear() -> Sketch {
     let e = crate::program::elaborate(&p);
     debug_assert!(e.ok(), "the gear does not elaborate");
     e.sketch
+}
+
+/// The *source* of a case, for the library that has one.
+///
+/// A case written as a document has a text somebody wrote, and that text — its comments, its
+/// components, the reasons in it — is the case.  Lifting the sketch it elaborates to would print
+/// a hundred and twenty `point` declarations and none of the explanation, which is a different
+/// document about the same drawing.  Every other case is a function, so it has no source and the
+/// caller lifts it.
+pub fn source(key: &str) -> Option<&'static str> {
+    match key.split(':').next().unwrap_or("") {
+        "gear" => Some(GEAR),
+        _ => None,
+    }
 }
 
 /// The case library's factory.  Keys are either a plain name or `name:arg[:arg]`, so a front end

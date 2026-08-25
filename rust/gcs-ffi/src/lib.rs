@@ -260,8 +260,6 @@ pub unsafe extern "C" fn gcs_sketch_to_json(h: *mut Sketch, indent: i32) -> *mut
     })
 }
 
-/// `[n_params, n_points, n_lines, n_circles, n_arcs, n_constraints, n_splines, n_ellipses]`
-#[no_mangle]
 /// How many integers `gcs_sketch_counts` writes.
 ///
 /// Asked rather than assumed: a binding that hard-codes the width writes past its buffer the day
@@ -1397,6 +1395,15 @@ pub unsafe extern "C" fn gcs_paste(h: *mut Sketch, clip: *mut Sketch, dx: f64,
 }
 
 /* -- examples -------------------------------------------------------------- */
+
+/// The source of a case written as a document, or null for one that is a function.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_example_source(name: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || match examples::source(&as_str(name, len)) {
+        Some(src) => out_str(src.to_string()),
+        None => std::ptr::null_mut(),
+    })
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_example(name: *const u8, len: usize) -> *mut Sketch {
@@ -2599,7 +2606,6 @@ pub unsafe extern "C" fn gcs_program_elaborate(ptr: *const u8, len: usize) -> *m
             .collect();
         all.append(&mut e.diags);
         e.diags = all;
-        e.text = prog.text().to_string();
         Box::into_raw(Box::new(e))
     })
 }
@@ -2630,7 +2636,7 @@ pub unsafe extern "C" fn gcs_elab_take_sketch(h: *mut Elaborated) -> *mut Sketch
 /// The text the program was read from — which a splice may have moved on.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_text(h: *mut Elaborated) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || out_str((*h).text.clone()))
+    guard(std::ptr::null_mut(), move || out_str((*h).text().to_string()))
 }
 
 /// `{"ok": bool, "diagnostics": [{severity, code, message, lo, hi, line, col}], "map": {...}}`
@@ -2645,7 +2651,7 @@ pub unsafe extern "C" fn gcs_elab_report(h: *mut Elaborated) -> *mut u8 {
             .diags
             .iter()
             .map(|d| {
-                let (line, col) = d.at(&e.text);
+                let (line, col) = d.at(e.text());
                 json::object([
                     ("severity", Json::Str(format!("{:?}", d.severity()).to_lowercase())),
                     ("code", Json::Str(d.code.as_str().to_string())),
@@ -2692,6 +2698,192 @@ pub unsafe extern "C" fn gcs_elab_report(h: *mut Elaborated) -> *mut u8 {
             ("constraints", Json::Arr(cons)),
         ]))
     })
+}
+
+/* -- editing the source ------------------------------------------------------------
+ *
+ * Every one of these returns `{text, kind, names, refused}` and changes nothing: the caller
+ * applies the text it gets back by elaborating it, which is the only place a document is ever
+ * replaced.  `kind` says what that costs — `numeric` means only numbers a solve may move
+ * changed, so a compiled plan survives.
+ */
+
+fn out_edit(e: gcs_core::edit::Edit) -> *mut u8 {
+    use gcs_core::edit::Kind;
+    out_json(json::object([
+        ("text", Json::Str(e.text)),
+        (
+            "kind",
+            Json::Str(
+                match e.kind {
+                    Kind::Structural => "structural",
+                    Kind::Numeric => "numeric",
+                    Kind::None => "none",
+                }
+                .to_string(),
+            ),
+        ),
+        ("names", Json::Arr(e.names.into_iter().map(Json::Str).collect())),
+        ("refused", e.refused.map(Json::Str).unwrap_or(Json::Null)),
+    ]))
+}
+
+/// Put a solved sketch's coordinates back into the seeds they came from.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_commit_seeds(h: *mut Elaborated, s: *mut Sketch) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let e = &*h;
+        out_edit(gcs_core::edit::commit_seeds(e, sk(s), &e.program))
+    })
+}
+
+/// The source after a gesture mutated the drawing: what is new gets a statement, what is gone
+/// loses one, and every seed is committed.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_reconcile(h: *mut Elaborated, s: *mut Sketch) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || out_edit(gcs_core::edit::reconcile(&mut *h, sk(s))))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_add_point(h: *mut Elaborated, x: f64, y: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        out_edit(gcs_core::edit::add_point(&(*h).program, x, y))
+    })
+}
+
+/// `{"kind": "line", "args": ["p0", "p1"], "seed": [..]}`
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_add_entity(
+    h: *mut Elaborated,
+    ptr: *const u8,
+    len: usize,
+) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let Some(kind) = EntKind::parse(v.get("kind").map(|k| k.as_str()).unwrap_or("")) else {
+            set_error("unknown entity kind");
+            return std::ptr::null_mut();
+        };
+        let args: Vec<String> = v
+            .get("args")
+            .map(|a| a.arr().iter().map(|x| x.as_str().to_string()).collect())
+            .unwrap_or_default();
+        let seed: Vec<f64> =
+            v.get("seed").map(|a| a.arr().iter().map(|x| x.as_f64()).collect()).unwrap_or_default();
+        out_edit(gcs_core::edit::add_entity(&(*h).program, kind, &args, &seed))
+    })
+}
+
+/// One constraint, in `report::constraint_from_json`'s shape but with entities by *name* — the
+/// document's own way of saying which, rather than an index into a sketch it is about to replace.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_add_relation(
+    h: *mut Elaborated,
+    ptr: *const u8,
+    len: usize,
+) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        // either spelling: `Horizontal`, the record shape both bindings build, or `horizontal`,
+        // the way a statement says it.  One name for one thing, written twice.
+        let name = v.get("type").map(|x| x.as_str().to_string()).unwrap_or_default();
+        let kind = gcs_core::constraints::CKind::from_name(&name)
+            .or_else(|| gcs_core::constraints::CKind::from_name(&gcs_core::syntax::camel(&name)));
+        let Some(kind) = kind else {
+            set_error(format!("unknown constraint type: {name}"));
+            return std::ptr::null_mut();
+        };
+        let spec = kind.spec();
+        let raw = v.get("args").cloned().unwrap_or(Json::Arr(Vec::new()));
+        let raw = raw.arr();
+        let mut args: Vec<Option<gcs_core::syntax::Arg>> = vec![None; spec.len()];
+        for (i, (_, k)) in spec.iter().enumerate() {
+            let Some(a) = raw.get(i) else { continue };
+            if matches!(a, Json::Null) {
+                continue; // left out: the core reads it off the geometry
+            }
+            args[i] = Some(if k.is_entity() {
+                gcs_core::syntax::Arg::Ref(gcs_core::syntax::Ref::new(a.as_str().to_string()))
+            } else if k.is_dimension() {
+                gcs_core::syntax::Arg::Dim {
+                    text: a.as_str().to_string(),
+                    span: Default::default(),
+                }
+            } else {
+                match a {
+                    Json::Bool(b) => gcs_core::syntax::Arg::Bool(*b),
+                    Json::Str(s) => gcs_core::syntax::Arg::Word(s.clone()),
+                    Json::Int(n) => gcs_core::syntax::Arg::Int(*n),
+                    other => gcs_core::syntax::Arg::Num(other.as_f64()),
+                }
+            });
+        }
+        out_edit(gcs_core::edit::add_relation(
+            &(*h).program,
+            gcs_core::syntax::Relation { kind, args, place: None },
+        ))
+    })
+}
+
+/// `{"entities": [["point", 3], ...], "constraints": [id, ...]}`
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_remove(
+    h: *mut Elaborated,
+    ptr: *const u8,
+    len: usize,
+) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let ents: Vec<EntRef> = v
+            .get("entities")
+            .map(|a| {
+                a.arr()
+                    .iter()
+                    .filter_map(|r| {
+                        let p = r.arr();
+                        (p.len() == 2)
+                            .then(|| EntKind::parse(p[0].as_str()))
+                            .flatten()
+                            .map(|k| EntRef::new(k, p[1].as_i64() as usize))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let cons: Vec<u32> = v
+            .get("constraints")
+            .map(|a| a.arr().iter().map(|x| x.as_i64() as u32).collect())
+            .unwrap_or_default();
+        let e = &*h;
+        out_edit(gcs_core::edit::remove(e, &e.program, &ents, &cons))
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_set_dimension(
+    h: *mut Elaborated,
+    cid: u32,
+    ap: *const u8,
+    an: usize,
+    tp: *const u8,
+    tn: usize,
+) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let e = &*h;
+        out_edit(gcs_core::edit::set_dimension(
+            e,
+            &e.program,
+            cid,
+            as_str(ap, an),
+            as_str(tp, tn),
+        ))
+    })
+}
+
+/// Take a new source that says the same statements, keeping the drawing.  0 when it cannot —
+/// the caller then elaborates, which is always correct and only slower.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_retext(h: *mut Elaborated, p: *const u8, n: usize) -> i32 {
+    guard(0, move || (*h).retext(&as_str(p, n)) as i32)
 }
 
 /// One curve as a polyline, over the interval that curve is drawn on.

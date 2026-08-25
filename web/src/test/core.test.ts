@@ -21,6 +21,7 @@ import {
 import { checkSketch } from '../core/fdcheck.js';
 import { enumerateStep } from '../core/homotopy.js';
 import { Point, Sketch, Spline } from '../core/model.js';
+import { Document } from '../core/program.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
 import { analyze } from '../core/witness.js';
 import { core, initCore } from '../core/wasm.js';
@@ -1753,4 +1754,144 @@ test('the gear is a program, and its flanks are involutes the language defines',
     }
   }
   sk.dispose();
+});
+
+/* -- Solvent: the source is the document ------------------------------------------ */
+
+const TRIANGLE = `\
+// a triangle, and this comment must survive every edit
+point a at (0, 0)
+point b at (100, 0)
+point c at (40, 70)
+
+line ab(a, b)      // the base
+line bc(b, c)
+line ca(c, a)
+
+horizontal(ab)
+distance(a, b) == w = 140
+ground(a)
+`;
+
+test('an edit is a new text, and the document is unchanged until it is applied', () => {
+  const d = Document.read(TRIANGLE);
+  assert.ok(d.ok, JSON.stringify(d.diagnostics));
+  const e = d.addPoint(12.5, -3);
+  assert.equal(e.kind, 'structural');
+  assert.deepEqual(e.names, ['p0']);
+  assert.ok(e.text.includes('point   p0 at (12.5, -3)'), e.text);
+  assert.equal(d.text, TRIANGLE, 'the document has not moved');
+  assert.equal(d.sketch.points.length, 3);
+  const next = Document.read(e.text);
+  assert.equal(next.sketch.points.length, 4);
+  next.dispose();
+  d.dispose();
+});
+
+test('a solve writes the seeds back and touches nothing else', () => {
+  const d = Document.read(TRIANGLE);
+  const r = solve(d.sketch);
+  assert.ok(r.success, r.message);
+  const e = d.commitSeeds();
+  assert.equal(e.kind, 'numeric', 'a seed is not a statement');
+  assert.ok(e.text.includes('// a triangle, and this comment must survive every edit'));
+  assert.ok(e.text.includes('line ab(a, b)      // the base'));
+  assert.ok(e.text.includes('distance(a, b) == w = 140'), 'the dimension is not a seed');
+  const before = TRIANGLE.split('\n');
+  const after = e.text.split('\n');
+  assert.equal(before.length, after.length);
+  for (let i = 0; i < before.length; i++) {
+    if (before[i].startsWith('point ')) continue;
+    assert.equal(after[i], before[i], `line ${i + 1} changed`);
+  }
+  d.dispose();
+});
+
+test('a name carries a selection from one document to the next', () => {
+  const d = Document.read(TRIANGLE);
+  const held = d.sketch.points[2];
+  const name = d.nameOf(held);
+  assert.equal(name, 'c');
+  const e = d.addPoint(0, 0);
+  const next = Document.read(e.text);
+  const again = next.entity(name!);
+  assert.ok(again, 'the same name reaches an entity in the new elaboration');
+  assert.equal(again!.kind, 'point');
+  assert.notEqual(again!.sketch, d.sketch, 'and it is a different sketch');
+  next.dispose();
+  d.dispose();
+});
+
+test('drawing a triangle by gestures writes six statements', () => {
+  let d = Document.read('');
+  const names: string[] = [];
+  for (const [x, y] of [[0, 0], [60, 0], [60, 40]]) {
+    const e = d.addPoint(x, y);
+    names.push(e.names[0]);
+    d.dispose();
+    d = Document.read(e.text);
+  }
+  for (const [i, j] of [[0, 1], [1, 2], [2, 0]]) {
+    const e = d.addEntity('line', [names[i], names[j]]);
+    d.dispose();
+    d = Document.read(e.text);
+  }
+  const e = d.addRelation('horizontal', ['l0']);
+  assert.ok(!e.refused, e.refused ?? '');
+  d.dispose();
+  d = Document.read(e.text);
+  assert.ok(d.ok, JSON.stringify(d.diagnostics));
+  assert.equal(d.sketch.points.length, 3);
+  assert.equal(d.sketch.lines.length, 3);
+  assert.ok(d.text.includes('horizontal(l0)'), d.text);
+  d.dispose();
+});
+
+test('editing a number splices the number, and a name is a column', () => {
+  const d = Document.read(TRIANGLE);
+  const dim = d.sketch.constraints.find((c) => c.typeName === 'Distance')!;
+  // `w = 140` names its value, so dropping the name drops a column — and the core says so
+  const drop = d.setDimension(dim.id, 'd', '160');
+  assert.equal(drop.kind, 'structural', 'a name that goes away is a column that goes away');
+  assert.ok(drop.text.includes('distance(a, b) == 160'), drop.text);
+  assert.ok(drop.text.includes('// the base'), 'and nothing else moved');
+
+  // between two bare numbers there is nothing but the number: the plan survives it
+  const plain = Document.read(drop.text);
+  const same = plain.sketch.constraints.find((c) => c.typeName === 'Distance')!;
+  const again = plain.setDimension(same.id, 'd', '170');
+  assert.equal(again.kind, 'numeric', 'a bare number cannot move the topology');
+  assert.ok(again.text.includes('distance(a, b) == 170'), again.text);
+
+  const named = plain.setDimension(same.id, 'd', 'w = 170');
+  assert.equal(named.kind, 'structural', 'a name may be a free variable');
+  plain.dispose();
+  d.dispose();
+});
+
+test('deleting a point takes the statements that named it', () => {
+  const d = Document.read(TRIANGLE);
+  const e = d.remove([d.sketch.points[2]]);
+  assert.ok(!e.text.includes('point c at'), e.text);
+  assert.ok(!e.text.includes('line bc'), e.text);
+  assert.ok(e.text.includes('line ab(a, b)      // the base'));
+  const next = Document.read(e.text);
+  assert.equal(next.sketch.points.length, 2);
+  assert.equal(next.sketch.lines.length, 1);
+  next.dispose();
+  d.dispose();
+});
+
+test('dragging the gear does not rewrite the gear', () => {
+  const d = Document.read(examples.source('gear'));
+  assert.ok(d.ok, JSON.stringify(d.diagnostics));
+  assert.ok(solve(d.sketch).success);
+  for (const p of d.sketch.points) {
+    p.x.value += 1.5;
+    p.y.value -= 0.5;
+  }
+  const e = d.commitSeeds();
+  assert.equal(e.text, d.text, 'a statement that makes thirty points records no one pose');
+  assert.ok(e.text.includes('curve involute(c: circle, phase: Angle)(u) ='));
+  d.dispose();
 });

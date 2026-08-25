@@ -1,6 +1,11 @@
-/* The program the drawing came from, shown beside it and edited back into it.
+/* The document, shown beside the drawing it makes.
  *
- * The core owns the language entirely — printing, reading, elaborating, and where every statement
+ * **This is not a view of the sketch — it is the source, and the drawing is what it came to.**  So
+ * the panel shows `view.source` and never re-prints: the comments somebody wrote, the components
+ * they factored out and the blank lines they left are the document as much as the numbers are, and
+ * a re-print would put a lift of the drawing there instead, losing all of it on the first drag.
+ *
+ * The core owns the language entirely — reading, elaborating, editing and where every statement
  * sits.  This module is the panel: it puts the text on the page, keeps out of the way while
  * somebody is typing in it, and hands what they typed back.
  *
@@ -8,8 +13,7 @@
  * rows only when the contents actually changed, so a caret and a scroll position survive an edit
  * made elsewhere; `dimbox.ts` will not overwrite a box somebody is in.  A panel that reprinted on
  * every solve would take the line out from under the cursor. */
-import * as io from '../core/io.js';
-import type { Diagnostic } from '../core/io.js';
+import type { Diagnostic, Ref, SourceMap } from '../core/io.js';
 import { pdiags, ppanel, ppanelState, ptext, view } from './shell.js';
 import { toast } from './ui.js';
 
@@ -18,7 +22,7 @@ import { toast } from './ui.js';
 let shown = '';
 /** Somebody is editing: nothing overwrites the box until they are done with it. */
 let typed = false;
-let lastMap: io.SourceMap = { entities: [], constraints: [] };
+
 
 export function programPanelOpen(): boolean {
   return !ppanel.hidden;
@@ -43,7 +47,7 @@ export function refreshProgram(): void {
     ppanelState.textContent = ' — edited, ⌘↵ to apply';
     return;
   }
-  const text = io.toProgram(view.sketch);
+  const text = view.source;
   if (text === shown) return;
   const { selectionStart, selectionEnd, scrollTop } = ptext;
   shown = text;
@@ -52,7 +56,7 @@ export function refreshProgram(): void {
   ptext.scrollTop = scrollTop;
   ppanel.classList.remove('dirty');
   ppanelState.textContent = '';
-  showDiags([]);
+  showDiags(view.doc.diagnostics);
 }
 
 /** Apply what is in the box.  One undo entry, one solve, one diagnosis — like every other edit.
@@ -61,29 +65,22 @@ export function refreshProgram(): void {
  *  statement is not an instruction to delete anything. */
 export function applyProgram(): boolean {
   const text = ptext.value;
-  let e: io.Elaboration;
-  try {
-    e = io.fromProgram(text);
-  } catch (err) {
-    toast(`the program could not be read: ${(err as Error).message}`);
-    return false;
-  }
-  showDiags(e.diagnostics);
-  if (!e.ok || !e.sketch) {
-    e.sketch?.dispose();
-    const first = e.diagnostics.find((d) => d.severity === 'error');
+  const undo = view.source;
+  if (!view.setProgram(text, false)) return false;
+  showDiags(view.doc.diagnostics);
+  if (!view.doc.ok) {
+    // it drew what it could, and the errors are in the gutter beside the lines that caused them
+    const first = view.doc.diagnostics.find((d) => d.severity === 'error');
     toast(first ? `line ${first.line}: ${first.message}` : 'the program has an error');
-    return false;
+  } else {
+    toast('program applied');
   }
-  lastMap = e.map;
+  view.pushUndo(undo);
   typed = false;
   shown = text;
   ppanel.classList.remove('dirty');
   ppanelState.textContent = '';
-  view.pushUndo();
-  view.setSketch(e.sketch, false);
-  toast('program applied');
-  return true;
+  return view.doc.ok;
 }
 
 /** Put back what the drawing says, throwing away what was typed. */
@@ -92,6 +89,12 @@ export function revertProgram(): void {
   shown = '';
   ppanel.classList.remove('dirty');
   refreshProgram();
+}
+
+/** Where every part of the drawing was written, in *this* elaboration.  Asked each time rather
+ *  than remembered: a map belongs to the elaboration that made it, and this panel outlives many. */
+function map(): SourceMap {
+  return view.doc.map;
 }
 
 function showDiags(ds: Diagnostic[]): void {
@@ -115,7 +118,7 @@ export function showStatementFor(): void {
   if (ppanel.hidden || typed || document.activeElement === ptext) return;
   const first = view.selected[0];
   if (!first) return;
-  const found = lastMap.entities.find(
+  const found = map().entities.find(
     (x) => x.kind === first.ref[0] && x.index === first.ref[1],
   );
   if (!found) return;
@@ -153,19 +156,16 @@ export function bindProgramPanel(): void {
   // a click in the text says which statement, and the drawing lights what it made
   ptext.addEventListener('click', () => {
     const off = ptext.selectionStart;
-    const ent = lastMap.entities.find((x) => off >= x.lo && off < x.hi);
-    if (!ent) return;
-    const of: Record<string, () => { ref: io.Ref }[]> = {
-      point: () => view.sketch.points,
-      line: () => view.sketch.lines,
-      circle: () => view.sketch.circles,
-      arc: () => view.sketch.arcs,
-      spline: () => view.sketch.splines,
-      ellipse: () => view.sketch.ellipses,
-    };
-    const e = of[ent.kind]?.()[ent.index];
+    // the innermost statement containing the caret: a statement inside a block is inside its
+    // block's span, and the one that made something is the one a click there means
+    let best: { name: string; lo: number; hi: number } | null = null;
+    for (const x of map().entities) {
+      if (off < x.lo || off >= x.hi) continue;
+      if (!best || x.hi - x.lo < best.hi - best.lo) best = x;
+    }
+    const e = best && view.doc.entity(best.name);
     if (e) {
-      view.highlight = [e as never];
+      view.highlight = [e];
       view.draw();
     }
   });

@@ -151,6 +151,8 @@ pub struct SourceMap {
 pub enum Made {
     Ent(EntRef),
     Con(u32),
+    /// A gauge or a flag: it names something already in the map rather than making anything.
+    Gauge,
 }
 
 impl SourceMap {
@@ -184,6 +186,7 @@ impl SourceMap {
             Made::Con(id) => {
                 self.of_constraint.insert(id, site);
             }
+            Made::Gauge => {}
         }
         self.made.entry(st.id).or_default().push(what);
     }
@@ -195,16 +198,125 @@ pub struct Elaborated {
     pub sketch: Sketch,
     pub map: SourceMap,
     pub diags: Vec<Diag>,
-    /// The text every span in here indexes.  Carried rather than borrowed, because a span without
-    /// the text it cuts is a pair of numbers about nothing — and because the one caller that most
-    /// needs both is across an ABI, where a borrow cannot follow.
-    pub text: String,
+    /// The program every span in here indexes.  Carried rather than borrowed: a span without the
+    /// text it cuts is a pair of numbers about nothing, an edit needs the statements as well as
+    /// the characters, and the caller that most needs all of it is across an ABI where a borrow
+    /// cannot follow.
+    pub program: Program,
     /// Whether the sketch has been moved out.  There was only ever one, and a second taker would
     /// get an empty sketch that looked like a real one.
     pub taken: bool,
 }
 
 impl Elaborated {
+    /// The source every span indexes.
+    pub fn text(&self) -> &str {
+        self.program.text()
+    }
+
+    /// Take a new source that says the *same statements* — a splice a `Kind::Numeric` edit made,
+    /// where a number changed and nothing else did.
+    ///
+    /// The drawing is not rebuilt: that is the whole value of the classification, since a
+    /// re-elaboration is a new `Sketch` and a new `Sketch` is a lost plan, a lost compiled system
+    /// and a lost selection.  But the spans **must** follow, or the next edit computed against
+    /// this elaboration would splice at an offset the text no longer has.  So the source is
+    /// re-*parsed* — cheap, and exact, because the same statements in the same order mint the same
+    /// ids — and every site is re-stamped from the statement it names.
+    ///
+    /// Returns false, changing nothing, if the new text does not parse or has lost a statement
+    /// this map still names; the caller then re-elaborates, which is always correct.
+    pub fn retext(&mut self, text: &str) -> bool {
+        let (prog, errs) = crate::syntax::parse(text);
+        if !errs.is_empty() {
+            return false;
+        }
+        let mut at: BTreeMap<StmtId, Span> = BTreeMap::new();
+        for c in prog.components.iter() {
+            for st in c.body.iter() {
+                stamp(st, &mut at);
+            }
+        }
+        let restamp = |site: &mut Site| -> bool {
+            match at.get(&site.stmt) {
+                Some(&sp) => {
+                    site.span = sp;
+                    true
+                }
+                None => false,
+            }
+        };
+        if !self.map.of_entity.values().all(|s| at.contains_key(&s.stmt))
+            || !self.map.of_constraint.values().all(|s| at.contains_key(&s.stmt))
+        {
+            return false;
+        }
+        for s in self.map.of_entity.values_mut() {
+            restamp(s);
+        }
+        for s in self.map.of_constraint.values_mut() {
+            restamp(s);
+        }
+        self.program = prog;
+        true
+    }
+
+    /// Take a source that has gained statements for things the sketch already holds, and extend
+    /// the map onto them.
+    ///
+    /// The counterpart of `retext` for a structural splice, and it exists for the same reason:
+    /// the drawing is not rebuilt.  Nothing about it changed — a gesture had already made these
+    /// entities, and the source is only catching up — so re-elaborating would throw away a sketch
+    /// that is already right, along with every proxy a caller is holding into it.
+    ///
+    /// `made` says what each appended statement was written for, in the order they were appended,
+    /// which is the order they now sit in at the end of the root body.  False, changing nothing,
+    /// if the new text does not parse or does not end with them.
+    pub fn adopt(&mut self, text: &str, made: &[Made]) -> bool {
+        let (prog, errs) = crate::syntax::parse(text);
+        if !errs.is_empty() {
+            return false;
+        }
+        let body = &prog.root().body;
+        if body.len() < made.len() {
+            return false;
+        }
+        let tail = &body[body.len() - made.len()..];
+        // the statements that went away take their entries with them
+        let mut live: BTreeMap<StmtId, Span> = BTreeMap::new();
+        for c in prog.components.iter() {
+            for st in c.body.iter() {
+                stamp(st, &mut live);
+            }
+        }
+        self.map.of_entity.retain(|_, s| live.contains_key(&s.stmt));
+        self.map.of_constraint.retain(|_, s| live.contains_key(&s.stmt));
+        for s in self.map.of_entity.values_mut() {
+            s.span = live[&s.stmt];
+        }
+        for s in self.map.of_constraint.values_mut() {
+            s.span = live[&s.stmt];
+        }
+        for (st, m) in tail.iter().zip(made) {
+            let site = Site { stmt: st.id, span: st.span, path: InstPath::default() };
+            match *m {
+                Made::Ent(r) => {
+                    if let StmtKind::Decl(d) = &st.kind {
+                        self.map.bind(&d.name.text, r);
+                    }
+                    self.map.of_entity.insert(r, site);
+                }
+                Made::Con(id) => {
+                    self.map.of_constraint.insert(id, site);
+                }
+                Made::Gauge => {}
+            }
+            self.map.made.entry(st.id).or_default().push(*m);
+        }
+        self.program = prog;
+        true
+    }
+
     /// Whether the program said anything the elaborator could not honour.  A warning does not
     /// count: an expression that will not compute is a thing to report, not a thing to refuse.
     pub fn ok(&self) -> bool {
@@ -283,6 +395,16 @@ fn follow(sk: &Sketch, mut e: EntRef, path: &[Seg]) -> Result<EntRef, String> {
         }
     }
     Ok(e)
+}
+
+/// Every statement's span, blocks included — a statement inside one is still reached by its id.
+fn stamp(st: &Stmt, out: &mut BTreeMap<StmtId, Span>) {
+    out.insert(st.id, st.span);
+    if let StmtKind::Block(b) = &st.kind {
+        for inner in b.body.iter() {
+            stamp(inner, out);
+        }
+    }
 }
 
 pub fn elaborate(p: &Program) -> Elaborated {
@@ -423,7 +545,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
         orient(&mut sk, &res, o, st, &mut diags);
     }
 
-    Elaborated { sketch: sk, map, diags, text: p.text().to_string(), taken: false }
+    Elaborated { sketch: sk, map, diags, program: p.clone(), taken: false }
 }
 
 /// A curve family, compiled.
@@ -939,7 +1061,7 @@ pub fn to_program(sk: &Sketch) -> Program {
     p
 }
 
-fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
+pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
     let kids = sk.children(e);
     let mut children: Vec<Vec<Ref>> = Vec::new();
     let mut taken = 0usize;
@@ -973,6 +1095,7 @@ fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         name: Name::new(entity_name(e)),
         children,
         seed_text: vec![None; seed.len()],
+        seed_spans: vec![Span::default(); seed.len()],
         seed,
         def: (e.kind == EntKind::Curve)
             .then(|| Name::new(sk.curve_defs[sk.curves[e.i()].def as usize].name.clone())),
@@ -983,7 +1106,7 @@ fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
     }
 }
 
-fn construction_of(sk: &Sketch, e: EntRef) -> bool {
+pub(crate) fn construction_of(sk: &Sketch, e: EntRef) -> bool {
     match e.kind {
         EntKind::Line => sk.lines[e.i()].construction,
         EntKind::Curve => sk.curves[e.i()].construction,
@@ -995,7 +1118,7 @@ fn construction_of(sk: &Sketch, e: EntRef) -> bool {
     }
 }
 
-fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {
+pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {
     let spec = c.kind.spec();
     let mut args: Vec<Option<Arg>> = Vec::with_capacity(spec.len());
     for (i, (_, kind)) in spec.iter().enumerate() {

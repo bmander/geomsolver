@@ -169,6 +169,7 @@ impl<'a> Walk<'a> {
                             children: vec![Vec::new(); count_children(kind)],
                             seed: vec![0.0; count_scalars(kind)],
                             seed_text: vec![None; count_scalars(kind)],
+                            seed_spans: vec![Span::default(); count_scalars(kind)],
                             knots: None,
                             def: None,
                             values: Vec::new(),
@@ -286,9 +287,19 @@ impl<'a> Walk<'a> {
         }
     }
 
+    /// An expanded statement keeps the id of the statement it came from.
+    ///
+    /// It is **the same statement** — a `cycle` of thirty makes thirty things from one line of
+    /// source, and the line is what a caret lands on, what a splice edits and what a span points
+    /// at.  What tells the thirty apart is the `path`, which is already on every `Site`.
+    ///
+    /// Minting a fresh id per copy would make each look like a statement of its own, and every
+    /// consumer that turns an id back into source — `Elaborated::retext`, `adopt`, `edit::remove`
+    /// — would find nothing there.  The multiplicity that a fresh id used to hide is exactly what
+    /// `commit_seeds` needs to see: an id reached more than once has no single pose to record.
     fn emit(&mut self, kind: StmtKind, st: &Stmt, scope: &Scope, path: &[u32]) {
-        let id = if path.is_empty() && scope.prefixes.len() == 1 { st.id } else { self.mint() };
-        self.out.push((Stmt { id, kind, span: st.span }, path.to_vec(), scope.clone()));
+        let _ = scope.prefixes.len();
+        self.out.push((Stmt { id: st.id, kind, span: st.span }, path.to_vec(), scope.clone()));
     }
 
     /// Bind an instantiation's arguments to the component's formals.
