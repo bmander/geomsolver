@@ -330,13 +330,21 @@ fn a_shuffled_document_says_the_same_thing() {
     }
 }
 
-/// **A placement keyed by position is a trap, and this is the proof.**  Shuffle the list *without*
-/// remapping the keys — which is exactly what a naive reordering of statements would do — and
-/// callouts land on other dimensions.  This test asserts the damage, so that when placements move
-/// onto their own statements it becomes the test that they no longer can.
+/// **A placement no longer follows a position, because it no longer has one.**
+///
+/// This test used to assert the *damage*: placements were stored in a table of their own keyed by
+/// position in the constraint list, so a naive reordering of statements — move the statements,
+/// leave the table alone — landed callouts on other dimensions, silently.  It was written to
+/// assert the damage precisely so that it would become this the day the design changed, which
+/// Solvent 0.2 §13.1 made normative and `io::to_json` now honours: the placement rides *in* its
+/// constraint.
+///
+/// So the naive shuffle is performed exactly as before, and now nothing moves.  The old
+/// position-keyed table is still *read* (a document does not have to be re-saved to be readable),
+/// which is why the reordering is done on the new form and the old key is not reintroduced.
 #[test]
-fn a_placement_keyed_by_position_follows_the_position() {
-    let mut hurt = 0;
+fn a_placement_no_longer_travels_by_position() {
+    let mut checked = 0;
     for (name, mut sk) in cases() {
         furnish(&mut sk);
         if sk.placements.is_empty() {
@@ -344,24 +352,48 @@ fn a_placement_keyed_by_position_follows_the_position() {
         }
         let want = statements(&sk);
         let doc = io::to_json(&sk);
+        assert!(doc.get("placements").is_none(), "{name}: a table keyed by position came back");
         for seed in SEEDS {
-            // the shuffle a language with no positions would perform: move the statements, leave
-            // the position-keyed table alone
-            let mut naive = shuffle(&doc, seed);
-            if let Json::Obj(fields) = &mut naive {
-                for (k, v) in fields.iter_mut() {
-                    if k == "placements" {
-                        *v = doc.get("placements").cloned().unwrap_or(Json::obj());
+            // the shuffle a language with no positions would perform
+            let sk2 = io::from_json(&shuffle(&doc, seed)).expect(name);
+            assert_eq!(statements(&sk2), want, "{name} seed {seed}: a callout moved");
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "no case carried a placement");
+}
+
+/// A document written before §13.1 still loads, placements and all.
+#[test]
+fn a_placement_from_an_older_document_is_still_read() {
+    let (name, mut sk) = cases().into_iter().find(|(_, s)| !s.user_constraints().is_empty()).expect("a case");
+    furnish(&mut sk);
+    assert!(!sk.placements.is_empty(), "{name}");
+    let want = statements(&sk);
+
+    // the 0.1 form: no `place` in any constraint, a `placements` table keyed by list position
+    let mut doc = io::to_json(&sk);
+    let mut table: Vec<(String, Json)> = Vec::new();
+    if let Json::Obj(fields) = &mut doc {
+        for (k, v) in fields.iter_mut() {
+            if k != "constraints" {
+                continue;
+            }
+            if let Json::Arr(cs) = v {
+                for (i, c) in cs.iter_mut().enumerate() {
+                    if let Json::Obj(cf) = c {
+                        if let Some(pos) = cf.iter().position(|(k, _)| k == "place") {
+                            let (_, place) = cf.remove(pos);
+                            table.push((i.to_string(), place));
+                        }
                     }
                 }
             }
-            let sk2 = io::from_json(&naive).expect(name);
-            if statements(&sk2) != want {
-                hurt += 1;
-            }
         }
+        fields.push(("placements".to_string(), Json::Obj(table)));
     }
-    assert!(hurt > 0, "if this ever stops failing, placements no longer travel by position");
+    let back = io::from_json(&doc).expect(name);
+    assert_eq!(statements(&back), want, "an older document lost its callouts");
 }
 
 /// **The solve does not care.**  Same constraints in another order, same answer — so the
@@ -571,4 +603,151 @@ fn describe_does_not_depend_on_list_position() {
             "{text}: the same statement, wherever it landed",
         );
     }
+}
+
+/* -- §13.1: document state travels on its statement ---------------------------------
+ *
+ * Solvent 0.2 §13.1 makes P2 binding on the *document* and not only on the program text: a
+ * placement, a root choice, anything a drawing carries must be attached to the statement it
+ * qualifies and never to a list position or an entity index.
+ *
+ * The two tests above measure what happens when it is not — and they are about JSON, which is now
+ * an *export* format rather than the document.  These two ask the same question of the document
+ * itself, where the answer has to be different: shuffle the statements somebody wrote and the
+ * drawing must come back the same.
+ *
+ * Everything here is compared **by document name**, never by entity index.  Shuffling declarations
+ * renumbers the entities — that is what a shuffle *is* — so an index-keyed comparison would report
+ * the renumbering rather than the property, which is the trap §0 already fell into once.
+ */
+
+/// Shuffle the statements of a program with a seeded permutation.  Declarations and statements
+/// alike: order is exactly what P2 says means nothing.
+fn shuffle_program(text: &str, seed: u32) -> String {
+    let (prog, errs) = gcs_core::syntax::parse(text);
+    assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
+    let mut lines: Vec<String> = prog
+        .root()
+        .body
+        .iter()
+        .map(|s| text[s.span.lo as usize..s.span.hi as usize].to_string())
+        .collect();
+    let mut rng = Rng::new(seed);
+    for i in (1..lines.len()).rev() {
+        let j = ((rng.next() * (i + 1) as f64) as usize).min(i);
+        lines.swap(i, j);
+    }
+    lines.join("\n") + "\n"
+}
+
+fn elaborated(text: &str) -> gcs_core::program::Elaborated {
+    let (prog, errs) = gcs_core::syntax::parse(text);
+    assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
+    gcs_core::program::elaborate(&prog)
+}
+
+/// What the document calls an entity, rather than where it happens to sit.
+fn name_of(e: &gcs_core::program::Elaborated, r: gcs_core::model::EntRef) -> String {
+    e.map.names.get(&r).and_then(|v| v.first()).cloned().unwrap_or_else(|| format!("?{r:?}"))
+}
+
+/// Every dimension, said in the document's own names, with where its callout sits.
+fn placed_by_name(e: &gcs_core::program::Elaborated) -> Vec<String> {
+    let mut v: Vec<String> = e
+        .sketch
+        .user_constraints()
+        .iter()
+        .map(|c| {
+            let args: Vec<String> = c
+                .args
+                .iter()
+                .map(|a| match a {
+                    gcs_core::constraints::Arg::Ent(r) => name_of(e, *r),
+                    // a constraint's own unknown is a slot index, allocated in statement order and
+                    // so permuted by a shuffle.  It is not something anyone states — `io::describe`
+                    // leaves it out for the same reason — so it is not what is under test here.
+                    gcs_core::constraints::Arg::Param(_) => "_".to_string(),
+                    other => format!("{other:?}"),
+                })
+                .collect();
+            let place = e
+                .sketch
+                .placements
+                .get(&c.id)
+                .map(|&(t, r)| format!(" at ({t}, {r})"))
+                .unwrap_or_default();
+            format!("{}({}){place}", c.type_name(), args.join(", "))
+        })
+        .collect();
+    v.sort();
+    v
+}
+
+/// Every recorded root choice, as the names of the three points it orients.
+fn branches_by_name(
+    e: &gcs_core::program::Elaborated,
+) -> std::collections::BTreeSet<(String, String, String, i32)> {
+    e.sketch
+        .branches
+        .iter()
+        .filter_map(|(k, &v)| {
+            let p = decompose::branch_key_points(k)?;
+            Some((
+                name_of(e, gcs_core::model::EntRef::point(p[0])),
+                name_of(e, gcs_core::model::EntRef::point(p[1])),
+                name_of(e, gcs_core::model::EntRef::point(p[2])),
+                v,
+            ))
+        })
+        .collect()
+}
+
+/// **A placement travels in the statement it belongs to.**
+///
+/// The inversion of `a_placement_keyed_by_position_follows_the_position`: written as `… == 80 at
+/// (12, -4)`, the number and where it sits are one statement, so there is no key to go stale and
+/// no shuffle that can move a callout onto another dimension.
+#[test]
+fn a_placement_travels_in_the_statement() {
+    let mut checked = 0;
+    for (name, mut sk) in cases() {
+        furnish(&mut sk);
+        if sk.placements.is_empty() {
+            continue;
+        }
+        let text = gcs_core::program::dumps(&sk);
+        assert!(text.contains(" at ("), "{name}: no placement was printed");
+        let want = placed_by_name(&elaborated(&text));
+        for seed in SEEDS {
+            let got = placed_by_name(&elaborated(&shuffle_program(&text, seed)));
+            assert_eq!(got, want, "{name}/{seed}: a callout moved");
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "no case carried a placement");
+}
+
+/// **A root choice travels by the names of the points it orients.**
+///
+/// The inversion of `a_root_choice_keyed_by_index_goes_inert`: `ccw(p0, p3, p7)` names points, and
+/// a name is what survives a reordering.  The measure is how many branches still *apply*, since
+/// the old failure was silent — the document kept them and fewer of them matched.
+#[test]
+fn a_branch_travels_by_name() {
+    let mut checked = 0;
+    for (name, mut sk) in cases() {
+        furnish(&mut sk);
+        if sk.branches.is_empty() {
+            continue;
+        }
+        let text = gcs_core::program::dumps(&sk);
+        let want = branches_by_name(&elaborated(&text));
+        assert!(!want.is_empty(), "{name}: no branch was printed by name");
+        for seed in SEEDS {
+            let got = branches_by_name(&elaborated(&shuffle_program(&text, seed)));
+            assert_eq!(got, want, "{name}/{seed}: a root choice went inert");
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "no case recorded a branch");
 }

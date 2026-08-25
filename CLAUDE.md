@@ -272,8 +272,13 @@ Conventions:
   the front end only strokes what it is handed.  Sizes are screen-constant through `unit`, the
   world length of one screen pixel — as is the pick tolerance, so a front end never converts.
   Where a callout sits is a *placement*: two numbers in a frame that follows the geometry,
-  automatic until someone drags it and then `Sketch.placements` document state, saved by index
-  into the constraint list (ids are not stable across a load).  The number a dimension states
+  automatic until someone drags it and then `Sketch.placements` document state, **saved on the
+  statement it qualifies** — `at (t, r)` after the dimension in Solvent, `"place"` inside the
+  constraint object in JSON.  Never by position in a list and never by entity index (Solvent
+  §13.1): both follow the position rather than the thing, and both fail silently — a callout
+  reappears on another dimension, a recorded root choice goes inert while the document still
+  carries it.  `io::from_json` still *reads* the old position-keyed `placements` table, so an
+  older document loads; it never writes one.  The number a dimension states
   comes from `io::dimension_text`, so the drawing and the constraint list cannot print it
   differently.  A callout is painted *over* the geometry, so `callout::pick` also owns what
   outranks it: a point within the same tolerance beats the figure's lines — a radius runs its

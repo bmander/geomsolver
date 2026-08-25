@@ -17,7 +17,7 @@
 use crate::expr::{self, Aff};
 use crate::model::EntKind;
 use crate::syntax::{
-    BlockKind, Component, Decl, Name, Program, Ref, Seg, Span, Stmt, StmtId, StmtKind,
+    BlockKind, Component, Decl, Name, Program, Ref, Seg, Span, Stmt, StmtKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -68,7 +68,6 @@ struct Walk<'a> {
     /// `port x = y`: one name for what another names.  Resolved transitively, after the walk.
     aliases: Vec<(String, Ref, Scope)>,
     errors: Vec<(Span, String)>,
-    next_id: u32,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -80,7 +79,6 @@ pub fn expand(prog: &Program) -> Expansion {
         names: BTreeSet::new(),
         aliases: Vec::new(),
         errors: Vec::new(),
-        next_id: prog.stmts().map(|s| s.id.0).max().unwrap_or(0),
     };
     let root = prog.root();
     let scope = Scope { prefixes: vec![String::new()], ..Scope::default() };
@@ -95,11 +93,6 @@ impl<'a> Walk<'a> {
         if self.errors.len() < 200 {
             self.errors.push((span, msg.into()));
         }
-    }
-
-    fn mint(&mut self) -> StmtId {
-        self.next_id += 1;
-        StmtId(self.next_id)
     }
 
     /// Walk one body, in source order.
@@ -298,7 +291,6 @@ impl<'a> Walk<'a> {
     /// — would find nothing there.  The multiplicity that a fresh id used to hide is exactly what
     /// `commit_seeds` needs to see: an id reached more than once has no single pose to record.
     fn emit(&mut self, kind: StmtKind, st: &Stmt, scope: &Scope, path: &[u32]) {
-        let _ = scope.prefixes.len();
         self.out.push((Stmt { id: st.id, kind, span: st.span }, path.to_vec(), scope.clone()));
     }
 

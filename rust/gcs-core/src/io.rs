@@ -215,32 +215,26 @@ pub fn to_json(sk: &Sketch) -> Json {
             ])
         })
         .collect();
-    // one list, walked twice: the placements below are keyed by position in it, so they and the
-    // constraints they name have to be the same walk
     let user = sk.user_constraints();
     let constraints: Vec<Json> = user
         .iter()
         .map(|c| {
-            object([
+            // where the callout sits rides *in* the constraint (Solvent §13.1): document state
+            // attaches to the statement it qualifies, never to a position in a list.  Keyed by
+            // position it followed the position — reorder the list without remapping and a
+            // placement reappeared on some other dimension, silently.
+            let mut o = object([
                 ("type", c.type_name().into()),
                 ("args", Json::Arr(c.args.iter().map(|a| arg_json(sk, a)).collect())),
-            ])
+            ]);
+            if let (Some(&(t, r)), Json::Obj(fields)) = (sk.placements.get(&c.id), &mut o) {
+                fields.push(("place".to_string(), Json::Arr(vec![Json::Num(t), Json::Num(r)])));
+            }
+            o
         })
         .collect();
     let branches: Vec<(String, Json)> =
         sk.branches.iter().map(|(k, &v)| (k.clone(), Json::Int(v as i64))).collect();
-    // Callout placements travel by position in the constraint list above, not by constraint id:
-    // loading a document assigns fresh ids in that order, so the index is the only name for a
-    // constraint that both sides of a save agree on.
-    let placements: Vec<(String, Json)> = user
-        .iter()
-        .enumerate()
-        .filter_map(|(i, c)| {
-            sk.placements
-                .get(&c.id)
-                .map(|&(t, r)| (i.to_string(), Json::Arr(vec![Json::Num(t), Json::Num(r)])))
-        })
-        .collect();
     object([
         ("version", Json::Int(1)),
         ("points", Json::Arr(points)),
@@ -251,7 +245,6 @@ pub fn to_json(sk: &Sketch) -> Json {
         ("ellipses", Json::Arr(ellipses)),
         ("constraints", Json::Arr(constraints)),
         ("branches", Json::Obj(branches)),
-        ("placements", Json::Obj(placements)),
     ])
 }
 
@@ -343,15 +336,26 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         // would parse every expression again for each, and would make a dimension whose
         // definition is further down the file briefly a free variable — allocating an unknown
         // this pass then retires, in a document that has no free variables in it at all
-        ids.push(sk.add_quiet(Constraint::new(kind, args)));
+        let id = sk.add_quiet(Constraint::new(kind, args));
+        // §13.1: the placement rides in the statement it qualifies
+        if let Some(a) = c.get("place") {
+            let a = a.arr();
+            if a.len() == 2 {
+                sk.placements.insert(id, (a[0].as_f64(), a[1].as_f64()));
+            }
+        }
+        ids.push(id);
     }
     expr::evaluate(&mut sk);   // every expression against the whole document, in order
+    // a document written before §13.1: placements in a table of their own, keyed by position in
+    // the constraint list.  Read, never written — a document does not have to be re-saved to be
+    // readable, and a placement that has already moved onto its constraint wins.
     if let Some(Json::Obj(kv)) = d.get("placements") {
         for (k, v) in kv {
             let a = v.arr();
             if let (Ok(i), 2) = (k.parse::<usize>(), a.len()) {
                 if let Some(&id) = ids.get(i) {
-                    sk.placements.insert(id, (a[0].as_f64(), a[1].as_f64()));
+                    sk.placements.entry(id).or_insert((a[0].as_f64(), a[1].as_f64()));
                 }
             }
         }
