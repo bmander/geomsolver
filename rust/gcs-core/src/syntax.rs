@@ -319,6 +319,11 @@ pub struct Relation {
     pub args: Vec<Option<Arg>>,
     /// Where the callout was dragged to, if anywhere.  A seed: inert, and written back.
     pub place: Option<(f64, f64)>,
+    /// Where `at (t, r)` sits in the source, so a callout dragged somewhere else rewrites those
+    /// characters instead of the statement around them.  Empty for a relation that was built
+    /// rather than parsed, and for one that carries no placement — in both cases there is no
+    /// text yet, and the writeback appends after the statement.
+    pub place_span: Span,
 }
 
 /// One argument as written.
@@ -2130,11 +2135,15 @@ impl<'a> P<'a> {
         }
         // the trailing `== …`: everything to the end of the logical line, verbatim
         let mut place = None;
+        let mut place_span = Span::default();
         if self.peek() == Some(&Tok::EqEq) {
             let after = self.here().hi as usize;
             self.i += 1;
             let (text, span, pl, end) = self.raw_dimension(after);
-            place = pl;
+            if let Some((v, sp)) = pl {
+                place = Some(v);
+                place_span = sp;
+            }
             let tail = spec.len().saturating_sub(1);
             if spec.last().is_some_and(|(_, k)| k.is_dimension()) {
                 args[tail] = Some(Arg::Dim { text, span });
@@ -2149,7 +2158,9 @@ impl<'a> P<'a> {
                 self.i += 1;
             }
         }
-        if place.is_none() && self.eat_word("at") {
+        if place.is_none() && self.peek_word("at") {
+            let lo = self.here().lo as usize;
+            self.i += 1;
             if !self.want_p('(') {
                 return None;
             }
@@ -2162,9 +2173,10 @@ impl<'a> P<'a> {
                 return None;
             }
             place = Some((t, r));
+            place_span = Span::new(lo, self.prev_hi());
         }
         self.end_of_stmt();
-        Some(Relation { kind, args, place })
+        Some(Relation { kind, args, place, place_span })
     }
 
     /// Everything after `==` to the end of the logical line, as written.
@@ -2173,7 +2185,10 @@ impl<'a> P<'a> {
     /// would be a second copy of rules like the one that makes `3 1/8` a number and `31/2` a
     /// division.  A trailing ` at (u, v)` is a placement rather than part of the expression —
     /// unambiguous, because a call in that language is `name(` with no space before the paren.
-    fn raw_dimension(&mut self, from: usize) -> (String, Span, Option<(f64, f64)>, usize) {
+    fn raw_dimension(
+        &mut self,
+        from: usize,
+    ) -> (String, Span, Option<((f64, f64), Span)>, usize) {
         let bytes = self.src.as_bytes();
         let mut end = from;
         while end < bytes.len() && bytes[end] != b'\n' && bytes[end] != b';' {
@@ -2193,7 +2208,11 @@ impl<'a> P<'a> {
                         .filter_map(|s| s.trim().parse::<f64>().ok())
                         .collect();
                     if nums.len() == 2 {
-                        place = Some((nums[0], nums[1]));
+                        // the span of `at (...)` itself, leading space excluded: a replacement
+                        // keeps the space, and a removal takes it with `back_over_spaces`
+                        let lo = from + at + 1;
+                        let hi = from + at + 5 + close + 1;
+                        place = Some(((nums[0], nums[1]), Span::new(lo, hi)));
                         text = &text[..at];
                     }
                 }

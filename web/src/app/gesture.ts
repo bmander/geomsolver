@@ -276,6 +276,9 @@ export function calloutGesture(v: SketchView, c: Constraint, from: [number, numb
       }
       dim.drag(v.sketch, c.id, ...v.s2w(sp[0], sp[1]), grip);
     },
+    // where a callout sits is document state, so the drag is a source edit and has to be
+    // written down — once, at the release, the same bargain `syncSeeds` strikes for a point
+    end: () => { if (moved) v.syncSource(); },
   };
 }
 
