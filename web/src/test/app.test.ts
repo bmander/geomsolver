@@ -273,6 +273,12 @@ test('re-placing puts a dragged callout back', () => {
   cv.fire('pointerup', pointer(ax, before - 60));
   assert.notEqual(dimY(view, view.sketch), before);
 
+  // the drag is document state, so it reached the source rather than living in the sketch alone
+  assert.ok(/at \(/.test(view.source), `the drag was written down: ${view.source}`);
+  const dragged = dimY(view, view.sketch);
+  view.setProgram(view.source, false);
+  assert.ok(Math.abs(dimY(view, view.sketch) - dragged) < 1e-9, 'and survives a re-elaboration');
+
   view.resetCallouts();
   assert.ok(Math.abs(dimY(view, view.sketch) - before) < 1e-9);
 

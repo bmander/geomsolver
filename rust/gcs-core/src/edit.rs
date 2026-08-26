@@ -366,6 +366,16 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
     hit
 }
 
+/// Back over the blanks before an offset — so a clause deleted from the middle of a line does
+/// not leave the space that set it off behind.
+fn back_over_spaces(text: &str, mut lo: usize) -> usize {
+    let b = text.as_bytes();
+    while lo > 0 && (b[lo - 1] == b' ' || b[lo - 1] == b'\t') {
+        lo -= 1;
+    }
+    lo
+}
+
 /// A statement's span, grown to swallow the newline that ends it — so deleting one does not
 /// leave a blank line where it stood.
 fn with_line(text: &str, s: Span) -> Span {
@@ -546,6 +556,42 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
                 at: Span::new(lo, lo + " construction".len()),
                 with: String::new(),
             });
+        }
+    }
+    /* where a callout sits.  A placement is document state saved on the statement it qualifies
+     * (spec §13.1), so a callout dragged somewhere else is a source edit like any other — and
+     * one nothing above notices, since it makes no entity and no constraint.  Read off the
+     * sketch and compared with what the statement says, exactly as the construction word is. */
+    for (id, site) in e.map.of_constraint.iter() {
+        if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
+            continue;
+        }
+        let Some(st) = prog.stmt(site.stmt) else { continue };
+        let StmtKind::Relation(rel) = &st.kind else { continue };
+        let now = sk.placements.get(id).copied();
+        if now == rel.place {
+            continue;
+        }
+        match now {
+            // rewrite the two numbers where they stand, or write them after the statement
+            Some((t, r)) => {
+                let with = format!("at ({}, {})", num(t), num(r));
+                let at = match rel.place_span.is_empty() {
+                    false => rel.place_span,
+                    true => Span::new(st.span.hi as usize, st.span.hi as usize),
+                };
+                let with = if rel.place_span.is_empty() { format!(" {with}") } else { with };
+                flags.push(Splice { at, with });
+            }
+            // back where the layout would put it: the clause goes, and the space before it
+            None if !rel.place_span.is_empty() => {
+                let lo = back_over_spaces(prog.text(), rel.place_span.lo as usize);
+                flags.push(Splice {
+                    at: Span::new(lo, rel.place_span.hi as usize),
+                    with: String::new(),
+                });
+            }
+            None => {}
         }
     }
     // `ground(p)` and `fix(c.r)`: a statement per held parameter, added and taken away

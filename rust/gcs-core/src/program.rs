@@ -1539,7 +1539,12 @@ pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {
     for (i, (_, kind)) in spec.iter().enumerate() {
         args.push(lift_arg(sk, *kind, &c.args[i]));
     }
-    Relation { kind: c.kind, args, place: sk.placements.get(&c.id).copied() }
+    Relation {
+        kind: c.kind,
+        args,
+        place: sk.placements.get(&c.id).copied(),
+        place_span: Span::default(),
+    }
 }
 
 fn lift_arg(sk: &Sketch, kind: SpecKind, a: &CArg) -> Option<Arg> {

@@ -483,3 +483,50 @@ fn a_second_gesture_beside_a_component_still_lands() {
     assert_eq!(back.sketch.points.len(), e.sketch.points.len());
     assert_eq!(back.sketch.lines.len(), e.sketch.lines.len());
 }
+
+/// **A callout dragged somewhere else is a source edit.**
+///
+/// Where a callout sits is document state saved on the statement it qualifies (spec §13.1), so
+/// moving one has to reach the text — and as a splice of the two numbers, leaving the statement
+/// around them alone.  Reaching for it is `reconcile`, the same seam a construction word uses.
+#[test]
+fn a_dragged_callout_is_written_down() {
+    let src = "point a at (0, 0)\npoint b at (60, 0)\ndistance(a, b) == 60\n";
+    let mut e = elaborate(&prog_of(src));
+    let id = e.sketch.user_constraints()[0].id;
+
+    // dragged where the layout would not have put it
+    e.sketch.placements.insert(id, (12.0, -4.0));
+    let out = reconciled(&mut e);
+    assert!(out.text.contains("distance(a, b) == 60 at (12, -4)"), "{}", out.text);
+    assert!(out.text.contains("point a at (0, 0)"), "the rest of the file is untouched");
+
+    // dragged again: the two numbers are rewritten where they stand, not appended beside
+    e.sketch.placements.insert(id, (20.0, 8.0));
+    let out = reconciled(&mut e);
+    assert!(out.text.contains("distance(a, b) == 60 at (20, 8)"), "{}", out.text);
+    assert_eq!(out.text.matches(" at (").count(), 3, "one per point, one per callout");
+
+    // and put back where the layout would place it, the clause goes with its space
+    e.sketch.placements.remove(&id);
+    let out = reconciled(&mut e);
+    assert!(out.text.contains("distance(a, b) == 60\n"), "{}", out.text);
+}
+
+/// The same, for a placement on a relation that states no number — the clause stands alone
+/// there, so it is written and removed on its own rather than after a `==`.
+#[test]
+fn a_placement_without_a_dimension_round_trips() {
+    let src = "point a at (0, 0)\npoint b at (60, 0)\nline l(a, b)\nhorizontal(l) at (3, 5)\n";
+    let mut e = elaborate(&prog_of(src));
+    let id = e.sketch.user_constraints().iter().find(|c| c.kind == CKind::Horizontal).unwrap().id;
+    assert_eq!(e.sketch.placements.get(&id).copied(), Some((3.0, 5.0)), "read as written");
+
+    e.sketch.placements.insert(id, (9.0, 1.0));
+    let out = reconciled(&mut e);
+    assert!(out.text.contains("horizontal(l) at (9, 1)"), "{}", out.text);
+
+    e.sketch.placements.remove(&id);
+    let out = reconciled(&mut e);
+    assert!(out.text.contains("horizontal(l)\n"), "{}", out.text);
+}
