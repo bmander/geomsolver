@@ -5,6 +5,14 @@
 // are the same size; the rectangle's sides are levelled, one width and one height are given, and
 // one arc centre is grounded.  Everything else — twelve points, four radii — is the solver's.
 //
+// It is written as a **chain** (§6.6), which is how a contour reads: one element after the next,
+// with the word between them saying how they meet.  The arcs name only their centres, because a
+// joint threads the point its two elements share — so each fillet takes its start from the line
+// it comes from and its end from the line it goes to, and `tangent` at a joint is stated *at*
+// that point rather than as a bare tangency over a coincidence.  `close` seals the loop back onto
+// the first link.  Every statement it stands for is an ordinary one; `tests/chain.rs` holds the
+// two spellings to being one drawing.
+//
 // The two dimensions measure between the *tangent points*, not across the rectangle, because
 // that is what the drawing has points at: the overall width is `w`, and what a caller sees is
 // `w - 2r` between `b1` and `b2`.
@@ -23,36 +31,21 @@ point t2 at (r, h)
 point l1 at (0, h - r)
 point l2 at (0, r)
 
-line bottom(b1, b2)
-line right(r1, r2)
-line top(t1, t2)
-line left(l1, l2)
-
-// the fillet centres, and the arcs that run counter-clockwise from one side to the next
+// the fillet centres; where each arc starts and ends is the chain's to say
 point c_br at (w - r, r)
 point c_tr at (w - r, h - r)
 point c_tl at (r, h - r)
 point c_bl at (r, r)
 
-arc a_br(center: c_br, start: b2, end: r1, r: r)
-arc a_tr(center: c_tr, start: r2, end: t1, r: r)
-arc a_tl(center: c_tl, start: t2, end: l1, r: r)
-arc a_bl(center: c_bl, start: l2, end: b1, r: r)
-
-horizontal(bottom)
-horizontal(top)
-vertical(left)
-vertical(right)
-
-// each fillet meets the side it comes from and the side it goes to, tangentially at its own ends
-tangent_arc_line(a_br, bottom, at: start)
-tangent_arc_line(a_br, right,  at: end)
-tangent_arc_line(a_tr, right,  at: start)
-tangent_arc_line(a_tr, top,    at: end)
-tangent_arc_line(a_tl, top,    at: start)
-tangent_arc_line(a_tl, left,   at: end)
-tangent_arc_line(a_bl, left,   at: start)
-tangent_arc_line(a_bl, bottom, at: end)
+// round the outline, counter-clockwise from the bottom edge
+horizontal line bottom(b1, b2) tangent
+arc a_br(center: c_br, r: r) tangent
+vertical line right(r1, r2) tangent
+arc a_tr(center: c_tr, r: r) tangent
+horizontal line top(t1, t2) tangent
+arc a_tl(center: c_tl, r: r) tangent
+vertical line left(l1, l2) tangent
+arc a_bl(center: c_bl, r: r) tangent close
 
 // one radius, stated once and shared
 equal_radius(a_br, a_tr)

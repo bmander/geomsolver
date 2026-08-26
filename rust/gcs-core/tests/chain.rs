@@ -17,10 +17,13 @@ use gcs_core::model::EntRef;
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::syntax::{highlight, parse, Chained, Tint};
 
-/// The shipped fillet case, written as one chain.  Same points, same numbers, same order of
-/// elements — only the four arc declarations lose their endpoints (the chain threads them) and
-/// the four levels and eight tangencies move into the chain's words.
-const RECT_FILLETS_CHAIN: &str = "\
+/// The shipped fillet case as it was written *longhand* — the independent witness the chain
+/// spelling is held against.
+///
+/// `rect_fillets.sv` is the chain now, so comparing the case against a chain written here would
+/// compare a thing with itself.  What has to be true is that the two *spellings* are one
+/// drawing, and that needs both of them: this is the one the language always had.
+const RECT_FILLETS_LONGHAND: &str = "\
 param w = 100
 param h = 60
 param r = 10
@@ -39,14 +42,28 @@ point c_tr at (w - r, h - r)
 point c_tl at (r, h - r)
 point c_bl at (r, r)
 
-horizontal line bottom(b1, b2) tangent
-arc a_br(center: c_br, r: r) tangent
-vertical line right(r1, r2) tangent
-arc a_tr(center: c_tr, r: r) tangent
-horizontal line top(t1, t2) tangent
-arc a_tl(center: c_tl, r: r) tangent
-vertical line left(l1, l2) tangent
-arc a_bl(center: c_bl, r: r) tangent close
+line bottom(b1, b2)
+arc a_br(center: c_br, start: b2, end: r1, r: r)
+line right(r1, r2)
+arc a_tr(center: c_tr, start: r2, end: t1, r: r)
+line top(t1, t2)
+arc a_tl(center: c_tl, start: t2, end: l1, r: r)
+line left(l1, l2)
+arc a_bl(center: c_bl, start: l2, end: b1, r: r)
+
+horizontal(bottom)
+horizontal(top)
+vertical(left)
+vertical(right)
+
+tangent_arc_line(a_br, bottom, at: start)
+tangent_arc_line(a_br, right,  at: end)
+tangent_arc_line(a_tr, right,  at: start)
+tangent_arc_line(a_tr, top,    at: end)
+tangent_arc_line(a_tl, top,    at: start)
+tangent_arc_line(a_tl, left,   at: end)
+tangent_arc_line(a_bl, left,   at: start)
+tangent_arc_line(a_bl, bottom, at: end)
 
 equal_radius(a_br, a_tr)
 equal_radius(a_br, a_tl)
@@ -103,17 +120,22 @@ fn said(sk: &gcs_core::model::Sketch) -> Vec<String> {
     v
 }
 
-/// **The gate.**  The chain says exactly what the longhand case says: same entities at the same
-/// indices, the same constraints with the same arguments, and the same drawing once solved.
+/// **The gate.**  The shipped case — a chain — says exactly what the longhand says: same
+/// entities at the same indices, the same constraints with the same arguments, and the same
+/// drawing once solved.
 #[test]
 fn the_chain_states_the_longhand() {
-    let e = read(RECT_FILLETS_CHAIN);
-    let long = examples::case("rect_fillets").expect("the shipped case");
-    let mut sk = e.sketch;
+    let chained = examples::case("rect_fillets").expect("the shipped case");
+    let long = read(RECT_FILLETS_LONGHAND).sketch;
+    let mut sk = chained;
     assert_eq!(
         (sk.points.len(), sk.lines.len(), sk.arcs.len()),
         (long.points.len(), long.lines.len(), long.arcs.len()),
         "the chain draws something else"
+    );
+    assert!(
+        examples::source("rect_fillets").expect("its source").contains(" tangent\n"),
+        "the shipped case is supposed to be the chain spelling"
     );
     assert_eq!(said(&sk), said(&long), "the chain states something else");
     let _ = gcs_core::solve::solve(&mut sk, gcs_core::solve::SolveOpts::default());
@@ -244,8 +266,9 @@ fn a_prefix_stands_alone() {
 /// numeric splice rest on.
 #[test]
 fn reparsing_a_chain_mints_the_same_ids() {
-    let a = parse(RECT_FILLETS_CHAIN).0;
-    let b = parse(RECT_FILLETS_CHAIN).0;
+    let src = examples::source("rect_fillets").expect("its source");
+    let a = parse(&src).0;
+    let b = parse(&src).0;
     let sig = |p: &gcs_core::syntax::Program| {
         p.stmts()
             .map(|s| (s.id, s.span, std::mem::discriminant(&s.kind)))
