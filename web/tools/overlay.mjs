@@ -88,9 +88,9 @@ try {
   for (const [name, text] of cases()) {
     // a lit range over the middle of the document, so the mark the panel puts on a picked
     // statement is under the same test as the colouring is
-    const lit = [Math.floor(text.length / 3), Math.floor((text.length * 2) / 3)];
-    const c = JSON.stringify({ text, runs: highlight(text), lit });
-    writeFileSync(here_case, `window.CASE = ${c};\n`);
+    const lit = { lo: Math.floor(text.length / 3), hi: Math.floor((text.length * 2) / 3) };
+    const CASE = { text, runs: highlight(text), lit };
+    writeFileSync(here_case, `window.CASE = ${JSON.stringify(CASE)};\n`);
     // Chrome prints the DOM and then does not always exit, so the timeout is the normal path
     // and what it collected on the way is the answer.
     let dom = '';

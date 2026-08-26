@@ -37,7 +37,10 @@
 
 /** A run of the text and what it is.  `cls` becomes the element's class and the stylesheet says
  *  what it looks like — see the face rule above. */
-export interface Run { cls: string; lo: number; hi: number }
+/** A stretch of the text, by string index. */
+export interface Extent { lo: number; hi: number }
+
+export interface Run extends Extent { cls: string }
 
 /** Past this the colouring is dropped and the text is shown plain: one span per run stops being
  *  free long before a textarea's own limit, and a file this long is not one anybody is reading a
@@ -50,13 +53,18 @@ export class CodeEditor {
   readonly box: HTMLTextAreaElement;
   private readonly copy: HTMLPreElement;
   private readonly colour: (text: string) => Run[];
-  /** The range the panel is pointing at — where the selected thing was written.
+  /** A range a caller has asked to be marked.  What it *means* is the caller's business; this
+   *  class knows only that those characters carry one more class than their neighbours.
    *
    *  Marked with a class and **never with a weight**.  The box in front of this copy is one
    *  face throughout; a bold here would advance its glyphs differently from the box's, and
    *  every character after it on the line would sit beside the one the caret is on.  See the
    *  four rules in this file's header — this is the third of them. */
-  private lit: [number, number] | null = null;
+  private lit: Extent | null = null;
+  /** The last colouring, against the text it was made from.  Colouring crosses the ABI and
+   *  re-lexes the document, and a repaint that only moved the *mark* has the same text and so
+   *  the same runs — which used to be paid for again anyway. */
+  private lastRuns: { text: string; runs: Run[] } | null = null;
 
   /** Build the two layers inside `host`, which is expected to be positioned (the stylesheet makes
    *  `#pcode` so).  The copy goes first so the box paints over it and takes the clicks. */
@@ -84,8 +92,13 @@ export class CodeEditor {
   }
 
   /** Put text in, colour it, and leave the caret and the scroll where they were.  The caller
-   *  decides whether that is the right thing; this only promises not to move them itself. */
-  setText(text: string): void {
+   *  decides whether that is the right thing; this only promises not to move them itself.
+   *
+   *  `lit` comes with the text because it usually moves with it: a splice shifts every offset
+   *  after it, so setting the two apart would repaint once against the old mark and again
+   *  against the new one. */
+  setText(text: string, lit?: Extent | null): void {
+    if (lit !== undefined) this.lit = lit;
     const { selectionStart, selectionEnd, scrollTop, scrollLeft } = this.box;
     this.box.value = text;
     this.repaint();
@@ -95,44 +108,46 @@ export class CodeEditor {
     this.follow();
   }
 
-  /** Colour what is in the box now — after typing, or after the rules changed. */
-  /** Point the copy at a range, or at nothing.  Repaints only when it actually moved, so a
-   *  selection gesture that keeps landing on the same statement costs one paint and not sixty. */
-  setLit(range: [number, number] | null): void {
+  /** Mark a range, or nothing.  Repaints only when it actually moved, so a gesture that keeps
+   *  landing on the same range costs one paint and not sixty. */
+  setLit(range: Extent | null): void {
     const a = this.lit, b = range;
-    if (a === b || (a && b && a[0] === b[0] && a[1] === b[1])) return;
+    if (a && b ? a.lo === b.lo && a.hi === b.hi : a === b) return;
     this.lit = range;
     this.repaint();
   }
 
+  /** Colour what is in the box now — after typing, or after the rules changed. */
   repaint(): void {
     const text = this.text;
     const out = document.createDocumentFragment();
     const lit = this.lit;
-    /* One stretch of text, split where the lit range starts and ends so the mark covers the
-     * punctuation *between* coloured runs too — a statement is spans and gaps, and half a
-     * marked statement would look like a colouring bug. */
-    const put = (from: number, to: number, cls: string): void => {
-      if (to <= from) return;
-      const clamp = (i: number): number => Math.min(Math.max(i, from), to);
-      const cuts = lit ? [from, clamp(lit[0]), clamp(lit[1]), to] : [from, to];
-      for (let i = 0; i + 1 < cuts.length; i += 1) {
-        const [a, b] = [cuts[i], cuts[i + 1]];
-        if (b <= a) continue;
-        const on = !!lit && a >= lit[0] && b <= lit[1];
-        if (!cls && !on) {
-          out.append(text.slice(a, b));
-          continue;
-        }
-        const span = document.createElement('span');
-        span.className = on ? (cls ? `${cls} lit` : 'lit') : cls;
-        span.textContent = text.slice(a, b);
-        out.append(span);
+    /** One piece of one colour: a bare string where it has nothing to say, a span where it has. */
+    const piece = (a: number, b: number, cls: string): void => {
+      if (b <= a) return;
+      if (!cls) {
+        out.append(text.slice(a, b));
+        return;
       }
+      const span = document.createElement('span');
+      span.className = cls;
+      span.textContent = text.slice(a, b);
+      out.append(span);
+    };
+    /* One stretch of text, cut where the mark starts and ends so it covers the punctuation
+     * *between* coloured runs too — a statement is spans and gaps, and half a marked statement
+     * would look like a colouring bug.  Nothing marked puts both cuts at the end, and so does a
+     * range lying outside this stretch, which is how those cases need no branch of their own. */
+    const put = (from: number, to: number, cls: string): void => {
+      const cut = (i: number): number => Math.min(Math.max(i, from), to);
+      const [lo, hi] = lit ? [cut(lit.lo), cut(lit.hi)] : [to, to];
+      piece(from, lo, cls);
+      piece(lo, hi, cls ? `${cls} lit` : 'lit');
+      piece(hi, to, cls);
     };
     let at = 0;
     if (text.length <= MAX_COLOUR) {
-      for (const r of this.colour(text)) {
+      for (const r of this.runs(text)) {
         put(at, r.lo, '');
         put(r.lo, r.hi, r.cls);
         at = r.hi;
@@ -144,6 +159,12 @@ export class CodeEditor {
     out.append('\n');
     this.copy.replaceChildren(out);
     this.follow();
+  }
+
+  /** The colouring of this text, from last time where the text has not changed since. */
+  private runs(text: string): Run[] {
+    if (this.lastRuns?.text !== text) this.lastRuns = { text, runs: this.colour(text) };
+    return this.lastRuns.runs;
   }
 
   /** One line, in pixels, as the stylesheet has it — asked for rather than written down, so a

@@ -25,7 +25,12 @@ import { core, lastError, takeJson, takeStr, withJson, withStr } from './wasm.js
  *  browser holds at the one seam it crosses (see `Offsets`), so nothing downstream has to remember
  *  which of the two units it is holding.  A caller slices with them and hands them to
  *  `setSelectionRange`. */
-export interface Span { lo: number; hi: number; line: number; col: number }
+export interface Span extends SourceSpan { line: number; col: number }
+
+/** A stretch of the program text, by string index — what a source-map entry pins down.  Not a
+ *  `Span`: that also carries the line and column the core worked out for a diagnostic, which a
+ *  map entry has no use for. */
+export interface SourceSpan { lo: number; hi: number }
 
 export interface Diagnostic extends Span {
   severity: 'error' | 'warning' | 'note';
@@ -149,13 +154,30 @@ export class Document {
     return this.byName.get(name);
   }
 
+  /** What the source map says about a part of the drawing: the name it was declared under and
+   *  where that declaration sits.  The one walk behind `nameOf` and `spanOf`, so "which entry is
+   *  this entity's" is asked in one place however many things come to want the answer. */
+  private entryOf(p: Primitive): SourceMap['entities'][number] | undefined {
+    return this.map.entities.find((e) => e.kind === p.kind && e.index === p.index);
+  }
+
   /** Every name this elaboration gave a part of the drawing.  Several names may reach one entity —
    *  a port bound to an actual is two names and one thing — so this is a list, not a lookup. */
   nameOf(p: Primitive): string | undefined {
-    for (const e of this.map.entities) {
-      if (e.kind === p.kind && e.index === p.index) return e.name;
-    }
-    return undefined;
+    return this.entryOf(p)?.name;
+  }
+
+  /** Where a part of the drawing was written down, and where a constraint was.
+   *
+   *  **The document answers this, not its readers.**  A span is a fact about the source, and the
+   *  source map is this class's; a caller that walked `map` itself would be the second reader of
+   *  a table with one owner, and the fourth such walk is what made these two worth having. */
+  spanOf(p: Primitive): SourceSpan | undefined {
+    return this.entryOf(p);
+  }
+
+  spanOfConstraint(id: number): SourceSpan | undefined {
+    return this.map.constraints.find((c) => c.id === id);
   }
 
   /* -- the edit verbs ------------------------------------------------------------------- */

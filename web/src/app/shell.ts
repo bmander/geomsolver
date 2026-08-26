@@ -71,10 +71,10 @@ export const hooks: { focusChanged: () => void } = { focusChanged: () => {} };
  *  taking the geometry with it, so every path that sets either one comes through here. */
 export function focusConstraint(c: Constraint | null, highlight?: Primitive[]): void {
   currentConstraint = c;
-  queueMicrotask(hooks.focusChanged);   // after the callers below have settled the selection
   view.litConstraint = c;             // so its callout on the drawing says so too
   view.highlight = highlight ?? (c ? expand(c.entities()) : []);
   if (c) view.selected = [];
+  hooks.focusChanged();               // last: everything it reads is settled by now
 }
 
 /** The focused constraint is gone from the document.  Drop the focus without touching what is
@@ -82,4 +82,5 @@ export function focusConstraint(c: Constraint | null, highlight?: Primitive[]): 
  *  about a constraint that no longer exists. */
 export function clearFocus(): void {
   currentConstraint = null;
+  hooks.focusChanged();               // the other writer of the focus, and it says so too
 }

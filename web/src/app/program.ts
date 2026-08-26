@@ -13,7 +13,7 @@
  * rows only when the contents actually changed, so a caret and a scroll position survive an edit
  * made elsewhere; `dimbox.ts` will not overwrite a box somebody is in.  A panel that reprinted on
  * every solve would take the line out from under the cursor. */
-import type { Diagnostic, SourceMap } from '../core/program.js';
+import type { Diagnostic, SourceMap, SourceSpan } from '../core/program.js';
 import { currentConstraint, pdiags, ped, ppanel, ppanelState, psplit, view } from './shell.js';
 import { toast } from './ui.js';
 
@@ -119,6 +119,7 @@ function setPanelWidth(px: number): void {
 /** Re-print, unless the panel is being typed in or already says this. */
 export function refreshProgram(): void {
   if (ppanel.hidden) return;
+  markStatement();              // the pick may have moved even where the text has not
   if (typed) {
     ppanel.classList.add('dirty');
     ppanelState.textContent = ' — edited, ⌘↵ to apply';
@@ -127,8 +128,7 @@ export function refreshProgram(): void {
   const text = view.source;
   if (text === shown) return;
   shown = text;
-  ped.setText(text);
-  ped.setLit(litSpan());        // the spans moved with the text; the mark follows them
+  ped.setText(text, litSpan());   // the spans moved with the text, so the mark moves with it
   ppanel.classList.remove('dirty');
   ppanelState.textContent = '';
   showDiags(view.doc.diagnostics);
@@ -186,36 +186,51 @@ function showDiags(ds: Diagnostic[]): void {
   }
 }
 
-/** Light the statement that made what is picked.  `highlight`, never `selected`: setting the
- *  selection would fire `onSelect`, which is a press on the canvas and shuts the constraints
- *  window. */
 /** Where the thing being looked at was written down — the focused constraint, or else the first
  *  selected element.  Null when neither is, and when what is picked came out of a component and
- *  so has no statement of its own in this document to point at. */
-function litSpan(): [number, number] | null {
+ *  so has no statement of its own in this document to point at.
+ *
+ *  The *policy* is here and the *lookup* is the document's: which of the two picks answers is a
+ *  question about this panel, and where a thing was written is a question about the source. */
+function litSpan(): SourceSpan | null {
   const c = currentConstraint;
-  if (c) {
-    const f = map().constraints.find((x) => x.id === c.id);
-    return f ? [f.lo, f.hi] : null;
-  }
   const first = view.selected[0];
-  if (!first) return null;
-  const f = map().entities.find((x) => x.kind === first.ref[0] && x.index === first.ref[1]);
-  return f ? [f.lo, f.hi] : null;
+  const doc = view.doc;
+  const at = c ? doc.spanOfConstraint(c.id) : first ? doc.spanOf(first) : undefined;
+  return at ?? null;
 }
 
-/** Point the panel at whatever is picked: mark the statement it was written as, and bring it on
- *  screen.  Called from both funnels — `view.onSelect` for the drawing, `hooks.focusChanged` for
- *  a constraint — so picking either way says the same thing here. */
+/** Mark the statement whatever is picked was written as, and nothing else.
+ *
+ *  Cheap enough to call whenever anything might have moved — `setLit` returns without painting
+ *  when the range is the one it already has — **except during a gesture**, where it is not:
+ *  a rubber band fires `onSelect` every frame, the leading edge sweeping past an element changes
+ *  which one is first, and repainting the whole copy mid-sweep would spend a millisecond a frame
+ *  marking something nobody can read yet.  The gesture ends in `onChanged`, which comes back
+ *  through here. */
+export function markStatement(): void {
+  if (ppanel.hidden || typed || view.gesture) return;
+  ped.setLit(litSpan());
+}
+
+/** Mark it *and* bring it on screen — what a deliberate pick does, as against the drawing moving
+ *  under one.  Called from both funnels: `view.onSelect` for the drawing, `hooks.focusChanged`
+ *  for a constraint, so picking either way says the same thing here. */
 export function showStatementFor(): void {
-  if (ppanel.hidden || typed) return;
+  markStatement();
   const where = litSpan();
-  ped.setLit(where);
-  // the selection and the scroll are only for a box nobody is in: moving either under somebody
-  // who is typing would take the line out from under their caret
-  if (!where || document.activeElement === ptext) return;
-  ptext.setSelectionRange(where[0], where[1]);
-  ped.scrollToLine(shown.slice(0, where[0]).split('\n').length - 1);
+  // the scroll is only for a box nobody is in: moving it under somebody who is typing would take
+  // the line out from under their caret
+  if (!where || ppanel.hidden || typed || view.gesture) return;
+  if (document.activeElement !== ptext) ped.scrollToLine(lineAt(where.lo));
+}
+
+/** Which line an offset falls on.  Counted rather than sliced: `slice(0, off).split` builds the
+ *  whole prefix and an array of every line in it, on every pick. */
+function lineAt(off: number): number {
+  let line = 0;
+  for (let i = 0; i < off && i < shown.length; i += 1) if (shown[i] === '\n') line += 1;
+  return line;
 }
 
 /** Wire the box up.  Called once, from `main`, so this module is reached the way `lists` is and
