@@ -203,11 +203,22 @@ dialog .choices button { text-align: left; font-family: var(--mono); font-size: 
    the program is what the drawing IS — permanently present, and typed into.  A window big enough
    to edit a program in would cover the thing it describes. */
 #ppanel {
-  flex: none; width: 380px; min-width: 240px; max-width: 60%;
+  flex: none; width: 30%; min-width: 240px; max-width: 60%;
   display: flex; flex-direction: column;
   border-left: 1px solid var(--line); background: var(--panel);
 }
 #ppanel[hidden] { display: none; }
+/* The partition.  `min-width`/`max-width` above are the whole of how far it may be dragged —
+   `program.ts` reads them off the computed style rather than keeping its own pair, so the limit
+   is stated once and in the place that already enforces it.  It is wider than it looks: the
+   border it sits against is one pixel and a one-pixel target is not a target. */
+#psplit {
+  flex: none; width: 7px; margin-right: -7px; z-index: 1;
+  cursor: col-resize; background: transparent;
+}
+#psplit:hover, #psplit:focus-visible, #psplit.dragging { background: var(--accent-soft); }
+#psplit:focus-visible { outline: none; }
+#psplit[hidden] { display: none; }
 #ppanel h2 {
   font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
   margin: 0; padding: 7px 10px 6px; border-bottom: 1px solid var(--line); flex: none;

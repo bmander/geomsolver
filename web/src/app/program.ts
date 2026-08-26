@@ -14,7 +14,7 @@
  * made elsewhere; `dimbox.ts` will not overwrite a box somebody is in.  A panel that reprinted on
  * every solve would take the line out from under the cursor. */
 import type { Diagnostic, SourceMap } from '../core/program.js';
-import { pdiags, ped, ppanel, ppanelState, view } from './shell.js';
+import { pdiags, ped, ppanel, ppanelState, psplit, view } from './shell.js';
 import { toast } from './ui.js';
 
 /** The box somebody types in.  `app/editor.ts` owns the two layers and the colouring; this module
@@ -32,15 +32,88 @@ export function programPanelOpen(): boolean {
   return !ppanel.hidden;
 }
 
-/** Show the program, or stop showing it.  Off by default: it is a second way of looking at the
- *  drawing, and the drawing is the first. */
+/** Show the program, or stop showing it.
+ *
+ *  **On by default.**  The source is not a remark about the drawing — it is what the drawing
+ *  *is*, so the page opens on both, and closing it is the deliberate act.  The partition goes
+ *  wherever the panel does: a handle for something that is not there resizes nothing. */
 export function toggleProgramPanel(): void {
   ppanel.hidden = !ppanel.hidden;
+  psplit.hidden = ppanel.hidden;
   if (!ppanel.hidden) {
     shown = '';                 // it has been away; whatever it held is stale
     refreshProgram();
   }
   view.resize();                // the canvas is a different width now
+}
+
+/** The partition between the drawing and the source.
+ *
+ *  The panel is on the right, so its width is the distance from the pointer to the row's right
+ *  edge — measured against that edge rather than accumulated from where the drag began, so a
+ *  pointer that runs past a limit and comes back picks the edge up where it left it instead of
+ *  an offset away.  The canvas is watched by a `ResizeObserver` (`main.ts`), so nothing here
+ *  has to tell the view it got narrower. */
+function bindPartition(): void {
+  const to = (clientX: number): void => {
+    const row = ppanel.parentElement;
+    if (row) setPanelWidth(row.getBoundingClientRect().right - clientX);
+  };
+  psplit.addEventListener('pointerdown', (e) => {
+    e.preventDefault();                        // a drag on a separator is not a text selection
+    psplit.setPointerCapture(e.pointerId);
+    psplit.classList.add('dragging');
+  });
+  psplit.addEventListener('pointermove', (e) => {
+    if (psplit.hasPointerCapture(e.pointerId)) to(e.clientX);
+  });
+  const done = (e: PointerEvent): void => {
+    if (!psplit.hasPointerCapture(e.pointerId)) return;
+    psplit.releasePointerCapture(e.pointerId);
+    psplit.classList.remove('dragging');
+  };
+  psplit.addEventListener('pointerup', done);
+  psplit.addEventListener('pointercancel', done);
+  // and by keyboard, since it is focusable: a separator nobody can reach with the keyboard is a
+  // control only half the people using it have
+  psplit.addEventListener('keydown', (e) => {
+    const step = e.key === 'ArrowLeft' ? 1 : e.key === 'ArrowRight' ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    setPanelWidth(ppanel.getBoundingClientRect().width + step * (e.shiftKey ? 40 : 8));
+  });
+}
+
+/** How wide the panel may be, as the stylesheet says.  Read rather than restated: the drag and
+ *  the layout would otherwise be two rules about one limit, and the first edit to either would
+ *  make them disagree. */
+function widthBounds(room: number): [number, number] {
+  const s = getComputedStyle(ppanel);
+  // `width` comes back resolved to pixels; `min-width`/`max-width` do **not** — a percentage is
+  // handed back as it was written, so `parseFloat('60%')` is sixty *pixels* unless it is asked
+  // what of.  Left unasked, the panel clamped itself to a 60px maximum and the handle spent the
+  // whole drag pinned against a limit the layout was quietly correcting.
+  const px = (v: string, fallback: number): number => {
+    const n = parseFloat(v);
+    if (!Number.isFinite(n)) return fallback;
+    return v.trimEnd().endsWith('%') ? (n / 100) * room : n;
+  };
+  return [px(s.minWidth, 240), px(s.maxWidth, room * 0.6)];
+}
+
+/** Put the partition somewhere, in whatever units keep it there.
+ *
+ *  A **percentage** of the row, not pixels: the panel opens at 30% of the window, and a width
+ *  frozen in pixels the moment somebody nudged the handle would stop tracking a window that is
+ *  then resized — the drawing and the source would drift apart on a laptop being plugged into a
+ *  monitor.  Clamped here to what the stylesheet allows, so the handle never runs on past a
+ *  limit the layout is quietly enforcing and leave the pointer somewhere the edge is not. */
+function setPanelWidth(px: number): void {
+  const room = ppanel.parentElement?.clientWidth ?? window.innerWidth;
+  if (room <= 0) return;
+  const [lo, hi] = widthBounds(room);
+  const w = Math.min(Math.max(px, lo), Math.min(hi, room));
+  ppanel.style.width = `${((w / room) * 100).toFixed(3)}%`;
 }
 
 /** Re-print, unless the panel is being typed in or already says this. */
@@ -131,6 +204,7 @@ export function showStatementFor(): void {
 /** Wire the box up.  Called once, from `main`, so this module is reached the way `lists` is and
  *  the view never has to import the shell. */
 export function bindProgramPanel(): void {
+  bindPartition();
   ptext.addEventListener('input', () => {
     typed = true;
     // colour what was just typed, not what the drawing came from: half a statement is still the

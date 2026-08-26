@@ -24,6 +24,7 @@ export const bannerText = document.getElementById('banner-text') as HTMLElement;
 export const bannerSelect = document.getElementById('banner-select') as HTMLButtonElement;
 export const measureEl = document.getElementById('measure') as HTMLElement;
 export const ppanel = document.getElementById('ppanel') as HTMLElement;
+export const psplit = document.getElementById('psplit') as HTMLElement;
 export const ppanelState = document.getElementById('ppanel-state') as HTMLElement;
 /** The program panel's code box — the two layers, built into `#pcode` by `app/editor.ts`.  It is
  *  handed the core's colouring and knows nothing else about Solvent. */
