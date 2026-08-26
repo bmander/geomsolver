@@ -275,6 +275,13 @@ test('re-placing puts a dragged callout back', () => {
 
   view.resetCallouts();
   assert.ok(Math.abs(dimY(view, view.sketch) - before) < 1e-9);
+
+  // and undoing it keeps the drawing: the snapshot it takes is program text, so undo restores a
+  // document — where a serialised sketch would come back from `Document.read` as an empty one
+  const points = view.sketch.points.length;
+  view.undo();
+  assert.equal(view.sketch.points.length, points, 'undo kept the drawing');
+  assert.ok(view.source.startsWith('point'), 'undo restored the source, not a dump');
 });
 
 /* -- copy and paste -------------------------------------------------------------------- */
@@ -551,8 +558,14 @@ test('a dimension being written is one edit, and Escape takes all of it back', (
   cv.fire('pointermove', pointer(...view.w2s(20, 60)));
   view.endDimension(true);
   assert.equal(sk.userConstraints().length, 1);
+  const points = view.sketch.points.length;
   view.undo();
   assert.equal(view.sketch.userConstraints().length, 0);
+  // the drawing comes back, rather than the undo blanking it: the snapshot a dimension takes is
+  // program text like every other, and a serialised sketch fed to `Document.read` would come
+  // back as an empty document rather than as a refusal
+  assert.equal(view.sketch.points.length, points, 'undo kept the drawing');
+  assert.ok(view.source.startsWith('point'), `undo restored the source, not a dump: ${view.source.slice(0, 40)}`);
 });
 
 test('a click plants the number, and the pointer stops carrying it', () => {

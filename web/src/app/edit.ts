@@ -164,7 +164,7 @@ export function pasteClipboard(v: SketchView): number {
  *  back, and this is it. */
 export function resetCallouts(v: SketchView, c?: Constraint | null): number {
   const cs = c ? [c] : v.sketch.userConstraints();
-  const before = io.dumps(v.sketch);
+  const before = v.source;
   const n = cs.filter((k) => dim.reset(v.sketch, k.id)).length;
   if (!n) return 0;             // nothing was out of place: no edit, and no history entry
   v.pushUndo(before);

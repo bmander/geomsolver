@@ -123,8 +123,11 @@ export class SketchView {
   ctx: CanvasRenderingContext2D;
   /** Where the pointer last was, in canvas coordinates. */
   cursor: [number, number] = [0, 0];
-  /** Both histories hold serialised sketches: `undoStack` the states an edit moved away from,
-   *  `redoStack` the ones an undo moved away from. */
+  /** Both histories hold **program text**: `undoStack` the states an edit moved away from,
+   *  `redoStack` the ones an undo moved away from.  Text, so undo restores what somebody wrote
+   *  — and so a caller that snapshots before it knows whether the edit will happen must
+   *  snapshot `source`, never a serialised sketch: `Document.read` does not throw on a program
+   *  error, so the wrong kind of string comes back as an empty drawing rather than a refusal. */
   private undoStack: string[] = [];
   private redoStack: string[] = [];
   private planSolver: PlanSolver | null = null;
