@@ -19,8 +19,9 @@
 //! follows it when the geometry it is written over is dragged.
 //!
 //! Like a tape, a locus encodes to a flat `Vec<f64>` and rides in the contact's constants, so no
-//! kernel signature learns about curves — and `eval_flat` here is the one evaluator: the kernel,
+//! kernel signature learns about curves — and `eval_at` here is the one evaluator: the kernel,
 //! the tessellation and the tests all run the flat form, so there is no second walker to drift.
+//! (`eval_flat` is its cold entry, the same walk named a contact it may carry a pose for.)
 //!
 //! **Branches are picked by seeds and carried by continuity.**  A taut string unwinds clockwise
 //! or counter-clockwise, and no regular residual can say which — chirality is discrete.  This
@@ -29,6 +30,20 @@
 //! the target parameter, and when that solve fails it marches from the low end of the domain,
 //! each step warm-started from the last, so the branch chosen at the start is the branch the
 //! whole curve is on.
+//!
+//! **And a branch once carried is kept.**  The outer solver moves `(u, θ)` a little and asks the
+//! same contact again, which is a continuation step like any other — so each contact's pose is
+//! remembered (`Seen`) and the next evaluation *resumes* from it rather than re-walking the
+//! march from the home.  Replaying instead cost the traced gear thirty-four block solves for
+//! every one it needed.  A resumed step is only trusted as far as it can be checked, and
+//! `continues` checks it against the tangent that predicted it; what fails falls back to the
+//! home and the full march, so the doctrine above is what decides every branch either way.
+//!
+//! So the kernel path carries a *history* where the drawing path (`sweep`, and `curve::closest`
+//! through it) is always cold.  That is the intended reading and not an oversight: the drawn
+//! curve is what a march from the home makes of `(u, θ)`, a contact is a point that got to its
+//! `u` by a road, and the two agree because every step of that road was checked against the
+//! curve's own tangent.  A change that lets them disagree is a change to `continues`.
 
 use crate::kernels::KERNELS;
 use crate::tape::{self, Tape};
@@ -195,10 +210,27 @@ impl Default for Val {
     }
 }
 
+/// Where one contact's evaluation last got to: the outer vector it was asked at, what it came
+/// to, and the inner pose that answered it.  Both of its uses are the same fact read twice —
+/// asked again at the *same* outer it is the answer (`System` asks for the Jacobian at the point
+/// it just asked the residual of), and asked at a *neighbouring* one it is where the
+/// continuation had reached, which is what `eval_at` carries forward.
+#[derive(Default)]
+struct Seen {
+    outer: Vec<f64>,
+    val: Val,
+    q: Vec<f64>,
+}
+
+/// How many contacts' poses are remembered at once.  A cache, not a table: past it they all go,
+/// so a document with thousands of contacts costs bounded memory and merely loses the warm
+/// start — never an answer, since a forgotten pose is one the march works out again.
+const SEEN_MAX: usize = 4096;
+
 /// Scratch an evaluation runs in — held by the caller and reused, like `tape::Scratch`, because
 /// a kernel evaluates the same locus for every constraint in its block.  It also carries the
-/// kernel path's one-entry memo: `System` always asks for the Jacobian at the point it just
-/// asked the residual of, and each of those would otherwise solve the block again.
+/// kernel path's memory of where each contact last was (`Seen`), keyed by the address of the
+/// contact's own constants.
 pub struct Scratch {
     ts: tape::Scratch,
     xv: Vec<f64>,
@@ -212,8 +244,7 @@ pub struct Scratch {
     wd: Vec<[f64; tape::MAX_VARS]>,
     v: Vec<f64>,
     jrow: Vec<f64>,
-    memo_key: (usize, usize, Vec<f64>),
-    memo: Option<Val>,
+    seen: std::collections::BTreeMap<(usize, usize), Seen>,
 }
 
 impl Scratch {
@@ -231,8 +262,7 @@ impl Scratch {
             wd: Vec::new(),
             v: Vec::new(),
             jrow: Vec::new(),
-            memo_key: (0, 0, Vec::new()),
-            memo: None,
+            seen: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -359,6 +389,10 @@ const TOL_OK: f64 = 1e-8;
 const TOL_STALL: f64 = 1e-10;
 /// A step smaller than this fraction of the pose is no step.
 const STEP_MIN: f64 = 1e-14;
+/// A resumed solve's correction against the tangent that predicted it.  Below this fraction of
+/// the predicted move the step is the continuation of the pose it started from; above it, the
+/// step is something else and the answer is thrown away for the march.
+const PREDICTED: f64 = 0.5;
 
 /// One Newton solve of the block at the parameter already written into `s.xv[0]`, from the `q`
 /// already in `s.xv`.  Residual rows are judged against their own kernel's power of length over
@@ -573,17 +607,57 @@ fn march(v: &View, s: &mut Scratch, outer: &[f64], from: f64, to: f64, keep_goin
 
 /// Evaluate the locus at `outer = [u, θ…, values…]`: solve the block, then the implicit function
 /// theorem for the derivatives.  A block without predicates tries the seeds at the target
-/// parameter first, and marches from the home when that fails; one *with* predicates always
-/// marches — they are read at the home and carried by continuity, and a direct solve at the
-/// target could land in a component they forbid.
+/// parameter first, and marches from the home when that fails; one *with* predicates marches —
+/// they are read at the home and carried by continuity, and a direct solve *from the seeds* at
+/// the target could land in a component they forbid.
+///
+/// This is the cold form, which starts from the home however often it is called.  A caller that
+/// names a contact (`eval_at`) gets the same walk with a branch it already holds carried into it.
 pub fn eval_flat(flat: &[f64], outer: &[f64], u_start: f64, s: &mut Scratch) -> Val {
+    eval_at(flat, outer, u_start, None, s)
+}
+
+/// `key` is where this contact's constants live: it both *resumes* from the pose remembered
+/// there and remembers the pose this evaluation ends on.  `None` is the cold form.
+///
+/// **Why resuming is the same statement about branches.**  The march exists because the branch
+/// is chosen at the home and carried by continuity (spec §6.5.1), and re-walking it from the
+/// home is one way to carry it — but the outer solver moves `(u, θ)` by a little and asks again,
+/// and *that* is a continuation step too.  Resuming honours the doctrine and replaying merely
+/// pays for it again: 1056 evaluations of the traced gear cost 35904 block solves, one per march
+/// step, for answers a hair from the ones beside them.  What it must not do is take the *hair*
+/// on trust, so `continues` checks the step against the tangent it was predicted by, and
+/// anything that fails falls back to the home and the full march below.
+fn eval_at(
+    flat: &[f64],
+    outer: &[f64],
+    u_start: f64,
+    key: Option<(usize, usize)>,
+    s: &mut Scratch,
+) -> Val {
     let Some(v) = prepare(flat, outer, s) else { return Val::default() };
     let u = outer[0];
+    // taken out of the map rather than borrowed from it: the solve below wants the scratch the
+    // pose lives in.  It goes back in `keep`, whatever this evaluation makes of it.
+    let from = key.and_then(|k| s.seen.remove(&k)).filter(|p| p.val.ok);
+    if let Some(prev) = &from {
+        refresh(&v, s, u, outer);
+        s.xv[v.n_outer..v.n_outer + v.n_q].copy_from_slice(&prev.q);
+        // read where it landed before paying `finish` for it: a rejected resume owes no
+        // factorisation, and the traced point is all `continues` ever asks about
+        if newton(&v, s) && continues(&v, s, prev) {
+            let val = finish(&v, s, true);
+            if val.ok {
+                return keep(&v, s, key, outer, val);
+            }
+        }
+    }
     if v.preds.is_empty() {
         refresh(&v, s, u, outer);
         seed(&v, s);
         if newton(&v, s) {
-            return finish(&v, s, true);
+            let val = finish(&v, s, true);
+            return keep(&v, s, key, outer, val);
         }
     }
     let u_home = home_of(&v, s, outer, u_start);
@@ -591,7 +665,52 @@ pub fn eval_flat(flat: &[f64], outer: &[f64], u_start: f64, s: &mut Scratch) -> 
     if ok && u != u_home {
         ok = march(&v, s, outer, u_home, u, false);
     }
-    finish(&v, s, ok)
+    let val = finish(&v, s, ok);
+    keep(&v, s, key, outer, val)
+}
+
+/// Remember the pose this evaluation ended on, under the contact it belongs to.
+fn keep(v: &View, s: &mut Scratch, key: Option<(usize, usize)>, outer: &[f64], val: Val) -> Val {
+    let Some(k) = key else { return val };
+    // a cache and not a table: past the bound every entry goes, since a forgotten pose is one
+    // the march works out again.  `k` was removed on the way in, so it is not among them.
+    if s.seen.len() >= SEEN_MAX {
+        s.seen.clear();
+    }
+    let q0 = v.n_outer;
+    let e = s.seen.entry(k).or_default();
+    e.outer.clear();
+    e.outer.extend_from_slice(outer);
+    e.q.clear();
+    e.q.extend_from_slice(&s.xv[q0..q0 + v.n_q]);
+    e.val = val;
+    val
+}
+
+/// Whether the pose just found *continues* the one resumed from, or is a different branch Newton
+/// happened to fall into.
+///
+/// The old pose carries its own derivatives — `∂C/∂(u, θ)`, which its own `finish` already paid a
+/// factorisation for — so where the point should have gone is a tangent step away, and the only
+/// question is how much Newton had to correct it.  On the same branch the correction is second
+/// order in the step and vanishes beside it; onto another branch it is the distance between the
+/// branches, which no step made it small.  So the test is the two against each other and needs
+/// no length of its own — the one absolute term is the inner solve's own accuracy, below which
+/// nothing about a pose is knowable anyway.
+fn continues(v: &View, s: &Scratch, prev: &Seen) -> bool {
+    let q0 = v.n_outer;
+    let (x, y) = (s.xv[q0 + v.traced], s.xv[q0 + v.traced + 1]);
+    // the tangent step and the correction to it, both as displacements from the old pose: the
+    // point itself is far from the origin and the two quantities compared here are not
+    let (mut dx, mut dy) = (0.0f64, 0.0f64);
+    for d in 0..1 + v.n_theta {
+        let step = s.xv[d] - prev.outer[d];
+        dx += prev.val.dx[d] * step;
+        dy += prev.val.dy[d] * step;
+    }
+    let corrected = (x - prev.val.x - dx).hypot(y - prev.val.y - dy);
+    let scale = 1.0 + prev.val.x.abs().max(prev.val.y.abs());
+    corrected <= PREDICTED * dx.hypot(dy) + TOL_OK * scale
 }
 
 /// Where evaluation is anchored: the family's `from` expression, read with the parameter as 0,
@@ -745,10 +864,16 @@ pub fn sweep(flat: &[f64], outer: &[f64], u0: f64, u1: f64, n: usize, s: &mut Sc
 }
 
 /// The two derivative-carrying evaluations a contact kernel makes, bundled: `kernels` calls this
-/// so the residual and the Jacobian read one code path.  A one-entry memo sits in front of the
-/// solve, because `System` always asks for the Jacobian at the point it just asked the residual
-/// of: the answer is a pure function of the constants and the columns past the contact point, so
-/// remembering the last one is deterministic and halves the block solves.
+/// so the residual and the Jacobian read one code path.  What each contact last came to sits in
+/// front of the solve, because `System` asks for the Jacobian at the point it just asked the
+/// residual of: the answer is a pure function of the constants and the columns past the contact
+/// point, so remembering it is deterministic and halves the block solves.
+///
+/// It is remembered **per contact** and not once for the whole path.  A block evaluates every
+/// contact of its kernel before the Jacobian pass begins (`point_on_trace_res` walks all `n`,
+/// then `point_on_trace_jac` walks all `n` again), so a single slot holds the *last* contact when
+/// the Jacobian asks for the *first* and never once hits — the halving it was written for only
+/// ever happened for a block of one.
 pub fn kernel_eval(consts: &[f64], v: &[f64], n_par: usize) -> Val {
     // the contact's constants: [u_start, n_values, values…, locus flat…]
     let Some(&u_start) = consts.first() else { return Val::default() };
@@ -774,22 +899,26 @@ pub fn kernel_eval(consts: &[f64], v: &[f64], n_par: usize) -> Val {
     let outer = &outer[..1 + theta + nv];
     LOCUS_SCRATCH.with(|s| {
         let s = &mut *s.borrow_mut();
-        // the constants live in a compiled block and are only ever rewritten in place with the
-        // same values, so (address, length) identifies them; the outer values carry the rest
+        // A compiled block's constants stay where they are put: `refresh_consts` rewrites a
+        // trace contact's in place (it is not among `System::spans` — those are a *spline*
+        // contact's knots), so the address is the contact's for the life of the system.  What
+        // the rewrite may change is the instance's `values`, and those ride in `outer` too, so
+        // a changed one misses below rather than reading stale.  Only a **recompile** can put
+        // another contact at this address, which is why `System::new` calls `forget`.
         let key = (flat.as_ptr() as usize, flat.len());
-        if let Some(val) = s.memo {
-            if (s.memo_key.0, s.memo_key.1) == key && s.memo_key.2 == outer {
-                return val;
+        if let Some(seen) = s.seen.get(&key) {
+            if seen.outer == outer {
+                return seen.val;
             }
         }
-        let val = eval_flat(flat, outer, u_start, s);
-        s.memo_key.0 = key.0;
-        s.memo_key.1 = key.1;
-        s.memo_key.2.clear();
-        s.memo_key.2.extend_from_slice(outer);
-        s.memo = Some(val);
-        val
+        eval_at(flat, outer, u_start, Some(key), s)
     })
+}
+
+/// Drop every remembered pose.  `System::new` calls it: a contact's constants are addressed by
+/// where they live, and a compile is the one thing that moves them.
+pub fn forget() {
+    LOCUS_SCRATCH.with(|s| s.borrow_mut().seen.clear());
 }
 
 thread_local! {

@@ -484,9 +484,9 @@ Conventions:
   theorem at the solution — `∂C/∂u` and `∂C/∂θ` from one factorisation of the inner Jacobian —
   which is what keeps a contact on the curve when the geometry it is written over is dragged.
   The whole compiled block encodes to flat `f64` and rides in the contact's consts exactly as
-  the tapes do (`locus::eval_flat` is the one evaluator: kernel, tessellation and tests all run
-  the flat form), so `System` only picks `trace_kernel` over `curve_kernel` per definition and
-  the bindings are untouched.  Chirality — which way the string unwinds — is a *branch*, and no
+  the tapes do (`locus::eval_at` is the one evaluator — kernel, tessellation and tests all run
+  the flat form — with `eval_flat` its cold entry), so `System` only picks `trace_kernel` over
+  `curve_kernel` per definition and the bindings are untouched.  Chirality — which way the string unwinds — is a *branch*, and no
   regular residual can state one (a residual zero at exactly one direction has a vanishing
   gradient there).  A block states its way onto a branch by three instruments, in order of
   strength (spec §6.5.1): a **signed constraint** where the vocabulary has one
@@ -498,14 +498,31 @@ Conventions:
   restarts (fixed-seed `rng::Rng`) when there are no seeds to start from; and a **seed** for
   what neither can say.  Continuity carries the branch from the home everywhere else —
   evaluation is one warm-started march, the same walk the polyline sweep does, and a block with
-  predicates never trusts a direct solve at the target (it could land in a forbidden
-  component).  A seed is a *place*, named geometrically where it can be: `at c bearing (u +
+  predicates never trusts a direct solve *from the seeds* at the target (it could land in a
+  forbidden component).  A branch once carried is **kept**: the outer solver moves `(u, θ)` a
+  little and asks the same contact again, which is a continuation step like any other, so each
+  contact's pose is remembered and the next evaluation *resumes* from it instead of re-walking
+  the march.  Replaying it cost thirty-four block solves for every one it needed — 92% of a
+  traced gear's solve.  A resumed step is trusted only as far as `locus::continues` can check
+  it, against the tangent the pose's own `∂C/∂(u, θ)` predicted (a correction second order in
+  the step is the same branch; one the size of the gap between branches is not), and what fails
+  falls back to the home and the full march, so the doctrine above still decides every branch.
+  A pose is addressed by *where its contact's constants live* — `refresh_consts` rewrites a
+  trace contact's in place, so the address is its own for the life of the system, and the values
+  that rewrite may change ride in `outer` too and so miss rather than read stale.  Only a
+  recompile can put another contact at that address, which is why `System::new` calls
+  `locus::forget`.  The kernel path therefore carries a history where the drawing path is always
+  cold, which is the intended reading: a contact is a point that reached its `u` by a road, and
+  the two agree because every step of that road was checked against the curve's own tangent.
+  A seed is a *place*, named geometrically where it can be: `at c bearing (u +
   phase)` is the point at the edge of the circle, `at t` is where another point starts
   (`program::at_seed` lowers both to the tapes the coordinate spelling would be), and
   `at (xexpr, yexpr)` remains for a place with no name.
   A block must be square — as many rows as inner coordinates — or elaboration refuses it.
   `tests/trace.rs` holds the taut-string involute checked against the closed form it never
-  states (with seeds wrong by 3× on purpose), and a gear run on traced flanks.
+  states (with seeds wrong by 3× on purpose), a gear run on traced flanks, and — the guard on
+  the resume — the same parameters asked in three orders, since an answer that depended on what
+  was evaluated before it would be a warm start that had changed one.
 - A curve is *geometry*, so like a dimension callout it is laid out in the core and the front end
   only strokes what it is handed: `curve::tessellate` refines to `FLATNESS_PX` screen pixels
   through `unit` (the world length of one screen pixel), and `curve::closest` is the pick test

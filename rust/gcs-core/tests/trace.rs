@@ -297,6 +297,99 @@ fn a_gear_runs_on_a_traced_involute() {
     assert_eq!(d.dof, 0, "no degree of freedom is left");
 }
 
+/// **An evaluation is a function of what it is asked, and not of what it was asked before.**
+///
+/// A contact's pose is remembered so the next evaluation may *resume* the continuation rather
+/// than replay it from the home (`locus::eval_at`), which is what keeps a traced drawing
+/// solvable — but a warm start is only ever an optimisation if the answer is the same one.  A
+/// resume that slipped onto the mirror branch would still converge, still satisfy every
+/// residual, and be wrong; and it would show up here, because the same parameters asked in a
+/// different order would come back different.
+///
+/// So: the same list of poses, evaluated in two orders and once as a scrambled walk that jumps
+/// the length of the domain between neighbours — worst case for a warm start, since every step
+/// is far.  The block carries a `ccw`, the case that never trusts a direct solve.
+#[test]
+fn an_evaluation_does_not_depend_on_what_was_evaluated_before() {
+    let src = "\
+curve involute(c: circle, datum: line, phase: Angle)(u) over (5, 60) =
+  trace p from (90 - phase) where {
+    point t
+    point p
+    line rad(c.center, t)
+    line s(t, p)
+    point_on_circle(t, c)
+    angle(datum, rad) == u + phase
+    perpendicular(rad, s)
+    point_line_distance(p, rad) == -(c.r * u * pi / 180)
+    ccw(datum.p1, datum.p2, t)
+  }
+
+point  o at (0, 0)
+point  ax at (1, 0)
+line   datum(o, ax) construction
+circle base(center: o, r: 20) construction
+curve  w = involute(base, datum, phase: 0) over (5, 60)
+radius(base) == 20
+ground(o)
+ground(ax)
+point q at (28, 22)
+point_on_curve(q, w, u = 30)
+";
+    let e = build(src);
+    assert!(
+        e.ok(),
+        "{:?}",
+        e.errors().map(|d| (d.code.as_str(), &d.message)).collect::<Vec<_>>()
+    );
+    let mut sys = System::new(&e.sketch);
+    let z0 = sys.z0(&e.sketch);
+
+    // the contact: its parameter is a column of the system, and it owns the two rows `q - C(u)`
+    let c = e.sketch.constraints.iter().find(|c| !c.aux_params().is_empty()).unwrap();
+    let col = sys.col_of[c.aux_params()[0] as usize] as usize;
+    let row = sys.row_of(c.id).expect("the contact is compiled into the plan");
+
+    // poses spread over the whole domain
+    let us: Vec<f64> = (0..24).map(|k| 6.0 + 52.0 * k as f64 / 23.0).collect();
+    let at = |sys: &mut System, u: f64| {
+        let mut z = z0.clone();
+        z[col] = u;
+        sys.residuals(&z)
+    };
+
+    let forward: Vec<Vec<f64>> = us.iter().map(|&u| at(&mut sys, u)).collect();
+    let mut backward: Vec<Vec<f64>> = us.iter().rev().map(|&u| at(&mut sys, u)).collect();
+    backward.reverse();
+    // a walk that jumps the domain each step: 0, 23, 1, 22, … — every warm start is a far one
+    let mut scrambled = vec![Vec::new(); us.len()];
+    for k in 0..us.len() {
+        let i = if k % 2 == 0 { k / 2 } else { us.len() - 1 - k / 2 };
+        scrambled[i] = at(&mut sys, us[i]);
+    }
+
+    let qxy = e.sketch.point_xy(e.map.ent_named("q").unwrap().i());
+    for (k, &u) in us.iter().enumerate() {
+        for (tag, got) in [("backward", &backward[k]), ("scrambled", &scrambled[k])] {
+            for i in 0..sys.n_res {
+                assert!(
+                    (got[i] - forward[k][i]).abs() < 1e-9,
+                    "at u = {u}, row {i}: {tag} read {}, forward read {}",
+                    got[i],
+                    forward[k][i],
+                );
+            }
+        }
+        // and it is the involute, not merely a repeatable answer: the row is q - C(u)
+        let want = involute_at(0.0, 0.0, 20.0, u);
+        let got = (qxy.0 - forward[k][row], qxy.1 - forward[k][row + 1]);
+        assert!(
+            (got.0 - want.0).abs() < 1e-7 && (got.1 - want.1).abs() < 1e-7,
+            "at u = {u}: involute {want:?}, trace {got:?}",
+        );
+    }
+}
+
 /// **The march is the fallback, and it carries the branch.**  This family's seeds collapse onto
 /// the circle's centre past `u = 30` — where `point_on_circle`'s gradient vanishes and the
 /// direct solve cannot even factorise — so evaluating at `u = 60` *must* march from the domain's

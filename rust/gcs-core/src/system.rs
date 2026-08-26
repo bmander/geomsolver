@@ -171,6 +171,11 @@ fn kernel_table(sk: &Sketch) -> Vec<Kernel> {
 
 impl System {
     pub fn new(sk: &Sketch) -> System {
+        // A remembered pose is addressed by where its contact's constants live, and this is the
+        // one moment those move: the blocks about to be built may take the memory a dropped
+        // system's did, and a pose read back through a reused address would be another curve's.
+        // Forgetting here is exact — nothing earlier is worth carrying past a recompile anyway.
+        crate::locus::forget();
         let table = kernel_table(sk);
         let n = sk.params.len();
         let free = sk.free_indices();
