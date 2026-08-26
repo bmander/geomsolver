@@ -19,10 +19,14 @@
  * language: the runs come from the core, the same as in the app. */
 import { CodeEditor } from '../src/app/editor.js';
 
-const { text, runs } = window.CASE;
+const { text, runs, lit } = window.CASE;
 
 const ed = new CodeEditor(document.getElementById('pcode'), () => runs);
 ed.setText(text);
+// and mark a range, because a mark is the other thing that can move a glyph: `.lit` may tint and
+// thicken an outline, never change the face.  The check below is exactly the one that catches it
+// if it ever does.
+if (lit) ed.setLit(lit);
 
 const copy = document.querySelector('.code-copy');
 const box = ed.box;

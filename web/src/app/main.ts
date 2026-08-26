@@ -45,7 +45,8 @@ import { editValue, onDimension } from './dimbox.js';
 import { bindProgramPanel, refreshProgram, showStatementFor, toggleProgramPanel } from './program.js';
 import { closePanel, openPanel, refresh, refreshStatus } from './lists.js';
 import {
-  aboutBadge, barConstraints, barTools, canvas, currentConstraint, focusConstraint, menubar, view,
+  aboutBadge, barConstraints, barTools, canvas, currentConstraint, focusConstraint, hooks, menubar,
+  view,
 } from './shell.js';
 import {
   MenuItem, ToolbarButton, addButton, addMenu, addSeparator, closeMenus, download, toast,
@@ -209,6 +210,7 @@ view.onChanged = () => { refresh(); refreshProgram(); };
 view.onProgram = () => { refreshProgram(); };
 view.onDragFrame = refreshStatus;
 view.onStatus = toast;
+hooks.focusChanged = showStatementFor;
 bindProgramPanel();
 new ResizeObserver(() => view.resize()).observe(canvas);
 view.resize();

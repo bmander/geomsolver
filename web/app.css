@@ -269,6 +269,16 @@ dialog .choices button { text-align: left; font-family: var(--mono); font-size: 
    face makes no promise about — and the box, which has no spans to style, stays regular
    throughout, so the text would slide out from under the caret on every line that used one. */
 .code-copy .comment { color: var(--syn-comment); }
+/* The statement whose element or constraint is picked on the drawing.
+   It reads as bold and is **not** bold: the box in front of this copy is one face throughout, so
+   a heavier run here would advance its glyphs further than the box advances the same characters,
+   and every character after it on the line would sit beside the one the caret is really on.
+   `-webkit-text-stroke` thickens the drawn outline and leaves the advance width alone, which is
+   the one way to say "bold" that `npm run overlay` still agrees with. */
+.code-copy .lit {
+  background: var(--accent-soft);
+  -webkit-text-stroke: 0.4px currentColor;
+}
 .code-copy .word { color: var(--syn-word); }
 .code-copy .type { color: var(--syn-type); }
 .code-copy .relation { color: var(--syn-relation); }

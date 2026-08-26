@@ -14,7 +14,7 @@
  * made elsewhere; `dimbox.ts` will not overwrite a box somebody is in.  A panel that reprinted on
  * every solve would take the line out from under the cursor. */
 import type { Diagnostic, SourceMap } from '../core/program.js';
-import { pdiags, ped, ppanel, ppanelState, psplit, view } from './shell.js';
+import { currentConstraint, pdiags, ped, ppanel, ppanelState, psplit, view } from './shell.js';
 import { toast } from './ui.js';
 
 /** The box somebody types in.  `app/editor.ts` owns the two layers and the colouring; this module
@@ -128,6 +128,7 @@ export function refreshProgram(): void {
   if (text === shown) return;
   shown = text;
   ped.setText(text);
+  ped.setLit(litSpan());        // the spans moved with the text; the mark follows them
   ppanel.classList.remove('dirty');
   ppanelState.textContent = '';
   showDiags(view.doc.diagnostics);
@@ -188,17 +189,33 @@ function showDiags(ds: Diagnostic[]): void {
 /** Light the statement that made what is picked.  `highlight`, never `selected`: setting the
  *  selection would fire `onSelect`, which is a press on the canvas and shuts the constraints
  *  window. */
-export function showStatementFor(): void {
-  if (ppanel.hidden || typed || document.activeElement === ptext) return;
+/** Where the thing being looked at was written down — the focused constraint, or else the first
+ *  selected element.  Null when neither is, and when what is picked came out of a component and
+ *  so has no statement of its own in this document to point at. */
+function litSpan(): [number, number] | null {
+  const c = currentConstraint;
+  if (c) {
+    const f = map().constraints.find((x) => x.id === c.id);
+    return f ? [f.lo, f.hi] : null;
+  }
   const first = view.selected[0];
-  if (!first) return;
-  const found = map().entities.find(
-    (x) => x.kind === first.ref[0] && x.index === first.ref[1],
-  );
-  if (!found) return;
-  ptext.setSelectionRange(found.lo, found.hi);
-  // scroll it into view without stealing the focus from the canvas
-  ped.scrollToLine(shown.slice(0, found.lo).split('\n').length - 1);
+  if (!first) return null;
+  const f = map().entities.find((x) => x.kind === first.ref[0] && x.index === first.ref[1]);
+  return f ? [f.lo, f.hi] : null;
+}
+
+/** Point the panel at whatever is picked: mark the statement it was written as, and bring it on
+ *  screen.  Called from both funnels — `view.onSelect` for the drawing, `hooks.focusChanged` for
+ *  a constraint — so picking either way says the same thing here. */
+export function showStatementFor(): void {
+  if (ppanel.hidden || typed) return;
+  const where = litSpan();
+  ped.setLit(where);
+  // the selection and the scroll are only for a box nobody is in: moving either under somebody
+  // who is typing would take the line out from under their caret
+  if (!where || document.activeElement === ptext) return;
+  ptext.setSelectionRange(where[0], where[1]);
+  ped.scrollToLine(shown.slice(0, where[0]).split('\n').length - 1);
 }
 
 /** Wire the box up.  Called once, from `main`, so this module is reached the way `lists` is and

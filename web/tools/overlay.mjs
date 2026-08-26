@@ -86,7 +86,11 @@ const OPTS = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer:
 let failed = 0;
 try {
   for (const [name, text] of cases()) {
-    writeFileSync(here_case, `window.CASE = ${JSON.stringify({ text, runs: highlight(text) })};\n`);
+    // a lit range over the middle of the document, so the mark the panel puts on a picked
+    // statement is under the same test as the colouring is
+    const lit = [Math.floor(text.length / 3), Math.floor((text.length * 2) / 3)];
+    const c = JSON.stringify({ text, runs: highlight(text), lit });
+    writeFileSync(here_case, `window.CASE = ${c};\n`);
     // Chrome prints the DOM and then does not always exit, so the timeout is the normal path
     // and what it collected on the way is the answer.
     let dom = '';

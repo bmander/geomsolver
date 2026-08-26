@@ -61,12 +61,17 @@ function initialProgram(): string {
 export const view = new SketchView(canvas, Document.read(initialProgram()));
 export let currentConstraint: Constraint | null = null;
 
+/** What the shell tells the rest of the page when the focus moves.  Assigned by `main`, the way
+ *  the view's own handlers are: `program` reads the shell, so the shell must not read it back. */
+export const hooks: { focusChanged: () => void } = { focusChanged: () => {} };
+
 /** Move the keyboard focus onto a constraint row, or off it with null.  Delete acts on
  *  whichever of the two selections holds the focus, so exactly one of `currentConstraint` and
  *  `view.selected` is ever populated — that is the whole reason deleting a constraint stopped
  *  taking the geometry with it, so every path that sets either one comes through here. */
 export function focusConstraint(c: Constraint | null, highlight?: Primitive[]): void {
   currentConstraint = c;
+  queueMicrotask(hooks.focusChanged);   // after the callers below have settled the selection
   view.litConstraint = c;             // so its callout on the drawing says so too
   view.highlight = highlight ?? (c ? expand(c.entities()) : []);
   if (c) view.selected = [];

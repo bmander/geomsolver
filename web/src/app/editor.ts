@@ -50,6 +50,13 @@ export class CodeEditor {
   readonly box: HTMLTextAreaElement;
   private readonly copy: HTMLPreElement;
   private readonly colour: (text: string) => Run[];
+  /** The range the panel is pointing at — where the selected thing was written.
+   *
+   *  Marked with a class and **never with a weight**.  The box in front of this copy is one
+   *  face throughout; a bold here would advance its glyphs differently from the box's, and
+   *  every character after it on the line would sit beside the one the caret is on.  See the
+   *  four rules in this file's header — this is the third of them. */
+  private lit: [number, number] | null = null;
 
   /** Build the two layers inside `host`, which is expected to be positioned (the stylesheet makes
    *  `#pcode` so).  The copy goes first so the box paints over it and takes the clicks. */
@@ -89,23 +96,52 @@ export class CodeEditor {
   }
 
   /** Colour what is in the box now — after typing, or after the rules changed. */
+  /** Point the copy at a range, or at nothing.  Repaints only when it actually moved, so a
+   *  selection gesture that keeps landing on the same statement costs one paint and not sixty. */
+  setLit(range: [number, number] | null): void {
+    const a = this.lit, b = range;
+    if (a === b || (a && b && a[0] === b[0] && a[1] === b[1])) return;
+    this.lit = range;
+    this.repaint();
+  }
+
   repaint(): void {
     const text = this.text;
     const out = document.createDocumentFragment();
+    const lit = this.lit;
+    /* One stretch of text, split where the lit range starts and ends so the mark covers the
+     * punctuation *between* coloured runs too — a statement is spans and gaps, and half a
+     * marked statement would look like a colouring bug. */
+    const put = (from: number, to: number, cls: string): void => {
+      if (to <= from) return;
+      const clamp = (i: number): number => Math.min(Math.max(i, from), to);
+      const cuts = lit ? [from, clamp(lit[0]), clamp(lit[1]), to] : [from, to];
+      for (let i = 0; i + 1 < cuts.length; i += 1) {
+        const [a, b] = [cuts[i], cuts[i + 1]];
+        if (b <= a) continue;
+        const on = !!lit && a >= lit[0] && b <= lit[1];
+        if (!cls && !on) {
+          out.append(text.slice(a, b));
+          continue;
+        }
+        const span = document.createElement('span');
+        span.className = on ? (cls ? `${cls} lit` : 'lit') : cls;
+        span.textContent = text.slice(a, b);
+        out.append(span);
+      }
+    };
     let at = 0;
     if (text.length <= MAX_COLOUR) {
       for (const r of this.colour(text)) {
-        if (r.lo > at) out.append(text.slice(at, r.lo));
-        const span = document.createElement('span');
-        span.className = r.cls;
-        span.textContent = text.slice(r.lo, r.hi);
-        out.append(span);
+        put(at, r.lo, '');
+        put(r.lo, r.hi, r.cls);
         at = r.hi;
       }
     }
     // the tail, and a newline past it: a `pre` drops the last one, and the copy has to be exactly
     // as tall as the box in front of it or the two scroll apart at the bottom
-    out.append(`${text.slice(at)}\n`);
+    put(at, text.length, '');
+    out.append('\n');
     this.copy.replaceChildren(out);
     this.follow();
   }
