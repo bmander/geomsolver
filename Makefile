@@ -8,8 +8,12 @@
 UNAME := $(shell uname -s)
 EXT := $(if $(filter Darwin,$(UNAME)),.dylib,$(if $(filter Windows_NT,$(OS)),.dll,.so))
 CARGO := cargo
-# `.sv` too: the gear is a Solvent program compiled in with `include_str!`, so it is source
-RUST_SRC := $(shell find rust/gcs-core/src rust/gcs-ffi/src -name '*.rs' -o -name '*.sv')
+# `.sv` too, and `rust/examples/` with them: every case in the library is a Solvent document
+# compiled in with `include_str!`, so a document is source.  Left out of this list, editing one
+# rebuilt nothing — the tests read the file from disk and passed while the browser went on
+# running the case that was compiled in weeks ago.
+RUST_SRC := $(shell find rust/gcs-core/src rust/gcs-ffi/src rust/examples \
+                        -name '*.rs' -o -name '*.sv')
 WASM_TARGET := wasm32-unknown-unknown
 
 .PHONY: all wasm test test-rust test-py test-web bench fmt clippy clean
