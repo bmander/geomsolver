@@ -2,7 +2,6 @@
  * the drawing where it will be read.  Where it is put is which dimension it is, so a pair that
  * can be measured three ways swaps one constraint for another as the pointer moves; nothing is
  * solved while it is being carried, and nothing reaches the undo stack until it is accepted. */
-import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
 import type { Callout } from '../core/callout.js';
 import { Constraint } from '../core/constraints.js';
@@ -29,6 +28,7 @@ export interface LiveDim {
    *  number being written is one the drawing already carried. */
   fresh: boolean;
   alt: DimAlt | null;
+  /** The **program text** before the gesture, which is what the undo stack holds. */
   before: string;
   /** The theorems the sketch already held, so that when the dimension lands the report can say
    *  which ones it brought with it: the sketch is not diagnosed while the number is carried. */
@@ -50,7 +50,7 @@ export function startDimension(v: SketchView, targets: Constraint[], fresh: bool
                                alt: DimAlt | null): boolean {
   endDimension(v, false);
   if (!targets.length) return false;
-  const before = io.dumps(v.sketch);
+  const before = v.source;
   const impliedBefore = new Set(v.diagnosis?.implied ?? []);
   // the record goes in first: stating the constraint is part of the gesture, so it must not
   // solve or diagnose either — the sketch it lands in is the one the pointer is still
