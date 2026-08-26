@@ -12,7 +12,14 @@ use gcs_core::syntax::{highlight, Tint};
 /// what a front end needs to write the runs out with the plain text between them.
 #[test]
 fn the_spans_tile_the_text() {
-    for src in [GEAR, "", "point p at (0, 0)", "// nothing but a comment", "/* unclosed"] {
+    for src in [
+        GEAR,
+        "",
+        "point p at (0, 0)",
+        "// nothing but a comment",
+        "/* unclosed",
+        "horizontal line a(p1, p2) tangent\narc k(center: c, r: 5) to close",
+    ] {
         let mut end = 0usize;
         for (tint, s) in highlight(src) {
             assert!(s.lo as usize >= end, "{tint:?} at {} overlaps the run before it", s.lo);

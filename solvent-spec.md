@@ -54,7 +54,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `port`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `ellipse`, `spline`, `construction`.
+- **Keywords:** `component`, `port`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `ellipse`, `spline`, `construction`. **[0.4]** In a chain (§6.6) the words `to` and `close` are meaningful *contextually*; they are not reserved, and an entity may bear either as a name.
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
 - **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . = -> ~`
@@ -289,6 +289,36 @@ A dimension in the block may be an expression over the parameter, the formals' c
 3. **A seed.** What neither an equation nor a predicate says, a seed says: the block's `at` seeds are places over the parameter and the formals, evaluation starts from them, and away from them continuity governs — an implementation MUST evaluate the curve as one continuation along the parameter, so the branch picked at the home is the branch everywhere. Deleting a seed still traces *a* branch, from a worse start — the same bargain a contact's `u = …` seed strikes in §4.3.
 
 **Places, not coordinates.** Inside a trace block a seed is a *place*, and this language names places geometrically: `point t at c bearing (u + phase)` is the point at the edge of circle `c` at that bearing from the page's x-axis, and `point p at t` is wherever `t` starts (a point already named must be declared first). Both lower to exactly what the coordinate spelling would — the bearing form is `centre + r·(cos β, sin β)` said the way a draughtsman says it — so the coordinate form `at (xexpr, yexpr)` remains available and means the same thing. Outside a trace block a seed is a number a solve writes back, which a place named by reference is not, so the geometric forms are trace-block-only (**E103** elsewhere).
+
+### 6.6 Chains **[0.4]**
+
+Sugar, and only sugar: a chain writes a run of declarations and the constraints *between* them in one ordered breath, and it elaborates to exactly the statements a person would otherwise write out. It is a parser construct — nothing downstream of the parser knows it exists.
+
+```
+horizontal line bottom(b1, b2) tangent
+arc a_br(center: c_br, r: r) tangent
+vertical line right(r1, r2) tangent close
+```
+
+```
+CHAIN  ::= LINK (JOINT LINK)* [JOINT "close"]
+LINK   ::= PREFIX* DECL
+PREFIX ::= a constraint name whose spec is one entity slot     // horizontal, vertical
+JOINT  ::= "to" | "tangent" | INFIX
+INFIX  ::= a constraint name whose spec is two entity slots    // perpendicular, equal_length, equal_radius
+```
+
+- A **prefix** desugars to that constraint applied to the declaration it stands before: `horizontal line bottom(b1, b2)` is `line bottom(b1, b2)` plus `horizontal(bottom)`. Eligibility is registry-derived — one entity slot and nothing else — so a new unary constraint joins the grammar without the grammar changing.
+- A **joint** stands between two links and says how they meet. Constraints return nothing, so a chain reads like a chained comparison, not an expression: each joint binds its two neighbours, and there is no precedence anywhere. An INFIX word is the two-argument counterpart of PREFIX, derived from the same registry: it desugars to that constraint over the pair, positionally, and MUST fit both — a word whose slots the pair cannot fill is an error, not a guess.
+- **Threading.** Every link of a chain is a line or an arc — an element with an entry and an exit, read left to right (`p1 → p2`; CCW, `start → end`). At each joint the shared point MUST be named by exactly one side, or by both in agreement; the name fills whichever boundary field the other side left out. An open chain's first entry and last exit are not joints and MUST be named where they stand. A kind with no boundary points — a circle — cannot sit in a chain.
+- `JOINT close` after the last link seals the loop: the last exit threads to the first entry, and the joint says how they meet there.
+- A statement otherwise ends at its line's end (§2); a line ending in a joint word continues its chain onto the next.
+
+**Every joint is the regular form.** The joint knows the shared point, so `tangent` between a line and an arc is `tangent_arc_line(arc, line, at: start|end)` — tangent *at* the point just threaded — and never the bare tangency over a coincidence, whose Jacobian is rank-deficient at every solution. `tangent` between two lines is collinearity (`parallel` over the shared point). A pair the vocabulary has no regular form for (two arcs, today) is an error, never a silently degenerate statement. `to` states nothing: the shared point is the whole of a plain corner.
+
+Each desugared statement keeps an identity of its own and a span into the chain's text, so a caret, a diagnosis culprit and a splice land on the word that stated the thing. (§12.7 is many instances from one statement; a chain is several statements from one *line*, each still its own.) Deleting a chain-borne constraint is therefore a word splice — a joint steps down to `to`, a prefix word goes where it stands — and deleting a link is refused: no splice takes one link out and leaves a chain behind, so that edit belongs to the source.
+
+*Non-normative:* chains and paths (§10) answer different questions. A path is a traversal of geometry that already exists — vertices, the circles its arc segments lie on, orientation and branch rules, for boundary composition and export. A chain *declares* the geometry: it is how a contour's elements, their meetings and the levels on its straight runs are written down in the first place. The case library's fillet rectangle is the canonical chain; its longhand form states the same sketch in thirty statements.
 
 ---
 

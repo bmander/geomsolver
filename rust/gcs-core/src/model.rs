@@ -106,6 +106,31 @@ impl EntKind {
         }
     }
 
+    /// Where an entity of this kind is *entered and left*, as indices into its `fields()` with
+    /// the scalars filtered out — which is the indexing `Decl::children` uses.
+    ///
+    /// A line runs `p1 → p2`; an arc runs CCW `start → end`.  This is what a chain (Solvent
+    /// §6.6) threads through: a joint's shared point is one element's exit and the next one's
+    /// entry.  `None` is a kind with no boundary — a circle has no ends, which is why its
+    /// radius is a Param and not a witness point, and why it cannot sit in a chain.
+    ///
+    /// It lives here, beside the table it indexes, because two integers derived from
+    /// `fields()` and written down somewhere else are two integers that go stale the first time
+    /// a field is reordered — silently, and in the direction of a wrong drawing.  Matched
+    /// exhaustively for the same reason every other table here is: a new kind with ends must
+    /// stop the build and be given an arm.
+    pub fn ends(self) -> Option<(usize, usize)> {
+        match self {
+            EntKind::Line => Some((0, 1)),
+            EntKind::Arc => Some((1, 2)),
+            EntKind::Point
+            | EntKind::Circle
+            | EntKind::Spline
+            | EntKind::Ellipse
+            | EntKind::Curve => None,
+        }
+    }
+
     /// The names a curve written over an entity of this kind reads its coordinates by, in
     /// **`Sketch::entity_params` order** — `c.center.x`, `c.center.y`, `c.r` for a circle.
     ///
