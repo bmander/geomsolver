@@ -545,19 +545,37 @@ fn a_root_choice_keyed_by_index_goes_inert() {
 ///
 /// This is why the acceptance bar for a text format is *document-state preservation* and not
 /// `Sketch` identity: the format we already ship does not meet the stricter one.
+///
+/// The library's own cases no longer show it, and that is worth saying rather than leaving as a
+/// silent pass: every one of them is elaborated from a document now, and `program` builds all the
+/// entities before any of the constraints — which is `from_json`'s order exactly, so their
+/// parameter vectors already survive a load.  What still permutes is a sketch built the way a
+/// *drawing* is built, an entity at a time with constraints going on as they are stated, so that
+/// is what this makes.
 #[test]
 fn a_round_trip_does_not_preserve_the_topology_key() {
-    let mut moved = Vec::new();
     for (name, sk) in cases() {
         let s = io::dumps(&sk, Some(1));
         let sk2 = io::loads(&s).expect(name);
         assert_eq!(io::dumps(&sk2, Some(1)), s, "{name}: the document itself is a fixed point");
-        if sk2.topology_key() != sk.topology_key() {
-            moved.push(name);
-        }
     }
-    assert!(
-        !moved.is_empty(),
+
+    // a contact owns an unknown, and here an entity is declared after it — which no document
+    // does and every session of drawing does
+    let mut sk = examples::case("spline_follower").expect("spline_follower");
+    let sp = gcs_core::model::EntRef::spline(0);
+    let rider = sk.points.len();
+    sk.point(70.0, 10.0, false, "late");
+    let on = Constraint::point_on_spline(&sk, gcs_core::model::EntRef::point(rider), sp);
+    sk.add(on);
+    sk.point(90.0, 10.0, false, "later");
+
+    let s = io::dumps(&sk, Some(1));
+    let sk2 = io::loads(&s).expect("interleaved");
+    assert_eq!(io::dumps(&sk2, Some(1)), s, "the document itself is a fixed point");
+    assert_ne!(
+        sk2.topology_key(),
+        sk.topology_key(),
         "if this ever stops failing, the parameter vector now survives a load and the note above \
          is stale",
     );

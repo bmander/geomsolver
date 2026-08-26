@@ -89,7 +89,7 @@ fn pebble_game_recognises_laman_graphs() {
     for seed in 0..6u32 {
         let mut rng = Rng::new(seed + 1);
         let n = 4 + rng.int(11);
-        let edges = gcs_core::examples::henneberg_edges(n, &mut rng);
+        let edges = gcs_core::fixtures::henneberg_edges(n, &mut rng);
         assert_eq!(edges.len(), 2 * n - 3);
         let res = graph::pebble_game(n, &edges);
         assert!(res.is_rigid() && res.redundant.is_empty());

@@ -46,10 +46,11 @@ export const parallels = (): Sketch => build('parallels');
 /** The graphical proof of the Pythagorean theorem: four a×b right triangles in a square of side
  *  a + b leave a square of side c, dimensioned `c = hypot(a, b)` — redundant and consistent. */
 export const pythagoras = (a = 30, b = 40): Sketch => build(`pythagoras:${a}:${b}`);
-export const k33 = (seed = 3): Sketch => build(`k33:${seed}`);
+export const k33 = (): Sketch => build('k33');
 export const laman = (n = 10, seed = 0): Sketch => build(`laman:${n}:${seed}`);
 /** A cubic B-spline with a face held tangent to it and a point riding on it. */
-export const splineFollower = (n = 7): Sketch => build(`spline_follower:${n}`);
+/** The control points are written out in the document, so their number is its own. */
+export const splineFollower = (): Sketch => build('spline_follower');
 /** `copies` separate staircases of `n` free-length H/V segments: a drag must cost one figure. */
 export const zigzag = (n = 32, copies = 1): Sketch => build(`zigzag:${n}:${copies}`);
 

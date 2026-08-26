@@ -3,7 +3,7 @@ use gcs_core::constraints::{Arg, CKind};
 use gcs_core::constraints::Constraint;
 use gcs_core::decompose::{decompose, PlanDrag, PlanSolver};
 use gcs_core::model::{EntRef, Sketch};
-use gcs_core::examples;
+use gcs_core::{examples, fixtures};
 use gcs_core::io;
 use gcs_core::newton::Method;
 
@@ -115,7 +115,7 @@ fn chirality_flags_follow_the_current_geometry() {
 
 #[test]
 fn k33_needs_a_core_and_decomposes() {
-    let mut sk = examples::k33(3);
+    let mut sk = examples::k33();
     let mut ps = PlanSolver::new(&sk, false);
     assert!(ps.plan.fully_decomposed(), "{}", ps.plan.summary());
     assert!(ps.plan.steps.iter().map(|s| s.ids.len()).max().unwrap() >= 4); // a core merge
@@ -127,7 +127,7 @@ fn k33_needs_a_core_and_decomposes() {
 #[test]
 fn laman_frameworks_decompose_fully() {
     for seed in 0..8u32 {
-        let mut sk = examples::laman(6 + (seed as usize % 7), 500 + seed, true);
+        let mut sk = fixtures::laman(6 + (seed as usize % 7), 500 + seed, true);
         let mut ps = PlanSolver::new(&sk, false);
         assert!(ps.plan.fully_decomposed(), "seed {seed}: {}", ps.plan.summary());
         sk.perturb(1.0, seed);

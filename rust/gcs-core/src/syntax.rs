@@ -368,7 +368,10 @@ impl Ref {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Seg {
     Field(Name),
-    Index(i64),
+    /// `p[i + 1]` — *which copy* of a repeated statement, as written.  Held as text because the
+    /// index is an expression over the counts and binders in scope, and those are not known until
+    /// the block is expanded; `flatten` works it out there.  Spec §12.5.
+    Index(String),
 }
 
 /// `ground(p0)` pins both of a point's coordinates; `fix(c0.r)` pins one scalar.  Deliberately
@@ -844,7 +847,7 @@ fn write_ref(out: &mut String, r: &Ref) {
                 out.push('.');
                 out.push_str(&f.text);
             }
-            Seg::Index(i) => out.push_str(&format!("[{i}]")),
+            Seg::Index(t) => out.push_str(&format!("[{t}]")),
         }
     }
 }
@@ -1445,11 +1448,11 @@ impl<'a> P<'a> {
             if self.eat_p('.') {
                 path.push(Seg::Field(self.ident()?));
             } else if self.eat_p('[') {
-                let v = self.number()?;
+                let (text, _) = self.expr_until(']')?;
                 if !self.want_p(']') {
                     return None;
                 }
-                path.push(Seg::Index(v as i64));
+                path.push(Seg::Index(text));
             } else {
                 break;
             }

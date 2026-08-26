@@ -48,7 +48,7 @@ fn under_determined_merges_are_skipped() {
 #[test]
 #[ignore = "~20 s (256 homotopy paths)"]
 fn the_k33_core_has_several_real_realizations() {
-    let mut sk = examples::k33(3);
+    let mut sk = examples::k33();
     let mut ps = PlanSolver::new(&sk, true);
     ps.solve(&mut sk, 1e-9, true, Method::DogLeg);
     let idx = (0..ps.plan.steps.len()).max_by_key(|&i| ps.plan.steps[i].ids.len()).unwrap();

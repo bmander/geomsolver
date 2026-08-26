@@ -2113,7 +2113,7 @@ pub unsafe extern "C" fn gcs_bipartite_components_json(
 pub extern "C" fn gcs_henneberg_edges_json(n: i32, seed: u32) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
         let mut rng = gcs_core::rng::Rng::new(seed);
-        let e = examples::henneberg_edges(n.max(2) as usize, &mut rng);
+        let e = gcs_core::fixtures::henneberg_edges(n.max(2) as usize, &mut rng);
         out_json(Json::Arr(
             e.iter()
                 .map(|&(a, b)| Json::Arr(vec![Json::Int(a as i64), Json::Int(b as i64)]))

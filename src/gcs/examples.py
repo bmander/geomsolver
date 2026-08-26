@@ -88,17 +88,22 @@ def pythagoras(a: float = 30.0, b: float = 40.0) -> Sketch:
     return build(f"pythagoras:{a}:{b}")
 
 
-def k33(seed: int = 3) -> Sketch:
-    return build(f"k33:{seed}")
+def k33() -> Sketch:
+    """A K3,3 bar framework: rigid, triangle-free, and so one core to the decomposition."""
+    return build("k33")
 
 
 def laman(n: int = 10, seed: int = 0) -> Sketch:
     return build(f"laman:{n}:{seed}")
 
 
-def spline_follower(n: int = 7) -> Sketch:
-    """A cubic B-spline with a face held tangent to it and a point riding on it."""
-    return build(f"spline_follower:{n}")
+def spline_follower() -> Sketch:
+    """A cubic B-spline with a face held tangent to it and a point riding on it.
+
+    The control points are written out in the document, so how many there are is its own
+    and not an argument.
+    """
+    return build("spline_follower")
 
 
 def perturb(sk: Sketch, sigma: float, seed: int = 0) -> None:

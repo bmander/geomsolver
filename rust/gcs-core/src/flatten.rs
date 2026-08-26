@@ -51,6 +51,10 @@ struct Scope {
     prefixes: Vec<String>,
     binds: BTreeMap<String, String>,
     cyc: Option<Cyc>,
+    /// The numbers in force where the statement was written — the enclosing counts, params and
+    /// block binders.  An index (`p[i + 1]`) is an expression over exactly these, and references
+    /// are resolved in a later pass where the walk's own environment is gone, so it travels here.
+    vals: BTreeMap<String, Aff>,
 }
 
 pub struct Expansion {
@@ -202,6 +206,7 @@ impl<'a> Walk<'a> {
                             .collect(),
                         binds,
                         cyc: None,
+                        vals: sub_vals.clone(),
                     };
                     sc.cyc = scope.cyc.clone();
                     self.body(&comp.body, &sc, &mut sub_vals, path, depth + 1);
@@ -242,6 +247,7 @@ impl<'a> Walk<'a> {
                                 k,
                                 n,
                             }),
+                            vals: sub.clone(),
                         };
                         let mut p2 = path.to_vec();
                         p2.push(k as u32);
@@ -505,6 +511,37 @@ fn substitute(text: &str, vals: &BTreeMap<String, Aff>) -> String {
     out
 }
 
+/// The absolute name `name` has inside copy `k` of whichever block declares it.
+///
+/// A block's copies are named `<enclosing>#<statement-id>.<k>.`, so this is a search for that
+/// shape among the names the walk has already collected: for each scope the reference can see,
+/// every block *within* it that declares `name`, at the copy asked for.  Two blocks in one scope
+/// declaring the same name make the index ambiguous, and an ambiguous name resolves to nothing
+/// rather than to whichever came first.
+fn copy_of(name: &str, k: usize, sc: &Scope, names: &BTreeSet<String>) -> Option<String> {
+    let mut found: Option<String> = None;
+    for p in &sc.prefixes {
+        let from = format!("{p}#");
+        for abs in names.range(from.clone()..).take_while(|n| n.starts_with(&from)) {
+            // `#<id>.<j>.<tail>` — the copy's own name, with no further block between
+            let tail = &abs[from.len()..];
+            let Some((_id, rest)) = tail.split_once('.') else { continue };
+            let Some((j, leaf)) = rest.split_once('.') else { continue };
+            if leaf != name || j.parse::<usize>() != Ok(k) {
+                continue;
+            }
+            if found.as_deref().is_some_and(|f| f != abs) {
+                return None; // two blocks here declare it: say nothing rather than guess
+            }
+            found = Some(abs.clone());
+        }
+        if found.is_some() {
+            return found;
+        }
+    }
+    found
+}
+
 /// The absolute name a reference denotes, and whatever field path is left over.
 ///
 /// Greedy on the dotted name: `t.lead` is one name if something declared it, and `c0.center` is
@@ -516,11 +553,35 @@ fn lookup(
     names: &BTreeSet<String>,
     alias: &BTreeMap<String, String>,
 ) -> Option<(String, Vec<String>)> {
+    // `p[k]` names *which copy* of a repeated statement, so it is resolved before anything else
+    // and the rest of the path is read against the copy it picks.  Only the root may carry one —
+    // an index selects an instance of the block a name was declared in, and a field of one is
+    // still a field.
+    if let Some(Seg::Index(text)) = r.path.first() {
+        let k = match value_of(text, &sc.vals) {
+            Ok(v) if v.is_finite() && v >= 0.0 && v.round() == v => v as usize,
+            _ => return None,
+        };
+        let abs = copy_of(&r.root.text, k, sc, names)?;
+        let rest: Vec<String> = r.path[1..]
+            .iter()
+            .map(|s| match s {
+                Seg::Field(f) => f.text.clone(),
+                Seg::Index(t) => t.clone(),
+            })
+            .collect();
+        // a second index would name a copy of a copy, which no statement makes
+        if r.path[1..].iter().any(|s| matches!(s, Seg::Index(_))) {
+            return None;
+        }
+        return Some((abs, rest));
+    }
+
     let mut segs: Vec<String> = vec![r.root.text.clone()];
     for s in &r.path {
         match s {
             Seg::Field(f) => segs.push(f.text.clone()),
-            Seg::Index(i) => segs.push(format!("{i}")),
+            Seg::Index(t) => segs.push(t.clone()),
         }
     }
     // `next` and `prev` name the sibling copy, so the rest of the path is read in *its* scope
@@ -561,6 +622,21 @@ fn lookup(
     None
 }
 
+/// A reference spelled back the way the source wrote it, for a message about it.
+fn written(r: &Ref) -> String {
+    let mut out = r.root.text.clone();
+    for seg in &r.path {
+        match seg {
+            Seg::Field(f) => {
+                out.push('.');
+                out.push_str(&f.text);
+            }
+            Seg::Index(t) => out.push_str(&format!("[{t}]")),
+        }
+    }
+    out
+}
+
 fn rewrite(
     k: &mut StmtKind,
     sc: &Scope,
@@ -573,7 +649,8 @@ fn rewrite(
             r.root = Name { text: abs, span: r.root.span };
             r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
         }
-        None => bad.push((r.span, format!("no such entity: `{}`", r.root.text))),
+        // named as written, so an index that picked no copy says which one it was
+        None => bad.push((r.span, format!("no such entity: `{}`", written(r)))),
     };
     match k {
         StmtKind::Decl(d) => {

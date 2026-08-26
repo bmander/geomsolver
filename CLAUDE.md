@@ -12,7 +12,7 @@ Currently: **Stage 5 done**, in **one** implementation —
   (`callout.rs`), dimension expressions (`expr.rs`), parametric curves (`curve.rs`), the
   **Solvent** language the document is written in (`syntax.rs`, `flatten.rs`, `program.rs`,
   `edit.rs`, `tape.rs`), JSON export (`io.rs`, `json.rs`) and the reference sketches
-  (`examples.rs`, `gear.sv`).
+  (`examples.rs`, over the documents in `rust/examples/`).
 * **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built twice — a native `cdylib` for
   Python and a self-contained `wasm32-unknown-unknown` module for the browser.
 * **bindings**: `src/gcs/` (Python, `ctypes`) and `web/src/core/` (TypeScript, WebAssembly).
@@ -210,6 +210,24 @@ Conventions:
   dimension takes part in it — editing that dimension is the next conflict; one among pure
   relations is a theorem that nothing can break, so its wholly-implied constraints are
   `implied`: noted, never painted as an error.
+- **Every case in the library is a Solvent document.**  Each is a `.sv` file in `rust/examples/`,
+  and its builder is a one-liner that elaborates the text (`examples::document`).
+  A case that takes arguments is still one implementation: `with_params` gives the document's own
+  named numbers — a `param w = 100` line, or a `== a = 30` dimension — the caller's values, since
+  a drawing written as a document already names what it is drawn from, and a second copy in Rust
+  is a second drawing the moment one is edited.  A start that is off the solution is `jitter`, a
+  function of the sketch: the document says what the figure *is*, not where a solve begins.  A
+  document's **seeds must track its parameters** (`pythagoras.sv` places its square from `la`/`lb`)
+  — a case is asked for unsolved, so seeds frozen at one size are a wrong drawing at another.
+  `tests/examples_sv.rs` holds each document to what the library advertises about it.
+- **What is not a drawing is not a case** (`fixtures.rs`).  `laman` and `henneberg_edges` make a
+  *random* graph and then measure the positions they happened to place: there is no statement
+  behind any of their numbers and no document that could express one.  They are the generator all
+  three language test suites run their property tests over, so they stay in the core — the core
+  owns algorithms — but in their own module, out of the case library and off the app's menu, so
+  that nothing mistakes a fixture for an example.  The rule that sorts them: a case belongs in
+  Solvent when its numbers are things a person would state, and stays a generator when they are
+  things a program measured.
 - **The document is the Solvent source (`gear.sv`, `syntax.rs`, `program.rs`, `edit.rs`).**  The
   drawing is what elaborating it produces, and drawing is a way to edit it.  So *every* edit is a
   **splice** — a few characters replaced in the text somebody wrote — and **never a reprint**: a

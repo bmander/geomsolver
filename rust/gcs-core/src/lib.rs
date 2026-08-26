@@ -20,6 +20,7 @@ pub mod ellipse;
 pub mod examples;
 pub mod expr;
 pub mod fdcheck;
+pub mod fixtures;
 pub mod flatten;
 pub mod graph;
 pub mod homotopy;
