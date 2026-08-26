@@ -81,8 +81,8 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   param u0 = sqrt((Rr / Rb) ^ 2 - 1) * 180 / pi
   param u1 = sqrt((Rt / Rb) ^ 2 - 1) * 180 / pi
 
-  point center at (0, 0)
-  point anchor at (R, 0)
+  point center hint at (0, 0)
+  point anchor hint at (R, 0)
   line  datum(center, anchor) construction
   circle base(center: center, r: Rb) construction
   circle root(center: center, r: Rr) construction

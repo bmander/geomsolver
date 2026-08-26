@@ -789,7 +789,7 @@ fn write_decl(out: &mut String, d: &Decl) {
     if d.kind == EntKind::Point {
         let x = d.seed.first().copied().unwrap_or(0.0);
         let y = d.seed.get(1).copied().unwrap_or(0.0);
-        out.push_str(&format!(" at ({}, {})", num(x), num(y)));
+        out.push_str(&format!(" hint at ({}, {})", num(x), num(y)));
     }
     if let Some(u) = &d.knots {
         out.push_str(" knots [");
@@ -1148,8 +1148,8 @@ fn joint_word(w: &str) -> bool {
 
 /// The words that shape a statement without naming anything — a modifier the parser eats where it
 /// stands.  `as` binds a name after it, which is why `highlight` treats that one specially.
-const MODIFIERS: [&str; 8] =
-    ["over", "as", "at", "about", "construction", "where", "bearing", "from"];
+const MODIFIERS: [&str; 9] =
+    ["over", "as", "at", "hint", "about", "construction", "where", "bearing", "from"];
 
 /// What the word *after* this one is expected to be — the whole of the state the colouring carries
 /// from one token to the next, and four states rather than the four independent flags that would
@@ -1585,6 +1585,21 @@ impl<'a> P<'a> {
         }
         self.fail(&format!("expected `{c}`"));
         false
+    }
+
+    /// `hint at` — a seed says outright that it is only a guess, which is what `=` says for
+    /// every other seed and what a bare `at` said for none: `at (0, 0)` reads as where the point
+    /// *is*, and it is not, it is where the solve begins (spec §4.3, Invariant H).
+    ///
+    /// Bare `at` is still read, so a document written before the word changed still loads.  It
+    /// is not written back: `write_decl` prints the current spelling, and a file that is edited
+    /// picks it up a statement at a time.
+    fn eat_hint_at(&mut self) -> bool {
+        if self.peek_word("hint") && self.word_at(self.i + 1) == Some("at") {
+            self.i += 2;
+            return true;
+        }
+        self.eat_word("at")
     }
 
     fn eat_word(&mut self, w: &str) -> bool {
@@ -2663,14 +2678,14 @@ impl<'a> P<'a> {
                 }
             }
         }
-        // trailing clauses, in any order: `at (x, y)` or `at REF [bearing (…)]`, `knots [...]`,
-        // `construction`
+        // trailing clauses, in any order: `hint at (x, y)` or `hint at REF [bearing (…)]`,
+        // `knots [...]`, `construction`
         let mut knots = None;
         let mut construction = false;
         let mut seed_at = None;
         loop {
-            if self.eat_word("at") {
-                // a place named geometrically: `at t`, `at c bearing (u + phase)`
+            if self.eat_hint_at() {
+                // a place named geometrically: `hint at t`, `hint at c bearing (u + phase)`
                 if self.peek() != Some(&Tok::P('(')) {
                     let what = self.refr()?;
                     let bearing =

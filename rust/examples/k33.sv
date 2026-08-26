@@ -10,12 +10,12 @@
 // because a bar framework *is* its bar lengths — but they have to be a set some placement really
 // achieves, so they are read off one, and nothing else about the numbers matters.
 
-point k0 at (0, 0)
-point k1 at (30, 4)
-point k2 at (58, -2)
-point k3 at (6, 26)
-point k4 at (34, 32)
-point k5 at (62, 24)
+point k0 hint at (0, 0)
+point k1 hint at (30, 4)
+point k2 hint at (58, -2)
+point k3 hint at (6, 26)
+point k4 hint at (34, 32)
+point k5 hint at (62, 24)
 
 line datum(k0, k3)
 

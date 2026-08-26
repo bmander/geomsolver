@@ -819,5 +819,5 @@ test('a gesture beside a component leaves the component written', () => {
   assert.ok(view.source.includes('component Flank('));
   assert.ok(view.source.includes('cycle N as i {'));
   assert.ok(view.source.includes('g: Gear(N: 30, m: 3, phi: 25, ded: 1)'));
-  assert.ok(/point\s+p0 at \(200, 0\)/.test(view.source), view.source);
+  assert.ok(/point\s+p0 hint at \(200, 0\)/.test(view.source), view.source);
 });

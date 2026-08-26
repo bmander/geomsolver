@@ -48,6 +48,14 @@ bundle's own URL, and a bundle written anywhere else would look for it somewhere
 node-only fallback imports in `wasm.ts` are left external; a browser never evaluates them.
 
 Conventions:
+- **A seed says it is a guess**: `point p hint at (0, 0)` (Solvent §6.4).  §4.3's whole
+  discipline is that seed-class is visible by a mark — `=` seeds, `==` constrains — and a
+  coordinate seed carried none, so the commonest seed in the language read as an assertion about
+  where the point *is*.  `hint at` says otherwise in the words §11 already uses for the statement
+  form.  A bare `at` is still *read* (`P::eat_hint_at`) so older documents load, and is never
+  written back: `write_decl` prints the current spelling and a file picks it up a statement at a
+  time.  A **callout placement keeps its bare `at`** — a placement is not a guess, it records
+  where somebody dragged the callout — which is why only declarations changed.
 - A constraint may own *unknowns* of its own: a `SpecKind::Param` slot in its `spec`, allocated
   by `Sketch::add` and moved by the solver like any other parameter.  The slot holds a seed
   number on the way in — which is what a document stores, what `graft` copies, and what

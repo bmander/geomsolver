@@ -13,14 +13,14 @@
 // `side` is stated rather than left out: a document's omitted flag takes the registry default,
 // where the Rust constructor reads it off the geometry, and here the geometry says -1.
 
-point c1 at (0, 0)
-point c2 at (50, 0)
+point c1 hint at (0, 0)
+point c2 hint at (50, 0)
 
 circle k1(center: c1, r: 10)
 circle k2(center: c2, r: 10)
 
-point p at (0, 10)
-point q at (50, 10)
+point p hint at (0, 10)
+point q hint at (50, 10)
 line  belt(p, q)
 
 radius(k1) == 10

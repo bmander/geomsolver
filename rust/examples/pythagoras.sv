@@ -16,10 +16,10 @@ param la = 30
 param lb = 40
 param s = la + lb
 
-point O at (0, 0)
-point E at (s, 0)
-point F at (s, s)
-point G at (0, s)
+point O hint at (0, 0)
+point E hint at (s, 0)
+point F hint at (s, s)
+point G hint at (0, s)
 
 line bottom(O, E)
 line right(E, F)
@@ -33,10 +33,10 @@ horizontal(bottom)
 equal_length(bottom, left)
 
 // one point on each side, `a` along from the corner it follows going round
-point P1 at (la, 0)
-point P2 at (s, la)
-point P3 at (lb, s)
-point P4 at (0, lb)
+point P1 hint at (la, 0)
+point P2 hint at (s, la)
+point P3 hint at (lb, s)
+point P4 hint at (0, lb)
 
 point_on_line(P1, bottom)
 point_on_line(P2, right)

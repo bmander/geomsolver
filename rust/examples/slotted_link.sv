@@ -12,15 +12,15 @@ param length = 80
 param r = 15
 param hole_r = 6
 
-point c1 at (0, 0)
-point c2 at (length, 0)
+point c1 hint at (0, 0)
+point c2 hint at (length, 0)
 
-point t1 at (0, r)
-point t2 at (length, r)
+point t1 hint at (0, r)
+point t2 hint at (length, r)
 line  top(t1, t2)
 
-point b1 at (length, 0 - r)
-point b2 at (0, 0 - r)
+point b1 hint at (length, 0 - r)
+point b2 hint at (0, 0 - r)
 line  bottom(b1, b2)
 
 arc a_right(center: c2, start: b1, end: t2, r: r)

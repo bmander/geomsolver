@@ -698,3 +698,25 @@ fn a_gear_with_few_teeth() {
         }
     }
 }
+
+/// **A seed says it is a guess.**  `hint at (x, y)` is the spelling; a bare `at (x, y)` is what
+/// documents said before the word changed and still reads, so a file written against the older
+/// language loads unchanged.  Both make the same drawing, and what is *printed* is the current
+/// spelling — a document picks it up a statement at a time, as edits touch them.
+#[test]
+fn a_seed_reads_either_spelling_and_prints_the_current_one() {
+    let read = |src: &str| {
+        let (p, errs) = gcs_core::syntax::parse(src);
+        assert!(errs.is_empty(), "{src}: {errs:?}");
+        let e = elaborate(&p);
+        assert!(e.ok(), "{src}: {:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+        e.sketch
+    };
+    let now = read("point a hint at (3, 4)\npoint b hint at (9, 1)\nline l(a, b)\n");
+    let was = read("point a at (3, 4)\npoint b at (9, 1)\nline l(a, b)\n");
+    assert_eq!(io::dumps(&now, Some(1)), io::dumps(&was, Some(1)), "one drawing, two spellings");
+
+    // and the printer writes the one the language uses now
+    let text = to_program(&now).text().to_string();
+    assert!(text.contains("hint at ("), "{text}");
+}

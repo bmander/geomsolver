@@ -8,20 +8,20 @@
 //
 // One degree of freedom is left: nothing fixes where the chain sits along the base.
 
-point o at (0, 0)
-point e at (40, 0)
+point o hint at (0, 0)
+point e hint at (40, 0)
 line  base(o, e)
 
-point a at (0, 15)
-point b at (40, 15)
+point a hint at (0, 15)
+point b hint at (40, 15)
 line  l2(a, b)
 
-point c at (10, 15)
-point d at (10, 35)
+point c hint at (10, 15)
+point d hint at (10, 35)
 line  l3(c, d)
 
-point f at (10, 35)
-point g at (30, 30)
+point f hint at (10, 35)
+point g hint at (30, 30)
 line  l4(f, g)
 
 parallel(base, l2)

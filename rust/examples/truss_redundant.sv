@@ -13,10 +13,10 @@ param web = hypot(span / 2, height)
 
 // bays + 1 nodes along the bottom, and one above the middle of each bay
 repeat bays + 1 as i {
-  point b at (i * span, 0)
+  point b hint at (i * span, 0)
 }
 repeat bays as i {
-  point t at ((i + 0.5) * span, height)
+  point t hint at ((i + 0.5) * span, height)
 }
 
 // the bottom chord, and the two web members that hang the top node off this bay

@@ -14,20 +14,20 @@ param h = 60
 param r = 10
 
 // the straight runs, each between the two fillets it joins
-point b1 at (r, 0)
-point b2 at (w - r, 0)
-point r1 at (w, r)
-point r2 at (w, h - r)
-point t1 at (w - r, h)
-point t2 at (r, h)
-point l1 at (0, h - r)
-point l2 at (0, r)
+point b1 hint at (r, 0)
+point b2 hint at (w - r, 0)
+point r1 hint at (w, r)
+point r2 hint at (w, h - r)
+point t1 hint at (w - r, h)
+point t2 hint at (r, h)
+point l1 hint at (0, h - r)
+point l2 hint at (0, r)
 
 // the fillet centres; where each arc starts and ends is the chain's to say
-point c_br at (w - r, r)
-point c_tr at (w - r, h - r)
-point c_tl at (r, h - r)
-point c_bl at (r, r)
+point c_br hint at (w - r, r)
+point c_tr hint at (w - r, h - r)
+point c_tl hint at (r, h - r)
+point c_bl hint at (r, r)
 
 // round the outline, counter-clockwise from the bottom edge
 horizontal line bottom(b1, b2) tangent

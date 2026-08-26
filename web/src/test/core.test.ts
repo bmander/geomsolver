@@ -1782,7 +1782,7 @@ test('an edit is a new text, and the document is unchanged until it is applied',
   const e = d.addPoint(12.5, -3);
   assert.equal(e.kind, 'structural');
   assert.deepEqual(e.names, ['p0']);
-  assert.ok(e.text.includes('point   p0 at (12.5, -3)'), e.text);
+  assert.ok(e.text.includes('point   p0 hint at (12.5, -3)'), e.text);
   assert.equal(d.text, TRIANGLE, 'the document has not moved');
   assert.equal(d.sketch.points.length, 3);
   const next = Document.read(e.text);
@@ -1917,7 +1917,7 @@ test('a diagnostic and a source map index the string, not the core\'s bytes', ()
   // the gear's centre is declared well past the em dash, so its span is only right if converted
   const centre = d.map.entities.find((x) => x.name === 'g.center')!;
   assert.ok(centre && centre.lo > dash, 'the centre is in the map, past the em dash');
-  assert.equal(text.slice(centre.lo, centre.hi), 'point center at (0, 0)');
+  assert.equal(text.slice(centre.lo, centre.hi), 'point center hint at (0, 0)');
   const port = d.map.entities.find((x) => x.name.endsWith('.t.r.lo'))!;
   assert.ok(port, 'a flank port is in the map');
   assert.equal(text.slice(port.lo, port.hi), 'port lo: point');

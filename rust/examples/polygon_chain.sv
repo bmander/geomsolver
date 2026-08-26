@@ -13,8 +13,8 @@ param radius = 50
 
 cycle n as i {
   // the link from bearing i to bearing i+1 round the ring, each end its own point
-  point a at (radius * cos(tau * i / n), radius * sin(tau * i / n))
-  point b at (radius * cos(tau * (i + 1) / n), radius * sin(tau * (i + 1) / n))
+  point a hint at (radius * cos(tau * i / n), radius * sin(tau * i / n))
+  point b hint at (radius * cos(tau * (i + 1) / n), radius * sin(tau * (i + 1) / n))
   line  e(a, b)
 
   coincident(b, next.a)

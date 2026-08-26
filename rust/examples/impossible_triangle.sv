@@ -6,9 +6,9 @@
 // `a` and `b` stand ten apart, and no position does that.  So the structure is well-constrained
 // and the solve has nowhere to go, which is the whole point of the case.
 
-point a at (0, 0)
-point b at (10, 0)
-point c at (5, 5)
+point a hint at (0, 0)
+point b hint at (10, 0)
+point c hint at (5, 5)
 
 line ab(a, b)
 

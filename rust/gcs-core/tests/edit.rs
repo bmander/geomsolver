@@ -132,7 +132,7 @@ fn drawing_a_point_appends_one_statement() {
     let e = edit::add_point(&prog, 12.5, -3.0);
     assert_eq!(e.kind, Kind::Structural);
     assert_eq!(e.names, vec!["p0"], "a name nothing had taken");
-    assert!(e.text.contains("point   p0 at (12.5, -3)"), "{}", e.text);
+    assert!(e.text.contains("point   p0 hint at (12.5, -3)"), "{}", e.text);
     assert!(e.text.trim_end().ends_with("// and this trailing note, too"), "{}", e.text);
     let back = elaborate(&prog_of(&e.text));
     assert!(back.ok());
@@ -473,8 +473,8 @@ fn a_second_gesture_beside_a_component_still_lands() {
     e.sketch.line(p, q);
     let second = reconciled(&mut e);
     assert_eq!(second.kind, Kind::Structural, "{:?}", second.refused);
-    assert!(second.text.contains("point   p0 at (-95, 48)"), "{}", second.text);
-    assert!(second.text.contains("point   p1 at (-40, 60)"), "{}", second.text);
+    assert!(second.text.contains("point   p0 hint at (-95, 48)"), "{}", second.text);
+    assert!(second.text.contains("point   p1 hint at (-40, 60)"), "{}", second.text);
     assert!(second.text.contains("line    l0(p0, p1)"), "{}", second.text);
     assert!(second.text.contains("cycle N as i {"), "and the gear is still written");
 
@@ -529,4 +529,19 @@ fn a_placement_without_a_dimension_round_trips() {
     e.sketch.placements.remove(&id);
     let out = reconciled(&mut e);
     assert!(out.text.contains("horizontal(l)\n"), "{}", out.text);
+}
+
+/// A solve writes a seed back **inside** the new clause: the spans point at the numbers, not at
+/// the words in front of them, so `hint at` is spliced exactly as a bare `at` was.
+#[test]
+fn a_seed_written_hint_at_is_still_written_back() {
+    let src = "point a hint at (0, 0)\npoint b hint at (10, 0)\nline l(a, b)\nground(a)\n";
+    let mut e = elaborate(&prog_of(src));
+    let mut sk = std::mem::take(&mut e.sketch);
+    let bx = sk.points[1].x as usize;
+    sk.params[bx].value = 42.5;     // drag `b` sideways
+    let out = edit::commit_seeds(&e, &sk, &e.program);
+    assert_eq!(out.kind, Kind::Numeric);
+    assert!(out.text.contains("point b hint at (42.5, 0)"), "{}", out.text);
+    assert!(out.text.contains("point a hint at (0, 0)"), "and nothing else moved: {}", out.text);
 }
