@@ -214,15 +214,18 @@ def test_well_constrained_examples() -> None:
 
 def test_conflict_set_is_the_two_distances() -> None:
     sk = examples.rect_fillets()
-    extra = C.Distance(sk.lines[0].p1, sk.lines[0].p2, 50)  # contradicts the 80 width
+    # the width the case states, and a second number on the *same pair*: what makes this a
+    # minimal conflict of two is that both name one length, not that both are lengths
+    width = next(c for c in sk.constraints if isinstance(c, C.Distance) and c.d == 100)
+    extra = C.Distance(width.p, width.q, 50)
     sk.add(extra)
     solve(sk)
     d = diagnose(sk)
     assert d.status == "conflict"
     assert d.n_redundant == 1
-    width = next(c for c in sk.constraints if isinstance(c, C.Distance) and c.d == 80)
     assert set(d.conflicts or []) == {extra, width}
-    assert d.entity_state[sk.lines[0]] == "conflict"
+    assert d.entity_state[width.p] == "conflict"
+    assert d.entity_state[width.q] == "conflict"
 
 
 def test_redundant_but_consistent_is_over_not_conflict() -> None:
@@ -252,7 +255,7 @@ def test_null_space_pins_left_side_of_undimensioned_rect() -> None:
     arc stay pinned; only the right side slides.  Structural analysis can't see that (tangent
     equations mention the far endpoint), the null space can."""
     sk = examples.rect_fillets()
-    sk.remove(next(c for c in sk.constraints if isinstance(c, C.Distance) and c.d == 80))
+    sk.remove(next(c for c in sk.constraints if isinstance(c, C.Distance) and c.d == 100))
     d = diagnose(sk)
     assert d.dof == 1
     assert {p.name for p in d.under_params} == {"b2.x", "r1.x", "r2.x", "t1.x", "c_br.x", "c_tr.x"}

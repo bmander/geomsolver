@@ -13,9 +13,11 @@
 // the first link.  Every statement it stands for is an ordinary one; `tests/chain.rs` holds the
 // two spellings to being one drawing.
 //
-// The two dimensions measure between the *tangent points*, not across the rectangle, because
-// that is what the drawing has points at: the overall width is `w`, and what a caller sees is
-// `w - 2r` between `b1` and `b2`.
+// The two dimensions measure **across the rectangle**, so they read `w` and `h` rather than the
+// tangent-point spans they used to.  The drawing has points there to measure between because the
+// fillets put them there: `a_tl` and `a_tr` are both tangent to `top`, so `l1` and `r2` are level
+// with each other and a width apart; `a_tr` and `a_br` are both tangent to `right`, so `t1` and
+// `b2` share a vertical and are a height apart.
 
 param w = 100
 param h = 60
@@ -51,7 +53,7 @@ arc a_bl(center: c_bl, r: r) tangent close
 a_br equal a_tr equal a_tl equal a_bl
 radius(a_bl) == r
 
-distance(b1, b2) == w - 2 * r
-distance(l1, l2) == h - 2 * r
+distance(l1, r2) == w
+distance(t1, b2) == h
 
 ground(c_bl)

@@ -44,8 +44,9 @@ fn without_a_line_keeps_its_points() {
 #[test]
 fn describe_matches_the_reference_form() {
     let sk = examples::rect_fillets(100.0, 60.0, 10.0, 0.0);
+    // the height, which the case states across the rectangle: `distance(t1, b2) == h`
     let last = sk.constraints.last().unwrap();
-    assert_eq!(io::describe(last), "Distance(P6, P7, 40)");
+    assert_eq!(io::describe(last), "Distance(P4, P1, 60)");
     assert_eq!(fmt_g(80.0, 4), "80");
     assert_eq!(fmt_g(0.5, 4), "0.5");
     assert_eq!(fmt_g(1234567.0, 4), "1.235e+06");

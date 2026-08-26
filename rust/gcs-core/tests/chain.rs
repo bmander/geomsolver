@@ -70,8 +70,8 @@ equal_radius(a_tr, a_tl)
 equal_radius(a_tl, a_bl)
 radius(a_bl) == r
 
-distance(b1, b2) == w - 2 * r
-distance(l1, l2) == h - 2 * r
+distance(l1, r2) == w
+distance(t1, b2) == h
 
 ground(c_bl)
 ";

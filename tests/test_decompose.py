@@ -36,8 +36,9 @@ def test_examples_fully_decompose_and_replay_exactly(name: str) -> None:
         assert r.success and not r.fell_back and r.max_residual < 1e-8, r
     # constraint values are read live: change a dimension, replay without recompiling
     if name == "rect_fillets":
-        d = next(c for c in sk.constraints if isinstance(c, C.Distance) and c.d == 80)
-        d.d = 120
+        # the width, which the case states across the rectangle: `distance(l1, r2) == w`
+        d = next(c for c in sk.constraints if isinstance(c, C.Distance) and c.d == 100)
+        d.d = 140
         r = ps.solve(fallback=False)
         assert r.success and max(p.x.value for p in sk.points) == pytest.approx(140.0, abs=1e-6)
 

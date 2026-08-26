@@ -148,15 +148,19 @@ test('well-constrained examples diagnose clean', () => {
 
 test('two contradicting widths give a two-constraint conflict set', () => {
   const sk = examples.rectFillets();
-  const extra = new C.Distance(sk.lines[0].p1, sk.lines[0].p2, 50);
+  // the width the case states, and a second number on the *same pair*: what makes this a
+  // minimal conflict of two is that both name one length, not that both are lengths
+  const width = sk.constraints.find((c) => c instanceof C.Distance && num(c.d) === 100)!;
+  const [wp, wq] = [width.p as Point, width.q as Point];
+  const extra = new C.Distance(wp, wq, 50);
   sk.add(extra);
   solve(sk);
   const d = diagnose(sk);
   assert.equal(d.status, 'conflict');
   assert.equal(d.nRedundant, 1);
-  const width = sk.constraints.find((c) => c instanceof C.Distance && num(c.d) === 80)!;
   assert.deepEqual(new Set(d.conflicts ?? []), new Set([extra, width]));
-  assert.equal(d.entityState.get(sk.lines[0]), 'conflict');
+  assert.equal(d.entityState.get(wp), 'conflict');
+  assert.equal(d.entityState.get(wq), 'conflict');
 });
 
 test('a redundant but consistent member is over, not conflict', () => {
@@ -186,7 +190,7 @@ test('under-constrained slot reports the free parameters the null space sees', (
 
 test('the null space pins the left side of an undimensioned rectangle', () => {
   const sk = examples.rectFillets();
-  const c = sk.constraints.find((k) => k instanceof C.Distance && num(k.d) === 80)!;
+  const c = sk.constraints.find((k) => k instanceof C.Distance && num(k.d) === 100)!;
   sk.remove(c);
   const d = diagnose(sk);
   assert.equal(d.dof, 1);
@@ -302,8 +306,8 @@ for (const name of ['rect_fillets', 'slotted_link', 'truss']) {
                   `${name} seed ${seed}: max|r| = ${r.maxResidual}`);
       }
       if (name === 'rect_fillets') {
-        const d = sk.constraints.find((c) => c instanceof C.Distance && num(c.d) === 80)!;
-        d.setValue('d', 120);                 // dimensions are read live: replay, no recompile
+        const d = sk.constraints.find((c) => c instanceof C.Distance && num(c.d) === 100)!;
+        d.setValue('d', 140);                 // dimensions are read live: replay, no recompile
         const r = ps.solve(1e-9, false);
         assert.ok(r.success);
         assert.ok(Math.abs(Math.max(...sk.points.map((p) => p.x.value)) - 140) < 1e-6);
@@ -972,7 +976,7 @@ test('the construction flag round-trips', () => {
 test('describe reads the spec', () => {
   const sk = examples.rectFillets();
   const d = sk.constraints.find((c) => c instanceof C.Distance)!;
-  assert.match(io.describe(d), /^Distance\(P\d+, P\d+, 80\)$/);
+  assert.match(io.describe(d), /^Distance\(P\d+, P\d+, 100\)$/);
 });
 
 test('deleting an entity removes what depends on it', () => {

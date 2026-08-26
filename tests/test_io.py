@@ -55,7 +55,8 @@ def test_every_constraint_type_has_spec_and_roundtrips() -> None:
 
 def test_describe() -> None:
     sk = examples.rect_fillets()
-    assert io.describe(sk.constraints[-1], sk) == "Distance(P6, P7, 40)"
+    # the height, stated across the rectangle: `distance(t1, b2) == h`
+    assert io.describe(sk.constraints[-1], sk) == "Distance(P4, P1, 60)"
 
 
 def test_callouts_cover_every_dimension() -> None:

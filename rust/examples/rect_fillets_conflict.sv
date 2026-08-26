@@ -1,6 +1,6 @@
 // The filleted rectangle with a second width dimension that contradicts the first.
 //
-// `distance(b1, b2)` is stated twice — once at `w - 2r`, once at 50 — and the two cannot both
+// `distance(l1, r2)` is stated twice — once at `w`, once at 50 — and the two cannot both
 // hold.  Structurally this is over-constrained and the matching finds it at once; what the case
 // is for is the *reporting*: the conflict names both dimensions, and the minimal conflict set is
 // the pair rather than the whole rectangle.
@@ -44,8 +44,8 @@ a_br equal a_tr equal a_tl equal a_bl
 radius(a_bl) == r
 
 // the same width, twice, and the two numbers disagree
-distance(b1, b2) == w - 2 * r
-distance(b1, b2) == 50
-distance(l1, l2) == h - 2 * r
+distance(l1, r2) == w
+distance(l1, r2) == 50
+distance(t1, b2) == h
 
 ground(c_bl)

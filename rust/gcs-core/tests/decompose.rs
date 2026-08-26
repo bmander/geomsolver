@@ -38,13 +38,14 @@ fn examples_fully_decompose_and_replay_exactly() {
     // constraint values are read live: change a dimension, replay without recompiling
     let mut sk = examples::example("rect_fillets").unwrap();
     let mut ps = PlanSolver::new(&sk, false);
+    // the width, which the case states across the rectangle: `distance(l1, r2) == w`
     let id = sk
         .constraints
         .iter()
-        .find(|c| c.kind == CKind::Distance && (c.args[2].num() - 80.0).abs() < 1e-9)
-        .unwrap()
+        .find(|c| c.kind == CKind::Distance && (c.args[2].num() - 100.0).abs() < 1e-9)
+        .expect("the width dimension")
         .id;
-    sk.constraint_mut(id).unwrap().set_num("d", 120.0);
+    sk.constraint_mut(id).unwrap().set_num("d", 140.0);
     let r = ps.solve(&mut sk, 1e-9, false, Method::DogLeg);
     assert!(r.success, "{r:?}");
     let max_x = (0..sk.points.len()).map(|i| sk.point_xy(i).0).fold(f64::MIN, f64::max);

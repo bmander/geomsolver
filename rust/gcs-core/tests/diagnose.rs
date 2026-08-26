@@ -260,22 +260,25 @@ fn well_constrained_examples() {
 #[test]
 fn conflict_set_is_the_two_distances() {
     let mut sk = examples::rect_fillets(100.0, 60.0, 10.0, 0.0);
-    let l = &sk.lines[0];
-    let (p1, p2) = (l.p1 as usize, l.p2 as usize);
-    let extra = sk.add(Constraint::distance(EntRef::point(p1), EntRef::point(p2), 50.0));
-    let width = sk
+    // the width the case states, and a second number on the *same pair*: what makes this a
+    // minimal conflict of two is that both name one length, not that both are lengths
+    let stated = sk
         .constraints
         .iter()
-        .find(|c| c.kind == CKind::Distance && (c.args[2].num() - 80.0).abs() < 1e-9)
-        .unwrap()
-        .id;
+        .find(|c| c.kind == CKind::Distance && (c.args[2].num() - 100.0).abs() < 1e-9)
+        .expect("the width dimension")
+        .clone();
+    let width = stated.id;
+    let (p1, p2) = (stated.args[0].ent(), stated.args[1].ent());
+    let extra = sk.add(Constraint::distance(p1, p2, 50.0));
     solve(&mut sk, SolveOpts::default());
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     assert_eq!(d.status, State::Conflict);
     assert_eq!(d.n_redundant, 1);
     let conf: std::collections::BTreeSet<u32> = d.conflicts.clone().unwrap().into_iter().collect();
     assert_eq!(conf, [extra, width].into_iter().collect());
-    assert_eq!(d.entity_state[&EntRef::line(0)], State::Conflict);
+    assert_eq!(d.entity_state[&p1], State::Conflict, "the points the two numbers measure between");
+    assert_eq!(d.entity_state[&p2], State::Conflict);
 }
 
 #[test]

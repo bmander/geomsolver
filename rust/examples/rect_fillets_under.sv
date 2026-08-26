@@ -44,6 +44,6 @@ a_br equal a_tr equal a_tl equal a_bl
 radius(a_bl) == r
 
 // and no width: this is the freedom the case is about
-distance(l1, l2) == h - 2 * r
+distance(t1, b2) == h
 
 ground(c_bl)
