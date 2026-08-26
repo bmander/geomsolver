@@ -66,8 +66,8 @@ tangent_arc_line(a_bl, left,   at: start)
 tangent_arc_line(a_bl, bottom, at: end)
 
 equal_radius(a_br, a_tr)
-equal_radius(a_br, a_tl)
-equal_radius(a_br, a_bl)
+equal_radius(a_tr, a_tl)
+equal_radius(a_tl, a_bl)
 radius(a_bl) == r
 
 distance(b1, b2) == w - 2 * r
@@ -267,8 +267,8 @@ fn a_prefix_stands_alone() {
 #[test]
 fn reparsing_a_chain_mints_the_same_ids() {
     let src = examples::source("rect_fillets").expect("its source");
-    let a = parse(&src).0;
-    let b = parse(&src).0;
+    let a = parse(src).0;
+    let b = parse(src).0;
     let sig = |p: &gcs_core::syntax::Program| {
         p.stmts()
             .map(|s| (s.id, s.span, std::mem::discriminant(&s.kind)))
@@ -410,4 +410,119 @@ fn a_chain_records_how_each_statement_is_spelled() {
         marks,
         vec![Chained::Prefix, Chained::Link, Chained::Joint, Chained::Link, Chained::Close]
     );
+}
+
+/* -- relation chains: operands that name rather than declare ---------------------------- */
+
+/// **`equal` is polymorphic, and a chain over names states it.**  Between arcs it is a radius,
+/// between lines a length, and which one is settled by what the names turn out to be.
+#[test]
+fn equal_chains_over_names() {
+    let e = read(&format!(
+        "{PTS}point d at (30, 10)\n\
+         arc k(center: c, start: p1, end: p2, r: 10)\n\
+         arc m(center: d, start: p2, end: p3, r: 10)\n\
+         arc q(center: d, start: p3, end: p4, r: 10)\n\
+         k equal m equal q\n"
+    ));
+    let kinds: Vec<CKind> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
+    assert_eq!(
+        kinds.iter().filter(|&&k| k == CKind::EqualRadius).count(),
+        2,
+        "three arcs chained is two statements, not three: {kinds:?}"
+    );
+
+    // the same word between lines is the other equality
+    let e = read(
+        "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint p3 at (10, 9)\n\
+         line a(p1, p2)\nline b(p2, p3)\n\
+         a equal b\n",
+    );
+    assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::EqualLength));
+}
+
+/// A relation chain does **not** thread.  Arcs have ends, so a chain that welded them would
+/// quietly say the two are adjacent as well as the same size — which is not what was written.
+#[test]
+fn a_relation_chain_threads_nothing() {
+    let e = read(&format!(
+        "{PTS}point d at (30, 10)\n\
+         arc k(center: c, start: p1, end: p2, r: 10)\n\
+         arc m(center: d, start: p3, end: p4, r: 10)\n\
+         k equal m\n"
+    ));
+    // each arc kept the ends it was given: nothing was threaded onto anything
+    assert_eq!(e.sketch.children(EntRef::arc(0))[1], EntRef::point(0));
+    assert_eq!(e.sketch.children(EntRef::arc(0))[2], EntRef::point(1));
+    assert_eq!(e.sketch.children(EntRef::arc(1))[1], EntRef::point(2));
+    assert_eq!(e.sketch.children(EntRef::arc(1))[2], EntRef::point(3));
+    assert_eq!(e.sketch.user_constraints().iter().filter(|c| c.kind == CKind::Coincident).count(), 0);
+}
+
+/// Every binary constraint is an infix word over names too, not just `equal` — the same
+/// registry rule the declaring form follows.
+#[test]
+fn any_binary_word_chains_over_names() {
+    let e = read(
+        "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint p3 at (0, 9)\npoint p4 at (9, 9)\n\
+         line a(p1, p2)\nline b(p3, p4)\n\
+         a parallel b\n",
+    );
+    assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::Parallel));
+}
+
+/// A chain either declares every element or names every one.  Mixing them asks the two rules
+/// about threading at once, so it is refused rather than answered arbitrarily.
+#[test]
+fn a_chain_may_not_mix_declarations_and_names() {
+    let src = "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint p3 at (10, 9)\n\
+               line a(p1, p2)\n\
+               line b(p2, p3) equal a\n";
+    refuses(src, "declares every element or names every one");
+}
+
+/// The contour words need a corner to state themselves at, and a relation chain has none.
+#[test]
+fn a_contour_word_is_refused_between_names() {
+    let base = "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint c at (5, 5)\n\
+                line a(p1, p2)\narc k(center: c, start: p1, end: p2, r: 5)\n";
+    refuses(&format!("{base}a tangent k\n"), "corner");
+    refuses(&format!("{base}a to k\n"), "corner");
+    refuses(&format!("{base}a equal a to close\n"), "no loop");
+}
+
+/// `equal` between kinds no constraint relates is an error, and it is reported wherever the
+/// kinds became known — as it parses when the chain declared them, at elaboration when it did
+/// not.  Both say the same thing.
+#[test]
+fn equal_across_kinds_is_refused_either_way() {
+    // declared: the keywords say what they are, so the parser settles it
+    let declared = "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint c at (5, 5)\n\
+                    line a(p1, p2) equal arc k(center: c, r: 5)\n";
+    refuses(declared, "does not relate");
+
+    // named: only elaboration knows, so the diagnosis carries it
+    let named = "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint c at (5, 5)\n\
+                 line a(p1, p2)\ncircle q(center: c, r: 5)\n\
+                 a equal q\n";
+    let (prog, errs) = parse(named);
+    assert!(errs.is_empty(), "it parses: {errs:?}");
+    let e = elaborate(&prog);
+    assert!(
+        e.errors().any(|d| d.message.contains("does not relate")),
+        "{:?}",
+        e.errors().map(|d| d.message.clone()).collect::<Vec<_>>()
+    );
+}
+
+/// A name declared *after* the chain that reads it still resolves — which is the whole reason
+/// `equal` over names cannot be settled as it parses.
+#[test]
+fn equal_reads_a_name_declared_further_down() {
+    let e = read(
+        "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint p3 at (10, 9)\n\
+         a equal b\n\
+         line a(p1, p2)\nline b(p2, p3)\n",
+    );
+    assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::EqualLength));
 }

@@ -269,7 +269,17 @@ Conventions:
   `tangent` always desugars to the regular At-form (`TangentArcLine`, or `Parallel` between two
   lines, which over the shared corner is collinearity) — never the bare pair that is
   rank-deficient at every solution.  Only lines and arcs chain; a circle has no ends, which is
-  the radius-as-Param discussion again.  Each desugared statement keeps an id of its own and a
+  the radius-as-Param discussion again.  **Operand form decides whether a chain threads**: links
+  that *declare* draw a contour and thread their corners; links that only *name* — `a_br equal
+  a_tr equal a_tl` — state a relation and thread nothing, since welding two arcs never said to
+  meet would be an invention.  A chain may not mix the two, and `to`/`tangent`/`close` are
+  contour words refused between names.  `equal` is the second polymorphic word beside `tangent`
+  (`syntax::equal_kind`): a length between lines, a radius between circles or arcs, an error
+  between one of each.  A contour settles it as it parses, because the keywords say what the
+  elements are; a relation chain cannot — a name may be declared further down the file or come
+  from a component — so `Relation::poly` carries the word and `program::constrain` settles it
+  once the entities resolve, **before** reading the spec, since the spec is what the arguments
+  are type-checked against.  Each desugared statement keeps an id of its own and a
   span into the chain's text (a chain is several statements from one *line*, where a `cycle` is
   many instances of one *statement*), so writeback, culprits and carets need nothing new.
   **How a statement is spelled is recorded, never sniffed back out of the characters**:

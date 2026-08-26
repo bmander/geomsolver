@@ -1223,14 +1223,49 @@ fn constrain(
     st: &Stmt,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
-    let spec = r.kind.spec();
+    // a drafting word the parser could not settle: `a equal b` between two *names*, where what
+    // `equal` means is the kinds it stands between and a name's kind is not known until here.
+    // Resolved before the spec is read, since the spec is what the arguments are checked against
+    // — an `EqualLength` placeholder would reject two arcs as "not a line" before ever asking.
+    let ckind = match &r.poly {
+        None => r.kind,
+        Some(word) => {
+            let ent = |i: usize| match r.args.get(i).and_then(|a| a.as_ref()) {
+                Some(Arg::Ref(re)) => res.lookup(re).map(|e| e.kind),
+                _ => None,
+            };
+            match (ent(0), ent(1)) {
+                (Some(a), Some(b)) => match crate::syntax::equal_kind(a, b) {
+                    Some(k) => k,
+                    None => {
+                        diags.push(Diag {
+                            code: Code::E040,
+                            span: word.span,
+                            stmt: Some(st.id),
+                            message: format!(
+                                "`{}` does not relate a {} to a {}",
+                                word.text,
+                                a.as_str(),
+                                b.as_str()
+                            ),
+                        });
+                        return None;
+                    }
+                },
+                // a name that resolves to nothing: the reference is reported below, on the
+                // argument itself, where the message can say which name it was
+                _ => r.kind,
+            }
+        }
+    };
+    let spec = ckind.spec();
     let mut args: Vec<CArg> = Vec::with_capacity(spec.len());
     let mut left_out = vec![false; spec.len()];
     for (i, (name, kind)) in spec.iter().enumerate() {
         let given = r.args.get(i).and_then(|a| a.as_ref());
         let Some(a) = given else {
             left_out[i] = true;
-            args.push(r.kind.default_arg(i));
+            args.push(ckind.default_arg(i));
             continue;
         };
         match to_arg(sk, res, *kind, a) {
@@ -1248,8 +1283,8 @@ fn constrain(
     }
     // the inferred slots the source left out — read off the geometry, the one place that rule
     // lives, shared with the document reader and the bindings' constraint records
-    io::seed_omitted(sk, r.kind, &mut args, |i| left_out[i]);
-    Some(sk.add_quiet(Constraint::new(r.kind, args)))
+    io::seed_omitted(sk, ckind, &mut args, |i| left_out[i]);
+    Some(sk.add_quiet(Constraint::new(ckind, args)))
 }
 
 fn arg_span(a: &Arg) -> Option<Span> {
@@ -1544,6 +1579,7 @@ pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {
         args,
         place: sk.placements.get(&c.id).copied(),
         place_span: Span::default(),
+        poly: None,
     }
 }
 

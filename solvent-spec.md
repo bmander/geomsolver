@@ -302,14 +302,17 @@ vertical line right(r1, r2) tangent close
 
 ```
 CHAIN  ::= LINK (JOINT LINK)* [JOINT "close"]
-LINK   ::= PREFIX* DECL
+LINK   ::= PREFIX* DECL | REF
 PREFIX ::= a constraint name whose spec is one entity slot     // horizontal, vertical
-JOINT  ::= "to" | "tangent" | INFIX
+JOINT  ::= "to" | "tangent" | "equal" | INFIX
 INFIX  ::= a constraint name whose spec is two entity slots    // perpendicular, equal_length, equal_radius
 ```
 
+**[0.5] Two kinds of chain, told apart by their operands.** A chain whose links are DECLarations draws a **contour**: its joints are corners, and threading (below) applies. A chain whose links are REFerences states a **relation** among elements declared elsewhere — `a_br equal a_tr equal a_tl` — and threads nothing, because there is no corner it was written at and welding one would be an invention. A chain MUST NOT mix the two: the choice of threading rule would then be arbitrary. `to`, `tangent` and `close` are contour vocabulary and are errors in a relation chain.
+
 - A **prefix** desugars to that constraint applied to the declaration it stands before: `horizontal line bottom(b1, b2)` is `line bottom(b1, b2)` plus `horizontal(bottom)`. Eligibility is registry-derived — one entity slot and nothing else — so a new unary constraint joins the grammar without the grammar changing.
-- A **joint** stands between two links and says how they meet. Constraints return nothing, so a chain reads like a chained comparison, not an expression: each joint binds its two neighbours, and there is no precedence anywhere. An INFIX word is the two-argument counterpart of PREFIX, derived from the same registry: it desugars to that constraint over the pair, positionally, and MUST fit both — a word whose slots the pair cannot fill is an error, not a guess.
+- A **joint** stands between two links and says how they meet. Constraints return nothing, so a chain reads like a chained comparison, not an expression: each joint binds its two neighbours, and there is no precedence anywhere. `a equal b equal c` is therefore two statements, not three, and n operands give n−1 — the same rank as any other spanning set over the same elements, stated as a path rather than a star. An INFIX word is the two-argument counterpart of PREFIX, derived from the same registry: it desugars to that constraint over the pair, positionally, and MUST fit both — a word whose slots the pair cannot fill is an error, not a guess.
+- **[0.5]** `equal` is **polymorphic**: `equal_length` between lines, `equal_radius` between circles or arcs, and an error between one of each, since no constraint equates a length to a radius. Like `tangent` it is drafting vocabulary rather than a constraint name, so no registry lookup can resolve it — the pair it stands between does. Where a chain declares its elements the keywords settle it as the program is read; where a chain names them it cannot be settled until the names are resolved, since a name may be declared further down the body (P2) or come from a component, so the word travels to elaboration and is settled there. Both report the same error.
 - **Threading.** Every link of a chain is a line or an arc — an element with an entry and an exit, read left to right (`p1 → p2`; CCW, `start → end`). At each joint the shared point MUST be named by exactly one side, or by both in agreement; the name fills whichever boundary field the other side left out. An open chain's first entry and last exit are not joints and MUST be named where they stand. A kind with no boundary points — a circle — cannot sit in a chain.
 - `JOINT close` after the last link seals the loop: the last exit threads to the first entry, and the joint says how they meet there.
 - A statement otherwise ends at its line's end (§2); a line ending in a joint word continues its chain onto the next.

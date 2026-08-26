@@ -48,9 +48,7 @@ vertical line left(l1, l2) tangent
 arc a_bl(center: c_bl, r: r) tangent close
 
 // one radius, stated once and shared
-equal_radius(a_br, a_tr)
-equal_radius(a_br, a_tl)
-equal_radius(a_br, a_bl)
+a_br equal a_tr equal a_tl equal a_bl
 radius(a_bl) == r
 
 distance(b1, b2) == w - 2 * r
