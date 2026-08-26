@@ -1,6 +1,17 @@
 # geomsolver
 
-Geometric constraint solver built in stages per `gcs-solver-program.md` (read it first).
+A geometric constraint solver, and **Solvent**, the language a drawing in it is written as.
+
+**Start here.** Asked to *draw* something — write or edit a sketch, add constraints, work out why
+a figure will not solve — read [`docs/solvent-primer.md`](docs/solvent-primer.md) first.  It is
+the language as the implementation actually accepts it, with every example run through the solver
+and its degrees of freedom quoted from what the solver said.  `solvent-spec.md` is the normative
+specification and is the authority on what the language *should* be, but it specifies constructs
+that do not parse yet (`hint` as a statement, `path`, `frame`), so write from the primer and reach
+for the spec when the question is what a rule ought to be.  Asked to work on the *solver* —
+kernels, diagnosis, decomposition, the bindings, the app — the rest of this file is the contract,
+and `gcs-solver-program.md` is the staged program it is built to.
+
 Currently: **Stage 5 done**, in **one** implementation —
 
 * **core** (`rust/gcs-core/`): the whole engine in Rust, no dependencies.  Model and constraints
