@@ -1,17 +1,18 @@
-// A spur gear with involute flanks, after solvent-spec.md §18.
+// A spur gear whose tooth flanks are true involutes — the curve a taut string traces.
 //
-// A gear tooth is not a trapezium, and it is not a polyline.  Its flank is the *involute* of a
-// base circle — the curve a taut string traces as it unwinds — and that is the whole reason gears
-// mesh smoothly: two involutes touch along a straight line of action, so the velocity ratio does
-// not vary as the teeth roll through.
+// A gear tooth is not a trapezium, and it is not a polyline pretending to curve.  Its flank is
+// the **involute** of a circle: the path the end of a taut string sweeps as it unwinds from
+// that circle.  That shape is the whole reason gears run smoothly — two involutes stay in
+// contact along a fixed straight line as they roll past each other, so the speed ratio between
+// the wheels never wavers, and the teeth do not knock.
 //
-// The involute is not built into this solver.  It is the three lines below: a curve family, in
-// the same little language a dimension is written in, over a circle it unwinds from.  `u` is the
-// roll angle — in degrees, like every angle here — so the string let out is `r u π/180` long, and
-// that string, perpendicular to the radius where it leaves the circle, *is* the definition.
+// The involute is not built into this solver.  It is the three lines below, written in the same
+// small language a dimension is written in: a curve *family*, defined over the circle it unwinds
+// from.  `u` is how far the string has unwound, in degrees, so the length let out is `r·u·π/180`
+// — and that string, square to the radius at the point it leaves the circle, is the definition.
 //
-// Everything after it is ordinary.  A point on a curve is one equation with one unknown of its
-// own, whichever family the curve belongs to.
+// Everything after it is ordinary.  Thirty teeth are one tooth written once and repeated, and a
+// point touching a curve is a single statement whichever family the curve belongs to.
 
 curve involute(c: circle, phase: Angle)(u) =
   ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),

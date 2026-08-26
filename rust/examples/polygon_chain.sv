@@ -1,12 +1,16 @@
-// A closed chain of equal-length links — and a redundancy no structural count can see.
+// A closed ring of equal-length links, and a redundancy that only arithmetic finds.
 //
-// Every link is its own line with its own two ends, joined to the next by a coincidence rather
-// than by sharing a point, and every link is told it is as long as the one after it.  Round a
-// closed ring that last statement is one too many: `e0 = e1`, `e1 = e2`, … `e[n-1] = e0` is `n`
-// equations saying what `n - 1` of them already said, so the matching counts a rank the Jacobian
-// does not have.  Only the numeric cross-check finds it, which is what the case is for.
+// Each link is its own segment, joined end to end all the way round, and each is told it is the
+// same length as the next one.  Round a closed ring that last statement is one too many: if each
+// link equals the one after it the whole way round, then "and the last equals the first" was
+// already true before it was said.
 //
-// Nothing sizes the ring, so it is under-constrained on purpose: the links may all grow together.
+// Counting does not notice.  There are as many statements as links and each looks like it says
+// something.  Only working through the actual numbers shows that one of them adds nothing, and
+// that is what this case is here to be checked against.
+//
+// Nothing says how big the ring is, so it is under-determined on purpose: all the links can grow
+// together, and dragging one shows it.
 
 param n = 12
 param radius = 50

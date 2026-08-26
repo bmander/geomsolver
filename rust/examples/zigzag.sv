@@ -1,17 +1,20 @@
-// Staircases of levelled segments, and nothing else said about them.
+// Staircases of level and plumb segments, with no lengths given anywhere.
 //
-// Every segment is either vertical or horizontal and *no length is given anywhere*, so each
-// staircase is a long chain of free links that only knows which way each link points.  That makes
-// it the drawing where a cost that goes with the *direction class* rather than with the geometry
-// shows up: every levelled line in the document lands in the ground x-axis's class, so a
-// decomposition that treats a shared class as an adjacency makes every staircase a neighbour of
-// every other.  `copies` of them, side by side and sharing nothing, then say whether a drag costs
-// the figure it moves or the whole document.
+// Every segment is either horizontal or vertical, and nothing says how long any of them is.  So
+// each staircase is a long slack chain that knows only which way each step points, and several
+// of them sit side by side, sharing nothing at all.
 //
-// The alternation is written as two runs rather than as one alternating run, because a staircase
-// of `n` points has `floor(n / 2)` vertical links and `floor((n - 1) / 2)` horizontal ones — the
-// counts differ by one when `n` is even, and a single run would need to ask which segment it was
-// on.  Said this way each run states one direction and the arithmetic settles the parity.
+// This is a benchmark rather than a drawing of anything.  Dragging one point of one staircase
+// ought to cost only that staircase: a document made of separate pieces should not get slower to
+// edit just because it contains more pieces.  The trap it is built to catch is that every level
+// segment in the file points the *same way*, so a solver that mistakes "shares a direction" for
+// "is connected to" would decide the whole document is one figure and pay for all of it on every
+// drag.
+//
+// The steps are written as two runs rather than one alternating run because a staircase of `n`
+// points has `floor(n / 2)` vertical steps and `floor((n - 1) / 2)` horizontal ones — the counts
+// differ when `n` is even, and written this way the arithmetic settles it instead of each step
+// having to ask which kind it is.
 
 param n = 32
 param copies = 3

@@ -1,10 +1,15 @@
-// Structurally fine, geometrically impossible.
+// Three lengths that cannot be a triangle.
 //
-// Three points, three lengths, one of every pair — the count a triangle wants, and the matching
-// says so.  But 1 + 1 < 10, and the triangle inequality is not something a degree-of-freedom
-// count can see: `b` and `c` would have to meet a unit from `a` and a unit from each other while
-// `a` and `b` stand ten apart, and no position does that.  So the structure is well-constrained
-// and the solve has nowhere to go, which is the whole point of the case.
+// Three points, with a distance given between each pair: one, one, and ten.  By the counting
+// that is exactly right — three pairs, three numbers, nothing left over and nothing missing —
+// so the drawing ought to be completely determined.
+//
+// It is not, because no triangle has sides 1, 1 and 10.  The two short sides together cannot
+// reach across the long one.  Counting statements tells you whether there is *enough*
+// information; it can never tell you whether the information is *possible*.
+//
+// So the drawing reports as fully determined and the solve has nowhere to go, and holding those
+// two facts at once without pretending either away is what the case is for.
 
 point a hint at (0, 0)
 point b hint at (10, 0)

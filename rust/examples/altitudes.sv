@@ -1,14 +1,18 @@
-// The three altitudes of a triangle meet in a point — and the drawing does not say so.
+// The three altitudes of a triangle meet at a point — and nothing here says so.
 //
-// The triangle is nailed down, and each altitude is a line from a vertex made perpendicular to
-// the opposite side.  `P` is then put on all three.  Two of those incidences place it; the third
-// is the theorem, and it is *true without being imposed* — which is exactly what the structural
-// count cannot see, since to a matching the third incidence looks like one more equation for one
-// more unknown.  Only the witness configuration finds it: jiggle the triangle, re-solve, and the
-// third row is still dependent, at every pose rather than at this one.
+// An altitude is a line from a corner, square to the opposite side.  Draw all three of them and
+// they always pass through a single point.  That is a theorem about every triangle, not a
+// coincidence of this one, and this drawing does not state it: `P` is simply told to lie on all
+// three lines.
 //
-// Three DOF are left on purpose (the altitude feet slide along their lines), so the case can be
-// dragged while the concurrency holds.
+// Two of those three statements are enough to place `P`.  The third is therefore saying nothing
+// new — but only because the theorem happens to be true.  Counting cannot see that: it is one
+// more statement about one more line, and the books balance.  Finding it takes actually moving
+// the triangle and solving again, to see that the third statement is still redundant at a
+// different shape rather than just at this one.
+//
+// Three degrees of freedom are left deliberately — the foot of each altitude may slide along its
+// line — so the triangle can be dragged about while the three lines go on meeting.
 
 point A hint at (0, 0)
 point B hint at (40, 0)

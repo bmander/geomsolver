@@ -1,16 +1,20 @@
-// A cubic B-spline with a straight follower held against it, and a point riding along it.
+// A freeform curve with a straight edge resting against it, and a bead riding along it.
 //
-// This is the case for the two things a curve has that no implicit primitive does.  The tangency
-// **owns the parameter it touches at**, so dragging a control point slides the contact along the
-// curve instead of breaking it — and it slides *past knots*, which changes which control points
-// the constraint's columns name and quietly recompiles the plan underneath.  The rider is held at
-// a distance from a grounded anchor above the curve, so it has somewhere to be and the curve
-// cannot simply shrug it off.
+// The curve is a B-spline: a smooth line steered by the run of control points beside it.  Drag
+// one and the curve bends towards it, and the two things touching the curve have to cope.
 //
-// Both halves start where they already belong, so opening the case shows the curve as it is drawn
-// rather than the nearest configuration to it.  The follower sits where the curve already dips
-// lowest — an interior dip rather than an end, so the contact has curve on both sides of it to
-// slide along — and `8.666667` is where that dip is, which is a *seed* and not a statement.
+// Touching a *curve* is not like touching a line.  There is no formula for which part of a curve
+// is being touched, so each contact carries its own extra unknown recording how far along it
+// sits.  That is what lets the contacts **slide**: move a control point and the straight edge
+// stays tangent by finding a new place to touch, rather than dragging the curve around with it.
+//
+// It will slide a long way, too — including past the joins between the curve's spans, which
+// changes which control points the contact actually depends on.  The drawing does not notice,
+// which is the point of the case.
+//
+// The bead is held a fixed distance from the anchor above the curve, so it has somewhere to be
+// and the curve cannot simply shrug it off.  `8.666667` is where the straight edge starts
+// looking for its contact — a starting guess, not a statement.
 
 point k0 hint at (0, 26)
 point k1 hint at (20, 0)

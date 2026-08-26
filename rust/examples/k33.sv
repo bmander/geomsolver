@@ -1,14 +1,17 @@
-// K3,3 as a bar framework: rigid, and with no triangle anywhere in it.
+// A rigid framework with no triangle anywhere in it.
 //
-// Six nodes in two groups of three, and a bar from every node of one group to every node of the
-// other — nine bars, which is exactly `2 × 6 - 3` and so minimally rigid.  What makes it the case
-// the decomposition is read on is that it contains **no triangle at all**: the cluster vocabulary
-// builds rigidity out of pairs and triples, and here there is no triple to start from, so no
-// sequence of merges reaches the answer and the whole framework has to be taken as one core.
+// Six joints in two groups of three, with a bar from every joint of one group to every joint
+// of the other.  That is nine bars — exactly `2 × 6 − 3`, the fewest that can hold six joints
+// rigid in a plane.  Drag any of them and the whole thing keeps its shape.
 //
-// The nine lengths are what the drawn positions come to.  They are stated rather than measured
-// because a bar framework *is* its bar lengths — but they have to be a set some placement really
-// achieves, so they are read off one, and nothing else about the numbers matters.
+// It is a hard case because the usual way to see that a framework is rigid is to find a triangle
+// and grow outwards from it, adding joints pinned by two bars to what you have already.
+// This framework has no triangle at all — every closed path in it is four bars or more — so
+// there is nowhere to start, and the shape has to be solved in one piece rather than assembled
+// from parts.
+//
+// The nine lengths are read off a drawing that works.  They have to be: pick nine numbers at
+// random and there is generally no arrangement of six joints that achieves them.
 
 point k0 hint at (0, 0)
 point k1 hint at (30, 4)

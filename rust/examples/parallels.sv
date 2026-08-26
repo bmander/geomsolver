@@ -1,12 +1,16 @@
-// Parallels and perpendiculars: the case the direction classes are read on.
+// A chain of segments held in place by direction alone.
 //
-// Nothing here is dimensioned into place except four lengths.  What holds the figure is that
-// `l2` is parallel to the grounded base, `l3` is vertical, and `l4` is perpendicular to `l3` —
-// three statements about *directions*, which `cgraph` collects into classes rather than into
-// edges.  The chain is joined by coincidences instead of by shared points, so the drawing also
-// says whether a merge follows an alias.
+// Almost nothing here is positioned.  What holds the figure is that one segment is parallel to
+// the grounded base, another is vertical, and a third is square to that one — statements about
+// which way things *point*, never about where they are.  Four lengths do the rest.
 //
-// One degree of freedom is left: nothing fixes where the chain sits along the base.
+// Directions are worth treating as their own kind of fact.  "Parallel to" and "square to" chain
+// together transitively, so a great many segments can end up sharing one direction without any
+// of them touching, and a drawing is often held together far more by that than by its
+// coincidences.
+//
+// One degree of freedom is left over: nothing says where along the base the chain sits, so it
+// slides.
 
 point o hint at (0, 0)
 point e hint at (40, 0)

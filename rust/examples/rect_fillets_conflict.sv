@@ -1,13 +1,16 @@
-// The filleted rectangle with a second width dimension that contradicts the first.
+// The same rounded rectangle, told two different widths.
 //
-// `distance(l1, r2)` is stated twice — once at `w`, once at 50 — and the two cannot both
-// hold.  Structurally this is over-constrained and the matching finds it at once; what the case
-// is for is the *reporting*: the conflict names both dimensions, and the minimal conflict set is
-// the pair rather than the whole rectangle.
+// The distance from `l1` to `r2` is given twice — once as `w`, which is 100, and once as 50.
+// Nothing can be both, so this drawing has no solution at all.
 //
-// The contour is a chain (§6.6), as it is in `rect_fillets.sv`: what this case adds is one
-// *dimension*, and a chain says nothing about numbers, so the two documents differ by exactly the
-// line that is extra.
+// What the case is really for is the *report*.  A solver that only said "failed" would leave you
+// hunting through forty statements for the two that disagree.  This one names them, and names
+// only them: the rest of the rectangle is perfectly satisfiable and is not blamed for the pair
+// that is not.
+//
+// The outline is a chain, exactly as in `rect_fillets.sv`.  What this file adds is one *number*,
+// and a chain says nothing about numbers — so the two documents differ by precisely the line
+// that is extra.
 
 param w = 100
 param h = 60

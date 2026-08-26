@@ -1,13 +1,15 @@
-// The filleted rectangle with its width dimension taken away.
+// The same rounded rectangle, with the width taken away.
 //
-// Everything else still holds — the fillets are still tangent to the sides they run between and
-// still equal — so the figure keeps its shape and the right-hand end simply slides: one degree of
-// freedom, and a null space that points along it.  The case the under-constrained colouring is
-// read on.
+// Every other statement still holds, so the shape is unchanged — but nothing now fixes how wide
+// the rectangle is, and the right-hand end is free to slide.  That is one **degree of freedom**:
+// one independent way the drawing can still move without breaking anything it was told.
 //
-// The contour is a chain (§6.6), as it is in `rect_fillets.sv`: what this case takes away is one
-// *dimension*, and a chain says nothing about numbers, so the two documents differ by exactly the
-// line that is missing.
+// The app colours what is still free, so this is the case to look at to see that reading.  Drag
+// the right-hand side and it goes; drag the left and the whole figure is already pinned.
+//
+// The outline is a chain, exactly as in `rect_fillets.sv`.  What this file changes is one
+// *number*, and a chain says nothing about numbers — so the two documents differ by precisely
+// the line that is missing.
 
 param w = 100
 param h = 60

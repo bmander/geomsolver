@@ -1,33 +1,30 @@
-// The spur gear again — but this time the involute is *traced*, not computed.
+// The same gear, with the involute *described* instead of derived.
 //
-// `gear.sv` writes the flank's curve as a formula: two expressions somebody derived on paper,
-// the string unwound in closed form.  This document writes what the string *does* and leaves the
-// deriving to the solver.  `trace p where { … }` (spec §6.5.1) says the curve is wherever its
-// constraints put `p` as the roll runs — and the constraints below are Wikipedia's definition of
-// an involute, verbatim: a point `t` on the base circle at bearing `u`; the string leaving
-// perpendicular to the radius there; and taut, exactly as long as the arc it has unwound.  No
-// closed form appears in any of them.
+// `gear.sv` writes the flank as a formula that somebody worked out on paper first.  This file
+// states what the string physically does and leaves the working to the solver.  `trace p where
+// { … }` says: the curve is wherever these statements put `p`, as the string unwinds.
 //
-// Note what is *not* here: the string end has no seed at all.  Given `t`, the two statements
-// about `p` — on the perpendicular through the tangent point, a signed arc's-worth from the
-// radius — are linear in `p` and meet in exactly one place, so there is no branch to pick and
-// nothing for a seed to say.  The sign is the winding: `point_line_distance` is positive to the
-// left of the line, so one signed equation unwinds the string one way for positive roll and the
-// other way for negative — which is how one family below serves both flanks of a tooth, where
-// the closed form needs the sign threaded through every term.
+// And the statements are the textbook definition, said once and not rearranged — a point `t` on
+// the base circle at angle `u`; the string leaving square to the radius there; the string taut,
+// exactly as long as the arc it has unwound so far.  No formula for an involute appears
+// anywhere.
 //
-// The remaining branch — `angle` is a statement mod 180°, so `t` could sit at the bearing or
-// opposite it — is a *stated fact*, not a starting point: `ccw(datum.p1, datum.p2, t)` selects
-// the solution component, the way an orientation predicate always does (spec §9.6).  A ccw is
-// read where it is unambiguous, and `from (90 - phase)` says where that is: the roll at which
-// the string points straight up the page, squarely on the datum's counter-clockwise side.
-// Everywhere else the answer is *carried* — evaluation is one continuation from that home, so
-// the component the predicate picks there is the component the whole curve is on, even where
-// the flank itself has wound past the datum and the ccw no longer reads true.
+// Notice what is *absent*: the far end of the string has no starting guess at all.  Given `t`,
+// the two statements about `p` meet in exactly one place, so there is nothing left to guess at.
+// The sign does the rest — a distance measured from a line is positive on one side of it and
+// negative on the other, so one statement unwinds the string one way for a positive roll and the
+// other way for a negative one.  That is how a single definition serves both flanks of a tooth,
+// where a formula would need the sign threaded through every term by hand.
 //
-// The datum line is the bearing's zero.  It is called `datum` in every component that hands it
-// down, exactly as `base`, `root` and `tip` keep their names — a formal renamed between levels
-// does not resolve (issue #4).
+// One real ambiguity remains.  "At angle `u`" is only true to within a half turn, so `t` could
+// sit at that bearing or straight opposite it.  `ccw(datum.p1, datum.p2, t)` settles it by
+// naming which side of the datum line the point falls on.  That is a stated fact, not a starting
+// guess: it is read once, at a roll angle where the answer is unmistakable, and carried from
+// there along the whole curve — including round to where the flank has wound past the datum and
+// the statement would no longer read true if it were asked again.
+//
+// The datum line is where the angle is measured from, and it keeps the name `datum` in every
+// component that hands it down.
 
 curve involute(c: circle, datum: line, phase: Angle)(u) =
   trace p from (90 - phase) where {

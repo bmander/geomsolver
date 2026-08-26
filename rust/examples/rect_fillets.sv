@@ -1,23 +1,23 @@
-// A rectangle with four equal fillets — the smallest drawing that is about *tangency*.
+// A rectangle with rounded corners — and nothing in this file says where the corners go.
 //
-// Nothing here states where a corner arc goes.  Each arc is told only that it runs into the line
-// before it and out into the line after it, tangentially at its own two ends, and that all four
-// are the same size; the rectangle's sides are levelled, one width and one height are given, and
-// one arc centre is grounded.  Everything else — twelve points, four radii — is the solver's.
+// This is a drawing made of *statements* rather than of coordinates.  You do not place the
+// geometry; you say what has to be true about it, and the solver finds positions that satisfy
+// everything at once.  Drag any point on the canvas and the rest rearranges to keep every line
+// below still true.
 //
-// It is written as a **chain** (§6.6), which is how a contour reads: one element after the next,
-// with the word between them saying how they meet.  The arcs name only their centres, because a
-// joint threads the point its two elements share — so each fillet takes its start from the line
-// it comes from and its end from the line it goes to, and `tangent` at a joint is stated *at*
-// that point rather than as a bare tangency over a coincidence.  `close` seals the loop back onto
-// the first link.  Every statement it stands for is an ordinary one; `tests/chain.rs` holds the
-// two spellings to being one drawing.
+// Here that means: the four straight sides are level or plumb, each corner arc runs smoothly
+// into the side before it and out into the side after it, all four arcs are the same size, and
+// the overall width and height are given.  Where the twelve points sit and how big the arcs are
+// is the solver's to work out.
 //
-// The two dimensions measure **across the rectangle**, so they read `w` and `h` rather than the
-// tangent-point spans they used to.  The drawing has points there to measure between because the
-// fillets put them there: `a_tl` and `a_tr` are both tangent to `top`, so `l1` and `r2` are level
-// with each other and a width apart; `a_tr` and `a_br` are both tangent to `right`, so `t1` and
-// `b2` share a vertical and are a height apart.
+// The outline is written as a **chain**: one element after the next, with the word between them
+// saying how they meet.  `tangent` means they run smoothly into one another with no crease;
+// `close` joins the last back round to the first.  The arcs name only their centres, because a
+// chain already knows where each one starts and ends — those are the points it shares with the
+// sides on either side of it.
+//
+// Two spellings are worth knowing before reading on.  `hint at (…)` is a starting guess and the
+// solver will move it; `==` states a number it must not.
 
 param w = 100
 param h = 60

@@ -1,9 +1,13 @@
-// The Warren truss with one member more than it needs — over-constrained, and consistent.
+// The same truss with one more member than it needs.
 //
-// The extra bar runs from the first bottom node to the third, and its length is exactly what the
-// two bays between them already force: `2 * span`.  So the structure is rigid twice over.  There
-// is nothing to solve differently and nothing to report as a conflict — the matching simply finds
-// more equations than unknowns, which is the amber reading rather than the red one.
+// The extra bar spans two bays, and it is given exactly the length those two bays already force.
+// So the frame is held rigid twice over: more is being said than there are unknowns to pin down,
+// but nothing said is *wrong*.
+//
+// That difference matters, and it is why this file and `truss_conflict.sv` are separate cases.
+// Saying something twice consistently is a note — you could delete the extra bar and lose
+// nothing.  Saying two things that cannot both hold is an error, and the drawing does not
+// exist.
 
 param bays = 6
 param span = 20

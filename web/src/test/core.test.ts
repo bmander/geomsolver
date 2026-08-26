@@ -1898,9 +1898,11 @@ test('the coloured runs index the string, not the core\'s bytes', () => {
     assert.ok(r.lo >= end && r.hi > r.lo && r.hi <= text.length, `${r.cls} at ${r.lo}`);
     end = r.hi;
   }
-  // the first run is the comment the file opens with, and it is one run and not one per line
+  // the first run is the comment the file opens with, and it covers the whole of that line —
+  // compared against the line itself rather than against its wording, which is prose and moves
   assert.equal(runs[0].cls, 'comment');
-  assert.equal(text.slice(runs[0].lo, runs[0].hi), '// A spur gear with involute flanks, after solvent-spec.md §18.');
+  assert.equal(text.slice(runs[0].lo, runs[0].hi), text.split('\n')[0]);
+  assert.ok(text.startsWith('// A spur gear'), text.slice(0, 40));
   // and a run past the em dash still lands on the word it names
   const family = runs.find((r) => r.cls === 'def' && text.slice(r.lo, r.hi) === 'involute');
   assert.ok(family, 'the curve family names itself');

@@ -1,12 +1,17 @@
-// An obround slot with a hole at each end — the shape a link between two pins actually is.
+// The slot-and-two-holes shape of a link joining a pair of pins.
 //
-// The two flanks are straight and the two ends are semicircular, and what says so is four
-// tangencies: each end arc meets the top and the bottom run at its own endpoints.  The holes are
-// concentric with the ends because they are drawn on the *same centre points*, which is a shared
-// point rather than a constraint — the cheapest way to say concentric there is.
+// The two long flanks are straight and the two ends are half-circles, and what says so is four
+// tangencies: each end arc meets the top run and the bottom run smoothly, with no crease where
+// they join.  Nothing states where the arcs go — being tangent to both runs at their own ends is
+// enough to put them there.
 //
-// One length, one end radius (shared by the other end), one hole radius each, one levelled run
-// and one grounded centre: fully constrained.
+// The holes sit exactly on the ends' centres because they are drawn *on the same points*.
+// Sharing a point costs nothing at all, where saying "concentric" would be one more equation to
+// solve; when two things really are in the same place, naming one point for both is the cheaper
+// and truer way to say it.
+//
+// One overall length, one end radius shared by both ends, a radius for each hole, one levelled
+// run and one pinned centre — and the shape is completely determined.
 
 param length = 80
 param r = 15

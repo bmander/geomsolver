@@ -1,11 +1,13 @@
-// A Warren truss: a bottom chord, a top chord half a bay in from each end, and a zig-zag web.
+// A Warren truss — the triangulated girder under a footbridge or a roof.
 //
-// Every member is dimensioned, which is what makes the whole thing rigid once one node is
-// grounded and one chord is levelled — and the dimensions are *stated* rather than measured.  A
-// Warren truss has only two member lengths in it: a chord panel is `span`, and every web member
-// runs from a chord node to a top node half a bay along and `height` up, so it is
-// `hypot(span / 2, height)`.  Writing the two formulas says what the truss is; writing the
-// thirty-odd numbers they come to would say only what this one measured.
+// Every member is given a length, and that is what makes the frame rigid once one joint is
+// pinned down and one chord is levelled.  Drag it anywhere and it keeps its shape exactly.
+//
+// The lengths are *stated* rather than measured off a picture, and a Warren truss needs only two
+// of them: a panel of the bottom chord is one bay, and every diagonal rises `height` over half a
+// bay, so it is `hypot(span / 2, height)`.  Writing those two formulas says what a Warren truss
+// *is*.  Writing out the thirty-odd numbers they come to would say only what this particular one
+// happened to measure — and would stop being true the moment the span changed.
 
 param bays = 8
 param span = 20

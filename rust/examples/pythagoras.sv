@@ -1,14 +1,19 @@
-// The Pythagorean theorem, drawn.
+// The Pythagorean theorem, drawn instead of written.
 //
-// A square of side `a + b` holds four copies of the right triangle with legs `a` and `b`, one in
-// each corner and each turned a quarter from the last.  What they leave in the middle is a square
-// on their hypotenuses, so `(a + b)² = 4 · ab/2 + c²`, which is `c² = a² + b²`.
+// A square of side `a + b` holds four copies of a right-angled triangle with legs `a` and `b`,
+// one in each corner, each turned a quarter-turn from the last.  What they leave in the middle
+// is a second square, standing on their hypotenuses.  Compare the big square with the four
+// triangles plus the small one and you get `(a + b)² = 4·ab/2 + c²`, which reduces to
+// `c² = a² + b²`.
 //
-// The drawing states `a` and `b` **once**, as named dimensions on the first triangle, and every
-// other leg reads the name — so editing either number moves all four triangles together.  The
-// inner square's side is then dimensioned `c = hypot(a, b)`, and that is the theorem: it is an
-// equation the figure *already satisfies*, so the diagnosis reports it as redundant and
-// consistent rather than as a conflict, and it stays that way when `a` or `b` is edited.
+// The drawing gives `a` and `b` **once**, as named numbers on the first triangle; every other
+// leg reads those names rather than repeating a number.  So editing either one moves all four
+// triangles together, and the figure stays a proof rather than becoming a picture of one.
+//
+// The inner square is then given the side `hypot(a, b)` — and *that* is the theorem.  It is a
+// statement the figure already satisfies without being told, so it is reported as redundant but
+// true, rather than as a contradiction.  Change `a` or `b` and it stays that way, which is the
+// part worth watching.
 
 // the legs, as numbers the drawing is placed from; `a` and `b` below are the dimensions that
 // state them, and every other leg reads those names rather than these

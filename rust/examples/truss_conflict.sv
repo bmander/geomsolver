@@ -1,9 +1,12 @@
-// The Warren truss with a member that cannot be there.
+// The same truss with a member that cannot exist.
 //
-// The bar from the first bottom node to the fourth is given a length of 999 where the chord it
-// runs beside is three bays, or 60.  Nothing can satisfy that, so this is a *conflict* rather
-// than a redundancy — and the case is about what gets named: the minimal conflict set is the
-// path of members from `b0` to `b3` plus this bar, not the whole truss.
+// The bar from `b0` to `b3` is given a length of 999, where the three bays it runs alongside come
+// to 60 altogether.  No arrangement of the joints satisfies that, so this drawing has no
+// solution.
+//
+// The case is about which statements get blamed.  It would be easy — and useless — to report
+// that the truss as a whole does not work.  What is reported instead is the offending bar
+// together with the run of members whose lengths it contradicts, and nothing else.
 
 param bays = 6
 param span = 20
