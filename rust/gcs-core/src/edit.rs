@@ -315,13 +315,23 @@ pub fn remove(e: &Elaborated, prog: &Program, ents: &[EntRef], cons: &[u32]) -> 
     if doomed.is_empty() {
         return Edit::none(prog, None);
     }
-    let edits: Vec<Splice> = prog
-        .root()
-        .body
-        .iter()
-        .filter(|s| doomed.contains(&s.id))
-        .map(|s| Splice { at: with_line(prog.text(), s.span), with: String::new() })
-        .collect();
+    // a link of a chain has no deletion splice, so the gesture is refused rather than half-done
+    let mut edits: Vec<Splice> = Vec::new();
+    for st in prog.root().body.iter().filter(|s| doomed.contains(&s.id)) {
+        match doom_splice(prog.text(), st) {
+            Some(e) => edits.push(e),
+            None => {
+                return Edit::none(
+                    prog,
+                    Some(
+                        "that is a link of a chain, which deletion cannot unpick; edit the \
+                         source instead"
+                            .into(),
+                    ),
+                )
+            }
+        }
+    }
     Edit {
         text: splice(prog.text(), edits),
         kind: Kind::Structural,
@@ -366,15 +376,51 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
     hit
 }
 
-/// A statement's span, grown to swallow the newline that ends it — so deleting one does not
-/// leave a blank line where it stood.
-fn with_line(text: &str, s: Span) -> Span {
+/// The splice that takes a doomed statement out of the text — `None` where there is none.
+///
+/// Almost always the statement's whole line.  A chain (spec §6.6) puts several statements on one
+/// line, so which characters go is a question about *how the statement was written*, and the
+/// parser answered it while desugaring: a joint steps down to `to` (the corner stays, the claim
+/// goes, and the chain still parses), a prefix word is deleted where it stands with the spaces
+/// that set it off, and a link has no splice at all — nothing takes one link out and leaves a
+/// chain behind, so it is refused.  Reading the answer back out of the characters would instead
+/// rest on "a longhand relation always carries a `(`", which nothing states and a qualified
+/// joint would quietly break.
+fn doom_splice(text: &str, st: &Stmt) -> Option<Splice> {
+    let one_word = |with: &str| Some(Splice { at: st.span, with: with.to_string() });
+    match st.chained {
+        syntax::Chained::No => {
+            Some(Splice { at: with_line(text, st.span), with: String::new() })
+        }
+        syntax::Chained::Link => None,
+        syntax::Chained::Joint => one_word("to"),
+        // the joint word and `close` share a span, and only the claim goes
+        syntax::Chained::Close => {
+            let tail = st.span.slice(text);
+            let close = tail.rfind("close").map(|i| &tail[i..]).unwrap_or("close");
+            one_word(&format!("to {close}"))
+        }
+        syntax::Chained::Prefix => Some(Splice {
+            at: Span::new(st.span.lo as usize, skip_spaces(text, st.span.hi as usize)),
+            with: String::new(),
+        }),
+    }
+}
+
+/// Past the blanks at an offset — what a deletion swallows so it leaves no ragged gap.
+fn skip_spaces(text: &str, mut hi: usize) -> usize {
     let b = text.as_bytes();
-    let mut hi = s.hi as usize;
     while hi < b.len() && (b[hi] == b' ' || b[hi] == b'\t' || b[hi] == b'\r') {
         hi += 1;
     }
-    if hi < b.len() && b[hi] == b'\n' {
+    hi
+}
+
+/// A statement's span, grown to swallow the newline that ends it — so deleting one does not
+/// leave a blank line where it stood.
+fn with_line(text: &str, s: Span) -> Span {
+    let mut hi = skip_spaces(text, s.hi as usize);
+    if text.as_bytes().get(hi) == Some(&b'\n') {
         hi += 1;
     }
     Span::new(s.lo as usize, hi)
@@ -595,7 +641,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         .body
         .iter()
         .filter(|s| doomed.contains(&s.id))
-        .map(|s| Splice { at: with_line(prog.text(), s.span), with: String::new() })
+        .filter_map(|s| doom_splice(prog.text(), s))
         .collect();
     edits.extend(flags);
     if !adds.is_empty() {

@@ -298,7 +298,8 @@ impl<'a> Walk<'a> {
     /// — would find nothing there.  The multiplicity that a fresh id used to hide is exactly what
     /// `commit_seeds` needs to see: an id reached more than once has no single pose to record.
     fn emit(&mut self, kind: StmtKind, st: &Stmt, scope: &Scope, path: &[u32]) {
-        self.out.push((Stmt { id: st.id, kind, span: st.span }, path.to_vec(), scope.clone()));
+        let stmt = Stmt { id: st.id, kind, span: st.span, chained: st.chained };
+        self.out.push((stmt, path.to_vec(), scope.clone()));
     }
 
     /// Bind an instantiation's arguments to the component's formals.

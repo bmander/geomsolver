@@ -257,6 +257,37 @@ Conventions:
   placement — belongs in `graft`, or the three will disagree.  JSON is now the *export* format,
   derived rather than canonical; `io::dumps` is still what the Rust tests, the Python binding and
   the benchmarks compare against.
+- A **chain** (Solvent §6.6) is parser-level sugar and nothing else: `horizontal line bottom(b1,
+  b2) tangent arc a(center: c, r: r) tangent …` desugars in `syntax.rs` into the ordinary
+  statements it stands for — a prefix word (any `CKind` whose spec is one entity slot) becomes
+  that unary relation, and a joint word becomes the relation between its two neighbours: `to` is
+  the plain corner, `tangent` maps per pair of kinds, and any binary `CKind` whose spec is two
+  entity slots (`perpendicular`, `equal_length`, `equal_radius`, …) is an infix spelling of
+  itself, type-checked against the pair — and no other module knows the construct exists.  Adjacency
+  *threads*: each joint's shared point is named by exactly one side (or both, in agreement) and
+  fills the boundary field the other side left out, so a joint always knows its point and
+  `tangent` always desugars to the regular At-form (`TangentArcLine`, or `Parallel` between two
+  lines, which over the shared corner is collinearity) — never the bare pair that is
+  rank-deficient at every solution.  Only lines and arcs chain; a circle has no ends, which is
+  the radius-as-Param discussion again.  Each desugared statement keeps an id of its own and a
+  span into the chain's text (a chain is several statements from one *line*, where a `cycle` is
+  many instances of one *statement*), so writeback, culprits and carets need nothing new.
+  **How a statement is spelled is recorded, never sniffed back out of the characters**:
+  `Stmt::chained` is a `Chained` (`No`/`Link`/`Prefix`/`Joint`/`Close`) written by the desugarer,
+  and `edit::doom_splice` matches on it — a doomed joint steps down to `to`, a doomed prefix word
+  goes where it stands, and a link has *no* splice, which is how deleting one is refused (no
+  splice takes a link out and leaves a chain behind).  Reading it back off the text instead would
+  rest on "a longhand relation always carries a `(`", which nothing states and a qualified joint
+  would quietly break.  Which slots a chain threads through is `EntKind::ends()` in `model.rs`,
+  beside the `fields()` table it indexes and exhaustive, so a new kind with ends stops the build
+  rather than silently threading the wrong children.  A line ending in a joint word continues
+  its chain onto the next; `JOINT close` seals a loop back to the first link's entry.
+  The colouring asks `opens_link` — the *same* predicate `chain_starts` asks — since written
+  twice the two drifted at once on whether `horizontal(bottom)` is a prefix.  It runs per
+  keystroke, so every guard there puts the pointer test before the registry lookup
+  (`chain_kind` allocates); reversing those two operands cost 65% of a highlight pass.
+  `tests/chain.rs` holds the gate: the chain spelling of `rect_fillets` states exactly what the
+  shipped longhand does.
 - A statement expanded by `flatten` **keeps the id of the statement it came from**: a `cycle` of
   thirty makes thirty things from one line, and the line is what a span points at, a caret lands
   on and a splice edits.  What tells the thirty apart is the `path` every `Site` carries.  Minting
