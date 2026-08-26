@@ -48,14 +48,19 @@ bundle's own URL, and a bundle written anywhere else would look for it somewhere
 node-only fallback imports in `wasm.ts` are left external; a browser never evaluates them.
 
 Conventions:
-- **A seed says it is a guess**: `point p hint at (0, 0)` (Solvent §6.4).  §4.3's whole
-  discipline is that seed-class is visible by a mark — `=` seeds, `==` constrains — and a
-  coordinate seed carried none, so the commonest seed in the language read as an assertion about
-  where the point *is*.  `hint at` says otherwise in the words §11 already uses for the statement
+- **A seed says it is a guess**: `point p hint at (0, 0)` (Solvent §6.4).  `at (0, 0)` read as
+  an assertion about where the point *is*, and it is not there — that is where the solve begins,
+  and the solve moves it.  `hint at` says so in the words §11 already uses for the statement
   form.  A bare `at` is still *read* (`P::eat_hint_at`) so older documents load, and is never
   written back: `write_decl` prints the current spelling and a file picks it up a statement at a
-  time.  A **callout placement keeps its bare `at`** — a placement is not a guess, it records
-  where somebody dragged the callout — which is why only declarations changed.
+  time.
+  **What `hint` marks is that a solve revises the number, not that the number is seed-class** —
+  the two are different sets, and that is why a **callout placement keeps its bare `at`**.  A
+  placement is every bit as inert (delete it and the drawing is the same), but nothing in the
+  solve path ever writes one: `callout::drag` and `callout::reset` are a person acting, and the
+  layout derives it until they do.  A coordinate seed is an input the solver overwrites; a
+  placement is a preference it never touches.  Ask §4.3, not the keyword, for what may be
+  deleted without changing the drawing.
 - A constraint may own *unknowns* of its own: a `SpecKind::Param` slot in its `spec`, allocated
   by `Sketch::add` and moved by the solver like any other parameter.  The slot holds a seed
   number on the way in — which is what a document stores, what `graft` copies, and what

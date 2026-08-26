@@ -1587,9 +1587,13 @@ impl<'a> P<'a> {
         false
     }
 
-    /// `hint at` — a seed says outright that it is only a guess, which is what `=` says for
-    /// every other seed and what a bare `at` said for none: `at (0, 0)` reads as where the point
-    /// *is*, and it is not, it is where the solve begins (spec §4.3, Invariant H).
+    /// `hint at` — a seed says outright that it is only a guess.  `at (0, 0)` read as an
+    /// assertion about where the point *is*, and it is not there: that is where the solve
+    /// begins, and the solve moves it (spec §6.4).
+    ///
+    /// The word marks *the solver revises this*, which is narrower than seed-class — a callout
+    /// placement is every bit as inert and keeps its bare `at`, because nothing in the solve
+    /// path writes one.  See `Relation::place`.
     ///
     /// Bare `at` is still read, so a document written before the word changed still loads.  It
     /// is not written back: `write_decl` prints the current spelling, and a file that is edited
