@@ -32,6 +32,9 @@ export interface Diagnosis {
   shaky: number;                   /* motions blocked at second order: rigid, not DOF */
   over: Constraint[];              /* "remove one of these" */
   implied: Constraint[];           /* implied by a relation-only theorem: consistent, no fix */
+  claimsTheorem: Constraint[];     /* `claim ...` statements: hold, and add no rank */
+  claimsViolated: Constraint[];    /* do not hold at this solution */
+  claimsConsuming: Constraint[];   /* hold only by the pose; enforcing one would take a DOF */
   underParams: Param[];            /* what can move at the configuration diagnosed */
   structuralUnderParams: Param[];
   components: Component[];
@@ -74,6 +77,9 @@ interface RawDiagnosis {
   shaky: number;
   over: number[];
   implied: number[];
+  claimsTheorem: number[];
+  claimsViolated: number[];
+  claimsConsuming: number[];
   underParams: number[];
   structuralUnderParams: number[];
   components: { params: number[]; constraints: number[]; structuralRank: number; dof: number }[];
@@ -110,6 +116,9 @@ function fromRaw(sk: Sketch, d: RawDiagnosis): Diagnosis {
     shaky: d.shaky,
     over: cons(d.over),
     implied: cons(d.implied),
+    claimsTheorem: cons(d.claimsTheorem),
+    claimsViolated: cons(d.claimsViolated),
+    claimsConsuming: cons(d.claimsConsuming),
     underParams: prm(d.underParams),
     structuralUnderParams: prm(d.structuralUnderParams),
     components: d.components.map((c) => ({

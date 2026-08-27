@@ -60,6 +60,9 @@ class Constraint:
         self._id: int = -1
         self.soft = self.soft_by_default
         self.intrinsic = False
+        #: a `claim` (Solvent §9.7): expected to add no rank, judged by the diagnosis and never
+        #: solved for
+        self.claim = False
 
     # -- values -------------------------------------------------------------
 
@@ -130,7 +133,7 @@ class Constraint:
         for v, (_, kind) in zip(self._args, self.spec):
             out.append(v.ref if kind in ENTITY_KINDS and isinstance(v, Entity) else v)
         return {"type": type(self).__name__, "args": out,
-                "soft": self.soft, "intrinsic": self.intrinsic}
+                "soft": self.soft, "intrinsic": self.intrinsic, "claim": self.claim}
 
     def _bind(self, sk: Sketch) -> None:
         if self._id >= 0 and self._sketch is sk:
@@ -152,6 +155,7 @@ class Constraint:
         self._id = int(rec["id"])
         self.soft = bool(rec["soft"])
         self.intrinsic = bool(rec["intrinsic"])
+        self.claim = bool(rec["claim"])
         self._args = [_from_json(sk, v, kind) for v, (_, kind) in zip(rec["args"], self.spec)]
         self._exprs = dict(rec.get("exprs") or {})
 
@@ -233,7 +237,7 @@ def _bound(c: Constraint) -> Iterator[tuple[Sketch, int]]:
         return
     sk = c.sketch
     temp = type(c)(*c.args())
-    temp.soft, temp.intrinsic = c.soft, c.intrinsic
+    temp.soft, temp.intrinsic, temp.claim = c.soft, c.intrinsic, c.claim
     temp._bind(sk)
     try:
         # a value the core filled in (a tangency's side) belongs to the original too

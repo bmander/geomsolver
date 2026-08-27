@@ -356,9 +356,10 @@ fn expressions_survive_rebuilds_and_a_paste_reports_its_duplicates() {
 }
 
 /// The graphical proof of the Pythagorean theorem, as a sketch: four a×b right triangles in a
-/// square of side a + b leave a square whose side is dimensioned `c = hypot(a, b)`.  The figure
-/// satisfies that equation without being made to — it is redundant and consistent — and goes on
-/// satisfying it when a leg is edited, which is what makes it a proof and not a coincidence.
+/// square of side a + b leave a square whose side is *claimed* to be `c = hypot(a, b)`.  The
+/// figure satisfies the claim without being made to — the diagnosis judges it a theorem — and
+/// goes on satisfying it when a leg is edited, which is what makes it a proof and not a
+/// coincidence.
 #[test]
 fn pythagoras_drawn_with_expressions_holds_and_stays_true_when_a_leg_is_edited() {
     let mut sk = examples::pythagoras(30.0, 40.0);
@@ -377,11 +378,13 @@ fn pythagoras_drawn_with_expressions_holds_and_stays_true_when_a_leg_is_edited()
         assert!((cc.args[2].num() - c).abs() < 1e-9);   // the expression computed it
         assert!(cc.error(sk) < 1e-6);                      // and the figure agrees
         assert_eq!(io::dimension_text(cc).unwrap(), "c = hypot(a, b)");   // drawn as written
+        assert!(cc.claim, "the hypotenuse is stated as a claim");
+        let cc_id = cc.id;
         let d = diagnose(sk, DiagnoseOptions::default());
-        assert_eq!(d.dof, 0);
-        assert_eq!(d.n_redundant, 1, "the theorem is one equation the construction already holds");
-        assert!(d.violated.is_empty() && d.conflicts.as_deref().unwrap_or(&[]).is_empty(),
-                "redundant but consistent");
+        assert_eq!((d.dof, d.n_redundant), (0, 0), "a claim is no equation");
+        assert_eq!(d.claims_theorem, vec![cc_id], "the construction already holds it");
+        assert!(d.claims_violated.is_empty() && d.claims_consuming.is_empty());
+        assert!(d.violated.is_empty() && d.conflicts.as_deref().unwrap_or(&[]).is_empty());
     };
     check(&mut sk, 30.0, 40.0);
     // edit a leg: everything that reads `a` follows, and the theorem still holds

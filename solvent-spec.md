@@ -419,6 +419,39 @@ Undecorated `tangent` is an error (**E010**) — there is no default branch, bec
 
 Orientation predicates (`ccw`, `cw`) are the only inequalities in this draft. They contribute no equations; they select among the discrete solution components of the equality system. Solvers MUST verify them on candidate solutions and MUST NOT report a solution violating one.
 
+### 9.7 Claims **[0.5]**
+
+```
+claim <relation>(<args…>) [== <expr>]
+```
+
+A **claim** is a relation stated as *expected to add no rank*: an assertion about the drawing
+the rest of the document determines, not part of what determines it. The altitudes of a
+triangle concur; the trace of a Peaucellier cell is straight — a claim is how a document says
+so out loud and has the statement checked, rather than smuggling the theorem in as one more
+constraint and hoping the diagnosis reads the intent.
+
+A claim MUST NOT act. Solvers MUST exclude claims from the equation system, from
+decomposition, and from any connectivity used to partition work (a claim spanning two figures
+does not join them): the solution set, the degrees of freedom, and every diagnostic class of
+the surrounding document are exactly what they would be with the claim deleted. In
+particular, a claim never makes a document over-constrained or in conflict.
+
+A claim MUST be judged. At a solution, diagnosis classifies each claim as exactly one of:
+
+* **theorem** — the claim holds and its residual rows add no rank to the system: the document
+  already implies it;
+* **violated** — the claim does not hold at this solution;
+* **consuming** — the claim holds, but its rows add rank: only the pose satisfies it, and
+  enforcing it would have removed a freedom. The claim claims too much.
+
+A claim MUST NOT introduce unknowns: a relation whose signature carries a solver-owned
+parameter (a curve contact's `t`) is an error as a claim (**E017**), since its unknown would
+appear in no equation. A claim's dimension may be an expression, but MUST NOT bind a free
+variable, for the same reason.
+
+`claim` qualifies a single longhand relation statement; it does not enter chains (§6.6).
+
 ---
 
 ## 10. Paths

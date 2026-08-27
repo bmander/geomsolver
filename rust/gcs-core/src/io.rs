@@ -230,6 +230,10 @@ pub fn to_json(sk: &Sketch) -> Json {
             if let (Some(&(t, r)), Json::Obj(fields)) = (sk.placements.get(&c.id), &mut o) {
                 fields.push(("place".to_string(), Json::Arr(vec![Json::Num(t), Json::Num(r)])));
             }
+            // only when set, so a document with no claim in it dumps exactly as it always has
+            if c.claim {
+                o.set("claim", Json::Bool(true));
+            }
             o
         })
         .collect();
@@ -336,7 +340,11 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         // would parse every expression again for each, and would make a dimension whose
         // definition is further down the file briefly a free variable — allocating an unknown
         // this pass then retires, in a document that has no free variables in it at all
-        let id = sk.add_quiet(Constraint::new(kind, args));
+        let mut nc = Constraint::new(kind, args);
+        // a document is untrusted input: a claim on a kind that owns an unknown would mint a
+        // degree of freedom no equation mentions, so the flag is dropped rather than honoured
+        nc.claim = c.get("claim").map(|v| v.as_bool()).unwrap_or(false) && kind.claimable();
+        let id = sk.add_quiet(nc);
         // §13.1: the placement rides in the statement it qualifies
         if let Some(a) = c.get("place") {
             let a = a.arr();
@@ -570,7 +578,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             // `add_quiet`: the walk evaluates once at the end, not once per constraint — a
             // dimension whose definition has not been grafted yet is not a free variable, it is
             // one whose turn has not come
-            let id = dst.add_quiet(Constraint::new(c.kind, args));
+            let mut nc = Constraint::new(c.kind, args);
+            nc.claim = c.claim;
+            let id = dst.add_quiet(nc);
             if let Some(&place) = src.placements.get(&c.id) {
                 dst.placements.insert(id, place);   // a dimension keeps where it was dragged to
             }
@@ -678,6 +688,11 @@ impl Part {
         let mut named: BTreeMap<EntRef, Vec<usize>> = BTreeMap::new();
         let mut by_free: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
         for (ci, c) in sk.constraints.iter().enumerate() {
+            // a claim constrains nothing, so it welds nothing: two figures a claim spans stay
+            // two parts, and a drag of one costs the other nothing
+            if c.claim {
+                continue;
+            }
             for e in c.entities() {
                 named.entry(e).or_default().push(ci);
             }

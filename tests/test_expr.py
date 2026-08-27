@@ -99,8 +99,8 @@ def test_documents_and_rebuilds_keep_the_text() -> None:
 
 
 def test_pythagoras_drawn_with_expressions_holds_and_stays_true_when_a_leg_is_edited() -> None:
-    """Four a×b right triangles in a square of side a + b leave a square dimensioned
-    `c = hypot(a, b)`: redundant and consistent, and still so after a leg is edited."""
+    """Four a×b right triangles in a square of side a + b leave a square whose side is *claimed*
+    to be `c = hypot(a, b)`: judged a theorem, and still one after a leg is edited."""
     sk = examples.pythagoras(30, 40)
 
     def check(a: float, b: float) -> None:
@@ -110,8 +110,10 @@ def test_pythagoras_drawn_with_expressions_holds_and_stays_true_when_a_leg_is_ed
             assert math.hypot(ln.p1.x.value - ln.p2.x.value, ln.p1.y.value - ln.p2.y.value) == pytest.approx(c, abs=1e-6)
         cc = next(k for k in sk.constraints if k.expr("d") == "c = hypot(a, b)")
         assert cc.d == pytest.approx(c)
+        assert cc.claim, "the hypotenuse is stated as a claim"
         d = diagnose(sk)
-        assert d.dof == 0 and d.n_redundant == 1 and not d.violated and not d.conflicts
+        assert d.dof == 0 and d.n_redundant == 0 and not d.violated and not d.conflicts
+        assert d.claims_theorem == [cc] and not d.claims_violated and not d.claims_consuming
 
     check(30, 40)
     a = next(k for k in sk.constraints if k.expr("d") == "a = 30")

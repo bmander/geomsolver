@@ -87,7 +87,7 @@ pub fn parallels() -> Sketch {
 }
 
 /// The Pythagorean theorem drawn, with `a` and `b` the document's own named dimensions and
-/// `c = hypot(a, b)` the redundant-and-consistent one — `pythagoras.sv`.
+/// `c = hypot(a, b)` a claim the diagnosis judges a theorem — `pythagoras.sv`.
 pub fn pythagoras(a: f64, b: f64) -> Sketch {
     let src = with_params(PYTHAGORAS, &[("la", a), ("lb", b)]);
     document(&src, "pythagoras")
@@ -117,6 +117,13 @@ pub fn belt_tangency() -> Sketch {
     document(BELT_TANGENCY, "belt_tangency")
 }
 
+/// The Peaucellier–Lipkin cell, over the three lengths its document names — `peaucellier.sv`.
+/// The theorem is a theorem at any of them, which is what the arguments are for.
+pub fn peaucellier(arm: f64, side: f64, crank: f64) -> Sketch {
+    let src = with_params(PEAUCELLIER, &[("arm", arm), ("side", side), ("crank", crank)]);
+    document(&src, "peaucellier")
+}
+
 /// Build a named example.  `None` for an unknown name.
 pub fn example(name: &str) -> Option<Sketch> {
     Some(match name {
@@ -138,12 +145,13 @@ pub fn example(name: &str) -> Option<Sketch> {
         "zigzag" => zigzag(32, 3),
         "spline_follower" => spline_follower(),
         "belt_tangency" => belt_tangency(),
+        "peaucellier" => peaucellier(100.0, 60.0, 40.0),
         _ => return None,
     })
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 21] = [
+pub const CASES: [(&str, &str, &str); 22] = [
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Slotted link", "slotted_link", "obround slot with two holes; fully constrained"),
     ("Truss (8 bays)", "truss", "~30-entity Warren truss, every member dimensioned"),
@@ -159,12 +167,13 @@ pub const CASES: [(&str, &str, &str); 21] = [
     ("K3,3 framework", "k33", "rigid but triangle-free: the decomposition needs a core merge"),
     ("Concurrent altitudes", "altitudes", "theorem-type dependency: the third incidence is implied (Diagnose → witness); 3 DOF to animate"),
     ("Parallels & perpendiculars", "parallels", "direction classes: parallel/perpendicular/vertical (1 DOF left: slide along the base)"),
-    ("Pythagoras, graphically", "pythagoras", "four a×b right triangles in a square of side a + b leave a square of side c; `c = hypot(a, b)` is redundant and consistent — edit a or b and it stays so"),
+    ("Pythagoras, graphically", "pythagoras", "four a×b right triangles in a square of side a + b leave a square of side c; `claim distance == c = hypot(a, b)` is judged a theorem — edit a or b and it stays one"),
     ("Curve and follower", "spline_follower", "a cubic B-spline with a face held tangent to it and a point riding on it — drag a control point and the contact slides along the curve, across knots and all"),
     ("Belt over two pulleys", "belt_tangency", "each end on its circle and the line tangent to it — a double root: rank-deficient at every solution, yet nothing can move.  The second-order screen calls it rigid rather than 2 DOF"),
     ("Spur gear (30 teeth)", "gear", "written as a Solvent program: a curve family the document itself defines, one flank as a component, repeated round a cycle — open the Program panel (Edit ▸ Program) to read it"),
     ("Spur gear, traced (12 teeth)", "gear_trace", "the same wheel with the involute *traced* rather than computed: `trace p where { … }` states the taut string — on the circle, perpendicular to the radius, as long as the arc unwound — and the solver finds every point of the flank"),
     ("Levelled zigzags (3×32)", "zigzag", "three separate staircases of free-length H/V segments — a drag costs one staircase, not three"),
+    ("Peaucellier straight line", "peaucellier", "the 1864 cell: circling rods whose pen draws an exact straight line — the path is a trace, the straightness is `claim vertical(rail)`, and the diagnosis judges the claim a theorem.  Drag the pen along the rail it cannot leave"),
 ];
 
 /// A spur gear, written as a Solvent program rather than built here.
@@ -277,6 +286,7 @@ pub fn source(key: &str) -> Option<&'static str> {
         "k33" => Some(K33),
         "pythagoras" => Some(PYTHAGORAS),
         "spline_follower" => Some(SPLINE_FOLLOWER),
+        "peaucellier" => Some(PEAUCELLIER),
         _ => None,
     }
 }
@@ -297,6 +307,13 @@ pub const TRUSS_FLOATING: &str = include_str!("../../examples/truss_floating.sv"
 pub const ZIGZAG: &str = include_str!("../../examples/zigzag.sv");
 pub const K33: &str = include_str!("../../examples/k33.sv");
 pub const PYTHAGORAS: &str = include_str!("../../examples/pythagoras.sv");
+
+/// The Peaucellier–Lipkin straight-line cell: a linkage of circling rods whose pen draws an
+/// exact straight line, the path stated as a `trace` locus over a scratch copy of the linkage.
+/// The straight-line property is stated outright — `claim vertical(rail)` (Solvent §9.7) — and
+/// the diagnosis judges the claim a theorem: true, and adding no rank the drawing does not
+/// already have.  The case for claims, as `altitudes` is for implied relations.
+pub const PEAUCELLIER: &str = include_str!("../../examples/peaucellier.sv");
 pub const SPLINE_FOLLOWER: &str = include_str!("../../examples/spline_follower.sv");
 
 /// The case library's factory.  Keys are either a plain name or `name:arg[:arg]`, so a front end
@@ -321,6 +338,7 @@ pub fn case(key: &str) -> Option<Sketch> {
         "zigzag" if !args.is_empty() => zigzag(n(0, 32), n(1, 1)),
         "rect_fillets" if args.len() >= 3 => rect_fillets(args[0], args[1], args[2], 0.0),
         "pythagoras" if args.len() >= 2 => pythagoras(args[0], args[1]),
+        "peaucellier" if args.len() >= 3 => peaucellier(args[0], args[1], args[2]),
         _ => return example(name),
     })
 }

@@ -214,9 +214,15 @@ impl System {
         let extent = sk.extent();
         let scale = extent.max(1.0).powi(2);
 
-        // group by kernel id, then sketch order — deterministic
+        // group by kernel id, then sketch order — deterministic.  A claim is no equation and no
+        // system carries one, which is the whole of what keeps a claim from moving the geometry:
+        // the diagnosis judges it by stacking its rows onto a compiled system (`conditioned_with`)
+        // rather than by compiling a system that has them.
         let mut by_kernel: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
         for (i, c) in sk.constraints.iter().enumerate() {
+            if c.claim {
+                continue;
+            }
             by_kernel.entry(c.kernel_id_in(sk)).or_default().push(i);
         }
 
@@ -633,6 +639,58 @@ impl System {
     pub fn conditioned(&mut self, z: &[f64]) -> Conditioned {
         let rows = self.hard_rows();
         self.condition(z, &rows)
+    }
+
+    /// `conditioned`, with the rows of constraints this system was *not* compiled from stacked
+    /// underneath, and the owning constraint id per row.  Its one caller is the diagnosis judging
+    /// a `claim` (§9.7): a claim has no rows precisely because it is never solved for, so asking
+    /// whether it adds rank means asking about this matrix plus its rows.
+    ///
+    /// It is asked *here* rather than by compiling a second `System` over the claims, for two
+    /// reasons the compile would get wrong.  The row's units and the column mapping are written
+    /// down once, in `scatter` and `col_of`, and a caller assembling rows itself would be a
+    /// second copy of both.  And a compile calls `locus::forget`, which is what makes an
+    /// address-keyed pose sound — so a second system built beside a live one throws that one's
+    /// remembered trace poses away and every contact re-walks its march from the home.  On
+    /// `peaucellier`, a traced document that ends on a claim, that cost 834 µs a diagnosis
+    /// against 45 µs for the whole of the rest of it.
+    ///
+    /// `extra` may own no `Param` and bind no free variable — which is exactly what a claim may
+    /// not do either (`CKind::claimable`, `expr::write_value`), so its columns are its entities'
+    /// and `kind.kernel()` is safe to ask.
+    pub(crate) fn conditioned_with(
+        &mut self,
+        sk: &Sketch,
+        z: &[f64],
+        extra: &[&Constraint],
+    ) -> (Conditioned, Vec<u32>) {
+        let base = self.conditioned(z);
+        let (_, mut row_c) = self.structure();
+        if extra.is_empty() || self.n_free == 0 {
+            return (base, row_c);
+        }
+        let n_extra: usize = extra.iter().map(|c| c.n_residuals()).sum();
+        let mut m = Mat::zeros(base.rows() + n_extra, self.n_free);
+        m.data[..base.as_mat().data.len()].copy_from_slice(&base.as_mat().data);
+        let mut r = base.rows();
+        for c in extra {
+            let ps = c.params(sk);
+            let v = c.local_values(sk);
+            let j = c.jacobian(sk, &v);
+            let kn = crate::kernels::kernel(c.kind.kernel());
+            let inv = 1.0 / self.extent.max(1.0).powi(kn.degree as i32 - 1);
+            for t in 0..kn.n_res {
+                for (k, &p) in ps.iter().enumerate() {
+                    let col = self.col_of[p as usize];
+                    if col >= 0 {
+                        m.data[r * self.n_free + col as usize] += j[t * kn.n_par + k] * inv;
+                    }
+                }
+                row_c.push(c.id);
+                r += 1;
+            }
+        }
+        (Conditioned { m }, row_c)
     }
 
     fn condition(&mut self, z: &[f64], rows: &[usize]) -> Conditioned {

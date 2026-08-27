@@ -123,8 +123,9 @@ pub fn make_witness(sk: &mut Sketch, seed: u32, jitter: f64, tol: f64) -> Vec<f6
     let mut edits: Vec<(usize, usize, f64)> = Vec::new(); // (constraint index, arg, new value)
     for (ci, c) in sk.constraints.iter().enumerate() {
         // a dimension written in terms of a free variable states no number, so there is no
-        // number to make generic: it is structure, and it stays exactly as it is
-        if c.soft || c.free.is_some() {
+        // number to make generic: it is structure, and it stays exactly as it is.  A claim's
+        // number is not an input either — no system reads it, so a jitter would measure nothing.
+        if c.soft || c.claim || c.free.is_some() {
             continue;
         }
         for (ai, _, kind) in c.dimensions() {
@@ -250,7 +251,7 @@ pub fn screen(
 ) -> (Mat, usize) {
     if cap == 0
         || null.cols == 0
-        || !sk.constraints.iter().any(|c| c.kind.is_tangency())
+        || !sk.constraints.iter().any(|c| !c.claim && c.kind.is_tangency())
         || sys.max_relative_residual(z0) > SCREEN_SOLVED
     {
         return (null, 0);

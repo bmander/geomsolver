@@ -883,6 +883,11 @@ fn write_value(
     if !kind.is_dimension() || sk.constraints[ci].kind.free_kernel().is_none() {
         return Err(format!("`{name}` is free, and this is not a dimension it can be"));
     }
+    // a claim compiles to no rows, so an unknown bound here would sit in no equation at all — a
+    // degree of freedom minted by a statement that promised to add nothing
+    if sk.constraints[ci].claim {
+        return Err(format!("`{name}` is free, and a claim may not bind an unknown"));
+    }
     // a form that does not actually move with the variable states nothing about it, and there
     // would be no way back from the dimension to a value for it
     if a.m == 0.0 {

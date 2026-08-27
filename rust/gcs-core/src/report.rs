@@ -159,6 +159,9 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
         ("shaky", (d.shaky as i64).into()),
         ("over", ids(&d.over)),
         ("implied", ids(&d.implied)),
+        ("claimsTheorem", ids(&d.claims_theorem)),
+        ("claimsViolated", ids(&d.claims_violated)),
+        ("claimsConsuming", ids(&d.claims_consuming)),
         ("underParams", ids(&d.under_params)),
         ("structuralUnderParams", ids(&d.structural_under_params)),
         ("components", Json::Arr(components)),
@@ -339,6 +342,7 @@ pub fn constraint_json(sk: &Sketch, c: &Constraint) -> Json {
         ("args", Json::Arr(args)),
         ("soft", c.soft.into()),
         ("intrinsic", c.intrinsic.into()),
+        ("claim", c.claim.into()),
     ]);
     if !exprs.is_empty() {
         v.set("exprs", Json::Obj(exprs));
@@ -550,6 +554,8 @@ pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String>
     }
     let mut c = Constraint::new(kind, args);
     c.soft = v.get("soft").map(|x| x.as_bool()).unwrap_or(false) || kind.soft_by_default();
+    // as in `io::from_json`: a claim that would own an unknown is not one this kind can carry
+    c.claim = v.get("claim").map(|x| x.as_bool()).unwrap_or(false) && kind.claimable();
     c.intrinsic = v.get("intrinsic").map(|x| x.as_bool()).unwrap_or(false);
     Ok(c)
 }

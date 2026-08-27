@@ -13,7 +13,7 @@
 //!   that residue is Stage 4's motivation.
 
 use crate::cgraph::coincident_classes;
-use crate::constraints::{same_constraint, CKind};
+use crate::constraints::{same_constraint, CKind, Constraint};
 use crate::graph;
 use crate::linalg::{rank_and_nullspace, Mat};
 use crate::system::RANK_TOL;
@@ -87,6 +87,15 @@ pub struct Diagnosis {
     /// concur) rather than a surplus.  Consistent on every solution, nothing to fix; each could be
     /// deleted without changing the sketch, but none has to be.
     pub implied: Vec<u32>,
+    /// The `claim` statements, judged.  A claim is no equation — it joins none of the counts or
+    /// sets above, and can never make the sketch Over or Conflict — so its whole report is which
+    /// of these three lists it landed in.  *Theorem*: it holds, and its rows add no rank — the
+    /// drawing already says it.  *Violated*: it does not hold at this solution.  *Consuming*: it
+    /// holds here, but enforcing it would have taken a freedom — satisfied by the pose, not by
+    /// the document, which is a claim that claims too much.
+    pub claims_theorem: Vec<u32>,
+    pub claims_violated: Vec<u32>,
+    pub claims_consuming: Vec<u32>,
     /// Parameters that can move *at the configuration diagnosed*.
     pub under_params: Vec<u32>,
     pub structural_under_params: Vec<u32>,
@@ -406,9 +415,13 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
                 j.select_rows(&rel_rows).left_nullspace(RANK_TOL).null()
             };
             let row_c_rel: Vec<u32> = rel_rows.iter().map(|&r| row_c[r]).collect();
+            // `same_constraint` compares what is said, not whether it is said: a claim restating
+            // a relation matches it exactly.  Counted as a duplicate it would move that relation
+            // out of `implied` and into `over` — a claim making the sketch over-constrained,
+            // which is the one thing §9.7 promises cannot happen.  Only what acts can duplicate.
             let duplicated = |c: u32| {
                 sk.constraint(c).is_some_and(|m| {
-                    sk.constraints.iter().any(|o| o.id != c && same_constraint(o, m))
+                    sk.constraints.iter().any(|o| o.acts() && o.id != c && same_constraint(o, m))
                 })
             };
             implied = removable_constraints(sk, &w_rel, &row_c_rel, RTOL)
@@ -436,8 +449,88 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         }
     }
 
-    // -- violated / conflicts --
+    // -- violated --
     let violated = violated_constraints(sk, sys, opts.tol);
+
+    // -- claims (Solvent §9.7), judged against the drawing the rest of the document made --
+    //
+    // A claim is no equation, so nothing above has seen one: the system, the matching, the ranks
+    // and every set are exactly what they would be with the claims deleted — which is the
+    // contract, since a claim states only that deleting it changes nothing.  Judging one takes a
+    // second compile that *does* carry its rows (`System::with_claims`), read three ways: its
+    // residual (does it hold?), and the rank of the other rows with and without it (does the
+    // drawing already say it, or would enforcing it have taken a freedom?).  All of it is behind
+    // the emptiness test, so a document with no claim in it pays nothing.
+    //
+    // It is asked of `sys` — the system already compiled, already warm — through
+    // `conditioned_with`, and never of a second `System` built over the claims.  A compile is
+    // what invalidates the remembered trace poses (it calls `locus::forget`, since only a
+    // recompile can put another contact at a given address), so a second system beside a live one
+    // throws that one's poses away and every contact re-walks its march from the home: on
+    // `peaucellier`, a traced document that ends on a claim, 834 µs a diagnosis against 45 µs for
+    // the whole of the rest of it.  The residual is `Constraint::error`, which needs no system at
+    // all.
+    let mut claims_theorem: Vec<u32> = Vec::new();
+    let mut claims_violated: Vec<u32> = Vec::new();
+    let mut claims_consuming: Vec<u32> = Vec::new();
+    let claims: Vec<&Constraint> = sk.constraints.iter().filter(|c| c.claim).collect();
+    if !claims.is_empty() {
+        // "does it hold?" is the same rule `violated_constraints` states against a compiled
+        // system, in the units the row carries: the residual over `extent^degree`
+        let held: BTreeSet<u32> = claims
+            .iter()
+            .filter(|c| {
+                let e = c.error(sk);
+                let deg = crate::kernels::kernel(c.kind.kernel()).degree as i32;
+                !e.is_nan() && e <= opts.tol * sk.extent().max(1.0).powi(deg)
+            })
+            .map(|c| c.id)
+            .collect();
+        // The rank question is the numeric cross-check's kind of question, and is gated the same
+        // way; past the limit a claim that holds is reported a theorem, under the same
+        // `numeric_skipped` flag the rest of the numeric reading carries.  Judged against the
+        // claim-free base rather than through `removable_constraints`, which measures each row
+        // against every other row there is: §9.7 asks what the *rest of the document* implies,
+        // so a claim two other claims imply is still consuming.
+        // no `n_res` test: a base with no rows at all is a real case (a lone grounded point), and
+        // a claim over it is exactly the one that adds rank
+        let judged = (want_numeric && sys.n_free > 0).then(|| {
+            let z = sys.z0(sk);
+            let (jc, row_c) = sys.conditioned_with(sk, &z, &claims);
+            let claimed: BTreeSet<u32> = claims.iter().map(|c| c.id).collect();
+            let base: Vec<usize> =
+                (0..jc.rows()).filter(|&r| !claimed.contains(&row_c[r])).collect();
+            let rank = jc.select_rows(&base).rank_rrqr(RANK_TOL);
+            (jc, row_c, base, rank)
+        });
+        // One rank over every row answers the whole question when the answer is "none of them" —
+        // which is the case a claim is written for.  Only when the claims together do add rank
+        // does it cost a factorisation each to say which.
+        let any_adds = judged
+            .as_ref()
+            .is_some_and(|(jc, _, _, rank)| jc.rank_rrqr(RANK_TOL) > *rank);
+        let mut rows: Vec<usize> = Vec::new();
+        for c in &claims {
+            if !held.contains(&c.id) {
+                claims_violated.push(c.id);
+                continue;
+            }
+            let consuming = any_adds
+                && judged.as_ref().is_some_and(|(jc, row_c, base, rank)| {
+                    rows.clear();
+                    rows.extend_from_slice(base);
+                    rows.extend((0..jc.rows()).filter(|&r| row_c[r] == c.id));
+                    jc.select_rows(&rows).rank_rrqr(RANK_TOL) > *rank
+                });
+            if consuming {
+                claims_consuming.push(c.id);
+            } else {
+                claims_theorem.push(c.id);
+            }
+        }
+    }
+
+    // -- conflicts --
     let mut conflict_set: Option<Vec<u32>> = None;
     if opts.conflicts.unwrap_or(!violated.is_empty()) {
         // Candidates = the structurally over-determined block (where a redundancy must live)
@@ -536,6 +629,9 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         shaky,
         over,
         implied,
+        claims_theorem,
+        claims_violated,
+        claims_consuming,
         under_params,
         structural_under_params: structural_under,
         components,

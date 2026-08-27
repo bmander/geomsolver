@@ -780,6 +780,8 @@ export interface ConstraintRecord {
   args: unknown[];
   soft: boolean;
   intrinsic: boolean;
+  /** a `claim` (Solvent §9.7): expected to add no rank, judged by the diagnosis, never solved */
+  claim: boolean;
   /** attribute → the expression text behind it, for a dimension written as one */
   exprs?: Record<string, string>;
 }

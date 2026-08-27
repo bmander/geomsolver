@@ -314,6 +314,15 @@ impl CKind {
             .collect()
     }
 
+    /// Whether this kind owns an unknown of its own — a `Param` slot the solver moves, such as a
+    /// curve contact's parameter along the curve.  A `claim` (§9.7) compiles to no rows, so such
+    /// an unknown would sit in no equation at all: a degree of freedom the drawing does not have,
+    /// minted by a statement that promised to add nothing.  Elaboration turns the refusal into an
+    /// E040 with a span; the document readers, which take untrusted input, drop the flag instead.
+    pub fn claimable(self) -> bool {
+        !self.spec().iter().any(|(_, k)| k.is_param())
+    }
+
     /// The spec slots a contact on a parametric entity of kind `of` is made of: which argument
     /// names the entity and which holds the parameter along it.  Read off the spec, so a new
     /// kind of contact is covered by declaring one — there is no table of kinds here to forget
@@ -588,6 +597,13 @@ pub struct Constraint {
     pub soft: bool,
     /// Implied by a primitive's definition (an arc's endpoints sit at its radius).
     pub intrinsic: bool,
+    /// A `claim` (Solvent §9.7): stated as *expected to add no rank*.  A claim is no equation —
+    /// the solve, the decomposition and the drag walk all leave it out, so it can never move the
+    /// geometry or weld two figures — and the diagnosis alone judges it, against the drawing the
+    /// rest of the document made: a theorem when it holds and adds no rank, `violated` when it
+    /// does not hold, `consuming` when enforcing it would have taken a freedom.  It travels like
+    /// any flag: through `graft`, the document and the JSON.
+    pub claim: bool,
     /// The unknown this constraint's number is written in terms of, when its dimension names a
     /// free variable — see `expr::Free`.  At most one, which is why it lives here and not on the
     /// argument: one appended column, one `(m, c)` pair, one twin kernel.  Derived state, written
@@ -596,9 +612,17 @@ pub struct Constraint {
 }
 
 impl Constraint {
+    /// Whether this constraint *acts* on the drawing — the one predicate behind "everything that
+    /// must be satisfied".  A soft one is a transient the solve may miss; a claim is a question
+    /// about the drawing rather than part of it, and neither is something a consumer asking for
+    /// the constraints that determine the figure wants back.
+    pub fn acts(&self) -> bool {
+        !self.soft && !self.claim
+    }
+
     pub fn new(kind: CKind, args: Vec<Arg>) -> Constraint {
         debug_assert_eq!(args.len(), kind.spec().len(), "{:?} arity", kind);
-        Constraint { id: 0, kind, args, soft: false, intrinsic: false, free: None }
+        Constraint { id: 0, kind, args, soft: false, intrinsic: false, claim: false, free: None }
     }
 
     pub fn coincident(p: EntRef, q: EntRef) -> Constraint {

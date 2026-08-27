@@ -44,6 +44,9 @@ class Diagnosis:
     shaky: int                          # motions blocked at second order: rigid, not DOF
     over: list[Constraint]              # "remove one of these"
     implied: list[Constraint]           # implied by a relation-only theorem: consistent, no fix
+    claims_theorem: list[Constraint]    # `claim …` statements: hold, and add no rank
+    claims_violated: list[Constraint]   # do not hold at this solution
+    claims_consuming: list[Constraint]  # hold only by the pose; enforcing one would take a DOF
     under_params: list[Param]           # what can move at the configuration diagnosed
     structural_under_params: list[Param]
     components: list[Component]
@@ -87,6 +90,9 @@ def _from_json(sk: Sketch, d: dict[str, Any]) -> Diagnosis:
         shaky=d["shaky"],
         over=cons(d["over"]),
         implied=cons(d["implied"]),
+        claims_theorem=cons(d["claimsTheorem"]),
+        claims_violated=cons(d["claimsViolated"]),
+        claims_consuming=cons(d["claimsConsuming"]),
         under_params=prm(d["underParams"]),
         structural_under_params=prm(d["structuralUnderParams"]),
         components=[Component(prm(c["params"]), cons(c["constraints"]),

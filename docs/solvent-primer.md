@@ -46,6 +46,7 @@ brackets, and except when the line ends with a chain joint (§1.7).
 param NAME = EXPR                       a number worked out while elaborating; never an unknown
 KIND NAME(ARGS) [hint at …] [construction]      an entity declaration (§1.4)
 RELATION(ARGS) [== EXPR] [at (t, r)]    a constraint (§1.5)
+claim RELATION(ARGS) [== EXPR]          an assertion, judged and never solved for (§1.9)
 ground(REF)                             pin both of a point's coordinates
 fix(REF.field)                          pin one scalar, e.g. fix(c.r)
 ccw(a, b, c) | cw(a, b, c)              record a root choice; contributes no equation
@@ -176,7 +177,30 @@ where the
 predicate is unambiguous — and carried from there along the whole curve by continuity; and a
 **seed**, for what neither can say.
 
-### 1.9 Checking your work
+### 1.9 Claims
+
+`claim` in front of a relation states it as *expected to add no rank*: an assertion about the
+drawing the rest of the document determines, not part of what determines it.
+
+```
+claim vertical(rail)        // "the drawing already says this" — checked, never enforced
+```
+
+A claim never acts.  It joins no solve, no count and no diagnostic set — the drawing, its
+degrees of freedom and its status are exactly what they would be with the claim deleted, so a
+claim can never make a sketch `Over` or `Conflict`, and a false one cannot pull the geometry
+toward itself.  Instead the diagnosis judges it, as one of three things: a **theorem** (it
+holds, and adds no rank — the document already implies it), **violated** (it does not hold), or
+**consuming** (it holds only because of where the solve happened to land; enforcing it would
+have removed a freedom, so the claim claims too much).  Use it to state the fact a figure was
+drawn to illustrate — the altitudes concur, the traced path is straight — and let the solver
+confirm the theorem instead of trusting the drawing to it.
+
+Because a claim adds no equations, it may not own an unknown: claiming a curve contact
+(`point_on_curve` and kin, whose slot carries the contact's own parameter) is an error, and so
+is binding a free variable in a claim's dimension.
+
+### 1.10 Checking your work
 
 Elaborate, solve, then diagnose. The diagnosis reports **degrees of freedom** and one of four
 states:

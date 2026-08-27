@@ -207,6 +207,27 @@ Conventions:
   coordinates — and `cgraph` gives them a `virtual_line` in the ground x-axis's direction class,
   the same trick arc-endpoint tangency uses, so a levelled pair decomposes rather than falling to
   the numeric residue.
+- A **`claim`** (Solvent §9.7) is a constraint-shaped statement that is *judged, never solved
+  for*: **no** `System` compiles a row for it, and decomposition (`cgraph`), the drag-part walk
+  (`io::Part`) and the witness's jitter all skip it, so a claim can never move geometry, weld two
+  figures into one drag part, or paint a sketch Over or Conflict.  The exclusion is written twice
+  and deliberately: `Constraint::acts()` is the named half, which `hard_constraints`/`hard_ids`
+  ask so a consumer added later inherits it rather than having to remember; the seams that need a
+  row index or an enumeration spell it out inline, exactly as `soft` already is.  Anything that
+  reads a constraint list to learn what determines the drawing — `known_radii`, the entity
+  colouring, the conflict candidates, `duplicated` — must go through the named half, or a claim
+  silently acts.  The diagnosis alone reads it, at the *end* of `diagnose_with` and through
+  `System::conditioned_with`, which stacks a claim's rows onto the system already compiled:
+  *theorem* (holds, and adds no rank), *violated* (does not hold), or *consuming* (holds only by
+  the pose — enforcing it would have taken a freedom).  Judging it by compiling a second `System`
+  is the thing not to do — a compile calls `locus::forget`, so a system built beside a live one
+  throws that one's remembered trace poses away and every contact re-walks its march from the
+  home: 834 µs a diagnosis on `peaucellier` against 69 µs now.  A claim may not own a `Param`
+  slot and may not bind a free variable, since its unknown would sit in no equation:
+  `CKind::claimable` is that rule, elaboration turns it into an E040 with a span, the document
+  readers (untrusted input) drop the flag, and `expr::evaluate` refuses the free binding.  The
+  flag travels like any other: `graft`, the document (`"claim"` in JSON, written only when set)
+  and both bindings' records.  `peaucellier.sv` is the case, `tests/claim.rs` the gate.
 - `same_constraint` is "says exactly the same thing"; `same_relation` is the same *without* the
   numbers — same type, same entities, same flags.  A repeated *relation* is refused by the app
   (`edit::applyConstraints`): it says nothing the sketch does not already say and adds equations

@@ -30,8 +30,9 @@ const DOCS: &[(&str, Shape, i64, State)] = &[
     ("truss_floating", (17, 31, 0, 0), 3, State::Under),
     ("zigzag", (96, 93, 0, 0), 99, State::Under),
     ("k33", (6, 1, 0, 0), 0, State::Well),
-    ("pythagoras", (8, 8, 0, 0), 0, State::Over),
+    ("pythagoras", (8, 8, 0, 0), 0, State::Well),
     ("spline_follower", (11, 1, 0, 0), 14, State::Under),
+    ("peaucellier", (8, 9, 1, 0), 1, State::Under),
 ];
 
 #[test]

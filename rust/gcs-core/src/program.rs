@@ -1281,10 +1281,26 @@ fn constrain(
             }
         }
     }
+    // a claim is judged, never solved for, so it may own no unknown — `CKind::claimable` is the
+    // rule, shared with the document readers; elaboration's job is only to give it a span
+    if r.claim && !ckind.claimable() {
+        diags.push(Diag {
+            code: Code::E040,
+            span: st.span,
+            stmt: Some(st.id),
+            message: format!(
+                "`{}` carries an unknown of its own, and a claim may add none",
+                crate::syntax::snake(ckind.name())
+            ),
+        });
+        return None;
+    }
     // the inferred slots the source left out — read off the geometry, the one place that rule
     // lives, shared with the document reader and the bindings' constraint records
     io::seed_omitted(sk, ckind, &mut args, |i| left_out[i]);
-    Some(sk.add_quiet(Constraint::new(ckind, args)))
+    let mut c = Constraint::new(ckind, args);
+    c.claim = r.claim;
+    Some(sk.add_quiet(c))
 }
 
 fn arg_span(a: &Arg) -> Option<Span> {
@@ -1580,6 +1596,7 @@ pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {
         place: sk.placements.get(&c.id).copied(),
         place_span: Span::default(),
         poly: None,
+        claim: c.claim,
     }
 }
 

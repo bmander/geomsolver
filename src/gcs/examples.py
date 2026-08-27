@@ -83,8 +83,8 @@ def parallels() -> Sketch:
 
 def pythagoras(a: float = 30.0, b: float = 40.0) -> Sketch:
     """The graphical proof of the Pythagorean theorem: four a×b right triangles in a square of
-    side a + b leave a square of side c, dimensioned `c = hypot(a, b)` — redundant and
-    consistent."""
+    side a + b leave a square whose side is claimed to be `c = hypot(a, b)` — judged a
+    theorem."""
     return build(f"pythagoras:{a}:{b}")
 
 
@@ -104,6 +104,12 @@ def spline_follower() -> Sketch:
     and not an argument.
     """
     return build("spline_follower")
+
+
+def peaucellier() -> Sketch:
+    """The Peaucellier–Lipkin cell: circling rods whose pen draws an exact straight line, the
+    straightness one `claim` the diagnosis judges a theorem."""
+    return build("peaucellier")
 
 
 def perturb(sk: Sketch, sigma: float, seed: int = 0) -> None:
@@ -132,7 +138,7 @@ def cases() -> list[dict[str, Any]]:
 
 
 __all__ = ["EXAMPLES", "altitudes", "henneberg_edges", "build", "cases", "impossible_triangle", "k33", "laman", "pythagoras",
-           "parallels", "perturb", "polygon_chain", "rect_fillets", "rect_fillets_conflict",
+           "parallels", "peaucellier", "perturb", "polygon_chain", "rect_fillets", "rect_fillets_conflict",
            "rect_fillets_under", "slotted_link", "truss", "truss_conflict", "truss_floating",
            "belt_tangency",
            "spline_follower", "truss_redundant", "zigzag"]

@@ -44,7 +44,7 @@ export const altitudes = (): Sketch => build('altitudes');
 export const beltTangency = (): Sketch => build('belt_tangency');
 export const parallels = (): Sketch => build('parallels');
 /** The graphical proof of the Pythagorean theorem: four a×b right triangles in a square of side
- *  a + b leave a square of side c, dimensioned `c = hypot(a, b)` — redundant and consistent. */
+ *  a + b leave a square whose side is claimed to be `c = hypot(a, b)` — judged a theorem. */
 export const pythagoras = (a = 30, b = 40): Sketch => build(`pythagoras:${a}:${b}`);
 export const k33 = (): Sketch => build('k33');
 export const laman = (n = 10, seed = 0): Sketch => build(`laman:${n}:${seed}`);
@@ -53,6 +53,9 @@ export const laman = (n = 10, seed = 0): Sketch => build(`laman:${n}:${seed}`);
 export const splineFollower = (): Sketch => build('spline_follower');
 /** `copies` separate staircases of `n` free-length H/V segments: a drag must cost one figure. */
 export const zigzag = (n = 32, copies = 1): Sketch => build(`zigzag:${n}:${copies}`);
+/** The Peaucellier–Lipkin cell: circling rods whose pen draws an exact straight line, the
+ *  straightness one `claim` the diagnosis judges a theorem. */
+export const peaucellier = (): Sketch => build('peaucellier');
 
 /** A random Laman graph's edges by Henneberg construction — the property-test generator. */
 export function hennebergEdges(n: number, seed = 0): [number, number][] {

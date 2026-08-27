@@ -908,7 +908,9 @@ impl Sketch {
         }
         s.push('|');
         for c in &self.constraints {
-            let _ = write!(s, "{}:{},", c.id, c.type_name());
+            // a claim compiles to no rows, so claiming a relation and stating it are different
+            // topologies even though the constraint list reads the same
+            let _ = write!(s, "{}:{}{},", c.id, c.type_name(), if c.claim { "?" } else { "" });
             // A constraint whose columns are not fixed by its entities alone writes them out:
             // which span of a spline a contact sits on, and which unknown a dimension written in
             // terms of a free variable is tied to.  Both are compiled into the plan, so both
@@ -1057,7 +1059,7 @@ impl Sketch {
     }
 
     pub fn n_residuals(&self) -> usize {
-        self.constraints.iter().map(|c| c.n_residuals()).sum()
+        self.constraints.iter().filter(|c| !c.claim).map(|c| c.n_residuals()).sum()
     }
 
     /// Constraints the user added (excludes intrinsic and soft/transient ones).
@@ -1065,13 +1067,16 @@ impl Sketch {
         self.constraints.iter().filter(|c| !(c.intrinsic || c.soft)).collect()
     }
 
-    /// Everything that must be satisfied (excludes soft ones such as drag targets).
+    /// Everything that must be satisfied: excludes soft ones such as drag targets, and claims,
+    /// which are judged rather than satisfied.  This is the named half of the rule the solve
+    /// seams spell out inline — a caller that only wants the list asks here, so a consumer added
+    /// later inherits both exclusions instead of having to remember them.
     pub fn hard_constraints(&self) -> Vec<&Constraint> {
-        self.constraints.iter().filter(|c| !c.soft).collect()
+        self.constraints.iter().filter(|c| c.acts()).collect()
     }
 
     pub fn hard_ids(&self) -> Vec<u32> {
-        self.constraints.iter().filter(|c| !c.soft).map(|c| c.id).collect()
+        self.constraints.iter().filter(|c| c.acts()).map(|c| c.id).collect()
     }
 
     // -- geometry -----------------------------------------------------------

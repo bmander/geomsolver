@@ -2847,6 +2847,8 @@ pub unsafe extern "C" fn gcs_elab_add_relation(
                 place: None,
                 place_span: gcs_core::syntax::Span::default(),
                 poly: None,
+                // the app states constraints; a claim is written in the program panel
+                claim: false,
             },
         ))
     })

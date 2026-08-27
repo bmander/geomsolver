@@ -10,10 +10,11 @@
 // leg reads those names rather than repeating a number.  So editing either one moves all four
 // triangles together, and the figure stays a proof rather than becoming a picture of one.
 //
-// The inner square is then given the side `hypot(a, b)` — and *that* is the theorem.  It is a
-// statement the figure already satisfies without being told, so it is reported as redundant but
-// true, rather than as a contradiction.  Change `a` or `b` and it stays that way, which is the
-// part worth watching.
+// The inner square's side is then *claimed* to be `hypot(a, b)` — and that is the theorem.  A
+// claim (§9.7) is judged, never solved for: the figure is built entirely from the legs, and the
+// diagnosis checks the hypotenuse against it and reports the claim a theorem — true, and adding
+// nothing the construction does not already say.  Change `a` or `b` and it stays so, which is
+// the part worth watching.
 
 // the legs, as numbers the drawing is placed from; `a` and `b` below are the dimensions that
 // state them, and every other leg reads those names rather than these
@@ -61,6 +62,6 @@ line h2(P2, P3)
 line h3(P3, P4)
 line h4(P4, P1)
 
-// true without being imposed
-distance(P1, P2) == c = hypot(a, b)
+// the theorem, stated as a claim: judged against the figure, never imposed on it
+claim distance(P1, P2) == c = hypot(a, b)
 ground(O)

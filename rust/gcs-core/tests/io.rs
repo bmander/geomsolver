@@ -393,7 +393,7 @@ fn the_constraint_record_carries_identity_and_arguments_only() {
     for rec in &recs {
         let Json::Obj(kv) = rec else { panic!("not an object") };
         let keys: Vec<&str> = kv.iter().map(|(k, _)| k.as_str()).collect();
-        assert_eq!(keys, ["id", "type", "args", "soft", "intrinsic"], "{keys:?}");
+        assert_eq!(keys, ["id", "type", "args", "soft", "intrinsic", "claim"], "{keys:?}");
     }
     // and what was dropped is still reachable for the one constraint someone is looking at
     let c = &sk.constraints[0];

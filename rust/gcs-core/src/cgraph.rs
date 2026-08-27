@@ -229,7 +229,9 @@ pub fn coincident_classes(sk: &Sketch) -> (Vec<usize>, Vec<Vec<usize>>) {
     let n = sk.points.len();
     let mut uf = UnionFind::new(n);
     for c in &sk.constraints {
-        if c.kind == CKind::Coincident {
+        // a *claimed* coincidence holds nothing together: it is a question about the drawing,
+        // not part of it
+        if c.kind == CKind::Coincident && !c.claim {
             uf.union(c.args[0].ent().i(), c.args[1].ent().i());
         }
     }
@@ -373,6 +375,11 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
     };
 
     for c in &sk.constraints {
+        // A claim is skipped outright — not even `unsupported`, which would hand it to the
+        // numeric residual and have the plan enforce a statement that promised to add nothing.
+        if c.claim {
+            continue;
+        }
         // A dimension written in terms of a free variable states no length: it states a
         // *relation* between dimensions, and the cluster vocabulary has no element for that —
         // an edge carrying it would be read as a rigid distance somebody had fixed.  So it goes

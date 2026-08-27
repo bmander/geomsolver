@@ -369,6 +369,9 @@ pub struct Relation {
     /// asks `constrain` rather than the field.  `None` — the ordinary case — means `kind` is
     /// what the statement says.
     pub poly: Option<Name>,
+    /// Written `claim …` (§9.7): stated as expected to add no rank, judged by the diagnosis and
+    /// never solved for.
+    pub claim: bool,
 }
 
 /// One argument as written.
@@ -802,6 +805,9 @@ fn write_decl(out: &mut String, d: &Decl) {
 }
 
 fn write_relation(out: &mut String, r: &Relation) {
+    if r.claim {
+        out.push_str("claim ");
+    }
     // a word still waiting on elaboration prints as the word: it is what somebody wrote, and the
     // kind beside it is a placeholder that has not been settled yet
     out.push_str(&match &r.poly {
@@ -1255,6 +1261,11 @@ fn tint_word(w: &str, prev: Option<&Tok>, next: Option<&Tok>, at: Next) -> (Opti
             // `trace p where { … }` — a family body usually starts its own line
             if w == "trace" {
                 return (Some(Tint::Word), Next::Def);
+            }
+            // `claim vertical(rail)`: the word after it is a statement start again, so the
+            // relation it qualifies is tinted exactly as it would be standing alone
+            if w == "claim" {
+                return (Some(Tint::Word), Next::Start);
             }
             (CKind::from_name(&camel(w)).is_some().then_some(Tint::Relation), Next::Word)
         }
@@ -1814,6 +1825,14 @@ impl<'a> P<'a> {
                 };
                 self.block(kind, next_id).map(StmtKind::Block)
             }
+            // `claim vertical(rail)` — a relation stated as expected to add no rank.  The colon
+            // guard keeps an instance *named* claim (`claim: Tooth(…)`) an instance.
+            "claim" if !matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P(':'))) => {
+                self.i += 1;
+                let mut r = self.relation()?;
+                r.claim = true;
+                Some(StmtKind::Relation(r))
+            }
             // `t: Tooth(...)` — a name, a colon and a component
             _ if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P(':'))) => {
                 let name = self.ident()?;
@@ -1872,8 +1891,13 @@ impl<'a> P<'a> {
         let next = self.word_at(self.i + 1);
         // `a_br equal a_tr` — a name, then a word that relates it to another.  Nothing else in
         // the language has that shape: a statement opening with a bare name is an instance, and
-        // that is a name followed by a colon.
-        if next.is_some_and(joint_word) && EntKind::parse(w).is_none() && prefix_kind(w).is_none()
+        // that is a name followed by a colon.  `claim parallel(…)` has the shape too — a binary
+        // relation's name doubles as an infix joint word — but `claim` qualifies a statement,
+        // it never names an element.
+        if w != "claim"
+            && next.is_some_and(joint_word)
+            && EntKind::parse(w).is_none()
+            && prefix_kind(w).is_none()
         {
             return true;
         }
@@ -2071,6 +2095,7 @@ impl<'a> P<'a> {
                     place: None,
                     place_span: Span::default(),
                     poly: None,
+                    claim: false,
                 };
                 *next_id += 1;
                 out.push(Stmt {
@@ -2212,7 +2237,7 @@ impl<'a> P<'a> {
         let (lref, lk) = left;
         let (rref, rk) = right;
         let rel = |kind: CKind, args: Vec<Option<Arg>>| {
-            Some(Relation { kind, args, place: None, place_span: Span::default(), poly: None })
+            Some(Relation { kind, args, place: None, place_span: Span::default(), poly: None, claim: false })
         };
         let ent = |r: &Ref| Some(Arg::Ref(r.clone()));
         if word == "to" {
@@ -2242,6 +2267,7 @@ impl<'a> P<'a> {
                     place: None,
                     place_span: Span::default(),
                     poly: Some(Name { text: word.to_string(), span: at }),
+                    claim: false,
                 }),
             };
         }
@@ -2848,7 +2874,7 @@ impl<'a> P<'a> {
             place_span = Span::new(lo, self.prev_hi());
         }
         self.end_of_stmt();
-        Some(Relation { kind, args, place, place_span, poly: None })
+        Some(Relation { kind, args, place, place_span, poly: None, claim: false })
     }
 
     /// Everything after `==` to the end of the logical line, as written.

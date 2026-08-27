@@ -1313,8 +1313,8 @@ test('expressions round-trip through the document and survive a rebuild', () => 
 });
 
 test('pythagoras drawn with expressions holds, and stays true when a leg is edited', () => {
-  // four a×b right triangles in a square of side a + b leave a square dimensioned
-  // `c = hypot(a, b)`: redundant and consistent, and still so after a leg is edited
+  // four a×b right triangles in a square of side a + b leave a square whose side is *claimed*
+  // to be `c = hypot(a, b)`: judged a theorem, and still one after a leg is edited
   const sk = examples.pythagoras(30, 40);
   const check = (a: number, b: number): void => {
     assert.ok(solve(sk).success);
@@ -1324,9 +1324,12 @@ test('pythagoras drawn with expressions holds, and stays true when a leg is edit
     }
     const cc = sk.constraints.find((k) => k.expr('d') === 'c = hypot(a, b)')!;
     assert.ok(Math.abs(num(cc.d) - c) < 1e-9);
+    assert.ok(cc.claim, 'the hypotenuse is stated as a claim');
     const d = diagnose(sk);
     assert.equal(d.dof, 0);
-    assert.equal(d.nRedundant, 1);
+    assert.equal(d.nRedundant, 0);
+    assert.deepEqual(d.claimsTheorem, [cc]);
+    assert.equal(d.claimsViolated.length + d.claimsConsuming.length, 0);
     assert.equal(d.violated.length, 0);
     assert.equal(d.conflicts?.length ?? 0, 0);
   };
