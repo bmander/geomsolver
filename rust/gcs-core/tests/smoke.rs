@@ -241,9 +241,18 @@ fn the_shared_dogleg_loop_solves_a_system_of_its_own() {
 #[test]
 fn the_conditioned_jacobian_is_dimensionless() {
     // each row of `conditioned` is the raw row over `extent^(degree - 1)`: a degree-1 row is a
-    // unit-free gradient already, a degree-2 row carries one power of length.  Every row then
-    // sits within a couple of orders of 1 — which is what lets one absolute tolerance judge them
-    // all, and what a kernel declaring the wrong `degree` would break.
+    // unit-free gradient already, a degree-2 row carries one power of length, a degree-0 row (an
+    // angle, whose residual is radians) carries one fewer and is multiplied by the extent.  Every
+    // row then sits within a couple of orders of 1 — which is what lets one absolute tolerance
+    // judge them all, and what a kernel declaring the wrong `degree` would break.
+    //
+    // The band is a claim about *well-proportioned* drawings, not a law: a row's units come from
+    // the drawing's extent while its gradient comes from the lengths that row actually reads, so
+    // any row leaves the band once those two part company — a degree-0 angle on a corner far
+    // smaller than the drawing on the high side, a degree-2 distance in the same pose on the low.
+    // (`locus::assemble` takes a row's units from the lengths the row itself reads, which is the
+    // sharper rule; this one is the cheap global.)  No document below carries an `angle`, so the
+    // degree-0 case is not exercised here — `an_angle_is_directed` is where that kernel is held.
     use gcs_core::kernels::KERNELS;
     for name in examples::EXAMPLES {
         let sk = examples::example(name).unwrap();
@@ -268,4 +277,40 @@ fn the_conditioned_jacobian_is_dimensionless() {
             assert!((1e-3..=1e2).contains(&norm), "{name} row {i}: |row| = {norm}");
         }
     }
+}
+
+/// An `angle` is *directed*: stated mod half a turn, as it once was, the opposite side satisfies
+/// the statement just as exactly, and the solve settles for whichever is nearer (issue #11).
+///
+/// The datum is grounded along the page's x-axis and the swinging point is held ten from its
+/// pivot, so a bearing of ±90° names one place and no other — and the pose starts on the side the
+/// half-turn reading would have been content with.
+#[test]
+fn an_angle_is_directed() {
+    let pose = |theta: f64, start: (f64, f64)| {
+        let mut sk = Sketch::new();
+        let o = sk.point(0.0, 0.0, true, "o");
+        let a = sk.point(10.0, 0.0, true, "a");
+        let p = sk.point(start.0, start.1, false, "p");
+        let datum = sk.line(o, a);
+        let swing = sk.line(o, p);
+        sk.add(Constraint::distance(EntRef::point(o), EntRef::point(p), 10.0));
+        sk.add(Constraint::new(
+            CKind::Angle,
+            vec![
+                Arg::Ent(EntRef::line(datum)),
+                Arg::Ent(EntRef::line(swing)),
+                Arg::Num(theta),
+            ],
+        ));
+        let r = solve(&mut sk, SolveOpts::default());
+        assert!(r.success, "theta {theta}: {r:?}");
+        sk.point_xy(p)
+    };
+    let at = |got: (f64, f64), want: (f64, f64)| {
+        assert!((got.0 - want.0).abs() < 1e-6 && (got.1 - want.1).abs() < 1e-6, "{got:?}");
+    };
+    // +90° posed below comes all the way round to straight up; −90° posed above, the mirror
+    at(pose(std::f64::consts::FRAC_PI_2, (-3.0, -10.0)), (0.0, 10.0));
+    at(pose(-std::f64::consts::FRAC_PI_2, (-3.0, 10.0)), (0.0, -10.0));
 }

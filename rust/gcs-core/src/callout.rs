@@ -428,6 +428,25 @@ fn sweep_start(sk: &Sketch, e: EntRef) -> f64 {
     }
 }
 
+/// The turn an angular callout draws: what the drawing *measures* between the two lines, on the
+/// lap the dimension *names*.
+///
+/// The two are the same number at a solution and the figure follows the geometry away from one,
+/// which is how every other callout behaves — a linear dimension puts its arrowheads on the
+/// points where they actually are and prints the number that was stated.  What makes an angle
+/// need saying out loud is that `angle_between` is an `atan2`, folded into (−π, π], while a
+/// dimension may name any lap: 270° and −90° describe the same pose but are not the same
+/// statement, and drawing the short way round a dimension that says 270 would be a figure
+/// contradicting its own label.  Adding back the whole turns the fold took out costs nothing
+/// when there are none, which is the ordinary case.
+fn sweep_of(sk: &Sketch, c: &Constraint, e1: EntRef, e2: EntRef) -> f64 {
+    let measured = angle_between(sk, e1, e2);
+    match c.args.get(2).map(|a| a.num()) {
+        Some(theta) => theta - wrap(theta - measured),
+        None => measured,
+    }
+}
+
 /// Where two lines meet, and the directions the model gives them — `None` when they are parallel
 /// and the corner is at infinity.
 fn corner_of(sk: &Sketch, c: &Constraint) -> Option<(P, P, P)> {
@@ -868,7 +887,7 @@ impl Pen<'_> {
             let (a1, b1) = seg(self.sk, i1);
             return Some(self.note(c.id, CalloutKind::Angular, mid(a1, b1), &text));
         };
-        let sweep = angle_between(self.sk, e1, e2);
+        let sweep = sweep_of(self.sk, c, e1, e2);
         let th0 = d1.1.atan2(d1.0);
         let (tw, th) = (self.px(FONT_PX * text_em(&text)), self.px(FONT_PX));
         // the label rides outside the arc, clear of it by its own half extent in that direction

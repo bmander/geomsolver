@@ -38,13 +38,15 @@ param crank = 40      // the crank q–b, and so the orbit its pin rides
 // where the pen must go, as a locus: a scratch copy of the linkage, posed at crank angle u.
 // Eight numbers to find (b, c, d, p), eight statements — the same eight a machinist would
 // check with a ruler.  Each of the doctrine's three instruments does the one job it is for.
-// The ccw/cw lines pick which of the mirror poses is meant, read once at the home angle and
-// carried round by continuity.  The seeds say only where to start looking: `b` at the edge of
-// its own circle, and the elbows split to either side of the arm — without that split, c and d
-// start as one point, and a solve that begins symmetric stays symmetric, folded flat.  (The
-// bearing u/2 is no derivation, just the inscribed angle: `o` is *on* the orbit, so the pin
-// seen from `o` moves at half the rate the crank turns it.)  And p itself needs no guess at
-// all, because "sixty from c and sixty from d, on the far side" meets in exactly one place.
+// An `angle` is directed, so which side of the frame the crank swings is in the residual
+// itself and no predicate has to say so; the ccw/cw lines pick which of the mirror poses
+// the elbows take, read once at the home angle and carried round by continuity.  The
+// seeds say only where to start looking: `b` at the edge of its own circle, and the elbows
+// split to either side of the arm — without that split, c and d start as one point, and a
+// solve that begins symmetric stays symmetric, folded flat.  (The bearing u/2 is no
+// derivation, just the inscribed angle: `o` is *on* the orbit, so the pin seen from `o` moves
+// at half the rate the crank turns it.)  And p itself needs no guess at all, because "sixty
+// from c and sixty from d, on the far side" meets in exactly one place.
 curve cell(o: point, q: point, datum: line, orbit: circle, arm: Length, side: Length)(u) =
   trace p from (90) where {
     point b at orbit bearing (u)
@@ -53,14 +55,13 @@ curve cell(o: point, q: point, datum: line, orbit: circle, arm: Length, side: Le
     point p
     line swing(q, b)
     point_on_circle(b, orbit)          // the crank pin on its circle...
-    angle(datum, swing) == u           // ...posed at bearing u,
+    angle(datum, swing) == u           // ...posed at bearing u — directed, so this side up,
     distance(o, c) == arm              // the two long arms,
     distance(o, d) == arm
     distance(b, c) == side             // and the kite closed round b and p
     distance(b, d) == side
     distance(p, c) == side
     distance(p, d) == side
-    ccw(o, q, b)                       // the crank pin above the frame, not below
     ccw(o, b, c)                       // c on the left of the arm...
     cw(o, b, d)                        // ...d on the right
     ccw(c, d, p)                       // and p on the far side of the kite from b

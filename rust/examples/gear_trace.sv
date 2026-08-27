@@ -16,12 +16,11 @@
 // other way for a negative one.  That is how a single definition serves both flanks of a tooth,
 // where a formula would need the sign threaded through every term by hand.
 //
-// One real ambiguity remains.  "At angle `u`" is only true to within a half turn, so `t` could
-// sit at that bearing or straight opposite it.  `ccw(datum.p1, datum.p2, t)` settles it by
-// naming which side of the datum line the point falls on.  That is a stated fact, not a starting
-// guess: it is read once, at a roll angle where the answer is unmistakable, and carried from
-// there along the whole curve — including round to where the flank has wound past the datum and
-// the statement would no longer read true if it were asked again.
+// No ambiguity remains.  An `angle` is directed — measured counter-clockwise from the datum's
+// own direction, on the full turn — so which side of the datum `t` falls is in the residual
+// itself, and it stays true however far the flank winds round.  Stated mod a half turn it
+// would need a `ccw` predicate to name the side, read once at a roll where the answer is
+// unmistakable and carried round by continuity.
 //
 // The datum line is where the angle is measured from, and it keeps the name `datum` in every
 // component that hands it down.
@@ -36,7 +35,6 @@ curve involute(c: circle, datum: line, phase: Angle)(u) =
     angle(datum, rad) == u + phase               // ...at bearing u from the datum,
     perpendicular(rad, s)                        // perpendicular to the radius there,
     point_line_distance(p, rad) == -(c.r * u * pi / 180)   // and taut: let out == arc unwound
-    ccw(datum.p1, datum.p2, t)                   // which of the two bearings mod 180: this one
   }
 
 // From here down the wheel is `gear.sv` unchanged — a flank between two circles, a tooth as two

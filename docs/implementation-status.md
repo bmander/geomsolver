@@ -44,8 +44,9 @@ LU against numpy — on purpose, because there is no LAPACK anywhere in the proj
   callout shows `h=40` or `=0.342`, the constraint list `h = w / 2 = 40`.
 * `kernels.rs` — one **vectorized residual/Jacobian kernel per constraint type**, evaluated for a
   whole block of same-typed constraints per call.  Registration order **is** the kernel id.
-  Squared distances, no sqrt; a determinant for parallel; dot/cross for angle; signed distance
-  minus the radius for tangency, with a chirality flag fixed at construction.
+  Squared distances, no sqrt; a determinant for parallel; a wrapped atan2 gap for the directed
+  angle; signed distance minus the radius for tangency, with a chirality flag fixed at
+  construction.
 * `system.rs` — **compile-to-plan**: constraints grouped into per-kernel blocks of flat arrays,
   the Jacobian's CSR structure and duplicate-summing scatter map computed once; each evaluation
   refills `data` only.  `update_consts` pushes a moved drag target or an edited dimension into the

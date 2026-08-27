@@ -4,8 +4,8 @@
 //! `v` is (n * n_par) local parameter values, `k` is (n * n_const) constants, `r` is (n * n_res)
 //! residuals and `j` is (n * n_res * n_par).  Column conventions match the `params` tuples the
 //! model builds; see the comment above each kernel.  Residual forms follow the program: squared
-//! distances (no sqrt), a determinant for parallel, dot/cross for angle, signed distance minus
-//! radius for tangency.
+//! distances (no sqrt), a determinant for parallel, a wrapped atan2 gap for the directed angle,
+//! signed distance minus radius for tangency.
 //!
 //! The order of `KERNELS` **is** the kernel id and is part of the plan ABI.
 
@@ -338,44 +338,95 @@ fn perpendicular_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     }
 }
 
-/// The dot and the cross of the two directions — what every angle form is written from.
+/// The dot and the cross of the two directions — the two components an angle is read from.
 #[inline]
 fn dot_cross(v: &[f64]) -> (f64, f64) {
     let (d1x, d1y, d2x, d2y) = dirs(v);
     (d1x * d2x + d1y * d2y, d1x * d2y - d1y * d2x)
 }
 
-/// `dot·sin θ − cross·cos θ`: zero exactly when the angle from l1 to l2 is θ, whether θ is a
-/// stated number or an unknown.  The caller passes its sine and cosine, which is where the two
-/// forms differ — one has them precomputed as constants, the other takes them of a column.
+/// An angle difference brought back to within half a turn: the gap between two bearings, with no
+/// lap in it.
+///
+/// Subtracting the nearest whole turn, rather than taking a remainder and folding it: `rem_euclid`
+/// is `fmod`, whose argument reduction costs more the further out the angle is, and a stated
+/// dimension is under no obligation to be within one lap of the pose (`u + phase` over a cycle of
+/// teeth is several).  This is flat at any magnitude.
+///
+/// At exactly half a turn `round` goes away from zero, so this is odd there — `+π ↦ −π` and
+/// `−π ↦ +π` — where folding a remainder would answer `+π` to both.  It is the one input whose
+/// sign is not determined by the arithmetic that produced it, and it is the pose farthest from
+/// the solution: the magnitude is π either way, both directions out of it are equally good, and
+/// nothing downstream reads the sign for anything but which way to turn first.  Worth knowing
+/// before assuming this and a placement wrap (`callout::wrap`) may be exchanged: they agree
+/// everywhere else and disagree here.
 #[inline]
-fn angle_gap(v: &[f64], s: f64, c: f64) -> f64 {
+fn wrap_turn(a: f64) -> f64 {
+    const TURN: f64 = 2.0 * std::f64::consts::PI;
+    a - TURN * (a * (1.0 / TURN)).round()
+}
+
+/// `wrap(atan2(cross, dot) − θ)`: zero exactly when the angle from l1's direction to l2's is θ,
+/// on the full turn and not merely mod half of one — see `CKind::Angle` for why that is the
+/// statement.
+///
+/// The residual is the angular gap itself, so it carries no power of length at all: degree 0,
+/// judged in absolute radians, and its gradient carries 1/length — which is exactly what
+/// `extent^(degree − 1)` says of it.  The wrap's cut sits at the pose farthest from the
+/// solution, where the residual is at its largest, so a descent runs away from it rather than
+/// across it.
+#[inline]
+fn angle_gap(v: &[f64], theta: f64) -> f64 {
     let (dot, cross) = dot_cross(v);
-    dot * s - cross * c
+    wrap_turn(cross.atan2(dot) - theta)
 }
 
 /// Its gradient in the eight direction columns.
+///
+/// The gap is a *difference* of two bearings — `atan2(d2) − atan2(d1)` — so each line's four
+/// columns see only its own direction: `∂/∂d1 = (d1y, −d1x)/|d1|²` and `∂/∂d2 = (−d2y, d2x)/|d2|²`,
+/// with each line's first endpoint carrying the negation of its second.  Written as one quotient
+/// over `dot² + cross²` the two lengths appear to be coupled and every slot needs a division;
+/// they are not, and `|d2|²` cancels out of the first four slots as `|d1|²` does out of the last
+/// four.  So the eight entries are four numbers and their negations, at two reciprocals.
+///
+/// Each `|dᵢ|²` is floored at `MIN_LINE_LEN` *squared*, so it gives out at exactly the line
+/// length `line_len` gives out at and for the same reason: a collapsed line would otherwise put a
+/// NaN where the solver reads "no error".  Both halves of that matter.  Flooring the two lines
+/// separately is what makes the guard a statement about a line at all — one floor over the
+/// product clamps `|d1|²|d2|²`, a length to the *fourth* power, and so bites at a line a million
+/// times longer than `MIN_LINE_LEN` names.  Squaring the constant is the rest of it: below the
+/// floor the gradient decays instead of growing, which is the opposite of what `MIN_LINE_LEN` is
+/// for, so the floor belongs where the length it is named for actually runs out.
 #[inline]
-fn angle_gap_jac(v: &[f64], s: f64, c: f64, j: &mut [f64]) {
-    let (mut jd, mut jc) = ([0.0f64; 8], [0.0f64; 8]);
-    dot_jac(v, &mut jd);
-    cross_jac(v, &mut jc);
-    for t in 0..8 {
-        j[t] = jd[t] * s - jc[t] * c;
-    }
+fn angle_gap_jac(v: &[f64], j: &mut [f64]) {
+    const MIN_LEN_SQ: f64 = MIN_LINE_LEN * MIN_LINE_LEN;
+    let (d1x, d1y, d2x, d2y) = dirs(v);
+    let i1 = 1.0 / (d1x * d1x + d1y * d1y).max(MIN_LEN_SQ);
+    let i2 = 1.0 / (d2x * d2x + d2y * d2y).max(MIN_LEN_SQ);
+    let (ax, ay) = (-d1y * i1, d1x * i1);
+    let (bx, by) = (d2y * i2, -d2x * i2);
+    j[0] = ax;
+    j[1] = ay;
+    j[2] = -ax;
+    j[3] = -ay;
+    j[4] = bx;
+    j[5] = by;
+    j[6] = -bx;
+    j[7] = -by;
 }
 
-/// K = (sin theta, cos theta): dot*sin - cross*cos
+/// K = (theta): the directed angle from l1 to l2 is theta, mod a full turn
 fn angle_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     for i in 0..n {
-        r[i] = angle_gap(&v[8 * i..], k[2 * i], k[2 * i + 1]);
+        r[i] = angle_gap(&v[8 * i..], k[i]);
     }
 }
 
-fn angle_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+fn angle_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 8 * i;
-        angle_gap_jac(&v[o..], k[2 * i], k[2 * i + 1], &mut j[o..o + 8]);
+        angle_gap_jac(&v[o..], &mut j[o..o + 8]);
     }
 }
 
@@ -1234,27 +1285,19 @@ fn vertical_distance_free_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
-/// (a1x,a1y,b1x,b1y,a2x,a2y,b2x,b2y,a), K = (m,c): dot*sin θ - cross*cos θ, θ = m*a + c.
-/// The angle itself is the unknown here rather than its sine and cosine, so the two constants
-/// the stated form carries precomputed are the affine map instead and the trigonometry moves
-/// into the kernel — which is what lets the column carry a derivative at all.
+/// (a1x,a1y,b1x,b1y,a2x,a2y,b2x,b2y,a), K = (m,c): wrap(atan2(cross, dot) − θ), θ = m*a + c
 fn angle_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     for i in 0..n {
         let o = 9 * i;
-        let (t, _) = free_dim(v, k, i, o + 8);
-        r[i] = angle_gap(&v[o..], t.sin(), t.cos());
+        r[i] = angle_gap(&v[o..], free_dim(v, k, i, o + 8).0);
     }
 }
 
 fn angle_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 9 * i;
-        let (t, m) = free_dim(v, k, i, o + 8);
-        let (s, c) = (t.sin(), t.cos());
-        angle_gap_jac(&v[o..], s, c, &mut j[o..o + 8]);
-        // d/dθ of (dot·sin θ − cross·cos θ), through the affine map
-        let (dot, cross) = dot_cross(&v[o..]);
-        j[o + 8] = (dot * c + cross * s) * m;
+        angle_gap_jac(&v[o..], &mut j[o..o + 8]);
+        j[o + 8] = -k[2 * i];
     }
 }
 
@@ -1475,7 +1518,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "vertical", n_res: 1, n_par: 4, degree: 1, n_const: 0, res: vertical::res, jac: vertical::jac, const_jac: Some(vertical::J) },
     Kernel { name: "parallel", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: parallel_res, jac: parallel_jac, const_jac: None },
     Kernel { name: "perpendicular", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: perpendicular_res, jac: perpendicular_jac, const_jac: None },
-    Kernel { name: "angle", n_res: 1, n_par: 8, degree: 2, n_const: 2, res: angle_res, jac: angle_jac, const_jac: None },
+    Kernel { name: "angle", n_res: 1, n_par: 8, degree: 0, n_const: 1, res: angle_res, jac: angle_jac, const_jac: None },
     Kernel { name: "equal_length", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: equal_length_res, jac: equal_length_jac, const_jac: None },
     Kernel { name: "point_on_line", n_res: 1, n_par: 6, degree: 2, n_const: 0, res: point_on_line_res, jac: point_on_line_jac, const_jac: None },
     Kernel { name: "point_on_circle", n_res: 1, n_par: 5, degree: 2, n_const: 0, res: point_on_circle_res, jac: point_on_circle_jac, const_jac: None },
@@ -1494,7 +1537,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "horizontal_distance", n_res: 1, n_par: 4, degree: 1, n_const: 1, res: horizontal_distance_res, jac: horizontal_distance_jac, const_jac: Some(HORIZONTAL_DISTANCE_J) },
     Kernel { name: "vertical_distance", n_res: 1, n_par: 4, degree: 1, n_const: 1, res: vertical_distance_res, jac: vertical_distance_jac, const_jac: Some(VERTICAL_DISTANCE_J) },
     Kernel { name: "distance_free", n_res: 1, n_par: 5, degree: 2, n_const: 2, res: distance_free_res, jac: distance_free_jac, const_jac: None },
-    Kernel { name: "angle_free", n_res: 1, n_par: 9, degree: 2, n_const: 2, res: angle_free_res, jac: angle_free_jac, const_jac: None },
+    Kernel { name: "angle_free", n_res: 1, n_par: 9, degree: 0, n_const: 2, res: angle_free_res, jac: angle_free_jac, const_jac: None },
     Kernel { name: "radius_free", n_res: 1, n_par: 2, degree: 1, n_const: 2, res: radius_free_res, jac: radius_free_jac, const_jac: None },
     Kernel { name: "parallel_distance_free", n_res: 1, n_par: 9, degree: 1, n_const: 2, res: parallel_distance_free_res, jac: parallel_distance_free_jac, const_jac: None },
     Kernel { name: "point_line_distance_free", n_res: 1, n_par: 7, degree: 1, n_const: 2, res: point_line_distance_free_res, jac: point_line_distance_free_jac, const_jac: None },

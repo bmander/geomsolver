@@ -105,6 +105,11 @@ ellipse_curvature(ellipse, circle)
 point_on_curve(p, curve)
 ```
 
+**`angle` is directed**: the full-turn angle from `l1`'s direction (p1→p2) to `l2`'s, positive
+counter-clockwise — the statement pins which side, not just the tilt, so a bearing needs no
+orientation predicate beside it. Swapping the lines or reversing one's endpoints negates or
+flips the reading, so mind which way each line was declared.
+
 **Tangency has a trap worth knowing.** If the contact point is already held on the circle, state
 the tangency *at* that point — `tangent_arc_line`, `tangent_line_circle_at` — rather than
 pairing
@@ -402,7 +407,6 @@ curve involute(c: circle, datum: line, phase: Angle)(u) over (0, 90) =
     angle(datum, rad) == u + phase                         // ...at bearing u from the datum,
     perpendicular(rad, s)                                  // square to the radius there,
     point_line_distance(p, rad) == -(c.r * u * pi / 180)   // and taut: let out == arc unwound
-    ccw(datum.p1, datum.p2, t)                             // which bearing mod 180: this one
   }
 
 point o hint at (0, 0)
@@ -429,9 +433,10 @@ The solver derives what §2.8 had to be derived by hand.
 Two details do real work. `point_line_distance` is **signed**, so the negative sign is what
 unwinds the string one way for a positive roll and the other for a negative one — which is why one
 family serves both flanks of a gear tooth, where a formula needs the sign threaded through every
-term. And `angle` is only true modulo half a turn, so `t` could sit at the bearing or opposite it;
-the `ccw` settles that, and `from (90 - phase)` names the one roll angle where the answer is
-unmistakable. It is read *there* and carried everywhere else.
+term. And `angle` is **directed**, so `t` sits at bearing `u + phase` and not opposite it — which
+side of the datum is in the residual itself, with no `ccw` needed to say so. Where a block has a
+genuinely discrete choice (two intersections of an elbow, say), `ccw(a, b, x)` still states it:
+read once at the `from (…)` home, and carried everywhere else by continuity.
 
 The remaining freedom is the contact's parameter again, exactly as in §2.8.
 

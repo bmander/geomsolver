@@ -691,3 +691,40 @@ fn a_run_is_drawn_along_the_page_and_reaches_both_points() {
     assert!((sk.point_xy(b).0 - 50.0).abs() < 1e-9, "{:?}", sk.point_xy(b));
     assert!((sk.point_xy(b).1 - 20.0).abs() < 1e-9, "the rise moved with the run");
 }
+
+/// An angular callout sweeps the angle its number states, not the half-turn reading of the same
+/// pose.  `angle_between` is an `atan2` and lands in (−π, π]; a dimension may name any lap.  While
+/// an angle was a statement mod half a turn either reading was as faithful, so the figure took
+/// the measured one; now 270° and −90° are different statements about the same pose, and a
+/// quarter-turn arc labelled "270°" is a drawing arguing with itself.
+#[test]
+fn an_angular_callout_sweeps_the_turn_its_number_states() {
+    let turn = |theta: f64, seed: (f64, f64)| {
+        let mut sk = Sketch::new();
+        let o = sk.point(0.0, 0.0, true, "o");
+        let a = sk.point(10.0, 0.0, true, "a");
+        let p = sk.point(seed.0, seed.1, false, "p");
+        let datum = sk.line(o, a);
+        let swing = sk.line(o, p);
+        sk.add(Constraint::distance(EntRef::point(o), EntRef::point(p), 10.0));
+        let id = sk.add(Constraint::new(
+            CKind::Angle,
+            vec![Arg::Ent(EntRef::line(datum)), Arg::Ent(EntRef::line(swing)), Arg::Num(theta)],
+        ));
+        assert!(solve(&mut sk, SolveOpts::default()).success, "{theta}");
+        let ks = layout(&sk, 1.0);
+        let k = ks.iter().find(|k| k.id == id).expect("the dimension is drawn").clone();
+        let arc = *k.arcs.first().expect("an angular callout draws an arc");
+        (k.text, arc.a1 - arc.a0)
+    };
+
+    // three quarters of a turn: the pose is the same one −90° describes, and the arc must not be
+    let (text, swept) = turn(1.5 * PI, (-2.0, -9.0));
+    assert_eq!(text, "270°");
+    assert!((swept - 1.5 * PI).abs() < 1e-9, "swept {swept}, stated 270°");
+
+    // and the ordinary case is untouched — no lap to add back
+    let (text, swept) = turn(PI / 2.0, (2.0, 9.0));
+    assert_eq!(text, "90°");
+    assert!((swept - PI / 2.0).abs() < 1e-9, "swept {swept}, stated 90°");
+}

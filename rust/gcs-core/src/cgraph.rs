@@ -98,6 +98,21 @@ pub struct Edge {
 
 /// dir(b) = dir(a) + phi (normals: n_b = rot(phi) n_a).  `phi` is the branch (mod pi) nearest the
 /// current geometry at build time — a chirality-like choice.
+///
+/// **Mod pi is the whole vocabulary here**, and it is weaker than two of its producers.  A line
+/// element has a direction and not a bearing, and `decompose`'s union-find accepts a join on the
+/// difference mod pi, so `Angle` at 0 and `Angle` at 180 — contradictory statements, since an
+/// angle is directed — join as one consistent class and the pair reads determined.  That costs
+/// nothing in rank (a direction relation is at most one either way, so `relation_bound` stays an
+/// upper bound and merge acceptance is unaffected); what it costs is that such a pair reaches a
+/// plan that cannot solve rather than being called a conflict, and falls to the numeric residue.
+/// `Parallel` and `Perpendicular` say exactly mod pi and are covered exactly.
+///
+/// The same gap is why a body's rotation is only ever pinned to within half a turn: `Wave` reads
+/// these classes, and an antipodal orientation satisfies the class while missing the constraint
+/// by pi.  Nothing in the plan forbids it — what rules it out is that a drag starts from a solved
+/// pose and moves continuously.  Raising `phi` to the full turn for `Angle` alone would not mend
+/// either: the mod-pi join is the ceiling, and a line element has no direction to hold the rest.
 #[derive(Clone, Copy, Debug)]
 pub struct DirRelation {
     pub a: El,
@@ -479,6 +494,8 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
                 let phi = branch(&[0.0, 1.0, 0.0], &normal_of(ax, ay, bx, by), target);
                 g.dirs.push(DirRelation { a: X_AXIS, b: v, phi, source: c.id });
             }
+            // an angle is directed and a direction class holds only mod pi — see `DirRelation`,
+            // which is where that gap and its consequences are written down
             CKind::Parallel | CKind::Perpendicular | CKind::Angle => {
                 let (i1, i2) = (c.args[0].ent().i(), c.args[1].ent().i());
                 let target = match c.kind {

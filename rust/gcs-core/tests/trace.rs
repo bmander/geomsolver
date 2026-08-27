@@ -308,7 +308,10 @@ fn a_gear_runs_on_a_traced_involute() {
 ///
 /// So: the same list of poses, evaluated in two orders and once as a scrambled walk that jumps
 /// the length of the domain between neighbours — worst case for a warm start, since every step
-/// is far.  The block carries a `ccw`, the case that never trusts a direct solve.
+/// is far.  The block carries a `ccw`, the case that never trusts a direct solve.  It is kept
+/// **on purpose** now that `angle` is directed and pins the side by itself: what is under test
+/// here is the resume, and a block with a predicate is the branch of it worth testing.  The
+/// shipped documents shed theirs; this one holds that path open.
 #[test]
 fn an_evaluation_does_not_depend_on_what_was_evaluated_before() {
     let src = "\
@@ -615,34 +618,56 @@ fn a_geometric_seed_outside_a_trace_block_is_refused() {
     );
 }
 
-/// **A branch is a stated fact.**  No seed anywhere: the block's points start wherever the
-/// deterministic restarts land them, and `ccw(datum.p1, datum.p2, t)` — an orientation
-/// predicate, the spec's own instrument for selecting among discrete solution components —
-/// says which of the two bearings mod 180 the solve must be in.  `from (90)` anchors the
-/// reading where the predicate is unambiguous; continuity carries it round the full circle,
-/// including the half where the ccw itself no longer reads true.
+/// **A branch is a stated fact.**  No seed anywhere: the block's point starts wherever the
+/// deterministic restarts land it, and `ccw(datum.p1, datum.p2, t)` — an orientation predicate,
+/// the spec's own instrument for selecting among discrete solution components — says which of
+/// the circle's two crossings of the vertical `x = centre.x + r·cos u` is meant.  `from (90)`
+/// anchors the reading a quarter turn from either crossing, where the two stand farthest apart.
+///
+/// The point of the test is the second half of §6.5.1's rule: a predicate is read **at the home
+/// only**, and an implementation MUST NOT re-enforce it elsewhere — so the branch is carried on
+/// to where the predicate itself reads *false*, and the curve stays on it.
+///
+/// **The datum is deliberately not the mirror axis, and levelling it would gut this test.**  The
+/// two solutions are mirrored in the horizontal through the centre (that is what the
+/// `horizontal_distance` row says); the predicate is read against `datum`, tilted to (2, 1).
+/// Because the two lines differ, the chosen branch crosses the datum at `tan u = 1/2` while the
+/// pair itself never merges — so the predicate flips partway along a branch that stays
+/// unambiguous.  Were the datum horizontal, a predicate flip and a branch fold would be the same
+/// event (an *angle* stated mod 180 was the old fixture, and that is exactly how it read), the
+/// domain would have to stop short of both, and the test would pass without ever exercising the
+/// rule in its name.
 #[test]
 fn a_branch_is_a_stated_fact() {
     let family = "\
-curve rim(c: circle, datum: line)(u) over (0, 350) =
-  trace p from (90) where {
+curve rim(c: circle, datum: line)(u) over (10, 170) =
+  trace t from (90) where {
     point t
-    point p
-    line rad(c.center, t)
     point_on_circle(t, c)
-    angle(datum, rad) == u
-    coincident(p, t)
+    horizontal_distance(c.center, t) == c.r * cos(u)
     ccw(datum.p1, datum.p2, t)
   }
 ";
+    // `ax` puts the datum along (2, 1).  Not chosen by eye: at 45° the restart path reflects the
+    // point to where the `horizontal_distance` gradient is parallel to the circle's and the home
+    // solve has a singular Jacobian.
     let doc = "\
 point  o at (2, 1)
-point  ax at (3, 1)
+point  ax at (4, 2)
 line   datum(o, ax) construction
 circle base(center: o, r: 7)
 curve  w = rim(base, datum)
 ";
-    for (pred, flip) in [("ccw", 0.0f64), ("cw", 180.0)] {
+    // `ccw(o, ax, t)` read on the traced point: the datum's direction crossed into o→t.  Taken
+    // off the elaborated sketch rather than written out, so that levelling the datum in `doc`
+    // changes this reading too — which is what makes the assertion below a real guard.
+    let reads_true = |sk: &gcs_core::model::Sketch, t: (f64, f64)| {
+        let l = &sk.lines[0];
+        let (ax, ay) = sk.point_xy(l.p1 as usize);
+        let (bx, by) = sk.point_xy(l.p2 as usize);
+        (bx - ax) * (t.1 - ay) - (by - ay) * (t.0 - ax) > 0.0
+    };
+    for (pred, flip) in [("ccw", 1.0f64), ("cw", -1.0)] {
         let src = format!("{}{doc}", family.replace("ccw(", &format!("{pred}(")));
         let e = build(&src);
         assert!(
@@ -650,17 +675,26 @@ curve  w = rim(base, datum)
             "{pred}: {:?}",
             e.errors().map(|d| (d.code.as_str(), &d.message)).collect::<Vec<_>>()
         );
-        // the whole circle, on the component the predicate names: cw is the mirror reading,
-        // and picks the opposite bearing
-        for u in [0.0f64, 90.0, 200.0, 350.0] {
-            let b = (u + flip).to_radians();
+        // the whole arc, on the component the predicate names: cw is the mirror reading, and
+        // picks the bearing on the other side of the centre
+        let mut seen = (false, false);
+        for u in [10.0f64, 90.0, 170.0] {
+            let b = (flip * u).to_radians();
             let want = (2.0 + 7.0 * b.cos(), 1.0 + 7.0 * b.sin());
             let got = e.sketch.curve_point(0, u);
             assert!(
                 (got.0 - want.0).abs() < 1e-8 && (got.1 - want.1).abs() < 1e-8,
                 "{pred} at u = {u}: rim {want:?}, trace {got:?}",
             );
+            match reads_true(&e.sketch, got) {
+                true => seen.0 = true,
+                false => seen.1 = true,
+            }
         }
+        // and the branch was carried past the predicate's own truth: had the datum been levelled
+        // onto the mirror axis the predicate would read one way for the whole domain, the curve
+        // above would still be traced correctly, and this test would guard nothing
+        assert_eq!(seen, (true, true), "{pred}: the predicate never flips along the branch");
     }
 }
 

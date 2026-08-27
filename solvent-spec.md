@@ -279,10 +279,9 @@ curve involute(c: circle, datum: line, phase: Angle)(u) =
     line rad(c.center, t)
     line s(t, p)
     point_on_circle(t, c)                                // the string leaves the circle...
-    angle(datum, rad) == u + phase                       // ...at bearing u,
+    angle(datum, rad) == u + phase                       // ...at bearing u — directed, so this side
     perpendicular(rad, s)                                // perpendicular to the radius there,
     point_line_distance(p, rad) == -(c.r * u * pi / 180) // and taut: let out == arc unwound
-    ccw(datum.p1, datum.p2, t)                           // which bearing mod 180: this one
   }
 ```
 
@@ -290,8 +289,8 @@ A dimension in the block may be an expression over the parameter, the formals' c
 
 **Branches.** A locus generically has several solutions, and a block states its way onto one — three instruments, in order of strength:
 
-1. **A signed constraint,** wherever the vocabulary can say it. Above, the taut string's winding is not a branch at all, because `point_line_distance` is signed: one equation unwinds the string one way for positive roll and the other for negative, where an unsigned `distance` would have left a mirror pair for something else to break.
-2. **An orientation predicate.** `ccw(a, b, x)` / `cw(a, b, x)` in a block is §9.6's statement doing §9.6's job: it contributes no residual and *selects among the discrete solution components*. Its third point MUST be one the block places. Above, it settles the one branch a residual cannot — `angle` is a statement mod 180°, so `t` could sit at the bearing or opposite it, and the ccw says which. A predicate is read **at the home** — the parameter value `from (expr)` names (the expression is over the formals and the family's values; absent, the instance's domain begins evaluation) — and an implementation MUST enforce it there (reflect the placed point across the oriented line and solve again) and MUST NOT re-enforce it elsewhere: away from the home, continuity governs, and the component the predicate picks at the home is the component the whole curve is on, even where the curve has since wound to where the predicate no longer reads true. Choose the home so the predicates read unambiguously — above, the roll at which the string points squarely to the datum's counter-clockwise side. A block with predicates needs no seeds at all: an implementation MUST fall back to deterministic restarts when the seeds (or their absence) leave the home solve nowhere to start.
+1. **A signed constraint,** wherever the vocabulary can say it. Above, *neither* choice is a branch at all: `angle` is directed (§9.4), so `t` sits at the bearing and not opposite it, and `point_line_distance` is signed, so one equation unwinds the string one way for positive roll and the other for negative — where a half-turn angle and an unsigned `distance` would each have left a mirror pair for something else to break.
+2. **An orientation predicate.** `ccw(a, b, x)` / `cw(a, b, x)` in a block is §9.6's statement doing §9.6's job: it contributes no residual and *selects among the discrete solution components*. Its third point MUST be one the block places. It settles the branches a residual cannot — an elbow's two intersections, say, where the distances hold on either side and only the orientation tells the poses apart. A predicate is read **at the home** — the parameter value `from (expr)` names (the expression is over the formals and the family's values; absent, the instance's domain begins evaluation) — and an implementation MUST enforce it there (reflect the placed point across the oriented line and solve again) and MUST NOT re-enforce it elsewhere: away from the home, continuity governs, and the component the predicate picks at the home is the component the whole curve is on, even where the curve has since wound to where the predicate no longer reads true. Choose the home so the predicates read unambiguously — the pose at which the two components stand farthest apart. A block with predicates needs no seeds at all: an implementation MUST fall back to deterministic restarts when the seeds (or their absence) leave the home solve nowhere to start.
 3. **A seed.** What neither an equation nor a predicate says, a seed says: the block's `at` seeds are places over the parameter and the formals, evaluation starts from them, and away from them continuity governs — an implementation MUST evaluate the curve as one continuation along the parameter, so the branch picked at the home is the branch everywhere. Deleting a seed still traces *a* branch, from a worse start — the same bargain a contact's `u = …` seed strikes in §4.3.
 
 **Places, not coordinates.** Inside a trace block a seed is a *place*, and this language names places geometrically: `point t hint at c bearing (u + phase)` is the point at the edge of circle `c` at that bearing from the page's x-axis, and `point p hint at t` is wherever `t` starts (a point already named must be declared first). Both lower to exactly what the coordinate spelling would — the bearing form is `centre + r·(cos β, sin β)` said the way a draughtsman says it — so the coordinate form `hint at (xexpr, yexpr)` remains available and means the same thing. Outside a trace block a seed is a number a solve writes back, which a place named by reference is not, so the geometric forms are trace-block-only (**E103** elsewhere).
@@ -387,6 +386,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `coincident(p, q)` | p − q | 2 | for *distinct* entities; see **W100** |
 | `distance(p, q) == e` | ‖p − q‖ − e | 1 | |
 | `angle(a, b, c) == e` | ∠(a−b, c−b) − e | 1 | signed; see §9.4 |
+| `angle(L1, L2) == e` | wrap(∠(dir(L1), dir(L2)) − e) | 1 | directed, mod 2π; see §9.4 |
 | `parallel(L1, L2)` | sin(L1.dir − L2.dir) | 1 | |
 | `perpendicular(L1, L2)` | cos(L1.dir − L2.dir) | 1 | |
 | `tangent(C1, C2)` | ‖c1−c2‖ − (r1 + r2) *or* ‖c1−c2‖ − \|r1 − r2\| | 1 | branch by decoration, §9.5 |
@@ -403,6 +403,8 @@ Implementations MAY extend this library. Extensions MUST document residuals and 
 ### 9.4 Signed angles
 
 `angle(a, b, c)` is the signed turn at vertex `b` from ray `b→a` to ray `b→c`, positive counterclockwise, in (−π, π]. Equating it to an expression is a 1-equation constraint. Programs that need the unsigned angle write `abs(angle(...))`; implementations MUST warn (**W102**) that `abs` introduces a branch (two solution families) unless an orientation predicate elsewhere disambiguates.
+
+`angle(L1, L2)` between two lines is likewise directed: `∠(dir(L1), dir(L2))`, the signed turn from `L1`'s direction (p1→p2) to `L2`'s, positive counterclockwise, in (−π, π] as everywhere else in this section. It is NOT a statement mod a half turn — the residual pins which side, so a bearing needs no orientation predicate beside it — and it is therefore sensitive to the order of the two lines and to the endpoint order each was declared with. Equating it to `e` compares the two mod 2π, so `e` may be written on any lap: 270° and −90° state the same thing, and an implementation MUST NOT treat a stated angle outside (−π, π] as an error.
 
 ### 9.5 Branch decorations are constraints
 

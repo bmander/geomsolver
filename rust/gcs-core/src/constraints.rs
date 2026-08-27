@@ -6,8 +6,8 @@
 //! covered everywhere as soon as it declares one.
 //!
 //! Residual forms follow the program: distance uses |p−q|² − d² (no sqrt), parallel is a 2×2
-//! determinant, angle a dot/cross combination, tangency a signed distance minus the radius with
-//! a chirality flag fixed at construction.
+//! determinant, angle a wrapped atan2 gap (directed, so it needs no chirality), tangency a
+//! signed distance minus the radius with a chirality flag fixed at construction.
 
 use crate::expr::Free;
 use crate::kernels::{self, K};
@@ -23,6 +23,12 @@ pub enum CKind {
     Vertical,
     Parallel,
     Perpendicular,
+    /// The *directed* angle: the full-turn angle from l1's direction (p1→p2) to l2's, positive
+    /// counter-clockwise — exactly the value `model::angle_between` reads and the dimension
+    /// dialog offers.  Not a statement mod half a turn: stated that way, every use that meant a
+    /// bearing had to drag an orientation predicate behind it to pick the side, where here the
+    /// winding is algebraic in the residual itself — the strongest of the three branch
+    /// instruments (spec §6.5.1) — and a trace block posing a crank by its angle needs no `ccw`.
     Angle,
     ParallelDistance,
     EqualLength,
@@ -950,13 +956,10 @@ impl Constraint {
             CKind::DragTarget => {
                 vec![self.args[1].num(), self.args[2].num(), self.args[3].num()]
             }
-            CKind::Angle => {
-                let t = self.args[2].num();
-                vec![t.sin(), t.cos()]
-            }
-            CKind::ParallelDistance | CKind::PointLineDistance | CKind::AnnularDistance => {
-                vec![self.args[2].num()]
-            }
+            CKind::Angle
+            | CKind::ParallelDistance
+            | CKind::PointLineDistance
+            | CKind::AnnularDistance => vec![self.args[2].num()],
             CKind::Radius => vec![self.args[1].num()],
             CKind::TangentLineCircle => vec![self.args[2].num()],
             CKind::TangentCircleCircle => {
