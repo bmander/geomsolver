@@ -13,6 +13,7 @@
  * rows only when the contents actually changed, so a caret and a scroll position survive an edit
  * made elsewhere; `dimbox.ts` will not overwrite a box somebody is in.  A panel that reprinted on
  * every solve would take the line out from under the cursor. */
+import type { Mark } from './editor.js';
 import type { Diagnostic, SourceMap, SourceSpan } from '../core/program.js';
 import { currentConstraint, pdiags, ped, ppanel, ppanelState, psplit, view } from './shell.js';
 import { toast } from './ui.js';
@@ -128,7 +129,7 @@ export function refreshProgram(): void {
   const text = view.source;
   if (text === shown) return;
   shown = text;
-  ped.setText(text, litSpan());   // the spans moved with the text, so the mark moves with it
+  ped.setText(text, marks());   // the spans moved with the text, so the marks move with them
   ppanel.classList.remove('dirty');
   ppanelState.textContent = '';
   showDiags(view.doc.diagnostics);
@@ -155,6 +156,12 @@ export function applyProgram(): boolean {
   shown = text;
   ppanel.classList.remove('dirty');
   ppanelState.textContent = '';
+  // The solve and the diagnosis happened inside `setProgram`, back when `typed` was still true —
+  // so the refresh it triggered took the early exit above and the marks still describe the
+  // document as it was before this apply.  Nothing will come back for them, either: `shown` now
+  // equals the text, so the next `refreshProgram` returns at its own guard.  This is the moment
+  // the panel stops being a draft, and so the moment it has to catch up with what was judged.
+  markStatement();
   return view.doc.ok;
 }
 
@@ -200,9 +207,41 @@ function litSpan(): SourceSpan | null {
   return at ?? null;
 }
 
-/** Mark the statement whatever is picked was written as, and nothing else.
+/** Every stretch of the source that is marked: the statement whatever is picked was written as,
+ *  and each `claim` (§9.7) tinted by how the diagnosis judged it.
  *
- *  Cheap enough to call whenever anything might have moved — `setLit` returns without painting
+ *  A claim is judged where it is *written*, because that is what it is — a sentence in the
+ *  document, not a state of the drawing.  It is also the quietest place to say so, which is the
+ *  point: this app is for sketching, and a claim is a remark somebody left in the margin.  A
+ *  wash of colour behind the statement is as much attention as proving should ever ask for, and
+ *  it costs the drawing none at all.
+ *
+ *  The three verdicts are the classical trichotomy, and the words are chosen to be exact:
+ *  *proved*, the document entails it; *refuted*, this drawing is a counterexample; *independent*,
+ *  true here but not implied — stating it would have cost a freedom. */
+function marks(): Mark[] {
+  const out: Mark[] = [];
+  const lit = litSpan();
+  if (lit) out.push({ lo: lit.lo, hi: lit.hi, cls: 'lit' });
+  const d = view.diagnosis;
+  if (!d) return out;
+  const doc = view.doc;
+  for (const [cs, cls] of [
+    [d.claimsTheorem, 'claim-proved'],
+    [d.claimsViolated, 'claim-refuted'],
+    [d.claimsConsuming, 'claim-independent'],
+  ] as const) {
+    for (const c of cs) {
+      const at = doc.spanOfConstraint(c.id);
+      if (at) out.push({ lo: at.lo, hi: at.hi, cls });
+    }
+  }
+  return out;
+}
+
+/** Mark the statement whatever is picked was written as, and the claims the diagnosis has judged.
+ *
+ *  Cheap enough to call whenever anything might have moved — `setMarks` returns without painting
  *  when the range is the one it already has — **except during a gesture**, where it is not:
  *  a rubber band fires `onSelect` every frame, the leading edge sweeping past an element changes
  *  which one is first, and repainting the whole copy mid-sweep would spend a millisecond a frame
@@ -210,7 +249,7 @@ function litSpan(): SourceSpan | null {
  *  through here. */
 export function markStatement(): void {
   if (ppanel.hidden || typed || view.gesture) return;
-  ped.setLit(litSpan());
+  ped.setMarks(marks());
 }
 
 /** Mark it *and* bring it on screen — what a deliberate pick does, as against the drawing moving

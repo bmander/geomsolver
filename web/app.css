@@ -98,24 +98,21 @@ label.check { display: inline-flex; align-items: center; gap: 4px; cursor: point
 #banner.over { display: flex; background: var(--warn-bg); color: var(--warn); border-bottom: 1px solid #e69500; }
 #banner-text { flex: 1; min-width: 0; }
 
-/* The claims strip.  A claim is judged, never enforced, so none of these is an error state the
-   way #banner's are: `proved` is the good news a claim is written to get, and even `failed` is
-   a report about the document rather than something the solver could not do. */
-#claims { display: none; align-items: center; gap: 10px; padding: 6px 12px; flex: none;
-          font-size: 13px; border-bottom: 1px solid transparent; }
-#claims.proved   { display: flex; background: var(--ok-bg); color: var(--ok);
-                   border-bottom-color: var(--ok); }
-#claims.failed   { display: flex; background: var(--danger-bg); color: #8a0000;
-                   border-bottom-color: #d62728; }
-#claims.consuming { display: flex; background: var(--warn-bg); color: var(--warn);
-                   border-bottom-color: #e69500; }
-#claims-text { flex: 1; min-width: 0; }
+#clist li.claim-proved      { color: var(--ok); }
+#clist li.claim-refuted     { color: #d62728; }
+#clist li.claim-independent { color: #b06d00; }
 
-/* A claim's row in the constraints window, by verdict.  `theorem` is not a fault and must not
-   read as one — the drawing proves it, which is what the claim was written to find out. */
-#clist li.claim-theorem   { color: var(--ok); }
-#clist li.claim-violated  { color: #d62728; }
-#clist li.claim-consuming { color: #b06d00; }
+/* A claim's verdict, washed behind the statement that made it (`app/program.ts::marks`).
+   Background only — a border or a padding here would advance the copy's glyphs past the box's
+   and put the caret beside the character it is on; see the four rules in `app/editor.ts`.
+
+   Deliberately faint: this app is for sketching, and a claim is a remark in the margin, so a
+   verdict should be legible when looked at and invisible when not.  `proved` is the faintest of
+   the three because it is the expected answer and the one nobody needs to act on; `refuted` is
+   the strongest because it is the only one that is news. */
+.claim-proved      { background: rgba(46, 139, 66, 0.13); }
+.claim-refuted     { background: rgba(214, 39, 40, 0.20); }
+.claim-independent { background: rgba(230, 149, 0, 0.17); }
 
 main { flex: 1; display: flex; min-height: 0; }
 #canvas-wrap { flex: 1; position: relative; min-width: 0; }

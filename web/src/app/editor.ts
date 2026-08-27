@@ -42,6 +42,13 @@ export interface Extent { lo: number; hi: number }
 
 export interface Run extends Extent { cls: string }
 
+/** A stretch a caller has asked to be marked, and what to call it.  What it *means* is the
+ *  caller's business; this class knows only that those characters carry one more class.
+ *
+ *  Marks may overlap — a statement can be both picked and judged — and a character under two of
+ *  them carries both classes, so the stylesheet composes them rather than either one winning. */
+export interface Mark extends Extent { cls: string }
+
 /** Past this the colouring is dropped and the text is shown plain: one span per run stops being
  *  free long before a textarea's own limit, and a file this long is not one anybody is reading a
  *  word of.  Typing stays instant, which is the thing that must not be traded. */
@@ -53,14 +60,15 @@ export class CodeEditor {
   readonly box: HTMLTextAreaElement;
   private readonly copy: HTMLPreElement;
   private readonly colour: (text: string) => Run[];
-  /** A range a caller has asked to be marked.  What it *means* is the caller's business; this
-   *  class knows only that those characters carry one more class than their neighbours.
+  /** The ranges a caller has asked to be marked, in no particular order and possibly overlapping.
    *
    *  Marked with a class and **never with a weight**.  The box in front of this copy is one
    *  face throughout; a bold here would advance its glyphs differently from the box's, and
    *  every character after it on the line would sit beside the one the caret is on.  See the
-   *  four rules in this file's header — this is the third of them. */
-  private lit: Extent | null = null;
+   *  four rules in this file's header — this is the third of them.  A background, a box-shadow
+   *  or an outline is safe, since none of the three takes any room; a border or a padding is
+   *  the same mistake as a bold. */
+  private marks: Mark[] = [];
   /** The last colouring, against the text it was made from.  Colouring crosses the ABI and
    *  re-lexes the document, and a repaint that only moved the *mark* has the same text and so
    *  the same runs — which used to be paid for again anyway. */
@@ -94,11 +102,11 @@ export class CodeEditor {
   /** Put text in, colour it, and leave the caret and the scroll where they were.  The caller
    *  decides whether that is the right thing; this only promises not to move them itself.
    *
-   *  `lit` comes with the text because it usually moves with it: a splice shifts every offset
-   *  after it, so setting the two apart would repaint once against the old mark and again
-   *  against the new one. */
-  setText(text: string, lit?: Extent | null): void {
-    if (lit !== undefined) this.lit = lit;
+   *  The marks come with the text because they usually move with it: a splice shifts every offset
+   *  after it, so setting the two apart would repaint once against the old marks and again
+   *  against the new ones. */
+  setText(text: string, marks?: Mark[]): void {
+    if (marks !== undefined) this.marks = marks;
     const { selectionStart, selectionEnd, scrollTop, scrollLeft } = this.box;
     this.box.value = text;
     this.repaint();
@@ -108,12 +116,16 @@ export class CodeEditor {
     this.follow();
   }
 
-  /** Mark a range, or nothing.  Repaints only when it actually moved, so a gesture that keeps
-   *  landing on the same range costs one paint and not sixty. */
-  setLit(range: Extent | null): void {
-    const a = this.lit, b = range;
-    if (a && b ? a.lo === b.lo && a.hi === b.hi : a === b) return;
-    this.lit = range;
+  /** Mark these ranges and no others.  Repaints only when the set actually changed, so a gesture
+   *  that keeps landing on the same statement costs one paint and not sixty. */
+  setMarks(marks: Mark[]): void {
+    const a = this.marks;
+    if (a.length === marks.length
+        && a.every((m, i) => m.lo === marks[i].lo && m.hi === marks[i].hi
+                          && m.cls === marks[i].cls)) {
+      return;
+    }
+    this.marks = marks;
     this.repaint();
   }
 
@@ -121,7 +133,7 @@ export class CodeEditor {
   repaint(): void {
     const text = this.text;
     const out = document.createDocumentFragment();
-    const lit = this.lit;
+    const marks = this.marks;
     /** One piece of one colour: a bare string where it has nothing to say, a span where it has. */
     const piece = (a: number, b: number, cls: string): void => {
       if (b <= a) return;
@@ -134,16 +146,27 @@ export class CodeEditor {
       span.textContent = text.slice(a, b);
       out.append(span);
     };
-    /* One stretch of text, cut where the mark starts and ends so it covers the punctuation
-     * *between* coloured runs too — a statement is spans and gaps, and half a marked statement
-     * would look like a colouring bug.  Nothing marked puts both cuts at the end, and so does a
-     * range lying outside this stretch, which is how those cases need no branch of their own. */
+    /* One stretch of text, cut wherever a mark starts or ends inside it, so a mark covers the
+     * punctuation *between* coloured runs too — a statement is spans and gaps, and half a marked
+     * statement would look like a colouring bug.  Cutting at every boundary rather than at one
+     * mark's is what lets marks overlap: each piece carries the classes of every mark over it,
+     * so a statement that is both picked and judged says both. */
     const put = (from: number, to: number, cls: string): void => {
+      // an empty or inverted stretch contributes nothing.  Worth its own line: the tiling below
+      // sorts its edges, so an inverted one would come back the right way round and emit the text
+      // between them — characters appearing in the copy that the box does not have, which is the
+      // one bug this whole class is built to avoid.
+      if (to <= from) return;
       const cut = (i: number): number => Math.min(Math.max(i, from), to);
-      const [lo, hi] = lit ? [cut(lit.lo), cut(lit.hi)] : [to, to];
-      piece(from, lo, cls);
-      piece(lo, hi, cls ? `${cls} lit` : 'lit');
-      piece(hi, to, cls);
+      const edges = [from, to];
+      for (const m of marks) edges.push(cut(m.lo), cut(m.hi));
+      edges.sort((a, b) => a - b);
+      for (let i = 0; i + 1 < edges.length; i += 1) {
+        const [a, b] = [edges[i], edges[i + 1]];
+        if (b <= a) continue;
+        const over = marks.filter((m) => m.lo <= a && m.hi >= b).map((m) => m.cls);
+        piece(a, b, [cls, ...over].filter(Boolean).join(' '));
+      }
     };
     let at = 0;
     if (text.length <= MAX_COLOUR) {

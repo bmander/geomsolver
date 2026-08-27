@@ -233,12 +233,24 @@ Conventions:
   claimed dimension **parenthesised** — the draughtsman's *reference dimension*, which says "this
   is what it measures, and it is not what controls it", a claim exactly.  The parentheses wrap
   the whole label (`(R50)`, never `R(50)`) and wrap *before* the text is measured, so the lane it
-  is given and the box it is picked by are the size of what is drawn.  The app then adds only
-  colour and placement: a claims strip of its own (`#claims`, `lists::refreshClaims`) rather than
-  a second meaning loaded onto `#banner`, because a claim's verdict is orthogonal to the sketch's
-  status — a `Well` drawing can carry one that does not hold, and that is news no banner state
-  can express.  It reports the good case too: a claim is written to have the drawing prove it, so
-  "proved" is the answer it was asked for.
+  is given and the box it is picked by are the size of what is drawn.
+  **A verdict is shown where the claim is written, and quietly.**  The app is for *sketching*;
+  proving is a remark in the margin, so there is no banner and no status — just a wash of colour
+  behind the statement in the program panel (`app/program.ts::marks`, `.claim-proved` /
+  `.claim-refuted` / `.claim-independent`), legible when looked at and invisible when not.
+  `proved` is the faintest, being the expected answer; `refuted` the strongest, being the only
+  one that is news.  The words are the classical trichotomy and are meant exactly: *proved* (the
+  document entails it), *refuted* (this drawing is a counterexample), *independent* (true here,
+  but not implied — stating it would have cost a freedom).  Not "inconsistent": under-constrained,
+  a refuted claim may still hold at some other solution, so what is known is the counterexample
+  and not the contradiction.
+  `CodeEditor` therefore carries a *set* of marks rather than one lit range, and they may overlap
+  (a picked statement that is also judged) — a mark tints and **never changes the face**, and
+  background/box-shadow/outline are the safe properties while border/padding are not.  The
+  splitting that composes overlapping marks is what `npm run overlay` guards: it drives the real
+  `CodeEditor` in headless Chrome, and it is the only check that can see a dropped or repeated
+  character moving every glyph after it.  Run it when you touch `editor.ts` — `make test` cannot,
+  since it needs Chrome.
 - `same_constraint` is "says exactly the same thing"; `same_relation` is the same *without* the
   numbers — same type, same entities, same flags.  A repeated *relation* is refused by the app
   (`edit::applyConstraints`): it says nothing the sketch does not already say and adds equations

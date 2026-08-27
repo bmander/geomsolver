@@ -23,10 +23,16 @@ const { text, runs, lit } = window.CASE;
 
 const ed = new CodeEditor(document.getElementById('pcode'), () => runs);
 ed.setText(text);
-// and mark a range, because a mark is the other thing that can move a glyph: `.lit` may tint and
-// thicken an outline, never change the face.  The check below is exactly the one that catches it
-// if it ever does.
-ed.setLit(lit);
+// and mark some ranges, because a mark is the other thing that can move a glyph: a mark's class
+// may tint, never change the face.  The check below is exactly the one that catches it if it
+// ever does.  Two of them *overlap*, since marks may — a claim's verdict under the statement a
+// pick has also lit — and an overlap is where the run-splitting is easiest to get wrong: a
+// dropped or repeated character there moves every glyph after it on the line.
+ed.setMarks([
+  { ...lit, cls: 'lit' },
+  { lo: lit.lo, hi: Math.floor((lit.lo + lit.hi) / 2), cls: 'claim-proved' },
+  { lo: Math.floor((lit.lo + lit.hi) / 2), hi: lit.hi + 20, cls: 'claim-refuted' },
+]);
 
 const copy = document.querySelector('.code-copy');
 const box = ed.box;
