@@ -1312,6 +1312,31 @@ test('expressions round-trip through the document and survive a rebuild', () => 
   sk3.dispose();
 });
 
+test('a claim reads as one, and a claimed dimension is drawn as a reference dimension', () => {
+  // what the app puts in a constraint row and on a callout comes from the core, so both
+  // bindings say the same thing about a claim and neither has a rule of its own
+  const sk = examples.peaucellier();
+  assert.ok(solve(sk).success);
+  const claim = sk.userConstraints().find((c) => c.claim)!;
+  assert.ok(claim, 'peaucellier ends on a claim');
+  assert.ok(io.describe(claim).startsWith('claim '), io.describe(claim));
+
+  const d = diagnose(sk);
+  assert.deepEqual(d.claimsTheorem, [claim], 'the straight line is a theorem');
+  assert.equal(d.claimsViolated.length + d.claimsConsuming.length, 0);
+  // and the claim is none of the ordinary readings, which is what lets the row say only its own
+  assert.equal(d.over.length, 0);
+  assert.ok(!d.implied.includes(claim));
+
+  // a claimed dimension draws in parentheses; pythagoras is the case that has one
+  const py = examples.pythagoras(30, 40);
+  assert.ok(solve(py).success);
+  const cc = py.userConstraints().find((c) => c.claim)!;
+  const k = callouts(py, 1).items.find((it) => it.id === cc.id)!;
+  assert.ok(k, 'the claimed hypotenuse is drawn');
+  assert.ok(k.text.startsWith('(') && k.text.endsWith(')'), k.text);
+});
+
 test('pythagoras drawn with expressions holds, and stays true when a leg is edited', () => {
   // four a×b right triangles in a square of side a + b leave a square whose side is *claimed*
   // to be `c = hypot(a, b)`: judged a theorem, and still one after a leg is edited

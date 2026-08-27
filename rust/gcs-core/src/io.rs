@@ -869,5 +869,10 @@ pub fn describe(c: &Constraint) -> String {
             }
         })
         .collect();
-    format!("{}({})", c.type_name(), parts.join(", "))
+    // a claim is a different statement from the relation it is written over — it is judged, not
+    // solved for — so it says so wherever a constraint is read out, in the word the document
+    // spells it with.  The rule is here because the constraint list, the banner and both
+    // bindings all ask this one function what a constraint is.
+    let claim = if c.claim { "claim " } else { "" };
+    format!("{claim}{}({})", c.type_name(), parts.join(", "))
 }

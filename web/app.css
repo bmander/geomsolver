@@ -12,6 +12,9 @@
   --danger-bg: #fdecea;
   --warn: #7a4a00;
   --warn-bg: #fff4e0;
+  /* a claim the drawing proves is the one piece of good news the page has to report */
+  --ok: #1e6b2e;
+  --ok-bg: #eaf6ec;
   --row-sel: #fce4f3;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   /* the program's colours.  The core says what class a run of the source is; these say what the
@@ -94,6 +97,25 @@ label.check { display: inline-flex; align-items: center; gap: 4px; cursor: point
 #banner.conflict { display: flex; background: var(--danger-bg); color: #8a0000; border-bottom: 1px solid #d62728; }
 #banner.over { display: flex; background: var(--warn-bg); color: var(--warn); border-bottom: 1px solid #e69500; }
 #banner-text { flex: 1; min-width: 0; }
+
+/* The claims strip.  A claim is judged, never enforced, so none of these is an error state the
+   way #banner's are: `proved` is the good news a claim is written to get, and even `failed` is
+   a report about the document rather than something the solver could not do. */
+#claims { display: none; align-items: center; gap: 10px; padding: 6px 12px; flex: none;
+          font-size: 13px; border-bottom: 1px solid transparent; }
+#claims.proved   { display: flex; background: var(--ok-bg); color: var(--ok);
+                   border-bottom-color: var(--ok); }
+#claims.failed   { display: flex; background: var(--danger-bg); color: #8a0000;
+                   border-bottom-color: #d62728; }
+#claims.consuming { display: flex; background: var(--warn-bg); color: var(--warn);
+                   border-bottom-color: #e69500; }
+#claims-text { flex: 1; min-width: 0; }
+
+/* A claim's row in the constraints window, by verdict.  `theorem` is not a fault and must not
+   read as one — the drawing proves it, which is what the claim was written to find out. */
+#clist li.claim-theorem   { color: var(--ok); }
+#clist li.claim-violated  { color: #d62728; }
+#clist li.claim-consuming { color: #b06d00; }
 
 main { flex: 1; display: flex; min-height: 0; }
 #canvas-wrap { flex: 1; position: relative; min-width: 0; }

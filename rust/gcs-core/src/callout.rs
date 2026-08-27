@@ -523,6 +523,22 @@ struct Pen<'a> {
     spins: BTreeMap<(i64, i64), u32>,
 }
 
+/// The number as it goes on the drawing.  A **claimed** dimension (§9.7) is drawn in
+/// parentheses — the draughtsman's *reference dimension*, which says "this is what it measures,
+/// and it is not what controls it".  That is a claim exactly: judged against the figure, never
+/// imposed on it, and deleting it leaves the drawing the same.
+///
+/// It wraps here rather than in `io::dimension_text` because the parentheses go round the whole
+/// label: a claimed radius reads `(R50)`, not `R(50)`.  And it wraps before the text is measured,
+/// so the lane it is given and the box it is picked by are the size of what is actually drawn.
+fn claimed(c: &Constraint, text: String) -> String {
+    if c.claim {
+        format!("({text})")
+    } else {
+        text
+    }
+}
+
 impl Pen<'_> {
     fn px(&self, n: f64) -> f64 {
         n * self.u
@@ -729,7 +745,7 @@ impl Pen<'_> {
     /// from the middle of the drawing, clear of anything already on that lane.
     fn distance(&mut self, c: &Constraint) -> Option<Callout> {
         let (a, b) = ends(self.sk, c)?;
-        let text = dimension_text(c)?;
+        let text = claimed(c, dimension_text(c)?);
         let Some(d) = unit(sub(b, a)) else {
             return Some(self.note(c.id, CalloutKind::Linear, a, &text));
         };
@@ -747,7 +763,7 @@ impl Pen<'_> {
     /// so the figure clears the pair however the pair is turned.
     fn axis_distance(&mut self, c: &Constraint) -> Option<Callout> {
         let (a, b) = ends(self.sk, c)?;
-        let text = dimension_text(c)?;
+        let text = claimed(c, dimension_text(c)?);
         let d = axis_of(c.kind);
         let n = perp(d);
         let place = self.placed(c).unwrap_or_else(|| {
@@ -767,7 +783,7 @@ impl Pen<'_> {
         let i = c.args[1].ent().i();
         let d = unit(self.sk.line_dir(i))?;
         let (a0, a1) = seg(self.sk, i);
-        let text = dimension_text(c)?;
+        let text = claimed(c, dimension_text(c)?);
         let place = self.placed(c).unwrap_or((0.0, 0.0));
         let mut k = self.aligned(c.id, foot, p, place, &text);
         witness(&mut k, a0, a1, a0, d, dot(sub(p, a0), d), foot);
@@ -786,7 +802,7 @@ impl Pen<'_> {
         let d = unit(self.sk.line_dir(i1))?;
         let (p1, q1) = seg(self.sk, i1);
         let (p2, q2) = seg(self.sk, i2);
-        let text = dimension_text(c)?;
+        let text = claimed(c, dimension_text(c)?);
         let place = self.placed(c).unwrap_or((0.0, 0.0));
         let mut k = self.aligned(c.id, a, b, place, &text);
         let t = dot(sub(a, p1), d);
@@ -799,7 +815,7 @@ impl Pen<'_> {
     /// the number on a landing clear of the shape.
     fn radius(&mut self, c: &Constraint) -> Option<Callout> {
         let e = c.args[0].ent();
-        let text = format!("R{}", dimension_text(c)?);
+        let text = claimed(c, format!("R{}", dimension_text(c)?));
         let r = self.sk.radius_value(e).abs();
         let place = self
             .placed(c)
@@ -825,7 +841,7 @@ impl Pen<'_> {
         let (e1, e2) = (c.args[0].ent(), c.args[1].ent());
         let (c1, c2) = (self.center(e1), self.center(e2));
         let (r1, r2) = (self.sk.radius_value(e1).abs(), self.sk.radius_value(e2).abs());
-        let text = dimension_text(c)?;
+        let text = claimed(c, dimension_text(c)?);
         let auto = (self.auto_ray(e1), 0.5 * (r1 + r2));
         let place = self.placed(c).unwrap_or(auto);
         let d = self.ray_dir(e1, place.0);
@@ -845,7 +861,7 @@ impl Pen<'_> {
     fn angle(&mut self, c: &Constraint) -> Option<Callout> {
         let (e1, e2) = (c.args[0].ent(), c.args[1].ent());
         let (i1, i2) = (e1.i(), e2.i());
-        let text = dimension_text(c)?;
+        let text = claimed(c, dimension_text(c)?);
         let Some((corner, d1, d2)) = corner_of(self.sk, c) else {
             // the lines have gone parallel: their corner is at infinity, and there is no arc to
             // draw around it

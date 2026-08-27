@@ -16,6 +16,10 @@
     <div class="bar" id="bar-constraints"></div>
   </header>
   <div id="banner"><span id="banner-text"></span><button id="banner-select">Select culprits</button></div>
+  <!-- claims (§9.7) are judged, never solved for, so their verdict is orthogonal to the sketch's
+       status: a well-constrained drawing can still carry one that does not hold.  Its own strip,
+       for that reason, rather than a second meaning loaded onto #banner. -->
+  <div id="claims"><span id="claims-text"></span><button id="claims-select">Show</button></div>
   <main>
     <div id="canvas-wrap">
       <canvas id="canvas"></canvas>

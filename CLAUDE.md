@@ -228,6 +228,17 @@ Conventions:
   readers (untrusted input) drop the flag, and `expr::evaluate` refuses the free binding.  The
   flag travels like any other: `graft`, the document (`"claim"` in JSON, written only when set)
   and both bindings' records.  `peaucellier.sv` is the case, `tests/claim.rs` the gate.
+  **What the front end shows is the core's wording, not its own**: `io::describe` prefixes
+  `claim `, so every constraint list says which statements are claims, and `callout.rs` draws a
+  claimed dimension **parenthesised** — the draughtsman's *reference dimension*, which says "this
+  is what it measures, and it is not what controls it", a claim exactly.  The parentheses wrap
+  the whole label (`(R50)`, never `R(50)`) and wrap *before* the text is measured, so the lane it
+  is given and the box it is picked by are the size of what is drawn.  The app then adds only
+  colour and placement: a claims strip of its own (`#claims`, `lists::refreshClaims`) rather than
+  a second meaning loaded onto `#banner`, because a claim's verdict is orthogonal to the sketch's
+  status — a `Well` drawing can carry one that does not hold, and that is news no banner state
+  can express.  It reports the good case too: a claim is written to have the drawing prove it, so
+  "proved" is the answer it was asked for.
 - `same_constraint` is "says exactly the same thing"; `same_relation` is the same *without* the
   numbers — same type, same entities, same flags.  A repeated *relation* is refused by the app
   (`edit::applyConstraints`): it says nothing the sketch does not already say and adds equations

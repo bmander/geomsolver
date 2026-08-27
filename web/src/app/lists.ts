@@ -13,8 +13,8 @@ import {
 } from '../core/model.js';
 import { expressions } from '../core/expr.js';
 import {
-  banner, bannerSelect, bannerText, clearFocus, clist, componentEl, cpanel, cpanelTitle,
-  currentConstraint, focusConstraint, footerEl, measureEl, view,
+  banner, bannerSelect, bannerText, claimsEl, claimsSelect, claimsText, clearFocus, clist,
+  componentEl, cpanel, cpanelTitle, currentConstraint, focusConstraint, footerEl, measureEl, view,
 } from './shell.js';
 import { dragWindow, stats } from './ui.js';
 
@@ -120,6 +120,11 @@ export function refreshRows(): void {
   const bad = new Set(d?.violated ?? []);          // culprits are handled first, below
   const over = new Set(d?.over ?? []);
   const implied = new Set(d?.implied ?? []);   // a theorem made it follow: a note, not a fault
+  // a claim (§9.7) is judged, never solved for, so its verdict is its own and none of the sets
+  // above ever holds one — which is why these are read separately rather than folded in
+  const theorem = new Set(d?.claimsTheorem ?? []);
+  const failed = new Set(d?.claimsViolated ?? []);
+  const consuming = new Set(d?.claimsConsuming ?? []);
   // an expression that could not be computed: its constraint holds the number it last had
   const exprError = new Map<number, string>();
   for (const it of expressions(sk)) if (it.error) exprError.set(it.id, it.error);
@@ -139,6 +144,24 @@ export function refreshRows(): void {
       li.classList.add('expr-error');
       li.title = `expression: ${exprError.get(c.id)} — the last number stands`;
     }
+    // a claim's verdict comes before the ordinary readings because none of them can apply to
+    // one: it joins no conflict, no over-block and no implied set, so what is left to say about
+    // it is exactly which of the three it landed in
+    else if (theorem.has(c)) {
+      li.textContent = `⊢ ${base}`;
+      li.classList.add('claim-theorem');
+      li.title = 'the drawing already implies it — a theorem, and nothing to fix';
+    }
+    else if (failed.has(c)) {
+      li.textContent = `✗ ${base}`;
+      li.classList.add('claim-violated');
+      li.title = 'the claim does not hold — the drawing is fine, the claim is wrong';
+    }
+    else if (consuming.has(c)) {
+      li.textContent = `⊬ ${base}`;
+      li.classList.add('claim-consuming');
+      li.title = 'true only where the solve happened to land: stating it would cost a freedom';
+    }
     else if (culprits.has(c)) { li.textContent = `✗ ${base}`; li.classList.add('culprit'); }
     else if (bad.has(c)) { li.textContent = base; li.classList.add('violated'); }
     else if (over.has(c)) { li.textContent = `≈ ${base}`; li.classList.add('over'); }
@@ -152,7 +175,57 @@ export function refreshRows(): void {
   });
   refreshPanel();
   refreshBanner();
+  refreshClaims();
 }
+
+/** The claims strip.  A claim is judged and never solved for, so its verdict is orthogonal to the
+ *  sketch's status — a well-constrained drawing can carry one that does not hold, and a false one
+ *  is news the banner has no way to report because nothing is wrong with the drawing.
+ *
+ *  It is worded by the worst verdict present, and it reports the good case too: a claim is
+ *  written to have the drawing prove it, so "proved" is the answer it was asked for and the one
+ *  worth putting on screen. */
+function refreshClaims(): void {
+  const d = view.diagnosis;
+  claimsEl.className = '';
+  const bad = d?.claimsViolated ?? [];
+  const spent = d?.claimsConsuming ?? [];
+  const held = d?.claimsTheorem ?? [];
+  const n = bad.length + spent.length + held.length;
+  if (!n) return;
+  const ix = new io.Index(view.sketch);
+  const names = (cs: Constraint[]): string => cs.map((c) => io.describe(c, ix)).join(', ');
+  if (bad.length) {
+    claimsText.textContent = `✗ ${bad.length} claim${bad.length === 1 ? '' : 's'} `
+      + `do${bad.length === 1 ? 'es' : ''} not hold — ${names(bad)}`;
+    claimsEl.className = 'failed';
+  } else if (spent.length) {
+    claimsText.textContent = `⊬ ${spent.length} claim${spent.length === 1 ? '' : 's'} true only `
+      + `at this pose (stating ${spent.length === 1 ? 'it' : 'them'} would cost a freedom) — `
+      + names(spent);
+    claimsEl.className = 'consuming';
+  } else {
+    claimsText.textContent = `⊢ ${held.length} claim${held.length === 1 ? '' : 's'} proved by the `
+      + `drawing — ${names(held)}`;
+    claimsEl.className = 'proved';
+  }
+}
+
+/** What the strip's button shows: the claims it is talking about, and the geometry they are
+ *  written over.  `openPanel` because a claim picked from the strip is a pick that made no
+ *  selection, the same as a callout clicked on the drawing. */
+claimsSelect.addEventListener('click', () => {
+  const d = view.diagnosis;
+  if (!d) return;
+  const cs = d.claimsViolated.length ? d.claimsViolated
+    : d.claimsConsuming.length ? d.claimsConsuming : d.claimsTheorem;
+  if (!cs.length) return;
+  const lit = expand(new Set(cs.flatMap((c) => c.entities())));
+  focusConstraint(cs[0], lit);
+  openPanel(lit);
+  refresh();
+  view.draw();
+});
 
 /** The window's heading and whether it is up at all, and the same answer in the status line:
  *  what is picked, said the way the old sidebar's row said it. */

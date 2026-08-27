@@ -27,6 +27,9 @@ export const COL = {
   conflict: '#b3001b',
   bandFill: 'rgba(227, 119, 194, 0.10)',
   dim: '#0f6f7a',
+  /* a claimed dimension: the drafting ink for a reference dimension, which is what the core
+     draws it as (parenthesised).  Lighter than a controlling one, because it does not control */
+  claimed: '#7aa7ad',
 };
 /* entity colouring by constraint state (FreeCAD-style, but from the DM decomposition and the
  * conflict set rather than from a guess) */
@@ -185,7 +188,8 @@ export function paintCallouts(v: SketchView): void {
   const painted = cs.items.map((k) => {
     const c = v.sketch.constraintById(k.id);
     const col = c && conflicts.has(c) ? COL.conflict
-      : c && c === lit ? COL.highlight : COL.dim;
+      : c && c === lit ? COL.highlight
+      : c?.claim ? COL.claimed : COL.dim;
     return { k, col };
   });
   const path = (segs: Seg[]): void => {

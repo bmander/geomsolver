@@ -263,6 +263,47 @@ ground(a)
     }
 }
 
+#[test]
+fn a_claim_reads_as_one_wherever_it_is_read_out() {
+    // the constraint list, the banner and both bindings all ask `describe` what a constraint is,
+    // so the word the document spells it with is the word they get
+    let sk = drawn(&format!("{RECT}claim parallel(bottom, top)\n"));
+    let c = sk.constraints.iter().find(|c| c.claim).unwrap();
+    assert_eq!(gcs_core::io::describe(c), "claim Parallel(L0, L2)");
+    let plain = sk.constraints.iter().find(|c| c.kind == CKind::Distance).unwrap();
+    assert!(!gcs_core::io::describe(plain).starts_with("claim "));
+}
+
+#[test]
+fn a_claimed_dimension_is_drawn_as_a_reference_dimension() {
+    // parentheses are the drafting convention for a dimension that is measured rather than
+    // controlling, which is a claim exactly — and they go round the whole label, so a claimed
+    // radius reads `(R20)` and never `R(20)`
+    let src = "
+point o hint at (0, 0)
+point p hint at (60, 0)
+circle k(center: o, r: 20)
+ground(o)
+horizontal line l(o, p)
+distance(o, p) == 60
+";
+    let label = |sk: &Sketch, kind: CKind| -> String {
+        let id = sk.constraints.iter().find(|c| c.kind == kind).unwrap().id;
+        gcs_core::callout::layout(sk, 1.0)
+            .into_iter()
+            .find(|k| k.id == id)
+            .expect("a dimension is drawn")
+            .text
+    };
+    let stated = drawn(&format!("{src}radius(k) == 20\n"));
+    assert_eq!(label(&stated, CKind::Radius), "R20");
+    assert_eq!(label(&stated, CKind::Distance), "60");
+
+    let claimed = drawn(&format!("{src}claim radius(k) == 20\n"));
+    assert_eq!(label(&claimed, CKind::Radius), "(R20)", "the parentheses go round the whole label");
+    assert_eq!(label(&claimed, CKind::Distance), "60", "an ordinary dimension is untouched");
+}
+
 // -- the case: the Peaucellier cell's straight line ---------------------------------------
 //
 // `peaucellier.sv` ends on `claim vertical(rail)`.  What the diagnosis must say is *theorem* —
