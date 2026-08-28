@@ -80,6 +80,8 @@ macro_rules! undrawn {
             | CKind::SplineCurvature
             | CKind::HorizontalPoints
             | CKind::VerticalPoints
+            | CKind::FrameUnit
+            | CKind::FrameAlign
     };
 }
 

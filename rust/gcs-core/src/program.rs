@@ -482,6 +482,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
         EntKind::Arc,
         EntKind::Spline,
         EntKind::Ellipse,
+        EntKind::Frame,
         EntKind::Curve,
     ] {
         for st in &body {
@@ -652,6 +653,11 @@ fn compile_trace(
             EntKind::Circle => {
                 let c = sk.point(0.0, 0.0, false, name);
                 EntRef::circle(sk.circle(c, 1.0, name))
+            }
+            EntKind::Frame => {
+                let o = sk.point(0.0, 0.0, false, name);
+                let t = sk.point(1.0, 0.0, false, name);
+                EntRef::frame(sk.frame(o, t, name))
             }
             other => {
                 return Err((
@@ -1106,6 +1112,20 @@ fn build(
             }
         }
         EntKind::Ellipse => sk.ellipse(kids[0], kids[1], seed(0), &d.name.text),
+        EntKind::Frame => {
+            // `frame` adds the two intrinsics here and nowhere else, and computes a rotor from
+            // the chord that a declared seed then replaces — except (0, 0), which is no rotor
+            // at all and is what an unwritten seed reads as
+            let fi = sk.frame(kids[0], kids[1], &d.name.text);
+            let (c, s) = (seed(0), seed(1));
+            if c != 0.0 || s != 0.0 {
+                let f = &sk.frames[fi];
+                let (cp, sp) = (f.c as usize, f.s as usize);
+                sk.params[cp].value = c;
+                sk.params[sp].value = s;
+            }
+            fi
+        }
         EntKind::Curve => unreachable!("a curve is built before this walk"),
     };
     let e = EntRef::new(d.kind, idx);
@@ -1212,6 +1232,7 @@ fn set_construction(sk: &mut Sketch, e: EntRef, on: bool) {
         EntKind::Arc => sk.arcs[e.i()].construction = on,
         EntKind::Spline => sk.splines[e.i()].construction = on,
         EntKind::Ellipse => sk.ellipses[e.i()].construction = on,
+        EntKind::Frame => sk.frames[e.i()].construction = on,
         EntKind::Point => {}
     }
 }
@@ -1580,6 +1601,7 @@ pub(crate) fn construction_of(sk: &Sketch, e: EntRef) -> bool {
         EntKind::Arc => sk.arcs[e.i()].construction,
         EntKind::Spline => sk.splines[e.i()].construction,
         EntKind::Ellipse => sk.ellipses[e.i()].construction,
+        EntKind::Frame => sk.frames[e.i()].construction,
         EntKind::Point => false,
     }
 }

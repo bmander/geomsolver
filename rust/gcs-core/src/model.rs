@@ -51,6 +51,14 @@ pub enum EntKind {
     Arc,
     Spline,
     Ellipse,
+    /// An origin and an attitude: a datum other statements measure from.  The attitude is a
+    /// unit rotor — two scalars `(c, s)` held to `c² + s² = 1` by an intrinsic constraint, the
+    /// 2D form of the quaternion a 3D workplane will want — kept pointed from `origin` at
+    /// `toward` by a second intrinsic, so the rotor is a first-class unknown that adds no
+    /// freedom beyond the two points it is slaved to.  A trace block reads `f.angle`
+    /// (`atan2(s, c)`, degrees — derived in `Tape::compile`, never stored) to state a bearing
+    /// relative to the frame instead of the page.
+    Frame,
     /// A curve written in the language: `C(u)` as an expression over the geometry it is drawn
     /// from.  Unlike every other kind it holds no coordinates of its own — it *is* the two
     /// expressions plus whatever it reads — so it moves when its arguments do and never
@@ -67,6 +75,7 @@ impl EntKind {
             EntKind::Arc => "arc",
             EntKind::Spline => "spline",
             EntKind::Ellipse => "ellipse",
+            EntKind::Frame => "frame",
             EntKind::Curve => "curve",
         }
     }
@@ -79,6 +88,7 @@ impl EntKind {
             "arc" => EntKind::Arc,
             "spline" => EntKind::Spline,
             "ellipse" => EntKind::Ellipse,
+            "frame" => EntKind::Frame,
             "curve" => EntKind::Curve,
             _ => return None,
         })
@@ -100,6 +110,7 @@ impl EntKind {
             EntKind::Arc => &[("center", C), ("start", C), ("end", C), ("r", S)],
             EntKind::Spline => &[("ctrl", L)],
             EntKind::Ellipse => &[("center", C), ("major", C), ("b", S)],
+            EntKind::Frame => &[("origin", C), ("toward", C), ("c", S), ("s", S)],
             // as many arguments as its definition takes, and none of them need be points — the
             // first kind for which that is true
             EntKind::Curve => &[("args", L)],
@@ -127,6 +138,7 @@ impl EntKind {
             | EntKind::Circle
             | EntKind::Spline
             | EntKind::Ellipse
+            | EntKind::Frame
             | EntKind::Curve => None,
         }
     }
@@ -151,6 +163,9 @@ impl EntKind {
                 [pt("center"), pt("start"), pt("end"), vec![format!("{n}.r")]].concat()
             }
             EntKind::Ellipse => [pt("center"), pt("major"), vec![format!("{n}.b")]].concat(),
+            EntKind::Frame => {
+                [pt("origin"), pt("toward"), vec![format!("{n}.c"), format!("{n}.s")]].concat()
+            }
             EntKind::Spline | EntKind::Curve => return None,
         })
     }
@@ -202,6 +217,9 @@ impl EntRef {
     }
     pub fn ellipse(idx: usize) -> EntRef {
         EntRef::new(EntKind::Ellipse, idx)
+    }
+    pub fn frame(idx: usize) -> EntRef {
+        EntRef::new(EntKind::Frame, idx)
     }
     pub fn i(self) -> usize {
         self.idx as usize
@@ -266,6 +284,18 @@ pub struct EllipseE {
     pub center: u32,
     pub major: u32,
     pub minor: u32,
+    pub construction: bool,
+}
+
+/// An origin, a point it is pointed at, and the unit rotor `(c, s)` between them — see
+/// `EntKind::Frame`.  `c` and `s` are Param indices; the two intrinsic constraints that slave
+/// them to the chord are added by `Sketch::frame` and never serialized, the arc's bargain.
+#[derive(Clone, Debug)]
+pub struct FrameE {
+    pub origin: u32,
+    pub toward: u32,
+    pub c: u32,
+    pub s: u32,
     pub construction: bool,
 }
 
@@ -377,6 +407,7 @@ pub struct Sketch {
     pub arcs: Vec<ArcE>,
     pub splines: Vec<SplineE>,
     pub ellipses: Vec<EllipseE>,
+    pub frames: Vec<FrameE>,
     pub curves: Vec<CurveE>,
     /// The curve families this document defines.  Document state like `branches`: a curve
     /// instance names one by index.
@@ -487,6 +518,45 @@ impl Sketch {
             construction: false,
         });
         self.ellipses.len() - 1
+    }
+
+    /// A frame at `origin` pointed at `toward`, plus its two intrinsic constraints: the rotor
+    /// `(c, s)` held to the unit circle, and kept on the chord `origin → toward` — so the
+    /// attitude is a first-class unknown that adds no freedom beyond the two points.  One rotor
+    /// unit is worth the chord's length, which is what `Param::scale` asks of a dimensionless
+    /// unknown.
+    pub fn frame(&mut self, origin: usize, toward: usize, name: &str) -> usize {
+        let ((c, s), scale) = self.frame_chord(origin, toward);
+        let cp = self.param_scaled(c, false, &format!("{name}.c"), scale);
+        let sp = self.param_scaled(s, false, &format!("{name}.s"), scale);
+        self.frames.push(FrameE {
+            origin: origin as u32,
+            toward: toward as u32,
+            c: cp as u32,
+            s: sp as u32,
+            construction: false,
+        });
+        let fi = self.frames.len() - 1;
+        let fref = EntRef::frame(fi);
+        let c1 = Constraint::frame_unit(fref);
+        let c2 = Constraint::frame_align(self, fref);
+        self.add(c1);
+        self.add(c2);
+        fi
+    }
+
+    /// The rotor of the chord `origin → toward`, and the world length one unit of it is worth.
+    /// A coincident pair names no direction, so it reads as the identity rotor at unit scale —
+    /// the raw delta would normalise to (0, 0) and start life violating `frame_unit`.
+    ///
+    /// The one answer, so the rotor's `Param::scale` and the seed of the alignment's own unknown
+    /// cannot come from two different rules — the same reason `constraints::contact_speed` is
+    /// one function.
+    pub(crate) fn frame_chord(&self, origin: usize, toward: usize) -> ((f64, f64), f64) {
+        let (ox, oy) = self.point_xy(origin);
+        let (tx, ty) = self.point_xy(toward);
+        let d = (tx - ox).hypot(ty - oy);
+        if d > 0.0 { (((tx - ox) / d, (ty - oy) / d), d) } else { ((1.0, 0.0), 1.0) }
     }
 
     /// A cubic B-spline over `ctrl`, with the clamped uniform knot vector.  `None` if there are
@@ -811,6 +881,18 @@ impl Sketch {
                 v.push(el.minor);
                 v
             }
+            EntKind::Frame => {
+                let f = &self.frames[e.i()];
+                let mut v = Vec::with_capacity(6);
+                for pi in [f.origin, f.toward] {
+                    let p = &self.points[pi as usize];
+                    v.push(p.x);
+                    v.push(p.y);
+                }
+                v.push(f.c);
+                v.push(f.s);
+                v
+            }
             // whatever its arguments contribute, in argument order — which is the order its
             // tapes were compiled against and so the order of the Jacobian's columns
             EntKind::Curve => {
@@ -836,6 +918,7 @@ impl Sketch {
             EntKind::Circle => vec![self.circles[e.i()].radius],
             EntKind::Arc => vec![self.arcs[e.i()].radius],
             EntKind::Ellipse => vec![self.ellipses[e.i()].minor],
+            EntKind::Frame => vec![self.frames[e.i()].c, self.frames[e.i()].s],
             // a curve holds no number of its own: it is its expressions, and they read
             // the geometry rather than owning any
             EntKind::Line | EntKind::Spline | EntKind::Curve => Vec::new(),
@@ -866,6 +949,10 @@ impl Sketch {
                 let el = &self.ellipses[e.i()];
                 vec![EntRef::point(el.center as usize), EntRef::point(el.major as usize)]
             }
+            EntKind::Frame => {
+                let f = &self.frames[e.i()];
+                vec![EntRef::point(f.origin as usize), EntRef::point(f.toward as usize)]
+            }
             // the one kind whose children need not be points
             EntKind::Curve => self.curves[e.i()].args.clone(),
         }
@@ -883,7 +970,7 @@ impl Sketch {
         match e.kind {
             EntKind::Spline => crate::curve::MIN_CTRL,
             EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc
-            | EntKind::Ellipse | EntKind::Curve => children.len(),
+            | EntKind::Ellipse | EntKind::Frame | EntKind::Curve => children.len(),
         }
     }
 
@@ -893,12 +980,13 @@ impl Sketch {
     pub fn topology_key(&self) -> String {
         use std::fmt::Write;
         let mut s = format!(
-            "{}|{}|{}|{}|{}|",
+            "{}|{}|{}|{}|{}|{}|",
             self.points.len(),
             self.lines.len(),
             self.circles.len(),
             self.arcs.len(),
-            self.ellipses.len()
+            self.ellipses.len(),
+            self.frames.len()
         );
         for sp in &self.splines {
             let _ = write!(s, "s{}:", sp.ctrl.len());
@@ -1003,6 +1091,7 @@ impl Sketch {
             EntKind::Arc => self.arcs.len(),
             EntKind::Spline => self.splines.len(),
             EntKind::Ellipse => self.ellipses.len(),
+            EntKind::Frame => self.frames.len(),
             EntKind::Curve => self.curves.len(),
         }
     }
@@ -1017,6 +1106,7 @@ impl Sketch {
             EntKind::Arc,
             EntKind::Spline,
             EntKind::Ellipse,
+            EntKind::Frame,
         ] {
             for i in 0..self.count(kind) {
                 out.push(EntRef::new(kind, i));
@@ -1138,6 +1228,12 @@ impl Sketch {
                 (cx - r, cy - r, cx + r, cy + r)
             }
             EntKind::Ellipse => crate::ellipse::bounds(self, e.i()),
+            EntKind::Frame => {
+                let f = &self.frames[e.i()];
+                let (ax, ay) = self.point_xy(f.origin as usize);
+                let (bx, by) = self.point_xy(f.toward as usize);
+                (ax.min(bx), ay.min(by), ax.max(bx), ay.max(by))
+            }
             EntKind::Arc | EntKind::Spline => {
                 let pts = if e.kind == EntKind::Arc {
                     self.arc_extremes(e.i())
@@ -1257,6 +1353,11 @@ fn point_to(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
         }
         EntKind::Spline => crate::curve::distance_to(sk, e.i(), px, py),
         EntKind::Ellipse => crate::ellipse::distance_to(sk, e.i(), px, py),
+        // a frame is a datum, not a figure: the place it stands at is its origin
+        EntKind::Frame => {
+            let (x, y) = sk.point_xy(sk.frames[e.i()].origin as usize);
+            (px - x).hypot(py - y)
+        }
     }
 }
 
@@ -1304,6 +1405,9 @@ pub fn point_to_drawn(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
         EntKind::Point | EntKind::Circle | EntKind::Spline | EntKind::Ellipse => {
             point_to(sk, px, py, e)
         }
+        // a frame draws nothing of its own — its points are the click targets — so it can
+        // never be the nearest drawn thing and a pick can never land on it
+        EntKind::Frame => f64::INFINITY,
     }
 }
 
@@ -1351,6 +1455,8 @@ fn measure_order(k: EntKind) -> u8 {
         EntKind::Spline => 3,
         EntKind::Ellipse => 4,
         EntKind::Curve => 5,
+        // last, so any pair with a frame in it puts the frame second and one arm catches it
+        EntKind::Frame => 6,
     }
 }
 
@@ -1393,6 +1499,8 @@ fn swept(sk: &Sketch, e: EntRef) -> Vec<(f64, f64)> {
     match e.kind {
         EntKind::Spline => crate::curve::sample(sk, e.i(), 64),
         EntKind::Ellipse => crate::ellipse::sample(sk, e.i(), 64),
+        // a frame is a datum, not a figure: the one place it stands at
+        EntKind::Frame => vec![sk.point_xy(sk.frames[e.i()].origin as usize)],
         _ => Vec::new(),
     }
 }
@@ -1412,13 +1520,15 @@ pub fn distance_between(sk: &Sketch, first: EntRef, second: EntRef) -> f64 {
         }
         // A curve and an ellipse have no closed form against any of the others, so both are
         // measured by sweeping what is drawn — close enough to measure by, and honestly the best
-        // a sampled answer can be.  Both sort after everything they could be paired with, so the
-        // swept one is always `b`, and the exact point case has already short-circuited above.
+        // a sampled answer can be.  A frame joins them with a single sample, its origin: not for
+        // want of a closed form but because a datum is measured where it stands.  All three sort
+        // after everything they could be paired with, so the swept one is always `b`, and the
+        // exact point case has already short-circuited above.
         //
         // This sits *above* the arms that reach for a centre and a radius, which is the whole
         // reason it is one arm and not one per family: a sampled kind that fell through to them
         // would ask a curve for a centre it does not have.
-        _ if matches!(b.kind, EntKind::Spline | EntKind::Ellipse) => swept(sk, b)
+        _ if matches!(b.kind, EntKind::Spline | EntKind::Ellipse | EntKind::Frame) => swept(sk, b)
             .into_iter()
             .map(|(x, y)| point_to(sk, x, y, a))
             .fold(f64::INFINITY, f64::min),

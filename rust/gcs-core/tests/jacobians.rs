@@ -35,6 +35,8 @@ fn all_constraints(seed: u32) -> Sketch {
     let sp = sk.spline(&ctrl).unwrap();
     let (ec, em) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
     let el = sk.ellipse(ec, em, rng.uniform(1.0, 11.0), "el");
+    let (fo, ft) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
+    let fr = sk.frame(fo, ft, "f");
 
     let (pe, qe) = (EntRef::point(p), EntRef::point(q));
     let (le1, le2) = (EntRef::line(l1), EntRef::line(l2));
@@ -91,6 +93,10 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::ellipse_tangent_line(&sk, EntRef::ellipse(el), le2),
         Constraint::ellipse_curvature(&sk, EntRef::ellipse(el), ce1),
         Constraint::ellipse_curvature(&sk, EntRef::ellipse(el), ae),
+        // the frame's own intrinsics were cleared with everything else below, so both are
+        // restated here to be checked like any other rows
+        Constraint::frame_unit(EntRef::frame(fr)),
+        Constraint::frame_align(&sk, EntRef::frame(fr)),
         // every dimension again with its number written in terms of a free variable, which is
         // an unknown of the sketch rather than a constant — one more column, and (m, c) where
         // the number was.  A different name each time, so no two of them are tied together, and

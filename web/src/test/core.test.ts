@@ -1663,6 +1663,29 @@ test('a point is pulled onto the rim, and the document keeps the ellipse', () =>
   back.dispose();
 });
 
+test('a frame is an origin, a toward point and a rotor slaved to the chord', () => {
+  const sk = new Sketch();
+  const o = sk.point(10, 5);
+  const t = sk.point(14, 8);           // chord (4, 3): the 3-4-5 rotor
+  const f = sk.frame(o, t);
+  assert.equal(f.origin, o);
+  assert.equal(f.toward, t);
+  const [c, s] = f.rotor;
+  assert.ok(Math.abs(c.value - 0.8) < 1e-12 && Math.abs(s.value - 0.6) < 1e-12);
+  // the two intrinsics came with it, and neither reads as something the user said
+  assert.equal(sk.constraints.length, 2);
+  assert.equal(sk.userConstraints().length, 0);
+  // a frame draws nothing of its own: the origin's point is the click target
+  assert.equal(sk.pick(10, 5, 0.5), o);
+  assert.equal(sk.pick(12, 6.5, 0.5), null);
+  const back = io.loads(io.dumps(sk));
+  assert.equal(back.frames.length, 1);
+  assert.ok(Math.abs(back.frames[0].rotor[0].value - 0.8) < 1e-12);
+  assert.equal(back.constraints.length, 2, 'the load re-mints the intrinsics');
+  sk.dispose();
+  back.dispose();
+});
+
 test('a rim drag resizes the minor radius through the same question the tool asks', () => {
   const sk = new Sketch();
   const el = sk.ellipse(sk.point(0, 0, true), sk.point(8, 0, true), 3);

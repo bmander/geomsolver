@@ -133,6 +133,7 @@ fn remap_early(
     arc_map: &[Option<usize>],
     spline_map: &[Option<usize>],
     ellipse_map: &[Option<usize>],
+    frame_map: &[Option<usize>],
     e: EntRef,
 ) -> Option<EntRef> {
     match e.kind {
@@ -142,6 +143,7 @@ fn remap_early(
         EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
         EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
         EntKind::Ellipse => ellipse_map[e.i()].map(EntRef::ellipse),
+        EntKind::Frame => frame_map[e.i()].map(EntRef::frame),
         // a curve is never another curve's argument: nothing in the language says so
         EntKind::Curve => None,
     }
@@ -215,6 +217,21 @@ pub fn to_json(sk: &Sketch) -> Json {
             ])
         })
         .collect();
+    let frames: Vec<Json> = sk
+        .frames
+        .iter()
+        .map(|f| {
+            object([
+                ("origin", (f.origin as i64).into()),
+                ("toward", (f.toward as i64).into()),
+                ("c", sk.params[f.c as usize].value.into()),
+                ("s", sk.params[f.s as usize].value.into()),
+                ("cfixed", sk.params[f.c as usize].fixed.into()),
+                ("sfixed", sk.params[f.s as usize].fixed.into()),
+                ("construction", f.construction.into()),
+            ])
+        })
+        .collect();
     let user = sk.user_constraints();
     let constraints: Vec<Json> = user
         .iter()
@@ -247,6 +264,7 @@ pub fn to_json(sk: &Sketch) -> Json {
         ("arcs", Json::Arr(arcs)),
         ("splines", Json::Arr(splines)),
         ("ellipses", Json::Arr(ellipses)),
+        ("frames", Json::Arr(frames)),
         ("constraints", Json::Arr(constraints)),
         ("branches", Json::Obj(branches)),
     ])
@@ -320,6 +338,22 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         let bp = sk.ellipses[ei].minor as usize;
         sk.params[bp].fixed = e.get("fixed").map(|v| v.as_bool()).unwrap_or(false);
         sk.ellipses[ei].construction = e.get("construction").map(|v| v.as_bool()).unwrap_or(false);
+    }
+    for f in d.get("frames").unwrap_or(&empty).arr() {
+        let g = |k: &str| index(f.get(k).map(|v| v.as_i64()).unwrap_or(0), np, k);
+        let fi = sk.frame(g("origin")?, g("toward")?, "");
+        let (cp, sp) = (sk.frames[fi].c as usize, sk.frames[fi].s as usize);
+        // the saved rotor over the recomputed one: an unsolved document's pose survives a
+        // round trip
+        if let Some(v) = f.get("c") {
+            sk.params[cp].value = v.as_f64();
+        }
+        if let Some(v) = f.get("s") {
+            sk.params[sp].value = v.as_f64();
+        }
+        sk.params[cp].fixed = f.get("cfixed").map(|v| v.as_bool()).unwrap_or(false);
+        sk.params[sp].fixed = f.get("sfixed").map(|v| v.as_bool()).unwrap_or(false);
+        sk.frames[fi].construction = f.get("construction").map(|v| v.as_bool()).unwrap_or(false);
     }
     let mut ids = Vec::new();
     for c in d.get("constraints").unwrap_or(&empty).arr() {
@@ -502,6 +536,26 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         ellipse_map[i] = Some(ni);
         made.push(EntRef::ellipse(ni));
     }
+    let mut frame_map: Vec<Option<usize>> = vec![None; src.frames.len()];
+    for i in 0..src.frames.len() {
+        if !keep(EntRef::frame(i)) {
+            continue;
+        }
+        let f = &src.frames[i];
+        let (Some(o), Some(t)) = (pt_index(f.origin as usize), pt_index(f.toward as usize))
+        else {
+            continue;
+        };
+        let ni = dst.frame(o, t, "");
+        let (nc, ns) = (dst.frames[ni].c as usize, dst.frames[ni].s as usize);
+        dst.params[nc].value = src.params[f.c as usize].value;
+        dst.params[ns].value = src.params[f.s as usize].value;
+        dst.params[nc].fixed = src.params[f.c as usize].fixed;
+        dst.params[ns].fixed = src.params[f.s as usize].fixed;
+        dst.frames[ni].construction = f.construction;
+        frame_map[i] = Some(ni);
+        made.push(EntRef::frame(ni));
+    }
     // curves last: a curve's arguments may be of any other kind, so every map it reads has to
     // be filled before this one is built.  The *definition* travels with it — a document that
     // came apart from the curve family it is written in would be a document that cannot be drawn.
@@ -511,7 +565,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let mut whole = true;
         for &a in &cv.args {
             match remap_early(&pt_index, &line_map, &circle_map, &arc_map, &spline_map,
-                              &ellipse_map, a) {
+                              &ellipse_map, &frame_map, a) {
                 Some(r) => args.push(r),
                 None => whole = false,
             }
@@ -545,6 +599,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
             EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
             EntKind::Ellipse => ellipse_map[e.i()].map(EntRef::ellipse),
+            EntKind::Frame => frame_map[e.i()].map(EntRef::frame),
             EntKind::Curve => curve_map[e.i()].map(|i| EntRef::new(EntKind::Curve, i)),
         }
     };

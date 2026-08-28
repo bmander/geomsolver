@@ -14,11 +14,12 @@ import './constraints.js';
 /** (xmin, ymin, xmax, ymax) */
 export type Box = [number, number, number, number];
 
-export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline' | 'ellipse' | 'curve';
+export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline' | 'ellipse' | 'curve'
+  | 'frame';
 export const KINDS: Kind[] =
-  ['point', 'line', 'circle', 'arc', 'spline', 'ellipse', 'curve'];
+  ['point', 'line', 'circle', 'arc', 'spline', 'ellipse', 'curve', 'frame'];
 export const KIND_ID: Record<Kind, number> =
-  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, ellipse: 5, curve: 6 };
+  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, ellipse: 5, curve: 6, frame: 7 };
 
 export class Param {
   constructor(readonly sketch: Sketch, readonly index: number) {}
@@ -333,11 +334,32 @@ export class Curve extends Constructible {
   }
 }
 
-export type Primitive = Point | Line | Circle | Arc | Spline | Ellipse | Curve;
+/** An origin, a point it is pointed at, and a unit rotor slaved to the chord between them by
+ *  two intrinsic constraints — a datum other statements measure from, adding no freedom beyond
+ *  its two points.  A trace block reads its bearing as `f.angle`. */
+export class Frame extends Constructible {
+  readonly kind = 'frame' as const;
+
+  get origin(): Point {
+    return this.children[0];
+  }
+
+  get toward(): Point {
+    return this.children[1];
+  }
+
+  /** The rotor `(c, s)`, held to the unit circle by its intrinsic constraint. */
+  get rotor(): [Param, Param] {
+    const p = this.params;
+    return [p[4], p[5]];
+  }
+}
+
+export type Primitive = Point | Line | Circle | Arc | Spline | Ellipse | Curve | Frame;
 
 const CLASSES =
   { point: Point, line: Line, circle: Circle, arc: Arc, spline: Spline,
-    ellipse: Ellipse, curve: Curve } as const;
+    ellipse: Ellipse, curve: Curve, frame: Frame } as const;
 
 /** The CCW arc through three points: centre, radius, and the sweep that passes through the
  *  third point.  `swapped` is true when that sweep runs from the *second* given point. */
@@ -365,7 +387,8 @@ export class Sketch {
   readonly handle: number;
   private params_: Param[] = [];
   private ents: Record<Kind, Entity[]> =
-    { point: [], line: [], circle: [], arc: [], spline: [], ellipse: [], curve: [] };
+    { point: [], line: [], circle: [], arc: [], spline: [], ellipse: [], curve: [],
+      frame: [] };
   private cons: Constraint[] = [];
   /** Constraint id → its proxy, so identity survives every round trip. */
   readonly byId = new Map<number, Constraint>();
@@ -460,6 +483,14 @@ export class Sketch {
     const i = withStr(name, (p, n) =>
       core().gcs_sketch_ellipse(this.handle, center.index, major.index, b, p, n));
     return this.ellipses[i];
+  }
+
+  /** A frame at `origin` pointed at `toward`. */
+  frame(origin: Point, toward: Point, name = ''): Frame {
+    const i = withStr(name, (p, n) =>
+      core().gcs_sketch_frame(this.handle, origin.index, toward.index, p, n));
+    this.touch();     // the rotor's two intrinsic constraints came with it
+    return this.frames[i];
   }
 
   /** A cubic B-spline over `ctrl`.  null when there are too few control points for a cubic, or
@@ -577,6 +608,10 @@ export class Sketch {
     return this.list<Curve>('curve', this.counts()[8]);
   }
 
+  get frames(): Frame[] {
+    return this.list<Frame>('frame', this.counts()[9]);
+  }
+
   /** How many points the document has — the size a control-polygon buffer has to allow for. */
   get pointCount(): number {
     return this.counts()[1];
@@ -597,13 +632,14 @@ export class Sketch {
     return (kind === 'point' ? this.points : kind === 'line' ? this.lines
       : kind === 'circle' ? this.circles : kind === 'spline' ? this.splines
       : kind === 'ellipse' ? this.ellipses
-      : kind === 'curve' ? this.curves : this.arcs) as Primitive[];
+      : kind === 'curve' ? this.curves
+      : kind === 'frame' ? this.frames : this.arcs) as Primitive[];
   }
 
   /** Every entity, in creation order per kind. */
   primitives(): Primitive[] {
     return [...this.points, ...this.lines, ...this.circles, ...this.arcs, ...this.splines,
-            ...this.ellipses];
+            ...this.ellipses, ...this.frames];
   }
 
   /** Constraints the user added (excludes intrinsic and soft/transient ones). */

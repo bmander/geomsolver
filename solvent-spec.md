@@ -75,7 +75,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 | `Point` | position in the plane | 2 |
 | `Line` | segment between two `Point`s; its infinite carrier is what constraints read **[0.2]** | 0 of its own (4 through its ends) |
 | `Circle` | center + radius | 3 |
-| `Frame` | origin + orientation | 3 |
+| `Frame` | origin + orientation | 3; **[0.6]** 0 beyond its two points as declared |
 | `Path` | directed piecewise boundary curve | 0 (derived object) |
 
 **[0.2] `Line` was a 2-DOF undirected infinite line with a `.dir` field in 0.1.** It is now a segment between two points, and every constraint that reads a line reads the infinite carrier through those points — which is what `parallel`, `perpendicular`, `on` and `angle` mean by a line anyway.
@@ -90,9 +90,22 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 |---|---|---|
 | `Circle` | `.center` | `Point` |
 | `Circle` | `.r` | `Length` |
-| `Frame` | `.origin` | `Point` |
-| `Frame` | `.angle` | `Angle` |
+| `Frame` | `.origin`, `.toward` | `Point` **[0.6]** |
+| `Frame` | `.c`, `.s` | `Scalar` **[0.6]** — the unit rotor |
+| `Frame` | `.angle` | `Angle` — derived, `atan2(s, c)`; readable in trace-block expressions **[0.6]** |
 | `Line` | `.p1`, `.p2` | `Point` **[0.2]** |
+
+**[0.6] A frame's orientation is a unit rotor, not a stored angle.** `frame f(origin: o,
+toward: q)` declares an origin (aliased), a second point it is pointed at (aliased), and two
+scalars `(c, s)` of its own, carrying two **intrinsic** constraints the declaration implies —
+`c² + s² = 1`, and `(toward − origin) = r·(c, s)` with the chord's length `r` an unknown the
+alignment owns — so the rotor is a first-class unknown of the sketch (it drags, grounds and
+diagnoses like any other) that adds **no** freedom beyond the two points it is slaved to.  The
+representation is the 2D form of the unit quaternion a 3D workplane will want: the eventual
+lift changes a component count, not the construct.  `.angle` is *derived* — implementations
+MUST NOT store it — and is what a trace-block expression reads to state a bearing relative to
+the frame rather than the page: `bearing (u + f.angle)` (§6.5.1).  The 0.1–0.5 constructor
+spelling `frame(center, ray(center, p))` is superseded by the field form; `ray` is dropped.
 
 ### 3.3 Dimensional analysis
 
@@ -192,7 +205,7 @@ A bare declaration introduces an entity all of whose coordinates are unknowns.
 
 ```
 circle pitch(center, R)
-frame  f0 = frame(center, ray(center, t.lead))
+frame  f0(origin: center, toward: t.lead)   -- [0.6]
 ```
 
 Constructor arguments have two behaviors, by type:
@@ -294,6 +307,8 @@ A dimension in the block may be an expression over the parameter, the formals' c
 3. **A seed.** What neither an equation nor a predicate says, a seed says: the block's `at` seeds are places over the parameter and the formals, evaluation starts from them, and away from them continuity governs — an implementation MUST evaluate the curve as one continuation along the parameter, so the branch picked at the home is the branch everywhere. Deleting a seed still traces *a* branch, from a worse start — the same bargain a contact's `u = …` seed strikes in §4.3.
 
 **Places, not coordinates.** Inside a trace block a seed is a *place*, and this language names places geometrically: `point t hint at c bearing (u + phase)` is the point at the edge of circle `c` at that bearing from the page's x-axis, and `point p hint at t` is wherever `t` starts (a point already named must be declared first). Both lower to exactly what the coordinate spelling would — the bearing form is `centre + r·(cos β, sin β)` said the way a draughtsman says it — so the coordinate form `hint at (xexpr, yexpr)` remains available and means the same thing. Outside a trace block a seed is a number a solve writes back, which a place named by reference is not, so the geometric forms are trace-block-only (**E103** elsewhere).
+
+**[0.6] Bearings may be measured from a frame.** A bare bearing is page-fixed, and a block posed against a datum (`angle(datum, swing) == u`) with page-fixed seeds goes quietly stale the moment the datum tilts — the solve starts from the wrong place, and the first symptom is a wrong branch at a distant pose (bmander/geomsolver#10). The remedy is arithmetic, not a clause: a family written over a `frame` reads its derived `.angle` in any trace-block expression, so `hint at c bearing (u + f.angle)` and `hint at (o.x + d * cos(u + f.angle), …)` state the same bearing *from the frame*, and both seed forms — the geometric and the coordinate — follow the drawing by the same term. A name of the form `x.angle` where the variable table holds the rotor `x.c` / `x.s` compiles to its `atan2`; any other unknown name remains the misspelling error it was.
 
 ### 6.6 Chains **[0.4]**
 
@@ -772,7 +787,7 @@ component Gear(N: Int, m: Length) {
   circle tip(center, R + m)
   circle root(center, R - 1.25*m)
 
-  frame f0 = frame(center, ray(center, t[0].lead))
+  frame f0(origin: center, toward: t[0].lead)
   port hub = f0
 
   ring N about center as i {

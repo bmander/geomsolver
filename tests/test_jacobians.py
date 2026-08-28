@@ -28,12 +28,13 @@ def _sketch_with_stuff(seed: int):
     sp = sk.spline([sk.point(r(), r()) for _ in range(6)])
     assert sp is not None
     el = sk.ellipse(sk.point(r(), r()), sk.point(r(), r()), abs(r()) + 1)
-    return sk, p, q, s, l1, l2, c1, c2, a, sp, el
+    fr = sk.frame(sk.point(r(), r()), sk.point(r(), r()))
+    return sk, p, q, s, l1, l2, c1, c2, a, sp, el, fr
 
 
 def all_constraints(seed: int):
     """One instance of every constraint type, on a sketch of every kind of entity."""
-    sk, p, q, s, l1, l2, c1, c2, a, sp, el = _sketch_with_stuff(seed)
+    sk, p, q, s, l1, l2, c1, c2, a, sp, el, fr = _sketch_with_stuff(seed)
     return [
         C.Coincident(p, q), C.Distance(p, q, 3.0), C.Midpoint(p, l1), C.DragTarget(p, 1, 2, 0.3),
         C.Horizontal(l1), C.Vertical(l1), C.Parallel(l1, l2), C.Perpendicular(l1, l2),
@@ -53,6 +54,7 @@ def all_constraints(seed: int):
         C.PointOnEllipse(p, el), C.PointOnEllipse(q, el),
         C.EllipseTangentLine(el, l1), C.EllipseTangentLine(el, l2),
         C.EllipseCurvature(el, c1), C.EllipseCurvature(el, a),
+        C.FrameUnit(fr), C.FrameAlign(fr),
     ]
 
 

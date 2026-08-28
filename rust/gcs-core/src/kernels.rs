@@ -51,9 +51,11 @@ pub enum K {
     PointOnEllipse,
     EllipseTangentLine,
     EllipseCurvature,
+    FrameUnit,
+    FrameAlign,
 }
 
-pub const N_KERNELS: usize = 37;
+pub const N_KERNELS: usize = 39;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -1509,6 +1511,62 @@ fn point_on_trace_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
+/// Columns of `frame_unit`: (c, s).
+///
+/// `r = c² + s² − 1`, the rotor held to the unit circle.  Dimensionless residual, judged in
+/// absolute units like the angular gap — degree 0 — and its gradient carries 1/length once the
+/// rotor columns are scaled by the chord, which is exactly what `extent^(degree − 1)` says of it
+/// (the `angle` kernel's rationale).
+fn frame_unit_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 2 * i;
+        r[i] = v[o] * v[o] + v[o + 1] * v[o + 1] - 1.0;
+    }
+}
+
+fn frame_unit_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 2 * i;
+        j[o] = 2.0 * v[o];
+        j[o + 1] = 2.0 * v[o + 1];
+    }
+}
+
+/// Columns of `frame_align`: (r, ox, oy, tx, ty, c, s).
+pub const N_PAR_FRAME_ALIGN: usize = 7;
+
+/// `(t − o) − r·(c, s) = 0`: the rotor kept on the chord `origin → toward`.  Two residuals
+/// against one owned unknown `r` (the chord's length), the net one equation an attitude is
+/// worth — and the *directed* form: with `frame_unit` holding `(c, s)` to the unit circle, `r`
+/// stays positive by continuity, where a bare cross-product row would be satisfied by the
+/// reversed frame too.  A signed displacement, so degree 1.
+fn frame_align_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_FRAME_ALIGN * i;
+        r[2 * i] = (v[o + 3] - v[o + 1]) - v[o] * v[o + 5];
+        r[2 * i + 1] = (v[o + 4] - v[o + 2]) - v[o] * v[o + 6];
+    }
+}
+
+fn frame_align_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_FRAME_ALIGN * i;
+        let jo = 2 * N_PAR_FRAME_ALIGN * i;
+        let row1 = jo + N_PAR_FRAME_ALIGN;
+        for t in 0..2 * N_PAR_FRAME_ALIGN {
+            j[jo + t] = 0.0;
+        }
+        j[jo] = -v[o + 5]; // ∂/∂r = -c
+        j[jo + 1] = -1.0;
+        j[jo + 3] = 1.0;
+        j[jo + 5] = -v[o]; // ∂/∂c = -r
+        j[row1] = -v[o + 6]; // ∂/∂r = -s
+        j[row1 + 2] = -1.0;
+        j[row1 + 4] = 1.0;
+        j[row1 + 6] = -v[o]; // ∂/∂s = -r
+    }
+}
+
 pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "coincident", n_res: 2, n_par: 4, degree: 1, n_const: 0, res: coincident::res, jac: coincident::jac, const_jac: Some(coincident::J) },
     Kernel { name: "distance", n_res: 1, n_par: 4, degree: 2, n_const: 1, res: distance_res, jac: distance_jac, const_jac: None },
@@ -1547,6 +1605,8 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "point_on_ellipse", n_res: 2, n_par: N_PAR_ON_ELLIPSE, degree: 1, n_const: 0, res: point_on_ellipse_res, jac: point_on_ellipse_jac, const_jac: None },
     Kernel { name: "ellipse_tangent_line", n_res: 2, n_par: N_PAR_ELLIPSE_LINE, degree: 1, n_const: 0, res: ellipse_tangent_line_res, jac: ellipse_tangent_line_jac, const_jac: None },
     Kernel { name: "ellipse_curvature", n_res: 3, n_par: N_PAR_ELLIPSE_CURVE, degree: 1, n_const: 0, res: ellipse_curvature_res, jac: ellipse_curvature_jac, const_jac: None },
+    Kernel { name: "frame_unit", n_res: 1, n_par: 2, degree: 0, n_const: 0, res: frame_unit_res, jac: frame_unit_jac, const_jac: None },
+    Kernel { name: "frame_align", n_res: 2, n_par: N_PAR_FRAME_ALIGN, degree: 1, n_const: 0, res: frame_align_res, jac: frame_align_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

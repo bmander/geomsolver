@@ -58,10 +58,18 @@ pub enum CKind {
     /// is worth — but the curve is an expression rather than a basis, so the kernel that
     /// evaluates it is chosen per *definition*, not per type.
     PointOnCurve,
+    /// A frame's rotor held to the unit circle: `c² + s² = 1`.  Intrinsic — `Sketch::frame`
+    /// states it and nothing else does — like an arc's endpoints sitting at its radius.
+    FrameUnit,
+    /// A frame's rotor kept on its chord: `(toward − origin) = r·(c, s)`, with the chord's
+    /// length `r` the constraint's own unknown — two residuals, one Param, net one equation,
+    /// and directed (with the rotor on the unit circle, `r` stays positive by continuity).
+    /// Intrinsic, the other half of what `Sketch::frame` states.
+    FrameAlign,
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 33] = [
+pub const ALL_KINDS: [CKind; 35] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -95,6 +103,8 @@ pub const ALL_KINDS: [CKind; 33] = [
     CKind::EllipseTangentLine,
     CKind::EllipseCurvature,
     CKind::PointOnCurve,
+    CKind::FrameUnit,
+    CKind::FrameAlign,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -108,6 +118,7 @@ pub enum SpecKind {
     Ellipse,
     /// A curve written in the language — see `model::CurveDef`.
     Curve,
+    Frame,
     Length,
     Angle,
     Float,
@@ -132,6 +143,7 @@ impl SpecKind {
                 | SpecKind::Spline
                 | SpecKind::Ellipse
                 | SpecKind::Curve
+                | SpecKind::Frame
         )
     }
 
@@ -154,6 +166,7 @@ impl SpecKind {
             SpecKind::Spline => "spline",
             SpecKind::Ellipse => "ellipse",
             SpecKind::Curve => "curve",
+            SpecKind::Frame => "frame",
             SpecKind::Length => "length",
             SpecKind::Angle => "angle",
             SpecKind::Float => "float",
@@ -205,6 +218,8 @@ impl CKind {
             CKind::EllipseTangentLine => "EllipseTangentLine",
             CKind::EllipseCurvature => "EllipseCurvature",
             CKind::PointOnCurve => "PointOnCurve",
+            CKind::FrameUnit => "FrameUnit",
+            CKind::FrameAlign => "FrameAlign",
         }
     }
 
@@ -278,6 +293,8 @@ impl CKind {
             CKind::EllipseCurvature => {
                 &[("ellipse", S::Ellipse), ("circle", S::CircleOrArc), ("t", S::Param)]
             }
+            CKind::FrameUnit => &[("frame", S::Frame)],
+            CKind::FrameAlign => &[("frame", S::Frame), ("r", S::Param)],
         }
     }
 
@@ -404,7 +421,11 @@ impl CKind {
             | CKind::HorizontalPoints
             | CKind::VerticalPoints
             | CKind::HorizontalDistance
-            | CKind::VerticalDistance => false,
+            | CKind::VerticalDistance
+            // a frame's intrinsics are algebra over its own scalars, not a touch between two
+            // figures: there is no contact to double-root
+            | CKind::FrameUnit
+            | CKind::FrameAlign => false,
         }
     }
 
@@ -476,6 +497,8 @@ impl CKind {
             CKind::PointOnEllipse => K::PointOnEllipse,
             CKind::EllipseTangentLine => K::EllipseTangentLine,
             CKind::EllipseCurvature => K::EllipseCurvature,
+            CKind::FrameUnit => K::FrameUnit,
+            CKind::FrameAlign => K::FrameAlign,
         }
     }
 
@@ -520,7 +543,9 @@ impl CKind {
             | CKind::SplineTangentLine
             | CKind::SplineCurvature
             | CKind::HorizontalPoints
-            | CKind::VerticalPoints => return None,
+            | CKind::VerticalPoints
+            | CKind::FrameUnit
+            | CKind::FrameAlign => return None,
         })
     }
 }
@@ -747,6 +772,24 @@ impl Constraint {
     /// place the circle's centre is already nearest.
     pub fn ellipse_curvature(sk: &Sketch, ellipse: EntRef, circle: EntRef) -> Constraint {
         Constraint::contact(sk, CKind::EllipseCurvature, Arg::Ent(ellipse), Arg::Ent(circle))
+    }
+
+    /// A frame's rotor held to the unit circle — intrinsic: `Sketch::frame` states it and
+    /// nothing else does, the arc's bargain.
+    pub fn frame_unit(frame: EntRef) -> Constraint {
+        let mut c = Constraint::new(CKind::FrameUnit, vec![Arg::Ent(frame)]);
+        c.intrinsic = true;
+        c
+    }
+
+    /// A frame's rotor kept on its chord, the chord's length its own unknown — intrinsic, the
+    /// other half of what `Sketch::frame` states.
+    pub fn frame_align(sk: &Sketch, frame: EntRef) -> Constraint {
+        let mut args = vec![Arg::Ent(frame), Arg::Num(0.0)];
+        args[1] = Arg::Num(seed_param(sk, CKind::FrameAlign, &args, 1));
+        let mut c = Constraint::new(CKind::FrameAlign, args);
+        c.intrinsic = true;
+        c
     }
 
     /// A two-entity curve contact whose parameter starts where the geometry puts it.
@@ -1116,6 +1159,12 @@ impl Constraint {
                 vec![rad(1)],
             ]
             .concat(),
+            // the rotor alone; and the chord's length, then the frame's six numbers in
+            // `entity_params` order — the kernels' column layouts exactly
+            CKind::FrameUnit => sk.own_params(e(0)),
+            CKind::FrameAlign => {
+                [vec![self.args[1].param()], sk.entity_params(e(0))].concat()
+            }
         }
     }
 
@@ -1190,6 +1239,13 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
         (CKind::EllipseCurvature, 2) => {
             let (cx, cy) = sk.point_xy(sk.round_center(args[1].ent()));
             crate::ellipse::closest(sk, args[0].ent().i(), cx, cy).0
+        }
+        // the chord's length as drawn, asked of the one function that also scales the rotor —
+        // a degenerate frame must read the same to both, or the preconditioning and the row's
+        // seed would disagree about a drawing neither can see
+        (CKind::FrameAlign, 1) => {
+            let f = &sk.frames[args[0].ent().i()];
+            sk.frame_chord(f.origin as usize, f.toward as usize).1
         }
         _ => 0.0,
     }
@@ -1278,6 +1334,7 @@ pub fn kind_matches(spec: SpecKind, ent: EntKind) -> bool {
         SpecKind::Spline => ent == EntKind::Spline,
         SpecKind::Ellipse => ent == EntKind::Ellipse,
         SpecKind::Curve => ent == EntKind::Curve,
+        SpecKind::Frame => ent == EntKind::Frame,
         _ => false,
     }
 }

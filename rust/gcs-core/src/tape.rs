@@ -29,7 +29,12 @@ use std::collections::BTreeMap;
 pub const MAX_OPS: usize = 4096;
 
 /// How many variables one tape may read: a curve parameter and the coordinates of the geometry
-/// it is written over.  Small on purpose — it is also the width of every gradient.
+/// it is written over.  Small on purpose, and *not* only as a bound: `get`/`map`/`zip` build a
+/// `[f64; MAX_VARS]` per operand and zero all of it, so this width is a per-op cost every tape
+/// pays whatever it reads — raising it taxes a four-variable family to make room for a wide one.
+/// A family that will not fit wants fewer arguments rather than a bigger number here: the widest
+/// shipped one is peaucellier's cell, and it came down from 20 to 12 by being written over the
+/// frame it was already passing a point, a pivot and a datum alongside.
 pub const MAX_VARS: usize = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -143,7 +148,9 @@ impl Tape {
     ///
     /// A name the table does not hold and `expr` does not know as a constant is an error here
     /// rather than a free variable: a curve is written over geometry that exists, and a name
-    /// nothing declares is a misspelling, not an unknown for the solver to answer.
+    /// nothing declares is a misspelling, not an unknown for the solver to answer.  The one
+    /// exception is `<f>.angle` where the table holds the rotor `<f>.c` / `<f>.s`: a frame's
+    /// angle is derived, not stored, and compiles to its atan2.
     pub fn compile(ast: &Ast, vars: &[String]) -> Result<Tape, String> {
         if vars.len() > MAX_VARS {
             return Err(format!("a curve may read at most {MAX_VARS} coordinates"));
@@ -185,6 +192,14 @@ impl Tape {
         Ok(self.ops.len() as u32 - 1)
     }
 
+    /// The rotor columns behind a derived `<name>.angle`, when the table holds them.
+    fn rotor_columns(name: &str, index: &BTreeMap<&str, u32>) -> Option<(u32, u32)> {
+        let prefix = name.strip_suffix(".angle")?;
+        let c = index.get(format!("{prefix}.c").as_str())?;
+        let s = index.get(format!("{prefix}.s").as_str())?;
+        Some((*c, *s))
+    }
+
     fn walk(&mut self, ast: &Ast, index: &BTreeMap<&str, u32>) -> Result<u32, String> {
         Ok(match ast {
             Ast::Num(v) => self.push(Op::Const(*v))?,
@@ -192,7 +207,20 @@ impl Tape {
                 Some(&i) => self.push(Op::Var(i))?,
                 None => match crate::expr::CONSTANTS.iter().find(|&&(n, _)| n == name) {
                     Some(&(_, v)) => self.push(Op::Const(v))?,
-                    None => return Err(format!("`{name}` is not something this curve can read")),
+                    // `f.angle` is derived, never stored: a frame keeps its attitude as the
+                    // rotor `(f.c, f.s)`, and the angle a bearing wants is its atan2 (degrees,
+                    // like every trig function here).  The one exception to the misspelling
+                    // rule above, and only where the table really holds a rotor.
+                    None => match Tape::rotor_columns(name, index) {
+                        Some((ci, si)) => {
+                            let s = self.push(Op::Var(si))?;
+                            let c = self.push(Op::Var(ci))?;
+                            self.push(Op::Call2(Fn2::Atan2, s, c))?
+                        }
+                        None => {
+                            return Err(format!("`{name}` is not something this curve can read"))
+                        }
+                    },
                 },
             },
             Ast::Neg(a) => {

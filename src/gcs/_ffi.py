@@ -71,6 +71,8 @@ _SIGNATURES: list[tuple[str, Any, list[Any]]] = [
     ("gcs_sketch_arc", ct.c_int32, [PTR, ct.c_int32, ct.c_int32, ct.c_int32, PTR, ct.c_size_t]),
     ("gcs_sketch_ellipse", ct.c_int32,
      [PTR, ct.c_int32, ct.c_int32, ct.c_double, PTR, ct.c_size_t]),
+    ("gcs_sketch_frame", ct.c_int32,
+     [PTR, ct.c_int32, ct.c_int32, PTR, ct.c_size_t]),
     ("gcs_ellipse_minor", ct.c_double,
      [ct.c_double, ct.c_double, ct.c_double, ct.c_double, ct.c_double, ct.c_double]),
     ("gcs_sketch_arc_through", ct.c_int32,

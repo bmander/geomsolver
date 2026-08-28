@@ -10,7 +10,7 @@ document and the set of valid solutions is unchanged. Your job on a sketch task 
 to compute positions — that is the solver's — but to say enough true things that exactly one
 drawing satisfies them, and then to check that the diagnosis agrees. This document is what the
 implementation actually accepts, verified against it; `solvent-spec.md` is the normative
-specification and describes several constructs (`hint` as a statement, `path`, `frame`) that the
+specification and describes several constructs (`hint` as a statement, `path`) that the
 parser does **not** yet accept.
 
 ---
@@ -72,12 +72,19 @@ References are `name`, `name.field`, or `name[expr]` (which copy of a repeated s
 | `arc` | `center`, `start`, `end` | `r` | `start → end`, counter-clockwise |
 | `spline` | `ctrl` (a list) | — | — |
 | `ellipse` | `center`, `major` | `b` (minor radius) | — |
+| `frame` | `origin`, `toward` | `c`, `s` (the unit rotor) | — |
 | `curve` | `args` (a list) | — | — |
 
 A point's seed is written `hint at (x, y)`; other scalars are seeded by name, `circle c(center: o,
 r: 25)`. Children may be given positionally or by label; a label is what lets you omit an earlier
 one (`line l(p2: c)` leaves `p1` for a chain to thread). An arc is a centre and two *real* points,
 so its ends drag and constrain like any others.
+
+A `frame` is a datum: an origin, a point it is pointed at, and a unit rotor `(c, s)` of its own,
+slaved to the chord between them by two intrinsic constraints the declaration implies — so it
+draws nothing, picks as nothing, and adds no freedom beyond its two points. What it is *for* is
+`f.angle` (below, §1.8): the datum's bearing as a number a trace block may read. You never seed
+`c` or `s` yourself; they are computed from the points and re-solved with everything else.
 
 ### 1.5 Constraints
 
@@ -173,6 +180,21 @@ the parameter runs. It is how a person actually states a curve: an involute is "
 string as it unwinds", and that sentence is the block. The block's statements are ordinary ones,
 over ordinary scratch geometry; it must be square (as many equations as it has inner coordinates)
 or elaboration refuses it. See §2.9.
+
+Inside a family's expressions — a formula's coordinates, a block's seeds, rows and home — a
+formal written `f: frame` offers one name no entity stores: `f.angle`, the frame's bearing in
+degrees (the `atan2` of its rotor, derived at compile). A bare `bearing (u)` is measured from the
+page's x-axis, so a block posed against a datum (`angle(datum, swing) == u`) with page-fixed
+seeds goes quietly stale when the datum tilts; written `bearing (u + f.angle)` — or
+`cos(u + f.angle)` in a coordinate seed — the seed follows the drawing. `peaucellier.sv` states
+its one seed this way; the rest of that block needs none, because its predicates already say
+which branch each point is on, and a seed repeating a predicate is the weaker of two statements
+of one fact.
+
+A frame is also usually the *shortest* way to write the formals: it carries an origin, a second
+point and a bearing, so a family written over one need not also be passed those points and the
+line between them. Prefer that — a family's formals are columns in every gradient its tapes
+evaluate, and the fewer it takes the cheaper every evaluation is.
 
 A locus generally has several solutions, and a block picks one by three means, strongest first: a
 **signed** constraint where the vocabulary has one (`point_line_distance` is signed, so a sign

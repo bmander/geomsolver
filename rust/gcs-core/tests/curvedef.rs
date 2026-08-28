@@ -297,12 +297,14 @@ fn the_names_match_the_parameters() {
     let ci = sk.circle(a, 2.0, "ci");
     let ar = sk.arc(a, b, c, "ar");
     let el = sk.ellipse(a, b, 1.5, "el");
+    let fr = sk.frame(a, b, "fr");
     for e in [
         EntRef::point(a),
         EntRef::line(l),
         EntRef::circle(ci),
         EntRef::arc(ar),
         EntRef::ellipse(el),
+        EntRef::frame(fr),
     ] {
         let names = e.kind.scalar_names("e").expect("a fixed number of coordinates");
         assert_eq!(

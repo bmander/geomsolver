@@ -7,7 +7,7 @@ a figure will not solve — read [`docs/solvent-primer.md`](docs/solvent-primer.
 the language as the implementation actually accepts it, with every example run through the solver
 and its degrees of freedom quoted from what the solver said.  `solvent-spec.md` is the normative
 specification and is the authority on what the language *should* be, but it specifies constructs
-that do not parse yet (`hint` as a statement, `path`, `frame`), so write from the primer and reach
+that do not parse yet (`hint` as a statement, `path`), so write from the primer and reach
 for the spec when the question is what a rule ought to be.  Asked to work on the *solver* —
 kernels, diagnosis, decomposition, the bindings, the app — the rest of this file is the contract,
 and `gcs-solver-program.md` is the staged program it is built to.
@@ -207,6 +207,30 @@ Conventions:
   coordinates — and `cgraph` gives them a `virtual_line` in the ground x-axis's direction class,
   the same trick arc-endpoint tangency uses, so a levelled pair decomposes rather than falling to
   the numeric residue.
+- A **frame** (`frame f(origin: o, toward: q)`, spec §3.2 [0.6]) is a datum: the two points
+  alias, and the attitude is a **unit rotor** `(c, s)` — two owned scalars slaved to the chord by
+  two intrinsic constraints minted in `Sketch::frame` and nowhere else (the arc's bargain, since
+  intrinsics are never serialized): `frame_unit` is `c² + s² − 1`, **degree 0** (dimensionless,
+  judged absolute — the `angle` kernel's rationale), and `frame_align` is `(t − o) − r·(c, s)`
+  with the chord's length `r` a `Param` slot of its own — two rows, net one equation, and
+  *directed*, where a bare cross-product row would admit the reversed frame.  Net **0 DOF**
+  beyond the two points; `c`,`s` get `Param::scale` = the chord's length.  A rotor rather than a
+  stored angle because it has no mod-2π seam, its rows are polynomial, and it is the 2D unit
+  quaternion — a 3D workplane changes the component count, not the construct.  `.angle` is
+  **derived, never stored**: `Tape::compile`'s one exception to the misspelling rule turns
+  `f.angle` into `atan2(f.s, f.c)` (degrees) wherever the table holds the rotor — which is what
+  lets a trace seed say `bearing (u + f.angle)` and follow a tilted datum (issue #10;
+  `peaucellier.sv` states its one seed this way, and `tests/frame.rs` holds the mirror-elbow
+  document that page-fixed seeds quietly get wrong).  A frame is also the shortest
+  formal list a family can be written over — it *is* an origin, a second point and a bearing, so
+  passing those beside it states one datum three times: `cell` went from 20 variable-table
+  columns to 12 by taking `(orbit, f)` where it had taken `(o, q, datum, orbit, f)`, which is
+  what kept it under `tape::MAX_VARS`.  Raising that constant is the wrong reflex — `get`/`map`/
+  `zip` zero a `[f64; MAX_VARS]` per operand, so its width is a cost every tape pays whatever it
+  reads, and 16 → 24 measured +7–14% on tapes as narrow as four variables.  A frame is in `primitives()`
+  (it round-trips, grafts, diagnoses), but it draws nothing and its pick distance is infinite —
+  its points are the click targets.  Both intrinsics are `unsupported` in `cgraph` for now, so a
+  document with a frame drags on the numeric path; the direction-class promotion is a follow-up.
 - A **`claim`** (Solvent §9.7) is a constraint-shaped statement that is *judged, never solved
   for*: **no** `System` compiles a row for it, and decomposition (`cgraph`), the drag-part walk
   (`io::Part`) and the witness's jitter all skip it, so a claim can never move geometry, weld two

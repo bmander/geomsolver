@@ -23,8 +23,11 @@ if TYPE_CHECKING:
 
 Box = tuple[float, float, float, float]  # (xmin, ymin, xmax, ymax)
 
-KIND_ID = {"point": 0, "line": 1, "circle": 2, "arc": 3, "spline": 4, "ellipse": 5}
-KINDS = ("point", "line", "circle", "arc", "spline", "ellipse")
+KIND_ID = {"point": 0, "line": 1, "circle": 2, "arc": 3, "spline": 4, "ellipse": 5,
+           "curve": 6, "frame": 7}
+# Indexed by kind id (`pick` reads names positionally).  "curve" holds place 6: the kind is
+# real in the core but has no Python proxy, exactly as before it was listed here.
+KINDS = ("point", "line", "circle", "arc", "spline", "ellipse", "curve", "frame")
 
 
 class Param:
@@ -318,10 +321,34 @@ class Ellipse(_Constructible):
         return self.sketch.param_at(int(i))
 
 
-_CLASSES: dict[str, type[Entity]] = {"point": Point, "line": Line, "circle": Circle,
-                                     "arc": Arc, "spline": Spline, "ellipse": Ellipse}
+class Frame(_Constructible):
+    """An origin, a point it is pointed at, and a unit rotor slaved to the chord between them
+    by two intrinsic constraints — a datum other statements measure from, adding no freedom
+    beyond its two points.  A trace block reads its bearing as `f.angle`."""
 
-Primitive = Point | Line | Circle | Arc | Spline | Ellipse
+    kind = "frame"
+    __slots__ = ()
+
+    @property
+    def origin(self) -> Point:
+        return self.children[0]
+
+    @property
+    def toward(self) -> Point:
+        return self.children[1]
+
+    @property
+    def rotor(self) -> tuple[Param, Param]:
+        """The rotor `(c, s)`, held to the unit circle by its intrinsic constraint."""
+        p = self.params
+        return (p[4], p[5])
+
+
+_CLASSES: dict[str, type[Entity]] = {"point": Point, "line": Line, "circle": Circle,
+                                     "arc": Arc, "spline": Spline, "ellipse": Ellipse,
+                                     "frame": Frame}
+
+Primitive = Point | Line | Circle | Arc | Spline | Ellipse | Frame
 
 
 class ThreePointArc(NamedTuple):
@@ -433,6 +460,13 @@ class Sketch:
         p, n = _ffi.send(name)
         i = lib.gcs_sketch_ellipse(self._h, center.index, major.index, float(b), p, n)
         return self.ellipses[int(i)]
+
+    def frame(self, origin: Point, toward: Point, name: str = "") -> Frame:
+        """A frame at `origin` pointed at `toward`."""
+        p, n = _ffi.send(name)
+        i = lib.gcs_sketch_frame(self._h, origin.index, toward.index, p, n)
+        self.touch()  # the rotor's two intrinsic constraints came with it
+        return self.frames[int(i)]
 
     def arc(self, center: Point, start: Point, end: Point, name: str = "") -> Arc:
         p, n = _ffi.send(name)
@@ -547,6 +581,10 @@ class Sketch:
         return self._entities("ellipse", self._counts()[7])
 
     @property
+    def frames(self) -> list[Frame]:
+        return self._entities("frame", self._counts()[9])
+
+    @property
     def constraints(self) -> list[Constraint]:
         self._sync_constraints()
         return list(self._cons)
@@ -568,11 +606,13 @@ class Sketch:
             return self.splines
         if kind == "ellipse":
             return self.ellipses
+        if kind == "frame":
+            return self.frames
         return self.arcs
 
     def primitives(self) -> list[Primitive]:
         return [*self.points, *self.lines, *self.circles, *self.arcs, *self.splines,
-                *self.ellipses]
+                *self.ellipses, *self.frames]
 
     def user_constraints(self) -> list[Constraint]:
         """What the user added: no intrinsic ones, no soft ones."""
