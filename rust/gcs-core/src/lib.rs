@@ -36,6 +36,7 @@ pub mod report;
 pub mod rng;
 pub mod solve;
 pub mod sparse;
+pub mod style;
 pub mod syntax;
 pub mod system;
 pub mod tape;

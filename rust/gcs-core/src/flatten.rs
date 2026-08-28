@@ -172,7 +172,8 @@ impl<'a> Walk<'a> {
                             def: None,
                             values: Vec::new(),
                             domain: None,
-                            construction: false,
+                            class: Default::default(),
+                            class_span: Span::default(),
                             seed_at: None,
                         };
                         self.emit(StmtKind::Decl(d), st, scope, path);

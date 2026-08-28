@@ -23,6 +23,7 @@ use crate::expr;
 use crate::io;
 use crate::model::{EntKind, EntRef, Field, Sketch};
 use crate::rng::Rng;
+use crate::style::Classes;
 use crate::syntax::{
     entity_name, line_col, num, Arg, Decl, Gauge, Kid, Name, Orient, Program, Ref, Relation, Seg,
     Span, Stmt, StmtId, StmtKind,
@@ -448,6 +449,17 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // remembered here: inferring it later from the name would find the one that won
     let mut skip: BTreeSet<StmtId> = BTreeSet::new();
     let body: Vec<&Stmt> = expansion.flat.iter().map(|f| &f.stmt).collect();
+    // the style sheet, before anything is built: it says nothing about what the drawing is, so
+    // it is collected once and never consulted again by anything here (spec §14)
+    let mut sheet = crate::style::Sheet::new();
+    for st in &body {
+        if let StmtKind::Style(r) = &st.kind {
+            // a class stated twice cascades, later over earlier — the same rule that decides a
+            // conflicting property between two classes on one declaration
+            sheet.entry(r.name.text.clone()).or_default().over(&r.style);
+        }
+    }
+    sk.set_sheet(sheet);
     for st in &body {
         let StmtKind::Decl(d) = &st.kind else { continue };
         if let Some(&was) = res.declared_at.get(&d.name.text) {
@@ -1211,7 +1223,7 @@ fn build(
         EntKind::Curve => unreachable!("a curve is built before this walk"),
     };
     let e = EntRef::new(d.kind, idx);
-    set_construction(sk, e, d.construction);
+    set_class(sk, e, d.class.clone());
     Some(e)
 }
 
@@ -1301,21 +1313,21 @@ let Some(fam) = d.def.as_ref() else {
         args,
         values,
         domain,
-        construction: d.construction,
+        class: d.class.clone(),
     });
     Some(EntRef::new(EntKind::Curve, sk.curves.len() - 1))
 }
 
-fn set_construction(sk: &mut Sketch, e: EntRef, on: bool) {
+fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {
     match e.kind {
-        EntKind::Line => sk.lines[e.i()].construction = on,
-        EntKind::Curve => sk.curves[e.i()].construction = on,
-        EntKind::Circle => sk.circles[e.i()].construction = on,
-        EntKind::Arc => sk.arcs[e.i()].construction = on,
-        EntKind::Spline => sk.splines[e.i()].construction = on,
-        EntKind::Ellipse => sk.ellipses[e.i()].construction = on,
-        EntKind::Frame => sk.frames[e.i()].construction = on,
         EntKind::Point => {}
+        EntKind::Line => sk.lines[e.i()].class = c,
+        EntKind::Curve => sk.curves[e.i()].class = c,
+        EntKind::Circle => sk.circles[e.i()].class = c,
+        EntKind::Arc => sk.arcs[e.i()].class = c,
+        EntKind::Spline => sk.splines[e.i()].class = c,
+        EntKind::Ellipse => sk.ellipses[e.i()].class = c,
+        EntKind::Frame => sk.frames[e.i()].class = c,
     }
 }
 
@@ -1676,21 +1688,9 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         values: Vec::new(),
         domain: None,
         knots,
-        construction: construction_of(sk, e),
+        class: sk.class_of(e),
+        class_span: Span::default(),
         seed_at: None,
-    }
-}
-
-pub(crate) fn construction_of(sk: &Sketch, e: EntRef) -> bool {
-    match e.kind {
-        EntKind::Line => sk.lines[e.i()].construction,
-        EntKind::Curve => sk.curves[e.i()].construction,
-        EntKind::Circle => sk.circles[e.i()].construction,
-        EntKind::Arc => sk.arcs[e.i()].construction,
-        EntKind::Spline => sk.splines[e.i()].construction,
-        EntKind::Ellipse => sk.ellipses[e.i()].construction,
-        EntKind::Frame => sk.frames[e.i()].construction,
-        EntKind::Point => false,
     }
 }
 

@@ -24,7 +24,7 @@ fn on_rim(sk: &Sketch, e: usize, x: f64, y: f64) -> f64 {
 #[test]
 fn round_trips_through_json() {
     let (mut sk, e) = with_ellipse();
-    sk.ellipses[e].construction = true;
+    sk.ellipses[e].class = gcs_core::style::Classes::one("construction");
     let bp = sk.ellipses[e].minor as usize;
     sk.params[bp].fixed = true;
     let p = sk.point(13.0, 7.0, false, "p");
@@ -32,7 +32,7 @@ fn round_trips_through_json() {
     let back = io::loads(&io::dumps(&sk, None)).unwrap();
     assert_eq!(back.ellipses.len(), 1);
     let be = &back.ellipses[0];
-    assert!(be.construction);
+    assert!(be.class.has("construction"));
     assert_eq!(back.params[be.minor as usize].value, 3.0);
     assert!(back.params[be.minor as usize].fixed);
     assert_eq!(back.constraints.len(), 1);

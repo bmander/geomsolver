@@ -10,9 +10,9 @@ export type Ref = [string, number];
 export interface SketchJSON {
   version: number;
   points: { x: number; y: number; fixed: boolean }[];
-  lines: { p1: number; p2: number; construction: boolean }[];
-  circles: { center: number; r: number; fixed: boolean; construction: boolean }[];
-  arcs: { center: number; start: number; end: number; r: number; fixed: boolean; construction: boolean }[];
+  lines: { p1: number; p2: number; class: string[] }[];
+  circles: { center: number; r: number; fixed: boolean; class: string[] }[];
+  arcs: { center: number; start: number; end: number; r: number; fixed: boolean; class: string[] }[];
   constraints: { type: string; args: unknown[] }[];
   branches: Record<string, number>;
 }

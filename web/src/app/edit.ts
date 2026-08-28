@@ -1,5 +1,5 @@
 /* Editing the document: adding and removing constraints, and what the selection can be told to
- * do — delete, mark as construction, copy, cut, paste, fix.  Each is one thing the user did, so
+ * do — delete, mark as reference geometry, copy, cut, paste, fix.  Each is one thing the user did, so
  * each is one undo entry, one solve and one diagnosis, and each says what came of it. */
 import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
@@ -105,12 +105,14 @@ export function toggleConstructionSelected(v: SketchView): void {
       e instanceof Line || e instanceof Circle || e instanceof Arc || e instanceof Ellipse,
   );
   if (!ents.length) {
-    v.onStatus('select line(s), circle(s), arc(s) or ellipse(s) to toggle construction geometry');
+    v.onStatus('select line(s), circle(s), arc(s) or ellipse(s) to toggle reference geometry');
     return;
   }
   v.pushUndo();
-  const all = ents.every((e) => e.construction);
-  for (const e of ents) e.construction = !all;
+  // `construction` is a *class* now, and the base sheet is what draws it dashed: the toggle
+  // sets and clears the name, and knows nothing about what it looks like
+  const all = ents.every((e) => e.hasClass('construction'));
+  for (const e of ents) e.setClass('construction', !all);
   v.onStatus(`${ents.length} entit${ents.length === 1 ? 'y' : 'ies'} `
     + `${all ? 'back to normal geometry' : 'marked as construction'}`);
   v.syncSource();      // a flag is document state, so the source has to say so

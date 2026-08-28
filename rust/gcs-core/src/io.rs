@@ -10,12 +10,32 @@ use crate::decompose;
 use crate::expr;
 use crate::json::{fmt_g, object, parse, Json};
 use crate::model::{expand, EntKind, EntRef, Sketch};
+use crate::style::Classes;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// `P0` / `L3` / `C1` / `A2` — the short label the UI and `describe` use.
 pub fn entity_name(e: EntRef) -> String {
     let c = e.kind.as_str().chars().next().unwrap().to_ascii_uppercase();
     format!("{c}{}", e.idx)
+}
+
+/// The classes an entity carries.  Written as a list, and **only when there is one** — the key
+/// is absent from an ordinary entity, so a document with no presentation in it exports none.
+fn class_json(c: &Classes) -> Json {
+    Json::Arr(c.0.iter().map(|s| Json::Str(s.clone())).collect())
+}
+
+/// The classes a stored entity carries, and the one key that is read and never written:
+/// `"construction": true` loads as the class `construction`, so an export from before there
+/// were classes still opens.  JSON is the export format, not the document.
+fn read_class(v: &Json) -> Classes {
+    if let Some(Json::Arr(a)) = v.get("class") {
+        return Classes(a.iter().map(|x| x.as_str().to_string()).collect());
+    }
+    if v.get("construction").map(|x| x.as_bool()).unwrap_or(false) {
+        return Classes::one("construction");
+    }
+    Classes::default()
 }
 
 fn ref_json(e: EntRef) -> Json {
@@ -163,7 +183,7 @@ pub fn to_json(sk: &Sketch) -> Json {
             object([
                 ("p1", (l.p1 as i64).into()),
                 ("p2", (l.p2 as i64).into()),
-                ("construction", l.construction.into()),
+                ("class", class_json(&l.class)),
             ])
         })
         .collect();
@@ -175,7 +195,7 @@ pub fn to_json(sk: &Sketch) -> Json {
                 ("center", (c.center as i64).into()),
                 ("r", sk.params[c.radius as usize].value.into()),
                 ("fixed", sk.params[c.radius as usize].fixed.into()),
-                ("construction", c.construction.into()),
+                ("class", class_json(&c.class)),
             ])
         })
         .collect();
@@ -189,7 +209,7 @@ pub fn to_json(sk: &Sketch) -> Json {
                 ("end", (a.end as i64).into()),
                 ("r", sk.params[a.radius as usize].value.into()),
                 ("fixed", sk.params[a.radius as usize].fixed.into()),
-                ("construction", a.construction.into()),
+                ("class", class_json(&a.class)),
             ])
         })
         .collect();
@@ -200,7 +220,7 @@ pub fn to_json(sk: &Sketch) -> Json {
             object([
                 ("ctrl", Json::Arr(s.ctrl.iter().map(|&c| Json::Int(c as i64)).collect())),
                 ("knots", Json::Arr(s.knots.iter().map(|&k| Json::Num(k)).collect())),
-                ("construction", s.construction.into()),
+                ("class", class_json(&s.class)),
             ])
         })
         .collect();
@@ -213,7 +233,7 @@ pub fn to_json(sk: &Sketch) -> Json {
                 ("major", (e.major as i64).into()),
                 ("b", sk.params[e.minor as usize].value.into()),
                 ("fixed", sk.params[e.minor as usize].fixed.into()),
-                ("construction", e.construction.into()),
+                ("class", class_json(&e.class)),
             ])
         })
         .collect();
@@ -228,7 +248,7 @@ pub fn to_json(sk: &Sketch) -> Json {
                 ("s", sk.params[f.s as usize].value.into()),
                 ("cfixed", sk.params[f.c as usize].fixed.into()),
                 ("sfixed", sk.params[f.s as usize].fixed.into()),
-                ("construction", f.construction.into()),
+                ("class", class_json(&f.class)),
             ])
         })
         .collect();
@@ -292,7 +312,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             ),
         };
         let ln = sk.line(index(p1, np, "line.p1")?, index(p2, np, "line.p2")?);
-        sk.lines[ln].construction = l.get("construction").map(|v| v.as_bool()).unwrap_or(false);
+        sk.lines[ln].class = read_class(l);
     }
     for c in d.get("circles").unwrap_or(&empty).arr() {
         let centre = c.get("center").map(|v| v.as_i64()).unwrap_or(0);
@@ -300,8 +320,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         let ci = sk.circle(centre, c.get("r").map(|v| v.as_f64()).unwrap_or(0.0), "");
         let rp = sk.circles[ci].radius as usize;
         sk.params[rp].fixed = c.get("fixed").map(|v| v.as_bool()).unwrap_or(false);
-        sk.circles[ci].construction =
-            c.get("construction").map(|v| v.as_bool()).unwrap_or(false);
+        sk.circles[ci].class = read_class(c);
     }
     for a in d.get("arcs").unwrap_or(&empty).arr() {
         let g = |k: &str| index(a.get(k).map(|v| v.as_i64()).unwrap_or(0), np, k);
@@ -309,7 +328,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         let rp = sk.arcs[ai].radius as usize;
         sk.params[rp].value = a.get("r").map(|v| v.as_f64()).unwrap_or(0.0);
         sk.params[rp].fixed = a.get("fixed").map(|v| v.as_bool()).unwrap_or(false);
-        sk.arcs[ai].construction = a.get("construction").map(|v| v.as_bool()).unwrap_or(false);
+        sk.arcs[ai].class = read_class(a);
     }
     for s in d.get("splines").unwrap_or(&empty).arr() {
         let raw = s.get("ctrl").map(|v| v.arr().to_vec()).unwrap_or_default();
@@ -330,14 +349,14 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
                 crate::curve::DEGREE
             )
         })?;
-        sk.splines[si].construction = s.get("construction").map(|v| v.as_bool()).unwrap_or(false);
+        sk.splines[si].class = read_class(s);
     }
     for e in d.get("ellipses").unwrap_or(&empty).arr() {
         let g = |k: &str| index(e.get(k).map(|v| v.as_i64()).unwrap_or(0), np, k);
         let ei = sk.ellipse(g("center")?, g("major")?, e.get("b").map(|v| v.as_f64()).unwrap_or(0.0), "");
         let bp = sk.ellipses[ei].minor as usize;
         sk.params[bp].fixed = e.get("fixed").map(|v| v.as_bool()).unwrap_or(false);
-        sk.ellipses[ei].construction = e.get("construction").map(|v| v.as_bool()).unwrap_or(false);
+        sk.ellipses[ei].class = read_class(e);
     }
     for f in d.get("frames").unwrap_or(&empty).arr() {
         let g = |k: &str| index(f.get(k).map(|v| v.as_i64()).unwrap_or(0), np, k);
@@ -353,7 +372,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         }
         sk.params[cp].fixed = f.get("cfixed").map(|v| v.as_bool()).unwrap_or(false);
         sk.params[sp].fixed = f.get("sfixed").map(|v| v.as_bool()).unwrap_or(false);
-        sk.frames[fi].construction = f.get("construction").map(|v| v.as_bool()).unwrap_or(false);
+        sk.frames[fi].class = read_class(f);
     }
     let mut ids = Vec::new();
     for c in d.get("constraints").unwrap_or(&empty).arr() {
@@ -456,7 +475,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             continue;
         };
         let ni = dst.line(p1, p2);
-        dst.lines[ni].construction = l.construction;
+        dst.lines[ni].class = l.class.clone();
         line_map[i] = Some(ni);
         made.push(EntRef::line(ni));
     }
@@ -470,7 +489,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let ni = dst.circle(centre, src.params[c.radius as usize].value, "");
         let rp = dst.circles[ni].radius as usize;
         dst.params[rp].fixed = src.params[c.radius as usize].fixed;
-        dst.circles[ni].construction = c.construction;
+        dst.circles[ni].class = c.class.clone();
         circle_map[i] = Some(ni);
         made.push(EntRef::circle(ni));
     }
@@ -491,7 +510,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let rp = dst.arcs[ni].radius as usize;
         dst.params[rp].value = src.params[a.radius as usize].value;
         dst.params[rp].fixed = src.params[a.radius as usize].fixed;
-        dst.arcs[ni].construction = a.construction;
+        dst.arcs[ni].class = a.class.clone();
         arc_map[i] = Some(ni);
         made.push(EntRef::arc(ni));
     }
@@ -513,9 +532,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         }
         // with nothing gone this gives back the knots unchanged, so there is no case to split
         let knots = crate::curve::knots_without(&sp.knots, &gone, ctrl.len());
-        let construction = sp.construction;
+        let class = sp.class.clone();
         let Some(ni) = dst.spline_with(&ctrl, Some(knots)) else { continue };
-        dst.splines[ni].construction = construction;
+        dst.splines[ni].class = class;
         spline_map[i] = Some(ni);
         made.push(EntRef::spline(ni));
     }
@@ -532,7 +551,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let ni = dst.ellipse(c, m, src.params[el.minor as usize].value, "");
         let bp = dst.ellipses[ni].minor as usize;
         dst.params[bp].fixed = src.params[el.minor as usize].fixed;
-        dst.ellipses[ni].construction = el.construction;
+        dst.ellipses[ni].class = el.class.clone();
         ellipse_map[i] = Some(ni);
         made.push(EntRef::ellipse(ni));
     }
@@ -552,7 +571,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         dst.params[ns].value = src.params[f.s as usize].value;
         dst.params[nc].fixed = src.params[f.c as usize].fixed;
         dst.params[ns].fixed = src.params[f.s as usize].fixed;
-        dst.frames[ni].construction = f.construction;
+        dst.frames[ni].class = f.class.clone();
         frame_map[i] = Some(ni);
         made.push(EntRef::frame(ni));
     }
@@ -586,7 +605,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             args,
             values: cv.values.clone(),
             domain: cv.domain,
-            construction: cv.construction,
+            class: cv.class.clone(),
         });
         curve_map[i] = Some(dst.curves.len() - 1);
         made.push(EntRef::new(EntKind::Curve, dst.curves.len() - 1));

@@ -11,6 +11,7 @@
 
 use crate::constraints::{Arg, Constraint};
 use crate::rng::Rng;
+use crate::style::Classes;
 use std::collections::BTreeMap;
 
 pub type Box2 = (f64, f64, f64, f64); // (xmin, ymin, xmax, ymax)
@@ -236,15 +237,15 @@ pub struct PointE {
 pub struct LineE {
     pub p1: u32,
     pub p2: u32,
-    /// Reference geometry: drawn dashed, constrains like any other.
-    pub construction: bool,
+    /// How it is *presented* — see `style.rs`.  Nothing the core computes reads it.
+    pub class: Classes,
 }
 
 #[derive(Clone, Debug)]
 pub struct CircleE {
     pub center: u32,
     pub radius: u32,
-    pub construction: bool,
+    pub class: Classes,
 }
 
 /// CCW arc from `start` to `end` about `center`.  The radius is its own Param so Circle and Arc
@@ -256,7 +257,7 @@ pub struct ArcE {
     pub start: u32,
     pub end: u32,
     pub radius: u32,
-    pub construction: bool,
+    pub class: Classes,
 }
 
 /// A cubic B-spline over an ordered control polygon.
@@ -272,7 +273,7 @@ pub struct SplineE {
     pub ctrl: Vec<u32>,
     /// `ctrl.len() + curve::DEGREE + 1` non-decreasing values.
     pub knots: Vec<f64>,
-    pub construction: bool,
+    pub class: Classes,
 }
 
 /// Centre, one end of the major axis, and a minor radius of its own.  Five numbers — exactly
@@ -284,7 +285,7 @@ pub struct EllipseE {
     pub center: u32,
     pub major: u32,
     pub minor: u32,
-    pub construction: bool,
+    pub class: Classes,
 }
 
 /// An origin, a point it is pointed at, and the unit rotor `(c, s)` between them — see
@@ -296,7 +297,7 @@ pub struct FrameE {
     pub toward: u32,
     pub c: u32,
     pub s: u32,
-    pub construction: bool,
+    pub class: Classes,
 }
 
 /// A curve family, written in the language: `C(u)` as a pair of expressions over the geometry
@@ -347,7 +348,7 @@ pub struct CurveE {
     /// which is how a gear flank is the piece of an involute between two circles rather than the
     /// whole spiral.
     pub domain: (f64, f64),
-    pub construction: bool,
+    pub class: Classes,
 }
 
 /// The CCW arc through three points.
@@ -425,12 +426,70 @@ pub struct Sketch {
     /// one the first time a name nothing defines is read and retires it when the last reader
     /// stops reading it, so nothing else in the document has to know they exist.
     pub free_vars: BTreeMap<String, u32>,
+    /// The document's style sheet: what each class looks like (`style.rs`).  Presentation, and
+    /// nothing the core computes reads it — it is here because it is document state, saved and
+    /// grafted with everything else, and because the core resolving it is what keeps two front
+    /// ends from disagreeing about how one drawing is drawn.
+    pub sheet: crate::style::Sheet,
+    /// Bumped whenever the sheet or a class changes, so a binding may cache the resolved styles
+    /// against it.  Geometry moves every frame and presentation almost never does; the counter
+    /// is what lets the second be read at the second's rate.
+    pub style_epoch: u32,
     next_cid: u32,
 }
 
 impl Sketch {
     pub fn new() -> Sketch {
         Sketch::default()
+    }
+
+    // -- presentation (`style.rs`) ------------------------------------------
+
+    /// The classes an entity carries.  Empty for a point, which is drawn as a dot and has no
+    /// stroke to style; giving it one is a later question and not this one's.
+    pub fn class_of(&self, e: EntRef) -> Classes {
+        match e.kind {
+            EntKind::Point => Classes::default(),
+            EntKind::Line => self.lines[e.i()].class.clone(),
+            EntKind::Circle => self.circles[e.i()].class.clone(),
+            EntKind::Arc => self.arcs[e.i()].class.clone(),
+            EntKind::Spline => self.splines[e.i()].class.clone(),
+            EntKind::Ellipse => self.ellipses[e.i()].class.clone(),
+            EntKind::Frame => self.frames[e.i()].class.clone(),
+            EntKind::Curve => self.curves[e.i()].class.clone(),
+        }
+    }
+
+    /// Give an entity a class, or take one away.  The one write path, so the epoch a binding
+    /// caches against cannot be missed.
+    pub fn set_class(&mut self, e: EntRef, name: &str, on: bool) {
+        let slot = match e.kind {
+            EntKind::Point => return,
+            EntKind::Line => self.lines.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Circle => self.circles.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Arc => self.arcs.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Spline => self.splines.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Ellipse => self.ellipses.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Frame => self.frames.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Curve => self.curves.get_mut(e.i()).map(|x| &mut x.class),
+        };
+        if let Some(c) = slot {
+            c.set(name, on);
+            self.style_epoch = self.style_epoch.wrapping_add(1);
+        }
+    }
+
+    /// The whole sheet, replaced.  Elaboration's write path, and the other half of the epoch.
+    pub fn set_sheet(&mut self, sheet: crate::style::Sheet) {
+        self.sheet = sheet;
+        self.style_epoch = self.style_epoch.wrapping_add(1);
+    }
+
+    /// What an entity is drawn with: the base sheet under the document's, cascaded over its
+    /// classes.  **The core resolves; a front end strokes what it is handed** — the same seam
+    /// `callout.rs` and `curve::tessellate` sit on, so every front end draws one drawing alike.
+    pub fn style_of(&self, e: EntRef) -> crate::style::Style {
+        crate::style::resolve(&self.sheet, &self.class_of(e))
     }
 
     // -- construction -------------------------------------------------------
@@ -453,7 +512,7 @@ impl Sketch {
     }
 
     pub fn line(&mut self, p1: usize, p2: usize) -> usize {
-        self.lines.push(LineE { p1: p1 as u32, p2: p2 as u32, construction: false });
+        self.lines.push(LineE { p1: p1 as u32, p2: p2 as u32, class: Classes::default() });
         self.lines.len() - 1
     }
 
@@ -465,7 +524,11 @@ impl Sketch {
 
     pub fn circle(&mut self, center: usize, radius: f64, name: &str) -> usize {
         let r = self.param(radius, false, &format!("{name}.r"));
-        self.circles.push(CircleE { center: center as u32, radius: r as u32, construction: false });
+        self.circles.push(CircleE {
+            center: center as u32,
+            radius: r as u32,
+            class: Classes::default(),
+        });
         self.circles.len() - 1
     }
 
@@ -480,7 +543,7 @@ impl Sketch {
             start: start as u32,
             end: end as u32,
             radius: rp as u32,
-            construction: false,
+            class: Classes::default(),
         });
         let ai = self.arcs.len() - 1;
         let aref = EntRef::arc(ai);
@@ -515,7 +578,7 @@ impl Sketch {
             center: center as u32,
             major: major as u32,
             minor: bp as u32,
-            construction: false,
+            class: Classes::default(),
         });
         self.ellipses.len() - 1
     }
@@ -534,7 +597,7 @@ impl Sketch {
             toward: toward as u32,
             c: cp as u32,
             s: sp as u32,
-            construction: false,
+            class: Classes::default(),
         });
         let fi = self.frames.len() - 1;
         let fref = EntRef::frame(fi);
@@ -578,7 +641,7 @@ impl Sketch {
         self.splines.push(SplineE {
             ctrl: ctrl.iter().map(|&c| c as u32).collect(),
             knots,
-            construction: false,
+            class: Classes::default(),
         });
         Some(self.splines.len() - 1)
     }

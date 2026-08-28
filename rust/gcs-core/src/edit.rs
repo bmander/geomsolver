@@ -321,7 +321,8 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
         def: None,
         values: Vec::new(),
         domain: None,
-        construction: false,
+        class: Default::default(),
+        class_span: Span::default(),
         seed_at: None,
     };
     append(prog, StmtKind::Decl(d), vec![name])
@@ -370,7 +371,8 @@ pub fn add_entity(prog: &Program, kind: EntKind, args: &[String], seed: &[f64]) 
         def: None,
         values: Vec::new(),
         domain: None,
-        construction: false,
+        class: Default::default(),
+        class_span: Span::default(),
         seed_at: None,
     };
     append(prog, StmtKind::Decl(d), vec![name])
@@ -702,30 +704,31 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         doomed.remove(&site.stmt);
     }
 
-    /* flags and gauge.  A construction word and a `ground` are neither an entity nor a
+    /* classes and gauges.  A `class` clause and a `ground` are neither an entity nor a
      * constraint, so nothing above notices them: they are read off the sketch and compared
      * against what the source says, statement by statement. */
     let mut flags: Vec<Splice> = Vec::new();
     for (r, site) in e.map.of_entity.iter() {
         if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
-            continue;   // inside a component: one statement, many instances, no one flag
+            continue;   // inside a component: one statement, many instances, no one class list
         }
         let Some(d) = decl_of(prog, site) else { continue };
-        let now = crate::program::construction_of(sk, *r);
-        if now == d.construction {
+        let now = sk.class_of(*r);
+        if now == d.class {
             continue;
         }
-        let Some(st) = prog.stmt(site.stmt) else { continue };
-        if now {
-            let at = Span::new(st.span.hi as usize, st.span.hi as usize);
-            flags.push(Splice { at, with: " construction".into() });
-        } else if let Some(i) =
-            prog.text()[st.span.lo as usize..st.span.hi as usize].rfind(" construction")
-        {
-            let lo = st.span.lo as usize + i;
+        // the whole clause, replaced where it stands — or written at the point the parser
+        // recorded for it, which is where it would have gone
+        let at = d.class_span;
+        if now.is_empty() {
+            // gone: the clause takes the space in front of it with it
+            let lo = back_over_spaces(prog.text(), at.lo as usize);
+            flags.push(Splice { at: Span::new(lo, at.hi as usize), with: String::new() });
+        } else {
+            let with = format!(" class {}", now.0.join(" "));
             flags.push(Splice {
-                at: Span::new(lo, lo + " construction".len()),
-                with: String::new(),
+                at,
+                with: if at.is_empty() { with } else { with.trim_start().to_string() },
             });
         }
     }

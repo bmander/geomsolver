@@ -54,7 +54,7 @@ component Gear(N: Int, m: Length, c: circle) {
   param R = m * N / 2
   port hub: point
   point center hint(x: 0, y: 0)
-  circle base(center: center) hint(r: R) construction
+  circle base(center: center) hint(r: R) class construction
   radius(base) == R
   ground(center)
   cycle N as i {
@@ -78,7 +78,8 @@ g: Gear(N: 30, m: 3)  // one wheel
     assert_eq!(tint_of(src, "center hint"), Some(Tint::Def));
     assert_eq!(tint_of(src, "hint("), Some(Tint::Word));
     assert_eq!(tint_of(src, "base(center"), Some(Tint::Def));
-    assert_eq!(tint_of(src, "construction"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "class"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "construction"), Some(Tint::Class));
     assert_eq!(tint_of(src, "radius"), Some(Tint::Relation));
     assert_eq!(tint_of(src, "== R"), Some(Tint::Claim));
     assert_eq!(tint_of(src, "ground"), Some(Tint::Relation));
@@ -153,4 +154,23 @@ fn a_block_comment_is_one_run() {
     assert_eq!(ts.iter().filter(|&&(t, _)| t == Tint::Comment).count(), 1);
     // and the word after it still starts a statement
     assert_eq!(tint_of(src, "line"), Some(Tint::Word));
+}
+
+/// **Presentation reads as presentation.**  A class on a declaration and the `style` block that
+/// says what it looks like are a different statement from what the drawing *is*, and the
+/// colouring says so: the class name has a tint of its own, wherever it stands.
+#[test]
+fn a_class_and_a_style_block_read_as_presentation() {
+    let src = "\
+style .centerline { dash: 12 3 2 3; width: 0.5; color: #888888 }
+point a hint(x: 0, y: 0)
+line ab(a, a) class centerline heavy
+";
+    assert_eq!(tint_of(src, "style"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "centerline {"), Some(Tint::Class));
+    assert_eq!(tint_of(src, "dash"), Some(Tint::Label));
+    assert_eq!(tint_of(src, "12"), Some(Tint::Num), "a sheet's lengths are not seeds");
+    assert_eq!(tint_of(src, "class"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "centerline heavy"), Some(Tint::Class));
+    assert_eq!(tint_of(src, "heavy"), Some(Tint::Class), "every class in the list");
 }

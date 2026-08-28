@@ -6,7 +6,8 @@ import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
 import type { Pt, Seg } from '../core/callout.js';
 import {
-  Arc, Circle, Ellipse, Line, Point, Primitive, Spline, ellipseMinor, onRadius, threePointArc,
+  Arc, Circle, Ellipse, Line, Point, Primitive, Spline, Style, ellipseMinor, onRadius,
+  threePointArc,
 } from '../core/model.js';
 import { tellDimension } from './dimension.js';
 import type { SketchView } from './view.js';
@@ -37,11 +38,9 @@ const COL_STATE: Record<string, string> = {
   well: '#2ca02c', under: '#e69500', over: '#d62728', conflict: '#d62728',
 };
 
-/** Reference geometry is drawn dashed; the dashes are screen px, so they do not zoom. */
-const CONSTRUCTION_DASH = [7, 4];
-
-/** A dimension's extension and witness lines: finer dashes than construction geometry, since
- *  they are annotation rather than something the sketch is made of. */
+/** A dimension's extension and witness lines: finer dashes than reference geometry, since they
+ *  are annotation rather than something the sketch is made of.  This is the app's own chrome —
+ *  a callout is not a statement in the document, so no class reaches it. */
 const WITNESS_DASH = [4, 3];
 
 export function paint(v: SketchView): void {
@@ -62,65 +61,71 @@ export function paint(v: SketchView): void {
   const sk = v.sketch;
   const sel = new Set(v.selected);
   const hl = new Set(v.highlight);
-  const strokeFor = (base: string, ent: Primitive, lw = 1.8): [string, number] => {
+  /* What to stroke an entity with.  The *document's* half — dash, weight, ink — is resolved in
+   * the core from its style sheet and arrives as a `Style`; the app's own chrome — selection,
+   * highlight, colour-by-state — is layered over it here, because that is a view toggle and not
+   * a statement in the document.  `paint` knows what a class is nowhere. */
+  const strokeFor = (base: string, ent: Primitive, st?: Style): [string, number] => {
+    const lw = st?.width ?? 1.8;
     if (sel.has(ent)) return [COL.sel, lw + 1.5];
     if (hl.has(ent)) return [COL.highlight, lw + 1];
-    return [v.colorByState ? COL_STATE[v.stateOf(ent)] : base, lw];
+    if (v.colorByState) return [COL_STATE[v.stateOf(ent)], lw];
+    return [st?.color ?? base, lw];
   };
 
   for (const ln of sk.lines) {
-    const [col, lw] = strokeFor(COL.line, ln);
+    const [col, lw] = strokeFor(COL.line, ln, ln.style);
     ctx.strokeStyle = col;
     ctx.lineWidth = lw;
-    ctx.setLineDash(ln.construction ? CONSTRUCTION_DASH : []);
+    ctx.setLineDash(ln.style.dash);
     ctx.beginPath();
     ctx.moveTo(...v.w2s(...ln.p1.xy));
     ctx.lineTo(...v.w2s(...ln.p2.xy));
     ctx.stroke();
   }
   for (const c of sk.circles) {
-    const [col, lw] = strokeFor(COL.circle, c);
+    const [col, lw] = strokeFor(COL.circle, c, c.style);
     ctx.strokeStyle = col;
     ctx.lineWidth = lw;
-    ctx.setLineDash(c.construction ? CONSTRUCTION_DASH : []);
+    ctx.setLineDash(c.style.dash);
     circlePath(v, c.center.xy, Math.abs(c.radius.value));
     ctx.stroke();
   }
   for (const a of sk.arcs) {
-    const [col, lw] = strokeFor(COL.arc, a);
+    const [col, lw] = strokeFor(COL.arc, a, a.style);
     ctx.strokeStyle = col;
     ctx.lineWidth = lw;
-    ctx.setLineDash(a.construction ? CONSTRUCTION_DASH : []);
+    ctx.setLineDash(a.style.dash);
     arcPath(v, a.center.xy, Math.abs(a.radius.value), ...a.angles());
     ctx.stroke();
   }
   for (const el of sk.ellipses) {
-    const [col, lw] = strokeFor(COL.ellipse, el);
+    const [col, lw] = strokeFor(COL.ellipse, el, el.style);
     ctx.strokeStyle = col;
     ctx.lineWidth = lw;
-    ctx.setLineDash(el.construction ? CONSTRUCTION_DASH : []);
+    ctx.setLineDash(el.style.dash);
     ellipsePath(v, el.center.xy, el.major.xy, Math.abs(el.minor.value));
     ctx.stroke();
   }
   // curves written in the language: the core lays out the polyline, exactly as it does for a
   // B-spline, so the front end strokes what it is handed and evaluates no expression of its own
   for (const cv of sk.curves) {
-    const [col, lw] = strokeFor(COL.spline, cv);
+    const [col, lw] = strokeFor(COL.spline, cv, cv.style);
     ctx.strokeStyle = col;
     ctx.lineWidth = lw;
-    ctx.setLineDash(cv.construction ? CONSTRUCTION_DASH : []);
+    ctx.setLineDash(cv.style.dash);
     polyPath(v, cv.polyline());
     ctx.stroke();
     ctx.setLineDash([]);
   }
   for (const sp of sk.splines) {
-    const [col, lw] = strokeFor(COL.spline, sp);
+    const [col, lw] = strokeFor(COL.spline, sp, sp.style);
     // the curve arrives as a polyline already refined to this zoom: `unit` is the world
     // length of one screen pixel, the same number the callouts are laid out against, so the
     // front end strokes what the core hands it and never evaluates a basis function
     ctx.strokeStyle = col;
     ctx.lineWidth = lw;
-    ctx.setLineDash(sp.construction ? CONSTRUCTION_DASH : []);
+    ctx.setLineDash(sp.style.dash);
     polyPath(v, sp.polyline(v.unit));
     ctx.stroke();
     // the control polygon, only while the curve or one of its points is in play: it is how

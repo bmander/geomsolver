@@ -54,7 +54,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `port`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `ellipse`, `spline`, `construction`. **[0.4]** In a chain (§6.6) the words `to` and `close` are meaningful *contextually*; they are not reserved, and an entity may bear either as a name. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` keeps its own form inside a trace block (§6.5.1).
+- **Keywords:** `component`, `port`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `ellipse`, `spline`. **[0.7]** `class` and `style` in, `construction` out — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the words `to` and `close` are meaningful *contextually*; they are not reserved, and an entity may bear either as a name. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` keeps its own form inside a trace block (§6.5.1).
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
 - **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . = -> ~`
@@ -269,7 +269,7 @@ ellipse e(center: q, major: m) hint(b: 12)
 
 These are seed-class (§4.2, §4.3) and semantically inert (P3). They are the primitive form; §11's `hint` statement remains, for the case it is actually good at.
 
-**[0.7] One clause for every seed.** `hint(…)` joins the trailing-clause loop, so it is order-free against `knots` and `construction` exactly as those two already are against each other. A constraint's own unknown is written the same way — `point_on_spline(p, s) hint(t: 0.4)` — and the *pin* stays in the argument list, `point_on_spline(p, s, t == 0.4)`: `hint` marks what a solve revises, and a pin is precisely what it does not.
+**[0.7] One clause for every seed.** `hint(…)` joins the trailing-clause loop, so it is order-free against `knots` and `class` (§13.2) exactly as those two already are against each other. A constraint's own unknown is written the same way — `point_on_spline(p, s) hint(t: 0.4)` — and the *pin* stays in the argument list, `point_on_spline(p, s, t == 0.4)`: `hint` marks what a solve revises, and a pin is precisely what it does not.
 
 Two things that look like seeds and are not, and stay where they are. **`knots [...]`** is document data no solve moves. **A curve instance's values** — `curve e = involute(base, phase: 0)` — are numbers the family takes, not numbers the solve revises.
 
@@ -649,6 +649,47 @@ This is P2 applied to the document rather than to the program text, and it is st
 
 Both failures are silent, and both are invisible to any test that checks only the solution set — which is why 0.1 could assert P2 in the parser and lose it in the file format. Where a datum has no statement to ride on, it MUST name what it qualifies (an entity by name, a solution branch by the names of the points that orient it) rather than by index.
 
+### 13.2 Presentation: classes and style sheets **[0.7]**
+
+> **A document says what the drawing *is*. How it *looks* is a separate statement, in a separate part of the file, and changing it is never an edit of the geometry.**
+
+A declaration carries a **class**; a `style` block says what a class looks like.
+
+```
+style .construction { dash: 7 4 }
+style .centerline   { dash: 12 3 2 3; width: 0.5; color: #888888 }
+style .heavy        { width: 2.5 }
+
+line   datum(center, anchor) class construction
+line   ab(a, b) class centerline heavy
+circle base(center: c) hint(r: Rb) class construction
+```
+
+- **A class goes on an entity declaration**, and nowhere else. Not on a component definition, not on an instance, not on a `cycle`. Those are all reasonable later and none of them is needed.
+- **A declaration MAY carry several classes**, space-separated. On a conflicting property the later one wins, so `class centerline heavy` is a centreline drawn thick — and *only* on the properties the later one states.
+- **`style` blocks sit at the top level.** An external sheet, shared across drawings, is the natural extension once there is more than one drawing to style; it is not specified here.
+- **An unmatched class is not an error.** It simply has no rule, exactly as in CSS — which is also what makes paste work: a figure copied out of a document with a sheet keeps its class names and picks up whatever the destination says about them, or nothing.
+
+| property | value | |
+|---|---|---|
+| `dash` | a list of lengths | as `stroke-dasharray`; empty or absent is solid |
+| `width` | a length | stroke weight |
+| `color` | `#rrggbb` | stroke ink |
+
+**Lengths in a sheet are screen pixels**, not world units — the rule that already governs everything drawn at a constant size. A dashed line does not change its dash pattern when you zoom.
+
+**`construction` is retired as a keyword.** What it did is one rule in an **implicit base sheet** that an implementation ships and a document may override:
+
+```
+style .construction { dash: 7 4 }
+```
+
+A document that overrides `.construction` MUST change how it draws and nothing else: same solve, same DOF, same diagnosis.
+
+**No algorithm may consult a class.** This is the point of the section, and it is a normative constraint on implementations rather than on documents: presentation is read where a drawing is drawn and nowhere else. It is also why the *implementation* resolves the cascade rather than a front end — a callout's figure and a curve's tessellation are laid out in the same place for the same reason, so that two front ends draw one drawing alike.
+
+An export format MAY record a class list. It SHOULD go on reading whatever the format wrote before there were classes; `construction` in particular SHOULD load as the class of that name.
+
 ---
 
 ## 14. Elaboration semantics
@@ -868,13 +909,14 @@ param          = IDENT ":" type ;
 type           = "Int" | "Scalar" | "Length" | "Angle"
                | "Point" | "Line" | "Circle" | "Frame" | "Path" ;
 
-statement      = decl | constraint | hint | gauge | block | path_decl | frag ;
+statement      = decl | constraint | hint | gauge | block | path_decl | style_rule | frag ;
+style_rule     = "style" "." IDENT "{" { IDENT ":" value { ";" } } "}" ;   (* §13.2 *)
 
 decl           = entity_decl | param_decl | port_decl | curve_def | instance_decl ;
 entity_decl    = ekw binder { "," binder }
                | ekw IDENT "=" expr ;
 ekw            = "point" | "circle" | "line" | "frame" | "ellipse" | "spline" | "curve" ;
-(* the trailing clauses are order-free: `hint(…)`, `knots […]`, `construction`.  The geometric
+(* the trailing clauses are order-free: `hint(…)`, `knots […]`, `class …`.  The geometric
    `hint at` forms — `hint at t`, `hint at c bearing (…)` — are trace-block seeds, §6.5.1 *)
 binder         = IDENT [ "(" ctor_arg { "," ctor_arg } ")" ] { trailer } ;
 (* §6.1: no list at all is the anonymous form — the kind's children are minted and reached as
@@ -882,7 +924,7 @@ binder         = IDENT [ "(" ctor_arg { "," ctor_arg } ")" ] { trailer } ;
 trailer        = hint_clause
                | "hint" "at" ref [ "bearing" "(" expr ")" ]
                | "knots" "[" number { "," number } "]"
-               | "construction" ;
+               | "class" IDENT { IDENT } ;                 (* presentation, §13.2 *)
 hint_clause    = "hint" "(" IDENT ":" expr { "," IDENT ":" expr } ")" ;   (* SEEDS, §4.3 *)
 ctor_arg       = [ IDENT ":" ] ( ref | hint_clause ) ;     (* what the thing is made of, §6.2 *)
 
@@ -941,7 +983,7 @@ Parsing note: a statement beginning with an expression is disambiguated by the t
 
 A minimal conforming implementation provides:
 
-1. Parser for §19; classifier assigning every statement to §4.2 classes **by the `=` / `==` mark (§4.3)**; Invariant H enforced by construction.
+1. Parser for §19; classifier assigning every statement to §4.2 classes **by the `=` / `==` mark (§4.3)**; Invariant H enforced by construction of the parser.
 2. Elaborator: instance expansion **preserving statement identity (§12.7)**, union-find aliasing, definitional substitution, dedup store, `ring` lowering (quotient form or cycle-plus-symmetry — either, per §12.3, **and reported if unrolled**).
 3. Invariance check §12.5 (syntactic criterion), gauge analysis (W103), DOF ledger (§16.3).
 4. A numeric backend satisfying §15 — Newton on the quotient system seeded by hints is sufficient — with rank-deficiency reporting attributed to source spans.

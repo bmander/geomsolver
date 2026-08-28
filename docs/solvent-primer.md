@@ -50,8 +50,9 @@ the centre is structure and the radius is a guess, and one pair of brackets said
 
 ```
 param NAME = EXPR                       a number worked out while elaborating; never an unknown
-KIND NAME[(CHILD | hint(x: E, y: E), …)] [hint(SCALAR: E, …)] [knots […]] [construction]
+KIND NAME[(CHILD | hint(x: E, y: E), …)] [hint(SCALAR: E, …)] [knots […]] [class NAME…]
                                         an entity declaration (§1.4)
+style .NAME { PROP: VALUE; … }          what a class looks like (§1.10)
 RELATION(ARGS) [== EXPR] [hint(SLOT: EXPR, …)] [at (t, r)]                 a constraint (§1.5)
 claim RELATION(ARGS) [== EXPR]          an assertion, judged and never solved for (§1.9)
 ground(REF)                             pin both of a point's coordinates
@@ -85,7 +86,7 @@ References are `name`, `name.field`, or `name[expr]` (which copy of a repeated s
 Every scalar is seeded by name in the trailing clause — `point p hint(x: 0, y: 0)`,
 `circle c(center: o) hint(r: 25)`, `arc a(center: c, start: s, end: e) hint(r: 5)`. Keys may come
 in any order and an omitted one is 0, so `point p hint(y: 12)` and `point t` are both legal. The
-clause is order-free against `knots` and `construction`, exactly as those two are against each
+clause is order-free against `knots` and `class`, exactly as those two are against each
 other. Children may be given positionally or by label; a label is what lets you omit an earlier
 one (`line l(p2: c)` leaves `p1` for a chain to thread). An arc is a centre and two *real* points,
 so its ends drag and constrain like any others.
@@ -260,7 +261,32 @@ Because a claim adds no equations, it may not own an unknown: claiming a curve c
 (`point_on_curve` and kin, whose slot carries the contact's own parameter) is an error, and so
 is binding a free variable in a claim's dimension.
 
-### 1.10 Checking your work
+### 1.10 How it looks
+
+**A document says what the drawing *is*; how it looks is a separate statement.** A declaration
+carries a **class**, and a `style` block says what that class looks like. Nothing the solver,
+the diagnosis or the decomposition does ever reads one.
+
+```
+style .construction { dash: 7 4 }
+style .centerline   { dash: 12 3 2 3; width: 0.5; color: #888888 }
+style .heavy        { width: 2.5 }
+
+line datum(o, q) class construction
+line ab(a, b) class centerline heavy      // a centreline drawn thick
+```
+
+Several classes cascade, later over earlier, and only on the properties the later one states. An
+unmatched class is not an error — it simply has no rule, exactly as in CSS, which is also what
+makes paste work. **Lengths in a sheet are screen pixels**: a dashed line does not change its
+dash pattern when you zoom.
+
+`construction` used to be a keyword. It is a class now, and `style .construction { dash: 7 4 }`
+is a rule in the base sheet the implementation ships — so `class construction` draws exactly as
+the word did, and a document that wants reference geometry drawn some other way says so and
+changes nothing else.
+
+### 1.11 Checking your work
 
 Elaborate, solve, then diagnose. The diagnosis reports **degrees of freedom** and one of four
 states:

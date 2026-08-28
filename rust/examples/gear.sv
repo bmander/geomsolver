@@ -87,9 +87,9 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   param u1 = sqrt((Rt / Rb) ^ 2 - 1) * 180 / pi
 
   point center hint(x: 0, y: 0)
-  circle base(center: center) hint(r: Rb) construction
-  circle root(center: center) hint(r: Rr) construction
-  circle tip(center: center) hint(r: Rt) construction
+  circle base(center: center) hint(r: Rb) class construction
+  circle root(center: center) hint(r: Rr) class construction
+  circle tip(center: center) hint(r: Rt) class construction
 
   // `r:` above only *seeds* a radius — a seed is where a solve starts, not something it must
   // honour — so without these the three circles would breathe.

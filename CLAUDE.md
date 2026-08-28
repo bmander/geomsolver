@@ -19,10 +19,11 @@ Currently: **Stage 5 done**, in **one** implementation —
   (`kernels.rs`, `system.rs`), our own DogLeg/LM plus the dense and sparse linear algebra
   (`newton.rs`, `linalg.rs`, `sparse.rs`), structural diagnosis (`graph.rs`, `diagnose.rs`),
   decomposition into cached solve plans (`cgraph.rs`, `decompose.rs`), witness analysis
-  (`witness.rs`), drag/solution management (`solve.rs`, `homotopy.rs`), dimension callouts
-  (`callout.rs`), dimension expressions (`expr.rs`), parametric curves (`curve.rs`), the
-  **Solvent** language the document is written in (`syntax.rs`, `flatten.rs`, `program.rs`,
-  `edit.rs`, `tape.rs`), JSON export (`io.rs`, `json.rs`) and the reference sketches
+  (`witness.rs`), presentation (`style.rs`), drag/solution management (`solve.rs`,
+  `homotopy.rs`), dimension callouts (`callout.rs`), dimension expressions (`expr.rs`),
+  parametric curves (`curve.rs`), the **Solvent** language the document is written in
+  (`syntax.rs`, `flatten.rs`, `program.rs`, `edit.rs`, `tape.rs`), JSON export
+  (`io.rs`, `json.rs`) and the reference sketches
   (`examples.rs`, over the documents in `rust/examples/`).
 * **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built twice — a self-contained
   `wasm32-unknown-unknown` module for the browser and a native `cdylib` for anything else that
@@ -66,7 +67,7 @@ Conventions:
 - **Every seed is written in one `hint(…)` clause, and nothing else is** (Solvent §4.3, §6.4):
   `point p hint(x: 0, y: 0)`, `circle c(center: o) hint(r: 25)`,
   `point_on_spline(p, s) hint(t: 0.4)`.  Keys in any order, an omitted scalar is 0, and the
-  clause joins the trailing-clause loop beside `knots` and `construction`.  **The brackets after
+  clause joins the trailing-clause loop beside `knots` and `class`.  **The brackets after
   the name are what the thing is made of; the `hint(…)` after them is where the solve begins** —
   which is what `circle c(center: o, r: 25)` got wrong, putting a number the solver will move
   inside the same brackets as the structure it may not.  §4.3's rule is then lexical and exact:
@@ -108,6 +109,25 @@ Conventions:
   Where an unseeded implicit child *starts* is `program::scatter` and is an implementation
   choice the spec must not carry — but it may not be the origin: two endpoints there is a
   zero-length line, with no direction for `horizontal(l)` and a singular row for any tangency.
+- **Presentation is a separate statement from what the drawing is** (`style.rs`, Solvent §13.2).
+  A declaration carries a **class** (`line datum(o, q) class construction`) and a top-level
+  `style .NAME { dash: 7 4; width: 0.5; color: #888888 }` says what a class looks like.
+  **No algorithm in the core consults a class** — nothing in the model, the kernels, diagnosis or
+  decomposition reads one, and that is the whole point: `construction` was a `bool` on seven
+  entity structs, serialized, grafted, exported, published and given a toggle, all to reach one
+  arm in `paint.ts`, and each new look cost the same again.  A class is one string in the same
+  places, once, and the count goes into the sheet instead.
+  `construction` is therefore no longer a word in the language: it is a class, and
+  `style .construction { dash: 7 4 }` is the one rule in `style::base()`, which a document may
+  override.  **The core resolves and the front end strokes** — the same seam `callout.rs` and
+  `curve::tessellate` sit on, so `paint.ts` reads `ent.style` (dash, width, colour) and knows
+  what a class is nowhere; `app/edit.ts`'s toggle sets and clears the *name*.  A sheet's lengths
+  are **screen pixels**, never world units: a dashed line does not change its pattern when you
+  zoom.  An unmatched class is not a diagnostic — it has no rule, as in CSS, which is also what
+  makes paste work.  `Sketch::style_epoch` is bumped by the one write path (`set_class`,
+  `set_sheet`) so a binding may cache a resolved table against it.  JSON writes `"class"` and
+  **reads `"construction": true`** and never writes it, the same bargain `from_json` already
+  strikes with the pre-§13.1 placements table.
 - A constraint may own *unknowns* of its own: a `SpecKind::Param` slot in its `spec`, allocated
   by `Sketch::add` and moved by the solver like any other parameter.  The slot holds a seed
   number on the way in — which is what a document stores, what `graft` copies, and what
@@ -123,7 +143,8 @@ Conventions:
   `rust/gcs-core/tests/`.  A binding changes only when the *surface* changes.  If you find
   yourself writing geometry or numerics in TypeScript, it belongs in Rust instead.
 - A new *entity* kind stops the build in the exhaustive `match e.kind` arms — `model.rs`
-  (`entity_params`, `children`, `count`, `bounds`, `distance_between`, `point_to_drawn`),
+  (`entity_params`, `children`, `count`, `bounds`, `distance_between`, `point_to_drawn`,
+  `class_of`, `set_class`),
   `io::graft`'s remap and the FFI's `ent`/`kind_id`.  Give it an arm in each; `primitives()`
   and `topology_key` are where it joins the document.
 - Every new constraint type = a vectorized kernel in `kernels.rs` (added to `KERNELS`; the
