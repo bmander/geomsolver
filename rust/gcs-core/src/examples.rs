@@ -124,6 +124,13 @@ pub fn peaucellier(arm: f64, side: f64, crank: f64) -> Sketch {
     document(&src, "peaucellier")
 }
 
+/// The same cell, proved against a grounded rail instead of a traced locus —
+/// `peaucellier_rail.sv`.  It takes no arguments on purpose: the anchor states where the line
+/// is, so the theorem holds at these three lengths and no others.
+pub fn peaucellier_rail() -> Sketch {
+    document(PEAUCELLIER_RAIL, "peaucellier_rail")
+}
+
 /// Build a named example.  `None` for an unknown name.
 pub fn example(name: &str) -> Option<Sketch> {
     Some(match name {
@@ -146,12 +153,13 @@ pub fn example(name: &str) -> Option<Sketch> {
         "spline_follower" => spline_follower(),
         "belt_tangency" => belt_tangency(),
         "peaucellier" => peaucellier(100.0, 60.0, 40.0),
+        "peaucellier_rail" => peaucellier_rail(),
         _ => return None,
     })
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 22] = [
+pub const CASES: [(&str, &str, &str); 23] = [
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Slotted link", "slotted_link", "obround slot with two holes; fully constrained"),
     ("Truss (8 bays)", "truss", "~30-entity Warren truss, every member dimensioned"),
@@ -174,6 +182,7 @@ pub const CASES: [(&str, &str, &str); 22] = [
     ("Spur gear, traced (12 teeth)", "gear_trace", "the same wheel with the involute *traced* rather than computed: `trace p where { … }` states the taut string — on the circle, perpendicular to the radius, as long as the arc unwound — and the solver finds every point of the flank"),
     ("Levelled zigzags (3×32)", "zigzag", "three separate staircases of free-length H/V segments — a drag costs one staircase, not three"),
     ("Peaucellier straight line", "peaucellier", "the 1864 cell: circling rods whose pen draws an exact straight line — the path is a trace, the straightness is `claim vertical(rail)`, and the diagnosis judges the claim a theorem.  Drag the pen along the rail it cannot leave"),
+    ("Peaucellier, proved by rail", "peaucellier_rail", "the same cell with no curve in it: the pen is joined to a grounded point and `claim vertical(rail)` asks whether saying so costs the crank a freedom.  It does not, so the claim is a theorem — but this one has to be told where the line is, where its sibling discovers it"),
 ];
 
 /// A spur gear, written as a Solvent program rather than built here.
@@ -287,6 +296,7 @@ pub fn source(key: &str) -> Option<&'static str> {
         "pythagoras" => Some(PYTHAGORAS),
         "spline_follower" => Some(SPLINE_FOLLOWER),
         "peaucellier" => Some(PEAUCELLIER),
+        "peaucellier_rail" => Some(PEAUCELLIER_RAIL),
         _ => None,
     }
 }
@@ -314,6 +324,7 @@ pub const PYTHAGORAS: &str = include_str!("../../examples/pythagoras.sv");
 /// the diagnosis judges the claim a theorem: true, and adding no rank the drawing does not
 /// already have.  The case for claims, as `altitudes` is for implied relations.
 pub const PEAUCELLIER: &str = include_str!("../../examples/peaucellier.sv");
+pub const PEAUCELLIER_RAIL: &str = include_str!("../../examples/peaucellier_rail.sv");
 pub const SPLINE_FOLLOWER: &str = include_str!("../../examples/spline_follower.sv");
 
 /// The case library's factory.  Keys are either a plain name or `name:arg[:arg]`, so a front end

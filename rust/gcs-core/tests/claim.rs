@@ -348,3 +348,40 @@ fn the_theorem_does_not_care_what_the_rods_measure() {
     straight_line_holds(100.0, 70.0, 40.0, 63.75);
     straight_line_holds(100.0, 60.0, 50.0, 64.0);
 }
+
+/// The same theorem, proved without a curve — `peaucellier_rail.sv`.  The rail joins the pen to
+/// a grounded point, and what makes it a proof rather than an observation is the *rank* test: a
+/// claim is a theorem only when stating it would cost the mechanism no freedom, so a theorem
+/// here says the pen's x cannot change as the crank turns.
+#[test]
+fn the_rail_proves_the_line_without_tracing_it() {
+    let mut sk = gcs_core::examples::example("peaucellier_rail").expect("a registered case");
+    let r = gcs_core::solve::solve(&mut sk, gcs_core::solve::SolveOpts::default());
+    assert!(r.success, "does not solve: {}", r.message);
+
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!((d.dof, d.status), (1, State::Under), "the crank is still free");
+    assert!(d.over.is_empty(), "a claim must never paint the drawing Over: {:?}", d.over);
+    let claim = sk.constraints.iter().find(|c| c.claim).expect("the file ends on a claim");
+    assert_eq!(claim.kind, CKind::Vertical);
+    assert_eq!(d.claims_theorem, vec![claim.id], "the straight line is a theorem");
+}
+
+/// And it is a test rather than a decoration: move the anchor off the line the pen actually
+/// draws and the same claim comes back *refuted*.  Without this the theorem above could be
+/// passing for any reason at all.
+#[test]
+fn the_rail_is_refuted_when_it_is_not_where_the_pen_goes() {
+    let src = gcs_core::examples::source("peaucellier_rail").unwrap()
+        .replace("point anchor hint at (80, 0)", "point anchor hint at (70, 0)");
+    let (prog, errs) = gcs_core::syntax::parse(&src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let mut e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok());
+    assert!(gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default()).success);
+
+    let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+    let claim = e.sketch.constraints.iter().find(|c| c.claim).unwrap();
+    assert_eq!(d.claims_violated, vec![claim.id], "a rail in the wrong place is a counterexample");
+    assert!(d.claims_theorem.is_empty());
+}
