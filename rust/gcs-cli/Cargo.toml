@@ -1,0 +1,18 @@
+[package]
+name = "gcs-cli"
+version = "0.1.0"
+edition = "2021"
+description = "solventc: check a Solvent document from the command line."
+
+# The CLI's dependencies are the CLI's.  Nothing here reaches the cdylib or the wasm — the same
+# argument the core's test reference implementation makes — but there is nothing here anyway:
+# four flags and a list of paths do not need an argument parser.
+[dependencies]
+gcs-core = { path = "../gcs-core" }
+
+[dev-dependencies]
+gcs-core = { path = "../gcs-core" }
+
+[[bin]]
+name = "solventc"
+path = "src/main.rs"

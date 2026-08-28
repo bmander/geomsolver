@@ -57,7 +57,7 @@ export function paint(v: SketchView): void {
    * highlight, colour-by-state — is layered over it here, because that is a view toggle and not
    * a statement in the document.  `paint` knows what a class is nowhere. */
   const strokeFor = (base: string, ent: Primitive, st?: Style): [string, number] => {
-    const lw = st?.width ?? 1.8;
+    const lw = st?.width ?? 1.8;   // the other copy is `svg::PLAIN_PX`; the two must agree
     if (sel.has(ent)) return [COL.sel, lw + 1.5];
     if (hl.has(ent)) return [COL.highlight, lw + 1];
     if (v.colorByState) return [COL_STATE[v.stateOf(ent)], lw];
@@ -214,10 +214,11 @@ export function paintCallouts(v: SketchView): void {
   ctx.lineCap = 'butt';
   for (const { k, col, lw } of painted) {
     ctx.strokeStyle = ctx.fillStyle = col;
-    ctx.lineWidth = lw;
     ctx.setLineDash(extension.dash);
+    ctx.lineWidth = extension.width ?? lw;   // `callout::ink` composes the thin lines this way
     path(k.thin);
     ctx.setLineDash([]);
+    ctx.lineWidth = lw;
     path(k.solid);
     for (const a of k.arcs) {
       arcPath(v, a.c, a.r, a.a0, a.a1, a.a1 > a.a0);

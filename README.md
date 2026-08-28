@@ -23,10 +23,26 @@ Rust and Node, and nothing else.
 
 ```sh
 make            # build/libgcs.dylib (the native C ABI)
+make solventc   # build/solventc (the command-line compiler)
 make wasm       # web/src/wasm/gcs.wasm (browser); adds the wasm32 target if needed
 cd web && npm install
 make test       # cargo + web suite
 ```
+
+## `solventc` — checking a drawing without a browser
+
+```sh
+solventc rust/examples/*.sv          # parse, elaborate, solve, diagnose, report
+solventc --json gear.sv              # the same numbers, structured
+solventc --output gear.svg gear.sv   # and an SVG of the drawing
+```
+
+Exit codes are `0` (elaborated and solved), `1` (did not parse or elaborate) and `2` (did not
+solve, unless `--allow-unsolved`), so a document can be checked in CI. A diagnostic carries its
+span: `gear.sv:31:14: error[E040]: \`c\` is a circle, and a line is built from points`.
+
+The report's wording is the core's — `diagnose::summary` for the per-document line, `io::describe`
+for a culprit — so the CLI and the app cannot come to describe the same drawing differently.
 
 ## TypeScript quickstart
 

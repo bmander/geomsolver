@@ -1346,23 +1346,43 @@ impl Sketch {
         b
     }
 
-    /// Bounds of everything drawn, curves included — what a "fit the view" wants.
+    /// Everything with something to draw: `primitives()` and the curves after it.
+    ///
+    /// A curve is written *over* the other kinds and so is built and grafted last, which is why
+    /// `primitives()` stops short of it — but a consumer that means "draw the drawing" wants
+    /// both, and this is where that is said.  Written once because it was already being patched
+    /// up locally by everything that needed it.
+    pub fn drawn(&self) -> Vec<EntRef> {
+        let mut v = self.primitives();
+        v.extend((0..self.curves.len()).map(|i| EntRef::new(EntKind::Curve, i)));
+        v
+    }
+
+    /// Bounds of the drawn primitives — what a "fit the view" wants.
+    ///
+    /// **Curves are not in it, and that is a cost decision.**  A curve's `bounds` is its
+    /// polyline, which for a traced family is a damped-Newton march per point; this runs inside
+    /// `callout::layout`, so it is paid on every repaint.  Measured on `gear_trace` (24 traced
+    /// curves) that is 11 ms a call against 1 µs — four orders of magnitude, per frame, to
+    /// square up a box.  A caller that needs the curves in its box and is already sweeping them
+    /// (the SVG export sizes a page from the polylines it is about to draw) grows this by what
+    /// it swept; one that is not should not start.
     pub fn drawn_bounds(&self) -> Box2 {
+        self.bounds_of(&self.primitives()).unwrap_or_else(|| self.bbox())
+    }
+
+    /// The box round a given set of entities, or `None` when the set draws nothing.  The fold
+    /// `drawn_bounds` and the SVG export's page both want, so neither writes it out.
+    pub fn bounds_of(&self, ents: &[EntRef]) -> Option<Box2> {
         let mut b = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
-        let mut any = false;
-        for e in self.primitives() {
+        for &e in ents {
             let x = self.bounds(e);
-            any = true;
             b.0 = b.0.min(x.0);
             b.1 = b.1.min(x.1);
             b.2 = b.2.max(x.2);
             b.3 = b.3.max(x.3);
         }
-        if any {
-            b
-        } else {
-            self.bbox()
-        }
+        b.0.is_finite().then_some(b)
     }
 
     /// Characteristic length of the sketch (tolerances, drag weights).

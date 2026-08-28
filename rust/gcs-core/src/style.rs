@@ -156,8 +156,12 @@ pub fn base() -> Sheet {
 /// work, since a figure copied out of a document with a sheet keeps its class names and picks up
 /// whatever the destination says about them, or nothing.
 pub fn resolve(sheet: &Sheet, classes: &Classes) -> Style {
+    // the shipped rules never change, and this runs once per entity per repaint and twice per
+    // callout in the SVG export — rebuilding four rules and their names each time is work no
+    // caller asked for
+    static BASE: std::sync::OnceLock<Sheet> = std::sync::OnceLock::new();
     let mut out = Style::default();
-    for layer in [&base(), sheet] {
+    for layer in [BASE.get_or_init(base), sheet] {
         for c in &classes.0 {
             if let Some(r) = layer.get(c) {
                 out.over(r);

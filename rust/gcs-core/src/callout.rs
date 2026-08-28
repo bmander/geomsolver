@@ -182,6 +182,37 @@ impl Callout {
     }
 }
 
+/// The head of one arrow, as the three world points a front end fills.
+///
+/// The tip is `a.at`, the back edge sits `ARROW_PX` back along `-dir`, and the barbs are `BARB`
+/// of that length either side.  Here rather than in a front end for the reason the label's box
+/// is (CLAUDE.md: "the whole figure — extension lines, heads, … — is laid out in the core and
+/// the front end only strokes what it is handed"): two front ends drew this triangle from the
+/// two constants, which is one drawing rule with two implementations and nothing to catch a
+/// mismatch.
+pub fn head(a: &Arrow, unit: f64) -> [P; 3] {
+    let len = ARROW_PX * unit;
+    let back = (a.at.0 - a.dir.0 * len, a.at.1 - a.dir.1 * len);
+    let (nx, ny) = (-a.dir.1 * len * BARB, a.dir.0 * len * BARB);
+    [a.at, (back.0 + nx, back.1 + ny), (back.0 - nx, back.1 - ny)]
+}
+
+/// What one callout is stroked with: the dimension line, and the extension lines beside it.
+///
+/// The *rule*, in the one place that has it — which classes a callout carries and how they
+/// compose.  A reference dimension is drawn `dimension reference` because it *is* a dimension
+/// and `.reference` says only how it differs; the extension lines take `.extension`'s dash and
+/// the dimension's ink, and its own weight only where a sheet states one.  Written once because
+/// each front end that resolved it for itself came to a slightly different answer.
+pub fn ink(sk: &Sketch, c: &Callout) -> (crate::style::Style, crate::style::Style) {
+    let claimed = sk.constraint(c.id).map(|k| k.claim).unwrap_or(false);
+    let solid = sk.style_named(if claimed { "dimension reference" } else { "dimension" });
+    let mut thin = sk.style_named("extension");
+    thin.color = solid.color.clone();
+    thin.width = thin.width.or(solid.width);
+    (solid, thin)
+}
+
 /// The drafting figure for every dimensioned constraint in the sketch, in world coordinates.
 /// `unit` is the world length of one screen pixel.
 pub fn layout(sk: &Sketch, unit: f64) -> Vec<Callout> {

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["gcs-core", "gcs-ffi"]
+members = ["gcs-core", "gcs-ffi", "gcs-cli"]
 
 [profile.release]
 opt-level = 3
