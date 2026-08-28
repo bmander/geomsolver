@@ -9,5 +9,7 @@ gcs-core = { path = "../gcs-core" }
 
 [lib]
 name = "gcs"
-crate-type = ["cdylib", "staticlib"]
+# `rlib` so `tests/` can link the ABI and check the panic boundary on the native
+# target — the one thing `wasm32-unknown-unknown` cannot check, since it aborts.
+crate-type = ["cdylib", "staticlib", "rlib"]
 path = "src/lib.rs"

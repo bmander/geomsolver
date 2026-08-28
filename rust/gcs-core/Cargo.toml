@@ -6,6 +6,13 @@ description = "Geometric constraint solver: model, numerics, diagnosis, decompos
 
 [dependencies]
 
+# The library itself has no dependencies.  Its *tests* have one reference implementation:
+# there is no LAPACK/BLAS here — the pivoted QR, the complete orthogonal decomposition, the
+# SVD and the LU are ours — so `tests/linalg.rs` compares them against an independent one.
+# Nothing here links into the cdylib or the wasm; only the test binary.
+[dev-dependencies]
+nalgebra = { version = "0.35", default-features = false, features = ["std"] }
+
 [lib]
 name = "gcs_core"
 path = "src/lib.rs"

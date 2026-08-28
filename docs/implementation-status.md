@@ -13,15 +13,16 @@ The solver exists **once**:
 |---|---|---|
 | **core** | [`rust/gcs-core/`](../rust/gcs-core/) | the whole engine — model, kernels, solvers, linear algebra, diagnosis, decomposition, witness analysis, homotopy, document I/O.  No dependencies. |
 | **ABI** | [`rust/gcs-ffi/`](../rust/gcs-ffi/) | one flat C ABI, built twice: a native `cdylib` and a self-contained `wasm32-unknown-unknown` module |
-| **Python** | [`src/gcs/`](../src/gcs/) | a thin `ctypes` binding — proxies over handles, numpy buffers for hot-path numbers, JSON for ragged results |
-| **TypeScript** | [`web/src/core/`](../web/src/core/) | the same binding over WebAssembly |
+| **TypeScript** | [`web/src/core/`](../web/src/core/) | a thin binding over WebAssembly — proxies over handles, buffers for hot-path numbers, JSON for ragged results |
 | **app** | [`web/src/app/`](../web/src/app/) | an HTML5-canvas sketcher, the only front end |
 
-Neither binding contains an algorithm.  Both generate their constraint classes from the core's own
-registry, so a new constraint type appears in Python and in the browser with nothing to change on
-either side.  The one place two implementations are still compared is
-[`tests/test_linalg.py`](../tests/test_linalg.py), which checks our QR / complete-orthogonal / SVD /
-LU against numpy — on purpose, because there is no LAPACK anywhere in the project.
+The binding contains no algorithm.  It generates its constraint classes from the core's own
+registry, so a new constraint type appears in the browser with nothing to change on that side.
+The one place two implementations are still compared is
+[`rust/gcs-core/tests/linalg.rs`](../rust/gcs-core/tests/linalg.rs), which checks our QR /
+complete-orthogonal / SVD / LU against `nalgebra` — on purpose, because there is no LAPACK
+anywhere in the project.  The library has no dependencies; its *tests* have one reference
+implementation, and it is a dev-dependency so nothing it brings links into the cdylib or the wasm.
 
 ## The core (`rust/gcs-core/`)
 
@@ -111,20 +112,19 @@ LU against numpy — on purpose, because there is no LAPACK anywhere in the proj
 * `examples.rs` — rectangle-with-fillets, slotted link, truss, under-constrained polygon chain,
   K₃,₃, random Laman frameworks, and the conflict/redundancy cases the app's library shows.
 
-## The bindings
+## The binding
 
-Both are the same shape.  A `Sketch` is a handle; `Param`, `Point`, `Line`, `Circle`, `Arc` and
-the constraint classes are interned proxies over `(handle, index)`; hot-path numbers (residuals,
-Jacobians, drag frames) cross as raw buffers; everything ragged crosses as one JSON document.
-The constraint classes themselves are generated at load time from `gcs_registry_json`, which is
-why `src/gcs/constraints.py` and `web/src/core/constraints.ts` know no type by name.
+A `Sketch` is a handle; `Param`, `Point`, `Line`, `Circle`, `Arc` and the constraint classes are
+interned proxies over `(handle, index)`; hot-path numbers (residuals, Jacobians, drag frames)
+cross as raw buffers; everything ragged crosses as one JSON document.  The constraint classes
+themselves are generated at load time from `gcs_registry_json`, which is why
+`web/src/core/constraints.ts` knows no type by name.
 
-```python
-from gcs import Sketch, Distance, solve
-sk = Sketch()
-p, q = sk.point(0, 0), sk.point(12, 0)
-sk.add(Distance(p, q, 10))
-solve(sk)                      # p -> (1, 0), q -> (11, 0): least change
+```ts
+const sk = new Sketch();
+const p = sk.point(0, 0), q = sk.point(12, 0);
+sk.add(new C.Distance(p, q, 10));
+solve(sk);                     // p -> (1, 0), q -> (11, 0): least change
 ```
 
 ## Web app
@@ -281,6 +281,5 @@ truss_100       400  400 |  0.61 ms |  1.17 ms |  0.16 ms
 
 | suite | what it covers |
 |---|---|
-| `cargo test --manifest-path rust/Cargo.toml` | the engine: FD Jacobian checks on every constraint type, both solvers, the graph algorithms against the reference cases, diagnosis, decomposition and replay, witness analysis, homotopy, the drag torture suite, document I/O |
-| `.venv/bin/pytest` | the Python binding reaching all of it, plus `test_linalg.py` — our QR / SVD / LU against numpy |
+| `cargo test --manifest-path rust/Cargo.toml` | the engine: FD Jacobian checks on every constraint type, both solvers, the graph algorithms against the reference cases, diagnosis, decomposition and replay, witness analysis, homotopy, the drag torture suite, document I/O; `tests/linalg.rs` — our QR / SVD / LU against `nalgebra`; `gcs-ffi/tests/` — the ABI's panic boundary, which only the native target can check |
 | `cd web && npm test` | the TypeScript binding reaching all of it, plus the ABI surface check |

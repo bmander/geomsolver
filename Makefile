@@ -1,9 +1,9 @@
-# gcs — one Rust core, two thin bindings.
+# gcs — one Rust core, one thin binding.
 #
-#   make            native shared library in build/ (what the Python package loads)
+#   make            native shared library in build/ (the released C ABI artefact)
 #   make wasm       web/src/wasm/gcs.wasm (what the web app instantiates)
-#   make test       everything: cargo, pytest, and the web suite
-#   make bench      the Rust-side benchmarks through both bindings
+#   make test       everything: cargo and the web suite
+#   make bench      the native benchmark and the wasm one, meant to be read side by side
 
 UNAME := $(shell uname -s)
 EXT := $(if $(filter Darwin,$(UNAME)),.dylib,$(if $(filter Windows_NT,$(OS)),.dll,.so))
@@ -16,7 +16,7 @@ RUST_SRC := $(shell find rust/gcs-core/src rust/gcs-ffi/src rust/examples \
                         -name '*.rs' -o -name '*.sv')
 WASM_TARGET := wasm32-unknown-unknown
 
-.PHONY: all wasm test test-rust test-py test-web bench fmt clippy clean
+.PHONY: all wasm test test-rust test-web bench fmt clippy clean
 
 all: build/libgcs$(EXT)
 
@@ -33,20 +33,18 @@ web/src/wasm/gcs.wasm: $(RUST_SRC) rust/gcs-core/Cargo.toml rust/gcs-ffi/Cargo.t
 	$(CARGO) build --manifest-path rust/Cargo.toml --release -p gcs-ffi --target $(WASM_TARGET)
 	cp rust/target/$(WASM_TARGET)/release/gcs.wasm $@
 
-test: test-rust test-py test-web
+test: test-rust test-web
 
+# `--all-targets` so `gcs-ffi/tests/` runs too: the panic boundary is the one thing only the
+# native target can check, since `wasm32-unknown-unknown` aborts whatever the profile says.
 test-rust:
 	$(CARGO) test --manifest-path rust/Cargo.toml --release
-
-test-py: all
-	.venv/bin/pytest -q
-	.venv/bin/mypy
 
 test-web: wasm
 	cd web && npm test
 
-bench: all wasm
-	.venv/bin/python -m gcs.bench
+bench: wasm
+	$(CARGO) run --manifest-path rust/Cargo.toml --release -p gcs-core --bin bench
 	cd web && npm run bench
 
 fmt:

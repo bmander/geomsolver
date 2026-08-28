@@ -24,13 +24,17 @@ Currently: **Stage 5 done**, in **one** implementation —
   **Solvent** language the document is written in (`syntax.rs`, `flatten.rs`, `program.rs`,
   `edit.rs`, `tape.rs`), JSON export (`io.rs`, `json.rs`) and the reference sketches
   (`examples.rs`, over the documents in `rust/examples/`).
-* **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built twice — a native `cdylib` for
-  Python and a self-contained `wasm32-unknown-unknown` module for the browser.
-* **bindings**: `src/gcs/` (Python, `ctypes`) and `web/src/core/` (TypeScript, WebAssembly).
-  Both are *thin*: proxies over handles, buffers for hot-path numbers, JSON for ragged results.
-  Neither contains an algorithm — and neither re-derives a number the report already carries
-  (a motion's `movingParams` is the core's reading of its own velocities, not a threshold each
-  binding picks), since two copies of a rule are two rules the moment one of them is edited.
+* **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built twice — a self-contained
+  `wasm32-unknown-unknown` module for the browser and a native `cdylib` for anything else that
+  speaks C.  The native build is also where the *panic boundary* is checked
+  (`gcs-ffi/tests/panic_boundary.rs`): `guard`'s `catch_unwind` only ever catches on native,
+  since `wasm32-unknown-unknown` aborts whatever the profile says, which is why the release
+  profile carries `panic = "unwind"`.
+* **binding**: `web/src/core/` (TypeScript, WebAssembly) — the only one.  It is *thin*: proxies
+  over handles, buffers for hot-path numbers, JSON for ragged results.  It contains no
+  algorithm — and re-derives no number the report already carries (a motion's `movingParams` is
+  the core's reading of its own velocities, not a threshold the binding picks), since two copies
+  of a rule are two rules the moment one of them is edited.
 * **app** (`web/src/app/`): an HTML5-canvas sketcher, the only front end.  Two halves, each
   a handful of modules rather than one slab.  The *view* is the canvas: `view.ts` holds the
   state — the camera, selection, tool, plan, diagnosis — and the modules beside it take that
@@ -46,9 +50,9 @@ Currently: **Stage 5 done**, in **one** implementation —
 
 Commands:
 `make` (native `build/libgcs.dylib`), `make wasm` (`web/src/wasm/gcs.wasm`),
-`make test` (cargo + pytest + mypy + the web suite), `cargo test --manifest-path rust/Cargo.toml`,
-`.venv/bin/pytest`, `.venv/bin/mypy` (strict, must stay clean), `cd web && npm test`,
-`make bench`, `cd web && npm run serve`.
+`make test` (cargo + the web suite), `cargo test --manifest-path rust/Cargo.toml`,
+`cd web && npm test`, `make bench` (the native `bench` binary and `npm run bench`, meant to be
+read side by side), `cd web && npm run serve`.
 
 `npm run build` is `tsc` (module per file, which is what `node --test` and the test suite run
 against) then esbuild, which rolls `dist/app/main.js` and everything it reaches into one
@@ -85,7 +89,7 @@ Conventions:
 - **The core owns every algorithm.**  A change to the model, a constraint type, diagnosis,
   decomposition or the solvers lands in `rust/gcs-core/` with a Rust test in
   `rust/gcs-core/tests/`.  A binding changes only when the *surface* changes.  If you find
-  yourself writing geometry or numerics in Python or TypeScript, it belongs in Rust instead.
+  yourself writing geometry or numerics in TypeScript, it belongs in Rust instead.
 - A new *entity* kind stops the build in the exhaustive `match e.kind` arms — `model.rs`
   (`entity_params`, `children`, `count`, `bounds`, `distance_between`, `point_to_drawn`),
   `io::graft`'s remap and the FFI's `ent`/`kind_id`.  Give it an arm in each; `primitives()`
@@ -347,8 +351,8 @@ Conventions:
   selection (so a clipboard is an ordinary sketch document), `paste` grafts one sketch onto
   another at an offset.  A new thing that travels with a constraint or an entity — a flag, a
   placement — belongs in `graft`, or the three will disagree.  JSON is now the *export* format,
-  derived rather than canonical; `io::dumps` is still what the Rust tests, the Python binding and
-  the benchmarks compare against.
+  derived rather than canonical; `io::dumps` is still what the Rust tests and the benchmarks
+  compare against.
 - A **chain** (Solvent §6.6) is parser-level sugar and nothing else: `horizontal line bottom(b1,
   b2) tangent arc a(center: c, r: r) tangent …` desugars in `syntax.rs` into the ordinary
   statements it stands for — a prefix word (any `CKind` whose spec is one entity slot) becomes
@@ -405,8 +409,11 @@ Conventions:
 - Replays are warm-started on the current geometry (leaves re-derived each frame), so the root a
   sketch is on is "nearest the identity"; alternatives are applied by writing geometry, not by
   caching transforms.
-- Slow tests are gated by `GCS_SLOW=1` (Python) and `#[ignore]` (cargo).
-- Benchmark on a quiet machine (`uptime`); this box often has a JVM indexer at 300% CPU.
+- Slow tests are gated by `#[ignore]` (cargo).
+- Benchmark on a quiet machine (`uptime`); this box often has a JVM indexer at 300% CPU.  The
+  native half is `rust/gcs-core/src/bin/bench.rs` (`cargo run --release -p gcs-core --bin bench`)
+  and the wasm half is `npm run bench`; `make bench` runs both.  Wall-clock medians and nothing
+  else — a benchmark harness would be the core's first dependency.
 - The front end is two layers and they are kept orthogonal.  *Geometry* is the core's, and it
   is asked in world coordinates: what a click picks is `model::pick` (which measures what is
   *drawn* — a line's segment, an arc's sweep, the curve itself — as against `point_to`, which
@@ -695,5 +702,9 @@ Conventions:
 - Nothing in the project is auto-formatted: there is no `rustfmt.toml`, and `cargo fmt` would
   reformat every file.  Match the surrounding style by hand (100 columns).
 - No LAPACK/BLAS: the QR, complete-orthogonal, SVD and LDLᵀ routines are ours, and
-  `tests/test_linalg.py` checks them against numpy — the one place two implementations are still
-  compared, on purpose.
+  `rust/gcs-core/tests/linalg.rs` checks them against `nalgebra` — the one place two
+  implementations are still compared, on purpose.  **The library has no dependencies; its tests
+  have one reference implementation**, and it is a `[dev-dependencies]` entry precisely so that
+  nothing it brings links into the cdylib or the wasm.  Each test also states the property the
+  reference cannot (`A ≈ QR` on the pivots, `NᵀN ≈ I`, a minimum-norm solution orthogonal to the
+  null space): a reference agreeing is evidence, a property holding is the contract.
