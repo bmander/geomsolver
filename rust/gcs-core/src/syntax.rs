@@ -6,8 +6,8 @@
 //!
 //! **Nothing here is written per constraint type.**  A statement's name is the snake_case of
 //! `CKind::name()`, its arguments follow `CKind::spec()`, and a trailing `Length`/`Angle` slot
-//! prints after `==` — the same bargain `report::registry_json` already strikes with the Python
-//! and TypeScript bindings, so a new constraint type appears in the language with nothing to
+//! prints after `==` — the same bargain `report::registry_json` already strikes with the
+//! TypeScript binding, so a new constraint type appears in the language with nothing to
 //! change.  Entity declarations are named by `EntKind::fields`, which is the document's own table.
 //!
 //! **The one exception is `joint_relation`**, and it is the exception that proves the rule: a

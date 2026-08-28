@@ -2,7 +2,7 @@
 name = "gcs-ffi"
 version = "0.1.0"
 edition = "2021"
-description = "Flat C ABI over gcs-core: one library for the Python and WebAssembly bindings."
+description = "Flat C ABI over gcs-core: one library, built as WebAssembly and as a native cdylib."
 
 [dependencies]
 gcs-core = { path = "../gcs-core" }

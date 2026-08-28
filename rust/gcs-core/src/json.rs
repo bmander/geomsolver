@@ -1,9 +1,9 @@
 //! A small JSON value, parser and writer.
 //!
-//! The core owns document I/O, so it owns JSON too — and the bindings speak JSON for everything
-//! that is not on the hot path, which keeps them thin.  Objects preserve insertion order so a
+//! The core owns document I/O, so it owns JSON too — and the binding speaks JSON for everything
+//! that is not on the hot path, which keeps it thin.  Objects preserve insertion order so a
 //! document round-trips byte-for-byte, and integers stay integers so a saved file reads the same
-//! in Python and in the browser.  No external crates: the WebAssembly build has no build step
+//! wherever it is opened.  No external crates: the WebAssembly build has no build step
 //! beyond `cargo build`.
 
 use std::fmt::Write as _;

@@ -44,7 +44,7 @@
 </dialog>
 <template id="about-dag">
   <svg class="dag" viewBox="0 0 360 228" role="img"
-       aria-label="Thirty-five years of research, to a mechanical implementation, to Rust, to the WASM/TypeScript and Python bindings">
+       aria-label="Thirty-five years of research, to a mechanical implementation, to Rust, to the WASM/TypeScript binding">
     <defs>
       <marker id="dag-arrow" viewBox="0 0 8 8" refX="7" refY="4"
               markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -57,14 +57,11 @@
     <text x="180" y="85" text-anchor="middle">Mechanical implementation</text>
     <rect x="145" y="124" width="70" height="30" rx="6"/>
     <text x="180" y="143" text-anchor="middle">Rust</text>
-    <rect x="5" y="190" width="175" height="30" rx="6"/>
-    <text x="92" y="209" text-anchor="middle">WASM/TypeScript bindings</text>
-    <rect x="240" y="190" width="120" height="30" rx="6"/>
-    <text x="300" y="209" text-anchor="middle">Python bindings</text>
+    <rect x="92" y="190" width="175" height="30" rx="6"/>
+    <text x="180" y="209" text-anchor="middle">WASM/TypeScript binding</text>
     <path d="M180 38 V64" marker-end="url(#dag-arrow)"/>
     <path d="M180 96 V122" marker-end="url(#dag-arrow)"/>
-    <path d="M180 154 L92 188" marker-end="url(#dag-arrow)"/>
-    <path d="M180 154 L300 188" marker-end="url(#dag-arrow)"/>
+    <path d="M180 154 V188" marker-end="url(#dag-arrow)"/>
   </svg>
 </template>
 <script type="module" src="./dist/app/bundle.js"></script>

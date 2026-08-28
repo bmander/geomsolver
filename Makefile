@@ -35,9 +35,11 @@ web/src/wasm/gcs.wasm: $(RUST_SRC) rust/gcs-core/Cargo.toml rust/gcs-ffi/Cargo.t
 
 test: test-rust test-web
 
-# `--all-targets` so `gcs-ffi/tests/` runs too: the panic boundary is the one thing only the
-# native target can check, since `wasm32-unknown-unknown` aborts whatever the profile says.
-test-rust:
+# A workspace `cargo test` already runs every member's `tests/`, so `gcs-ffi/tests/` comes along:
+# the panic boundary is the one thing only the native target can check, since
+# `wasm32-unknown-unknown` aborts whatever the profile says.  `all` is a prerequisite so the
+# released cdylib has to link before the suite can pass — nothing else builds it any more.
+test-rust: all
 	$(CARGO) test --manifest-path rust/Cargo.toml --release
 
 test-web: wasm

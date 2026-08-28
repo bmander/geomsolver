@@ -6,8 +6,8 @@
 #![allow(clippy::needless_range_loop, clippy::too_many_arguments, clippy::type_complexity)]
 //!
 //! One implementation of everything: the model, the numerics, structural diagnosis, cluster
-//! decomposition, witness analysis and solution management.  The Python and TypeScript packages
-//! are thin bindings over the flat C ABI in `gcs-ffi`; there is no second copy of any algorithm.
+//! decomposition, witness analysis and solution management.  The TypeScript package is a thin
+//! binding over the flat C ABI in `gcs-ffi`; there is no second copy of any algorithm.
 pub mod callout;
 pub mod cgraph;
 pub mod complex;

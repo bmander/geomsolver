@@ -22,10 +22,10 @@ use gcs_core::system::System;
 const METHODS: [Method; 2] = [Method::DogLeg, Method::Lm];
 
 fn median(mut v: Vec<f64>) -> f64 {
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
     if v.is_empty() {
         return f64::NAN;
     }
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let n = v.len();
     if n % 2 == 1 {
         v[n / 2]
@@ -54,16 +54,18 @@ fn bench_solve(make: &dyn Fn() -> Sketch, method: Method, reps: u32) -> (f64, bo
     (median(ts), ok, its / reps as f64)
 }
 
-fn bench_compile(make: &dyn Fn() -> Sketch, reps: u32) -> f64 {
-    let sk = make();
+/// (median compile ms, free columns, residual rows) — the dimensions come off the last system
+/// it built, so nothing compiles a `System` twice to print two integers.
+fn bench_compile(sk: &Sketch, reps: u32) -> (f64, usize, usize) {
     let mut ts = Vec::new();
+    let (mut free, mut res) = (0, 0);
     for _ in 0..reps {
         let t0 = Instant::now();
-        let s = System::new(&sk);
+        let s = System::new(sk);
         ts.push(ms(t0));
-        drop(s);
+        (free, res) = (s.n_free, s.n_res);
     }
-    median(ts)
+    (median(ts), free, res)
 }
 
 fn bench_drag(mut sk: Sketch, frames: u32) -> (f64, bool) {
@@ -72,9 +74,12 @@ fn bench_drag(mut sk: Sketch, frames: u32) -> (f64, bool) {
     let mut d = Drag::new(&mut sk, p, x, y, Method::DogLeg, 1.0, Vec::new(), 0.05);
     let mut ts = Vec::new();
     let mut ok = false;
-    for _ in 0..frames {
+    // The cursor has to keep moving.  Held at one target the drag reaches it on the first frame
+    // and the rest time a solve with nothing to do — which is what printed 30,000 fps.
+    for i in 0..frames {
+        let a = 0.3 * i as f64;
         let t0 = Instant::now();
-        let r = d.move_to(&mut sk, x + 1.0, y + 0.5);
+        let r = d.move_to(&mut sk, x + 1.0 + a.cos(), y + 0.5 + a.sin());
         ts.push(ms(t0));
         ok = r.success;
     }
@@ -86,29 +91,25 @@ fn bench_drag(mut sk: Sketch, frames: u32) -> (f64, bool) {
 /// when given one, as the app drags, else with a plan of its own.
 fn bench_plan_drag(sk: &mut Sketch, point: usize, frames: u32, own: bool) -> (f64, f64) {
     let (x, y) = sk.point_xy(point);
-    let mut ts = Vec::new();
-    if own {
-        let t0 = Instant::now();
-        let mut d = PlanDrag::new(sk, point, x, y, None, 0.05);
-        let start = ms(t0);
-        for i in 0..frames {
-            let a = 0.3 * i as f64;
-            let t0 = Instant::now();
-            d.move_to(sk, None, x + 2.0 * a.cos(), y + 2.0 * a.sin());
-            ts.push(ms(t0));
-        }
-        d.end();
-        return (start, median(ts));
-    }
-    let mut plan = PlanSolver::new(sk, true);
-    plan.solve(sk, 1e-9, true, Method::DogLeg);
+    // The cached plan is the app's: decomposed and solved by the edit before the gesture, so
+    // neither cost lands in `start`.  Its absence is exactly what the `own` column measures.
+    let mut plan = (!own).then(|| {
+        let mut p = PlanSolver::new(sk, true);
+        p.solve(sk, 1e-9, true, Method::DogLeg);
+        p
+    });
     let t0 = Instant::now();
-    let mut d = PlanDrag::on(sk, &mut plan, point, x, y, None, 0.05);
+    let mut d = match plan.as_mut() {
+        Some(p) => PlanDrag::on(sk, p, point, x, y, None, 0.05),
+        None => PlanDrag::new(sk, point, x, y, None, 0.05),
+    };
     let start = ms(t0);
+    let cached = plan.as_ref().map(|p| &p.plan);
+    let mut ts = Vec::new();
     for i in 0..frames {
         let a = 0.3 * i as f64;
         let t0 = Instant::now();
-        d.move_to(sk, Some(&plan.plan), x + 2.0 * a.cos(), y + 2.0 * a.sin());
+        d.move_to(sk, cached, x + 2.0 * a.cos(), y + 2.0 * a.sin());
         ts.push(ms(t0));
     }
     d.end();
@@ -128,13 +129,15 @@ fn cases() -> Vec<Case> {
 }
 
 fn main() {
+    let cases = cases();
+
     println!("== solve (jittered warm start): compiled-solve ms / iterations ==");
     print!("{:<16}{:>5}{:>5} |", "sketch", "free", "res");
     for m in METHODS {
         print!(" {:^24} |", m.as_str());
     }
     println!(" compile");
-    for (name, make) in cases() {
+    for (name, make) in &cases {
         let sk = make();
         let reps = if sk.params.len() > 100 { 5 } else { 20 };
         let mut cells = Vec::new();
@@ -142,20 +145,16 @@ fn main() {
             let (t, ok, it) = bench_solve(make.as_ref(), m, reps);
             cells.push(format!("{t:8.2} ms {:3} it={it:4.1}", if ok { "" } else { "BAD" }));
         }
-        let s = System::new(&sk);
-        print!(
-            "{name:<16}{:>5}{:>5} |",
-            s.n_free,
-            s.n_res
-        );
+        let (tc, free, res) = bench_compile(&sk, reps);
+        print!("{name:<16}{free:>5}{res:>5} |");
         for c in cells {
             print!(" {c} |");
         }
-        println!(" {:5.2} ms", bench_compile(make.as_ref(), reps));
+        println!(" {tc:5.2} ms");
     }
 
     println!("\n== decomposition plan: compile once, replay per solve ==");
-    for (name, make) in cases() {
+    for (name, make) in &cases {
         let mut sk = make();
         let t0 = Instant::now();
         let mut ps = PlanSolver::new(&sk, false);
@@ -191,7 +190,8 @@ fn main() {
         );
     }
 
-    println!("\n== drag of one figure among many (PlanDrag start + frame): the cost of the region ==");
+    println!("\n== drag of one figure among many (PlanDrag start + frame): the cost of the \
+              region ==");
     println!("   own plan: the drag decomposes the figure | cached plan: as the app drags");
     for (n, copies) in [(32usize, 1usize), (32, 3), (32, 30), (128, 1), (2048, 1)] {
         let mut sk = zigzag(n, copies);

@@ -1,8 +1,8 @@
 //! gcs — the flat C ABI over `gcs-core`.
 //!
-//! One library, two consumers: the Python package loads it with `ctypes`, the web app instantiates
-//! the same code compiled to WebAssembly.  Everything above the numbers lives in Rust; the
-//! bindings only marshal.
+//! One library, built twice: the web app instantiates it compiled to WebAssembly, and the native
+//! `cdylib` is the released C ABI for anything else that speaks C.  Everything above the numbers
+//! lives in Rust; a binding only marshals.
 //!
 //! Conventions
 //!   * handles are opaque pointers, freed by their `*_free`;
