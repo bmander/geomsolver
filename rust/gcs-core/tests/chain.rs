@@ -321,6 +321,41 @@ fn a_prefix_stands_alone() {
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::Horizontal));
 }
 
+/// A prefix word carries its own parentheses, and the lookahead reads through them: `distance(1)
+/// line l1` is a link prefixed with its length, at the head of a chain and after a marker alike
+/// — never a `distance` joint between the links.
+#[test]
+fn a_parenthesized_prefix_opens_a_link() {
+    let e = read("distance(1) line l1\n");
+    let c = e
+        .sketch
+        .user_constraints()
+        .into_iter()
+        .find(|c| c.kind == CKind::Distance)
+        .expect("the length");
+    assert_eq!(e.sketch.points.len(), 2, "both ends minted");
+    assert_eq!(gcs_core::io::describe(c), "P0 distance(1) P1");
+
+    let e = read("distance(1) line l1 -> distance(2) line l2\n");
+    assert_eq!(
+        e.sketch.user_constraints().iter().filter(|c| c.kind == CKind::Distance).count(),
+        2,
+        "each length binds to its own link"
+    );
+    assert_eq!(e.sketch.points.len(), 3, "and the corner is still shared");
+
+    // the colouring takes the same step: `distance` before an element is the link's prefix,
+    // tinted as the relation it states
+    let src = "distance(1) line l1 -> distance(2) line l2\n";
+    let runs = highlight(src);
+    let tints: Vec<Tint> = runs
+        .iter()
+        .filter(|(_, s)| src[s.lo as usize..].starts_with("distance"))
+        .map(|(t, _)| *t)
+        .collect();
+    assert_eq!(tints, vec![Tint::Relation, Tint::Relation]);
+}
+
 /// The same text parses to the same statements with the same ids, which is what `retext` and a
 /// numeric splice rest on.
 #[test]

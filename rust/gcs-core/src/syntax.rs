@@ -2743,7 +2743,8 @@ impl<'a> P<'a> {
             // order of questions the colouring asks (`tint_word`), so the two cannot disagree
             let word = match self.peek() {
                 Some(Tok::Ident(w))
-                    if joint_word(w) && !opens_link(w, self.word_at(self.i + 1)) =>
+                    if joint_word(w)
+                        && !opens_link(w, self.word_at(past_args(&self.t, self.i))) =>
                 {
                     let w = w.clone();
                     self.i += 1;
