@@ -2,39 +2,30 @@
 
 A 2D geometric constraint solver — points, lines, circles and arcs under dimensional and
 relational constraints — with structural diagnosis, decomposition into cached solve plans, and
-robust dragging, packaged for Python and the browser.
+robust dragging, packaged for the browser.
 
 **[Try the sketcher in your browser →](https://bmander.github.io/geomsolver/)**
 
 ## Implementation
 
 The whole engine is one dependency-free Rust crate ([`rust/gcs-core/`](rust/gcs-core/)) behind a
-flat C ABI ([`rust/gcs-ffi/`](rust/gcs-ffi/)), built as a native library for the Python binding
-([`src/gcs/`](src/gcs/), `ctypes`) and as WebAssembly for the TypeScript binding
-([`web/src/core/`](web/src/core/)).  Both bindings are thin proxies with no algorithms of their
-own; [`web/src/app/`](web/src/app/) is an HTML5-canvas sketcher on top.  Stages 0–5 of
+flat C ABI ([`rust/gcs-ffi/`](rust/gcs-ffi/)), built as WebAssembly for the TypeScript binding
+([`web/src/core/`](web/src/core/)) and as a native shared library for anything else that speaks
+C.  The binding is a thin proxy with no algorithms of its own;
+[`web/src/app/`](web/src/app/) is an HTML5-canvas sketcher on top.  Stages 0–5 of
 [`gcs-solver-program.md`](gcs-solver-program.md) are done — see
 [`docs/implementation-status.md`](docs/implementation-status.md) for what that covers, the module
 map, benchmarks and per-stage status.
 
 ## Building
 
+Rust and Node, and nothing else.
+
 ```sh
-python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
-make            # build/libgcs.dylib (Python)
+make            # build/libgcs.dylib (the native C ABI)
 make wasm       # web/src/wasm/gcs.wasm (browser); adds the wasm32 target if needed
 cd web && npm install
-make test       # cargo + pytest + mypy + web suite
-```
-
-## Python quickstart
-
-```python
-from gcs import Sketch, Distance, solve
-sk = Sketch()
-p, q = sk.point(0, 0), sk.point(12, 0)
-sk.add(Distance(p, q, 10))
-solve(sk)          # p -> (1, 0), q -> (11, 0): least change
+make test       # cargo + web suite
 ```
 
 ## TypeScript quickstart

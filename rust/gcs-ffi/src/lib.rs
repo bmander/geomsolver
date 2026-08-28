@@ -1,8 +1,8 @@
 //! gcs — the flat C ABI over `gcs-core`.
 //!
-//! One library, two consumers: the Python package loads it with `ctypes`, the web app instantiates
-//! the same code compiled to WebAssembly.  Everything above the numbers lives in Rust; the
-//! bindings only marshal.
+//! One library, built twice: the web app instantiates it compiled to WebAssembly, and the native
+//! `cdylib` is the released C ABI for anything else that speaks C.  Everything above the numbers
+//! lives in Rust; a binding only marshals.
 //!
 //! Conventions
 //!   * handles are opaque pointers, freed by their `*_free`;
@@ -865,14 +865,6 @@ pub unsafe extern "C" fn gcs_distance_between(
 ) -> f64 {
     guard(f64::NAN, move || {
         model::distance_between(sk(h), ent(ka, ia), ent(kb, ib))
-    })
-}
-
-/// Twice the signed area of (a, b, c) — the order-type invariant the drag guards.
-#[no_mangle]
-pub unsafe extern "C" fn gcs_orientation(h: *mut Sketch, a: i32, b: i32, c: i32) -> f64 {
-    guard(f64::NAN, move || {
-        model::orientation(sk(h), a as usize, b as usize, c as usize)
     })
 }
 

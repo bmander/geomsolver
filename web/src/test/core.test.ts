@@ -1,6 +1,6 @@
-/* The TypeScript binding against the Rust core — the same properties the Python suite asserts:
- * the compiled plan, both solvers, structural diagnosis, the decomposition plan, witness
- * analysis, homotopy enumeration, dragging and JSON I/O.
+/* The TypeScript binding against the Rust core: the compiled plan, both solvers, structural
+ * diagnosis, the decomposition plan, witness analysis, homotopy enumeration, dragging and
+ * JSON I/O.
  *
  * There is one implementation of all of it now; these tests check that the binding reaches it
  * faithfully, and that the ABI the two sides share stays in step. */
@@ -467,8 +467,8 @@ test('a floating rigid truss has exactly three rigid-body motions', () => {
 });
 
 test('a motion says which params it moves, and the core is what says so', () => {
-  // the same case the Python suite checks, so the two bindings cannot drift from each other
-  // or from `witness::moving_params` — which they would if either read the velocities itself
+  // the binding must not drift from `witness::moving_params` — which it would if it read the
+  // velocities itself
   const sk = examples.rectFilletsUnder();
   const w = analyze(sk);
   assert.equal(w.motions.length, 1);

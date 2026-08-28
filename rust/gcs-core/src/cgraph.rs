@@ -21,7 +21,8 @@ use crate::graph::UnionFind;
 use crate::model::{EntKind, EntRef, Sketch};
 use std::collections::BTreeMap;
 
-/// Python's (kind, idx) tuple order is L < P < V; the derived `Ord` reproduces it.
+/// The element order is L < P < V; the derived `Ord` is what fixes it, and the plan's
+/// determinism rests on it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ElKind {
     L,

@@ -1,7 +1,7 @@
 //! Finite-difference verification of analytic Jacobians.
 //!
 //! A first-class module because it stays useful forever: every new constraint type is checked
-//! against it, and the bindings expose it so the same check runs from Python and from the browser.
+//! against it, and the binding exposes it so the same check runs from the browser.
 
 use crate::constraints::Constraint;
 use crate::linalg::Mat;

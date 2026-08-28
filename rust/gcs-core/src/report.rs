@@ -1,9 +1,10 @@
 //! JSON views of the analysis results.
 //!
 //! Diagnosis, witness reports, plans and constraint graphs are rich, ragged structures.  Encoding
-//! them here — once — is what lets the Python and TypeScript packages stay thin bindings: they
-//! parse one document instead of reimplementing a dozen accessors, and both see exactly the same
-//! field names.  Hot-path numbers (residuals, Jacobians, drag frames) never go through here.
+//! them here — once — is what lets the TypeScript package stay a thin binding: it parses one
+//! document instead of reimplementing a dozen accessors, and a second binding would see exactly
+//! the same field names.  Hot-path numbers (residuals, Jacobians, drag frames) never go through
+//! here.
 
 use crate::callout::{self, Callout, Seg};
 use crate::cgraph::{ConstraintGraph, El, ElKind};

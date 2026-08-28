@@ -13,15 +13,16 @@ The solver exists **once**:
 |---|---|---|
 | **core** | [`rust/gcs-core/`](../rust/gcs-core/) | the whole engine — model, kernels, solvers, linear algebra, diagnosis, decomposition, witness analysis, homotopy, document I/O.  No dependencies. |
 | **ABI** | [`rust/gcs-ffi/`](../rust/gcs-ffi/) | one flat C ABI, built twice: a native `cdylib` and a self-contained `wasm32-unknown-unknown` module |
-| **Python** | [`src/gcs/`](../src/gcs/) | a thin `ctypes` binding — proxies over handles, numpy buffers for hot-path numbers, JSON for ragged results |
-| **TypeScript** | [`web/src/core/`](../web/src/core/) | the same binding over WebAssembly |
+| **TypeScript** | [`web/src/core/`](../web/src/core/) | a thin binding over WebAssembly — proxies over handles, buffers for hot-path numbers, JSON for ragged results |
 | **app** | [`web/src/app/`](../web/src/app/) | an HTML5-canvas sketcher, the only front end |
 
-Neither binding contains an algorithm.  Both generate their constraint classes from the core's own
-registry, so a new constraint type appears in Python and in the browser with nothing to change on
-either side.  The one place two implementations are still compared is
-[`tests/test_linalg.py`](../tests/test_linalg.py), which checks our QR / complete-orthogonal / SVD /
-LU against numpy — on purpose, because there is no LAPACK anywhere in the project.
+The binding contains no algorithm.  It generates its constraint classes from the core's own
+registry, so a new constraint type appears in the browser with nothing to change on that side.
+The one place two implementations are still compared is
+[`rust/gcs-core/tests/linalg.rs`](../rust/gcs-core/tests/linalg.rs), which checks our QR /
+complete-orthogonal / SVD / LU against `nalgebra` — on purpose, because there is no LAPACK
+anywhere in the project.  The library has no dependencies; its *tests* have one reference
+implementation, and it is a dev-dependency so nothing it brings links into the cdylib or the wasm.
 
 ## The core (`rust/gcs-core/`)
 
@@ -111,20 +112,19 @@ LU against numpy — on purpose, because there is no LAPACK anywhere in the proj
 * `examples.rs` — rectangle-with-fillets, slotted link, truss, under-constrained polygon chain,
   K₃,₃, random Laman frameworks, and the conflict/redundancy cases the app's library shows.
 
-## The bindings
+## The binding
 
-Both are the same shape.  A `Sketch` is a handle; `Param`, `Point`, `Line`, `Circle`, `Arc` and
-the constraint classes are interned proxies over `(handle, index)`; hot-path numbers (residuals,
-Jacobians, drag frames) cross as raw buffers; everything ragged crosses as one JSON document.
-The constraint classes themselves are generated at load time from `gcs_registry_json`, which is
-why `src/gcs/constraints.py` and `web/src/core/constraints.ts` know no type by name.
+A `Sketch` is a handle; `Param`, `Point`, `Line`, `Circle`, `Arc` and the constraint classes are
+interned proxies over `(handle, index)`; hot-path numbers (residuals, Jacobians, drag frames)
+cross as raw buffers; everything ragged crosses as one JSON document.  The constraint classes
+themselves are generated at load time from `gcs_registry_json`, which is why
+`web/src/core/constraints.ts` knows no type by name.
 
-```python
-from gcs import Sketch, Distance, solve
-sk = Sketch()
-p, q = sk.point(0, 0), sk.point(12, 0)
-sk.add(Distance(p, q, 10))
-solve(sk)                      # p -> (1, 0), q -> (11, 0): least change
+```ts
+const sk = new Sketch();
+const p = sk.point(0, 0), q = sk.point(12, 0);
+sk.add(new C.Distance(p, q, 10));
+solve(sk);                     // p -> (1, 0), q -> (11, 0): least change
 ```
 
 ## Web app
@@ -179,18 +179,17 @@ solve(sk)                      # p -> (1, 0), q -> (11, 0): least change
   enumeration of alternative roots;
 * JSON save/load, undo, and the case library from `examples.ts`.
 
-Measured through both bindings on the same machine (median ms) — the two are the same code, so
-they are the same numbers; the Python column is no longer a slower reference implementation but
-the same core reached through `ctypes`:
+Measured in the browser (median ms) — `npm run bench`, whose native half
+(`cargo run --release -p gcs-core --bin bench`) measures the same things on the same code:
 
-| case | free | compile | dogleg | plan replay | drag frame (browser) | drag frame (Python) |
-|---|---|---|---|---|---|---|
-| rect_fillets | 26 | 0.02 | 0.33 | 0.26 | 0.21 | 0.2 |
-| truss(50), 300 entities | 200 | 0.11 | 0.60 | 0.87 | 0.30 | 0.3 |
-| truss(200), 1200 entities | 800 | 0.27 | 1.77 | 2.98 | 1.21 | 1.6 |
+| case | free | compile | dogleg | plan replay | drag frame |
+|---|---|---|---|---|---|
+| rect_fillets | 26 | 0.02 | 0.33 | 0.26 | 0.21 |
+| truss(50), 300 entities | 200 | 0.11 | 0.60 | 0.87 | 0.30 |
+| truss(200), 1200 entities | 800 | 0.27 | 1.77 | 2.98 | 1.21 |
 
-For scale, the Python reference implementation this replaced solved `truss(100)` in 25.5 ms and
-dragged a 1200-entity truss at 9.1 ms/frame; the same work is now 0.61 ms and 1.6 ms.
+For scale, the pure-Python prototype this replaced solved `truss(100)` in 25.5 ms and dragged a
+1200-entity truss at 9.1 ms/frame; the same work is now 0.61 ms and 1.6 ms.
 
 One thing worth knowing: `diagnose` runs after every edit, and a dense SVD of a 1000-entity sketch
 costs more than everything else put together, so the numeric rank / null-space cross-check is
@@ -205,7 +204,7 @@ analysis is still available on demand from the Diagnose button.
 | continuation-style dragging | ✅ `PlanDrag`/`Drag` subdivide far cursor jumps (≤ 5 % of extent per increment) |
 | order-type guards | ✅ numeric drag watches the plan's triangle orientations; retries with smaller steps, records/flags unavoidable flips |
 | homotopy continuation for enumeration on small cores | ✅ `homotopy::enumerate_step` (total-degree, γ-trick; the K₃,₃ core enumerates its real realizations in ~3 s of 256 tracked paths); the app's `Alternatives…` button |
-| torture suite: recorded drag trajectories, zero solution jumps; branches survive save/load | ✅ `rust/gcs-core/tests/drag.rs` and `tests/test_drag.py` (floating truss, sliding rect, pinned apex never jumps, guard flags a forced crossing, continuity under far drags, JSON round-trip of branches) |
+| torture suite: recorded drag trajectories, zero solution jumps; branches survive save/load | ✅ `rust/gcs-core/tests/drag.rs` (floating truss, sliding rect, pinned apex never jumps, guard flags a forced crossing, continuity under far drags, JSON round-trip of branches) |
 
 ## Stage 4 status
 
@@ -226,7 +225,7 @@ analysis is still available on demand from the Diagnose button.
 | ruler-and-compass closed forms with chirality flags | ✅ PPP triangle merge (circle–circle) with orientation flag; other merges numeric (tiny) — closed-form library to grow |
 | numeric fallback for non-constructible / unsupported | ✅ `PlanSolver.solve` verifies and falls back |
 | decomposition once per topology; drags/edits replay the cached plan | ✅ `PlanSolver` + live dimension values (`refresh_consts`) |
-| regression suite runs both paths and diffs | ✅ `tests/test_decompose.py::test_plan_and_numeric_agree` |
+| regression suite runs both paths and diffs | ✅ `rust/gcs-core/tests/decompose.rs::the_plan_and_the_numeric_path_agree` |
 | 1000-entity mostly-tree-decomposable sketch in low ms from the cached plan | ✅ a 300-entity truss replays in 0.21 ms and a 600-entity one in 0.39 ms; the plan executes entirely in the core |
 | non-tree-decomposable cores isolated into minimal numeric subsystems (Owen / DR-planning objective) | ✅ `find_core` in `decompose` — greedy minimal rigid subset, one numeric step, tree merging resumes; K₃,₃ + all random Laman frameworks decompose fully (an SPQR-tree split proper is not implemented — the rank-based core search plays that role) |
 
@@ -245,14 +244,14 @@ analysis is still available on demand from the Diagnose button.
 
 | criterion | status |
 |---|---|
-| compile-to-plan boundary (flat arrays, no Python objects in the loop) | ✅ `System.blocks` + precomputed CSR/scatter |
+| compile-to-plan boundary (flat arrays, no object model in the loop) | ✅ `System.blocks` + precomputed CSR/scatter |
 | sparse Jacobian assembly, triplet→CSR | ✅ structure once, data per eval |
 | own LM + DogLeg (default) | ✅ `newton.rs` |
 | under-constrained = min-norm GN step | ✅ our complete orthogonal decomposition / regularized `LDLᵀ` |
 | rank-revealing QR at the solution | ✅ `SolveResult.rank`, `System.rank()` (already caught a redundant EqualLength cycle in `polygon_chain`) |
 | >10× scipy on the 30-entity sketch | ✅ 0.15 ms on `truss(8)` vs 2.9 ms for `scipy-dogbox` in the Stage-0 prototype (~20×) |
 | 60 fps drag on a 200-entity sketch | ✅ 0.3 ms/frame at 300 entities, 1.6 ms at 1200 |
-| flat `slvs`-style C API | ✅ [`rust/gcs-ffi/src/lib.rs`](../rust/gcs-ffi/src/lib.rs) — `gcs_system_new` / `gcs_system_solve` / `gcs_system_residuals` …, consumed from WebAssembly and from `ctypes` |
+| flat `slvs`-style C API | ✅ [`rust/gcs-ffi/src/lib.rs`](../rust/gcs-ffi/src/lib.rs) — `gcs_system_new` / `gcs_system_solve` / `gcs_system_residuals` …, consumed from WebAssembly and, as the native `cdylib`, from anything else that speaks C |
 
 ## Stage 0 exit criteria
 
@@ -281,6 +280,5 @@ truss_100       400  400 |  0.61 ms |  1.17 ms |  0.16 ms
 
 | suite | what it covers |
 |---|---|
-| `cargo test --manifest-path rust/Cargo.toml` | the engine: FD Jacobian checks on every constraint type, both solvers, the graph algorithms against the reference cases, diagnosis, decomposition and replay, witness analysis, homotopy, the drag torture suite, document I/O |
-| `.venv/bin/pytest` | the Python binding reaching all of it, plus `test_linalg.py` — our QR / SVD / LU against numpy |
+| `cargo test --manifest-path rust/Cargo.toml` | the engine: FD Jacobian checks on every constraint type, both solvers, the graph algorithms against the reference cases, diagnosis, decomposition and replay, witness analysis, homotopy, the drag torture suite, document I/O; `tests/linalg.rs` — our QR / SVD / LU against `nalgebra`; `gcs-ffi/tests/` — the ABI's panic boundary, which only the native target can check |
 | `cd web && npm test` | the TypeScript binding reaching all of it, plus the ABI surface check |

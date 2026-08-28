@@ -5,7 +5,7 @@
 //! after a pivoted QR, `sigma_i > rcond * sigma_0` after an SVD — for a matrix whose scale nobody
 //! knows, which is what the plain `rcond` entry points take; absolute for one whose entries are
 //! dimensionless (`system::Conditioned`), where a magnitude is a statement on its own.
-//! No LAPACK/BLAS: these routines are ours, and `tests/test_linalg.py` checks them against numpy.
+//! No LAPACK/BLAS: these routines are ours, and `tests/linalg.rs` checks them against `nalgebra`.
 
 /// How a factorisation decides that a pivot or a singular value is zero.
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -1,6 +1,6 @@
 /* Finite-difference verification of analytic Jacobians.
  *
- * The check runs in the core, so the browser and the Python suite see the same numbers. */
+ * The check runs in the core, so the browser sees the core's own numbers. */
 import { Constraint } from './constraints.js';
 import { Sketch } from './model.js';
 import { core, lastError } from './wasm.js';
