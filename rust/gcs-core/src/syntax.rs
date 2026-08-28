@@ -819,21 +819,36 @@ fn write_decl(out: &mut String, d: &Decl) {
     out.push(' ');
     out.push_str(&d.name.text);
 
+    out.push_str(&decl_tail(d, &d.seed));
+    if let Some(u) = &d.knots {
+        out.push_str(" knots [");
+        out.push_str(&u.iter().map(|&v| num(v)).collect::<Vec<_>>().join(", "));
+        out.push(']');
+    }
+    if d.construction {
+        out.push_str(" construction");
+    }
+}
+
+/// `(center: p2)` — what a declaration says the thing is *made of*, or nothing when it names
+/// none of it.  A slot holds a name or a seed, and a seed is the same `hint(…)` clause it is
+/// everywhere else, one level down.
+pub(crate) fn decl_args(d: &Decl) -> String {
     let label = labels_children(d.kind);
     let mut parts: Vec<String> = Vec::new();
     let mut child = 0usize;
     for (name, field) in d.kind.fields() {
         match field {
             Field::Child | Field::List => {
-                let refs = d.children.get(child).cloned().unwrap_or_default();
+                let kids = d.children.get(child).map(|g| g.as_slice()).unwrap_or_default();
                 child += 1;
-                for r in &refs {
+                for k in kids {
                     let mut s = String::new();
                     if label && *field == Field::Child {
                         s.push_str(name);
                         s.push_str(": ");
                     }
-                    match r {
+                    match k {
                         Kid::Ref(r) => write_ref(&mut s, r),
                         Kid::Hint(k) => s.push_str(&kid_seed_text(k)),
                     }
@@ -845,24 +860,30 @@ fn write_decl(out: &mut String, d: &Decl) {
             Field::Scalar => {}
         }
     }
-    if !parts.is_empty() {
-        out.push('(');
-        out.push_str(&parts.join(", "));
-        out.push(')');
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("({})", parts.join(", "))
     }
-    let hint = hint_clause(d, &d.seed);
+}
+
+/// Everything a declaration says after its name bar the order-free trailers: what it is made of,
+/// and where its solve begins.
+///
+/// One function because `edit::commit_seeds` writes this same tail when a solve moved a number
+/// the source never wrote, and a statement printed two ways is two spellings of one clause —
+/// which is how the writeback came to drop the `center:` a printed `arc` puts in.  No leading
+/// space, for `hint_of`'s reason: the separator belongs to whoever is joining the statement up.
+pub(crate) fn decl_tail(d: &Decl, seed: &[f64]) -> String {
+    let mut out = decl_args(d);
+    let hint = hint_clause(d, seed);
     if !hint.is_empty() {
+        // the list glues to the name; the clause is a word of its own and brings its separator,
+        // whether it follows the name or the bracket
         out.push(' ');
         out.push_str(&hint);
     }
-    if let Some(u) = &d.knots {
-        out.push_str(" knots [");
-        out.push_str(&u.iter().map(|&v| num(v)).collect::<Vec<_>>().join(", "));
-        out.push(']');
-    }
-    if d.construction {
-        out.push_str(" construction");
-    }
+    out
 }
 
 /// What a `Param` slot's number comes to, seeded or pinned.
@@ -890,13 +911,32 @@ fn hint_of(parts: &[String]) -> String {
     }
 }
 
+/// `hint(x: 0, y: 0)` — a point's scalars, keyed by the names `fields()` gives them.
+///
+/// The keys come off the one table so that the parser, the printer and the writeback cannot
+/// disagree about what a point's coordinates are called, which is the reason `fields()` exists.
+fn point_hint(text: [Option<&str>; 2], v: [f64; 2]) -> String {
+    let parts: Vec<String> = EntKind::Point
+        .fields()
+        .iter()
+        .filter(|(_, f)| *f == Field::Scalar)
+        .enumerate()
+        .map(|(i, (name, _))| match text.get(i).copied().flatten() {
+            Some(t) => format!("{name}: {t}"),
+            None => format!("{name}: {}", num(v.get(i).copied().unwrap_or(0.0))),
+        })
+        .collect();
+    hint_of(&parts)
+}
+
+/// The same, for a place a solve arrived at: numbers, and no text anybody wrote.
+pub(crate) fn hint_xy(x: f64, y: f64) -> String {
+    point_hint([None, None], [x, y])
+}
+
 /// `hint(x: 0, y: 0)` standing in a child slot — an anonymous point, and where its solve begins.
 pub(crate) fn kid_seed_text(k: &KidSeed) -> String {
-    let one = |i: usize| match &k.text[i] {
-        Some(t) => t.clone(),
-        None => num(k.v[i]),
-    };
-    hint_of(&[format!("x: {}", one(0)), format!("y: {}", one(1))])
+    point_hint([k.text[0].as_deref(), k.text[1].as_deref()], k.v)
 }
 
 /// `hint(x: 0, y: 0)` — every scalar the kind owns, keyed by the name `fields()` gives it.
@@ -1768,20 +1808,23 @@ impl<'a> P<'a> {
     /// thing is *made of*; this says where the solve *begins* (spec §6.4).  A number inside one
     /// is a seed and every other number is not, which is what makes "may a solve write this?" a
     /// lexical test rather than an analysis.
-    fn eat_hint_clause(&mut self) -> bool {
+    ///
+    /// It gives back where the `hint` word stands, since every caller wants the span of the whole
+    /// clause and only the one that ate the word knows where it began.
+    fn eat_hint_clause(&mut self) -> Option<usize> {
         if self.peek_word("hint") && self.t.get(self.i + 1).map(|(t, _)| t) == Some(&Tok::P('(')) {
+            let lo = self.t[self.i].1.lo as usize;
             self.i += 2;
-            return true;
+            return Some(lo);
         }
-        false
+        None
     }
 
     /// A `hint(…)` standing in a child slot, the opening paren already eaten.
     ///
     /// The same clause as everywhere else, so it is read by the same `hint_body`; what the keys
     /// mean is this table — an anonymous child is a point, and a point has x and y.
-    fn kid_seed(&mut self) -> Option<KidSeed> {
-        let lo = self.t[self.i - 2].1.lo as usize; // the `hint` word itself
+    fn kid_seed(&mut self, lo: usize) -> Option<KidSeed> {
         let mut k = KidSeed::default();
         for h in self.hint_body("x: 0, y: 0")? {
             let i = match h.key.as_str() {
@@ -2912,10 +2955,9 @@ impl<'a> P<'a> {
                     _ => {
                         // a slot carries a name or a seed, and nothing else says "anonymous":
                         // an entity whose children are all unseeded writes no list at all
-                        let kid = if self.eat_hint_clause() {
-                            Kid::Hint(self.kid_seed()?)
-                        } else {
-                            Kid::Ref(self.refr()?)
+                        let kid = match self.eat_hint_clause() {
+                            Some(lo) => Kid::Hint(self.kid_seed(lo)?),
+                            None => Kid::Ref(self.refr()?),
                         };
                         let slot = match &label {
                             Some(l) => fields
@@ -2963,9 +3005,8 @@ impl<'a> P<'a> {
                 let bearing =
                     if self.eat_word("bearing") { Some(self.paren_expr()?) } else { None };
                 seed_at = Some(AtRef { what, bearing });
-            } else if self.eat_hint_clause() {
+            } else if let Some(lo) = self.eat_hint_clause() {
                 // `hint(x: 0, y: 12)` — keyed, keys in any order, an omitted scalar is 0
-                let lo = self.t[self.i - 2].1.lo as usize; // the `hint` word itself
                 for h in self.hint_body("x: 0, y: 0")? {
                     let Some(i) = scalars.iter().position(|&s| s == h.key) else {
                         let m = format!("`{}` has no scalar `{}` to seed", kind.as_str(), h.key);
@@ -3115,7 +3156,9 @@ impl<'a> P<'a> {
         // trailing clauses: `hint(t: 0.4)` — every seed in the language is written in one — and
         // the callout's `at (t, r)`, which is a placement and not a seed (spec §6.4)
         loop {
-            if self.eat_hint_clause() {
+            // a relation's clause needs no span of its own: its numbers are spliced where they
+            // stand, and one it never wrote is a slot the constraint seeds for itself
+            if self.eat_hint_clause().is_some() {
                 for h in self.hint_body("t: 0.4")? {
                     let slot = spec.iter().position(|(n, k)| n == &h.key && *k == SpecKind::Param);
                     let Some(i) = slot else {

@@ -631,3 +631,55 @@ fn a_drag_of_a_minted_child_writes_the_list() {
     assert!(back.ok());
     assert!(back.map.ent_named("l.p1").is_some());
 }
+
+/// The argument list belongs to the **name**, not to wherever the clause happens to sit.
+///
+/// A declaration's trailers are order-free, so `construction` may stand between the two; a list
+/// written at the clause's position would land past it, where an argument list is not something
+/// a declaration can say.  And what is written is the printer's spelling — an `arc`'s labels
+/// included — since a statement spelled two ways is two spellings of one clause.
+#[test]
+fn a_written_argument_list_goes_on_the_name_and_is_spelled_once() {
+    for (src, want) in [
+        ("circle c hint(r: 25)\n", "circle c(center: hint(x: 3, y: 4)) hint(r: 25)"),
+        ("circle c construction hint(r: 25)\n",
+         "circle c(center: hint(x: 3, y: 4)) construction hint(r: 25)"),
+    ] {
+        let mut e = elaborate(&prog_of(src));
+        assert!(e.ok(), "{src}: {:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+        let mut sk = std::mem::take(&mut e.sketch);
+        let [x, y] = sk.point_params(0);
+        sk.params[x as usize].value = 3.0;
+        sk.params[y as usize].value = 4.0;
+        let out = edit::commit_seeds(&e, &sk, &e.program);
+        assert!(out.text.contains(want), "{src} gave {}", out.text);
+        // and what it wrote is a document again
+        let back = elaborate(&prog_of(&out.text));
+        assert!(back.ok(), "{}: {:?}", out.text,
+            back.errors().map(|d| &d.message).collect::<Vec<_>>());
+    }
+}
+
+/// A slot that keys one coordinate and omits the other still records both.
+///
+/// `hint(x: 3)` says y is 0, and gives it no span to splice — so the clause it is written in is
+/// what gets rewritten, which is the whole reason `KidSeed` carries its own span.  Dropping the
+/// coordinate instead would leave a drawing whose source cannot express its pose, which is the
+/// case `commit_seeds` exists to prevent.
+#[test]
+fn a_slot_that_omits_a_coordinate_is_rewritten_whole() {
+    let src = "line l(hint(x: 3), hint(x: 60, y: 20))   // one keyed, one not\n";
+    let mut e = elaborate(&prog_of(src));
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let mut sk = std::mem::take(&mut e.sketch);
+    let p1 = e.map.ent_named("l.p1").expect("the dotted path is its name");
+    let [x, y] = sk.point_params(p1.i());
+    sk.params[x as usize].value = 7.0;
+    sk.params[y as usize].value = -5.0;
+    let out = edit::commit_seeds(&e, &sk, &e.program);
+    assert!(
+        out.text.contains("line l(hint(x: 7, y: -5), hint(x: 60, y: 20))   // one keyed"),
+        "both coordinates, comment intact: {}",
+        out.text
+    );
+}

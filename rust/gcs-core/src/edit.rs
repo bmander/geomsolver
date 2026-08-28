@@ -15,7 +15,7 @@
 //! comes.  Nothing here re-parses: the caller applies the returned text and elaborates once.
 
 use crate::model::{EntKind, EntRef, Sketch};
-use crate::program::{Elaborated, Site};
+use crate::program::{Elaborated, Made, Site};
 use crate::syntax::{self, num, Decl, Program, Span, Stmt, StmtKind};
 
 /// What an edit did to the document, and what it costs to take up.
@@ -93,76 +93,82 @@ fn splice(text: &str, mut edits: Vec<Splice>) -> String {
 ///
 /// `Kind::Numeric`, always: a seed is not a statement, so nothing recompiles.
 pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
-    // A statement now makes more than one entity — `line l(hint(…), hint(…))` declares a line and
-    // mints two points — so the multiplicity that matters is *instances*, not entities: several
-    // paths through one statement is several poses and no one of them to record.
-    let mut paths: std::collections::BTreeMap<crate::syntax::StmtId, usize> =
-        std::collections::BTreeMap::new();
-    let mut ents: std::collections::BTreeMap<crate::syntax::StmtId, Vec<EntRef>> =
-        std::collections::BTreeMap::new();
-    for (ent, site) in &e.map.of_entity {
-        if site.path.0.is_empty() {
-            ents.entry(site.stmt).or_default().push(*ent);
-        } else {
-            *paths.entry(site.stmt).or_insert(0) += 1;
-        }
-    }
+    // The walk is over the root component's own statements, which is the question `in_root` was
+    // asking one statement at a time: a statement inside a component is written in the
+    // component's terms, and a pose put there is a pose put on every instance of it.  What each
+    // one made is `SourceMap::made_by`, in the order `build` made it — the declaration's own
+    // entity first, then the children it minted — so neither the entity index nor the
+    // find-by-kind that re-derived the parent is needed.
     let mut edits = Vec::new();
-    for (id, made) in &ents {
-        if paths.contains_key(id) {
-            continue;
-        }
-        // the statement must be the root's own: one inside a component is written in the
-        // component's terms, and a pose put there is a pose put on every instance of it
-        if !in_root(prog, *id) {
-            continue;
-        }
-        let Some(d) = stmt_decl(prog, *id) else { continue };
+    for st in &prog.root().body {
+        let StmtKind::Decl(d) = &st.kind else { continue };
         // `hint at t` names a *place*, and has no coordinates to write
         if d.seed_at.is_some() {
             continue;
         }
-        let Some(&parent) = made.iter().find(|r| r.kind == d.kind) else { continue };
-        // the slots the statement wrote, flattened in field order — the same order
-        // `sk.children` hands them back in
-        let flat: Vec<&syntax::Kid> = d.children.iter().flatten().collect();
+        // a declaration that could not be built made nothing, and has no pose to record
+        let Some(Made::Ent(parent)) = e.map.made_by(st.id).first().copied() else { continue };
         let kids = sk.children(parent);
 
-        // one seed at a time: splice where the source wrote it, and remember when it did not
-        let mut mine: Vec<Splice> = Vec::new();
-        let mut missing = false;
-        let mut splice_one = |v: f64, text: Option<&String>, span: Span| {
+        // One seed at a time: where the source wrote it, the splice that records it; where it
+        // did not, the news that something has moved with nowhere to write it.
+        let one = |v: f64, text: Option<&String>, span: Span| -> (Option<Splice>, bool) {
             if text.is_some() {
-                return; // written as an expression: a solve does not rewrite arithmetic
+                return (None, false); // an expression: a solve does not rewrite arithmetic
             }
             let now = num(v);
             if span.is_empty() {
                 // an omitted scalar reads as 0, so it needs recording only when it is not 0
-                missing |= v != 0.0;
+                (None, v != 0.0)
             } else if span.slice(prog.text()) != now {
-                mine.push(Splice { at: span, with: now });
+                (Some(Splice { at: span, with: now }), false)
+            } else {
+                (None, false)
             }
         };
+        let mut mine: Vec<Splice> = Vec::new();
+        let mut missing = false;
         for (i, p) in sk.own_params(parent).iter().enumerate() {
             let v = sk.params[*p as usize].value;
             let text = d.seed_text.get(i).and_then(|t| t.as_ref());
-            splice_one(v, text, d.seed_spans.get(i).copied().unwrap_or_default());
+            let (sp, miss) = one(v, text, d.seed_spans.get(i).copied().unwrap_or_default());
+            mine.extend(sp);
+            missing |= miss;
         }
-        // an anonymous child's seed lives in the parent's statement, in a slot of its own
-        for (j, k) in kids.iter().enumerate() {
-            if !made.contains(k) {
-                continue; // named somewhere else, and written back there
-            }
-            let seed: Option<&syntax::KidSeed> = flat.get(j).and_then(|kid| match kid {
-                syntax::Kid::Hint(s) => Some(s),
-                syntax::Kid::Ref(_) => None,
-            });
-            for (i, p) in sk.own_params(*k).iter().enumerate().take(2) {
-                let v = sk.params[*p as usize].value;
-                match seed {
-                    Some(s) => splice_one(v, s.text[i].as_ref(), s.spans[i]),
-                    None => splice_one(v, None, Span::default()),
+        // An anonymous child's seed lives in the parent's statement, in a slot of its own — and
+        // the slots stand in the order `sk.children` hands the children back in, so the two walk
+        // together.  A slot the source wrote a *name* in is a point declared elsewhere, and is
+        // written back where it was declared; one it wrote nothing for at all was minted.
+        let mut slots = d.children.iter().flatten();
+        for &k in kids.iter() {
+            let seed = match slots.next() {
+                Some(syntax::Kid::Ref(_)) => continue,
+                Some(syntax::Kid::Hint(s)) => Some(s),
+                None => None,
+            };
+            let v = sk.point_params(k.i()).map(|p| sk.params[p as usize].value);
+            match seed {
+                // A slot that keyed one coordinate and left the other out has nowhere to splice
+                // the one it left out, and the clause it is written in is the smallest thing
+                // that can carry both — which is what `KidSeed::span` is for.  Not when a
+                // coordinate is an expression: rewriting the clause would rewrite the arithmetic.
+                Some(s)
+                    if s.spans.iter().any(|sp| sp.is_empty())
+                        && s.text.iter().all(|t| t.is_none()) =>
+                {
+                    let now = syntax::hint_xy(v[0], v[1]);
+                    if s.span.slice(prog.text()) != now {
+                        mine.push(Splice { at: s.span, with: now });
+                    }
                 }
+                Some(s) => {
+                    for i in 0..2 {
+                        let (sp, miss) = one(v[i], s.text[i].as_ref(), s.spans[i]);
+                        mine.extend(sp);
+                        missing |= miss;
+                    }
+                }
+                None => missing |= v.iter().any(|&c| c != 0.0),
             }
         }
 
@@ -171,10 +177,8 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             continue;
         }
         // Something the source never wrote has moved — an omitted radius, an endpoint of a bare
-        // `line l`.  There is nowhere to splice, so the declaration's *tail* is rewritten: the
-        // argument list where the source wrote none, and the `hint(…)` clause, together as one
-        // edit at the point the parser recorded.  Two splices at one position would be two
-        // insertions racing for the same offset.
+        // `line l`.  There is nowhere to splice, so what the source left out is written: the
+        // argument list, the `hint(…)` clause, or both.
         let Some(at) = d.hint_span else { continue };
         let mut pose = d.seed.clone();
         for (i, p) in sk.own_params(parent).iter().enumerate() {
@@ -185,40 +189,50 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         // the clause, as the pose the solve arrived at; empty when the kind owns no scalar at
         // all — a line's numbers are its two points', and they are written in the slots
         let hint = syntax::hint_clause(d, &pose);
-        let mut with = String::new();
-        if d.children.iter().all(|g| g.is_empty()) && !kids.is_empty() {
-            let parts: Vec<String> = kids
-                .iter()
-                .map(|k| {
-                    let ps = sk.own_params(*k);
-                    let at = |i: usize| {
-                        ps.get(i).map(|&p| sk.params[p as usize].value).unwrap_or(0.0)
-                    };
-                    syntax::kid_seed_text(&syntax::KidSeed {
-                        v: [at(0), at(1)],
-                        ..Default::default()
-                    })
-                })
-                .collect();
-            with.push('(');
-            with.push_str(&parts.join(", "));
-            with.push(')');
-            if !hint.is_empty() {
-                with.push(' ');
-                with.push_str(&hint);
+        // the source named none of its children, so the list has to be written too.  It is
+        // spelled by the printer that spells every other statement — write it here and an
+        // `arc`'s `center:`/`start:`/`end:` labels are dropped by the one path that wrote its
+        // own — and a `Decl` of the solved pose is what that printer takes.
+        let list = (d.children.iter().all(|g| g.is_empty()) && !kids.is_empty()).then(|| {
+            let mut d2 = d.clone();
+            let mut minted = kids.iter().map(|k| {
+                let v = sk.point_params(k.i()).map(|p| sk.params[p as usize].value);
+                syntax::Kid::Hint(syntax::KidSeed { v, ..Default::default() })
+            });
+            for g in d2.children.iter_mut() {
+                *g = minted.by_ref().take(g.len().max(1)).collect();
             }
-        } else if hint.is_empty() {
+            (syntax::decl_args(&d2), syntax::decl_tail(&d2, &pose))
+        });
+        if list.is_none() && hint.is_empty() {
             // nothing to write here: what moved is in a slot the source wrote, and splices there
             edits.extend(mine);
             continue;
-        } else {
-            // an insertion has to bring the space that separates it from the statement; a
-            // replacement stands between the two the clause already had
-            with = if at.is_empty() { format!(" {hint}") } else { hint };
         }
         // a slot the source *did* write still splices in place; only what it did not is here
         edits.extend(mine.into_iter().filter(|s| s.at.lo >= at.hi || s.at.hi <= at.lo));
-        edits.push(Splice { at, with });
+        match list {
+            // Both are missing and both would go at the same offset — the parser records the
+            // clause's home just past the name when there is no clause — so they are written as
+            // one edit.  Two insertions at one position would race for it.
+            Some((_, tail)) if at.is_empty() => edits.push(Splice { at, with: tail }),
+            // The clause has a home of its own, and the *list* belongs to the name: written at
+            // the clause's position it would land past whatever trailer stands between them,
+            // where an argument list is not a thing a declaration can say.
+            Some((args, _)) => {
+                let end = d.name.span.hi as usize;
+                edits.push(Splice { at: Span::new(end, end), with: args });
+                if !hint.is_empty() {
+                    edits.push(Splice { at, with: hint });
+                }
+            }
+            // an insertion has to bring the space that separates it from the statement; a
+            // replacement stands between the two the clause already had
+            None => {
+                let with = if at.is_empty() { format!(" {hint}") } else { hint };
+                edits.push(Splice { at, with });
+            }
+        }
     }
     if edits.is_empty() {
         return Edit::none(prog, None);
@@ -242,11 +256,7 @@ fn in_root(prog: &Program, id: crate::syntax::StmtId) -> bool {
 }
 
 fn decl_of<'a>(prog: &'a Program, site: &Site) -> Option<&'a Decl> {
-    stmt_decl(prog, site.stmt)
-}
-
-fn stmt_decl(prog: &Program, id: crate::syntax::StmtId) -> Option<&Decl> {
-    match &prog.stmt(id)?.kind {
+    match &prog.stmt(site.stmt)?.kind {
         StmtKind::Decl(d) => Some(d),
         _ => None,
     }

@@ -825,3 +825,17 @@ fn an_anonymous_child_prints_back_anonymous() {
         gcs_core::io::dumps(&first.sketch, Some(1))
     );
 }
+
+/// A seed in a *list* slot is refused rather than minting a point nothing can reach.
+///
+/// A control polygon has no arity, so it has no dotted path either: `s.ctrl` is a list and
+/// `follow` will not index one.  A point with no name is a point no constraint can be written
+/// against and no drag can write back, which is the one outcome worse than an error.
+#[test]
+fn a_seed_in_a_list_slot_is_refused() {
+    let src = "spline s(hint(x: 0, y: 0), hint(x: 1, y: 0), hint(x: 2, y: 1), hint(x: 3, y: 0))\n";
+    let (p, errs) = gcs_core::syntax::parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = elaborate(&p);
+    assert!(!e.ok(), "a nameless control point should not elaborate");
+}
