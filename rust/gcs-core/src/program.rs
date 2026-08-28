@@ -1178,9 +1178,15 @@ fn at_seed(
 /// scatter: distinct bearings round a unit circle, jittered off the crate's seeded `rng::Rng` so
 /// the answer is the same on every run and on every machine.  It is an implementation choice and
 /// belongs nowhere in the spec.
-fn scatter(id: StmtId, k: usize, n: usize) -> (f64, f64) {
-    let mut rng = Rng::new(0x5eed_u32 ^ id.0.wrapping_mul(2_654_435_761).wrapping_add(k as u32));
-    let th = std::f64::consts::TAU * k as f64 / n as f64 + rng.uniform(-0.2, 0.2);
+fn scatter(i: usize) -> (f64, f64) {
+    // the bearing walks a fixed step per minted point, in creation order — which for a chain's
+    // corners is traversal order, so a contour of implicit points seeds as a *simple polygon*
+    // and not as a pile or a self-crossing quad, whose nearest solution is a collapsed side (a
+    // zero-length line satisfies every direction constraint on it).  The step is irrational in
+    // turns (half the golden angle), so no later point lands back on an earlier bearing.
+    const STEP: f64 = 1.199982;
+    let mut rng = Rng::new(0x5eed_u32 ^ (i as u32).wrapping_mul(2_654_435_761));
+    let th = i as f64 * STEP + rng.uniform(-0.2, 0.2);
     let r = rng.uniform(0.8, 1.2);
     (r * th.cos(), r * th.sin())
 }
@@ -1235,7 +1241,7 @@ fn build(
     // `Some(0)` and `None` both mean there is nothing to mint, and so does a written list
     let mint = if written == 0 { d.kind.children_arity().unwrap_or(0) } else { 0 };
     for k in 0..mint {
-        let (x, y) = scatter(st.id, k, mint);
+        let (x, y) = scatter(sk.points.len());
         // the dotted path *is* the point's name — there is no other — so it is the name the
         // sketch carries too, and every reader that shows one shows this
         let i = sk.point(x, y, false, &dotted[k]);
@@ -1249,8 +1255,10 @@ fn build(
         // thread fill only the slots it speaks for (`line l1 -> line l2`) and leave the rest
         // the drawing's own
         if group.is_empty() && written != 0 {
-            if let (Some(n), Some(name)) = (d.kind.children_arity(), dotted.get(slot)) {
-                let (x, y) = scatter(st.id, slot, n);
+            // a `List` kind has no arity to mint from, and a slot with no dotted path has no
+            // name to be reached by
+            if let Some(name) = d.kind.children_arity().and(dotted.get(slot)) {
+                let (x, y) = scatter(sk.points.len());
                 let i = sk.point(x, y, false, name);
                 kids.push(i);
                 anon.push((name.clone(), EntRef::point(i)));

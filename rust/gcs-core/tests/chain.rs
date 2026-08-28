@@ -785,6 +785,32 @@ fn removing_an_unthreaded_relation_from_a_closed_chain_is_refused() {
     assert!(out.refused.is_some(), "a break inside a closed chain went through");
 }
 
+/// **A contour of implicit points seeds as a simple polygon and solves as the figure.**  The
+/// constraints of this rectangle are equally satisfied by a collapsed triangle — a zero-length
+/// line is "perpendicular" to everything — and seeds that pile a chain's minted corners up (or
+/// order them in a self-crossing quad) put the solve in that basin.  `program::scatter` walks
+/// the bearing per minted point in creation order, which for a chain is traversal order, and
+/// this is the gate that the walk keeps the drawing out of the collapse.
+#[test]
+fn an_implicit_rectangle_does_not_collapse() {
+    let e = read(
+        "distance(w=1) line l1 -> perpendicular distance(h=2) line l2 -> perpendicular \
+         line l3 -> perpendicular line l4 -> close\n",
+    );
+    let mut sk = e.sketch.clone();
+    let r = gcs_core::solve::solve(&mut sk, gcs_core::solve::SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let at = |i: usize| {
+        let p = &sk.points[i];
+        (sk.params[p.x as usize].value, sk.params[p.y as usize].value)
+    };
+    let len = |a: (f64, f64), b: (f64, f64)| ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+    let (a, b, c, d) = (at(0), at(1), at(2), at(3));
+    for (p, q, want) in [(a, b, 1.0), (b, c, 2.0), (c, d, 1.0), (d, a, 2.0)] {
+        assert!((len(p, q) - want).abs() < 1e-6, "a side is {} not {want}", len(p, q));
+    }
+}
+
 /* -- the operator form (spec §9.1) ---------------------------------------------------------- */
 
 /// **Every statement is a prefix or an infix operator, and `name(args…)` is retired.**

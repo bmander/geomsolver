@@ -148,8 +148,12 @@ Conventions:
   and where the source wrote no list at all, writes the whole argument list at `hint_span` in
   one edit, since two splices at one offset are two insertions racing for it.
   Where an unseeded implicit child *starts* is `program::scatter` and is an implementation
-  choice the spec must not carry — but it may not be the origin: two endpoints there is a
-  zero-length line, with no direction for `horizontal(l)` and a singular row for any tangency.
+  choice the spec must not carry — but it may not be the origin (two endpoints there is a
+  zero-length line, with no direction for `horizontal(l)` and a singular row for any tangency),
+  and minted points may not pile up or seed a contour as a self-crossing quad: a collapsed side
+  satisfies every direction constraint on it, so that basin must not be where a solve begins.
+  `scatter` therefore walks the bearing a fixed irrational step per minted point, in creation
+  order — which for a chain is traversal order, so a contour seeds as a simple polygon.
 - **Presentation is a separate statement from what the drawing is** (`style.rs`, Solvent §13.2).
   A declaration carries a **class** (`line datum(o, q) class construction`) and a top-level
   `style .NAME { dash: 7 4; width: 0.5; color: #888888 }` says what a class looks like.
