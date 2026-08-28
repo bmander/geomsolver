@@ -10,10 +10,11 @@
 // the overall width and height are given.  Where the twelve points sit and how big the arcs are
 // is the solver's to work out.
 //
-// The outline is written as a **chain**: one element after the next, with the word between them
-// saying how they meet.  `tangent` means they run smoothly into one another with no crease;
-// `close` joins the last back round to the first.  The arcs name only their centres, because a
-// chain already knows where each one starts and ends — those are the points it shares with the
+// The outline is written as a **chain**: one element after the next, with `->` marking each
+// corner where one runs into the next, and a word beside the marker saying how they meet
+// there.  `-> tangent` means they run smoothly into one another with no crease; `-> close`
+// joins the last back round to the first.  The arcs name only their centres, because a corner
+// already knows where each one starts and ends — those are the points it shares with the
 // sides on either side of it.
 //
 // Two things are worth knowing before reading on.  A `hint(…)` clause is a starting guess and
@@ -42,14 +43,14 @@ point c_tl hint(x: r, y: h - r)
 point c_bl hint(x: r, y: r)
 
 // round the outline, counter-clockwise from the bottom edge
-horizontal line bottom(b1, b2) tangent
-arc a_br(center: c_br) hint(r: r) tangent
-vertical line right(r1, r2) tangent
-arc a_tr(center: c_tr) hint(r: r) tangent
-horizontal line top(t1, t2) tangent
-arc a_tl(center: c_tl) hint(r: r) tangent
-vertical line left(l1, l2) tangent
-arc a_bl(center: c_bl) hint(r: r) tangent close
+horizontal line bottom(b1, b2) -> tangent
+arc a_br(center: c_br) hint(r: r) -> tangent
+vertical line right(r1, r2) -> tangent
+arc a_tr(center: c_tr) hint(r: r) -> tangent
+horizontal line top(t1, t2) -> tangent
+arc a_tl(center: c_tl) hint(r: r) -> tangent
+vertical line left(l1, l2) -> tangent
+arc a_bl(center: c_bl) hint(r: r) -> tangent close
 
 // one radius, stated once and shared
 a_br equal a_tr equal a_tl equal a_bl

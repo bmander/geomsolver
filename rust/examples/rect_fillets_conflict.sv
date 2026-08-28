@@ -33,14 +33,14 @@ point c_tl hint(x: r, y: h - r)
 point c_bl hint(x: r, y: r)
 
 // round the outline, counter-clockwise from the bottom edge
-horizontal line bottom(b1, b2) tangent
-arc a_br(center: c_br) hint(r: r) tangent
-vertical line right(r1, r2) tangent
-arc a_tr(center: c_tr) hint(r: r) tangent
-horizontal line top(t1, t2) tangent
-arc a_tl(center: c_tl) hint(r: r) tangent
-vertical line left(l1, l2) tangent
-arc a_bl(center: c_bl) hint(r: r) tangent close
+horizontal line bottom(b1, b2) -> tangent
+arc a_br(center: c_br) hint(r: r) -> tangent
+vertical line right(r1, r2) -> tangent
+arc a_tr(center: c_tr) hint(r: r) -> tangent
+horizontal line top(t1, t2) -> tangent
+arc a_tl(center: c_tl) hint(r: r) -> tangent
+vertical line left(l1, l2) -> tangent
+arc a_bl(center: c_bl) hint(r: r) -> tangent close
 
 // one radius, stated once and shared
 a_br equal a_tr equal a_tl equal a_bl

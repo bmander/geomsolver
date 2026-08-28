@@ -231,8 +231,17 @@ pub enum Chained {
     Link,
     /// A unary word standing before a link: `horizontal line …`.
     Prefix,
-    /// A word standing between two links: `… tangent …`.
+    /// A worded joint that also threads: `… -> tangent …`.  Doomed, it steps down to the bare
+    /// corner `->` — the claim goes, and the corner stays.
     Joint,
+    /// A worded joint that does not thread — an infix relation between two links, `… equal …`.
+    /// Its span was chosen at desugar time to be deletable (the word, plus a terminal name-link
+    /// a deletion must take with it); doomed, the span becomes a statement break.
+    Infix,
+    /// A worded joint no splice can remove: it stands unthreaded in a chain that closes, where
+    /// a break would re-aim the `close` at another link.  Deleting it is refused, the link's
+    /// own bargain.
+    Stuck,
     /// The joint before `close`, which seals a loop.
     Close,
 }
@@ -1415,6 +1424,8 @@ enum Tok {
     Eq,
     /// `==` — a constraint
     EqEq,
+    /// `->` — a chain's joint marker: the two links beside it share a boundary point (§6.6)
+    Arrow,
     /// end of a statement: a newline or a `;`
     Nl,
 }
@@ -1475,6 +1486,12 @@ fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
                     i += 1;
                     toks.push((Tok::Eq, Span::new(lo, i)));
                 }
+            }
+            // `->` is the joint marker (§6.6).  `>` is not a token on its own, so the pair is
+            // claimed here before `-` can read as punctuation.
+            '-' if b.get(i + 1) == Some(&b'>') => {
+                i += 2;
+                toks.push((Tok::Arrow, Span::new(lo, i)));
             }
             // `'` and `"` are the foot and inch marks (spec §3.3), and `|` is what a raw
             // branch key separates its points with.  The language has **no string literal**:
@@ -1605,14 +1622,15 @@ const OPENERS: [&str; 12] = [
 const ORIENTS: [&str; 2] = ["ccw", "cw"];
 const BLOCKS: [&str; 3] = ["repeat", "cycle", "ring"];
 
-/// Whether a word may stand between two links of a chain (spec §6.6).  `to` is the plain shared
-/// corner; `tangent` is the drafting word, mapped per pair of kinds to the regular At-form; and
+/// Whether a word may stand between two links of a chain (spec §6.6).  `tangent` is the
+/// drafting word, mapped per pair of kinds to the regular At-form where the joint threads; and
 /// any binary constraint whose spec is exactly two entity slots — `perpendicular`,
 /// `equal_length`, `equal_radius` — is an infix spelling of itself, the two-argument counterpart
 /// of `prefix_kind` and derived from the same registry.  `equal` is the polymorphic one
-/// (`equal_kind`).  `close`, which seals a loop, is not a joint — it stands where a link would.
+/// (`equal_kind`).  The plain corner is not a word at all but the `->` marker, and `close`,
+/// which seals a loop, is not a joint — it stands where a link would.
 fn joint_word(w: &str) -> bool {
-    w == "to" || is_operator(w)
+    is_operator(w)
 }
 
 /// The words that shape a statement without naming anything — a modifier the parser eats where it
@@ -1687,6 +1705,8 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
             // clause is what says a number is one now
             Tok::Eq => None,
             Tok::EqEq => Some(Tint::Claim),
+            // the joint marker is structure, the way `close` is
+            Tok::Arrow => Some(Tint::Word),
             // a body is made of statements, so a brace begins one the way a newline does
             Tok::P('{') | Tok::P('}') => {
                 at = Next::Start;
@@ -1838,7 +1858,7 @@ fn tint_word(
                 };
             }
             if (next_word.is_some() || at_line_end) && joint_word(w) {
-                return (Some(if w == "to" { Tint::Word } else { Tint::Relation }), Next::Word);
+                return (Some(Tint::Relation), Next::Word);
             }
             if w == "close" && at_line_end {
                 return (Some(Tint::Word), Next::Word);
@@ -1852,12 +1872,12 @@ fn tint_word(
 
 /// What a chain link stands on.
 ///
-/// **Which of the two it is decides whether the chain threads** (spec §6.6).  A chain that
-/// *declares* its elements is drawing a contour — the joints are corners, and each one welds the
-/// point its two elements share.  A chain that *names* elements already declared is stating a
-/// relation among them, and welding anything would be an invention: `a_br equal a_tl` says the
-/// two arcs are the same size and nothing whatever about where they meet.  So the operands say
-/// which kind of chain it is, and a chain may not mix them.
+/// A link that *declares* offers the joints beside it a list to read and fill; a link that only
+/// *names* an element declared elsewhere offers neither — its boundary is its own declaration's
+/// business.  Whether a joint welds the two is **not** read off this distinction: threading is
+/// stated at the joint, by the `->` marker, and its absence states the links are separate
+/// (spec §6.6) — `a_br equal a_tl` says the two arcs are the same size and nothing whatever
+/// about where they meet, and writing `->` beside the word is how one would say more.
 enum LinkBody {
     /// `line bottom(b1, b2)` — the chain declares it, so the keyword says what kind it is.
     /// Boxed because a `Decl` is many times a `Ref`, and a chain holds a `Vec` of these.
@@ -1867,11 +1887,22 @@ enum LinkBody {
     Ref(Ref),
 }
 
+/// A joint between two links: whether the `->` marker threads it, the word standing at it (with
+/// whatever stood in the word's parentheses), and where its text runs — from the marker (or the
+/// word, where there is no marker) through the word's arguments, and through `close` for the
+/// joint that seals a loop.  At least one of marker and word is present; the grammar has no
+/// empty joint.
+struct Joint {
+    thread: bool,
+    word: Option<(String, Vec<OpArg>)>,
+    span: Span,
+    /// The joint's own statements are skipped where its structure was refused — a threaded
+    /// circle, a `close` over one link — so one mistake is one message.
+    sound: bool,
+}
+
 /// One link of a chain while it is being read: the unary constraint words standing before it,
 /// what it stands on, and where its text sits.
-/// A joint: the word, whatever stood in its parentheses, and where it was written.
-type Joint = (String, Vec<OpArg>, Span);
-
 struct Link {
     /// The words standing before it, each with its own parentheses: `horizontal`, `radius(25)`.
     prefixes: Vec<(Name, Vec<OpArg>)>,
@@ -1922,17 +1953,6 @@ pub fn equal_kind(left: EntKind, right: EntKind) -> Option<CKind> {
         }
         _ => None,
     }
-}
-
-/// The word that says nothing without a corner to say it at.  A relation chain has no corners,
-/// so `to` is refused there rather than quietly meaning something weaker than it does in a
-/// contour — it *is* the corner, and there is nothing else it could be.
-///
-/// `tangent` was here too, and is not any more: between two names it is the ordinary infix
-/// operator `belt tangent k1`, which is a statement about two things that touch and needs no
-/// corner to be one.  It is only *in a contour* that it means "and at the point they share".
-fn contour_word(w: &str) -> bool {
-    w == "to"
 }
 
 /// Whether a word may stand *before* its one operand — `horizontal`, `vertical`, `radius`,
@@ -2647,9 +2667,15 @@ impl<'a> P<'a> {
             && !is_operator(w)
         {
             // the operand may be a dotted name — `l.p1 distance(6) l.p2` — so the word that
-            // relates it is looked for past the whole reference, not at the next token
-            if self.past_ref(self.i).and_then(|j| self.word_at(j)).is_some_and(joint_word) {
-                return true;
+            // relates it is looked for past the whole reference, not at the next token.  The
+            // retired `to` is still recognised here, so `a to k` reaches the chain loop and its
+            // migration message rather than a generic refusal.
+            if let Some(j) = self.past_ref(self.i) {
+                if matches!(self.t.get(j).map(|(t, _)| t), Some(Tok::Arrow))
+                    || self.word_at(j).is_some_and(|w| joint_word(w) || w == "to")
+                {
+                    return true;
+                }
             }
         }
         opens_link(w, next)
@@ -2700,24 +2726,61 @@ impl<'a> P<'a> {
         let mut joints: Vec<Joint> = Vec::new();
         let mut close: Option<Joint> = None;
         loop {
-            let joint = match self.peek() {
-                Some(Tok::Ident(w)) if joint_word(w) => w.clone(),
-                _ => break,
+            let start = self.here().lo as usize;
+            // `->` says the two links beside it share a boundary point; a word beside it says
+            // what else holds at the corner just threaded.  At least one of the two makes a
+            // joint, and neither alone implies the other (spec §6.6).
+            let mut thread = self.peek() == Some(&Tok::Arrow);
+            if thread {
+                self.i += 1;
+                // a line ending in `->` continues the chain on the next, exactly as a line
+                // ending in a joint word does
+                self.skip_ends();
+            }
+            // a word that opens a link is the next link's own — `-> vertical line right(…)` is
+            // a plain corner onto a levelled line, not a `vertical` joint — which is the same
+            // order of questions the colouring asks (`tint_word`), so the two cannot disagree
+            let word = match self.peek() {
+                Some(Tok::Ident(w))
+                    if joint_word(w) && !opens_link(w, self.word_at(self.i + 1)) =>
+                {
+                    let w = w.clone();
+                    self.i += 1;
+                    // an infix operator carries its own parentheses: `p1 distance(80) p2` is a
+                    // chain of one joint, which is the unification that makes a lone statement
+                    // and a chain one grammar rather than two
+                    let args = self.op_args(&w)?;
+                    Some((w, args))
+                }
+                _ => None,
             };
-            let wspan = self.here();
-            self.i += 1;
-            // an infix operator carries its own parentheses: `p1 distance(80) p2` is a chain of
-            // one joint, which is the unification that makes a lone statement and a chain one
-            // grammar rather than two
-            let args = self.op_args(&joint)?;
-            // a line ending in a joint word continues the chain on the next — the one place a
+            if !thread && word.is_none() {
+                // the retired corner word, caught here so a 0.7 document says what to write
+                if self.peek_word("to") {
+                    self.fail("`to` is retired: a corner is written `->` (spec §6.6)");
+                    self.i += 1;
+                    thread = true;
+                } else {
+                    break;
+                }
+            }
+            let hi = self.prev_hi();
+            // a line ending in a joint continues the chain on the next — the one place a
             // statement runs past its line's end
             self.skip_ends();
             if self.eat_word("close") {
-                close = Some((joint, args, Span::new(wspan.lo as usize, self.prev_hi())));
+                if !thread {
+                    self.fail("a loop is a thread: a chain closes with `-> close`");
+                }
+                close = Some(Joint {
+                    thread: true,
+                    word,
+                    span: Span::new(start, self.prev_hi()),
+                    sound: true,
+                });
                 break;
             }
-            joints.push((joint, args, wspan));
+            joints.push(Joint { thread, word, span: Span::new(start, hi), sound: true });
             links.push(self.link()?);
         }
         // the trailing clauses a statement may carry — a lone infix operator is a one-joint
@@ -2817,8 +2880,8 @@ impl<'a> P<'a> {
     fn desugar(
         &mut self,
         mut links: Vec<Link>,
-        joints: Vec<Joint>,
-        close: Option<Joint>,
+        mut joints: Vec<Joint>,
+        mut close: Option<Joint>,
         whole: Span,
         next_id: &mut u32,
         out: &mut Vec<Stmt>,
@@ -2831,82 +2894,82 @@ impl<'a> P<'a> {
         let lone = n == 2
             && joints.len() == 1
             && close.is_none()
+            && !joints[0].thread
             && links.iter().all(|l| l.kind().is_none());
-        let mut sound = true;
 
-        // **operand form decides what kind of chain this is.**  Declarations draw a contour and
-        // its joints are corners; names state a relation and there is no corner to state it at.
-        let declares = links.iter().filter(|l| l.kind().is_some()).count();
-        let contour = declares == n;
-        if chained && declares != 0 && !contour {
+        // **threading is stated at the joint, never inferred** (spec §6.6): `->` says the two
+        // links beside it share a boundary point, and its absence says they do not — so a chain
+        // may mix declarations and names freely, and each marker is judged where it stands.
+        // A marker needs an end on each side it can see, which is exactly a line or an arc; a
+        // side that only names an element has a kind only elaboration knows, and is trusted to
+        // the point the other side names.
+        if close.is_some() && n < 2 {
             self.errs.push(SynErr {
-                span: links[declares.min(n - 1)].span_of_name(),
-                message: "a chain either declares every element or names every one: the first \
-                          draws a contour and threads its corners, the second states a relation \
-                          and threads nothing"
-                    .to_string(),
+                span: links[0].span_of_name(),
+                message: "a chain closes over at least two elements".to_string(),
             });
-            sound = false;
+            if let Some(c) = &mut close {
+                c.sound = false;
+            }
         }
-
-        if chained && contour {
-            // a contour threads through boundary points, so every link must have a boundary —
-            // which is exactly a line or an arc
-            for l in &links {
-                if l.kind().is_some_and(|k| k.ends().is_none()) {
-                    self.errs.push(SynErr {
-                        span: l.span_of_name(),
-                        message: format!(
-                            "a chain joins lines and arcs; a {} has no ends to thread",
-                            l.kind().map(|k| k.as_str()).unwrap_or("thing")
-                        ),
-                    });
+        let mut endless = vec![false; n]; // reported once per link, however many markers reach it
+        for k in 0..joints.len() + usize::from(close.as_ref().is_some_and(|c| c.sound)) {
+            let (thread, li, ri) = match joints.get(k) {
+                Some(j) => (j.thread, k, k + 1),
+                None => (true, n - 1, 0),
+            };
+            if !thread {
+                continue;
+            }
+            let mut sound = true;
+            for side in [li, ri] {
+                if links[side].kind().is_some_and(|k| k.ends().is_none()) {
+                    if !endless[side] {
+                        self.errs.push(SynErr {
+                            span: links[side].span_of_name(),
+                            message: format!(
+                                "a corner joins lines and arcs; a {} has no ends to thread",
+                                links[side].kind().map(|k| k.as_str()).unwrap_or("thing")
+                            ),
+                        });
+                        endless[side] = true;
+                    }
                     sound = false;
                 }
             }
-            if close.is_some() && n < 2 {
-                self.errs.push(SynErr {
-                    span: links[0].span_of_name(),
-                    message: "a chain closes over at least two elements".to_string(),
-                });
-                sound = false;
-            }
-        } else if chained && sound {
-            // a relation chain: the contour words say nothing without a corner, and there is no
-            // loop to close
-            for (w, _, sp) in joints.iter().chain(close.iter()) {
-                if contour_word(w) {
-                    self.errs.push(SynErr {
-                        span: *sp,
-                        message: format!(
-                            "`{w}` joins elements a chain declares, where it has the corner to \
-                             state itself at; between names it would say nothing"
-                        ),
-                    });
-                    sound = false;
+            if !sound {
+                match joints.get_mut(k) {
+                    Some(j) => j.sound = false,
+                    None => close.as_mut().expect("the close joint").sound = false,
                 }
-            }
-            if let Some((_, _, sp)) = &close {
-                self.errs.push(SynErr {
-                    span: *sp,
-                    message: "only a contour closes: a relation among names has no loop"
-                        .to_string(),
-                });
-                sound = false;
             }
         }
 
-        // threading: at each joint the shared point is named by exactly one side, or by both in
-        // agreement, and the name fills whichever side left its boundary field out
-        if chained && contour && sound {
-            for i in 0..n - 1 {
-                self.thread(&mut links, i, i + 1, joints[i].2);
+        // threading: at each threaded joint the shared point is named by exactly one side, or
+        // by both in agreement, and the name fills whichever declared side left its boundary
+        // field out.  `covered` is the ends the markers spoke for; every other end of a link a
+        // marker reached must be named where it stands, or its list is left partial (§6.1).
+        let mut covered = vec![(false, false); n]; // (entry, exit)
+        for k in 0..joints.len() {
+            if joints[k].thread && joints[k].sound {
+                self.thread(&mut links, k, k + 1, joints[k].span);
+                covered[k].1 = true;
+                covered[k + 1].0 = true;
             }
-            match &close {
-                Some((_, _, sp)) => self.thread(&mut links, n - 1, 0, *sp),
-                None => {
-                    self.loose_end(&links[0], true);
-                    self.loose_end(&links[n - 1], false);
+        }
+        if close.as_ref().is_some_and(|c| c.sound) {
+            let sp = close.as_ref().expect("just checked").span;
+            self.thread(&mut links, n - 1, 0, sp);
+            covered[n - 1].1 = true;
+            covered[0].0 = true;
+        }
+        for (li, l) in links.iter().enumerate() {
+            if covered[li].0 != covered[li].1 {
+                if !covered[li].0 {
+                    self.loose_end(l, true);
+                }
+                if !covered[li].1 {
+                    self.loose_end(l, false);
                 }
             }
         }
@@ -2916,14 +2979,41 @@ impl<'a> P<'a> {
             true => links.iter().map(|l| (l.entity(), l.kind())).collect(),
             false => Vec::new(),
         };
+        // how each worded joint splices when its statement is doomed (`Chained`): a threaded
+        // one steps down to the bare corner; an unthreaded one becomes a statement break, its
+        // span grown over a terminal name-link that a break would leave dangling; in a chain
+        // that closes no break is safe — it would re-aim the `close` — so the joint is Stuck
+        let spell: Vec<(Span, Chained)> = joints
+            .iter()
+            .enumerate()
+            .map(|(k, j)| {
+                if j.thread {
+                    return (j.span, Chained::Joint);
+                }
+                if close.is_some() {
+                    return (j.span, Chained::Stuck);
+                }
+                let mut sp = j.span;
+                if k == 0 && links[0].kind().is_none() {
+                    sp = Span::new(links[0].span.lo as usize, sp.hi as usize);
+                }
+                if k + 1 == n - 1 && links[n - 1].kind().is_none() {
+                    sp = Span::new(sp.lo as usize, links[n - 1].span.hi as usize);
+                }
+                (sp, Chained::Infix)
+            })
+            .collect();
         let at = |i: usize| (&sig[i].0, sig[i].1);
         let first = out.len();
         for (i, link) in links.into_iter().enumerate() {
-            if i > 0 && sound {
-                let (w, args, sp) = &joints[i - 1];
-                let (span, how) =
-                    if lone { (whole, Chained::No) } else { (*sp, Chained::Joint) };
-                out.extend(self.joint_stmt(w, args, *sp, span, at(i - 1), at(i), how, next_id));
+            if i > 0 && joints[i - 1].sound {
+                if let Some((w, args)) = &joints[i - 1].word {
+                    let j = &joints[i - 1];
+                    let (span, how) = if lone { (whole, Chained::No) } else { spell[i - 1] };
+                    out.extend(
+                        self.joint_stmt(w, args, j.span, span, at(i - 1), at(i), j.thread, how, next_id),
+                    );
+                }
             }
             let ent = match &link.body {
                 LinkBody::Decl(d) => Ref { root: d.name.clone(), path: Vec::new(), span: d.name.span },
@@ -2965,17 +3055,28 @@ impl<'a> P<'a> {
                 chained: if chained { Chained::Link } else { Chained::No },
             });
         }
-        if let Some((w, args, sp)) = close {
-            let sealed = sound.then(|| {
-                self.joint_stmt(&w, &args, sp, sp, at(n - 1), at(0), Chained::Close, next_id)
-            });
-            match sealed.flatten() {
+        if let Some(c) = close {
+            let sealed = match (&c.word, c.sound) {
+                (Some((w, args)), true) => self.joint_stmt(
+                    w,
+                    args,
+                    c.span,
+                    c.span,
+                    at(n - 1),
+                    at(0),
+                    true,
+                    Chained::Close,
+                    next_id,
+                ),
+                _ => None,
+            };
+            match sealed {
                 Some(st) => out.push(st),
-                // `to close` states nothing, so no statement owns its words; the last link's
+                // `-> close` states nothing, so no statement owns its words; the last link's
                 // span grows over them, or an append would land in the middle of the chain
                 None => {
                     if let Some(last) = out.last_mut() {
-                        last.span = Span::new(last.span.lo as usize, sp.hi as usize);
+                        last.span = Span::new(last.span.lo as usize, c.span.hi as usize);
                     }
                 }
             }
@@ -2993,35 +3094,41 @@ impl<'a> P<'a> {
         span: Span,
         left: (&Ref, Option<EntKind>),
         right: (&Ref, Option<EntKind>),
+        threaded: bool,
         chained: Chained,
         next_id: &mut u32,
     ) -> Option<Stmt> {
-        let rel = self.joint_relation(word, args, at, left, right)?;
+        let rel = self.joint_relation(word, args, at, left, right, threaded)?;
         *next_id += 1;
         Some(Stmt { id: StmtId(*next_id), kind: StmtKind::Relation(rel), span, chained })
     }
 
-    /// Resolve one joint's shared point between link `li` (its exit) and link `ri` (its entry).
+    /// Resolve one threaded joint's shared point between link `li` (its exit) and link `ri`
+    /// (its entry).
     fn thread(&mut self, links: &mut [Link], li: usize, ri: usize, at: Span) {
-        let (Some(lk), Some(rk)) = (links[li].kind(), links[ri].kind()) else { return };
-        let (Some((_, exit)), Some((entry, _))) = (lk.ends(), rk.ends()) else {
-            return; // a kind with no ends, already reported
-        };
         fn decl_of(l: &Link) -> Option<&Decl> {
             match &l.body {
                 LinkBody::Decl(d) => Some(d),
                 LinkBody::Ref(_) => None,
             }
         }
+        // which slot each side threads through, where that side is declared here.  A link that
+        // only *names* an element has no list to read or fill — its boundary is its own
+        // declaration's business — so the declared side must say where the two meet, usually
+        // by the existing element's own child (`line l(a, k.start) -> tangent k`).
+        let exit = links[li].kind().and_then(|k| k.ends()).map(|(_, ex)| ex);
+        let entry = links[ri].kind().and_then(|k| k.ends()).map(|(en, _)| en);
         // a joint threads a *name*: it welds two links to one point, and only a name says
         // which.  A slot seeded with `hint(…)` names nothing, so it reads as unfilled here and
         // the other side must say where they meet.
-        let slot = |i: usize, k: usize| {
-            decl_of(&links[i])
-                .and_then(|d| d.children.get(k))
-                .and_then(|v| v.first())
-                .and_then(|kid| kid.as_ref())
-                .cloned()
+        let slot = |i: usize, k: Option<usize>| {
+            k.and_then(|k| {
+                decl_of(&links[i])
+                    .and_then(|d| d.children.get(k))
+                    .and_then(|v| v.first())
+                    .and_then(|kid| kid.as_ref())
+                    .cloned()
+            })
         };
         let (left, right) = (slot(li, exit), slot(ri, entry));
         match (left, right) {
@@ -3041,13 +3148,13 @@ impl<'a> P<'a> {
                 }
             }
             (Some(l), None) => {
-                if let LinkBody::Decl(d) = &mut links[ri].body {
-                    d.children[entry] = vec![Kid::Ref(l)];
+                if let (Some(en), LinkBody::Decl(d)) = (entry, &mut links[ri].body) {
+                    d.children[en] = vec![Kid::Ref(l)];
                 }
             }
             (None, Some(r)) => {
-                if let LinkBody::Decl(d) = &mut links[li].body {
-                    d.children[exit] = vec![Kid::Ref(r)];
+                if let (Some(ex), LinkBody::Decl(d)) = (exit, &mut links[li].body) {
+                    d.children[ex] = vec![Kid::Ref(r)];
                 }
             }
             (None, None) => {
@@ -3063,8 +3170,9 @@ impl<'a> P<'a> {
         }
     }
 
-    /// An open chain's first entry and last exit are not joints, so nothing fills them in; they
-    /// must be named where they stand.
+    /// An end no marker filled, on a link some marker reached: a thread wrote a name into the
+    /// link's list, so what it left out must be named where it stands (§6.1) — reported here
+    /// with the chain's own words rather than as a bare partial-list error.
     fn loose_end(&mut self, l: &Link, entry: bool) {
         let LinkBody::Decl(d) = &l.body else { return };
         let Some((en, ex)) = d.kind.ends() else { return };
@@ -3078,13 +3186,14 @@ impl<'a> P<'a> {
         }
     }
 
-    /// The relation one qualified joint states, or `None` for a plain corner — and an error
-    /// where the vocabulary has no regular form for the pair, which is refused rather than
-    /// stated as a bare tangency over a shared point (a double root no rank tolerance can read).
+    /// The relation one worded joint states — and, where the joint threads, an error for a pair
+    /// the vocabulary has no regular form for, which is refused rather than stated as a bare
+    /// tangency over a shared point (a double root no rank tolerance can read).
     ///
-    /// A contour's kinds are known here, because its links declared them.  A relation chain's
-    /// are not — a name's kind is elaboration's to say — so a word that needs them travels
-    /// instead, and `program::constrain` settles it once the entities are resolved.
+    /// A declared link's kind is known here; a named one's is elaboration's to say — so a word
+    /// that needs kinds it does not have travels instead, and `program::constrain` settles it
+    /// once the entities are resolved.  What the marker adds is the one thing the operator
+    /// cannot know: *which end* two links meet at, read off the direction of travel.
     fn joint_relation(
         &mut self,
         word: &str,
@@ -3092,13 +3201,11 @@ impl<'a> P<'a> {
         at: Span,
         left: (&Ref, Option<EntKind>),
         right: (&Ref, Option<EntKind>),
+        threaded: bool,
     ) -> Option<Relation> {
         use EntKind::{Arc, Line};
         let (lref, lk) = left;
         let (rref, rk) = right;
-        if word == "to" {
-            return None;
-        }
         // A joint is the infix operator its word already is, written between two links instead
         // of between two names — so it makes the same `Written` a lone statement does, and
         // `program::constrain` settles both.  The chain contributes the one thing it knows and
@@ -3122,6 +3229,12 @@ impl<'a> P<'a> {
         let end = |w: &str| {
             vec![OpArg::Named(Name { text: "at".into(), span: at }, Arg::Word(w.to_string()))]
         };
+        // no marker, no corner: the word is the ordinary infix operator between the two, as it
+        // is between two names — for `tangent`, the well-conditioned bare pair, which is the
+        // correct statement exactly when the two are separate
+        if !threaded {
+            return written(word, vec![lref.clone(), rref.clone()], extra.to_vec());
+        }
         match (lk, rk) {
             // the joint knows the shared point, so tangency is stated *at* it — the regular
             // form, with `at:` read off the direction of travel
@@ -3129,6 +3242,25 @@ impl<'a> P<'a> {
                 written("tangent", vec![rref.clone(), lref.clone()], end("start"))
             }
             (Some(Arc), Some(Line)) if word == "tangent" => {
+                written("tangent", vec![lref.clone(), rref.clone()], end("end"))
+            }
+            // a corner between a fresh element and one declared elsewhere: the declared side
+            // says which of its ends was threaded, and elaboration settles the pair once the
+            // name's kind is known — the `at:` selector is what keeps the statement the regular
+            // form there too, never the bare pair over a coincidence
+            (Some(Arc), None) if word == "tangent" => {
+                written("tangent", vec![lref.clone(), rref.clone()], end("end"))
+            }
+            (None, Some(Arc)) if word == "tangent" => {
+                written("tangent", vec![rref.clone(), lref.clone()], end("start"))
+            }
+            (Some(Line), None) if word == "tangent" => {
+                written("tangent", vec![lref.clone(), rref.clone()], end("p2"))
+            }
+            // the named side can only sensibly be an arc here (a line meeting a line tangent is
+            // collinear, and needs both declared to say so); `at: end` is the arc's exit, and a
+            // name of any other kind is refused where its kind becomes known
+            (None, Some(Line)) if word == "tangent" => {
                 written("tangent", vec![lref.clone(), rref.clone()], end("end"))
             }
             // two straight runs meeting tangent share a point and a direction: collinear

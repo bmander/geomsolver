@@ -506,40 +506,50 @@ Conventions:
   circle` is `TangentLineCircle` — and a name that is also an element keyword can no longer lead
   a statement (`spline_follower.sv`'s spline is `cam`, not `curve`).
 - A **chain** (Solvent §6.6) is parser-level sugar and nothing else: `horizontal line bottom(b1,
-  b2) tangent arc a(center: c, r: r) tangent …` desugars in `syntax.rs` into the ordinary
-  statements it stands for — a prefix word (any `CKind` whose spec is one entity slot) becomes
-  that unary relation, and a joint word becomes the relation between its two neighbours: `to` is
-  the plain corner, `tangent` maps per pair of kinds, and any binary `CKind` whose spec is two
-  entity slots (`perpendicular`, `equal_length`, `equal_radius`, …) is an infix spelling of
-  itself, type-checked against the pair — and no other module knows the construct exists.  Adjacency
-  *threads*: each joint's shared point is named by exactly one side (or both, in agreement) and
-  fills the boundary field the other side left out, so a joint always knows its point and
-  `tangent` always desugars to the regular At-form (`TangentArcLine`, or `Parallel` between two
-  lines, which over the shared corner is collinearity) — never the bare pair that is
-  rank-deficient at every solution.  Only lines and arcs chain; a circle has no ends, which is
-  the radius-as-Param discussion again.  **Operand form decides whether a chain threads**: links
-  that *declare* draw a contour and thread their corners; links that only *name* — `a_br equal
-  a_tr equal a_tl` — state a relation and thread nothing, since welding two arcs never said to
-  meet would be an invention.  A chain may not mix the two, and `to`/`tangent`/`close` are
-  contour words refused between names.  `equal` is the second polymorphic word beside `tangent`
+  b2) -> tangent arc a(center: c) hint(r: r) -> tangent …` desugars in `syntax.rs` into the
+  ordinary statements it stands for — a prefix word (any `CKind` whose spec is one entity slot)
+  becomes that unary relation, and a joint's word becomes the relation between its two
+  neighbours: `tangent` maps per pair of kinds, and any binary `CKind` whose spec is two entity
+  slots (`perpendicular`, `equal_length`, `equal_radius`, …) is an infix spelling of itself,
+  type-checked against the pair — and no other module knows the construct exists.
+  **Threading is a statement, not an inference** (issue #31): the `->` marker on a joint says
+  its two links share a boundary point, threaded left-to-right (`p1 → p2`; `start → end`, CCW),
+  and its absence says they do not — so `->` alone is the plain corner (`to` is retired into
+  it), `-> tangent` is a corner that is also tangent there, and a bare word states the relation
+  and welds nothing.  At a threaded joint the shared point is named by exactly one side (or
+  both, in agreement) and fills the boundary field a declared side left out, so a threaded
+  `tangent` always desugars to the regular At-form (`TangentArcLine`/`TangentLineCircleAt`, or
+  `Parallel` between two lines, which over the shared corner is collinearity) — never the bare
+  pair that is rank-deficient at every solution; the `at:` argument is only ever supplied by a
+  threaded joint, and an *unthreaded* `tangent` is the plain pair, correct exactly when the two
+  are separate.  A chain may mix declarations and names, because each joint states its own
+  threading: a link that only names an element offers no list to read or fill, so at a corner
+  with one the declared side names the shared point, usually by the existing element's own
+  child (`line t(p3, k.start) -> tangent k` — `follow_building` resolves such a child through
+  the declaration when the entity's kind builds later).  Only lines and arcs are threaded; a
+  circle has no ends — which is the radius-as-Param discussion again — but may stand in a chain
+  no marker reaches.  `equal` is the second polymorphic word beside `tangent`
   (`syntax::equal_kind`): a length between lines, a radius between circles or arcs, an error
-  between one of each.  A contour settles it as it parses, because the keywords say what the
-  elements are; a relation chain cannot — a name may be declared further down the file or come
-  from a component — so `Relation::poly` carries the word and `program::constrain` settles it
-  once the entities resolve, **before** reading the spec, since the spec is what the arguments
-  are type-checked against.  Each desugared statement keeps an id of its own and a
+  between one of each; a name may be declared further down the file or come from a component,
+  so `Relation::poly` carries the word and `program::constrain` settles it once the entities
+  resolve, **before** reading the spec, since the spec is what the arguments are type-checked
+  against.  Each desugared statement keeps an id of its own and a
   span into the chain's text (a chain is several statements from one *line*, where a `cycle` is
   many instances of one *statement*), so writeback, culprits and carets need nothing new.
   **How a statement is spelled is recorded, never sniffed back out of the characters**:
-  `Stmt::chained` is a `Chained` (`No`/`Link`/`Prefix`/`Joint`/`Close`) written by the desugarer,
-  and `edit::doom_splice` matches on it — a doomed joint steps down to `to`, a doomed prefix word
-  goes where it stands, and a link has *no* splice, which is how deleting one is refused (no
-  splice takes a link out and leaves a chain behind).  Reading it back off the text instead would
+  `Stmt::chained` is a `Chained` (`No`/`Link`/`Prefix`/`Joint`/`Infix`/`Stuck`/`Close`) written
+  by the desugarer, and `edit::doom_splice` matches on it — a doomed threaded joint steps down
+  to the bare corner `->`, a doomed unthreaded joint becomes a statement break (its span grown
+  at desugar time over a terminal name-link a break would leave dangling; inside a closed chain
+  there is no safe break, which is `Stuck` and refused), a doomed prefix word goes where it
+  stands, and a link has *no* splice, which is how deleting one is refused (no splice takes a
+  link out and leaves a chain behind).  Reading it back off the text instead would
   rest on "a longhand relation always carries a `(`", which nothing states and a qualified joint
   would quietly break.  Which slots a chain threads through is `EntKind::ends()` in `model.rs`,
   beside the `fields()` table it indexes and exhaustive, so a new kind with ends stops the build
-  rather than silently threading the wrong children.  A line ending in a joint word continues
-  its chain onto the next; `JOINT close` seals a loop back to the first link's entry.
+  rather than silently threading the wrong children.  A line ending in a joint — the marker or
+  a word — continues its chain onto the next; `-> close` seals a loop back to the first link's
+  entry, and a `close` with no marker is an error, since a loop is a thread.
   The colouring asks `opens_link` — the *same* predicate `chain_starts` asks — since written
   twice the two drifted at once on whether `horizontal(bottom)` is a prefix.  Both reach it
   through `past_args`, the lookahead **stepping over the operator's own parentheses**: now that a

@@ -451,7 +451,7 @@ pub fn remove(e: &Elaborated, prog: &Program, ents: &[EntRef], cons: &[u32]) -> 
                 return Edit::none(
                     prog,
                     Some(
-                        "that is a link of a chain, which deletion cannot unpick; edit the \
+                        "that is part of a chain, which deletion cannot unpick; edit the \
                          source instead"
                             .into(),
                     ),
@@ -542,12 +542,19 @@ fn doom_splice(text: &str, st: &Stmt) -> Option<Splice> {
             Some(Splice { at: with_line(text, st.span), with: String::new() })
         }
         syntax::Chained::Link => None,
-        syntax::Chained::Joint => one_word("to"),
+        // a threaded joint steps down to the bare corner: the claim goes, the weld stays
+        syntax::Chained::Joint => one_word("->"),
+        // an unthreaded joint states only the relation, so its span — grown at desugar time
+        // over a terminal name-link that would otherwise dangle — becomes a statement break
+        syntax::Chained::Infix => Some(Splice { at: st.span, with: "\n".to_string() }),
+        // an unthreaded joint in a chain that closes: a break would re-aim the `close` at
+        // another link, so there is no splice and the gesture is refused
+        syntax::Chained::Stuck => None,
         // the joint word and `close` share a span, and only the claim goes
         syntax::Chained::Close => {
             let tail = st.span.slice(text);
             let close = tail.rfind("close").map(|i| &tail[i..]).unwrap_or("close");
-            one_word(&format!("to {close}"))
+            one_word(&format!("-> {close}"))
         }
         syntax::Chained::Prefix => Some(Splice {
             at: Span::new(st.span.lo as usize, skip_spaces(text, st.span.hi as usize)),

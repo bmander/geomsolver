@@ -225,18 +225,23 @@ to be — a `Str` argument is written as the word it is (`at: start`).
 A chain writes a run of elements and the relations *between* them on one line.
 
 ```
-CHAIN  ::= LINK (JOINT LINK)* [JOINT 'close']
+CHAIN  ::= LINK (JOINT LINK)* ['->' ['close' | INFIX 'close']]
 LINK   ::= PREFIX* DECL | REF
 PREFIX ::= a constraint taking one entity            horizontal, vertical
-JOINT  ::= 'to' | 'tangent' | 'equal' | INFIX
-INFIX  ::= a constraint taking two entities          perpendicular, equal_length, equal_radius
+JOINT  ::= '->' [INFIX] | INFIX                      at least one of the two
+INFIX  ::= 'tangent' | 'equal' | a constraint taking two entities
 ```
 
-**The operands decide what the chain does.** Links that *declare* draw a contour: each joint is a
-corner, and the shared point is threaded — named by exactly one side (or both, agreeing) and
-filled into the other. `to` is a plain corner; `tangent` becomes the regular at-the-point form.
-Links that only *name* state a relation among existing elements and thread nothing. A chain may
-not mix the two, and `to` / `tangent` / `close` are meaningless between names.
+**Threading is stated at the joint, never inferred.** `->` says the two links beside it share a
+boundary point, threaded left to right (`p1 → p2` on a line; `start → end` on an arc, CCW); its
+absence says they do not. `->` alone is the plain corner; `-> tangent` is a corner that is also
+tangent there, the regular at-the-point form — the shared point is named by exactly one side (or
+both, agreeing) and filled into the other. A word without the marker states only the relation:
+`a_br equal a_tr` relates two arcs declared elsewhere and welds nothing, and
+`line l1(a, b) perpendicular line l2(c, d)` declares two separate lines at a right angle. A
+chain may mix declarations and names; at a corner with an element declared elsewhere, the
+declared side names the shared point, usually by that element's own child
+(`line t(p3, k.start) -> tangent k`). A loop closes with `-> close` — a loop is a thread.
 
 `equal` is polymorphic: a length between lines, a radius between circles or arcs. `a equal b equal
 c` is two statements, not three.
@@ -385,10 +390,10 @@ point p1 hint(x: w, y: 0)
 point p2 hint(x: w, y: h)
 point p3 hint(x: 0, y: h)
 
-horizontal line bottom(p0, p1) to
-vertical   line right(p1, p2) to
-horizontal line top(p2, p3) to
-vertical   line left(p3, p0) to close
+horizontal line bottom(p0, p1) ->
+vertical   line right(p1, p2) ->
+horizontal line top(p2, p3) ->
+vertical   line left(p3, p0) -> close
 
 p0 distance(w) p1
 p1 distance(h) p2
@@ -441,8 +446,8 @@ point c hint(x: 40, y: 10)
 point d hint(x: 40, y: 40)
 point o hint(x: 30, y: 10)
 
-horizontal line run(a, b) tangent
-arc fillet(center: o) hint(r: 10) tangent
+horizontal line run(a, b) -> tangent
+arc fillet(center: o) hint(r: 10) -> tangent
 vertical line rise(c, d)
 
 radius(10) fillet

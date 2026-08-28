@@ -323,12 +323,87 @@ impl Elaborated {
 struct Resolver {
     of: BTreeMap<String, EntRef>,
     declared_at: BTreeMap<String, Span>,
+    /// Each declaration's child slots, as the names it wrote — what `follow_building` reads
+    /// where the entity itself is not built yet (build order is per kind, so a child slot that
+    /// reaches into an entity of a later kind — `line t(p3, k.start)` with `k` an arc — has
+    /// only the declaration to ask).  `None` where a slot holds a seed or nothing, since the
+    /// point it mints does not exist until the parent is built.
+    kids: BTreeMap<String, Vec<Option<Ref>>>,
 }
 
 impl Resolver {
     fn lookup(&self, r: &Ref) -> Option<EntRef> {
         self.of.get(&r.root.text).copied()
     }
+
+    /// The name declaration `name` (of kind `kind`) wrote in its child field `f`, mirroring
+    /// `follow`'s reading of the built entity — the same fields, the same refusals.
+    fn kid(&self, name: &str, kind: EntKind, f: &str) -> Result<Option<Ref>, String> {
+        let slots = self.kids.get(name).ok_or_else(|| format!("no such entity: `{name}`"))?;
+        let mut at = 0usize;
+        for (n, k) in kind.fields() {
+            match k {
+                Field::Scalar => {}
+                Field::Child => {
+                    if *n == f {
+                        return Ok(slots.get(at).cloned().flatten());
+                    }
+                    at += 1;
+                }
+                Field::List => {
+                    if *n == f {
+                        return Err(format!("`{f}` is a list, so it needs an index"));
+                    }
+                    at += 1;
+                }
+            }
+        }
+        let named: Vec<&str> =
+            kind.fields().iter().filter(|(_, k)| *k == Field::Child).map(|(n, _)| *n).collect();
+        Err(if named.is_empty() {
+            format!("a {} has no parts", kind.as_str())
+        } else {
+            format!("a {} has {}, not `{f}`", kind.as_str(), named.join(", "))
+        })
+    }
+}
+
+/// `follow`, for the one walk that runs while the sketch is still being built.
+///
+/// Phase 2 builds per kind, so a child slot's dotted reference may reach an entity that exists
+/// in name only — `line t(p3, k.start)` with `k` an arc, which builds after every line.  Where
+/// the entity is built this is `follow`; where it is not, the slot's name is read off the
+/// *declaration* (`Resolver::kid`) and the walk continues from what that names.  A slot that
+/// holds a seed or nothing mints its point only when the parent is built, so there is nothing
+/// to reach and the reference is refused rather than guessed.
+fn follow_building(sk: &Sketch, res: &Resolver, e: EntRef, r: &Ref) -> Result<EntRef, String> {
+    let mut e = e;
+    let mut name = r.root.text.clone();
+    let mut path: Vec<Seg> = r.path.clone();
+    // two declarations naming their parts through each other would walk forever; the cap is
+    // far past any real document, so hitting it is the cycle
+    for _ in 0..64 {
+        if path.is_empty() || e.i() < sk.count(e.kind) {
+            return follow(sk, e, &path);
+        }
+        let Seg::Field(f) = &path[0] else {
+            return Err("an index names a copy, not a part".to_string());
+        };
+        let Some(kid) = res.kid(&name, e.kind, &f.text)? else {
+            return Err(format!(
+                "`{name}` does not name its {}, and `{name}` is not built yet: name the point \
+                 itself",
+                f.text
+            ));
+        };
+        let Some(ne) = res.lookup(&kid) else {
+            return Err(format!("no such entity: `{}`", kid.root.text));
+        };
+        e = ne;
+        name = kid.root.text.clone();
+        path = kid.path.iter().chain(path[1..].iter()).cloned().collect();
+    }
+    Err(format!("`{}` names its parts in a circle", r.root.text))
 }
 
 /// Follow a reference's field path to the sub-entity it names — `root.center` is the circle's
@@ -524,6 +599,16 @@ pub fn elaborate(p: &Program) -> Elaborated {
         let n = count.entry(d.kind).or_insert(0);
         res.of.insert(d.name.text.clone(), EntRef::new(d.kind, *n as usize));
         res.declared_at.insert(d.name.text.clone(), d.name.span);
+        res.kids.insert(
+            d.name.text.clone(),
+            d.children
+                .iter()
+                .map(|g| match g.first() {
+                    Some(crate::syntax::Kid::Ref(r)) if g.len() == 1 => Some(r.clone()),
+                    _ => None,
+                })
+                .collect(),
+        );
         *n += 1;
     }
 
@@ -1191,7 +1276,7 @@ fn build(
             });
             return None;
         };
-        let e = match follow(sk, e, &r.path) {
+        let e = match follow_building(sk, res, e, r) {
             Ok(e) => e,
             Err(msg) => {
                 diags.push(Diag {
