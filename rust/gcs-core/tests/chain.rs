@@ -1,7 +1,7 @@
 //! Chains: the prefix and joint sugar (spec §6.6).
 //!
 //! A chain is a parser addition rather than a change of shape — `horizontal line bottom(b1, b2)
-//! tangent arc a(center: c, r: 5) …` desugars into the declarations and relations it is sugar
+//! tangent arc a(center: c) hint(r: 5) …` desugars into the declarations and relations it is sugar
 //! for, each with its own id and a span into the chain's own text.  What is worth testing is
 //! therefore the desugaring itself: that a contour written as a chain states *exactly* what the
 //! longhand states (held against the shipped `rect_fillets` case), that threading fills the
@@ -28,28 +28,28 @@ param w = 100
 param h = 60
 param r = 10
 
-point b1 at (r, 0)
-point b2 at (w - r, 0)
-point r1 at (w, r)
-point r2 at (w, h - r)
-point t1 at (w - r, h)
-point t2 at (r, h)
-point l1 at (0, h - r)
-point l2 at (0, r)
+point b1 hint(x: r, y: 0)
+point b2 hint(x: w - r, y: 0)
+point r1 hint(x: w, y: r)
+point r2 hint(x: w, y: h - r)
+point t1 hint(x: w - r, y: h)
+point t2 hint(x: r, y: h)
+point l1 hint(x: 0, y: h - r)
+point l2 hint(x: 0, y: r)
 
-point c_br at (w - r, r)
-point c_tr at (w - r, h - r)
-point c_tl at (r, h - r)
-point c_bl at (r, r)
+point c_br hint(x: w - r, y: r)
+point c_tr hint(x: w - r, y: h - r)
+point c_tl hint(x: r, y: h - r)
+point c_bl hint(x: r, y: r)
 
 line bottom(b1, b2)
-arc a_br(center: c_br, start: b2, end: r1, r: r)
+arc a_br(center: c_br, start: b2, end: r1) hint(r: r)
 line right(r1, r2)
-arc a_tr(center: c_tr, start: r2, end: t1, r: r)
+arc a_tr(center: c_tr, start: r2, end: t1) hint(r: r)
 line top(t1, t2)
-arc a_tl(center: c_tl, start: t2, end: l1, r: r)
+arc a_tl(center: c_tl, start: t2, end: l1) hint(r: r)
 line left(l1, l2)
-arc a_bl(center: c_bl, start: l2, end: b1, r: r)
+arc a_bl(center: c_bl, start: l2, end: b1) hint(r: r)
 
 horizontal(bottom)
 horizontal(top)
@@ -77,13 +77,13 @@ ground(c_bl)
 ";
 
 /// Five points and a centre, the cast every small chain below is drawn from.
-const PTS: &str = "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint p3 at (20, 10)\n\
-                   point p4 at (20, 30)\npoint c at (10, 10)\n";
+const PTS: &str = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 20, y: 10)\n\
+                   point p4 hint(x: 20, y: 30)\npoint c hint(x: 10, y: 10)\n";
 
 /// One line, one arc, one line, tangent at both joints — the smallest chain with a threaded
 /// element in the middle, and what three of the edit tests below are written against.
 const TANGENT_RUN: &str =
-    "line a(p1, p2) tangent arc k(center: c, r: 10) tangent line b(p3, p4)\n";
+    "line a(p1, p2) tangent arc k(center: c) hint(r: 10) tangent line b(p3, p4)\n";
 
 fn read(src: &str) -> Elaborated {
     let (prog, errs) = parse(src);
@@ -167,7 +167,7 @@ fn threading_fills_the_ends_nobody_wrote() {
 #[test]
 fn close_threads_back_to_the_first_link() {
     let e = read(
-        "point p1 at (0, 0)\npoint p2 at (10, 0)\n\
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\n\
          line a(p1, p2) to line b(p2) to close\n",
     );
     let kids = e.sketch.children(EntRef::line(1));
@@ -179,14 +179,14 @@ fn close_threads_back_to_the_first_link() {
 /// neither side names is refused, since an unnamed point has no seed and no statement.
 #[test]
 fn a_joint_is_named_by_exactly_one_side_or_by_both_in_agreement() {
-    let agree = "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint p3 at (5, 10)\n\
+    let agree = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 5, y: 10)\n\
                  line a(p1, p2) to line b(p2, p3)\n";
     assert!(errors(agree).is_empty(), "{:?}", errors(agree));
-    let disagree = "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint p3 at (5, 10)\n\
-                    point p4 at (9, 9)\nline a(p1, p2) to line b(p3, p4)\n";
+    let disagree = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 5, y: 10)\n\
+                    point p4 hint(x: 9, y: 9)\nline a(p1, p2) to line b(p3, p4)\n";
     refuses(disagree, "names two points");
-    let nobody = "point p1 at (0, 0)\npoint c at (5, 5)\n\
-                  line a(p1) to arc k(center: c, r: 5)\n";
+    let nobody = "point p1 hint(x: 0, y: 0)\npoint c hint(x: 5, y: 5)\n\
+                  line a(p1) to arc k(center: c) hint(r: 5)\n";
     refuses(nobody, "neither");
 }
 
@@ -194,8 +194,8 @@ fn a_joint_is_named_by_exactly_one_side_or_by_both_in_agreement() {
 /// not quietly seeded at the origin.
 #[test]
 fn an_open_end_must_be_named() {
-    let src = "point p3 at (20, 10)\npoint p4 at (20, 30)\npoint c at (10, 10)\n\
-               arc k(center: c, r: 5) to line b(p3, p4)\n";
+    let src = "point p3 hint(x: 20, y: 10)\npoint p4 hint(x: 20, y: 30)\npoint c hint(x: 10, y: 10)\n\
+               arc k(center: c) hint(r: 5) to line b(p3, p4)\n";
     refuses(src, "leaves `k`'s start unnamed");
 }
 
@@ -205,26 +205,26 @@ fn an_open_end_must_be_named() {
 #[test]
 fn the_vocabulary_is_the_regular_forms_or_a_refusal() {
     let e = read(
-        "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint p3 at (20, 0)\n\
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 20, y: 0)\n\
          line a(p1, p2) tangent line b(p2, p3)\n",
     );
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::Parallel));
 
-    let perp = "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint c at (5, 5)\n\
-                arc k(center: c, start: p1, end: p2, r: 5) perpendicular line b(p2, p1)\n";
+    let perp = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
+                arc k(center: c, start: p1, end: p2) hint(r: 5) perpendicular line b(p2, p1)\n";
     refuses(perp, "does not join");
 
-    let arcs = "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint p3 at (20, 0)\n\
-                point c at (5, 5)\npoint d at (15, 5)\n\
-                arc k(center: c, start: p1, end: p2, r: 5) tangent \
-                arc m(center: d, start: p2, end: p3, r: 5)\n";
+    let arcs = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 20, y: 0)\n\
+                point c hint(x: 5, y: 5)\npoint d hint(x: 15, y: 5)\n\
+                arc k(center: c, start: p1, end: p2) hint(r: 5) tangent \
+                arc m(center: d, start: p2, end: p3) hint(r: 5)\n";
     refuses(arcs, "does not join");
 
-    let circle = "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint c at (5, 5)\n\
-                  circle q(center: c, r: 5) to line b(p1, p2)\n";
+    let circle = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
+                  circle q(center: c) hint(r: 5) to line b(p1, p2)\n";
     refuses(circle, "no ends");
 
-    let lone = "point p1 at (0, 0)\npoint p2 at (10, 0)\nline a(p1, p2) tangent close\n";
+    let lone = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\nline a(p1, p2) tangent close\n";
     refuses(lone, "at least two");
 }
 
@@ -234,31 +234,31 @@ fn the_vocabulary_is_the_regular_forms_or_a_refusal() {
 #[test]
 fn a_binary_constraint_is_an_infix_word() {
     let e = read(
-        "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint p3 at (10, 10)\n\
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 10, y: 10)\n\
          line a(p1, p2) equal_length line b(p2, p3)\n",
     );
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::EqualLength));
 
     let e = read(
-        "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint p3 at (20, 0)\n\
-         point c at (5, 5)\npoint d at (15, 5)\n\
-         arc k(center: c, start: p1, end: p2, r: 5) equal_radius \
-         arc m(center: d, end: p3, r: 5)\n",
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 20, y: 0)\n\
+         point c hint(x: 5, y: 5)\npoint d hint(x: 15, y: 5)\n\
+         arc k(center: c, start: p1, end: p2) hint(r: 5) equal_radius \
+         arc m(center: d, end: p3) hint(r: 5)\n",
     );
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::EqualRadius));
     // and the joint still threads: m starts where k ends, whatever the joint says about them
     assert_eq!(e.sketch.children(EntRef::arc(1))[1], EntRef::point(1));
 
     // a word whose slots the pair does not fit is refused, not guessed at
-    let unfit = "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint c at (5, 5)\n\
-                 line a(p1, p2) equal_radius arc k(center: c, end: p1, r: 5)\n";
+    let unfit = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
+                 line a(p1, p2) equal_radius arc k(center: c, end: p1) hint(r: 5)\n";
     refuses(unfit, "does not join");
 }
 
 /// A prefix on a lone declaration is the smallest chain there is: two statements from one line.
 #[test]
 fn a_prefix_stands_alone() {
-    let e = read("point p1 at (0, 0)\npoint p2 at (10, 3)\nhorizontal line a(p1, p2)\n");
+    let e = read("point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 3)\nhorizontal line a(p1, p2)\n");
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::Horizontal));
 }
 
@@ -335,14 +335,14 @@ fn a_chain_seed_writes_back() {
     let r = sk.own_params(EntRef::arc(0))[0] as usize;
     sk.params[r].value = 12.5;
     let out = edit::commit_seeds(&e, &sk, &e.program);
-    assert!(out.text.contains("arc k(center: c, r: 12.5) tangent"), "{}", out.text);
+    assert!(out.text.contains("arc k(center: c) hint(r: 12.5) tangent"), "{}", out.text);
 }
 
 /// The chain's words are coloured by the parser's own scan, like every other word: joints read
 /// as relations, `to` and `close` as structure, and a prefixed element still names itself.
 #[test]
 fn the_chain_is_coloured() {
-    let src = "line a(p1, p2) tangent vertical arc k(center: c, r: 10) to close\n";
+    let src = "line a(p1, p2) tangent vertical arc k(center: c) hint(r: 10) to close\n";
     let tint = |what: &str| {
         highlight(src)
             .into_iter()
@@ -365,7 +365,7 @@ fn the_chain_is_coloured() {
 fn a_prefix_word_is_only_a_prefix_where_the_parser_reads_one() {
     let longhand = "line a(p1, p2)\nhorizontal(a)\n";
     let e = read(&format!(
-        "point p1 at (0, 0)\npoint p2 at (10, 3)\n{longhand}"
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 3)\n{longhand}"
     ));
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::Horizontal));
     // the statement is a relation, so its name colours as one and nothing reads as a chain
@@ -391,7 +391,7 @@ fn a_prefix_word_is_only_a_prefix_where_the_parser_reads_one() {
 /// carrying no chain provenance, deletable as lines.
 #[test]
 fn a_plain_declaration_is_untouched_by_the_sugar() {
-    let (prog, errs) = parse("point p1 at (0, 0)\npoint p2 at (10, 0)\nline a(p1, p2)\n");
+    let (prog, errs) = parse("point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\nline a(p1, p2)\n");
     assert!(errs.is_empty());
     let marks: Vec<Chained> = prog.stmts().map(|s| s.chained).collect();
     assert_eq!(marks, vec![Chained::No; 3]);
@@ -402,7 +402,7 @@ fn a_plain_declaration_is_untouched_by_the_sugar() {
 #[test]
 fn a_chain_records_how_each_statement_is_spelled() {
     let (prog, errs) = parse(
-        "horizontal line a(p1, p2) tangent arc k(center: c, r: 5) tangent close\n",
+        "horizontal line a(p1, p2) tangent arc k(center: c) hint(r: 5) tangent close\n",
     );
     assert!(errs.is_empty(), "{errs:?}");
     let marks: Vec<Chained> = prog.stmts().map(|s| s.chained).collect();
@@ -419,10 +419,10 @@ fn a_chain_records_how_each_statement_is_spelled() {
 #[test]
 fn equal_chains_over_names() {
     let e = read(&format!(
-        "{PTS}point d at (30, 10)\n\
-         arc k(center: c, start: p1, end: p2, r: 10)\n\
-         arc m(center: d, start: p2, end: p3, r: 10)\n\
-         arc q(center: d, start: p3, end: p4, r: 10)\n\
+        "{PTS}point d hint(x: 30, y: 10)\n\
+         arc k(center: c, start: p1, end: p2) hint(r: 10)\n\
+         arc m(center: d, start: p2, end: p3) hint(r: 10)\n\
+         arc q(center: d, start: p3, end: p4) hint(r: 10)\n\
          k equal m equal q\n"
     ));
     let kinds: Vec<CKind> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
@@ -434,7 +434,7 @@ fn equal_chains_over_names() {
 
     // the same word between lines is the other equality
     let e = read(
-        "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint p3 at (10, 9)\n\
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 10, y: 9)\n\
          line a(p1, p2)\nline b(p2, p3)\n\
          a equal b\n",
     );
@@ -446,9 +446,9 @@ fn equal_chains_over_names() {
 #[test]
 fn a_relation_chain_threads_nothing() {
     let e = read(&format!(
-        "{PTS}point d at (30, 10)\n\
-         arc k(center: c, start: p1, end: p2, r: 10)\n\
-         arc m(center: d, start: p3, end: p4, r: 10)\n\
+        "{PTS}point d hint(x: 30, y: 10)\n\
+         arc k(center: c, start: p1, end: p2) hint(r: 10)\n\
+         arc m(center: d, start: p3, end: p4) hint(r: 10)\n\
          k equal m\n"
     ));
     // each arc kept the ends it was given: nothing was threaded onto anything
@@ -464,7 +464,7 @@ fn a_relation_chain_threads_nothing() {
 #[test]
 fn any_binary_word_chains_over_names() {
     let e = read(
-        "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint p3 at (0, 9)\npoint p4 at (9, 9)\n\
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 0, y: 9)\npoint p4 hint(x: 9, y: 9)\n\
          line a(p1, p2)\nline b(p3, p4)\n\
          a parallel b\n",
     );
@@ -475,7 +475,7 @@ fn any_binary_word_chains_over_names() {
 /// about threading at once, so it is refused rather than answered arbitrarily.
 #[test]
 fn a_chain_may_not_mix_declarations_and_names() {
-    let src = "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint p3 at (10, 9)\n\
+    let src = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 10, y: 9)\n\
                line a(p1, p2)\n\
                line b(p2, p3) equal a\n";
     refuses(src, "declares every element or names every one");
@@ -484,8 +484,8 @@ fn a_chain_may_not_mix_declarations_and_names() {
 /// The contour words need a corner to state themselves at, and a relation chain has none.
 #[test]
 fn a_contour_word_is_refused_between_names() {
-    let base = "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint c at (5, 5)\n\
-                line a(p1, p2)\narc k(center: c, start: p1, end: p2, r: 5)\n";
+    let base = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
+                line a(p1, p2)\narc k(center: c, start: p1, end: p2) hint(r: 5)\n";
     refuses(&format!("{base}a tangent k\n"), "corner");
     refuses(&format!("{base}a to k\n"), "corner");
     refuses(&format!("{base}a equal a to close\n"), "no loop");
@@ -497,13 +497,13 @@ fn a_contour_word_is_refused_between_names() {
 #[test]
 fn equal_across_kinds_is_refused_either_way() {
     // declared: the keywords say what they are, so the parser settles it
-    let declared = "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint c at (5, 5)\n\
-                    line a(p1, p2) equal arc k(center: c, r: 5)\n";
+    let declared = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
+                    line a(p1, p2) equal arc k(center: c) hint(r: 5)\n";
     refuses(declared, "does not relate");
 
     // named: only elaboration knows, so the diagnosis carries it
-    let named = "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint c at (5, 5)\n\
-                 line a(p1, p2)\ncircle q(center: c, r: 5)\n\
+    let named = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
+                 line a(p1, p2)\ncircle q(center: c) hint(r: 5)\n\
                  a equal q\n";
     let (prog, errs) = parse(named);
     assert!(errs.is_empty(), "it parses: {errs:?}");
@@ -520,7 +520,7 @@ fn equal_across_kinds_is_refused_either_way() {
 #[test]
 fn equal_reads_a_name_declared_further_down() {
     let e = read(
-        "point p1 at (0, 0)\npoint p2 at (10, 0)\npoint p3 at (10, 9)\n\
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 10, y: 9)\n\
          a equal b\n\
          line a(p1, p2)\nline b(p2, p3)\n",
     );

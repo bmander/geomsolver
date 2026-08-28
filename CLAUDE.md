@@ -63,12 +63,23 @@ bundle's own URL, and a bundle written anywhere else would look for it somewhere
 node-only fallback imports in `wasm.ts` are left external; a browser never evaluates them.
 
 Conventions:
-- **A seed says it is a guess**: `point p hint at (0, 0)` (Solvent §6.4).  `at (0, 0)` read as
-  an assertion about where the point *is*, and it is not there — that is where the solve begins,
-  and the solve moves it.  `hint at` says so in the words §11 already uses for the statement
-  form.  A bare `at` is still *read* (`P::eat_hint_at`) so older documents load, and is never
-  written back: `write_decl` prints the current spelling and a file picks it up a statement at a
-  time.
+- **Every seed is written in one `hint(…)` clause, and nothing else is** (Solvent §4.3, §6.4):
+  `point p hint(x: 0, y: 0)`, `circle c(center: o) hint(r: 25)`,
+  `point_on_spline(p, s) hint(t: 0.4)`.  Keys in any order, an omitted scalar is 0, and the
+  clause joins the trailing-clause loop beside `knots` and `construction`.  **The brackets after
+  the name are what the thing is made of; the `hint(…)` after them is where the solve begins** —
+  which is what `circle c(center: o, r: 25)` got wrong, putting a number the solver will move
+  inside the same brackets as the structure it may not.  §4.3's rule is then lexical and exact:
+  *a number inside a `hint(…)` is a seed, and every other number is not* — which `=` never was,
+  since `param w = 100` is written with one and is not a seed.  The three retired spellings
+  (`at (0, 0)`, `hint at (0, 0)`, a scalar in a constructor arg) do **not** parse, and each
+  errors saying where the number belongs.
+  Two exceptions, and both are the rule rather than against it.  A **pin** stays in the argument
+  list — `point_on_spline(p, s, t == 0.4)` — because `hint` marks what a solve revises and a pin
+  is precisely what it does not; it is a stated number, beside every other stated number.  And
+  **`hint at REF` keeps its own form** inside a trace block (§6.5.1), where a seed is a *place*
+  and not a pair of numbers: `point b hint at orbit bearing (u + f.angle)`.  Both lower to the
+  same tapes the coordinate spelling would, which is why they share the word.
   **What `hint` marks is that a solve revises the number, not that the number is seed-class** —
   the two are different sets, and that is why a **callout placement keeps its bare `at`**.  A
   placement is every bit as inert (delete it and the drawing is the same), but nothing in the
@@ -335,8 +346,17 @@ Conventions:
   Three edit classes, and **the core says which — the front end never guesses**: `Structural`
   (statements added or removed), `Numeric` (only numbers a solve may move, so a compiled plan
   survives — which is what keeps editing a dimension instant), `None`.
-  Writeback is one lexical rule: *a seed is writable iff it is written with `=` and not `==`, is
-  a literal and not an expression, and is reached by exactly one instance path.*
+  Writeback is one lexical rule: *a seed is writable iff it is inside a `hint(…)` clause, is a
+  literal and not an expression, and is reached by exactly one instance path.*  "Inside
+  `hint(…)`" is the stronger test the `=`/`==` one was reaching for — it cannot be confused with
+  a `param`.
+  A seed the source **never wrote** has no span to splice and a solve moves it all the same (a
+  radius, a frame's rotor), so `Decl::hint_span` carries both cases at once: where the clause
+  *is*, and — an empty span — where it *would go*.  `commit_seeds` splices each seed in place
+  when every one it needs has a span, and writes the whole clause at that point when one does
+  not.  Appending, rather than leaving it, because otherwise a drawing has a pose its source
+  cannot express; a decl seeded by *place* (`hint at t`) is skipped, having no coordinates to
+  write.
   `reconcile` and `retext` **apply themselves to the `Elaborated` and do not rebuild the
   drawing** — nothing about the drawing changed, the source is only catching up, and rebuilding
   would invalidate every proxy a half-finished tool is holding.  `retext` re-parses (same

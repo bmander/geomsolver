@@ -19,14 +19,14 @@
 // `side: -1` says which way round the belt runs.  It is written out because a document that
 // leaves it out gets a fixed default rather than a look at the drawing.
 
-point c1 hint at (0, 0)
-point c2 hint at (50, 0)
+point c1 hint(x: 0, y: 0)
+point c2 hint(x: 50, y: 0)
 
-circle k1(center: c1, r: 10)
-circle k2(center: c2, r: 10)
+circle k1(center: c1) hint(r: 10)
+circle k2(center: c2) hint(r: 10)
 
-point p hint at (0, 10)
-point q hint at (50, 10)
+point p hint(x: 0, y: 10)
+point q hint(x: 50, y: 10)
 line  belt(p, q)
 
 radius(k1) == 10

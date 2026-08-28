@@ -9,6 +9,7 @@
 
 use gcs_core::diagnose::{diagnose, DiagnoseOptions, State};
 use gcs_core::examples;
+use gcs_core::model::{EntKind, Field};
 
 /// What the drawing is made of: points, lines, circles, arcs.
 type Shape = (usize, usize, usize, usize);
@@ -82,4 +83,41 @@ fn a_cases_arguments_reach_its_document() {
     };
     assert!((span(&wide) - 140.0).abs() < 1e-9, "width reached the drawing: {}", span(&wide));
     assert!((span(&base) - 100.0).abs() < 1e-9, "{}", span(&base));
+}
+
+/// **Every seed in the library is written in a `hint(…)` clause** (Solvent §4.3).
+///
+/// The rule is lexical, so the check is too: a scalar the kind owns must not appear as a
+/// constructor argument, and a coordinate seed must not be a bare or `hint at` pair.  Grepping
+/// the shipped documents is the only way to catch a spelling that still *parses* somewhere but
+/// says the wrong thing about which numbers a solve may rewrite.
+///
+/// Which names are scalars is asked of `EntKind::fields()`, the one table that says so — a new
+/// entity kind is then held to the rule by having a field, and not by anybody remembering to
+/// add its letter to a list here.
+#[test]
+fn no_document_writes_a_seed_the_old_way() {
+    for &(key, ..) in DOCS {
+        let src = examples::source(key).unwrap_or_else(|| panic!("{key} has no source"));
+        for (n, line) in src.lines().enumerate() {
+            let code = line.split("//").next().unwrap_or("");
+            let where_ = format!("{key}:{}: {line}", n + 1);
+            assert!(!code.contains("hint at ("), "a coordinate pair after `hint at` — {where_}");
+            // a declaration leads with its kind, and the scalars at issue are that kind's own
+            let kind = code.split_whitespace().next().and_then(EntKind::parse);
+            for (name, field) in kind.iter().flat_map(|k| k.fields()) {
+                if *field != Field::Scalar {
+                    continue;
+                }
+                // a scalar inside the brackets that say what the entity is made of
+                if let Some(i) = code.find(&format!(" {name}: ")) {
+                    let head = &code[..i];
+                    assert!(
+                        !head.contains('(') || head.contains("hint("),
+                        "a seed in a constructor argument list — {where_}"
+                    );
+                }
+            }
+        }
+    }
 }

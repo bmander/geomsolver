@@ -15,10 +15,10 @@ fn the_spans_tile_the_text() {
     for src in [
         GEAR,
         "",
-        "point p at (0, 0)",
+        "point p hint(x: 0, y: 0)",
         "// nothing but a comment",
         "/* unclosed",
-        "horizontal line a(p1, p2) tangent\narc k(center: c, r: 5) to close",
+        "horizontal line a(p1, p2) tangent\narc k(center: c) hint(r: 5) to close",
     ] {
         let mut end = 0usize;
         for (tint, s) in highlight(src) {
@@ -53,8 +53,8 @@ fn a_statement_is_coloured_by_what_it_declares() {
 component Gear(N: Int, m: Length, c: circle) {
   param R = m * N / 2
   port hub: point
-  point center at (0, 0)
-  circle base(center: center, r: R) construction
+  point center hint(x: 0, y: 0)
+  circle base(center: center) hint(r: R) construction
   radius(base) == R
   ground(center)
   cycle N as i {
@@ -75,8 +75,8 @@ g: Gear(N: 30, m: 3)  // one wheel
     assert_eq!(tint_of(src, "hub"), Some(Tint::Def));
     assert_eq!(tint_of(src, "point\n"), Some(Tint::Type));
     assert_eq!(tint_of(src, "point center"), Some(Tint::Word));
-    assert_eq!(tint_of(src, "center at"), Some(Tint::Def));
-    assert_eq!(tint_of(src, "at ("), Some(Tint::Word));
+    assert_eq!(tint_of(src, "center hint"), Some(Tint::Def));
+    assert_eq!(tint_of(src, "hint("), Some(Tint::Word));
     assert_eq!(tint_of(src, "base(center"), Some(Tint::Def));
     assert_eq!(tint_of(src, "construction"), Some(Tint::Word));
     assert_eq!(tint_of(src, "radius"), Some(Tint::Relation));
@@ -93,12 +93,19 @@ g: Gear(N: 30, m: 3)  // one wheel
 }
 
 /// A seed and a claim are different statements about the same number, and read as such.
+///
+/// The colouring does not key on `=` any more — `param w = 100` is written with one and is not a
+/// seed.  What makes a number a seed is the clause it stands in, which is §4.3's whole rule: a
+/// number inside a `hint(…)` is a seed, and every other number is not.
 #[test]
 fn a_seed_and_a_claim_are_told_apart() {
-    let src = "point_on_curve(lo, e, u = 3)\nradius(c) == 4";
+    let src = "point_on_curve(lo, e) hint(u: 3)\nradius(c) == 4\nparam w = 100";
     assert_eq!(tint_of(src, "point_on_curve"), Some(Tint::Relation));
-    assert_eq!(tint_of(src, "= 3"), Some(Tint::Seed));
+    assert_eq!(tint_of(src, "hint("), Some(Tint::Word));
+    assert_eq!(tint_of(src, "u:"), Some(Tint::Label));
+    assert_eq!(tint_of(src, "3)"), Some(Tint::Seed));
     assert_eq!(tint_of(src, "== 4"), Some(Tint::Claim));
+    assert_eq!(tint_of(src, "100"), Some(Tint::Num), "a param is not a seed");
 }
 
 /// A curve family is a declaration like any other, and its body is arithmetic the parser never

@@ -312,6 +312,7 @@ fn a_name_declared_twice_is_an_error() {
             seed: vec![1.0, 2.0],
             seed_text: vec![None, None],
             seed_spans: vec![Default::default(); 2],
+            hint_span: None,
             knots: None,
             def: None,
             values: Vec::new(),
@@ -435,16 +436,16 @@ fn parsing_and_printing_is_a_fixed_point() {
 fn a_program_written_by_hand_draws() {
     let text = "\
 // a square with a hole, written by hand
-point a at (0, 0)
-point b at (100, 0)
-point c at (100, 100)
-point d at (0, 100)
-point o at (50, 50)
+point a hint(x: 0, y: 0)
+point b hint(x: 100, y: 0)
+point c hint(x: 100, y: 100)
+point d hint(x: 0, y: 100)
+point o hint(x: 50, y: 50)
 line  ab(a, b)
 line  bc(b, c)
 line  cd(c, d)
 line  da(d, a)
-circle hole(center: o, r: 20)
+circle hole(center: o) hint(r: 20)
 
 horizontal(ab)
 perpendicular(ab, bc)
@@ -471,7 +472,7 @@ ground(a)
 /// A bad line costs one line, and every diagnostic carries a span that slices to the problem.
 #[test]
 fn one_bad_line_costs_one_line() {
-    let text = "point a at (0, 0)\nthis is not a statement\npoint b at (10, 0)\n";
+    let text = "point a hint(x: 0, y: 0)\nthis is not a statement\npoint b hint(x: 10, y: 0)\n";
     let (p, errs) = gcs_core::syntax::parse(text);
     assert!(!errs.is_empty(), "the bad line is reported");
     let e = elaborate(&p);
@@ -564,7 +565,7 @@ fn a_gear_elaborates() {
         for k in 0..=8 {
             let u = u0 + (u1 - u0) * k as f64 / 8.0;
             let (x, y) = e.sketch.curve_point(ci, u);
-            // the tangent point is at the roll, off the *base* circle
+            // the tangent point is hint at the roll, off the *base* circle
             let ph = phase_of(&e.sketch, ci);
             let a = (u + ph).to_radians();
             let t = (rb * a.cos(), rb * a.sin());
@@ -703,12 +704,16 @@ fn a_gear_with_few_teeth() {
     }
 }
 
-/// **A seed says it is a guess.**  `hint at (x, y)` is the spelling; a bare `at (x, y)` is what
-/// documents said before the word changed and still reads, so a file written against the older
-/// language loads unchanged.  Both make the same drawing, and what is *printed* is the current
-/// spelling — a document picks it up a statement at a time, as edits touch them.
+/// **Every seed is in a `hint(…)` clause, and nothing else is.**
+///
+/// The keys may come in any order and an omitted one is 0, so the two spellings below are one
+/// drawing.  What the printer writes is the full clause, whatever the source wrote — the shape
+/// that round-trips without a rule about which numbers are worth saying.
+///
+/// The spellings the clause replaced — `point p at (0, 0)`, `point p hint at (0, 0)`,
+/// `circle c(center: o, r: 25)` — do not parse: one class of thing is written one way.
 #[test]
-fn a_seed_reads_either_spelling_and_prints_the_current_one() {
+fn every_seed_is_written_in_a_hint_clause() {
     let read = |src: &str| {
         let (p, errs) = gcs_core::syntax::parse(src);
         assert!(errs.is_empty(), "{src}: {errs:?}");
@@ -716,11 +721,21 @@ fn a_seed_reads_either_spelling_and_prints_the_current_one() {
         assert!(e.ok(), "{src}: {:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
         e.sketch
     };
-    let now = read("point a hint at (3, 4)\npoint b hint at (9, 1)\nline l(a, b)\n");
-    let was = read("point a at (3, 4)\npoint b at (9, 1)\nline l(a, b)\n");
-    assert_eq!(io::dumps(&now, Some(1)), io::dumps(&was, Some(1)), "one drawing, two spellings");
+    let now = read("point a hint(x: 3, y: 4)\npoint b hint(x: 9, y: 1)\nline l(a, b)\n");
+    let flipped = read("point a hint(y: 4, x: 3)\npoint b hint(x: 9, y: 1)\nline l(a, b)\n");
+    assert_eq!(io::dumps(&now, Some(1)), io::dumps(&flipped, Some(1)), "keys in any order");
 
-    // and the printer writes the one the language uses now
+    // and the printer writes the clause, all of it
     let text = to_program(&now).text().to_string();
-    assert!(text.contains("hint at ("), "{text}");
+    assert!(text.contains("hint(x: 3, y: 4)"), "{text}");
+
+    // the retired spellings are errors, and each says where the number belongs
+    for src in [
+        "point a at (3, 4)\n",
+        "point a hint at (3, 4)\n",
+        "point o hint(x: 0, y: 0)\ncircle c(center: o, r: 25)\n",
+    ] {
+        let (_, errs) = gcs_core::syntax::parse(src);
+        assert!(!errs.is_empty(), "{src} still parses");
+    }
 }

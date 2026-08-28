@@ -1582,6 +1582,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         children,
         seed_text: vec![None; seed.len()],
         seed_spans: vec![Span::default(); seed.len()],
+        hint_span: None,
         seed,
         def: (e.kind == EntKind::Curve)
             .then(|| Name::new(sk.curve_defs[sk.curves[e.i()].def as usize].name.clone())),

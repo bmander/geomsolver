@@ -243,11 +243,11 @@ curve involute(c: circle, phase: Angle)(u) over (0, 90) =
   ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
     c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)) )
 
-point  o at (0, 0)
-circle base(center: o, r: 20) construction
+point  o hint(x: 0, y: 0)
+circle base(center: o) hint(r: 20) construction
 curve  flank = involute(base, phase: 0) over (0, 60)
 
-point  p at (40, 40)
+point  p hint(x: 40, y: 40)
 point_on_curve(p, flank)
 radius(base) == 20
 ground(o)
@@ -321,7 +321,7 @@ fn the_names_match_the_parameters() {
 #[test]
 fn a_curve_over_a_spline_is_refused() {
     let (prog, _) = gcs_core::syntax::parse(
-        "curve bad(s: spline)(u) = ( u, u )\npoint p at (0, 0)\n",
+        "curve bad(s: spline)(u) = ( u, u )\npoint p hint(x: 0, y: 0)\n",
     );
     let e = gcs_core::program::elaborate(&prog);
     assert!(!e.ok());

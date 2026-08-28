@@ -13,12 +13,12 @@
 // The nine lengths are read off a drawing that works.  They have to be: pick nine numbers at
 // random and there is generally no arrangement of six joints that achieves them.
 
-point k0 hint at (0, 0)
-point k1 hint at (30, 4)
-point k2 hint at (58, -2)
-point k3 hint at (6, 26)
-point k4 hint at (34, 32)
-point k5 hint at (62, 24)
+point k0 hint(x: 0, y: 0)
+point k1 hint(x: 30, y: 4)
+point k2 hint(x: 58, y: -2)
+point k3 hint(x: 6, y: 26)
+point k4 hint(x: 34, y: 32)
+point k5 hint(x: 62, y: 24)
 
 line datum(k0, k3)
 

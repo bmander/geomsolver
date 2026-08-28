@@ -33,8 +33,8 @@ component Flank(base: circle, root: circle, tip: circle,
   port lo: point
   port hi: point
 
-  point_on_curve(lo, e, u = u0)
-  point_on_curve(hi, e, u = u1)
+  point_on_curve(lo, e) hint(u: u0)
+  point_on_curve(hi, e) hint(u: u1)
   point_on_circle(lo, root)
   point_on_circle(hi, tip)
 }
@@ -86,10 +86,10 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   param u0 = sqrt((Rr / Rb) ^ 2 - 1) * 180 / pi
   param u1 = sqrt((Rt / Rb) ^ 2 - 1) * 180 / pi
 
-  point center hint at (0, 0)
-  circle base(center: center, r: Rb) construction
-  circle root(center: center, r: Rr) construction
-  circle tip(center: center, r: Rt) construction
+  point center hint(x: 0, y: 0)
+  circle base(center: center) hint(r: Rb) construction
+  circle root(center: center) hint(r: Rr) construction
+  circle tip(center: center) hint(r: Rt) construction
 
   // `r:` above only *seeds* a radius — a seed is where a solve starts, not something it must
   // honour — so without these the three circles would breathe.

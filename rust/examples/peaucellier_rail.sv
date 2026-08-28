@@ -11,10 +11,10 @@ param crank = 40      // the crank q–b, and the orbit its pin rides
 // The fixed frame.  `point_on_circle(o, orbit)` is the theorem's whole hypothesis — the pin's
 // circle passes through the centre of inversion — and it places `q` too, so no dimension between
 // the pivots is ever stated.
-point o hint at (0, 0)
-point q hint at (crank, 0)
+point o hint(x: 0, y: 0)
+point q hint(x: crank, y: 0)
 line datum(o, q) construction
-circle orbit(center: q, r: crank) construction
+circle orbit(center: q) hint(r: crank) construction
 
 horizontal(datum)
 radius(orbit) == crank
@@ -22,10 +22,10 @@ point_on_circle(o, orbit)
 ground(o)
 
 // the machine itself, at one pose; the crank is the one freedom left
-point b   hint at (50.4, 38.6)
-point c   hint at (30.4, 95.2)
-point d   hint at (99.9, 4.8)
-point pen hint at (80.0, 61.4)
+point b   hint(x: 50.4, y: 38.6)
+point c   hint(x: 30.4, y: 95.2)
+point d   hint(x: 99.9, y: 4.8)
+point pen hint(x: 80.0, y: 61.4)
 
 line swing(q, b)
 point_on_circle(b, orbit)
@@ -46,7 +46,7 @@ ccw(c, d, pen)                         // and the pen on the far side of the kit
 // The whole proof, in four statements.  A claim is judged on whether stating it would cost a
 // freedom, so a theorem here does not mean "the pen happens to be at 80" — it means saying so
 // takes nothing from the crank, which is to say the pen's x never changes as the crank turns.
-point anchor hint at (80, 0)
+point anchor hint(x: 80, y: 0)
 ground(anchor)
 line rail(anchor, pen) construction
 claim vertical(rail)

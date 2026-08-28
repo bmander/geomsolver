@@ -17,9 +17,9 @@ use gcs_core::syntax::parse;
 /// blank lines, alignment, and a trailing note after the last statement.
 const DOC: &str = "\
 // a triangle, and this comment must survive every drag
-point a at (0, 0)
-point b at (100, 0)
-point c at (40, 70)
+point a hint(x: 0, y: 0)
+point b hint(x: 100, y: 0)
+point c hint(x: 40, y: 70)
 
 line ab(a, b)      // the base
 line bc(b, c)
@@ -84,8 +84,8 @@ fn a_solve_writes_back_the_seeds_and_nothing_else() {
 fn a_seed_written_as_an_expression_is_not_overwritten() {
     let src = "\
 component Ring(rad: Length) {
-  point o at (0, 0)
-  circle c(center: o, r: rad)
+  point o hint(x: 0, y: 0)
+  circle c(center: o) hint(r: rad)
   radius(c) == rad
   ground(o)
 }
@@ -103,10 +103,10 @@ g: Ring(rad: 25)
 #[test]
 fn a_seed_inside_a_block_is_left_alone() {
     let src = "\
-point o at (0, 0)
+point o hint(x: 0, y: 0)
 ground(o)
 cycle 4 as i {
-  point p at (10, 0)
+  point p hint(x: 10, y: 0)
 }
 ";
     let prog = prog_of(src);
@@ -132,7 +132,7 @@ fn drawing_a_point_appends_one_statement() {
     let e = edit::add_point(&prog, 12.5, -3.0);
     assert_eq!(e.kind, Kind::Structural);
     assert_eq!(e.names, vec!["p0"], "a name nothing had taken");
-    assert!(e.text.contains("point   p0 hint at (12.5, -3)"), "{}", e.text);
+    assert!(e.text.contains("point   p0 hint(x: 12.5, y: -3)"), "{}", e.text);
     assert!(e.text.trim_end().ends_with("// and this trailing note, too"), "{}", e.text);
     let back = elaborate(&prog_of(&e.text));
     assert!(back.ok());
@@ -142,7 +142,7 @@ fn drawing_a_point_appends_one_statement() {
 /// A minted name never collides with one already written, whatever it is.
 #[test]
 fn a_minted_name_is_free() {
-    let prog = prog_of("point p0 at (0, 0)\npoint p1 at (1, 0)\npoint p3 at (3, 0)\n");
+    let prog = prog_of("point p0 hint(x: 0, y: 0)\npoint p1 hint(x: 1, y: 0)\npoint p3 hint(x: 3, y: 0)\n");
     assert_eq!(edit::mint(&prog, EntKind::Point), "p2", "the first gap, not the next number");
     assert_eq!(edit::mint(&prog, EntKind::Line), "l0");
 }
@@ -174,8 +174,8 @@ fn deleting_a_point_takes_what_named_it() {
 fn deleting_what_a_component_made_is_refused() {
     let src = "\
 component Pair() {
-  point a at (0, 0)
-  point b at (10, 0)
+  point a hint(x: 0, y: 0)
+  point b hint(x: 10, y: 0)
 }
 q: Pair()
 ground(q.a)
@@ -220,7 +220,7 @@ fn editing_a_dimension_splices_the_number() {
 fn a_stale_span_edits_nothing() {
     let prog = prog_of(DOC);
     let e = elaborate(&prog);
-    let short = prog_of("point a at (0, 0)\n");
+    let short = prog_of("point a hint(x: 0, y: 0)\n");
     // spans from the long document, applied to the short one
     let d = edit::remove(&e, &short, &[EntRef::point(2)], &[]);
     let _ = d.text;
@@ -473,8 +473,8 @@ fn a_second_gesture_beside_a_component_still_lands() {
     e.sketch.line(p, q);
     let second = reconciled(&mut e);
     assert_eq!(second.kind, Kind::Structural, "{:?}", second.refused);
-    assert!(second.text.contains("point   p0 hint at (-95, 48)"), "{}", second.text);
-    assert!(second.text.contains("point   p1 hint at (-40, 60)"), "{}", second.text);
+    assert!(second.text.contains("point   p0 hint(x: -95, y: 48)"), "{}", second.text);
+    assert!(second.text.contains("point   p1 hint(x: -40, y: 60)"), "{}", second.text);
     assert!(second.text.contains("line    l0(p0, p1)"), "{}", second.text);
     assert!(second.text.contains("cycle N as i {"), "and the gear is still written");
 
@@ -491,7 +491,7 @@ fn a_second_gesture_beside_a_component_still_lands() {
 /// around them alone.  Reaching for it is `reconcile`, the same seam a construction word uses.
 #[test]
 fn a_dragged_callout_is_written_down() {
-    let src = "point a at (0, 0)\npoint b at (60, 0)\ndistance(a, b) == 60\n";
+    let src = "point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\ndistance(a, b) == 60\n";
     let mut e = elaborate(&prog_of(src));
     let id = e.sketch.user_constraints()[0].id;
 
@@ -499,13 +499,15 @@ fn a_dragged_callout_is_written_down() {
     e.sketch.placements.insert(id, (12.0, -4.0));
     let out = reconciled(&mut e);
     assert!(out.text.contains("distance(a, b) == 60 at (12, -4)"), "{}", out.text);
-    assert!(out.text.contains("point a at (0, 0)"), "the rest of the file is untouched");
+    assert!(out.text.contains("point a hint(x: 0, y: 0)"), "the rest of the file is untouched");
 
     // dragged again: the two numbers are rewritten where they stand, not appended beside
     e.sketch.placements.insert(id, (20.0, 8.0));
     let out = reconciled(&mut e);
     assert!(out.text.contains("distance(a, b) == 60 at (20, 8)"), "{}", out.text);
-    assert_eq!(out.text.matches(" at (").count(), 3, "one per point, one per callout");
+    // `at (…)` is now the callout's alone: every seed in the language is in a `hint(…)` clause,
+    // and a placement is the one inert number that is not a seed (spec §6.4)
+    assert_eq!(out.text.matches(" at (").count(), 1, "the callout's, and nothing else's");
 
     // and put back where the layout would place it, the clause goes with its space
     e.sketch.placements.remove(&id);
@@ -517,7 +519,7 @@ fn a_dragged_callout_is_written_down() {
 /// there, so it is written and removed on its own rather than after a `==`.
 #[test]
 fn a_placement_without_a_dimension_round_trips() {
-    let src = "point a at (0, 0)\npoint b at (60, 0)\nline l(a, b)\nhorizontal(l) at (3, 5)\n";
+    let src = "point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\nline l(a, b)\nhorizontal(l) at (3, 5)\n";
     let mut e = elaborate(&prog_of(src));
     let id = e.sketch.user_constraints().iter().find(|c| c.kind == CKind::Horizontal).unwrap().id;
     assert_eq!(e.sketch.placements.get(&id).copied(), Some((3.0, 5.0)), "read as written");
@@ -531,17 +533,49 @@ fn a_placement_without_a_dimension_round_trips() {
     assert!(out.text.contains("horizontal(l)\n"), "{}", out.text);
 }
 
-/// A solve writes a seed back **inside** the new clause: the spans point at the numbers, not at
-/// the words in front of them, so `hint at` is spliced exactly as a bare `at` was.
+/// **A seed the document never wrote is recorded where the clause would have gone.**
+///
+/// A radius is a seed now — `circle c(center: o) hint(r: 25)` — so it is one a person may
+/// perfectly well never write, and a solve still moves it.  There is then no span to splice, and
+/// leaving it alone would mean a drawing whose pose the source cannot express.  So the clause is
+/// written out whole, at the point the parser recorded for it, and the statement around it is
+/// untouched — one splice, and every comment where it was.
 #[test]
-fn a_seed_written_hint_at_is_still_written_back() {
-    let src = "point a hint at (0, 0)\npoint b hint at (10, 0)\nline l(a, b)\nground(a)\n";
+fn a_seed_the_source_never_wrote_is_appended() {
+    let src = "point o hint(x: 0, y: 0)\ncircle c(center: o)   // a hole, and this comment stays\n";
+    let mut e = elaborate(&prog_of(src));
+    let mut sk = std::mem::take(&mut e.sketch);
+    let r = sk.circles[0].radius as usize;
+    sk.params[r].value = 12.5;
+    let out = edit::commit_seeds(&e, &sk, &e.program);
+    assert_eq!(out.kind, Kind::Numeric, "a seed is not a statement, wherever it is written");
+    assert!(
+        out.text.contains("circle c(center: o) hint(r: 12.5)   // a hole"),
+        "the clause is appended, and the comment is where it was: {}",
+        out.text
+    );
+
+    // and once it is written it splices in place, like every other seed
+    let mut e2 = elaborate(&prog_of(&out.text));
+    let mut sk2 = std::mem::take(&mut e2.sketch);
+    let r2 = sk2.circles[0].radius as usize;
+    sk2.params[r2].value = 30.0;
+    let again = edit::commit_seeds(&e2, &sk2, &e2.program);
+    assert!(again.text.contains("hint(r: 30)"), "{}", again.text);
+    assert_eq!(again.text.matches("hint(r:").count(), 1, "spliced, not appended twice");
+}
+
+/// A solve writes a seed back **inside** the clause: the spans point at the numbers, not at the
+/// words in front of them, so the statement around them is never reprinted.
+#[test]
+fn a_seed_written_in_a_hint_clause_is_written_back() {
+    let src = "point a hint(x: 0, y: 0)\npoint b hint(x: 10, y: 0)\nline l(a, b)\nground(a)\n";
     let mut e = elaborate(&prog_of(src));
     let mut sk = std::mem::take(&mut e.sketch);
     let bx = sk.points[1].x as usize;
     sk.params[bx].value = 42.5;     // drag `b` sideways
     let out = edit::commit_seeds(&e, &sk, &e.program);
     assert_eq!(out.kind, Kind::Numeric);
-    assert!(out.text.contains("point b hint at (42.5, 0)"), "{}", out.text);
-    assert!(out.text.contains("point a hint at (0, 0)"), "and nothing else moved: {}", out.text);
+    assert!(out.text.contains("point b hint(x: 42.5, y: 0)"), "{}", out.text);
+    assert!(out.text.contains("point a hint(x: 0, y: 0)"), "and nothing else moved: {}", out.text);
 }

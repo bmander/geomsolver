@@ -14,7 +14,7 @@ param crank = 40      // the crank q–b, and the orbit its pin rides
 curve cell(orbit: circle, f: frame, arm: Length, side: Length)(u) =
   trace p from (90) where {
     line datum(f.origin, f.toward)
-    point b at orbit bearing (u + f.angle)   // `u` is measured from the datum, so the seed is too
+    point b hint at orbit bearing (u + f.angle)   // `u` is measured from the datum, so the seed is too
     point c
     point d
     point p
@@ -36,11 +36,11 @@ curve cell(orbit: circle, f: frame, arm: Length, side: Length)(u) =
 // its bearing.  `point_on_circle(o, orbit)` is the theorem's whole hypothesis — the pin's circle
 // passes through the centre of inversion — and it places `q` too, so no dimension between the
 // pivots is ever stated.
-point o hint at (0, 0)
-point q hint at (crank, 0)
+point o hint(x: 0, y: 0)
+point q hint(x: crank, y: 0)
 line datum(o, q) construction
 frame f(origin: o, toward: q) construction
-circle orbit(center: q, r: crank) construction
+circle orbit(center: q) hint(r: crank) construction
 
 horizontal(datum)
 radius(orbit) == crank
@@ -48,10 +48,10 @@ point_on_circle(o, orbit)
 ground(o)
 
 // the machine itself, at one pose
-point b   hint at (50.4, 38.6)
-point c   hint at (30.4, 95.2)
-point d   hint at (99.9, 4.8)
-point pen hint at (80.0, 61.4)
+point b   hint(x: 50.4, y: 38.6)
+point c   hint(x: 30.4, y: 95.2)
+point d   hint(x: 99.9, y: 4.8)
+point pen hint(x: 80.0, y: 61.4)
 
 line swing(q, b)
 point_on_circle(b, orbit)
@@ -74,8 +74,8 @@ ccw(c, d, pen)
 // unchanged, which is what a claim promises.
 curve path = cell(orbit, f, arm: arm, side: side) over (60, 115)
 
-point g1 hint at (80, 51)
-point g2 hint at (80, 114)
+point g1 hint(x: 80, y: 51)
+point g2 hint(x: 80, y: 114)
 point_on_curve(g1, path, u == 65)
 point_on_curve(g2, path, u == 110)
 line rail(g1, g2) construction
