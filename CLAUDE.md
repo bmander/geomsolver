@@ -495,7 +495,17 @@ Conventions:
   Where a callout sits is a *placement*: two numbers in a frame that follows the geometry,
   automatic until someone drags it and then `Sketch.placements` document state, **saved on the
   statement it qualifies** — `at (t, r)` after the dimension in Solvent, `"place"` inside the
-  constraint object in JSON.  Never by position in a list and never by entity index (Solvent
+  constraint object in JSON.  **It stays there, and the sheet takes everything it shares**
+  (issue #16, spec §13.1): a class is a rule many statements share and a placement is a fact
+  about one, so `style .dimension` / `.reference` / `.extension` own the ink, the weight and the
+  dash — `paint.ts` asks `styleNamed` three times a repaint and holds no callout ink of its own
+  — and the statement keeps the one pair of numbers that is about that statement alone.  The
+  alternatives all fail a rule §13.1 already states: a position or an index fails *silently*, a
+  selector on type-and-arguments cannot always name one dimension (the app deliberately never
+  dedups them), and a minted id collides the first time somebody copies a block of text.  Naming
+  the dimension is the one that works, and costs every dimension anyone has dragged a name
+  nobody asked for.  A placement whose dimension is gone is gone with it — `Sketch::remove`
+  drops it, and in the source it rides on the statement the splice takes.  Never by position in a list and never by entity index (Solvent
   §13.1): both follow the position rather than the thing, and both fail silently — a callout
   reappears on another dimension, a recorded root choice goes inert while the document still
   carries it.  `io::from_json` still *reads* the old position-keyed `placements` table, so an

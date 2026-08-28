@@ -649,6 +649,14 @@ This is P2 applied to the document rather than to the program text, and it is st
 
 Both failures are silent, and both are invisible to any test that checks only the solution set — which is why 0.1 could assert P2 in the parser and lose it in the file format. Where a datum has no statement to ride on, it MUST name what it qualifies (an entity by name, a solution branch by the names of the points that orient it) rather than by index.
 
+**[0.7] A callout's placement stays here, and the sheet takes everything it shares.** Where a dimension's number sits on the page is presentation: delete every `at (t, r)` and the figure, the solve, the DOF count and the diagnosis are identical. It is nonetheless written on the constraint statement, and that is deliberate rather than a leak.
+
+The alternatives are worse in ways this section already names. Keying a placement by *position* or by *entity index* fails silently, which is what the section exists to forbid. A *selector* over the statement (`place distance(p0, p1) at (12, -4)`) is ambiguous by construction: a second length on the same pair is a state a document is allowed to be in, and reporting it as over-constrained naming both is the point, so a selector on type-and-arguments cannot always name one dimension. A *minted id* is a name with a machine's spelling, and it fails the first time somebody copies a block of text: two statements with one id and no reader able to tell which was meant. **Naming the dimension** (`distance(p0, p1) == 80 as d1` and a separate `place d1 at (12, -4)`) is the one alternative that satisfies both constraints — a name is identity, not appearance — and it costs every dimension anyone has ever dragged a name nobody asked for, minted by a second splice into the geometry statement.
+
+So a placement stays on its statement, and orthogonality is achieved the other way round: **the sheet (§13.2) owns everything a callout *shares*** — the ink, the weight, the dash, and whatever else is added later — and the statement keeps the one pair of numbers that is about that statement alone and nothing else. A class is a rule many statements share; a placement is a fact about one, and that is exactly the difference between the two constructs.
+
+Whatever an implementation does, a placement whose dimension is gone MUST be gone with it: removed, or reported. Never silently inert while the document still carries it, which is the failure this section names.
+
 ### 13.2 Presentation: classes and style sheets **[0.7]**
 
 > **A document says what the drawing *is*. How it *looks* is a separate statement, in a separate part of the file, and changing it is never an edit of the geometry.**

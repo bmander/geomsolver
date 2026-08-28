@@ -747,6 +747,13 @@ export class Sketch {
     return takeStr(core().gcs_sketch_topology_key(this.handle));
   }
 
+  /** What one *named* class comes to.  The drawing's chrome asks this: a dimension callout is
+   *  not an entity and carries no class of its own, but its ink is shared by every callout in
+   *  the document — which is exactly what a class is for. */
+  styleNamed(name: string): Style {
+    return withStr(name, (p, n) => takeJson<Style>(core().gcs_style_named(this.handle, p, n)));
+  }
+
   /** Seeded Gaussian noise on every free parameter (warm starts, witness construction). */
   perturb(sigma: number, seed = 0): void {
     core().gcs_sketch_perturb(this.handle, sigma, seed >>> 0);

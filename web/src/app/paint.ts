@@ -27,21 +27,12 @@ export const COL = {
   highlight: '#9467bd',
   conflict: '#b3001b',
   bandFill: 'rgba(227, 119, 194, 0.10)',
-  dim: '#0f6f7a',
-  /* a claimed dimension: the drafting ink for a reference dimension, which is what the core
-     draws it as (parenthesised).  Lighter than a controlling one, because it does not control */
-  claimed: '#7aa7ad',
 };
 /* entity colouring by constraint state (FreeCAD-style, but from the DM decomposition and the
  * conflict set rather than from a guess) */
 const COL_STATE: Record<string, string> = {
   well: '#2ca02c', under: '#e69500', over: '#d62728', conflict: '#d62728',
 };
-
-/** A dimension's extension and witness lines: finer dashes than reference geometry, since they
- *  are annotation rather than something the sketch is made of.  This is the app's own chrome —
- *  a callout is not a statement in the document, so no class reaches it. */
-const WITNESS_DASH = [4, 3];
 
 export function paint(v: SketchView): void {
   const ctx = v.ctx;
@@ -188,14 +179,23 @@ export function paintCallouts(v: SketchView): void {
   const cs = dim.callouts(v.sketch, v.unit);
   const conflicts = new Set(v.diagnosis?.conflicts ?? []);
   const lit = v.litConstraint;
+  /* A callout's *figure* is geometry, laid out by the core so every front end agrees where it
+   * is; the ink it is stroked in is presentation, and every callout in a document shares it —
+   * which is what a class is.  So the sheet says it, and this asks the sheet.  What stays on
+   * the dimension's own statement is the one pair of numbers that is about that statement
+   * alone: where somebody dragged this callout (spec §13.1).  Three lookups a repaint. */
+  const inkDim = v.sketch.styleNamed('dimension');
+  const inkRef = v.sketch.styleNamed('reference');
+  const extension = v.sketch.styleNamed('extension');
   // the colour rule reaches for a constraint by id, so it runs once per callout rather than
   // once per callout per pass
   const painted = cs.items.map((k) => {
     const c = v.sketch.constraintById(k.id);
+    const ink = c?.claim ? inkRef : inkDim;
     const col = c && conflicts.has(c) ? COL.conflict
       : c && c === lit ? COL.highlight
-      : c?.claim ? COL.claimed : COL.dim;
-    return { k, col };
+      : ink.color ?? COL.point;
+    return { k, col, lw: ink.width ?? 1 };
   });
   const path = (segs: Seg[]): void => {
     ctx.beginPath();
@@ -208,10 +208,10 @@ export function paintCallouts(v: SketchView): void {
 
   ctx.save();
   ctx.lineCap = 'butt';
-  ctx.lineWidth = 1;
-  for (const { k, col } of painted) {
+  for (const { k, col, lw } of painted) {
     ctx.strokeStyle = ctx.fillStyle = col;
-    ctx.setLineDash(WITNESS_DASH);
+    ctx.lineWidth = lw;
+    ctx.setLineDash(extension.dash);
     path(k.thin);
     ctx.setLineDash([]);
     path(k.solid);

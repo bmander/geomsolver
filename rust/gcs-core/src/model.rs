@@ -492,6 +492,13 @@ impl Sketch {
         crate::style::resolve(&self.sheet, &self.class_of(e))
     }
 
+    /// What one *named* class comes to.  The drawing's chrome asks this — a dimension callout is
+    /// not an entity and carries no class of its own, but its ink is shared by every callout in
+    /// the document, which is exactly what a class is for.
+    pub fn style_named(&self, name: &str) -> crate::style::Style {
+        crate::style::resolve(&self.sheet, &Classes::one(name))
+    }
+
     // -- construction -------------------------------------------------------
 
     pub fn param(&mut self, value: f64, fixed: bool, name: &str) -> usize {

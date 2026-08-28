@@ -99,10 +99,28 @@ pub type Sheet = BTreeMap<String, Style>;
 /// reference geometry drawn some other way says so and changes nothing else about the drawing.
 pub fn base() -> Sheet {
     let mut s = Sheet::new();
-    s.insert(
-        "construction".to_string(),
-        Style { dash: Some(vec![7.0, 4.0]), width: None, color: None },
-    );
+    let rule = |dash: Option<Vec<f64>>, width: Option<f64>, color: Option<&str>| Style {
+        dash,
+        width,
+        color: color.map(str::to_string),
+    };
+    // reference geometry.  What the retired `construction` keyword did, and the whole of it.
+    s.insert("construction".into(), rule(Some(vec![7.0, 4.0]), None, None));
+    // A dimension callout's ink, and nothing about its *figure*: the extension lines, the heads,
+    // the label's box and the hit test are geometry, laid out by `callout.rs` in world units so
+    // that every front end agrees where the figure is (issue #14).  What is presentational there
+    // is the ink it is stroked in, which is here.
+    //
+    // These are what makes a *placement* fit to stay on its statement (§13.1): a class is a rule
+    // many statements share, and everything a callout shares is in these three rules.  What is
+    // left on the statement is the one pair of numbers that is about that statement alone.
+    s.insert("dimension".into(), rule(None, Some(1.0), Some("#0f6f7a")));
+    // a claimed dimension — the draughtsman's reference dimension, which `callout.rs` draws
+    // parenthesised.  Lighter than a controlling one, because it does not control.
+    s.insert("reference".into(), rule(None, Some(1.0), Some("#7aa7ad")));
+    // a dimension's extension and witness lines: finer dashes than reference geometry, being
+    // annotation rather than something the sketch is made of
+    s.insert("extension".into(), rule(Some(vec![4.0, 3.0]), None, None));
     s
 }
 
