@@ -127,9 +127,7 @@ fn main() -> ExitCode {
     for s in &sources {
         let (code, doc) = check(s, &opts);
         worst = worst.max(code);
-        if opts.json {
-            docs.push(doc);
-        }
+        docs.extend(doc);
     }
     if opts.json {
         println!("{}", json::object([("documents", Json::Arr(docs))]).dump(Some(2)));
@@ -138,7 +136,7 @@ fn main() -> ExitCode {
 }
 
 /// One document: its exit code, and its JSON report when one was asked for.
-fn check(s: &Source, opts: &Opts) -> (u8, Json) {
+fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     let (prog, errs) = parse(&s.text);
     let e = elaborate(&prog);
     // Nothing is said in `--json` mode, so nothing is worked out either: the collapse below is
@@ -164,7 +162,7 @@ fn check(s: &Source, opts: &Opts) -> (u8, Json) {
         if !opts.json {
             println!("{}: did not elaborate", s.name);
         }
-        return (1, doc_json(s, None, None, &e));
+        return (1, opts.json.then(|| doc_json(s, None, None, &e)));
     }
 
     let mut sk = e.sketch.clone();
@@ -197,7 +195,7 @@ fn check(s: &Source, opts: &Opts) -> (u8, Json) {
             code = 1;
         }
     }
-    (code, doc_json(s, Some(&r), d.as_ref().map(|d| (&sk, d)), &e))
+    (code, opts.json.then(|| doc_json(s, Some(&r), d.as_ref().map(|d| (&sk, d)), &e)))
 }
 
 /// How many culprits a set prints before it says how many more there are.  A conflict on a truss

@@ -1358,9 +1358,17 @@ impl Sketch {
         v
     }
 
-    /// Bounds of everything drawn, curves included — what a "fit the view" wants.
+    /// Bounds of the drawn primitives — what a "fit the view" wants.
+    ///
+    /// **Curves are not in it, and that is a cost decision.**  A curve's `bounds` is its
+    /// polyline, which for a traced family is a damped-Newton march per point; this runs inside
+    /// `callout::layout`, so it is paid on every repaint.  Measured on `gear_trace` (24 traced
+    /// curves) that is 11 ms a call against 1 µs — four orders of magnitude, per frame, to
+    /// square up a box.  A caller that needs the curves in its box and is already sweeping them
+    /// (the SVG export sizes a page from the polylines it is about to draw) grows this by what
+    /// it swept; one that is not should not start.
     pub fn drawn_bounds(&self) -> Box2 {
-        self.bounds_of(&self.drawn()).unwrap_or_else(|| self.bbox())
+        self.bounds_of(&self.primitives()).unwrap_or_else(|| self.bbox())
     }
 
     /// The box round a given set of entities, or `None` when the set draws nothing.  The fold

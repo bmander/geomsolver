@@ -35,15 +35,23 @@ fn the_whole_library_reports() {
     assert_eq!(out.status.code(), Some(2), "the unsatisfiable ones are a failure");
     assert_eq!(text.lines().filter(|l| l.contains(": solved")).count(), all.len() - 3);
 
-    let mut ok = args.clone();
+    // told not to be, they are not — asked over the three that fail rather than the whole
+    // library again, which is the same assertion for a second parse, solve and diagnosis of
+    // every document (1.2 s of `make test` in the profile the tests build)
+    let bad: Vec<String> =
+        ["impossible_triangle.sv", "truss_conflict.sv", "rect_fillets_conflict.sv"]
+            .iter()
+            .map(|f| doc(f))
+            .collect();
+    let mut ok: Vec<&str> = bad.iter().map(String::as_str).collect();
     ok.push("--allow-unsolved");
     assert_eq!(run(&ok).status.code(), Some(0), "and told not to be, they are not");
 
     for under in ["rect_fillets_under.sv", "truss_floating.sv"] {
         assert_eq!(run(&[&doc(under)]).status.code(), Some(0), "{under}: solved, with freedoms");
     }
-    for bad in ["impossible_triangle.sv", "truss_conflict.sv", "rect_fillets_conflict.sv"] {
-        assert_eq!(run(&[&doc(bad)]).status.code(), Some(2), "{bad}");
+    for b in &bad {
+        assert_eq!(run(&[b]).status.code(), Some(2), "{b}");
     }
 }
 
