@@ -307,6 +307,17 @@ pub enum BlockKind {
     Ring,
 }
 
+/// One `name: value` of a `hint(…)` clause, read but not yet resolved: the key, where it was
+/// written, and the value exactly as `value_text` gave it back.
+struct Hint {
+    key: String,
+    /// Where the key stands, so an unknown one is reported there rather than after its value.
+    at: Span,
+    value: Option<f64>,
+    text: String,
+    span: Span,
+}
+
 /// `point p0 hint(x: 0, y: 0)`, `circle c0(center: p2) hint(r: 25)`,
 /// `spline s0(p3, p4, p5, p6) knots [...]`.
 #[derive(Clone, Debug)]
@@ -769,7 +780,6 @@ fn write_decl(out: &mut String, d: &Decl) {
     let label = labels_children(d.kind);
     let mut parts: Vec<String> = Vec::new();
     let mut child = 0usize;
-    let mut scalar = 0usize;
     for (name, field) in d.kind.fields() {
         match field {
             Field::Child | Field::List => {
@@ -787,16 +797,19 @@ fn write_decl(out: &mut String, d: &Decl) {
             }
             // every scalar is a seed, and every seed is in the `hint(…)` clause: the brackets
             // after the name are what the thing is *made of*, and a radius is not that
-            Field::Scalar => scalar += 1,
+            Field::Scalar => {}
         }
     }
-    let _ = scalar;
     if !parts.is_empty() {
         out.push('(');
         out.push_str(&parts.join(", "));
         out.push(')');
     }
-    out.push_str(&hint_clause(d));
+    let hint = hint_clause(d, &d.seed);
+    if !hint.is_empty() {
+        out.push(' ');
+        out.push_str(&hint);
+    }
     if let Some(u) = &d.knots {
         out.push_str(" knots [");
         out.push_str(&u.iter().map(|&v| num(v)).collect::<Vec<_>>().join(", "));
@@ -807,13 +820,42 @@ fn write_decl(out: &mut String, d: &Decl) {
     }
 }
 
-/// ` hint(x: 0, y: 0)` — every scalar the kind owns, keyed by the name `fields()` gives it.
+/// What a `Param` slot's number comes to, seeded or pinned.
+///
+/// `hint(t: 0.4)` and `t == 0.4` are the same number read the same way — a literal or an
+/// expression, and the span an edit would splice it at.  Which of the two it is, is the word,
+/// and the word is this one flag.
+fn param_arg(value: Option<f64>, text: String, span: Span, pinned: bool) -> Arg {
+    match value {
+        Some(value) => Arg::Seed { value, pinned },
+        None => Arg::SeedExpr { text, pinned, span },
+    }
+}
+
+/// `hint(a: 1, b: 2)` from its parts, or nothing at all when there are none.
+///
+/// No leading space: the separator belongs to whatever is joining the statement up, which is
+/// the one place that knows whether anything came before — a splice into a gap does not.  The
+/// printed clause has one spelling, so it has one place that spells it.
+fn hint_of(parts: &[String]) -> String {
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("hint({})", parts.join(", "))
+    }
+}
+
+/// `hint(x: 0, y: 0)` — every scalar the kind owns, keyed by the name `fields()` gives it.
 ///
 /// All of them or none: a kind with no scalars writes nothing, and a kind with some writes them
 /// whatever they are, so the printed form round-trips without a rule about which numbers are
 /// worth saying.  A declaration whose seed is a *place* (`hint at t`) has no coordinates to
-/// write and is left to the source it came from.
-pub(crate) fn hint_clause(d: &Decl) -> String {
+/// write and is left to the source it came from — so an empty string is also the answer to "is
+/// there a clause to write here at all?", which is the only test a caller needs.
+///
+/// The numbers are passed rather than read off `d`, because `edit::commit_seeds` prints the pose
+/// a solve just arrived at and the declaration still holds the one it started from.
+pub(crate) fn hint_clause(d: &Decl, seed: &[f64]) -> String {
     if d.seed_at.is_some() {
         return String::new();
     }
@@ -823,19 +865,15 @@ pub(crate) fn hint_clause(d: &Decl) -> String {
         if *field != Field::Scalar {
             continue;
         }
-        let v = d.seed.get(scalar).copied().unwrap_or(0.0);
-        let text = match d.seed_text.get(scalar).and_then(|t| t.clone()) {
-            Some(t) => t,
+        let v = seed.get(scalar).copied().unwrap_or(0.0);
+        let text = match d.seed_text.get(scalar).and_then(|t| t.as_deref()) {
+            Some(t) => t.to_string(),
             None => num(v),
         };
         scalar += 1;
         parts.push(format!("{name}: {text}"));
     }
-    if parts.is_empty() {
-        String::new()
-    } else {
-        format!(" hint({})", parts.join(", "))
-    }
+    hint_of(&parts)
 }
 
 fn write_relation(out: &mut String, r: &Relation) {
@@ -875,8 +913,10 @@ fn write_relation(out: &mut String, r: &Relation) {
             out.push_str(&dim_text(a));
         }
     }
-    if !hints.is_empty() {
-        out.push_str(&format!(" hint({})", hints.join(", ")));
+    let hint = hint_of(&hints);
+    if !hint.is_empty() {
+        out.push(' ');
+        out.push_str(&hint);
     }
     if let Some((t, rr)) = r.place {
         out.push_str(&format!(" at ({}, {})", num(t), num(rr)));
@@ -1683,14 +1723,42 @@ impl<'a> P<'a> {
     }
 
     /// `name:` at the head of a slot — the label and nothing else, consumed.
+    ///
+    /// Matched through the reference and cloned only in the winning arm, the way `eat_word` is:
+    /// this is asked once per argument and once per hint, and most of those asks say no.
     fn slot_label(&mut self) -> Option<String> {
-        match (self.peek().cloned(), self.t.get(self.i + 1).map(|(t, _)| t)) {
+        match (self.peek(), self.t.get(self.i + 1).map(|(t, _)| t)) {
             (Some(Tok::Ident(s)), Some(Tok::P(':'))) => {
+                let s = s.clone();
                 self.i += 2;
                 Some(s)
             }
             _ => None,
         }
+    }
+
+    /// The body of a `hint(…)`, from just past the `(` to the `)`.
+    ///
+    /// The grammar is the clause's own and is the same wherever the clause is written; what a
+    /// key *means* is not — a declaration's scalars and a constraint's `Param` slots are
+    /// different tables — so the keys come back unresolved, each with the span it was written
+    /// at, and the caller looks them up and reports an unknown one where it stands.
+    fn hint_body(&mut self, eg: &str) -> Option<Vec<Hint>> {
+        let mut out = Vec::new();
+        while !self.eat_p(')') {
+            let at = self.here();
+            let Some(key) = self.slot_label() else {
+                self.fail(&format!("a hint names what it seeds: `hint({eg})`"));
+                return None;
+            };
+            let (value, text, span) = self.value_text()?;
+            out.push(Hint { key, at, value, text, span });
+            if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
+                self.fail("expected `,` or `)`");
+                return None;
+            }
+        }
+        Some(out)
     }
 
     fn eat_word(&mut self, w: &str) -> bool {
@@ -1715,6 +1783,12 @@ impl<'a> P<'a> {
 
     fn fail(&mut self, msg: &str) {
         let span = self.here();
+        self.fail_at(span, msg);
+    }
+
+    /// The same, at a span already read — a key whose value has since been consumed is reported
+    /// where it was written and not where the parser has got to.
+    fn fail_at(&mut self, span: Span, msg: &str) {
         // one message per position: a cascade after the first is noise
         if self.errs.last().map(|e| e.span.lo) != Some(span.lo) {
             self.errs.push(SynErr { span, message: msg.to_string() });
@@ -2736,13 +2810,7 @@ impl<'a> P<'a> {
             let mut positional = 0usize;
             while !self.eat_p(')') {
                 // `name:` labels a field; anything else is positional
-                let label = match (self.peek().cloned(), self.t.get(self.i + 1).map(|(t, _)| t)) {
-                    (Some(Tok::Ident(s)), Some(Tok::P(':'))) => {
-                        self.i += 2;
-                        Some(s)
-                    }
-                    _ => None,
-                };
+                let label = self.slot_label();
                 match label {
                     // the brackets after the name are *what the thing is made of*; where the
                     // solve begins is the `hint(…)` after them (spec §6.4)
@@ -2806,23 +2874,15 @@ impl<'a> P<'a> {
             } else if self.eat_hint_clause() {
                 // `hint(x: 0, y: 12)` — keyed, keys in any order, an omitted scalar is 0
                 let lo = self.t[self.i - 2].1.lo as usize; // the `hint` word itself
-                while !self.eat_p(')') {
-                    let Some(l) = self.slot_label() else {
-                        self.fail("a hint names the scalar it seeds: `hint(x: 0, y: 0)`");
+                for h in self.hint_body("x: 0, y: 0")? {
+                    let Some(i) = scalars.iter().position(|&s| s == h.key) else {
+                        let m = format!("`{}` has no scalar `{}` to seed", kind.as_str(), h.key);
+                        self.fail_at(h.at, &m);
                         return None;
                     };
-                    let Some(i) = scalars.iter().position(|&s| s == l) else {
-                        self.fail(&format!("`{}` has no scalar `{l}` to seed", kind.as_str()));
-                        return None;
-                    };
-                    let (v, t, sp) = self.value_text()?;
-                    seed[i] = v.unwrap_or(0.0);
-                    seed_text[i] = (v.is_none()).then_some(t);
-                    seed_spans[i] = sp;
-                    if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
-                        self.fail("expected `,` or `)`");
-                        return None;
-                    }
+                    seed[i] = h.value.unwrap_or(0.0);
+                    seed_text[i] = (h.value.is_none()).then_some(h.text);
+                    seed_spans[i] = h.span;
                 }
                 hint_span = Span::new(lo, self.prev_hi());
             } else if self.eat_word("knots") {
@@ -2840,6 +2900,16 @@ impl<'a> P<'a> {
                 knots = Some(u);
             } else if self.eat_word("construction") {
                 construction = true;
+            } else if self.peek_word("hint") || self.peek_word("at") {
+                // the retired coordinate spellings, `hint at (0, 0)` and a bare `at (0, 0)` —
+                // what every document in the library said until the clause arrived, so the
+                // reader most likely to meet an error here is the one holding one of them
+                self.fail(&format!(
+                    "a coordinate seed is keyed now: `{} {} hint(x: …, y: …)`",
+                    kind.as_str(),
+                    name.text
+                ));
+                return None;
             } else {
                 break;
             }
@@ -2954,33 +3024,14 @@ impl<'a> P<'a> {
         // the callout's `at (t, r)`, which is a placement and not a seed (spec §6.4)
         loop {
             if self.eat_hint_clause() {
-                while !self.eat_p(')') {
-                    let Some(l) = self.slot_label() else {
-                        self.fail("a hint names the slot it seeds: `hint(t: 0.4)`");
+                for h in self.hint_body("t: 0.4")? {
+                    let slot = spec.iter().position(|(n, k)| n == &h.key && *k == SpecKind::Param);
+                    let Some(i) = slot else {
+                        let m = format!("`{}` has no slot `{}` to seed", name.text, h.key);
+                        self.fail_at(h.at, &m);
                         return None;
                     };
-                    match spec.iter().position(|(n, k)| n == &l && *k == SpecKind::Param) {
-                        Some(i) => {
-                            let lo = self.here();
-                            let (v, text, _) = self.value_text()?;
-                            args[i] = Some(match v {
-                                Some(value) => Arg::Seed { value, pinned: false },
-                                None => Arg::SeedExpr {
-                                    text,
-                                    pinned: false,
-                                    span: Span::new(lo.lo as usize, self.prev_hi()),
-                                },
-                            });
-                        }
-                        None => {
-                            self.fail(&format!("`{}` has no slot `{l}` to seed", name.text));
-                            return None;
-                        }
-                    }
-                    if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
-                        self.fail("expected `,` or `)`");
-                        return None;
-                    }
+                    args[i] = Some(param_arg(h.value, h.text, h.span, false));
                 }
             } else if place.is_none() && self.peek_word("at") {
                 let lo = self.here().lo as usize;
@@ -3064,23 +3115,16 @@ impl<'a> P<'a> {
     fn arg(&mut self, kind: SpecKind) -> Option<Arg> {
         // `t == 0.37` in the argument list: a slot the constraint owns, *pinned*.  Somebody said
         // where along and the solver is not to argue, which is a stated number and belongs where
-        // every other stated number is.  A seeded one is `hint(t: 0.37)` — see `param_hint`.
+        // every other stated number is.  A seeded one is `hint(t: 0.37)`, read by `hint_body` —
+        // and read into the same `Arg`, since the word is the whole of the difference.
         if kind == SpecKind::Param {
             if matches!(self.peek(), Some(Tok::Ident(_)))
                 && self.t.get(self.i + 1).map(|(t, _)| t) == Some(&Tok::EqEq)
             {
                 self.i += 2;
             }
-            let lo = self.here();
-            let (v, text, _) = self.value_text()?;
-            return Some(match v {
-                Some(value) => Arg::Seed { value, pinned: true },
-                None => Arg::SeedExpr {
-                    text,
-                    pinned: true,
-                    span: Span::new(lo.lo as usize, self.prev_hi()),
-                },
-            });
+            let (v, text, span) = self.value_text()?;
+            return Some(param_arg(v, text, span, true));
         }
         match self.peek().cloned() {
             Some(Tok::Num(_)) | Some(Tok::P('-')) | Some(Tok::P('+')) => {

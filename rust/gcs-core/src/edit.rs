@@ -122,9 +122,9 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
                 continue; // written as an expression: a solve does not rewrite arithmetic
             }
             let v = sk.params[*p as usize].value;
-            let now = num(v);
             match d.seed_spans.get(i).copied().filter(|s| !s.is_empty()) {
                 Some(span) => {
+                    let now = num(v);
                     if span.slice(prog.text()) != now {
                         mine.push(Splice { at: span, with: now });
                     }
@@ -133,20 +133,25 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
                 None => missing |= v != 0.0,
             }
         }
-        match (missing, d.hint_span) {
-            // `hint at t` names a *place*, and has no coordinates to write
-            (true, Some(hint)) if d.seed_at.is_none() && !d.seed.is_empty() => {
-                let mut d2 = d.clone();
+        // a declaration seeded by *place* (`hint at t`) has no coordinates to write, which
+        // `hint_clause` says by giving back nothing: one rule, and only where it is written
+        let clause = match (missing, d.hint_span) {
+            (true, Some(hint)) => {
+                let mut pose = d.seed.clone();
                 for (i, p) in own.iter().enumerate() {
-                    if let Some(s) = d2.seed.get_mut(i) {
+                    if let Some(s) = pose.get_mut(i) {
                         *s = sk.params[*p as usize].value;
                     }
                 }
-                // the printed clause leads with a space, which an *insertion* wants and a
-                // replacement of the clause already there does not
-                let text = syntax::hint_clause(&d2);
-                let with =
-                    if hint.is_empty() { text } else { text.trim_start().to_string() };
+                Some((hint, syntax::hint_clause(d, &pose)))
+            }
+            _ => None,
+        };
+        match clause {
+            Some((hint, text)) if !text.is_empty() => {
+                // an insertion has to bring the space that separates it from the statement; a
+                // replacement stands between the two the clause already had
+                let with = if hint.is_empty() { format!(" {text}") } else { text };
                 edits.push(Splice { at: hint, with });
             }
             _ => edits.extend(mine),
