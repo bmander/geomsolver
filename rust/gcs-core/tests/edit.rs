@@ -26,9 +26,9 @@ line ab(a, b)      // the base
 line bc(b, c)
 line ca(c, a)
 
-horizontal(ab)
-distance(a, b) == w = 140
-ground(a)
+horizontal ab
+a distance(w = 140) b
+ground a
 
 // and this trailing note, too
 ";
@@ -87,8 +87,8 @@ fn a_seed_written_as_an_expression_is_not_overwritten() {
 component Ring(rad: Length) {
   point o hint(x: 0, y: 0)
   circle c(center: o) hint(r: rad)
-  radius(c) == rad
-  ground(o)
+  radius(rad) c
+  ground o
 }
 g: Ring(rad: 25)
 ";
@@ -105,7 +105,7 @@ g: Ring(rad: 25)
 fn a_seed_inside_a_block_is_left_alone() {
     let src = "\
 point o hint(x: 0, y: 0)
-ground(o)
+ground o
 cycle 4 as i {
   point p hint(x: 10, y: 0)
 }
@@ -161,7 +161,7 @@ fn deleting_a_point_takes_what_named_it() {
     assert!(!d.text.contains("line bc"), "{}", d.text);
     assert!(!d.text.contains("line ca"), "{}", d.text);
     assert!(d.text.contains("line ab(a, b)      // the base"), "{}", d.text);
-    assert!(d.text.contains("distance(a, b) == w = 140"), "{}", d.text);
+    assert!(d.text.contains("a distance(w = 140) b"), "{}", d.text);
     assert!(d.text.contains("// a triangle"), "the comments stay");
     let back = elaborate(&prog_of(&d.text));
     assert!(back.ok(), "{:?}", back.errors().map(|x| &x.message).collect::<Vec<_>>());
@@ -179,7 +179,7 @@ component Pair() {
   point b hint(x: 10, y: 0)
 }
 q: Pair()
-ground(q.a)
+ground q.a
 ";
     let prog = prog_of(src);
     let e = elaborate(&prog);
@@ -206,7 +206,7 @@ fn editing_a_dimension_splices_the_number() {
         .id;
 
     let plain = edit::set_dimension(&e, &prog, cid, "d", "140");
-    assert!(plain.text.contains("distance(a, b) == 140"), "{}", plain.text);
+    assert!(plain.text.contains("a distance(140) b"), "{}", plain.text);
     assert!(plain.text.contains("// the base"), "everything else is untouched");
 
     let named = edit::set_dimension(&e, &prog, cid, "d", "w = 140");
@@ -302,7 +302,7 @@ fn a_line_drawn_beside_a_comment_leaves_the_comment_alone() {
         assert!(edit.text.contains(line), "lost: {line}\n{}", edit.text);
     }
     assert!(edit.text.contains("line    l0(p0, p1)"), "{}", edit.text);
-    assert!(edit.text.contains("horizontal(l0)"), "{}", edit.text);
+    assert!(edit.text.contains("horizontal l0"), "{}", edit.text);
 
     let back = elaborate(&prog_of(&edit.text));
     assert!(back.ok(), "{:?}", back.errors().map(|d| &d.message).collect::<Vec<_>>());
@@ -322,16 +322,16 @@ fn a_constraint_added_and_one_removed_are_both_splices() {
     let mut e = elaborate(&prog);
     e.sketch.add(Constraint::one_line(CKind::Vertical, EntRef::line(1)));
     let edit = reconciled(&mut e);
-    assert!(edit.text.contains("vertical(bc)"), "{}", edit.text);
-    assert!(edit.text.contains("horizontal(ab)"), "and the one that was there stays");
+    assert!(edit.text.contains("vertical bc"), "{}", edit.text);
+    assert!(edit.text.contains("horizontal ab"), "and the one that was there stays");
 
     let prog2 = prog_of(&edit.text);
     let mut e2 = elaborate(&prog2);
     let id = e2.sketch.user_constraints().last().unwrap().id;
     e2.sketch.remove(id);
     let back = reconciled(&mut e2);
-    assert!(!back.text.contains("vertical(bc)"), "{}", back.text);
-    assert!(back.text.contains("horizontal(ab)"), "{}", back.text);
+    assert!(!back.text.contains("vertical bc"), "{}", back.text);
+    assert!(back.text.contains("horizontal ab"), "{}", back.text);
     assert!(back.text.contains("// a triangle, and this comment must survive every drag"));
 }
 
@@ -390,8 +390,8 @@ fn reconciling_extends_the_map_rather_than_rebuilding_the_drawing() {
     assert!(d.text.contains("// a triangle, and this comment must survive every drag"));
 }
 
-/// A gauge a component wrote is the component's, not the drawing's: `ground(center)` inside
-/// `Gear` says the same thing about `g.center` as a top-level `ground(g.center)` would, and adding
+/// A gauge a component wrote is the component's, not the drawing's: `ground center` inside
+/// `Gear` says the same thing about `g.center` as a top-level `ground g.center` would, and adding
 /// the second is a statement the document did not need and nobody asked for.
 #[test]
 fn a_gauge_a_component_wrote_is_not_repeated() {
@@ -400,7 +400,7 @@ fn a_gauge_a_component_wrote_is_not_repeated() {
     assert!(e.ok());
     assert!(e.sketch.point_fixed(0), "the gear grounds its own centre");
     let edit = reconciled(&mut e);
-    assert!(!edit.text.contains("ground(g.center)"), "{}", &edit.text[edit.text.len() - 300..]);
+    assert!(!edit.text.contains("ground g.center"), "{}", &edit.text[edit.text.len() - 300..]);
     assert_eq!(edit.text, gcs_core::examples::GEAR, "nothing to say, and nothing said");
 }
 
@@ -420,8 +420,8 @@ fn a_flag_and_a_gauge_are_spliced_too() {
     let edit = reconciled(&mut e);
     assert!(edit.text.contains("line bc(b, c) class construction"), "{}", edit.text);
     assert!(edit.text.contains("line ab(a, b)      // the base"), "the comment stayed");
-    assert!(edit.text.contains("ground(c)"), "{}", edit.text);
-    assert!(!edit.text.contains("ground(a)"), "the one that was let go is gone:\n{}", edit.text);
+    assert!(edit.text.contains("ground c"), "{}", edit.text);
+    assert!(!edit.text.contains("ground a"), "the one that was let go is gone:\n{}", edit.text);
 
     let back = elaborate(&prog_of(&edit.text));
     assert!(back.ok(), "{:?}", back.errors().map(|d| &d.message).collect::<Vec<_>>());
@@ -492,20 +492,20 @@ fn a_second_gesture_beside_a_component_still_lands() {
 /// around them alone.  Reaching for it is `reconcile`, the same seam a construction word uses.
 #[test]
 fn a_dragged_callout_is_written_down() {
-    let src = "point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\ndistance(a, b) == 60\n";
+    let src = "point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\na distance(60) b\n";
     let mut e = elaborate(&prog_of(src));
     let id = e.sketch.user_constraints()[0].id;
 
     // dragged where the layout would not have put it
     e.sketch.placements.insert(id, (12.0, -4.0));
     let out = reconciled(&mut e);
-    assert!(out.text.contains("distance(a, b) == 60 at (12, -4)"), "{}", out.text);
+    assert!(out.text.contains("a distance(60) b at (12, -4)"), "{}", out.text);
     assert!(out.text.contains("point a hint(x: 0, y: 0)"), "the rest of the file is untouched");
 
     // dragged again: the two numbers are rewritten where they stand, not appended beside
     e.sketch.placements.insert(id, (20.0, 8.0));
     let out = reconciled(&mut e);
-    assert!(out.text.contains("distance(a, b) == 60 at (20, 8)"), "{}", out.text);
+    assert!(out.text.contains("a distance(60) b at (20, 8)"), "{}", out.text);
     // `at (…)` is now the callout's alone: every seed in the language is in a `hint(…)` clause,
     // and a placement is the one inert number that is not a seed (spec §6.4)
     assert_eq!(out.text.matches(" at (").count(), 1, "the callout's, and nothing else's");
@@ -513,25 +513,25 @@ fn a_dragged_callout_is_written_down() {
     // and put back where the layout would place it, the clause goes with its space
     e.sketch.placements.remove(&id);
     let out = reconciled(&mut e);
-    assert!(out.text.contains("distance(a, b) == 60\n"), "{}", out.text);
+    assert!(out.text.contains("a distance(60) b\n"), "{}", out.text);
 }
 
 /// The same, for a placement on a relation that states no number — the clause stands alone
 /// there, so it is written and removed on its own rather than after a `==`.
 #[test]
 fn a_placement_without_a_dimension_round_trips() {
-    let src = "point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\nline l(a, b)\nhorizontal(l) at (3, 5)\n";
+    let src = "point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\nline l(a, b)\nhorizontal l at (3, 5)\n";
     let mut e = elaborate(&prog_of(src));
     let id = e.sketch.user_constraints().iter().find(|c| c.kind == CKind::Horizontal).unwrap().id;
     assert_eq!(e.sketch.placements.get(&id).copied(), Some((3.0, 5.0)), "read as written");
 
     e.sketch.placements.insert(id, (9.0, 1.0));
     let out = reconciled(&mut e);
-    assert!(out.text.contains("horizontal(l) at (9, 1)"), "{}", out.text);
+    assert!(out.text.contains("horizontal l at (9, 1)"), "{}", out.text);
 
     e.sketch.placements.remove(&id);
     let out = reconciled(&mut e);
-    assert!(out.text.contains("horizontal(l)\n"), "{}", out.text);
+    assert!(out.text.contains("horizontal l\n"), "{}", out.text);
 }
 
 /// **A seed the document never wrote is recorded where the clause would have gone.**
@@ -570,7 +570,7 @@ fn a_seed_the_source_never_wrote_is_appended() {
 /// words in front of them, so the statement around them is never reprinted.
 #[test]
 fn a_seed_written_in_a_hint_clause_is_written_back() {
-    let src = "point a hint(x: 0, y: 0)\npoint b hint(x: 10, y: 0)\nline l(a, b)\nground(a)\n";
+    let src = "point a hint(x: 0, y: 0)\npoint b hint(x: 10, y: 0)\nline l(a, b)\nground a\n";
     let mut e = elaborate(&prog_of(src));
     let mut sk = std::mem::take(&mut e.sketch);
     let bx = sk.points[1].x as usize;

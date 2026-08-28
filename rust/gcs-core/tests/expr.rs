@@ -166,7 +166,7 @@ fn angles_are_written_in_degrees() {
     let items = expr::evaluate(&mut sk);
     assert_eq!(items[0].value, 30.0);
     assert_eq!(io::dimension_text(sk.constraint(ang).unwrap()).unwrap(), "a = 30°");
-    assert_eq!(io::describe(sk.constraint(d).unwrap()), "Distance(P4, P5, a * 2 = 60)");
+    assert_eq!(io::describe(sk.constraint(d).unwrap()), "P4 distance(a * 2 = 60) P5");
 }
 
 #[test]
@@ -318,9 +318,9 @@ fn the_binding_record_keeps_numbers_and_adds_the_text() {
 fn describe_and_callout_text() {
     let (sk, ids) = three(["w = 3", "h = w * 2", "sin(h * 5)"]);
     let c = |i: usize| sk.constraint(ids[i]).unwrap();
-    assert_eq!(io::describe(c(0)), "Distance(P0, P1, w = 3 = 3)");
-    assert_eq!(io::describe(c(1)), "Distance(P2, P3, h = w * 2 = 6)");
-    assert_eq!(io::describe(c(2)), "Distance(P4, P5, sin(h * 5) = 0.5)");
+    assert_eq!(io::describe(c(0)), "P0 distance(w = 3 = 3) P1");
+    assert_eq!(io::describe(c(1)), "P2 distance(h = w * 2 = 6) P3");
+    assert_eq!(io::describe(c(2)), "P4 distance(sin(h * 5) = 0.5) P5");
     // the drawing carries the expression; what it came to is in the list, above
     assert_eq!(io::dimension_text(c(0)).unwrap(), "w = 3");
     assert_eq!(io::dimension_text(c(1)).unwrap(), "h = w * 2");
@@ -482,7 +482,7 @@ fn a_dimension_written_as_a_fraction_is_drawn_as_one() {
     let c = sk.constraint(id).unwrap();
 
     assert_eq!(io::dimension_text(c).as_deref(), Some("3 1/8"), "the callout lost the fraction");
-    assert_eq!(io::describe(c), "Distance(P0, P1, 3 1/8)");
+    assert_eq!(io::describe(c), "P0 distance(3 1/8) P1");
     assert_eq!(c.args[2].num(), 3.125, "and the graph still has the number");
     assert!(solve(&mut sk, SolveOpts::default()).success);
 

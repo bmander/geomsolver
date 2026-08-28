@@ -438,6 +438,49 @@ Conventions:
   placement — belongs in `graft`, or the three will disagree.  JSON is now the *export* format,
   derived rather than canonical; `io::dumps` is still what the Rust tests and the benchmarks
   compare against.
+- **Every constraint is written as a prefix or an infix operator** (Solvent §9.2); `name(args…)`
+  is retired.  `radius(25) c`, `p1 distance(80) p2`, `horizontal l`, `ground p`, `a symmetry(l) b`
+  — the word, its one or two operands, and everything else in the parentheses on the word: the
+  number, a selector (`side: -1`, `at: start`, `along: x`), a third entity, a pin (`t == 0.4`).
+  A *seed* for an owned slot stays the trailing `hint(t: 0.4)`, where every seed is.
+  **A pin and a seed are one `OpArg::Slot { key: Name, arg: Arg }`** — the word is the whole of
+  the difference between them, and all three of the things that went wrong when they were three
+  variants of two fields were the *same* omission.  A pin kept only its parsed number, and
+  `value_text` parses no expression, so `t == t0` inside a component pinned the contact at 0 with
+  nothing reported; the key was thrown away, so one naming no slot at all filled whichever
+  `Param` slot the settled kind had; and `write_written` guessed the name `t`, which is right on
+  a spline and wrong on a curve (`PointOnCurve`'s is `u`), so it disagreed with `operator_text`
+  about one statement.  The value is **`syntax::Arg` and not a second encoding of it**: `assemble`
+  hands it straight on, and `flatten::settle_arg` is the one walk that reads a component's
+  parameters out of an argument — a statement carries its arguments twice, as the operator was
+  written and in spec order, and both halves are the same type.  `Written::assemble` matches the
+  key against the spec; an unknown one is an E040 **at the key's own span** and in the word the
+  writer typed, which is why the key is a `Name` and why `assemble` returns a `Result` and
+  `settle` carries a `Span` beside its message, in the `(Span, String)` order every other
+  fallible path in `program.rs` uses.  `syntax::slot_text` is the one place a slot is spelled,
+  read by both printers, as `hint_of` is for the clause around it.
+  **The shape is the library's, not a rule imposed on it**: every user-facing kind has one or two
+  entity slots, always first in spec order, with `Symmetric` the single three-slot exception the
+  parentheses absorb.  Several kinds share a word and that is the saving — **`on` is five,
+  `distance` is six, `tangent` is six** — and `horizontal`/`vertical` are two each with the
+  *fixity* doing the work, which is exactly the distinction `HorizontalPoints` was added to draw.
+  **What a word means is the kinds of its operands, and a name does not carry its kind until
+  elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` (the word, the
+  operands, what was in the parentheses) and `program::settle` turns it into a `CKind` plus
+  arguments in spec order, through `constraints::infix_op` / `prefix_op` and `Written::assemble`.
+  One path, where 0.6 had a longhand and a chain: a **lone infix statement is a one-joint chain**,
+  and what a chain adds is the corner — which end two links meet at — that an operator between two
+  names cannot know.  `CKind::operator()` is the inverse and is matched exhaustively, so a new
+  kind stops the build there; `syntax::operator_text` is the one printer, read by `write_relation`
+  and by `io::describe`, so the drawing, the constraint list and the program panel cannot spell
+  one constraint three ways.  **The surface word and the wire name are separate**: the registry
+  goes on publishing snake_case `name`, which the binding and the JSON export key on, and
+  `operator`/`fixity`/`operands` are new information beside it — **the binding is untouched**.
+  `ccw`/`cw` keep a call: under the general rule they would be `a ccw(c) b`, which reorders three
+  points that are symmetric, and the predicate is about the *triangle*.
+  Operand order carries meaning now — `arc tangent line` is `TangentArcLine` and `line tangent
+  circle` is `TangentLineCircle` — and a name that is also an element keyword can no longer lead
+  a statement (`spline_follower.sv`'s spline is `cam`, not `curve`).
 - A **chain** (Solvent §6.6) is parser-level sugar and nothing else: `horizontal line bottom(b1,
   b2) tangent arc a(center: c, r: r) tangent …` desugars in `syntax.rs` into the ordinary
   statements it stands for — a prefix word (any `CKind` whose spec is one entity slot) becomes
@@ -474,9 +517,22 @@ Conventions:
   rather than silently threading the wrong children.  A line ending in a joint word continues
   its chain onto the next; `JOINT close` seals a loop back to the first link's entry.
   The colouring asks `opens_link` — the *same* predicate `chain_starts` asks — since written
-  twice the two drifted at once on whether `horizontal(bottom)` is a prefix.  It runs per
-  keystroke, so every guard there puts the pointer test before the registry lookup
-  (`chain_kind` allocates); reversing those two operands cost 65% of a highlight pass.
+  twice the two drifted at once on whether `horizontal(bottom)` is a prefix.  Both reach it
+  through `past_args`, the lookahead **stepping over the operator's own parentheses**: now that a
+  word carries its number, the token after `radius` is `(` and not the element keyword, so
+  reading `i + 1` had `radius(25) circle base(…)` open no chain — it fell to `relation()`, whose
+  `refr()` swallowed the keyword `circle` as an operand — while the identical form parsed
+  mid-chain, where `link` reads the arguments itself.  The same miss left every parenthesised
+  infix uncoloured, which is most of the constraints in a document.  It returns an **index**, the
+  shape `past_ref` already uses, because a caller asks two things at that position — what word is
+  there, and whether the line ends there — and a lookahead answering only the first left
+  `p distance(80)` at the end of a line reading as neither.  What it must *not* cost is the guard
+  that keeps a bare name plain: a name in an argument list is followed by `,` or `)`, neither a
+  word nor the end of a line, so `tangent` used as a point stays untinted.
+  It runs per keystroke, so every guard there puts the pointer test before the registry lookup
+  (`chain_kind` allocates); reversing those two operands cost 65% of a highlight pass — which is
+  also why `tint_word` takes the token slice and computes the lookahead in the one arm that
+  reads it, rather than once per token above the match.
   `tests/chain.rs` holds the gate: the chain spelling of `rect_fillets` states exactly what the
   shipped longhand does.
 - A statement expanded by `flatten` **keeps the id of the statement it came from**: a `cycle` of

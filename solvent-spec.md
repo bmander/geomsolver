@@ -54,7 +54,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `port`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `ellipse`, `spline`. **[0.7]** `unit`, `class` and `style` in, `construction` out — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the words `to` and `close` are meaningful *contextually*; they are not reserved, and an entity may bear either as a name. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` keeps its own form inside a trace block (§6.5.1).
+- **Keywords:** `component`, `port`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `ellipse`, `spline`. **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `on`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the words `to` and `close` are meaningful *contextually*; they are not reserved, and an entity may bear either as a name. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` keeps its own form inside a trace block (§6.5.1).
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
 - **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . = -> ~`
@@ -410,7 +410,7 @@ JOINT  ::= "to" | "tangent" | "equal" | INFIX
 INFIX  ::= a constraint name whose spec is two entity slots    // perpendicular, equal_length, equal_radius
 ```
 
-**[0.5] Two kinds of chain, told apart by their operands.** A chain whose links are DECLarations draws a **contour**: its joints are corners, and threading (below) applies. A chain whose links are REFerences states a **relation** among elements declared elsewhere — `a_br equal a_tr equal a_tl` — and threads nothing, because there is no corner it was written at and welding one would be an invention. A chain MUST NOT mix the two: the choice of threading rule would then be arbitrary. `to`, `tangent` and `close` are contour vocabulary and are errors in a relation chain.
+**[0.5] Two kinds of chain, told apart by their operands.** A chain whose links are DECLarations draws a **contour**: its joints are corners, and threading (below) applies. A chain whose links are REFerences states a **relation** among elements declared elsewhere — `a_br equal a_tr equal a_tl` — and threads nothing, because there is no corner it was written at and welding one would be an invention. A chain MUST NOT mix the two: the choice of threading rule would then be arbitrary. **[0.7]** `to` and `close` are contour vocabulary and are errors in a relation chain; `tangent` is not, being the ordinary infix operator (§9.2) between two names.
 
 - A **prefix** desugars to that constraint applied to the declaration it stands before: `horizontal line bottom(b1, b2)` is `line bottom(b1, b2)` plus `horizontal(bottom)`. Eligibility is registry-derived — one entity slot and nothing else — so a new unary constraint joins the grammar without the grammar changing.
 - A **joint** stands between two links and says how they meet. Constraints return nothing, so a chain reads like a chained comparison, not an expression: each joint binds its two neighbours, and there is no precedence anywhere. `a equal b equal c` is therefore two statements, not three, and n operands give n−1 — the same rank as any other spanning set over the same elements, stated as a path rather than a star. An INFIX word is the two-argument counterpart of PREFIX, derived from the same registry: it desugars to that constraint over the pair, positionally, and MUST fit both — a word whose slots the pair cannot fill is an error, not a guess.
@@ -462,15 +462,55 @@ Instantiation elaborates the named component's body into the current scope with 
 
 Both sides are dimension-checked. The residual is `lhs − rhs` (componentwise for future vector expressions; in this draft `==` applies to scalar-dimensioned expressions and to `Point` via `coincident`, §9.3).
 
-### 9.2 Predicate form
+### 9.2 Operator form **[0.7]**
+
+> **Every constraint is written as a prefix or an infix operator.  `name(args…)` is retired.**
+
+Where a constraint needs more than its two operands — a number, a selector, a third entity — those go in parentheses **on the operator**:
 
 ```
-on(root, lead, trail)
-angle(lead, root.center, trail) == slot / 2
-ccw(lead, tl, tr)
+horizontal line1                    point1 horizontal point2
+radius(25) circle1                  point1 distance(1' 3") point2
+distance(6) line1                   point1 symmetry(line1) point2
+distance(x = 7) line1               point1 distance(60, along: x) point2
+ground p1                           l1 angle(30) l2
+fix c.r                             line1 tangent(side: -1) circle1
 ```
 
-Predicates with more than the minimum arity distribute: `on(c, p1, p2, ..., pk)` means the conjunction of `on(c, pi)`.
+**The type system already has this shape.** Every constraint a person writes has 1 or 2 entity slots, always first in spec order: 1 for `horizontal`, `vertical` and `radius`, 2 for everything else, and 3 for symmetry alone — which the parentheses absorb exactly as proposed. So "two operands, the rest in parentheses" is a *description* of the library rather than a rule imposed on it.
+
+What goes in the parentheses is a short list:
+
+- **the number**, which may be named or an expression exactly as elsewhere: `distance(80)`, `distance(x = 7)`, `distance(h = w / 2)`, `distance(1' 3")`;
+- **a selector** — `side: -1`, `at: start`, `external: true`, `along: x`;
+- **the third entity**, for `symmetry`;
+- **a pin**, `t == 0.4`, for a slot the constraint owns. Its *seed* is the trailing `hint(t: 0.4)` where every seed in the language is (§4.3).
+
+| word | fixity | operands → constraint |
+|---|---|---|
+| `on` | infix | (point, line \| circle \| arc \| spline \| ellipse \| curve) — **five** constraints |
+| `distance` | infix | (p, p); +`along: x`/`y` for the run and the rise; (p, line); (line, line); (circle, circle) — **six** |
+| `distance` | prefix | on a line: the distance between its own ends |
+| `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line); (ellipse, line) — **six** |
+| `equal` | infix | (line, line) a length; (circle, circle) a radius |
+| `curvature` | infix | (spline, circle), (ellipse, circle) |
+| `horizontal`, `vertical` | prefix / infix | a line; or a pair of points |
+| `angle` | infix | (line, line) |
+| `radius` | prefix | a circle or an arc |
+| `coincident`, `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each |
+| `ground`, `fix` | prefix | the gauges (§13) |
+
+The collapses are where the saving is: **`on` is five constraints, `distance` is six, `tangent` is six**, and `horizontal`/`vertical` are two each with the **fixity** doing the work — a line prefixed, a pair of points infixed, which is exactly the distinction the point-pair forms were added to draw. `angle` and `radius` keep their own words rather than folding into `distance`, because over two lines a length means a parallel distance and an angle means an angle, and nothing but the number's unit could separate them.
+
+**Operand order carries meaning.** `arc tangent line` is a tangency at the arc's end; `line tangent circle` is the ordinary one. Each named itself before and the order was decoration; as an operator, which side the arc is written on picks the constraint.
+
+**What a word means is the kinds of its operands, and a name does not carry its kind until elaboration** — a name may be declared further down the body (P2) or come from a component. So an implementation MUST settle the word after resolution, and MUST report a pair a word does not relate rather than guessing at one.
+
+**The surface word and the wire name are separate.** An export format's constraint identifier is unaffected by this section; the operator is information beside it.
+
+**`ccw` and `cw` keep a call.** Under the general rule they would be `a ccw(c) b`, which reorders three points that are symmetric: the predicate is about the *triangle*, not about a pair with a decoration. They are the one exception, and it is made for the reader.
+
+A chain (§6.6) is the same grammar: a **lone infix statement is a one-joint chain**, and what a chain adds is the corner — which end two links meet at — that an operator between two names cannot know.
 
 ### 9.3 Standard constraint library
 
@@ -1018,10 +1058,16 @@ instance_decl  = IDENT ":" IDENT "(" [ args ] ")" ;
 args           = arg { "," arg } ;
 arg            = [ IDENT ":" ] expr ;
 
-constraint     = expr "==" expr
-               | pred [ "." IDENT ] "(" args ")" [ "==" expr ]
+(* §9.2: every constraint is a prefix or an infix operator; `name(args…)` is retired. *)
+constraint     = [ "claim" ] ( prefix_form | infix_form )
                  [ hint_clause ] [ "at" "(" number "," number ")" ] ;  (* §4.3, §13.1 *)
-pred           = IDENT ;
+prefix_form    = IDENT [ op_args ] ref ;
+infix_form     = ref IDENT [ op_args ] ref ;
+op_args        = "(" op_arg { "," op_arg } ")" ;
+op_arg         = expr                                      (* the number it states *)
+               | ref                                       (* a third entity: `symmetry` *)
+               | IDENT ":" value                           (* a selector *)
+               | IDENT "==" expr ;                         (* a pin, §4.3 *)
 
 (* §4.3: a number inside `hint(…)` seeds; `==` inside an argument list pins.  The two are the
    whole of the seed/constraint classification, and they are told apart by the clause alone. *)

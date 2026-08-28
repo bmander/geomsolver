@@ -248,9 +248,9 @@ circle base(center: o) hint(r: 20) class construction
 curve  flank = involute(base, phase: 0) over (0, 60)
 
 point  p hint(x: 40, y: 40)
-point_on_curve(p, flank)
-radius(base) == 20
-ground(o)
+p on flank
+radius(20) base
+ground o
 ";
     let (prog, errs) = gcs_core::syntax::parse(src);
     assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());

@@ -44,11 +44,11 @@ arc a_bl(center: c_bl) hint(r: r) tangent close
 
 // one radius, stated once and shared
 a_br equal a_tr equal a_tl equal a_bl
-radius(a_bl) == r
+radius(r) a_bl
 
 // the same width, twice, and the two numbers disagree
-distance(l1, r2) == w
-distance(l1, r2) == 50
-distance(t1, b2) == h
+l1 distance(w) r2
+l1 distance(50) r2
+t1 distance(h) b2
 
-ground(c_bl)
+ground c_bl

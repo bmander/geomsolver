@@ -43,9 +43,9 @@ arc a_bl(center: c_bl) hint(r: r) tangent close
 
 // one radius, stated once and shared
 a_br equal a_tr equal a_tl equal a_bl
-radius(a_bl) == r
+radius(r) a_bl
 
 // and no width: this is the freedom the case is about
-distance(t1, b2) == h
+t1 distance(h) b2
 
-ground(c_bl)
+ground c_bl

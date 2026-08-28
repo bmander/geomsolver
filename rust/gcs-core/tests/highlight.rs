@@ -55,8 +55,8 @@ component Gear(N: Int, m: Length, c: circle) {
   port hub: point
   point center hint(x: 0, y: 0)
   circle base(center: center) hint(r: R) class construction
-  radius(base) == R
-  ground(center)
+  radius(R) base
+  ground center
   cycle N as i {
     t: Tooth(base, a0: i * R)
   }
@@ -81,7 +81,7 @@ g: Gear(N: 30, m: 3)  // one wheel
     assert_eq!(tint_of(src, "class"), Some(Tint::Word));
     assert_eq!(tint_of(src, "construction"), Some(Tint::Class));
     assert_eq!(tint_of(src, "radius"), Some(Tint::Relation));
-    assert_eq!(tint_of(src, "== R"), Some(Tint::Claim));
+    assert_eq!(tint_of(src, "radius(R)"), Some(Tint::Relation));
     assert_eq!(tint_of(src, "ground"), Some(Tint::Relation));
     assert_eq!(tint_of(src, "cycle"), Some(Tint::Word));
     assert_eq!(tint_of(src, "as"), Some(Tint::Word));
@@ -100,8 +100,8 @@ g: Gear(N: 30, m: 3)  // one wheel
 /// number inside a `hint(…)` is a seed, and every other number is not.
 #[test]
 fn a_seed_and_a_claim_are_told_apart() {
-    let src = "point_on_curve(lo, e) hint(u: 3)\nradius(c) == 4\nparam w = 100";
-    assert_eq!(tint_of(src, "point_on_curve"), Some(Tint::Relation));
+    let src = "lo on e hint(u: 3)\ns on(t == 4) k\nparam w = 100";
+    assert_eq!(tint_of(src, "on e"), Some(Tint::Relation));
     assert_eq!(tint_of(src, "hint("), Some(Tint::Word));
     assert_eq!(tint_of(src, "u:"), Some(Tint::Label));
     assert_eq!(tint_of(src, "3)"), Some(Tint::Seed));
@@ -125,11 +125,11 @@ fn a_curve_family_is_a_declaration() {
 #[test]
 fn a_trace_family_is_coloured() {
     let src = "curve unwind(c: circle)(u) =\n  trace p where {\n\
-               point p\n    point_on_circle(p, c)\n  }";
+               point p\n    p on c\n  }";
     assert_eq!(tint_of(src, "trace"), Some(Tint::Word));
     assert_eq!(tint_of(src, "p where"), Some(Tint::Def));
     assert_eq!(tint_of(src, "where"), Some(Tint::Word));
-    assert_eq!(tint_of(src, "point_on_circle"), Some(Tint::Relation));
+    assert_eq!(tint_of(src, "on c"), Some(Tint::Relation));
 }
 
 /// The reference document, coloured.  A cheap guard that the rules above reach the real thing:
@@ -173,4 +173,45 @@ line ab(a, a) class centerline heavy
     assert_eq!(tint_of(src, "class"), Some(Tint::Word));
     assert_eq!(tint_of(src, "centerline heavy"), Some(Tint::Class));
     assert_eq!(tint_of(src, "heavy"), Some(Tint::Class), "every class in the list");
+}
+
+/// **An operator carries its number on the word, and is still an operator.**
+///
+/// `p distance(80) q` is the ordinary spelling of a dimension now (spec §9.1), so the token after
+/// the word is `(` and not the right operand.  The joint test read `i + 1` and found punctuation,
+/// which left every parenthesised operator — most of the constraint statements in a document —
+/// uncoloured while the paren-less ones beside them were tinted.  `word_past_args` is the one
+/// lookahead both this and `chain_starts` ask, so a word coloured as a relation here is a word
+/// the parser settles as one.
+#[test]
+fn an_operator_is_coloured_through_its_own_parentheses() {
+    let src = "\
+point p hint(x: 0, y: 0)
+point q hint(x: 60, y: 0)
+point r hint(x: 60, y: 40)
+p distance(80) q
+p distance(20, along: y) r
+q equal r
+horizontal p
+";
+    assert_eq!(tint_of(src, "distance(80)"), Some(Tint::Relation));
+    assert_eq!(tint_of(src, "distance(20"), Some(Tint::Relation), "a selector beside the number");
+    assert_eq!(tint_of(src, "equal"), Some(Tint::Relation), "and the paren-less form as before");
+    assert_eq!(tint_of(src, "horizontal"), Some(Tint::Relation));
+}
+
+/// The other side of that lookahead: a **name** that happens to spell an operator is still a name.
+///
+/// The guard the joint test carries is what keeps `tangent` in an argument list plain, and reading
+/// past the parentheses must not cost it — a bare name is followed by `,` or `)`, which is neither
+/// a word nor the end of the line, so it never reaches the operator arm.
+#[test]
+fn a_name_that_spells_an_operator_stays_a_name() {
+    let src = "\
+point tangent hint(x: 0, y: 0)
+point b hint(x: 1, y: 0)
+line l(tangent, b)
+";
+    assert_eq!(tint_of(src, "tangent hint"), Some(Tint::Def), "the point it declares");
+    assert_eq!(tint_of(src, "tangent,"), None, "and the same name, used");
 }

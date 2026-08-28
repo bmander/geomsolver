@@ -759,11 +759,11 @@ test('redundancy the matching cannot see is counted and named as implied', () =>
   assert.deepEqual(d.over, []);
   const named = new Set(d.implied.map((c) => io.describe(c)));
   assert.deepEqual([...named].sort(), [
-    'Perpendicular(L3, L1)', 'Perpendicular(L4, L2)', 'Perpendicular(L5, L0)',
+    'L3 perpendicular L1', 'L4 perpendicular L2', 'L5 perpendicular L0',
     // `P3` is the concurrency point: `altitudes.sv` writes the three feet *in* the lines they
     // slide along (`line alt_a(A, hint(x: 15, y: 5))`), so those points are minted with the
     // lines and come after it
-    'PointOnLine(P3, L3)', 'PointOnLine(P3, L4)', 'PointOnLine(P3, L5)',
+    'P3 on L3', 'P3 on L4', 'P3 on L5',
   ]);
   assert.ok([...d.entityState.values()].every((s) => s !== 'over'));
 });
@@ -1013,7 +1013,7 @@ test('an old export with "construction": true still loads', () => {
 test('describe reads the spec', () => {
   const sk = examples.rectFillets();
   const d = sk.constraints.find((c) => c instanceof C.Distance)!;
-  assert.match(io.describe(d), /^Distance\(P\d+, P\d+, 100\)$/);
+  assert.match(io.describe(d), /^P\d+ distance\(100\) P\d+$/);
 });
 
 test('deleting an entity removes what depends on it', () => {
@@ -1280,7 +1280,7 @@ test('dimensions written as expressions are evaluated in dependency order', () =
   assert.equal(num(cs[1].d), 2);
   assert.ok(Math.abs(num(cs[0].d) - Math.sin((20 * Math.PI) / 180)) < 1e-12);
   assert.equal(cs[1].expr('d'), 'h = w * 2');
-  assert.equal(cs[1].describe(), 'Distance(P2, P3, h = w * 2 = 2)');
+  assert.equal(cs[1].describe(), 'P2 distance(h = w * 2 = 2) P3');
   const items = expressions(sk);
   assert.deepEqual(items.map((it) => it.id), [cs[2].id, cs[1].id, cs[0].id]);
   assert.deepEqual(items[1].deps, ['w']);
@@ -1776,9 +1776,9 @@ test('a program written by hand draws', () => {
     'point a hint(x: 0, y: 0)',
     'point b hint(x: 100, y: 0)',
     'line  ab(a, b)',
-    'distance(a, b) == w = 60',
-    'horizontal(ab)',
-    'ground(a)',
+    'a distance(w = 60) b',
+    'horizontal ab',
+    'ground a',
   ].join('\n'));
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   assert.equal(d.sketch.points.length, 2);
@@ -1859,9 +1859,9 @@ line ab(a, b)      // the base
 line bc(b, c)
 line ca(c, a)
 
-horizontal(ab)
-distance(a, b) == w = 140
-ground(a)
+horizontal ab
+a distance(w = 140) b
+ground a
 `;
 
 test('an edit is a new text, and the document is unchanged until it is applied', () => {
@@ -1887,7 +1887,7 @@ test('a solve writes the seeds back and touches nothing else', () => {
   assert.equal(e.kind, 'numeric', 'a seed is not a statement');
   assert.ok(e.text.includes('// a triangle, and this comment must survive every edit'));
   assert.ok(e.text.includes('line ab(a, b)      // the base'));
-  assert.ok(e.text.includes('distance(a, b) == w = 140'), 'the dimension is not a seed');
+  assert.ok(e.text.includes('a distance(w = 140) b'), 'the dimension is not a seed');
   const before = TRIANGLE.split('\n');
   const after = e.text.split('\n');
   assert.equal(before.length, after.length);
@@ -1934,7 +1934,7 @@ test('drawing a triangle by gestures writes six statements', () => {
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   assert.equal(d.sketch.points.length, 3);
   assert.equal(d.sketch.lines.length, 3);
-  assert.ok(d.text.includes('horizontal(l0)'), d.text);
+  assert.ok(d.text.includes('horizontal l0'), d.text);
   d.dispose();
 });
 
@@ -1944,7 +1944,7 @@ test('editing a number splices the number, and a name is a column', () => {
   // `w = 140` names its value, so dropping the name drops a column — and the core says so
   const drop = d.setDimension(dim.id, 'd', '160');
   assert.equal(drop.kind, 'structural', 'a name that goes away is a column that goes away');
-  assert.ok(drop.text.includes('distance(a, b) == 160'), drop.text);
+  assert.ok(drop.text.includes('a distance(160) b'), drop.text);
   assert.ok(drop.text.includes('// the base'), 'and nothing else moved');
 
   // between two bare numbers there is nothing but the number: the plan survives it
@@ -1952,7 +1952,7 @@ test('editing a number splices the number, and a name is a column', () => {
   const same = plain.sketch.constraints.find((c) => c.typeName === 'Distance')!;
   const again = plain.setDimension(same.id, 'd', '170');
   assert.equal(again.kind, 'numeric', 'a bare number cannot move the topology');
-  assert.ok(again.text.includes('distance(a, b) == 170'), again.text);
+  assert.ok(again.text.includes('a distance(170) b'), again.text);
 
   const named = plain.setDimension(same.id, 'd', 'w = 170');
   assert.equal(named.kind, 'structural', 'a name may be a free variable');
@@ -2017,7 +2017,9 @@ test('a diagnostic and a source map index the string, not the core\'s bytes', ()
   const b = Document.read(broken);
   const err = b.diagnostics.find((x) => x.severity === 'error')!;
   assert.ok(err, JSON.stringify(b.diagnostics));
-  assert.ok(broken.slice(err.lo, err.hi).startsWith('nonsense'),
+  // `nonsense here` has the shape of an infix statement — a name, a word, a name — so what the
+  // parser complains about is the word that was supposed to relate them
+  assert.ok(broken.slice(err.lo, err.hi).startsWith('here'),
             `the diagnostic covers ${JSON.stringify(broken.slice(err.lo, err.hi))}`);
   // the line the core counted and the line the string has agree
   assert.equal(broken.slice(0, err.lo).split('\n').length, err.line);

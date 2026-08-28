@@ -489,6 +489,18 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                     look(r);
                 }
             }
+            // what a *written* statement names: its operands, and a third entity in the
+            // parentheses.  `args` is the settled form and is empty until elaboration.
+            if let Some(w) = &rel.poly {
+                for r in w.ops.iter() {
+                    look(r);
+                }
+                for a in &w.args {
+                    if let syntax::OpArg::Ent(r) = a {
+                        look(r);
+                    }
+                }
+            }
         }
         StmtKind::Gauge(g) => match g {
             syntax::Gauge::Ground(r) | syntax::Gauge::Fix(r) => look(r),
@@ -579,16 +591,31 @@ pub fn set_dimension(e: &Elaborated, prog: &Program, cid: u32, attr: &str, text:
     }
     let Some(st) = prog.stmt(site.stmt) else { return Edit::none(prog, None) };
     let StmtKind::Relation(rel) = &st.kind else { return Edit::none(prog, None) };
-    let Some(i) = rel.kind.spec().iter().position(|(n, _)| *n == attr) else {
-        return Edit::none(prog, Some(format!("no argument `{attr}`")));
+    // the number a statement states is the unlabelled thing in its operator's parentheses
+    // (spec §9.1), which is where a *written* statement carries it
+    let dim = match &rel.poly {
+        Some(w) => w.args.iter().find_map(|a| match a {
+            syntax::OpArg::Dim(text, span) => Some((*span, text.clone())),
+            _ => None,
+        }),
+        None => rel
+            .kind
+            .spec()
+            .iter()
+            .position(|(n, _)| *n == attr)
+            .and_then(|i| rel.args.get(i).and_then(|a| a.as_ref()))
+            .and_then(|a| match a {
+                syntax::Arg::Dim { span, text } => Some((*span, text.clone())),
+                _ => None,
+            }),
     };
-    let Some(syntax::Arg::Dim { span, text: was }) = rel.args.get(i).and_then(|a| a.as_ref())
-    else {
+    let Some((span, was)) = dim else {
         return Edit::none(prog, Some("that argument is not a dimension".into()));
     };
+    let was = was.as_str();
     let plain = crate::expr::literal(text).is_some() && crate::expr::literal(was).is_some();
     Edit {
-        text: splice(prog.text(), vec![Splice { at: *span, with: text.trim().to_string() }]),
+        text: splice(prog.text(), vec![Splice { at: span, with: text.trim().to_string() }]),
         kind: if plain { Kind::Numeric } else { Kind::Structural },
         names: Vec::new(),
         refused: None,

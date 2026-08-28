@@ -33,7 +33,7 @@
 //! That distinction is lexical, which is what makes "may a solve write this number?" a test
 //! rather than an analysis — see `edit::commit_seeds`.
 
-use crate::constraints::{CKind, SpecKind};
+use crate::constraints::{is_operator, CKind, Fixity, SpecKind};
 use crate::model::{EntKind, EntRef, Field};
 use crate::style::{Classes, Style};
 
@@ -354,6 +354,18 @@ struct Hint {
     span: Span,
 }
 
+impl From<Hint> for OpArg {
+    /// A hint read from a `hint(…)` clause is a **seed** for the slot it names — the only thing
+    /// such a clause can be (spec §4.3).  A pin is the same argument with `pinned` set, built
+    /// where `==` is read instead.
+    fn from(h: Hint) -> OpArg {
+        OpArg::Slot {
+            key: Name { text: h.key, span: h.at },
+            arg: seed_arg(h.value, h.text, h.span, false),
+        }
+    }
+}
+
 /// `point p0 hint(x: 0, y: 0)`, `circle c0(center: p2) hint(r: 25)`,
 /// `spline s0(p3, p4, p5, p6) knots [...]`.
 #[derive(Clone, Debug)]
@@ -454,7 +466,138 @@ pub struct AtRef {
     pub bearing: Option<(String, Span)>,
 }
 
-/// A constraint statement: `distance(p0, p1) == 80 at (12, -4)`.
+/// What stood in an operator's parentheses.
+///
+/// Everything that is not one of the two operands, and it is a short list: the number, a
+/// selector, and — for `symmetry`, `ccw` and `cw` — a third entity.
+#[derive(Clone, Debug)]
+pub enum OpArg {
+    /// `side: -1`, `at: start`, `along: x`, `external: true`
+    Named(Name, Arg),
+    /// the third entity, unlabelled: `a symmetry(l) b`
+    Ent(Ref),
+    /// A slot the constraint owns, **named as the spec names it** — `t == 0.4` in the
+    /// parentheses, or `hint(t: 0.4)` after the operands.
+    ///
+    /// One variant, because the word is the whole of the difference: a **pin** is a stated
+    /// number the solve may not revise and a **seed** is where it begins (spec §4.3), and both
+    /// are the same number read the same way — a literal, or an expression over the parameters
+    /// in scope (`hint(u: u0)` inside a component), worked out during expansion.  Which of the
+    /// two, and which of literal and expression, is `Arg`'s to say and not a second encoding
+    /// here: this is `Arg::Seed`/`Arg::SeedExpr` with the key in front, so `assemble` hands the
+    /// value straight on and `flatten` settles it through the one walk it already had.
+    ///
+    /// The key is a `Name` and carries **its own span** — the key is what an unknown-slot
+    /// message is about, so the caret belongs on it and not on the value after it, which is the
+    /// rule `kid_seed` and the declaration's own clause already keep.  It is kept at all because
+    /// a kind's slot is `t` on a spline and `u` on a curve, and neither the check in
+    /// `Written::assemble` nor the printer may guess which.
+    Slot { key: Name, arg: Arg },
+    /// the number, as written — `80`, `x = 7`, `h = w / 2`, `1' 3"`
+    Dim(String, Span),
+}
+
+/// A constraint statement **as it was written**: an operator, its operands, and what stood in
+/// its parentheses (spec §9.1).
+///
+/// `name(args…)` is retired.  What a word means depends on the *kinds* of its operands — `on` is
+/// five constraints, `distance` is six, `tangent` is six — and a name's kind is not known until
+/// elaboration, so this is what the parser produces and `program::constrain` is what settles it.
+/// One path, where 0.6 had a longhand and a chain.
+#[derive(Clone, Debug)]
+pub struct Written {
+    pub word: Name,
+    pub fixity: Fixity,
+    /// One (prefix) or two (infix), in written order.  **Order carries meaning**: `arc tangent
+    /// line` is `TangentArcLine` and `line tangent circle` is `TangentLineCircle`.
+    pub ops: Vec<Ref>,
+    pub args: Vec<OpArg>,
+    pub span: Span,
+}
+
+impl Written {
+    /// One selector by name — what `constraints::infix_op` reads to tell `distance … along: x`
+    /// from a plain one, and a tangency at a named end from the bare pair.
+    pub fn sel(&self, name: &str) -> Option<String> {
+        self.args.iter().find_map(|a| match a {
+            OpArg::Named(n, v) if n.text == name => Some(match v {
+                Arg::Word(w) => w.clone(),
+                Arg::Int(i) => i.to_string(),
+                Arg::Bool(b) => b.to_string(),
+                Arg::Num(x) => num(*x),
+                _ => String::new(),
+            }),
+            _ => None,
+        })
+    }
+
+    /// The arguments a constraint of `kind` takes, in **spec order**, from what was written.
+    ///
+    /// The one place the operator form becomes the library's form, so the parser and the
+    /// elaborator cannot disagree about which slot a selector filled.  Entity slots come first
+    /// in spec order and are filled from the operands, then from an unlabelled entity in the
+    /// parentheses (`symmetry`'s line); the trailing dimension from the number; a `Param` from
+    /// the pin; and everything else by its own name.
+    pub fn assemble(&self, kind: CKind) -> Result<Vec<Option<Arg>>, (Span, String)> {
+        let spec = kind.spec();
+        // a seed or a pin names the slot it fills, and a name the kind does not have is a typo
+        // rather than something to fill the first slot with: `on` owns `t` on a spline and `u`
+        // on a curve, so the wrong word here would silently pin the right slot at the wrong
+        // number.  Checked before anything is assembled, so the message is about what was
+        // written and not about what it came to.
+        for a in &self.args {
+            let OpArg::Slot { key, .. } = a else { continue };
+            if !spec.iter().any(|(n, k)| k.is_param() && *n == key.text) {
+                let word = &self.word.text;
+                let m = format!("`{word}` has no slot `{}` to seed", key.text);
+                return Err((key.span, m));
+            }
+        }
+        let mut out: Vec<Option<Arg>> = vec![None; spec.len()];
+        let mut ents: Vec<Ref> = self.ops.clone();
+        // `distance line1` is the distance between the line's own ends — the one prefix word
+        // that is sugar for a statement about something else's parts
+        if kind == CKind::Distance && self.ops.len() == 1 {
+            let r = &self.ops[0];
+            ents = ["p1", "p2"]
+                .iter()
+                .map(|f| Ref {
+                    root: r.root.clone(),
+                    path: vec![Seg::Field(Name::new(*f))],
+                    span: r.span,
+                })
+                .collect();
+        }
+        ents.extend(self.args.iter().filter_map(|a| match a {
+            OpArg::Ent(r) => Some(r.clone()),
+            _ => None,
+        }));
+        let mut next = ents.into_iter();
+        for (i, (name, sk)) in spec.iter().enumerate() {
+            out[i] = if sk.is_entity() {
+                next.next().map(Arg::Ref)
+            } else if sk.is_param() {
+                self.args.iter().find_map(|a| match a {
+                    OpArg::Slot { key, arg } if key.text == *name => Some(arg.clone()),
+                    _ => None,
+                })
+            } else if sk.is_dimension() && i + 1 == spec.len() {
+                self.args.iter().find_map(|a| match a {
+                    OpArg::Dim(t, sp) => Some(Arg::Dim { text: t.clone(), span: *sp }),
+                    _ => None,
+                })
+            } else {
+                self.args.iter().find_map(|a| match a {
+                    OpArg::Named(n, v) if n.text == *name => Some(v.clone()),
+                    _ => None,
+                })
+            };
+        }
+        Ok(out)
+    }
+}
+
+/// A constraint statement: `p0 distance(80) p1 at (12, -4)`.
 #[derive(Clone, Debug)]
 pub struct Relation {
     pub kind: CKind,
@@ -467,16 +610,16 @@ pub struct Relation {
     /// rather than parsed, and for one that carries no placement — in both cases there is no
     /// text yet, and the writeback appends after the statement.
     pub place_span: Span,
-    /// A **drafting word** whose constraint is the pair it stands between — `equal`, which is
-    /// `EqualLength` between lines and `EqualRadius` between circles or arcs (`equal_kind`).
+    /// The statement **as it was written**, where it was written as an operator — which is every
+    /// statement a document contains, since `name(args…)` is retired (spec §9.1).
     ///
-    /// Set only where the word could not be settled as it was read: a chain over *names* does
-    /// not know what kind anything is, since a name may be declared further down the file or
-    /// come from a component.  So the word travels and `program::constrain` settles it once the
-    /// entities are resolved; `kind` is a placeholder until then, and every reader that matters
-    /// asks `constrain` rather than the field.  `None` — the ordinary case — means `kind` is
-    /// what the statement says.
-    pub poly: Option<Name>,
+    /// The word alone does not say which constraint it is: `on` is five, `distance` is six, and
+    /// what tells them apart is the *kinds* of the operands, which a name does not carry until
+    /// elaboration.  So the word and its parentheses travel, `program::constrain` settles them,
+    /// and `kind`/`args` are a placeholder until it does.  `None` is a relation somebody
+    /// **built** rather than wrote — `edit::add_relation`, `program::lift_relation` — where the
+    /// kind is known from the start and the printer works the operator out backwards.
+    pub poly: Option<Written>,
     /// Written `claim …` (§9.7): stated as expected to add no rank, judged by the diagnosis and
     /// never solved for.
     pub claim: bool,
@@ -774,15 +917,14 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
     match k {
         StmtKind::Decl(d) => write_decl(out, d),
         StmtKind::Relation(r) => write_relation(out, r),
+        // the gauges are prefix operators like every other statement (spec §9.1)
         StmtKind::Gauge(Gauge::Ground(r)) => {
-            out.push_str("ground(");
+            out.push_str("ground ");
             write_ref(out, r);
-            out.push(')');
         }
         StmtKind::Gauge(Gauge::Fix(r)) => {
-            out.push_str("fix(");
+            out.push_str("fix ");
             write_ref(out, r);
-            out.push(')');
         }
         StmtKind::Orient(o) => write_orient(out, o),
         StmtKind::Instance(i) => {
@@ -949,23 +1091,21 @@ pub(crate) fn decl_tail(d: &Decl, seed: &[f64]) -> String {
     out
 }
 
-/// What a `Param` slot's number comes to, seeded or pinned.
+/// `hint(a: 1, b: 2)` from its parts, or nothing at all when there are none.
 ///
-/// `hint(t: 0.4)` and `t == 0.4` are the same number read the same way — a literal or an
-/// expression, and the span an edit would splice it at.  Which of the two it is, is the word,
-/// and the word is this one flag.
-fn param_arg(value: Option<f64>, text: String, span: Span, pinned: bool) -> Arg {
+/// No leading space: the separator belongs to whatever is joining the statement up, which is
+/// the one place that knows whether anything came before — a splice into a gap does not.  The
+/// printed clause has one spelling, so it has one place that spells it.
+/// What a `Param` slot's number comes to, seeded or pinned: a literal, or an expression over the
+/// parameters in scope with the span an edit would splice it at.  Which of the two it is, is the
+/// word, and the word is this one flag.
+fn seed_arg(value: Option<f64>, text: String, span: Span, pinned: bool) -> Arg {
     match value {
         Some(value) => Arg::Seed { value, pinned },
         None => Arg::SeedExpr { text, pinned, span },
     }
 }
 
-/// `hint(a: 1, b: 2)` from its parts, or nothing at all when there are none.
-///
-/// No leading space: the separator belongs to whatever is joining the statement up, which is
-/// the one place that knows whether anything came before — a splice into a gap does not.  The
-/// printed clause has one spelling, so it has one place that spells it.
 fn hint_of(parts: &[String]) -> String {
     if parts.is_empty() {
         String::new()
@@ -1037,46 +1177,159 @@ fn write_relation(out: &mut String, r: &Relation) {
     if r.claim {
         out.push_str("claim ");
     }
-    // a word still waiting on elaboration prints as the word: it is what somebody wrote, and the
-    // kind beside it is a placeholder that has not been settled yet
-    out.push_str(&match &r.poly {
-        Some(w) => w.text.clone(),
-        None => snake(r.kind.name()),
-    });
-    let spec = r.kind.spec();
-    // a trailing Length or Angle is what the statement *states*, and goes after `==`
-    let tail = spec.len().checked_sub(1).filter(|&i| spec[i].1.is_dimension());
-    let mut parts: Vec<String> = Vec::new();
-    // a slot the constraint owns is a seed, and a seed is in the `hint(…)` clause — unless it
-    // is *pinned*, which is a stated number and belongs beside every other stated number
-    let mut hints: Vec<String> = Vec::new();
-    for (i, (name, sk)) in spec.iter().enumerate() {
-        if Some(i) == tail {
-            continue;
+    // what somebody wrote, where they wrote it: a statement waiting on elaboration prints back
+    // as its operator, and the kind beside it is a placeholder that has not been settled yet
+    if let Some(w) = &r.poly {
+        write_written(out, w);
+        if let Some((t, rr)) = r.place {
+            out.push_str(&format!(" at ({}, {})", num(t), num(rr)));
         }
-        let Some(a) = r.args.get(i).and_then(|a| a.as_ref()) else { continue };
+        return;
+    }
+    out.push_str(&operator_text(r.kind, &r.args));
+    if let Some((t, rr)) = r.place {
+        out.push_str(&format!(" at ({}, {})", num(t), num(rr)));
+    }
+}
+
+fn write_written(out: &mut String, w: &Written) {
+    let mut parts: Vec<String> = Vec::new();
+    let mut hints: Vec<String> = Vec::new();
+    for a in &w.args {
         match a {
-            Arg::Seed { value, pinned: false } => hints.push(format!("{name}: {}", num(*value))),
-            Arg::SeedExpr { text, pinned: false, .. } => hints.push(format!("{name}: {text}")),
-            _ => parts.push(write_arg(name, *sk, a)),
+            OpArg::Named(n, v) => parts.push(format!("{}: {}", n.text, sel_text(v))),
+            OpArg::Ent(r) => {
+                let mut s = String::new();
+                write_ref(&mut s, r);
+                parts.push(s);
+            }
+            OpArg::Dim(t, _) => parts.insert(0, t.clone()),
+            // the slot's own name, as it was written: `t` on a spline and `u` on a curve.  The
+            // same `slot_text` `operator_text` reads it off the spec with, so the two printers
+            // cannot come to spell one slot differently.
+            OpArg::Slot { key, arg } => match slot_text(&key.text, arg) {
+                Some((true, t)) => parts.push(t),
+                Some((false, t)) => hints.push(t),
+                None => {}
+            },
         }
     }
-    out.push('(');
-    out.push_str(&parts.join(", "));
-    out.push(')');
-    if let Some(i) = tail {
-        if let Some(a) = r.args.get(i).and_then(|a| a.as_ref()) {
-            out.push_str(" == ");
-            out.push_str(&dim_text(a));
+    let head = |out: &mut String, r: &Ref| {
+        write_ref(out, r);
+        out.push(' ');
+    };
+    if w.fixity == Fixity::Infix {
+        if let Some(l) = w.ops.first() {
+            head(out, l);
         }
+    }
+    out.push_str(&w.word.text);
+    if !parts.is_empty() {
+        out.push_str(&format!("({})", parts.join(", ")));
+    }
+    let last = if w.fixity == Fixity::Infix { w.ops.get(1) } else { w.ops.first() };
+    if let Some(r) = last {
+        out.push(' ');
+        write_ref(out, r);
     }
     let hint = hint_of(&hints);
     if !hint.is_empty() {
         out.push(' ');
         out.push_str(&hint);
     }
-    if let Some((t, rr)) = r.place {
-        out.push_str(&format!(" at ({}, {})", num(t), num(rr)));
+}
+
+/// A constraint the *library* holds, written as the operator it is spelled with (spec §9.1).
+///
+/// The inverse of parsing, and the one place it is done — `write_relation` prints a statement
+/// somebody built rather than wrote, and `io::describe` prints one for a reader.  So the drawing,
+/// the constraint list and the program panel cannot come to spell one constraint three ways.
+pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
+    let Some((word, fixity)) = kind.operator() else {
+        // nobody writes this one: a drag target, a frame's intrinsics
+        return format!("{}(…)", snake(kind.name()));
+    };
+    let spec = kind.spec();
+    let mut ents: Vec<String> = Vec::new();
+    let mut parens: Vec<String> = Vec::new();
+    let mut hints: Vec<String> = Vec::new();
+    // which of the three a pair of points means is not in the kind's name but in `along:`
+    match kind {
+        CKind::HorizontalDistance => parens.push("along: x".to_string()),
+        CKind::VerticalDistance => parens.push("along: y".to_string()),
+        _ => {}
+    }
+    for (i, (name, sk)) in spec.iter().enumerate() {
+        let Some(a) = args.get(i).and_then(|a| a.as_ref()) else { continue };
+        if sk.is_entity() {
+            ents.push(write_arg(name, *sk, a));
+        } else if sk.is_param() {
+            match slot_text(name, a) {
+                Some((true, t)) => parens.push(t),
+                Some((false, t)) => hints.push(t),
+                None => {}
+            }
+        } else if sk.is_dimension() && i + 1 == spec.len() {
+            parens.insert(0, dim_text(a));
+        } else {
+            parens.push(write_arg(name, *sk, a));
+        }
+    }
+    // the third entity of `symmetry` goes in the parentheses with everything else that is not
+    // one of the two operands
+    while ents.len() > 2 {
+        let extra = ents.pop().expect("more than two");
+        parens.push(extra);
+    }
+    let mut out = String::new();
+    if fixity == Fixity::Infix && !ents.is_empty() {
+        out.push_str(&ents.remove(0));
+        out.push(' ');
+    }
+    out.push_str(word);
+    if !parens.is_empty() {
+        out.push_str(&format!("({})", parens.join(", ")));
+    }
+    for e in &ents {
+        out.push(' ');
+        out.push_str(e);
+    }
+    let hint = hint_of(&hints);
+    if !hint.is_empty() {
+        out.push(' ');
+        out.push_str(&hint);
+    }
+    out
+}
+
+/// One owned slot, written down: `Some((true, "t == 0.4"))` for the parentheses, where a **pin**
+/// is a stated number beside every other stated number, and `Some((false, "t: 0.4"))` for the
+/// `hint(…)` clause, where every seed in the language is (spec §4.3).
+///
+/// **The one place that spells a slot**, asked by `operator_text` off the spec and by
+/// `write_written` off the key the document used — the same bargain `hint_of` strikes with the
+/// clause around it.  `None` is a slot that states no number at all: a `Param` the sketch has
+/// already allocated, which `describe` leaves out because it is the solver's business.
+fn slot_text(name: &str, a: &Arg) -> Option<(bool, String)> {
+    let (pinned, v) = match a {
+        Arg::Seed { value, pinned } => (*pinned, num(*value)),
+        Arg::SeedExpr { text, pinned, .. } => (*pinned, text.clone()),
+        _ => return None,
+    };
+    Some(match pinned {
+        true => (true, format!("{name} == {v}")),
+        false => (false, format!("{name}: {v}")),
+    })
+}
+
+/// A selector's value, as a `style` block writes one.
+fn sel_text(a: &Arg) -> String {
+    match a {
+        Arg::Num(v) => num(*v),
+        Arg::Int(v) => v.to_string(),
+        Arg::Bool(b) => b.to_string(),
+        Arg::Word(w) => w.clone(),
+        other => format!("{other:?}"),
     }
 }
 
@@ -1341,6 +1594,14 @@ impl Tint {
  * each place; a `match` on `&str` cannot be made exhaustive, so this is as far as the linkage
  * goes.) */
 const GAUGES: [&str; 2] = ["ground", "fix"];
+
+/// The words that open a statement of their own, so a name may never be one.  Written down here
+/// because an infix statement begins with a *name*, and a keyword followed by a word that
+/// happens to be an operator — `param radius = 50` — would otherwise read as one.
+const OPENERS: [&str; 12] = [
+    "claim", "component", "param", "port", "unit", "style", "branch", "repeat", "cycle", "ring",
+    "ground", "fix",
+];
 const ORIENTS: [&str; 2] = ["ccw", "cw"];
 const BLOCKS: [&str; 3] = ["repeat", "cycle", "ring"];
 
@@ -1351,7 +1612,7 @@ const BLOCKS: [&str; 3] = ["repeat", "cycle", "ring"];
 /// of `prefix_kind` and derived from the same registry.  `equal` is the polymorphic one
 /// (`equal_kind`).  `close`, which seals a loop, is not a joint — it stands where a link would.
 fn joint_word(w: &str) -> bool {
-    w == "to" || w == "tangent" || w == "equal" || infix_kind(w).is_some()
+    w == "to" || is_operator(w)
 }
 
 /// The words that shape a statement without naming anything — a modifier the parser eats where it
@@ -1403,7 +1664,6 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
     let mut style = 0i32;
     for (i, (t, span)) in lexed.toks.iter().enumerate() {
         let prev = i.checked_sub(1).map(|j| &lexed.toks[j].0);
-        let next = lexed.toks.get(i + 1).map(|(t, _)| t);
         match t {
             Tok::P('(') if matches!(prev, Some(Tok::Ident(w)) if w == "hint") => hint = 1,
             Tok::P('(') | Tok::P('[') if hint > 0 => hint += 1,
@@ -1434,7 +1694,7 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
             }
             Tok::P(_) => None,
             Tok::Ident(w) => {
-                let (tint, then) = tint_word(w, prev, next, at);
+                let (tint, then) = tint_word(w, prev, &lexed.toks, i, at);
                 at = then;
                 tint
             }
@@ -1473,14 +1733,21 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
 
 /// What one word is, given where in its statement it fell, and what the word after it will be.
 /// Split out because it is the whole of the rule and the loop around it is only bookkeeping.
-fn tint_word(w: &str, prev: Option<&Tok>, next: Option<&Tok>, at: Next) -> (Option<Tint>, Next) {
+fn tint_word(
+    w: &str,
+    prev: Option<&Tok>,
+    toks: &[(Tok, Span)],
+    i: usize,
+    at: Next,
+) -> (Option<Tint>, Next) {
+    let next = toks.get(i + 1).map(|(t, _)| t);
     match at {
         Next::Unit => (Some(Tint::Type), Next::Word),
         Next::Class => {
             // the list runs to the next thing a declaration may say — another trailing clause,
             // or a chain's joint.  The same predicate the parser stops on, asked once.
             if TRAILERS.contains(&w) || joint_word(w) || w == "close" {
-                return tint_word(w, prev, next, Next::Word);
+                return tint_word(w, prev, toks, i, Next::Word);
             }
             (Some(Tint::Class), Next::Class)
         }
@@ -1520,7 +1787,10 @@ fn tint_word(w: &str, prev: Option<&Tok>, next: Option<&Tok>, at: Next) -> (Opti
             if w == "claim" {
                 return (Some(Tint::Word), Next::Start);
             }
-            (CKind::from_name(&camel(w)).is_some().then_some(Tint::Relation), Next::Word)
+            // the operator table, not the registry's names: `on` and `equal` are constraints
+            // the language writes and are not any `CKind`'s name, and `point_on_circle` is a
+            // name no document writes any more (spec §9.1)
+            (is_operator(w).then_some(Tint::Relation), Next::Word)
         }
         Next::Word => {
             // `c: circle`, `phase: Angle` — the one place a bare word is a type
@@ -1549,11 +1819,17 @@ fn tint_word(w: &str, prev: Option<&Tok>, next: Option<&Tok>, at: Next) -> (Opti
             // a chain (spec §6.6): the element keyword mid-line, the words standing prefix to
             // it, the joints between links, and `close`.  Each is claimed only in the company a
             // chain puts it in, so a point *named* `tangent` in an argument list stays plain.
-            let next_word = match next {
-                Some(Tok::Ident(n)) => Some(n.as_str()),
-                _ => None,
-            };
-            let at_line_end = matches!(next, Some(Tok::Nl) | None);
+            // past the operator's own parentheses, which is where its right operand is:
+            // `radius(25) circle base(…)` and `p distance(80) q` are the prefix and the joint
+            // they would be without a number on the word.  The same lookahead `chain_starts`
+            // reads, so a word this colours as a relation is one the parser settles as one —
+            // and computed *here*, in the one arm that reads it, since the loop around this runs
+            // per keystroke and every other arm has already returned.
+            let j = past_args(toks, i);
+            let next_word = word_at(toks, j);
+            // both questions off the one cursor: a line ending in a joint word continues its
+            // chain onto the next, and `p distance(80)` ends a line as surely as `p equal` does
+            let at_line_end = matches!(toks.get(j).map(|(t, _)| t), Some(Tok::Nl) | None);
             if opens_link(w, next_word) {
                 // the element keyword names what the link declares; a prefix states a relation
                 return match EntKind::parse(w) {
@@ -1593,8 +1869,12 @@ enum LinkBody {
 
 /// One link of a chain while it is being read: the unary constraint words standing before it,
 /// what it stands on, and where its text sits.
+/// A joint: the word, whatever stood in its parentheses, and where it was written.
+type Joint = (String, Vec<OpArg>, Span);
+
 struct Link {
-    prefixes: Vec<(CKind, Span)>,
+    /// The words standing before it, each with its own parentheses: `horizontal`, `radius(25)`.
+    prefixes: Vec<(Name, Vec<OpArg>)>,
     body: LinkBody,
     /// Where the link's text runs, which is not the declaration's: it starts at the element
     /// keyword rather than at the name.
@@ -1644,35 +1924,76 @@ pub fn equal_kind(left: EntKind, right: EntKind) -> Option<CKind> {
     }
 }
 
-/// The words that may stand between two links but say nothing without a corner to say it at.
-/// A relation chain has no corners, so these are refused there rather than quietly meaning
-/// something weaker than they do in a contour.
-fn contour_word(w: &str) -> bool {
-    w == "to" || w == "tangent"
-}
-
-/// The constraint a chain word names, and how many entities it relates — the one lookup behind
-/// both `prefix_kind` and `infix_kind`, which are asked of the same word in turn.
+/// The word that says nothing without a corner to say it at.  A relation chain has no corners,
+/// so `to` is refused there rather than quietly meaning something weaker than it does in a
+/// contour — it *is* the corner, and there is nothing else it could be.
 ///
-/// Registry-derived, so a future unary or binary constraint joins the chain grammar without
-/// anybody remembering to list it here.  It allocates (`camel`) and scans the registry, so every
-/// caller guards it with the cheap question first — the colouring asks it per identifier per
-/// keystroke.
-fn chain_kind(w: &str) -> Option<(CKind, usize)> {
-    let k = CKind::from_name(&camel(w))?;
-    let spec = k.spec();
-    spec.iter().all(|(_, s)| s.is_entity()).then_some((k, spec.len()))
+/// `tangent` was here too, and is not any more: between two names it is the ordinary infix
+/// operator `belt tangent k1`, which is a statement about two things that touch and needs no
+/// corner to be one.  It is only *in a contour* that it means "and at the point they share".
+fn contour_word(w: &str) -> bool {
+    w == "to"
 }
 
-/// The unary constraint a word names — `horizontal`, `vertical` — eligible to stand prefix to a
-/// declaration.
-fn prefix_kind(w: &str) -> Option<CKind> {
-    chain_kind(w).filter(|&(_, n)| n == 1).map(|(k, _)| k)
+/// Whether a word may stand *before* its one operand — `horizontal`, `vertical`, `radius`,
+/// `distance` (spec §9.1).  Derived from the operator table by asking it, so a word given a
+/// prefix reading later joins the grammar with nothing here to edit.
+fn prefix_word(w: &str) -> bool {
+    [EntKind::Line, EntKind::Circle, EntKind::Arc]
+        .iter()
+        .any(|&k| crate::constraints::prefix_op(w, k).is_some())
 }
 
-/// The binary constraint a word names infix: `perpendicular`, `equal_length`, `equal_radius`.
-fn infix_kind(w: &str) -> Option<CKind> {
-    chain_kind(w).filter(|&(_, n)| n == 2).map(|(k, _)| k)
+/// The identifier at a token position, where there is one.
+///
+/// A free function over the slice, with `P::word_at` a one-line delegator, because the colouring
+/// walks the same tokens without a parser around them and a second copy of one `match` is a
+/// second place for it to change.
+fn word_at(toks: &[(Tok, Span)], i: usize) -> Option<&str> {
+    match toks.get(i).map(|(t, _)| t) {
+        Some(Tok::Ident(n)) => Some(n.as_str()),
+        _ => None,
+    }
+}
+
+/// The token index just past the word at `i` and **its parentheses**, if it has any — the cursor
+/// `opens_link` and the joint test read from now that an operator carries its number on the word
+/// itself.
+///
+/// `radius(25) circle base(center: c)` opens a chain exactly as `horizontal line l(a, b)` does,
+/// and `p distance(80) q` is a joint exactly as `p equal q` is — but in both, the token after the
+/// word is `(` and not the word the test is looking for.  Reading only `i + 1` made the
+/// parenthesised prefix open no chain, which routed it to `relation()` and had `refr()` swallow
+/// the keyword `circle` as an operand — while the *same* form parsed mid-chain, where `link`
+/// reads the arguments itself — and left every parenthesised infix operator uncoloured.
+///
+/// An **index** and not a word, the shape `past_ref` already uses: a caller needs to ask two
+/// things at that position — what word is there, and whether the line ends there — and a lookahead
+/// that answered only the first left `p distance(80)` at the end of a line reading as neither.
+/// A free function over the token slice because `chain_starts` and `highlight` both ask it, and
+/// what `opens_link` already says about itself holds here: written twice, the two drift at once.
+fn past_args(toks: &[(Tok, Span)], i: usize) -> usize {
+    let mut j = i + 1;
+    if toks.get(j).map(|(t, _)| t) != Some(&Tok::P('(')) {
+        return j;
+    }
+    let mut depth = 0i32;
+    loop {
+        match toks.get(j).map(|(t, _)| t) {
+            Some(Tok::P('(')) => depth += 1,
+            Some(Tok::P(')')) => {
+                depth -= 1;
+                if depth == 0 {
+                    return j + 1;
+                }
+            }
+            // an unclosed list is a syntax error the parser proper reports; this lookahead only
+            // has to stop rather than run off the end
+            Some(Tok::Nl) | None => return j,
+            _ => {}
+        }
+        j += 1;
+    }
 }
 
 /// Whether `w`, with `next` the identifier after it, opens a chain link — an element keyword
@@ -1684,14 +2005,13 @@ fn infix_kind(w: &str) -> Option<CKind> {
 /// always been; written twice, the two copies drifted on exactly that clause, and a colour that
 /// disagrees with the parser is the one thing `highlight` exists to rule out.
 fn opens_link(w: &str, next: Option<&str>) -> bool {
-    // the lookahead first: it is a pointer test, where `prefix_kind` allocates
+    // the lookahead first: it is a pointer test, where `prefix_word` scans the operator table
     let Some(n) = next else { return false };
     if EntKind::parse(w).is_some() {
         return true; // a declaration names itself
     }
-    (EntKind::parse(n).is_some() || prefix_kind(n).is_some()) && prefix_kind(w).is_some()
+    (EntKind::parse(n).is_some() || prefix_word(n)) && prefix_word(w)
 }
-
 
 /// What the field at a boundary slot is called, for a message about it.
 fn boundary_name(k: EntKind, slot: usize) -> &'static str {
@@ -2147,18 +2467,10 @@ impl<'a> P<'a> {
                 Some(StmtKind::Unit(self.ident()?))
             }
             "style" => self.style_rule(),
-            g if GAUGES.contains(&g) => {
-                self.i += 1;
-                let ground = w == "ground";
-                if !self.want_p('(') {
-                    return None;
-                }
-                let r = self.refr()?;
-                if !self.want_p(')') {
-                    return None;
-                }
-                Some(StmtKind::Gauge(if ground { Gauge::Ground(r) } else { Gauge::Fix(r) }))
-            }
+            // **`ccw` and `cw` keep a call.**  Every other statement is a prefix or an infix
+            // operator, and under that rule these would be `a ccw(c) b` — which reorders three
+            // points that are symmetric, since the predicate is about the *triangle* and not
+            // about a pair with a decoration.  Spec §9.6 keeps the call for exactly that reason.
             o if ORIENTS.contains(&o) => {
                 self.i += 1;
                 let ccw = w == "ccw";
@@ -2174,6 +2486,14 @@ impl<'a> P<'a> {
                     }
                 }
                 Some(StmtKind::Orient(Orient { ccw, pts, raw: None }))
+            }
+            // the gauges are prefix operators like any other: `ground p1`, `fix c.r`
+            g if GAUGES.contains(&g) => {
+                self.i += 1;
+                let ground = w == "ground";
+                let r = self.refr()?;
+                self.end_of_stmt();
+                Some(StmtKind::Gauge(if ground { Gauge::Ground(r) } else { Gauge::Fix(r) }))
             }
             "branch" => {
                 self.i += 1;
@@ -2313,35 +2633,72 @@ impl<'a> P<'a> {
     /// Whether what stands here opens a declaration — possibly a chain of them.
     fn chain_starts(&self) -> bool {
         let Some(Tok::Ident(w)) = self.peek() else { return false };
-        let next = self.word_at(self.i + 1);
+        let next = word_at(&self.t, past_args(&self.t, self.i));
         // `a_br equal a_tr` — a name, then a word that relates it to another.  Nothing else in
         // the language has that shape: a statement opening with a bare name is an instance, and
         // that is a name followed by a colon.  `claim parallel(…)` has the shape too — a binary
         // relation's name doubles as an infix joint word — but `claim` qualifies a statement,
         // it never names an element.
-        if w != "claim"
-            && next.is_some_and(joint_word)
+        // a word that *opens* a statement is not an operand, however the next word reads:
+        // `param radius = 50` is a definition and not `param` related to `radius`
+        if !OPENERS.contains(&w.as_str())
             && EntKind::parse(w).is_none()
-            && prefix_kind(w).is_none()
+            && !prefix_word(w)
+            && !is_operator(w)
         {
-            return true;
+            // the operand may be a dotted name — `l.p1 distance(6) l.p2` — so the word that
+            // relates it is looked for past the whole reference, not at the next token
+            if self.past_ref(self.i).and_then(|j| self.word_at(j)).is_some_and(joint_word) {
+                return true;
+            }
         }
         opens_link(w, next)
     }
 
+    /// The token index just past a reference beginning at `j` — a name, then any run of
+    /// `.field` and `[index]` — or `None` where no reference begins there.
+    fn past_ref(&self, mut j: usize) -> Option<usize> {
+        if !matches!(self.t.get(j).map(|(t, _)| t), Some(Tok::Ident(_))) {
+            return None;
+        }
+        j += 1;
+        loop {
+            match self.t.get(j).map(|(t, _)| t) {
+                Some(Tok::P('.')) => j += 2,
+                Some(Tok::P('[')) => {
+                    let mut d = 0i32;
+                    loop {
+                        match self.t.get(j).map(|(t, _)| t) {
+                            Some(Tok::P('[')) => d += 1,
+                            Some(Tok::P(']')) => {
+                                d -= 1;
+                                if d == 0 {
+                                    j += 1;
+                                    break;
+                                }
+                            }
+                            Some(Tok::Nl) | None => return Some(j),
+                            _ => {}
+                        }
+                        j += 1;
+                    }
+                }
+                _ => return Some(j),
+            }
+        }
+    }
+
     /// The identifier at a token position, where there is one — what `opens_link` reads ahead.
     fn word_at(&self, i: usize) -> Option<&str> {
-        match self.t.get(i).map(|(t, _)| t) {
-            Some(Tok::Ident(n)) => Some(n.as_str()),
-            _ => None,
-        }
+        word_at(&self.t, i)
     }
 
     /// `[prefix…] decl (joint [prefix…] decl)* [joint "close"]`.
     fn chain(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
+        let lo = self.here().lo as usize;
         let mut links = vec![self.link()?];
-        let mut joints: Vec<(String, Span)> = Vec::new();
-        let mut close: Option<(String, Span)> = None;
+        let mut joints: Vec<Joint> = Vec::new();
+        let mut close: Option<Joint> = None;
         loop {
             let joint = match self.peek() {
                 Some(Tok::Ident(w)) if joint_word(w) => w.clone(),
@@ -2349,47 +2706,96 @@ impl<'a> P<'a> {
             };
             let wspan = self.here();
             self.i += 1;
+            // an infix operator carries its own parentheses: `p1 distance(80) p2` is a chain of
+            // one joint, which is the unification that makes a lone statement and a chain one
+            // grammar rather than two
+            let args = self.op_args(&joint)?;
             // a line ending in a joint word continues the chain on the next — the one place a
             // statement runs past its line's end
             self.skip_ends();
             if self.eat_word("close") {
-                close = Some((joint, Span::new(wspan.lo as usize, self.prev_hi())));
+                close = Some((joint, args, Span::new(wspan.lo as usize, self.prev_hi())));
                 break;
             }
-            joints.push((joint, wspan));
+            joints.push((joint, args, wspan));
             links.push(self.link()?);
         }
+        // the trailing clauses a statement may carry — a lone infix operator is a one-joint
+        // chain, so it carries them here as it would anywhere else
+        let mut place = None;
+        let mut place_span = Span::default();
+        let mut seeds: Vec<OpArg> = Vec::new();
+        loop {
+            if self.eat_hint_clause().is_some() {
+                for h in self.hint_body("t: 0.4")? {
+                    seeds.push(h.into());
+                }
+            } else if place.is_none() && !joints.is_empty() && self.peek_word("at") {
+                // a placement qualifies a *dimension*, so it is read only where the line states
+                // one — after a declaration, `at (…)` is not a clause the language has
+                let at = self.here().lo as usize;
+                self.i += 1;
+                if !self.want_p('(') {
+                    return None;
+                }
+                let t = self.number()?;
+                if !self.want_p(',') {
+                    return None;
+                }
+                let r = self.number()?;
+                if !self.want_p(')') {
+                    return None;
+                }
+                place = Some((t, r));
+                place_span = Span::new(at, self.prev_hi());
+            } else {
+                break;
+            }
+        }
         self.end_of_stmt();
-        self.desugar(links, joints, close, next_id, out);
+        let whole = Span::new(lo, self.prev_hi());
+        let first = out.len();
+        self.desugar(links, joints, close, whole, next_id, out);
+        // a placement and a seed qualify the one statement the line states, which for a lone
+        // infix operator is the statement itself
+        if let Some(StmtKind::Relation(r)) = out.get_mut(first).map(|s| &mut s.kind) {
+            if let Some(p) = place {
+                r.place = Some(p);
+                r.place_span = place_span;
+            }
+            if let Some(w) = r.poly.as_mut() {
+                w.args.extend(seeds);
+            }
+        }
         Some(())
     }
 
     /// `[prefix…] KIND name(…)`, or a bare name — the two things a link may stand on.
     fn link(&mut self) -> Option<Link> {
-        let mut prefixes: Vec<(CKind, Span)> = Vec::new();
+        let mut prefixes: Vec<(Name, Vec<OpArg>)> = Vec::new();
         let kind = loop {
-            let Some(Tok::Ident(w)) = self.peek() else {
+            let Some(Tok::Ident(w)) = self.peek().cloned() else {
                 self.fail("expected an element");
                 return None;
             };
-            if let Some(k) = EntKind::parse(w) {
+            if let Some(k) = EntKind::parse(&w) {
                 break Some(k);
             }
             // a name, not a keyword: the link stands on something declared elsewhere.  A prefix
             // word only reaches here when an element follows it, so this cannot swallow one.
-            if prefixes.is_empty() && prefix_kind(w).is_none() {
+            if prefixes.is_empty() && !prefix_word(&w) {
                 break None;
             }
-            match prefix_kind(w) {
-                Some(c) => {
-                    prefixes.push((c, self.here()));
-                    self.i += 1;
-                }
-                None => {
-                    self.fail("expected an element");
-                    return None;
-                }
+            if !prefix_word(&w) {
+                self.fail("expected an element");
+                return None;
             }
+            // a prefix word carries its own parentheses like any other operator:
+            // `radius(25) circle base(center: c)`
+            let name = Name { text: w, span: self.here() };
+            self.i += 1;
+            let args = self.op_args(&name.text)?;
+            prefixes.push((name, args));
         };
         let lo = self.here().lo as usize;
         let Some(kind) = kind else {
@@ -2411,13 +2817,21 @@ impl<'a> P<'a> {
     fn desugar(
         &mut self,
         mut links: Vec<Link>,
-        joints: Vec<(String, Span)>,
-        close: Option<(String, Span)>,
+        joints: Vec<Joint>,
+        close: Option<Joint>,
+        whole: Span,
         next_id: &mut u32,
         out: &mut Vec<Stmt>,
     ) {
         let chained = links.len() > 1 || close.is_some();
         let n = links.len();
+        // **A lone infix operator is a one-joint chain**, and that is a unification rather than
+        // a new case — but the statement it makes occupies its whole line, so it is recorded as
+        // the ordinary statement it is: a whole-line span to splice, and no chain to be part of.
+        let lone = n == 2
+            && joints.len() == 1
+            && close.is_none()
+            && links.iter().all(|l| l.kind().is_none());
         let mut sound = true;
 
         // **operand form decides what kind of chain this is.**  Declarations draw a contour and
@@ -2460,7 +2874,7 @@ impl<'a> P<'a> {
         } else if chained && sound {
             // a relation chain: the contour words say nothing without a corner, and there is no
             // loop to close
-            for (w, sp) in joints.iter().chain(close.iter()) {
+            for (w, _, sp) in joints.iter().chain(close.iter()) {
                 if contour_word(w) {
                     self.errs.push(SynErr {
                         span: *sp,
@@ -2472,7 +2886,7 @@ impl<'a> P<'a> {
                     sound = false;
                 }
             }
-            if let Some((_, sp)) = &close {
+            if let Some((_, _, sp)) = &close {
                 self.errs.push(SynErr {
                     span: *sp,
                     message: "only a contour closes: a relation among names has no loop"
@@ -2486,10 +2900,10 @@ impl<'a> P<'a> {
         // agreement, and the name fills whichever side left its boundary field out
         if chained && contour && sound {
             for i in 0..n - 1 {
-                self.thread(&mut links, i, i + 1, joints[i].1);
+                self.thread(&mut links, i, i + 1, joints[i].2);
             }
             match &close {
-                Some((_, sp)) => self.thread(&mut links, n - 1, 0, *sp),
+                Some((_, _, sp)) => self.thread(&mut links, n - 1, 0, *sp),
                 None => {
                     self.loose_end(&links[0], true);
                     self.loose_end(&links[n - 1], false);
@@ -2506,27 +2920,36 @@ impl<'a> P<'a> {
         let first = out.len();
         for (i, link) in links.into_iter().enumerate() {
             if i > 0 && sound {
-                let (w, sp) = &joints[i - 1];
-                out.extend(self.joint_stmt(w, *sp, at(i - 1), at(i), Chained::Joint, next_id));
+                let (w, args, sp) = &joints[i - 1];
+                let (span, how) =
+                    if lone { (whole, Chained::No) } else { (*sp, Chained::Joint) };
+                out.extend(self.joint_stmt(w, args, *sp, span, at(i - 1), at(i), how, next_id));
             }
             let ent = match &link.body {
                 LinkBody::Decl(d) => Ref { root: d.name.clone(), path: Vec::new(), span: d.name.span },
                 LinkBody::Ref(r) => r.clone(),
             };
-            for (k, sp) in &link.prefixes {
+            for (word, args) in &link.prefixes {
+                let sp = word.span;
                 let rel = Relation {
-                    kind: *k,
-                    args: vec![Some(Arg::Ref(ent.clone()))],
+                    kind: CKind::Coincident,   // a placeholder `program::constrain` replaces
+                    args: Vec::new(),
                     place: None,
                     place_span: Span::default(),
-                    poly: None,
+                    poly: Some(Written {
+                        word: word.clone(),
+                        fixity: Fixity::Prefix,
+                        ops: vec![ent.clone()],
+                        args: args.clone(),
+                        span: sp,
+                    }),
                     claim: false,
                 };
                 *next_id += 1;
                 out.push(Stmt {
                     id: StmtId(*next_id),
                     kind: StmtKind::Relation(rel),
-                    span: *sp,
+                    span: sp,
                     chained: Chained::Prefix,
                 });
             }
@@ -2542,9 +2965,10 @@ impl<'a> P<'a> {
                 chained: if chained { Chained::Link } else { Chained::No },
             });
         }
-        if let Some((w, sp)) = close {
-            let sealed =
-                sound.then(|| self.joint_stmt(&w, sp, at(n - 1), at(0), Chained::Close, next_id));
+        if let Some((w, args, sp)) = close {
+            let sealed = sound.then(|| {
+                self.joint_stmt(&w, &args, sp, sp, at(n - 1), at(0), Chained::Close, next_id)
+            });
             match sealed.flatten() {
                 Some(st) => out.push(st),
                 // `to close` states nothing, so no statement owns its words; the last link's
@@ -2560,18 +2984,21 @@ impl<'a> P<'a> {
     }
 
     /// The statement one joint states, where it states one — a plain corner states nothing.
+    #[allow(clippy::too_many_arguments)]
     fn joint_stmt(
         &mut self,
         word: &str,
+        args: &[OpArg],
         at: Span,
+        span: Span,
         left: (&Ref, Option<EntKind>),
         right: (&Ref, Option<EntKind>),
         chained: Chained,
         next_id: &mut u32,
     ) -> Option<Stmt> {
-        let rel = self.joint_relation(word, at, left, right)?;
+        let rel = self.joint_relation(word, args, at, left, right)?;
         *next_id += 1;
-        Some(Stmt { id: StmtId(*next_id), kind: StmtKind::Relation(rel), span: at, chained })
+        Some(Stmt { id: StmtId(*next_id), kind: StmtKind::Relation(rel), span, chained })
     }
 
     /// Resolve one joint's shared point between link `li` (its exit) and link `ri` (its entry).
@@ -2661,6 +3088,7 @@ impl<'a> P<'a> {
     fn joint_relation(
         &mut self,
         word: &str,
+        extra: &[OpArg],
         at: Span,
         left: (&Ref, Option<EntKind>),
         right: (&Ref, Option<EntKind>),
@@ -2668,80 +3096,65 @@ impl<'a> P<'a> {
         use EntKind::{Arc, Line};
         let (lref, lk) = left;
         let (rref, rk) = right;
-        let rel = |kind: CKind, args: Vec<Option<Arg>>| {
-            Some(Relation { kind, args, place: None, place_span: Span::default(), poly: None, claim: false })
-        };
-        let ent = |r: &Ref| Some(Arg::Ref(r.clone()));
         if word == "to" {
             return None;
         }
-        // `equal`: the pair decides which equality it is, so it is resolved here when the chain
-        // declared its elements and carried to elaboration when it only named them
-        if word == "equal" {
-            return match (lk, rk) {
-                (Some(a), Some(b)) => match equal_kind(a, b) {
-                    Some(k) => rel(k, vec![ent(lref), ent(rref)]),
-                    None => {
-                        self.errs.push(SynErr {
-                            span: at,
-                            message: format!(
-                                "`equal` does not relate a {} to a {}",
-                                a.as_str(),
-                                b.as_str()
-                            ),
-                        });
-                        None
-                    }
-                },
-                _ => Some(Relation {
-                    kind: CKind::EqualLength,   // a placeholder `constrain` replaces
-                    args: vec![ent(lref), ent(rref)],
-                    place: None,
-                    place_span: Span::default(),
-                    poly: Some(Name { text: word.to_string(), span: at }),
-                    claim: false,
+        // A joint is the infix operator its word already is, written between two links instead
+        // of between two names — so it makes the same `Written` a lone statement does, and
+        // `program::constrain` settles both.  The chain contributes the one thing it knows and
+        // the operator cannot: *which end* two links meet at.
+        let written = |w: &str, ops: Vec<Ref>, args: Vec<OpArg>| {
+            Some(Relation {
+                kind: CKind::Coincident,
+                args: Vec::new(),
+                place: None,
+                place_span: Span::default(),
+                poly: Some(Written {
+                    word: Name { text: w.to_string(), span: at },
+                    fixity: Fixity::Infix,
+                    ops,
+                    args,
+                    span: at,
                 }),
-            };
-        }
+                claim: false,
+            })
+        };
+        let end = |w: &str| {
+            vec![OpArg::Named(Name { text: "at".into(), span: at }, Arg::Word(w.to_string()))]
+        };
         match (lk, rk) {
             // the joint knows the shared point, so tangency is stated *at* it — the regular
             // form, with `at:` read off the direction of travel
-            (Some(Line), Some(Arc)) if word == "tangent" => rel(
-                CKind::TangentArcLine,
-                vec![ent(rref), ent(lref), Some(Arg::Word("start".to_string()))],
-            ),
-            (Some(Arc), Some(Line)) if word == "tangent" => rel(
-                CKind::TangentArcLine,
-                vec![ent(lref), ent(rref), Some(Arg::Word("end".to_string()))],
-            ),
+            (Some(Line), Some(Arc)) if word == "tangent" => {
+                written("tangent", vec![rref.clone(), lref.clone()], end("start"))
+            }
+            (Some(Arc), Some(Line)) if word == "tangent" => {
+                written("tangent", vec![lref.clone(), rref.clone()], end("end"))
+            }
             // two straight runs meeting tangent share a point and a direction: collinear
             (Some(Line), Some(Line)) if word == "tangent" => {
-                rel(CKind::Parallel, vec![ent(lref), ent(rref)])
+                written("parallel", vec![lref.clone(), rref.clone()], extra.to_vec())
             }
-            _ => {
-                // any binary constraint is an infix spelling of itself: `perpendicular`,
-                // `equal_length`, `equal_radius`, …  Where the kinds are known the pair is
-                // checked here; where they are not, `to_arg` checks them at elaboration.
-                if let Some(k) = infix_kind(word) {
-                    let spec = k.spec();
-                    let fits = |s: SpecKind, e: Option<EntKind>| {
-                        e.is_none_or(|e| crate::constraints::kind_matches(s, e))
-                    };
-                    if fits(spec[0].1, lk) && fits(spec[1].1, rk) {
-                        return rel(k, vec![ent(lref), ent(rref)]);
-                    }
-                }
-                let name = |k: Option<EntKind>| k.map(|k| k.as_str()).unwrap_or("that");
+            // two arcs meeting at a corner already touch there, so `TangentCircleCircle` would
+            // be a row that is zero at every solution — a *tangency between names* is a real
+            // statement, but at a shared corner there is nothing left for it to say
+            (Some(a), Some(b))
+                if word == "tangent"
+                    && matches!(a, Arc | EntKind::Circle)
+                    && matches!(b, Arc | EntKind::Circle) =>
+            {
                 self.errs.push(SynErr {
                     span: at,
                     message: format!(
-                        "`{word}` does not join {} to {}",
-                        name(lk),
-                        name(rk)
+                        "`tangent` does not join a {} to a {} at a corner: they already meet \
+                         there, and there is no regular form left to state",
+                        a.as_str(),
+                        b.as_str()
                     ),
                 });
                 None
             }
+            _ => written(word, vec![lref.clone(), rref.clone()], extra.to_vec()),
         }
     }
 
@@ -3227,112 +3640,66 @@ impl<'a> P<'a> {
         })
     }
 
+    /// One constraint, written as an operator (spec §9.1).
+    ///
+    /// `PREFIX [( args )] OPERAND` or `OPERAND INFIX [( args )] OPERAND`, then the trailing
+    /// clauses every statement may carry: `hint(t: 0.4)` and the callout's `at (t, r)`.
+    ///
+    /// Nothing is *resolved* here.  What a word means depends on the kinds of its operands, and
+    /// a name does not carry its kind until elaboration — so the word and its parentheses travel
+    /// in `Relation::poly` and `program::constrain` settles them.  One path, where 0.6 had a
+    /// longhand and a chain.
     fn relation(&mut self) -> Option<Relation> {
-        let name = self.ident()?;
-        let Some(kind) = CKind::from_name(&camel(&name.text)) else {
-            self.errs.push(SynErr {
-                span: name.span,
-                message: format!("`{}` is not a constraint", name.text),
-            });
-            return None;
-        };
-        let spec = kind.spec();
-        let mut args: Vec<Option<Arg>> = vec![None; spec.len()];
-        if !self.want_p('(') {
-            return None;
-        }
-        let mut positional = 0usize;
-        while !self.eat_p(')') {
-            let label = match (self.peek().cloned(), self.t.get(self.i + 1).map(|(t, _)| t)) {
-                (Some(Tok::Ident(s)), Some(Tok::P(':'))) => {
-                    self.i += 2;
-                    Some(s)
-                }
-                // `t == 0.37` pins: the label is the slot's own name.  A *seed* is not written
-                // here — it is `hint(t: 0.37)`, with every other seed in the language.
-                (Some(Tok::Ident(s)), Some(Tok::Eq)) => {
-                    self.fail(&format!(
-                        "`{s}` is a seed, and a seed goes in a `hint(…)` clause: \
-                         `{}(…) hint({s}: …)`.  `{s} == …` pins it instead.",
-                        name.text
-                    ));
+        let lo = self.here().lo as usize;
+        let (word, fixity, ops, args) = match self.peek().cloned() {
+            Some(Tok::Ident(w)) if is_operator(&w) => {
+                let word = Name { text: w, span: self.here() };
+                self.i += 1;
+                let args = self.op_args(&word.text)?;
+                let r = self.refr()?;
+                (word, Fixity::Prefix, vec![r], args)
+            }
+            _ => {
+                let left = self.refr()?;
+                let Some(Tok::Ident(w)) = self.peek().cloned() else {
+                    self.fail("a statement relates two things with a word between them");
+                    return None;
+                };
+                if !is_operator(&w) {
+                    self.fail(&format!("`{w}` is not a constraint"));
                     return None;
                 }
-                (Some(Tok::Ident(s)), Some(Tok::EqEq)) => Some(s),
-                _ => None,
-            };
-            let slot = match &label {
-                Some(l) => match spec.iter().position(|(n, _)| n == l) {
-                    Some(i) => i,
-                    None => {
-                        self.fail(&format!("`{}` has no argument `{l}`", name.text));
-                        return None;
-                    }
-                },
-                None => {
-                    // positional arguments fill the slots that were not labelled, in order
-                    while positional < spec.len() && args[positional].is_some() {
-                        positional += 1;
-                    }
-                    positional
-                }
-            };
-            if slot >= spec.len() {
-                self.fail(&format!("`{}` takes {} arguments", name.text, spec.len()));
-                return None;
+                let word = Name { text: w, span: self.here() };
+                self.i += 1;
+                let args = self.op_args(&word.text)?;
+                let right = self.refr()?;
+                (word, Fixity::Infix, vec![left, right], args)
             }
-            let a = self.arg(spec[slot].1)?;
-            args[slot] = Some(a);
-            if label.is_none() {
-                positional += 1;
-            }
-            if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
-                self.fail("expected `,` or `)`");
-                return None;
-            }
-        }
-        // the trailing `== …`: everything to the end of the logical line, verbatim
+        };
+        self.relation_tail(word, fixity, ops, args, lo)
+    }
+
+    /// Everything a relation statement may carry after its operands.
+    fn relation_tail(
+        &mut self,
+        word: Name,
+        fixity: Fixity,
+        ops: Vec<Ref>,
+        args: Vec<OpArg>,
+        lo: usize,
+    ) -> Option<Relation> {
+        let mut args = args;
         let mut place = None;
         let mut place_span = Span::default();
-        if self.peek() == Some(&Tok::EqEq) {
-            let after = self.here().hi as usize;
-            self.i += 1;
-            let (text, span, pl, end) = self.raw_dimension(after);
-            if let Some((v, sp)) = pl {
-                place = Some(v);
-                place_span = sp;
-            }
-            let tail = spec.len().saturating_sub(1);
-            if spec.last().is_some_and(|(_, k)| k.is_dimension()) {
-                args[tail] = Some(Arg::Dim { text, span });
-            } else {
-                self.errs.push(SynErr {
-                    span,
-                    message: format!("`{}` states no number", name.text),
-                });
-            }
-            // skip every token the raw region swallowed
-            while self.i < self.t.len() && (self.t[self.i].1.lo as usize) < end {
-                self.i += 1;
-            }
-        }
-        // trailing clauses: `hint(t: 0.4)` — every seed in the language is written in one — and
-        // the callout's `at (t, r)`, which is a placement and not a seed (spec §6.4)
         loop {
-            // a relation's clause needs no span of its own: its numbers are spliced where they
-            // stand, and one it never wrote is a slot the constraint seeds for itself
             if self.eat_hint_clause().is_some() {
+                // a seed for a slot the constraint owns — the same clause as everywhere else,
+                // and read by the same body, so one hint is parsed in one place
                 for h in self.hint_body("t: 0.4")? {
-                    let slot = spec.iter().position(|(n, k)| n == &h.key && *k == SpecKind::Param);
-                    let Some(i) = slot else {
-                        let m = format!("`{}` has no slot `{}` to seed", name.text, h.key);
-                        self.fail_at(h.at, &m);
-                        return None;
-                    };
-                    args[i] = Some(param_arg(h.value, h.text, h.span, false));
+                    args.push(h.into());
                 }
             } else if place.is_none() && self.peek_word("at") {
-                let lo = self.here().lo as usize;
+                let at = self.here().lo as usize;
                 self.i += 1;
                 if !self.want_p('(') {
                     return None;
@@ -3346,13 +3713,111 @@ impl<'a> P<'a> {
                     return None;
                 }
                 place = Some((t, r));
-                place_span = Span::new(lo, self.prev_hi());
+                place_span = Span::new(at, self.prev_hi());
             } else {
                 break;
             }
         }
         self.end_of_stmt();
-        Some(Relation { kind, args, place, place_span, poly: None, claim: false })
+        Some(Relation {
+            kind: CKind::Coincident,   // a placeholder `program::constrain` replaces
+            args: Vec::new(),
+            place,
+            place_span,
+            poly: Some(Written {
+                word,
+                fixity,
+                ops,
+                args,
+                span: Span::new(lo, self.prev_hi()),
+            }),
+            claim: false,
+        })
+    }
+
+    /// What stood in an operator's parentheses — nothing at all where there are none.
+    ///
+    /// An **unlabelled** item is the number, except for the three words that take a third entity
+    /// (`symmetry`, `ccw`, `cw`): the word decides, which is why this takes it.  The number is
+    /// read as raw text and handed to `expr.rs`, exactly as the text after `==` was — the
+    /// dimension sub-language is that module's, and a second tokenizer here would be a second
+    /// copy of rules like the one that makes `3 1/8` a number and `1' 6"` one length.
+    fn op_args(&mut self, word: &str) -> Option<Vec<OpArg>> {
+        if !self.eat_p('(') {
+            return Some(Vec::new());
+        }
+        let takes_entity = matches!(word, "symmetry" | "ccw" | "cw");
+        let mut out = Vec::new();
+        while !self.eat_p(')') {
+            match (self.peek().cloned(), self.t.get(self.i + 1).map(|(t, _)| t.clone())) {
+                (Some(Tok::Ident(n)), Some(Tok::P(':'))) => {
+                    let name = Name { text: n, span: self.here() };
+                    self.i += 2;
+                    let v = self.sel_value()?;
+                    out.push(OpArg::Named(name, v));
+                }
+                // `t == 0.4` — the same slot the `hint(…)` clause seeds, *pinned*.  The whole
+                // of the value is kept, expression and all: written inside a component a pin
+                // reads the parameters in scope (`t == t0`), which `flatten` settles later, and
+                // taking only `value` here would pin every one of them at 0.
+                (Some(Tok::Ident(key)), Some(Tok::EqEq)) => {
+                    let at = self.here();
+                    self.i += 2;
+                    let (value, text, span) = self.value_text()?;
+                    let arg = seed_arg(value, text, span, true);
+                    out.push(OpArg::Slot { key: Name { text: key, span: at }, arg });
+                }
+                _ if takes_entity => out.push(OpArg::Ent(self.refr()?)),
+                _ => {
+                    let from = self.here().lo as usize;
+                    let mut depth = 0i32;
+                    while !self.done() {
+                        match self.peek() {
+                            Some(Tok::P('(')) | Some(Tok::P('[')) => depth += 1,
+                            Some(Tok::P(')')) | Some(Tok::P(']')) if depth == 0 => break,
+                            Some(Tok::P(')')) | Some(Tok::P(']')) => depth -= 1,
+                            Some(Tok::P(',')) if depth == 0 => break,
+                            Some(Tok::Nl) => break,
+                            _ => {}
+                        }
+                        self.i += 1;
+                    }
+                    let text = self.text_from(from).trim().to_string();
+                    if text.is_empty() {
+                        self.fail("expected the number this states");
+                        return None;
+                    }
+                    let hi = self.prev_hi();
+                    out.push(OpArg::Dim(text, Span::new(from, hi)));
+                }
+            }
+            if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
+                self.fail("expected `,` or `)`");
+                return None;
+            }
+        }
+        Some(out)
+    }
+
+    /// A selector's value: `side: -1`, `at: start`, `external: true`, `along: x`.
+    fn sel_value(&mut self) -> Option<Arg> {
+        match self.peek().cloned() {
+            Some(Tok::Num(_)) | Some(Tok::P('-')) | Some(Tok::P('+')) => {
+                Some(Arg::Num(self.number()?))
+            }
+            Some(Tok::Ident(w)) if w == "true" || w == "false" => {
+                self.i += 1;
+                Some(Arg::Bool(w == "true"))
+            }
+            Some(Tok::Ident(w)) => {
+                self.i += 1;
+                Some(Arg::Word(w))
+            }
+            _ => {
+                self.fail("expected a value");
+                None
+            }
+        }
     }
 
     /// Everything after `==` to the end of the logical line, as written.
@@ -3408,45 +3873,6 @@ impl<'a> P<'a> {
         let trimmed = text.trim();
         let span = Span::new(from + lead, from + lead + trimmed.len());
         (trimmed.to_string(), span, place, end)
-    }
-
-    fn arg(&mut self, kind: SpecKind) -> Option<Arg> {
-        // `t == 0.37` in the argument list: a slot the constraint owns, *pinned*.  Somebody said
-        // where along and the solver is not to argue, which is a stated number and belongs where
-        // every other stated number is.  A seeded one is `hint(t: 0.37)`, read by `hint_body` —
-        // and read into the same `Arg`, since the word is the whole of the difference.
-        if kind == SpecKind::Param {
-            if matches!(self.peek(), Some(Tok::Ident(_)))
-                && self.t.get(self.i + 1).map(|(t, _)| t) == Some(&Tok::EqEq)
-            {
-                self.i += 2;
-            }
-            let (v, text, span) = self.value_text()?;
-            return Some(param_arg(v, text, span, true));
-        }
-        match self.peek().cloned() {
-            Some(Tok::Num(_)) | Some(Tok::P('-')) | Some(Tok::P('+')) => {
-                let v = self.number()?;
-                Some(match kind {
-                    SpecKind::Int => Arg::Int(v as i64),
-                    _ => Arg::Num(v),
-                })
-            }
-            Some(Tok::Ident(s)) if s == "true" || s == "false" => {
-                self.i += 1;
-                Some(Arg::Bool(s == "true"))
-            }
-            // a bare word in a Str slot is the word; anywhere else it names an entity
-            Some(Tok::Ident(s)) if kind == SpecKind::Str => {
-                self.i += 1;
-                Some(Arg::Word(s))
-            }
-            Some(Tok::Ident(_)) => Some(Arg::Ref(self.refr()?)),
-            _ => {
-                self.fail("expected an argument");
-                None
-            }
-        }
     }
 
     fn end_of_stmt(&mut self) {

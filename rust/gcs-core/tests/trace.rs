@@ -29,10 +29,10 @@ curve unwind(c: circle, datum: line, phase: Angle)(u) over (5, 90) =
                  y: c.center.y + c.r * (sin(u + phase) - 3 * u * pi / 180 * cos(u + phase)))
     line rad(c.center, t)
     line s(t, p)
-    point_on_circle(t, c)
-    perpendicular(rad, s)
-    angle(datum, rad) == u + phase
-    distance(t, p) == c.r * u * pi / 180
+    t on c
+    rad perpendicular s
+    datum angle(u + phase) rad
+    t distance(c.r * u * pi / 180) p
   }
 
 point  o hint(x: 0, y: 0)
@@ -43,9 +43,9 @@ circle base(center: o) hint(r: 20) class construction
 curve  formula = involute(base, phase: 0) over (5, 60)
 curve  string = unwind(base, datum, phase: 0) over (5, 60)
 
-radius(base) == 20
-ground(o)
-ground(ax)
+radius(20) base
+ground o
+ground ax
 ";
 
 fn build(src: &str) -> gcs_core::program::Elaborated {
@@ -94,7 +94,7 @@ fn the_taut_string_traces_the_involute() {
 /// perpendicular to the radius at the tangent point, as long as the arc unwound.
 #[test]
 fn a_point_lands_on_a_traced_curve() {
-    let src = format!("{DOC}point q hint(x: 28, y: 22)\npoint_on_curve(q, string) hint(u: 30)\n");
+    let src = format!("{DOC}point q hint(x: 28, y: 22)\nq on string hint(u: 30)\n");
     let mut e = build(&src);
     assert!(e.ok());
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -123,7 +123,7 @@ fn a_point_lands_on_a_traced_curve() {
 /// checked at once.
 #[test]
 fn the_trace_jacobian_matches_a_finite_difference() {
-    let src = format!("{DOC}point q hint(x: 28, y: 22)\npoint_on_curve(q, string) hint(u: 30)\n");
+    let src = format!("{DOC}point q hint(x: 28, y: 22)\nq on string hint(u: 30)\n");
     let e = build(&src);
     assert!(e.ok());
     let mut sys = System::new(&e.sketch);
@@ -154,8 +154,8 @@ fn the_trace_jacobian_matches_a_finite_difference() {
 /// columns are reached down *two* formal paths and the merged Jacobian must still be right.
 #[test]
 fn moving_the_circle_carries_the_traced_curve() {
-    let doc = DOC.replace("radius(base) == 20", "radius(base) == 26");
-    let src = format!("{doc}point q hint(x: 28, y: 22)\npoint_on_curve(q, string) hint(u: 30)\n");
+    let doc = DOC.replace("radius(20) base", "radius(26) base");
+    let src = format!("{doc}point q hint(x: 28, y: 22)\nq on string hint(u: 30)\n");
     let mut e = build(&src);
     assert!(e.ok());
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -180,8 +180,8 @@ curve wander(c: circle)(u) over (0, 90) =
   trace p where {
     point t
     point p
-    point_on_circle(t, c)
-    distance(t, p) == c.r * u * pi / 180
+    t on c
+    t distance(c.r * u * pi / 180) p
   }
 point  o hint(x: 0, y: 0)
 circle base(center: o) hint(r: 20)
@@ -205,8 +205,8 @@ fn a_block_holds_declarations_and_constraints_only() {
 curve odd(c: circle)(u) =
   trace p where {
     point p
-    ground(p)
-    coincident(p, c.center)
+    ground p
+    p coincident c.center
   }
 point  o hint(x: 0, y: 0)
 circle base(center: o) hint(r: 20)
@@ -321,10 +321,10 @@ curve involute(c: circle, datum: line, phase: Angle)(u) over (5, 60) =
     point p
     line rad(c.center, t)
     line s(t, p)
-    point_on_circle(t, c)
-    angle(datum, rad) == u + phase
-    perpendicular(rad, s)
-    point_line_distance(p, rad) == -(c.r * u * pi / 180)
+    t on c
+    datum angle(u + phase) rad
+    rad perpendicular s
+    p distance(-(c.r * u * pi / 180)) rad
     ccw(datum.p1, datum.p2, t)
   }
 
@@ -333,11 +333,11 @@ point  ax hint(x: 1, y: 0)
 line   datum(o, ax) class construction
 circle base(center: o) hint(r: 20) class construction
 curve  w = involute(base, datum, phase: 0) over (5, 60)
-radius(base) == 20
-ground(o)
-ground(ax)
+radius(20) base
+ground o
+ground ax
 point q hint(x: 28, y: 22)
-point_on_curve(q, w) hint(u: 30)
+q on w hint(u: 30)
 ";
     let e = build(src);
     assert!(
@@ -409,10 +409,10 @@ curve limp(c: circle, datum: line, phase: Angle)(u) over (5, 60) =
                  y: c.center.y + c.r * (sin(u + phase) - u * pi / 90) * max(0, 1 - u / 30))
     line rad(c.center, t)
     line s(t, p)
-    point_on_circle(t, c)
-    perpendicular(rad, s)
-    angle(datum, rad) == u + phase
-    distance(t, p) == c.r * u * pi / 180
+    t on c
+    rad perpendicular s
+    datum angle(u + phase) rad
+    t distance(c.r * u * pi / 180) p
   }
 
 point  o hint(x: 0, y: 0)
@@ -451,8 +451,8 @@ fn a_malformed_flat_is_nan_not_a_curve() {
 #[test]
 fn an_overconstrained_block_is_refused() {
     let doc = DOC.replace(
-        "    distance(t, p) == c.r * u * pi / 180",
-        "    distance(t, p) == c.r * u * pi / 180\n    point_on_line(p, datum)",
+        "    t distance(c.r * u * pi / 180) p",
+        "    t distance(c.r * u * pi / 180) p\n    p on datum",
     );
     let (prog, errs) = parse(&doc);
     assert!(errs.is_empty());
@@ -474,8 +474,8 @@ curve dot(c: circle)(u) over (0, 10) =
   trace p where {
     point p hint(x: 1, y: 1)
     circle k(center: p) hint(r: 2)
-    coincident(p, c.center)
-    radius(k) == 5 + u
+    p coincident c.center
+    radius(5 + u) k
   }
 point  o hint(x: 3, y: -2)
 circle base(center: o) hint(r: 20)
@@ -499,14 +499,14 @@ curve  w = dot(base)
 #[test]
 fn a_blocks_mistakes_are_named() {
     let cases = [
-        ("trace c where {\n  point p\n  coincident(p, c.center)\n}",
+        ("trace c where {\n  point p\n  p coincident c.center\n}",
          "must be a point the block declares"),
-        ("trace p where {\n  point p\n  point p\n  coincident(p, c.center)\n}",
+        ("trace p where {\n  point p\n  point p\n  p coincident c.center\n}",
          "declared twice"),
-        ("trace p where {\n  point p\n  line l(p, zzz)\n  coincident(p, c.center)\n}",
+        ("trace p where {\n  point p\n  line l(p, zzz)\n  p coincident c.center\n}",
          "no such entity"),
         ("trace p where {\n  point p\n  point q\n  line l(p, q)\n\
-          tangent_line_circle(l, c)\n  coincident(p, c.center)\n}",
+          l tangent c\n  p coincident c.center\n}",
          "must be stated"),
     ];
     for (body, want) in cases {
@@ -538,9 +538,9 @@ curve rim(c: circle, datum: line)(u) over (0, 350) =
     point t hint at c bearing (u)
     point p hint at t
     line rad(c.center, t)
-    point_on_circle(t, c)
-    angle(datum, rad) == u
-    coincident(p, t)
+    t on c
+    datum angle(u) rad
+    p coincident t
   }
 point  o hint(x: 2, y: 1)
 point  ax hint(x: 3, y: 1)
@@ -571,18 +571,18 @@ curve  w = rim(base, datum)
 fn a_geometric_seeds_mistakes_are_named() {
     let cases = [
         ("trace p where {\n  point q\n  point p hint at q bearing (0)\n\
-          coincident(p, c.center)\n  coincident(q, c.center)\n}",
+          p coincident c.center\n  q coincident c.center\n}",
          "a bearing needs a circle"),
-        ("trace p where {\n  point p hint at c\n  coincident(p, c.center)\n}",
+        ("trace p where {\n  point p hint at c\n  p coincident c.center\n}",
          "says the bearing"),
         ("trace p where {\n  point p\n  point q\n  line l(p, q) hint at c\n\
-          coincident(p, c.center)\n  coincident(q, c.center)\n}",
+          p coincident c.center\n  q coincident c.center\n}",
          "only a point takes a geometric seed"),
-        ("trace p where {\n  point p hint at zzz\n  coincident(p, c.center)\n}",
+        ("trace p where {\n  point p hint at zzz\n  p coincident c.center\n}",
          "no such entity"),
         // a point may only seed at one already declared: names enter scope in order
         ("trace p where {\n  point p hint at q\n  point q\n\
-          coincident(p, c.center)\n  coincident(q, c.center)\n}",
+          p coincident c.center\n  q coincident c.center\n}",
          "no such entity: `q`"),
     ];
     for (body, want) in cases {
@@ -643,8 +643,8 @@ fn a_branch_is_a_stated_fact() {
 curve rim(c: circle, datum: line)(u) over (10, 170) =
   trace t from (90) where {
     point t
-    point_on_circle(t, c)
-    horizontal_distance(c.center, t) == c.r * cos(u)
+    t on c
+    c.center distance(c.r * cos(u), along: x) t
     ccw(datum.p1, datum.p2, t)
   }
 ";
@@ -702,12 +702,12 @@ curve  w = rim(base, datum)
 #[test]
 fn an_orientations_mistakes_are_named() {
     let cases = [
-        ("trace p where {\n  point p\n  ccw(c.center, p)\n  coincident(p, c.center)\n}",
+        ("trace p where {\n  point p\n  ccw(c.center, p)\n  p coincident c.center\n}",
          "names three points"),
-        ("trace p where {\n  point p\n  ccw(c, c.center, p)\n  coincident(p, c.center)\n}",
+        ("trace p where {\n  point p\n  ccw(c, c.center, p)\n  p coincident c.center\n}",
          "about points"),
         ("trace p where {\n  point p\n  ccw(p, c.center, c.center)\n\
-          coincident(p, c.center)\n}",
+          p coincident c.center\n}",
          "must be one the block places"),
     ];
     for (body, want) in cases {

@@ -32,11 +32,11 @@ line right(E, F)
 line top(F, G)
 line left(G, O)
 
-perpendicular(bottom, right)
-perpendicular(right, top)
-perpendicular(top, left)
-horizontal(bottom)
-equal_length(bottom, left)
+bottom perpendicular right
+right perpendicular top
+top perpendicular left
+horizontal bottom
+bottom equal left
 
 // one point on each side, `a` along from the corner it follows going round
 point P1 hint(x: la, y: 0)
@@ -44,17 +44,17 @@ point P2 hint(x: s, y: la)
 point P3 hint(x: lb, y: s)
 point P4 hint(x: 0, y: lb)
 
-point_on_line(P1, bottom)
-point_on_line(P2, right)
-point_on_line(P3, top)
-point_on_line(P4, left)
+P1 on bottom
+P2 on right
+P3 on top
+P4 on left
 
 // the two legs, named here and read everywhere else
-distance(O, P1) == a = la
-distance(P1, E) == b = lb
-distance(E, P2) == a
-distance(F, P3) == a
-distance(G, P4) == a
+O distance(a = la) P1
+P1 distance(b = lb) E
+E distance(a) P2
+F distance(a) P3
+G distance(a) P4
 
 // the hypotenuses, which are the inner square
 line h1(P1, P2)
@@ -63,5 +63,5 @@ line h3(P3, P4)
 line h4(P4, P1)
 
 // the theorem, stated as a claim: judged against the figure, never imposed on it
-claim distance(P1, P2) == c = hypot(a, b)
-ground(O)
+claim P1 distance(c = hypot(a, b)) P2
+ground O

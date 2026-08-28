@@ -29,19 +29,19 @@ repeat bays as i {
   line rise(b[i], t[i])
   line fall(t[i], b[i + 1])
 
-  distance(b[i], b[i + 1]) == span
-  distance(b[i], t[i]) == web
-  distance(t[i], b[i + 1]) == web
+  b[i] distance(span) b[i + 1]
+  b[i] distance(web) t[i]
+  t[i] distance(web) b[i + 1]
 }
 
 // the top chord runs between neighbouring top nodes, so there is one fewer of it
 repeat bays - 1 as i {
   line upper(t[i], t[i + 1])
-  distance(t[i], t[i + 1]) == span
+  t[i] distance(span) t[i + 1]
 }
 
-horizontal(chord[0])
-ground(b[0])
+horizontal chord[0]
+ground b[0]
 
 // what the two bays it spans already say
-distance(b[0], b[2]) == 2 * span
+b[0] distance(2 * span) b[2]

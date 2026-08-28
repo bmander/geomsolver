@@ -22,9 +22,9 @@ const PLAIN: &str = "\
 point a hint(x: 0, y: 0)
 point b hint(x: 60, y: 0)
 line ab(a, b) class construction
-distance(a, b) == 60
-horizontal(ab)
-ground(a)
+a distance(60) b
+horizontal ab
+ground a
 ";
 
 /// `class construction` draws exactly as the retired keyword did — from the base sheet, which is
@@ -180,11 +180,11 @@ fn an_svg_export_draws_a_claimed_dimension_in_the_documents_ink() {
 style .dimension { color: #b00020 }
 point a hint(x: 0, y: 0)
 point b hint(x: 60, y: 0)
-ground(a)
-horizontal(ab)
+ground a
 line ab(a, b)
-distance(a, b) == 60 at (10, -20)
-claim horizontal_distance(a, b) == 60 at (10, 20)
+horizontal ab
+a distance(60) b at (10, -20)
+claim a distance(60, along: x) b at (10, 20)
 ";
     let out = gcs_core::svg::render(&read(src), 400.0);
     assert!(out.contains("(60)"), "the claim is drawn as a reference dimension:\n{out}");
@@ -213,8 +213,8 @@ fn a_statement_inserted_above_does_not_move_a_callout() {
     let src = "\
 point a hint(x: 0, y: 0)
 point b hint(x: 60, y: 0)
-distance(a, b) == 60 at (12, -4)
-horizontal_points(a, b) at (3, 5)
+a distance(60) b at (12, -4)
+a horizontal b at (3, 5)
 ";
     let before = read(src);
     let after = read(&src.replace("point a hint", "point z hint(x: 9, y: 9)\npoint a hint"));
@@ -230,7 +230,7 @@ horizontal_points(a, b) at (3, 5)
 /// sketch, `Sketch::remove` drops it with the constraint.
 #[test]
 fn a_placement_dies_with_its_dimension() {
-    let mut sk = read("point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\ndistance(a, b) == 60 at (12, -4)\n");
+    let mut sk = read("point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\na distance(60) b at (12, -4)\n");
     let id = sk.user_constraints()[0].id;
     assert_eq!(sk.placements.get(&id).copied(), Some((12.0, -4.0)));
     sk.remove(id);
@@ -241,7 +241,7 @@ fn a_placement_dies_with_its_dimension() {
 /// Copying a figure brings its callouts, and pasting it twice gives two sets.
 #[test]
 fn copying_a_figure_brings_its_callouts() {
-    let sk = read("point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\ndistance(a, b) == 60 at (12, -4)\n");
+    let sk = read("point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\na distance(60) b at (12, -4)\n");
     let clip = gcs_core::io::copy(&sk, &[EntRef::point(0), EntRef::point(1)]);
     assert_eq!(clip.placements.len(), 1, "the callout came with the figure");
     let mut dst = Sketch::new();

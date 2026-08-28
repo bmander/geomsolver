@@ -401,7 +401,9 @@ fn a_sketch_with_a_curve_in_it_still_diagnoses_and_reports() {
     let _ = gcs_core::report::constraints_json(&sk);
     let _ = gcs_core::report::registry_json();
     let _ = gcs_core::report::callouts_json(&sk, 0.1);
-    assert!(gcs_core::io::describe(sk.constraints.last().unwrap()).starts_with("PointOnSpline("));
+    // the operator, as a document writes it: `on` is one word for five constraints, and which
+    // it is comes from the right operand's kind
+    assert_eq!(gcs_core::io::describe(sk.constraints.last().unwrap()), "P5 on S0");
 }
 
 #[test]

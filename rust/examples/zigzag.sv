@@ -27,10 +27,10 @@ repeat copies as c {
 
   repeat floor(n / 2) as k {
     line v(p[2 * k], p[2 * k + 1])
-    vertical(v)
+    vertical v
   }
   repeat floor((n - 1) / 2) as k {
     line h(p[2 * k + 1], p[2 * k + 2])
-    horizontal(h)
+    horizontal h
   }
 }

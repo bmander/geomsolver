@@ -269,7 +269,7 @@ fn an_angle_is_written_in_degrees() {
         ],
     ));
     let text = to_program(&sk).text().to_string();
-    assert!(text.contains("== 30"), "thirty degrees, not a sixth of pi:\n{text}");
+    assert!(text.contains("angle(30"), "thirty degrees, not a sixth of pi:\n{text}");
     let back = elaborate(&to_program(&sk)).sketch;
     let got = back.user_constraints()[0].get_num("theta").unwrap();
     assert!((got - std::f64::consts::FRAC_PI_6).abs() < 1e-12, "{got}");
@@ -448,14 +448,14 @@ line  cd(c, d)
 line  da(d, a)
 circle hole(center: o) hint(r: 20)
 
-horizontal(ab)
-perpendicular(ab, bc)
-perpendicular(bc, cd)
-perpendicular(cd, da)
-distance(a, b) == w = 100
-distance(b, c) == w
-radius(hole) == w / 5
-ground(a)
+horizontal ab
+ab perpendicular bc
+bc perpendicular cd
+cd perpendicular da
+a distance(w = 100) b
+b distance(w) c
+radius(w / 5) hole
+ground a
 ";
     let (p, errs) = gcs_core::syntax::parse(text);
     assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
@@ -755,7 +755,7 @@ fn read_ok(src: &str) -> gcs_core::program::Elaborated {
 /// they are called — a name earns its place when something says it twice, and these said it once.
 #[test]
 fn a_declaration_may_omit_its_children() {
-    let e = read_ok("line l\nhorizontal(l)\nground(l.p1)\n");
+    let e = read_ok("line l\nhorizontal l\nground l.p1\n");
     assert_eq!(e.sketch.points.len(), 2, "two ends, minted");
     assert_eq!(e.sketch.lines.len(), 1);
     // the dotted path is the name: it resolves, and the map carries it
@@ -772,7 +772,7 @@ fn a_declaration_may_omit_its_children() {
     );
     assert!(d > 1e-3, "a zero-length line has no direction to level: {d}");
 
-    for src in ["circle c\nradius(c) == 5\n", "arc a\nradius(a) == 5\n"] {
+    for src in ["circle c\nradius(5) c\n", "arc a\nradius(5) a\n"] {
         let e = read_ok(src);
         assert!(!e.sketch.points.is_empty(), "{src}");
     }
@@ -782,9 +782,9 @@ fn a_declaration_may_omit_its_children() {
 /// statements it stands for — same drawing, same freedoms.
 #[test]
 fn a_child_slot_may_hold_a_seed() {
-    let mut anon = read_ok("line l(hint(x: 0, y: 0), hint(x: 60, y: 20))\nground(l.p1)\n");
+    let mut anon = read_ok("line l(hint(x: 0, y: 0), hint(x: 60, y: 20))\nground l.p1\n");
     let mut named = read_ok(
-        "point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 20)\nline l(a, b)\nground(a)\n",
+        "point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 20)\nline l(a, b)\nground a\n",
     );
     assert_eq!(gcs_core::io::dumps(&anon.sketch, Some(1)), gcs_core::io::dumps(&named.sketch, Some(1)));
     let opts = gcs_core::diagnose::DiagnoseOptions::default();
