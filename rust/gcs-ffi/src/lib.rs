@@ -856,8 +856,9 @@ pub unsafe extern "C" fn gcs_styles_json(h: *mut Sketch) -> *mut u8 {
     })
 }
 
-/// What one named class comes to.  A dimension callout is not an entity and carries no class of
-/// its own, but its ink is shared by every callout in the document — which is what a class is.
+/// What a named class list comes to, spelled as a declaration spells one — `"dimension"`, or
+/// `"dimension reference"`.  A dimension callout is not an entity and carries no class of its
+/// own, but its ink is shared by every callout in the document — which is what a class is.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_style_named(h: *mut Sketch, name: *const u8, len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || out_json(style_json(&sk(h).style_named(as_str(name, len)))))

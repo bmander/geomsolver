@@ -185,7 +185,11 @@ export function paintCallouts(v: SketchView): void {
    * the dimension's own statement is the one pair of numbers that is about that statement
    * alone: where somebody dragged this callout (spec §13.1).  Three lookups a repaint. */
   const inkDim = v.sketch.styleNamed('dimension');
-  const inkRef = v.sketch.styleNamed('reference');
+  // a reference dimension *is* a dimension, so it is drawn with both classes: the shared rule,
+  // and then the one that says how it differs.  Asked for `reference` alone it would miss
+  // whatever the document said about `.dimension`, and a sheet that recoloured its callouts
+  // would recolour half of them.
+  const inkRef = v.sketch.styleNamed('dimension reference');
   const extension = v.sketch.styleNamed('extension');
   // the colour rule reaches for a constraint by id, so it runs once per callout rather than
   // once per callout per pass
@@ -194,7 +198,7 @@ export function paintCallouts(v: SketchView): void {
     const ink = c?.claim ? inkRef : inkDim;
     const col = c && conflicts.has(c) ? COL.conflict
       : c && c === lit ? COL.highlight
-      : ink.color ?? COL.point;
+      : ink.color ?? COL.point;   // the base sheet always states one, so the fallback is dead
     return { k, col, lw: ink.width ?? 1 };
   });
   const path = (segs: Seg[]): void => {

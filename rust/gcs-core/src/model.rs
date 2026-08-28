@@ -492,11 +492,17 @@ impl Sketch {
         crate::style::resolve(&self.sheet, &self.class_of(e))
     }
 
-    /// What one *named* class comes to.  The drawing's chrome asks this — a dimension callout is
-    /// not an entity and carries no class of its own, but its ink is shared by every callout in
-    /// the document, which is exactly what a class is for.
-    pub fn style_named(&self, name: &str) -> crate::style::Style {
-        crate::style::resolve(&self.sheet, &Classes::one(name))
+    /// What a *named* class list comes to, spelled as a declaration spells one: `"dimension"`,
+    /// or `"dimension reference"`.  The drawing's chrome asks this — a dimension callout is not
+    /// an entity and carries no class of its own, but its ink is shared by every callout in the
+    /// document, which is exactly what a class is for.
+    ///
+    /// A list rather than one name because a claimed dimension *is* a dimension: it takes the
+    /// shared rule and then the one that says how it differs, which is how a caller gets a
+    /// document's `style .dimension` on a reference dimension too.
+    pub fn style_named(&self, classes: &str) -> crate::style::Style {
+        let list = Classes(classes.split_whitespace().map(str::to_string).collect());
+        crate::style::resolve(&self.sheet, &list)
     }
 
     // -- construction -------------------------------------------------------

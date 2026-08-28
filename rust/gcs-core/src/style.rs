@@ -76,13 +76,24 @@ impl Style {
         }
     }
 
-    /// One property, by the name a `style` block writes.  `None` is a property the sheet does
-    /// not know — which is not an error, exactly as an unmatched class is not.
+    /// One property, by the name a `style` block writes.  `false` is a property the sheet cannot
+    /// use — a name it does not know, *or* a value it cannot read — which is not an error,
+    /// exactly as an unmatched class is not.
+    ///
+    /// A value it cannot read is dropped rather than stored, because a half-stated property is
+    /// worse than an absent one: `color:` with nothing after it stored `Some("")`, and an empty
+    /// string is not nullish, so it travelled all the way to `ctx.fillStyle`, which ignores an
+    /// assignment it cannot parse and leaves the previous colour standing.  Every dimension's
+    /// label came out drawn in the background colour.  `None` already means *says nothing*, and
+    /// that is what a value with no reading says.
+    ///
+    /// `dash` is the one that keeps an empty list: "empty or absent is solid" is what the field
+    /// documents, so `dash:` states solid and has a reading of its own.
     pub fn set(&mut self, prop: &str, values: &[f64], text: &str) -> bool {
         match prop {
             "dash" => self.dash = Some(values.to_vec()),
-            "width" => self.width = values.first().copied(),
-            "color" => self.color = Some(text.to_string()),
+            "width" if !values.is_empty() => self.width = Some(values[0]),
+            "color" if !text.is_empty() => self.color = Some(text.to_string()),
             _ => return false,
         }
         true
@@ -117,27 +128,40 @@ pub fn base() -> Sheet {
     s.insert("dimension".into(), rule(None, Some(1.0), Some("#0f6f7a")));
     // a claimed dimension — the draughtsman's reference dimension, which `callout.rs` draws
     // parenthesised.  Lighter than a controlling one, because it does not control.
-    s.insert("reference".into(), rule(None, Some(1.0), Some("#7aa7ad")));
+    //
+    // **Only the difference.**  A reference dimension *is* a dimension, so it is drawn with both
+    // classes and this rule says the one thing that is not shared: the lighter ink.  Restating
+    // the weight here would make `.reference` a complete rule rather than a modifier, and a
+    // document that said `style .dimension { width: 2 }` would get thick controlling dimensions
+    // and thin claimed ones — a split drawing, from a sheet that named neither.
+    s.insert("reference".into(), rule(None, None, Some("#7aa7ad")));
     // a dimension's extension and witness lines: finer dashes than reference geometry, being
     // annotation rather than something the sketch is made of
     s.insert("extension".into(), rule(Some(vec![4.0, 3.0]), None, None));
     s
 }
 
-/// What a class list comes to: the base sheet under the document's, cascaded in written order.
+/// What a class list comes to: the base sheet under the document's, each cascaded in written
+/// order.
+///
+/// **Two layers, not one interleaved pass.**  What a document says beats what the implementation
+/// ships, whichever class it happens to be written on — the rule CSS states between an author
+/// sheet and the user agent's, and the reason the base sheet is describable as being *under* the
+/// document's at all.  Resolved a class at a time (base, sheet, base, sheet), a later class's
+/// shipped rule would override an earlier class's *stated* one: `class dimension reference` with
+/// `style .dimension { color: #b00020 }` came back the base `.reference` teal, so the one
+/// document rule anybody would write to recolour their callouts recoloured half of them.
 ///
 /// An unmatched class simply has no rule, exactly as in CSS — which is also what makes paste
 /// work, since a figure copied out of a document with a sheet keeps its class names and picks up
 /// whatever the destination says about them, or nothing.
 pub fn resolve(sheet: &Sheet, classes: &Classes) -> Style {
-    let base = base();
     let mut out = Style::default();
-    for c in &classes.0 {
-        if let Some(r) = base.get(c) {
-            out.over(r);
-        }
-        if let Some(r) = sheet.get(c) {
-            out.over(r);
+    for layer in [&base(), sheet] {
+        for c in &classes.0 {
+            if let Some(r) = layer.get(c) {
+                out.over(r);
+            }
         }
     }
     out

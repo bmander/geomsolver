@@ -694,6 +694,8 @@ style .construction { dash: 7 4 }
 
 A document that overrides `.construction` MUST change how it draws and nothing else: same solve, same DOF, same diagnosis.
 
+**The base sheet is a layer *under* the document's, not a rule interleaved between a declaration's classes.** A style resolves by cascading the whole base sheet over the empty style in written class order, then the whole document sheet over that, again in written class order. So what a document states beats what the implementation ships whichever class it happens to be written on — the rule CSS states between an author sheet and the user agent's — and a base rule may state only what its class *adds*, since anything it restates would override a document rule written on an earlier class.
+
 **No algorithm may consult a class.** This is the point of the section, and it is a normative constraint on implementations rather than on documents: presentation is read where a drawing is drawn and nowhere else. It is also why the *implementation* resolves the cascade rather than a front end — a callout's figure and a curve's tessellation are laid out in the same place for the same reason, so that two front ends draw one drawing alike.
 
 An export format MAY record a class list. It SHOULD go on reading whatever the format wrote before there were classes; `construction` in particular SHOULD load as the class of that name.

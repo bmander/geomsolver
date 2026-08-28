@@ -979,6 +979,23 @@ test('classes round-trip, and the core resolves what they look like', () => {
   assert.equal(io.dumps(back), s);
 });
 
+test('a claimed callout takes the dimension rule and then its own', () => {
+  // `paint.ts` asks for both classes, because a reference dimension *is* a dimension: a sheet
+  // that recoloured `.dimension` alone would otherwise recolour only the unclaimed half
+  const plain = Document.read('point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\n');
+  assert.equal(plain.sketch.styleNamed('dimension').color, '#0f6f7a');
+  assert.equal(plain.sketch.styleNamed('dimension reference').color, '#7aa7ad');
+  assert.equal(plain.sketch.styleNamed('dimension reference').width,
+    plain.sketch.styleNamed('dimension').width, 'the weight is shared, so only the ink differs');
+  plain.dispose();
+
+  const styled = Document.read(
+    'style .dimension { color: #b00020; width: 2 }\npoint a hint(x: 0, y: 0)\n');
+  assert.equal(styled.sketch.styleNamed('dimension reference').color, '#b00020');
+  assert.equal(styled.sketch.styleNamed('dimension reference').width, 2);
+  styled.dispose();
+});
+
 test('an old export with "construction": true still loads', () => {
   // JSON is the export format, not the document: the key is read and never written
   const sk = io.loads(JSON.stringify({

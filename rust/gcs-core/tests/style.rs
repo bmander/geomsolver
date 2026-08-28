@@ -138,9 +138,12 @@ fn a_style_block_prints_back() {
 #[test]
 fn a_callouts_shared_presentation_is_in_the_sheet() {
     let sk = read(PLAIN);
-    // the three rules a callout is drawn with, and nothing in them about *where* one sits
+    // the three rules a callout is drawn with, and nothing in them about *where* one sits.  A
+    // claimed dimension is drawn with two of them: it *is* a dimension, and `.reference` says
+    // the one thing that differs, so it takes the shared weight and its own lighter ink.
     assert_eq!(sk.style_named("dimension").color.as_deref(), Some("#0f6f7a"));
-    assert_eq!(sk.style_named("reference").color.as_deref(), Some("#7aa7ad"));
+    assert_eq!(sk.style_named("dimension reference").color.as_deref(), Some("#7aa7ad"));
+    assert_eq!(sk.style_named("dimension reference").width, sk.style_named("dimension").width);
     assert_eq!(sk.style_named("extension").dash, Some(vec![4.0, 3.0]));
 
     // and a document may say otherwise, changing nothing about what the drawing is
@@ -149,6 +152,38 @@ fn a_callouts_shared_presentation_is_in_the_sheet() {
     assert_eq!(b.style_named("dimension").color.as_deref(), Some("#b00020"));
     assert_eq!(b.style_named("dimension").width, Some(2.0));
     assert_eq!(gcs_core::io::dumps(&read(PLAIN), Some(1)), gcs_core::io::dumps(&b, Some(1)));
+}
+
+/// **What a document says beats what the implementation ships, whichever class it is written
+/// on.**  The base sheet is a layer *under* the document's, not a rule interleaved between its
+/// classes — so one `style .dimension` recolours every callout, and not the half of them that
+/// are not also `.reference`.
+#[test]
+fn a_document_rule_beats_a_shipped_one_on_a_later_class() {
+    let b = read(&format!("style .dimension {{ color: #b00020; width: 2 }}\n{PLAIN}"));
+    let claimed = b.style_named("dimension reference");
+    assert_eq!(claimed.color.as_deref(), Some("#b00020"), "a stated colour reaches a claim too");
+    assert_eq!(claimed.width, Some(2.0));
+    // and the document may still say how a reference dimension differs
+    let sheet = "style .dimension { color: #b00020 }\nstyle .reference { color: #e5989b }\n";
+    let c = read(&format!("{sheet}{PLAIN}"));
+    assert_eq!(c.style_named("dimension").color.as_deref(), Some("#b00020"));
+    assert_eq!(c.style_named("dimension reference").color.as_deref(), Some("#e5989b"));
+}
+
+/// A property whose value the sheet cannot read is **dropped**, exactly as a property it does
+/// not know is.  `color:` with nothing after it stored an empty string, which is not nullish and
+/// so travelled to `ctx.fillStyle` — where an unparseable assignment is ignored and leaves the
+/// previous colour standing, drawing every dimension's label in the background colour.
+#[test]
+fn a_property_with_no_value_says_nothing() {
+    let sk = read(&format!("style .dimension {{ color: ; width: }}\n{PLAIN}"));
+    let ink = sk.style_named("dimension");
+    assert_eq!(ink.color.as_deref(), Some("#0f6f7a"), "the base ink stands");
+    assert_eq!(ink.width, Some(1.0));
+    // `dash` is the one that reads an empty list: absent or empty is solid, so it states solid
+    let d = read(&format!("style .construction {{ dash: }}\n{PLAIN}"));
+    assert_eq!(d.style_named("construction").dash, Some(vec![]));
 }
 
 /// Inserting or deleting a statement above a dimension does not move its callout — the failure

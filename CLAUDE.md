@@ -124,7 +124,17 @@ Conventions:
   what a class is nowhere; `app/edit.ts`'s toggle sets and clears the *name*.  A sheet's lengths
   are **screen pixels**, never world units: a dashed line does not change its pattern when you
   zoom.  An unmatched class is not a diagnostic — it has no rule, as in CSS, which is also what
-  makes paste work.  `Sketch::style_epoch` is bumped by the one write path (`set_class`,
+  makes paste work.  The cascade is **two layers, not one interleaved pass**: the whole base
+  sheet under the whole document's, each in written order, so what a document says beats what
+  the implementation ships whichever class it is written on.  Resolved a class at a time, a
+  later class's shipped rule would override an earlier class's *stated* one.  A base rule
+  therefore states only what its class **adds** — `.reference` is the lighter ink and nothing
+  else, because a reference dimension *is* a dimension and is drawn `class dimension reference`;
+  restating the shared weight there would make it a complete rule, and one
+  `style .dimension { width: 2 }` would come out thick on half the callouts.  A value the sheet
+  cannot read (`color:` with nothing after it) is **dropped**, exactly as an unknown property is
+  — `Some("")` is not nullish and reached `ctx.fillStyle`, which ignores what it cannot parse.
+  `Sketch::style_epoch` is bumped by the one write path (`set_class`,
   `set_sheet`) so a binding may cache a resolved table against it.  JSON writes `"class"` and
   **reads `"construction": true`** and never writes it, the same bargain `from_json` already
   strikes with the pre-§13.1 placements table.
