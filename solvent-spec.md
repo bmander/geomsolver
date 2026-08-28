@@ -203,33 +203,48 @@ no one pose to record.
 
 ```
 point p, q
-line  l
+line  l                        // makes two points: l.p1, l.p2
+circle c                       // makes one:        c.center
+arc   a                        // makes three:      a.center, a.start, a.end
 ```
 
 A bare declaration introduces an entity all of whose coordinates are unknowns.
 
+**[0.7] The children come with it.** A declaration that writes no argument list gets the ones its kind is built from, *unnamed*, and they are reached by dot access: `l.p1` is an ordinary point, and it constrains, drags and is picked like any other. Half the points in a drawing are named only because a line has to be written from something; a name earns its place when something says it twice.
+
+**The dotted path is the name.** An anonymous child has no name in the source, so `l.p1` *is* its name, and everything that identifies an entity by name MUST agree — a constraint written against it, a selection that outlives a re-elaboration, a diagnostic that reports it.
+
+Where an unnamed and unseeded coordinate *starts* is not the language's business (§15). It is worth saying only that the obvious answer is wrong: two implicit endpoints both at the origin is a zero-length line, with no direction for `horizontal(l)` to bite on and a singular row for any tangency, so an implementation MUST NOT place them coincidently.
+
+A **list** child slot — a spline's control polygon, a curve's arguments — has no arity to conjure children from, so a bare `spline s` remains **E103**.
+
 ### 6.2 Constructor declarations
 
 ```
-circle pitch(center, R)
+circle pitch(center)
 frame  f0(origin: center, toward: t.lead)   -- [0.6]
+line   l(hint(x: 0, y: 0), hint(x: 60, y: 20))   -- [0.7]
 ```
 
 Constructor arguments have two behaviors, by type:
 
-- An argument of **entity type** *aliases* the corresponding sub-entity (P1). `circle pitch(center, R)` makes `pitch.center` and `center` one entity.
-- **[0.2]** An argument of **value type** *seeds* the corresponding coordinate. It is an unknown of the sketch with a starting value, not a substitution.
+- An argument of **entity type** *aliases* the corresponding sub-entity (P1). `circle pitch(center)` makes `pitch.center` and `center` one entity.
+- **[0.7]** A child slot may hold a **`hint(…)`** instead of a reference: an anonymous point, and where its solve begins. It is the same clause as §4.3's, standing in for a child rather than qualifying the declaration it follows, so one construct means "where this begins" wherever it appears.
+
+**[0.7] List all the children, or none.** If a declaration writes an argument list at all, every child slot in it is either a reference or a `hint(…)`; anything between is **E103**, as it always was — the accepted arity is `children_arity()` *or* zero. There is no bare `hint` meaning "anonymous and unseeded": a written slot carries a name or a seed, and an entity whose children are all unseeded is spelled by writing no list at all.
+
+*A partial list exists in exactly one place: mid-desugaring, where a chain's joint (§6.6) has not yet filled the boundary slot a link left out. It is filled before elaboration sees it, and a joint threads a **name** — a seeded slot names nothing, so the other side must say where the two meet.*
+
+**[0.2] The value-type rule is reversed from 0.1**, which made a value argument definitional — `circle pitch(center, R)` introducing `pitch.r == R` as a substitution. That cannot stand beside §4.3, and it is wrong on its own terms: a radius is a coordinate a user drags. Under 0.1's reading, taking hold of a rim and pulling would be an *edit of what the program means* rather than a move within its solution set, and every direct-manipulation gesture on a scalar would be a different kind of event from the same gesture on a point. **[0.7]** A value argument is no longer written there at all; it is §4.3's `hint(…)`.
 
 The `name = expr` form declares an entity wholly defined by an expression; all its coordinates are definitional.
-
-**[0.2] The value-type rule is reversed from 0.1**, which made such an argument definitional — `circle pitch(center, R)` introducing `pitch.r == R` as a substitution. That cannot stand beside §4.3, and it is wrong on its own terms: a radius is a coordinate a user drags. Under 0.1's reading, taking hold of a rim and pulling would be an *edit of what the program means* rather than a move within its solution set, and every direct-manipulation gesture on a scalar would be a different kind of event from the same gesture on a point.
 
 A radius that is meant to be *held* says so:
 
 ```
-circle c(center: o, r: 25)     // 25 is where it starts
-radius(c) == 25                // 25 is what it is
-fix(c.r)                       // 25 is what it is, without a dimension on the drawing
+circle c(center: o) hint(r: 25)   // 25 is where it starts
+radius(c) == 25                   // 25 is what it is
+fix(c.r)                          // 25 is what it is, without a dimension on the drawing
 ```
 
 ### 6.3 `param`
@@ -862,12 +877,14 @@ ekw            = "point" | "circle" | "line" | "frame" | "ellipse" | "spline" | 
 (* the trailing clauses are order-free: `hint(…)`, `knots […]`, `construction`.  The geometric
    `hint at` forms — `hint at t`, `hint at c bearing (…)` — are trace-block seeds, §6.5.1 *)
 binder         = IDENT [ "(" ctor_arg { "," ctor_arg } ")" ] { trailer } ;
+(* §6.1: no list at all is the anonymous form — the kind's children are minted and reached as
+   `l.p1`.  A written list gives every slot a name or a seed; anything between is E103. *)
 trailer        = hint_clause
                | "hint" "at" ref [ "bearing" "(" expr ")" ]
                | "knots" "[" number { "," number } "]"
                | "construction" ;
 hint_clause    = "hint" "(" IDENT ":" expr { "," IDENT ":" expr } ")" ;   (* SEEDS, §4.3 *)
-ctor_arg       = [ IDENT ":" ] ref ;                       (* what the thing is made of, §6.2 *)
+ctor_arg       = [ IDENT ":" ] ( ref | hint_clause ) ;     (* what the thing is made of, §6.2 *)
 
 (* a curve FAMILY, §6.5; an instance is an ordinary entity_decl *)
 curve_def      = "curve" IDENT "(" [ params ] ")" "(" IDENT ")"

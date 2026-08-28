@@ -87,6 +87,27 @@ Conventions:
   layout derives it until they do.  A coordinate seed is an input the solver overwrites; a
   placement is a preference it never touches.  Ask §4.3, not the keyword, for what may be
   deleted without changing the drawing.
+- **A declaration need not name its children** (Solvent §6.1, §6.2).  `line l` mints two points,
+  `circle c` one, `arc a` three; a child slot may hold a `hint(…)` instead of a reference
+  (`line alt_a(A, hint(x: 15, y: 5))`), which is the same clause standing in for a child rather
+  than qualifying the declaration it follows.  `Decl::children` is therefore `Vec<Vec<Kid>>` —
+  a name *or* a seed, and no third form, since "anonymous and unseeded" is spelled by writing no
+  list at all.  **All the children or none**: a partial list is E103, exactly as it was, and the
+  one place a partial list exists is mid-desugaring, where a chain's joint has not yet filled the
+  boundary slot a link left out.  A joint threads a *name*, so a seeded slot reads as unfilled
+  there and the other side must say where the two meet.
+  **The dotted path is the name.**  An anonymous child has no name in the source, so `l.p1` *is*
+  its name: `program::build` mints the point *with* that name, binds it in `map.names`, and
+  records it against the parent's statement — which is what makes it resolve, constrain, drag,
+  be picked, be dimensioned (`edit`'s `name_of` reads the map), survive a re-elaboration
+  (`Document.entity`) and read as `l.p1` in the status line.  Nothing in the bindings changed.
+  Writeback follows it down: an anonymous child's seed lives in the *parent's* statement, in a
+  slot, so `commit_seeds` walks the parent's children and splices inside `Kid::Hint`'s spans —
+  and where the source wrote no list at all, writes the whole argument list at `hint_span` in
+  one edit, since two splices at one offset are two insertions racing for it.
+  Where an unseeded implicit child *starts* is `program::scatter` and is an implementation
+  choice the spec must not carry — but it may not be the origin: two endpoints there is a
+  zero-length line, with no direction for `horizontal(l)` and a singular row for any tangency.
 - A constraint may own *unknowns* of its own: a `SpecKind::Param` slot in its `spec`, allocated
   by `Sketch::add` and moved by the solver like any other parameter.  The slot holds a seed
   number on the way in — which is what a document stores, what `graft` copies, and what

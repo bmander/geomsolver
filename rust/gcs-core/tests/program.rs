@@ -285,7 +285,7 @@ fn a_bad_name_is_a_diagnostic_with_a_span() {
     for st in p.root_mut().body.iter_mut() {
         if let gcs_core::syntax::StmtKind::Decl(d) = &mut st.kind {
             if d.kind == EntKind::Line {
-                d.children[0][0] = gcs_core::syntax::Ref::new("nope");
+                d.children[0][0] = gcs_core::syntax::Kid::Ref(gcs_core::syntax::Ref::new("nope"));
                 break;
             }
         }
@@ -738,4 +738,90 @@ fn every_seed_is_written_in_a_hint_clause() {
         let (_, errs) = gcs_core::syntax::parse(src);
         assert!(!errs.is_empty(), "{src} still parses");
     }
+}
+
+/* -- implicit children (spec §6.1, §6.2) ---------------------------------------------- */
+
+fn read_ok(src: &str) -> gcs_core::program::Elaborated {
+    let (p, errs) = gcs_core::syntax::parse(src);
+    assert!(errs.is_empty(), "{src}: {errs:?}");
+    let e = elaborate(&p);
+    assert!(e.ok(), "{src}: {:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    e
+}
+
+/// **A declaration need not name its children.**  `line l` makes two points, and `l.p1` is what
+/// they are called — a name earns its place when something says it twice, and these said it once.
+#[test]
+fn a_declaration_may_omit_its_children() {
+    let e = read_ok("line l\nhorizontal(l)\nground(l.p1)\n");
+    assert_eq!(e.sketch.points.len(), 2, "two ends, minted");
+    assert_eq!(e.sketch.lines.len(), 1);
+    // the dotted path is the name: it resolves, and the map carries it
+    let p1 = e.map.ent_named("l.p1").expect("l.p1 is a name");
+    let p2 = e.map.ent_named("l.p2").expect("l.p2 is a name");
+    assert_ne!(p1, p2);
+    assert_eq!(e.map.names.get(&p1).map(|v| v[0].as_str()), Some("l.p1"));
+
+    // and the ends do not start on top of each other, or `horizontal` would have no direction
+    let [ax, ay] = e.sketch.point_params(p1.i());
+    let [bx, by] = e.sketch.point_params(p2.i());
+    let d = (e.sketch.params[ax as usize].value - e.sketch.params[bx as usize].value).hypot(
+        e.sketch.params[ay as usize].value - e.sketch.params[by as usize].value,
+    );
+    assert!(d > 1e-3, "a zero-length line has no direction to level: {d}");
+
+    for src in ["circle c\nradius(c) == 5\n", "arc a\nradius(a) == 5\n"] {
+        let e = read_ok(src);
+        assert!(!e.sketch.points.is_empty(), "{src}");
+    }
+}
+
+/// A child slot may hold a seed instead of a name, and it says the same thing as the three
+/// statements it stands for — same drawing, same freedoms.
+#[test]
+fn a_child_slot_may_hold_a_seed() {
+    let mut anon = read_ok("line l(hint(x: 0, y: 0), hint(x: 60, y: 20))\nground(l.p1)\n");
+    let mut named = read_ok(
+        "point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 20)\nline l(a, b)\nground(a)\n",
+    );
+    assert_eq!(gcs_core::io::dumps(&anon.sketch, Some(1)), gcs_core::io::dumps(&named.sketch, Some(1)));
+    let opts = gcs_core::diagnose::DiagnoseOptions::default();
+    assert_eq!(
+        gcs_core::diagnose::diagnose(&mut anon.sketch, opts).dof,
+        gcs_core::diagnose::diagnose(&mut named.sketch, opts).dof
+    );
+}
+
+/// All the children or none: a written slot carries a name or a seed, and anything between is
+/// E103 exactly as it always was.  A `spline` has no arity to conjure children from, so a bare
+/// one stays an error.
+#[test]
+fn a_partial_child_list_is_still_an_error() {
+    for src in ["point a hint(x: 0, y: 0)\nline l(a)\n", "spline s\n"] {
+        let (p, errs) = gcs_core::syntax::parse(src);
+        assert!(errs.is_empty(), "{src}: {errs:?}");
+        let e = elaborate(&p);
+        assert!(!e.ok(), "{src} should not elaborate");
+    }
+}
+
+/// A seed in a slot round-trips: the printer writes the anonymous form back, since a child with
+/// no name has no name to print.
+#[test]
+fn an_anonymous_child_prints_back_anonymous() {
+    let src = "line l(hint(x: 0, y: 0), hint(x: 60, y: 20))\ncircle c hint(r: 25)\n";
+    let (p, errs) = gcs_core::syntax::parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let mut out = String::new();
+    gcs_core::syntax::write_stmt_to(&mut out, &p.root().body[0].kind);
+    assert!(out.contains("hint(x: 0, y: 0)"), "{out}");
+    assert!(out.contains("hint(x: 60, y: 20)"), "{out}");
+    // and re-reading it is the same drawing
+    let again = read_ok(src);
+    let first = read_ok(src);
+    assert_eq!(
+        gcs_core::io::dumps(&again.sketch, Some(1)),
+        gcs_core::io::dumps(&first.sketch, Some(1))
+    );
 }

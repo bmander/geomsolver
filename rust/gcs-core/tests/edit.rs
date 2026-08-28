@@ -579,3 +579,55 @@ fn a_seed_written_in_a_hint_clause_is_written_back() {
     assert!(out.text.contains("point b hint(x: 42.5, y: 0)"), "{}", out.text);
     assert!(out.text.contains("point a hint(x: 0, y: 0)"), "and nothing else moved: {}", out.text);
 }
+
+/// **A drag of an anonymous endpoint records itself.**
+///
+/// `line l(hint(x: 0, y: 0), …)` puts a point's seed in its parent's statement, one level down
+/// from where `Decl::seed_spans` looks — so writeback has to find the slot, and splice inside
+/// it.  A point named the ordinary way and one written in a slot are the same point, and a
+/// gesture on either has to reach the source.
+#[test]
+fn a_drag_of_an_anonymous_child_is_written_back() {
+    let src = "line l(hint(x: 0, y: 0), hint(x: 60, y: 20))   // one line, two points\n";
+    let mut e = elaborate(&prog_of(src));
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let mut sk = std::mem::take(&mut e.sketch);
+    let p2 = e.map.ent_named("l.p2").expect("the dotted path is its name");
+    let [x, y] = sk.point_params(p2.i());
+    sk.params[x as usize].value = 42.5;
+    sk.params[y as usize].value = -3.0;
+    let out = edit::commit_seeds(&e, &sk, &e.program);
+    assert_eq!(out.kind, Kind::Numeric);
+    assert!(
+        out.text.contains("line l(hint(x: 0, y: 0), hint(x: 42.5, y: -3))   // one line"),
+        "spliced in the slot, comment intact: {}",
+        out.text
+    );
+}
+
+/// The same for a declaration that wrote no list at all: there is nothing to splice, so the
+/// argument list is written out — the tail of the statement, in one edit, exactly as an omitted
+/// scalar's clause is.
+#[test]
+fn a_drag_of_a_minted_child_writes_the_list() {
+    let src = "line l   // two ends, and nothing names them\n";
+    let mut e = elaborate(&prog_of(src));
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let mut sk = std::mem::take(&mut e.sketch);
+    for (i, r) in ["l.p1", "l.p2"].iter().enumerate() {
+        let p = e.map.ent_named(r).expect("named by its path");
+        let [x, y] = sk.point_params(p.i());
+        sk.params[x as usize].value = 10.0 * (i as f64 + 1.0);
+        sk.params[y as usize].value = 0.0;
+    }
+    let out = edit::commit_seeds(&e, &sk, &e.program);
+    assert!(
+        out.text.contains("line l(hint(x: 10, y: 0), hint(x: 20, y: 0))   // two ends"),
+        "{}",
+        out.text
+    );
+    // and reading it back is the same drawing, with the same names
+    let back = elaborate(&prog_of(&out.text));
+    assert!(back.ok());
+    assert!(back.map.ent_named("l.p1").is_some());
+}

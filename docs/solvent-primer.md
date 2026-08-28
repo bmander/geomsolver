@@ -50,7 +50,8 @@ the centre is structure and the radius is a guess, and one pair of brackets said
 
 ```
 param NAME = EXPR                       a number worked out while elaborating; never an unknown
-KIND NAME[(CHILDREN)] [hint(SCALAR: EXPR, …)] [knots […]] [construction]   an entity (§1.4)
+KIND NAME[(CHILD | hint(x: E, y: E), …)] [hint(SCALAR: E, …)] [knots […]] [construction]
+                                        an entity declaration (§1.4)
 RELATION(ARGS) [== EXPR] [hint(SLOT: EXPR, …)] [at (t, r)]                 a constraint (§1.5)
 claim RELATION(ARGS) [== EXPR]          an assertion, judged and never solved for (§1.9)
 ground(REF)                             pin both of a point's coordinates
@@ -88,6 +89,27 @@ clause is order-free against `knots` and `construction`, exactly as those two ar
 other. Children may be given positionally or by label; a label is what lets you omit an earlier
 one (`line l(p2: c)` leaves `p1` for a chain to thread). An arc is a centre and two *real* points,
 so its ends drag and constrain like any others.
+
+**Children need not be named.** Write no argument list and the kind's children are made for you,
+unnamed; a slot may also hold a `hint(…)` instead of a reference, which is an anonymous point and
+where its solve begins:
+
+```
+line   l                                          two points: l.p1, l.p2
+circle c hint(r: 25)                              an unnamed centre, a seeded radius
+arc    a                                          a.center, a.start, a.end
+line   l(hint(x: 0, y: 0), hint(x: 60, y: 20))    two points, seeded
+line   alt_a(A, hint(x: 15, y: 5))                one named end and one not
+```
+
+**The dotted path is the name.** `l.p1` is an ordinary point — it constrains, drags, is picked,
+and is what a dimension states itself against. Name a point when something says it twice; these
+said it once, and six statements become three.
+
+**All the children, or none.** A written slot carries a name or a seed; there is no bare `hint`
+meaning "anonymous and unseeded", because writing no list at all says that. `line l(a)` is still
+the error it always was, and so is `spline s` — a control polygon has no arity to conjure children
+from.
 
 A `frame` is a datum: an origin, a point it is pointed at, and a unit rotor `(c, s)` of its own,
 slaved to the chord between them by two intrinsic constraints the declaration implies — so it

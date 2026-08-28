@@ -325,8 +325,9 @@ pub struct Decl {
     pub kind: EntKind,
     pub name: Name,
     /// One per `Child`/`List` field of `EntKind::fields`, in that order; a `List` field holds as
-    /// many as were written.
-    pub children: Vec<Vec<Ref>>,
+    /// many as were written.  Empty throughout — `line l` — is the anonymous form: the kind's
+    /// children are minted, unnamed, and reached as `l.p1`.
+    pub children: Vec<Vec<Kid>>,
     /// One per `Scalar` field — the entity's seed, and hint-class.
     pub seed: Vec<f64>,
     /// The same, as written, where it was written as an expression over the enclosing component's
@@ -361,6 +362,47 @@ pub struct Decl {
     /// A seed named *geometrically* rather than by coordinates: `at t`, `at c.center`,
     /// `at c bearing (u + phase)`.  What it may name is the elaborator's question.
     pub seed_at: Option<AtRef>,
+}
+
+/// What fills one child slot of a declaration.
+///
+/// A written slot carries a **name** or a **seed**, and there is no third form: `line l(a, b)`
+/// names its ends and `line l(hint(x: 0, y: 0), hint(x: 60, y: 20))` seeds two points nothing
+/// names.  An entity whose children are all unnamed and unseeded is spelled by writing no list
+/// at all — `line l` — which is why "anonymous and unseeded" needs no spelling of its own.
+///
+/// The one place a *partial* list exists is mid-desugaring, where a chain's joint has not yet
+/// filled the boundary slot the link left out (§6.6); it is filled before elaboration sees it.
+#[derive(Clone, Debug)]
+pub enum Kid {
+    /// `line l(a, b)` — the point is named, and named somewhere else.
+    Ref(Ref),
+    /// `line l(hint(x: 0, y: 0), …)` — an anonymous point, and where its solve begins.  The
+    /// same clause as everywhere else in the language, one level down.
+    Hint(KidSeed),
+}
+
+impl Kid {
+    pub fn as_ref(&self) -> Option<&Ref> {
+        match self {
+            Kid::Ref(r) => Some(r),
+            Kid::Hint(_) => None,
+        }
+    }
+}
+
+/// The seed inside a child slot: an anonymous point's `x` and `y`, carried exactly as
+/// `Decl::seed` / `seed_text` / `seed_spans` carry an entity's own scalars, and for the same
+/// reasons — a solve splices the numbers and never the words around them.
+#[derive(Clone, Debug, Default)]
+pub struct KidSeed {
+    pub v: [f64; 2],
+    /// As written, where it was written as an expression over the parameters in scope.
+    pub text: [Option<String>; 2],
+    /// Where each number sits in the source.
+    pub spans: [Span; 2],
+    /// The whole `hint(…)`, so a writeback that has to add a key can rewrite it.
+    pub span: Span,
 }
 
 /// `at c bearing (u + phase)` — a place given as geometry: at a point, or at the edge of a
@@ -791,7 +833,10 @@ fn write_decl(out: &mut String, d: &Decl) {
                         s.push_str(name);
                         s.push_str(": ");
                     }
-                    write_ref(&mut s, r);
+                    match r {
+                        Kid::Ref(r) => write_ref(&mut s, r),
+                        Kid::Hint(k) => s.push_str(&kid_seed_text(k)),
+                    }
                     parts.push(s);
                 }
             }
@@ -843,6 +888,15 @@ fn hint_of(parts: &[String]) -> String {
     } else {
         format!("hint({})", parts.join(", "))
     }
+}
+
+/// `hint(x: 0, y: 0)` standing in a child slot — an anonymous point, and where its solve begins.
+pub(crate) fn kid_seed_text(k: &KidSeed) -> String {
+    let one = |i: usize| match &k.text[i] {
+        Some(t) => t.clone(),
+        None => num(k.v[i]),
+    };
+    hint_of(&[format!("x: {}", one(0)), format!("y: {}", one(1))])
 }
 
 /// `hint(x: 0, y: 0)` — every scalar the kind owns, keyed by the name `fields()` gives it.
@@ -1722,6 +1776,31 @@ impl<'a> P<'a> {
         false
     }
 
+    /// A `hint(…)` standing in a child slot, the opening paren already eaten.
+    ///
+    /// The same clause as everywhere else, so it is read by the same `hint_body`; what the keys
+    /// mean is this table — an anonymous child is a point, and a point has x and y.
+    fn kid_seed(&mut self) -> Option<KidSeed> {
+        let lo = self.t[self.i - 2].1.lo as usize; // the `hint` word itself
+        let mut k = KidSeed::default();
+        for h in self.hint_body("x: 0, y: 0")? {
+            let i = match h.key.as_str() {
+                "x" => 0,
+                "y" => 1,
+                _ => {
+                    let m = format!("an anonymous point has no scalar `{}`; it has x and y", h.key);
+                    self.fail_at(h.at, &m);
+                    return None;
+                }
+            };
+            k.v[i] = h.value.unwrap_or(0.0);
+            k.text[i] = (h.value.is_none()).then_some(h.text);
+            k.spans[i] = h.span;
+        }
+        k.span = Span::new(lo, self.prev_hi());
+        Some(k)
+    }
+
     /// `name:` at the head of a slot — the label and nothing else, consumed.
     ///
     /// Matched through the reference and cloned only in the winning arm, the way `eat_word` is:
@@ -2311,8 +2390,15 @@ impl<'a> P<'a> {
                 LinkBody::Ref(_) => None,
             }
         }
+        // a joint threads a *name*: it welds two links to one point, and only a name says
+        // which.  A slot seeded with `hint(…)` names nothing, so it reads as unfilled here and
+        // the other side must say where they meet.
         let slot = |i: usize, k: usize| {
-            decl_of(&links[i]).and_then(|d| d.children.get(k)).and_then(|v| v.first()).cloned()
+            decl_of(&links[i])
+                .and_then(|d| d.children.get(k))
+                .and_then(|v| v.first())
+                .and_then(|kid| kid.as_ref())
+                .cloned()
         };
         let (left, right) = (slot(li, exit), slot(ri, entry));
         match (left, right) {
@@ -2333,12 +2419,12 @@ impl<'a> P<'a> {
             }
             (Some(l), None) => {
                 if let LinkBody::Decl(d) = &mut links[ri].body {
-                    d.children[entry] = vec![l];
+                    d.children[entry] = vec![Kid::Ref(l)];
                 }
             }
             (None, Some(r)) => {
                 if let LinkBody::Decl(d) = &mut links[li].body {
-                    d.children[exit] = vec![r];
+                    d.children[exit] = vec![Kid::Ref(r)];
                 }
             }
             (None, None) => {
@@ -2743,7 +2829,7 @@ impl<'a> P<'a> {
             }
             self.i += 1;
             def = Some(self.ident()?);
-            let mut args: Vec<Vec<Ref>> = vec![Vec::new()];
+            let mut args: Vec<Vec<Kid>> = vec![Vec::new()];
             if self.want_p('(') {
                 while !self.eat_p(')') {
                     // `phase: 0` is a number the family takes; a bare name is an entity it is
@@ -2762,7 +2848,7 @@ impl<'a> P<'a> {
                             let (t, _) = self.expr_until(',')?;
                             values.push((l, t));
                         }
-                        None => args[0].push(self.refr()?),
+                        None => args[0].push(Kid::Ref(self.refr()?)),
                     }
                     if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
                         self.fail("expected `,` or `)`");
@@ -2792,7 +2878,7 @@ impl<'a> P<'a> {
                 seed_at: None,
             });
         }
-        let mut children: Vec<Vec<Ref>> = Vec::new();
+        let mut children: Vec<Vec<Kid>> = Vec::new();
         let mut seed: Vec<f64> = Vec::new();
         let fields = kind.fields();
         // one slot per Child/List field, so the printer's shape and the parser's agree
@@ -2824,7 +2910,13 @@ impl<'a> P<'a> {
                         return None;
                     }
                     _ => {
-                        let r = self.refr()?;
+                        // a slot carries a name or a seed, and nothing else says "anonymous":
+                        // an entity whose children are all unseeded writes no list at all
+                        let kid = if self.eat_hint_clause() {
+                            Kid::Hint(self.kid_seed()?)
+                        } else {
+                            Kid::Ref(self.refr()?)
+                        };
                         let slot = match &label {
                             Some(l) => fields
                                 .iter()
@@ -2845,7 +2937,7 @@ impl<'a> P<'a> {
                             }
                         };
                         if let Some(g) = children.get_mut(slot) {
-                            g.push(r);
+                            g.push(kid);
                         }
                         positional += 1;
                     }

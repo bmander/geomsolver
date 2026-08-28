@@ -657,8 +657,11 @@ fn rewrite(
     match k {
         StmtKind::Decl(d) => {
             for g in &mut d.children {
-                for r in g.iter_mut() {
-                    fix(r, bad);
+                for kid in g.iter_mut() {
+                    // a seeded slot names nothing, so there is nothing in it to rescope
+                    if let crate::syntax::Kid::Ref(r) = kid {
+                        fix(r, bad);
+                    }
                 }
             }
         }

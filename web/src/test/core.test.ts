@@ -760,7 +760,10 @@ test('redundancy the matching cannot see is counted and named as implied', () =>
   const named = new Set(d.implied.map((c) => io.describe(c)));
   assert.deepEqual([...named].sort(), [
     'Perpendicular(L3, L1)', 'Perpendicular(L4, L2)', 'Perpendicular(L5, L0)',
-    'PointOnLine(P6, L3)', 'PointOnLine(P6, L4)', 'PointOnLine(P6, L5)',
+    // `P3` is the concurrency point: `altitudes.sv` writes the three feet *in* the lines they
+    // slide along (`line alt_a(A, hint(x: 15, y: 5))`), so those points are minted with the
+    // lines and come after it
+    'PointOnLine(P3, L3)', 'PointOnLine(P3, L4)', 'PointOnLine(P3, L5)',
   ]);
   assert.ok([...d.entityState.values()].every((s) => s !== 'over'));
 });
