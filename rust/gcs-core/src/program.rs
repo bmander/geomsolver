@@ -22,9 +22,10 @@ use crate::decompose;
 use crate::expr;
 use crate::io;
 use crate::model::{EntKind, EntRef, Field, Sketch};
+use crate::rng::Rng;
 use crate::syntax::{
-    entity_name, line_col, num, Arg, Decl, Gauge, Name, Orient, Program, Ref, Relation, Seg, Span,
-    Stmt, StmtId, StmtKind,
+    entity_name, line_col, num, Arg, Decl, Gauge, Kid, Name, Orient, Program, Ref, Relation, Seg,
+    Span, Stmt, StmtId, StmtKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -490,11 +491,20 @@ pub fn elaborate(p: &Program) -> Elaborated {
             if d.kind != kind || skip.contains(&st.id) {
                 continue;
             }
-            match build(&mut sk, &res, d, st, &mut diags) {
+            let mut anon: Vec<(String, EntRef)> = Vec::new();
+            match build(&mut sk, &res, d, st, &mut diags, &mut anon) {
                 Some(e) => {
                     built.insert(e, true);
                     map.bind(&d.name.text, e);
                     map.record(st, Made::Ent(e));
+                    // an anonymous child's name *is* its dotted path, so it is bound like any
+                    // other: that is what lets a dimension name it, a selection survive a
+                    // re-elaboration, and a drag of it find the slot it came from
+                    for (name, k) in anon {
+                        built.insert(k, true);
+                        map.bind(&name, k);
+                        map.record(st, Made::Ent(k));
+                    }
                 }
                 None => {
                     // a declaration that could not be built leaves its name unbound, so every
@@ -704,6 +714,7 @@ fn compile_trace(
                 .children
                 .get(g)
                 .and_then(|v| v.first())
+                .and_then(|k| k.as_ref())
                 .ok_or((st.span, format!("`{}` needs its points named", d.name.text)))?;
             let e = scope
                 .get(&r.root.text)
@@ -989,12 +1000,41 @@ fn at_seed(
     }
 }
 
+/// Where an unseeded implicit child starts.
+///
+/// **Nothing in the language says** (spec §15): a declaration with no hint has unknowns, and the
+/// document says no more than that.  The implementation needs an answer all the same, and the
+/// obvious one is wrong — `line l`'s two endpoints both at the origin is a zero-length line, with
+/// no direction for `horizontal(l)` to bite on and a singular row for any tangency.  So they
+/// scatter: distinct bearings round a unit circle, jittered off the crate's seeded `rng::Rng` so
+/// the answer is the same on every run and on every machine.  It is an implementation choice and
+/// belongs nowhere in the spec.
+fn scatter(id: StmtId, k: usize, n: usize) -> (f64, f64) {
+    let mut rng = Rng::new(0x5eed_u32 ^ id.0.wrapping_mul(2_654_435_761).wrapping_add(k as u32));
+    let th = std::f64::consts::TAU * k as f64 / n as f64 + rng.uniform(-0.2, 0.2);
+    let r = rng.uniform(0.8, 1.2);
+    (r * th.cos(), r * th.sin())
+}
+
+/// The dotted names of a kind's child slots: `l.p1`, `a.center`.  An anonymous child has no name
+/// in the source, so this **is** its name, and everything that identifies an entity by name —
+/// the map, a new constraint's arguments, a selection crossing a re-elaboration — asks here.
+fn child_names(d: &Decl) -> Vec<String> {
+    d.kind
+        .fields()
+        .iter()
+        .filter(|(_, f)| *f == Field::Child)
+        .map(|(n, _)| format!("{}.{n}", d.name.text))
+        .collect()
+}
+
 fn build(
     sk: &mut Sketch,
     res: &Resolver,
     d: &Decl,
     st: &Stmt,
     diags: &mut Vec<Diag>,
+    anon: &mut Vec<(String, EntRef)>,
 ) -> Option<EntRef> {
     // a curve is the one kind whose arguments need not be points, so it is built before the
     // walk that insists they are
@@ -1014,48 +1054,90 @@ fn build(
     }
     // every child a declaration names, flattened in field order and checked to be a Point —
     // which every other child of every other kind is, and which is what an alias class must
-    // agree about
+    // agree about.  A slot may hold a *seed* instead of a name, and a declaration may write no
+    // list at all: both mint a point nothing names, reached as `l.p1` (spec §6.1, §6.2).
+    let written: usize = d.children.iter().map(|g| g.len()).sum();
+    // the dotted names, worked out only where one is needed: every child a document names is a
+    // `Kid::Ref`, and formatting names nothing would read is a string per slot per elaboration
+    let anonymous =
+        written == 0 || d.children.iter().flatten().any(|k| matches!(k, Kid::Hint(_)));
+    let dotted = if anonymous { child_names(d) } else { Vec::new() };
     let mut kids: Vec<usize> = Vec::new();
-    for group in &d.children {
-        for r in group {
-            let Some(e) = res.lookup(r) else {
-                diags.push(Diag {
-                    code: Code::E101,
-                    span: r.span,
-                    stmt: Some(st.id),
-                    message: format!("no such entity: `{}`", r.root.text),
-                });
-                return None;
-            };
-            let e = match follow(sk, e, &r.path) {
-                Ok(e) => e,
-                Err(msg) => {
+    // `Some(0)` and `None` both mean there is nothing to mint, and so does a written list
+    let mint = if written == 0 { d.kind.children_arity().unwrap_or(0) } else { 0 };
+    for k in 0..mint {
+        let (x, y) = scatter(st.id, k, mint);
+        // the dotted path *is* the point's name — there is no other — so it is the name the
+        // sketch carries too, and every reader that shows one shows this
+        let i = sk.point(x, y, false, &dotted[k]);
+        kids.push(i);
+        anon.push((dotted[k].clone(), EntRef::point(i)));
+    }
+    for (slot, kid) in d.children.iter().flatten().enumerate() {
+        let r = match kid {
+            Kid::Ref(r) => r,
+            Kid::Hint(seed) => {
+                // a list slot has no arity, so it has no dotted path to be named by, and a
+                // point nothing can name is a point nothing can constrain or drag
+                let Some(name) = dotted.get(slot) else {
                     diags.push(Diag {
-                        code: Code::E040,
-                        span: r.span,
+                        code: Code::E103,
+                        span: st.span,
                         stmt: Some(st.id),
-                        message: msg,
+                        message: format!(
+                            "a {}'s control points have no names to be reached by, so each \
+                             one is declared",
+                            d.kind.as_str()
+                        ),
                     });
                     return None;
-                }
-            };
-            if e.kind != EntKind::Point {
+                };
+                let i = sk.point(seed.v[0], seed.v[1], false, name);
+                kids.push(i);
+                anon.push((name.clone(), EntRef::point(i)));
+                continue;
+            }
+        };
+        let Some(e) = res.lookup(r) else {
+            diags.push(Diag {
+                code: Code::E101,
+                span: r.span,
+                stmt: Some(st.id),
+                message: format!("no such entity: `{}`", r.root.text),
+            });
+            return None;
+        };
+        let e = match follow(sk, e, &r.path) {
+            Ok(e) => e,
+            Err(msg) => {
                 diags.push(Diag {
                     code: Code::E040,
                     span: r.span,
                     stmt: Some(st.id),
-                    message: format!(
-                        "`{}` is a {}, and a {} is built from points",
-                        r.root.text,
-                        e.kind.as_str(),
-                        d.kind.as_str()
-                    ),
+                    message: msg,
                 });
                 return None;
             }
-            kids.push(e.i());
+        };
+        if e.kind != EntKind::Point {
+            diags.push(Diag {
+                code: Code::E040,
+                span: r.span,
+                stmt: Some(st.id),
+                message: format!(
+                    "`{}` is a {}, and a {} is built from points",
+                    r.root.text,
+                    e.kind.as_str(),
+                    d.kind.as_str()
+                ),
+            });
+            return None;
         }
+        kids.push(e.i());
     }
+    // all the children, or none: a written slot carries a name or a seed, and a declaration that
+    // writes no list at all gets them minted.  Anything between is E103, as it always was — the
+    // accepted arity is now `children_arity()` *or* zero.
     let want = d.kind.children_arity();
     if let Some(n) = want {
         if kids.len() != n {
@@ -1064,9 +1146,9 @@ fn build(
                 span: st.span,
                 stmt: Some(st.id),
                 message: format!(
-                    "a {} is built from {n} point(s), and {} were given",
+                    "a {} is built from {n} point(s) or from none at all, and {} were given",
                     d.kind.as_str(),
-                    kids.len()
+                    written
                 ),
             });
             return None;
@@ -1164,7 +1246,7 @@ let Some(fam) = d.def.as_ref() else {
     let args: Vec<EntRef> = d
         .children
         .first()
-        .map(|g| g.iter().filter_map(|r| res.lookup(r)).collect())
+        .map(|g| g.iter().filter_map(|k| k.as_ref()).filter_map(|r| res.lookup(r)).collect())
         .unwrap_or_default();
     if args.len() != want.len() {
         diags.push(Diag {
@@ -1549,16 +1631,21 @@ pub fn to_program(sk: &Sketch) -> Program {
 
 pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
     let kids = sk.children(e);
-    let mut children: Vec<Vec<Ref>> = Vec::new();
+    let mut children: Vec<Vec<Kid>> = Vec::new();
     let mut taken = 0usize;
     for (_, field) in e.kind.fields() {
         match field {
             Field::Child => {
-                children.push(kids.get(taken).map(|&k| vec![Ref::new(entity_name(k))]).unwrap_or_default());
+                children.push(
+                    kids.get(taken)
+                        .map(|&k| vec![Kid::Ref(Ref::new(entity_name(k)))])
+                        .unwrap_or_default(),
+                );
                 taken += 1;
             }
             Field::List => {
-                children.push(kids[taken..].iter().map(|&k| Ref::new(entity_name(k))).collect());
+                children
+                    .push(kids[taken..].iter().map(|&k| Kid::Ref(Ref::new(entity_name(k)))).collect());
                 taken = kids.len();
             }
             Field::Scalar => {}

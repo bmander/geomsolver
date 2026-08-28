@@ -22,14 +22,13 @@ line ab(A, B)
 line bc(B, C)
 line ca(C, A)
 
-// each altitude runs from a vertex to a foot that is free to slide along it
-point QA hint(x: 15, y: 5)
-point QB hint(x: 20, y: 10)
-point QC hint(x: 15, y: -5)
-
-line alt_a(A, QA)
-line alt_b(B, QB)
-line alt_c(C, QC)
+// Each altitude runs from a vertex to a foot that is free to slide along it.  The feet are
+// written *in the lines* rather than declared above them: nothing else in this file says their
+// names, and a name earns its place when something says it twice.  They are still there to
+// constrain and to drag — `alt_a.p2` is the point, and that dotted path is what it is called.
+line alt_a(A, hint(x: 15, y: 5))
+line alt_b(B, hint(x: 20, y: 10))
+line alt_c(C, hint(x: 15, y: -5))
 
 perpendicular(alt_a, bc)
 perpendicular(alt_b, ca)
