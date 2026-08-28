@@ -36,6 +36,18 @@ Currently: **Stage 5 done**, in **one** implementation —
   algorithm — and re-derives no number the report already carries (a motion's `movingParams` is
   the core's reading of its own velocities, not a threshold the binding picks), since two copies
   of a rule are two rules the moment one of them is edited.
+* **CLI** (`rust/gcs-cli/`): `solventc`, which parses, elaborates, solves, diagnoses and reports
+  on a document from a terminal — the first way to check a drawing without a browser, and the
+  natural home for module resolution when it arrives.  It **invents no wording**: a per-document
+  line is `diagnose::summary`, a culprit is `io::describe`, `--json` is `report::*_json`, so it
+  and the app cannot come to describe one drawing differently.  Exit codes 0/1/2 are what
+  `Diag::severity` and `SolveResult::success` already say, given a process to say it to.  The
+  seam an importer will need is there already — a `Source { name, text }` list in, a report per
+  source out — because **the core takes text and has no filesystem**: it runs in wasm and must
+  not learn how to open a file, so the thing with a working directory is this binary.
+  `--output` writes an SVG through `gcs_core::svg`, in the core for the reason callout layout
+  is: an "export SVG" button in the app must not be a second implementation.  An SVG has no
+  screen, so the export **chooses a `unit`** from `--width` and every constant size follows.
 * **app** (`web/src/app/`): an HTML5-canvas sketcher, the only front end.  Two halves, each
   a handful of modules rather than one slab.  The *view* is the canvas: `view.ts` holds the
   state — the camera, selection, tool, plan, diagnosis — and the modules beside it take that
@@ -50,7 +62,8 @@ Currently: **Stage 5 done**, in **one** implementation —
   `ui` (dialogs and bar widgets), and `main.ts`, which is only wiring.  `index.html` is structure and `app.css` is the whole of the styling.
 
 Commands:
-`make` (native `build/libgcs.dylib`), `make wasm` (`web/src/wasm/gcs.wasm`),
+`make` (native `build/libgcs.dylib`), `make solventc` (`build/solventc`),
+`make wasm` (`web/src/wasm/gcs.wasm`),
 `make test` (cargo + the web suite), `cargo test --manifest-path rust/Cargo.toml`,
 `cd web && npm test`, `make bench` (the native `bench` binary and `npm run bench`, meant to be
 read side by side), `cd web && npm run serve`.

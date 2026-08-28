@@ -1,6 +1,7 @@
 # gcs — one Rust core, one thin binding.
 #
 #   make            native shared library in build/ (the released C ABI artefact)
+#   make solventc   build/solventc — check a Solvent document from a terminal
 #   make wasm       web/src/wasm/gcs.wasm (what the web app instantiates)
 #   make test       everything: cargo and the web suite
 #   make bench      the native benchmark and the wasm one, meant to be read side by side
@@ -12,11 +13,11 @@ CARGO := cargo
 # compiled in with `include_str!`, so a document is source.  Left out of this list, editing one
 # rebuilt nothing — the tests read the file from disk and passed while the browser went on
 # running the case that was compiled in weeks ago.
-RUST_SRC := $(shell find rust/gcs-core/src rust/gcs-ffi/src rust/examples \
+RUST_SRC := $(shell find rust/gcs-core/src rust/gcs-ffi/src rust/gcs-cli/src rust/examples \
                         -name '*.rs' -o -name '*.sv')
 WASM_TARGET := wasm32-unknown-unknown
 
-.PHONY: all wasm test test-rust test-web bench fmt clippy clean
+.PHONY: all wasm solventc test test-rust test-web bench fmt clippy clean
 
 all: build/libgcs$(EXT)
 
@@ -24,6 +25,13 @@ build/libgcs$(EXT): $(RUST_SRC) rust/gcs-core/Cargo.toml rust/gcs-ffi/Cargo.toml
 	@mkdir -p build
 	$(CARGO) build --manifest-path rust/Cargo.toml --release -p gcs-ffi
 	cp rust/target/release/libgcs$(EXT) $@
+
+solventc: build/solventc
+
+build/solventc: $(RUST_SRC) rust/gcs-cli/Cargo.toml
+	@mkdir -p build
+	$(CARGO) build --manifest-path rust/Cargo.toml --release -p gcs-cli
+	cp rust/target/release/solventc $@
 
 wasm: web/src/wasm/gcs.wasm
 
@@ -35,10 +43,11 @@ web/src/wasm/gcs.wasm: $(RUST_SRC) rust/gcs-core/Cargo.toml rust/gcs-ffi/Cargo.t
 
 test: test-rust test-web
 
-# A workspace `cargo test` already runs every member's `tests/`, so `gcs-ffi/tests/` comes along:
-# the panic boundary is the one thing only the native target can check, since
-# `wasm32-unknown-unknown` aborts whatever the profile says.  `all` is a prerequisite so the
-# released cdylib has to link before the suite can pass — nothing else builds it any more.
+# A workspace `cargo test` already runs every member's `tests/`, so `gcs-ffi/tests/` and
+# `gcs-cli/tests/` come along: the panic boundary is the one thing only the native target can
+# check, since `wasm32-unknown-unknown` aborts whatever the profile says, and `solventc` is run
+# over the case library.  `all` is a prerequisite so the released cdylib has to link before the
+# suite can pass — nothing else builds it any more.
 test-rust: all
 	$(CARGO) test --manifest-path rust/Cargo.toml --release
 

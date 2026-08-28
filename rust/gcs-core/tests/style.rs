@@ -171,6 +171,26 @@ fn a_document_rule_beats_a_shipped_one_on_a_later_class() {
     assert_eq!(c.style_named("dimension reference").color.as_deref(), Some("#e5989b"));
 }
 
+/// **Both front ends ask the same thing of a claimed callout.**  `svg::render` is the second one
+/// that strokes a sheet, so the rule that a reference dimension is drawn `dimension reference`
+/// is pinned here too: written once per front end, it is the pair that drifts.
+#[test]
+fn an_svg_export_draws_a_claimed_dimension_in_the_documents_ink() {
+    let src = "\
+style .dimension { color: #b00020 }
+point a hint(x: 0, y: 0)
+point b hint(x: 60, y: 0)
+ground(a)
+horizontal(ab)
+line ab(a, b)
+distance(a, b) == 60 at (10, -20)
+claim horizontal_distance(a, b) == 60 at (10, 20)
+";
+    let out = gcs_core::svg::render(&read(src), 400.0);
+    assert!(out.contains("(60)"), "the claim is drawn as a reference dimension:\n{out}");
+    assert!(!out.contains("#7aa7ad"), "and takes the document's ink, not the shipped one:\n{out}");
+}
+
 /// A property whose value the sheet cannot read is **dropped**, exactly as a property it does
 /// not know is.  `color:` with nothing after it stored an empty string, which is not nullish and
 /// so travelled to `ctx.fillStyle` — where an unparseable assignment is ignored and leaves the
