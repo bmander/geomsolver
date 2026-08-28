@@ -23,6 +23,15 @@ use crate::style::Style;
 /// White space round the drawing, in screen pixels.
 const MARGIN_PX: f64 = 24.0;
 
+/// The weight of geometry a sheet says nothing about.  The base sheet has no rule for unclassed
+/// geometry, so each front end answers "what does a plain line look like" for itself and the two
+/// must agree: `paint.ts`'s `strokeFor` holds the other copy.
+const PLAIN_PX: f64 = 1.8;
+
+/// Rim points for an ellipse.  A fixed count rather than `unit`-driven flatness: `ellipse.rs`
+/// has no tessellator of its own yet, and this is the sweep every other consumer of it uses.
+const RIM: usize = 180;
+
 /// The ink for geometry a sheet says nothing about.  A drawing exported for print is black
 /// unless the document says otherwise — the per-kind palette the app paints with is the *app's*
 /// chrome, not the document's (spec §13.2).
@@ -31,21 +40,20 @@ const INK: &str = "#000000";
 /// Render a solved sketch at a given page width, in pixels.
 pub fn render(sk: &Sketch, width_px: f64) -> String {
     let width_px = width_px.max(16.0);
-    // the geometry first, to fix `unit`; then the callouts, which are laid out *against* a unit
-    // and may reach outside the geometry they measure
-    let geo = drawn_bbox(sk);
+    // The geometry first, to fix `unit`; then the callouts, which are laid out *against* a unit
+    // and may reach outside the geometry they measure.  `Sketch::drawn_bounds` and nothing of
+    // our own: `callout::layout` measures the drawing by that same box, and a page sized by a
+    // second answer would put the callouts somewhere the page is not.
+    let geo = sk.drawn_bounds();
     let span = (geo.2 - geo.0).max(geo.3 - geo.1).max(1e-9);
     let unit = span / (width_px - 2.0 * MARGIN_PX).max(1.0);
     let cs = callout::layout(sk, unit);
 
     let mut b = geo;
     for c in &cs {
-        for p in c.label.iter().chain(c.solid.iter().flat_map(|s| [&s.0, &s.1])) {
-            grow(&mut b, *p);
-        }
-        for s in &c.thin {
-            grow(&mut b, s.0);
-            grow(&mut b, s.1);
+        let segs = c.solid.iter().chain(&c.thin);
+        for p in c.label.iter().copied().chain(segs.flat_map(|s| [s.0, s.1])) {
+            grow(&mut b, p);
         }
         for a in &c.arcs {
             grow(&mut b, (a.c.0 - a.r, a.c.1 - a.r));
@@ -68,7 +76,7 @@ pub fn render(sk: &Sketch, width_px: f64) -> String {
         n(h)
     ));
     out.push_str("<g fill=\"none\" stroke-linecap=\"round\">\n");
-    for e in drawn(sk) {
+    for e in sk.drawn() {
         entity(&mut out, sk, e, unit, &at);
     }
     out.push_str("</g>\n");
@@ -77,33 +85,6 @@ pub fn render(sk: &Sketch, width_px: f64) -> String {
     }
     out.push_str("</svg>\n");
     out
-}
-
-/// Everything with something to draw.  `Sketch::primitives` stops short of curves — a curve is
-/// written over the other kinds and is built and grafted after them — so they are added here,
-/// which is the only place in this file that has to know the difference.
-fn drawn(sk: &Sketch) -> Vec<EntRef> {
-    let mut v = sk.primitives();
-    v.extend((0..sk.curves.len()).map(|i| EntRef::new(EntKind::Curve, i)));
-    v
-}
-
-/// The extents of what is actually *drawn* — a frame draws nothing and a point is a place, so
-/// the box is over the geometry a reader sees.
-fn drawn_bbox(sk: &Sketch) -> (f64, f64, f64, f64) {
-    let mut b = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
-    for e in drawn(sk) {
-        if e.kind == EntKind::Frame {
-            continue;
-        }
-        let (a, c, d, f) = sk.bounds(e);
-        grow(&mut b, (a, c));
-        grow(&mut b, (d, f));
-    }
-    if !b.0.is_finite() {
-        return (0.0, 0.0, 1.0, 1.0);
-    }
-    b
 }
 
 fn grow(b: &mut (f64, f64, f64, f64), p: (f64, f64)) {
@@ -124,7 +105,7 @@ fn stroke(s: &Style) -> String {
     let mut out = format!(
         " stroke=\"{}\" stroke-width=\"{}\"",
         s.color.as_deref().unwrap_or(INK),
-        n(s.width.unwrap_or(1.4))
+        n(s.width.unwrap_or(PLAIN_PX))
     );
     if let Some(d) = s.dash.as_ref().filter(|d| !d.is_empty()) {
         let parts: Vec<String> = d.iter().map(|&v| n(v)).collect();
@@ -133,10 +114,9 @@ fn stroke(s: &Style) -> String {
     out
 }
 
-fn poly(out: &mut String, pts: &[(f64, f64)], at: &dyn Fn((f64, f64)) -> (f64, f64), attrs: &str) {
-    if pts.len() < 2 {
-        return;
-    }
+/// `"x,y x,y …"` — a point list in page coordinates, which is what every `points=` attribute in
+/// this file wants.  Written once so the number format is stated once.
+fn points(pts: &[(f64, f64)], at: &dyn Fn((f64, f64)) -> (f64, f64)) -> String {
     let parts: Vec<String> = pts
         .iter()
         .map(|&p| {
@@ -144,7 +124,14 @@ fn poly(out: &mut String, pts: &[(f64, f64)], at: &dyn Fn((f64, f64)) -> (f64, f
             format!("{},{}", n(x), n(y))
         })
         .collect();
-    out.push_str(&format!("<polyline points=\"{}\"{attrs}/>\n", parts.join(" ")));
+    parts.join(" ")
+}
+
+fn poly(out: &mut String, pts: &[(f64, f64)], at: &dyn Fn((f64, f64)) -> (f64, f64), attrs: &str) {
+    if pts.len() < 2 {
+        return;
+    }
+    out.push_str(&format!("<polyline points=\"{}\"{attrs}/>\n", points(pts, at)));
 }
 
 /// One arc, as an SVG elliptical-arc path.  `a1 > a0` is counterclockwise in the drawing, which
@@ -231,21 +218,10 @@ fn entity(
         }
         EntKind::Ellipse => {
             // sampled rather than written as an SVG ellipse: the rotation would be a second
-            // place the major axis's angle is worked out, and `ellipse.rs` already owns it
-            let el = &sk.ellipses[i];
-            let c = sk.point_xy(el.center as usize);
-            let m = sk.point_xy(el.major as usize);
-            let b = sk.params[el.minor as usize].value.abs();
-            let (dx, dy) = (m.0 - c.0, m.1 - c.1);
-            let a = dx.hypot(dy).max(1e-12);
-            let (ux, uy) = (dx / a, dy / a);
-            let pts: Vec<(f64, f64)> = (0..=180)
-                .map(|k| {
-                    let t = std::f64::consts::TAU * k as f64 / 180.0;
-                    let (p, q) = (a * t.cos(), b * t.sin());
-                    (c.0 + p * ux - q * uy, c.1 + p * uy + q * ux)
-                })
-                .collect();
+            // place the major axis's angle is worked out, and `ellipse.rs` already owns it —
+            // which is `ellipse::sample`, so the rim is walked there and not here
+            let mut pts = crate::ellipse::sample(sk, i, RIM);
+            pts.push(pts[0]); // a rim is closed; `sample` gives one turn's worth, open
             poly(out, &pts, at, &s);
         }
         EntKind::Spline => poly(out, &crate::curve::tessellate(sk, i, unit), at, &s),
@@ -259,62 +235,36 @@ fn dimension(
     out: &mut String,
     sk: &Sketch,
     c: &Callout,
-    _unit: f64,
+    unit: f64,
     at: &dyn Fn((f64, f64)) -> (f64, f64),
 ) {
-    let claimed = sk.constraint(c.id).map(|k| k.claim).unwrap_or(false);
-    // a reference dimension *is* a dimension: the shared rule, and then the one that says how it
-    // differs.  Asked for `reference` alone it would take neither the shared weight nor whatever
-    // the document said about `.dimension`, which is `paint.ts`'s reason for the same list.
-    let ink = sk.style_named(if claimed { "dimension reference" } else { "dimension" });
+    // which classes a callout carries and how they compose is `callout::ink`'s: a rule each front
+    // end resolved for itself is a rule each front end gets slightly differently
+    let (ink, thin) = callout::ink(sk, c);
     let col = ink.color.clone().unwrap_or_else(|| INK.to_string());
-    let thin = {
-        let mut t = sk.style_named("extension");
-        t.color = Some(col.clone());
-        t.width = t.width.or(ink.width);
-        t
-    };
-    let solid = Style { dash: None, ..ink.clone() };
+    // one attribute string per style, not one per segment: a callout's parts are all stroked
+    // the same two ways, and `stroke` allocates
+    let (thin, solid) = (stroke(&thin), stroke(&Style { dash: None, ..ink }));
     for s in &c.thin {
-        poly(out, &[s.0, s.1], at, &stroke(&thin));
+        poly(out, &[s.0, s.1], at, &thin);
     }
     for s in &c.solid {
-        poly(out, &[s.0, s.1], at, &stroke(&solid));
+        poly(out, &[s.0, s.1], at, &solid);
     }
     for a in &c.arcs {
-        arc_path(out, a.c, a.r, a.a0, a.a1, at, &stroke(&solid));
+        arc_path(out, a.c, a.r, a.a0, a.a1, at, &solid);
     }
     for a in &c.arrows {
-        // the head is a filled triangle: the tip, and two barbs a fixed number of pixels back
-        let len = callout::ARROW_PX * _unit;
-        let (bx, by) = (a.at.0 - a.dir.0 * len, a.at.1 - a.dir.1 * len);
-        let (nx, ny) = (-a.dir.1 * len * callout::BARB, a.dir.0 * len * callout::BARB);
-        let pts = [a.at, (bx + nx, by + ny), (bx - nx, by - ny)];
-        let parts: Vec<String> = pts
-            .iter()
-            .map(|&p| {
-                let (x, y) = at(p);
-                format!("{},{}", n(x), n(y))
-            })
-            .collect();
-        out.push_str(&format!(
-            "<polygon points=\"{}\" fill=\"{col}\"/>\n",
-            parts.join(" ")
-        ));
+        // a filled triangle, in the shape the layout hands over — the core lays the figure out
+        // and this only strokes it, the same bargain the label's box is drawn under
+        let pts = callout::head(a, unit);
+        out.push_str(&format!("<polygon points=\"{}\" fill=\"{col}\"/>\n", points(&pts, at)));
     }
     // the number, over a box that clears what is behind it — one dimension's number must not rub
     // out the next one's line, which is why the box is part of the layout
-    let box_pts: Vec<String> = c
-        .label
-        .iter()
-        .map(|&p| {
-            let (x, y) = at(p);
-            format!("{},{}", n(x), n(y))
-        })
-        .collect();
     out.push_str(&format!(
         "<polygon points=\"{}\" fill=\"#ffffff\"/>\n",
-        box_pts.join(" ")
+        points(&c.label, at)
     ));
     let (ax, ay) = at(c.anchor);
     // the layout turns counterclockwise; the page turns the other way, its y pointing down

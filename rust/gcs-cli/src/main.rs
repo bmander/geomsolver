@@ -34,7 +34,7 @@ solventc — check a Solvent document
     --json              structured output instead of the text report
     --no-diagnose       solve only; skip the diagnosis
     --allow-unsolved    a document that does not solve is not a failure
-    --output PATH       write an SVG (one file, so one document)
+    -o, --output PATH   write an SVG (one file, so one document)
     --width PX          the SVG's page width in pixels (default 800)
     -h, --help          this
 
@@ -140,19 +140,24 @@ fn main() -> ExitCode {
 /// One document: its exit code, and its JSON report when one was asked for.
 fn check(s: &Source, opts: &Opts) -> (u8, Json) {
     let (prog, errs) = parse(&s.text);
-    // a syntax error is a diagnostic like any other; it just has no `Code` of its own yet
-    for e in &errs {
-        say(s, e.span.lo, "error", "E001", &e.message, opts.json);
-    }
     let e = elaborate(&prog);
-    // the same reference can be reported by expansion and again by the build that follows it;
-    // saying it twice is a repetition and not a second finding, so identical lines collapse.
-    // The *wording* is still the core's — this is paging, like `SHOW` below.
-    let mut said: std::collections::BTreeSet<(u32, &str, &str)> = std::collections::BTreeSet::new();
-    for d in &e.diags {
-        let (sev, code) = (severity(d.severity()), d.code.as_str());
-        if said.insert((d.span.lo, code, &d.message)) {
-            say(s, d.span.lo, sev, code, &d.message, opts.json);
+    // Nothing is said in `--json` mode, so nothing is worked out either: the collapse below is
+    // part of deciding what to print, and running it to feed a function that discards every line
+    // is work done for no reader.
+    if !opts.json {
+        // a syntax error is a diagnostic like any other; it just has no `Code` of its own yet
+        for x in &errs {
+            say(s, x.span.lo, "error", "E001", &x.message);
+        }
+        // the same reference can be reported by expansion and again by the build that follows
+        // it; saying it twice is a repetition and not a second finding, so identical lines
+        // collapse.  The *wording* is still the core's — this is paging, like `SHOW` below.
+        let mut said: std::collections::BTreeSet<(u32, &str, &str)> = Default::default();
+        for d in &e.diags {
+            let (sev, code) = (severity(d.severity()), d.code.as_str());
+            if said.insert((d.span.lo, code, &d.message)) {
+                say(s, d.span.lo, sev, code, &d.message);
+            }
         }
     }
     if !errs.is_empty() || !e.ok() {
@@ -183,15 +188,15 @@ fn check(s: &Source, opts: &Opts) -> (u8, Json) {
             }
         }
     }
+    let mut code = if r.success || opts.allow_unsolved { 0 } else { 2 };
     if let Some(path) = &opts.output {
         // the writer is `gcs_core::svg`, not this crate's: an "export SVG" button in the web app
         // must not be a second implementation, the same reason callout layout is in the core
         if let Err(err) = std::fs::write(path, gcs_core::svg::render(&sk, opts.width)) {
             eprintln!("solventc: {path}: {err}");
-            return (1, doc_json(s, Some(&r), d.as_ref().map(|d| (&sk, d)), &e));
+            code = 1;
         }
     }
-    let code = if r.success || opts.allow_unsolved { 0 } else { 2 };
     (code, doc_json(s, Some(&r), d.as_ref().map(|d| (&sk, d)), &e))
 }
 
@@ -216,10 +221,7 @@ fn report_set(sk: &Sketch, what: &str, ids: &[u32]) {
 /// Offsets cross from the core in **UTF-8 bytes** and a column counts characters, which
 /// `syntax::line_col` already knows — `gear.sv` has an em dash in its second line, so this is the
 /// ordinary case and not a corner one.
-fn say(s: &Source, off: u32, sev: &str, code: &str, msg: &str, quiet: bool) {
-    if quiet {
-        return;
-    }
+fn say(s: &Source, off: u32, sev: &str, code: &str, msg: &str) {
     let (line, col) = line_col(&s.text, off);
     eprintln!("{}:{line}:{col}: {sev}[{code}]: {msg}", s.name);
 }
