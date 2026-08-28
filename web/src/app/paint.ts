@@ -10,6 +10,7 @@ import {
   threePointArc,
 } from '../core/model.js';
 import { tellDimension } from './dimension.js';
+import { paintHandles, paintUnderlay } from './underlay.js';
 import type { SketchView } from './view.js';
 
 export const COL = {
@@ -27,6 +28,10 @@ export const COL = {
   highlight: '#9467bd',
   conflict: '#b3001b',
   bandFill: 'rgba(227, 119, 194, 0.10)',
+  /** The traced picture's frame and its corner handles — chrome, so grey, and the same grey a
+   *  preview is drawn in: neither is part of the drawing. */
+  imageFrame: '#999999',
+  imageHandle: '#666666',
 };
 /* entity colouring by constraint state (FreeCAD-style, but from the DM decomposition and the
  * conflict set rather than from a guess) */
@@ -40,6 +45,8 @@ export function paint(v: SketchView): void {
   ctx.save();
   ctx.fillStyle = COL.bg;
   ctx.fillRect(0, 0, w, h);
+  // the picture being traced, under everything: the axes and the drawing read over it
+  paintUnderlay(v);
   ctx.lineCap = 'round';
   const [ox, oy] = v.w2s(0, 0);
   ctx.strokeStyle = COL.axis;
@@ -151,8 +158,12 @@ export function paint(v: SketchView): void {
     }
   }
   paintCallouts(v);
+  // the picture's frame and handles, over everything, and **only while its own tool is down** —
+  // which is the whole of what that tool is: with any other, the picture is scenery a press
+  // goes straight through
+  if (v.tool === 'image') paintHandles(v, COL.imageFrame, COL.imageHandle);
   v.gesture?.paint?.(ctx);
-  if (v.tool !== 'select') {                 // snap indicator
+  if (v.tool !== 'select' && v.tool !== 'image') {   // snap indicator
     const sp = v.pickPoint(...v.cursor);
     if (sp) {
       const [sx, sy] = v.w2s(...sp.xy);

@@ -27,6 +27,8 @@ import type { Gesture } from './gesture.js';
 import type { DimAlt, LiveDim } from './dimension.js';
 import { paint } from './paint.js';
 import * as tools from './tools.js';
+import * as underlay from './underlay.js';
+import type { Bitmap, Underlay } from './underlay.js';
 
 /* A dimension being written belongs to `dimension`, but it is the view a caller holds, so the
  * two types are published from here as well. */
@@ -58,7 +60,7 @@ export interface Place {
 
 export type Tool =
   'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit'
-  | 'ellipse';
+  | 'ellipse' | 'image';
 
 
 
@@ -77,6 +79,10 @@ export class SketchView {
   colorByState = true;
   /** Paint the dimensioned constraints on the drawing as callouts. */
   showDimensions = true;
+  /** A picture to trace over, in world coordinates — see `underlay.ts`.  Not document state:
+   *  it is scenery, and it is inert under every tool but its own, which is what lets the
+   *  drawing be made straight through it. */
+  underlay: Underlay | null = null;
 
   selected: Primitive[] = [];
   highlight: Primitive[] = [];
@@ -587,6 +593,35 @@ export class SketchView {
    * holds one object and never has to know which module a verb lives in. */
 
   setTool(tool: Tool): void { tools.setTool(this, tool); }
+
+  /* The picture traced over, if there is one.  It is view state and not document state, so
+   * none of this goes near `afterEdit`, the undo stack or the source — a repaint is the whole
+   * of the consequence. */
+
+  /** Put a picture in the middle of the view, replacing any that was there. */
+  traceImage(image: Bitmap, name: string, url: string | null = null): void {
+    underlay.release(this.underlay);
+    this.underlay = underlay.place(this, image, name, url);
+    this.onStatus(`tracing ${name} — drag it to place it, drag a corner to size and turn it`);
+    this.draw();
+  }
+
+  /** Take it away again. */
+  removeImage(): void {
+    underlay.release(this.underlay);
+    this.underlay = null;
+    if (this.tool === 'image') this.setTool('select');
+    this.draw();
+  }
+
+  /** Fade it, or bring it back — `by` is added to the opacity and the result is kept on 0…1. */
+  fadeImage(by: number): void {
+    const u = this.underlay;
+    if (!u) return;
+    u.opacity = Math.min(1, Math.max(0, u.opacity + by));
+    this.onStatus(`${u.name} at ${Math.round(u.opacity * 100)}%`);
+    this.draw();
+  }
   cancelTool(): void { tools.cancelTool(this); }
   finishCurve(): void { tools.finishCurve(this); }
   finishSplineFit(): void { tools.finishSplineFit(this); }

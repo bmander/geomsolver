@@ -49,7 +49,8 @@ import {
   view,
 } from './shell.js';
 import {
-  MenuItem, ToolbarButton, addButton, addMenu, addSeparator, closeMenus, download, toast,
+  MenuItem, ToolbarButton, addButton, addMenu, addSeparator, closeMenus, download, openImage,
+  toast,
 } from './ui.js';
 import { Tool } from './view.js';
 
@@ -67,6 +68,7 @@ for (const [label, tool, key] of [
   ['Point', 'point', 'p'], ['Line', 'line', 'l'], ['Rect', 'rect', 'r'],
   ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
   ['Ellipse', 'ellipse', 'o'], ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'],
+  ['Image', 'image', 'u'],
 ] as [string, Tool, string][]) {
   toolButtons.set(tool, addButton(barTools, {
     label, key, toggle: true, title: 'Click again to put the tool down and go back to selecting',
@@ -106,6 +108,19 @@ function exportSvg(): void {
   toast('exported sketch.svg');
 }
 
+/** Put a picture behind the drawing to trace over.
+ *
+ *  It is **view state, not document state** — scenery, like the camera and the colouring, and
+ *  the same in kind as the paper you would tape to a drawing board.  So it is not saved, not
+ *  exported, not solved and not undone: undoing a line must not move your photograph, and the
+ *  Solvent document stays what somebody wrote.  What survives tracing is the drawing. */
+async function traceImage(): Promise<void> {
+  const got = await openImage();
+  if (!got) return;
+  view.traceImage(got.image, got.name, got.url);
+  view.setTool('image');
+}
+
 /* Everything that is neither a tool nor a constraint.  Like the constraints bar these are
  * tables rather than calls, so the accelerator printed beside an item is the same string the
  * keyboard handler matches — see ACTION_KEYS. */
@@ -119,6 +134,12 @@ const MENUS: [string, (MenuItem | null)[]][] = [
     { label: 'Export SVG', onClick: exportSvg,
       title: 'The drawing as a scalable image, laid out by the core — the same figure `solventc '
         + '--output` writes' },
+    null,
+    { label: 'Trace image…', onClick: () => void traceImage(),
+      title: 'Put a picture behind the drawing to draw over.  It is scenery — not saved, not '
+        + 'exported, not undone' },
+    { label: 'Remove image', onClick: () => view.removeImage(),
+      title: 'Take the traced picture away again' },
   ]],
   ['Edit', [
     { label: 'Undo', key: '⌘z', onClick: () => view.undo() },
@@ -160,7 +181,7 @@ aboutBadge.addEventListener('click', () => void about());
 
 const TOOL_KEYS: Record<string, Tool> = {
   p: 'point', l: 'line', r: 'rect', c: 'circle', a: 'arc', 3: 'arc3', s: 'spline',
-  w: 'splinefit', o: 'ellipse',
+  w: 'splinefit', o: 'ellipse', u: 'image',
 };
 /** Every accelerator in the app, read off the buttons and menu items themselves so there is
  *  one list and not two.  The token is the chip the control prints, lowercased: '⇧l', '⌘z'. */
@@ -201,6 +222,13 @@ window.addEventListener('keydown', (e) => {
   // shift is part of the token, so ⇧L is Perpendicular and never the Line tool.  The key is
   // taken: an action that opens a dialog has focused its text field by the time the browser
   // would insert the character, and would find a stray letter in it
+  // the traced picture's own two keys, live only while its tool is down — the brackets a
+  // drawing program fades a reference layer with, and nowhere near anything else's accelerator
+  if (view.tool === 'image' && (k === '[' || k === ']')) {
+    e.preventDefault();
+    view.fadeImage(k === '[' ? -0.1 : 0.1);
+    return;
+  }
   const action = ACTION_KEYS.get(e.shiftKey ? `⇧${k}` : k);
   if (action) { e.preventDefault(); action(); return; }
   if (!e.shiftKey && TOOL_KEYS[k]) view.setTool(TOOL_KEYS[k]);

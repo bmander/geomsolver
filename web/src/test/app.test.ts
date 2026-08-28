@@ -17,6 +17,8 @@ import { callouts } from '../core/callout.js';
 import { PlanDrag } from '../core/decompose.js';
 import { solve } from '../core/system.js';
 import { DimAlt, SketchView } from '../app/view.js';
+import { contains, corners, toImage, toWorld } from '../app/underlay.js';
+import type { Bitmap } from '../app/underlay.js';
 import { initCore } from '../core/wasm.js';
 import { fakeCanvas, pointer } from './canvas.js';
 
@@ -820,4 +822,159 @@ test('a gesture beside a component leaves the component written', () => {
   assert.ok(view.source.includes('cycle N as i {'));
   assert.ok(view.source.includes('g: Gear(N: 30, m: 3, phi: 25, ded: 1)'));
   assert.ok(/point\s+p0 hint\(x: 200, y: 0\)/.test(view.source), view.source);
+});
+
+
+/* -- the traced picture ------------------------------------------------------------
+ *
+ * The placement is a similarity in world coordinates, so all of it can be checked without a
+ * browser: a `Bitmap` is two numbers, and the fake canvas swallows the one `drawImage` call.
+ * What is worth a test is what a person doing the tracing would notice — that what they took
+ * hold of stays under the pointer, that the picture is inert under every other tool, and that
+ * none of it reaches the document. */
+
+/** A picture, without one.  Everything below is a fact about the placement, not the pixels. */
+function bitmap(width = 400, height = 300): Bitmap {
+  return { width, height };
+}
+
+function traced(text = ANNOTATED): SketchView {
+  const view = docView(text);
+  view.traceImage(bitmap(), 'photo.png');
+  return view;
+}
+
+test('a traced picture lands in the middle of the view, edges in sight', () => {
+  const view = traced();
+  const u = view.underlay!;
+  assert.deepEqual([u.x, u.y], view.s2w(view.width / 2, view.height / 2));
+  assert.equal(u.angle, 0);
+  // the longer side spans some but not all of the shorter side of the canvas
+  const span = view.len(u.scale * u.image.width);
+  assert.ok(span > 0.3 * view.height && span < view.height, `spanned ${span}px`);
+  // on it, and only just: a corner is the edge of it, so what is measured is either side
+  assert.ok(contains(u, u.x, u.y));
+  const [cx, cy] = corners(u)[0];
+  const in3 = u.scale * 3;
+  assert.ok(contains(u, cx + in3, cy - in3), 'three pixels inside the top-left corner is not on it');
+  assert.ok(!contains(u, cx - in3, cy + in3), 'three pixels outside it is');
+});
+
+test('world and image coordinates are inverses, turned and scaled or not', () => {
+  const view = traced();
+  const u = view.underlay!;
+  u.angle = 0.7;
+  u.scale = 0.42;
+  for (const [px, py] of [[0, 0], [37, -11], [-200, 150]]) {
+    const back = toImage(u, ...toWorld(u, px, py));
+    assert.ok(Math.hypot(back[0] - px, back[1] - py) < 1e-9, `${back} for ${[px, py]}`);
+  }
+  // and the corners come back in image order: the first is the top-left one, which at a
+  // rotation of zero is up and to the left of the centre — the picture is not mirrored
+  u.angle = 0;
+  const [tl, tr, , bl] = corners(u);
+  assert.ok(tl[0] < u.x && tl[1] > u.y, `top-left at ${tl}`);
+  assert.ok(tr[0] > u.x && tr[1] > u.y, `top-right at ${tr}`);
+  assert.ok(bl[0] < u.x && bl[1] < u.y, `bottom-left at ${bl}`);
+});
+
+test('dragging the picture keeps the place that was grabbed under the pointer', () => {
+  const view = traced();
+  const u = view.underlay!;
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  view.setTool('image');
+  const from = view.w2s(u.x + 3, u.y - 2);
+  const held = toImage(u, ...view.s2w(...from));
+  const size = u.scale;
+  cv.fire('pointerdown', pointer(...from));
+  cv.fire('pointermove', pointer(from[0] + 55, from[1] - 30));
+  cv.fire('pointerup', pointer(from[0] + 55, from[1] - 30));
+  const now = toImage(u, ...view.s2w(from[0] + 55, from[1] - 30));
+  assert.ok(Math.hypot(now[0] - held[0], now[1] - held[1]) < 1e-6,
+            `the picture slipped: ${held} became ${now}`);
+  assert.equal(u.scale, size, 'a move is not a resize');
+  assert.equal(u.angle, 0, 'and not a rotation');
+});
+
+test('dragging a corner sizes and turns it about a centre that stays put', () => {
+  const view = traced();
+  const u = view.underlay!;
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  view.setTool('image');
+  const centre: [number, number] = [u.x, u.y];
+  const grip = view.w2s(...corners(u)[0]);
+  const to: [number, number] = [grip[0] - 60, grip[1] + 25];
+  cv.fire('pointerdown', pointer(...grip));
+  cv.fire('pointermove', pointer(...to));
+  cv.fire('pointerup', pointer(...to));
+
+  assert.deepEqual([u.x, u.y], centre, 'the centre moved');
+  assert.ok(u.angle !== 0, 'it did not turn');
+  // the corner that was taken hold of is where the pointer left it — which is the whole of
+  // what makes one handle do both jobs without a mode
+  const at = view.w2s(...corners(u)[0]);
+  assert.ok(Math.hypot(at[0] - to[0], at[1] - to[1]) < 1e-6, `corner at ${at}, pointer at ${to}`);
+  // and the scale stayed uniform: the two sides keep the ratio the pixels have
+  const side = (a: number[], b: number[]): number => Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const [tl, tr, , bl] = corners(u);
+  assert.ok(Math.abs(side(tl, tr) / side(tl, bl) - u.image.width / u.image.height) < 1e-9,
+            'the picture was squashed');
+});
+
+test('under every other tool the picture is scenery, and the drawing goes straight through it',
+     () => {
+  const view = traced();
+  const u = view.underlay!;
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const was = { x: u.x, y: u.y, scale: u.scale, angle: u.angle };
+  const on = view.w2s(u.x, u.y);
+  const before = view.sketch.points.length;
+
+  view.setTool('select');                    // a press on it starts a band, not a move
+  cv.fire('pointerdown', pointer(...on));
+  cv.fire('pointermove', pointer(on[0] + 40, on[1] + 40));
+  cv.fire('pointerup', pointer(on[0] + 40, on[1] + 40));
+  assert.deepEqual({ x: u.x, y: u.y, scale: u.scale, angle: u.angle }, was);
+
+  view.setTool('point');                     // and a point tool puts a point on top of it
+  cv.fire('pointerdown', pointer(...on));
+  cv.fire('pointerup', pointer(...on));
+  assert.equal(view.sketch.points.length, before + 1);
+  assert.deepEqual({ x: u.x, y: u.y, scale: u.scale, angle: u.angle }, was);
+});
+
+test('the picture is not in the document: nothing it does is written, saved or undone', () => {
+  const view = traced();
+  const u = view.underlay!;
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const source = view.source;
+  view.setTool('image');
+  const on = view.w2s(u.x, u.y);
+  cv.fire('pointerdown', pointer(...on));
+  cv.fire('pointermove', pointer(on[0] + 90, on[1] + 15));
+  cv.fire('pointerup', pointer(on[0] + 90, on[1] + 15));
+
+  assert.notEqual(u.x, view.s2w(...on)[0], 'the test moved nothing');
+  assert.equal(view.source, source, 'a traced picture wrote itself into the document');
+  view.undo();
+  assert.equal(view.source, source, 'undo stepped over a document edit that never happened');
+  assert.ok(view.underlay, 'and undo took the photograph away');
+  assert.ok(!io.dumps(view.sketch).includes('photo.png'));
+});
+
+test('taking the picture away puts the tool down with it', () => {
+  const view = traced();
+  view.setTool('image');
+  view.removeImage();
+  assert.equal(view.underlay, null);
+  assert.equal(view.tool, 'select');
+});
+
+test('fading is kept on the scale, from either end', () => {
+  const view = traced();
+  const u = view.underlay!;
+  for (let i = 0; i < 20; i++) view.fadeImage(-0.1);
+  assert.equal(u.opacity, 0);
+  for (let i = 0; i < 20; i++) view.fadeImage(0.1);
+  assert.equal(u.opacity, 1);
 });

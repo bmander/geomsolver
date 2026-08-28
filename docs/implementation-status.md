@@ -139,6 +139,10 @@ solve(sk);                     // p -> (1, 0), q -> (11, 0): least change
   through — `Sketch.arcThrough`, which builds the circumcircle and picks the sweep
   containing that point), wheel zoom, right-drag pan; Escape steps back one stage at a
   time — stop a DOF animation, drop the points a tool has collected, leave the tool;
+* **File ▸ Trace image…** puts a picture behind the drawing and the **Image** tool (`u`)
+  places it: drag it to move it, drag a corner to size *and* turn it at once, `[` and `]`
+  fade it.  Under every other tool it is inert, so the drawing is made straight through it.
+  It is view state and not document state — not saved, not exported, not solved, not undone;
 * every dimension's number is editable as text (double-click its callout or its row): a
   number, or an expression — `w = 80` names it, `h = w / 2` uses it — evaluated by the core
   in dependency order; a row whose expression cannot be computed is marked `ƒ` with why, and

@@ -56,7 +56,13 @@ Currently: **Stage 5 done**, in **one** implementation —
   a handful of modules rather than one slab.  The *view* is the canvas: `view.ts` holds the
   state — the camera, selection, tool, plan, diagnosis — and the modules beside it take that
   view as their first argument and do the work (`paint`, `gesture`, `tools`, `dimension`,
-  `edit`), with `camera` the one that holds where the drawing sits on the canvas;
+  `edit`), with `camera` the one that holds where the drawing sits on the canvas and
+  `underlay` the picture traced over — **view state, never the document**: a photograph is
+  scaffolding for the person drawing, so nothing about it is saved, exported, solved or
+  undone, and it is inert under every tool but its own, which is what lets the drawing be
+  made straight through it.  Its placement is a similarity in world coordinates and reaches
+  the screen only through `camera`, so it pans and zooms with the drawing and this file
+  writes no minus sign in front of a y either;
   `SketchView` keeps a one-line delegator for each verb the shell calls, so a caller holds one
   object.  The *shell* is the page around it: `shell.ts` (the elements, the view, the focused
   constraint, and where the core is started), `commands` (the constraints bar), `dialogs` (what

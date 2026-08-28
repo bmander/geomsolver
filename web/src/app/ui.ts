@@ -272,6 +272,33 @@ export function openFile(accept = '.json'): Promise<string | null> {
   });
 }
 
+/** Pick an image file and decode it, as the element the canvas will draw and the URL that
+ *  element is holding — the caller lets the URL go when it lets the picture go.
+ *
+ *  An object URL rather than a data URL: the picture is a photograph, and reading a ten-megabyte
+ *  one into a base64 string to hand straight back to the same browser is work nobody asked for. */
+export function openImage(): Promise<{ image: HTMLImageElement; name: string; url: string } | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.addEventListener('change', () => {
+      const f = input.files?.[0];
+      if (!f) return resolve(null);
+      const url = URL.createObjectURL(f);
+      const image = new Image();
+      image.addEventListener('load', () => resolve({ image, name: f.name, url }));
+      image.addEventListener('error', () => {
+        URL.revokeObjectURL(url);            // nothing will ever draw it, so nothing will free it
+        resolve(null);
+      });
+      image.src = url;
+    });
+    input.addEventListener('cancel', () => resolve(null));
+    input.click();
+  });
+}
+
 /** Make a floating window draggable by a handle inside it, kept inside its offset parent.
  *  Where it sits is the user's, so it is written into `left`/`top` once and the CSS corner it
  *  started in is dropped — nothing re-places it afterwards. */

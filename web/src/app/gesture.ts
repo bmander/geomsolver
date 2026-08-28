@@ -13,6 +13,7 @@ import { moveDimension, placeDimension } from './dimension.js';
 import { COL } from './paint.js';
 import { insertControl } from './edit.js';
 import { cancelTool, toolClick } from './tools.js';
+import { grab as grabImage } from './underlay.js';
 import type { SketchView } from './view.js';
 
 /** One pointer gesture in progress.  `move` gets canvas coordinates; `end` and `paint` are
@@ -107,6 +108,13 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
   if (v.liveDim?.placing) {
     e.preventDefault();
     placeDimension(v);
+    return;
+  }
+  // the picture being traced.  It is grabbable **only** while its own tool is down, which is
+  // what lets every other tool draw straight through it; and a press that lands beside it there
+  // pans, so the tool is somewhere you can work rather than a trap.
+  if (v.tool === 'image') {
+    v.gesture = grabImage(v, sp) ?? panGesture(v, sp);
     return;
   }
   if (v.tool !== 'select') {
