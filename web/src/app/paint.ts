@@ -10,7 +10,7 @@ import {
   threePointArc,
 } from '../core/model.js';
 import { tellDimension } from './dimension.js';
-import { paintHandles, paintUnderlay } from './underlay.js';
+import { paintFrame, paintUnderlay } from './underlay.js';
 import type { SketchView } from './view.js';
 
 export const COL = {
@@ -28,10 +28,10 @@ export const COL = {
   highlight: '#9467bd',
   conflict: '#b3001b',
   bandFill: 'rgba(227, 119, 194, 0.10)',
-  /** The traced picture's frame and its corner handles — chrome, so grey, and the same grey a
-   *  preview is drawn in: neither is part of the drawing. */
+  /** The traced picture's frame, unselected — chrome, so the same grey a preview is drawn in:
+   *  neither is part of the drawing.  Hovered and selected it takes the canvas's own two
+   *  colours, so the picture answers a pointer the way everything else does. */
   imageFrame: '#999999',
-  imageHandle: '#666666',
 };
 /* entity colouring by constraint state (FreeCAD-style, but from the DM decomposition and the
  * conflict set rather than from a guess) */
@@ -158,12 +158,12 @@ export function paint(v: SketchView): void {
     }
   }
   paintCallouts(v);
-  // the picture's frame and handles, over everything, and **only while its own tool is down** —
-  // which is the whole of what that tool is: with any other, the picture is scenery a press
-  // goes straight through
-  if (v.tool === 'image') paintHandles(v, COL.imageFrame, COL.imageHandle);
+  // the traced picture's frame, over everything: dashed grey while it is scenery, since that
+  // edge is the only part of it a press takes hold of and an affordance you cannot see is one
+  // nobody finds — and the canvas's own selected/hovered colours otherwise
+  paintFrame(v, { idle: COL.imageFrame, hover: COL.highlight, sel: COL.sel });
   v.gesture?.paint?.(ctx);
-  if (v.tool !== 'select' && v.tool !== 'image') {   // snap indicator
+  if (v.tool !== 'select') {                 // snap indicator
     const sp = v.pickPoint(...v.cursor);
     if (sp) {
       const [sx, sy] = v.w2s(...sp.xy);

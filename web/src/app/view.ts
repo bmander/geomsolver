@@ -60,7 +60,7 @@ export interface Place {
 
 export type Tool =
   'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit'
-  | 'ellipse' | 'image';
+  | 'ellipse';
 
 
 
@@ -79,9 +79,10 @@ export class SketchView {
   colorByState = true;
   /** Paint the dimensioned constraints on the drawing as callouts. */
   showDimensions = true;
-  /** A picture to trace over, in world coordinates — see `underlay.ts`.  Not document state:
-   *  it is scenery, and it is inert under every tool but its own, which is what lets the
-   *  drawing be made straight through it. */
+  /** A picture to trace over, in world coordinates — see `underlay.ts`.  Handled like anything
+   *  else on the canvas (clicked, dragged, deleted) but **not document state**: it is scenery,
+   *  and only its frame answers a press until it is selected, which is what lets the drawing be
+   *  made straight through it. */
   underlay: Underlay | null = null;
 
   selected: Primitive[] = [];
@@ -598,28 +599,48 @@ export class SketchView {
    * none of this goes near `afterEdit`, the undo stack or the source — a repaint is the whole
    * of the consequence. */
 
-  /** Put a picture in the middle of the view, replacing any that was there. */
+  /** Put a picture in the middle of the view, replacing any that was there.  It arrives
+   *  selected, so the handles that place it are there to be used at once. */
   traceImage(image: Bitmap, name: string, url: string | null = null): void {
     underlay.release(this.underlay);
     this.underlay = underlay.place(this, image, name, url);
-    this.onStatus(`tracing ${name} — drag it to place it, drag a corner to size and turn it`);
+    this.pickImage();
+    this.onStatus(`tracing ${name} — drag it to place it, drag a corner to size and turn it, `
+                  + 'Delete to remove it');
+    this.onChanged();
     this.draw();
+  }
+
+  /** Select the picture.  The two selections are exclusive: a photograph is not a `Primitive`
+   *  and cannot be constrained or dimensioned beside one, so holding both would only leave
+   *  Delete ambiguous. */
+  pickImage(): void {
+    if (!this.underlay) return;
+    this.underlay.picked = true;
+    this.selected = [];
+  }
+
+  /** And the other way: anything that selects geometry lets the picture go. */
+  dropImage(): void {
+    if (this.underlay) this.underlay.picked = false;
   }
 
   /** Take it away again. */
   removeImage(): void {
     underlay.release(this.underlay);
     this.underlay = null;
-    if (this.tool === 'image') this.setTool('select');
+    this.onChanged();
     this.draw();
   }
 
-  /** Fade it, or bring it back — `by` is added to the opacity and the result is kept on 0…1. */
+  /** Fade it, or bring it back — `by` is added to the opacity and the result is kept on 0…1.
+   *  What it came to is read off the status line, which is where what is picked is named; it is
+   *  not also toasted, since two places saying one number is two places to keep in step. */
   fadeImage(by: number): void {
     const u = this.underlay;
     if (!u) return;
     u.opacity = Math.min(1, Math.max(0, u.opacity + by));
-    this.onStatus(`${u.name} at ${Math.round(u.opacity * 100)}%`);
+    this.onChanged();
     this.draw();
   }
   cancelTool(): void { tools.cancelTool(this); }

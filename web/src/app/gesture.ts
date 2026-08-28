@@ -13,7 +13,7 @@ import { moveDimension, placeDimension } from './dimension.js';
 import { COL } from './paint.js';
 import { insertControl } from './edit.js';
 import { cancelTool, toolClick } from './tools.js';
-import { grab as grabImage } from './underlay.js';
+import { bodyAt, grabBody, grabHandle, handleAt } from './underlay.js';
 import type { SketchView } from './view.js';
 
 /** One pointer gesture in progress.  `move` gets canvas coordinates; `end` and `paint` are
@@ -110,13 +110,6 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     placeDimension(v);
     return;
   }
-  // the picture being traced.  It is grabbable **only** while its own tool is down, which is
-  // what lets every other tool draw straight through it; and a press that lands beside it there
-  // pans, so the tool is somewhere you can work rather than a trap.
-  if (v.tool === 'image') {
-    v.gesture = grabImage(v, sp) ?? panGesture(v, sp);
-    return;
-  }
   if (v.tool !== 'select') {
     toolClick(v, sp);
     return;
@@ -134,6 +127,13 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     };
     return;
   }
+  // a corner of the traced picture.  Handles exist only while it is selected and are painted
+  // over everything, so like a callout they outrank the geometry underneath them.
+  const corner = handleAt(v, sp);
+  if (corner >= 0) {
+    v.gesture = grabHandle(v, corner);
+    return;
+  }
   // a dimension is painted over the geometry, so a press that lands on one takes hold of it:
   // it selects the constraint, and dragging moves the callout rather than the sketch
   const callout = v.pickCallout(sp[0], sp[1]);
@@ -145,6 +145,18 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     return;
   }
   const ent = v.pick(sp[0], sp[1]);
+  // **the drawing outranks the picture**, so the geometry is asked first: a line lying across a
+  // photograph is what a click on that line picks.  Only then does the picture answer — by its
+  // frame while it is scenery, and anywhere on it once it has been selected.
+  if (!ent && bodyAt(v, sp)) {
+    v.pickImage();
+    v.gesture = grabBody(v, sp);
+    v.onSelect();
+    v.onChanged();          // as every other press does: the window and the readout follow it
+    v.draw();
+    return;
+  }
+  v.dropImage();
   if (!ent) {
     // nothing under the cursor: start a rubber band.  A press with no drag still just
     // clears the selection, because an empty box selects nothing.
@@ -334,11 +346,24 @@ export function boxContents(v: SketchView, extents: readonly (readonly [Primitiv
 /** Cursor affordance: what a press here would grab. */
 export function hover(v: SketchView, sp: [number, number]): void {
   if (v.tool !== 'select') return;
+  const corner = handleAt(v, sp);
+  if (v.underlay) v.underlay.hover = corner >= 0;
+  if (corner >= 0) {
+    v.canvas.style.cursor = corner % 2 ? 'nesw-resize' : 'nwse-resize';
+    return;
+  }
   if (v.pickCallout(sp[0], sp[1])) {
     v.canvas.style.cursor = 'move';
     return;
   }
   const ent = v.pick(sp[0], sp[1]);
+  // the same order the press takes: the geometry answers first, and the picture's frame
+  // afterwards, so what lights up is what a click would get
+  if (!ent && bodyAt(v, sp)) {
+    if (v.underlay) v.underlay.hover = true;
+    v.canvas.style.cursor = 'move';
+    return;
+  }
   v.canvas.style.cursor = ent instanceof Point && canMove(v, ent) ? 'grab'
     : isResizable(v, ent) ? 'ew-resize' : '';
 }

@@ -68,7 +68,6 @@ for (const [label, tool, key] of [
   ['Point', 'point', 'p'], ['Line', 'line', 'l'], ['Rect', 'rect', 'r'],
   ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
   ['Ellipse', 'ellipse', 'o'], ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'],
-  ['Image', 'image', 'u'],
 ] as [string, Tool, string][]) {
   toolButtons.set(tool, addButton(barTools, {
     label, key, toggle: true, title: 'Click again to put the tool down and go back to selecting',
@@ -117,8 +116,8 @@ function exportSvg(): void {
 async function traceImage(): Promise<void> {
   const got = await openImage();
   if (!got) return;
+  view.setTool('select');            // it arrives selected, and select is where it is handled
   view.traceImage(got.image, got.name, got.url);
-  view.setTool('image');
 }
 
 /* Everything that is neither a tool nor a constraint.  Like the constraints bar these are
@@ -181,7 +180,7 @@ aboutBadge.addEventListener('click', () => void about());
 
 const TOOL_KEYS: Record<string, Tool> = {
   p: 'point', l: 'line', r: 'rect', c: 'circle', a: 'arc', 3: 'arc3', s: 'spline',
-  w: 'splinefit', o: 'ellipse', u: 'image',
+  w: 'splinefit', o: 'ellipse',
 };
 /** Every accelerator in the app, read off the buttons and menu items themselves so there is
  *  one list and not two.  The token is the chip the control prints, lowercased: '⇧l', '⌘z'. */
@@ -222,9 +221,9 @@ window.addEventListener('keydown', (e) => {
   // shift is part of the token, so ⇧L is Perpendicular and never the Line tool.  The key is
   // taken: an action that opens a dialog has focused its text field by the time the browser
   // would insert the character, and would find a stray letter in it
-  // the traced picture's own two keys, live only while its tool is down — the brackets a
-  // drawing program fades a reference layer with, and nowhere near anything else's accelerator
-  if (view.tool === 'image' && (k === '[' || k === ']')) {
+  // the traced picture's own two keys, live only while it is the selected thing — the brackets
+  // a drawing program fades a reference layer with, and nowhere near anything else's accelerator
+  if (view.underlay?.picked && (k === '[' || k === ']')) {
     e.preventDefault();
     view.fadeImage(k === '[' ? -0.1 : 0.1);
     return;

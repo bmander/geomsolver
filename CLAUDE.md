@@ -59,10 +59,18 @@ Currently: **Stage 5 done**, in **one** implementation —
   `edit`), with `camera` the one that holds where the drawing sits on the canvas and
   `underlay` the picture traced over — **view state, never the document**: a photograph is
   scaffolding for the person drawing, so nothing about it is saved, exported, solved or
-  undone, and it is inert under every tool but its own, which is what lets the drawing be
-  made straight through it.  Its placement is a similarity in world coordinates and reaches
-  the screen only through `camera`, so it pans and zooms with the drawing and this file
-  writes no minus sign in front of a y either;
+  undone.  It is nonetheless handled the way everything else on the canvas is — clicked,
+  dragged, deleted, under the ordinary select tool and with no mode of its own — and two
+  rules keep that from spoiling the tracing it exists for: **the drawing outranks it** (the
+  geometry is offered a press first), and **only its frame is clickable, never its
+  interior** — nothing in this drawing is picked by an area, a circle being picked by its rim
+  and not by the disc inside it, so the edge is where you take hold of it and the middle is
+  where you draw.  Selected, the whole of it drags, so placing it is not a fight with a
+  two-pixel border.  It is not a `Primitive` and so never joins `selected` — it would have to
+  be answered for at every seam that reads one — but the two selections are exclusive, which
+  is what leaves Delete unambiguous.  Its placement is a similarity in world coordinates and
+  reaches the screen only through `camera`, so it pans and zooms with the drawing and this
+  file writes no minus sign in front of a y either;
   `SketchView` keeps a one-line delegator for each verb the shell calls, so a caller holds one
   object.  The *shell* is the page around it: `shell.ts` (the elements, the view, the focused
   constraint, and where the core is started), `commands` (the constraints bar), `dialogs` (what
