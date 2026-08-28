@@ -56,7 +56,7 @@ function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
 function describeEntity(e: Primitive, ix: io.Index): string {
   const n = ix.name(e).padEnd(4);
   const tag = e instanceof Point ? (e.isFixed ? '  ·fixed' : '')
-            : e.construction ? '  ·constr' : '';
+            : e.hasClass('construction') ? '  ·constr' : '';
   const body = e instanceof Line ? `line    ${ix.name(e.p1)}–${ix.name(e.p2)}`
     : e instanceof Arc ? `arc     @${ix.name(e.center)} ${ix.name(e.start)}–${ix.name(e.end)}`
     : e instanceof Circle ? `circle  @${ix.name(e.center)}`

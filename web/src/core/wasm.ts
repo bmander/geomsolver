@@ -81,8 +81,12 @@ export interface Abi {
   gcs_entity_params(h: number, kind: number, idx: number, out: number): number;
   gcs_entity_points(h: number, kind: number, idx: number, out: number): number;
   gcs_entity_radius_param(h: number, kind: number, idx: number): number;
-  gcs_entity_construction(h: number, kind: number, idx: number): number;
-  gcs_entity_set_construction(h: number, kind: number, idx: number, v: number): void;
+  gcs_entity_class(h: number, kind: number, idx: number): number;
+  gcs_entity_set_class(
+    h: number, kind: number, idx: number, name: number, nameLen: number, on: number): void;
+  gcs_entity_style(h: number, kind: number, idx: number): number;
+  gcs_styles_json(h: number): number;
+  gcs_style_epoch(h: number): number;
   gcs_entity_bounds(h: number, kind: number, idx: number, out: number): void;
   gcs_entity_name(kind: number, idx: number): number;
   gcs_distance_between(h: number, ka: number, ia: number, kb: number, ib: number): number;

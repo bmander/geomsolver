@@ -50,7 +50,7 @@ fn involute_sketch() -> (Sketch, usize) {
         args: vec![EntRef::circle(c)],
         values: Vec::new(),
         domain: (0.0, 90.0),
-        construction: true,
+        class: gcs_core::style::Classes::one("construction"),
     });
     let p = sk.point(20.0, 20.0, false, "p");
     sk.add(Constraint::new(
@@ -205,7 +205,7 @@ fn two_curve_families_get_their_own_kernels() {
         args: vec![EntRef::circle(0)],
         values: Vec::new(),
         domain: (0.0, 90.0),
-        construction: true,
+        class: gcs_core::style::Classes::one("construction"),
     });
     let q = sk.point(0.0, 30.0, false, "q");
     sk.add(Constraint::new(
@@ -244,7 +244,7 @@ curve involute(c: circle, phase: Angle)(u) over (0, 90) =
     c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)) )
 
 point  o hint(x: 0, y: 0)
-circle base(center: o) hint(r: 20) construction
+circle base(center: o) hint(r: 20) class construction
 curve  flank = involute(base, phase: 0) over (0, 60)
 
 point  p hint(x: 40, y: 40)

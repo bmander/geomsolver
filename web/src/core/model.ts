@@ -5,7 +5,7 @@
  * did while the data itself lives in the core.  Nothing is mirrored: every read goes through
  * the ABI.
  */
-import { Buf, core, lastError, takeStr, withBuf, withJson, withStr } from './wasm.js';
+import { Buf, core, lastError, takeJson, takeStr, withBuf, withJson, withStr } from './wasm.js';
 import type { Constraint } from './constraints.js';
 // The constraint classes are generated from the core's registry and register themselves with
 // `initCore`; loading them here means every consumer of the model gets them, in any import order.
@@ -95,14 +95,40 @@ export abstract class Entity {
   }
 }
 
-/** Line, Circle and Arc carry the construction (reference geometry) flag. */
-abstract class Constructible extends Entity {
-  get construction(): boolean {
-    return core().gcs_entity_construction(this.sketch.handle, this.kindId, this.index) !== 0;
+/** What an entity is drawn with: dash pattern, stroke weight and ink, all in **screen pixels**
+ *  — a dashed line does not change its dash pattern when you zoom.  Resolved in the core from
+ *  the document's style sheet; nothing here knows what a class is. */
+export interface Style {
+  dash: number[];
+  width: number | null;
+  color: string | null;
+}
+
+/** Everything with a stroke carries *classes*, and a style sheet says what a class looks like.
+ *  Presentation, and nothing the core computes reads it: the binding surfaces it and the app
+ *  strokes it. */
+abstract class Styled extends Entity {
+  /** The classes it carries, in written order — later wins on a conflicting property. */
+  get classes(): string[] {
+    return takeJson<string[]>(
+      core().gcs_entity_class(this.sketch.handle, this.kindId, this.index),
+    );
   }
 
-  set construction(v: boolean) {
-    core().gcs_entity_set_construction(this.sketch.handle, this.kindId, this.index, v ? 1 : 0);
+  hasClass(name: string): boolean {
+    return this.classes.includes(name);
+  }
+
+  setClass(name: string, on: boolean): void {
+    withStr(name, (p, n) =>
+      core().gcs_entity_set_class(this.sketch.handle, this.kindId, this.index, p, n, on ? 1 : 0));
+  }
+
+  /** What it is *drawn with*, cascaded: **the core resolves and the front end strokes**, the
+   *  same seam callout layout and curve tessellation sit on, so every front end draws one
+   *  drawing alike. */
+  get style(): Style {
+    return takeJson<Style>(core().gcs_entity_style(this.sketch.handle, this.kindId, this.index));
   }
 }
 
@@ -136,7 +162,7 @@ export class Point extends Entity {
   }
 }
 
-export class Line extends Constructible {
+export class Line extends Styled {
   readonly kind = 'line' as const;
 
   get p1(): Point {
@@ -159,7 +185,7 @@ export class Line extends Constructible {
   }
 }
 
-export class Circle extends Constructible {
+export class Circle extends Styled {
   readonly kind = 'circle' as const;
 
   get center(): Point {
@@ -175,7 +201,7 @@ export class Circle extends Constructible {
 /** CCW arc from `start` to `end` about `center`.  The radius is its own Param so Circle and Arc
  *  share every radius-based constraint; the two intrinsic constraints |start-center|² = r² and
  *  |end-center|² = r² are added by `Sketch.arc`. */
-export class Arc extends Constructible {
+export class Arc extends Styled {
   readonly kind = 'arc' as const;
 
   get center(): Point {
@@ -210,7 +236,7 @@ export class Arc extends Constructible {
  *  any others.  Everything about the curve itself — where a parameter lands, the polyline it is
  *  drawn as, the distance to it — is computed in the core: nothing here evaluates a basis
  *  function, exactly as nothing here lays out a dimension callout. */
-export class Spline extends Constructible {
+export class Spline extends Styled {
   readonly kind = 'spline' as const;
 
   /** A control polygon is as long as it is, so this is the one kind whose width follows the
@@ -290,7 +316,7 @@ export class Spline extends Constructible {
 /** Centre, one end of the major axis, and a minor radius of its own.  Five numbers — the 5 DOF
  *  an ellipse has — so unlike an arc it carries no intrinsic constraint; the major point is a
  *  real rim point and drags, snaps and constrains like any other. */
-export class Ellipse extends Constructible {
+export class Ellipse extends Styled {
   readonly kind = 'ellipse' as const;
 
   get center(): Point {
@@ -310,7 +336,7 @@ export class Ellipse extends Constructible {
 /** A curve written in the language: `C(u)` as a pair of expressions over the geometry it is
  *  drawn from.  It owns no coordinates — it *is* its expressions — so it moves exactly when its
  *  arguments do, and the core lays out the polyline the front end strokes. */
-export class Curve extends Constructible {
+export class Curve extends Styled {
   readonly kind = 'curve' as const;
 
   /** As many arguments as its family takes, of whatever kinds. */
@@ -337,7 +363,7 @@ export class Curve extends Constructible {
 /** An origin, a point it is pointed at, and a unit rotor slaved to the chord between them by
  *  two intrinsic constraints — a datum other statements measure from, adding no freedom beyond
  *  its two points.  A trace block reads its bearing as `f.angle`. */
-export class Frame extends Constructible {
+export class Frame extends Styled {
   readonly kind = 'frame' as const;
 
   get origin(): Point {

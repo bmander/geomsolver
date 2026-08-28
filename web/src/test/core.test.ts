@@ -963,17 +963,34 @@ test('symmetric mirrors two points about a line', () => {
   assert.ok(Math.abs(p.y.value - q.y.value) < 1e-9);
 });
 
-test('the construction flag round-trips', () => {
+test('classes round-trip, and the core resolves what they look like', () => {
   const sk = examples.slottedLink();
-  sk.lines[0].construction = true;
-  sk.arcs[0].construction = true;
-  sk.circles[0].construction = true;
+  sk.lines[0].setClass('construction', true);
+  sk.arcs[0].setClass('construction', true);
+  sk.circles[0].setClass('construction', true);
+  // the base sheet is what makes `construction` mean "dashed"; the class says only which rule
+  assert.deepEqual(sk.lines[0].style.dash, [7, 4]);
+  assert.deepEqual(sk.lines[1].style.dash, [], 'and plain geometry is solid');
   const s = io.dumps(sk);
   const back = io.loads(s);
-  assert.deepEqual(back.lines.map((l) => l.construction), sk.lines.map((l) => l.construction));
-  assert.deepEqual(back.arcs.map((a) => a.construction), sk.arcs.map((a) => a.construction));
-  assert.deepEqual(back.circles.map((c) => c.construction), sk.circles.map((c) => c.construction));
+  assert.deepEqual(back.lines.map((l) => l.classes), sk.lines.map((l) => l.classes));
+  assert.deepEqual(back.arcs.map((a) => a.classes), sk.arcs.map((a) => a.classes));
+  assert.deepEqual(back.circles.map((c) => c.classes), sk.circles.map((c) => c.classes));
   assert.equal(io.dumps(back), s);
+});
+
+test('an old export with "construction": true still loads', () => {
+  // JSON is the export format, not the document: the key is read and never written
+  const sk = io.loads(JSON.stringify({
+    version: 1,
+    points: [{ x: 0, y: 0 }, { x: 10, y: 0 }],
+    lines: [{ p1: 0, p2: 1, construction: true }],
+    constraints: [],
+  }));
+  assert.deepEqual(sk.lines[0].classes, ['construction']);
+  assert.deepEqual(sk.lines[0].style.dash, [7, 4]);
+  assert.ok(!io.dumps(sk).includes('"construction":'), 'and is never written back');
+  sk.dispose();
 });
 
 test('describe reads the spec', () => {
@@ -1649,7 +1666,7 @@ test('a point is pulled onto the rim, and the document keeps the ellipse', () =>
   const m = sk.point(18, 5, true);
   const el = sk.ellipse(c, m, 3);
   el.minor.fixed = true;
-  el.construction = true;
+  el.setClass('construction', true);
   const p = sk.point(11, 9);
   sk.add(new C.PointOnEllipse(p, el));
   assert.ok(solve(sk).success);
@@ -1658,7 +1675,7 @@ test('a point is pulled onto the rim, and the document keeps the ellipse', () =>
   assert.ok(Math.abs((x / 8) ** 2 + (y / 3) ** 2 - 1) < 1e-6);
   const back = io.loads(io.dumps(sk));
   assert.equal(back.ellipses.length, 1);
-  assert.ok(back.ellipses[0].construction);
+  assert.ok(back.ellipses[0].hasClass('construction'));
   assert.ok(back.ellipses[0].minor.fixed);
   assert.equal(back.ellipses[0].minor.value, 3);
   assert.equal(back.constraints.filter((k) => k.typeName === 'PointOnEllipse').length, 1);

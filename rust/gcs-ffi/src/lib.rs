@@ -797,42 +797,80 @@ pub unsafe extern "C" fn gcs_entity_radius_param(h: *mut Sketch, kind: i32, idx:
     })
 }
 
+/// The classes an entity carries, as a JSON array of strings.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_entity_construction(h: *mut Sketch, kind: i32, idx: i32) -> i32 {
-    guard(-1, move || {
-        let s = sk(h);
-        (match kind {
-            1 => s.lines[idx as usize].construction,
-            2 => s.circles[idx as usize].construction,
-            3 => s.arcs[idx as usize].construction,
-            4 => s.splines[idx as usize].construction,
-            5 => s.ellipses[idx as usize].construction,
-            7 => s.frames[idx as usize].construction,
-            _ => false,
-        }) as i32
+pub unsafe extern "C" fn gcs_entity_class(h: *mut Sketch, kind: i32, idx: i32) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let c = sk(h).class_of(ent(kind, idx));
+        out_json(Json::Arr(c.0.into_iter().map(Json::Str).collect()))
     })
 }
 
+/// Give an entity a class, or take one away.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_entity_set_construction(
+pub unsafe extern "C" fn gcs_entity_set_class(
     h: *mut Sketch,
     kind: i32,
     idx: i32,
-    v: i32,
+    name: *const u8,
+    name_len: usize,
+    on: i32,
 ) {
     guard((), move || {
-        let s = sk(h);
-        let b = v != 0;
-        match kind {
-            1 => s.lines[idx as usize].construction = b,
-            2 => s.circles[idx as usize].construction = b,
-            3 => s.arcs[idx as usize].construction = b,
-            4 => s.splines[idx as usize].construction = b,
-            5 => s.ellipses[idx as usize].construction = b,
-            7 => s.frames[idx as usize].construction = b,
-            _ => {}
-        }
+        sk(h).set_class(ent(kind, idx), as_str(name, name_len), on != 0);
     })
+}
+
+/// What an entity is *drawn with*: dash, width and colour, resolved from the base sheet under
+/// the document's (`style.rs`).  The core resolves and a front end strokes what it is handed —
+/// the same seam callout layout and curve tessellation sit on.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_entity_style(h: *mut Sketch, kind: i32, idx: i32) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || out_json(style_json(&sk(h).style_of(ent(kind, idx)))))
+}
+
+/// Every resolved style in one document, in `primitives()` order per kind, plus the sheet's own
+/// epoch.  One call a repaint, rather than one a shape: presentation almost never changes and
+/// geometry changes every frame, and this is what lets the first be read at the first's rate.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_styles_json(h: *mut Sketch) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let s = sk(h);
+        let of = |k: EntKind| -> Json {
+            Json::Arr(
+                (0..s.count(k))
+                    .map(|i| style_json(&s.style_of(EntRef::new(k, i))))
+                    .collect(),
+            )
+        };
+        out_json(json::object([
+            ("epoch", Json::Int(s.style_epoch as i64)),
+            ("line", of(EntKind::Line)),
+            ("circle", of(EntKind::Circle)),
+            ("arc", of(EntKind::Arc)),
+            ("spline", of(EntKind::Spline)),
+            ("ellipse", of(EntKind::Ellipse)),
+            ("frame", of(EntKind::Frame)),
+            ("curve", of(EntKind::Curve)),
+        ]))
+    })
+}
+
+/// Bumped whenever the sheet or a class changes, so a caller may cache the table above.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_style_epoch(h: *mut Sketch) -> i32 {
+    guard(-1, move || sk(h).style_epoch as i32)
+}
+
+fn style_json(s: &gcs_core::style::Style) -> Json {
+    json::object([
+        (
+            "dash",
+            Json::Arr(s.dash.clone().unwrap_or_default().into_iter().map(Json::Num).collect()),
+        ),
+        ("width", s.width.map(Json::Num).unwrap_or(Json::Null)),
+        ("color", s.color.clone().map(Json::Str).unwrap_or(Json::Null)),
+    ])
 }
 
 /// Bounding box of one entity (4 doubles).

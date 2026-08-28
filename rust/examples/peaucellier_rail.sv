@@ -13,8 +13,8 @@ param crank = 40      // the crank q–b, and the orbit its pin rides
 // the pivots is ever stated.
 point o hint(x: 0, y: 0)
 point q hint(x: crank, y: 0)
-line datum(o, q) construction
-circle orbit(center: q) hint(r: crank) construction
+line datum(o, q) class construction
+circle orbit(center: q) hint(r: crank) class construction
 
 horizontal(datum)
 radius(orbit) == crank
@@ -48,7 +48,7 @@ ccw(c, d, pen)                         // and the pen on the far side of the kit
 // takes nothing from the crank, which is to say the pen's x never changes as the crank turns.
 point anchor hint(x: 80, y: 0)
 ground(anchor)
-line rail(anchor, pen) construction
+line rail(anchor, pen) class construction
 claim vertical(rail)
 
 // Diagnosed: dof 1, Under — the crank — and the claim a theorem.  Move the anchor and the claim

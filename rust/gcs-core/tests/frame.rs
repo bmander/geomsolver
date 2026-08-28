@@ -62,7 +62,7 @@ fn the_rotor_tracks_the_chord_through_a_solve() {
 #[test]
 fn round_trips_through_json() {
     let (mut sk, f) = with_frame();
-    sk.frames[f].construction = true;
+    sk.frames[f].class = gcs_core::style::Classes::one("construction");
     let (cp, sp) = (sk.frames[f].c as usize, sk.frames[f].s as usize);
     sk.params[cp].fixed = true;
     // an unsolved pose survives: the saved rotor wins over the recomputed one
@@ -70,7 +70,7 @@ fn round_trips_through_json() {
     let back = io::loads(&io::dumps(&sk, None)).unwrap();
     assert_eq!(back.frames.len(), 1);
     let bf = &back.frames[0];
-    assert!(bf.construction);
+    assert!(bf.class.has("construction"));
     assert!(back.params[bf.c as usize].fixed);
     assert!(!back.params[bf.s as usize].fixed);
     assert_eq!(back.params[bf.c as usize].value, 0.8);
@@ -162,8 +162,8 @@ curve elbow(o: point, datum: line, f: frame)(u) over (10, 80) =
 
 point o hint(x: 0, y: 0)
 point q hint(x: -30, y: 51.9615242270663)
-line  datum(o, q) construction
-frame f(origin: o, toward: q) construction
+line  datum(o, q) class construction
+frame f(origin: o, toward: q) class construction
 
 curve path = elbow(o, datum, f)
 

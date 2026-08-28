@@ -8,6 +8,7 @@
 
 use gcs_core::constraints::{CKind, Constraint};
 use gcs_core::edit::{self, Kind};
+use gcs_core::style::Classes;
 use gcs_core::model::{EntKind, EntRef};
 use gcs_core::program::elaborate;
 use gcs_core::solve::{solve, SolveOpts};
@@ -410,25 +411,25 @@ fn a_flag_and_a_gauge_are_spliced_too() {
     let prog = prog_of(DOC);
     let mut e = elaborate(&prog);
     assert!(e.ok());
-    e.sketch.lines[1].construction = true;
+    e.sketch.lines[1].class = Classes::one("construction");
     let a = e.map.ent_named("a").unwrap();
     let c = e.map.ent_named("c").unwrap();
     e.sketch.fix_point(a.i(), false);
     e.sketch.fix_point(c.i(), true);
 
     let edit = reconciled(&mut e);
-    assert!(edit.text.contains("line bc(b, c) construction"), "{}", edit.text);
+    assert!(edit.text.contains("line bc(b, c) class construction"), "{}", edit.text);
     assert!(edit.text.contains("line ab(a, b)      // the base"), "the comment stayed");
     assert!(edit.text.contains("ground(c)"), "{}", edit.text);
     assert!(!edit.text.contains("ground(a)"), "the one that was let go is gone:\n{}", edit.text);
 
     let back = elaborate(&prog_of(&edit.text));
     assert!(back.ok(), "{:?}", back.errors().map(|d| &d.message).collect::<Vec<_>>());
-    assert!(back.sketch.lines[1].construction);
+    assert!(back.sketch.lines[1].class.has("construction"));
     assert!(back.sketch.point_fixed(2) && !back.sketch.point_fixed(0));
 
     // and taking the flag off again takes the word out, leaving the line as it was
-    e.sketch.lines[1].construction = false;
+    e.sketch.lines[1].class = Default::default();
     let off = reconciled(&mut e);
     assert!(off.text.contains("line bc(b, c)\n"), "{}", off.text);
 }
@@ -642,8 +643,8 @@ fn a_drag_of_a_minted_child_writes_the_list() {
 fn a_written_argument_list_goes_on_the_name_and_is_spelled_once() {
     for (src, want) in [
         ("circle c hint(r: 25)\n", "circle c(center: hint(x: 3, y: 4)) hint(r: 25)"),
-        ("circle c construction hint(r: 25)\n",
-         "circle c(center: hint(x: 3, y: 4)) construction hint(r: 25)"),
+        ("circle c class construction hint(r: 25)\n",
+         "circle c(center: hint(x: 3, y: 4)) class construction hint(r: 25)"),
     ] {
         let mut e = elaborate(&prog_of(src));
         assert!(e.ok(), "{src}: {:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());

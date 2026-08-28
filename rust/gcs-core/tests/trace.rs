@@ -37,8 +37,8 @@ curve unwind(c: circle, datum: line, phase: Angle)(u) over (5, 90) =
 
 point  o hint(x: 0, y: 0)
 point  ax hint(x: 1, y: 0)
-line   datum(o, ax) construction
-circle base(center: o) hint(r: 20) construction
+line   datum(o, ax) class construction
+circle base(center: o) hint(r: 20) class construction
 
 curve  formula = involute(base, phase: 0) over (5, 60)
 curve  string = unwind(base, datum, phase: 0) over (5, 60)
@@ -330,8 +330,8 @@ curve involute(c: circle, datum: line, phase: Angle)(u) over (5, 60) =
 
 point  o hint(x: 0, y: 0)
 point  ax hint(x: 1, y: 0)
-line   datum(o, ax) construction
-circle base(center: o) hint(r: 20) construction
+line   datum(o, ax) class construction
+circle base(center: o) hint(r: 20) class construction
 curve  w = involute(base, datum, phase: 0) over (5, 60)
 radius(base) == 20
 ground(o)
@@ -417,8 +417,8 @@ curve limp(c: circle, datum: line, phase: Angle)(u) over (5, 60) =
 
 point  o hint(x: 0, y: 0)
 point  ax hint(x: 1, y: 0)
-line   datum(o, ax) construction
-circle base(center: o) hint(r: 20) construction
+line   datum(o, ax) class construction
+circle base(center: o) hint(r: 20) class construction
 curve  w = limp(base, datum, phase: 0) over (5, 60)
 ";
     let e = build(src);
@@ -544,7 +544,7 @@ curve rim(c: circle, datum: line)(u) over (0, 350) =
   }
 point  o hint(x: 2, y: 1)
 point  ax hint(x: 3, y: 1)
-line   datum(o, ax) construction
+line   datum(o, ax) class construction
 circle base(center: o) hint(r: 7)
 curve  w = rim(base, datum)
 ";
@@ -654,7 +654,7 @@ curve rim(c: circle, datum: line)(u) over (10, 170) =
     let doc = "\
 point  o hint(x: 2, y: 1)
 point  ax hint(x: 4, y: 2)
-line   datum(o, ax) construction
+line   datum(o, ax) class construction
 circle base(center: o) hint(r: 7)
 curve  w = rim(base, datum)
 ";

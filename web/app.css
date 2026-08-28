@@ -34,6 +34,9 @@
      palette carries the program panel with it */
   --syn-relation: var(--accent);
   --syn-claim: var(--danger);
+  /* a class names presentation, which is a different statement from what the drawing is — muted,
+     because a sheet is a remark about the drawing and not part of it */
+  --syn-class: #9c5d00;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -309,6 +312,9 @@ dialog .choices button { text-align: left; font-family: var(--mono); font-size: 
    language a reader most needs to see at a glance */
 .code-copy .seed { color: var(--muted); }
 .code-copy .claim { color: var(--syn-claim); }
+/* a class is presentation, which is a different statement from what the drawing is — so it
+   reads as one, and not as the geometry it qualifies */
+.code-copy .class { color: var(--syn-class); }
 
 #pdiags {
   flex: none; max-height: 34%; overflow: auto; list-style: none; margin: 0; padding: 0;

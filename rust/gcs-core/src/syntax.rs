@@ -35,6 +35,7 @@
 
 use crate::constraints::{CKind, SpecKind};
 use crate::model::{EntKind, EntRef, Field};
+use crate::style::{Classes, Style};
 
 /// How long a program may be.  A document is untrusted input and `wasm32-unknown-unknown` aborts
 /// rather than unwinding, so the size is checked here rather than left to an allocator.
@@ -242,6 +243,24 @@ pub enum StmtKind {
     Param(ParamDecl),
     /// `repeat`, `cycle`, `ring` — see `Block`.
     Block(Block),
+    /// `style .construction { dash: 7 4 }` — what a class looks like.  Presentation, and the
+    /// one statement that says nothing about what the drawing *is*.
+    Style(StyleRule),
+}
+
+/// `style .NAME { prop: value; … }`.
+///
+/// The properties are held as a resolved `Style` rather than as text: the little language they
+/// are written in is three keywords and a number, so unlike a dimension there is nothing here a
+/// second reader could disagree about.  An unknown property is dropped with a warning span, the
+/// way an unmatched class is simply not a rule.
+#[derive(Clone, Debug)]
+pub struct StyleRule {
+    pub name: Name,
+    pub style: Style,
+    /// The property names as written, in order, so the printer says what the source said.
+    pub props: Vec<String>,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug)]
@@ -358,7 +377,12 @@ pub struct Decl {
     pub values: Vec<(Name, String)>,
     /// The interval a curve instance is drawn over, as written.
     pub domain: Option<(String, String)>,
-    pub construction: bool,
+    /// The classes it carries, in written order: `line l(a, b) class centerline heavy`.
+    /// Presentation, and nothing the core computes reads it (spec §14).
+    pub class: Classes,
+    /// Where `class …` sits in the source, so a toggle rewrites the words and not the statement
+    /// around them.  An *empty* span at the point one would be written when there is none.
+    pub class_span: Span,
     /// A seed named *geometrically* rather than by coordinates: `at t`, `at c.center`,
     /// `at c bearing (u + phase)`.  What it may name is the elaborator's question.
     pub seed_at: Option<AtRef>,
@@ -775,6 +799,16 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             }
         }
         StmtKind::Param(p) => out.push_str(&format!("param {} = {}", p.name.text, p.text)),
+        StmtKind::Style(r) => {
+            out.push_str(&format!("style .{} {{ ", r.name.text));
+            let parts: Vec<String> = r
+                .props
+                .iter()
+                .filter_map(|k| style_prop_text(&r.style, k).map(|v| format!("{k}: {v}")))
+                .collect();
+            out.push_str(&parts.join("; "));
+            out.push_str(" }");
+        }
         StmtKind::Block(b) => {
             out.push_str(match b.kind {
                 BlockKind::Repeat => "repeat ",
@@ -825,8 +859,19 @@ fn write_decl(out: &mut String, d: &Decl) {
         out.push_str(&u.iter().map(|&v| num(v)).collect::<Vec<_>>().join(", "));
         out.push(']');
     }
-    if d.construction {
-        out.push_str(" construction");
+    if !d.class.is_empty() {
+        out.push_str(" class ");
+        out.push_str(&d.class.0.join(" "));
+    }
+}
+
+/// One property of a style, as a `style` block writes it.
+fn style_prop_text(s: &Style, prop: &str) -> Option<String> {
+    match prop {
+        "dash" => s.dash.as_ref().map(|d| d.iter().map(|&v| num(v)).collect::<Vec<_>>().join(" ")),
+        "width" => s.width.map(num),
+        "color" => s.color.clone(),
+        _ => None,
     }
 }
 
@@ -1286,6 +1331,9 @@ pub enum Tint {
     Seed,
     /// `==`, a claim it may not
     Claim,
+    /// `class centerline`, and the `.centerline` a `style` block names — presentation, which is
+    /// a different statement from what the drawing is and reads as one
+    Class,
 }
 
 impl Tint {
@@ -1303,6 +1351,7 @@ impl Tint {
             Tint::Label => "label",
             Tint::Seed => "seed",
             Tint::Claim => "claim",
+            Tint::Class => "class",
         }
     }
 }
@@ -1330,7 +1379,11 @@ fn joint_word(w: &str) -> bool {
 /// The words that shape a statement without naming anything — a modifier the parser eats where it
 /// stands.  `as` binds a name after it, which is why `highlight` treats that one specially.
 const MODIFIERS: [&str; 9] =
-    ["over", "as", "at", "hint", "about", "construction", "where", "bearing", "from"];
+    ["over", "as", "at", "hint", "about", "class", "where", "bearing", "from"];
+
+/// The words that may follow a declaration's own, so `class a b` knows where its list ends.
+/// A chain's joints are here too: `arc a(center: c) class construction tangent …` is one link.
+const TRAILERS: [&str; 4] = ["knots", "hint", "class", "close"];
 
 /// What the word *after* this one is expected to be — the whole of the state the colouring carries
 /// from one token to the next, and four states rather than the four independent flags that would
@@ -1339,6 +1392,8 @@ const MODIFIERS: [&str; 9] =
 enum Next {
     /// begins a statement, so it is the word that says what the statement *is*
     Start,
+    /// names a class: every plain word after `class`, and the one a `style` block declares
+    Class,
     /// names what the statement declares
     Def,
     /// names the component an instance is of — the one type written without a `:` before it
@@ -1363,6 +1418,9 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
     // seed and every other number is not — the whole of §4.3's lexical rule, and the reason the
     // colouring can say which numbers a solve may rewrite without elaborating anything.
     let mut hint = 0i32;
+    // and how deep inside a `style .name { … }` block, whose body is `property: value` pairs
+    // rather than statements
+    let mut style = 0i32;
     for (i, (t, span)) in lexed.toks.iter().enumerate() {
         let prev = i.checked_sub(1).map(|j| &lexed.toks[j].0);
         let next = lexed.toks.get(i + 1).map(|(t, _)| t);
@@ -1372,6 +1430,11 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
             Tok::P(')') | Tok::P(']') if hint > 0 => hint -= 1,
             Tok::Nl => hint = 0,
             _ => {}
+        }
+        if matches!(t, Tok::Ident(w) if w == "style") && at == Next::Start {
+            style = 1;
+        } else if matches!(t, Tok::P('}')) && style > 0 {
+            style = 0;
         }
         let tint = match t {
             Tok::Nl => {
@@ -1402,6 +1465,11 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
         if at == Next::Start && !matches!(t, Tok::P('{') | Tok::P('}')) {
             at = Next::Word;
         }
+        // a `style` block's body is `property: value` pairs, not statements: the brace above
+        // reset the state to `Start`, where `dash:` would read as an instance
+        if matches!(t, Tok::P('{')) && style > 0 {
+            at = Next::Word;
+        }
         if let Some(tint) = tint {
             out.push((tint, *span));
         }
@@ -1428,12 +1496,24 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
 /// Split out because it is the whole of the rule and the loop around it is only bookkeeping.
 fn tint_word(w: &str, prev: Option<&Tok>, next: Option<&Tok>, at: Next) -> (Option<Tint>, Next) {
     match at {
+        Next::Class => {
+            // the list runs to the next thing a declaration may say — another trailing clause,
+            // or a chain's joint.  The same predicate the parser stops on, asked once.
+            if TRAILERS.contains(&w) || joint_word(w) || w == "close" {
+                return tint_word(w, prev, next, Next::Word);
+            }
+            (Some(Tint::Class), Next::Class)
+        }
         Next::Def => (Some(Tint::Def), Next::Word),
         Next::Inst => (Some(Tint::Type), Next::Word),
         Next::Start => {
             // `point p`, `component Gear(…)`, `curve involute(…)`, `param R = …`, `port lo: point`
             if EntKind::parse(w).is_some() || matches!(w, "component" | "param" | "port") {
                 return (Some(Tint::Word), Next::Def);
+            }
+            // `style .construction { … }` — the class it names is the thing it declares
+            if w == "style" {
+                return (Some(Tint::Word), Next::Class);
             }
             if BLOCKS.contains(&w) {
                 return (Some(Tint::Word), Next::Word);
@@ -1467,8 +1547,16 @@ fn tint_word(w: &str, prev: Option<&Tok>, next: Option<&Tok>, at: Next) -> (Opti
                 return (Some(Tint::Label), Next::Word);
             }
             if MODIFIERS.contains(&w) {
-                // `cycle N as i` — the binder is a name the block declares
-                return (Some(Tint::Word), if w == "as" { Next::Def } else { Next::Word });
+                // `cycle N as i` — the binder is a name the block declares; `class a b` names
+                // classes until the clause ends
+                return (
+                    Some(Tint::Word),
+                    match w {
+                        "as" => Next::Def,
+                        "class" => Next::Class,
+                        _ => Next::Word,
+                    },
+                );
             }
             // `= trace p where { … }` — the traced point is a name the family declares
             if w == "trace" && prev == Some(&Tok::Eq) {
@@ -1844,6 +1932,76 @@ impl<'a> P<'a> {
         Some(k)
     }
 
+    /// `style .construction { dash: 7 4; width: 0.5; color: #888888 }`.
+    ///
+    /// A `#rrggbb` is not one token — the lexer has no colour literal and does not need one, a
+    /// colour being the only thing in the language written with a `#`.  So the value of every
+    /// property is taken as the run of tokens up to the `;` or the `}`, and read by the property
+    /// that wanted it.
+    fn style_rule(&mut self) -> Option<StmtKind> {
+        let lo = self.here().lo as usize;
+        self.i += 1; // `style`
+        if !self.want_p('.') {
+            return None;
+        }
+        let name = self.ident()?;
+        if !self.want_p('{') {
+            return None;
+        }
+        let mut style = Style::default();
+        let mut props: Vec<String> = Vec::new();
+        while !self.eat_p('}') {
+            if self.eat_p(';') || self.peek() == Some(&Tok::Nl) {
+                self.i += usize::from(self.peek() == Some(&Tok::Nl));
+                continue;
+            }
+            let Some(prop) = self.slot_label() else {
+                self.fail("a style rule is `property: value`");
+                return None;
+            };
+            let from = self.here().lo as usize;
+            let mut values: Vec<f64> = Vec::new();
+            while !matches!(self.peek(), Some(Tok::P(';')) | Some(Tok::P('}')) | Some(Tok::Nl) | None)
+            {
+                if let Some(Tok::Num(v)) = self.peek() {
+                    values.push(*v);
+                }
+                self.i += 1;
+            }
+            let text = self.text_from(from).trim().to_string();
+            if !style.set(&prop, &values, &text) {
+                // an unknown property is not an error, exactly as an unmatched class is not:
+                // a sheet says what it knows how to say and the rest has no rule
+                continue;
+            }
+            props.push(prop);
+        }
+        Some(StmtKind::Style(StyleRule { name, style, props, span: Span::new(lo, self.prev_hi()) }))
+    }
+
+    /// `class centerline heavy` — the classes a declaration carries, and where they are written.
+    ///
+    /// Every bare word after `class` belongs to it, up to the next thing a declaration may say:
+    /// another trailing clause, or a chain's joint (`class construction tangent arc …` is one
+    /// link, and `tangent` is not a class).  `at` is where the clause *would* go when there is
+    /// none, so an edit that adds one has somewhere to put it.
+    fn class_clause(&mut self, at: usize) -> (Classes, Span) {
+        if !self.peek_word("class") {
+            return (Classes::default(), Span::new(at, at));
+        }
+        let lo = self.here().lo as usize;
+        self.i += 1;
+        let mut c = Classes::default();
+        while let Some(Tok::Ident(w)) = self.peek().cloned() {
+            if TRAILERS.contains(&w.as_str()) || joint_word(&w) || w == "close" {
+                break;
+            }
+            c.0.push(w);
+            self.i += 1;
+        }
+        (c, Span::new(lo, self.prev_hi()))
+    }
+
     /// `name:` at the head of a slot — the label and nothing else, consumed.
     ///
     /// Matched through the reference and cloned only in the winning arm, the way `eat_word` is:
@@ -2000,6 +2158,7 @@ impl<'a> P<'a> {
             return None;
         };
         match w.as_str() {
+            "style" => self.style_rule(),
             g if GAUGES.contains(&g) => {
                 self.i += 1;
                 let ground = w == "ground";
@@ -2904,7 +3063,8 @@ impl<'a> P<'a> {
             if self.eat_word("over") {
                 domain = Some(self.interval()?);
             }
-            let construction = self.eat_word("construction");
+            let at = self.prev_hi();
+            let (class, class_span) = self.class_clause(at);
             return Some(Decl {
                 kind,
                 name,
@@ -2917,7 +3077,8 @@ impl<'a> P<'a> {
                 def,
                 values,
                 domain,
-                construction,
+                class,
+                class_span,
                 seed_at: None,
             });
         }
@@ -2991,10 +3152,11 @@ impl<'a> P<'a> {
             }
         }
         // trailing clauses, in any order: `hint(x: 0, y: 0)` or `hint at REF [bearing (…)]`,
-        // `knots [...]`, `construction`.  Where a clause *would* go if it is not written is the
+        // `knots [...]`, `class …`.  Where a clause *would* go if it is not written is the
         // point we are standing on now, before any of them: that is what writeback appends at.
         let mut knots = None;
-        let mut construction = false;
+        let mut class = Classes::default();
+        let mut class_span = Span::default();
         let mut seed_at = None;
         let insert = self.prev_hi();
         let mut hint_span = Span::new(insert, insert);
@@ -3031,8 +3193,14 @@ impl<'a> P<'a> {
                     }
                 }
                 knots = Some(u);
-            } else if self.eat_word("construction") {
-                construction = true;
+            } else if self.peek_word("class") {
+                let (c, sp) = self.class_clause(insert);
+                if c.is_empty() {
+                    self.fail("`class` names at least one class");
+                    return None;
+                }
+                class = c;
+                class_span = sp;
             } else if self.peek_word("hint") || self.peek_word("at") {
                 // the retired coordinate spellings, `hint at (0, 0)` and a bare `at (0, 0)` —
                 // what every document in the library said until the clause arrived, so the
@@ -3059,7 +3227,8 @@ impl<'a> P<'a> {
             def,
             values,
             domain,
-            construction,
+            class,
+            class_span: if class_span.is_empty() { Span::new(insert, insert) } else { class_span },
             seed_at,
         })
     }

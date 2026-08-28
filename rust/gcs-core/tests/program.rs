@@ -132,7 +132,7 @@ fn every_constraint_type_is_printable() {
 fn every_constraint_name_survives_the_case_round_trip() {
     let words = [
         "point", "line", "circle", "arc", "spline", "ellipse", "frame", "at", "knots",
-        "construction",
+        "class",
         "ground", "fix", "ccw", "cw", "branch", "component", "port", "param", "ring", "repeat",
         "cycle", "path", "true", "false",
     ];
@@ -317,7 +317,8 @@ fn a_name_declared_twice_is_an_error() {
             def: None,
             values: Vec::new(),
             domain: None,
-            construction: false,
+            class: Default::default(),
+            class_span: Default::default(),
             seed_at: None,
         }));
     }

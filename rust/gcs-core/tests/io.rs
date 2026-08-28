@@ -3,6 +3,7 @@ use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::examples;
 use gcs_core::io;
 use gcs_core::json::{fmt_g, Json};
+use gcs_core::style::Classes;
 use gcs_core::model::{self, angle_between, distance_between, on_radius, EntKind, EntRef, Sketch};
 use gcs_core::solve::{solve, SolveOpts};
 
@@ -154,15 +155,15 @@ fn a_rectangle_is_rigid_up_to_its_five_degrees_of_freedom() {
 }
 
 #[test]
-fn construction_flags_round_trip() {
+fn classes_round_trip() {
     let mut sk = examples::slotted_link(80.0, 15.0, 6.0);
-    sk.lines[0].construction = true;
-    sk.arcs[0].construction = true;
-    sk.circles[0].construction = true;
+    sk.lines[0].class = Classes::one("construction");
+    sk.arcs[0].class = Classes::one("construction");
+    sk.circles[0].class = Classes::one("construction");
     let back = io::loads(&io::dumps(&sk, Some(1))).unwrap();
     assert_eq!(
-        back.lines.iter().map(|l| l.construction).collect::<Vec<_>>(),
-        sk.lines.iter().map(|l| l.construction).collect::<Vec<_>>()
+        back.lines.iter().map(|l| l.class.clone()).collect::<Vec<_>>(),
+        sk.lines.iter().map(|l| l.class.clone()).collect::<Vec<_>>()
     );
     assert_eq!(io::dumps(&back, Some(1)), io::dumps(&sk, Some(1)));
 }
@@ -476,13 +477,13 @@ fn copy_carries_the_flags_and_the_dimension_placements() {
     let a = sk.point(0.0, 0.0, true, "");
     let b = sk.point(10.0, 0.0, false, "");
     let l = sk.line(a, b);
-    sk.lines[l].construction = true;
+    sk.lines[l].class = Classes::one("construction");
     let id = sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 10.0));
     sk.placements.insert(id, (1.5, -7.0));
 
     let clip = io::copy(&sk, &[EntRef::line(l)]);
     assert!(clip.point_fixed(0), "a fixed point stays fixed");
-    assert!(clip.lines[0].construction, "reference geometry stays reference geometry");
+    assert!(clip.lines[0].class.has("construction"), "reference geometry stays reference geometry");
     let kept = clip.user_constraints()[0].id;
     assert_eq!(clip.placements.get(&kept), Some(&(1.5, -7.0)));
 }
