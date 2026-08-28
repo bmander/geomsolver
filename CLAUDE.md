@@ -129,11 +129,15 @@ Conventions:
   `circle c` one, `arc a` three; a child slot may hold a `hint(…)` instead of a reference
   (`line alt_a(A, hint(x: 15, y: 5))`), which is the same clause standing in for a child rather
   than qualifying the declaration it follows.  `Decl::children` is therefore `Vec<Vec<Kid>>` —
-  a name *or* a seed, and no third form, since "anonymous and unseeded" is spelled by writing no
-  list at all.  **All the children or none**: a partial list is E103, exactly as it was, and the
-  one place a partial list exists is mid-desugaring, where a chain's joint has not yet filled the
-  boundary slot a link left out.  A joint threads a *name*, so a seeded slot reads as unfilled
-  there and the other side must say where the two meet.
+  a name *or* a seed, and no third form, since "anonymous and unseeded" is spelled by an *empty
+  slot*: a slot the list leaves out is an **implicit child**, minted by `program::build` exactly
+  as a wholly-unwritten list's are, which is what lets a chain's marker fill only the ends it
+  speaks for (`line l1 -> line l2` is three points, one shared).  E103 now refuses only a list
+  with *more* children than the kind has slots.  A joint threads a *name*, so a seeded slot
+  reads as unfilled there and the other side may say where the two meet — and between two
+  declarations where neither does, `thread` mints the name itself (the earlier-built side's
+  dotted boundary, `l1.p2`), refusing only when a side is a name-link whose kind no boundary
+  field can be read off.
   **The dotted path is the name.**  An anonymous child has no name in the source, so `l.p1` *is*
   its name: `program::build` mints the point *with* that name, binds it in `map.names`, and
   records it against the parent's statement — which is what makes it resolve, constrain, drag,

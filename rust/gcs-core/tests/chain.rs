@@ -197,18 +197,65 @@ fn a_joint_is_named_by_exactly_one_side_or_by_both_in_agreement() {
     let disagree = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 5, y: 10)\n\
                     point p4 hint(x: 9, y: 9)\nline a(p1, p2) -> line b(p3, p4)\n";
     refuses(disagree, "names two points");
-    let nobody = "point p1 hint(x: 0, y: 0)\npoint c hint(x: 5, y: 5)\n\
-                  line a(p1) -> arc k(center: c) hint(r: 5)\n";
-    refuses(nobody, "neither");
+    // a joint *nobody* names, between two declarations, is minted: the earlier-built side's
+    // boundary is an anonymous child with a name, and the other side's slot takes that name
+    let nobody = read(
+        "point p1 hint(x: 0, y: 0)\npoint p3 hint(x: 20, y: 10)\npoint c hint(x: 5, y: 5)\n\
+         line a(p1) -> arc k(center: c, end: p3) hint(r: 5)\n",
+    );
+    assert_eq!(
+        nobody.sketch.children(EntRef::arc(0))[1],
+        nobody.sketch.children(EntRef::line(0))[1],
+        "the arc starts at the line's minted end"
+    );
+    // with a name-link on one side there is no kind to read a boundary field off, so the
+    // declared side must say where they meet — that refusal stays
+    let named_side = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
+                      arc k(center: c, start: p1, end: p2) hint(r: 5)\n\
+                      line t(p1) -> tangent k\n";
+    refuses(named_side, "neither");
 }
 
-/// An open chain's first entry and last exit are not joints; left unnamed they are reported,
-/// not quietly seeded at the origin.
+/// An open chain's first entry and last exit are not joints, and nothing need name them: an
+/// end no marker reaches is an implicit child, minted exactly as `line l`'s own points are.
 #[test]
-fn an_open_end_must_be_named() {
-    let src = "point p3 hint(x: 20, y: 10)\npoint p4 hint(x: 20, y: 30)\npoint c hint(x: 10, y: 10)\n\
-               arc k(center: c) hint(r: 5) -> line b(p3, p4)\n";
-    refuses(src, "leaves `k`'s start unnamed");
+fn an_open_end_is_an_implicit_child() {
+    let e = read(
+        "point p3 hint(x: 20, y: 10)\npoint p4 hint(x: 20, y: 30)\npoint c hint(x: 10, y: 10)\n\
+         arc k(center: c) hint(r: 5) -> line b(p3, p4)\n",
+    );
+    let kids = e.sketch.children(EntRef::arc(0));
+    assert_eq!(kids[2], EntRef::point(0), "the arc ends where `b` starts");
+    assert_eq!(kids[1], EntRef::point(3), "the arc's start is its own, minted as `k.start`");
+}
+
+/// **`line l1 -> line l2` works**: two lines with implicit points, joined at one shared
+/// implicit point — three points in all, the middle one both `l1.p2` and `l2.p1`.  And the
+/// writeback round-trips: the poses land in `hint(…)` clauses, the shared point is named by
+/// its dotted path, and the reparsed text is the same drawing.
+#[test]
+fn a_corner_of_implicit_points() {
+    let e = read("line l1 -> line l2\n");
+    let (a, b) = (e.sketch.children(EntRef::line(0)), e.sketch.children(EntRef::line(1)));
+    assert_eq!(e.sketch.points.len(), 3, "three points, one shared");
+    assert_eq!(a[1], b[0], "l2 starts where l1 ends");
+    assert_ne!(a[0], b[1], "and the open ends are their own");
+
+    let out = edit::commit_seeds(&e, &e.sketch, &e.program);
+    assert!(out.text.contains("l1.p2"), "the shared point is named by its path:\n{}", out.text);
+    let again = read(&out.text);
+    assert_eq!(again.sketch.points.len(), 3, "{}", out.text);
+    let (a2, b2) = (again.sketch.children(EntRef::line(0)), again.sketch.children(EntRef::line(1)));
+    assert_eq!(a2[1], b2[0], "still one corner:\n{}", out.text);
+    // and the poses survived: the reparsed sketch starts where the solved one stood
+    for i in 0..3 {
+        let p = &e.sketch.points[i];
+        let q = &again.sketch.points[i];
+        let (px, py) = (e.sketch.params[p.x as usize].value, e.sketch.params[p.y as usize].value);
+        let (qx, qy) =
+            (again.sketch.params[q.x as usize].value, again.sketch.params[q.y as usize].value);
+        assert!((px - qx).abs() < 1e-9 && (py - qy).abs() < 1e-9, "point {i} moved:\n{}", out.text);
+    }
 }
 
 /// The joint vocabulary maps to the regular forms and refuses the rest: two straight runs
@@ -602,6 +649,41 @@ fn a_corner_onto_existing_geometry() {
     refuses(
         &format!("{base}line t(p3) -> tangent k\n"),
         "names the point where they meet",
+    );
+}
+
+/// **Every threadable pair mints its corner**, whichever side builds first: `thread` names the
+/// earlier-built side's boundary (kind order, then statement order) and fills the later side's
+/// slot, so the name exists by the time it resolves — an arc before a line takes the fill
+/// itself, since lines build first.
+#[test]
+fn every_threadable_pair_mints_its_corner() {
+    // arc -> line: the shared point is the line's minted `l1.p1`, written into the arc's `end`
+    let e = read("point c hint(x: 5, y: 5)\narc k(center: c) hint(r: 5) -> line l1\n");
+    assert_eq!(
+        e.sketch.children(EntRef::arc(0))[2],
+        e.sketch.children(EntRef::line(0))[0],
+        "the arc ends where the line begins"
+    );
+
+    // arc -> arc: same kind, so statement order decides — the second takes the first's `end`
+    let e = read(
+        "point c hint(x: 5, y: 5)\npoint d hint(x: 15, y: 5)\n\
+         arc k(center: c) hint(r: 5) -> arc m(center: d) hint(r: 5)\n",
+    );
+    assert_eq!(
+        e.sketch.children(EntRef::arc(0))[2],
+        e.sketch.children(EntRef::arc(1))[1],
+        "m starts where k ends"
+    );
+
+    // and a loop of nothing but implicit points closes onto the first link's minted entry
+    let e = read("line a -> line b -> line d -> close\n");
+    assert_eq!(e.sketch.points.len(), 3, "a closed triangle of three minted corners");
+    assert_eq!(
+        e.sketch.children(EntRef::line(2))[1],
+        e.sketch.children(EntRef::line(0))[0],
+        "the last exit is the first entry"
     );
 }
 

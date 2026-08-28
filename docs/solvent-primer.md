@@ -94,8 +94,9 @@ other. Children may be given positionally or by label; a label is what lets you 
 one (`line l(p2: c)` leaves `p1` for a chain to thread). An arc is a centre and two *real* points,
 so its ends drag and constrain like any others.
 
-**Children need not be named.** Write no argument list and the kind's children are made for you,
-unnamed; a slot may also hold a `hint(…)` instead of a reference, which is an anonymous point and
+**Children need not be named — any slot may be left implicit.** Write no argument list and the
+kind's children are made for you, unnamed; leave one slot out (`line l(p2: c)`) and just that
+child is minted; a slot may also hold a `hint(…)` instead of a reference, which is an anonymous point and
 where its solve begins:
 
 ```
@@ -235,8 +236,10 @@ INFIX  ::= 'tangent' | 'equal' | a constraint taking two entities
 **Threading is stated at the joint, never inferred.** `->` says the two links beside it share a
 boundary point, threaded left to right (`p1 → p2` on a line; `start → end` on an arc, CCW); its
 absence says they do not. `->` alone is the plain corner; `-> tangent` is a corner that is also
-tangent there, the regular at-the-point form — the shared point is named by exactly one side (or
-both, agreeing) and filled into the other. A word without the marker states only the relation:
+tangent there, the regular at-the-point form. The shared point may be named by one side (or
+both, agreeing) — and between two declarations by nobody, the chain minting it as an implicit
+point: `line l1 -> line l2` is two lines and three points, one shared. A word without the
+marker states only the relation:
 `a_br equal a_tr` relates two arcs declared elsewhere and welds nothing, and
 `line l1(a, b) perpendicular line l2(c, d)` declares two separate lines at a right angle. A
 chain may mix declarations and names; at a corner with an element declared elsewhere, the

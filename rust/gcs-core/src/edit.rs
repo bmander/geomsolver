@@ -109,6 +109,25 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         // a declaration that could not be built made nothing, and has no pose to record
         let Some(Made::Ent(parent)) = e.map.made_by(st.id).first().copied() else { continue };
         let kids = sk.children(parent);
+        // the statement's slot for each child, in field order — the same order `sk.children`
+        // hands them back in.  A slot may be empty (an implicit child), so for the per-slot
+        // kinds the groups are indexed directly; a `List` kind's one group is flattened.
+        let slot_kid = |j: usize| -> Option<&syntax::Kid> {
+            if d.children.len() == kids.len() {
+                d.children.get(j).and_then(|g| g.first())
+            } else {
+                d.children.iter().flatten().nth(j)
+            }
+        };
+        // whether a kid's text is this statement's own: a chain's thread fills slots with
+        // references written in *another* link (or written nowhere, with an empty span), and a
+        // writeback must not mistake those for a list the source wrote here
+        let written_here = |kid: &syntax::Kid| match kid {
+            syntax::Kid::Ref(r) => {
+                !r.span.is_empty() && r.span.lo >= st.span.lo && r.span.hi <= st.span.hi
+            }
+            syntax::Kid::Hint(_) => true,
+        };
 
         // One seed at a time: where the source wrote it, the splice that records it; where it
         // did not, the news that something has moved with nowhere to write it.
@@ -139,9 +158,8 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         // the slots stand in the order `sk.children` hands the children back in, so the two walk
         // together.  A slot the source wrote a *name* in is a point declared elsewhere, and is
         // written back where it was declared; one it wrote nothing for at all was minted.
-        let mut slots = d.children.iter().flatten();
-        for &k in kids.iter() {
-            let seed = match slots.next() {
+        for (j, &k) in kids.iter().enumerate() {
+            let seed = match slot_kid(j) {
                 Some(syntax::Kid::Ref(_)) => continue,
                 Some(syntax::Kid::Hint(s)) => Some(s),
                 None => None,
@@ -189,18 +207,26 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         // the clause, as the pose the solve arrived at; empty when the kind owns no scalar at
         // all — a line's numbers are its two points', and they are written in the slots
         let hint = syntax::hint_clause(d, &pose);
-        // the source named none of its children, so the list has to be written too.  It is
-        // spelled by the printer that spells every other statement — write it here and an
-        // `arc`'s `center:`/`start:`/`end:` labels are dropped by the one path that wrote its
-        // own — and a `Decl` of the solved pose is what that printer takes.
-        let list = (d.children.iter().all(|g| g.is_empty()) && !kids.is_empty()).then(|| {
+        // No slot of this list is the source's own text, so the list has to be written too —
+        // a chain's thread fills slots with references written in *another* link, or written
+        // nowhere at all, and neither is a list this statement can splice into.  It is spelled
+        // by the printer that spells every other statement — write it here and an `arc`'s
+        // `center:`/`start:`/`end:` labels are dropped by the one path that wrote its own —
+        // and a `Decl` of the solved pose is what that printer takes.
+        let mine_here = d.children.iter().flatten().any(|kid| written_here(kid));
+        let list = (!mine_here && !kids.is_empty()).then(|| {
             let mut d2 = d.clone();
-            let mut minted = kids.iter().map(|k| {
-                let v = sk.point_params(k.i()).map(|p| sk.params[p as usize].value);
-                syntax::Kid::Hint(syntax::KidSeed { v, ..Default::default() })
+            // a slot the thread filled keeps the name it threaded; every other slot is a child
+            // this statement minted, and is written as the `hint(…)` its pose is
+            let mut filled = kids.iter().enumerate().map(|(j, k)| match slot_kid(j) {
+                Some(syntax::Kid::Ref(r)) => syntax::Kid::Ref(r.clone()),
+                _ => {
+                    let v = sk.point_params(k.i()).map(|p| sk.params[p as usize].value);
+                    syntax::Kid::Hint(syntax::KidSeed { v, ..Default::default() })
+                }
             });
             for g in d2.children.iter_mut() {
-                *g = minted.by_ref().take(g.len().max(1)).collect();
+                *g = filled.by_ref().take(g.len().max(1)).collect();
             }
             (syntax::decl_args(&d2), syntax::decl_tail(&d2, &pose))
         });

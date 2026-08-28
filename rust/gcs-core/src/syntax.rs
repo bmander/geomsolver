@@ -2056,8 +2056,9 @@ fn refs_eq(a: &Ref, b: &Ref) -> bool {
         })
 }
 
-/// A reference as written, for a message about it.
-fn ref_text(r: &Ref) -> String {
+/// A reference as written, for a message about it — and for a writeback that has to spell a
+/// reference the source never wrote (a chain-minted `l1.p2`).
+pub(crate) fn ref_text(r: &Ref) -> String {
     let mut s = String::new();
     write_ref(&mut s, r);
     s
@@ -2945,33 +2946,18 @@ impl<'a> P<'a> {
             }
         }
 
-        // threading: at each threaded joint the shared point is named by exactly one side, or
-        // by both in agreement, and the name fills whichever declared side left its boundary
-        // field out.  `covered` is the ends the markers spoke for; every other end of a link a
-        // marker reached must be named where it stands, or its list is left partial (§6.1).
-        let mut covered = vec![(false, false); n]; // (entry, exit)
+        // threading: at each threaded joint the shared point is named by exactly one side, by
+        // both in agreement, or — between two declarations — by nobody, in which case the chain
+        // mints it (`thread`).  An end no marker reaches is an implicit child like any other
+        // unwritten slot (§6.2): `line l1 -> line l2` is two lines and three points, one shared.
         for k in 0..joints.len() {
             if joints[k].thread && joints[k].sound {
                 self.thread(&mut links, k, k + 1, joints[k].span);
-                covered[k].1 = true;
-                covered[k + 1].0 = true;
             }
         }
         if close.as_ref().is_some_and(|c| c.sound) {
             let sp = close.as_ref().expect("just checked").span;
             self.thread(&mut links, n - 1, 0, sp);
-            covered[n - 1].1 = true;
-            covered[0].0 = true;
-        }
-        for (li, l) in links.iter().enumerate() {
-            if covered[li].0 != covered[li].1 {
-                if !covered[li].0 {
-                    self.loose_end(l, true);
-                }
-                if !covered[li].1 {
-                    self.loose_end(l, false);
-                }
-            }
         }
         // the links are consumed below, so what a joint needs of them — the entity and its kind
         // where that is known — is taken first, and only where there are joints to need it
@@ -3131,6 +3117,28 @@ impl<'a> P<'a> {
             })
         };
         let (left, right) = (slot(li, exit), slot(ri, entry));
+        // Write a name into a declared side's boundary slot.  A side that only names an element
+        // has no list to fill; and a name that already denotes exactly that slot — the link's
+        // own dotted boundary, which a written-back chain uses to name the shared point — is
+        // left alone rather than written over itself, which would be a reference with no floor.
+        fn fill(link: &mut Link, slot: Option<usize>, r: Ref) {
+            let Some(k) = slot else { return };
+            if let (Some(kind), LinkBody::Decl(d)) = (link.kind(), &mut link.body) {
+                if let [Seg::Field(f)] = r.path.as_slice() {
+                    if r.root.text == d.name.text && f.text == boundary_name(kind, k) {
+                        return;
+                    }
+                }
+                d.children[k] = vec![Kid::Ref(r)];
+            }
+        }
+        // Whether link `a` is built before link `b`: phase 2 builds per kind in declaration
+        // order of `EntKind` (`primitives()` order), and within a kind in statement order,
+        // which for a chain is link order.
+        fn builds_first(a: &Link, ia: usize, b: &Link, ib: usize) -> bool {
+            let ord = |l: &Link| l.kind().map(|k| k as usize).unwrap_or(usize::MAX);
+            (ord(a), ia) < (ord(b), ib)
+        }
         match (left, right) {
             (Some(l), Some(r)) => {
                 if !refs_eq(&l, &r) {
@@ -3148,41 +3156,45 @@ impl<'a> P<'a> {
                 }
             }
             (Some(l), None) => {
-                if let (Some(en), LinkBody::Decl(d)) = (entry, &mut links[ri].body) {
-                    d.children[en] = vec![Kid::Ref(l)];
-                }
+                fill(&mut links[ri], entry, l);
             }
             (None, Some(r)) => {
-                if let (Some(ex), LinkBody::Decl(d)) = (exit, &mut links[li].body) {
-                    d.children[ex] = vec![Kid::Ref(r)];
-                }
+                fill(&mut links[li], exit, r);
             }
             (None, None) => {
-                self.errs.push(SynErr {
-                    span: at,
-                    message: format!(
-                        "neither `{}` nor `{}` names the point where they meet",
-                        ref_text(&links[li].entity()),
-                        ref_text(&links[ri].entity())
-                    ),
-                });
+                // between two declarations the chain mints the point itself: the boundary of
+                // the side built first is an anonymous child with a name — the dotted path
+                // *is* the name (§6.2) — so the other side's slot is filled with exactly that
+                // name.  The side built later takes the fill, so the name exists by the time
+                // it resolves; a side that only names an element has no kind to read a
+                // boundary field off, so there the point must be named where it stands.
+                let lf = links[li].kind().zip(exit).map(|(k, s)| boundary_name(k, s));
+                let rf = links[ri].kind().zip(entry).map(|(k, s)| boundary_name(k, s));
+                let dotted = |root: Name, f: &str| Ref {
+                    root,
+                    path: vec![Seg::Field(Name::new(f))],
+                    span: Span::default(),
+                };
+                match (lf, rf) {
+                    (Some(lf), Some(rf)) => {
+                        if builds_first(&links[li], li, &links[ri], ri) {
+                            let r = dotted(links[li].entity().root, lf);
+                            fill(&mut links[ri], entry, r);
+                        } else {
+                            let r = dotted(links[ri].entity().root, rf);
+                            fill(&mut links[li], exit, r);
+                        }
+                    }
+                    _ => self.errs.push(SynErr {
+                        span: at,
+                        message: format!(
+                            "neither `{}` nor `{}` names the point where they meet",
+                            ref_text(&links[li].entity()),
+                            ref_text(&links[ri].entity())
+                        ),
+                    }),
+                }
             }
-        }
-    }
-
-    /// An end no marker filled, on a link some marker reached: a thread wrote a name into the
-    /// link's list, so what it left out must be named where it stands (§6.1) — reported here
-    /// with the chain's own words rather than as a bare partial-list error.
-    fn loose_end(&mut self, l: &Link, entry: bool) {
-        let LinkBody::Decl(d) = &l.body else { return };
-        let Some((en, ex)) = d.kind.ends() else { return };
-        let slot = if entry { en } else { ex };
-        if d.children.get(slot).is_none_or(|v| v.is_empty()) {
-            let field = boundary_name(d.kind, slot);
-            self.errs.push(SynErr {
-                span: d.name.span,
-                message: format!("the chain leaves `{}`'s {field} unnamed", d.name.text),
-            });
         }
     }
 

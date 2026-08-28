@@ -1228,8 +1228,8 @@ fn build(
     let written: usize = d.children.iter().map(|g| g.len()).sum();
     // the dotted names, worked out only where one is needed: every child a document names is a
     // `Kid::Ref`, and formatting names nothing would read is a string per slot per elaboration
-    let anonymous =
-        written == 0 || d.children.iter().flatten().any(|k| matches!(k, Kid::Hint(_)));
+    let anonymous = written == 0
+        || d.children.iter().any(|g| g.is_empty() || g.iter().any(|k| matches!(k, Kid::Hint(_))));
     let dotted = if anonymous { child_names(d) } else { Vec::new() };
     let mut kids: Vec<usize> = Vec::new();
     // `Some(0)` and `None` both mean there is nothing to mint, and so does a written list
@@ -1242,71 +1242,89 @@ fn build(
         kids.push(i);
         anon.push((dotted[k].clone(), EntRef::point(i)));
     }
-    for (slot, kid) in d.children.iter().flatten().enumerate() {
-        let r = match kid {
-            Kid::Ref(r) => r,
-            Kid::Hint(seed) => {
-                // a list slot has no arity, so it has no dotted path to be named by, and a
-                // point nothing can name is a point nothing can constrain or drag
-                let Some(name) = dotted.get(slot) else {
-                    diags.push(Diag {
-                        code: Code::E103,
-                        span: st.span,
-                        stmt: Some(st.id),
-                        message: format!(
-                            "a {}'s control points have no names to be reached by, so each \
-                             one is declared",
-                            d.kind.as_str()
-                        ),
-                    });
-                    return None;
-                };
-                let i = sk.point(seed.v[0], seed.v[1], false, name);
+    let mut slot = 0usize;
+    for group in &d.children {
+        // a slot nothing names or seeds is an *implicit child*, minted exactly as a declaration
+        // that writes no list at all mints them (spec §6.2) — which is what lets a chain's
+        // thread fill only the slots it speaks for (`line l1 -> line l2`) and leave the rest
+        // the drawing's own
+        if group.is_empty() && written != 0 {
+            if let (Some(n), Some(name)) = (d.kind.children_arity(), dotted.get(slot)) {
+                let (x, y) = scatter(st.id, slot, n);
+                let i = sk.point(x, y, false, name);
                 kids.push(i);
                 anon.push((name.clone(), EntRef::point(i)));
-                continue;
             }
-        };
-        let Some(e) = res.lookup(r) else {
-            diags.push(Diag {
-                code: Code::E101,
-                span: r.span,
-                stmt: Some(st.id),
-                message: format!("no such entity: `{}`", r.root.text),
-            });
-            return None;
-        };
-        let e = match follow_building(sk, res, e, r) {
-            Ok(e) => e,
-            Err(msg) => {
+            slot += 1;
+            continue;
+        }
+        for kid in group {
+            let r = match kid {
+                Kid::Ref(r) => r,
+                Kid::Hint(seed) => {
+                    // a list slot has no arity, so it has no dotted path to be named by, and a
+                    // point nothing can name is a point nothing can constrain or drag
+                    let Some(name) = dotted.get(slot) else {
+                        diags.push(Diag {
+                            code: Code::E103,
+                            span: st.span,
+                            stmt: Some(st.id),
+                            message: format!(
+                                "a {}'s control points have no names to be reached by, so each \
+                                 one is declared",
+                                d.kind.as_str()
+                            ),
+                        });
+                        return None;
+                    };
+                    let i = sk.point(seed.v[0], seed.v[1], false, name);
+                    kids.push(i);
+                    anon.push((name.clone(), EntRef::point(i)));
+                    slot += 1;
+                    continue;
+                }
+            };
+            slot += 1;
+            let Some(e) = res.lookup(r) else {
+                diags.push(Diag {
+                    code: Code::E101,
+                    span: r.span,
+                    stmt: Some(st.id),
+                    message: format!("no such entity: `{}`", r.root.text),
+                });
+                return None;
+            };
+            let e = match follow_building(sk, res, e, r) {
+                Ok(e) => e,
+                Err(msg) => {
+                    diags.push(Diag {
+                        code: Code::E040,
+                        span: r.span,
+                        stmt: Some(st.id),
+                        message: msg,
+                    });
+                    return None;
+                }
+            };
+            if e.kind != EntKind::Point {
                 diags.push(Diag {
                     code: Code::E040,
                     span: r.span,
                     stmt: Some(st.id),
-                    message: msg,
+                    message: format!(
+                        "`{}` is a {}, and a {} is built from points",
+                        r.root.text,
+                        e.kind.as_str(),
+                        d.kind.as_str()
+                    ),
                 });
                 return None;
             }
-        };
-        if e.kind != EntKind::Point {
-            diags.push(Diag {
-                code: Code::E040,
-                span: r.span,
-                stmt: Some(st.id),
-                message: format!(
-                    "`{}` is a {}, and a {} is built from points",
-                    r.root.text,
-                    e.kind.as_str(),
-                    d.kind.as_str()
-                ),
-            });
-            return None;
+            kids.push(e.i());
         }
-        kids.push(e.i());
     }
-    // all the children, or none: a written slot carries a name or a seed, and a declaration that
-    // writes no list at all gets them minted.  Anything between is E103, as it always was — the
-    // accepted arity is now `children_arity()` *or* zero.
+    // a slot carries a name, a seed, or nothing — an implicit child, minted above — so the one
+    // thing left to refuse is *more* than the kind has slots for
     let want = d.kind.children_arity();
     if let Some(n) = want {
         if kids.len() != n {
@@ -1315,7 +1333,7 @@ fn build(
                 span: st.span,
                 stmt: Some(st.id),
                 message: format!(
-                    "a {} is built from {n} point(s) or from none at all, and {} were given",
+                    "a {} is built from {n} point(s), and {} were given",
                     d.kind.as_str(),
                     written
                 ),

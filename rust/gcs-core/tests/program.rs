@@ -798,8 +798,17 @@ fn a_child_slot_may_hold_a_seed() {
 /// E103 exactly as it always was.  A `spline` has no arity to conjure children from, so a bare
 /// one stays an error.
 #[test]
-fn a_partial_child_list_is_still_an_error() {
-    for src in ["point a hint(x: 0, y: 0)\nline l(a)\n", "spline s\n"] {
+fn a_slot_left_out_is_an_implicit_child() {
+    // `line l(a)` names one end and leaves the other implicit — minted as `l.p2`, exactly as a
+    // declaration that writes no list at all mints them (spec §6.1); what stays refused is a
+    // kind with no arity to conjure children from, and a list with more than the kind holds
+    let (p, errs) = gcs_core::syntax::parse("point a hint(x: 0, y: 0)\nline l(a)\n");
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = elaborate(&p);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+    assert_eq!(e.sketch.points.len(), 2, "the second end is minted");
+
+    for src in ["spline s\n", "point a\npoint b\npoint c\nline l(a, b, c)\n"] {
         let (p, errs) = gcs_core::syntax::parse(src);
         assert!(errs.is_empty(), "{src}: {errs:?}");
         let e = elaborate(&p);
