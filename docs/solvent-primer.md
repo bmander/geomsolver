@@ -25,7 +25,8 @@ program     ::= statement*
 statement   ::= <one of the forms in §1.3>            terminated by a newline or ';'
 comment     ::= '//' … end-of-line | '/*' … '*/'
 identifier  ::= [A-Za-z_][A-Za-z0-9_]*
-number      ::= decimal, optionally in exponent form; `3 1/2` is a mixed fraction (three and a half)
+number      ::= decimal, optionally in exponent form; `3 1/2` is a mixed fraction (three and a
+                half); a unit may follow — `80mm`, `45deg`, `0.5rad`, `6"`, `1' 6 3/16"` (§1.6)
 ```
 
 Whitespace is insignificant except as a separator. A newline ends a statement, **except** inside
@@ -49,6 +50,7 @@ the centre is structure and the radius is a guess, and one pair of brackets said
 ### 1.3 Statement forms
 
 ```
+unit NAME                               what the document's numbers are in (§1.6)
 param NAME = EXPR                       a number worked out while elaborating; never an unknown
 KIND NAME[(CHILD | hint(x: E, y: E), …)] [hint(SCALAR: E, …)] [knots […]] [class NAME…]
                                         an entity declaration (§1.4)
@@ -171,6 +173,40 @@ distance(c, d) == w / 2         // reads it
 A name that nothing defines is a **free variable**: not an error, but one unknown of the sketch,
 tying together every dimension that reads it. The tie must be affine in one free name (`a`,
 `a / 2`, `2 * a + 5`); `a * a`, `sin(a)` and two free names in one dimension are errors.
+
+**Every number has a dimension**, and the language checks it. There are two — a **length** and an
+**angle**. `*` and `/` derive them, `+` and `-` demand agreement, and what an expression comes to
+is checked against the slot it stands in. So `distance(a, b) == 45deg` is an error, and so is a
+length added to an angle.
+
+**A bare number is dimensionless, and a *context* may take one.** `distance(a, b) == 80` is a
+length because the slot says so, and `sin(30)` reads 30 as degrees because the function does. What
+a context may not do is speak for a second operand: `90 / N + ivp` is a plain number added to an
+angle, and the language asks rather than answers — `90deg / N + ivp` is the answer.
+
+A number may say what it is:
+
+```
+unit mm                          // what this document's numbers are in
+
+distance(a, b) == 80mm           // and what this one is in
+distance(c, d) == 1' 6 3/16"     // one literal: a space tells the readings apart, as in `3 1/2`
+angle(l, m) == 45deg
+param ivp = tan(phi) * 1rad - phi   // `inv φ = tan φ − φ` holds only in radians, and now says so
+```
+
+**Without a `unit` line the document is in drawing units** — a length with no name. Everything
+still checks; you simply cannot write `mm` or `"`, because there is nothing to convert to. A name
+is worth a number, and where it is *used* decides what it is: `w = 80` in a length slot does not
+make `w` a length, but `w = 80mm` does, and so does a component formal declared `Length`.
+
+`pi` is the mathematical constant and is dimensionless; `tau` and `turn` are a full **turn**, and
+are angles. `sin`/`cos`/`tan` take an angle; `asin`/`acos`/`atan`/`atan2` give one;
+`floor`/`ceil`/`round` take a plain number, because rounding a dimensioned quantity depends on
+which unit you round in.
+
+**The language has no string literal.** `"` is the inch mark, and there is nothing else for one
+to be — a `Str` argument is written as the word it is (`at: start`).
 
 ### 1.7 Chains
 

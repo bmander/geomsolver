@@ -132,6 +132,36 @@ pub enum SpecKind {
 }
 
 impl SpecKind {
+    /// What a slot's number *is* (`units.rs`).  `SpecKind::Length` and `Angle` already **are**
+    /// the dimensions, so the check an expression faces is `Dim(expr).fits(slot.dim())` and
+    /// nothing here has to be written per constraint type.
+    ///
+    /// Exhaustive on purpose, like `own_params` and `free_kernel`: a new slot kind that carries a
+    /// number must stop the build here, or it would quietly be dimensionless and accept anything.
+    /// `Param` is the one that is *stated* Scalar rather than being one — a slot's hidden unknown
+    /// is a curve parameter here, but `FrameAlign`'s is a chord length, and nothing yet asks.
+    pub fn dim(self) -> crate::units::Dim {
+        use crate::units::Dim;
+        match self {
+            SpecKind::Length => Dim::LENGTH,
+            SpecKind::Angle => Dim::ANGLE,
+            SpecKind::Point
+            | SpecKind::Line
+            | SpecKind::Circle
+            | SpecKind::Arc
+            | SpecKind::CircleOrArc
+            | SpecKind::Spline
+            | SpecKind::Ellipse
+            | SpecKind::Curve
+            | SpecKind::Frame
+            | SpecKind::Float
+            | SpecKind::Int
+            | SpecKind::Str
+            | SpecKind::Bool
+            | SpecKind::Param => Dim::SCALAR,
+        }
+    }
+
     pub fn is_entity(self) -> bool {
         matches!(
             self,
@@ -295,6 +325,29 @@ impl CKind {
             }
             CKind::FrameUnit => &[("frame", S::Frame)],
             CKind::FrameAlign => &[("frame", S::Frame), ("r", S::Param)],
+        }
+    }
+
+    /// What this type's `SpecKind::Param` slot *is* (`units.rs`) — `None` where it owns none.
+    ///
+    /// `SpecKind::dim()` cannot answer this, which is why it is asked here: a hidden unknown is
+    /// usually a **place along a curve** and dimensionless, but `FrameAlign`'s is the frame
+    /// chord's **length**, and a paste between documents in different units has to convert one
+    /// and must not touch the other.  `every_param_slot_states_its_dimension` holds every type
+    /// that owns a Param to naming it here, so a new one cannot arrive unstated.
+    pub fn param_dim(self) -> Option<crate::units::Dim> {
+        use crate::units::Dim;
+        match self {
+            CKind::FrameAlign => Some(Dim::LENGTH),
+            // a place along a curve or an ellipse: a parameter, not a length
+            CKind::PointOnSpline
+            | CKind::PointOnCurve
+            | CKind::SplineTangentLine
+            | CKind::SplineCurvature
+            | CKind::PointOnEllipse
+            | CKind::EllipseTangentLine
+            | CKind::EllipseCurvature => Some(Dim::SCALAR),
+            _ => None,
         }
     }
 

@@ -8,15 +8,15 @@
 //
 // The involute is not built into this solver.  It is the three lines below, written in the same
 // small language a dimension is written in: a curve *family*, defined over the circle it unwinds
-// from.  `u` is how far the string has unwound, in degrees, so the length let out is `r·u·π/180`
+// from.  `u` is how far the string has unwound, in degrees, so the length let out is `r · u/1rad`
 // — and that string, square to the radius at the point it leaves the circle, is the definition.
 //
 // Everything after it is ordinary.  Thirty teeth are one tooth written once and repeated, and a
 // point touching a curve is a single statement whichever family the curve belongs to.
 
 curve involute(c: circle, phase: Angle)(u) =
-  ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
-    c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)) )
+  ( c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
+    c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)) )
 
 // One flank: the piece of an involute between the root circle and the tip.
 //
@@ -79,12 +79,12 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   param pitch = tau / N
   // half a tooth's angular thickness, measured from the base circle.  `inv(u) = u - atan(u)`,
   // and the roll at the pitch circle is `tan(phi)` — the two facts an involute gear needs.
-  param ivp = tan(phi) * 180 / pi - phi
-  param half = 90 / N + ivp
+  param ivp = tan(phi) * 1rad - phi
+  param half = 90deg / N + ivp
   // the rolls that reach the root and the tip: r(u) = Rb sqrt(1 + u²), so u = sqrt((r/Rb)² - 1),
   // in degrees because that is what the curve runs on
-  param u0 = sqrt((Rr / Rb) ^ 2 - 1) * 180 / pi
-  param u1 = sqrt((Rt / Rb) ^ 2 - 1) * 180 / pi
+  param u0 = sqrt((Rr / Rb) ^ 2 - 1) * 1rad
+  param u1 = sqrt((Rt / Rb) ^ 2 - 1) * 1rad
 
   point center hint(x: 0, y: 0)
   circle base(center: center) hint(r: Rb) class construction

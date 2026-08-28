@@ -16,8 +16,9 @@
 
 use crate::expr::{self, Aff};
 use crate::model::EntKind;
+use crate::units::Units;
 use crate::syntax::{
-    BlockKind, Component, Decl, Name, Program, Ref, Seg, Span, Stmt, StmtKind,
+    BlockKind, Component, Decl, Name, Program, Ref, Seg, Span, Stmt, StmtKind, Ty,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -64,6 +65,9 @@ pub struct Expansion {
 
 struct Walk<'a> {
     prog: &'a Program,
+    /// What the document's numbers are in — carried through the walk because every expression
+    /// worked out here is worked out in them.
+    units: Units,
     out: Vec<(Stmt, Vec<u32>, Scope)>,
     /// Every absolute name a declaration will make.  Collected as the walk goes and used to
     /// resolve references afterwards, so forward reference works — which spec P2 requires, since
@@ -76,9 +80,10 @@ struct Walk<'a> {
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
 /// orientations, with every name made absolute.
-pub fn expand(prog: &Program) -> Expansion {
+pub fn expand(prog: &Program, units: Units) -> Expansion {
     let mut w = Walk {
         prog,
+        units,
         out: Vec::new(),
         names: BTreeSet::new(),
         aliases: Vec::new(),
@@ -129,14 +134,14 @@ impl<'a> Walk<'a> {
                     // a curve's numbers and the interval it is drawn over are written over the
                     // parameters in scope too, and are worked out in the same pass
                     for (_, t) in d2.values.iter_mut() {
-                        match value_of(t, vals) {
+                        match value_of(t, vals, self.units) {
                             Ok(v) => *t = crate::syntax::num(v),
                             Err(e) => self.err(st.span, format!("`{t}`: {e}")),
                         }
                     }
                     if let Some((a, b)) = d2.domain.as_mut() {
                         for t in [a, b] {
-                            match value_of(t, vals) {
+                            match value_of(t, vals, self.units) {
                                 Ok(v) => *t = crate::syntax::num(v),
                                 Err(e) => self.err(st.span, format!("`{t}`: {e}")),
                             }
@@ -146,7 +151,7 @@ impl<'a> Walk<'a> {
                     // in scope, and is a number from now on
                     for i in 0..d2.seed_text.len() {
                         let Some(t) = d2.seed_text[i].clone() else { continue };
-                        match value_of(&t, vals) {
+                        match value_of(&t, vals, self.units) {
                             Ok(v) => d2.seed[i] = v,
                             Err(e) => self.err(st.span, format!("`{t}`: {e}")),
                         }
@@ -183,9 +188,9 @@ impl<'a> Walk<'a> {
                     }
                 }
                 StmtKind::Param(pd) => {
-                    match value_of(&pd.text, vals) {
-                        Ok(v) => {
-                            vals.insert(pd.name.text.clone(), Aff::num(v));
+                    match value_aff(&pd.text, vals, self.units) {
+                        Ok(a) => {
+                            vals.insert(pd.name.text.clone(), a);
                         }
                         Err(e) => self.err(pd.span, format!("`{}`: {e}", pd.name.text)),
                     };
@@ -214,7 +219,7 @@ impl<'a> Walk<'a> {
                     self.body(&comp.body, &sc, &mut sub_vals, path, depth + 1);
                 }
                 StmtKind::Block(b) => {
-                    let n = match value_of(&b.count, vals) {
+                    let n = match value_of(&b.count, vals, self.units) {
                         Ok(v) if v.is_finite() && v >= 0.0 => v.round() as usize,
                         Ok(v) => {
                             self.err(b.span, format!("`{}` is {v}, which is not a count", b.count));
@@ -262,13 +267,13 @@ impl<'a> Walk<'a> {
                     let mut r2 = rel.clone();
                     for a in r2.args.iter_mut().flatten() {
                         match a {
-                            crate::syntax::Arg::Dim { text, span } => match settle(text, vals) {
+                            crate::syntax::Arg::Dim { text, span } => match settle(text, vals, self.units) {
                                 Ok(t) => *text = t,
                                 Err(e) => self.err(*span, format!("`{text}`: {e}")),
                             },
                             // a contact's seed may be written over the parameters in scope too
                             crate::syntax::Arg::SeedExpr { text, pinned, span } => {
-                                match value_of(text, vals) {
+                                match value_of(text, vals, self.units) {
                                     Ok(v) => {
                                         *a = crate::syntax::Arg::Seed {
                                             value: v,
@@ -346,21 +351,42 @@ impl<'a> Walk<'a> {
                 (Ty::Ent(_), InstVal::Expr(t)) => {
                     self.err(a.span, format!("`{}` wants an entity, and `{t}` is a number", f.name.text))
                 }
-                (_, InstVal::Expr(t)) => match value_of(t, vals) {
-                    Ok(v) => {
-                        sub.insert(f.name.text.clone(), Aff::num(v));
-                    }
-                    Err(e) => self.err(a.span, format!("`{}`: {e}", f.name.text)),
-                },
-                (_, InstVal::Ref(r)) => match value_of(&r.root.text, vals) {
-                    Ok(v) => {
-                        sub.insert(f.name.text.clone(), Aff::num(v));
-                    }
-                    Err(e) => self.err(a.span, format!("`{}`: {e}", f.name.text)),
-                },
+                // A formal *declares* what its argument is — `phi: Angle`, `m: Length` — so the
+                // number it stands for carries that dimension through the component's body.
+                // This is where `param x = w + phi` is caught: nothing else in a component says
+                // what a number is, and the substitution `settle` performs erases it.
+                (ty, InstVal::Expr(t)) => self.bind_value(&mut sub, f, *ty, t, vals, a.span),
+                (ty, InstVal::Ref(r)) => {
+                    self.bind_value(&mut sub, f, *ty, &r.root.text, vals, a.span)
+                }
             }
         }
         (binds, sub)
+    }
+
+    /// One value argument, worked out and bound under the formal's *declared* dimension.
+    ///
+    /// The formal declares, so it wins — but an argument that said what it was and disagreed is
+    /// reported: `Tooth(a0: 30mm)` is a mistake, not a conversion.
+    fn bind_value(
+        &mut self,
+        sub: &mut BTreeMap<String, Aff>,
+        f: &crate::syntax::Formal,
+        ty: Ty,
+        text: &str,
+        vals: &BTreeMap<String, Aff>,
+        span: Span,
+    ) {
+        let want = ty.dim();
+        match value_aff(text, vals, self.units) {
+            Ok(a) => match a.dim.require(want, &f.name.text) {
+                Ok(()) => {
+                    sub.insert(f.name.text.clone(), a.as_dim(want));
+                }
+                Err(e) => self.err(span, e),
+            },
+            Err(e) => self.err(span, format!("`{}`: {e}", f.name.text)),
+        }
     }
 
     /// Turn every reference into the absolute name of what it denotes.
@@ -368,7 +394,7 @@ impl<'a> Walk<'a> {
         // port aliases first, and transitively: `port a = b` where `b` is itself a port
         let mut alias: BTreeMap<String, String> = BTreeMap::new();
         for (abs, r, sc) in self.aliases.clone() {
-            if let Some((target, _)) = lookup(&r, &sc, &self.names, &alias) {
+            if let Some((target, _)) = lookup(&r, &sc, &self.names, &alias, self.units) {
                 alias.insert(abs, target);
             }
         }
@@ -404,7 +430,7 @@ impl<'a> Walk<'a> {
                 }
             }
             let mut bad: Vec<(Span, String)> = Vec::new();
-            rewrite(&mut st.kind, &sc, &self.names, &alias, &mut bad);
+            rewrite(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad);
             for (span, msg) in bad {
                 self.err(span, msg);
             }
@@ -426,19 +452,28 @@ fn count_scalars(k: EntKind) -> usize {
 ///
 /// The language's angle is the degree — `sin(90)` is 1, and every dimension a person reads is in
 /// degrees — so a whole turn is `tau = 360`, not 2π.  Keeping `tau` at 2π and the texts in degrees
-/// would give two units one name.
-fn value_of(text: &str, env: &BTreeMap<String, Aff>) -> Result<f64, String> {
+/// would give two units one name; units say which of the two each is (`expr::CONSTANTS`), so
+/// `pi` is the dimensionless constant and `tau` is an **angle**, and `tau == 2 * pi * 1rad`
+/// holds where it used to be a coincidence of the same digits.
+fn value_of(text: &str, env: &BTreeMap<String, Aff>, units: Units) -> Result<f64, String> {
+    Ok(value_aff(text, env, units)?.c)
+}
+
+/// The same, keeping what it *is* beside what it is worth.
+///
+/// A `param`'s dimension has to survive into the names that read it, or `param R = m * N / 2`
+/// would forget that `m` was declared a `Length` and `param Rt = R + m` would read as a plain
+/// number added to a length — the very thing the check exists to catch, missed because the check
+/// threw the answer away.
+fn value_aff(text: &str, env: &BTreeMap<String, Aff>, units: Units) -> Result<Aff, String> {
     let t = text.trim();
     if t.is_empty() {
         return Err("nothing to work out".to_string());
     }
-    let mut env = env.clone();
-    env.entry("tau".to_string()).or_insert_with(|| Aff::num(360.0));
-    env.entry("turn".to_string()).or_insert_with(|| Aff::num(360.0));
-    let p = expr::parse(t)?;
-    let a = expr::eval(&p.body, &env)?;
+    let p = expr::parse_in(t, units)?;
+    let a = expr::eval(&p.body, env)?;
     match a.number() {
-        Some(v) if v.is_finite() => Ok(v),
+        Some(v) if v.is_finite() => Ok(a),
         Some(v) => Err(format!("comes to {v}")),
         None => Err(format!(
             "`{}` is not a number here — a component's parameters are, and the document's \
@@ -460,14 +495,14 @@ fn value_of(text: &str, env: &BTreeMap<String, Aff>) -> Result<f64, String> {
 /// flat document no longer has, so printing it back would name things that are not there.  One
 /// that still reads a document name — `w / 2` — keeps its form, and the reader keeps their
 /// formula.
-fn settle(text: &str, vals: &BTreeMap<String, Aff>) -> Result<String, String> {
+fn settle(text: &str, vals: &BTreeMap<String, Aff>, units: Units) -> Result<String, String> {
     let sub = substitute(text, vals);
     // nothing of the component's in it: leave it exactly as written, so `h = w / 2` and `3 1/8`
     // reach the document with the form somebody typed
     if sub == text {
         return Ok(text.to_string());
     }
-    let p = expr::parse(&sub)?;
+    let p = expr::parse_in(&sub, units)?;
     let env: BTreeMap<String, Aff> = BTreeMap::new();
     if let Ok(a) = expr::eval(&p.body, &env) {
         if let Some(v) = a.number() {
@@ -498,10 +533,9 @@ fn substitute(text: &str, vals: &BTreeMap<String, Aff>) -> String {
                 i += 1;
             }
             let word: String = b[from..i].iter().collect();
-            let known = vals
-                .get(&word)
-                .and_then(|a| a.number())
-                .or_else(|| (word == "tau" || word == "turn").then_some(360.0));
+            // `tau` and `turn` are `expr::CONSTANTS` now, and an angle rather than a number
+            // that happens to be 360, so they are left for the evaluator to read
+            let known = vals.get(&word).and_then(|a| a.number());
             match known {
                 Some(v) => out.push_str(&format!("({})", crate::syntax::num(v))),
                 None => out.push_str(&word),
@@ -555,13 +589,14 @@ fn lookup(
     sc: &Scope,
     names: &BTreeSet<String>,
     alias: &BTreeMap<String, String>,
+    units: Units,
 ) -> Option<(String, Vec<String>)> {
     // `p[k]` names *which copy* of a repeated statement, so it is resolved before anything else
     // and the rest of the path is read against the copy it picks.  Only the root may carry one —
     // an index selects an instance of the block a name was declared in, and a field of one is
     // still a field.
     if let Some(Seg::Index(text)) = r.path.first() {
-        let k = match value_of(text, &sc.vals) {
+        let k = match value_of(text, &sc.vals, units) {
             Ok(v) if v.is_finite() && v >= 0.0 && v.round() == v => v as usize,
             _ => return None,
         };
@@ -645,9 +680,10 @@ fn rewrite(
     sc: &Scope,
     names: &BTreeSet<String>,
     alias: &BTreeMap<String, String>,
+    units: Units,
     bad: &mut Vec<(Span, String)>,
 ) {
-    let fix = |r: &mut Ref, bad: &mut Vec<(Span, String)>| match lookup(r, sc, names, alias) {
+    let fix = |r: &mut Ref, bad: &mut Vec<(Span, String)>| match lookup(r, sc, names, alias, units) {
         Some((abs, rest)) => {
             r.root = Name { text: abs, span: r.root.span };
             r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();

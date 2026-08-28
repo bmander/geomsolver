@@ -24,7 +24,6 @@
   --syn-type: #0f6f6f;
   --syn-label: #8a6d00;
   --syn-number: #a03000;
-  --syn-string: #2f7d32;
   /* a declared name.  Its own ink rather than the body's, since colour is the only thing a run
      here may carry — the weight that used to tell it apart moved the text out from under the
      caret */
@@ -307,7 +306,6 @@ dialog .choices button { text-align: left; font-family: var(--mono); font-size: 
 .code-copy .def { color: var(--syn-def); }
 .code-copy .label { color: var(--syn-label); }
 .code-copy .number { color: var(--syn-number); }
-.code-copy .string { color: var(--syn-string); }
 /* a seed is where a solve starts and a claim is what it must honour: the one difference in the
    language a reader most needs to see at a glance */
 .code-copy .seed { color: var(--muted); }

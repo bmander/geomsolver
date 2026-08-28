@@ -16,6 +16,7 @@
 
 use crate::constraints::{Arg, Constraint, SpecKind};
 use crate::model::Sketch;
+use crate::units::{unit, Dim, Units};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A dimension argument written as text, with the number it last evaluated to in the argument's
@@ -63,7 +64,17 @@ impl Expr {
 pub const MAX_TEXT: usize = 1000;
 const MAX_DEPTH: usize = 64;
 
-pub const CONSTANTS: &[(&str, f64)] = &[("pi", std::f64::consts::PI)];
+/// The names every expression knows, and what each *is*.
+///
+/// `pi` is the mathematical constant and is **dimensionless**; `tau` and `turn` are a full
+/// **turn**, which is an angle.  They used to be 3.14159 and 360 side by side with nothing
+/// saying why — the constant and a turn, in different units.  Units settle it, and
+/// `tau == 2 * pi * 1rad` now holds dimensionally, which it did not.
+pub const CONSTANTS: &[(&str, f64, Dim)] = &[
+    ("pi", std::f64::consts::PI, Dim::SCALAR),
+    ("tau", 360.0, Dim::ANGLE),
+    ("turn", 360.0, Dim::ANGLE),
+];
 
 /// (name, minimum arity, maximum arity)
 pub const FUNCTIONS: &[(&str, usize, usize)] = &[
@@ -88,14 +99,17 @@ pub const FUNCTIONS: &[(&str, usize, usize)] = &[
 ];
 
 fn is_builtin(name: &str) -> bool {
-    CONSTANTS.iter().any(|&(n, _)| n == name) || FUNCTIONS.iter().any(|&(n, _, _)| n == name)
+    CONSTANTS.iter().any(|&(n, _, _)| n == name) || FUNCTIONS.iter().any(|&(n, _, _)| n == name)
 }
 
 /* -- syntax --------------------------------------------------------------------- */
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Ast {
-    Num(f64),
+    /// A literal, and what it *is*.  A bare number is `Dim::SCALAR` and takes the dimension of
+    /// wherever it stands; a suffixed one — `45deg`, `1' 6 3/16"` — says so itself, and the
+    /// tokenizer has already converted it into the document's own units.
+    Num(f64, Dim),
     Var(String),
     Neg(Box<Ast>),
     Bin(Op, Box<Ast>, Box<Ast>),
@@ -128,9 +142,9 @@ impl Ast {
 
     fn collect_deps(&self, out: &mut BTreeSet<String>) {
         match self {
-            Ast::Num(_) => {}
+            Ast::Num(..) => {}
             Ast::Var(v) => {
-                if !CONSTANTS.iter().any(|&(n, _)| n == v) {
+                if !CONSTANTS.iter().any(|&(n, _, _)| n == v) {
                     out.insert(v.clone());
                 }
             }
@@ -150,7 +164,7 @@ impl Ast {
 
 #[derive(Clone, Debug, PartialEq)]
 enum Tok {
-    Num(f64),
+    Num(f64, Dim),
     Ident(String),
     Op(char),
     Pow,
@@ -193,7 +207,88 @@ fn mixed_fraction(chars: &[char], from: usize) -> Option<(f64, f64, usize)> {
     Some((num, den, i))
 }
 
-fn tokenize(text: &str) -> Result<Vec<(Tok, usize)>, String> {
+/// The unit written on a number, and the number it makes — `80mm`, `45deg`, `6"`, `1' 6 3/16"`.
+///
+/// **A space is what tells the readings apart**, exactly as it does in `mixed_fraction`: `1' 6"`
+/// is one literal (a foot and six inches) for the same reason `3 1/2` is one number, and `1'` on
+/// its own is a foot.  So feet-and-inches is not a special case bolted on — it is the rule this
+/// language already had, applied to a second pair of units.
+///
+/// The value comes back **in the document's own units**, converted here, which is why the
+/// tokenizer needs to know them.  A suffix in a document that names no unit is an error rather
+/// than a guess: see `Units::convert`.
+fn suffix(
+    chars: &[char],
+    i: &mut usize,
+    v: f64,
+    units: Units,
+) -> Result<(f64, Dim), String> {
+    // `'` and `"` are punctuation, not words, so they are read here rather than from the table
+    let mark = |c: Option<&char>| match c {
+        Some('\'') => unit("ft"),
+        Some('"') => unit("in"),
+        _ => None,
+    };
+    if let Some(u) = mark(chars.get(*i)) {
+        *i += 1;
+        let mut total = units.convert(v, u)?;
+        // feet *and* inches: the second half across a space, in the smaller unit
+        let mut j = *i;
+        while chars.get(j).is_some_and(|c| c.is_whitespace()) {
+            j += 1;
+        }
+        if j > *i {
+            if let Some((inches, end)) = inch_part(chars, j) {
+                total += units.convert(inches, unit("in").expect("in"))?;
+                *i = end;
+            }
+        }
+        return Ok((total, Dim::LENGTH));
+    }
+    // a word: `mm`, `deg`, …  Only immediately after the digits — `2 mm` is a juxtaposition and
+    // not a unit, the same rule the mark above follows.
+    let start = *i;
+    let mut j = *i;
+    while chars.get(j).is_some_and(|c| c.is_ascii_alphabetic()) {
+        j += 1;
+    }
+    if j == start {
+        return Ok((v, Dim::SCALAR));
+    }
+    let word: String = chars[start..j].iter().collect();
+    match unit(&word) {
+        Some(u) => {
+            *i = j;
+            Ok((units.convert(v, u)?, u.dim))
+        }
+        // not a unit: it is a name, and `2r` is two times r as it always was
+        None => Ok((v, Dim::SCALAR)),
+    }
+}
+
+/// The inches half of `1' 6 3/16"` — digits, optionally a mixed fraction, then the inch mark.
+/// `None` for anything else, which leaves the tokens to be read the ordinary way.
+fn inch_part(chars: &[char], from: usize) -> Option<(f64, usize)> {
+    let mut i = from;
+    let start = i;
+    while chars.get(i).is_some_and(|c| c.is_ascii_digit() || *c == '.') {
+        i += 1;
+    }
+    if i == start {
+        return None;
+    }
+    let mut v: f64 = chars[start..i].iter().collect::<String>().parse().ok()?;
+    if let Some((num, den, end)) = mixed_fraction(chars, i) {
+        if den == 0.0 {
+            return None;
+        }
+        v += num / den;
+        i = end;
+    }
+    (chars.get(i) == Some(&'"')).then(|| (v, i + 1))
+}
+
+fn tokenize(text: &str, units: Units) -> Result<Vec<(Tok, usize)>, String> {
     let chars: Vec<char> = text.chars().collect();
     let mut out = Vec::new();
     let mut i = 0;
@@ -235,7 +330,11 @@ fn tokenize(text: &str) -> Result<Vec<(Tok, usize)>, String> {
                     i = end;
                 }
             }
-            out.push((Tok::Num(v), at));
+            // a unit on the number — `80mm`, `45deg`, `1' 6 3/16"`.  A *space* is what tells
+            // the readings apart, which is the rule `mixed_fraction` already keeps: `1' 6"` is
+            // one literal for the same reason `3 1/2` is.
+            let (v, d) = suffix(&chars, &mut i, v, units)?;
+            out.push((Tok::Num(v, d), at));
             continue;
         }
         if c.is_ascii_alphabetic() || c == '_' {
@@ -382,7 +481,7 @@ impl Parser {
     fn atom(&mut self) -> Result<Ast, String> {
         let at = self.here();
         match self.next() {
-            Tok::Num(v) => Ok(Ast::Num(v)),
+            Tok::Num(v, d) => Ok(Ast::Num(v, d)),
             Tok::Ident(name) => {
                 if *self.peek() != Tok::LParen {
                     return Ok(Ast::Var(name));
@@ -432,11 +531,17 @@ impl Parser {
 /// Parse `name = body` or `body`.  A syntax error, an unknown function, a wrong arity, or a
 /// definition of a built-in name is an `Err`; a name nothing defines is not — that is the
 /// document's business, not the text's.
+/// Parse in **drawing units**: a document that names none, where a unit suffix is an error.
+/// Every caller that has a document uses `parse_in`.
 pub fn parse(text: &str) -> Result<Parsed, String> {
+    parse_in(text, Units::default())
+}
+
+pub fn parse_in(text: &str, units: Units) -> Result<Parsed, String> {
     if text.len() > MAX_TEXT {
         return Err(format!("expression longer than {MAX_TEXT} characters"));
     }
-    let toks = tokenize(text)?;
+    let toks = tokenize(text, units)?;
     let mut p = Parser { toks, pos: 0, depth: 0 };
     let mut name = None;
     if let (Tok::Ident(n), Some((Tok::Assign, _))) = (p.peek().clone(), p.toks.get(1)) {
@@ -456,7 +561,7 @@ pub fn parse(text: &str) -> Result<Parsed, String> {
 
 fn tok_text(t: &Tok) -> String {
     match t {
-        Tok::Num(v) => format!("{v}"),
+        Tok::Num(v, _) => format!("{v}"),
         Tok::Ident(s) => s.clone(),
         Tok::Op(c) => c.to_string(),
         Tok::Pow => "^".to_string(),
@@ -490,21 +595,26 @@ pub fn literal(text: &str) -> Option<f64> {
 /// constraint list print it as written rather than as "what it came to".  `3 1/8` on a callout
 /// tells a reader something 3.125 does not, and it is what they typed.
 ///
-/// `None` for an ordinary decimal, which prints as itself and has nothing to remember, and for
+/// `false` for an ordinary decimal, which prints as itself and has nothing to remember, and for
 /// anything carrying a name, an operator or a function.
-pub fn notation(text: &str) -> Option<f64> {
+///
+/// A *verdict*, not a number: `1' 6 3/16"` is worth different numbers in different documents,
+/// and what this answers is only whether the text is one token.  It is read in millimetres so
+/// that a unit suffix is accepted whatever the document says; the value never leaves.
+pub fn notation(text: &str) -> bool {
     let t = text.trim();
     if t.parse::<f64>().is_ok() {
-        return None;
+        return false;
     }
-    let toks = tokenize(t).ok()?;
+    let mm = Units::with_length("mm").expect("mm is a unit");
+    let Ok(toks) = tokenize(t, mm) else { return false };
+    // a sign in front changes nothing about whether the text is one number
     let v = match toks.as_slice() {
-        [(Tok::Num(v), _), (Tok::End, _)] => *v,
-        [(Tok::Op('-'), _), (Tok::Num(v), _), (Tok::End, _)] => -*v,
-        [(Tok::Op('+'), _), (Tok::Num(v), _), (Tok::End, _)] => *v,
-        _ => return None,
+        [(Tok::Num(v, _), _), (Tok::End, _)]
+        | [(Tok::Op('-' | '+'), _), (Tok::Num(v, _), _), (Tok::End, _)] => *v,
+        _ => return false,
     };
-    Some(v).filter(|v| v.is_finite())
+    v.is_finite()
 }
 
 /* -- evaluation --------------------------------------------------------------- */
@@ -544,15 +654,32 @@ pub struct Aff {
     pub free: Option<String>,
     pub m: f64,
     pub c: f64,
+    /// What it *is* — see `units.rs`.  Carried beside the value rather than worked out again by
+    /// a second walk: the dimension of `a * b` is a fact about the same two operands the number
+    /// came from, and two walks would be two answers the moment one of them was edited.
+    pub dim: Dim,
 }
 
 impl Aff {
     pub fn num(v: f64) -> Aff {
-        Aff { free: None, m: 0.0, c: v }
+        Aff { free: None, m: 0.0, c: v, dim: Dim::SCALAR }
+    }
+
+    /// A number that says what it is: a literal with a unit on it, or a value whose dimension
+    /// something else declared.
+    pub fn of_dim(v: f64, dim: Dim) -> Aff {
+        Aff { free: None, m: 0.0, c: v, dim }
     }
 
     fn of(name: &str) -> Aff {
-        Aff { free: Some(name.to_string()), m: 1.0, c: 0.0 }
+        Aff { free: Some(name.to_string()), m: 1.0, c: 0.0, dim: Dim::SCALAR }
+    }
+
+    /// The same value, said to be of this dimension.  What a declared formal and a named slot
+    /// do to a number that arrived bare.
+    pub fn as_dim(mut self, dim: Dim) -> Aff {
+        self.dim = dim;
+        self
     }
 
     /// The number this is worth when the free name stands at `a`.
@@ -591,9 +718,9 @@ fn not_affine(name: &str) -> String {
 /// (`sqrt(-1)`, `1/0`) comes back as is, for the caller to judge.
 pub fn eval(ast: &Ast, env: &BTreeMap<String, Aff>) -> Result<Aff, String> {
     Ok(match ast {
-        Ast::Num(v) => Aff::num(*v),
-        Ast::Var(name) => match CONSTANTS.iter().find(|&&(n, _)| n == name) {
-            Some(&(_, v)) => Aff::num(v),
+        Ast::Num(v, d) => Aff::of_dim(*v, *d),
+        Ast::Var(name) => match CONSTANTS.iter().find(|&&(n, _, _)| n == name) {
+            Some(&(_, v, d)) => Aff::of_dim(v, d),
             None => match env.get(name) {
                 Some(a) => a.clone(),
                 None => Aff::of(name),
@@ -601,38 +728,135 @@ pub fn eval(ast: &Ast, env: &BTreeMap<String, Aff>) -> Result<Aff, String> {
         },
         Ast::Neg(a) => {
             let x = eval(a, env)?;
-            Aff { free: x.free, m: -x.m, c: -x.c }
+            Aff { free: x.free, m: -x.m, c: -x.c, dim: x.dim }
         }
         Ast::Bin(op, a, b) => {
             let (x, y) = (eval(a, env)?, eval(b, env)?);
             match op {
-                Op::Add => Aff { free: together(&x, &y)?, m: x.m + y.m, c: x.c + y.c },
-                Op::Sub => Aff { free: together(&x, &y)?, m: x.m - y.m, c: x.c - y.c },
-                Op::Mul => match (x.number(), y.number()) {
-                    (Some(k), _) => Aff { free: y.free, m: k * y.m, c: k * y.c },
-                    (_, Some(k)) => Aff { free: x.free, m: k * x.m, c: k * x.c },
-                    _ => return Err(free_pair_of(&x, &y)),
+                // `+` and `-` demand agreement, where a *bare number* takes the other's
+                // dimension: `90 / N + ivp` is an angle because `ivp` is, and `w + phi` is an
+                // error because both said what they were and disagreed
+                Op::Add => Aff {
+                    free: together(&x, &y)?,
+                    m: x.m + y.m,
+                    c: x.c + y.c,
+                    dim: sum(&x, &y, "+")?,
                 },
-                Op::Div => match y.number() {
-                    Some(k) => Aff { free: x.free, m: x.m / k, c: x.c / k },
-                    None => return Err(not_affine(y.free.as_deref().unwrap_or(""))),
+                Op::Sub => Aff {
+                    free: together(&x, &y)?,
+                    m: x.m - y.m,
+                    c: x.c - y.c,
+                    dim: sum(&x, &y, "-")?,
                 },
+                // `*` and `/` derive: the exponents add and subtract, and nothing can disagree
+                Op::Mul => {
+                    let dim = x.dim.mul(y.dim);
+                    match (x.number(), y.number()) {
+                        (Some(k), _) => Aff { free: y.free, m: k * y.m, c: k * y.c, dim },
+                        (_, Some(k)) => Aff { free: x.free, m: k * x.m, c: k * x.c, dim },
+                        _ => return Err(free_pair_of(&x, &y)),
+                    }
+                }
+                Op::Div => {
+                    let dim = x.dim.div(y.dim);
+                    match y.number() {
+                        Some(k) => Aff { free: x.free, m: x.m / k, c: x.c / k, dim },
+                        None => return Err(not_affine(y.free.as_deref().unwrap_or(""))),
+                    }
+                }
                 Op::Pow => match (x.number(), y.number()) {
-                    (Some(p), Some(q)) => Aff::num(p.powf(q)),
+                    (Some(p), Some(q)) => {
+                        if !y.dim.is_scalar() {
+                            return Err(format!(
+                                "a power is a plain number, and this one is {}",
+                                y.dim.name()
+                            ));
+                        }
+                        let dim = x.dim.powf(q).ok_or_else(|| {
+                            format!(
+                                "{} to the power {q} is not a dimension — a dimensioned base \
+                                 takes a whole power",
+                                x.dim.name()
+                            )
+                        })?;
+                        Aff::of_dim(p.powf(q), dim)
+                    }
                     _ => return Err(free_pair_of(&x, &y)),
                 },
             }
         }
         Ast::Call(name, args) => {
             let mut vals = Vec::with_capacity(args.len());
+            let mut dims = Vec::with_capacity(args.len());
             for a in args {
                 let v = eval(a, env)?;
+                dims.push(v.dim);
                 match v.number() {
                     Some(n) => vals.push(n),
                     None => return Err(not_affine(v.free.as_deref().unwrap_or(""))),
                 }
             }
-            Aff::num(call(name, &vals))
+            Aff::of_dim(call(name, &vals), signature(name, &dims)?)
+        }
+    })
+}
+
+/// What `a + b` is, when a bare number takes the other's dimension and anything else must agree.
+fn sum(x: &Aff, y: &Aff, op: &str) -> Result<Dim, String> {
+    x.dim.agree(y.dim).ok_or_else(|| {
+        format!("`{}` and `{}` cannot be added: {op} needs one dimension, not two",
+            x.dim.name(), y.dim.name())
+    })
+}
+
+/// A function's dimensions: what it takes and what it gives back (spec §3.3).
+///
+/// `floor`, `ceil` and `round` are Scalar-only deliberately: rounding a dimensioned quantity
+/// depends on which unit you round in, and a language that silently picked one would be wrong
+/// half the time.
+fn signature(name: &str, a: &[Dim]) -> Result<Dim, String> {
+    let scalar_in = || -> Result<Dim, String> {
+        match a.iter().find(|d| !d.is_scalar()) {
+            Some(d) => Err(format!("`{name}` takes a plain number, and this one is {}", d.name())),
+            None => Ok(Dim::SCALAR),
+        }
+    };
+    // from the *first* argument, not from `Scalar`: `max(a, b)` is whatever a and b are, and
+    // starting at Scalar would make every dimensioned call disagree with nothing
+    let agreeing = || -> Result<Dim, String> {
+        let mut d = *a.first().unwrap_or(&Dim::SCALAR);
+        for x in &a[1..] {
+            d = d.agree(*x).ok_or_else(|| {
+                format!("`{name}` needs its arguments in one dimension, and {} is not {}",
+                    x.name(), d.name())
+            })?;
+        }
+        Ok(d)
+    };
+    Ok(match name {
+        "sin" | "cos" | "tan" => {
+            if !a[0].fits(Dim::ANGLE) {
+                return Err(format!("`{name}` takes an angle, and this is {}", a[0].name()));
+            }
+            Dim::SCALAR
+        }
+        "asin" | "acos" | "atan" => {
+            scalar_in()?;
+            Dim::ANGLE
+        }
+        "atan2" => {
+            agreeing()?;
+            Dim::ANGLE
+        }
+        "sqrt" => a[0].sqrt(),
+        "abs" | "min" | "max" | "hypot" => agreeing()?,
+        "exp" | "ln" | "log" | "floor" | "ceil" | "round" => scalar_in()?,
+        // every name in `FUNCTIONS` is stated above, and the parser admits no other — so this
+        // arm is reached only by a function added to that list and not to this one, which would
+        // otherwise be dimensionless and take anything in silence
+        other => {
+            debug_assert!(false, "`{other}` is in FUNCTIONS with no dimension signature");
+            Dim::SCALAR
         }
     })
 }
@@ -702,6 +926,7 @@ struct Node {
 /// Among the ready ones the earliest in the document goes first, so the order is reproducible
 /// and reads naturally; what is never ready is on a cycle.
 pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
+    let units = sk.units;
     let mut nodes: Vec<Node> = Vec::new();
     // Every binding to a free variable is worked out again from here, so a text that has stopped
     // reading one — or stopped parsing, or stopped being text at all — cannot leave a column
@@ -712,7 +937,7 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
         c.free = None;
         for (ai, (_, kind)) in c.kind.spec().iter().enumerate() {
             if let Arg::Expr(e) = &c.args[ai] {
-                nodes.push(Node { ci, ai, kind: *kind, parsed: parse(&e.text) });
+                nodes.push(Node { ci, ai, kind: *kind, parsed: parse_in(&e.text, units) });
             }
         }
     }
@@ -779,6 +1004,10 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     // the free names actually bound this time round, and what one unit of each is worth in world
     // length — the largest any of its readers makes it, since that is the motion a step buys
     let mut bound: BTreeMap<String, f64> = BTreeMap::new();
+    // what each free name turned out to *be*, and the slot that first said so.  A name read by
+    // a `Length` dimension and an `Angle` one is an error naming both — the one genuinely new
+    // piece of analysis units bring, and the only place a dimension is deduced rather than read.
+    let mut free_dim: BTreeMap<String, (Dim, &'static str)> = BTreeMap::new();
     while let Some(&i) = ready.iter().next() {
         ready.remove(&i);
         order.push(i);
@@ -790,17 +1019,27 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
             if let Some(name) = unready {
                 errors[i] = Some(format!("`{name}` could not be evaluated"));
             } else {
-                match eval(&parsed.body, &env) {
-                    Ok(a) => match write_value(sk, nd, &a, &mut bound) {
-                        Ok(v) => {
-                            values[i] = v;
-                            free_of[i] = a.free.iter().cloned().collect();
-                            if let Some(name) = &parsed.name {
-                                env.insert(name.clone(), a);
-                            }
+                // work it out, check what it came to against its slot, write it: three steps
+                // that fail the same way, so they are one chain and one error arm
+                let done = (|| -> Result<(f64, Aff), String> {
+                    let a = eval(&parsed.body, &env)?;
+                    check_dim(sk, nd, &a, &mut free_dim)?;
+                    Ok((write_value(sk, nd, &a, &mut bound)?, a))
+                })();
+                match done {
+                    Ok((v, a)) => {
+                        values[i] = v;
+                        free_of[i] = a.free.iter().cloned().collect();
+                        if let Some(name) = &parsed.name {
+                            // **A name is worth a number, and where that number is *used*
+                            // decides what it is.**  `w = 80` in a `Length` slot does not make
+                            // `w` a length: the same 80 may be a run, a rise or an angle, and a
+                            // document with no `unit` line is in drawing units until something
+                            // says otherwise.  `w = 80mm` is how a person says otherwise, and
+                            // *that* travels.
+                            env.insert(name.clone(), a);
                         }
-                        Err(e) => errors[i] = Some(e),
-                    },
+                    }
                     Err(e) => errors[i] = Some(e),
                 }
             }
@@ -841,6 +1080,47 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
             }
         })
         .collect()
+}
+
+/// The dimension an expression came to, against the slot it is written in (spec §3.3).
+///
+/// A **bare number fits anywhere** — that is the whole of what "a document with no `unit` line is
+/// in drawing units" means — and anything that said what it was must agree.  So
+/// `distance(a, b) == 45deg` is an error and `distance(a, b) == 80` is not.
+///
+/// A form in a *free* name is different: its `dim` was worked out with the unknown treated as a
+/// plain number, so what the slot says is not a check but a **deduction** —
+/// `dim(free) = slot / dim(rest)`.  A name read once as a length and once as an angle is the
+/// error, and it is reported on the second reader with both slots named.
+fn check_dim(
+    sk: &Sketch,
+    nd: &Node,
+    a: &Aff,
+    free_dim: &mut BTreeMap<String, (Dim, &'static str)>,
+) -> Result<(), String> {
+    let want = nd.kind.dim();
+    let attr = sk.constraints[nd.ci].spec()[nd.ai].0;
+    let Some(name) = a.free.clone() else {
+        return a.dim.require(want, attr);
+    };
+    let d = want.div(a.dim);
+    if d != Dim::SCALAR && d != Dim::LENGTH && d != Dim::ANGLE {
+        return Err(format!(
+            "`{name}` would have to be {} here, which is not a length, an angle or a plain number",
+            d.name()
+        ));
+    }
+    match free_dim.get(&name) {
+        Some(&(was, first)) if was != d => Err(format!(
+            "`{name}` is {} in `{first}` and {} in `{attr}` — one free name, one dimension",
+            was.name(),
+            d.name()
+        )),
+        _ => {
+            free_dim.insert(name, (d, attr));
+            Ok(())
+        }
+    }
 }
 
 /// Write what one expression came to into its argument, and return it in the units a person
@@ -1093,7 +1373,9 @@ pub fn set_dimension(sk: &mut Sketch, id: u32, attr: &str, text: &str) -> Result
         evaluate(sk);   // whatever read a name this used to define
         return Ok(None);
     }
-    parse(text)?;
+    // the document's units, so typing `6"` into the dimbox works with no change in the app —
+    // `set_dimension` is the one write path for a dimension's text
+    parse_in(text, sk.units)?;
     sk.constraint_mut(id).unwrap().args[i] = Arg::Expr(Expr::new(text, value));
     let mine = evaluate(sk).into_iter().find(|it| it.id == id && it.attr == attr);
     Ok(mine.and_then(|it| it.error))

@@ -54,7 +54,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `port`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `ellipse`, `spline`. **[0.7]** `class` and `style` in, `construction` out — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the words `to` and `close` are meaningful *contextually*; they are not reserved, and an entity may bear either as a name. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` keeps its own form inside a trace block (§6.5.1).
+- **Keywords:** `component`, `port`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `ellipse`, `spline`. **[0.7]** `unit`, `class` and `style` in, `construction` out — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the words `to` and `close` are meaningful *contextually*; they are not reserved, and an entity may bear either as a name. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` keeps its own form inside a trace block (§6.5.1).
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
 - **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . = -> ~`
@@ -107,9 +107,65 @@ MUST NOT store it — and is what a trace-block expression reads to state a bear
 the frame rather than the page: `bearing (u + f.angle)` (§6.5.1).  The 0.1–0.5 constructor
 spelling `frame(center, ray(center, p))` is superseded by the field form; `ray` is dropped.
 
-### 3.3 Dimensional analysis
+### 3.3 Dimensional analysis and units **[0.7]**
 
-Implementations SHOULD check dimensions in expressions and constraints (`Length == Length`, `Angle == Angle`, `Length * Scalar → Length`, `Length / Length → Scalar`, etc.) and MUST NOT silently coerce `Angle` to `Scalar` or vice versa. Angle arithmetic is mod 2π where the operand is a bearing and signed where it is a turn; see §9.4.
+Implementations **MUST** check dimensions in expressions and constraints, and MUST NOT silently coerce `Angle` to `Scalar` or vice versa. Angle arithmetic is mod 2π where the operand is a bearing and signed where it is a turn; see §9.4. *(SHOULD in 0.1–0.6, and never implemented; MUST from 0.7.)*
+
+**Two base dimensions**, because two is what the language has: a **length** and an **angle**. A quantity is a rational power of each — rational, because `sqrt` halves one and `sqrt(area)` is a length.
+
+- `*` and `/` **derive**: the exponents add and subtract.
+- `+` and `-` **demand agreement**, and so do `min`, `max`, `hypot` and `atan2`'s two arguments.
+- `^` takes a plain number, and a **dimensioned base takes a whole power**: `x ^ 2.5` where `x` is a length is not a dimension anybody meant, and `sqrt` is how a half is written.
+- The dimension an expression comes to is checked against the **slot** it is written in.
+
+**A bare number is dimensionless, and a *context* may take one.** That is what "drawing units" means: `distance(a, b) == 80` is a length because the slot says so, and `sin(30)` reads 30 as degrees because the function does. A context may **not** speak for a second operand: `90 / N + ivp` is a plain number added to an angle, and an implementation MUST report it rather than choose. The asymmetry is the design — a slot and a function say what they want; two operands are not a context, and neither of them is authoritative.
+
+A **name** is worth a number, and where that number is *used* decides what it is: `w = 80` in a `Length` slot does not make `w` a length, since the same 80 may be a run, a rise or an angle. A unit on the literal (`w = 80mm`) says otherwise, and so does a component formal's declared type (§8) — which is what catches `param x = w + phi`.
+
+| function | |
+|---|---|
+| `sin`, `cos`, `tan` | `Angle → Scalar` |
+| `asin`, `acos`, `atan` | `Scalar → Angle` |
+| `atan2` | `(D, D) → Angle`, arguments agreeing |
+| `sqrt` | `D → D^½` |
+| `abs`, `min`, `max`, `hypot` | `D → D`, arguments agreeing |
+| `exp`, `ln`, `log` | `Scalar → Scalar` |
+| `floor`, `ceil`, `round` | `Scalar → Scalar` |
+
+`floor`, `ceil` and `round` are `Scalar`-only **deliberately**: rounding a dimensioned quantity depends on which unit you round in, and a language that silently picked one would be wrong half the time.
+
+#### 3.3.1 The literal
+
+```
+80mm     3.5in     45deg     0.5rad     12
+1' 6 3/16"
+```
+
+A number MAY carry a unit. The length units are `mm`, `cm`, `m`, `km`, `in`, `ft`, `thou`; the angle units are `deg`, `rad`, `grad`. `'` and `"` are the foot and inch marks.
+
+**Feet-and-inches is one literal**, and it is a rule the language already had: *a space is what tells the readings apart*, exactly as it does in a mixed fraction, where `3 1/2` is three and a half and `31/2` is a division. So `1' 6"` is one length for the same reason.
+
+**The language therefore has no string literal.** A `"` is the inch mark and there is nothing else for one to be; every `Str` argument is written as the word it is (`at: start`), and a raw branch key is written bare (§13.1).
+
+#### 3.3.2 `unit`
+
+```
+unit mm
+```
+
+`unit` names the document's **length** unit. A bare number in a `Length` slot is that unit, so every existing document keeps working with one added line, and a suffixed literal converts to it.
+
+**Without a `unit` line the document is in drawing units** — a length dimension with no name. Everything still checks: `distance(a, b) == 45deg` is still an error and `Length + Angle` is still an error. You simply cannot write `mm` or `"`, because there is nothing to convert to, and an implementation MUST report that rather than guess.
+
+**Storing the document's unit costs an implementation nothing for lengths**, because a well-formed kernel is homogeneous in length: scale every length in a sketch by a constant and no residual, no tolerance and no rank moves. **Angles are the exception, and it is not a choice**: `cos θ` is not homogeneous, and there is no consistent unit it works in other than radians. So an angle is stored in radians and converted at the text seam, which is exactly where it converts anyway; what units remove is not the conversion but the *guess*.
+
+Where a document may be copied into another, a paste between documents in different units **SHOULD convert**: a figure is the same figure in either, and two inches is 50.8 millimetres.
+
+#### 3.3.3 `pi` and `tau`
+
+`pi` is the dimensionless mathematical constant. `tau` and `turn` are a full **turn**, which is an `Angle`. They were 3.14159 and 360 side by side with nothing saying why; units settle it, and `tau == 2 * pi * 1rad` now holds dimensionally where it used to be a coincidence of digits.
+
+A conversion written out — `* 180 / pi` — is `* 1rad`, and the `1rad` that remains is not noise: it is the fact that `inv φ = tan φ − φ` **holds only in radians**, which the formula never said and which the check now makes it say.
 
 ---
 
@@ -919,8 +975,20 @@ param          = IDENT ":" type ;
 type           = "Int" | "Scalar" | "Length" | "Angle"
                | "Point" | "Line" | "Circle" | "Frame" | "Path" ;
 
-statement      = decl | constraint | hint | gauge | block | path_decl | style_rule | frag ;
+statement      = decl | constraint | hint | gauge | block | path_decl | style_rule
+               | unit_decl | frag ;
 style_rule     = "style" "." IDENT "{" { IDENT ":" value { ";" } } "}" ;   (* §13.2 *)
+unit_decl      = "unit" IDENT ;                                           (* §3.3.2 *)
+
+(* §3.3.1: a number may carry a unit, and feet-and-inches is ONE literal — a space is what
+   tells the readings apart, exactly as it does in a mixed fraction. *)
+number         = digits [ "." digits ] [ ("e"|"E") [ "+"|"-" ] digits ]
+                 [ " " digits "/" digits ]                                (* mixed fraction *)
+                 [ unit_suffix ] ;
+unit_suffix    = "mm" | "cm" | "m" | "km" | "in" | "ft" | "thou"
+               | "deg" | "rad" | "grad"
+               | "'" [ " " number "\"" ]                                  (* feet, and inches *)
+               | "\"" ;
 
 decl           = entity_decl | param_decl | port_decl | curve_def | instance_decl ;
 entity_decl    = ekw binder { "," binder }

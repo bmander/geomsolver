@@ -431,6 +431,11 @@ pub struct Sketch {
     /// grafted with everything else, and because the core resolving it is what keeps two front
     /// ends from disagreeing about how one drawing is drawn.
     pub sheet: crate::style::Sheet,
+    /// What the document's numbers are in (`units.rs`).  Storing it costs the solve nothing —
+    /// every kernel is homogeneous in length, so scaling a whole sketch moves no residual, no
+    /// tolerance and no rank — but it is what makes `80mm` mean something and what lets a paste
+    /// out of a document in inches arrive in a document in millimetres as the same drawing.
+    pub units: crate::units::Units,
     /// Bumped whenever the sheet or a class changes, so a binding may cache the resolved styles
     /// against it.  Geometry moves every frame and presentation almost never does; the counter
     /// is what lets the second be read at the second's rate.
@@ -476,6 +481,103 @@ impl Sketch {
         if let Some(c) = slot {
             c.set(name, on);
             self.style_epoch = self.style_epoch.wrapping_add(1);
+        }
+    }
+
+    /// Every length in the sketch, times `k` — what a paste between two documents in different
+    /// units does to the figure it carries.
+    ///
+    /// **Written out by kind, and exhaustively**, because "is this parameter a length?" is not a
+    /// question a `Param` can answer: a frame's rotor is a direction and a curve's parameter is
+    /// a place along it, and scaling either would take the drawing apart.  So each table that
+    /// knows says — `own_length_params` per entity kind, `CKind::param_dim` per constraint that
+    /// owns an unknown — and a new kind stops the build in the first rather than being silently
+    /// left unconverted.
+    ///
+    /// **An expression's *text* is not rewritten, and the number it came to is converted.**
+    /// `w = 80` is arithmetic the author wrote, and rewriting it would be an edit of what the
+    /// document says rather than a change of the units it says it in — the same reason
+    /// `commit_seeds` never overwrites `hint(r: Rr)`.  What the formula last came to is not
+    /// authored, though: it is a length in the document's units like any other, and it is what a
+    /// **free variable** is seeded from, so a figure tied together by `== w` would otherwise
+    /// arrive scaled with `w` still at its old size.  Everything that re-evaluates is overwritten
+    /// by the `expr::evaluate` at the end of `graft` regardless.
+    pub fn rescale(&mut self, k: f64) {
+        if k == 1.0 || !k.is_finite() || k <= 0.0 {
+            return;
+        }
+        let mut lengths: Vec<u32> = Vec::new();
+        for e in self.primitives() {
+            lengths.extend(self.own_length_params(e));
+        }
+        // a free variable a *length* dimension reads is a length itself, and it is the same
+        // unknown however many dimensions read it — so the params are gathered before any is
+        // written, and each is scaled once
+        for c in &self.constraints {
+            let Some(f) = &c.free else { continue };
+            if c.dimensions().iter().any(|(_, _, kind)| kind.dim() == crate::units::Dim::LENGTH) {
+                lengths.push(f.param);
+            }
+        }
+        lengths.sort_unstable();
+        lengths.dedup();
+        for i in lengths {
+            self.params[i as usize].value *= k;
+        }
+        for c in self.constraints.iter_mut() {
+            let reads_a_length =
+                c.dimensions().iter().any(|(_, _, kind)| kind.dim() == crate::units::Dim::LENGTH);
+            // the offset of `value = m·a + c` is in the dimension's own units, so it converts
+            // with the unknown while the ratio `m` does not
+            if reads_a_length {
+                if let Some(f) = c.free.as_mut() {
+                    f.c *= k;
+                }
+            }
+            for (i, (_, kind)) in c.kind.spec().iter().enumerate() {
+                let is_length = *kind == crate::constraints::SpecKind::Length
+                    || (kind.is_param()
+                        && c.kind.param_dim() == Some(crate::units::Dim::LENGTH));
+                if !is_length {
+                    continue;
+                }
+                match c.args.get_mut(i) {
+                    Some(Arg::Num(v)) => *v *= k,
+                    // a Param slot holds a seed on the way in and an index once added; the
+                    // index's value was scaled above, the seed is scaled here
+                    Some(Arg::Seed { value, .. }) => *value *= k,
+                    // the text stays as written; what it came to converts
+                    Some(Arg::Expr(e)) => e.value *= k,
+                    _ => {}
+                }
+            }
+        }
+        // a callout's placement is two world lengths in a frame that follows the geometry
+        // (`callout::Frame`), so it converts with the figure it annotates
+        for (t, r) in self.placements.values_mut() {
+            *t *= k;
+            *r *= k;
+        }
+    }
+
+    /// Which of an entity's *own* params are lengths.
+    ///
+    /// Exhaustive for `own_params`' reason, and it is the table `rescale` drives off: a new
+    /// entity kind with a number of its own must stop the build here, or a paste between two
+    /// documents in different units would leave that number unconverted.
+    fn own_length_params(&self, e: EntRef) -> Vec<u32> {
+        match e.kind {
+            EntKind::Point => self.point_params(e.i()).to_vec(),
+            EntKind::Circle => vec![self.circles[e.i()].radius],
+            EntKind::Arc => vec![self.arcs[e.i()].radius],
+            EntKind::Ellipse => vec![self.ellipses[e.i()].minor],
+            // the rotor `(c, s)` is a unit vector — a direction, and scaling it would only
+            // break `frame_unit`.  A frame's one length is `frame_align`'s chord, which is a
+            // constraint's Param and is converted with the constraints.
+            EntKind::Frame => Vec::new(),
+            // a line and a spline are their points, and a curve is its expressions: no number
+            // of their own to convert
+            EntKind::Line | EntKind::Spline | EntKind::Curve => Vec::new(),
         }
     }
 

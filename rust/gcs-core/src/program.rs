@@ -422,19 +422,49 @@ pub fn elaborate(p: &Program) -> Elaborated {
     let mut map = SourceMap::default();
     let mut sk = Sketch::new();
 
+    // -- phase 0: the document's unit, before *anything* reads a number.
+    //
+    // A literal with a unit on it converts to this one, and a document that names none is in
+    // drawing units (spec §3.3).  It is read from the **unexpanded root** because a unit is
+    // document preamble and a component is reusable: a `unit` line anywhere else is refused
+    // below rather than quietly doing nothing.  It comes before the curve families, because a
+    // family's body is a number-bearing text like any other.
+    let mut said = false;
+    for st in &p.root().body {
+        let StmtKind::Unit(n) = &st.kind else { continue };
+        if said {
+            diags.push(Diag {
+                code: Code::E040,
+                span: n.span,
+                stmt: Some(st.id),
+                message: "the document's unit is already stated above — one document, one \
+                          unit"
+                    .to_string(),
+            });
+            continue;
+        }
+        said = true;
+        match crate::units::Units::with_length(&n.text) {
+            Ok(u) => sk.units = u,
+            Err(message) => {
+                diags.push(Diag { code: Code::E040, span: n.span, stmt: Some(st.id), message })
+            }
+        }
+    }
+
     // -- phase 1: names, in one pre-pass.  Indices come from declaration order within a kind,
     // which is `primitives()` order, which is the order phase 2 builds in.
     // curve families first: an instance names one, and the tapes have to exist before any
     // contact with them is compiled
     for f in &p.curves {
-        match compile_family(f) {
+        match compile_family(f, sk.units) {
             Ok(d) => sk.curve_defs.push(d),
             Err((span, message)) => {
                 diags.push(Diag { code: Code::E103, span, stmt: None, message })
             }
         }
     }
-    let expansion = crate::flatten::expand(p);
+    let expansion = crate::flatten::expand(p, sk.units);
     for (span, message) in &expansion.errors {
         diags.push(Diag {
             code: if message.starts_with("no such") { Code::E101 } else { Code::E103 },
@@ -453,6 +483,21 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // it is collected once and never consulted again by anything here (spec §14)
     let mut sheet = crate::style::Sheet::new();
     for st in &body {
+        // a `unit` inside a component or a block is expanded into the flat list and read by
+        // nobody — phase 0 takes the root's alone, a component being reusable and a unit being
+        // the document's.  Silence there is exactly what §13.1 forbids, so it is a diagnostic.
+        if let StmtKind::Unit(n) = &st.kind {
+            if !p.root().body.iter().any(|r| r.id == st.id) {
+                diags.push(Diag {
+                    code: Code::E040,
+                    span: n.span,
+                    stmt: Some(st.id),
+                    message: "a document's unit is stated once, at the top — not inside a \
+                              component or a block"
+                        .to_string(),
+                });
+            }
+        }
         if let StmtKind::Style(r) = &st.kind {
             // a class stated twice cascades, later over earlier — the same rule that decides a
             // conflicting property between two classes on one declaration
@@ -584,7 +629,10 @@ pub fn elaborate(p: &Program) -> Elaborated {
 /// The variable table is the parameter, then every coordinate its entity formals contribute *in
 /// `entity_params` order* (`EntKind::scalar_names`), then the numbers it takes.  That order is
 /// the kernel's column order, which is what makes a tape's gradient a row of the Jacobian.
-fn compile_family(f: &crate::syntax::CurveFamily) -> Result<crate::model::CurveDef, (Span, String)> {
+fn compile_family(
+    f: &crate::syntax::CurveFamily,
+    units: crate::units::Units,
+) -> Result<crate::model::CurveDef, (Span, String)> {
     use crate::syntax::{FamilyBody, Ty};
     let mut vars = vec![f.param.text.clone()];
     let mut formals = Vec::new();
@@ -611,13 +659,13 @@ fn compile_family(f: &crate::syntax::CurveFamily) -> Result<crate::model::CurveD
     let body = match &f.body {
         FamilyBody::Exprs { x, y, xspan, yspan } => {
             let tape = |text: &str, span: Span| -> Result<crate::tape::Tape, (Span, String)> {
-                let ast = crate::expr::parse(text).map_err(|e| (span, e))?;
+                let ast = crate::expr::parse_in(text, units).map_err(|e| (span, e))?;
                 crate::tape::Tape::compile(&ast.body, &vars).map_err(|e| (span, e))
             };
             crate::model::CurveBody::Exprs { x: tape(x, *xspan)?, y: tape(y, *yspan)? }
         }
         FamilyBody::Trace { point, home, body } => crate::model::CurveBody::Trace(
-            compile_trace(f, point, home.as_ref(), body, &vars, &formals, values.len())?,
+            compile_trace(f, point, home.as_ref(), body, &vars, &formals, values.len(), units)?,
         ),
     };
     let num = |t: &str| crate::expr::literal(t).unwrap_or(0.0);
@@ -656,10 +704,14 @@ fn compile_trace(
     vars: &[String],
     formals: &[(String, EntKind)],
     n_values: usize,
+    units: crate::units::Units,
 ) -> Result<crate::locus::Locus, (Span, String)> {
     use crate::locus::{Locus, Pred, Row};
     use crate::tape::Tape;
     let mut sk = Sketch::new();
+    // the scratch sketch the block is lowered through reads numbers, so it is in the document's
+    // units too — `at_seed` asks it what a bearing's literal is written in
+    sk.units = units;
     let mut scope: BTreeMap<String, EntRef> = BTreeMap::new();
     // scratch parameter index -> variable-table slot
     let mut slot: BTreeMap<u32, usize> = BTreeMap::new();
@@ -698,11 +750,12 @@ fn compile_trace(
     let n_outer = vars.len();
     debug_assert_eq!(n_outer, 1 + n_theta + n_values, "variable table shape");
     let tape = |text: &str, span: Span| -> Result<Tape, (Span, String)> {
-        let ast = crate::expr::parse(text).map_err(|e| (span, e))?;
+        let ast = crate::expr::parse_in(text, units).map_err(|e| (span, e))?;
         Tape::compile(&ast.body, vars).map_err(|e| (span, e))
     };
     let constant = |v: f64| -> Tape {
-        Tape::compile(&crate::expr::Ast::Num(v), vars).expect("a number always compiles")
+        Tape::compile(&crate::expr::Ast::Num(v, crate::units::Dim::SCALAR), vars)
+            .expect("a number always compiles")
     };
 
     // -- pass 1: declarations, so a statement may read a point declared after it --------
@@ -989,7 +1042,7 @@ fn at_seed(
             };
             let ctr = sk.point_params(c.center as usize);
             let (cx, cy, r) = (name(ctr[0])?, name(ctr[1])?, name(c.radius)?);
-            let beta = crate::expr::parse(text).map_err(|m| (*bsp, m))?.body;
+            let beta = crate::expr::parse_in(text, sk.units).map_err(|m| (*bsp, m))?.body;
             let coord = |centre: &str, trig: &str| -> Result<Tape, (Span, String)> {
                 let ast = Ast::Bin(
                     Op::Add,
@@ -1477,7 +1530,9 @@ fn to_arg(sk: &Sketch, res: &Resolver, kind: SpecKind, a: &Arg) -> Result<CArg, 
             match expr::literal(text) {
                 Some(n) => CArg::Num(expr::to_arg_units(k, n)),
                 None => {
-                    expr::parse(text).map_err(|e| e.to_string())?;
+                    // in the *document's* units: `80mm` is a number here only where the document
+                    // said what a number is, and saying so is `unit mm` (spec §3.3)
+                    expr::parse_in(text, sk.units).map_err(|e| e.to_string())?;
                     CArg::Expr(expr::Expr::new(text.trim().to_string(), 0.0))
                 }
             }
@@ -1595,6 +1650,21 @@ fn orient(sk: &mut Sketch, res: &Resolver, o: &Orient, st: &Stmt, diags: &mut Ve
 /// can show a program before anything can read one back.
 pub fn to_program(sk: &Sketch) -> Program {
     let mut p = Program::new();
+    // what its numbers are in, first: every number after it is read in them (spec §3.3.2)
+    if let Some(n) = sk.units.name() {
+        p.push(StmtKind::Unit(Name::new(n)));
+    }
+    // the style sheet, before the geometry it styles
+    for (name, style) in &sk.sheet {
+        p.push(StmtKind::Style(crate::syntax::StyleRule {
+            name: Name::new(name.clone()),
+            style: style.clone(),
+            // what this style states, asked of the style — a lifted rule has no source whose
+            // wording it could be keeping
+            props: style.stated().into_iter().map(|s| s.to_string()).collect(),
+            span: Span::default(),
+        }));
+    }
     for e in sk.primitives() {
         p.push(StmtKind::Decl(lift_decl(sk, e)));
     }

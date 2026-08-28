@@ -17,6 +17,14 @@
 //! a finite difference of this evaluator, so neither the units nor the calculus can drift from
 //! the language they belong to.
 //!
+//! **A tape is not dimension-checked** (`units.rs`, spec §3.3).  A literal here is *converted*
+//! like any other — a family's body is parsed in the document's units — but `expr::eval` also
+//! carries a `Dim` beside every value and checks what an expression comes to against the slot it
+//! is written in, and a tape carries no `Dim` at all.  So a *curve family's* body and a *trace
+//! block's* expressions are the one corner of the language where `Length + Angle` goes
+//! unremarked.  Carrying `Dim` through the compiler is a change of its own, and until it is made
+//! the `* 1rad` in `gear.sv`'s involute is readability rather than a check performed here.
+//!
 //! A tape is `Copy`-free but cheap to clone and encodes to a flat `Vec<f64>`, which is how it
 //! reaches a kernel: it rides in the constraint's constants, where a block already carries
 //! per-constraint numbers, so no kernel signature has to learn about curves.
@@ -202,11 +210,13 @@ impl Tape {
 
     fn walk(&mut self, ast: &Ast, index: &BTreeMap<&str, u32>) -> Result<u32, String> {
         Ok(match ast {
-            Ast::Num(v) => self.push(Op::Const(*v))?,
+            // the dimension is dropped: nothing downstream of here checks one — see the note
+            // on dimensions in the module header, which is where that gap is written down
+            Ast::Num(v, _) => self.push(Op::Const(*v))?,
             Ast::Var(name) => match index.get(name.as_str()) {
                 Some(&i) => self.push(Op::Var(i))?,
-                None => match crate::expr::CONSTANTS.iter().find(|&&(n, _)| n == name) {
-                    Some(&(_, v)) => self.push(Op::Const(v))?,
+                None => match crate::expr::CONSTANTS.iter().find(|&&(n, _, _)| n == name) {
+                    Some(&(_, v, _)) => self.push(Op::Const(v))?,
                     // `f.angle` is derived, never stored: a frame keeps its attitude as the
                     // rotor `(f.c, f.s)`, and the angle a bearing wants is its atan2 (degrees,
                     // like every trig function here).  The one exception to the misspelling
