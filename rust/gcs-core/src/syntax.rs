@@ -18,16 +18,20 @@
 //! derived: `prefix_kind` and `infix_kind` ask `CKind::spec()` for eligibility, so a new unary or
 //! binary constraint joins the language with nothing here to edit.
 //!
-//! Two spellings carry the whole hint/constraint classification the language rests on:
+//! One clause carries the whole hint/constraint classification the language rests on:
 //!
-//! * `=` **seeds**.  `at (0, 0)`, `r: 25`, `t = 0.37` are inert — deleting every one of them
-//!   changes no solution set, only which solution is found, so a solve may write them back.
-//! * `==` **constrains**.  `== 80` and `t == 0.37` state something, and a solve must never
-//!   rewrite one.  A pinned curve parameter is `==` precisely because it changes the solution
-//!   set: without the pin, a curve fitted through m points keeps m degrees of freedom.
+//! * **A number inside a `hint(…)` clause is a seed.**  `point p hint(x: 0, y: 0)`,
+//!   `circle c(center: o) hint(r: 25)`, `point_on_spline(p, s) hint(t: 0.37)` are inert —
+//!   deleting every one of them changes no solution set, only which solution is found, so a
+//!   solve may write them back.  The brackets after a name are what the thing is *made of*;
+//!   the clause after them is where the solve *begins*.
+//! * **Every other number is not.**  `== 80` and `t == 0.37` state something and a solve must
+//!   never rewrite one; `param w = 100` is arithmetic done while elaborating.  A pinned curve
+//!   parameter is `==` precisely because it changes the solution set: without the pin, a curve
+//!   fitted through m points keeps m degrees of freedom.
 //!
 //! That distinction is lexical, which is what makes "may a solve write this number?" a test
-//! rather than an analysis — see `program::commit_seeds`.
+//! rather than an analysis — see `edit::commit_seeds`.
 
 use crate::constraints::{CKind, SpecKind};
 use crate::model::{EntKind, EntRef, Field};
@@ -303,7 +307,8 @@ pub enum BlockKind {
     Ring,
 }
 
-/// `point p0 at (0, 0)`, `circle c0(center: p2, r: 25)`, `spline s0(p3, p4, p5, p6) knots [...]`.
+/// `point p0 hint(x: 0, y: 0)`, `circle c0(center: p2) hint(r: 25)`,
+/// `spline s0(p3, p4, p5, p6) knots [...]`.
 #[derive(Clone, Debug)]
 pub struct Decl {
     pub kind: EntKind,
@@ -324,6 +329,15 @@ pub struct Decl {
     ///
     /// Empty for a declaration that was built rather than parsed — there is no text to splice.
     pub seed_spans: Vec<Span>,
+    /// The `hint(…)` clause: where it *is* when the statement wrote one, and where it *would go*
+    /// — an empty span at the insertion point — when it did not.  `None` for a declaration that
+    /// was built rather than parsed.
+    ///
+    /// Both cases at once, because writeback needs both and one of them is not a special case:
+    /// a solve moves a scalar the document never wrote (a radius, a frame's rotor), and there
+    /// has to be somewhere to record it.  `edit::commit_seeds` splices the individual seeds when
+    /// every one it needs already has a span, and rewrites this whole clause when one does not.
+    pub hint_span: Option<Span>,
     /// Document data no solve moves, so not a seed and never written back.
     pub knots: Option<Vec<f64>>,
     /// A curve instance: the family it belongs to.  `None` for every other kind.
@@ -771,29 +785,18 @@ fn write_decl(out: &mut String, d: &Decl) {
                     parts.push(s);
                 }
             }
-            Field::Scalar => {
-                // a point's coordinates are its `at` clause, not constructor arguments: a point
-                // *is* a place, and `point p0(x: 0, y: 0)` says it twice
-                if d.kind == EntKind::Point {
-                    scalar += 1;
-                    continue;
-                }
-                let v = d.seed.get(scalar).copied().unwrap_or(0.0);
-                scalar += 1;
-                parts.push(format!("{name}: {}", num(v)));
-            }
+            // every scalar is a seed, and every seed is in the `hint(…)` clause: the brackets
+            // after the name are what the thing is *made of*, and a radius is not that
+            Field::Scalar => scalar += 1,
         }
     }
+    let _ = scalar;
     if !parts.is_empty() {
         out.push('(');
         out.push_str(&parts.join(", "));
         out.push(')');
     }
-    if d.kind == EntKind::Point {
-        let x = d.seed.first().copied().unwrap_or(0.0);
-        let y = d.seed.get(1).copied().unwrap_or(0.0);
-        out.push_str(&format!(" hint at ({}, {})", num(x), num(y)));
-    }
+    out.push_str(&hint_clause(d));
     if let Some(u) = &d.knots {
         out.push_str(" knots [");
         out.push_str(&u.iter().map(|&v| num(v)).collect::<Vec<_>>().join(", "));
@@ -801,6 +804,37 @@ fn write_decl(out: &mut String, d: &Decl) {
     }
     if d.construction {
         out.push_str(" construction");
+    }
+}
+
+/// ` hint(x: 0, y: 0)` — every scalar the kind owns, keyed by the name `fields()` gives it.
+///
+/// All of them or none: a kind with no scalars writes nothing, and a kind with some writes them
+/// whatever they are, so the printed form round-trips without a rule about which numbers are
+/// worth saying.  A declaration whose seed is a *place* (`hint at t`) has no coordinates to
+/// write and is left to the source it came from.
+pub(crate) fn hint_clause(d: &Decl) -> String {
+    if d.seed_at.is_some() {
+        return String::new();
+    }
+    let mut parts: Vec<String> = Vec::new();
+    let mut scalar = 0usize;
+    for (name, field) in d.kind.fields() {
+        if *field != Field::Scalar {
+            continue;
+        }
+        let v = d.seed.get(scalar).copied().unwrap_or(0.0);
+        let text = match d.seed_text.get(scalar).and_then(|t| t.clone()) {
+            Some(t) => t,
+            None => num(v),
+        };
+        scalar += 1;
+        parts.push(format!("{name}: {text}"));
+    }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" hint({})", parts.join(", "))
     }
 }
 
@@ -818,12 +852,19 @@ fn write_relation(out: &mut String, r: &Relation) {
     // a trailing Length or Angle is what the statement *states*, and goes after `==`
     let tail = spec.len().checked_sub(1).filter(|&i| spec[i].1.is_dimension());
     let mut parts: Vec<String> = Vec::new();
+    // a slot the constraint owns is a seed, and a seed is in the `hint(…)` clause — unless it
+    // is *pinned*, which is a stated number and belongs beside every other stated number
+    let mut hints: Vec<String> = Vec::new();
     for (i, (name, sk)) in spec.iter().enumerate() {
         if Some(i) == tail {
             continue;
         }
         let Some(a) = r.args.get(i).and_then(|a| a.as_ref()) else { continue };
-        parts.push(write_arg(name, *sk, a));
+        match a {
+            Arg::Seed { value, pinned: false } => hints.push(format!("{name}: {}", num(*value))),
+            Arg::SeedExpr { text, pinned: false, .. } => hints.push(format!("{name}: {text}")),
+            _ => parts.push(write_arg(name, *sk, a)),
+        }
     }
     out.push('(');
     out.push_str(&parts.join(", "));
@@ -833,6 +874,9 @@ fn write_relation(out: &mut String, r: &Relation) {
             out.push_str(" == ");
             out.push_str(&dim_text(a));
         }
+    }
+    if !hints.is_empty() {
+        out.push_str(&format!(" hint({})", hints.join(", ")));
     }
     if let Some((t, rr)) = r.place {
         out.push_str(&format!(" at ({}, {})", num(t), num(rr)));
@@ -848,19 +892,16 @@ fn write_arg(name: &str, sk: SpecKind, a: &Arg) -> String {
             write_ref(&mut s, r);
             s
         }
-        Arg::Seed { value, pinned } => {
-            // `==` for a pin and `=` for a seed: the one lexical fact `commit_seeds` reads
-            format!("{name} {} {}", if *pinned { "==" } else { "=" }, num(*value))
-        }
+        // only a *pin* reaches here: an unpinned slot is a seed and `write_relation` puts it in
+        // the `hint(…)` clause, which is where every seed in the language is written
+        Arg::Seed { value, .. } => format!("{name} == {}", num(*value)),
         Arg::Num(v) if sk == SpecKind::Angle => format!("{name}: {}", num(v.to_degrees())),
         Arg::Num(v) => format!("{name}: {}", num(*v)),
         Arg::Int(v) => format!("{name}: {v}"),
         Arg::Bool(b) => format!("{name}: {b}"),
         Arg::Word(w) => format!("{name}: {}", word(w)),
         Arg::Dim { text, .. } => format!("{name}: {text}"),
-        Arg::SeedExpr { text, pinned, .. } => {
-            format!("{name} {} {text}", if *pinned { "==" } else { "=" })
-        }
+        Arg::SeedExpr { text, .. } => format!("{name} == {text}"),
     }
 }
 
@@ -1184,17 +1225,31 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
     let (lexed, _) = lex(src);
     let mut out: Vec<(Tint, Span)> = Vec::with_capacity(lexed.toks.len());
     let mut at = Next::Start;
+    // how deep inside a `hint(…)` clause we are, and 0 outside one.  A number inside one is a
+    // seed and every other number is not — the whole of §4.3's lexical rule, and the reason the
+    // colouring can say which numbers a solve may rewrite without elaborating anything.
+    let mut hint = 0i32;
     for (i, (t, span)) in lexed.toks.iter().enumerate() {
         let prev = i.checked_sub(1).map(|j| &lexed.toks[j].0);
         let next = lexed.toks.get(i + 1).map(|(t, _)| t);
+        match t {
+            Tok::P('(') if matches!(prev, Some(Tok::Ident(w)) if w == "hint") => hint = 1,
+            Tok::P('(') | Tok::P('[') if hint > 0 => hint += 1,
+            Tok::P(')') | Tok::P(']') if hint > 0 => hint -= 1,
+            Tok::Nl => hint = 0,
+            _ => {}
+        }
         let tint = match t {
             Tok::Nl => {
                 at = Next::Start;
                 continue;
             }
             Tok::Str(_) => Some(Tint::Str),
+            Tok::Num(_) if hint > 0 => Some(Tint::Seed),
             Tok::Num(_) => Some(Tint::Num),
-            Tok::Eq => Some(Tint::Seed),
+            // `param w = 100` and `curve e = involute(…)` — an assignment, and not a seed: the
+            // clause is what says a number is one now
+            Tok::Eq => None,
             Tok::EqEq => Some(Tint::Claim),
             // a body is made of statements, so a brace begins one the way a newline does
             Tok::P('{') | Tok::P('}') => {
@@ -1598,23 +1653,44 @@ impl<'a> P<'a> {
         false
     }
 
-    /// `hint at` — a seed says outright that it is only a guess.  `at (0, 0)` read as an
-    /// assertion about where the point *is*, and it is not there: that is where the solve
-    /// begins, and the solve moves it (spec §6.4).
+    /// `hint at REF` — a seed given as a *place* rather than as a pair of numbers, which is what
+    /// a seed inside a trace block is (spec §6.5.1): `hint at t`, `hint at c bearing (u + phase)`.
     ///
-    /// The word marks *the solver revises this*, which is narrower than seed-class — a callout
-    /// placement is every bit as inert and keeps its bare `at`, because nothing in the solve
-    /// path writes one.  See `Relation::place`.
-    ///
-    /// Bare `at` is still read, so a document written before the word changed still loads.  It
-    /// is not written back: `write_decl` prints the current spelling, and a file that is edited
-    /// picks it up a statement at a time.
+    /// `hint(x:, y:)` is the coordinate spelling of the same thing and both lower to the same
+    /// tapes, which is why the word is shared.  `hint at (0, 0)` is *not* accepted: coordinates
+    /// are keyed now, and one spelling of a thing is the whole point of the clause.
     fn eat_hint_at(&mut self) -> bool {
-        if self.peek_word("hint") && self.word_at(self.i + 1) == Some("at") {
+        if self.peek_word("hint")
+            && self.word_at(self.i + 1) == Some("at")
+            && self.t.get(self.i + 2).map(|(t, _)| t) != Some(&Tok::P('('))
+        {
             self.i += 2;
             return true;
         }
-        self.eat_word("at")
+        false
+    }
+
+    /// `hint(` — the clause every seed is written in.  The brackets after a name say what the
+    /// thing is *made of*; this says where the solve *begins* (spec §6.4).  A number inside one
+    /// is a seed and every other number is not, which is what makes "may a solve write this?" a
+    /// lexical test rather than an analysis.
+    fn eat_hint_clause(&mut self) -> bool {
+        if self.peek_word("hint") && self.t.get(self.i + 1).map(|(t, _)| t) == Some(&Tok::P('(')) {
+            self.i += 2;
+            return true;
+        }
+        false
+    }
+
+    /// `name:` at the head of a slot — the label and nothing else, consumed.
+    fn slot_label(&mut self) -> Option<String> {
+        match (self.peek().cloned(), self.t.get(self.i + 1).map(|(t, _)| t)) {
+            (Some(Tok::Ident(s)), Some(Tok::P(':'))) => {
+                self.i += 2;
+                Some(s)
+            }
+            _ => None,
+        }
     }
 
     fn eat_word(&mut self, w: &str) -> bool {
@@ -2633,6 +2709,7 @@ impl<'a> P<'a> {
                 seed: Vec::new(),
                 seed_text: Vec::new(),
                 seed_spans: Vec::new(),
+                hint_span: None,
                 knots: None,
                 def,
                 values,
@@ -2667,13 +2744,16 @@ impl<'a> P<'a> {
                     _ => None,
                 };
                 match label {
+                    // the brackets after the name are *what the thing is made of*; where the
+                    // solve begins is the `hint(…)` after them (spec §6.4)
                     Some(l) if scalars.contains(&l.as_str()) => {
-                        let (v, t, sp) = self.value_text()?;
-                        if let Some(i) = scalars.iter().position(|&s| s == l) {
-                            seed[i] = v.unwrap_or(0.0);
-                            seed_text[i] = (v.is_none()).then_some(t);
-                            seed_spans[i] = sp;
-                        }
+                        self.fail(&format!(
+                            "`{l}` is a seed, and a seed goes in a `hint(…)` clause: \
+                             `{} {}(…) hint({l}: …)`",
+                            kind.as_str(),
+                            name.text
+                        ));
+                        return None;
                     }
                     _ => {
                         let r = self.refr()?;
@@ -2708,37 +2788,43 @@ impl<'a> P<'a> {
                 }
             }
         }
-        // trailing clauses, in any order: `hint at (x, y)` or `hint at REF [bearing (…)]`,
-        // `knots [...]`, `construction`
+        // trailing clauses, in any order: `hint(x: 0, y: 0)` or `hint at REF [bearing (…)]`,
+        // `knots [...]`, `construction`.  Where a clause *would* go if it is not written is the
+        // point we are standing on now, before any of them: that is what writeback appends at.
         let mut knots = None;
         let mut construction = false;
         let mut seed_at = None;
+        let insert = self.prev_hi();
+        let mut hint_span = Span::new(insert, insert);
         loop {
             if self.eat_hint_at() {
                 // a place named geometrically: `hint at t`, `hint at c bearing (u + phase)`
-                if self.peek() != Some(&Tok::P('(')) {
-                    let what = self.refr()?;
-                    let bearing =
-                        if self.eat_word("bearing") { Some(self.paren_expr()?) } else { None };
-                    seed_at = Some(AtRef { what, bearing });
-                    continue;
-                }
-                self.i += 1; // `(`
-                let (x, xt, xs) = self.value_text()?;
-                if !self.want_p(',') {
-                    return None;
-                }
-                let (y, yt, ys) = self.value_text()?;
-                if !self.want_p(')') {
-                    return None;
-                }
-                for (i, (v, t, sp)) in [(x, xt, xs), (y, yt, ys)].into_iter().enumerate() {
-                    if i < scalars.len() {
-                        seed[i] = v.unwrap_or(0.0);
-                        seed_text[i] = (v.is_none()).then_some(t);
-                        seed_spans[i] = sp;
+                let what = self.refr()?;
+                let bearing =
+                    if self.eat_word("bearing") { Some(self.paren_expr()?) } else { None };
+                seed_at = Some(AtRef { what, bearing });
+            } else if self.eat_hint_clause() {
+                // `hint(x: 0, y: 12)` — keyed, keys in any order, an omitted scalar is 0
+                let lo = self.t[self.i - 2].1.lo as usize; // the `hint` word itself
+                while !self.eat_p(')') {
+                    let Some(l) = self.slot_label() else {
+                        self.fail("a hint names the scalar it seeds: `hint(x: 0, y: 0)`");
+                        return None;
+                    };
+                    let Some(i) = scalars.iter().position(|&s| s == l) else {
+                        self.fail(&format!("`{}` has no scalar `{l}` to seed", kind.as_str()));
+                        return None;
+                    };
+                    let (v, t, sp) = self.value_text()?;
+                    seed[i] = v.unwrap_or(0.0);
+                    seed_text[i] = (v.is_none()).then_some(t);
+                    seed_spans[i] = sp;
+                    if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
+                        self.fail("expected `,` or `)`");
+                        return None;
                     }
                 }
+                hint_span = Span::new(lo, self.prev_hi());
             } else if self.eat_word("knots") {
                 if !self.want_p('[') {
                     return None;
@@ -2765,6 +2851,7 @@ impl<'a> P<'a> {
             seed,
             seed_text,
             seed_spans,
+            hint_span: Some(hint_span),
             knots,
             def,
             values,
@@ -2795,10 +2882,17 @@ impl<'a> P<'a> {
                     self.i += 2;
                     Some(s)
                 }
-                // `t = 0.37` seeds and `t == 0.37` pins: the label is the slot's own name
-                (Some(Tok::Ident(s)), Some(Tok::Eq)) | (Some(Tok::Ident(s)), Some(Tok::EqEq)) => {
-                    Some(s)
+                // `t == 0.37` pins: the label is the slot's own name.  A *seed* is not written
+                // here — it is `hint(t: 0.37)`, with every other seed in the language.
+                (Some(Tok::Ident(s)), Some(Tok::Eq)) => {
+                    self.fail(&format!(
+                        "`{s}` is a seed, and a seed goes in a `hint(…)` clause: \
+                         `{}(…) hint({s}: …)`.  `{s} == …` pins it instead.",
+                        name.text
+                    ));
+                    return None;
                 }
+                (Some(Tok::Ident(s)), Some(Tok::EqEq)) => Some(s),
                 _ => None,
             };
             let slot = match &label {
@@ -2856,22 +2950,57 @@ impl<'a> P<'a> {
                 self.i += 1;
             }
         }
-        if place.is_none() && self.peek_word("at") {
-            let lo = self.here().lo as usize;
-            self.i += 1;
-            if !self.want_p('(') {
-                return None;
+        // trailing clauses: `hint(t: 0.4)` — every seed in the language is written in one — and
+        // the callout's `at (t, r)`, which is a placement and not a seed (spec §6.4)
+        loop {
+            if self.eat_hint_clause() {
+                while !self.eat_p(')') {
+                    let Some(l) = self.slot_label() else {
+                        self.fail("a hint names the slot it seeds: `hint(t: 0.4)`");
+                        return None;
+                    };
+                    match spec.iter().position(|(n, k)| n == &l && *k == SpecKind::Param) {
+                        Some(i) => {
+                            let lo = self.here();
+                            let (v, text, _) = self.value_text()?;
+                            args[i] = Some(match v {
+                                Some(value) => Arg::Seed { value, pinned: false },
+                                None => Arg::SeedExpr {
+                                    text,
+                                    pinned: false,
+                                    span: Span::new(lo.lo as usize, self.prev_hi()),
+                                },
+                            });
+                        }
+                        None => {
+                            self.fail(&format!("`{}` has no slot `{l}` to seed", name.text));
+                            return None;
+                        }
+                    }
+                    if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
+                        self.fail("expected `,` or `)`");
+                        return None;
+                    }
+                }
+            } else if place.is_none() && self.peek_word("at") {
+                let lo = self.here().lo as usize;
+                self.i += 1;
+                if !self.want_p('(') {
+                    return None;
+                }
+                let t = self.number()?;
+                if !self.want_p(',') {
+                    return None;
+                }
+                let r = self.number()?;
+                if !self.want_p(')') {
+                    return None;
+                }
+                place = Some((t, r));
+                place_span = Span::new(lo, self.prev_hi());
+            } else {
+                break;
             }
-            let t = self.number()?;
-            if !self.want_p(',') {
-                return None;
-            }
-            let r = self.number()?;
-            if !self.want_p(')') {
-                return None;
-            }
-            place = Some((t, r));
-            place_span = Span::new(lo, self.prev_hi());
         }
         self.end_of_stmt();
         Some(Relation { kind, args, place, place_span, poly: None, claim: false })
@@ -2896,6 +3025,14 @@ impl<'a> P<'a> {
             end += 1;
         }
         let mut text = &self.src[from..end];
+        // a trailing `hint(…)` ends the dimension and starts the statement's trailing clauses;
+        // stopping *here* hands those tokens back to the loop that reads them, rather than
+        // teaching this function a second grammar.  (No kind carries both a dimension and a
+        // `Param` slot today, so this is a guard rather than a path anything walks.)
+        if let Some(h) = text.find(" hint(") {
+            end = from + h;
+            text = &text[..h];
+        }
         let mut place = None;
         if let Some(at) = text.rfind(" at (") {
             let tail = &text[at + 5..];
@@ -2925,22 +3062,24 @@ impl<'a> P<'a> {
     }
 
     fn arg(&mut self, kind: SpecKind) -> Option<Arg> {
-        // `t = 0.37` and `t == 0.37`: a slot the constraint owns, seeded or pinned
+        // `t == 0.37` in the argument list: a slot the constraint owns, *pinned*.  Somebody said
+        // where along and the solver is not to argue, which is a stated number and belongs where
+        // every other stated number is.  A seeded one is `hint(t: 0.37)` — see `param_hint`.
         if kind == SpecKind::Param {
-            let mut pinned = false;
-            if matches!(self.peek(), Some(Tok::Ident(_))) {
-                let eq = self.t.get(self.i + 1).map(|(t, _)| t.clone());
-                if matches!(eq, Some(Tok::Eq) | Some(Tok::EqEq)) {
-                    pinned = eq == Some(Tok::EqEq);
-                    self.i += 2;
-                }
+            if matches!(self.peek(), Some(Tok::Ident(_)))
+                && self.t.get(self.i + 1).map(|(t, _)| t) == Some(&Tok::EqEq)
+            {
+                self.i += 2;
             }
             let lo = self.here();
-            let (v, text, sp) = self.value_text()?;
-            let _ = sp;
+            let (v, text, _) = self.value_text()?;
             return Some(match v {
-                Some(value) => Arg::Seed { value, pinned },
-                None => Arg::SeedExpr { text, pinned, span: Span::new(lo.lo as usize, self.prev_hi()) },
+                Some(value) => Arg::Seed { value, pinned: true },
+                None => Arg::SeedExpr {
+                    text,
+                    pinned: true,
+                    span: Span::new(lo.lo as usize, self.prev_hi()),
+                },
             });
         }
         match self.peek().cloned() {

@@ -54,7 +54,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `port`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `ellipse`, `spline`, `construction`. **[0.4]** In a chain (§6.6) the words `to` and `close` are meaningful *contextually*; they are not reserved, and an entity may bear either as a name. **[0.5]** A coordinate seed is written `hint at` (§6.4).
+- **Keywords:** `component`, `port`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `ellipse`, `spline`, `construction`. **[0.4]** In a chain (§6.6) the words `to` and `close` are meaningful *contextually*; they are not reserved, and an entity may bear either as a name. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` keeps its own form inside a trace block (§6.5.1).
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
 - **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . = -> ~`
@@ -135,22 +135,29 @@ Every statement belongs to exactly one class. The classification is normative be
 |---|---|---|
 | **Declaration** | entity declarations, `param`, `port`, `curve` family definitions, instance declarations | introduces entities/aliases |
 | **Constraint** | predicate calls, `==` equations, **pinned seeds (`==`, §4.3) [0.2]**, orientation predicates, arc-branch and tangency-side decorations, `ring` symmetry, gauge statements | **yes** |
-| **Seed** *(was Hint)* | `hint ... at ...`, **and every `=` seed written inline in a declaration (§6.4) [0.2]** | **no (P3)** |
+| **Seed** *(was Hint)* | the `hint` statement (§11), **and every seed written inline in a `hint(…)` clause (§4.3, §6.4) [0.2] [0.7]** | **no (P3)** |
 | **Structure** | `repeat`/`cycle` blocks, `path` declarations (net of their derived constraints, §10.4) | organizational |
 
-### 4.3 Seeds and pins: `=` and `==` **[0.2]**
+### 4.3 Seeds and pins: `hint(…)` and `==` **[0.2]** **[0.7]**
 
-> **A number written with `=` is a seed. A number written with `==` is a constraint.**
+> **A number inside a `hint(…)` clause is a seed. Every other number is not.**
 
 This is the only distinction between the two classes, and it is lexical on purpose. §11 requires an implementation to verify Invariant H *syntactically*; a mark you can see does that, and no analysis of what a number "is really doing" does.
 
 ```
-point p at (0, 0)                    // seed: a solve may move it
-circle c(center: o, r: 25)           // seed: a solve may move the radius
+point p hint(x: 0, y: 0)             // seed: a solve may move it
+circle c(center: o) hint(r: 25)      // seed: a solve may move the radius
 distance(a, b) == 80                 // constraint: a solve must not move it
-point_on_spline(p, s, t = 0.37)      // seed: the contact may slide along the curve
+point_on_spline(p, s) hint(t: 0.37)  // seed: the contact may slide along the curve
 point_on_spline(p, s, t == 0.37)     // constraint: the contact is pinned there
+param w = 100                        // neither: a number worked out while elaborating
 ```
+
+**[0.7] One clause, where 0.2–0.6 had three spellings.** A seed used to be written three ways depending only on what happened to carry it — `hint at (0, 0)` for a point's coordinates, a labelled `r: 25` inside the constructor for any other scalar, `t = 0.37` for a constraint's own unknown. Three spellings for one class of thing, and the middle one was the worst: it put a number the solver will move inside the same brackets as the structure it may not, so `circle c(center: o, r: 25)` read as though the radius were as much a part of what the circle *is* as its centre.
+
+`hint(key: value, …)` says it once, keys in any order, on declarations and on constraints alike. **The brackets after the name are what the thing is made of; the `hint(…)` after them is where the solve begins.** It also mends the headline of this section, which was only ever approximately true: `r: 25` was a seed written with `:`, and `param w = 100` is not a seed at all.
+
+The three retired spellings — `point p at (0, 0)`, `point p hint at (0, 0)`, `circle c(center: o, r: 25)` — MUST NOT parse. A document written against 0.2–0.6 does not load; the change is small, mechanical and worth doing once.
 
 The last pair is why the rule is needed at all. A curve contact carries its own parameter, and
 whether that parameter is free is not a fact about how it looks — it is a fact about the solution
@@ -235,25 +242,29 @@ Introduces a named definitional value. `param` values are evaluated at elaborati
 
 ### 6.4 Seeds written inline **[0.2]**
 
-A declaration MAY carry the starting values of its own coordinates:
+A declaration MAY carry the starting values of its own scalars, in a trailing `hint(…)` clause:
 
 ```
-point   p  hint at (0, 0)
-circle  c(center: o, r: 25)
-ellipse e(center: q, major: m, b: 12)
+point   p  hint(x: 0, y: 0)
+point   p  hint(y: 12)                     // an omitted scalar is 0
+point   t                                  // no clause at all
+circle  c(center: o) hint(r: 25)
+ellipse e(center: q, major: m) hint(b: 12)
 ```
 
 These are seed-class (§4.2, §4.3) and semantically inert (P3). They are the primitive form; §11's `hint` statement remains, for the case it is actually good at.
 
-**[0.5] `hint at`, where 0.2–0.4 wrote a bare `at`.** A coordinate seed reads as an assertion it does not make: `point p at (0, 0)` says where the point *is*, and it is not there — that is only where the solve begins, and the solve will move it. `hint at` says as much, in the words §11 already uses for the statement form, so the two read alike: `hint p at (0, 0)` standing on its own and `point p hint at (0, 0)` inline. Implementations SHOULD keep reading a bare `at`, so that documents written against 0.2–0.4 load, and SHOULD write the current spelling.
+**[0.7] One clause for every seed.** `hint(…)` joins the trailing-clause loop, so it is order-free against `knots` and `construction` exactly as those two already are against each other. A constraint's own unknown is written the same way — `point_on_spline(p, s) hint(t: 0.4)` — and the *pin* stays in the argument list, `point_on_spline(p, s, t == 0.4)`: `hint` marks what a solve revises, and a pin is precisely what it does not.
 
-**What `hint` marks is that a solve revises the number — not that the number is seed-class.** The two are not the same set, and the difference decides where the word belongs. Seed-class is §4.3's classification: inert under P3, so deleting it changes no solution set. That is true of a coordinate seed *and* of a callout placement (§13.1), which is why a placement keeps its bare `at` even though it is every bit as inert. What separates them is who writes them. A coordinate seed is an input a solve overwrites, every time, which is the whole of what §6.4's writeback does. A placement is never touched by a solve at all: it is derived by the layout until somebody drags the callout, and from then on it records where that person put it. So a placement is not a guess about anything, and `at` there says what it means.
+Two things that look like seeds and are not, and stay where they are. **`knots [...]`** is document data no solve moves. **A curve instance's values** — `curve e = involute(base, phase: 0)` — are numbers the family takes, not numbers the solve revises.
+
+**What `hint` marks is that a solve revises the number — not that the number is seed-class.** The two are not the same set, and the difference decides where the word belongs. Seed-class is §4.3's classification: inert under P3, so deleting it changes no solution set. That is true of a coordinate seed *and* of a callout placement (§13.1), which is why a placement keeps its bare `at (t, r)` even though it is every bit as inert. What separates them is who writes them. A coordinate seed is an input a solve overwrites, every time, which is the whole of what §6.4's writeback does. A placement is never touched by a solve at all: it is derived by the layout until somebody drags the callout, and from then on it records where that person put it. So a placement is not a guess about anything, and `at` there says what it means.
 
 *Non-normative:* an implementation can therefore read `hint` as the mark of "this is the solver's to answer", which is a narrower and more useful claim than "this is inert". A reader wanting to know what may be deleted without changing the drawing should ask §4.3, which answers for both.
 
 **Why inline is the primitive.** A seed's job is to say where a coordinate starts, and the place a reader looks for that is the declaration of the thing that has the coordinate. It matters more than taste once a drawing is edited by drawing on it: a solve that wants to record where a point ended up rewrites six characters of a declaration that already exists, where under 0.1 it would have to locate that point's `hint` statement among the body's statements, or synthesise one and decide where to put it. The first is a splice; the second is a program transformation, and it is performed on every drag.
 
-`hint` keeps the cases inline cannot express — seeding an entity declared elsewhere, and seeding from an expression over other geometry (`hint t.lead at center + polar(root.r, 0)`).
+`hint` keeps the cases inline cannot express — seeding an entity declared elsewhere, and seeding from an expression over other geometry (`hint t.lead(x: center.x + root.r, y: center.y)`).
 
 ### 6.5 Curve families **[0.2]**
 
@@ -272,7 +283,7 @@ curve e = involute(base, phase: a0) over (u0, u1)
 point_on_curve(p, e, u = u0)
 ```
 
-`point_on_curve(p, C, u)` says `p − C(u) = 0`: two residuals, one new unknown (the parameter, seed-class per §4.3), and so one equation net — the same arithmetic as a contact with any other curve.
+`point_on_curve(p, C) hint(u: …)` says `p − C(u) = 0`: two residuals, one new unknown (the parameter, seed-class per §4.3), and so one equation net — the same arithmetic as a contact with any other curve.
 
 **Requirements.** An implementation MUST differentiate a family's expressions with respect to the parameter *and* with respect to every coordinate they read. `∂C/∂u` is which way a contact may slide; `∂C/∂θ` is how the curve moves when the geometry it is written over moves, and an implementation that computes only the first will solve a contact once and drop it the moment that geometry is dragged. Both are mechanical from the expression, so this is a requirement on effort, not on ingenuity.
 
@@ -304,11 +315,11 @@ A dimension in the block may be an expression over the parameter, the formals' c
 
 1. **A signed constraint,** wherever the vocabulary can say it. Above, *neither* choice is a branch at all: `angle` is directed (§9.4), so `t` sits at the bearing and not opposite it, and `point_line_distance` is signed, so one equation unwinds the string one way for positive roll and the other for negative — where a half-turn angle and an unsigned `distance` would each have left a mirror pair for something else to break.
 2. **An orientation predicate.** `ccw(a, b, x)` / `cw(a, b, x)` in a block is §9.6's statement doing §9.6's job: it contributes no residual and *selects among the discrete solution components*. Its third point MUST be one the block places. It settles the branches a residual cannot — an elbow's two intersections, say, where the distances hold on either side and only the orientation tells the poses apart. A predicate is read **at the home** — the parameter value `from (expr)` names (the expression is over the formals and the family's values; absent, the instance's domain begins evaluation) — and an implementation MUST enforce it there (reflect the placed point across the oriented line and solve again) and MUST NOT re-enforce it elsewhere: away from the home, continuity governs, and the component the predicate picks at the home is the component the whole curve is on, even where the curve has since wound to where the predicate no longer reads true. Choose the home so the predicates read unambiguously — the pose at which the two components stand farthest apart. A block with predicates needs no seeds at all: an implementation MUST fall back to deterministic restarts when the seeds (or their absence) leave the home solve nowhere to start.
-3. **A seed.** What neither an equation nor a predicate says, a seed says: the block's `at` seeds are places over the parameter and the formals, evaluation starts from them, and away from them continuity governs — an implementation MUST evaluate the curve as one continuation along the parameter, so the branch picked at the home is the branch everywhere. Deleting a seed still traces *a* branch, from a worse start — the same bargain a contact's `u = …` seed strikes in §4.3.
+3. **A seed.** What neither an equation nor a predicate says, a seed says: the block's `at` seeds are places over the parameter and the formals, evaluation starts from them, and away from them continuity governs — an implementation MUST evaluate the curve as one continuation along the parameter, so the branch picked at the home is the branch everywhere. Deleting a seed still traces *a* branch, from a worse start — the same bargain a contact's `hint(u: …)` seed strikes in §4.3.
 
-**Places, not coordinates.** Inside a trace block a seed is a *place*, and this language names places geometrically: `point t hint at c bearing (u + phase)` is the point at the edge of circle `c` at that bearing from the page's x-axis, and `point p hint at t` is wherever `t` starts (a point already named must be declared first). Both lower to exactly what the coordinate spelling would — the bearing form is `centre + r·(cos β, sin β)` said the way a draughtsman says it — so the coordinate form `hint at (xexpr, yexpr)` remains available and means the same thing. Outside a trace block a seed is a number a solve writes back, which a place named by reference is not, so the geometric forms are trace-block-only (**E103** elsewhere).
+**Places, not coordinates.** Inside a trace block a seed is a *place*, and this language names places geometrically: `point t hint at c bearing (u + phase)` is the point at the edge of circle `c` at that bearing from the page's x-axis, and `point p hint at t` is wherever `t` starts (a point already named must be declared first). Both lower to exactly what the coordinate spelling would — the bearing form is `centre + r·(cos β, sin β)` said the way a draughtsman says it — so the coordinate form `hint(x: xexpr, y: yexpr)` remains available and means the same thing. Outside a trace block a seed is a number a solve writes back, which a place named by reference is not, so the geometric forms are trace-block-only (**E103** elsewhere).
 
-**[0.6] Bearings may be measured from a frame.** A bare bearing is page-fixed, and a block posed against a datum (`angle(datum, swing) == u`) with page-fixed seeds goes quietly stale the moment the datum tilts — the solve starts from the wrong place, and the first symptom is a wrong branch at a distant pose (bmander/geomsolver#10). The remedy is arithmetic, not a clause: a family written over a `frame` reads its derived `.angle` in any trace-block expression, so `hint at c bearing (u + f.angle)` and `hint at (o.x + d * cos(u + f.angle), …)` state the same bearing *from the frame*, and both seed forms — the geometric and the coordinate — follow the drawing by the same term. A name of the form `x.angle` where the variable table holds the rotor `x.c` / `x.s` compiles to its `atan2`; any other unknown name remains the misspelling error it was.
+**[0.6] Bearings may be measured from a frame.** A bare bearing is page-fixed, and a block posed against a datum (`angle(datum, swing) == u`) with page-fixed seeds goes quietly stale the moment the datum tilts — the solve starts from the wrong place, and the first symptom is a wrong branch at a distant pose (bmander/geomsolver#10). The remedy is arithmetic, not a clause: a family written over a `frame` reads its derived `.angle` in any trace-block expression, so `hint at c bearing (u + f.angle)` and `hint(x: o.x + d * cos(u + f.angle), …)` state the same bearing *from the frame*, and both seed forms — the geometric and the coordinate — follow the drawing by the same term. A name of the form `x.angle` where the variable table holds the rotor `x.c` / `x.s` compiles to its `atan2`; any other unknown name remains the misspelling error it was.
 
 ### 6.6 Chains **[0.4]**
 
@@ -514,14 +525,14 @@ Path fragments compose by **endpoint identity**: two fragments whose end and sta
 **[0.2]** A hint is one of the two seed forms; the other, and the primitive, is the inline seed of §6.4. Everything in this section applies to both, and "hint" below should be read as "seed". Use `hint` when inline cannot say it: seeding an entity declared elsewhere, or seeding from an expression over other geometry.
 
 ```
-hint t.lead at center + polar(root.r, 0)
+hint t.lead(x: center.x + root.r, y: center.y)
 ```
 
-`hint REF at EXPR` seeds the entity `REF` at the value of `EXPR` (evaluated with whatever definitional values and previously seeded values are available; unseeded quantities in a hint expression are an error **E014**).
+`hint REF(key: EXPR, …)` seeds the entity `REF`'s named scalars at the values of the expressions (evaluated with whatever definitional values and previously seeded values are available; unseeded quantities in a hint expression are an error **E014**).
 
 Normative invariant (**Invariant H**): *for every program P, sol(P) = sol(P minus all seeds).* Implementations MUST maintain a statement classification sufficient to verify Invariant H syntactically — i.e., the seed class is closed under everything the grammar allows in a seed, and nothing in the seed class can generate residuals or alter aliasing.
 
-**[0.2]** §4.3 is how that classification is meant to be maintained: `=` is seed-class and `==` is constraint-class, so the check is a look at the mark rather than an argument about the statement.
+**[0.2]** §4.3 is how that classification is meant to be maintained: a number inside `hint(…)` is seed-class and every other number is not, so the check is a look at the clause rather than an argument about the statement.
 
 Hints on entities inside a `ring` seed the fundamental-domain representative (§12.4). Hints MAY use block indices in `repeat`/`cycle` (where each instance is a distinct variable) and MUST NOT use them in `ring` (**E015**: there is only one representative to seed).
 
@@ -796,7 +807,7 @@ component Gear(N: Int, m: Length) {
     angle(t.trail, center, next.t.lead) == tau/(2*N)
   }
 
-  hint t.lead at center + polar(root.r, 0)
+  hint t.lead(x: center.x + root.r, y: center.y)
 
   ground(center)
   fix(direction(center, t.lead))
@@ -848,10 +859,15 @@ decl           = entity_decl | param_decl | port_decl | curve_def | instance_dec
 entity_decl    = ekw binder { "," binder }
                | ekw IDENT "=" expr ;
 ekw            = "point" | "circle" | "line" | "frame" | "ellipse" | "spline" | "curve" ;
-(* the geometric `at` forms — `at t`, `at c bearing (…)` — are trace-block seeds, §6.5.1 *)
-binder         = IDENT [ "(" ctor_arg { "," ctor_arg } ")" ]
-                 [ "at" ( "(" expr "," expr ")" | ref [ "bearing" "(" expr ")" ] ) ] ;
-ctor_arg       = [ IDENT ":" ] expr ;                      (* value args are SEEDS, §6.2 *)
+(* the trailing clauses are order-free: `hint(…)`, `knots […]`, `construction`.  The geometric
+   `hint at` forms — `hint at t`, `hint at c bearing (…)` — are trace-block seeds, §6.5.1 *)
+binder         = IDENT [ "(" ctor_arg { "," ctor_arg } ")" ] { trailer } ;
+trailer        = hint_clause
+               | "hint" "at" ref [ "bearing" "(" expr ")" ]
+               | "knots" "[" number { "," number } "]"
+               | "construction" ;
+hint_clause    = "hint" "(" IDENT ":" expr { "," IDENT ":" expr } ")" ;   (* SEEDS, §4.3 *)
+ctor_arg       = [ IDENT ":" ] ref ;                       (* what the thing is made of, §6.2 *)
 
 (* a curve FAMILY, §6.5; an instance is an ordinary entity_decl *)
 curve_def      = "curve" IDENT "(" [ params ] ")" "(" IDENT ")"
@@ -866,14 +882,14 @@ args           = arg { "," arg } ;
 arg            = [ IDENT ":" ] expr ;
 
 constraint     = expr "==" expr
-               | pred [ "." IDENT ] "(" args ")" [ "==" expr ] ;  (* decoration e.g. tangent.ext *)
+               | pred [ "." IDENT ] "(" args ")" [ "==" expr ]
+                 [ hint_clause ] [ "at" "(" number "," number ")" ] ;  (* §4.3, §13.1 *)
 pred           = IDENT ;
 
-(* §4.3: inside an argument list, `=` seeds and `==` pins.  The two are the whole of the
-   seed/constraint classification, and they are told apart by the mark alone. *)
+(* §4.3: a number inside `hint(…)` seeds; `==` inside an argument list pins.  The two are the
+   whole of the seed/constraint classification, and they are told apart by the clause alone. *)
 arg            = [ IDENT ":" ] expr
-               | IDENT "=" expr                            (* seed: a solve may move it *)
-               | IDENT "==" expr ;                         (* pin:  a solve may not *)
+               | IDENT "==" expr ;                         (* pin:  a solve may not move it *)
 
 path_decl      = "path" IDENT ":" orient "=" path_expr ;
 frag           = path_expr ;                               (* statement-level fragment *)
@@ -881,7 +897,7 @@ orient         = "ccw" | "cw" ;
 path_expr      = ref seg ref { seg ref } ;
 seg            = "->" | "~" ref [ "rev" ] "~" ;
 
-hint           = "hint" ref "at" expr ;
+hint           = "hint" ref hint_clause ;                  (* §11; unimplemented *)
 gauge          = "ground" "(" ref ")" | "fix" "(" expr ")" ;
 
 block          = "repeat" expr [ "as" IDENT ] "{" { statement } "}"
@@ -900,7 +916,7 @@ mulop          = "*" | "/" ;
 
 Parsing note: a statement beginning with an expression is disambiguated by the token following the first `ref`/`expr`: `==` → constraint; `->` or `~` → fragment; otherwise error. `ccw`/`cw` appear both as orientation keywords (after `:` in `path`) and as predicates; context disambiguates. **[0.2]** `curve NAME(` opens a family definition and `curve NAME =` an instance; the token after the name settles which.
 
-**[0.2] Note on the trailing `==`.** After the `==` that follows a predicate's closing parenthesis, an implementation MAY take the rest of the logical line verbatim rather than tokenizing it, and hand that text to whatever evaluates dimension expressions. This is not laziness: `3 1/2` is three and a half and `31/2` is a division, and that rule belongs to one tokenizer. Two copies of it are two rules the moment one is edited. An `==` *inside* an argument list is the pin of §4.3 and is lexed normally; the two never meet.
+**[0.2] Note on the trailing `==`.** After the `==` that follows a predicate's closing parenthesis, an implementation MAY take the rest of the logical line verbatim rather than tokenizing it, and hand that text to whatever evaluates dimension expressions. This is not laziness: `3 1/2` is three and a half and `31/2` is a division, and that rule belongs to one tokenizer. Two copies of it are two rules the moment one is edited. An `==` *inside* an argument list is the pin of §4.3 and is lexed normally; the two never meet. **[0.7]** A trailing `hint(…)` ends the verbatim region, since it is a clause of the statement and not part of the number.
 
 ---
 

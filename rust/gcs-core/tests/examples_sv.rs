@@ -83,3 +83,31 @@ fn a_cases_arguments_reach_its_document() {
     assert!((span(&wide) - 140.0).abs() < 1e-9, "width reached the drawing: {}", span(&wide));
     assert!((span(&base) - 100.0).abs() < 1e-9, "{}", span(&base));
 }
+
+/// **Every seed in the library is written in a `hint(…)` clause** (Solvent §4.3).
+///
+/// The rule is lexical, so the check is too: a scalar the kind owns must not appear as a
+/// constructor argument, and a coordinate seed must not be a bare or `hint at` pair.  Grepping
+/// the shipped documents is the only way to catch a spelling that still *parses* somewhere but
+/// says the wrong thing about which numbers a solve may rewrite.
+#[test]
+fn no_document_writes_a_seed_the_old_way() {
+    for &(key, ..) in DOCS {
+        let src = examples::source(key).unwrap_or_else(|| panic!("{key} has no source"));
+        for (n, line) in src.lines().enumerate() {
+            let code = line.split("//").next().unwrap_or("");
+            let where_ = format!("{key}:{}: {line}", n + 1);
+            assert!(!code.contains("hint at ("), "a coordinate pair after `hint at` — {where_}");
+            for scalar in [" r: ", " b: ", " c: ", " s: "] {
+                // a scalar inside the brackets that say what the entity is made of
+                if let Some(i) = code.find(scalar) {
+                    let head = &code[..i];
+                    assert!(
+                        !head.contains('(') || head.contains("hint("),
+                        "a seed in a constructor argument list — {where_}"
+                    );
+                }
+            }
+        }
+    }
+}

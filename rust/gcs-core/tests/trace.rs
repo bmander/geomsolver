@@ -24,9 +24,9 @@ curve involute(c: circle, phase: Angle)(u) over (5, 90) =
 
 curve unwind(c: circle, datum: line, phase: Angle)(u) over (5, 90) =
   trace p where {
-    point t at (c.center.x + c.r * cos(u + phase), c.center.y + c.r * sin(u + phase))
-    point p at (c.center.x + c.r * (cos(u + phase) + 3 * u * pi / 180 * sin(u + phase)), \
-                c.center.y + c.r * (sin(u + phase) - 3 * u * pi / 180 * cos(u + phase)))
+    point t hint(x: c.center.x + c.r * cos(u + phase), y: c.center.y + c.r * sin(u + phase))
+    point p hint(x: c.center.x + c.r * (cos(u + phase) + 3 * u * pi / 180 * sin(u + phase)), \
+                 y: c.center.y + c.r * (sin(u + phase) - 3 * u * pi / 180 * cos(u + phase)))
     line rad(c.center, t)
     line s(t, p)
     point_on_circle(t, c)
@@ -35,10 +35,10 @@ curve unwind(c: circle, datum: line, phase: Angle)(u) over (5, 90) =
     distance(t, p) == c.r * u * pi / 180
   }
 
-point  o at (0, 0)
-point  ax at (1, 0)
+point  o hint(x: 0, y: 0)
+point  ax hint(x: 1, y: 0)
 line   datum(o, ax) construction
-circle base(center: o, r: 20) construction
+circle base(center: o) hint(r: 20) construction
 
 curve  formula = involute(base, phase: 0) over (5, 60)
 curve  string = unwind(base, datum, phase: 0) over (5, 60)
@@ -94,7 +94,7 @@ fn the_taut_string_traces_the_involute() {
 /// perpendicular to the radius at the tangent point, as long as the arc unwound.
 #[test]
 fn a_point_lands_on_a_traced_curve() {
-    let src = format!("{DOC}point q at (28, 22)\npoint_on_curve(q, string, u = 30)\n");
+    let src = format!("{DOC}point q hint(x: 28, y: 22)\npoint_on_curve(q, string) hint(u: 30)\n");
     let mut e = build(&src);
     assert!(e.ok());
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -123,7 +123,7 @@ fn a_point_lands_on_a_traced_curve() {
 /// checked at once.
 #[test]
 fn the_trace_jacobian_matches_a_finite_difference() {
-    let src = format!("{DOC}point q at (28, 22)\npoint_on_curve(q, string, u = 30)\n");
+    let src = format!("{DOC}point q hint(x: 28, y: 22)\npoint_on_curve(q, string) hint(u: 30)\n");
     let e = build(&src);
     assert!(e.ok());
     let mut sys = System::new(&e.sketch);
@@ -155,7 +155,7 @@ fn the_trace_jacobian_matches_a_finite_difference() {
 #[test]
 fn moving_the_circle_carries_the_traced_curve() {
     let doc = DOC.replace("radius(base) == 20", "radius(base) == 26");
-    let src = format!("{doc}point q at (28, 22)\npoint_on_curve(q, string, u = 30)\n");
+    let src = format!("{doc}point q hint(x: 28, y: 22)\npoint_on_curve(q, string) hint(u: 30)\n");
     let mut e = build(&src);
     assert!(e.ok());
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -183,8 +183,8 @@ curve wander(c: circle)(u) over (0, 90) =
     point_on_circle(t, c)
     distance(t, p) == c.r * u * pi / 180
   }
-point  o at (0, 0)
-circle base(center: o, r: 20)
+point  o hint(x: 0, y: 0)
+circle base(center: o) hint(r: 20)
 curve  w = wander(base)
 ";
     let (prog, errs) = parse(src);
@@ -208,8 +208,8 @@ curve odd(c: circle)(u) =
     ground(p)
     coincident(p, c.center)
   }
-point  o at (0, 0)
-circle base(center: o, r: 20)
+point  o hint(x: 0, y: 0)
+circle base(center: o) hint(r: 20)
 curve  w = odd(base)
 ";
     let (prog, errs) = parse(src);
@@ -328,16 +328,16 @@ curve involute(c: circle, datum: line, phase: Angle)(u) over (5, 60) =
     ccw(datum.p1, datum.p2, t)
   }
 
-point  o at (0, 0)
-point  ax at (1, 0)
+point  o hint(x: 0, y: 0)
+point  ax hint(x: 1, y: 0)
 line   datum(o, ax) construction
-circle base(center: o, r: 20) construction
+circle base(center: o) hint(r: 20) construction
 curve  w = involute(base, datum, phase: 0) over (5, 60)
 radius(base) == 20
 ground(o)
 ground(ax)
-point q at (28, 22)
-point_on_curve(q, w, u = 30)
+point q hint(x: 28, y: 22)
+point_on_curve(q, w) hint(u: 30)
 ";
     let e = build(src);
     assert!(
@@ -403,10 +403,10 @@ fn the_march_carries_a_branch_past_bad_seeds() {
     let src = "\
 curve limp(c: circle, datum: line, phase: Angle)(u) over (5, 60) =
   trace p where {
-    point t at (c.center.x + c.r * cos(u + phase) * max(0, 1 - u / 30), \
-                c.center.y + c.r * sin(u + phase) * max(0, 1 - u / 30))
-    point p at (c.center.x + c.r * cos(u + phase) * max(0, 1 - u / 30), \
-                c.center.y + c.r * (sin(u + phase) - u * pi / 90) * max(0, 1 - u / 30))
+    point t hint(x: c.center.x + c.r * cos(u + phase) * max(0, 1 - u / 30), \
+                 y: c.center.y + c.r * sin(u + phase) * max(0, 1 - u / 30))
+    point p hint(x: c.center.x + c.r * cos(u + phase) * max(0, 1 - u / 30), \
+                 y: c.center.y + c.r * (sin(u + phase) - u * pi / 90) * max(0, 1 - u / 30))
     line rad(c.center, t)
     line s(t, p)
     point_on_circle(t, c)
@@ -415,10 +415,10 @@ curve limp(c: circle, datum: line, phase: Angle)(u) over (5, 60) =
     distance(t, p) == c.r * u * pi / 180
   }
 
-point  o at (0, 0)
-point  ax at (1, 0)
+point  o hint(x: 0, y: 0)
+point  ax hint(x: 1, y: 0)
 line   datum(o, ax) construction
-circle base(center: o, r: 20) construction
+circle base(center: o) hint(r: 20) construction
 curve  w = limp(base, datum, phase: 0) over (5, 60)
 ";
     let e = build(src);
@@ -472,13 +472,13 @@ fn a_block_may_draw_a_circle_of_its_own() {
     let src = "\
 curve dot(c: circle)(u) over (0, 10) =
   trace p where {
-    point p at (1, 1)
-    circle k(center: p, r: 2)
+    point p hint(x: 1, y: 1)
+    circle k(center: p) hint(r: 2)
     coincident(p, c.center)
     radius(k) == 5 + u
   }
-point  o at (3, -2)
-circle base(center: o, r: 20)
+point  o hint(x: 3, y: -2)
+circle base(center: o) hint(r: 20)
 curve  w = dot(base)
 ";
     let e = build(src);
@@ -511,8 +511,8 @@ fn a_blocks_mistakes_are_named() {
     ];
     for (body, want) in cases {
         let src = format!(
-            "curve b(c: circle)(u) =\n  {body}\npoint o at (0, 0)\n\
-             circle base(center: o, r: 5)\ncurve w = b(base)\n"
+            "curve b(c: circle)(u) =\n  {body}\npoint o hint(x: 0, y: 0)\n\
+             circle base(center: o) hint(r: 5)\ncurve w = b(base)\n"
         );
         let (prog, errs) = parse(&src);
         assert!(errs.is_empty(), "{want}: {errs:?}");
@@ -535,17 +535,17 @@ fn a_seed_is_a_place_named_geometrically() {
     let src = "\
 curve rim(c: circle, datum: line)(u) over (0, 350) =
   trace p where {
-    point t at c bearing (u)
-    point p at t
+    point t hint at c bearing (u)
+    point p hint at t
     line rad(c.center, t)
     point_on_circle(t, c)
     angle(datum, rad) == u
     coincident(p, t)
   }
-point  o at (2, 1)
-point  ax at (3, 1)
+point  o hint(x: 2, y: 1)
+point  ax hint(x: 3, y: 1)
 line   datum(o, ax) construction
-circle base(center: o, r: 7)
+circle base(center: o) hint(r: 7)
 curve  w = rim(base, datum)
 ";
     let e = build(src);
@@ -570,25 +570,25 @@ curve  w = rim(base, datum)
 #[test]
 fn a_geometric_seeds_mistakes_are_named() {
     let cases = [
-        ("trace p where {\n  point q\n  point p at q bearing (0)\n\
+        ("trace p where {\n  point q\n  point p hint at q bearing (0)\n\
           coincident(p, c.center)\n  coincident(q, c.center)\n}",
          "a bearing needs a circle"),
-        ("trace p where {\n  point p at c\n  coincident(p, c.center)\n}",
+        ("trace p where {\n  point p hint at c\n  coincident(p, c.center)\n}",
          "says the bearing"),
-        ("trace p where {\n  point p\n  point q\n  line l(p, q) at c\n\
+        ("trace p where {\n  point p\n  point q\n  line l(p, q) hint at c\n\
           coincident(p, c.center)\n  coincident(q, c.center)\n}",
          "only a point takes a geometric seed"),
-        ("trace p where {\n  point p at zzz\n  coincident(p, c.center)\n}",
+        ("trace p where {\n  point p hint at zzz\n  coincident(p, c.center)\n}",
          "no such entity"),
         // a point may only seed at one already declared: names enter scope in order
-        ("trace p where {\n  point p at q\n  point q\n\
+        ("trace p where {\n  point p hint at q\n  point q\n\
           coincident(p, c.center)\n  coincident(q, c.center)\n}",
          "no such entity: `q`"),
     ];
     for (body, want) in cases {
         let src = format!(
-            "curve b(c: circle)(u) =\n  {body}\npoint o at (0, 0)\n\
-             circle base(center: o, r: 5)\ncurve w = b(base)\n"
+            "curve b(c: circle)(u) =\n  {body}\npoint o hint(x: 0, y: 0)\n\
+             circle base(center: o) hint(r: 5)\ncurve w = b(base)\n"
         );
         let (prog, errs) = parse(&src);
         assert!(errs.is_empty(), "{want}: {errs:?}");
@@ -606,7 +606,7 @@ fn a_geometric_seeds_mistakes_are_named() {
 /// reference is not — so the geometric form is refused there, and says where it belongs.
 #[test]
 fn a_geometric_seed_outside_a_trace_block_is_refused() {
-    let src = "point o at (0, 0)\ncircle c0(center: o, r: 5)\npoint q at c0 bearing (30)\n";
+    let src = "point o hint(x: 0, y: 0)\ncircle c0(center: o) hint(r: 5)\npoint q hint at c0 bearing (30)\n";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&prog);
@@ -652,10 +652,10 @@ curve rim(c: circle, datum: line)(u) over (10, 170) =
     // point to where the `horizontal_distance` gradient is parallel to the circle's and the home
     // solve has a singular Jacobian.
     let doc = "\
-point  o at (2, 1)
-point  ax at (4, 2)
+point  o hint(x: 2, y: 1)
+point  ax hint(x: 4, y: 2)
 line   datum(o, ax) construction
-circle base(center: o, r: 7)
+circle base(center: o) hint(r: 7)
 curve  w = rim(base, datum)
 ";
     // `ccw(o, ax, t)` read on the traced point: the datum's direction crossed into o→t.  Taken
@@ -712,8 +712,8 @@ fn an_orientations_mistakes_are_named() {
     ];
     for (body, want) in cases {
         let src = format!(
-            "curve b(c: circle)(u) =\n  {body}\npoint o at (0, 0)\n\
-             circle base(center: o, r: 5)\ncurve w = b(base)\n"
+            "curve b(c: circle)(u) =\n  {body}\npoint o hint(x: 0, y: 0)\n\
+             circle base(center: o) hint(r: 5)\ncurve w = b(base)\n"
         );
         let (prog, errs) = parse(&src);
         assert!(errs.is_empty(), "{want}: {errs:?}");

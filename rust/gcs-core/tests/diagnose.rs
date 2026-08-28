@@ -482,7 +482,7 @@ fn tangent_at_a_point_on_the_circle(far_dimension: bool) -> Sketch {
         vec![Arg::Ent(EntRef::line(line)), Arg::Ent(EntRef::circle(circle)), Arg::Int(1)],
     ));
     if far_dimension {
-        // a separate figure: one point held at a distance from the centre, touching nothing
+        // a separate figure: one point held hint at a distance from the centre, touching nothing
         let far = sk.point(60.0, 0.0, false, "far");
         sk.add(Constraint::distance(EntRef::point(far), EntRef::point(c), 60.0));
     }

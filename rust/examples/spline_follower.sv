@@ -16,26 +16,26 @@
 // and the curve cannot simply shrug it off.  `8.666667` is where the straight edge starts
 // looking for its contact — a starting guess, not a statement.
 
-point k0 hint at (0, 26)
-point k1 hint at (20, 0)
-point k2 hint at (40, 26)
-point k3 hint at (60, 0)
-point k4 hint at (80, 26)
-point k5 hint at (100, 0)
-point k6 hint at (120, 26)
+point k0 hint(x: 0, y: 26)
+point k1 hint(x: 20, y: 0)
+point k2 hint(x: 40, y: 26)
+point k3 hint(x: 60, y: 0)
+point k4 hint(x: 80, y: 26)
+point k5 hint(x: 100, y: 0)
+point k6 hint(x: 120, y: 26)
 
 spline curve(k0, k1, k2, k3, k4, k5, k6)
 
 // the follower: a level face resting against the curve, touching wherever it must
-point f1 hint at (0, 8.666667)
-point f2 hint at (120, 8.666667)
+point f1 hint(x: 0, y: 8.666667)
+point f2 hint(x: 120, y: 8.666667)
 line  face(f1, f2)
 horizontal(face)
 spline_tangent_line(curve, face)
 
 // and a point riding on the curve, held off a grounded anchor above it
-point rider hint at (60, 8.666667)
-point anchor hint at (60, 68.666667)
+point rider hint(x: 60, y: 8.666667)
+point anchor hint(x: 60, y: 68.666667)
 point_on_spline(rider, curve)
 distance(anchor, rider) == 60
 

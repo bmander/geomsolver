@@ -75,15 +75,21 @@ fn splice(text: &str, mut edits: Vec<Splice>) -> String {
 
 /// Put the solved coordinates back into the seeds they came from.
 ///
-/// > A seed is writable iff it is written with `=` and not `==`, is a literal and not an
-/// > expression, and is reached by exactly one instance path.
+/// > A seed is writable iff it is inside a `hint(…)` clause, is a literal and not an expression,
+/// > and is reached by exactly one instance path.
 ///
-/// The first is lexical, which is what makes this a test rather than an analysis: `at (0, 0)` and
-/// `r: 25` are hints a solve may move, and `== 80` states a number it may not.  The second keeps
-/// `r: Rr` — a radius written in terms of a component's parameter — from being overwritten with
-/// the number it happened to come to.  The third is why a point inside a `cycle` of thirty does
-/// not write back at all: thirty instances share one statement, and there is no one pose to
-/// record.
+/// The first is lexical, which is what makes this a test rather than an analysis: a number in a
+/// `hint(…)` is one a solve may move, and every other number — `== 80`, `param w = 100` — is not.
+/// The second keeps `hint(r: Rr)` — a radius written in terms of a component's parameter — from
+/// being overwritten with the number it happened to come to.  The third is why a point inside a
+/// `cycle` of thirty does not write back at all: thirty instances share one statement, and there
+/// is no one pose to record.
+///
+/// A seed the source **never wrote** is the case the clause makes real: a radius and a frame's
+/// rotor are seeds a person may perfectly well omit, and a solve moves them anyway.  There is
+/// then no span to splice, so the clause is written out whole at the point the parser recorded
+/// for it (`Decl::hint_span`) — one splice, and the statement around it untouched.  Leaving it
+/// alone instead would mean a drawing whose pose its source cannot express.
 ///
 /// `Kind::Numeric`, always: a seed is not a statement, so nothing recompiles.
 pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
@@ -105,17 +111,45 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         }
         let Some(d) = decl_of(prog, site) else { continue };
         let own = sk.own_params(*ent);
+        // a seed the statement never wrote has no span to splice, and a solve has moved it all
+        // the same — a radius, a frame's rotor.  The clause is then written out whole, at the
+        // place the parser recorded for it; every seed that *is* written splices in place, so
+        // the ordinary drag still rewrites six characters and leaves every comment alone.
+        let mut missing = false;
+        let mut mine: Vec<Splice> = Vec::new();
         for (i, p) in own.iter().enumerate() {
-            let Some(span) = d.seed_spans.get(i).copied() else { continue };
-            if span.is_empty() || d.seed_text.get(i).and_then(|t| t.as_ref()).is_some() {
-                continue; // built rather than written, or written as an expression
+            if d.seed_text.get(i).and_then(|t| t.as_ref()).is_some() {
+                continue; // written as an expression: a solve does not rewrite arithmetic
             }
             let v = sk.params[*p as usize].value;
-            let was = span.slice(prog.text());
             let now = num(v);
-            if was != now {
-                edits.push(Splice { at: span, with: now });
+            match d.seed_spans.get(i).copied().filter(|s| !s.is_empty()) {
+                Some(span) => {
+                    if span.slice(prog.text()) != now {
+                        mine.push(Splice { at: span, with: now });
+                    }
+                }
+                // an omitted scalar reads as 0, so it needs recording only when it is not 0
+                None => missing |= v != 0.0,
             }
+        }
+        match (missing, d.hint_span) {
+            // `hint at t` names a *place*, and has no coordinates to write
+            (true, Some(hint)) if d.seed_at.is_none() && !d.seed.is_empty() => {
+                let mut d2 = d.clone();
+                for (i, p) in own.iter().enumerate() {
+                    if let Some(s) = d2.seed.get_mut(i) {
+                        *s = sk.params[*p as usize].value;
+                    }
+                }
+                // the printed clause leads with a space, which an *insertion* wants and a
+                // replacement of the clause already there does not
+                let text = syntax::hint_clause(&d2);
+                let with =
+                    if hint.is_empty() { text } else { text.trim_start().to_string() };
+                edits.push(Splice { at: hint, with });
+            }
+            _ => edits.extend(mine),
         }
     }
     if edits.is_empty() {
@@ -190,7 +224,7 @@ fn append(prog: &Program, kind: StmtKind, names: Vec<String>) -> Edit {
     }
 }
 
-/// `point pN at (x, y)`
+/// `point pN hint(x: …, y: …)`
 pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
     let name = mint(prog, EntKind::Point);
     let d = Decl {
@@ -200,6 +234,7 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
         seed: vec![x, y],
         seed_text: vec![None, None],
         seed_spans: Vec::new(),
+        hint_span: None,
         knots: None,
         def: None,
         values: Vec::new(),
@@ -241,6 +276,7 @@ pub fn add_entity(prog: &Program, kind: EntKind, args: &[String], seed: &[f64]) 
         seed: (0..n_scalar).map(|i| seed.get(i).copied().unwrap_or(0.0)).collect(),
         seed_text: vec![None; n_scalar],
         seed_spans: Vec::new(),
+        hint_span: None,
         knots: None,
         def: None,
         values: Vec::new(),

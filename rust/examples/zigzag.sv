@@ -22,7 +22,7 @@ param copies = 3
 repeat copies as c {
   // the staircase's own points: up 5 on every odd step, along 3 on every even one
   repeat n as i {
-    point p hint at (4 * n * c + 3 * floor(i / 2), 5 * floor((i + 1) / 2))
+    point p hint(x: 4 * n * c + 3 * floor(i / 2), y: 5 * floor((i + 1) / 2))
   }
 
   repeat floor(n / 2) as k {

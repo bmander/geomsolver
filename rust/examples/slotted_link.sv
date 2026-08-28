@@ -17,22 +17,22 @@ param length = 80
 param r = 15
 param hole_r = 6
 
-point c1 hint at (0, 0)
-point c2 hint at (length, 0)
+point c1 hint(x: 0, y: 0)
+point c2 hint(x: length, y: 0)
 
-point t1 hint at (0, r)
-point t2 hint at (length, r)
+point t1 hint(x: 0, y: r)
+point t2 hint(x: length, y: r)
 line  top(t1, t2)
 
-point b1 hint at (length, 0 - r)
-point b2 hint at (0, 0 - r)
+point b1 hint(x: length, y: 0 - r)
+point b2 hint(x: 0, y: 0 - r)
 line  bottom(b1, b2)
 
-arc a_right(center: c2, start: b1, end: t2, r: r)
-arc a_left(center: c1, start: t1, end: b2, r: r)
+arc a_right(center: c2, start: b1, end: t2) hint(r: r)
+arc a_left(center: c1, start: t1, end: b2) hint(r: r)
 
-circle h1(center: c1, r: hole_r)
-circle h2(center: c2, r: hole_r)
+circle h1(center: c1) hint(r: hole_r)
+circle h2(center: c2) hint(r: hole_r)
 
 tangent_arc_line(a_right, bottom, at: start)
 tangent_arc_line(a_right, top,    at: end)

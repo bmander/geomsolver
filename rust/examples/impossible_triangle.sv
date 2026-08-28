@@ -11,9 +11,9 @@
 // So the drawing reports as fully determined and the solve has nowhere to go, and holding those
 // two facts at once without pretending either away is what the case is for.
 
-point a hint at (0, 0)
-point b hint at (10, 0)
-point c hint at (5, 5)
+point a hint(x: 0, y: 0)
+point b hint(x: 10, y: 0)
+point c hint(x: 5, y: 5)
 
 line ab(a, b)
 

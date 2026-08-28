@@ -1710,7 +1710,7 @@ test('a line solves tangent to the rim, and a circle takes its curvature', () =>
   assert.ok(solve(sk).success);
   assert.ok(allSatisfied(sk));
   // the level line above the ellipse rests on top of the rim: y = 5 + b = 8
-  assert.ok(Math.abs(ln.p1.y.value - 8) < 1e-6, `line landed at y=${ln.p1.y.value}`);
+  assert.ok(Math.abs(ln.p1.y.value - 8) < 1e-6, `line landed hint at y=${ln.p1.y.value}`);
   // an axis-aligned check: at the major end the rim's radius of curvature is b²/a
   const t = num(sk.constraints.find((k) => k.typeName === 'EllipseCurvature')!.args[2]);
   if (Math.abs(Math.sin(t)) < 1e-3) {
@@ -1736,8 +1736,8 @@ test('a sketch prints as a program and reads back the same', () => {
 
 test('a program written by hand draws', () => {
   const d = Document.read([
-    'point a at (0, 0)',
-    'point b at (100, 0)',
+    'point a hint(x: 0, y: 0)',
+    'point b hint(x: 100, y: 0)',
     'line  ab(a, b)',
     'distance(a, b) == w = 60',
     'horizontal(ab)',
@@ -1750,7 +1750,7 @@ test('a program written by hand draws', () => {
 });
 
 test('a program with a bad line reports it and draws the rest', () => {
-  const d = Document.read('point a at (0, 0)\nnonsense here\npoint b at (5, 5)\n');
+  const d = Document.read('point a hint(x: 0, y: 0)\nnonsense here\npoint b hint(x: 5, y: 5)\n');
   assert.ok(!d.ok);
   assert.ok(d.diagnostics.length > 0);
   assert.ok(d.diagnostics[0].line >= 1 && d.diagnostics[0].code.length === 4);
@@ -1814,9 +1814,9 @@ test('the gear is a program, and its flanks are involutes the language defines',
 
 const TRIANGLE = `\
 // a triangle, and this comment must survive every edit
-point a at (0, 0)
-point b at (100, 0)
-point c at (40, 70)
+point a hint(x: 0, y: 0)
+point b hint(x: 100, y: 0)
+point c hint(x: 40, y: 70)
 
 line ab(a, b)      // the base
 line bc(b, c)
@@ -1833,7 +1833,7 @@ test('an edit is a new text, and the document is unchanged until it is applied',
   const e = d.addPoint(12.5, -3);
   assert.equal(e.kind, 'structural');
   assert.deepEqual(e.names, ['p0']);
-  assert.ok(e.text.includes('point   p0 hint at (12.5, -3)'), e.text);
+  assert.ok(e.text.includes('point   p0 hint(x: 12.5, y: -3)'), e.text);
   assert.equal(d.text, TRIANGLE, 'the document has not moved');
   assert.equal(d.sketch.points.length, 3);
   const next = Document.read(e.text);
@@ -1969,7 +1969,7 @@ test('a diagnostic and a source map index the string, not the core\'s bytes', ()
   // the gear's centre is declared well past the em dash, so its span is only right if converted
   const centre = d.map.entities.find((x) => x.name === 'g.center')!;
   assert.ok(centre && centre.lo > dash, 'the centre is in the map, past the em dash');
-  assert.equal(text.slice(centre.lo, centre.hi), 'point center hint at (0, 0)');
+  assert.equal(text.slice(centre.lo, centre.hi), 'point center hint(x: 0, y: 0)');
   const port = d.map.entities.find((x) => x.name.endsWith('.t.r.lo'))!;
   assert.ok(port, 'a flank port is in the map');
   assert.equal(text.slice(port.lo, port.hi), 'port lo: point');
@@ -1988,7 +1988,7 @@ test('a diagnostic and a source map index the string, not the core\'s bytes', ()
 });
 
 test('a program half-typed is still coloured', () => {
-  const runs = highlight('point p at (0,\ncircle c(center: p, r');
+  const runs = highlight('point p hint(x: 0,\ncircle c(center: p, r');
   assert.equal(runs[0].cls, 'word');
   assert.ok(runs.some((r) => r.cls === 'label'), 'the labels of an unfinished call');
 });

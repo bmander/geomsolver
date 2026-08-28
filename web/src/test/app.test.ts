@@ -728,8 +728,8 @@ test('picking measures what is drawn, and does it in the core', () => {
 
 const ANNOTATED = `\
 // a base, and this comment must survive every gesture
-point a at (0, 0)
-point b at (100, 0)
+point a hint(x: 0, y: 0)
+point b hint(x: 100, y: 0)
 line ab(a, b)      // the base
 horizontal(ab)
 ground(a)
@@ -780,8 +780,8 @@ test('a drag writes its seeds back, once, and nothing else', () => {
   assert.equal(wrote, 1, 'a drag is one edit');
   assert.ok(view.source.includes('// a base, and this comment must survive every gesture'));
   assert.ok(view.source.includes('line ab(a, b)      // the base'));
-  assert.ok(!view.source.includes('point b at (100, 0)'), `the seed did not move:\n${view.source}`);
-  assert.ok(/point b at \(/.test(view.source), 'and it is still a seed');
+  assert.ok(!view.source.includes('point b hint(x: 100, y: 0)'), `the seed did not move:\n${view.source}`);
+  assert.ok(/point b hint\(/.test(view.source), 'and it is still a seed');
 });
 
 test('deleting takes the statements that named it, and leaves the comments', () => {
@@ -819,5 +819,5 @@ test('a gesture beside a component leaves the component written', () => {
   assert.ok(view.source.includes('component Flank('));
   assert.ok(view.source.includes('cycle N as i {'));
   assert.ok(view.source.includes('g: Gear(N: 30, m: 3, phi: 25, ded: 1)'));
-  assert.ok(/point\s+p0 hint at \(200, 0\)/.test(view.source), view.source);
+  assert.ok(/point\s+p0 hint\(x: 200, y: 0\)/.test(view.source), view.source);
 });

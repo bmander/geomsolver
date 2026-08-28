@@ -33,10 +33,10 @@ fn drawn(src: &str) -> Sketch {
 
 /// §2.2's rectangle, with room after it for one claim.
 const RECT: &str = "
-point p0 hint at (0, 0)
-point p1 hint at (60, 0)
-point p2 hint at (60, 40)
-point p3 hint at (0, 40)
+point p0 hint(x: 0, y: 0)
+point p1 hint(x: 60, y: 0)
+point p2 hint(x: 60, y: 40)
+point p3 hint(x: 0, y: 40)
 horizontal line bottom(p0, p1) to
 vertical   line right(p1, p2) to
 horizontal line top(p2, p3) to
@@ -79,8 +79,8 @@ fn a_claim_the_pose_happens_to_satisfy_is_consuming() {
     // not a theorem and the diagnosis says which kind of not
     let mut sk = drawn(
         "
-point a hint at (0, 0)
-point c hint at (0, 9)
+point a hint(x: 0, y: 0)
+point c hint(x: 0, y: 9)
 line ac(a, c)
 ground(a)
 claim vertical(ac)
@@ -96,11 +96,11 @@ claim vertical(ac)
 #[test]
 fn a_claim_may_not_own_an_unknown() {
     let src = "
-point o hint at (0, 0)
-circle k(center: o, r: 20)
-point p hint at (20, 0)
+point o hint(x: 0, y: 0)
+circle k(center: o) hint(r: 20)
+point p hint(x: 20, y: 0)
 claim point_on_circle(p, k)
-point q hint at (25, 8)
+point q hint(x: 25, y: 8)
 spline s(o, p, q, o, p, q, o)
 claim point_on_spline(q, s)
 ";
@@ -140,14 +140,14 @@ fn a_claim_does_not_weld_drag_parts() {
     // one part, or dragging either would cost both
     let sk = drawn(
         "
-point a hint at (0, 0)
-point b hint at (30, 0)
+point a hint(x: 0, y: 0)
+point b hint(x: 30, y: 0)
 line ab(a, b)
 horizontal(ab)
 distance(a, b) == 30
 ground(a)
-point c hint at (0, 20)
-point d hint at (30, 20)
+point c hint(x: 0, y: 20)
+point d hint(x: 30, y: 20)
 line cd(c, d)
 horizontal(cd)
 distance(c, d) == 30
@@ -189,8 +189,8 @@ fn a_claim_is_not_a_number_the_decomposition_reads() {
     // "everything that must be satisfied" is written down once.  A claimed radius states no
     // radius, so the decomposition must not be able to tell it from an absent one.
     const CIRCLE: &str = "
-point o hint at (0, 0)
-circle k(center: o, r: 20)
+point o hint(x: 0, y: 0)
+circle k(center: o) hint(r: 20)
 ground(o)
 ";
     let plain = drawn(CIRCLE);
@@ -206,9 +206,9 @@ fn a_document_may_not_smuggle_a_claim_onto_an_unknown() {
     // another road entirely, so the flag is dropped there rather than honoured
     let sk = drawn(
         "
-point o hint at (0, 0)
-point p hint at (20, 0)
-point q hint at (25, 8)
+point o hint(x: 0, y: 0)
+point p hint(x: 20, y: 0)
+point q hint(x: 25, y: 8)
 spline s(o, p, q, o, p, q, o)
 point_on_spline(q, s)
 ground(o)
@@ -230,15 +230,15 @@ fn a_claims_rows_are_the_rows_the_compiler_would_have_built() {
         (RECT, "parallel(bottom, top)\n"),   // a theorem: adds nothing
         (RECT, "horizontal(top)\n"),         // a duplicate: adds nothing either
         ("
-point a hint at (0, 0)
-point c hint at (0, 9)
+point a hint(x: 0, y: 0)
+point c hint(x: 0, y: 9)
 line ac(a, c)
 ground(a)
 ", "vertical(ac)\n"),                        // consuming: the pose alone satisfies it
         ("
-point a hint at (0, 0)
-point b hint at (30, 0)
-point c hint at (30, 40)
+point a hint(x: 0, y: 0)
+point b hint(x: 30, y: 0)
+point c hint(x: 30, y: 40)
 line ab(a, b)
 line bc(b, c)
 horizontal(ab)
@@ -280,9 +280,9 @@ fn a_claimed_dimension_is_drawn_as_a_reference_dimension() {
     // controlling, which is a claim exactly — and they go round the whole label, so a claimed
     // radius reads `(R20)` and never `R(20)`
     let src = "
-point o hint at (0, 0)
-point p hint at (60, 0)
-circle k(center: o, r: 20)
+point o hint(x: 0, y: 0)
+point p hint(x: 60, y: 0)
+circle k(center: o) hint(r: 20)
 ground(o)
 horizontal line l(o, p)
 distance(o, p) == 60
@@ -373,7 +373,7 @@ fn the_rail_proves_the_line_without_tracing_it() {
 #[test]
 fn the_rail_is_refuted_when_it_is_not_where_the_pen_goes() {
     let src = gcs_core::examples::source("peaucellier_rail").unwrap()
-        .replace("point anchor hint at (80, 0)", "point anchor hint at (70, 0)");
+        .replace("point anchor hint(x: 80, y: 0)", "point anchor hint(x: 70, y: 0)");
     let (prog, errs) = gcs_core::syntax::parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let mut e = gcs_core::program::elaborate(&prog);

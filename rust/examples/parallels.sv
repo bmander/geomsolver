@@ -12,20 +12,20 @@
 // One degree of freedom is left over: nothing says where along the base the chain sits, so it
 // slides.
 
-point o hint at (0, 0)
-point e hint at (40, 0)
+point o hint(x: 0, y: 0)
+point e hint(x: 40, y: 0)
 line  base(o, e)
 
-point a hint at (0, 15)
-point b hint at (40, 15)
+point a hint(x: 0, y: 15)
+point b hint(x: 40, y: 15)
 line  l2(a, b)
 
-point c hint at (10, 15)
-point d hint at (10, 35)
+point c hint(x: 10, y: 15)
+point d hint(x: 10, y: 35)
 line  l3(c, d)
 
-point f hint at (10, 35)
-point g hint at (30, 30)
+point f hint(x: 10, y: 35)
+point g hint(x: 30, y: 30)
 line  l4(f, g)
 
 parallel(base, l2)

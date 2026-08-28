@@ -167,6 +167,7 @@ impl<'a> Walk<'a> {
                             seed: vec![0.0; count_scalars(kind)],
                             seed_text: vec![None; count_scalars(kind)],
                             seed_spans: vec![Span::default(); count_scalars(kind)],
+                            hint_span: None,
                             knots: None,
                             def: None,
                             values: Vec::new(),

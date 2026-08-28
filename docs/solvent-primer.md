@@ -3,10 +3,11 @@
 Solvent is the language a drawing in this project *is*. You do not place geometry in it; you
 declare entities and state what must be true of them, and a solver finds coordinates satisfying
 everything at once — so a sketch is a set of claims, not a sequence of drawing commands, and
-reordering the statements cannot change what it means. Two marks carry the whole discipline:
-`hint at` and `:` introduce **seeds**, which are only where the solver starts looking and which it
-is free to move, while `==` states a **constraint**, which it must not; delete every seed in a
-document and the set of valid solutions is unchanged. Your job on a sketch task is therefore not
+reordering the statements cannot change what it means. One clause carries the whole discipline:
+a number inside a **`hint(…)`** clause is a **seed**, only where the solver starts looking and
+free to be moved, and every other number is not — `==` states a **constraint**, which the solver
+must satisfy and may never rewrite; delete every seed in a document and the set of valid solutions
+is unchanged. Your job on a sketch task is therefore not
 to compute positions — that is the solver's — but to say enough true things that exactly one
 drawing satisfies them, and then to check that the diagnosis agrees. This document is what the
 implementation actually accepts, verified against it; `solvent-spec.md` is the normative
@@ -34,8 +35,13 @@ brackets, and except when the line ends with a chain joint (§1.7).
 
 | written | class | meaning |
 |---|---|---|
-| `hint at (x, y)`, `r: 25`, `t = 0.4` | seed | where the solve begins; the solver may move it |
+| `hint(x: 0, y: 0)`, `hint(r: 25)`, `hint(t: 0.4)` | seed | where the solve begins; the solver may move it |
 | `== 80`, `t == 0.4` | constraint | a claim the solver must satisfy and may never rewrite |
+| `param w = 100` | neither | a number worked out while elaborating |
+
+**The brackets after a name are what the thing is made of; the `hint(…)` after them is where the
+solve begins.** That is why `circle c(center: o) hint(r: 25)` and not `circle c(center: o, r: 25)`:
+the centre is structure and the radius is a guess, and one pair of brackets said both.
 
 `hint` marks *the solver revises this*. A callout placement (`… == 80 at (12, -4)`) keeps a bare
 `at`: it is inert too, but it records where a person dragged a dimension and no solve touches it.
@@ -44,8 +50,8 @@ brackets, and except when the line ends with a chain joint (§1.7).
 
 ```
 param NAME = EXPR                       a number worked out while elaborating; never an unknown
-KIND NAME(ARGS) [hint at …] [construction]      an entity declaration (§1.4)
-RELATION(ARGS) [== EXPR] [at (t, r)]    a constraint (§1.5)
+KIND NAME[(CHILDREN)] [hint(SCALAR: EXPR, …)] [knots […]] [construction]   an entity (§1.4)
+RELATION(ARGS) [== EXPR] [hint(SLOT: EXPR, …)] [at (t, r)]                 a constraint (§1.5)
 claim RELATION(ARGS) [== EXPR]          an assertion, judged and never solved for (§1.9)
 ground(REF)                             pin both of a point's coordinates
 fix(REF.field)                          pin one scalar, e.g. fix(c.r)
@@ -75,8 +81,11 @@ References are `name`, `name.field`, or `name[expr]` (which copy of a repeated s
 | `frame` | `origin`, `toward` | `c`, `s` (the unit rotor) | — |
 | `curve` | `args` (a list) | — | — |
 
-A point's seed is written `hint at (x, y)`; other scalars are seeded by name, `circle c(center: o,
-r: 25)`. Children may be given positionally or by label; a label is what lets you omit an earlier
+Every scalar is seeded by name in the trailing clause — `point p hint(x: 0, y: 0)`,
+`circle c(center: o) hint(r: 25)`, `arc a(center: c, start: s, end: e) hint(r: 5)`. Keys may come
+in any order and an omitted one is 0, so `point p hint(y: 12)` and `point t` are both legal. The
+clause is order-free against `knots` and `construction`, exactly as those two are against each
+other. Children may be given positionally or by label; a label is what lets you omit an earlier
 one (`line l(p2: c)` leaves `p1` for a chain to thread). An arc is a centre and two *real* points,
 so its ends drag and constrain like any others.
 
@@ -90,7 +99,9 @@ draws nothing, picks as nothing, and adds no freedom beyond its two points. What
 
 Every relation is written `snake_case_name(args…)`, arguments in spec order, with a trailing
 `== value` where it takes one. Slots typed `Param` are the constraint's own hidden unknown and are
-normally omitted.
+normally omitted; seed one with `point_on_spline(p, s) hint(t: 0.4)`, and **pin** it — say where
+along, and mean it — with `point_on_spline(p, s, t == 0.4)`, which is a stated number and so
+belongs in the argument list beside every other stated number.
 
 ```
 coincident(p, q)                     midpoint(p, line)
@@ -253,8 +264,8 @@ Each was run through the implementation; the reported figures are what it actual
 ### 2.1 One dimensioned line — `dof 0, Well`
 
 ```
-point a hint at (0, 0)
-point b hint at (30, 10)
+point a hint(x: 0, y: 0)
+point b hint(x: 30, y: 10)
 
 line ab(a, b)
 horizontal(ab)
@@ -273,10 +284,10 @@ put `b` on, and nothing more.
 param w = 60
 param h = 40
 
-point p0 hint at (0, 0)
-point p1 hint at (w, 0)
-point p2 hint at (w, h)
-point p3 hint at (0, h)
+point p0 hint(x: 0, y: 0)
+point p1 hint(x: w, y: 0)
+point p2 hint(x: w, y: h)
+point p3 hint(x: 0, y: h)
 
 horizontal line bottom(p0, p1) to
 vertical   line right(p1, p2) to
@@ -308,9 +319,9 @@ and a picture of one.
 ### 2.4 A free variable — `dof 1, Under`, on purpose
 
 ```
-point a hint at (0, 0)
-point b hint at (10, 0)
-point c hint at (0, 9)
+point a hint(x: 0, y: 0)
+point b hint(x: 10, y: 0)
+point c hint(x: 0, y: 9)
 
 line ab(a, b)
 line ac(a, c)
@@ -328,14 +339,14 @@ third constraint, and it closes.
 ### 2.5 An arc, tangent to what it joins — `dof 0, Well`
 
 ```
-point a hint at (0, 0)
-point b hint at (30, 0)
-point c hint at (40, 10)
-point d hint at (40, 40)
-point o hint at (30, 10)
+point a hint(x: 0, y: 0)
+point b hint(x: 30, y: 0)
+point c hint(x: 40, y: 10)
+point d hint(x: 40, y: 40)
+point o hint(x: 30, y: 10)
 
 horizontal line run(a, b) tangent
-arc fillet(center: o, r: 10) tangent
+arc fillet(center: o) hint(r: 10) tangent
 vertical line rise(c, d)
 
 radius(fillet) == 10
@@ -358,10 +369,10 @@ component Rung(a: point, b: point, len: Length) {
   distance(a, b) == len
 }
 
-point l0 hint at (0, 0)
-point r0 hint at (50, 0)
-point l1 hint at (0, 20)
-point r1 hint at (50, 20)
+point l0 hint(x: 0, y: 0)
+point r0 hint(x: 50, y: 0)
+point l1 hint(x: 0, y: 20)
+point r1 hint(x: 50, y: 20)
 
 t0: Rung(l0, r0, len: 50)
 t1: Rung(l1, r1, len: 50)
@@ -382,7 +393,7 @@ param n = 6
 param r = 40
 
 cycle n as i {
-  point p hint at (r, i * 60)
+  point p hint(x: r, y: i * 60)
   line e(p, next.p)
   equal_length(e, next.e)
 }
@@ -401,11 +412,11 @@ curve involute(c: circle, phase: Angle)(u) over (0, 90) =
   ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
     c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)) )
 
-point o hint at (0, 0)
-circle base(center: o, r: 20)
+point o hint(x: 0, y: 0)
+circle base(center: o) hint(r: 20)
 curve f = involute(base, phase: 0)
 
-point t hint at (25, 8)
+point t hint(x: 25, y: 8)
 point_on_curve(t, f)
 ground(o)
 fix(base.r)
@@ -431,14 +442,14 @@ curve involute(c: circle, datum: line, phase: Angle)(u) over (0, 90) =
     point_line_distance(p, rad) == -(c.r * u * pi / 180)   // and taut: let out == arc unwound
   }
 
-point o hint at (0, 0)
-point x hint at (20, 0)
-circle base(center: o, r: 20)
+point o hint(x: 0, y: 0)
+point x hint(x: 20, y: 0)
+circle base(center: o) hint(r: 20)
 line datum(o, x)
 
 curve f = involute(base, datum, phase: 0)
 
-point g hint at (25, 8)
+point g hint(x: 25, y: 8)
 point_on_curve(g, f)
 
 ground(o)
