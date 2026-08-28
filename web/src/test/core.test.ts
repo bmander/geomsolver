@@ -1242,6 +1242,29 @@ test('every function the Abi interface declares is exported by the module', asyn
   for (const n of names) assert.equal(typeof m[n], 'function', `${n} is declared but not exported`);
 });
 
+test('the drawing exports as SVG, laid out by the core', () => {
+  // **the core draws it** — the binding asks for the text and adds nothing, which is what keeps
+  // the app's button and `solventc --output` from being two pictures of one drawing
+  const sk = examples.rectFillets();
+  assert.ok(solve(sk).success);
+  const out = io.svg(sk, 400);
+  assert.ok(out.startsWith('<svg xmlns="http://www.w3.org/2000/svg"'), out.slice(0, 60));
+  assert.ok(out.trimEnd().endsWith('</svg>'));
+  assert.ok(!out.includes('NaN') && !out.includes('inf'), 'every number is a number');
+  // the four sides, the four fillets, and the two dimensions it states
+  assert.equal((out.match(/<line /g) ?? []).length, 4);
+  assert.equal((out.match(/<path d="M/g) ?? []).length, 4);
+  assert.ok(out.includes('>100</text>') && out.includes('>60</text>'), 'the numbers are drawn');
+  // the page width is what fixes `unit`, so everything drawn at a constant size follows it
+  const wide = io.svg(sk, 1200);
+  const w = (t: string) => Number(/width="([\d.]+)"/.exec(t)![1]);
+  assert.ok(w(wide) > w(out) * 2.5, `${w(out)} against ${w(wide)}`);
+  // and a class the sheet knows reaches the stroke: reference geometry exports dashed
+  sk.lines[0].setClass('construction', true);
+  assert.ok(io.svg(sk, 400).includes('stroke-dasharray="7 4"'));
+  sk.dispose();
+});
+
 test('the registry the binding generates its classes from matches the kernels', () => {
   const reg = C.REGISTRY();
   assert.equal(reg.kernels.length, core().gcs_kernel_count());

@@ -234,9 +234,9 @@ document.addEventListener('pointerdown', (e) => {
   if (openMenu && !(e.target as HTMLElement).closest('.menu')) closeMenus();
 });
 
-/** Download a string as a file (used by Save). */
-export function download(name: string, text: string): void {
-  const blob = new Blob([text], { type: 'application/json' });
+/** Download a string as a file — the document as JSON, or the drawing as SVG. */
+export function download(name: string, text: string, type = 'application/json'): void {
+  const blob = new Blob([text], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
