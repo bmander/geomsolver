@@ -68,7 +68,13 @@ Currently: **Stage 5 done**, in **one** implementation —
   where you draw.  Selected, the whole of it drags, so placing it is not a fight with a
   two-pixel border.  It is not a `Primitive` and so never joins `selected` — it would have to
   be answered for at every seam that reads one — but the two selections are exclusive, which
-  is what leaves Delete unambiguous.  Its placement is a similarity in world coordinates and
+  is what leaves Delete unambiguous.  Each direction of that is **one place**: `pickImage`
+  clears `selected`, and `selected` is a *setter* that lets the picture go, so paste, a rubber
+  band and the constraint list inherit the rule rather than each remembering it — enforced at
+  the call sites instead, the one that forgets fails silently, by deleting the photograph
+  instead of what was just pasted.  Which pick outranks which is likewise stated once, in
+  `gesture::whatIsAt`, since a press and the cursor that promises what it will do must not walk
+  two copies of the order.  Its placement is a similarity in world coordinates and
   reaches the screen only through `camera`, so it pans and zooms with the drawing and this
   file writes no minus sign in front of a y either;
   `SketchView` keeps a one-line delegator for each verb the shell calls, so a caller holds one

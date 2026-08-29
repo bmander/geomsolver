@@ -936,6 +936,14 @@ test('selecting the picture and selecting geometry are exclusive', () => {
   drag(view, on, on);
   assert.deepEqual(view.selected, [a]);
   assert.ok(!u.picked);
+
+  // and it is the *assignment* that lets it go, not the gesture that happened to make one —
+  // paste, a rubber band and the constraint list all write this field and none of them can be
+  // expected to remember the picture.  Delete would otherwise take the photograph instead.
+  view.pickImage();
+  assert.ok(u.picked);
+  view.selected = [a];
+  assert.ok(!u.picked, 'selecting geometry by any route should let the picture go');
 });
 
 test('the drawing outranks the picture: a line across it is what a click on the line picks', () => {

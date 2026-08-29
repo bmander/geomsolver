@@ -43,7 +43,7 @@ import {
 } from './dialogs.js';
 import { editValue, onDimension } from './dimbox.js';
 import { bindProgramPanel, refreshProgram, showStatementFor, toggleProgramPanel } from './program.js';
-import { closePanel, openPanel, refresh, refreshStatus } from './lists.js';
+import { closePanel, openPanel, refresh, refreshPanel, refreshStatus } from './lists.js';
 import {
   aboutBadge, barConstraints, barTools, canvas, currentConstraint, focusConstraint, hooks, menubar,
   view,
@@ -120,6 +120,12 @@ async function traceImage(): Promise<void> {
   view.traceImage(got.image, got.name, got.url);
 }
 
+/** The traced picture's two keys, live only while it is the selected thing — the brackets a
+ *  drawing program fades a reference layer with.  The gate is here and not in `fadeImage`,
+ *  which fades whatever picture there is: it is about what the *accelerator* may do, so it
+ *  belongs beside the accelerator, in the one table every key in the app is read off. */
+const fade = (by: number) => () => { if (view.underlay?.picked) view.fadeImage(by); };
+
 /* Everything that is neither a tool nor a constraint.  Like the constraints bar these are
  * tables rather than calls, so the accelerator printed beside an item is the same string the
  * keyboard handler matches — see ACTION_KEYS. */
@@ -139,6 +145,10 @@ const MENUS: [string, (MenuItem | null)[]][] = [
         + 'exported, not undone' },
     { label: 'Remove image', onClick: () => view.removeImage(),
       title: 'Take the traced picture away again' },
+    { label: 'Fade image', key: '[', onClick: fade(-0.1),
+      title: 'Fade the traced picture, while it is the selected thing' },
+    { label: 'Brighten image', key: ']', onClick: fade(0.1),
+      title: 'Bring the traced picture back up, while it is the selected thing' },
   ]],
   ['Edit', [
     { label: 'Undo', key: '⌘z', onClick: () => view.undo() },
@@ -221,13 +231,6 @@ window.addEventListener('keydown', (e) => {
   // shift is part of the token, so ⇧L is Perpendicular and never the Line tool.  The key is
   // taken: an action that opens a dialog has focused its text field by the time the browser
   // would insert the character, and would find a stray letter in it
-  // the traced picture's own two keys, live only while it is the selected thing — the brackets
-  // a drawing program fades a reference layer with, and nowhere near anything else's accelerator
-  if (view.underlay?.picked && (k === '[' || k === ']')) {
-    e.preventDefault();
-    view.fadeImage(k === '[' ? -0.1 : 0.1);
-    return;
-  }
   const action = ACTION_KEYS.get(e.shiftKey ? `⇧${k}` : k);
   if (action) { e.preventDefault(); action(); return; }
   if (!e.shiftKey && TOOL_KEYS[k]) view.setTool(TOOL_KEYS[k]);
@@ -254,6 +257,7 @@ view.onPickConstraint = (c) => {
 view.onEditConstraint = (c) => editValue(c);
 view.onDimension = onDimension;
 view.onChanged = () => { refresh(); refreshProgram(); };
+view.onPicked = refreshPanel;
 // the source changed without the drawing's structure doing so — a drag wrote its seeds back, or a
 // number was spliced.  Never per frame: `onDragFrame` is the frame seam and this is not wired to it
 view.onProgram = () => { refreshProgram(); };

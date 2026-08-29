@@ -30,6 +30,7 @@
  * only `paint` and the loader need one.
  */
 import { PICK_PX } from './view.js';
+import { COL, polyPath } from './paint.js';
 import type { Gesture } from './gesture.js';
 import type { SketchView } from './view.js';
 
@@ -60,9 +61,6 @@ export interface Underlay {
    *  every seam that reads one.  The two are kept exclusive instead: selecting either clears
    *  the other, so what Delete takes is never in doubt. */
   picked: boolean;
-  /** The pointer is over a part of it that would answer a press — the same promise the cursor
-   *  makes over a draggable point. */
-  hover: boolean;
   /** Where an object URL must be released when this is replaced — `null` for one that has none
    *  (a test's stub).  The loader is the only thing that makes them and this is the only thing
    *  that lets them go, so a session that traces a dozen photographs keeps none of them. */
@@ -71,10 +69,10 @@ export interface Underlay {
 
 /** How faded a fresh underlay is: enough that the geometry drawn over it reads, and enough that
  *  the picture underneath still does. */
-export const OPACITY = 0.55;
+const OPACITY = 0.55;
 
 /** Half the side of a corner handle, in screen pixels. */
-export const HANDLE = 5;
+const HANDLE = 5;
 
 /** How much of the visible world a fresh underlay's longer side spans.  Not the whole of it: a
  *  picture you cannot see the edges of is one you cannot take hold of. */
@@ -126,9 +124,9 @@ export function contains(u: Underlay, wx: number, wy: number): boolean {
  *  its edges in view.  Where it goes after that is the user's. */
 export function place(v: SketchView, image: Bitmap, name: string, url: string | null): Underlay {
   const [x, y] = v.s2w(v.width / 2, v.height / 2);
-  const span = v.cam.world(Math.min(v.width, v.height)) * FIT;
+  const span = v.world(Math.min(v.width, v.height)) * FIT;
   const scale = span / Math.max(image.width, image.height, 1);
-  return { image, name, x, y, scale, angle: 0, opacity: OPACITY, picked: false, hover: false, url };
+  return { image, name, x, y, scale, angle: 0, opacity: OPACITY, picked: false, url };
 }
 
 /** Let go of the browser resource a picture was holding.  Called wherever one is replaced or
@@ -149,16 +147,10 @@ export function release(u: Underlay | null): void {
 export function handleAt(v: SketchView, sp: [number, number]): number {
   const u = v.underlay;
   if (!u?.picked) return -1;
-  let best = -1;
-  let near = PICK_PX + HANDLE;
-  corners(u).forEach((c, i) => {
-    const d = Math.hypot(...v.w2s(c[0], c[1]).map((s, k) => s - sp[k]) as [number, number]);
-    if (d < near) {
-      near = d;
-      best = i;
-    }
+  return corners(u).findIndex(([x, y]) => {
+    const s = v.w2s(x, y);
+    return Math.hypot(s[0] - sp[0], s[1] - sp[1]) < PICK_PX + HANDLE;
   });
-  return best;
 }
 
 /** Whether a press would take hold of the picture itself: anywhere on it once it is selected,
@@ -243,7 +235,7 @@ export function paintUnderlay(v: SketchView): void {
   const u = v.underlay;
   if (!u || u.opacity <= 0) return;
   const ctx = v.ctx;
-  const k = v.cam.len(u.scale);        // screen pixels per image pixel
+  const k = v.len(u.scale);            // screen pixels per image pixel
   if (!(k > 0) || !isFinite(k)) return;
   ctx.save();
   ctx.globalAlpha = u.opacity;
@@ -260,25 +252,34 @@ export function paintUnderlay(v: SketchView): void {
  *  The frame is drawn whether or not it is selected, because it is the *only* part of the
  *  picture a press can take hold of unselected: an affordance you cannot see is one nobody
  *  finds.  Selected and hovered recolour it exactly as they recolour a line, so the picture
- *  answers a pointer the way the rest of the canvas does. */
-export function paintFrame(v: SketchView, cols: { idle: string; hover: string; sel: string }): void {
+ *  answers a pointer the way the rest of the canvas does.
+ *
+ *  Hovered is **derived here from `v.cursor`**, the way the snap indicator is, rather than
+ *  stored on the picture and written from the move handler: a flag written in one place and
+ *  read in another goes stale the moment something returns early — changing tool with the
+ *  pointer over the frame left it lit, promising an affordance that no longer answers. */
+export function paintFrame(v: SketchView): void {
   const u = v.underlay;
   if (!u) return;
   const ctx = v.ctx;
-  const pts = corners(u).map(([x, y]) => v.w2s(x, y));
-  const col = u.picked ? cols.sel : u.hover ? cols.hover : cols.idle;
+  const world = corners(u);
+  const hover = v.tool === 'select'
+    && (handleAt(v, v.cursor) >= 0 || bodyAt(v, v.cursor));
+  const col = u.picked ? COL.sel : hover ? COL.highlight : COL.imageFrame;
   ctx.save();
   ctx.setLineDash(u.picked ? [] : [6, 4]);
   ctx.lineWidth = u.picked ? 2 : 1;
   ctx.strokeStyle = col;
-  ctx.beginPath();
-  pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  polyPath(v, world);
   ctx.closePath();
   ctx.stroke();
   if (u.picked) {
     ctx.setLineDash([]);
     ctx.fillStyle = col;
-    for (const [x, y] of pts) ctx.fillRect(x - HANDLE, y - HANDLE, HANDLE * 2, HANDLE * 2);
+    for (const [wx, wy] of world) {
+      const [x, y] = v.w2s(wx, wy);
+      ctx.fillRect(x - HANDLE, y - HANDLE, HANDLE * 2, HANDLE * 2);
+    }
   }
   ctx.restore();
 }

@@ -127,28 +127,22 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     };
     return;
   }
-  // a corner of the traced picture.  Handles exist only while it is selected and are painted
-  // over everything, so like a callout they outrank the geometry underneath them.
-  const corner = handleAt(v, sp);
-  if (corner >= 0) {
-    v.gesture = grabHandle(v, corner);
+  const at = whatIsAt(v, sp);
+  // a corner of the traced picture: it sizes and turns the picture about its centre
+  if (at.kind === 'handle') {
+    v.gesture = grabHandle(v, at.corner);
     return;
   }
-  // a dimension is painted over the geometry, so a press that lands on one takes hold of it:
-  // it selects the constraint, and dragging moves the callout rather than the sketch
-  const callout = v.pickCallout(sp[0], sp[1]);
-  if (callout) {
+  // a dimension: the press selects the constraint, and dragging moves the callout rather
+  // than the sketch
+  if (at.kind === 'callout') {
     v.selected = [];
-    v.onPickConstraint(callout);
-    v.gesture = calloutGesture(v, callout, sp);
+    v.onPickConstraint(at.callout);
+    v.gesture = calloutGesture(v, at.callout, sp);
     v.draw();
     return;
   }
-  const ent = v.pick(sp[0], sp[1]);
-  // **the drawing outranks the picture**, so the geometry is asked first: a line lying across a
-  // photograph is what a click on that line picks.  Only then does the picture answer — by its
-  // frame while it is scenery, and anywhere on it once it has been selected.
-  if (!ent && bodyAt(v, sp)) {
+  if (at.kind === 'image') {
     v.pickImage();
     v.gesture = grabBody(v, sp);
     v.onSelect();
@@ -157,6 +151,7 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     return;
   }
   v.dropImage();
+  const ent = at.kind === 'entity' ? at.ent : null;
   if (!ent) {
     // nothing under the cursor: start a rubber band.  A press with no drag still just
     // clears the selection, because an empty box selects nothing.
@@ -343,29 +338,45 @@ export function boxContents(v: SketchView, extents: readonly (readonly [Primitiv
     .map(([e]) => e);
 }
 
+/** What is under the pointer, in the order a press offers itself to things.
+ *
+ *  The order is the whole content of this function and it is stated **once**: a corner handle,
+ *  then a dimension callout, then the geometry, then the traced picture, then nothing.  Handles
+ *  and callouts are painted over everything and so outrank it; the **drawing outranks the
+ *  picture**, so a line lying across a photograph is what a click on that line picks, and the
+ *  picture answers only where the geometry did not.
+ *
+ *  Both readers — the press and the cursor it promises — ask this rather than each walking the
+ *  list, because two copies of the order are two orders the moment one of them is edited, and
+ *  the failure is a cursor that offers what a click does not do. */
+type Target =
+  | { kind: 'handle'; corner: number }
+  | { kind: 'callout'; callout: Constraint }
+  | { kind: 'entity'; ent: Primitive }
+  | { kind: 'image' }
+  | { kind: 'none' };
+
+function whatIsAt(v: SketchView, sp: [number, number]): Target {
+  const corner = handleAt(v, sp);
+  if (corner >= 0) return { kind: 'handle', corner };
+  const callout = v.pickCallout(sp[0], sp[1]);
+  if (callout) return { kind: 'callout', callout };
+  const ent = v.pick(sp[0], sp[1]);
+  if (ent) return { kind: 'entity', ent };
+  if (bodyAt(v, sp)) return { kind: 'image' };
+  return { kind: 'none' };
+}
+
 /** Cursor affordance: what a press here would grab. */
 export function hover(v: SketchView, sp: [number, number]): void {
   if (v.tool !== 'select') return;
-  const corner = handleAt(v, sp);
-  if (v.underlay) v.underlay.hover = corner >= 0;
-  if (corner >= 0) {
-    v.canvas.style.cursor = corner % 2 ? 'nesw-resize' : 'nwse-resize';
-    return;
-  }
-  if (v.pickCallout(sp[0], sp[1])) {
-    v.canvas.style.cursor = 'move';
-    return;
-  }
-  const ent = v.pick(sp[0], sp[1]);
-  // the same order the press takes: the geometry answers first, and the picture's frame
-  // afterwards, so what lights up is what a click would get
-  if (!ent && bodyAt(v, sp)) {
-    if (v.underlay) v.underlay.hover = true;
-    v.canvas.style.cursor = 'move';
-    return;
-  }
-  v.canvas.style.cursor = ent instanceof Point && canMove(v, ent) ? 'grab'
-    : isResizable(v, ent) ? 'ew-resize' : '';
+  const at = whatIsAt(v, sp);
+  v.canvas.style.cursor =
+      at.kind === 'handle' ? (at.corner % 2 ? 'nesw-resize' : 'nwse-resize')
+    : at.kind === 'callout' || at.kind === 'image' ? 'move'
+    : at.kind === 'entity' && at.ent instanceof Point && canMove(v, at.ent) ? 'grab'
+    : at.kind === 'entity' && isResizable(v, at.ent) ? 'ew-resize'
+    : '';
 }
 
 /** Can any part of this entity actually move?  `Diagnosis.underParams` is the Jacobian

@@ -161,7 +161,7 @@ export function paint(v: SketchView): void {
   // the traced picture's frame, over everything: dashed grey while it is scenery, since that
   // edge is the only part of it a press takes hold of and an affordance you cannot see is one
   // nobody finds — and the canvas's own selected/hovered colours otherwise
-  paintFrame(v, { idle: COL.imageFrame, hover: COL.highlight, sel: COL.sel });
+  paintFrame(v);
   v.gesture?.paint?.(ctx);
   if (v.tool !== 'select') {                 // snap indicator
     const sp = v.pickPoint(...v.cursor);

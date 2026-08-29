@@ -179,7 +179,7 @@ export function refreshRows(): void {
 
 /** The window's heading and whether it is up at all, and the same answer in the status line:
  *  what is picked, said the way the old sidebar's row said it. */
-function refreshPanel(): void {
+export function refreshPanel(): void {
   cpanel.hidden = subject.length === 0;
   if (!subject.length) {
     // the traced picture is picked the way an entity is, so it says so where an entity does —

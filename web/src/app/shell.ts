@@ -73,7 +73,10 @@ export function focusConstraint(c: Constraint | null, highlight?: Primitive[]): 
   currentConstraint = c;
   view.litConstraint = c;             // so its callout on the drawing says so too
   view.highlight = highlight ?? (c ? expand(c.entities()) : []);
-  if (c) view.selected = [];
+  if (c) {
+    view.selected = [];
+    view.dropImage();       // focusing a constraint is selecting something, so the picture lets go
+  }
   hooks.focusChanged();               // last: everything it reads is settled by now
 }
 

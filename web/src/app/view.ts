@@ -85,7 +85,17 @@ export class SketchView {
    *  made straight through it. */
   underlay: Underlay | null = null;
 
-  selected: Primitive[] = [];
+  /** What is selected.  Written through a setter on purpose: selecting geometry is the other
+   *  half of the picture's exclusivity, and there are eleven sites that assign this.  Enforced
+   *  here, paste, a rubber band and a press on an entity all inherit the rule; enforced at each
+   *  of them, it is a rule stated nowhere they can see and the failure is silent — a Delete
+   *  that takes the photograph instead of what was just pasted. */
+  get selected(): Primitive[] { return this._selected; }
+  set selected(prims: Primitive[]) {
+    this._selected = prims;
+    if (prims.length) this.dropImage();
+  }
+  private _selected: Primitive[] = [];
   highlight: Primitive[] = [];
   pending: Point[] = [];
   /** Where the fit tool has been told the curve must pass, before there is a curve.  Places
@@ -113,6 +123,11 @@ export class SketchView {
   onStatus: (msg: string) => void = () => {};
   /** A dimension callout was clicked: the shell puts the focus on that constraint. */
   onPickConstraint: (c: Constraint) => void = () => {};
+  /** What is held changed, and nothing else did — the line that names it is the whole of the
+   *  consequence.  Narrower than `onChanged`, which re-reads every constraint and every
+   *  expression out of the core and re-renders the program overlay: fading the traced picture
+   *  is a keypress that auto-repeats, and it moves one number in one string. */
+  onPicked: () => void = () => {};
   /** And double-clicked: the shell opens its value for editing. */
   onEditConstraint: (c: Constraint) => void = () => {};
   /** A dimension is being written, and this is where its number is on screen — the shell puts
@@ -640,7 +655,7 @@ export class SketchView {
     const u = this.underlay;
     if (!u) return;
     u.opacity = Math.min(1, Math.max(0, u.opacity + by));
-    this.onChanged();
+    this.onPicked();
     this.draw();
   }
   cancelTool(): void { tools.cancelTool(this); }

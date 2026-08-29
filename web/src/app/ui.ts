@@ -256,20 +256,23 @@ export function download(name: string, text: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/** Ask for a local file and return its text (null if the user cancels). */
-export function openFile(accept = '.json'): Promise<string | null> {
+/** Ask the browser for a local file (null if the user cancels).  The dialog is the same
+ *  whatever is wanted off the file afterwards, so it is asked for in one place — what a caller
+ *  does with the `File` is the only part that differs. */
+function pickFile(accept: string): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = accept;
-    input.addEventListener('change', () => {
-      const f = input.files?.[0];
-      if (!f) return resolve(null);
-      f.text().then(resolve, () => resolve(null));
-    });
+    input.addEventListener('change', () => resolve(input.files?.[0] ?? null));
     input.addEventListener('cancel', () => resolve(null));
     input.click();
   });
+}
+
+/** Ask for a local file and return its text (null if the user cancels). */
+export function openFile(accept = '.json'): Promise<string | null> {
+  return pickFile(accept).then((f) => (f ? f.text().catch(() => null) : null));
 }
 
 /** Pick an image file and decode it, as the element the canvas will draw and the URL that
@@ -277,26 +280,24 @@ export function openFile(accept = '.json'): Promise<string | null> {
  *
  *  An object URL rather than a data URL: the picture is a photograph, and reading a ten-megabyte
  *  one into a base64 string to hand straight back to the same browser is work nobody asked for. */
-export function openImage(): Promise<{ image: HTMLImageElement; name: string; url: string } | null> {
-  return new Promise((resolve) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.addEventListener('change', () => {
-      const f = input.files?.[0];
-      if (!f) return resolve(null);
-      const url = URL.createObjectURL(f);
-      const image = new Image();
-      image.addEventListener('load', () => resolve({ image, name: f.name, url }));
-      image.addEventListener('error', () => {
-        URL.revokeObjectURL(url);            // nothing will ever draw it, so nothing will free it
-        resolve(null);
-      });
-      image.src = url;
-    });
-    input.addEventListener('cancel', () => resolve(null));
-    input.click();
-  });
+export async function openImage():
+    Promise<{ image: HTMLImageElement; name: string; url: string } | null> {
+  const f = await pickFile('image/*');
+  if (!f) return null;
+  const url = URL.createObjectURL(f);
+  const image = new Image();
+  image.src = url;
+  try {
+    // `decode()` and not `load`: `load` only promises the bytes and the intrinsic size, and
+    // leaves the decode to the first `drawImage` — which happens inside a frame callback, so a
+    // twelve-megapixel photograph would spend it stalling the canvas.  Decoded here, the frame
+    // that first draws the picture costs what every later one does.
+    await image.decode();
+    return { image, name: f.name, url };
+  } catch {
+    URL.revokeObjectURL(url);              // nothing will ever draw it, so nothing will free it
+    return null;
+  }
 }
 
 /** Make a floating window draggable by a handle inside it, kept inside its offset parent.
