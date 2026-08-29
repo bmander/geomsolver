@@ -457,15 +457,19 @@ fn a_mixed_number_is_kept_as_written_rather_than_collapsed() {
     assert_eq!(expr::literal("inf"), None);
 
     // `notation` is what says the kept text is a number and not a computation, so the drawing
-    // prints it as written
-    assert_eq!(expr::notation("3 1/2"), Some(3.5));
-    assert_eq!(expr::notation("-2 3/8"), Some(-2.375));
-    assert_eq!(expr::notation("  12 15/16 "), Some(12.9375));
-    assert_eq!(expr::notation("5"), None, "digits already; nothing to remember");
-    assert_eq!(expr::notation("-2.5"), None);
-    assert_eq!(expr::notation("w = 3 1/2"), None, "a name is not a notation");
-    assert_eq!(expr::notation("3 1/2 + w"), None);
-    assert_eq!(expr::notation("1/2"), None, "a division is a computation");
+    // prints it as written.  A *verdict*, not a number: `1' 6 3/16"` is worth different numbers
+    // in different documents, and what this answers is only whether the text is one token.
+    assert!(expr::notation("3 1/2"));
+    assert!(expr::notation("-2 3/8"));
+    assert!(expr::notation("  12 15/16 "));
+    assert!(expr::notation("80mm"), "a unit is part of the number");
+    assert!(expr::notation("45deg"));
+    assert!(expr::notation("1' 6 3/16\""), "feet and inches is one literal");
+    assert!(!expr::notation("5"), "digits already; nothing to remember");
+    assert!(!expr::notation("-2.5"));
+    assert!(!expr::notation("w = 3 1/2"), "a name is not a notation");
+    assert!(!expr::notation("3 1/2 + w"));
+    assert!(!expr::notation("1/2"), "a division is a computation");
 }
 
 #[test]
@@ -759,7 +763,7 @@ fn a_dotted_name_is_one_name_and_a_decimal_point_is_not() {
         expr::Ast::Bin(
             expr::Op::Add,
             Box::new(expr::Ast::Var("c.center.x".to_string())),
-            Box::new(expr::Ast::Num(1.0)),
+            Box::new(expr::Ast::Num(1.0, Default::default())),
         ),
     );
     // and the numbers a dot has always started or split

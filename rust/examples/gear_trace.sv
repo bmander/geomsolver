@@ -34,7 +34,7 @@ curve involute(c: circle, datum: line, phase: Angle)(u) =
     point_on_circle(t, c)                        // the string leaves the circle...
     angle(datum, rad) == u + phase               // ...at bearing u from the datum,
     perpendicular(rad, s)                        // perpendicular to the radius there,
-    point_line_distance(p, rad) == -(c.r * u * pi / 180)   // and taut: let out == arc unwound
+    point_line_distance(p, rad) == -(c.r * u / 1rad)   // and taut: let out == arc unwound
   }
 
 // From here down the wheel is `gear.sv` unchanged — a flank between two circles, a tooth as two
@@ -71,10 +71,10 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   param Rr = max(R - ded * m, Rb * (1 + clear))
 
   param pitch = tau / N
-  param ivp = tan(phi) * 180 / pi - phi
-  param half = 90 / N + ivp
-  param u0 = sqrt((Rr / Rb) ^ 2 - 1) * 180 / pi
-  param u1 = sqrt((Rt / Rb) ^ 2 - 1) * 180 / pi
+  param ivp = tan(phi) * 1rad - phi
+  param half = 90deg / N + ivp
+  param u0 = sqrt((Rr / Rb) ^ 2 - 1) * 1rad
+  param u1 = sqrt((Rt / Rb) ^ 2 - 1) * 1rad
 
   point center hint(x: 0, y: 0)
   point anchor hint(x: R, y: 0)

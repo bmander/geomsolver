@@ -89,6 +89,25 @@ impl Style {
     ///
     /// `dash` is the one that keeps an empty list: "empty or absent is solid" is what the field
     /// documents, so `dash:` states solid and has a reading of its own.
+    /// The property names this style actually states, in the order `set` reads them.
+    ///
+    /// One table, for `Ty::parse`'s reason: a `StyleRule` lifted out of a `Sketch` has no source
+    /// to have said what it said, so what it prints is what the `Style` holds — and a fourth
+    /// property would otherwise parse, cascade and paint while silently never printing back.
+    pub fn stated(&self) -> Vec<&'static str> {
+        let mut out = Vec::with_capacity(3);
+        if self.dash.is_some() {
+            out.push("dash");
+        }
+        if self.width.is_some() {
+            out.push("width");
+        }
+        if self.color.is_some() {
+            out.push("color");
+        }
+        out
+    }
+
     pub fn set(&mut self, prop: &str, values: &[f64], text: &str) -> bool {
         match prop {
             "dash" => self.dash = Some(values.to_vec()),

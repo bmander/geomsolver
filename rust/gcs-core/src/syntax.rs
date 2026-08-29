@@ -189,6 +189,18 @@ impl Ty {
             other => Ty::Ent(EntKind::parse(&other.to_lowercase())?),
         })
     }
+
+    /// What a formal declared this way *is* (`units.rs`) — the same table one question further
+    /// on, and here for `parse`'s reason: a second copy of the list would be a second answer the
+    /// moment a type is added.  `Length` and `Angle` name the two base dimensions; `Int` and
+    /// `Scalar` are plain numbers, and an entity formal is not a number at all.
+    pub fn dim(self) -> crate::units::Dim {
+        match self {
+            Ty::Length => crate::units::Dim::LENGTH,
+            Ty::Angle => crate::units::Dim::ANGLE,
+            Ty::Int | Ty::Scalar | Ty::Ent(_) => crate::units::Dim::SCALAR,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -246,6 +258,11 @@ pub enum StmtKind {
     /// `style .construction { dash: 7 4 }` — what a class looks like.  Presentation, and the
     /// one statement that says nothing about what the drawing *is*.
     Style(StyleRule),
+    /// `unit mm` — what the document's numbers are in (spec §3.3).  A bare number in a `Length`
+    /// slot is that unit, so every document keeps working with one added line; a document that
+    /// says nothing is in **drawing units**, and everything still dimension-checks, you simply
+    /// cannot write `mm` because there is nothing to convert to.
+    Unit(Name),
 }
 
 /// `style .NAME { prop: value; … }`.
@@ -799,6 +816,7 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             }
         }
         StmtKind::Param(p) => out.push_str(&format!("param {} = {}", p.name.text, p.text)),
+        StmtKind::Unit(n) => out.push_str(&format!("unit {}", n.text)),
         StmtKind::Style(r) => {
             out.push_str(&format!("style .{} {{ ", r.name.text));
             let parts: Vec<String> = r
@@ -1078,22 +1096,11 @@ fn write_arg(name: &str, sk: SpecKind, a: &Arg) -> String {
         Arg::Num(v) => format!("{name}: {}", num(*v)),
         Arg::Int(v) => format!("{name}: {v}"),
         Arg::Bool(b) => format!("{name}: {b}"),
-        Arg::Word(w) => format!("{name}: {}", word(w)),
+        // **The language has no string literal** — a quote is the inch mark (spec §3.3) — so a
+        // `Str` slot is written as the word it is (`at: start`), bare.
+        Arg::Word(w) => format!("{name}: {w}"),
         Arg::Dim { text, .. } => format!("{name}: {text}"),
         Arg::SeedExpr { text, .. } => format!("{name} == {text}"),
-    }
-}
-
-/// A `Str` argument bare when it is an identifier — `at: start` — and quoted when it is not, so
-/// the parser never has to guess and an empty one is still visible.
-fn word(w: &str) -> String {
-    let plain = !w.is_empty()
-        && w.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
-        && w.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-    if plain {
-        w.to_string()
-    } else {
-        format!("{w:?}")
     }
 }
 
@@ -1108,7 +1115,7 @@ fn dim_text(a: &Arg) -> String {
 
 fn write_orient(out: &mut String, o: &Orient) {
     if let Some((key, v)) = &o.raw {
-        out.push_str(&format!("branch({key:?}, {v})"));
+        out.push_str(&format!("branch({key}, {v})"));
         return;
     }
     out.push_str(if o.ccw { "ccw(" } else { "cw(" });
@@ -1149,7 +1156,6 @@ pub struct SynErr {
 enum Tok {
     Ident(String),
     Num(f64),
-    Str(String),
     /// `(` `)` `[` `]` `,` `:` `.` `-` `{` `}`
     P(char),
     /// `=` — a seed
@@ -1217,36 +1223,10 @@ fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
                     toks.push((Tok::Eq, Span::new(lo, i)));
                 }
             }
-            '"' => {
-                i += 1;
-                let mut s = String::new();
-                while i < b.len() && b[i] != b'"' {
-                    if b[i] == b'\\' && i + 1 < b.len() {
-                        i += 1;
-                        s.push(match b[i] {
-                            b'n' => '\n',
-                            b't' => '\t',
-                            other => other as char,
-                        });
-                    } else {
-                        // walk by character, so a multi-byte one survives
-                        let ch = src[i..].chars().next().unwrap_or('"');
-                        s.push(ch);
-                        i += ch.len_utf8() - 1;
-                    }
-                    i += 1;
-                }
-                if i >= b.len() {
-                    errs.push(SynErr {
-                        span: Span::new(lo, b.len()),
-                        message: "a string with no closing quote".to_string(),
-                    });
-                } else {
-                    i += 1;
-                }
-                toks.push((Tok::Str(s), Span::new(lo, i)));
-            }
-            '(' | ')' | '[' | ']' | ',' | ':' | '{' | '}' | '-' | '+' => {
+            // `'` and `"` are the foot and inch marks (spec §3.3), and `|` is what a raw
+            // branch key separates its points with.  The language has **no string literal**:
+            // a quote after a number is a unit, and there is nothing else for one to be.
+            '(' | ')' | '[' | ']' | ',' | ':' | '{' | '}' | '-' | '+' | '\'' | '"' | '|' => {
                 i += 1;
                 match c {
                     '(' | '[' => depth += 1,
@@ -1314,7 +1294,6 @@ fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tint {
     Comment,
-    Str,
     Num,
     /// `component`, `param`, `port`, `cycle`, `point`, `over`, `construction` — a word that starts
     /// a statement or shapes one
@@ -1342,7 +1321,6 @@ impl Tint {
     pub fn as_str(self) -> &'static str {
         match self {
             Tint::Comment => "comment",
-            Tint::Str => "string",
             Tint::Num => "number",
             Tint::Word => "word",
             Tint::Type => "type",
@@ -1394,6 +1372,8 @@ enum Next {
     Start,
     /// names a class: every plain word after `class`, and the one a `style` block declares
     Class,
+    /// names the document's unit: the one word after `unit`
+    Unit,
     /// names what the statement declares
     Def,
     /// names the component an instance is of — the one type written without a `:` before it
@@ -1441,7 +1421,6 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
                 at = Next::Start;
                 continue;
             }
-            Tok::Str(_) => Some(Tint::Str),
             Tok::Num(_) if hint > 0 => Some(Tint::Seed),
             Tok::Num(_) => Some(Tint::Num),
             // `param w = 100` and `curve e = involute(…)` — an assignment, and not a seed: the
@@ -1496,6 +1475,7 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
 /// Split out because it is the whole of the rule and the loop around it is only bookkeeping.
 fn tint_word(w: &str, prev: Option<&Tok>, next: Option<&Tok>, at: Next) -> (Option<Tint>, Next) {
     match at {
+        Next::Unit => (Some(Tint::Type), Next::Word),
         Next::Class => {
             // the list runs to the next thing a declaration may say — another trailing clause,
             // or a chain's joint.  The same predicate the parser stops on, asked once.
@@ -1514,6 +1494,10 @@ fn tint_word(w: &str, prev: Option<&Tok>, next: Option<&Tok>, at: Next) -> (Opti
             // `style .construction { … }` — the class it names is the thing it declares
             if w == "style" {
                 return (Some(Tint::Word), Next::Class);
+            }
+            // `unit mm` — the word, and the unit it names (spec §3.3)
+            if w == "unit" {
+                return (Some(Tint::Word), Next::Unit);
             }
             if BLOCKS.contains(&w) {
                 return (Some(Tint::Word), Next::Word);
@@ -2158,6 +2142,10 @@ impl<'a> P<'a> {
             return None;
         };
         match w.as_str() {
+            "unit" => {
+                self.i += 1;
+                Some(StmtKind::Unit(self.ident()?))
+            }
             "style" => self.style_rule(),
             g if GAUGES.contains(&g) => {
                 self.i += 1;
@@ -2192,13 +2180,19 @@ impl<'a> P<'a> {
                 if !self.want_p('(') {
                     return None;
                 }
-                let key = match self.bump() {
-                    Some((Tok::Str(s), _)) => s,
-                    _ => {
-                        self.fail("a raw branch key is a string");
-                        return None;
-                    }
-                };
+                // the key is written **bare** — `branch(ppp:3|4|5, 1)`.  The language has no
+                // string literal (a quote is the inch mark, §3.3), and a branch key is one run
+                // of characters with no comma in it, so it is taken as the source text up to
+                // the comma exactly as a dimension's is taken up to the end of its line.
+                let from = self.here().lo as usize;
+                while !matches!(self.peek(), Some(Tok::P(',')) | Some(Tok::Nl) | None) {
+                    self.i += 1;
+                }
+                let key = self.text_from(from).trim().to_string();
+                if key.is_empty() {
+                    self.fail("a raw branch names the construction it decides");
+                    return None;
+                }
                 if !self.want_p(',') {
                     return None;
                 }
@@ -3437,10 +3431,6 @@ impl<'a> P<'a> {
                     SpecKind::Int => Arg::Int(v as i64),
                     _ => Arg::Num(v),
                 })
-            }
-            Some(Tok::Str(s)) => {
-                self.i += 1;
-                Some(Arg::Word(s))
             }
             Some(Tok::Ident(s)) if s == "true" || s == "false" => {
                 self.i += 1;

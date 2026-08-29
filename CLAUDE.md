@@ -591,6 +591,32 @@ Conventions:
   an expression.  Documents save `{"expr", "value"}` and accept a bare
   string; the bindings' records keep the number in `args` and put the text under `exprs`, and
   their proxies `sync()` before handing out a value, since an edit elsewhere can move it.
+- **Every number has a dimension, and it is checked** (`units.rs`, Solvent §3.3).  Two bases — a
+  **length** and an **angle** — with *rational* exponents, because `sqrt` halves one.  `*` and
+  `/` derive, `+` and `-` demand agreement, `^` takes a whole power on a dimensioned base, and
+  what an expression comes to is checked against its slot (`SpecKind::dim()`, so nothing is
+  written per constraint type).  `Aff` carries the dimension beside the value: one walk, because
+  the dimension of `a * b` is a fact about the same two operands the number came from.
+  **The asymmetry between `Dim::fits` and `Dim::agree` is the design.**  A *context* — a slot, a
+  function's argument — may take a bare number, which is the whole of what "a document with no
+  `unit` line is in drawing units" means.  Two *operands* are not a context, so mixing one that
+  said what it was with one that did not is a question the language asks rather than answers:
+  `90 / N + ivp` is an error, and `90deg / N + ivp` is the answer.  A **name** is worth a number
+  and where it is used decides what it is (`w = 80` in a Length slot does not make `w` a length);
+  a unit on the literal and a component formal's declared `Ty` are what *do* travel, and the
+  formal is what catches `param x = w + phi` — `flatten::settle` substitutes a parameter away, so
+  a dimension that did not travel with the number would leave nothing to check.
+  A literal may carry a unit, converted **to the document's own** by the tokenizer (which is why
+  `expr::parse_in` takes `Units`): `unit mm` names it, and without one a suffix is refused rather
+  than guessed.  **Feet-and-inches is one literal** — `1' 6 3/16"` — by the rule the language
+  already had, that *a space tells the readings apart*; so the language has **no string literal**
+  at all (`"` is the inch mark, a `Str` argument is a bare word, a raw branch key is bare).
+  `pi` is dimensionless and `tau`/`turn` are a **turn**, so `tau == 2 * pi * 1rad` holds; the nine
+  `* 180 / pi` conversions are `* 1rad`, which is not noise but the statement that
+  `inv φ = tan φ − φ` holds only in radians.  Storing the unit costs the solve nothing (every
+  kernel is homogeneous in length), and `io::paste` converts a figure between two documents that
+  named different ones — `Sketch::rescale`, which is written out by kind because "is this
+  parameter a length?" is not a question a `Param` can answer.
 - A name **nothing defines is a free variable** (`expr::Free`): an unknown of the sketch rather
   than an error, so the dimensions reading it are tied to each other and what they come to is
   left to the solver — one degree of freedom where two stated numbers would have been none.

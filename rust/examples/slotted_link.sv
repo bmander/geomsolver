@@ -13,6 +13,11 @@
 // One overall length, one end radius shared by both ends, a radius for each hole, one levelled
 // run and one pinned centre — and the shape is completely determined.
 
+// The document's unit.  Without this line the drawing is in *drawing units* — a length with no
+// name — and everything still dimension-checks; what the line buys is the right to write a
+// length in the unit a person has in hand: `distance(c1, c2) == 3 1/8"` is 79.375 here.
+unit mm
+
 param length = 80
 param r = 15
 param hole_r = 6

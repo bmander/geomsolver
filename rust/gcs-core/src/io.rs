@@ -287,11 +287,19 @@ pub fn to_json(sk: &Sketch) -> Json {
         ("frames", Json::Arr(frames)),
         ("constraints", Json::Arr(constraints)),
         ("branches", Json::Obj(branches)),
+        // written only where the document named one: a drawing in drawing units says nothing
+        ("unit", sk.units.name().map(|n| Json::Str(n.to_string())).unwrap_or(Json::Null)),
     ])
 }
 
 pub fn from_json(d: &Json) -> Result<Sketch, String> {
     let mut sk = Sketch::new();
+    // the unit first, for `elaborate`'s reason: it is document preamble, and every number read
+    // below — a dimension's text above all — is read in it.  Set after the evaluation at the
+    // foot of this function it would be set after the numbers it governs had been worked out.
+    if let Json::Str(name) = d.get("unit").unwrap_or(&Json::Null) {
+        sk.units = crate::units::Units::with_length(name)?;
+    }
     let empty = Json::Arr(Vec::new());
     for (i, p) in d.get("points").unwrap_or(&empty).arr().iter().enumerate() {
         sk.point(
@@ -449,6 +457,12 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
          offset: (f64, f64)) -> Vec<EntRef> {
     let base = dst.points.len();
     let fresh = base == 0;   // a rebuild owns the whole document; a paste only adds to it
+    if fresh {
+        // a rebuild, a deletion and a copy all keep the document they came from — which is what
+        // makes a clipboard say what its numbers are in, and `paste` able to convert them
+        dst.units = src.units;
+        dst.sheet = src.sheet.clone();
+    }
     let mut made = Vec::new();
     let mut keep_pts = Vec::new();
     let mut pt_map: Vec<Option<usize>> = vec![None; src.points.len()];
@@ -716,8 +730,22 @@ pub fn copy(sk: &Sketch, entities: &[EntRef]) -> Sketch {
 /// Add everything in `clip` to `sk`, moved by (dx, dy), and return what that made.  The pasted
 /// geometry brings its own constraints and nothing else: it is not joined to what is already
 /// there, so it can be put where it belongs before being tied down.
+/// Paste a figure in, **converting it** where the two documents are in different units.
+///
+/// A figure copied out of a drawing in inches and pasted into one in millimetres is the same
+/// figure, and 2 inches is 50.8 mm: converting is what keeps it so.  The scaling is on a copy of
+/// the clipboard, so a clipboard may be pasted into any number of documents and is unchanged by
+/// each.  Two documents that say nothing about their units are in the same drawing units and
+/// nothing is scaled.
 pub fn paste(sk: &mut Sketch, clip: &Sketch, dx: f64, dy: f64) -> Vec<EntRef> {
-    graft(sk, clip, &|_| true, &[], (dx, dy))
+    match (clip.units.length, sk.units.length) {
+        (Some((_, from)), Some((_, to))) if from != to => {
+            let mut scaled = clip.clone();
+            scaled.rescale(from / to);
+            graft(sk, &scaled, &|_| true, &[], (dx, dy))
+        }
+        _ => graft(sk, clip, &|_| true, &[], (dx, dy)),
+    }
 }
 
 /// The part of a sketch one gesture can move, as a sketch of its own.
@@ -887,7 +915,7 @@ pub fn arg_text(kind: SpecKind, a: &Arg) -> String {
         (_, Arg::Param(i)) => format!("@{i}"),
         // a number written a particular way keeps the way: `3 1/8` says more than 3.125 does,
         // and it is what somebody typed.  A *formula* still shows what it came to.
-        (k, Arg::Expr(e)) if expr::notation(&e.text).is_some() => as_written(k, &e.text),
+        (k, Arg::Expr(e)) if expr::notation(&e.text) => as_written(k, &e.text),
         // the formula and what it came to: `h = w * 2 = 80`, `sin(h * 10) = 0.342`
         (k, Arg::Expr(e)) => format!("{} = {}", e.text, arg_text(k, &Arg::Num(e.value))),
         (SpecKind::Angle, a) => format!("{}°", fmt_g(a.num().to_degrees(), 3)),
