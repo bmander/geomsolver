@@ -32,8 +32,11 @@ export function dumps(sk: Sketch, space = -1): string {
  *
  *  An SVG has no screen, so the export **chooses a `unit`** — the world length of one screen
  *  pixel — from the page width, and every constant size follows: callout text and arrowheads,
- *  a curve's flatness, and a sheet's dash lengths and stroke weights. */
-export function svg(sk: Sketch, width = 800): string {
+ *  a curve's flatness, and a sheet's dash lengths and stroke weights.  The width is asked for
+ *  rather than defaulted: how wide the page is is the one thing the core cannot know, so a
+ *  number invented here would be the binding holding a rule of its own — `solventc` already
+ *  keeps the only default there is. */
+export function svg(sk: Sketch, width: number): string {
   return takeStr(core().gcs_sketch_svg(sk.handle, width));
 }
 

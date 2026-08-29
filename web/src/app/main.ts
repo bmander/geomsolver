@@ -87,9 +87,6 @@ for (const b of CONSTRAINT_BUTTONS) addButton(barConstraints, b);
 
 /* -- menu bar ------------------------------------------------------------------- */
 
-/* Everything that is neither a tool nor a constraint.  Like the constraints bar these are
- * tables rather than calls, so the accelerator printed beside an item is the same string the
- * keyboard handler matches — see ACTION_KEYS. */
 /** The drawing as an SVG file.
  *
  *  **The core draws it.**  The figures, the strokes a style sheet resolves to and the whole of
@@ -97,17 +94,22 @@ for (const b of CONSTRAINT_BUTTONS) addButton(barConstraints, b);
  *  from being two implementations of one picture.  The app contributes the one thing the core
  *  cannot know: how wide the page is.  The canvas's own width is the honest answer — the export
  *  is the size of the area the drawing was being looked at in — and everything drawn at a
- *  constant size follows from it, since a page width is what fixes `unit`.
+ *  constant size follows from it, since a page width is what fixes `unit`.  A canvas with no
+ *  width yet is `svg::render`'s business and not this button's — it floors the page itself, and
+ *  a second floor here would be a second rule about the same number.
  *
  *  The *camera* is deliberately not consulted.  An export is of the drawing, not of the view:
  *  the core fits the whole figure to the page, so a file is the same whatever the pan and zoom
  *  happened to be when the button was pressed. */
 function exportSvg(): void {
-  const text = io.svg(view.sketch, Math.max(view.width, 200));
+  const text = io.svg(view.sketch, view.width);
   download('sketch.svg', text, 'image/svg+xml');
   toast('exported sketch.svg');
 }
 
+/* Everything that is neither a tool nor a constraint.  Like the constraints bar these are
+ * tables rather than calls, so the accelerator printed beside an item is the same string the
+ * keyboard handler matches — see ACTION_KEYS. */
 const MENUS: [string, (MenuItem | null)[]][] = [
   ['File', [
     { label: 'New', onClick: () => view.setSketch(newSketch()) },

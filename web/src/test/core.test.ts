@@ -1243,18 +1243,18 @@ test('every function the Abi interface declares is exported by the module', asyn
 });
 
 test('the drawing exports as SVG, laid out by the core', () => {
-  // **the core draws it** — the binding asks for the text and adds nothing, which is what keeps
-  // the app's button and `solventc --output` from being two pictures of one drawing
+  // **the core draws it**, so what the figure is made of is the core's test to write and
+  // `gcs-cli/tests/cli.rs::output_writes_an_svg` writes it — over this same document, down to
+  // the four sides and the four fillets.  Asserting them again here would be a second copy of
+  // the drawing rules, in the layer that has no say in them.  What is *this* layer's to check
+  // is the three things that are true of the binding and of nothing else: the text crosses the
+  // ABI whole, the width argument reaches the core as a number, and a class set through a proxy
+  // is in the sheet by the time the export resolves a stroke.
   const sk = examples.rectFillets();
   assert.ok(solve(sk).success);
   const out = io.svg(sk, 400);
   assert.ok(out.startsWith('<svg xmlns="http://www.w3.org/2000/svg"'), out.slice(0, 60));
-  assert.ok(out.trimEnd().endsWith('</svg>'));
-  assert.ok(!out.includes('NaN') && !out.includes('inf'), 'every number is a number');
-  // the four sides, the four fillets, and the two dimensions it states
-  assert.equal((out.match(/<line /g) ?? []).length, 4);
-  assert.equal((out.match(/<path d="M/g) ?? []).length, 4);
-  assert.ok(out.includes('>100</text>') && out.includes('>60</text>'), 'the numbers are drawn');
+  assert.ok(out.trimEnd().endsWith('</svg>'), 'the string arrived whole, not truncated');
   // the page width is what fixes `unit`, so everything drawn at a constant size follows it
   const wide = io.svg(sk, 1200);
   const w = (t: string) => Number(/width="([\d.]+)"/.exec(t)![1]);
