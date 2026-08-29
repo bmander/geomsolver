@@ -102,8 +102,7 @@ for (const b of CONSTRAINT_BUTTONS) addButton(barConstraints, b);
  *  the core fits the whole figure to the page, so a file is the same whatever the pan and zoom
  *  happened to be when the button was pressed. */
 function exportSvg(): void {
-  const text = io.svg(view.sketch, view.width);
-  download('sketch.svg', text, 'image/svg+xml');
+  download('sketch.svg', io.svg(view.sketch, view.width));
   toast('exported sketch.svg');
 }
 
@@ -117,7 +116,7 @@ const MENUS: [string, (MenuItem | null)[]][] = [
     { label: 'Open test case…', onClick: () => void openCase() },
     null,
     { label: 'Save', onClick: () => download('sketch.json', io.dumps(view.sketch)) },
-    { label: 'Export SVG', onClick: () => exportSvg(),
+    { label: 'Export SVG', onClick: exportSvg,
       title: 'The drawing as a scalable image, laid out by the core — the same figure `solventc '
         + '--output` writes' },
   ]],
