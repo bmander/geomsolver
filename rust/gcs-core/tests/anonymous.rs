@@ -306,7 +306,13 @@ fn the_sketch_shows_a_name_and_never_the_key() {
     assert!(names.contains(&"l0.p1.x"), "and an anonymous one reads positionally: {names:?}");
     assert!(names.contains(&"c0.r"), "{names:?}");
     // the map keeps the key all the same — that is what a chain's corner welds by
-    assert!(e.map.ent_named("#a29.p1").is_some() || e.map.names.values().flatten().any(|n| n.starts_with('#')));
+    assert!(e.map.names.values().flatten().any(|n| n.starts_with("#a")), "the key is still there");
+
+    // and a *block prefix* is not an anonymous name: the flattener wrote it, it says which
+    // instance the thing belongs to, and it is shown as it always has been
+    let e = read("point o hint(x: 0, y: 0)\nground o\ncycle 3 as i {\n  point p hint(x: 1, y: 0)\n}\n");
+    let names: Vec<&str> = e.sketch.params.iter().map(|p| p.name.as_str()).collect();
+    assert!(names.iter().any(|n| n.ends_with(".0.p.x")), "the instance path stands: {names:?}");
 }
 
 /// A diagnostic about an anonymous declaration spells the kind, never the hidden key — a `#`

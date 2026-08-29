@@ -1088,16 +1088,11 @@ pub(crate) fn decl_args(d: &Decl) -> String {
     // position, so where an earlier slot stands empty — a corner the writeback left for the
     // chain's marker to thread again — a bare `line(hint(…))` would put the kept end in the
     // wrong slot on the next parse, and the pose committed for it would quietly reseed.
-    let mut gap = false;
-    let mut after_gap = false;
-    for (i, (_, f)) in d.kind.fields().iter().filter(|(_, f)| *f != Field::Scalar).enumerate() {
-        let empty = d.children.get(i).map(|g| g.is_empty()).unwrap_or(true);
-        match (empty, *f) {
-            (true, Field::Child) => gap = true,
-            (false, _) if gap => after_gap = true,
-            _ => {}
-        }
-    }
+    let after_gap = d
+        .children
+        .iter()
+        .rposition(|g| !g.is_empty())
+        .is_some_and(|k| d.children[..k].iter().any(|g| g.is_empty()));
     let label = labels_children(d.kind) || after_gap;
     let mut parts: Vec<String> = Vec::new();
     let mut child = 0usize;
@@ -2005,9 +2000,13 @@ impl Link {
         }
     }
 
+    /// Where to point a complaint about this link.  An **anonymous** declaration's name span is
+    /// empty — it marks where a name *would* go — and a caret with nothing under it says
+    /// nothing, so the link's own text stands in: the keyword a reader can see.
     fn span_of_name(&self) -> Span {
         match &self.body {
-            LinkBody::Decl(d) => d.name.span,
+            LinkBody::Decl(d) if !d.name.span.is_empty() => d.name.span,
+            LinkBody::Decl(_) => self.span,
             LinkBody::Ref(r) => r.span,
         }
     }

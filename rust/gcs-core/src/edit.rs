@@ -221,6 +221,19 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             // slot is left empty: the marker threads it again on the next parse, which keeps
             // the weld the corner's and the pose the owning link's.  Every other slot is a
             // child this statement minted, and is written as the `hint(…)` its pose is.
+            // Leaving a slot empty is safe only because a chain's marker threads it again on
+            // the next parse — so the statement must *be* in a chain.  Nothing else can put a
+            // reference the source cannot write into a slot, and `Chained` records that rather
+            // than sniffing it back out of the text; asserted, since a silent violation would
+            // be a slot nothing refills and a point that reseeds from `scatter`.
+            debug_assert!(
+                !matches!(st.chained, syntax::Chained::No)
+                    || !d.children.iter().flatten().any(|kid| match kid {
+                        syntax::Kid::Ref(r) => syntax::hidden(&r.root.text),
+                        syntax::Kid::Hint(_) => false,
+                    }),
+                "an unwritable reference outside a chain has nothing to re-thread its slot",
+            );
             let mut filled = kids.iter().enumerate().map(|(j, k)| match slot_kid(j) {
                 Some(syntax::Kid::Ref(r)) if syntax::hidden(&r.root.text) => None,
                 Some(syntax::Kid::Ref(r)) => Some(syntax::Kid::Ref(r.clone())),
@@ -886,7 +899,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         }
     }
     // …a new entity names its children, which may be points the drawing already had…
-    for (&r, _) in minted.iter() {
+    for &r in minted.keys() {
         needed.extend(sk.children(r));
     }
     // …and a gauge names what it holds
@@ -895,7 +908,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         if minted.contains_key(r) || renamed.contains_key(r) {
             continue; // new (its statement carries the name), or its statement already named
         }
-        if e.map.names.get(r).is_some_and(|v| v.iter().any(|n| !syntax::hidden(n))) {
+        if e.map.written_name(*r).is_some() {
             continue; // the source already calls it something
         }
         let Some(site) = e.map.of_entity.get(r) else { continue };
@@ -925,6 +938,10 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         // later gesture in this same elaboration must never meet one first
         let name = next_name(&mut taken, d.kind);
         named.push(Splice { at: d.name.span, with: format!(" {name}") });
+        // a name this edit gave a declaration, which is what `Edit::names` reports — a caller
+        // reads it to refer to what it just made, and a name minted into a declaration that
+        // was already there is as much this edit's doing as one on a statement it appended
+        names.push(name.clone());
         for m in e.map.made_by(site.stmt) {
             let crate::program::Made::Ent(k) = *m else { continue };
             let Some(h) = e.map.names.get(&k).and_then(|v| v.first()) else { continue };
@@ -951,10 +968,8 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             .get(&r)
             .cloned()
             .or_else(|| renamed.get(&r).cloned())
-            .or_else(|| {
-                let v = e.map.names.get(&r)?;
-                v.iter().find(|n| !syntax::hidden(n)).or_else(|| v.first()).cloned()
-            })
+            .or_else(|| e.map.written_name(r).cloned())
+            .or_else(|| e.map.names.get(&r).and_then(|v| v.first()).cloned())
             .unwrap_or_else(|| syntax::entity_name(r))
     };
 

@@ -179,6 +179,14 @@ impl SourceMap {
         self.names.entry(e).or_default().push(name.to_string());
     }
 
+    /// The first name the **source** actually wrote for an entity, where it wrote one — never a
+    /// key the elaboration minted.  The one place that rule is spelled: a reader asking
+    /// `names.first()` gets whatever is at the head, and what is at the head is `favor`'s
+    /// business, so anything that needs "a name a statement may say" asks here instead.
+    pub(crate) fn written_name(&self, e: EntRef) -> Option<&String> {
+        self.names.get(&e)?.iter().find(|n| !crate::syntax::hidden(n))
+    }
+
     /// Bind a name and put it *first* — for a name minted into the source after the map was made
     /// (`edit::reconcile`), which every later reader must prefer over the hidden key the entity
     /// elaborated under, or the next edit writes the key into a statement.
@@ -1229,8 +1237,14 @@ fn child_names(d: &Decl, base: &str) -> Vec<String> {
 /// entity's name into every place a parameter is listed (a DOF report, a mode's label), so the
 /// key would be read by somebody.  Names in the *sketch* are display; names in the source map
 /// are identity; this is the one seam where the two part company.
+///
+/// `nameless`, not `hidden`, and for the reason the report gives: a **block prefix** is a name
+/// the flattener made and has always been shown — it says which instance the thing belongs to,
+/// which an index cannot — so only a declaration the source named *nothing* is relabelled here.
+/// Asking the broader question would show one entity by its path in one window and by its index
+/// in another.
 fn shown(sk: &Sketch, d: &Decl) -> String {
-    match crate::syntax::hidden(&d.name.text) {
+    match crate::syntax::nameless(&d.name.text) {
         true => crate::syntax::entity_name(EntRef::new(d.kind, sk.count(d.kind))),
         false => d.name.text.clone(),
     }
