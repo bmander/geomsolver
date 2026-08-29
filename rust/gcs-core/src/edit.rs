@@ -636,6 +636,9 @@ fn doom_splice(text: &str, st: &Stmt) -> Option<Splice> {
         // an unthreaded joint in a chain that closes: a break would re-aim the `close` at
         // another link, so there is no splice and the gesture is refused
         syntax::Chained::Stuck => None,
+        // one member of a joint's list goes out of the list — its span carries its comma —
+        // and the corner, the list and the joint's other statements stand
+        syntax::Chained::Grouped => Some(Splice { at: st.span, with: String::new() }),
         // the joint word and `close` share a span, and only the claim goes
         syntax::Chained::Close => {
             let tail = st.span.slice(text);

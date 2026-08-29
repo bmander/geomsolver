@@ -242,6 +242,10 @@ pub enum Chained {
     /// a break would re-aim the `close` at another link.  Deleting it is refused, the link's
     /// own bargain.
     Stuck,
+    /// One member of a joint's parenthesized list, `-> (equal, angle(30deg))`: doomed, it
+    /// splices out of the list — its span carries its comma — and the corner, the list, and
+    /// the joint's other statements stand.
+    Grouped,
     /// The joint before `close`, which seals a loop.
     Close,
 }
@@ -1680,13 +1684,22 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
     // and how deep inside a `style .name { … }` block, whose body is `property: value` pairs
     // rather than statements
     let mut style = 0i32;
+    // and inside a joint's `-> ( … )` list, whose words are relations wherever they fall —
+    // entered only after the marker, so a point *named* `equal` in an argument list stays plain
+    let mut joint = 0i32;
     for (i, (t, span)) in lexed.toks.iter().enumerate() {
         let prev = i.checked_sub(1).map(|j| &lexed.toks[j].0);
         match t {
             Tok::P('(') if matches!(prev, Some(Tok::Ident(w)) if w == "hint") => hint = 1,
+            Tok::P('(') if joint == 0 && matches!(prev, Some(Tok::Arrow)) => joint = 1,
             Tok::P('(') | Tok::P('[') if hint > 0 => hint += 1,
+            Tok::P('(') | Tok::P('[') if joint > 0 => joint += 1,
             Tok::P(')') | Tok::P(']') if hint > 0 => hint -= 1,
-            Tok::Nl => hint = 0,
+            Tok::P(')') | Tok::P(']') if joint > 0 => joint -= 1,
+            Tok::Nl => {
+                hint = 0;
+                joint = 0;
+            }
             _ => {}
         }
         if matches!(t, Tok::Ident(w) if w == "style") && at == Next::Start {
@@ -1713,6 +1726,10 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
                 None
             }
             Tok::P(_) => None,
+            Tok::Ident(w) if joint > 0 => {
+                // a member of a joint's list is the relation it states
+                joint_word(w).then_some(Tint::Relation)
+            }
             Tok::Ident(w) => {
                 let (tint, then) = tint_word(w, prev, &lexed.toks, i, at);
                 at = then;
@@ -1894,7 +1911,13 @@ enum LinkBody {
 /// empty joint.
 struct Joint {
     thread: bool,
-    word: Option<(String, Vec<OpArg>)>,
+    /// The relations stated at this joint: one bare word, or several in a parenthesized list —
+    /// `-> (equal, angle(30deg))` states both at the corner just threaded.  Each carries its
+    /// own parentheses and its own span, so each desugars to a statement of its own.
+    words: Vec<(String, Vec<OpArg>, Span)>,
+    /// Whether the words were written as a `( … )` list — which is what a doomed member's
+    /// splice must leave standing, where a doomed bare word steps down to the marker.
+    grouped: bool,
     span: Span,
     /// The joint's own statements are skipped where its structure was refused — a threaded
     /// circle, a `close` over one link — so one mistake is one message.
@@ -2672,7 +2695,13 @@ impl<'a> P<'a> {
             // retired `to` is still recognised here, so `a to k` reaches the chain loop and its
             // migration message rather than a generic refusal.
             if let Some(j) = self.past_ref(self.i) {
-                if matches!(self.t.get(j).map(|(t, _)| t), Some(Tok::Arrow))
+                // a list after a name opens a chain — `A (equal, angle(30)) B` — but not for
+                // the orientation predicates, whose call form (`ccw(a, b, c)`) is a statement
+                // of its own
+                let list = matches!(self.t.get(j).map(|(t, _)| t), Some(Tok::P('(')))
+                    && !ORIENTS.contains(&w.as_str());
+                if list
+                    || matches!(self.t.get(j).map(|(t, _)| t), Some(Tok::Arrow))
                     || self.word_at(j).is_some_and(|w| joint_word(w) || w == "to")
                 {
                     return true;
@@ -2741,22 +2770,57 @@ impl<'a> P<'a> {
             // a word that opens a link is the next link's own — `-> vertical line right(…)` is
             // a plain corner onto a levelled line, not a `vertical` joint — which is the same
             // order of questions the colouring asks (`tint_word`), so the two cannot disagree
-            let word = match self.peek() {
+            let mut words: Vec<(String, Vec<OpArg>, Span)> = Vec::new();
+            let mut grouped = false;
+            match self.peek() {
                 Some(Tok::Ident(w))
                     if joint_word(w)
                         && !opens_link(w, self.word_at(past_args(&self.t, self.i))) =>
                 {
                     let w = w.clone();
+                    let lo = self.here().lo as usize;
                     self.i += 1;
                     // an infix operator carries its own parentheses: `p1 distance(80) p2` is a
                     // chain of one joint, which is the unification that makes a lone statement
                     // and a chain one grammar rather than two
                     let args = self.op_args(&w)?;
-                    Some((w, args))
+                    words.push((w, args, Span::new(lo, self.prev_hi())));
                 }
-                _ => None,
-            };
-            if !thread && word.is_none() {
+                // several relations at one joint: `-> (equal, angle(30deg))` states them all
+                // between the two links, at the corner the marker threads.  The list is read
+                // leniently — a trailing comma, or nothing at all — because a doomed member's
+                // splice leaves exactly those behind.
+                Some(Tok::P('(')) => {
+                    grouped = true;
+                    self.i += 1;
+                    while !self.eat_p(')') {
+                        let Some(Tok::Ident(w)) = self.peek().cloned() else {
+                            self.fail("a joint's list holds constraint words: `(equal, angle(30))`");
+                            return None;
+                        };
+                        if !joint_word(&w) {
+                            self.fail(&format!("`{w}` is not a constraint between two links"));
+                            return None;
+                        }
+                        let lo = self.here().lo as usize;
+                        self.i += 1;
+                        let args = self.op_args(&w)?;
+                        words.push((w, args, Span::new(lo, self.prev_hi())));
+                        if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
+                            self.fail("expected `,` or `)`");
+                            return None;
+                        }
+                    }
+                }
+                _ => {}
+            }
+            // the marker may stand on either side of the words, or both — `A -> (equal) -> B`
+            // is the one joint `A -> equal B` is — and any marker threads
+            if (!words.is_empty() || grouped) && self.peek() == Some(&Tok::Arrow) {
+                thread = true;
+                self.i += 1;
+            }
+            if !thread && words.is_empty() && !grouped {
                 // the retired corner word, caught here so a 0.7 document says what to write
                 if self.peek_word("to") {
                     self.fail("`to` is retired: a corner is written `->` (spec §6.6)");
@@ -2776,13 +2840,14 @@ impl<'a> P<'a> {
                 }
                 close = Some(Joint {
                     thread: true,
-                    word,
+                    words,
+                    grouped,
                     span: Span::new(start, self.prev_hi()),
                     sound: true,
                 });
                 break;
             }
-            joints.push(Joint { thread, word, span: Span::new(start, hi), sound: true });
+            joints.push(Joint { thread, words, grouped, span: Span::new(start, hi), sound: true });
             links.push(self.link()?);
         }
         // the trailing clauses a statement may carry — a lone infix operator is a one-joint
@@ -2897,6 +2962,7 @@ impl<'a> P<'a> {
             && joints.len() == 1
             && close.is_none()
             && !joints[0].thread
+            && joints[0].words.len() == 1
             && links.iter().all(|l| l.kind().is_none());
 
         // **threading is stated at the joint, never inferred** (spec §6.6): `->` says the two
@@ -2970,6 +3036,18 @@ impl<'a> P<'a> {
         // one steps down to the bare corner; an unthreaded one becomes a statement break, its
         // span grown over a terminal name-link that a break would leave dangling; in a chain
         // that closes no break is safe — it would re-aim the `close` — so the joint is Stuck
+        // one member of a joint's list, with the comma that travels with it: every member but
+        // the last runs to the next member's start, so splicing any subset out leaves a list
+        // the lenient group parse still reads
+        fn member_span(j: &Joint, k: usize) -> Span {
+            let lo = j.words[k].2.lo as usize;
+            let hi = if k + 1 < j.words.len() {
+                j.words[k + 1].2.lo as usize
+            } else {
+                j.words[k].2.hi as usize
+            };
+            Span::new(lo, hi)
+        }
         let spell: Vec<(Span, Chained)> = joints
             .iter()
             .enumerate()
@@ -2994,11 +3072,21 @@ impl<'a> P<'a> {
         let first = out.len();
         for (i, link) in links.into_iter().enumerate() {
             if i > 0 && joints[i - 1].sound {
-                if let Some((w, args)) = &joints[i - 1].word {
-                    let j = &joints[i - 1];
-                    let (span, how) = if lone { (whole, Chained::No) } else { spell[i - 1] };
+                let j = &joints[i - 1];
+                for k in 0..j.words.len() {
+                    let (w, args, wspan) = &j.words[k];
+                    // a doomed *list* member splices out of the list; a doomed bare word steps
+                    // down to the marker or to a statement break (`spell`); a singleton list
+                    // with no marker is the bare word's case, its span the whole list
+                    let (span, how) = if lone {
+                        (whole, Chained::No)
+                    } else if j.grouped && (j.thread || j.words.len() > 1) {
+                        (member_span(j, k), Chained::Grouped)
+                    } else {
+                        spell[i - 1]
+                    };
                     out.extend(
-                        self.joint_stmt(w, args, j.span, span, at(i - 1), at(i), j.thread, how, next_id),
+                        self.joint_stmt(w, args, *wspan, span, at(i - 1), at(i), j.thread, how, next_id),
                     );
                 }
             }
@@ -3043,29 +3131,28 @@ impl<'a> P<'a> {
             });
         }
         if let Some(c) = close {
-            let sealed = match (&c.word, c.sound) {
-                (Some((w, args)), true) => self.joint_stmt(
-                    w,
-                    args,
-                    c.span,
-                    c.span,
-                    at(n - 1),
-                    at(0),
-                    true,
-                    Chained::Close,
-                    next_id,
-                ),
-                _ => None,
-            };
-            match sealed {
-                Some(st) => out.push(st),
+            let mut sealed = Vec::new();
+            if c.sound {
+                for k in 0..c.words.len() {
+                    let (w, args, wspan) = &c.words[k];
+                    let (span, how) = if c.grouped {
+                        (member_span(&c, k), Chained::Grouped)
+                    } else {
+                        (c.span, Chained::Close)
+                    };
+                    sealed.extend(
+                        self.joint_stmt(w, args, *wspan, span, at(n - 1), at(0), true, how, next_id),
+                    );
+                }
+            }
+            if sealed.is_empty() {
                 // `-> close` states nothing, so no statement owns its words; the last link's
                 // span grows over them, or an append would land in the middle of the chain
-                None => {
-                    if let Some(last) = out.last_mut() {
-                        last.span = Span::new(last.span.lo as usize, c.span.hi as usize);
-                    }
+                if let Some(last) = out.last_mut() {
+                    last.span = Span::new(last.span.lo as usize, c.span.hi as usize);
                 }
+            } else {
+                out.extend(sealed);
             }
         }
         let _ = first;

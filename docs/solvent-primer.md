@@ -226,10 +226,11 @@ to be — a `Str` argument is written as the word it is (`at: start`).
 A chain writes a run of elements and the relations *between* them on one line.
 
 ```
-CHAIN  ::= LINK (JOINT LINK)* ['->' ['close' | INFIX 'close']]
+CHAIN  ::= LINK (JOINT LINK)* ['->' [WORDS] 'close']
 LINK   ::= PREFIX* DECL | REF
 PREFIX ::= a constraint taking one entity            horizontal, vertical
-JOINT  ::= '->' [INFIX] | INFIX                      at least one of the two
+JOINT  ::= '->' [WORDS] ['->'] | WORDS ['->']        at least one marker or word
+WORDS  ::= INFIX | '(' INFIX (',' INFIX)* ')'        one relation, or a list
 INFIX  ::= 'tangent' | 'equal' | a constraint taking two entities
 ```
 
@@ -239,6 +240,9 @@ absence says they do not. `->` alone is the plain corner; `-> tangent` is a corn
 tangent there, the regular at-the-point form. The shared point may be named by one side (or
 both, agreeing) — and between two declarations by nobody, the chain minting it as an implicit
 point: `line l1 -> line l2` is two lines and three points, one shared. A word without the
+marker states only the relation. A joint may carry a *list* — `A -> (equal, angle(30deg)) B`
+states both at the corner, and the marker may stand on either side of the list or both. A word
+without the
 marker states only the relation:
 `a_br equal a_tr` relates two arcs declared elsewhere and welds nothing, and
 `line l1(a, b) perpendicular line l2(c, d)` declares two separate lines at a right angle. A

@@ -524,7 +524,11 @@ Conventions:
   its two links share a boundary point, threaded left-to-right (`p1 → p2`; `start → end`, CCW),
   and its absence says they do not — so `->` alone is the plain corner (`to` is retired into
   it), `-> tangent` is a corner that is also tangent there, and a bare word states the relation
-  and welds nothing.  At a threaded joint the shared point is named by exactly one side (or
+  and welds nothing.  A joint may carry a parenthesized *list* — `-> (equal, angle(30deg))`
+  states each member as a statement of its own at that corner, the marker may stand on either
+  side of the list or both, and a doomed member splices out of the list (`Chained::Grouped`),
+  its comma with it, leaving the corner and the rest standing; after a declaration a bare `(`
+  is that declaration's own argument list, so an unthreaded list there needs the marker.  At a threaded joint the shared point is named by exactly one side (or
   both, in agreement) and fills the boundary field a declared side left out, so a threaded
   `tangent` always desugars to the regular At-form (`TangentArcLine`/`TangentLineCircleAt`, or
   `Parallel` between two lines, which over the shared corner is collinearity) — never the bare
