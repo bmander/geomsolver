@@ -23,6 +23,23 @@ export function dumps(sk: Sketch, space = -1): string {
   return takeStr(core().gcs_sketch_to_json(sk.handle, space));
 }
 
+/** The drawing as SVG, at a page width in pixels.
+ *
+ *  **The core draws it**, exactly as it lays out a callout and tessellates a curve: the figures,
+ *  the strokes the style sheet resolves to and the arithmetic are all its, and this asks for the
+ *  text.  `solventc --output` asks the same function, so the button and the command line cannot
+ *  come to draw one drawing differently.
+ *
+ *  An SVG has no screen, so the export **chooses a `unit`** — the world length of one screen
+ *  pixel — from the page width, and every constant size follows: callout text and arrowheads,
+ *  a curve's flatness, and a sheet's dash lengths and stroke weights.  The width is asked for
+ *  rather than defaulted: how wide the page is is the one thing the core cannot know, so a
+ *  number invented here would be the binding holding a rule of its own — `solventc` already
+ *  keeps the only default there is. */
+export function svg(sk: Sketch, width: number): string {
+  return takeStr(core().gcs_sketch_svg(sk.handle, width));
+}
+
 export function loads(s: string): Sketch {
   const h = withStr(s, (p, n) => core().gcs_sketch_from_json(p, n));
   if (!h) throw new Error(lastError() || 'bad sketch document');

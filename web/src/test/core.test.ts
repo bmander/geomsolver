@@ -1242,6 +1242,32 @@ test('every function the Abi interface declares is exported by the module', asyn
   for (const n of names) assert.equal(typeof m[n], 'function', `${n} is declared but not exported`);
 });
 
+test('the drawing exports as SVG, laid out by the core', () => {
+  // **the core draws it**, so what the figure is made of is the core's test to write and
+  // `gcs-cli/tests/cli.rs::output_writes_an_svg` writes it — over this same document, down to
+  // the four sides and the four fillets.  Asserting them again here would be a second copy of
+  // the drawing rules, in the layer that has no say in them.  What is *this* layer's to check
+  // is the three things that are true of the binding and of nothing else: the text crosses the
+  // ABI whole, the width argument reaches the core as a number, and a class set through a proxy
+  // is in the sheet by the time the export resolves a stroke.
+  //
+  // The width read back is not an equality: `render` grows the page by whatever the callouts overhang, so what comes
+  // back is never the width that was asked for
+  const w = (t: string) => Number(/width="([\d.]+)"/.exec(t)![1]);
+  const sk = examples.rectFillets();
+  assert.ok(solve(sk).success);
+  const out = io.svg(sk, 400);
+  assert.ok(out.startsWith('<svg xmlns="http://www.w3.org/2000/svg"'), out.slice(0, 60));
+  assert.ok(out.trimEnd().endsWith('</svg>'), 'the string arrived whole, not truncated');
+  // the page width is what fixes `unit`, so everything drawn at a constant size follows it
+  const wide = io.svg(sk, 1200);
+  assert.ok(w(wide) > w(out) * 2.5, `${w(out)} against ${w(wide)}`);
+  // and a class the sheet knows reaches the stroke: reference geometry exports dashed
+  sk.lines[0].setClass('construction', true);
+  assert.ok(io.svg(sk, 400).includes('stroke-dasharray="7 4"'));
+  sk.dispose();
+});
+
 test('the registry the binding generates its classes from matches the kernels', () => {
   const reg = C.REGISTRY();
   assert.equal(reg.kernels.length, core().gcs_kernel_count());

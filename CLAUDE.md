@@ -46,8 +46,12 @@ Currently: **Stage 5 done**, in **one** implementation —
   source out — because **the core takes text and has no filesystem**: it runs in wasm and must
   not learn how to open a file, so the thing with a working directory is this binary.
   `--output` writes an SVG through `gcs_core::svg`, in the core for the reason callout layout
-  is: an "export SVG" button in the app must not be a second implementation.  An SVG has no
-  screen, so the export **chooses a `unit`** from `--width` and every constant size follows.
+  is — and the app's `File ▸ Export SVG` calls the same function, so the button and the command
+  line are one picture of one drawing and not two.  An SVG has no screen, so the export
+  **chooses a `unit`** from the page width (`--width`, or the canvas's own) and every constant
+  size follows: callout text and arrowheads, a curve's flatness, a sheet's dashes and weights.
+  The *camera* is deliberately not consulted — an export is of the drawing, not of the view, so
+  the file is the same whatever the pan and zoom were.
 * **app** (`web/src/app/`): an HTML5-canvas sketcher, the only front end.  Two halves, each
   a handful of modules rather than one slab.  The *view* is the canvas: `view.ts` holds the
   state — the camera, selection, tool, plan, diagnosis — and the modules beside it take that

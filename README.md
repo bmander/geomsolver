@@ -37,6 +37,9 @@ solventc --json gear.sv              # the same numbers, structured
 solventc --output gear.svg gear.sv   # and an SVG of the drawing
 ```
 
+The sketcher's `File ▸ Export SVG` writes the same file through the same function
+(`gcs_core::svg`), so the button and the command line cannot draw one drawing differently.
+
 Exit codes are `0` (elaborated and solved), `1` (did not parse or elaborate) and `2` (did not
 solve, unless `--allow-unsolved`), so a document can be checked in CI. A diagnostic carries its
 span: `gear.sv:31:14: error[E040]: \`c\` is a circle, and a line is built from points`.

@@ -234,9 +234,20 @@ document.addEventListener('pointerdown', (e) => {
   if (openMenu && !(e.target as HTMLElement).closest('.menu')) closeMenus();
 });
 
-/** Download a string as a file (used by Save). */
+/** What a downloaded file is, by what it is called.  The name already states the format, so a
+ *  caller that had to state it again would be writing one fact twice — and a Blob given the
+ *  wrong type fails silently, which is the way to get it wrong that nobody notices.  A format
+ *  the table does not know is offered as plain text: everything this app writes is text. */
+const MIME: Record<string, string> = {
+  json: 'application/json',
+  svg: 'image/svg+xml',
+  sv: 'text/plain',
+};
+
+/** Download a string as a file — the document as JSON, the source as `.sv`, the drawing
+ *  as SVG. */
 export function download(name: string, text: string): void {
-  const blob = new Blob([text], { type: 'application/json' });
+  const blob = new Blob([text], { type: MIME[name.split('.').pop() ?? ''] ?? 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

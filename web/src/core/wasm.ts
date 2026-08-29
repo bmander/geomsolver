@@ -86,6 +86,7 @@ export interface Abi {
     h: number, kind: number, idx: number, name: number, nameLen: number, on: number): void;
   gcs_entity_style(h: number, kind: number, idx: number): number;
   gcs_styles_json(h: number): number;
+  gcs_sketch_svg(h: number, width: number): number;
   gcs_style_named(h: number, name: number, len: number): number;
   gcs_style_epoch(h: number): number;
   gcs_entity_bounds(h: number, kind: number, idx: number, out: number): void;

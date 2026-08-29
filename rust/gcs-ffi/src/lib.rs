@@ -260,6 +260,17 @@ pub unsafe extern "C" fn gcs_sketch_to_json(h: *mut Sketch, indent: i32) -> *mut
     })
 }
 
+/// The drawing as SVG, at a page width in pixels.
+///
+/// The writer is `gcs_core::svg`, in the core for the reason callout layout is: an "export SVG"
+/// button and `solventc --output` must not be two implementations, or the same drawing would come
+/// out of the two of them differently.  **An SVG has no screen, so the export chooses a `unit`**
+/// — the world length of one screen pixel — from the page width, and every constant size follows.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_svg(h: *mut Sketch, width_px: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || out_str(gcs_core::svg::render(sk(h), width_px)))
+}
+
 /// How many integers `gcs_sketch_counts` writes.
 ///
 /// Asked rather than assumed: a binding that hard-codes the width writes past its buffer the day
