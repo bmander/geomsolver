@@ -56,7 +56,27 @@ Currently: **Stage 5 done**, in **one** implementation —
   a handful of modules rather than one slab.  The *view* is the canvas: `view.ts` holds the
   state — the camera, selection, tool, plan, diagnosis — and the modules beside it take that
   view as their first argument and do the work (`paint`, `gesture`, `tools`, `dimension`,
-  `edit`), with `camera` the one that holds where the drawing sits on the canvas;
+  `edit`), with `camera` the one that holds where the drawing sits on the canvas and
+  `underlay` the picture traced over — **view state, never the document**: a photograph is
+  scaffolding for the person drawing, so nothing about it is saved, exported, solved or
+  undone.  It is nonetheless handled the way everything else on the canvas is — clicked,
+  dragged, deleted, under the ordinary select tool and with no mode of its own — and two
+  rules keep that from spoiling the tracing it exists for: **the drawing outranks it** (the
+  geometry is offered a press first), and **only its frame is clickable, never its
+  interior** — nothing in this drawing is picked by an area, a circle being picked by its rim
+  and not by the disc inside it, so the edge is where you take hold of it and the middle is
+  where you draw.  Selected, the whole of it drags, so placing it is not a fight with a
+  two-pixel border.  It is not a `Primitive` and so never joins `selected` — it would have to
+  be answered for at every seam that reads one — but the two selections are exclusive, which
+  is what leaves Delete unambiguous.  Each direction of that is **one place**: `pickImage`
+  clears `selected`, and `selected` is a *setter* that lets the picture go, so paste, a rubber
+  band and the constraint list inherit the rule rather than each remembering it — enforced at
+  the call sites instead, the one that forgets fails silently, by deleting the photograph
+  instead of what was just pasted.  Which pick outranks which is likewise stated once, in
+  `gesture::whatIsAt`, since a press and the cursor that promises what it will do must not walk
+  two copies of the order.  Its placement is a similarity in world coordinates and
+  reaches the screen only through `camera`, so it pans and zooms with the drawing and this
+  file writes no minus sign in front of a y either;
   `SketchView` keeps a one-line delegator for each verb the shell calls, so a caller holds one
   object.  The *shell* is the page around it: `shell.ts` (the elements, the view, the focused
   constraint, and where the core is started), `commands` (the constraints bar), `dialogs` (what

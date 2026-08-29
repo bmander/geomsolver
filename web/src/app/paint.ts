@@ -10,6 +10,7 @@ import {
   threePointArc,
 } from '../core/model.js';
 import { tellDimension } from './dimension.js';
+import { paintFrame, paintUnderlay } from './underlay.js';
 import type { SketchView } from './view.js';
 
 export const COL = {
@@ -27,6 +28,10 @@ export const COL = {
   highlight: '#9467bd',
   conflict: '#b3001b',
   bandFill: 'rgba(227, 119, 194, 0.10)',
+  /** The traced picture's frame, unselected — chrome, so the same grey a preview is drawn in:
+   *  neither is part of the drawing.  Hovered and selected it takes the canvas's own two
+   *  colours, so the picture answers a pointer the way everything else does. */
+  imageFrame: '#999999',
 };
 /* entity colouring by constraint state (FreeCAD-style, but from the DM decomposition and the
  * conflict set rather than from a guess) */
@@ -40,6 +45,8 @@ export function paint(v: SketchView): void {
   ctx.save();
   ctx.fillStyle = COL.bg;
   ctx.fillRect(0, 0, w, h);
+  // the picture being traced, under everything: the axes and the drawing read over it
+  paintUnderlay(v);
   ctx.lineCap = 'round';
   const [ox, oy] = v.w2s(0, 0);
   ctx.strokeStyle = COL.axis;
@@ -151,6 +158,10 @@ export function paint(v: SketchView): void {
     }
   }
   paintCallouts(v);
+  // the traced picture's frame, over everything: dashed grey while it is scenery, since that
+  // edge is the only part of it a press takes hold of and an affordance you cannot see is one
+  // nobody finds — and the canvas's own selected/hovered colours otherwise
+  paintFrame(v);
   v.gesture?.paint?.(ctx);
   if (v.tool !== 'select') {                 // snap indicator
     const sp = v.pickPoint(...v.cursor);

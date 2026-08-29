@@ -27,6 +27,8 @@ import type { Gesture } from './gesture.js';
 import type { DimAlt, LiveDim } from './dimension.js';
 import { paint } from './paint.js';
 import * as tools from './tools.js';
+import * as underlay from './underlay.js';
+import type { Bitmap, Underlay } from './underlay.js';
 
 /* A dimension being written belongs to `dimension`, but it is the view a caller holds, so the
  * two types are published from here as well. */
@@ -77,8 +79,23 @@ export class SketchView {
   colorByState = true;
   /** Paint the dimensioned constraints on the drawing as callouts. */
   showDimensions = true;
+  /** A picture to trace over, in world coordinates — see `underlay.ts`.  Handled like anything
+   *  else on the canvas (clicked, dragged, deleted) but **not document state**: it is scenery,
+   *  and only its frame answers a press until it is selected, which is what lets the drawing be
+   *  made straight through it. */
+  underlay: Underlay | null = null;
 
-  selected: Primitive[] = [];
+  /** What is selected.  Written through a setter on purpose: selecting geometry is the other
+   *  half of the picture's exclusivity, and there are eleven sites that assign this.  Enforced
+   *  here, paste, a rubber band and a press on an entity all inherit the rule; enforced at each
+   *  of them, it is a rule stated nowhere they can see and the failure is silent — a Delete
+   *  that takes the photograph instead of what was just pasted. */
+  get selected(): Primitive[] { return this._selected; }
+  set selected(prims: Primitive[]) {
+    this._selected = prims;
+    if (prims.length) this.dropImage();
+  }
+  private _selected: Primitive[] = [];
   highlight: Primitive[] = [];
   pending: Point[] = [];
   /** Where the fit tool has been told the curve must pass, before there is a curve.  Places
@@ -106,6 +123,11 @@ export class SketchView {
   onStatus: (msg: string) => void = () => {};
   /** A dimension callout was clicked: the shell puts the focus on that constraint. */
   onPickConstraint: (c: Constraint) => void = () => {};
+  /** What is held changed, and nothing else did — the line that names it is the whole of the
+   *  consequence.  Narrower than `onChanged`, which re-reads every constraint and every
+   *  expression out of the core and re-renders the program overlay: fading the traced picture
+   *  is a keypress that auto-repeats, and it moves one number in one string. */
+  onPicked: () => void = () => {};
   /** And double-clicked: the shell opens its value for editing. */
   onEditConstraint: (c: Constraint) => void = () => {};
   /** A dimension is being written, and this is where its number is on screen — the shell puts
@@ -587,6 +609,63 @@ export class SketchView {
    * holds one object and never has to know which module a verb lives in. */
 
   setTool(tool: Tool): void { tools.setTool(this, tool); }
+
+  /* The picture traced over, if there is one.  It is view state and not document state, so
+   * none of this goes near `afterEdit`, the undo stack or the source — a repaint is the whole
+   * of the consequence. */
+
+  /** Put a picture in the middle of the view, replacing any that was there.  It arrives
+   *  selected, so the handles that place it are there to be used at once. */
+  traceImage(image: Bitmap, name: string, url: string | null = null): void {
+    underlay.release(this.underlay);
+    this.underlay = underlay.place(this, image, name, url);
+    // select is where a picture is handled, and it arrives selected — so the tool comes with
+    // it rather than being set by whichever caller happened to ask.  A drawing tool would
+    // leave it `picked` with nothing on the canvas willing to answer for it.
+    this.setTool('select');
+    this.pickImage();
+    this.onStatus(`tracing ${name} — drag it to place it, drag a corner to size and turn it, `
+                  + 'Delete to remove it');
+    this.onChanged();
+    this.draw();
+  }
+
+  /** Select the picture.  The two selections are exclusive: a photograph is not a `Primitive`
+   *  and cannot be constrained or dimensioned beside one, so holding both would only leave
+   *  Delete ambiguous. */
+  pickImage(): void {
+    if (!this.underlay) return;
+    this.underlay.picked = true;
+    this.selected = [];
+  }
+
+  /** And the other way: anything that selects geometry lets the picture go. */
+  dropImage(): void {
+    if (this.underlay) this.underlay.picked = false;
+  }
+
+  /** Take it away again.  The sentence is here and not at the callers: the menu item and the
+   *  Delete key remove the same picture, and a removal reported two ways (or, as it was, one
+   *  way and silently) is two removals as far as anyone reading the status line is concerned. */
+  removeImage(): void {
+    const gone = this.underlay?.name;
+    underlay.release(this.underlay);
+    this.underlay = null;
+    if (gone) this.onStatus(`removed ${gone}`);
+    this.onChanged();
+    this.draw();
+  }
+
+  /** Fade it, or bring it back — `by` is added to the opacity and the result is kept on 0…1.
+   *  What it came to is read off the status line, which is where what is picked is named; it is
+   *  not also toasted, since two places saying one number is two places to keep in step. */
+  fadeImage(by: number): void {
+    const u = this.underlay;
+    if (!u) return;
+    u.opacity = Math.min(1, Math.max(0, u.opacity + by));
+    this.onPicked();
+    this.draw();
+  }
   cancelTool(): void { tools.cancelTool(this); }
   finishCurve(): void { tools.finishCurve(this); }
   finishSplineFit(): void { tools.finishSplineFit(this); }

@@ -93,6 +93,13 @@ export function removeConstraint(v: SketchView, c: Constraint): void {
  *  Refused when what is selected came out of a component: there is no one statement to delete, and
  *  taking the component out is a far larger edit than the gesture asked for. */
 export function deleteSelected(v: SketchView): void {
+  // the traced picture, when that is what is selected — which is the only time it can be, the
+  // two selections being exclusive.  It is not in the document, so this is not an `apply`:
+  // nothing is spliced, nothing is solved and there is nothing for undo to come back to.
+  if (v.underlay?.picked) {
+    v.removeImage();          // which says so itself, so the menu item and this agree
+    return;
+  }
   if (!v.selected.length) return;
   const n = v.selected.length;
   if (v.apply(v.doc.remove(v.selected), `deleted ${n} entities`)) v.onSelect();

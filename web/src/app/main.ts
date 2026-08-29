@@ -43,13 +43,14 @@ import {
 } from './dialogs.js';
 import { editValue, onDimension } from './dimbox.js';
 import { bindProgramPanel, refreshProgram, showStatementFor, toggleProgramPanel } from './program.js';
-import { closePanel, openPanel, refresh, refreshStatus } from './lists.js';
+import { closePanel, openPanel, refresh, refreshPanel, refreshStatus } from './lists.js';
 import {
   aboutBadge, barConstraints, barTools, canvas, currentConstraint, focusConstraint, hooks, menubar,
   view,
 } from './shell.js';
 import {
-  MenuItem, ToolbarButton, addButton, addMenu, addSeparator, closeMenus, download, toast,
+  MenuItem, ToolbarButton, addButton, addMenu, addSeparator, closeMenus, download, openImage,
+  toast,
 } from './ui.js';
 import { Tool } from './view.js';
 
@@ -106,6 +107,24 @@ function exportSvg(): void {
   toast('exported sketch.svg');
 }
 
+/** Put a picture behind the drawing to trace over.
+ *
+ *  It is **view state, not document state** — scenery, like the camera and the colouring, and
+ *  the same in kind as the paper you would tape to a drawing board.  So it is not saved, not
+ *  exported, not solved and not undone: undoing a line must not move your photograph, and the
+ *  Solvent document stays what somebody wrote.  What survives tracing is the drawing. */
+async function traceImage(): Promise<void> {
+  const got = await openImage();
+  if (!got) return;
+  view.traceImage(got.image, got.name, got.url);
+}
+
+/** The traced picture's two keys, live only while it is the selected thing — the brackets a
+ *  drawing program fades a reference layer with.  The gate is here and not in `fadeImage`,
+ *  which fades whatever picture there is: it is about what the *accelerator* may do, so it
+ *  belongs beside the accelerator, in the one table every key in the app is read off. */
+const fade = (by: number) => () => { if (view.underlay?.picked) view.fadeImage(by); };
+
 /* Everything that is neither a tool nor a constraint.  Like the constraints bar these are
  * tables rather than calls, so the accelerator printed beside an item is the same string the
  * keyboard handler matches — see ACTION_KEYS. */
@@ -119,6 +138,16 @@ const MENUS: [string, (MenuItem | null)[]][] = [
     { label: 'Export SVG', onClick: exportSvg,
       title: 'The drawing as a scalable image, laid out by the core — the same figure `solventc '
         + '--output` writes' },
+    null,
+    { label: 'Trace image…', onClick: () => void traceImage(),
+      title: 'Put a picture behind the drawing to draw over.  It is scenery — not saved, not '
+        + 'exported, not undone' },
+    { label: 'Remove image', onClick: () => view.removeImage(),
+      title: 'Take the traced picture away again' },
+    { label: 'Fade image', key: '[', onClick: fade(-0.1),
+      title: 'Fade the traced picture, while it is the selected thing' },
+    { label: 'Brighten image', key: ']', onClick: fade(0.1),
+      title: 'Bring the traced picture back up, while it is the selected thing' },
   ]],
   ['Edit', [
     { label: 'Undo', key: '⌘z', onClick: () => view.undo() },
@@ -227,6 +256,7 @@ view.onPickConstraint = (c) => {
 view.onEditConstraint = (c) => editValue(c);
 view.onDimension = onDimension;
 view.onChanged = () => { refresh(); refreshProgram(); };
+view.onPicked = refreshPanel;
 // the source changed without the drawing's structure doing so — a drag wrote its seeds back, or a
 // number was spliced.  Never per frame: `onDragFrame` is the frame seam and this is not wired to it
 view.onProgram = () => { refreshProgram(); };

@@ -179,10 +179,14 @@ export function refreshRows(): void {
 
 /** The window's heading and whether it is up at all, and the same answer in the status line:
  *  what is picked, said the way the old sidebar's row said it. */
-function refreshPanel(): void {
+export function refreshPanel(): void {
   cpanel.hidden = subject.length === 0;
   if (!subject.length) {
-    componentEl.textContent = '';
+    // the traced picture is picked the way an entity is, so it says so where an entity does —
+    // it has no constraints on it and so no window, only the line that names what you hold
+    const u = view.underlay;
+    componentEl.textContent = u?.picked
+      ? `image ${u.name} — ${Math.round(u.opacity * 100)}%   |   ` : '';
     return;
   }
   const ix = new io.Index(view.sketch);

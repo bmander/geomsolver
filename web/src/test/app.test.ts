@@ -17,6 +17,8 @@ import { callouts } from '../core/callout.js';
 import { PlanDrag } from '../core/decompose.js';
 import { solve } from '../core/system.js';
 import { DimAlt, SketchView } from '../app/view.js';
+import { contains, corners, toImage, toWorld } from '../app/underlay.js';
+import type { Bitmap } from '../app/underlay.js';
 import { initCore } from '../core/wasm.js';
 import { fakeCanvas, pointer } from './canvas.js';
 
@@ -820,4 +822,240 @@ test('a gesture beside a component leaves the component written', () => {
   assert.ok(view.source.includes('cycle N as i {'));
   assert.ok(view.source.includes('g: Gear(N: 30, m: 3, phi: 25, ded: 1)'));
   assert.ok(/point\s+p0 hint\(x: 200, y: 0\)/.test(view.source), view.source);
+});
+
+
+/* -- the traced picture ------------------------------------------------------------
+ *
+ * The placement is a similarity in world coordinates, so all of it can be checked without a
+ * browser: a `Bitmap` is two numbers, and the fake canvas swallows the one `drawImage` call.
+ * What is worth a test is what a person doing the tracing would notice — that the picture is
+ * handled like everything else on the canvas, that the drawing still outranks it, and that none
+ * of it reaches the document. */
+
+/** A picture, without one.  Everything below is a fact about the placement, not the pixels. */
+function bitmap(width = 400, height = 300): Bitmap {
+  return { width, height };
+}
+
+/** A view with a picture on it, dropped again so the tests start where a user would: with it
+ *  on the canvas and nothing selected.  (`traceImage` leaves it selected, which is its own
+ *  case below.) */
+function traced(text = ANNOTATED): SketchView {
+  const view = docView(text);
+  view.traceImage(bitmap(), 'photo.png');
+  view.dropImage();
+  return view;
+}
+
+/** Press, move and release on the canvas, as the pointer handlers see it. */
+function drag(view: SketchView, from: [number, number], to: [number, number]): void {
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  cv.fire('pointerdown', pointer(...from));
+  cv.fire('pointermove', pointer(...to));
+  cv.fire('pointerup', pointer(...to));
+}
+
+/** A screen point a given number of pixels along the picture's top edge, which is the frame —
+ *  the only part of it a press takes hold of while it is not selected. */
+function onFrame(view: SketchView): [number, number] {
+  const [tl, tr] = corners(view.underlay!).map(([x, y]) => view.w2s(x, y));
+  return [(tl[0] + tr[0]) / 2, (tl[1] + tr[1]) / 2];
+}
+
+test('a traced picture lands in the middle of the view, edges in sight, and selected', () => {
+  const view = docView(ANNOTATED);
+  view.traceImage(bitmap(), 'photo.png');
+  const u = view.underlay!;
+  assert.deepEqual([u.x, u.y], view.s2w(view.width / 2, view.height / 2));
+  assert.equal(u.angle, 0);
+  assert.ok(u.picked, 'the handles that place it should be there to be used at once');
+  // the longer side spans some but not all of the shorter side of the canvas
+  const span = view.len(u.scale * u.image.width);
+  assert.ok(span > 0.3 * view.height && span < view.height, `spanned ${span}px`);
+  // on it, and only just: a corner is the edge of it, so what is measured is either side
+  assert.ok(contains(u, u.x, u.y));
+  const [cx, cy] = corners(u)[0];
+  const in3 = u.scale * 3;
+  assert.ok(contains(u, cx + in3, cy - in3), 'three pixels inside the top-left corner is not on it');
+  assert.ok(!contains(u, cx - in3, cy + in3), 'three pixels outside it is');
+});
+
+test('world and image coordinates are inverses, turned and scaled or not', () => {
+  const view = traced();
+  const u = view.underlay!;
+  u.angle = 0.7;
+  u.scale = 0.42;
+  for (const [px, py] of [[0, 0], [37, -11], [-200, 150]]) {
+    const back = toImage(u, ...toWorld(u, px, py));
+    assert.ok(Math.hypot(back[0] - px, back[1] - py) < 1e-9, `${back} for ${[px, py]}`);
+  }
+  // and the corners come back in image order: the first is the top-left one, which at a
+  // rotation of zero is up and to the left of the centre — the picture is not mirrored
+  u.angle = 0;
+  const [tl, tr, , bl] = corners(u);
+  assert.ok(tl[0] < u.x && tl[1] > u.y, `top-left at ${tl}`);
+  assert.ok(tr[0] > u.x && tr[1] > u.y, `top-right at ${tr}`);
+  assert.ok(bl[0] < u.x && bl[1] < u.y, `bottom-left at ${bl}`);
+});
+
+test('unselected, only its frame answers a press — the middle of it is where you draw', () => {
+  const view = traced();
+  const u = view.underlay!;
+  const middle = view.w2s(u.x, u.y);
+  const before = view.sketch.points.length;
+
+  // a click in the middle of it selects nothing and starts a band, exactly as bare canvas does
+  drag(view, middle, [middle[0] + 40, middle[1] + 40]);
+  assert.ok(!u.picked, 'clicking through it took hold of it');
+
+  // and a drawing tool puts a point down on top of it
+  view.setTool('point');
+  drag(view, middle, middle);
+  assert.equal(view.sketch.points.length, before + 1);
+  assert.ok(!u.picked);
+  view.setTool('select');
+
+  // its frame, though, is a click target like any other
+  drag(view, onFrame(view), onFrame(view));
+  assert.ok(u.picked, 'the frame is the handle, and it did not answer');
+});
+
+test('selecting the picture and selecting geometry are exclusive', () => {
+  const view = traced();
+  const u = view.underlay!;
+  const a = view.sketch.points[0];
+  view.selected = [a];
+
+  drag(view, onFrame(view), onFrame(view));
+  assert.ok(u.picked);
+  assert.deepEqual(view.selected, [], 'a photograph is not a Primitive and cannot join the list');
+
+  // and back: taking hold of a point lets the picture go
+  const on = view.w2s(...a.xy);
+  drag(view, on, on);
+  assert.deepEqual(view.selected, [a]);
+  assert.ok(!u.picked);
+
+  // and it is the *assignment* that lets it go, not the gesture that happened to make one —
+  // paste, a rubber band and the constraint list all write this field and none of them can be
+  // expected to remember the picture.  Delete would otherwise take the photograph instead.
+  view.pickImage();
+  assert.ok(u.picked);
+  view.selected = [a];
+  assert.ok(!u.picked, 'selecting geometry by any route should let the picture go');
+});
+
+test('the drawing outranks the picture: a line across it is what a click on the line picks', () => {
+  const view = traced();
+  const u = view.underlay!;
+  const ln = view.sketch.lines[0];
+  // put the picture over the line, so the two are under the same pixel
+  const mid: [number, number] = [(ln.p1.xy[0] + ln.p2.xy[0]) / 2, (ln.p1.xy[1] + ln.p2.xy[1]) / 2];
+  [u.x, u.y] = mid;
+  const on = view.w2s(...mid);
+
+  drag(view, on, on);
+  assert.deepEqual(view.selected, [ln], 'the picture swallowed a click meant for the drawing');
+  assert.ok(!u.picked);
+});
+
+test('dragging the picture keeps the place that was grabbed under the pointer', () => {
+  const view = traced();
+  const u = view.underlay!;
+  view.pickImage();                      // selected, so the whole of it drags
+  const from = view.w2s(u.x + 3, u.y - 2);
+  const held = toImage(u, ...view.s2w(...from));
+  const size = u.scale;
+
+  drag(view, from, [from[0] + 55, from[1] - 30]);
+  const now = toImage(u, ...view.s2w(from[0] + 55, from[1] - 30));
+  assert.ok(Math.hypot(now[0] - held[0], now[1] - held[1]) < 1e-6,
+            `the picture slipped: ${held} became ${now}`);
+  assert.equal(u.scale, size, 'a move is not a resize');
+  assert.equal(u.angle, 0, 'and not a rotation');
+});
+
+test('a press on the frame selects and moves it in the one gesture', () => {
+  const view = traced();
+  const u = view.underlay!;
+  const from = onFrame(view);
+  const was: [number, number] = [u.x, u.y];
+
+  drag(view, from, [from[0] + 40, from[1]]);
+  assert.ok(u.picked);
+  assert.ok(Math.abs(u.x - was[0] - view.world(40)) < 1e-9, 'it did not follow the pointer');
+  assert.equal(u.y, was[1]);
+});
+
+test('dragging a corner sizes and turns it about a centre that stays put', () => {
+  const view = traced();
+  const u = view.underlay!;
+  view.pickImage();                      // handles exist only while it is selected
+  const centre: [number, number] = [u.x, u.y];
+  const grip = view.w2s(...corners(u)[0]);
+  const to: [number, number] = [grip[0] - 60, grip[1] + 25];
+
+  drag(view, grip, to);
+  assert.deepEqual([u.x, u.y], centre, 'the centre moved');
+  assert.ok(u.angle !== 0, 'it did not turn');
+  // the corner that was taken hold of is where the pointer left it — which is the whole of
+  // what makes one handle do both jobs without a mode
+  const at = view.w2s(...corners(u)[0]);
+  assert.ok(Math.hypot(at[0] - to[0], at[1] - to[1]) < 1e-6, `corner at ${at}, pointer at ${to}`);
+  // and the scale stayed uniform: the two sides keep the ratio the pixels have
+  const side = (a: number[], b: number[]): number => Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const [tl, tr, , bl] = corners(u);
+  assert.ok(Math.abs(side(tl, tr) / side(tl, bl) - u.image.width / u.image.height) < 1e-9,
+            'the picture was squashed');
+});
+
+test('a corner handle is not there to be grabbed until the picture is selected', () => {
+  const view = traced();
+  const u = view.underlay!;
+  const grip = view.w2s(...corners(u)[0]);
+  const was = { scale: u.scale, angle: u.angle };
+
+  drag(view, grip, [grip[0] - 60, grip[1] + 25]);
+  assert.deepEqual({ scale: u.scale, angle: u.angle }, was, 'an unselected corner resized it');
+});
+
+test('Delete takes the picture when the picture is what is selected, and only then', () => {
+  const view = traced();
+  view.selected = [view.sketch.points[0]];
+  const points = view.sketch.points.length;
+  view.deleteSelected();
+  assert.ok(view.underlay, 'deleting a point took the photograph with it');
+  assert.equal(view.sketch.points.length, points - 1);
+
+  view.pickImage();
+  const source = view.source;
+  view.deleteSelected();
+  assert.equal(view.underlay, null);
+  assert.equal(view.source, source, 'removing the picture spliced the document');
+});
+
+test('the picture is not in the document: nothing it does is written, saved or undone', () => {
+  const view = traced();
+  const u = view.underlay!;
+  const source = view.source;
+  view.pickImage();
+  const on = view.w2s(u.x, u.y);
+
+  drag(view, on, [on[0] + 90, on[1] + 15]);
+  assert.notEqual(u.x, view.s2w(...on)[0], 'the test moved nothing');
+  assert.equal(view.source, source, 'a traced picture wrote itself into the document');
+  view.undo();
+  assert.equal(view.source, source, 'undo stepped over a document edit that never happened');
+  assert.ok(view.underlay, 'and undo took the photograph away');
+  assert.ok(!io.dumps(view.sketch).includes('photo.png'));
+});
+
+test('fading is kept on the scale, from either end', () => {
+  const view = traced();
+  const u = view.underlay!;
+  for (let i = 0; i < 20; i++) view.fadeImage(-0.1);
+  assert.equal(u.opacity, 0);
+  for (let i = 0; i < 20; i++) view.fadeImage(0.1);
+  assert.equal(u.opacity, 1);
 });
