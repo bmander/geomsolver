@@ -147,6 +147,35 @@ Conventions:
   slot, so `commit_seeds` walks the parent's children and splices inside `Kid::Hint`'s spans —
   and where the source wrote no list at all, writes the whole argument list at `hint_span` in
   one edit, since two splices at one offset are two insertions racing for it.
+  **The element's own name is optional too** (issue #33), independently of everything after it:
+  `line`, `line(p1, p2)`, `line hint(x: 0, y: 0)` and `arc(center: c)` are all anonymous forms,
+  and the token after the kind keyword decides — `syntax::names_decl` is the one predicate, asked
+  by `decl()` and the colouring alike, so a trailing-clause word, an operator word or an element
+  keyword can no longer be a declaration's name (`curve` keeps requiring one; contacts address
+  it — the colouring carries the same exception).  A word declined there is remembered
+  (`P::declined`) and named in a note when the line then fails to parse, since the reservation
+  is the cause no other error can see.  An anonymous declaration still carries a `Decl::name`:
+  a key the source cannot write — `#a` and its own offset, the flattener's block-prefix device
+  marked apart — with an **empty span at the point a real name would go** (`hint_span`'s
+  idiom).  `syntax::hidden` is "the source cannot write it" (both kinds); `syntax::nameless` is
+  the narrower "an anonymous declaration's key", and the **report** asks that one: the key is
+  withheld (offset-derived, it goes stale — or lands on another entity — after any edit above
+  it, so a selection must never cross on one) while a block-prefix name stays published as it
+  always was.  The key is what a chain's corner welds by and what `res` resolves, and it must
+  never reach the source: `write_decl` spells the statement without it,
+  `commit_seeds` leaves a thread-filled slot holding one *empty* — forcing labels on the kept
+  children when a gap precedes them (`decl_args`), since a line's slots count by position — and
+  diagnostics spell the kind instead.  `edit::reconcile` **mints on demand**: the moment an
+  appended statement must reference an anonymous element (a constraint from the app, a gauge on
+  a fixed point — `held_refs` is the one walk `gauges` shares), a real name is spliced into the
+  declaration at that empty span, **every entity the statement made** renamed with it — the
+  child by the dotted path read off the map's own key, never by comparing offsets a retext may
+  have moved — and `SourceMap::favor`ed to the front, so the next gesture in the same
+  elaboration reads the name and not the key.  One that *cannot* be named (anonymous inside a
+  component or a block) is refused with the cause, before anything is written.  The whole pass
+  is behind an any-hidden-names scan, so an ordinary document pays one map walk per gesture.
+  Insertions racing for one offset are ordered by `splice`'s stable sort, so reconcile pushes
+  appends before flags before names; `tests/anonymous.rs` is the gate.
   Where an unseeded implicit child *starts* is `program::scatter` and is an implementation
   choice the spec must not carry — but it may not be the origin (two endpoints there is a
   zero-length line, with no direction for `horizontal(l)` and a singular row for any tangency),

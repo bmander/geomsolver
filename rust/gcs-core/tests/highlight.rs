@@ -200,18 +200,24 @@ horizontal p
     assert_eq!(tint_of(src, "horizontal"), Some(Tint::Relation));
 }
 
-/// The other side of that lookahead: a **name** that happens to spell an operator is still a name.
-///
-/// The guard the joint test carries is what keeps `tangent` in an argument list plain, and reading
-/// past the parentheses must not cost it — a bare name is followed by `,` or `)`, which is neither
-/// a word nor the end of the line, so it never reaches the operator arm.
+/// A declaration's name is **optional** (issue #33), so the word after an element keyword is a
+/// name only when it could be one: a trailing clause's word or an operator there keeps its own
+/// reading — the reservation `names_decl` states, asked by the parser and the colouring alike —
+/// and a name that spells an operator stays plain where it is *used*, a bare name in an argument
+/// list being followed by `,` or `)`.
 #[test]
-fn a_name_that_spells_an_operator_stays_a_name() {
+fn an_anonymous_declaration_gives_its_name_tint_to_nobody() {
     let src = "\
-point tangent hint(x: 0, y: 0)
-point b hint(x: 1, y: 0)
-line l(tangent, b)
+point a hint(x: 0, y: 0)
+point hint(x: 1, y: 0)
+line class construction
+line -> tangent arc -> tangent line
 ";
-    assert_eq!(tint_of(src, "tangent hint"), Some(Tint::Def), "the point it declares");
-    assert_eq!(tint_of(src, "tangent,"), None, "and the same name, used");
+    assert_eq!(tint_of(src, "a hint"), Some(Tint::Def), "a written name still tints");
+    assert_eq!(tint_of(src, "hint(x: 1"), Some(Tint::Word), "an anonymous point's clause");
+    assert_eq!(tint_of(src, "class"), Some(Tint::Word), "an anonymous line's clause");
+    assert_eq!(tint_of(src, "tangent arc"), Some(Tint::Relation), "a joint on an anonymous link");
+    // a curve's name is not optional (`decl()` makes the same exception), so its next word is a
+    // name whatever it spells — the parser accepts `curve tangent = …` and the colour agrees
+    assert_eq!(tint_of("curve tangent = involute(c)\n", "tangent"), Some(Tint::Def));
 }
