@@ -291,6 +291,24 @@ fn deleting_an_anonymous_element_takes_its_statement() {
     assert_eq!(d.text, "point a hint(x: 1, y: 2)\n");
 }
 
+/// **Names in the sketch are display; names in the map are identity.**  A parameter carries its
+/// entity's name into every place a parameter is listed (a DOF report, a mode's label), so an
+/// anonymous element is called what the *drawing* calls it — never by the offset key it resolves
+/// by, which is not a thing to show anybody.
+#[test]
+fn the_sketch_shows_a_name_and_never_the_key() {
+    let e = read("point a hint(x: 1, y: 2)\nline\ncircle\n");
+    for p in &e.sketch.params {
+        assert!(!p.name.contains('#'), "a key reached a parameter: {}", p.name);
+    }
+    let names: Vec<&str> = e.sketch.params.iter().map(|p| p.name.as_str()).collect();
+    assert!(names.contains(&"a.x"), "a written name is unchanged: {names:?}");
+    assert!(names.contains(&"l0.p1.x"), "and an anonymous one reads positionally: {names:?}");
+    assert!(names.contains(&"c0.r"), "{names:?}");
+    // the map keeps the key all the same — that is what a chain's corner welds by
+    assert!(e.map.ent_named("#a29.p1").is_some() || e.map.names.values().flatten().any(|n| n.starts_with('#')));
+}
+
 /// A diagnostic about an anonymous declaration spells the kind, never the hidden key — a `#`
 /// and an offset are the elaboration's, and nothing a person wrote or can search for.
 #[test]

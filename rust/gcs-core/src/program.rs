@@ -174,7 +174,7 @@ impl SourceMap {
         self.of_constraint.get(&id)
     }
 
-    pub(crate) fn bind(&mut self, name: &str, e: EntRef) {
+    fn bind(&mut self, name: &str, e: EntRef) {
         self.by_name.insert(name.to_string(), e);
         self.names.entry(e).or_default().push(name.to_string());
     }
@@ -875,15 +875,12 @@ fn compile_trace(
                 .get(g)
                 .and_then(|v| v.first())
                 .and_then(|k| k.as_ref())
-                // an anonymous declaration's key is the elaboration's, not the writer's — the
-                // message spells the kind instead, the bargain `decl()`'s `head` strikes
+                // an anonymous declaration's key is the elaboration's, not the writer's, so the
+                // message spells the kind instead — `decl_head`, the one wording both the
+                // parser's errors and these diagnostics use
                 .ok_or_else(|| {
-                    let who = if crate::syntax::hidden(&d.name.text) {
-                        format!("a {} here", d.kind.as_str())
-                    } else {
-                        format!("`{}`", d.name.text)
-                    };
-                    (st.span, format!("{who} needs its points named"))
+                    let who = crate::syntax::decl_head(d.kind, &d.name.text);
+                    (st.span, format!("`{who}` needs its points named"))
                 })?;
             let e = scope
                 .get(&r.root.text)
@@ -1213,13 +1210,30 @@ fn scatter(i: usize) -> (f64, f64) {
 /// The dotted names of a kind's child slots: `l.p1`, `a.center`.  An anonymous child has no name
 /// in the source, so this **is** its name, and everything that identifies an entity by name —
 /// the map, a new constraint's arguments, a selection crossing a re-elaboration — asks here.
-fn child_names(d: &Decl) -> Vec<String> {
+///
+/// Under `base`, which is the declaration's own name — or, for an anonymous one, what the
+/// *drawing* calls it (`shown`), since the key it resolves by is not a thing to show anybody.
+fn child_names(d: &Decl, base: &str) -> Vec<String> {
     d.kind
         .fields()
         .iter()
         .filter(|(_, f)| *f == Field::Child)
-        .map(|(n, _)| format!("{}.{n}", d.name.text))
+        .map(|(n, _)| format!("{base}.{n}"))
         .collect()
+}
+
+/// What to *call* a declaration where a person will read it — the name it was given, and for an
+/// anonymous one the positional name the drawing already labels it by (`l0`, `p2`).
+///
+/// The key an anonymous declaration resolves by is an offset, and a parameter carries its
+/// entity's name into every place a parameter is listed (a DOF report, a mode's label), so the
+/// key would be read by somebody.  Names in the *sketch* are display; names in the source map
+/// are identity; this is the one seam where the two part company.
+fn shown(sk: &Sketch, d: &Decl) -> String {
+    match crate::syntax::hidden(&d.name.text) {
+        true => crate::syntax::entity_name(EntRef::new(d.kind, sk.count(d.kind))),
+        false => d.name.text.clone(),
+    }
 }
 
 fn build(
@@ -1255,15 +1269,19 @@ fn build(
     // `Kid::Ref`, and formatting names nothing would read is a string per slot per elaboration
     let anonymous = written == 0
         || d.children.iter().any(|g| g.is_empty() || g.iter().any(|k| matches!(k, Kid::Hint(_))));
-    let dotted = if anonymous { child_names(d) } else { Vec::new() };
+    // The child's **name**, which is its dotted path, and what to **call** it — the same string
+    // for a declaration the source named, and two different ones for an anonymous declaration,
+    // whose key is an offset nobody should be shown.
+    let dotted = if anonymous { child_names(d, &d.name.text) } else { Vec::new() };
+    let label = if anonymous { child_names(d, &shown(sk, d)) } else { Vec::new() };
     let mut kids: Vec<usize> = Vec::new();
     // `Some(0)` and `None` both mean there is nothing to mint, and so does a written list
     let mint = if written == 0 { d.kind.children_arity().unwrap_or(0) } else { 0 };
     for k in 0..mint {
         let (x, y) = scatter(sk.points.len());
-        // the dotted path *is* the point's name — there is no other — so it is the name the
-        // sketch carries too, and every reader that shows one shows this
-        let i = sk.point(x, y, false, &dotted[k]);
+        // the dotted path *is* the point's name — there is no other — so it is what the map
+        // binds; the sketch carries what a reader is shown
+        let i = sk.point(x, y, false, &label[k]);
         kids.push(i);
         anon.push((dotted[k].clone(), EntRef::point(i)));
     }
@@ -1278,7 +1296,7 @@ fn build(
             // name to be reached by
             if let Some(name) = d.kind.children_arity().and(dotted.get(slot)) {
                 let (x, y) = scatter(sk.points.len());
-                let i = sk.point(x, y, false, name);
+                let i = sk.point(x, y, false, label.get(slot).unwrap_or(name));
                 kids.push(i);
                 anon.push((name.clone(), EntRef::point(i)));
             }
@@ -1304,7 +1322,7 @@ fn build(
                         });
                         return None;
                     };
-                    let i = sk.point(seed.v[0], seed.v[1], false, name);
+                    let i = sk.point(seed.v[0], seed.v[1], false, label.get(slot).unwrap_or(name));
                     kids.push(i);
                     anon.push((name.clone(), EntRef::point(i)));
                     slot += 1;
@@ -1369,14 +1387,17 @@ fn build(
         }
     }
     let seed = |i: usize| d.seed.get(i).copied().unwrap_or(0.0);
+    // what a reader is shown: the declaration's own name, or what the drawing calls it where
+    // the source named nothing — a scalar carries this into every list of parameters
+    let show = shown(sk, d);
     let idx = match d.kind {
-        EntKind::Point => sk.point(seed(0), seed(1), false, &d.name.text),
+        EntKind::Point => sk.point(seed(0), seed(1), false, &show),
         EntKind::Line => sk.line(kids[0], kids[1]),
-        EntKind::Circle => sk.circle(kids[0], seed(0), &d.name.text),
+        EntKind::Circle => sk.circle(kids[0], seed(0), &show),
         EntKind::Arc => {
             // `arc` adds the two intrinsic `PointOnCircle`s here and nowhere else, and computes a
             // radius from the geometry that the declared seed then replaces
-            let ai = sk.arc(kids[0], kids[1], kids[2], &d.name.text);
+            let ai = sk.arc(kids[0], kids[1], kids[2], &show);
             let rp = sk.arcs[ai].radius as usize;
             sk.params[rp].value = seed(0);
             ai
@@ -1407,12 +1428,12 @@ fn build(
                 }
             }
         }
-        EntKind::Ellipse => sk.ellipse(kids[0], kids[1], seed(0), &d.name.text),
+        EntKind::Ellipse => sk.ellipse(kids[0], kids[1], seed(0), &show),
         EntKind::Frame => {
             // `frame` adds the two intrinsics here and nowhere else, and computes a rotor from
             // the chord that a declared seed then replaces — except (0, 0), which is no rotor
             // at all and is what an unwritten seed reads as
-            let fi = sk.frame(kids[0], kids[1], &d.name.text);
+            let fi = sk.frame(kids[0], kids[1], &show);
             let (c, s) = (seed(0), seed(1));
             if c != 0.0 || s != 0.0 {
                 let f = &sk.frames[fi];

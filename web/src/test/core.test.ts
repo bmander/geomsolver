@@ -2082,7 +2082,7 @@ test('a diagnostic and a source map index the string, not the core\'s bytes', ()
   const centre = d.map.entities.find((x) => x.name === 'g.center')!;
   assert.ok(centre && centre.lo > dash, 'the centre is in the map, past the em dash');
   assert.equal(text.slice(centre.lo, centre.hi), 'point center hint(x: 0, y: 0)');
-  const port = d.map.entities.find((x) => x.name.endsWith('.t.r.lo'))!;
+  const port = d.map.entities.find((x) => x.name?.endsWith('.t.r.lo'))!;
   assert.ok(port, 'a flank port is in the map');
   assert.equal(text.slice(port.lo, port.hi), 'port lo: point');
   d.dispose();

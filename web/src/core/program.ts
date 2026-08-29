@@ -41,7 +41,11 @@ export interface Diagnostic extends Span {
 /** Which statement made which part of the drawing, and the other way round.  Offsets into the
  *  same text the panel holds, so a click on either end finds the other. */
 export interface SourceMap {
-  entities: { kind: string; index: number; name: string; lo: number; hi: number }[];
+  /** `name` is absent for an **anonymous** element: the source calls it nothing, and the core
+   *  withholds the key it elaborated under (that key is its statement's offset, so a selection
+   *  carried on one could land on a different entity after an edit above it).  `lo`/`hi` still
+   *  say where it was written. */
+  entities: { kind: string; index: number; name?: string; lo: number; hi: number }[];
   constraints: { id: number; lo: number; hi: number }[];
 }
 
@@ -108,18 +112,18 @@ export class Document {
     const at = new Offsets(this.text);
     this.diagnostics = r.diagnostics.map((d) => ({ ...d, lo: at.at(d.lo), hi: at.at(d.hi) }));
     this.map = {
+      // an anonymous element comes back with an empty name; it becomes *absent* here, at the
+      // one seam a report is read, so every later reader — `byName`, `nameOf`'s type, the
+      // selection carried across a re-elaboration — inherits the rule rather than each
+      // remembering to test for `''`
       entities: r.entities.map(([kind, index, name, lo, hi]) =>
-        ({ kind, index, name, lo: at.at(lo), hi: at.at(hi) })),
+        ({ kind, index, name: name || undefined, lo: at.at(lo), hi: at.at(hi) })),
       constraints: r.constraints.map(([id, lo, hi]) => ({ id, lo: at.at(lo), hi: at.at(hi) })),
     };
     this.byName.clear();
     for (const e of this.map.entities) {
-      if (!KINDS.includes(e.kind as Kind)) continue;
-      const of = this.sketch.entities(e.kind as Kind)[e.index];
-      // an anonymous entity is published unnamed (the core withholds its hidden key), so it
-      // has no entry here: a selection on it does not cross a re-elaboration, which is honest
-      // — a stale key could land it on a different entity
-      if (of && e.name) this.byName.set(e.name, of);
+      const of = e.name ? this.entityOf(e) : undefined;
+      if (of) this.byName.set(e.name!, of);
     }
   }
 
@@ -155,6 +159,15 @@ export class Document {
    *  from one document to the next: a proxy dies with its sketch, a name does not. */
   entity(name: string): Primitive | undefined {
     return this.byName.get(name);
+  }
+
+  /** The entity a source-map entry stands for.  Every entry carries the kind and the index, so
+   *  this resolves an **anonymous** element as readily as a named one — which `entity` cannot,
+   *  there being no name to ask by.  Within one elaboration it is the lookup to use; only a
+   *  selection *crossing* elaborations needs the name. */
+  entityOf(entry: { kind: string; index: number }): Primitive | undefined {
+    if (!KINDS.includes(entry.kind as Kind)) return undefined;
+    return this.sketch.entities(entry.kind as Kind)[entry.index];
   }
 
   /** What the source map says about a part of the drawing: the name it was declared under and

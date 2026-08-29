@@ -1824,7 +1824,7 @@ fn tint_word(
         Next::Class => {
             // the list runs to the next thing a declaration may say — another trailing clause,
             // or a chain's joint.  The same predicate the parser stops on, asked once.
-            if TRAILERS.contains(&w) || joint_word(w) || w == "close" {
+            if trails_decl(w) {
                 return tint_word(w, prev, toks, i, Next::Word);
             }
             (Some(Tint::Class), Next::Class)
@@ -1843,9 +1843,7 @@ fn tint_word(
         Next::Start => {
             // `point p`, `component Gear(…)`, `curve involute(…)`, `param R = …`, `port lo: point`
             if EntKind::parse(w).is_some() {
-                // a curve's name is not optional (`decl()` makes the same exception), so its
-                // next word is a name whatever it spells — `curve tangent = …` is legal
-                return (Some(Tint::Word), if w == "curve" { Next::Def } else { Next::DeclName });
+                return (Some(Tint::Word), after_kind(w));
             }
             if matches!(w, "component" | "param" | "port") {
                 return (Some(Tint::Word), Next::Def);
@@ -1923,12 +1921,9 @@ fn tint_word(
             // chain onto the next, and `p distance(80)` ends a line as surely as `p equal` does
             let at_line_end = matches!(toks.get(j).map(|(t, _)| t), Some(Tok::Nl) | None);
             if opens_link(w, next_word) {
-                // the element keyword names what the link declares; a prefix states a relation.
-                // `curve`'s name is not optional, so its next word is a name whatever it spells.
+                // the element keyword names what the link declares; a prefix states a relation
                 return match EntKind::parse(w) {
-                    Some(_) => {
-                        (Some(Tint::Word), if w == "curve" { Next::Def } else { Next::DeclName })
-                    }
+                    Some(_) => (Some(Tint::Word), after_kind(w)),
                     None => (Some(Tint::Relation), Next::Word),
                 };
             }
@@ -2115,13 +2110,42 @@ fn opens_link(w: &str, next: Option<&str>) -> bool {
 
 /// Whether a word may be a declaration's **name**.  With the name optional (§6.1, issue #33),
 /// the token after the kind keyword decides what the statement says next, so every word that may
-/// follow a declaration is reserved: another element keyword, an operator (a chain's joint or the
-/// next link's prefix), a trailing clause's word, and `at`, whose retired seed spelling keeps its
-/// message.  `line hint(x: 0, y: 0)` seeds an anonymous line, and does not declare one named
-/// `hint`.  Asked by the parser (`decl`) and the colouring (`tint_word`) alike — written twice,
-/// the two would drift on exactly these words.
+/// follow a declaration is reserved: another element keyword, anything that trails one, and `at`,
+/// whose retired seed spelling keeps its message.  `line hint(x: 0, y: 0)` seeds an anonymous
+/// line, and does not declare one named `hint`.  Asked by the parser (`decl`) and the colouring
+/// (`tint_word`) alike — written twice, the two would drift on exactly these words.
 fn names_decl(w: &str) -> bool {
-    EntKind::parse(w).is_none() && !is_operator(w) && !TRAILERS.contains(&w) && w != "at"
+    EntKind::parse(w).is_none() && !trails_decl(w) && w != "at"
+}
+
+/// Whether a word may stand *after* a declaration — a trailing clause's own word, or a chain's
+/// joint.  **The one spelling** of that list: `class_clause` stops on it, the colouring's class
+/// arm stops on it, and `names_decl` reserves it.  Written three times, a word added to a
+/// declaration's tail lands in one of them and the colouring and the parser part company.
+fn trails_decl(w: &str) -> bool {
+    TRAILERS.contains(&w) || joint_word(w)
+}
+
+/// What follows an element keyword: a name, and the name is optional — except after `curve`,
+/// whose form is `curve name = family(…)` and whose name a contact addresses.  `decl()` makes
+/// the same exception, so this is the colouring's half of one rule.
+fn after_kind(w: &str) -> Next {
+    if w == "curve" {
+        Next::Def
+    } else {
+        Next::DeclName
+    }
+}
+
+/// How a message spells a declaration whose name is optional: the name where the source wrote
+/// one, and the bare kind where it did not.  Both the parser's errors and the elaborator's
+/// diagnostics ask, so an anonymous declaration is described one way and never by its key.
+pub(crate) fn decl_head(kind: EntKind, name: &str) -> String {
+    if hidden(name) {
+        kind.as_str().to_string()
+    } else {
+        format!("{} {name}", kind.as_str())
+    }
 }
 
 /// Whether a name is one the source could never write: the `#a`-keyed name an anonymous
@@ -2433,7 +2457,7 @@ impl<'a> P<'a> {
         self.i += 1;
         let mut c = Classes::default();
         while let Some(Tok::Ident(w)) = self.peek().cloned() {
-            if TRAILERS.contains(&w.as_str()) || joint_word(&w) || w == "close" {
+            if trails_decl(&w) {
                 break;
             }
             c.0.push(w);
@@ -3793,11 +3817,11 @@ impl<'a> P<'a> {
         // span is empty at the point a real name would go, which is where `edit::reconcile`
         // splices one the moment a statement must say it.  `curve` keeps requiring a name: its
         // form is `curve name = family(…)`, and the name is what the contacts address.
-        let named = match self.peek() {
-            Some(Tok::Ident(w)) => kind == EntKind::Curve || names_decl(w),
-            _ => false,
-        };
-        let name = if named || kind == EntKind::Curve {
+        // Curve first, and on its own: its name is required, so it reaches `ident()` — and that
+        // error — whatever stands next, identifier or not.
+        let named = kind == EntKind::Curve
+            || matches!(self.peek(), Some(Tok::Ident(w)) if names_decl(w));
+        let name = if named {
             self.ident()?
         } else {
             // an Ident declined here was very possibly *meant* as a name — remembered, so a
@@ -3808,12 +3832,9 @@ impl<'a> P<'a> {
             let at = self.prev_hi();
             Name { text: format!("#a{at}"), span: Span::new(at, at) }
         };
-        // how an error spells this statement's head: with the name where there is one
-        let head = if hidden(&name.text) {
-            kind.as_str().to_string()
-        } else {
-            format!("{} {}", kind.as_str(), name.text)
-        };
+        // how an error spells this statement's head — computed at the failure, since every
+        // declaration that parses would otherwise allocate a string nothing reads
+        let head = || decl_head(kind, &name.text);
         // `curve e = involute(base, phase: 0) over (0, 45)`
         let mut def = None;
         let mut values: Vec<(Name, String)> = Vec::new();
@@ -3899,6 +3920,7 @@ impl<'a> P<'a> {
                     // the brackets after the name are *what the thing is made of*; where the
                     // solve begins is the `hint(…)` after them (spec §6.4)
                     Some(l) if scalars.contains(&l.as_str()) => {
+                        let head = head();
                         self.fail(&format!(
                             "`{l}` is a seed, and a seed goes in a `hint(…)` clause: \
                              `{head}(…) hint({l}: …)`"
@@ -3997,6 +4019,7 @@ impl<'a> P<'a> {
                 // the retired coordinate spellings, `hint at (0, 0)` and a bare `at (0, 0)` —
                 // what every document in the library said until the clause arrived, so the
                 // reader most likely to meet an error here is the one holding one of them
+                let head = head();
                 self.fail(&format!("a coordinate seed is keyed now: `{head} hint(x: …, y: …)`"));
                 return None;
             } else {

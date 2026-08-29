@@ -306,12 +306,14 @@ export function bindProgramPanel(): void {
     const off = ptext.selectionStart;
     // the innermost statement containing the caret: a statement inside a block is inside its
     // block's span, and the one that made something is the one a click there means
-    let best: { name: string; lo: number; hi: number } | null = null;
+    // resolved by kind and index rather than by name, so a statement that declares an
+    // **anonymous** element lights it like any other — it has no name to be asked by
+    let best: { kind: string; index: number; lo: number; hi: number } | null = null;
     for (const x of map().entities) {
       if (off < x.lo || off >= x.hi) continue;
       if (!best || x.hi - x.lo < best.hi - best.lo) best = x;
     }
-    const e = best && view.doc.entity(best.name);
+    const e = best && view.doc.entityOf(best);
     if (e) {
       view.highlight = [e];
       view.draw();
