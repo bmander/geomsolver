@@ -116,7 +116,6 @@ function exportSvg(): void {
 async function traceImage(): Promise<void> {
   const got = await openImage();
   if (!got) return;
-  view.setTool('select');            // it arrives selected, and select is where it is handled
   view.traceImage(got.image, got.name, got.url);
 }
 

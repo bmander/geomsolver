@@ -97,9 +97,7 @@ export function deleteSelected(v: SketchView): void {
   // two selections being exclusive.  It is not in the document, so this is not an `apply`:
   // nothing is spliced, nothing is solved and there is nothing for undo to come back to.
   if (v.underlay?.picked) {
-    const name = v.underlay.name;
-    v.removeImage();
-    v.onStatus(`removed ${name}`);
+    v.removeImage();          // which says so itself, so the menu item and this agree
     return;
   }
   if (!v.selected.length) return;

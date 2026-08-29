@@ -619,6 +619,10 @@ export class SketchView {
   traceImage(image: Bitmap, name: string, url: string | null = null): void {
     underlay.release(this.underlay);
     this.underlay = underlay.place(this, image, name, url);
+    // select is where a picture is handled, and it arrives selected — so the tool comes with
+    // it rather than being set by whichever caller happened to ask.  A drawing tool would
+    // leave it `picked` with nothing on the canvas willing to answer for it.
+    this.setTool('select');
     this.pickImage();
     this.onStatus(`tracing ${name} — drag it to place it, drag a corner to size and turn it, `
                   + 'Delete to remove it');
@@ -640,10 +644,14 @@ export class SketchView {
     if (this.underlay) this.underlay.picked = false;
   }
 
-  /** Take it away again. */
+  /** Take it away again.  The sentence is here and not at the callers: the menu item and the
+   *  Delete key remove the same picture, and a removal reported two ways (or, as it was, one
+   *  way and silently) is two removals as far as anyone reading the status line is concerned. */
   removeImage(): void {
+    const gone = this.underlay?.name;
     underlay.release(this.underlay);
     this.underlay = null;
+    if (gone) this.onStatus(`removed ${gone}`);
     this.onChanged();
     this.draw();
   }
