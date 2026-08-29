@@ -524,11 +524,23 @@ Conventions:
   its two links share a boundary point, threaded left-to-right (`p1 → p2`; `start → end`, CCW),
   and its absence says they do not — so `->` alone is the plain corner (`to` is retired into
   it), `-> tangent` is a corner that is also tangent there, and a bare word states the relation
-  and welds nothing.  A joint may carry a parenthesized *list* — `-> (equal, angle(30deg))`
-  states each member as a statement of its own at that corner, the marker may stand on either
-  side of the list or both, and a doomed member splices out of the list (`Chained::Grouped`),
-  its comma with it, leaving the corner and the rest standing; after a declaration a bare `(`
-  is that declaration's own argument list, so an unthreaded list there needs the marker.  At a threaded joint the shared point is named by exactly one side (or
+  and welds nothing.  A joint may state *several* relations — `-> equal angle(30deg)`
+  states each word as a statement of its own at that corner, and the marker may stand on
+  either side of the words or both.  The run ends at the first word that opens the next link
+  — an element keyword, or a prefix word standing before one — so fixity sorts a joint's
+  infix words from the next link's prefix words with no punctuation.  A doomed word splices
+  out where it stands (`Chained::Member`), leaving the corner and the rest; the whole joint
+  doomed at once — an entity deletion dooms every relation naming it — has no word left to
+  hold the line, so each member carries the joint's written word count and its one-word doom
+  (`of`, `fall`, `out_of`) and `edit::doomed_splices` composes that single splice for
+  `remove` and `reconcile` alike — counted against the words as *written*, so a word the
+  desugarer refused holds its joint's text — and `remove` refuses outright a doom set whose
+  splices leave text that no longer parses (a name link dangling between two doomed joints).
+  A trailing placement attaches to the line's **one** relation and is refused on a line
+  stating several; where none is written the parser records the spot one *would* take
+  (`place_span` as an empty span — `hint_span`'s device), so the callout writeback splices
+  where the parser said and re-derives nothing, and a line with no spot (it ends in a
+  declaration) leaves the callout's pose to the layout.  At a threaded joint the shared point is named by exactly one side (or
   both, in agreement) and fills the boundary field a declared side left out, so a threaded
   `tangent` always desugars to the regular At-form (`TangentArcLine`/`TangentLineCircleAt`, or
   `Parallel` between two lines, which over the shared corner is collinearity) — never the bare
@@ -549,7 +561,7 @@ Conventions:
   span into the chain's text (a chain is several statements from one *line*, where a `cycle` is
   many instances of one *statement*), so writeback, culprits and carets need nothing new.
   **How a statement is spelled is recorded, never sniffed back out of the characters**:
-  `Stmt::chained` is a `Chained` (`No`/`Link`/`Prefix`/`Joint`/`Infix`/`Stuck`/`Close`) written
+  `Stmt::chained` is a `Chained` (`No`/`Link`/`Prefix`/`Joint`/`Infix`/`Member`/`Stuck`/`Close`) written
   by the desugarer, and `edit::doom_splice` matches on it — a doomed threaded joint steps down
   to the bare corner `->`, a doomed unthreaded joint becomes a statement break (its span grown
   at desugar time over a terminal name-link a break would leave dangling; inside a closed chain

@@ -641,13 +641,13 @@ fn equal_reads_a_name_declared_further_down() {
 
 /* -- the joint marker: threading stated per joint (spec §6.6) ------------------------------- */
 
-/// **A joint may state a list of relations**: `-> (equal, angle(30deg))` is `equal` and
-/// `angle` both, between the two links, at the corner the marker threads.  The marker may
-/// stand on either side of the list or both — `-> (equal) -> B` is the joint `-> equal B` is —
-/// and without a marker a list between two names states its relations and welds nothing.
+/// **A joint may state several relations**: `-> equal angle(30deg)` is `equal` and `angle`
+/// both, between the two links, at the corner the marker threads.  The marker may stand on
+/// either side of the words or both — `A -> equal -> B` is the joint `A -> equal B` is — and
+/// without a marker the words state their relations and weld nothing.
 #[test]
-fn a_joint_states_a_list_of_relations() {
-    let e = read("line A -> (equal, angle(30deg)) line B\n");
+fn a_joint_states_several_relations() {
+    let e = read("line A -> equal angle(30deg) line B\n");
     let kinds: Vec<CKind> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
     assert!(kinds.contains(&CKind::EqualLength) && kinds.contains(&CKind::Angle), "{kinds:?}");
     assert_eq!(
@@ -656,8 +656,8 @@ fn a_joint_states_a_list_of_relations() {
         "and the corner still welds"
     );
 
-    // the marker on the far side of the list is the same joint
-    let e = read("line A -> (equal) -> line B\n");
+    // the marker on the far side of the words is the same joint
+    let e = read("line A -> equal -> line B\n");
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::EqualLength));
     assert_eq!(e.sketch.points.len(), 3, "threaded: three points, one shared");
 
@@ -665,13 +665,13 @@ fn a_joint_states_a_list_of_relations() {
     let e = read(
         "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 10, y: 8)\n\
          point p4 hint(x: 0, y: 9)\nline A(p1, p2)\nline B(p3, p4)\n\
-         A (equal, angle(30deg)) B\n",
+         A equal angle(30deg) B\n",
     );
     assert_eq!(e.sketch.points.len(), 4, "no weld between names");
     assert_eq!(e.sketch.user_constraints().len(), 2);
 
-    // and the list's members are coloured as the relations they are
-    let src = "line A -> (equal, angle(30deg)) line B\n";
+    // and the words are coloured as the relations they are
+    let src = "line A -> equal angle(30deg) line B\n";
     let tint = |what: &str| {
         highlight(src)
             .into_iter()
@@ -680,13 +680,130 @@ fn a_joint_states_a_list_of_relations() {
     };
     assert_eq!(tint("equal"), Some(Tint::Relation));
     assert_eq!(tint("angle"), Some(Tint::Relation));
+
+    // a word standing against the far-side marker is a relation too
+    let src = "line A -> equal -> line B\n";
+    let run = highlight(src)
+        .into_iter()
+        .find(|(_, s)| src[s.lo as usize..].starts_with("equal"))
+        .map(|(t, _)| t);
+    assert_eq!(run, Some(Tint::Relation));
 }
 
-/// A doomed list member splices out of the list — its comma goes with it — and the corner,
-/// the list, and the joint's other statements stand.
+/// The retired 0.8 list errors saying what to write, the way `to` does.
 #[test]
-fn removing_a_list_member_leaves_the_list() {
-    let e = read("line A -> (equal, angle(30deg)) line B\n");
+fn the_retired_list_says_what_to_write() {
+    let (_, errs) = parse("line A -> (equal, angle(30deg)) line B\n");
+    assert!(errs.iter().any(|e| e.message.contains("bare words")), "{errs:?}");
+}
+
+/// A marker at the start of the next line is a statement of its own, not the far side of the
+/// joint before it: the words and their marker are read on one line.
+#[test]
+fn a_marker_on_the_next_line_does_not_thread() {
+    let (_, errs) = parse("line A equal\n-> line B\n");
+    assert!(!errs.is_empty(), "the joint before the break must not pick the marker up");
+}
+
+/// A comment standing between two of a joint's words belongs to neither: a word's splice
+/// takes only the word and the blanks after it.
+#[test]
+fn a_comment_between_words_survives_the_splice() {
+    let e = read("line A -> equal /* keep */ angle(30deg) line B\n");
+    let eq = e
+        .sketch
+        .user_constraints()
+        .iter()
+        .find(|c| c.kind == CKind::EqualLength)
+        .expect("the equality")
+        .id;
+    let out = edit::remove(&e, &e.program, &[], &[eq]);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    assert!(out.text.contains("/* keep */"), "{}", out.text);
+    read(&out.text);
+}
+
+/// A word the desugarer refused still holds the joint's text: it emitted no statement, so no
+/// doom can count it, and deleting the sibling's constraint must not compose the whole-joint
+/// splice and take the refused word — and its diagnostic — along.
+#[test]
+fn a_refused_word_holds_its_joint() {
+    let src = "point c1 hint(x: 0, y: 0)\npoint c2 hint(x: 30, y: 0)\n\
+               arc a(center: c1) -> tangent equal arc b(center: c2)\n";
+    let (prog, errs) = parse(src);
+    assert!(!errs.is_empty(), "the threaded arc-arc tangent is refused, which is the point");
+    let e = elaborate(&prog);
+    let eq = e
+        .sketch
+        .user_constraints()
+        .iter()
+        .find(|c| c.kind == CKind::EqualRadius)
+        .expect("the equality")
+        .id;
+    let out = edit::remove(&e, &prog, &[], &[eq]);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    assert!(out.text.contains("tangent"), "the refused word stays: {}", out.text);
+}
+
+/// What no set of splices can unpick is refused whole: an entity standing as a name link
+/// between two doomed joints would be left dangling on a line of its own.
+#[test]
+fn a_doom_no_splice_can_write_is_refused() {
+    let e = read(
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 10, y: 8)\n\
+         point p4 hint(x: 0, y: 9)\npoint p5 hint(x: 4, y: 4)\npoint p6 hint(x: 9, y: 9)\n\
+         line A(p1, p2)\nline B(p3, p4)\nline C(p5, p6)\n\
+         A equal B equal C\n",
+    );
+    let out = edit::remove(&e, &e.program, &[EntRef::line(1)], &[]);
+    assert!(out.refused.is_some(), "a dangling middle link must refuse: {}", out.text);
+}
+
+/// A placement (§13.1) qualifies the line's one relation, wherever it fell among the links;
+/// a line stating several relations refuses it rather than guessing which.
+#[test]
+fn a_placement_names_the_lines_one_relation() {
+    let e = read(&format!("{PTS}line B(p3, p4)\nline a(p1, p2) angle(30deg) B at (2, 5)\n"));
+    let d = e
+        .sketch
+        .user_constraints()
+        .iter()
+        .find(|c| c.kind == CKind::Angle)
+        .expect("the angle")
+        .id;
+    assert_eq!(e.sketch.placements.get(&d).copied(), Some((2.0, 5.0)));
+
+    let (_, errs) = parse("A equal angle(30deg) B at (0.5, 10)\n");
+    assert!(!errs.is_empty(), "several relations leave a placement nothing to name");
+}
+
+/// An unthreaded joint's break takes the trailing clauses with it: a placement qualifies the
+/// dimension being deleted, and left standing behind the taken name-link it would dangle.
+#[test]
+fn a_break_takes_the_trailing_placement_with_it() {
+    let e = read(
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 10, y: 8)\n\
+         point p4 hint(x: 0, y: 9)\nline B(p3, p4)\n\
+         line a(p1, p2) angle(30deg) B at (0.5, 10)\n",
+    );
+    let ang = e
+        .sketch
+        .user_constraints()
+        .iter()
+        .find(|c| c.kind == CKind::Angle)
+        .expect("the angle")
+        .id;
+    let out = edit::remove(&e, &e.program, &[], &[ang]);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    assert!(!out.text.contains("at (0.5"), "the placement goes with its dimension: {}", out.text);
+    read(&out.text);
+}
+
+/// A doomed word splices out where it stands — the corner and the joint's other statements
+/// are left standing.
+#[test]
+fn removing_one_of_a_joints_words_leaves_the_rest() {
+    let e = read("line A -> equal angle(30deg) line B\n");
     let angle = e
         .sketch
         .user_constraints()
@@ -702,12 +819,12 @@ fn removing_a_list_member_leaves_the_list() {
     assert_eq!(
         again.sketch.children(EntRef::line(0))[1],
         again.sketch.children(EntRef::line(1))[0],
-        "the corner survives the member:\n{}",
+        "the corner survives the word:\n{}",
         out.text
     );
 
-    // and the other member goes the same way, leaving the corner alone
-    let e = read("line A -> (equal, angle(30deg)) line B\n");
+    // and the other word goes the same way, leaving the corner alone
+    let e = read("line A -> equal angle(30deg) line B\n");
     let eq = e
         .sketch
         .user_constraints()
@@ -723,6 +840,36 @@ fn removing_a_list_member_leaves_the_list() {
         "{}",
         out.text
     );
+}
+
+/// The whole joint doomed at once falls back to what its only word's doom would be: threaded,
+/// the corner stays; unthreaded between two names — an entity deletion dooms every relation
+/// naming it — the break is the whole of the line, and the line goes rather than dangling.
+#[test]
+fn a_joint_doomed_whole_falls_back_to_one_splice() {
+    let e = read("line A -> equal angle(30deg) line B\n");
+    let ids: Vec<u32> = e.sketch.user_constraints().iter().map(|c| c.id).collect();
+    let out = edit::remove(&e, &e.program, &[], &ids);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    let again = read(&out.text);
+    assert!(again.sketch.user_constraints().is_empty(), "{}", out.text);
+    assert_eq!(
+        again.sketch.children(EntRef::line(0))[1],
+        again.sketch.children(EntRef::line(1))[0],
+        "the corner stands: {}",
+        out.text
+    );
+
+    let e = read(
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 10, y: 8)\n\
+         point p4 hint(x: 0, y: 9)\nline A(p1, p2)\nline B(p3, p4)\n\
+         A equal angle(30deg) B\n",
+    );
+    let out = edit::remove(&e, &e.program, &[EntRef::line(0)], &[]);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    let again = read(&out.text);
+    assert!(again.sketch.user_constraints().is_empty(), "{}", out.text);
+    assert_eq!(again.sketch.lines.len(), 1, "the line that held only them goes: {}", out.text);
 }
 
 /// **Declared, related, not joined.**  Two lines declared on one line with a right angle
