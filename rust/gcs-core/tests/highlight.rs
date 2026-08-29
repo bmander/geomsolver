@@ -217,4 +217,7 @@ line -> tangent arc -> tangent line
     assert_eq!(tint_of(src, "hint(x: 1"), Some(Tint::Word), "an anonymous point's clause");
     assert_eq!(tint_of(src, "class"), Some(Tint::Word), "an anonymous line's clause");
     assert_eq!(tint_of(src, "tangent arc"), Some(Tint::Relation), "a joint on an anonymous link");
+    // a curve's name is not optional (`decl()` makes the same exception), so its next word is a
+    // name whatever it spells — the parser accepts `curve tangent = …` and the colour agrees
+    assert_eq!(tint_of("curve tangent = involute(c)\n", "tangent"), Some(Tint::Def));
 }

@@ -179,6 +179,16 @@ impl SourceMap {
         self.names.entry(e).or_default().push(name.to_string());
     }
 
+    /// Bind a name and put it *first* — for a name minted into the source after the map was made
+    /// (`edit::reconcile`), which every later reader must prefer over the hidden key the entity
+    /// elaborated under, or the next edit writes the key into a statement.
+    pub(crate) fn favor(&mut self, name: &str, e: EntRef) {
+        self.by_name.insert(name.to_string(), e);
+        let v = self.names.entry(e).or_default();
+        v.retain(|n| n != name);
+        v.insert(0, name.to_string());
+    }
+
     fn record(&mut self, st: &Stmt, what: Made) {
         let site = Site { stmt: st.id, span: st.span, path: InstPath::default() };
         match what {
@@ -865,7 +875,16 @@ fn compile_trace(
                 .get(g)
                 .and_then(|v| v.first())
                 .and_then(|k| k.as_ref())
-                .ok_or((st.span, format!("`{}` needs its points named", d.name.text)))?;
+                // an anonymous declaration's key is the elaboration's, not the writer's — the
+                // message spells the kind instead, the bargain `decl()`'s `head` strikes
+                .ok_or_else(|| {
+                    let who = if crate::syntax::hidden(&d.name.text) {
+                        format!("a {} here", d.kind.as_str())
+                    } else {
+                        format!("`{}`", d.name.text)
+                    };
+                    (st.span, format!("{who} needs its points named"))
+                })?;
             let e = scope
                 .get(&r.root.text)
                 .copied()

@@ -312,15 +312,27 @@ fn append_at(prog: &Program) -> (Span, String) {
 
 /// A name nothing has taken, in the kind's own alphabet: `p0`, `l1`, `c0`.
 pub fn mint(prog: &Program, kind: EntKind) -> String {
-    let taken: std::collections::BTreeSet<&str> = prog
+    let mut taken: std::collections::BTreeSet<String> = prog
         .stmts()
         .filter_map(|s| match &s.kind {
-            StmtKind::Decl(d) => Some(d.name.text.as_str()),
+            StmtKind::Decl(d) => Some(d.name.text.clone()),
             _ => None,
         })
         .collect();
+    next_name(&mut taken, kind)
+}
+
+/// The next name `taken` does not hold, in the kind's own alphabet — and now taken.  The one
+/// spelling of the fresh-name rule: `mint` asks it for a caller, and `reconcile` asks it for a
+/// new entity and again for an anonymous declaration a statement is about to reference.
+fn next_name(taken: &mut std::collections::BTreeSet<String>, kind: EntKind) -> String {
     let c = syntax::kind_initial(kind);
-    (0..).map(|i| format!("{c}{i}")).find(|n| !taken.contains(n.as_str())).unwrap_or_default()
+    let name = (0..)
+        .map(|i| format!("{c}{i}"))
+        .find(|n| !taken.contains(n))
+        .expect("an unbounded sequence always holds a fresh name");
+    taken.insert(name.clone());
+    name
 }
 
 /// Append one statement, whatever it is.
@@ -843,10 +855,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         if r.i() < high.get(&r.kind).copied().unwrap_or(0) {
             continue;
         }
-        let c = syntax::kind_initial(r.kind);
-        let name = (0..).map(|i| format!("{c}{i}")).find(|n| !taken.contains(n)).unwrap_or_default();
-        taken.insert(name.clone());
-        minted.insert(r, name);
+        minted.insert(r, next_name(&mut taken, r.kind));
     }
 
     /* An **anonymous declaration** (issue #33) has no name a statement can say: the `#`-keyed
@@ -855,84 +864,97 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
      * declaration, at the empty span the parser recorded where one would go — the same bargain
      * `commit_seeds` strikes with an unwritten `hint(…)` clause.  On demand, and only on
      * demand: an anonymous element nothing references stays unnamed. */
-    let mut needed: std::collections::BTreeSet<EntRef> = std::collections::BTreeSet::new();
-    // a new constraint names its entities…
-    for c in sk.user_constraints() {
-        if e.map.of_constraint.contains_key(&c.id) {
-            continue;
-        }
-        for a in c.args.iter() {
-            if let crate::constraints::Arg::Ent(r) = a {
-                needed.insert(*r);
-            }
-        }
-    }
-    // …a new entity names its children, which may be points the drawing already had…
-    for (&r, _) in minted.iter() {
-        needed.extend(sk.children(r));
-    }
-    // …and a gauge names what it holds
-    for i in 0..sk.points.len() {
-        if sk.point_fixed(i) {
-            needed.insert(EntRef::point(i));
-        }
-    }
-    for r in sk.primitives() {
-        if sk.own_params(r).iter().any(|&p| sk.params[p as usize].fixed) {
-            needed.insert(r);
-        }
-    }
     let mut named: Vec<Splice> = Vec::new();
     let mut renamed: std::collections::BTreeMap<EntRef, String> = std::collections::BTreeMap::new();
-    // one name per statement, however many of its entities are needed: the declaration's own
-    // entity takes the name, and a child it minted is reached by its dotted path under it
-    let mut fresh: std::collections::BTreeMap<crate::syntax::StmtId, String> =
-        std::collections::BTreeMap::new();
-    for r in &needed {
-        if minted.contains_key(r) {
-            continue; // new: the statement being appended carries its name
-        }
-        if e.map.names.get(r).is_some_and(|v| v.iter().any(|n| !syntax::hidden(n))) {
-            continue; // the source already calls it something
-        }
-        let Some(site) = e.map.of_entity.get(r) else { continue };
-        if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
-            continue; // a component's or a block's: no one statement to put a name on
-        }
-        let Some(d) = decl_of(prog, site) else { continue };
-        if !syntax::hidden(&d.name.text) {
-            continue; // named since the map was made
-        }
-        let name = fresh.entry(site.stmt).or_insert_with(|| {
-            let c = syntax::kind_initial(d.kind);
-            let name =
-                (0..).map(|i| format!("{c}{i}")).find(|n| !taken.contains(n)).unwrap_or_default();
-            taken.insert(name.clone());
-            named.push(Splice { at: d.name.span, with: format!(" {name}") });
-            name
-        });
-        // an anonymous child's hidden name is its parent's plus the dotted path (`#41.p2`), so
-        // the path survives the rename and the parent's key does not
-        let text = match e.map.names.get(r).and_then(|v| v.first()) {
-            Some(h)
-                if h.len() > d.name.text.len()
-                    && h.starts_with(d.name.text.as_str())
-                    && h.as_bytes()[d.name.text.len()] == b'.' =>
-            {
-                format!("{name}{}", &h[d.name.text.len()..])
+    // one allocation-free look first, so a drawing with nothing anonymous in it — the ordinary
+    // case, block-prefix names included — pays nothing more than this scan per gesture
+    let any_hidden = e.map.names.values().any(|v| v.first().is_some_and(|n| syntax::nameless(n)));
+    if any_hidden {
+        let mut needed: std::collections::BTreeSet<EntRef> = std::collections::BTreeSet::new();
+        // a new constraint names its entities…
+        for c in sk.user_constraints() {
+            if e.map.of_constraint.contains_key(&c.id) {
+                continue;
             }
-            _ => name.clone(),
-        };
-        renamed.insert(*r, text);
+            for a in c.args.iter() {
+                if let crate::constraints::Arg::Ent(r) = a {
+                    needed.insert(*r);
+                }
+            }
+        }
+        // …a new entity names its children, which may be points the drawing already had…
+        for (&r, _) in minted.iter() {
+            needed.extend(sk.children(r));
+        }
+        // …and a gauge names what it holds — the same holds `gauges` writes out below, from the
+        // one walk, so the two cannot disagree about what is held
+        needed.extend(held_refs(sk, &|r| root_declared(e, prog, r)).into_iter().map(|(r, _)| r));
+        for r in &needed {
+            if minted.contains_key(r) || renamed.contains_key(r) {
+                continue; // new (its statement carries the name), or its statement already named
+            }
+            if e.map.names.get(r).is_some_and(|v| v.iter().any(|n| !syntax::hidden(n))) {
+                continue; // the source already calls it something
+            }
+            let Some(site) = e.map.of_entity.get(r) else { continue };
+            if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
+                // no statement of the root's to put a name on — for a declaration that is
+                // *anonymous*, refuse now with the cause, rather than writing the hidden key
+                // and refusing later with none.  (An entity a block prefix names keeps its
+                // long-standing path; its declaration has a name already.)
+                if e.map.names.get(r).and_then(|v| v.first()).is_some_and(|n| syntax::nameless(n))
+                {
+                    return Edit::none(
+                        prog,
+                        Some(
+                            "that is anonymous inside a component or a block, so no statement \
+                             can name it; give its declaration a name there first"
+                                .into(),
+                        ),
+                    );
+                }
+                continue;
+            }
+            let Some(d) = decl_of(prog, site) else { continue };
+            if !syntax::hidden(&d.name.text) {
+                continue; // named since the map was made
+            }
+            // one name per statement — and *every* entity the statement made follows it at
+            // once, because the map's hidden keys go stale the moment the name lands, and a
+            // later gesture in this same elaboration must never meet one first
+            let name = next_name(&mut taken, d.kind);
+            named.push(Splice { at: d.name.span, with: format!(" {name}") });
+            for m in e.map.made_by(site.stmt) {
+                let crate::program::Made::Ent(k) = *m else { continue };
+                let Some(h) = e.map.names.get(&k).and_then(|v| v.first()) else { continue };
+                if !syntax::hidden(h) {
+                    continue;
+                }
+                // a child's key is its parent's plus the dotted path (`#41.p2`), and the path
+                // is the *stable* half: the parent's key is an offset an earlier retext may
+                // have moved, so the path is read off the map's own name and never compared
+                // against the declaration's
+                let text = match h.find('.') {
+                    Some(dot) if h.starts_with('#') => format!("{name}{}", &h[dot..]),
+                    _ => name.clone(),
+                };
+                renamed.insert(k, text);
+            }
+        }
     }
 
-    // the elaboration's own name for an entity it made — what a new statement has to refer to
+    // the elaboration's own name for an entity it made — what a new statement has to refer to.
+    // Never a hidden key while a written name exists: a mint in an earlier reconcile of this
+    // same elaboration leaves both in the map, favoured order or not.
     let name_of = |r: EntRef| -> String {
         minted
             .get(&r)
             .cloned()
             .or_else(|| renamed.get(&r).cloned())
-            .or_else(|| e.map.names.get(&r).and_then(|v| v.first()).cloned())
+            .or_else(|| {
+                let v = e.map.names.get(&r)?;
+                v.iter().find(|n| !syntax::hidden(n)).or_else(|| v.first()).cloned()
+            })
             .unwrap_or_else(|| syntax::entity_name(r))
     };
 
@@ -1116,9 +1138,10 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         return Edit::none(prog, Some("the drawing could not be written down".into()));
     }
     // an entity just named in place resolves by that name from here on — the map learns it now,
-    // so a later reconcile in this same elaboration does not mint a second one
+    // *first*, so a later reconcile in this same elaboration reads the written name and not the
+    // hidden key it elaborated under
     for (r, n) in &renamed {
-        e.map.bind(n, *r);
+        e.map.favor(n, *r);
     }
     // and now the seeds, against the source that finally has statements for everything
     let after = e.program.clone();
@@ -1162,23 +1185,22 @@ fn gauge_key(g: &crate::syntax::Gauge) -> (String, Option<String>) {
     (r.root.text.clone(), field)
 }
 
-/// Everything the sketch itself holds fixed, written the way a gauge statement writes it.
-fn gauges(
-    sk: &Sketch,
-    name_of: &dyn Fn(EntRef) -> String,
-    ours: &dyn Fn(EntRef) -> bool,
-) -> std::collections::BTreeSet<(String, Option<String>)> {
-    let mut out = std::collections::BTreeSet::new();
+/// Everything the sketch itself holds fixed — the entity, and the field when it is one scalar
+/// rather than a point — before any name is put to it.  **The one walk**: `gauges` writes these
+/// out as statements, and the anonymous-naming pass reads them to know what must be nameable,
+/// so the two cannot disagree about what is held.
+fn held_refs(sk: &Sketch, ours: &dyn Fn(EntRef) -> bool) -> Vec<(EntRef, Option<&'static str>)> {
+    let mut out = Vec::new();
     for i in 0..sk.points.len() {
         if sk.point_fixed(i) && ours(EntRef::point(i)) {
-            out.insert((name_of(EntRef::point(i)), None));
+            out.push((EntRef::point(i), None));
         }
     }
     for r in sk.primitives() {
         if r.kind == EntKind::Point || !ours(r) {
             continue;
         }
-        let scalars: Vec<&str> = r
+        let scalars: Vec<&'static str> = r
             .kind
             .fields()
             .iter()
@@ -1187,12 +1209,23 @@ fn gauges(
             .collect();
         for (i, &pi) in sk.own_params(r).iter().enumerate() {
             if sk.params[pi as usize].fixed {
-                let f = scalars.get(i).copied().unwrap_or("r");
-                out.insert((name_of(r), Some(f.to_string())));
+                out.push((r, Some(scalars.get(i).copied().unwrap_or("r"))));
             }
         }
     }
     out
+}
+
+/// Everything the sketch itself holds fixed, written the way a gauge statement writes it.
+fn gauges(
+    sk: &Sketch,
+    name_of: &dyn Fn(EntRef) -> String,
+    ours: &dyn Fn(EntRef) -> bool,
+) -> std::collections::BTreeSet<(String, Option<String>)> {
+    held_refs(sk, ours)
+        .into_iter()
+        .map(|(r, f)| (name_of(r), f.map(str::to_string)))
+        .collect()
 }
 
 /// Whether an entity's declaration is a statement of the root — as against one a component made,

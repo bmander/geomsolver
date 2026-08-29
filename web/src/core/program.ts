@@ -116,7 +116,10 @@ export class Document {
     for (const e of this.map.entities) {
       if (!KINDS.includes(e.kind as Kind)) continue;
       const of = this.sketch.entities(e.kind as Kind)[e.index];
-      if (of) this.byName.set(e.name, of);
+      // an anonymous entity is published unnamed (the core withholds its hidden key), so it
+      // has no entry here: a selection on it does not cross a re-elaboration, which is honest
+      // — a stale key could land it on a different entity
+      if (of && e.name) this.byName.set(e.name, of);
     }
   }
 

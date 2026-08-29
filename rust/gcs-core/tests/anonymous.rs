@@ -192,12 +192,125 @@ fn a_fixed_anonymous_point_is_named_for_its_gauge() {
     assert!(back.sketch.point_fixed(0));
 }
 
+/// A chain of *lines* writes its pose back through the same elision an arc's does — and a line's
+/// children print positionally, so the slot the thread will fill again forces labels on, or the
+/// kept end would count into the wrong slot on the next parse and quietly reseed.
+#[test]
+fn an_anonymous_line_chain_survives_a_reload() {
+    let mut e = read("line -> line\n");
+    assert_eq!(e.sketch.points.len(), 3, "one corner shared");
+    let poses = [(0.0, 0.0), (20.0, 10.0), (30.0, 102.0)];
+    for (i, (x, y)) in poses.iter().enumerate() {
+        let [px, py] = e.sketch.point_params(i);
+        e.sketch.params[px as usize].value = *x;
+        e.sketch.params[py as usize].value = *y;
+    }
+    let edit = edit::commit_seeds(&e, &e.sketch, &e.program);
+    assert!(!edit.text.contains('#'), "no hidden name reaches the source:\n{}", edit.text);
+    assert!(edit.text.contains("p2: hint(x: 30, y: 102)"), "the kept slot is labelled:\n{}", edit.text);
+    let back = read(&edit.text);
+    assert_eq!(back.sketch.points.len(), 3, "the corner is still shared");
+    assert_eq!(
+        back.sketch.children(EntRef::line(1))[0],
+        back.sketch.children(EntRef::line(0))[1],
+        "and it is still the weld"
+    );
+    for (i, (x, y)) in poses.iter().enumerate() {
+        assert_eq!(back.sketch.point_xy(i), (*x, *y), "point {i} kept its pose");
+    }
+}
+
+/// The app never re-elaborates after a reconcile, so the *same* elaboration must take a second
+/// gesture: the mint renames every entity its statement made, first in the map, and the next
+/// statement writes the name and not the key.
+#[test]
+fn a_second_gesture_after_a_mint_still_writes() {
+    let mut e = read("line\n");
+    e.sketch.add(Constraint::one_line(CKind::Horizontal, EntRef::line(0)));
+    let first = reconciled(&mut e);
+    assert!(first.refused.is_none(), "{:?}", first.refused);
+    let kids = e.sketch.children(EntRef::line(0));
+    e.sketch.add(Constraint::distance(kids[0], kids[1], 80.0));
+    let second = reconciled(&mut e);
+    assert!(second.refused.is_none(), "{:?}", second.refused);
+    assert!(second.text.contains("l0.p1 distance(80) l0.p2"), "{}", second.text);
+    assert!(!second.text.contains('#'), "{}", second.text);
+    let back = read(&second.text);
+    assert_eq!(back.sketch.user_constraints().len(), 2);
+}
+
+/// A numeric edit above the declaration moves its offset, so the map's hidden keys go stale —
+/// the rename follows the dotted path, which is the stable half, and never compares offsets.
+#[test]
+fn a_mint_survives_offsets_an_earlier_edit_moved() {
+    let mut e = read("point q hint(x: 1, y: 2)\nline\n");
+    let [px, py] = e.sketch.point_params(0);
+    e.sketch.params[px as usize].value = 17.25;
+    e.sketch.params[py as usize].value = -3.5;
+    let seeds = edit::commit_seeds(&e, &e.sketch, &e.program);
+    assert_eq!(seeds.kind, Kind::Numeric);
+    assert!(e.retext(&seeds.text), "a numeric edit retexts in place");
+    let kids = e.sketch.children(EntRef::line(0));
+    e.sketch.add(Constraint::distance(kids[0], kids[1], 80.0));
+    let edit = reconciled(&mut e);
+    assert!(edit.refused.is_none(), "{:?}", edit.refused);
+    assert!(edit.text.contains("l0.p1 distance(80) l0.p2"), "{}", edit.text);
+    let back = read(&edit.text);
+    assert_eq!(back.sketch.user_constraints().len(), 1);
+}
+
+/// An element a component made anonymously has no statement of the root's to put a name on, so
+/// the gesture is refused **with the cause** — never by writing the hidden key and failing to
+/// parse it back.
+#[test]
+fn a_gesture_on_a_component_made_anonymous_element_says_why_it_is_refused() {
+    let mut e = read("component Strut() {\n  line\n}\ns1: Strut()\n");
+    e.sketch.add(Constraint::one_line(CKind::Horizontal, EntRef::line(0)));
+    let edit = reconciled(&mut e);
+    assert_eq!(edit.kind, Kind::None);
+    let why = edit.refused.expect("refused, and says why");
+    assert!(why.contains("name"), "{why}");
+}
+
+/// A reserved word written where a name would go is very possibly a name somebody meant, so a
+/// line that then fails to parse says the reservation — beside the failure, never on a line
+/// that parses (`line tangent arc` is a chain).
+#[test]
+fn a_reserved_word_meant_as_a_name_is_said_so() {
+    refuses("point tangent hint(x: 0, y: 0)\n", "cannot be a declaration's name");
+    refuses("point close hint(x: 0, y: 0)\n", "cannot be a declaration's name");
+    let (_, errs) = parse("line -> tangent arc -> tangent line\n");
+    assert!(errs.is_empty(), "a chain that parses gets no note: {errs:?}");
+}
+
 /// Deletion never needed the name: the statement goes by its site.
 #[test]
 fn deleting_an_anonymous_element_takes_its_statement() {
     let e = read("line\npoint a hint(x: 1, y: 2)\n");
     let d = edit::remove(&e, &e.program, &[EntRef::line(0)], &[]);
     assert_eq!(d.text, "point a hint(x: 1, y: 2)\n");
+}
+
+/// A diagnostic about an anonymous declaration spells the kind, never the hidden key — a `#`
+/// and an offset are the elaboration's, and nothing a person wrote or can search for.
+#[test]
+fn a_trace_block_diagnostic_never_says_the_hidden_key() {
+    let src = "\
+point o hint(x: 0, y: 0)
+circle c(center: o) hint(r: 10)
+curve fam(c: circle)(u) = trace p where {
+  point p hint(x: 1, y: 0)
+  line
+}
+";
+    let (prog, errs) = parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = elaborate(&prog);
+    let msgs: Vec<&String> = e.diags.iter().map(|d| &d.message).collect();
+    for m in &msgs {
+        assert!(!m.contains('#'), "a hidden key leaked: {m}");
+    }
+    assert!(msgs.iter().any(|m| m.contains("needs its points named")), "{msgs:?}");
 }
 
 /// An anonymous declaration inside a component is one statement and many elements, like any

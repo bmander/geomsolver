@@ -1084,7 +1084,21 @@ fn style_prop_text(s: &Style, prop: &str) -> Option<String> {
 /// none of it.  A slot holds a name or a seed, and a seed is the same `hint(…)` clause it is
 /// everywhere else, one level down.
 pub(crate) fn decl_args(d: &Decl) -> String {
-    let label = labels_children(d.kind);
+    // A *gap* in the slots forces labels on: an unlabelled child counts into its slot by
+    // position, so where an earlier slot stands empty — a corner the writeback left for the
+    // chain's marker to thread again — a bare `line(hint(…))` would put the kept end in the
+    // wrong slot on the next parse, and the pose committed for it would quietly reseed.
+    let mut gap = false;
+    let mut after_gap = false;
+    for (i, (_, f)) in d.kind.fields().iter().filter(|(_, f)| *f != Field::Scalar).enumerate() {
+        let empty = d.children.get(i).map(|g| g.is_empty()).unwrap_or(true);
+        match (empty, *f) {
+            (true, Field::Child) => gap = true,
+            (false, _) if gap => after_gap = true,
+            _ => {}
+        }
+    }
+    let label = labels_children(d.kind) || after_gap;
     let mut parts: Vec<String> = Vec::new();
     let mut child = 0usize;
     for (name, field) in d.kind.fields() {
@@ -1829,7 +1843,9 @@ fn tint_word(
         Next::Start => {
             // `point p`, `component Gear(…)`, `curve involute(…)`, `param R = …`, `port lo: point`
             if EntKind::parse(w).is_some() {
-                return (Some(Tint::Word), Next::DeclName);
+                // a curve's name is not optional (`decl()` makes the same exception), so its
+                // next word is a name whatever it spells — `curve tangent = …` is legal
+                return (Some(Tint::Word), if w == "curve" { Next::Def } else { Next::DeclName });
             }
             if matches!(w, "component" | "param" | "port") {
                 return (Some(Tint::Word), Next::Def);
@@ -1907,9 +1923,12 @@ fn tint_word(
             // chain onto the next, and `p distance(80)` ends a line as surely as `p equal` does
             let at_line_end = matches!(toks.get(j).map(|(t, _)| t), Some(Tok::Nl) | None);
             if opens_link(w, next_word) {
-                // the element keyword names what the link declares; a prefix states a relation
+                // the element keyword names what the link declares; a prefix states a relation.
+                // `curve`'s name is not optional, so its next word is a name whatever it spells.
                 return match EntKind::parse(w) {
-                    Some(_) => (Some(Tint::Word), Next::DeclName),
+                    Some(_) => {
+                        (Some(Tint::Word), if w == "curve" { Next::Def } else { Next::DeclName })
+                    }
                     None => (Some(Tint::Relation), Next::Word),
                 };
             }
@@ -2105,14 +2124,23 @@ fn names_decl(w: &str) -> bool {
     EntKind::parse(w).is_none() && !is_operator(w) && !TRAILERS.contains(&w) && w != "at"
 }
 
-/// Whether a name is one the source could never write: the `#`-keyed name an anonymous
-/// declaration resolves by (`#41`, and `#41.p2` for a child it mints) or a block prefix the
+/// Whether a name is one the source could never write: the `#a`-keyed name an anonymous
+/// declaration resolves by (`#a41`, and `#a41.p2` for a child it mints) or a block prefix the
 /// flattener made (`#5.0.p0`).  `#` never survives the tokenizer inside an identifier, so the
 /// test cannot claim a written name.  Who asks: whatever would *write* a name into the source —
-/// `edit::reconcile` mints a real one instead, on demand — and the printer, which spells an
-/// anonymous declaration without one.
-pub(crate) fn hidden(name: &str) -> bool {
+/// `edit::reconcile` mints a real one instead, on demand — the printer, which spells an
+/// anonymous declaration without one, and the diagnostics, which spell the kind.
+pub fn hidden(name: &str) -> bool {
     name.contains('#')
+}
+
+/// Whether a name is an **anonymous declaration's key** — `#a` and its offset, alone or as a
+/// segment of a flattened path (`s1.#a41`).  Narrower than `hidden`, and the report asks this
+/// one: a block-prefix name (`#5.0.t.r.lo`) has always been published and selected by, where a
+/// declaration's key is derived from its offset, which any edit above it moves — so a selection
+/// keyed on one goes stale, or lands on another entity, and the report withholds it.
+pub fn nameless(name: &str) -> bool {
+    name.split('.').any(|s| s.starts_with("#a"))
 }
 
 /// What the field at a boundary slot is called, for a message about it.
@@ -2153,6 +2181,11 @@ struct P<'a> {
     t: Vec<(Tok, Span)>,
     i: usize,
     errs: Vec<SynErr>,
+    /// A word `decl()` declined as a name because the language reserves it — kept until the
+    /// statement ends, so a line that then fails to parse can say the likely cause.  A line
+    /// that parses (`line tangent arc` is a chain) needs no saying, so this is only read
+    /// beside a failure (`chain_or_one`).
+    declined: Option<(String, Span)>,
 }
 
 /// Read a program.
@@ -2174,7 +2207,7 @@ pub fn parse(src: &str) -> (Program, Vec<SynErr>) {
         );
     }
     let (lexed, errs) = lex(src);
-    let mut st = P { src, t: lexed.toks, i: 0, errs };
+    let mut st = P { src, t: lexed.toks, i: 0, errs, declined: None };
     let mut body: Vec<Stmt> = Vec::new();
     let mut comps: Vec<Component> = Vec::new();
     let mut families: Vec<CurveFamily> = Vec::new();
@@ -2718,7 +2751,9 @@ impl<'a> P<'a> {
     /// span into the chain's own text, so nothing downstream — `flatten`, the elaborator, the
     /// source map, a splice — learns the word "chain".  Spec §6.6.
     fn chain_or_one(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
-        if !self.chain_starts() {
+        self.declined = None;
+        let before = self.errs.len();
+        let got = if !self.chain_starts() {
             let lo = self.here().lo as usize;
             let kind = self.stmt(next_id)?;
             *next_id += 1;
@@ -2728,9 +2763,26 @@ impl<'a> P<'a> {
                 span: Span::new(lo, self.prev_hi()),
                 chained: Chained::No,
             });
-            return Some(());
+            Some(())
+        } else {
+            self.chain(next_id, out)
+        };
+        // The name in a declaration is optional, and the words that may follow one are reserved
+        // (§6.1) — so a statement that *named* a declaration with one of them no longer parses,
+        // and what went wrong is a reservation the errors above cannot see.  Said only beside a
+        // failure: `line tangent arc` is a chain, and needs no remark.
+        if self.errs.len() > before {
+            if let Some((w, span)) = self.declined.take() {
+                self.errs.push(SynErr {
+                    span,
+                    message: format!(
+                        "note: `{w}` cannot be a declaration's name — the words that may follow \
+                         a declaration are reserved (spec §6.1)"
+                    ),
+                });
+            }
         }
-        self.chain(next_id, out)
+        got
     }
 
     /// Whether what stands here opens a declaration — possibly a chain of them.
@@ -3737,7 +3789,7 @@ impl<'a> P<'a> {
         // reserved for what can follow a declaration (`names_decl`) is read as itself.  An
         // anonymous declaration still needs a key the desugared statements can resolve by — a
         // chain's corner welds by *name* — so it is given one the tokenizer can never produce,
-        // `#` and its own offset, the device the flattener's block prefixes already use; its
+        // `#a` and its own offset (the flattener's block-prefix device, marked apart); its
         // span is empty at the point a real name would go, which is where `edit::reconcile`
         // splices one the moment a statement must say it.  `curve` keeps requiring a name: its
         // form is `curve name = family(…)`, and the name is what the contacts address.
@@ -3748,8 +3800,13 @@ impl<'a> P<'a> {
         let name = if named || kind == EntKind::Curve {
             self.ident()?
         } else {
+            // an Ident declined here was very possibly *meant* as a name — remembered, so a
+            // line that then fails to parse can say so (`chain_or_one`)
+            if let (Some(Tok::Ident(w)), None) = (self.peek(), &self.declined) {
+                self.declined = Some((w.clone(), self.here()));
+            }
             let at = self.prev_hi();
-            Name { text: format!("#{at}"), span: Span::new(at, at) }
+            Name { text: format!("#a{at}"), span: Span::new(at, at) }
         };
         // how an error spells this statement's head: with the name where there is one
         let head = if hidden(&name.text) {

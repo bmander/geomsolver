@@ -115,8 +115,8 @@ said it once, and six statements become three.
 is a statement — a line with no name, implicit children and no hint — and so are `line(p1, p2)`,
 `point hint(x: 3, y: 4)`, `arc(center: c)` and `line class construction`. The token after the
 kind keyword decides: a word that may follow a declaration — another element keyword, a
-constraint word, `hint`, `knots`, `class`, `at` — can therefore no longer be a declaration's
-name. An anonymous element draws, drags and deletes without ever being named; the moment the
+constraint word, `hint`, `knots`, `class`, `at`, `close` — can therefore no longer be a
+declaration's name. An anonymous element draws, drags and deletes without ever being named; the moment the
 source must *reference* it (a constraint applied from the app, a dimension stated on it), a real
 name is spliced into the declaration — the same bargain a solve strikes with an unwritten
 `hint(…)` clause. `curve` keeps requiring a name: its form is `curve name = family(…)`, and the

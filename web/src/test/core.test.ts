@@ -1972,6 +1972,10 @@ test('an anonymous element is named the moment the source must say it', () => {
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   assert.equal(d.sketch.lines.length, 1);
   assert.equal(d.sketch.points.length, 2);
+  // no name is published for it — the hidden key is offset-derived, so a selection keyed on it
+  // could land on a different entity after an edit — but its span still says where it was written
+  assert.ok(!d.nameOf(d.sketch.lines[0]), 'an anonymous element has no published name');
+  assert.ok(d.spanOf(d.sketch.lines[0]), 'and still has a place in the source');
   d.sketch.add(new C.Horizontal(d.sketch.lines[0]));
   const e = d.reconcile();
   assert.ok(!e.refused, e.refused ?? '');
