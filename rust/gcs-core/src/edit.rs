@@ -333,6 +333,66 @@ fn append(prog: &Program, kind: StmtKind, names: Vec<String>) -> Edit {
 }
 
 /// `point pN hint(x: …, y: …)`
+/// The rectangle the Rect tool draws: a **reusable component**, defined once per document, and
+/// one instance per gesture.  The definition is the chain a person would write — four lines
+/// welded corner to corner at right angles, the first two carrying the width and the height —
+/// so what a gesture leaves in the source is one statement, `r0: Rectangle(w: 120, h: 60)`,
+/// and the drawing owns a `Rectangle` any later statement may instance again.  Where the
+/// figure *sits* is not in the statement: an instance's geometry is written in the component's
+/// terms, so its pose is the session's (the tool seeds it at the gesture) and a reload starts
+/// it from `scatter`, the same bargain every component's interior strikes.
+pub fn add_rectangle(prog: &Program, w: f64, h: f64) -> Edit {
+    let (at, lead) = append_at(prog);
+    let mut with = lead;
+    if !prog
+        .components
+        .iter()
+        .any(|c| c.name.as_ref().is_some_and(|n| n.text == "Rectangle"))
+    {
+        if at.lo > 0 {
+            with.push('\n'); // a blank line between the drawing and the definition
+        }
+        with.push_str(
+            "component Rectangle(w: Length, h: Length) {\n  distance(w) line l1 -> \
+             perpendicular distance(h) line l2 -> perpendicular line l3 -> perpendicular \
+             line l4 -> close\n}\n\n",
+        );
+    }
+    // a fresh instance name, past every name the document already binds
+    let taken: std::collections::BTreeSet<&str> = prog
+        .stmts()
+        .filter_map(|s| match &s.kind {
+            StmtKind::Decl(d) => Some(d.name.text.as_str()),
+            StmtKind::Instance(i) => Some(i.name.text.as_str()),
+            StmtKind::Param(p) => Some(p.name.text.as_str()),
+            StmtKind::Port(p) => Some(p.name.text.as_str()),
+            _ => None,
+        })
+        .collect();
+    let name =
+        (0..).map(|i| format!("r{i}")).find(|n| !taken.contains(n.as_str())).unwrap_or_default();
+    let arg = |label: &str, v: f64| syntax::InstArg {
+        label: Some(syntax::Name::new(label)),
+        value: syntax::InstVal::Expr(num(v)),
+        span: Span::default(),
+    };
+    let inst = syntax::Instance {
+        name: syntax::Name::new(name.clone()),
+        component: syntax::Name::new("Rectangle"),
+        args: vec![arg("w", w), arg("h", h)],
+        span: Span::default(),
+    };
+    let mut line = String::new();
+    syntax::write_stmt_to(&mut line, &StmtKind::Instance(inst));
+    with.push_str(&line);
+    Edit {
+        text: splice(prog.text(), vec![Splice { at, with }]),
+        kind: Kind::Structural,
+        names: vec![name],
+        refused: None,
+    }
+}
+
 pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
     let name = mint(prog, EntKind::Point);
     let d = Decl {

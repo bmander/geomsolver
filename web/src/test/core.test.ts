@@ -1964,6 +1964,31 @@ test('drawing a triangle by gestures writes six statements', () => {
   d.dispose();
 });
 
+test('the rect tool writes a component instance, and the component once', () => {
+  let d = Document.read('');
+  const first = d.addRectangle(120, 60);
+  assert.equal(first.kind, 'structural');
+  assert.equal(first.names[0], 'r0');
+  assert.ok(first.text.includes('component Rectangle(w: Length, h: Length)'), first.text);
+  assert.ok(first.text.includes('r0: Rectangle(w: 120, h: 60)'), first.text);
+  d.dispose();
+  d = Document.read(first.text);
+  assert.ok(d.ok, JSON.stringify(d.diagnostics));
+
+  const second = d.addRectangle(40, 40);
+  assert.equal(second.names[0], 'r1');
+  assert.equal(second.text.split('component Rectangle').length, 2, 'one definition, reused');
+  d.dispose();
+  d = Document.read(second.text);
+  assert.ok(d.ok, JSON.stringify(d.diagnostics));
+  assert.equal(d.sketch.lines.length, 8);
+  // the corners the tool then seeds are addressable by name, through the instance
+  for (const part of ['r0.l1.p1', 'r0.l1.p2', 'r0.l2.p2', 'r0.l3.p2']) {
+    assert.ok(d.entity(part), `${part} resolves`);
+  }
+  d.dispose();
+});
+
 test('editing a number splices the number, and a name is a column', () => {
   const d = Document.read(TRIANGLE);
   const dim = d.sketch.constraints.find((c) => c.typeName === 'Distance')!;

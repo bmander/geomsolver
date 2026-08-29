@@ -2846,6 +2846,14 @@ pub unsafe extern "C" fn gcs_elab_add_point(h: *mut Elaborated, x: f64, y: f64) 
     })
 }
 
+/// A `Rectangle` component instance — and the component's definition, the first time.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_add_rectangle(h: *mut Elaborated, w: f64, hh: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        out_edit(gcs_core::edit::add_rectangle(&(*h).program, w, hh))
+    })
+}
+
 /// `{"kind": "line", "args": ["p0", "p1"], "seed": [..]}`
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_add_entity(

@@ -140,6 +140,37 @@ fn drawing_a_point_appends_one_statement() {
     assert_eq!(back.sketch.points.len(), 4);
 }
 
+/// **The Rect tool writes a component, once, and instances after.**  The first rectangle
+/// brings the `Rectangle` definition with it — the chain of four lines welded at right
+/// angles — and every rectangle is one statement, `rN: Rectangle(w: …, h: …)`, each a rigid
+/// figure of its own (DOF 3: position and rotation).
+#[test]
+fn a_rectangle_is_a_component_instance() {
+    let prog = prog_of("point p9 hint(x: 5, y: 5)\n");
+    let e = edit::add_rectangle(&prog, 120.0, 60.0);
+    assert_eq!(e.kind, Kind::Structural);
+    assert_eq!(e.names, vec!["r0"]);
+    assert!(e.text.contains("component Rectangle(w: Length, h: Length)"), "{}", e.text);
+    assert!(e.text.contains("r0: Rectangle(w: 120, h: 60)"), "{}", e.text);
+    let prog = prog_of(&e.text);
+    let back = elaborate(&prog);
+    assert!(back.ok(), "{:?}", back.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+    assert_eq!((back.sketch.points.len(), back.sketch.lines.len()), (5, 4));
+
+    // the second rectangle reuses the definition: one component, two instances
+    let e = edit::add_rectangle(&prog, 40.0, 40.0);
+    assert_eq!(e.names, vec!["r1"]);
+    assert_eq!(e.text.matches("component Rectangle").count(), 1, "{}", e.text);
+    let back = elaborate(&prog_of(&e.text));
+    assert!(back.ok(), "{:?}", back.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+    assert_eq!(back.sketch.lines.len(), 8);
+    let mut sk = back.sketch.clone();
+    let r = solve(&mut sk, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let d = gcs_core::diagnose::diagnose(&mut sk, gcs_core::diagnose::DiagnoseOptions::default());
+    assert_eq!(d.dof, 8, "a loose point (2) and two rigid rectangles (3 each)");
+}
+
 /// A minted name never collides with one already written, whatever it is.
 #[test]
 fn a_minted_name_is_free() {
