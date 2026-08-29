@@ -21,9 +21,9 @@ cycle n as i {
   point b hint(x: radius * cos(tau * (i + 1) / n), y: radius * sin(tau * (i + 1) / n))
   line  e(a, b)
 
-  coincident(b, next.a)
-  equal_length(e, next.e)
+  b coincident next.a
+  e equal next.e
 }
 
 // the ring floats otherwise; one end of the first link is enough to pin it
-ground(a[0])
+ground a[0]

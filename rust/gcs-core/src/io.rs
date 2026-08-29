@@ -952,29 +952,58 @@ pub fn dimension_text(c: &Constraint) -> Option<String> {
 
 /// Human-readable one-liner: `Distance(P0, P1, 80)`; angles shown in degrees.
 pub fn describe(c: &Constraint) -> String {
-    // hidden unknowns are left out: a curve parameter is the solver's business, not a reader's
-    let parts: Vec<String> = c
+    // **the operator, as a document writes it** (spec §9.1) — `syntax::operator_text` is the one
+    // place a constraint becomes its spelling, so the drawing, the constraint list and the
+    // program panel cannot come to say one constraint three ways.  Hidden unknowns are left out
+    // there too: a curve parameter is the solver's business, not a reader's.
+    let mut args: Vec<Option<crate::syntax::Arg>> = c
         .kind
         .spec()
         .iter()
         .zip(&c.args)
-        .filter(|((_, kind), _)| !kind.is_param())
-        .map(|((_, kind), v)| {
-            let t = arg_text(*kind, v);
-            // a dimension written in terms of a free variable states no number: what it says is
-            // which other dimensions it is tied to, and the number beside the formula is only
-            // where the solver has currently put it — so it is marked as the reading it is
-            if c.free.is_some() && kind.is_dimension() {
-                format!("{t} (free)")
-            } else {
-                t
-            }
-        })
+        .map(|((_, kind), v)| lift_arg(*kind, v))
         .collect();
+    // a dimension written in terms of a free variable states no number: what it says is which
+    // other dimensions it is tied to, and the number beside the formula is only where the solver
+    // has currently put it — so it is marked as the reading it is, *on the dimension*
+    if c.free.is_some() {
+        for ((_, kind), a) in c.kind.spec().iter().zip(args.iter_mut()) {
+            if kind.is_dimension() {
+                if let Some(crate::syntax::Arg::Dim { text, .. }) = a {
+                    text.push_str(" (free)");
+                }
+            }
+        }
+    }
+    let text = crate::syntax::operator_text(c.kind, &args);
     // a claim is a different statement from the relation it is written over — it is judged, not
     // solved for — so it says so wherever a constraint is read out, in the word the document
-    // spells it with.  The rule is here because the constraint list, the banner and both
-    // bindings all ask this one function what a constraint is.
+    // spells it with.
     let claim = if c.claim { "claim " } else { "" };
-    format!("{claim}{}({})", c.type_name(), parts.join(", "))
+    format!("{claim}{text}")
+}
+
+/// One stored argument, as the syntax that would have written it — the bridge `describe` crosses
+/// to print a constraint the library holds in the words a document uses.
+fn lift_arg(kind: SpecKind, a: &Arg) -> Option<crate::syntax::Arg> {
+    use crate::syntax::Arg as S;
+    Some(match a {
+        Arg::Ent(e) => S::Ref(crate::syntax::Ref::new(entity_name(*e))),
+        Arg::Param(_) => return None,
+        Arg::Seed { value, pinned } => S::Seed { value: *value, pinned: *pinned },
+        Arg::Num(v) => S::Num(expr::to_user_units(kind, *v)),
+        Arg::Int(v) => S::Int(*v),
+        Arg::Bool(b) => S::Bool(*b),
+        Arg::Str(t) => S::Word(t.clone()),
+        // the formula and what it came to: `h = w * 2 = 80`, `sin(h * 10) = 0.342`.  A number
+        // written a particular way keeps the way — `3 1/8` says more than 3.125 does.
+        Arg::Expr(e) if expr::notation(&e.text) => S::Dim {
+            text: e.text.clone(),
+            span: crate::syntax::Span::default(),
+        },
+        Arg::Expr(e) => S::Dim {
+            text: format!("{} = {}", e.text, arg_text(kind, &Arg::Num(e.value))),
+            span: crate::syntax::Span::default(),
+        },
+    })
 }

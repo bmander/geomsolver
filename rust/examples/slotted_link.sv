@@ -15,7 +15,7 @@
 
 // The document's unit.  Without this line the drawing is in *drawing units* — a length with no
 // name — and everything still dimension-checks; what the line buys is the right to write a
-// length in the unit a person has in hand: `distance(c1, c2) == 3 1/8"` is 79.375 here.
+// length in the unit a person has in hand: `c1 distance(3 1/8"` is 79.375 here.) c2
 unit mm
 
 param length = 80
@@ -39,17 +39,17 @@ arc a_left(center: c1, start: t1, end: b2) hint(r: r)
 circle h1(center: c1) hint(r: hole_r)
 circle h2(center: c2) hint(r: hole_r)
 
-tangent_arc_line(a_right, bottom, at: start)
-tangent_arc_line(a_right, top,    at: end)
-tangent_arc_line(a_left,  top,    at: start)
-tangent_arc_line(a_left,  bottom, at: end)
+a_right tangent(at: start) bottom
+a_right tangent(at: end) top
+a_left tangent(at: start) top
+a_left tangent(at: end) bottom
 
-equal_radius(a_left, a_right)
-radius(a_left) == r
-radius(h1) == hole_r
-radius(h2) == hole_r
+a_left equal a_right
+radius(r) a_left
+radius(hole_r) h1
+radius(hole_r) h2
 
-distance(c1, c2) == length
-horizontal(top)
+c1 distance(length) c2
+horizontal top
 
-ground(c1)
+ground c1

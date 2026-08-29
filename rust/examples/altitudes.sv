@@ -30,16 +30,16 @@ line alt_a(A, hint(x: 15, y: 5))
 line alt_b(B, hint(x: 20, y: 10))
 line alt_c(C, hint(x: 15, y: -5))
 
-perpendicular(alt_a, bc)
-perpendicular(alt_b, ca)
-perpendicular(alt_c, ab)
+alt_a perpendicular bc
+alt_b perpendicular ca
+alt_c perpendicular ab
 
 // two of these place P; the third is the theorem
 point P hint(x: 15, y: 8)
-point_on_line(P, alt_a)
-point_on_line(P, alt_b)
-point_on_line(P, alt_c)
+P on alt_a
+P on alt_b
+P on alt_c
 
-ground(A)
-ground(B)
-ground(C)
+ground A
+ground B
+ground C

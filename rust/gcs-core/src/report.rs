@@ -461,8 +461,21 @@ pub fn registry_json() -> Json {
                     _ => arg_json_value(&k.default_arg(i)),
                 })
                 .collect();
+            // **the surface word and the wire name are different things** (spec §9.1): `name`
+            // is the snake_case identifier the binding keys on and the JSON export writes, and
+            // is unchanged; the operator is new information beside it, published once so that
+            // no binding learns the grammar.
+            let (word, fixity) = match k.operator() {
+                Some((w, f)) => (Json::Str(w.to_string()), Json::Str(f.as_str().to_string())),
+                None => (Json::Null, Json::Null),
+            };
             object([
                 ("name", k.name().into()),
+                ("operator", word),
+                ("fixity", fixity),
+                // how many of the leading spec slots are the operator's *operands*; the rest is
+                // what goes in its parentheses
+                ("operands", Json::Int(k.spec().iter().take_while(|(_, s)| s.is_entity()).count().min(2) as i64)),
                 ("spec", Json::Arr(spec)),
                 ("defaults", Json::Arr(defaults)),
                 ("soft", k.soft_by_default().into()),

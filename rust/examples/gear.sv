@@ -33,10 +33,10 @@ component Flank(base: circle, root: circle, tip: circle,
   port lo: point
   port hi: point
 
-  point_on_curve(lo, e) hint(u: u0)
-  point_on_curve(hi, e) hint(u: u1)
-  point_on_circle(lo, root)
-  point_on_circle(hi, tip)
+  lo on e hint(u: u0)
+  hi on e hint(u: u1)
+  lo on root
+  hi on tip
 }
 
 component Tooth(base: circle, root: circle, tip: circle,
@@ -93,10 +93,10 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
 
   // `r:` above only *seeds* a radius — a seed is where a solve starts, not something it must
   // honour — so without these the three circles would breathe.
-  radius(base) == Rb
-  radius(root) == Rr
-  radius(tip) == Rt
-  ground(center)
+  radius(Rb) base
+  radius(Rr) root
+  radius(Rt) tip
+  ground center
 
   // `cycle` and not `ring`: the teeth are congruent because each is given the same numbers, not
   // because the wheel is *claimed* to be symmetric.  Spec §12.3 makes the two equivalent when the

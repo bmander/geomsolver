@@ -29,12 +29,12 @@ point p hint(x: 0, y: 10)
 point q hint(x: 50, y: 10)
 line  belt(p, q)
 
-radius(k1) == 10
-radius(k2) == 10
-point_on_circle(p, k1)
-point_on_circle(q, k2)
-tangent_line_circle(belt, k1, side: -1)
-tangent_line_circle(belt, k2, side: -1)
+radius(10) k1
+radius(10) k2
+p on k1
+q on k2
+belt tangent(side: -1) k1
+belt tangent(side: -1) k2
 
-ground(c1)
-ground(c2)
+ground c1
+ground c2

@@ -41,15 +41,15 @@ horizontal line bottom(p0, p1) to
 vertical   line right(p1, p2) to
 horizontal line top(p2, p3) to
 vertical   line left(p3, p0) to close
-distance(p0, p1) == 60
-distance(p1, p2) == 40
-ground(p0)
+p0 distance(60) p1
+p1 distance(40) p2
+ground p0
 ";
 
 #[test]
 fn a_true_claim_is_a_theorem() {
     // two levelled sides are parallel — the drawing already says it, so the claim adds no rank
-    let mut sk = drawn(&format!("{RECT}claim parallel(bottom, top)\n"));
+    let mut sk = drawn(&format!("{RECT}claim bottom parallel top\n"));
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     assert_eq!((d.dof, d.status), (0, State::Well), "a claim joins no count");
     let c = sk.constraints.iter().find(|c| c.claim).unwrap().id;
@@ -62,7 +62,7 @@ fn a_true_claim_is_a_theorem() {
 fn a_false_claim_is_violated_and_moves_nothing() {
     // the bottom is horizontal by statement; claiming it vertical is simply untrue — and must
     // neither pull the rectangle out of shape nor read as a conflict
-    let mut sk = drawn(&format!("{RECT}claim vertical(bottom)\n"));
+    let mut sk = drawn(&format!("{RECT}claim vertical bottom\n"));
     let (x1, y1) = sk.point_xy(1);
     assert!((x1 - 60.0).abs() < 1e-9 && y1.abs() < 1e-9, "the claim pulled the drawing");
     let d = diagnose(&mut sk, DiagnoseOptions::default());
@@ -82,8 +82,8 @@ fn a_claim_the_pose_happens_to_satisfy_is_consuming() {
 point a hint(x: 0, y: 0)
 point c hint(x: 0, y: 9)
 line ac(a, c)
-ground(a)
-claim vertical(ac)
+ground a
+claim vertical ac
 ",
     );
     let d = diagnose(&mut sk, DiagnoseOptions::default());
@@ -99,10 +99,10 @@ fn a_claim_may_not_own_an_unknown() {
 point o hint(x: 0, y: 0)
 circle k(center: o) hint(r: 20)
 point p hint(x: 20, y: 0)
-claim point_on_circle(p, k)
+claim p on k
 point q hint(x: 25, y: 8)
 spline s(o, p, q, o, p, q, o)
-claim point_on_spline(q, s)
+claim q on s
 ";
     let (prog, errs) = gcs_core::syntax::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
@@ -116,7 +116,7 @@ claim point_on_spline(q, s)
 
 #[test]
 fn a_claim_travels_like_any_flag() {
-    let sk = drawn(&format!("{RECT}claim parallel(bottom, top)\n"));
+    let sk = drawn(&format!("{RECT}claim bottom parallel top\n"));
     // the JSON export and back
     let json = gcs_core::io::dumps(&sk, None);
     assert!(json.contains("\"claim\""), "the flag is document state");
@@ -128,7 +128,7 @@ fn a_claim_travels_like_any_flag() {
     // and the lifted program prints the word back
     let mut p = gcs_core::program::to_program(&back);
     let text = gcs_core::syntax::render(&mut p).to_string();
-    assert!(text.contains("claim parallel("), "{text}");
+    assert!(text.contains("claim l0 parallel l2"), "{text}");
     // a claim-free document dumps exactly as it always has
     let plain = drawn(RECT);
     assert!(!gcs_core::io::dumps(&plain, None).contains("\"claim\""));
@@ -143,16 +143,16 @@ fn a_claim_does_not_weld_drag_parts() {
 point a hint(x: 0, y: 0)
 point b hint(x: 30, y: 0)
 line ab(a, b)
-horizontal(ab)
-distance(a, b) == 30
-ground(a)
+horizontal ab
+a distance(30) b
+ground a
 point c hint(x: 0, y: 20)
 point d hint(x: 30, y: 20)
 line cd(c, d)
-horizontal(cd)
-distance(c, d) == 30
-ground(c)
-claim equal_length(ab, cd)
+horizontal cd
+c distance(30) d
+ground c
+claim ab equal cd
 ",
     );
     let part = gcs_core::io::Part::around(&sk, gcs_core::model::EntRef::point(1));
@@ -191,11 +191,11 @@ fn a_claim_is_not_a_number_the_decomposition_reads() {
     const CIRCLE: &str = "
 point o hint(x: 0, y: 0)
 circle k(center: o) hint(r: 20)
-ground(o)
+ground o
 ";
     let plain = drawn(CIRCLE);
-    let claimed = drawn(&format!("{CIRCLE}claim radius(k) == 20\n"));
-    let stated = drawn(&format!("{CIRCLE}radius(k) == 20\n"));
+    let claimed = drawn(&format!("{CIRCLE}claim radius(20) k\n"));
+    let stated = drawn(&format!("{CIRCLE}radius(20) k\n"));
     assert_eq!(gcs_core::cgraph::known_radii(&claimed), gcs_core::cgraph::known_radii(&plain));
     assert_ne!(gcs_core::cgraph::known_radii(&stated), gcs_core::cgraph::known_radii(&plain));
 }
@@ -210,8 +210,8 @@ point o hint(x: 0, y: 0)
 point p hint(x: 20, y: 0)
 point q hint(x: 25, y: 8)
 spline s(o, p, q, o, p, q, o)
-point_on_spline(q, s)
-ground(o)
+q on s
+ground o
 ",
     );
     let json = gcs_core::io::dumps(&sk, None)
@@ -227,23 +227,23 @@ fn a_claims_rows_are_the_rows_the_compiler_would_have_built() {
     // a wrong scale or a mismapped column: a claim is *consuming* exactly when stating it for
     // real would have cost the drawing a freedom, so make it real and count.
     for (src, tail) in [
-        (RECT, "parallel(bottom, top)\n"),   // a theorem: adds nothing
-        (RECT, "horizontal(top)\n"),         // a duplicate: adds nothing either
+        (RECT, "bottom parallel top\n"),      // a theorem: adds nothing
+        (RECT, "horizontal top\n"),          // a duplicate: adds nothing either
         ("
 point a hint(x: 0, y: 0)
 point c hint(x: 0, y: 9)
 line ac(a, c)
-ground(a)
-", "vertical(ac)\n"),                        // consuming: the pose alone satisfies it
+ground a
+", "vertical ac\n"),                         // consuming: the pose alone satisfies it
         ("
 point a hint(x: 0, y: 0)
 point b hint(x: 30, y: 0)
 point c hint(x: 30, y: 40)
 line ab(a, b)
 line bc(b, c)
-horizontal(ab)
-ground(a)
-", "vertical(bc)\n"),                        // consuming as well, with a bigger base
+horizontal ab
+ground a
+", "vertical bc\n"),                         // consuming as well, with a bigger base
     ] {
         let mut claimed = drawn(&format!("{src}claim {tail}"));
         let d = diagnose(&mut claimed, DiagnoseOptions::default());
@@ -267,9 +267,9 @@ ground(a)
 fn a_claim_reads_as_one_wherever_it_is_read_out() {
     // the constraint list, the banner and both bindings all ask `describe` what a constraint is,
     // so the word the document spells it with is the word they get
-    let sk = drawn(&format!("{RECT}claim parallel(bottom, top)\n"));
+    let sk = drawn(&format!("{RECT}claim bottom parallel top\n"));
     let c = sk.constraints.iter().find(|c| c.claim).unwrap();
-    assert_eq!(gcs_core::io::describe(c), "claim Parallel(L0, L2)");
+    assert_eq!(gcs_core::io::describe(c), "claim L0 parallel L2");
     let plain = sk.constraints.iter().find(|c| c.kind == CKind::Distance).unwrap();
     assert!(!gcs_core::io::describe(plain).starts_with("claim "));
 }
@@ -283,9 +283,9 @@ fn a_claimed_dimension_is_drawn_as_a_reference_dimension() {
 point o hint(x: 0, y: 0)
 point p hint(x: 60, y: 0)
 circle k(center: o) hint(r: 20)
-ground(o)
+ground o
 horizontal line l(o, p)
-distance(o, p) == 60
+o distance(60) p
 ";
     let label = |sk: &Sketch, kind: CKind| -> String {
         let id = sk.constraints.iter().find(|c| c.kind == kind).unwrap().id;
@@ -295,18 +295,18 @@ distance(o, p) == 60
             .expect("a dimension is drawn")
             .text
     };
-    let stated = drawn(&format!("{src}radius(k) == 20\n"));
+    let stated = drawn(&format!("{src}radius(20) k\n"));
     assert_eq!(label(&stated, CKind::Radius), "R20");
     assert_eq!(label(&stated, CKind::Distance), "60");
 
-    let claimed = drawn(&format!("{src}claim radius(k) == 20\n"));
+    let claimed = drawn(&format!("{src}claim radius(20) k\n"));
     assert_eq!(label(&claimed, CKind::Radius), "(R20)", "the parentheses go round the whole label");
     assert_eq!(label(&claimed, CKind::Distance), "60", "an ordinary dimension is untouched");
 }
 
 // -- the case: the Peaucellier cell's straight line ---------------------------------------
 //
-// `peaucellier.sv` ends on `claim vertical(rail)`.  What the diagnosis must say is *theorem* —
+// `peaucellier.sv` ends on `claim vertical rail`.  What the diagnosis must say is *theorem* —
 // not `violated`, not `consuming`, and not `over` — and it must keep saying it when the rods
 // change length.  (`examples_sv.rs` pins what the library advertises: dof 1, Under.)
 

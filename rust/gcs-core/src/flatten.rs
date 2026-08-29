@@ -104,6 +104,29 @@ impl<'a> Walk<'a> {
         }
     }
 
+    /// One argument, read over the parameters in scope: a dimension's text settled to text, a
+    /// seed or a pin settled to its number.
+    ///
+    /// **The one walk**, because a statement carries its arguments twice — as the operator was
+    /// written and in spec order — and both halves are `syntax::Arg`.  Written twice, a new kind
+    /// of argument gets settled in one of them and silently keeps the component's own names in
+    /// the other.
+    fn settle_arg(&mut self, a: &mut crate::syntax::Arg, vals: &BTreeMap<String, Aff>) {
+        match a {
+            crate::syntax::Arg::Dim { text, span } => match settle(text, vals, self.units) {
+                Ok(t) => *text = t,
+                Err(e) => self.err(*span, format!("`{text}`: {e}")),
+            },
+            crate::syntax::Arg::SeedExpr { text, pinned, span } => {
+                match value_of(text, vals, self.units) {
+                    Ok(v) => *a = crate::syntax::Arg::Seed { value: v, pinned: *pinned },
+                    Err(e) => self.err(*span, format!("`{text}`: {e}")),
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Walk one body, in source order.
     fn body(
         &mut self,
@@ -265,26 +288,30 @@ impl<'a> Walk<'a> {
                 // do not exist in the flat document, so they are worked out here
                 StmtKind::Relation(rel) => {
                     let mut r2 = rel.clone();
-                    for a in r2.args.iter_mut().flatten() {
-                        match a {
-                            crate::syntax::Arg::Dim { text, span } => match settle(text, vals, self.units) {
-                                Ok(t) => *text = t,
-                                Err(e) => self.err(*span, format!("`{text}`: {e}")),
-                            },
-                            // a contact's seed may be written over the parameters in scope too
-                            crate::syntax::Arg::SeedExpr { text, pinned, span } => {
-                                match value_of(text, vals, self.units) {
-                                    Ok(v) => {
-                                        *a = crate::syntax::Arg::Seed {
-                                            value: v,
-                                            pinned: *pinned,
-                                        }
-                                    }
-                                    Err(e) => self.err(*span, format!("`{text}`: {e}")),
+                    // the number and the seeds a relation carries are written in the component's
+                    // own parameters, which the flat document does not have.  A statement holds
+                    // them twice over — as written (`poly`, whose operator has not been settled
+                    // yet) and in spec order — but both are `syntax::Arg`, so both walks are the
+                    // same one and a new kind of argument is settled in one place.
+                    if let Some(w) = r2.poly.as_mut() {
+                        for a in w.args.iter_mut() {
+                            match a {
+                                crate::syntax::OpArg::Slot { arg, .. } => {
+                                    self.settle_arg(arg, vals)
                                 }
+                                crate::syntax::OpArg::Named(_, arg) => self.settle_arg(arg, vals),
+                                crate::syntax::OpArg::Dim(text, span) => {
+                                    match settle(text, vals, self.units) {
+                                        Ok(t) => *text = t,
+                                        Err(e) => self.err(*span, format!("`{text}`: {e}")),
+                                    }
+                                }
+                                crate::syntax::OpArg::Ent(_) => {}
                             }
-                            _ => {}
                         }
+                    }
+                    for a in r2.args.iter_mut().flatten() {
+                        self.settle_arg(a, vals);
                     }
                     self.emit(StmtKind::Relation(r2), st, scope, path);
                 }
@@ -706,6 +733,18 @@ fn rewrite(
             for a in rel.args.iter_mut().flatten() {
                 if let crate::syntax::Arg::Ref(r) = a {
                     fix(r, bad);
+                }
+            }
+            // an operator's operands are references like any other, and are the only ones a
+            // written statement has — `args` is the *settled* form, which does not exist yet
+            if let Some(w) = rel.poly.as_mut() {
+                for r in w.ops.iter_mut() {
+                    fix(r, bad);
+                }
+                for a in w.args.iter_mut() {
+                    if let crate::syntax::OpArg::Ent(r) = a {
+                        fix(r, bad);
+                    }
                 }
             }
         }

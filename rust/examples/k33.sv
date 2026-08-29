@@ -22,16 +22,16 @@ point k5 hint(x: 62, y: 24)
 
 line datum(k0, k3)
 
-distance(k0, k3) == 26.683328
-distance(k0, k4) == 46.690470
-distance(k0, k5) == 66.483081
-distance(k1, k3) == 32.557641
-distance(k1, k4) == 28.284271
-distance(k1, k5) == 37.735925
-distance(k2, k3) == 59.059292
-distance(k2, k4) == 41.617304
-distance(k2, k5) == 26.305893
+k0 distance(26.683328) k3
+k0 distance(46.690470) k4
+k0 distance(66.483081) k5
+k1 distance(32.557641) k3
+k1 distance(28.284271) k4
+k1 distance(37.735925) k5
+k2 distance(59.059292) k3
+k2 distance(41.617304) k4
+k2 distance(26.305893) k5
 
 // the framework is rigid but free to move as a whole; these two settle where it sits
-horizontal(datum)
-ground(k0)
+horizontal datum
+ground k0

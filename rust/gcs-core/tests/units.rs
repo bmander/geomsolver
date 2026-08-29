@@ -45,7 +45,7 @@ const PAIR: &str = "point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\nline l(
 /// `unit mm` names what a bare number is, and a suffixed one converts to it.
 #[test]
 fn a_unit_line_names_what_a_number_is() {
-    let sk = read(&format!("unit mm\n{PAIR}distance(a, b) == 2in\n")).expect("elaborates");
+    let sk = read(&format!("unit mm\n{PAIR}a distance(2in) b\n")).expect("elaborates");
     assert_eq!(sk.units.name(), Some("mm"));
     let d = sk.user_constraints()[0].args[2].num();
     assert!((d - 50.8).abs() < 1e-9, "two inches is 50.8 mm, got {d}");
@@ -55,7 +55,7 @@ fn a_unit_line_names_what_a_number_is() {
 /// what tells the readings apart, exactly as it does in `3 1/2`.
 #[test]
 fn feet_and_inches_is_one_literal() {
-    let sk = read(&format!("unit mm\n{PAIR}distance(a, b) == 1' 6 3/16\"\n")).expect("elaborates");
+    let sk = read(&format!("unit mm\n{PAIR}a distance(1' 6 3/16\") b\n")).expect("elaborates");
     let d = sk.user_constraints()[0].args[2].num();
     assert!((d - 461.9625).abs() < 1e-9, "got {d}");
     // and it prints as written, not as what it came to: `1' 6 3/16"` tells a reader what
@@ -68,10 +68,10 @@ fn feet_and_inches_is_one_literal() {
 /// is refused rather than guessed at.
 #[test]
 fn drawing_units_still_check_and_refuse_a_suffix() {
-    let sk = read(&format!("{PAIR}distance(a, b) == 60\n")).expect("a bare number is a length");
+    let sk = read(&format!("{PAIR}a distance(60) b\n")).expect("a bare number is a length");
     assert_eq!(sk.units.name(), None);
-    says(&format!("{PAIR}distance(a, b) == 6\"\n"), "names no unit");
-    says(&format!("{PAIR}distance(a, b) == 80mm\n"), "names no unit");
+    says(&format!("{PAIR}a distance(6\") b\n"), "names no unit");
+    says(&format!("{PAIR}a distance(80mm) b\n"), "names no unit");
 }
 
 /* -- what it catches --------------------------------------------------------------------- */
@@ -79,10 +79,10 @@ fn drawing_units_still_check_and_refuse_a_suffix() {
 /// The slot says what it wants, and an expression that said what it was must agree.
 #[test]
 fn an_angle_in_a_length_slot_is_an_error() {
-    says(&format!("{PAIR}distance(a, b) == 45deg\n"), "is Length, and this is Angle");
+    says(&format!("{PAIR}a distance(45deg) b\n"), "is Length, and this is Angle");
     // and the other way round
     says(
-        &format!("{PAIR}point c hint(x: 1, y: 1)\nline m(b, c)\nangle(l, m) == 3in\n"),
+        &format!("{PAIR}point c hint(x: 1, y: 1)\nline m(b, c)\nl angle(3in) m\n"),
         "names no unit",
     );
 }
@@ -96,7 +96,7 @@ fn a_length_plus_an_angle_is_an_error() {
 component Bad(w: Length, phi: Angle) {
   param x = w + phi
   point p hint(x: x, y: 0)
-  ground(p)
+  ground p
 }
 g: Bad(w: 10, phi: 20)
 ";
@@ -109,7 +109,7 @@ g: Bad(w: 10, phi: 20)
 #[test]
 fn the_unstated_radians_are_caught() {
     let head = "component G(phi: Angle) {\n  param ivp = ";
-    let tail = "\n  point p hint(x: ivp, y: 0)\n  ground(p)\n}\ng: G(phi: 20)\n";
+    let tail = "\n  point p hint(x: ivp, y: 0)\n  ground p\n}\ng: G(phi: 20)\n";
     says(&format!("{head}tan(phi) - phi{tail}"), "cannot be added");
     says(&format!("{head}tan(phi) * 180 / pi - phi{tail}"), "cannot be added");
     // said properly, it elaborates — and comes to the same number the conversion did
@@ -122,11 +122,11 @@ fn the_unstated_radians_are_caught() {
 /// side by side with nothing saying why.
 #[test]
 fn pi_is_a_number_and_tau_is_an_angle() {
-    says(&format!("{PAIR}distance(a, b) == tau\n"), "is Length, and this is Angle");
-    read(&format!("{PAIR}distance(a, b) == pi * 20\n")).expect("pi is a plain number");
+    says(&format!("{PAIR}a distance(tau) b\n"), "is Length, and this is Angle");
+    read(&format!("{PAIR}a distance(pi * 20) b\n")).expect("pi is a plain number");
     // `tau == 2 * pi * 1rad` holds dimensionally, which it did not
     let sk = read("point a hint(x: 0, y: 0)\npoint b hint(x: 1, y: 0)\npoint c hint(x: 1, y: 1)\n\
-                   line l(a, b)\nline m(a, c)\nangle(l, m) == tau / 8\n")
+                   line l(a, b)\nline m(a, c)\nl angle(tau / 8) m\n")
         .expect("an angle slot takes an angle");
     let want = (360.0f64 / 8.0).to_radians();
     assert!((sk.user_constraints()[0].args[2].num() - want).abs() < 1e-9);
@@ -142,8 +142,8 @@ point b hint(x: 60, y: 0)
 point c hint(x: 60, y: 40)
 line l(a, b)
 line m(b, c)
-distance(a, b) == k
-angle(l, m) == k
+a distance(k) b
+l angle(k) m
 ";
     says(src, "one free name, one dimension");
 }
@@ -152,7 +152,7 @@ angle(l, m) == k
 /// rounding a dimensioned quantity depends on which unit you round in.
 #[test]
 fn the_functions_have_signatures() {
-    let with = |body: &str| format!("{PAIR}distance(a, b) == {body}\n");
+    let with = |body: &str| format!("{PAIR}a distance({body}) b\n");
     says(&with("sin(3in)"), "names no unit");
     read(&with("sin(30) * 60")).expect("a bare number in an angle position is degrees");
     says(&with("floor(45deg)"), "takes a plain number");
@@ -187,12 +187,12 @@ fn the_library_is_unchanged() {
 /// A document's unit round-trips through JSON, and is written only when there is one.
 #[test]
 fn the_unit_round_trips() {
-    let sk = read(&format!("unit in\n{PAIR}distance(a, b) == 2\n")).expect("elaborates");
+    let sk = read(&format!("unit in\n{PAIR}a distance(2) b\n")).expect("elaborates");
     let json = io::dumps(&sk, None);
     assert!(json.contains("\"unit\":\"in\""), "{json}");
     assert_eq!(io::loads(&json).expect("loads").units.name(), Some("in"));
 
-    let plain = read(&format!("{PAIR}distance(a, b) == 2\n")).expect("elaborates");
+    let plain = read(&format!("{PAIR}a distance(2) b\n")).expect("elaborates");
     assert!(io::dumps(&plain, None).contains("\"unit\":null"));
     assert_eq!(io::loads(&io::dumps(&plain, None)).expect("loads").units.name(), None);
 }
@@ -201,7 +201,7 @@ fn the_unit_round_trips() {
 /// A figure is the same figure in either document, and two inches is 50.8 mm.
 #[test]
 fn a_paste_between_units_converts() {
-    let inches = read(&format!("unit in\n{PAIR}distance(a, b) == 2\n")).expect("elaborates");
+    let inches = read(&format!("unit in\n{PAIR}a distance(2) b\n")).expect("elaborates");
     let clip = io::copy(&inches, &inches.primitives());
     assert_eq!(clip.units.name(), Some("in"), "a clipboard says what its numbers are in");
 
@@ -233,7 +233,7 @@ fn a_unit_line_says_what_it_will_not_take() {
 #[test]
 fn a_printed_program_keeps_the_unit_and_the_sheet() {
     let sk = read(&format!(
-        "unit in\nstyle .construction {{ dash: 2 2 }}\n{PAIR}distance(a, b) == 2\n"
+        "unit in\nstyle .construction {{ dash: 2 2 }}\n{PAIR}a distance(2) b\n"
     ))
     .expect("elaborates");
     let mut p = gcs_core::program::to_program(&sk);
@@ -252,7 +252,7 @@ fn there_is_no_string_literal() {
     // `at: start` is a word, and always was
     read("point o hint(x: 0, y: 0)\npoint s hint(x: 10, y: 0)\npoint e hint(x: 0, y: 10)\n\
           arc a(center: o, start: s, end: e) hint(r: 10)\npoint q hint(x: 20, y: 0)\n\
-          line l(s, q)\ntangent_arc_line(a, l, at: start)\n")
+          line l(s, q)\na tangent(at: start) l\n")
         .expect("a Str argument is a bare word");
     // a raw branch, bare, and printed back the same way.  A key the reader does not recognise
     // is exactly what `branch` exists for — a recorded root choice from a document this
@@ -265,7 +265,7 @@ fn there_is_no_string_literal() {
     assert!(text.contains("branch(other:0|1|2, 1)"), "{text}");
     // and a quote in a document is a unit mark, wherever it lands
     let (_, errs) = parse("unit mm\npoint a hint(x: 0, y: 0)\npoint b hint(x: 1, y: 0)\n\
-                           distance(a, b) == 6\"\n");
+                           a distance(6\") b\n");
     assert!(errs.is_empty(), "{errs:?}");
 }
 
@@ -288,8 +288,8 @@ fn a_paste_converts_the_lengths_that_are_not_arguments() {
                frame f(origin: o, toward: q)\n\
                point a hint(x: 0, y: 3)\n\
                point b hint(x: 6, y: 3)\n\
-               distance(a, b) == w\n\
-               distance(o, a) == w / 2\n";
+               a distance(w) b\n\
+               o distance(w / 2) a\n";
     let inches = read(src).expect("elaborates");
     let clip = io::copy(&inches, &inches.primitives());
 
@@ -324,7 +324,7 @@ fn a_paste_converts_the_lengths_that_are_not_arguments() {
 #[test]
 fn a_paste_converts_a_placement() {
     let inches =
-        read(&format!("unit in\n{PAIR}distance(a, b) == 2 at (3, 1)\n")).expect("elaborates");
+        read(&format!("unit in\n{PAIR}a distance(2) b at (3, 1)\n")).expect("elaborates");
     let clip = io::copy(&inches, &inches.primitives());
     assert_eq!(clip.placements.len(), 1, "the placement came along");
 
@@ -371,7 +371,7 @@ fn a_curve_body_is_read_in_the_documents_units() {
 /// units the sketch had before the `unit` key was reached.
 #[test]
 fn a_saved_document_has_its_unit_before_its_expressions() {
-    let inches = read(&format!("unit in\n{PAIR}distance(a, b) == 2\n")).expect("elaborates");
+    let inches = read(&format!("unit in\n{PAIR}a distance(2) b\n")).expect("elaborates");
     let mut json = io::to_json(&inches);
     let back = io::from_json(&json).expect("loads");
     assert_eq!(back.units.name(), Some("in"));

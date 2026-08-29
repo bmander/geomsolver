@@ -28,15 +28,15 @@ point f hint(x: 10, y: 35)
 point g hint(x: 30, y: 30)
 line  l4(f, g)
 
-parallel(base, l2)
-distance(o, a) == 15
-vertical(l3)
-coincident(c, a)
-distance(c, d) == 20
-distance(a, b) == 40
-perpendicular(l3, l4)
-coincident(f, d)
-distance(f, g) == 20
+base parallel l2
+o distance(15) a
+vertical l3
+c coincident a
+c distance(20) d
+a distance(40) b
+l3 perpendicular l4
+f coincident d
+f distance(20) g
 
-ground(o)
-ground(e)
+ground o
+ground e

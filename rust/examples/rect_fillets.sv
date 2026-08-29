@@ -16,8 +16,10 @@
 // chain already knows where each one starts and ends — those are the points it shares with the
 // sides on either side of it.
 //
-// Two spellings are worth knowing before reading on.  `hint at (…)` is a starting guess and the
-// solver will move it; `==` states a number it must not.
+// Two things are worth knowing before reading on.  A `hint(…)` clause is a starting guess and
+// the solver will move it; everything else is a number it must not.  And every constraint is a
+// word standing before its one operand or between its two — `horizontal bottom`,
+// `l1 distance(w) r2` — with whatever is not an operand in the parentheses on the word.
 
 param w = 100
 param h = 60
@@ -51,9 +53,9 @@ arc a_bl(center: c_bl) hint(r: r) tangent close
 
 // one radius, stated once and shared
 a_br equal a_tr equal a_tl equal a_bl
-radius(a_bl) == r
+radius(r) a_bl
 
-distance(l1, r2) == w
-distance(t1, b2) == h
+l1 distance(w) r2
+t1 distance(h) b2
 
-ground(c_bl)
+ground c_bl

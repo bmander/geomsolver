@@ -154,10 +154,10 @@ curve elbow(o: point, datum: line, f: frame)(u) over (10, 80) =
     point t hint(x: o.x + 60 * cos(u + f.angle), y: o.y + 60 * sin(u + f.angle))
     point p hint(x: o.x + 50 * cos(u + f.angle + 53), y: o.y + 50 * sin(u + f.angle + 53))
     line swing(o, t)
-    angle(datum, swing) == u
-    distance(o, t) == 60
-    distance(t, p) == 50
-    distance(o, p) == 50
+    datum angle(u) swing
+    o distance(60) t
+    t distance(50) p
+    o distance(50) p
   }
 
 point o hint(x: 0, y: 0)
@@ -167,8 +167,8 @@ frame f(origin: o, toward: q) class construction
 
 curve path = elbow(o, datum, f)
 
-ground(o)
-ground(q)
+ground o
+ground q
 ";
 
 /// Where the elbow is at `u`, worked out here: 50 out of `o` at bearing `datum + u + acos(0.6)`,

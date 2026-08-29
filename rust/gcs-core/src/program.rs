@@ -885,6 +885,25 @@ fn compile_trace(
                 ))
             }
         };
+        // the operator, settled against what the *block* declares — the same two lookups the
+        // document's statements go through, over a scope of the block's own
+        let settled = match &r.poly {
+            None => None,
+            Some(w) => Some(
+                settle(w, &|rf| {
+                    scope.get(&rf.root.text).copied().and_then(|e| follow(&sk, e, &rf.path).ok())
+                        .map(|e| e.kind)
+                })?,
+            ),
+        };
+        let owned;
+        let r: &Relation = match settled {
+            Some((k, a)) => {
+                owned = Relation { kind: k, args: a, ..r.clone() };
+                &owned
+            }
+            None => r,
+        };
         let spec = r.kind.spec();
         if r.kind == CKind::DragTarget || spec.iter().any(|(_, k)| k.is_param()) {
             return Err((
@@ -1384,6 +1403,47 @@ fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {
     }
 }
 
+/// The constraint an operator statement names, and its arguments in spec order.
+///
+/// Two lookups and an assembly: `constraints::infix_op` / `prefix_op` turn the word and the
+/// operands' kinds into a `CKind`, and `Written::assemble` puts what was written into the slots
+/// that kind has.  Both tables are exhaustive over the library, so a new constraint joins the
+/// language by being given an operator and nothing else.
+fn settle(
+    w: &crate::syntax::Written,
+    kind_of: &dyn Fn(&Ref) -> Option<EntKind>,
+) -> Result<(CKind, Vec<Option<Arg>>), (Span, String)> {
+    use crate::constraints::Fixity;
+    let word = w.word.text.as_str();
+    let kinds: Vec<Option<EntKind>> = w.ops.iter().map(kind_of).collect();
+    // a name that resolves to nothing is reported on the argument itself, where the message can
+    // say which name it was; here it only means the word cannot be settled
+    let named = |k: Option<EntKind>| k.map(|k| k.as_str()).unwrap_or("that");
+    let kind = match w.fixity {
+        Fixity::Prefix => {
+            let Some(a) = kinds.first().copied().flatten() else {
+                let m = format!("`{word}` needs to know what `{}` is", w.ops[0].root.text);
+                return Err((w.word.span, m));
+            };
+            crate::constraints::prefix_op(word, a).ok_or_else(|| {
+                (w.word.span, format!("`{word}` does not apply to a {}", a.as_str()))
+            })?
+        }
+        Fixity::Infix => {
+            let (a, b) = (kinds.first().copied().flatten(), kinds.get(1).copied().flatten());
+            let (Some(a), Some(b)) = (a, b) else {
+                return Err((w.word.span, format!("`{word}` needs to know what its operands are")));
+            };
+            crate::constraints::infix_op(word, a, b, &|n| w.sel(n)).ok_or_else(|| {
+                let m =
+                    format!("`{word}` does not relate a {} to a {}", named(Some(a)), named(Some(b)));
+                (w.word.span, m)
+            })?
+        }
+    };
+    Ok((kind, w.assemble(kind)?))
+}
+
 fn constrain(
     sk: &mut Sketch,
     res: &Resolver,
@@ -1391,41 +1451,35 @@ fn constrain(
     st: &Stmt,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
-    // a drafting word the parser could not settle: `a equal b` between two *names*, where what
-    // `equal` means is the kinds it stands between and a name's kind is not known until here.
-    // Resolved before the spec is read, since the spec is what the arguments are checked against
-    // — an `EqualLength` placeholder would reject two arcs as "not a line" before ever asking.
-    let ckind = match &r.poly {
-        None => r.kind,
-        Some(word) => {
-            let ent = |i: usize| match r.args.get(i).and_then(|a| a.as_ref()) {
-                Some(Arg::Ref(re)) => res.lookup(re).map(|e| e.kind),
-                _ => None,
-            };
-            match (ent(0), ent(1)) {
-                (Some(a), Some(b)) => match crate::syntax::equal_kind(a, b) {
-                    Some(k) => k,
-                    None => {
-                        diags.push(Diag {
-                            code: Code::E040,
-                            span: word.span,
-                            stmt: Some(st.id),
-                            message: format!(
-                                "`{}` does not relate a {} to a {}",
-                                word.text,
-                                a.as_str(),
-                                b.as_str()
-                            ),
-                        });
-                        return None;
-                    }
-                },
-                // a name that resolves to nothing: the reference is reported below, on the
-                // argument itself, where the message can say which name it was
-                _ => r.kind,
+    // **The operator, settled.**  What a word means is the *kinds* of its operands — `on` is
+    // five constraints, `distance` is six — and a name's kind is not known until here, so every
+    // statement a document contains arrives as a word and its parentheses.  Settled before the
+    // spec is read, since the spec is what the arguments are then checked against.
+    let settled = match &r.poly {
+        None => None,
+        Some(w) => match settle(w, &|r| {
+            res.lookup(r).and_then(|e| follow(sk, e, &r.path).ok()).map(|e| e.kind)
+        }) {
+            Ok(v) => Some(v),
+            Err((span, message)) => {
+                diags.push(Diag { code: Code::E040, span, stmt: Some(st.id), message });
+                return None;
             }
+        },
+    };
+    let (ckind, built);
+    let args_of: &[Option<Arg>] = match &settled {
+        Some((k, a)) => {
+            ckind = *k;
+            built = a.clone();
+            &built
+        }
+        None => {
+            ckind = r.kind;
+            &r.args
         }
     };
+    let r = &Relation { kind: ckind, args: args_of.to_vec(), ..r.clone() };
     let spec = ckind.spec();
     let mut args: Vec<CArg> = Vec::with_capacity(spec.len());
     let mut left_out = vec![false; spec.len()];

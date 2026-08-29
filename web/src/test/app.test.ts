@@ -731,8 +731,8 @@ const ANNOTATED = `\
 point a hint(x: 0, y: 0)
 point b hint(x: 100, y: 0)
 line ab(a, b)      // the base
-horizontal(ab)
-ground(a)
+horizontal ab
+ground a
 `;
 
 function docView(text: string): SketchView {
@@ -790,9 +790,9 @@ test('deleting takes the statements that named it, and leaves the comments', () 
   view.deleteSelected();
   assert.ok(!view.source.includes('point b at'), view.source);
   assert.ok(!view.source.includes('line ab'), 'the line that named it went too');
-  assert.ok(!view.source.includes('horizontal(ab)'), 'and the constraint on that line');
+  assert.ok(!view.source.includes('horizontal ab'), 'and the constraint on that line');
   assert.ok(view.source.includes('// a base, and this comment must survive every gesture'));
-  assert.ok(view.source.includes('ground(a)'));
+  assert.ok(view.source.includes('ground a'));
   assert.equal(view.sketch.points.length, 1);
 });
 

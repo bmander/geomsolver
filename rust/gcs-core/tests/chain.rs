@@ -51,29 +51,29 @@ arc a_tl(center: c_tl, start: t2, end: l1) hint(r: r)
 line left(l1, l2)
 arc a_bl(center: c_bl, start: l2, end: b1) hint(r: r)
 
-horizontal(bottom)
-horizontal(top)
-vertical(left)
-vertical(right)
+horizontal bottom
+horizontal top
+vertical left
+vertical right
 
-tangent_arc_line(a_br, bottom, at: start)
-tangent_arc_line(a_br, right,  at: end)
-tangent_arc_line(a_tr, right,  at: start)
-tangent_arc_line(a_tr, top,    at: end)
-tangent_arc_line(a_tl, top,    at: start)
-tangent_arc_line(a_tl, left,   at: end)
-tangent_arc_line(a_bl, left,   at: start)
-tangent_arc_line(a_bl, bottom, at: end)
+a_br tangent(at: start) bottom
+a_br tangent(at: end) right
+a_tr tangent(at: start) right
+a_tr tangent(at: end) top
+a_tl tangent(at: start) top
+a_tl tangent(at: end) left
+a_bl tangent(at: start) left
+a_bl tangent(at: end) bottom
 
-equal_radius(a_br, a_tr)
-equal_radius(a_tr, a_tl)
-equal_radius(a_tl, a_bl)
-radius(a_bl) == r
+a_br equal a_tr
+a_tr equal a_tl
+a_tl equal a_bl
+radius(r) a_bl
 
-distance(l1, r2) == w
-distance(t1, b2) == h
+l1 distance(w) r2
+t1 distance(h) b2
 
-ground(c_bl)
+ground c_bl
 ";
 
 /// Five points and a centre, the cast every small chain below is drawn from.
@@ -107,6 +107,18 @@ fn errors(src: &str) -> Vec<String> {
 /// the failure prints the document that produced it.
 fn refuses(src: &str, needle: &str) {
     let msgs = errors(src);
+    assert!(msgs.iter().any(|m| m.contains(needle)), "expected `{needle}`\n{src}\n{msgs:?}");
+}
+
+/// The same for a complaint **elaboration** carries.  Which of the two a mistake lands in is not
+/// arbitrary: what a word *means* is the kinds of its operands, and a name does not carry its
+/// kind until elaboration — so `a equal q` is refused there, and a chain that declared its
+/// elements is refused there too, because every statement now goes through one settling.
+fn refuses_later(src: &str, needle: &str) {
+    let (prog, errs) = parse(src);
+    assert!(errs.is_empty(), "it parses: {errs:?}");
+    let e = elaborate(&prog);
+    let msgs: Vec<String> = e.errors().map(|d| d.message.clone()).collect();
     assert!(msgs.iter().any(|m| m.contains(needle)), "expected `{needle}`\n{src}\n{msgs:?}");
 }
 
@@ -212,13 +224,13 @@ fn the_vocabulary_is_the_regular_forms_or_a_refusal() {
 
     let perp = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
                 arc k(center: c, start: p1, end: p2) hint(r: 5) perpendicular line b(p2, p1)\n";
-    refuses(perp, "does not join");
+    refuses_later(perp, "does not relate");
 
     let arcs = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 20, y: 0)\n\
                 point c hint(x: 5, y: 5)\npoint d hint(x: 15, y: 5)\n\
                 arc k(center: c, start: p1, end: p2) hint(r: 5) tangent \
                 arc m(center: d, start: p2, end: p3) hint(r: 5)\n";
-    refuses(arcs, "does not join");
+    refuses(arcs, "already meet there");
 
     let circle = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
                   circle q(center: c) hint(r: 5) to line b(p1, p2)\n";
@@ -228,31 +240,31 @@ fn the_vocabulary_is_the_regular_forms_or_a_refusal() {
     refuses(lone, "at least two");
 }
 
-/// Any binary constraint whose spec is two entity slots is an infix word — the two-argument
-/// counterpart of the prefix rule, derived from the same registry, and type-checked against the
-/// pair it stands between before it desugars.
+/// **An operator between two links is the same operator it is between two names.**  A joint is
+/// not a grammar of its own: `equal` is `EqualLength` between lines and `EqualRadius` between
+/// arcs, settled by the kinds either way, and the chain contributes only the corner.
 #[test]
 fn a_binary_constraint_is_an_infix_word() {
     let e = read(
         "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 10, y: 10)\n\
-         line a(p1, p2) equal_length line b(p2, p3)\n",
+         line a(p1, p2) equal line b(p2, p3)\n",
     );
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::EqualLength));
 
     let e = read(
         "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 20, y: 0)\n\
          point c hint(x: 5, y: 5)\npoint d hint(x: 15, y: 5)\n\
-         arc k(center: c, start: p1, end: p2) hint(r: 5) equal_radius \
+         arc k(center: c, start: p1, end: p2) hint(r: 5) equal \
          arc m(center: d, end: p3) hint(r: 5)\n",
     );
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::EqualRadius));
     // and the joint still threads: m starts where k ends, whatever the joint says about them
     assert_eq!(e.sketch.children(EntRef::arc(1))[1], EntRef::point(1));
 
-    // a word whose slots the pair does not fit is refused, not guessed at
+    // a word whose operands it does not relate is refused, not guessed at
     let unfit = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
-                 line a(p1, p2) equal_radius arc k(center: c, end: p1) hint(r: 5)\n";
-    refuses(unfit, "does not join");
+                 line a(p1, p2) perpendicular arc k(center: c, end: p1) hint(r: 5)\n";
+    refuses_later(unfit, "does not relate");
 }
 
 /// A prefix on a lone declaration is the smallest chain there is: two statements from one line.
@@ -357,13 +369,13 @@ fn the_chain_is_coloured() {
     assert_eq!(tint("close"), Some(Tint::Word));
 }
 
-/// **The colouring is the parser's own reading, not a second one.**  A prefix word qualifies an
-/// element only when an element follows it — so `horizontal(bottom)` is the longhand statement
-/// it always was, and `horizontal foo` is neither, and the colour says so in both cases.  Both
-/// questions go through `opens_link`; asked twice, the two copies drifted on exactly this.
+/// **The colouring is the parser's own reading, not a second one.**  A prefix word opens a
+/// *link* only when an element keyword follows it; before a bare name it is the prefix operator
+/// (`horizontal a`), which declares nothing.  Both questions go through `opens_link`; asked
+/// twice, the two copies drifted on exactly this.
 #[test]
 fn a_prefix_word_is_only_a_prefix_where_the_parser_reads_one() {
-    let longhand = "line a(p1, p2)\nhorizontal(a)\n";
+    let longhand = "line a(p1, p2)\nhorizontal a\n";
     let e = read(&format!(
         "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 3)\n{longhand}"
     ));
@@ -377,9 +389,11 @@ fn a_prefix_word_is_only_a_prefix_where_the_parser_reads_one() {
     };
     assert_eq!(at("horizontal"), Some(Tint::Relation));
 
-    // and a prefix word before something that is not an element opens no chain either way
+    // and a prefix word before a *name* is the prefix operator it is — `horizontal foo` is a
+    // statement about `foo`, refused at elaboration where `foo` turns out to be nothing
     let neither = "horizontal foo\n";
-    assert!(!errors(neither).is_empty(), "`horizontal foo` is not a statement");
+    assert!(errors(neither).is_empty(), "`horizontal foo` parses: {:?}", errors(neither));
+    refuses_later(neither, "needs to know what `foo` is");
     let runs = highlight(neither);
     assert!(
         runs.iter().all(|(_, s)| !neither[s.lo as usize..].starts_with("foo")),
@@ -481,25 +495,33 @@ fn a_chain_may_not_mix_declarations_and_names() {
     refuses(src, "declares every element or names every one");
 }
 
-/// The contour words need a corner to state themselves at, and a relation chain has none.
+/// **`to` is the only word that needs a corner**, and a relation chain has none.
+///
+/// `tangent` used to be here beside it.  It is not any more: between two names it is the
+/// ordinary infix operator, and `a tangent k` is a statement about two things that touch — which
+/// needs no corner to be one.  It is only *in a contour* that it means "and at the point they
+/// share", which is the chain contributing what the operator cannot know.
 #[test]
-fn a_contour_word_is_refused_between_names() {
+fn only_a_corner_word_is_refused_between_names() {
     let base = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
                 line a(p1, p2)\narc k(center: c, start: p1, end: p2) hint(r: 5)\n";
-    refuses(&format!("{base}a tangent k\n"), "corner");
     refuses(&format!("{base}a to k\n"), "corner");
     refuses(&format!("{base}a equal a to close\n"), "no loop");
+    // and the tangency between two names states itself, at the end the drawing already shares
+    let e = read(&format!("{base}k tangent a\n"));
+    assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::TangentArcLine));
 }
 
-/// `equal` between kinds no constraint relates is an error, and it is reported wherever the
-/// kinds became known — as it parses when the chain declared them, at elaboration when it did
-/// not.  Both say the same thing.
+/// `equal` between kinds no constraint relates is an error, reported where the kinds become
+/// known — which is elaboration, for a chain that declared its elements and for one that only
+/// named them alike.
 #[test]
 fn equal_across_kinds_is_refused_either_way() {
-    // declared: the keywords say what they are, so the parser settles it
+    // declared or named, it is settled in one place now: what a word means is the kinds of its
+    // operands, and asking that question twice is what let the two answers drift
     let declared = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
-                    line a(p1, p2) equal arc k(center: c) hint(r: 5)\n";
-    refuses(declared, "does not relate");
+                    line a(p1, p2) equal arc k(center: c, start: p2, end: p1) hint(r: 5)\n";
+    refuses_later(declared, "does not relate");
 
     // named: only elaboration knows, so the diagnosis carries it
     let named = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
@@ -526,3 +548,221 @@ fn equal_reads_a_name_declared_further_down() {
     );
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::EqualLength));
 }
+
+/* -- the operator form (spec §9.1) ---------------------------------------------------------- */
+
+/// **Every statement is a prefix or an infix operator, and `name(args…)` is retired.**
+///
+/// `radius(25) c` and `p1 distance(80) p2` — the word, whatever is not one of its two operands
+/// in the parentheses, and nothing else.  This is the shape the library already had: every
+/// user-facing constraint has one or two entity slots, always first in spec order, with
+/// `Symmetric` the single exception the parentheses absorb.
+#[test]
+fn a_statement_is_a_prefix_or_an_infix_operator() {
+    let e = read(
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 60, y: 0)\npoint p3 hint(x: 60, y: 40)\n\
+         point c hint(x: 20, y: 20)\ncircle k(center: c) hint(r: 5)\n\
+         line l(p1, p2)\nline m(p2, p3)\n\
+         radius(25) k\n\
+         p1 distance(80) p2\n\
+         horizontal l\n\
+         l perpendicular m\n\
+         p1 symmetry(m) p3\n\
+         p1 distance(20, along: y) p3\n",
+    );
+    let kinds: Vec<CKind> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
+    for want in [
+        CKind::Radius,
+        CKind::Distance,
+        CKind::Horizontal,
+        CKind::Perpendicular,
+        CKind::Symmetric,
+        CKind::VerticalDistance,
+    ] {
+        assert!(kinds.contains(&want), "{want:?} not among {kinds:?}");
+    }
+    // `symmetry`'s third entity went into the parentheses and came out in the third spec slot
+    let sym = e.sketch.user_constraints().into_iter().find(|c| c.kind == CKind::Symmetric).unwrap();
+    assert_eq!(gcs_core::io::describe(sym), "P0 symmetry(L1) P2");
+}
+
+/// **The fixity does the work** for `horizontal` and `vertical`: a line prefixed, a pair of
+/// points infixed — which is exactly the distinction `HorizontalPoints` was added to draw.
+#[test]
+fn one_word_two_constraints_by_fixity() {
+    let e = read(
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 60, y: 3)\nline l(p1, p2)\n\
+         horizontal l\np1 horizontal p2\n",
+    );
+    let kinds: Vec<CKind> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
+    assert!(kinds.contains(&CKind::Horizontal) && kinds.contains(&CKind::HorizontalPoints));
+}
+
+/// `distance` before a line is sugar for the distance between its own ends, and states exactly
+/// what naming them would.
+#[test]
+fn a_prefix_distance_is_the_distance_between_the_ends() {
+    let a = read("point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 6, y: 0)\nline l(p1, p2)\ndistance(6) l\n");
+    let b = read(
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 6, y: 0)\nline l(p1, p2)\n\
+         l.p1 distance(6) l.p2\n",
+    );
+    assert_eq!(
+        gcs_core::io::describe(a.sketch.user_constraints()[0]),
+        gcs_core::io::describe(b.sketch.user_constraints()[0]),
+    );
+}
+
+/// **`on` is five constraints and one word**, told apart by the right operand's kind — including
+/// a name that comes from a component, which is the case deferred settling exists for.
+#[test]
+fn on_resolves_across_every_kind_it_reaches() {
+    let src = "\
+component Holder() {
+  port hub: point
+  point o hint(x: 0, y: 0)
+  circle k(center: o) hint(r: 20)
+  port ring = k
+}
+g: Holder()
+point p hint(x: 20, y: 0)
+p on g.ring
+point q hint(x: 5, y: 0)
+point r hint(x: 30, y: 0)
+line   l(q, r)
+point s hint(x: 10, y: 1)
+s on l
+";
+    let e = read(src);
+    let kinds: Vec<CKind> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
+    assert!(kinds.contains(&CKind::PointOnCircle), "a name from a component: {kinds:?}");
+    assert!(kinds.contains(&CKind::PointOnLine));
+}
+
+/// Round-trip: parse → print → parse gives the same statements.
+#[test]
+fn the_operator_form_round_trips() {
+    for key in ["rect_fillets", "truss", "pythagoras", "altitudes"] {
+        let src = examples::source(key).expect("its source");
+        let a = read(src);
+        let mut p = gcs_core::program::to_program(&a.sketch);
+        let text = gcs_core::syntax::render(&mut p).to_string();
+        let b = read(&text);
+        assert_eq!(
+            gcs_core::io::dumps(&a.sketch, Some(1)),
+            gcs_core::io::dumps(&b.sketch, Some(1)),
+            "{key} did not come back the same:\n{text}"
+        );
+        assert!(!text.contains("=="), "no statement is written as a call: {text}");
+    }
+}
+
+/// **No document, fixture or example writes a constraint as a call.**  The acceptance criterion,
+/// as a test: a `name(` at the head of a statement is the retired form.
+#[test]
+fn no_document_writes_a_call() {
+    for (_, key, _) in gcs_core::examples::CASES {
+        let Some(src) = examples::source(key) else { continue };
+        for (n, line) in src.lines().enumerate() {
+            let code = line.split("//").next().unwrap_or("").trim();
+            // the retired *names*, and every word that is infix-only opening a call — a
+            // prefix operator's own parentheses (`radius(r) a_bl`) look like one and are not
+            for w in [
+                "point_on_", "equal_length", "equal_radius", "tangent_", "horizontal_points",
+                "vertical_points", "horizontal_distance", "vertical_distance",
+                "parallel_distance", "point_line_distance", "annular_distance", "symmetric(",
+                "angle(", "parallel(", "perpendicular(", "coincident(", "midpoint(",
+                "symmetry(", "equal(", "on(", "curvature(", "tangent(", "ground(", "fix(",
+                "horizontal(", "vertical(",
+            ] {
+                assert!(!code.starts_with(w), "{key}:{}: a call — {line}", n + 1);
+            }
+        }
+    }
+}
+
+/// **A prefix word carrying its own number opens a chain, exactly as a bare one does.**
+///
+/// `radius(25) circle base(center: o)` is the prefix form of a dimension (spec §9.1), and the
+/// only thing between it and `horizontal line l(a, b)` is the parentheses.  The chain lookahead
+/// read the token at `i + 1`, found `(` rather than the element keyword, and opened no link — so
+/// the statement fell to `relation()`, whose `refr()` swallowed the keyword `circle` as an
+/// operand and reported "no such entity: 'circle'".  The *same* form parsed perfectly well as a
+/// later link, where `link` reads the arguments itself, which is the tell: one grammar was being
+/// asked two questions.  Both spellings state the same two things here, in both positions.
+#[test]
+fn a_parenthesised_prefix_opens_a_chain() {
+    let leading = read("point o hint(x: 0, y: 0)\nradius(25) circle base(center: o)\n");
+    let kinds = |e: &Elaborated| -> Vec<CKind> {
+        e.sketch.user_constraints().iter().map(|c| c.kind).collect()
+    };
+    assert_eq!(kinds(&leading), vec![CKind::Radius], "the leading link states its radius");
+    assert_eq!(leading.sketch.circles.len(), 1, "and declares the circle it stands before");
+
+    // the same word, one link along: what already worked, and what the leading link now matches
+    let later = read(&format!(
+        "{PTS}{}",
+        TANGENT_RUN.replace("tangent arc k", "tangent radius(10) arc k")
+    ));
+    assert!(kinds(&later).contains(&CKind::Radius), "and so does the same word mid-chain");
+}
+
+/// **A slot is named where it is written, and the name is kept** (spec §4.3, §9.1).
+///
+/// `t == 0.4` and `hint(t: 0.4)` are the same number read the same way — a pin is one a solve may
+/// not revise and a seed is where it begins — so an operator carries one `OpArg::Slot` for both,
+/// holding the key the writer used and the ordinary `syntax::Arg` the elaborator wants.  Three
+/// things went wrong when that key and that text were thrown away, and they are the three checked
+/// here: a pin written as an *expression* kept only the parsed value, and `value_text` returns
+/// none for an expression, so `t == t0` inside a component pinned the contact at 0 with no
+/// diagnostic anywhere; a key naming no slot at all was accepted and quietly filled whichever
+/// `Param` slot the settled kind had; and the printer guessed the name `t`, which is right on a
+/// spline and wrong on a curve, so it disagreed with `operator_text` about the same statement.
+///
+/// The printed name is therefore stated over a **curve**, whose slot is `u`: on a spline the
+/// guess and the truth are the same string, so a spline can witness nothing here.
+#[test]
+fn a_slot_keeps_the_name_and_the_number_it_was_written_with() {
+    // a pin written over a component's parameters, settled by `flatten` and *pinned*
+    let e = read(&format!(
+        "component C(t0: Scalar) {{\n{}  a on(t == t0) s\n}}\nc: C(t0: 0.25)\n",
+        SPLINE.replace('\n', "\n  ").trim_end_matches(' ')
+    ));
+    let cs = e.sketch.user_constraints();
+    let c = cs.iter().find(|c| c.kind == CKind::PointOnSpline).expect("the contact");
+    let gcs_core::constraints::Arg::Param(i) = c.args[2] else { panic!("a Param slot: {c:?}") };
+    let p = &e.sketch.params[i as usize];
+    assert!((p.value - 0.25).abs() < 1e-12, "the pin is what was written, not 0: {}", p.value);
+    assert!(p.fixed, "and it is still a pin");
+
+    // a key the kind has no slot for is a typo, not something to fill the first slot with —
+    // reported on the key, which is what it is about, and in the word the writer typed
+    refuses_later(&format!("{SPLINE}a on s hint(bogus: 0.4)\n"), "`on` has no slot `bogus`");
+
+    // and the printer writes the name that was written.  `u` is the case: a curve's slot is not
+    // called `t`, so the retired hard-code printed `hint(t: …)` for a statement that said `u`.
+    for stated in ["p on flank hint(u: 20)", "p on(u == 20) flank"] {
+        let src = format!("{CURVE}{stated}\n");
+        let (mut prog, errs) = parse(&src);
+        assert!(errs.is_empty(), "{stated} parses: {errs:?}");
+        let text = gcs_core::syntax::render(&mut prog).to_string();
+        assert!(text.contains(stated), "{stated} did not print back:\n{text}");
+        assert!(!text.contains("(t:") && !text.contains("t =="), "no guessed `t`:\n{text}");
+    }
+}
+
+/// A spline and a point beside it, for the statements above that need an owned slot called `t`.
+const SPLINE: &str = "point s0 hint(x: 0, y: 0)\npoint s1 hint(x: 20, y: 10)\n\
+                      point s2 hint(x: 40, y: 10)\npoint s3 hint(x: 60, y: 0)\n\
+                      spline s(s0, s1, s2, s3)\npoint a hint(x: 30, y: 8)\n";
+
+/// The same, for a curve family written in the document — whose slot is called `u`.
+const CURVE: &str = "\
+curve involute(c: circle, phase: Angle)(u) over (0, 90) =
+  ( c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
+    c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)) )
+point o hint(x: 0, y: 0)
+circle base(center: o) hint(r: 20)
+curve flank = involute(base, phase: 0) over (0, 60)
+point p hint(x: 40, y: 40)
+";

@@ -31,10 +31,10 @@ curve involute(c: circle, datum: line, phase: Angle)(u) =
     point p
     line rad(c.center, t)
     line s(t, p)
-    point_on_circle(t, c)                        // the string leaves the circle...
-    angle(datum, rad) == u + phase               // ...at bearing u from the datum,
-    perpendicular(rad, s)                        // perpendicular to the radius there,
-    point_line_distance(p, rad) == -(c.r * u / 1rad)   // and taut: let out == arc unwound
+    t on c                                       // the string leaves the circle...
+    datum angle(u + phase) rad                   // ...at bearing u from the datum,
+    rad perpendicular s                          // perpendicular to the radius there,
+    p distance(-(c.r * u / 1rad)) rad                  // and taut: let out == arc unwound
   }
 
 // From here down the wheel is `gear.sv` unchanged — a flank between two circles, a tooth as two
@@ -47,10 +47,10 @@ component Flank(base: circle, datum: line, root: circle, tip: circle,
   port lo: point
   port hi: point
 
-  point_on_curve(lo, e) hint(u: u0)
-  point_on_curve(hi, e) hint(u: u1)
-  point_on_circle(lo, root)
-  point_on_circle(hi, tip)
+  lo on e hint(u: u0)
+  hi on e hint(u: u1)
+  lo on root
+  hi on tip
 }
 
 component Tooth(base: circle, datum: line, root: circle, tip: circle,
@@ -83,11 +83,11 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   circle root(center: center) hint(r: Rr) class construction
   circle tip(center: center) hint(r: Rt) class construction
 
-  radius(base) == Rb
-  radius(root) == Rr
-  radius(tip) == Rt
-  ground(center)
-  ground(anchor)
+  radius(Rb) base
+  radius(Rr) root
+  radius(Rt) tip
+  ground center
+  ground anchor
 
   cycle N as i {
     t: Tooth(base, datum, root, tip, a0: i * pitch, half: half, u0: u0, u1: u1)

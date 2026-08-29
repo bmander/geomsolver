@@ -38,7 +38,7 @@ fn examples_fully_decompose_and_replay_exactly() {
     // constraint values are read live: change a dimension, replay without recompiling
     let mut sk = examples::example("rect_fillets").unwrap();
     let mut ps = PlanSolver::new(&sk, false);
-    // the width, which the case states across the rectangle: `distance(l1, r2) == w`
+    // the width, which the case states across the rectangle: `l1 distance(w) r2`
     let id = sk
         .constraints
         .iter()

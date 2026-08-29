@@ -107,6 +107,150 @@ pub const ALL_KINDS: [CKind; 35] = [
     CKind::FrameAlign,
 ];
 
+/// What a written operator says, once its operands' kinds are known.
+///
+/// **The one table that turns a word and a pair of kinds into a constraint.**  It is the inverse
+/// of `CKind::operator`, and it is a table rather than a search because several kinds share a
+/// word and the operand kinds (and one selector) are what tell them apart: `on` is five kinds,
+/// `distance` is six, `tangent` is six.
+///
+/// Operand order carries meaning, and that is a change worth seeing: `arc tangent line` is
+/// `TangentArcLine` and `line tangent circle` is `TangentLineCircle`.  Each named itself before
+/// and the order was decoration; as an operator, which side the arc is written on picks the kind.
+///
+/// `sel` is what stood in the parentheses, by name — `along`, `at` — since two of the choices
+/// cannot be made from the kinds alone.  `None` is "this word does not relate those two", which
+/// the caller reports with the kinds in it.
+pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option<String>) -> Option<CKind> {
+    use EntKind::{Arc, Circle, Curve, Ellipse, Line, Point, Spline};
+    let round = |k: EntKind| matches!(k, Circle | Arc);
+    Some(match word {
+        "on" => match (a, b) {
+            (Point, Line) => CKind::PointOnLine,
+            (Point, k) if round(k) => CKind::PointOnCircle,
+            (Point, Spline) => CKind::PointOnSpline,
+            (Point, Ellipse) => CKind::PointOnEllipse,
+            (Point, Curve) => CKind::PointOnCurve,
+            _ => return None,
+        },
+        "distance" => match (a, b) {
+            // which of the three a pair of points means is `along:`, and the run and the rise
+            // are signed from the first point to the second — so they do not commute
+            (Point, Point) => match sel("along").as_deref() {
+                None => CKind::Distance,
+                Some("x") => CKind::HorizontalDistance,
+                Some("y") => CKind::VerticalDistance,
+                Some(_) => return None,
+            },
+            (Point, Line) => CKind::PointLineDistance,
+            (Line, Line) => CKind::ParallelDistance,
+            (x, y) if round(x) && round(y) => CKind::AnnularDistance,
+            _ => return None,
+        },
+        "tangent" => match (a, b) {
+            // tangency at a named end of the line is the regular form; the bare pair is
+            // rank-deficient at every solution, so `at:` is how a drawing says which
+            (Line, k) if round(k) => match sel("at") {
+                Some(_) => CKind::TangentLineCircleAt,
+                None => CKind::TangentLineCircle,
+            },
+            (Arc, Line) => CKind::TangentArcLine,
+            (x, y) if round(x) && round(y) => CKind::TangentCircleCircle,
+            (Spline, Line) => CKind::SplineTangentLine,
+            (Ellipse, Line) => CKind::EllipseTangentLine,
+            _ => return None,
+        },
+        "equal" => match (a, b) {
+            (Line, Line) => CKind::EqualLength,
+            (x, y) if round(x) && round(y) => CKind::EqualRadius,
+            _ => return None,
+        },
+        "curvature" => match (a, b) {
+            (Spline, k) if round(k) => CKind::SplineCurvature,
+            (Ellipse, k) if round(k) => CKind::EllipseCurvature,
+            _ => return None,
+        },
+        "horizontal" => match (a, b) {
+            (Point, Point) => CKind::HorizontalPoints,
+            _ => return None,
+        },
+        "vertical" => match (a, b) {
+            (Point, Point) => CKind::VerticalPoints,
+            _ => return None,
+        },
+        "angle" => match (a, b) {
+            (Line, Line) => CKind::Angle,
+            _ => return None,
+        },
+        "coincident" => match (a, b) {
+            (Point, Point) => CKind::Coincident,
+            _ => return None,
+        },
+        "midpoint" => match (a, b) {
+            (Point, Line) => CKind::Midpoint,
+            _ => return None,
+        },
+        "parallel" => match (a, b) {
+            (Line, Line) => CKind::Parallel,
+            _ => return None,
+        },
+        "perpendicular" => match (a, b) {
+            (Line, Line) => CKind::Perpendicular,
+            _ => return None,
+        },
+        "symmetry" => match (a, b) {
+            (Point, Point) => CKind::Symmetric,
+            _ => return None,
+        },
+        _ => return None,
+    })
+}
+
+/// The same for a word standing *before* its one operand.  `distance` on a line is sugar for the
+/// distance between its ends, which is why it is here and not in the table above.
+pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
+    use EntKind::{Arc, Circle, Line};
+    Some(match (word, on) {
+        ("horizontal", Line) => CKind::Horizontal,
+        ("vertical", Line) => CKind::Vertical,
+        ("radius", Circle | Arc) => CKind::Radius,
+        ("distance", Line) => CKind::Distance,
+        _ => return None,
+    })
+}
+
+/// Every word the language writes a **constraint** with (spec §9.1).
+///
+/// The gauges (`ground`, `fix`) and the orientation predicates (`ccw`, `cw`) are not here: they
+/// are statements of their own kinds, and a chain's joint may not be one.  `ground p1` is still
+/// a prefix operator to read, and it is read where the statement dispatcher knows it is one.
+pub const OPERATORS: [&str; 14] = [
+    "on", "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "angle",
+    "radius", "coincident", "midpoint", "parallel", "perpendicular", "symmetry",
+];
+
+pub fn is_operator(w: &str) -> bool {
+    OPERATORS.contains(&w)
+}
+
+/// Where an operator stands to its operand(s) — see `CKind::operator`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fixity {
+    /// `radius(25) circle1`, `horizontal line1`, `ground p1`
+    Prefix,
+    /// `p1 distance(80) p2`, `line1 tangent circle1`
+    Infix,
+}
+
+impl Fixity {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Fixity::Prefix => "prefix",
+            Fixity::Infix => "infix",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpecKind {
     Point,
@@ -349,6 +493,69 @@ impl CKind {
             | CKind::EllipseCurvature => Some(Dim::SCALAR),
             _ => None,
         }
+    }
+
+    /// How a constraint is **written** (Solvent §9.1): the word, and where it stands.
+    ///
+    /// Every user-facing constraint has one or two entity slots, always first in spec order —
+    /// 1 for `Horizontal`, `Vertical` and `Radius`, 2 for twenty-eight others, and 3 for
+    /// `Symmetric` alone.  So "two operands, everything else in the parentheses" is not a rule
+    /// imposed on the library; it is a description of it, with one exception the parentheses
+    /// absorb.  `None` is a constraint nobody writes: `DragTarget` is internal and `soft`,
+    /// `FrameUnit`/`FrameAlign` are intrinsic and minted by `Sketch::frame`.
+    ///
+    /// Several kinds share a word, and that is where the saving is: **`on` is five kinds,
+    /// `distance` is six, `tangent` is six**, and `horizontal`/`vertical` are two each with the
+    /// *fixity* doing the work — a line prefixed, a pair of points infixed, which is exactly the
+    /// distinction `HorizontalPoints` was added to draw.
+    ///
+    /// The **surface word and the wire name are different things**: `report::registry_json` goes
+    /// on publishing the snake_case `name` that both the binding and the JSON export key on, and
+    /// this is new information beside it.  Matched exhaustively, so a new kind stops the build —
+    /// the pattern `callout::pen` and `free_kernel` already use.
+    pub fn operator(self) -> Option<(&'static str, Fixity)> {
+        use Fixity::{Infix, Prefix};
+        Some(match self {
+            // a point on something: five kinds, one word, told apart by the right operand
+            CKind::PointOnLine
+            | CKind::PointOnCircle
+            | CKind::PointOnSpline
+            | CKind::PointOnEllipse
+            | CKind::PointOnCurve => ("on", Infix),
+            // a measured separation: six kinds, told apart by the pair and by `along:`
+            CKind::Distance
+            | CKind::HorizontalDistance
+            | CKind::VerticalDistance
+            | CKind::PointLineDistance
+            | CKind::ParallelDistance
+            | CKind::AnnularDistance => ("distance", Infix),
+            // touching: six kinds, told apart by the pair and by `at:`
+            CKind::TangentLineCircle
+            | CKind::TangentLineCircleAt
+            | CKind::TangentCircleCircle
+            | CKind::TangentArcLine
+            | CKind::SplineTangentLine
+            | CKind::EllipseTangentLine => ("tangent", Infix),
+            CKind::EqualLength | CKind::EqualRadius => ("equal", Infix),
+            CKind::SplineCurvature | CKind::EllipseCurvature => ("curvature", Infix),
+            // the fixity is the distinction: a line prefixed, a pair of points infixed
+            CKind::Horizontal => ("horizontal", Prefix),
+            CKind::HorizontalPoints => ("horizontal", Infix),
+            CKind::Vertical => ("vertical", Prefix),
+            CKind::VerticalPoints => ("vertical", Infix),
+            // `angle` and `radius` keep their own words rather than folding into `distance`:
+            // over two lines a Length means a parallel distance and an Angle means an angle, and
+            // nothing but the number's unit could separate them
+            CKind::Angle => ("angle", Infix),
+            CKind::Radius => ("radius", Prefix),
+            CKind::Coincident => ("coincident", Infix),
+            CKind::Midpoint => ("midpoint", Infix),
+            CKind::Parallel => ("parallel", Infix),
+            CKind::Perpendicular => ("perpendicular", Infix),
+            // the only kind with three entity slots, and the parentheses absorb the third
+            CKind::Symmetric => ("symmetry", Infix),
+            CKind::DragTarget | CKind::FrameUnit | CKind::FrameAlign => return None,
+        })
     }
 
     /// The value an omitted argument takes.  One table, read by the JSON path and by both

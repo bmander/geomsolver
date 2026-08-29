@@ -17,9 +17,9 @@ point c hint(x: 5, y: 5)
 
 line ab(a, b)
 
-distance(a, b) == 10
-distance(b, c) == 1
-distance(a, c) == 1
-horizontal(ab)
+a distance(10) b
+b distance(1) c
+a distance(1) c
+horizontal ab
 
-ground(a)
+ground a
