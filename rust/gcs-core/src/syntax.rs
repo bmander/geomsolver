@@ -1048,11 +1048,15 @@ fn labels_children(k: EntKind) -> bool {
 fn write_decl(out: &mut String, d: &Decl) {
     let kw = d.kind.as_str();
     out.push_str(kw);
-    for _ in kw.len()..KW {
+    // an anonymous declaration has no name to spell — its `#` key is the elaboration's, not
+    // the source's — so the keyword stands alone and the tail glues to it
+    if !hidden(&d.name.text) {
+        for _ in kw.len()..KW {
+            out.push(' ');
+        }
         out.push(' ');
+        out.push_str(&d.name.text);
     }
-    out.push(' ');
-    out.push_str(&d.name.text);
 
     out.push_str(&decl_tail(d, &d.seed));
     if let Some(u) = &d.knots {
@@ -1687,6 +1691,9 @@ enum Next {
     Unit,
     /// names what the statement declares
     Def,
+    /// the same, after an element keyword — where the name is *optional* (§6.1), so a word
+    /// reserved for what may follow a declaration keeps its own reading instead
+    DeclName,
     /// names the component an instance is of — the one type written without a `:` before it
     Inst,
     /// nothing in particular
@@ -1756,6 +1763,11 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
         if at == Next::Start && !matches!(t, Tok::P('{') | Tok::P('}')) {
             at = Next::Word;
         }
+        // a declaration's name stands against its keyword or not at all — the name is optional,
+        // so `line(p1, p2)` must not read `p1` as one once the bracket has gone by
+        if at == Next::DeclName && !matches!(t, Tok::Ident(_)) {
+            at = Next::Word;
+        }
         // a `style` block's body is `property: value` pairs, not statements: the brace above
         // reset the state to `Start`, where `dash:` would read as an instance
         if matches!(t, Tok::P('{')) && style > 0 {
@@ -1804,10 +1816,22 @@ fn tint_word(
             (Some(Tint::Class), Next::Class)
         }
         Next::Def => (Some(Tint::Def), Next::Word),
+        Next::DeclName => {
+            // the name is optional: what follows the keyword may be the next thing the
+            // statement says — a clause, a joint, the next link — and those words keep their
+            // own colour.  The same predicate the parser decides by, asked once.
+            if !names_decl(w) {
+                return tint_word(w, prev, toks, i, Next::Word);
+            }
+            (Some(Tint::Def), Next::Word)
+        }
         Next::Inst => (Some(Tint::Type), Next::Word),
         Next::Start => {
             // `point p`, `component Gear(…)`, `curve involute(…)`, `param R = …`, `port lo: point`
-            if EntKind::parse(w).is_some() || matches!(w, "component" | "param" | "port") {
+            if EntKind::parse(w).is_some() {
+                return (Some(Tint::Word), Next::DeclName);
+            }
+            if matches!(w, "component" | "param" | "port") {
                 return (Some(Tint::Word), Next::Def);
             }
             // `style .construction { … }` — the class it names is the thing it declares
@@ -1885,7 +1909,7 @@ fn tint_word(
             if opens_link(w, next_word) {
                 // the element keyword names what the link declares; a prefix states a relation
                 return match EntKind::parse(w) {
-                    Some(_) => (Some(Tint::Word), Next::Def),
+                    Some(_) => (Some(Tint::Word), Next::DeclName),
                     None => (Some(Tint::Relation), Next::Word),
                 };
             }
@@ -2062,12 +2086,33 @@ fn past_args(toks: &[(Tok, Span)], i: usize) -> usize {
 /// always been; written twice, the two copies drifted on exactly that clause, and a colour that
 /// disagrees with the parser is the one thing `highlight` exists to rule out.
 fn opens_link(w: &str, next: Option<&str>) -> bool {
-    // the lookahead first: it is a pointer test, where `prefix_word` scans the operator table
-    let Some(n) = next else { return false };
     if EntKind::parse(w).is_some() {
-        return true; // a declaration names itself
+        return true; // a declaration names itself — or nothing at all, the name being optional
     }
+    // the lookahead: it is a pointer test, where `prefix_word` scans the operator table
+    let Some(n) = next else { return false };
     (EntKind::parse(n).is_some() || prefix_word(n)) && prefix_word(w)
+}
+
+/// Whether a word may be a declaration's **name**.  With the name optional (§6.1, issue #33),
+/// the token after the kind keyword decides what the statement says next, so every word that may
+/// follow a declaration is reserved: another element keyword, an operator (a chain's joint or the
+/// next link's prefix), a trailing clause's word, and `at`, whose retired seed spelling keeps its
+/// message.  `line hint(x: 0, y: 0)` seeds an anonymous line, and does not declare one named
+/// `hint`.  Asked by the parser (`decl`) and the colouring (`tint_word`) alike — written twice,
+/// the two would drift on exactly these words.
+fn names_decl(w: &str) -> bool {
+    EntKind::parse(w).is_none() && !is_operator(w) && !TRAILERS.contains(&w) && w != "at"
+}
+
+/// Whether a name is one the source could never write: the `#`-keyed name an anonymous
+/// declaration resolves by (`#41`, and `#41.p2` for a child it mints) or a block prefix the
+/// flattener made (`#5.0.p0`).  `#` never survives the tokenizer inside an identifier, so the
+/// test cannot claim a written name.  Who asks: whatever would *write* a name into the source —
+/// `edit::reconcile` mints a real one instead, on demand — and the printer, which spells an
+/// anonymous declaration without one.
+pub(crate) fn hidden(name: &str) -> bool {
+    name.contains('#')
 }
 
 /// What the field at a boundary slot is called, for a message about it.
@@ -3686,7 +3731,32 @@ impl<'a> P<'a> {
     }
 
     fn decl(&mut self, kind: EntKind) -> Option<Decl> {
-        let name = self.ident()?;
+        // **The name is optional**, independently of everything after it (issue #33): `line`
+        // alone, `line(p1, p2)` and `line hint(x: 0, y: 0)` are all anonymous forms.  The token
+        // after the kind keyword decides — an identifier that may be a name is one, and a word
+        // reserved for what can follow a declaration (`names_decl`) is read as itself.  An
+        // anonymous declaration still needs a key the desugared statements can resolve by — a
+        // chain's corner welds by *name* — so it is given one the tokenizer can never produce,
+        // `#` and its own offset, the device the flattener's block prefixes already use; its
+        // span is empty at the point a real name would go, which is where `edit::reconcile`
+        // splices one the moment a statement must say it.  `curve` keeps requiring a name: its
+        // form is `curve name = family(…)`, and the name is what the contacts address.
+        let named = match self.peek() {
+            Some(Tok::Ident(w)) => kind == EntKind::Curve || names_decl(w),
+            _ => false,
+        };
+        let name = if named || kind == EntKind::Curve {
+            self.ident()?
+        } else {
+            let at = self.prev_hi();
+            Name { text: format!("#{at}"), span: Span::new(at, at) }
+        };
+        // how an error spells this statement's head: with the name where there is one
+        let head = if hidden(&name.text) {
+            kind.as_str().to_string()
+        } else {
+            format!("{} {}", kind.as_str(), name.text)
+        };
         // `curve e = involute(base, phase: 0) over (0, 45)`
         let mut def = None;
         let mut values: Vec<(Name, String)> = Vec::new();
@@ -3774,9 +3844,7 @@ impl<'a> P<'a> {
                     Some(l) if scalars.contains(&l.as_str()) => {
                         self.fail(&format!(
                             "`{l}` is a seed, and a seed goes in a `hint(…)` clause: \
-                             `{} {}(…) hint({l}: …)`",
-                            kind.as_str(),
-                            name.text
+                             `{head}(…) hint({l}: …)`"
                         ));
                         return None;
                     }
@@ -3872,11 +3940,7 @@ impl<'a> P<'a> {
                 // the retired coordinate spellings, `hint at (0, 0)` and a bare `at (0, 0)` —
                 // what every document in the library said until the clause arrived, so the
                 // reader most likely to meet an error here is the one holding one of them
-                self.fail(&format!(
-                    "a coordinate seed is keyed now: `{} {} hint(x: …, y: …)`",
-                    kind.as_str(),
-                    name.text
-                ));
+                self.fail(&format!("a coordinate seed is keyed now: `{head} hint(x: …, y: …)`"));
                 return None;
             } else {
                 break;

@@ -216,17 +216,21 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         let mine_here = d.children.iter().flatten().any(|kid| written_here(kid));
         let list = (!mine_here && !kids.is_empty()).then(|| {
             let mut d2 = d.clone();
-            // a slot the thread filled keeps the name it threaded; every other slot is a child
-            // this statement minted, and is written as the `hint(…)` its pose is
+            // a slot the thread filled keeps the name it threaded — unless that name is one the
+            // source cannot write (an anonymous link's `#`-keyed boundary), in which case the
+            // slot is left empty: the marker threads it again on the next parse, which keeps
+            // the weld the corner's and the pose the owning link's.  Every other slot is a
+            // child this statement minted, and is written as the `hint(…)` its pose is.
             let mut filled = kids.iter().enumerate().map(|(j, k)| match slot_kid(j) {
-                Some(syntax::Kid::Ref(r)) => syntax::Kid::Ref(r.clone()),
+                Some(syntax::Kid::Ref(r)) if syntax::hidden(&r.root.text) => None,
+                Some(syntax::Kid::Ref(r)) => Some(syntax::Kid::Ref(r.clone())),
                 _ => {
                     let v = sk.point_params(k.i()).map(|p| sk.params[p as usize].value);
-                    syntax::Kid::Hint(syntax::KidSeed { v, ..Default::default() })
+                    Some(syntax::Kid::Hint(syntax::KidSeed { v, ..Default::default() }))
                 }
             });
             for g in d2.children.iter_mut() {
-                *g = filled.by_ref().take(g.len().max(1)).collect();
+                *g = filled.by_ref().take(g.len().max(1)).flatten().collect();
             }
             (syntax::decl_args(&d2), syntax::decl_tail(&d2, &pose))
         });
@@ -844,11 +848,90 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         taken.insert(name.clone());
         minted.insert(r, name);
     }
+
+    /* An **anonymous declaration** (issue #33) has no name a statement can say: the `#`-keyed
+     * name it resolves by is the elaboration's, not the source's.  So whatever a new statement
+     * is about to reach for is named *now* — a real name minted and spliced into the
+     * declaration, at the empty span the parser recorded where one would go — the same bargain
+     * `commit_seeds` strikes with an unwritten `hint(…)` clause.  On demand, and only on
+     * demand: an anonymous element nothing references stays unnamed. */
+    let mut needed: std::collections::BTreeSet<EntRef> = std::collections::BTreeSet::new();
+    // a new constraint names its entities…
+    for c in sk.user_constraints() {
+        if e.map.of_constraint.contains_key(&c.id) {
+            continue;
+        }
+        for a in c.args.iter() {
+            if let crate::constraints::Arg::Ent(r) = a {
+                needed.insert(*r);
+            }
+        }
+    }
+    // …a new entity names its children, which may be points the drawing already had…
+    for (&r, _) in minted.iter() {
+        needed.extend(sk.children(r));
+    }
+    // …and a gauge names what it holds
+    for i in 0..sk.points.len() {
+        if sk.point_fixed(i) {
+            needed.insert(EntRef::point(i));
+        }
+    }
+    for r in sk.primitives() {
+        if sk.own_params(r).iter().any(|&p| sk.params[p as usize].fixed) {
+            needed.insert(r);
+        }
+    }
+    let mut named: Vec<Splice> = Vec::new();
+    let mut renamed: std::collections::BTreeMap<EntRef, String> = std::collections::BTreeMap::new();
+    // one name per statement, however many of its entities are needed: the declaration's own
+    // entity takes the name, and a child it minted is reached by its dotted path under it
+    let mut fresh: std::collections::BTreeMap<crate::syntax::StmtId, String> =
+        std::collections::BTreeMap::new();
+    for r in &needed {
+        if minted.contains_key(r) {
+            continue; // new: the statement being appended carries its name
+        }
+        if e.map.names.get(r).is_some_and(|v| v.iter().any(|n| !syntax::hidden(n))) {
+            continue; // the source already calls it something
+        }
+        let Some(site) = e.map.of_entity.get(r) else { continue };
+        if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
+            continue; // a component's or a block's: no one statement to put a name on
+        }
+        let Some(d) = decl_of(prog, site) else { continue };
+        if !syntax::hidden(&d.name.text) {
+            continue; // named since the map was made
+        }
+        let name = fresh.entry(site.stmt).or_insert_with(|| {
+            let c = syntax::kind_initial(d.kind);
+            let name =
+                (0..).map(|i| format!("{c}{i}")).find(|n| !taken.contains(n)).unwrap_or_default();
+            taken.insert(name.clone());
+            named.push(Splice { at: d.name.span, with: format!(" {name}") });
+            name
+        });
+        // an anonymous child's hidden name is its parent's plus the dotted path (`#41.p2`), so
+        // the path survives the rename and the parent's key does not
+        let text = match e.map.names.get(r).and_then(|v| v.first()) {
+            Some(h)
+                if h.len() > d.name.text.len()
+                    && h.starts_with(d.name.text.as_str())
+                    && h.as_bytes()[d.name.text.len()] == b'.' =>
+            {
+                format!("{name}{}", &h[d.name.text.len()..])
+            }
+            _ => name.clone(),
+        };
+        renamed.insert(*r, text);
+    }
+
     // the elaboration's own name for an entity it made — what a new statement has to refer to
     let name_of = |r: EntRef| -> String {
         minted
             .get(&r)
             .cloned()
+            .or_else(|| renamed.get(&r).cloned())
             .or_else(|| e.map.names.get(&r).and_then(|v| v.first()).cloned())
             .unwrap_or_else(|| syntax::entity_name(r))
     };
@@ -996,7 +1079,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         made.push(crate::program::Made::Gauge);
     }
 
-    if adds.is_empty() && doomed.is_empty() && flags.is_empty() {
+    if adds.is_empty() && doomed.is_empty() && flags.is_empty() && named.is_empty() {
         // nothing structural: the drawing only moved, and the seeds record where to
         let seeds = commit_seeds(e, sk, prog);
         if seeds.kind != Kind::None {
@@ -1010,7 +1093,6 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
     // nothing between them; a statement with no splice is dropped, and `adopt` is the net
     let mut edits: Vec<Splice> =
         doomed_splices(prog.text(), &prog.root().body, &doomed).into_iter().flatten().collect();
-    edits.extend(flags);
     if !adds.is_empty() {
         let (at, lead) = append_at(prog);
         let mut line = String::new();
@@ -1022,9 +1104,21 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         }
         edits.push(Splice { at, with: line });
     }
+    // after the append, deliberately: insertions at one offset land in *reverse* application
+    // order, and `splice`'s stable sort applies equal offsets in this vec's order — so where
+    // the file's last statement is the one being named or flagged, this order is the layout:
+    // the appended statements go past the line's end, a class clause stands before them, and a
+    // minted name lands against its keyword with everything else after it
+    edits.extend(flags);
+    edits.extend(named);
     let text = splice(prog.text(), edits);
     if !e.adopt(&text, &made) {
         return Edit::none(prog, Some("the drawing could not be written down".into()));
+    }
+    // an entity just named in place resolves by that name from here on — the map learns it now,
+    // so a later reconcile in this same elaboration does not mint a second one
+    for (r, n) in &renamed {
+        e.map.bind(n, *r);
     }
     // and now the seeds, against the source that finally has statements for everything
     let after = e.program.clone();

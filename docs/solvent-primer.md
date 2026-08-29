@@ -52,8 +52,8 @@ the centre is structure and the radius is a guess, and one pair of brackets said
 ```
 unit NAME                               what the document's numbers are in (§1.6)
 param NAME = EXPR                       a number worked out while elaborating; never an unknown
-KIND NAME[(CHILD | hint(x: E, y: E), …)] [hint(SCALAR: E, …)] [knots […]] [class NAME…]
-                                        an entity declaration (§1.4)
+KIND [NAME][(CHILD | hint(x: E, y: E), …)] [hint(SCALAR: E, …)] [knots […]] [class NAME…]
+                                        an entity declaration (§1.4); the name is optional
 style .NAME { PROP: VALUE; … }          what a class looks like (§1.10)
 WORD[(ARGS)] REF | REF WORD[(ARGS)] REF   a constraint, prefix or infix (§1.5)
     [hint(SLOT: EXPR, …)] [at (t, r)]
@@ -110,6 +110,17 @@ line   alt_a(A, hint(x: 15, y: 5))                one named end and one not
 **The dotted path is the name.** `l.p1` is an ordinary point — it constrains, drags, is picked,
 and is what a dimension states itself against. Name a point when something says it twice; these
 said it once, and six statements become three.
+
+**The element's own name is optional too**, independently of everything after it. `line` alone
+is a statement — a line with no name, implicit children and no hint — and so are `line(p1, p2)`,
+`point hint(x: 3, y: 4)`, `arc(center: c)` and `line class construction`. The token after the
+kind keyword decides: a word that may follow a declaration — another element keyword, a
+constraint word, `hint`, `knots`, `class`, `at` — can therefore no longer be a declaration's
+name. An anonymous element draws, drags and deletes without ever being named; the moment the
+source must *reference* it (a constraint applied from the app, a dimension stated on it), a real
+name is spliced into the declaration — the same bargain a solve strikes with an unwritten
+`hint(…)` clause. `curve` keeps requiring a name: its form is `curve name = family(…)`, and the
+name is what the contacts address.
 
 **All the children, or none.** A written slot carries a name or a seed; there is no bare `hint`
 meaning "anonymous and unseeded", because writing no list at all says that. `line l(a)` is still
@@ -247,6 +258,9 @@ states only the relation:
 chain may mix declarations and names; at a corner with an element declared elsewhere, the
 declared side names the shared point, usually by that element's own child
 (`line t(p3, k.start) -> tangent k`). A loop closes with `-> close` — a loop is a thread.
+Links may be anonymous like any other declaration, so
+`line -> tangent arc -> tangent line` is a fully anonymous open contour: two lines and an arc,
+welded and tangent at both corners.
 
 `equal` is polymorphic: a length between lines, a radius between circles or arcs. `a equal b equal
 c` is two statements, not three.

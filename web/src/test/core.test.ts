@@ -1964,6 +1964,26 @@ test('drawing a triangle by gestures writes six statements', () => {
   d.dispose();
 });
 
+test('an anonymous element is named the moment the source must say it', () => {
+  // the name in a declaration is optional (issue #33): `line` alone draws, and stays unnamed
+  // until a statement has to reference it — here a constraint applied the way the app applies
+  // one, into the sketch and reconciled — at which point the core splices a real name in
+  const d = Document.read('line\n');
+  assert.ok(d.ok, JSON.stringify(d.diagnostics));
+  assert.equal(d.sketch.lines.length, 1);
+  assert.equal(d.sketch.points.length, 2);
+  d.sketch.add(new C.Horizontal(d.sketch.lines[0]));
+  const e = d.reconcile();
+  assert.ok(!e.refused, e.refused ?? '');
+  assert.ok(e.text.includes('line l0('), e.text);
+  assert.ok(e.text.includes('horizontal l0'), e.text);
+  const next = Document.read(e.text);
+  assert.ok(next.ok, JSON.stringify(next.diagnostics));
+  assert.equal(next.sketch.constraints.length, 1);
+  next.dispose();
+  d.dispose();
+});
+
 test('the rect tool writes a component instance, and the component once', () => {
   let d = Document.read('');
   const first = d.addRectangle(120, 60);

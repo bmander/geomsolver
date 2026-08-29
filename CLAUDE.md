@@ -147,6 +147,21 @@ Conventions:
   slot, so `commit_seeds` walks the parent's children and splices inside `Kid::Hint`'s spans —
   and where the source wrote no list at all, writes the whole argument list at `hint_span` in
   one edit, since two splices at one offset are two insertions racing for it.
+  **The element's own name is optional too** (issue #33), independently of everything after it:
+  `line`, `line(p1, p2)`, `line hint(x: 0, y: 0)` and `arc(center: c)` are all anonymous forms,
+  and the token after the kind keyword decides — `syntax::names_decl` is the one predicate, asked
+  by `decl()` and the colouring alike, so a trailing-clause word, an operator word or an element
+  keyword can no longer be a declaration's name (`curve` keeps requiring one; contacts address
+  it).  An anonymous declaration still carries a `Decl::name`: a key the source cannot write —
+  `#` and its own offset, `syntax::hidden`, the device the flattener's block prefixes already
+  use — with an **empty span at the point a real name would go** (`hint_span`'s idiom).  That
+  key is what a chain's corner welds by and what `res` resolves, it binds in the map like a
+  block-prefix name does, and it must never reach the source: `write_decl` spells the statement
+  without it, and `edit::reconcile` **mints on demand** — the moment an appended statement must
+  reference an anonymous element (a constraint from the app, a gauge on a fixed point), a real
+  name is spliced into the declaration at that empty span, a child following as its dotted path.
+  Insertions racing for one offset are ordered by `splice`'s stable sort, so reconcile pushes
+  appends before flags before names; `tests/anonymous.rs` is the gate.
   Where an unseeded implicit child *starts* is `program::scatter` and is an implementation
   choice the spec must not carry — but it may not be the origin (two endpoints there is a
   zero-length line, with no direction for `horizontal(l)` and a singular row for any tangency),

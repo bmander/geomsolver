@@ -174,7 +174,7 @@ impl SourceMap {
         self.of_constraint.get(&id)
     }
 
-    fn bind(&mut self, name: &str, e: EntRef) {
+    pub(crate) fn bind(&mut self, name: &str, e: EntRef) {
         self.by_name.insert(name.to_string(), e);
         self.names.entry(e).or_default().push(name.to_string());
     }
