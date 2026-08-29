@@ -411,7 +411,9 @@ export function paintPreview(v: SketchView): void {
     ctx.stroke();
     rubber();
   } else if (v.tool === 'rect') {
-    ctx.strokeRect(p0[0], p0[1], cur[0] - p0[0], cur[1] - p0[1]);
+    // the first click is a place rather than a point, so the band starts from `pendingFit`
+    const a = v.pendingFit.length ? v.w2s(...v.pendingFit[0].at) : p0;
+    ctx.strokeRect(a[0], a[1], cur[0] - a[0], cur[1] - a[1]);
   } else if (v.tool === 'circle') {
     const c = v.pending[0].xy;
     const w = v.s2w(cur[0], cur[1]);

@@ -61,7 +61,7 @@ line od(o, d)
 oc equal od
 o distance(arm) c
 
-line bc(b, c) to line cp(c, pen) to line pd(pen, d) to line db(d, b) to close
+line bc(b, c) -> line cp(c, pen) -> line pd(pen, d) -> line db(d, b) -> close
 bc equal cp equal pd equal db
 b distance(side) c
 

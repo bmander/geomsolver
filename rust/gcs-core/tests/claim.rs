@@ -37,10 +37,10 @@ point p0 hint(x: 0, y: 0)
 point p1 hint(x: 60, y: 0)
 point p2 hint(x: 60, y: 40)
 point p3 hint(x: 0, y: 40)
-horizontal line bottom(p0, p1) to
-vertical   line right(p1, p2) to
-horizontal line top(p2, p3) to
-vertical   line left(p3, p0) to close
+horizontal line bottom(p0, p1) ->
+vertical   line right(p1, p2) ->
+horizontal line top(p2, p3) ->
+vertical   line left(p3, p0) -> close
 p0 distance(60) p1
 p1 distance(40) p2
 ground p0

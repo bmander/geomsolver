@@ -18,7 +18,7 @@ fn the_spans_tile_the_text() {
         "point p hint(x: 0, y: 0)",
         "// nothing but a comment",
         "/* unclosed",
-        "horizontal line a(p1, p2) tangent\narc k(center: c) hint(r: 5) to close",
+        "horizontal line a(p1, p2) -> tangent\narc k(center: c) hint(r: 5) -> close",
     ] {
         let mut end = 0usize;
         for (tint, s) in highlight(src) {

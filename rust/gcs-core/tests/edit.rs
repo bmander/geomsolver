@@ -140,6 +140,37 @@ fn drawing_a_point_appends_one_statement() {
     assert_eq!(back.sketch.points.len(), 4);
 }
 
+/// **The Rect tool writes a component, once, and instances after.**  The first rectangle
+/// brings the `Rectangle` definition with it — the chain of four lines welded at right
+/// angles — and every rectangle is one statement, `rN: Rectangle(w: …, h: …)`, each a rigid
+/// figure of its own (DOF 3: position and rotation).
+#[test]
+fn a_rectangle_is_a_component_instance() {
+    let prog = prog_of("point p9 hint(x: 5, y: 5)\n");
+    let e = edit::add_rectangle(&prog, 120.0, 60.0);
+    assert_eq!(e.kind, Kind::Structural);
+    assert_eq!(e.names, vec!["r0"]);
+    assert!(e.text.contains("component Rectangle(w: Length, h: Length)"), "{}", e.text);
+    assert!(e.text.contains("r0: Rectangle(w: 120, h: 60)"), "{}", e.text);
+    let prog = prog_of(&e.text);
+    let back = elaborate(&prog);
+    assert!(back.ok(), "{:?}", back.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+    assert_eq!((back.sketch.points.len(), back.sketch.lines.len()), (5, 4));
+
+    // the second rectangle reuses the definition: one component, two instances
+    let e = edit::add_rectangle(&prog, 40.0, 40.0);
+    assert_eq!(e.names, vec!["r1"]);
+    assert_eq!(e.text.matches("component Rectangle").count(), 1, "{}", e.text);
+    let back = elaborate(&prog_of(&e.text));
+    assert!(back.ok(), "{:?}", back.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+    assert_eq!(back.sketch.lines.len(), 8);
+    let mut sk = back.sketch.clone();
+    let r = solve(&mut sk, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let d = gcs_core::diagnose::diagnose(&mut sk, gcs_core::diagnose::DiagnoseOptions::default());
+    assert_eq!(d.dof, 8, "a loose point (2) and two rigid rectangles (3 each)");
+}
+
 /// A minted name never collides with one already written, whatever it is.
 #[test]
 fn a_minted_name_is_free() {
@@ -514,6 +545,38 @@ fn a_dragged_callout_is_written_down() {
     e.sketch.placements.remove(&id);
     let out = reconciled(&mut e);
     assert!(out.text.contains("a distance(60) b\n"), "{}", out.text);
+}
+
+/// A dimension that is its line's one relation takes the dragged callout's clause at the end
+/// of the line's statements, wherever the dimension fell among the links (§13.1).
+#[test]
+fn a_callout_on_a_chained_dimension_is_written_at_the_line_end() {
+    let src = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 60, y: 0)\npoint p3 hint(x: 60, y: 40)\n\
+               point p4 hint(x: 0, y: 40)\nline B(p3, p4)\nline a(p1, p2) angle(30deg) B\n";
+    let mut e = elaborate(&prog_of(src));
+    let id = e.sketch.user_constraints().iter().find(|c| c.kind == CKind::Angle).unwrap().id;
+    e.sketch.placements.insert(id, (2.0, 5.0));
+    let out = reconciled(&mut e);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    assert!(out.text.contains("angle(30deg) B at (2, 5)"), "{}", out.text);
+    // and read back, it is the angle's
+    let again = elaborate(&prog_of(&out.text));
+    let id = again.sketch.user_constraints().iter().find(|c| c.kind == CKind::Angle).unwrap().id;
+    assert_eq!(again.sketch.placements.get(&id).copied(), Some((2.0, 5.0)));
+}
+
+/// A dimension sharing its line with another relation has no spot a placement clause can
+/// name, so a dragged callout is not written down — and the gesture still succeeds.
+#[test]
+fn a_callout_on_a_run_dimension_is_left_to_the_layout() {
+    let src = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 60, y: 0)\npoint p3 hint(x: 60, y: 40)\n\
+               point p4 hint(x: 0, y: 40)\nline A(p1, p2)\nline B(p3, p4)\nA equal angle(30deg) B\n";
+    let mut e = elaborate(&prog_of(src));
+    let id = e.sketch.user_constraints().iter().find(|c| c.kind == CKind::Angle).unwrap().id;
+    e.sketch.placements.insert(id, (0.5, 10.0));
+    let out = reconciled(&mut e);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    assert!(!out.text.contains(" at ("), "nothing lands mid-joint: {}", out.text);
 }
 
 /// The same, for a placement on a relation that states no number — the clause stands alone

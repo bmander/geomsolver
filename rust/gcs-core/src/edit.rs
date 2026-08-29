@@ -109,6 +109,25 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         // a declaration that could not be built made nothing, and has no pose to record
         let Some(Made::Ent(parent)) = e.map.made_by(st.id).first().copied() else { continue };
         let kids = sk.children(parent);
+        // the statement's slot for each child, in field order — the same order `sk.children`
+        // hands them back in.  A slot may be empty (an implicit child), so for the per-slot
+        // kinds the groups are indexed directly; a `List` kind's one group is flattened.
+        let slot_kid = |j: usize| -> Option<&syntax::Kid> {
+            if d.children.len() == kids.len() {
+                d.children.get(j).and_then(|g| g.first())
+            } else {
+                d.children.iter().flatten().nth(j)
+            }
+        };
+        // whether a kid's text is this statement's own: a chain's thread fills slots with
+        // references written in *another* link (or written nowhere, with an empty span), and a
+        // writeback must not mistake those for a list the source wrote here
+        let written_here = |kid: &syntax::Kid| match kid {
+            syntax::Kid::Ref(r) => {
+                !r.span.is_empty() && r.span.lo >= st.span.lo && r.span.hi <= st.span.hi
+            }
+            syntax::Kid::Hint(_) => true,
+        };
 
         // One seed at a time: where the source wrote it, the splice that records it; where it
         // did not, the news that something has moved with nowhere to write it.
@@ -139,9 +158,8 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         // the slots stand in the order `sk.children` hands the children back in, so the two walk
         // together.  A slot the source wrote a *name* in is a point declared elsewhere, and is
         // written back where it was declared; one it wrote nothing for at all was minted.
-        let mut slots = d.children.iter().flatten();
-        for &k in kids.iter() {
-            let seed = match slots.next() {
+        for (j, &k) in kids.iter().enumerate() {
+            let seed = match slot_kid(j) {
                 Some(syntax::Kid::Ref(_)) => continue,
                 Some(syntax::Kid::Hint(s)) => Some(s),
                 None => None,
@@ -189,18 +207,26 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         // the clause, as the pose the solve arrived at; empty when the kind owns no scalar at
         // all — a line's numbers are its two points', and they are written in the slots
         let hint = syntax::hint_clause(d, &pose);
-        // the source named none of its children, so the list has to be written too.  It is
-        // spelled by the printer that spells every other statement — write it here and an
-        // `arc`'s `center:`/`start:`/`end:` labels are dropped by the one path that wrote its
-        // own — and a `Decl` of the solved pose is what that printer takes.
-        let list = (d.children.iter().all(|g| g.is_empty()) && !kids.is_empty()).then(|| {
+        // No slot of this list is the source's own text, so the list has to be written too —
+        // a chain's thread fills slots with references written in *another* link, or written
+        // nowhere at all, and neither is a list this statement can splice into.  It is spelled
+        // by the printer that spells every other statement — write it here and an `arc`'s
+        // `center:`/`start:`/`end:` labels are dropped by the one path that wrote its own —
+        // and a `Decl` of the solved pose is what that printer takes.
+        let mine_here = d.children.iter().flatten().any(|kid| written_here(kid));
+        let list = (!mine_here && !kids.is_empty()).then(|| {
             let mut d2 = d.clone();
-            let mut minted = kids.iter().map(|k| {
-                let v = sk.point_params(k.i()).map(|p| sk.params[p as usize].value);
-                syntax::Kid::Hint(syntax::KidSeed { v, ..Default::default() })
+            // a slot the thread filled keeps the name it threaded; every other slot is a child
+            // this statement minted, and is written as the `hint(…)` its pose is
+            let mut filled = kids.iter().enumerate().map(|(j, k)| match slot_kid(j) {
+                Some(syntax::Kid::Ref(r)) => syntax::Kid::Ref(r.clone()),
+                _ => {
+                    let v = sk.point_params(k.i()).map(|p| sk.params[p as usize].value);
+                    syntax::Kid::Hint(syntax::KidSeed { v, ..Default::default() })
+                }
             });
             for g in d2.children.iter_mut() {
-                *g = minted.by_ref().take(g.len().max(1)).collect();
+                *g = filled.by_ref().take(g.len().max(1)).collect();
             }
             (syntax::decl_args(&d2), syntax::decl_tail(&d2, &pose))
         });
@@ -307,6 +333,66 @@ fn append(prog: &Program, kind: StmtKind, names: Vec<String>) -> Edit {
 }
 
 /// `point pN hint(x: …, y: …)`
+/// The rectangle the Rect tool draws: a **reusable component**, defined once per document, and
+/// one instance per gesture.  The definition is the chain a person would write — four lines
+/// welded corner to corner at right angles, the first two carrying the width and the height —
+/// so what a gesture leaves in the source is one statement, `r0: Rectangle(w: 120, h: 60)`,
+/// and the drawing owns a `Rectangle` any later statement may instance again.  Where the
+/// figure *sits* is not in the statement: an instance's geometry is written in the component's
+/// terms, so its pose is the session's (the tool seeds it at the gesture) and a reload starts
+/// it from `scatter`, the same bargain every component's interior strikes.
+pub fn add_rectangle(prog: &Program, w: f64, h: f64) -> Edit {
+    let (at, lead) = append_at(prog);
+    let mut with = lead;
+    if !prog
+        .components
+        .iter()
+        .any(|c| c.name.as_ref().is_some_and(|n| n.text == "Rectangle"))
+    {
+        if at.lo > 0 {
+            with.push('\n'); // a blank line between the drawing and the definition
+        }
+        with.push_str(
+            "component Rectangle(w: Length, h: Length) {\n  distance(w) line l1 -> \
+             perpendicular distance(h) line l2 -> perpendicular line l3 -> perpendicular \
+             line l4 -> close\n}\n\n",
+        );
+    }
+    // a fresh instance name, past every name the document already binds
+    let taken: std::collections::BTreeSet<&str> = prog
+        .stmts()
+        .filter_map(|s| match &s.kind {
+            StmtKind::Decl(d) => Some(d.name.text.as_str()),
+            StmtKind::Instance(i) => Some(i.name.text.as_str()),
+            StmtKind::Param(p) => Some(p.name.text.as_str()),
+            StmtKind::Port(p) => Some(p.name.text.as_str()),
+            _ => None,
+        })
+        .collect();
+    let name =
+        (0..).map(|i| format!("r{i}")).find(|n| !taken.contains(n.as_str())).unwrap_or_default();
+    let arg = |label: &str, v: f64| syntax::InstArg {
+        label: Some(syntax::Name::new(label)),
+        value: syntax::InstVal::Expr(num(v)),
+        span: Span::default(),
+    };
+    let inst = syntax::Instance {
+        name: syntax::Name::new(name.clone()),
+        component: syntax::Name::new("Rectangle"),
+        args: vec![arg("w", w), arg("h", h)],
+        span: Span::default(),
+    };
+    let mut line = String::new();
+    syntax::write_stmt_to(&mut line, &StmtKind::Instance(inst));
+    with.push_str(&line);
+    Edit {
+        text: splice(prog.text(), vec![Splice { at, with }]),
+        kind: Kind::Structural,
+        names: vec![name],
+        refused: None,
+    }
+}
+
 pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
     let name = mint(prog, EntKind::Point);
     let d = Decl {
@@ -443,28 +529,40 @@ pub fn remove(e: &Elaborated, prog: &Program, ents: &[EntRef], cons: &[u32]) -> 
         return Edit::none(prog, None);
     }
     // a link of a chain has no deletion splice, so the gesture is refused rather than half-done
+    let refuse = || {
+        Edit::none(
+            prog,
+            Some(
+                "that is part of a chain, which deletion cannot unpick; edit the source instead"
+                    .into(),
+            ),
+        )
+    };
     let mut edits: Vec<Splice> = Vec::new();
-    for st in prog.root().body.iter().filter(|s| doomed.contains(&s.id)) {
-        match doom_splice(prog.text(), st) {
+    for s in doomed_splices(prog.text(), &prog.root().body, &doomed) {
+        match s {
             Some(e) => edits.push(e),
-            None => {
-                return Edit::none(
-                    prog,
-                    Some(
-                        "that is a link of a chain, which deletion cannot unpick; edit the \
-                         source instead"
-                            .into(),
-                    ),
-                )
-            }
+            None => return refuse(),
         }
     }
-    Edit {
-        text: splice(prog.text(), edits),
-        kind: Kind::Structural,
-        names: Vec::new(),
-        refused: None,
+    let text = splice(prog.text(), edits);
+    // and where a chain was touched, the result must still parse: a chain can weave what no
+    // set of per-statement splices unpicks — a name link left dangling between two doomed
+    // joints — and a deletion that corrupts the source is worse than one that is refused.
+    // Whole-line deletions cannot introduce an error, so they skip both parses; a clean
+    // result cannot have more errors than the old text, so it skips the baseline one.
+    let woven = prog
+        .root()
+        .body
+        .iter()
+        .any(|s| doomed.contains(&s.id) && !matches!(s.chained, syntax::Chained::No));
+    if woven {
+        let errs = crate::syntax::parse(&text).1.len();
+        if errs > 0 && errs > crate::syntax::parse(prog.text()).1.len() {
+            return refuse();
+        }
     }
+    Edit { text, kind: Kind::Structural, names: Vec::new(), refused: None }
 }
 
 /// The names a statement refers to, of those given.
@@ -529,30 +627,96 @@ fn back_over_spaces(text: &str, mut lo: usize) -> usize {
 ///
 /// Almost always the statement's whole line.  A chain (spec §6.6) puts several statements on one
 /// line, so which characters go is a question about *how the statement was written*, and the
-/// parser answered it while desugaring: a joint steps down to `to` (the corner stays, the claim
+/// parser answered it while desugaring: a joint steps down to `->` (the corner stays, the claim
 /// goes, and the chain still parses), a prefix word is deleted where it stands with the spaces
 /// that set it off, and a link has no splice at all — nothing takes one link out and leaves a
 /// chain behind, so it is refused.  Reading the answer back out of the characters would instead
 /// rest on "a longhand relation always carries a `(`", which nothing states and a qualified
 /// joint would quietly break.
 fn doom_splice(text: &str, st: &Stmt) -> Option<Splice> {
-    let one_word = |with: &str| Some(Splice { at: st.span, with: with.to_string() });
-    match st.chained {
-        syntax::Chained::No => {
-            Some(Splice { at: with_line(text, st.span), with: String::new() })
+    doom_at(text, st.span, &st.chained)
+}
+
+/// The doom splices for a set of statements at once — and the composition the set needs: the
+/// words of one joint hang together, so while each doomed alone splices out where it stands
+/// and the rest hold the line, a joint whose every *written* word is doomed (an entity
+/// deletion dooms every relation naming it) would leave two links with nothing between them.
+/// Such a joint yields the one splice its only word's doom would be — the `fall` its members
+/// carry — and its other members yield nothing.  Counted against `out_of`, the words as
+/// written, so a word that was refused at desugar (emitting no statement) holds the joint's
+/// text in place.  A `None` is a statement with no splice at all, the caller's refusal.
+fn doomed_splices(
+    text: &str,
+    body: &[Stmt],
+    doomed: &std::collections::BTreeSet<syntax::StmtId>,
+) -> Vec<Option<Splice>> {
+    let mut fell: std::collections::BTreeMap<Span, usize> = Default::default();
+    for st in body.iter().filter(|s| doomed.contains(&s.id)) {
+        if let syntax::Chained::Member { of, .. } = st.chained {
+            *fell.entry(of).or_insert(0) += 1;
         }
+    }
+    let mut out = Vec::new();
+    for st in body.iter().filter(|s| doomed.contains(&s.id)) {
+        match st.chained {
+            syntax::Chained::Member { of, fall, out_of } => match fell.get(&of) {
+                // every written word fell: the joint composes to its only word's doom, once
+                // — taking the entry marks it done
+                Some(&n) if n == out_of as usize => {
+                    fell.remove(&of);
+                    out.push(doom_at(text, of, &fall.into()));
+                }
+                // siblings hold the line: this word goes out alone
+                Some(_) => out.push(doom_splice(text, st)),
+                // the joint's one composed splice went with its first member
+                None => {}
+            },
+            _ => out.push(doom_splice(text, st)),
+        }
+    }
+    out
+}
+
+/// The splice for one doomed spelling over one span — `doom_splice`'s own body, split out so
+/// `remove` can compose a joint whose every word fell at once: it dooms the `fall` the members
+/// carry, over the joint's whole span.
+fn doom_at(text: &str, at: Span, how: &syntax::Chained) -> Option<Splice> {
+    let one_word = |with: &str| Some(Splice { at, with: with.to_string() });
+    match how {
+        syntax::Chained::No => Some(Splice { at: with_line(text, at), with: String::new() }),
         syntax::Chained::Link => None,
-        syntax::Chained::Joint => one_word("to"),
-        // the joint word and `close` share a span, and only the claim goes
-        syntax::Chained::Close => {
-            let tail = st.span.slice(text);
-            let close = tail.rfind("close").map(|i| &tail[i..]).unwrap_or("close");
-            one_word(&format!("to {close}"))
+        // a threaded joint steps down to the bare corner: the claim goes, the weld stays
+        syntax::Chained::Joint => one_word("->"),
+        // an unthreaded joint states only the relation, so its span — grown at desugar time
+        // over a terminal name-link that would otherwise dangle — becomes a statement break;
+        // one that is the whole of its line would leave only a blank one, so the line goes
+        syntax::Chained::Infix => {
+            let lo = back_over_spaces(text, at.lo as usize);
+            let hi = skip_spaces(text, at.hi as usize);
+            let whole = (lo == 0 || text.as_bytes()[lo - 1] == b'\n')
+                && matches!(text.as_bytes().get(hi), None | Some(&b'\n'));
+            match whole {
+                true => Some(Splice { at: with_line(text, at), with: String::new() }),
+                false => Some(Splice { at, with: "\n".to_string() }),
+            }
         }
-        syntax::Chained::Prefix => Some(Splice {
-            at: Span::new(st.span.lo as usize, skip_spaces(text, st.span.hi as usize)),
+        // an unthreaded joint in a chain that closes: a break would re-aim the `close` at
+        // another link, so there is no splice and the gesture is refused
+        syntax::Chained::Stuck => None,
+        // one of a joint's several words, or a prefix word, goes out where it stands with
+        // the blanks after it — a comment or a line break beside it survives.  A doomed
+        // member leaves the corner and the joint's other statements standing; the whole
+        // joint doomed at once is composed by `doomed_splices` from the `fall` it carries
+        syntax::Chained::Member { .. } | syntax::Chained::Prefix => Some(Splice {
+            at: Span::new(at.lo as usize, skip_spaces(text, at.hi as usize)),
             with: String::new(),
         }),
+        // the joint word and `close` share a span, and only the claim goes
+        syntax::Chained::Close => {
+            let tail = at.slice(text);
+            let close = tail.rfind("close").map(|i| &tail[i..]).unwrap_or("close");
+            one_word(&format!("-> {close}"))
+        }
     }
 }
 
@@ -774,15 +938,19 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             continue;
         }
         match now {
-            // rewrite the two numbers where they stand, or write them after the statement
+            // rewrite the two numbers where they stand, or write the whole clause at the
+            // spot the parser recorded for it — `place_span` as an empty span is where one
+            // *would* go, the `class_span` idiom.  A statement whose line offers no spot (it
+            // shares the line's relations, or the line ends in a declaration) records none,
+            // and the pose stays the layout's — the bargain `commit_seeds` strikes with a
+            // decl seeded by place.
             Some((t, r)) => {
                 let with = format!("at ({}, {})", num(t), num(r));
-                let at = match rel.place_span.is_empty() {
-                    false => rel.place_span,
-                    true => Span::new(st.span.hi as usize, st.span.hi as usize),
-                };
-                let with = if rel.place_span.is_empty() { format!(" {with}") } else { with };
-                flags.push(Splice { at, with });
+                let at = rel.place_span;
+                if at != Span::default() {
+                    let with = if at.is_empty() { format!(" {with}") } else { with };
+                    flags.push(Splice { at, with });
+                }
             }
             // back where the layout would put it: the clause goes, and the space before it
             None if !rel.place_span.is_empty() => {
@@ -837,13 +1005,11 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         return seeds;
     }
 
-    let mut edits: Vec<Splice> = prog
-        .root()
-        .body
-        .iter()
-        .filter(|s| doomed.contains(&s.id))
-        .filter_map(|s| doom_splice(prog.text(), s))
-        .collect();
+    // composed, so a joint whose every word fell at once — both relations of one run
+    // withdrawn together — is unwritten as one splice rather than left as two links with
+    // nothing between them; a statement with no splice is dropped, and `adopt` is the net
+    let mut edits: Vec<Splice> =
+        doomed_splices(prog.text(), &prog.root().body, &doomed).into_iter().flatten().collect();
     edits.extend(flags);
     if !adds.is_empty() {
         let (at, lead) = append_at(prog);

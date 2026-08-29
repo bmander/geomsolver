@@ -103,12 +103,41 @@ export function pickPlace(v: SketchView, sp: [number, number]): Place {
   return { at: on ? on.xy : v.s2w(sp[0], sp[1]), on };
 }
 
+/** Seed a fresh `Rectangle` instance's corners where the gesture drew them.  The dragged span
+ *  is already a solution of the component — the sides measure w and h and the corners are
+ *  square — so the solve keeps it there.  The pose lives in the session only: an instance's
+ *  geometry is written in the component's terms, and a pose written there would be a pose on
+ *  every instance — the bargain every component interior strikes. */
+function placeRectangle(
+  v: SketchView,
+  name: string,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): void {
+  const corners: [string, number, number][] = [
+    ['l1.p1', x0, y0],
+    ['l1.p2', x1, y0],
+    ['l2.p2', x1, y1],
+    ['l3.p2', x0, y1],
+  ];
+  for (const [part, x, y] of corners) {
+    const p = v.doc.entity(`${name}.${part}`);
+    if (p instanceof Point) {
+      p.x.value = x;
+      p.y.value = y;
+    }
+  }
+  v.afterEdit();
+}
+
 export function toolClick(v: SketchView, sp: [number, number]): void {
   const sk = v.sketch;
   // Tools that make geometry as they go take their snapshot on the first click of a run.  The
   // fit tool makes nothing until it finishes and takes its own there, so pushing here would
   // leave an undo entry — and a whole document serialised — per click that changed nothing.
-  if (v.tool !== 'splinefit' && !v.pending.length) v.pushUndo();
+  if (v.tool !== 'splinefit' && v.tool !== 'rect' && !v.pending.length) v.pushUndo();
   if (v.tool === 'point') {
     snapOrNew(v, sp);
   } else if (v.tool === 'line') {
@@ -116,12 +145,20 @@ export function toolClick(v: SketchView, sp: [number, number]): void {
     if (v.pending.length && p !== v.pending[v.pending.length - 1]) sk.line(v.pending[v.pending.length - 1], p);
     v.pending = [p];                            // continue the polyline
   } else if (v.tool === 'rect') {
-    if (!v.pending.length) {
-      v.pending = [snapOrNew(v, sp)];
+    // a rectangle is a *component instance*: the gesture measures width and height, the
+    // document gains `rN: Rectangle(w: …, h: …)` — and the component itself, the first time —
+    // and the instance is then seeded where the gesture drew it.  The first click is a place,
+    // not a point: the statement's only numbers are the two lengths.
+    if (!v.pendingFit.length) {
+      v.pendingFit = [pickPlace(v, sp)];
     } else {
+      const [x0, y0] = v.pendingFit[0].at;
       const [x1, y1] = v.s2w(sp[0], sp[1]);
-      sk.rectangle(v.pending[0], x1, y1);      // the first click's point is corner a
-      v.pending = [];
+      v.pendingFit = [];
+      const e = v.doc.addRectangle(Math.abs(x1 - x0) || 1, Math.abs(y1 - y0) || 1);
+      if (v.apply(e, `${e.names[0]}: Rectangle`)) {
+        placeRectangle(v, e.names[0], x0, y0, x1, y1);
+      }
     }
   } else if (v.tool === 'circle') {
     if (!v.pending.length) {

@@ -155,7 +155,12 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
                 None => CKind::TangentLineCircle,
             },
             (Arc, Line) => CKind::TangentArcLine,
-            (x, y) if round(x) && round(y) => CKind::TangentCircleCircle,
+            // two round things meeting at a corner already touch there, so a threaded joint's
+            // `at:` has no regular form to pick — refused, never a silently degenerate row
+            (x, y) if round(x) && round(y) => match sel("at") {
+                None => CKind::TangentCircleCircle,
+                Some(_) => return None,
+            },
             (Spline, Line) => CKind::SplineTangentLine,
             (Ellipse, Line) => CKind::EllipseTangentLine,
             _ => return None,

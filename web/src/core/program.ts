@@ -217,6 +217,11 @@ export class Document {
     return edit(core().gcs_elab_add_point(this.h, x, y));
   }
 
+  /** A `Rectangle` component instance — and the component's definition, the first time. */
+  addRectangle(w: number, h: number): Edit {
+    return edit(core().gcs_elab_add_rectangle(this.h, w, h));
+  }
+
   /** An entity over names already in the source. */
   addEntity(kind: string, args: string[], seed: number[] = []): Edit {
     return edit(

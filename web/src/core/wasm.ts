@@ -40,6 +40,7 @@ export interface Abi {
   gcs_elab_commit_seeds(h: number, sk: number): number;
   gcs_elab_reconcile(h: number, sk: number): number;
   gcs_elab_add_point(h: number, x: number, y: number): number;
+  gcs_elab_add_rectangle(h: number, w: number, hh: number): number;
   gcs_elab_add_entity(h: number, p: number, n: number): number;
   gcs_elab_add_relation(h: number, p: number, n: number): number;
   gcs_elab_remove(h: number, p: number, n: number): number;

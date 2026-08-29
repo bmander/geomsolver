@@ -83,7 +83,7 @@ const PTS: &str = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint 
 /// One line, one arc, one line, tangent at both joints — the smallest chain with a threaded
 /// element in the middle, and what three of the edit tests below are written against.
 const TANGENT_RUN: &str =
-    "line a(p1, p2) tangent arc k(center: c) hint(r: 10) tangent line b(p3, p4)\n";
+    "line a(p1, p2) -> tangent arc k(center: c) hint(r: 10) -> tangent line b(p3, p4)\n";
 
 fn read(src: &str) -> Elaborated {
     let (prog, errs) = parse(src);
@@ -146,7 +146,7 @@ fn the_chain_states_the_longhand() {
         "the chain draws something else"
     );
     assert!(
-        examples::source("rect_fillets").expect("its source").contains(" tangent\n"),
+        examples::source("rect_fillets").expect("its source").contains("-> tangent\n"),
         "the shipped case is supposed to be the chain spelling"
     );
     assert_eq!(said(&sk), said(&long), "the chain states something else");
@@ -180,7 +180,7 @@ fn threading_fills_the_ends_nobody_wrote() {
 fn close_threads_back_to_the_first_link() {
     let e = read(
         "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\n\
-         line a(p1, p2) to line b(p2) to close\n",
+         line a(p1, p2) -> line b(p2) -> close\n",
     );
     let kids = e.sketch.children(EntRef::line(1));
     assert_eq!(kids[0], EntRef::point(1), "b starts where a ends");
@@ -192,23 +192,70 @@ fn close_threads_back_to_the_first_link() {
 #[test]
 fn a_joint_is_named_by_exactly_one_side_or_by_both_in_agreement() {
     let agree = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 5, y: 10)\n\
-                 line a(p1, p2) to line b(p2, p3)\n";
+                 line a(p1, p2) -> line b(p2, p3)\n";
     assert!(errors(agree).is_empty(), "{:?}", errors(agree));
     let disagree = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 5, y: 10)\n\
-                    point p4 hint(x: 9, y: 9)\nline a(p1, p2) to line b(p3, p4)\n";
+                    point p4 hint(x: 9, y: 9)\nline a(p1, p2) -> line b(p3, p4)\n";
     refuses(disagree, "names two points");
-    let nobody = "point p1 hint(x: 0, y: 0)\npoint c hint(x: 5, y: 5)\n\
-                  line a(p1) to arc k(center: c) hint(r: 5)\n";
-    refuses(nobody, "neither");
+    // a joint *nobody* names, between two declarations, is minted: the earlier-built side's
+    // boundary is an anonymous child with a name, and the other side's slot takes that name
+    let nobody = read(
+        "point p1 hint(x: 0, y: 0)\npoint p3 hint(x: 20, y: 10)\npoint c hint(x: 5, y: 5)\n\
+         line a(p1) -> arc k(center: c, end: p3) hint(r: 5)\n",
+    );
+    assert_eq!(
+        nobody.sketch.children(EntRef::arc(0))[1],
+        nobody.sketch.children(EntRef::line(0))[1],
+        "the arc starts at the line's minted end"
+    );
+    // with a name-link on one side there is no kind to read a boundary field off, so the
+    // declared side must say where they meet — that refusal stays
+    let named_side = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
+                      arc k(center: c, start: p1, end: p2) hint(r: 5)\n\
+                      line t(p1) -> tangent k\n";
+    refuses(named_side, "neither");
 }
 
-/// An open chain's first entry and last exit are not joints; left unnamed they are reported,
-/// not quietly seeded at the origin.
+/// An open chain's first entry and last exit are not joints, and nothing need name them: an
+/// end no marker reaches is an implicit child, minted exactly as `line l`'s own points are.
 #[test]
-fn an_open_end_must_be_named() {
-    let src = "point p3 hint(x: 20, y: 10)\npoint p4 hint(x: 20, y: 30)\npoint c hint(x: 10, y: 10)\n\
-               arc k(center: c) hint(r: 5) to line b(p3, p4)\n";
-    refuses(src, "leaves `k`'s start unnamed");
+fn an_open_end_is_an_implicit_child() {
+    let e = read(
+        "point p3 hint(x: 20, y: 10)\npoint p4 hint(x: 20, y: 30)\npoint c hint(x: 10, y: 10)\n\
+         arc k(center: c) hint(r: 5) -> line b(p3, p4)\n",
+    );
+    let kids = e.sketch.children(EntRef::arc(0));
+    assert_eq!(kids[2], EntRef::point(0), "the arc ends where `b` starts");
+    assert_eq!(kids[1], EntRef::point(3), "the arc's start is its own, minted as `k.start`");
+}
+
+/// **`line l1 -> line l2` works**: two lines with implicit points, joined at one shared
+/// implicit point — three points in all, the middle one both `l1.p2` and `l2.p1`.  And the
+/// writeback round-trips: the poses land in `hint(…)` clauses, the shared point is named by
+/// its dotted path, and the reparsed text is the same drawing.
+#[test]
+fn a_corner_of_implicit_points() {
+    let e = read("line l1 -> line l2\n");
+    let (a, b) = (e.sketch.children(EntRef::line(0)), e.sketch.children(EntRef::line(1)));
+    assert_eq!(e.sketch.points.len(), 3, "three points, one shared");
+    assert_eq!(a[1], b[0], "l2 starts where l1 ends");
+    assert_ne!(a[0], b[1], "and the open ends are their own");
+
+    let out = edit::commit_seeds(&e, &e.sketch, &e.program);
+    assert!(out.text.contains("l1.p2"), "the shared point is named by its path:\n{}", out.text);
+    let again = read(&out.text);
+    assert_eq!(again.sketch.points.len(), 3, "{}", out.text);
+    let (a2, b2) = (again.sketch.children(EntRef::line(0)), again.sketch.children(EntRef::line(1)));
+    assert_eq!(a2[1], b2[0], "still one corner:\n{}", out.text);
+    // and the poses survived: the reparsed sketch starts where the solved one stood
+    for i in 0..3 {
+        let p = &e.sketch.points[i];
+        let q = &again.sketch.points[i];
+        let (px, py) = (e.sketch.params[p.x as usize].value, e.sketch.params[p.y as usize].value);
+        let (qx, qy) =
+            (again.sketch.params[q.x as usize].value, again.sketch.params[q.y as usize].value);
+        assert!((px - qx).abs() < 1e-9 && (py - qy).abs() < 1e-9, "point {i} moved:\n{}", out.text);
+    }
 }
 
 /// The joint vocabulary maps to the regular forms and refuses the rest: two straight runs
@@ -218,7 +265,7 @@ fn an_open_end_must_be_named() {
 fn the_vocabulary_is_the_regular_forms_or_a_refusal() {
     let e = read(
         "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 20, y: 0)\n\
-         line a(p1, p2) tangent line b(p2, p3)\n",
+         line a(p1, p2) -> tangent line b(p2, p3)\n",
     );
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::Parallel));
 
@@ -228,15 +275,15 @@ fn the_vocabulary_is_the_regular_forms_or_a_refusal() {
 
     let arcs = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 20, y: 0)\n\
                 point c hint(x: 5, y: 5)\npoint d hint(x: 15, y: 5)\n\
-                arc k(center: c, start: p1, end: p2) hint(r: 5) tangent \
+                arc k(center: c, start: p1, end: p2) hint(r: 5) -> tangent \
                 arc m(center: d, start: p2, end: p3) hint(r: 5)\n";
     refuses(arcs, "already meet there");
 
     let circle = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
-                  circle q(center: c) hint(r: 5) to line b(p1, p2)\n";
+                  circle q(center: c) hint(r: 5) -> line b(p1, p2)\n";
     refuses(circle, "no ends");
 
-    let lone = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\nline a(p1, p2) tangent close\n";
+    let lone = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\nline a(p1, p2) -> tangent close\n";
     refuses(lone, "at least two");
 }
 
@@ -254,7 +301,7 @@ fn a_binary_constraint_is_an_infix_word() {
     let e = read(
         "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 20, y: 0)\n\
          point c hint(x: 5, y: 5)\npoint d hint(x: 15, y: 5)\n\
-         arc k(center: c, start: p1, end: p2) hint(r: 5) equal \
+         arc k(center: c, start: p1, end: p2) hint(r: 5) -> equal \
          arc m(center: d, end: p3) hint(r: 5)\n",
     );
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::EqualRadius));
@@ -263,7 +310,7 @@ fn a_binary_constraint_is_an_infix_word() {
 
     // a word whose operands it does not relate is refused, not guessed at
     let unfit = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
-                 line a(p1, p2) perpendicular arc k(center: c, end: p1) hint(r: 5)\n";
+                 line a(p1, p2) -> perpendicular arc k(center: c, end: p1) hint(r: 5)\n";
     refuses_later(unfit, "does not relate");
 }
 
@@ -272,6 +319,41 @@ fn a_binary_constraint_is_an_infix_word() {
 fn a_prefix_stands_alone() {
     let e = read("point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 3)\nhorizontal line a(p1, p2)\n");
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::Horizontal));
+}
+
+/// A prefix word carries its own parentheses, and the lookahead reads through them: `distance(1)
+/// line l1` is a link prefixed with its length, at the head of a chain and after a marker alike
+/// — never a `distance` joint between the links.
+#[test]
+fn a_parenthesized_prefix_opens_a_link() {
+    let e = read("distance(1) line l1\n");
+    let c = e
+        .sketch
+        .user_constraints()
+        .into_iter()
+        .find(|c| c.kind == CKind::Distance)
+        .expect("the length");
+    assert_eq!(e.sketch.points.len(), 2, "both ends minted");
+    assert_eq!(gcs_core::io::describe(c), "P0 distance(1) P1");
+
+    let e = read("distance(1) line l1 -> distance(2) line l2\n");
+    assert_eq!(
+        e.sketch.user_constraints().iter().filter(|c| c.kind == CKind::Distance).count(),
+        2,
+        "each length binds to its own link"
+    );
+    assert_eq!(e.sketch.points.len(), 3, "and the corner is still shared");
+
+    // the colouring takes the same step: `distance` before an element is the link's prefix,
+    // tinted as the relation it states
+    let src = "distance(1) line l1 -> distance(2) line l2\n";
+    let runs = highlight(src);
+    let tints: Vec<Tint> = runs
+        .iter()
+        .filter(|(_, s)| src[s.lo as usize..].starts_with("distance"))
+        .map(|(t, _)| *t)
+        .collect();
+    assert_eq!(tints, vec![Tint::Relation, Tint::Relation]);
 }
 
 /// The same text parses to the same statements with the same ids, which is what `retext` and a
@@ -290,9 +372,9 @@ fn reparsing_a_chain_mints_the_same_ids() {
     assert!(sig(&a).len() > 30, "the chain expanded into its statements");
 }
 
-/// Removing a chain-borne relation is a word splice, not a line deletion: a joint steps down to
-/// `to` — the corner stays, the claim goes — and a prefix word goes where it stands.  The text
-/// still parses, and says one thing less.
+/// Removing a chain-borne relation is a word splice, not a line deletion: a threaded joint
+/// steps down to the bare corner `->` — the weld stays, the claim goes — and a prefix word goes
+/// where it stands.  The text still parses, and says one thing less.
 #[test]
 fn removing_a_chain_relation_splices_a_word() {
     let src = format!("{PTS}{}", TANGENT_RUN.replace("tangent line b", "tangent vertical line b"));
@@ -306,7 +388,7 @@ fn removing_a_chain_relation_splices_a_word() {
         .id;
     let out = edit::remove(&e, &e.program, &[], &[tangency]);
     assert!(out.refused.is_none(), "{:?}", out.refused);
-    assert!(out.text.contains("line a(p1, p2) to arc"), "{}", out.text);
+    assert!(out.text.contains("line a(p1, p2) -> arc"), "{}", out.text);
     let again = read(&out.text);
     assert_eq!(
         again.sketch.user_constraints().iter().filter(|c| c.kind == CKind::TangentArcLine).count(),
@@ -347,14 +429,14 @@ fn a_chain_seed_writes_back() {
     let r = sk.own_params(EntRef::arc(0))[0] as usize;
     sk.params[r].value = 12.5;
     let out = edit::commit_seeds(&e, &sk, &e.program);
-    assert!(out.text.contains("arc k(center: c) hint(r: 12.5) tangent"), "{}", out.text);
+    assert!(out.text.contains("arc k(center: c) hint(r: 12.5) -> tangent"), "{}", out.text);
 }
 
 /// The chain's words are coloured by the parser's own scan, like every other word: joints read
 /// as relations, `to` and `close` as structure, and a prefixed element still names itself.
 #[test]
 fn the_chain_is_coloured() {
-    let src = "line a(p1, p2) tangent vertical arc k(center: c) hint(r: 10) to close\n";
+    let src = "line a(p1, p2) -> tangent vertical arc k(center: c) hint(r: 10) -> close\n";
     let tint = |what: &str| {
         highlight(src)
             .into_iter()
@@ -365,7 +447,7 @@ fn the_chain_is_coloured() {
     assert_eq!(tint("vertical"), Some(Tint::Relation));
     assert_eq!(tint("arc"), Some(Tint::Word));
     assert_eq!(tint("k(center"), Some(Tint::Def));
-    assert_eq!(tint("to"), Some(Tint::Word));
+    assert_eq!(tint("->"), Some(Tint::Word));
     assert_eq!(tint("close"), Some(Tint::Word));
 }
 
@@ -416,7 +498,7 @@ fn a_plain_declaration_is_untouched_by_the_sugar() {
 #[test]
 fn a_chain_records_how_each_statement_is_spelled() {
     let (prog, errs) = parse(
-        "horizontal line a(p1, p2) tangent arc k(center: c) hint(r: 5) tangent close\n",
+        "horizontal line a(p1, p2) -> tangent arc k(center: c) hint(r: 5) -> tangent close\n",
     );
     assert!(errs.is_empty(), "{errs:?}");
     let marks: Vec<Chained> = prog.stmts().map(|s| s.chained).collect();
@@ -485,28 +567,36 @@ fn any_binary_word_chains_over_names() {
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::Parallel));
 }
 
-/// A chain either declares every element or names every one.  Mixing them asks the two rules
-/// about threading at once, so it is refused rather than answered arbitrarily.
+/// **A chain may mix declarations and names**, because the threading of each joint is stated
+/// at that joint rather than derived from the shape of the whole line: `line b(p2, p3) equal a`
+/// declares one element and relates it to one declared above, and welds nothing.
 #[test]
-fn a_chain_may_not_mix_declarations_and_names() {
-    let src = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 10, y: 9)\n\
-               line a(p1, p2)\n\
-               line b(p2, p3) equal a\n";
-    refuses(src, "declares every element or names every one");
+fn a_chain_may_mix_declarations_and_names() {
+    let e = read(
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 10, y: 9)\n\
+         line a(p1, p2)\n\
+         line b(p2, p3) equal a\n",
+    );
+    assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::EqualLength));
+    // b kept the ends it was given: the wordless weld would need a `->`
+    assert_eq!(e.sketch.children(EntRef::line(1))[0], EntRef::point(1));
+    assert_eq!(e.sketch.children(EntRef::line(1))[1], EntRef::point(2));
 }
 
-/// **`to` is the only word that needs a corner**, and a relation chain has none.
-///
-/// `tangent` used to be here beside it.  It is not any more: between two names it is the
-/// ordinary infix operator, and `a tangent k` is a statement about two things that touch — which
-/// needs no corner to be one.  It is only *in a contour* that it means "and at the point they
-/// share", which is the chain contributing what the operator cannot know.
+/// **Threading is a statement, not an inference.**  The retired corner word says where the
+/// marker is; a marker between two names has no declared side to thread; and a loop is a
+/// thread, so `close` without one is refused.
 #[test]
-fn only_a_corner_word_is_refused_between_names() {
+fn threading_is_written_never_inferred() {
     let base = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint c hint(x: 5, y: 5)\n\
                 line a(p1, p2)\narc k(center: c, start: p1, end: p2) hint(r: 5)\n";
-    refuses(&format!("{base}a to k\n"), "corner");
-    refuses(&format!("{base}a equal a to close\n"), "no loop");
+    refuses(&format!("{base}a to k\n"), "`to` is retired");
+    refuses(&format!("{base}a -> k\n"), "names the point where they meet");
+    refuses(
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 5, y: 9)\n\
+         line a(p1, p2) -> line b(p2, p3) equal close\n",
+        "a loop is a thread",
+    );
     // and the tangency between two names states itself, at the end the drawing already shares
     let e = read(&format!("{base}k tangent a\n"));
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::TangentArcLine));
@@ -547,6 +637,409 @@ fn equal_reads_a_name_declared_further_down() {
          line a(p1, p2)\nline b(p2, p3)\n",
     );
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::EqualLength));
+}
+
+/* -- the joint marker: threading stated per joint (spec §6.6) ------------------------------- */
+
+/// **A joint may state several relations**: `-> equal angle(30deg)` is `equal` and `angle`
+/// both, between the two links, at the corner the marker threads.  The marker may stand on
+/// either side of the words or both — `A -> equal -> B` is the joint `A -> equal B` is — and
+/// without a marker the words state their relations and weld nothing.
+#[test]
+fn a_joint_states_several_relations() {
+    let e = read("line A -> equal angle(30deg) line B\n");
+    let kinds: Vec<CKind> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
+    assert!(kinds.contains(&CKind::EqualLength) && kinds.contains(&CKind::Angle), "{kinds:?}");
+    assert_eq!(
+        e.sketch.children(EntRef::line(0))[1],
+        e.sketch.children(EntRef::line(1))[0],
+        "and the corner still welds"
+    );
+
+    // the marker on the far side of the words is the same joint
+    let e = read("line A -> equal -> line B\n");
+    assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::EqualLength));
+    assert_eq!(e.sketch.points.len(), 3, "threaded: three points, one shared");
+
+    // between two names, no marker: the relations, and no weld
+    let e = read(
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 10, y: 8)\n\
+         point p4 hint(x: 0, y: 9)\nline A(p1, p2)\nline B(p3, p4)\n\
+         A equal angle(30deg) B\n",
+    );
+    assert_eq!(e.sketch.points.len(), 4, "no weld between names");
+    assert_eq!(e.sketch.user_constraints().len(), 2);
+
+    // and the words are coloured as the relations they are
+    let src = "line A -> equal angle(30deg) line B\n";
+    let tint = |what: &str| {
+        highlight(src)
+            .into_iter()
+            .find(|(_, s)| src[s.lo as usize..].starts_with(what))
+            .map(|(t, _)| t)
+    };
+    assert_eq!(tint("equal"), Some(Tint::Relation));
+    assert_eq!(tint("angle"), Some(Tint::Relation));
+
+    // a word standing against the far-side marker is a relation too
+    let src = "line A -> equal -> line B\n";
+    let run = highlight(src)
+        .into_iter()
+        .find(|(_, s)| src[s.lo as usize..].starts_with("equal"))
+        .map(|(t, _)| t);
+    assert_eq!(run, Some(Tint::Relation));
+}
+
+/// The retired 0.8 list errors saying what to write, the way `to` does.
+#[test]
+fn the_retired_list_says_what_to_write() {
+    let (_, errs) = parse("line A -> (equal, angle(30deg)) line B\n");
+    assert!(errs.iter().any(|e| e.message.contains("bare words")), "{errs:?}");
+}
+
+/// A marker at the start of the next line is a statement of its own, not the far side of the
+/// joint before it: the words and their marker are read on one line.
+#[test]
+fn a_marker_on_the_next_line_does_not_thread() {
+    let (_, errs) = parse("line A equal\n-> line B\n");
+    assert!(!errs.is_empty(), "the joint before the break must not pick the marker up");
+}
+
+/// A comment standing between two of a joint's words belongs to neither: a word's splice
+/// takes only the word and the blanks after it.
+#[test]
+fn a_comment_between_words_survives_the_splice() {
+    let e = read("line A -> equal /* keep */ angle(30deg) line B\n");
+    let eq = e
+        .sketch
+        .user_constraints()
+        .iter()
+        .find(|c| c.kind == CKind::EqualLength)
+        .expect("the equality")
+        .id;
+    let out = edit::remove(&e, &e.program, &[], &[eq]);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    assert!(out.text.contains("/* keep */"), "{}", out.text);
+    read(&out.text);
+}
+
+/// A word the desugarer refused still holds the joint's text: it emitted no statement, so no
+/// doom can count it, and deleting the sibling's constraint must not compose the whole-joint
+/// splice and take the refused word — and its diagnostic — along.
+#[test]
+fn a_refused_word_holds_its_joint() {
+    let src = "point c1 hint(x: 0, y: 0)\npoint c2 hint(x: 30, y: 0)\n\
+               arc a(center: c1) -> tangent equal arc b(center: c2)\n";
+    let (prog, errs) = parse(src);
+    assert!(!errs.is_empty(), "the threaded arc-arc tangent is refused, which is the point");
+    let e = elaborate(&prog);
+    let eq = e
+        .sketch
+        .user_constraints()
+        .iter()
+        .find(|c| c.kind == CKind::EqualRadius)
+        .expect("the equality")
+        .id;
+    let out = edit::remove(&e, &prog, &[], &[eq]);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    assert!(out.text.contains("tangent"), "the refused word stays: {}", out.text);
+}
+
+/// What no set of splices can unpick is refused whole: an entity standing as a name link
+/// between two doomed joints would be left dangling on a line of its own.
+#[test]
+fn a_doom_no_splice_can_write_is_refused() {
+    let e = read(
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 10, y: 8)\n\
+         point p4 hint(x: 0, y: 9)\npoint p5 hint(x: 4, y: 4)\npoint p6 hint(x: 9, y: 9)\n\
+         line A(p1, p2)\nline B(p3, p4)\nline C(p5, p6)\n\
+         A equal B equal C\n",
+    );
+    let out = edit::remove(&e, &e.program, &[EntRef::line(1)], &[]);
+    assert!(out.refused.is_some(), "a dangling middle link must refuse: {}", out.text);
+}
+
+/// A placement (§13.1) qualifies the line's one relation, wherever it fell among the links;
+/// a line stating several relations refuses it rather than guessing which.
+#[test]
+fn a_placement_names_the_lines_one_relation() {
+    let e = read(&format!("{PTS}line B(p3, p4)\nline a(p1, p2) angle(30deg) B at (2, 5)\n"));
+    let d = e
+        .sketch
+        .user_constraints()
+        .iter()
+        .find(|c| c.kind == CKind::Angle)
+        .expect("the angle")
+        .id;
+    assert_eq!(e.sketch.placements.get(&d).copied(), Some((2.0, 5.0)));
+
+    let (_, errs) = parse("A equal angle(30deg) B at (0.5, 10)\n");
+    assert!(!errs.is_empty(), "several relations leave a placement nothing to name");
+}
+
+/// An unthreaded joint's break takes the trailing clauses with it: a placement qualifies the
+/// dimension being deleted, and left standing behind the taken name-link it would dangle.
+#[test]
+fn a_break_takes_the_trailing_placement_with_it() {
+    let e = read(
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 10, y: 8)\n\
+         point p4 hint(x: 0, y: 9)\nline B(p3, p4)\n\
+         line a(p1, p2) angle(30deg) B at (0.5, 10)\n",
+    );
+    let ang = e
+        .sketch
+        .user_constraints()
+        .iter()
+        .find(|c| c.kind == CKind::Angle)
+        .expect("the angle")
+        .id;
+    let out = edit::remove(&e, &e.program, &[], &[ang]);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    assert!(!out.text.contains("at (0.5"), "the placement goes with its dimension: {}", out.text);
+    read(&out.text);
+}
+
+/// A doomed word splices out where it stands — the corner and the joint's other statements
+/// are left standing.
+#[test]
+fn removing_one_of_a_joints_words_leaves_the_rest() {
+    let e = read("line A -> equal angle(30deg) line B\n");
+    let angle = e
+        .sketch
+        .user_constraints()
+        .iter()
+        .find(|c| c.kind == CKind::Angle)
+        .expect("the angle")
+        .id;
+    let out = edit::remove(&e, &e.program, &[], &[angle]);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    assert!(!out.text.contains("angle"), "{}", out.text);
+    let again = read(&out.text);
+    assert!(again.sketch.user_constraints().iter().any(|c| c.kind == CKind::EqualLength));
+    assert_eq!(
+        again.sketch.children(EntRef::line(0))[1],
+        again.sketch.children(EntRef::line(1))[0],
+        "the corner survives the word:\n{}",
+        out.text
+    );
+
+    // and the other word goes the same way, leaving the corner alone
+    let e = read("line A -> equal angle(30deg) line B\n");
+    let eq = e
+        .sketch
+        .user_constraints()
+        .iter()
+        .find(|c| c.kind == CKind::EqualLength)
+        .expect("the equality")
+        .id;
+    let out = edit::remove(&e, &e.program, &[], &[eq]);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    let again = read(&out.text);
+    assert!(
+        again.sketch.user_constraints().iter().any(|c| c.kind == CKind::Angle),
+        "{}",
+        out.text
+    );
+}
+
+/// The whole joint doomed at once falls back to what its only word's doom would be: threaded,
+/// the corner stays; unthreaded between two names — an entity deletion dooms every relation
+/// naming it — the break is the whole of the line, and the line goes rather than dangling.
+#[test]
+fn a_joint_doomed_whole_falls_back_to_one_splice() {
+    let e = read("line A -> equal angle(30deg) line B\n");
+    let ids: Vec<u32> = e.sketch.user_constraints().iter().map(|c| c.id).collect();
+    let out = edit::remove(&e, &e.program, &[], &ids);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    let again = read(&out.text);
+    assert!(again.sketch.user_constraints().is_empty(), "{}", out.text);
+    assert_eq!(
+        again.sketch.children(EntRef::line(0))[1],
+        again.sketch.children(EntRef::line(1))[0],
+        "the corner stands: {}",
+        out.text
+    );
+
+    let e = read(
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 10, y: 8)\n\
+         point p4 hint(x: 0, y: 9)\nline A(p1, p2)\nline B(p3, p4)\n\
+         A equal angle(30deg) B\n",
+    );
+    let out = edit::remove(&e, &e.program, &[EntRef::line(0)], &[]);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    let again = read(&out.text);
+    assert!(again.sketch.user_constraints().is_empty(), "{}", out.text);
+    assert_eq!(again.sketch.lines.len(), 1, "the line that held only them goes: {}", out.text);
+}
+
+/// **Declared, related, not joined.**  Two lines declared on one line with a right angle
+/// between them and no corner: without the marker the word states only the relation, and each
+/// line keeps the ends it was given.
+#[test]
+fn declared_related_not_joined() {
+    let e = read(&format!("{PTS}line l1(p1, p2) perpendicular line l2(p3, p4)\n"));
+    assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::Perpendicular));
+    assert_eq!(e.sketch.children(EntRef::line(0)), vec![EntRef::point(0), EntRef::point(1)]);
+    assert_eq!(e.sketch.children(EntRef::line(1)), vec![EntRef::point(2), EntRef::point(3)]);
+}
+
+/// **A corner between a fresh element and an existing one.**  The declared side names the
+/// shared point — by the existing element's own child — and the tangency is still the regular
+/// At-form, at the end the direction of travel picks, never the bare pair.
+#[test]
+fn a_corner_onto_existing_geometry() {
+    let base = format!(
+        "{PTS}arc k(center: c, start: p1, end: p2) hint(r: 10)\n"
+    );
+    // a fresh line runs into the arc: tangent at the line's exit, which is the arc's start
+    let e = read(&format!("{base}line t(p3, k.start) -> tangent k\n"));
+    let c = e
+        .sketch
+        .user_constraints()
+        .into_iter()
+        .find(|c| c.kind == CKind::TangentLineCircleAt)
+        .expect("the at-form");
+    assert!(format!("{:?}", c.args).contains("p2"), "tangent at the line's exit: {:?}", c.args);
+
+    // and out of the arc the other way: the arc exits at its end, so the tangency is stated there
+    let e = read(&format!("{base}k -> tangent line t(k.end, p3)\n"));
+    let c = e
+        .sketch
+        .user_constraints()
+        .into_iter()
+        .find(|c| c.kind == CKind::TangentArcLine)
+        .expect("the at-form");
+    assert!(format!("{:?}", c.args).contains("end"), "tangent at the arc's exit: {:?}", c.args);
+
+    // a corner whose declared side does not say where they meet has nothing to thread
+    refuses(
+        &format!("{base}line t(p3) -> tangent k\n"),
+        "names the point where they meet",
+    );
+}
+
+/// **Every threadable pair mints its corner**, whichever side builds first: `thread` names the
+/// earlier-built side's boundary (kind order, then statement order) and fills the later side's
+/// slot, so the name exists by the time it resolves — an arc before a line takes the fill
+/// itself, since lines build first.
+#[test]
+fn every_threadable_pair_mints_its_corner() {
+    // arc -> line: the shared point is the line's minted `l1.p1`, written into the arc's `end`
+    let e = read("point c hint(x: 5, y: 5)\narc k(center: c) hint(r: 5) -> line l1\n");
+    assert_eq!(
+        e.sketch.children(EntRef::arc(0))[2],
+        e.sketch.children(EntRef::line(0))[0],
+        "the arc ends where the line begins"
+    );
+
+    // arc -> arc: same kind, so statement order decides — the second takes the first's `end`
+    let e = read(
+        "point c hint(x: 5, y: 5)\npoint d hint(x: 15, y: 5)\n\
+         arc k(center: c) hint(r: 5) -> arc m(center: d) hint(r: 5)\n",
+    );
+    assert_eq!(
+        e.sketch.children(EntRef::arc(0))[2],
+        e.sketch.children(EntRef::arc(1))[1],
+        "m starts where k ends"
+    );
+
+    // and a loop of nothing but implicit points closes onto the first link's minted entry
+    let e = read("line a -> line b -> line d -> close\n");
+    assert_eq!(e.sketch.points.len(), 3, "a closed triangle of three minted corners");
+    assert_eq!(
+        e.sketch.children(EntRef::line(2))[1],
+        e.sketch.children(EntRef::line(0))[0],
+        "the last exit is the first entry"
+    );
+}
+
+/// Removing an unthreaded joint's relation splices a statement break where the word stood —
+/// the two links were never welded, so the line simply comes apart into its statements.
+#[test]
+fn removing_an_unthreaded_relation_splices_a_break() {
+    let e = read(&format!("{PTS}line l1(p1, p2) perpendicular line l2(p3, p4)\n"));
+    let perp = e
+        .sketch
+        .user_constraints()
+        .iter()
+        .find(|c| c.kind == CKind::Perpendicular)
+        .expect("the relation")
+        .id;
+    let out = edit::remove(&e, &e.program, &[], &[perp]);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    let again = read(&out.text);
+    assert!(!again.sketch.user_constraints().iter().any(|c| c.kind == CKind::Perpendicular));
+    assert_eq!(again.sketch.lines.len(), 2, "both lines survive the break:\n{}", out.text);
+
+    // a relation chain's terminal name goes with its joint, so nothing is left dangling
+    let e = read(
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 10, y: 9)\n\
+         point p4 hint(x: 0, y: 9)\n\
+         line a(p1, p2)\nline b(p2, p3)\nline d(p3, p4)\n\
+         a equal b equal d\n",
+    );
+    let last = e
+        .sketch
+        .user_constraints()
+        .iter()
+        .filter(|c| c.kind == CKind::EqualLength)
+        .last()
+        .expect("the second equality")
+        .id;
+    let out = edit::remove(&e, &e.program, &[], &[last]);
+    assert!(out.refused.is_none(), "{:?}", out.refused);
+    let again = read(&out.text);
+    assert_eq!(
+        again.sketch.user_constraints().iter().filter(|c| c.kind == CKind::EqualLength).count(),
+        1,
+        "{}",
+        out.text
+    );
+}
+
+/// In a chain that closes, an unthreaded relation has no splice: a break would re-aim the
+/// `close` at another link, so the deletion is refused rather than half-done.
+#[test]
+fn removing_an_unthreaded_relation_from_a_closed_chain_is_refused() {
+    let e = read(
+        "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 10, y: 0)\npoint p3 hint(x: 5, y: 9)\n\
+         line a(p1, p2) -> line b(p2, p3) equal line d(p3, p1) -> close\n",
+    );
+    let eq = e
+        .sketch
+        .user_constraints()
+        .iter()
+        .find(|c| c.kind == CKind::EqualLength)
+        .expect("the relation")
+        .id;
+    let out = edit::remove(&e, &e.program, &[], &[eq]);
+    assert!(out.refused.is_some(), "a break inside a closed chain went through");
+}
+
+/// **A contour of implicit points seeds as a simple polygon and solves as the figure.**  The
+/// constraints of this rectangle are equally satisfied by a collapsed triangle — a zero-length
+/// line is "perpendicular" to everything — and seeds that pile a chain's minted corners up (or
+/// order them in a self-crossing quad) put the solve in that basin.  `program::scatter` walks
+/// the bearing per minted point in creation order, which for a chain is traversal order, and
+/// this is the gate that the walk keeps the drawing out of the collapse.
+#[test]
+fn an_implicit_rectangle_does_not_collapse() {
+    let e = read(
+        "distance(w=1) line l1 -> perpendicular distance(h=2) line l2 -> perpendicular \
+         line l3 -> perpendicular line l4 -> close\n",
+    );
+    let mut sk = e.sketch.clone();
+    let r = gcs_core::solve::solve(&mut sk, gcs_core::solve::SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let at = |i: usize| {
+        let p = &sk.points[i];
+        (sk.params[p.x as usize].value, sk.params[p.y as usize].value)
+    };
+    let len = |a: (f64, f64), b: (f64, f64)| ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+    let (a, b, c, d) = (at(0), at(1), at(2), at(3));
+    for (p, q, want) in [(a, b, 1.0), (b, c, 2.0), (c, d, 1.0), (d, a, 2.0)] {
+        assert!((len(p, q) - want).abs() < 1e-6, "a side is {} not {want}", len(p, q));
+    }
 }
 
 /* -- the operator form (spec §9.1) ---------------------------------------------------------- */
