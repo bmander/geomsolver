@@ -13,9 +13,13 @@
 // is the statement "convex, once around".
 
 component Ngon(n: Int, side: Length) {
-  circle c hint(r: 30)
+  // seeds track both parameters: the radius the side demands, not a number frozen at one size —
+  // seeded at 30, the solve must inflate the figure by side/(2 sin(pi/n))/30 and runs out of
+  // iterations near n = 185; seeded here, n runs to the flattener's statement cap
+  param r0 = side / (2 * sin(tau / (2 * n)))
+  circle c hint(r: r0)
   cycle n as i {
-    point p hint(x: 30 * cos(tau * i / n), y: 30 * sin(tau * i / n))
+    point p hint(x: r0 * cos(tau * i / n), y: r0 * sin(tau * i / n))
     p on c
     line s(p) -> equal
   }
