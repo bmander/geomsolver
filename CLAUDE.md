@@ -157,23 +157,33 @@ Conventions:
   is the cause no other error can see.  An anonymous declaration still carries a `Decl::name`:
   a key the source cannot write — `#a` and its own offset, the flattener's block-prefix device
   marked apart — with an **empty span at the point a real name would go** (`hint_span`'s
-  idiom).  `syntax::hidden` is "the source cannot write it" (both kinds); `syntax::nameless` is
-  the narrower "an anonymous declaration's key", and the **report** asks that one: the key is
-  withheld (offset-derived, it goes stale — or lands on another entity — after any edit above
-  it, so a selection must never cross on one) while a block-prefix name stays published as it
-  always was.  The key is what a chain's corner welds by and what `res` resolves, and it must
+  idiom), and a `Decl::named` saying the source wrote none.  **Whether a name is one a statement
+  may say is known where it is minted and told, never sniffed back out of the characters**
+  (issue #39): the parser either took an identifier or declined to, and a prefix the flattener
+  puts on the front is a written name said in an instance's terms.  So `SourceMap::bind` takes a
+  `program::Say` and files the name accordingly — into `by_name` always, since *everything*
+  resolves, and into `names` only when the source could utter it.  The two tables are two
+  questions and since anonymous elements they have two answers, so `map.names` is now exactly
+  "what the source calls the thing": `name_of` is `names.first()`, an anonymous entity has no
+  entry, and no consumer screens a string.  A block prefix (`#4.0.p`) is `Say::Yes` — unwritable,
+  but stable, published and selected by since the flat subset — where a declaration's key is
+  `Say::No`, being derived from an offset any edit above it moves.  `syntax::hidden` answers a
+  question about a *string* and so cannot tell those two apart; it survives only where the
+  question really is about characters (`write_decl`, a thread-filled slot's `Kid::Ref`).
+  The key is what a chain's corner welds by and what `res` resolves, and it must
   never reach the source: `write_decl` spells the statement without it,
   `commit_seeds` leaves a thread-filled slot holding one *empty* — forcing labels on the kept
   children when a gap precedes them (`decl_args`), since a line's slots count by position — and
   diagnostics spell the kind instead.  `edit::reconcile` **mints on demand**: the moment an
   appended statement must reference an anonymous element (a constraint from the app, a gauge on
   a fixed point — `held_refs` is the one walk `gauges` shares), a real name is spliced into the
-  declaration at that empty span, **every entity the statement made** renamed with it — the
-  child by the dotted path read off the map's own key, never by comparing offsets a retext may
-  have moved — and `SourceMap::favor`ed to the front, so the next gesture in the same
-  elaboration reads the name and not the key.  One that *cannot* be named (anonymous inside a
-  component or a block) is refused with the cause, before anything is written.  The whole pass
-  is behind an any-hidden-names scan, so an ordinary document pays one map walk per gesture.
+  declaration at that empty span, **every entity the statement made** renamed with it — a child
+  by the dotted path `program::child_names` would have given it, read off its *position* among
+  the parent's children, which is where the path came from in the first place — and `bind`ed
+  `Say::Yes`, so the next gesture in the same elaboration reads the name where it read nothing.
+  Its four guards are then one question, "does the source call this anything": named, no
+  statement of the root's to name it on (refused with the cause, before anything is written),
+  named since the map was made, or mint.
   Insertions racing for one offset are ordered by `splice`'s stable sort, so reconcile pushes
   appends before flags before names; `tests/anonymous.rs` is the gate.
   Where an unseeded implicit child *starts* is `program::scatter` and is an implementation

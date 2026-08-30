@@ -164,6 +164,27 @@ fn a_dimension_on_anonymous_endpoints_mints_the_parent() {
     assert_eq!(back.sketch.user_constraints().len(), 1);
 }
 
+/// A slot the source named beside a slot it left empty.  The minted child's dotted path is its
+/// **position** among the parent's children — the same walk that named it in the first place —
+/// so it comes out as the slot it actually sits in (`a0.end`), and the named ones are untouched.
+/// Recovering the path by slicing the key it elaborated under happened to agree here and could
+/// not say why: the key's own half is an offset, and only the marker it is spelled with told the
+/// two halves apart.
+#[test]
+fn a_mint_names_a_child_by_the_slot_it_sits_in() {
+    let src = "point c hint(x: 0, y: 0)\npoint s hint(x: 10, y: 0)\narc(center: c, start: s)\n";
+    let mut e = read(src);
+    let kids = e.sketch.children(EntRef::arc(0));
+    assert_eq!(kids[0], EntRef::point(0), "the named slots are the points that were declared");
+    e.sketch.add(Constraint::distance(EntRef::point(0), kids[2], 80.0));
+    let edit = reconciled(&mut e);
+    assert!(edit.text.contains("arc a0("), "{}", edit.text);
+    assert!(edit.text.contains("c distance(80) a0.end"), "{}", edit.text);
+    let back = read(&edit.text);
+    assert_eq!(back.sketch.user_constraints().len(), 1);
+    assert_eq!(back.sketch.points.len(), 3, "the named endpoints are not minted again");
+}
+
 /// The mint reaches into a chain: naming one link splices its name where it would stand, the
 /// seeds are recorded where each link owns them, and a corner the thread filled with a name the
 /// source cannot write is left an empty slot for the marker to thread again — never written out.
@@ -305,8 +326,13 @@ fn the_sketch_shows_a_name_and_never_the_key() {
     assert!(names.contains(&"a.x"), "a written name is unchanged: {names:?}");
     assert!(names.contains(&"l0.p1.x"), "and an anonymous one reads positionally: {names:?}");
     assert!(names.contains(&"c0.r"), "{names:?}");
-    // the map keeps the key all the same — that is what a chain's corner welds by
-    assert!(e.map.names.values().flatten().any(|n| n.starts_with("#a")), "the key is still there");
+    // the map keeps the key all the same — that is what a chain's corner welds by — but files
+    // it under *resolution* and never as a name, so nothing that reads what an entity is called
+    // has to screen it out (issue #39)
+    let key = format!("#a{}", "point a hint(x: 1, y: 2)\nline".len());
+    assert_eq!(e.map.ent_named(&key), Some(EntRef::line(0)), "the key still resolves");
+    assert_eq!(e.map.name_of(EntRef::line(0)), None, "and the source calls it nothing");
+    assert!(e.map.names.values().flatten().all(|n| !n.starts_with("#a")), "a key was filed");
 
     // and a *block prefix* is not an anonymous name: the flattener wrote it, it says which
     // instance the thing belongs to, and it is shown as it always has been

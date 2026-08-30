@@ -142,11 +142,46 @@ pub struct Site {
 pub struct SourceMap {
     pub of_entity: BTreeMap<EntRef, Site>,
     pub of_constraint: BTreeMap<u32, Site>,
-    /// Every name an entity was declared or aliased under.  A `Vec` from the start, because a
-    /// port puts several names on one entity and costs no residual for doing it.
+    /// Every name an entity was declared or aliased under **that a statement could say** — so
+    /// what the source calls the thing, and nothing else.  A `Vec` from the start, because a
+    /// port puts several names on one entity and costs no residual for doing it; empty for an
+    /// entity the source calls nothing, which is the whole of what a reader has to ask.
+    ///
+    /// Deliberately *not* the same set as `by_name`, which is resolution and holds every key as
+    /// well.  Which of the two a name joins is `bind`'s argument and is decided where the name
+    /// is minted (issue #39); no reader re-derives it from the characters.
     pub names: BTreeMap<EntRef, Vec<String>>,
     by_name: BTreeMap<String, EntRef>,
     made: BTreeMap<StmtId, Vec<Made>>,
+}
+
+/// Whether a name being bound is one a **statement may say**.
+///
+/// Known where the name is minted and never again: the parser either took an identifier for a
+/// declaration or declined to (`Decl::named`), and a prefix the flattener puts on the front is a
+/// written name said in an instance's terms.  So `bind` is told, rather than asked to work it
+/// back out of the characters — which it could do only by the `#a` marker the anonymous mint
+/// happens to use, a spelling nothing states and nothing tests (issue #39).
+///
+/// `No` is exactly one thing: an anonymous declaration's key (`#a41`, `#a41.p2`), which is
+/// derived from an offset any edit above it moves and which the source calls nothing.  A block
+/// prefix (`#4.0.p`) is `Yes` — unwritable, but stable and published and selected by since the
+/// flat subset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Say {
+    Yes,
+    No,
+}
+
+impl Say {
+    /// A declaration's own name, and every dotted path under it: a child of a thing the source
+    /// calls nothing is called nothing either.
+    pub(crate) fn of(d: &Decl) -> Say {
+        match d.named {
+            true => Say::Yes,
+            false => Say::No,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -174,27 +209,22 @@ impl SourceMap {
         self.of_constraint.get(&id)
     }
 
-    fn bind(&mut self, name: &str, e: EntRef) {
+    /// File a name under an entity.  Every name resolves; only a name `say` says the source can
+    /// utter is also one the entity is *called*.
+    ///
+    /// A name minted after the map was made — `edit::reconcile` splicing one into an anonymous
+    /// declaration — comes through here too, and needs nothing special: the entity had no name
+    /// to be preferred over, because the key it elaborated under was never filed as one.
+    pub(crate) fn bind(&mut self, name: &str, e: EntRef, say: Say) {
         self.by_name.insert(name.to_string(), e);
-        self.names.entry(e).or_default().push(name.to_string());
+        if say == Say::Yes {
+            self.names.entry(e).or_default().push(name.to_string());
+        }
     }
 
-    /// The first name the **source** actually wrote for an entity, where it wrote one — never a
-    /// key the elaboration minted.  The one place that rule is spelled: a reader asking
-    /// `names.first()` gets whatever is at the head, and what is at the head is `favor`'s
-    /// business, so anything that needs "a name a statement may say" asks here instead.
-    pub(crate) fn written_name(&self, e: EntRef) -> Option<&String> {
-        self.names.get(&e)?.iter().find(|n| !crate::syntax::hidden(n))
-    }
-
-    /// Bind a name and put it *first* — for a name minted into the source after the map was made
-    /// (`edit::reconcile`), which every later reader must prefer over the hidden key the entity
-    /// elaborated under, or the next edit writes the key into a statement.
-    pub(crate) fn favor(&mut self, name: &str, e: EntRef) {
-        self.by_name.insert(name.to_string(), e);
-        let v = self.names.entry(e).or_default();
-        v.retain(|n| n != name);
-        v.insert(0, name.to_string());
+    /// What the source calls an entity, where it calls it anything.
+    pub fn name_of(&self, e: EntRef) -> Option<&String> {
+        self.names.get(&e)?.first()
     }
 
     fn record(&mut self, st: &Stmt, what: Made) {
@@ -284,7 +314,7 @@ impl Elaborated {
             match *m {
                 Made::Ent(r) => {
                     if let StmtKind::Decl(d) = &st.kind {
-                        self.map.bind(&d.name.text, r);
+                        self.map.bind(&d.name.text, r, Say::of(d));
                     }
                     self.map.of_entity.insert(r, site);
                 }
@@ -655,14 +685,16 @@ pub fn elaborate(p: &Program) -> Elaborated {
             match build(&mut sk, &res, d, st, &mut diags, &mut anon) {
                 Some(e) => {
                     built.insert(e, true);
-                    map.bind(&d.name.text, e);
+                    map.bind(&d.name.text, e, Say::of(d));
                     map.record(st, Made::Ent(e));
                     // an anonymous child's name *is* its dotted path, so it is bound like any
                     // other: that is what lets a dimension name it, a selection survive a
-                    // re-elaboration, and a drag of it find the slot it came from
+                    // re-elaboration, and a drag of it find the slot it came from.  Whether it
+                    // is a name anyone may *say* is the declaration's answer, not its own —
+                    // `l.p1` under a named line, nothing under an anonymous one
                     for (name, k) in anon {
                         built.insert(k, true);
-                        map.bind(&name, k);
+                        map.bind(&name, k, Say::of(d));
                         map.record(st, Made::Ent(k));
                     }
                 }
@@ -1221,7 +1253,7 @@ fn scatter(i: usize) -> (f64, f64) {
 ///
 /// Under `base`, which is the declaration's own name — or, for an anonymous one, what the
 /// *drawing* calls it (`shown`), since the key it resolves by is not a thing to show anybody.
-fn child_names(d: &Decl, base: &str) -> Vec<String> {
+pub(crate) fn child_names(d: &Decl, base: &str) -> Vec<String> {
     d.kind
         .fields()
         .iter()
@@ -1238,15 +1270,16 @@ fn child_names(d: &Decl, base: &str) -> Vec<String> {
 /// key would be read by somebody.  Names in the *sketch* are display; names in the source map
 /// are identity; this is the one seam where the two part company.
 ///
-/// `nameless`, not `hidden`, and for the reason the report gives: a **block prefix** is a name
-/// the flattener made and has always been shown — it says which instance the thing belongs to,
-/// which an index cannot — so only a declaration the source named *nothing* is relabelled here.
-/// Asking the broader question would show one entity by its path in one window and by its index
-/// in another.
+/// `Decl::named`, and not any reading of the characters: a **block prefix** is a name the
+/// flattener made and has always been shown — it says which instance the thing belongs to, which
+/// an index cannot — so only a declaration the source named *nothing* is relabelled here.  A
+/// predicate over the string can tell those two apart only by the marker the anonymous mint
+/// happens to use, and the broader of the two readings shows one entity by its path in one
+/// window and by its index in another.
 fn shown(sk: &Sketch, d: &Decl) -> String {
-    match crate::syntax::nameless(&d.name.text) {
-        true => crate::syntax::entity_name(EntRef::new(d.kind, sk.count(d.kind))),
-        false => d.name.text.clone(),
+    match d.named {
+        false => crate::syntax::entity_name(EntRef::new(d.kind, sk.count(d.kind))),
+        true => d.name.text.clone(),
     }
 }
 
@@ -1967,6 +2000,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
     Decl {
         kind: e.kind,
         name: Name::new(entity_name(e)),
+        named: true,
         children,
         seed_text: vec![None; seed.len()],
         seed_spans: vec![Span::default(); seed.len()],

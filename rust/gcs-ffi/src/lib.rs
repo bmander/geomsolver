@@ -2766,18 +2766,12 @@ pub unsafe extern "C" fn gcs_elab_report(h: *mut Elaborated) -> *mut u8 {
                 Json::Arr(vec![
                     Json::Str(r.kind.as_str().to_string()),
                     Json::Int(r.idx as i64),
-                    // never an anonymous declaration's `#a` key: it is derived from the
-                    // statement's offset, so a selection keyed on it goes stale — or lands on
-                    // another entity — after any edit above it.  An entity the source calls
-                    // nothing is published unnamed; its span still says where it was written.
-                    Json::Str(
-                        e.map
-                            .names
-                            .get(r)
-                            .and_then(|v| v.iter().find(|n| !gcs_core::syntax::nameless(n)))
-                            .cloned()
-                            .unwrap_or_default(),
-                    ),
+                    // what the source calls it, which for an anonymous declaration is nothing:
+                    // the key it resolves by is derived from the statement's offset, so a
+                    // selection keyed on it would go stale — or land on another entity — after
+                    // any edit above it.  The map files a key under resolution alone, so there
+                    // is nothing here to screen out; the span still says where it was written.
+                    Json::Str(e.map.name_of(*r).cloned().unwrap_or_default()),
                     Json::Int(site.span.lo as i64),
                     Json::Int(site.span.hi as i64),
                 ])

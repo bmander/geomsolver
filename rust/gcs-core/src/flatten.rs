@@ -191,6 +191,7 @@ impl<'a> Walk<'a> {
                         let d = Decl {
                             kind,
                             name: Name { text: abs, span: p.name.span },
+                            named: true,
                             children: vec![Vec::new(); count_children(kind)],
                             seed: vec![0.0; count_scalars(kind)],
                             seed_text: vec![None; count_scalars(kind)],

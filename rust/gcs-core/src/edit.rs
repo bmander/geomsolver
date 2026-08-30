@@ -432,6 +432,7 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
     let d = Decl {
         kind: EntKind::Point,
         name: syntax::Name::new(name.clone()),
+        named: true,
         children: Vec::new(),
         seed: vec![x, y],
         seed_text: vec![None, None],
@@ -482,6 +483,7 @@ pub fn add_entity(prog: &Program, kind: EntKind, args: &[String], seed: &[f64]) 
     let d = Decl {
         kind,
         name: syntax::Name::new(name.clone()),
+        named: true,
         children,
         seed: (0..n_scalar).map(|i| seed.get(i).copied().unwrap_or(0.0)).collect(),
         seed_text: vec![None; n_scalar],
@@ -908,68 +910,65 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         if minted.contains_key(r) || renamed.contains_key(r) {
             continue; // new (its statement carries the name), or its statement already named
         }
-        if e.map.written_name(*r).is_some() {
+        if e.map.name_of(*r).is_some() {
             continue; // the source already calls it something
         }
         let Some(site) = e.map.of_entity.get(r) else { continue };
         if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
-            // no statement of the root's to put a name on — for a declaration that is
-            // *anonymous*, refuse now with the cause, rather than writing the hidden key
-            // and refusing later with none.  (An entity a block prefix names keeps its
-            // long-standing path; its declaration has a name already.)
-            if e.map.names.get(r).and_then(|v| v.first()).is_some_and(|n| syntax::nameless(n)) {
-                return Edit::none(
-                    prog,
-                    Some(
-                        "that is anonymous inside a component or a block, so no statement \
-                         can name it; give its declaration a name there first"
-                            .into(),
-                    ),
-                );
-            }
-            continue;
+            // Nothing calls it and there is no statement of the root's to put a name on: it is
+            // anonymous inside a component or a block, so refuse now with the cause rather than
+            // later with none.  (An entity a block prefix names left at the test above — its
+            // declaration has a name already, said in the instance's terms.)
+            return Edit::none(
+                prog,
+                Some(
+                    "that is anonymous inside a component or a block, so no statement \
+                     can name it; give its declaration a name there first"
+                        .into(),
+                ),
+            );
         }
         let Some(d) = decl_of(prog, site) else { continue };
-        if !syntax::hidden(&d.name.text) {
+        if d.named {
             continue; // named since the map was made
         }
-        // one name per statement — and *every* entity the statement made follows it at
-        // once, because the map's hidden keys go stale the moment the name lands, and a
-        // later gesture in this same elaboration must never meet one first
+        // One name per statement, and *every* entity the statement made follows it at once —
+        // the declaration first, then the children it minted, which is the order they were
+        // recorded in.  All of them, because a later gesture in this same elaboration must
+        // find a name where this one left the source saying a name.
+        let mut made_ents = e.map.made_by(site.stmt).iter().filter_map(|m| match *m {
+            crate::program::Made::Ent(k) => Some(k),
+            _ => None,
+        });
+        let Some(parent) = made_ents.next() else { continue };
         let name = next_name(&mut taken, d.kind);
         named.push(Splice { at: d.name.span, with: format!(" {name}") });
         // a name this edit gave a declaration, which is what `Edit::names` reports — a caller
         // reads it to refer to what it just made, and a name minted into a declaration that
         // was already there is as much this edit's doing as one on a statement it appended
         names.push(name.clone());
-        for m in e.map.made_by(site.stmt) {
-            let crate::program::Made::Ent(k) = *m else { continue };
-            let Some(h) = e.map.names.get(&k).and_then(|v| v.first()) else { continue };
-            if !syntax::hidden(h) {
-                continue;
+        renamed.insert(parent, name.clone());
+        // each child's new name is the dotted path `program::child_names` would have given it
+        // under the name just chosen — its slot read off its *position* among the parent's
+        // children, which is where the path came from in the first place
+        let paths = crate::program::child_names(d, &name);
+        let kids = sk.children(parent);
+        for k in made_ents {
+            if let Some(path) = kids.iter().position(|&c| c == k).and_then(|i| paths.get(i)) {
+                renamed.insert(k, path.clone());
             }
-            // a child's key is its parent's plus the dotted path (`#a41.p2`), and the path
-            // is the *stable* half: the parent's key is an offset an earlier retext may
-            // have moved, so the path is read off the map's own name and never compared
-            // against the declaration's
-            let text = match h.find('.') {
-                Some(dot) if h.starts_with('#') => format!("{name}{}", &h[dot..]),
-                _ => name.clone(),
-            };
-            renamed.insert(k, text);
         }
     }
 
     // the elaboration's own name for an entity it made — what a new statement has to refer to.
-    // Never a hidden key while a written name exists: a mint in an earlier reconcile of this
-    // same elaboration leaves both in the map, favoured order or not.
+    // Never a key: the map files one under `by_name` alone, so what it *calls* an entity is a
+    // name a statement may say or nothing at all.
     let name_of = |r: EntRef| -> String {
         minted
             .get(&r)
             .cloned()
             .or_else(|| renamed.get(&r).cloned())
-            .or_else(|| e.map.written_name(r).cloned())
-            .or_else(|| e.map.names.get(&r).and_then(|v| v.first()).cloned())
+            .or_else(|| e.map.name_of(r).cloned())
             .unwrap_or_else(|| syntax::entity_name(r))
     };
 
@@ -1154,11 +1153,11 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
     if !e.adopt(&text, &made) {
         return Edit::none(prog, Some("the drawing could not be written down".into()));
     }
-    // an entity just named in place resolves by that name from here on — the map learns it now,
-    // *first*, so a later reconcile in this same elaboration reads the written name and not the
-    // hidden key it elaborated under
+    // an entity just named in place resolves by that name from here on — and is *called* it,
+    // which it was called nothing until now, so a later reconcile in this same elaboration
+    // reads a name and not the key it elaborated under
     for (r, n) in &renamed {
-        e.map.favor(n, *r);
+        e.map.bind(n, *r, crate::program::Say::Yes);
     }
     // and now the seeds, against the source that finally has statements for everything
     let after = e.program.clone();

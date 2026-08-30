@@ -413,6 +413,17 @@ impl From<Hint> for OpArg {
 pub struct Decl {
     pub kind: EntKind,
     pub name: Name,
+    /// Whether the **source** wrote that name.  An anonymous declaration carries one all the
+    /// same — `#a` and its own offset, so a chain's corner and the desugared statements have
+    /// something to resolve by — but a key is not a name, and this is the *only* place the
+    /// difference is known first-hand: the parser either took an identifier or declined to.
+    /// Every later reader is told (`SourceMap::bind`, `program::shown`, `edit::reconcile`)
+    /// rather than asking the characters, which could tell a key from a name only by the `#a`
+    /// the mint happens to use.
+    ///
+    /// A prefix the flattener puts on the front does not touch it: `#5.0.p0` is a name the
+    /// source wrote, said in an instance's terms.
+    pub named: bool,
     /// One per `Child`/`List` field of `EntKind::fields`, in that order; a `List` field holds as
     /// many as were written.  Empty throughout — `line l` — is the anonymous form: the kind's
     /// children are minted, unnamed, and reached as `l.p1`.
@@ -2150,20 +2161,14 @@ pub(crate) fn decl_head(kind: EntKind, name: &str) -> String {
 /// Whether a name is one the source could never write: the `#a`-keyed name an anonymous
 /// declaration resolves by (`#a41`, and `#a41.p2` for a child it mints) or a block prefix the
 /// flattener made (`#5.0.p0`).  `#` never survives the tokenizer inside an identifier, so the
-/// test cannot claim a written name.  Who asks: whatever would *write* a name into the source —
-/// `edit::reconcile` mints a real one instead, on demand — the printer, which spells an
-/// anonymous declaration without one, and the diagnostics, which spell the kind.
+/// test cannot claim a written name.  Who asks: what would *write* a name into the source — the
+/// printer, which spells an anonymous declaration without one — and the diagnostics, which
+/// spell the kind.
+///
+/// It answers a question about a **string**, and so cannot tell those two cases apart; anything
+/// that needs to knows already and is told (`Decl::named`, `program::Say`, issue #39).
 pub fn hidden(name: &str) -> bool {
     name.contains('#')
-}
-
-/// Whether a name is an **anonymous declaration's key** — `#a` and its offset, alone or as a
-/// segment of a flattened path (`s1.#a41`).  Narrower than `hidden`, and the report asks this
-/// one: a block-prefix name (`#5.0.t.r.lo`) has always been published and selected by, where a
-/// declaration's key is derived from its offset, which any edit above it moves — so a selection
-/// keyed on one goes stale, or lands on another entity, and the report withholds it.
-pub fn nameless(name: &str) -> bool {
-    name.split('.').any(|s| s.starts_with("#a"))
 }
 
 /// What the field at a boundary slot is called, for a message about it.
@@ -3882,6 +3887,7 @@ impl<'a> P<'a> {
             return Some(Decl {
                 kind,
                 name,
+                named,
                 children: args,
                 seed: Vec::new(),
                 seed_text: Vec::new(),
@@ -4028,6 +4034,7 @@ impl<'a> P<'a> {
         Some(Decl {
             kind,
             name,
+            named,
             children,
             seed,
             seed_text,
