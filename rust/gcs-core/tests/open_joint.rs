@@ -11,7 +11,7 @@ use gcs_core::constraints::CKind;
 use gcs_core::edit::{self, Kind};
 use gcs_core::model::EntRef;
 use gcs_core::program::{elaborate, Elaborated};
-use gcs_core::syntax::{parse, Chained, StmtKind};
+use gcs_core::syntax::{highlight, parse, Chained, StmtKind, Tint};
 
 fn read(src: &str) -> Elaborated {
     let (prog, errs) = parse(src);
@@ -227,6 +227,27 @@ fn the_refusals() {
     );
     // a circle has no ends, at an open joint as at any other
     refuses("cycle 2 {\n  circle c hint(r: 5) ->\n}\n", "has no ends to thread");
+}
+
+/// A body's `}` ends a statement as a line break does, so the issue's own one-line spelling
+/// parses — and the trailing joint's word tints as the relation the parser makes of it, at
+/// the `}` exactly as at a line's end.
+#[test]
+fn a_one_line_body_reads() {
+    let e = read("cycle 4 { distance(50) line -> angle(90) }\n");
+    assert_eq!((e.sketch.lines.len(), e.sketch.points.len()), (4, 4));
+    assert_eq!(kinds(&e.sketch, CKind::Angle), 4);
+    let e = read("cycle 2 { line }\n");
+    assert_eq!(e.sketch.lines.len(), 2);
+
+    let tint_of = |src: &str, word: &str| {
+        let at = src.find(word).expect("the word is in the text") as u32;
+        highlight(src).into_iter().find(|(_, s)| s.lo == at).map(|(t, _)| t)
+    };
+    let one_line = "cycle 4 { distance(50) line -> angle(90) }";
+    assert_eq!(tint_of(one_line, "angle"), Some(Tint::Relation), "at the closing brace");
+    let split = "cycle 4 {\n  distance(50) line -> angle(90)\n}\n";
+    assert_eq!(tint_of(split, "angle"), Some(Tint::Relation), "at the line's end");
 }
 
 /// One copy welds the line to itself, which build refuses as the self-reference it is —

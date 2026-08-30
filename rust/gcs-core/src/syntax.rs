@@ -2116,8 +2116,11 @@ fn tint_word(
             let j = past_args(toks, i);
             let next_word = word_at(toks, j);
             // both questions off the one cursor: a line ending in a joint word continues its
-            // chain onto the next, and `p distance(80)` ends a line as surely as `p equal` does
-            let at_line_end = matches!(toks.get(j).map(|(t, _)| t), Some(Tok::Nl) | None);
+            // chain onto the next, and `p distance(80)` ends a line as surely as `p equal` does.
+            // A body's `}` ends a statement as a line break does (`end_of_stmt`), so a word
+            // standing at one — a one-line body's trailing joint — reads the same way.
+            let at_line_end =
+                matches!(toks.get(j).map(|(t, _)| t), Some(Tok::Nl | Tok::P('}')) | None);
             if opens_link(w, next_word) {
                 // the element keyword names what the link declares; a prefix states a relation
                 return match EntKind::parse(w) {
@@ -3224,9 +3227,7 @@ impl<'a> P<'a> {
                 break;
             }
         }
-        if open.is_none() {
-            self.end_of_stmt();
-        }
+        self.end_of_stmt();
         let whole = Span::new(lo, self.prev_hi());
         // whether the line's end can take a trailing clause appended later: a chain ending
         // in a name (or sealed by `close`) can, one ending in a declaration cannot — the
@@ -4683,6 +4684,12 @@ impl<'a> P<'a> {
 
     fn end_of_stmt(&mut self) {
         if self.done() || self.peek() == Some(&Tok::Nl) {
+            return;
+        }
+        // inside a braced body the closing `}` ends a statement as a line break does — so
+        // `cycle 4 { distance(50) line -> angle(90) }` is writable on the one line it is
+        // about — and the brace is left standing, being the body's to consume
+        if self.in_body > 0 && self.peek() == Some(&Tok::P('}')) {
             return;
         }
         self.fail("more on this line than the statement wanted");
