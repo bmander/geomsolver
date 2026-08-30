@@ -227,6 +227,55 @@ fn the_refusals() {
     );
     // a circle has no ends, at an open joint as at any other
     refuses("cycle 2 {\n  circle c hint(r: 5) ->\n}\n", "has no ends to thread");
+    // a trace block is a body too, and has no next copy either
+    refuses(
+        "curve f(o: point)(u) = trace p where {\n  line ->\n}\n",
+        "a chain ends mid-joint only in a `repeat`, `cycle` or `ring`",
+    );
+}
+
+/// A dimension at the joint is settled per copy, against that copy's binder — the joint is
+/// stated between copy i and copy i+1 with copy i's numbers in force.
+#[test]
+fn a_joint_dimension_reads_the_binder() {
+    let e = read("cycle 3 as i {\n  line -> angle(60 + i * 10)\n}\n");
+    let mut angles: Vec<f64> = e
+        .sketch
+        .user_constraints()
+        .iter()
+        .filter(|c| c.kind == CKind::Angle)
+        .filter_map(|c| match c.args.last() {
+            Some(gcs_core::constraints::Arg::Num(v)) => Some(v.to_degrees().round()),
+            _ => None,
+        })
+        .collect();
+    angles.sort_by(f64::total_cmp);
+    assert_eq!(angles, vec![60.0, 70.0, 80.0]);
+}
+
+/// Blocks nest, and each body's open joint is its own block's: the inner cycle welds its own
+/// loop once per outer copy.
+#[test]
+fn a_nested_body_may_end_mid_joint() {
+    let e = read("repeat 2 {\n  cycle 2 {\n    line ->\n  }\n}\n");
+    let sk = e.sketch;
+    assert_eq!((sk.lines.len(), sk.points.len()), (4, 4), "two separate two-gons");
+    for i in [0, 2] {
+        assert_eq!(sk.lines[i].p2, sk.lines[i + 1].p1);
+        assert_eq!(sk.lines[i + 1].p2, sk.lines[i].p1);
+    }
+    assert_ne!(sk.lines[0].p2, sk.lines[2].p1, "the outer repeat relates nothing");
+}
+
+/// In a `repeat` with a declared entry the stated welds run through the declared points and
+/// only the last copy's exit is left to mint: N declared points and one implicit end.
+#[test]
+fn a_repeat_weld_runs_through_the_declared_points() {
+    let e = read("repeat 3 {\n  point p hint(x: 0, y: 0)\n  line s(p) ->\n}\n");
+    let sk = e.sketch;
+    assert_eq!((sk.lines.len(), sk.points.len()), (3, 4), "three p's and the open end");
+    assert_eq!(sk.lines[0].p2, sk.lines[1].p1);
+    assert_eq!(sk.lines[1].p2, sk.lines[2].p1);
 }
 
 /// A body's `}` ends a statement as a line break does, so the issue's own one-line spelling
