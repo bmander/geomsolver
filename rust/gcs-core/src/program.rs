@@ -142,20 +142,25 @@ pub struct Site {
 pub struct SourceMap {
     pub of_entity: BTreeMap<EntRef, Site>,
     pub of_constraint: BTreeMap<u32, Site>,
-    /// Every name an entity was declared or aliased under **that a statement could say** — so
-    /// what the source calls the thing, and nothing else.  A `Vec` from the start, because a
-    /// port puts several names on one entity and costs no residual for doing it; empty for an
-    /// entity the source calls nothing, which is the whole of what a reader has to ask.
+    /// Every name an entity was declared or aliased under **that the source calls it** — what a
+    /// window shows, a selection crosses a re-elaboration on, and the report publishes.  A `Vec`
+    /// from the start, because a port puts several names on one entity and costs no residual for
+    /// doing it; empty for an entity the source calls nothing, which is the whole of what a
+    /// reader has to ask.
     ///
     /// Deliberately *not* the same set as `by_name`, which is resolution and holds every key as
     /// well.  Which of the two a name joins is `bind`'s argument and is decided where the name
     /// is minted (issue #39); no reader re-derives it from the characters.
+    ///
+    /// Nor is it "a name that can be written back into source" — that is `syntax::hidden`'s
+    /// narrower question, which a block prefix fails and which is why `hidden` survives.
     pub names: BTreeMap<EntRef, Vec<String>>,
     by_name: BTreeMap<String, EntRef>,
     made: BTreeMap<StmtId, Vec<Made>>,
 }
 
-/// Whether a name being bound is one a **statement may say**.
+/// Whether a name being bound is one the source **calls the thing** — an identity to publish,
+/// show and select by — or only a key to resolve through.
 ///
 /// Known where the name is minted and never again: the parser either took an identifier for a
 /// declaration or declined to (`Decl::named`), and a prefix the flattener puts on the front is a
@@ -165,8 +170,12 @@ pub struct SourceMap {
 ///
 /// `No` is exactly one thing: an anonymous declaration's key (`#a41`, `#a41.p2`), which is
 /// derived from an offset any edit above it moves and which the source calls nothing.  A block
-/// prefix (`#4.0.p`) is `Yes` — unwritable, but stable and published and selected by since the
-/// flat subset.
+/// prefix (`#4.0.p`) is `Yes` — it has been published and selected by since the flat subset, and
+/// it is stable, being the statement's id.
+///
+/// **`Yes` is not "writable"**, and the two must not be confused: a block prefix carries a `#`
+/// and so can no more be spliced into a statement than a key can.  `syntax::hidden` is that
+/// narrower question, and this does not answer it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Say {
     Yes,

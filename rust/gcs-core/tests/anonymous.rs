@@ -293,6 +293,24 @@ fn a_gesture_on_a_component_made_anonymous_element_says_why_it_is_refused() {
     assert!(why.contains("name"), "{why}");
 }
 
+/// **What the source calls a thing and what a statement can be written with are two questions**,
+/// and a block prefix is what separates them: `#3.0.p` is published and selected by — it says
+/// which copy, which an index cannot — and it carries a `#` no tokenizer will give back.  So a
+/// gesture reaching for one copy of a block is refused with the cause, where it used to write
+/// the prefix out and come back with `adopt`'s generic "could not be written down".
+#[test]
+fn a_gesture_on_one_copy_of_a_block_says_why_it_is_refused() {
+    let mut e = read("point q hint(x: 5, y: 5)\ncycle 2 {\n  point p hint(x: 0, y: 0)\n}\n");
+    assert_eq!(e.map.name_of(EntRef::point(1)).map(String::as_str), Some("#3.0.p"));
+    e.sketch.add(Constraint::distance(EntRef::point(0), EntRef::point(1), 80.0));
+    let edit = reconciled(&mut e);
+    assert_eq!(edit.kind, Kind::None);
+    let why = edit.refused.expect("refused, and says why");
+    assert!(why.contains("block"), "{why}");
+    assert!(!why.contains("could not be written down"), "{why}");
+    assert!(!edit.text.contains('#'), "and nothing was written:\n{}", edit.text);
+}
+
 /// A reserved word written where a name would go is very possibly a name somebody meant, so a
 /// line that then fails to parse says the reservation — beside the failure, never on a line
 /// that parses (`line tangent arc` is a chain).

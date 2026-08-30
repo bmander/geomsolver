@@ -162,14 +162,17 @@ Conventions:
   (issue #39): the parser either took an identifier or declined to, and a prefix the flattener
   puts on the front is a written name said in an instance's terms.  So `SourceMap::bind` takes a
   `program::Say` and files the name accordingly — into `by_name` always, since *everything*
-  resolves, and into `names` only when the source could utter it.  The two tables are two
+  resolves, and into `names` only when the source calls the thing that.  The two tables are two
   questions and since anonymous elements they have two answers, so `map.names` is now exactly
   "what the source calls the thing": `name_of` is `names.first()`, an anonymous entity has no
-  entry, and no consumer screens a string.  A block prefix (`#4.0.p`) is `Say::Yes` — unwritable,
-  but stable, published and selected by since the flat subset — where a declaration's key is
-  `Say::No`, being derived from an offset any edit above it moves.  `syntax::hidden` answers a
-  question about a *string* and so cannot tell those two apart; it survives only where the
-  question really is about characters (`write_decl`, a thread-filled slot's `Kid::Ref`).
+  entry, and no consumer screens a string.  A block prefix (`#4.0.p`) is `Say::Yes` — published
+  and selected by since the flat subset, and stable, being the statement's id — where a
+  declaration's key is `Say::No`, being derived from an offset any edit above it moves.
+  **`Say::Yes` is not "writable"**, and a third question is exactly what a block prefix is for:
+  it carries a `#` and so can no more be spliced into a statement than a key can.  That one is
+  `syntax::hidden`, asked where a name is about to *reach the source* — `write_decl`, a
+  thread-filled slot's `Kid::Ref`, and `reconcile`'s gate, which refuses a gesture on one copy
+  of a block with the cause instead of writing the prefix out for `adopt` to fail on.
   The key is what a chain's corner welds by and what `res` resolves, and it must
   never reach the source: `write_decl` spells the statement without it,
   `commit_seeds` leaves a thread-filled slot holding one *empty* — forcing labels on the kept

@@ -910,15 +910,33 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         if minted.contains_key(r) || renamed.contains_key(r) {
             continue; // new (its statement carries the name), or its statement already named
         }
-        if e.map.name_of(*r).is_some() {
-            continue; // the source already calls it something
+        // What the source calls it, if it calls it anything — and, where it does, whether that
+        // name is one a statement can be *written* with.  The two are different questions and a
+        // **block prefix** is what separates them: `#3.0.p` is published and selected by, and
+        // carries a `#` no tokenizer will give back, so an appended statement naming it would
+        // not parse.  `syntax::hidden` is that narrower question and this is where it belongs —
+        // the alternative is the generic "could not be written down" from `adopt`, half a
+        // function later and with the cause lost.
+        match e.map.name_of(*r) {
+            Some(n) if !syntax::hidden(n) => continue, // the source already calls it something
+            Some(_) => {
+                return Edit::none(
+                    prog,
+                    Some(
+                        "that is one copy of a block, and only the flattener has a name for \
+                         it; write the statement inside the block, where it holds for every \
+                         copy"
+                            .into(),
+                    ),
+                )
+            }
+            None => {}
         }
         let Some(site) = e.map.of_entity.get(r) else { continue };
         if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
             // Nothing calls it and there is no statement of the root's to put a name on: it is
             // anonymous inside a component or a block, so refuse now with the cause rather than
-            // later with none.  (An entity a block prefix names left at the test above — its
-            // declaration has a name already, said in the instance's terms.)
+            // later with none.
             return Edit::none(
                 prog,
                 Some(
