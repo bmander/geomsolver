@@ -307,8 +307,7 @@ fn a_name_declared_twice_is_an_error() {
     for _ in 0..2 {
         p.push(gcs_core::syntax::StmtKind::Decl(gcs_core::syntax::Decl {
             kind: EntKind::Point,
-            name: gcs_core::syntax::Name::new("p0"),
-            named: gcs_core::syntax::Named::Written,
+            name: gcs_core::syntax::DeclName::Written(gcs_core::syntax::Name::new("p0")),
             children: Vec::new(),
             seed: vec![1.0, 2.0],
             seed_text: vec![None, None],

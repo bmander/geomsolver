@@ -263,7 +263,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             // the clause's position it would land past whatever trailer stands between them,
             // where an argument list is not a thing a declaration can say.
             Some((args, _)) => {
-                let end = d.name.span.hi as usize;
+                let end = d.name.span().hi as usize;
                 edits.push(Splice { at: Span::new(end, end), with: args });
                 if !hint.is_empty() {
                     edits.push(Splice { at, with: hint });
@@ -334,7 +334,7 @@ pub fn mint(prog: &Program, kind: EntKind) -> String {
 fn taken_names(prog: &Program) -> std::collections::BTreeSet<String> {
     prog.stmts()
         .filter_map(|s| match &s.kind {
-            StmtKind::Decl(d) => Some(d.name.text.clone()),
+            StmtKind::Decl(d) => Some(d.name.key().text.clone()),
             _ => None,
         })
         .collect()
@@ -396,7 +396,7 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64) -> Edit {
     let taken: std::collections::BTreeSet<&str> = prog
         .stmts()
         .filter_map(|s| match &s.kind {
-            StmtKind::Decl(d) => Some(d.name.text.as_str()),
+            StmtKind::Decl(d) => Some(d.name.key().text.as_str()),
             StmtKind::Instance(i) => Some(i.name.text.as_str()),
             StmtKind::Param(p) => Some(p.name.text.as_str()),
             StmtKind::Port(p) => Some(p.name.text.as_str()),
@@ -431,8 +431,7 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
     let name = mint(prog, EntKind::Point);
     let d = Decl {
         kind: EntKind::Point,
-        name: syntax::Name::new(name.clone()),
-        named: syntax::Named::Written,
+        name: syntax::DeclName::Written(syntax::Name::new(name.clone())),
         children: Vec::new(),
         seed: vec![x, y],
         seed_text: vec![None, None],
@@ -482,8 +481,7 @@ pub fn add_entity(prog: &Program, kind: EntKind, args: &[String], seed: &[f64]) 
     let n_scalar = kind.fields().iter().filter(|(_, f)| *f == crate::model::Field::Scalar).count();
     let d = Decl {
         kind,
-        name: syntax::Name::new(name.clone()),
-        named: syntax::Named::Written,
+        name: syntax::DeclName::Written(syntax::Name::new(name.clone())),
         children,
         seed: (0..n_scalar).map(|i| seed.get(i).copied().unwrap_or(0.0)).collect(),
         seed_text: vec![None; n_scalar],
@@ -533,7 +531,7 @@ pub fn remove(e: &Elaborated, prog: &Program, ents: &[EntRef], cons: &[u32]) -> 
         }
         doomed.insert(site.stmt);
         if let Some(d) = decl_of(prog, site) {
-            names.insert(d.name.text.clone());
+            names.insert(d.name.key().text.clone());
         }
     }
     for id in cons {
@@ -553,7 +551,7 @@ pub fn remove(e: &Elaborated, prog: &Program, ents: &[EntRef], cons: &[u32]) -> 
             }
             doomed.insert(st.id);
             if let StmtKind::Decl(d) = &st.kind {
-                names.insert(d.name.text.clone());   // and now whatever names *it* goes too
+                names.insert(d.name.key().text.clone());   // and now whatever names *it* goes too
             }
             grew = true;
         }
@@ -943,7 +941,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             );
         }
         let Some(d) = decl_of(prog, site) else { continue };
-        if d.named.shown() {
+        if d.name.shown().is_some() {
             continue; // named since the map was made
         }
         // One name per statement, and *every* entity the statement made follows it at once —
@@ -953,7 +951,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         let mut made_ents = e.map.ents_made_by(site.stmt);
         let Some(parent) = made_ents.next() else { continue };
         let name = next_name(&mut taken, d.kind);
-        named.push(Splice { at: d.name.span, with: format!(" {name}") });
+        named.push(Splice { at: d.name.span(), with: format!(" {name}") });
         // a name this edit gave a declaration, which is what `Edit::names` reports — a caller
         // reads it to refer to what it just made, and a name minted into a declaration that
         // was already there is as much this edit's doing as one on a statement it appended
@@ -988,7 +986,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
     for r in sk.primitives() {
         let Some(name) = minted.get(&r) else { continue };
         let mut d = crate::program::lift_decl(sk, r);
-        d.name = syntax::Name::new(name.clone());
+        d.name = syntax::DeclName::Written(syntax::Name::new(name.clone()));
         rename_children(&mut d, sk, r, &name_of);
         names.push(name.clone());
         made.push(Made::Ent(r));

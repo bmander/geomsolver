@@ -157,24 +157,32 @@ Conventions:
   is the cause no other error can see.  An anonymous declaration still carries a `Decl::name`:
   a key the source cannot write — `#a` and its own offset, the flattener's block-prefix device
   marked apart — with an **empty span at the point a real name would go** (`hint_span`'s
-  idiom), and a `syntax::Named` saying what its name *is*.  **A name is three questions, not one,
-  and each is known where the name is minted and told — never sniffed back out of the
-  characters** (issue #39).  The three: does it **resolve**, does the source **call the thing
-  that** (so: shown, published, selected by), and may a statement be **written** with it.
-  `Named` is the three answers — `Written` (`l0`, `s1.p0`), `Copy` (`#3.0.p`, one copy of a
-  block) and `No` (`#a41`, an anonymous declaration's key) — written by the two mints that know:
-  the parser took an identifier or declined to, and **the flattener knows whether the prefix it
-  is putting on the front is an instance's own name or a block's id** (`Scope::copies`, and
-  `Named::in_copy`).  `SourceMap::bind` is then told, and files each name into as many of its
-  three tables as apply: `by_name` always, `names` when `shown()`, `writable` when `writable()`.
+  idiom).  **A name is three questions, not one, and each is known where the name is minted and
+  told — never sniffed back out of the characters** (issue #39).  The three: does it
+  **resolve**, does the source **call the thing that** (so: shown, published, selected by), and
+  may a statement be **written** with it.  `Decl::name` is a **`DeclName`** — the name fused
+  with the three-question answer (issue #40): `Written(Name)` (`l0`, `s1.p0`), `Copy(Name)`
+  (`#3.0.p`, one copy of a block) and `Key(Name)` (`#a41`, an anonymous declaration's minted
+  key).  Fused, not a `bool` beside a string, so no reader can take the text without picking the
+  accessor that says which question it asks — `key()` (resolution, every declaration's),
+  `shown()` and `written()` (each an `Option` the compiler makes a new reader answer), `span()`
+  (where a name is or would go) — where eleven guard sites used to be a convention policed by
+  memory, four of which were not written.  It is stamped by the two mints that know: the parser
+  took an identifier or declined to, and **the flattener knows whether the prefix it is putting
+  on the front is an instance's own name or a block's id** (`Scope::copies`, and
+  `DeclName::prefixed` — a key is prefixed like any name, since two copies of one block hold two
+  entities the resolver must tell apart).  `SourceMap::bind` is then told (`DeclName::named`,
+  the bare answer, is its vocabulary), and files each name into as many of its three tables as
+  apply: `by_name` always, `names` when `shown()`, `writable` when `writable()`.
   So `map.names` is exactly "what the source calls the thing" — `name_of` is `names.first()`, an
   anonymous entity has no entry — and `writable_name` is the narrower one `edit::reconcile`'s
   gate asks, refusing a gesture on one copy of a block *with the cause* instead of writing the
   prefix out for `adopt` to fail on.  Two answers would not do: a predicate over characters can
-  separate `Copy` from `No` only by the `#a` marker the anonymous mint happens to use, which is
+  separate `Copy` from `Key` only by the `#a` marker the anonymous mint happens to use, which is
   the fragility the issue names, and it is `Copy` — unwritable but shown — that makes the two
   spellings disagree.  `syntax::hidden` survives only where the question really is about
-  characters and no `Decl` is in hand (`write_decl`, a thread-filled slot's `Kid::Ref`).
+  characters and only a `Ref` is in hand: a thread-filled slot's `Kid::Ref`, whose root names
+  *another* link's boundary.
   The key is what a chain's corner welds by and what `res` resolves, and it must
   never reach the source: `write_decl` spells the statement without it,
   `commit_seeds` leaves a thread-filled slot holding one *empty* — forcing labels on the kept

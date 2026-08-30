@@ -407,13 +407,15 @@ impl From<Hint> for OpArg {
     }
 }
 
-/// What a declaration's name is, which is **three** things and not two (issue #39).
+/// What a name is, which is **three** things and not two (issue #39) — the bare answer, which
+/// is `SourceMap::bind`'s vocabulary; on a declaration it travels fused with the name itself as
+/// `DeclName` (issue #40).
 ///
 /// There are three questions anyone asks about a name and they have three different answers, so
 /// a predicate over the characters can only ever get two of them right.  Each is known where the
 /// name is minted — the parser took an identifier or declined to, the flattener prefixed with an
-/// instance's name or with a block's id — and never again, so it is recorded here and every
-/// later reader is *told*.
+/// instance's name or with a block's id — and never again, so it is recorded and every later
+/// reader is *told*.
 ///
 /// | | resolves | shown, selected by | written into a statement |
 /// |---|---|---|---|
@@ -447,13 +449,83 @@ impl Named {
     pub fn writable(self) -> bool {
         self == Named::Written
     }
+}
 
-    /// The same declaration seen from inside one copy of a block, whose prefix the flattener is
-    /// about to put on the front.  A name the source never wrote is still one it never wrote.
-    pub fn in_copy(self) -> Named {
+/// A declaration's name and what it is, in one value (issue #40).
+///
+/// The answer (`Named`) wrapped around the name itself, so no reader can take the text without
+/// saying which of the three questions it is asking: `key` resolves and is every declaration's,
+/// `shown` is what the source calls the thing, `written` is a name a statement may say.  The
+/// eleven sites that guarded `d.name.text` with a remembered predicate are now accessors whose
+/// `Option` the compiler makes each new reader answer.
+#[derive(Clone, Debug)]
+pub enum DeclName {
+    /// The source wrote it, and every prefix the flattener put in front is a component
+    /// instance's own name — so the whole dotted path is one a statement may be written with.
+    Written(Name),
+    /// The source wrote it, but a `cycle` or a `repeat` stands between: the flattener spells
+    /// each copy `#3.0.p`, which says *which* copy — shown, selected by — and which carries a
+    /// `#` no tokenizer will give back.
+    Copy(Name),
+    /// The source wrote none.  A minted resolution key — `#a` and the declaration's own offset,
+    /// prefixed like any name when a block or a component encloses it — which resolves and is
+    /// nothing else: not shown, not written, its span empty at the point a real name would go.
+    Key(Name),
+}
+
+impl DeclName {
+    /// What this declaration **resolves** by — every declaration has one, and a chain's corner
+    /// welds by it.  Whether it is also what the source *calls* the thing is `shown`'s question,
+    /// so a key must never reach the source, a report, or a reader's eye.
+    pub fn key(&self) -> &Name {
         match self {
-            Named::No => Named::No,
-            _ => Named::Copy,
+            DeclName::Written(n) | DeclName::Copy(n) | DeclName::Key(n) => n,
+        }
+    }
+
+    /// What the source calls the thing, where it calls it anything — shown, published, selected
+    /// by.  `None` for an anonymous declaration, whose key is nobody's to see.
+    pub fn shown(&self) -> Option<&Name> {
+        match self {
+            DeclName::Written(n) | DeclName::Copy(n) => Some(n),
+            DeclName::Key(_) => None,
+        }
+    }
+
+    /// The narrower one: a name a statement may be **written** with.  A block's copy is shown
+    /// and refused here, which is the whole difference between the two questions.
+    pub fn written(&self) -> Option<&Name> {
+        match self {
+            DeclName::Written(n) => Some(n),
+            _ => None,
+        }
+    }
+
+    /// Where the name stands — or, an empty span, where one *would* go (`hint_span`'s device),
+    /// which is where `edit::reconcile` splices a minted name.
+    pub fn span(&self) -> Span {
+        self.key().span
+    }
+
+    /// The three-question answer alone, which is `SourceMap::bind`'s vocabulary.
+    pub fn named(&self) -> Named {
+        match self {
+            DeclName::Written(_) => Named::Written,
+            DeclName::Copy(_) => Named::Copy,
+            DeclName::Key(_) => Named::No,
+        }
+    }
+
+    /// The same name under the prefix the flattener is putting on the front: an instance's own
+    /// name keeps a written name writable, and a block's id (`copies`) makes any shown name one
+    /// copy's.  A key stays a key — prefixed all the same, since two copies of one block hold
+    /// two entities the resolver must tell apart.
+    pub fn prefixed(&self, text: String, copies: bool) -> DeclName {
+        let n = Name { text, span: self.span() };
+        match (self, copies) {
+            (DeclName::Key(_), _) => DeclName::Key(n),
+            (DeclName::Copy(_), _) | (_, true) => DeclName::Copy(n),
+            (DeclName::Written(_), false) => DeclName::Written(n),
         }
     }
 }
@@ -463,12 +535,11 @@ impl Named {
 #[derive(Clone, Debug)]
 pub struct Decl {
     pub kind: EntKind,
-    pub name: Name,
-    /// What this declaration's name **is** — see `Named`.  Written where it is known first-hand
-    /// and nowhere else: the parser either took an identifier or declined to, and the flattener
-    /// knows whether the prefix it is putting on the front is an instance's own name or a
-    /// block's id.
-    pub named: Named,
+    /// The name **and what it is** — see `DeclName`.  Written where it is known first-hand and
+    /// nowhere else: the parser either took an identifier or declined to (minting a key), and
+    /// the flattener knows whether the prefix it is putting on the front is an instance's own
+    /// name or a block's id.
+    pub name: DeclName,
     /// One per `Child`/`List` field of `EntKind::fields`, in that order; a `List` field holds as
     /// many as were written.  Empty throughout — `line l` — is the anonymous form: the kind's
     /// children are minted, unnamed, and reached as `l.p1`.
@@ -1104,14 +1175,14 @@ fn labels_children(k: EntKind) -> bool {
 fn write_decl(out: &mut String, d: &Decl) {
     let kw = d.kind.as_str();
     out.push_str(kw);
-    // an anonymous declaration has no name to spell — its `#` key is the elaboration's, not
-    // the source's — so the keyword stands alone and the tail glues to it
-    if !hidden(&d.name.text) {
+    // an anonymous declaration has no name to spell — its key is the elaboration's, not the
+    // source's — so the keyword stands alone and the tail glues to it
+    if let Some(n) = d.name.written() {
         for _ in kw.len()..KW {
             out.push(' ');
         }
         out.push(' ');
-        out.push_str(&d.name.text);
+        out.push_str(&n.text);
     }
 
     out.push_str(&decl_tail(d, &d.seed));
@@ -2039,10 +2110,13 @@ struct Link {
 }
 
 impl Link {
-    /// The entity this link is about, as a relation written over it would name it.
+    /// The entity this link is about, as a relation written over it would name it — the
+    /// resolution key, since a corner welds by name and an anonymous link has nothing else.
     fn entity(&self) -> Ref {
         match &self.body {
-            LinkBody::Decl(d) => Ref { root: d.name.clone(), path: Vec::new(), span: d.name.span },
+            LinkBody::Decl(d) => {
+                Ref { root: d.name.key().clone(), path: Vec::new(), span: d.name.span() }
+            }
             LinkBody::Ref(r) => r.clone(),
         }
     }
@@ -2061,8 +2135,7 @@ impl Link {
     /// nothing, so the link's own text stands in: the keyword a reader can see.
     fn span_of_name(&self) -> Span {
         match &self.body {
-            LinkBody::Decl(d) if !d.name.span.is_empty() => d.name.span,
-            LinkBody::Decl(_) => self.span,
+            LinkBody::Decl(d) => d.name.shown().map(|n| n.span).unwrap_or(self.span),
             LinkBody::Ref(r) => r.span,
         }
     }
@@ -2194,24 +2267,25 @@ fn after_kind(w: &str) -> Next {
 
 /// How a message spells a declaration whose name is optional: the name where the source wrote
 /// one, and the bare kind where it did not.  Both the parser's errors and the elaborator's
-/// diagnostics ask, so an anonymous declaration is described one way and never by its key.
-pub(crate) fn decl_head(kind: EntKind, name: &str) -> String {
-    if hidden(name) {
-        kind.as_str().to_string()
-    } else {
-        format!("{} {name}", kind.as_str())
+/// diagnostics ask, so an anonymous declaration is described one way and never by its key —
+/// `written`, not `shown`, because a block copy's prefixed name is no better in a message than
+/// the bare kind and used to be refused here by the same character test the printer ran.
+pub(crate) fn decl_head(kind: EntKind, name: &DeclName) -> String {
+    match name.written() {
+        Some(n) => format!("{} {}", kind.as_str(), n.text),
+        None => kind.as_str().to_string(),
     }
 }
 
 /// Whether a name is one the source could never write: the `#a`-keyed name an anonymous
 /// declaration resolves by (`#a41`, and `#a41.p2` for a child it mints) or a block prefix the
 /// flattener made (`#5.0.p0`).  `#` never survives the tokenizer inside an identifier, so the
-/// test cannot claim a written name.  Who asks: what would *write* a name into the source — the
-/// printer, which spells an anonymous declaration without one — and the diagnostics, which
-/// spell the kind.
+/// test cannot claim a written name.
 ///
-/// It answers a question about a **string**, and so cannot tell those two cases apart; anything
-/// that needs to knows already and is told (`Decl::named`, `program::Say`, issue #39).
+/// It answers a question about a **string**, and so cannot tell those two cases apart; anywhere
+/// a `Decl` is in hand the question is `DeclName`'s and typed (issues #39, #40).  What is left
+/// is the one seam with only a `Ref` to ask about: a slot a chain's thread filled with another
+/// link's boundary, which `edit::commit_seeds` must leave empty when the source cannot say it.
 pub fn hidden(name: &str) -> bool {
     name.contains('#')
 }
@@ -3289,7 +3363,9 @@ impl<'a> P<'a> {
                 }
             }
             let ent = match &link.body {
-                LinkBody::Decl(d) => Ref { root: d.name.clone(), path: Vec::new(), span: d.name.span },
+                LinkBody::Decl(d) => {
+                    Ref { root: d.name.key().clone(), path: Vec::new(), span: d.name.span() }
+                }
                 LinkBody::Ref(r) => r.clone(),
             };
             for (word, args) in &link.prefixes {
@@ -3411,7 +3487,7 @@ impl<'a> P<'a> {
             let Some(k) = slot else { return };
             if let (Some(kind), LinkBody::Decl(d)) = (link.kind(), &mut link.body) {
                 if let [Seg::Field(f)] = r.path.as_slice() {
-                    if r.root.text == d.name.text && f.text == boundary_name(kind, k) {
+                    if r.root.text == d.name.key().text && f.text == boundary_name(kind, k) {
                         return;
                     }
                 }
@@ -3870,9 +3946,8 @@ impl<'a> P<'a> {
         // error — whatever stands next, identifier or not.
         let named = kind == EntKind::Curve
             || matches!(self.peek(), Some(Tok::Ident(w)) if names_decl(w));
-        let named = if named { Named::Written } else { Named::No };
-        let name = if named.shown() {
-            self.ident()?
+        let name = if named {
+            DeclName::Written(self.ident()?)
         } else {
             // an Ident declined here was very possibly *meant* as a name — remembered, so a
             // line that then fails to parse can say so (`chain_or_one`)
@@ -3880,11 +3955,11 @@ impl<'a> P<'a> {
                 self.declined = Some((w.clone(), self.here()));
             }
             let at = self.prev_hi();
-            Name { text: format!("#a{at}"), span: Span::new(at, at) }
+            DeclName::Key(Name { text: format!("#a{at}"), span: Span::new(at, at) })
         };
         // how an error spells this statement's head — computed at the failure, since every
         // declaration that parses would otherwise allocate a string nothing reads
-        let head = || decl_head(kind, &name.text);
+        let head = || decl_head(kind, &name);
         // `curve e = involute(base, phase: 0) over (0, 45)`
         let mut def = None;
         let mut values: Vec<(Name, String)> = Vec::new();
@@ -3933,7 +4008,6 @@ impl<'a> P<'a> {
             return Some(Decl {
                 kind,
                 name,
-                named,
                 children: args,
                 seed: Vec::new(),
                 seed_text: Vec::new(),
@@ -4080,7 +4154,6 @@ impl<'a> P<'a> {
         Some(Decl {
             kind,
             name,
-            named,
             children,
             seed,
             seed_text,

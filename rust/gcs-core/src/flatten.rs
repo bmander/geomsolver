@@ -18,7 +18,7 @@ use crate::expr::{self, Aff};
 use crate::model::EntKind;
 use crate::units::Units;
 use crate::syntax::{
-    BlockKind, Component, Decl, Name, Named, Program, Ref, Seg, Span, Stmt, StmtKind, Ty,
+    BlockKind, Component, Decl, DeclName, Name, Program, Ref, Seg, Span, Stmt, StmtKind, Ty,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -155,13 +155,10 @@ impl<'a> Walk<'a> {
             }
             match &st.kind {
                 StmtKind::Decl(d) => {
-                    let abs = format!("{prefix}{}", d.name.text);
+                    let abs = format!("{prefix}{}", d.name.key().text);
                     self.names.insert(abs.clone());
                     let mut d2 = d.clone();
-                    d2.name = Name { text: abs, span: d.name.span };
-                    if scope.copies {
-                        d2.named = d.named.in_copy();
-                    }
+                    d2.name = d.name.prefixed(abs, scope.copies);
                     // a curve's numbers and the interval it is drawn over are written over the
                     // parameters in scope too, and are worked out in the same pass
                     for (_, t) in d2.values.iter_mut() {
@@ -196,12 +193,12 @@ impl<'a> Walk<'a> {
                     if let Some(kind) = p.declare {
                         let abs = format!("{prefix}{}", p.name.text);
                         self.names.insert(abs.clone());
+                        let name = Name { text: abs, span: p.name.span };
                         let d = Decl {
                             kind,
-                            name: Name { text: abs, span: p.name.span },
-                            named: match scope.copies {
-                                true => Named::Copy,
-                                false => Named::Written,
+                            name: match scope.copies {
+                                true => DeclName::Copy(name),
+                                false => DeclName::Written(name),
                             },
                             children: vec![Vec::new(); count_children(kind)],
                             seed: vec![0.0; count_scalars(kind)],

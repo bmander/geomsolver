@@ -25,8 +25,8 @@ use crate::model::{EntKind, EntRef, Field, Sketch};
 use crate::rng::Rng;
 use crate::style::Classes;
 use crate::syntax::{
-    entity_name, line_col, num, Arg, Decl, Gauge, Kid, Name, Named, Orient, Program, Ref, Relation,
-    Seg, Span, Stmt, StmtId, StmtKind,
+    entity_name, line_col, num, Arg, Decl, DeclName, Gauge, Kid, Name, Named, Orient, Program,
+    Ref, Relation, Seg, Span, Stmt, StmtId, StmtKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -315,7 +315,7 @@ impl Elaborated {
             match *m {
                 Made::Ent(r) => {
                     if let StmtKind::Decl(d) = &st.kind {
-                        self.map.bind(&d.name.text, r, d.named);
+                        self.map.bind(&d.name.key().text, r, d.name.named());
                     }
                     self.map.of_entity.insert(r, site);
                 }
@@ -631,14 +631,16 @@ pub fn elaborate(p: &Program) -> Elaborated {
     sk.set_sheet(sheet);
     for st in &body {
         let StmtKind::Decl(d) = &st.kind else { continue };
-        if let Some(&was) = res.declared_at.get(&d.name.text) {
+        // the *key*, which is resolution's question: an anonymous key is its own offset and a
+        // copy's carries its prefix, so only a name the source wrote twice can actually collide
+        let key = &d.name.key().text;
+        if let Some(&was) = res.declared_at.get(key) {
             diags.push(Diag {
                 code: Code::E001,
-                span: d.name.span,
+                span: d.name.span(),
                 stmt: Some(st.id),
                 message: format!(
-                    "`{}` is declared twice; the first is at line {}",
-                    d.name.text,
+                    "`{key}` is declared twice; the first is at line {}",
                     line_col(p.text(), was.lo).0
                 ),
             });
@@ -646,10 +648,10 @@ pub fn elaborate(p: &Program) -> Elaborated {
             continue; // the second, so every later reference still resolves to the first
         }
         let n = count.entry(d.kind).or_insert(0);
-        res.of.insert(d.name.text.clone(), EntRef::new(d.kind, *n as usize));
-        res.declared_at.insert(d.name.text.clone(), d.name.span);
+        res.of.insert(key.clone(), EntRef::new(d.kind, *n as usize));
+        res.declared_at.insert(key.clone(), d.name.span());
         res.kids.insert(
-            d.name.text.clone(),
+            key.clone(),
             d.children
                 .iter()
                 .map(|g| match g.first() {
@@ -686,7 +688,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
             match build(&mut sk, &res, d, st, &mut diags, &mut anon) {
                 Some(e) => {
                     built.insert(e, true);
-                    map.bind(&d.name.text, e, d.named);
+                    map.bind(&d.name.key().text, e, d.name.named());
                     map.record(st, Made::Ent(e));
                     // an anonymous child's name *is* its dotted path, so it is bound like any
                     // other: that is what lets a dimension name it, a selection survive a
@@ -695,14 +697,14 @@ pub fn elaborate(p: &Program) -> Elaborated {
                     // `l.p1` under a named line, nothing under an anonymous one
                     for (name, k) in anon {
                         built.insert(k, true);
-                        map.bind(&name, k, d.named);
+                        map.bind(&name, k, d.name.named());
                         map.record(st, Made::Ent(k));
                     }
                 }
                 None => {
                     // a declaration that could not be built leaves its name unbound, so every
                     // reference to it is reported where the reference is
-                    res.of.remove(&d.name.text);
+                    res.of.remove(&d.name.key().text);
                 }
             }
         }
@@ -920,7 +922,7 @@ fn compile_trace(
                 // message spells the kind instead — `decl_head`, the one wording both the
                 // parser's errors and these diagnostics use
                 .ok_or_else(|| {
-                    let who = crate::syntax::decl_head(d.kind, &d.name.text);
+                    let who = crate::syntax::decl_head(d.kind, &d.name);
                     (st.span, format!("`{who}` needs its points named"))
                 })?;
             let e = scope
@@ -935,7 +937,8 @@ fn compile_trace(
                     Some(a) => at_seed(&sk, &scope, &slot, vars, &seeds, n_outer, a, st.span)?,
                     None => (seed_tape(0)?, seed_tape(1)?),
                 };
-                let e = EntRef::point(sk.point(0.0, 0.0, false, &d.name.text));
+                // a scratch sketch nobody's DOF dialog reads, so the key is a fine label here
+                let e = EntRef::point(sk.point(0.0, 0.0, false, &d.name.key().text));
                 seeds.push(sx);
                 seeds.push(sy);
                 for p in sk.entity_params(e) {
@@ -958,7 +961,7 @@ fn compile_trace(
                     return Err((st.span, "a circle's centre is a point".to_string()));
                 }
                 let sr = seed_tape(0)?;
-                let e = EntRef::circle(sk.circle(c.i(), 0.0, &d.name.text));
+                let e = EntRef::circle(sk.circle(c.i(), 0.0, &d.name.key().text));
                 seeds.push(sr);
                 slot.insert(sk.circles[e.i()].radius, n_outer + n_q);
                 n_q += 1;
@@ -971,8 +974,9 @@ fn compile_trace(
                 ))
             }
         };
-        if scope.insert(d.name.text.clone(), e).is_some() {
-            return Err((st.span, format!("`{}` is declared twice", d.name.text)));
+        if scope.insert(d.name.key().text.clone(), e).is_some() {
+            // two anonymous declarations are two offsets, so only a written name can be here
+            return Err((st.span, format!("`{}` is declared twice", d.name.key().text)));
         }
     }
 
@@ -1271,16 +1275,16 @@ pub(crate) fn child_names(d: &Decl, base: &str) -> Vec<String> {
 /// key would be read by somebody.  Names in the *sketch* are display; names in the source map
 /// are identity; this is the one seam where the two part company.
 ///
-/// `Decl::named`, and not any reading of the characters: a **block prefix** is a name the
+/// `DeclName::shown`, and not any reading of the characters: a **block prefix** is a name the
 /// flattener made and has always been shown — it says which instance the thing belongs to, which
 /// an index cannot — so only a declaration the source named *nothing* is relabelled here.  A
 /// predicate over the string can tell those two apart only by the marker the anonymous mint
 /// happens to use, and the broader of the two readings shows one entity by its path in one
 /// window and by its index in another.
 fn shown(sk: &Sketch, d: &Decl) -> String {
-    match d.named.shown() {
-        false => crate::syntax::entity_name(EntRef::new(d.kind, sk.count(d.kind))),
-        true => d.name.text.clone(),
+    match d.name.shown() {
+        None => crate::syntax::entity_name(EntRef::new(d.kind, sk.count(d.kind))),
+        Some(n) => n.text.clone(),
     }
 }
 
@@ -1320,7 +1324,7 @@ fn build(
     // The child's **name**, which is its dotted path, and what to **call** it — the same string
     // for a declaration the source named, and two different ones for an anonymous declaration,
     // whose key is an offset nobody should be shown.
-    let dotted = if anonymous { child_names(d, &d.name.text) } else { Vec::new() };
+    let dotted = if anonymous { child_names(d, &d.name.key().text) } else { Vec::new() };
     let label = if anonymous { child_names(d, &shown(sk, d)) } else { Vec::new() };
     let mut kids: Vec<usize> = Vec::new();
     // `Some(0)` and `None` both mean there is nothing to mint, and so does a written list
@@ -2000,8 +2004,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
     };
     Decl {
         kind: e.kind,
-        name: Name::new(entity_name(e)),
-        named: Named::Written,
+        name: DeclName::Written(Name::new(entity_name(e))),
         children,
         seed_text: vec![None; seed.len()],
         seed_spans: vec![Span::default(); seed.len()],
