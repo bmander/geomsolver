@@ -265,6 +265,17 @@ welded and tangent at both corners.
 `equal` is polymorphic: a length between lines, a radius between circles or arcs. `a equal b equal
 c` is two statements, not three.
 
+Inside a `repeat`, `cycle` or `ring` body the final chain may end **mid-joint** — the marker,
+or the marker with words, standing at the body's `}`: the trailing joint threads the chain onto
+the *next copy's* first link, weld and at-forms exactly as an in-chain joint. `cycle` and `ring`
+wrap, so every copy states it and the loop closes with no `close`; a `repeat`'s last copy simply
+leaves it unstated, so `repeat N { line -> angle(a) }` is an open polyline of N sides and N−1
+corners. Both boundary links must be the body's own declarations, and at most one of the two
+boundary slots may name its point — both named are two different points across the copy seam,
+and that coincidence is written longhand. A statement inside a braced body also ends at the
+body's `}`, so the whole of a block fits one line: `cycle 4 { line s -> perpendicular equal }`
+is a square but for a size and a pose.
+
 ### 1.8 Curve families
 
 A family is a *kind* of curve, written over the geometry it is drawn from, and instanced with
@@ -524,6 +535,26 @@ ground p[0]
 Six links, all told they are the same length — which round a ring is one statement more than is
 independent, and nothing sizes the ring at all, so five freedoms remain. Under-constrained
 repetition is normal and is not a mistake by itself; `p[0]` indexes a particular copy.
+
+The body may end mid-joint (§1.7), which is how a closed contour is written with no names for
+its corners at all — `dof 1, Under`:
+
+```
+cycle 4 {
+  line s -> perpendicular equal
+}
+s[0].p1 distance(50) s[0].p2
+ground s[0].p1
+```
+
+Each copy's side is welded onto the next's at a corner also held square and equal to it, the
+wrap sealing the loop: four lines over the four points the welds mint. One dimension sizes it
+and a grounded corner places it, leaving the one freedom — the square swings about that corner.
+Round a closed loop one `perpendicular` and one `equal` are theorems, which the diagnosis notes
+as implied and never paints; state a *dimension* at every corner instead (`-> angle(90)`) and
+the same closure redundancy is `Over` — "remove one" — since editing one of those dimensions is
+the next conflict. The shipped `square.sv` and `ngon.sv` are the two readings side by side, the
+latter a component that takes `n` and draws any regular polygon.
 
 ### 2.8 A curve family — `dof 1, Under`
 
