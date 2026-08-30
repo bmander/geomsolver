@@ -553,8 +553,12 @@ and a grounded corner places it, leaving the one freedom — the square swings a
 Round a closed loop one `perpendicular` and one `equal` are theorems, which the diagnosis notes
 as implied and never paints; state a *dimension* at every corner instead (`-> angle(90)`) and
 the same closure redundancy is `Over` — "remove one" — since editing one of those dimensions is
-the next conflict. The shipped `square.sv` and `ngon.sv` are the two readings side by side, the
-latter a component that takes `n` and draws any regular polygon.
+the next conflict. The shipped `square.sv` is this figure; `ngon.sv` is the parametric case — a
+component taking `n`, its corners riding a circle with `equal` at every welded corner, all pure
+relations. Its seeds walk once round the circle on purpose: equal chords of a circle fix each
+central angle's size and not its sign, so the collapsed polygon, zigzags and stars satisfy the
+same statements — the winding is a branch, and a branch is chosen by seeds where no residual
+can state it.
 
 ### 2.8 A curve family — `dof 1, Under`
 

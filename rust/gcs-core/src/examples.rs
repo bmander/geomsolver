@@ -42,8 +42,8 @@ pub fn square() -> Sketch {
 }
 
 /// A regular n-gon from one component — `ngon.sv`.  The parametric sibling of `square.sv`:
-/// `Ngon(n: Int, side: Length)` is one line and one corner round a `cycle` whose body ends
-/// mid-joint, and the instance line picks the count.
+/// `Ngon(n: Int, side: Length)` is a corner on a circle and a side round a `cycle` whose body
+/// ends mid-joint, the instance line picking the count and the seeds picking the winding.
 pub fn ngon() -> Sketch {
     document(NGON, "ngon")
 }
@@ -178,7 +178,7 @@ pub fn example(name: &str) -> Option<Sketch> {
 pub const CASES: [(&str, &str, &str); 25] = [
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Square, one line round a cycle", "square", "`cycle 4 { line s -> perpendicular equal }` — the body ends mid-joint, so each side welds to the next copy's and the wrap closes the loop (issue #38); 1 DOF: it swings about its grounded corner"),
-    ("Regular n-gon (component)", "ngon", "a parametric `Ngon(n, side)` component: the same open-jointed cycle with `n` a parameter — and the honest Over, since dimensioning all n corners of a closed loop states one too many"),
+    ("Regular n-gon (component)", "ngon", "a parametric `Ngon(n, side)` component: corners on a circle, equal sides, the open-jointed cycle welding them round — pure relations, so the closure equality is implied rather than Over, and the seeds walk once round the circle to pick the convex winding no residual can state (1 DOF: it spins about its hub)"),
     ("Slotted link", "slotted_link", "obround slot with two holes; fully constrained"),
     ("Truss (8 bays)", "truss", "~30-entity Warren truss, every member dimensioned"),
     ("Truss (50 bays)", "truss50", "300 entities — drag a node"),
