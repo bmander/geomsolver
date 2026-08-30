@@ -530,6 +530,9 @@ fn spans(prog: &Program) -> BTreeMap<StmtId, Span> {
             for inner in b.body.iter() {
                 stamp(inner, out);
             }
+            for inner in b.joint.iter().flat_map(|j| j.stmts.iter()) {
+                stamp(inner, out);
+            }
         }
     }
     let mut out = BTreeMap::new();

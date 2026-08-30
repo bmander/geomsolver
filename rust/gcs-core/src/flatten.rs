@@ -18,7 +18,8 @@ use crate::expr::{self, Aff};
 use crate::model::EntKind;
 use crate::units::Units;
 use crate::syntax::{
-    BlockKind, Component, Decl, DeclName, Name, Program, Ref, Seg, Span, Stmt, StmtKind, Ty,
+    BlockKind, Component, Decl, DeclName, Kid, Name, OpenJoint, OpenSide, Program, Ref, Seg,
+    Span, Stmt, StmtKind, Ty,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -269,6 +270,7 @@ impl<'a> Walk<'a> {
                         continue;
                     }
                     let block_prefix = format!("{prefix}#{}.", st.id.0);
+                    let mut ranges: Vec<(usize, usize)> = Vec::new();
                     for k in 0..n {
                         let mut sub = vals.clone();
                         if let Some(i) = &b.binder {
@@ -292,7 +294,27 @@ impl<'a> Walk<'a> {
                         };
                         let mut p2 = path.to_vec();
                         p2.push(k as u32);
+                        let from = self.out.len();
                         self.body(&b.body, &sc, &mut sub, &p2, depth + 1);
+                        // the trailing joint's relations, stated between this copy and the
+                        // next: every copy for a cycle or a ring (the wrap seals the loop),
+                        // all but the last for a repeat, whose final corner is simply not
+                        // stated (issue #38).  The joint is the *block's* statement, so its
+                        // scope carries `cyc` whatever the kind — a repeat's own body still
+                        // may not say `next`.
+                        if let Some(j) = &b.joint {
+                            if b.kind != BlockKind::Repeat || k + 1 < n {
+                                let sc2 = Scope {
+                                    cyc: Some(Cyc { prefix: block_prefix.clone(), k, n }),
+                                    ..sc.clone()
+                                };
+                                self.body(&j.stmts, &sc2, &mut sub, &p2, depth + 1);
+                            }
+                        }
+                        ranges.push((from, self.out.len()));
+                    }
+                    if let Some(j) = &b.joint {
+                        self.weld(j, b.kind, &block_prefix, n, &ranges);
                     }
                 }
                 // a constraint: its dimension is written in the component's own parameters, which
@@ -345,6 +367,71 @@ impl<'a> Walk<'a> {
     fn emit(&mut self, kind: StmtKind, st: &Stmt, scope: &Scope, path: &[u32]) {
         let stmt = Stmt { id: st.id, kind, span: st.span, chained: st.chained };
         self.out.push((stmt, path.to_vec(), scope.clone()));
+    }
+
+    /// The open joint's weld, stated per pair of copies: the shared boundary point's name is
+    /// written into one side's child slot, exactly as an in-chain `thread` writes it (#38).
+    ///
+    /// Which side takes the name follows `thread`'s own doctrine.  A side that *declared* its
+    /// boundary named the point, so the other side's slot is filled; where neither did, the
+    /// **later-built** side's slot takes the earlier side's minted dotted name, because a slot
+    /// resolves through what is already built (`follow_building` refuses a reach into an
+    /// entity that is not) and build order is per kind, then flat statement order — across the
+    /// copies, `(kind, copy, statement)`.  That is `builds_first` generalized: for an ordinary
+    /// pair the next copy builds later, and at a cycle's wrap the first copy built long ago,
+    /// so the seam is spelled `prev.…` looking back or `next.…` looking forward and no pair
+    /// references a point that does not yet exist.
+    fn weld(&mut self, j: &OpenJoint, kind: BlockKind, block_prefix: &str, n: usize, ranges: &[(usize, usize)]) {
+        let pairs = if kind == BlockKind::Repeat { n.saturating_sub(1) } else { n };
+        for i in 0..pairs {
+            let k = (i + 1) % n;
+            // the side whose slot takes the shared point's name
+            let fill_first = match (j.first.declared, j.last.declared) {
+                (true, true) => continue, // refused at parse; nothing sound to state
+                (true, false) => false,
+                (false, true) => true,
+                (false, false) => {
+                    (j.last.kind as usize, i, j.last.stmt.0)
+                        < (j.first.kind as usize, k, j.first.stmt.0)
+                }
+            };
+            let (side, copy, from, root) = if fill_first {
+                (&j.first, k, &j.last, "prev")
+            } else {
+                (&j.last, i, &j.first, "next")
+            };
+            let mut path = vec![Seg::Field(from.boundary.root.clone())];
+            path.extend(from.boundary.path.iter().cloned());
+            let r = Ref { root: Name { text: root.to_string(), span: j.span }, path, span: j.span };
+            self.fill(ranges[copy], side, r, block_prefix, copy, n);
+        }
+    }
+
+    /// Write the shared point's name into the emitted clone of one side's declaration, and
+    /// give the clone's scope the block's own `cyc`, so `next`/`prev` resolve there whatever
+    /// the block's kind — the weld is the block's statement, not one the body wrote.
+    fn fill(
+        &mut self,
+        range: (usize, usize),
+        side: &OpenSide,
+        r: Ref,
+        block_prefix: &str,
+        copy: usize,
+        n: usize,
+    ) {
+        for idx in range.0..range.1 {
+            let (stmt, _, sc) = &mut self.out[idx];
+            if stmt.id != side.stmt {
+                continue;
+            }
+            if let StmtKind::Decl(d) = &mut stmt.kind {
+                if let Some(slot) = d.children.get_mut(side.slot) {
+                    *slot = vec![Kid::Ref(r)];
+                }
+                sc.cyc = Some(Cyc { prefix: block_prefix.to_string(), k: copy, n });
+            }
+            return;
+        }
     }
 
     /// Bind an instantiation's arguments to the component's formals.

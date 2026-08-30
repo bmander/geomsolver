@@ -371,7 +371,49 @@ pub struct Block {
     /// `as i` — the index, available to every expression inside.
     pub binder: Option<Name>,
     pub body: Vec<Stmt>,
+    /// The body's trailing open joint, where its last chain ends mid-joint: the chain threads
+    /// onto the next copy (issue #38).
+    pub joint: Option<OpenJoint>,
     pub span: Span,
+}
+
+/// A block body that ends mid-joint — `cycle N { distance(d) line -> angle(a) }` — threads its
+/// chain onto the **next copy's** first link: every copy states the joint in a `cycle` or a
+/// `ring` (the wrap seals the loop), and all but the last do in a `repeat`, whose final corner
+/// is simply not stated.  Everything here is computed at parse time, where both links are
+/// declarations of the body's own; what the flattener adds is only *which* copies.
+#[derive(Clone, Debug)]
+pub struct OpenJoint {
+    /// The relations the joint states, one statement per word, desugared exactly as an
+    /// in-chain joint's are — the right operand spelled `next.<first link>`, which the
+    /// flattener's own `next` arm resolves per pair of copies.
+    pub stmts: Vec<Stmt>,
+    /// The words as written, for the printer — the statements above hold refs no source says.
+    pub words: Vec<(String, Vec<OpArg>, Span)>,
+    /// The chain's last link, whose exit the joint threads.
+    pub last: OpenSide,
+    /// The chain's first link, whose entry the next copy is entered by.
+    pub first: OpenSide,
+    /// The joint's own text — the marker through the last word — for errors about it.
+    pub span: Span,
+}
+
+/// One side of an open joint: enough to find the link's declaration in a copy's expansion and
+/// state the weld there.
+#[derive(Clone, Debug)]
+pub struct OpenSide {
+    /// The id of the link's declaration statement — the same id in every copy; the copy's
+    /// instance path is what tells the clones apart.
+    pub stmt: StmtId,
+    pub kind: EntKind,
+    /// Which child slot the thread fills — exit for the last link, entry for the first.
+    pub slot: usize,
+    /// Whether the slot names its point in the source — at most one side may (§6.6).
+    pub declared: bool,
+    /// The point where the chain crosses this side, body-relative: the slot's declared
+    /// reference, or the dotted boundary path the mint would use (`<key>.p1`).  What the
+    /// *other* side's slot is filled with, under `next.`/`prev.`.
+    pub boundary: Ref,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -986,6 +1028,9 @@ impl Program {
                     if let Some(hit) = find(&b.body, id) {
                         return Some(hit);
                     }
+                    if let Some(hit) = b.joint.as_ref().and_then(|j| find(&j.stmts, id)) {
+                        return Some(hit);
+                    }
                 }
             }
             None
@@ -1011,6 +1056,9 @@ impl Program {
             out.push(st);
             if let StmtKind::Block(b) = &st.kind {
                 for inner in b.body.iter() {
+                    walk(inner, out);
+                }
+                for inner in b.joint.iter().flat_map(|j| j.stmts.iter()) {
                     walk(inner, out);
                 }
             }
@@ -1152,9 +1200,29 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
                 out.push_str(&format!(" as {}", i.text));
             }
             out.push_str(" {\n");
-            for st in &b.body {
+            for (i, st) in b.body.iter().enumerate() {
                 out.push_str("  ");
                 write_stmt(out, &st.kind);
+                // the trailing open joint is the last chain's own text, so it goes back on
+                // that line — `line -> angle(30)` — never on a line of its own
+                if i + 1 == b.body.len() {
+                    if let Some(j) = &b.joint {
+                        out.push_str(" ->");
+                        for (w, args, _) in &j.words {
+                            let (parts, hints) = written_parts(args);
+                            out.push(' ');
+                            out.push_str(w);
+                            if !parts.is_empty() {
+                                out.push_str(&format!("({})", parts.join(", ")));
+                            }
+                            let hint = hint_of(&hints);
+                            if !hint.is_empty() {
+                                out.push(' ');
+                                out.push_str(&hint);
+                            }
+                        }
+                    }
+                }
                 out.push('\n');
             }
             out.push('}');
@@ -1373,10 +1441,13 @@ fn write_relation(out: &mut String, r: &Relation) {
     }
 }
 
-fn write_written(out: &mut String, w: &Written) {
+/// An operator's parenthesised arguments, partitioned the way they print: what goes in the
+/// parentheses, and what goes in a trailing `hint(…)` — shared by `write_written` and the
+/// block printer's open joint, so the two cannot come to spell one argument differently.
+fn written_parts(args: &[OpArg]) -> (Vec<String>, Vec<String>) {
     let mut parts: Vec<String> = Vec::new();
     let mut hints: Vec<String> = Vec::new();
-    for a in &w.args {
+    for a in args {
         match a {
             OpArg::Named(n, v) => parts.push(format!("{}: {}", n.text, sel_text(v))),
             OpArg::Ent(r) => {
@@ -1395,6 +1466,11 @@ fn write_written(out: &mut String, w: &Written) {
             },
         }
     }
+    (parts, hints)
+}
+
+fn write_written(out: &mut String, w: &Written) {
+    let (parts, hints) = written_parts(&w.args);
     let head = |out: &mut String, r: &Ref| {
         write_ref(out, r);
         out.push(' ');
@@ -2141,6 +2217,17 @@ impl Link {
     }
 }
 
+/// One boundary link of a body's trailing open joint, read while the chain's links are still
+/// in hand — what `open_finish` turns into an `OpenSide` once desugaring has given the link's
+/// declaration its statement id.
+struct OpenEnd {
+    kind: EntKind,
+    slot: usize,
+    declared: bool,
+    boundary: Ref,
+    entity: Ref,
+}
+
 /// The relation a **polymorphic** word states between two kinds.
 ///
 /// Beside `joint_relation`'s tangency table because it is the same sort of word: drafting
@@ -2333,6 +2420,13 @@ struct P<'a> {
     /// that parses (`line tangent arc` is a chain) needs no saying, so this is only read
     /// beside a failure (`chain_or_one`).
     declined: Option<(String, Span)>,
+    /// How many braced bodies are being read: a chain inside one may end mid-joint at the
+    /// body's `}`, and a statement there ends at `}` as it would at a line break (issue #38).
+    in_body: u32,
+    /// A body's trailing open joint, handed up from the chain that read it to the block whose
+    /// body it ends.  A `component` or a trace block takes it too — to refuse it, since
+    /// neither has a next copy to continue onto.
+    open: Option<OpenJoint>,
 }
 
 /// Read a program.
@@ -2354,7 +2448,7 @@ pub fn parse(src: &str) -> (Program, Vec<SynErr>) {
         );
     }
     let (lexed, errs) = lex(src);
-    let mut st = P { src, t: lexed.toks, i: 0, errs, declined: None };
+    let mut st = P { src, t: lexed.toks, i: 0, errs, declined: None, in_body: 0, open: None };
     let mut body: Vec<Stmt> = Vec::new();
     let mut comps: Vec<Component> = Vec::new();
     let mut families: Vec<CurveFamily> = Vec::new();
@@ -3007,6 +3101,7 @@ impl<'a> P<'a> {
         let mut links = vec![self.link()?];
         let mut joints: Vec<Joint> = Vec::new();
         let mut close: Option<Joint> = None;
+        let mut open: Option<Joint> = None;
         loop {
             let start = self.here().lo as usize;
             // `->` says the two links beside it share a boundary point; a word beside it says
@@ -3086,6 +3181,14 @@ impl<'a> P<'a> {
                 });
                 break;
             }
+            // a block body may end mid-joint: the marker (with any words) standing at the
+            // body's `}` threads the chain onto the next copy's first link (issue #38).  Only
+            // a *threaded* joint may dangle — an unthreaded trailing word still wants its
+            // right operand, and keeps its error.
+            if thread && self.in_body > 0 && self.peek() == Some(&Tok::P('}')) {
+                open = Some(Joint { thread, words, span: Span::new(start, hi), sound: true });
+                break;
+            }
             joints.push(Joint { thread, words, span: Span::new(start, hi), sound: true });
             links.push(self.link()?);
         }
@@ -3121,15 +3224,25 @@ impl<'a> P<'a> {
                 break;
             }
         }
-        self.end_of_stmt();
+        if open.is_none() {
+            self.end_of_stmt();
+        }
         let whole = Span::new(lo, self.prev_hi());
         // whether the line's end can take a trailing clause appended later: a chain ending
         // in a name (or sealed by `close`) can, one ending in a declaration cannot — the
         // declaration reads a trailing `at` as its own retired seed spelling
         let open_end = close.is_some()
             || matches!(links.last().map(|l| &l.body), Some(LinkBody::Ref(_)));
+        // the open joint's boundary links, read while they are in hand — desugar consumes them
+        let ends = match &open {
+            Some(j) => self.open_ends(j.span, &links),
+            None => None,
+        };
         let first = out.len();
-        self.desugar(links, joints, close, whole, next_id, out);
+        self.desugar(links, joints, close, open.is_some(), whole, next_id, out);
+        if let (Some(j), Some((fe, le))) = (open, ends) {
+            self.open_finish(j, fe, le, &out[first..], next_id);
+        }
         // a placement qualifies exactly one dimension (§13.1), so it is attached to the one
         // relation the line states, wherever that fell among the links.  A line stating
         // several offers no way to say which — guessing the first put callouts on statements
@@ -3221,16 +3334,18 @@ impl<'a> P<'a> {
 
     /// The statements a chain is sugar for, in the order their text sits: each link's prefix
     /// relations, its declaration, and between links the joint that binds them.
+    #[allow(clippy::too_many_arguments)]
     fn desugar(
         &mut self,
         mut links: Vec<Link>,
         mut joints: Vec<Joint>,
         mut close: Option<Joint>,
+        open: bool,
         whole: Span,
         next_id: &mut u32,
         out: &mut Vec<Stmt>,
     ) {
-        let chained = links.len() > 1 || close.is_some();
+        let chained = links.len() > 1 || close.is_some() || open;
         let n = links.len();
         // **A lone infix operator is a one-joint chain**, and that is a unification rather than
         // a new case — but the statement it makes occupies its whole line, so it is recorded as
@@ -3444,6 +3559,143 @@ impl<'a> P<'a> {
         let rel = self.joint_relation(word, args, at, left, right, threaded)?;
         *next_id += 1;
         Some(Stmt { id: StmtId(*next_id), kind: StmtKind::Relation(rel), span, chained })
+    }
+
+    /// One boundary link of an open joint, or the refusal that stops it: the joint threads the
+    /// body's own declarations — a name-link's kind is elaboration's to say, and its boundary
+    /// is what issue #35 will teach `thread` to read — and only a kind with ends threads.
+    fn open_end(&mut self, link: &Link, entry: bool) -> Option<OpenEnd> {
+        let Some(kind) = link.kind() else {
+            self.errs.push(SynErr {
+                span: link.span_of_name(),
+                message: format!(
+                    "`{}` is declared elsewhere, and an open joint threads the body's own \
+                     elements",
+                    ref_text(&link.entity())
+                ),
+            });
+            return None;
+        };
+        let Some((en, ex)) = kind.ends() else {
+            self.errs.push(SynErr {
+                span: link.span_of_name(),
+                message: format!(
+                    "a corner joins lines and arcs; a {} has no ends to thread",
+                    kind.as_str()
+                ),
+            });
+            return None;
+        };
+        let slot = if entry { en } else { ex };
+        let declared = match &link.body {
+            LinkBody::Decl(d) => {
+                d.children.get(slot).and_then(|v| v.first()).and_then(|k| k.as_ref()).cloned()
+            }
+            LinkBody::Ref(_) => None,
+        };
+        let entity = link.entity();
+        let boundary = match &declared {
+            Some(r) => r.clone(),
+            // the mint's own spelling: the dotted path *is* the anonymous child's name (§6.2)
+            None => Ref {
+                root: entity.root.clone(),
+                path: vec![Seg::Field(Name::new(boundary_name(kind, slot)))],
+                span: Span::default(),
+            },
+        };
+        Some(OpenEnd { kind, slot, declared: declared.is_some(), boundary, entity })
+    }
+
+    /// The two boundary links of a body's open joint, read while the links are in hand: what
+    /// the weld needs of each.  `None` where the joint cannot stand, each refusal its own
+    /// message — mirroring `thread`, whose corner this is, stated across the copy seam.
+    fn open_ends(&mut self, at: Span, links: &[Link]) -> Option<(OpenEnd, OpenEnd)> {
+        let fe = self.open_end(links.first()?, true);
+        let le = self.open_end(links.last()?, false);
+        let (fe, le) = (fe?, le?);
+        // the shared point is named by at most one side: both declared name two different
+        // points — copy i's exit and copy i+1's entry are different entities however alike
+        // their leaves read — and welding them is the longhand's `coincident` to state
+        if fe.declared && le.declared {
+            self.errs.push(SynErr {
+                span: at,
+                message: format!(
+                    "the joint names two points: `{}` leaves at `{}` and the next copy's `{}` \
+                     arrives at `{}`",
+                    ref_text(&le.entity),
+                    ref_text(&le.boundary),
+                    ref_text(&fe.entity),
+                    ref_text(&fe.boundary)
+                ),
+            });
+            return None;
+        }
+        Some((fe, le))
+    }
+
+    /// The open joint, settled: the boundary links' declaration statements are found among
+    /// what the chain just emitted, and each word becomes the statement an in-chain joint's
+    /// would — the right operand spelled through `next`, the flattener's own word for the
+    /// sibling copy, so `-> tangent` gets the regular At-form and `-> angle(a)` the plain
+    /// infix, per pair of copies.
+    fn open_finish(
+        &mut self,
+        j: Joint,
+        fe: OpenEnd,
+        le: OpenEnd,
+        made: &[Stmt],
+        next_id: &mut u32,
+    ) {
+        // both boundary links are declarations (`open_ends` said so), and links emit their
+        // declarations in link order — so the slice's first and last `Decl` are theirs
+        let mut decls = made.iter().filter(|s| matches!(s.kind, StmtKind::Decl(_)));
+        let first_id = decls.next().map(|s| s.id);
+        let last_id = decls.last().map(|s| s.id).or(first_id);
+        let (Some(first_id), Some(last_id)) = (first_id, last_id) else { return };
+        let lref = le.entity.clone();
+        let mut path = vec![Seg::Field(fe.entity.root.clone())];
+        path.extend(fe.entity.path.iter().cloned());
+        let rref = Ref { root: Name { text: "next".into(), span: j.span }, path, span: j.span };
+        let mut stmts = Vec::new();
+        for k in 0..j.words.len() {
+            let (w, args, wspan) = &j.words[k];
+            let (span, how) = if j.words.len() > 1 {
+                let out_of = j.words.len() as u32;
+                (*wspan, Chained::Member { of: j.span, fall: Fall::Joint, out_of })
+            } else {
+                (j.span, Chained::Joint)
+            };
+            stmts.extend(self.joint_stmt(
+                w,
+                args,
+                *wspan,
+                span,
+                (&lref, Some(le.kind)),
+                (&rref, Some(fe.kind)),
+                true,
+                how,
+                next_id,
+            ));
+        }
+        self.open = Some(OpenJoint {
+            stmts,
+            words: j.words,
+            last: OpenSide {
+                stmt: last_id,
+                kind: le.kind,
+                slot: le.slot,
+                declared: le.declared,
+                boundary: le.boundary,
+            },
+            first: OpenSide {
+                stmt: first_id,
+                kind: fe.kind,
+                slot: fe.slot,
+                declared: fe.declared,
+                boundary: fe.boundary,
+            },
+            span: j.span,
+        });
     }
 
     /// Resolve one threaded joint's shared point between link `li` (its exit) and link `ri`
@@ -3721,6 +3973,7 @@ impl<'a> P<'a> {
                 return None;
             }
             let body = self.braced_body(next_id)?;
+            self.no_open_joint("a trace block");
             return Some(CurveFamily {
                 name,
                 formals,
@@ -3836,6 +4089,7 @@ impl<'a> P<'a> {
             }
         }
         let body = self.braced_body(next_id)?;
+        self.no_open_joint("a component");
         Some(Component { name: Some(name), formals, body, span: Span::new(lo, self.prev_hi()) })
     }
 
@@ -3859,7 +4113,8 @@ impl<'a> P<'a> {
         let about = if self.eat_word("about") { Some(self.refr()?) } else { None };
         let binder = if self.eat_word("as") { Some(self.ident()?) } else { None };
         let body = self.braced_body(next_id)?;
-        Some(Block { kind, count, about, binder, body, span: Span::new(lo, self.prev_hi()) })
+        let joint = self.open.take();
+        Some(Block { kind, count, about, binder, body, joint, span: Span::new(lo, self.prev_hi()) })
     }
 
     fn braced_body(&mut self, next_id: &mut u32) -> Option<Vec<Stmt>> {
@@ -3867,6 +4122,13 @@ impl<'a> P<'a> {
         if !self.want_p('{') {
             return None;
         }
+        self.in_body += 1;
+        let got = self.braced_stmts(next_id);
+        self.in_body -= 1;
+        got
+    }
+
+    fn braced_stmts(&mut self, next_id: &mut u32) -> Option<Vec<Stmt>> {
         let mut body = Vec::new();
         loop {
             self.skip_ends();
@@ -3885,6 +4147,20 @@ impl<'a> P<'a> {
             }
         }
         Some(body)
+    }
+
+    /// Refuse the open joint a body just handed up, where the construct around it has no next
+    /// copy for the chain to continue onto.
+    fn no_open_joint(&mut self, what: &str) {
+        if let Some(j) = self.open.take() {
+            self.errs.push(SynErr {
+                span: j.span,
+                message: format!(
+                    "a chain ends mid-joint only in a `repeat`, `cycle` or `ring`, where it \
+                     threads onto the next copy — {what} has none (spec §6.6)"
+                ),
+            });
+        }
     }
 
     /// One argument of an instantiation: an entity by name, or a number worked out here.
