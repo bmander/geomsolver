@@ -193,13 +193,11 @@ impl<'a> Walk<'a> {
                     if let Some(kind) = p.declare {
                         let abs = format!("{prefix}{}", p.name.text);
                         self.names.insert(abs.clone());
-                        let name = Name { text: abs, span: p.name.span };
                         let d = Decl {
                             kind,
-                            name: match scope.copies {
-                                true => DeclName::Copy(name),
-                                false => DeclName::Written(name),
-                            },
+                            // the port's own written name, under the prefix — the same rule
+                            // every ordinary declaration goes through above
+                            name: DeclName::Written(p.name.clone()).prefixed(abs, scope.copies),
                             children: vec![Vec::new(); count_children(kind)],
                             seed: vec![0.0; count_scalars(kind)],
                             seed_text: vec![None; count_scalars(kind)],

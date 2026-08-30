@@ -522,10 +522,10 @@ impl DeclName {
     /// two entities the resolver must tell apart.
     pub fn prefixed(&self, text: String, copies: bool) -> DeclName {
         let n = Name { text, span: self.span() };
-        match (self, copies) {
-            (DeclName::Key(_), _) => DeclName::Key(n),
-            (DeclName::Copy(_), _) | (_, true) => DeclName::Copy(n),
-            (DeclName::Written(_), false) => DeclName::Written(n),
+        match self {
+            DeclName::Key(_) => DeclName::Key(n),
+            DeclName::Written(_) if !copies => DeclName::Written(n),
+            _ => DeclName::Copy(n),
         }
     }
 }
@@ -3362,12 +3362,7 @@ impl<'a> P<'a> {
                     );
                 }
             }
-            let ent = match &link.body {
-                LinkBody::Decl(d) => {
-                    Ref { root: d.name.key().clone(), path: Vec::new(), span: d.name.span() }
-                }
-                LinkBody::Ref(r) => r.clone(),
-            };
+            let ent = link.entity();
             for (word, args) in &link.prefixes {
                 let sp = word.span;
                 let rel = Relation {

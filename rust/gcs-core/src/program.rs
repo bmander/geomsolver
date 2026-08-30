@@ -635,12 +635,18 @@ pub fn elaborate(p: &Program) -> Elaborated {
         // copy's carries its prefix, so only a name the source wrote twice can actually collide
         let key = &d.name.key().text;
         if let Some(&was) = res.declared_at.get(key) {
+            // …but the message shows what the source calls it, and spells the kind where it
+            // calls it nothing, so a key cannot leak here even if that argument ever breaks
+            let who = d.name.shown().map_or_else(
+                || crate::syntax::decl_head(d.kind, &d.name),
+                |n| n.text.clone(),
+            );
             diags.push(Diag {
                 code: Code::E001,
                 span: d.name.span(),
                 stmt: Some(st.id),
                 message: format!(
-                    "`{key}` is declared twice; the first is at line {}",
+                    "`{who}` is declared twice; the first is at line {}",
                     line_col(p.text(), was.lo).0
                 ),
             });
@@ -975,8 +981,13 @@ fn compile_trace(
             }
         };
         if scope.insert(d.name.key().text.clone(), e).is_some() {
-            // two anonymous declarations are two offsets, so only a written name can be here
-            return Err((st.span, format!("`{}` is declared twice", d.name.key().text)));
+            // two anonymous declarations are two offsets, so only a written name can collide —
+            // but the message asks `shown` all the same, so a key cannot leak into it
+            let who = d.name.shown().map_or_else(
+                || crate::syntax::decl_head(d.kind, &d.name),
+                |n| n.text.clone(),
+            );
+            return Err((st.span, format!("`{who}` is declared twice")));
         }
     }
 
