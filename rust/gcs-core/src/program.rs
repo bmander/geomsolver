@@ -25,8 +25,8 @@ use crate::model::{EntKind, EntRef, Field, Sketch};
 use crate::rng::Rng;
 use crate::style::Classes;
 use crate::syntax::{
-    entity_name, line_col, num, Arg, Decl, Gauge, Kid, Name, Orient, Program, Ref, Relation, Seg,
-    Span, Stmt, StmtId, StmtKind,
+    entity_name, line_col, num, Arg, Decl, Gauge, Kid, Name, Named, Orient, Program, Ref, Relation,
+    Seg, Span, Stmt, StmtId, StmtKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -155,42 +155,12 @@ pub struct SourceMap {
     /// Nor is it "a name that can be written back into source" — that is `syntax::hidden`'s
     /// narrower question, which a block prefix fails and which is why `hidden` survives.
     pub names: BTreeMap<EntRef, Vec<String>>,
+    /// Of those, the entities whose name a statement may also be **written** with.  Strictly
+    /// narrower than `names`, and a block's copy is the whole of the difference: `#3.0.p` is
+    /// what the source calls that copy and carries a `#` no tokenizer will give back.
+    writable: BTreeSet<EntRef>,
     by_name: BTreeMap<String, EntRef>,
     made: BTreeMap<StmtId, Vec<Made>>,
-}
-
-/// Whether a name being bound is one the source **calls the thing** — an identity to publish,
-/// show and select by — or only a key to resolve through.
-///
-/// Known where the name is minted and never again: the parser either took an identifier for a
-/// declaration or declined to (`Decl::named`), and a prefix the flattener puts on the front is a
-/// written name said in an instance's terms.  So `bind` is told, rather than asked to work it
-/// back out of the characters — which it could do only by the `#a` marker the anonymous mint
-/// happens to use, a spelling nothing states and nothing tests (issue #39).
-///
-/// `No` is exactly one thing: an anonymous declaration's key (`#a41`, `#a41.p2`), which is
-/// derived from an offset any edit above it moves and which the source calls nothing.  A block
-/// prefix (`#4.0.p`) is `Yes` — it has been published and selected by since the flat subset, and
-/// it is stable, being the statement's id.
-///
-/// **`Yes` is not "writable"**, and the two must not be confused: a block prefix carries a `#`
-/// and so can no more be spliced into a statement than a key can.  `syntax::hidden` is that
-/// narrower question, and this does not answer it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Say {
-    Yes,
-    No,
-}
-
-impl Say {
-    /// A declaration's own name, and every dotted path under it: a child of a thing the source
-    /// calls nothing is called nothing either.
-    pub(crate) fn of(d: &Decl) -> Say {
-        match d.named {
-            true => Say::Yes,
-            false => Say::No,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -218,22 +188,44 @@ impl SourceMap {
         self.of_constraint.get(&id)
     }
 
-    /// File a name under an entity.  Every name resolves; only a name `say` says the source can
-    /// utter is also one the entity is *called*.
+    /// File a name under an entity, told what kind of name it is.
+    ///
+    /// The three questions of `syntax::Named`, and one table each: *everything* resolves, only a
+    /// name the source calls the thing is one to show, and only some of those may be written
+    /// into a statement.  A reader asks the table and never the characters (issue #39).
     ///
     /// A name minted after the map was made — `edit::reconcile` splicing one into an anonymous
     /// declaration — comes through here too, and needs nothing special: the entity had no name
     /// to be preferred over, because the key it elaborated under was never filed as one.
-    pub(crate) fn bind(&mut self, name: &str, e: EntRef, say: Say) {
+    pub(crate) fn bind(&mut self, name: &str, e: EntRef, named: Named) {
         self.by_name.insert(name.to_string(), e);
-        if say == Say::Yes {
+        if named.shown() {
             self.names.entry(e).or_default().push(name.to_string());
+        }
+        if named.writable() {
+            self.writable.insert(e);
         }
     }
 
     /// What the source calls an entity, where it calls it anything.
     pub fn name_of(&self, e: EntRef) -> Option<&String> {
         self.names.get(&e)?.first()
+    }
+
+    /// The same, where a statement may also be **written** with it — so `None` for one copy of a
+    /// block, which the source calls `#3.0.p` and cannot say.
+    pub(crate) fn writable_name(&self, e: EntRef) -> Option<&String> {
+        self.writable.contains(&e).then(|| self.name_of(e)).flatten()
+    }
+
+    /// Every entity a statement made, in the order `program::build` made them — the declaration's
+    /// own entity first, then the children it minted.  Two callers walk it for that reason
+    /// (`edit::commit_seeds`, `edit::reconcile`), so the order is stated once, here.
+    pub(crate) fn ents_made_by(&self, s: StmtId) -> impl Iterator<Item = EntRef> + '_ {
+        self.made_by(s).iter().filter_map(|m| match *m {
+            Made::Ent(e) => Some(e),
+            _ => None,
+        })
     }
 
     fn record(&mut self, st: &Stmt, what: Made) {
@@ -323,7 +315,7 @@ impl Elaborated {
             match *m {
                 Made::Ent(r) => {
                     if let StmtKind::Decl(d) = &st.kind {
-                        self.map.bind(&d.name.text, r, Say::of(d));
+                        self.map.bind(&d.name.text, r, d.named);
                     }
                     self.map.of_entity.insert(r, site);
                 }
@@ -694,7 +686,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
             match build(&mut sk, &res, d, st, &mut diags, &mut anon) {
                 Some(e) => {
                     built.insert(e, true);
-                    map.bind(&d.name.text, e, Say::of(d));
+                    map.bind(&d.name.text, e, d.named);
                     map.record(st, Made::Ent(e));
                     // an anonymous child's name *is* its dotted path, so it is bound like any
                     // other: that is what lets a dimension name it, a selection survive a
@@ -703,7 +695,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
                     // `l.p1` under a named line, nothing under an anonymous one
                     for (name, k) in anon {
                         built.insert(k, true);
-                        map.bind(&name, k, Say::of(d));
+                        map.bind(&name, k, d.named);
                         map.record(st, Made::Ent(k));
                     }
                 }
@@ -1286,7 +1278,7 @@ pub(crate) fn child_names(d: &Decl, base: &str) -> Vec<String> {
 /// happens to use, and the broader of the two readings shows one entity by its path in one
 /// window and by its index in another.
 fn shown(sk: &Sketch, d: &Decl) -> String {
-    match d.named {
+    match d.named.shown() {
         false => crate::syntax::entity_name(EntRef::new(d.kind, sk.count(d.kind))),
         true => d.name.text.clone(),
     }
@@ -2009,7 +2001,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
     Decl {
         kind: e.kind,
         name: Name::new(entity_name(e)),
-        named: true,
+        named: Named::Written,
         children,
         seed_text: vec![None; seed.len()],
         seed_spans: vec![Span::default(); seed.len()],

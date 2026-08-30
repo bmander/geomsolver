@@ -293,6 +293,30 @@ fn a_gesture_on_a_component_made_anonymous_element_says_why_it_is_refused() {
     assert!(why.contains("name"), "{why}");
 }
 
+/// **A name is three questions, not two** (issue #39), and the flattener's two kinds of prefix
+/// are what separate the second from the third: a component instance's prefix is its own name
+/// and stays writable, a block's is the statement's id and is not.  `syntax::Named` records
+/// which at the one walk that knows, so no reader tells them apart by the `#`.
+#[test]
+fn an_instance_prefix_is_writable_and_a_block_prefix_is_not() {
+    let e = read(
+        "component Strut() {\n  point p hint(x: 1, y: 0)\n}\ns1: Strut()\n\
+         cycle 2 {\n  point q hint(x: 0, y: 0)\n}\n",
+    );
+    // the instance's: the source can say `s1.p`, so all three questions answer yes
+    let inst = EntRef::point(0);
+    assert_eq!(e.map.name_of(inst).map(String::as_str), Some("s1.p"));
+    assert!(e.map.ent_named("s1.p") == Some(inst), "and it resolves");
+    // the block's: shown and selected by, and never written into a statement — that last is
+    // `writable_name`, which is the core's own and is exercised through the refusal below
+    let copy = EntRef::point(1);
+    assert_eq!(e.map.name_of(copy).map(String::as_str), Some("#4.0.q"));
+    assert_eq!(e.map.ent_named("#4.0.q"), Some(copy), "it resolves");
+    // an anonymous declaration inside a block is neither
+    let e = read("cycle 2 {\n  line\n}\n");
+    assert_eq!(e.map.name_of(EntRef::line(0)), None);
+}
+
 /// **What the source calls a thing and what a statement can be written with are two questions**,
 /// and a block prefix is what separates them: `#3.0.p` is published and selected by — it says
 /// which copy, which an index cannot — and it carries a `#` no tokenizer will give back.  So a

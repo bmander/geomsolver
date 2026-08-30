@@ -407,23 +407,68 @@ impl From<Hint> for OpArg {
     }
 }
 
+/// What a declaration's name is, which is **three** things and not two (issue #39).
+///
+/// There are three questions anyone asks about a name and they have three different answers, so
+/// a predicate over the characters can only ever get two of them right.  Each is known where the
+/// name is minted — the parser took an identifier or declined to, the flattener prefixed with an
+/// instance's name or with a block's id — and never again, so it is recorded here and every
+/// later reader is *told*.
+///
+/// | | resolves | shown, selected by | written into a statement |
+/// |---|---|---|---|
+/// | `Written` — `l0`, `s1.p0` | yes | yes | yes |
+/// | `Copy` — `#3.0.p` | yes | yes | **no** |
+/// | `No` — `#a41` | yes | **no** | no |
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Named {
+    /// The source wrote the name, and every prefix in front of it is a component instance's own
+    /// name — so the whole dotted path is one a statement may be written with.
+    #[default]
+    Written,
+    /// The source wrote the name, but a `cycle` or a `repeat` stands between: the flattener
+    /// spells each copy `#3.0.p`, which says *which* copy — what a window shows and a selection
+    /// is kept on, and stable, being the statement's id — and which carries a `#` no tokenizer
+    /// will give back.
+    Copy,
+    /// The source wrote no name.  The parser minted a key — `#a` and the declaration's own
+    /// offset — which resolves and is nothing else: not shown, not selected on, not written.
+    No,
+}
+
+impl Named {
+    /// Whether the source calls the thing this: an identity to publish, show and select by.
+    pub fn shown(self) -> bool {
+        self != Named::No
+    }
+
+    /// Whether a statement may be *written* with it.  Strictly narrower than `shown`, and a
+    /// block's copy is the whole of the difference.
+    pub fn writable(self) -> bool {
+        self == Named::Written
+    }
+
+    /// The same declaration seen from inside one copy of a block, whose prefix the flattener is
+    /// about to put on the front.  A name the source never wrote is still one it never wrote.
+    pub fn in_copy(self) -> Named {
+        match self {
+            Named::No => Named::No,
+            _ => Named::Copy,
+        }
+    }
+}
+
 /// `point p0 hint(x: 0, y: 0)`, `circle c0(center: p2) hint(r: 25)`,
 /// `spline s0(p3, p4, p5, p6) knots [...]`.
 #[derive(Clone, Debug)]
 pub struct Decl {
     pub kind: EntKind,
     pub name: Name,
-    /// Whether the **source** wrote that name.  An anonymous declaration carries one all the
-    /// same — `#a` and its own offset, so a chain's corner and the desugared statements have
-    /// something to resolve by — but a key is not a name, and this is the *only* place the
-    /// difference is known first-hand: the parser either took an identifier or declined to.
-    /// Every later reader is told (`SourceMap::bind`, `program::shown`, `edit::reconcile`)
-    /// rather than asking the characters, which could tell a key from a name only by the `#a`
-    /// the mint happens to use.
-    ///
-    /// A prefix the flattener puts on the front does not touch it: `#5.0.p0` is a name the
-    /// source wrote, said in an instance's terms.
-    pub named: bool,
+    /// What this declaration's name **is** — see `Named`.  Written where it is known first-hand
+    /// and nowhere else: the parser either took an identifier or declined to, and the flattener
+    /// knows whether the prefix it is putting on the front is an instance's own name or a
+    /// block's id.
+    pub named: Named,
     /// One per `Child`/`List` field of `EntKind::fields`, in that order; a `List` field holds as
     /// many as were written.  Empty throughout — `line l` — is the anonymous form: the kind's
     /// children are minted, unnamed, and reached as `l.p1`.
@@ -3825,7 +3870,8 @@ impl<'a> P<'a> {
         // error — whatever stands next, identifier or not.
         let named = kind == EntKind::Curve
             || matches!(self.peek(), Some(Tok::Ident(w)) if names_decl(w));
-        let name = if named {
+        let named = if named { Named::Written } else { Named::No };
+        let name = if named.shown() {
             self.ident()?
         } else {
             // an Ident declined here was very possibly *meant* as a name — remembered, so a

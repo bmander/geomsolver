@@ -157,22 +157,24 @@ Conventions:
   is the cause no other error can see.  An anonymous declaration still carries a `Decl::name`:
   a key the source cannot write — `#a` and its own offset, the flattener's block-prefix device
   marked apart — with an **empty span at the point a real name would go** (`hint_span`'s
-  idiom), and a `Decl::named` saying the source wrote none.  **Whether a name is one a statement
-  may say is known where it is minted and told, never sniffed back out of the characters**
-  (issue #39): the parser either took an identifier or declined to, and a prefix the flattener
-  puts on the front is a written name said in an instance's terms.  So `SourceMap::bind` takes a
-  `program::Say` and files the name accordingly — into `by_name` always, since *everything*
-  resolves, and into `names` only when the source calls the thing that.  The two tables are two
-  questions and since anonymous elements they have two answers, so `map.names` is now exactly
-  "what the source calls the thing": `name_of` is `names.first()`, an anonymous entity has no
-  entry, and no consumer screens a string.  A block prefix (`#4.0.p`) is `Say::Yes` — published
-  and selected by since the flat subset, and stable, being the statement's id — where a
-  declaration's key is `Say::No`, being derived from an offset any edit above it moves.
-  **`Say::Yes` is not "writable"**, and a third question is exactly what a block prefix is for:
-  it carries a `#` and so can no more be spliced into a statement than a key can.  That one is
-  `syntax::hidden`, asked where a name is about to *reach the source* — `write_decl`, a
-  thread-filled slot's `Kid::Ref`, and `reconcile`'s gate, which refuses a gesture on one copy
-  of a block with the cause instead of writing the prefix out for `adopt` to fail on.
+  idiom), and a `syntax::Named` saying what its name *is*.  **A name is three questions, not one,
+  and each is known where the name is minted and told — never sniffed back out of the
+  characters** (issue #39).  The three: does it **resolve**, does the source **call the thing
+  that** (so: shown, published, selected by), and may a statement be **written** with it.
+  `Named` is the three answers — `Written` (`l0`, `s1.p0`), `Copy` (`#3.0.p`, one copy of a
+  block) and `No` (`#a41`, an anonymous declaration's key) — written by the two mints that know:
+  the parser took an identifier or declined to, and **the flattener knows whether the prefix it
+  is putting on the front is an instance's own name or a block's id** (`Scope::copies`, and
+  `Named::in_copy`).  `SourceMap::bind` is then told, and files each name into as many of its
+  three tables as apply: `by_name` always, `names` when `shown()`, `writable` when `writable()`.
+  So `map.names` is exactly "what the source calls the thing" — `name_of` is `names.first()`, an
+  anonymous entity has no entry — and `writable_name` is the narrower one `edit::reconcile`'s
+  gate asks, refusing a gesture on one copy of a block *with the cause* instead of writing the
+  prefix out for `adopt` to fail on.  Two answers would not do: a predicate over characters can
+  separate `Copy` from `No` only by the `#a` marker the anonymous mint happens to use, which is
+  the fragility the issue names, and it is `Copy` — unwritable but shown — that makes the two
+  spellings disagree.  `syntax::hidden` survives only where the question really is about
+  characters and no `Decl` is in hand (`write_decl`, a thread-filled slot's `Kid::Ref`).
   The key is what a chain's corner welds by and what `res` resolves, and it must
   never reach the source: `write_decl` spells the statement without it,
   `commit_seeds` leaves a thread-filled slot holding one *empty* — forcing labels on the kept
@@ -183,7 +185,9 @@ Conventions:
   declaration at that empty span, **every entity the statement made** renamed with it — a child
   by the dotted path `program::child_names` would have given it, read off its *position* among
   the parent's children, which is where the path came from in the first place — and `bind`ed
-  `Say::Yes`, so the next gesture in the same elaboration reads the name where it read nothing.
+  `Named::Written`, so the next gesture in the same elaboration reads a name where it read
+  nothing.  What a statement made, in the order `build` made it, is `SourceMap::ents_made_by`,
+  which `commit_seeds` and `reconcile` share so the ordering invariant is stated once.
   Its four guards are then one question, "does the source call this anything": named, no
   statement of the root's to name it on (refused with the cause, before anything is written),
   named since the map was made, or mint.

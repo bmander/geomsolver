@@ -18,7 +18,7 @@ use crate::expr::{self, Aff};
 use crate::model::EntKind;
 use crate::units::Units;
 use crate::syntax::{
-    BlockKind, Component, Decl, Name, Program, Ref, Seg, Span, Stmt, StmtKind, Ty,
+    BlockKind, Component, Decl, Name, Named, Program, Ref, Seg, Span, Stmt, StmtKind, Ty,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -52,6 +52,11 @@ struct Scope {
     prefixes: Vec<String>,
     binds: BTreeMap<String, String>,
     cyc: Option<Cyc>,
+    /// Whether a `cycle` or a `repeat` stands anywhere above: the prefix in force then carries a
+    /// block's id (`#3.0.`) rather than an instance's name, and a declaration under it is one
+    /// *copy* — shown and selected by, never written into a statement.  This walk is the only
+    /// place that is known (`syntax::Named`, issue #39).
+    copies: bool,
     /// The numbers in force where the statement was written — the enclosing counts, params and
     /// block binders.  An index (`p[i + 1]`) is an expression over exactly these, and references
     /// are resolved in a later pass where the walk's own environment is gone, so it travels here.
@@ -154,6 +159,9 @@ impl<'a> Walk<'a> {
                     self.names.insert(abs.clone());
                     let mut d2 = d.clone();
                     d2.name = Name { text: abs, span: d.name.span };
+                    if scope.copies {
+                        d2.named = d.named.in_copy();
+                    }
                     // a curve's numbers and the interval it is drawn over are written over the
                     // parameters in scope too, and are worked out in the same pass
                     for (_, t) in d2.values.iter_mut() {
@@ -191,7 +199,10 @@ impl<'a> Walk<'a> {
                         let d = Decl {
                             kind,
                             name: Name { text: abs, span: p.name.span },
-                            named: true,
+                            named: match scope.copies {
+                                true => Named::Copy,
+                                false => Named::Written,
+                            },
                             children: vec![Vec::new(); count_children(kind)],
                             seed: vec![0.0; count_scalars(kind)],
                             seed_text: vec![None; count_scalars(kind)],
@@ -237,6 +248,7 @@ impl<'a> Walk<'a> {
                             .collect(),
                         binds,
                         cyc: None,
+                        copies: scope.copies,
                         vals: sub_vals.clone(),
                     };
                     sc.cyc = scope.cyc.clone();
@@ -278,6 +290,9 @@ impl<'a> Walk<'a> {
                                 k,
                                 n,
                             }),
+                            // the prefix just built is the block's id, so every declaration
+                            // below is a copy, however deep and through however many instances
+                            copies: true,
                             vals: sub.clone(),
                         };
                         let mut p2 = path.to_vec();

@@ -96,9 +96,9 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
     // The walk is over the root component's own statements, which is the question `in_root` was
     // asking one statement at a time: a statement inside a component is written in the
     // component's terms, and a pose put there is a pose put on every instance of it.  What each
-    // one made is `SourceMap::made_by`, in the order `build` made it — the declaration's own
-    // entity first, then the children it minted — so neither the entity index nor the
-    // find-by-kind that re-derived the parent is needed.
+    // one made is `SourceMap::ents_made_by`, whose order — the declaration's own entity first,
+    // then the children it minted — is what `reconcile` reads too, so neither the entity index
+    // nor the find-by-kind that re-derived the parent is needed.
     let mut edits = Vec::new();
     for st in &prog.root().body {
         let StmtKind::Decl(d) = &st.kind else { continue };
@@ -107,7 +107,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             continue;
         }
         // a declaration that could not be built made nothing, and has no pose to record
-        let Some(Made::Ent(parent)) = e.map.made_by(st.id).first().copied() else { continue };
+        let Some(parent) = e.map.ents_made_by(st.id).next() else { continue };
         let kids = sk.children(parent);
         // the statement's slot for each child, in field order — the same order `sk.children`
         // hands them back in.  A slot may be empty (an implicit child), so for the per-slot
@@ -432,7 +432,7 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
     let d = Decl {
         kind: EntKind::Point,
         name: syntax::Name::new(name.clone()),
-        named: true,
+        named: syntax::Named::Written,
         children: Vec::new(),
         seed: vec![x, y],
         seed_text: vec![None, None],
@@ -483,7 +483,7 @@ pub fn add_entity(prog: &Program, kind: EntKind, args: &[String], seed: &[f64]) 
     let d = Decl {
         kind,
         name: syntax::Name::new(name.clone()),
-        named: true,
+        named: syntax::Named::Written,
         children,
         seed: (0..n_scalar).map(|i| seed.get(i).copied().unwrap_or(0.0)).collect(),
         seed_text: vec![None; n_scalar],
@@ -854,7 +854,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
     let mut adds: Vec<StmtKind> = Vec::new();
     // what an appended statement was written *for*, so the map can be extended onto it without
     // elaborating anything
-    let mut made: Vec<crate::program::Made> = Vec::new();
+    let mut made: Vec<Made> = Vec::new();
 
     // what the elaboration made, per kind, is the high-water mark: past it is new
     let mut high: std::collections::BTreeMap<EntKind, usize> = std::collections::BTreeMap::new();
@@ -910,27 +910,23 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         if minted.contains_key(r) || renamed.contains_key(r) {
             continue; // new (its statement carries the name), or its statement already named
         }
-        // What the source calls it, if it calls it anything — and, where it does, whether that
-        // name is one a statement can be *written* with.  The two are different questions and a
-        // **block prefix** is what separates them: `#3.0.p` is published and selected by, and
-        // carries a `#` no tokenizer will give back, so an appended statement naming it would
-        // not parse.  `syntax::hidden` is that narrower question and this is where it belongs —
-        // the alternative is the generic "could not be written down" from `adopt`, half a
-        // function later and with the cause lost.
-        match e.map.name_of(*r) {
-            Some(n) if !syntax::hidden(n) => continue, // the source already calls it something
-            Some(_) => {
-                return Edit::none(
-                    prog,
-                    Some(
-                        "that is one copy of a block, and only the flattener has a name for \
-                         it; write the statement inside the block, where it holds for every \
-                         copy"
-                            .into(),
-                    ),
-                )
-            }
-            None => {}
+        if e.map.writable_name(*r).is_some() {
+            continue; // the source already calls it something a statement may say
+        }
+        // Called something a statement may *not* say, which is one copy of a block: `#3.0.p`
+        // says which copy — so it is shown and selected by — and carries a `#` no tokenizer
+        // will give back.  Two questions, and the map answers both from what the flattener told
+        // it; the alternative was writing the prefix out for `adopt` to fail on half a function
+        // later, with the cause lost.
+        if e.map.name_of(*r).is_some() {
+            return Edit::none(
+                prog,
+                Some(
+                    "that is one copy of a block, and only the flattener has a name for it; \
+                     write the statement inside the block, where it holds for every copy"
+                        .into(),
+                ),
+            );
         }
         let Some(site) = e.map.of_entity.get(r) else { continue };
         if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
@@ -947,17 +943,14 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             );
         }
         let Some(d) = decl_of(prog, site) else { continue };
-        if d.named {
+        if d.named.shown() {
             continue; // named since the map was made
         }
         // One name per statement, and *every* entity the statement made follows it at once —
         // the declaration first, then the children it minted, which is the order they were
         // recorded in.  All of them, because a later gesture in this same elaboration must
         // find a name where this one left the source saying a name.
-        let mut made_ents = e.map.made_by(site.stmt).iter().filter_map(|m| match *m {
-            crate::program::Made::Ent(k) => Some(k),
-            _ => None,
-        });
+        let mut made_ents = e.map.ents_made_by(site.stmt);
         let Some(parent) = made_ents.next() else { continue };
         let name = next_name(&mut taken, d.kind);
         named.push(Splice { at: d.name.span, with: format!(" {name}") });
@@ -968,7 +961,9 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         renamed.insert(parent, name.clone());
         // each child's new name is the dotted path `program::child_names` would have given it
         // under the name just chosen — its slot read off its *position* among the parent's
-        // children, which is where the path came from in the first place
+        // children, which is where the path came from in the first place.  A `List` kind has no
+        // dotted paths and mints no anonymous children either (`build` refuses with E103), which
+        // is the same pairing `commit_seeds` spells out over its own slot walk.
         let paths = crate::program::child_names(d, &name);
         let kids = sk.children(parent);
         for k in made_ents {
@@ -996,7 +991,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         d.name = syntax::Name::new(name.clone());
         rename_children(&mut d, sk, r, &name_of);
         names.push(name.clone());
-        made.push(crate::program::Made::Ent(r));
+        made.push(Made::Ent(r));
         adds.push(StmtKind::Decl(d));
     }
 
@@ -1014,7 +1009,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
                 *r = syntax::Ref::new(name_of(*er));
             }
         }
-        made.push(crate::program::Made::Con(c.id));
+        made.push(Made::Con(c.id));
         adds.push(StmtKind::Relation(rel));
     }
     let mut doomed: std::collections::BTreeSet<crate::syntax::StmtId> =
@@ -1132,7 +1127,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             None => crate::syntax::Gauge::Ground(syntax::Ref::new(k.0.clone())),
             Some(f) => crate::syntax::Gauge::Fix(syntax::Ref::field(k.0.clone(), f)),
         }));
-        made.push(crate::program::Made::Gauge);
+        made.push(Made::Gauge);
     }
 
     if adds.is_empty() && doomed.is_empty() && flags.is_empty() && named.is_empty() {
@@ -1175,7 +1170,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
     // which it was called nothing until now, so a later reconcile in this same elaboration
     // reads a name and not the key it elaborated under
     for (r, n) in &renamed {
-        e.map.bind(n, *r, crate::program::Say::Yes);
+        e.map.bind(n, *r, syntax::Named::Written);
     }
     // and now the seeds, against the source that finally has statements for everything
     let after = e.program.clone();
