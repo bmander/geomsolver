@@ -527,10 +527,7 @@ fn spans(prog: &Program) -> BTreeMap<StmtId, Span> {
     fn stamp(st: &Stmt, out: &mut BTreeMap<StmtId, Span>) {
         out.insert(st.id, st.span);
         if let StmtKind::Block(b) = &st.kind {
-            for inner in b.body.iter() {
-                stamp(inner, out);
-            }
-            for inner in b.joint.iter().flat_map(|j| j.stmts.iter()) {
+            for inner in b.stmts() {
                 stamp(inner, out);
             }
         }

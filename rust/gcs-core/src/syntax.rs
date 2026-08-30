@@ -394,8 +394,23 @@ pub struct OpenJoint {
     pub last: OpenSide,
     /// The chain's first link, whose entry the next copy is entered by.
     pub first: OpenSide,
+    /// Which side's slot names the shared point in the source.  At most one may (§6.6) — the
+    /// parser refuses both, and this is that refusal carried as a fact rather than a pair of
+    /// booleans a reader must remember cannot both be set.
+    pub named: OpenNamed,
     /// The joint's own text — the marker through the last word — for errors about it.
     pub span: Span,
+}
+
+/// Which of an open joint's sides declares the shared point.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OpenNamed {
+    /// Neither: the chain mints it, on the earlier-built side.
+    Neither,
+    /// The first link's entry names it (`line s(p) ->` — the point is the next copy's `p`).
+    First,
+    /// The last link's exit names it.
+    Last,
 }
 
 /// One side of an open joint: enough to find the link's declaration in a copy's expansion and
@@ -408,8 +423,6 @@ pub struct OpenSide {
     pub kind: EntKind,
     /// Which child slot the thread fills — exit for the last link, entry for the first.
     pub slot: usize,
-    /// Whether the slot names its point in the source — at most one side may (§6.6).
-    pub declared: bool,
     /// The point where the chain crosses this side, body-relative: the slot's declared
     /// reference, or the dotted boundary path the mint would use (`<key>.p1`).  What the
     /// *other* side's slot is filled with, under `next.`/`prev.`.
@@ -424,6 +437,24 @@ pub enum BlockKind {
     Cycle,
     /// A cycle whose instances are claimed to be congruent about an axis.
     Ring,
+}
+
+impl BlockKind {
+    /// Whether the copies close: `next` wraps, and a trailing open joint's last pair is the
+    /// loop's closure.  `repeat` alone does not — the one rule, read wherever a pair or a
+    /// sibling reference asks it, so the joint's statements and its welds cannot disagree on
+    /// which pairs exist.
+    pub fn wraps(self) -> bool {
+        self != BlockKind::Repeat
+    }
+}
+
+impl Block {
+    /// The statements the block holds: its body's, and its trailing joint's — stated once, so
+    /// a walker over the program cannot forget the joint's.
+    pub fn stmts(&self) -> impl Iterator<Item = &Stmt> {
+        self.body.iter().chain(self.joint.iter().flat_map(|j| j.stmts.iter()))
+    }
 }
 
 /// One `name: value` of a `hint(…)` clause, read but not yet resolved: the key, where it was
@@ -1019,23 +1050,16 @@ impl Program {
     /// `edit::commit_seeds` and once per entity again by `reconcile`, and `stmts` builds a `Vec`
     /// of the whole program to hand back.  Here it short-circuits and allocates nothing.
     pub fn stmt(&self, id: StmtId) -> Option<&Stmt> {
-        fn find(body: &[Stmt], id: StmtId) -> Option<&Stmt> {
-            for st in body.iter() {
-                if st.id == id {
-                    return Some(st);
-                }
-                if let StmtKind::Block(b) = &st.kind {
-                    if let Some(hit) = find(&b.body, id) {
-                        return Some(hit);
-                    }
-                    if let Some(hit) = b.joint.as_ref().and_then(|j| find(&j.stmts, id)) {
-                        return Some(hit);
-                    }
-                }
+        fn find(st: &Stmt, id: StmtId) -> Option<&Stmt> {
+            if st.id == id {
+                return Some(st);
+            }
+            if let StmtKind::Block(b) = &st.kind {
+                return b.stmts().find_map(|inner| find(inner, id));
             }
             None
         }
-        self.components.iter().find_map(|c| find(&c.body, id))
+        self.components.iter().find_map(|c| c.body.iter().find_map(|st| find(st, id)))
     }
 
     /// The innermost statement covering a byte offset — a caret, turned into what it is written
@@ -1055,10 +1079,7 @@ impl Program {
         fn walk<'a>(st: &'a Stmt, out: &mut Vec<&'a Stmt>) {
             out.push(st);
             if let StmtKind::Block(b) = &st.kind {
-                for inner in b.body.iter() {
-                    walk(inner, out);
-                }
-                for inner in b.joint.iter().flat_map(|j| j.stmts.iter()) {
+                for inner in b.stmts() {
                     walk(inner, out);
                 }
             }
@@ -2390,6 +2411,57 @@ fn boundary_name(k: EntKind, slot: usize) -> &'static str {
         .unwrap_or("end")
 }
 
+/// How one of a joint's words records its spelling: a word with siblings spans itself alone
+/// and is a `Member` of the one written joint, and an only word carries the joint's whole
+/// span and its one-word doom.  Three joints state words — mid-chain, `close` and a block
+/// body's open end — and this is the one protocol they share.
+fn word_spelling(n: usize, wspan: Span, of: Span, fall: Fall) -> (Span, Chained) {
+    if n > 1 {
+        (wspan, Chained::Member { of, fall, out_of: n as u32 })
+    } else {
+        (of, fall.into())
+    }
+}
+
+/// The reference standing in one of a link's child slots, where the link declares one.  A link
+/// that only *names* an element has no list to read, and a slot seeded with `hint(…)` names
+/// nothing, so both read as unfilled — the rule `thread` and an open joint's ends ask alike,
+/// stated once.
+fn slot_ref(link: &Link, slot: usize) -> Option<Ref> {
+    match &link.body {
+        LinkBody::Decl(d) => {
+            d.children.get(slot).and_then(|v| v.first()).and_then(|kid| kid.as_ref()).cloned()
+        }
+        LinkBody::Ref(_) => None,
+    }
+}
+
+/// The dotted name a mint gives a boundary child — the entity's own name and the field, since
+/// the dotted path *is* the anonymous child's name (§6.2).
+fn boundary_ref(root: Name, kind: EntKind, slot: usize) -> Ref {
+    Ref {
+        root,
+        path: vec![Seg::Field(Name::new(boundary_name(kind, slot)))],
+        span: Span::default(),
+    }
+}
+
+/// A reference respelled under another root — `s.p1` becomes `next.s.p1` — the spelling of a
+/// name that crosses a block's copy seam, written here and read by the flattener's weld so the
+/// two cannot come to address the seam differently.
+pub(crate) fn under_root(root: &str, r: &Ref, span: Span) -> Ref {
+    let mut path = vec![Seg::Field(r.root.clone())];
+    path.extend(r.path.iter().cloned());
+    Ref { root: Name { text: root.to_string(), span }, path, span }
+}
+
+/// Where an entity kind stands in phase 2's build order: per kind in `EntKind` declaration
+/// order (`primitives()` order), then in statement order.  The kind half of `builds_first`,
+/// shared with the flattener's weld so the two cannot come to order one pair differently.
+pub(crate) fn build_rank(k: EntKind) -> usize {
+    k as usize
+}
+
 /// Whether two references name the same thing — the comparison the two sides of a joint are
 /// held to.  Not `==`: a `Ref` carries the span it was written at, so the same name written in
 /// two places is two unequal values.
@@ -3241,8 +3313,8 @@ impl<'a> P<'a> {
         };
         let first = out.len();
         self.desugar(links, joints, close, open.is_some(), whole, next_id, out);
-        if let (Some(j), Some((fe, le))) = (open, ends) {
-            self.open_finish(j, fe, le, &out[first..], next_id);
+        if let (Some(j), Some((fe, le, named))) = (open, ends) {
+            self.open_finish(j, fe, le, named, &out[first..], next_id);
         }
         // a placement qualifies exactly one dimension (§13.1), so it is attached to the one
         // relation the line states, wherever that fell among the links.  A line stating
@@ -3465,13 +3537,9 @@ impl<'a> P<'a> {
                     // or to a statement break (`spell`)
                     let (span, how) = if lone {
                         (whole, Chained::No)
-                    } else if j.words.len() > 1 {
-                        let (of, fall) = spell[i - 1];
-                        let out_of = j.words.len() as u32;
-                        (*wspan, Chained::Member { of, fall, out_of })
                     } else {
-                        let (sp, fall) = spell[i - 1];
-                        (sp, fall.into())
+                        let (of, fall) = spell[i - 1];
+                        word_spelling(j.words.len(), *wspan, of, fall)
                     };
                     out.extend(
                         self.joint_stmt(w, args, *wspan, span, at(i - 1), at(i), j.thread, how, next_id),
@@ -3520,12 +3588,7 @@ impl<'a> P<'a> {
             if c.sound {
                 for k in 0..c.words.len() {
                     let (w, args, wspan) = &c.words[k];
-                    let (span, how) = if c.words.len() > 1 {
-                        let out_of = c.words.len() as u32;
-                        (*wspan, Chained::Member { of: c.span, fall: Fall::Close, out_of })
-                    } else {
-                        (c.span, Chained::Close)
-                    };
+                    let (span, how) = word_spelling(c.words.len(), *wspan, c.span, Fall::Close);
                     sealed.extend(
                         self.joint_stmt(w, args, *wspan, span, at(n - 1), at(0), true, how, next_id),
                     );
@@ -3588,21 +3651,12 @@ impl<'a> P<'a> {
             return None;
         };
         let slot = if entry { en } else { ex };
-        let declared = match &link.body {
-            LinkBody::Decl(d) => {
-                d.children.get(slot).and_then(|v| v.first()).and_then(|k| k.as_ref()).cloned()
-            }
-            LinkBody::Ref(_) => None,
-        };
+        let declared = slot_ref(link, slot);
         let entity = link.entity();
         let boundary = match &declared {
             Some(r) => r.clone(),
             // the mint's own spelling: the dotted path *is* the anonymous child's name (§6.2)
-            None => Ref {
-                root: entity.root.clone(),
-                path: vec![Seg::Field(Name::new(boundary_name(kind, slot)))],
-                span: Span::default(),
-            },
+            None => boundary_ref(entity.root.clone(), kind, slot),
         };
         Some(OpenEnd { kind, slot, declared: declared.is_some(), boundary, entity })
     }
@@ -3610,28 +3664,33 @@ impl<'a> P<'a> {
     /// The two boundary links of a body's open joint, read while the links are in hand: what
     /// the weld needs of each.  `None` where the joint cannot stand, each refusal its own
     /// message — mirroring `thread`, whose corner this is, stated across the copy seam.
-    fn open_ends(&mut self, at: Span, links: &[Link]) -> Option<(OpenEnd, OpenEnd)> {
+    fn open_ends(&mut self, at: Span, links: &[Link]) -> Option<(OpenEnd, OpenEnd, OpenNamed)> {
         let fe = self.open_end(links.first()?, true);
         let le = self.open_end(links.last()?, false);
         let (fe, le) = (fe?, le?);
         // the shared point is named by at most one side: both declared name two different
         // points — copy i's exit and copy i+1's entry are different entities however alike
         // their leaves read — and welding them is the longhand's `coincident` to state
-        if fe.declared && le.declared {
-            self.errs.push(SynErr {
-                span: at,
-                message: format!(
-                    "the joint names two points: `{}` leaves at `{}` and the next copy's `{}` \
-                     arrives at `{}`",
-                    ref_text(&le.entity),
-                    ref_text(&le.boundary),
-                    ref_text(&fe.entity),
-                    ref_text(&fe.boundary)
-                ),
-            });
-            return None;
-        }
-        Some((fe, le))
+        let named = match (fe.declared, le.declared) {
+            (true, true) => {
+                self.errs.push(SynErr {
+                    span: at,
+                    message: format!(
+                        "the joint names two points: `{}` leaves at `{}` and the next copy's \
+                         `{}` arrives at `{}`",
+                        ref_text(&le.entity),
+                        ref_text(&le.boundary),
+                        ref_text(&fe.entity),
+                        ref_text(&fe.boundary)
+                    ),
+                });
+                return None;
+            }
+            (true, false) => OpenNamed::First,
+            (false, true) => OpenNamed::Last,
+            (false, false) => OpenNamed::Neither,
+        };
+        Some((fe, le, named))
     }
 
     /// The open joint, settled: the boundary links' declaration statements are found among
@@ -3644,6 +3703,7 @@ impl<'a> P<'a> {
         j: Joint,
         fe: OpenEnd,
         le: OpenEnd,
+        named: OpenNamed,
         made: &[Stmt],
         next_id: &mut u32,
     ) {
@@ -3654,18 +3714,11 @@ impl<'a> P<'a> {
         let last_id = decls.last().map(|s| s.id).or(first_id);
         let (Some(first_id), Some(last_id)) = (first_id, last_id) else { return };
         let lref = le.entity.clone();
-        let mut path = vec![Seg::Field(fe.entity.root.clone())];
-        path.extend(fe.entity.path.iter().cloned());
-        let rref = Ref { root: Name { text: "next".into(), span: j.span }, path, span: j.span };
+        let rref = under_root("next", &fe.entity, j.span);
         let mut stmts = Vec::new();
         for k in 0..j.words.len() {
             let (w, args, wspan) = &j.words[k];
-            let (span, how) = if j.words.len() > 1 {
-                let out_of = j.words.len() as u32;
-                (*wspan, Chained::Member { of: j.span, fall: Fall::Joint, out_of })
-            } else {
-                (j.span, Chained::Joint)
-            };
+            let (span, how) = word_spelling(j.words.len(), *wspan, j.span, Fall::Joint);
             stmts.extend(self.joint_stmt(
                 w,
                 args,
@@ -3681,20 +3734,9 @@ impl<'a> P<'a> {
         self.open = Some(OpenJoint {
             stmts,
             words: j.words,
-            last: OpenSide {
-                stmt: last_id,
-                kind: le.kind,
-                slot: le.slot,
-                declared: le.declared,
-                boundary: le.boundary,
-            },
-            first: OpenSide {
-                stmt: first_id,
-                kind: fe.kind,
-                slot: fe.slot,
-                declared: fe.declared,
-                boundary: fe.boundary,
-            },
+            last: OpenSide { stmt: last_id, kind: le.kind, slot: le.slot, boundary: le.boundary },
+            first: OpenSide { stmt: first_id, kind: fe.kind, slot: fe.slot, boundary: fe.boundary },
+            named,
             span: j.span,
         });
     }
@@ -3702,12 +3744,6 @@ impl<'a> P<'a> {
     /// Resolve one threaded joint's shared point between link `li` (its exit) and link `ri`
     /// (its entry).
     fn thread(&mut self, links: &mut [Link], li: usize, ri: usize, at: Span) {
-        fn decl_of(l: &Link) -> Option<&Decl> {
-            match &l.body {
-                LinkBody::Decl(d) => Some(d),
-                LinkBody::Ref(_) => None,
-            }
-        }
         // which slot each side threads through, where that side is declared here.  A link that
         // only *names* an element has no list to read or fill — its boundary is its own
         // declaration's business — so the declared side must say where the two meet, usually
@@ -3715,17 +3751,8 @@ impl<'a> P<'a> {
         let exit = links[li].kind().and_then(|k| k.ends()).map(|(_, ex)| ex);
         let entry = links[ri].kind().and_then(|k| k.ends()).map(|(en, _)| en);
         // a joint threads a *name*: it welds two links to one point, and only a name says
-        // which.  A slot seeded with `hint(…)` names nothing, so it reads as unfilled here and
-        // the other side must say where they meet.
-        let slot = |i: usize, k: Option<usize>| {
-            k.and_then(|k| {
-                decl_of(&links[i])
-                    .and_then(|d| d.children.get(k))
-                    .and_then(|v| v.first())
-                    .and_then(|kid| kid.as_ref())
-                    .cloned()
-            })
-        };
+        // which (`slot_ref`'s rule).
+        let slot = |i: usize, k: Option<usize>| k.and_then(|k| slot_ref(&links[i], k));
         let (left, right) = (slot(li, exit), slot(ri, entry));
         // Write a name into a declared side's boundary slot.  A side that only names an element
         // has no list to fill; and a name that already denotes exactly that slot — the link's
@@ -3746,7 +3773,7 @@ impl<'a> P<'a> {
         // order of `EntKind` (`primitives()` order), and within a kind in statement order,
         // which for a chain is link order.
         fn builds_first(a: &Link, ia: usize, b: &Link, ib: usize) -> bool {
-            let ord = |l: &Link| l.kind().map(|k| k as usize).unwrap_or(usize::MAX);
+            let ord = |l: &Link| l.kind().map(build_rank).unwrap_or(usize::MAX);
             (ord(a), ia) < (ord(b), ib)
         }
         match (left, right) {
@@ -3778,20 +3805,15 @@ impl<'a> P<'a> {
                 // name.  The side built later takes the fill, so the name exists by the time
                 // it resolves; a side that only names an element has no kind to read a
                 // boundary field off, so there the point must be named where it stands.
-                let lf = links[li].kind().zip(exit).map(|(k, s)| boundary_name(k, s));
-                let rf = links[ri].kind().zip(entry).map(|(k, s)| boundary_name(k, s));
-                let dotted = |root: Name, f: &str| Ref {
-                    root,
-                    path: vec![Seg::Field(Name::new(f))],
-                    span: Span::default(),
-                };
+                let lf = links[li].kind().zip(exit);
+                let rf = links[ri].kind().zip(entry);
                 match (lf, rf) {
-                    (Some(lf), Some(rf)) => {
+                    (Some((lk, ls)), Some((rk, rs))) => {
                         if builds_first(&links[li], li, &links[ri], ri) {
-                            let r = dotted(links[li].entity().root, lf);
+                            let r = boundary_ref(links[li].entity().root, lk, ls);
                             fill(&mut links[ri], entry, r);
                         } else {
-                            let r = dotted(links[ri].entity().root, rf);
+                            let r = boundary_ref(links[ri].entity().root, rk, rs);
                             fill(&mut links[li], exit, r);
                         }
                     }
@@ -3973,8 +3995,8 @@ impl<'a> P<'a> {
                 self.fail("a trace is `trace point [from (...)] where { ... }`");
                 return None;
             }
-            let body = self.braced_body(next_id)?;
-            self.no_open_joint("a trace block");
+            let (body, joint) = self.braced_body(next_id)?;
+            self.no_open_joint(joint, "a trace block");
             return Some(CurveFamily {
                 name,
                 formals,
@@ -4089,8 +4111,8 @@ impl<'a> P<'a> {
                 }
             }
         }
-        let body = self.braced_body(next_id)?;
-        self.no_open_joint("a component");
+        let (body, joint) = self.braced_body(next_id)?;
+        self.no_open_joint(joint, "a component");
         Some(Component { name: Some(name), formals, body, span: Span::new(lo, self.prev_hi()) })
     }
 
@@ -4113,12 +4135,14 @@ impl<'a> P<'a> {
         let count = self.text_from(from).trim().to_string();
         let about = if self.eat_word("about") { Some(self.refr()?) } else { None };
         let binder = if self.eat_word("as") { Some(self.ident()?) } else { None };
-        let body = self.braced_body(next_id)?;
-        let joint = self.open.take();
+        let (body, joint) = self.braced_body(next_id)?;
         Some(Block { kind, count, about, binder, body, joint, span: Span::new(lo, self.prev_hi()) })
     }
 
-    fn braced_body(&mut self, next_id: &mut u32) -> Option<Vec<Stmt>> {
+    /// A braced body, and the open joint its last chain may have ended in — handed back rather
+    /// than left in parser state, so every construct with a body is made to answer for a
+    /// dangling joint: a block takes it, and anything else refuses it (`no_open_joint`).
+    fn braced_body(&mut self, next_id: &mut u32) -> Option<(Vec<Stmt>, Option<OpenJoint>)> {
         self.skip_ends();
         if !self.want_p('{') {
             return None;
@@ -4126,7 +4150,9 @@ impl<'a> P<'a> {
         self.in_body += 1;
         let got = self.braced_stmts(next_id);
         self.in_body -= 1;
-        got
+        // taken even where the body failed, or a stale joint would leak into the next body
+        let joint = self.open.take();
+        got.map(|body| (body, joint))
     }
 
     fn braced_stmts(&mut self, next_id: &mut u32) -> Option<Vec<Stmt>> {
@@ -4152,8 +4178,8 @@ impl<'a> P<'a> {
 
     /// Refuse the open joint a body just handed up, where the construct around it has no next
     /// copy for the chain to continue onto.
-    fn no_open_joint(&mut self, what: &str) {
-        if let Some(j) = self.open.take() {
+    fn no_open_joint(&mut self, joint: Option<OpenJoint>, what: &str) {
+        if let Some(j) = joint {
             self.errs.push(SynErr {
                 span: j.span,
                 message: format!(

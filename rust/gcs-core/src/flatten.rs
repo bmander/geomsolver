@@ -18,8 +18,8 @@ use crate::expr::{self, Aff};
 use crate::model::EntKind;
 use crate::units::Units;
 use crate::syntax::{
-    BlockKind, Component, Decl, DeclName, Kid, Name, OpenJoint, OpenSide, Program, Ref, Seg,
-    Span, Stmt, StmtKind, Ty,
+    build_rank, under_root, BlockKind, Component, Decl, DeclName, Kid, Name, OpenJoint,
+    OpenNamed, OpenSide, Program, Ref, Seg, Span, Stmt, StmtKind, Ty,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -282,7 +282,7 @@ impl<'a> Walk<'a> {
                                 .collect(),
                             binds: scope.binds.clone(),
                             // `next` and `prev` mean something only where the copies close
-                            cyc: (b.kind != BlockKind::Repeat).then(|| Cyc {
+                            cyc: b.kind.wraps().then(|| Cyc {
                                 prefix: block_prefix.clone(),
                                 k,
                                 n,
@@ -299,19 +299,21 @@ impl<'a> Walk<'a> {
                         // the trailing joint's relations, stated between this copy and the
                         // next: every copy for a cycle or a ring (the wrap seals the loop),
                         // all but the last for a repeat, whose final corner is simply not
-                        // stated (issue #38).  The joint is the *block's* statement, so its
-                        // scope carries `cyc` whatever the kind — a repeat's own body still
-                        // may not say `next`.
+                        // stated (issue #38).  The joint is the *block's* statement, so it
+                        // gets the `cyc` a repeat's own body does not — a wrapping kind's
+                        // scope already carries it.
                         if let Some(j) = &b.joint {
-                            if b.kind != BlockKind::Repeat || k + 1 < n {
+                            if b.kind.wraps() {
+                                self.body(&j.stmts, &sc, &mut sub, &p2, depth + 1);
+                            } else if k + 1 < n {
                                 let sc2 = Scope {
                                     cyc: Some(Cyc { prefix: block_prefix.clone(), k, n }),
                                     ..sc.clone()
                                 };
                                 self.body(&j.stmts, &sc2, &mut sub, &p2, depth + 1);
                             }
+                            ranges.push((from, self.out.len()));
                         }
-                        ranges.push((from, self.out.len()));
                     }
                     if let Some(j) = &b.joint {
                         self.weld(j, b.kind, &block_prefix, n, &ranges);
@@ -382,17 +384,18 @@ impl<'a> Walk<'a> {
     /// so the seam is spelled `prev.…` looking back or `next.…` looking forward and no pair
     /// references a point that does not yet exist.
     fn weld(&mut self, j: &OpenJoint, kind: BlockKind, block_prefix: &str, n: usize, ranges: &[(usize, usize)]) {
-        let pairs = if kind == BlockKind::Repeat { n.saturating_sub(1) } else { n };
+        let pairs = if kind.wraps() { n } else { n.saturating_sub(1) };
         for i in 0..pairs {
             let k = (i + 1) % n;
-            // the side whose slot takes the shared point's name
-            let fill_first = match (j.first.declared, j.last.declared) {
-                (true, true) => continue, // refused at parse; nothing sound to state
-                (true, false) => false,
-                (false, true) => true,
-                (false, false) => {
-                    (j.last.kind as usize, i, j.last.stmt.0)
-                        < (j.first.kind as usize, k, j.first.stmt.0)
+            // the side whose slot takes the shared point's name: the side that declared its
+            // boundary named it, so the other is filled — and where neither did, the mint
+            // goes on the side built first, so the fill goes on the other
+            let fill_first = match j.named {
+                OpenNamed::First => false,
+                OpenNamed::Last => true,
+                OpenNamed::Neither => {
+                    (build_rank(j.last.kind), i, j.last.stmt.0)
+                        < (build_rank(j.first.kind), k, j.first.stmt.0)
                 }
             };
             let (side, copy, from, root) = if fill_first {
@@ -400,9 +403,7 @@ impl<'a> Walk<'a> {
             } else {
                 (&j.last, i, &j.first, "next")
             };
-            let mut path = vec![Seg::Field(from.boundary.root.clone())];
-            path.extend(from.boundary.path.iter().cloned());
-            let r = Ref { root: Name { text: root.to_string(), span: j.span }, path, span: j.span };
+            let r = under_root(root, &from.boundary, j.span);
             self.fill(ranges[copy], side, r, block_prefix, copy, n);
         }
     }
@@ -428,7 +429,15 @@ impl<'a> Walk<'a> {
                 if let Some(slot) = d.children.get_mut(side.slot) {
                     *slot = vec![Kid::Ref(r)];
                 }
-                sc.cyc = Some(Cyc { prefix: block_prefix.to_string(), k: copy, n });
+                // a wrapping kind's scope carries the block's `cyc` already; a repeat's does
+                // not, and the fill just written needs `lookup`'s `next`/`prev` arm.  The
+                // grant is per-statement, so in a repeat this one welded declaration's *own*
+                // refs would resolve `next` too — the E020 rule bent for exactly the
+                // statements the weld touches, since resolution has no narrower scope to
+                // give one reference.
+                if sc.cyc.is_none() {
+                    sc.cyc = Some(Cyc { prefix: block_prefix.to_string(), k: copy, n });
+                }
             }
             return;
         }
