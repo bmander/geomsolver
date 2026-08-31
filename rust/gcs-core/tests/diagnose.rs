@@ -656,3 +656,39 @@ fn a_solve_that_stopped_short_is_unsolved_not_a_conflict() {
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     assert_eq!(d.status, State::Well, "{}", summary(&d));
 }
+
+/// #43.17 — an entity's own intrinsic rows are not statements in the document and cannot be
+/// removed, so "remove one of these" never names one.
+#[test]
+fn an_intrinsic_row_is_never_a_culprit() {
+    let (prog, _) = gcs_core::syntax::parse(
+        "point o hint(x: 0, y: 0)
+         point s hint(x: 20, y: 0)
+         point e hint(x: 0, y: 20)
+         arc a(center: o, start: s, end: e) hint(r: 20)
+         radius(20) a
+         o distance(20) s
+         ground o
+         horizontal line r0(o, s)",
+    );
+    let mut sk = gcs_core::program::elaborate(&prog).sketch;
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert!(!d.over.is_empty(), "{}", summary(&d));
+    for c in d.over.iter().chain(d.conflicts.iter().flatten()).chain(d.violated.iter()) {
+        assert!(!sk.constraint(*c).unwrap().intrinsic, "named an intrinsic row: {}", summary(&d));
+    }
+}
+
+/// #43.18 — the components line is paged like every other list in the summary.
+#[test]
+fn the_components_line_is_bounded() {
+    let (prog, _) = gcs_core::syntax::parse("repeat 400 as i { point p hint(x: i, y: 0) }\nground p[0]\n");
+    let mut sk = gcs_core::program::elaborate(&prog).sketch;
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    let s = summary(&d);
+    // 400 points, one grounded: 798 free coordinates and no equation, so 798 components
+    assert!(s.contains("798 components"), "{s}");
+    assert!(s.contains("… and 786 more"), "{s}");
+    assert!(s.len() < 400, "{} chars: {s}", s.len());
+}

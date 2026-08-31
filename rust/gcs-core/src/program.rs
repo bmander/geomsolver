@@ -48,6 +48,10 @@ pub enum Severity {
 pub enum Code {
     /// redeclaration within a body
     E001,
+    /// a `ring` body references an external entity that does not turn with it (§12.5)
+    E021,
+    /// a `ring` inside a `ring` (§12.6): may be refused, must not be mis-solved
+    E022,
     /// type mismatch within an alias class
     E040,
     /// syntax
@@ -68,12 +72,17 @@ pub enum Code {
     W110,
     /// a free variable: which dimensions it ties together
     W111,
+    /// a `ring` unrolled to its copies (§12.3 [0.2]): the symmetry is by the numbers each copy
+    /// was given, not held, and the DOF ledger counts every copy
+    W112,
 }
 
 impl Code {
     pub fn as_str(self) -> &'static str {
         match self {
             Code::E001 => "E001",
+            Code::E021 => "E021",
+            Code::E022 => "E022",
             Code::E040 => "E040",
             Code::E100 => "E100",
             Code::E101 => "E101",
@@ -84,12 +93,13 @@ impl Code {
             Code::E106 => "E106",
             Code::W110 => "W110",
             Code::W111 => "W111",
+            Code::W112 => "W112",
         }
     }
 
     pub fn severity(self) -> Severity {
         match self {
-            Code::W110 | Code::W111 => Severity::Warning,
+            Code::W110 | Code::W111 | Code::W112 => Severity::Warning,
             _ => Severity::Error,
         }
     }
@@ -589,9 +599,18 @@ pub fn elaborate(p: &Program) -> Elaborated {
         }
     }
     let expansion = crate::flatten::expand(p, sk.units);
+    for (code, span, message) in &expansion.coded {
+        diags.push(Diag { code: *code, span: *span, stmt: None, message: message.clone() });
+    }
     for (span, message) in &expansion.errors {
         diags.push(Diag {
-            code: if message.starts_with("no such") { Code::E101 } else { Code::E103 },
+            code: if message.starts_with("no such") {
+                Code::E101
+            } else if message.ends_with("is declared twice") {
+                Code::E001
+            } else {
+                Code::E103
+            },
             span: *span,
             stmt: None,
             message: message.clone(),
@@ -1739,6 +1758,43 @@ fn constrain(
                 });
                 return None;
             }
+        }
+    }
+    // a magnitude stated negative: the kernel would square the sign away and the drawing show
+    // the positive, so the document and the drawing would disagree about what the thing is
+    if ckind.magnitude() {
+        if let Some(i) = spec.iter().position(|(_, k)| *k == SpecKind::Length) {
+            if args[i].num() < 0.0 {
+                diags.push(Diag {
+                    code: Code::E040,
+                    span: r.args.get(i).and_then(|a| a.as_ref()).and_then(arg_span).unwrap_or(st.span),
+                    stmt: Some(st.id),
+                    message: format!(
+                        "a {} is a magnitude and cannot be negative",
+                        crate::syntax::snake(ckind.name())
+                    ),
+                });
+                return None;
+            }
+        }
+    }
+    // `distance` between two circles is the radial gap between *concentric* ones — a kernel
+    // that reads two radii and neither centre (`AnnularDistance`).  Written over two circles
+    // centred apart, it says nothing about the gap a person meant and then duplicates the two
+    // radii it does read (#43.21), so it is refused with the reading it has.
+    if ckind == CKind::AnnularDistance {
+        let centre = |e: EntRef| sk.children(e).first().copied();
+        if centre(args[0].ent()) != centre(args[1].ent()) {
+            diags.push(Diag {
+                code: Code::E040,
+                span: st.span,
+                stmt: Some(st.id),
+                message: "`distance` between two circles is the radial gap between concentric \
+                          ones, and these are centred on different points — dimension the \
+                          centres, or make the circles concentric"
+                    .to_string(),
+            });
+            return None;
         }
     }
     // a claim is judged, never solved for, so it may own no unknown — `CKind::claimable` is the

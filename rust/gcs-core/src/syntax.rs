@@ -2758,7 +2758,18 @@ impl<'a> P<'a> {
             let text = self.text_from(from).trim().to_string();
             if !style.set(&prop, &values, &text) {
                 // an unknown property is not an error, exactly as an unmatched class is not:
-                // a sheet says what it knows how to say and the rest has no rule
+                // a sheet says what it knows how to say and the rest has no rule.  A value a
+                // *known* property cannot read is another thing — `color: ;`, `width: nope` —
+                // never anything but a mistake, and dropped silently a mistyped sheet looked
+                // exactly like a working one (#43.20)
+                if Style::knows(&prop) {
+                    let m = if text.is_empty() {
+                        format!("`{prop}:` is given no value")
+                    } else {
+                        format!("`{prop}` cannot read `{text}`")
+                    };
+                    self.fail_at(Span::new(from, self.prev_hi().max(from + 1)), &m);
+                }
                 continue;
             }
             props.push(prop);
@@ -3036,7 +3047,7 @@ impl<'a> P<'a> {
                             let Some(i) = scalars.iter().position(|&s| s == h.key) else {
                                 let m = format!("`{}` has no scalar `{}` to seed", k.as_str(), h.key);
                                 self.fail_at(h.at, &m);
-                                return None;
+                                continue;
                             };
                             seed[i] = h.value.unwrap_or(0.0);
                             seed_text[i] = (h.value.is_none()).then_some(h.text);
@@ -4208,6 +4219,14 @@ impl<'a> P<'a> {
         }
         let count = self.text_from(from).trim().to_string();
         let about = if self.eat_word("about") { Some(self.refr()?) } else { None };
+        // the axis is what a ring *is* about (spec §12.3: the clause is mandatory); without it
+        // the word said nothing a `cycle` does not
+        if kind == BlockKind::Ring && about.is_none() {
+            // reported, and the block read on: bailing out here would hand its body to the
+            // statement parser as loose lines, and the one mistake would be reported four ways
+            let at = self.here();
+            self.fail_at(Span::new(lo, at.lo as usize), "a `ring` names its axis: `ring N about REF`");
+        }
         let binder = if self.eat_word("as") { Some(self.ident()?) } else { None };
         let (body, joint) = self.braced_body(next_id)?;
         Some(Block { kind, count, about, binder, body, joint, span: Span::new(lo, self.prev_hi()) })
@@ -4482,9 +4501,12 @@ impl<'a> P<'a> {
                 // `hint(x: 0, y: 12)` — keyed, keys in any order, an omitted scalar is 0
                 for h in self.hint_body("x: 0, y: 0")? {
                     let Some(i) = scalars.iter().position(|&s| s == h.key) else {
+                        // the key is the mistake, not the declaration: reported, and the rest
+                        // of the clause read on, so the entity is still declared and no
+                        // statement naming it fails for want of it (#43.19)
                         let m = format!("`{}` has no scalar `{}` to seed", kind.as_str(), h.key);
                         self.fail_at(h.at, &m);
-                        return None;
+                        continue;
                     };
                     seed[i] = h.value.unwrap_or(0.0);
                     seed_text[i] = (h.value.is_none()).then_some(h.text);

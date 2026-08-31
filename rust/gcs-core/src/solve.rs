@@ -103,7 +103,8 @@ impl System {
     /// plan solver's fallback and a front end that compiled a system for itself alike.
     pub fn solve(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
         let mut res = self.solve_compiled(sk, opts);
-        if !opts.rehome || !opts.writeback || self.spans().is_empty() {
+        // a curve family's contact has no span to walk off, but a domain to be clamped to
+        if !opts.rehome || !opts.writeback || (self.spans().is_empty() && sk.curves.is_empty()) {
             return res;
         }
         for _ in 0..curve::MAX_REHOME {

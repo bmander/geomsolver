@@ -342,6 +342,9 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     let l2 = sk.line(r, s);
     let c1 = sk.circle(p, 8.0, "c1");
     let c2 = sk.circle(q, 5.0, "c2");
+    // `distance` between two circles is the gap between *concentric* ones, and is refused over
+    // any other pair — so that one kind takes a second circle on `c1`'s own centre
+    let c3 = sk.circle(p, 5.0, "c3");
     let ac = sk.point(20.0, 20.0, false, "ac");
     let a1 = sk.arc(ac, r, s, "a1");
     let el = sk.ellipse(r, s, 6.0, "el");
@@ -382,7 +385,9 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
                 used_line = true;
                 Arg::Ent(EntRef::line(l1))
             }
-            SpecKind::Circle | SpecKind::CircleOrArc if used_circle => Arg::Ent(EntRef::circle(c2)),
+            SpecKind::Circle | SpecKind::CircleOrArc if used_circle => {
+                Arg::Ent(EntRef::circle(if kind == CKind::AnnularDistance { c3 } else { c2 }))
+            }
             SpecKind::Circle | SpecKind::CircleOrArc => {
                 used_circle = true;
                 Arg::Ent(EntRef::circle(c1))

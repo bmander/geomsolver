@@ -177,10 +177,17 @@ pub fn summary(d: &Diagnosis) -> String {
         parts.push(format!("{} constraint(s) violated", d.violated.len()));
     }
     if d.components.len() > 1 {
+        // paged like every other list here: `repeat 100000` is a document somebody can write,
+        // and a hundred thousand DOFs on one line is not a summary (#43.18)
+        const SHOW: usize = 12;
+        let dofs: Vec<String> =
+            d.components.iter().take(SHOW).map(|c| c.dof.to_string()).collect();
+        let more = d.components.len().saturating_sub(SHOW);
         parts.push(format!(
-            "{} components: DOF {}",
+            "{} components: DOF {}{}",
             d.components.len(),
-            d.components.iter().map(|c| c.dof.to_string()).collect::<Vec<_>>().join(", ")
+            dofs.join(", "),
+            if more > 0 { format!(", … and {more} more") } else { String::new() }
         ));
     }
     if !d.rigid_clusters.is_empty() {
@@ -243,9 +250,12 @@ pub fn removable_constraints(sk: &Sketch, w: &Mat, row_c: &[u32], rtol: f64) -> 
 pub fn violated_constraints(sk: &Sketch, sys: &mut System, tol: f64) -> Vec<u32> {
     let z = sys.z0(sk);
     let err = sys.constraint_errors(&z);
-    // one pass to collect the soft ids, rather than a linear scan of the constraint list per
-    // constraint — this runs after every edit
-    let soft: BTreeSet<u32> = sk.constraints.iter().filter(|c| c.soft).map(|c| c.id).collect();
+    // one pass to collect the ids to leave out, rather than a linear scan of the constraint
+    // list per constraint — this runs after every edit.  A soft row is a drag's, and an
+    // intrinsic row is an entity's own definition: neither is a statement the document made,
+    // so neither is named as one it could remove.
+    let soft: BTreeSet<u32> =
+        sk.constraints.iter().filter(|c| c.soft || c.intrinsic).map(|c| c.id).collect();
     let mut out = Vec::new();
     for (i, &cid) in sys.cids.iter().enumerate() {
         if !soft.contains(&cid) && (err[i].is_nan() || err[i] > tol) {
@@ -296,9 +306,14 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     let mut over_set: BTreeSet<u32> = BTreeSet::new();
     let mut over: Vec<u32> = Vec::new();
     let mut implied: Vec<u32> = Vec::new();
+    // an entity's own intrinsic rows — the two that make an arc's ends its ends — are not in
+    // the document and cannot be removed, so "remove one of these" never names one (#43.17);
+    // the numeric path (`removable_constraints`) already leaves them out
+    let intrinsic: BTreeSet<u32> =
+        sk.constraints.iter().filter(|c| c.intrinsic).map(|c| c.id).collect();
     for &r in &dm.over_rows {
         let c = row_c[r];
-        if over_set.insert(c) {
+        if !intrinsic.contains(&c) && over_set.insert(c) {
             over.push(c);
         }
     }

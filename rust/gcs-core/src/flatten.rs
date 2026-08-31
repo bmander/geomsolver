@@ -16,6 +16,7 @@
 
 use crate::expr::{self, Aff};
 use crate::model::EntKind;
+use crate::program::Code;
 use crate::units::Units;
 use crate::syntax::{
     build_rank, under_root, BlockKind, Component, Decl, DeclName, Kid, Name, OpenJoint,
@@ -46,6 +47,14 @@ struct Cyc {
     n: usize,
 }
 
+/// The `ring` a statement stands inside, if any: the block's prefix (every copy's name starts
+/// with it), the axis as written, and where the block is.  What E021 is judged against.
+#[derive(Clone)]
+struct Ring {
+    prefix: String,
+    about: Ref,
+}
+
 /// What the names in one statement are resolved against: the prefixes it is nested in, innermost
 /// first.  An instance's entity arguments are not here: a formal is a *port alias* under the
 /// instance's own prefix (`bind`), found by `lookup` through the prefixes like any other name.
@@ -53,6 +62,7 @@ struct Cyc {
 struct Scope {
     prefixes: Vec<String>,
     cyc: Option<Cyc>,
+    ring: Option<Ring>,
     /// Whether a `cycle` or a `repeat` stands anywhere above: the prefix in force then carries a
     /// block's id (`#3.0.`) rather than an instance's name, and a declaration under it is one
     /// *copy* — shown and selected by, never written into a statement.  This walk is the only
@@ -67,6 +77,9 @@ struct Scope {
 pub struct Expansion {
     pub flat: Vec<Flat>,
     pub errors: Vec<(Span, String)>,
+    /// Diagnostics that carry their own code: a `ring`'s (§12.3–12.6), which are not the
+    /// "no such name" / "not a shape" pair the plain errors sort into.
+    pub coded: Vec<(Code, Span, String)>,
 }
 
 struct Walk<'a> {
@@ -82,6 +95,7 @@ struct Walk<'a> {
     /// `port x = y`: one name for what another names.  Resolved transitively, after the walk.
     aliases: Vec<(String, Ref, Scope)>,
     errors: Vec<(Span, String)>,
+    coded: Vec<(Code, Span, String)>,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -94,13 +108,14 @@ pub fn expand(prog: &Program, units: Units) -> Expansion {
         names: BTreeSet::new(),
         aliases: Vec::new(),
         errors: Vec::new(),
+        coded: Vec::new(),
     };
     let root = prog.root();
     let scope = Scope { prefixes: vec![String::new()], ..Scope::default() };
     let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
     w.body(&root.body, &scope, &mut vals, &[], 0);
     let flat = w.resolve();
-    Expansion { flat, errors: w.errors }
+    Expansion { flat, errors: w.errors, coded: w.coded }
 }
 
 impl<'a> Walk<'a> {
@@ -149,6 +164,9 @@ impl<'a> Walk<'a> {
             return;
         }
         let prefix = scope.prefixes.first().cloned().unwrap_or_default();
+        // the params this body has declared: a second `param w` in one body is the E001 a
+        // second `point w` is, and the first stands (#43.13)
+        let mut params_here: BTreeSet<String> = BTreeSet::new();
         for st in body {
             if self.out.len() >= MAX_FLAT {
                 self.err(st.span, format!("more than {MAX_FLAT} statements once expanded"));
@@ -212,6 +230,10 @@ impl<'a> Walk<'a> {
                     }
                 }
                 StmtKind::Param(pd) => {
+                    if !params_here.insert(pd.name.text.clone()) {
+                        self.err(pd.name.span, format!("`{}` is declared twice", pd.name.text));
+                        continue;
+                    }
                     match value_aff(&pd.text, vals, self.units) {
                         Ok(a) => {
                             vals.insert(pd.name.text.clone(), a);
@@ -236,6 +258,7 @@ impl<'a> Walk<'a> {
                             .chain(scope.prefixes.iter().cloned())
                             .collect(),
                         cyc: None,
+                        ring: scope.ring.clone(),
                         copies: scope.copies,
                         vals: sub_vals.clone(),
                     };
@@ -262,6 +285,35 @@ impl<'a> Walk<'a> {
                         continue;
                     }
                     let block_prefix = format!("{prefix}#{}.", st.id.0);
+                    // A `ring` is **unrolled**: its copies are made as a `cycle`'s are, congruent
+                    // by the numbers each was given and not held so.  Spec §12.3 permits that
+                    // and [0.2] requires it be said wherever the DOF ledger is, which W112 is;
+                    // §12.6 lets a nested ring be refused and forbids mis-solving it, and
+                    // refusing is the honest one of the two (#43.8, #43.9).
+                    let ring = match b.kind {
+                        BlockKind::Ring if scope.ring.is_some() => {
+                            self.coded.push((
+                                Code::E022,
+                                b.span,
+                                "a `ring` inside a `ring` is not supported".to_string(),
+                            ));
+                            continue;
+                        }
+                        BlockKind::Ring => {
+                            self.coded.push((
+                                Code::W112,
+                                b.span,
+                                format!(
+                                    "`ring {}` is unrolled: its copies are congruent by the \
+                                     numbers each was given, not held so, and the DOF counts \
+                                     every copy",
+                                    b.count
+                                ),
+                            ));
+                            b.about.clone().map(|about| Ring { prefix: block_prefix.clone(), about })
+                        }
+                        _ => scope.ring.clone(),
+                    };
                     let mut ranges: Vec<(usize, usize)> = Vec::new();
                     for k in 0..n {
                         let mut sub = vals.clone();
@@ -278,6 +330,7 @@ impl<'a> Walk<'a> {
                                 k,
                                 n,
                             }),
+                            ring: ring.clone(),
                             // the prefix just built is the block's id, so every declaration
                             // below is a copy, however deep and through however many instances
                             copies: true,
@@ -565,16 +618,78 @@ impl<'a> Walk<'a> {
             }
         }
         let out = std::mem::take(&mut self.out);
-        let mut flat = Vec::with_capacity(out.len());
+        let mut done: Vec<(Stmt, Vec<u32>, Scope, Option<StmtKind>)> = Vec::with_capacity(out.len());
         for (mut st, path, sc) in out {
+            // a ring statement is judged after the rewrite (E021 below), against what its
+            // references resolved to — but named in the message as they were written
+            let written = sc.ring.as_ref().map(|_| st.kind.clone());
             let mut bad: Vec<(Span, String)> = Vec::new();
             rewrite(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad);
+            let clean = bad.is_empty();
             for (span, msg) in bad {
                 self.err(span, msg);
             }
-            flat.push(Flat { stmt: st, path });
+            done.push((st, path, sc, written.filter(|_| clean)));
         }
-        flat
+        self.judge_rings(&done, &alias);
+        done.into_iter().map(|(stmt, path, _, _)| Flat { stmt, path }).collect()
+    }
+
+    /// E021 (spec §12.5): a statement inside a `ring` may reference, outside the ring, only
+    /// what the ring's turn leaves where it is — the axis point, and a circle or an arc centred
+    /// on it.  Anything else — a stray point every copy is dimensioned to — cannot be true of
+    /// all N copies at once, and the spec calls the refusal one of the language's best
+    /// diagnostics; without it the same document came back as eight `over` culprits.
+    fn judge_rings(&mut self, done: &[(Stmt, Vec<u32>, Scope, Option<StmtKind>)], alias: &BTreeMap<String, String>) {
+        if done.iter().all(|(_, _, sc, _)| sc.ring.is_none()) {
+            return;
+        }
+        // what every declared entity is, and for a circle or an arc, the absolute name of its
+        // centre — the first child, resolved by the rewrite above
+        let mut decls: BTreeMap<&str, (EntKind, Option<&str>)> = BTreeMap::new();
+        for (st, _, _, _) in done {
+            if let StmtKind::Decl(d) = &st.kind {
+                let centre = match d.kind {
+                    EntKind::Circle | EntKind::Arc => d.children.first().and_then(|g| g.first()).and_then(|k| match k {
+                        Kid::Ref(r) => Some(r.root.text.as_str()),
+                        Kid::Hint(_) => None,
+                    }),
+                    _ => None,
+                };
+                decls.insert(d.name.key().text.as_str(), (d.kind, centre));
+            }
+        }
+        for (st, _, sc, written) in done {
+            let (Some(ring), Some(written)) = (&sc.ring, written) else { continue };
+            // the axis, resolved where the block stands: outside every copy's own prefix
+            let outer = Scope {
+                prefixes: sc.prefixes.iter().filter(|p| !p.starts_with(&ring.prefix)).cloned().collect(),
+                ..Scope::default()
+            };
+            let axis = lookup(&ring.about, &outer, &self.names, alias, self.units).map(|(a, _)| a);
+            for (now, was) in refs_of(&st.kind).into_iter().zip(refs_of(written)) {
+                let x = now.root.text.as_str();
+                if x.starts_with(&ring.prefix) || Some(x) == axis.as_deref() {
+                    continue;
+                }
+                let invariant = matches!(
+                    decls.get(x),
+                    Some((EntKind::Circle | EntKind::Arc, Some(c))) if Some(*c) == axis.as_deref()
+                );
+                if !invariant {
+                    self.coded.push((
+                        Code::E021,
+                        was.span,
+                        format!(
+                            "`{}` is outside the `ring` and does not turn with it: from inside, \
+                             only the axis point and a circle or arc centred on it may be \
+                             referenced",
+                            written_ref(was)
+                        ),
+                    ));
+                }
+            }
+        }
     }
 }
 
@@ -787,6 +902,49 @@ fn lookup(
         }
     }
     None
+}
+
+/// Every reference a statement makes, in the order `rewrite` visits them — the two walks must
+/// agree, since `judge_rings` zips a statement before the rewrite with itself after.
+fn refs_of(k: &StmtKind) -> Vec<&Ref> {
+    let mut out = Vec::new();
+    match k {
+        StmtKind::Decl(d) => {
+            for g in &d.children {
+                for kid in g {
+                    if let Kid::Ref(r) = kid {
+                        out.push(r);
+                    }
+                }
+            }
+        }
+        StmtKind::Relation(rel) => {
+            for a in rel.args.iter().flatten() {
+                if let crate::syntax::Arg::Ref(r) = a {
+                    out.push(r);
+                }
+            }
+            if let Some(w) = &rel.poly {
+                out.extend(w.ops.iter());
+                for a in &w.args {
+                    if let crate::syntax::OpArg::Ent(r) = a {
+                        out.push(r);
+                    }
+                }
+            }
+        }
+        StmtKind::Gauge(g) => match g {
+            crate::syntax::Gauge::Ground(r) | crate::syntax::Gauge::Fix(r) => out.push(r),
+        },
+        StmtKind::Orient(o) => out.extend(o.pts.iter()),
+        _ => {}
+    }
+    out
+}
+
+/// A reference spelled back the way the source wrote it, for a message about it.
+fn written_ref(r: &Ref) -> String {
+    written(r)
 }
 
 /// A reference spelled back the way the source wrote it, for a message about it.

@@ -1437,6 +1437,12 @@ pub fn set_dimension(sk: &mut Sketch, id: u32, attr: &str, text: &str) -> Result
     };
     let text = text.trim();
     if let Some(v) = literal(text) {
+        if v < 0.0 && sk.constraint(id).is_some_and(|c| c.kind.magnitude()) {
+            return Err(format!(
+                "a {} is a magnitude and cannot be negative",
+                crate::syntax::snake(sk.constraint(id).unwrap().kind.name())
+            ));
+        }
         sk.constraint_mut(id).unwrap().args[i] = Arg::Num(to_arg_units(kind, v));
         evaluate(sk);   // whatever read a name this used to define
         return Ok(None);
