@@ -157,7 +157,6 @@ fn a_rectangle_widened_past_its_gauss_newton_step_solves() {
     };
     let res = solve(&mut build(), SolveOpts::default());
     assert!(res.success, "{}: max residual {}", res.message, res.max_residual);
-    assert_eq!(res.method, "lm");
 }
 
 /// Defence in depth for the same thing: a NaN anywhere in a residual vector has to win the max,

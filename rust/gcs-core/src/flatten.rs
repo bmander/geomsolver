@@ -176,34 +176,26 @@ impl<'a> Walk<'a> {
                             }
                         }
                     }
-                    // a seed written as an expression is worked out here, against the parameters
-                    // in scope, and is a number from now on
-                    for i in 0..d2.seed_text.len() {
-                        let Some(t) = d2.seed_text[i].clone() else { continue };
-                        match value_of(&t, vals, self.units) {
-                            Ok(v) => d2.seed[i] = v,
-                            Err(e) => self.err(st.span, format!("`{t}`: {e}")),
-                        }
-                        d2.seed_text[i] = None;
-                    }
+                    self.settle_seeds(&mut d2, vals, st.span);
                     self.emit(StmtKind::Decl(d2), st, scope, path);
                 }
                 // `port lead: Point` is a fresh declaration that the boundary also names.  There
-                // is nothing else to it: a port carries no joint, no direction and no constraint.
+                // is nothing else to it: a port carries no joint, no direction and no constraint
+                // — and its seed, where it wrote one, is a declaration's seed.
                 StmtKind::Port(p) => {
                     if let Some(kind) = p.declare {
                         let abs = format!("{prefix}{}", p.name.text);
                         self.names.insert(abs.clone());
-                        let d = Decl {
+                        let mut d = Decl {
                             kind,
                             // the port's own written name, under the prefix — the same rule
                             // every ordinary declaration goes through above
                             name: DeclName::Written(p.name.clone()).prefixed(abs, scope.copies),
                             children: vec![Vec::new(); count_children(kind)],
-                            seed: vec![0.0; count_scalars(kind)],
-                            seed_text: vec![None; count_scalars(kind)],
-                            seed_spans: vec![Span::default(); count_scalars(kind)],
-                            hint_span: None,
+                            seed: p.seed.clone(),
+                            seed_text: p.seed_text.clone(),
+                            seed_spans: p.seed_spans.clone(),
+                            hint_span: p.hint_span,
                             knots: None,
                             def: None,
                             values: Vec::new(),
@@ -212,6 +204,7 @@ impl<'a> Walk<'a> {
                             class_span: Span::default(),
                             seed_at: None,
                         };
+                        self.settle_seeds(&mut d, vals, st.span);
                         self.emit(StmtKind::Decl(d), st, scope, path);
                     } else if let Some(r) = &p.alias {
                         let abs = format!("{prefix}{}", p.name.text);
@@ -351,6 +344,20 @@ impl<'a> Walk<'a> {
                 // a gauge or an orientation: kept as written, resolved later
                 other => self.emit(other.clone(), st, scope, path),
             }
+        }
+    }
+
+    /// A seed written as an expression is worked out here, against the parameters in scope,
+    /// and is a number from now on — for a declaration and for the declaring form of a port
+    /// alike, since both carry the one `hint(…)` clause a seed is written in.
+    fn settle_seeds(&mut self, d: &mut Decl, vals: &BTreeMap<String, Aff>, span: Span) {
+        for i in 0..d.seed_text.len() {
+            let Some(t) = d.seed_text[i].clone() else { continue };
+            match value_of(&t, vals, self.units) {
+                Ok(v) => d.seed[i] = v,
+                Err(e) => self.err(span, format!("`{t}`: {e}")),
+            }
+            d.seed_text[i] = None;
         }
     }
 
@@ -573,10 +580,6 @@ impl<'a> Walk<'a> {
 
 fn count_children(k: EntKind) -> usize {
     k.fields().iter().filter(|(_, f)| *f != crate::model::Field::Scalar).count()
-}
-
-fn count_scalars(k: EntKind) -> usize {
-    k.fields().iter().filter(|(_, f)| *f == crate::model::Field::Scalar).count()
 }
 
 /// A number worked out while elaborating.

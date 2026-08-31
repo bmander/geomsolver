@@ -1241,15 +1241,19 @@ fn at_seed(
     }
 }
 
-/// Where an unseeded implicit child starts.
+/// Where an unseeded point starts — an implicit child, a declared point with no `hint(…)`, a
+/// port with none.
 ///
 /// **Nothing in the language says** (spec §15): a declaration with no hint has unknowns, and the
 /// document says no more than that.  The implementation needs an answer all the same, and the
 /// obvious one is wrong — `line l`'s two endpoints both at the origin is a zero-length line, with
-/// no direction for `horizontal(l)` to bite on and a singular row for any tangency.  So they
-/// scatter: distinct bearings round a unit circle, jittered off the crate's seeded `rng::Rng` so
-/// the answer is the same on every run and on every machine.  It is an implementation choice and
-/// belongs nowhere in the spec.
+/// no direction for `horizontal(l)` to bite on and a singular row for any tangency, and
+/// `point a` / `point b` / `a distance(30) b` there is a stationary point of the one residual it
+/// has.  So they scatter: distinct bearings round a unit circle, jittered off the crate's seeded
+/// `rng::Rng` so the answer is the same on every run and on every machine.  No exception for
+/// the drawing's first point: a port declared before `point base hint(x: 0, y: 0)` would sit
+/// on it, and a seeded point at the origin is the commonest one there is.  It is an
+/// implementation choice and belongs nowhere in the spec.
 fn scatter(i: usize) -> (f64, f64) {
     // the bearing walks a fixed step per minted point, in creation order — which for a chain's
     // corners is traversal order, so a contour of implicit points seeds as a *simple polygon*
@@ -1453,7 +1457,17 @@ fn build(
     // what a reader is shown: the declaration's own name, or what the drawing calls it where
     // the source named nothing — a scalar carries this into every list of parameters
     let show = shown(sk, d);
+    // A point whose source wrote no seed at all — no `hint(…)` clause (the empty span where
+    // one would go) and no place — starts where a minted child does, not at the origin: two
+    // such points on top of each other put every distance between them at a stationary point
+    // of its own residual, and the first document anybody writes solved as a conflict (#43).
+    // A declaration lifted from a sketch has no span (`None`) and carries its numbers.
+    let unseeded = d.seed_at.is_none() && d.hint_span.is_some_and(|s| s.is_empty());
     let idx = match d.kind {
+        EntKind::Point if unseeded => {
+            let (x, y) = scatter(sk.points.len());
+            sk.point(x, y, false, &show)
+        }
         EntKind::Point => sk.point(seed(0), seed(1), false, &show),
         EntKind::Line => sk.line(kids[0], kids[1]),
         EntKind::Circle => sk.circle(kids[0], seed(0), &show),

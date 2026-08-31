@@ -351,6 +351,16 @@ pub struct Port {
     pub declare: Option<EntKind>,
     /// `port x = y` — export one that already exists.
     pub alias: Option<Ref>,
+    /// The declaring form's seed, exactly a `Decl`'s: `port tip: point hint(x: 0, y: 30)` is
+    /// where the solve begins, since a port is a declaration and every seed is written in one
+    /// `hint(…)` clause (§4.3).  Without one the port's entity starts where an unseeded
+    /// declaration does (`program::scatter`), rather than at the origin on top of every other
+    /// unseeded port — which was the one place a component built of ports could begin (#43).
+    pub seed: Vec<f64>,
+    pub seed_text: Vec<Option<String>>,
+    pub seed_spans: Vec<Span>,
+    /// Where the clause is, or — an empty span — where it would go (`Decl::hint_span`).
+    pub hint_span: Option<Span>,
 }
 
 #[derive(Clone, Debug)]
@@ -1189,6 +1199,27 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             out.push_str(&format!("port {}", p.name.text));
             if let Some(k) = p.declare {
                 out.push_str(&format!(": {}", camel(k.as_str())));
+                // the clause as written, where one was: a port with none stays without one
+                if p.hint_span.is_some_and(|s| !s.is_empty()) {
+                    let mut parts: Vec<String> = Vec::new();
+                    let mut scalar = 0usize;
+                    for (name, field) in k.fields() {
+                        if *field != Field::Scalar {
+                            continue;
+                        }
+                        let text = match p.seed_text.get(scalar).and_then(|t| t.as_deref()) {
+                            Some(t) => t.to_string(),
+                            None => num(p.seed.get(scalar).copied().unwrap_or(0.0)),
+                        };
+                        scalar += 1;
+                        parts.push(format!("{name}: {text}"));
+                    }
+                    let hint = hint_of(&parts);
+                    if !hint.is_empty() {
+                        out.push(' ');
+                        out.push_str(&hint);
+                    }
+                }
             } else if let Some(r) = &p.alias {
                 out.push_str(" = ");
                 write_ref(out, r);
@@ -2986,13 +3017,56 @@ impl<'a> P<'a> {
                         });
                         return None;
                     };
+                    // the declaring form is a declaration, and takes a declaration's seed —
+                    // the same clause, read against the same scalar table, recorded the same
+                    // way: where it is, or the empty span where it would go
+                    let scalars: Vec<&str> = k
+                        .fields()
+                        .iter()
+                        .filter(|(_, f)| *f == Field::Scalar)
+                        .map(|(n, _)| *n)
+                        .collect();
+                    let mut seed = vec![0.0; scalars.len()];
+                    let mut seed_text: Vec<Option<String>> = vec![None; scalars.len()];
+                    let mut seed_spans: Vec<Span> = vec![Span::default(); scalars.len()];
+                    let insert = self.prev_hi();
+                    let mut hint_span = Span::new(insert, insert);
+                    if let Some(lo) = self.eat_hint_clause() {
+                        for h in self.hint_body("x: 0, y: 0")? {
+                            let Some(i) = scalars.iter().position(|&s| s == h.key) else {
+                                let m = format!("`{}` has no scalar `{}` to seed", k.as_str(), h.key);
+                                self.fail_at(h.at, &m);
+                                return None;
+                            };
+                            seed[i] = h.value.unwrap_or(0.0);
+                            seed_text[i] = (h.value.is_none()).then_some(h.text);
+                            seed_spans[i] = h.span;
+                        }
+                        hint_span = Span::new(lo, self.prev_hi());
+                    }
                     self.end_of_stmt();
-                    Some(StmtKind::Port(Port { name, declare: Some(k), alias: None }))
+                    Some(StmtKind::Port(Port {
+                        name,
+                        declare: Some(k),
+                        alias: None,
+                        seed,
+                        seed_text,
+                        seed_spans,
+                        hint_span: Some(hint_span),
+                    }))
                 } else if self.peek() == Some(&Tok::Eq) {
                     self.i += 1;
                     let r = self.refr()?;
                     self.end_of_stmt();
-                    Some(StmtKind::Port(Port { name, declare: None, alias: Some(r) }))
+                    Some(StmtKind::Port(Port {
+                        name,
+                        declare: None,
+                        alias: Some(r),
+                        seed: Vec::new(),
+                        seed_text: Vec::new(),
+                        seed_spans: Vec::new(),
+                        hint_span: None,
+                    }))
                 } else {
                     self.fail("a port is `port name: Kind` or `port name = other`");
                     None

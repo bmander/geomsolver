@@ -30,8 +30,13 @@ curve involute(c: circle, phase: Angle)(u) =
 component Flank(base: circle, root: circle, tip: circle,
                 phase: Angle, u0: Angle, u1: Angle) {
   curve e = involute(base, phase: phase) over (u0, u1)
-  port lo: point
-  port hi: point
+  // Seeded at the centre on purpose.  Where along the flank each end sits is the contact's own
+  // `hint(u: …)` below; from the centre — where every circle's row is flat — the first step
+  // puts the point on the curve at exactly that roll, and the solve is nine iterations.  Left
+  // unseeded, a point starts a unit or so off the centre at a bearing of its own, and from
+  // there the root and tip circles pull against the flank.
+  port lo: point hint(x: 0, y: 0)
+  port hi: point hint(x: 0, y: 0)
 
   lo on e hint(u: u0)
   hi on e hint(u: u1)
