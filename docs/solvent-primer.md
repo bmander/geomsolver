@@ -63,10 +63,10 @@ fix REF.field                           pin one scalar, e.g. `fix c.r`
 ccw(a, b, c) | cw(a, b, c)              record a root choice; contributes no equation
 NAME: Component(ARGS)                   instantiate a component
 component NAME(FORMALS) { statement* }  define one
-port NAME: KIND | port NAME = REF       export an entity across a component boundary
+port NAME: KIND [hint(…)] | port NAME = REF   export an entity across a component boundary
 repeat N [as i] { … }                   N copies, unrelated
 cycle N [as i] { … }                    N copies that close: `next` and `prev` are in scope
-ring N about REF [as i] { … }           a cycle claimed to be cyclically symmetric
+ring N about REF [as i] { … }           a cycle claimed to be cyclically symmetric (§1.7)
 curve NAME(FORMALS)(u) [over (a, b)] = ( XEXPR, YEXPR )        a curve family (§1.8)
 curve NAME(FORMALS)(u) [over (a, b)] = trace P [from (E)] where { … }
 ```
@@ -88,7 +88,10 @@ References are `name`, `name.field`, or `name[expr]` (which copy of a repeated s
 
 Every scalar is seeded by name in the trailing clause — `point p hint(x: 0, y: 0)`,
 `circle c(center: o) hint(r: 25)`, `arc a(center: c, start: s, end: e) hint(r: 5)`. Keys may come
-in any order and an omitted one is 0, so `point p hint(y: 12)` and `point t` are both legal. The
+in any order and an omitted one is 0, so `point p hint(y: 12)` and `point t` are both legal. A
+point with no clause at all starts where the implementation puts it — off the origin, and apart
+from every other unseeded point, since two points on top of each other put a distance between
+them where it has no gradient — and a solve writes the pose it reached back as the clause. The
 clause is order-free against `knots` and `class`, exactly as those two are against each
 other. Children may be given positionally or by label; a label is what lets you omit an earlier
 one (`line l(p2: c)` leaves `p1` for a chain to thread). An arc is a centre and two *real* points,
@@ -150,7 +153,7 @@ fix c.r                             line1 tangent(side: -1) circle1
 | word | how it stands | what it relates |
 |---|---|---|
 | `on` | infix | a point to a line, circle, arc, spline, ellipse or curve — **five** constraints, one word |
-| `distance` | infix | two points; `along: x` / `along: y` for the run and the rise; a point and a line; two lines; two circles |
+| `distance` | infix | two points; `along: x` / `along: y` for the run and the rise; a point and a line; two lines; two *concentric* circles or arcs (the radial gap between them — over two centred apart it is refused, since it reads neither centre) |
 | `distance` | prefix | a line — the distance between its own ends |
 | `tangent` | infix | a line and a circle (`at: p1`/`p2` for a tangency at that end), two circles (`external: bool`), an arc and a line (`at: start`/`end`), a spline or an ellipse and a line |
 | `equal` | infix | two lines (a length), two circles or arcs (a radius) |
@@ -264,6 +267,13 @@ welded and tangent at both corners.
 
 `equal` is polymorphic: a length between lines, a radius between circles or arcs. `a equal b equal
 c` is two statements, not three.
+
+**`ring` is unrolled.** `ring N about REF { … }` makes the N copies a `cycle` would, congruent by
+the numbers each was given and not held so; the implementation says it did (W112) wherever it
+reports the degrees of freedom, since the spec's `ring` is constraint-class and this one counts
+every copy. The `about` clause is mandatory. A statement inside a ring may reference, outside it,
+only what the ring's turn leaves where it is — the axis point, and a circle or arc centred on it
+(E021 otherwise); a ring inside a ring is refused (E022).
 
 Inside a `repeat`, `cycle` or `ring` body the final chain may end **mid-joint** — the marker,
 or the marker with words, standing at the body's `}`: the trailing joint threads the chain onto
