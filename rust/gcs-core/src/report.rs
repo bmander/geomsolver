@@ -365,7 +365,7 @@ pub fn exprs_json(sk: &mut Sketch) -> Json {
                     ("value", it.value.into()),
                     ("deps", Json::Arr(it.deps.iter().map(|d| Json::Str(d.clone())).collect())),
                     ("free", Json::Arr(it.free.iter().map(|d| Json::Str(d.clone())).collect())),
-                    ("error", it.error.map(Json::Str).unwrap_or(Json::Null)),
+                    ("error", it.error.map(|e| Json::Str(e.message)).unwrap_or(Json::Null)),
                 ])
             })
             .collect(),

@@ -740,11 +740,21 @@ pub fn elaborate(p: &Program) -> Elaborated {
         let span = map.site_of_constraint(item.id).map(|s| s.span).unwrap_or_default();
         let stmt = map.site_of_constraint(item.id).map(|s| s.stmt);
         if let Some(err) = &item.error {
+            // what the fault *is* decides what is said (#43.11): a number that is not what its
+            // slot takes is the E103 every `param` already gets — §3.3 names `distance(45deg)`
+            // as an error — and a claim binding a free name is the E040 §9.7 promises;
+            // only an expression that would not compute is a warning, since the last number
+            // stands and the drawing goes on
+            let (code, tail) = match err.fault {
+                expr::Fault::Dimension => (Code::E103, ""),
+                expr::Fault::ClaimFree => (Code::E040, ""),
+                expr::Fault::Uncomputable => (Code::W110, " — the last number stands"),
+            };
             diags.push(Diag {
-                code: Code::W110,
+                code,
                 span,
                 stmt,
-                message: format!("`{}`: {err} — the last number stands", item.text),
+                message: format!("`{}`: {err}{tail}", item.text),
             });
         } else if !item.free.is_empty() {
             diags.push(Diag {

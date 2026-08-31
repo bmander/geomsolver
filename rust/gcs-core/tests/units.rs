@@ -395,3 +395,33 @@ fn a_unit_is_stated_once_and_only_in_the_root() {
         "stated once, at the top",
     );
 }
+
+/// What an expression's fault *is* decides what is said of it (issue #43.11).  A number that is
+/// not what its slot takes is the error §3.3 names — `distance(45deg)` — the same E103 a `param`
+/// gets, not a warning that the last number stands; a claim binding a free name is §9.7's E040,
+/// not a warning followed by a refutation of the zero the warning made up; and a free name in
+/// an ordinary dimension is still the W111 it always was.
+#[test]
+fn a_slot_mismatch_is_an_error_and_a_free_name_is_not() {
+    let diag = |src: &str| -> Vec<(String, String)> {
+        let (prog, errs) = gcs_core::syntax::parse(src);
+        assert!(errs.is_empty(), "{errs:?}");
+        let e = gcs_core::program::elaborate(&prog);
+        e.diags.iter().map(|d| (d.code.as_str().to_string(), d.message.clone())).collect()
+    };
+    let two = "point a hint(x: 0, y: 0)\npoint b hint(x: 40, y: 0)\n";
+    let d = diag(&format!("{two}a distance(45deg) b\n"));
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert_eq!(d[0].0, "E103");
+    assert!(d[0].1.contains("`d` is Length, and this is Angle"), "{}", d[0].1);
+    assert!(!d[0].1.contains("last number"), "{}", d[0].1);
+
+    let d = diag(&format!(
+        "{two}point c hint(x: 40, y: 30)\na distance(40) b\nb distance(30) c\nclaim a distance(zz) c\nground a\nground b\n"
+    ));
+    assert_eq!(d.iter().filter(|x| x.0 == "E040").count(), 1, "{d:?}");
+    assert!(d.iter().any(|x| x.1.contains("a claim may not bind an unknown")), "{d:?}");
+
+    let d = diag(&format!("{two}a distance(w) b\n"));
+    assert_eq!(d.iter().map(|x| x.0.as_str()).collect::<Vec<_>>(), ["W111"], "{d:?}");
+}

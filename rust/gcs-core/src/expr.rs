@@ -903,6 +903,57 @@ pub fn to_user_units(kind: SpecKind, v: f64) -> f64 {
 
 /* -- the document's expressions ------------------------------------------------- */
 
+/// Why an expression could not be used — sorted by what it means for the document, since the
+/// three are not one kind of thing and were reported as one (#43.11).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fault {
+    /// The number is not what its slot takes — `distance(45deg)`.  An error the spec names
+    /// (§3.3: an angle is never coerced to a length or back), and the one place the checker
+    /// used to degrade to a warning while every `param` got the error.
+    Dimension,
+    /// A claim's dimension names a free variable (§9.7).  A claim compiles to no rows, so the
+    /// unknown would sit in no equation; warned and zeroed, the claim came back *refuted* by
+    /// the number the warning had made up.
+    ClaimFree,
+    /// It would not compute — a cycle, a name defined twice, a non-number — and the last
+    /// number stands, so the solver always has a constant.
+    Uncomputable,
+}
+
+/// An expression's fault and the words for it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExprError {
+    pub fault: Fault,
+    pub message: String,
+}
+
+impl ExprError {
+    fn new(fault: Fault, message: impl Into<String>) -> ExprError {
+        ExprError { fault, message: message.into() }
+    }
+}
+
+/// A bare message is the ordinary fault: it would not compute.
+impl From<String> for ExprError {
+    fn from(message: String) -> ExprError {
+        ExprError::new(Fault::Uncomputable, message)
+    }
+}
+
+/// Read as its message where only the words matter, so `error.as_deref()` is the text.
+impl std::ops::Deref for ExprError {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.message
+    }
+}
+
+impl std::fmt::Display for ExprError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
 /// One expression in the document, after evaluation.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExprItem {
@@ -921,7 +972,7 @@ pub struct ExprItem {
     /// moves rather than numbers.  At most one, since a dimension can only follow one; a list
     /// because that is what a reader wants to be handed, and because the deps beside it are one.
     pub free: Vec<String>,
-    pub error: Option<String>,
+    pub error: Option<ExprError>,
 }
 
 struct Node {
@@ -955,10 +1006,10 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
         }
     }
     let n = nodes.len();
-    let mut errors: Vec<Option<String>> = vec![None; n];
+    let mut errors: Vec<Option<ExprError>> = vec![None; n];
     for (i, nd) in nodes.iter().enumerate() {
         if let Err(e) = &nd.parsed {
-            errors[i] = Some(e.clone());
+            errors[i] = Some(e.clone().into());
         }
     }
     // who defines what; a name defined twice is nobody's, and every definer is told
@@ -974,7 +1025,7 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
             def.insert(name.clone(), who[0]);
         } else {
             for &i in who {
-                errors[i] = Some(format!("`{name}` is defined more than once"));
+                errors[i] = Some(format!("`{name}` is defined more than once").into());
             }
         }
     }
@@ -999,7 +1050,7 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
                 }
                 None => {
                     if errors[i].is_none() && definers.contains_key(name) {
-                        errors[i] = Some(format!("`{name}` is defined more than once"));
+                        errors[i] = Some(format!("`{name}` is defined more than once").into());
                     }
                 }
             }
@@ -1030,11 +1081,11 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
             let unready =
                 deps[i].iter().filter(|d| def.contains_key(*d)).find(|d| !env.contains_key(*d));
             if let Some(name) = unready {
-                errors[i] = Some(format!("`{name}` could not be evaluated"));
+                errors[i] = Some(format!("`{name}` could not be evaluated").into());
             } else {
                 // work it out, check what it came to against its slot, write it: three steps
                 // that fail the same way, so they are one chain and one error arm
-                let done = (|| -> Result<(f64, Aff), String> {
+                let done = (|| -> Result<(f64, Aff), ExprError> {
                     let a = eval(&parsed.body, &env)?;
                     check_dim(sk, nd, &a, &mut free_dim)?;
                     Ok((write_value(sk, nd, &a, &mut bound)?, a))
@@ -1069,7 +1120,7 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     let stuck: Vec<usize> = (0..n).filter(|&i| indeg[i] > 0).collect();
     for &i in &stuck {
         if errors[i].is_none() {
-            errors[i] = Some(cycle_text(i, &nodes, &deps, &def, &indeg));
+            errors[i] = Some(cycle_text(i, &nodes, &deps, &def, &indeg).into());
         }
         order.push(i);
     }
@@ -1110,25 +1161,26 @@ fn check_dim(
     nd: &Node,
     a: &Aff,
     free_dim: &mut BTreeMap<String, (Dim, &'static str)>,
-) -> Result<(), String> {
+) -> Result<(), ExprError> {
     let want = nd.kind.dim();
     let attr = sk.constraints[nd.ci].spec()[nd.ai].0;
+    let dim = |m: String| ExprError::new(Fault::Dimension, m);
     let Some(name) = a.free.clone() else {
-        return a.dim.require(want, attr);
+        return a.dim.require(want, attr).map_err(dim);
     };
     let d = want.div(a.dim);
     if d != Dim::SCALAR && d != Dim::LENGTH && d != Dim::ANGLE {
-        return Err(format!(
+        return Err(dim(format!(
             "`{name}` would have to be {} here, which is not a length, an angle or a plain number",
             d.name()
-        ));
+        )));
     }
     match free_dim.get(&name) {
-        Some(&(was, first)) if was != d => Err(format!(
+        Some(&(was, first)) if was != d => Err(dim(format!(
             "`{name}` is {} in `{first}` and {} in `{attr}` — one free name, one dimension",
             was.name(),
             d.name()
-        )),
+        ))),
         _ => {
             free_dim.insert(name, (d, attr));
             Ok(())
@@ -1153,7 +1205,7 @@ fn write_value(
     nd: &Node,
     a: &Aff,
     bound: &mut BTreeMap<String, f64>,
-) -> Result<f64, String> {
+) -> Result<f64, ExprError> {
     let (ci, ai, kind) = (nd.ci, nd.ai, nd.kind);
     let text = match &sk.constraints[ci].args[ai] {
         Arg::Expr(e) => e.text.clone(),
@@ -1161,30 +1213,33 @@ fn write_value(
     };
     let Some(name) = a.free.clone() else {
         if !a.c.is_finite() {
-            return Err("does not evaluate to a number".to_string());
+            return Err("does not evaluate to a number".to_string().into());
         }
         sk.constraints[ci].args[ai] = Arg::Expr(Expr::new(text, to_arg_units(kind, a.c)));
         return Ok(a.c);
     };
     if !a.m.is_finite() || !a.c.is_finite() {
-        return Err("does not evaluate to a number".to_string());
+        return Err("does not evaluate to a number".to_string().into());
     }
     // only a stated number can become an unknown, and only where there is a kernel to read it as
     // a column.  The two go together — `every_dimension_can_be_written_free` — so this is the
     // belt to that braces: an expression somewhere it was never meant to be says so rather than
     // selecting a kernel that does not exist.
     if !kind.is_dimension() || sk.constraints[ci].kind.free_kernel().is_none() {
-        return Err(format!("`{name}` is free, and this is not a dimension it can be"));
+        return Err(format!("`{name}` is free, and this is not a dimension it can be").into());
     }
     // a claim compiles to no rows, so an unknown bound here would sit in no equation at all — a
     // degree of freedom minted by a statement that promised to add nothing
     if sk.constraints[ci].claim {
-        return Err(format!("`{name}` is free, and a claim may not bind an unknown"));
+        return Err(ExprError::new(
+            Fault::ClaimFree,
+            format!("`{name}` is free, and a claim may not bind an unknown"),
+        ));
     }
     // a form that does not actually move with the variable states nothing about it, and there
     // would be no way back from the dimension to a value for it
     if a.m == 0.0 {
-        return Err(format!("`{name}` does not affect this dimension"));
+        return Err(format!("`{name}` does not affect this dimension").into());
     }
     let stated = sk.constraints[ci].args[ai].num();
     let seed = (to_user_units(kind, stated) - a.c) / a.m;
@@ -1391,7 +1446,7 @@ pub fn set_dimension(sk: &mut Sketch, id: u32, attr: &str, text: &str) -> Result
     parse_in(text, sk.units)?;
     sk.constraint_mut(id).unwrap().args[i] = Arg::Expr(Expr::new(text, value));
     let mine = evaluate(sk).into_iter().find(|it| it.id == id && it.attr == attr);
-    Ok(mine.and_then(|it| it.error))
+    Ok(mine.and_then(|it| it.error).map(|e| e.message))
 }
 
 /// Whether a constraint carries any expression — what decides if adding it needs an evaluation.
