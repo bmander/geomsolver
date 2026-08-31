@@ -47,11 +47,11 @@ struct Cyc {
 }
 
 /// What the names in one statement are resolved against: the prefixes it is nested in, innermost
-/// first, and the aliases the instantiation bound.
+/// first.  An instance's entity arguments are not here: a formal is a *port alias* under the
+/// instance's own prefix (`bind`), found by `lookup` through the prefixes like any other name.
 #[derive(Clone, Default)]
 struct Scope {
     prefixes: Vec<String>,
-    binds: BTreeMap<String, String>,
     cyc: Option<Cyc>,
     /// Whether a `cycle` or a `repeat` stands anywhere above: the prefix in force then carries a
     /// block's id (`#3.0.`) rather than an instance's name, and a declaration under it is one
@@ -237,12 +237,11 @@ impl<'a> Walk<'a> {
                         continue;
                     };
                     let comp = comp.clone();
-                    let (binds, mut sub_vals) = self.bind(&comp, inst, scope, vals);
+                    let mut sub_vals = self.bind(&comp, inst, scope, vals);
                     let mut sc = Scope {
                         prefixes: std::iter::once(format!("{prefix}{}.", inst.name.text))
                             .chain(scope.prefixes.iter().cloned())
                             .collect(),
-                        binds,
                         cyc: None,
                         copies: scope.copies,
                         vals: sub_vals.clone(),
@@ -280,7 +279,6 @@ impl<'a> Walk<'a> {
                             prefixes: std::iter::once(format!("{block_prefix}{k}."))
                                 .chain(scope.prefixes.iter().cloned())
                                 .collect(),
-                            binds: scope.binds.clone(),
                             // `next` and `prev` mean something only where the copies close
                             cyc: b.kind.wraps().then(|| Cyc {
                                 prefix: block_prefix.clone(),
@@ -447,15 +445,27 @@ impl<'a> Walk<'a> {
     ///
     /// An entity argument *aliases*: the formal and the actual denote one entity, at no cost.  A
     /// value argument is worked out here and is a number from then on.
+    ///
+    /// The alias is recorded exactly as `port f = actual` written in the instance's body would
+    /// be: under the instance's **absolute** prefix, `{prefix}{inst}.{formal}`, resolved in the
+    /// caller's scope.  Absolute, because that is the one key every reader already reaches —
+    /// `lookup` walks a statement's prefixes outward, so the formal is found from a `repeat` in
+    /// the body (`f.#3.1.hub` misses, `f.hub` hits), from a nested instance's own arguments
+    /// (`Inner(q)` resolves `q` in `Outer`'s scope, where `o.q` is an alias), and separately per
+    /// copy of an instance inside a block (`#3.0.s.b` and `#3.1.s.b` are two keys).  Keyed by
+    /// the instance's bare name, as it once was, all three of those collapsed: a block's prefix
+    /// was read back as the instance name, an outer formal was not yet bound when the inner
+    /// alias looked for it, and three copies of `s` wrote one key, so every copy was bound to
+    /// the last actual and the drawing came out silently wrong (issue #43).
     fn bind(
         &mut self,
         comp: &Component,
         inst: &crate::syntax::Instance,
         scope: &Scope,
         vals: &BTreeMap<String, Aff>,
-    ) -> (BTreeMap<String, String>, BTreeMap<String, Aff>) {
+    ) -> BTreeMap<String, Aff> {
         use crate::syntax::{InstVal, Ty};
-        let mut binds = BTreeMap::new();
+        let prefix = scope.prefixes.first().cloned().unwrap_or_default();
         let mut sub: BTreeMap<String, Aff> = BTreeMap::new();
         let mut positional = 0usize;
         for a in &inst.args {
@@ -475,9 +485,8 @@ impl<'a> Walk<'a> {
                 (Ty::Ent(_), InstVal::Ref(r)) => {
                     // recorded unresolved; the resolve pass turns it into an absolute name in the
                     // *caller's* scope, which is what makes it an alias rather than a copy
-                    binds.insert(f.name.text.clone(), String::new());
                     self.aliases.push((
-                        format!("\u{1}{}\u{1}{}", inst.name.text, f.name.text),
+                        format!("{prefix}{}.{}", inst.name.text, f.name.text),
                         r.clone(),
                         scope.clone(),
                     ));
@@ -495,7 +504,7 @@ impl<'a> Walk<'a> {
                 }
             }
         }
-        (binds, sub)
+        sub
     }
 
     /// One value argument, worked out and bound under the formal's *declared* dimension.
@@ -550,19 +559,7 @@ impl<'a> Walk<'a> {
         }
         let out = std::mem::take(&mut self.out);
         let mut flat = Vec::with_capacity(out.len());
-        for (mut st, path, mut sc) in out {
-            // an instance's entity arguments: the formal now names what the caller passed
-            for (formal, target) in sc.binds.iter_mut() {
-                if target.is_empty() {
-                    // the instance's own prefix is the innermost; the key was stashed under the
-                    // instance name so several instances of one component do not collide
-                    let inner = sc.prefixes.first().cloned().unwrap_or_default();
-                    let iname = inner.trim_end_matches('.').rsplit('.').next().unwrap_or("");
-                    if let Some(t) = alias.get(&format!("\u{1}{iname}\u{1}{formal}")) {
-                        *target = t.clone();
-                    }
-                }
-            }
+        for (mut st, path, sc) in out {
             let mut bad: Vec<(Span, String)> = Vec::new();
             rewrite(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad);
             for (span, msg) in bad {
@@ -770,11 +767,6 @@ fn lookup(
     for take in (1..=segs.len()).rev() {
         let cand = segs[..take].join(".");
         let rest: Vec<String> = segs[take..].to_vec();
-        if let Some(t) = sc.binds.get(&cand) {
-            if !t.is_empty() {
-                return Some((t.clone(), rest));
-            }
-        }
         for p in &prefixes {
             let abs = format!("{p}{cand}");
             if names.contains(&abs) {
