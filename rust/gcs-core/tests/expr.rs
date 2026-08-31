@@ -176,8 +176,11 @@ fn errors_name_the_problem_and_keep_the_last_value() {
     let items = expr::evaluate(&mut sk);
     let by_id = |id: u32| items.iter().find(|it| it.id == id).unwrap();
     assert!(by_id(ids[0]).error.is_none());
-    assert!(by_id(ids[1]).error.as_deref().unwrap().contains("`q` is free"));
-    assert_eq!(by_id(ids[2]).error.as_deref(), Some("`h` could not be evaluated"));
+    assert!(by_id(ids[1]).error.as_ref().unwrap().message.contains("`q` is free"));
+    assert_eq!(
+        by_id(ids[2]).error.as_ref().map(|e| e.message.as_str()),
+        Some("`h` could not be evaluated")
+    );
     assert_eq!(value(&sk, ids[1]), 0.0);   // what it had
 
     // define q elsewhere and everything downstream computes
@@ -207,14 +210,14 @@ fn duplicates_cycles_and_non_numbers() {
 
     let (mut sk, ids) = three(["a = b + 1", "b = a + 1", "a"]);
     let items = expr::evaluate(&mut sk);
-    let by_id = |id: u32| items.iter().find(|it| it.id == id).unwrap().error.clone().unwrap();
+    let by_id = |id: u32| items.iter().find(|it| it.id == id).unwrap().error.clone().unwrap().message;
     assert_eq!(by_id(ids[0]), "circular: a → b → a");
     assert_eq!(by_id(ids[1]), "circular: b → a → b");
     assert_eq!(by_id(ids[2]), "`a` could not be evaluated");
 
     let (mut sk, ids) = three(["r = sqrt(-1)", "1 / 0", "r"]);
     let items = expr::evaluate(&mut sk);
-    let by_id = |id: u32| items.iter().find(|it| it.id == id).unwrap().error.clone().unwrap();
+    let by_id = |id: u32| items.iter().find(|it| it.id == id).unwrap().error.clone().unwrap().message;
     assert_eq!(by_id(ids[0]), "does not evaluate to a number");
     assert_eq!(by_id(ids[1]), "does not evaluate to a number");
     assert_eq!(by_id(ids[2]), "`r` could not be evaluated");
@@ -606,8 +609,8 @@ fn the_number_a_free_dimension_shows_follows_the_solver() {
     // the drawing says what was written; the list says that and where it stands, marked as the
     // reading it is rather than a number anybody stated
     assert_eq!(io::dimension_text(sk.constraint(ids[0]).unwrap()).unwrap(), "q");
-    assert!(io::describe(sk.constraint(ids[0]).unwrap()).contains("q = 20.17 (free)"),
-            "{}", io::describe(sk.constraint(ids[0]).unwrap()));
+    let said = io::describe(sk.constraint(ids[0]).unwrap());
+    assert!(said.contains("q = 20.17") && said.contains(" (free)"), "{said}");
 }
 
 /// A free variable is not document state: the text and the number are, and evaluating them

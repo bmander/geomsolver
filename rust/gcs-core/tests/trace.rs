@@ -241,6 +241,20 @@ fn a_gear_runs_on_a_traced_involute() {
 
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
+    // and on the flank each contact names, not its mirror: every roll inside the interval its
+    // instance was drawn over.  The radii below cannot tell the two branches apart — the
+    // mirror crosses the root and the tip circles too — and a gear once solved onto it, tooth
+    // tips fifteen degrees from where the drawn flanks ended, with nothing said (#43.10).
+    for c in e.sketch.constraints.iter() {
+        if let Some((cv, t)) = c.family_contact() {
+            let (a, b) = e.sketch.curve_domain(cv.i());
+            let u = e.sketch.params[t as usize].value;
+            assert!(
+                u >= a.min(b) - 1e-6 && u <= a.max(b) + 1e-6,
+                "a contact at u = {u} on a flank drawn over ({a}, {b})"
+            );
+        }
+    }
 
     // the wheel's numbers, worked out here rather than asked of the core
     let (m, ded, phi) = (3.0f64, 1.0f64, 25.0f64);
@@ -383,9 +397,13 @@ q on w hint(u: 30)
                 );
             }
         }
-        // and it is the involute, not merely a repeatable answer: the row is q - C(u)
+        // and it is the involute, not merely a repeatable answer: the row is q - C(u), handed
+        // out over its own units (`System::row_scale`)
         let want = involute_at(0.0, 0.0, 20.0, u);
-        let got = (qxy.0 - forward[k][row], qxy.1 - forward[k][row + 1]);
+        let got = (
+            qxy.0 - forward[k][row] * sys.row_scale[row],
+            qxy.1 - forward[k][row + 1] * sys.row_scale[row + 1],
+        );
         assert!(
             (got.0 - want.0).abs() < 1e-7 && (got.1 - want.1).abs() < 1e-7,
             "at u = {u}: involute {want:?}, trace {got:?}",

@@ -21,7 +21,7 @@
 //! `Sketch::topology_key` carries it — so a contact walking past a knot is a recompile, the
 //! same event as any other topology change and about as rare.
 
-use crate::model::Sketch;
+use crate::model::{EntKind, EntRef, Sketch};
 use std::collections::BTreeMap;
 
 /// The one degree the kernels are compiled for.  The basis below is written for general `p`; a
@@ -618,16 +618,40 @@ pub fn contact_spans(sk: &Sketch) -> BTreeMap<u32, usize> {
 pub fn clamp_contacts(sk: &mut Sketch) -> Vec<u32> {
     let mut moved = Vec::new();
     for i in 0..sk.constraints.len() {
-        let Some((s, t)) = sk.constraints[i].curve_contact() else { continue };
+        // a contact of either family: a spline's parameter runs over its knots, a curve
+        // family's over the `over (a, b)` its instance declared — and a point constrained to a
+        // quarter arc drawn `over (0, 90)` sat at 270°, off the drawn curve, with the
+        // diagnosis calling the drawing well determined (#43.10)
+        let c = &sk.constraints[i];
+        let on_spline = c.curve_contact().map(|(s, t)| (EntRef::spline(s), t));
+        let Some((e, t)) = on_spline.or_else(|| c.family_contact()) else {
+            continue;   // an ellipse's parameter is an angle, and wraps
+        };
+        // a family's instance may run its interval either way (`over (-u0, -u1)` is a flank
+        // unwinding the other way), so the bounds are ordered before anything is held to them
+        let (t0, t1) = match e.kind {
+            EntKind::Spline => domain(sk, e.i()),
+            EntKind::Curve => {
+                let (a, b) = sk.curve_domain(e.i());
+                (a.min(b), a.max(b))
+            }
+            _ => continue,
+        };
         if sk.params[t as usize].fixed {
             continue;   // pinned: somebody said where along, and the solver is not to argue
         }
-        let (t0, t1) = domain(sk, s);
         let v = sk.params[t as usize].value;
         let c = if v.is_finite() { v.clamp(t0, t1) } else { 0.5 * (t0 + t1) };
         if c != v {
             sk.params[t as usize].value = c;
-            moved.push(t);
+            // held for the retry only when it was *materially* off the end.  A contact that
+            // belongs at an endpoint — a flank's roll at the root circle — lands a rounding
+            // error past it, and pinning that would recompile the system for nothing: a
+            // recompile forgets every remembered trace pose, and a traced gear re-walking a
+            // hundred marches from home did not come back to the same drawing.
+            if (c - v).abs() > 1e-9 * (t1 - t0).abs().max(1e-300) {
+                moved.push(t);
+            }
         }
     }
     moved

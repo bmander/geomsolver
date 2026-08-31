@@ -108,6 +108,12 @@ impl Style {
         out
     }
 
+    /// Whether `prop` is a property a sheet can state at all — as against one it can state
+    /// but was given no reading for, which `set` alone cannot tell apart.
+    pub fn knows(prop: &str) -> bool {
+        matches!(prop, "dash" | "width" | "color")
+    }
+
     pub fn set(&mut self, prop: &str, values: &[f64], text: &str) -> bool {
         match prop {
             "dash" => self.dash = Some(values.to_vec()),

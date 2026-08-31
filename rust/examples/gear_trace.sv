@@ -44,8 +44,14 @@ curve involute(c: circle, datum: line, phase: Angle)(u) =
 component Flank(base: circle, datum: line, root: circle, tip: circle,
                 phase: Angle, u0: Angle, u1: Angle) {
   curve e = involute(base, datum, phase: phase) over (u0, u1)
-  port lo: point
-  port hi: point
+  // Seeded at the centre, as gear.sv's are and for the same reason: from there the first step
+  // puts each end on the flank at the roll its contact's `hint(u: …)` names.  Started a unit
+  // or so off-centre, the solve reached the *mirror* branch of the string — the same radii,
+  // the wrong bearings, a tooth flaring the wrong way — and `over (u0, u1)` is what now refuses
+  // that: a contact off the drawn interval is put back and held, and the drawing either solves
+  // on the flank or says it did not.
+  port lo: point hint(x: 0, y: 0)
+  port hi: point hint(x: 0, y: 0)
 
   lo on e hint(u: u0)
   hi on e hint(u: u1)

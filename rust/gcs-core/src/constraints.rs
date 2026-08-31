@@ -607,6 +607,15 @@ impl CKind {
     /// an unknown would sit in no equation at all: a degree of freedom the drawing does not have,
     /// minted by a statement that promised to add nothing.  Elaboration turns the refusal into an
     /// E040 with a span; the document readers, which take untrusted input, drop the flag instead.
+    /// Whether the number this kind states is a *magnitude* — a point-to-point distance, a
+    /// radius — as against a signed one (a run, a rise, a point's offset from a line).  A
+    /// magnitude's residual squares its sign away or draws its absolute value, so a negative
+    /// literal in the source would quietly mean the positive and the drawing and the document
+    /// would disagree about what the circle is (#43.12); it is refused where it is written.
+    pub fn magnitude(self) -> bool {
+        matches!(self, CKind::Distance | CKind::Radius)
+    }
+
     pub fn claimable(self) -> bool {
         !self.spec().iter().any(|(_, k)| k.is_param())
     }
@@ -1317,6 +1326,18 @@ impl Constraint {
     pub fn parametric_contact(&self) -> Option<(EntRef, u32)> {
         let (e, t) =
             self.kind.contact_slots().or_else(|| self.kind.ellipse_contact_slots())?;
+        match self.args[t] {
+            Arg::Param(p) => Some((self.args[e].ent(), p)),
+            _ => None,
+        }
+    }
+
+    /// A contact on a curve *family* instance (`PointOnCurve`) and the Param holding where
+    /// along it — the third family, asked separately from the other two for the one thing it
+    /// shares with a spline and not with an ellipse: a bounded parameter, clamped to the
+    /// `over (a, b)` its instance declared (`curve::clamp_contacts`).
+    pub fn family_contact(&self) -> Option<(EntRef, u32)> {
+        let (e, t) = self.kind.contact_on(SpecKind::Curve)?;
         match self.args[t] {
             Arg::Param(p) => Some((self.args[e].ent(), p)),
             _ => None,

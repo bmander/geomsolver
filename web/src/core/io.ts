@@ -99,9 +99,10 @@ export class Index {
   }
 }
 
-/** Human-readable one-liner: `Distance(P0, P1, 80)`; angles shown in degrees. */
-export function describe(c: Constraint, _ix?: Index | Sketch): string {
-  return c.describe();
+/** Human-readable one-liner: `P0 distance(80) P1`; angles shown in degrees.  Given the
+ *  document, entities are named as its source names them. */
+export function describe(c: Constraint, doc?: { readonly handle: number }): string {
+  return c.describe(doc);
 }
 
 /** Python's %g-style formatting: `sig` significant digits, trailing zeros dropped. */

@@ -128,11 +128,12 @@ fn a_degenerate_line_does_not_read_as_solved() {
 
 /// DogLeg's first full Gauss–Newton step can overshoot clean out of the solution's basin and
 /// stall in a residual minimum that solves nothing — this rectangle, carrying its redundant
-/// perpendiculars and asked to widen from 7.6 to 25, does exactly that.  The one-shot solve
-/// retries the same start on the damped path and succeeds.  If the first half of this test ever
-/// fails, DogLeg has learned to solve the trap itself and the pinned failure can retire.
+/// perpendiculars and asked to widen from 7.6 to 25, used to do exactly that on raw residuals,
+/// and the one-shot solve retried the same start on the damped path.  With every row in its
+/// own units DogLeg takes the trap itself, so the pinned failure has retired as its comment
+/// said it would; what is held is that the figure solves, whichever path takes it.
 #[test]
-fn an_unconverged_dogleg_retries_on_the_damped_path() {
+fn a_rectangle_widened_past_its_gauss_newton_step_solves() {
     let build = || {
         let mut sk = Sketch::new();
         let a = sk.point(167.7, 4.83, false, "a");
@@ -154,11 +155,8 @@ fn an_unconverged_dogleg_retries_on_the_damped_path() {
         sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 25.0));
         sk
     };
-    let bare = solve(&mut build(), SolveOpts { retry: false, ..SolveOpts::default() });
-    assert!(!bare.success, "DogLeg now solves this on its own: {bare:?}");
     let res = solve(&mut build(), SolveOpts::default());
     assert!(res.success, "{}: max residual {}", res.message, res.max_residual);
-    assert_eq!(res.method, "lm");
 }
 
 /// Defence in depth for the same thing: a NaN anywhere in a residual vector has to win the max,
@@ -269,7 +267,8 @@ fn the_conditioned_jacobian_is_dimensionless() {
             let unit = extent.powi(degree as i32 - 1);
             let mut norm = 0.0f64;
             for j in 0..sys.n_free {
-                let want = raw.at(r, j) / unit;
+                // `jacobian_dense` hands a row out over `row_scale` (`extent^degree`) already
+                let want = raw.at(r, j) * sys.row_scale[r] / unit;
                 assert!((c.as_mat().at(i, j) - want).abs() <= 1e-12 * want.abs().max(1.0));
                 norm += want * want;
             }

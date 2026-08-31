@@ -37,6 +37,11 @@ pub struct Block {
 /// sketch at every size.  The one number the diagnosis, the witness and `System::rank` share.
 pub const RANK_TOL: f64 = 1e-9;
 
+/// `‖Jᵀr‖∞ / (‖J‖∞ ‖r‖∞)` below which a pose counts as stationary (`System::stationary`).  At
+/// a minimum the solvers actually reach, the ratio is rounding — 1e-12 and below; a solve
+/// that stopped short of one is off by orders of magnitude, so the line between them is wide.
+pub const STATIONARY_TOL: f64 = 1e-6;
+
 /// Rows of the Jacobian at z with the units divided out: row r over
 /// `max(1, extent)^(degree - 1)`, columns already in world length (`z = x * col_scale`).  Every
 /// entry is dimensionless and O(1) for a well-posed row, so a singular value is an absolute
@@ -114,14 +119,26 @@ pub struct System {
     /// Residual units per row: `max(1, extent)^degree` for the row's kernel.  Kernels are not
     /// all written to the same power of length, so one system-wide scale judges half of them
     /// against a tolerance meant for the other half.
+    ///
+    /// **Every residual this system hands out is already divided by it**, and so is every row
+    /// of the Jacobian — `residuals_into` and `compute_csr` are the two places a row is
+    /// produced, and both scale it there.  So the vector the solvers minimise is
+    /// dimensionless: a degree-0 `angle` row (a bearing gap in radians, O(1)) sits beside a
+    /// degree-2 `distance` row (a squared length, O(L²)) at equal weight.  Left raw, the
+    /// dogleg's merit function, its ratio test and its Cauchy step all belonged to the length
+    /// rows — a four-bar linkage with one angle stated turned its crank about a degree an
+    /// iteration and ran out at a hundred, and the same figure at ten times the size did not
+    /// move at all (issue #43).  The relative rule "solved" already used for the *test* is
+    /// now the rule the *iteration* sees, which is the only way the two can agree.
     pub row_scale: Vec<f64>,
+    /// False when every `row_scale` is 1 — a drawing within a unit of the origin — which then
+    /// pays nothing for the division.
+    row_scaled: bool,
     /// Units of a row of the Jacobian: `max(1, extent)^(degree - 1)`, since the derivative of a
     /// degree-`d` residual with respect to a world length carries one power of length fewer.
-    /// What `conditioned` divides each row by.
+    /// What `conditioned` divides a *raw* row by; over a row already over `row_scale`, that is
+    /// a multiplication by `row_scale / jac_scale`, which is `max(1, extent)` for every row.
     jac_scale: Vec<f64>,
-    /// The smallest `row_scale` over hard rows — the strictest tolerance in the system, which is
-    /// what the inner solver has to iterate to for every row to come in under its own.
-    pub min_hard_scale: f64,
     /// One flag per residual row: rows that must be satisfied.
     pub hard: Vec<bool>,
     pub blocks: Vec<Block>,
@@ -328,15 +345,7 @@ impl System {
                 jac_scale[r] = jsc;
             }
         }
-        let mut min_hard_scale = f64::INFINITY;
-        for r in 0..n_res {
-            if hard[r] {
-                min_hard_scale = min_hard_scale.min(row_scale[r]);
-            }
-        }
-        if !min_hard_scale.is_finite() {
-            min_hard_scale = extent.max(1.0);
-        }
+        let row_scaled = row_scale.iter().any(|&s| s != 1.0);
 
         System {
             n_params: n,
@@ -349,8 +358,8 @@ impl System {
             extent,
             scale,
             row_scale,
+            row_scaled,
             jac_scale,
-            min_hard_scale,
             hard,
             blocks,
             cids,
@@ -473,6 +482,12 @@ impl System {
             let rows = b.count * kn.n_res;
             (kn.res)(b.count, &v, &b.consts, &mut r[b.row0..b.row0 + rows]);
         }
+        // each row in its own units — see `row_scale`
+        if self.row_scaled {
+            for i in 0..self.n_res {
+                r[i] /= self.row_scale[i];
+            }
+        }
     }
 
     pub fn residuals(&mut self, z: &[f64]) -> Vec<f64> {
@@ -509,12 +524,14 @@ impl System {
         for e in 0..self.ent_src.len() {
             self.csr_data[self.ent_slot[e] as usize] += self.jdata[self.ent_src[e] as usize];
         }
-        // dr/dz = (dr/dx) / col_scale: the same chain rule that turned x into z above
-        if self.scaled {
+        // dr/dz = (dr/dx) / col_scale: the same chain rule that turned x into z above — and the
+        // row over its own units, as `residuals_into` hands the residual out
+        if self.scaled || self.row_scaled {
             for r in 0..self.n_res {
+                let inv = 1.0 / self.row_scale[r];
                 for p in self.csr_indptr[r]..self.csr_indptr[r + 1] {
                     let p = p as usize;
-                    self.csr_data[p] /= self.col_scale[self.csr_indices[p] as usize];
+                    self.csr_data[p] *= inv / self.col_scale[self.csr_indices[p] as usize];
                 }
             }
         }
@@ -538,7 +555,8 @@ impl System {
         }
         self.compute_csr(z);
         for (i, &r) in rows.iter().enumerate() {
-            let inv = if condition { 1.0 / self.jac_scale[r] } else { 1.0 };
+            // the CSR row is already over `row_scale`; conditioning wants it over `jac_scale`
+            let inv = if condition { self.row_scale[r] / self.jac_scale[r] } else { 1.0 };
             for p in self.csr_indptr[r]..self.csr_indptr[r + 1] {
                 m.data[i * self.n_free + self.csr_indices[p as usize] as usize] =
                     self.csr_data[p as usize] * inv;
@@ -547,7 +565,9 @@ impl System {
         m
     }
 
-    /// max |r| over hard rows at z — what "solved" means.
+    /// max |r| over hard rows at z.  A residual is handed out in its row's own units, so this
+    /// is `max_relative_residual` under its older name; both are kept because the ABI
+    /// publishes both.
     pub fn max_hard_residual(&mut self, z: &[f64]) -> f64 {
         let r = self.residuals(z);
         let mut mx = 0.0f64;
@@ -565,36 +585,55 @@ impl System {
         mx
     }
 
+    /// Whether `z` is a stationary point of ½‖r‖² over the hard rows: `‖Jᵀr‖∞` within
+    /// `STATIONARY_TOL` of `‖J‖∞ · ‖r‖∞`, which is the largest one entry of the gradient could
+    /// be, so the ratio is dimensionless and the same statement at every size.
+    ///
+    /// A pose that is not a solution means one of two things, and only this question tells
+    /// them apart.  At a stationary point the solver could go no further: the residual left
+    /// is what the constraints *cannot* agree on, and the diagnosis may call it a conflict and
+    /// look for the minimal set behind it.  Anywhere else the solver simply stopped — out of
+    /// iterations, a collapsed trust region — and the unsatisfied rows are a fact about the
+    /// solve, not about the geometry: a diagnosis that read them as a conflict named three
+    /// innocent statements on a consistent four-bar linkage and invited the user to delete one
+    /// (issue #43).  A NaN anywhere is not stationary either; nothing is known there.
+    pub fn stationary(&mut self, z: &[f64]) -> bool {
+        let r = self.residuals(z);
+        self.compute_csr(z);
+        let mut g = vec![0.0; self.n_free];
+        let (mut jmax, mut rmax) = (0.0f64, 0.0f64);
+        for row in 0..self.n_res {
+            if !self.hard[row] {
+                continue;
+            }
+            if r[row].is_nan() {
+                return false;
+            }
+            rmax = rmax.max(r[row].abs());
+            for p in self.csr_indptr[row]..self.csr_indptr[row + 1] {
+                let p = p as usize;
+                let v = self.csr_data[p];
+                if v.is_nan() {
+                    return false;
+                }
+                jmax = jmax.max(v.abs());
+                g[self.csr_indices[p] as usize] += v * r[row];
+            }
+        }
+        let gmax = g.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+        gmax <= STATIONARY_TOL * jmax * rmax
+    }
+
     /// max |residual| / (that row's units) over the hard rows — dimensionless, so one threshold
-    /// judges every kernel.  This, not `max_hard_residual`, is what "solved" means.
+    /// judges every kernel.  This is what "solved" means.  The division happened where the
+    /// residual was produced (`row_scale`), so there is nothing left to do here but the max.
     /// `locus::assemble` states the same rule in miniature for a trace block's inner rows; an
     /// edit to what counts toward a row's units has a twin there.
     pub fn max_relative_residual(&mut self, z: &[f64]) -> f64 {
-        let r = self.residuals(z);
-        let mut mx = 0.0f64;
-        for i in 0..self.n_res {
-            if self.hard[i] {
-                if r[i].is_nan() {
-                    return f64::NAN;
-                }
-                let a = r[i].abs() / self.row_scale[i];
-                if a > mx {
-                    mx = a;
-                }
-            }
-        }
-        mx
+        self.max_hard_residual(z)
     }
 
-    /// The units of a constraint's residual, for judging `constraint_errors` against.
-    pub fn constraint_scale(&self, cid: u32) -> f64 {
-        match self.slot_of.get(&cid) {
-            Some(&(b, _)) => self.extent.max(1.0).powi(self.kernels[self.blocks[b].kid].degree as i32),
-            None => self.scale,
-        }
-    }
-
-    /// max |residual| per constraint, in block order (`self.cids`).
+    /// max |residual| per constraint, in block order (`self.cids`), each in its own units.
     /// How many constraints this plan was compiled from — the length `constraint_errors`
     /// reports, which is the sketch's count only until the sketch is edited.
     pub fn n_constraints(&self) -> usize {

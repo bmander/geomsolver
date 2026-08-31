@@ -1,5 +1,5 @@
 use gcs_core::constraints::{Arg, CKind, Constraint, SpecKind};
-use gcs_core::diagnose::{diagnose, distance_rigidity, minimal_conflict_set, DiagnoseOptions, State};
+use gcs_core::diagnose::{diagnose, distance_rigidity, minimal_conflict_set, summary, DiagnoseOptions, State};
 use gcs_core::examples;
 use gcs_core::model::{EntRef, Sketch};
 use gcs_core::newton::Method;
@@ -405,7 +405,9 @@ fn a_large_sketch_does_not_loosen_the_linear_constraints() {
 
     let r = solve(&mut sk, SolveOpts::default());
     assert!(!r.success, "contradictory radii reported solved: {r:?}");
-    assert!(r.max_residual > 0.4, "{r:?}");
+    // the residual is reported in the row's own units — a length over the extent — so the
+    // 0.45 the two radii cannot agree on reads as 0.45 / 1000
+    assert!(r.max_residual > 0.4 / 1000.0, "{r:?}");
 
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     assert_eq!(d.status, State::Conflict, "{d:?}");
@@ -454,7 +456,7 @@ fn diagnosis_scales_to_a_large_sketch() {
     let mut sk = examples::truss(40, 20.0, 15.0, true);
     assert!(sk.constraints.len() > 150, "{}", sk.constraints.len());
     let d = diagnose(&mut sk, DiagnoseOptions { numeric: Some(false), ..Default::default() });
-    assert_eq!(d.status, State::Well, "{}", gcs_core::diagnose::summary(&d));
+    assert_eq!(d.status, State::Well, "{}", summary(&d));
     assert_eq!(d.dof, 0);
     assert!(d.violated.is_empty());
     assert_eq!(d.components.len(), 1);
@@ -609,4 +611,80 @@ fn a_tangential_contact_is_rigid_not_under() {
     assert!(d.over.is_empty() && d.implied.is_empty());
     assert_eq!(d.geometric_dependency, 0);
     assert!(d.under_params.is_empty(), "{:?}", d.under_params);
+}
+
+/// A pose the solver merely stopped at is no verdict.  The four-bar linkage is consistent and
+/// full rank; asked to solve in one iteration it does not get there, and what the diagnosis
+/// says about that pose is *unsolved* — not a conflict naming three innocent statements, which
+/// is what reading the unsatisfied rows as evidence about the geometry did (issue #43).
+#[test]
+fn a_solve_that_stopped_short_is_unsolved_not_a_conflict() {
+    let (prog, _) = gcs_core::syntax::parse(
+        "point a hint(x: 0, y: 0)
+         point d hint(x: 60, y: 0)
+         point b hint(x: 8, y: 24)
+         point c hint(x: 52, y: 30)
+         line ground_link(a, d)
+         line crank(a, b)
+         line coupler(b, c)
+         line rocker(d, c)
+         a distance(25) b
+         b distance(45) c
+         d distance(30) c
+         ground a
+         ground d
+         crank angle(70) ground_link",
+    );
+    let mut sk = gcs_core::program::elaborate(&prog).sketch;
+    let r = solve(&mut sk, SolveOpts { max_iter: 1, retry: false, ..SolveOpts::default() });
+    assert!(!r.success, "one iteration was enough: {r:?}");
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.status, State::Unsolved, "{}", summary(&d));
+    assert!(!d.violated.is_empty(), "the unsatisfied rows are still reported");
+    assert!(d.conflicts.is_none(), "no conflict set is searched for: {:?}", d.conflicts);
+    assert!(summary(&d).contains("UNSOLVED"), "{}", summary(&d));
+    // entities keep their determination — nothing is painted a conflict, or unsolved
+    assert!(d.entity_state.values().all(|&s| s == State::Well), "{:?}", d.entity_state);
+
+    // solved, the same figure is well-constrained and nothing is violated
+    let r = solve(&mut sk, SolveOpts::default());
+    assert!(r.success, "{r:?}");
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.status, State::Well, "{}", summary(&d));
+}
+
+/// #43.17 — an entity's own intrinsic rows are not statements in the document and cannot be
+/// removed, so "remove one of these" never names one.
+#[test]
+fn an_intrinsic_row_is_never_a_culprit() {
+    let (prog, _) = gcs_core::syntax::parse(
+        "point o hint(x: 0, y: 0)
+         point s hint(x: 20, y: 0)
+         point e hint(x: 0, y: 20)
+         arc a(center: o, start: s, end: e) hint(r: 20)
+         radius(20) a
+         o distance(20) s
+         ground o
+         horizontal line r0(o, s)",
+    );
+    let mut sk = gcs_core::program::elaborate(&prog).sketch;
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert!(!d.over.is_empty(), "{}", summary(&d));
+    for c in d.over.iter().chain(d.conflicts.iter().flatten()).chain(d.violated.iter()) {
+        assert!(!sk.constraint(*c).unwrap().intrinsic, "named an intrinsic row: {}", summary(&d));
+    }
+}
+
+/// #43.18 — the components line is paged like every other list in the summary.
+#[test]
+fn the_components_line_is_bounded() {
+    let (prog, _) = gcs_core::syntax::parse("repeat 400 as i { point p hint(x: i, y: 0) }\nground p[0]\n");
+    let mut sk = gcs_core::program::elaborate(&prog).sketch;
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    let s = summary(&d);
+    // 400 points, one grounded: 798 free coordinates and no equation, so 798 components
+    assert!(s.contains("798 components"), "{s}");
+    assert!(s.contains("… and 786 more"), "{s}");
+    assert!(s.len() < 400, "{} chars: {s}", s.len());
 }

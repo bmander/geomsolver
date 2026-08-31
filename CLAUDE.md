@@ -39,8 +39,10 @@ Currently: **Stage 5 done**, in **one** implementation —
 * **CLI** (`rust/gcs-cli/`): `solventc`, which parses, elaborates, solves, diagnoses and reports
   on a document from a terminal — the first way to check a drawing without a browser, and the
   natural home for module resolution when it arrives.  It **invents no wording**: a per-document
-  line is `diagnose::summary`, a culprit is `io::describe`, `--json` is `report::*_json`, so it
-  and the app cannot come to describe one drawing differently.  Exit codes 0/1/2 are what
+  line is `diagnose::summary`, a culprit is `io::describe_with` (the core's wording over the
+  `SourceMap`'s names — `corner distance(60) along`, never `P0`; the app reaches the same through
+  `gcs_elab_describe`), `--json` is `report::*_json`, so it and the app cannot come to describe
+  one drawing differently.  Exit codes 0/1/2 are what
   `Diag::severity` and `SolveResult::success` already say, given a process to say it to.  The
   seam an importer will need is there already — a `Source { name, text }` list in, a report per
   source out — because **the core takes text and has no filesystem**: it runs in wasm and must
@@ -201,13 +203,21 @@ Conventions:
   named since the map was made, or mint.
   Insertions racing for one offset are ordered by `splice`'s stable sort, so reconcile pushes
   appends before flags before names; `tests/anonymous.rs` is the gate.
-  Where an unseeded implicit child *starts* is `program::scatter` and is an implementation
-  choice the spec must not carry — but it may not be the origin (two endpoints there is a
-  zero-length line, with no direction for `horizontal(l)` and a singular row for any tangency),
-  and minted points may not pile up or seed a contour as a self-crossing quad: a collapsed side
-  satisfies every direction constraint on it, so that basin must not be where a solve begins.
-  `scatter` therefore walks the bearing a fixed irrational step per minted point, in creation
-  order — which for a chain is traversal order, so a contour seeds as a simple polygon.
+  Where an unseeded point *starts* — an implicit child, a declared `point a` with no `hint(…)`
+  clause, a `port tip: point` with none — is `program::scatter` and is an implementation choice
+  the spec must not carry — but it may not be the origin (two endpoints there is a zero-length
+  line, with no direction for `horizontal(l)` and a singular row for any tangency; two points
+  there put a `distance` at a stationary point of its own residual, and the first document
+  anybody writes solved as a conflict), and minted points may not pile up or seed a contour as a
+  self-crossing quad: a collapsed side satisfies every direction constraint on it, so that basin
+  must not be where a solve begins.  `scatter` therefore walks the bearing a fixed irrational
+  step per minted point, in creation order — which for a chain is traversal order, so a contour
+  seeds as a simple polygon.  "No clause" is the empty `hint_span` the parser leaves where one
+  would go (a lifted declaration has `None` and keeps its numbers), and `commit_seeds` then
+  writes the solved pose in as the clause.  The declaring form of a port takes the same clause
+  (`port lo: point hint(x: 0, y: 0)`), and `gear.sv` / `gear_trace.sv` state theirs: from the
+  centre, where every circle's row is flat, a flank's first step lands on the involute at the
+  roll its contact names, where a start a unit off reached the mirror branch.
 - **Presentation is a separate statement from what the drawing is** (`style.rs`, Solvent §13.2).
   A declaration carries a **class** (`line datum(o, q) class construction`) and a top-level
   `style .NAME { dash: 7 4; width: 0.5; color: #888888 }` says what a class looks like.
@@ -331,7 +341,19 @@ Conventions:
   of the curve's length.  Systems where every scale is 1 take the untouched path.
 - "Solved" is `System::max_relative_residual <= 1e-6`: each row's residual over its own units
   (`extent^degree`).  Never one absolute threshold for the whole system — half the kernels are
-  linear in length and half quadratic, so one threshold is wrong for one of the halves.
+  linear in length and half quadratic, so one threshold is wrong for one of the halves.  **And
+  the iteration sees the same vector**: `residuals_into` and `compute_csr` divide every row by
+  `row_scale` where it is produced, so the dogleg's merit function, its ratio test and its
+  Cauchy step weigh an `angle` row (radians, O(1)) and a `distance` row (a squared length,
+  O(L²)) alike.  Minimised raw, a four-bar linkage with its crank angle stated turned about a
+  degree an iteration and did not solve at all past forty units across (issue #43).  Anything
+  reading a residual off a `System` — a test comparing against a kernel — multiplies by
+  `row_scale` to get the raw one back.  A pose that is *not* a solution is one of two things,
+  and `System::stationary` tells them apart: at a stationary point the residual left is what the
+  constraints cannot agree on, and the diagnosis may call it a conflict; anywhere else the solver
+  merely stopped, the diagnosis solves a scratch copy to find out which, and a consistent
+  drawing is `State::Unsolved` — no conflict set, no culprits, the unsatisfied rows listed as
+  what they are.
 - Its Jacobian twin: a rank or a null space is judged on `System::conditioned` — the hard rows
   over `extent^(degree−1)` (a degree-`d` residual's derivative with respect to a length carries
   one power fewer), columns already in world length — against one absolute, dimensionless
@@ -673,6 +695,18 @@ Conventions:
   `commit_seeds` needs to see.  `Program::stmts` walks into block bodies for the same reason;
   whether a statement is one the *root* may splice on its own is a different question, asked
   against `root().body` (`edit::in_root`).
+- **`ring` is unrolled and says so** (issue #43): the flattener makes a ring's copies as a
+  `cycle`'s and pushes a W112 at the block — spec §12.3 [0.2] requires the unrolling be reported
+  wherever the DOF ledger is — refuses a ring inside a ring (E022, §12.6: may refuse, must not
+  mis-solve), and after the rewrite judges every statement inside one against what its
+  references resolved to (`flatten::judge_rings`, E021): outside the ring only the axis point,
+  and a circle or arc centred on it, turn with it.  The parser makes `about` mandatory.  These
+  carry their own codes through `Expansion::coded`, since the plain `errors` are sorted into
+  E101/E103 by message.  Likewise an expression's failure is an `expr::ExprError` with a `Fault`
+  — `Dimension` (E103, §3.3: `distance(45deg)` is an error, never a coercion), `ClaimFree`
+  (E040, §9.7) or `Uncomputable` (W110, the last number stands) — because three different things
+  were one warning.  A point-to-point distance and a radius are `CKind::magnitude`, and a
+  negative literal in one is E040 where it is written: the kernel would square the sign away.
 - Decomposition maps constraints onto F–H elements in `cgraph::build`; a new constraint type is
   either an edge (PP/PL), a direction relation, or `unsupported` (numeric residual).  Merge
   decisions use generic-rank at witness poses; chirality of PPP merges is the triangle
@@ -720,7 +754,11 @@ Conventions:
   carries it.  `io::from_json` still *reads* the old position-keyed `placements` table, so an
   older document loads; it never writes one.  The number a dimension states
   comes from `io::dimension_text`, so the drawing and the constraint list cannot print it
-  differently.  A callout is painted *over* the geometry, so `callout::pick` also owns what
+  differently — and a bare number is read through `io::reading`, one constant
+  (`READING_SIG`, six digits) for the callout, `arg_text` and `describe` alike, since
+  `syntax::num` is the *source* printer and prints every digit a double has.  A written literal
+  that names its unit (`60deg`) is drawn as written and given no second sign
+  (`expr::names_unit`).  A callout is painted *over* the geometry, so `callout::pick` also owns what
   outranks it: a point within the same tolerance beats the figure's lines — a radius runs its
   leader out of the centre it measures from, and the one point a circle has has to stay
   clickable once it is dimensioned — but not the number's own box, which is filled solid, and

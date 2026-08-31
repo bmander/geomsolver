@@ -167,7 +167,9 @@ solve(sk);                     // p -> (1, 0), q -> (11, 0): least change
   sketches quietly redundant.  A point and a line selected together give `PointLineDistance`:
   the point's perpendicular offset from the line, also signed, and measured to the *infinite*
   line so the foot may fall past the end of the segment.  Two circles or arcs give
-  `AnnularDistance`: the radial thickness of the ring between them.  None of the three creates
+  `AnnularDistance`: the radial thickness of the ring between them — which reads two radii and
+  neither centre, so in Solvent `c1 distance(d) c2` is refused unless the two are centred on one
+  point.  None of the three creates
   the alignment it dimensions — pair them with Parallel, or Coincident on the centres, when
   nothing else in the sketch already implies it.
   Equal takes an equality *set*: n selected lines or n circles/arcs become n−1

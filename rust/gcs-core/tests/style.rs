@@ -191,13 +191,19 @@ claim a distance(60, along: x) b at (10, 20)
     assert!(!out.contains("#7aa7ad"), "and takes the document's ink, not the shipped one:\n{out}");
 }
 
-/// A property whose value the sheet cannot read is **dropped**, exactly as a property it does
-/// not know is.  `color:` with nothing after it stored an empty string, which is not nullish and
-/// so travelled to `ctx.fillStyle` — where an unparseable assignment is ignored and leaves the
-/// previous colour standing, drawing every dimension's label in the background colour.
+/// A property whose value the sheet cannot read is **dropped** — `color:` with nothing after it
+/// stored an empty string, which is not nullish and so travelled to `ctx.fillStyle`, where an
+/// unparseable assignment is ignored and leaves the previous colour standing, drawing every
+/// dimension's label in the background colour — and, unlike a property it does not know, it is
+/// **reported** (issue #43.20): a mistyped sheet must not look exactly like a working one.
 #[test]
 fn a_property_with_no_value_says_nothing() {
-    let sk = read(&format!("style .dimension {{ color: ; width: }}\n{PLAIN}"));
+    let src = format!("style .dimension {{ color: ; width: }}\n{PLAIN}");
+    let (prog, errs) = gcs_core::syntax::parse(&src);
+    let said: Vec<&str> = errs.iter().map(|e| e.message.as_str()).collect();
+    assert!(said.iter().any(|m| m.contains("`color:` is given no value")), "{said:?}");
+    assert!(said.iter().any(|m| m.contains("`width:` is given no value")), "{said:?}");
+    let sk = gcs_core::program::elaborate(&prog).sketch;
     let ink = sk.style_named("dimension");
     assert_eq!(ink.color.as_deref(), Some("#0f6f7a"), "the base ink stands");
     assert_eq!(ink.width, Some(1.0));

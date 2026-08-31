@@ -30,7 +30,7 @@ function rebuildRows(next: Constraint[]): void {
   clist.replaceChildren();
   next.forEach((c) => {
     const li = document.createElement('li');
-    li.dataset.base = io.describe(c, ix);
+    li.dataset.base = io.describe(c, view.doc);
     li.textContent = li.dataset.base;
     li.addEventListener('click', () => {
       focusConstraint(c);
@@ -132,7 +132,7 @@ export function refreshRows(): void {
     // an expression's number moves when a name it reads does, without the list changing — so
     // the rows' text is re-read while any expression is about
     const ix = new io.Index(sk);
-    rows.forEach((c, i) => { (clist.children[i] as HTMLElement).dataset.base = io.describe(c, ix); });
+    rows.forEach((c, i) => { (clist.children[i] as HTMLElement).dataset.base = io.describe(c, view.doc); });
   }
   rows.forEach((c, i) => {
     const li = clist.children[i] as HTMLElement;
@@ -233,11 +233,12 @@ export function refreshStatus(): void {
   const d = view.diagnosis;
   const r = view.lastResult;
   const conflict = d?.status === 'conflict';
-  footerEl.classList.toggle('unsolved', conflict || (!!r && !r.success));
+  const unsolved = d?.status === 'unsolved' || (!!r && !r.success);
+  footerEl.classList.toggle('unsolved', conflict || unsolved);
   // nothing is diagnosed until there is a constraint to diagnose, and until then the freedom
   // left is simply every free parameter — there are no equations for one to be spent on
   stats(conflict ? '⚠ CONFLICT'
-      : r && !r.success ? `⚠ NOT CONVERGED  max|r|=${r.maxResidual.toExponential(1)}`
+      : unsolved ? `⚠ NOT CONVERGED${r ? `  max|r|=${r.maxResidual.toExponential(1)}` : ''}`
       : `DOF ${d ? d.dof : view.sketch.freeIndices().length}`);
   refreshMeasure();
 }
@@ -254,12 +255,12 @@ function refreshBanner(): void {
   const ix = new io.Index(view.sketch);
   if (d.status === 'conflict') {
     bannerText.textContent = d.conflicts?.length
-      ? `⚠ Conflicting constraints — remove one of: ${d.conflicts.map((c) => io.describe(c, ix)).join(', ')}`
+      ? `⚠ Conflicting constraints — remove one of: ${d.conflicts.map((c) => io.describe(c, view.doc)).join(', ')}`
       : `⚠ ${d.violated.length} constraint(s) cannot be satisfied`;
     banner.className = 'conflict';
   } else {
     bannerText.textContent = `⚠ ${d.nRedundant} redundant equation(s) (consistent, but over-constrained) among: `
-      + d.over.map((c) => io.describe(c, ix)).join(', ');
+      + d.over.map((c) => io.describe(c, view.doc)).join(', ');
     banner.className = 'over';
   }
   bannerSelect.hidden = !(d.conflicts?.length || d.status === 'over');

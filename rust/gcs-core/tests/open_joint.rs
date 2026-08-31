@@ -74,8 +74,9 @@ fn a_repeat_ends_open() {
 /// `ring` closes exactly as `cycle` does.
 #[test]
 fn a_ring_wraps_like_a_cycle() {
-    let e = read("ring 4 {\n  distance(50) line -> angle(90)\n}\n");
-    assert_eq!((e.sketch.lines.len(), e.sketch.points.len()), (4, 4));
+    // a ring names its axis (§12.3), which is one more point than the cycle it unrolls to
+    let e = read("point o hint(x: 0, y: 0)\nring 4 about o {\n  distance(50) line -> angle(90)\n}\n");
+    assert_eq!((e.sketch.lines.len(), e.sketch.points.len()), (4, 5));
     assert_eq!(kinds(&e.sketch, CKind::Angle), 4);
 }
 

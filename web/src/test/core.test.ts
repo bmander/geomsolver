@@ -2084,7 +2084,7 @@ test('a diagnostic and a source map index the string, not the core\'s bytes', ()
   assert.equal(text.slice(centre.lo, centre.hi), 'point center hint(x: 0, y: 0)');
   const port = d.map.entities.find((x) => x.name?.endsWith('.t.r.lo'))!;
   assert.ok(port, 'a flank port is in the map');
-  assert.equal(text.slice(port.lo, port.hi), 'port lo: point');
+  assert.equal(text.slice(port.lo, port.hi), 'port lo: point hint(x: 0, y: 0)');
   d.dispose();
 
   // and a diagnostic points at the words it is about, on a line past the em dash

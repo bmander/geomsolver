@@ -48,6 +48,10 @@ pub enum Severity {
 pub enum Code {
     /// redeclaration within a body
     E001,
+    /// a `ring` body references an external entity that does not turn with it (§12.5)
+    E021,
+    /// a `ring` inside a `ring` (§12.6): may be refused, must not be mis-solved
+    E022,
     /// type mismatch within an alias class
     E040,
     /// syntax
@@ -68,12 +72,17 @@ pub enum Code {
     W110,
     /// a free variable: which dimensions it ties together
     W111,
+    /// a `ring` unrolled to its copies (§12.3 [0.2]): the symmetry is by the numbers each copy
+    /// was given, not held, and the DOF ledger counts every copy
+    W112,
 }
 
 impl Code {
     pub fn as_str(self) -> &'static str {
         match self {
             Code::E001 => "E001",
+            Code::E021 => "E021",
+            Code::E022 => "E022",
             Code::E040 => "E040",
             Code::E100 => "E100",
             Code::E101 => "E101",
@@ -84,12 +93,13 @@ impl Code {
             Code::E106 => "E106",
             Code::W110 => "W110",
             Code::W111 => "W111",
+            Code::W112 => "W112",
         }
     }
 
     pub fn severity(self) -> Severity {
         match self {
-            Code::W110 | Code::W111 => Severity::Warning,
+            Code::W110 | Code::W111 | Code::W112 => Severity::Warning,
             _ => Severity::Error,
         }
     }
@@ -589,9 +599,18 @@ pub fn elaborate(p: &Program) -> Elaborated {
         }
     }
     let expansion = crate::flatten::expand(p, sk.units);
+    for (code, span, message) in &expansion.coded {
+        diags.push(Diag { code: *code, span: *span, stmt: None, message: message.clone() });
+    }
     for (span, message) in &expansion.errors {
         diags.push(Diag {
-            code: if message.starts_with("no such") { Code::E101 } else { Code::E103 },
+            code: if message.starts_with("no such") {
+                Code::E101
+            } else if message.ends_with("is declared twice") {
+                Code::E001
+            } else {
+                Code::E103
+            },
             span: *span,
             stmt: None,
             message: message.clone(),
@@ -740,11 +759,21 @@ pub fn elaborate(p: &Program) -> Elaborated {
         let span = map.site_of_constraint(item.id).map(|s| s.span).unwrap_or_default();
         let stmt = map.site_of_constraint(item.id).map(|s| s.stmt);
         if let Some(err) = &item.error {
+            // what the fault *is* decides what is said (#43.11): a number that is not what its
+            // slot takes is the E103 every `param` already gets — §3.3 names `distance(45deg)`
+            // as an error — and a claim binding a free name is the E040 §9.7 promises;
+            // only an expression that would not compute is a warning, since the last number
+            // stands and the drawing goes on
+            let (code, tail) = match err.fault {
+                expr::Fault::Dimension => (Code::E103, ""),
+                expr::Fault::ClaimFree => (Code::E040, ""),
+                expr::Fault::Uncomputable => (Code::W110, " — the last number stands"),
+            };
             diags.push(Diag {
-                code: Code::W110,
+                code,
                 span,
                 stmt,
-                message: format!("`{}`: {err} — the last number stands", item.text),
+                message: format!("`{}`: {err}{tail}", item.text),
             });
         } else if !item.free.is_empty() {
             diags.push(Diag {
@@ -1241,15 +1270,19 @@ fn at_seed(
     }
 }
 
-/// Where an unseeded implicit child starts.
+/// Where an unseeded point starts — an implicit child, a declared point with no `hint(…)`, a
+/// port with none.
 ///
 /// **Nothing in the language says** (spec §15): a declaration with no hint has unknowns, and the
 /// document says no more than that.  The implementation needs an answer all the same, and the
 /// obvious one is wrong — `line l`'s two endpoints both at the origin is a zero-length line, with
-/// no direction for `horizontal(l)` to bite on and a singular row for any tangency.  So they
-/// scatter: distinct bearings round a unit circle, jittered off the crate's seeded `rng::Rng` so
-/// the answer is the same on every run and on every machine.  It is an implementation choice and
-/// belongs nowhere in the spec.
+/// no direction for `horizontal(l)` to bite on and a singular row for any tangency, and
+/// `point a` / `point b` / `a distance(30) b` there is a stationary point of the one residual it
+/// has.  So they scatter: distinct bearings round a unit circle, jittered off the crate's seeded
+/// `rng::Rng` so the answer is the same on every run and on every machine.  No exception for
+/// the drawing's first point: a port declared before `point base hint(x: 0, y: 0)` would sit
+/// on it, and a seeded point at the origin is the commonest one there is.  It is an
+/// implementation choice and belongs nowhere in the spec.
 fn scatter(i: usize) -> (f64, f64) {
     // the bearing walks a fixed step per minted point, in creation order — which for a chain's
     // corners is traversal order, so a contour of implicit points seeds as a *simple polygon*
@@ -1453,7 +1486,17 @@ fn build(
     // what a reader is shown: the declaration's own name, or what the drawing calls it where
     // the source named nothing — a scalar carries this into every list of parameters
     let show = shown(sk, d);
+    // A point whose source wrote no seed at all — no `hint(…)` clause (the empty span where
+    // one would go) and no place — starts where a minted child does, not at the origin: two
+    // such points on top of each other put every distance between them at a stationary point
+    // of its own residual, and the first document anybody writes solved as a conflict (#43).
+    // A declaration lifted from a sketch has no span (`None`) and carries its numbers.
+    let unseeded = d.seed_at.is_none() && d.hint_span.is_some_and(|s| s.is_empty());
     let idx = match d.kind {
+        EntKind::Point if unseeded => {
+            let (x, y) = scatter(sk.points.len());
+            sk.point(x, y, false, &show)
+        }
         EntKind::Point => sk.point(seed(0), seed(1), false, &show),
         EntKind::Line => sk.line(kids[0], kids[1]),
         EntKind::Circle => sk.circle(kids[0], seed(0), &show),
@@ -1715,6 +1758,43 @@ fn constrain(
                 });
                 return None;
             }
+        }
+    }
+    // a magnitude stated negative: the kernel would square the sign away and the drawing show
+    // the positive, so the document and the drawing would disagree about what the thing is
+    if ckind.magnitude() {
+        if let Some(i) = spec.iter().position(|(_, k)| *k == SpecKind::Length) {
+            if args[i].num() < 0.0 {
+                diags.push(Diag {
+                    code: Code::E040,
+                    span: r.args.get(i).and_then(|a| a.as_ref()).and_then(arg_span).unwrap_or(st.span),
+                    stmt: Some(st.id),
+                    message: format!(
+                        "a {} is a magnitude and cannot be negative",
+                        crate::syntax::snake(ckind.name())
+                    ),
+                });
+                return None;
+            }
+        }
+    }
+    // `distance` between two circles is the radial gap between *concentric* ones — a kernel
+    // that reads two radii and neither centre (`AnnularDistance`).  Written over two circles
+    // centred apart, it says nothing about the gap a person meant and then duplicates the two
+    // radii it does read (#43.21), so it is refused with the reading it has.
+    if ckind == CKind::AnnularDistance {
+        let centre = |e: EntRef| sk.children(e).first().copied();
+        if centre(args[0].ent()) != centre(args[1].ent()) {
+            diags.push(Diag {
+                code: Code::E040,
+                span: st.span,
+                stmt: Some(st.id),
+                message: "`distance` between two circles is the radial gap between concentric \
+                          ones, and these are centred on different points — dimension the \
+                          centres, or make the circles concentric"
+                    .to_string(),
+            });
+            return None;
         }
     }
     // a claim is judged, never solved for, so it may own no unknown — `CKind::claimable` is the
