@@ -906,6 +906,23 @@ impl Part {
     }
 }
 
+/// Significant digits a stored number is read to — on a callout, in a list, in a report.
+///
+/// **One constant, read through `reading`**, so `dimension_text` and `describe` cannot print
+/// one number two ways: a bare `Arg::Num` that a `param` substitution left at
+/// 49.99999999999999 is `50` on the drawing and `50` in the list (#43.15), where the list
+/// used to print the float and the callout four digits of it.  Six, because that is where a
+/// double's noise ends and a drawing's own numbers do not — `1234.5` keeps its half, which at
+/// four it did not.
+pub const READING_SIG: usize = 6;
+
+/// A stored number as a reader reads it: in the units they read (degrees for an angle), to
+/// `READING_SIG`.  Every place a constraint's number is turned into text for a person goes
+/// through here — the callout, the constraint list, the CLI's culprits.
+pub fn reading(kind: SpecKind, v: f64) -> String {
+    fmt_g(expr::to_user_units(kind, v), READING_SIG)
+}
+
 /// One argument as a person reads it: an entity by name, an angle in degrees, everything else as
 /// a number.  The constraint list, the reports and the dimension callouts on the drawing all
 /// print the same value the same way because they all come through here.
@@ -918,20 +935,21 @@ pub fn arg_text(kind: SpecKind, a: &Arg) -> String {
         (k, Arg::Expr(e)) if expr::notation(&e.text) => as_written(k, &e.text),
         // the formula and what it came to: `h = w * 2 = 80`, `sin(h * 10) = 0.342`
         (k, Arg::Expr(e)) => format!("{} = {}", e.text, arg_text(k, &Arg::Num(e.value))),
-        (SpecKind::Angle, a) => format!("{}°", fmt_g(a.num().to_degrees(), 3)),
-        (SpecKind::Length, a) | (SpecKind::Float, a) => fmt_g(a.num(), 4),
+        (SpecKind::Angle, a) => format!("{}°", reading(kind, a.num())),
+        (SpecKind::Length, a) | (SpecKind::Float, a) => reading(kind, a.num()),
         (_, Arg::Bool(b)) => if *b { "True" } else { "False" }.to_string(),
         (_, Arg::Int(i)) => format!("{i}"),
         (_, Arg::Str(s)) => s.clone(),
-        (_, a) => fmt_g(a.num(), 4),
+        (_, a) => reading(kind, a.num()),
     }
 }
 
 /// A dimension as it was written: the text somebody typed, carrying the degree sign an angle is
-/// read in.  Trimming is all the tidying there is — their spacing is theirs.
+/// read in — unless the text names its unit already, since `45deg` followed by `°` says it
+/// twice (#43.14).  Trimming is all the tidying there is — their spacing is theirs.
 fn as_written(kind: SpecKind, text: &str) -> String {
     let t = text.trim();
-    if kind == SpecKind::Angle { format!("{t}°") } else { t.to_string() }
+    if kind == SpecKind::Angle && !expr::names_unit(t) { format!("{t}°") } else { t.to_string() }
 }
 
 /// The number a dimensioned constraint states, as its callout prints it — the first Length or
@@ -950,8 +968,18 @@ pub fn dimension_text(c: &Constraint) -> Option<String> {
     })
 }
 
-/// Human-readable one-liner: `Distance(P0, P1, 80)`; angles shown in degrees.
+/// Human-readable one-liner: `P0 distance(80) P1`; angles shown in degrees.  Entities are named
+/// `P0`, `L1` — what a sketch with no source calls them; a caller holding a source map gives
+/// `describe_with` the names the document uses.
 pub fn describe(c: &Constraint) -> String {
+    describe_with(c, &|_| None)
+}
+
+/// `describe`, with an entity named as the source names it where `name` answers — so a
+/// culprit reads `corner distance(60) along` and a reader can find the statement (#43.16).
+/// The wording is still this function's: a front end supplies names and never composes the
+/// line, which is what keeps the app and the CLI describing one constraint one way.
+pub fn describe_with(c: &Constraint, name: &dyn Fn(EntRef) -> Option<String>) -> String {
     // **the operator, as a document writes it** (spec §9.1) — `syntax::operator_text` is the one
     // place a constraint becomes its spelling, so the drawing, the constraint list and the
     // program panel cannot come to say one constraint three ways.  Hidden unknowns are left out
@@ -961,7 +989,7 @@ pub fn describe(c: &Constraint) -> String {
         .spec()
         .iter()
         .zip(&c.args)
-        .map(|((_, kind), v)| lift_arg(*kind, v))
+        .map(|((_, kind), v)| lift_arg(*kind, v, name))
         .collect();
     // a dimension written in terms of a free variable states no number: what it says is which
     // other dimensions it is tied to, and the number beside the formula is only where the solver
@@ -985,13 +1013,23 @@ pub fn describe(c: &Constraint) -> String {
 
 /// One stored argument, as the syntax that would have written it — the bridge `describe` crosses
 /// to print a constraint the library holds in the words a document uses.
-fn lift_arg(kind: SpecKind, a: &Arg) -> Option<crate::syntax::Arg> {
+///
+/// A bare number goes as its *reading* and not as the number: `syntax::num` is the source
+/// printer and prints every digit a double has, which is right for a splice and wrong for a
+/// person — the list said `49.99999999999999` where the callout said `50`.
+fn lift_arg(
+    kind: SpecKind,
+    a: &Arg,
+    name: &dyn Fn(EntRef) -> Option<String>,
+) -> Option<crate::syntax::Arg> {
     use crate::syntax::Arg as S;
     Some(match a {
-        Arg::Ent(e) => S::Ref(crate::syntax::Ref::new(entity_name(*e))),
+        Arg::Ent(e) => {
+            S::Ref(crate::syntax::Ref::new(name(*e).unwrap_or_else(|| entity_name(*e))))
+        }
         Arg::Param(_) => return None,
         Arg::Seed { value, pinned } => S::Seed { value: *value, pinned: *pinned },
-        Arg::Num(v) => S::Num(expr::to_user_units(kind, *v)),
+        Arg::Num(v) => S::Dim { text: reading(kind, *v), span: crate::syntax::Span::default() },
         Arg::Int(v) => S::Int(*v),
         Arg::Bool(b) => S::Bool(*b),
         Arg::Str(t) => S::Word(t.clone()),

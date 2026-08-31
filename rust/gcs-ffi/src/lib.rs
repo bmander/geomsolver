@@ -2826,6 +2826,21 @@ fn out_edit(e: gcs_core::edit::Edit) -> *mut u8 {
     ]))
 }
 
+/// `gcs_describe`, with every entity named as the document names it: the wording is the
+/// core's either way, and this is where a front end that holds the source gets the names in.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_describe(h: *mut Elaborated, s: *mut Sketch, id: i32) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let e = &*h;
+        let sk = sk(s);
+        out_str(
+            sk.constraint(id as u32)
+                .map(|c| io::describe_with(c, &|x| e.map.name_of(x).cloned()))
+                .unwrap_or_default(),
+        )
+    })
+}
+
 /// Put a solved sketch's coordinates back into the seeds they came from.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_commit_seeds(h: *mut Elaborated, s: *mut Sketch) -> *mut u8 {

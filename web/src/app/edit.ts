@@ -71,11 +71,11 @@ export function reportAdded(v: SketchView, cs: Constraint[], skipped: number,
   // a remark rather than a warning: the sketch is consistent and nothing needs doing
   const newlyImplied = (d?.implied ?? []).filter((k) => !impliedBefore.has(k));
   const why = st === 'conflict' && d?.conflicts?.length
-    ? ` — CONFLICT, remove one of: ${d.conflicts.map((k) => io.describe(k, v.sketch)).join(', ')}`
+    ? ` — CONFLICT, remove one of: ${d.conflicts.map((k) => io.describe(k, v.doc)).join(', ')}`
     : st === 'over' ? ' — redundant (consistent) with existing constraints'
     : res && !res.success ? ' — solver did NOT converge'
     : newlyImplied.length
-    ? ` — consistent; ${newlyImplied.map((k) => io.describe(k, v.sketch)).join(', ')} now follow from the rest`
+    ? ` — consistent; ${newlyImplied.map((k) => io.describe(k, v.doc)).join(', ')} now follow from the rest`
     : '';
   v.onStatus(`added ${what}${dup}${why}`);
 }

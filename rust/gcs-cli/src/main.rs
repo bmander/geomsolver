@@ -176,11 +176,11 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         }
         if let Some(d) = &d {
             println!("  {}", gcs_core::diagnose::summary(d));
-            report_set(&sk, "conflict", d.conflicts.as_deref().unwrap_or(&[]));
-            report_set(&sk, "over", &d.over);
-            report_set(&sk, "implied", &d.implied);
-            report_set(&sk, "claim refuted", &d.claims_violated);
-            report_set(&sk, "claim independent", &d.claims_consuming);
+            report_set(&sk, &e.map, "conflict", d.conflicts.as_deref().unwrap_or(&[]));
+            report_set(&sk, &e.map, "over", &d.over);
+            report_set(&sk, &e.map, "implied", &d.implied);
+            report_set(&sk, &e.map, "claim refuted", &d.claims_violated);
+            report_set(&sk, &e.map, "claim independent", &d.claims_consuming);
             for w in &d.warnings {
                 println!("  note: {w}");
             }
@@ -202,11 +202,12 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
 /// can name every member of it; the wording is the core's, the paging is the terminal's.
 const SHOW: usize = 8;
 
-/// The constraints in one of the diagnosis's sets, named the way the core names them.
-fn report_set(sk: &Sketch, what: &str, ids: &[u32]) {
+/// The constraints in one of the diagnosis's sets, worded by the core and named as the source
+/// names them — `over: corner distance(60) along`, so the reader can find the statement.
+fn report_set(sk: &Sketch, map: &gcs_core::program::SourceMap, what: &str, ids: &[u32]) {
     for id in ids.iter().take(SHOW) {
         if let Some(c) = sk.constraint(*id) {
-            println!("  {what}: {}", io::describe(c));
+            println!("  {what}: {}", io::describe_with(c, &|e| map.name_of(e).cloned()));
         }
     }
     if ids.len() > SHOW {

@@ -606,8 +606,8 @@ fn the_number_a_free_dimension_shows_follows_the_solver() {
     // the drawing says what was written; the list says that and where it stands, marked as the
     // reading it is rather than a number anybody stated
     assert_eq!(io::dimension_text(sk.constraint(ids[0]).unwrap()).unwrap(), "q");
-    assert!(io::describe(sk.constraint(ids[0]).unwrap()).contains("q = 20.17 (free)"),
-            "{}", io::describe(sk.constraint(ids[0]).unwrap()));
+    let said = io::describe(sk.constraint(ids[0]).unwrap());
+    assert!(said.contains("q = 20.17") && said.contains(" (free)"), "{said}");
 }
 
 /// A free variable is not document state: the text and the number are, and evaluating them

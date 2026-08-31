@@ -617,6 +617,19 @@ pub fn notation(text: &str) -> bool {
     v.is_finite()
 }
 
+/// Whether a text that is one number (`notation`) wrote its unit — `45deg`, `3mm`, `1' 6"` —
+/// as against a bare `3 1/8`, which takes the unit of the slot it stands in.  What a printer
+/// asks before putting a degree sign after it.
+pub fn names_unit(text: &str) -> bool {
+    let mm = Units::with_length("mm").expect("mm is a unit");
+    let Ok(toks) = tokenize(text.trim(), mm) else { return false };
+    match toks.as_slice() {
+        [(Tok::Num(_, d), _), (Tok::End, _)]
+        | [(Tok::Op('-' | '+'), _), (Tok::Num(_, d), _), (Tok::End, _)] => !d.is_scalar(),
+        _ => false,
+    }
+}
+
 /* -- evaluation --------------------------------------------------------------- */
 
 fn call(name: &str, a: &[f64]) -> f64 {

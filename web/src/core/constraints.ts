@@ -244,8 +244,13 @@ export abstract class Constraint {
     return this.evaluated((sk, id) => core().gcs_constraint_error(sk.handle, id));
   }
 
-  describe(): string {
-    return this.evaluated((sk, id) => takeStr(core().gcs_describe(sk.handle, id)));
+  /** The core's one-liner for this constraint.  Given the document it came from, every entity
+   *  in it is named as the source names it (`corner distance(60) along`); without one, as the
+   *  sketch does (`P0 distance(60) P1`).  The wording is the core's either way. */
+  describe(doc?: { readonly handle: number }): string {
+    return this.evaluated((sk, id) => takeStr(doc
+      ? core().gcs_elab_describe(doc.handle, sk.handle, id)
+      : core().gcs_describe(sk.handle, id)));
   }
 
   /** Run against the core.  A constraint the user has not added yet is placed in its entities'

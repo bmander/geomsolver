@@ -30,7 +30,7 @@ function rebuildRows(next: Constraint[]): void {
   clist.replaceChildren();
   next.forEach((c) => {
     const li = document.createElement('li');
-    li.dataset.base = io.describe(c, ix);
+    li.dataset.base = io.describe(c, view.doc);
     li.textContent = li.dataset.base;
     li.addEventListener('click', () => {
       focusConstraint(c);
@@ -132,7 +132,7 @@ export function refreshRows(): void {
     // an expression's number moves when a name it reads does, without the list changing — so
     // the rows' text is re-read while any expression is about
     const ix = new io.Index(sk);
-    rows.forEach((c, i) => { (clist.children[i] as HTMLElement).dataset.base = io.describe(c, ix); });
+    rows.forEach((c, i) => { (clist.children[i] as HTMLElement).dataset.base = io.describe(c, view.doc); });
   }
   rows.forEach((c, i) => {
     const li = clist.children[i] as HTMLElement;
@@ -255,12 +255,12 @@ function refreshBanner(): void {
   const ix = new io.Index(view.sketch);
   if (d.status === 'conflict') {
     bannerText.textContent = d.conflicts?.length
-      ? `⚠ Conflicting constraints — remove one of: ${d.conflicts.map((c) => io.describe(c, ix)).join(', ')}`
+      ? `⚠ Conflicting constraints — remove one of: ${d.conflicts.map((c) => io.describe(c, view.doc)).join(', ')}`
       : `⚠ ${d.violated.length} constraint(s) cannot be satisfied`;
     banner.className = 'conflict';
   } else {
     bannerText.textContent = `⚠ ${d.nRedundant} redundant equation(s) (consistent, but over-constrained) among: `
-      + d.over.map((c) => io.describe(c, ix)).join(', ');
+      + d.over.map((c) => io.describe(c, view.doc)).join(', ');
     banner.className = 'over';
   }
   bannerSelect.hidden = !(d.conflicts?.length || d.status === 'over');

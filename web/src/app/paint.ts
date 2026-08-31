@@ -363,7 +363,7 @@ export function paintConflicts(v: SketchView): void {
     ctx.save();
     ctx.setLineDash([]);
     ctx.fillStyle = COL.conflict;
-    ctx.fillText(`✗ ${io.describe(c, v.sketch)}`, ax + 8, ay - 8 - 18 * n);
+    ctx.fillText(`✗ ${io.describe(c, v.doc)}`, ax + 8, ay - 8 - 18 * n);
     ctx.restore();
   }
   ctx.restore();

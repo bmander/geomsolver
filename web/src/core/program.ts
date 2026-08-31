@@ -84,6 +84,10 @@ export class Document {
   diagnostics: Diagnostic[];
   map: SourceMap;
   private h: number;
+  /** The core handle, for a call that takes the elaboration beside the sketch. */
+  get handle(): number {
+    return this.h;
+  }
   private byName = new Map<string, Primitive>();
 
   private constructor(h: number, text: string) {

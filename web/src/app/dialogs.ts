@@ -93,7 +93,7 @@ export function flipBranch(): void {
     view.pushUndo();
     c.setValue('side', -Number(c.side));
     view.afterEdit();
-    toast(`flipped the tangency side of ${io.describe(c, view.sketch)}`);
+    toast(`flipped the tangency side of ${io.describe(c, view.doc)}`);
     return;
   }
   if (c && C.isType(c, 'TangentCircleCircle')) {
@@ -176,11 +176,11 @@ export async function showDiagnosis(): Promise<void> {
   const { summary } = await import('../core/diagnose.js');
   lines.push(summary(d), '');
   if (d.conflicts?.length) {
-    lines.push('Conflict — remove one of:', ...d.conflicts.map((c) => `   ✗ ${io.describe(c, ix)}`), '');
+    lines.push('Conflict — remove one of:', ...d.conflicts.map((c) => `   ✗ ${io.describe(c, view.doc)}`), '');
   }
   if (d.over.length) {
     lines.push(`Structurally redundant block (${d.nRedundant} equation(s) too many):`,
-               ...d.over.map((c) => `   • ${io.describe(c, ix)}`), '');
+               ...d.over.map((c) => `   • ${io.describe(c, view.doc)}`), '');
   }
   if (d.underParams.length) {
     const names = (['point', 'circle', 'arc'] as const)
@@ -200,8 +200,8 @@ export async function showDiagnosis(): Promise<void> {
   if (rep) {
     lines.push(`Witness analysis: ${witnessSummary(rep)}`);
     for (const dep of rep.dependencies) {
-      lines.push(`   ⟂ ${io.describe(dep.constraint, ix)} is implied by `
-        + dep.impliedBy.slice(0, 6).map((c) => io.describe(c, ix)).join(', ')
+      lines.push(`   ⟂ ${io.describe(dep.constraint, view.doc)} is implied by `
+        + dep.impliedBy.slice(0, 6).map((c) => io.describe(c, view.doc)).join(', ')
         + (dep.theorem ? '  [theorem-type: invisible to structural analysis]' : ''));
     }
     const internal = rep.motions.filter((m) => !m.rigid);
