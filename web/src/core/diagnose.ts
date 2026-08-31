@@ -10,7 +10,8 @@ import { WitnessReport, reportFrom } from './witness.js';
 import { core, takeJson, withJson } from './wasm.js';
 
 /** `unsolved`: constraints unsatisfied at a pose that is not stationary — the solve stopped
- *  short, so the core gives no verdict (a conflict is one) and names no culprits. */
+ *  short, so the core gives no verdict (a conflict is one) and names no culprits.  A status
+ *  only: an entity's state is its determination, which holds at a non-solution too. */
 export type State = 'well' | 'under' | 'over' | 'conflict' | 'unsolved';
 
 /** Free parameters up to which the automatic numeric cross-check (a dense SVD) runs. */

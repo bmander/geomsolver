@@ -31,7 +31,8 @@ pub enum State {
     Over,
     Conflict,
     /// Constraints are unsatisfied at a pose that is not stationary: the solve stopped short,
-    /// and nothing is known about the geometry there — not a conflict, which is a verdict.
+    /// and nothing is known about the geometry there — not a conflict, which is a verdict.  A
+    /// *status* only: an entity keeps the determination the rank gives it.
     Unsolved,
 }
 
@@ -612,12 +613,11 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     let under_set: BTreeSet<u32> = under_params.iter().copied().collect();
     let conflict_ids: BTreeSet<u32> = match &conflict_set {
         Some(c) => c.iter().copied().collect(),
-        // stalled, the violated rows are no verdict on anything they touch
+        // stalled, the violated rows are no verdict on anything they touch: an entity keeps
+        // the determination the rank gives it, which holds at a non-solution as well
         None if stalled => BTreeSet::new(),
         None => violated.iter().copied().collect(),
     };
-    let unsolved_ids: BTreeSet<u32> =
-        if stalled { violated.iter().copied().collect() } else { BTreeSet::new() };
     let mut touched: BTreeMap<EntRef, Vec<u32>> = BTreeMap::new();
     for c in sk.hard_constraints() {
         for e in c.entities() {
@@ -632,9 +632,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     for &e in &ents {
         let empty = Vec::new();
         let cs = touched.get(&e).unwrap_or(&empty);
-        let st = if cs.iter().any(|c| unsolved_ids.contains(c)) {
-            State::Unsolved
-        } else if cs.iter().any(|c| conflict_ids.contains(c)) {
+        let st = if cs.iter().any(|c| conflict_ids.contains(c)) {
             State::Conflict
         } else if cs.iter().any(|c| over_set.contains(c)) {
             State::Over

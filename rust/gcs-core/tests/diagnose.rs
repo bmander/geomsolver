@@ -643,12 +643,8 @@ fn a_solve_that_stopped_short_is_unsolved_not_a_conflict() {
     assert!(!d.violated.is_empty(), "the unsatisfied rows are still reported");
     assert!(d.conflicts.is_none(), "no conflict set is searched for: {:?}", d.conflicts);
     assert!(summary(&d).contains("UNSOLVED"), "{}", summary(&d));
-    assert!(
-        d.entity_state.values().any(|&s| s == State::Unsolved)
-            && d.entity_state.values().all(|&s| s != State::Conflict),
-        "{:?}",
-        d.entity_state
-    );
+    // entities keep their determination — nothing is painted a conflict, or unsolved
+    assert!(d.entity_state.values().all(|&s| s == State::Well), "{:?}", d.entity_state);
 
     // solved, the same figure is well-constrained and nothing is violated
     let r = solve(&mut sk, SolveOpts::default());
