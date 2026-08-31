@@ -350,7 +350,7 @@ fn a_reserved_word_meant_as_a_name_is_said_so() {
 #[test]
 fn deleting_an_anonymous_element_takes_its_statement() {
     let e = read("line\npoint a hint(x: 1, y: 2)\n");
-    let d = edit::remove(&e, &e.program, &[EntRef::line(0)], &[]);
+    let d = edit::remove(&e, &e.program, &e.sketch, &[EntRef::line(0)], &[]);
     assert_eq!(d.text, "point a hint(x: 1, y: 2)\n");
 }
 

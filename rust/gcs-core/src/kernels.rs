@@ -53,9 +53,10 @@ pub enum K {
     EllipseCurvature,
     FrameUnit,
     FrameAlign,
+    Project,
 }
 
-pub const N_KERNELS: usize = 39;
+pub const N_KERNELS: usize = 40;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -1567,6 +1568,61 @@ fn frame_align_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     }
 }
 
+/// Columns of `project`: (px, py, qx, qy, oax, oay, ca, sa, obx, oby, cb, sb) — the two images,
+/// then each plane's origin and rotor.  Constants: (dax, day, dbx, dby), the fold line the two
+/// planes share in each plane's own 2D coordinates (`plane::fold_line`).
+pub const N_PAR_PROJECT: usize = 12;
+
+/// The projector rule of descriptive geometry: two images of one point agree on their
+/// coordinate along the fold line their planes share, and on nothing else.  Each image is read
+/// in its plane's own frame — `Rᵀ(c, s)(p − o)` with `Rᵀ(c, s)(x, y) = (c·x + s·y, −s·x + c·y)`
+/// — and dotted with the fold direction there:
+///
+/// `r = d_A · Rᵀ(c_A, s_A)(p − o_A) − d_B · Rᵀ(c_B, s_B)(q − o_B)`
+///
+/// One row, bilinear in rotor × length, so degree 1 like `frame_align`.  A view slides freely
+/// along its projectors (perpendicular to the fold on the page) without moving the row, which
+/// is the free spacing between the views of a drawing.
+fn project_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_PROJECT * i;
+        let (dax, day, dbx, dby) = (k[4 * i], k[4 * i + 1], k[4 * i + 2], k[4 * i + 3]);
+        let (wx, wy) = (v[o] - v[o + 4], v[o + 1] - v[o + 5]);
+        let (ca, sa) = (v[o + 6], v[o + 7]);
+        let (ux, uy) = (v[o + 2] - v[o + 8], v[o + 3] - v[o + 9]);
+        let (cb, sb) = (v[o + 10], v[o + 11]);
+        let a = dax * (ca * wx + sa * wy) + day * (-sa * wx + ca * wy);
+        let b = dbx * (cb * ux + sb * uy) + dby * (-sb * ux + cb * uy);
+        r[i] = a - b;
+    }
+}
+
+fn project_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_PROJECT * i;
+        let (dax, day, dbx, dby) = (k[4 * i], k[4 * i + 1], k[4 * i + 2], k[4 * i + 3]);
+        let (wx, wy) = (v[o] - v[o + 4], v[o + 1] - v[o + 5]);
+        let (ca, sa) = (v[o + 6], v[o + 7]);
+        let (ux, uy) = (v[o + 2] - v[o + 8], v[o + 3] - v[o + 9]);
+        let (cb, sb) = (v[o + 10], v[o + 11]);
+        // the fold direction as drawn in each view: `R(c, s)·d`
+        let (gax, gay) = (dax * ca - day * sa, dax * sa + day * ca);
+        let (gbx, gby) = (dbx * cb - dby * sb, dbx * sb + dby * cb);
+        j[o] = gax;
+        j[o + 1] = gay;
+        j[o + 2] = -gbx;
+        j[o + 3] = -gby;
+        j[o + 4] = -gax;
+        j[o + 5] = -gay;
+        j[o + 6] = dax * wx + day * wy;
+        j[o + 7] = -day * wx + dax * wy;
+        j[o + 8] = gbx;
+        j[o + 9] = gby;
+        j[o + 10] = -(dbx * ux + dby * uy);
+        j[o + 11] = -(-dby * ux + dbx * uy);
+    }
+}
+
 pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "coincident", n_res: 2, n_par: 4, degree: 1, n_const: 0, res: coincident::res, jac: coincident::jac, const_jac: Some(coincident::J) },
     Kernel { name: "distance", n_res: 1, n_par: 4, degree: 2, n_const: 1, res: distance_res, jac: distance_jac, const_jac: None },
@@ -1607,6 +1663,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "ellipse_curvature", n_res: 3, n_par: N_PAR_ELLIPSE_CURVE, degree: 1, n_const: 0, res: ellipse_curvature_res, jac: ellipse_curvature_jac, const_jac: None },
     Kernel { name: "frame_unit", n_res: 1, n_par: 2, degree: 0, n_const: 0, res: frame_unit_res, jac: frame_unit_jac, const_jac: None },
     Kernel { name: "frame_align", n_res: 2, n_par: N_PAR_FRAME_ALIGN, degree: 1, n_const: 0, res: frame_align_res, jac: frame_align_jac, const_jac: None },
+    Kernel { name: "project", n_res: 1, n_par: N_PAR_PROJECT, degree: 1, n_const: 4, res: project_res, jac: project_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

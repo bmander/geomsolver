@@ -163,6 +163,11 @@ pub fn base() -> Sheet {
     // a dimension's extension and witness lines: finer dashes than reference geometry, being
     // annotation rather than something the sketch is made of
     s.insert("extension".into(), rule(Some(vec![4.0, 3.0]), None, None));
+    // a plane's datum glyph — the chord from its origin to the point it is turned toward, which
+    // is where a view is taken hold of.  Fine and light: it is a label on the sheet, not a
+    // line of the object.  The kind carries the class itself (`EntKind::implicit_class`), so a
+    // document's own `style .plane` rule overrides this one without the declaration saying so.
+    s.insert("plane".into(), rule(Some(vec![2.0, 3.0]), Some(0.75), Some("#8a8a8a")));
     s
 }
 

@@ -72,6 +72,11 @@ struct Scope {
     /// block binders.  An index (`p[i + 1]`) is an expression over exactly these, and references
     /// are resolved in a later pass where the walk's own environment is gone, so it travels here.
     vals: BTreeMap<String, Aff>,
+    /// The view an enclosing instance is drawn `in` (§6.7): every point-bearing declaration
+    /// emitted under it joins the plane.  The ref as *written* at the instance — the emitted
+    /// statement's own `rewrite` resolves it, reaching the caller's names through the prefix
+    /// chain this scope already carries.
+    in_plane: Option<Ref>,
 }
 
 pub struct Expansion {
@@ -148,6 +153,20 @@ impl<'a> Walk<'a> {
         }
     }
 
+    /// The view an enclosing instance is drawn `in`, put on one declaration its expansion
+    /// makes (§6.7).  A datum or a curve is left alone — it has no points of its own to put
+    /// there — and a declaration that already says which plane (a clause of its own, on a
+    /// plane the component declares) may not be told twice.
+    fn stamp_scope_plane(&mut self, d: &mut Decl, scope: &Scope) {
+        let Some(p) = &scope.in_plane else { return };
+        if !d.kind.bears_points() {
+            return;   // a datum's points are the datum's, and a curve is its expressions
+        }
+        if !d.membership.join(p, crate::syntax::Source::Instance) {
+            self.err(d.membership.span(), d.membership.cause().to_string());
+        }
+    }
+
     /// Walk one body, in source order.
     fn body(
         &mut self,
@@ -195,6 +214,12 @@ impl<'a> Walk<'a> {
                         }
                     }
                     self.settle_seeds(&mut d2, vals, st.span);
+                    // a plane's fold and basis are written over the parameters in scope like
+                    // any other number, through the one walk that settles an argument
+                    for a in d2.attitude.args_mut() {
+                        self.settle_arg(a, vals);
+                    }
+                    self.stamp_scope_plane(&mut d2, scope);
                     self.emit(StmtKind::Decl(d2), st, scope, path);
                 }
                 // `port lead: Point` is a fresh declaration that the boundary also names.  There
@@ -221,8 +246,12 @@ impl<'a> Walk<'a> {
                             class: Default::default(),
                             class_span: Span::default(),
                             seed_at: None,
+                            attitude: Default::default(),
+                            membership: Default::default(),
+                            list_span: Span::default(),
                         };
                         self.settle_seeds(&mut d, vals, st.span);
+                        self.stamp_scope_plane(&mut d, scope);
                         self.emit(StmtKind::Decl(d), st, scope, path);
                     } else if let Some(r) = &p.alias {
                         let abs = format!("{prefix}{}", p.name.text);
@@ -253,6 +282,16 @@ impl<'a> Walk<'a> {
                     };
                     let comp = comp.clone();
                     let mut sub_vals = self.bind(&comp, inst, scope, vals);
+                    // the instance's own `in`, or the one already in force around it — both at
+                    // once is a plane given twice, which one statement may not do (§6.7)
+                    let in_plane = match (inst.membership.plane(), &scope.in_plane) {
+                        (Some(p), Some(_)) => {
+                            self.err(p.span, inst.membership.cause().to_string());
+                            scope.in_plane.clone()
+                        }
+                        (Some(p), None) => Some(p.clone()),
+                        (None, q) => q.clone(),
+                    };
                     let mut sc = Scope {
                         prefixes: std::iter::once(format!("{prefix}{}.", inst.name.text))
                             .chain(scope.prefixes.iter().cloned())
@@ -261,6 +300,7 @@ impl<'a> Walk<'a> {
                         ring: scope.ring.clone(),
                         copies: scope.copies,
                         vals: sub_vals.clone(),
+                        in_plane,
                     };
                     sc.cyc = scope.cyc.clone();
                     self.body(&comp.body, &sc, &mut sub_vals, path, depth + 1);
@@ -335,6 +375,7 @@ impl<'a> Walk<'a> {
                             // below is a copy, however deep and through however many instances
                             copies: true,
                             vals: sub.clone(),
+                            in_plane: scope.in_plane.clone(),
                         };
                         let mut p2 = path.to_vec();
                         p2.push(k as u32);
@@ -672,6 +713,11 @@ impl<'a> Walk<'a> {
                 if x.starts_with(&ring.prefix) || Some(x) == axis.as_deref() {
                     continue;
                 }
+                // a plane is a label on the sheet, not a position: a membership or a fold
+                // referencing one from inside a ring is true of every copy alike
+                if matches!(decls.get(x), Some((EntKind::Plane, _))) {
+                    continue;
+                }
                 let invariant = matches!(
                     decls.get(x),
                     Some((EntKind::Circle | EntKind::Arc, Some(c))) if Some(*c) == axis.as_deref()
@@ -714,7 +760,11 @@ fn value_of(text: &str, env: &BTreeMap<String, Aff>, units: Units) -> Result<f64
 /// would forget that `m` was declared a `Length` and `param Rt = R + m` would read as a plain
 /// number added to a length — the very thing the check exists to catch, missed because the check
 /// threw the answer away.
-fn value_aff(text: &str, env: &BTreeMap<String, Aff>, units: Units) -> Result<Aff, String> {
+pub(crate) fn value_aff(
+    text: &str,
+    env: &BTreeMap<String, Aff>,
+    units: Units,
+) -> Result<Aff, String> {
     let t = text.trim();
     if t.is_empty() {
         return Err("nothing to work out".to_string());
@@ -917,6 +967,10 @@ fn refs_of(k: &StmtKind) -> Vec<&Ref> {
                     }
                 }
             }
+            // then the plane it is in and the plane it is folded from — `rewrite` visits them
+            // in this order
+            out.extend(d.membership.plane());
+            out.extend(d.attitude.plane_ref());
         }
         StmtKind::Relation(rel) => {
             for a in rel.args.iter().flatten() {
@@ -987,6 +1041,12 @@ fn rewrite(
                         fix(r, bad);
                     }
                 }
+            }
+            if let Some(r) = d.membership.plane_mut() {
+                fix(r, bad);
+            }
+            if let Some(r) = d.attitude.plane_ref_mut() {
+                fix(r, bad);
             }
         }
         StmtKind::Relation(rel) => {

@@ -178,10 +178,10 @@ fn removing_one_stated_corner_edits_nothing() {
         .find(|c| c.kind == CKind::EqualLength)
         .expect("a stated corner")
         .id;
-    let out = edit::remove(&e, &e.program, &[], &[equal]);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[], &[equal]);
     assert_eq!(out.kind, Kind::None, "one line, four corners: nothing to splice");
     assert_eq!(out.text, src);
-    let out = edit::remove(&e, &e.program, &[EntRef::line(0)], &[]);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[EntRef::line(0)], &[]);
     assert!(out.refused.is_some(), "deleting one copy's side went through");
 }
 

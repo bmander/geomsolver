@@ -280,7 +280,7 @@ pub unsafe extern "C" fn gcs_counts_len() -> i32 {
     N_COUNTS as i32
 }
 
-const N_COUNTS: usize = 10;
+const N_COUNTS: usize = 11;
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
@@ -298,6 +298,7 @@ pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
             s.curves.len(),
             // appended, never inserted: the positions above are what the bindings hard-code
             s.frames.len(),
+            s.planes.len(),
         ];
         debug_assert_eq!(v.len(), N_COUNTS, "gcs_counts_len is what callers size their buffer by");
         for (i, x) in v.iter().enumerate() {
@@ -381,6 +382,87 @@ pub unsafe extern "C" fn gcs_sketch_frame(
 ) -> i32 {
     guard(-1, move || {
         sk(h).frame(origin as usize, toward as usize, as_str(name, name_len)) as i32
+    })
+}
+
+/// A plane: a frame with a basis `(u, v)` in space, orthonormalised on the way in.  -1 and an
+/// error when the two do not span a plane.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn gcs_sketch_plane(
+    h: *mut Sketch,
+    origin: i32,
+    toward: i32,
+    ux: f64,
+    uy: f64,
+    uz: f64,
+    vx: f64,
+    vy: f64,
+    vz: f64,
+    name: *const u8,
+    name_len: usize,
+) -> i32 {
+    guard(-1, move || {
+        let Some(basis) = gcs_core::plane::Basis::explicit([ux, uy, uz], [vx, vy, vz]) else {
+            set_error("u and v do not span a plane");
+            return -1;
+        };
+        sk(h).plane(origin as usize, toward as usize, basis, as_str(name, name_len)) as i32
+    })
+}
+
+/// A plane's basis: six doubles, `u` then `v`.  Returns how many were written.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_plane_basis(h: *mut Sketch, idx: i32, out: *mut f64) -> i32 {
+    guard(-1, move || {
+        let b = &sk(h).planes[idx as usize].basis;
+        for (i, x) in b.u.iter().chain(b.v.iter()).enumerate() {
+            *out.add(i) = *x;
+        }
+        6
+    })
+}
+
+/// The datum glyph a plane is drawn as, in world coordinates: eight doubles, two segments as
+/// `x1 y1 x2 y2` each — the chord, then the tick.  Laid out by the core for a callout's reason,
+/// so the canvas and the SVG export stroke one figure and not two.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_plane_glyph(
+    h: *mut Sketch,
+    idx: i32,
+    unit: f64,
+    out: *mut f64,
+) -> i32 {
+    guard(-1, move || {
+        let g = gcs_core::plane::glyph(sk(h), idx as usize, unit);
+        for (k, (from, to)) in g.iter().enumerate() {
+            *out.add(4 * k) = from.0;
+            *out.add(4 * k + 1) = from.1;
+            *out.add(4 * k + 2) = to.0;
+            *out.add(4 * k + 3) = to.1;
+        }
+        8
+    })
+}
+
+/// Which plane a point is on: its index, or -1 for the page.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_point_plane(h: *mut Sketch, idx: i32) -> i32 {
+    guard(-1, move || sk(h).plane_of(idx as usize).map_or(-1, |p| p as i32))
+}
+
+/// Put a point on a plane (-1 takes it off).  0, or -1 with an error when the plane does not
+/// exist — a document is untrusted, and so is a binding's index.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_point_set_plane(h: *mut Sketch, idx: i32, plane: i32) -> i32 {
+    guard(-1, move || {
+        let s = sk(h);
+        if plane >= 0 && plane as usize >= s.planes.len() {
+            set_error("no such plane");
+            return -1;
+        }
+        s.set_plane(idx as usize, (plane >= 0).then_some(plane as usize));
+        0
     })
 }
 
@@ -727,6 +809,7 @@ fn kind_id(k: EntKind) -> i32 {
         EntKind::Ellipse => 5,
         EntKind::Curve => 6,
         EntKind::Frame => 7,
+        EntKind::Plane => 8,
     }
 }
 
@@ -739,6 +822,7 @@ fn ent(kind: i32, idx: i32) -> EntRef {
         5 => EntKind::Ellipse,
         6 => EntKind::Curve,
         7 => EntKind::Frame,
+        8 => EntKind::Plane,
         _ => EntKind::Spline,
     };
     EntRef::new(k, idx as usize)
@@ -784,8 +868,8 @@ pub unsafe extern "C" fn gcs_entity_points(
                 let e = &s.ellipses[idx as usize];
                 vec![e.center as usize, e.major as usize]
             }
-            7 => {
-                let f = &s.frames[idx as usize];
+            7 | 8 => {
+                let f = s.frame_of(ent(kind, idx));
                 vec![f.origin as usize, f.toward as usize]
             }
             _ => vec![idx as usize],
@@ -862,6 +946,7 @@ pub unsafe extern "C" fn gcs_styles_json(h: *mut Sketch) -> *mut u8 {
             ("spline", of(EntKind::Spline)),
             ("ellipse", of(EntKind::Ellipse)),
             ("frame", of(EntKind::Frame)),
+            ("plane", of(EntKind::Plane)),
             ("curve", of(EntKind::Curve)),
         ]))
     })
@@ -2866,9 +2951,18 @@ pub unsafe extern "C" fn gcs_elab_add_point(h: *mut Elaborated, x: f64, y: f64) 
 
 /// A `Rectangle` component instance — and the component's definition, the first time.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_elab_add_rectangle(h: *mut Elaborated, w: f64, hh: f64) -> *mut u8 {
+pub unsafe extern "C" fn gcs_elab_add_rectangle(
+    h: *mut Elaborated,
+    w: f64,
+    hh: f64,
+    plane: *const u8,
+    plane_len: usize,
+) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        out_edit(gcs_core::edit::add_rectangle(&(*h).program, w, hh))
+        // an empty name is the page: the instance takes no clause
+        let p = as_str(plane, plane_len);
+        let p = (!p.is_empty()).then_some(p);
+        out_edit(gcs_core::edit::add_rectangle(&(*h).program, w, hh, p.as_deref()))
     })
 }
 
@@ -2891,6 +2985,58 @@ pub unsafe extern "C" fn gcs_elab_add_entity(
             .unwrap_or_default();
         let seed: Vec<f64> =
             v.get("seed").map(|a| a.arr().iter().map(|x| x.as_f64()).collect()).unwrap_or_default();
+        if kind == EntKind::Plane {
+            // `{"from": NAME, "fold": TEXT}` or `{"u": [TEXT; 3], "v": [TEXT; 3]}`, or nothing
+            // for the page; the texts are spelled into the statement as given and read by the
+            // elaboration like any other number
+            use gcs_core::syntax::{Arg, Attitude, Ref};
+            let dim = |x: &Json| Arg::Dim { text: x.as_str().to_string(), span: Default::default() };
+            let triple = |x: Option<&Json>| -> Option<[Arg; 3]> {
+                let a = x?.arr();
+                (a.len() == 3).then(|| [dim(&a[0]), dim(&a[1]), dim(&a[2])])
+            };
+            let att = v.get("attitude");
+            let attitude = match att {
+                Some(a) if !matches!(a, Json::Null) => {
+                    if let Some(from) = a.get("from") {
+                        Attitude::From {
+                            plane: Ref::new(from.as_str().to_string()),
+                            fold: a.get("fold").map(dim),
+                        }
+                    } else {
+                        match (triple(a.get("u")), triple(a.get("v"))) {
+                            (Some(u), Some(v)) => Attitude::Basis { u, v },
+                            _ => {
+                                set_error("a plane's attitude is `from`/`fold` or `u`/`v`");
+                                return std::ptr::null_mut();
+                            }
+                        }
+                    }
+                }
+                _ => Attitude::Page,
+            };
+            let name = v.get("name").map(|n| n.as_str().to_string());
+            // `"places": [[x, y], [x, y]]` seeds the origin and the toward point in the statement
+            let places: Vec<(f64, f64)> = v
+                .get("places")
+                .map(|a| {
+                    a.arr()
+                        .iter()
+                        .filter_map(|p| {
+                            let p = p.arr();
+                            (p.len() == 2).then(|| (p[0].as_f64(), p[1].as_f64()))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            return out_edit(gcs_core::edit::add_plane(
+                &(*h).program,
+                &args,
+                attitude,
+                name.as_deref(),
+                &places,
+            ));
+        }
         out_edit(gcs_core::edit::add_entity(&(*h).program, kind, &args, &seed))
     })
 }
@@ -2958,6 +3104,7 @@ pub unsafe extern "C" fn gcs_elab_add_relation(
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_remove(
     h: *mut Elaborated,
+    s: *mut Sketch,
     ptr: *const u8,
     len: usize,
 ) -> *mut u8 {
@@ -2982,8 +3129,9 @@ pub unsafe extern "C" fn gcs_elab_remove(
             .get("constraints")
             .map(|a| a.arr().iter().map(|x| x.as_i64() as u32).collect())
             .unwrap_or_default();
+        // the live sketch, not the elaboration's: the binding took that one out into `s`
         let e = &*h;
-        out_edit(gcs_core::edit::remove(e, &e.program, &ents, &cons))
+        out_edit(gcs_core::edit::remove(e, &e.program, sk(s), &ents, &cons))
     })
 }
 

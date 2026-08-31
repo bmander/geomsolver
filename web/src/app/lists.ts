@@ -9,7 +9,8 @@
 import * as io from '../core/io.js';
 import { Constraint } from '../core/constraints.js';
 import {
-  Arc, Circle, Ellipse, Line, Point, Primitive, Spline, angleBetween, distanceBetween, expand,
+  Arc, Circle, Ellipse, Line, Plane, Point, Primitive, Spline, angleBetween, distanceBetween,
+  expand,
 } from '../core/model.js';
 import { expressions } from '../core/expr.js';
 import {
@@ -55,7 +56,8 @@ function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
  *  drag.  Live values belong in the measurement readout, not here. */
 function describeEntity(e: Primitive, ix: io.Index): string {
   const n = ix.name(e).padEnd(4);
-  const tag = e instanceof Point ? (e.isFixed ? '  ·fixed' : '')
+  // a point says which view it is drawn in, by the name the source calls the view
+  const tag = e instanceof Point ? `${e.isFixed ? '  ·fixed' : ''}${inView(e)}`
             : e.hasClass('construction') ? '  ·constr' : '';
   const body = e instanceof Line ? `line    ${ix.name(e.p1)}–${ix.name(e.p2)}`
     : e instanceof Arc ? `arc     @${ix.name(e.center)} ${ix.name(e.start)}–${ix.name(e.end)}`
@@ -63,8 +65,20 @@ function describeEntity(e: Primitive, ix: io.Index): string {
     // a curve reads as its control polygon: that is what it is made of and what edits it
     : e instanceof Spline ? `spline  ${e.ctrl.map((p) => ix.name(p)).join('–')}`
     : e instanceof Ellipse ? `ellipse @${ix.name(e.center)} →${ix.name(e.major)}`
+    : e instanceof Plane ? `plane   @${ix.name(e.origin)} →${ix.name(e.toward)}`
     : 'point';
   return `${n}${body}${tag}`;
+}
+
+/** `  ·in top` for a point drawn in a view, and nothing for one on the page. */
+function inView(p: Point): string {
+  const pl = p.plane;
+  return pl ? `  ·in ${planeName(pl)}` : '';
+}
+
+/** What the source calls a view — and, for one it calls nothing, the sketch's own label. */
+function planeName(pl: Plane): string {
+  return view.doc.nameOf(pl) ?? pl.name;
 }
 
 /** What the window is open on: the selection while there is one, and otherwise whatever it was
@@ -237,9 +251,11 @@ export function refreshStatus(): void {
   footerEl.classList.toggle('unsolved', conflict || unsolved);
   // nothing is diagnosed until there is a constraint to diagnose, and until then the freedom
   // left is simply every free parameter — there are no equations for one to be spent on
-  stats(conflict ? '⚠ CONFLICT'
+  const state = conflict ? '⚠ CONFLICT'
       : unsolved ? `⚠ NOT CONVERGED${r ? `  max|r|=${r.maxResidual.toExponential(1)}` : ''}`
-      : `DOF ${d ? d.dof : view.sketch.freeIndices().length}`);
+      : `DOF ${d ? d.dof : view.sketch.freeIndices().length}`;
+  // and where the next point goes, while that is somewhere other than the page
+  stats(view.plane ? `${state}   ·   drawing in ${planeName(view.plane)}` : state);
   refreshMeasure();
 }
 

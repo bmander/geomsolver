@@ -37,6 +37,14 @@ fn all_constraints(seed: u32) -> Sketch {
     let el = sk.ellipse(ec, em, rng.uniform(1.0, 11.0), "el");
     let (fo, ft) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
     let fr = sk.frame(fo, ft, "f");
+    // two planes at random, the page's and one folded from it, with `p` and `q` as images on
+    // them — so a projection's planes are inferred exactly as a document's would be
+    let (po, pt1) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
+    let pa = sk.plane(po, pt1, gcs_core::plane::Basis::page(), "pa");
+    let (po2, pt2) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
+    let pb = sk.plane(po2, pt2, gcs_core::plane::Basis::page().fold(0.7), "pb");
+    sk.set_plane(p, Some(pa));
+    sk.set_plane(q, Some(pb));
 
     let (pe, qe) = (EntRef::point(p), EntRef::point(q));
     let (le1, le2) = (EntRef::line(l1), EntRef::line(l2));
@@ -97,6 +105,7 @@ fn all_constraints(seed: u32) -> Sketch {
         // restated here to be checked like any other rows
         Constraint::frame_unit(EntRef::frame(fr)),
         Constraint::frame_align(&sk, EntRef::frame(fr)),
+        Constraint::project(&sk, pe, qe).expect("two images on two planes that fold"),
         // every dimension again with its number written in terms of a free variable, which is
         // an unknown of the sketch rather than a constant — one more column, and (m, c) where
         // the number was.  A different name each time, so no two of them are tied together, and

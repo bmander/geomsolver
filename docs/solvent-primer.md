@@ -52,8 +52,11 @@ the centre is structure and the radius is a guess, and one pair of brackets said
 ```
 unit NAME                               what the document's numbers are in (§1.6)
 param NAME = EXPR                       a number worked out while elaborating; never an unknown
-KIND [NAME][(CHILD | hint(x: E, y: E), …)] [hint(SCALAR: E, …)] [knots […]] [class NAME…]
+KIND [NAME][(CHILD | hint(x: E, y: E), …)] [hint(SCALAR: E, …)] [knots […]] [class NAME…] [in REF]
                                         an entity declaration (§1.4); the name is optional
+plane [NAME][(origin: R, toward: R[, from: R, fold: E | , u: (E, E, E), v: (E, E, E)])]
+                                        a view: a frame with an attitude in space (§1.4)
+in REF { statement* }                   every declaration inside is drawn in that plane (§2.10)
 style .NAME { PROP: VALUE; … }          what a class looks like (§1.10)
 WORD[(ARGS)] REF | REF WORD[(ARGS)] REF   a constraint, prefix or infix (§1.5)
     [hint(SLOT: EXPR, …)] [at (t, r)]
@@ -61,7 +64,7 @@ claim <constraint>                      an assertion, judged and never solved fo
 ground REF                              pin both of a point's coordinates
 fix REF.field                           pin one scalar, e.g. `fix c.r`
 ccw(a, b, c) | cw(a, b, c)              record a root choice; contributes no equation
-NAME: Component(ARGS)                   instantiate a component
+NAME: Component(ARGS) [in REF]          instantiate a component, drawn in that plane if said
 component NAME(FORMALS) { statement* }  define one
 port NAME: KIND [hint(…)] | port NAME = REF   export an entity across a component boundary
 repeat N [as i] { … }                   N copies, unrelated
@@ -84,6 +87,7 @@ References are `name`, `name.field`, or `name[expr]` (which copy of a repeated s
 | `spline` | `ctrl` (a list) | — | — |
 | `ellipse` | `center`, `major` | `b` (minor radius) | — |
 | `frame` | `origin`, `toward` | `c`, `s` (the unit rotor) | — |
+| `plane` | `origin`, `toward` | `c`, `s` — and a constant basis `u`, `v` in space | — |
 | `curve` | `args` (a list) | — | — |
 
 Every scalar is seeded by name in the trailing clause — `point p hint(x: 0, y: 0)`,
@@ -162,6 +166,7 @@ fix c.r                             line1 tangent(side: -1) circle1
 | `angle` | infix | two lines |
 | `radius` | prefix | a circle or an arc |
 | `coincident`, `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each |
+| `project` | infix | two points, each `in` a plane: two images of one point in space (§2.10) |
 | `ground`, `fix` | prefix | pin both of a point's coordinates, or one scalar |
 | `ccw(a, b, c)`, `cw(a, b, c)` | a call | the one exception: the predicate is about the *triangle*, and three symmetric points do not want reordering |
 
@@ -638,6 +643,59 @@ read once at the `from (…)` home, and carried everywhere else by continuity.
 
 The remaining freedom is the contact's parameter again, exactly as in §2.8.
 
+### 2.10 Three views — `dof 0, Well`
+
+A drawing of a part is several pictures of it on one sheet, and the sheet stays a sheet: a
+`plane` is a frame (an origin, a point it is turned toward, a rotor) that also carries a
+constant attitude in space, a point says which view it is drawn `in`, and `a project b` says
+two points are two images of one corner — their coordinates along the fold line the two views
+share agree, which is one equation.  Nothing three-dimensional is ever solved for.
+
+```
+// a 60-wide, 40-tall, 30-deep block, three views, one corner tied across them
+point Af hint(x: 0, y: 0) in front
+point qf hint(x: 40, y: 0)
+plane front(origin: Af, toward: qf)                             // the page itself
+point At hint(x: 0, y: 90) in top
+point qt hint(x: 40, y: 90)
+plane top(origin: At, toward: qt, from: front, fold: 0deg)      // folded up from the x-axis
+point Ar hint(x: 150, y: 0) in right
+point qr hint(x: 150, y: -40)
+plane right(origin: Ar, toward: qr, from: front, fold: -90deg)  // folded from z, turned so z is up
+ground Af
+ground qf
+ground At
+ground qt
+ground Ar
+ground qr
+
+point Bf hint(x: 60, y: 40) in front
+Af distance(60, along: x) Bf
+Af distance(40, along: y) Bf
+point Bt in top
+point Br in right
+Bf project Bt          // width agrees front ↔ top
+Bf project Br          // height agrees front ↔ right
+Bt project Br          // depth agrees top ↔ right
+At distance(30, along: y) Bt
+```
+
+`in top { … }` writes the clause once: every declaration in the block — a `cycle`'s copies
+included — is drawn in `top`, and the statements are otherwise ordinary (they dimension, drag
+and delete as themselves; deleting the plane unwraps the block and leaves them on the page).
+A component instance takes it whole — `t: Tooth(…) in top` draws everything the component
+makes in the view, a datum or a curve inside excepted.
+
+Each view's origin is the same corner `A` as that view sees it, so no projection between the
+origins need be stated.  `fold` is the bearing of the fold line in the parent view — `0deg` from
+the page is the top view, `-90deg` the right view — and the new view's second axis points away
+from the parent's viewer, so distance from the fold line is depth: third-angle projection.  Any
+plane can be reached in two folds, or given outright as `u: (…), v: (…)`.  Points `B` in the top
+and right views are placed by projection and the one depth dimension: `solventc` reports
+`dof 0, Well`.  `rust/examples/bracket.sv` is the full case — an L-bracket in three views with
+an auxiliary view folded at the bearing of its inclined face, whose four corners are placed by
+projection alone and come out the true-size rectangle the face is.
+
 ---
 
 ## 3. Working checklist
@@ -652,5 +710,5 @@ The remaining freedom is the contact's parameter again, exactly as in §2.8.
    whole drawing. If `Over`, find the claim already implied by the others. If `Under`, ask what can
    still move.
 
-The nineteen documents in `rust/examples/` are the worked corpus, each with a header explaining
+The twenty-four documents in `rust/examples/` are the worked corpus, each with a header explaining
 what it is for; `rect_fillets.sv` is the best first read and `gear_trace.sv` the deepest.

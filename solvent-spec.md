@@ -54,7 +54,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `port`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `ellipse`, `spline`. **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `on`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` keeps its own form inside a trace block (§6.5.1).
+- **Keywords:** `component`, `port`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `ellipse`, `spline`. **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `on`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` keeps its own form inside a trace block (§6.5.1). **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family.
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
 - **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . = -> ~`
@@ -76,6 +76,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 | `Line` | segment between two `Point`s; its infinite carrier is what constraints read **[0.2]** | 0 of its own (4 through its ends) |
 | `Circle` | center + radius | 3 |
 | `Frame` | origin + orientation | 3; **[0.6]** 0 beyond its two points as declared |
+| `Plane` | a `Frame` that is also a **view**: a plane in space, given as a constant orthonormal basis `(u, v)` **[0.10]** | 0 beyond its two points (§6.7) |
 | `Path` | directed piecewise boundary curve | 0 (derived object) |
 
 **[0.2] `Line` was a 2-DOF undirected infinite line with a `.dir` field in 0.1.** It is now a segment between two points, and every constraint that reads a line reads the infinite carrier through those points — which is what `parallel`, `perpendicular`, `on` and `angle` mean by a line anyway.
@@ -93,6 +94,7 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 | `Frame` | `.origin`, `.toward` | `Point` **[0.6]** |
 | `Frame` | `.c`, `.s` | `Scalar` **[0.6]** — the unit rotor |
 | `Frame` | `.angle` | `Angle` — derived, `atan2(s, c)`; readable in trace-block expressions **[0.6]** |
+| `Plane` | `.origin`, `.toward`, `.c`, `.s`, `.angle` | as `Frame` **[0.10]**; its basis `u`, `v` are constants of the declaration, not sub-entities |
 | `Line` | `.p1`, `.p2` | `Point` **[0.2]** |
 
 **[0.6] A frame's orientation is a unit rotor, not a stored angle.** `frame f(origin: o,
@@ -428,6 +430,38 @@ Each desugared statement keeps an identity of its own and a span into the chain'
 
 *Non-normative:* chains and paths (§10) answer different questions. A path is a traversal of geometry that already exists — vertices, the circles its arc segments lie on, orientation and branch rules, for boundary composition and export. A chain *declares* the geometry: it is how a contour's elements, their meetings and the levels on its straight runs are written down in the first place. The case library's fillet rectangle is the canonical chain; its longhand form states the same sketch in thirty statements.
 
+### 6.7 Planes and projection **[0.10]**
+
+A multiview drawing is several pictures of one object on one sheet, each on a stated plane in space, related by projection. The language states it the draughtsman's way — descriptive geometry — and **nothing three-dimensional is ever solved for**: a document stays planar, and what is added is a datum with an attitude, a membership, and one equation.
+
+**A `plane` is a `Frame` with an attitude.** `plane front(origin: o, toward: q)` declares an origin, a point it is turned toward and a unit rotor, exactly as `frame` does (§3.2 [0.6]) — that is where the view sits on the page and which way it is turned, and all of it is solved for as a frame's is. What it adds is a **basis** `(u, v)`, an orthonormal pair in space with `n = u × v` toward the viewer, which is a *constant* of the declaration: document data like a spline's knots, never a seed and never moved by a solve — which is why it stands in the brackets with the children (§6.2) and not in `hint(…)` (§4.3). It is written one of three ways:
+
+```
+plane front(origin: o, toward: q)                                   // the page itself
+plane top(origin: o2, toward: q2, from: front, fold: 0deg)          // folded from another
+plane p(origin: o4, toward: q4, u: (0.6, 0.8, 0), v: (0, 0, 1))     // given outright
+```
+
+- With neither `from` nor a basis, the plane is **the page**: `u = (1, 0, 0)`, `v = (0, 0, 1)`, so `n = (0, −1, 0)` — the front view, the viewer standing at −y.
+- `from: P, fold: θ` **folds** the plane from `P` about the line at bearing `θ` in `P`: the new plane is perpendicular to `P` and contains that line, which is its `u` — `u = cos θ·u_P + sin θ·v_P` — and its `v = −n_P` points *away* from `P`'s viewer, so distance from the fold line in the new view is depth behind `P` (third-angle projection). `fold` is an `Angle`, and an omitted one is 0. From the page, `fold: 0deg` is the top view (`u = x`, `v = y`) and `fold: -90deg` the right view (`u = −z`, `v = y`), drawn with its frame turned −90° so z is up on the page. Two folds reach any plane; `P` may be declared after the plane that folds from it (P2), and a plane folded from itself, however indirectly, is **E041**. `from` names a plane and nothing else (**E040**, **E101**).
+- `u:`, `v:` give the basis outright as two triples of dimensionless expressions. They are normalised, `v` is orthogonalised against `u`, and a pair spanning no plane is **E103**. Neither half alone, and not both a `from` and a basis, is a syntax error.
+
+An implementation MUST NOT make the attitude an unknown; a document that wants a view to follow the geometry writes the fold as an expression over its parameters.
+
+**A point says which plane it is on with `in`.** `point a in top` is a trailer of the declaration, order-free against `hint`, `knots` and `class`, and it applies to **every point the declaration mints or names**: `line l(a, b) in top` puts `a` and `b` on `top`, `circle c in right` its centre, `arc`, `spline` and `ellipse` likewise. A membership moves nothing — it is a label, read only by `project` — and a point with none is simply on the page. A point put on two different planes by two declarations is **E060**; agreement is not an error. `frame`, `plane` and `curve` have no points of their own to put anywhere, and `in` on them is a syntax error. Inside a `ring` (§12.5) a plane is invariant: a membership or a fold referencing one is true of every copy alike.
+
+**`a project b` says two points are images of one point in space.** It is an infix operator over two points (§9.2), each `in` a plane; the two planes are **inferred** from the memberships and are never written — an implementation MUST refuse (**E061**) a point on no plane, two points on one plane (a view relates nothing to itself), and two planes that are parallel (they share no fold line), each at the statement. With `d = (n_A × n_B)/|n_A × n_B|` the fold line the planes share, `d_A = (u_A·d, v_A·d)` its direction in A's own 2D coordinates and `d_B` likewise, the residual is
+
+`d_A · Rᵀ(c_A, s_A)(p − o_A) − d_B · Rᵀ(c_B, s_B)(q − o_B) = 0`, `Rᵀ(c, s)(x, y) = (c·x + s·y, −s·x + c·y)`
+
+— one equation: two images of one point agree on their coordinate along the fold line their views share, and on nothing else. Each view's origin is taken as the image of one shared origin in space, so the origins of a drawing's views are all images of one point and need no projection between them; and a view slides freely along its projectors (perpendicular to the fold on the page) without moving the row, which is the free spacing between the views of a drawing. `project` is claimable (§9.7): `claim a project b` asks whether two views are consistent. It is not commutative.
+
+**The block form writes the clause once.** `in top { … }` marks every declaration in its body `in top`; a `repeat`, `cycle` or `ring` inside it marks the declarations of every copy, so a contour drawn as a chain round a cycle is drawn in the view. The statements are ordinary statements of the enclosing body, and an implementation MUST treat them exactly as if each had written the clause itself — they splice, diagnose and delete as themselves, only the header and the closing brace are the block's, and deleting the plane removes exactly those, leaving the statements as page geometry. The block stands at the top level of a document (inside a body, the clause says it one declaration at a time); a declaration inside that writes its own `in`, and a kind with no points of its own, are refused where they stand.
+
+**An instance joins a view whole.** `t: Tooth(…) in top` puts every point-bearing declaration the instance's expansion makes — through nested components and blocks — on the plane: the block's rule, over the statements one statement stands for. A datum or a curve inside is left alone, having no points of its own to put there. A point aliased in through an argument joins through any body declaration that names it, and one already on another plane is E060; an expansion given two planes — a clause of its own under an enclosing `in` — is refused. An instance inside an `in { … }` block takes the block's plane the same way.
+
+*Non-normative:* the front, top and right views of a part are then three planes — the page, `fold: 0deg`, `fold: -90deg` — with the part's corners drawn `in` each and tied across them by `project`; an auxiliary view folded at the bearing of an inclined face shows that face true-size, and its corners can be placed by projection alone. `rust/examples/bracket.sv` is the worked case.
+
 ---
 
 ## 7. Ports
@@ -501,6 +535,7 @@ What goes in the parentheses is a short list:
 | `angle` | infix | (line, line) |
 | `radius` | prefix | a circle or an arc |
 | `coincident`, `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each |
+| `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
 | `ground`, `fix` | prefix | the gauges (§13) |
 
 The collapses are where the saving is: **`on` is five constraints, `distance` is six, `tangent` is six**, and `horizontal`/`vertical` are two each with the **fixity** doing the work — a line prefixed, a pair of points infixed, which is exactly the distinction the point-pair forms were added to draw. `angle` and `radius` keep their own words rather than folding into `distance`, because over two lines a length means a parallel distance and an angle means an angle, and nothing but the number's unit could separate them.
@@ -537,6 +572,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `cw(a, b, c)` | (b−a) × (c−a) < 0 | 0 | |
 | `revolute(f1: Frame, f2: Frame)` | f1.origin − f2.origin | 2 | relative angle free |
 | `weld(f1: Frame, f2: Frame)` | f1.origin − f2.origin, f1.angle − f2.angle | 3 | triggers **W101** |
+| `project(p, q)` **[0.10]** | d_A·Rᵀ(c_A, s_A)(p − o_A) − d_B·Rᵀ(c_B, s_B)(q − o_B) | 1 | the planes A, B inferred from `p`, `q`'s memberships; d the fold line they share, §6.7 |
 
 Implementations MAY extend this library. Extensions MUST document residuals and equation counts, and MUST classify each decoration as hint or constraint per P3.
 
@@ -873,8 +909,10 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E022 | nested `ring` (if unsupported) |
 | E030 | `fix` target has no determined value |
 | E040 | type mismatch within an alias class |
-| E041 | cyclic definitional dependency |
+| E041 | cyclic definitional dependency (a plane folded from itself, §6.7) |
 | E050 | inconsistent system (no solution); report a minimal infeasible subset when computable |
+| E060 | a point put on two different planes (§6.7) **[0.10]** |
+| E061 | `project` refused: a point on no plane, both on one plane, or parallel planes (§6.7) **[0.10]** |
 
 ### 16.2 Warnings and lints
 
@@ -895,7 +933,7 @@ Implementations SHOULD emit, on request, a degrees-of-freedom ledger: per alias 
 
 ## 17. Deferred and open issues (non-normative)
 
-1. **3D lift.** `Frame` generalizes; `ring` generalizes to rotation about a line; the arc-branch rule needs a replacement (no global winding in 3D). Joint library grows (revolute gains an axis argument, add prismatic/cylindrical/spherical).
+1. **3D lift.** **[0.10]** Multiview drawing is settled *without* one — §6.7: a `plane` is a frame with a constant attitude, a point is `in` a view, and `project` is the one equation two images of a point share; nothing three-dimensional is solved for, no true length is measured, and a view's attitude is never an unknown. What remains open is the lift itself: `Frame` generalizes; `ring` generalizes to rotation about a line; the arc-branch rule needs a replacement (no global winding in 3D). Joint library grows (revolute gains an axis argument, add prismatic/cylindrical/spherical). Also deferred from §6.7: a solved-for fold (`fold: along l`).
 2. ~~**Curve entities.**~~ **[0.2] Settled — see §6.5.** A curve is a *family declared in the document*, two expressions over the geometry it is drawn from, rather than an entity kind per curve. Involute, cycloid and trochoid are library code. What remains open is `tangent` against such a curve (one more order in the parameter, and what a *mating* gear needs) and the path grammar's slot for a curve segment.
 3. **Nested symmetry groups.** Semantics of `ring` in `ring` beyond the reject-or-elaborate rule of §12.6 (planetary sets are the motivating case: carrier symmetry ≠ sun symmetry).
 4. **Constraint strengths.** A Cassowary-style required/strong/weak hierarchy for graceful over-constraint. Interacts with P3 (a weak constraint changes the solution set; it is constraint-class) and with diagnostics (W105 becomes resolution, not warning).
@@ -1016,10 +1054,11 @@ component      = "component" IDENT "(" [ params ] ")" "{" { statement } "}" ;
 params         = param { "," param } ;
 param          = IDENT ":" type ;
 type           = "Int" | "Scalar" | "Length" | "Angle"
-               | "Point" | "Line" | "Circle" | "Frame" | "Path" ;
+               | "Point" | "Line" | "Circle" | "Frame" | "Plane" | "Path" ;
 
 statement      = decl | constraint | hint | gauge | block | path_decl | style_rule
-               | unit_decl | frag ;
+               | unit_decl | frag | in_block ;
+in_block       = "in" ref "{" { statement } "}" ;         (* membership, written once: §6.7 *)
 style_rule     = "style" "." IDENT "{" { IDENT ":" value { ";" } } "}" ;   (* §13.2 *)
 unit_decl      = "unit" IDENT ;                                           (* §3.3.2 *)
 
@@ -1036,18 +1075,24 @@ unit_suffix    = "mm" | "cm" | "m" | "km" | "in" | "ft" | "thou"
 decl           = entity_decl | param_decl | port_decl | curve_def | instance_decl ;
 entity_decl    = ekw binder { "," binder }
                | ekw IDENT "=" expr ;
-ekw            = "point" | "circle" | "line" | "frame" | "ellipse" | "spline" | "curve" ;
-(* the trailing clauses are order-free: `hint(…)`, `knots […]`, `class …`.  The geometric
-   `hint at` forms — `hint at t`, `hint at c bearing (…)` — are trace-block seeds, §6.5.1 *)
+ekw            = "point" | "circle" | "line" | "frame" | "plane" | "ellipse" | "spline"
+               | "curve" ;
+(* the trailing clauses are order-free: `hint(…)`, `knots […]`, `class …`, `in REF`.  The
+   geometric `hint at` forms — `hint at t`, `hint at c bearing (…)` — are trace-block seeds,
+   §6.5.1 *)
 binder         = IDENT [ "(" ctor_arg { "," ctor_arg } ")" ] { trailer } ;
 (* §6.1: no list at all is the anonymous form — the kind's children are minted and reached as
    `l.p1`.  A slot is a name, a seed, or implicit; only an overfull list is E103. *)
 trailer        = hint_clause
                | "hint" "at" ref [ "bearing" "(" expr ")" ]
                | "knots" "[" number { "," number } "]"
-               | "class" IDENT { IDENT } ;                 (* presentation, §13.2 *)
+               | "class" IDENT { IDENT }                   (* presentation, §13.2 *)
+               | "in" ref ;                                (* membership of a plane, §6.7 *)
 hint_clause    = "hint" "(" IDENT ":" expr { "," IDENT ":" expr } ")" ;   (* SEEDS, §4.3 *)
-ctor_arg       = [ IDENT ":" ] ( ref | hint_clause ) ;     (* what the thing is made of, §6.2 *)
+ctor_arg       = [ IDENT ":" ] ( ref | hint_clause )       (* what the thing is made of, §6.2 *)
+               | "from" ":" ref                            (* a plane folded from another, §6.7 *)
+               | "fold" ":" expr                           (* the fold, an Angle; 0 when omitted *)
+               | ( "u" | "v" ) ":" "(" expr "," expr "," expr ")" ;   (* a plane's basis, §6.7 *)
 
 (* a curve FAMILY, §6.5; an instance is an ordinary entity_decl *)
 curve_def      = "curve" IDENT "(" [ params ] ")" "(" IDENT ")"
@@ -1057,7 +1102,7 @@ curve_def      = "curve" IDENT "(" [ params ] ")" "(" IDENT ")"
 param_decl     = "param" IDENT "=" expr ;
 port_decl      = "port" IDENT ":" type
                | "port" IDENT "=" ref ;
-instance_decl  = IDENT ":" IDENT "(" [ args ] ")" ;
+instance_decl  = IDENT ":" IDENT "(" [ args ] ")" [ "in" ref ] ;   (* drawn in a view, §6.7 *)
 args           = arg { "," arg } ;
 arg            = [ IDENT ":" ] expr ;
 

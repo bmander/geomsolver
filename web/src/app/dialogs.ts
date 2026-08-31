@@ -5,12 +5,14 @@ import * as examples from '../core/examples.js';
 import * as io from '../core/io.js';
 import { applyAlternative, enumerateStep, isCurrent } from '../core/homotopy.js';
 import { Point, Sketch } from '../core/model.js';
+import { Attitude } from '../core/program.js';
 import { METHODS, Method } from '../core/system.js';
 import { witnessSummary } from '../core/witness.js';
 import { expressions } from '../core/expr.js';
 import { aboutDag, currentConstraint, view } from './shell.js';
 import {
-  addCheckbox, addLink, addSelect, askChoice, openFile, showReport, showSheet, toast,
+  addCheckbox, addLink, addNumber, addSelect, addText, askChoice, askFields, openFile,
+  showReport, showSheet, toast,
 } from './ui.js';
 
 /** What the wordmark on the bar opens.  The diagram lives in the page as a template, since a
@@ -80,6 +82,56 @@ export function options(): Promise<void> {
     }, 'The trust-region method the solver runs');
     body.append(box);
   });
+}
+
+/* -- views ---------------------------------------------------------------------- */
+
+/** The two choices in the `from` list that are not a view of the document's. */
+const PAGE = 'page';
+const EXPLICIT = 'explicit u, v';
+
+/** `"0.6, 0.8, 0"` as the three texts a basis is written from — texts, not numbers: the form
+ *  parses nothing, and the core says whether they span a plane. */
+function triple(s: string): [string, string, string] | null {
+  const parts = s.split(',').map((x) => x.trim());
+  return parts.length === 3 && parts.every((x) => x) ? [parts[0], parts[1], parts[2]] : null;
+}
+
+/** Ask what the next plane is — its name, and its attitude as the statement will spell it —
+ *  then arm the plane tool with it: where it sits on the page is the two clicks' business.
+ *  **No geometry here**: a fold is handed on as the degrees typed, a basis as the texts, and
+ *  the core validates both where it elaborates them. */
+export async function insertPlane(): Promise<void> {
+  const views = view.sketch.planes.map((p) => view.doc.nameOf(p))
+    .filter((n): n is string => !!n);
+  let name = '', from = PAGE, fold = '0', u = '1, 0, 0', v = '0, 0, 1';
+  const ok = await askFields('Insert plane', (body) => {
+    addText(body, 'name', name, (s) => { name = s; },
+            'What the statement calls the view — blank to have one minted');
+    addSelect(body, 'from', [PAGE, ...views, EXPLICIT], from, (s) => { from = s; },
+              'The page itself; a view folded from one already drawn; or a basis written out');
+    addNumber(body, 'fold', 0, (s) => { fold = s; },
+              'Degrees, about the fold line with the view it is from: 0 is the top view of a '
+            + 'front, -90 the right view, third-angle');
+    addText(body, 'u', u, (s) => { u = s; }, 'The page\'s x axis in space, for an explicit basis');
+    addText(body, 'v', v, (s) => { v = s; }, 'The page\'s y axis in space, for an explicit basis');
+  });
+  if (!ok) return;
+  let attitude: Attitude | null;
+  if (from === PAGE) {
+    attitude = null;
+  } else if (from === EXPLICIT) {
+    const uu = triple(u), vv = triple(v);
+    if (!uu || !vv) {
+      toast('u and v are each three numbers, separated by commas');
+      return;
+    }
+    attitude = { u: uu, v: vv };
+  } else {
+    attitude = { from, fold: `${fold.trim() || '0'}deg` };
+  }
+  view.insertPlane({ name: name.trim() || undefined, attitude });
+  toast('click where the view\'s origin goes, then where it points — or Enter to point it right');
 }
 
 /* -- Stage 5: root selection ---------------------------------------------------- */

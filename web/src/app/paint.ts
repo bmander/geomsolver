@@ -6,7 +6,7 @@ import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
 import type { Pt, Seg } from '../core/callout.js';
 import {
-  Arc, Circle, Ellipse, Line, Point, Primitive, Spline, Style, ellipseMinor, onRadius,
+  Arc, Circle, Ellipse, Line, Plane, Point, Primitive, Spline, Style, ellipseMinor, onRadius,
   threePointArc,
 } from '../core/model.js';
 import { tellDimension } from './dimension.js';
@@ -32,7 +32,11 @@ export const COL = {
    *  neither is part of the drawing.  Hovered and selected it takes the canvas's own two
    *  colours, so the picture answers a pointer the way everything else does. */
   imageFrame: '#999999',
+  /** A plane's chord, should the sheet say nothing — the base sheet's `.plane` always does,
+   *  so this is the same dead fallback a callout's ink has. */
+  plane: '#8a8a8a',
 };
+const PLANE_FONT = '11px system-ui, sans-serif';
 /* entity colouring by constraint state (FreeCAD-style, but from the DM decomposition and the
  * conflict set rather than from a guess) */
 const COL_STATE: Record<string, string> = {
@@ -139,6 +143,39 @@ export function paint(v: SketchView): void {
       ctx.stroke();
       ctx.restore();
     }
+  }
+  // a plane is its chord — origin to toward, the sheet's dashed light ink — with a tick out of
+  // the origin along the chord's normal and its name beside it, upright, since the page is
+  // read upright whichever way the view is turned.  Its two points are drawn as points below;
+  // nothing marks the points drawn *in* it, which read as ordinary geometry
+  for (const pl of sk.planes) {
+    // one read: `style` crosses the ABI and comes back as JSON, and it is the same answer twice
+    const st = pl.style;
+    const [col, lw] = strokeFor(COL.plane, pl, st);
+    // the figure is the core's, laid out at `unit` like a callout's: the chord, then the tick.
+    // Nothing here derives it — the tick's direction is the frame's y-axis and its length is a
+    // screen constant, and both are said in `plane::glyph`
+    const [chord, tick] = pl.glyph(v.unit);
+    ctx.strokeStyle = col;
+    ctx.lineWidth = lw;
+    ctx.setLineDash(st.dash);
+    ctx.beginPath();
+    ctx.moveTo(...v.w2s(...chord[0]));
+    ctx.lineTo(...v.w2s(...chord[1]));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(...v.w2s(...tick[0]));
+    ctx.lineTo(...v.w2s(...tick[1]));
+    ctx.stroke();
+    // the name is the app's: a `Sketch` holds no source names, which is the one part of the
+    // glyph the core cannot say
+    const [tx, ty] = v.w2s(...tick[1]);
+    ctx.fillStyle = col;
+    ctx.font = PLANE_FONT;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(v.doc.nameOf(pl) ?? pl.name, tx + 3, ty - 3);
   }
   ctx.setLineDash([]);
   if (v.pending.length || v.pendingFit.length) paintPreview(v);
@@ -350,6 +387,13 @@ export function paintConflicts(v: SketchView): void {
         ctx.stroke();
         xs.push(e.major.x.value);
         ys.push(e.major.y.value);
+      } else if (e instanceof Plane) {
+        ctx.beginPath();
+        ctx.moveTo(...v.w2s(...e.origin.xy));
+        ctx.lineTo(...v.w2s(...e.toward.xy));
+        ctx.stroke();
+        xs.push(e.origin.x.value);
+        ys.push(e.origin.y.value);
       }
     }
     if (!xs.length) continue;
@@ -414,6 +458,13 @@ export function paintPreview(v: SketchView): void {
     // the first click is a place rather than a point, so the band starts from `pendingFit`
     const a = v.pendingFit.length ? v.w2s(...v.pendingFit[0].at) : p0;
     ctx.strokeRect(a[0], a[1], cur[0] - a[0], cur[1] - a[1]);
+  } else if (v.tool === 'plane') {
+    // the chord being laid down, from the first place to the cursor
+    const a = v.pendingFit.length ? v.w2s(...v.pendingFit[0].at) : p0;
+    ctx.beginPath();
+    ctx.moveTo(a[0], a[1]);
+    ctx.lineTo(cur[0], cur[1]);
+    ctx.stroke();
   } else if (v.tool === 'circle') {
     const c = v.pending[0].xy;
     const w = v.s2w(cur[0], cur[1]);

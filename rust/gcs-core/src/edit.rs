@@ -258,15 +258,20 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             // Both are missing and both would go at the same offset — the parser records the
             // clause's home just past the name when there is no clause — so they are written as
             // one edit.  Two insertions at one position would race for it.
-            Some((_, tail)) if at.is_empty() => edits.push(Splice { at, with: tail }),
+            Some((_, tail)) if at.is_empty() && d.list_span.is_empty() => {
+                edits.push(Splice { at, with: tail })
+            }
             // The clause has a home of its own, and the *list* belongs to the name: written at
             // the clause's position it would land past whatever trailer stands between them,
-            // where an argument list is not a thing a declaration can say.
+            // where an argument list is not a thing a declaration can say.  The list is
+            // *replaced* where one stands — a plane that wrote its attitude and no children
+            // has a list none of whose slots is its own, and a second list beside the first
+            // would be two — and inserted at the name's end where none does.
             Some((args, _)) => {
-                let end = d.name.span().hi as usize;
-                edits.push(Splice { at: Span::new(end, end), with: args });
+                edits.push(Splice { at: d.list_span, with: args });
                 if !hint.is_empty() {
-                    edits.push(Splice { at, with: hint });
+                    let with = if at.is_empty() { format!(" {hint}") } else { hint };
+                    edits.push(Splice { at, with });
                 }
             }
             // an insertion has to bring the space that separates it from the statement; a
@@ -375,7 +380,7 @@ fn append(prog: &Program, kind: StmtKind, names: Vec<String>) -> Edit {
 /// figure *sits* is not in the statement: an instance's geometry is written in the component's
 /// terms, so its pose is the session's (the tool seeds it at the gesture) and a reload starts
 /// it from `scatter`, the same bargain every component's interior strikes.
-pub fn add_rectangle(prog: &Program, w: f64, h: f64) -> Edit {
+pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edit {
     let (at, lead) = append_at(prog);
     let mut with = lead;
     if !prog
@@ -415,6 +420,10 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64) -> Edit {
         component: syntax::Name::new("Rectangle"),
         args: vec![arg("w", w), arg("h", h)],
         span: Span::default(),
+        // drawn in a view when the caller says so: the instance joins it whole (§6.7)
+        membership: plane
+            .map(|p| syntax::Membership::lifted(syntax::Ref::new(p)))
+            .unwrap_or_default(),
     };
     let mut line = String::new();
     syntax::write_stmt_to(&mut line, &StmtKind::Instance(inst));
@@ -444,16 +453,59 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
         class: Default::default(),
         class_span: Span::default(),
         seed_at: None,
+        attitude: Default::default(),
+        membership: Default::default(),
+        list_span: Span::default(),
     };
     append(prog, StmtKind::Decl(d), vec![name])
 }
 
 /// An entity built from names that already exist — a line from two points, a circle from a centre.
 pub fn add_entity(prog: &Program, kind: EntKind, args: &[String], seed: &[f64]) -> Edit {
+    add_entity_with(prog, kind, args, seed, Default::default(), None, &[])
+}
+
+/// A plane, with the attitude its statement will spell — folded from another, or given a basis
+/// — and, when the caller has one, the name it asked for.  A name already in use is refused
+/// rather than silently renamed: the caller is about to refer to it.
+///
+/// `places` seeds the origin and the toward point *in the statement* (`origin: hint(x: …)`),
+/// for a slot `args` leaves unnamed.  In the statement and not written into the points
+/// afterwards, because a datum's rotor and its chord-length unknown are seeded from the chord
+/// when the plane is *built*: two points moved by hand after the fact leave both stale, and a
+/// solve from there lands on the degenerate frame with its two points together.
+pub fn add_plane(
+    prog: &Program,
+    args: &[String],
+    attitude: syntax::Attitude,
+    name: Option<&str>,
+    places: &[(f64, f64)],
+) -> Edit {
+    add_entity_with(prog, EntKind::Plane, args, &[], attitude, name, places)
+}
+
+fn add_entity_with(
+    prog: &Program,
+    kind: EntKind,
+    args: &[String],
+    seed: &[f64],
+    attitude: syntax::Attitude,
+    name: Option<&str>,
+    places: &[(f64, f64)],
+) -> Edit {
     if kind == EntKind::Point || kind == EntKind::Curve {
         return Edit::none(prog, Some(format!("a {} is not built this way", kind.as_str())));
     }
-    let name = mint(prog, kind);
+    let name = match name {
+        Some(n) if taken_names(prog).contains(n) => {
+            return Edit::none(prog, Some(format!("`{n}` is already a name in this document")));
+        }
+        Some(n) if !crate::syntax::is_name(n) => {
+            return Edit::none(prog, Some(format!("`{n}` is not a name a statement can say")));
+        }
+        Some(n) => n.to_string(),
+        None => mint(prog, kind),
+    };
     let mut children: Vec<Vec<syntax::Kid>> = Vec::new();
     let mut taken = 0usize;
     for (_, f) in kind.fields() {
@@ -478,6 +530,12 @@ pub fn add_entity(prog: &Program, kind: EntKind, args: &[String], seed: &[f64]) 
             crate::model::Field::Scalar => {}
         }
     }
+    // a place seeds a child slot nothing named — the same `hint(…)` clause, one level down
+    for (g, &(x, y)) in children.iter_mut().zip(places) {
+        if g.is_empty() {
+            g.push(syntax::Kid::Hint(syntax::KidSeed { v: [x, y], ..Default::default() }));
+        }
+    }
     let n_scalar = kind.fields().iter().filter(|(_, f)| *f == crate::model::Field::Scalar).count();
     let d = Decl {
         kind,
@@ -494,6 +552,9 @@ pub fn add_entity(prog: &Program, kind: EntKind, args: &[String], seed: &[f64]) 
         class: Default::default(),
         class_span: Span::default(),
         seed_at: None,
+        attitude,
+        membership: Default::default(),
+        list_span: Span::default(),
     };
     append(prog, StmtKind::Decl(d), vec![name])
 }
@@ -514,7 +575,19 @@ pub fn add_relation(prog: &Program, r: syntax::Relation) -> Edit {
 /// Refused when what is being removed was made inside a component or a block.  There is no one
 /// statement to delete there — the statement makes N of them — and quietly deleting the whole
 /// component would be a much larger edit than the gesture asked for.
-pub fn remove(e: &Elaborated, prog: &Program, ents: &[EntRef], cons: &[u32]) -> Edit {
+///
+/// The **sketch is passed**, as `reconcile` and `commit_seeds` take theirs and for the same
+/// reason: a front end moves the sketch out of the elaboration into a handle of its own
+/// (`Elaborated::taken`), so `e.sketch` is empty there.  The one question here only the model
+/// can answer is which constraints name an entity their text never spells — a projection's
+/// planes — and asked of an empty sketch it silently answers none.
+pub fn remove(
+    e: &Elaborated,
+    prog: &Program,
+    sk: &Sketch,
+    ents: &[EntRef],
+    cons: &[u32],
+) -> Edit {
     let mut doomed: std::collections::BTreeSet<crate::syntax::StmtId> =
         std::collections::BTreeSet::new();
     let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -559,8 +632,59 @@ pub fn remove(e: &Elaborated, prog: &Program, ents: &[EntRef], cons: &[u32]) -> 
             break;
         }
     }
+    // and every statement whose *constraint* names one of the gone without its text doing so:
+    // a projection's planes are its points' memberships, inferred and never spelled, so the
+    // model drops it when a plane goes (`io::without`'s rule) and its statement goes with it
+    // only a kind with an inferred entity slot can be in that position, so a document with none
+    // skips the walk — `user_constraints` and `entities` both allocate
+    let gone: std::collections::BTreeSet<EntRef> = sk
+        .constraints
+        .iter()
+        .any(|c| c.kind.spec().iter().enumerate().any(|(i, (_, k))| k.is_entity() && c.kind.infers_arg(i)))
+        .then(|| names.iter().filter_map(|n| e.map.ent_named(n)).collect())
+        .unwrap_or_default();
+    for c in sk.user_constraints().into_iter().filter(|_| !gone.is_empty()) {
+        if !c.entities().iter().any(|x| gone.contains(x)) {
+            continue;
+        }
+        if let Some(site) = e.map.of_constraint.get(&c.id) {
+            if site.path.0.is_empty() && in_root(prog, site.stmt) {
+                doomed.insert(site.stmt);
+            }
+        }
+    }
     if doomed.is_empty() {
         return Edit::none(prog, None);
+    }
+    // a membership names a plane without depending on it: a point whose plane goes stays,
+    // and only its `in …` clause comes out — with the space that set it off
+    let mut clauses: Vec<Splice> = Vec::new();
+    for st in prog.root().body.iter() {
+        if doomed.contains(&st.id) {
+            continue;
+        }
+        let m = match &st.kind {
+            StmtKind::Decl(d) => &d.membership,
+            StmtKind::Instance(i) => &i.membership,
+            _ => continue,
+        };
+        // only a clause this statement wrote has a span here to take out; a block's comes out
+        // with the block's own header below
+        let (Some(p), at) = (m.written(), m.span()) else { continue };
+        if names.contains(&p.root.text) && !at.is_empty() {
+            clauses.push(clause_splice(prog.text(), at, None));
+        }
+    }
+    // and an `in PLANE { … }` block whose plane goes: the header and its brace come out, and
+    // the statements stay — page geometry now, exactly as a clause's point stays.  The block's
+    // own decls have no clause span, so the pass above never reaches into the header.
+    for b in &prog.in_blocks {
+        if !names.contains(&b.plane.root.text) {
+            continue;
+        }
+        for at in [b.header, b.close] {
+            clauses.push(clause_splice(prog.text(), at, None));
+        }
     }
     // a link of a chain has no deletion splice, so the gesture is refused rather than half-done
     let refuse = || {
@@ -572,7 +696,7 @@ pub fn remove(e: &Elaborated, prog: &Program, ents: &[EntRef], cons: &[u32]) -> 
             ),
         )
     };
-    let mut edits: Vec<Splice> = Vec::new();
+    let mut edits: Vec<Splice> = clauses;
     for s in doomed_splices(prog.text(), &prog.root().body, &doomed) {
         match s {
             Some(e) => edits.push(e),
@@ -614,6 +738,11 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                     look(r);
                 }
             }
+            // a plane folded from a deleted one is defined from nothing, and goes with it; a
+            // membership (`in …`) is a label the point survives losing, and is not counted
+            if let Some(r) = d.attitude.plane_ref() {
+                look(r);
+            }
         }
         StmtKind::Relation(rel) => {
             for a in rel.args.iter().flatten() {
@@ -645,6 +774,26 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
         _ => {}
     }
     hit
+}
+
+/// One trailing clause, written where the parser said it goes or taken out of the line.
+///
+/// **The separator dance, once.**  A clause the source wrote is *replaced* between the spaces
+/// it already had; one it did not is *inserted* and brings the space that sets it off (the
+/// empty-span idiom `class_span`, `plane_span` and `place_span` all use); and one that goes
+/// takes the blanks in front of it with it, or the line is left with a gap.  `class`, `in` and
+/// a callout's placement are all this, and it had been written out at five sites — where the
+/// fiddly half is the same at every one and the wrong half is invisible until a statement
+/// prints with two spaces or none.
+fn clause_splice(text: &str, at: Span, with: Option<String>) -> Splice {
+    match with {
+        Some(s) if at.is_empty() => Splice { at, with: s },
+        Some(s) => Splice { at, with: s.trim_start().to_string() },
+        None => {
+            let lo = back_over_spaces(text, at.lo as usize);
+            Splice { at: Span::new(lo, at.hi as usize), with: String::new() }
+        }
+    }
 }
 
 /// Back over the blanks before an offset — so a clause deleted from the middle of a line does
@@ -898,12 +1047,88 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             }
         }
     }
-    // …a new entity names its children, which may be points the drawing already had…
+    // …a new entity names its children, which may be points the drawing already had, and the
+    // plane its points are on…
     for &r in minted.keys() {
         needed.extend(sk.children(r));
+        if let Some(p) = crate::program::plane_of_entity(sk, r) {
+            needed.insert(EntRef::plane(p));
+        }
     }
-    // …and a gauge names what it holds
+    // …a gauge names what it holds…
     needed.extend(held.iter().map(|(r, _)| *r));
+    /* …and a membership names its plane.  `point a in top` is neither an entity nor a
+     * constraint, so nothing above notices it: it is read off the sketch and compared with
+     * what the statement says, declaration by declaration, the way a class is — but worked out
+     * *here*, since the plane it will name may be one nothing has named yet. */
+    let mut memberships: Vec<(&Decl, Option<usize>)> = Vec::new();
+    // a drawing with no view in it has no membership to write, and the walk below is a scan of
+    // the root body per entity — so the question is asked once, of the sketch, first
+    for (r, site) in e.map.of_entity.iter().filter(|_| !sk.planes.is_empty()) {
+        if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
+            continue;
+        }
+        // the declaration's own entity, not a child it minted: the clause is the statement's
+        if e.map.ents_made_by(site.stmt).next() != Some(*r) {
+            continue;
+        }
+        let Some(d) = decl_of(prog, site) else { continue };
+        if !d.kind.bears_points() {
+            continue;
+        }
+        let now = crate::program::plane_of_entity(sk, *r);
+        let was = d
+            .membership
+            .plane()
+            .as_ref()
+            .and_then(|p| e.map.ent_named(&p.root.text))
+            .filter(|p| p.kind == EntKind::Plane)
+            .map(|p| p.i());
+        if now == was {
+            continue;
+        }
+        // a membership the `in … { }` block around the statement gave it: there is no clause
+        // here to splice, and writing one would say `in` twice
+        // the clause is not this statement's to rewrite — a block's, or an enclosing
+        // instance's — and which it is is the membership's to say, not this sentence's
+        if !d.membership.editable() {
+            return Edit::none(
+                prog,
+                Some(format!(
+                    "that point is {}, so its plane is not this statement's to change; \
+                     move the statement in the source instead",
+                    d.membership.cause()
+                )),
+            );
+        }
+        // a declaration with no clause whose every point is declared elsewhere — `line l(a, b)`
+        // — says nothing about planes; its points' own declarations do.  **Before the straddle
+        // refusal below**: a line drawn between a point in a view and a point on the page is
+        // exactly that declaration, and refusing it would stop the source tracking the drawing
+        // from then on — `syncSource` only reports a refusal, so the jam is silent.
+        let names_all = d.kind != EntKind::Point
+            && !d.children.iter().any(|g| g.is_empty())
+            && d.children.iter().flatten().all(|k| matches!(k, syntax::Kid::Ref(_)));
+        if d.membership.plane().is_none() && names_all {
+            continue;
+        }
+        // its points *are* this statement's to say, and they are on different planes: one
+        // clause cannot say two, so the gesture is refused with the cause rather than written
+        // wrong.  Only reachable where the statement mints or seeds a point of its own.
+        if now.is_none() && sk.children(*r).iter().any(|k| sk.plane_of(k.i()).is_some()) {
+            return Edit::none(
+                prog,
+                Some(format!(
+                    "the points of `{}` are on different planes, which one statement cannot say",
+                    d.name.shown().map_or_else(|| d.kind.as_str().to_string(), |n| n.text.clone())
+                )),
+            );
+        }
+        if let Some(p) = now {
+            needed.insert(EntRef::plane(p));
+        }
+        memberships.push((d, now));
+    }
     for r in &needed {
         if minted.contains_key(r) || renamed.contains_key(r) {
             continue; // new (its statement carries the name), or its statement already named
@@ -988,6 +1213,10 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         let mut d = crate::program::lift_decl(sk, r);
         d.name = syntax::DeclName::Written(syntax::Name::new(name.clone()));
         rename_children(&mut d, sk, r, &name_of);
+        // the plane its points are on, by the name the document calls it
+        d.membership = crate::program::plane_of_entity(sk, r)
+            .map(|p| syntax::Membership::lifted(syntax::Ref::new(name_of(EntRef::plane(p)))))
+            .unwrap_or_default();
         names.push(name.clone());
         made.push(Made::Ent(r));
         adds.push(StmtKind::Decl(d));
@@ -1040,18 +1269,15 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         }
         // the whole clause, replaced where it stands — or written at the point the parser
         // recorded for it, which is where it would have gone
-        let at = d.class_span;
-        if now.is_empty() {
-            // gone: the clause takes the space in front of it with it
-            let lo = back_over_spaces(prog.text(), at.lo as usize);
-            flags.push(Splice { at: Span::new(lo, at.hi as usize), with: String::new() });
-        } else {
-            let with = format!(" class {}", now.0.join(" "));
-            flags.push(Splice {
-                at,
-                with: if at.is_empty() { with } else { with.trim_start().to_string() },
-            });
-        }
+        let with = (!now.is_empty()).then(|| format!(" class {}", now.0.join(" ")));
+        flags.push(clause_splice(prog.text(), d.class_span, with));
+    }
+    // memberships, worked out above and written now that every plane has a name: the clause
+    // replaced where it stands, written where the parser said one would go, or taken out
+    // with the space in front of it
+    for (d, now) in memberships {
+        let with = now.map(|p| format!(" in {}", name_of(EntRef::plane(p))));
+        flags.push(clause_splice(prog.text(), d.membership.span(), with));
     }
     /* where a callout sits.  A placement is document state saved on the statement it qualifies
      * (spec §13.1), so a callout dragged somewhere else is a source edit like any other — and
@@ -1074,23 +1300,17 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             // shares the line's relations, or the line ends in a declaration) records none,
             // and the pose stays the layout's — the bargain `commit_seeds` strikes with a
             // decl seeded by place.
-            Some((t, r)) => {
-                let with = format!("at ({}, {})", num(t), num(r));
-                let at = rel.place_span;
-                if at != Span::default() {
-                    let with = if at.is_empty() { format!(" {with}") } else { with };
-                    flags.push(Splice { at, with });
-                }
+            // the one guard this clause has that the others do not: a line with no spot for a
+            // placement records `Span::default()`, and the pose stays the layout's
+            Some((t, r)) if rel.place_span != Span::default() => {
+                let with = format!(" at ({}, {})", num(t), num(r));
+                flags.push(clause_splice(prog.text(), rel.place_span, Some(with)));
             }
             // back where the layout would put it: the clause goes, and the space before it
             None if !rel.place_span.is_empty() => {
-                let lo = back_over_spaces(prog.text(), rel.place_span.lo as usize);
-                flags.push(Splice {
-                    at: Span::new(lo, rel.place_span.hi as usize),
-                    with: String::new(),
-                });
+                flags.push(clause_splice(prog.text(), rel.place_span, None));
             }
-            None => {}
+            _ => {}
         }
     }
     // `ground(p)` and `fix(c.r)`: a statement per held parameter, added and taken away — the

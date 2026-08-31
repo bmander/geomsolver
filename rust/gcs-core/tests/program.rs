@@ -131,8 +131,8 @@ fn every_constraint_type_is_printable() {
 #[test]
 fn every_constraint_name_survives_the_case_round_trip() {
     let words = [
-        "point", "line", "circle", "arc", "spline", "ellipse", "frame", "at", "knots",
-        "class",
+        "point", "line", "circle", "arc", "spline", "ellipse", "frame", "plane", "at", "knots",
+        "class", "in",
         "ground", "fix", "ccw", "cw", "branch", "component", "port", "param", "ring", "repeat",
         "cycle", "path", "true", "false",
     ];
@@ -178,6 +178,7 @@ fn the_document_uses_the_field_names() {
         ("arcs", EntKind::Arc),
         ("ellipses", EntKind::Ellipse),
         ("frames", EntKind::Frame),
+        ("planes", EntKind::Plane),
     ] {
         let Some(first) = doc.get(plural).and_then(|a| a.arr().first()) else { continue };
         for (name, _) in kind.fields() {
@@ -320,6 +321,9 @@ fn a_name_declared_twice_is_an_error() {
             class: Default::default(),
             class_span: Default::default(),
             seed_at: None,
+            attitude: Default::default(),
+            membership: Default::default(),
+            list_span: Default::default(),
         }));
     }
     render(&mut p);
@@ -353,6 +357,16 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
         .collect();
     let sp = sk.spline(&ctrl).expect("four control points make a curve");
     let fr = sk.frame(p, q, "f");
+    // two planes, the page's and the top's, with `p` and `q` as images on them: what a
+    // projection is inferred from
+    let pa = sk.plane(r, s, gcs_core::plane::Basis::page(), "front");
+    let pb = sk.plane(r, s, gcs_core::plane::Basis::page().fold(0.0), "top");
+    if kind == CKind::Project {
+        sk.set_plane(p, Some(pa));
+        sk.set_plane(q, Some(pb));
+        let c = Constraint::project(&sk, EntRef::point(p), EntRef::point(q)).unwrap();
+        return (sk, c);
+    }
     let arg = |k: SpecKind| -> Arg {
         match k {
             SpecKind::Point => Arg::Ent(EntRef::point(p)),
@@ -362,6 +376,7 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
             SpecKind::Spline => Arg::Ent(EntRef::spline(sp)),
             SpecKind::Ellipse => Arg::Ent(EntRef::ellipse(el)),
             SpecKind::Frame => Arg::Ent(EntRef::frame(fr)),
+            SpecKind::Plane => Arg::Ent(EntRef::plane(pa)),
             SpecKind::Length => Arg::Num(12.0),
             SpecKind::Angle => Arg::Num(0.5),
             _ => Arg::Num(0.0),

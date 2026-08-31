@@ -15,11 +15,12 @@ import './constraints.js';
 export type Box = [number, number, number, number];
 
 export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline' | 'ellipse' | 'curve'
-  | 'frame';
+  | 'frame' | 'plane';
+// in kind-id order: `pick` decodes the core's answer by indexing this list
 export const KINDS: Kind[] =
-  ['point', 'line', 'circle', 'arc', 'spline', 'ellipse', 'curve', 'frame'];
+  ['point', 'line', 'circle', 'arc', 'spline', 'ellipse', 'curve', 'frame', 'plane'];
 export const KIND_ID: Record<Kind, number> =
-  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, ellipse: 5, curve: 6, frame: 7 };
+  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, ellipse: 5, curve: 6, frame: 7, plane: 8 };
 
 export class Param {
   constructor(readonly sketch: Sketch, readonly index: number) {}
@@ -159,6 +160,19 @@ export class Point extends Entity {
 
   fix(fixed = true): void {
     for (const p of this.params) p.fixed = fixed;
+  }
+
+  /** The view this point is drawn in, or null for the page.  Membership is what a `project`
+   *  reads to know which two views it relates, and what the source writes as `in top`; it is
+   *  document state, so the core holds it and a gesture sets it before the source catches up. */
+  get plane(): Plane | null {
+    const i = core().gcs_point_plane(this.sketch.handle, this.index);
+    return i < 0 ? null : this.sketch.planes[i];
+  }
+
+  set plane(p: Plane | null) {
+    const ok = core().gcs_point_set_plane(this.sketch.handle, this.index, p ? p.index : -1) === 0;
+    if (!ok) throw new Error(lastError() || 'no such plane');
   }
 }
 
@@ -360,12 +374,12 @@ export class Curve extends Styled {
   }
 }
 
-/** An origin, a point it is pointed at, and a unit rotor slaved to the chord between them by
- *  two intrinsic constraints — a datum other statements measure from, adding no freedom beyond
- *  its two points.  A trace block reads its bearing as `f.angle`. */
-export class Frame extends Styled {
-  readonly kind = 'frame' as const;
-
+/** What a `frame` and a `plane` share: an origin, a point it is pointed at, and a unit rotor
+ *  slaved to the chord between them by two intrinsic constraints — a datum other statements
+ *  measure from, adding no freedom beyond its two points.  The split mirrors the core's own
+ *  (`Sketch::frame_of`, `Sketch::datum`): every reader of a rotor takes both kinds, and the
+ *  rotor's column layout is written once. */
+export abstract class Datum extends Styled {
   get origin(): Point {
     return this.children[0];
   }
@@ -381,11 +395,49 @@ export class Frame extends Styled {
   }
 }
 
-export type Primitive = Point | Line | Circle | Arc | Spline | Ellipse | Curve | Frame;
+/** A datum other statements measure from; a trace block reads its bearing as `f.angle`. */
+export class Frame extends Datum {
+  readonly kind = 'frame' as const;
+}
+
+/** A view: a frame that also carries a constant attitude in space — an orthonormal basis
+ *  `(u, v)`, with the viewer along `u × v`.  The frame is where the view sits on the page and
+ *  may be turned like any other; the basis says which way the page is looking, and no solve
+ *  moves it.  Points drawn *in* it (`Point.plane`) are images of space in that view, which is
+ *  what a `project` between two of them relates. */
+export class Plane extends Datum {
+  readonly kind = 'plane' as const;
+
+  /** The attitude, as the core orthonormalised it on the way in. */
+  get basis(): { u: [number, number, number]; v: [number, number, number] } {
+    return withBuf(6, 8, (b) => {
+      core().gcs_plane_basis(this.sketch.handle, this.index, b.ptr);
+      const x = b.f64;
+      return { u: [x[0], x[1], x[2]], v: [x[3], x[4], x[5]] };
+    });
+  }
+
+  /** The datum figure this plane is drawn as, in world coordinates: the chord and the tick,
+   *  as segments.  Laid out by the core at `unit` — the world length of one screen pixel —
+   *  exactly as a dimension callout is, so a front end strokes the figure and derives none of
+   *  it (and the SVG export draws the same one). */
+  glyph(unit: number): [[number, number], [number, number]][] {
+    return withBuf(8, 8, (b) => {
+      core().gcs_plane_glyph(this.sketch.handle, this.index, unit, b.ptr);
+      const x = b.f64;
+      return [
+        [[x[0], x[1]], [x[2], x[3]]],
+        [[x[4], x[5]], [x[6], x[7]]],
+      ];
+    });
+  }
+}
+
+export type Primitive = Point | Line | Circle | Arc | Spline | Ellipse | Curve | Frame | Plane;
 
 const CLASSES =
   { point: Point, line: Line, circle: Circle, arc: Arc, spline: Spline,
-    ellipse: Ellipse, curve: Curve, frame: Frame } as const;
+    ellipse: Ellipse, curve: Curve, frame: Frame, plane: Plane } as const;
 
 /** The CCW arc through three points: centre, radius, and the sweep that passes through the
  *  third point.  `swapped` is true when that sweep runs from the *second* given point. */
@@ -414,7 +466,7 @@ export class Sketch {
   private params_: Param[] = [];
   private ents: Record<Kind, Entity[]> =
     { point: [], line: [], circle: [], arc: [], spline: [], ellipse: [], curve: [],
-      frame: [] };
+      frame: [], plane: [] };
   private cons: Constraint[] = [];
   /** Constraint id → its proxy, so identity survives every round trip. */
   readonly byId = new Map<number, Constraint>();
@@ -517,6 +569,18 @@ export class Sketch {
       core().gcs_sketch_frame(this.handle, origin.index, toward.index, p, n));
     this.touch();     // the rotor's two intrinsic constraints came with it
     return this.frames[i];
+  }
+
+  /** A plane at `origin` pointed at `toward`, looking along `u × v`.  The core orthonormalises
+   *  the basis and refuses one that spans no plane. */
+  plane(origin: Point, toward: Point, u: readonly [number, number, number],
+        v: readonly [number, number, number], name = ''): Plane {
+    const i = withStr(name, (p, n) =>
+      core().gcs_sketch_plane(this.handle, origin.index, toward.index,
+                              u[0], u[1], u[2], v[0], v[1], v[2], p, n));
+    if (i < 0) throw new Error(lastError() || 'u and v do not span a plane');
+    this.touch();     // a plane is a frame, so its rotor's intrinsics came with it
+    return this.planes[i];
   }
 
   /** A cubic B-spline over `ctrl`.  null when there are too few control points for a cubic, or
@@ -638,6 +702,10 @@ export class Sketch {
     return this.list<Frame>('frame', this.counts()[9]);
   }
 
+  get planes(): Plane[] {
+    return this.list<Plane>('plane', this.counts()[10]);
+  }
+
   /** How many points the document has — the size a control-polygon buffer has to allow for. */
   get pointCount(): number {
     return this.counts()[1];
@@ -659,13 +727,14 @@ export class Sketch {
       : kind === 'circle' ? this.circles : kind === 'spline' ? this.splines
       : kind === 'ellipse' ? this.ellipses
       : kind === 'curve' ? this.curves
-      : kind === 'frame' ? this.frames : this.arcs) as Primitive[];
+      : kind === 'frame' ? this.frames
+      : kind === 'plane' ? this.planes : this.arcs) as Primitive[];
   }
 
   /** Every entity, in creation order per kind. */
   primitives(): Primitive[] {
     return [...this.points, ...this.lines, ...this.circles, ...this.arcs, ...this.splines,
-            ...this.ellipses, ...this.frames];
+            ...this.ellipses, ...this.frames, ...this.planes];
   }
 
   /** Constraints the user added (excludes intrinsic and soft/transient ones). */

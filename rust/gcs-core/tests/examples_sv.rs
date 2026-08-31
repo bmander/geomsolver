@@ -37,6 +37,7 @@ const DOCS: &[(&str, Shape, i64, State)] = &[
     ("spline_follower", (11, 1, 0, 0), 14, State::Under),
     ("peaucellier", (8, 9, 1, 0), 1, State::Under),
     ("peaucellier_rail", (7, 9, 1, 0), 1, State::Under),
+    ("bracket", (31, 21, 0, 0), 0, State::Well),
 ];
 
 #[test]

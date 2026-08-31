@@ -79,6 +79,8 @@ export function paste(sk: Sketch, clip: Sketch, dx: number, dy: number): Primiti
   sk.touch();   // the pasted constraints arrived behind the proxy's back
   const of: Record<string, () => Primitive[]> = {
     point: () => sk.points, line: () => sk.lines, circle: () => sk.circles, arc: () => sk.arcs,
+    spline: () => sk.splines, ellipse: () => sk.ellipses, curve: () => sk.curves,
+    frame: () => sk.frames, plane: () => sk.planes,
   };
   return made.flatMap(([kind, i]) => {
     const e = of[kind]?.()[i];

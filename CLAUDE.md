@@ -419,6 +419,55 @@ Conventions:
   (it round-trips, grafts, diagnoses), but it draws nothing and its pick distance is infinite —
   its points are the click targets.  Both intrinsics are `unsupported` in `cgraph` for now, so a
   document with a frame drags on the numeric path; the direction-class promotion is a follow-up.
+- A **`plane`** (Solvent §6.7) is a frame that is also a **view**: the same origin, toward point
+  and rotor (the same two intrinsics, minted by `Sketch::plane` through the halves `frame`
+  shares — `datum`/`slave`), plus a constant attitude in space, `plane::Basis` `(u, v)`, with
+  `n = u × v` toward the viewer.  **Nothing three-dimensional is solved for**: the basis is
+  document data like a spline's knots, resolved at elaboration (`program::plane_bases`, a
+  memoised walk over the `from` chain — the page, `from: P, fold: θ` as `Basis::fold`, or
+  `u:`/`v:` orthonormalised by `Basis::explicit`) and stored on `PlaneE`; it is written in the
+  brackets with the children because it is what the plane is *made of* and no solve moves it.
+  A point's **membership** is `PointE.plane`, set by `point a in top` — a trailer applying to
+  every point the declaration mints or names, filled in by `program::memberships` after every
+  kind is built and before any constraint — and it moves nothing: only `Project` reads it.
+  `a project b` is one row over 12 columns (`kernels::project`: both points, both planes'
+  origins and rotors) with the fold line the planes share as consts (`plane::fold_line`).  The
+  two plane slots are real entity slots — so `io::Part`, `topology_key`, the graft and a
+  deletion follow the planes with no new code — and **inferred**: `infers_arg` marks them, the
+  registry publishes null, the source and the bindings write two points, and
+  **`io::seed_omitted` is the one seam** that fills them (`constraints::infer_entity`) and
+  refuses what the model refuses (`constraints::validate`: no plane, one plane, parallel
+  planes) — returning `Result`, so the elaborator (E061 at the statement), `from_json`, the
+  FFI's `gcs_constraint_add` and `Constraint::project` are refused by one rule.  `operator_text`
+  skips an inferred entity slot, so `describe` and a lifted statement both say `a project b`.
+  A plane's minted label starts with `v` (`syntax::kind_initial`, now exhaustive): `p` is the
+  point's, and a plane on the page is a view.  It draws its chord as a datum glyph — the kind's
+  *implicit class* `.plane` (`EntKind::implicit_class`, resolved under the declaration's own in
+  `style_of`, so a document's `style .plane` rule wins and the JSON never writes it) — and is
+  picked by that chord, its points outranking it as everywhere.  Deleting a plane from the source
+  (`edit::remove`) dooms a plane folded from it (`mentions` counts `Attitude::From`), splices
+  the `in` clause out of every surviving declaration (a membership is a label, not a
+  dependency), and dooms every statement whose *elaborated* constraint named it — a projection
+  never spells its planes.  `commit_seeds` replaces the bracket list at `Decl::list_span` rather
+  than inserting a second one beside a list that stated an attitude and no children.
+  **`in top { … }` is the clause written once**: the parser **hoists** the body's statements
+  into the enclosing body, stamping each declaration (`Decl::plane_from_block`, `stamp_plane`
+  recursing into `repeat`/`cycle`/`ring` bodies so a contour drawn round a cycle is drawn in
+  the view) — so writeback, carets, the DOF ledger and `edit::in_root` see ordinary root
+  statements, and only the header and brace are the block's (`Program::in_blocks`), which is
+  what `remove` splices when the plane goes.  The printers spell no clause a statement did not
+  write, and a membership edit on a block-stamped declaration is refused with the cause (the
+  clause is the header's, not the statement's).  Top level only — inside a body the clause
+  says it per declaration.  **An instance joins a view whole** (`t: Tooth(…) in top`, or an
+  instance inside the block): that stamping is the *flattener's* (`Scope::in_plane`, carried
+  down the expansion and applied in `stamp_scope_plane` — the ref as written, resolved by the
+  emitted statement's own `rewrite` through the prefix chain), skipping datum and curve kinds,
+  refusing a plane given twice, and reaching an aliased argument point through any body
+  declaration that names it.  `add_rectangle` takes the plane, which is how the rect tool
+  joins the current view.
+  Not commutative (`same_args` swaps only the first two entity slots).  `cgraph` leaves it
+  unsupported, so a multiview drawing drags on the numeric path.  `bracket.sv` is the case;
+  `tests/plane.rs` and `tests/plane_lang.rs` are the gates.
 - A **`claim`** (Solvent §9.7) is a constraint-shaped statement that is *judged, never solved
   for*: **no** `System` compiles a row for it, and decomposition (`cgraph`), the drag-part walk
   (`io::Part`) and the witness's jitter all skip it, so a claim can never move geometry, weld two

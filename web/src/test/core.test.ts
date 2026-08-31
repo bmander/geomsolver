@@ -20,7 +20,7 @@ import {
 } from '../core/diagnose.js';
 import { checkSketch } from '../core/fdcheck.js';
 import { enumerateStep } from '../core/homotopy.js';
-import { Point, Sketch, Spline } from '../core/model.js';
+import { Plane, Point, Sketch, Spline } from '../core/model.js';
 import { Document, fromSketch, highlight } from '../core/program.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
 import { analyze } from '../core/witness.js';
@@ -1749,6 +1749,133 @@ test('a frame is an origin, a toward point and a rotor slaved to the chord', () 
   back.dispose();
 });
 
+/* -- planes: a frame with an attitude, membership, and projection between views ---------- */
+
+const near3 = (got: readonly number[], want: readonly number[], what: string): void => {
+  for (let i = 0; i < 3; i++) {
+    assert.ok(Math.abs(got[i] - want[i]) < 1e-12, `${what}: ${got} is not ${want}`);
+  }
+};
+
+test('a plane is a frame with an attitude, and a point may be drawn in it', () => {
+  const sk = new Sketch();
+  const o = sk.point(10, 5);
+  const t = sk.point(14, 8);           // chord (4, 3): the 3-4-5 rotor
+  const pl = sk.plane(o, t, [2, 0, 0], [1, 1, 0]);    // orthonormalised on the way in
+  assert.equal(pl.origin, o);
+  assert.equal(pl.toward, t);
+  near3(pl.basis.u, [1, 0, 0], 'u');
+  near3(pl.basis.v, [0, 1, 0], 'v');
+  const [c, s] = pl.rotor;
+  assert.ok(Math.abs(c.value - 0.8) < 1e-12 && Math.abs(s.value - 0.6) < 1e-12);
+  assert.equal(sk.constraints.length, 2, 'the rotor\'s two intrinsics came with it');
+  assert.equal(sk.userConstraints().length, 0);
+  assert.equal(pl.name, 'V0', 'a plane is a view');
+  assert.throws(() => sk.plane(o, t, [1, 0, 0], [2, 0, 0]), /span/);
+  assert.equal(sk.planes.length, 1, 'and a refused one is not there');
+  // membership is the core's: set, read back, and cleared
+  const p = sk.point(12, 9);
+  assert.equal(p.plane, null);
+  p.plane = pl;
+  assert.equal(p.plane, pl);
+  // the chord is what a click picks, and a point within reach outranks it
+  assert.equal(sk.pick(12, 6.5, 0.5), pl);
+  assert.equal(sk.pick(10, 5, 0.5), o);
+  assert.ok(pl.style.dash.length, 'the base sheet draws a plane dashed without being asked');
+  // the document carries the basis, the membership and the rotor, and re-mints the intrinsics
+  const back = io.loads(io.dumps(sk));
+  assert.equal(back.planes.length, 1);
+  near3(back.planes[0].basis.v, [0, 1, 0], 'v after the round trip');
+  assert.equal(back.points[2].plane, back.planes[0]);
+  assert.ok(Math.abs(back.planes[0].rotor[1].value - 0.6) < 1e-12);
+  assert.equal(back.constraints.length, 2);
+  p.plane = null;
+  assert.equal(p.plane, null);
+  sk.dispose();
+  back.dispose();
+});
+
+test('a projection binds over two points, and the core fills in their views', () => {
+  const sk = new Sketch();
+  // the front view on the page and the top view above it — the layout the core's tests assert
+  const front = sk.plane(sk.point(0, 0, true), sk.point(1, 0, true), [1, 0, 0], [0, 0, 1]);
+  const top = sk.plane(sk.point(0, 100, true), sk.point(1, 100, true), [1, 0, 0], [0, 1, 0]);
+  const a = sk.point(30, 40);
+  a.plane = front;
+  const b = sk.point(30, 120);
+  b.plane = top;
+  const c = new C.Project(a, b);
+  assert.deepEqual(c.entities(), [a, b], 'unbound, the plane slots are nothing yet');
+  sk.add(c);
+  assert.equal(c.pa, front, 'the core read a\'s view off a');
+  assert.equal(c.pb, top);
+  assert.deepEqual(c.entities(), [a, b, front, top]);
+  // one row: the two images share their width across the fold, so moving one moves the other
+  a.fix();
+  a.x.value = 45;
+  assert.ok(solve(sk).success);
+  assert.ok(Math.abs(b.x.value - 45) < 1e-6, `b followed to ${b.x.value}`);
+  // a refusal is the core's words, and adds nothing
+  const n = sk.constraints.length;
+  const a2 = sk.point(5, 5);
+  a2.plane = front;
+  assert.throws(() => sk.add(new C.Project(a, a2)), /itself/);
+  assert.throws(() => sk.add(new C.Project(a, sk.point(9, 9))), /on no plane/);
+  assert.equal(sk.constraints.length, n);
+  // the document keeps the projection with both views in it
+  const back = io.loads(io.dumps(sk));
+  const again = back.constraints.find((k) => k.typeName === 'Project')!;
+  assert.ok(again, 'the projection round-tripped');
+  assert.equal(again.entities().length, 4);
+  sk.dispose();
+  back.dispose();
+});
+
+test('a plane is written through the edit API, and its minted points answer by name', () => {
+  const d = Document.read('point o hint(x: 0, y: 0)\npoint q hint(x: 1, y: 0)\n'
+                          + 'plane front(origin: o, toward: q)\n');
+  assert.ok(d.ok, JSON.stringify(d.diagnostics));
+  // the places go into the statement: the chord the frame is read off is the one asked for
+  const e = d.addEntity('plane', [], [], { from: 'front', fold: '-90deg' }, 'right',
+                        [[150, 0], [150, -1]]);
+  assert.equal(e.kind, 'structural');
+  assert.deepEqual(e.names, ['right']);
+  assert.ok(e.text.includes('plane   right(origin: hint(x: 150, y: 0), toward: hint(x: 150, '
+                            + 'y: -1), from: front, fold: -90deg)'), e.text);
+  const next = Document.read(e.text);
+  assert.ok(next.ok, JSON.stringify(next.diagnostics));
+  const right = next.entity('right');
+  assert.ok(right instanceof Plane);
+  assert.equal(right, next.sketch.planes[1]);
+  const ro = next.entity('right.origin');
+  assert.ok(ro instanceof Point, 'the implicit child is named by its path');
+  assert.deepEqual(ro.xy, [150, 0]);
+  assert.deepEqual(right.toward.xy, [150, -1]);
+  // and the rotor was read off that chord — straight down — not off a scattered one
+  const [c, s] = right.rotor;
+  assert.ok(Math.abs(c.value) < 1e-12 && Math.abs(s.value + 1) < 1e-12,
+            `rotor ${c.value}, ${s.value}`);
+  // the fold came to the right view's basis: u = -z, v = y, the viewer at +x
+  near3(right.basis.u, [0, 0, -1], 'u');
+  near3(right.basis.v, [0, 1, 0], 'v');
+  // without places the two points are scattered, and the statement carries no seed
+  const bare = d.addEntity('plane', [], [], null, 'aux');
+  assert.ok(/plane\s+aux\b/.test(bare.text) && !bare.text.includes('aux(origin: hint'), bare.text);
+  // a taken name is refused with the cause; an unnamed plane is minted one, as a view
+  assert.ok(d.addEntity('plane', [], [], null, 'front').refused, 'the name is taken');
+  assert.deepEqual(d.addEntity('plane', [], []).names, ['v0']);
+  const ex = d.addEntity('plane', [], [], { u: ['0.6', '0.8', '0'], v: ['0', '0', '1'] });
+  assert.ok(ex.text.includes('u: (0.6, 0.8, 0), v: (0, 0, 1)'), ex.text);
+  // a membership set on the sketch before the source catches up is written as the clause
+  const p = next.sketch.point(3, 4);
+  p.plane = next.sketch.planes[0];
+  const r = next.reconcile();
+  assert.ok(!r.refused, r.refused ?? '');
+  assert.ok(/point\s+p0 hint\(x: 3, y: 4\) in front/.test(r.text), r.text);
+  next.dispose();
+  d.dispose();
+});
+
 test('a rim drag resizes the minor radius through the same question the tool asks', () => {
   const sk = new Sketch();
   const el = sk.ellipse(sk.point(0, 0, true), sk.point(8, 0, true), 3);
@@ -2119,4 +2246,19 @@ test('dragging the gear does not rewrite the gear', () => {
   assert.equal(e.text, d.text, 'a statement that makes thirty points records no one pose');
   assert.ok(e.text.includes('curve involute(c: circle, phase: Angle)(u) ='));
   d.dispose();
+});
+
+test('a rectangle joins the view it is drawn in, whole', () => {
+  const d = Document.read(
+    'point o hint(x: 0, y: 0)\npoint q hint(x: 40, y: 0)\nplane front(origin: o, toward: q)\n',
+  );
+  const e = d.addRectangle(30, 20, 'front');
+  assert.ok(e.text.includes(': Rectangle(w: 30, h: 20) in front'), e.text);
+  const d2 = Document.read(e.text);
+  assert.ok(d2.ok, d2.diagnostics.map((x) => x.message).join());
+  const front = d2.sketch.planes[0];
+  // the four corners the component makes — membership per point could never reach them
+  assert.equal(d2.sketch.points.filter((p) => p.plane === front).length, 4);
+  d.dispose();
+  d2.dispose();
 });

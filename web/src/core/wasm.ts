@@ -41,10 +41,10 @@ export interface Abi {
   gcs_elab_describe(h: number, sk: number, id: number): number;
   gcs_elab_reconcile(h: number, sk: number): number;
   gcs_elab_add_point(h: number, x: number, y: number): number;
-  gcs_elab_add_rectangle(h: number, w: number, hh: number): number;
+  gcs_elab_add_rectangle(h: number, w: number, hh: number, plane: number, planeLen: number): number;
   gcs_elab_add_entity(h: number, p: number, n: number): number;
   gcs_elab_add_relation(h: number, p: number, n: number): number;
-  gcs_elab_remove(h: number, p: number, n: number): number;
+  gcs_elab_remove(h: number, sk: number, p: number, n: number): number;
   gcs_elab_set_dimension(h: number, cid: number, ap: number, an: number,
                          tp: number, tn: number): number;
   gcs_sketch_counts(h: number, out: number): void;
@@ -57,6 +57,13 @@ export interface Abi {
                      name: number, nameLen: number): number;
   gcs_sketch_frame(h: number, origin: number, toward: number,
                    name: number, nameLen: number): number;
+  gcs_sketch_plane(h: number, origin: number, toward: number, ux: number, uy: number,
+                   uz: number, vx: number, vy: number, vz: number,
+                   name: number, nameLen: number): number;
+  gcs_plane_basis(h: number, idx: number, out: number): number;
+  gcs_plane_glyph(h: number, idx: number, unit: number, out: number): number;
+  gcs_point_plane(h: number, idx: number): number;
+  gcs_point_set_plane(h: number, idx: number, plane: number): number;
   gcs_ellipse_minor(cx: number, cy: number, mx: number, my: number, tx: number,
                     ty: number): number;
   gcs_sketch_spline(h: number, ctrl: number, n: number): number;

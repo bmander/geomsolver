@@ -147,7 +147,7 @@ fn drawing_a_point_appends_one_statement() {
 #[test]
 fn a_rectangle_is_a_component_instance() {
     let prog = prog_of("point p9 hint(x: 5, y: 5)\n");
-    let e = edit::add_rectangle(&prog, 120.0, 60.0);
+    let e = edit::add_rectangle(&prog, 120.0, 60.0, None);
     assert_eq!(e.kind, Kind::Structural);
     assert_eq!(e.names, vec!["r0"]);
     assert!(e.text.contains("component Rectangle(w: Length, h: Length)"), "{}", e.text);
@@ -158,7 +158,7 @@ fn a_rectangle_is_a_component_instance() {
     assert_eq!((back.sketch.points.len(), back.sketch.lines.len()), (5, 4));
 
     // the second rectangle reuses the definition: one component, two instances
-    let e = edit::add_rectangle(&prog, 40.0, 40.0);
+    let e = edit::add_rectangle(&prog, 40.0, 40.0, None);
     assert_eq!(e.names, vec!["r1"]);
     assert_eq!(e.text.matches("component Rectangle").count(), 1, "{}", e.text);
     let back = elaborate(&prog_of(&e.text));
@@ -185,7 +185,7 @@ fn a_minted_name_is_free() {
 fn deleting_a_point_takes_what_named_it() {
     let prog = prog_of(DOC);
     let e = elaborate(&prog);
-    let d = edit::remove(&e, &prog, &[EntRef::point(2)], &[]);
+    let d = edit::remove(&e, &prog, &e.sketch, &[EntRef::point(2)], &[]);
     assert_eq!(d.kind, Kind::Structural);
     // `c` and the two lines that named it are gone; the base and its dimension are not
     assert!(!d.text.contains("point c at"), "{}", d.text);
@@ -215,7 +215,7 @@ ground q.a
     let prog = prog_of(src);
     let e = elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
-    let d = edit::remove(&e, &prog, &[EntRef::point(0)], &[]);
+    let d = edit::remove(&e, &prog, &e.sketch, &[EntRef::point(0)], &[]);
     assert_eq!(d.kind, Kind::None);
     assert!(d.refused.is_some_and(|r| r.contains("component")), "it says why");
     assert_eq!(d.text, src, "and changes nothing");
@@ -254,7 +254,7 @@ fn a_stale_span_edits_nothing() {
     let e = elaborate(&prog);
     let short = prog_of("point a hint(x: 0, y: 0)\n");
     // spans from the long document, applied to the short one
-    let d = edit::remove(&e, &short, &[EntRef::point(2)], &[]);
+    let d = edit::remove(&e, &short, &e.sketch, &[EntRef::point(2)], &[]);
     let _ = d.text;
     let s = edit::commit_seeds(&e, &e.sketch, &short);
     let _ = s.text;
@@ -415,7 +415,7 @@ fn reconciling_extends_the_map_rather_than_rebuilding_the_drawing() {
     assert_eq!(again.text, first.text);
 
     // and a deletion afterwards splices against the source it just wrote
-    let d = edit::remove(&e, &e.program, &[EntRef::point(before)], &[]);
+    let d = edit::remove(&e, &e.program, &e.sketch, &[EntRef::point(before)], &[]);
     assert!(!d.text.contains("point   p0 at"), "{}", d.text);
     assert!(!d.text.contains("line    l0("), "{}", d.text);
     assert!(d.text.contains("// a triangle, and this comment must survive every drag"));

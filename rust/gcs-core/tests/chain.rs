@@ -386,7 +386,7 @@ fn removing_a_chain_relation_splices_a_word() {
         .find(|c| c.kind == CKind::TangentArcLine)
         .expect("a joint")
         .id;
-    let out = edit::remove(&e, &e.program, &[], &[tangency]);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[], &[tangency]);
     assert!(out.refused.is_none(), "{:?}", out.refused);
     assert!(out.text.contains("line a(p1, p2) -> arc"), "{}", out.text);
     let again = read(&out.text);
@@ -403,7 +403,7 @@ fn removing_a_chain_relation_splices_a_word() {
         .find(|c| c.kind == CKind::Vertical)
         .expect("the prefix")
         .id;
-    let out = edit::remove(&e, &e.program, &[], &[level]);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[], &[level]);
     assert!(out.text.contains("tangent line b(p3, p4)"), "{}", out.text);
     assert!(!read(&out.text).sketch.user_constraints().iter().any(|c| c.kind == CKind::Vertical));
 }
@@ -413,10 +413,10 @@ fn removing_a_chain_relation_splices_a_word() {
 #[test]
 fn removing_a_link_is_refused() {
     let e = read(&format!("{PTS}{TANGENT_RUN}"));
-    let out = edit::remove(&e, &e.program, &[EntRef::arc(0)], &[]);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[EntRef::arc(0)], &[]);
     assert!(out.refused.is_some(), "deleting a link went through");
     // and deleting a point a link is threaded through is the same refusal, found transitively
-    let out = edit::remove(&e, &e.program, &[EntRef::point(1)], &[]);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[EntRef::point(1)], &[]);
     assert!(out.refused.is_some(), "deleting a threaded point went through");
 }
 
@@ -717,7 +717,7 @@ fn a_comment_between_words_survives_the_splice() {
         .find(|c| c.kind == CKind::EqualLength)
         .expect("the equality")
         .id;
-    let out = edit::remove(&e, &e.program, &[], &[eq]);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[], &[eq]);
     assert!(out.refused.is_none(), "{:?}", out.refused);
     assert!(out.text.contains("/* keep */"), "{}", out.text);
     read(&out.text);
@@ -740,7 +740,7 @@ fn a_refused_word_holds_its_joint() {
         .find(|c| c.kind == CKind::EqualRadius)
         .expect("the equality")
         .id;
-    let out = edit::remove(&e, &prog, &[], &[eq]);
+    let out = edit::remove(&e, &prog, &e.sketch, &[], &[eq]);
     assert!(out.refused.is_none(), "{:?}", out.refused);
     assert!(out.text.contains("tangent"), "the refused word stays: {}", out.text);
 }
@@ -755,7 +755,7 @@ fn a_doom_no_splice_can_write_is_refused() {
          line A(p1, p2)\nline B(p3, p4)\nline C(p5, p6)\n\
          A equal B equal C\n",
     );
-    let out = edit::remove(&e, &e.program, &[EntRef::line(1)], &[]);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[EntRef::line(1)], &[]);
     assert!(out.refused.is_some(), "a dangling middle link must refuse: {}", out.text);
 }
 
@@ -793,7 +793,7 @@ fn a_break_takes_the_trailing_placement_with_it() {
         .find(|c| c.kind == CKind::Angle)
         .expect("the angle")
         .id;
-    let out = edit::remove(&e, &e.program, &[], &[ang]);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[], &[ang]);
     assert!(out.refused.is_none(), "{:?}", out.refused);
     assert!(!out.text.contains("at (0.5"), "the placement goes with its dimension: {}", out.text);
     read(&out.text);
@@ -811,7 +811,7 @@ fn removing_one_of_a_joints_words_leaves_the_rest() {
         .find(|c| c.kind == CKind::Angle)
         .expect("the angle")
         .id;
-    let out = edit::remove(&e, &e.program, &[], &[angle]);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[], &[angle]);
     assert!(out.refused.is_none(), "{:?}", out.refused);
     assert!(!out.text.contains("angle"), "{}", out.text);
     let again = read(&out.text);
@@ -832,7 +832,7 @@ fn removing_one_of_a_joints_words_leaves_the_rest() {
         .find(|c| c.kind == CKind::EqualLength)
         .expect("the equality")
         .id;
-    let out = edit::remove(&e, &e.program, &[], &[eq]);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[], &[eq]);
     assert!(out.refused.is_none(), "{:?}", out.refused);
     let again = read(&out.text);
     assert!(
@@ -849,7 +849,7 @@ fn removing_one_of_a_joints_words_leaves_the_rest() {
 fn a_joint_doomed_whole_falls_back_to_one_splice() {
     let e = read("line A -> equal angle(30deg) line B\n");
     let ids: Vec<u32> = e.sketch.user_constraints().iter().map(|c| c.id).collect();
-    let out = edit::remove(&e, &e.program, &[], &ids);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[], &ids);
     assert!(out.refused.is_none(), "{:?}", out.refused);
     let again = read(&out.text);
     assert!(again.sketch.user_constraints().is_empty(), "{}", out.text);
@@ -865,7 +865,7 @@ fn a_joint_doomed_whole_falls_back_to_one_splice() {
          point p4 hint(x: 0, y: 9)\nline A(p1, p2)\nline B(p3, p4)\n\
          A equal angle(30deg) B\n",
     );
-    let out = edit::remove(&e, &e.program, &[EntRef::line(0)], &[]);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[EntRef::line(0)], &[]);
     assert!(out.refused.is_none(), "{:?}", out.refused);
     let again = read(&out.text);
     assert!(again.sketch.user_constraints().is_empty(), "{}", out.text);
@@ -965,7 +965,7 @@ fn removing_an_unthreaded_relation_splices_a_break() {
         .find(|c| c.kind == CKind::Perpendicular)
         .expect("the relation")
         .id;
-    let out = edit::remove(&e, &e.program, &[], &[perp]);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[], &[perp]);
     assert!(out.refused.is_none(), "{:?}", out.refused);
     let again = read(&out.text);
     assert!(!again.sketch.user_constraints().iter().any(|c| c.kind == CKind::Perpendicular));
@@ -986,7 +986,7 @@ fn removing_an_unthreaded_relation_splices_a_break() {
         .last()
         .expect("the second equality")
         .id;
-    let out = edit::remove(&e, &e.program, &[], &[last]);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[], &[last]);
     assert!(out.refused.is_none(), "{:?}", out.refused);
     let again = read(&out.text);
     assert_eq!(
@@ -1012,7 +1012,7 @@ fn removing_an_unthreaded_relation_from_a_closed_chain_is_refused() {
         .find(|c| c.kind == CKind::EqualLength)
         .expect("the relation")
         .id;
-    let out = edit::remove(&e, &e.program, &[], &[eq]);
+    let out = edit::remove(&e, &e.program, &e.sketch, &[], &[eq]);
     assert!(out.refused.is_some(), "a break inside a closed chain went through");
 }
 

@@ -25,8 +25,8 @@ use crate::model::{EntKind, EntRef, Field, Sketch};
 use crate::rng::Rng;
 use crate::style::Classes;
 use crate::syntax::{
-    entity_name, line_col, num, Arg, Decl, DeclName, Gauge, Kid, Name, Named, Orient, Program,
-    Ref, Relation, Seg, Span, Stmt, StmtId, StmtKind,
+    entity_name, line_col, num, Arg, Attitude, Decl, DeclName, Gauge, Kid, Name, Named, Orient,
+    Program, Ref, Relation, Seg, Span, Stmt, StmtId, StmtKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -54,6 +54,13 @@ pub enum Code {
     E022,
     /// type mismatch within an alias class
     E040,
+    /// a cyclic definitional dependency: a plane folded from itself (§6.7)
+    E041,
+    /// a point given two planes (§6.7)
+    E060,
+    /// a `project` the model refuses: a point on no plane, both on one, or parallel planes
+    /// (§6.7) — the core's own words, given a span
+    E061,
     /// syntax
     E100,
     /// no such name
@@ -84,6 +91,9 @@ impl Code {
             Code::E021 => "E021",
             Code::E022 => "E022",
             Code::E040 => "E040",
+            Code::E041 => "E041",
+            Code::E060 => "E060",
+            Code::E061 => "E061",
             Code::E100 => "E100",
             Code::E101 => "E101",
             Code::E102 => "E102",
@@ -688,6 +698,11 @@ pub fn elaborate(p: &Program) -> Elaborated {
         *n += 1;
     }
 
+    // every plane's attitude, before any plane is built: a plane folded from another needs
+    // the parent's basis, and the build itself must stay in body order (phase 1 assigned the
+    // indices in it), so the arithmetic is done here, memoised, and handed to the build
+    let bases = plane_bases(&body, &res, &skip, sk.units, &mut diags);
+
     // -- phase 2: geometry, per kind in `primitives()` order.  The same walk `io::from_json`
     // makes, through the same constructors, so the two produce the same parameter vector.
     let mut built: BTreeMap<EntRef, bool> = BTreeMap::new();
@@ -702,6 +717,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
         EntKind::Spline,
         EntKind::Ellipse,
         EntKind::Frame,
+        EntKind::Plane,
         EntKind::Curve,
     ] {
         for st in &body {
@@ -710,7 +726,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 continue;
             }
             let mut anon: Vec<(String, EntRef)> = Vec::new();
-            match build(&mut sk, &res, d, st, &mut diags, &mut anon) {
+            match build(&mut sk, &res, d, st, &bases, &mut diags, &mut anon) {
                 Some(e) => {
                     built.insert(e, true);
                     map.bind(&d.name.key().text, e, d.name.named());
@@ -734,6 +750,10 @@ pub fn elaborate(p: &Program) -> Elaborated {
             }
         }
     }
+
+    // memberships, once every kind is built and before any constraint reads one: `point a in
+    // top` names a plane built after the point, and `project` infers its planes from these
+    memberships(&mut sk, &res, &map, &body, &skip, &mut diags);
 
     // -- phase 3: constraints, in statement order
     for st in &body {
@@ -1332,11 +1352,231 @@ fn shown(sk: &Sketch, d: &Decl) -> String {
     }
 }
 
+/// Every plane's basis, resolved from what its declaration wrote (§6.7): the page, a fold
+/// from another plane, or a basis given outright.  Memoised recursion over the `from` chain,
+/// so a plane is worked out once and a cycle is caught where it closes.  A plane whose
+/// attitude is refused has no entry, and `build` then leaves it unbuilt.
+///
+/// **Keyed by the declaration's name, never by its statement id.**  A statement expanded by
+/// `flatten` keeps the id of the statement it came from, so a component instanced twice — or a
+/// plane declared inside a `cycle` — is several planes from one id, each with the fold its own
+/// copy was given (`settle_arg` substitutes the instance's parameters into the text).  Keyed by
+/// id every copy read the first one's basis and came out silently wrong; the *name* is the
+/// prefixed absolute one the resolver keys on, which is one per copy.
+fn plane_bases(
+    body: &[&Stmt],
+    res: &Resolver,
+    skip: &BTreeSet<StmtId>,
+    units: crate::units::Units,
+    diags: &mut Vec<Diag>,
+) -> BTreeMap<String, crate::plane::Basis> {
+    let mut decls: BTreeMap<&str, (&Stmt, &Decl)> = BTreeMap::new();
+    for st in body {
+        let StmtKind::Decl(d) = &st.kind else { continue };
+        if d.kind == EntKind::Plane && !skip.contains(&st.id) {
+            decls.entry(&d.name.key().text).or_insert((st, d));
+        }
+    }
+    let mut done: BTreeMap<String, Option<crate::plane::Basis>> = BTreeMap::new();
+    let keys: Vec<&str> = decls.keys().copied().collect();
+    for k in keys {
+        basis_of(k, &decls, res, units, &mut done, &mut Vec::new(), diags);
+    }
+    done.into_iter().filter_map(|(k, b)| b.map(|b| (k, b))).collect()
+}
+
+fn basis_of<'a>(
+    key: &'a str,
+    decls: &BTreeMap<&'a str, (&'a Stmt, &'a Decl)>,
+    res: &Resolver,
+    units: crate::units::Units,
+    done: &mut BTreeMap<String, Option<crate::plane::Basis>>,
+    stack: &mut Vec<&'a str>,
+    diags: &mut Vec<Diag>,
+) -> Option<crate::plane::Basis> {
+    let &(st, d) = decls.get(key)?;
+    if let Some(b) = done.get(key) {
+        return *b;
+    }
+    let fail = |diags: &mut Vec<Diag>, code: Code, span: Span, message: String| {
+        diags.push(Diag { code, span, stmt: Some(st.id), message });
+    };
+    // one number the attitude was written with, as the dimension its slot takes
+    // what a written number comes to, asked of the one function that answers it everywhere —
+    // an attitude is written in the same little language a dimension is, and read in the
+    // document's own units.  Nothing is in scope: a plane's fold is settled per copy by the
+    // flattener before this runs, so what arrives here is arithmetic over literals.
+    let number = |a: &Arg, want: crate::units::Dim, what: &str| -> Result<f64, String> {
+        let Arg::Dim { text, .. } = a else { return Err(format!("`{what}` is not a number")) };
+        let v = crate::flatten::value_aff(text, &BTreeMap::new(), units)
+            .map_err(|e| format!("`{text}`: {e}"))?;
+        v.dim.require(want, what)?;
+        Ok(v.c)
+    };
+    let basis = match &d.attitude {
+        Attitude::Page => Some(crate::plane::Basis::page()),
+        Attitude::From { plane, fold } => {
+            let parent = if !plane.path.is_empty() {
+                fail(diags, Code::E040, plane.span, "`from` names a plane, not a part of one".into());
+                None
+            } else {
+                match res.lookup(plane) {
+                    None => {
+                        fail(
+                            diags,
+                            Code::E101,
+                            plane.span,
+                            format!("no such entity: `{}`", plane.root.text),
+                        );
+                        None
+                    }
+                    Some(e) if e.kind != EntKind::Plane => {
+                        fail(
+                            diags,
+                            Code::E040,
+                            plane.span,
+                            format!(
+                                "`{}` is a {}, and `from` names a plane",
+                                plane.root.text,
+                                e.kind.as_str()
+                            ),
+                        );
+                        None
+                    }
+                    Some(_) if stack.contains(&key) || plane.root.text == key => {
+                        fail(
+                            diags,
+                            Code::E041,
+                            plane.span,
+                            format!("`{key}` is folded from itself, through `{}`", plane.root.text),
+                        );
+                        None
+                    }
+                    Some(_) => {
+                        stack.push(key);
+                        let p = basis_of(plane.root.text.as_str(), decls, res, units, done,
+                                         stack, diags);
+                        stack.pop();
+                        p
+                    }
+                }
+            };
+            let theta = match fold {
+                None => Some(0.0),
+                Some(a) => match number(a, crate::units::Dim::ANGLE, "fold") {
+                    Ok(deg) => Some(expr::to_arg_units(SpecKind::Angle, deg)),
+                    Err(m) => {
+                        fail(diags, Code::E103, arg_span(a).unwrap_or(st.span), m);
+                        None
+                    }
+                },
+            };
+            match (parent, theta) {
+                (Some(p), Some(t)) => Some(p.fold(t)),
+                _ => None,
+            }
+        }
+        Attitude::Basis { u, v } => {
+            let mut vals = [[0.0; 3]; 2];
+            let mut ok = true;
+            for (k, (name, triple)) in [("u", u), ("v", v)].into_iter().enumerate() {
+                for (i, a) in triple.iter().enumerate() {
+                    match number(a, crate::units::Dim::SCALAR, name) {
+                        Ok(x) => vals[k][i] = x,
+                        Err(m) => {
+                            fail(diags, Code::E103, arg_span(a).unwrap_or(st.span), m);
+                            ok = false;
+                        }
+                    }
+                }
+            }
+            let b = ok.then(|| crate::plane::Basis::explicit(vals[0], vals[1])).flatten();
+            if ok && b.is_none() {
+                fail(
+                    diags,
+                    Code::E103,
+                    arg_span(&u[0]).unwrap_or(st.span),
+                    "`u` and `v` do not span a plane".into(),
+                );
+            }
+            b
+        }
+    };
+    done.insert(key.to_string(), basis);
+    basis
+}
+
+/// `point a in top` (§6.7): every point a declaration mints or names is put on the plane it
+/// names.  After every kind is built, since the plane may be declared after the point; before
+/// any constraint, since `project` reads these.  A point two declarations put on two different
+/// planes is E060 — one image is on one plane.
+fn memberships(
+    sk: &mut Sketch,
+    res: &Resolver,
+    map: &SourceMap,
+    body: &[&Stmt],
+    skip: &BTreeSet<StmtId>,
+    diags: &mut Vec<Diag>,
+) {
+    for st in body {
+        let StmtKind::Decl(d) = &st.kind else { continue };
+        let Some(r) = d.membership.plane() else { continue };
+        if skip.contains(&st.id) {
+            continue;
+        }
+        let mut fail = |code: Code, span: Span, message: String| {
+            diags.push(Diag { code, span, stmt: Some(st.id), message });
+        };
+        let plane = match res.lookup(r) {
+            None => {
+                fail(Code::E101, r.span, format!("no such entity: `{}`", r.root.text));
+                continue;
+            }
+            Some(e) if e.kind != EntKind::Plane || !r.path.is_empty() => {
+                fail(
+                    Code::E040,
+                    r.span,
+                    format!("`{}` is a {}, and `in` names a plane", r.root.text, e.kind.as_str()),
+                );
+                continue;
+            }
+            Some(e) => e.i(),
+        };
+        // a declaration that could not be built made nothing to put anywhere
+        let Some(me) = res.of.get(&d.name.key().text).copied() else { continue };
+        let points: Vec<usize> = match me.kind {
+            EntKind::Point => vec![me.i()],
+            _ => sk.children(me).into_iter().map(|k| k.i()).collect(),
+        };
+        for p in points {
+            match sk.plane_of(p) {
+                Some(q) if q != plane => {
+                    let who = |e: EntRef| {
+                        map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e))
+                    };
+                    fail(
+                        Code::E060,
+                        // the ref's own span: the clause's word, or the block header's
+                        r.span,
+                        format!(
+                            "`{}` is already in `{}`",
+                            who(EntRef::point(p)),
+                            who(EntRef::plane(q))
+                        ),
+                    );
+                }
+                _ => sk.set_plane(p, Some(plane)),
+            }
+        }
+    }
+}
+
 fn build(
     sk: &mut Sketch,
     res: &Resolver,
     d: &Decl,
     st: &Stmt,
+    bases: &BTreeMap<String, crate::plane::Basis>,
     diags: &mut Vec<Diag>,
     anon: &mut Vec<(String, EntRef)>,
 ) -> Option<EntRef> {
@@ -1549,6 +1789,20 @@ fn build(
             }
             fi
         }
+        EntKind::Plane => {
+            // the frame's bargain again, over a basis the attitude pass resolved before this
+            // walk; a plane whose basis was refused has no entry and is not built
+            let basis = *bases.get(&d.name.key().text)?;
+            let pi = sk.plane(kids[0], kids[1], basis, &show);
+            let (c, s) = (seed(0), seed(1));
+            if c != 0.0 || s != 0.0 {
+                let f = &sk.planes[pi].frame;
+                let (cp, sp) = (f.c as usize, f.s as usize);
+                sk.params[cp].value = c;
+                sk.params[sp].value = s;
+            }
+            pi
+        }
         EntKind::Curve => unreachable!("a curve is built before this walk"),
     };
     let e = EntRef::new(d.kind, idx);
@@ -1657,6 +1911,7 @@ fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {
         EntKind::Spline => sk.splines[e.i()].class = c,
         EntKind::Ellipse => sk.ellipses[e.i()].class = c,
         EntKind::Frame => sk.frames[e.i()].class = c,
+        EntKind::Plane => sk.planes[e.i()].frame.class = c,
     }
 }
 
@@ -1812,8 +2067,12 @@ fn constrain(
         return None;
     }
     // the inferred slots the source left out — read off the geometry, the one place that rule
-    // lives, shared with the document reader and the bindings' constraint records
-    io::seed_omitted(sk, ckind, &mut args, |i| left_out[i]);
+    // lives, shared with the document reader and the bindings' constraint records — and what
+    // the model refuses once they are in, in its own words, given this statement's span
+    if let Err(message) = io::seed_omitted(sk, ckind, &mut args, |i| left_out[i]) {
+        diags.push(Diag { code: Code::E061, span: st.span, stmt: Some(st.id), message });
+        return None;
+    }
     let mut c = Constraint::new(ckind, args);
     c.claim = r.claim;
     Some(sk.add_quiet(c))
@@ -2109,7 +2368,55 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         class: sk.class_of(e),
         class_span: Span::default(),
         seed_at: None,
+        attitude: lift_attitude(sk, e),
+        membership: lift_plane(sk, e),
+        list_span: Span::default(),
     }
+}
+
+/// A plane's attitude as a statement spells it: nothing for the page's own basis, the basis
+/// itself otherwise.  A lifted plane never says `from` — the sketch holds the resolved basis
+/// and not the construction it came from.
+fn lift_attitude(sk: &Sketch, e: EntRef) -> Attitude {
+    if e.kind != EntKind::Plane {
+        return Attitude::Page;
+    }
+    let b = sk.planes[e.i()].basis;
+    let page = crate::plane::Basis::page();
+    let same = |a: [f64; 3], c: [f64; 3]| (0..3).all(|i| (a[i] - c[i]).abs() < 1e-12);
+    if same(b.u, page.u) && same(b.v, page.v) {
+        return Attitude::Page;
+    }
+    let dim = |x: f64| Arg::Dim { text: num(x), span: Span::default() };
+    Attitude::Basis {
+        u: [dim(b.u[0]), dim(b.u[1]), dim(b.u[2])],
+        v: [dim(b.v[0]), dim(b.v[1]), dim(b.v[2])],
+    }
+}
+
+/// The plane an entity's points are all on, when they are all on one — the clause its
+/// statement writes.  A point with none, or a line whose ends are on two planes (which no one
+/// statement can say), lifts without one.
+pub(crate) fn lift_plane(sk: &Sketch, e: EntRef) -> crate::syntax::Membership {
+    match plane_of_entity(sk, e) {
+        Some(p) => crate::syntax::Membership::lifted(Ref::new(entity_name(EntRef::plane(p)))),
+        None => Default::default(),
+    }
+}
+
+/// The one plane every point of an entity is on, or `None` — for a point, its own.
+pub(crate) fn plane_of_entity(sk: &Sketch, e: EntRef) -> Option<usize> {
+    // a point answers for itself, and a datum or a curve has no points of its own to answer
+    // for; everything else is its children, walked without collecting them twice
+    if !e.kind.bears_points() {
+        return None;
+    }
+    if e.kind == EntKind::Point {
+        return sk.plane_of(e.i());
+    }
+    let kids = sk.children(e);
+    let first = sk.plane_of(kids.first()?.i())?;
+    kids.iter().all(|k| sk.plane_of(k.i()) == Some(first)).then_some(first)
 }
 
 pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {

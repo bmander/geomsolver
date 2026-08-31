@@ -88,6 +88,28 @@ export function askNumber(title: string, label: string, value: number, step = 'a
   });
 }
 
+/** A form: the caller fills the body with fields (`addText`, `addNumber`, `addSelect`) whose
+ *  callbacks hold the answers, and this resolves true on OK and false on Cancel.  Enter in any
+ *  field is OK.  Nothing is validated here — what a field's text means is the caller's, and
+ *  usually the core's, to say. */
+export function askFields(title: string, build: (body: HTMLElement) => void): Promise<boolean> {
+  return open<boolean>(title, (resolve) => {
+    const box = document.createElement('div');
+    box.className = 'fields';
+    build(box);
+    box.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
+        e.preventDefault();
+        resolve(true);
+      }
+    });
+    modalBody.append(box);
+    modalActions.append(button('Cancel', () => resolve(false)),
+                        button('OK', () => resolve(true), true));
+    setTimeout(() => box.querySelector('input')?.focus(), 0);
+  });
+}
+
 /** Pick one of a list; resolves null on cancel. */
 export function askChoice(title: string, label: string, options: string[]): Promise<number | null> {
   return open<number | null>(title, (resolve) => {
@@ -160,6 +182,31 @@ export function addCheckbox(bar: HTMLElement, label: string, checked: boolean,
   c.addEventListener('change', () => onChange(c.checked));
   field(bar, title).append(c, document.createTextNode(label));
   return c;
+}
+
+/** A text field.  `onChange` hears every keystroke, so the caller's variable is the field's
+ *  current text by the time the form is accepted. */
+export function addText(bar: HTMLElement, label: string, value: string,
+                        onChange: (v: string) => void, title?: string): HTMLInputElement {
+  const t = document.createElement('input');
+  t.type = 'text';
+  t.value = value;
+  t.addEventListener('input', () => onChange(t.value));
+  field(bar, title).append(document.createTextNode(label), t);
+  return t;
+}
+
+/** A number field, handed on as the *text* typed: a form's numbers are spliced into the
+ *  source as written, and `-90` and `-90.0` are two spellings the document keeps apart. */
+export function addNumber(bar: HTMLElement, label: string, value: number,
+                          onChange: (v: string) => void, title?: string): HTMLInputElement {
+  const t = document.createElement('input');
+  t.type = 'number';
+  t.step = 'any';
+  t.value = String(value);
+  t.addEventListener('input', () => onChange(t.value));
+  field(bar, title).append(document.createTextNode(label), t);
+  return t;
 }
 
 export function addSelect(bar: HTMLElement, label: string, options: string[], value: string,

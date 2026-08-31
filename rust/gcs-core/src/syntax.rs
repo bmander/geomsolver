@@ -118,6 +118,10 @@ pub struct Program {
     /// reason: a family is a *kind of curve*, not a curve, and several drawings may be written
     /// over one.
     pub curves: Vec<CurveFamily>,
+    /// The `in PLANE { … }` blocks' own text (§6.7).  Their statements are hoisted into the
+    /// body at parse, so nothing but the header and the brace is the block's, and this is
+    /// where `edit::remove` finds them when the plane goes.
+    pub in_blocks: Vec<InBlock>,
     next_stmt: u32,
 }
 
@@ -327,6 +331,11 @@ pub struct Instance {
     pub component: Name,
     pub args: Vec<InstArg>,
     pub span: Span,
+    /// The view the instance is drawn in — `t: Tooth(…) in top` (§6.7): every point-bearing
+    /// declaration its expansion makes joins the plane, the block's rule over the statements
+    /// one statement stands for.  Carried into the expansion by the flattener
+    /// (`Scope::in_plane`), never resolved here.
+    pub membership: Membership,
 }
 
 #[derive(Clone, Debug)]
@@ -666,6 +675,233 @@ pub struct Decl {
     /// A seed named *geometrically* rather than by coordinates: `at t`, `at c.center`,
     /// `at c bearing (u + phase)`.  What it may name is the elaborator's question.
     pub seed_at: Option<AtRef>,
+    /// A plane's attitude in space, as written (§6.7).  `Page` for every other kind.
+    pub attitude: Attitude,
+    /// The plane this declaration's points are on — `point a in top`, and for a line, a circle,
+    /// an arc, a spline or an ellipse, every point it mints or names (§6.7).  Its span is at
+    /// the end of the trailers, so an appended clause lands after `hint`/`class` and never
+    /// races `class_span`'s offset.
+    pub membership: Membership,
+    /// The `( … )` after the name — what the thing is made of, and a plane's attitude — or an
+    /// empty span at the name's end when none was written.  `commit_seeds` replaces it rather
+    /// than inserting a second list beside one that stated an attitude and no children.
+    pub list_span: Span,
+}
+
+/// Which plane a statement's points are drawn in, and **how the statement came by it** (§6.7).
+///
+/// Fused rather than a `Ref`, a `Span` and a `bool` standing beside each other, for the reason
+/// `DeclName` is (issue #40): three questions are asked of this, and each has a reader that
+/// must not answer a different one.  Does it **resolve** — every form does.  May a printer
+/// **spell** it — only a clause the statement wrote itself, since a block's or an instance's is
+/// already written once, above.  And **why** is a second one refused — a block and an instance
+/// are different sentences to whoever wrote them.  Spelled as a `bool` next to the ref, those
+/// were a convention policed by memory, and the wording was already wrong for an instance.
+#[derive(Clone, Debug, Default)]
+pub struct Membership {
+    plane: Option<Ref>,
+    /// Where the clause is, or an empty span where one would go — `class_span`'s idiom.
+    span: Span,
+    from: Source,
+}
+
+/// Where a membership came from — see `Membership`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Source {
+    /// The statement's own `in PLANE` clause.
+    #[default]
+    Written,
+    /// The `in PLANE { … }` block around it.
+    Block,
+    /// An enclosing instance's `in PLANE` — the component's statements join the view whole.
+    Instance,
+}
+
+impl Membership {
+    /// The statement's own clause, as parsed.
+    pub fn written_at(plane: Ref, span: Span) -> Membership {
+        Membership { plane: Some(plane), span, from: Source::Written }
+    }
+
+    /// A membership a *lift* gives a statement it is about to print — written, so it prints,
+    /// with no span of its own because there is no source behind it yet.
+    pub fn lifted(plane: Ref) -> Membership {
+        Membership::written_at(plane, Span::default())
+    }
+
+    /// Which plane, however the statement came by it: what resolution and the model ask.
+    pub fn plane(&self) -> Option<&Ref> {
+        self.plane.as_ref()
+    }
+
+    /// The same, to rescope — `flatten::rewrite` makes every reference absolute.
+    pub fn plane_mut(&mut self) -> Option<&mut Ref> {
+        self.plane.as_mut()
+    }
+
+    /// The clause the statement may **spell** — `None` where the plane came from a block or an
+    /// enclosing instance, which wrote it once already.
+    pub fn written(&self) -> Option<&Ref> {
+        (self.from == Source::Written).then_some(self.plane.as_ref()).flatten()
+    }
+
+    /// Where the clause is, or would go.
+    pub fn span(&self) -> Span {
+        self.span
+    }
+
+    pub fn set_span(&mut self, span: Span) {
+        self.span = span;
+    }
+
+    /// Put the statement in a plane it is not already in, saying where the clause came from;
+    /// `false` when it is already in one, which is a plane given twice.
+    pub fn join(&mut self, plane: &Ref, from: Source) -> bool {
+        if self.plane.is_some() {
+            return false;
+        }
+        self.plane = Some(plane.clone());
+        self.from = from;
+        true
+    }
+
+    /// Why a second plane is refused, in the words of whoever gave it the first.
+    pub fn cause(&self) -> &'static str {
+        match self.from {
+            Source::Written => "already in a plane",
+            Source::Block => "already in a plane: the block around it says which",
+            Source::Instance => "already in a plane: the `in` on the instance says which",
+        }
+    }
+
+    /// Whether an *edit* may write the clause here — a plane a block or an instance gave the
+    /// statement is not this statement's to rewrite.
+    pub fn editable(&self) -> bool {
+        self.from == Source::Written
+    }
+}
+
+/// An `in PLANE { … }` block's own text (§6.7): the header (`in PLANE {`) and the closing
+/// brace.  The statements inside are the enclosing body's own — hoisted at parse, each stamped
+/// with the plane — so nothing else remembers the block existed, and this is what `edit::remove`
+/// splices when the plane goes: the header and the brace come out, and the statements stay.
+#[derive(Clone, Debug)]
+pub struct InBlock {
+    pub plane: Ref,
+    pub header: Span,
+    pub close: Span,
+}
+
+/// Stamp every declaration of an `in PLANE { … }` body with the plane — the clause written
+/// once (§6.7).  Recursive into `repeat`/`cycle`/`ring` bodies, so a square drawn as a cycle
+/// inside the block is drawn in the view; a declaration that already says `in`, a kind with no
+/// points of its own, and a component instance (whose statements are not here to stamp) are
+/// each refused where they stand.
+fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
+    for st in stmts {
+        match &mut st.kind {
+            StmtKind::Decl(d) => {
+                if !d.kind.bears_points() {
+                    errs.push(SynErr {
+                        span: st.span,
+                        message: format!(
+                            "`in` puts points on a plane, and a {} has none of its own",
+                            d.kind.as_str()
+                        ),
+                    });
+                } else if !d.membership.join(plane, Source::Block) {
+                    errs.push(SynErr { span: d.membership.span(), message: d.membership.cause().into() });
+                }
+            }
+            StmtKind::Block(b) => stamp_plane(&mut b.body, plane, errs),
+            // the instance joins whole: the flattener carries the plane into its expansion
+            StmtKind::Instance(inst) => {
+                if !inst.membership.join(plane, Source::Block) {
+                    errs.push(SynErr {
+                        span: inst.membership.span(),
+                        message: inst.membership.cause().into(),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// What a plane's constant basis is made of, as written (§6.7): nothing (the page), another
+/// plane and a fold, or the basis itself.  Never a seed — a solve moves none of it — which is
+/// why it stands in the brackets with the children and not in `hint(…)` (§4.3).
+#[derive(Clone, Debug, Default)]
+pub enum Attitude {
+    /// The page: the front view, `u = x`, `v = z`.
+    #[default]
+    Page,
+    /// `from: front, fold: 30deg` — the plane perpendicular to `front` containing the direction
+    /// at that bearing in it.  `fold` is an `Arg::Dim` (an Angle, as written); `None` is 0.
+    From { plane: Ref, fold: Option<Arg> },
+    /// `u: (0.6, 0.8, 0), v: (0, 0, 1)` — six dimensionless `Arg::Dim`s.
+    Basis { u: [Arg; 3], v: [Arg; 3] },
+}
+
+impl Attitude {
+    /// The reference it names, if any — for the walks that fix every reference a statement
+    /// makes (`flatten::rewrite`, `edit::mentions`).
+    pub fn plane_ref(&self) -> Option<&Ref> {
+        match self {
+            Attitude::From { plane, .. } => Some(plane),
+            Attitude::Page | Attitude::Basis { .. } => None,
+        }
+    }
+
+    pub fn plane_ref_mut(&mut self) -> Option<&mut Ref> {
+        match self {
+            Attitude::From { plane, .. } => Some(plane),
+            Attitude::Page | Attitude::Basis { .. } => None,
+        }
+    }
+
+    /// Every number it was written over, for the flattener to settle a component's parameters
+    /// into.
+    pub fn args_mut(&mut self) -> Vec<&mut Arg> {
+        match self {
+            Attitude::Page => Vec::new(),
+            Attitude::From { fold, .. } => fold.iter_mut().collect(),
+            Attitude::Basis { u, v } => u.iter_mut().chain(v.iter_mut()).collect(),
+        }
+    }
+}
+
+/// A plane's attitude arguments while the bracket list is being read: each may arrive once,
+/// in any order, and `attitude_of` says which combinations make a plane.
+#[derive(Default)]
+struct AttParts {
+    from: Option<Ref>,
+    fold: Option<Arg>,
+    u: Option<[Arg; 3]>,
+    v: Option<[Arg; 3]>,
+}
+
+/// The labels a plane's brackets may carry beside its children.
+fn attitude_label(l: &str) -> bool {
+    matches!(l, "from" | "fold" | "u" | "v")
+}
+
+/// What the attitude arguments a bracket list carried come to: the page when it carried none,
+/// a fold when it named a plane, a basis when it gave both vectors — and a complaint for the
+/// halves and the mixtures.
+fn attitude_of(p: AttParts) -> Result<Attitude, String> {
+    match (p.from, p.fold, p.u, p.v) {
+        (None, None, None, None) => Ok(Attitude::Page),
+        (Some(plane), fold, None, None) => Ok(Attitude::From { plane, fold }),
+        (None, None, Some(u), Some(v)) => Ok(Attitude::Basis { u, v }),
+        (None, Some(_), None, None) => Err("`fold` folds from a plane: say `from:` too".into()),
+        (None, None, Some(_), None) | (None, None, None, Some(_)) => {
+            Err("a basis is both `u:` and `v:`".into())
+        }
+        _ => Err("a plane is folded from another (`from:`, `fold:`) or given a basis \
+                  (`u:`, `v:`), not both"
+            .into()),
+    }
 }
 
 /// What fills one child slot of a declaration.
@@ -958,8 +1194,22 @@ pub fn entity_name(e: EntRef) -> String {
     format!("{}{}", kind_initial(e.kind), e.idx)
 }
 
+/// The letter a minted name of this kind starts with.  The first letter of the keyword for
+/// every kind but one: `plane` and `point` share a `p`, and a plane on the page is a *view*, so
+/// its names run `v0`, `v1` — a letter no other kind uses.  Exhaustive, so a new kind has to
+/// say what its names look like rather than inherit a clash.
 pub fn kind_initial(k: EntKind) -> char {
-    k.as_str().chars().next().expect("every kind name has a letter")
+    match k {
+        EntKind::Plane => 'v',
+        EntKind::Point
+        | EntKind::Line
+        | EntKind::Circle
+        | EntKind::Arc
+        | EntKind::Spline
+        | EntKind::Ellipse
+        | EntKind::Frame
+        | EntKind::Curve => k.as_str().chars().next().expect("every kind name has a letter"),
+    }
 }
 
 /// `PointOnLine` → `point_on_line`.  A run of capitals stays together, so `K33`-shaped names do
@@ -1022,6 +1272,7 @@ impl Program {
             text: String::new(),
             components: vec![Component::default()],
             curves: Vec::new(),
+            in_blocks: Vec::new(),
             next_stmt: 0,
         }
     }
@@ -1194,6 +1445,11 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
                 .collect();
             out.push_str(&parts.join(", "));
             out.push(')');
+            // only a clause this statement wrote — `Membership::written` is the one guard
+            if let Some(p) = i.membership.written() {
+                out.push_str(" in ");
+                write_ref(out, p);
+            }
         }
         StmtKind::Port(p) => {
             out.push_str(&format!("port {}", p.name.text));
@@ -1315,6 +1571,34 @@ fn write_decl(out: &mut String, d: &Decl) {
         out.push_str(" class ");
         out.push_str(&d.class.0.join(" "));
     }
+    // only a clause this statement wrote: a block's or an instance's is already written once
+    if let Some(p) = d.membership.written() {
+        out.push_str(" in ");
+        write_ref(out, p);
+    }
+}
+
+/// A plane's attitude, as its bracket list spells it after the children: `from: front,
+/// fold: 30deg` or `u: (…), v: (…)`, each number as written.  Nothing for the page.
+fn attitude_parts(a: &Attitude) -> Vec<String> {
+    let dim = |a: &Arg| match a {
+        Arg::Dim { text, .. } => text.clone(),
+        other => write_arg("", crate::constraints::SpecKind::Float, other),
+    };
+    let triple = |t: &[Arg; 3]| format!("({}, {}, {})", dim(&t[0]), dim(&t[1]), dim(&t[2]));
+    match a {
+        Attitude::Page => Vec::new(),
+        Attitude::From { plane, fold } => {
+            let mut s = String::from("from: ");
+            write_ref(&mut s, plane);
+            let mut parts = vec![s];
+            if let Some(f) = fold {
+                parts.push(format!("fold: {}", dim(f)));
+            }
+            parts
+        }
+        Attitude::Basis { u, v } => vec![format!("u: {}", triple(u)), format!("v: {}", triple(v))],
+    }
 }
 
 /// One property of a style, as a `style` block writes it.
@@ -1366,6 +1650,8 @@ pub(crate) fn decl_args(d: &Decl) -> String {
             Field::Scalar => {}
         }
     }
+    // a plane's attitude is what it is made of too, and no solve moves it
+    parts.extend(attitude_parts(&d.attitude));
     if parts.is_empty() {
         String::new()
     } else {
@@ -1570,6 +1856,11 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     }
     for (i, (name, sk)) in spec.iter().enumerate() {
         let Some(a) = args.get(i).and_then(|a| a.as_ref()) else { continue };
+        // an entity slot the core infers — a projection's planes — is never spelled: the
+        // source writes two points, and a lifted statement carries what the core filled in
+        if sk.is_entity() && kind.infers_arg(i) {
+            continue;
+        }
         if sk.is_entity() {
             ents.push(write_arg(name, *sk, a));
         } else if sk.is_param() {
@@ -1829,10 +2120,10 @@ fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
                     }),
                 }
             }
-            c if c.is_alphabetic() || c == '_' => {
+            c if ident_start(c) => {
                 while i < b.len() && {
                     let ch = src[i..].chars().next().unwrap_or(' ');
-                    ch.is_alphanumeric() || ch == '_'
+                    ident_char(ch)
                 } {
                     i += src[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
                 }
@@ -1915,6 +2206,16 @@ const GAUGES: [&str; 2] = ["ground", "fix"];
 /// The words that open a statement of their own, so a name may never be one.  Written down here
 /// because an infix statement begins with a *name*, and a keyword followed by a word that
 /// happens to be an operator — `param radius = 50` — would otherwise read as one.
+/// What an identifier is made of — the lexer's rule, and the one `is_name` is held to, so
+/// "a name the tokenizer would read as one word" has a single definition.
+fn ident_start(c: char) -> bool {
+    c.is_alphabetic() || c == '_'
+}
+
+fn ident_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
 const OPENERS: [&str; 12] = [
     "claim", "component", "param", "port", "unit", "style", "branch", "repeat", "cycle", "ring",
     "ground", "fix",
@@ -1935,12 +2236,12 @@ fn joint_word(w: &str) -> bool {
 
 /// The words that shape a statement without naming anything — a modifier the parser eats where it
 /// stands.  `as` binds a name after it, which is why `highlight` treats that one specially.
-const MODIFIERS: [&str; 9] =
-    ["over", "as", "at", "hint", "about", "class", "where", "bearing", "from"];
+const MODIFIERS: [&str; 10] =
+    ["over", "as", "at", "hint", "about", "class", "where", "bearing", "from", "in"];
 
 /// The words that may follow a declaration's own, so `class a b` knows where its list ends.
 /// A chain's joints are here too: `arc a(center: c) class construction tangent …` is one link.
-const TRAILERS: [&str; 4] = ["knots", "hint", "class", "close"];
+const TRAILERS: [&str; 5] = ["knots", "hint", "class", "close", "in"];
 
 /// What the word *after* this one is expected to be — the whole of the state the colouring carries
 /// from one token to the next, and four states rather than the four independent flags that would
@@ -2106,6 +2407,10 @@ fn tint_word(
             if w == "unit" {
                 return (Some(Tint::Word), Next::Unit);
             }
+            // `in top { … }` — the membership block (§6.7): the word, then the plane it names
+            if w == "in" {
+                return (Some(Tint::Word), Next::Word);
+            }
             if BLOCKS.contains(&w) {
                 return (Some(Tint::Word), Next::Word);
             }
@@ -2139,6 +2444,11 @@ fn tint_word(
             }
             if next == Some(&Tok::P(':')) {
                 return (Some(Tint::Label), Next::Word);
+            }
+            // `3in` is one literal to the parser and two tokens here: the inch mark after a
+            // number is a unit, plain like `mm` and `deg`, and not the membership clause
+            if w == "in" && matches!(prev, Some(Tok::Num(_))) {
+                return (None, Next::Word);
             }
             if MODIFIERS.contains(&w) {
                 // `cycle N as i` — the binder is a name the block declares; `class a b` names
@@ -2388,6 +2698,27 @@ fn names_decl(w: &str) -> bool {
     EntKind::parse(w).is_none() && !trails_decl(w) && w != "at"
 }
 
+/// Whether a string is a name a declaration may be given: an identifier the tokenizer would
+/// read as one word, and not a word the language reserves.  What a caller asking for a name
+/// of its own choosing (`edit::add_plane`) is held to.
+///
+/// Both halves are asked of the tables that own them rather than rebuilt here: `ident_start`
+/// and `ident_char` are the lexer's own character rule, and `OPENERS` is the list of words
+/// that begin a statement — "so a name may never be one" is what its doc comment already
+/// says.  Spelled out again, this predicate drifted the moment either was extended.
+pub fn is_name(s: &str) -> bool {
+    let mut cs = s.chars();
+    matches!(cs.next(), Some(c) if ident_start(c))
+        && cs.all(ident_char)
+        && names_decl(s)
+        && !MODIFIERS.contains(&s)
+        && !OPENERS.contains(&s)
+        && !ORIENTS.contains(&s)
+        // `trace` opens no statement of its own — it stands after a family's `=` — so it is
+        // not in `OPENERS`, and a declaration named for it would still read as one
+        && s != "trace"
+}
+
 /// Whether a word may stand *after* a declaration — a trailing clause's own word, or a chain's
 /// joint.  **The one spelling** of that list: `class_clause` stops on it, the colouring's class
 /// arm stops on it, and `names_decl` reserves it.  Written three times, a word added to a
@@ -2533,6 +2864,8 @@ struct P<'a> {
     /// body it ends.  A `component` or a trace block takes it too — to refuse it, since
     /// neither has a next copy to continue onto.
     open: Option<OpenJoint>,
+    /// The `in PLANE { … }` headers read so far — handed to the `Program` at the end.
+    in_blocks: Vec<InBlock>,
 }
 
 /// Read a program.
@@ -2554,7 +2887,16 @@ pub fn parse(src: &str) -> (Program, Vec<SynErr>) {
         );
     }
     let (lexed, errs) = lex(src);
-    let mut st = P { src, t: lexed.toks, i: 0, errs, declined: None, in_body: 0, open: None };
+    let mut st = P {
+        src,
+        t: lexed.toks,
+        i: 0,
+        errs,
+        declined: None,
+        in_body: 0,
+        open: None,
+        in_blocks: Vec::new(),
+    };
     let mut body: Vec<Stmt> = Vec::new();
     let mut comps: Vec<Component> = Vec::new();
     let mut families: Vec<CurveFamily> = Vec::new();
@@ -2593,6 +2935,7 @@ pub fn parse(src: &str) -> (Program, Vec<SynErr>) {
     }
     p.next_stmt = next_id;
     p.curves = families;
+    p.in_blocks = std::mem::take(&mut st.in_blocks);
     // named components first, the anonymous root last — `Program::root` takes the last, and a
     // program that declares components and nothing loose has its last component as the root
     let anon_empty = body.is_empty();
@@ -3133,12 +3476,21 @@ impl<'a> P<'a> {
                 } else {
                     return None;
                 }
+                // `in top` — the instance drawn in a view (§6.7), the one trailer it takes
+                let mut membership = Membership::default();
+                if self.peek_word("in") {
+                    let plo = self.here().lo as usize;
+                    self.i += 1;
+                    let r = self.refr()?;
+                    membership = Membership::written_at(r, Span::new(plo, self.prev_hi()));
+                }
                 self.end_of_stmt();
                 Some(StmtKind::Instance(Instance {
                     name,
                     component,
                     args,
                     span: Span::new(lo, self.prev_hi()),
+                    membership,
                 }))
             }
             _ => self.relation().map(StmtKind::Relation),
@@ -3153,6 +3505,14 @@ impl<'a> P<'a> {
     /// source map, a splice — learns the word "chain".  Spec §6.6.
     fn chain_or_one(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
         self.declined = None;
+        // `in top { … }` before anything else: `in` opens no chain and no statement of any
+        // other kind — the one look this could be confused with is an instance named `in`,
+        // which `is_name` already refuses, and the colon after it tells even that apart
+        if self.peek_word("in")
+            && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::Ident(_)))
+        {
+            return self.in_block(next_id, out);
+        }
         let before = self.errs.len();
         let got = if !self.chain_starts() {
             let lo = self.here().lo as usize;
@@ -3184,6 +3544,42 @@ impl<'a> P<'a> {
             }
         }
         got
+    }
+
+    /// `in PLANE { … }` — the membership clause written once, over a body (§6.7): every
+    /// declaration inside is `in PLANE`, a `cycle` inside draws its copies in the view, and
+    /// the statements are **hoisted** into the enclosing body — so a caret, a seed splice and
+    /// `edit::in_root` see ordinary root statements, and only the header text is the block's
+    /// (`Program::in_blocks`).  Top level only: inside a body the clause already says it one
+    /// declaration at a time, and a header buried in another statement's span would be a
+    /// splice no deletion could compose.
+    fn in_block(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
+        let lo = self.here().lo as usize;
+        self.i += 1; // `in`
+        let plane = self.refr()?;
+        self.skip_ends();
+        if !matches!(self.peek(), Some(Tok::P('{'))) {
+            self.fail("an `in` block is `in PLANE { … }`");
+            return None;
+        }
+        let header = Span::new(lo, self.here().hi as usize);
+        let nested = self.in_body > 0;
+        if nested {
+            self.fail(
+                "an `in` block stands at the top level; inside a body, write the clause on \
+                 each declaration",
+            );
+        }
+        let (mut body, joint) = self.braced_body(next_id)?;
+        self.no_open_joint(joint, "an `in` block");
+        let close = self.t.get(self.i.wrapping_sub(1)).map(|(_, s)| *s).unwrap_or_default();
+        stamp_plane(&mut body, &plane, &mut self.errs);
+        // recorded only where a deletion could reach it: a nested block is already an error
+        if !nested {
+            self.in_blocks.push(InBlock { plane, header, close });
+        }
+        out.extend(body);
+        Some(())
     }
 
     /// Whether what stands here opens a declaration — possibly a chain of them.
@@ -4396,6 +4792,10 @@ impl<'a> P<'a> {
             }
             let at = self.prev_hi();
             let (class, class_span) = self.class_clause(at);
+            if self.peek_word("in") {
+                self.fail("`in` puts points on a plane, and a curve has none of its own");
+                return None;
+            }
             return Some(Decl {
                 kind,
                 name,
@@ -4411,6 +4811,9 @@ impl<'a> P<'a> {
                 class,
                 class_span,
                 seed_at: None,
+                attitude: Attitude::Page,
+                membership: Membership::default(),
+                list_span: Span::default(),
             });
         }
         let mut children: Vec<Vec<Kid>> = Vec::new();
@@ -4427,12 +4830,28 @@ impl<'a> P<'a> {
         seed.resize(scalars.len(), 0.0);
         let mut seed_text: Vec<Option<String>> = vec![None; scalars.len()];
         let mut seed_spans: Vec<Span> = vec![Span::default(); scalars.len()];
+        let mut att = AttParts::default();
+        let name_end = self.prev_hi();
+        let open = self.here().lo as usize;
+        let mut list_span = Span::new(name_end, name_end);
         if self.eat_p('(') {
             let mut positional = 0usize;
             while !self.eat_p(')') {
                 // `name:` labels a field; anything else is positional
                 let label = self.slot_label();
                 match label {
+                    // a plane's attitude is what it is made of, so it stands in the brackets
+                    // with the children — and no other kind has one to give
+                    Some(l) if attitude_label(&l) => {
+                        if kind != EntKind::Plane {
+                            self.fail(&format!(
+                                "`{l}` folds a plane, and a {} has no attitude to give",
+                                kind.as_str()
+                            ));
+                            return None;
+                        }
+                        self.attitude_arg(&l, &mut att)?;
+                    }
                     // the brackets after the name are *what the thing is made of*; where the
                     // solve begins is the `hint(…)` after them (spec §6.4)
                     Some(l) if scalars.contains(&l.as_str()) => {
@@ -4480,14 +4899,25 @@ impl<'a> P<'a> {
                     return None;
                 }
             }
+            list_span = Span::new(open, self.prev_hi());
         }
+        let attitude = match attitude_of(att) {
+            Ok(a) => a,
+            Err(m) => {
+                let head = head();
+                self.fail(&format!("`{head}`: {m}"));
+                return None;
+            }
+        };
         // trailing clauses, in any order: `hint(x: 0, y: 0)` or `hint at REF [bearing (…)]`,
-        // `knots [...]`, `class …`.  Where a clause *would* go if it is not written is the
-        // point we are standing on now, before any of them: that is what writeback appends at.
+        // `knots [...]`, `class …`, `in PLANE`.  Where a clause *would* go if it is not written
+        // is the point we are standing on now, before any of them: that is what writeback
+        // appends at.
         let mut knots = None;
         let mut class = Classes::default();
         let mut class_span = Span::default();
         let mut seed_at = None;
+        let mut membership = Membership::default();
         let insert = self.prev_hi();
         let mut hint_span = Span::new(insert, insert);
         loop {
@@ -4534,6 +4964,26 @@ impl<'a> P<'a> {
                 }
                 class = c;
                 class_span = sp;
+            } else if self.peek_word("in") {
+                // `in top` — every point this declaration mints or names is an image on that
+                // plane (§6.7).  A datum has no points of its own to put there, and a curve is
+                // its expressions.
+                if !kind.bears_points() {
+                    self.fail(&format!(
+                        "`in` puts points on a plane, and a {} has none of its own",
+                        kind.as_str()
+                    ));
+                    return None;
+                }
+                if membership.plane().is_some() {
+                    let head = head();
+                    self.fail(&format!("`{head}` is {}", membership.cause()));
+                    return None;
+                }
+                let lo = self.here().lo as usize;
+                self.i += 1;
+                let r = self.refr()?;
+                membership = Membership::written_at(r, Span::new(lo, self.prev_hi()));
             } else if self.peek_word("hint") || self.peek_word("at") {
                 // the retired coordinate spellings, `hint at (0, 0)` and a bare `at (0, 0)` —
                 // what every document in the library said until the clause arrived, so the
@@ -4544,6 +4994,12 @@ impl<'a> P<'a> {
             } else {
                 break;
             }
+        }
+        // where an `in` clause would go: after every trailer, so an appended one never races
+        // `class_span` for one offset
+        if membership.span().is_empty() {
+            let end = self.prev_hi();
+            membership.set_span(Span::new(end, end));
         }
         Some(Decl {
             kind,
@@ -4560,7 +5016,61 @@ impl<'a> P<'a> {
             class,
             class_span: if class_span.is_empty() { Span::new(insert, insert) } else { class_span },
             seed_at,
+            attitude,
+            membership,
+            list_span,
         })
+    }
+
+    /// One of a plane's attitude arguments, the label already eaten: `from: REF`,
+    /// `fold: EXPR`, `u: (E, E, E)`, `v: (E, E, E)`.
+    fn attitude_arg(&mut self, label: &str, parts: &mut AttParts) -> Option<()> {
+        let twice = |s: &mut Self| {
+            s.fail(&format!("`{label}` is given twice"));
+            None
+        };
+        match label {
+            "from" => {
+                if parts.from.is_some() {
+                    return twice(self);
+                }
+                parts.from = Some(self.refr()?);
+            }
+            "fold" => {
+                if parts.fold.is_some() {
+                    return twice(self);
+                }
+                let (text, span) = self.expr_until(',')?;
+                parts.fold = Some(Arg::Dim { text, span });
+            }
+            _ => {
+                let slot = if label == "u" { &mut parts.u } else { &mut parts.v };
+                if slot.is_some() {
+                    return twice(self);
+                }
+                *slot = Some(self.triple()?);
+            }
+        }
+        Some(())
+    }
+
+    /// `(E, E, E)` — three expressions, as written.
+    fn triple(&mut self) -> Option<[Arg; 3]> {
+        if !self.want_p('(') {
+            return None;
+        }
+        let mut out: Vec<Arg> = Vec::with_capacity(3);
+        for k in 0..3 {
+            let (text, span) = self.expr_until(if k < 2 { ',' } else { ')' })?;
+            out.push(Arg::Dim { text, span });
+            if k < 2 && !self.want_p(',') {
+                return None;
+            }
+        }
+        if !self.want_p(')') {
+            return None;
+        }
+        Some([out.remove(0), out.remove(0), out.remove(0)])
     }
 
     /// One constraint, written as an operator (spec §9.1).

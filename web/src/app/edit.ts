@@ -17,8 +17,10 @@ const PASTE_PX = 24;
  *  diagnosis.  A multi-entity action (an equality set, Horizontal over several lines)
  *  is one thing the user did, so it should take one Ctrl+Z to undo. */
 export function addConstraints(v: SketchView, ...cs: Constraint[]): void {
-  if (cs.length) v.pushUndo();
-  applyConstraints(v, ...cs);
+  if (!cs.length) return;
+  v.pushUndo();
+  // nothing added — every one a repeat, or the core refused it — is nothing to come back from
+  if (!applyConstraints(v, ...cs).length) v.dropUndo();
 }
 
 /** The same, without the undo entry: for an edit that is still being made, and so does not
@@ -50,7 +52,16 @@ export function applyConstraints(v: SketchView, ...cs: Constraint[]): Constraint
   const skipped = cs.length - fresh.length;
   cs = fresh;
   const impliedBefore = new Set(v.diagnosis?.implied ?? []);
-  v.sketch.add(...cs);
+  // the core may refuse one outright — a `project` between two points of one view, or of a
+  // point on no view — and its message is the whole of what there is to say.  Whatever of the
+  // batch was bound before the refusal comes back out, so a refused edit is no edit at all.
+  try {
+    v.sketch.add(...cs);
+  } catch (err) {
+    for (const c of cs) if (c.id >= 0 && c.sketch === v.sketch) v.sketch.remove(c);
+    v.onStatus((err as Error).message);
+    return [];
+  }
   const res = v.afterEdit();
   // a dimension still being carried has not been judged — `afterEdit` did not diagnose it —
   // so what it came to is reported when it lands instead of now

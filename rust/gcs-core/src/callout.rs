@@ -82,6 +82,7 @@ macro_rules! undrawn {
             | CKind::VerticalPoints
             | CKind::FrameUnit
             | CKind::FrameAlign
+            | CKind::Project
     };
 }
 

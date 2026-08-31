@@ -10,13 +10,14 @@ import * as C from '../core/constraints.js';
 import { Constraint } from '../core/constraints.js';
 import * as examples from '../core/examples.js';
 import * as io from '../core/io.js';
-import { Sketch } from '../core/model.js';
+import { Plane, Point, Sketch } from '../core/model.js';
 import { Document, fromSketch } from '../core/program.js';
 import type { Diagnosis } from '../core/diagnose.js';
 import { callouts } from '../core/callout.js';
 import { PlanDrag } from '../core/decompose.js';
 import { solve } from '../core/system.js';
 import { DimAlt, SketchView } from '../app/view.js';
+import { threeViews } from '../app/tools.js';
 import { contains, corners, toImage, toWorld } from '../app/underlay.js';
 import type { Bitmap } from '../app/underlay.js';
 import { initCore } from '../core/wasm.js';
@@ -825,6 +826,194 @@ test('a gesture beside a component leaves the component written', () => {
 });
 
 
+/* -- views: the current plane, membership and projection ----------------------------------
+ *
+ * A plane is where the next point goes, and that is view state until a point is drawn — at
+ * which moment it is document state, written as the point's `in` clause.  What is worth a
+ * test is that seam: the membership reaches the source through the same reconcile every
+ * gesture goes through, the current plane crosses a re-elaboration the way the selection
+ * does, and a projection the core refuses leaves nothing behind. */
+
+const VIEWS = `\
+point o hint(x: 0, y: 0)
+point q hint(x: 40, y: 0)
+point o2 hint(x: 0, y: 80)
+point q2 hint(x: 40, y: 80)
+plane front(origin: o, toward: q)
+plane top(origin: o2, toward: q2, from: front, fold: 0deg)
+ground o
+ground q
+ground o2
+ground q2
+`;
+
+function planeNamed(view: SketchView, name: string): Plane {
+  const p = view.doc.entity(name);
+  assert.ok(p instanceof Plane, `${name} is a plane`);
+  return p;
+}
+
+function pointNamed(view: SketchView, name: string): Point {
+  const p = view.doc.entity(name);
+  assert.ok(p instanceof Point, `${name} is a point`);
+  return p;
+}
+
+/** A click with a drawing tool down. */
+function click(view: SketchView, x: number, y: number): void {
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  cv.fire('pointerdown', pointer(...view.w2s(x, y)));
+  cv.fire('pointerup', pointer(...view.w2s(x, y)));
+}
+
+test('the current plane flows into a fresh point, and a snapped point stays where it was', () => {
+  const view = docView(VIEWS);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  const front = planeNamed(view, 'front');
+  view.selected = [front];
+  assert.equal(view.plane, front, 'a plane selected on its own is the one being drawn in');
+  view.selected = [];
+  assert.equal(view.plane, front, 'and stays so past the selection');
+
+  view.setTool('point');
+  click(view, 20, 10);
+  assert.ok(/point\s+p0 hint\(x: 20, y: 10\) in front/.test(view.source), view.source);
+  assert.equal(pointNamed(view, 'p0').plane, front);
+  // a click on the page's own datum snaps to it and does not pull it into the view
+  click(view, 0, 0);
+  assert.equal(view.sketch.points.length, 5, 'the click snapped rather than minting');
+  assert.ok(view.source.includes('point o hint(x: 0, y: 0)\n'), view.source);
+  assert.equal(pointNamed(view, 'o').plane, null);
+  // and back on the page, the next point carries no clause
+  view.drawOnPage();
+  click(view, 25, 15);
+  assert.ok(/point\s+p1 hint\(x: 25, y: 15\)\n/.test(view.source), view.source);
+});
+
+test('a projection is one constraint, and the source says `project`', () => {
+  const view = docView(`${VIEWS}point a in front hint(x: 10, y: 5)\n`
+                       + 'point b in top hint(x: 10, y: 100)\n');
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.addConstraints(new C.Project(pointNamed(view, 'a'), pointNamed(view, 'b')));
+  const cs = view.sketch.userConstraints();
+  assert.equal(cs.length, 1);
+  assert.equal(cs[0].typeName, 'Project');
+  assert.equal(cs[0].entities().length, 4, 'the core filled the two views in');
+  assert.ok(/\na project b\n/.test(view.source), view.source);
+  assert.ok(!view.source.includes('project('), `the views are never spelled:\n${view.source}`);
+  view.undo();
+  assert.equal(view.sketch.userConstraints().length, 0, 'and it is one step back');
+});
+
+test('a refused projection changes nothing, says why, and leaves nothing to undo', () => {
+  const view = docView(`${VIEWS}point a in front hint(x: 10, y: 5)\n`
+                       + 'point b in front hint(x: 20, y: 5)\npoint c hint(x: 30, y: 30)\n');
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  const before = view.source;
+  view.addConstraints(new C.Project(pointNamed(view, 'a'), pointNamed(view, 'b')));
+  assert.equal(view.sketch.userConstraints().length, 0, 'two points of one view');
+  assert.ok(said.some((m) => /itself/.test(m)), said.join('\n'));
+  view.addConstraints(new C.Project(pointNamed(view, 'a'), pointNamed(view, 'c')));
+  assert.equal(view.sketch.userConstraints().length, 0, 'a point on no view');
+  assert.ok(said.some((m) => /on no plane/.test(m)), said.join('\n'));
+  assert.equal(view.source, before, 'the source did not move');
+  view.undo();
+  assert.equal(said[said.length - 1], 'nothing to undo');
+});
+
+test('the current plane survives an edit, goes with its deletion, and is dropped by a load', () => {
+  // a projection into the view about to go: its statement never names the plane, so whether
+  // it goes too is the model's to say — through the live sketch, which the elaboration's
+  // own was taken out into
+  const view = docView(`${VIEWS}point a hint(x: 5, y: 5) in front\npoint b hint(x: 5, y: 85) in top\na project b\n`);
+  view.plane = planeNamed(view, 'top');
+  // a structural edit re-elaborates the drawing: the plane comes across by name
+  assert.ok(view.apply(view.doc.addPoint(1, 2)));
+  assert.ok(view.plane instanceof Plane, 'the plane was lost to the re-elaboration');
+  assert.equal(view.plane.sketch, view.sketch, 'and is the new drawing\'s');
+  assert.equal(view.doc.nameOf(view.plane), 'top');
+  // deleting it takes the clauses and the statement; there is no view left to draw in
+  view.selected = [view.plane];
+  view.deleteSelected();
+  assert.equal(view.plane, null);
+  assert.ok(!view.source.includes('plane top'), view.source);
+  assert.ok(view.source.includes('ground o2'), 'its points stay');
+  assert.ok(!view.source.includes('project'), `the projection went with it: ${view.source}`);
+  assert.ok(view.source.includes('point b hint(x: 5, y: 85)\n'), `the clause came out: ${view.source}`);
+  assert.equal(view.sketch.userConstraints().length, 0);
+  // and a load is another drawing's, whatever it happens to call things
+  view.plane = planeNamed(view, 'front');
+  view.setProgram(VIEWS);
+  assert.equal(view.plane, null);
+});
+
+test('the plane tool writes the statement, seeds its points, and makes it current', () => {
+  const view = docView(VIEWS);
+  view.insertPlane({ name: 'aux', attitude: { from: 'front', fold: '30deg' } });
+  assert.equal(view.tool, 'plane');
+  click(view, 60, 0);
+  assert.equal(view.sketch.planes.length, 2, 'the first click is a place, not a plane');
+  click(view, 100, 0);
+  assert.equal(view.sketch.planes.length, 3);
+  const aux = planeNamed(view, 'aux');
+  assert.equal(view.plane, aux, 'the new view is the one being drawn in');
+  assert.deepEqual(view.selected, [aux]);
+  assert.equal(view.tool, 'select', 'armed for one plane, and put down after it');
+  assert.deepEqual(aux.origin.xy, [60, 0]);
+  assert.deepEqual(aux.toward.xy, [100, 0]);
+  // one statement, its attitude kept and its two points seeded in the one list — seeded *in
+  // the statement*, so the frame was read off the chord that was clicked
+  const line = view.source.split('\n').find((l) => /^plane\s+aux\(/.test(l));
+  assert.ok(line, view.source);
+  assert.ok(line.includes('origin: hint(x: 60, y: 0)'), line);
+  assert.ok(line.includes('toward: hint(x: 100, y: 0)'), line);
+  assert.ok(line.includes('from: front, fold: 30deg'), line);
+  assert.equal(line.split('(').length - 1, line.split(')').length - 1, 'balanced');
+  assert.ok(Math.abs(aux.rotor[0].value - 1) < 1e-12, 'the rotor is the chord\'s');
+  // Enter after the first click points the view to the right
+  view.insertPlane({ attitude: null });
+  click(view, 0, -60);
+  view.finishCurve();
+  const v = planeNamed(view, 'v0');
+  assert.deepEqual(v.toward.xy, [40, -60]);
+  assert.equal(view.plane, v);
+});
+
+test('three views land where the table puts them, and stay there through the solve', () => {
+  // auto-solve on: what this guards is the *solve* after the edit.  A plane is a frame whose
+  // rotor and chord length are read off the chord at elaboration, so a pose written into the
+  // points afterwards left both stale and the solve collapsed `toward` onto `origin`
+  const view = new SketchView(fakeCanvas(), Document.read('point o hint(x: 0, y: 0)\nground o\n'));
+  assert.ok(threeViews(view));
+  const at = (name: string, x: number, y: number): void => {
+    const p = pointNamed(view, name);
+    assert.ok(Math.hypot(p.xy[0] - x, p.xy[1] - y) < 1e-6, `${name} at ${p.xy}, not (${x}, ${y})`);
+  };
+  at('front.origin', 0, 0);
+  at('front.toward', 40, 0);
+  at('top.origin', 0, 80);
+  at('top.toward', 40, 80);
+  at('right.origin', 120, 0);
+  at('right.toward', 120, -40);
+  // the right view is turned a quarter clockwise: its rotor says so
+  const [c, s] = planeNamed(view, 'right').rotor;
+  assert.ok(Math.abs(c.value) < 1e-9 && Math.abs(s.value + 1) < 1e-9,
+            `rotor ${c.value}, ${s.value}`);
+  assert.ok(view.lastResult?.success, 'the layout solved');
+  assert.equal(view.plane, planeNamed(view, 'front'), 'drawing in the front');
+  // one edit: the three statements, their seeds, and the five relations, all written
+  assert.ok(view.source.includes('plane   right(origin: hint(x: 120, y: 0), toward: hint(x: 120, '
+                                 + 'y: -40), from: front, fold: -90deg)'), view.source);
+  assert.ok(view.source.includes('front.origin vertical top.origin'), view.source);
+  const kinds = view.sketch.userConstraints().map((c) => c.typeName).sort();
+  assert.deepEqual(kinds, ['HorizontalPoints', 'HorizontalPoints', 'HorizontalPoints',
+                           'VerticalPoints', 'VerticalPoints']);
+  view.undo();
+  assert.equal(view.sketch.planes.length, 0, 'and one step back');
+  assert.equal(view.plane, null);
+});
+
 /* -- the traced picture ------------------------------------------------------------
  *
  * The placement is a similarity in world coordinates, so all of it can be checked without a
@@ -1058,4 +1247,43 @@ test('fading is kept on the scale, from either end', () => {
   assert.equal(u.opacity, 0);
   for (let i = 0; i < 20; i++) view.fadeImage(0.1);
   assert.equal(u.opacity, 1);
+});
+
+test('an arc drawn in a view puts its core-minted centre in the view too', () => {
+  const view = docView(VIEWS);
+  view.plane = planeNamed(view, 'top');
+  view.setTool('arc3');
+  click(view, 0, 60);
+  click(view, 40, 60);
+  click(view, 20, 75);            // the third click makes the circumcircle, and its centre
+  assert.equal(view.sketch.arcs.length, 1);
+  const arc = view.sketch.arcs[0];
+  // the centre is minted inside the core, after the two ends were joined: left on the page it
+  // is a straddling statement no `in` clause can say, and the source stops tracking the drawing
+  assert.equal(arc.children.length, 3, 'centre, start and end');
+  for (const p of arc.children) {
+    assert.equal(p.plane, view.plane, 'every point of the arc is in the view');
+  }
+  view.afterEdit();
+  assert.ok(view.source.includes(' in top'), view.source);
+  // and the source keeps up: a second sync is not refused
+  const before = view.source;
+  view.syncSource();
+  assert.equal(view.source, before);
+});
+
+test('drawing on the page stays on the page across a re-elaboration', () => {
+  const view = docView(VIEWS);
+  const top = planeNamed(view, 'top');
+  view.selected = [top];
+  assert.equal(view.plane, top);
+  view.drawOnPage();
+  assert.equal(view.plane, null);
+  assert.ok(!view.selected.includes(top), 'the view stops being the subject');
+  // a structural edit re-elaborates and rebinds the selection: the plane must not come back
+  assert.ok(view.apply(view.doc.addPoint(3, 4)));
+  assert.equal(view.plane, null, 'the rebind re-armed the current plane');
+  view.setTool('point');
+  click(view, 12, 12);
+  assert.equal(view.sketch.points.at(-1)?.plane, null, 'and the next point is on the page');
 });

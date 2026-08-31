@@ -15,8 +15,8 @@ import * as dim from '../core/callout.js';
 import { Constraint } from '../core/constraints.js';
 import { PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
-import { Param, Point, Primitive, Sketch } from '../core/model.js';
-import { Document, Edit, fromSketch } from '../core/program.js';
+import { Param, Plane, Point, Primitive, Sketch } from '../core/model.js';
+import { Attitude, Document, Edit, fromSketch } from '../core/program.js';
 import { Method, SolveResult, System } from '../core/system.js';
 import { Motion, WitnessReport, analyze } from '../core/witness.js';
 import { Camera } from './camera.js';
@@ -60,8 +60,15 @@ export interface Place {
 
 export type Tool =
   'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit'
-  | 'ellipse';
+  | 'ellipse' | 'plane';
 
+/** What the plane tool is armed with: the name the statement is to be given, if any, and the
+ *  attitude — as text, since the statement spells it and the core reads it.  Where the plane
+ *  sits on the page is the two clicks' business. */
+export interface PlaneSpec {
+  name?: string;
+  attitude: Attitude | null;
+}
 
 
 export class SketchView {
@@ -94,8 +101,17 @@ export class SketchView {
   set selected(prims: Primitive[]) {
     this._selected = prims;
     if (prims.length) this.dropImage();
+    // picking a view is choosing where to draw: a plane selected on its own becomes the current
+    // one, and stays so past the selection — the point drawn next is in it
+    if (prims.length === 1 && prims[0] instanceof Plane) this.plane = prims[0];
   }
   private _selected: Primitive[] = [];
+  /** **The current plane**: the view every point a tool mints is drawn in, or null for the
+   *  page.  A proxy of the current sketch, carried across a re-elaboration by name like the
+   *  selection, and let go when the name no longer resolves — a deleted plane, or a load. */
+  plane: Plane | null = null;
+  /** What the plane tool will write when its two clicks land. */
+  planeSpec: PlaneSpec | null = null;
   highlight: Primitive[] = [];
   pending: Point[] = [];
   /** Where the fit tool has been told the curve must pass, before there is a curve.  Places
@@ -272,11 +288,19 @@ export class SketchView {
     this.liveDim = null;              // and a dimension half-written belongs to the old document
     this.onDimension(null, null);
     const held = carry ? this.namesOf(this.selected) : [];
+    const heldPlane = carry && this.plane ? this.doc.nameOf(this.plane) : undefined;
     const old = this.doc;
     this.doc = next;
     // the outgoing elaboration owns a core sketch, and a wasm heap only grows
     if (old !== next) old.dispose();
+    // the current plane crosses by name too, and only if the name still reaches a plane: an
+    // edit keeps it, deleting it or loading another document lets it go
+    // the selection first: its setter arms the current plane when a lone plane is picked, and
+    // what the swap carries is the answer — otherwise a plane still selected but deliberately
+    // *not* current (`drawOnPage`) would be re-armed by the rebind
     this.selected = carry ? this.rebind(held) : [];
+    const again = heldPlane ? this.doc.entity(heldPlane) : undefined;
+    this.plane = again instanceof Plane ? again : null;
     this.highlight = [];
     this.litConstraint = null;
     this.pastes = 0;              // a fresh sheet: the next paste starts its cascade over
@@ -669,6 +693,26 @@ export class SketchView {
   cancelTool(): void { tools.cancelTool(this); }
   finishCurve(): void { tools.finishCurve(this); }
   finishSplineFit(): void { tools.finishSplineFit(this); }
+
+  /** Arm the plane tool: the next two clicks say where the view sits, and this says what it is. */
+  insertPlane(spec: PlaneSpec): void {
+    this.planeSpec = spec;
+    this.setTool('plane');
+  }
+
+  /** Draw the next things on the page rather than in a view.  Nothing in the document changes:
+   *  the current plane is where a *future* point goes, so this is a repaint and a status line. */
+  drawOnPage(): void {
+    // and the view stops being the subject: left selected, the setter would arm it again as
+    // the next press or re-elaboration went through `selected`
+    if (this.selected.some((e) => e instanceof Plane)) {
+      this.selected = this.selected.filter((e) => !(e instanceof Plane));
+    }
+    this.plane = null;
+    this.onStatus('drawing on the page');
+    this.onChanged();
+    this.draw();
+  }
 
   startDimension(targets: Constraint[], fresh: boolean, alt: DimAlt | null): boolean {
     return dimension.startDimension(this, targets, fresh, alt);

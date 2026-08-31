@@ -14,11 +14,12 @@ import { core, lastError, onInit, takeJson, takeStr, withBuf, withJson, withStr 
 
 export type SpecKind =
   | 'point' | 'line' | 'circle' | 'arc' | 'circle_or_arc' | 'spline' | 'ellipse'
-  | 'curve' | 'frame' | 'length' | 'angle' | 'float' | 'int' | 'str' | 'bool' | 'param';
+  | 'curve' | 'frame' | 'plane' | 'length' | 'angle' | 'float' | 'int' | 'str' | 'bool'
+  | 'param';
 
 export const ENTITY_KINDS: ReadonlySet<string> =
   new Set(['point', 'line', 'circle', 'arc', 'circle_or_arc', 'spline', 'ellipse', 'curve',
-           'frame']);
+           'frame', 'plane']);
 export const DIMENSION_KINDS: ReadonlySet<string> = new Set(['length', 'angle']);
 /** A hidden unknown the constraint owns — where along a curve a contact sits.  It reads as the
  *  number the solver currently has it at and cannot be written: nobody states a curve
@@ -116,10 +117,13 @@ export abstract class Constraint {
     return REGISTRY().kernels[this.kernelId].nRes;
   }
 
-  /** Entities this constraint references directly, in spec order. */
+  /** Entities this constraint references directly, in spec order.  A slot the core fills in
+   *  from the geometry (a `project`'s two planes, read off its points' memberships) is null
+   *  until the constraint is bound, and is left out here rather than handed to a caller about
+   *  to read its children. */
   entities(): Primitive[] {
     return this.spec.flatMap(([, k], i) =>
-      (ENTITY_KINDS.has(k) ? [this.args[i] as Primitive] : []));
+      (ENTITY_KINDS.has(k) && this.args[i] != null ? [this.args[i] as Primitive] : []));
   }
 
   /** The (attribute, kind) pairs of this constraint's dimension values. */
@@ -373,7 +377,7 @@ export function initTypes(): Record<string, ConstraintCtor> {
     EqualRadius, AnnularDistance, TangentLineCircle, TangentCircleCircle, TangentArcLine,
     TangentLineCircleAt, Symmetric, PointOnSpline, SplineTangentLine, SplineCurvature,
     HorizontalPoints, VerticalPoints, HorizontalDistance, VerticalDistance, PointOnEllipse,
-    EllipseTangentLine, EllipseCurvature,
+    EllipseTangentLine, EllipseCurvature, Project,
   } = CONSTRAINT_TYPES);
   return CONSTRAINT_TYPES;
 }
@@ -412,6 +416,9 @@ export let VerticalDistance: ConstraintCtor;
 export let PointOnEllipse: ConstraintCtor;
 export let EllipseTangentLine: ConstraintCtor;
 export let EllipseCurvature: ConstraintCtor;
+/** `a project b`: two points are images of one point in space.  Its two plane slots are left
+ *  out — the core reads them off the points' memberships, as it reads a tangency's side. */
+export let Project: ConstraintCtor;
 
 onInit(() => {
   initTypes();

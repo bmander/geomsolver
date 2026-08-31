@@ -170,12 +170,18 @@ pub fn example(name: &str) -> Option<Sketch> {
         "belt_tangency" => belt_tangency(),
         "peaucellier" => peaucellier(100.0, 60.0, 40.0),
         "peaucellier_rail" => peaucellier_rail(),
+        "bracket" => bracket(),
         _ => return None,
     })
 }
 
+/// An L-bracket in three views and an auxiliary view — descriptive geometry on one sheet.
+pub fn bracket() -> Sketch {
+    document(BRACKET, "bracket")
+}
+
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 25] = [
+pub const CASES: [(&str, &str, &str); 26] = [
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Square, one line round a cycle", "square", "`cycle 4 { line s -> perpendicular equal }` — the body ends mid-joint, so each side welds to the next copy's and the wrap closes the loop (issue #38); 1 DOF: it swings about its grounded corner"),
     ("Regular n-gon (component)", "ngon", "a parametric `Ngon(n, side)` component: corners on a circle, equal sides, the open-jointed cycle welding them round — pure relations, so the closure equality is implied rather than Over, and the seeds walk once round the circle to pick the convex winding no residual can state (1 DOF: it spins about its hub)"),
@@ -201,6 +207,7 @@ pub const CASES: [(&str, &str, &str); 25] = [
     ("Levelled zigzags (3×32)", "zigzag", "three separate staircases of free-length H/V segments — a drag costs one staircase, not three"),
     ("Peaucellier straight line", "peaucellier", "the 1864 cell: circling rods whose pen draws an exact straight line — the path is a trace, the straightness is `claim vertical(rail)`, and the diagnosis judges the claim a theorem.  Drag the pen along the rail it cannot leave"),
     ("Peaucellier, proved by rail", "peaucellier_rail", "the same cell with no curve in it: the pen is joined to a grounded point and `claim vertical(rail)` asks whether saying so costs the crank a freedom.  It does not, so the claim is a theorem — but this one has to be told where the line is, where its sibling discovers it"),
+    ("L-bracket in three views", "bracket", "descriptive geometry on one sheet: front, top and right views as `plane`s, every corner tied across them by `project`, and an auxiliary view folded at the inclined face's own bearing that shows the face true-size — edit a dimension in the front view and the other three views follow"),
 ];
 
 /// A spur gear, written as a Solvent program rather than built here.
@@ -317,6 +324,7 @@ pub fn source(key: &str) -> Option<&'static str> {
         "spline_follower" => Some(SPLINE_FOLLOWER),
         "peaucellier" => Some(PEAUCELLIER),
         "peaucellier_rail" => Some(PEAUCELLIER_RAIL),
+        "bracket" => Some(BRACKET),
         _ => None,
     }
 }
@@ -347,6 +355,7 @@ pub const PYTHAGORAS: &str = include_str!("../../examples/pythagoras.sv");
 /// already have.  The case for claims, as `altitudes` is for implied relations.
 pub const PEAUCELLIER: &str = include_str!("../../examples/peaucellier.sv");
 pub const PEAUCELLIER_RAIL: &str = include_str!("../../examples/peaucellier_rail.sv");
+pub const BRACKET: &str = include_str!("../../examples/bracket.sv");
 pub const SPLINE_FOLLOWER: &str = include_str!("../../examples/spline_follower.sv");
 
 /// The case library's factory.  Keys are either a plain name or `name:arg[:arg]`, so a front end

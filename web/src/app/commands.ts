@@ -4,7 +4,8 @@
 import * as C from '../core/constraints.js';
 import { Constraint, ENTITY_KINDS } from '../core/constraints.js';
 import {
-  Arc, Circle, Ellipse, Line, Point, Spline, angleBetween, distanceBetween, signedPointToLine,
+  Arc, Circle, Ellipse, Line, Plane, Point, Spline, angleBetween, distanceBetween,
+  signedPointToLine,
 } from '../core/model.js';
 import { view } from './shell.js';
 import { ToolbarButton, toast } from './ui.js';
@@ -69,6 +70,9 @@ export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
     title: 'A line or a circle tangent to a circle/arc · a line tangent to a curve or ellipse '
          + '· a circle taking a curve\'s or an ellipse\'s own radius where it touches' },
   { label: 'Symmetric', key: '⇧q', onClick: () => cSymmetric() },
+  { label: 'Project', key: 'j', onClick: () => cProject(),
+    title: 'Two points, each drawn in a view, are images of one point in space: what they '
+         + 'share along the fold line between their views agrees' },
   { label: 'Fix', key: 'f', onClick: () => view.toggleFixSelected() },
 ];
 
@@ -76,7 +80,7 @@ export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
 
 function sel(): {
   pts: Point[]; lines: Line[]; circles: (Circle | Arc)[]; splines: Spline[];
-  ellipses: Ellipse[];
+  ellipses: Ellipse[]; planes: Plane[];
 } {
   const s = view.selected;
   return {
@@ -85,6 +89,7 @@ function sel(): {
     circles: s.filter((e): e is Circle | Arc => e instanceof Circle || e instanceof Arc),
     splines: s.filter((e): e is Spline => e instanceof Spline),
     ellipses: s.filter((e): e is Ellipse => e instanceof Ellipse),
+    planes: s.filter((e): e is Plane => e instanceof Plane),
   };
 }
 
@@ -96,7 +101,7 @@ function need(ok: boolean, what: string): boolean {
 /** Generic applier: checks the selection has the required counts and passes the entities in
  *  spec order.  Single-line constraints (Horizontal/Vertical) apply to every selected line. */
 function applySimple([, cls, nPts, nLines, nCirc, , nSpl = 0, nEll = 0]: Simple): void {
-  const { pts, lines, circles, splines, ellipses } = sel();
+  const { pts, lines, circles, splines, ellipses, planes } = sel();
   const perLine = nPts === 0 && nLines === 1 && nCirc === 0;
   const ok = pts.length === nPts && circles.length === nCirc && splines.length === nSpl
     && ellipses.length === nEll
@@ -107,12 +112,13 @@ function applySimple([, cls, nPts, nLines, nCirc, , nSpl = 0, nEll = 0]: Simple)
   if (!need(ok, what)) return;
   const made = (perLine ? lines : [null]).map((ln) => {
     const args: unknown[] = [];
-    let pi = 0, li = 0, ci = 0, si = 0, ei = 0;
+    let pi = 0, li = 0, ci = 0, si = 0, ei = 0, vi = 0;
     for (const [, kind] of cls.spec) {
       if (kind === 'point') args.push(pts[pi++]);
       else if (kind === 'line') args.push(perLine ? ln : lines[li++]);
       else if (kind === 'spline') args.push(splines[si++]);
       else if (kind === 'ellipse') args.push(ellipses[ei++]);
+      else if (kind === 'plane') args.push(planes[vi++]);   // never a circle, whatever is picked
       else if (ENTITY_KINDS.has(kind)) args.push(circles[ci++]);
       // a `param` slot is not an entity: it is left out, and the core seeds it off the geometry
     }
@@ -252,6 +258,18 @@ function cEqual(): void {
   } else {
     need(false, 'two or more lines, or two or more circles/arcs (not a mix)');
   }
+}
+
+/** Two points are images of one point in space.  Which two views they are in is not asked:
+ *  the core reads it off the points, and refuses — in its own words, which become the status
+ *  line — a point on no view, two in one view, or two views that are parallel. */
+function cProject(): void {
+  const { pts } = sel();
+  // exactly two points and nothing else: `selected.length` is what says "nothing else", so a
+  // plane picked alongside them is refused here rather than silently ignored
+  if (!need(pts.length === 2 && view.selected.length === 2,
+            'two points, one in each of two views')) return;
+  view.addConstraints(new C.Project(pts[0], pts[1]));
 }
 
 /** Two points mirrored across a line — pick the two points and the axis. */

@@ -60,6 +60,13 @@ pub enum EntKind {
     /// (`atan2(s, c)`, degrees — derived in `Tape::compile`, never stored) to state a bearing
     /// relative to the frame instead of the page.
     Frame,
+    /// A frame that is also a *view*: the same origin, toward point and rotor, plus a constant
+    /// 3D attitude (`plane::Basis`) saying which plane in space the picture drawn in it is of.
+    /// A point that says it is `in` the plane is an image of something on that plane, and
+    /// `Project` between two such points is the one equation two images of one point share.
+    /// Nothing about the attitude is ever solved for — it is document data, like a spline's
+    /// knots — which is what keeps the whole engine planar.
+    Plane,
     /// A curve written in the language: `C(u)` as an expression over the geometry it is drawn
     /// from.  Unlike every other kind it holds no coordinates of its own — it *is* the two
     /// expressions plus whatever it reads — so it moves when its arguments do and never
@@ -77,6 +84,7 @@ impl EntKind {
             EntKind::Spline => "spline",
             EntKind::Ellipse => "ellipse",
             EntKind::Frame => "frame",
+            EntKind::Plane => "plane",
             EntKind::Curve => "curve",
         }
     }
@@ -90,6 +98,7 @@ impl EntKind {
             "spline" => EntKind::Spline,
             "ellipse" => EntKind::Ellipse,
             "frame" => EntKind::Frame,
+            "plane" => EntKind::Plane,
             "curve" => EntKind::Curve,
             _ => return None,
         })
@@ -111,7 +120,11 @@ impl EntKind {
             EntKind::Arc => &[("center", C), ("start", C), ("end", C), ("r", S)],
             EntKind::Spline => &[("ctrl", L)],
             EntKind::Ellipse => &[("center", C), ("major", C), ("b", S)],
-            EntKind::Frame => &[("origin", C), ("toward", C), ("c", S), ("s", S)],
+            // a plane's attitude is not a field: a Scalar is a number a solve may write back,
+            // and the basis is document data no solve moves
+            EntKind::Frame | EntKind::Plane => {
+                &[("origin", C), ("toward", C), ("c", S), ("s", S)]
+            }
             // as many arguments as its definition takes, and none of them need be points — the
             // first kind for which that is true
             EntKind::Curve => &[("args", L)],
@@ -140,6 +153,7 @@ impl EntKind {
             | EntKind::Spline
             | EntKind::Ellipse
             | EntKind::Frame
+            | EntKind::Plane
             | EntKind::Curve => None,
         }
     }
@@ -164,11 +178,50 @@ impl EntKind {
                 [pt("center"), pt("start"), pt("end"), vec![format!("{n}.r")]].concat()
             }
             EntKind::Ellipse => [pt("center"), pt("major"), vec![format!("{n}.b")]].concat(),
-            EntKind::Frame => {
+            EntKind::Frame | EntKind::Plane => {
                 [pt("origin"), pt("toward"), vec![format!("{n}.c"), format!("{n}.s")]].concat()
             }
             EntKind::Spline | EntKind::Curve => return None,
         })
+    }
+
+    /// Whether an entity of this kind has points of its own to put on a plane — what the `in`
+    /// clause and the `in … { }` block ask before stamping one (§6.7).  A datum's two points
+    /// are the datum's, and a curve is its expressions; everything else is drawn from points a
+    /// membership is about.
+    ///
+    /// Exhaustive, and asked rather than spelled: written out as a `matches!` at each of the
+    /// five sites that ask it — the parser twice, the flattener, the elaborator and the
+    /// writeback — a new kind joined the list at whichever of them its author happened to
+    /// read, and was silently stamped at the rest.
+    pub fn bears_points(self) -> bool {
+        match self {
+            EntKind::Frame | EntKind::Plane | EntKind::Curve => false,
+            EntKind::Point
+            | EntKind::Line
+            | EntKind::Circle
+            | EntKind::Arc
+            | EntKind::Spline
+            | EntKind::Ellipse => true,
+        }
+    }
+
+    /// A class a kind carries without being given it — the datum glyph a plane is drawn as is
+    /// `.plane`, so the sheet says what a plane looks like the way it says what a dimension
+    /// does, and the document's own `style .plane` rule wins over the shipped one.  Never
+    /// written to the document: it is a fact about the kind, not about the statement.
+    pub fn implicit_class(self) -> Option<&'static str> {
+        match self {
+            EntKind::Plane => Some("plane"),
+            EntKind::Point
+            | EntKind::Line
+            | EntKind::Circle
+            | EntKind::Arc
+            | EntKind::Spline
+            | EntKind::Ellipse
+            | EntKind::Frame
+            | EntKind::Curve => None,
+        }
     }
 
     /// How many sub-entities a declaration names — `None` for a kind whose children are a *list*,
@@ -222,6 +275,9 @@ impl EntRef {
     pub fn frame(idx: usize) -> EntRef {
         EntRef::new(EntKind::Frame, idx)
     }
+    pub fn plane(idx: usize) -> EntRef {
+        EntRef::new(EntKind::Plane, idx)
+    }
     pub fn i(self) -> usize {
         self.idx as usize
     }
@@ -231,6 +287,10 @@ impl EntRef {
 pub struct PointE {
     pub x: u32,
     pub y: u32,
+    /// The plane this point is an image on, if it says (`point a in top`) — what `Project`
+    /// reads to know which two views it relates.  A membership, not a constraint: it moves
+    /// nothing, and a point with none is simply on the page.
+    pub plane: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -298,6 +358,15 @@ pub struct FrameE {
     pub c: u32,
     pub s: u32,
     pub class: Classes,
+}
+
+/// A frame with an attitude in space — see `EntKind::Plane`.  The frame half is the page
+/// placement (where the view sits and which way it is turned), the basis is which plane of the
+/// object it pictures; only the first is ever solved for.
+#[derive(Clone, Debug)]
+pub struct PlaneE {
+    pub frame: FrameE,
+    pub basis: crate::plane::Basis,
 }
 
 /// A curve family, written in the language: `C(u)` as a pair of expressions over the geometry
@@ -409,6 +478,7 @@ pub struct Sketch {
     pub splines: Vec<SplineE>,
     pub ellipses: Vec<EllipseE>,
     pub frames: Vec<FrameE>,
+    pub planes: Vec<PlaneE>,
     pub curves: Vec<CurveE>,
     /// The curve families this document defines.  Document state like `branches`: a curve
     /// instance names one by index.
@@ -461,6 +531,7 @@ impl Sketch {
             EntKind::Spline => self.splines[e.i()].class.clone(),
             EntKind::Ellipse => self.ellipses[e.i()].class.clone(),
             EntKind::Frame => self.frames[e.i()].class.clone(),
+            EntKind::Plane => self.planes[e.i()].frame.class.clone(),
             EntKind::Curve => self.curves[e.i()].class.clone(),
         }
     }
@@ -476,6 +547,7 @@ impl Sketch {
             EntKind::Spline => self.splines.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Ellipse => self.ellipses.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Frame => self.frames.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Plane => self.planes.get_mut(e.i()).map(|x| &mut x.frame.class),
             EntKind::Curve => self.curves.get_mut(e.i()).map(|x| &mut x.class),
         };
         if let Some(c) = slot {
@@ -574,7 +646,8 @@ impl Sketch {
             // the rotor `(c, s)` is a unit vector — a direction, and scaling it would only
             // break `frame_unit`.  A frame's one length is `frame_align`'s chord, which is a
             // constraint's Param and is converted with the constraints.
-            EntKind::Frame => Vec::new(),
+            // (and a plane's basis is a direction in space, dimensionless twice over)
+            EntKind::Frame | EntKind::Plane => Vec::new(),
             // a line and a spline are their points, and a curve is its expressions: no number
             // of their own to convert
             EntKind::Line | EntKind::Spline | EntKind::Curve => Vec::new(),
@@ -591,7 +664,13 @@ impl Sketch {
     /// classes.  **The core resolves; a front end strokes what it is handed** — the same seam
     /// `callout.rs` and `curve::tessellate` sit on, so every front end draws one drawing alike.
     pub fn style_of(&self, e: EntRef) -> crate::style::Style {
-        crate::style::resolve(&self.sheet, &self.class_of(e))
+        // a kind may carry a class it was never given — a plane's datum glyph is `.plane` —
+        // under whatever the declaration says, so the document's rule still wins
+        let mut classes = self.class_of(e);
+        if let Some(c) = e.kind.implicit_class() {
+            classes.0.insert(0, c.to_string());
+        }
+        crate::style::resolve(&self.sheet, &classes)
     }
 
     /// What a *named* class list comes to, spelled as a declaration spells one: `"dimension"`,
@@ -622,8 +701,20 @@ impl Sketch {
     pub fn point(&mut self, x: f64, y: f64, fixed: bool, name: &str) -> usize {
         let px = self.param(x, fixed, &format!("{name}.x"));
         let py = self.param(y, fixed, &format!("{name}.y"));
-        self.points.push(PointE { x: px as u32, y: py as u32 });
+        self.points.push(PointE { x: px as u32, y: py as u32, plane: None });
         self.points.len() - 1
+    }
+
+    /// Which plane a point is an image on, if it says.
+    pub fn plane_of(&self, point: usize) -> Option<usize> {
+        self.points[point].plane.map(|p| p as usize)
+    }
+
+    /// Put a point on a plane, or take it off (`None`).  A membership and not a constraint:
+    /// nothing moves, and only `Project` reads it.
+    pub fn set_plane(&mut self, point: usize, plane: Option<usize>) {
+        debug_assert!(plane.map_or(true, |p| p < self.planes.len()));
+        self.points[point].plane = plane.map(|p| p as u32);
     }
 
     pub fn line(&mut self, p1: usize, p2: usize) -> usize {
@@ -704,23 +795,60 @@ impl Sketch {
     /// unit is worth the chord's length, which is what `Param::scale` asks of a dimensionless
     /// unknown.
     pub fn frame(&mut self, origin: usize, toward: usize, name: &str) -> usize {
+        let f = self.datum(origin, toward, name);
+        self.frames.push(f);
+        let fi = self.frames.len() - 1;
+        self.slave(EntRef::frame(fi));
+        fi
+    }
+
+    /// A plane: a frame with a stated attitude in space (`plane::Basis`), and the same two
+    /// intrinsics.  The basis arrives resolved — the model stores what a plane *is*, and refusing
+    /// a degenerate one is the job of whoever read it (`Basis::explicit`).
+    pub fn plane(
+        &mut self,
+        origin: usize,
+        toward: usize,
+        basis: crate::plane::Basis,
+        name: &str,
+    ) -> usize {
+        let frame = self.datum(origin, toward, name);
+        self.planes.push(PlaneE { frame, basis });
+        let pi = self.planes.len() - 1;
+        self.slave(EntRef::plane(pi));
+        pi
+    }
+
+    /// The frame half of either datum kind, so every reader of a rotor takes both.
+    pub fn frame_of(&self, e: EntRef) -> &FrameE {
+        match e.kind {
+            EntKind::Frame => &self.frames[e.i()],
+            EntKind::Plane => &self.planes[e.i()].frame,
+            other => panic!("a {} has no rotor", other.as_str()),
+        }
+    }
+
+    /// The rotor's two params, seeded from the chord — the half of `frame` a plane shares.
+    fn datum(&mut self, origin: usize, toward: usize, name: &str) -> FrameE {
         let ((c, s), scale) = self.frame_chord(origin, toward);
         let cp = self.param_scaled(c, false, &format!("{name}.c"), scale);
         let sp = self.param_scaled(s, false, &format!("{name}.s"), scale);
-        self.frames.push(FrameE {
+        FrameE {
             origin: origin as u32,
             toward: toward as u32,
             c: cp as u32,
             s: sp as u32,
             class: Classes::default(),
-        });
-        let fi = self.frames.len() - 1;
-        let fref = EntRef::frame(fi);
-        let c1 = Constraint::frame_unit(fref);
-        let c2 = Constraint::frame_align(self, fref);
+        }
+    }
+
+    /// The two intrinsics that hold a datum's rotor to its chord — minted here and nowhere
+    /// else, since intrinsics are never serialized.
+    fn slave(&mut self, e: EntRef) {
+        let c1 = Constraint::frame_unit(e);
+        let c2 = Constraint::frame_align(self, e);
         self.add(c1);
         self.add(c2);
-        fi
     }
 
     /// The rotor of the chord `origin → toward`, and the world length one unit of it is worth.
@@ -1059,8 +1187,8 @@ impl Sketch {
                 v.push(el.minor);
                 v
             }
-            EntKind::Frame => {
-                let f = &self.frames[e.i()];
+            EntKind::Frame | EntKind::Plane => {
+                let f = self.frame_of(e);
                 let mut v = Vec::with_capacity(6);
                 for pi in [f.origin, f.toward] {
                     let p = &self.points[pi as usize];
@@ -1096,7 +1224,10 @@ impl Sketch {
             EntKind::Circle => vec![self.circles[e.i()].radius],
             EntKind::Arc => vec![self.arcs[e.i()].radius],
             EntKind::Ellipse => vec![self.ellipses[e.i()].minor],
-            EntKind::Frame => vec![self.frames[e.i()].c, self.frames[e.i()].s],
+            EntKind::Frame | EntKind::Plane => {
+                let f = self.frame_of(e);
+                vec![f.c, f.s]
+            }
             // a curve holds no number of its own: it is its expressions, and they read
             // the geometry rather than owning any
             EntKind::Line | EntKind::Spline | EntKind::Curve => Vec::new(),
@@ -1127,8 +1258,8 @@ impl Sketch {
                 let el = &self.ellipses[e.i()];
                 vec![EntRef::point(el.center as usize), EntRef::point(el.major as usize)]
             }
-            EntKind::Frame => {
-                let f = &self.frames[e.i()];
+            EntKind::Frame | EntKind::Plane => {
+                let f = self.frame_of(e);
                 vec![EntRef::point(f.origin as usize), EntRef::point(f.toward as usize)]
             }
             // the one kind whose children need not be points
@@ -1148,7 +1279,9 @@ impl Sketch {
         match e.kind {
             EntKind::Spline => crate::curve::MIN_CTRL,
             EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc
-            | EntKind::Ellipse | EntKind::Frame | EntKind::Curve => children.len(),
+            | EntKind::Ellipse | EntKind::Frame | EntKind::Plane | EntKind::Curve => {
+                children.len()
+            }
         }
     }
 
@@ -1158,13 +1291,14 @@ impl Sketch {
     pub fn topology_key(&self) -> String {
         use std::fmt::Write;
         let mut s = format!(
-            "{}|{}|{}|{}|{}|{}|",
+            "{}|{}|{}|{}|{}|{}|{}|",
             self.points.len(),
             self.lines.len(),
             self.circles.len(),
             self.arcs.len(),
             self.ellipses.len(),
-            self.frames.len()
+            self.frames.len(),
+            self.planes.len()
         );
         for sp in &self.splines {
             let _ = write!(s, "s{}:", sp.ctrl.len());
@@ -1270,6 +1404,7 @@ impl Sketch {
             EntKind::Spline => self.splines.len(),
             EntKind::Ellipse => self.ellipses.len(),
             EntKind::Frame => self.frames.len(),
+            EntKind::Plane => self.planes.len(),
             EntKind::Curve => self.curves.len(),
         }
     }
@@ -1285,6 +1420,7 @@ impl Sketch {
             EntKind::Spline,
             EntKind::Ellipse,
             EntKind::Frame,
+            EntKind::Plane,
         ] {
             for i in 0..self.count(kind) {
                 out.push(EntRef::new(kind, i));
@@ -1406,8 +1542,8 @@ impl Sketch {
                 (cx - r, cy - r, cx + r, cy + r)
             }
             EntKind::Ellipse => crate::ellipse::bounds(self, e.i()),
-            EntKind::Frame => {
-                let f = &self.frames[e.i()];
+            EntKind::Frame | EntKind::Plane => {
+                let f = self.frame_of(e);
                 let (ax, ay) = self.point_xy(f.origin as usize);
                 let (bx, by) = self.point_xy(f.toward as usize);
                 (ax.min(bx), ay.min(by), ax.max(bx), ay.max(by))
@@ -1551,9 +1687,9 @@ fn point_to(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
         }
         EntKind::Spline => crate::curve::distance_to(sk, e.i(), px, py),
         EntKind::Ellipse => crate::ellipse::distance_to(sk, e.i(), px, py),
-        // a frame is a datum, not a figure: the place it stands at is its origin
-        EntKind::Frame => {
-            let (x, y) = sk.point_xy(sk.frames[e.i()].origin as usize);
+        // a datum is not a figure: the place it stands at is its origin
+        EntKind::Frame | EntKind::Plane => {
+            let (x, y) = sk.point_xy(sk.frame_of(e).origin as usize);
             (px - x).hypot(py - y)
         }
     }
@@ -1606,6 +1742,13 @@ pub fn point_to_drawn(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
         // a frame draws nothing of its own — its points are the click targets — so it can
         // never be the nearest drawn thing and a pick can never land on it
         EntKind::Frame => f64::INFINITY,
+        // a plane draws its chord as a datum glyph, and that is where it is taken hold of; its
+        // points still win a pick within tolerance, as every point does
+        EntKind::Plane => {
+            let f = sk.frame_of(e);
+            let (a, b) = (sk.point_xy(f.origin as usize), sk.point_xy(f.toward as usize));
+            seg_distance((px, py), a, b)
+        }
     }
 }
 
@@ -1653,8 +1796,8 @@ fn measure_order(k: EntKind) -> u8 {
         EntKind::Spline => 3,
         EntKind::Ellipse => 4,
         EntKind::Curve => 5,
-        // last, so any pair with a frame in it puts the frame second and one arm catches it
-        EntKind::Frame => 6,
+        // last, so any pair with a datum in it puts the datum second and one arm catches it
+        EntKind::Frame | EntKind::Plane => 6,
     }
 }
 
@@ -1697,8 +1840,8 @@ fn swept(sk: &Sketch, e: EntRef) -> Vec<(f64, f64)> {
     match e.kind {
         EntKind::Spline => crate::curve::sample(sk, e.i(), 64),
         EntKind::Ellipse => crate::ellipse::sample(sk, e.i(), 64),
-        // a frame is a datum, not a figure: the one place it stands at
-        EntKind::Frame => vec![sk.point_xy(sk.frames[e.i()].origin as usize)],
+        // a datum is not a figure: the one place it stands at
+        EntKind::Frame | EntKind::Plane => vec![sk.point_xy(sk.frame_of(e).origin as usize)],
         _ => Vec::new(),
     }
 }
@@ -1726,7 +1869,10 @@ pub fn distance_between(sk: &Sketch, first: EntRef, second: EntRef) -> f64 {
         // This sits *above* the arms that reach for a centre and a radius, which is the whole
         // reason it is one arm and not one per family: a sampled kind that fell through to them
         // would ask a curve for a centre it does not have.
-        _ if matches!(b.kind, EntKind::Spline | EntKind::Ellipse | EntKind::Frame) => swept(sk, b)
+        _ if matches!(
+            b.kind,
+            EntKind::Spline | EntKind::Ellipse | EntKind::Frame | EntKind::Plane
+        ) => swept(sk, b)
             .into_iter()
             .map(|(x, y)| point_to(sk, x, y, a))
             .fold(f64::INFINITY, f64::min),

@@ -532,7 +532,17 @@ pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String>
                 let arr = a.arr();
                 let ek = crate::model::EntKind::parse(arr.first().map(|x| x.as_str()).unwrap_or(""))
                     .ok_or_else(|| "bad entity reference".to_string())?;
-                Arg::Ent(EntRef::new(ek, arr.get(1).map(|x| x.as_i64()).unwrap_or(0) as usize))
+                // the kind the slot takes and an index the sketch has: a binding's record is
+                // untrusted the way a document is, and every reader past this one indexes by
+                // the spec's kind — a mismatch or an overrun is a panic there, an abort in wasm
+                if !crate::constraints::kind_matches(*k, ek) {
+                    return Err(format!("a {} slot does not take a {}", k.as_str(), ek.as_str()));
+                }
+                let i = arr.get(1).map(|x| x.as_i64()).unwrap_or(0);
+                if i < 0 || i as usize >= sk.count(ek) {
+                    return Err(format!("{} index {i} out of range", ek.as_str()));
+                }
+                Arg::Ent(EntRef::new(ek, i as usize))
             }
             // a hidden unknown arrives as its number, or `{"value", "pinned"}` when whoever
             // computed it means it to stay — the same form the document uses
@@ -557,7 +567,7 @@ pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String>
         });
     }
     // a hidden unknown nobody supplied starts where the geometry puts it
-    crate::io::seed_omitted(sk, kind, &mut args, |i| crate::io::omitted(raw.get(i)));
+    crate::io::seed_omitted(sk, kind, &mut args, |i| crate::io::omitted(raw.get(i)))?;
     // the tangencies read their branch off the sketch when none was supplied
     let omitted = raw.get(2).map(|x| matches!(x, Json::Null)).unwrap_or(true);
     if omitted && kind == CKind::TangentLineCircle {

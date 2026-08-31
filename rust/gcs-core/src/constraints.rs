@@ -66,10 +66,18 @@ pub enum CKind {
     /// and directed (with the rotor on the unit circle, `r` stays positive by continuity).
     /// Intrinsic, the other half of what `Sketch::frame` states.
     FrameAlign,
+    /// Two points are images of one point in space, each on the plane it is `in`: their
+    /// coordinates along the fold line the two planes share agree (`plane::fold_line`).  One
+    /// row over both points and both planes' frames.  The plane slots are **inferred** from the
+    /// points' memberships at `io::seed_omitted`'s seam — the source and the bindings write two
+    /// points — and refused when a point is on no plane, both are on one, or the planes are
+    /// parallel.  Not commutative: `same_args` swaps only the first two entity slots, so
+    /// `b project a` reads as a second relation, which the diagnosis reports as implied.
+    Project,
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 35] = [
+pub const ALL_KINDS: [CKind; 36] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -105,6 +113,7 @@ pub const ALL_KINDS: [CKind; 35] = [
     CKind::PointOnCurve,
     CKind::FrameUnit,
     CKind::FrameAlign,
+    CKind::Project,
 ];
 
 /// What a written operator says, once its operands' kinds are known.
@@ -195,6 +204,11 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Point, Line) => CKind::Midpoint,
             _ => return None,
         },
+        // two images of one point; which planes is read off the points, never written
+        "project" => match (a, b) {
+            (Point, Point) => CKind::Project,
+            _ => return None,
+        },
         "parallel" => match (a, b) {
             (Line, Line) => CKind::Parallel,
             _ => return None,
@@ -229,9 +243,9 @@ pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
 /// The gauges (`ground`, `fix`) and the orientation predicates (`ccw`, `cw`) are not here: they
 /// are statements of their own kinds, and a chain's joint may not be one.  `ground p1` is still
 /// a prefix operator to read, and it is read where the statement dispatcher knows it is one.
-pub const OPERATORS: [&str; 14] = [
+pub const OPERATORS: [&str; 15] = [
     "on", "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "angle",
-    "radius", "coincident", "midpoint", "parallel", "perpendicular", "symmetry",
+    "radius", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
 ];
 
 pub fn is_operator(w: &str) -> bool {
@@ -267,7 +281,11 @@ pub enum SpecKind {
     Ellipse,
     /// A curve written in the language — see `model::CurveDef`.
     Curve,
+    /// Either datum kind: a frame, or a plane, which is a frame with an attitude.  The two
+    /// intrinsics read the rotor and nothing else, so they take both — `CircleOrArc`'s bargain.
     Frame,
+    /// A plane and nothing else: `Project` reads its basis.
+    Plane,
     Length,
     Angle,
     Float,
@@ -303,6 +321,7 @@ impl SpecKind {
             | SpecKind::Ellipse
             | SpecKind::Curve
             | SpecKind::Frame
+            | SpecKind::Plane
             | SpecKind::Float
             | SpecKind::Int
             | SpecKind::Str
@@ -323,6 +342,7 @@ impl SpecKind {
                 | SpecKind::Ellipse
                 | SpecKind::Curve
                 | SpecKind::Frame
+                | SpecKind::Plane
         )
     }
 
@@ -346,6 +366,7 @@ impl SpecKind {
             SpecKind::Ellipse => "ellipse",
             SpecKind::Curve => "curve",
             SpecKind::Frame => "frame",
+            SpecKind::Plane => "plane",
             SpecKind::Length => "length",
             SpecKind::Angle => "angle",
             SpecKind::Float => "float",
@@ -399,6 +420,7 @@ impl CKind {
             CKind::PointOnCurve => "PointOnCurve",
             CKind::FrameUnit => "FrameUnit",
             CKind::FrameAlign => "FrameAlign",
+            CKind::Project => "Project",
         }
     }
 
@@ -474,6 +496,11 @@ impl CKind {
             }
             CKind::FrameUnit => &[("frame", S::Frame)],
             CKind::FrameAlign => &[("frame", S::Frame), ("r", S::Param)],
+            // the two planes are real slots — so the drag part, the topology key, the graft
+            // and a deletion follow them — and inferred ones, so nobody writes them
+            CKind::Project => {
+                &[("a", S::Point), ("b", S::Point), ("pa", S::Plane), ("pb", S::Plane)]
+            }
         }
     }
 
@@ -559,6 +586,8 @@ impl CKind {
             CKind::Perpendicular => ("perpendicular", Infix),
             // the only kind with three entity slots, and the parentheses absorb the third
             CKind::Symmetric => ("symmetry", Infix),
+            // two operands; the plane slots behind them are inferred and never spelled
+            CKind::Project => ("project", Infix),
             CKind::DragTarget | CKind::FrameUnit | CKind::FrameAlign => return None,
         })
     }
@@ -586,9 +615,15 @@ impl CKind {
     /// The registry publishes a null default for these so a binding cannot substitute a constant
     /// and quietly pick the wrong branch — `default_arg` is the fallback when there is no sketch.
     pub fn infers_arg(self, i: usize) -> bool {
-        // a hidden unknown is always read off the geometry: nobody types a curve parameter
+        // a hidden unknown is always read off the geometry: nobody types a curve parameter;
+        // and a projection's planes are read off its points' memberships
         self.spec()[i].1.is_param()
-            || matches!((self, i), (CKind::TangentLineCircle, 2) | (CKind::TangentCircleCircle, 2))
+            || matches!(
+                (self, i),
+                (CKind::TangentLineCircle, 2)
+                    | (CKind::TangentCircleCircle, 2)
+                    | (CKind::Project, 2 | 3)
+            )
     }
 
     /// The spec slots holding an unknown of this kind's own, as (index, name).  On the kind,
@@ -699,7 +734,9 @@ impl CKind {
             // a frame's intrinsics are algebra over its own scalars, not a touch between two
             // figures: there is no contact to double-root
             | CKind::FrameUnit
-            | CKind::FrameAlign => false,
+            | CKind::FrameAlign
+            // a projection is a linear tie between two images: no contact, no double root
+            | CKind::Project => false,
         }
     }
 
@@ -773,6 +810,7 @@ impl CKind {
             CKind::EllipseCurvature => K::EllipseCurvature,
             CKind::FrameUnit => K::FrameUnit,
             CKind::FrameAlign => K::FrameAlign,
+            CKind::Project => K::Project,
         }
     }
 
@@ -819,7 +857,8 @@ impl CKind {
             | CKind::HorizontalPoints
             | CKind::VerticalPoints
             | CKind::FrameUnit
-            | CKind::FrameAlign => return None,
+            | CKind::FrameAlign
+            | CKind::Project => return None,
         })
     }
 }
@@ -1066,6 +1105,15 @@ impl Constraint {
         c
     }
 
+    /// Two points as images of one point in space — the planes read off their memberships,
+    /// through the same seam the document readers use (`io::seed_omitted`), so a Rust caller
+    /// and a document are refused by one rule.
+    pub fn project(sk: &Sketch, a: EntRef, b: EntRef) -> Result<Constraint, String> {
+        let mut args = vec![Arg::Ent(a), Arg::Ent(b), Arg::Num(0.0), Arg::Num(0.0)];
+        crate::io::seed_omitted(sk, CKind::Project, &mut args, |i| i >= 2)?;
+        Ok(Constraint::new(CKind::Project, args))
+    }
+
     /// A two-entity curve contact whose parameter starts where the geometry puts it.
     fn contact(sk: &Sketch, kind: CKind, a: Arg, b: Arg) -> Constraint {
         let mut args = vec![a, b, Arg::Num(0.0)];
@@ -1282,6 +1330,15 @@ impl Constraint {
             CKind::TangentCircleCircle => {
                 vec![if matches!(self.args[2], Arg::Bool(true)) { 1.0 } else { -1.0 }]
             }
+            // the fold line in each plane's own coordinates — validated at the add, so a pair
+            // with none cannot be here; recomputed with every refresh, being a cross product
+            // and four dots, rather than kept in a second skip set beside the curve contacts
+            CKind::Project => {
+                let basis = |i: usize| &sk.planes[self.args[i].ent().i()].basis;
+                let (da, db) = crate::plane::fold_line(basis(2), basis(3))
+                    .expect("a projection between parallel planes is refused at the add");
+                vec![da[0], da[1], db[0], db[1]]
+            }
             _ => Vec::new(),
         }
     }
@@ -1451,6 +1508,14 @@ impl Constraint {
             CKind::FrameAlign => {
                 [vec![self.args[1].param()], sk.entity_params(e(0))].concat()
             }
+            // the two images, then each plane's origin and rotor — the kernel's twelve columns
+            CKind::Project => {
+                let datum = |i: usize| {
+                    let f = sk.frame_of(e(i));
+                    [sk.point_params(f.origin as usize).to_vec(), vec![f.c, f.s]].concat()
+                };
+                [pt(0), pt(1), datum(2), datum(3)].concat()
+            }
         }
     }
 
@@ -1530,10 +1595,55 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
         // a degenerate frame must read the same to both, or the preconditioning and the row's
         // seed would disagree about a drawing neither can see
         (CKind::FrameAlign, 1) => {
-            let f = &sk.frames[args[0].ent().i()];
+            let f = sk.frame_of(args[0].ent());
             sk.frame_chord(f.origin as usize, f.toward as usize).1
         }
         _ => 0.0,
+    }
+}
+
+/// An entity slot the core fills when the caller leaves it out — the entity counterpart of
+/// `seed_param`: a projection's planes are its points' memberships, and nobody writes them.
+/// `Err` is the reason it cannot, in the words the caller reports.
+pub fn infer_entity(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> Result<EntRef, String> {
+    match (kind, i) {
+        (CKind::Project, 2 | 3) => {
+            let p = args[i - 2].ent();
+            sk.plane_of(p.i()).map(EntRef::plane).ok_or_else(|| {
+                format!(
+                    "{} is on no plane, so `project` cannot say which view it is in",
+                    crate::io::entity_name(p)
+                )
+            })
+        }
+        _ => Err(format!("{} leaves nothing for the core to infer in slot {i}", kind.name())),
+    }
+}
+
+/// What a kind refuses once its arguments are all in — the checks that need the sketch, which
+/// the type check on the spec cannot make.  One rule for the elaborator, the document readers,
+/// the FFI and the Rust constructors alike.
+pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
+    match kind {
+        CKind::Project => {
+            let (pa, pb) = (args[2].ent(), args[3].ent());
+            if pa == pb {
+                return Err(format!(
+                    "both points are on {}, and one view relates nothing to itself",
+                    crate::io::entity_name(pa)
+                ));
+            }
+            let basis = |e: EntRef| &sk.planes[e.i()].basis;
+            if crate::plane::fold_line(basis(pa), basis(pb)).is_none() {
+                return Err(format!(
+                    "{} and {} are parallel, so no fold line relates their views",
+                    crate::io::entity_name(pa),
+                    crate::io::entity_name(pb)
+                ));
+            }
+            Ok(())
+        }
+        _ => Ok(()),
     }
 }
 
@@ -1620,7 +1730,9 @@ pub fn kind_matches(spec: SpecKind, ent: EntKind) -> bool {
         SpecKind::Spline => ent == EntKind::Spline,
         SpecKind::Ellipse => ent == EntKind::Ellipse,
         SpecKind::Curve => ent == EntKind::Curve,
-        SpecKind::Frame => ent == EntKind::Frame,
+        // a plane is a frame with an attitude, and the intrinsics read only the frame half
+        SpecKind::Frame => ent == EntKind::Frame || ent == EntKind::Plane,
+        SpecKind::Plane => ent == EntKind::Plane,
         _ => false,
     }
 }

@@ -26,8 +26,13 @@
  *             other and leaves what they are worth to the solver
  *   editing   F fix/unfix · G construction · Del delete · Ctrl+Z undo · ⇧Ctrl+Z redo ·
  *             Ctrl+X/C/V cut, copy, paste the selection · wheel zoom · right-drag pan
- *   menus     File/Edit/Solution hold everything that is not a tool or a constraint; the
- *             solver's own switches are behind Solution ▸ Options
+ *   views     Insert ▸ Plane… asks what the view is and takes two clicks for where it sits;
+ *             Insert ▸ Three views lays out front, top and right.  A plane selected on its own
+ *             is the one being drawn in — every point a tool mints goes `in` it, and the
+ *             status line says so — until Insert ▸ Draw on page.  J projects two points, one
+ *             in each of two views, onto one point in space
+ *   menus     File/Edit/Insert/Solution hold everything that is not a tool or a constraint;
+ *             the solver's own switches are behind Solution ▸ Options
  *
  * Everything below is presentation; the solver, diagnosis, decomposition and root selection
  * all live in core/ and are shared with the test suite.  This file is the wiring: what is on
@@ -38,9 +43,10 @@
 import * as io from '../core/io.js';
 import { CONSTRAINT_BUTTONS } from './commands.js';
 import {
-  about, alternatives, doOpen, flipBranch, newSketch, openCase, options, report, reportSolve,
-  showDiagnosis,
+  about, alternatives, doOpen, flipBranch, insertPlane, newSketch, openCase, options, report,
+  reportSolve, showDiagnosis,
 } from './dialogs.js';
+import { threeViews } from './tools.js';
 import { editValue, onDimension } from './dimbox.js';
 import { bindProgramPanel, refreshProgram, showStatementFor, toggleProgramPanel } from './program.js';
 import { closePanel, openPanel, refresh, refreshPanel, refreshStatus } from './lists.js';
@@ -168,6 +174,16 @@ const MENUS: [string, (MenuItem | null)[]][] = [
       const n = view.resetCallouts(currentConstraint);
       toast(n ? `${n} dimension(s) put back` : 'no dimension has been moved');
     } },
+  ]],
+  ['Insert', [
+    { label: 'Plane…', onClick: () => void insertPlane(),
+      title: 'A view of space to draw in: the page, one folded from another view, or an '
+        + 'explicit basis.  Two clicks then say where it sits' },
+    { label: 'Three views', onClick: () => threeViews(view),
+      title: 'Front, top and right views in the standard third-angle layout, aligned' },
+    null,
+    { label: 'Draw on page', onClick: () => view.drawOnPage(),
+      title: 'The next points go on the page itself rather than in the current view' },
   ]],
   ['Solution', [
     { label: 'Solve', onClick: () => { view.solveNow(); reportSolve(); } },

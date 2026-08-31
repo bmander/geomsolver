@@ -15,7 +15,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// `P0` / `L3` / `C1` / `A2` — the short label the UI and `describe` use.
 pub fn entity_name(e: EntRef) -> String {
-    let c = e.kind.as_str().chars().next().unwrap().to_ascii_uppercase();
+    // the same letter a minted name starts with, so the label on the drawing and the name in
+    // the program cannot disagree about which kind `V0` is
+    let c = crate::syntax::kind_initial(e.kind).to_ascii_uppercase();
     format!("{c}{}", e.idx)
 }
 
@@ -93,6 +95,12 @@ fn arg_from_json(sk: &Sketch, kind: SpecKind, v: &Json) -> Result<Arg, String> {
             }
             let ek = EntKind::parse(a[0].as_str())
                 .ok_or_else(|| format!("unknown entity kind {:?}", a[0].as_str()))?;
+            // and it must be a kind the slot takes: a document is untrusted input, and every
+            // reader past this one indexes the list its *spec* names (a projection's planes
+            // reach `sk.planes`), so a mismatch here is a panic there — an abort under wasm
+            if !crate::constraints::kind_matches(kind, ek) {
+                return Err(format!("a {} slot does not take a {}", kind.as_str(), ek.as_str()));
+            }
             Arg::Ent(EntRef::new(ek, index(a[1].as_i64(), sk.count(ek), ek.as_str())?))
         }
         SpecKind::Int => Arg::Int(v.as_i64()),
@@ -113,19 +121,28 @@ pub(crate) fn omitted(v: Option<&Json>) -> bool {
     matches!(v, None | Some(Json::Null))
 }
 
-/// Fill in the hidden unknowns the caller left out, from the geometry — the one place the rule
-/// lives, shared by the document reader and the bindings' constraint records.
-pub(crate) fn seed_omitted(
+/// Fill in what the caller left out, from the geometry — the hidden unknowns, and the entity
+/// slots the core infers (a projection's planes) — then whatever the kind refuses once its
+/// arguments are all in.  The one place the rule lives, shared by the elaborator, the document
+/// reader, the bindings' constraint records and the Rust constructors, so a constraint is
+/// refused by one rule wherever it comes from.  `Err` is the reason, in the caller's words.
+pub fn seed_omitted(
     sk: &Sketch,
     kind: CKind,
     args: &mut [Arg],
     left_out: impl Fn(usize) -> bool,
-) {
+) -> Result<(), String> {
     for (i, _) in kind.param_slots() {
         if left_out(i) {
             args[i] = Arg::Num(crate::constraints::seed_param(sk, kind, args, i));
         }
     }
+    for (i, (_, k)) in kind.spec().iter().enumerate() {
+        if k.is_entity() && kind.infers_arg(i) && left_out(i) {
+            args[i] = Arg::Ent(crate::constraints::infer_entity(sk, kind, args, i)?);
+        }
+    }
+    crate::constraints::validate(sk, kind, args)
 }
 
 /// A cap on how long a control polygon a document may declare.  A document is untrusted input
@@ -154,6 +171,7 @@ fn remap_early(
     spline_map: &[Option<usize>],
     ellipse_map: &[Option<usize>],
     frame_map: &[Option<usize>],
+    plane_map: &[Option<usize>],
     e: EntRef,
 ) -> Option<EntRef> {
     match e.kind {
@@ -164,6 +182,7 @@ fn remap_early(
         EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
         EntKind::Ellipse => ellipse_map[e.i()].map(EntRef::ellipse),
         EntKind::Frame => frame_map[e.i()].map(EntRef::frame),
+        EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
         // a curve is never another curve's argument: nothing in the language says so
         EntKind::Curve => None,
     }
@@ -173,7 +192,13 @@ pub fn to_json(sk: &Sketch) -> Json {
     let points: Vec<Json> = (0..sk.points.len())
         .map(|i| {
             let (x, y) = sk.point_xy(i);
-            object([("x", x.into()), ("y", y.into()), ("fixed", sk.point_fixed(i).into())])
+            let mut o =
+                object([("x", x.into()), ("y", y.into()), ("fixed", sk.point_fixed(i).into())]);
+            // only when set, so a document with no plane in it dumps exactly as it always has
+            if let Some(p) = sk.plane_of(i) {
+                o.set("plane", Json::Int(p as i64));
+            }
+            o
         })
         .collect();
     let lines: Vec<Json> = sk
@@ -252,6 +277,25 @@ pub fn to_json(sk: &Sketch) -> Json {
             ])
         })
         .collect();
+    let planes: Vec<Json> = sk
+        .planes
+        .iter()
+        .map(|p| {
+            let f = &p.frame;
+            let v3 = |a: [f64; 3]| Json::Arr(a.iter().map(|&x| Json::Num(x)).collect());
+            object([
+                ("origin", (f.origin as i64).into()),
+                ("toward", (f.toward as i64).into()),
+                ("c", sk.params[f.c as usize].value.into()),
+                ("s", sk.params[f.s as usize].value.into()),
+                ("cfixed", sk.params[f.c as usize].fixed.into()),
+                ("sfixed", sk.params[f.s as usize].fixed.into()),
+                ("u", v3(p.basis.u)),
+                ("v", v3(p.basis.v)),
+                ("class", class_json(&f.class)),
+            ])
+        })
+        .collect();
     let user = sk.user_constraints();
     let constraints: Vec<Json> = user
         .iter()
@@ -285,6 +329,7 @@ pub fn to_json(sk: &Sketch) -> Json {
         ("splines", Json::Arr(splines)),
         ("ellipses", Json::Arr(ellipses)),
         ("frames", Json::Arr(frames)),
+        ("planes", Json::Arr(planes)),
         ("constraints", Json::Arr(constraints)),
         ("branches", Json::Obj(branches)),
         // written only where the document named one: a drawing in drawing units says nothing
@@ -382,6 +427,36 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         sk.params[sp].fixed = f.get("sfixed").map(|v| v.as_bool()).unwrap_or(false);
         sk.frames[fi].class = read_class(f);
     }
+    for (k, p) in d.get("planes").unwrap_or(&empty).arr().iter().enumerate() {
+        let g = |key: &str| index(p.get(key).map(|v| v.as_i64()).unwrap_or(0), np, key);
+        let v3 = |key: &str| -> [f64; 3] {
+            let a = p.get(key).map(|v| v.arr()).unwrap_or_default();
+            [0, 1, 2].map(|i| a.get(i).map(|v| v.as_f64()).unwrap_or(0.0))
+        };
+        let basis = crate::plane::Basis::explicit(v3("u"), v3("v"))
+            .ok_or_else(|| format!("plane {k}: u and v do not span a plane"))?;
+        let pi = sk.plane(g("origin")?, g("toward")?, basis, "");
+        let f = &sk.planes[pi].frame;
+        let (cp, sp) = (f.c as usize, f.s as usize);
+        if let Some(v) = p.get("c") {
+            sk.params[cp].value = v.as_f64();
+        }
+        if let Some(v) = p.get("s") {
+            sk.params[sp].value = v.as_f64();
+        }
+        sk.params[cp].fixed = p.get("cfixed").map(|v| v.as_bool()).unwrap_or(false);
+        sk.params[sp].fixed = p.get("sfixed").map(|v| v.as_bool()).unwrap_or(false);
+        sk.planes[pi].frame.class = read_class(p);
+    }
+    // memberships once the planes exist to be members of: a point's `"plane"` names one by
+    // index, and the point was read before any plane was
+    for (i, pt) in d.get("points").unwrap_or(&empty).arr().iter().enumerate() {
+        if let Some(v) = pt.get("plane") {
+            if !omitted(Some(v)) {
+                sk.set_plane(i, Some(index(v.as_i64(), sk.planes.len(), "point.plane")?));
+            }
+        }
+    }
     let mut ids = Vec::new();
     for c in d.get("constraints").unwrap_or(&empty).arr() {
         let name = c.get("type").map(|v| v.as_str().to_string()).unwrap_or_default();
@@ -394,9 +469,15 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         }
         let mut args = Vec::with_capacity(spec.len());
         for (i, (_, k)) in spec.iter().enumerate() {
-            args.push(arg_from_json(&sk, *k, &raw[i])?);
+            // a slot the core infers may be left out — a projection's planes — and holds a
+            // placeholder until `seed_omitted` fills it
+            if kind.infers_arg(i) && omitted(raw.get(i)) {
+                args.push(kind.default_arg(i));
+            } else {
+                args.push(arg_from_json(&sk, *k, &raw[i])?);
+            }
         }
-        seed_omitted(&sk, kind, &mut args, |i| omitted(raw.get(i)));
+        seed_omitted(&sk, kind, &mut args, |i| omitted(raw.get(i)))?;
         // `add_quiet`, because the evaluation below is the document's: adding one at a time
         // would parse every expression again for each, and would make a dimension whose
         // definition is further down the file briefly a free variable — allocating an unknown
@@ -589,6 +670,34 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         frame_map[i] = Some(ni);
         made.push(EntRef::frame(ni));
     }
+    let mut plane_map: Vec<Option<usize>> = vec![None; src.planes.len()];
+    for i in 0..src.planes.len() {
+        if !keep(EntRef::plane(i)) {
+            continue;
+        }
+        let p = &src.planes[i];
+        let f = &p.frame;
+        let (Some(o), Some(t)) = (pt_index(f.origin as usize), pt_index(f.toward as usize))
+        else {
+            continue;
+        };
+        let ni = dst.plane(o, t, p.basis, "");
+        let (nc, ns) = (dst.planes[ni].frame.c as usize, dst.planes[ni].frame.s as usize);
+        dst.params[nc].value = src.params[f.c as usize].value;
+        dst.params[ns].value = src.params[f.s as usize].value;
+        dst.params[nc].fixed = src.params[f.c as usize].fixed;
+        dst.params[ns].fixed = src.params[f.s as usize].fixed;
+        dst.planes[ni].frame.class = f.class.clone();
+        plane_map[i] = Some(ni);
+        made.push(EntRef::plane(ni));
+    }
+    // a membership follows its plane across, and a plane that did not come — deleted, or
+    // missing a point — takes the memberships that named it with it
+    for i in 0..src.points.len() {
+        if let (Some(ni), Some(p)) = (pt_index(i), src.plane_of(i)) {
+            dst.set_plane(ni, plane_map[p]);
+        }
+    }
     // curves last: a curve's arguments may be of any other kind, so every map it reads has to
     // be filled before this one is built.  The *definition* travels with it — a document that
     // came apart from the curve family it is written in would be a document that cannot be drawn.
@@ -598,7 +707,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let mut whole = true;
         for &a in &cv.args {
             match remap_early(&pt_index, &line_map, &circle_map, &arc_map, &spline_map,
-                              &ellipse_map, &frame_map, a) {
+                              &ellipse_map, &frame_map, &plane_map, a) {
                 Some(r) => args.push(r),
                 None => whole = false,
             }
@@ -633,6 +742,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
             EntKind::Ellipse => ellipse_map[e.i()].map(EntRef::ellipse),
             EntKind::Frame => frame_map[e.i()].map(EntRef::frame),
+            EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
             EntKind::Curve => curve_map[e.i()].map(|i| EntRef::new(EntKind::Curve, i)),
         }
     };
