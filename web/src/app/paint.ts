@@ -37,6 +37,8 @@ export const COL = {
  * conflict set rather than from a guess) */
 const COL_STATE: Record<string, string> = {
   well: '#2ca02c', under: '#e69500', over: '#d62728', conflict: '#d62728',
+  // no verdict: the solve stopped short of the constraints on this entity
+  unsolved: '#e69500',
 };
 
 export function paint(v: SketchView): void {

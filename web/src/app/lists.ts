@@ -233,11 +233,12 @@ export function refreshStatus(): void {
   const d = view.diagnosis;
   const r = view.lastResult;
   const conflict = d?.status === 'conflict';
-  footerEl.classList.toggle('unsolved', conflict || (!!r && !r.success));
+  const unsolved = d?.status === 'unsolved' || (!!r && !r.success);
+  footerEl.classList.toggle('unsolved', conflict || unsolved);
   // nothing is diagnosed until there is a constraint to diagnose, and until then the freedom
   // left is simply every free parameter — there are no equations for one to be spent on
   stats(conflict ? '⚠ CONFLICT'
-      : r && !r.success ? `⚠ NOT CONVERGED  max|r|=${r.maxResidual.toExponential(1)}`
+      : unsolved ? `⚠ NOT CONVERGED${r ? `  max|r|=${r.maxResidual.toExponential(1)}` : ''}`
       : `DOF ${d ? d.dof : view.sketch.freeIndices().length}`);
   refreshMeasure();
 }

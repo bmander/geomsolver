@@ -383,9 +383,13 @@ q on w hint(u: 30)
                 );
             }
         }
-        // and it is the involute, not merely a repeatable answer: the row is q - C(u)
+        // and it is the involute, not merely a repeatable answer: the row is q - C(u), handed
+        // out over its own units (`System::row_scale`)
         let want = involute_at(0.0, 0.0, 20.0, u);
-        let got = (qxy.0 - forward[k][row], qxy.1 - forward[k][row + 1]);
+        let got = (
+            qxy.0 - forward[k][row] * sys.row_scale[row],
+            qxy.1 - forward[k][row + 1] * sys.row_scale[row + 1],
+        );
         assert!(
             (got.0 - want.0).abs() < 1e-7 && (got.1 - want.1).abs() < 1e-7,
             "at u = {u}: involute {want:?}, trace {got:?}",

@@ -9,7 +9,9 @@ import { System } from './system.js';
 import { WitnessReport, reportFrom } from './witness.js';
 import { core, takeJson, withJson } from './wasm.js';
 
-export type State = 'well' | 'under' | 'over' | 'conflict';
+/** `unsolved`: constraints unsatisfied at a pose that is not stationary — the solve stopped
+ *  short, so the core gives no verdict (a conflict is one) and names no culprits. */
+export type State = 'well' | 'under' | 'over' | 'conflict' | 'unsolved';
 
 /** Free parameters up to which the automatic numeric cross-check (a dense SVD) runs. */
 export const NUMERIC_MAX = 300;

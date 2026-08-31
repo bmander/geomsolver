@@ -55,7 +55,8 @@ impl SolveResult {
 #[derive(Clone, Copy, Debug)]
 pub struct SolveOpts {
     pub method: Method,
-    /// Relative to extent² (residual units for squared distances).
+    /// The residual, in each row's own units (`System::row_scale`), below which the iteration
+    /// stops; "solved" is the fixed 1e-6 on the same measure.
     pub tol: f64,
     pub max_nfev: i32,
     pub writeback: bool,
@@ -154,12 +155,16 @@ impl System {
     /// One minimisation from `z`, updated in place, measured on the hard rows: the result and
     /// the max residual relative to each row's own units, which is what "solved" means.
     fn minimise(&mut self, z: &mut [f64], method: Method, opts: &SolveOpts) -> (SolveResult, f64) {
+        // Every residual the system hands out is over its row's own units (`System::row_scale`),
+        // so `tol` is the tolerance as stated and the gradient's units are 1/length: a scaled
+        // row's derivative with respect to a world-length column is O(1/extent) whatever the
+        // row's degree, so stationarity is judged against that.
         let info: Info = newton::solve_system(
             self,
             method,
-            opts.tol * self.min_hard_scale,
+            opts.tol,
             1e-12,
-            1e-16 * self.scale,
+            1e-16 / self.extent.max(1.0),
             opts.max_iter,
             opts.max_nfev,
             opts.dense,
@@ -167,7 +172,6 @@ impl System {
         );
         let r = self.residuals(z);
         let mut n2 = 0.0;
-        let mut mx = 0.0f64;
         let mut rel = 0.0f64;
         // NaN is not "no error", and `f64::max` would drop it: track it and let it win at the end
         let mut nan = false;
@@ -178,15 +182,14 @@ impl System {
                 if a.is_nan() {
                     nan = true;
                 } else {
-                    mx = mx.max(a);
-                    rel = rel.max(a / self.row_scale[i]);
+                    rel = rel.max(a);
                 }
             }
         }
         if nan {
-            mx = f64::NAN;
             rel = f64::NAN;
         }
+        let mx = rel;
         let res = SolveResult {
             // relative, not absolute: a radius kernel's residual is a length and a distance
             // kernel's is a length squared, so one absolute threshold cannot judge both

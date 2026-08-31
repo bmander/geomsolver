@@ -437,7 +437,8 @@ fn a_compiled_system_keeps_the_span_it_was_built_from() {
     let z = sys.z0(&sk);
     let got = sys.residuals(&z);
     for i in 0..want.len() {
-        assert!((got[row + i] - want[i]).abs() < 1e-12,
+        // a system hands a residual out in its row's units; the kernel's is raw
+        assert!((got[row + i] * sys.row_scale[row + i] - want[i]).abs() < 1e-12,
                 "refreshed constants came from the parameter's new span, not the compiled one");
     }
 }

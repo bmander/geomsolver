@@ -30,6 +30,9 @@ pub enum State {
     Under,
     Over,
     Conflict,
+    /// Constraints are unsatisfied at a pose that is not stationary: the solve stopped short,
+    /// and nothing is known about the geometry there — not a conflict, which is a verdict.
+    Unsolved,
 }
 
 impl State {
@@ -39,6 +42,7 @@ impl State {
             State::Under => "under",
             State::Over => "over",
             State::Conflict => "conflict",
+            State::Unsolved => "unsolved",
         }
     }
 }
@@ -161,7 +165,13 @@ pub fn summary(d: &Diagnosis) -> String {
             d.implied.len()
         ));
     }
-    if d.conflicts.as_ref().map(|c| !c.is_empty()).unwrap_or(false) {
+    if d.status == State::Unsolved {
+        parts.push(format!(
+            "UNSOLVED — {} constraint(s) unsatisfied where the solve stopped short of a \
+             stationary point; no verdict on them",
+            d.violated.len()
+        ));
+    } else if d.conflicts.as_ref().map(|c| !c.is_empty()).unwrap_or(false) {
         parts.push("CONFLICT — remove one of the listed constraints".to_string());
     } else if !d.violated.is_empty() {
         parts.push(format!("{} constraint(s) violated", d.violated.len()));
@@ -227,8 +237,9 @@ pub fn removable_constraints(sk: &Sketch, w: &Mat, row_c: &[u32], rtol: f64) -> 
 }
 
 /// Hard constraints whose residual is not (numerically) zero at the current configuration.
-/// Each is judged against its own kernel's units — a radius error is a length, a distance error a
-/// length squared, and one absolute threshold for both calls half of them satisfied.
+/// Each is judged in its own kernel's units — a radius error is a length, a distance error a
+/// length squared, and one absolute threshold for both calls half of them satisfied — which is
+/// how `constraint_errors` already reports them (`System::row_scale`).
 pub fn violated_constraints(sk: &Sketch, sys: &mut System, tol: f64) -> Vec<u32> {
     let z = sys.z0(sk);
     let err = sys.constraint_errors(&z);
@@ -237,8 +248,7 @@ pub fn violated_constraints(sk: &Sketch, sys: &mut System, tol: f64) -> Vec<u32>
     let soft: BTreeSet<u32> = sk.constraints.iter().filter(|c| c.soft).map(|c| c.id).collect();
     let mut out = Vec::new();
     for (i, &cid) in sys.cids.iter().enumerate() {
-        let lim = tol * sys.constraint_scale(cid);
-        if !soft.contains(&cid) && (err[i].is_nan() || err[i] > lim) {
+        if !soft.contains(&cid) && (err[i].is_nan() || err[i] > tol) {
             out.push(cid);
         }
     }
@@ -451,6 +461,33 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
 
     // -- violated --
     let violated = violated_constraints(sk, sys, opts.tol);
+    // A violated row is evidence about the *geometry* only at a stationary point — where the
+    // solver could go no further, what is left is what the constraints cannot agree on.
+    // Anywhere else it is evidence about the solve, and the diagnosis finds out which it is for
+    // itself rather than guessing: a scratch copy is solved.  If that solves, the constraints
+    // are consistent and the caller's pose is merely *unsolved* — no conflict, no culprits.
+    // If it does not, the search for the minimal conflict set is the last word: it proves a
+    // conflict by finding the subset it cannot add to a feasible pose, and an empty answer
+    // from a pose that was never stationary means it found every constraint feasible after
+    // all.  The search runs from the caller's pose, not the scratch one — a failed solve of
+    // the whole system has pulled everything toward the impossible row, and the trials
+    // warm-start better from where the drawing was.  Read as a conflict directly, a solve that ran out on a consistent four-bar named
+    // three innocent statements to delete (issue #43).  The extra solve is paid only on this
+    // path, which the app is rarely on (it solves before it diagnoses).
+    let mut stalled = false;
+    let mut unsettled = false;
+    if !violated.is_empty() {
+        let z = sys.z0(sk);
+        if !sys.stationary(&z) {
+            let mut scratch = sk.clone();
+            let mut ssys = System::new(&scratch);
+            if ssys.solve(&mut scratch, SolveOpts::default()).success {
+                stalled = true;
+            } else {
+                unsettled = true;
+            }
+        }
+    }
 
     // -- claims (Solvent §9.7), judged against the drawing the rest of the document made --
     //
@@ -532,7 +569,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
 
     // -- conflicts --
     let mut conflict_set: Option<Vec<u32>> = None;
-    if opts.conflicts.unwrap_or(!violated.is_empty()) {
+    if !stalled && opts.conflicts.unwrap_or(!violated.is_empty()) {
         // Candidates = the structurally over-determined block (where a redundancy must live)
         // *together with* whatever is actually violated.  Not just the over-block: a consistent
         // duplicate (two Horizontals on one line) makes an over-block with nothing to do with an
@@ -546,7 +583,11 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
                 cands.push(c);
             }
         }
-        conflict_set = Some(minimal_conflict_set(sk, Some(&cands), opts.tol, Method::DogLeg, 60));
+        let set = minimal_conflict_set(sk, Some(&cands), opts.tol, Method::DogLeg, 60);
+        // the search found every constraint feasible from a pose that was never stationary:
+        // consistent, and merely unsolved
+        stalled = set.is_empty() && unsettled;
+        conflict_set = Some(set);
     }
 
     // -- pebble game on the point-distance graph --
@@ -556,8 +597,12 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     let under_set: BTreeSet<u32> = under_params.iter().copied().collect();
     let conflict_ids: BTreeSet<u32> = match &conflict_set {
         Some(c) => c.iter().copied().collect(),
+        // stalled, the violated rows are no verdict on anything they touch
+        None if stalled => BTreeSet::new(),
         None => violated.iter().copied().collect(),
     };
+    let unsolved_ids: BTreeSet<u32> =
+        if stalled { violated.iter().copied().collect() } else { BTreeSet::new() };
     let mut touched: BTreeMap<EntRef, Vec<u32>> = BTreeMap::new();
     for c in sk.hard_constraints() {
         for e in c.entities() {
@@ -572,7 +617,9 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     for &e in &ents {
         let empty = Vec::new();
         let cs = touched.get(&e).unwrap_or(&empty);
-        let st = if cs.iter().any(|c| conflict_ids.contains(c)) {
+        let st = if cs.iter().any(|c| unsolved_ids.contains(c)) {
+            State::Unsolved
+        } else if cs.iter().any(|c| conflict_ids.contains(c)) {
             State::Conflict
         } else if cs.iter().any(|c| over_set.contains(c)) {
             State::Over
@@ -606,7 +653,9 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     // enough, since a dependency can be shared between a user constraint that is still doing work
     // and a primitive's own definition, leaving nothing to delete — and a relation-only theorem
     // leaves `implied` constraints that *could* go but need not, which is not "over" either
-    let status = if conflict_set.as_ref().map(|c| !c.is_empty()).unwrap_or(false)
+    let status = if stalled {
+        State::Unsolved
+    } else if conflict_set.as_ref().map(|c| !c.is_empty()).unwrap_or(false)
         || !violated.is_empty()
     {
         State::Conflict
