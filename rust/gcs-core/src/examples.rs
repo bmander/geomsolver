@@ -34,6 +34,20 @@ pub fn truss(bays: usize, span: f64, height: f64, dims: bool) -> Sketch {
     sk
 }
 
+/// A square stated as one line and one corner round a `cycle` — `square.sv`.  The case for a
+/// body ending mid-joint (issue #38): the trailing joint threads each copy's side onto the
+/// next's, and the wrap closes the loop with no `close`, no names and no written points.
+pub fn square() -> Sketch {
+    document(SQUARE, "square")
+}
+
+/// A regular n-gon from one component — `ngon.sv`.  The parametric sibling of `square.sv`:
+/// `Ngon(n: Int, side: Length)` is a corner on a circle and a side round a `cycle` whose body
+/// ends mid-joint, the instance line picking the count and the seeds picking the winding.
+pub fn ngon() -> Sketch {
+    document(NGON, "ngon")
+}
+
 /// A closed ring of equal-length links — `polygon_chain.sv`.
 pub fn polygon_chain(n: usize, radius: f64) -> Sketch {
     let src = with_params(POLYGON_CHAIN, &[("n", n as f64), ("radius", radius)]);
@@ -137,6 +151,8 @@ pub fn example(name: &str) -> Option<Sketch> {
         "rect_fillets" => rect_fillets(100.0, 60.0, 10.0, 0.0),
         "slotted_link" => slotted_link(80.0, 15.0, 6.0),
         "truss" => truss(8, 20.0, 15.0, true),
+        "square" => square(),
+        "ngon" => ngon(),
         "polygon_chain" => polygon_chain(12, 50.0),
         "rect_fillets_conflict" => rect_fillets_conflict(),
         "rect_fillets_under" => rect_fillets_under(),
@@ -159,8 +175,10 @@ pub fn example(name: &str) -> Option<Sketch> {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 23] = [
+pub const CASES: [(&str, &str, &str); 25] = [
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
+    ("Square, one line round a cycle", "square", "`cycle 4 { line s -> perpendicular equal }` — the body ends mid-joint, so each side welds to the next copy's and the wrap closes the loop (issue #38); 1 DOF: it swings about its grounded corner"),
+    ("Regular n-gon (component)", "ngon", "a parametric `Ngon(n, side)` component: corners on a circle, equal sides, the open-jointed cycle welding them round — pure relations, so the closure equality is implied rather than Over, and the seeds walk once round the circle to pick the convex winding no residual can state (1 DOF: it spins about its hub)"),
     ("Slotted link", "slotted_link", "obround slot with two holes; fully constrained"),
     ("Truss (8 bays)", "truss", "~30-entity Warren truss, every member dimensioned"),
     ("Truss (50 bays)", "truss50", "300 entities — drag a node"),
@@ -286,6 +304,8 @@ pub fn source(key: &str) -> Option<&'static str> {
         "slotted_link" => Some(SLOTTED_LINK),
         "rect_fillets_conflict" => Some(RECT_FILLETS_CONFLICT),
         "rect_fillets_under" => Some(RECT_FILLETS_UNDER),
+        "square" => Some(SQUARE),
+        "ngon" => Some(NGON),
         "polygon_chain" => Some(POLYGON_CHAIN),
         "truss" => Some(TRUSS),
         "truss_redundant" => Some(TRUSS_REDUNDANT),
@@ -309,6 +329,8 @@ pub const RECT_FILLETS: &str = include_str!("../../examples/rect_fillets.sv");
 pub const SLOTTED_LINK: &str = include_str!("../../examples/slotted_link.sv");
 pub const RECT_FILLETS_CONFLICT: &str = include_str!("../../examples/rect_fillets_conflict.sv");
 pub const RECT_FILLETS_UNDER: &str = include_str!("../../examples/rect_fillets_under.sv");
+pub const SQUARE: &str = include_str!("../../examples/square.sv");
+pub const NGON: &str = include_str!("../../examples/ngon.sv");
 pub const POLYGON_CHAIN: &str = include_str!("../../examples/polygon_chain.sv");
 pub const TRUSS: &str = include_str!("../../examples/truss.sv");
 pub const TRUSS_REDUNDANT: &str = include_str!("../../examples/truss_redundant.sv");

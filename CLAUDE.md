@@ -645,6 +645,24 @@ Conventions:
   (`chain_kind` allocates); reversing those two operands cost 65% of a highlight pass — which is
   also why `tint_word` takes the token slice and computes the lookahead in the one arm that
   reads it, rather than once per token above the match.
+  **A block body may end mid-joint** (issue #38): a *threaded* trailing joint at the body's `}`
+  threads the chain onto the next copy's first link — every pair in a `cycle`/`ring` (the wrap
+  seals the loop: `cycle 4 { line s -> perpendicular equal }` is the square), all but the last
+  in a `repeat`, whose final corner is simply unstated.  The parser records it on the block
+  (`Block::joint`, an `OpenJoint`): the word statements are minted at parse through the same
+  `joint_relation` — both links' kinds are known, being the body's own declarations, so a
+  tangency is the regular At-form across the copy seam — with the right operand spelled
+  `next.<leaf>`, which `flatten::lookup`'s own `next` arm resolves per pair under a scope given
+  the block's `cyc` whatever the kind (the joint is the *block's* statement, so a `repeat` body
+  still may not say `next`).  The weld is the flattener's (`weld`/`fill`): the earlier-built
+  side's boundary name is written into the later-built side's slot — `builds_first` generalized
+  to (kind, copy, statement), because `follow_building` rightly refuses a reach into an unbuilt
+  entity's implicit child, and at a cycle's wrap the earlier side is the *first* copy.  At most
+  one boundary slot may name its point (both named are two different points across the seam,
+  refused); a name-link boundary is refused until #35 teaches `thread` to read one.  A statement
+  inside a braced body ends at the `}` as at a line break (`end_of_stmt`), so the one-line
+  spelling reads, and the colouring reads the brace the same way.  `square.sv` and `ngon.sv`
+  (a component taking `n`) are the cases; `tests/open_joint.rs` is the gate.
   `tests/chain.rs` holds the gate: the chain spelling of `rect_fillets` states exactly what the
   shipped longhand does.
 - A statement expanded by `flatten` **keeps the id of the statement it came from**: a `cycle` of

@@ -24,6 +24,8 @@ const DOCS: &[(&str, Shape, i64, State)] = &[
     ("rect_fillets_under", (12, 4, 0, 4), 1, State::Under),
     ("rect_fillets_conflict", (12, 4, 0, 4), 0, State::Conflict),
     ("slotted_link", (6, 2, 2, 2), 0, State::Well),
+    ("square", (4, 4, 0, 0), 1, State::Under),
+    ("ngon", (6, 5, 1, 0), 1, State::Under),
     ("polygon_chain", (24, 12, 0, 0), 11, State::Under),
     ("truss", (17, 31, 0, 0), 0, State::Well),
     ("truss_redundant", (13, 23, 0, 0), 0, State::Over),
