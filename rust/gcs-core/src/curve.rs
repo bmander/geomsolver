@@ -316,12 +316,19 @@ fn refine(
     refine(sk, i, span, m, pm, b, pb, tol, depth - 1, out);
 }
 
+/// The world length a chord may stray from its curve at `unit` (the world length of one screen
+/// pixel): `FLATNESS_PX` on the screen, whatever the zoom.  The one conversion, so a spline and
+/// a circle folded into the box are refined to the same rule.
+pub fn flatness(unit: f64) -> f64 {
+    (unit.abs() * FLATNESS_PX).max(1e-12)
+}
+
 /// The curve as a polyline, refined until a chord strays less than `FLATNESS_PX` screen pixels
 /// from it.  `unit` is the world length of one screen pixel, exactly as the callouts use it: the
 /// core lays the figure out and the front end only strokes what it is handed, so a front end
 /// never evaluates a basis function.
 pub fn tessellate(sk: &Sketch, i: usize, unit: f64) -> Vec<(f64, f64)> {
-    let tol = (unit.abs() * FLATNESS_PX).max(1e-12);
+    let tol = flatness(unit);
     let spans = spans_with_bounds(sk, i);
     let start = spans.first().map(|&(s, a, _)| eval_on(sk, i, s, a).p).unwrap_or((0.0, 0.0));
     let mut out = vec![start];

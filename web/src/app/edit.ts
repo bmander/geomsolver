@@ -17,7 +17,7 @@ const PASTE_PX = 24;
  *  diagnosis.  A multi-entity action (an equality set, Horizontal over several lines)
  *  is one thing the user did, so it should take one Ctrl+Z to undo. */
 export function addConstraints(v: SketchView, ...cs: Constraint[]): void {
-  if (!cs.length) return;
+  if (!cs.length || !v.mayEdit()) return;
   v.pushUndo();
   // nothing added — every one a repeat, or the core refused it — is nothing to come back from
   if (!applyConstraints(v, ...cs).length) v.dropUndo();
@@ -92,6 +92,7 @@ export function reportAdded(v: SketchView, cs: Constraint[], skipped: number,
 }
 
 export function removeConstraint(v: SketchView, c: Constraint): void {
+  if (!v.mayEdit()) return;
   v.pushUndo();
   v.sketch.remove(c);
   v.afterEdit();
@@ -118,6 +119,7 @@ export function deleteSelected(v: SketchView): void {
 
 /** Flip reference/normal on the selected lines, circles, arcs and ellipses. */
 export function toggleConstructionSelected(v: SketchView): void {
+  if (!v.mayEdit()) return;
   const ents = v.selected.filter(
     (e): e is Line | Circle | Arc | Ellipse =>
       e instanceof Line || e instanceof Circle || e instanceof Arc || e instanceof Ellipse,
@@ -165,6 +167,7 @@ export function cutSelected(v: SketchView): number {
  *  dragged where it belongs straight away.  The copy is independent: it brings its own
  *  constraints and is joined to nothing. */
 export function pasteClipboard(v: SketchView): number {
+  if (!v.mayEdit()) return 0;
   const clip = v.clipboard;
   if (!clip?.primitives().length) return 0;
   v.pushUndo();
@@ -183,6 +186,7 @@ export function pasteClipboard(v: SketchView): number {
  *  them.  A drawing that has been rearranged by hand and then edited into a mess needs a way
  *  back, and this is it. */
 export function resetCallouts(v: SketchView, c?: Constraint | null): number {
+  if (!v.mayEdit()) return 0;
   const cs = c ? [c] : v.sketch.userConstraints();
   const before = v.source;
   const n = cs.filter((k) => dim.reset(v.sketch, k.id)).length;
@@ -193,6 +197,7 @@ export function resetCallouts(v: SketchView, c?: Constraint | null): number {
 }
 
 export function toggleFixSelected(v: SketchView): void {
+  if (!v.mayEdit()) return;
   const pts = v.selected.filter((e): e is Point => e instanceof Point);
   if (!pts.length) return;
   v.pushUndo();

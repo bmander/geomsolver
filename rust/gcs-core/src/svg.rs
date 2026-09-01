@@ -17,7 +17,7 @@
 
 use crate::callout::{self, Callout};
 use crate::json::fmt_g;
-use crate::model::{EntKind, EntRef, Sketch};
+use crate::model::{grow, EntKind, EntRef, Sketch};
 use crate::style::Style;
 
 /// White space round the drawing, in screen pixels.
@@ -30,7 +30,6 @@ const PLAIN_PX: f64 = 1.8;
 
 /// Rim points for an ellipse.  A fixed count rather than `unit`-driven flatness: `ellipse.rs`
 /// has no tessellator of its own yet, and this is the sweep every other consumer of it uses.
-const RIM: usize = 180;
 
 /// The ink for geometry a sheet says nothing about.  A drawing exported for print is black
 /// unless the document says otherwise — the per-kind palette the app paints with is the *app's*
@@ -92,13 +91,6 @@ pub fn render(sk: &Sketch, width_px: f64) -> String {
     }
     out.push_str("</svg>\n");
     out
-}
-
-fn grow(b: &mut (f64, f64, f64, f64), p: (f64, f64)) {
-    b.0 = b.0.min(p.0);
-    b.1 = b.1.min(p.1);
-    b.2 = b.2.max(p.0);
-    b.3 = b.3.max(p.1);
 }
 
 /// A number, as short as it can be written without changing what it is.
@@ -238,9 +230,7 @@ fn entity(
             // sampled rather than written as an SVG ellipse: the rotation would be a second
             // place the major axis's angle is worked out, and `ellipse.rs` already owns it —
             // which is `ellipse::sample`, so the rim is walked there and not here
-            let mut pts = crate::ellipse::sample(sk, i, RIM);
-            pts.push(pts[0]); // a rim is closed; `sample` gives one turn's worth, open
-            poly(out, &pts, at, &ink());
+            poly(out, &crate::ellipse::rim(sk, i), at, &ink());
         }
         EntKind::Spline => poly(out, &crate::curve::tessellate(sk, i, unit), at, &ink()),
         // the polyline `render` already swept to size the page

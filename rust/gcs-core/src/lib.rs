@@ -31,6 +31,7 @@ pub mod linalg;
 pub mod locus;
 pub mod model;
 pub mod newton;
+pub mod overview;
 pub mod plane;
 pub mod program;
 pub mod report;

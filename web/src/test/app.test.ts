@@ -10,7 +10,7 @@ import * as C from '../core/constraints.js';
 import { Constraint } from '../core/constraints.js';
 import * as examples from '../core/examples.js';
 import * as io from '../core/io.js';
-import { Plane, Point, Sketch } from '../core/model.js';
+import { Plane, Point, Primitive, Sketch } from '../core/model.js';
 import { Document, fromSketch } from '../core/program.js';
 import type { Diagnosis } from '../core/diagnose.js';
 import { callouts } from '../core/callout.js';
@@ -20,6 +20,7 @@ import { DimAlt, SketchView } from '../app/view.js';
 import { threeViews } from '../app/tools.js';
 import { contains, corners, toImage, toWorld } from '../app/underlay.js';
 import type { Bitmap } from '../app/underlay.js';
+import type { Item } from '../core/overview.js';
 import { initCore } from '../core/wasm.js';
 import { fakeCanvas, pointer } from './canvas.js';
 
@@ -1286,4 +1287,236 @@ test('drawing on the page stays on the page across a re-elaboration', () => {
   view.setTool('point');
   click(view, 12, 12);
   assert.equal(view.sketch.points.at(-1)?.plane, null, 'and the next point is on the page');
+});
+
+/* -- the overview: the same document, folded back into the glass box --------------------
+ *
+ * Everything about the scene itself — where a view stands in space, what reconstructs, how it
+ * projects — is the core's and is tested there.  What is worth a test here is the *mode*: that
+ * it is view state and so survives a document change, that nothing in it edits, and that a
+ * press picks the entity whose edge is under it. */
+
+/** Two views with one edge of an object drawn in each, tied corner to corner — the least a box
+ *  can be folded from. */
+const BOXED = `${VIEWS}point af in front hint(x: 10, y: 10)
+point bf in front hint(x: 30, y: 20)
+point a2 in top hint(x: 10, y: 100)
+point b2 in top hint(x: 30, y: 100)
+line lf(af, bf)
+line lt(a2, b2)
+af project a2
+bf project b2
+`;
+
+function boxed(): SketchView {
+  const view = docView(BOXED);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.setOverview(true);
+  return view;
+}
+
+/** A screen point in the middle of one of the scene's `drawn` segments, and the entity that
+ *  segment is drawn from — so a press can be aimed without this test knowing any 3D. */
+function onEdge(view: SketchView): [[number, number], Primitive] {
+  const it = view.scene().items.find((i) => i.part === 'drawn' && i.pts.length > 1);
+  assert.ok(it, 'the scene has a view\'s own geometry in it');
+  const ent = view.entityOf(it);
+  assert.ok(ent, 'and it names what it is drawn from');
+  return [midOf(view, it), ent];
+}
+
+/** The screen midpoint of an item's first segment. */
+function midOf(view: SketchView, it: Item): [number, number] {
+  const [a, b] = [view.w2s(...it.pts[0]), view.w2s(...it.pts[1])];
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+}
+
+/** A screen point on the edge of one of the scene's panes, and the plane that pane is of. */
+function onPaneEdge(view: SketchView): [[number, number], Plane] {
+  const it = view.scene().items.find((i) => i.part === 'face');
+  assert.ok(it, 'the scene has a pane in it');
+  const plane = view.planeOf(it);
+  assert.ok(plane, 'and it names the view it is of');
+  return [midOf(view, it), plane];
+}
+
+test('the overview is view state, so it outlives the document it was opened on', () => {
+  const view = boxed();
+  const orbit = { ...view.orbit };
+  // the drawing is read-only in the box but the *source* is not: typing in the program panel
+  // re-elaborates the drawing under it, and the mode has to survive that swap
+  const n = view.sketch.points.length;
+  view.setProgram(`${BOXED}point extra hint(x: 1, y: 2)\n`);
+  assert.equal(view.sketch.points.length, n + 1, 'a structural edit re-elaborates the drawing');
+  assert.equal(view.overview, true, 'the mode survived the swap');
+  assert.deepEqual(view.orbit, orbit, 'and so did the orbit');
+  view.setProgram(VIEWS);
+  assert.equal(view.overview, true, 'and a load is a document, not a camera');
+  // the scene is asked afresh, so it is the *new* document's
+  assert.ok(view.scene().items.every((i) => i.part !== 'solid'), 'nothing left to reconstruct');
+});
+
+test('nothing in the overview edits: the tools and the drags are gated off in one place', () => {
+  const view = boxed();
+  const before = view.source;
+  const n = view.sketch.points.length;
+  view.setTool('point');
+  click(view, 20, 20);
+  assert.equal(view.sketch.points.length, n, 'the point tool minted nothing');
+  // a press on an edge would be a drag on the sheet; here it takes no undo state and moves no
+  // geometry, so the source is what it was
+  const poses = view.sketch.points.map((p) => [...p.xy]);
+  const [at] = onEdge(view);
+  drag(view, at, [at[0] + 40, at[1] + 25]);
+  assert.equal(view.source, before, 'the source did not move');
+  assert.deepEqual(view.sketch.points.map((p) => [...p.xy]), poses, 'and neither did the drawing');
+  view.undo();
+  assert.equal(view.source, before, 'there was nothing on the stack to undo');
+});
+
+test('a press in the overview picks the edge under it, and then orbits', () => {
+  const view = boxed();
+  const [at, ent] = onEdge(view);
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  cv.fire('pointerdown', pointer(...at));
+  assert.deepEqual(view.selected, [ent], 'the entity the edge is drawn from');
+  const az = view.orbit.az, el = view.orbit.el;
+  cv.fire('pointermove', pointer(at[0] + 50, at[1] + 30));
+  cv.fire('pointerup', pointer(at[0] + 50, at[1] + 30));
+  assert.ok(view.orbit.az > az, 'a rightward drag swung the eye round');
+  assert.ok(view.orbit.el < el, 'and a downward one lowered it: the pointer pushes the box');
+  assert.deepEqual(view.selected, [ent], 'the selection is the press\'s, not the drag\'s');
+  // and a press on nothing clears it without touching the document
+  const before = view.source;
+  cv.fire('pointerdown', pointer(5, 5));
+  cv.fire('pointerup', pointer(5, 5));
+  assert.deepEqual(view.selected, []);
+  assert.equal(view.source, before);
+});
+
+test('double-clicking a view in the box goes to it, and the box shows every plane', () => {
+  const view = boxed();
+  // every plane is a pane with its own axes, drawn in or not — which is what makes a view
+  // something you can go to before anything has been drawn in it
+  const scene = view.scene();
+  const planes = view.sketch.planes.length;
+  assert.equal(scene.items.filter((i) => i.part === 'face').length, planes, 'a pane per plane');
+  assert.equal(scene.items.filter((i) => i.part === 'axis').length, 2 * planes, 'an x and a y');
+
+  // aimed at a pane's own outline: a double-click anywhere that belongs to a view goes to it
+  const [edge, want] = onPaneEdge(view);
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  cv.fire('dblclick', { clientX: edge[0], clientY: edge[1] });
+  assert.equal(view.overview, false, 'it left the box');
+  assert.equal(view.plane, want, 'on the view that was double-clicked, where a tool now draws');
+  // armed, not selected: a selected plane opens the constraints window over the drawing
+  assert.deepEqual(view.selected, [], 'and nothing is selected');
+});
+
+test('a pane bolds when the pointer is on its edge, and lets go when it leaves', () => {
+  const view = boxed();
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const [edge, plane] = onPaneEdge(view);
+  const face = view.scene().items.find((i) => i.part === 'face')!;
+  cv.fire('pointermove', pointer(...edge));
+  assert.equal(view.hoverPlane, plane, 'the pane whose edge the pointer is on');
+  // its *interior* is not a target — nothing on this canvas is picked by an area — so a point
+  // well inside the same pane holds nothing
+  const mid = face.pts.slice(0, 4).reduce((m, p) => [m[0] + p[0] / 4, m[1] + p[1] / 4], [0, 0]);
+  cv.fire('pointermove', pointer(...view.w2s(mid[0], mid[1])));
+  assert.equal(view.hoverPlane, null, 'the middle of a pane is where you draw, not what you grab');
+  // and leaving the box lets it go rather than holding a proxy the next document will not know
+  cv.fire('pointermove', pointer(...edge));
+  assert.ok(view.hoverPlane);
+  view.setOverview(false);
+  assert.equal(view.hoverPlane, null);
+});
+
+test('every verb that reaches the document without a pointer is refused in the box', () => {
+  const view = boxed();
+  const before = view.source;
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  // an edge selected in the box is a real entity: Delete on it must not splice the source
+  const [at, ent] = onEdge(view);
+  cv.fire('pointerdown', pointer(...at));
+  cv.fire('pointerup', pointer(...at));
+  assert.deepEqual(view.selected, [ent]);
+  view.deleteSelected();
+  assert.equal(view.source, before, 'Delete did nothing');
+  assert.ok(view.copySelected() >= 1, 'copying is reading, and still allowed');
+  assert.equal(view.pasteClipboard(), 0, 'pasting is not');
+  assert.equal(view.source, before);
+  view.toggleConstructionSelected();
+  assert.equal(view.source, before, 'and neither is the class toggle');
+  const n = view.sketch.userConstraints().length;
+  const [p, q] = view.sketch.points;
+  view.addConstraints(new C.HorizontalPoints(p, q));
+  assert.equal(view.sketch.userConstraints().length, n, 'the constraints bar adds nothing');
+  assert.equal(view.startDimension([new C.Distance(p, q, 10)], true, null), false, 'nor a dimension');
+  view.undo();
+  assert.equal(view.source, before, 'and there was nothing on the stack to undo');
+});
+
+test('leaving or entering the box abandons the gesture in flight', () => {
+  const view = docView(BOXED);
+  view.fit();
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const before = view.source;
+  // press and hold a free point on the sheet, then flip into the box while holding
+  const pt = view.sketch.points.find((p) => !p.isFixed)!;
+  const at = view.w2s(...pt.xy);
+  cv.fire('pointerdown', pointer(...at));
+  assert.ok(view.gesture, 'a drag is live');
+  view.setOverview(true);
+  assert.equal(view.gesture, null, 'and is dropped at the seam, uncommitted');
+  cv.fire('pointermove', pointer(at[0] + 80, at[1] + 60));
+  cv.fire('pointerup', pointer(at[0] + 80, at[1] + 60));
+  assert.equal(view.source, before, 'so the release writes nothing');
+  // and the other way: an orbit does not go on turning the sheet
+  cv.fire('pointerdown', pointer(5, 5));
+  assert.ok(view.gesture, 'an orbit is live');
+  const az = view.orbit.az;
+  view.setOverview(false);
+  assert.equal(view.gesture, null);
+  cv.fire('pointermove', pointer(100, 5));
+  cv.fire('pointerup', pointer(100, 5));
+  assert.equal(view.orbit.az, az, 'the orbit stayed where it was');
+  assert.equal(view.source, before);
+});
+
+test('a click on a pane selects nothing and arms nothing; the hover lets go off the canvas', () => {
+  const view = boxed();
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const [edge] = onPaneEdge(view);
+  const plane = view.plane;
+  cv.fire('pointerdown', pointer(...edge));
+  cv.fire('pointerup', pointer(...edge));
+  assert.deepEqual(view.selected, [], 'a pane is not a thing to select');
+  assert.equal(view.plane, plane, 'and a click did not change where the next point goes');
+  cv.fire('pointermove', pointer(...edge));
+  assert.ok(view.hoverPlane, 'the pointer on its edge bolds it');
+  cv.fire('pointerleave', {});
+  assert.equal(view.hoverPlane, null, 'and off the canvas it lets go');
+  // back on the sheet the box's hand is not left on the cursor
+  view.setOverview(false);
+  assert.equal(view.canvas.style.cursor, '');
+});
+
+test('a fit in the overview frames the scene, not the sheet', () => {
+  const view = docView(BOXED);
+  view.fit();                         // the sheet's own bounds
+  view.setOverview(true);             // which refits, the two spaces being unrelated
+  const b = view.scene().bounds;
+  const mid = view.w2s((b[0] + b[2]) / 2, (b[1] + b[3]) / 2);
+  assert.ok(Math.abs(mid[0] - view.width / 2) < 1e-6 && Math.abs(mid[1] - view.height / 2) < 1e-6,
+            `the scene is centred: ${mid}`);
+  const [x0, y0] = view.w2s(b[0], b[1]), [x1, y1] = view.w2s(b[2], b[3]);
+  assert.ok(Math.min(x0, x1) >= 0 && Math.max(x0, x1) <= view.width, 'and it is all on screen');
+  assert.ok(Math.min(y0, y1) >= 0 && Math.max(y0, y1) <= view.height);
+  // and back on the sheet the drawing is framed again
+  view.setOverview(false);
+  const d = view.sketch.drawnBounds();
+  const c = view.w2s((d[0] + d[2]) / 2, (d[1] + d[3]) / 2);
+  assert.ok(Math.abs(c[0] - view.width / 2) < 1e-6 && Math.abs(c[1] - view.height / 2) < 1e-6,
+            `the drawing is centred: ${c}`);
 });

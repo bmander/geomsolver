@@ -107,6 +107,19 @@ pub fn sample(sk: &Sketch, i: usize, n: usize) -> Vec<(f64, f64)> {
     geom(sk, i).samples(n).map(|(_, p)| p).collect()
 }
 
+/// How many chords a drawn rim is walked in.
+pub const RIM: usize = 180;
+
+/// The rim as a **closed** polyline: one turn of `RIM` chords and the first point again, which
+/// is what the SVG export and the box both stroke.
+pub fn rim(sk: &Sketch, i: usize) -> Vec<(f64, f64)> {
+    let mut pts = sample(sk, i, RIM);
+    if let Some(&first) = pts.first() {
+        pts.push(first);
+    }
+    pts
+}
+
 /// The parameter of the rim point nearest (x, y), and how far that is.  A coarse sweep for the
 /// basin — the nearest of an ellipse's up-to-four critical points is the branch a fresh contact
 /// should start on — then Newton on (E(θ) − q)·E'(θ) = 0 to land on it.

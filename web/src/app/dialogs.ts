@@ -76,6 +76,10 @@ export function options(): Promise<void> {
                 'Call out every dimensioned constraint on the drawing — click one to select it, '
               + 'drag it where you want it, double-click to change its number.  Asking for a '
               + 'dimension turns them back on: the number is edited where it is drawn');
+    addCheckbox(box, 'overview', view.overview, (v) => { view.setOverview(v); },
+                'Fold the views back into the glass box they were unfolded from, with the object '
+              + 'reconstructed between them.  Drag to orbit, wheel to zoom; the drawing is '
+              + 'read-only in there — a click lights an edge up and nothing edits');
     addSelect(box, 'method', [...METHODS], view.method, (m) => {
       view.method = m as Method;
       view.solveNow();
@@ -140,6 +144,7 @@ export async function insertPlane(): Promise<void> {
  *  closed-form constructions that place it (the other circle-circle intersection), recorded
  *  in the sketch's branches and replayed sticky. */
 export function flipBranch(): void {
+  if (!view.mayEdit()) return;
   const c = currentConstraint;
   if (c && C.isType(c, 'TangentLineCircle')) {
     view.pushUndo();
@@ -198,7 +203,7 @@ export async function alternatives(): Promise<void> {
                   : `distance ${io.fmt(a.distance, 3)}`));
   const pick = await askChoice('Alternative solutions',
     `${alts.length} real solutions of this construction:`, labels);
-  if (pick === null || isCurrent(alts[pick])) return;
+  if (pick === null || isCurrent(alts[pick]) || !view.mayEdit()) return;
   view.pushUndo();
   applyAlternative(ps, idx, alts[pick]);
   const res = view.afterEdit();

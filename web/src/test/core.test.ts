@@ -21,6 +21,7 @@ import {
 import { checkSketch } from '../core/fdcheck.js';
 import { enumerateStep } from '../core/homotopy.js';
 import { Plane, Point, Sketch, Spline } from '../core/model.js';
+import { overview } from '../core/overview.js';
 import { Document, fromSketch, highlight } from '../core/program.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
 import { analyze } from '../core/witness.js';
@@ -1829,6 +1830,42 @@ test('a projection binds over two points, and the core fills in their views', ()
   assert.equal(again.entities().length, 4);
   sk.dispose();
   back.dispose();
+});
+
+test('the overview folds the views into the box, and is flat looked at square on', () => {
+  const sk = new Sketch();
+  // front on the page and top above it, the layout the projection test uses
+  const front = sk.plane(sk.point(0, 0, true), sk.point(1, 0, true), [1, 0, 0], [0, 0, 1]);
+  const top = sk.plane(sk.point(0, 100, true), sk.point(1, 100, true), [1, 0, 0], [0, 1, 0]);
+  // one edge of the object: two corners, each drawn in both views and tied by `project`, with
+  // the edge itself drawn in each — which is what makes it an edge of the solid and not a ray
+  const af = sk.point(30, 40), bf = sk.point(60, 90);
+  const atop = sk.point(30, 120), btop = sk.point(60, 120);
+  for (const p of [af, bf]) p.plane = front;
+  for (const p of [atop, btop]) p.plane = top;
+  const lf = sk.line(af, bf);
+  sk.line(atop, btop);
+  sk.add(new C.Project(af, atop), new C.Project(bf, btop));
+
+  // the front plane's viewer stands at −y: bearing −90° at no elevation, where the screen axes
+  // are the page's own, so the front view comes out at the coordinates it was drawn in
+  const s = overview(sk, 1, -Math.PI / 2, 0);
+  const parts = (p: string): typeof s.items => s.items.filter((it) => it.part === p);
+  assert.equal(parts('face').length, 2, 'one pane per view');
+  assert.equal(parts('drawn').length, 2, "each view's own edge, standing on its plane");
+  assert.equal(parts('solid').length, 1, 'and the object between them');
+  assert.equal(parts('solid')[0].pts.length, 2, 'the polyline is paired up, not flat');
+
+  const drawn = s.items.find((it) => it.part === 'drawn' && it.kind === 'line'
+                                     && it.index === sk.lines.indexOf(lf));
+  assert.ok(drawn, 'the front view names the line it is drawn from');
+  assert.deepEqual(drawn.pts.map((p) => p.map((n) => Math.round(n * 1e9) / 1e9)),
+                   [[30, 40], [60, 90]]);
+  // and the bounds are the scene's own, which is what a fit in the box wants
+  const xs = s.items.flatMap((it) => it.pts.map((p) => p[0]));
+  assert.ok(Math.abs(s.bounds[0] - Math.min(...xs)) < 1e-9, `${s.bounds} against ${xs}`);
+  assert.ok(Math.abs(s.bounds[2] - Math.max(...xs)) < 1e-9);
+  sk.dispose();
 });
 
 test('a plane is written through the edit API, and its minted points answer by name', () => {

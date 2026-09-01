@@ -696,6 +696,16 @@ and right views are placed by projection and the one depth dimension: `solventc`
 an auxiliary view folded at the bearing of its inclined face, whose four corners are placed by
 projection alone and come out the true-size rectangle the face is.
 
+Because the document says which plane each view is on, the sheet and the **object** are one
+drawing: the app's overview mode folds the views back into the glass box they were unfolded
+from and reconstructs the part in the middle of it.  Nothing is solved for and nothing is
+stored — a point drawn in a view sits in space at `a·u + b·v` for the coordinates that view
+measured, and any corner two non-parallel views both see is placed exactly.  **Every** plane
+stands there as a pane with its own x and y running across it and crossing at its origin —
+drawn in or not, since a view is a place to draw — and double-clicking one leaves the box and makes it the view the next thing you
+draw is drawn in.  Otherwise it is a way of *looking*, like the camera: the drawing is still
+the sheet.
+
 ---
 
 ## 3. Working checklist

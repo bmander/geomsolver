@@ -30,7 +30,10 @@
  *             Insert ▸ Three views lays out front, top and right.  A plane selected on its own
  *             is the one being drawn in — every point a tool mints goes `in` it, and the
  *             status line says so — until Insert ▸ Draw on page.  J projects two points, one
- *             in each of two views, onto one point in space
+ *             in each of two views, onto one point in space.  Edit ▸ Overview (⌘B) folds the
+ *             sheet back into the glass box, the object reconstructed between the panes: drag
+ *             to orbit, wheel to zoom, and a click lights an edge up on the sheet.  Nothing in
+ *             there edits — it is the drawing looked at, not drawn on
  *   menus     File/Edit/Insert/Solution hold everything that is not a tool or a constraint;
  *             the solver's own switches are behind Solution ▸ Options
  *
@@ -167,6 +170,9 @@ const MENUS: [string, (MenuItem | null)[]][] = [
       title: 'A copy of the clipboard, nudged clear and selected, joined to nothing' },
     null,
     { label: 'Fit to screen', onClick: () => view.fit() },
+    { label: 'Overview', key: '⌘b', onClick: () => view.setOverview(!view.overview),
+      title: 'The views folded back into the glass box, with the object reconstructed between '
+        + 'them — drag to orbit, wheel to zoom.  Read-only: a click lights an edge up' },
     { label: 'Program', key: '⌘p', onClick: () => toggleProgramPanel(),
       title: 'The program this drawing is written as — edit it and the drawing follows' },
     { label: 'Re-place dimensions', onClick: () => {

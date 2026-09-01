@@ -16,6 +16,14 @@ use std::collections::BTreeMap;
 
 pub type Box2 = (f64, f64, f64, f64); // (xmin, ymin, xmax, ymax)
 
+/// Grow a box to take in a point.
+pub fn grow(b: &mut Box2, p: (f64, f64)) {
+    b.0 = b.0.min(p.0);
+    b.1 = b.1.min(p.1);
+    b.2 = b.2.max(p.0);
+    b.3 = b.3.max(p.1);
+}
+
 thread_local! {
     /// Scratch the model-side locus paths run in — a pick, a paint and a bounds query each
     /// evaluate every trace curve they touch, and building a fresh scratch per question would

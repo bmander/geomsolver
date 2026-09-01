@@ -2406,17 +2406,28 @@ pub(crate) fn lift_plane(sk: &Sketch, e: EntRef) -> crate::syntax::Membership {
 
 /// The one plane every point of an entity is on, or `None` — for a point, its own.
 pub(crate) fn plane_of_entity(sk: &Sketch, e: EntRef) -> Option<usize> {
+    plane_of_entity_by(sk, e, |p| sk.plane_of(p))
+}
+
+/// The same walk over any reading of where a point is — membership here, and the overview's
+/// `view_of` (which also reads a datum's own points in the plane they place) — so the rule
+/// "every point it is made of agrees" is written once.
+pub(crate) fn plane_of_entity_by(
+    sk: &Sketch,
+    e: EntRef,
+    at: impl Fn(usize) -> Option<usize>,
+) -> Option<usize> {
     // a point answers for itself, and a datum or a curve has no points of its own to answer
     // for; everything else is its children, walked without collecting them twice
     if !e.kind.bears_points() {
         return None;
     }
     if e.kind == EntKind::Point {
-        return sk.plane_of(e.i());
+        return at(e.i());
     }
     let kids = sk.children(e);
-    let first = sk.plane_of(kids.first()?.i())?;
-    kids.iter().all(|k| sk.plane_of(k.i()) == Some(first)).then_some(first)
+    let first = at(kids.first()?.i())?;
+    kids.iter().all(|k| at(k.i()) == Some(first)).then_some(first)
 }
 
 pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {

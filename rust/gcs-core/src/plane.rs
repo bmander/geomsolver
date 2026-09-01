@@ -23,7 +23,7 @@ pub struct Basis {
 /// planes would say nothing.
 pub const PARALLEL_TOL: f64 = 1e-9;
 
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+pub(crate) fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
@@ -89,6 +89,32 @@ impl Basis {
     pub fn normal(&self) -> [f64; 3] {
         cross(self.u, self.v)
     }
+
+    /// Where a point drawn in this view sits **in space**: `a·u + b·v`, for the view
+    /// coordinates `(a, b)` that `in_view` reads off the page.
+    ///
+    /// Every plane's origin is the image of one shared origin in space — the convention
+    /// `project` is written against, and what lets its residual compare two views by one
+    /// number — so a view's origin is the origin, and this is the whole of the lift.
+    pub fn lift(&self, a: f64, b: f64) -> [f64; 3] {
+        [
+            a * self.u[0] + b * self.v[0],
+            a * self.u[1] + b * self.v[1],
+            a * self.u[2] + b * self.v[2],
+        ]
+    }
+}
+
+/// A point's coordinates **in the view it is drawn in**: `Rᵀ(c, s)(p − o)`, with
+/// `Rᵀ(c, s)(x, y) = (c·x + s·y, −s·x + c·y)` — the page pose undone, leaving what the
+/// draughtsman measured on that view.
+///
+/// The one place this is said.  `kernels::project_res` compares two of these along the fold
+/// line and `overview` lifts one into space, and if the two ever disagreed about what a view
+/// coordinate is, the drawing and the box would be pictures of different objects.
+pub fn in_view(c: f64, s: f64, o: (f64, f64), p: (f64, f64)) -> (f64, f64) {
+    let (x, y) = (p.0 - o.0, p.1 - o.1);
+    (c * x + s * y, -s * x + c * y)
 }
 
 /// The fold line two planes share, as a direction in each plane's own 2D coordinates:

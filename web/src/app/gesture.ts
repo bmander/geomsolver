@@ -8,12 +8,14 @@ import { PlanDrag } from '../core/decompose.js';
 import {
   Arc, Box, Circle, Ellipse, Param, Point, Primitive, Spline, ellipseMinor,
 } from '../core/model.js';
+import type { Item } from '../core/overview.js';
 import { RadiusDrag } from '../core/system.js';
 import { moveDimension, placeDimension } from './dimension.js';
 import { COL } from './paint.js';
 import { insertControl } from './edit.js';
 import { cancelTool, toolClick } from './tools.js';
-import { bodyAt, grabBody, grabHandle, handleAt } from './underlay.js';
+import { bodyAt, grabBody, grabHandle, handleAt, segmentDistance } from './underlay.js';
+import { PICK_PX } from './view.js';
 import type { SketchView } from './view.js';
 
 /** One pointer gesture in progress.  `move` gets canvas coordinates; `end` and `paint` are
@@ -65,8 +67,33 @@ export function bindEvents(v: SketchView): void {
     finish(e);
   });
   cv.addEventListener('pointercancel', finish);
+  // off the canvas, the pointer is over nothing: the pane it bolded on the way out lets go
+  cv.addEventListener('pointerleave', () => {
+    if (v.hoverPlane) { v.hoverPlane = null; v.draw(); }
+  });
   cv.addEventListener('lostpointercapture', finish);
   cv.addEventListener('dblclick', (e) => {
+    // in the box, a double-click is how you go to a view: it leaves the overview and makes that
+    // plane the current one, so the next thing you draw is drawn in it.  It reads the *item's*
+    // plane rather than asking what a click landed on — a pane, its axes and the geometry
+    // standing on it all belong to one view, so double-clicking any of them means the same
+    // thing, and nothing is ever picked by an area
+    if (v.overview) {
+      const hit = pickSceneItem(v, local(v, e));
+      const plane = hit && v.planeOf(hit);
+      if (!plane) return;                       // the object itself is of no one view
+      v.setOverview(false);
+      // going to a view is choosing where to draw, not picking a thing: the plane is armed and
+      // *nothing* is selected — a selected plane opens the constraints window, which would then
+      // sit over the drawing you came here to make and take every click that landed on it
+      v.plane = plane;
+      v.selected = [];
+      v.onSelect();
+      v.onChanged();
+      v.onStatus(`drawing in ${v.doc.nameOf(plane) ?? 'the view'}`);
+      v.draw();
+      return;
+    }
     // the same gesture the constraint list uses: double-click a dimension, type a new number
     const sp = local(v, e);
     const c = v.pickCallout(...sp);
@@ -103,6 +130,25 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     return;
   }
   if (e.button !== 0) return;
+  /* **The overview is read-only, and this is where that is decided.**  One gate rather than a
+   * test in each of them, because every path below mutates the document — a tool click, a point
+   * or radius drag, taking hold of a callout, inserting a control point, the traced picture's
+   * handles — and every one of them would be acting on *sheet* coordinates a press in the box
+   * does not carry: what is under the cursor there is a line standing on a plane in space, not
+   * the place on the page the same two numbers name.  So a press picks (highlight only, so the
+   * sheet lights up the edge you clicked in the box) and then orbits, and a drag from empty
+   * space orbits alone.  Wheel zoom and the middle-drag pan above are camera-only and go on
+   * working unchanged. */
+  if (v.overview) {
+    const hit = pickScene(v, sp);
+    if (!e.shiftKey || !hit) v.selected = hit ? [hit] : [];
+    else if (!v.selected.includes(hit)) v.selected = [...v.selected, hit];
+    v.gesture = orbitGesture(v, sp);
+    v.onSelect();
+    v.onChanged();
+    v.draw();
+    return;
+  }
   // a dimension still following the pointer: this click is what plants it.  The default is
   // refused so the focus stays in its editor — the number is still being typed
   if (v.liveDim?.placing) {
@@ -218,6 +264,60 @@ export function abandonGesture(v: SketchView): void {
 }
 
 /* -- the gestures.  Each owns its own state; `paint` is for the ones that draw. -- */
+
+/** How far the eye swings per screen pixel dragged, and how near the pole an elevation may come:
+ *  at exactly ±90° the bearing means nothing and the box would spin about nothing. */
+const ORBIT_PER_PX = 0.008;
+const EL_MAX = Math.PI / 2 - 1e-3;
+
+/** Orbit the overview: a horizontal drag swings the eye round the box, a vertical one lowers
+ *  it — the pointer pushes the box about as if it were held.
+ *  Camera-only — the two angles are view state and nothing in the document moves — so it is
+ *  `transient` exactly as a pan is. */
+export function orbitGesture(v: SketchView, from: [number, number]): Gesture {
+  let last = from;
+  return {
+    transient: true,
+    move: (sp) => {
+      const o = v.orbit;
+      o.az += (sp[0] - last[0]) * ORBIT_PER_PX;
+      // dragging *down* lowers the eye: the pointer pushes the box about as if it were held,
+      // rather than steering a camera pointed at it
+      o.el = Math.min(EL_MAX, Math.max(-EL_MAX, o.el - (sp[1] - last[1]) * ORBIT_PER_PX));
+      last = sp;
+    },
+  };
+}
+
+/** What the pointer is over in the box: the item whose projected polyline runs nearest it,
+ *  within the usual tolerance, or nothing.
+ *
+ *  Measured in the world, as every pick is: the scene is already flat by the time it arrives, so
+ *  the pointer is taken out to it once and the tolerance travels as `PICK_PX * unit`, the same
+ *  world length a callout or a curve is picked by.  In the app rather than the core because
+ *  there is no geometry left to ask the core about — only which of the polylines it handed us to
+ *  paint the pointer is over, the question `boxContents` asks of a rubber band: chrome. */
+export function pickSceneItem(v: SketchView, sp: [number, number]): Item | null {
+  const wp = v.s2w(...sp);
+  let best = v.world(PICK_PX), hit: Item | null = null;
+  for (const it of v.scene().items) {
+    for (let i = 1; i < it.pts.length; i++) {
+      const d = segmentDistance(wp, it.pts[i - 1], it.pts[i]);
+      if (d < best) { best = d; hit = it; }
+    }
+  }
+  return hit;
+}
+
+/** The entity under the pointer in the box, for the selection: a view's own geometry or an
+ *  edge of the object.  **Never a pane** — a pane names its plane, and selecting a plane on its
+ *  own arms it as the view the next thing is drawn in (`SketchView.selected`'s rule), which is
+ *  the double-click's meaning and not a click's.  A pane answers a click with nothing, and the
+ *  pointer with a bold edge. */
+export function pickScene(v: SketchView, sp: [number, number]): Primitive | null {
+  const it = pickSceneItem(v, sp);
+  return it && (it.part === 'drawn' || it.part === 'solid') ? v.entityOf(it) ?? null : null;
+}
 
 export function panGesture(v: SketchView, from: [number, number]): Gesture {
   let last = from;
@@ -369,6 +469,21 @@ function whatIsAt(v: SketchView, sp: [number, number]): Target {
 
 /** Cursor affordance: what a press here would grab. */
 export function hover(v: SketchView, sp: [number, number]): void {
+  // in the box a press does one thing wherever it lands — pick, then orbit — so it promises
+  // that and nothing else, rather than offering a grab it has been gated out of doing
+  if (v.overview) {
+    v.canvas.style.cursor = 'grab';
+    // …but a pane bolds under the pointer, which is what says a view is somewhere you can go.
+    // Its **edge** is the target and never its interior, the rule everything on this canvas is
+    // picked by, so this is `pickSceneItem`'s ordinary answer and no second kind of hit test
+    const it = pickSceneItem(v, sp);
+    const next = it?.part === 'face' ? v.planeOf(it) : null;
+    if (next !== v.hoverPlane) {
+      v.hoverPlane = next;
+      v.draw();                  // only when it changed: this runs on every move of the pointer
+    }
+    return;
+  }
   if (v.tool !== 'select') return;
   const at = whatIsAt(v, sp);
   v.canvas.style.cursor =

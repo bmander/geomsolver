@@ -435,6 +435,40 @@ pub fn callouts_json(sk: &Sketch, unit: f64) -> Json {
     ])
 }
 
+/// The 3D overview, projected to 2D world coordinates (`overview.rs`): the glass box the views
+/// were unfolded from, and the object they are of.  `unit` sizes what is screen-constant, `az`
+/// and `el` are the orbit in radians.
+pub fn overview_json(sk: &Sketch, unit: f64, az: f64, el: f64) -> Json {
+    let s = crate::overview::scene(sk, unit, az, el);
+    let items: Vec<Json> = s
+        .items
+        .iter()
+        .map(|it| {
+            let pts: Vec<Json> = it.pts.iter().map(|&p| pt(p)).collect();
+            let mut o = object([
+                ("part", Json::Str(it.what.as_str().to_string())),
+                ("pts", Json::Arr(pts)),
+            ]);
+            // what it is drawn from, so the front end resolves style and selection through the
+            // entity exactly as it does on the sheet
+            if let Some(e) = it.of {
+                o.set("kind", Json::Str(e.kind.as_str().to_string()));
+                o.set("index", Json::Int(e.idx as i64));
+            }
+            // the view it belongs to, so a front end can go to that plane without working out
+            // a second time which one an entity is drawn in
+            if let Some(p) = it.in_plane {
+                o.set("plane", Json::Int(p.idx as i64));
+            }
+            o
+        })
+        .collect();
+    object([
+        ("items", Json::Arr(items)),
+        ("bounds", floats(&[s.bounds.0, s.bounds.1, s.bounds.2, s.bounds.3])),
+    ])
+}
+
 pub fn constraints_json(sk: &Sketch) -> Json {
     Json::Arr(sk.constraints.iter().map(|c| constraint_json(sk, c)).collect())
 }

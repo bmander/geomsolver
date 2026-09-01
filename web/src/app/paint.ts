@@ -5,6 +5,7 @@
 import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
 import type { Pt, Seg } from '../core/callout.js';
+import type { Item, Part } from '../core/overview.js';
 import {
   Arc, Circle, Ellipse, Line, Plane, Point, Primitive, Spline, Style, ellipseMinor, onRadius,
   threePointArc,
@@ -43,7 +44,35 @@ const COL_STATE: Record<string, string> = {
   well: '#2ca02c', under: '#e69500', over: '#d62728', conflict: '#d62728',
 };
 
+/* What to stroke an entity with.  The *document's* half — dash, weight, ink — is resolved in the
+ * core from its style sheet and arrives as a `Style`; the app's own chrome — selection,
+ * highlight, colour-by-state — is layered over it here, because that is a view toggle and not a
+ * statement in the document.  `paint` knows what a class is nowhere.
+ *
+ * Module-level rather than a closure so the overview inks its scene by the same rule: an edge of
+ * the glass box is the same line as the one on the sheet, and picking it there must light it up
+ * the same way. */
+function strokeOf(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>,
+                  base: string, ent: Primitive, st?: Style): [string, number] {
+  const lw = st?.width ?? 1.8;   // the other copy is `svg::PLAIN_PX`; the two must agree
+  const chrome = chromeOf(sel, hl, ent);
+  if (chrome) return [chrome[0], lw + chrome[1]];
+  if (v.colorByState) return [COL_STATE[v.stateOf(ent)], lw];
+  return [st?.color ?? base, lw];
+}
+
+/** The app's own layer over the document's ink — selected, then highlighted — as a colour and
+ *  the weight it adds, or null where the document's ink shows through.  The one statement of
+ *  that order, read by the sheet's stroke and by the box's datum marks alike. */
+function chromeOf(sel: Set<Primitive>, hl: Set<Primitive>, ent: Primitive): [string, number] | null {
+  if (sel.has(ent)) return [COL.sel, 1.5];
+  if (hl.has(ent)) return [COL.highlight, 1];
+  return null;
+}
+
 export function paint(v: SketchView): void {
+  // the box is a different picture of the same document, so it takes the canvas whole
+  if (v.overview) return paintOverview(v);
   const ctx = v.ctx;
   const w = v.width, h = v.height;
   ctx.save();
@@ -63,17 +92,8 @@ export function paint(v: SketchView): void {
   const sk = v.sketch;
   const sel = new Set(v.selected);
   const hl = new Set(v.highlight);
-  /* What to stroke an entity with.  The *document's* half — dash, weight, ink — is resolved in
-   * the core from its style sheet and arrives as a `Style`; the app's own chrome — selection,
-   * highlight, colour-by-state — is layered over it here, because that is a view toggle and not
-   * a statement in the document.  `paint` knows what a class is nowhere. */
-  const strokeFor = (base: string, ent: Primitive, st?: Style): [string, number] => {
-    const lw = st?.width ?? 1.8;   // the other copy is `svg::PLAIN_PX`; the two must agree
-    if (sel.has(ent)) return [COL.sel, lw + 1.5];
-    if (hl.has(ent)) return [COL.highlight, lw + 1];
-    if (v.colorByState) return [COL_STATE[v.stateOf(ent)], lw];
-    return [st?.color ?? base, lw];
-  };
+  const strokeFor = (base: string, ent: Primitive, st?: Style): [string, number] =>
+    strokeOf(v, sel, hl, base, ent, st);
 
   for (const ln of sk.lines) {
     const [col, lw] = strokeFor(COL.line, ln, ln.style);
@@ -211,6 +231,91 @@ export function paint(v: SketchView): void {
       ctx.stroke();
     }
   }
+  ctx.restore();
+}
+
+/** The overview: the sheet folded back into the glass box, with the object between the panes.
+ *
+ *  **Every polyline here is the core's**, already lifted onto its plane in space, orbited and
+ *  flattened to 2D world coordinates by `overview.rs` — the same seam a callout's figure and a
+ *  plane's glyph sit on — so this maps them to the screen with the ordinary camera and strokes
+ *  what it is handed.  No vector arithmetic; `camera.ts` stays the whole of the app's algebra.
+ *
+ *  What is deliberately *not* drawn: the callouts, the tool preview, the snap indicator, the
+ *  traced picture and the page's own axes.  Every one of them is an annotation on a *sheet* —
+ *  a number laid out in the plane of the page, a photograph taped behind it, the origin the
+ *  layout is measured from — and means nothing once the sheet is standing on edge in space.
+ *  The three parts of the scene go down in the order they occlude each other, since nothing here
+ *  is hidden-line removed: the panes faintest and first, the views' own geometry on them, then
+ *  the reconstructed object strongest and over everything, being what the drawing is *of*. */
+export function paintOverview(v: SketchView): void {
+  const ctx = v.ctx;
+  ctx.save();
+  ctx.fillStyle = COL.bg;
+  ctx.fillRect(0, 0, v.width, v.height);
+  ctx.lineCap = 'round';
+  const sel = new Set(v.selected);
+  const hl = new Set(v.highlight);
+  const scene = v.scene();
+  // an item that names an entity is inked by the drawing's own rule, so selecting a line on the
+  // sheet lights it up in the box and picking it in the box lights it up on the sheet
+  const ink = (it: Item, base: string): [string, number] => {
+    const ent = v.entityOf(it);
+    if (!ent) return [base, 1.5];
+    // a Point carries no style and the core draws none into the scene, but the item's kind is
+    // whatever the core said it was: ask for the sheet only where there is one to ask for
+    return strokeOf(v, sel, hl, base, ent, 'style' in ent ? ent.style : undefined);
+  };
+  // a datum mark is not geometry and takes no state colour: `colorByState` would paint a view's
+  // axes the same green as everything standing on it, which is exactly the ink the mark has to
+  // read *against*.  Selection still shows, since that is about the view and not the drawing
+  const mark = (ent: Primitive | undefined): string =>
+    (ent && chromeOf(sel, hl, ent)?.[0]) ?? COL.plane;
+  const draw = (part: Part, fn: (it: Item) => void): void => {
+    for (const it of scene.items) if (it.part === part) fn(it);
+  };
+  // the panes: a wash of the plane's own ink with its outline over it, faint enough that the
+  // geometry standing on the far side of one still reads through it
+  draw('face', (it) => {
+    const [col] = ink(it, COL.plane);
+    // the one the pointer is on: its frame bolds, which is the affordance for the double-click
+    // that goes to it.  The wash is left alone — an area that lit up would say the interior is
+    // the target, and it is the edge that is
+    const on = v.planeOf(it) === v.hoverPlane;
+    polyPath(v, it.pts);
+    ctx.closePath();
+    ctx.globalAlpha = 0.05;
+    ctx.fillStyle = col;
+    ctx.fill();
+    ctx.globalAlpha = on ? 0.7 : 0.35;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = on ? 2.5 : 1;
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+  // a view's geometry and the object's edges are stroked the same way, the object a shade heavier
+  const stroke = (part: Part, base: string, extra = 0): void => draw(part, (it) => {
+    const [col, lw] = ink(it, base);
+    ctx.strokeStyle = col;
+    ctx.lineWidth = lw + extra;
+    polyPath(v, it.pts);
+    ctx.stroke();
+  });
+  stroke('drawn', COL.line);
+  // each pane's own x and y, crossing at its origin: which way that view's coordinates run, and
+  // where it measures them from.  Over the geometry, because it is the mark you read a pane by
+  // and the drawing standing on it would otherwise cover the crossing
+  ctx.globalAlpha = 0.75;
+  draw('axis', (it) => {
+    // the plane's own ink, as the sheet draws a datum's glyph in — the same mark, folded up
+    ctx.strokeStyle = mark(v.planeOf(it) ?? undefined);
+    ctx.lineWidth = 1.25;
+    polyPath(v, it.pts);
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+  stroke('solid', COL.point, 1);
+  v.gesture?.paint?.(ctx);
   ctx.restore();
 }
 

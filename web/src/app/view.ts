@@ -18,6 +18,7 @@ import { Diagnosis, diagnose } from '../core/diagnose.js';
 import { Param, Plane, Point, Primitive, Sketch } from '../core/model.js';
 import { Attitude, Document, Edit, fromSketch } from '../core/program.js';
 import { Method, SolveResult, System } from '../core/system.js';
+import { Item, Scene, overview } from '../core/overview.js';
 import { Motion, WitnessReport, analyze } from '../core/witness.js';
 import { Camera } from './camera.js';
 import * as edit from './edit.js';
@@ -86,6 +87,23 @@ export class SketchView {
   colorByState = true;
   /** Paint the dimensioned constraints on the drawing as callouts. */
   showDimensions = true;
+  /** **The overview**: the sheet folded back into the glass box it was unfolded from, with the
+   *  object reconstructed in the middle.  A mode on the same canvas rather than a second window,
+   *  and *read-only* — orbit, pan and zoom; a click highlights and never edits, which
+   *  `gesture::onPointerDown` states once.  Like the camera and the colouring it is **view
+   *  state**: not saved, not exported, not solved and not undone, so `swap` leaves it (and the
+   *  orbit) alone and the mode survives a document change. */
+  overview = false;
+  /** The pane the pointer is over in the box, picked by its **edge** and never by its interior —
+   *  the rule everything on this canvas is picked by.  Bolding it is what says a view is a thing
+   *  you can go to, so it is set by `gesture::hover` and read only by the painter.  Chrome, and
+   *  view state like the orbit: never saved, exported, solved or undone. */
+  hoverPlane: Plane | null = null;
+  /** Where the eye stands for the overview, in radians: a bearing about the vertical and an
+   *  elevation above the horizon.  A three-quarter view to start with, which is how a glass box
+   *  is drawn in a textbook — `az = -π/2, el = 0` is the front view seen square on, and would
+   *  open the mode looking at the picture it was folded from. */
+  orbit = { az: -Math.PI / 4, el: Math.PI / 6 };
   /** A picture to trace over, in world coordinates — see `underlay.ts`.  Handled like anything
    *  else on the canvas (clicked, dragged, deleted) but **not document state**: it is scenery,
    *  and only its frame answers a press until it is selected, which is what lets the drawing be
@@ -234,7 +252,68 @@ export class SketchView {
   get width(): number { return this.canvas.clientWidth; }
   get height(): number { return this.canvas.clientHeight; }
 
+  /** The scene the overview shows, as the core folds and projects it.  Remembered against the
+   *  four things it is a function of — the drawing, the zoom and the two orbit angles — since a
+   *  pointer move asks for it twice (the hover pick, then the repaint) and the box is read-only,
+   *  so between edits nothing else can move under it; `afterEdit` and `swap` forget it. */
+  scene(): Scene {
+    const { az, el } = this.orbit;
+    const c = this.sceneCache;
+    if (c && c.sketch === this.sketch && c.unit === this.unit && c.az === az && c.el === el) {
+      return c.scene;
+    }
+    const scene = overview(this.sketch, this.unit, az, el);
+    this.sceneCache = { sketch: this.sketch, unit: this.unit, az, el, scene };
+    return scene;
+  }
+  private sceneCache: { sketch: Sketch; unit: number; az: number; el: number; scene: Scene } | null
+    = null;
+
+  /** The entity a scene item is drawn from, where one is — the one decode of the wire's
+   *  `kind`/`index` pair, so the painter and the picks read it one way. */
+  entityOf(it: Item): Primitive | undefined {
+    return it.kind !== undefined && it.index !== undefined
+      ? this.doc.entityOf({ kind: it.kind, index: it.index }) : undefined;
+  }
+
+  /** The view a scene item belongs to, as a `Plane` — the other decode of the wire, for the
+   *  double-click that goes to a view and the hover that bolds one. */
+  planeOf(it: Item): Plane | null {
+    const p = it.plane !== undefined ? this.doc.entityOf({ kind: 'plane', index: it.plane }) : null;
+    return p instanceof Plane ? p : null;
+  }
+
+  /** End everything in flight, uncommitted: a gesture, a wobble animation, a dimension being
+   *  carried, and the remembered scene.  Called before the drawing is replaced (`swap`) and
+   *  before screen coordinates change meaning (`setOverview`), so the list of things that can be
+   *  mid-way is written once. */
+  private settle(): void {
+    this.stopAnimation();             // first: it restores into the sketch it started on
+    this.sceneCache = null;
+    abandonGesture(this);             // dropped, not ended: `end` would commit into what follows
+    if (this.liveDim) this.endDimension(false);
+  }
+
+  /** **May the document be edited right now?**  The other half of the box's read-only rule: the
+   *  pointer is gated once in `gesture::onPointerDown`, and every verb that reaches the document
+   *  *without* a pointer — Delete, paste, the constraints bar, a dimension, a flip — asks this
+   *  first.  It says why when the answer is no, so a refused key is not a dead one. */
+  mayEdit(): boolean {
+    if (!this.overview) return true;
+    this.onStatus('the glass box is read-only — double-click a view to draw in it, or ⌘B for the sheet');
+    return false;
+  }
+
   fit(): void {
+    // the box and the sheet have unrelated coordinates — a view's picture stands where its plane
+    // is in space, not where it was laid out on the page — so the mode says which bounds to fit.
+    // `unit` reaches the scene only through how finely a curve is tessellated, so asking the
+    // camera we are about to move is honest enough and needs no second pass
+    if (this.overview) {
+      this.cam.fitTo(this.scene().bounds, this.width, this.height);
+      this.draw();
+      return;
+    }
     if (!this.sketch.points.length) return;
     this.cam.fitTo(this.sketch.drawnBounds(), this.width, this.height);
     this.draw();
@@ -283,10 +362,7 @@ export class SketchView {
   /** Adopt an elaboration already in hand — the seam every structural edit goes through, so
    *  there is exactly one place where the drawing is replaced. */
   private swap(next: Document, fit: boolean, carry = false): void {
-    this.stopAnimation();             // before the swap: it restores into the sketch it started on
-    abandonGesture(this);            // before the swap: `end` would commit into the new sketch
-    this.liveDim = null;              // and a dimension half-written belongs to the old document
-    this.onDimension(null, null);
+    this.settle();                    // before the swap: nothing in flight may reach the new sketch
     const held = carry ? this.namesOf(this.selected) : [];
     const heldPlane = carry && this.plane ? this.doc.nameOf(this.plane) : undefined;
     const old = this.doc;
@@ -302,6 +378,7 @@ export class SketchView {
     const again = heldPlane ? this.doc.entity(heldPlane) : undefined;
     this.plane = again instanceof Plane ? again : null;
     this.highlight = [];
+    this.hoverPlane = null;       // a proxy dies with its sketch; the next move over one revives it
     this.litConstraint = null;
     this.pastes = 0;              // a fresh sheet: the next paste starts its cascade over
     this.pending = [];
@@ -330,6 +407,7 @@ export class SketchView {
    *  across by name; `numeric` and `none` leave the drawing standing, because the core has said
    *  the topology cannot have moved and a compiled plan is still good. */
   apply(e: Edit, what?: string): boolean {
+    if (!this.mayEdit()) return false;
     if (e.refused) {
       this.onStatus(e.refused);
       return false;
@@ -496,6 +574,7 @@ export class SketchView {
    *  failure is reported by the diagnosis, not by exploded geometry (which would also mislead
    *  the conflict search). */
   afterEdit(): SolveResult | null {
+    this.sceneCache = null;
     // A dimension still being laid down is being *said*, not solved, and the drawing holds
     // still under the number while somebody decides where to put it and which one it is: no
     // solve, and no re-diagnosis either — nothing changes colour, no banner appears and
@@ -712,6 +791,25 @@ export class SketchView {
     this.onStatus('drawing on the page');
     this.onChanged();
     this.draw();
+  }
+
+  /** Fold the sheet into the box, or lay it back out flat.  The sentence is here rather than at
+   *  the two callers — the checkbox and the menu item — because crossing between the two spaces
+   *  is one thing and not two: their coordinates are unrelated, so the camera has to be refitted
+   *  or the drawing lands off screen at whatever zoom the sheet was being read at. */
+  setOverview(on: boolean): void {
+    if (this.overview === on) return;
+    // whatever the pointer was in the middle of ends here, uncommitted: the fit below changes
+    // what a screen position means, so a drag carried across the seam would move geometry by
+    // box coordinates — and, the other way, an orbit would go on turning a sheet
+    this.settle();
+    this.overview = on;
+    this.hoverPlane = null;       // the pointer is over nothing until it moves again
+    this.canvas.style.cursor = '';   // `hover` sets the box's hand inline, and the sheet's own is CSS
+    this.onStatus(on ? 'the glass box — drag to orbit, wheel to zoom, double-click a view to draw '
+                       + 'in it; the drawing is read-only here'
+                     : 'the sheet');
+    this.fit();                   // which repaints
   }
 
   startDimension(targets: Constraint[], fresh: boolean, alt: DimAlt | null): boolean {

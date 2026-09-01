@@ -763,6 +763,58 @@ Conventions:
 - Replays are warm-started on the current geometry (leaves re-derived each frame), so the root a
   sketch is on is "nearest the identity"; alternatives are applied by writing geometry, not by
   caching transforms.
+- The **overview** (`overview.rs`) is the drawing folded back into the glass box it was unfolded
+  from: each view standing on its own plane in space, and the object the views are *of*
+  reconstructed between them.  **Nothing is solved for and nothing is stored** — a point drawn in
+  view P has view coordinates `plane::in_view` (the same reading `project`'s residual takes, and
+  the same function, so the two cannot drift), sits in space at `a·u_P + b·v_P` (`Basis::lift`),
+  and a corner tied by `project` into two non-parallel views is over-determined and exact: four
+  rows in three unknowns, consistent *because* the projection holds.  "Non-parallel" is
+  `overview::RCOND`, about a degree: past that the rank test passes and the residual is amplified
+  by 1/σ₃, which flings a corner across the page — `validate` refuses only the exactly-parallel
+  pair, and an explicit `u:`/`v:` basis can be as close as it likes.  A corner is a **pair of
+  images and never a transitive class** — in the front view the near and far ends of a vertical
+  edge coincide, so merging `Ff project Fa` with `Ff project F2a` collapses the object along every
+  edge that runs away from a view — and its images are **ordered by plane**, never by the order
+  the statement named them, which is what lets the edge walk compare image to image.  An object
+  edge is one both views draw, deduped by its **3D segment to a tolerance** (`SAME_POINT`), since
+  one stroke in one view is two edges of the part and two pairs of views agree on a corner only
+  to the solve.  Where a point *stands* is `overview::view_of` — its membership, or, for a datum's
+  own origin and `toward` (members of nothing, since they place the view rather than being drawn
+  in it), that plane: every origin is the one shared origin, and `Insert ▸ Three views` stamps
+  nothing.  A line stands with each end where that end is, so a projector between two views is
+  neither a stray stroke on the page nor anyone's.
+  The **core projects and the front end strokes**, the seam `callout.rs` sits on: the scene comes
+  out in 2D world coordinates already orbited and flattened, so `camera.ts` stays the whole of the
+  app's linear algebra and no 3D arithmetic exists above the ABI.  `Part` names what an item is
+  (`Face`/`Axis`/`Drawn`/`Solid`) and `Item::in_plane` names the view it belongs to, so a front end
+  never works out a second time and in its own words which view a thing is in; `overview::drawable`
+  is the per-kind polyline walk `svg::entity` and `paint.ts` each make for their own output, said
+  once as geometry, refined to `curve::flatness`.
+  **Every plane is a pane** — drawn in or not, because a view is a place to draw and one that did
+  not show until something was in it could not be gone to — and `overview::pane` is the *one* rule
+  for how far one reaches, so its face and its axes cannot disagree: the geometry standing on it
+  and its origin, grown a little, and never thinner than `LEAST_SIDE` either way (a view holding
+  only its origin, or points along one line, is a pane like any other).  Its **x and y run right
+  across it**, crossing at the origin: the sheet's own axes folded up, since a pane is a little
+  sheet and what makes it read as one is its axes.  A screen-constant tick would be truer to a
+  datum glyph and is what this was; at the size a box is looked at it disappeared into whatever
+  the view had drawn near its corner.
+  The mode is **read-only, and that is two gates**: the pointer, once, in `gesture::onPointerDown`
+  (a press picks and then orbits, nothing else), and `SketchView.mayEdit` at every verb that
+  reaches the document *without* a pointer — `apply`, the constraints bar, paste, the class and
+  fix toggles, a dimension, a branch flip — which says why when it refuses.  `setOverview`
+  abandons whatever is in flight (a gesture, a carried dimension, an animation) before it refits,
+  since the fit changes what a screen position means.  Hovering a pane's **edge** bolds it —
+  never its interior, the rule everything on this canvas is picked by — but a *click* on one
+  selects nothing: selecting a plane arms it as the view the next thing is drawn in, and that is
+  the double-click's meaning.  A double-click on anything belonging to a view (its pane, its axes,
+  its geometry) leaves the box and arms that plane without selecting it, so no constraints window
+  opens over the drawing you came to make.  A drag orbits with the y inverted: the pointer pushes
+  the box about as if it were held.  The scene is memoised against the drawing, the zoom and the
+  orbit (`SketchView.scene`), because a pointer move asks for it twice and the box is read-only.
+  The mode, the orbit and the hovered pane are *view state*, `underlay`'s rule: never saved,
+  exported, solved or undone.
 - Slow tests are gated by `#[ignore]` (cargo).
 - Benchmark on a quiet machine (`uptime`); this box often has a JVM indexer at 300% CPU.  The
   native half is `rust/gcs-core/src/bin/bench.rs` (`cargo run --release -p gcs-core --bin bench`)

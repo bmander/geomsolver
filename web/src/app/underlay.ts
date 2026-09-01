@@ -164,9 +164,12 @@ export function bodyAt(v: SketchView, sp: [number, number]): boolean {
   return pts.some((p, i) => segmentDistance(sp, p, pts[(i + 1) % 4]) <= PICK_PX);
 }
 
-/** Distance from a point to a segment, in whatever units all three are in. */
-function segmentDistance(p: [number, number], a: [number, number], b: [number, number]): number {
-  const [vx, vy] = [b[0] - a[0], b[1] - a[1]];
+/** Distance from a point to a segment, in whatever units all three are in.  Shared with the
+ *  overview's pick, which asks the same question of a projected polyline: both are the app's own
+ *  chrome measured on the screen, and one copy of the arithmetic is enough. */
+export function segmentDistance(p: [number, number], a: [number, number],
+                                b: [number, number]): number {
+  const vx = b[0] - a[0], vy = b[1] - a[1];
   const len2 = vx * vx + vy * vy;
   const t = len2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / len2)) : 0;
   return Math.hypot(p[0] - (a[0] + t * vx), p[1] - (a[1] + t * vy));

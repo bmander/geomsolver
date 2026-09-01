@@ -49,7 +49,7 @@ export interface LiveDim {
 export function startDimension(v: SketchView, targets: Constraint[], fresh: boolean,
                                alt: DimAlt | null): boolean {
   endDimension(v, false);
-  if (!targets.length) return false;
+  if (!targets.length || !v.mayEdit()) return false;
   const before = v.source;
   const impliedBefore = new Set(v.diagnosis?.implied ?? []);
   // the record goes in first: stating the constraint is part of the gesture, so it must not

@@ -1587,13 +1587,12 @@ fn project_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     for i in 0..n {
         let o = N_PAR_PROJECT * i;
         let (dax, day, dbx, dby) = (k[4 * i], k[4 * i + 1], k[4 * i + 2], k[4 * i + 3]);
-        let (wx, wy) = (v[o] - v[o + 4], v[o + 1] - v[o + 5]);
         let (ca, sa) = (v[o + 6], v[o + 7]);
-        let (ux, uy) = (v[o + 2] - v[o + 8], v[o + 3] - v[o + 9]);
         let (cb, sb) = (v[o + 10], v[o + 11]);
-        let a = dax * (ca * wx + sa * wy) + day * (-sa * wx + ca * wy);
-        let b = dbx * (cb * ux + sb * uy) + dby * (-sb * ux + cb * uy);
-        r[i] = a - b;
+        // each image read in its own view — the one reading, shared with `overview`
+        let (ax, ay) = crate::plane::in_view(ca, sa, (v[o + 4], v[o + 5]), (v[o], v[o + 1]));
+        let (bx, by) = crate::plane::in_view(cb, sb, (v[o + 8], v[o + 9]), (v[o + 2], v[o + 3]));
+        r[i] = (dax * ax + day * ay) - (dbx * bx + dby * by);
     }
 }
 
