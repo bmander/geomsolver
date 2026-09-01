@@ -46,7 +46,7 @@
 import * as io from '../core/io.js';
 import { CONSTRAINT_BUTTONS } from './commands.js';
 import {
-  about, alternatives, doOpen, flipBranch, insertPlane, newSketch, openCase, options, report,
+  about, alternatives, doOpen, flipBranch, insertPlane, openCase, options, report,
   reportSolve, showDiagnosis,
 } from './dialogs.js';
 import { threeViews } from './tools.js';
@@ -139,7 +139,7 @@ const fade = (by: number) => () => { if (view.underlay?.picked) view.fadeImage(b
  * keyboard handler matches — see ACTION_KEYS. */
 const MENUS: [string, (MenuItem | null)[]][] = [
   ['File', [
-    { label: 'New', onClick: () => view.setSketch(newSketch()) },
+    { label: 'New', onClick: () => view.newDocument() },
     { label: 'Open…', onClick: () => void doOpen() },
     { label: 'Open test case…', onClick: () => void openCase() },
     null,

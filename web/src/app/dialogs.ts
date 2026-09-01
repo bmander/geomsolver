@@ -4,7 +4,7 @@ import * as C from '../core/constraints.js';
 import * as examples from '../core/examples.js';
 import * as io from '../core/io.js';
 import { applyAlternative, enumerateStep, isCurrent } from '../core/homotopy.js';
-import { Point, Sketch } from '../core/model.js';
+import { Point } from '../core/model.js';
 import { Attitude } from '../core/program.js';
 import { METHODS, Method } from '../core/system.js';
 import { witnessSummary } from '../core/witness.js';
@@ -38,12 +38,6 @@ export function report(n: number, did: string): void {
  *  is free to float — it satisfies its constraints just as well anywhere on the canvas, so a
  *  drag slides the whole thing rather than working against anything.  One fixed point at the
  *  origin gives the drawing somewhere to be. */
-export function newSketch(): Sketch {
-  const sk = new Sketch();
-  sk.point(0, 0, true);
-  return sk;
-}
-
 /** The reference sketches, each with the one line that says what it is there to show.  Asked
  *  for the first time the menu item is picked, so booting costs nothing for a list most
  *  sessions never open. */
@@ -53,7 +47,7 @@ export async function openCase(): Promise<void> {
   const i = await askChoice('Open test case', 'The sketches the solver is exercised on:',
                             cases.map((c) => `${c.label} — ${c.description}`));
   if (i === null) return;
-  view.setProgram(examples.source(cases[i].key));
+  view.load(examples.source(cases[i].key));
   toast(`${cases[i].label} — ${cases[i].description}`, 12000);
 }
 

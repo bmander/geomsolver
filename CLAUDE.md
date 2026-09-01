@@ -814,7 +814,10 @@ Conventions:
   the box about as if it were held.  The scene is memoised against the drawing, the zoom and the
   orbit (`SketchView.scene`), because a pointer move asks for it twice and the box is read-only.
   The mode, the orbit and the hovered pane are *view state*, `underlay`'s rule: never saved,
-  exported, solved or undone.
+  exported, solved or undone — and **the box exists only where there are views**: a document
+  with no plane has nothing to fold, so a load or an edit that leaves none returns to the sheet
+  (`swap`) and ⌘B on one says why it stays, since shown in the box such a drawing is a tilted,
+  read-only, empty-looking sheet on which every tool click silently does nothing.
 - Slow tests are gated by `#[ignore]` (cargo).
 - Benchmark on a quiet machine (`uptime`); this box often has a JVM indexer at 300% CPU.  The
   native half is `rust/gcs-core/src/bin/bench.rs` (`cargo run --release -p gcs-core --bin bench`)
@@ -1021,7 +1024,14 @@ Conventions:
   no glyph off where the plain text puts it, and the copy follows the box to both ends.  It is not
   in `npm test` because it needs Chrome, and `make test` must not.
 - `SketchView` holds a `Document` (`core/program.ts`), not a `Sketch`: `view.sketch` is a getter
-  for what the source came to and `view.source` is the document.  Undo is program text, so it
+  for what the source came to and `view.source` is the document.  **A new document is one
+  verb**, `SketchView.load` (File ▸ New is `newDocument`, Open and a test case reach it too):
+  the outgoing text goes on the undo stack as one step, so a load is undoable and ⌘Z after one
+  cannot land on an older state of a drawing that is gone; `settle()` is the one list of what
+  is in flight — a gesture, an animation, a carried dimension, a tool's half-collected clicks,
+  the remembered scene — cleared before any swap and before the box.  `setProgram` is the
+  *edit* of the same shape, the panel replacing the text, and keeps the history its own way.
+  Undo is program text, so it
   restores what somebody wrote, comments and all.  A selection crosses a re-elaboration **by
   name** (`Document.nameOf` / `Document.entity`) — a proxy is interned per `Sketch` and dies with
   it; a name is what the source calls the thing.  `swap` is the one seam that replaces the

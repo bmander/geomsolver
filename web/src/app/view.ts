@@ -92,7 +92,8 @@ export class SketchView {
    *  and *read-only* — orbit, pan and zoom; a click highlights and never edits, which
    *  `gesture::onPointerDown` states once.  Like the camera and the colouring it is **view
    *  state**: not saved, not exported, not solved and not undone, so `swap` leaves it (and the
-   *  orbit) alone and the mode survives a document change. */
+   *  orbit) alone and the mode survives a document change — for as long as the document has a
+   *  view to show; the box exists only where there are planes. */
   overview = false;
   /** The pane the pointer is over in the box, picked by its **edge** and never by its interior —
    *  the rule everything on this canvas is picked by.  Bolding it is what says a view is a thing
@@ -284,14 +285,19 @@ export class SketchView {
   }
 
   /** End everything in flight, uncommitted: a gesture, a wobble animation, a dimension being
-   *  carried, and the remembered scene.  Called before the drawing is replaced (`swap`) and
-   *  before screen coordinates change meaning (`setOverview`), so the list of things that can be
-   *  mid-way is written once. */
+   *  carried, a tool's half-collected clicks, and the remembered scene.  Called before the
+   *  drawing is replaced (`swap`) and before screen coordinates change meaning
+   *  (`setOverview`), so the list of things that can be mid-way is written once — a tool's
+   *  pending points are proxies that die with the sketch, and a curve fit finished after a load
+   *  would hand the new sketch the old one's points. */
   private settle(): void {
     this.stopAnimation();             // first: it restores into the sketch it started on
     this.sceneCache = null;
     abandonGesture(this);             // dropped, not ended: `end` would commit into what follows
     if (this.liveDim) this.endDimension(false);
+    this.pending = [];
+    this.pendingFit = [];
+    this.planeSpec = null;
   }
 
   /** **May the document be edited right now?**  The other half of the box's read-only rule: the
@@ -330,6 +336,31 @@ export class SketchView {
     return this.reread(text, fit, false);
   }
 
+  /** **A new document**, and the whole of what that means.  Every way of getting one — File ▸
+   *  New, Open, a test case — comes through here, so the intention is spelled once: the
+   *  outgoing document goes on the undo stack as one step (so a load is undoable, and ⌘Z after
+   *  it cannot land on an older state of a drawing that is gone), whatever was in flight is
+   *  settled, the selection is not carried (it belonged to the other drawing), the box is left
+   *  if the new drawing has no view to show, and the camera is refitted.  `setProgram` is the
+   *  *edit* of the same shape — the program panel replacing the text — which keeps the history
+   *  its own way and is not this. */
+  load(text: string, fit = true): boolean {
+    this.pushUndo();
+    if (!this.reread(text, fit, false)) {
+      this.dropUndo();
+      return false;
+    }
+    return true;
+  }
+
+  /** File ▸ New: a fresh sheet with one grounded point at the origin, so the first thing drawn
+   *  has something to be placed against. */
+  newDocument(): void {
+    const sk = new Sketch();
+    sk.point(0, 0, true);
+    this.setSketch(sk);
+  }
+
   /** Read a source afresh and make it the document — the one place `Document.read` is called, so
    *  a program that will not elaborate is refused in exactly one way.  `carry` says whether the
    *  selection is the same drawing's (an edit) or another's (a load). */
@@ -356,7 +387,7 @@ export class SketchView {
     } finally {
       sk.dispose();
     }
-    this.setProgram(text, fit);
+    this.load(text, fit);
   }
 
   /** Adopt an elaboration already in hand — the seam every structural edit goes through, so
@@ -367,6 +398,9 @@ export class SketchView {
     const heldPlane = carry && this.plane ? this.doc.nameOf(this.plane) : undefined;
     const old = this.doc;
     this.doc = next;
+    // the mode survives a document change, being view state — but only while there is a box to
+    // show: a new document, or an edit that took the last plane, is back on the sheet
+    if (this.overview && !this.sketch.planes.length) this.setOverview(false);
     // the outgoing elaboration owns a core sketch, and a wasm heap only grows
     if (old !== next) old.dispose();
     // the current plane crosses by name too, and only if the name still reaches a plane: an
@@ -381,7 +415,6 @@ export class SketchView {
     this.hoverPlane = null;       // a proxy dies with its sketch; the next move over one revives it
     this.litConstraint = null;
     this.pastes = 0;              // a fresh sheet: the next paste starts its cascade over
-    this.pending = [];
     this.releasePlan();
     this.afterEdit();
     this.onProgram();
@@ -799,6 +832,12 @@ export class SketchView {
    *  or the drawing lands off screen at whatever zoom the sheet was being read at. */
   setOverview(on: boolean): void {
     if (this.overview === on) return;
+    // the box exists only where there are views: a drawing with no plane has nothing to fold,
+    // and shown in the box it is a tilted sheet that is read-only for no visible reason
+    if (on && !this.sketch.planes.length) {
+      this.onStatus('this drawing has no views to fold — add a plane (Insert ▸ Three views) first');
+      return;
+    }
     // whatever the pointer was in the middle of ends here, uncommitted: the fit below changes
     // what a screen position means, so a drag carried across the seam would move geometry by
     // box coordinates — and, the other way, an orbit would go on turning a sheet

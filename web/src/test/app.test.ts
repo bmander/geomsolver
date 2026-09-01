@@ -1356,6 +1356,52 @@ test('the overview is view state, so it outlives the document it was opened on',
   assert.ok(view.scene().items.every((i) => i.part !== 'solid'), 'nothing left to reconstruct');
 });
 
+test('a new document is one undo step, and takes nothing in flight with it', () => {
+  const view = docView(examples.source('rect_fillets'));
+  const before = view.source;
+  // half a spline fit, a plane armed: state that points into the sketch about to be replaced
+  view.setTool('splinefit');
+  click(view, 30, 30);
+  click(view, 60, 40);
+  assert.equal(view.pendingFit.length, 2, 'two places collected');
+  view.newDocument();
+  assert.notEqual(view.source, before, 'a fresh sheet');
+  assert.deepEqual(view.pendingFit, [], 'the fit did not come along');
+  assert.deepEqual(view.pending, []);
+  assert.equal(view.planeSpec, null);
+  // ⌘Z is the drawing that was replaced — the *last* state of it, not an older one — and ⌘⇧Z
+  // is the fresh sheet again
+  view.undo();
+  assert.equal(view.source, before, 'undo restores the document New replaced');
+  view.redo();
+  assert.notEqual(view.source, before, 'and redo is the new one again');
+  // a test case loaded from the menu goes the same way
+  view.load(examples.source('bracket'));
+  assert.ok(view.sketch.planes.length, 'the bracket');
+  view.undo();
+  assert.notEqual(view.source, before);
+  assert.equal(view.sketch.planes.length, 0, 'back to the sheet it replaced');
+});
+
+test('the box exists only where there are views', () => {
+  // a drawing with no plane has nothing to fold: ⌘B stays on the sheet and says why
+  const view = docView('point p hint(x: 0, y: 0)\nground p\n');
+  let said = '';
+  view.onStatus = (s) => { said = s; };
+  view.setOverview(true);
+  assert.equal(view.overview, false, 'no box without a view');
+  assert.match(said, /no views/);
+  // and File ▸ New from inside the box comes back to the sheet, where the tools work — left in
+  // the box, a plane-less document is a tilted empty sheet on which every click does nothing
+  const boxedView = boxed();
+  boxedView.setProgram('point p hint(x: 0, y: 0)\nground p\n');
+  assert.equal(boxedView.overview, false, 'a document with no plane has no box');
+  boxedView.setTool('point');
+  const n = boxedView.sketch.points.length;
+  click(boxedView, 40, 40);
+  assert.equal(boxedView.sketch.points.length, n + 1, 'and drawing works again');
+});
+
 test('nothing in the overview edits: the tools and the drags are gated off in one place', () => {
   const view = boxed();
   const before = view.source;
