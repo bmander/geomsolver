@@ -167,6 +167,82 @@ impl<'a> Walk<'a> {
         }
     }
 
+    /// Work out every `param` a body declares, before any statement of the body is walked.
+    ///
+    /// A body is a set (spec P2): `param h = w / 2` may stand above `param w = 60`, so the
+    /// definitions are taken in *dependency* order and not in line order — a param is ready
+    /// when none of the names it reads is another param of this body still waiting, and the
+    /// ready ones are worked out until none is left.  What remains then reads itself, through
+    /// however many others, which is the cyclic definitional dependency spec §11 names E041.
+    /// A second `param w` in one body is the E001 a second `point w` is, and the first stands
+    /// (#43.13); a param whose definition fails is reported once, where it is written, and the
+    /// params that read it are left unsaid rather than each repeating the cause (#45.1).
+    fn params(&mut self, body: &[Stmt], vals: &mut BTreeMap<String, Aff>) {
+        let mut pending: Vec<&crate::syntax::ParamDecl> = Vec::new();
+        let mut here: BTreeSet<String> = BTreeSet::new();
+        for st in body {
+            if let StmtKind::Param(pd) = &st.kind {
+                if !here.insert(pd.name.text.clone()) {
+                    self.err(pd.name.span, format!("`{}` is declared twice", pd.name.text));
+                    continue;
+                }
+                pending.push(pd);
+            }
+        }
+        // the names each definition reads; a text that does not parse reads nothing, and is
+        // worked out at once so the parse error is the one reported
+        let reads: Vec<BTreeSet<String>> = pending
+            .iter()
+            .map(|pd| {
+                expr::parse_in(pd.text.trim(), self.units)
+                    .map(|p| p.body.deps())
+                    .unwrap_or_default()
+            })
+            .collect();
+        let mut waiting: Vec<usize> = (0..pending.len()).collect();
+        let mut failed: BTreeSet<String> = BTreeSet::new();
+        loop {
+            let names: BTreeSet<&str> =
+                waiting.iter().map(|&i| pending[i].name.text.as_str()).collect();
+            let (ready, rest): (Vec<usize>, Vec<usize>) = waiting
+                .iter()
+                .partition(|&&i| !reads[i].iter().any(|n| names.contains(n.as_str())));
+            if ready.is_empty() {
+                for i in rest {
+                    let pd = pending[i];
+                    let through = reads[i]
+                        .iter()
+                        .find(|n| names.contains(n.as_str()) && **n != pd.name.text)
+                        .map(|n| format!(", through `{n}`"))
+                        .unwrap_or_default();
+                    self.coded.push((
+                        Code::E041,
+                        pd.span,
+                        format!("`{}` is defined in terms of itself{through}", pd.name.text),
+                    ));
+                }
+                return;
+            }
+            for i in ready {
+                let pd = pending[i];
+                if reads[i].iter().any(|n| failed.contains(n)) {
+                    failed.insert(pd.name.text.clone());
+                    continue;   // the cause is already reported, at the param it reads
+                }
+                match value_aff(&pd.text, vals, self.units) {
+                    Ok(a) => {
+                        vals.insert(pd.name.text.clone(), a);
+                    }
+                    Err(e) => {
+                        self.err(pd.span, format!("`{}`: {e}", pd.name.text));
+                        failed.insert(pd.name.text.clone());
+                    }
+                }
+            }
+            waiting = rest;
+        }
+    }
+
     /// Walk one body, in source order.
     fn body(
         &mut self,
@@ -183,9 +259,8 @@ impl<'a> Walk<'a> {
             return;
         }
         let prefix = scope.prefixes.first().cloned().unwrap_or_default();
-        // the params this body has declared: a second `param w` in one body is the E001 a
-        // second `point w` is, and the first stands (#43.13)
-        let mut params_here: BTreeSet<String> = BTreeSet::new();
+        // every `param` of the body first, whatever line it stands on — a body is a set (P2)
+        self.params(body, vals);
         for st in body {
             if self.out.len() >= MAX_FLAT {
                 self.err(st.span, format!("more than {MAX_FLAT} statements once expanded"));
@@ -258,18 +333,7 @@ impl<'a> Walk<'a> {
                         self.aliases.push((abs, r.clone(), scope.clone()));
                     }
                 }
-                StmtKind::Param(pd) => {
-                    if !params_here.insert(pd.name.text.clone()) {
-                        self.err(pd.name.span, format!("`{}` is declared twice", pd.name.text));
-                        continue;
-                    }
-                    match value_aff(&pd.text, vals, self.units) {
-                        Ok(a) => {
-                            vals.insert(pd.name.text.clone(), a);
-                        }
-                        Err(e) => self.err(pd.span, format!("`{}`: {e}", pd.name.text)),
-                    };
-                }
+                StmtKind::Param(_) => {}   // worked out above, before the walk
                 StmtKind::Instance(inst) => {
                     let Some(comp) = self.prog.components.iter().find(|c| {
                         c.name.as_ref().map(|n| n.text.as_str()) == Some(inst.component.text.as_str())

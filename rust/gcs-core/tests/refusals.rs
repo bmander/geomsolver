@@ -47,6 +47,44 @@ fn a_param_declared_twice_is_an_error() {
     assert!(d.is_empty() && e.ok(), "{d:?}");
 }
 
+/// #45.1 — a body is a set (spec P2): a `param` may read one declared below it, at the top
+/// level, inside a block and inside a component alike.
+#[test]
+fn a_param_may_read_one_declared_below_it() {
+    let (e, d) = read("param h = w / 2\nparam w = 60\npoint a hint(x: 0, y: 0)\npoint b hint(x: w, y: 0)\na horizontal b\na distance(w) b\npoint c hint(x: 0, y: h)\na vertical c\na distance(h) c\nground a\n");
+    assert!(d.is_empty() && e.ok(), "{d:?}");
+    let mut sk = e.sketch;
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    assert!((sk.point_xy(1).0 - 60.0).abs() < 1e-9);
+    assert!((sk.point_xy(2).1 - 30.0).abs() < 1e-9);
+    // a block's param reads the binder and a param of the enclosing body written after the
+    // block; a component's reads its formal and a sibling written below
+    let (e, d) = read("repeat 2 as i {\n point p hint(x: k, y: 0)\n param k = base + i * 10\n}\nparam base = 5\ncomponent C(n: Int) {\n param half = whole / 2\n param whole = n * 2\n point q hint(x: half, y: whole)\n}\nc: C(n: 4)\n");
+    assert!(d.is_empty() && e.ok(), "{d:?}");
+    let sk = e.sketch;
+    assert!((sk.point_xy(0).0 - 5.0).abs() < 1e-9 && (sk.point_xy(1).0 - 15.0).abs() < 1e-9);
+    assert!((sk.point_xy(2).0 - 4.0).abs() < 1e-9 && (sk.point_xy(2).1 - 8.0).abs() < 1e-9);
+}
+
+/// #45.1 — a `param` defined in terms of itself, through however many others, is the cyclic
+/// definitional dependency spec §11 names E041; and one that fails is reported once, where it
+/// is written, not again at every param that reads it.
+#[test]
+fn a_cyclic_param_is_e041_and_a_failed_one_is_reported_once() {
+    let (e, d) = read("param a = b + 1\nparam b = c * 2\nparam c = a\nparam d = d\nparam e = 60\npoint p hint(x: e, y: 0)\nground p\n");
+    assert!(!e.ok());
+    let cycles: Vec<&String> = d.iter().filter(|m| m.starts_with("E041")).collect();
+    assert_eq!(cycles.len(), 4, "{d:?}");
+    assert!(cycles.iter().any(|m| m.contains("`a` is defined in terms of itself, through `b`")), "{d:?}");
+    assert!(cycles.iter().any(|m| m.contains("`d` is defined in terms of itself") && !m.contains("through")), "{d:?}");
+    // `e` is not in the cycle and is worked out
+    assert!((e.sketch.point_xy(0).0 - 60.0).abs() < 1e-9);
+    // `h` reads a `w` whose definition failed: the one error is at `w`
+    let (_, d) = read("param w = nosuch * 2\nparam h = w / 2\npoint a hint(x: 0, y: 0)\nground a\n");
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert!(d[0].contains("`w`: `nosuch` is not a number here"), "{d:?}");
+}
+
 /// #43.19 — a bad key in a `hint(…)` is the mistake, not the declaration: one error, and the
 /// entity is still declared for everything that names it.
 #[test]

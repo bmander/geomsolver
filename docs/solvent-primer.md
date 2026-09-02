@@ -446,7 +446,10 @@ ground p0
 ```
 
 Eight unknowns; four directions, two lengths and a ground. `param` is arithmetic done while
-reading — `w` never becomes an unknown, it is just 60 wherever it appears. The chain here states
+reading — `w` never becomes an unknown, it is just 60 wherever it appears. A `param` may read
+another written anywhere in the same body or an enclosing one — `param h = w / 2` may stand above
+`param w = 60`, a body being a set — and one defined in terms of itself, through however many
+others, is an error (E041). The chain here states
 nothing the four separate `horizontal …` / `vertical …` lines would not; it just reads as the
 outline it is.
 
