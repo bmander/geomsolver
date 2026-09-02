@@ -68,7 +68,22 @@ component SumpSide(o: point, rail: line) {
 // the deck, the piston on the bore axis at the height the end view gives its small end, and the
 // two cam lobes over it.  The crankshaft below and the rod are parts of their own
 // (`engine.crankshaft`, `engine.conrod`), drawn by the assembly.
-component CylinderSide(ax: point, deckline: line) {
+component CylinderSide(ax: point, deckline: line, i: Int) {
+  // this cylinder's place in the cycle: the firing order 1-3-4-2 puts cylinder 3 a half turn
+  // behind 1, 4 a full turn, 2 a turn and a half (for 1-2-4-3, the last term is floor(i / 2))
+  param off = 180deg * (i * (3 - i) / 2) + 360deg * (i - 2 * floor(i / 2))
+  param c = cycle - off - 720deg * floor((cycle - off) / 720deg)
+  param ai = (c - icenter) / 2
+  param ae = (c - ecenter) / 2
+  // each lobe edge on: its reach above and below the camshaft at the angle it stands at now —
+  // the nose's height on the page, with a nose circle round it, or the base circle if that is
+  // taller.  The intake axis leans out at `va` one way, the exhaust the other.
+  param ny_i = dn_i * sin(90deg - va + 180deg + ai)
+  param ny_e = dn_e * sin(90deg + va + 180deg + ae)
+  param top_i = max(rb, ny_i + rn)
+  param bot_i = max(rb, rn - ny_i)
+  param top_e = max(rb, ny_e + rn)
+  param bot_e = max(rb, rn - ny_e)
   point wl0 hint(x: ax.x - D / 2, y: ax.y + deck)
   point wr0 hint(x: ax.x + D / 2, y: ax.y + deck)
   point wl1 hint(x: ax.x - D / 2, y: ax.y + deck - wall)
@@ -86,8 +101,8 @@ component CylinderSide(ax: point, deckline: line) {
   port small: point hint(x: ax.x, y: ax.y + R + L)
   ax distance(0, along: x) small
   piston: Piston(small, pin: 0)
-  lobe_i: Box(ax, x0: 14mm, y0: camh - rb, x1: 26mm, y1: camh + rb)
-  lobe_e: Box(ax, x0: -26mm, y0: camh - rb, x1: -14mm, y1: camh + rb)
+  lobe_i: Box(ax, x0: 14mm, y0: camh - bot_i, x1: 26mm, y1: camh + top_i)
+  lobe_e: Box(ax, x0: -26mm, y0: camh - bot_e, x1: -14mm, y1: camh + top_e)
 }
 
 // The timing drive on the front face, edge on: the pulleys are rectangles, the belt two lines.
@@ -109,7 +124,7 @@ component SideSection(o: point) {
   // the four cylinders on the pitch
   repeat 4 as i {
     ax: At(o, dx: front + 25mm + P / 2 + i * P, dy: 0mm)
-    cyl: CylinderSide(ax.p, block.deckline)
+    cyl: CylinderSide(ax.p, block.deckline, i: i)
   }
   // the pitch, as a reference dimension: every bore is already on it
   claim ax[0].p distance(P) ax[1].p class shown

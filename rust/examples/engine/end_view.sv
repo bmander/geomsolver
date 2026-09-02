@@ -88,10 +88,17 @@ component Head(o: point, wl0: point, wr0: point, d_l: point, d_r: point) {
   vaxis_e perpendicular roof_l
   seat_i distance(stem + rb) cam_i
   seat_e distance(stem + rb) cam_e
-  lobe_i: Lobe(cam_i, vaxis_i, phi: 180deg)
-  lobe_e: Lobe(cam_e, vaxis_e, phi: 300deg)
-  v_i: Valve(seat_i, vaxis_i, lobe_i.nose, head: div)
-  v_e: Valve(seat_e, vaxis_e, lobe_e.base, head: dev)
+  // where cylinder 1 is in its cycle says where each lobe points — its nose is down the valve
+  // axis at the lobe's centre in the cycle, and turns at half the crank's rate either side — and
+  // how far each valve is off its seat: the lobe's reach along the axis, less the base circle
+  param ai = (cycle - icenter) / 2
+  param ae = (cycle - ecenter) / 2
+  param lift_now_i = max(rb, dn_i * cos(ai) + rn) - rb
+  param lift_now_e = max(rb, dn_e * cos(ae) + rn) - rb
+  lobe_i: Lobe(cam_i, vaxis_i, phi: 180deg + ai, dn: dn_i)
+  lobe_e: Lobe(cam_e, vaxis_e, phi: 180deg + ae, dn: dn_e)
+  v_i: Valve(seat_i, vaxis_i, lift: lift_now_i, head: div)
+  v_e: Valve(seat_e, vaxis_e, lift: lift_now_e, head: dev)
 }
 
 // The timing drive on the front of the engine: crank pulley, two cam pulleys, the belt over them.

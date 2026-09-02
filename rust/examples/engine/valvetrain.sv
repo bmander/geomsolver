@@ -6,8 +6,9 @@
 use engine.dims
 use engine.parts
 
-// A tangent cam about `c`, its nose at `phi` from the line `ref`, measured counter-clockwise.
-component Lobe(c: point, ref: line, phi: Angle) {
+// A tangent cam about `c`, its nose `dn` out at `phi` from the line `ref`, measured
+// counter-clockwise: the base circle, the nose circle and the two flanks tangent to both.
+component Lobe(c: point, ref: line, phi: Angle, dn: Length) {
   circle kb(center: c) hint(r: rb)
   port base = kb
   radius(rb) kb
@@ -23,19 +24,21 @@ component Lobe(c: point, ref: line, phi: Angle) {
   fr: Span(kb, kn, side: -1)
 }
 
-// A valve on the axis from its seat centre `seat` toward the cam centre at `axis.p2`, its flat
-// follower face resting on the lobe's circle `ride`: the base circle shut, the nose circle open.
-component Valve(seat: point, axis: line, ride: circle, head: Length) {
-  // the follower face: on the axis and square to it, tangent to the lobe
-  port fc: point hint at axis.p2
+// A valve on the axis from its seat centre `seat` toward the cam centre at `axis.p2`, lifted
+// `lift` off its seat by the lobe: the flat follower face stands `rb + lift` from the cam's
+// centre, which is where the lobe's outline reaches at this moment (see `dims.sv`) — so the face
+// is tangent to whichever of base circle, flank or nose is under it, without saying which.
+component Valve(seat: point, axis: line, lift: Length, head: Length) {
+  // the follower face: on the axis and square to it, `rb + lift` short of the cam's centre
+  port fc: point hint(x: axis.p2.x - (rb + lift) * (axis.p2.x - axis.p1.x) / stem, y: axis.p2.y - (rb + lift) * (axis.p2.y - axis.p1.y) / stem)
   fc on axis
+  axis.p2 distance(rb + lift) fc
   point f1 hint(x: axis.p2.x - 15mm, y: axis.p2.y - rb)
   point f2 hint(x: axis.p2.x + 15mm, y: axis.p2.y - rb)
   line face(f1, f2)
   fc midpoint face
   face perpendicular axis
   f1 distance(30) f2
-  face tangent ride
   // the bucket under the face, 30 wide and 20 deep
   point b1 hint(x: axis.p2.x - 15mm, y: axis.p2.y - rb - 20mm)
   point b2 hint(x: axis.p2.x + 15mm, y: axis.p2.y - rb - 20mm)
