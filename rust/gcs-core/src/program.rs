@@ -756,8 +756,17 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 }
                 None => {
                     // a declaration that could not be built leaves its name unbound, so every
-                    // reference to it is reported where the reference is
-                    res.of.remove(&d.name.key().text);
+                    // reference to it is reported where the reference is — and made nothing,
+                    // so every later entity of its kind sits one index below where phase 1
+                    // put it: the resolver is shifted with them, or a reference to a later arc
+                    // would read the one after it (or past the end of the list)
+                    if let Some(gone) = res.of.remove(&d.name.key().text) {
+                        for e in res.of.values_mut() {
+                            if e.kind == gone.kind && e.idx > gone.idx {
+                                e.idx -= 1;
+                            }
+                        }
+                    }
                 }
             }
         }

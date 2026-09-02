@@ -60,9 +60,39 @@ pub struct Style {
     pub width: Option<f64>,
     /// `#rrggbb`.
     pub color: Option<String>,
-    /// `display: none` — not drawn at all, and for a dimension not laid out or picked either.
-    /// `Some(false)` is `display: inline`, a later class showing what an earlier one hid.
-    pub hidden: Option<bool>,
+    /// `display: none | inline | geometry` — see `Display`.
+    pub display: Option<Display>,
+}
+
+/// What `display` says is drawn (§13.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Display {
+    /// Not drawn at all; a dimension is neither laid out nor picked.
+    None,
+    /// Drawn — and, from a later class, drawn again after an earlier class hid it.
+    Inline,
+    /// Drawn, but never dimensioned: a phantom position is geometry only.  An entity under it
+    /// is shown; a dimension whose statement carries it is not.
+    Geometry,
+}
+
+impl Display {
+    pub fn parse(s: &str) -> Option<Display> {
+        Some(match s {
+            "none" => Display::None,
+            "inline" => Display::Inline,
+            "geometry" => Display::Geometry,
+            _ => return None,
+        })
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Display::None => "none",
+            Display::Inline => "inline",
+            Display::Geometry => "geometry",
+        }
+    }
 }
 
 impl Style {
@@ -77,14 +107,20 @@ impl Style {
         if let Some(c) = &other.color {
             self.color = Some(c.clone());
         }
-        if let Some(h) = other.hidden {
-            self.hidden = Some(h);
+        if let Some(d) = other.display {
+            self.display = Some(d);
         }
     }
 
     /// Whether what carries this style is drawn at all.
     pub fn shown(&self) -> bool {
-        self.hidden != Some(true)
+        self.display != Some(Display::None)
+    }
+
+    /// Whether a dimension whose statement carries this style is laid out: not under `none`,
+    /// and not under `geometry` either.
+    pub fn dimensioned(&self) -> bool {
+        !matches!(self.display, Some(Display::None) | Some(Display::Geometry))
     }
 
     /// One property, by the name a `style` block writes.  `false` is a property the sheet cannot
@@ -116,7 +152,7 @@ impl Style {
         if self.color.is_some() {
             out.push("color");
         }
-        if self.hidden.is_some() {
+        if self.display.is_some() {
             out.push("display");
         }
         out
@@ -133,10 +169,13 @@ impl Style {
             "dash" => self.dash = Some(values.to_vec()),
             "width" if !values.is_empty() => self.width = Some(values[0]),
             "color" if !text.is_empty() => self.color = Some(text.to_string()),
-            // CSS's words: `none` hides, `inline` shows again — which a later class needs a way
-            // to say, since `None` is *says nothing*
-            "display" if text == "none" => self.hidden = Some(true),
-            "display" if text == "inline" => self.hidden = Some(false),
+            // CSS's words, and one of the draughtsman's: `none` hides, `inline` shows again —
+            // which a later class needs a way to say, since `None` is *says nothing* — and
+            // `geometry` draws without dimensioning
+            "display" => match Display::parse(text) {
+                Some(d) => self.display = Some(d),
+                None => return false,
+            },
             _ => return false,
         }
         true
@@ -157,7 +196,7 @@ pub fn base() -> Sheet {
         dash,
         width,
         color: color.map(str::to_string),
-        hidden: None,
+        display: None,
     };
     // reference geometry.  What the retired `construction` keyword did, and the whole of it.
     s.insert("construction".into(), rule(Some(vec![7.0, 4.0]), None, None));

@@ -243,7 +243,7 @@ pub fn layout(sk: &Sketch, unit: f64) -> Vec<Callout> {
     for c in &sk.constraints {
         // a drag target is a number, not a dimension, and an arc's own definition is not
         // something the drawing states twice
-        if c.soft || c.intrinsic || !style_of(sk, c).shown() {
+        if c.soft || c.intrinsic || !style_of(sk, c).dimensioned() {
             continue;
         }
         if let Some(k) = pen.one(c) {

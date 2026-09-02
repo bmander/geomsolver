@@ -421,6 +421,9 @@ pub struct Port {
     pub hint_span: Option<Span>,
     /// `port a: point hint at k bearing (b)` — a seed named by a place (`Decl::seed_at`).
     pub seed_at: Option<AtRef>,
+    /// `port a: point in top` — the declaring form is a declaration, and takes a declaration's
+    /// membership (§6.7), written or stamped by an enclosing `in … { }` block.
+    pub membership: Membership,
     /// `port p = (xexpr, yexpr)` — a point *computed* from the component's formals and
     /// parameters rather than placed by constraints (§6.5).  It is drawn only as a curve: a
     /// component with one is traced, never instantiated on the sheet.  Text, like a dimension's.
@@ -875,6 +878,12 @@ fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
                 }
             }
             StmtKind::Block(b) => stamp_plane(&mut b.body, plane, errs),
+            // the declaring port is a declaration, and its point is an image in the view
+            StmtKind::Port(p) if p.declare.is_some() => {
+                if !p.membership.join(plane, Source::Block) {
+                    errs.push(SynErr { span: p.membership.span(), message: p.membership.cause().into() });
+                }
+            }
             // the instance joins whole: the flattener carries the plane into its expansion
             StmtKind::Instance(inst) => {
                 if !inst.membership.join(plane, Source::Block) {
@@ -1571,6 +1580,10 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
                         out.push_str(&format!(" bearing ({b})"));
                     }
                 }
+                if let Some(r) = p.membership.written() {
+                    out.push_str(" in ");
+                    write_ref(out, r);
+                }
                 // the clause as written, where one was: a port with none stays without one
                 if p.hint_span.is_some_and(|s| !s.is_empty()) {
                     let mut parts: Vec<String> = Vec::new();
@@ -1767,7 +1780,7 @@ fn style_prop_text(s: &Style, prop: &str) -> Option<String> {
         "dash" => s.dash.as_ref().map(|d| d.iter().map(|&v| num(v)).collect::<Vec<_>>().join(" ")),
         "width" => s.width.map(num),
         "color" => s.color.clone(),
-        "display" => s.hidden.map(|h| if h { "none" } else { "inline" }.to_string()),
+        "display" => s.display.map(|d| d.as_str().to_string()),
         _ => None,
     }
 }
@@ -3599,6 +3612,14 @@ impl<'a> P<'a> {
                         }
                         hint_span = Span::new(lo, self.prev_hi());
                     }
+                    // `in top` — the port's point is an image in that view (§6.7)
+                    let mut membership = Membership::default();
+                    if self.peek_word("in") {
+                        let plo = self.here().lo as usize;
+                        self.i += 1;
+                        let r = self.refr()?;
+                        membership = Membership::written_at(r, Span::new(plo, self.prev_hi()));
+                    }
                     self.end_of_stmt();
                     Some(StmtKind::Port(Port {
                         name,
@@ -3609,6 +3630,7 @@ impl<'a> P<'a> {
                         seed_spans,
                         hint_span: Some(hint_span),
                         seed_at,
+                        membership,
                         computed: None,
                     }))
                 } else if self.peek() == Some(&Tok::Eq) {
@@ -3629,6 +3651,7 @@ impl<'a> P<'a> {
                         seed_spans: Vec::new(),
                         hint_span: None,
                         seed_at: None,
+                        membership: Membership::default(),
                         computed,
                     }))
                 } else {

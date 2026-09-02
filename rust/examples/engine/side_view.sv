@@ -65,9 +65,9 @@ component SumpSide(o: point, rail: line) {
 }
 
 // One cylinder edge on, about its axis point `ax` on the crank axis: the bore walls down from
-// the deck, the piston and its pin on the bore axis at the heights the end view gives them, the
-// throw below, and the two cam lobes over it.  The rod between pin and small end is the part
-// `engine.conrod` draws, with the two points the assembly hands it.
+// the deck, the piston on the bore axis at the height the end view gives its small end, and the
+// two cam lobes over it.  The crankshaft below and the rod are parts of their own
+// (`engine.crankshaft`, `engine.conrod`), drawn by the assembly.
 component CylinderSide(ax: point, deckline: line) {
   point wl0 hint(x: ax.x - D / 2, y: ax.y + deck)
   point wr0 hint(x: ax.x + D / 2, y: ax.y + deck)
@@ -84,11 +84,8 @@ component CylinderSide(ax: point, deckline: line) {
   wl0 distance(-wall, along: y) wl1
   wr0 distance(-wall, along: y) wr1
   port small: point hint(x: ax.x, y: ax.y + R + L)
-  port pin: point hint(x: ax.x, y: ax.y + R)
   ax distance(0, along: x) small
-  ax distance(0, along: x) pin
   piston: Piston(small, pin: 0)
-  throw: ThrowSide(ax, pin)
   lobe_i: Box(ax, x0: 14mm, y0: camh - rb, x1: 26mm, y1: camh + rb)
   lobe_e: Box(ax, x0: -26mm, y0: camh - rb, x1: -14mm, y1: camh + rb)
 }
@@ -109,14 +106,10 @@ component SideSection(o: point) {
   block: BlockSide(o)
   sump: SumpSide(o, block.railline)
   drive: DriveSide(o, block.cam)
-  // the four cylinders on the pitch, and the five main bearings between and beyond them
+  // the four cylinders on the pitch
   repeat 4 as i {
     ax: At(o, dx: front + 25mm + P / 2 + i * P, dy: 0mm)
     cyl: CylinderSide(ax.p, block.deckline)
-  }
-  repeat 5 as j {
-    jc: At(o, dx: front + 25mm + j * P, dy: 0mm)
-    journal: Journal(jc.p)
   }
   // the pitch, as a reference dimension: every bore is already on it
   claim ax[0].p distance(P) ax[1].p class shown

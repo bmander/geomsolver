@@ -10,6 +10,7 @@
 unit mm
 use std
 use engine.dims
+use engine.crankshaft
 use engine.conrod
 use engine.end_view
 use engine.side_view
@@ -25,6 +26,11 @@ end: EndSection(views.right_origin) in views.right
 side: SideSection(O) in views.front
 plan: PlanView(views.top_origin) in views.top
 
+// the crankshaft, one part in both sections (`engine.crankshaft`): the throw of cylinder 1 and
+// a ghost of 2 and 3's in the end section, the whole shaft in the side section, every pin's
+// height carried across inside the part
+crank: Crankshaft(views.right, views.front, views.right_origin, end.bore, O, draw_end: 1, draw_side: 1)
+
 // the connecting rods, one part drawn in the views it shows in (`engine.conrod`): rod 1 in the
 // end section and the side section both, with the shank's section A-A beside the plan; rods 2 to
 // 4 in the side section only, the small end of each placed by the end-view image it shares —
@@ -32,11 +38,11 @@ plan: PlanView(views.top_origin) in views.top
 point secA in views.top
 views.top_origin distance(back + 80mm, along: x) secA
 views.top_origin distance(0, along: y) secA
-rod1: ConRod(views.right, views.front, views.top, end.crank.t1.pin, end.bore, side.cyl[0].pin, side.cyl[0].small, secA, draw_end: 1, draw_side: 1, draw_sec: 1)
-rod2: ConRod(views.right, views.front, views.top, end.crank.t2.pin, end.bore, side.cyl[1].pin, side.cyl[1].small, secA, draw_end: 0, draw_side: 1, draw_sec: 0)
-rod3: ConRod(views.right, views.front, views.top, end.crank.t2.pin, end.bore, side.cyl[2].pin, side.cyl[2].small, secA, draw_end: 0, draw_side: 1, draw_sec: 0)
-rod4: ConRod(views.right, views.front, views.top, end.crank.t1.pin, end.bore, side.cyl[3].pin, side.cyl[3].small, secA, draw_end: 0, draw_side: 1, draw_sec: 0)
-ghost: Rod(end.crank.t2.pin, end.bore) in views.right class phantom
+rod1: ConRod(views.right, views.front, views.top, crank.t1[0].pin, end.bore, crank.pin_s[0], side.cyl[0].small, secA, draw_end: 1, draw_side: 1, draw_sec: 1)
+rod2: ConRod(views.right, views.front, views.top, crank.t2[0].pin, end.bore, crank.pin_s[1], side.cyl[1].small, secA, draw_end: 0, draw_side: 1, draw_sec: 0)
+rod3: ConRod(views.right, views.front, views.top, crank.t2[0].pin, end.bore, crank.pin_s[2], side.cyl[2].small, secA, draw_end: 0, draw_side: 1, draw_sec: 0)
+rod4: ConRod(views.right, views.front, views.top, crank.t1[0].pin, end.bore, crank.pin_s[3], side.cyl[3].small, secA, draw_end: 0, draw_side: 1, draw_sec: 0)
+ghost: Rod(crank.t2[0].pin, end.bore) in views.right class phantom
 piston1: Piston(rod1.sm[0], pin: 1) in views.right
 
 // heights, end view to side view
@@ -48,10 +54,6 @@ end.head.cam_i project side.block.cam
 ghost.small project side.cyl[1].small
 ghost.small project side.cyl[2].small
 rod1.sm[0] project side.cyl[3].small
-end.crank.t1.pin project side.cyl[0].pin
-end.crank.t2.pin project side.cyl[1].pin
-end.crank.t2.pin project side.cyl[2].pin
-end.crank.t1.pin project side.cyl[3].pin
 
 // lengths, side view to plan
 side.block.bfl project plan.fl
@@ -71,7 +73,7 @@ end.head.cam_e project plan.ce
 style .dimension { display: none }
 style .shown { display: inline }
 style .point { display: none }
-style .phantom { dash: 6 3; width: 0.6; color: #888888 }
+style .phantom { dash: 6 3; width: 0.6; color: #888888; display: geometry }
 style .thin { width: 0.6 }
 style .belt { width: 1.2; color: #2a7ab0 }
 style .axis { dash: 14 3 2 3; width: 0.5; color: #888888 }

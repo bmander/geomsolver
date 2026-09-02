@@ -325,10 +325,11 @@ impl<'a> Walk<'a> {
     /// there — and a declaration that already says which plane (a clause of its own, on a
     /// plane the component declares) may not be told twice.
     fn stamp_scope_plane(&mut self, d: &mut Decl, scope: &Scope) {
-        // the instance's classes, under the declaration's own so the declaration's rule wins
-        for c in scope.in_class.0.iter().rev() {
+        // the instance's classes, over the declaration's own: what the assembly says of an
+        // instance is the later and stronger word, so a phantom's centreline is a phantom's
+        for c in &scope.in_class.0 {
             if !d.class.has(c) {
-                d.class.0.insert(0, c.clone());
+                d.class.0.push(c.clone());
             }
         }
         let Some(p) = &scope.in_plane else { return };
@@ -521,7 +522,7 @@ impl<'a> Walk<'a> {
                             seed_at: p.seed_at.clone(),
                             seed_names: Vec::new(),
                             attitude: Default::default(),
-                            membership: Default::default(),
+                            membership: p.membership.clone(),
                             list_span: Span::default(),
                         };
                         self.settle_seeds(&mut d, vals, scope, st.span);
@@ -720,6 +721,13 @@ impl<'a> Walk<'a> {
                     }
                     for a in r2.args.iter_mut().flatten() {
                         self.settle_arg(a, vals, scope);
+                    }
+                    // the enclosing instances' classes, over the statement's own: a ghosted
+                    // part's dimensions are the ghost's (`display: geometry`) as its lines are
+                    for c in &scope.in_class.0 {
+                        if !r2.class.has(c) {
+                            r2.class.0.push(c.clone());
+                        }
                     }
                     self.emit(StmtKind::Relation(r2), st, scope, path);
                 }

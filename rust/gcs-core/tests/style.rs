@@ -342,6 +342,41 @@ fn an_instance_takes_a_class_whole() {
          u: Two(o)\n",
     );
     assert_eq!(sk.class_of(EntRef::new(EntKind::Line, 0)), Classes::one("phantom"));
-    assert_eq!(sk.class_of(EntRef::new(EntKind::Circle, 0)).0, vec!["phantom", "heavy"]);
+    // the assembly's word is the later, stronger one: over the declaration's own
+    assert_eq!(sk.class_of(EntRef::new(EntKind::Circle, 0)).0, vec!["heavy", "phantom"]);
     assert!(sk.class_of(EntRef::new(EntKind::Line, 1)).is_empty());
+}
+
+/// `display: geometry` draws a thing and never dimensions it — a phantom position — and an
+/// instance's class reaches its relations as well as its declarations, so one class on the
+/// instance is the whole of what a ghosted copy of a dimensioned part needs.
+#[test]
+fn display_geometry_draws_without_dimensioning() {
+    let src = "\
+style .dimension { display: none }
+style .shown { display: inline }
+style .phantom { dash: 6 3; display: geometry }
+component Bar(a: point) {
+  point b hint(x: a.x + 30, y: a.y)
+  line l(a, b)
+  a distance(30) b class shown
+  horizontal l
+}
+point o hint(x: 0, y: 0)
+ground o
+r: Bar(o)
+g: Bar(o) class phantom
+";
+    let sk = read(src);
+    let shown: Vec<u32> = gcs_core::callout::layout(&sk, 1.0).iter().map(|c| c.id).collect();
+    assert_eq!(shown.len(), 1, "the real bar's dimension, and not the phantom's");
+    let c = sk.constraint(shown[0]).unwrap();
+    assert!(!c.class.has("phantom"));
+    // the phantom's line is drawn, dashed
+    let l = EntRef::new(EntKind::Line, 1);
+    assert!(sk.style_of(l).shown());
+    assert_eq!(sk.style_of(l).dash, Some(vec![6.0, 3.0]));
+    let svg = gcs_core::svg::render(&sk, 400.0);
+    assert_eq!(svg.matches("<line").count(), 2, "both bars drawn: {svg}");
+    assert_eq!(svg.matches("stroke-dasharray=\"6 3\"").count(), 1, "one of them dashed: {svg}");
 }

@@ -18,19 +18,6 @@ component Span(k1: circle, k2: circle, side: Scalar) {
   s tangent(at: p2) k2
 }
 
-// One crank throw seen along the axis: the pin at `theta` from the bore axis, clockwise from top
-// dead centre, and the web drawn as the two tangents from journal to pin.
-component Throw(o: point, axis: line, journal: circle, theta: Angle) {
-  port pin: point hint(x: o.x + R * sin(theta), y: o.y + R * cos(theta))
-  line arm(o, pin) class axis
-  o distance(R) pin
-  axis angle(-theta) arm
-  circle kp(center: pin) hint(r: rp)
-  radius(rp) kp
-  l: Span(journal, kp, side: 1)
-  r: Span(journal, kp, side: -1)
-}
-
 // A connecting rod's *phantom* position, seen along the axis: the centreline and the two eyes,
 // the small end riding the bore axis one rod length from the pin.  The rod itself is the part
 // `engine.conrod` designs; this is the outline a draughtsman ghosts in for a second position.
@@ -77,53 +64,6 @@ component Piston(small: point, pin: Int) {
   cl distance(-6, along: y) r1.p2
   cl distance(-12, along: y) r2.p1
   cl distance(-12, along: y) r2.p2
-}
-
-// A throw seen from the side, edge on: the pin is a short cylinder along the crank axis, drawn
-// as a rectangle about `pin`, and the two webs run from the journal up to it.  Where `pin`
-// stands is the caller's — its height is the end view's, by projection.
-component ThrowSide(o: point, pin: point) {
-  point a hint(x: pin.x - 10mm, y: pin.y + rp)
-  point b hint(x: pin.x + 10mm, y: pin.y + rp)
-  point c hint(x: pin.x + 10mm, y: pin.y - rp)
-  point d hint(x: pin.x - 10mm, y: pin.y - rp)
-  line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close
-  pin distance(-10, along: x) a
-  pin distance(rp, along: y) a
-  pin distance(10, along: x) b
-  pin distance(rp, along: y) b
-  pin distance(10, along: x) c
-  pin distance(-rp, along: y) c
-  pin distance(-10, along: x) d
-  pin distance(-rp, along: y) d
-  // the webs, from the journal's flanks to the pin's
-  line wl(hint(x: o.x - 22mm, y: o.y), hint(x: pin.x - 10mm, y: pin.y))
-  line wr(hint(x: o.x + 22mm, y: o.y), hint(x: pin.x + 10mm, y: pin.y))
-  o distance(-22, along: x) wl.p1
-  o distance(0, along: y) wl.p1
-  pin distance(-10, along: x) wl.p2
-  pin distance(0, along: y) wl.p2
-  o distance(22, along: x) wr.p1
-  o distance(0, along: y) wr.p1
-  pin distance(10, along: x) wr.p2
-  pin distance(0, along: y) wr.p2
-}
-
-// A main journal seen from the side: a rectangle 24 long about the axis point `o`.
-component Journal(o: point) {
-  point a hint(x: o.x - 12mm, y: o.y + rj)
-  point b hint(x: o.x + 12mm, y: o.y + rj)
-  point c hint(x: o.x + 12mm, y: o.y - rj)
-  point d hint(x: o.x - 12mm, y: o.y - rj)
-  line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close
-  o distance(-12, along: x) a
-  o distance(rj, along: y) a
-  o distance(12, along: x) b
-  o distance(rj, along: y) b
-  o distance(12, along: x) c
-  o distance(-rj, along: y) c
-  o distance(-12, along: x) d
-  o distance(-rj, along: y) d
 }
 
 // A point placed from `o` by two ordinates — the corner of an outline, a centre on a pitch.

@@ -417,10 +417,14 @@ t2: Throw(o, bore, theta: 220deg) class phantom   // every declaration the insta
 ```
 
 `display: none` leaves a thing out of the picture — an entity is not drawn, a dimension is
-neither laid out nor picked — and `display: inline` from a later class shows it again. A class on
-a relation that states no dimension is inert. Every point is drawn under the implicit class
-`.point`. Nothing the solver does reads any of it: hide every dimension and the drawing is the
-same drawing.
+neither laid out nor picked — and `display: inline` from a later class shows it again;
+`display: geometry` draws a thing and never dimensions it, which is what a phantom position is.
+A class on an instance reaches its relations as well as its declarations and stands *over* the
+statement's own — the assembly's word about an instance is the stronger one — so
+`g: Throw(…) class phantom` with `style .phantom { dash: 6 3; display: geometry }` ghosts a
+dimensioned part whole, its `class shown` dimensions included. A class on a relation that states
+no dimension is inert. Every point is drawn under the implicit class `.point`. Nothing the solver
+does reads any of it: hide every dimension and the drawing is the same drawing.
 
 `construction` used to be a keyword. It is a class now, and `style .construction { dash: 7 4 }`
 is a rule in the base sheet the implementation ships — so `class construction` draws exactly as

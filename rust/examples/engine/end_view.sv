@@ -2,27 +2,14 @@
 //
 // Everything here is placed from the crank centre `o` by ordinates — this is the view that owns
 // the engine's *heights* and *widths*, and the other two views take theirs from it by projection.
-// The section is five assemblies, each a component below: the crank with its rod and piston, the
-// bore, the block with its sump, the head with its valvetrain, and the timing drive.  The
-// mechanism is drawn at the crank angle the dimension table gives, with the throw of cylinders
-// 2 and 3 a half turn on as a phantom, so the side view can read every piston's height off this
-// one section.
+// The castings are four assemblies, each a component below: the bore, the block with its sump,
+// the head with its valvetrain, and the timing drive.  The crankshaft, the rods and the piston
+// are parts of their own (`engine.crankshaft`, `engine.conrod`), drawn in this view by the
+// document.
 
 use engine.dims
 use engine.parts
 use engine.valvetrain
-
-// The crank: journal, the throw of cylinder 1, and the phantom throw of cylinders 2 and 3 a
-// half turn on.  The rods and pistons are parts of the assembly (`engine.conrod`), drawn here
-// by the document.
-component Crank(o: point, bore: line) {
-  circle journal(center: o) hint(r: rj)
-  radius(rj) journal
-  circle crankpath(center: o) hint(r: R) class phantom
-  radius(R) crankpath
-  t1: Throw(o, bore, journal, theta: theta)
-  t2: Throw(o, bore, journal, theta: theta + 180deg) class phantom
-}
 
 // The cylinder wall, `wall` deep below the deck, and the two dimensions the sheet shows for it.
 component Bore(o: point) {
@@ -124,7 +111,6 @@ component EndSection(o: point) {
   top: At(o, dx: 0mm, dy: deck + 30mm)
   port bore = axisline
   line axisline(o, top.p) class axis
-  crank: Crank(o, axisline)
   cyl: Bore(o)
   block: Block(o)
   head: Head(o, cyl.l0, cyl.r0, block.d_l, block.d_r)

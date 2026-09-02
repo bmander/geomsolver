@@ -180,10 +180,14 @@ Conventions:
   binding's constraint record (identity and arguments only).  `callout::style_of` resolves
   `.dimension` (`.reference` for a claim) under the statement's classes, and `layout` skips one
   that is not `shown()`, so neither front end lays out or picks a hidden dimension.
-  `Instance::class` is carried down the expansion as `Scope::in_class` and stamped under each
-  emitted declaration's own (`stamp_scope_plane`), the way `in` is.  `Style::hidden` is
-  `display: none | inline`; `svg::render` and `paint.ts` skip what is not shown, and every point
-  is drawn under the implicit class `.point` (`EntKind::implicit_class`), read once per repaint
+  `Instance::class` is carried down the expansion as `Scope::in_class` and stamped **over** each
+  emitted declaration's and relation's own (`stamp_scope_plane`, the Relation arm of `body`) —
+  the assembly's word is the stronger — the way `in` is.  `Style::display` is
+  `display: none | inline | geometry` (`style::Display`): `shown()` is what an entity asks,
+  `dimensioned()` what `callout::layout` asks, and `geometry` is drawn but never dimensioned —
+  a phantom position, `style .phantom { …; display: geometry }` on a ghosted instance of a
+  dimensioned part.  `svg::render` and `paint.ts` skip what is not shown, and every point is
+  drawn under the implicit class `.point` (`EntKind::implicit_class`), read once per repaint
   through `styleNamed('point')`.  The idiom for a drawing dense with dimensions is
   `style .dimension { display: none }` and `class shown` on the few to draw.
 - **A declaration need not name its children** (Solvent §6.1, §6.2).  `line l` mints two points,
