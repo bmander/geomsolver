@@ -326,7 +326,10 @@ Conventions:
   `System::solve` says it instead — clamp, compare `curve::contact_spans` against the spans it was
   compiled from, rebuild itself when one moved — so *every* caller gets it: the one-shot `solve`,
   the plan solver's fallback and a front end that compiled a system for itself alike.  A clamped
-  parameter is *pinned* for the retry: free, the next solve walks straight back off the end.
+  parameter is *pinned* for the retry: free, the next solve walks straight back off the end.  A
+  contact *seeded* off the end is the other case and is clamped **before** the first solve and
+  left free — a seed says only where the search begins (P3), and pinned, `hint(t: 2)` nailed the
+  point to the curve's last control point and a solvable document read UNSOLVED (#45.7).
   `SolveOpts::rehome` turns it off for the one caller owning a *pair* of systems that must stay
   in step — `PullPolish`, which re-homes both together, lifting its drag target out to rebuild.
   All of it is behind an empty span map, so a sketch with no curves pays nothing.

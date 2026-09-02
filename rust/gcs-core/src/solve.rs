@@ -102,9 +102,23 @@ impl System {
     /// This is the one place the rule lives, so every caller gets it — the one-shot `solve`, the
     /// plan solver's fallback and a front end that compiled a system for itself alike.
     pub fn solve(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
-        let mut res = self.solve_compiled(sk, opts);
         // a curve family's contact has no span to walk off, but a domain to be clamped to
-        if !opts.rehome || !opts.writeback || (self.spans().is_empty() && sk.curves.is_empty()) {
+        let rehome =
+            opts.rehome && opts.writeback && !(self.spans().is_empty() && sk.curves.is_empty());
+        // A contact *seeded* off the end of its curve is brought onto it before anything is
+        // solved, and left free.  The pin below is for a solve that walked off — free again, it
+        // walks straight back — but a seed is only where the search begins, and one written a
+        // knot span too far says nothing about where the answer is: pinned to the end for the
+        // retry, `p on s hint(t: 2)` nailed `p` to the curve's last point and a document with a
+        // unique solution came back UNSOLVED (#45.7, spec P3).  From the end and free, the
+        // solve walks in to the answer, or back off to be clamped and pinned as before.
+        if rehome && !curve::clamp_contacts(sk).is_empty()
+            && curve::contact_spans(sk) != *self.spans()
+        {
+            *self = System::new(sk);
+        }
+        let mut res = self.solve_compiled(sk, opts);
+        if !rehome {
             return res;
         }
         for _ in 0..curve::MAX_REHOME {

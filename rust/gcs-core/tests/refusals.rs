@@ -126,6 +126,52 @@ fn an_unreadable_style_value_is_reported() {
     assert!(d.is_empty() && e.ok(), "{d:?}");
 }
 
+/// #45.7 — a contact *seeded* off the end of its curve is only a seed (spec P3): brought onto
+/// the curve before the solve and left free, so a document with one answer reaches it from
+/// `t: 2`, `t: -1` or `t: 5` exactly as from `t: 0.5`.  Pinned to the end for the retry, as a
+/// solve that *walked* off is, it nailed the point to the curve's last control point.
+#[test]
+fn a_contact_seeded_off_its_curve_still_solves() {
+    let doc = |t: &str| {
+        format!(
+            "point a hint(x: 0, y: 0)\npoint b hint(x: 10, y: 20)\npoint c hint(x: 30, y: 20)\n\
+             point d hint(x: 40, y: 0)\nspline s(a, b, c, d)\nground a\nground b\nground c\nground d\n\
+             point p hint(x: 20, y: 14)\np on s hint(t: {t})\np vertical b\n"
+        )
+    };
+    let mut want = None;
+    for t in ["0.5", "1.5", "-1", "2", "5"] {
+        let (e, d) = read(&doc(t));
+        assert!(d.is_empty(), "{d:?}");
+        let mut sk = e.sketch;
+        let r = solve(&mut sk, SolveOpts::default());
+        assert!(r.success, "t: {t}: {}", r.message);
+        let (px, py) = sk.point_xy(4);
+        assert!((px - 10.0).abs() < 1e-6, "t: {t}: p at ({px}, {py})");
+        let c = sk.user_constraints().iter().find(|c| !c.aux_params().is_empty()).unwrap().clone();
+        let u = sk.params[c.aux_params()[0] as usize].value;
+        assert!((0.0..=1.0).contains(&u) && !sk.params[c.aux_params()[0] as usize].fixed, "t: {t}: u = {u}");
+        // one answer, whatever the seed
+        match want {
+            None => want = Some(py),
+            Some(w) => assert!((py - w).abs() < 1e-6, "t: {t}: {py} vs {w}"),
+        }
+    }
+    // a family's contact likewise, seeded past either end of `over (0, 720)`
+    for u in ["900", "-100"] {
+        let (e, d) = read(&format!(
+            "curve spiral(o: point, k: Length)(u) over (0, 720) =\n  ( o.x + k * u / 360 * cos(u), o.y + k * u / 360 * sin(u) )\n\
+             point o hint(x: 0, y: 0)\ncurve f = spiral(o, k: 10)\npoint t hint(x: 12, y: 3)\nt on f hint(u: {u})\nground o\n"
+        ));
+        assert!(d.is_empty(), "{d:?}");
+        let mut sk = e.sketch;
+        assert!(solve(&mut sk, SolveOpts::default()).success, "u: {u}");
+        let c = sk.user_constraints().iter().find(|c| !c.aux_params().is_empty()).unwrap().clone();
+        let v = sk.params[c.aux_params()[0] as usize].value;
+        assert!((0.0..=720.0).contains(&v), "u: {u} → {v}");
+    }
+}
+
 /// #43.21 — `distance` between two circles reads two radii and neither centre (the annular gap
 /// between concentric circles), so over two circles centred apart it is refused with that
 /// reading, instead of conflicting with the radii it silently duplicated.
