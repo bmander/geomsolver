@@ -7,6 +7,7 @@
 
 /// The library, `(name, text)`.
 pub const MODULES: &[(&str, &str)] = &[
+    ("std", include_str!("../../lib/std.sv")),
     ("engine.dims", include_str!("../../examples/engine/dims.sv")),
     ("engine.parts", include_str!("../../examples/engine/parts.sv")),
     ("engine.valvetrain", include_str!("../../examples/engine/valvetrain.sv")),

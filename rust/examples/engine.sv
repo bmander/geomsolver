@@ -8,32 +8,21 @@
 // by the other two.  One crank angle in the table turns every piston in every view.
 
 unit mm
+use std
 use engine.dims
 use engine.end_view
 use engine.side_view
 use engine.top_view
 
-// the three planes: the page is the side view; the end view is folded from it on the right,
-// turned so up stays up; the plan is folded up from the x-axis and drawn above
-point Of hint(x: 0, y: 0)
-point qf hint(x: 40, y: 0)
-plane front(origin: Of, toward: qf)
-point Or hint(x: 620, y: 0)
-point qr hint(x: 620, y: -40)
-plane right(origin: Or, toward: qr, from: front, fold: -90deg)
-point Ot hint(x: 0, y: 620)
-point qt hint(x: 40, y: 620)
-plane top(origin: Ot, toward: qt, from: front, fold: 0deg)
-ground Of
-ground qf
-ground Or
-ground qr
-ground Ot
-ground qt
+// the three views, from the standard library: the page is the side view, the end view stands
+// to the right of it turned so up stays up, and the plan is folded up above it
+point O hint(x: 0, y: 0)
+ground O
+views: ThreeViews(O, right: 620, up: 620)
 
-end: EndSection(Or) in right
-side: SideSection(Of) in front
-plan: PlanView(Ot) in top
+end: EndSection(views.right_origin) in views.right
+side: SideSection(O) in views.front
+plan: PlanView(views.top_origin) in views.top
 
 // heights, end view to side view
 end.block.d_l project side.block.bfl

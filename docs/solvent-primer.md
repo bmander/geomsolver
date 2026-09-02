@@ -447,7 +447,8 @@ brought it in, with the module's line in front of the message.
 the modules it uses — which is what lets `engine/dims.sv` hold the whole dimension table and every
 view read `D` for the bore. A formal of the same name shadows a param.
 `rust/examples/engine.sv` is the worked case: a four-cylinder engine in three views, written as a
-dimension module, a parts module, a valvetrain module and one module per view.
+dimension module, a parts module, a valvetrain module and one module per view, over the standard
+library's three views (`use std`, `rust/lib/std.sv`).
 
 ### 1.12 Checking your work
 
@@ -776,6 +777,11 @@ Bf project Br          // height agrees front ↔ right
 Bt project Br          // depth agrees top ↔ right
 At distance(30, along: y) Bt
 ```
+
+The standard library writes this layout once: `use std` and `views: ThreeViews(O, right: 150,
+up: 90)` declares the page as `views.front` and folds `views.right` and `views.top` from it, with
+`views.right_origin` and `views.top_origin` the corner `A` as those views see it — so a drawing
+grounds one point and writes its geometry `in views.top`.
 
 `in top { … }` writes the clause once: every declaration in the block — a `cycle`'s copies
 included — is drawn in `top`, and the statements are otherwise ordinary (they dimension, drag

@@ -160,7 +160,9 @@ Conventions:
   resolver is the host's — `solventc` reads `engine.parts` as `engine/parts.sv` beside the
   document, then `library::resolve`; the FFI and `examples::document` use `library::parse_linked`,
   over `library::MODULES` (compiled in with `include_str!`, which is how the app opens the
-  engine).  `program::reparse` relinks from the texts already in hand (`modules::relink`), so an
+  engine).  **`rust/lib/` is the standard library** — `std` (`ThreeViews`: the three principal
+  views laid out from one grounded point) — and is in the Makefile's `RUST_SRC` so editing it
+  rebuilds what compiled it in.  `program::reparse` relinks from the texts already in hand (`modules::relink`), so an
   edit never asks the host.  E070 no module, E071 defined twice.  `tests/modules.rs` is the gate.
 - **A class stands on a relation and on an instance, and `display: none` hides** (Solvent
   §13.2).  `Relation::class` is parsed in both trailing-clause loops (a chain's and a lone

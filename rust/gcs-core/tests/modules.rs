@@ -149,6 +149,31 @@ fn every_span_is_one_integer_into_one_virtual_text() {
     assert!(!p.owns(rung.span));
 }
 
+/// `use std` is the library's: `ThreeViews` lays out the three principal views from one
+/// grounded point, so a drawing writes one instance where it wrote six points and three planes.
+#[test]
+fn the_standard_library_lays_out_three_views() {
+    let (prog, errs, linked) = gcs_core::library::parse_linked(
+        "use std\npoint O hint(x: 0, y: 0)\nground O\nv: ThreeViews(O, right: 100, up: 80)\n\
+         point a in v.front\npoint b in v.top\npoint c in v.right\na project b\na project c\nb project c\n\
+         O distance(30, along: x) a\nO distance(20, along: y) a\nv.top_origin distance(10, along: y) b\n",
+    );
+    assert!(errs.is_empty() && linked.is_empty(), "{errs:?} {linked:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    assert_eq!(e.sketch.planes.len(), 3);
+    let mut sk = e.sketch.clone();
+    assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
+    let d = gcs_core::diagnose::diagnose(&mut sk, gcs_core::diagnose::DiagnoseOptions::default());
+    assert_eq!((d.dof, d.status), (0, gcs_core::diagnose::State::Well));
+    // the right view's origin is `right` along, the top's `up` above
+    let ro = e.map.ent_named("v.right_origin").unwrap();
+    let to = e.map.ent_named("v.top_origin").unwrap();
+    let near = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9;
+    assert!(near(sk.point_xy(ro.i()), (100.0, 0.0)), "{:?}", sk.point_xy(ro.i()));
+    assert!(near(sk.point_xy(to.i()), (0.0, 80.0)), "{:?}", sk.point_xy(to.i()));
+}
+
 #[test]
 fn the_library_resolves_the_shipped_engine() {
     let (prog, errs, linked) =

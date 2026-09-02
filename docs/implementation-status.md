@@ -19,7 +19,9 @@ The solver exists **once**:
 The language has **modules** (`use engine.parts`, spec §14.4): `modules.rs` links a module's
 components and params into a program, the CLI resolves a name against the files beside the
 document and the core's compiled-in library (`library.rs`) resolves it in the browser.
-`rust/examples/engine.sv` — a four-cylinder engine in three views — is written as six modules.
+`rust/examples/engine.sv` — a four-cylinder engine in three views — is written as six modules
+over the standard library's `std` (`rust/lib/std.sv`), whose `ThreeViews` lays out the three
+principal views from one grounded point.
 
 The binding contains no algorithm.  It generates its constraint classes from the core's own
 registry, so a new constraint type appears in the browser with nothing to change on that side.
