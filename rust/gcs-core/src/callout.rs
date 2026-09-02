@@ -73,6 +73,8 @@ macro_rules! undrawn {
             | CKind::Symmetric
             | CKind::PointOnSpline
             | CKind::PointOnCurve
+            | CKind::CurveTangentLine
+            | CKind::CurveCurvature
             | CKind::PointOnEllipse
             | CKind::EllipseTangentLine
             | CKind::EllipseCurvature

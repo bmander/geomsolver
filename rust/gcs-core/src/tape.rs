@@ -124,11 +124,13 @@ mod code {
 pub struct Scratch {
     v: Vec<f64>,
     g: Vec<f64>,
+    /// One `Series` per slot, for `eval_series_flat`.
+    t: Vec<Series>,
 }
 
 impl Scratch {
     pub fn new() -> Scratch {
-        Scratch { v: Vec::new(), g: Vec::new() }
+        Scratch { v: Vec::new(), g: Vec::new(), t: Vec::new() }
     }
 
     fn fit(&mut self, n_ops: usize, n_vars: usize) {
@@ -273,10 +275,306 @@ impl Tape {
     }
 }
 
-/// Run a tape in its flat form: the one evaluator, and the one place the calculus is written.
+/// A value with its first three derivatives in the tape's **first** variable — `u`, the curve's
+/// parameter — and the gradient of the first three of those in every variable.
+///
+/// This is what a contact that reads the curve's *direction* needs: a tangency is stated on
+/// `C'(u)` and a curvature on `C''(u)`, each row differentiated in `u` (one order higher) and in
+/// every coordinate the curve is written over (the gradient of that order).  `c[k]` is
+/// `dᵏv/duᵏ` and `g[k][j]` is `∂c[k]/∂x[j]`, so `g[k][0] == c[k + 1]`.  Truncated Taylor
+/// arithmetic, order by order, with the gradient carried through the same recurrences — the
+/// one place the second- and third-order calculus is written, checked in `tests/tape.rs`
+/// against finite differences of `eval_flat`.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Series {
+    pub c: [f64; 4],
+    pub g: [[f64; MAX_VARS]; 3],
+}
+
+/// Pascal's rows, for Leibniz and the quotient recurrence.
+const BIN: [[f64; 4]; 4] = [
+    [1.0, 0.0, 0.0, 0.0],
+    [1.0, 1.0, 0.0, 0.0],
+    [1.0, 2.0, 1.0, 0.0],
+    [1.0, 3.0, 3.0, 1.0],
+];
+
+impl Series {
+    fn constant(v: f64) -> Series {
+        Series { c: [v, 0.0, 0.0, 0.0], ..Series::default() }
+    }
+
+    fn var(j: usize, v: f64, n: usize) -> Series {
+        let mut s = Series::constant(v);
+        if j == 0 {
+            s.c[1] = 1.0;
+        }
+        if j < n {
+            s.g[0][j] = 1.0;
+        }
+        s
+    }
+
+    /// Whether this is a constant of the tape: no gradient in any variable, `u` included —
+    /// and then no derivative either, since the recurrences make one from the other.
+    fn is_constant(&self, n: usize) -> bool {
+        self.g[0][..n].iter().all(|&v| v == 0.0)
+    }
+
+    /// `d/du` of this series: what is known drops one order — `c[3]` and `g[2]` of the result
+    /// are not known and are left 0, which is why a caller reads at most two orders of it.
+    fn shift(&self) -> Series {
+        let mut s = Series::constant(self.c[1]);
+        s.c[1] = self.c[2];
+        s.c[2] = self.c[3];
+        s.g[0] = self.g[1];
+        s.g[1] = self.g[2];
+        s
+    }
+
+    fn map(&self, n: usize, f: impl Fn(f64) -> f64) -> Series {
+        let mut s = Series::default();
+        for k in 0..4 {
+            s.c[k] = f(self.c[k]);
+        }
+        for k in 0..3 {
+            s.g[k] = map(&self.g[k], n, &f);
+        }
+        s
+    }
+
+    fn zip(&self, b: &Series, n: usize, f: impl Fn(f64, f64) -> f64) -> Series {
+        let mut s = Series::default();
+        for k in 0..4 {
+            s.c[k] = f(self.c[k], b.c[k]);
+        }
+        for k in 0..3 {
+            s.g[k] = zip(&self.g[k], &b.g[k], n, &f);
+        }
+        s
+    }
+
+    /// Leibniz: `(ab)⁽ᵏ⁾ = Σ C(k, i) a⁽ⁱ⁾ b⁽ᵏ⁻ⁱ⁾`, and its gradient term by term.
+    fn mul(&self, b: &Series, n: usize) -> Series {
+        let mut s = Series::default();
+        for k in 0..4 {
+            for i in 0..=k {
+                s.c[k] += BIN[k][i] * self.c[i] * b.c[k - i];
+            }
+        }
+        for k in 0..3 {
+            for i in 0..=k {
+                for j in 0..n {
+                    s.g[k][j] += BIN[k][i]
+                        * (self.g[i][j] * b.c[k - i] + self.c[i] * b.g[k - i][j]);
+                }
+            }
+        }
+        s
+    }
+
+    /// `q = a / b`, order by order: `qₖ = (aₖ − Σᵢ₍ₖ C(k, i) qᵢ bₖ₋ᵢ) / b₀`, and its gradient.
+    fn div(&self, b: &Series, n: usize) -> Series {
+        let inv = 1.0 / b.c[0];
+        let mut q = Series::default();
+        for k in 0..4 {
+            let mut acc = self.c[k];
+            for i in 0..k {
+                acc -= BIN[k][i] * q.c[i] * b.c[k - i];
+            }
+            q.c[k] = acc * inv;
+        }
+        for k in 0..3 {
+            for j in 0..n {
+                let mut acc = self.g[k][j] - q.c[k] * b.g[0][j];
+                for i in 0..k {
+                    acc -= BIN[k][i] * (q.g[i][j] * b.c[k - i] + q.c[i] * b.g[k - i][j]);
+                }
+                q.g[k][j] = acc * inv;
+            }
+        }
+        q
+    }
+
+    /// `f(a)` for a one-argument `f` with derivatives `d[0..=3]` at `a₀` — Faà di Bruno to
+    /// third order, and the gradient of the first three orders through the same terms.
+    fn apply(&self, d: [f64; 4], n: usize) -> Series {
+        let [a1, a2, a3] = [self.c[1], self.c[2], self.c[3]];
+        let mut s = Series::default();
+        s.c[0] = d[0];
+        s.c[1] = d[1] * a1;
+        s.c[2] = d[2] * a1 * a1 + d[1] * a2;
+        s.c[3] = d[3] * a1 * a1 * a1 + 3.0 * d[2] * a1 * a2 + d[1] * a3;
+        for j in 0..n {
+            let (g0, g1, g2) = (self.g[0][j], self.g[1][j], self.g[2][j]);
+            s.g[0][j] = d[1] * g0;
+            s.g[1][j] = d[2] * a1 * g0 + d[1] * g1;
+            s.g[2][j] =
+                d[3] * a1 * a1 * g0 + 2.0 * d[2] * a1 * g1 + d[2] * a2 * g0 + d[1] * g2;
+        }
+        s
+    }
+}
+
+/// The first three derivatives of a one-argument function, beside its value — `call1` one and
+/// two orders further, with the same degree convention.
+fn call1_series(f: Fn1, a: f64) -> [f64; 4] {
+    const K: f64 = std::f64::consts::PI / 180.0;
+    match f {
+        Fn1::Sqrt => {
+            let s = a.sqrt();
+            if s == 0.0 {
+                [0.0, 0.0, 0.0, 0.0]
+            } else {
+                [s, 0.5 / s, -0.25 / (s * s * s), 0.375 / (s * s * s * s * s)]
+            }
+        }
+        Fn1::Abs => [a.abs(), a.signum(), 0.0, 0.0],
+        Fn1::Sin => {
+            let (s, c) = (a * K).sin_cos();
+            [s, K * c, -K * K * s, -K * K * K * c]
+        }
+        Fn1::Cos => {
+            let (s, c) = (a * K).sin_cos();
+            [c, -K * s, -K * K * c, K * K * K * s]
+        }
+        Fn1::Tan => {
+            let t = (a * K).tan();
+            let q = 1.0 + t * t;
+            [t, K * q, 2.0 * K * K * t * q, 2.0 * K * K * K * q * (1.0 + 3.0 * t * t)]
+        }
+        Fn1::Asin | Fn1::Acos => {
+            let w = 1.0 - a * a;
+            let r = w.sqrt();
+            let d = [1.0 / r / K, a / (w * r) / K, (1.0 + 2.0 * a * a) / (w * w * r) / K];
+            match f {
+                Fn1::Asin => [a.asin().to_degrees(), d[0], d[1], d[2]],
+                _ => [a.acos().to_degrees(), -d[0], -d[1], -d[2]],
+            }
+        }
+        Fn1::Atan => {
+            let w = 1.0 + a * a;
+            [
+                a.atan().to_degrees(),
+                1.0 / w / K,
+                -2.0 * a / (w * w) / K,
+                (6.0 * a * a - 2.0) / (w * w * w) / K,
+            ]
+        }
+        Fn1::Exp => {
+            let e = a.exp();
+            [e, e, e, e]
+        }
+        Fn1::Ln => [a.ln(), 1.0 / a, -1.0 / (a * a), 2.0 / (a * a * a)],
+        Fn1::Log => {
+            let l = std::f64::consts::LN_10;
+            [a.log10(), 1.0 / (a * l), -1.0 / (a * a * l), 2.0 / (a * a * a * l)]
+        }
+        Fn1::Floor => [a.floor(), 0.0, 0.0, 0.0],
+        Fn1::Ceil => [a.ceil(), 0.0, 0.0, 0.0],
+        Fn1::Round => [a.round(), 0.0, 0.0, 0.0],
+    }
+}
+
+impl Tape {
+    /// Evaluate with derivatives in the first variable to third order, and the gradient of the
+    /// first three orders — see `Series`.
+    pub fn eval_series(&self, x: &[f64], s: &mut Scratch) -> Series {
+        eval_series_flat(&self.flat, self.n_vars, x, s)
+    }
+}
+
+/// `eval_flat`, carried to third order in the first variable — the second walker over the
+/// instructions, and deliberately so: each op's rule here is the *Taylor* rule, which contains
+/// the first-order one, and `tests/tape.rs` holds the two to each other.
+pub fn eval_series_flat(flat: &[f64], n_vars: usize, x: &[f64], s: &mut Scratch) -> Series {
+    const K: f64 = std::f64::consts::PI / 180.0;
+    let n_ops = flat.len() / WORD;
+    let n = n_vars.min(MAX_VARS);
+    // every slot is written before a later op reads it, so no clearing: only growth costs
+    s.t.resize(n_ops.max(1), Series::default());
+    for i in 0..n_ops {
+        let w = &flat[i * WORD..i * WORD + WORD];
+        let (a, b) = (w[1] as usize, w[2] as usize);
+        // an operand is an earlier slot; a malformed one reads the last, as `view` bounds do
+        let get = |k: usize| s.t[k.min(i.saturating_sub(1))];
+        let out = if w[0] == code::CONST {
+            Series::constant(w[1])
+        } else if w[0] == code::VAR {
+            Series::var(a, x.get(a).copied().unwrap_or(0.0), n)
+        } else if w[0] == code::NEG {
+            get(a).map(n, |p| -p)
+        } else if w[0] == code::ADD {
+            get(a).zip(&get(b), n, |p, q| p + q)
+        } else if w[0] == code::SUB {
+            get(a).zip(&get(b), n, |p, q| p - q)
+        } else if w[0] == code::MUL {
+            get(a).mul(&get(b), n)
+        } else if w[0] == code::DIV {
+            get(a).div(&get(b), n)
+        } else if w[0] == code::POW {
+            let (base, ex) = (get(a), get(b));
+            if ex.is_constant(n) {
+                // a fixed power: a one-argument function of the base, the falling factorials
+                // `p (p−1) … (p−k+1) a^(p−k)`; a constant exponent over a zero base is finite,
+                // as `eval_flat` keeps it
+                let (v, p) = (base.c[0], ex.c[0]);
+                let mut d = [v.powf(p); 4];
+                let mut fall = 1.0;
+                for k in 1..4 {
+                    fall *= p - (k - 1) as f64;
+                    d[k] = if v == 0.0 && p - k as f64 <= 0.0 { 0.0 } else { fall * v.powf(p - k as f64) };
+                }
+                base.apply(d, n)
+            } else {
+                // a varying exponent: exp(b ln a), each a one-argument rule
+                let e = base.apply(call1_series(Fn1::Ln, base.c[0]), n).mul(&ex, n);
+                e.apply(call1_series(Fn1::Exp, e.c[0]), n)
+            }
+        } else if w[0] == code::CALL1 {
+            let arg = get(a);
+            arg.apply(call1_series(fn1_of(w[2]), arg.c[0]), n)
+        } else {
+            let (p, q) = (get(a), get(b));
+            match fn2_of(w[3]) {
+                // d atan2(a, b) = (b da − a db) / (a² + b²): the derivative as a series over the
+                // shifted series, one order down — which is why `c[3]` needs `shift`'s `c[2]`
+                // and nothing past it, and the gradient needs one order less again
+                Fn2::Atan2 => {
+                    let num = q.mul(&p.shift(), n).zip(&p.mul(&q.shift(), n), n, |x, y| x - y);
+                    let den = p.mul(&p, n).zip(&q.mul(&q, n), n, |x, y| x + y);
+                    let r = num.div(&den, n);
+                    // the value and the first order are `call2`'s own; the rest the series
+                    let (val, da, db) = call2(Fn2::Atan2, p.c[0], q.c[0]);
+                    let mut o = Series::default();
+                    o.c = [val, r.c[0] / K, r.c[1] / K, r.c[2] / K];
+                    o.g[0] = zip(&p.g[0], &q.g[0], n, |x, y| da * x + db * y);
+                    o.g[1] = map(&r.g[0], n, |x| x / K);
+                    o.g[2] = map(&r.g[1], n, |x| x / K);
+                    o
+                }
+                Fn2::Min => if p.c[0] <= q.c[0] { p } else { q },
+                Fn2::Max => if p.c[0] >= q.c[0] { p } else { q },
+                Fn2::Hypot => {
+                    let sq = p.mul(&p, n).zip(&q.mul(&q, n), n, |x, y| x + y);
+                    sq.apply(call1_series(Fn1::Sqrt, sq.c[0]), n)
+                }
+            }
+        };
+        s.t[i] = out;
+    }
+    match n_ops {
+        0 => Series::default(),
+        k => s.t[k - 1],
+    }
+}
+
+/// Run a tape in its flat form: the first-order evaluator, and the place the first-order calculus
+/// is written — `eval_series_flat` is the one other walker, and holds the same rules to third
+/// order, the two kept together by `tests/tape.rs`.
 ///
 /// A kernel calls this with the slice of its constants the tape occupies; `Tape::eval` calls it
-/// with its own.  Neither has a second walker to keep in step with the first.
+/// with its own.
 pub fn eval_flat(flat: &[f64], n_vars: usize, x: &[f64], s: &mut Scratch) -> Value {
     let n_ops = flat.len() / WORD;
     let n = n_vars.min(MAX_VARS);
@@ -373,30 +671,8 @@ fn zip(
 /// wrong is silent: the curve draws correctly and the solver takes the wrong step.  It is checked
 /// against a finite difference of this same evaluator in `tests/tape.rs`.
 fn call1(f: Fn1, a: f64) -> (f64, f64) {
-    const K: f64 = std::f64::consts::PI / 180.0;
-    match f {
-        Fn1::Sqrt => {
-            let s = a.sqrt();
-            (s, if s == 0.0 { 0.0 } else { 0.5 / s })
-        }
-        Fn1::Abs => (a.abs(), a.signum()),
-        Fn1::Sin => ((a * K).sin(), (a * K).cos() * K),
-        Fn1::Cos => ((a * K).cos(), -(a * K).sin() * K),
-        Fn1::Tan => {
-            let c = (a * K).cos();
-            ((a * K).tan(), K / (c * c))
-        }
-        Fn1::Asin => (a.asin().to_degrees(), 1.0 / (1.0 - a * a).sqrt() / K),
-        Fn1::Acos => (a.acos().to_degrees(), -1.0 / (1.0 - a * a).sqrt() / K),
-        Fn1::Atan => (a.atan().to_degrees(), 1.0 / (1.0 + a * a) / K),
-        Fn1::Exp => (a.exp(), a.exp()),
-        Fn1::Ln => (a.ln(), 1.0 / a),
-        Fn1::Log => (a.log10(), 1.0 / (a * std::f64::consts::LN_10)),
-        // a step has no slope anywhere it is defined, and no derivative where it is not
-        Fn1::Floor => (a.floor(), 0.0),
-        Fn1::Ceil => (a.ceil(), 0.0),
-        Fn1::Round => (a.round(), 0.0),
-    }
+    let d = call1_series(f, a);
+    (d[0], d[1])
 }
 
 fn call2(f: Fn2, a: f64, b: f64) -> (f64, f64, f64) {

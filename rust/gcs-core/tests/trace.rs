@@ -54,11 +54,8 @@ fn build(src: &str) -> gcs_core::program::Elaborated {
     elaborate(&prog)
 }
 
-/// Where the involute is at `u`, worked out here rather than asked of the core.
-fn involute_at(cx: f64, cy: f64, rb: f64, u_deg: f64) -> (f64, f64) {
-    let r = u_deg.to_radians();
-    (cx + rb * (r.cos() + r * r.sin()), cy + rb * (r.sin() - r * r.cos()))
-}
+mod common;
+use common::{fd_jacobian, involute_at};
 
 /// **The taut string traces the involute.**  Nothing in the `unwind` family states the closed
 /// form (its seeds are wrong by design), yet the curve it draws is the involute to solver
@@ -126,27 +123,7 @@ fn the_trace_jacobian_matches_a_finite_difference() {
     let src = format!("{DOC}point q hint(x: 28, y: 22)\nq on string hint(u: 30)\n");
     let e = build(&src);
     assert!(e.ok());
-    let mut sys = System::new(&e.sketch);
-    let z = sys.z0(&e.sketch);
-    // only the contact's rows: the radius row is exact and unrelated
-    let dense = sys.jacobian_dense(&z);
-    let m = sys.n_res;
-    let n = z.len();
-    for j in 0..n {
-        let h = 1e-6 * z[j].abs().max(1.0);
-        let (mut lo, mut hi) = (z.clone(), z.clone());
-        lo[j] -= h;
-        hi[j] += h;
-        let (a, b) = (sys.residuals(&lo), sys.residuals(&hi));
-        for i in 0..m {
-            let fd = (b[i] - a[i]) / (2.0 * h);
-            let got = dense.at(i, j);
-            assert!(
-                (got - fd).abs() <= 1e-4 * fd.abs().max(1.0),
-                "d r{i} / d z{j}: kernel {got}, finite difference {fd}",
-            );
-        }
-    }
+    fd_jacobian(&e.sketch, 1e-4);
 }
 
 /// The curve moves when the geometry it is written over does, and the point comes with it —

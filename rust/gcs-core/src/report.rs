@@ -519,7 +519,7 @@ pub fn registry_json() -> Json {
                 (
                     "kernel",
                     match k {
-                        CKind::PointOnCurve => Json::Int(-1),
+                        k if k.family_kernel().is_some() => Json::Int(-1),
                         _ => (k.kernel() as i64).into(),
                     },
                 ),

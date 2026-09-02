@@ -642,11 +642,9 @@ fn eval_at(
     // pose lives in.  It goes back in `keep`, whatever this evaluation makes of it.
     let from = key.and_then(|k| s.seen.remove(&k)).filter(|p| p.val.ok);
     if let Some(prev) = &from {
-        refresh(&v, s, u, outer);
-        s.xv[v.n_outer..v.n_outer + v.n_q].copy_from_slice(&prev.q);
         // read where it landed before paying `finish` for it: a rejected resume owes no
         // factorisation, and the traced point is all `continues` ever asks about
-        if newton(&v, s) && continues(&v, s, prev) {
+        if warm(&v, s, u, outer, &prev.q) && continues(&v, s, prev) {
             let val = finish(&v, s, true);
             if val.ok {
                 return keep(&v, s, key, outer, val);
@@ -898,36 +896,25 @@ pub fn sweep(
 /// the Jacobian asks for the *first* and never once hits — the halving it was written for only
 /// ever happened for a block of one.
 pub fn kernel_eval(consts: &[f64], v: &[f64], n_par: usize) -> Val {
-    // the contact's constants: [anchor u, n_values, values…, has_pose, locus flat…, pose…] —
-    // the pose is the drawn instance's, `n_q` wide (the flat says how wide) and meaningful
-    // when `has_pose` says so, reserved either way so the block's constants are one width
-    let Some(&u_start) = consts.first() else { return Val::default() };
-    let Some(&nv) = consts.get(1) else { return Val::default() };
-    if !(nv >= 0.0 && nv <= tape::MAX_VARS as f64) {
-        return Val::default();
-    }
-    let nv = nv as usize;
-    let Some(values) = consts.get(2..2 + nv) else { return Val::default() };
-    let Some(&has_pose) = consts.get(2 + nv) else { return Val::default() };
-    let Some(flat) = consts.get(3 + nv..) else { return Val::default() };
-    let Some(n_q) = view(flat).map(|w| w.n_q) else { return Val::default() };
-    if flat.len() < n_q {
-        return Val::default();
-    }
-    let pose = (has_pose == 1.0).then(|| &flat[flat.len() - n_q..]);
-    // the outer vector: the parameter column, the θ columns, then the given numbers
+    // the point-on-curve columns: the point, the parameter, then the θ columns
     let theta = n_par.saturating_sub(3);
     if v.len() < 3 + theta {
         return Val::default();
     }
-    let mut outer = [0.0f64; tape::MAX_VARS];
-    if 1 + theta + nv > tape::MAX_VARS {
+    kernel_eval_at(consts, v[2], &v[3..3 + theta])
+}
+
+/// `kernel_eval` given the parameter and the θ columns outright — what a kernel whose columns
+/// are laid out otherwise (a tangency's line after the curve's coordinates) calls.
+pub fn kernel_eval_at(consts: &[f64], u: f64, theta_cols: &[f64]) -> Val {
+    let Some((anchor_u, values, has_pose, flat)) = decode(consts) else { return Val::default() };
+    let Some(n_q) = view(flat).map(|w| w.n_q) else { return Val::default() };
+    if flat.len() < n_q {
         return Val::default();
     }
-    outer[0] = v[2];
-    outer[1..1 + theta].copy_from_slice(&v[3..3 + theta]);
-    outer[1 + theta..1 + theta + nv].copy_from_slice(values);
-    let outer = &outer[..1 + theta + nv];
+    let pose = has_pose.then(|| &flat[flat.len() - n_q..]);
+    let mut outer = [0.0f64; tape::MAX_VARS];
+    let Some(outer) = outer_of(u, theta_cols, values, &mut outer) else { return Val::default() };
     LOCUS_SCRATCH.with(|s| {
         let s = &mut *s.borrow_mut();
         // A compiled block's constants stay where they are put: `refresh_consts` rewrites a
@@ -942,8 +929,100 @@ pub fn kernel_eval(consts: &[f64], v: &[f64], n_par: usize) -> Val {
                 return seen.val;
             }
         }
-        eval_at(flat, outer, Anchor { u: u_start, pose }, Some(key), s)
+        eval_at(flat, outer, Anchor { u: anchor_u, pose }, Some(key), s)
     })
+}
+
+/// A contact's constants, read once for both entries: `[anchor u, n_values, values…, has_pose,
+/// locus flat…, pose…]` — the pose is the drawn instance's, `n_q` wide (the flat says how wide)
+/// and meaningful when `has_pose` says so, reserved either way so the block's constants are one
+/// width.  The flat handed back still carries the pose after it, which `view` ignores.
+fn decode(consts: &[f64]) -> Option<(f64, &[f64], bool, &[f64])> {
+    let &u = consts.first()?;
+    let &nv = consts.get(1)?;
+    if !(nv >= 0.0 && nv <= tape::MAX_VARS as f64) {
+        return None;
+    }
+    let nv = nv as usize;
+    let values = consts.get(2..2 + nv)?;
+    let &has_pose = consts.get(2 + nv)?;
+    let flat = consts.get(3 + nv..)?;
+    Some((u, values, has_pose == 1.0, flat))
+}
+
+/// The outer vector: the parameter column, the θ columns, then the given numbers.
+fn outer_of<'a>(u: f64, theta: &[f64], values: &[f64], into: &'a mut [f64; tape::MAX_VARS]) -> Option<&'a [f64]> {
+    let width = 1 + theta.len() + values.len();
+    if width > tape::MAX_VARS {
+        return None;
+    }
+    into[0] = u;
+    into[1..1 + theta.len()].copy_from_slice(theta);
+    into[1 + theta.len()..width].copy_from_slice(values);
+    Some(&into[..width])
+}
+
+/// One Newton solve of the block at `u` from a pose already found — the step a resume and a
+/// difference both take.  `true` when it converged; the pose is then in `s.xv`.
+fn warm(v: &View, s: &mut Scratch, u: f64, outer: &[f64], q: &[f64]) -> bool {
+    refresh(v, s, u, outer);
+    s.xv[v.n_outer..v.n_outer + v.n_q].copy_from_slice(q);
+    newton(v, s)
+}
+
+/// A traced curve's **frame** at a contact: the point, its exact first derivative in `[u, θ…]`
+/// (the implicit function theorem, as `kernel_eval` gives it), and the Jacobian of that first
+/// derivative — which the theorem does not give without second derivatives of the block's
+/// kernels, and which is therefore a **forward difference** of the exact velocity from the
+/// memoised centre, one warm-started block solve per column.  A tangency's residual is exact;
+/// its Jacobian is accurate to the difference, which is what a solver's Jacobian needs and no
+/// more.  A curvature needs the second derivative exactly, and a traced curve cannot give it —
+/// see `constraints::validate`.
+#[derive(Clone, Copy, Debug)]
+pub struct Frame {
+    pub val: Val,
+    /// `d1[k][j] = ∂(dC_k/du)/∂outer[j]` for `k` in x, y — by finite difference.
+    pub d1: [[f64; tape::MAX_VARS]; 2],
+}
+
+pub fn kernel_frame(consts: &[f64], u: f64, theta_cols: &[f64]) -> Frame {
+    let val = kernel_eval_at(consts, u, theta_cols);
+    let mut d1 = [[0.0f64; tape::MAX_VARS]; 2];
+    if !val.ok {
+        return Frame { val, d1 };
+    }
+    let Some((_, values, _, flat)) = decode(consts) else { return Frame { val, d1 } };
+    let mut outer = [0.0f64; tape::MAX_VARS];
+    let Some(outer) = outer_of(u, theta_cols, values, &mut outer) else { return Frame { val, d1 } };
+    let key = (flat.as_ptr() as usize, flat.len());
+    LOCUS_SCRATCH.with(|s| {
+        let s = &mut *s.borrow_mut();
+        // the pose the centre was answered at — `kernel_eval_at` always leaves it here
+        let mut q = [0.0f64; MAX_Q];
+        let Some(n_q) = s.seen.get(&key).map(|p| {
+            q[..p.q.len()].copy_from_slice(&p.q);
+            p.q.len()
+        }) else { return };
+        let Some(vw) = prepare(flat, outer, s) else { return };
+        let mut probe = [0.0f64; tape::MAX_VARS];
+        probe[..outer.len()].copy_from_slice(outer);
+        for j in 0..1 + theta_cols.len() {
+            let h = 1e-5 * outer[j].abs().max(1.0);
+            probe[j] = outer[j] + h;
+            // a continuation step of one difference from the remembered pose, never a cold
+            // start, so the branch cannot change under it; the perturbed pose is not kept
+            let ok = warm(&vw, s, probe[0], &probe[..outer.len()], &q[..n_q]);
+            let f = if ok { finish(&vw, s, true) } else { Val::default() };
+            probe[j] = outer[j];
+            if !f.ok {
+                d1 = [[f64::NAN; tape::MAX_VARS]; 2];
+                return;
+            }
+            d1[0][j] = (f.dx[0] - val.dx[0]) / h;
+            d1[1][j] = (f.dy[0] - val.dy[0]) / h;
+        }
+    });
+    Frame { val, d1 }
 }
 
 /// Drop every remembered pose.  `System::new` calls it: a contact's constants are addressed by

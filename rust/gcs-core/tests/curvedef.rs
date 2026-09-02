@@ -68,15 +68,8 @@ fn involute_sketch() -> (Sketch, usize) {
     (sk, p)
 }
 
-/// Where the involute is at `u`, worked out here rather than asked of the core — so the test and
-/// the thing it tests do not share an implementation.
-fn involute_at(cx: f64, cy: f64, rb: f64, u_deg: f64) -> (f64, f64) {
-    let (u, r) = (u_deg, u_deg.to_radians());
-    (
-        cx + rb * (u.to_radians().cos() + r * u.to_radians().sin()),
-        cy + rb * (u.to_radians().sin() - r * u.to_radians().cos()),
-    )
-}
+mod common;
+use common::{fd_jacobian, involute_at};
 
 /// **A point solves onto a curve nothing in the core knows.**
 #[test]
@@ -119,27 +112,8 @@ fn a_point_lands_on_a_curve_written_in_the_language() {
 #[test]
 fn the_kernels_jacobian_matches_a_finite_difference() {
     let (sk, _) = involute_sketch();
-    let mut sys = System::new(&sk);
-    let z = sys.z0(&sk);
-    let dense = sys.jacobian_dense(&z);
-    let m = sys.n_res;
-    let n = z.len();
-    assert_eq!(m, 2, "one contact, two residuals");
-    for j in 0..n {
-        let h = 1e-6 * z[j].abs().max(1.0);
-        let (mut lo, mut hi) = (z.clone(), z.clone());
-        lo[j] -= h;
-        hi[j] += h;
-        let (a, b) = (sys.residuals(&lo), sys.residuals(&hi));
-        for i in 0..m {
-            let fd = (b[i] - a[i]) / (2.0 * h);
-            let got = dense.at(i, j);
-            assert!(
-                (got - fd).abs() <= 1e-5 * fd.abs().max(1.0),
-                "d r{i} / d z{j}: kernel {got}, finite difference {fd}",
-            );
-        }
-    }
+    assert_eq!(System::new(&sk).n_res, 2, "one contact, two residuals");
+    fd_jacobian(&sk, 1e-5);
 }
 
 /// The curve moves when the geometry it is written over does, and the point comes with it —

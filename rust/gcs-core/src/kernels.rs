@@ -120,6 +120,38 @@ pub fn trace_kernel(n_theta: usize, n_const: usize) -> Kernel {
     }
 }
 
+/// A line tangent to a curve written in the language: `(u, θ…, ax, ay, bx, by)` — the same two
+/// rows as `spline_tangent_line`, with `C` and `C'` from the definition's tapes (a formula) or
+/// its block (a trace).  One kernel per definition, as the contact's is.
+pub fn curve_tangent_kernel(n_theta: usize, n_const: usize, trace: bool) -> Kernel {
+    Kernel {
+        name: if trace { "trace_tangent_line" } else { "curve_tangent_line" },
+        n_res: 2,
+        n_par: 1 + n_theta + 4,
+        n_const,
+        degree: 1,
+        res: if trace { curve_tangent_res::<true> } else { curve_tangent_res::<false> },
+        jac: if trace { curve_tangent_jac::<true> } else { curve_tangent_jac::<false> },
+        const_jac: None,
+    }
+}
+
+/// A circle osculating a curve written in the language: `(u, θ…, cx, cy, r)` — the three rows
+/// of `spline_curvature`, with `C`, `C'`, `C''` and `C'''` from the definition's tapes.  A trace
+/// has no second derivative to give, so its slot is `refused`.
+pub fn curve_curvature_kernel(n_theta: usize, n_const: usize, trace: bool) -> Kernel {
+    Kernel {
+        name: if trace { "trace_curvature" } else { "curve_curvature" },
+        n_res: 3,
+        n_par: 1 + n_theta + 3,
+        n_const,
+        degree: 1,
+        res: if trace { refused_res } else { curve_curvature_res },
+        jac: if trace { refused_jac } else { curve_curvature_jac },
+        const_jac: None,
+    }
+}
+
 /* -- linear kernels: r = J v with a constant J ----------------------------- */
 
 fn lin_res(n: usize, v: &[f64], j: &'static [f64], n_res: usize, n_par: usize, r: &mut [f64]) {
@@ -1403,14 +1435,207 @@ fn curve_parts(k: &[f64]) -> (usize, &[f64], &[f64], &[f64]) {
     (n_vars, x, y, &k[3 + lx + ly..])
 }
 
-/// The variable vector a tape is evaluated at, from the columns and the constants: the parameter,
-/// then the curve's coordinates, then its given numbers.
-fn curve_x(v: &[f64], n_par: usize, values: &[f64], out: &mut [f64]) -> usize {
-    out[0] = v[2];
-    let theta = n_par - 3;
-    out[1..1 + theta].copy_from_slice(&v[3..3 + theta]);
-    out[1 + theta..1 + theta + values.len()].copy_from_slice(values);
-    1 + theta + values.len()
+/// The variable vector a tape is evaluated at: the parameter, then the curve's coordinates, then
+/// its given numbers — the definition's own order.
+fn curve_x(u: f64, theta: &[f64], values: &[f64], out: &mut [f64]) -> usize {
+    out[0] = u;
+    out[1..1 + theta.len()].copy_from_slice(theta);
+    out[1 + theta.len()..1 + theta.len() + values.len()].copy_from_slice(values);
+    1 + theta.len() + values.len()
+}
+
+/// A curve's **frame** at a contact, whichever way the definition places it: the point and its
+/// first three derivatives in the parameter, and the gradient of the first three orders in the
+/// outer columns `[u, θ…]`.  A formula gives all of it exactly (`tape::Series`); a trace gives
+/// the point and `C'` exactly and `C'`'s gradient by difference (`locus::kernel_frame`), and no
+/// higher order — which is why a curvature is never stated against one (`constraints::validate`).
+///
+/// A **residual** reads only the derivatives (`curve_value`), never the gradient: a rejected
+/// trust-region step evaluates residuals without ever asking for a Jacobian, and for a trace the
+/// gradient is a sweep of block solves — the `EllFrame` bargain, kept here for the same reason.
+struct CurveFrame {
+    /// `c[k]` is `dᵏC/duᵏ` for `k` in 0..4, as (x, y).
+    c: [[f64; 2]; 4],
+    /// `g[k][j]` is `∂c[k]/∂outer[j]` for `k` in 0..3, as (x, y).
+    g: [[[f64; crate::tape::MAX_VARS]; 2]; 3],
+}
+
+/// `C` and its derivatives in the parameter, for a residual.  `TRACE` says which body the
+/// constants hold — a trace's block, or a formula's two tapes.
+fn curve_value<const TRACE: bool>(k: &[f64], u: f64, theta: &[f64]) -> [[f64; 2]; 4] {
+    if TRACE {
+        let val = crate::locus::kernel_eval_at(k, u, theta);
+        let nan = [f64::NAN; 2];
+        return [[val.x, val.y], [val.dx[0], val.dy[0]], nan, nan];
+    }
+    CURVE_SCRATCH.with(|sc| {
+        let sc = &mut *sc.borrow_mut();
+        let (n_vars, tx, ty, values) = curve_parts(k);
+        let mut x = [0.0f64; crate::tape::MAX_VARS];
+        curve_x(u, theta, values, &mut x);
+        let sx = crate::tape::eval_series_flat(tx, n_vars, &x, sc);
+        let sy = crate::tape::eval_series_flat(ty, n_vars, &x, sc);
+        std::array::from_fn(|k| [sx.c[k], sy.c[k]])
+    })
+}
+
+/// The whole frame, for a Jacobian.
+fn curve_frame<const TRACE: bool>(k: &[f64], u: f64, theta: &[f64]) -> CurveFrame {
+    let nan = [[f64::NAN; crate::tape::MAX_VARS]; 2];
+    if TRACE {
+        let fr = crate::locus::kernel_frame(k, u, theta);
+        return CurveFrame {
+            c: [[fr.val.x, fr.val.y], [fr.val.dx[0], fr.val.dy[0]], [f64::NAN; 2], [f64::NAN; 2]],
+            g: [[fr.val.dx, fr.val.dy], fr.d1, nan],
+        };
+    }
+    CURVE_SCRATCH.with(|sc| {
+        let sc = &mut *sc.borrow_mut();
+        let (n_vars, tx, ty, values) = curve_parts(k);
+        let mut x = [0.0f64; crate::tape::MAX_VARS];
+        curve_x(u, theta, values, &mut x);
+        let sx = crate::tape::eval_series_flat(tx, n_vars, &x, sc);
+        let sy = crate::tape::eval_series_flat(ty, n_vars, &x, sc);
+        CurveFrame {
+            c: std::array::from_fn(|k| [sx.c[k], sy.c[k]]),
+            g: std::array::from_fn(|k| [sx.g[k], sy.g[k]]),
+        }
+    })
+}
+
+/* -- a line tangent to a curve: (u, θ…, ax, ay, bx, by) ----------------------------------- */
+
+/// Rows: `cross(b − a, C − a) / |b − a|` and `cross(C', b − a) / |b − a|` — the spline
+/// tangency's, over the curve's own frame.
+fn curve_tangent_res<const TRACE: bool>(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let (n_par, n_const) = curve_widths(n, v, k);
+    if n_par < 5 || n_const < 2 {
+        return;
+    }
+    let n_theta = n_par - 5;
+    for i in 0..n {
+        let (o, ko) = (n_par * i, n_const * i);
+        let c = curve_value::<TRACE>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta]);
+        let l = o + 1 + n_theta;
+        let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
+        let (wx, wy) = (c[0][0] - v[l], c[0][1] - v[l + 1]);
+        let len = line_len(dx, dy);
+        r[2 * i] = (dx * wy - dy * wx) / len;
+        r[2 * i + 1] = (c[1][0] * dy - c[1][1] * dx) / len;
+    }
+}
+
+fn curve_tangent_jac<const TRACE: bool>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    const W: usize = crate::tape::MAX_VARS + 4;
+    let (n_par, n_const) = curve_widths(n, v, k);
+    if n_par < 5 || n_const < 2 || n_par > W {
+        return;
+    }
+    let n_theta = n_par - 5;
+    let (mut dc, mut dl) = ([0.0f64; W], [0.0f64; W]);
+    for i in 0..n {
+        let (o, ko) = (n_par * i, n_const * i);
+        let f = curve_frame::<TRACE>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta]);
+        let l = o + 1 + n_theta;
+        let ll = l - o;
+        let jo = 2 * n_par * i;
+        let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
+        let (wx, wy) = (f.c[0][0] - v[l], f.c[0][1] - v[l + 1]);
+        let (tx, ty) = (f.c[1][0], f.c[1][1]);
+        let len = line_len(dx, dy);
+        // |b − a| moves with the line's ends only
+        dl[..n_par].fill(0.0);
+        dl[ll..ll + 4].copy_from_slice(&[-dx / len, -dy / len, dx / len, dy / len]);
+        // row 0: cross(b − a, C − a) — the curve's columns move C, the line's move both ends
+        for c in 0..1 + n_theta {
+            dc[c] = dx * f.g[0][1][c] - dy * f.g[0][0][c];
+        }
+        dc[ll..ll + 4].copy_from_slice(&[dy - wy, wx - dx, wy, -wx]);
+        ratio_jac(&dc[..n_par], &dl[..n_par], len, dx * wy - dy * wx, &mut j[jo..jo + n_par]);
+        // row 1: cross(C', b − a) — the curve's columns move C'
+        for c in 0..1 + n_theta {
+            dc[c] = f.g[1][0][c] * dy - f.g[1][1][c] * dx;
+        }
+        dc[ll..ll + 4].copy_from_slice(&[ty, -tx, -ty, tx]);
+        ratio_jac(&dc[..n_par], &dl[..n_par], len, tx * dy - ty * dx, &mut j[jo + n_par..jo + 2 * n_par]);
+    }
+}
+
+/* -- a circle osculating a curve: (u, θ…, cx, cy, r) ------------------------------------- */
+
+/// Rows: the spline curvature's — the centre is the centre of curvature, and the radius is the
+/// distance to it — over a formula's frame; a trace has no second derivative and gets the
+/// `refused` kernel instead.  The u column and every θ column go through one formula, since
+/// `g[k][·][0]` is `c[k + 1]`: a column moves C, C' and C'' by its own three gradients, and for
+/// `u` those are C', C'' and C'''.
+fn curve_curvature_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let (n_par, n_const) = curve_widths(n, v, k);
+    if n_par < 4 || n_const < 2 {
+        return;
+    }
+    let n_theta = n_par - 4;
+    for i in 0..n {
+        let (o, ko) = (n_par * i, n_const * i);
+        let f = curve_value::<false>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta]);
+        let c = o + 1 + n_theta;
+        let ([tx, ty], [sx, sy]) = (f[1], f[2]);
+        let (dx, dy) = (v[c] - f[0][0], v[c + 1] - f[0][1]);
+        let g = (tx * tx + ty * ty) / turn(tx * sy - ty * sx);
+        r[3 * i] = dx + g * ty;
+        r[3 * i + 1] = dy - g * tx;
+        r[3 * i + 2] = line_len(dx, dy) - v[c + 2];
+    }
+}
+
+fn curve_curvature_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let (n_par, n_const) = curve_widths(n, v, k);
+    if n_par < 4 || n_const < 2 {
+        return;
+    }
+    let n_theta = n_par - 4;
+    for i in 0..n {
+        let (o, ko) = (n_par * i, n_const * i);
+        let f = curve_frame::<false>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta]);
+        let c = o + 1 + n_theta;
+        let cc = c - o;
+        let jo = 3 * n_par * i;
+        let (row1, row2) = (jo + n_par, jo + 2 * n_par);
+        let ([tx, ty], [sx, sy]) = (f.c[1], f.c[2]);
+        let (dx, dy) = (v[c] - f.c[0][0], v[c + 1] - f.c[0][1]);
+        let q = tx * tx + ty * ty;
+        let kk = turn(tx * sy - ty * sx);
+        let g = q / kk;
+        let len = line_len(dx, dy);
+        j[jo..jo + 3 * n_par].fill(0.0);
+        for col in 0..1 + n_theta {
+            let [ax, ay] = [f.g[0][0][col], f.g[0][1][col]];
+            let [bx, by] = [f.g[1][0][col], f.g[1][1][col]];
+            let [ex, ey] = [f.g[2][0][col], f.g[2][1][col]];
+            let dq = 2.0 * (tx * bx + ty * by);
+            let dkk = bx * sy + tx * ey - by * sx - ty * ex;
+            let dg = (dq * kk - q * dkk) / (kk * kk);
+            j[jo + col] = -ax + dg * ty + g * by;
+            j[row1 + col] = -ay - dg * tx - g * bx;
+            j[row2 + col] = (dx * -ax + dy * -ay) / len;
+        }
+        j[jo + cc] = 1.0;
+        j[row1 + cc + 1] = 1.0;
+        j[row2 + cc] = dx / len;
+        j[row2 + cc + 1] = dy / len;
+        j[row2 + cc + 2] = -1.0;
+    }
+}
+
+/// A slot in the kernel table for a constraint a body cannot serve — a curvature against a
+/// traced curve — filled so the table keeps its stride and `kernel_id_in` stays a function of
+/// the kind and the definition.  `constraints::validate` refuses the constraint before it is
+/// compiled; if one is compiled all the same, every row is NaN, which `System` reads as
+/// "not converged" and never as "no error".
+fn refused_res(_n: usize, _v: &[f64], _k: &[f64], r: &mut [f64]) {
+    r.fill(f64::NAN);
+}
+fn refused_jac(_n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
+    j.fill(f64::NAN);
 }
 
 /// The block's widths, read off the slices it was handed.
@@ -1436,7 +1661,7 @@ fn point_on_curve_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
         for i in 0..n {
             let (o, ko) = (n_par * i, n_const * i);
             let (n_vars, tx, ty, values) = curve_parts(&k[ko..ko + n_const]);
-            curve_x(&v[o..], n_par, values, &mut x);
+            curve_x(v[o + 2], &v[o + 3..o + n_par], values, &mut x);
             let cx = crate::tape::eval_flat(tx, n_vars, &x, &mut sc);
             let cy = crate::tape::eval_flat(ty, n_vars, &x, &mut sc);
             r[2 * i] = v[o] - cx.v;
@@ -1458,7 +1683,7 @@ fn point_on_curve_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
             let jo = 2 * n_par * i;
             let row1 = jo + n_par;
             let (n_vars, tx, ty, values) = curve_parts(&k[ko..ko + n_const]);
-            curve_x(&v[o..], n_par, values, &mut x);
+            curve_x(v[o + 2], &v[o + 3..o + n_par], values, &mut x);
             let cx = crate::tape::eval_flat(tx, n_vars, &x, &mut sc);
             let cy = crate::tape::eval_flat(ty, n_vars, &x, &mut sc);
             for t in 0..2 * n_par {

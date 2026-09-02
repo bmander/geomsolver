@@ -117,6 +117,71 @@ fn a_tape_differentiates_itself_correctly() {
     }
 }
 
+/// **The Taylor evaluator agrees with the first-order one.**  Each order in the first variable
+/// against a central difference of the order below it, and each order's gradient against a
+/// central difference of the order below's gradient — so `Series` is checked against
+/// `eval_flat` and never against a second hand-derived formula.
+#[test]
+fn a_tape_differentiates_itself_to_third_order() {
+    let mut s = Scratch::new();
+    for (src, names) in CASES {
+        let t = tape(src, names);
+        if names.is_empty() {
+            continue;   // a constant has no first variable to be a series in
+        }
+        for k in 0..5 {
+            let x = sample(names.len(), k);
+            let ser = t.eval_series(&x, &mut s);
+            let h = 1e-4 * x[0].abs().max(1.0);
+            let (mut lo, mut hi) = (x.clone(), x.clone());
+            lo[0] -= h;
+            hi[0] += h;
+            let (slo, shi) = (t.eval_series(&lo, &mut s), t.eval_series(&hi, &mut s));
+            // c[k + 1] against the difference of c[k] in u; the tolerance loosens an order at
+            // a time, as a central difference of a difference does
+            for k in 0..3 {
+                let fd = (shi.c[k] - slo.c[k]) / (2.0 * h);
+                let tol = 1e-4 * 10f64.powi(k as i32) * fd.abs().max(1.0);
+                assert!(
+                    (ser.c[k + 1] - fd).abs() <= tol,
+                    "d^{}({src})/du^{} at {x:?}: series {}, finite difference {fd}",
+                    k + 1,
+                    k + 1,
+                    ser.c[k + 1],
+                );
+            }
+            // the value and its first derivative are the first-order evaluator's own
+            let (v, d) = at(&t, &x);
+            assert!((ser.c[0] - v).abs() <= 1e-12 * v.abs().max(1.0), "{src}: value");
+            for j in 0..names.len() {
+                assert!(
+                    (ser.g[0][j] - d[j]).abs() <= 1e-9 * d[j].abs().max(1.0),
+                    "{src}: gradient in {}",
+                    names[j]
+                );
+            }
+            // g[k][j] against the difference of c[k] in x[j]
+            for j in 0..names.len() {
+                let h = 1e-4 * x[j].abs().max(1.0);
+                let (mut lo, mut hi) = (x.clone(), x.clone());
+                lo[j] -= h;
+                hi[j] += h;
+                let (slo, shi) = (t.eval_series(&lo, &mut s), t.eval_series(&hi, &mut s));
+                for k in 1..3 {
+                    let fd = (shi.c[k] - slo.c[k]) / (2.0 * h);
+                    let tol = 1e-4 * 10f64.powi(k as i32) * fd.abs().max(1.0);
+                    assert!(
+                        (ser.g[k][j] - fd).abs() <= tol,
+                        "d(d^{k}({src})/du^{k})/d{} at {x:?}: series {}, finite difference {fd}",
+                        names[j],
+                        ser.g[k][j],
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// The gradient in a variable the expression does not read is zero, not noise.
 #[test]
 fn an_unread_variable_has_no_gradient() {

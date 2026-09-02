@@ -1206,20 +1206,22 @@ pub fn entity_name(e: EntRef) -> String {
 }
 
 /// The letter a minted name of this kind starts with.  The first letter of the keyword for
-/// every kind but one: `plane` and `point` share a `p`, and a plane on the page is a *view*, so
-/// its names run `v0`, `v1` — a letter no other kind uses.  Exhaustive, so a new kind has to
-/// say what its names look like rather than inherit a clash.
+/// every kind but two: `plane` and `point` share a `p`, and a plane on the page is a *view*, so
+/// its names run `v0`, `v1`; `curve` and `circle` share a `c`, and a curve's run `k0`, `k1` —
+/// a label `C0` on a circle beside a label `C0` on the curve written over it was one label for
+/// two things.  Exhaustive, so a new kind has to say what its names look like rather than
+/// inherit a clash.
 pub fn kind_initial(k: EntKind) -> char {
     match k {
         EntKind::Plane => 'v',
+        EntKind::Curve => 'k',
         EntKind::Point
         | EntKind::Line
         | EntKind::Circle
         | EntKind::Arc
         | EntKind::Spline
         | EntKind::Ellipse
-        | EntKind::Frame
-        | EntKind::Curve => k.as_str().chars().next().expect("every kind name has a letter"),
+        | EntKind::Frame => k.as_str().chars().next().expect("every kind name has a letter"),
     }
 }
 

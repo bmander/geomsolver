@@ -377,7 +377,8 @@ export function initTypes(): Record<string, ConstraintCtor> {
     EqualRadius, AnnularDistance, TangentLineCircle, TangentCircleCircle, TangentArcLine,
     TangentLineCircleAt, Symmetric, PointOnSpline, SplineTangentLine, SplineCurvature,
     HorizontalPoints, VerticalPoints, HorizontalDistance, VerticalDistance, PointOnEllipse,
-    EllipseTangentLine, EllipseCurvature, Project,
+    EllipseTangentLine, EllipseCurvature, PointOnCurve, CurveTangentLine, CurveCurvature,
+    Project,
   } = CONSTRAINT_TYPES);
   return CONSTRAINT_TYPES;
 }
@@ -416,6 +417,11 @@ export let VerticalDistance: ConstraintCtor;
 export let PointOnEllipse: ConstraintCtor;
 export let EllipseTangentLine: ConstraintCtor;
 export let EllipseCurvature: ConstraintCtor;
+/** The three contacts with a curve written in the language: a point on it, a line tangent to
+ *  it, a circle osculating it.  Each owns the curve's parameter, as a spline's contacts do. */
+export let PointOnCurve: ConstraintCtor;
+export let CurveTangentLine: ConstraintCtor;
+export let CurveCurvature: ConstraintCtor;
 /** `a project b`: two points are images of one point in space.  Its two plane slots are left
  *  out — the core reads them off the points' memberships, as it reads a tangency's side. */
 export let Project: ConstraintCtor;

@@ -91,10 +91,10 @@ fn every_constraint_type_is_printable() {
         if kind == CKind::DragTarget {
             continue; // soft, and never in a document — `user_constraints` filters it
         }
-        if kind == CKind::PointOnCurve {
-            // pending the `curve` surface: a contact prints, but the curve it names has no
-            // declaration to print yet, so there is nothing for it to round-trip against.  This
-            // skip comes out with `a_curve_written_in_the_language_draws`.
+        if matches!(kind, CKind::PointOnCurve | CKind::CurveTangentLine | CKind::CurveCurvature) {
+            // a curve's contacts print, but the curve they name lifts as an instance of a
+            // component the sketch does not hold the text of, so there is nothing for them to
+            // round-trip against here; `tests/curve_contact.rs` prints them from a document
             continue;
         }
         let (sk, c) = fixture(kind);

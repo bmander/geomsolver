@@ -9,7 +9,7 @@
 import * as io from '../core/io.js';
 import { Constraint } from '../core/constraints.js';
 import {
-  Arc, Circle, Ellipse, Line, Plane, Point, Primitive, Spline, angleBetween, distanceBetween,
+  Arc, Circle, Curve, Ellipse, Line, Plane, Point, Primitive, Spline, angleBetween, distanceBetween,
   expand,
 } from '../core/model.js';
 import { expressions } from '../core/expr.js';
@@ -66,6 +66,8 @@ function describeEntity(e: Primitive, ix: io.Index): string {
     : e instanceof Spline ? `spline  ${e.ctrl.map((p) => ix.name(p)).join('–')}`
     : e instanceof Ellipse ? `ellipse @${ix.name(e.center)} →${ix.name(e.major)}`
     : e instanceof Plane ? `plane   @${ix.name(e.origin)} →${ix.name(e.toward)}`
+    // a curve written in the language is its statement; the program panel says the rest
+    : e instanceof Curve ? 'curve'
     : 'point';
   return `${n}${body}${tag}`;
 }

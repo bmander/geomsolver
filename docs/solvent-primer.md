@@ -165,9 +165,9 @@ fix c.r                             line1 tangent(side: -1) circle1
 | `on` | infix | a point to a line, circle, arc, spline, ellipse or curve — **five** constraints, one word |
 | `distance` | infix | two points; `along: x` / `along: y` for the run and the rise; a point and a line; two lines; two *concentric* circles or arcs (the radial gap between them — over two centred apart it is refused, since it reads neither centre) |
 | `distance` | prefix | a line — the distance between its own ends |
-| `tangent` | infix | a line and a circle (`at: p1`/`p2` for a tangency at that end), two circles (`external: bool`), an arc and a line (`at: start`/`end`), a spline or an ellipse and a line |
+| `tangent` | infix | a line and a circle (`at: p1`/`p2` for a tangency at that end), two circles (`external: bool`), an arc and a line (`at: start`/`end`), a spline, an ellipse or a curve and a line |
 | `equal` | infix | two lines (a length), two circles or arcs (a radius) |
-| `curvature` | infix | a spline or an ellipse and a circle |
+| `curvature` | infix | a spline, an ellipse or a curve and a circle — the circle becomes the rim's own radius where it touches; a *traced* curve has no curvature to state, and is refused |
 | `horizontal`, `vertical` | prefix / infix | a line — or a *pair of points*, which needs no line drawn between them |
 | `angle` | infix | two lines |
 | `radius` | prefix | a circle or an arc |
@@ -176,7 +176,7 @@ fix c.r                             line1 tangent(side: -1) circle1
 | `ground`, `fix` | prefix | pin both of a point's coordinates, or one scalar |
 | `ccw(a, b, c)`, `cw(a, b, c)` | a call | the one exception: the predicate is about the *triangle*, and three symmetric points do not want reordering |
 
-The collapses are the point: `on` is five constraints and `distance` and `tangent` are six each,
+The collapses are the point: `on` is five constraints, `distance` is six and `tangent` seven,
 told apart by the **kinds of their operands** — and `horizontal`/`vertical` are two each, told
 apart by where the word stands.
 

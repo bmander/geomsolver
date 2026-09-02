@@ -447,7 +447,8 @@ Conventions:
   FFI's `gcs_constraint_add` and `Constraint::project` are refused by one rule.  `operator_text`
   skips an inferred entity slot, so `describe` and a lifted statement both say `a project b`.
   A plane's minted label starts with `v` (`syntax::kind_initial`, now exhaustive): `p` is the
-  point's, and a plane on the page is a view.  It draws its chord as a datum glyph — the kind's
+  point's, and a plane on the page is a view — as a curve's starts with `k`, `c` being the
+  circle's.  It draws its chord as a datum glyph — the kind's
   *implicit class* `.plane` (`EntKind::implicit_class`, resolved under the declaration's own in
   `style_of`, so a document's `style .plane` rule wins and the JSON never writes it) — and is
   picked by that chord, its points outranking it as everywhere.  Deleting a plane from the source
@@ -1115,10 +1116,38 @@ Conventions:
   built and grafted **last**, since its arguments may be of any other kind.
   A curve's kernel belongs to its **definition**, not its type: two definitions read different
   numbers of coordinates and cannot share a fixed-width block.  So `CKind::kernel()` panics for
-  `PointOnCurve`, `kernel_id_in(sk)` returns `N_KERNELS + def`, `System` owns a table of the
-  static kernels plus one per definition, and the registry publishes `kernel: -1` — which the
-  bindings' exhaustive tests key on rather than on a name.  The tapes ride in the constraint's
-  `consts`, so no kernel signature learns about curves and `KERNELS` stays `'static`.
+  the three curve kinds, `kernel_id_in(sk)` returns `N_KERNELS + 3·def + slot`, `System` owns a
+  table of the static kernels plus **three per definition** — the contact `PointOnCurve`, the
+  tangency `CurveTangentLine` (`inv tangent l`: the spline tangency's two rows over the curve's
+  frame) and the curvature `CurveCurvature` (`inv curvature k`: the spline curvature's three) —
+  and the registry publishes `kernel: -1` for all three, which the bindings' exhaustive tests key
+  on rather than on a name.  The tapes ride in the constraint's `consts`, so no kernel signature
+  learns about curves and `KERNELS` stays `'static`.  What a tangency and a curvature need is the
+  curve's **frame** (`kernels::CurveFrame`): `C` to `C'''` in the parameter and the gradient of
+  the first three orders in `[u, θ…]`.  A formula gives all of it exactly from
+  `tape::eval_series_flat` — truncated Taylor arithmetic to third order with the gradient
+  carried through the same recurrences (`tape::Series`, checked against finite differences of
+  the first-order evaluator in `tests/tape.rs`).  A trace gives `C` and `C'` exactly (the implicit
+  function theorem, as the contact already had) and `C'`'s gradient by **forward difference** of
+  that exact velocity from the memoised centre (`locus::kernel_frame`: one warm block solve per
+  column, from the contact's remembered pose, so the branch cannot change under it) — accurate
+  enough for a Jacobian, which is all it is used for, since the residual is exact.  **A residual
+  never builds the frame**: `curve_value` gives the derivatives alone (for a trace, the memoised
+  contact evaluation), and only a Jacobian pays for the gradient — the `EllFrame` bargain, since
+  a rejected trust-region step evaluates residuals without ever asking for one, and for a trace
+  the gradient is a sweep of block solves.  It gives no `C''`: that would need second derivatives
+  of the block's kernels, and a residual by difference would solve to a slightly wrong circle and
+  call it right, so `constraints::validate` refuses a curvature against a traced curve and its
+  slot in the table is the `refused` kernel (every row NaN, which `System` reads as not
+  converged).  Which kernel a kind runs through is `CKind::family_kernel` — `FamilyKernel`, whose
+  discriminant is the slot and which knows its row count — read by `kernel_id_in`,
+  `n_residuals`, the registry's `kernel: -1` and `kernel_table` alike, so a fourth per-definition
+  kind is one arm.  `Sketch::curve_polyline` is memoised against everything it reads (the
+  variables at the interval's start, the interval, the anchor and its pose), because a pick
+  walks every drawn curve on every pointer move.  `tests/curve_contact.rs` holds both contacts
+  against the involute's closed forms (the tangent is the string; the radius of curvature is
+  the string unwound); `tests/common` is the finite-difference Jacobian check the curve tests
+  share.
   **An unbound numeric formal is an unknown of the drawing.**  `leg: Leg(axle, pivot)` with
   `theta` not given binds it to a *free* `Aff` named under the instance — `leg.theta`, so two
   legs have two cranks — and every reader carries it: `value_aff` passes a free value the scope

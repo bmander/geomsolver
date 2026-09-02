@@ -546,6 +546,12 @@ pub struct Sketch {
     /// one the first time a name nothing defines is read and retires it when the last reader
     /// stops reading it, so nothing else in the document has to know they exist.
     pub free_vars: BTreeMap<String, u32>,
+    /// Each curve's polyline, remembered against everything it was computed from
+    /// (`curve_polyline`).  A pick walks every drawn curve on every pointer move, and a traced
+    /// curve's polyline is a march of `CURVE_STEPS` block solves — nine milliseconds a move on
+    /// the gear, for a drawing that had not changed.  Interior, so `&self` readers share it; a
+    /// cache and not state, since a miss recomputes what a hit remembers.
+    pub polyline_cache: std::cell::RefCell<BTreeMap<usize, (Vec<f64>, Vec<(f64, f64)>)>>,
     /// The document's style sheet: what each class looks like (`style.rs`).  Presentation, and
     /// nothing the core computes reads it — it is here because it is document state, saved and
     /// grafted with everything else, and because the core resolving it is what keeps two front
@@ -1436,6 +1442,22 @@ impl Sketch {
         }
     }
 
+    /// The parameter at which a curve's polyline comes nearest by some measure — where a fresh
+    /// contact starts: nearest a point for a contact, nearest a line for a tangency.  Over the
+    /// drawn polyline, which is what a person points at, and to its resolution; the solve does
+    /// the rest.
+    pub fn curve_nearest_by(&self, i: usize, dist: impl Fn(f64, f64) -> f64) -> f64 {
+        let (a, b) = self.curve_domain(i);
+        let poly = self.curve_polyline(i);
+        let n = poly.len().saturating_sub(1).max(1);
+        poly.iter()
+            .enumerate()
+            .map(|(k, &(px, py))| (dist(px, py), k))
+            .min_by(|p, q| p.0.total_cmp(&q.0))
+            .map(|(_, k)| a + (b - a) * k as f64 / n as f64)
+            .unwrap_or(a)
+    }
+
     /// The pose a curve's trace is anchored at, read off the sheet — `None` for a curve whose
     /// instance is not drawn, or whose pose is not whole.
     pub fn curve_pose(&self, i: usize) -> Option<Vec<f64>> {
@@ -1461,6 +1483,23 @@ impl Sketch {
     /// carries its branch along the curve.
     pub fn curve_polyline(&self, i: usize) -> Vec<(f64, f64)> {
         let (a, b) = self.curve_domain(i);
+        // what the polyline is a function of: the curve's variables at the interval's start
+        // (the parameter first, then every coordinate it reads), the interval, the anchor and
+        // the anchor pose — the same reading `curve_point` and `sweep` take
+        let mut key = self.curve_vars(i, a);
+        key.extend([b, self.curve_home(i)]);
+        key.extend(self.curve_pose(i).unwrap_or_default());
+        if let Some((k, poly)) = self.polyline_cache.borrow().get(&i) {
+            if *k == key {
+                return poly.clone();
+            }
+        }
+        let poly = self.curve_polyline_uncached(i, a, b);
+        self.polyline_cache.borrow_mut().insert(i, (key, poly.clone()));
+        poly
+    }
+
+    fn curve_polyline_uncached(&self, i: usize, a: f64, b: f64) -> Vec<(f64, f64)> {
         let d = &self.curve_defs[self.curves[i].def as usize];
         match &d.body {
             CurveBody::Exprs { x: tx, y: ty } => {
@@ -1863,7 +1902,9 @@ pub fn pick(sk: &Sketch, x: f64, y: f64, tol: f64) -> Option<EntRef> {
         }
     }
     let mut best: Option<(EntRef, f64)> = None;
-    for e in sk.primitives() {
+    // what is drawn, curves included: a pick measures the figure on the sheet, and a curve
+    // written in the language is one (`drawn`, where `primitives` stops short of it)
+    for e in sk.drawn() {
         if e.kind == EntKind::Point {
             continue;
         }

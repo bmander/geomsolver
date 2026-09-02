@@ -172,16 +172,28 @@ pub struct System {
 /// column counts while each block keeps a fixed one.
 fn kernel_table(sk: &Sketch) -> Vec<Kernel> {
     let mut t: Vec<Kernel> = kernels::KERNELS.to_vec();
+    // `FamilyKernel::ALL` per definition, in its order — which is what `kernel_id_in` counts
+    use crate::constraints::FamilyKernel;
     for d in &sk.curve_defs {
         let n_theta = d.vars.len().saturating_sub(1 + d.values.len());
-        t.push(match &d.body {
+        let (n_const, trace) = match &d.body {
             crate::model::CurveBody::Exprs { x, y } => {
-                kernels::curve_kernel(n_theta, 3 + x.flat.len() + y.flat.len() + d.values.len())
+                (3 + x.flat.len() + y.flat.len() + d.values.len(), false)
             }
             crate::model::CurveBody::Trace(l) => {
-                kernels::trace_kernel(n_theta, 3 + d.values.len() + l.flat.len() + l.n_q())
+                (3 + d.values.len() + l.flat.len() + l.n_q(), true)
             }
-        });
+        };
+        for fk in FamilyKernel::ALL {
+            t.push(match (fk, trace) {
+                (FamilyKernel::Contact, false) => kernels::curve_kernel(n_theta, n_const),
+                (FamilyKernel::Contact, true) => kernels::trace_kernel(n_theta, n_const),
+                (FamilyKernel::Tangent, _) => kernels::curve_tangent_kernel(n_theta, n_const, trace),
+                (FamilyKernel::Curvature, _) => {
+                    kernels::curve_curvature_kernel(n_theta, n_const, trace)
+                }
+            });
+        }
     }
     t
 }

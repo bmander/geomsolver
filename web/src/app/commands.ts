@@ -4,36 +4,34 @@
 import * as C from '../core/constraints.js';
 import { Constraint, ENTITY_KINDS } from '../core/constraints.js';
 import {
-  Arc, Circle, Ellipse, Line, Plane, Point, Spline, angleBetween, distanceBetween,
+  Arc, Circle, Curve, Ellipse, Line, Plane, Point, Spline, angleBetween, distanceBetween,
   signedPointToLine,
 } from '../core/model.js';
 import { view } from './shell.js';
 import { ToolbarButton, toast } from './ui.js';
 import type { DimAlt } from './view.js';
 
-/* constraints whose arguments are just entities:
- * (label, class, points, lines, circles/arcs, shortcut, splines, ellipses) */
-type Simple = [string, C.ConstraintCtor, number, number, number, string?, number?, number?];
+/* constraints whose arguments are just entities: (label, class, shortcut).  What each wants
+ * selected is not restated here — it is counted off the class's own spec (`wanted`), so a kind
+ * added to the language is one filter in `sel()` and not a column in every table. */
+type Simple = [string, C.ConstraintCtor, string?];
 const SIMPLE: Simple[] = [
-  ['Parallel', C.Parallel, 0, 2, 0, 'b'],
-  ['Perpendicular', C.Perpendicular, 0, 2, 0, '⇧l'],
-  ['Midpoint', C.Midpoint, 1, 1, 0, '⇧m'],
+  ['Parallel', C.Parallel, 'b'],
+  ['Perpendicular', C.Perpendicular, '⇧l'],
+  ['Midpoint', C.Midpoint, '⇧m'],
 ];
 /* Level and plumb read the selection too.  A pair of points says exactly what a line through
  * them would — that the segment between them is level — and wanting that without drawing the
  * line is the common case: two corners of a shape that share no edge. */
 const LEVEL: Simple[] = [
-  ['Horizontal', C.Horizontal, 0, 1, 0],
-  ['Horizontal', C.HorizontalPoints, 2, 0, 0],
-  ['Vertical', C.Vertical, 0, 1, 0],
-  ['Vertical', C.VerticalPoints, 2, 0, 0],
+  ['Horizontal', C.Horizontal],
+  ['Horizontal', C.HorizontalPoints],
+  ['Vertical', C.Vertical],
+  ['Vertical', C.VerticalPoints],
 ];
 
 function cLevel(label: 'Horizontal' | 'Vertical'): void {
-  const { pts, lines, circles } = sel();
-  const hit = LEVEL.find(([l, , nPts, nLines, nCirc]) =>
-    l === label && circles.length === nCirc && pts.length === nPts
-    && (nLines === 1 ? lines.length >= 1 : lines.length === nLines));
+  const hit = LEVEL.find(([l, cls]) => l === label && fits(cls));
   if (!need(!!hit, 'one or more lines, or two points')) return;
   applySimple(hit as Simple);
 }
@@ -41,13 +39,15 @@ function cLevel(label: 'Horizontal' | 'Vertical'): void {
 /* One "these touch" button.  Which incidence it means is the selection's business, not the
  * user's: two points meet, a point sits on a line, a point sits on a circle or arc. */
 const INCIDENCE: Simple[] = [
-  ['Coincident', C.Coincident, 2, 0, 0],
-  ['On line', C.PointOnLine, 1, 1, 0],
-  ['On circle', C.PointOnCircle, 1, 0, 1],
+  ['Coincident', C.Coincident],
+  ['On line', C.PointOnLine],
+  ['On circle', C.PointOnCircle],
   // a curve is one more row, not a branch: `applySimple` fills the spec's slots by kind, and
   // the contact's hidden parameter is not an entity slot so it is left for the core to seed
-  ['On curve', C.PointOnSpline, 1, 0, 0, undefined, 1],
-  ['On ellipse', C.PointOnEllipse, 1, 0, 0, undefined, 0, 1],
+  ['On curve', C.PointOnSpline],
+  ['On ellipse', C.PointOnEllipse],
+  // a curve written in the language takes the same contact, owning its own parameter
+  ['On curve', C.PointOnCurve],
 ];
 /* The constraints bar, in an order that interleaves the dimensioned constraints with the
  * entity-only ones.  `key` is both the chip printed on the button and the token the keyboard
@@ -64,7 +64,7 @@ export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
     title: 'Level: one or more lines, or a pair of points with no line between them' },
   { label: 'Vertical', key: 'v', onClick: () => cLevel('Vertical'),
     title: 'Plumb: one or more lines, or a pair of points with no line between them' },
-  ...SIMPLE.map((c): ToolbarButton => ({ label: c[0], key: c[5], onClick: () => applySimple(c) })),
+  ...SIMPLE.map((c): ToolbarButton => ({ label: c[0], key: c[2], onClick: () => applySimple(c) })),
   { label: 'Equal', key: 'e', onClick: () => cEqual() },
   { label: 'Tangent', key: 't', onClick: () => cTangent(),
     title: 'A line or a circle tangent to a circle/arc · a line tangent to a curve or ellipse '
@@ -78,10 +78,13 @@ export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
 
 /* -- selection helpers -------------------------------------------------------- */
 
-function sel(): {
+type Sel = {
   pts: Point[]; lines: Line[]; circles: (Circle | Arc)[]; splines: Spline[];
-  ellipses: Ellipse[]; planes: Plane[];
-} {
+  ellipses: Ellipse[]; curves: Curve[]; planes: Plane[];
+};
+type Bin = keyof Sel;
+
+function sel(): Sel {
   const s = view.selected;
   return {
     pts: s.filter((e): e is Point => e instanceof Point),
@@ -89,8 +92,49 @@ function sel(): {
     circles: s.filter((e): e is Circle | Arc => e instanceof Circle || e instanceof Arc),
     splines: s.filter((e): e is Spline => e instanceof Spline),
     ellipses: s.filter((e): e is Ellipse => e instanceof Ellipse),
+    curves: s.filter((e): e is Curve => e instanceof Curve),
     planes: s.filter((e): e is Plane => e instanceof Plane),
   };
+}
+
+/** The bin of the selection a spec slot of this kind is filled from — `null` for a slot that is
+ *  not an entity (a number, a selector, a contact's own parameter, which the core seeds). */
+function binOf(kind: string): Bin | null {
+  if (kind === 'point') return 'pts';
+  if (kind === 'line') return 'lines';
+  if (kind === 'spline') return 'splines';
+  if (kind === 'ellipse') return 'ellipses';
+  if (kind === 'curve') return 'curves';
+  if (kind === 'plane') return 'planes';
+  return ENTITY_KINDS.has(kind) ? 'circles' : null;   // a circle or an arc, whichever is picked
+}
+
+const BINS: Bin[] = ['pts', 'lines', 'circles', 'splines', 'ellipses', 'curves', 'planes'];
+const BIN_WORD: Record<Bin, string> = {
+  pts: 'point(s)', lines: 'line(s)', circles: 'circle(s)/arc(s)', splines: 'spline(s)',
+  ellipses: 'ellipse(s)', curves: 'curve(s)', planes: 'plane(s)',
+};
+
+/** How many of each bin a class wants — counted off its spec, the one statement of it. */
+function wanted(cls: C.ConstraintCtor): Record<Bin, number> {
+  const n = Object.fromEntries(BINS.map((b) => [b, 0])) as Record<Bin, number>;
+  for (const [, kind] of cls.spec) {
+    const b = binOf(kind);
+    if (b) n[b]++;
+  }
+  return n;
+}
+
+/** A class on one line alone applies to every selected line at once — level and plumb. */
+function perLine(w: Record<Bin, number>): boolean {
+  return w.lines === 1 && BINS.every((b) => b === 'lines' || w[b] === 0);
+}
+
+/** Whether the selection is what the class wants. */
+function fits(cls: C.ConstraintCtor, s = sel()): boolean {
+  const w = wanted(cls);
+  return BINS.every((b) => (b === 'lines' && perLine(w)) ? s.lines.length >= 1
+                                                        : s[b].length === w[b]);
 }
 
 function need(ok: boolean, what: string): boolean {
@@ -100,27 +144,20 @@ function need(ok: boolean, what: string): boolean {
 
 /** Generic applier: checks the selection has the required counts and passes the entities in
  *  spec order.  Single-line constraints (Horizontal/Vertical) apply to every selected line. */
-function applySimple([, cls, nPts, nLines, nCirc, , nSpl = 0, nEll = 0]: Simple): void {
-  const { pts, lines, circles, splines, ellipses, planes } = sel();
-  const perLine = nPts === 0 && nLines === 1 && nCirc === 0;
-  const ok = pts.length === nPts && circles.length === nCirc && splines.length === nSpl
-    && ellipses.length === nEll
-    && (perLine ? lines.length >= 1 : lines.length === nLines);
-  const what = ([[nPts, 'point(s)'], [nLines, 'line(s)'], [nCirc, 'circle(s)/arc(s)'],
-                 [nSpl, 'curve(s)'], [nEll, 'ellipse(s)']] as const)
-    .filter(([n]) => n).map(([n, w]) => `${n} ${w}`).join(', ');
-  if (!need(ok, what)) return;
-  const made = (perLine ? lines : [null]).map((ln) => {
+function applySimple([, cls]: Simple): void {
+  const s = sel();
+  const w = wanted(cls);
+  const each = perLine(w);
+  const what = BINS.filter((b) => w[b]).map((b) => `${w[b]} ${BIN_WORD[b]}`).join(', ');
+  if (!need(fits(cls, s), what)) return;
+  const made = (each ? s.lines : [null]).map((ln) => {
     const args: unknown[] = [];
-    let pi = 0, li = 0, ci = 0, si = 0, ei = 0, vi = 0;
+    const taken = Object.fromEntries(BINS.map((b) => [b, 0])) as Record<Bin, number>;
     for (const [, kind] of cls.spec) {
-      if (kind === 'point') args.push(pts[pi++]);
-      else if (kind === 'line') args.push(perLine ? ln : lines[li++]);
-      else if (kind === 'spline') args.push(splines[si++]);
-      else if (kind === 'ellipse') args.push(ellipses[ei++]);
-      else if (kind === 'plane') args.push(planes[vi++]);   // never a circle, whatever is picked
-      else if (ENTITY_KINDS.has(kind)) args.push(circles[ci++]);
+      const b = binOf(kind);
       // a `param` slot is not an entity: it is left out, and the core seeds it off the geometry
+      if (!b) continue;
+      args.push(b === 'lines' && each ? ln : s[b][taken[b]++]);
     }
     return new (cls as unknown as new (...a: unknown[]) => Constraint)(...args);
   });
@@ -129,10 +166,7 @@ function applySimple([, cls, nPts, nLines, nCirc, , nSpl = 0, nEll = 0]: Simple)
 
 /** The single incidence button: read the selection and pick the constraint that fits it. */
 function cCoincident(): void {
-  const { pts, lines, circles, splines, ellipses } = sel();
-  const hit = INCIDENCE.find(([, , nPts, nLines, nCirc, , nSpl = 0, nEll = 0]) =>
-    pts.length === nPts && lines.length === nLines && circles.length === nCirc
-    && splines.length === nSpl && ellipses.length === nEll);
+  const hit = INCIDENCE.find(([, cls]) => fits(cls));
   if (!need(!!hit,
             'two points, a point and a line, or a point and a circle/arc/curve/ellipse')) return;
   applySimple(hit as Simple);
@@ -280,15 +314,18 @@ function cSymmetric(): void {
 }
 
 function cTangent(): void {
-  const { lines, circles, splines, ellipses } = sel();
+  const { lines, circles, splines, ellipses, curves } = sel();
   /* The two parametric families take the same pair of contacts, for the same reasons, so they
    * are one table and not two blocks: against a line it is a tangency — one constraint owning
    * one parameter, since split in half it would be a point on the rim and a direction somewhere
    * else on it — and against a circle it is a curvature, which says not just the direction there
    * but how hard it turns, so the circle becomes that rim's own radius where it touches. */
-  const RIMS: [Spline[] | Ellipse[], C.ConstraintCtor, C.ConstraintCtor, string][] = [
+  const RIMS: [Spline[] | Ellipse[] | Curve[], C.ConstraintCtor, C.ConstraintCtor, string][] = [
     [splines, C.SplineTangentLine, C.SplineCurvature, 'a curve'],
     [ellipses, C.EllipseTangentLine, C.EllipseCurvature, 'an ellipse'],
+    // a curve written in the language: the same two contacts, over the definition's frame —
+    // and against a traced curve the curvature is refused by the core, which says why
+    [curves, C.CurveTangentLine, C.CurveCurvature, 'a curve'],
   ];
   const picked = RIMS.filter(([rims]) => rims.length);
   if (picked.length) {

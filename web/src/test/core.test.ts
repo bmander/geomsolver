@@ -1278,7 +1278,9 @@ test('the registry the binding generates its classes from matches the kernels', 
     // families read different numbers of coordinates, so they cannot share one.  Every other
     // type names a static kernel, and must.
     if (t.kernel === -1) {
-      assert.equal(t.name, 'PointOnCurve', `${t.name} has no static kernel`);
+      // exactly the kinds with a curve slot: their kernel is the curve's definition's
+      const onCurve = C.CONSTRAINT_TYPES[t.name].spec.some(([, k]) => k === 'curve');
+      assert.ok(onCurve, `${t.name} has no static kernel`);
     } else {
       assert.ok(t.kernel >= 0 && t.kernel < reg.kernels.length, t.name);
     }
