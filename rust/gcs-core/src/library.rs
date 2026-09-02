@@ -11,11 +11,12 @@ pub const MODULES: &[(&str, &str)] = &[
     ("engine.dims", include_str!("../../examples/engine/dims.sv")),
     ("engine.parts", include_str!("../../examples/engine/parts.sv")),
     ("engine.valvetrain", include_str!("../../examples/engine/valvetrain.sv")),
+    ("engine.block", include_str!("../../examples/engine/block.sv")),
+    ("engine.head", include_str!("../../examples/engine/head.sv")),
     ("engine.conrod", include_str!("../../examples/engine/conrod.sv")),
     ("engine.crankshaft", include_str!("../../examples/engine/crankshaft.sv")),
     ("engine.end_view", include_str!("../../examples/engine/end_view.sv")),
     ("engine.side_view", include_str!("../../examples/engine/side_view.sv")),
-    ("engine.top_view", include_str!("../../examples/engine/top_view.sv")),
 ];
 
 /// A module's text by name, or `None` where the library has none.

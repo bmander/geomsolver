@@ -154,8 +154,9 @@ Conventions:
   block form is allowed inside a component body — the plane is a formal, and nothing the
   document deletes reaches the header — and still refused inside a root block.  With
   `repeat flag { … }` over a 0/1 `Int` formal for the views an instance does not show in, a
-  part's whole design is one module (`engine/conrod.sv`), and the view modules draw only the
-  castings a view is of.  Instances inside a block copy are indexed like declarations
+  part's whole design is one module (`engine/block.sv`, `engine/head.sv`,
+  `engine/crankshaft.sv`, `engine/conrod.sv`), the castings included; the view modules hold only
+  what the assembly adds (the bore axis, the pistons on it, the timing drive).  Instances inside a block copy are indexed like declarations
   (`cyl[0].small`: `copy_of` returns the copy's prefix and `lookup` reads the rest under it).
 - **Modules** (Solvent §14.4, `modules.rs`, `library.rs`).  `use engine.parts` is parsed into
   `Program::uses`; `modules::link(prog, resolver)` resolves each once, transitively, parsing the

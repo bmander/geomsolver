@@ -49,7 +49,24 @@ param sump = -130mm
 param wall = 170mm      // the cylinder wall runs this far below the deck
 param front = -25mm     // the block's front face along the crank axis
 param back = 4 * P + 25mm   // and its rear face
+param bulk = 14mm       // a crankcase bulkhead's thickness, at each main bearing
+param rmb = rj + 2mm    // the main bearing shell, outside: the bore in the bulkhead
+param wmb = 22mm        // a main bearing's length along the axis
+param capd = 14mm       // the bearing cap's depth below the shell
+
+// the head: a separate casting, standing on its gasket
+param gasket = 2mm      // the head gasket: the head's face stands this far off the deck
 param head = 190mm      // deck to the top of the head
+param rcamj = 13mm      // a camshaft journal
+param wcamb = 16mm      // a cam bearing's length along the axis
+param camcap = 4mm      // the bearing cap's wall round the journal
+
+// the crank's rear end, past the block: a seal journal, the flange, the flywheel
+param rseal = 22mm
+param rflange = 60mm
+param wflange = 12mm
+param rfw = 140mm       // the flywheel
+param wfw = 30mm
 
 // the valvetrain: a tangent cam (base circle, nose circle, straight flanks) on a flat follower,
 // valves inclined `va` either side of the bore axis in a pent roof

@@ -39,7 +39,7 @@ const DOCS: &[(&str, Shape, i64, State)] = &[
     ("peaucellier_rail", (7, 9, 1, 0), 1, State::Under),
     ("jansen", (8, 12, 1, 0), 1, State::Under),
     ("bracket", (31, 21, 0, 0), 0, State::Well),
-    ("engine", (431, 307, 40, 10), 0, State::Well),
+    ("engine", (633, 467, 43, 11), 0, State::Well),
 ];
 
 #[test]

@@ -10,11 +10,12 @@
 unit mm
 use std
 use engine.dims
+use engine.block
+use engine.head
 use engine.crankshaft
 use engine.conrod
 use engine.end_view
 use engine.side_view
-use engine.top_view
 
 // the three views, from the standard library: the page is the side view, the end view stands
 // to the right of it turned so up stays up, and the plan is folded up above it
@@ -24,7 +25,12 @@ views: ThreeViews(O, right: 620, up: 620)
 
 end: EndSection(views.right_origin) in views.right
 side: SideSection(O) in views.front
-plan: PlanView(views.top_origin) in views.top
+
+// the castings, each one part in its three views (`engine.block`, `engine.head`): the block
+// from the pan rail to the deck with its bores and main bearings, and the head standing on its
+// gasket with the valves and the camshafts in their bearings
+block: EngineBlock(views.right, views.front, views.top, views.right_origin, O, views.top_origin)
+head: CylinderHead(views.right, views.front, views.top, views.right_origin, O, views.top_origin)
 
 // the crankshaft, one part in both sections (`engine.crankshaft`): the throw of cylinder 1 and
 // a ghost of 2 and 3's in the end section, the whole shaft in the side section, every pin's
@@ -36,38 +42,21 @@ crank: Crankshaft(views.right, views.front, views.right_origin, end.bore, O, dra
 // 4 in the side section only, the small end of each placed by the end-view image it shares —
 // rod 1's for cylinder 4, and a ghosted rod a half turn on for cylinders 2 and 3
 point secA in views.top
-views.top_origin distance(back + 80mm, along: x) secA
+views.top_origin distance(back + 120mm, along: x) secA
 views.top_origin distance(0, along: y) secA
-rod1: ConRod(views.right, views.front, views.top, crank.t1[0].pin, end.bore, crank.pin_s[0], side.cyl[0].small, secA, draw_end: 1, draw_side: 1, draw_sec: 1)
-rod2: ConRod(views.right, views.front, views.top, crank.t2[0].pin, end.bore, crank.pin_s[1], side.cyl[1].small, secA, draw_end: 0, draw_side: 1, draw_sec: 0)
-rod3: ConRod(views.right, views.front, views.top, crank.t2[0].pin, end.bore, crank.pin_s[2], side.cyl[2].small, secA, draw_end: 0, draw_side: 1, draw_sec: 0)
-rod4: ConRod(views.right, views.front, views.top, crank.t1[0].pin, end.bore, crank.pin_s[3], side.cyl[3].small, secA, draw_end: 0, draw_side: 1, draw_sec: 0)
+rod1: ConRod(views.right, views.front, views.top, crank.t1[0].pin, end.bore, crank.pin_s[0], side.small[0], secA, draw_end: 1, draw_side: 1, draw_sec: 1)
+rod2: ConRod(views.right, views.front, views.top, crank.t2[0].pin, end.bore, crank.pin_s[1], side.small[1], secA, draw_end: 0, draw_side: 1, draw_sec: 0)
+rod3: ConRod(views.right, views.front, views.top, crank.t2[0].pin, end.bore, crank.pin_s[2], side.small[2], secA, draw_end: 0, draw_side: 1, draw_sec: 0)
+rod4: ConRod(views.right, views.front, views.top, crank.t1[0].pin, end.bore, crank.pin_s[3], side.small[3], secA, draw_end: 0, draw_side: 1, draw_sec: 0)
 ghost: Rod(crank.t2[0].pin, end.bore) in views.right class phantom
 piston1: Piston(rod1.sm[0], pin: 1) in views.right
+ghost.small project side.small[1]
+ghost.small project side.small[2]
+rod1.sm[0] project side.small[3]
 
-// heights, end view to side view
-end.block.d_l project side.block.bfl
-end.block.pr_l project side.block.rfl
-end.block.sp_l.p project side.sump.sd
-end.head.tl project side.block.htl
-end.head.cam_i project side.block.cam
-ghost.small project side.cyl[1].small
-ghost.small project side.cyl[2].small
-rod1.sm[0] project side.cyl[3].small
-
-// lengths, side view to plan
-side.block.bfl project plan.fl
-side.block.bfr project plan.br
-side.ax[0].p project plan.c[0]
-side.ax[1].p project plan.c[1]
-side.ax[2].p project plan.c[2]
-side.ax[3].p project plan.c[3]
-
-// widths, end view to plan
-end.block.d_r project plan.fl
-end.block.d_l project plan.br
-end.head.cam_i project plan.ci
-end.head.cam_e project plan.ce
+// the timing drive, on the front of the engine in the end section and edge on in the side
+drive: Drive(views.right_origin, head.cam_i, head.cam_e) in views.right
+drive_s: DriveSide(O, head.cam) in views.front
 
 // how it looks: the dimensions the sheet shows, and nothing else
 style .dimension { display: none }

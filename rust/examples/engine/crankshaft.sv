@@ -22,8 +22,6 @@ param wj = 24mm             // a main journal's length along the axis
 param wpin = pinlen         // a crank pin's length: the table's, since the rod's big end rides it
 param web = P / 2 - (wj + wpin) / 2   // a web's thickness along the axis: what the pitch leaves
 param rnose = 16mm          // the nose the pulley sits on
-param rflange = 50mm        // the flywheel flange
-param wflange = 18mm
 param oilr = 2.5mm          // the oil passage, half its bore
 
 // One throw seen along the axis: the pin at `theta` from the bore axis, clockwise from top dead
@@ -138,8 +136,12 @@ component Crankshaft(end: plane, side: plane, o: point, axis: line, o_s: point,
   }
   repeat draw_side {
     in side {
+      // the nose the pulley sits on, forward of the first journal; behind the last, the seal
+      // journal through the block's rear wall, then the flange and the flywheel on it
       nose: Box(o_s, x0: front - 70mm, y0: -rnose, x1: front + 25mm - wj / 2, y1: rnose)
-      flange: Box(o_s, x0: back - 25mm + wj / 2, y0: -rflange, x1: back - 25mm + wj / 2 + wflange, y1: rflange)
+      seal: Box(o_s, x0: back - 25mm + wj / 2, y0: -rseal, x1: back + 8mm, y1: rseal)
+      flange: Box(o_s, x0: back + 8mm, y0: -rflange, x1: back + 8mm + wflange, y1: rflange)
+      flywheel: Box(o_s, x0: back + 8mm + wflange, y0: -rfw, x1: back + 8mm + wflange + wfw, y1: rfw)
       claim journal[0].a distance(wj, along: x) journal[0].b class shown
       claim pin[0].a distance(wpin, along: x) pin[0].b class shown
     }

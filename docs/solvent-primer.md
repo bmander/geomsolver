@@ -452,8 +452,9 @@ the modules it uses — which is what lets `engine/dims.sv` hold the whole dimen
 view read `D` for the bore; a file's own params may read them too (`param rB = rp + 1.5mm`) and
 shadow them. A formal of the same name shadows a param.
 `rust/examples/engine.sv` is the worked case: a four-cylinder engine in three views, written as a
-dimension module, a parts module, a valvetrain module and one module per view, over the standard
-library's three views (`use std`, `rust/lib/std.sv`).
+dimension module, a parts module, a valvetrain module and one module per *part* — block, head,
+crankshaft, connecting rod — each drawn in every view it shows in, over the standard library's
+three views (`use std`, `rust/lib/std.sv`).
 
 ### 1.12 Checking your work
 
