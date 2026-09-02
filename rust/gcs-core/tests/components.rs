@@ -107,3 +107,50 @@ fn a_cycle_of_instances_binds_per_copy() {
     assert_eq!(d.structural_rank, 6, "{}", gcs_core::diagnose::summary(&d));
     assert!(d.over.is_empty(), "over: {:?}", d.over);
 }
+
+/// #45.3 — a repetition inside a component is reached from outside by indexing the dotted
+/// name: `l.p[1]` is copy 1 of the `p` the block in `l` declares, and a field of the copy
+/// follows the index.  A copy that is not there is still nothing, and through a second
+/// instance the same spelling reaches the other one.
+#[test]
+fn a_copy_inside_an_instance_is_indexed_from_outside() {
+    let sk = drawn(
+        "component Ladder(o: point, n: Int) {\n\
+         \x20 repeat n as i {\n\
+         \x20   point p hint(x: 0, y: i * 10)\n\
+         \x20   line e(p, hint(x: 5, y: i * 10))\n\
+         \x20 }\n\
+         \x20 o coincident p[0]\n\
+         }\n\
+         point o hint(x: 0, y: 0)\n\
+         point o2 hint(x: 50, y: 0)\n\
+         l: Ladder(o, n: 3)\n\
+         m: Ladder(o2, n: 2)\n\
+         ground o\n\
+         ground o2\n\
+         l.p[0] vertical l.p[1]\n\
+         l.p[0] distance(10) l.p[1]\n\
+         l.p[1] vertical l.p[2]\n\
+         l.p[1] distance(10) l.p[2]\n\
+         horizontal l.e[2]\n\
+         l.e[2].p1 distance(7) l.e[2].p2\n\
+         m.p[1] distance(12) o2\n\
+         m.p[0] vertical m.p[1]\n",
+    );
+    // l.p[2] is 20 up from o; l.e[2]'s far end is 7 further along, level with it
+    let n = sk.points.len();
+    assert!(n >= 6, "{n}");
+    let ys: Vec<f64> = (0..n).map(|i| sk.point_xy(i).1).collect();
+    assert!(ys.iter().any(|&y| (y - 20.0).abs() < 1e-6), "{ys:?}");
+    assert!(ys.iter().any(|&y| (y - 12.0).abs() < 1e-6), "{ys:?}");
+    let xs: Vec<f64> = (0..n).map(|i| sk.point_xy(i).0).collect();
+    assert!(xs.iter().any(|&x| (x - 7.0).abs() < 1e-6), "{xs:?}");
+    // past the copies, and a copy of a copy, are nothing
+    let refused = |src: &str| {
+        let (prog, _) = gcs_core::syntax::parse(src);
+        let e = gcs_core::program::elaborate(&prog);
+        assert!(!e.ok(), "{src}");
+    };
+    refused("component L(n: Int) { repeat n { point p } }\nl: L(n: 2)\nground l.p[2]\n");
+    refused("component L(n: Int) { repeat n { point p } }\nl: L(n: 2)\nground l.p[0][0]\n");
+}

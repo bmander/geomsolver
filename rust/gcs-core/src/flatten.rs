@@ -917,17 +917,25 @@ fn substitute(text: &str, vals: &BTreeMap<String, Aff>) -> String {
     out
 }
 
-/// The absolute name `name` has inside copy `k` of whichever block declares it.
+/// The absolute name `name` has inside copy `k` of whichever block declares it, under
+/// `container` — the dotted path written before the indexed name (`l.` for `l.p[1]`, nothing
+/// for `p[1]`), which is an instance the block was walked inside.
 ///
 /// A block's copies are named `<enclosing>#<statement-id>.<k>.`, so this is a search for that
 /// shape among the names the walk has already collected: for each scope the reference can see,
-/// every block *within* it that declares `name`, at the copy asked for.  Two blocks in one scope
+/// every block *within* the container there that declares `name`, at the copy asked for.  Two blocks in one scope
 /// declaring the same name make the index ambiguous, and an ambiguous name resolves to nothing
 /// rather than to whichever came first.
-fn copy_of(name: &str, k: usize, sc: &Scope, names: &BTreeSet<String>) -> Option<String> {
+fn copy_of(
+    container: &str,
+    name: &str,
+    k: usize,
+    sc: &Scope,
+    names: &BTreeSet<String>,
+) -> Option<String> {
     let mut found: Option<String> = None;
     for p in &sc.prefixes {
-        let from = format!("{p}#");
+        let from = format!("{p}{container}#");
         for abs in names.range(from.clone()..).take_while(|n| n.starts_with(&from)) {
             // `#<id>.<j>.<tail>` — the copy's own name, with no further block between
             let tail = &abs[from.len()..];
@@ -961,26 +969,37 @@ fn lookup(
     units: Units,
 ) -> Option<(String, Vec<String>)> {
     // `p[k]` names *which copy* of a repeated statement, so it is resolved before anything else
-    // and the rest of the path is read against the copy it picks.  Only the root may carry one —
-    // an index selects an instance of the block a name was declared in, and a field of one is
-    // still a field.
-    if let Some(Seg::Index(text)) = r.path.first() {
+    // and the rest of the path is read against the copy it picks.  The index may stand on the
+    // root or on a dotted name — `l.p[1]` is copy 1 of the `p` a block inside the instance `l`
+    // declares, which is how a component's repetition is reached from outside (#45.3) — and
+    // what stands before it is the *container* the block was walked under, never a field: an
+    // index selects a copy of the block a name was declared in, and a field of a copy is still
+    // a field, so it comes after.  Only once — a copy of a copy is a thing no statement makes.
+    if let Some(at) = r.path.iter().position(|s| matches!(s, Seg::Index(_))) {
+        let Seg::Index(text) = &r.path[at] else { unreachable!() };
+        if r.path[at + 1..].iter().any(|s| matches!(s, Seg::Index(_))) {
+            return None;
+        }
         let k = match value_of(text, &sc.vals, units) {
             Ok(v) if v.is_finite() && v >= 0.0 && v.round() == v => v as usize,
             _ => return None,
         };
-        let abs = copy_of(&r.root.text, k, sc, names)?;
-        let rest: Vec<String> = r.path[1..]
+        let mut segs: Vec<&str> = vec![r.root.text.as_str()];
+        for s in &r.path[..at] {
+            if let Seg::Field(f) = s {
+                segs.push(f.text.as_str());
+            }
+        }
+        let leaf = segs.pop()?;
+        let container = segs.iter().map(|s| format!("{s}.")).collect::<String>();
+        let abs = copy_of(&container, leaf, k, sc, names)?;
+        let rest: Vec<String> = r.path[at + 1..]
             .iter()
             .map(|s| match s {
                 Seg::Field(f) => f.text.clone(),
                 Seg::Index(t) => t.clone(),
             })
             .collect();
-        // a second index would name a copy of a copy, which no statement makes
-        if r.path[1..].iter().any(|s| matches!(s, Seg::Index(_))) {
-            return None;
-        }
         return Some((abs, rest));
     }
 

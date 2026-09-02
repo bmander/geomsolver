@@ -74,7 +74,10 @@ curve NAME(FORMALS)(u) [over (a, b)] = ( XEXPR, YEXPR )        a curve family (�
 curve NAME(FORMALS)(u) [over (a, b)] = trace P [from (E)] where { … }
 ```
 
-References are `name`, `name.field`, or `name[expr]` (which copy of a repeated statement).
+References are `name`, `name.field`, or `name[expr]` (which copy of a repeated statement; the
+expression may read any `param` or binder in scope). The index may stand on a dotted name —
+`l.p[1]` is copy 1 of the `p` a `repeat` inside the instance `l` declares — and a field of the copy
+follows it (`l.e[2].p1`).
 
 ### 1.4 Entities
 
