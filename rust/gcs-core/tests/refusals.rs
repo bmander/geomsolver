@@ -66,6 +66,26 @@ fn a_param_may_read_one_declared_below_it() {
     assert!((sk.point_xy(2).0 - 4.0).abs() < 1e-9 && (sk.point_xy(2).1 - 8.0).abs() < 1e-9);
 }
 
+/// #45.2 — an index is an expression over the numbers in scope, at the top level as inside a
+/// block: `p[n - 1]` reads the `param n`, wherever the statement stands.
+#[test]
+fn a_top_level_index_reads_a_param() {
+    let (e, d) = read("p[n - 1] distance(10) p[0]\nparam n = 4\ncycle n as i {\n point p hint(x: 40 * cos(i * 90), y: 40 * sin(i * 90))\n}\nground p[0]\np[n / 2] distance(k) p[1]\nparam k = 30\n");
+    assert!(d.is_empty() && e.ok(), "{d:?}");
+    let mut sk = e.sketch;
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    // p[3] is 10 from p[0], and p[2] is 30 from p[1]
+    let (x0, y0) = sk.point_xy(0);
+    let (x3, y3) = sk.point_xy(3);
+    assert!(((x3 - x0).hypot(y3 - y0) - 10.0).abs() < 1e-6);
+    let (x1, y1) = sk.point_xy(1);
+    let (x2, y2) = sk.point_xy(2);
+    assert!(((x2 - x1).hypot(y2 - y1) - 30.0).abs() < 1e-6);
+    // an index past the copies is still nothing
+    let (e, d) = read("param n = 4\ncycle n {\n point p\n}\nground p[n]\n");
+    assert!(!e.ok() && d.iter().any(|m| m.contains("no such entity: `p[n]`")), "{d:?}");
+}
+
 /// #45.1 — a `param` defined in terms of itself, through however many others, is the cyclic
 /// definitional dependency spec §11 names E041; and one that fails is reported once, where it
 /// is written, not again at every param that reads it.

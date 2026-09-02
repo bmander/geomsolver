@@ -261,6 +261,12 @@ impl<'a> Walk<'a> {
         let prefix = scope.prefixes.first().cloned().unwrap_or_default();
         // every `param` of the body first, whatever line it stands on — a body is a set (P2)
         self.params(body, vals);
+        // and with them the numbers in force are complete for every statement of the body:
+        // the enclosing ones the caller passed and the body's own — so that is the table each
+        // statement is emitted with, which is what an index (`p[n - 1]`) is read against.  The
+        // root's scope arrived with an empty one, and a top-level index could read a literal
+        // and not a `param` (#45.2).
+        let scope = &Scope { vals: vals.clone(), ..scope.clone() };
         for st in body {
             if self.out.len() >= MAX_FLAT {
                 self.err(st.span, format!("more than {MAX_FLAT} statements once expanded"));
