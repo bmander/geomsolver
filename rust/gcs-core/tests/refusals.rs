@@ -217,3 +217,22 @@ fn a_curve_family_contact_stays_inside_its_domain() {
     let u = sk.params[c.aux_params()[0] as usize].value;
     assert!((0.0..=90.0).contains(&u), "u = {u} is off the curve");
 }
+
+/// The lexer read `b[i] as char`, so the first byte of a multibyte character passed for a
+/// Latin-1 letter and opened an identifier that then consumed nothing: `…` or `→` anywhere in a
+/// statement hung the parser, while the same character in a comment was fine.  Both are read
+/// now — a letter outside ASCII is an identifier character, and a symbol is a punctuation token
+/// reported where it is used, like any other stray character.
+#[test]
+fn a_non_ascii_character_in_a_statement_does_not_hang_the_lexer() {
+    for src in ["point p hint(x: 0, y: 0) …\n", "use a…\n", "point p → q\n", "line l(a, b) — c\n"] {
+        let (_, d) = read(src);
+        assert!(!d.is_empty(), "{src:?} should be refused, not accepted");
+    }
+    // a letter outside ASCII is a letter, in a name as in a comment
+    let (e, d) = read("point début hint(x: 1, y: 2)\nground début\n");
+    assert!(d.is_empty(), "{d:?}");
+    assert_eq!(e.sketch.point_xy(0), (1.0, 2.0));
+    let (_, d) = read("// an em dash — in a comment\npoint p hint(x: 0, y: 0)\n");
+    assert!(d.is_empty(), "{d:?}");
+}

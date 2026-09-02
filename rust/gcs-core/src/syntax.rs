@@ -2216,7 +2216,13 @@ fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
     // *not* count — a body is made of statements, and those still end at their line's end.
     let mut depth = 0i32;
     while i < b.len() {
-        let c = b[i] as char;
+        // The *character* at `i`, never `b[i] as char`: cast, the first byte of `…` reads as the
+        // Latin-1 letter `â`, which is alphabetic, so the identifier arm below opened on it — and
+        // then found `…` is no identifier character, consumed nothing, and never advanced.  An
+        // em dash in a comment was fine (the comment arm walks bytes to the newline), so the
+        // hang waited for the first non-ASCII character in a statement.  `i` is always on a
+        // character boundary here: every arm advances by whole characters.
+        let c = src[i..].chars().next().unwrap_or(' ');
         let lo = i;
         match c {
             ' ' | '\t' | '\r' => i += 1,
@@ -2296,11 +2302,9 @@ fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
                 }
             }
             c if ident_start(c) => {
-                while i < b.len() && {
-                    let ch = src[i..].chars().next().unwrap_or(' ');
-                    ident_char(ch)
-                } {
-                    i += src[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+                // `ident_start` implies `ident_char`, so this consumes at least `c`
+                while let Some(ch) = src[i..].chars().next().filter(|&ch| ident_char(ch)) {
+                    i += ch.len_utf8();
                 }
                 toks.push((Tok::Ident(src[lo..i].to_string()), Span::new(lo, i)));
             }
@@ -2311,7 +2315,7 @@ fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
             // that really is out of place is caught where it is *used*, with a span on the
             // statement that wanted something else.
             other => {
-                i += src[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+                i += other.len_utf8();
                 toks.push((Tok::P(other), Span::new(lo, i)));
             }
         }

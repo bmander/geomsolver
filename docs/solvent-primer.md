@@ -32,8 +32,7 @@ number      ::= decimal, exponent form allowed; `3 1/2` is a mixed fraction;
 ```
 
 Whitespace only separates. A newline ends a statement, except inside brackets and except when the
-line ends with a chain joint (1.7). Keep source ASCII outside comments: a stray `…` or `→` in a
-statement is not tokenized.
+line ends with a chain joint (1.7).
 
 ### 1.2 Seeds and constraints
 
