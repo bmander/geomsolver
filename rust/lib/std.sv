@@ -16,29 +16,30 @@
 //   ground O
 //   views: ThreeViews(O, right: 620, up: 620)
 //   part: Something(views.right_origin) in views.right
+//
+// The views are `front`, `right` and `top`, reached as `views.right`; `right` the length and
+// `right` the view do not meet, since a number is read in an expression and an entity in a
+// reference.
 component ThreeViews(o: point, right: Length, up: Length) {
   // each view's `toward` point sets which way it is turned on the page; a hand's breadth away
   point qf
   o distance(40, along: x) qf
   o distance(0, along: y) qf
-  plane pf(origin: o, toward: qf)
-  port front = pf
+  plane front(origin: o, toward: qf)
 
-  port right_origin: point
+  point right_origin
   point qr
   o distance(right, along: x) right_origin
   o distance(0, along: y) right_origin
   right_origin distance(0, along: x) qr
   right_origin distance(-40, along: y) qr
-  plane pr(origin: right_origin, toward: qr, from: pf, fold: -90deg)
-  port right = pr
+  plane right(origin: right_origin, toward: qr, from: front, fold: -90deg)
 
-  port top_origin: point
+  point top_origin
   point qt
   o distance(0, along: x) top_origin
   o distance(up, along: y) top_origin
   top_origin distance(40, along: x) qt
   top_origin distance(0, along: y) qt
-  plane pt(origin: top_origin, toward: qt, from: pf, fold: 0deg)
-  port top = pt
+  plane top(origin: top_origin, toward: qt, from: front, fold: 0deg)
 }

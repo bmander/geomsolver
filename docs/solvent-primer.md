@@ -57,6 +57,7 @@ unit NAME                               what the document's numbers are in      
 param NAME = EXPR                       a number worked out while elaborating
 KIND [NAME][(CHILD | hint(x: E, y: E), ...)] [hint(SCALAR: E, ...)] [knots [...]]
      [class NAME...] [in REF]           an entity declaration; every part is optional (1.4)
+point NAME = (XEXPR, YEXPR)             a computed point, drawn only as a curve      (1.9)
 plane [NAME](origin: R, toward: R[, from: R, fold: E | , u: (E,E,E), v: (E,E,E)])
                                         a view: a frame with an attitude in space   (1.13)
 in REF { statement* }                   every declaration inside is drawn in that plane
@@ -70,8 +71,6 @@ fix REF.FIELD                           pin one scalar: fix c.r
 ccw(a, b, c) | cw(a, b, c)              record a root choice; adds no equation
 NAME: Component(ARGS) [in REF] [class NAME...]     an instance                      (1.8)
 component NAME(FORMALS) { statement* }  a definition
-port NAME: KIND [hint(...)]  |  port NAME = REF    export an entity from a component
-port NAME = (XEXPR, YEXPR)              a computed point, drawn only as a curve      (1.9)
 repeat N [as i] { ... }                 N copies, unrelated
 cycle N [as i] { ... }                  N copies that close; `next` and `prev` are in scope
 ring N about REF [as i] { ... }         a cycle claimed cyclically symmetric        (1.7)
@@ -292,8 +291,7 @@ component Rung(a: point, b: point, len: Length) {
   line e(a, b)
   horizontal e
   a distance(len) b
-  port mid: point          // declares a point and exports it: t0.mid
-  port edge = e            // exports an existing entity under a new name
+  point mid                // reached from outside as t0.mid, like everything the body makes
 }
 t0: Rung(l0, r0, len: 50)
 ```
@@ -306,8 +304,9 @@ under the instance (`c.theta`), which is how a mechanism is drawn with its crank
 
 A file's top-level `param`s are in scope inside the components it defines, and so are those of
 the modules it uses; a formal of the same name shadows a param. Everything an instance makes is
-reachable by dotted name (`c.p`, `five.s[0].p1`); a `port` is only a name on the boundary, and
-passing one instance's port to another merges the two entities.
+reachable by dotted name (`c.p`, `t0.e`, `five.s[0].p1`) — there is no export list, and passing
+one instance's entity to another as an argument makes the two one entity. (`port` is retired;
+a document that writes one is told what to write instead.)
 
 ### 1.9 Curves
 
@@ -332,7 +331,7 @@ formal, or the interval's start when it gives none.
 
 A component's point is placed one of two ways:
 
-- **Computed**: `port p = (XEXPR, YEXPR)`, coordinates as expressions over the formals and
+- **Computed**: `point p = (XEXPR, YEXPR)`, coordinates as expressions over the formals and
   params. A component with a computed point can only be traced, never drawn (2.8).
 - **Placed by constraints**: any point the body declares, held where the body's statements put it
   as the formal runs. This is how a person actually states a curve: "the end of a taut string as
@@ -617,7 +616,7 @@ winding is a branch only a seed can choose.
 
 ```
 component Involute(c: circle, phase: Angle, u: Angle) {
-  port p = ( c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
+  point p = ( c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
              c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)) )
 }
 

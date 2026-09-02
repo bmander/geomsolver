@@ -30,7 +30,7 @@ param oilr = 2.5mm          // the oil passage, half its bore
 // and `heel` are where the arm's line crosses the eye and the rim — the throw's extreme points,
 // which the side view reads.
 component Throw(o: point, axis: line, theta: Angle) {
-  port pin: point hint(x: o.x + R * sin(theta), y: o.y + R * cos(theta))
+  point pin hint(x: o.x + R * sin(theta), y: o.y + R * cos(theta))
   line arm(o, pin) class axis
   o distance(R) pin class shown
   axis angle(-theta) arm
@@ -54,8 +54,8 @@ component Throw(o: point, axis: line, theta: Angle) {
   fl tangent(at: p1) eye
   fr tangent(at: p1) eye
   // the crown of the eye and the heel of the rim, on the arm's own line
-  port crown: point hint(x: pin.x + eP * sin(theta), y: pin.y + eP * cos(theta))
-  port heel: point hint(x: o.x - rcw * sin(theta), y: o.y - rcw * cos(theta))
+  point crown hint(x: pin.x + eP * sin(theta), y: pin.y + eP * cos(theta))
+  point heel hint(x: o.x - rcw * sin(theta), y: o.y - rcw * cos(theta))
   crown on eye
   crown on arm
   heel on rim
@@ -122,7 +122,7 @@ component Crankshaft(end: plane, side: plane, o: point, axis: line, o_s: point,
       // cylinders 1 and 4 are up together, 2 and 3 a half turn on
       param k = i * (3 - i) / 2
       param ph = theta + 180deg * k
-      port pin_s: point hint(x: o_s.x + xc, y: o_s.y + R * cos(ph))
+      point pin_s hint(x: o_s.x + xc, y: o_s.y + R * cos(ph))
       o_s distance(xc, along: x) pin_s
       pin: Box(pin_s, x0: -wpin / 2, y0: -rp, x1: wpin / 2, y1: rp)
       // the throw's crown and heel at this cylinder, their heights the end view's

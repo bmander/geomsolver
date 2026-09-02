@@ -70,7 +70,7 @@ fn a_seed_reads_the_seed_of_what_it_names() {
 fn a_component_seeds_from_its_formals_geometry() {
     let e = read(
         "component Off(p: point, d: Length) {\n\
-           port q: point hint(x: p.x + d, y: p.y)\n\
+           point q hint(x: p.x + d, y: p.y)\n\
            line s(p, hint(x: p.x + d / 2, y: p.y + d))\n\
          }\n\
          point a hint(x: 10, y: 20)\n\
@@ -112,8 +112,8 @@ fn a_geometric_seed_follows_the_scope_it_was_written_in() {
     let e = read(
         "unit mm\n\
          component Span(k1: circle, k2: circle, side: Scalar) {\n\
-           port a: point hint at k1 bearing (atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)\n\
-           port b: point hint at k2 bearing (atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)\n\
+           point a hint at k1 bearing (atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)\n\
+           point b hint at k2 bearing (atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)\n\
            line s(a, b)\n\
          }\n\
          point o hint(x: 0, y: 0)\n\

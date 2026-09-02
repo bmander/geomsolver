@@ -358,7 +358,7 @@ fn every_param_slot_states_its_dimension() {
 fn a_curve_body_is_read_in_the_documents_units() {
     let sk = read(
         "unit mm\n\
-         component ray(c: circle, u: Angle) {\n  port p = ( c.center.x + 1in * u, c.center.y )\n}\n\
+         component ray(c: circle, u: Angle) {\n  point p = ( c.center.x + 1in * u, c.center.y )\n}\n\
          point o hint(x: 0, y: 0)\n\
          circle c1(center: o) hint(r: 25)\n\
          curve w = ray(c1).p over u in (0, 1)\n",

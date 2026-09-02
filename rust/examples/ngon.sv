@@ -25,10 +25,8 @@ component Ngon(n: Int, side: Length) {
   }
   // one side sized, and the radius follows — a dimensioned radius would let the sides collapse
   s[0].p1 distance(side) s[0].p2
-  // the hub and the first side, for a caller to hold
-  port hub = c
-  port first = s[0]
 }
 
+// the hub and the sides are reached by their names: `five.c`, `five.s[0]`
 five: Ngon(n: 5, side: 40)
-ground five.hub.center
+ground five.c.center

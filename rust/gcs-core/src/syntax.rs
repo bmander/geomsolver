@@ -338,10 +338,6 @@ pub enum StmtKind {
     Orient(Orient),
     /// `t: Tooth(root, tip, slot: 360 / N)` — a component, elaborated in place.
     Instance(Instance),
-    /// `port lead: Point` declares one and exports it; `port hub = f0` exports one that exists.
-    /// A port is *a name on the boundary for an interior entity, and nothing more* (spec §7):
-    /// binding costs no residual because it is aliasing, not constraint.
-    Port(Port),
     /// `param R = m * N / 2` — a number worked out while elaborating, never an unknown.
     Param(ParamDecl),
     /// `repeat`, `cycle`, `ring` — see `Block`.
@@ -400,34 +396,6 @@ pub enum InstVal {
     Ref(Ref),
     /// An expression over the enclosing component's own parameters, evaluated while elaborating.
     Expr(String),
-}
-
-#[derive(Clone, Debug)]
-pub struct Port {
-    pub name: Name,
-    /// `port x: Point` — declare one of this kind and export it.
-    pub declare: Option<EntKind>,
-    /// `port x = y` — export one that already exists.
-    pub alias: Option<Ref>,
-    /// The declaring form's seed, exactly a `Decl`'s: `port tip: point hint(x: 0, y: 30)` is
-    /// where the solve begins, since a port is a declaration and every seed is written in one
-    /// `hint(…)` clause (§4.3).  Without one the port's entity starts where an unseeded
-    /// declaration does (`program::scatter`), rather than at the origin on top of every other
-    /// unseeded port — which was the one place a component built of ports could begin (#43).
-    pub seed: Vec<f64>,
-    pub seed_text: Vec<Option<String>>,
-    pub seed_spans: Vec<Span>,
-    /// Where the clause is, or — an empty span — where it would go (`Decl::hint_span`).
-    pub hint_span: Option<Span>,
-    /// `port a: point hint at k bearing (b)` — a seed named by a place (`Decl::seed_at`).
-    pub seed_at: Option<AtRef>,
-    /// `port a: point in top` — the declaring form is a declaration, and takes a declaration's
-    /// membership (§6.7), written or stamped by an enclosing `in … { }` block.
-    pub membership: Membership,
-    /// `port p = (xexpr, yexpr)` — a point *computed* from the component's formals and
-    /// parameters rather than placed by constraints (§6.5).  It is drawn only as a curve: a
-    /// component with one is traced, never instantiated on the sheet.  Text, like a dimension's.
-    pub computed: Option<[(String, Span); 2]>,
 }
 
 #[derive(Clone, Debug)]
@@ -720,6 +688,12 @@ pub struct Decl {
     pub knots: Option<Vec<f64>>,
     /// A curve: what it is a curve *of* (§6.5).  `None` for every other kind.
     pub curve: Option<CurveSpec>,
+    /// A **computed** point, `point p = (xexpr, yexpr)` (§6.5): its coordinates are expressions
+    /// over the component's formals and params, and no constraint places it.  The brackets
+    /// after a name say what the thing is made of, and this one is made of a formula — text,
+    /// like a dimension's.  It is drawn only as a curve: a component with one is traced, never
+    /// instantiated on the sheet.  `None` for every placed declaration.
+    pub computed: Option<[(String, Span); 2]>,
     /// The classes it carries, in written order: `line l(a, b) class centerline heavy`.
     /// Presentation, and nothing the core computes reads it (spec §14).
     pub class: Classes,
@@ -878,12 +852,6 @@ fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
                 }
             }
             StmtKind::Block(b) => stamp_plane(&mut b.body, plane, errs),
-            // the declaring port is a declaration, and its point is an image in the view
-            StmtKind::Port(p) if p.declare.is_some() => {
-                if !p.membership.join(plane, Source::Block) {
-                    errs.push(SynErr { span: p.membership.span(), message: p.membership.cause().into() });
-                }
-            }
             // the instance joins whole: the flattener carries the plane into its expansion
             StmtKind::Instance(inst) => {
                 if !inst.membership.join(plane, Source::Block) {
@@ -1569,49 +1537,6 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
                 out.push_str(&i.class.0.join(" "));
             }
         }
-        StmtKind::Port(p) => {
-            out.push_str(&format!("port {}", p.name.text));
-            if let Some(k) = p.declare {
-                out.push_str(&format!(": {}", camel(k.as_str())));
-                if let Some(at) = &p.seed_at {
-                    out.push_str(" hint at ");
-                    write_ref(out, &at.what);
-                    if let Some((b, _)) = &at.bearing {
-                        out.push_str(&format!(" bearing ({b})"));
-                    }
-                }
-                if let Some(r) = p.membership.written() {
-                    out.push_str(" in ");
-                    write_ref(out, r);
-                }
-                // the clause as written, where one was: a port with none stays without one
-                if p.hint_span.is_some_and(|s| !s.is_empty()) {
-                    let mut parts: Vec<String> = Vec::new();
-                    let mut scalar = 0usize;
-                    for (name, field) in k.fields() {
-                        if *field != Field::Scalar {
-                            continue;
-                        }
-                        let text = match p.seed_text.get(scalar).and_then(|t| t.as_deref()) {
-                            Some(t) => t.to_string(),
-                            None => num(p.seed.get(scalar).copied().unwrap_or(0.0)),
-                        };
-                        scalar += 1;
-                        parts.push(format!("{name}: {text}"));
-                    }
-                    let hint = hint_of(&parts);
-                    if !hint.is_empty() {
-                        out.push(' ');
-                        out.push_str(&hint);
-                    }
-                }
-            } else if let Some(r) = &p.alias {
-                out.push_str(" = ");
-                write_ref(out, r);
-            } else if let Some([(x, _), (y, _)]) = &p.computed {
-                out.push_str(&format!(" = ({x}, {y})"));
-            }
-        }
         StmtKind::Param(p) => out.push_str(&format!("param {} = {}", p.name.text, p.text)),
         StmtKind::Unit(n) => out.push_str(&format!("unit {}", n.text)),
         StmtKind::Style(r) => {
@@ -1730,6 +1655,11 @@ fn write_decl(out: &mut String, d: &Decl) {
         out.push_str(&n.text);
     }
 
+    // a computed point is its formula, and carries no clause a solve could write
+    if let Some([(x, _), (y, _)]) = &d.computed {
+        out.push_str(&format!(" = ({x}, {y})"));
+        return;
+    }
     if let Some(c) = &d.curve {
         write_curve_spec(out, c);
     } else {
@@ -2335,8 +2265,8 @@ fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
 pub enum Tint {
     Comment,
     Num,
-    /// `component`, `param`, `port`, `cycle`, `point`, `over`, `construction` — a word that starts
-    /// a statement or shapes one
+    /// `component`, `param`, `cycle`, `point`, `over`, `construction` — a word that starts a
+    /// statement or shapes one
     Word,
     /// `Angle`, `circle`, `Tooth` — a word in the place a type is written
     Type,
@@ -2395,6 +2325,8 @@ fn ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
+// `port` is retired (bmander/geomsolver#47) and kept here only so a document written against it
+// is told what to write instead of reading `port` as a name
 const OPENERS: [&str; 13] = [
     "claim", "component", "param", "port", "unit", "style", "branch", "repeat", "cycle", "ring",
     "ground", "fix", "use",
@@ -2571,11 +2503,11 @@ fn tint_word(
         }
         Next::Inst => (Some(Tint::Type), Next::Word),
         Next::Start => {
-            // `point p`, `component Gear(…)`, `curve involute(…)`, `param R = …`, `port lo: point`
+            // `point p`, `component Gear(…)`, `curve involute(…)`, `param R = …`
             if EntKind::parse(w).is_some() {
                 return (Some(Tint::Word), after_kind(w));
             }
-            if matches!(w, "component" | "param" | "port" | "use") {
+            if matches!(w, "component" | "param" | "use") {
                 return (Some(Tint::Word), Next::Def);
             }
             // `style .construction { … }` — the class it names is the thing it declares
@@ -3571,97 +3503,14 @@ impl<'a> P<'a> {
                 Some(StmtKind::Orient(Orient { ccw: v >= 0, pts: Vec::new(), raw: Some((key, v)) }))
             }
             "port" => {
-                self.i += 1;
-                let name = self.ident()?;
-                if self.eat_p(':') {
-                    let ty = self.ident()?;
-                    let Some(k) = EntKind::parse(&ty.text.to_lowercase()) else {
-                        self.errs.push(SynErr {
-                            span: ty.span,
-                            message: format!("`{}` is not a kind of entity", ty.text),
-                        });
-                        return None;
-                    };
-                    // the declaring form is a declaration, and takes a declaration's seed —
-                    // the same clause, read against the same scalar table, recorded the same
-                    // way: where it is, or the empty span where it would go
-                    let scalars: Vec<&str> = k
-                        .fields()
-                        .iter()
-                        .filter(|(_, f)| *f == Field::Scalar)
-                        .map(|(n, _)| *n)
-                        .collect();
-                    let mut seed = vec![0.0; scalars.len()];
-                    let mut seed_text: Vec<Option<String>> = vec![None; scalars.len()];
-                    let mut seed_spans: Vec<Span> = vec![Span::default(); scalars.len()];
-                    let insert = self.prev_hi();
-                    let mut hint_span = Span::new(insert, insert);
-                    let mut seed_at = None;
-                    if self.eat_hint_at() {
-                        // a place named geometrically, as a declaration may (§6.4)
-                        let what = self.refr()?;
-                        let bearing =
-                            if self.eat_word("bearing") { Some(self.paren_expr()?) } else { None };
-                        seed_at = Some(AtRef { what, bearing });
-                    } else if let Some(lo) = self.eat_hint_clause() {
-                        for h in self.hint_body("x: 0, y: 0")? {
-                            let Some(i) = scalars.iter().position(|&s| s == h.key) else {
-                                let m = format!("`{}` has no scalar `{}` to seed", k.as_str(), h.key);
-                                self.fail_at(h.at, &m);
-                                continue;
-                            };
-                            seed[i] = h.value.unwrap_or(0.0);
-                            seed_text[i] = (h.value.is_none()).then_some(h.text);
-                            seed_spans[i] = h.span;
-                        }
-                        hint_span = Span::new(lo, self.prev_hi());
-                    }
-                    // `in top` — the port's point is an image in that view (§6.7)
-                    let mut membership = Membership::default();
-                    if self.peek_word("in") {
-                        let plo = self.here().lo as usize;
-                        self.i += 1;
-                        let r = self.refr()?;
-                        membership = Membership::written_at(r, Span::new(plo, self.prev_hi()));
-                    }
-                    self.end_of_stmt();
-                    Some(StmtKind::Port(Port {
-                        name,
-                        declare: Some(k),
-                        alias: None,
-                        seed,
-                        seed_text,
-                        seed_spans,
-                        hint_span: Some(hint_span),
-                        seed_at,
-                        membership,
-                        computed: None,
-                    }))
-                } else if self.peek() == Some(&Tok::Eq) {
-                    self.i += 1;
-                    // `port p = (x, y)` — a computed point; `port p = other` — an alias
-                    let (alias, computed) = if self.peek() == Some(&Tok::P('(')) {
-                        (None, Some(self.pair()?))
-                    } else {
-                        (Some(self.refr()?), None)
-                    };
-                    self.end_of_stmt();
-                    Some(StmtKind::Port(Port {
-                        name,
-                        declare: None,
-                        alias,
-                        seed: Vec::new(),
-                        seed_text: Vec::new(),
-                        seed_spans: Vec::new(),
-                        hint_span: None,
-                        seed_at: None,
-                        membership: Membership::default(),
-                        computed,
-                    }))
-                } else {
-                    self.fail("a port is `port name: Kind`, `port name = other` or `port name = (x, y)`");
-                    None
-                }
+                // retired (bmander/geomsolver#47): everything an instance makes is reached by
+                // its dotted name, so a port was a second name for a thing that had one
+                self.fail(
+                    "`port` is retired: an instance's entities are reached by dotted name \
+                     (`inst.p`), so declare the point (`point p hint(…)`), compute it \
+                     (`point p = (x, y)`) or name the aliased entity itself",
+                );
+                None
             }
             "param" => {
                 self.i += 1;
@@ -5031,11 +4880,53 @@ impl<'a> P<'a> {
                 curve: Some(curve),
                 class,
                 class_span,
+                computed: None,
                 seed_at: None,
                 seed_names: Vec::new(),
                 attitude: Attitude::Page,
                 membership: Membership::default(),
                 list_span: Span::default(),
+            });
+        }
+        // `point p = (xexpr, yexpr)` — a computed point (§6.5).  The brackets after a name say
+        // what the thing is made of, and this one is made of a formula: no children, no seed
+        // and no trailer, since nothing on the sheet ever holds it and no solve writes it.
+        if self.peek() == Some(&Tok::Eq) {
+            if kind != EntKind::Point {
+                self.fail(&format!(
+                    "only a point is computed (`point p = (x, y)`); a {} is made of its \
+                     children",
+                    kind.as_str()
+                ));
+                return None;
+            }
+            if name.written().is_none() {
+                self.fail("a computed point is named: `point p = (x, y)`");
+                return None;
+            }
+            self.i += 1;
+            let computed = Some(self.pair()?);
+            let end = self.prev_hi();
+            let mut membership = Membership::default();
+            membership.set_span(Span::new(end, end));
+            return Some(Decl {
+                kind,
+                name,
+                children: Vec::new(),
+                seed: vec![0.0; 2],
+                seed_text: vec![None; 2],
+                seed_spans: vec![Span::default(); 2],
+                hint_span: None,
+                knots: None,
+                curve: None,
+                computed,
+                class: Classes::default(),
+                class_span: Span::new(end, end),
+                seed_at: None,
+                seed_names: Vec::new(),
+                attitude: Attitude::Page,
+                membership,
+                list_span: Span::new(end, end),
             });
         }
         let mut children: Vec<Vec<Kid>> = Vec::new();
@@ -5233,6 +5124,7 @@ impl<'a> P<'a> {
             hint_span: Some(hint_span),
             knots,
             curve: None,
+            computed: None,
             class,
             class_span: if class_span.is_empty() { Span::new(insert, insert) } else { class_span },
             seed_at,

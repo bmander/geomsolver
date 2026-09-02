@@ -22,6 +22,5 @@ component Drive(o: point, cam_i: point, cam_e: point) {
 
 component EndSection(o: point) {
   top: At(o, dx: 0mm, dy: deck + 30mm)
-  port bore = axisline
-  line axisline(o, top.p) class axis
+  line bore(o, top.p) class axis
 }

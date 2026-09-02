@@ -24,9 +24,9 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
   // -- along the axis: the section through cylinder 1 -------------------------------------
   in end {
     // the casting: its face on the gasket, its sides, its top
-    port f_l: point hint(x: o.x - hw, y: o.y + deck + gasket)
+    point f_l hint(x: o.x - hw, y: o.y + deck + gasket)
     point f_r hint(x: o.x + hw, y: o.y + deck + gasket)
-    port t_l: point hint(x: o.x - 110mm, y: o.y + deck + head)
+    point t_l hint(x: o.x - 110mm, y: o.y + deck + head)
     tr: At(o, dx: 110mm, dy: deck + head)
     line face(f_l, f_r) -> line side_r(f_r, tr.p) -> line topline(tr.p, t_l) -> line side_l(t_l, f_l) -> close
     o distance(-hw, along: x) f_l
@@ -49,8 +49,8 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
     seat_e on roof_l
     o distance(vs, along: x) seat_i
     o distance(-vs, along: x) seat_e
-    port cam_i: point hint(x: o.x + camx, y: o.y + camh + gasket)
-    port cam_e: point hint(x: o.x - camx, y: o.y + camh + gasket)
+    point cam_i hint(x: o.x + camx, y: o.y + camh + gasket)
+    point cam_e hint(x: o.x - camx, y: o.y + camh + gasket)
     line vaxis_i(seat_i, cam_i) class axis
     line vaxis_e(seat_e, cam_e) class axis
     vaxis_i perpendicular roof_r
@@ -76,9 +76,9 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
 
   // -- across the axis: the head edge on ----------------------------------------------
   in side {
-    port hfl: point hint(x: o_s.x + front, y: o_s.y + deck + gasket)
+    point hfl hint(x: o_s.x + front, y: o_s.y + deck + gasket)
     point hfr hint(x: o_s.x + back, y: o_s.y + deck + gasket)
-    port htl: point hint(x: o_s.x + front, y: o_s.y + deck + head)
+    point htl hint(x: o_s.x + front, y: o_s.y + deck + head)
     point htr hint(x: o_s.x + back, y: o_s.y + deck + head)
     line hface(hfl, hfr) -> line hback(hfr, htr) -> line htop(htr, htl) -> line hfront(htl, hfl) -> close
     o_s distance(front, along: x) hfl
@@ -88,7 +88,7 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
     horizontal hface
     horizontal htop
     // the camshaft: the two shafts lie one behind the other here, one journal's outline
-    port cam: point hint(x: o_s.x + front, y: o_s.y + camh + gasket)
+    point cam hint(x: o_s.x + front, y: o_s.y + camh + gasket)
     point camb hint(x: o_s.x + back, y: o_s.y + camh + gasket)
     line camline(cam, camb) class axis
     o_s distance(front, along: x) cam
@@ -141,10 +141,10 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
   // -- from above: the head's outline, the two shafts in their bearings, and each cylinder's
   // valves and plug -----------------------------------------------------------------------
   in top {
-    port hfl_t: point hint(x: o_t.x + front, y: o_t.y - 110mm)
+    point hfl_t hint(x: o_t.x + front, y: o_t.y - 110mm)
     point hfr_t hint(x: o_t.x + back, y: o_t.y - 110mm)
     point hbr_t hint(x: o_t.x + back, y: o_t.y + 110mm)
-    port hbl_t: point hint(x: o_t.x + front, y: o_t.y + 110mm)
+    point hbl_t hint(x: o_t.x + front, y: o_t.y + 110mm)
     line h1(hfl_t, hfr_t) -> line h2(hfr_t, hbr_t) -> line h3(hbr_t, hbl_t) -> line h4(hbl_t, hfl_t) -> close
     horizontal h1
     vertical h2
@@ -152,8 +152,8 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
     vertical h4
     o_t distance(front, along: x) hfl_t
     o_t distance(back, along: x) hbr_t
-    port ci: point hint(x: o_t.x + front + 10mm, y: o_t.y + camx)
-    port ce: point hint(x: o_t.x + front + 10mm, y: o_t.y - camx)
+    point ci hint(x: o_t.x + front + 10mm, y: o_t.y + camx)
+    point ce hint(x: o_t.x + front + 10mm, y: o_t.y - camx)
     point ci1 hint(x: o_t.x + back - 10mm, y: o_t.y + camx)
     point ce1 hint(x: o_t.x + back - 10mm, y: o_t.y - camx)
     line cl_i(ci, ci1) class axis

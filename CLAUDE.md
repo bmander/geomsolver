@@ -132,8 +132,8 @@ Conventions:
   placement is a preference it never touches.  Ask §4.3, not the keyword, for what may be
   deleted without changing the drawing.
 - **A seed may read geometry, and reads its seed** (Solvent §6.4).  `hint(x: k.center.x + k.r,
-  y: pin.y)`, `hint at pin`, `hint at k bearing (b)` — on the sheet, in a child slot and on a
-  `port` alike.  The flattener settles a seed text over the parameters in scope and, where that
+  y: pin.y)`, `hint at pin`, `hint at k bearing (b)` — on the sheet and in a child slot alike.
+  The flattener settles a seed text over the parameters in scope and, where that
   fails and the text names a dotted scalar, keeps it (`settle_seed`, `reads_geometry`) with every
   dotted name resolved to the entity's absolute name in `Decl::seed_names` (`rescope_seeds`, the
   same `lookup` every reference goes through — so a formal reads as its actual and a block copy as
@@ -174,6 +174,14 @@ Conventions:
   views laid out from one grounded point) — and is in the Makefile's `RUST_SRC` so editing it
   rebuilds what compiled it in.  `program::reparse` relinks from the texts already in hand (`modules::relink`), so an
   edit never asks the host.  E070 no module, E071 defined twice.  `tests/modules.rs` is the gate.
+- **`port` is retired** (issue #47, item 1).  Everything an instance makes is reached by its
+  dotted name (`five.s[0].p1`, `t0.mid`), so a port was a second name for a thing that had one:
+  its declaring form is a `point` of the body, its alias form is the caller writing the entity's
+  own name, and the one real construct under the keyword — the **computed point** — is
+  `point p = (xexpr, yexpr)` (`Decl::computed`, the same brackets-say-what-it-is-made-of rule as
+  every other declaration), refused on the sheet by the flattener and compiled to two tapes when
+  traced.  The parser keeps the word in `OPENERS` only to refuse it naming the three forms.
+  Aliasing is untouched: it is a property of argument passing (`bind_instance`), not of ports.
 - **A class stands on a relation and on an instance, and `display: none` hides** (Solvent
   §13.2).  `Relation::class` is parsed in both trailing-clause loops (a chain's and a lone
   relation's, before `at`), set on `Constraint::class` by `constrain`, written by `io::dumps`,
@@ -269,7 +277,7 @@ Conventions:
   Insertions racing for one offset are ordered by `splice`'s stable sort, so reconcile pushes
   appends before flags before names; `tests/anonymous.rs` is the gate.
   Where an unseeded point *starts* — an implicit child, a declared `point a` with no `hint(…)`
-  clause, a `port tip: point` with none — is `program::scatter` and is an implementation choice
+  clause, inside a component or not — is `program::scatter` and is an implementation choice
   the spec must not carry — but it may not be the origin (two endpoints there is a zero-length
   line, with no direction for `horizontal(l)` and a singular row for any tangency; two points
   there put a `distance` at a stationary point of its own residual, and the first document
@@ -279,8 +287,8 @@ Conventions:
   step per minted point, in creation order — which for a chain is traversal order, so a contour
   seeds as a simple polygon.  "No clause" is the empty `hint_span` the parser leaves where one
   would go (a lifted declaration has `None` and keeps its numbers), and `commit_seeds` then
-  writes the solved pose in as the clause.  The declaring form of a port takes the same clause
-  (`port lo: point hint(x: 0, y: 0)`), and `gear.sv` / `gear_trace.sv` state theirs: from the
+  writes the solved pose in as the clause.  A component's points take the same clause, and
+  `gear.sv` / `gear_trace.sv` state theirs: from the
   centre, where every circle's row is flat, a flank's first step lands on the involute at the
   roll its contact names, where a start a unit off reached the mirror branch.
 - **Presentation is a separate statement from what the drawing is** (`style.rs`, Solvent §13.2).
@@ -1147,7 +1155,7 @@ Conventions:
   the numbers) and resolves a drawn target onto the instance owning the longest prefix, so
   `build_curve` never re-derives which instance a point belongs to.  A component's point is
   placed one of two ways, and `program::compile_curve` picks the body from that: a **computed**
-  point, `port p = (xexpr, yexpr)` (`Port::computed`), compiles to two `tape.rs` tapes — the
+  point, `point p = (xexpr, yexpr)` (`Decl::computed`), compiles to two `tape.rs` tapes — the
   formula an involute has — and a component with one is refused on the sheet, since nothing
   there holds a point to a formula; any other point is a **locus**, lowered by `compile_trace`
   from the body's statements.  Either way the tapes are differentiated forward in the swept
@@ -1162,8 +1170,8 @@ Conventions:
   number, and the mode adds one policy, `Walk::keep_text`: a text nothing can work out at all
   (a `param` or an argument over `sin(u)`) is kept as text and written in where it is read
   (`Sym::texts`, keyed by absolute name and looked up through the scope's prefixes like any
-  name), where the sheet would report it.  A nested instance, a `repeat` and a port alias are
-  the flattener's as they are on the sheet — and a nested instance's *own* unbound formal is
+  name), where the sheet would report it.  A nested instance, a `repeat` and a formal's alias
+  are the flattener's as they are on the sheet — and a nested instance's *own* unbound formal is
   its own unknown there too (`#c12.i.u`), no column of the curve, and reported rather than
   captured by an outer formal of the same name (`tests/curve_of.rs`).  One expansion per
   `(component, point, formal)` — `CurveDef::key` — and every instance asked for the same

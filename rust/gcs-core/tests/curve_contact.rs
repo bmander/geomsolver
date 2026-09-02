@@ -12,7 +12,7 @@ use gcs_core::syntax::parse;
 
 const INVOLUTE: &str = "\
 component Involute(c: circle, phase: Angle, u: Angle) {
-  port p = ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
+  point p = ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
              c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)) )
 }
 point  o hint(x: 0, y: 0)

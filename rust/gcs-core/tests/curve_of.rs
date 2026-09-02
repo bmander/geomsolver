@@ -135,7 +135,7 @@ curve k = d.i.t over u in (0, 90)
 fn a_computed_point_stands_alone() {
     let src = "\
 component Both(o: point, u: Angle) {
-  port p = ( o.x + cos(u), o.y + sin(u) )
+  point p = ( o.x + cos(u), o.y + sin(u) )
   point q hint(x: 3, y: 4)
   o distance(5) q
 }

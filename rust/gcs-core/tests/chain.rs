@@ -1112,14 +1112,13 @@ fn a_prefix_distance_is_the_distance_between_the_ends() {
 fn on_resolves_across_every_kind_it_reaches() {
     let src = "\
 component Holder() {
-  port hub: point
+  point hub
   point o hint(x: 0, y: 0)
   circle k(center: o) hint(r: 20)
-  port ring = k
 }
 g: Holder()
 point p hint(x: 20, y: 0)
-p on g.ring
+p on g.k
 point q hint(x: 5, y: 0)
 point r hint(x: 30, y: 0)
 line   l(q, r)
@@ -1252,7 +1251,7 @@ const SPLINE: &str = "point s0 hint(x: 0, y: 0)\npoint s1 hint(x: 20, y: 10)\n\
 /// The same, for a curve family written in the document — whose slot is called `u`.
 const CURVE: &str = "\
 component Involute(c: circle, phase: Angle, u: Angle) {
-  port p = ( c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
+  point p = ( c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
              c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)) )
 }
 point o hint(x: 0, y: 0)

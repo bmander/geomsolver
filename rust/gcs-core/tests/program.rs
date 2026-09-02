@@ -316,6 +316,7 @@ fn a_name_declared_twice_is_an_error() {
             hint_span: None,
             knots: None,
             curve: None,
+            computed: None,
             class: Default::default(),
             class_span: Default::default(),
             seed_at: None,

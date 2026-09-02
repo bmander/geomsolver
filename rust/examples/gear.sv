@@ -17,7 +17,7 @@
 // point touching a curve is a single statement whichever component the curve belongs to.
 
 component Involute(c: circle, phase: Angle, u: Angle) {
-  port p = ( c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
+  point p = ( c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
              c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)) )
 }
 
@@ -38,8 +38,8 @@ component Flank(base: circle, root: circle, tip: circle,
   // puts the point on the curve at exactly that roll, and the solve is nine iterations.  Left
   // unseeded, a point starts a unit or so off the centre at a bearing of its own, and from
   // there the root and tip circles pull against the flank.
-  port lo: point hint(x: 0, y: 0)
-  port hi: point hint(x: 0, y: 0)
+  point lo hint(x: 0, y: 0)
+  point hi hint(x: 0, y: 0)
 
   lo on e hint(u: u0)
   hi on e hint(u: u1)

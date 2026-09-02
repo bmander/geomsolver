@@ -170,9 +170,9 @@ pub struct SourceMap {
     pub of_constraint: BTreeMap<u32, Site>,
     /// Every name an entity was declared or aliased under **that the source calls it** — what a
     /// window shows, a selection crosses a re-elaboration on, and the report publishes.  A `Vec`
-    /// from the start, because a port puts several names on one entity and costs no residual for
-    /// doing it; empty for an entity the source calls nothing, which is the whole of what a
-    /// reader has to ask.
+    /// from the start, because a formal puts a second name on the entity it is given and costs
+    /// no residual for doing it; empty for an entity the source calls nothing, which is the
+    /// whole of what a reader has to ask.
     ///
     /// Deliberately *not* the same set as `by_name`, which is resolution and holds every key as
     /// well.  Which of the two a name joins is `bind`'s argument and is decided where the name
@@ -392,8 +392,8 @@ impl Elaborated {
 /// requires, since a body is a set and a set has no "before".
 ///
 /// The union-find is a singleton per class in the flat subset and is here from the start: an
-/// alias class *is* how a port costs nothing, so aliasing is a property of this pass rather than
-/// a later change to the model.
+/// alias class *is* how a formal costs nothing, so aliasing is a property of this pass rather
+/// than a later change to the model.
 #[derive(Default)]
 struct Resolver {
     of: BTreeMap<String, EntRef>,
@@ -850,7 +850,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
 /// flat body under an empty prefix.  The variable table is the swept formal, then every
 /// coordinate the entity formals contribute *in `entity_params` order* (`EntKind::scalar_names`),
 /// then the other numbers the component takes.  That order is the kernel's column order, which
-/// is what makes a tape's gradient a row of the Jacobian.  A computed point (`port p = (x, y)`)
+/// is what makes a tape's gradient a row of the Jacobian.  A computed point (`point p = (x, y)`)
 /// compiles to its two tapes; any other point is a trace over the body's statements.
 fn compile_curve(
     prog: &Program,
@@ -906,7 +906,7 @@ fn compile_curve(
     // sheet or in a block can hold a point to a formula beside placed geometry, so the body
     // is the one computed point — decided by shape, not by which statement is found first
     let computed = body.iter().find_map(|st| match &st.kind {
-        StmtKind::Port(pt) if pt.name.text == traced => pt.computed.as_ref(),
+        StmtKind::Decl(d) if d.name.key().text == traced => d.computed.as_ref(),
         _ => None,
     });
     let (body, pose_of) = match computed {
@@ -1027,6 +1027,10 @@ fn compile_trace(
     let mut pose_of: Vec<(String, usize)> = Vec::new();
     for st in body {
         let StmtKind::Decl(d) = &st.kind else { continue };
+        // a computed point that is not the one traced is its formula and has no unknowns here
+        if d.computed.is_some() {
+            continue;
+        }
         if d.seed_at.is_some() && d.kind != EntKind::Point {
             return Err((st.span, "only a point takes a geometric seed".to_string()));
         }
@@ -1158,8 +1162,6 @@ fn compile_trace(
                 continue;
             }
             StmtKind::Relation(r) => r,
-            // a computed point that is not the one traced has nothing to say here
-            StmtKind::Port(pt) if pt.computed.is_some() => continue,
             _ => {
                 return Err((
                     st.span,
@@ -1360,8 +1362,7 @@ fn at_seed(
     }
 }
 
-/// Where an unseeded point starts — an implicit child, a declared point with no `hint(…)`, a
-/// port with none.
+/// Where an unseeded point starts — an implicit child, a declared point with no `hint(…)`.
 ///
 /// **Nothing in the language says** (spec §15): a declaration with no hint has unknowns, and the
 /// document says no more than that.  The implementation needs an answer all the same, and the
@@ -1370,7 +1371,7 @@ fn at_seed(
 /// `point a` / `point b` / `a distance(30) b` there is a stationary point of the one residual it
 /// has.  So they scatter: distinct bearings round a unit circle, jittered off the crate's seeded
 /// `rng::Rng` so the answer is the same on every run and on every machine.  No exception for
-/// the drawing's first point: a port declared before `point base hint(x: 0, y: 0)` would sit
+/// the drawing's first point: a point declared before `point base hint(x: 0, y: 0)` would sit
 /// on it, and a seeded point at the origin is the commonest one there is.  It is an
 /// implementation choice and belongs nowhere in the spec.
 /// Where an unwritten radius starts when the geometry gives none — a circle's, or an arc whose
@@ -2684,6 +2685,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         hint_span: None,
         seed,
         curve: (e.kind == EntKind::Curve).then(|| lift_curve(sk, e.i())),
+        computed: None,
         knots,
         class: sk.class_of(e),
         class_span: Span::default(),

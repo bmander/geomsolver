@@ -25,7 +25,7 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
   // -- along the axis: the section through cylinder 1 -------------------------------------
   in end {
     // the bore's walls, `wall` deep below the deck
-    port bl0: point hint(x: o.x - D / 2, y: o.y + deck)
+    point bl0 hint(x: o.x - D / 2, y: o.y + deck)
     point br0 hint(x: o.x + D / 2, y: o.y + deck)
     bl1: At(o, dx: -D / 2, dy: deck - wall)
     br1: At(o, dx: D / 2, dy: deck - wall)
@@ -36,13 +36,13 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     o distance(deck, along: y) br0
     bl0 distance(D) br0 class shown
     // the outline: deck, walls, skirt, pan rail
-    port d_l: point hint(x: o.x - hw, y: o.y + deck)
+    point d_l hint(x: o.x - hw, y: o.y + deck)
     point d_r hint(x: o.x + hw, y: o.y + deck)
     s_l: At(o, dx: -hw, dy: 110mm)
     s_r: At(o, dx: hw, dy: 110mm)
     k_l: At(o, dx: -kw, dy: 30mm)
     k_r: At(o, dx: kw, dy: 30mm)
-    port pr_l: point hint(x: o.x - kw, y: o.y + rail)
+    point pr_l hint(x: o.x - kw, y: o.y + rail)
     point pr_r hint(x: o.x + kw, y: o.y + rail)
     line deckline(d_l, d_r) -> line b_r(d_r, s_r.p) -> line sk_r(s_r.p, k_r.p) ->
       line kr(k_r.p, pr_r) -> line railline(pr_r, pr_l) -> line kl(pr_l, k_l.p) ->
@@ -69,7 +69,7 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     // the sump
     sh_l: At(o, dx: -kw, dy: rail - 30mm)
     sh_r: At(o, dx: kw, dy: rail - 30mm)
-    port sp_l: point hint(x: o.x - 60mm, y: o.y + sump)
+    point sp_l hint(x: o.x - 60mm, y: o.y + sump)
     point sp_r hint(x: o.x + 60mm, y: o.y + sump)
     line su_r(pr_r, sh_r.p) -> line ss_r(sh_r.p, sp_r) -> line sb(sp_r, sp_l) ->
       line ss_l(sp_l, sh_l.p) -> line su_l(sh_l.p, pr_l)
@@ -81,11 +81,10 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
 
   // -- across the axis: the casting edge on -----------------------------------------------
   in side {
-    port bfl: point hint(x: o_s.x + front, y: o_s.y + deck)
+    point bfl hint(x: o_s.x + front, y: o_s.y + deck)
     point bfr hint(x: o_s.x + back, y: o_s.y + deck)
     point rfl hint(x: o_s.x + front, y: o_s.y + rail)
     point rfr hint(x: o_s.x + back, y: o_s.y + rail)
-    port deckline = dl
     line dl(bfl, bfr)
     line blockfront(bfl, rfl)
     line blockback(bfr, rfr)
@@ -140,7 +139,7 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
 
   // -- from above: the deck and the bores -----------------------------------------------
   in top {
-    port fl: point hint(x: o_t.x + front, y: o_t.y - hw)
+    point fl hint(x: o_t.x + front, y: o_t.y - hw)
     point fr hint(x: o_t.x + back, y: o_t.y - hw)
     point br hint(x: o_t.x + back, y: o_t.y + hw)
     point bl hint(x: o_t.x + front, y: o_t.y + hw)

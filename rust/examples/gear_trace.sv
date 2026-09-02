@@ -51,8 +51,8 @@ component Flank(base: circle, datum: line, root: circle, tip: circle,
   // the wrong bearings, a tooth flaring the wrong way — and `over (u0, u1)` is what now refuses
   // that: a contact off the drawn interval is put back and held, and the drawing either solves
   // on the flank or says it did not.
-  port lo: point hint(x: 0, y: 0)
-  port hi: point hint(x: 0, y: 0)
+  point lo hint(x: 0, y: 0)
+  point hi hint(x: 0, y: 0)
 
   lo on e hint(u: u0)
   hi on e hint(u: u1)

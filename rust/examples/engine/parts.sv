@@ -9,8 +9,8 @@ use engine.dims
 // `side` says which side of the centre line: the seeds are the two contact points at the bearing
 // square to the line of centres, so the solve starts on the branch that was asked for.
 component Span(k1: circle, k2: circle, side: Scalar) {
-  port a: point hint at k1 bearing (atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)
-  port b: point hint at k2 bearing (atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)
+  point a hint at k1 bearing (atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)
+  point b hint at k2 bearing (atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)
   line s(a, b)
   a on k1
   b on k2
@@ -22,7 +22,7 @@ component Span(k1: circle, k2: circle, side: Scalar) {
 // the small end riding the bore axis one rod length from the pin.  The rod itself is the part
 // `engine.conrod` designs; this is the outline a draughtsman ghosts in for a second position.
 component Rod(pin: point, axis: line) {
-  port small: point hint(x: pin.x, y: pin.y + L)
+  point small hint(x: pin.x, y: pin.y + L)
   line cl(pin, small) class axis
   small on axis
   pin distance(L) small
@@ -69,7 +69,7 @@ component Piston(small: point, pin: Int) {
 // A point placed from `o` by two ordinates — the corner of an outline, a centre on a pitch.
 // One statement where a point and its two runs were three.
 component At(o: point, dx: Length, dy: Length) {
-  port p: point hint(x: o.x + dx, y: o.y + dy)
+  point p hint(x: o.x + dx, y: o.y + dy)
   o distance(dx, along: x) p
   o distance(dy, along: y) p
 }

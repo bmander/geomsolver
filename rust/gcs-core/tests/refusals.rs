@@ -160,7 +160,7 @@ fn a_contact_seeded_off_its_curve_still_solves() {
     // a family's contact likewise, seeded past either end of `over (0, 720)`
     for u in ["900", "-100"] {
         let (e, d) = read(&format!(
-            "component spiral(o: point, k: Length, u: Angle) {{\n  port p = ( o.x + k * u / 360 * cos(u), o.y + k * u / 360 * sin(u) )\n}}\n\
+            "component spiral(o: point, k: Length, u: Angle) {{\n  point p = ( o.x + k * u / 360 * cos(u), o.y + k * u / 360 * sin(u) )\n}}\n\
              point o hint(x: 0, y: 0)\ncurve f = spiral(o, k: 10).p over u in (0, 720)\npoint t hint(x: 12, y: 3)\nt on f hint(u: {u})\nground o\n"
         ));
         assert!(d.is_empty(), "{d:?}");
@@ -196,7 +196,7 @@ fn distance_between_circles_centred_apart_is_refused() {
 fn a_curve_family_contact_stays_inside_its_domain() {
     let (e, d) = read(
         "component quarter(c: circle, u: Angle) {
-           port p = ( c.center.x + c.r * cos(u), c.center.y + c.r * sin(u) )
+           point p = ( c.center.x + c.r * cos(u), c.center.y + c.r * sin(u) )
          }
          point o hint(x: 0, y: 0)
          circle c(center: o) hint(r: 20)

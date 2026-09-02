@@ -52,7 +52,7 @@ fn a_statement_is_coloured_by_what_it_declares() {
     let src = "\
 component Gear(N: Int, m: Length, c: circle) {
   param R = m * N / 2
-  port hub: point
+  point hub
   point center hint(x: 0, y: 0)
   circle base(center: center) hint(r: R) class construction
   radius(R) base
@@ -71,9 +71,8 @@ g: Gear(N: 30, m: 3)  // one wheel
     assert_eq!(tint_of(src, "param"), Some(Tint::Word));
     assert_eq!(tint_of(src, "R ="), Some(Tint::Def));
     assert_eq!(tint_of(src, "2\n"), Some(Tint::Num));
-    assert_eq!(tint_of(src, "port"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "point hub"), Some(Tint::Word));
     assert_eq!(tint_of(src, "hub"), Some(Tint::Def));
-    assert_eq!(tint_of(src, "point\n"), Some(Tint::Type));
     assert_eq!(tint_of(src, "point center"), Some(Tint::Word));
     assert_eq!(tint_of(src, "center hint"), Some(Tint::Def));
     assert_eq!(tint_of(src, "hint("), Some(Tint::Word));
@@ -112,9 +111,9 @@ fn a_seed_and_a_claim_are_told_apart() {
 /// A computed point is arithmetic the parser never tokenizes — so the numbers in it are still
 /// numbers, and nothing there is mistaken for a word.
 #[test]
-fn a_computed_port_is_arithmetic() {
+fn a_computed_point_is_arithmetic() {
     let src = "component Involute(c: circle, phase: Angle, u: Angle) {\n\
-               port p = ( c.center.x + c.r * 180, 0 )\n}";
+               point p = ( c.center.x + c.r * 180, 0 )\n}";
     assert_eq!(tint_of(src, "component"), Some(Tint::Word));
     assert_eq!(tint_of(src, "Involute"), Some(Tint::Def));
     assert_eq!(tint_of(src, "Angle"), Some(Tint::Type));

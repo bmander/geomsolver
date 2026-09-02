@@ -404,7 +404,6 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
             StmtKind::Decl(d) => Some(d.name.key().text.as_str()),
             StmtKind::Instance(i) => Some(i.name.text.as_str()),
             StmtKind::Param(p) => Some(p.name.text.as_str()),
-            StmtKind::Port(p) => Some(p.name.text.as_str()),
             _ => None,
         })
         .collect();
@@ -449,6 +448,7 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
         hint_span: None,
         knots: None,
         curve: None,
+        computed: None,
         class: Default::default(),
         class_span: Span::default(),
         seed_at: None,
@@ -547,6 +547,7 @@ fn add_entity_with(
         hint_span: None,
         knots: None,
         curve: None,
+        computed: None,
         class: Default::default(),
         class_span: Span::default(),
         seed_at: None,

@@ -4,9 +4,9 @@
 //! after it — building the geometry, adding the constraints, evaluating the expressions — works on
 //! a list with no components and no blocks in it, exactly as it did before either existed.
 //!
-//! **Connection is aliasing, and aliasing is free.**  Binding a port or passing an entity to an
-//! instance does not add a constraint; it makes two names denote one entity, which costs no
-//! residual and cannot be violated (spec P1).  That is not an optimisation — it is why a
+//! **Connection is aliasing, and aliasing is free.**  Passing an entity to an instance does not
+//! add a constraint; it makes two names denote one entity, which costs no residual and cannot
+//! be violated (spec P1).  That is not an optimisation — it is why a
 //! component boundary is free, and it needs nothing from the model at all: a name resolves to an
 //! entity, and several names may resolve to the same one.
 //!
@@ -19,7 +19,7 @@ use crate::model::EntKind;
 use crate::program::Code;
 use crate::units::Units;
 use crate::syntax::{
-    build_rank, under_root, BlockKind, Component, CurveTarget, Decl, DeclName, Kid, Name,
+    build_rank, under_root, BlockKind, Component, CurveTarget, Decl, Kid, Name,
     OpenJoint, OpenNamed, OpenSide, Program, Ref, Seg, Span, Stmt, StmtKind, Ty,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -56,7 +56,7 @@ struct Ring {
 }
 
 /// What the names in one statement are resolved against: the prefixes it is nested in, innermost
-/// first.  An instance's entity arguments are not here: a formal is a *port alias* under the
+/// first.  An instance's entity arguments are not here: a formal is an *alias* under the
 /// instance's own prefix (`bind`), found by `lookup` through the prefixes like any other name.
 #[derive(Clone, Default)]
 struct Scope {
@@ -106,8 +106,8 @@ pub struct Expansion {
     /// elaborator finds the instance a curve's point belongs to here, with the entities it was
     /// given resolved to absolute names and the numbers it was given worked out.
     pub instances: Vec<InstanceInfo>,
-    /// `port x = y`, resolved: absolute name to absolute name.  What a curve's point is when
-    /// the component exported it under another name.
+    /// Every formal bound to an actual, resolved: absolute name to absolute name.  What a
+    /// curve's point is when the name it was asked by is an alias.
     pub aliases: BTreeMap<String, String>,
 }
 
@@ -151,7 +151,8 @@ struct Walk<'a> {
     /// resolve references afterwards, so forward reference works — which spec P2 requires, since
     /// a body is a set and a set has no "before".
     names: BTreeSet<String>,
-    /// `port x = y`: one name for what another names.  Resolved transitively, after the walk.
+    /// A formal bound to an actual: one name for what another names.  Resolved transitively,
+    /// after the walk.
     aliases: Vec<(String, Ref, Scope)>,
     instances: Vec<InstanceInfo>,
     /// `Some` while a component is expanded over its formals as variables — see `Sym`.
@@ -470,6 +471,28 @@ impl<'a> Walk<'a> {
                     self.names.insert(abs.clone());
                     let mut d2 = d.clone();
                     d2.name = d.name.prefixed(abs, scope.copies);
+                    // a computed point is made of expressions over the formals, which is a
+                    // thing a curve can be and a drawing cannot: nothing on the sheet holds a
+                    // point to a formula (§6.5)
+                    if let Some([(x, xs), (y, ys)]) = &d.computed {
+                        if self.sym.is_none() {
+                            let n = &d.name.key().text;
+                            self.err(
+                                d.name.span(),
+                                format!(
+                                    "`{n}` is a computed point, so its component is drawn only \
+                                     as a curve: `curve e = Component(…).{n} over u in (a, b)`"
+                                ),
+                            );
+                            continue;
+                        }
+                        d2.computed = Some([
+                            (self.subst_sym(x, vals, scope), *xs),
+                            (self.subst_sym(y, vals, scope), *ys),
+                        ]);
+                        self.emit(StmtKind::Decl(d2), st, scope, path);
+                        continue;
+                    }
                     if let Some(c) = d2.curve.as_mut() {
                         // the interval is written over the parameters in scope, like a number
                         for t in [&mut c.domain.0, &mut c.domain.1] {
@@ -497,64 +520,6 @@ impl<'a> Walk<'a> {
                     }
                     self.stamp_scope_plane(&mut d2, scope);
                     self.emit(StmtKind::Decl(d2), st, scope, path);
-                }
-                // `port lead: Point` is a fresh declaration that the boundary also names.  There
-                // is nothing else to it: a port carries no joint, no direction and no constraint
-                // — and its seed, where it wrote one, is a declaration's seed.
-                StmtKind::Port(p) => {
-                    if let Some(kind) = p.declare {
-                        let abs = format!("{prefix}{}", p.name.text);
-                        self.names.insert(abs.clone());
-                        let mut d = Decl {
-                            kind,
-                            // the port's own written name, under the prefix — the same rule
-                            // every ordinary declaration goes through above
-                            name: DeclName::Written(p.name.clone()).prefixed(abs, scope.copies),
-                            children: vec![Vec::new(); count_children(kind)],
-                            seed: p.seed.clone(),
-                            seed_text: p.seed_text.clone(),
-                            seed_spans: p.seed_spans.clone(),
-                            hint_span: p.hint_span,
-                            knots: None,
-                            curve: None,
-                            class: Default::default(),
-                            class_span: Span::default(),
-                            seed_at: p.seed_at.clone(),
-                            seed_names: Vec::new(),
-                            attitude: Default::default(),
-                            membership: p.membership.clone(),
-                            list_span: Span::default(),
-                        };
-                        self.settle_seeds(&mut d, vals, scope, st.span);
-                        self.stamp_scope_plane(&mut d, scope);
-                        self.emit(StmtKind::Decl(d), st, scope, path);
-                    } else if let Some(r) = &p.alias {
-                        let abs = format!("{prefix}{}", p.name.text);
-                        self.aliases.push((abs, r.clone(), scope.clone()));
-                    } else if let Some(xy) = &p.computed {
-                        // a computed point is made of expressions over the formals, which is
-                        // a thing a curve can be and a drawing cannot: nothing on the sheet
-                        // holds a point to a formula (§6.5)
-                        if self.sym.is_none() {
-                            self.err(
-                                p.name.span,
-                                format!(
-                                    "`{}` is a computed point, so its component is drawn only \
-                                     as a curve: `curve e = Component(…).{} over u in (a, b)`",
-                                    p.name.text, p.name.text
-                                ),
-                            );
-                            continue;
-                        }
-                        let mut p2 = p.clone();
-                        p2.name = Name { text: format!("{prefix}{}", p.name.text), span: p.name.span };
-                        let [(x, xs), (y, ys)] = xy;
-                        p2.computed = Some([
-                            (self.subst_sym(x, vals, scope), *xs),
-                            (self.subst_sym(y, vals, scope), *ys),
-                        ]);
-                        self.emit(StmtKind::Port(p2), st, scope, path);
-                    }
                 }
                 StmtKind::Param(_) => {}   // worked out above, before the walk
                 StmtKind::Instance(inst) => {
@@ -738,8 +703,7 @@ impl<'a> Walk<'a> {
     }
 
     /// A seed written as an expression is worked out here, against the parameters in scope,
-    /// and is a number from now on — for a declaration and for the declaring form of a port
-    /// alike, since both carry the one `hint(…)` clause a seed is written in.
+    /// and is a number from now on.
     fn settle_seeds(&mut self, d: &mut Decl, vals: &BTreeMap<String, Aff>, scope: &Scope, span: Span) {
         for i in 0..d.seed_text.len() {
             let Some(t) = d.seed_text[i].take() else { continue };
@@ -934,9 +898,8 @@ impl<'a> Walk<'a> {
     /// An entity argument *aliases*: the formal and the actual denote one entity, at no cost.  A
     /// value argument is worked out here and is a number from then on.
     ///
-    /// The alias is recorded exactly as `port f = actual` written in the instance's body would
-    /// be: under the instance's **absolute** prefix, `{prefix}{inst}.{formal}`, resolved in the
-    /// caller's scope.  Absolute, because that is the one key every reader already reaches —
+    /// The alias is recorded under the instance's **absolute** prefix, `{prefix}{inst}.{formal}`,
+    /// resolved in the caller's scope.  Absolute, because that is the one key every reader already reaches —
     /// `lookup` walks a statement's prefixes outward, so the formal is found from a `repeat` in
     /// the body (`f.#3.1.hub` misses, `f.hub` hits), from a nested instance's own arguments
     /// (`Inner(q)` resolves `q` in `Outer`'s scope, where `o.q` is an alias), and separately per
@@ -1096,7 +1059,7 @@ impl<'a> Walk<'a> {
 
     /// Turn every reference into the absolute name of what it denotes.
     fn resolve(&mut self) -> (Vec<Flat>, BTreeMap<String, String>) {
-        // port aliases first, and transitively: `port a = b` where `b` is itself a port
+        // aliases first, and transitively: a formal bound to another instance's formal
         let mut alias: BTreeMap<String, String> = BTreeMap::new();
         for (abs, r, sc) in self.aliases.clone() {
             if let Some((target, _)) = lookup(&r, &sc, &self.names, &alias, self.units) {
@@ -1252,10 +1215,6 @@ impl<'a> Walk<'a> {
             }
         }
     }
-}
-
-fn count_children(k: EntKind) -> usize {
-    k.fields().iter().filter(|(_, f)| *f != crate::model::Field::Scalar).count()
 }
 
 /// A number worked out while elaborating.

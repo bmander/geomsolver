@@ -16,14 +16,14 @@ a segment whose infinite carrier is what constraints read (§3.1).*
 
 ## 1. Overview
 
-Solvent is a declarative language for describing planar geometry under constraint. A Solvent program does not construct geometry step by step; it declares a set of entities, relations among them, and structural facts (symmetry, connectivity), and delegates the discovery of coordinates to a solver. The language borrows its module discipline from hardware description languages: designs are built from **components** with **ports**, component bodies are **unordered**, and connection between components is **aliasing** (net formation), not constraint.
+Solvent is a declarative language for describing planar geometry under constraint. A Solvent program does not construct geometry step by step; it declares a set of entities, relations among them, and structural facts (symmetry, connectivity), and delegates the discovery of coordinates to a solver. The language borrows its module discipline from hardware description languages: designs are built from **components**, component bodies are **unordered**, and connection between components is **aliasing** (net formation), not constraint.
 
 ### 1.1 Design principles (normative)
 
 These principles are binding on the rest of the specification. Where a detailed rule appears to conflict with a principle, the principle governs and the conflict is a defect in this document.
 
 **P1 — Connection is aliasing; constraint is explicit.**
-Binding a port, passing an entity as an instance argument, or writing `port x = y` makes two names refer to *one* entity. Aliasing has zero solver cost and cannot be violated. A constraint always relates *distinct* entities and always contributes residual equations (or inequalities) to the system.
+Passing an entity as an instance argument makes two names refer to *one* entity **[0.13]** (a port once did too; §7). Aliasing has zero solver cost and cannot be violated. A constraint always relates *distinct* entities and always contributes residual equations (or inequalities) to the system.
 
 **P2 — Component bodies are unordered.**
 Statements within a component body form a set. Reordering the statements of a body MUST NOT change the meaning of a program. Statements interact only through the entities they name. The only ordered contexts in the language are the interiors of single statements where order is semantic (path traversals, argument lists).
@@ -36,7 +36,7 @@ Deleting every seed from a program MUST NOT change its solution set. Seeds may c
 **[0.2]** The two are told apart by one mark, not by analysis: a number written with `=` is a seed and a solver may rewrite it; a number written with `==` is a constraint and a solver MUST NOT (§4.3). This is what makes Invariant H (§11) checkable *syntactically*, as that section already requires.
 
 **P4 — Component boundaries are decomposition structure.**
-A component is solvable against its ports. Implementations SHOULD exploit the component instance tree as a decomposition plan (solve interiors against port entities; solve the inter-component system over ports).
+A component is solvable against the entities it is written over. Implementations SHOULD exploit the component instance tree as a decomposition plan (solve interiors against the formals; solve the inter-component system over them).
 
 **P5 — Symmetry is a claim, not a macro.**
 The `ring` construct asserts cyclic symmetry. Its solution set contains exactly the symmetric solutions of the corresponding unrolled system. Implementations SHOULD solve in the fundamental domain, and one that does not MUST say so (§12.3).
@@ -54,7 +54,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `port`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `ellipse`, `spline`. **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `on`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` keeps its own form inside a trace block (§6.5.1). **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family.
+- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `ellipse`, `spline`. **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `on`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` keeps its own form inside a trace block (§6.5.1). **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it.
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
 - **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . = -> ~`
@@ -191,7 +191,7 @@ Every statement belongs to exactly one class. The classification is normative be
 
 | Class | Statements | Affects solution set? |
 |---|---|---|
-| **Declaration** | entity declarations, `param`, `port`, `curve` family definitions, instance declarations | introduces entities/aliases |
+| **Declaration** | entity declarations, `param`, `curve` family definitions, instance declarations | introduces entities/aliases |
 | **Constraint** | predicate calls, `==` equations, **pinned seeds (`==`, §4.3) [0.2]**, orientation predicates, arc-branch and tangency-side decorations, `ring` symmetry, gauge statements | **yes** |
 | **Seed** *(was Hint)* | the `hint` statement (§11), **and every seed written inline in a `hint(…)` clause (§4.3, §6.4) [0.2] [0.7]** | **no (P3)** |
 | **Structure** | `repeat`/`cycle` blocks, `path` declarations (net of their derived constraints, §10.4) | organizational |
@@ -341,7 +341,7 @@ Two things that look like seeds and are not, and stay where they are. **`knots [
 
 `hint` keeps the cases inline cannot express — seeding an entity declared elsewhere, and seeding from an expression over other geometry (`hint t.lead(x: center.x + root.r, y: center.y)`).
 
-**[0.12] A seed may read geometry, and reads its seed.** The text in a `hint(…)` clause — a declaration's, a child slot's (`line l(hint(x: p.x + 10, y: p.y), …)`) or a `port`'s — MAY name another entity's scalar by its dotted path: `p.x`, `p.y`, `k.center.x`, `k.r`, `e.b`. What it reads is that scalar's **own seed**, never a solved value, so the clause stays seed-class: delete it and the solution set is unchanged, as §4.3 requires. The same clause is `hint at REF` — the place another point starts — and `hint at K bearing (β)`, the point on circle `K`'s edge at bearing `β` from the page's x-axis; both were a trace block's words (§6.5) and now mean the same thing on the sheet. Seeds are settled once every declaration has one, in statement order, so a seed reading a seed that was itself read from a third comes out right when the three are written in the order they depend on; written the other way round it reads the earlier one's provisional seed (an unseeded point's scatter, an unwritten radius's default), which an implementation MAY warn about and MUST NOT refuse. A read of a scalar the entity has not (`p.z`), or of nothing (`nobody.x`), is **E103**. A geometry read is a `Length` where the document names a `unit` (so it adds to `150mm` and not to `10`) and a bare number where it does not, since there no literal can be a length. Inside a component the names resolve as references do — a formal reads as the entity it aliases, a name inside a block's copy as that copy's. A seed written this way is an expression and is never written back by a solve.
+**[0.12] A seed may read geometry, and reads its seed.** The text in a `hint(…)` clause — a declaration's or a child slot's (`line l(hint(x: p.x + 10, y: p.y), …)`) — MAY name another entity's scalar by its dotted path: `p.x`, `p.y`, `k.center.x`, `k.r`, `e.b`. What it reads is that scalar's **own seed**, never a solved value, so the clause stays seed-class: delete it and the solution set is unchanged, as §4.3 requires. The same clause is `hint at REF` — the place another point starts — and `hint at K bearing (β)`, the point on circle `K`'s edge at bearing `β` from the page's x-axis; both were a trace block's words (§6.5) and now mean the same thing on the sheet. Seeds are settled once every declaration has one, in statement order, so a seed reading a seed that was itself read from a third comes out right when the three are written in the order they depend on; written the other way round it reads the earlier one's provisional seed (an unseeded point's scatter, an unwritten radius's default), which an implementation MAY warn about and MUST NOT refuse. A read of a scalar the entity has not (`p.z`), or of nothing (`nobody.x`), is **E103**. A geometry read is a `Length` where the document names a `unit` (so it adds to `150mm` and not to `10`) and a bare number where it does not, since there no literal can be a length. Inside a component the names resolve as references do — a formal reads as the entity it aliases, a name inside a block's copy as that copy's. A seed written this way is an expression and is never written back by a solve.
 
 ### 6.5 Curves **[0.11]**
 
@@ -352,9 +352,9 @@ curve NAME = REF over FORMAL in ( A, B )                    an instance's point
 curve NAME = Component(ARGS).REF over FORMAL in ( A, B )    an instance written in place
 ```
 
-`REF` names a point the component places — a declaration of its body, a nested instance's, or a port aliasing one; a formal the component is written over does not move with the swept formal and is refused (**E103**). `FORMAL` is a numeric formal of that component, `Angle` or `Length` (**E040** otherwise); the interval's ends are expressions over the parameters in scope. A curve declares an entity and takes contacts like any other curve, each owning the curve's parameter — always spelled `u`, whatever the formal is called: `p on e hint(u: …)` says `p − C(u) = 0`, two residuals and one new unknown; `e tangent l` holds the line through `C(u)` along `C'(u)`, two residuals against the one unknown; `e curvature k` makes the circle the curve's osculating circle at `u`, three residuals against it. A tangency needs `C'` and its derivatives in the geometry — second order — and a curvature `C''` and `C'''`: a computed point supplies them exactly from its expressions, and a locus supplies `C'` exactly (the implicit function theorem) with its derivatives by difference, and no higher order at all, so a curvature stated against a traced curve is an error (**E103**). There is no separate curve family: 0.2's `curve NAME(FORMALS)(PARAM) = …` and 0.3's `trace POINT where { … }` are retired, and an implementation MUST refuse them with a message naming this form.
+`REF` names a point the component places — a declaration of its body or a nested instance's; a formal the component is written over does not move with the swept formal and is refused (**E103**). `FORMAL` is a numeric formal of that component, `Angle` or `Length` (**E040** otherwise); the interval's ends are expressions over the parameters in scope. A curve declares an entity and takes contacts like any other curve, each owning the curve's parameter — always spelled `u`, whatever the formal is called: `p on e hint(u: …)` says `p − C(u) = 0`, two residuals and one new unknown; `e tangent l` holds the line through `C(u)` along `C'(u)`, two residuals against the one unknown; `e curvature k` makes the circle the curve's osculating circle at `u`, three residuals against it. A tangency needs `C'` and its derivatives in the geometry — second order — and a curvature `C''` and `C'''`: a computed point supplies them exactly from its expressions, and a locus supplies `C'` exactly (the implicit function theorem) with its derivatives by difference, and no higher order at all, so a curvature stated against a traced curve is an error (**E103**). There is no separate curve family: 0.2's `curve NAME(FORMALS)(PARAM) = …` and 0.3's `trace POINT where { … }` are retired, and an implementation MUST refuse them with a message naming this form.
 
-**Two ways a component places the point.** A **computed** point, `port p = ( XEXPR, YEXPR )`, gives the coordinates as expressions over the formals and the params; a component with one is drawn only as a curve, and an instance of it on the sheet is an error (**E103**), since nothing on the sheet holds a point to a formula. Any **other** point is placed by the body's statements — the locus form: `C(u)` is where the constraints put the point, given the formal's value and the geometry the component is written over. Traced, the body MUST determine its own coordinates — as many equations as coordinates of its own — or the curve is an error (**E103**): an under- or over-constrained locus is a curve that does not exist, and it must not elaborate quietly. Drawn, the same component may be closed from outside like any other.
+**Two ways a component places the point.** A **computed** point, `point p = ( XEXPR, YEXPR )` **[0.13]** (`port p = …` in 0.12), gives the coordinates as expressions over the formals and the params; a component with one is drawn only as a curve, and an instance of it on the sheet is an error (**E103**), since nothing on the sheet holds a point to a formula. Any **other** point is placed by the body's statements — the locus form: `C(u)` is where the constraints put the point, given the formal's value and the geometry the component is written over. Traced, the body MUST determine its own coordinates — as many equations as coordinates of its own — or the curve is an error (**E103**): an under- or over-constrained locus is a curve that does not exist, and it must not elaborate quietly. Drawn, the same component may be closed from outside like any other.
 
 ```
 component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
@@ -386,7 +386,7 @@ curve e = Unwind(base, datum, phase: a0).p over u in (u0, u1)
 
 **Bearings may be measured from a frame.** A bare bearing is page-fixed, and a body posed against a datum (`datum angle(u) swing`) with page-fixed seeds goes quietly stale the moment the datum tilts (bmander/geomsolver#10). A component written over a `frame` reads its derived `.angle` in any expression, so `hint at c bearing (u + f.angle)` and `hint(x: o.x + d * cos(u + f.angle), …)` state the same bearing *from the frame*. A name of the form `x.angle` where the variable table holds the rotor `x.c` / `x.s` compiles to its `atan2`; any other unknown name remains the misspelling error it was.
 
-**Why a point of a component and not a family of its own.** 0.2 gave a curve a construct of its own — a family with formals, a parameter and a body — and 0.3 a second body form, and every mechanism was then written twice: once as the drawing and once more inside the family, with the formals passed to themselves (bmander/geomsolver#46). A component already has formals, a body, params, ports and instances, and a curve is one question asked of it. The gear in §18 is the case that makes the difference plain: its flanks are involutes because the document says what an involute is, and nothing in the solver knows the word; the walking leg of `jansen.sv` is drawn once, and its stride is the same leg asked where its toe goes.
+**Why a point of a component and not a family of its own.** 0.2 gave a curve a construct of its own — a family with formals, a parameter and a body — and 0.3 a second body form, and every mechanism was then written twice: once as the drawing and once more inside the family, with the formals passed to themselves (bmander/geomsolver#46). A component already has formals, a body, params and instances, and a curve is one question asked of it. The gear in §18 is the case that makes the difference plain: its flanks are involutes because the document says what an involute is, and nothing in the solver knows the word; the walking leg of `jansen.sv` is drawn once, and its stride is the same leg asked where its toe goes.
 
 ### 6.6 Chains **[0.4]**
 
@@ -458,16 +458,17 @@ An implementation MUST NOT make the attitude an unknown; a document that wants a
 
 ---
 
-## 7. Ports
+## 7. Ports **[0.13]**
 
-```
-port lead: Point          // form A: declare a fresh entity and export it
-port hub = f0             // form B: export an existing entity under a new name
-```
+**Retired.** Everything an instance makes is reachable by its dotted name — `inst.p` for a point of the body, `inst.sub.p` for a nested instance's, `inst.s[0].p1` for one inside a block's copy — so a port was a second name for a thing that already had one (bmander/geomsolver#47). Its three forms are written as what they were:
 
-A port is **a name on the component boundary for an interior entity** — nothing more (P1). Ports carry no joint semantics, no constraint machinery, and no direction. Form A is sugar for a fresh declaration plus an export. Form B exports an alias.
+| was | is |
+|---|---|
+| `port lo: point hint(x: 0, y: 0)` | `point lo hint(x: 0, y: 0)` — a declaration of the body |
+| `port hub = c` | nothing; the caller writes `inst.c` |
+| `port p = (xexpr, yexpr)` | `point p = (xexpr, yexpr)` — a computed point (§6.5) |
 
-At an instantiation site, `inst.portname` denotes the interior entity. Passing one component's port as another component's argument merges the two entities into one alias class.
+An implementation MUST refuse `port` with a message naming these forms. Aliasing is untouched, being a property of argument passing and not of ports (P1): passing one instance's entity to another as an argument still merges the two into one alias class.
 
 *Non-normative:* joints between components are ordinary constraints written at the assembly site, e.g. `revolute(gear.hub, shaft.j3)`. The language deliberately has no "connect with joint" primitive; see the weld lint **W101** in §16.
 
@@ -840,7 +841,7 @@ Elaboration lowers a program to the **kernel form** consumed by solvers. The pip
 ### 14.1 Phases
 
 1. **Instance expansion.** Recursively inline component bodies for the root's instance tree, freshening names by instance path. `repeat`/`cycle` unroll. `ring` either unrolls to `cycle` + symmetry constraints (§12.3) or lowers to quotient form (§12.4); the two MUST be solution-equivalent.
-2. **Alias resolution.** Union-find over all names, merging classes for: port exports, entity-typed arguments, `port x = y`, and constructor entity-arguments. Each class gets one representative entity. Type mismatch within a class is an error (**E040**).
+2. **Alias resolution.** Union-find over all names, merging classes for: entity-typed arguments and constructor entity-arguments. Each class gets one representative entity. Type mismatch within a class is an error (**E040**).
 3. **Definitional substitution.** Definitional equalities (constructor value-arguments, `param`, `= expr` declarations) are substituted, METAFONT-style: they are not residuals and consume no solver iterations. A cyclic definitional dependency is an error (**E041**).
 4. **Constraint collection.** Predicate statements, `==` equations, derived path incidences (§10.4), symmetry constraints, and gauges are collected into the constraint store.
 5. **Path assembly.** Fragments compose per §10.5 into boundary curves attached to the model as derived objects.
@@ -928,7 +929,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | Code | Condition |
 |---|---|
 | W100 | `coincident(p, q)` where making `p`,`q` one entity would suffice — "consider binding instead of constraining" |
-| W101 | frames fully welded by constraints — "consider a port alias" |
+| W101 | frames fully welded by constraints — "consider passing one entity to both" |
 | W102 | `abs(angle(...))` without a disambiguating orientation predicate |
 | W103 | rank deficiency spanned by rigid motions — "add ground/fix" |
 | W104 | under-constrained: report the number of residual DOF and, when computable, a basis of unconstrained motions attributed to source entities |
@@ -966,8 +967,8 @@ curve involute(c: circle, phase: Angle)(u) =
 component Flank(base: circle, root: circle, tip: circle,
                 phase: Angle, u0: Angle, u1: Angle) {
   curve e = involute(base, phase: phase) over (u0, u1)
-  port lo: point
-  port hi: point
+  point lo
+  point hi
   point_on_curve(lo, e, u = u0)      point_on_circle(lo, root)
   point_on_curve(hi, e, u = u1)      point_on_circle(hi, tip)
 }
@@ -1082,9 +1083,10 @@ unit_suffix    = "mm" | "cm" | "m" | "km" | "in" | "ft" | "thou"
                | "'" [ " " number "\"" ]                                  (* feet, and inches *)
                | "\"" ;
 
-decl           = entity_decl | param_decl | port_decl | curve_def | instance_decl ;
+decl           = entity_decl | param_decl | curve_def | instance_decl ;
 entity_decl    = ekw binder { "," binder }
-               | ekw IDENT "=" expr ;
+               | ekw IDENT "=" expr
+               | "point" IDENT "=" "(" expr "," expr ")" ;   (* a computed point, §6.5 [0.13] *)
 ekw            = "point" | "circle" | "line" | "frame" | "plane" | "ellipse" | "spline"
                | "curve" ;
 (* the trailing clauses are order-free: `hint(…)`, `knots […]`, `class …`, `in REF`.  The
@@ -1110,8 +1112,6 @@ curve_def      = "curve" IDENT "(" [ params ] ")" "(" IDENT ")"
                  "=" ( "(" expr "," expr ")"
                      | "trace" IDENT [ "from" "(" expr ")" ] "where" "{" { stmt } "}" ) ;
 param_decl     = "param" IDENT "=" expr ;
-port_decl      = "port" IDENT ":" type
-               | "port" IDENT "=" ref ;
 instance_decl  = IDENT ":" IDENT "(" [ args ] ")" [ "in" ref ] [ "class" IDENT { IDENT } ] ;   (* §6.7, §13.2 *)
 args           = arg { "," arg } ;
 arg            = [ IDENT ":" ] expr ;

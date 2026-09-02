@@ -21,7 +21,7 @@ component SideSection(o: point) {
   // the four pistons on the pitch, each at the height its rod's small end is given
   repeat 4 as i {
     ax: At(o, dx: front + 25mm + P / 2 + i * P, dy: 0mm)
-    port small: point hint(x: o.x + front + 25mm + P / 2 + i * P, y: o.y + R + L)
+    point small hint(x: o.x + front + 25mm + P / 2 + i * P, y: o.y + R + L)
     ax.p distance(0, along: x) small
     piston: Piston(small, pin: 0)
   }

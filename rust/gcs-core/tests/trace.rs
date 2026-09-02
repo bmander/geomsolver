@@ -19,7 +19,7 @@ use gcs_core::system::System;
 /// where the seed put it and every comparison below would fail.
 const DOC: &str = "\
 component involute(c: circle, phase: Angle, u: Angle) {
-  port p = ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
+  point p = ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
              c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)) )
 }
 

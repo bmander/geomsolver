@@ -3,7 +3,7 @@
 //! Issue #43.6 and #43.7: `point a` / `point b` / `a distance(30) b` is the shape of the first
 //! document anybody writes, and with both points at the origin its one residual is at a
 //! stationary point — the solver reported a conflict on a figure with an obvious answer.  A
-//! `port tip: point` had the same start and, taking no `hint(…)` clause, no way out of it.  Now
+//! `point tip` had the same start and, taking no `hint(…)` clause, no way out of it.  Now
 //! a declared point with no clause and no place starts where a minted child does, and the
 //! declaring form of a port takes the clause every other declaration takes.
 
@@ -43,7 +43,7 @@ fn two_unseeded_points_do_not_start_on_top_of_each_other() {
 fn a_port_with_no_seed_starts_off_the_origin_and_solves() {
     let e = read(
         "component Hook(len: Length) {
-           port tip: point
+           point tip
            point base hint(x: 0, y: 0)
            base distance(len) tip
          }
@@ -60,7 +60,7 @@ fn a_port_with_no_seed_starts_off_the_origin_and_solves() {
 fn a_port_takes_a_hint_clause() {
     let e = read(
         "component Hook(len: Length) {
-           port tip: point hint(x: 3, y: 4)
+           point tip hint(x: 3, y: 4)
            point base hint(x: 0, y: 0)
            base distance(len) tip
          }
@@ -72,7 +72,7 @@ fn a_port_takes_a_hint_clause() {
     // an expression over the component's parameters, as any seed may be
     let e = read(
         "component Hook(len: Length) {
-           port tip: point hint(x: len, y: 0)
+           point tip hint(x: len, y: 0)
            point base hint(x: 0, y: 0)
            base distance(len) tip
          }
@@ -82,7 +82,7 @@ fn a_port_takes_a_hint_clause() {
     assert_eq!(e.sketch.point_xy(tip.i()), (30.0, 0.0));
 
     // and a key the kind has no scalar for is refused as it is on a declaration
-    let (_, errs) = parse("component H() { port tip: point hint(z: 1) }\n");
+    let (_, errs) = parse("component H() { point tip hint(z: 1) }\n");
     assert!(errs.iter().any(|x| x.message.contains("no scalar `z`")), "{errs:?}");
 }
 

@@ -9,7 +9,7 @@ use gcs_core::syntax::parse;
 fn an_instance_inside_a_copy_is_indexed_like_a_declaration() {
     let src = "\
 component Rung(a: point) {
-  port b: point hint(x: a.x + 10, y: a.y)
+  point b hint(x: a.x + 10, y: a.y)
   line l(a, b)
   a distance(10) b
   horizontal l

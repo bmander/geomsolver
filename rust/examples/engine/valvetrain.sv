@@ -9,19 +9,17 @@ use engine.parts
 // A tangent cam about `c`, its nose `dn` out at `phi` from the line `ref`, measured
 // counter-clockwise: the base circle, the nose circle and the two flanks tangent to both.
 component Lobe(c: point, ref: line, phi: Angle, dn: Length) {
-  circle kb(center: c) hint(r: rb)
-  port base = kb
-  radius(rb) kb
+  circle base(center: c) hint(r: rb)
+  radius(rb) base
   point n hint(x: c.x + dn * cos(phi + atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x)),
                y: c.y + dn * sin(phi + atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x)))
   line spine(c, n) class axis
   c distance(dn) n
   ref angle(phi) spine
-  circle kn(center: n) hint(r: rn)
-  port nose = kn
-  radius(rn) kn
-  fl: Span(kb, kn, side: 1)
-  fr: Span(kb, kn, side: -1)
+  circle nose(center: n) hint(r: rn)
+  radius(rn) nose
+  fl: Span(base, nose, side: 1)
+  fr: Span(base, nose, side: -1)
 }
 
 // A valve on the axis from its seat centre `seat` toward the cam centre at `axis.p2`, lifted
@@ -30,7 +28,7 @@ component Lobe(c: point, ref: line, phi: Angle, dn: Length) {
 // is tangent to whichever of base circle, flank or nose is under it, without saying which.
 component Valve(seat: point, axis: line, lift: Length, head: Length) {
   // the follower face: on the axis and square to it, `rb + lift` short of the cam's centre
-  port fc: point hint(x: axis.p2.x - (rb + lift) * (axis.p2.x - axis.p1.x) / stem, y: axis.p2.y - (rb + lift) * (axis.p2.y - axis.p1.y) / stem)
+  point fc hint(x: axis.p2.x - (rb + lift) * (axis.p2.x - axis.p1.x) / stem, y: axis.p2.y - (rb + lift) * (axis.p2.y - axis.p1.y) / stem)
   fc on axis
   axis.p2 distance(rb + lift) fc
   point f1 hint(x: axis.p2.x - 15mm, y: axis.p2.y - rb)
@@ -50,7 +48,7 @@ component Valve(seat: point, axis: line, lift: Length, head: Length) {
   f1 distance(20) b1
   f2 distance(20) b2
   // the stem, `stem` down the axis to the head, which the lobe lifts off its seat or does not
-  port hc: point hint at seat
+  point hc hint at seat
   hc on axis
   hc distance(stem) fc
   line st(hc, fc)
