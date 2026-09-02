@@ -315,6 +315,9 @@ pub fn to_json(sk: &Sketch) -> Json {
             if c.claim {
                 o.set("claim", Json::Bool(true));
             }
+            if !c.class.is_empty() {
+                o.set("class", Json::Arr(c.class.0.iter().map(|s| Json::Str(s.clone())).collect()));
+            }
             o
         })
         .collect();
@@ -486,6 +489,11 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         // a document is untrusted input: a claim on a kind that owns an unknown would mint a
         // degree of freedom no equation mentions, so the flag is dropped rather than honoured
         nc.claim = c.get("claim").map(|v| v.as_bool()).unwrap_or(false) && kind.claimable();
+        if let Some(cls) = c.get("class") {
+            nc.class = crate::style::Classes(
+                cls.arr().iter().map(|s| s.as_str().to_string()).filter(|s| !s.is_empty()).collect(),
+            );
+        }
         let id = sk.add_quiet(nc);
         // §13.1: the placement rides in the statement it qualifies
         if let Some(a) = c.get("place") {
@@ -791,6 +799,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             // one whose turn has not come
             let mut nc = Constraint::new(c.kind, args);
             nc.claim = c.claim;
+            nc.class = c.class.clone();
             let id = dst.add_quiet(nc);
             if let Some(&place) = src.placements.get(&c.id) {
                 dst.placements.insert(id, place);   // a dimension keeps where it was dragged to

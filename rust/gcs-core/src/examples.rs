@@ -178,8 +178,15 @@ pub fn example(name: &str) -> Option<Sketch> {
         "peaucellier_rail" => peaucellier_rail(),
         "jansen" => jansen(),
         "bracket" => bracket(),
+        "engine" => engine(),
         _ => return None,
     })
+}
+
+/// A four-cylinder engine in three views, written as modules — the dimension table, the parts,
+/// the valvetrain and one component per view each in a file of its own, linked by `use` (§14.4).
+pub fn engine() -> Sketch {
+    document(ENGINE, "engine")
 }
 
 /// An L-bracket in three views and an auxiliary view — descriptive geometry on one sheet.
@@ -188,7 +195,7 @@ pub fn bracket() -> Sketch {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 27] = [
+pub const CASES: [(&str, &str, &str); 28] = [
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Square, one line round a cycle", "square", "`cycle 4 { line s -> perpendicular equal }` — the body ends mid-joint, so each side welds to the next copy's and the wrap closes the loop (issue #38); 1 DOF: it swings about its grounded corner"),
     ("Regular n-gon (component)", "ngon", "a parametric `Ngon(n, side)` component: corners on a circle, equal sides, the open-jointed cycle welding them round — pure relations, so the closure equality is implied rather than Over, and the seeds walk once round the circle to pick the convex winding no residual can state (1 DOF: it spins about its hub)"),
@@ -216,6 +223,7 @@ pub const CASES: [(&str, &str, &str); 27] = [
     ("Peaucellier, proved by rail", "peaucellier_rail", "the same cell with no curve in it: the pen is joined to a grounded point and `claim vertical(rail)` asks whether saying so costs the crank a freedom.  It does not, so the claim is a theorem — but this one has to be told where the line is, where its sibling discovers it"),
     ("Jansen's linkage", "jansen", "Theo Jansen's walking leg as one component: a crank at one fixed point drives two rigid triangles hinged on another, and nothing but rod lengths is stated — the ccw/cw lines pick each joint's pose.  Drawn with its crank angle unbound (1 DOF: drag `leg.pin` round its circle and the leg steps), and `path` is the same leg asked where its toe goes over a turn"),
     ("L-bracket in three views", "bracket", "descriptive geometry on one sheet: front, top and right views as `plane`s, every corner tied across them by `project`, and an auxiliary view folded at the inclined face's own bearing that shows the face true-size — edit a dimension in the front view and the other three views follow"),
+    ("Four-cylinder engine, three views", "engine", "a whole engine as modules (`use engine.dims`, `engine.parts`, `engine.valvetrain`, one module per view): crankshaft, rods and pistons at one crank angle, a pent-roof head with tangent cams on flat followers lifting the valves, and the timing belt over its pulleys — the end view owns the heights, the side view the lengths, and the plan is placed by projection from both.  Edit `theta` in `engine/dims.sv` and every piston in every view moves"),
 ];
 
 /// A spur gear, written as a Solvent program rather than built here.
@@ -241,8 +249,9 @@ pub fn gear_trace() -> Sketch {
 }
 
 fn document(src: &str, name: &str) -> Sketch {
-    let (p, errs) = crate::syntax::parse(src);
+    let (p, errs, linked) = crate::library::parse_linked(src);
     debug_assert!(errs.is_empty(), "the {name} does not parse: {errs:?}");
+    debug_assert!(linked.is_empty(), "the {name} does not link: {linked:?}");
     let e = crate::program::elaborate(&p);
     debug_assert!(e.ok(), "the {name} does not elaborate");
     e.sketch
@@ -334,9 +343,13 @@ pub fn source(key: &str) -> Option<&'static str> {
         "peaucellier_rail" => Some(PEAUCELLIER_RAIL),
         "jansen" => Some(JANSEN),
         "bracket" => Some(BRACKET),
+        "engine" => Some(ENGINE),
         _ => None,
     }
 }
+
+/// The engine's document — its modules are the library's (`library::MODULES`).
+pub const ENGINE: &str = include_str!("../../examples/engine.sv");
 
 pub const IMPOSSIBLE_TRIANGLE: &str = include_str!("../../examples/impossible_triangle.sv");
 pub const ALTITUDES: &str = include_str!("../../examples/altitudes.sv");

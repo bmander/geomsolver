@@ -96,58 +96,70 @@ export function paint(v: SketchView): void {
     strokeOf(v, sel, hl, base, ent, st);
 
   for (const ln of sk.lines) {
-    const [col, lw] = strokeFor(COL.line, ln, ln.style);
+    const st = ln.style;
+    if (st.hidden) continue;
+    const [col, lw] = strokeFor(COL.line, ln, st);
     ctx.strokeStyle = col;
     ctx.lineWidth = lw;
-    ctx.setLineDash(ln.style.dash);
+    ctx.setLineDash(st.dash);
     ctx.beginPath();
     ctx.moveTo(...v.w2s(...ln.p1.xy));
     ctx.lineTo(...v.w2s(...ln.p2.xy));
     ctx.stroke();
   }
   for (const c of sk.circles) {
-    const [col, lw] = strokeFor(COL.circle, c, c.style);
+    const st = c.style;
+    if (st.hidden) continue;
+    const [col, lw] = strokeFor(COL.circle, c, st);
     ctx.strokeStyle = col;
     ctx.lineWidth = lw;
-    ctx.setLineDash(c.style.dash);
+    ctx.setLineDash(st.dash);
     circlePath(v, c.center.xy, Math.abs(c.radius.value));
     ctx.stroke();
   }
   for (const a of sk.arcs) {
-    const [col, lw] = strokeFor(COL.arc, a, a.style);
+    const st = a.style;
+    if (st.hidden) continue;
+    const [col, lw] = strokeFor(COL.arc, a, st);
     ctx.strokeStyle = col;
     ctx.lineWidth = lw;
-    ctx.setLineDash(a.style.dash);
+    ctx.setLineDash(st.dash);
     arcPath(v, a.center.xy, Math.abs(a.radius.value), ...a.angles());
     ctx.stroke();
   }
   for (const el of sk.ellipses) {
-    const [col, lw] = strokeFor(COL.ellipse, el, el.style);
+    const st = el.style;
+    if (st.hidden) continue;
+    const [col, lw] = strokeFor(COL.ellipse, el, st);
     ctx.strokeStyle = col;
     ctx.lineWidth = lw;
-    ctx.setLineDash(el.style.dash);
+    ctx.setLineDash(st.dash);
     ellipsePath(v, el.center.xy, el.major.xy, Math.abs(el.minor.value));
     ctx.stroke();
   }
   // curves written in the language: the core lays out the polyline, exactly as it does for a
   // B-spline, so the front end strokes what it is handed and evaluates no expression of its own
   for (const cv of sk.curves) {
-    const [col, lw] = strokeFor(COL.spline, cv, cv.style);
+    const st = cv.style;
+    if (st.hidden) continue;
+    const [col, lw] = strokeFor(COL.spline, cv, st);
     ctx.strokeStyle = col;
     ctx.lineWidth = lw;
-    ctx.setLineDash(cv.style.dash);
+    ctx.setLineDash(st.dash);
     polyPath(v, cv.polyline());
     ctx.stroke();
     ctx.setLineDash([]);
   }
   for (const sp of sk.splines) {
-    const [col, lw] = strokeFor(COL.spline, sp, sp.style);
+    const st = sp.style;
+    if (st.hidden) continue;
+    const [col, lw] = strokeFor(COL.spline, sp, st);
     // the curve arrives as a polyline already refined to this zoom: `unit` is the world
     // length of one screen pixel, the same number the callouts are laid out against, so the
     // front end strokes what the core hands it and never evaluates a basis function
     ctx.strokeStyle = col;
     ctx.lineWidth = lw;
-    ctx.setLineDash(sp.style.dash);
+    ctx.setLineDash(st.dash);
     polyPath(v, sp.polyline(v.unit));
     ctx.stroke();
     // the control polygon, only while the curve or one of its points is in play: it is how
@@ -201,7 +213,10 @@ export function paint(v: SketchView): void {
   if (v.pending.length || v.pendingFit.length) paintPreview(v);
   if (v.diagnosis?.conflicts?.length) paintConflicts(v);
 
+  // one read for every point: a point's style is the sheet's `.point` rule and nothing else
+  const hidePoints = sk.styleNamed('point').hidden;
   for (const p of sk.points) {
+    if (hidePoints && !sel.has(p) && !hl.has(p)) continue;
     const [sx, sy] = v.w2s(...p.xy);
     const col = sel.has(p) ? COL.sel : hl.has(p) ? COL.highlight : p.isFixed ? COL.fixed
       : v.colorByState ? COL_STATE[v.stateOf(p)] : COL.point;

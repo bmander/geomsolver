@@ -39,14 +39,17 @@ const DOCS: &[(&str, Shape, i64, State)] = &[
     ("peaucellier_rail", (7, 9, 1, 0), 1, State::Under),
     ("jansen", (8, 12, 1, 0), 1, State::Under),
     ("bracket", (31, 21, 0, 0), 0, State::Well),
+    ("engine", (296, 208, 40, 0), 0, State::Well),
 ];
 
 #[test]
 fn every_document_case_is_its_document() {
     for &(key, shape, dof, status) in DOCS {
         let src = examples::source(key).unwrap_or_else(|| panic!("{key} has no source"));
-        let (prog, errs) = gcs_core::syntax::parse(src);
+        // linked against the library, as the app links it: a document's modules are its own
+        let (prog, errs, linked) = gcs_core::library::parse_linked(src);
         assert!(errs.is_empty(), "{key} does not parse: {errs:?}");
+        assert!(linked.is_empty(), "{key} does not link: {linked:?}");
         let e = gcs_core::program::elaborate(&prog);
         assert!(
             e.ok(),

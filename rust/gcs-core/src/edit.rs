@@ -424,6 +424,7 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
         membership: plane
             .map(|p| syntax::Membership::lifted(syntax::Ref::new(p)))
             .unwrap_or_default(),
+        class: Default::default(),
     };
     let mut line = String::new();
     syntax::write_stmt_to(&mut line, &StmtKind::Instance(inst));
@@ -451,6 +452,7 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
         class: Default::default(),
         class_span: Span::default(),
         seed_at: None,
+        seed_names: Vec::new(),
         attitude: Default::default(),
         membership: Default::default(),
         list_span: Span::default(),
@@ -548,6 +550,7 @@ fn add_entity_with(
         class: Default::default(),
         class_span: Span::default(),
         seed_at: None,
+        seed_names: Vec::new(),
         attitude,
         membership: Default::default(),
         list_span: Span::default(),

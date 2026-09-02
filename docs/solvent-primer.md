@@ -50,6 +50,7 @@ the centre is structure and the radius is a guess, and one pair of brackets said
 ### 1.3 Statement forms
 
 ```
+use NAME[.NAME…]                        a module: its components and params join the document (§1.11)
 unit NAME                               what the document's numbers are in (§1.6)
 param NAME = EXPR                       a number worked out while elaborating; never an unknown
 KIND [NAME][(CHILD | hint(x: E, y: E), …)] [hint(SCALAR: E, …)] [knots […]] [class NAME…] [in REF]
@@ -59,12 +60,12 @@ plane [NAME][(origin: R, toward: R[, from: R, fold: E | , u: (E, E, E), v: (E, E
 in REF { statement* }                   every declaration inside is drawn in that plane (§2.10)
 style .NAME { PROP: VALUE; … }          what a class looks like (§1.10)
 WORD[(ARGS)] REF | REF WORD[(ARGS)] REF   a constraint, prefix or infix (§1.5)
-    [hint(SLOT: EXPR, …)] [at (t, r)]
+    [hint(SLOT: EXPR, …)] [class NAME…] [at (t, r)]
 claim <constraint>                      an assertion, judged and never solved for (§1.9)
 ground REF                              pin both of a point's coordinates
 fix REF.field                           pin one scalar, e.g. `fix c.r`
 ccw(a, b, c) | cw(a, b, c)              record a root choice; contributes no equation
-NAME: Component(ARGS) [in REF]          instantiate a component, drawn in that plane if said
+NAME: Component(ARGS) [in REF] [class NAME…]   instantiate a component, drawn in that plane if said
 component NAME(FORMALS) { statement* }  define one
 port NAME: KIND [hint(…)] | port NAME = REF   export an entity across a component boundary
 port NAME = (XEXPR, YEXPR)              a computed point, drawn only as a curve (§1.8)
@@ -78,7 +79,8 @@ curve NAME = Component(ARGS).POINT over FORMAL in (A, B)   of its numeric formal
 References are `name`, `name.field`, or `name[expr]` (which copy of a repeated statement; the
 expression may read any `param` or binder in scope). The index may stand on a dotted name —
 `l.p[1]` is copy 1 of the `p` a `repeat` inside the instance `l` declares — and a field of the copy
-follows it (`l.e[2].p1`).
+follows it (`l.e[2].p1`). The copy may be an instance as well as a declaration: `cyl[0].small` is
+the `small` of copy 0's `cyl`, which is how one cylinder of a repeated row is reached from outside.
 
 ### 1.4 Entities
 
@@ -134,6 +136,18 @@ source must *reference* it (a constraint applied from the app, a dimension state
 name is spliced into the declaration — the same bargain a solve strikes with an unwritten
 `hint(…)` clause. `curve` keeps requiring a name: its form is `curve name = family(…)`, and the
 name is what the contacts address.
+
+**A seed may read geometry.** The numbers in a `hint(…)` clause may name another entity's scalar
+— `hint(x: k.center.x + k.r, y: pin.y)` — and read that scalar's *own seed*, never a solved
+value, so the clause is still only where the solve begins. Two spellings name a place outright:
+`hint at pin` starts a point where another one starts, and `hint at k bearing (90deg)` puts it on
+the circle's edge at that bearing. Inside a component the names are the formals' (`k1` reads as
+whatever circle was passed), so a component can seed its own branch choice — a tangent span's two
+contacts, a rod's small end above its pin — from the geometry it is written over. Seeds settle in
+statement order; a seed that reads one written below it reads that one's provisional start. Where
+the document names a `unit`, a geometry read is a length, so write `pin.x - 10mm` and not
+`pin.x - 10`. A `param` may not read geometry: it feeds constraints, and a seed must never change
+what a document says.
 
 **All the children, or none.** A written slot carries a name or a seed; there is no bare `hint`
 meaning "anonymous and unseeded", because writing no list at all says that. `line l(a)` is still
@@ -390,12 +404,52 @@ unmatched class is not an error — it simply has no rule, exactly as in CSS, wh
 makes paste work. **Lengths in a sheet are screen pixels**: a dashed line does not change its
 dash pattern when you zoom.
 
+A class stands in three more places, and there is one more property:
+
+```
+style .dimension { display: none }      // no callouts…
+style .shown     { display: inline }    // …but for the ones that ask
+style .point     { display: none }      // and no point handles in the picture
+style .phantom   { dash: 6 3; color: #888888 }
+
+a distance(80) b class shown            // a relation carries a class: this dimension is drawn
+t2: Throw(o, bore, theta: 220deg) class phantom   // every declaration the instance makes is dashed
+```
+
+`display: none` leaves a thing out of the picture — an entity is not drawn, a dimension is
+neither laid out nor picked — and `display: inline` from a later class shows it again. A class on
+a relation that states no dimension is inert. Every point is drawn under the implicit class
+`.point`. Nothing the solver does reads any of it: hide every dimension and the drawing is the
+same drawing.
+
 `construction` used to be a keyword. It is a class now, and `style .construction { dash: 7 4 }`
 is a rule in the base sheet the implementation ships — so `class construction` draws exactly as
 the word did, and a document that wants reference geometry drawn some other way says so and
 changes nothing else.
 
-### 1.11 Checking your work
+### 1.11 Modules
+
+```
+use engine.dims          // a module: engine/dims.sv beside the document, or the library's
+use engine.parts
+```
+
+A **module** is a Solvent document read for its components. `use NAME` at the top of a document
+brings in every `component` the module defines and every top-level `param` it states — its own
+drawing, if it has one, is not drawn, so `gear.sv` is a module as it stands. How the name is
+found is the host's business: `solventc` reads `engine.parts` as `engine/parts.sv` beside the
+document and falls back to the library compiled into the core; the app has no filesystem and reads
+the library alone. A module's own `use`s are followed, once each. A module nothing finds is E070
+at the `use`; a component defined twice is E071; a module's own error is shown at the `use` that
+brought it in, with the module's line in front of the message.
+
+**A file's top-level `param`s are in scope in the components it defines**, and so are those of
+the modules it uses — which is what lets `engine/dims.sv` hold the whole dimension table and every
+view read `D` for the bore. A formal of the same name shadows a param.
+`rust/examples/engine.sv` is the worked case: a four-cylinder engine in three views, written as a
+dimension module, a parts module, a valvetrain module and one module per view.
+
+### 1.12 Checking your work
 
 Elaborate, solve, then diagnose. The diagnosis reports **degrees of freedom** and one of four
 states:
@@ -763,5 +817,6 @@ the sheet.
    whole drawing. If `Over`, find the claim already implied by the others. If `Under`, ask what can
    still move.
 
-The twenty-five documents in `rust/examples/` are the worked corpus, each with a header explaining
-what it is for; `rect_fillets.sv` is the best first read and `gear_trace.sv` the deepest.
+The documents in `rust/examples/` are the worked corpus, each with a header explaining what it is
+for; `rect_fillets.sv` is the best first read, `gear_trace.sv` the deepest, and `engine.sv` with
+its `engine/` modules the largest — three views of a whole engine tied by projection.

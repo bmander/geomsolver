@@ -112,13 +112,52 @@ pub struct StmtId(pub u32);
 pub struct Program {
     text: String,
     /// One, anonymous, in the flat subset; `component` is a parser addition rather than a change
-    /// of shape.
+    /// of shape.  A module's components stand here too once `modules::link` has run, before the
+    /// root, each saying which module it came from.
     pub components: Vec<Component>,
     /// The `in PLANE { … }` blocks' own text (§6.7).  Their statements are hoisted into the
     /// body at parse, so nothing but the header and the brace is the block's, and this is
     /// where `edit::remove` finds them when the plane goes.
     pub in_blocks: Vec<InBlock>,
+    /// `use engine.crank` — the modules the document asks for (§14.4), in written order.  What a
+    /// name resolves to is the host's business (`modules::link`): the core takes text and has
+    /// no filesystem.
+    pub uses: Vec<Use>,
+    /// The modules linked in, in the order they were resolved.  Each one's text is kept, so a
+    /// re-parse of the document (`retext`) can link again without asking the host.
+    pub modules: Vec<Module>,
     next_stmt: u32,
+}
+
+/// `use engine.crank` — a module the document reads its components from.
+#[derive(Clone, Debug)]
+pub struct Use {
+    /// The dotted name as written, `engine.crank`.
+    pub name: String,
+    pub span: Span,
+}
+
+/// A module linked into a program: its text, and where its spans start.
+///
+/// **Every span in a program is one integer into one virtual text**: the document, then each
+/// module in turn, each after a one-byte gap.  A module's components are parsed with their spans
+/// already at `base`, so nothing downstream learns a second coordinate — a caret, a splice or a
+/// diagnostic asks `Program::source_at` which text an offset is in, and a splice on the document
+/// (`edit.rs`) walks the root body alone, which no module span is ever in.
+#[derive(Clone, Debug)]
+pub struct Module {
+    pub name: String,
+    pub text: String,
+    /// The offset this module's text starts at in the virtual text.
+    pub base: usize,
+    /// The `use` in the **document** that brought it in — directly, or through another module —
+    /// which is where a diagnostic inside it is shown to a reader of the document.
+    pub via: Span,
+    /// The module's own top-level body: its `param`s are what its components may read (§6.3).
+    /// Nothing else in it is drawn — a module's drawing is its own.
+    pub root: Component,
+    /// The modules this one `use`s, whose params its file reads in turn.
+    pub uses: Vec<String>,
 }
 
 /// `curve path = leg.toe over theta in (0, 360)` — what a curve declaration says (§6.5).
@@ -166,6 +205,8 @@ pub struct Component {
     pub formals: Vec<Formal>,
     pub body: Vec<Stmt>,
     pub span: Span,
+    /// Which of the program's `modules` it was read from; `None` for one the document wrote.
+    pub module: Option<usize>,
 }
 
 #[derive(Clone, Debug)]
@@ -341,6 +382,9 @@ pub struct Instance {
     /// one statement stands for.  Carried into the expansion by the flattener
     /// (`Scope::in_plane`), never resolved here.
     pub membership: Membership,
+    /// `t2: Throw(…) class phantom` — every declaration the expansion makes carries these
+    /// classes under its own (§13.2), the way `in` puts the whole instance in a view.
+    pub class: Classes,
 }
 
 #[derive(Clone, Debug)]
@@ -375,6 +419,8 @@ pub struct Port {
     pub seed_spans: Vec<Span>,
     /// Where the clause is, or — an empty span — where it would go (`Decl::hint_span`).
     pub hint_span: Option<Span>,
+    /// `port a: point hint at k bearing (b)` — a seed named by a place (`Decl::seed_at`).
+    pub seed_at: Option<AtRef>,
     /// `port p = (xexpr, yexpr)` — a point *computed* from the component's formals and
     /// parameters rather than placed by constraints (§6.5).  It is drawn only as a curve: a
     /// component with one is traced, never instantiated on the sheet.  Text, like a dimension's.
@@ -680,6 +726,10 @@ pub struct Decl {
     /// A seed named *geometrically* rather than by coordinates: `at t`, `at c.center`,
     /// `at c bearing (u + phase)`.  What it may name is the elaborator's question.
     pub seed_at: Option<AtRef>,
+    /// The geometry the seed texts read (§6.4), each dotted name as written beside the absolute
+    /// name of the entity it resolved to — filled by the flattener, read by the build, since an
+    /// absolute name (`side.#282.0.small`) is not one the expression language can spell.
+    pub seed_names: Vec<(String, String)>,
     /// A plane's attitude in space, as written (§6.7).  `Page` for every other kind.
     pub attitude: Attitude,
     /// The plane this declaration's points are on — `point a in top`, and for a line, a circle,
@@ -1121,6 +1171,13 @@ pub struct Relation {
     /// Written `claim …` (§9.7): stated as expected to add no rank, judged by the diagnosis and
     /// never solved for.
     pub claim: bool,
+    /// The classes the statement carries (`a distance(80) b class ref`), which is how a
+    /// dimension's callout is given a look of its own — or none, under `display: none` — the
+    /// way a declaration's is (§13.2).  A relation that states no dimension draws nothing, and a
+    /// class on it is inert.
+    pub class: Classes,
+    /// Where the clause is, or an empty span where one would go.
+    pub class_span: Span,
 }
 
 /// One argument as written.
@@ -1285,8 +1342,56 @@ impl Program {
             text: String::new(),
             components: vec![Component::default()],
             in_blocks: Vec::new(),
+            uses: Vec::new(),
+            modules: Vec::new(),
             next_stmt: 0,
         }
+    }
+
+    /// The id the next statement minted into this program takes — what a module's statements
+    /// are numbered from, so no two statements in one program share an id.
+    pub fn next_stmt(&self) -> u32 {
+        self.next_stmt
+    }
+
+    pub(crate) fn set_next_stmt(&mut self, n: u32) {
+        self.next_stmt = n;
+    }
+
+    /// Where the virtual text ends: the offset the next module linked in starts at.
+    pub fn virtual_len(&self) -> usize {
+        match self.modules.last() {
+            Some(m) => m.base + m.text.len() + 1,
+            None => self.text.len() + 1,
+        }
+    }
+
+    /// Which text an offset is in — the document (`None`) or a module — and the offset in it.
+    pub fn source_at(&self, off: usize) -> (Option<usize>, usize) {
+        for (k, m) in self.modules.iter().enumerate() {
+            if off >= m.base && off <= m.base + m.text.len() {
+                return (Some(k), off - m.base);
+            }
+        }
+        (None, off.min(self.text.len()))
+    }
+
+    /// Whether a span is in the document's own text — what a splice may touch.
+    pub fn owns(&self, span: Span) -> bool {
+        span.hi as usize <= self.text.len()
+    }
+
+    /// 1-based line and column of an offset, in whichever text it is in.
+    pub fn line_col(&self, off: usize) -> (u32, u32) {
+        match self.source_at(off) {
+            (Some(k), local) => line_col(&self.modules[k].text, local as u32),
+            (None, local) => line_col(&self.text, local as u32),
+        }
+    }
+
+    /// A module's text by name, for a re-parse that links again without asking the host.
+    pub fn module_text(&self, name: &str) -> Option<String> {
+        self.modules.iter().find(|m| m.name == name).map(|m| m.text.clone())
     }
 
     /// The text this program was last rendered or parsed from.  Every `Span` indexes it.
@@ -1450,11 +1555,22 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
                 out.push_str(" in ");
                 write_ref(out, p);
             }
+            if !i.class.is_empty() {
+                out.push_str(" class ");
+                out.push_str(&i.class.0.join(" "));
+            }
         }
         StmtKind::Port(p) => {
             out.push_str(&format!("port {}", p.name.text));
             if let Some(k) = p.declare {
                 out.push_str(&format!(": {}", camel(k.as_str())));
+                if let Some(at) = &p.seed_at {
+                    out.push_str(" hint at ");
+                    write_ref(out, &at.what);
+                    if let Some((b, _)) = &at.bearing {
+                        out.push_str(&format!(" bearing ({b})"));
+                    }
+                }
                 // the clause as written, where one was: a port with none stays without one
                 if p.hint_span.is_some_and(|s| !s.is_empty()) {
                     let mut parts: Vec<String> = Vec::new();
@@ -1651,6 +1767,7 @@ fn style_prop_text(s: &Style, prop: &str) -> Option<String> {
         "dash" => s.dash.as_ref().map(|d| d.iter().map(|&v| num(v)).collect::<Vec<_>>().join(" ")),
         "width" => s.width.map(num),
         "color" => s.color.clone(),
+        "display" => s.hidden.map(|h| if h { "none" } else { "inline" }.to_string()),
         _ => None,
     }
 }
@@ -1812,12 +1929,13 @@ fn write_relation(out: &mut String, r: &Relation) {
     // as its operator, and the kind beside it is a placeholder that has not been settled yet
     if let Some(w) = &r.poly {
         write_written(out, w);
-        if let Some((t, rr)) = r.place {
-            out.push_str(&format!(" at ({}, {})", num(t), num(rr)));
-        }
-        return;
+    } else {
+        out.push_str(&operator_text(r.kind, &r.args));
     }
-    out.push_str(&operator_text(r.kind, &r.args));
+    if !r.class.is_empty() {
+        out.push_str(" class ");
+        out.push_str(&r.class.0.join(" "));
+    }
     if let Some((t, rr)) = r.place {
         out.push_str(&format!(" at ({}, {})", num(t), num(rr)));
     }
@@ -2260,9 +2378,9 @@ fn ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
-const OPENERS: [&str; 12] = [
+const OPENERS: [&str; 13] = [
     "claim", "component", "param", "port", "unit", "style", "branch", "repeat", "cycle", "ring",
-    "ground", "fix",
+    "ground", "fix", "use",
 ];
 const ORIENTS: [&str; 2] = ["ccw", "cw"];
 const BLOCKS: [&str; 3] = ["repeat", "cycle", "ring"];
@@ -2440,7 +2558,7 @@ fn tint_word(
             if EntKind::parse(w).is_some() {
                 return (Some(Tint::Word), after_kind(w));
             }
-            if matches!(w, "component" | "param" | "port") {
+            if matches!(w, "component" | "param" | "port" | "use") {
                 return (Some(Tint::Word), Next::Def);
             }
             // `style .construction { … }` — the class it names is the thing it declares
@@ -2908,17 +3026,33 @@ struct P<'a> {
 /// still arrives.  That is the same bargain `program::elaborate` strikes, for the same reason: a
 /// panel has to show the drawing *and* the error.
 pub fn parse(src: &str) -> (Program, Vec<SynErr>) {
+    parse_from(src, 0, 0)
+}
+
+/// Read a text whose spans are to start at `base` and whose statements are numbered from
+/// `first_id` — the form a module is read in (`modules::link`), so that its spans and ids join
+/// the document's without a second coordinate anywhere.  The text is padded out to `base` before
+/// it is read, which is what puts every span where it belongs at the cost of a scan over the
+/// padding; the `Program` keeps the text itself, unpadded.
+pub fn parse_from(src: &str, base: usize, first_id: u32) -> (Program, Vec<SynErr>) {
     let mut p = Program::new();
     p.text = src.to_string();
     if src.len() > MAX_TEXT {
         return (
             p,
             vec![SynErr {
-                span: Span::new(0, 0),
+                span: Span::new(base, base),
                 message: format!("a program may not be longer than {MAX_TEXT} bytes"),
             }],
         );
     }
+    let padded;
+    let src = if base > 0 {
+        padded = format!("{}{src}", " ".repeat(base));
+        padded.as_str()
+    } else {
+        src
+    };
     let (lexed, errs) = lex(src);
     let mut st = P {
         src,
@@ -2932,7 +3066,8 @@ pub fn parse(src: &str) -> (Program, Vec<SynErr>) {
     };
     let mut body: Vec<Stmt> = Vec::new();
     let mut comps: Vec<Component> = Vec::new();
-    let mut next_id = 0u32;
+    let mut uses: Vec<Use> = Vec::new();
+    let mut next_id = first_id;
     while !st.done() {
         st.skip_ends();
         if st.done() {
@@ -2948,6 +3083,15 @@ pub fn parse(src: &str) -> (Program, Vec<SynErr>) {
         if st.peek_word("component") {
             match st.component(&mut next_id) {
                 Some(c) => comps.push(c),
+                None => st.resync(),
+            }
+            continue;
+        }
+        // `use engine.crank` — a module, named as a dotted path (§14.4).  At the top only: a
+        // module is a set of components a document reads, and a body reads nothing but names.
+        if st.peek_word("use") {
+            match st.use_stmt() {
+                Some(u) => uses.push(u),
                 None => st.resync(),
             }
             continue;
@@ -2974,6 +3118,7 @@ pub fn parse(src: &str) -> (Program, Vec<SynErr>) {
     }
     p.next_stmt = next_id;
     p.in_blocks = std::mem::take(&mut st.in_blocks);
+    p.uses = uses;
     // named components first, the anonymous root last — `Program::root` takes the last, and a
     // program that declares components and nothing loose has its last component as the root
     let anon_empty = body.is_empty();
@@ -2983,7 +3128,8 @@ pub fn parse(src: &str) -> (Program, Vec<SynErr>) {
             name: None,
             formals: Vec::new(),
             body,
-            span: Span::new(0, src.len()),
+            span: Span::new(base, src.len()),
+            module: None,
         });
     }
     let errs = std::mem::take(&mut st.errs);
@@ -3172,7 +3318,8 @@ impl<'a> P<'a> {
         self.i += 1;
         let mut c = Classes::default();
         while let Some(Tok::Ident(w)) = self.peek().cloned() {
-            if trails_decl(&w) {
+            // `at` is a relation's placement clause, and no class is called that
+            if trails_decl(&w) || w == "at" {
                 break;
             }
             c.0.push(w);
@@ -3342,6 +3489,10 @@ impl<'a> P<'a> {
                 Some(StmtKind::Unit(self.ident()?))
             }
             "style" => self.style_rule(),
+            "use" => {
+                self.fail("a `use` stands at the top of a document, not inside a body");
+                None
+            }
             // **`ccw` and `cw` keep a call.**  Every other statement is a prefix or an infix
             // operator, and under that rule these would be `a ccw(c) b` — which reorders three
             // points that are symmetric, since the predicate is about the *triangle* and not
@@ -3423,7 +3574,14 @@ impl<'a> P<'a> {
                     let mut seed_spans: Vec<Span> = vec![Span::default(); scalars.len()];
                     let insert = self.prev_hi();
                     let mut hint_span = Span::new(insert, insert);
-                    if let Some(lo) = self.eat_hint_clause() {
+                    let mut seed_at = None;
+                    if self.eat_hint_at() {
+                        // a place named geometrically, as a declaration may (§6.4)
+                        let what = self.refr()?;
+                        let bearing =
+                            if self.eat_word("bearing") { Some(self.paren_expr()?) } else { None };
+                        seed_at = Some(AtRef { what, bearing });
+                    } else if let Some(lo) = self.eat_hint_clause() {
                         for h in self.hint_body("x: 0, y: 0")? {
                             let Some(i) = scalars.iter().position(|&s| s == h.key) else {
                                 let m = format!("`{}` has no scalar `{}` to seed", k.as_str(), h.key);
@@ -3445,6 +3603,7 @@ impl<'a> P<'a> {
                         seed_text,
                         seed_spans,
                         hint_span: Some(hint_span),
+                        seed_at,
                         computed: None,
                     }))
                 } else if self.peek() == Some(&Tok::Eq) {
@@ -3464,6 +3623,7 @@ impl<'a> P<'a> {
                         seed_text: Vec::new(),
                         seed_spans: Vec::new(),
                         hint_span: None,
+                        seed_at: None,
                         computed,
                     }))
                 } else {
@@ -3510,13 +3670,26 @@ impl<'a> P<'a> {
                 let component = self.ident()?;
                 let lo = name.span.lo as usize;
                 let args = self.inst_args()?;
-                // `in top` — the instance drawn in a view (§6.7), the one trailer it takes
+                // the trailers an instance takes, in either order: `in top` — drawn in a view
+                // (§6.7) — and `class phantom` — every declaration it makes carries the class
                 let mut membership = Membership::default();
-                if self.peek_word("in") {
-                    let plo = self.here().lo as usize;
-                    self.i += 1;
-                    let r = self.refr()?;
-                    membership = Membership::written_at(r, Span::new(plo, self.prev_hi()));
+                let mut class = Classes::default();
+                loop {
+                    if membership.plane().is_none() && self.peek_word("in") {
+                        let plo = self.here().lo as usize;
+                        self.i += 1;
+                        let r = self.refr()?;
+                        membership = Membership::written_at(r, Span::new(plo, self.prev_hi()));
+                    } else if class.is_empty() && self.peek_word("class") {
+                        let (c, _) = self.class_clause(self.here().lo as usize);
+                        if c.is_empty() {
+                            self.fail("`class` names at least one class");
+                            return None;
+                        }
+                        class = c;
+                    } else {
+                        break;
+                    }
                 }
                 self.end_of_stmt();
                 Some(StmtKind::Instance(Instance {
@@ -3525,6 +3698,7 @@ impl<'a> P<'a> {
                     args,
                     span: Span::new(lo, self.prev_hi()),
                     membership,
+                    class,
                 }))
             }
             _ => self.relation().map(StmtKind::Relation),
@@ -3787,11 +3961,22 @@ impl<'a> P<'a> {
         let mut place = None;
         let mut place_span = Span::default();
         let mut seeds: Vec<OpArg> = Vec::new();
+        let mut class = Classes::default();
+        let mut class_span = Span::default();
         loop {
             if self.eat_hint_clause().is_some() {
                 for h in self.hint_body("t: 0.4")? {
                     seeds.push(h.into());
                 }
+            } else if class.is_empty() && !joints.is_empty() && self.peek_word("class") {
+                // a class qualifies the line's one relation, as a placement does
+                let (c, sp) = self.class_clause(self.here().lo as usize);
+                if c.is_empty() {
+                    self.fail("`class` names at least one class");
+                    return None;
+                }
+                class = c;
+                class_span = sp;
             } else if place.is_none() && !joints.is_empty() && self.peek_word("at") {
                 // a placement qualifies a *dimension*, so it is read only where the line states
                 // one — after a declaration, `at (…)` is not a clause the language has
@@ -3851,6 +4036,8 @@ impl<'a> P<'a> {
                             (None, true) => Span::new(whole.hi as usize, whole.hi as usize),
                             (None, false) => Span::default(),
                         };
+                        r.class = class.clone();
+                        r.class_span = class_span;
                     }
                 }
                 (Some(_), Some(_)) if place.is_some() => self.errs.push(SynErr {
@@ -4077,6 +4264,8 @@ impl<'a> P<'a> {
                         span: sp,
                     }),
                     claim: false,
+                    class: Classes::default(),
+                    class_span: Span::default(),
                 };
                 *next_id += 1;
                 out.push(Stmt {
@@ -4383,6 +4572,8 @@ impl<'a> P<'a> {
                     span: at,
                 }),
                 claim: false,
+                class: Classes::default(),
+                class_span: Span::default(),
             })
         };
         let end = |w: &str| {
@@ -4483,6 +4674,7 @@ impl<'a> P<'a> {
                 args,
                 span: Span::new(lo, self.prev_hi()),
                 membership: Membership::default(),
+                class: Classes::default(),
             };
             CurveTarget::Anon(inst, point)
         } else {
@@ -4568,6 +4760,19 @@ impl<'a> P<'a> {
     }
 
     /// `component Name(formals) { body }`.
+    /// `use engine.crank` — the dotted name, and where the statement stands.
+    fn use_stmt(&mut self) -> Option<Use> {
+        let lo = self.here().lo as usize;
+        self.i += 1; // `use`
+        let mut name = self.ident()?.text;
+        while self.eat_p('.') {
+            name.push('.');
+            name.push_str(&self.ident()?.text);
+        }
+        self.end_of_stmt();
+        Some(Use { name, span: Span::new(lo, self.prev_hi()) })
+    }
+
     fn component(&mut self, next_id: &mut u32) -> Option<Component> {
         let lo = self.here().lo as usize;
         self.i += 1; // `component`
@@ -4597,7 +4802,13 @@ impl<'a> P<'a> {
         }
         let (body, joint) = self.braced_body(next_id)?;
         self.no_open_joint(joint, "a component");
-        Some(Component { name: Some(name), formals, body, span: Span::new(lo, self.prev_hi()) })
+        Some(Component {
+            name: Some(name),
+            formals,
+            body,
+            span: Span::new(lo, self.prev_hi()),
+            module: None,
+        })
     }
 
     fn block(&mut self, kind: BlockKind, next_id: &mut u32) -> Option<Block> {
@@ -4782,6 +4993,7 @@ impl<'a> P<'a> {
                 class,
                 class_span,
                 seed_at: None,
+                seed_names: Vec::new(),
                 attitude: Attitude::Page,
                 membership: Membership::default(),
                 list_span: Span::default(),
@@ -4985,6 +5197,7 @@ impl<'a> P<'a> {
             class,
             class_span: if class_span.is_empty() { Span::new(insert, insert) } else { class_span },
             seed_at,
+            seed_names: Vec::new(),
             attitude,
             membership,
             list_span,
@@ -5093,6 +5306,8 @@ impl<'a> P<'a> {
         let mut args = args;
         let mut place = None;
         let mut place_span = Span::default();
+        let mut class = Classes::default();
+        let mut class_span = Span::default();
         loop {
             if self.eat_hint_clause().is_some() {
                 // a seed for a slot the constraint owns — the same clause as everywhere else,
@@ -5100,6 +5315,14 @@ impl<'a> P<'a> {
                 for h in self.hint_body("t: 0.4")? {
                     args.push(h.into());
                 }
+            } else if class.is_empty() && self.peek_word("class") {
+                let (c, sp) = self.class_clause(self.here().lo as usize);
+                if c.is_empty() {
+                    self.fail("`class` names at least one class");
+                    return None;
+                }
+                class = c;
+                class_span = sp;
             } else if place.is_none() && self.peek_word("at") {
                 let at = self.here().lo as usize;
                 self.i += 1;
@@ -5140,6 +5363,8 @@ impl<'a> P<'a> {
                 span: Span::new(lo, self.prev_hi()),
             }),
             claim: false,
+            class,
+            class_span,
         })
     }
 

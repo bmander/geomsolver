@@ -60,6 +60,9 @@ pub struct Style {
     pub width: Option<f64>,
     /// `#rrggbb`.
     pub color: Option<String>,
+    /// `display: none` — not drawn at all, and for a dimension not laid out or picked either.
+    /// `Some(false)` is `display: inline`, a later class showing what an earlier one hid.
+    pub hidden: Option<bool>,
 }
 
 impl Style {
@@ -74,6 +77,14 @@ impl Style {
         if let Some(c) = &other.color {
             self.color = Some(c.clone());
         }
+        if let Some(h) = other.hidden {
+            self.hidden = Some(h);
+        }
+    }
+
+    /// Whether what carries this style is drawn at all.
+    pub fn shown(&self) -> bool {
+        self.hidden != Some(true)
     }
 
     /// One property, by the name a `style` block writes.  `false` is a property the sheet cannot
@@ -105,13 +116,16 @@ impl Style {
         if self.color.is_some() {
             out.push("color");
         }
+        if self.hidden.is_some() {
+            out.push("display");
+        }
         out
     }
 
     /// Whether `prop` is a property a sheet can state at all — as against one it can state
     /// but was given no reading for, which `set` alone cannot tell apart.
     pub fn knows(prop: &str) -> bool {
-        matches!(prop, "dash" | "width" | "color")
+        matches!(prop, "dash" | "width" | "color" | "display")
     }
 
     pub fn set(&mut self, prop: &str, values: &[f64], text: &str) -> bool {
@@ -119,6 +133,10 @@ impl Style {
             "dash" => self.dash = Some(values.to_vec()),
             "width" if !values.is_empty() => self.width = Some(values[0]),
             "color" if !text.is_empty() => self.color = Some(text.to_string()),
+            // CSS's words: `none` hides, `inline` shows again — which a later class needs a way
+            // to say, since `None` is *says nothing*
+            "display" if text == "none" => self.hidden = Some(true),
+            "display" if text == "inline" => self.hidden = Some(false),
             _ => return false,
         }
         true
@@ -139,6 +157,7 @@ pub fn base() -> Sheet {
         dash,
         width,
         color: color.map(str::to_string),
+        hidden: None,
     };
     // reference geometry.  What the retired `construction` keyword did, and the whole of it.
     s.insert("construction".into(), rule(Some(vec![7.0, 4.0]), None, None));

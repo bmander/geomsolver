@@ -255,3 +255,93 @@ fn copying_a_figure_brings_its_callouts() {
     gcs_core::io::paste(&mut dst, &clip, 100.0, 0.0);
     assert_eq!(dst.placements.len(), 2, "two pastes, two sets");
 }
+
+/// A relation statement carries a class as a declaration does (§13.2), and `display: none` on
+/// it leaves its callout out of the layout — where a draughtsman decides which of a drawing's
+/// dimensions the sheet shows.  Nothing about the solve changes.
+#[test]
+fn a_relations_class_says_how_its_callout_looks() {
+    let src = "\
+style .dimension { display: none }
+style .shown { display: inline; color: #ff0000 }
+point a hint(x: 0, y: 0)
+point b hint(x: 60, y: 0)
+point c hint(x: 60, y: 40)
+line ab(a, b)
+line bc(b, c)
+a distance(60) b class shown
+b distance(40) c
+horizontal ab
+vertical bc
+ground a
+";
+    let sk = read(src);
+    let shown: Vec<u32> = gcs_core::callout::layout(&sk, 1.0).iter().map(|c| c.id).collect();
+    assert_eq!(shown.len(), 1, "one dimension shown, one hidden");
+    let c = sk.constraint(shown[0]).unwrap();
+    assert!(c.class.has("shown"));
+    assert_eq!(gcs_core::callout::style_of(&sk, c).color.as_deref(), Some("#ff0000"));
+    // the same solve and DOF as with no style at all
+    let plain = read(&src.replace("style .dimension { display: none }\n", "").replace(" class shown", ""));
+    let mut a = sk.clone();
+    let mut b = plain.clone();
+    gcs_core::solve::solve(&mut a, Default::default());
+    gcs_core::solve::solve(&mut b, Default::default());
+    assert_eq!(diagnose(&mut a, DiagnoseOptions::default()).dof, diagnose(&mut b, DiagnoseOptions::default()).dof);
+    // it travels: the export writes it and a paste keeps it
+    let dumped = gcs_core::io::dumps(&sk, None);
+    assert!(dumped.contains("\"class\""), "{dumped}");
+    let back = gcs_core::io::from_json(&gcs_core::json::parse(&dumped).unwrap()).expect("loads");
+    assert!(back.constraints.iter().any(|c| c.class.has("shown")));
+    let copy = gcs_core::io::copy(&sk, &sk.primitives());
+    assert!(copy.constraints.iter().any(|c| c.class.has("shown")));
+    // and prints back on the statement
+    let (prog, _) = gcs_core::syntax::parse(src);
+    let mut out = String::new();
+    let st = prog.root().body.iter().find(|s| matches!(&s.kind, gcs_core::syntax::StmtKind::Relation(r) if !r.class.is_empty())).unwrap();
+    gcs_core::syntax::write_stmt_to(&mut out, &st.kind);
+    assert!(out.contains("class shown"), "{out}");
+}
+
+/// `display: none` on an entity's class is honoured by the export, and `.point` is the implicit
+/// class every point's handle is drawn under.
+#[test]
+fn display_none_leaves_a_thing_out_of_the_export() {
+    let src = "\
+style .gone { display: none }
+style .point { display: none }
+point a hint(x: 0, y: 0)
+point b hint(x: 60, y: 0)
+line ab(a, b)
+line cd(hint(x: 0, y: 20), hint(x: 60, y: 20)) class gone
+ground a
+";
+    let sk = read(src);
+    assert!(!sk.style_of(EntRef::new(EntKind::Line, 1)).shown());
+    assert!(sk.style_of(EntRef::new(EntKind::Line, 0)).shown());
+    assert!(!sk.style_of(EntRef::new(EntKind::Point, 0)).shown());
+    let svg = gcs_core::svg::render(&sk, 400.0);
+    assert_eq!(svg.matches("<line").count(), 1, "{svg}");
+    assert_eq!(svg.matches("<circle").count(), 0, "no point handles: {svg}");
+    // a later class shows again what an earlier one hid
+    let sk = read(&src.replace("class gone", "class gone back").replace("style .point", "style .back { display: inline }\nstyle .point"));
+    assert!(sk.style_of(EntRef::new(EntKind::Line, 1)).shown());
+}
+
+/// `t: Throw(…) class phantom` — every declaration the instance makes carries the class, under
+/// its own (§13.2), the way `in` puts the whole instance in a view.
+#[test]
+fn an_instance_takes_a_class_whole() {
+    let sk = read(
+        "component Two(a: point) {\n\
+           line l(a, hint(x: 1, y: 1))\n\
+           circle k(center: a) hint(r: 2) class heavy\n\
+         }\n\
+         point o hint(x: 0, y: 0)\n\
+         t: Two(o) class phantom\n\
+         u: Two(o)\n",
+    );
+    assert_eq!(sk.class_of(EntRef::new(EntKind::Line, 0)), Classes::one("phantom"));
+    assert_eq!(sk.class_of(EntRef::new(EntKind::Circle, 0)).0, vec!["phantom", "heavy"]);
+    assert!(sk.class_of(EntRef::new(EntKind::Line, 1)).is_empty());
+}

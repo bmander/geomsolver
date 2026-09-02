@@ -137,8 +137,20 @@ fn main() -> ExitCode {
 
 /// One document: its exit code, and its JSON report when one was asked for.
 fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
-    let (prog, errs) = parse(&s.text);
-    let e = elaborate(&prog);
+    let (mut prog, errs) = parse(&s.text);
+    // `use engine.crank` is `engine/crank.sv` beside the document, and failing that the module
+    // library compiled into the core — the one place a working directory enters the core's work
+    let dir = std::path::Path::new(&s.name).parent().map(|d| d.to_path_buf()).unwrap_or_default();
+    let mut resolve = |name: &str| -> Option<String> {
+        let rel = format!("{}.sv", name.replace('.', "/"));
+        std::fs::read_to_string(dir.join(rel)).ok().or_else(|| gcs_core::library::resolve(name))
+    };
+    let linked = gcs_core::modules::link(&mut prog, &mut resolve);
+    let mut e = elaborate(&prog);
+    // a module's diagnostics are the document's to hear, before the elaboration's
+    let mut diags = linked;
+    diags.append(&mut e.diags);
+    e.diags = diags;
     // Nothing is said in `--json` mode, so nothing is worked out either: the collapse below is
     // part of deciding what to print, and running it to feed a function that discards every line
     // is work done for no reader.

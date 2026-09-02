@@ -77,6 +77,9 @@ struct Scope {
     /// prefixes of the scope it was written in — `rewrite` resolves it there and not in the
     /// component's own chain, where a body declaration called `top` would take it (#45.4).
     in_plane: Option<InPlane>,
+    /// The classes every enclosing instance was given (`t2: Throw(…) class phantom`), which
+    /// every declaration emitted under them carries beneath its own (§13.2).
+    in_class: crate::style::Classes,
 }
 
 impl Scope {
@@ -153,6 +156,13 @@ struct Walk<'a> {
     instances: Vec<InstanceInfo>,
     /// `Some` while a component is expanded over its formals as variables — see `Sym`.
     sym: Option<Sym>,
+    /// The file's top-level `param`s, which every component written in the file may read
+    /// (§6.3): the numbers a drawing is drawn from — a bore, a stroke — stated once at the top
+    /// and not threaded through every formal list.  A formal of the same name shadows one.
+    file_vals: BTreeMap<String, Aff>,
+    /// The same for each module linked in (§14.4): a module's components read the module's own
+    /// top-level params, worked out once, the first time one of its components is bound.
+    module_vals: Vec<Option<BTreeMap<String, Aff>>>,
     errors: Vec<(Span, String)>,
     coded: Vec<(Code, Span, String)>,
 }
@@ -179,7 +189,15 @@ pub fn expand(prog: &Program, units: Units) -> Expansion {
 pub fn expand_component(prog: &Program, comp: &Component, units: Units) -> Expansion {
     let mut w = Walk::new(prog, units, Some(Sym::default()));
     let scope = Scope { prefixes: vec![String::new()], ..Scope::default() };
-    let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
+    // the file's top-level params, which the body may read; what is wrong with them is the
+    // root's to report, and `expand` does
+    let mut file_vals: BTreeMap<String, Aff> = BTreeMap::new();
+    let (ne, nc) = (w.errors.len(), w.coded.len());
+    w.params(&prog.root().body, &mut file_vals, &scope);
+    w.errors.truncate(ne);
+    w.coded.truncate(nc);
+    let mut vals: BTreeMap<String, Aff> = file_vals.clone();
+    w.file_vals = file_vals;
     for f in &comp.formals {
         match f.ty {
             Ty::Ent(_) => {
@@ -212,6 +230,8 @@ impl<'a> Walk<'a> {
             aliases: Vec::new(),
             instances: Vec::new(),
             sym,
+            file_vals: BTreeMap::new(),
+            module_vals: vec![None; prog.modules.len()],
             errors: Vec::new(),
             coded: Vec::new(),
         }
@@ -241,7 +261,7 @@ impl<'a> Walk<'a> {
     fn subst_sym(&self, text: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> String {
         let Some(sym) = &self.sym else { return text.to_string() };
         substitute_with(text, |w| {
-            of_vals(vals)(w).or_else(|| {
+            of_vals(vals, self.units)(w).or_else(|| {
                 scope.prefixes.iter().find_map(|p| sym.texts.get(&format!("{p}{w}")).cloned())
             })
         })
@@ -305,6 +325,12 @@ impl<'a> Walk<'a> {
     /// there — and a declaration that already says which plane (a clause of its own, on a
     /// plane the component declares) may not be told twice.
     fn stamp_scope_plane(&mut self, d: &mut Decl, scope: &Scope) {
+        // the instance's classes, under the declaration's own so the declaration's rule wins
+        for c in scope.in_class.0.iter().rev() {
+            if !d.class.has(c) {
+                d.class.0.insert(0, c.clone());
+            }
+        }
         let Some(p) = &scope.in_plane else { return };
         if !d.kind.bears_points() {
             return;   // a datum's points are the datum's, and a curve is its expressions
@@ -414,6 +440,15 @@ impl<'a> Walk<'a> {
         let prefix = scope.prefix().to_string();
         // every `param` of the body first, whatever line it stands on — a body is a set (P2)
         self.params(body, vals, scope);
+        // the root's are the file's, and every component written in the file reads them —
+        // with the params of every module the file `use`s under its own (§14.4)
+        if depth == 0 {
+            let uses: Vec<String> = self.prog.uses.iter().map(|u| u.name.clone()).collect();
+            for (k, v) in self.used_params(&uses) {
+                vals.entry(k).or_insert(v);
+            }
+            self.file_vals = vals.clone();
+        }
         // and with them the numbers in force are complete for every statement of the body:
         // the enclosing ones the caller passed and the body's own — so that is the table each
         // statement is emitted with, which is what an index (`p[n - 1]`) is read against.  The
@@ -480,7 +515,8 @@ impl<'a> Walk<'a> {
                             curve: None,
                             class: Default::default(),
                             class_span: Span::default(),
-                            seed_at: None,
+                            seed_at: p.seed_at.clone(),
+                            seed_names: Vec::new(),
                             attitude: Default::default(),
                             membership: Default::default(),
                             list_span: Span::default(),
@@ -542,6 +578,11 @@ impl<'a> Walk<'a> {
                         copies: scope.copies,
                         vals: sub_vals.clone(),
                         in_plane,
+                        in_class: {
+                            let mut c = scope.in_class.clone();
+                            c.0.extend(inst.class.0.iter().cloned());
+                            c
+                        },
                     };
                     sc.cyc = scope.cyc.clone();
                     self.body(&comp.body, &sc, &mut sub_vals, path, depth + 1);
@@ -617,6 +658,7 @@ impl<'a> Walk<'a> {
                             copies: true,
                             vals: sub.clone(),
                             in_plane: scope.in_plane.clone(),
+                            in_class: scope.in_class.clone(),
                         };
                         let mut p2 = path.to_vec();
                         p2.push(k as u32);
@@ -690,17 +732,67 @@ impl<'a> Walk<'a> {
     fn settle_seeds(&mut self, d: &mut Decl, vals: &BTreeMap<String, Aff>, scope: &Scope, span: Span) {
         for i in 0..d.seed_text.len() {
             let Some(t) = d.seed_text[i].take() else { continue };
-            let t = self.subst_sym(&t, vals, scope);
-            match value_of(&t, vals, self.units) {
-                Ok(v) => d.seed[i] = v,
-                // over a variable of the curve, or a formal's coordinate the curve's table
-                // names and nothing here can: kept as text for the compile to read
-                Err(_) if self.sym.is_some() => d.seed_text[i] = Some(t),
-                Err(e) => self.err(span, format!("`{t}`: {e}")),
+            if let Some(v) = self.settle_seed(t, &mut d.seed_text[i], vals, scope, span) {
+                d.seed[i] = v;
+            }
+        }
+        // a seed in a child slot — `line l(hint(x: w / 2, y: 0), …)` — is the same clause one
+        // level down, and is written over the same parameters
+        for kid in d.children.iter_mut().flatten() {
+            let crate::syntax::Kid::Hint(ks) = kid else { continue };
+            for i in 0..2 {
+                let Some(t) = ks.text[i].take() else { continue };
+                if let Some(v) = self.settle_seed(t, &mut ks.text[i], vals, scope, span) {
+                    ks.v[i] = v;
+                }
             }
         }
         if let Some((b, _)) = d.seed_at.as_mut().and_then(|a| a.bearing.as_mut()) {
-            *b = self.subst_sym(b, vals, scope);
+            // the bearing is a text over the parameters in scope, read later — by the trace
+            // compile off its variable table, or by the build off the geometry's seeds — so
+            // the numbers in force are written in and the rest is left for that reader
+            *b = if self.sym.is_some() {
+                self.subst_sym(b, vals, scope)
+            } else {
+                substitute(b, vals, self.units)
+            };
+        }
+    }
+
+    /// One seed's text, settled over the parameters in scope: the number it comes to, or —
+    /// where it cannot come to one here — the text kept in `keep` for a later reader.
+    ///
+    /// Two readers keep a text.  A trace block's compile reads a variable of the curve or a
+    /// formal's coordinate off its own table.  And on the sheet a seed may **read geometry**
+    /// (`hint(x: k.center.x + k.r, y: pin.y)`): the value read is that scalar's own *seed*,
+    /// which is a fact about the built drawing and not about this scope, so `program::build`
+    /// works it out once every declaration has one (§6.4).  Any other failure is the error it
+    /// always was.
+    fn settle_seed(
+        &mut self,
+        t: String,
+        keep: &mut Option<String>,
+        vals: &BTreeMap<String, Aff>,
+        scope: &Scope,
+        span: Span,
+    ) -> Option<f64> {
+        let t = self.subst_sym(&t, vals, scope);
+        match value_of(&t, vals, self.units) {
+            Ok(v) => Some(v),
+            Err(_) if self.sym.is_some() => {
+                *keep = Some(t);
+                None
+            }
+            // the numbers in force written in, so what the build reads is geometry and nothing
+            // of this scope's
+            Err(_) if reads_geometry(&t, self.units) => {
+                *keep = Some(substitute(&t, vals, self.units));
+                None
+            }
+            Err(e) => {
+                self.err(span, format!("`{t}`: {e}"));
+                None
+            }
         }
     }
 
@@ -906,7 +998,53 @@ impl<'a> Walk<'a> {
             let name = format!("{prefix}{}.{}", inst.name.text, f.name.text);
             sub.insert(f.name.text.clone(), free(name, f.ty));
         }
+        // and under the formals, the numbers of the file the component was written in (§6.3)
+        let file = match comp.module {
+            None => self.file_vals.clone(),
+            Some(k) => self.module_params(k),
+        };
+        for (k, v) in file {
+            sub.entry(k).or_insert(v);
+        }
         sub
+    }
+
+    /// A module's top-level `param`s, worked out once — in the module's own scope, which has no
+    /// prefix and no numbers but its own and those of the modules it `use`s.
+    fn module_params(&mut self, k: usize) -> BTreeMap<String, Aff> {
+        if let Some(Some(v)) = self.module_vals.get(k) {
+            return v.clone();
+        }
+        // marked done before the walk, so a module reached again through its own `use`s reads
+        // nothing from itself rather than recursing
+        if let Some(slot) = self.module_vals.get_mut(k) {
+            *slot = Some(BTreeMap::new());
+        }
+        let scope = Scope { prefixes: vec![String::new()], ..Scope::default() };
+        let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
+        let m = &self.prog.modules[k];
+        let (body, uses) = (m.root.body.clone(), m.uses.clone());
+        self.params(&body, &mut vals, &scope);
+        for (name, v) in self.used_params(&uses) {
+            vals.entry(name).or_insert(v);
+        }
+        if let Some(slot) = self.module_vals.get_mut(k) {
+            *slot = Some(vals.clone());
+        }
+        vals
+    }
+
+    /// The params of the modules a file names in its `use`s, in that order; a name two of them
+    /// define is the earlier's.
+    fn used_params(&mut self, uses: &[String]) -> BTreeMap<String, Aff> {
+        let mut out: BTreeMap<String, Aff> = BTreeMap::new();
+        for name in uses {
+            let Some(k) = self.prog.modules.iter().position(|m| &m.name == name) else { continue };
+            for (n, v) in self.module_params(k) {
+                out.entry(n).or_insert(v);
+            }
+        }
+        out
     }
 
     /// One value argument, worked out and bound under the formal's *declared* dimension.
@@ -983,6 +1121,13 @@ impl<'a> Walk<'a> {
             let written = sc.ring.as_ref().map(|_| st.kind.clone());
             let mut bad: Vec<(Span, String)> = Vec::new();
             rewrite(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad);
+            // a seed that reads geometry names it in the scope it was written in, and is read
+            // on the sheet, where only absolute names mean anything — so it is rescoped as the
+            // statement's references were.  Not in a trace block, whose kept texts are read
+            // off the block's own variable table by the formals' names.
+            if self.sym.is_none() {
+                rescope_seeds(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad);
+            }
             let clean = bad.is_empty();
             for (span, msg) in bad {
                 self.err(span, msg);
@@ -1164,7 +1309,7 @@ pub(crate) fn value_aff(
 /// that still reads a document name — `w / 2` — keeps its form, and the reader keeps their
 /// formula.
 fn settle(text: &str, vals: &BTreeMap<String, Aff>, units: Units) -> Result<String, String> {
-    let sub = substitute(text, vals);
+    let sub = substitute(text, vals, units);
     // nothing of the component's in it: leave it exactly as written, so `h = w / 2` and `3 1/8`
     // reach the document with the form somebody typed
     if sub == text {
@@ -1190,19 +1335,28 @@ fn settle(text: &str, vals: &BTreeMap<String, Aff>, units: Units) -> Result<Stri
 ///
 /// At identifier boundaries, so `flank` in `cos(flank)` is replaced and the `flank` inside
 /// `flank_out` is not; and parenthesised, so a negative value does not change what binds to what.
-fn substitute(text: &str, vals: &BTreeMap<String, Aff>) -> String {
-    substitute_with(text, of_vals(vals))
+fn substitute(text: &str, vals: &BTreeMap<String, Aff>, units: Units) -> String {
+    substitute_with(text, of_vals(vals, units))
 }
 
 /// What a word stands for in `vals`, as text: a number, parenthesised; a value affine in the
 /// drawing's unknown (a formal left unbound, or a `param` over one) as `(m * name + c)`, or
 /// the bare name when that is all it is.  `tau` and `turn` are `expr::CONSTANTS` now, and an
 /// angle rather than a number that happens to be 360, so they are left for the evaluator.
-fn of_vals(vals: &BTreeMap<String, Aff>) -> impl Fn(&str) -> Option<String> + '_ {
+fn of_vals(vals: &BTreeMap<String, Aff>, units: Units) -> impl Fn(&str) -> Option<String> + '_ {
     move |w| {
         let a = vals.get(w)?;
         if let Some(v) = a.number() {
-            return Some(format!("({})", crate::syntax::num(v)));
+            // a number that knows what it is says so, or `phi + atan2(…)` would read a plain
+            // number added to an angle once `phi: Angle` was written in as one
+            let suffix = if a.dim == crate::units::Dim::ANGLE {
+                "deg"
+            } else if a.dim == crate::units::Dim::LENGTH {
+                units.name().unwrap_or("")
+            } else {
+                ""
+            };
+            return Some(format!("({}{suffix})", crate::syntax::num(v)));
         }
         let n = a.free.as_ref()?;
         Some(if a.m == 1.0 && a.c == 0.0 {
@@ -1214,6 +1368,94 @@ fn of_vals(vals: &BTreeMap<String, Aff>) -> impl Fn(&str) -> Option<String> + '_
 }
 
 /// `substitute`, over whatever `of` says a word stands for.
+/// Whether a seed's text reads a scalar of the geometry — `k.center.x`, `pin.y`, `base.r` — which
+/// is the one kind of name a seed may keep past the flattener (§6.4): a dotted name, since a
+/// param and a formal are bare words and an entity's scalar never is.
+fn reads_geometry(text: &str, units: Units) -> bool {
+    expr::parse_in(text, units)
+        .map(|p| p.body.deps().iter().any(|d| d.contains('.')))
+        .unwrap_or(false)
+}
+
+/// The geometry a kept seed text reads, renamed to the absolute names the sheet resolves — the
+/// same `lookup` every reference goes through, so a formal reads as the actual it aliases and a
+/// name inside a block's copy reads as that copy's.  The scalar (`x`, `y`, `r`, `b`) stays on the
+/// end, since it is the build's question and not a name.
+fn rescope_seeds(
+    k: &mut StmtKind,
+    sc: &Scope,
+    names_seen: &BTreeSet<String>,
+    alias: &BTreeMap<String, String>,
+    units: Units,
+    bad: &mut Vec<(Span, String)>,
+) {
+    let StmtKind::Decl(d) = k else { return };
+    let mut names: BTreeMap<String, String> = BTreeMap::new();
+    for i in 0..d.seed_text.len() {
+        let span = d.seed_spans.get(i).copied().unwrap_or_default();
+        if let Some(t) = d.seed_text[i].as_deref() {
+            rescope_text(t, span, sc, names_seen, alias, units, &mut names, bad);
+        }
+    }
+    for kid in d.children.iter().flatten() {
+        if let crate::syntax::Kid::Hint(ks) = kid {
+            for i in 0..2 {
+                if let Some(t) = ks.text[i].as_deref() {
+                    rescope_text(t, ks.spans[i], sc, names_seen, alias, units, &mut names, bad);
+                }
+            }
+        }
+    }
+    // a bearing is a text over the same names — `atan2(k2.center.y - k1.center.y, …)`
+    if let Some((b, span)) = d.seed_at.as_ref().and_then(|a| a.bearing.as_ref()) {
+        rescope_text(b, *span, sc, names_seen, alias, units, &mut names, bad);
+    }
+    d.seed_names = names.into_iter().collect();
+}
+
+/// One kept seed text — see `rescope_seeds`: each dotted name in it, resolved.
+#[allow(clippy::too_many_arguments)]
+fn rescope_text(
+    t: &str,
+    span: Span,
+    sc: &Scope,
+    names_seen: &BTreeSet<String>,
+    alias: &BTreeMap<String, String>,
+    units: Units,
+    names: &mut BTreeMap<String, String>,
+    bad: &mut Vec<(Span, String)>,
+) {
+    let Ok(p) = expr::parse_in(t, units) else { return };
+    for dep in p.body.deps() {
+        if names.contains_key(&dep) {
+            continue;
+        }
+        let mut segs: Vec<&str> = dep.split('.').collect();
+        if segs.len() < 2 {
+            continue;
+        }
+        let scalar = segs.pop().unwrap_or_default();
+        let r = Ref {
+            root: Name { text: segs[0].to_string(), span },
+            path: segs[1..].iter().map(|f| Seg::Field(Name::new(*f))).collect(),
+            span,
+        };
+        match lookup(&r, sc, names_seen, alias, units) {
+            Some((abs, rest)) => {
+                let mut full = abs;
+                for f in rest {
+                    full.push('.');
+                    full.push_str(&f);
+                }
+                full.push('.');
+                full.push_str(scalar);
+                names.insert(dep.clone(), full);
+            }
+            None => bad.push((span, format!("no such entity: `{}`", segs[0]))),
+        }
+    }
+}
+
 fn substitute_with(text: &str, of: impl Fn(&str) -> Option<String>) -> String {
     let mut out = String::with_capacity(text.len());
     let b: Vec<char> = text.chars().collect();
@@ -1263,13 +1505,17 @@ fn copy_of(
             let tail = &abs[from.len()..];
             let Some((_id, rest)) = tail.split_once('.') else { continue };
             let Some((j, leaf)) = rest.split_once('.') else { continue };
-            if leaf != name || j.parse::<usize>() != Ok(k) {
+            // the copy's own declaration, or an *instance* the copy holds — `cyl[0].small` is
+            // a point of copy 0's `cyl`, whose absolute prefix is what the rest is read under
+            let is_inst = leaf.starts_with(name) && leaf[name.len()..].starts_with('.');
+            if (leaf != name && !is_inst) || j.parse::<usize>() != Ok(k) {
                 continue;
             }
-            if found.as_deref().is_some_and(|f| f != abs) {
+            let copy = format!("{from}{_id}.{j}.{name}");
+            if found.as_deref().is_some_and(|f| f != copy) {
                 return None; // two blocks here declare it: say nothing rather than guess
             }
-            found = Some(abs.clone());
+            found = Some(copy);
         }
         if found.is_some() {
             return found;
@@ -1322,6 +1568,17 @@ fn lookup(
                 Seg::Index(t) => t.clone(),
             })
             .collect();
+        // greedy under the copy, as below: `cyl[0].small` is the entity `…cyl.small` and no
+        // field, where `p[1].x` is the entity `…p` and its field
+        for take in (1..=rest.len()).rev() {
+            let cand = format!("{abs}.{}", rest[..take].join("."));
+            if names.contains(&cand) {
+                return Some((cand, rest[take..].to_vec()));
+            }
+            if let Some(t) = alias.get(&cand) {
+                return Some((t.clone(), rest[take..].to_vec()));
+            }
+        }
         return Some((abs, rest));
     }
 

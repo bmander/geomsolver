@@ -103,6 +103,8 @@ export interface Style {
   dash: number[];
   width: number | null;
   color: string | null;
+  /** `display: none` — not drawn at all. */
+  hidden: boolean;
 }
 
 /** Everything with a stroke carries *classes*, and a style sheet says what a class looks like.

@@ -208,12 +208,23 @@ pub fn head(a: &Arrow, unit: f64) -> [P; 3] {
 /// the dimension's ink, and its own weight only where a sheet states one.  Written once because
 /// each front end that resolved it for itself came to a slightly different answer.
 pub fn ink(sk: &Sketch, c: &Callout) -> (crate::style::Style, crate::style::Style) {
-    let claimed = sk.constraint(c.id).map(|k| k.claim).unwrap_or(false);
-    let solid = sk.style_named(if claimed { "dimension reference" } else { "dimension" });
+    let solid = sk.constraint(c.id).map(|k| style_of(sk, k)).unwrap_or_default();
     let mut thin = sk.style_named("extension");
     thin.color = solid.color.clone();
     thin.width = thin.width.or(solid.width);
     (solid, thin)
+}
+
+/// A dimension's own style: `.dimension` — `.reference` too when it is a claim — under the
+/// classes its statement carries, so `a distance(80) b class hidden` is drawn as the sheet says
+/// `.hidden` is, and `display: none` there leaves it out of the layout.
+pub fn style_of(sk: &Sketch, c: &crate::constraints::Constraint) -> crate::style::Style {
+    let mut classes = crate::style::Classes::one("dimension");
+    if c.claim {
+        classes.0.push("reference".to_string());
+    }
+    classes.0.extend(c.class.0.iter().cloned());
+    crate::style::resolve(&sk.sheet, &classes)
 }
 
 /// The drafting figure for every dimensioned constraint in the sketch, in world coordinates.
@@ -232,7 +243,7 @@ pub fn layout(sk: &Sketch, unit: f64) -> Vec<Callout> {
     for c in &sk.constraints {
         // a drag target is a number, not a dimension, and an arc's own definition is not
         // something the drawing states twice
-        if c.soft || c.intrinsic {
+        if c.soft || c.intrinsic || !style_of(sk, c).shown() {
             continue;
         }
         if let Some(k) = pen.one(c) {

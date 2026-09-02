@@ -1013,6 +1013,11 @@ pub struct Constraint {
     /// argument: one appended column, one `(m, c)` pair, one twin kernel.  Derived state, written
     /// only by `expr::evaluate`, so `Constraint::new` and every rebuild leave it empty.
     pub free: Option<Free>,
+    /// The classes the statement carries (§13.2) — a dimension's callout is drawn in them over
+    /// `.dimension`, and `display: none` on one leaves the callout out of the layout altogether.
+    /// Presentation: nothing that solves, diagnoses or decomposes reads it, and `same_constraint`
+    /// does not compare it.
+    pub class: crate::style::Classes,
 }
 
 impl Constraint {
@@ -1026,7 +1031,16 @@ impl Constraint {
 
     pub fn new(kind: CKind, args: Vec<Arg>) -> Constraint {
         debug_assert_eq!(args.len(), kind.spec().len(), "{:?} arity", kind);
-        Constraint { id: 0, kind, args, soft: false, intrinsic: false, claim: false, free: None }
+        Constraint {
+            id: 0,
+            kind,
+            args,
+            soft: false,
+            intrinsic: false,
+            claim: false,
+            free: None,
+            class: Default::default(),
+        }
     }
 
     pub fn coincident(p: EntRef, q: EntRef) -> Constraint {

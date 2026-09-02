@@ -83,7 +83,10 @@ pub fn render(sk: &Sketch, width_px: f64) -> String {
     ));
     out.push_str("<g fill=\"none\" stroke-linecap=\"round\">\n");
     for e in sk.drawn() {
-        entity(&mut out, sk, e, unit, &at, &polys);
+        // `display: none` is not drawn, and that is the whole of what it means
+        if sk.style_of(e).shown() {
+            entity(&mut out, sk, e, unit, &at, &polys);
+        }
     }
     out.push_str("</g>\n");
     for c in &cs {

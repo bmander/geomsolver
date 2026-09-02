@@ -221,8 +221,10 @@ impl EntKind {
     pub fn implicit_class(self) -> Option<&'static str> {
         match self {
             EntKind::Plane => Some("plane"),
-            EntKind::Point
-            | EntKind::Line
+            // a point carries no class of its own and is drawn as a handle; `.point` is how a
+            // document says the handles are not part of the picture (`display: none`)
+            EntKind::Point => Some("point"),
+            EntKind::Line
             | EntKind::Circle
             | EntKind::Arc
             | EntKind::Spline

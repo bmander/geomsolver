@@ -584,20 +584,19 @@ fn a_geometric_seeds_mistakes_are_named() {
     }
 }
 
-/// Outside a trace block a seed is a number a solve writes back, which a place named by
-/// reference is not — so the geometric form is refused there, and says where it belongs.
+/// Outside a trace block the geometric form means the same place it means inside one (§6.4):
+/// the point starts on the circle's edge at that bearing, the seed is never written back, and
+/// the drawing says nothing more than it did.
 #[test]
-fn a_geometric_seed_outside_a_trace_block_is_refused() {
+fn a_geometric_seed_outside_a_trace_block_is_a_place() {
     let src = "point o hint(x: 0, y: 0)\ncircle c0(center: o) hint(r: 5)\npoint q hint at c0 bearing (30)\n";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&prog);
-    assert!(!e.ok());
-    assert!(
-        e.errors().any(|d| d.message.contains("lives in a trace block")),
-        "{:?}",
-        e.errors().map(|d| &d.message).collect::<Vec<_>>()
-    );
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let (x, y) = e.sketch.point_xy(1);
+    let (ex, ey) = (5.0 * 30f64.to_radians().cos(), 5.0 * 30f64.to_radians().sin());
+    assert!((x - ex).abs() < 1e-9 && (y - ey).abs() < 1e-9, "{x} {y}");
 }
 
 /// **A branch is a stated fact.**  No seed anywhere: the block's point starts wherever the

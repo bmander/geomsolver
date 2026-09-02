@@ -974,6 +974,7 @@ fn style_json(s: &gcs_core::style::Style) -> Json {
         ),
         ("width", s.width.map(Json::Num).unwrap_or(Json::Null)),
         ("color", s.color.clone().map(Json::Str).unwrap_or(Json::Null)),
+        ("hidden", Json::Bool(!s.shown())),
     ])
 }
 
@@ -2766,7 +2767,8 @@ pub unsafe extern "C" fn gcs_ppp_triangles(p: *mut PlanSolver, out: *mut i32) ->
 pub unsafe extern "C" fn gcs_program_elaborate(ptr: *const u8, len: usize) -> *mut Elaborated {
     guard(std::ptr::null_mut(), move || {
         let src = as_str(ptr, len);
-        let (prog, errs) = syntax::parse(src);
+        // the browser has no filesystem, so a `use` resolves against the library compiled in
+        let (prog, errs, mut linked) = gcs_core::library::parse_linked(src);
         let mut e = program::elaborate(&prog);
         // the parser's complaints come first, in the order they were found: they are about the
         // text, and everything after them is about a text that was already wrong
@@ -2779,6 +2781,7 @@ pub unsafe extern "C" fn gcs_program_elaborate(ptr: *const u8, len: usize) -> *m
                 message: s.message.clone(),
             })
             .collect();
+        all.append(&mut linked);
         all.append(&mut e.diags);
         e.diags = all;
         Box::into_raw(Box::new(e))
@@ -3111,6 +3114,8 @@ pub unsafe extern "C" fn gcs_elab_add_relation(
                 poly: None,
                 // the app states constraints; a claim is written in the program panel
                 claim: false,
+                class: Default::default(),
+                class_span: gcs_core::syntax::Span::default(),
             },
         ))
     })

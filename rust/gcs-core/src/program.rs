@@ -25,8 +25,8 @@ use crate::model::{EntKind, EntRef, Field, Sketch};
 use crate::rng::Rng;
 use crate::style::Classes;
 use crate::syntax::{
-    entity_name, line_col, num, Arg, Attitude, Decl, DeclName, Gauge, Kid, Name, Named, Orient,
-    Program, Ref, Relation, Seg, Span, Stmt, StmtId, StmtKind,
+    entity_name, line_col, num, Arg, AtRef, Attitude, Decl, DeclName, Gauge, Kid, Name, Named,
+    Orient, Program, Ref, Relation, Seg, Span, Stmt, StmtId, StmtKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -61,6 +61,10 @@ pub enum Code {
     /// a `project` the model refuses: a point on no plane, both on one, or parallel planes
     /// (§6.7) — the core's own words, given a span
     E061,
+    /// a `use` nothing resolves (§14.4)
+    E070,
+    /// a component defined twice, across the document and its modules (§14.4)
+    E071,
     /// syntax
     E100,
     /// no such name
@@ -94,6 +98,8 @@ impl Code {
             Code::E041 => "E041",
             Code::E060 => "E060",
             Code::E061 => "E061",
+            Code::E070 => "E070",
+            Code::E071 => "E071",
             Code::E100 => "E100",
             Code::E101 => "E101",
             Code::E102 => "E102",
@@ -298,7 +304,7 @@ impl Elaborated {
     /// Returns false, changing nothing, if the new text does not parse or has lost a statement
     /// this map still names; the caller then re-elaborates, which is always correct.
     pub fn retext(&mut self, text: &str) -> bool {
-        let Some(prog) = reparse(text) else { return false };
+        let Some(prog) = reparse(text, &self.program) else { return false };
         let at = spans(&prog);
         // "the same statements" is the caller's claim; if it is false, refuse rather than quietly
         // dropping what the map knows.  The caller then elaborates, which is always correct.
@@ -322,7 +328,7 @@ impl Elaborated {
     /// which is the order they now sit in at the end of the root body.  False, changing nothing,
     /// if the new text does not parse or does not end with them.
     pub fn adopt(&mut self, text: &str, made: &[Made]) -> bool {
-        let Some(prog) = reparse(text) else { return false };
+        let Some(prog) = reparse(text, &self.program) else { return false };
         let body = &prog.root().body;
         if body.len() < made.len() {
             return false;
@@ -536,10 +542,13 @@ enum Keep {
 /// Parse a source that is expected to be good.  `None` when it is not: both callers are taking a
 /// text the core itself just spliced, so a parse error means the splice was wrong, and the answer
 /// is to refuse and let the caller elaborate from scratch.
-fn reparse(text: &str) -> Option<Program> {
-    let (prog, errs) = crate::syntax::parse(text);
-    errs.is_empty().then_some(prog)
+fn reparse(text: &str, like: &Program) -> Option<Program> {
+    let (mut prog, errs) = crate::syntax::parse(text);
+    // the same modules, from the texts already in hand: a re-parse asks the host nothing
+    let linked = crate::modules::relink(&mut prog, like);
+    (errs.is_empty() && linked.is_empty()).then_some(prog)
 }
+
 
 /// Where every statement in a program sits, blocks included — a statement inside one is still
 /// reached by its id.
@@ -666,7 +675,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 stmt: Some(st.id),
                 message: format!(
                     "`{who}` is declared twice; the first is at line {}",
-                    line_col(p.text(), was.lo).0
+                    p.line_col(was.lo as usize).0
                 ),
             });
             skip.insert(st.id);
@@ -696,6 +705,8 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // -- phase 2: geometry, per kind in `primitives()` order.  The same walk `io::from_json`
     // makes, through the same constructors, so the two produce the same parameter vector.
     let mut built: BTreeMap<EntRef, bool> = BTreeMap::new();
+    // seeds that read geometry, settled once every declaration has a seed of its own
+    let mut deferred: Vec<Deferred> = Vec::new();
     // `primitives()` order, and **curves last**: a curve is written over other entities, so
     // every kind it may name has to exist before it does.  The same reason `io::graft` grafts
     // them last.
@@ -716,7 +727,18 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 continue;
             }
             let mut anon: Vec<(String, EntRef)> = Vec::new();
-            match build(&mut sk, &res, d, st, &bases, &mut diags, &mut anon, p, &expansion.instances) {
+            match build(
+                &mut sk,
+                &res,
+                d,
+                st,
+                &bases,
+                &mut diags,
+                &mut anon,
+                &mut deferred,
+                p,
+                &expansion.instances,
+            ) {
                 Some(e) => {
                     built.insert(e, true);
                     map.bind(&d.name.key().text, e, d.name.named());
@@ -740,6 +762,10 @@ pub fn elaborate(p: &Program) -> Elaborated {
             }
         }
     }
+
+    // seeds named by geometry, once every entity has a seed to be read: in statement order, so
+    // a seed that reads a seed read from a third is settled after both (§6.4)
+    settle_deferred(&mut sk, &res, &deferred, &mut diags);
 
     // memberships, once every kind is built and before any constraint reads one: `point a in
     // top` names a plane built after the point, and `project` infers its planes from these
@@ -804,6 +830,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
         orient(&mut sk, &res, o, st, &mut diags);
     }
 
+    crate::modules::localize(p, &mut diags);
     Elaborated { sketch: sk, map, diags, program: p.clone(), taken: false }
 }
 
@@ -1620,6 +1647,7 @@ fn build(
     bases: &BTreeMap<String, crate::plane::Basis>,
     diags: &mut Vec<Diag>,
     anon: &mut Vec<(String, EntRef)>,
+    deferred: &mut Vec<Deferred>,
     prog: &Program,
     insts: &[crate::flatten::InstanceInfo],
 ) -> Option<EntRef> {
@@ -1628,16 +1656,16 @@ fn build(
     if d.kind == EntKind::Curve {
         return build_curve(sk, res, d, st, diags, prog, insts);
     }
-    // a geometric seed reads geometry that a trace block's variable table names; out here a
-    // drawing's seed is a number a solve writes back, which a place named by reference is not
-    if d.seed_at.is_some() {
+    // a seed named by a place (`hint at k bearing (b)`) is a point's; every other kind has a
+    // scalar of its own the clause seeds by name
+    if d.seed_at.is_some() && d.kind != EntKind::Point {
         diags.push(Diag {
             code: Code::E103,
             span: st.span,
             stmt: Some(st.id),
-            message: "a seed named geometrically (`at c bearing (…)`) lives in a trace block"
-                .to_string(),
+            message: "only a point takes a geometric seed (`hint at …`)".to_string(),
         });
+        return None;
     }
     // every child a declaration names, flattened in field order and checked to be a Point —
     // which every other child of every other kind is, and which is what an alias class must
@@ -1702,6 +1730,17 @@ fn build(
                         return None;
                     };
                     let i = sk.point(seed.v[0], seed.v[1], false, label.get(slot).unwrap_or(name));
+                    for (k, t) in seed.text.iter().enumerate() {
+                        if let Some(t) = t {
+                            deferred.push(Deferred::Text {
+                                param: sk.point_params(i)[k],
+                                text: t.clone(),
+                                names: d.seed_names.clone(),
+                                span: seed.spans[k],
+                                stmt: st.id,
+                            });
+                        }
+                    }
                     kids.push(i);
                     anon.push((name.clone(), EntRef::point(i)));
                     slot += 1;
@@ -1875,7 +1914,177 @@ fn build(
     };
     let e = EntRef::new(d.kind, idx);
     set_class(sk, e, d.class.clone());
+    // the seeds this declaration wrote over geometry, settled once everything is built: a
+    // point's place, and any scalar's text that read another entity's
+    if let Some(at) = &d.seed_at {
+        deferred.push(Deferred::At {
+            point: idx,
+            at: at.clone(),
+            names: d.seed_names.clone(),
+            span: st.span,
+            stmt: st.id,
+        });
+    }
+    // the declaration's own scalars are the last of `entity_params`, after its children's
+    let params = sk.entity_params(e);
+    let own = &params[params.len().saturating_sub(d.seed_text.len())..];
+    for (k, t) in d.seed_text.iter().enumerate() {
+        if let (Some(t), Some(param)) = (t, own.get(k).copied()) {
+            let span = d.seed_spans.get(k).copied().unwrap_or(st.span);
+            deferred.push(Deferred::Text {
+                param,
+                text: t.clone(),
+                names: d.seed_names.clone(),
+                span,
+                stmt: st.id,
+            });
+        }
+    }
     Some(e)
+}
+
+/// A seed that reads geometry, held until every declaration has a seed to be read (§6.4).
+///
+/// Two spellings, one rule: **the value read is the other scalar's own seed**.  A text over
+/// entity scalars — `hint(x: k.center.x + k.r, y: pin.y)` — and a place named outright —
+/// `hint at pin`, `hint at k bearing (b)`, the words a trace block already had for the same two
+/// things.  Settled in statement order, so a seed that reads a seed that was itself read from a
+/// third comes out right when the three are written in the order they depend on; written the
+/// other way round it reads the earlier one's *provisional* seed, which is the same bargain the
+/// trace block's "declared after this point" strikes, said more leniently.
+enum Deferred {
+    Text { param: u32, text: String, names: Vec<(String, String)>, span: Span, stmt: StmtId },
+    At { point: usize, at: AtRef, names: Vec<(String, String)>, span: Span, stmt: StmtId },
+}
+
+/// The seed a dotted name reads: `pin.x`, `k.center.y`, `base.r`, `e.b` — `dotted` as the
+/// flattener resolved it, its root the entity's absolute name, and the last segment the scalar by
+/// the kind's own `scalar_names`.
+fn seed_read(sk: &Sketch, res: &Resolver, dotted: &str) -> Result<f64, String> {
+    let (path, scalar) = dotted
+        .rsplit_once('.')
+        .ok_or_else(|| format!("`{dotted}` is not a number here"))?;
+    // an entity's absolute name is dotted itself (`t1.pin` under an instance), so the entity is
+    // the longest head of the path that names one, and the rest is fields into it
+    let segs: Vec<&str> = path.split('.').collect();
+    let (e, fields) = (1..=segs.len())
+        .rev()
+        .find_map(|k| res.of.get(&segs[..k].join(".")).map(|e| (*e, &segs[k..])))
+        .ok_or_else(|| format!("no such entity: `{}`", segs[0]))?;
+    let fields: Vec<Seg> = fields.iter().map(|f| Seg::Field(Name::new(*f))).collect();
+    let e = follow(sk, e, &fields)?;
+    let names = e
+        .kind
+        .scalar_names(path)
+        .ok_or_else(|| format!("a {} has no scalar to read by name", e.kind.as_str()))?;
+    let at = names.iter().position(|n| *n == dotted).ok_or_else(|| {
+        format!(
+            "a {} has no `{scalar}`; its scalars are {}",
+            e.kind.as_str(),
+            names.iter().map(|n| format!("`{n}`")).collect::<Vec<_>>().join(", ")
+        )
+    })?;
+    let p = *sk
+        .entity_params(e)
+        .get(at)
+        .ok_or_else(|| format!("`{dotted}` has no seed yet"))?;
+    Ok(sk.params[p as usize].value)
+}
+
+/// An expression over geometry's seeds, come to its number.  `names` is what each dotted name
+/// in it resolved to (`Decl::seed_names`); one it does not list is read as written.
+fn seed_eval(
+    sk: &Sketch,
+    res: &Resolver,
+    text: &str,
+    names: &[(String, String)],
+) -> Result<f64, String> {
+    let p = expr::parse_in(text, sk.units)?;
+    let mut env: BTreeMap<String, expr::Aff> = BTreeMap::new();
+    // a coordinate or a radius is a length, so it adds to `150mm` and not to a plain number —
+    // where the document names a unit.  Where it does not, no literal can be a length, so the
+    // read is the bare number everything else there is (§3.3).
+    let dim = if sk.units.name().is_some() {
+        crate::units::Dim::LENGTH
+    } else {
+        crate::units::Dim::SCALAR
+    };
+    for dep in p.body.deps() {
+        if dep.contains('.') {
+            let abs = names.iter().find(|(w, _)| *w == dep).map(|(_, a)| a.as_str());
+            let v = seed_read(sk, res, abs.unwrap_or(&dep))?;
+            env.insert(dep.clone(), expr::Aff::of_dim(v, dim));
+        }
+    }
+    let a = expr::eval(&p.body, &env)?;
+    match a.number() {
+        Some(v) if v.is_finite() => Ok(v),
+        Some(v) => Err(format!("comes to {v}")),
+        None => Err(format!(
+            "`{}` is not a number here — a component's parameters are, and the document's \
+             dimensions are not",
+            a.free.unwrap_or_default()
+        )),
+    }
+}
+
+fn settle_deferred(sk: &mut Sketch, res: &Resolver, deferred: &[Deferred], diags: &mut Vec<Diag>) {
+    for d in deferred {
+        let (span, stmt, result) = match d {
+            Deferred::Text { param, text, names, span, stmt } => {
+                let r = seed_eval(sk, res, text, names).map(|v| {
+                    sk.params[*param as usize].value = v;
+                });
+                (*span, *stmt, r.map_err(|e| format!("`{text}`: {e}")))
+            }
+            Deferred::At { point, at, names, span, stmt } => {
+                let r = place_of(sk, res, at, names).map(|(x, y)| {
+                    let [px, py] = sk.point_params(*point);
+                    sk.params[px as usize].value = x;
+                    sk.params[py as usize].value = y;
+                });
+                (*span, *stmt, r)
+            }
+        };
+        if let Err(message) = result {
+            diags.push(Diag { code: Code::E103, span, stmt: Some(stmt), message });
+        }
+    }
+}
+
+/// Where `hint at …` puts a point on the sheet: the seed of the point it names, or the edge of
+/// the circle it names at the bearing given — `at_seed`'s two places, read as numbers.
+fn place_of(
+    sk: &Sketch,
+    res: &Resolver,
+    a: &AtRef,
+    names: &[(String, String)],
+) -> Result<(f64, f64), String> {
+    let e = *res
+        .of
+        .get(&a.what.root.text)
+        .ok_or_else(|| format!("no such entity: `{}`", a.what.root.text))?;
+    let e = follow(sk, e, &a.what.path)?;
+    match (e.kind, &a.bearing) {
+        (EntKind::Point, None) => Ok(sk.point_xy(e.i())),
+        (EntKind::Point, Some(_)) => {
+            Err("a point is already a place; a bearing needs a circle".to_string())
+        }
+        (EntKind::Circle, Some((text, _))) => {
+            let c = &sk.circles[e.i()];
+            let (cx, cy) = sk.point_xy(c.center as usize);
+            let r = sk.params[c.radius as usize].value;
+            // a bearing is an angle, so the text may say `90deg` or read a `param` already
+            // written in; what it comes to is in the document's angle unit, which is degrees
+            let b = seed_eval(sk, res, text, names).map_err(|m| format!("`{text}`: {m}"))?;
+            let b = b.to_radians();
+            Ok((cx + r * b.cos(), cy + r * b.sin()))
+        }
+        (EntKind::Circle, None) => {
+            Err("where on the edge?  `at c bearing (…)` says the bearing".to_string())
+        }
+        (k, _) => Err(format!("a seed cannot be at a {}", k.as_str())),
+    }
 }
 
 
@@ -2179,6 +2388,7 @@ fn constrain(
     }
     let mut c = Constraint::new(ckind, args);
     c.claim = r.claim;
+    c.class = r.class.clone();
     Some(sk.add_quiet(c))
 }
 
@@ -2469,6 +2679,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         class: sk.class_of(e),
         class_span: Span::default(),
         seed_at: None,
+        seed_names: Vec::new(),
         attitude: lift_attitude(sk, e),
         membership: lift_plane(sk, e),
         list_span: Span::default(),
@@ -2503,6 +2714,7 @@ fn lift_curve(sk: &Sketch, i: usize) -> crate::syntax::CurveSpec {
                 args,
                 span: Span::default(),
                 membership: Default::default(),
+                class: Default::default(),
             },
             Ref::new(def.port.clone()),
         ),
@@ -2581,6 +2793,8 @@ pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {
         place_span: Span::default(),
         poly: None,
         claim: c.claim,
+        class: c.class.clone(),
+        class_span: Span::default(),
     }
 }
 

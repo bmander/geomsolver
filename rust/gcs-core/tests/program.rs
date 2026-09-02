@@ -319,6 +319,7 @@ fn a_name_declared_twice_is_an_error() {
             class: Default::default(),
             class_span: Default::default(),
             seed_at: None,
+            seed_names: Vec::new(),
             attitude: Default::default(),
             membership: Default::default(),
             list_span: Default::default(),

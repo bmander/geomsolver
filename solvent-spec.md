@@ -313,6 +313,8 @@ param R = m * N / 2
 
 Introduces a named definitional value. `param` values are evaluated at elaboration time when all inputs are `Int`/literal, otherwise they are definitional scalars.
 
+**[0.12] A file's top-level `param`s are in scope in every component the file defines**, and in the file's root body — the numbers a drawing is drawn from, a bore and a stroke, stated once at the top rather than threaded through every formal list. A formal of the same name shadows one, since a component's interface must not break when a `param` of that name is added above it. The `param`s of a module the file `use`s (§14.4) are in the file's scope too, under its own. A `param` MUST NOT read geometry (`a.x`): a `param` feeds constraints, and a number read off a seed would make the solution set depend on where a solve began (P3); a *seed* may (§6.4).
+
 ### 6.4 Seeds written inline **[0.2]**
 
 A declaration MAY carry the starting values of its own scalars, in a trailing `hint(…)` clause:
@@ -338,6 +340,8 @@ Two things that look like seeds and are not, and stay where they are. **`knots [
 **Why inline is the primitive.** A seed's job is to say where a coordinate starts, and the place a reader looks for that is the declaration of the thing that has the coordinate. It matters more than taste once a drawing is edited by drawing on it: a solve that wants to record where a point ended up rewrites six characters of a declaration that already exists, where under 0.1 it would have to locate that point's `hint` statement among the body's statements, or synthesise one and decide where to put it. The first is a splice; the second is a program transformation, and it is performed on every drag.
 
 `hint` keeps the cases inline cannot express — seeding an entity declared elsewhere, and seeding from an expression over other geometry (`hint t.lead(x: center.x + root.r, y: center.y)`).
+
+**[0.12] A seed may read geometry, and reads its seed.** The text in a `hint(…)` clause — a declaration's, a child slot's (`line l(hint(x: p.x + 10, y: p.y), …)`) or a `port`'s — MAY name another entity's scalar by its dotted path: `p.x`, `p.y`, `k.center.x`, `k.r`, `e.b`. What it reads is that scalar's **own seed**, never a solved value, so the clause stays seed-class: delete it and the solution set is unchanged, as §4.3 requires. The same clause is `hint at REF` — the place another point starts — and `hint at K bearing (β)`, the point on circle `K`'s edge at bearing `β` from the page's x-axis; both were a trace block's words (§6.5) and now mean the same thing on the sheet. Seeds are settled once every declaration has one, in statement order, so a seed reading a seed that was itself read from a third comes out right when the three are written in the order they depend on; written the other way round it reads the earlier one's provisional seed (an unseeded point's scatter, an unwritten radius's default), which an implementation MAY warn about and MUST NOT refuse. A read of a scalar the entity has not (`p.z`), or of nothing (`nobody.x`), is **E103**. A geometry read is a `Length` where the document names a `unit` (so it adds to `150mm` and not to `10`) and a bare number where it does not, since there no literal can be a length. Inside a component the names resolve as references do — a formal reads as the entity it aliases, a name inside a block's copy as that copy's. A seed written this way is an expression and is never written back by a solve.
 
 ### 6.5 Curves **[0.11]**
 
@@ -798,6 +802,8 @@ line   ab(a, b) class centerline heavy
 circle base(center: c) hint(r: Rb) class construction
 ```
 
+**[0.12] Three more places a class stands, and one more property.** A *relation* statement carries a class as a declaration does — `a distance(80) b class shown` — and a dimension's callout is drawn in `.dimension` (and `.reference` when it is a claim) under the classes its statement carries; on a relation that states no dimension a class is inert. An *instance* carries one — `t2: Throw(…) class phantom` — and every declaration its expansion makes carries it beneath its own, the way `in` puts an instance in a view (§6.7). Every *point* is drawn under the implicit class `.point`, so a document may say that its handles are not part of the picture. The property `display: none` leaves what carries it out of the picture altogether — an entity is not drawn, a dimension is neither laid out nor picked — and `display: inline` shows it again from a later class, since an absent property says nothing. The idiom for a drawing dense with dimensions is `style .dimension { display: none }` and `class shown` on the few the sheet is to show. Nothing about the solve, the count or the diagnosis reads any of it.
+
 - **A class goes on an entity declaration**, and nowhere else. Not on a component definition, not on an instance, not on a `cycle`. Those are all reasonable later and none of them is needed.
 - **A declaration MAY carry several classes**, space-separated. On a conflicting property the later one wins, so `class centerline heavy` is a centreline drawn thick — and *only* on the properties the later one states.
 - **`style` blocks sit at the top level.** An external sheet, shared across drawings, is the natural extension once there is more than one drawing to style; it is not specified here.
@@ -838,6 +844,17 @@ Elaboration lowers a program to the **kernel form** consumed by solvers. The pip
 3. **Definitional substitution.** Definitional equalities (constructor value-arguments, `param`, `= expr` declarations) are substituted, METAFONT-style: they are not residuals and consume no solver iterations. A cyclic definitional dependency is an error (**E041**).
 4. **Constraint collection.** Predicate statements, `==` equations, derived path incidences (§10.4), symmetry constraints, and gauges are collected into the constraint store.
 5. **Path assembly.** Fragments compose per §10.5 into boundary curves attached to the model as derived objects.
+
+### 14.4 Modules **[0.12]**
+
+```
+use engine.dims
+use engine.parts
+```
+
+A **module** is a Solvent document read for its components. `use NAME` at the top level of a document — never inside a body — asks for one; `NAME` is a dotted path, and **what it resolves to is the host's question**: an implementation with a working directory resolves `engine.parts` to `engine/parts.sv` beside the document, one without a filesystem resolves it against whatever library it carries, and both fall through to the other in that order. The core takes text and never opens a file. A module contributes exactly its **component definitions** and its top-level **`param`s** (§6.3); its own loose statements — its drawing — are not drawn, so a document that is also a library (`gear.sv`) is a module as it stands. A module's own `use`s are followed the same way, each module linked once however many times it is asked for, so a diamond is one copy and a cycle terminates. A module a host cannot resolve is **E070**, at the `use`. Two definitions of one component name, wherever they come from, are **E071**, at the document's own definition when the clash is with one and otherwise at the `use` that brought the later module in; there is no shadowing (§5). A module's own errors — a parse error, a faulty `param` — are reported to a reader of the document *at the `use` that brought the module in*, with the module's name, line and column in front of the message, since that line is the one the document can edit.
+
+*Non-normative:* an implementation may parse a module with its spans offset past everything linked before it, so that every span in a linked program is one integer into one virtual text and no consumer learns a second coordinate; a splice on the document then walks the root body alone, which no module span is ever in.
 
 ### 14.2 Kernel form
 
@@ -903,6 +920,8 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E050 | inconsistent system (no solution); report a minimal infeasible subset when computable |
 | E060 | a point put on two different planes (§6.7) **[0.10]** |
 | E061 | `project` refused: a point on no plane, both on one plane, or parallel planes (§6.7) **[0.10]** |
+| E070 | a `use` nothing resolves (§14.4) **[0.12]** |
+| E071 | a component defined twice, across the document and its modules (§14.4) **[0.12]** |
 
 ### 16.2 Warnings and lints
 
@@ -1039,7 +1058,8 @@ Square system, full rank at the hinted seed; one Newton basin per §12.4, lifted
 ## 19. Grammar (EBNF)
 
 ```ebnf
-program        = { component } ;
+program        = { use_decl } { component } ;
+use_decl       = "use" IDENT { "." IDENT } ;                         (* a module, §14.4 *)
 component      = "component" IDENT "(" [ params ] ")" "{" { statement } "}" ;
 params         = param { "," param } ;
 param          = IDENT ":" type ;
@@ -1049,7 +1069,7 @@ type           = "Int" | "Scalar" | "Length" | "Angle"
 statement      = decl | constraint | hint | gauge | block | path_decl | style_rule
                | unit_decl | frag | in_block ;
 in_block       = "in" ref "{" { statement } "}" ;         (* membership, written once: §6.7 *)
-style_rule     = "style" "." IDENT "{" { IDENT ":" value { ";" } } "}" ;   (* §13.2 *)
+style_rule     = "style" "." IDENT "{" { IDENT ":" value { ";" } } "}" ;   (* §13.2; `display: none | inline` *)
 unit_decl      = "unit" IDENT ;                                           (* §3.3.2 *)
 
 (* §3.3.1: a number may carry a unit, and feet-and-inches is ONE literal — a space is what
@@ -1092,7 +1112,7 @@ curve_def      = "curve" IDENT "(" [ params ] ")" "(" IDENT ")"
 param_decl     = "param" IDENT "=" expr ;
 port_decl      = "port" IDENT ":" type
                | "port" IDENT "=" ref ;
-instance_decl  = IDENT ":" IDENT "(" [ args ] ")" [ "in" ref ] ;   (* drawn in a view, §6.7 *)
+instance_decl  = IDENT ":" IDENT "(" [ args ] ")" [ "in" ref ] [ "class" IDENT { IDENT } ] ;   (* §6.7, §13.2 *)
 args           = arg { "," arg } ;
 arg            = [ IDENT ":" ] expr ;
 

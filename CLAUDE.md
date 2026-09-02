@@ -37,8 +37,9 @@ Currently: **Stage 5 done**, in **one** implementation —
   the core's reading of its own velocities, not a threshold the binding picks), since two copies
   of a rule are two rules the moment one of them is edited.
 * **CLI** (`rust/gcs-cli/`): `solventc`, which parses, elaborates, solves, diagnoses and reports
-  on a document from a terminal — the first way to check a drawing without a browser, and the
-  natural home for module resolution when it arrives.  It **invents no wording**: a per-document
+  on a document from a terminal — the first way to check a drawing without a browser, and where
+  module resolution lives: `use engine.parts` is `engine/parts.sv` beside the document, then the
+  library compiled into the core (`library::MODULES`).  It **invents no wording**: a per-document
   line is `diagnose::summary`, a culprit is `io::describe_with` (the core's wording over the
   `SourceMap`'s names — `corner distance(60) along`, never `P0`; the app reaches the same through
   `gcs_elab_describe`), `--json` is `report::*_json`, so it and the app cannot come to describe
@@ -130,6 +131,50 @@ Conventions:
   layout derives it until they do.  A coordinate seed is an input the solver overwrites; a
   placement is a preference it never touches.  Ask §4.3, not the keyword, for what may be
   deleted without changing the drawing.
+- **A seed may read geometry, and reads its seed** (Solvent §6.4).  `hint(x: k.center.x + k.r,
+  y: pin.y)`, `hint at pin`, `hint at k bearing (b)` — on the sheet, in a child slot and on a
+  `port` alike.  The flattener settles a seed text over the parameters in scope and, where that
+  fails and the text names a dotted scalar, keeps it (`settle_seed`, `reads_geometry`) with every
+  dotted name resolved to the entity's absolute name in `Decl::seed_names` (`rescope_seeds`, the
+  same `lookup` every reference goes through — so a formal reads as its actual and a block copy as
+  itself, and never rewritten into the text, since `side.#282.0.small` is no name the expression
+  language can spell); `program::build` records each as a `Deferred` and `settle_deferred` works
+  them out after every kind is built, in statement order, off the built seeds (`seed_read`,
+  `place_of`).  A read is a `Length` where the document names a unit and a bare number where it
+  does not (`seed_eval`).  A `param` may not read geometry — it feeds constraints — and
+  `commit_seeds` never writes an expression back, so P3 holds.  The bearing of a sheet `hint at`
+  is `substitute`d over the scope's numbers, which print **with their unit** (`of_vals`: an
+  `Angle` as `(180deg)`, a `Length` as `(150mm)`), or `phi + atan2(…)` reads as a plain number
+  added to an angle.  A file's top-level `param`s are in scope in its components (`Walk::file_vals`,
+  under the formals in `bind`) and so are the params of the modules it `use`s
+  (`module_params`, memoised, cycle-safe).  `tests/seeds.rs` is the gate.
+- **Modules** (Solvent §14.4, `modules.rs`, `library.rs`).  `use engine.parts` is parsed into
+  `Program::uses`; `modules::link(prog, resolver)` resolves each once, transitively, parsing the
+  module with `syntax::parse_from(text, base, first_id)` — **every span is one integer into one
+  virtual text**: the document, then each module after a one-byte gap, so no consumer learns a
+  second coordinate and a splice (root body only) never meets a module span.  `Program::source_at`
+  says which text an offset is in; `modules::localize` (run by `link` and by `elaborate`) shows a
+  module's diagnostic at the `use` that brought it in (`Module::via`) with `name:line:col` in
+  front of the message.  A module contributes its components (`Component::module` says which)
+  and its top-level params; its own drawing is not drawn.  **The core has no filesystem**: the
+  resolver is the host's — `solventc` reads `engine.parts` as `engine/parts.sv` beside the
+  document, then `library::resolve`; the FFI and `examples::document` use `library::parse_linked`,
+  over `library::MODULES` (compiled in with `include_str!`, which is how the app opens the
+  engine).  `program::reparse` relinks from the texts already in hand (`modules::relink`), so an
+  edit never asks the host.  E070 no module, E071 defined twice.  `tests/modules.rs` is the gate.
+- **A class stands on a relation and on an instance, and `display: none` hides** (Solvent
+  §13.2).  `Relation::class` is parsed in both trailing-clause loops (a chain's and a lone
+  relation's, before `at`), set on `Constraint::class` by `constrain`, written by `io::dumps`,
+  read by `from_json`, carried by `graft`, printed by `write_relation`, and **not** in the
+  binding's constraint record (identity and arguments only).  `callout::style_of` resolves
+  `.dimension` (`.reference` for a claim) under the statement's classes, and `layout` skips one
+  that is not `shown()`, so neither front end lays out or picks a hidden dimension.
+  `Instance::class` is carried down the expansion as `Scope::in_class` and stamped under each
+  emitted declaration's own (`stamp_scope_plane`), the way `in` is.  `Style::hidden` is
+  `display: none | inline`; `svg::render` and `paint.ts` skip what is not shown, and every point
+  is drawn under the implicit class `.point` (`EntKind::implicit_class`), read once per repaint
+  through `styleNamed('point')`.  The idiom for a drawing dense with dimensions is
+  `style .dimension { display: none }` and `class shown` on the few to draw.
 - **A declaration need not name its children** (Solvent §6.1, §6.2).  `line l` mints two points,
   `circle c` one, `arc a` three; a child slot may hold a `hint(…)` instead of a reference
   (`line alt_a(A, hint(x: 15, y: 5))`), which is the same clause standing in for a child rather
