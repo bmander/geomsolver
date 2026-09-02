@@ -2697,8 +2697,8 @@ fn opens_link(w: &str, next: Option<&str>) -> bool {
 /// Whether a word may be a declaration's **name**.  With the name optional (§6.1, issue #33),
 /// the token after the kind keyword decides what the statement says next, so every word that may
 /// follow a declaration is reserved: another element keyword, anything that trails one, and `at`,
-/// whose retired seed spelling keeps its message.  `line hint(x: 0, y: 0)` seeds an anonymous
-/// line, and does not declare one named `hint`.  Asked by the parser (`decl`) and the colouring
+/// whose retired seed spelling keeps its message.  `circle hint(r: 25)` seeds an anonymous
+/// circle, and does not declare one named `hint`.  Asked by the parser (`decl`) and the colouring
 /// (`tint_word`) alike — written twice, the two would drift on exactly these words.
 fn names_decl(w: &str) -> bool {
     EntKind::parse(w).is_none() && !trails_decl(w) && w != "at"
@@ -4726,7 +4726,7 @@ impl<'a> P<'a> {
 
     fn decl(&mut self, kind: EntKind) -> Option<Decl> {
         // **The name is optional**, independently of everything after it (issue #33): `line`
-        // alone, `line(p1, p2)` and `line hint(x: 0, y: 0)` are all anonymous forms.  The token
+        // alone, `line(p1, p2)` and `circle hint(r: 25)` are all anonymous forms.  The token
         // after the kind keyword decides — an identifier that may be a name is one, and a word
         // reserved for what can follow a declaration (`names_decl`) is read as itself.  An
         // anonymous declaration still needs a key the desugared statements can resolve by — a

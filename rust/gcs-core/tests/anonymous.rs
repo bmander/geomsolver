@@ -1,8 +1,9 @@
 //! Anonymous elements: the name in a declaration is optional (issue #33).
 //!
 //! `line` alone is a valid statement — a line with no name, implicit children and no hint — and
-//! the name is optional *independently* of the rest, so `line(p1, p2)`, `line hint(x: 0, y: 0)`
-//! and `arc(center: c)` are all valid anonymous forms.  Internally the statement id suffices: an
+//! the name is optional *independently* of the rest, so `line(p1, p2)`, `circle hint(r: 25)`
+//! and `arc(center: c)` are all valid anonymous forms (a line owns no scalar: its seeded
+//! anonymous form is `line(hint(x: 0, y: 0), hint(x: 60, y: 20))`).  Internally the statement id suffices: an
 //! anonymous element parses, elaborates, draws and deletes without ever being named.  The moment
 //! the *source* must reference it — a constraint applied from the app, a gauge on a fixed point —
 //! a real name is minted and spliced into the declaration, the same bargain `commit_seeds`

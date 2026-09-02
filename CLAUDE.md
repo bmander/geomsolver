@@ -152,7 +152,8 @@ Conventions:
   and where the source wrote no list at all, writes the whole argument list at `hint_span` in
   one edit, since two splices at one offset are two insertions racing for it.
   **The element's own name is optional too** (issue #33), independently of everything after it:
-  `line`, `line(p1, p2)`, `line hint(x: 0, y: 0)` and `arc(center: c)` are all anonymous forms,
+  `line`, `line(p1, p2)`, `circle hint(r: 25)` and `arc(center: c)` are all anonymous forms
+  (a line owns no scalar, so its ends are seeded in the slots: `line(hint(x: 0, y: 0), hint(x: 60, y: 20))`),
   and the token after the kind keyword decides — `syntax::names_decl` is the one predicate, asked
   by `decl()` and the colouring alike, so a trailing-clause word, an operator word or an element
   keyword can no longer be a declaration's name (`curve` keeps requiring one; contacts address
