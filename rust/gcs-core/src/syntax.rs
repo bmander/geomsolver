@@ -340,7 +340,7 @@ pub enum StmtKind {
     Instance(Instance),
     /// `param R = m * N / 2` — a number worked out while elaborating, never an unknown.
     Param(ParamDecl),
-    /// `repeat`, `cycle`, `ring` — see `Block`.
+    /// `repeat`, `cycle` — see `Block`.
     Block(Block),
     /// `style .construction { dash: 7 4 }` — what a class looks like.  Presentation, and the
     /// one statement that says nothing about what the drawing *is*.
@@ -405,14 +405,13 @@ pub struct ParamDecl {
     pub span: Span,
 }
 
-/// Repetition.  Three constructs and three meanings (spec §12).
+/// Repetition.  Two constructs and two meanings (spec §12): the third, `ring`, is refused by
+/// name until it can hold its copies congruent (issue #47, item 3).
 #[derive(Clone, Debug)]
 pub struct Block {
     pub kind: BlockKind,
     /// How many, as an expression over the enclosing parameters.
     pub count: String,
-    /// `ring N about center` — the axis every instance turns about.
-    pub about: Option<Ref>,
     /// `as i` — the index, available to every expression inside.
     pub binder: Option<Name>,
     pub body: Vec<Stmt>,
@@ -424,7 +423,7 @@ pub struct Block {
 
 /// A block body that ends mid-joint — `cycle N { distance(d) line -> angle(a) }` — threads its
 /// chain onto the **next copy's** first link: every copy states the joint in a `cycle` or a
-/// `ring` (the wrap seals the loop), and all but the last do in a `repeat`, whose final corner
+/// (the wrap seals the loop), and all but the last do in a `repeat`, whose final corner
 /// is simply not stated.  Everything here is computed at parse time, where both links are
 /// declarations of the body's own; what the flattener adds is only *which* copies.
 #[derive(Clone, Debug)]
@@ -480,8 +479,6 @@ pub enum BlockKind {
     Repeat,
     /// N copies that close: `next` is instance (i+1) mod N, `prev` is (i-1) mod N.
     Cycle,
-    /// A cycle whose instances are claimed to be congruent about an axis.
-    Ring,
 }
 
 impl BlockKind {
@@ -836,7 +833,7 @@ pub struct InBlock {
 }
 
 /// Stamp every declaration of an `in PLANE { … }` body with the plane — the clause written
-/// once (§6.7).  Recursive into `repeat`/`cycle`/`ring` bodies, so a square drawn as a cycle
+/// once (§6.7).  Recursive into `repeat`/`cycle` bodies, so a square drawn as a cycle
 /// inside the block is drawn in the view; a declaration that already says `in`, a kind with no
 /// points of its own, and a component instance (whose statements are not here to stamp) are
 /// each refused where they stand.
@@ -1559,13 +1556,8 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             out.push_str(match b.kind {
                 BlockKind::Repeat => "repeat ",
                 BlockKind::Cycle => "cycle ",
-                BlockKind::Ring => "ring ",
             });
             out.push_str(&b.count);
-            if let Some(a) = &b.about {
-                out.push_str(" about ");
-                write_ref(out, a);
-            }
             if let Some(i) = &b.binder {
                 out.push_str(&format!(" as {}", i.text));
             }
@@ -2338,14 +2330,14 @@ fn ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
-// `port` is retired (bmander/geomsolver#47) and kept here only so a document written against it
-// is told what to write instead of reading `port` as a name
+// `port` is retired and `ring` is not yet (bmander/geomsolver#47), and each is kept here only so
+// a document written with it is told what to write instead of reading the word as a name
 const OPENERS: [&str; 13] = [
     "claim", "component", "param", "port", "unit", "style", "branch", "repeat", "cycle", "ring",
     "ground", "fix", "use",
 ];
 const ORIENTS: [&str; 2] = ["ccw", "cw"];
-const BLOCKS: [&str; 3] = ["repeat", "cycle", "ring"];
+const BLOCKS: [&str; 2] = ["repeat", "cycle"];
 
 /// Whether a word may stand between two links of a chain (spec §6.6).  `tangent` is the
 /// drafting word, mapped per pair of kinds to the regular At-form where the joint threads; and
@@ -2360,7 +2352,7 @@ fn joint_word(w: &str) -> bool {
 
 /// The words that shape a statement without naming anything — a modifier the parser eats where it
 /// stands.  `as` binds a name after it, which is why `highlight` treats that one specially.
-const MODIFIERS: [&str; 8] = ["over", "as", "at", "hint", "about", "class", "from", "in"];
+const MODIFIERS: [&str; 7] = ["over", "as", "at", "hint", "class", "from", "in"];
 
 /// The words that may follow a declaration's own, so `class a b` knows where its list ends.
 /// A chain's joints are here too: `arc a(center: c) class construction tangent …` is one link.
@@ -3540,10 +3532,23 @@ impl<'a> P<'a> {
                 self.i += 1;
                 let kind = match w.as_str() {
                     "repeat" => BlockKind::Repeat,
-                    "cycle" => BlockKind::Cycle,
-                    _ => BlockKind::Ring,
+                    _ => BlockKind::Cycle,
                 };
                 self.block(kind, next_id).map(StmtKind::Block)
+            }
+            "ring" => {
+                // Not a construct of this implementation (bmander/geomsolver#47, item 3): a
+                // ring it could only unroll into the cycle it stood over, and then say so on
+                // every run.  The word comes back with the fundamental-domain solve of spec
+                // §12.4.  Reported once, the body consumed, so its statements are not read as
+                // loose lines and one mistake told N ways.
+                self.fail(
+                    "`ring` is not yet a construct of this implementation: write `cycle N { … }`, \
+                     whose copies are congruent by the numbers each is given (spec §12.3 is \
+                     what `ring` will add)",
+                );
+                self.skip_block();
+                None
             }
             // `claim vertical(rail)` — a relation stated as expected to add no rank.  The colon
             // guard keeps an instance *named* claim (`claim: Tooth(…)`) an instance.
@@ -4698,7 +4703,7 @@ impl<'a> P<'a> {
 
     fn block(&mut self, kind: BlockKind, next_id: &mut u32) -> Option<Block> {
         let lo = self.prev_hi();
-        // the count runs to `about`, `as` or `{`, and is an expression over what is in scope
+        // the count runs to `as` or `{`, and is an expression over what is in scope
         let from = self.here().lo as usize;
         let mut depth = 0i32;
         while !self.done() {
@@ -4706,25 +4711,37 @@ impl<'a> P<'a> {
                 Some(Tok::P('(')) => depth += 1,
                 Some(Tok::P(')')) => depth -= 1,
                 Some(Tok::P('{')) if depth == 0 => break,
-                Some(Tok::Ident(w)) if depth == 0 && (w == "about" || w == "as") => break,
+                Some(Tok::Ident(w)) if depth == 0 && w == "as" => break,
                 Some(Tok::Nl) => break,
                 _ => {}
             }
             self.i += 1;
         }
         let count = self.text_from(from).trim().to_string();
-        let about = if self.eat_word("about") { Some(self.refr()?) } else { None };
-        // the axis is what a ring *is* about (spec §12.3: the clause is mandatory); without it
-        // the word said nothing a `cycle` does not
-        if kind == BlockKind::Ring && about.is_none() {
-            // reported, and the block read on: bailing out here would hand its body to the
-            // statement parser as loose lines, and the one mistake would be reported four ways
-            let at = self.here();
-            self.fail_at(Span::new(lo, at.lo as usize), "a `ring` names its axis: `ring N about REF`");
-        }
         let binder = if self.eat_word("as") { Some(self.ident()?) } else { None };
         let (body, joint) = self.braced_body(next_id)?;
-        Some(Block { kind, count, about, binder, body, joint, span: Span::new(lo, self.prev_hi()) })
+        Some(Block { kind, count, binder, body, joint, span: Span::new(lo, self.prev_hi()) })
+    }
+
+    /// Step over a refused block: the rest of its header line and, where one opens there, the
+    /// balanced braces after it — however many lines they span.
+    fn skip_block(&mut self) {
+        let mut depth = 0i32;
+        while !self.done() {
+            match self.peek() {
+                Some(Tok::P('{')) => depth += 1,
+                Some(Tok::P('}')) => {
+                    depth -= 1;
+                    if depth <= 0 {
+                        self.i += 1;
+                        return;
+                    }
+                }
+                Some(Tok::Nl) if depth == 0 => return,
+                _ => {}
+            }
+            self.i += 1;
+        }
     }
 
     /// A braced body, and the open joint its last chain may have ended in — handed back rather
@@ -4771,7 +4788,7 @@ impl<'a> P<'a> {
             self.errs.push(SynErr {
                 span: j.span,
                 message: format!(
-                    "a chain ends mid-joint only in a `repeat`, `cycle` or `ring`, where it \
+                    "a chain ends mid-joint only in a `repeat` or a `cycle`, where it \
                      threads onto the next copy — {what} has none (spec §6.6)"
                 ),
             });

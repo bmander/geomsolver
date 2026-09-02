@@ -73,7 +73,6 @@ NAME: Component(ARGS) [in REF] [class NAME...]     an instance                  
 component NAME(FORMALS) { statement* }  a definition
 repeat N [as i] { ... }                 N copies, unrelated
 cycle N [as i] { ... }                  N copies that close; `next` and `prev` are in scope
-ring N about REF [as i] { ... }         a cycle claimed cyclically symmetric        (1.7)
 curve NAME = INSTANCE.POINT over FORMAL in (A, B)          a curve                  (1.9)
 curve NAME = Component(ARGS).POINT over FORMAL in (A, B)
 ```
@@ -272,14 +271,12 @@ absence says they do not. So:
   `a equal b equal c` is two statements.
 
 **Repetition.** `repeat N { … }` makes N unrelated copies; `cycle N { … }` makes N copies that
-close, with `next` and `prev` in scope; `ring N about REF { … }` is a cycle that claims cyclic
-symmetry about a point. `ring` is *unrolled*: the copies are congruent only by the numbers each
-was given, the DOF counts every copy, and the CLI says so (W112). `about` is mandatory; a
-statement inside a ring may reach outside it only for the axis point or a circle or arc centred
-on it (E021); rings do not nest (E022). `as i` binds the copy index for expressions.
+close, with `next` and `prev` in scope. `as i` binds the copy index for expressions. The spec's
+`ring` (§12.3) is not yet a construct of this implementation: the word is refused with a note
+saying `cycle`, whose copies are congruent by the numbers each is given.
 
 **A body may end mid-joint.** A trailing joint at the body's `}` threads the chain onto the next
-copy's first link. `cycle` and `ring` wrap, so the loop closes with no `close`; a `repeat`'s last
+copy's first link. `cycle` wraps, so the loop closes with no `close`; a `repeat`'s last
 copy leaves it unstated, so `repeat N { line -> angle(a) }` is an open polyline of N sides. Both
 boundary links must be the body's own declarations, and at most one of the two boundary slots may
 name its point. A statement inside braces ends at the `}`, so a block fits one line:

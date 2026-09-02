@@ -538,7 +538,7 @@ Conventions:
   than inserting a second one beside a list that stated an attitude and no children.
   **`in top { … }` is the clause written once**: the parser **hoists** the body's statements
   into the enclosing body, stamping each declaration (`Decl::plane_from_block`, `stamp_plane`
-  recursing into `repeat`/`cycle`/`ring` bodies so a contour drawn round a cycle is drawn in
+  recursing into `repeat`/`cycle` bodies so a contour drawn round a cycle is drawn in
   the view) — so writeback, carets, the DOF ledger and `edit::in_root` see ordinary root
   statements, and only the header and brace are the block's (`Program::in_blocks`), which is
   what `remove` splices when the plane goes.  The printers spell no clause a statement did not
@@ -805,7 +805,7 @@ Conventions:
   also why `tint_word` takes the token slice and computes the lookahead in the one arm that
   reads it, rather than once per token above the match.
   **A block body may end mid-joint** (issue #38): a *threaded* trailing joint at the body's `}`
-  threads the chain onto the next copy's first link — every pair in a `cycle`/`ring` (the wrap
+  threads the chain onto the next copy's first link — every pair in a `cycle` (the wrap
   seals the loop: `cycle 4 { line s -> perpendicular equal }` is the square), all but the last
   in a `repeat`, whose final corner is simply unstated.  The parser records it on the block
   (`Block::joint`, an `OpenJoint`): the word statements are minted at parse through the same
@@ -832,14 +832,15 @@ Conventions:
   `commit_seeds` needs to see.  `Program::stmts` walks into block bodies for the same reason;
   whether a statement is one the *root* may splice on its own is a different question, asked
   against `root().body` (`edit::in_root`).
-- **`ring` is unrolled and says so** (issue #43): the flattener makes a ring's copies as a
-  `cycle`'s and pushes a W112 at the block — spec §12.3 [0.2] requires the unrolling be reported
-  wherever the DOF ledger is — refuses a ring inside a ring (E022, §12.6: may refuse, must not
-  mis-solve), and after the rewrite judges every statement inside one against what its
-  references resolved to (`flatten::judge_rings`, E021): outside the ring only the axis point,
-  and a circle or arc centred on it, turn with it.  The parser makes `about` mandatory.  These
-  carry their own codes through `Expansion::coded`, since the plain `errors` are sorted into
-  E101/E103 by message.  Likewise an expression's failure is an `expr::ExprError` with a `Fault`
+- **`ring` is refused by name** (issue #47, item 3): the parser reports the word once, saying
+  `cycle N { … }` is the spelling whose copies are congruent by the numbers each is given, and
+  consumes the block (`skip_block`) so its body is not read as loose lines.  It had been
+  unrolled into exactly that cycle plus three rules and a warning (W112 on every run, E021,
+  E022, a mandatory `about`) guarding a symmetry no solve held; the spec keeps §12.3–12.5 as
+  the target and the word comes back with the fundamental-domain solve, for which
+  `tests/ring.rs` is the gate.  A diagnostic that carries its own code (E041) goes through
+  `Expansion::coded`, since the plain `errors` are sorted into E101/E103 by message.
+  Likewise an expression's failure is an `expr::ExprError` with a `Fault`
   — `Dimension` (E103, §3.3: `distance(45deg)` is an error, never a coercion), `ClaimFree`
   (E040, §9.7) or `Uncomputable` (W110, the last number stands) — because three different things
   were one warning.  A point-to-point distance and a radius are `CKind::magnitude`, and a

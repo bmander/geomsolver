@@ -71,15 +71,6 @@ fn a_repeat_ends_open() {
     assert_eq!(kinds(&e.sketch, CKind::Angle), 0);
 }
 
-/// `ring` closes exactly as `cycle` does.
-#[test]
-fn a_ring_wraps_like_a_cycle() {
-    // a ring names its axis (§12.3), which is one more point than the cycle it unrolls to
-    let e = read("point o hint(x: 0, y: 0)\nring 4 about o {\n  distance(50) line -> angle(90)\n}\n");
-    assert_eq!((e.sketch.lines.len(), e.sketch.points.len()), (4, 5));
-    assert_eq!(kinds(&e.sketch, CKind::Angle), 4);
-}
-
 /// A worded open joint whose word is a tangency gets the regular At-form across the copy seam
 /// — never the bare pair that is rank-deficient at every solution.
 #[test]
@@ -214,7 +205,7 @@ fn the_refusals() {
     // neither does a component
     refuses(
         "component C() {\n  line ->\n}\nc: C()\n",
-        "a chain ends mid-joint only in a `repeat`, `cycle` or `ring`",
+        "a chain ends mid-joint only in a `repeat` or a `cycle`",
     );
     // a name-link's boundary is elaboration's to read (issue #35), so the body must declare
     refuses(
@@ -231,7 +222,7 @@ fn the_refusals() {
     // a component's body has no next copy either
     refuses(
         "component f(o: point, u: Angle) {\n  line ->\n}\n",
-        "a chain ends mid-joint only in a `repeat`, `cycle` or `ring`",
+        "a chain ends mid-joint only in a `repeat` or a `cycle`",
     );
 }
 

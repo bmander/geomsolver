@@ -15,7 +15,6 @@
 //! the rest, so an internal name has no spelling to keep valid.
 
 use crate::expr::{self, Aff};
-use crate::model::EntKind;
 use crate::program::Code;
 use crate::units::Units;
 use crate::syntax::{
@@ -47,14 +46,6 @@ struct Cyc {
     n: usize,
 }
 
-/// The `ring` a statement stands inside, if any: the block's prefix (every copy's name starts
-/// with it), the axis as written, and where the block is.  What E021 is judged against.
-#[derive(Clone)]
-struct Ring {
-    prefix: String,
-    about: Ref,
-}
-
 /// What the names in one statement are resolved against: the prefixes it is nested in, innermost
 /// first.  An instance's entity arguments are not here: a formal is an *alias* under the
 /// instance's own prefix (`bind`), found by `lookup` through the prefixes like any other name.
@@ -62,7 +53,6 @@ struct Ring {
 struct Scope {
     prefixes: Vec<String>,
     cyc: Option<Cyc>,
-    ring: Option<Ring>,
     /// Whether a `cycle` or a `repeat` stands anywhere above: the prefix in force then carries a
     /// block's id (`#3.0.`) rather than an instance's name, and a declaration under it is one
     /// *copy* — shown and selected by, never written into a statement.  This walk is the only
@@ -99,8 +89,8 @@ struct InPlane {
 pub struct Expansion {
     pub flat: Vec<Flat>,
     pub errors: Vec<(Span, String)>,
-    /// Diagnostics that carry their own code: a `ring`'s (§12.3–12.6), which are not the
-    /// "no such name" / "not a shape" pair the plain errors sort into.
+    /// Diagnostics that carry their own code (E041, a param defined in terms of itself), which
+    /// are not the "no such name" / "not a shape" pair the plain errors sort into.
     pub coded: Vec<(Code, Span, String)>,
     /// Every instance the walk bound, drawn or not — what a curve is a curve *of* (§6.5): the
     /// elaborator finds the instance a curve's point belongs to here, with the entities it was
@@ -543,7 +533,6 @@ impl<'a> Walk<'a> {
                     let mut sc = Scope {
                         prefixes: std::iter::once(key).chain(scope.prefixes.iter().cloned()).collect(),
                         cyc: None,
-                        ring: scope.ring.clone(),
                         copies: scope.copies,
                         vals: sub_vals.clone(),
                         in_plane,
@@ -576,35 +565,6 @@ impl<'a> Walk<'a> {
                         continue;
                     }
                     let block_prefix = format!("{prefix}#{}.", st.id.0);
-                    // A `ring` is **unrolled**: its copies are made as a `cycle`'s are, congruent
-                    // by the numbers each was given and not held so.  Spec §12.3 permits that
-                    // and [0.2] requires it be said wherever the DOF ledger is, which W112 is;
-                    // §12.6 lets a nested ring be refused and forbids mis-solving it, and
-                    // refusing is the honest one of the two (#43.8, #43.9).
-                    let ring = match b.kind {
-                        BlockKind::Ring if scope.ring.is_some() => {
-                            self.coded.push((
-                                Code::E022,
-                                b.span,
-                                "a `ring` inside a `ring` is not supported".to_string(),
-                            ));
-                            continue;
-                        }
-                        BlockKind::Ring => {
-                            self.coded.push((
-                                Code::W112,
-                                b.span,
-                                format!(
-                                    "`ring {}` is unrolled: its copies are congruent by the \
-                                     numbers each was given, not held so, and the DOF counts \
-                                     every copy",
-                                    b.count
-                                ),
-                            ));
-                            b.about.clone().map(|about| Ring { prefix: block_prefix.clone(), about })
-                        }
-                        _ => scope.ring.clone(),
-                    };
                     let mut ranges: Vec<(usize, usize)> = Vec::new();
                     for k in 0..n {
                         let mut sub = vals.clone();
@@ -621,7 +581,6 @@ impl<'a> Walk<'a> {
                                 k,
                                 n,
                             }),
-                            ring: ring.clone(),
                             // the prefix just built is the block's id, so every declaration
                             // below is a copy, however deep and through however many instances
                             copies: true,
@@ -634,7 +593,7 @@ impl<'a> Walk<'a> {
                         let from = self.out.len();
                         self.body(&b.body, &sc, &mut sub, &p2, depth + 1);
                         // the trailing joint's relations, stated between this copy and the
-                        // next: every copy for a cycle or a ring (the wrap seals the loop),
+                        // next: every copy for a cycle (the wrap seals the loop),
                         // all but the last for a repeat, whose final corner is simply not
                         // stated (issue #38).  The joint is the *block's* statement, so it
                         // gets the `cyc` a repeat's own body does not — a wrapping kind's
@@ -1089,11 +1048,8 @@ impl<'a> Walk<'a> {
             }
         }
         let out = std::mem::take(&mut self.out);
-        let mut done: Vec<(Stmt, Vec<u32>, Scope, Option<StmtKind>)> = Vec::with_capacity(out.len());
+        let mut done: Vec<(Stmt, Vec<u32>)> = Vec::with_capacity(out.len());
         for (mut st, path, sc) in out {
-            // a ring statement is judged after the rewrite (E021 below), against what its
-            // references resolved to — but named in the message as they were written
-            let written = sc.ring.as_ref().map(|_| st.kind.clone());
             let mut bad: Vec<(Span, String)> = Vec::new();
             rewrite(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad);
             // a seed that reads geometry names it in the scope it was written in, and is read
@@ -1126,10 +1082,9 @@ impl<'a> Walk<'a> {
                     }
                 }
             }
-            done.push((st, path, sc, written.filter(|_| clean)));
+            done.push((st, path));
         }
-        self.judge_rings(&done, &alias);
-        let flat = done.into_iter().map(|(stmt, path, _, _)| Flat { stmt, path }).collect();
+        let flat = done.into_iter().map(|(stmt, path)| Flat { stmt, path }).collect();
         (flat, alias)
     }
 
@@ -1154,67 +1109,6 @@ impl<'a> Walk<'a> {
             })
     }
 
-    /// E021 (spec §12.5): a statement inside a `ring` may reference, outside the ring, only
-    /// what the ring's turn leaves where it is — the axis point, and a circle or an arc centred
-    /// on it.  Anything else — a stray point every copy is dimensioned to — cannot be true of
-    /// all N copies at once, and the spec calls the refusal one of the language's best
-    /// diagnostics; without it the same document came back as eight `over` culprits.
-    fn judge_rings(&mut self, done: &[(Stmt, Vec<u32>, Scope, Option<StmtKind>)], alias: &BTreeMap<String, String>) {
-        if done.iter().all(|(_, _, sc, _)| sc.ring.is_none()) {
-            return;
-        }
-        // what every declared entity is, and for a circle or an arc, the absolute name of its
-        // centre — the first child, resolved by the rewrite above
-        let mut decls: BTreeMap<&str, (EntKind, Option<&str>)> = BTreeMap::new();
-        for (st, _, _, _) in done {
-            if let StmtKind::Decl(d) = &st.kind {
-                let centre = match d.kind {
-                    EntKind::Circle | EntKind::Arc => d.children.first().and_then(|g| g.first()).and_then(|k| match k {
-                        Kid::Ref(r) => Some(r.root.text.as_str()),
-                        Kid::Hint(_) => None,
-                    }),
-                    _ => None,
-                };
-                decls.insert(d.name.key().text.as_str(), (d.kind, centre));
-            }
-        }
-        for (st, _, sc, written) in done {
-            let (Some(ring), Some(written)) = (&sc.ring, written) else { continue };
-            // the axis, resolved where the block stands: outside every copy's own prefix
-            let outer = Scope {
-                prefixes: sc.prefixes.iter().filter(|p| !p.starts_with(&ring.prefix)).cloned().collect(),
-                ..Scope::default()
-            };
-            let axis = lookup(&ring.about, &outer, &self.names, alias, self.units).map(|(a, _)| a);
-            for (now, was) in refs_of(&st.kind).into_iter().zip(refs_of(written)) {
-                let x = now.root.text.as_str();
-                if x.starts_with(&ring.prefix) || Some(x) == axis.as_deref() {
-                    continue;
-                }
-                // a plane is a label on the sheet, not a position: a membership or a fold
-                // referencing one from inside a ring is true of every copy alike
-                if matches!(decls.get(x), Some((EntKind::Plane, _))) {
-                    continue;
-                }
-                let invariant = matches!(
-                    decls.get(x),
-                    Some((EntKind::Circle | EntKind::Arc, Some(c))) if Some(*c) == axis.as_deref()
-                );
-                if !invariant {
-                    self.coded.push((
-                        Code::E021,
-                        was.span,
-                        format!(
-                            "`{}` is outside the `ring` and does not turn with it: from inside, \
-                             only the axis point and a circle or arc centred on it may be \
-                             referenced",
-                            written_ref(was)
-                        ),
-                    ));
-                }
-            }
-        }
-    }
 }
 
 /// A number worked out while elaborating.
@@ -1591,54 +1485,6 @@ fn lookup(
         }
     }
     None
-}
-
-/// Every reference a statement makes, in the order `rewrite` visits them — the two walks must
-/// agree, since `judge_rings` zips a statement before the rewrite with itself after.
-fn refs_of(k: &StmtKind) -> Vec<&Ref> {
-    let mut out = Vec::new();
-    match k {
-        StmtKind::Decl(d) => {
-            for g in &d.children {
-                for kid in g {
-                    if let Kid::Ref(r) = kid {
-                        out.push(r);
-                    }
-                }
-            }
-            // then the plane it is in and the plane it is folded from — `rewrite` visits them
-            // in this order — then a curve's drawn target and a geometric seed's place
-            out.extend(d.membership.plane());
-            out.extend(d.attitude.plane_ref());
-            if let Some(crate::syntax::CurveSpec { target: CurveTarget::Drawn(r), .. }) = &d.curve {
-                out.push(r);
-            }
-            if let Some(at) = &d.seed_at {
-                out.push(&at.what);
-            }
-        }
-        StmtKind::Relation(rel) => {
-            for a in rel.args.iter().flatten() {
-                if let crate::syntax::Arg::Ref(r) = a {
-                    out.push(r);
-                }
-            }
-            if let Some(w) = &rel.poly {
-                out.extend(w.ops.iter());
-                for a in &w.args {
-                    if let crate::syntax::OpArg::Ent(r) = a {
-                        out.push(r);
-                    }
-                }
-            }
-        }
-        StmtKind::Gauge(g) => match g {
-            crate::syntax::Gauge::Ground(r) | crate::syntax::Gauge::Fix(r) => out.push(r),
-        },
-        StmtKind::Orient(o) => out.extend(o.pts.iter()),
-        _ => {}
-    }
-    out
 }
 
 /// A reference spelled back the way the source wrote it, for a message about it.

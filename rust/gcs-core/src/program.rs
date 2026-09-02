@@ -48,10 +48,6 @@ pub enum Severity {
 pub enum Code {
     /// redeclaration within a body
     E001,
-    /// a `ring` body references an external entity that does not turn with it (§12.5)
-    E021,
-    /// a `ring` inside a `ring` (§12.6): may be refused, must not be mis-solved
-    E022,
     /// type mismatch within an alias class
     E040,
     /// a cyclic definitional dependency: a plane folded from itself (§6.7)
@@ -83,17 +79,12 @@ pub enum Code {
     W110,
     /// a free variable: which dimensions it ties together
     W111,
-    /// a `ring` unrolled to its copies (§12.3 [0.2]): the symmetry is by the numbers each copy
-    /// was given, not held, and the DOF ledger counts every copy
-    W112,
 }
 
 impl Code {
     pub fn as_str(self) -> &'static str {
         match self {
             Code::E001 => "E001",
-            Code::E021 => "E021",
-            Code::E022 => "E022",
             Code::E040 => "E040",
             Code::E041 => "E041",
             Code::E060 => "E060",
@@ -109,13 +100,12 @@ impl Code {
             Code::E106 => "E106",
             Code::W110 => "W110",
             Code::W111 => "W111",
-            Code::W112 => "W112",
         }
     }
 
     pub fn severity(self) -> Severity {
         match self {
-            Code::W110 | Code::W111 | Code::W112 => Severity::Warning,
+            Code::W110 | Code::W111 => Severity::Warning,
             _ => Severity::Error,
         }
     }
