@@ -105,7 +105,9 @@ node-only fallback imports in `wasm.ts` are left external; a browser never evalu
 Conventions:
 - **Every seed is written in one `hint(…)` clause, and nothing else is** (Solvent §4.3, §6.4):
   `point p hint(x: 0, y: 0)`, `circle c(center: o) hint(r: 25)`,
-  `point_on_spline(p, s) hint(t: 0.4)`.  Keys in any order, an omitted scalar is 0, and the
+  `point_on_spline(p, s) hint(t: 0.4)`.  Keys in any order, an omitted coordinate is 0 — an
+  omitted *radius* is computed from the geometry (`UNSEEDED_RADIUS` where it gives none), since
+  0 is a stationary point of every on-circle row in `r` (#45.6) — and the
   clause joins the trailing-clause loop beside `knots` and `class`.  **The brackets after
   the name are what the thing is made of; the `hint(…)` after them is where the solve begins** —
   which is what `circle c(center: o, r: 25)` got wrong, putting a number the solver will move

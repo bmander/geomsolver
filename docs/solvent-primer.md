@@ -95,7 +95,9 @@ follows it (`l.e[2].p1`).
 
 Every scalar is seeded by name in the trailing clause — `point p hint(x: 0, y: 0)`,
 `circle c(center: o) hint(r: 25)`, `arc a(center: c, start: s, end: e) hint(r: 5)`. Keys may come
-in any order and an omitted one is 0, so `point p hint(y: 12)` and `point t` are both legal. A
+in any order; an omitted coordinate is 0, so `point p hint(y: 12)` and `point t` are both legal,
+and an omitted radius is *computed* — an arc's from its centre and start, an ellipse's minor from
+its major — never 0, where no on-circle row has a gradient to move it. A
 point with no clause at all starts where the implementation puts it — off the origin, and apart
 from every other unseeded point, since two points on top of each other put a distance between
 them where it has no gradient — and a solve writes the pose it reached back as the clause. The

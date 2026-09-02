@@ -615,7 +615,10 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         // the search found every constraint feasible from a pose that was never stationary:
         // consistent, and merely unsolved
         stalled = set.is_empty() && unsettled;
-        conflict_set = Some(set);
+        // an intrinsic row may be *in* the set the search proves — the radius an arc's ends fix
+        // is what a stray dimension on it contradicts — but it is nobody's statement and
+        // nothing anyone can remove, so the culprits named are the document's own (#45.6)
+        conflict_set = Some(set.into_iter().filter(|c| !intrinsic.contains(c)).collect());
     }
     // a dependency whose rows do not hold is no theorem: two tangencies of one pair that
     // cannot both be true are dependent in W and carry no dimension, so W's reading files them

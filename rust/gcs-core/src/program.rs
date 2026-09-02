@@ -1303,6 +1303,12 @@ fn at_seed(
 /// the drawing's first point: a port declared before `point base hint(x: 0, y: 0)` would sit
 /// on it, and a seeded point at the origin is the commonest one there is.  It is an
 /// implementation choice and belongs nowhere in the spec.
+/// Where an unwritten radius starts when the geometry gives none — a circle's, or an arc whose
+/// start sits on its centre.  Any length but zero would do (the row's gradient in `r` is `−2r`,
+/// so the solve moves it from anywhere else); this one is the scale `scatter` places points at,
+/// and as much an implementation choice as that is.
+const UNSEEDED_RADIUS: f64 = 1.0;
+
 fn scatter(i: usize) -> (f64, f64) {
     // the bearing walks a fixed step per minted point, in creation order — which for a chain's
     // corners is traversal order, so a contour of implicit points seeds as a *simple polygon*
@@ -1732,6 +1738,18 @@ fn build(
     // of its own residual, and the first document anybody writes solved as a conflict (#43).
     // A declaration lifted from a sketch has no span (`None`) and carries its numbers.
     let unseeded = d.seed_at.is_none() && d.hint_span.is_some_and(|s| s.is_empty());
+    // A scalar the source never wrote reads as 0, and for a radius 0 is a stationary point of
+    // every on-circle row (∂/∂r of |p−c|² − r² is −2r): an `arc` with its ends grounded and no
+    // `hint(r:)` could not solve at all, and a conflict elsewhere in the drawing was blamed on
+    // the arc's own intrinsic, the first row a search from that pose could not satisfy (#45.6).
+    // So a radius is *written or computed*, never defaulted: the constructor's geometric one for
+    // an arc, half the major axis for an ellipse, `UNSEEDED_RADIUS` for a circle and wherever the
+    // geometry gives nothing.  A declaration lifted from a sketch has no spans and carries its
+    // numbers, as for a point above.
+    let wrote = |i: usize| {
+        d.hint_span.is_none() || d.seed_spans.get(i).is_some_and(|s| !s.is_empty())
+    };
+    let nonzero = |r: f64| if r.abs() > 1e-9 { r } else { UNSEEDED_RADIUS };
     let idx = match d.kind {
         EntKind::Point if unseeded => {
             let (x, y) = scatter(sk.points.len());
@@ -1739,13 +1757,17 @@ fn build(
         }
         EntKind::Point => sk.point(seed(0), seed(1), false, &show),
         EntKind::Line => sk.line(kids[0], kids[1]),
-        EntKind::Circle => sk.circle(kids[0], seed(0), &show),
+        EntKind::Circle => {
+            let r = if wrote(0) { seed(0) } else { UNSEEDED_RADIUS };
+            sk.circle(kids[0], r, &show)
+        }
         EntKind::Arc => {
             // `arc` adds the two intrinsic `PointOnCircle`s here and nowhere else, and computes a
-            // radius from the geometry that the declared seed then replaces
+            // radius from the geometry that a *written* seed then replaces
             let ai = sk.arc(kids[0], kids[1], kids[2], &show);
             let rp = sk.arcs[ai].radius as usize;
-            sk.params[rp].value = seed(0);
+            sk.params[rp].value =
+                if wrote(0) { seed(0) } else { nonzero(sk.params[rp].value) };
             ai
         }
         EntKind::Spline => {
@@ -1774,7 +1796,16 @@ fn build(
                 }
             }
         }
-        EntKind::Ellipse => sk.ellipse(kids[0], kids[1], seed(0), &show),
+        EntKind::Ellipse => {
+            let b = if wrote(0) {
+                seed(0)
+            } else {
+                let (cx, cy) = sk.point_xy(kids[0]);
+                let (mx, my) = sk.point_xy(kids[1]);
+                nonzero(0.5 * (mx - cx).hypot(my - cy))
+            };
+            sk.ellipse(kids[0], kids[1], b, &show)
+        }
         EntKind::Frame => {
             // `frame` adds the two intrinsics here and nowhere else, and computes a rotor from
             // the chord that a declared seed then replaces — except (0, 0), which is no rotor

@@ -731,3 +731,46 @@ fn a_relation_only_closure_is_implied_at_dof_zero_too() {
     assert_eq!(d.status, State::Over, "{}", summary(&d));
     assert!(dims.iter().all(|c| d.over.contains(c)), "over: {:?}", d.over);
 }
+
+/// #45.6 — a radius the source never wrote is computed, never 0: at 0 every on-circle row has
+/// no gradient in `r`, so an `arc` with grounded ends and no `hint(r:)` could not solve, and a
+/// conflict elsewhere was blamed on the arc's own intrinsic — the first row a search from that
+/// pose could not satisfy.  The conflict set names the document's statements and no intrinsic.
+#[test]
+fn an_unwritten_radius_starts_off_zero_and_a_conflict_names_no_intrinsic() {
+    let read = |src: &str| {
+        let (prog, errs) = gcs_core::syntax::parse(src);
+        assert!(errs.is_empty(), "{errs:?}");
+        let e = gcs_core::program::elaborate(&prog);
+        assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+        e
+    };
+    let arc = "point c hint(x: 0, y: 0)\npoint s hint(x: 10, y: 0)\npoint e hint(x: 0, y: 10)\n\
+               arc k(center: c, start: s, end: e)\nground c\nground s\nground e\n";
+    let mut sk = read(arc).sketch;
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let r = sk.params[sk.arcs[0].radius as usize].value;
+    assert!((r - 10.0).abs() < 1e-9, "r = {r}");
+    let mut sk = read("point o hint(x: 0, y: 0)\ncircle c(center: o)\npoint p hint(x: 10, y: 0)\np on c\nground o\nground p\n").sketch;
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let r = sk.params[sk.circles[0].radius as usize].value;
+    assert!((r - 10.0).abs() < 1e-9, "r = {r}");
+    let e = read("point o hint(x: 0, y: 0)\npoint m hint(x: 30, y: 0)\nellipse e(center: o, major: m)\n");
+    assert!(e.sketch.params[e.sketch.ellipses[0].minor as usize].value > 0.0);
+    // a written seed still wins, including a written 0
+    let e = read("point c hint(x: 0, y: 0)\narc k(center: c) hint(r: 0)\n");
+    assert_eq!(e.sketch.params[e.sketch.arcs[0].radius as usize].value, 0.0);
+    // the conflict: a point on the arc at the wrong distance from its centre
+    let e = read(&format!("{arc}point p hint(x: 7, y: 7)\np on k\np distance(5) c\n"));
+    let mut sk = e.sketch;
+    assert!(!solve(&mut sk, SolveOpts::default()).success);
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.status, State::Conflict, "{}", summary(&d));
+    let set = d.conflicts.clone().unwrap_or_default();
+    let user: Vec<u32> = sk.user_constraints().iter().map(|c| c.id).collect();
+    assert_eq!(set.len(), 2, "{set:?}");
+    assert!(set.iter().all(|c| user.contains(c)), "an intrinsic was named: {set:?}");
+    for c in &sk.constraints {
+        assert!(!c.intrinsic || !set.contains(&c.id));
+    }
+}
