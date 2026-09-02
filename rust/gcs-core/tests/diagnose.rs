@@ -688,3 +688,46 @@ fn the_components_line_is_bounded() {
     assert!(s.contains("… and 786 more"), "{s}");
     assert!(s.len() < 400, "{} chars: {s}", s.len());
 }
+
+/// #45.5 — a closure theorem among pure relations is `implied` whether or not the matching saw
+/// it.  A determined square with a stated side (the shipped `square.sv` plus `horizontal`) is
+/// `Well`, its one dimension named nowhere; the longhand rectangle with two lengths and a fifth
+/// right angle is the same figure and the same answer.  Before, the numeric refinement ran only
+/// where numeric rank fell below structural, and at DOF 0 the structural over-block — every row
+/// touching the cluster — stood as `over`, the side length first.
+#[test]
+fn a_relation_only_closure_is_implied_at_dof_zero_too() {
+    let read = |src: &str| {
+        let (prog, errs) = gcs_core::syntax::parse(src);
+        assert!(errs.is_empty(), "{errs:?}");
+        let e = gcs_core::program::elaborate(&prog);
+        assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+        let mut sk = e.sketch;
+        assert!(solve(&mut sk, SolveOpts::default()).success);
+        let d = diagnose(&mut sk, DiagnoseOptions::default());
+        let dims: Vec<u32> =
+            sk.user_constraints().iter().filter(|c| c.kind.has_dimension()).map(|c| c.id).collect();
+        (d, dims)
+    };
+    let (d, dims) = read(
+        "cycle 4 {\n line s -> perpendicular equal\n}\ns[0].p1 distance(50) s[0].p2\nground s[0].p1\nhorizontal s[0]\n",
+    );
+    assert_eq!((d.dof, d.status), (0, State::Well), "{}", summary(&d));
+    assert!(d.over.is_empty(), "over: {:?}", d.over);
+    assert!(!d.implied.is_empty() && dims.iter().all(|c| !d.implied.contains(c)), "{:?}", d.implied);
+    let (d, dims) = read(
+        "point p hint(x: 0, y: 0)\npoint q hint(x: 40, y: 0)\npoint r hint(x: 40, y: 40)\npoint s hint(x: 0, y: 40)\n\
+         line a(p, q)\nline b(q, r)\nline c(r, s)\nline d(s, p)\nhorizontal a\na perpendicular b\n\
+         b perpendicular c\nc perpendicular d\nd perpendicular a\np distance(40) q\nq distance(40) r\nground p\n",
+    );
+    assert_eq!((d.dof, d.status), (0, State::Well), "{}", summary(&d));
+    assert!(d.over.is_empty(), "over: {:?}", d.over);
+    assert_eq!(dims.len(), 2);
+    assert!(dims.iter().all(|c| !d.implied.contains(c)), "{:?}", d.implied);
+    // and a redundancy a dimension takes part in is still `over`, at DOF 0 as anywhere
+    let (d, dims) = read(
+        "point a hint(x: 0, y: 0)\npoint b hint(x: 40, y: 0)\na horizontal b\na distance(40) b\na distance(40) b\nground a\n",
+    );
+    assert_eq!(d.status, State::Over, "{}", summary(&d));
+    assert!(dims.iter().all(|c| d.over.contains(c)), "over: {:?}", d.over);
+}

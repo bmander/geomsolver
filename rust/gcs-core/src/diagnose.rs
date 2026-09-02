@@ -86,7 +86,9 @@ pub struct Diagnosis {
     /// term of art is a *shaky* framework — infinitesimally flexible, rigid.
     pub shaky: usize,
     /// "Remove one of these."  Where the numeric cross-check saw the dependency, the constraints
-    /// wholly implied by one that involves a dimension; otherwise the structural over-block.
+    /// wholly implied by one that involves a dimension.  The structural over-block stands in
+    /// only where no numeric rank was computed: at DOF 0 that block is every row touching the
+    /// cluster, and would name a determined figure's one dimension for a closure theorem.
     pub over: Vec<u32>,
     /// Constraints wholly implied by a dependency among pure relations — a theorem (the altitudes
     /// concur) rather than a surplus.  Consistent on every solution, nothing to fix; each could be
@@ -318,6 +320,9 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
             over.push(c);
         }
     }
+    // the matching's reading, kept: it is where a redundancy *must* live, so the conflict
+    // search below seeds its candidates from it whatever W says about who is removable
+    let structural_over = over.clone();
     let structural_under: Vec<u32> = dm.under_cols.iter().map(|&j| free_params[j]).collect();
     let mut under_params = structural_under.clone();
 
@@ -417,9 +422,14 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         if numeric_rank.is_some() {
             under_params = movable.iter().map(|&j| free_params[j]).collect();
         }
-        if numeric_rank.is_some_and(|r| r < dm.rank) {
+        if numeric_rank.is_some_and(|r| r < adj.len()) {
             // ...and name the constraints worth removing, or the report would say
-            // "over-constrained" with nothing to point at.  One extra SVD, only on this path.
+            // "over-constrained" with nothing to point at.  One extra SVD, only where something
+            // is redundant at all — whether the matching saw it or only the Jacobian does.  Run
+            // only on the second case, a determined square with a stated side had every one of
+            // its ten constraints `over`, the side length first: the matching's over-block at
+            // DOF 0 is every row touching the cluster, where W's reading is the relation-only
+            // closure it always was, which is `implied` and nothing to fix (#45.5).
             let j = cond.unwrap_or_else(|| {
                 let z = sys.z0(sk);
                 sys.conditioned(&z)
@@ -466,12 +476,14 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
                     over.push(c);
                 }
             }
-            warnings.push(format!(
-                "structural rank {} but numeric rank {}: a dependency the graph cannot see \
-                 (theorem-induced or degenerate configuration) — Stage 4",
-                dm.rank,
-                numeric_rank.unwrap()
-            ));
+            if numeric_rank.is_some_and(|r| r < dm.rank) {
+                warnings.push(format!(
+                    "structural rank {} but numeric rank {}: a dependency the graph cannot see \
+                     (theorem-induced or degenerate configuration) — Stage 4",
+                    dm.rank,
+                    numeric_rank.unwrap()
+                ));
+            }
         }
     }
 
@@ -593,8 +605,8 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         // pair — the real conflict is then in the constraints held fixed, so no candidate can be
         // satisfied and the first one tried wins.  Everything else stays fixed, so the result is
         // minimal "among the suspects", and the filter costs |candidates| solves, not |all|.
-        let mut cands = over.clone();
-        for &c in &violated {
+        let mut cands = structural_over;
+        for &c in over.iter().chain(&violated) {
             if !cands.contains(&c) {
                 cands.push(c);
             }
@@ -604,6 +616,22 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         // consistent, and merely unsolved
         stalled = set.is_empty() && unsettled;
         conflict_set = Some(set);
+    }
+    // a dependency whose rows do not hold is no theorem: two tangencies of one pair that
+    // cannot both be true are dependent in W and carry no dimension, so W's reading files them
+    // as `implied` — "consistent, nothing to fix" — beside the conflict that names them.  What
+    // is violated, or found in the conflict set, is a surplus and is said so.
+    let contested = |c: &u32| {
+        violated.contains(c) || conflict_set.as_ref().is_some_and(|s| s.contains(c))
+    };
+    if implied.iter().any(contested) {
+        let (moved, kept): (Vec<u32>, Vec<u32>) = implied.iter().copied().partition(|c| contested(c));
+        implied = kept;
+        for c in moved {
+            if over_set.insert(c) {
+                over.push(c);
+            }
+        }
     }
 
     // -- pebble game on the point-distance graph --
