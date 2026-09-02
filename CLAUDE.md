@@ -460,8 +460,10 @@ Conventions:
   clause is the header's, not the statement's).  Top level only — inside a body the clause
   says it per declaration.  **An instance joins a view whole** (`t: Tooth(…) in top`, or an
   instance inside the block): that stamping is the *flattener's* (`Scope::in_plane`, carried
-  down the expansion and applied in `stamp_scope_plane` — the ref as written, resolved by the
-  emitted statement's own `rewrite` through the prefix chain), skipping datum and curve kinds,
+  down the expansion and applied in `stamp_scope_plane` — the ref as written *with the prefixes
+  of the scope it was written in*, which is what `rewrite` resolves it against: resolved through
+  the emitted statement's own chain, a body declaration called `top` took the caller's view,
+  #45.4), skipping datum and curve kinds,
   refusing a plane given twice, and reaching an aliased argument point through any body
   declaration that names it.  `add_rectangle` takes the plane, which is how the rect tool
   joins the current view.

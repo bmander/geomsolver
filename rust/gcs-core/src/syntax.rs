@@ -779,6 +779,12 @@ impl Membership {
     pub fn editable(&self) -> bool {
         self.from == Source::Written
     }
+
+    /// Who gave the statement its plane — the flattener asks, since a plane an *instance* gave
+    /// was written in the caller's scope and resolves there, not in the component's.
+    pub fn source(&self) -> Source {
+        self.from
+    }
 }
 
 /// An `in PLANE { … }` block's own text (§6.7): the header (`in PLANE {`) and the closing

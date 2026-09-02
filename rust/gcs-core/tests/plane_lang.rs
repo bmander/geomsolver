@@ -573,3 +573,31 @@ fn a_line_across_two_views_does_not_jam_the_source() {
     assert_eq!(again.kind, Kind::None, "the source keeps up: {:?}", again.refused);
     assert_eq!(again.refused, None);
 }
+
+/// #45.4 — an instance's `in PLANE` is written at the instance, in the caller's scope, and
+/// resolves there: a declaration inside the component that happens to bear the plane's name
+/// does not take it — and neither does one in a component nested below, where the clause
+/// was carried down from the outermost instance.
+#[test]
+fn an_instance_in_plane_resolves_in_the_callers_scope() {
+    let e = read(&format!(
+        "{VIEWS}\ncomponent Dot(o: point) {{\n point top hint(x: 5, y: 5)\n o distance(5) top\n \
+         o horizontal top\n}}\nk: Dot(o2) in top\n"
+    ));
+    let top = e.map.ent_named("top").unwrap().i();
+    assert_eq!(e.sketch.plane_of(e.map.ent_named("k.top").unwrap().i()), Some(top));
+    let e = read(&format!(
+        "{VIEWS}\ncomponent Dot(o: point) {{\n point top hint(x: 5, y: 5)\n o distance(5) top\n}}\n\
+         component Pair(o: point) {{\n point top hint(x: 9, y: 9)\n d: Dot(o)\n}}\n\
+         k: Pair(o2) in top\n"
+    ));
+    let top = e.map.ent_named("top").unwrap().i();
+    assert_eq!(e.sketch.plane_of(e.map.ent_named("k.top").unwrap().i()), Some(top));
+    assert_eq!(e.sketch.plane_of(e.map.ent_named("k.d.top").unwrap().i()), Some(top));
+    // a plane the caller cannot see is still nothing, named as written
+    refused(
+        &format!("{VIEWS}\ncomponent Dot(o: point) {{\n point p hint(x: 5, y: 5)\n}}\nk: Dot(o2) in nowhere\n"),
+        "E101",
+        "`nowhere`",
+    );
+}

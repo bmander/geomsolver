@@ -73,10 +73,17 @@ struct Scope {
     /// are resolved in a later pass where the walk's own environment is gone, so it travels here.
     vals: BTreeMap<String, Aff>,
     /// The view an enclosing instance is drawn `in` (§6.7): every point-bearing declaration
-    /// emitted under it joins the plane.  The ref as *written* at the instance — the emitted
-    /// statement's own `rewrite` resolves it, reaching the caller's names through the prefix
-    /// chain this scope already carries.
-    in_plane: Option<Ref>,
+    /// emitted under it joins the plane.  The ref as *written* at the instance, with the
+    /// prefixes of the scope it was written in — `rewrite` resolves it there and not in the
+    /// component's own chain, where a body declaration called `top` would take it (#45.4).
+    in_plane: Option<InPlane>,
+}
+
+/// An instance's `in PLANE`, and where it was written — see `Scope::in_plane`.
+#[derive(Clone)]
+struct InPlane {
+    plane: Ref,
+    prefixes: Vec<String>,
 }
 
 pub struct Expansion {
@@ -162,7 +169,7 @@ impl<'a> Walk<'a> {
         if !d.kind.bears_points() {
             return;   // a datum's points are the datum's, and a curve is its expressions
         }
-        if !d.membership.join(p, crate::syntax::Source::Instance) {
+        if !d.membership.join(&p.plane, crate::syntax::Source::Instance) {
             self.err(d.membership.span(), d.membership.cause().to_string());
         }
     }
@@ -359,7 +366,10 @@ impl<'a> Walk<'a> {
                             self.err(p.span, inst.membership.cause().to_string());
                             scope.in_plane.clone()
                         }
-                        (Some(p), None) => Some(p.clone()),
+                        // written here, in this scope: it resolves against these prefixes
+                        (Some(p), None) => {
+                            Some(InPlane { plane: p.clone(), prefixes: scope.prefixes.clone() })
+                        }
                         (None, q) => q.clone(),
                     };
                     let mut sc = Scope {
@@ -1131,8 +1141,25 @@ fn rewrite(
                     }
                 }
             }
+            // a plane an instance gave the statement was written at the instance, in the
+            // caller's scope, and is resolved there — the component's own names are not in
+            // the caller's sight, so they may not take it (#45.4)
+            let from_instance = d.membership.source() == crate::syntax::Source::Instance;
             if let Some(r) = d.membership.plane_mut() {
-                fix(r, bad);
+                match (&sc.in_plane, from_instance) {
+                    (Some(ip), true) => {
+                        let outer = Scope { prefixes: ip.prefixes.clone(), ..sc.clone() };
+                        match lookup(r, &outer, names, alias, units) {
+                            Some((abs, rest)) => {
+                                r.root = Name { text: abs, span: r.root.span };
+                                r.path =
+                                    rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
+                            }
+                            None => bad.push((r.span, format!("no such entity: `{}`", written(r)))),
+                        }
+                    }
+                    _ => fix(r, bad),
+                }
             }
             if let Some(r) = d.attitude.plane_ref_mut() {
                 fix(r, bad);
