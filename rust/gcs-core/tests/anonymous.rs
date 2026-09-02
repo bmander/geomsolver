@@ -391,10 +391,11 @@ fn a_trace_block_diagnostic_never_says_the_hidden_key() {
     let src = "\
 point o hint(x: 0, y: 0)
 circle c(center: o) hint(r: 10)
-curve fam(c: circle)(u) = trace p where {
+component fam(c: circle, u: Angle) {
   point p hint(x: 1, y: 0)
   line
 }
+curve w = fam(c).p over u in (0, 1)
 ";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");

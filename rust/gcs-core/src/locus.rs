@@ -101,6 +101,12 @@ pub struct Locus {
 }
 
 impl Locus {
+    /// How many inner unknowns the block has — the width of an anchor pose.  Read through the
+    /// one decoder of the encoding, so a malformed flat is 0 and never a garbage width.
+    pub fn n_q(&self) -> usize {
+        view(&self.flat).map_or(0, |v| v.n_q)
+    }
+
     /// Validate and encode.  An `Err` is a diagnostic for the family, not a panic.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -112,7 +118,6 @@ impl Locus {
         seeds: Vec<Tape>,
         rows: Vec<Row>,
         preds: Vec<Pred>,
-        home: Option<Tape>,
     ) -> Result<Locus, String> {
         if n_q == 0 || n_q > MAX_Q {
             return Err(format!("a trace block declares between 1 and {MAX_Q} unknowns"));
@@ -152,7 +157,6 @@ impl Locus {
             rows.len() as f64,
             traced as f64,
             preds.len() as f64,
-            home.is_some() as u8 as f64,
         ];
         for t in &w {
             f.push(t.flat.len() as f64);
@@ -172,10 +176,6 @@ impl Locus {
         for p in &preds {
             f.push(if p.ccw { 1.0 } else { 0.0 });
             f.extend(p.cols.iter().map(|&c| c as f64));
-        }
-        if let Some(t) = &home {
-            f.push(t.flat.len() as f64);
-            f.extend_from_slice(&t.flat);
         }
         Ok(Locus { flat: f })
     }
@@ -287,9 +287,10 @@ struct View<'a> {
     rows: Vec<(usize, &'a [f64], &'a [f64])>,
     seeds: Vec<&'a [f64]>,
     preds: Vec<(bool, [usize; 6])>,
-    home: Option<&'a [f64]>,
 }
 
+/// Decode the flat form.  Trailing numbers past the encoding are ignored: a contact's constants
+/// carry the anchor pose after the flat (`kernel_eval`), and the flat says where it ends.
 fn view(flat: &[f64]) -> Option<View<'_>> {
     let g = |i: usize| flat.get(i).copied().filter(|v| v.is_finite() && *v >= 0.0);
     let n_outer = g(0)? as usize;
@@ -299,7 +300,6 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
     let n_rows = g(4)? as usize;
     let traced = g(5)? as usize;
     let n_preds = g(6)? as usize;
-    let has_home = g(7)? as usize;
     if n_outer == 0
         || n_outer > tape::MAX_VARS
         || 1 + n_theta > n_outer
@@ -308,12 +308,11 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
         || n_w > MAX_W
         || n_rows > MAX_ROWS
         || n_preds > MAX_PREDS
-        || has_home > 1
         || traced + 2 > n_q
     {
         return None;
     }
-    let mut at = 8usize;
+    let mut at = 7usize;
     // a length is bounded by the whole encoding before it indexes anything, so a corrupt one
     // is a `None` and never an overflow
     let take = |at: &mut usize, len: usize| -> Option<&[f64]> {
@@ -369,14 +368,16 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
         }
         preds.push((ccw, cols));
     }
-    let home = if has_home == 1 {
-        let len = g(at)? as usize;
-        at += 1;
-        Some(take(&mut at, len)?)
-    } else {
-        None
-    };
-    Some(View { n_outer, n_theta, n_q, traced, w, rows, seeds, preds, home })
+    Some(View { n_outer, n_theta, n_q, traced, w, rows, seeds, preds })
+}
+
+/// Where an evaluation is anchored: the parameter value the block's predicates are read at,
+/// and — for a curve of a drawn instance — the pose on the sheet the anchor solve starts from.
+/// `None` for the pose leaves the seeds to start it.
+#[derive(Clone, Copy, Debug)]
+pub struct Anchor<'a> {
+    pub u: f64,
+    pub pose: Option<&'a [f64]>,
 }
 
 /// Below this relative residual the block is solved outright.
@@ -613,8 +614,8 @@ fn march(v: &View, s: &mut Scratch, outer: &[f64], from: f64, to: f64, keep_goin
 ///
 /// This is the cold form, which starts from the home however often it is called.  A caller that
 /// names a contact (`eval_at`) gets the same walk with a branch it already holds carried into it.
-pub fn eval_flat(flat: &[f64], outer: &[f64], u_start: f64, s: &mut Scratch) -> Val {
-    eval_at(flat, outer, u_start, None, s)
+pub fn eval_flat(flat: &[f64], outer: &[f64], anchor: Anchor, s: &mut Scratch) -> Val {
+    eval_at(flat, outer, anchor, None, s)
 }
 
 /// `key` is where this contact's constants live: it both *resumes* from the pose remembered
@@ -631,7 +632,7 @@ pub fn eval_flat(flat: &[f64], outer: &[f64], u_start: f64, s: &mut Scratch) -> 
 fn eval_at(
     flat: &[f64],
     outer: &[f64],
-    u_start: f64,
+    anchor: Anchor,
     key: Option<(usize, usize)>,
     s: &mut Scratch,
 ) -> Val {
@@ -660,10 +661,9 @@ fn eval_at(
             return keep(&v, s, key, outer, val);
         }
     }
-    let u_home = home_of(&v, s, outer, u_start);
-    let mut ok = cold_start(&v, s, outer, u_home);
-    if ok && u != u_home {
-        ok = march(&v, s, outer, u_home, u, false);
+    let mut ok = cold_start(&v, s, outer, anchor);
+    if ok && u != anchor.u {
+        ok = march(&v, s, outer, anchor.u, u, false);
     }
     let val = finish(&v, s, ok);
     keep(&v, s, key, outer, val)
@@ -713,37 +713,37 @@ fn continues(v: &View, s: &Scratch, prev: &Seen) -> bool {
     corrected <= PREDICTED * dx.hypot(dy) + TOL_OK * scale
 }
 
-/// Where evaluation is anchored: the family's `from` expression, read with the parameter as 0,
-/// or the given start (the instance's domain) when it declares none.
-fn home_of(v: &View, s: &mut Scratch, outer: &[f64], u_start: f64) -> f64 {
-    match v.home {
-        Some(t) => {
-            let mut x = [0.0f64; tape::MAX_VARS];
-            x[..v.n_outer].copy_from_slice(&outer[..v.n_outer]);
-            x[0] = 0.0;
-            let h = tape::eval_flat(t, v.n_outer, &x[..v.n_outer], &mut s.ts).v;
-            if h.is_finite() {
-                h
-            } else {
-                u_start
-            }
-        }
-        None => u_start,
+/// The solve everything else is carried from: the **pose** a drawn instance stands at when
+/// there is one, else the seeds (or restarts) at the home, then the predicates.  A pose is the
+/// strongest start there is — the sheet already holds the assembly the predicates name, at the
+/// very parameter the home is — so it goes first and the seeds are the fallback.  The restarts
+/// are drawn from a *fixed* seed, so every evaluation tries the same starts and the answer cannot
+/// depend on history — and each violated predicate reflects its point across the oriented line
+/// and solves again, which is the move between the two components with Newton finishing it.
+fn cold_start(v: &View, s: &mut Scratch, outer: &[f64], anchor: Anchor) -> bool {
+    refresh(v, s, anchor.u, outer);
+    let mut ok = false;
+    if let Some(p) = anchor.pose.filter(|p| p.len() == v.n_q) {
+        s.xv[v.n_outer..v.n_outer + v.n_q].copy_from_slice(p);
+        ok = newton(v, s);
     }
-}
-
-/// The solve everything else is carried from: seeds (or restarts) at the home, then the
-/// predicates.  The restarts are drawn from a *fixed* seed, so every evaluation tries the same
-/// starts and the answer cannot depend on history — and each violated predicate reflects its
-/// point across the oriented line and solves again, which is the move between the two components
-/// with Newton finishing it.
-fn cold_start(v: &View, s: &mut Scratch, outer: &[f64], u_home: f64) -> bool {
-    refresh(v, s, u_home, outer);
-    seed(v, s);
-    let mut ok = newton(v, s);
+    if !ok {
+        seed(v, s);
+        ok = newton(v, s);
+    }
     if !ok {
         let mut rng = crate::rng::Rng::new(0x7ace);
-        let scale = outer[..v.n_outer].iter().fold(1.0f64, |m, &x| m.max(x.abs()));
+        // the geometry's scale — the entity formals' coordinates and where the seeds put the
+        // block's own points, and nothing else.  Not the parameter, which is the value asked
+        // for (a restart that read it made the anchor solve a lottery in `u`), and not the
+        // values, which may be angles: a tooth's `phase` of 129° scattered the restarts across
+        // eight times the base circle's radius, and the string never found the circle again.
+        // The seeds count so that a component written over a point at the origin is not
+        // restarted within a unit of it whatever size its linkage is
+        let scale = outer[1..1 + v.n_theta]
+            .iter()
+            .chain(&s.xv[v.n_outer..v.n_outer + v.n_q])
+            .fold(1.0f64, |m, &x| m.max(x.abs()));
         for _ in 0..RESTARTS {
             seed(v, s);
             for i in 0..v.n_q {
@@ -838,27 +838,50 @@ fn finish(v: &View, s: &mut Scratch, ok: bool) -> Val {
 
 /// The curve as a polyline: one march across `[u0, u1]`, each sample warm-started from the last.
 /// What `Sketch::curve_polyline` draws and the pick test measures for a trace family.
-pub fn sweep(flat: &[f64], outer: &[f64], u0: f64, u1: f64, n: usize, s: &mut Scratch)
-    -> Vec<(f64, f64)>
-{
+///
+/// The samples are walked **outward from the anchor** — down to `u0`, then, from the anchor's
+/// pose again, up to `u1` — so every solve is a sample and the branch is still carried by one
+/// continuation from the pose.  Marching from the anchor to `u0` first and then sampling paid
+/// for the stretch between them twice, on every repaint of a curve of a drawn instance, whose
+/// anchor is wherever the crank stands.  An anchor outside the interval is marched to the
+/// nearer end, once, and the samples walked across from there.
+pub fn sweep(
+    flat: &[f64],
+    outer: &[f64],
+    u0: f64,
+    u1: f64,
+    n: usize,
+    anchor: Anchor,
+    s: &mut Scratch,
+) -> Vec<(f64, f64)> {
     let Some(v) = prepare(flat, outer, s) else { return Vec::new() };
     if n == 0 {
         return Vec::new();
     }
     let q0 = v.n_outer;
-    let mut out = Vec::with_capacity(n + 1);
-    // anchor at the home, walk to the near end, then sample — one continuation throughout, so
-    // the branch the home picks is the branch the whole polyline is on
-    let u_home = home_of(&v, s, outer, u0);
-    let _ = cold_start(&v, s, outer, u_home);
-    if u_home != u0 {
-        let _ = march(&v, s, outer, u_home, u0, true);
-    }
-    for k in 0..=n {
-        let u = u0 + (u1 - u0) * k as f64 / n as f64;
+    let at = |k: usize| u0 + (u1 - u0) * k as f64 / n as f64;
+    let sample = |s: &mut Scratch, u: f64| {
         refresh(&v, s, u, outer);
         let _ = newton(&v, s);
-        out.push((s.xv[q0 + v.traced], s.xv[q0 + v.traced + 1]));
+        (s.xv[q0 + v.traced], s.xv[q0 + v.traced + 1])
+    };
+    let _ = cold_start(&v, s, outer, anchor);
+    let mut out = vec![(0.0, 0.0); n + 1];
+    // the samples on the anchor's near side of u0 (none when the anchor is past u1, all when
+    // it is past u0), walked toward u0; the rest walked toward u1 from the anchor's pose again
+    let toward_u0 = (0..=n).filter(|&k| (at(k) - anchor.u) * (u1 - u0) <= 0.0).count();
+    if toward_u0 == 0 {
+        let _ = march(&v, s, outer, anchor.u, u1, true);
+    } else if toward_u0 == n + 1 {
+        let _ = march(&v, s, outer, anchor.u, u0, true);
+    }
+    let pose: Vec<f64> = s.xv[q0..q0 + v.n_q].to_vec();
+    for k in (0..toward_u0).rev() {
+        out[k] = sample(s, at(k));
+    }
+    s.xv[q0..q0 + v.n_q].copy_from_slice(&pose);
+    for k in toward_u0..=n {
+        out[k] = sample(s, at(k));
     }
     out
 }
@@ -875,7 +898,9 @@ pub fn sweep(flat: &[f64], outer: &[f64], u0: f64, u1: f64, n: usize, s: &mut Sc
 /// the Jacobian asks for the *first* and never once hits — the halving it was written for only
 /// ever happened for a block of one.
 pub fn kernel_eval(consts: &[f64], v: &[f64], n_par: usize) -> Val {
-    // the contact's constants: [u_start, n_values, values…, locus flat…]
+    // the contact's constants: [anchor u, n_values, values…, has_pose, locus flat…, pose…] —
+    // the pose is the drawn instance's, `n_q` wide (the flat says how wide) and meaningful
+    // when `has_pose` says so, reserved either way so the block's constants are one width
     let Some(&u_start) = consts.first() else { return Val::default() };
     let Some(&nv) = consts.get(1) else { return Val::default() };
     if !(nv >= 0.0 && nv <= tape::MAX_VARS as f64) {
@@ -883,7 +908,13 @@ pub fn kernel_eval(consts: &[f64], v: &[f64], n_par: usize) -> Val {
     }
     let nv = nv as usize;
     let Some(values) = consts.get(2..2 + nv) else { return Val::default() };
-    let Some(flat) = consts.get(2 + nv..) else { return Val::default() };
+    let Some(&has_pose) = consts.get(2 + nv) else { return Val::default() };
+    let Some(flat) = consts.get(3 + nv..) else { return Val::default() };
+    let Some(n_q) = view(flat).map(|w| w.n_q) else { return Val::default() };
+    if flat.len() < n_q {
+        return Val::default();
+    }
+    let pose = (has_pose == 1.0).then(|| &flat[flat.len() - n_q..]);
     // the outer vector: the parameter column, the θ columns, then the given numbers
     let theta = n_par.saturating_sub(3);
     if v.len() < 3 + theta {
@@ -911,7 +942,7 @@ pub fn kernel_eval(consts: &[f64], v: &[f64], n_par: usize) -> Val {
                 return seen.val;
             }
         }
-        eval_at(flat, outer, u_start, Some(key), s)
+        eval_at(flat, outer, Anchor { u: u_start, pose }, Some(key), s)
     })
 }
 

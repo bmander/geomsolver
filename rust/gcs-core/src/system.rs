@@ -179,7 +179,7 @@ fn kernel_table(sk: &Sketch) -> Vec<Kernel> {
                 kernels::curve_kernel(n_theta, 3 + x.flat.len() + y.flat.len() + d.values.len())
             }
             crate::model::CurveBody::Trace(l) => {
-                kernels::trace_kernel(n_theta, 2 + d.values.len() + l.flat.len())
+                kernels::trace_kernel(n_theta, 3 + d.values.len() + l.flat.len() + l.n_q())
             }
         });
     }

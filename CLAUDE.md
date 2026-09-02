@@ -119,9 +119,10 @@ Conventions:
   Two exceptions, and both are the rule rather than against it.  A **pin** stays in the argument
   list — `point_on_spline(p, s, t == 0.4)` — because `hint` marks what a solve revises and a pin
   is precisely what it does not; it is a stated number, beside every other stated number.  And
-  **`hint at REF` keeps its own form** inside a trace block (§6.5.1), where a seed is a *place*
-  and not a pair of numbers: `point b hint at orbit bearing (u + f.angle)`.  Both lower to the
-  same tapes the coordinate spelling would, which is why they share the word.
+  **`hint at REF` keeps its own form** inside a component that is only ever traced (§6.5),
+  where a seed is a *place* and not a pair of numbers: `point b hint at orbit bearing (u +
+  f.angle)`.  Both lower to the same tapes the coordinate spelling would, which is why they
+  share the word.
   **What `hint` marks is that a solve revises the number, not that the number is seed-class** —
   the two are different sets, and that is why a **callout placement keeps its bare `at`**.  A
   placement is every bit as inert (delete it and the drawing is the same), but nothing in the
@@ -413,13 +414,12 @@ Conventions:
   quaternion — a 3D workplane changes the component count, not the construct.  `.angle` is
   **derived, never stored**: `Tape::compile`'s one exception to the misspelling rule turns
   `f.angle` into `atan2(f.s, f.c)` (degrees) wherever the table holds the rotor — which is what
-  lets a trace seed say `bearing (u + f.angle)` and follow a tilted datum (issue #10;
-  `peaucellier.sv` states its one seed this way, and `tests/frame.rs` holds the mirror-elbow
-  document that page-fixed seeds quietly get wrong).  A frame is also the shortest
-  formal list a family can be written over — it *is* an origin, a second point and a bearing, so
-  passing those beside it states one datum three times: `cell` went from 20 variable-table
-  columns to 12 by taking `(orbit, f)` where it had taken `(o, q, datum, orbit, f)`, which is
-  what kept it under `tape::MAX_VARS`.  Raising that constant is the wrong reflex — `get`/`map`/
+  lets a traced seed say `bearing (u + f.angle)` and follow a tilted datum (issue #10;
+  `tests/frame.rs` holds the mirror-elbow document that page-fixed seeds quietly get wrong).
+  A frame is also the shortest formal list a traced component can be written over — it *is*
+  an origin, a second point and a bearing, so passing those beside it states one datum three
+  times: the Peaucellier cell went from 20 variable-table columns to 12 by taking `(orbit, f)`
+  where it had taken `(o, q, datum, orbit, f)`, which is what kept it under `tape::MAX_VARS`.  Raising that constant is the wrong reflex — `get`/`map`/
   `zip` zero a `[f64; MAX_VARS]` per operand, so its width is a cost every tape pays whatever it
   reads, and 16 → 24 measured +7–14% on tapes as narrow as four variables.  A frame is in `primitives()`
   (it round-trips, grafts, diagnoses), but it draws nothing and its pick distance is infinite —
@@ -1075,76 +1075,127 @@ Conventions:
   every cluster a neighbour of every other.  `relation_bound` must stay an upper bound on the
   merge rank (an under-count loses a determined merge to the numeric fallback): validate a change
   by forcing the factorisation on every call and asserting `rank <= bound` across the cases.
-- A **curve family is written in the document**, not in the core.  `curve involute(c: circle,
-  phase: Angle)(u) = ( xexpr, yexpr )` is a `CurveDef`: two `expr.rs` expressions over the
-  geometry the curve is drawn from, compiled to a `tape.rs` tape and differentiated forward in
-  `u` *and* in every coordinate they read.  `∂C/∂u` is which way a contact may slide; `∂C/∂θ` is
-  how the curve moves when its geometry does, and without it a point solves once and falls off
-  the moment the circle is dragged.  An involute, a cycloid and a spiral are then library code,
-  not three entity kinds.
-  The variable table is the parameter, then every scalar the arguments contribute **in
-  `entity_params` order** (`EntKind::scalar_names`), then the numbers the instance was given —
+- **A curve is a point of a component, as one of its numeric formals runs** (Solvent §6.5).
+  There is no curve family: `curve path = leg.toe over theta in (0, 360)` asks a *drawn*
+  instance where one of its points goes as one of its formals runs, and
+  `curve e = Involute(base, phase: a0).p over u in (u0, u1)` asks the same of an instance
+  written in place and never drawn.  `syntax::CurveSpec` is the statement (`CurveTarget`
+  `Drawn`/`Anon`, the swept formal, the interval); the flattener records every instance it
+  binds (`flatten::InstanceInfo` — prefix, component, the actuals resolved to absolute names,
+  the numbers) and resolves a drawn target onto the instance owning the longest prefix, so
+  `build_curve` never re-derives which instance a point belongs to.  A component's point is
+  placed one of two ways, and `program::compile_curve` picks the body from that: a **computed**
+  point, `port p = (xexpr, yexpr)` (`Port::computed`), compiles to two `tape.rs` tapes — the
+  formula an involute has — and a component with one is refused on the sheet, since nothing
+  there holds a point to a formula; any other point is a **locus**, lowered by `compile_trace`
+  from the body's statements.  Either way the tapes are differentiated forward in the swept
+  formal *and* in every coordinate they read: `∂C/∂u` is which way a contact may slide, `∂C/∂θ`
+  is how the curve moves when its geometry does, and without it a point solves once and falls
+  off the moment the circle is dragged.
+  **The body is expanded by the real flattener, symbolically** (`flatten::expand_component`,
+  `Sym`): the entity formals are names the body may reach, and every numeric formal is bound
+  as a *free value named after itself* — the same `Aff` an unbound formal becomes on the sheet
+  — so the ordinary machinery carries it: `substitute` writes a free value back out by name (or
+  as `(m * name + c)` for a `param` affine in it), `settle` keeps a dimension that comes to no
+  number, and the mode adds one policy, `Walk::keep_text`: a text nothing can work out at all
+  (a `param` or an argument over `sin(u)`) is kept as text and written in where it is read
+  (`Sym::texts`, keyed by absolute name and looked up through the scope's prefixes like any
+  name), where the sheet would report it.  A nested instance, a `repeat` and a port alias are
+  the flattener's as they are on the sheet — and a nested instance's *own* unbound formal is
+  its own unknown there too (`#c12.i.u`), no column of the curve, and reported rather than
+  captured by an outer formal of the same name (`tests/curve_of.rs`).  One expansion per
+  `(component, point, formal)` — `CurveDef::key` — and every instance asked for the same
+  shares the definition.  Which instance a drawn point belongs to is `Walk::owner_of`: the
+  innermost drawn instance owning the name's prefix *whose component has the swept formal*,
+  handed to the elaborator as `CurveSpec::of` rather than re-derived there.
+  The variable table is the swept formal, then every scalar the entity formals contribute
+  **in `entity_params` order** (`EntKind::scalar_names`), then the other numeric formals —
   which is also `params_on`'s column order, so a tape's gradient *is* a row of the Jacobian.
   `EntKind::Curve` is the one kind whose children need not be points, and the one that must be
   built and grafted **last**, since its arguments may be of any other kind.
-  A curve's kernel belongs to its **definition**, not its type: two families read different
+  A curve's kernel belongs to its **definition**, not its type: two definitions read different
   numbers of coordinates and cannot share a fixed-width block.  So `CKind::kernel()` panics for
   `PointOnCurve`, `kernel_id_in(sk)` returns `N_KERNELS + def`, `System` owns a table of the
-  static kernels plus one per family, and the registry publishes `kernel: -1` — which the
+  static kernels plus one per definition, and the registry publishes `kernel: -1` — which the
   bindings' exhaustive tests key on rather than on a name.  The tapes ride in the constraint's
   `consts`, so no kernel signature learns about curves and `KERNELS` stays `'static`.
-- A family's body may be a **locus** instead of a formula: `curve name(…)(u) = trace p where
-  { … }` (spec §6.5.1, `locus.rs`) — the curve is wherever the block's constraints put `p`,
-  which is how a person states an involute ("the end of a taut string as it unwinds") without
-  ever deriving it.  The block is lowered once, at family compile time
-  (`program::compile_trace`), through a scratch sketch and `Constraint::params_on` — the real
-  column mapping, never a second copy — into rows of the static kernels over one variable table
-  `[u, θ, values, q, w]`: `q` the block's own coordinates, `w` a dimension written over `u` and
-  the geometry, computed by a tape and read by the dimension's **free twin** kernel with
+  **An unbound numeric formal is an unknown of the drawing.**  `leg: Leg(axle, pivot)` with
+  `theta` not given binds it to a *free* `Aff` named under the instance — `leg.theta`, so two
+  legs have two cranks — and every reader carries it: `value_aff` passes a free value the scope
+  bound (refusing, as it always did, a name nothing binds), so a `param` over it is affine in
+  it, an argument handing it to a nested instance binds that formal to the same unknown, and
+  `substitute` writes the name into every dimension that reads it, where the language already
+  makes a name nothing defines a free variable (`expr::Free`).  A drawn mechanism is therefore
+  drawn once with its crank free, and the curve's anchor follows the unknown: `CurveE::home`
+  is `Home::Free(name)` and `Sketch::curve_home` reads it, since the unknown is allocated after
+  the curve is built and moves with every solve.
+- A **locus** (`locus.rs`) is what a traced point is: the curve is wherever the body's
+  constraints put `p`, which is how a person states an involute ("the end of a taut string as
+  it unwinds") without ever deriving it.  The body is lowered once, when the curve is first
+  built (`program::compile_trace`), through a scratch sketch and `Constraint::params_on` — the
+  real column mapping, never a second copy — into rows of the static kernels over one variable
+  table `[u, θ, values, q, w]`: `q` the body's own coordinates, `w` a dimension written over `u`
+  and the geometry, computed by a tape and read by the dimension's **free twin** kernel with
   `(m, c)` the unit conversion, so no new derivative code exists anywhere.  Evaluating `C(u)`
   is a small damped Newton solve of the rows and its derivatives are the implicit function
   theorem at the solution — `∂C/∂u` and `∂C/∂θ` from one factorisation of the inner Jacobian —
   which is what keeps a contact on the curve when the geometry it is written over is dragged.
-  The whole compiled block encodes to flat `f64` and rides in the contact's consts exactly as
+  The whole compiled body encodes to flat `f64` and rides in the contact's consts exactly as
   the tapes do (`locus::eval_at` is the one evaluator — kernel, tessellation and tests all run
   the flat form — with `eval_flat` its cold entry), so `System` only picks `trace_kernel` over
-  `curve_kernel` per definition and the bindings are untouched.  Chirality — which way the string unwinds — is a *branch*, and no
-  regular residual can state one (a residual zero at exactly one direction has a vanishing
-  gradient there).  A block states its way onto a branch by three instruments, in order of
-  strength (spec §6.5.1): a **signed constraint** where the vocabulary has one
-  (`point_line_distance` is signed, so "taut" written against the radius line makes the winding
-  algebraic in the sign of the roll); an **orientation predicate** — `ccw(a, b, x)` in a block
-  contributes no residual and selects the solution component, its third point one the block
-  places, enforced only at the **home** (`trace p from (expr) where …` — evaluation's anchor,
-  chosen where the predicates read unambiguously) by reflect-and-resolve, with deterministic
-  restarts (fixed-seed `rng::Rng`) when there are no seeds to start from; and a **seed** for
-  what neither can say.  Continuity carries the branch from the home everywhere else —
-  evaluation is one warm-started march, the same walk the polyline sweep does, and a block with
-  predicates never trusts a direct solve *from the seeds* at the target (it could land in a
-  forbidden component).  A branch once carried is **kept**: the outer solver moves `(u, θ)` a
-  little and asks the same contact again, which is a continuation step like any other, so each
-  contact's pose is remembered and the next evaluation *resumes* from it instead of re-walking
-  the march.  Replaying it cost thirty-four block solves for every one it needed — 92% of a
-  traced gear's solve.  A resumed step is trusted only as far as `locus::continues` can check
-  it, against the tangent the pose's own `∂C/∂(u, θ)` predicted (a correction second order in
-  the step is the same branch; one the size of the gap between branches is not), and what fails
-  falls back to the home and the full march, so the doctrine above still decides every branch.
-  A pose is addressed by *where its contact's constants live* — `refresh_consts` rewrites a
-  trace contact's in place, so the address is its own for the life of the system, and the values
-  that rewrite may change ride in `outer` too and so miss rather than read stale.  Only a
-  recompile can put another contact at that address, which is why `System::new` calls
-  `locus::forget`.  The kernel path therefore carries a history where the drawing path is always
-  cold, which is the intended reading: a contact is a point that reached its `u` by a road, and
-  the two agree because every step of that road was checked against the curve's own tangent.
-  A seed is a *place*, named geometrically where it can be: `at c bearing (u +
-  phase)` is the point at the edge of the circle, `at t` is where another point starts
-  (`program::at_seed` lowers both to the tapes the coordinate spelling would be), and
-  `at (xexpr, yexpr)` remains for a place with no name.
-  A block must be square — as many rows as inner coordinates — or elaboration refuses it.
+  `curve_kernel` per definition and the bindings are untouched.  A trace contact's constants
+  are `[anchor, n_values, values…, has_pose, flat…, pose…]` (`kernel_eval` reads them,
+  `consts_on` writes them, `kernel_table` sizes them; the flat's own header says how wide the
+  pose is, and `view` ignores what trails it): the anchor parameter, the numbers, and — for a
+  curve of a **drawn** instance — the **pose on the sheet**, read off the instance's own points
+  at every compile and refresh (`CurveDef::pose_of` names each inner unknown's owner by its own
+  scalars, `CurveE::pose` the resolved entities, `Sketch::curve_pose` the one reader, and
+  `model::whole` the one statement that a pose with a hole is no pose), which is where the
+  anchor solve starts (`locus::Anchor`).  The polyline sweep walks its samples **outward from
+  the anchor** — down to `u0`, then from the anchor's pose again up to `u1` — so every solve
+  is a sample; marching to `u0` first paid for that stretch twice on every repaint.  Chirality —
+  which way the string unwinds — is a *branch*, and no regular residual can state one (a
+  residual zero at exactly one direction has a vanishing gradient there).  A body states its
+  way onto a branch by three instruments, in order of strength (spec §6.5): a **signed
+  constraint** where the vocabulary has one (`point_line_distance` is signed, so "taut" written
+  against the radius line makes the winding algebraic in the sign of the roll); an
+  **orientation predicate** — `ccw(a, b, x)` contributes no residual and selects the solution
+  component, its third point one the body places, enforced only at the **anchor** (the drawn
+  pose, or the value an instance written in place gave the swept formal) by
+  reflect-and-resolve, with deterministic restarts (fixed-seed `rng::Rng`, scaled by the entity
+  formals' coordinates and by *nothing else* — scaled by every outer value, a tooth's `phase`
+  of 129° threw the restarts eight radii from the circle, and the target `u` made the anchor
+  solve a lottery per evaluation) when there is no pose and the seeds leave it nowhere to
+  start; and a **seed** for what neither can say.  Continuity carries the branch from the
+  anchor everywhere else — evaluation is one warm-started march, the same walk the polyline
+  sweep does, and a body with predicates never trusts a direct solve *from the seeds* at the
+  target (it could land in a forbidden component).  A branch once carried is **kept**: the
+  outer solver moves `(u, θ)` a little and asks the same contact again, which is a
+  continuation step like any other, so each contact's pose is remembered and the next
+  evaluation *resumes* from it instead of re-walking the march.  Replaying it cost thirty-four
+  block solves for every one it needed — 92% of a traced gear's solve.  A resumed step is
+  trusted only as far as `locus::continues` can check it, against the tangent the pose's own
+  `∂C/∂(u, θ)` predicted (a correction second order in the step is the same branch; one the
+  size of the gap between branches is not), and what fails falls back to the anchor and the
+  full march, so the doctrine above still decides every branch.  A pose is addressed by *where
+  its contact's constants live* — `refresh_consts` rewrites a trace contact's in place, so the
+  address is its own for the life of the system, and the values that rewrite may change ride in
+  `outer` too and so miss rather than read stale.  Only a recompile can put another contact at
+  that address, which is why `System::new` calls `locus::forget`.  The kernel path therefore
+  carries a history where the drawing path is always cold, which is the intended reading: a
+  contact is a point that reached its `u` by a road, and the two agree because every step of
+  that road was checked against the curve's own tangent.
+  A seed is a *place*, named geometrically where it can be: `at c bearing (u + phase)` is the
+  point at the edge of the circle, `at t` is where another point starts (`program::at_seed`
+  lowers both to the tapes the coordinate spelling would be), and `at (xexpr, yexpr)` remains
+  for a place with no name — in a component that is only ever traced, since on the sheet a
+  seed is a number a solve writes back (`build` refuses a drawn one).
+  A traced body must be square — as many rows as inner coordinates — or elaboration refuses it.
   `tests/trace.rs` holds the taut-string involute checked against the closed form it never
   states (with seeds wrong by 3× on purpose), a gear run on traced flanks, and — the guard on
   the resume — the same parameters asked in three orders, since an answer that depended on what
-  was evaluated before it would be a warm start that had changed one.
+  was evaluated before it would be a warm start that had changed one; `tests/jansen.rs` holds
+  the drawn-instance form against an independent circle-intersection model at 24 crank angles.
 - A curve is *geometry*, so like a dimension callout it is laid out in the core and the front end
   only strokes what it is handed: `curve::tessellate` refines to `FLATNESS_PX` screen pixels
   through `unit` (the world length of one screen pixel), and `curve::closest` is the pick test

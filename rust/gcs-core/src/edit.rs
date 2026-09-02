@@ -447,9 +447,7 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
         seed_spans: Vec::new(),
         hint_span: None,
         knots: None,
-        def: None,
-        values: Vec::new(),
-        domain: None,
+        curve: None,
         class: Default::default(),
         class_span: Span::default(),
         seed_at: None,
@@ -546,9 +544,7 @@ fn add_entity_with(
         seed_spans: Vec::new(),
         hint_span: None,
         knots: None,
-        def: None,
-        values: Vec::new(),
-        domain: None,
+        curve: None,
         class: Default::default(),
         class_span: Span::default(),
         seed_at: None,
@@ -742,6 +738,20 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
             // membership (`in …`) is a label the point survives losing, and is not counted
             if let Some(r) = d.attitude.plane_ref() {
                 look(r);
+            }
+            // a curve is a point of an instance, and goes with what it is written over: the
+            // instance's point, or — written in place — the entities the instance was given
+            if let Some(c) = &d.curve {
+                match &c.target {
+                    syntax::CurveTarget::Drawn(r) => look(r),
+                    syntax::CurveTarget::Anon(inst, _) => {
+                        for a in &inst.args {
+                            if let syntax::InstVal::Ref(r) = &a.value {
+                                look(r);
+                            }
+                        }
+                    }
+                }
             }
         }
         StmtKind::Relation(rel) => {

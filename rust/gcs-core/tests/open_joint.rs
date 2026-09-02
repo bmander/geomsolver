@@ -228,9 +228,9 @@ fn the_refusals() {
     );
     // a circle has no ends, at an open joint as at any other
     refuses("cycle 2 {\n  circle c hint(r: 5) ->\n}\n", "has no ends to thread");
-    // a trace block is a body too, and has no next copy either
+    // a component's body has no next copy either
     refuses(
-        "curve f(o: point)(u) = trace p where {\n  line ->\n}\n",
+        "component f(o: point, u: Angle) {\n  line ->\n}\n",
         "a chain ends mid-joint only in a `repeat`, `cycle` or `ring`",
     );
 }

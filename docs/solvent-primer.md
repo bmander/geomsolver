@@ -67,11 +67,12 @@ ccw(a, b, c) | cw(a, b, c)              record a root choice; contributes no equ
 NAME: Component(ARGS) [in REF]          instantiate a component, drawn in that plane if said
 component NAME(FORMALS) { statement* }  define one
 port NAME: KIND [hint(…)] | port NAME = REF   export an entity across a component boundary
+port NAME = (XEXPR, YEXPR)              a computed point, drawn only as a curve (§1.8)
 repeat N [as i] { … }                   N copies, unrelated
 cycle N [as i] { … }                    N copies that close: `next` and `prev` are in scope
 ring N about REF [as i] { … }           a cycle claimed to be cyclically symmetric (§1.7)
-curve NAME(FORMALS)(u) [over (a, b)] = ( XEXPR, YEXPR )        a curve family (§1.8)
-curve NAME(FORMALS)(u) [over (a, b)] = trace P [from (E)] where { … }
+curve NAME = INSTANCE.POINT over FORMAL in (A, B)         a curve: an instance's point, as one
+curve NAME = Component(ARGS).POINT over FORMAL in (A, B)   of its numeric formals runs (§1.8)
 ```
 
 References are `name`, `name.field`, or `name[expr]` (which copy of a repeated statement; the
@@ -296,50 +297,55 @@ and that coincidence is written longhand. A statement inside a braced body also 
 body's `}`, so the whole of a block fits one line: `cycle 4 { line s -> perpendicular equal }`
 is a square but for a size and a pose.
 
-### 1.8 Curve families
+### 1.8 Curves
 
-A family is a *kind* of curve, written over the geometry it is drawn from, and instanced with
-`curve name = family(args)`. A curve is library code, not an entity kind: an involute, a cycloid
-and a spiral are three families, not three additions to the model.
-
-A family's body takes one of two forms.
+A curve is **a point of a component, as one of the component's numeric formals runs over an
+interval**. There is no separate "curve family": a component is written once, and asking for one
+of its points over one of its formals is what makes a curve of it. An involute, a cycloid and a
+walking leg's stride are three components, not three additions to the model.
 
 ```
-curve NAME(FORMALS)(u) [over (a, b)] = ( XEXPR, YEXPR )              a formula
-curve NAME(FORMALS)(u) [over (a, b)] = trace P [from (E)] where { … }   a locus
+curve NAME = INSTANCE.POINT over FORMAL in (A, B)           a drawn instance's point
+curve NAME = Component(ARGS).POINT over FORMAL in (A, B)     an instance written in place
 ```
 
-**The formula form** gives the two coordinates directly, as expressions in the parameter and in
-the geometry the family is written over (§2.8).
+**Over a drawn instance.** The leg is drawn once — `leg: Leg(axle, pivot)` — and
+`curve path = leg.toe over theta in (0, 360)` is where its toe goes as `theta` runs. The
+drawing's own pose is where the trace is anchored, so the component needs no seeds for the curve's
+sake; and an instance that leaves a numeric formal *unbound* makes it an unknown of the drawing
+(`leg.theta`, reported as a free variable), so the crank is the drawing's freedom and the curve
+follows wherever it stands. `jansen.sv` and `peaucellier.sv` are both written this way.
 
-**The locus form** — `trace` — says *the curve is wherever these constraints put this point*, as
-the parameter runs. It is how a person actually states a curve: an involute is "the end of a taut
-string as it unwinds", and that sentence is the block. The block's statements are ordinary ones,
-over ordinary scratch geometry; it must be square (as many equations as it has inner coordinates)
-or elaboration refuses it. See §2.9.
+**Over an instance written in place.** `Involute(base, phase: a0).p` binds an instance that is
+never drawn — the curve is the only thing made of it. Its anchor is the value it gives the swept
+formal (`Cell(…, u: 90)`), or the interval's start when it gives none.
 
-Inside a family's expressions — a formula's coordinates, a block's seeds, rows and home — a
-formal written `f: frame` offers one name no entity stores: `f.angle`, the frame's bearing in
-degrees (the `atan2` of its rotor, derived at compile). A bare `bearing (u)` is measured from the
-page's x-axis, so a block posed against a datum (`datum angle(u`) with page-fixed) swing
-seeds goes quietly stale when the datum tilts; written `bearing (u + f.angle)` — or
-`cos(u + f.angle)` in a coordinate seed — the seed follows the drawing. `peaucellier.sv` states
-its one seed this way; the rest of that block needs none, because its predicates already say
-which branch each point is on, and a seed repeating a predicate is the weaker of two statements
-of one fact.
+A component's point is placed one of two ways. **Computed**: `port p = (XEXPR, YEXPR)` gives
+the coordinates as expressions over the formals and params — the formula an involute has (§2.8).
+A component with a computed point is drawn only as a curve. **Placed by constraints**: any point
+the body declares, held where the body's statements put it as the formal runs — the locus form,
+which is how a person actually states a curve: an involute is "the end of a taut string as it
+unwinds", and that sentence is the body (§2.9). Traced, the body must be square — as many
+equations as it has coordinates of its own — or elaboration refuses it; drawn, it may be closed
+from outside like any component. The swept formal may be an `Angle` or a `Length`; the point
+must be one the component places, not geometry it is written over.
 
-A frame is also usually the *shortest* way to write the formals: it carries an origin, a second
-point and a bearing, so a family written over one need not also be passed those points and the
-line between them. Prefer that — a family's formals are columns in every gradient its tapes
-evaluate, and the fewer it takes the cheaper every evaluation is.
+Inside a traced component's expressions a formal written `f: frame` offers one name no entity
+stores: `f.angle`, the frame's bearing in degrees. A bare `bearing (u)` is measured from the
+page's x-axis, so a body posed against a datum with page-fixed seeds goes quietly stale when the
+datum tilts; written `bearing (u + f.angle)` — or `cos(u + f.angle)` in a coordinate seed — the
+seed follows the drawing. A frame is also usually the *shortest* way to write the formals: it
+carries an origin, a second point and a bearing, so a component written over one need not also be
+passed those points. Prefer that — a component's entity formals are columns in every gradient the
+curve evaluates, and the fewer it takes the cheaper every evaluation is.
 
-A locus generally has several solutions, and a block picks one by three means, strongest first: a
+A locus generally has several solutions, and a body picks one by three means, strongest first: a
 **signed** constraint where the vocabulary has one (`point_line_distance` is signed, so a sign
 chooses a winding); an **orientation predicate** (`ccw` / `cw`), which contributes no equation and
-selects a component, read at the **home** — the parameter value `from (…)` names, chosen
-where the
-predicate is unambiguous — and carried from there along the whole curve by continuity; and a
-**seed**, for what neither can say.
+selects a component, read at the **anchor** — the drawn pose, or the value the instance gave the
+swept formal, chosen where the predicate is unambiguous — and carried from there along the whole
+curve by continuity; and a **seed**, for what neither can say. A curve over a drawn instance
+starts from the pose on the sheet and needs none of the seeds.
 
 ### 1.9 Claims
 
@@ -583,16 +589,17 @@ central angle's size and not its sign, so the collapsed polygon, zigzags and sta
 same statements — the winding is a branch, and a branch is chosen by seeds where no residual
 can state it.
 
-### 2.8 A curve family — `dof 1, Under`
+### 2.8 A curve from a computed point — `dof 1, Under`
 
 ```
-curve involute(c: circle, phase: Angle)(u) over (0, 90) =
-  ( c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
-    c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)) )
+component Involute(c: circle, phase: Angle, u: Angle) {
+  port p = ( c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
+             c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)) )
+}
 
 point o hint(x: 0, y: 0)
 circle base(center: o) hint(r: 20)
-curve f = involute(base, phase: 0)
+curve f = Involute(base, phase: 0).p over u in (0, 90)
 
 point t hint(x: 25, y: 8)
 t on f
@@ -600,32 +607,33 @@ ground o
 fix base.r
 ```
 
-An involute is library code, not an entity kind: two expressions over the circle it unwinds from.
-The remaining freedom is the contact's own — `point_on_curve` carries a parameter saying *how far
-along* `t` sits, and nothing here says. That is one equation's worth of unknown, and it is why a
-contact slides along a curve instead of breaking when the geometry beneath it moves.
+An involute is library code, not an entity kind: a component with one computed point, over the
+circle it unwinds from, and the curve is that point as `u` runs. The remaining freedom is the
+contact's own — `point_on_curve` carries a parameter saying *how far along* `t` sits, and nothing
+here says. That is one equation's worth of unknown, and it is why a contact slides along a curve
+instead of breaking when the geometry beneath it moves. The contact's parameter is always written
+`u` (`t on f hint(u: 30)`, `t on(u == 30) f`), whatever the swept formal is called.
 
 ### 2.9 A curve stated as a locus — `dof 1, Under`
 
 ```
-curve involute(c: circle, datum: line, phase: Angle)(u) over (0, 90) =
-  trace p from (90 - phase) where {
-    point t
-    point p
-    line rad(c.center, t)
-    line s(t, p)
-    t on c                                                 // the string leaves the circle...
-    datum angle(u + phase) rad                             // ...at bearing u from the datum,
-    rad perpendicular s                                    // square to the radius there,
-    p distance(-(c.r * u / 1rad)) rad                      // and taut: as long as the arc
-  }
+component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
+  point t
+  point p
+  line rad(c.center, t)
+  line s(t, p)
+  t on c                                                 // the string leaves the circle...
+  datum angle(u + phase) rad                             // ...at bearing u from the datum,
+  rad perpendicular s                                    // square to the radius there,
+  p distance(-(c.r * u / 1rad)) rad                      // and taut: as long as the arc
+}
 
 point o hint(x: 0, y: 0)
 point x hint(x: 20, y: 0)
 circle base(center: o) hint(r: 20)
 line datum(o, x)
 
-curve f = involute(base, datum, phase: 0)
+curve f = Unwind(base, datum, phase: 0).p over u in (0, 90)
 
 point g hint(x: 25, y: 8)
 g on f
@@ -637,19 +645,46 @@ o distance(20) x
 ```
 
 This draws the same curve as §2.8 and states no formula at all — compare the two bodies. Every
-line in the block is the textbook definition said once: a point on the base circle at bearing `u`,
-the string leaving square to the radius, and the string exactly as long as the arc it has unwound.
-The solver derives what §2.8 had to be derived by hand.
+line in the component is the textbook definition said once: a point on the base circle at bearing
+`u`, the string leaving square to the radius, and the string exactly as long as the arc it has
+unwound. The solver derives what §2.8 had to be derived by hand.
 
 Two details do real work. `point_line_distance` is **signed**, so the negative sign is what
 unwinds the string one way for a positive roll and the other for a negative one — which is why one
-family serves both flanks of a gear tooth, where a formula needs the sign threaded through every
-term. And `angle` is **directed**, so `t` sits at bearing `u + phase` and not opposite it — which
-side of the datum is in the residual itself, with no `ccw` needed to say so. Where a block has a
-genuinely discrete choice (two intersections of an elbow, say), `ccw(a, b, x)` still states it:
-read once at the `from (…)` home, and carried everywhere else by continuity.
+component serves both flanks of a gear tooth, where a formula needs the sign threaded through
+every term. And `angle` is **directed**, so `t` sits at bearing `u + phase` and not opposite it —
+which side of the datum is in the residual itself, with no `ccw` needed to say so. Where a body
+has a genuinely discrete choice (two intersections of an elbow, say), `ccw(a, b, x)` still states
+it: read once at the anchor, and carried everywhere else by continuity.
 
 The remaining freedom is the contact's parameter again, exactly as in §2.8.
+
+### 2.9.1 A curve of a drawn instance — `dof 1, Under`
+
+```
+component Crank(o: point, datum: line, theta: Angle) {
+  point p hint(x: 20, y: 10)
+  line arm(o, p)
+  o distance(30) p
+  datum angle(theta) arm
+}
+
+point o hint(x: 0, y: 0)
+point x hint(x: 10, y: 0)
+line datum(o, x)
+ground o
+ground x
+
+c: Crank(o, datum)                                  // theta unbound: the crank turns
+curve rim = c.p over theta in (0, 360)
+```
+
+The crank is drawn once and traced from that drawing. `c: Crank(o, datum)` leaves `theta`
+unbound, so it is an unknown of the sketch — `c.theta`, which the diagnosis reports as a free
+variable and which is the one freedom left — and `rim` is where the drawn `p` goes as that
+formal runs a full turn. The trace is anchored at the pose on the sheet: drag `c.p` and the
+anchor moves with it. `jansen.sv` is this at full size — the leg drawn, its crank free, the toe's
+stride traced from the same statements.
 
 ### 2.10 Three views — `dof 0, Well`
 
@@ -728,5 +763,5 @@ the sheet.
    whole drawing. If `Over`, find the claim already implied by the others. If `Under`, ask what can
    still move.
 
-The twenty-four documents in `rust/examples/` are the worked corpus, each with a header explaining
+The twenty-five documents in `rust/examples/` are the worked corpus, each with a header explaining
 what it is for; `rect_fillets.sv` is the best first read and `gear_trace.sv` the deepest.

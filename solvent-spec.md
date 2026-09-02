@@ -339,60 +339,50 @@ Two things that look like seeds and are not, and stay where they are. **`knots [
 
 `hint` keeps the cases inline cannot express — seeding an entity declared elsewhere, and seeding from an expression over other geometry (`hint t.lead(x: center.x + root.r, y: center.y)`).
 
-### 6.5 Curve families **[0.2]**
+### 6.5 Curves **[0.11]**
+
+A curve is **a point of a component, as one of the component's numeric formals runs over an interval**:
 
 ```
-curve involute(c: circle, phase: Angle)(u) =
-  ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
-    c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)) )
+curve NAME = REF over FORMAL in ( A, B )                    an instance's point
+curve NAME = Component(ARGS).REF over FORMAL in ( A, B )    an instance written in place
 ```
 
-`curve NAME(FORMALS)(PARAM) [over (A, B)] = ( XEXPR, YEXPR )` declares a **family**: a map from a parameter and some geometry to a point in the plane. It declares no entity and no unknown — a family is a *kind* of curve, and several drawings may be written from one.
+`REF` names a point the component places — a declaration of its body, a nested instance's, or a port aliasing one; a formal the component is written over does not move with the swept formal and is refused (**E103**). `FORMAL` is a numeric formal of that component, `Angle` or `Length` (**E040** otherwise); the interval's ends are expressions over the parameters in scope. A curve declares an entity and takes contacts like any other curve: `p on e hint(u: …)` says `p − C(u) = 0`, two residuals and one new unknown, the contact's parameter — always spelled `u`, whatever the formal is called. There is no separate curve family: 0.2's `curve NAME(FORMALS)(PARAM) = …` and 0.3's `trace POINT where { … }` are retired, and an implementation MUST refuse them with a message naming this form.
 
-An instance is a declaration like any other, and takes contacts like any other curve:
-
-```
-curve e = involute(base, phase: a0) over (u0, u1)
-point_on_curve(p, e, u = u0)
-```
-
-`point_on_curve(p, C) hint(u: …)` says `p − C(u) = 0`: two residuals, one new unknown (the parameter, seed-class per §4.3), and so one equation net — the same arithmetic as a contact with any other curve.
-
-**Requirements.** An implementation MUST differentiate a family's expressions with respect to the parameter *and* with respect to every coordinate they read. `∂C/∂u` is which way a contact may slide; `∂C/∂θ` is how the curve moves when the geometry it is written over moves, and an implementation that computes only the first will solve a contact once and drop it the moment that geometry is dragged. Both are mechanical from the expression, so this is a requirement on effort, not on ingenuity.
-
-A name a family's expressions cannot reach is an error (**E016**), not a free variable. A dimension may name an unknown of the drawing; a curve is written over geometry that exists, and a misspelling there would quietly add a degree of freedom to every point on the curve.
-
-**Why a declaration and not an entity kind.** 0.1 deferred this to §17.2 as "curve entities ... as first-class entities," which reads as one entity kind per family: an involute kind, a cycloid kind, a trochoid kind, each with its own constraints and its own place in every exhaustive match. Written as a declaration they are library code instead, and a second family is a second pair of expressions rather than a second constraint family. The gear in §18 is the case that makes the difference plain: its flanks are involutes because the document says what an involute is, and nothing in the solver knows the word.
-
-### 6.5.1 Trace families **[0.3]**
-
-A family's body may be a **locus** instead of a formula: `curve NAME(FORMALS)(PARAM) [over (A, B)] = trace POINT where { BODY }`. The block's statements are ordinary declarations and constraints; `C(u)` is the position they force on the traced point, given the parameter and the geometry the family is written over. This is the form a definition takes when a person states it — an involute is "the curve traced by the end of a taut string as it unwinds", and that sentence is the block:
+**Two ways a component places the point.** A **computed** point, `port p = ( XEXPR, YEXPR )`, gives the coordinates as expressions over the formals and the params; a component with one is drawn only as a curve, and an instance of it on the sheet is an error (**E103**), since nothing on the sheet holds a point to a formula. Any **other** point is placed by the body's statements — the locus form: `C(u)` is where the constraints put the point, given the formal's value and the geometry the component is written over. Traced, the body MUST determine its own coordinates — as many equations as coordinates of its own — or the curve is an error (**E103**): an under- or over-constrained locus is a curve that does not exist, and it must not elaborate quietly. Drawn, the same component may be closed from outside like any other.
 
 ```
-curve involute(c: circle, datum: line, phase: Angle)(u) =
-  trace p from (90 - phase) where {
-    point t
-    point p
-    line rad(c.center, t)
-    line s(t, p)
-    point_on_circle(t, c)                                // the string leaves the circle...
-    angle(datum, rad) == u + phase                       // ...at bearing u — directed, so this side
-    perpendicular(rad, s)                                // perpendicular to the radius there,
-    point_line_distance(p, rad) == -(c.r * u * pi / 180) // and taut: let out == arc unwound
-  }
+component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
+  point t
+  point p
+  line rad(c.center, t)
+  line s(t, p)
+  t on c                                       // the string leaves the circle...
+  datum angle(u + phase) rad                   // ...at bearing u — directed, so this side
+  rad perpendicular s                          // perpendicular to the radius there,
+  p distance(-(c.r * u / 1rad)) rad            // and taut: let out == arc unwound
+}
+curve e = Unwind(base, datum, phase: a0).p over u in (u0, u1)
 ```
 
-A dimension in the block may be an expression over the parameter, the formals' coordinates and the value formals. The block MUST determine its points — as many equations as inner coordinates — or the definition is an error: an under- or over-constrained locus is a curve that does not exist, and it must not elaborate quietly. Instances, contacts and `over` behave exactly as for an expression family, and the derivative requirement above stands unchanged: `∂C/∂u` and `∂C/∂θ` now come from the implicit function theorem at the block's solution rather than from the expressions, but a contact must still follow the curve when the geometry it is written over is dragged.
+**Over a drawn instance.** `curve path = leg.toe over theta in (0, 360)` names a point of an instance the drawing holds. The trace is **anchored at the drawing**: the pose the instance stands in on the sheet is where evaluation begins, and the value the instance gave the swept formal is the anchor's parameter. An instance that leaves a numeric formal **unbound** makes it an unknown of the drawing — the rule that a name nothing defines is a free variable (§3.4), applied to a formal, named under the instance (`leg.theta`) so two instances leaving the same formal unbound have two unknowns — and the anchor then follows that unknown wherever the solve puts it. This is the form a mechanism is written in: drawn once with its crank free, and traced from the same statements.
 
-**Branches.** A locus generically has several solutions, and a block states its way onto one — three instruments, in order of strength:
+**Over an instance written in place.** `Involute(base, phase: a0).p` binds the arguments as an instance statement would and draws nothing: the curve is the only thing made of it. The anchor is the value it gives the swept formal, or the interval's start when it gives none.
 
-1. **A signed constraint,** wherever the vocabulary can say it. Above, *neither* choice is a branch at all: `angle` is directed (§9.4), so `t` sits at the bearing and not opposite it, and `point_line_distance` is signed, so one equation unwinds the string one way for positive roll and the other for negative — where a half-turn angle and an unsigned `distance` would each have left a mirror pair for something else to break.
-2. **An orientation predicate.** `ccw(a, b, x)` / `cw(a, b, x)` in a block is §9.6's statement doing §9.6's job: it contributes no residual and *selects among the discrete solution components*. Its third point MUST be one the block places. It settles the branches a residual cannot — an elbow's two intersections, say, where the distances hold on either side and only the orientation tells the poses apart. A predicate is read **at the home** — the parameter value `from (expr)` names (the expression is over the formals and the family's values; absent, the instance's domain begins evaluation) — and an implementation MUST enforce it there (reflect the placed point across the oriented line and solve again) and MUST NOT re-enforce it elsewhere: away from the home, continuity governs, and the component the predicate picks at the home is the component the whole curve is on, even where the curve has since wound to where the predicate no longer reads true. Choose the home so the predicates read unambiguously — the pose at which the two components stand farthest apart. A block with predicates needs no seeds at all: an implementation MUST fall back to deterministic restarts when the seeds (or their absence) leave the home solve nowhere to start.
-3. **A seed.** What neither an equation nor a predicate says, a seed says: the block's `at` seeds are places over the parameter and the formals, evaluation starts from them, and away from them continuity governs — an implementation MUST evaluate the curve as one continuation along the parameter, so the branch picked at the home is the branch everywhere. Deleting a seed still traces *a* branch, from a worse start — the same bargain a contact's `hint(u: …)` seed strikes in §4.3.
+**Requirements.** An implementation MUST differentiate `C` with respect to the swept formal *and* with respect to every coordinate the component reads. `∂C/∂u` is which way a contact may slide; `∂C/∂θ` is how the curve moves when the geometry it is written over moves, and an implementation that computes only the first will solve a contact once and drop it the moment that geometry is dragged. For a computed point both are mechanical from the expressions; for a locus both come from the implicit function theorem at the body's solution. A name a computed point's expressions cannot reach is an error (**E016**), not a free variable: a curve is written over geometry that exists, and a misspelling there would quietly add a degree of freedom to every point on the curve.
 
-**Places, not coordinates.** Inside a trace block a seed is a *place*, and this language names places geometrically: `point t hint at c bearing (u + phase)` is the point at the edge of circle `c` at that bearing from the page's x-axis, and `point p hint at t` is wherever `t` starts (a point already named must be declared first). Both lower to exactly what the coordinate spelling would — the bearing form is `centre + r·(cos β, sin β)` said the way a draughtsman says it — so the coordinate form `hint(x: xexpr, y: yexpr)` remains available and means the same thing. Outside a trace block a seed is a number a solve writes back, which a place named by reference is not, so the geometric forms are trace-block-only (**E103** elsewhere).
+**Branches.** A locus generically has several solutions, and a component states its way onto one — three instruments, in order of strength:
 
-**[0.6] Bearings may be measured from a frame.** A bare bearing is page-fixed, and a block posed against a datum (`angle(datum, swing) == u`) with page-fixed seeds goes quietly stale the moment the datum tilts — the solve starts from the wrong place, and the first symptom is a wrong branch at a distant pose (bmander/geomsolver#10). The remedy is arithmetic, not a clause: a family written over a `frame` reads its derived `.angle` in any trace-block expression, so `hint at c bearing (u + f.angle)` and `hint(x: o.x + d * cos(u + f.angle), …)` state the same bearing *from the frame*, and both seed forms — the geometric and the coordinate — follow the drawing by the same term. A name of the form `x.angle` where the variable table holds the rotor `x.c` / `x.s` compiles to its `atan2`; any other unknown name remains the misspelling error it was.
+1. **A signed constraint,** wherever the vocabulary can say it. Above, *neither* choice is a branch at all: `angle` is directed (§9.4), so `t` sits at the bearing and not opposite it, and `point_line_distance` is signed, so one equation unwinds the string one way for positive roll and the other for negative.
+2. **An orientation predicate.** `ccw(a, b, x)` / `cw(a, b, x)` in the body is §9.6's statement doing §9.6's job: it contributes no residual and *selects among the discrete solution components*. Traced, its third point MUST be one the component places. A predicate is read **at the anchor** — the drawn pose, or the value the instance gave the swept formal, chosen where the predicates read unambiguously — and an implementation MUST enforce it there (reflect the placed point across the oriented line and solve again) and MUST NOT re-enforce it elsewhere: away from the anchor, continuity governs, and the component the predicate picks at the anchor is the component the whole curve is on, even where the curve has since wound to where the predicate no longer reads true. A body with predicates needs no seeds at all: an implementation MUST fall back to deterministic restarts, scaled by the geometry the component is written over and by nothing else, when the seeds (or their absence) leave the anchor solve nowhere to start. Drawn, the same predicate records the root choice the drawing is on (§9.6).
+3. **A seed.** What neither an equation nor a predicate says, a seed says: the body's seeds are places over the formals, evaluation of an instance written in place starts from them, and away from the anchor continuity governs — an implementation MUST evaluate the curve as one continuation along the parameter, so the branch picked at the anchor is the branch everywhere. A curve over a drawn instance starts from the pose on the sheet and reads no seed.
+
+**Places, not coordinates.** Inside a component that is only ever traced, a seed may be a *place*: `point t hint at c bearing (u + phase)` is the point at the edge of circle `c` at that bearing from the page's x-axis, and `point p hint at t` is wherever `t` starts (a point already named must be declared first). Both lower to exactly what the coordinate spelling would, so `hint(x: xexpr, y: yexpr)` remains available and means the same thing. On the sheet a seed is a number a solve writes back, which a place named by reference is not, so a drawn instance of a component with a geometric seed is an error (**E103**).
+
+**Bearings may be measured from a frame.** A bare bearing is page-fixed, and a body posed against a datum (`datum angle(u) swing`) with page-fixed seeds goes quietly stale the moment the datum tilts (bmander/geomsolver#10). A component written over a `frame` reads its derived `.angle` in any expression, so `hint at c bearing (u + f.angle)` and `hint(x: o.x + d * cos(u + f.angle), …)` state the same bearing *from the frame*. A name of the form `x.angle` where the variable table holds the rotor `x.c` / `x.s` compiles to its `atan2`; any other unknown name remains the misspelling error it was.
+
+**Why a point of a component and not a family of its own.** 0.2 gave a curve a construct of its own — a family with formals, a parameter and a body — and 0.3 a second body form, and every mechanism was then written twice: once as the drawing and once more inside the family, with the formals passed to themselves (bmander/geomsolver#46). A component already has formals, a body, params, ports and instances, and a curve is one question asked of it. The gear in §18 is the case that makes the difference plain: its flanks are involutes because the document says what an involute is, and nothing in the solver knows the word; the walking leg of `jansen.sv` is drawn once, and its stride is the same leg asked where its toe goes.
 
 ### 6.6 Chains **[0.4]**
 

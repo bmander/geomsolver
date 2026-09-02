@@ -19,8 +19,8 @@ use crate::model::EntKind;
 use crate::program::Code;
 use crate::units::Units;
 use crate::syntax::{
-    build_rank, under_root, BlockKind, Component, Decl, DeclName, Kid, Name, OpenJoint,
-    OpenNamed, OpenSide, Program, Ref, Seg, Span, Stmt, StmtKind, Ty,
+    build_rank, under_root, BlockKind, Component, CurveTarget, Decl, DeclName, Kid, Name,
+    OpenJoint, OpenNamed, OpenSide, Program, Ref, Seg, Span, Stmt, StmtKind, Ty,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -79,6 +79,13 @@ struct Scope {
     in_plane: Option<InPlane>,
 }
 
+impl Scope {
+    /// The innermost prefix — what a name declared here is put under.
+    fn prefix(&self) -> &str {
+        self.prefixes.first().map(String::as_str).unwrap_or("")
+    }
+}
+
 /// An instance's `in PLANE`, and where it was written — see `Scope::in_plane`.
 #[derive(Clone)]
 struct InPlane {
@@ -92,6 +99,43 @@ pub struct Expansion {
     /// Diagnostics that carry their own code: a `ring`'s (§12.3–12.6), which are not the
     /// "no such name" / "not a shape" pair the plain errors sort into.
     pub coded: Vec<(Code, Span, String)>,
+    /// Every instance the walk bound, drawn or not — what a curve is a curve *of* (§6.5): the
+    /// elaborator finds the instance a curve's point belongs to here, with the entities it was
+    /// given resolved to absolute names and the numbers it was given worked out.
+    pub instances: Vec<InstanceInfo>,
+    /// `port x = y`, resolved: absolute name to absolute name.  What a curve's point is when
+    /// the component exported it under another name.
+    pub aliases: BTreeMap<String, String>,
+}
+
+/// One instance, as bound: which component, under what prefix, given what.
+#[derive(Clone, Debug)]
+pub struct InstanceInfo {
+    /// The absolute prefix every name of its expansion starts with — `leg.`, `g.t.r.`, or
+    /// `#c12.` for an instance written in place inside a curve.
+    pub prefix: String,
+    pub component: String,
+    /// The entity formals in order, each with the absolute name of the actual it aliases —
+    /// `None` where the instance gave none, or gave one that resolved to nothing.
+    pub ents: Vec<(String, Option<String>)>,
+    /// The numeric formals, by name: a number, or the drawing's unknown a formal left unbound
+    /// became (a free `Aff`, `bind`).
+    pub values: BTreeMap<String, Aff>,
+    /// Whether its body was expanded onto the sheet.  An instance written in place inside a
+    /// curve is bound and never drawn: the curve is the only thing made of it.
+    pub drawn: bool,
+}
+
+/// The walk's *symbolic* mode: a component expanded over its formals as **variables**, which is
+/// what compiling a curve over it needs (§6.5).  The numeric formals are bound as free values
+/// named after themselves, so the ordinary machinery carries them — `substitute` writes a free
+/// value back out by name, `settle` keeps a dimension that comes to no number — and the mode
+/// adds one policy: a text that cannot be worked out at all (a `param` or a seed over `sin(u)`,
+/// say) is **kept** as text and written in where it is read, where the sheet would report it.
+#[derive(Default)]
+struct Sym {
+    /// Params and arguments that came to text rather than a value, by absolute name: `(sin(u))`.
+    texts: BTreeMap<String, String>,
 }
 
 struct Walk<'a> {
@@ -106,6 +150,9 @@ struct Walk<'a> {
     names: BTreeSet<String>,
     /// `port x = y`: one name for what another names.  Resolved transitively, after the walk.
     aliases: Vec<(String, Ref, Scope)>,
+    instances: Vec<InstanceInfo>,
+    /// `Some` while a component is expanded over its formals as variables — see `Sym`.
+    sym: Option<Sym>,
     errors: Vec<(Span, String)>,
     coded: Vec<(Code, Span, String)>,
 }
@@ -113,27 +160,120 @@ struct Walk<'a> {
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
 /// orientations, with every name made absolute.
 pub fn expand(prog: &Program, units: Units) -> Expansion {
-    let mut w = Walk {
-        prog,
-        units,
-        out: Vec::new(),
-        names: BTreeSet::new(),
-        aliases: Vec::new(),
-        errors: Vec::new(),
-        coded: Vec::new(),
-    };
+    let mut w = Walk::new(prog, units, None);
     let root = prog.root();
     let scope = Scope { prefixes: vec![String::new()], ..Scope::default() };
     let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
     w.body(&root.body, &scope, &mut vals, &[], 0);
-    let flat = w.resolve();
-    Expansion { flat, errors: w.errors, coded: w.coded }
+    w.finish()
+}
+
+/// Expand one component **over its formals** — the form a curve is compiled from (§6.5).
+///
+/// The entity formals are names the body may reach (`c`, `c.center`), bound to nothing: what
+/// they denote is the curve's own business, a column of its variable table per coordinate.  The
+/// numeric formals are variables too, so nothing that reads one is worked out — see `Sym`.  What
+/// comes out is the body as a flat list of statements under an empty prefix, exactly as a drawn
+/// instance's would come out under its own, with `param`s, nested instances and repetition all
+/// done here and not again by the compile.
+pub fn expand_component(prog: &Program, comp: &Component, units: Units) -> Expansion {
+    let mut w = Walk::new(prog, units, Some(Sym::default()));
+    let scope = Scope { prefixes: vec![String::new()], ..Scope::default() };
+    let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
+    for f in &comp.formals {
+        match f.ty {
+            Ty::Ent(_) => {
+                w.names.insert(f.name.text.clone());
+            }
+            // a variable of the curve: a free value named after itself, which the ordinary
+            // walk carries into every text that reads it
+            ty => {
+                vals.insert(f.name.text.clone(), free(f.name.text.clone(), ty));
+            }
+        }
+    }
+    w.body(&comp.body, &scope, &mut vals, &[], 1);
+    w.finish()
+}
+
+/// The drawing's unknown a formal stands for when nothing binds it — the rule that a name
+/// nothing defines is a free variable, applied to a formal under its declared dimension.
+fn free(name: String, ty: Ty) -> Aff {
+    Aff { free: Some(name), m: 1.0, c: 0.0, dim: ty.dim() }
 }
 
 impl<'a> Walk<'a> {
+    fn new(prog: &'a Program, units: Units, sym: Option<Sym>) -> Walk<'a> {
+        Walk {
+            prog,
+            units,
+            out: Vec::new(),
+            names: BTreeSet::new(),
+            aliases: Vec::new(),
+            instances: Vec::new(),
+            sym,
+            errors: Vec::new(),
+            coded: Vec::new(),
+        }
+    }
+
     fn err(&mut self, span: Span, msg: impl Into<String>) {
         if self.errors.len() < 200 {
             self.errors.push((span, msg.into()));
+        }
+    }
+
+    fn finish(mut self) -> Expansion {
+        let (flat, aliases) = self.resolve();
+        Expansion {
+            flat,
+            errors: self.errors,
+            coded: self.coded,
+            instances: self.instances,
+            aliases,
+        }
+    }
+
+    /// A text with what `substitute` writes in, and — in the symbolic mode — every name that
+    /// came to text (`Sym::texts`, looked up through the scope's prefixes like any other name)
+    /// written in as well.  A kept text was itself substituted when it was kept, so one pass
+    /// is the fixed point.  The identity outside the symbolic mode.
+    fn subst_sym(&self, text: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> String {
+        let Some(sym) = &self.sym else { return text.to_string() };
+        substitute_with(text, |w| {
+            of_vals(vals)(w).or_else(|| {
+                scope.prefixes.iter().find_map(|p| sym.texts.get(&format!("{p}{w}")).cloned())
+            })
+        })
+    }
+
+    /// A dimension's text, settled: the component's numbers written in, and the names that came
+    /// to text as well.
+    fn settle_text(
+        &self,
+        text: &str,
+        vals: &BTreeMap<String, Aff>,
+        scope: &Scope,
+    ) -> Result<String, String> {
+        settle(&self.subst_sym(text, vals, scope), vals, self.units)
+    }
+
+    /// Keep a name as text — a value nothing here can work out, written in where it is read.
+    /// The symbolic mode's one policy; `false` outside it, where the caller reports instead.
+    fn keep_text(
+        &mut self,
+        abs: String,
+        text: &str,
+        vals: &BTreeMap<String, Aff>,
+        scope: &Scope,
+    ) -> bool {
+        let t = format!("({})", self.subst_sym(text, vals, scope).trim());
+        match self.sym.as_mut() {
+            Some(sym) => {
+                sym.texts.insert(abs, t);
+                true
+            }
+            None => false,
         }
     }
 
@@ -144,9 +284,9 @@ impl<'a> Walk<'a> {
     /// written and in spec order — and both halves are `syntax::Arg`.  Written twice, a new kind
     /// of argument gets settled in one of them and silently keeps the component's own names in
     /// the other.
-    fn settle_arg(&mut self, a: &mut crate::syntax::Arg, vals: &BTreeMap<String, Aff>) {
+    fn settle_arg(&mut self, a: &mut crate::syntax::Arg, vals: &BTreeMap<String, Aff>, scope: &Scope) {
         match a {
-            crate::syntax::Arg::Dim { text, span } => match settle(text, vals, self.units) {
+            crate::syntax::Arg::Dim { text, span } => match self.settle_text(text, vals, scope) {
                 Ok(t) => *text = t,
                 Err(e) => self.err(*span, format!("`{text}`: {e}")),
             },
@@ -184,7 +324,8 @@ impl<'a> Walk<'a> {
     /// A second `param w` in one body is the E001 a second `point w` is, and the first stands
     /// (#43.13); a param whose definition fails is reported once, where it is written, and the
     /// params that read it are left unsaid rather than each repeating the cause (#45.1).
-    fn params(&mut self, body: &[Stmt], vals: &mut BTreeMap<String, Aff>) {
+    fn params(&mut self, body: &[Stmt], vals: &mut BTreeMap<String, Aff>, scope: &Scope) {
+        let prefix = scope.prefix().to_string();
         let mut pending: Vec<&crate::syntax::ParamDecl> = Vec::new();
         let mut here: BTreeSet<String> = BTreeSet::new();
         for st in body {
@@ -240,9 +381,14 @@ impl<'a> Walk<'a> {
                     Ok(a) => {
                         vals.insert(pd.name.text.clone(), a);
                     }
+                    // a text a curve's variables leave no value to — kept, in the symbolic
+                    // mode; a mistake, on the sheet
                     Err(e) => {
-                        self.err(pd.span, format!("`{}`: {e}", pd.name.text));
-                        failed.insert(pd.name.text.clone());
+                        let abs = format!("{prefix}{}", pd.name.text);
+                        if !self.keep_text(abs, &pd.text, vals, scope) {
+                            self.err(pd.span, format!("`{}`: {e}", pd.name.text));
+                            failed.insert(pd.name.text.clone());
+                        }
                     }
                 }
             }
@@ -265,9 +411,9 @@ impl<'a> Walk<'a> {
             }
             return;
         }
-        let prefix = scope.prefixes.first().cloned().unwrap_or_default();
+        let prefix = scope.prefix().to_string();
         // every `param` of the body first, whatever line it stands on — a body is a set (P2)
-        self.params(body, vals);
+        self.params(body, vals, scope);
         // and with them the numbers in force are complete for every statement of the body:
         // the enclosing ones the caller passed and the body's own — so that is the table each
         // statement is emitted with, which is what an index (`p[n - 1]`) is read against.  The
@@ -285,27 +431,30 @@ impl<'a> Walk<'a> {
                     self.names.insert(abs.clone());
                     let mut d2 = d.clone();
                     d2.name = d.name.prefixed(abs, scope.copies);
-                    // a curve's numbers and the interval it is drawn over are written over the
-                    // parameters in scope too, and are worked out in the same pass
-                    for (_, t) in d2.values.iter_mut() {
-                        match value_of(t, vals, self.units) {
-                            Ok(v) => *t = crate::syntax::num(v),
-                            Err(e) => self.err(st.span, format!("`{t}`: {e}")),
-                        }
-                    }
-                    if let Some((a, b)) = d2.domain.as_mut() {
-                        for t in [a, b] {
+                    if let Some(c) = d2.curve.as_mut() {
+                        // the interval is written over the parameters in scope, like a number
+                        for t in [&mut c.domain.0, &mut c.domain.1] {
                             match value_of(t, vals, self.units) {
                                 Ok(v) => *t = crate::syntax::num(v),
                                 Err(e) => self.err(st.span, format!("`{t}`: {e}")),
                             }
                         }
+                        // an instance written in place is bound like any other and never
+                        // drawn: the curve is the only thing made of it (§6.5)
+                        if let CurveTarget::Anon(inst, point) = &c.target {
+                            if let Some((_, _, key)) = self.bind_instance(inst, scope, vals, false) {
+                                c.of = Some(crate::syntax::CurveOf {
+                                    instance: key,
+                                    point: written(point),
+                                });
+                            }
+                        }
                     }
-                    self.settle_seeds(&mut d2, vals, st.span);
+                    self.settle_seeds(&mut d2, vals, scope, st.span);
                     // a plane's fold and basis are written over the parameters in scope like
                     // any other number, through the one walk that settles an argument
                     for a in d2.attitude.args_mut() {
-                        self.settle_arg(a, vals);
+                        self.settle_arg(a, vals, scope);
                     }
                     self.stamp_scope_plane(&mut d2, scope);
                     self.emit(StmtKind::Decl(d2), st, scope, path);
@@ -328,9 +477,7 @@ impl<'a> Walk<'a> {
                             seed_spans: p.seed_spans.clone(),
                             hint_span: p.hint_span,
                             knots: None,
-                            def: None,
-                            values: Vec::new(),
-                            domain: None,
+                            curve: None,
                             class: Default::default(),
                             class_span: Span::default(),
                             seed_at: None,
@@ -338,27 +485,43 @@ impl<'a> Walk<'a> {
                             membership: Default::default(),
                             list_span: Span::default(),
                         };
-                        self.settle_seeds(&mut d, vals, st.span);
+                        self.settle_seeds(&mut d, vals, scope, st.span);
                         self.stamp_scope_plane(&mut d, scope);
                         self.emit(StmtKind::Decl(d), st, scope, path);
                     } else if let Some(r) = &p.alias {
                         let abs = format!("{prefix}{}", p.name.text);
                         self.aliases.push((abs, r.clone(), scope.clone()));
+                    } else if let Some(xy) = &p.computed {
+                        // a computed point is made of expressions over the formals, which is
+                        // a thing a curve can be and a drawing cannot: nothing on the sheet
+                        // holds a point to a formula (§6.5)
+                        if self.sym.is_none() {
+                            self.err(
+                                p.name.span,
+                                format!(
+                                    "`{}` is a computed point, so its component is drawn only \
+                                     as a curve: `curve e = Component(…).{} over u in (a, b)`",
+                                    p.name.text, p.name.text
+                                ),
+                            );
+                            continue;
+                        }
+                        let mut p2 = p.clone();
+                        p2.name = Name { text: format!("{prefix}{}", p.name.text), span: p.name.span };
+                        let [(x, xs), (y, ys)] = xy;
+                        p2.computed = Some([
+                            (self.subst_sym(x, vals, scope), *xs),
+                            (self.subst_sym(y, vals, scope), *ys),
+                        ]);
+                        self.emit(StmtKind::Port(p2), st, scope, path);
                     }
                 }
                 StmtKind::Param(_) => {}   // worked out above, before the walk
                 StmtKind::Instance(inst) => {
-                    let Some(comp) = self.prog.components.iter().find(|c| {
-                        c.name.as_ref().map(|n| n.text.as_str()) == Some(inst.component.text.as_str())
-                    }) else {
-                        self.err(
-                            inst.component.span,
-                            format!("no component named `{}`", inst.component.text),
-                        );
+                    let Some((comp, mut sub_vals, key)) = self.bind_instance(inst, scope, vals, true)
+                    else {
                         continue;
                     };
-                    let comp = comp.clone();
-                    let mut sub_vals = self.bind(&comp, inst, scope, vals);
                     // the instance's own `in`, or the one already in force around it — both at
                     // once is a plane given twice, which one statement may not do (§6.7)
                     let in_plane = match (inst.membership.plane(), &scope.in_plane) {
@@ -373,9 +536,7 @@ impl<'a> Walk<'a> {
                         (None, q) => q.clone(),
                     };
                     let mut sc = Scope {
-                        prefixes: std::iter::once(format!("{prefix}{}.", inst.name.text))
-                            .chain(scope.prefixes.iter().cloned())
-                            .collect(),
+                        prefixes: std::iter::once(key).chain(scope.prefixes.iter().cloned()).collect(),
                         cyc: None,
                         ring: scope.ring.clone(),
                         copies: scope.copies,
@@ -497,11 +658,13 @@ impl<'a> Walk<'a> {
                         for a in w.args.iter_mut() {
                             match a {
                                 crate::syntax::OpArg::Slot { arg, .. } => {
-                                    self.settle_arg(arg, vals)
+                                    self.settle_arg(arg, vals, scope)
                                 }
-                                crate::syntax::OpArg::Named(_, arg) => self.settle_arg(arg, vals),
+                                crate::syntax::OpArg::Named(_, arg) => {
+                                    self.settle_arg(arg, vals, scope)
+                                }
                                 crate::syntax::OpArg::Dim(text, span) => {
-                                    match settle(text, vals, self.units) {
+                                    match self.settle_text(text, vals, scope) {
                                         Ok(t) => *text = t,
                                         Err(e) => self.err(*span, format!("`{text}`: {e}")),
                                     }
@@ -511,7 +674,7 @@ impl<'a> Walk<'a> {
                         }
                     }
                     for a in r2.args.iter_mut().flatten() {
-                        self.settle_arg(a, vals);
+                        self.settle_arg(a, vals, scope);
                     }
                     self.emit(StmtKind::Relation(r2), st, scope, path);
                 }
@@ -524,14 +687,20 @@ impl<'a> Walk<'a> {
     /// A seed written as an expression is worked out here, against the parameters in scope,
     /// and is a number from now on — for a declaration and for the declaring form of a port
     /// alike, since both carry the one `hint(…)` clause a seed is written in.
-    fn settle_seeds(&mut self, d: &mut Decl, vals: &BTreeMap<String, Aff>, span: Span) {
+    fn settle_seeds(&mut self, d: &mut Decl, vals: &BTreeMap<String, Aff>, scope: &Scope, span: Span) {
         for i in 0..d.seed_text.len() {
-            let Some(t) = d.seed_text[i].clone() else { continue };
+            let Some(t) = d.seed_text[i].take() else { continue };
+            let t = self.subst_sym(&t, vals, scope);
             match value_of(&t, vals, self.units) {
                 Ok(v) => d.seed[i] = v,
+                // over a variable of the curve, or a formal's coordinate the curve's table
+                // names and nothing here can: kept as text for the compile to read
+                Err(_) if self.sym.is_some() => d.seed_text[i] = Some(t),
                 Err(e) => self.err(span, format!("`{t}`: {e}")),
             }
-            d.seed_text[i] = None;
+        }
+        if let Some((b, _)) = d.seed_at.as_mut().and_then(|a| a.bearing.as_mut()) {
+            *b = self.subst_sym(b, vals, scope);
         }
     }
 
@@ -622,6 +791,41 @@ impl<'a> Walk<'a> {
         }
     }
 
+    /// Find the component an instance names and bind its arguments, recording the instance
+    /// (`InstanceInfo`) for the curves that may be written over it.  Returns the component, what
+    /// it was given, and the instance's absolute prefix; `None`, reported, when there is no such
+    /// component.
+    fn bind_instance(
+        &mut self,
+        inst: &crate::syntax::Instance,
+        scope: &Scope,
+        vals: &BTreeMap<String, Aff>,
+        drawn: bool,
+    ) -> Option<(&'a Component, BTreeMap<String, Aff>, String)> {
+        let Some(comp) = self.prog.component(&inst.component.text) else {
+            self.err(
+                inst.component.span,
+                format!("no component named `{}`", inst.component.text),
+            );
+            return None;
+        };
+        let sub_vals = self.bind(comp, inst, scope, vals);
+        let key = format!("{}{}.", scope.prefix(), inst.name.text);
+        self.instances.push(InstanceInfo {
+            prefix: key.clone(),
+            component: inst.component.text.clone(),
+            ents: comp
+                .formals
+                .iter()
+                .filter(|f| matches!(f.ty, Ty::Ent(_)))
+                .map(|f| (f.name.text.clone(), None))
+                .collect(),
+            values: sub_vals.clone(),
+            drawn,
+        });
+        Some((comp, sub_vals, key))
+    }
+
     /// Bind an instantiation's arguments to the component's formals.
     ///
     /// An entity argument *aliases*: the formal and the actual denote one entity, at no cost.  A
@@ -646,7 +850,7 @@ impl<'a> Walk<'a> {
         vals: &BTreeMap<String, Aff>,
     ) -> BTreeMap<String, Aff> {
         use crate::syntax::{InstVal, Ty};
-        let prefix = scope.prefixes.first().cloned().unwrap_or_default();
+        let prefix = scope.prefix().to_string();
         let mut sub: BTreeMap<String, Aff> = BTreeMap::new();
         let mut positional = 0usize;
         for a in &inst.args {
@@ -679,11 +883,28 @@ impl<'a> Walk<'a> {
                 // number it stands for carries that dimension through the component's body.
                 // This is where `param x = w + phi` is caught: nothing else in a component says
                 // what a number is, and the substitution `settle` performs erases it.
-                (ty, InstVal::Expr(t)) => self.bind_value(&mut sub, f, *ty, t, vals, a.span),
+                (ty, InstVal::Expr(t)) => {
+                    self.bind_value(&mut sub, f, *ty, t, vals, scope, &inst.name.text, a.span)
+                }
                 (ty, InstVal::Ref(r)) => {
-                    self.bind_value(&mut sub, f, *ty, &r.root.text, vals, a.span)
+                    let t = r.root.text.clone();
+                    self.bind_value(&mut sub, f, *ty, &t, vals, scope, &inst.name.text, a.span)
                 }
             }
+        }
+        // A numeric formal the instance leaves unbound is an **unknown of the drawing**: the
+        // language already makes a name nothing defines a free variable, and this is that
+        // rule applied to a formal — a leg drawn with its crank angle unbound has a crank that
+        // turns.  Named under the instance's own prefix (`leg.theta`), so two instances that
+        // leave the same formal unbound have two unknowns and not one shared one — and inside
+        // a traced component the name is no column of the curve, which is how a nested
+        // instance's unbound formal is reported rather than captured by an outer one's.
+        for f in &comp.formals {
+            if matches!(f.ty, Ty::Ent(_)) || sub.contains_key(&f.name.text) {
+                continue;
+            }
+            let name = format!("{prefix}{}.{}", inst.name.text, f.name.text);
+            sub.insert(f.name.text.clone(), free(name, f.ty));
         }
         sub
     }
@@ -692,6 +913,7 @@ impl<'a> Walk<'a> {
     ///
     /// The formal declares, so it wins — but an argument that said what it was and disagreed is
     /// reported: `Tooth(a0: 30mm)` is a mistake, not a conversion.
+    #[allow(clippy::too_many_arguments)]
     fn bind_value(
         &mut self,
         sub: &mut BTreeMap<String, Aff>,
@@ -699,6 +921,8 @@ impl<'a> Walk<'a> {
         ty: Ty,
         text: &str,
         vals: &BTreeMap<String, Aff>,
+        scope: &Scope,
+        inst: &str,
         span: Span,
     ) {
         let want = ty.dim();
@@ -709,12 +933,19 @@ impl<'a> Walk<'a> {
                 }
                 Err(e) => self.err(span, e),
             },
-            Err(e) => self.err(span, format!("`{}`: {e}", f.name.text)),
+            // a text a curve's variables leave no value to — kept, in the symbolic mode,
+            // under the name the formal has inside the instance; a mistake, on the sheet
+            Err(e) => {
+                let abs = format!("{}{inst}.{}", scope.prefix(), f.name.text);
+                if !self.keep_text(abs, text, vals, scope) {
+                    self.err(span, format!("`{}`: {e}", f.name.text));
+                }
+            }
         }
     }
 
     /// Turn every reference into the absolute name of what it denotes.
-    fn resolve(&mut self) -> Vec<Flat> {
+    fn resolve(&mut self) -> (Vec<Flat>, BTreeMap<String, String>) {
         // port aliases first, and transitively: `port a = b` where `b` is itself a port
         let mut alias: BTreeMap<String, String> = BTreeMap::new();
         for (abs, r, sc) in self.aliases.clone() {
@@ -738,6 +969,12 @@ impl<'a> Walk<'a> {
                 break;
             }
         }
+        // what each instance was given, now that the aliases its arguments made are absolute
+        for info in self.instances.iter_mut() {
+            for (formal, actual) in info.ents.iter_mut() {
+                *actual = alias.get(&format!("{}{formal}", info.prefix)).cloned();
+            }
+        }
         let out = std::mem::take(&mut self.out);
         let mut done: Vec<(Stmt, Vec<u32>, Scope, Option<StmtKind>)> = Vec::with_capacity(out.len());
         for (mut st, path, sc) in out {
@@ -750,10 +987,51 @@ impl<'a> Walk<'a> {
             for (span, msg) in bad {
                 self.err(span, msg);
             }
+            // a curve of a drawn instance's point: the point's name is absolute now, and the
+            // instance it belongs to is the innermost one whose component has the formal
+            if let StmtKind::Decl(Decl { curve: Some(c), .. }) = &mut st.kind {
+                if let (CurveTarget::Drawn(r), true) = (&c.target, clean) {
+                    let abs = written_ref(r);
+                    match self.owner_of(&abs, &c.swept.text) {
+                        Some(of) => c.of = Some(of),
+                        None => self.err(
+                            r.span,
+                            format!(
+                                "`{abs}` is not a point of an instance whose component has a \
+                                 numeric formal `{}`, and a curve is a point of a component \
+                                 as one of its formals runs",
+                                c.swept.text
+                            ),
+                        ),
+                    }
+                }
+            }
             done.push((st, path, sc, written.filter(|_| clean)));
         }
         self.judge_rings(&done, &alias);
-        done.into_iter().map(|(stmt, path, _, _)| Flat { stmt, path }).collect()
+        let flat = done.into_iter().map(|(stmt, path, _, _)| Flat { stmt, path }).collect();
+        (flat, alias)
+    }
+
+    /// The instance a curve of the point `abs` is a curve *of*: the innermost drawn instance
+    /// whose prefix the name starts with **and whose component declares `swept` as a numeric
+    /// formal** — so `o.i.t over u` sweeps `Outer`'s `u` when `Inner` has none, and `Inner`'s
+    /// own when it does.
+    fn owner_of(&self, abs: &str, swept: &str) -> Option<crate::syntax::CurveOf> {
+        let mut owners: Vec<&InstanceInfo> =
+            self.instances.iter().filter(|i| i.drawn && abs.starts_with(&i.prefix)).collect();
+        owners.sort_by_key(|i| std::cmp::Reverse(i.prefix.len()));
+        owners
+            .into_iter()
+            .find(|i| {
+                self.prog.component(&i.component).is_some_and(|c| {
+                    c.formals.iter().any(|f| f.name.text == swept && !matches!(f.ty, Ty::Ent(_)))
+                })
+            })
+            .map(|i| crate::syntax::CurveOf {
+                instance: i.prefix.clone(),
+                point: abs[i.prefix.len()..].to_string(),
+            })
     }
 
     /// E021 (spec §12.5): a statement inside a `ring` may reference, outside the ring, only
@@ -831,10 +1109,20 @@ fn count_children(k: EntKind) -> usize {
 /// `pi` is the dimensionless constant and `tau` is an **angle**, and `tau == 2 * pi * 1rad`
 /// holds where it used to be a coincidence of the same digits.
 fn value_of(text: &str, env: &BTreeMap<String, Aff>, units: Units) -> Result<f64, String> {
-    Ok(value_aff(text, env, units)?.c)
+    let a = value_aff(text, env, units)?;
+    a.number().ok_or_else(|| {
+        format!(
+            "`{}` is not a number here — a component's parameters are, and the document's \
+             dimensions are not",
+            a.free.unwrap_or_default()
+        )
+    })
 }
 
-/// The same, keeping what it *is* beside what it is worth.
+/// The same, keeping what it *is* beside what it is worth — and what it is *in terms of*: a
+/// text over a formal left unbound comes to an affine value in that unknown (`bind`), which a
+/// `param`, an argument to a nested instance and a dimension all carry on.  Only a caller that
+/// needs a number (`value_of`: a seed, a count, an index) refuses one.
 ///
 /// A `param`'s dimension has to survive into the names that read it, or `param R = m * N / 2`
 /// would forget that `m` was declared a `Length` and `param Rt = R + m` would read as a plain
@@ -851,14 +1139,15 @@ pub(crate) fn value_aff(
     }
     let p = expr::parse_in(t, units)?;
     let a = expr::eval(&p.body, env)?;
-    match a.number() {
-        Some(v) if v.is_finite() => Ok(a),
-        Some(v) => Err(format!("comes to {v}")),
-        None => Err(format!(
-            "`{}` is not a number here — a component's parameters are, and the document's \
-             dimensions are not",
-            a.free.unwrap_or_default()
+    match (a.number(), &a.free) {
+        (Some(v), _) if !v.is_finite() => Err(format!("comes to {v}")),
+        // an unknown the scope *bound* — a formal left unbound, a param over one — carries on;
+        // a name nothing binds is the document's, and a component's numbers cannot read it
+        (None, Some(n)) if !env.values().any(|b| b.free.as_deref() == Some(n)) => Err(format!(
+            "`{n}` is not a number here — a component's parameters are, and the document's \
+             dimensions are not"
         )),
+        _ => Ok(a),
     }
 }
 
@@ -902,6 +1191,30 @@ fn settle(text: &str, vals: &BTreeMap<String, Aff>, units: Units) -> Result<Stri
 /// At identifier boundaries, so `flank` in `cos(flank)` is replaced and the `flank` inside
 /// `flank_out` is not; and parenthesised, so a negative value does not change what binds to what.
 fn substitute(text: &str, vals: &BTreeMap<String, Aff>) -> String {
+    substitute_with(text, of_vals(vals))
+}
+
+/// What a word stands for in `vals`, as text: a number, parenthesised; a value affine in the
+/// drawing's unknown (a formal left unbound, or a `param` over one) as `(m * name + c)`, or
+/// the bare name when that is all it is.  `tau` and `turn` are `expr::CONSTANTS` now, and an
+/// angle rather than a number that happens to be 360, so they are left for the evaluator.
+fn of_vals(vals: &BTreeMap<String, Aff>) -> impl Fn(&str) -> Option<String> + '_ {
+    move |w| {
+        let a = vals.get(w)?;
+        if let Some(v) = a.number() {
+            return Some(format!("({})", crate::syntax::num(v)));
+        }
+        let n = a.free.as_ref()?;
+        Some(if a.m == 1.0 && a.c == 0.0 {
+            n.clone()
+        } else {
+            format!("({} * {n} + {})", crate::syntax::num(a.m), crate::syntax::num(a.c))
+        })
+    }
+}
+
+/// `substitute`, over whatever `of` says a word stands for.
+fn substitute_with(text: &str, of: impl Fn(&str) -> Option<String>) -> String {
     let mut out = String::with_capacity(text.len());
     let b: Vec<char> = text.chars().collect();
     let mut i = 0usize;
@@ -912,11 +1225,8 @@ fn substitute(text: &str, vals: &BTreeMap<String, Aff>) -> String {
                 i += 1;
             }
             let word: String = b[from..i].iter().collect();
-            // `tau` and `turn` are `expr::CONSTANTS` now, and an angle rather than a number
-            // that happens to be 360, so they are left for the evaluator to read
-            let known = vals.get(&word).and_then(|a| a.number());
-            match known {
-                Some(v) => out.push_str(&format!("({})", crate::syntax::num(v))),
+            match of(&word) {
+                Some(t) => out.push_str(&t),
                 None => out.push_str(&word),
             }
         } else {
@@ -926,6 +1236,8 @@ fn substitute(text: &str, vals: &BTreeMap<String, Aff>) -> String {
     }
     out
 }
+
+
 
 /// The absolute name `name` has inside copy `k` of whichever block declares it, under
 /// `container` — the dotted path written before the indexed name (`l.` for `l.p[1]`, nothing
@@ -1067,9 +1379,15 @@ fn refs_of(k: &StmtKind) -> Vec<&Ref> {
                 }
             }
             // then the plane it is in and the plane it is folded from — `rewrite` visits them
-            // in this order
+            // in this order — then a curve's drawn target and a geometric seed's place
             out.extend(d.membership.plane());
             out.extend(d.attitude.plane_ref());
+            if let Some(crate::syntax::CurveSpec { target: CurveTarget::Drawn(r), .. }) = &d.curve {
+                out.push(r);
+            }
+            if let Some(at) = &d.seed_at {
+                out.push(&at.what);
+            }
         }
         StmtKind::Relation(rel) => {
             for a in rel.args.iter().flatten() {
@@ -1163,6 +1481,14 @@ fn rewrite(
             }
             if let Some(r) = d.attitude.plane_ref_mut() {
                 fix(r, bad);
+            }
+            if let Some(crate::syntax::CurveSpec { target: CurveTarget::Drawn(r), .. }) =
+                d.curve.as_mut()
+            {
+                fix(r, bad);
+            }
+            if let Some(at) = d.seed_at.as_mut() {
+                fix(&mut at.what, bad);
             }
         }
         StmtKind::Relation(rel) => {

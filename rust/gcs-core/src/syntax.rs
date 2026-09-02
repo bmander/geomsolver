@@ -114,10 +114,6 @@ pub struct Program {
     /// One, anonymous, in the flat subset; `component` is a parser addition rather than a change
     /// of shape.
     pub components: Vec<Component>,
-    /// The curve families the program defines.  Program-level like a component, and for the same
-    /// reason: a family is a *kind of curve*, not a curve, and several drawings may be written
-    /// over one.
-    pub curves: Vec<CurveFamily>,
     /// The `in PLANE { … }` blocks' own text (§6.7).  Their statements are hoisted into the
     /// body at parse, so nothing but the header and the brace is the block's, and this is
     /// where `edit::remove` finds them when the plane goes.
@@ -125,34 +121,43 @@ pub struct Program {
     next_stmt: u32,
 }
 
-/// `curve involute(c: circle, phase: Angle)(u) over (0, 90) = ( xexpr, yexpr )`
+/// `curve path = leg.toe over theta in (0, 360)` — what a curve declaration says (§6.5).
 ///
-/// The expressions are kept as *text* and compiled by `program::elaborate`, exactly as a
-/// dimension's is: the little language they are written in is `expr.rs`'s, and reading it a
-/// second time here would be a second copy of rules like the one that makes `3 1/8` a number.
+/// A curve is **a point of a component, as one of that component's numeric formals runs over an
+/// interval**: the target names the point, `over` names the formal that is swept, and `in` gives
+/// the interval.  The point may belong to an instance the drawing already holds (`leg.toe`) —
+/// then the instance's own pose and the value it gave the formal are where the trace is anchored
+/// — or to an instance written in place and never drawn (`Involute(base, phase: a0).p`).  The
+/// interval's ends are kept as text and worked out over the parameters in scope, like a
+/// dimension's.
 #[derive(Clone, Debug)]
-pub struct CurveFamily {
-    pub name: Name,
-    /// The entities the curve is written over, and the numbers it takes.
-    pub formals: Vec<Formal>,
-    /// What it runs on.
-    pub param: Name,
-    /// The interval it is drawn over unless an instance narrows it.
-    pub domain: Option<(String, String)>,
-    pub body: FamilyBody,
-    pub span: Span,
+pub struct CurveSpec {
+    pub target: CurveTarget,
+    /// The numeric formal that runs — `theta`.
+    pub swept: Name,
+    /// `in (a, b)`, as written.
+    pub domain: (String, String),
+    /// What the flattener resolved the target to — `None` until it has, or when it could not.
+    pub of: Option<CurveOf>,
 }
 
-/// What follows a family's `=`: a pair of expressions, or `trace p [from (expr)] where { … }` —
-/// a point and the constraints that force it, the curve then being wherever they put the point
-/// as the parameter runs.  `from` names the parameter value evaluation is anchored at: the one
-/// place the block's orientation predicates are read, chosen so they read unambiguously.  The
-/// block's statements are ordinary statements; what may appear in one is
-/// `program::compile_trace`'s question, not the parser's.
+/// The instance a curve's point belongs to, resolved: the absolute prefix of the instance
+/// (`leg.`, or a phantom `#c12.` for one written in place), and the point's name under it
+/// (`toe`, `sub.pt`).
 #[derive(Clone, Debug)]
-pub enum FamilyBody {
-    Exprs { x: String, y: String, xspan: Span, yspan: Span },
-    Trace { point: Name, home: Option<(String, Span)>, body: Vec<Stmt> },
+pub struct CurveOf {
+    pub instance: String,
+    pub point: String,
+}
+
+/// Where a curve's point comes from — see `CurveSpec`.
+#[derive(Clone, Debug)]
+pub enum CurveTarget {
+    /// `leg.toe`: a point of an instance the drawing holds.
+    Drawn(Ref),
+    /// `Leg(axle, pivot).toe`: an instance written in place, never drawn, and the point's path
+    /// inside it.  The instance's name is a key the source cannot write.
+    Anon(Instance, Ref),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -370,6 +375,10 @@ pub struct Port {
     pub seed_spans: Vec<Span>,
     /// Where the clause is, or — an empty span — where it would go (`Decl::hint_span`).
     pub hint_span: Option<Span>,
+    /// `port p = (xexpr, yexpr)` — a point *computed* from the component's formals and
+    /// parameters rather than placed by constraints (§6.5).  It is drawn only as a curve: a
+    /// component with one is traced, never instantiated on the sheet.  Text, like a dimension's.
+    pub computed: Option<[(String, Span); 2]>,
 }
 
 #[derive(Clone, Debug)]
@@ -660,12 +669,8 @@ pub struct Decl {
     pub hint_span: Option<Span>,
     /// Document data no solve moves, so not a seed and never written back.
     pub knots: Option<Vec<f64>>,
-    /// A curve instance: the family it belongs to.  `None` for every other kind.
-    pub def: Option<Name>,
-    /// The numbers a curve instance is given, as written.
-    pub values: Vec<(Name, String)>,
-    /// The interval a curve instance is drawn over, as written.
-    pub domain: Option<(String, String)>,
+    /// A curve: what it is a curve *of* (§6.5).  `None` for every other kind.
+    pub curve: Option<CurveSpec>,
     /// The classes it carries, in written order: `line l(a, b) class centerline heavy`.
     /// Presentation, and nothing the core computes reads it (spec §14).
     pub class: Classes,
@@ -1277,7 +1282,6 @@ impl Program {
         Program {
             text: String::new(),
             components: vec![Component::default()],
-            curves: Vec::new(),
             in_blocks: Vec::new(),
             next_stmt: 0,
         }
@@ -1316,6 +1320,11 @@ impl Program {
     /// A direct walk rather than `stmts().find(…)`: this is asked once per entity by
     /// `edit::commit_seeds` and once per entity again by `reconcile`, and `stmts` builds a `Vec`
     /// of the whole program to hand back.  Here it short-circuits and allocates nothing.
+    /// The component called `name`, if the program defines one.
+    pub fn component(&self, name: &str) -> Option<&Component> {
+        self.components.iter().find(|c| c.name.as_ref().map(|n| n.text.as_str()) == Some(name))
+    }
+
     pub fn stmt(&self, id: StmtId) -> Option<&Stmt> {
         fn find(st: &Stmt, id: StmtId) -> Option<&Stmt> {
             if st.id == id {
@@ -1432,25 +1441,8 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
         }
         StmtKind::Orient(o) => write_orient(out, o),
         StmtKind::Instance(i) => {
-            out.push_str(&format!("{}: {}(", i.name.text, i.component.text));
-            let parts: Vec<String> = i
-                .args
-                .iter()
-                .map(|a| {
-                    let mut s = String::new();
-                    if let Some(l) = &a.label {
-                        s.push_str(&l.text);
-                        s.push_str(": ");
-                    }
-                    match &a.value {
-                        InstVal::Ref(r) => write_ref(&mut s, r),
-                        InstVal::Expr(t) => s.push_str(t),
-                    }
-                    s
-                })
-                .collect();
-            out.push_str(&parts.join(", "));
-            out.push(')');
+            out.push_str(&format!("{}: ", i.name.text));
+            write_instance_call(out, i);
             // only a clause this statement wrote — `Membership::written` is the one guard
             if let Some(p) = i.membership.written() {
                 out.push_str(" in ");
@@ -1485,6 +1477,8 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             } else if let Some(r) = &p.alias {
                 out.push_str(" = ");
                 write_ref(out, r);
+            } else if let Some([(x, _), (y, _)]) = &p.computed {
+                out.push_str(&format!(" = ({x}, {y})"));
             }
         }
         StmtKind::Param(p) => out.push_str(&format!("param {} = {}", p.name.text, p.text)),
@@ -1554,6 +1548,44 @@ fn labels_children(k: EntKind) -> bool {
     !matches!(k, EntKind::Line | EntKind::Spline)
 }
 
+/// `Tooth(base, a0: 30)` — a component and what it is given, the same spelling for an instance
+/// statement and for an instance written in place inside a curve.
+fn write_instance_call(out: &mut String, i: &Instance) {
+    out.push_str(&format!("{}(", i.component.text));
+    let parts: Vec<String> = i
+        .args
+        .iter()
+        .map(|a| {
+            let mut s = String::new();
+            if let Some(l) = &a.label {
+                s.push_str(&l.text);
+                s.push_str(": ");
+            }
+            match &a.value {
+                InstVal::Ref(r) => write_ref(&mut s, r),
+                InstVal::Expr(t) => s.push_str(t),
+            }
+            s
+        })
+        .collect();
+    out.push_str(&parts.join(", "));
+    out.push(')');
+}
+
+/// ` = leg.toe over theta in (0, 360)` — what a curve is a curve of (§6.5).
+fn write_curve_spec(out: &mut String, c: &CurveSpec) {
+    out.push_str(" = ");
+    match &c.target {
+        CurveTarget::Drawn(r) => write_ref(out, r),
+        CurveTarget::Anon(inst, point) => {
+            write_instance_call(out, inst);
+            out.push('.');
+            write_ref(out, point);
+        }
+    }
+    out.push_str(&format!(" over {} in ({}, {})", c.swept.text, c.domain.0, c.domain.1));
+}
+
 fn write_decl(out: &mut String, d: &Decl) {
     let kw = d.kind.as_str();
     out.push_str(kw);
@@ -1567,7 +1599,11 @@ fn write_decl(out: &mut String, d: &Decl) {
         out.push_str(&n.text);
     }
 
-    out.push_str(&decl_tail(d, &d.seed));
+    if let Some(c) = &d.curve {
+        write_curve_spec(out, c);
+    } else {
+        out.push_str(&decl_tail(d, &d.seed));
+    }
     if let Some(u) = &d.knots {
         out.push_str(" knots [");
         out.push_str(&u.iter().map(|&v| num(v)).collect::<Vec<_>>().join(", "));
@@ -2242,8 +2278,8 @@ fn joint_word(w: &str) -> bool {
 
 /// The words that shape a statement without naming anything — a modifier the parser eats where it
 /// stands.  `as` binds a name after it, which is why `highlight` treats that one specially.
-const MODIFIERS: [&str; 10] =
-    ["over", "as", "at", "hint", "about", "class", "where", "bearing", "from", "in"];
+const MODIFIERS: [&str; 9] =
+    ["over", "as", "at", "hint", "about", "class", "bearing", "from", "in"];
 
 /// The words that may follow a declaration's own, so `class a b` knows where its list ends.
 /// A chain's joints are here too: `arc a(center: c) class construction tangent …` is one link.
@@ -2429,10 +2465,6 @@ fn tint_word(
             if next == Some(&Tok::P(':')) {
                 return (Some(Tint::Def), Next::Inst);
             }
-            // `trace p where { … }` — a family body usually starts its own line
-            if w == "trace" {
-                return (Some(Tint::Word), Next::Def);
-            }
             // `claim vertical(rail)`: the word after it is a statement start again, so the
             // relation it qualifies is tinted exactly as it would be standing alone
             if w == "claim" {
@@ -2467,10 +2499,6 @@ fn tint_word(
                         _ => Next::Word,
                     },
                 );
-            }
-            // `= trace p where { … }` — the traced point is a name the family declares
-            if w == "trace" && prev == Some(&Tok::Eq) {
-                return (Some(Tint::Word), Next::Def);
             }
             // a chain (spec §6.6): the element keyword mid-line, the words standing prefix to
             // it, the joints between links, and `close`.  Each is claimed only in the company a
@@ -2720,9 +2748,6 @@ pub fn is_name(s: &str) -> bool {
         && !MODIFIERS.contains(&s)
         && !OPENERS.contains(&s)
         && !ORIENTS.contains(&s)
-        // `trace` opens no statement of its own — it stands after a family's `=` — so it is
-        // not in `OPENERS`, and a declaration named for it would still read as one
-        && s != "trace"
 }
 
 /// Whether a word may stand *after* a declaration — a trailing clause's own word, or a chain's
@@ -2905,7 +2930,6 @@ pub fn parse(src: &str) -> (Program, Vec<SynErr>) {
     };
     let mut body: Vec<Stmt> = Vec::new();
     let mut comps: Vec<Component> = Vec::new();
-    let mut families: Vec<CurveFamily> = Vec::new();
     let mut next_id = 0u32;
     while !st.done() {
         st.skip_ends();
@@ -2926,13 +2950,20 @@ pub fn parse(src: &str) -> (Program, Vec<SynErr>) {
             }
             continue;
         }
-        // `curve name(` defines a *family*; `curve name =` draws one.  Which it is is settled by
-        // the token after the name, and nowhere else.
-        if st.peek_word("curve") && st.curve_is_family() {
-            match st.curve_family(&mut next_id) {
-                Some(c) => families.push(c),
-                None => st.resync(),
-            }
+        // `curve name(` was a *family* until 0.11; a family is a component now (§6.5)
+        if st.peek_word("curve")
+            && matches!(st.t.get(st.i + 2).map(|(t, _)| t), Some(Tok::P('(')))
+        {
+            let span = st.here();
+            st.errs.push(SynErr {
+                span,
+                message: "a curve family is a component now: write \
+                          `component Name(c: circle, u: Angle) { … }` with the traced point \
+                          inside it, and draw the curve as \
+                          `curve e = Name(c).point over u in (a, b)`"
+                    .to_string(),
+            });
+            st.resync();
             continue;
         }
         if st.chain_or_one(&mut next_id, &mut body).is_none() {
@@ -2940,7 +2971,6 @@ pub fn parse(src: &str) -> (Program, Vec<SynErr>) {
         }
     }
     p.next_stmt = next_id;
-    p.curves = families;
     p.in_blocks = std::mem::take(&mut st.in_blocks);
     // named components first, the anonymous root last — `Program::root` takes the last, and a
     // program that declares components and nothing loose has its last component as the root
@@ -3413,22 +3443,29 @@ impl<'a> P<'a> {
                         seed_text,
                         seed_spans,
                         hint_span: Some(hint_span),
+                        computed: None,
                     }))
                 } else if self.peek() == Some(&Tok::Eq) {
                     self.i += 1;
-                    let r = self.refr()?;
+                    // `port p = (x, y)` — a computed point; `port p = other` — an alias
+                    let (alias, computed) = if self.peek() == Some(&Tok::P('(')) {
+                        (None, Some(self.pair()?))
+                    } else {
+                        (Some(self.refr()?), None)
+                    };
                     self.end_of_stmt();
                     Some(StmtKind::Port(Port {
                         name,
                         declare: None,
-                        alias: Some(r),
+                        alias,
                         seed: Vec::new(),
                         seed_text: Vec::new(),
                         seed_spans: Vec::new(),
                         hint_span: None,
+                        computed,
                     }))
                 } else {
-                    self.fail("a port is `port name: Kind` or `port name = other`");
+                    self.fail("a port is `port name: Kind`, `port name = other` or `port name = (x, y)`");
                     None
                 }
             }
@@ -3470,18 +3507,7 @@ impl<'a> P<'a> {
                 self.i += 1; // the colon
                 let component = self.ident()?;
                 let lo = name.span.lo as usize;
-                let mut args = Vec::new();
-                if self.want_p('(') {
-                    while !self.eat_p(')') {
-                        args.push(self.inst_arg()?);
-                        if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
-                            self.fail("expected `,` or `)`");
-                            return None;
-                        }
-                    }
-                } else {
-                    return None;
-                }
+                let args = self.inst_args()?;
                 // `in top` — the instance drawn in a view (§6.7), the one trailer it takes
                 let mut membership = Membership::default();
                 if self.peek_word("in") {
@@ -4421,100 +4447,6 @@ impl<'a> P<'a> {
         }
     }
 
-    /// After `curve NAME`, a `(` opens a family's formals and anything else is an instance.
-    fn curve_is_family(&self) -> bool {
-        matches!(self.t.get(self.i + 2).map(|(t, _)| t), Some(Tok::P('(')))
-    }
-
-    /// `curve NAME(formals)(param) [over (a, b)] = ( xexpr, yexpr )`, or
-    /// `… = trace NAME where { … }`.
-    fn curve_family(&mut self, next_id: &mut u32) -> Option<CurveFamily> {
-        let lo = self.here().lo as usize;
-        self.i += 1; // `curve`
-        let name = self.ident()?;
-        let mut formals = Vec::new();
-        if self.want_p('(') {
-            while !self.eat_p(')') {
-                let fname = self.ident()?;
-                if !self.want_p(':') {
-                    return None;
-                }
-                let tname = self.ident()?;
-                let Some(ty) = Ty::parse(&tname.text) else {
-                    self.errs.push(SynErr {
-                        span: tname.span,
-                        message: format!("`{}` is not a type", tname.text),
-                    });
-                    return None;
-                };
-                let span = Span::new(fname.span.lo as usize, self.prev_hi());
-                formals.push(Formal { name: fname, ty, span });
-                if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
-                    self.fail("expected `,` or `)`");
-                    return None;
-                }
-            }
-        } else {
-            return None;
-        }
-        // the parameter it runs on
-        if !self.want_p('(') {
-            return None;
-        }
-        let param = self.ident()?;
-        if !self.want_p(')') {
-            return None;
-        }
-        let domain = if self.eat_word("over") { Some(self.interval()?) } else { None };
-        if self.peek() != Some(&Tok::Eq) {
-            self.fail("a curve family is `curve name(...)(u) = ( x, y )`");
-            return None;
-        }
-        self.i += 1;
-        // a family is usually too long for one line, and the `=` is where it breaks
-        self.skip_ends();
-        // `trace p [from (expr)] where { … }` — the locus form
-        if self.eat_word("trace") {
-            let point = self.ident()?;
-            let home =
-                if self.eat_word("from") { Some(self.paren_expr()?) } else { None };
-            if !self.eat_word("where") {
-                self.fail("a trace is `trace point [from (...)] where { ... }`");
-                return None;
-            }
-            let (body, joint) = self.braced_body(next_id)?;
-            self.no_open_joint(joint, "a trace block");
-            return Some(CurveFamily {
-                name,
-                formals,
-                param,
-                domain,
-                body: FamilyBody::Trace { point, home, body },
-                span: Span::new(lo, self.prev_hi()),
-            });
-        }
-        if !self.want_p('(') {
-            return None;
-        }
-        let (x, xspan) = self.expr_until(',')?;
-        if !self.want_p(',') {
-            return None;
-        }
-        let (y, yspan) = self.expr_until(')')?;
-        if !self.want_p(')') {
-            return None;
-        }
-        self.end_of_stmt();
-        Some(CurveFamily {
-            name,
-            formals,
-            param,
-            domain,
-            body: FamilyBody::Exprs { x, y, xspan, yspan },
-            span: Span::new(lo, self.prev_hi()),
-        })
-    }
-
     /// `( expr )` — the parenthesised expression `from` and `bearing` both carry.
     fn paren_expr(&mut self) -> Option<(String, Span)> {
         if !self.want_p('(') {
@@ -4528,19 +4460,82 @@ impl<'a> P<'a> {
     }
 
     /// `over (a, b)` — two expressions over whatever parameters are in scope.
-    fn interval(&mut self) -> Option<(String, String)> {
+    /// What follows a curve's `=`: `REF over IDENT in (a, b)`, or
+    /// `Component(args).path over IDENT in (a, b)`.  A component name is told from a point's by
+    /// the `(` after it, the same token that tells an instance from a reference elsewhere.
+    fn curve_spec(&mut self) -> Option<CurveSpec> {
+        let target = if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('('))) {
+            let component = self.ident()?;
+            let lo = component.span.lo as usize;
+            let args = self.inst_args()?;
+            if !self.eat_p('.') {
+                self.fail("the point the curve traces follows the instance: `Component(…).point`");
+                return None;
+            }
+            let point = self.refr()?;
+            let at = lo;
+            let inst = Instance {
+                // a key the source cannot write, as an anonymous declaration's is
+                name: Name { text: format!("#c{at}"), span: Span::new(at, at) },
+                component,
+                args,
+                span: Span::new(lo, self.prev_hi()),
+                membership: Membership::default(),
+            };
+            CurveTarget::Anon(inst, point)
+        } else {
+            CurveTarget::Drawn(self.refr()?)
+        };
+        if self.peek_word("over") && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('('))) {
+            self.fail(
+                "`over` names the formal that runs, and `in` the interval: \
+                 `over theta in (0, 360)`",
+            );
+            return None;
+        }
+        if !self.eat_word("over") {
+            self.fail("a curve says which formal runs: `over theta in (a, b)`");
+            return None;
+        }
+        let swept = self.ident()?;
+        if !self.eat_word("in") {
+            self.fail("a curve says the interval its formal runs over: `in (a, b)`");
+            return None;
+        }
+        let [(a, _), (b, _)] = self.pair()?;
+        Some(CurveSpec { target, swept, domain: (a, b), of: None })
+    }
+
+    /// `( expr, expr )` — an interval, a computed point's coordinates.
+    fn pair(&mut self) -> Option<[(String, Span); 2]> {
         if !self.want_p('(') {
             return None;
         }
-        let (a, _) = self.expr_until(',')?;
+        let a = self.expr_until(',')?;
         if !self.want_p(',') {
             return None;
         }
-        let (b, _) = self.expr_until(')')?;
+        let b = self.expr_until(')')?;
         if !self.want_p(')') {
             return None;
         }
-        Some((a, b))
+        Some([a, b])
+    }
+
+    /// `(arg, label: arg, …)` — what an instance is given, the `(` not yet eaten.
+    fn inst_args(&mut self) -> Option<Vec<InstArg>> {
+        if !self.want_p('(') {
+            return None;
+        }
+        let mut args = Vec::new();
+        while !self.eat_p(')') {
+            args.push(self.inst_arg()?);
+            if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
+                self.fail("expected `,` or `)`");
+                return None;
+            }
+        }
+        Some(args)
     }
 
     /// The source up to `end` at the top bracket level, as written.
@@ -4753,49 +4748,19 @@ impl<'a> P<'a> {
         // how an error spells this statement's head — computed at the failure, since every
         // declaration that parses would otherwise allocate a string nothing reads
         let head = || decl_head(kind, &name);
-        // `curve e = involute(base, phase: 0) over (0, 45)`
-        let mut def = None;
-        let mut values: Vec<(Name, String)> = Vec::new();
-        let mut domain = None;
+        // `curve path = leg.toe over theta in (0, 360)` — a point of a component, as one of its
+        // numeric formals runs (§6.5).  The target is an instance's point, or an instance
+        // written in place followed by the point's path.
         if kind == EntKind::Curve {
             if self.peek() != Some(&Tok::Eq) {
-                self.fail("a curve is drawn as `curve name = family(args)`");
+                self.fail(
+                    "a curve is `curve name = instance.point over formal in (a, b)`, or \
+                     `curve name = Component(args).point over formal in (a, b)`",
+                );
                 return None;
             }
             self.i += 1;
-            def = Some(self.ident()?);
-            let mut args: Vec<Vec<Kid>> = vec![Vec::new()];
-            if self.want_p('(') {
-                while !self.eat_p(')') {
-                    // `phase: 0` is a number the family takes; a bare name is an entity it is
-                    // written over
-                    let label = match (self.peek().cloned(), self.t.get(self.i + 1).map(|(t, _)| t))
-                    {
-                        (Some(Tok::Ident(s)), Some(Tok::P(':'))) => {
-                            let n = Name { text: s, span: self.here() };
-                            self.i += 2;
-                            Some(n)
-                        }
-                        _ => None,
-                    };
-                    match label {
-                        Some(l) => {
-                            let (t, _) = self.expr_until(',')?;
-                            values.push((l, t));
-                        }
-                        None => args[0].push(Kid::Ref(self.refr()?)),
-                    }
-                    if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
-                        self.fail("expected `,` or `)`");
-                        return None;
-                    }
-                }
-            } else {
-                return None;
-            }
-            if self.eat_word("over") {
-                domain = Some(self.interval()?);
-            }
+            let curve = self.curve_spec()?;
             let at = self.prev_hi();
             let (class, class_span) = self.class_clause(at);
             if self.peek_word("in") {
@@ -4805,15 +4770,13 @@ impl<'a> P<'a> {
             return Some(Decl {
                 kind,
                 name,
-                children: args,
+                children: Vec::new(),
                 seed: Vec::new(),
                 seed_text: Vec::new(),
                 seed_spans: Vec::new(),
                 hint_span: None,
                 knots: None,
-                def,
-                values,
-                domain,
+                curve: Some(curve),
                 class,
                 class_span,
                 seed_at: None,
@@ -5016,9 +4979,7 @@ impl<'a> P<'a> {
             seed_spans,
             hint_span: Some(hint_span),
             knots,
-            def,
-            values,
-            domain,
+            curve: None,
             class,
             class_span: if class_span.is_empty() { Span::new(insert, insert) } else { class_span },
             seed_at,

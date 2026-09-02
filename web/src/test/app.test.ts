@@ -819,7 +819,7 @@ test('a gesture beside a component leaves the component written', () => {
   cv.fire('pointerup', pointer(...view.w2s(200, 0)));
 
   assert.equal(view.sketch.points.length, before + 1);
-  assert.ok(view.source.includes('curve involute(c: circle, phase: Angle)(u) ='));
+  assert.ok(view.source.includes('component Involute(c: circle, phase: Angle, u: Angle) {'));
   assert.ok(view.source.includes('component Flank('));
   assert.ok(view.source.includes('cycle N as i {'));
   assert.ok(view.source.includes('g: Gear(N: 30, m: 3, phi: 25, ded: 1)'));

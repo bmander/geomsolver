@@ -377,31 +377,49 @@ pub struct PlaneE {
     pub basis: crate::plane::Basis,
 }
 
-/// A curve family, written in the language: `C(u)` as a pair of expressions over the geometry
-/// the curve is drawn from.
+/// A curve, compiled: **a point of a component, as one of the component's numeric formals
+/// runs** (Solvent §6.5).  `C(u)` is where the component's own statements put the point, given
+/// the formal's value `u` and the geometry the component is written over.
 ///
-/// This is what makes an involute — or a cycloid, or a spiral — *library code* rather than
-/// another entity kind with another pair of kernels.  A definition names the entities it is
-/// written over, the compile-time values it takes, and the parameter it runs on; the two tapes
-/// are compiled against one variable table, which is the parameter followed by every scalar its
-/// arguments contribute, in `entity_params` order.  That order is the kernel's column order, so
-/// a tape's gradient *is* the Jacobian row.
+/// This is what makes an involute — or a cycloid, or a walking leg's stride — *library code*
+/// rather than another entity kind with another pair of kernels: a component is written once,
+/// drawn or not, and a curve is one of its points asked over an interval.  A definition names
+/// the entities the component is written over, the numbers it takes besides the swept one, and
+/// the swept formal; the body is compiled against one variable table, which is the swept formal
+/// followed by every scalar the entity formals contribute, in `entity_params` order, then the
+/// other numbers.  That order is the kernel's column order, so a tape's gradient *is* the
+/// Jacobian row.  One definition serves every instance of the component asked for the same
+/// point over the same formal.
 #[derive(Clone, Debug)]
 pub struct CurveDef {
+    /// `CurveDef::key` — never a spelling.
     pub name: String,
-    /// The entity arguments, in order: what an instance must supply, and of what kind.
+    pub component: String,
+    /// The point, by its name under the instance: `toe`, `sub.pt`.
+    pub port: String,
+    /// The entity formals, in order: what an instance must supply, and of what kind.
     pub formals: Vec<(String, EntKind)>,
-    /// The compile-time value parameters, in order.
+    /// The numeric formals other than the swept one, in order.
     pub values: Vec<String>,
-    /// What the curve runs on — `u`.
+    /// The swept formal — what the curve runs on.
     pub param: String,
     /// The variable table the body was compiled over: `param` first, then one name per scalar
     /// the formals contribute, then the value parameters.  Kept so a definition can be re-read
     /// and printed.
     pub vars: Vec<String>,
     pub body: CurveBody,
-    /// The interval the curve is drawn over.
-    pub domain: (f64, f64),
+    /// For a trace: each inner unknown's owner — the entity's name under the instance and
+    /// which of its own scalars — which is where a **drawn** instance's pose is read off, so
+    /// the trace's home is the pose on the sheet rather than the component's seeds.  Empty for
+    /// a formula.
+    pub pose_of: Vec<(String, usize)>,
+}
+
+impl CurveDef {
+    /// What one definition is keyed by: the component, the point, the swept formal.
+    pub fn key(component: &str, point: &str, swept: &str) -> String {
+        format!("{component}.{point}/{swept}")
+    }
 }
 
 /// How a family says where `C(u)` is: as two expressions, or as the constraints that force it.
@@ -421,11 +439,35 @@ pub struct CurveE {
     pub def: u32,
     pub args: Vec<EntRef>,
     pub values: Vec<f64>,
-    /// The interval *this* curve is drawn over.  A family has a default; an instance narrows it,
-    /// which is how a gear flank is the piece of an involute between two circles rather than the
-    /// whole spiral.
+    /// The interval *this* curve is drawn over — the piece of an involute between two circles
+    /// rather than the whole spiral.
     pub domain: (f64, f64),
+    /// The parameter value a trace is anchored at — the one place a block's orientation
+    /// predicates are read (§6.5).  `Sketch::curve_home` reads it.
+    pub home: Home,
+    /// Where the anchor pose is read from, for a curve of a **drawn** instance: per inner unknown
+    /// of the block, the entity on the sheet and which of its own scalars (`CurveDef::pose_of`,
+    /// resolved).  Empty for an instance written in place, whose seeds start the trace.
+    pub pose: Vec<(EntRef, usize)>,
     pub class: Classes,
+}
+
+/// Where a curve's trace is anchored in the parameter: a number the instance gave the swept
+/// formal (or the interval's start, when it gave none), or the drawing's own unknown — a drawn
+/// instance that left the formal unbound made it one (`leg.theta`), and the anchor is wherever
+/// it stands.  Kept as the unknown's *name*, looked up in `free_vars` when read, since the
+/// unknown is allocated after the curve is built and moves with every solve.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Home {
+    At(f64),
+    Free(String),
+}
+
+/// A pose is whole or it is nothing: a list with a hole in it is not the pose the block's
+/// `n_q` unknowns want, and the seeds stand in.  The one statement of the rule `cold_start`
+/// relies on (`p.len() == v.n_q`), for the three seams that assemble one.
+pub fn whole<T>(v: Vec<T>, n: usize) -> Vec<T> {
+    if v.len() == n { v } else { Vec::new() }
 }
 
 /// The CCW arc through three points.
@@ -1367,7 +1409,9 @@ impl Sketch {
             }
             CurveBody::Trace(l) => MODEL_LOCUS.with(|s| {
                 let s = &mut *s.borrow_mut();
-                let v = crate::locus::eval_flat(&l.flat, &x, self.curves[i].domain.0, s);
+                let pose = self.curve_pose(i);
+                let anchor = crate::locus::Anchor { u: self.curve_home(i), pose: pose.as_deref() };
+                let v = crate::locus::eval_flat(&l.flat, &x, anchor, s);
                 (v.x, v.y)
             }),
         }
@@ -1375,6 +1419,39 @@ impl Sketch {
 
     pub fn curve_domain(&self, i: usize) -> (f64, f64) {
         self.curves[i].domain
+    }
+
+    /// The parameter a curve's trace is anchored at — the drawing's unknown where the swept
+    /// formal is one, else the number the instance gave.  An unknown no dimension has read yet
+    /// is not allocated, and the interval's start stands in until it is.
+    pub fn curve_home(&self, i: usize) -> f64 {
+        let cv = &self.curves[i];
+        match &cv.home {
+            Home::At(u) => *u,
+            Home::Free(n) => self
+                .free_vars
+                .get(n)
+                .map(|&p| self.params[p as usize].value)
+                .unwrap_or(cv.domain.0),
+        }
+    }
+
+    /// The pose a curve's trace is anchored at, read off the sheet — `None` for a curve whose
+    /// instance is not drawn, or whose pose is not whole.
+    pub fn curve_pose(&self, i: usize) -> Option<Vec<f64>> {
+        let cv = &self.curves[i];
+        if cv.pose.is_empty() {
+            return None;
+        }
+        cv.pose
+            .iter()
+            .map(|&(e, j)| self.own_param(e, j).map(|p| self.params[p as usize].value))
+            .collect()
+    }
+
+    /// One of an entity's own scalars — the `j`th of `own_params` — without the list.
+    pub fn own_param(&self, e: EntRef, j: usize) -> Option<u32> {
+        self.own_params(e).get(j).copied()
     }
 
     /// The curve as a polyline, for measuring and for drawing.  Uniform in the parameter: a
@@ -1397,7 +1474,9 @@ impl Sketch {
                     .collect()
             }
             CurveBody::Trace(l) => MODEL_LOCUS.with(|s| {
-                crate::locus::sweep(&l.flat, &self.curve_vars(i, a), a, b, CURVE_STEPS,
+                let pose = self.curve_pose(i);
+                let anchor = crate::locus::Anchor { u: self.curve_home(i), pose: pose.as_deref() };
+                crate::locus::sweep(&l.flat, &self.curve_vars(i, a), a, b, CURVE_STEPS, anchor,
                                     &mut s.borrow_mut())
             }),
         }

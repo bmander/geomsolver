@@ -6,17 +6,20 @@
 // contact along a fixed straight line as they roll past each other, so the speed ratio between
 // the wheels never wavers, and the teeth do not knock.
 //
-// The involute is not built into this solver.  It is the three lines below, written in the same
-// small language a dimension is written in: a curve *family*, defined over the circle it unwinds
-// from.  `u` is how far the string has unwound, in degrees, so the length let out is `r · u/1rad`
-// — and that string, square to the radius at the point it leaves the circle, is the definition.
+// The involute is not built into this solver.  It is the component below, written in the same
+// small language a dimension is written in: a *computed point* over the circle it unwinds from.
+// `u` is how far the string has unwound, in degrees, so the length let out is `r · u/1rad` — and
+// that string, square to the radius at the point it leaves the circle, is the definition.  A
+// curve is a point of a component as one of its formals runs, so `Involute(base, …).p over u`
+// is the flank.
 //
 // Everything after it is ordinary.  Thirty teeth are one tooth written once and repeated, and a
-// point touching a curve is a single statement whichever family the curve belongs to.
+// point touching a curve is a single statement whichever component the curve belongs to.
 
-curve involute(c: circle, phase: Angle)(u) =
-  ( c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
-    c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)) )
+component Involute(c: circle, phase: Angle, u: Angle) {
+  port p = ( c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
+             c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)) )
+}
 
 // One flank: the piece of an involute between the root circle and the tip.
 //
@@ -29,7 +32,7 @@ curve involute(c: circle, phase: Angle)(u) =
 // solves, from a worse start.
 component Flank(base: circle, root: circle, tip: circle,
                 phase: Angle, u0: Angle, u1: Angle) {
-  curve e = involute(base, phase: phase) over (u0, u1)
+  curve e = Involute(base, phase: phase).p over u in (u0, u1)
   // Seeded at the centre on purpose.  Where along the flank each end sits is the contact's own
   // `hint(u: …)` below; from the centre — where every circle's row is flat — the first step
   // puts the point on the curve at exactly that roll, and the solve is nine iterations.  Left

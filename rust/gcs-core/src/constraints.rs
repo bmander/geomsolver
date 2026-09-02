@@ -1302,14 +1302,29 @@ impl Constraint {
                     k.extend_from_slice(&cv.values);
                     k
                 }
-                // a trace contact adds where its instance's domain begins — the march's home,
-                // which is instance data the way the values are
+                // a trace contact adds the march's home — the parameter its instance is
+                // anchored at — and, for a curve of a drawn instance, the pose on the sheet
+                // the home solve starts from: instance data the way the values are, read off
+                // the sketch here so a refresh carries the pose the drawing has now
                 crate::model::CurveBody::Trace(l) => {
-                    let mut k = Vec::with_capacity(2 + cv.values.len() + l.flat.len());
-                    k.push(cv.domain.0);
+                    let ci = self.args[1].ent().i();
+                    let n_q = l.n_q();
+                    let mut k = Vec::with_capacity(3 + cv.values.len() + l.flat.len() + n_q);
+                    k.push(sk.curve_home(ci));
                     k.push(cv.values.len() as f64);
                     k.extend_from_slice(&cv.values);
-                    k.extend_from_slice(&l.flat);
+                    match sk.curve_pose(ci) {
+                        Some(pose) => {
+                            k.push(1.0);
+                            k.extend_from_slice(&l.flat);
+                            k.extend(pose);
+                        }
+                        None => {
+                            k.push(0.0);
+                            k.extend_from_slice(&l.flat);
+                            k.extend(std::iter::repeat(0.0).take(n_q));
+                        }
+                    }
                     k
                 }
             };

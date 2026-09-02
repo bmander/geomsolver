@@ -149,23 +149,22 @@ use gcs_core::syntax::parse;
 /// written `u + 53` the choice is right only while the datum is horizontal.  `f.angle` is the
 /// datum's own bearing, read off the frame's rotor, so the seed follows the drawing.
 const ELBOW: &str = "\
-curve elbow(o: point, datum: line, f: frame)(u) over (10, 80) =
-  trace p from (30) where {
-    point t hint(x: o.x + 60 * cos(u + f.angle), y: o.y + 60 * sin(u + f.angle))
-    point p hint(x: o.x + 50 * cos(u + f.angle + 53), y: o.y + 50 * sin(u + f.angle + 53))
-    line swing(o, t)
-    datum angle(u) swing
-    o distance(60) t
-    t distance(50) p
-    o distance(50) p
-  }
+component elbow(o: point, datum: line, f: frame, u: Angle) {
+  point t hint(x: o.x + 60 * cos(u + f.angle), y: o.y + 60 * sin(u + f.angle))
+  point p hint(x: o.x + 50 * cos(u + f.angle + 53), y: o.y + 50 * sin(u + f.angle + 53))
+  line swing(o, t)
+  datum angle(u) swing
+  o distance(60) t
+  t distance(50) p
+  o distance(50) p
+}
 
 point o hint(x: 0, y: 0)
 point q hint(x: -30, y: 51.9615242270663)
 line  datum(o, q) class construction
 frame f(origin: o, toward: q) class construction
 
-curve path = elbow(o, datum, f)
+curve path = elbow(o, datum, f, u: 30).p over u in (10, 80)
 
 ground o
 ground q

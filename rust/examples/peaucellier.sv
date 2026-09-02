@@ -8,38 +8,39 @@ param arm = 100       // the long arms, o–c and o–d
 param side = 60       // the four sides of the kite, b–c–pen–d
 param crank = 40      // the crank q–b, and the orbit its pin rides
 
-// Where the pen goes, as a locus: a scratch linkage posed at crank angle u, eight numbers against
-// eight statements.  Only `b` is seeded — the ccw/cw lines pick the elbows, and a seed repeating a
-// predicate is the weaker of two statements of one fact.
-curve cell(orbit: circle, f: frame, arm: Length, side: Length)(u) =
-  trace p from (90) where {
-    line datum(f.origin, f.toward)
-    point b hint at orbit bearing (u + f.angle)   // `u` is measured from the datum, so the seed is too
-    point c
-    point d
-    point p
-    line swing(f.toward, b)
-    b on orbit                         // the crank pin on its circle...
-    datum angle(u) swing               // ...posed at bearing u; directed, so this side up
-    f.origin distance(arm) c           // the two long arms,
-    f.origin distance(arm) d
-    b distance(side) c                 // and the kite closed round b and p
-    b distance(side) d
-    p distance(side) c
-    p distance(side) d
-    ccw(f.origin, b, c)                // c left of the arm, d right,
-    cw(f.origin, b, d)
-    ccw(c, d, p)                       // and p on the far side of the kite from b
-  }
+// The cell, once: a linkage posed at crank angle u, eight numbers against eight statements.
+// The ccw/cw lines pick the elbows — a seed repeating a predicate is the weaker of two
+// statements of one fact — and the seeds only start the solve near them.  Drawn below with `u`
+// left unbound, so the crank is the drawing's one freedom; traced below that, where the same
+// component is asked where `pen` goes as `u` runs.
+component Cell(orbit: circle, datum: line, arm: Length, side: Length, u: Angle) {
+  point b   hint(x: 50.4, y: 38.6)
+  point c   hint(x: 30.4, y: 95.2)
+  point d   hint(x: 99.9, y: 4.8)
+  point pen hint(x: 80.0, y: 61.4)
+  line swing(datum.p2, b)
+  b on orbit                         // the crank pin on its circle...
+  datum angle(u) swing               // ...posed at bearing u; directed, so this side up
+  line oc(datum.p1, c)
+  line od(datum.p1, d)
+  datum.p1 distance(arm) c           // the two long arms,
+  datum.p1 distance(arm) d
+  line bc(b, c) -> line cp(c, pen) -> line pd(pen, d) -> line db(d, b) -> close
+  b distance(side) c                 // and the kite closed round b and pen
+  b distance(side) d
+  pen distance(side) c
+  pen distance(side) d
+  ccw(datum.p1, b, c)                // c left of the arm, d right,
+  cw(datum.p1, b, d)
+  ccw(c, d, pen)                     // and pen on the far side of the kite from b
+}
 
-// The fixed frame; `f` is the datum as something measurable, which is where the seed above gets
-// its bearing.  `o on orbit` is the theorem's whole hypothesis — the pin's circle
-// passes through the centre of inversion — and it places `q` too, so no dimension between the
-// pivots is ever stated.
+// The fixed frame: the datum the crank angle is read from, and the orbit.  `o on orbit` is the
+// theorem's whole hypothesis — the pin's circle passes through the centre of inversion — and it
+// places `q` too, so no dimension between the pivots is ever stated.
 point o hint(x: 0, y: 0)
 point q hint(x: crank, y: 0)
 line datum(o, q) class construction
-frame f(origin: o, toward: q) class construction
 circle orbit(center: q) hint(r: crank) class construction
 
 horizontal datum
@@ -47,32 +48,16 @@ radius(crank) orbit
 o on orbit
 ground o
 
-// the machine itself, at one pose
-point b   hint(x: 50.4, y: 38.6)
-point c   hint(x: 30.4, y: 95.2)
-point d   hint(x: 99.9, y: 4.8)
-point pen hint(x: 80.0, y: 61.4)
+// the machine itself, at one pose — `u` unbound, so the crank angle is an unknown of the
+// drawing and the pen may be dragged
+cell: Cell(orbit, datum, arm: arm, side: side)
 
-line swing(q, b)
-b on orbit
-
-line oc(o, c)
-line od(o, d)
-oc equal od
-o distance(arm) c
-
-line bc(b, c) -> line cp(c, pen) -> line pd(pen, d) -> line db(d, b) -> close
-bc equal cp equal pd equal db
-b distance(side) c
-
-ccw(o, b, c)                           // the same mirror choices the trace makes,
-cw(o, b, d)                            // so the drawn cell is the traced one
-ccw(c, d, pen)
-
-// `rail` runs through two pinned points of the pen's path, and the claim says it is vertical —
-// which nothing above states.  The diagnosis reports it a theorem; delete it and the drawing is
-// unchanged, which is what a claim promises.
-curve path = cell(orbit, f, arm: arm, side: side) over (60, 115)
+// Where the pen goes: the drawn cell's own `pen`, as its crank angle runs.  The drawing's pose
+// is where the trace is anchored, so it needs no seeds of its own.  `rail` runs through two
+// pinned points of the path, and the claim says it is vertical — which nothing above states.
+// The diagnosis reports it a theorem; delete it and the drawing is unchanged, which is what a
+// claim promises.
+curve path = cell.pen over u in (60, 115)
 
 point g1 hint(x: 80, y: 51)
 point g2 hint(x: 80, y: 114)
@@ -82,5 +67,5 @@ line rail(g1, g2) class construction
 
 claim vertical rail
 
-// Diagnosed: dof 1, Under — the crank — and the claim a theorem.  Drag `pen`; the cell folds and
-// stretches to carry it along the line it cannot leave.
+// Diagnosed: dof 1, Under — the crank — and the claim a theorem.  Drag `cell.pen`; the cell
+// folds and stretches to carry it along the line it cannot leave.

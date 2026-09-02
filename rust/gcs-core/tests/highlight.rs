@@ -109,26 +109,27 @@ fn a_seed_and_a_claim_are_told_apart() {
     assert_eq!(tint_of(src, "100"), Some(Tint::Num), "a param is not a seed");
 }
 
-/// A curve family is a declaration like any other, and its body is arithmetic the parser never
-/// tokenizes — so the numbers in it are still numbers, and nothing there is mistaken for a word.
+/// A computed point is arithmetic the parser never tokenizes — so the numbers in it are still
+/// numbers, and nothing there is mistaken for a word.
 #[test]
-fn a_curve_family_is_a_declaration() {
-    let src = "curve involute(c: circle, phase: Angle)(u) =\n  ( c.center.x + c.r * 180, 0 )";
-    assert_eq!(tint_of(src, "curve"), Some(Tint::Word));
-    assert_eq!(tint_of(src, "involute"), Some(Tint::Def));
+fn a_computed_port_is_arithmetic() {
+    let src = "component Involute(c: circle, phase: Angle, u: Angle) {\n\
+               port p = ( c.center.x + c.r * 180, 0 )\n}";
+    assert_eq!(tint_of(src, "component"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "Involute"), Some(Tint::Def));
     assert_eq!(tint_of(src, "Angle"), Some(Tint::Type));
     assert_eq!(tint_of(src, "180"), Some(Tint::Num));
 }
 
-/// A trace family reads as what it is: `trace` and `where` are keywords, the traced point is a
-/// name the family declares, and the block's statements colour like any other statements.
+/// A curve reads as what it is: a declaration, its `over` and `in` the words that shape it,
+/// and the component's statements colour like any other statements.
 #[test]
-fn a_trace_family_is_coloured() {
-    let src = "curve unwind(c: circle)(u) =\n  trace p where {\n\
-               point p\n    p on c\n  }";
-    assert_eq!(tint_of(src, "trace"), Some(Tint::Word));
-    assert_eq!(tint_of(src, "p where"), Some(Tint::Def));
-    assert_eq!(tint_of(src, "where"), Some(Tint::Word));
+fn a_curve_is_coloured() {
+    let src = "component unwind(c: circle, u: Angle) {\n  point p\n  p on c\n}\n\
+               curve w = unwind(c).p over u in (0, 1)";
+    assert_eq!(tint_of(src, "curve"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "over"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "in ("), Some(Tint::Word));
     assert_eq!(tint_of(src, "on c"), Some(Tint::Relation));
 }
 

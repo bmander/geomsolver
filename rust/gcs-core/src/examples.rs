@@ -145,6 +145,12 @@ pub fn peaucellier_rail() -> Sketch {
     document(PEAUCELLIER_RAIL, "peaucellier_rail")
 }
 
+/// Jansen's linkage — the Strandbeest walking leg, eleven rods in the "holy numbers" and the
+/// toe's stride traced from the same statements — `jansen.sv`.
+pub fn jansen() -> Sketch {
+    document(JANSEN, "jansen")
+}
+
 /// Build a named example.  `None` for an unknown name.
 pub fn example(name: &str) -> Option<Sketch> {
     Some(match name {
@@ -170,6 +176,7 @@ pub fn example(name: &str) -> Option<Sketch> {
         "belt_tangency" => belt_tangency(),
         "peaucellier" => peaucellier(100.0, 60.0, 40.0),
         "peaucellier_rail" => peaucellier_rail(),
+        "jansen" => jansen(),
         "bracket" => bracket(),
         _ => return None,
     })
@@ -181,7 +188,7 @@ pub fn bracket() -> Sketch {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 26] = [
+pub const CASES: [(&str, &str, &str); 27] = [
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Square, one line round a cycle", "square", "`cycle 4 { line s -> perpendicular equal }` — the body ends mid-joint, so each side welds to the next copy's and the wrap closes the loop (issue #38); 1 DOF: it swings about its grounded corner"),
     ("Regular n-gon (component)", "ngon", "a parametric `Ngon(n, side)` component: corners on a circle, equal sides, the open-jointed cycle welding them round — pure relations, so the closure equality is implied rather than Over, and the seeds walk once round the circle to pick the convex winding no residual can state (1 DOF: it spins about its hub)"),
@@ -202,11 +209,12 @@ pub const CASES: [(&str, &str, &str); 26] = [
     ("Pythagoras, graphically", "pythagoras", "four a×b right triangles in a square of side a + b leave a square of side c; `claim distance == c = hypot(a, b)` is judged a theorem — edit a or b and it stays one"),
     ("Curve and follower", "spline_follower", "a cubic B-spline with a face held tangent to it and a point riding on it — drag a control point and the contact slides along the curve, across knots and all"),
     ("Belt over two pulleys", "belt_tangency", "each end on its circle and the line tangent to it — a double root: rank-deficient at every solution, yet nothing can move.  The second-order screen calls it rigid rather than 2 DOF"),
-    ("Spur gear (30 teeth)", "gear", "written as a Solvent program: a curve family the document itself defines, one flank as a component, repeated round a cycle — open the Program panel (Edit ▸ Program) to read it"),
-    ("Spur gear, traced (12 teeth)", "gear_trace", "the same wheel with the involute *traced* rather than computed: `trace p where { … }` states the taut string — on the circle, perpendicular to the radius, as long as the arc unwound — and the solver finds every point of the flank"),
+    ("Spur gear (30 teeth)", "gear", "written as a Solvent program: the involute is a component with one computed point, a flank is that point over a roll, a tooth is two flanks, repeated round a cycle — open the Program panel (Edit ▸ Program) to read it"),
+    ("Spur gear, traced (12 teeth)", "gear_trace", "the same wheel with the involute *traced* rather than computed: a component states the taut string — on the circle, perpendicular to the radius, as long as the arc unwound — and the flank is its far end as the string unwinds, every point of it the solver's"),
     ("Levelled zigzags (3×32)", "zigzag", "three separate staircases of free-length H/V segments — a drag costs one staircase, not three"),
-    ("Peaucellier straight line", "peaucellier", "the 1864 cell: circling rods whose pen draws an exact straight line — the path is a trace, the straightness is `claim vertical(rail)`, and the diagnosis judges the claim a theorem.  Drag the pen along the rail it cannot leave"),
+    ("Peaucellier straight line", "peaucellier", "the 1864 cell: circling rods whose pen draws an exact straight line — the cell is one component, drawn with its crank free and traced from that drawing; the straightness is `claim vertical(rail)`, and the diagnosis judges the claim a theorem.  Drag the pen along the rail it cannot leave"),
     ("Peaucellier, proved by rail", "peaucellier_rail", "the same cell with no curve in it: the pen is joined to a grounded point and `claim vertical(rail)` asks whether saying so costs the crank a freedom.  It does not, so the claim is a theorem — but this one has to be told where the line is, where its sibling discovers it"),
+    ("Jansen's linkage", "jansen", "Theo Jansen's walking leg as one component: a crank at one fixed point drives two rigid triangles hinged on another, and nothing but rod lengths is stated — the ccw/cw lines pick each joint's pose.  Drawn with its crank angle unbound (1 DOF: drag `leg.pin` round its circle and the leg steps), and `path` is the same leg asked where its toe goes over a turn"),
     ("L-bracket in three views", "bracket", "descriptive geometry on one sheet: front, top and right views as `plane`s, every corner tied across them by `project`, and an auxiliary view folded at the inclined face's own bearing that shows the face true-size — edit a dimension in the front view and the other three views follow"),
 ];
 
@@ -219,8 +227,8 @@ pub const CASES: [(&str, &str, &str); 26] = [
 /// have to hold for it to come out round.
 pub const GEAR: &str = include_str!("../../examples/gear.sv");
 
-/// The same wheel with the involute *traced* rather than computed — the family's body is
-/// `trace p where { … }` (spec §6.5.1), the taut string stated as constraints, and the solver
+/// The same wheel with the involute *traced* rather than computed — the flank is a point of a
+/// component whose body states the taut string as constraints (spec §6.5), and the solver
 /// finds every point of the flank.  Twelve teeth, so it also lives in the stub-tooth regime.
 pub const GEAR_TRACE: &str = include_str!("../../examples/gear_trace.sv");
 
@@ -324,6 +332,7 @@ pub fn source(key: &str) -> Option<&'static str> {
         "spline_follower" => Some(SPLINE_FOLLOWER),
         "peaucellier" => Some(PEAUCELLIER),
         "peaucellier_rail" => Some(PEAUCELLIER_RAIL),
+        "jansen" => Some(JANSEN),
         "bracket" => Some(BRACKET),
         _ => None,
     }
@@ -355,6 +364,7 @@ pub const PYTHAGORAS: &str = include_str!("../../examples/pythagoras.sv");
 /// already have.  The case for claims, as `altitudes` is for implied relations.
 pub const PEAUCELLIER: &str = include_str!("../../examples/peaucellier.sv");
 pub const PEAUCELLIER_RAIL: &str = include_str!("../../examples/peaucellier_rail.sv");
+pub const JANSEN: &str = include_str!("../../examples/jansen.sv");
 pub const BRACKET: &str = include_str!("../../examples/bracket.sv");
 pub const SPLINE_FOLLOWER: &str = include_str!("../../examples/spline_follower.sv");
 

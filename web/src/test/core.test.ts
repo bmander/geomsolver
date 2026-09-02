@@ -2230,8 +2230,8 @@ test('the coloured runs index the string, not the core\'s bytes', () => {
   assert.equal(runs[0].cls, 'comment');
   assert.equal(text.slice(runs[0].lo, runs[0].hi), text.split('\n')[0]);
   // and a run past the em dash still lands on the word it names
-  const family = runs.find((r) => r.cls === 'def' && text.slice(r.lo, r.hi) === 'involute');
-  assert.ok(family, 'the curve family names itself');
+  const family = runs.find((r) => r.cls === 'def' && text.slice(r.lo, r.hi) === 'Involute');
+  assert.ok(family, 'the involute component names itself');
   assert.ok(text.slice(0, family.lo).includes('—'), 'which is past the first non-ASCII character');
 });
 
@@ -2281,7 +2281,7 @@ test('dragging the gear does not rewrite the gear', () => {
   }
   const e = d.commitSeeds();
   assert.equal(e.text, d.text, 'a statement that makes thirty points records no one pose');
-  assert.ok(e.text.includes('curve involute(c: circle, phase: Angle)(u) ='));
+  assert.ok(e.text.includes('component Involute(c: circle, phase: Angle, u: Angle) {'));
   d.dispose();
 });
 

@@ -1251,11 +1251,12 @@ const SPLINE: &str = "point s0 hint(x: 0, y: 0)\npoint s1 hint(x: 20, y: 10)\n\
 
 /// The same, for a curve family written in the document — whose slot is called `u`.
 const CURVE: &str = "\
-curve involute(c: circle, phase: Angle)(u) over (0, 90) =
-  ( c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
-    c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)) )
+component Involute(c: circle, phase: Angle, u: Angle) {
+  port p = ( c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
+             c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)) )
+}
 point o hint(x: 0, y: 0)
 circle base(center: o) hint(r: 20)
-curve flank = involute(base, phase: 0) over (0, 60)
+curve flank = Involute(base, phase: 0).p over u in (0, 60)
 point p hint(x: 40, y: 40)
 ";

@@ -27,6 +27,9 @@ fn involute_def() -> CurveDef {
     let y = "c.center.y + c.r * (sin(u) - u * pi / 180 * cos(u))";
     CurveDef {
         name: "involute".to_string(),
+        component: "involute".to_string(),
+        port: "p".to_string(),
+        pose_of: Vec::new(),
         formals: vec![("c".to_string(), EntKind::Circle)],
         values: Vec::new(),
         param: "u".to_string(),
@@ -35,7 +38,6 @@ fn involute_def() -> CurveDef {
             y: Tape::compile(&expr::parse(y).unwrap().body, &vars).unwrap(),
         },
         vars,
-        domain: (0.0, 90.0),
     }
 }
 
@@ -50,6 +52,8 @@ fn involute_sketch() -> (Sketch, usize) {
         args: vec![EntRef::circle(c)],
         values: Vec::new(),
         domain: (0.0, 90.0),
+        home: gcs_core::model::Home::At(0.0),
+        pose: Vec::new(),
         class: gcs_core::style::Classes::one("construction"),
     });
     let p = sk.point(20.0, 20.0, false, "p");
@@ -188,6 +192,9 @@ fn two_curve_families_get_their_own_kernels() {
         .collect();
     sk.curve_defs.push(CurveDef {
         name: "rim".to_string(),
+        component: "rim".to_string(),
+        port: "p".to_string(),
+        pose_of: Vec::new(),
         formals: vec![("c".to_string(), EntKind::Circle)],
         values: Vec::new(),
         param: "u".to_string(),
@@ -198,13 +205,14 @@ fn two_curve_families_get_their_own_kernels() {
                 .unwrap(),
         },
         vars,
-        domain: (0.0, 360.0),
     });
     sk.curves.push(CurveE {
         def: 1,
         args: vec![EntRef::circle(0)],
         values: Vec::new(),
         domain: (0.0, 90.0),
+        home: gcs_core::model::Home::At(0.0),
+        pose: Vec::new(),
         class: gcs_core::style::Classes::one("construction"),
     });
     let q = sk.point(0.0, 30.0, false, "q");
@@ -239,13 +247,14 @@ fn two_curve_families_get_their_own_kernels() {
 #[test]
 fn a_curve_written_in_the_language_draws() {
     let src = "\
-curve involute(c: circle, phase: Angle)(u) over (0, 90) =
-  ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
-    c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)) )
+component Involute(c: circle, phase: Angle, u: Angle) {
+  port p = ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
+             c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)) )
+}
 
 point  o hint(x: 0, y: 0)
 circle base(center: o) hint(r: 20) class construction
-curve  flank = involute(base, phase: 0) over (0, 60)
+curve  flank = Involute(base, phase: 0).p over u in (0, 60)
 
 point  p hint(x: 40, y: 40)
 p on flank
@@ -323,7 +332,9 @@ fn the_names_match_the_parameters() {
 #[test]
 fn a_curve_over_a_spline_is_refused() {
     let (prog, _) = gcs_core::syntax::parse(
-        "curve bad(s: spline)(u) = ( u, u )\npoint p hint(x: 0, y: 0)\n",
+        "component bad(s: spline, u: Angle) {\n  port p = ( u, u )\n}\n\
+         point a hint(x: 0, y: 0)\npoint b hint(x: 1, y: 1)\npoint c hint(x: 2, y: 1)\n\
+         point d hint(x: 3, y: 0)\nspline s(a, b, c, d)\ncurve w = bad(s).p over u in (0, 1)\n",
     );
     let e = gcs_core::program::elaborate(&prog);
     assert!(!e.ok());

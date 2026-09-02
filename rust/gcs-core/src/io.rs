@@ -723,11 +723,24 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                 dst.curve_defs.len() - 1
             }
         };
+        // the home pose follows the entities it is read from, and is whole or nothing: a
+        // pose with a hole in it is no pose, and the seeds stand in
+        let pose: Vec<_> = cv
+            .pose
+            .iter()
+            .filter_map(|&(e, j)| {
+                remap_early(&pt_index, &line_map, &circle_map, &arc_map, &spline_map,
+                            &ellipse_map, &frame_map, &plane_map, e)
+                    .map(|r| (r, j))
+            })
+            .collect();
         dst.curves.push(crate::model::CurveE {
             def: at as u32,
             args,
             values: cv.values.clone(),
             domain: cv.domain,
+            home: cv.home.clone(),
+            pose: crate::model::whole(pose, cv.pose.len()),
             class: cv.class.clone(),
         });
         curve_map[i] = Some(dst.curves.len() - 1);

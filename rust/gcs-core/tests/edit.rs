@@ -281,7 +281,7 @@ fn dragging_the_gear_does_not_rewrite_the_gear() {
     }
     let edit = edit::commit_seeds(&e, &e.sketch, &prog);
     assert_eq!(edit.text, gcs_core::examples::GEAR, "the source is untouched");
-    assert!(edit.text.contains("curve involute(c: circle, phase: Angle)(u) ="));
+    assert!(edit.text.contains("component Involute(c: circle, phase: Angle, u: Angle) {"));
     assert!(edit.text.contains("component Flank("));
     assert!(edit.text.contains("cycle N as i {"));
 }
@@ -384,7 +384,7 @@ fn drawing_beside_a_component_leaves_the_component_written() {
         rest = &rest[i + line.len()..];
     }
     assert!(edit.text.contains("cycle N as i {"));
-    assert!(edit.text.contains("curve involute(c: circle, phase: Angle)(u) ="));
+    assert!(edit.text.contains("component Involute(c: circle, phase: Angle, u: Angle) {"));
     let back = elaborate(&prog_of(&edit.text));
     assert!(back.ok(), "{:?}", back.errors().map(|d| &d.message).collect::<Vec<_>>());
     assert_eq!(back.sketch.lines.len(), e.sketch.lines.len());

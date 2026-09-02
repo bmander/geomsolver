@@ -598,16 +598,6 @@ pub fn elaborate(p: &Program) -> Elaborated {
 
     // -- phase 1: names, in one pre-pass.  Indices come from declaration order within a kind,
     // which is `primitives()` order, which is the order phase 2 builds in.
-    // curve families first: an instance names one, and the tapes have to exist before any
-    // contact with them is compiled
-    for f in &p.curves {
-        match compile_family(f, sk.units) {
-            Ok(d) => sk.curve_defs.push(d),
-            Err((span, message)) => {
-                diags.push(Diag { code: Code::E103, span, stmt: None, message })
-            }
-        }
-    }
     let expansion = crate::flatten::expand(p, sk.units);
     for (code, span, message) in &expansion.coded {
         diags.push(Diag { code: *code, span: *span, stmt: None, message: message.clone() });
@@ -726,7 +716,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 continue;
             }
             let mut anon: Vec<(String, EntRef)> = Vec::new();
-            match build(&mut sk, &res, d, st, &bases, &mut diags, &mut anon) {
+            match build(&mut sk, &res, d, st, &bases, &mut diags, &mut anon, p, &expansion.instances) {
                 Some(e) => {
                     built.insert(e, true);
                     map.bind(&d.name.key().text, e, d.name.named());
@@ -817,27 +807,36 @@ pub fn elaborate(p: &Program) -> Elaborated {
     Elaborated { sketch: sk, map, diags, program: p.clone(), taken: false }
 }
 
-/// A curve family, compiled.
+/// A curve, compiled: a component's point over one of its numeric formals (§6.5).
 ///
-/// The variable table is the parameter, then every coordinate its entity formals contribute *in
-/// `entity_params` order* (`EntKind::scalar_names`), then the numbers it takes.  That order is
-/// the kernel's column order, which is what makes a tape's gradient a row of the Jacobian.
-fn compile_family(
-    f: &crate::syntax::CurveFamily,
+/// The component is expanded **over its formals** (`flatten::expand_component`), so `param`s,
+/// nested instances and repetition are done there and not again here, and what arrives is a
+/// flat body under an empty prefix.  The variable table is the swept formal, then every
+/// coordinate the entity formals contribute *in `entity_params` order* (`EntKind::scalar_names`),
+/// then the other numbers the component takes.  That order is the kernel's column order, which
+/// is what makes a tape's gradient a row of the Jacobian.  A computed point (`port p = (x, y)`)
+/// compiles to its two tapes; any other point is a trace over the body's statements.
+fn compile_curve(
+    prog: &Program,
+    comp: &crate::syntax::Component,
+    swept: &str,
+    point: &str,
     units: crate::units::Units,
 ) -> Result<crate::model::CurveDef, (Span, String)> {
-    use crate::syntax::{FamilyBody, Ty};
-    let mut vars = vec![f.param.text.clone()];
+    use crate::syntax::Ty;
+    let cname = comp.name.as_ref().map(|n| n.text.clone()).unwrap_or_default();
+    let mut vars = vec![swept.to_string()];
     let mut formals = Vec::new();
     let mut values = Vec::new();
-    for fo in &f.formals {
+    for fo in &comp.formals {
         match fo.ty {
             Ty::Ent(k) => {
                 let names = k.scalar_names(&fo.name.text).ok_or_else(|| {
                     (
                         fo.span,
                         format!(
-                            "a curve cannot be written over a {}: it has no fixed number of                              coordinates",
+                            "a curve cannot be written over a {}: it has no fixed number of \
+                             coordinates",
                             k.as_str()
                         ),
                     )
@@ -845,35 +844,69 @@ fn compile_family(
                 vars.extend(names);
                 formals.push((fo.name.text.clone(), k));
             }
-            _ => values.push(fo.name.text.clone()),
+            _ if fo.name.text != swept => values.push(fo.name.text.clone()),
+            _ => {}
         }
     }
     vars.extend(values.iter().cloned());
-    let body = match &f.body {
-        FamilyBody::Exprs { x, y, xspan, yspan } => {
+    let ex = crate::flatten::expand_component(prog, comp, units);
+    if let Some((span, m)) = ex.errors.first() {
+        return Err((*span, m.clone()));
+    }
+    if let Some((_, span, m)) = ex.coded.iter().find(|(c, ..)| c.severity() == Severity::Error) {
+        return Err((*span, m.clone()));
+    }
+    let traced = ex.aliases.get(point).cloned().unwrap_or_else(|| point.to_string());
+    if formals.iter().any(|(n, _)| *n == traced) {
+        return Err((
+            comp.span,
+            format!(
+                "`{point}` is geometry `{cname}` is written over, and does not move with `{swept}`"
+            ),
+        ));
+    }
+    let body: Vec<&Stmt> = ex.flat.iter().map(|f| &f.stmt).collect();
+    // a computed point is the whole of what a component may say about it: nothing on the
+    // sheet or in a block can hold a point to a formula beside placed geometry, so the body
+    // is the one computed point — decided by shape, not by which statement is found first
+    let computed = body.iter().find_map(|st| match &st.kind {
+        StmtKind::Port(pt) if pt.name.text == traced => pt.computed.as_ref(),
+        _ => None,
+    });
+    let (body, pose_of) = match computed {
+        Some([(x, xspan), (y, yspan)]) => {
+            if body.len() != 1 {
+                return Err((
+                    comp.span,
+                    format!(
+                        "`{point}` is a computed point, so `{cname}` may hold nothing else: a \
+                         formula and placed geometry cannot both say where a point is"
+                    ),
+                ));
+            }
             let tape = |text: &str, span: Span| -> Result<crate::tape::Tape, (Span, String)> {
                 let ast = crate::expr::parse_in(text, units).map_err(|e| (span, e))?;
                 crate::tape::Tape::compile(&ast.body, &vars).map_err(|e| (span, e))
             };
-            crate::model::CurveBody::Exprs { x: tape(x, *xspan)?, y: tape(y, *yspan)? }
+            let body = crate::model::CurveBody::Exprs { x: tape(x, *xspan)?, y: tape(y, *yspan)? };
+            (body, Vec::new())
         }
-        FamilyBody::Trace { point, home, body } => crate::model::CurveBody::Trace(
-            compile_trace(f, point, home.as_ref(), body, &vars, &formals, values.len(), units)?,
-        ),
-    };
-    let num = |t: &str| crate::expr::literal(t).unwrap_or(0.0);
-    let domain = match &f.domain {
-        Some((a, b)) => (num(a), num(b)),
-        None => (0.0, 1.0),
+        None => {
+            let (locus, pose_of) =
+                compile_trace(comp.span, &traced, &body, &vars, &formals, values.len(), units)?;
+            (crate::model::CurveBody::Trace(locus), pose_of)
+        }
     };
     Ok(crate::model::CurveDef {
-        name: f.name.text.clone(),
+        name: crate::model::CurveDef::key(&cname, point, swept),
+        component: cname,
+        port: point.to_string(),
         formals,
         values,
-        param: f.param.text.clone(),
+        param: swept.to_string(),
         vars,
         body,
-        domain,
+        pose_of,
     })
 }
 
@@ -889,16 +922,16 @@ fn compile_family(
 /// kernel: the value becomes a derived variable `w`, defined by a tape, read as the twin's last
 /// column with `(m, c)` the unit conversion — so `∂r/∂u` comes from the kernel and the tape and
 /// nowhere else.
+#[allow(clippy::too_many_arguments)]
 fn compile_trace(
-    f: &crate::syntax::CurveFamily,
-    point: &crate::syntax::Name,
-    home: Option<&(String, Span)>,
-    body: &[Stmt],
+    span: Span,
+    point: &str,
+    body: &[&Stmt],
     vars: &[String],
     formals: &[(String, EntKind)],
     n_values: usize,
     units: crate::units::Units,
-) -> Result<crate::locus::Locus, (Span, String)> {
+) -> Result<(crate::locus::Locus, Vec<(String, usize)>), (Span, String)> {
     use crate::locus::{Locus, Pred, Row};
     use crate::tape::Tape;
     let mut sk = Sketch::new();
@@ -928,7 +961,7 @@ fn compile_trace(
             }
             other => {
                 return Err((
-                    f.span,
+                    span,
                     format!("a trace cannot yet be written over a {}", other.as_str()),
                 ))
             }
@@ -954,6 +987,8 @@ fn compile_trace(
     // -- pass 1: declarations, so a statement may read a point declared after it --------
     let mut n_q = 0usize;
     let mut seeds: Vec<Tape> = Vec::new();
+    // each inner unknown's owner, so a drawn instance's pose can be read off the sheet
+    let mut pose_of: Vec<(String, usize)> = Vec::new();
     for st in body {
         let StmtKind::Decl(d) = &st.kind else { continue };
         if d.seed_at.is_some() && d.kind != EntKind::Point {
@@ -996,8 +1031,9 @@ fn compile_trace(
                 let e = EntRef::point(sk.point(0.0, 0.0, false, &d.name.key().text));
                 seeds.push(sx);
                 seeds.push(sy);
-                for p in sk.entity_params(e) {
+                for (j, p) in sk.own_params(e).into_iter().enumerate() {
                     slot.insert(p, n_outer + n_q);
+                    pose_of.push((d.name.key().text.clone(), j));
                     n_q += 1;
                 }
                 e
@@ -1018,7 +1054,9 @@ fn compile_trace(
                 let sr = seed_tape(0)?;
                 let e = EntRef::circle(sk.circle(c.i(), 0.0, &d.name.key().text));
                 seeds.push(sr);
-                slot.insert(sk.circles[e.i()].radius, n_outer + n_q);
+                let (j, p) = (0usize, sk.own_params(e)[0]);
+                slot.insert(p, n_outer + n_q);
+                pose_of.push((d.name.key().text.clone(), j));
                 n_q += 1;
                 e
             }
@@ -1084,10 +1122,12 @@ fn compile_trace(
                 continue;
             }
             StmtKind::Relation(r) => r,
+            // a computed point that is not the one traced has nothing to say here
+            StmtKind::Port(pt) if pt.computed.is_some() => continue,
             _ => {
                 return Err((
                     st.span,
-                    "a trace block holds declarations and constraints only".to_string(),
+                    "a traced component holds declarations and constraints only".to_string(),
                 ))
             }
         };
@@ -1182,32 +1222,26 @@ fn compile_trace(
         let consts = c.consts_on(&sk, None);
         rows.push(Row { kid, cols, consts });
     }
-    let traced = match scope.get(&point.text) {
+    let traced = match scope.get(point) {
         Some(e) if e.kind == EntKind::Point => {
             let p = sk.point_params(e.i())[0];
             match slot.get(&p) {
                 Some(&s) if s >= n_outer => s - n_outer,
                 _ => {
                     return Err((
-                        point.span,
-                        format!("`{}` must be a point the block declares", point.text),
+                        span,
+                        format!("`{point}` must be a point the component declares"),
                     ))
                 }
             }
         }
         _ => {
-            return Err((
-                point.span,
-                format!("`{}` must be a point the block declares", point.text),
-            ))
+            return Err((span, format!("`{point}` must be a point the component declares")))
         }
     };
-    let home_tape = match home {
-        Some((text, sp)) => Some(tape(text, *sp)?),
-        None => None,
-    };
-    Locus::new(n_outer, n_theta, n_q, traced, w, seeds, rows, preds, home_tape)
-        .map_err(|m| (f.span, m))
+    let locus = Locus::new(n_outer, n_theta, n_q, traced, w, seeds, rows, preds)
+        .map_err(|m| (span, m))?;
+    Ok((locus, pose_of))
 }
 
 /// A seed named geometrically, compiled to the tapes a written pair would be: the place a point
@@ -1577,6 +1611,7 @@ fn memberships(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build(
     sk: &mut Sketch,
     res: &Resolver,
@@ -1585,11 +1620,13 @@ fn build(
     bases: &BTreeMap<String, crate::plane::Basis>,
     diags: &mut Vec<Diag>,
     anon: &mut Vec<(String, EntRef)>,
+    prog: &Program,
+    insts: &[crate::flatten::InstanceInfo],
 ) -> Option<EntRef> {
     // a curve is the one kind whose arguments need not be points, so it is built before the
     // walk that insists they are
     if d.kind == EntKind::Curve {
-        return build_curve(sk, res, d, st, diags);
+        return build_curve(sk, res, d, st, diags, prog, insts);
     }
     // a geometric seed reads geometry that a trace block's variable table names; out here a
     // drawing's seed is a number a solve writes back, which a place named by reference is not
@@ -1849,87 +1886,123 @@ fn build_curve(
     d: &Decl,
     st: &Stmt,
     diags: &mut Vec<Diag>,
+    prog: &Program,
+    insts: &[crate::flatten::InstanceInfo],
 ) -> Option<EntRef> {
-let Some(fam) = d.def.as_ref() else {
-        diags.push(Diag {
-            code: Code::E103,
-            span: st.span,
-            stmt: Some(st.id),
-            message: "a curve is drawn as `curve name = family(args)`".to_string(),
-        });
-        return None;
-    };
-    let Some(di) = sk.curve_defs.iter().position(|x| x.name == fam.text) else {
-        diags.push(Diag {
-            code: Code::E101,
-            span: fam.span,
-            stmt: Some(st.id),
-            message: format!("no curve family named `{}`", fam.text),
-        });
-        return None;
-    };
-    let want = sk.curve_defs[di].formals.clone();
-    let args: Vec<EntRef> = d
-        .children
-        .first()
-        .map(|g| g.iter().filter_map(|k| k.as_ref()).filter_map(|r| res.lookup(r)).collect())
-        .unwrap_or_default();
-    if args.len() != want.len() {
-        diags.push(Diag {
-            code: Code::E103,
-            span: st.span,
-            stmt: Some(st.id),
-            message: format!(
-                "`{}` is written over {} entit(ies), and {} were given",
-                fam.text,
-                want.len(),
-                args.len()
-            ),
-        });
-        return None;
-    }
-    for (a, (fname, k)) in args.iter().zip(&want) {
-        if a.kind != *k {
-            diags.push(Diag {
-                code: Code::E040,
-                span: st.span,
-                stmt: Some(st.id),
-                message: format!(
-                    "`{fname}` is a {}, and a {} was given",
-                    k.as_str(),
-                    a.kind.as_str()
-                ),
-            });
-            return None;
+    match curve_entity(sk, res, d, st, prog, insts) {
+        Ok(Some(cv)) => {
+            sk.curves.push(cv);
+            Some(EntRef::new(EntKind::Curve, sk.curves.len() - 1))
+        }
+        Ok(None) => None,
+        Err((code, span, message)) => {
+            diags.push(Diag { code, span, stmt: Some(st.id), message });
+            None
         }
     }
-    // the numbers it was given, in the family's own order
-    let names = sk.curve_defs[di].values.clone();
-    let values: Vec<f64> = names
-        .iter()
-        .map(|n| {
-            d.values
-                .iter()
-                .find(|(l, _)| &l.text == n)
-                .and_then(|(_, t)| crate::expr::literal(t))
-                .unwrap_or(0.0)
-        })
-        .collect();
-    let domain = match &d.domain {
-        Some((a, b)) => (
-            crate::expr::literal(a).unwrap_or(0.0),
-            crate::expr::literal(b).unwrap_or(1.0),
-        ),
-        None => sk.curve_defs[di].domain,
+}
+
+/// The curve a declaration draws: its definition (compiled on first use, shared after), the
+/// entities and numbers the instance gave it, and where its trace is anchored.  `Ok(None)` when
+/// the flattener already reported what is wrong with it.
+fn curve_entity(
+    sk: &mut Sketch,
+    res: &Resolver,
+    d: &Decl,
+    st: &Stmt,
+    prog: &Program,
+    insts: &[crate::flatten::InstanceInfo],
+) -> Result<Option<crate::model::CurveE>, (Code, Span, String)> {
+    let Some(c) = d.curve.as_ref() else {
+        return Err((
+            Code::E103,
+            st.span,
+            "a curve is `curve name = instance.point over formal in (a, b)`".to_string(),
+        ));
     };
-    sk.curves.push(crate::model::CurveE {
+    // the instance the point belongs to — found by the flattener, which reported it if it
+    // found none
+    let Some(of) = &c.of else { return Ok(None) };
+    let Some(info) = insts.iter().find(|i| i.prefix == of.instance) else { return Ok(None) };
+    let Some(comp) = prog.component(&info.component) else { return Ok(None) };
+    let swept = c.swept.text.as_str();
+    let numeric = comp
+        .formals
+        .iter()
+        .any(|f| f.name.text == swept && !matches!(f.ty, crate::syntax::Ty::Ent(_)));
+    if !numeric {
+        return Err((
+            Code::E040,
+            c.swept.span,
+            format!("`{swept}` is not a numeric formal of `{}`", info.component),
+        ));
+    }
+    // one definition per (component, point, formal), shared by every instance asked for it
+    let key = crate::model::CurveDef::key(&info.component, &of.point, swept);
+    let di = match sk.curve_defs.iter().position(|x| x.name == key) {
+        Some(i) => i,
+        None => {
+            let def = compile_curve(prog, comp, swept, &of.point, sk.units)
+                .map_err(|(span, m)| (Code::E103, span, m))?;
+            sk.curve_defs.push(def);
+            sk.curve_defs.len() - 1
+        }
+    };
+    let def = &sk.curve_defs[di];
+    let missing = |what: &str| {
+        (Code::E101, st.span, format!("`{}` was not given `{what}`", info.component))
+    };
+    // the entities the instance was given, in the component's order
+    let mut args: Vec<EntRef> = Vec::with_capacity(def.formals.len());
+    for ((fname, k), (_, actual)) in def.formals.iter().zip(&info.ents) {
+        let abs = actual.as_ref().ok_or_else(|| missing(fname))?;
+        let e = *res
+            .of
+            .get(abs)
+            .ok_or_else(|| (Code::E101, st.span, format!("no such entity: `{abs}`")))?;
+        if e.kind != *k {
+            return Err((
+                Code::E040,
+                st.span,
+                format!("`{fname}` is a {}, and a {} was given", k.as_str(), e.kind.as_str()),
+            ));
+        }
+        args.push(e);
+    }
+    // the numbers it was given, in the definition's order
+    let values = def
+        .values
+        .iter()
+        .map(|n| info.values.get(n).and_then(|a| a.number()).ok_or_else(|| missing(n)))
+        .collect::<Result<Vec<f64>, _>>()?;
+    let num = |t: &str| crate::expr::literal(t);
+    let domain = (num(&c.domain.0).unwrap_or(0.0), num(&c.domain.1).unwrap_or(1.0));
+    // the anchor: what the swept formal was given — a number, or the drawing's unknown a drawn
+    // instance left it as — or the interval's start for an instance written in place
+    let home = match info.values.get(swept).map(|a| (a.number(), &a.free)) {
+        Some((Some(v), _)) => crate::model::Home::At(v),
+        Some((None, Some(n))) if info.drawn => crate::model::Home::Free(n.clone()),
+        _ => crate::model::Home::At(domain.0),
+    };
+    // the pose a drawn instance stands in, per inner unknown of the block — whole or nothing
+    let pose: Vec<(EntRef, usize)> = if info.drawn {
+        def.pose_of
+            .iter()
+            .filter_map(|(n, j)| res.of.get(&format!("{}{n}", of.instance)).map(|&e| (e, *j)))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let pose = crate::model::whole(pose, def.pose_of.len());
+    Ok(Some(crate::model::CurveE {
         def: di as u32,
         args,
         values,
         domain,
+        home,
+        pose,
         class: d.class.clone(),
-    });
-    Some(EntRef::new(EntKind::Curve, sk.curves.len() - 1))
+    }))
 }
 
 fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {
@@ -2391,10 +2464,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         seed_spans: vec![Span::default(); seed.len()],
         hint_span: None,
         seed,
-        def: (e.kind == EntKind::Curve)
-            .then(|| Name::new(sk.curve_defs[sk.curves[e.i()].def as usize].name.clone())),
-        values: Vec::new(),
-        domain: None,
+        curve: (e.kind == EntKind::Curve).then(|| lift_curve(sk, e.i())),
         knots,
         class: sk.class_of(e),
         class_span: Span::default(),
@@ -2402,6 +2472,43 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         attitude: lift_attitude(sk, e),
         membership: lift_plane(sk, e),
         list_span: Span::default(),
+    }
+}
+
+/// A curve as a statement spells it: an instance written in place — the component, what it was
+/// given, the swept formal at the home — and the point, over the interval.  The component's
+/// own text is not in the sketch, so a lifted program parses only beside it.
+fn lift_curve(sk: &Sketch, i: usize) -> crate::syntax::CurveSpec {
+    use crate::syntax::{CurveSpec, CurveTarget, InstArg, InstVal, Instance};
+    let cv = &sk.curves[i];
+    let def = &sk.curve_defs[cv.def as usize];
+    let arg = |n: &str, v: InstVal| InstArg { label: Some(Name::new(n)), value: v, span: Span::default() };
+    let mut args: Vec<InstArg> = def
+        .formals
+        .iter()
+        .zip(&cv.args)
+        .map(|((n, _), a)| arg(n, InstVal::Ref(Ref::new(entity_name(*a)))))
+        .collect();
+    args.extend(
+        def.values.iter().zip(&cv.values).map(|(n, v)| arg(n, InstVal::Expr(crate::syntax::num(*v)))),
+    );
+    if let crate::model::Home::At(u) = cv.home {
+        args.push(arg(&def.param, InstVal::Expr(crate::syntax::num(u))));
+    }
+    CurveSpec {
+        target: CurveTarget::Anon(
+            Instance {
+                name: Name::new("#c"),
+                component: Name::new(def.component.clone()),
+                args,
+                span: Span::default(),
+                membership: Default::default(),
+            },
+            Ref::new(def.port.clone()),
+        ),
+        swept: Name::new(def.param.clone()),
+        domain: (crate::syntax::num(cv.domain.0), crate::syntax::num(cv.domain.1)),
+        of: None,
     }
 }
 
