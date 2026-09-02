@@ -3017,6 +3017,10 @@ struct P<'a> {
     open: Option<OpenJoint>,
     /// The `in PLANE { … }` headers read so far — handed to the `Program` at the end.
     in_blocks: Vec<InBlock>,
+    /// Whether the statements being read are a component's (§6.7): an `in PLANE { … }` block
+    /// may stand there, over a plane the component was handed, where in a root block it may
+    /// not — a header buried in a root statement's span is a splice no deletion could compose.
+    in_comp: bool,
 }
 
 /// Read a program.
@@ -3063,6 +3067,7 @@ pub fn parse_from(src: &str, base: usize, first_id: u32) -> (Program, Vec<SynErr
         in_body: 0,
         open: None,
         in_blocks: Vec::new(),
+        in_comp: false,
     };
     let mut body: Vec<Stmt> = Vec::new();
     let mut comps: Vec<Component> = Vec::new();
@@ -3771,11 +3776,15 @@ impl<'a> P<'a> {
             return None;
         }
         let header = Span::new(lo, self.here().hi as usize);
+        // inside a component the block is the one way to write a part's view in one place —
+        // the plane is a formal, and nothing the document deletes reaches the header; inside a
+        // root block a header buried in another statement's span is a splice no deletion
+        // could compose, so there the clause is written per declaration
         let nested = self.in_body > 0;
-        if nested {
+        if nested && !self.in_comp {
             self.fail(
-                "an `in` block stands at the top level; inside a body, write the clause on \
-                 each declaration",
+                "an `in` block stands at the top level or in a component; inside a block here, \
+                 write the clause on each declaration",
             );
         }
         let (mut body, joint) = self.braced_body(next_id)?;
@@ -4800,7 +4809,10 @@ impl<'a> P<'a> {
                 }
             }
         }
-        let (body, joint) = self.braced_body(next_id)?;
+        let was = std::mem::replace(&mut self.in_comp, true);
+        let got = self.braced_body(next_id);
+        self.in_comp = was;
+        let (body, joint) = got?;
         self.no_open_joint(joint, "a component");
         Some(Component {
             name: Some(name),

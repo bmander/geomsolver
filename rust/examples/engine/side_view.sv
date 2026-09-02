@@ -66,7 +66,8 @@ component SumpSide(o: point, rail: line) {
 
 // One cylinder edge on, about its axis point `ax` on the crank axis: the bore walls down from
 // the deck, the piston and its pin on the bore axis at the heights the end view gives them, the
-// rod between, the throw below, and the two cam lobes over it.
+// throw below, and the two cam lobes over it.  The rod between pin and small end is the part
+// `engine.conrod` draws, with the two points the assembly hands it.
 component CylinderSide(ax: point, deckline: line) {
   point wl0 hint(x: ax.x - D / 2, y: ax.y + deck)
   point wr0 hint(x: ax.x + D / 2, y: ax.y + deck)
@@ -86,7 +87,6 @@ component CylinderSide(ax: point, deckline: line) {
   port pin: point hint(x: ax.x, y: ax.y + R)
   ax distance(0, along: x) small
   ax distance(0, along: x) pin
-  line rod(pin, small)
   piston: Piston(small, pin: 0)
   throw: ThrowSide(ax, pin)
   lobe_i: Box(ax, x0: 14mm, y0: camh - rb, x1: 26mm, y1: camh + rb)

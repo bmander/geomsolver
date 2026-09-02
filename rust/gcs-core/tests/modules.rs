@@ -41,6 +41,7 @@ fn shelf() -> BTreeMap<&'static str, &'static str> {
     m.insert("lib.diamond", "use lib.rung\ncomponent Step(a: point, b: point) { r: Rung(a, b) }\n");
     m.insert("lib.loop_a", "use lib.loop_b\nparam pa = 1\ncomponent A(p: point) { }\n");
     m.insert("lib.loop_b", "use lib.loop_a\nparam pb = 2\ncomponent B(p: point) { }\n");
+    m.insert("lib.over", "use lib.rung\nparam twice = 2 * len\ncomponent Long(a: point, b: point) { a distance(twice) b }\n");
     m
 }
 
@@ -115,6 +116,19 @@ fn a_diamond_links_once_and_a_cycle_ends() {
     assert!(linked.is_empty(), "{linked:?}");
     assert!(e.ok());
     assert_eq!(e.program.modules.len(), 2);
+}
+
+/// A module's own params may read the params of the modules it uses, and the document's may
+/// read every module's: the used come first, so `param twice = 2 * len` is 100 and not free.
+#[test]
+fn a_files_params_read_the_modules_it_uses() {
+    let (e, linked) = read("use lib.over\npoint a hint(x: 0, y: 0)\npoint b hint(x: 100, y: 0)\nl: Long(a, b)\nground a\nb distance(twice, along: y) a\n");
+    assert!(linked.is_empty(), "{linked:?}");
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let mut sk = e.sketch.clone();
+    gcs_core::solve::solve(&mut sk, Default::default());
+    let (x, y) = sk.point_xy(1);
+    assert!((x.hypot(y) - 100.0).abs() < 1e-6 && (y + 100.0).abs() < 1e-6, "{x} {y}");
 }
 
 #[test]

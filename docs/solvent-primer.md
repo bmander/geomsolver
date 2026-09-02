@@ -445,7 +445,8 @@ brought it in, with the module's line in front of the message.
 
 **A file's top-level `param`s are in scope in the components it defines**, and so are those of
 the modules it uses — which is what lets `engine/dims.sv` hold the whole dimension table and every
-view read `D` for the bore. A formal of the same name shadows a param.
+view read `D` for the bore; a file's own params may read them too (`param rB = rp + 1.5mm`) and
+shadow them. A formal of the same name shadows a param.
 `rust/examples/engine.sv` is the worked case: a four-cylinder engine in three views, written as a
 dimension module, a parts module, a valvetrain module and one module per view, over the standard
 library's three views (`use std`, `rust/lib/std.sv`).
@@ -782,6 +783,13 @@ The standard library writes this layout once: `use std` and `views: ThreeViews(O
 up: 90)` declares the page as `views.front` and folds `views.right` and `views.top` from it, with
 `views.right_origin` and `views.top_origin` the corner `A` as those views see it — so a drawing
 grounds one point and writes its geometry `in views.top`.
+
+**A part is designed in one place.** A component's body may carry `in view { … }` blocks over
+planes it was handed, one per view the part shows in, and the `project` statements tying them
+— so the whole design of a connecting rod is one file, and the view modules draw only the
+castings a view is of. `repeat flag { … }` with a 0-or-1 `Int` formal leaves a view undrawn for
+an instance that does not show in it. `rust/examples/engine/conrod.sv` is the worked case.
+Inside a *root* block (a `repeat` at the top level) the clause is still written per declaration.
 
 `in top { … }` writes the clause once: every declaration in the block — a `cycle`'s copies
 included — is drawn in `top`, and the statements are otherwise ordinary (they dimension, drag

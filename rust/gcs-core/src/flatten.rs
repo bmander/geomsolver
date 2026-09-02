@@ -438,15 +438,18 @@ impl<'a> Walk<'a> {
             return;
         }
         let prefix = scope.prefix().to_string();
-        // every `param` of the body first, whatever line it stands on — a body is a set (P2)
-        self.params(body, vals, scope);
-        // the root's are the file's, and every component written in the file reads them —
-        // with the params of every module the file `use`s under its own (§14.4)
+        // the root's numbers are the file's: the params of every module the file `use`s come
+        // first, so the file's own may read them (`param rB = rp + 1.5mm`) and shadow them
         if depth == 0 {
             let uses: Vec<String> = self.prog.uses.iter().map(|u| u.name.clone()).collect();
             for (k, v) in self.used_params(&uses) {
                 vals.entry(k).or_insert(v);
             }
+        }
+        // every `param` of the body, whatever line it stands on — a body is a set (P2)
+        self.params(body, vals, scope);
+        // and every component written in the file reads them (§14.4)
+        if depth == 0 {
             self.file_vals = vals.clone();
         }
         // and with them the numbers in force are complete for every statement of the body:
@@ -1024,10 +1027,11 @@ impl<'a> Walk<'a> {
         let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
         let m = &self.prog.modules[k];
         let (body, uses) = (m.root.body.clone(), m.uses.clone());
-        self.params(&body, &mut vals, &scope);
+        // the modules it uses first, so its own params may read them and shadow them
         for (name, v) in self.used_params(&uses) {
-            vals.entry(name).or_insert(v);
+            vals.insert(name, v);
         }
+        self.params(&body, &mut vals, &scope);
         if let Some(slot) = self.module_vals.get_mut(k) {
             *slot = Some(vals.clone());
         }

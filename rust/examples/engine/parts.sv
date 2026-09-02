@@ -31,8 +31,9 @@ component Throw(o: point, axis: line, journal: circle, theta: Angle) {
   r: Span(journal, kp, side: -1)
 }
 
-// A connecting rod seen along the axis: the small end rides the bore axis one rod length from
-// the pin, and the shank is two lines 10 off the rod's centreline between the two eyes.
+// A connecting rod's *phantom* position, seen along the axis: the centreline and the two eyes,
+// the small end riding the bore axis one rod length from the pin.  The rod itself is the part
+// `engine.conrod` designs; this is the outline a draughtsman ghosts in for a second position.
 component Rod(pin: point, axis: line) {
   port small: point hint(x: pin.x, y: pin.y + L)
   line cl(pin, small) class axis
@@ -42,20 +43,6 @@ component Rod(pin: point, axis: line) {
   circle sm(center: small) hint(r: rsmall)
   radius(rbig) big
   radius(rsmall) sm
-  point bl hint(x: pin.x - 10mm, y: pin.y + rbig)
-  point br hint(x: pin.x + 10mm, y: pin.y + rbig)
-  point sl hint(x: small.x - 10mm, y: small.y - rsmall)
-  point sr hint(x: small.x + 10mm, y: small.y - rsmall)
-  line shl(bl, sl)
-  line shr(br, sr)
-  bl on big
-  br on big
-  sl on sm
-  sr on sm
-  bl distance(10) cl
-  sl distance(10) cl
-  br distance(-10) cl
-  sr distance(-10) cl
 }
 
 // A piston: a rectangle about its small end, the crown `ch` above the pin, two rings under the

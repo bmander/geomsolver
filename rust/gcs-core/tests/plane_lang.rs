@@ -33,6 +33,55 @@ fn refused(src: &str, code: &str, needle: &str) {
     );
 }
 
+/// A part designed in one place (§6.7): a component whose body carries `in view { … }` blocks
+/// over planes it was handed, with the projection tying its views inside it — and a view left
+/// undrawn by `repeat 0`.
+#[test]
+fn a_component_carries_its_views_in_blocks() {
+    let src = "\
+point Af hint(x: 0, y: 0) in front
+point qf hint(x: 40, y: 0)
+plane front(origin: Af, toward: qf)
+point Ar hint(x: 150, y: 0) in right
+point qr hint(x: 150, y: -40)
+plane right(origin: Ar, toward: qr, from: front, fold: -90deg)
+ground Af
+ground qf
+ground Ar
+ground qr
+component Peg(f: plane, r: plane, cf: point, cr: point, draw_r: Int) {
+  in f {
+    point a hint(x: cf.x, y: cf.y + 10)
+    cf distance(0, along: x) a
+    cf distance(10, along: y) a
+  }
+  repeat draw_r {
+    in r {
+      point b hint(x: cr.x + 5, y: cr.y + 10)
+      cr distance(5, along: x) b
+    }
+    a project b[0]
+  }
+}
+p: Peg(front, right, Af, Ar, draw_r: 1)
+q: Peg(front, right, Af, Ar, draw_r: 0)
+";
+    let e = read(src);
+    assert_eq!(e.sketch.points.len(), 4 + 3, "a and b of p, a of q");
+    let mut sk = e.sketch.clone();
+    assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
+    let b = e.map.ent_named("p.b").or_else(|| {
+        e.map.names.iter().find(|(_, ns)| ns.iter().any(|n| n.ends_with(".0.b"))).map(|(r, _)| *r)
+    }).expect("p.b");
+    let (bx, by) = sk.point_xy(b.i());
+    assert!((bx - 155.0).abs() < 1e-6 && (by - 10.0).abs() < 1e-6, "{bx} {by}");
+    // and inside a root block the clause is still written per declaration
+    misparses(
+        "point o\nplane f(origin: o, toward: hint(x: 1, y: 0))\nrepeat 2 { in f { point p } }\n",
+        "in a component",
+    );
+}
+
 fn misparses(src: &str, needle: &str) {
     let (_, errs) = parse(src);
     let msgs: Vec<String> = errs.into_iter().map(|e| e.message).collect();

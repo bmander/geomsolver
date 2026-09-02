@@ -12,18 +12,16 @@ use engine.dims
 use engine.parts
 use engine.valvetrain
 
-// The crank and what rides on it: journal, throw, rod and piston for cylinder 1, and the phantom
-// throw and rod a half turn on.
+// The crank: journal, the throw of cylinder 1, and the phantom throw of cylinders 2 and 3 a
+// half turn on.  The rods and pistons are parts of the assembly (`engine.conrod`), drawn here
+// by the document.
 component Crank(o: point, bore: line) {
   circle journal(center: o) hint(r: rj)
   radius(rj) journal
   circle crankpath(center: o) hint(r: R) class phantom
   radius(R) crankpath
   t1: Throw(o, bore, journal, theta: theta)
-  r1: Rod(t1.pin, bore)
-  p1: Piston(r1.small, pin: 1)
   t2: Throw(o, bore, journal, theta: theta + 180deg) class phantom
-  r2: Rod(t2.pin, bore) class phantom
 }
 
 // The cylinder wall, `wall` deep below the deck, and the two dimensions the sheet shows for it.
@@ -124,8 +122,9 @@ component Drive(o: point, cam_i: point, cam_e: point) {
 
 component EndSection(o: point) {
   top: At(o, dx: 0mm, dy: deck + 30mm)
-  line bore(o, top.p) class axis
-  crank: Crank(o, bore)
+  port bore = axisline
+  line axisline(o, top.p) class axis
+  crank: Crank(o, axisline)
   cyl: Bore(o)
   block: Block(o)
   head: Head(o, cyl.l0, cyl.r0, block.d_l, block.d_r)

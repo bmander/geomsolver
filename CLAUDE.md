@@ -147,7 +147,16 @@ Conventions:
   `Angle` as `(180deg)`, a `Length` as `(150mm)`), or `phi + atan2(…)` reads as a plain number
   added to an angle.  A file's top-level `param`s are in scope in its components (`Walk::file_vals`,
   under the formals in `bind`) and so are the params of the modules it `use`s
-  (`module_params`, memoised, cycle-safe).  `tests/seeds.rs` is the gate.
+  (`module_params`, memoised, cycle-safe) — the used modules' params are merged **before** a
+  file's own are worked out, so `param rB = rp + 1.5mm` reads the table.  `tests/seeds.rs` is
+  the gate.
+- **A part is one component carrying `in view { … }` blocks** (Solvent §6.7, `P::in_comp`): the
+  block form is allowed inside a component body — the plane is a formal, and nothing the
+  document deletes reaches the header — and still refused inside a root block.  With
+  `repeat flag { … }` over a 0/1 `Int` formal for the views an instance does not show in, a
+  part's whole design is one module (`engine/conrod.sv`), and the view modules draw only the
+  castings a view is of.  Instances inside a block copy are indexed like declarations
+  (`cyl[0].small`: `copy_of` returns the copy's prefix and `lookup` reads the rest under it).
 - **Modules** (Solvent §14.4, `modules.rs`, `library.rs`).  `use engine.parts` is parsed into
   `Program::uses`; `modules::link(prog, resolver)` resolves each once, transitively, parsing the
   module with `syntax::parse_from(text, base, first_id)` — **every span is one integer into one
