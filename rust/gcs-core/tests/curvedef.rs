@@ -68,8 +68,7 @@ fn involute_sketch() -> (Sketch, usize) {
     (sk, p)
 }
 
-mod common;
-use common::{fd_jacobian, involute_at};
+use crate::common::{fd_jacobian, involute_at};
 
 /// **A point solves onto a curve nothing in the core knows.**
 #[test]

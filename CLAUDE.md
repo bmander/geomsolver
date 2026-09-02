@@ -91,7 +91,10 @@ Currently: **Stage 5 done**, in **one** implementation —
 Commands:
 `make` (native `build/libgcs.dylib`), `make solventc` (`build/solventc`),
 `make wasm` (`web/src/wasm/gcs.wasm`),
-`make test` (cargo + the web suite), `cargo test --manifest-path rust/Cargo.toml`,
+`make test` (both released artefacts, cargo and the web suite),
+`cargo test --manifest-path rust/Cargo.toml` (**never `--release`**: the suite runs under
+`[profile.test]` — optimised, no LTO, no debuginfo — and `rust/Cargo.toml` says what each of
+the three would cost; one file of the core suite is filtered as `cargo test chain::`),
 `cd web && npm test`, `make bench` (the native `bench` binary and `npm run bench`, meant to be
 read side by side), `cd web && npm run serve`.
 
@@ -336,7 +339,10 @@ Conventions:
   the slot outright.
 - **The core owns every algorithm.**  A change to the model, a constraint type, diagnosis,
   decomposition or the solvers lands in `rust/gcs-core/` with a Rust test in
-  `rust/gcs-core/tests/`.  A binding changes only when the *surface* changes.  If you find
+  `rust/gcs-core/tests/` — **a new file there is listed in `tests/main.rs`**, since the core
+  suite is one binary (`autotests = false`; the note at the top of `main.rs` says why) and a
+  file nobody lists is a test nobody runs, which `every_file_is_a_module` fails the suite
+  over.  A binding changes only when the *surface* changes.  If you find
   yourself writing geometry or numerics in TypeScript, it belongs in Rust instead.
 - A new *entity* kind stops the build in the exhaustive `match e.kind` arms — `model.rs`
   (`entity_params`, `children`, `count`, `bounds`, `distance_between`, `point_to_drawn`,
@@ -901,6 +907,15 @@ Conventions:
   (`swap`) and ⌘B on one says why it stays, since shown in the box such a drawing is a tilted,
   read-only, empty-looking sheet on which every tool click silently does nothing.
 - Slow tests are gated by `#[ignore]` (cargo).
+- **Test time is measured, not guessed, and three findings decide the shape of `make test`**
+  (each with its numbers where the rule is written): `cargo test --release` fat-LTO-linked the
+  engine once per test binary (`rust/Cargo.toml`, `[profile.test]`); macOS assesses every fresh
+  executable on its first launch and keeps unpacked debuginfo objects forever in
+  `target/debug/deps`, so the core suite is one binary built without debuginfo
+  (`gcs-core/tests/main.rs`); and the two released links overlap only inside one cargo
+  invocation (`Makefile`, `release`).  A `target/debug/deps` that has grown to hundreds of
+  thousands of files makes every binary in it take seconds to launch — `cargo clean --profile
+  dev` is the cure, and `debug = 0` is what stops it recurring.
 - Benchmark on a quiet machine (`uptime`); this box often has a JVM indexer at 300% CPU.  The
   native half is `rust/gcs-core/src/bin/bench.rs` (`cargo run --release -p gcs-core --bin bench`)
   and the wasm half is `npm run bench`; `make bench` runs both.  Wall-clock medians and nothing

@@ -54,8 +54,7 @@ fn build(src: &str) -> gcs_core::program::Elaborated {
     elaborate(&prog)
 }
 
-mod common;
-use common::{fd_jacobian, involute_at};
+use crate::common::{fd_jacobian, involute_at};
 
 /// **The taut string traces the involute.**  Nothing in the `unwind` family states the closed
 /// form (its seeds are wrong by design), yet the curve it draws is the involute to solver

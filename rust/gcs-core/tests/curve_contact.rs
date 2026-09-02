@@ -44,8 +44,7 @@ ground o
 ground ax
 ";
 
-mod common;
-use common::{build, fd_jacobian, involute_at};
+use crate::common::{build, fd_jacobian, involute_at};
 
 /// The contact's parameter, read off the one constraint that owns one.
 fn param_of(e: &Elaborated) -> f64 {

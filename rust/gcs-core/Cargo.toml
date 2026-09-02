@@ -3,6 +3,9 @@ name = "gcs-core"
 version = "0.1.0"
 edition = "2021"
 description = "Geometric constraint solver: model, numerics, diagnosis, decomposition — the whole engine."
+# The suite is ONE test binary, `tests/main.rs`, with each `tests/*.rs` a module of it: see the
+# note at the top of that file for what fifty binaries cost.
+autotests = false
 
 [dependencies]
 
@@ -16,3 +19,7 @@ nalgebra = { version = "0.35", default-features = false, features = ["std"] }
 [lib]
 name = "gcs_core"
 path = "src/lib.rs"
+
+[[test]]
+name = "core"
+path = "tests/main.rs"

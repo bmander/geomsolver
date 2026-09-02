@@ -8,3 +8,21 @@ lto = true
 codegen-units = 1
 # not "abort": the FFI's `guard` turns a core panic into an error return.
 panic = "unwind"
+
+# `make test` and a bare `cargo test` run under this profile: the optimisation the numerics need
+# (a debug build runs the suite many times slower) without the link-time work only a released
+# artefact is worth.  Under `--release` every integration-test binary — fifty of them, then —
+# performed its own fat-LTO link of the whole engine: 100–190 CPU-seconds each, 94% of a
+# `make test`, for tests that run in 17 seconds.  `[profile.bench]` is no escape, since cargo
+# 1.57+ builds `cargo test --release` under `release` itself.  Inheriting `dev` keeps debug assertions on,
+# which the suite had never run with, and keeps the build incremental, so an edit to one file of
+# the core recompiles that and relinks the tests.  The cdylib, `solventc` and the wasm still
+# build under `release`.
+# No debuginfo, because on macOS it is kept "unpacked": every object file of every test crate is
+# left in `target/debug/deps` and nothing ever removes one, and a directory of 335,000 of them
+# made every test binary take five seconds to *launch* — 250 of the 275 seconds `cargo test`
+# ran for.  A failing test still says its file and line (that is the panic's, not the
+# debugger's); only a backtrace loses its line numbers.
+[profile.test]
+opt-level = 3
+debug = 0
