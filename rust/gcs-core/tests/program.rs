@@ -732,7 +732,8 @@ fn a_gear_with_few_teeth() {
 /// that round-trips without a rule about which numbers are worth saying.
 ///
 /// The spellings the clause replaced — `point p at (0, 0)`, `point p hint at (0, 0)`,
-/// `circle c(center: o, r: 25)` — do not parse: one class of thing is written one way.
+/// `circle c(center: o, r: 25)`, and the place's own grammar `point p hint at q bearing (30)`
+/// (#47.2) — do not parse: one class of thing is written one way.
 #[test]
 fn every_seed_is_written_in_a_hint_clause() {
     let read = |src: &str| {
@@ -755,6 +756,8 @@ fn every_seed_is_written_in_a_hint_clause() {
         "point a at (3, 4)\n",
         "point a hint at (3, 4)\n",
         "point o hint(x: 0, y: 0)\ncircle c(center: o, r: 25)\n",
+        "point q hint(x: 0, y: 0)\npoint a hint at q\n",
+        "point q hint(x: 0, y: 0)\ncircle k(center: q) hint(r: 5)\npoint a hint at k bearing (30)\n",
     ] {
         let (_, errs) = gcs_core::syntax::parse(src);
         assert!(!errs.is_empty(), "{src} still parses");

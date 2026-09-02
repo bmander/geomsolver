@@ -48,7 +48,7 @@ component Valve(seat: point, axis: line, lift: Length, head: Length) {
   f1 distance(20) b1
   f2 distance(20) b2
   // the stem, `stem` down the axis to the head, which the lobe lifts off its seat or does not
-  point hc hint at seat
+  point hc hint(at: seat)
   hc on axis
   hc distance(stem) fc
   line st(hc, fc)

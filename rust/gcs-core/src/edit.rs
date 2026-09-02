@@ -102,7 +102,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
     let mut edits = Vec::new();
     for st in &prog.root().body {
         let StmtKind::Decl(d) = &st.kind else { continue };
-        // `hint at t` names a *place*, and has no coordinates to write
+        // `hint(at: t)` names a *place*, and has no coordinates to write
         if d.seed_at.is_some() {
             continue;
         }

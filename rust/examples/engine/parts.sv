@@ -9,8 +9,8 @@ use engine.dims
 // `side` says which side of the centre line: the seeds are the two contact points at the bearing
 // square to the line of centres, so the solve starts on the branch that was asked for.
 component Span(k1: circle, k2: circle, side: Scalar) {
-  point a hint at k1 bearing (atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)
-  point b hint at k2 bearing (atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)
+  point a hint(at: k1, bearing: atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)
+  point b hint(at: k2, bearing: atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)
   line s(a, b)
   a on k1
   b on k2

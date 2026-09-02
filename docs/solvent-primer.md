@@ -128,9 +128,10 @@ must later reference an anonymous element (a constraint applied from the app, sa
 spliced into its declaration. `curve` always requires a name.
 
 **A seed may read geometry.** `hint(x: k.center.x + k.r, y: pin.y)` reads another scalar's *seed*,
-never a solved value, so the clause is still only a starting point. Two spellings name a place
-outright: `hint at pin` starts a point where another starts, and `hint at k bearing (90deg)` puts
-it on the circle's rim at that bearing. Inside a component the names are the formals'. Seeds
+never a solved value, so the clause is still only a starting point. Two keys name a place
+outright: `hint(at: pin)` starts a point where another starts, and `hint(at: k, bearing: 90deg)`
+puts it on the circle's rim at that bearing; a clause with `at` carries no `x` or `y`. Inside a
+component the names are the formals'. Seeds
 settle in statement order, so a seed reading one written below it reads that one's provisional
 start. Where the document names a `unit`, a geometry read is a length: write `pin.x - 10mm`, not
 `pin.x - 10`. A `param` may **not** read geometry; it feeds constraints, and a seed must never
@@ -340,7 +341,8 @@ A component's point is placed one of two ways:
 
 The swept formal may be an `Angle` or a `Length`; the point must be one the component places, not
 geometry it is written over. A formal `f: frame` offers `f.angle`, the frame's bearing in degrees:
-seeds written `bearing (u + f.angle)` follow a tilted datum where page-fixed ones go stale. A frame
+seeds written `hint(at: c, bearing: u + f.angle)` follow a tilted datum where page-fixed ones go
+stale. A frame
 is also usually the shortest formal list, since it carries an origin, a second point and a bearing;
 fewer entity formals mean cheaper curve evaluations.
 

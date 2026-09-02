@@ -114,16 +114,20 @@ Conventions:
   which is what `circle c(center: o, r: 25)` got wrong, putting a number the solver will move
   inside the same brackets as the structure it may not.  §4.3's rule is then lexical and exact:
   *a number inside a `hint(…)` is a seed, and every other number is not* — which `=` never was,
-  since `param w = 100` is written with one and is not a seed.  The three retired spellings
-  (`at (0, 0)`, `hint at (0, 0)`, a scalar in a constructor arg) do **not** parse, and each
-  errors saying where the number belongs.
-  Two exceptions, and both are the rule rather than against it.  A **pin** stays in the argument
+  since `param w = 100` is written with one and is not a seed.  The four retired spellings
+  (`at (0, 0)`, `hint at (0, 0)`, a scalar in a constructor arg, and `hint at REF [bearing (…)]`)
+  do **not** parse, and each errors saying where the number belongs.
+  **A place is two keys of the same clause** (issue #47, item 2): `point b hint(at: orbit,
+  bearing: u + f.angle)`, `point p hint(at: pin)` — a seed given as geometry rather than as a
+  pair of numbers, on the sheet and inside a traced component alike.  `hint_body` reads `at:` as
+  a reference (`Hint::place`) wherever the clause stands, and the declaration's trailer loop is
+  the one table that takes it, into `Decl::seed_at` (an `AtRef`: the place and its bearing
+  text); a clause with `at:` and a scalar, or `bearing:` without `at:`, is refused at the key.
+  Both lower to the same tapes the coordinate spelling would, so nothing below the parser knows
+  there are two — and there is no second grammar, no `bearing` keyword and no second print arm.
+  One exception, and it is the rule rather than against it.  A **pin** stays in the argument
   list — `point_on_spline(p, s, t == 0.4)` — because `hint` marks what a solve revises and a pin
-  is precisely what it does not; it is a stated number, beside every other stated number.  And
-  **`hint at REF` keeps its own form** inside a component that is only ever traced (§6.5),
-  where a seed is a *place* and not a pair of numbers: `point b hint at orbit bearing (u +
-  f.angle)`.  Both lower to the same tapes the coordinate spelling would, which is why they
-  share the word.
+  is precisely what it does not; it is a stated number, beside every other stated number.
   **What `hint` marks is that a solve revises the number, not that the number is seed-class** —
   the two are different sets, and that is why a **callout placement keeps its bare `at`**.  A
   placement is every bit as inert (delete it and the drawing is the same), but nothing in the
@@ -132,7 +136,7 @@ Conventions:
   placement is a preference it never touches.  Ask §4.3, not the keyword, for what may be
   deleted without changing the drawing.
 - **A seed may read geometry, and reads its seed** (Solvent §6.4).  `hint(x: k.center.x + k.r,
-  y: pin.y)`, `hint at pin`, `hint at k bearing (b)` — on the sheet and in a child slot alike.
+  y: pin.y)`, `hint(at: pin)`, `hint(at: k, bearing: b)` — on the sheet and in a child slot alike.
   The flattener settles a seed text over the parameters in scope and, where that
   fails and the text names a dotted scalar, keeps it (`settle_seed`, `reads_geometry`) with every
   dotted name resolved to the entity's absolute name in `Decl::seed_names` (`rescope_seeds`, the
@@ -142,8 +146,8 @@ Conventions:
   them out after every kind is built, in statement order, off the built seeds (`seed_read`,
   `place_of`).  A read is a `Length` where the document names a unit and a bare number where it
   does not (`seed_eval`).  A `param` may not read geometry — it feeds constraints — and
-  `commit_seeds` never writes an expression back, so P3 holds.  The bearing of a sheet `hint at`
-  is `substitute`d over the scope's numbers, which print **with their unit** (`of_vals`: an
+  `commit_seeds` never writes an expression back, so P3 holds.  The bearing of a sheet
+  `hint(at: …)` is `substitute`d over the scope's numbers, which print **with their unit** (`of_vals`: an
   `Angle` as `(180deg)`, a `Length` as `(150mm)`), or `phi + atan2(…)` reads as a plain number
   added to an angle.  A file's top-level `param`s are in scope in its components (`Walk::file_vals`,
   under the formals in `bind`) and so are the params of the modules it `use`s
@@ -483,7 +487,7 @@ Conventions:
   quaternion — a 3D workplane changes the component count, not the construct.  `.angle` is
   **derived, never stored**: `Tape::compile`'s one exception to the misspelling rule turns
   `f.angle` into `atan2(f.s, f.c)` (degrees) wherever the table holds the rotor — which is what
-  lets a traced seed say `bearing (u + f.angle)` and follow a tilted datum (issue #10;
+  lets a traced seed say `bearing: u + f.angle` and follow a tilted datum (issue #10;
   `tests/frame.rs` holds the mirror-elbow document that page-fixed seeds quietly get wrong).
   A frame is also the shortest formal list a traced component can be written over — it *is*
   an origin, a second point and a bearing, so passing those beside it states one datum three
@@ -655,7 +659,7 @@ Conventions:
   *is*, and — an empty span — where it *would go*.  `commit_seeds` splices each seed in place
   when every one it needs has a span, and writes the whole clause at that point when one does
   not.  Appending, rather than leaving it, because otherwise a drawing has a pose its source
-  cannot express; a decl seeded by *place* (`hint at t`) is skipped, having no coordinates to
+  cannot express; a decl seeded by *place* (`hint(at: t)`) is skipped, having no coordinates to
   write.
   `reconcile` and `retext` **apply themselves to the `Elaborated` and do not rebuild the
   drawing** — nothing about the drawing changed, the source is only catching up, and rebuilding
@@ -1283,11 +1287,12 @@ Conventions:
   carries a history where the drawing path is always cold, which is the intended reading: a
   contact is a point that reached its `u` by a road, and the two agree because every step of
   that road was checked against the curve's own tangent.
-  A seed is a *place*, named geometrically where it can be: `at c bearing (u + phase)` is the
-  point at the edge of the circle, `at t` is where another point starts (`program::at_seed`
-  lowers both to the tapes the coordinate spelling would be), and `at (xexpr, yexpr)` remains
-  for a place with no name — in a component that is only ever traced, since on the sheet a
-  seed is a number a solve writes back (`build` refuses a drawn one).
+  A seed is a *place*, named geometrically where it can be: `hint(at: c, bearing: u + phase)`
+  is the point at the edge of the circle, `hint(at: t)` is where another point starts
+  (`program::at_seed` lowers both to the tapes the coordinate spelling would be), and
+  `hint(x: xexpr, y: yexpr)` remains for a place with no name — in a component that is only
+  ever traced, since on the sheet a seed is a number a solve writes back (`build` refuses a
+  drawn one).
   A traced body must be square — as many rows as inner coordinates — or elaboration refuses it.
   `tests/trace.rs` holds the taut-string involute checked against the closed form it never
   states (with seeds wrong by 3× on purpose), a gear run on traced flanks, and — the guard on

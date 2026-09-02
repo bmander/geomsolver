@@ -95,7 +95,7 @@ fn a_cases_arguments_reach_its_document() {
 /// **Every seed in the library is written in a `hint(…)` clause** (Solvent §4.3).
 ///
 /// The rule is lexical, so the check is too: a scalar the kind owns must not appear as a
-/// constructor argument, and a coordinate seed must not be a bare or `hint at` pair.  Grepping
+/// constructor argument, and a place must be keyed too — no `hint at REF` (#47.2).  Grepping
 /// the shipped documents is the only way to catch a spelling that still *parses* somewhere but
 /// says the wrong thing about which numbers a solve may rewrite.
 ///
@@ -109,7 +109,7 @@ fn no_document_writes_a_seed_the_old_way() {
         for (n, line) in src.lines().enumerate() {
             let code = line.split("//").next().unwrap_or("");
             let where_ = format!("{key}:{}: {line}", n + 1);
-            assert!(!code.contains("hint at ("), "a coordinate pair after `hint at` — {where_}");
+            assert!(!code.contains("hint at"), "`hint at` is `hint(at: …)` now — {where_}");
             // a declaration leads with its kind, and the scalars at issue are that kind's own
             let kind = code.split_whitespace().next().and_then(EntKind::parse);
             for (name, field) in kind.iter().flat_map(|k| k.fields()) {

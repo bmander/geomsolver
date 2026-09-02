@@ -1284,8 +1284,8 @@ fn compile_trace(
 
 /// A seed named geometrically, compiled to the tapes a written pair would be: the place a point
 /// already names, or **the point at the edge of a circle** at a bearing from the page's x-axis —
-/// `at c bearing (u + phase)`, which is what that place is called in this language rather than
-/// the trigonometry it comes to.
+/// `hint(at: c, bearing: u + phase)`, which is what that place is called in this language rather
+/// than the trigonometry it comes to.
 fn at_seed(
     sk: &Sketch,
     scope: &BTreeMap<String, EntRef>,
@@ -1356,7 +1356,7 @@ fn at_seed(
         }
         (EntKind::Circle, None) => Err((
             span,
-            "where on the edge?  `at c bearing (…)` says the bearing".to_string(),
+            "where on the edge?  `hint(at: c, bearing: …)` says the bearing".to_string(),
         )),
         (k, _) => Err((a.what.span, format!("a seed cannot be at a {}", k.as_str()))),
     }
@@ -1666,14 +1666,14 @@ fn build(
     if d.kind == EntKind::Curve {
         return build_curve(sk, res, d, st, diags, prog, insts);
     }
-    // a seed named by a place (`hint at k bearing (b)`) is a point's; every other kind has a
-    // scalar of its own the clause seeds by name
+    // a seed named by a place (`hint(at: k, bearing: b)`) is a point's; every other kind has
+    // a scalar of its own the clause seeds by name
     if d.seed_at.is_some() && d.kind != EntKind::Point {
         diags.push(Diag {
             code: Code::E103,
             span: st.span,
             stmt: Some(st.id),
-            message: "only a point takes a geometric seed (`hint at …`)".to_string(),
+            message: "only a point takes a geometric seed (`hint(at: …)`)".to_string(),
         });
         return None;
     }
@@ -1957,8 +1957,8 @@ fn build(
 ///
 /// Two spellings, one rule: **the value read is the other scalar's own seed**.  A text over
 /// entity scalars — `hint(x: k.center.x + k.r, y: pin.y)` — and a place named outright —
-/// `hint at pin`, `hint at k bearing (b)`, the words a trace block already had for the same two
-/// things.  Settled in statement order, so a seed that reads a seed that was itself read from a
+/// `hint(at: pin)`, `hint(at: k, bearing: b)`, the words a trace block already had for the same
+/// two things.  Settled in statement order, so a seed that reads a seed that was itself read from a
 /// third comes out right when the three are written in the order they depend on; written the
 /// other way round it reads the earlier one's *provisional* seed, which is the same bargain the
 /// trace block's "declared after this point" strikes, said more leniently.
@@ -2062,8 +2062,8 @@ fn settle_deferred(sk: &mut Sketch, res: &Resolver, deferred: &[Deferred], diags
     }
 }
 
-/// Where `hint at …` puts a point on the sheet: the seed of the point it names, or the edge of
-/// the circle it names at the bearing given — `at_seed`'s two places, read as numbers.
+/// Where `hint(at: …)` puts a point on the sheet: the seed of the point it names, or the edge
+/// of the circle it names at the bearing given — `at_seed`'s two places, read as numbers.
 fn place_of(
     sk: &Sketch,
     res: &Resolver,
@@ -2091,7 +2091,7 @@ fn place_of(
             Ok((cx + r * b.cos(), cy + r * b.sin()))
         }
         (EntKind::Circle, None) => {
-            Err("where on the edge?  `at c bearing (…)` says the bearing".to_string())
+            Err("where on the edge?  `hint(at: c, bearing: …)` says the bearing".to_string())
         }
         (k, _) => Err(format!("a seed cannot be at a {}", k.as_str())),
     }

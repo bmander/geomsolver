@@ -514,16 +514,16 @@ fn a_blocks_mistakes_are_named() {
     }
 }
 
-/// **A seed is a place, and a place is named geometrically.**  `at c bearing (u)` is the point
-/// at the edge of the circle — said the way a draughtsman says it, lowered to the same tapes the
-/// trigonometry would be — and `at t` is wherever another point starts.  The bearing may read
-/// `u`, which is what lets one seed follow the whole rim.
+/// **A seed is a place, and a place is named geometrically.**  `hint(at: c, bearing: u)` is
+/// the point at the edge of the circle — said the way a draughtsman says it, lowered to the same
+/// tapes the trigonometry would be — and `hint(at: t)` is wherever another point starts.  The
+/// bearing may read `u`, which is what lets one seed follow the whole rim.
 #[test]
 fn a_seed_is_a_place_named_geometrically() {
     let src = "\
 component rim(c: circle, datum: line, u: Angle) {
-  point t hint at c bearing (u)
-  point p hint at t
+  point t hint(at: c, bearing: u)
+  point p hint(at: t)
   line rad(c.center, t)
   t on c
   datum angle(u) rad
@@ -557,14 +557,14 @@ curve  w = rim(base, datum, u: 90).t over u in (10, 170)
 #[test]
 fn a_geometric_seeds_mistakes_are_named() {
     let cases = [
-        ("point q\n  point p hint at q bearing (0)\n  p coincident c.center\n  q coincident c.center",
+        ("point q\n  point p hint(at: q, bearing: 0)\n  p coincident c.center\n  q coincident c.center",
          "a bearing needs a circle"),
-        ("point p hint at c\n  p coincident c.center", "says the bearing"),
-        ("point p\n  point q\n  line l(p, q) hint at c\n  p coincident c.center\n  q coincident c.center",
+        ("point p hint(at: c)\n  p coincident c.center", "says the bearing"),
+        ("point p\n  point q\n  line l(p, q) hint(at: c)\n  p coincident c.center\n  q coincident c.center",
          "only a point takes a geometric seed"),
-        ("point p hint at zzz\n  p coincident c.center", "no such entity"),
+        ("point p hint(at: zzz)\n  p coincident c.center", "no such entity"),
         // a point may only seed at one already declared: names enter scope in order
-        ("point p hint at q\n  point q\n  p coincident c.center\n  q coincident c.center",
+        ("point p hint(at: q)\n  point q\n  p coincident c.center\n  q coincident c.center",
          "no such entity: `q`"),
     ];
     for (body, want) in cases {
@@ -589,7 +589,7 @@ fn a_geometric_seeds_mistakes_are_named() {
 /// the drawing says nothing more than it did.
 #[test]
 fn a_geometric_seed_outside_a_trace_block_is_a_place() {
-    let src = "point o hint(x: 0, y: 0)\ncircle c0(center: o) hint(r: 5)\npoint q hint at c0 bearing (30)\n";
+    let src = "point o hint(x: 0, y: 0)\ncircle c0(center: o) hint(r: 5)\npoint q hint(at: c0, bearing: 30)\n";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&prog);

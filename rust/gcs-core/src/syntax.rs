@@ -511,6 +511,10 @@ struct Hint {
     value: Option<f64>,
     text: String,
     span: Span,
+    /// `at: REF` — the one key whose value is a *reference* and not a number: a place (§6.4).
+    /// Read wherever the clause stands, since the grammar is the clause's own; which tables
+    /// take one is the caller's question, and a declaration's is the only one that does.
+    place: Option<Ref>,
 }
 
 impl From<Hint> for OpArg {
@@ -700,8 +704,9 @@ pub struct Decl {
     /// Where `class …` sits in the source, so a toggle rewrites the words and not the statement
     /// around them.  An *empty* span at the point one would be written when there is none.
     pub class_span: Span,
-    /// A seed named *geometrically* rather than by coordinates: `at t`, `at c.center`,
-    /// `at c bearing (u + phase)`.  What it may name is the elaborator's question.
+    /// A seed named *geometrically* rather than by coordinates: `hint(at: t)`,
+    /// `hint(at: c.center)`, `hint(at: c, bearing: u + phase)`.  What it may name is the
+    /// elaborator's question.
     pub seed_at: Option<AtRef>,
     /// The geometry the seed texts read (§6.4), each dotted name as written beside the absolute
     /// name of the entity it resolved to — filled by the flattener, read by the build, since an
@@ -983,8 +988,9 @@ pub struct KidSeed {
     pub span: Span,
 }
 
-/// `at c bearing (u + phase)` — a place given as geometry: at a point, or at the edge of a
-/// circle at a bearing from the page's x-axis.
+/// `hint(at: c, bearing: u + phase)` — a place given as geometry: at a point, or at the edge
+/// of a circle at a bearing from the page's x-axis.  The `at:` and `bearing:` keys of the one
+/// seed clause (§6.4), read out of it beside the scalars.
 #[derive(Clone, Debug)]
 pub struct AtRef {
     pub what: Ref,
@@ -1837,15 +1843,22 @@ pub(crate) fn kid_seed_text(k: &KidSeed) -> String {
 ///
 /// All of them or none: a kind with no scalars writes nothing, and a kind with some writes them
 /// whatever they are, so the printed form round-trips without a rule about which numbers are
-/// worth saying.  A declaration whose seed is a *place* (`hint at t`) has no coordinates to
-/// write and is left to the source it came from — so an empty string is also the answer to "is
-/// there a clause to write here at all?", which is the only test a caller needs.
+/// worth saying.  A declaration whose seed is a *place* (`hint(at: t)`) has no coordinates to
+/// write and prints the place instead — `edit::commit_seeds` never reaches one, since a place
+/// is nothing a solve writes back.  An empty string is the answer to "is there a clause to
+/// write here at all?", which is the only test a caller needs.
 ///
 /// The numbers are passed rather than read off `d`, because `edit::commit_seeds` prints the pose
 /// a solve just arrived at and the declaration still holds the one it started from.
 pub(crate) fn hint_clause(d: &Decl, seed: &[f64]) -> String {
-    if d.seed_at.is_some() {
-        return String::new();
+    if let Some(at) = &d.seed_at {
+        let mut place = String::new();
+        write_ref(&mut place, &at.what);
+        let mut parts = vec![format!("at: {place}")];
+        if let Some((b, _)) = &at.bearing {
+            parts.push(format!("bearing: {b}"));
+        }
+        return hint_of(&parts);
     }
     let mut parts: Vec<String> = Vec::new();
     let mut scalar = 0usize;
@@ -2347,8 +2360,7 @@ fn joint_word(w: &str) -> bool {
 
 /// The words that shape a statement without naming anything — a modifier the parser eats where it
 /// stands.  `as` binds a name after it, which is why `highlight` treats that one specially.
-const MODIFIERS: [&str; 9] =
-    ["over", "as", "at", "hint", "about", "class", "bearing", "from", "in"];
+const MODIFIERS: [&str; 8] = ["over", "as", "at", "hint", "about", "class", "from", "in"];
 
 /// The words that may follow a declaration's own, so `class a b` knows where its list ends.
 /// A chain's joints are here too: `arc a(center: c) class construction tangent …` is one link.
@@ -3143,23 +3155,6 @@ impl<'a> P<'a> {
         false
     }
 
-    /// `hint at REF` — a seed given as a *place* rather than as a pair of numbers, which is what
-    /// a seed inside a trace block is (spec §6.5.1): `hint at t`, `hint at c bearing (u + phase)`.
-    ///
-    /// `hint(x:, y:)` is the coordinate spelling of the same thing and both lower to the same
-    /// tapes, which is why the word is shared.  `hint at (0, 0)` is *not* accepted: coordinates
-    /// are keyed now, and one spelling of a thing is the whole point of the clause.
-    fn eat_hint_at(&mut self) -> bool {
-        if self.peek_word("hint")
-            && self.word_at(self.i + 1) == Some("at")
-            && self.t.get(self.i + 2).map(|(t, _)| t) != Some(&Tok::P('('))
-        {
-            self.i += 2;
-            return true;
-        }
-        false
-    }
-
     /// `hint(` — the clause every seed is written in.  The brackets after a name say what the
     /// thing is *made of*; this says where the solve *begins* (spec §6.4).  A number inside one
     /// is a seed and every other number is not, which is what makes "may a solve write this?" a
@@ -3311,8 +3306,22 @@ impl<'a> P<'a> {
                 self.fail(&format!("a hint names what it seeds: `hint({eg})`"));
                 return None;
             };
-            let (value, text, span) = self.value_text()?;
-            out.push(Hint { key, at, value, text, span });
+            let (value, text, span, place) = if key == "at" {
+                // a place, not a number — `at: pin`, `at: k` — so it is read as a reference;
+                // `at: (3, 4)` is the coordinate pair the keys replaced, and says so
+                if self.peek() == Some(&Tok::P('(')) {
+                    self.fail("`at:` names a place; a coordinate seed is `hint(x: …, y: …)`");
+                    return None;
+                }
+                let r = self.refr()?;
+                let mut text = String::new();
+                write_ref(&mut text, &r);
+                (None, text, r.span, Some(r))
+            } else {
+                let (value, text, span) = self.value_text()?;
+                (value, text, span, None)
+            };
+            out.push(Hint { key, at, value, text, span, place });
             if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
                 self.fail("expected `,` or `)`");
                 return None;
@@ -4525,18 +4534,6 @@ impl<'a> P<'a> {
         }
     }
 
-    /// `( expr )` — the parenthesised expression `from` and `bearing` both carry.
-    fn paren_expr(&mut self) -> Option<(String, Span)> {
-        if !self.want_p('(') {
-            return None;
-        }
-        let e = self.expr_until(')')?;
-        if !self.want_p(')') {
-            return None;
-        }
-        Some(e)
-    }
-
     /// `over (a, b)` — two expressions over whatever parameters are in scope.
     /// What follows a curve's `=`: `REF over IDENT in (a, b)`, or
     /// `Component(args).path over IDENT in (a, b)`.  A component name is told from a point's by
@@ -5022,27 +5019,41 @@ impl<'a> P<'a> {
                 return None;
             }
         };
-        // trailing clauses, in any order: `hint(x: 0, y: 0)` or `hint at REF [bearing (…)]`,
-        // `knots [...]`, `class …`, `in PLANE`.  Where a clause *would* go if it is not written
-        // is the point we are standing on now, before any of them: that is what writeback
-        // appends at.
+        // trailing clauses, in any order: `hint(…)`, `knots [...]`, `class …`, `in PLANE`.
+        // Where a clause *would* go if it is not written is the point we are standing on now,
+        // before any of them: that is what writeback appends at.
         let mut knots = None;
         let mut class = Classes::default();
         let mut class_span = Span::default();
-        let mut seed_at = None;
+        let mut seed_at: Option<AtRef> = None;
         let mut membership = Membership::default();
         let insert = self.prev_hi();
         let mut hint_span = Span::new(insert, insert);
         loop {
-            if self.eat_hint_at() {
-                // a place named geometrically: `hint at t`, `hint at c bearing (u + phase)`
-                let what = self.refr()?;
-                let bearing =
-                    if self.eat_word("bearing") { Some(self.paren_expr()?) } else { None };
-                seed_at = Some(AtRef { what, bearing });
-            } else if let Some(lo) = self.eat_hint_clause() {
-                // `hint(x: 0, y: 12)` — keyed, keys in any order, an omitted scalar is 0
+            if let Some(lo) = self.eat_hint_clause() {
+                // `hint(x: 0, y: 12)` — keyed, keys in any order, an omitted scalar is 0 — or a
+                // place named geometrically, `hint(at: t)`, `hint(at: c, bearing: u + phase)`:
+                // the same clause, since a seed is what is inside one and nothing else is
+                // (§4.3), and a place is a seed given as geometry rather than as numbers.
+                // `at:` and `bearing:` are keys beside the scalars; a clause naming a place
+                // carries no coordinate, and a bearing without a place says where on nothing.
+                let mut bearing: Option<(String, Span)> = None;
+                let mut bearing_at = Span::default();
+                let mut coord: Option<Span> = None;
                 for h in self.hint_body("x: 0, y: 0")? {
+                    if let Some(what) = h.place {
+                        if seed_at.is_some() {
+                            self.fail_at(h.at, "`at:` is written twice");
+                            continue;
+                        }
+                        seed_at = Some(AtRef { what, bearing: None });
+                        continue;
+                    }
+                    if h.key == "bearing" {
+                        bearing = Some((h.text, h.span));
+                        bearing_at = h.at;
+                        continue;
+                    }
                     let Some(i) = scalars.iter().position(|&s| s == h.key) else {
                         // the key is the mistake, not the declaration: reported, and the rest
                         // of the clause read on, so the entity is still declared and no
@@ -5051,9 +5062,24 @@ impl<'a> P<'a> {
                         self.fail_at(h.at, &m);
                         continue;
                     };
+                    coord.get_or_insert(h.at);
                     seed[i] = h.value.unwrap_or(0.0);
                     seed_text[i] = (h.value.is_none()).then_some(h.text);
                     seed_spans[i] = h.span;
+                }
+                match (&mut seed_at, bearing) {
+                    (Some(at), b) => {
+                        at.bearing = b;
+                        if let Some(sp) = coord {
+                            let m = "`at:` names the place; a clause with it carries no scalar";
+                            self.fail_at(sp, m);
+                        }
+                    }
+                    (None, Some(_)) => {
+                        let m = "`bearing:` says where on a circle's edge, and needs `at:`";
+                        self.fail_at(bearing_at, m);
+                    }
+                    (None, None) => {}
                 }
                 hint_span = Span::new(lo, self.prev_hi());
             } else if self.eat_word("knots") {
@@ -5098,11 +5124,20 @@ impl<'a> P<'a> {
                 let r = self.refr()?;
                 membership = Membership::written_at(r, Span::new(lo, self.prev_hi()));
             } else if self.peek_word("hint") || self.peek_word("at") {
-                // the retired coordinate spellings, `hint at (0, 0)` and a bare `at (0, 0)` —
-                // what every document in the library said until the clause arrived, so the
-                // reader most likely to meet an error here is the one holding one of them
+                // the retired spellings — `hint at (0, 0)` and a bare `at (0, 0)` for a pair of
+                // coordinates, `hint at REF [bearing (…)]` for a place (#47.2) — are what every
+                // document said until the clause took them in, so the reader most likely to meet
+                // an error here is the one holding one of them
                 let head = head();
-                self.fail(&format!("a coordinate seed is keyed now: `{head} hint(x: …, y: …)`"));
+                let place = self.peek_word("hint")
+                    && self.word_at(self.i + 1) == Some("at")
+                    && self.t.get(self.i + 2).map(|(t, _)| t) != Some(&Tok::P('('));
+                let m = if place {
+                    format!("a place is keyed now: `{head} hint(at: REF, bearing: …)`")
+                } else {
+                    format!("a coordinate seed is keyed now: `{head} hint(x: …, y: …)`")
+                };
+                self.fail(&m);
                 return None;
             } else {
                 break;
