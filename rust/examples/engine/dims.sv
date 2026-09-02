@@ -19,6 +19,7 @@ param rp = 20mm         // crank pin
 param rbig = 30mm       // big end
 param rsmall = 16mm     // small end
 param rpin = 11mm       // piston pin
+param pinlen = 28mm     // a crank pin's length along the axis: the rod's big end and its clearance
 
 // the block: half-widths at the deck and at the pan rail, the rail and the sump below the axis
 param hw = 75mm

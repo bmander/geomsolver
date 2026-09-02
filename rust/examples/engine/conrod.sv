@@ -18,7 +18,7 @@ use engine.dims
 use engine.parts
 
 // the rod's own dimensions
-param wB = 24mm             // big end, along the crank axis
+param wB = pinlen - 4mm     // big end, along the crank axis: the pin less 2 of clearance a side
 param wS = 22mm             // small end, along the crank axis
 param rB = rp + 1.5mm       // big-end bore: the crank pin and a bearing shell
 param rS = rpin + 1mm       // small-end bore: the piston pin and a bush
