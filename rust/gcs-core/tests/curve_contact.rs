@@ -59,7 +59,7 @@ fn param_of(e: &Elaborated) -> f64 {
 fn a_line_solves_tangent_to_a_curve() {
     let src = format!(
         "{INVOLUTE}point a hint(x: 30, y: -5)\npoint b hint(x: 45, y: 25)\nline l(a, b)\n\
-         ground a\na distance(30) b\ninv tangent l hint(u: 45)\n"
+         ground a\na distance(30) b\ninv tangent l hint(t: 45)\n"
     );
     let mut e = build(&src);
     fd_jacobian(&e.sketch, 1e-5);
@@ -84,7 +84,7 @@ fn a_line_solves_tangent_to_a_curve() {
 fn a_circle_solves_osculating_a_curve() {
     let src = format!(
         "{INVOLUTE}point k hint(x: 5, y: 20)\ncircle osc(center: k) hint(r: 15)\n\
-         inv curvature osc hint(u: 60)\no distance(12, along: x) k\n"
+         inv curvature osc hint(t: 60)\no distance(12, along: x) k\n"
     );
     let mut e = build(&src);
     fd_jacobian(&e.sketch, 1e-5);
@@ -110,7 +110,7 @@ fn a_circle_solves_osculating_a_curve() {
 fn a_line_solves_tangent_to_a_traced_curve() {
     let src = format!(
         "{UNWIND}point a hint(x: 30, y: -5)\npoint b hint(x: 45, y: 25)\nline l(a, b)\n\
-         ground a\na distance(30) b\ninv tangent l hint(u: 45)\n"
+         ground a\na distance(30) b\ninv tangent l hint(t: 45)\n"
     );
     let mut e = build(&src);
     // the solve first: the frame's difference reads the pose the contact last reached

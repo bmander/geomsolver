@@ -707,7 +707,6 @@ pub fn elaborate(p: &Program) -> Elaborated {
         EntKind::Arc,
         EntKind::Spline,
         EntKind::Ellipse,
-        EntKind::Frame,
         EntKind::Plane,
         EntKind::Curve,
     ] {
@@ -975,10 +974,11 @@ fn compile_trace(
                 let c = sk.point(0.0, 0.0, false, name);
                 EntRef::circle(sk.circle(c, 1.0, name))
             }
-            EntKind::Frame => {
+            // a datum: its attitude is no column of the curve, so the page's will do
+            EntKind::Plane => {
                 let o = sk.point(0.0, 0.0, false, name);
                 let t = sk.point(1.0, 0.0, false, name);
-                EntRef::frame(sk.frame(o, t, name))
+                EntRef::plane(sk.plane(o, t, crate::plane::Basis::page(), name))
             }
             other => {
                 return Err((
@@ -1895,23 +1895,12 @@ fn build(
             };
             sk.ellipse(kids[0], kids[1], b, &show)
         }
-        EntKind::Frame => {
-            // `frame` adds the two intrinsics here and nowhere else, and computes a rotor from
-            // the chord that a declared seed then replaces — except (0, 0), which is no rotor
-            // at all and is what an unwritten seed reads as
-            let fi = sk.frame(kids[0], kids[1], &show);
-            let (c, s) = (seed(0), seed(1));
-            if c != 0.0 || s != 0.0 {
-                let f = &sk.frames[fi];
-                let (cp, sp) = (f.c as usize, f.s as usize);
-                sk.params[cp].value = c;
-                sk.params[sp].value = s;
-            }
-            fi
-        }
         EntKind::Plane => {
-            // the frame's bargain again, over a basis the attitude pass resolved before this
-            // walk; a plane whose basis was refused has no entry and is not built
+            // `plane` adds the two intrinsics here and nowhere else, and computes a rotor from
+            // the chord that a declared seed then replaces — except (0, 0), which is no rotor
+            // at all and is what an unwritten seed reads as — over a basis the attitude pass
+            // resolved before this walk; a plane whose basis was refused has no entry and is
+            // not built
             let basis = *bases.get(&d.name.key().text)?;
             let pi = sk.plane(kids[0], kids[1], basis, &show);
             let (c, s) = (seed(0), seed(1));
@@ -2236,7 +2225,6 @@ fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {
         EntKind::Arc => sk.arcs[e.i()].class = c,
         EntKind::Spline => sk.splines[e.i()].class = c,
         EntKind::Ellipse => sk.ellipses[e.i()].class = c,
-        EntKind::Frame => sk.frames[e.i()].class = c,
         EntKind::Plane => sk.planes[e.i()].frame.class = c,
     }
 }

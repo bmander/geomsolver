@@ -1729,11 +1729,11 @@ test('a point is pulled onto the rim, and the document keeps the ellipse', () =>
   back.dispose();
 });
 
-test('a frame is an origin, a toward point and a rotor slaved to the chord', () => {
+test('a datum is an origin, a toward point and a rotor slaved to the chord', () => {
   const sk = new Sketch();
   const o = sk.point(10, 5);
   const t = sk.point(14, 8);           // chord (4, 3): the 3-4-5 rotor
-  const f = sk.frame(o, t);
+  const f = sk.plane(o, t, [1, 0, 0], [0, 1, 0]);      // the page's attitude: a plain datum
   assert.equal(f.origin, o);
   assert.equal(f.toward, t);
   const [c, s] = f.rotor;
@@ -1741,18 +1741,18 @@ test('a frame is an origin, a toward point and a rotor slaved to the chord', () 
   // the two intrinsics came with it, and neither reads as something the user said
   assert.equal(sk.constraints.length, 2);
   assert.equal(sk.userConstraints().length, 0);
-  // a frame draws nothing of its own: the origin's point is the click target
+  // its points outrank it under a pick, and its chord is where it is taken hold of
   assert.equal(sk.pick(10, 5, 0.5), o);
-  assert.equal(sk.pick(12, 6.5, 0.5), null);
+  assert.equal(sk.pick(12, 6.5, 0.5), f);
   const back = io.loads(io.dumps(sk));
-  assert.equal(back.frames.length, 1);
-  assert.ok(Math.abs(back.frames[0].rotor[0].value - 0.8) < 1e-12);
+  assert.equal(back.planes.length, 1);
+  assert.ok(Math.abs(back.planes[0].rotor[0].value - 0.8) < 1e-12);
   assert.equal(back.constraints.length, 2, 'the load re-mints the intrinsics');
   sk.dispose();
   back.dispose();
 });
 
-/* -- planes: a frame with an attitude, membership, and projection between views ---------- */
+/* -- planes: a datum with an attitude, membership, and projection between views ---------- */
 
 const near3 = (got: readonly number[], want: readonly number[], what: string): void => {
   for (let i = 0; i < 3; i++) {
@@ -1760,7 +1760,7 @@ const near3 = (got: readonly number[], want: readonly number[], what: string): v
   }
 };
 
-test('a plane is a frame with an attitude, and a point may be drawn in it', () => {
+test('a plane is a datum with an attitude, and a point may be drawn in it', () => {
   const sk = new Sketch();
   const o = sk.point(10, 5);
   const t = sk.point(14, 8);           // chord (4, 3): the 3-4-5 rotor

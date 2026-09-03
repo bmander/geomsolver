@@ -170,7 +170,6 @@ fn remap_early(
     arc_map: &[Option<usize>],
     spline_map: &[Option<usize>],
     ellipse_map: &[Option<usize>],
-    frame_map: &[Option<usize>],
     plane_map: &[Option<usize>],
     e: EntRef,
 ) -> Option<EntRef> {
@@ -181,7 +180,6 @@ fn remap_early(
         EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
         EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
         EntKind::Ellipse => ellipse_map[e.i()].map(EntRef::ellipse),
-        EntKind::Frame => frame_map[e.i()].map(EntRef::frame),
         EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
         // a curve is never another curve's argument: nothing in the language says so
         EntKind::Curve => None,
@@ -262,21 +260,6 @@ pub fn to_json(sk: &Sketch) -> Json {
             ])
         })
         .collect();
-    let frames: Vec<Json> = sk
-        .frames
-        .iter()
-        .map(|f| {
-            object([
-                ("origin", (f.origin as i64).into()),
-                ("toward", (f.toward as i64).into()),
-                ("c", sk.params[f.c as usize].value.into()),
-                ("s", sk.params[f.s as usize].value.into()),
-                ("cfixed", sk.params[f.c as usize].fixed.into()),
-                ("sfixed", sk.params[f.s as usize].fixed.into()),
-                ("class", class_json(&f.class)),
-            ])
-        })
-        .collect();
     let planes: Vec<Json> = sk
         .planes
         .iter()
@@ -331,7 +314,6 @@ pub fn to_json(sk: &Sketch) -> Json {
         ("arcs", Json::Arr(arcs)),
         ("splines", Json::Arr(splines)),
         ("ellipses", Json::Arr(ellipses)),
-        ("frames", Json::Arr(frames)),
         ("planes", Json::Arr(planes)),
         ("constraints", Json::Arr(constraints)),
         ("branches", Json::Obj(branches)),
@@ -414,10 +396,12 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         sk.params[bp].fixed = e.get("fixed").map(|v| v.as_bool()).unwrap_or(false);
         sk.ellipses[ei].class = read_class(e);
     }
+    // a `frame` from a document written before it was folded into `plane` (issue #47, item 6):
+    // read as a plane with the page's attitude, which is what a datum is; never written
     for f in d.get("frames").unwrap_or(&empty).arr() {
         let g = |k: &str| index(f.get(k).map(|v| v.as_i64()).unwrap_or(0), np, k);
-        let fi = sk.frame(g("origin")?, g("toward")?, "");
-        let (cp, sp) = (sk.frames[fi].c as usize, sk.frames[fi].s as usize);
+        let pi = sk.plane(g("origin")?, g("toward")?, crate::plane::Basis::page(), "");
+        let (cp, sp) = (sk.planes[pi].frame.c as usize, sk.planes[pi].frame.s as usize);
         // the saved rotor over the recomputed one: an unsolved document's pose survives a
         // round trip
         if let Some(v) = f.get("c") {
@@ -428,7 +412,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         }
         sk.params[cp].fixed = f.get("cfixed").map(|v| v.as_bool()).unwrap_or(false);
         sk.params[sp].fixed = f.get("sfixed").map(|v| v.as_bool()).unwrap_or(false);
-        sk.frames[fi].class = read_class(f);
+        sk.planes[pi].frame.class = read_class(f);
     }
     for (k, p) in d.get("planes").unwrap_or(&empty).arr().iter().enumerate() {
         let g = |key: &str| index(p.get(key).map(|v| v.as_i64()).unwrap_or(0), np, key);
@@ -658,26 +642,6 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         ellipse_map[i] = Some(ni);
         made.push(EntRef::ellipse(ni));
     }
-    let mut frame_map: Vec<Option<usize>> = vec![None; src.frames.len()];
-    for i in 0..src.frames.len() {
-        if !keep(EntRef::frame(i)) {
-            continue;
-        }
-        let f = &src.frames[i];
-        let (Some(o), Some(t)) = (pt_index(f.origin as usize), pt_index(f.toward as usize))
-        else {
-            continue;
-        };
-        let ni = dst.frame(o, t, "");
-        let (nc, ns) = (dst.frames[ni].c as usize, dst.frames[ni].s as usize);
-        dst.params[nc].value = src.params[f.c as usize].value;
-        dst.params[ns].value = src.params[f.s as usize].value;
-        dst.params[nc].fixed = src.params[f.c as usize].fixed;
-        dst.params[ns].fixed = src.params[f.s as usize].fixed;
-        dst.frames[ni].class = f.class.clone();
-        frame_map[i] = Some(ni);
-        made.push(EntRef::frame(ni));
-    }
     let mut plane_map: Vec<Option<usize>> = vec![None; src.planes.len()];
     for i in 0..src.planes.len() {
         if !keep(EntRef::plane(i)) {
@@ -715,7 +679,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let mut whole = true;
         for &a in &cv.args {
             match remap_early(&pt_index, &line_map, &circle_map, &arc_map, &spline_map,
-                              &ellipse_map, &frame_map, &plane_map, a) {
+                              &ellipse_map, &plane_map, a) {
                 Some(r) => args.push(r),
                 None => whole = false,
             }
@@ -738,7 +702,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             .iter()
             .filter_map(|&(e, j)| {
                 remap_early(&pt_index, &line_map, &circle_map, &arc_map, &spline_map,
-                            &ellipse_map, &frame_map, &plane_map, e)
+                            &ellipse_map, &plane_map, e)
                     .map(|r| (r, j))
             })
             .collect();
@@ -762,7 +726,6 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
             EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
             EntKind::Ellipse => ellipse_map[e.i()].map(EntRef::ellipse),
-            EntKind::Frame => frame_map[e.i()].map(EntRef::frame),
             EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
             EntKind::Curve => curve_map[e.i()].map(|i| EntRef::new(EntKind::Curve, i)),
         }

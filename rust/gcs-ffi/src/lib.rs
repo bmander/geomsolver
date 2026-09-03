@@ -297,7 +297,8 @@ pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
             s.ellipses.len(),
             s.curves.len(),
             // appended, never inserted: the positions above are what the bindings hard-code
-            s.frames.len(),
+            // (slot 9 was the frames', until `frame` was folded into `plane` — #47, item 6)
+            0,
             s.planes.len(),
         ];
         debug_assert_eq!(v.len(), N_COUNTS, "gcs_counts_len is what callers size their buffer by");
@@ -367,21 +368,6 @@ pub unsafe extern "C" fn gcs_sketch_ellipse(
 ) -> i32 {
     guard(-1, move || {
         sk(h).ellipse(center as usize, major as usize, b, as_str(name, name_len)) as i32
-    })
-}
-
-/// A frame at `origin` pointed at `toward` — the rotor and its two intrinsic constraints come
-/// with it, exactly as an arc's endpoint incidences come with the arc.
-#[no_mangle]
-pub unsafe extern "C" fn gcs_sketch_frame(
-    h: *mut Sketch,
-    origin: i32,
-    toward: i32,
-    name: *const u8,
-    name_len: usize,
-) -> i32 {
-    guard(-1, move || {
-        sk(h).frame(origin as usize, toward as usize, as_str(name, name_len)) as i32
     })
 }
 
@@ -808,8 +794,9 @@ fn kind_id(k: EntKind) -> i32 {
         EntKind::Spline => 4,
         EntKind::Ellipse => 5,
         EntKind::Curve => 6,
-        EntKind::Frame => 7,
-        EntKind::Plane => 8,
+        // 7 was the frame's, until it was folded into the plane (#47, item 6); the binding
+        // decodes an id by indexing its list, so the ids stay contiguous
+        EntKind::Plane => 7,
     }
 }
 
@@ -821,8 +808,7 @@ fn ent(kind: i32, idx: i32) -> EntRef {
         3 => EntKind::Arc,
         5 => EntKind::Ellipse,
         6 => EntKind::Curve,
-        7 => EntKind::Frame,
-        8 => EntKind::Plane,
+        7 => EntKind::Plane,
         _ => EntKind::Spline,
     };
     EntRef::new(k, idx as usize)
@@ -945,7 +931,6 @@ pub unsafe extern "C" fn gcs_styles_json(h: *mut Sketch) -> *mut u8 {
             ("arc", of(EntKind::Arc)),
             ("spline", of(EntKind::Spline)),
             ("ellipse", of(EntKind::Ellipse)),
-            ("frame", of(EntKind::Frame)),
             ("plane", of(EntKind::Plane)),
             ("curve", of(EntKind::Curve)),
         ]))

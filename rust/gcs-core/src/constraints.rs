@@ -354,10 +354,7 @@ pub enum SpecKind {
     Ellipse,
     /// A curve written in the language — see `model::CurveDef`.
     Curve,
-    /// Either datum kind: a frame, or a plane, which is a frame with an attitude.  The two
-    /// intrinsics read the rotor and nothing else, so they take both — `CircleOrArc`'s bargain.
-    Frame,
-    /// A plane and nothing else: `Project` reads its basis.
+    /// The datum: a plane, whose rotor the two intrinsics read and whose basis `Project` does.
     Plane,
     /// One of an entity's own numbers, named by its field — `c.r`, `p.x` — the operand of
     /// `fix`.  Filled from a reference like an entity slot and resolved by the gauge's own
@@ -397,7 +394,6 @@ impl SpecKind {
             | SpecKind::Spline
             | SpecKind::Ellipse
             | SpecKind::Curve
-            | SpecKind::Frame
             | SpecKind::Plane
             | SpecKind::Scalar
             | SpecKind::Float
@@ -419,7 +415,6 @@ impl SpecKind {
                 | SpecKind::Spline
                 | SpecKind::Ellipse
                 | SpecKind::Curve
-                | SpecKind::Frame
                 | SpecKind::Plane
         )
     }
@@ -448,7 +443,6 @@ impl SpecKind {
             SpecKind::Spline => "spline",
             SpecKind::Ellipse => "ellipse",
             SpecKind::Curve => "curve",
-            SpecKind::Frame => "frame",
             SpecKind::Plane => "plane",
             SpecKind::Scalar => "scalar",
             SpecKind::Length => "length",
@@ -574,10 +568,10 @@ impl CKind {
             }
             CKind::Symmetric => &[("p", S::Point), ("q", S::Point), ("line", S::Line)],
             CKind::PointOnSpline => &[("p", S::Point), ("spline", S::Spline), ("t", S::Param)],
-            CKind::PointOnCurve => &[("p", S::Point), ("curve", S::Curve), ("u", S::Param)],
-            CKind::CurveTangentLine => &[("curve", S::Curve), ("line", S::Line), ("u", S::Param)],
+            CKind::PointOnCurve => &[("p", S::Point), ("curve", S::Curve), ("t", S::Param)],
+            CKind::CurveTangentLine => &[("curve", S::Curve), ("line", S::Line), ("t", S::Param)],
             CKind::CurveCurvature => {
-                &[("curve", S::Curve), ("circle", S::CircleOrArc), ("u", S::Param)]
+                &[("curve", S::Curve), ("circle", S::CircleOrArc), ("t", S::Param)]
             }
             CKind::SplineTangentLine => {
                 &[("spline", S::Spline), ("line", S::Line), ("t", S::Param)]
@@ -594,8 +588,8 @@ impl CKind {
             CKind::EllipseCurvature => {
                 &[("ellipse", S::Ellipse), ("circle", S::CircleOrArc), ("t", S::Param)]
             }
-            CKind::FrameUnit => &[("frame", S::Frame)],
-            CKind::FrameAlign => &[("frame", S::Frame), ("r", S::Param)],
+            CKind::FrameUnit => &[("frame", S::Plane)],
+            CKind::FrameAlign => &[("frame", S::Plane), ("r", S::Param)],
             // the two planes are real slots — so the drag part, the topology key, the graft
             // and a deletion follow them — and inferred ones, so nobody writes them
             CKind::Project => {
@@ -1945,8 +1939,6 @@ pub fn kind_matches(spec: SpecKind, ent: EntKind) -> bool {
         SpecKind::Spline => ent == EntKind::Spline,
         SpecKind::Ellipse => ent == EntKind::Ellipse,
         SpecKind::Curve => ent == EntKind::Curve,
-        // a plane is a frame with an attitude, and the intrinsics read only the frame half
-        SpecKind::Frame => ent == EntKind::Frame || ent == EntKind::Plane,
         SpecKind::Plane => ent == EntKind::Plane,
         _ => false,
     }

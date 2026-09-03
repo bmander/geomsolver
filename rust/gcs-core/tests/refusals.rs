@@ -161,7 +161,7 @@ fn a_contact_seeded_off_its_curve_still_solves() {
     for u in ["900", "-100"] {
         let (e, d) = read(&format!(
             "component spiral(o: point, k: Length, u: Angle) {{\n  point p = ( o.x + k * u / 360 * cos(u), o.y + k * u / 360 * sin(u) )\n}}\n\
-             point o hint(x: 0, y: 0)\ncurve f = spiral(o, k: 10).p over u in (0, 720)\npoint t hint(x: 12, y: 3)\nt on f hint(u: {u})\nground o\n"
+             point o hint(x: 0, y: 0)\ncurve f = spiral(o, k: 10).p over u in (0, 720)\npoint t hint(x: 12, y: 3)\nt on f hint(t: {u})\nground o\n"
         ));
         assert!(d.is_empty(), "{d:?}");
         let mut sk = e.sketch;

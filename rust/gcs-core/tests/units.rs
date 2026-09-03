@@ -285,7 +285,7 @@ fn a_paste_converts_the_lengths_that_are_not_arguments() {
     let src = "unit in\n\
                point o hint(x: 0, y: 0)\n\
                point q hint(x: 4, y: 0)\n\
-               frame f(origin: o, toward: q)\n\
+               plane f(origin: o, toward: q)\n\
                point a hint(x: 0, y: 3)\n\
                point b hint(x: 6, y: 3)\n\
                a distance(w) b\n\
@@ -299,7 +299,7 @@ fn a_paste_converts_the_lengths_that_are_not_arguments() {
         c.args[1].value(sk)
     };
     let rotor = |sk: &Sketch| -> (f64, f64) {
-        let f = &sk.frames[0];
+        let f = &sk.planes[0].frame;
         (sk.params[f.c as usize].value, sk.params[f.s as usize].value)
     };
     // the free variable `w`, which no argument holds

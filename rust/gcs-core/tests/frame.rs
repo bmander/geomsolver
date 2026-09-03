@@ -1,6 +1,8 @@
-//! The frame as a datum: an origin, a point it is pointed at, and a unit rotor slaved to the
-//! chord between them by its two intrinsic constraints — so the attitude is a first-class
-//! unknown that adds no freedom beyond the two points.
+//! The datum: an origin, a point it is pointed at, and a unit rotor slaved to the chord
+//! between them by its two intrinsic constraints — so the attitude is a first-class unknown
+//! that adds no freedom beyond the two points.  It is a `plane` (issue #47, item 6 folded
+//! `frame` into it): a plane with no attitude written is a datum with the page's, and every
+//! reading below is of the datum half a view shares.
 use gcs_core::constraints::CKind;
 use gcs_core::model::{distance_between, pick, EntRef, Sketch};
 use gcs_core::solve::{solve, SolveOpts};
@@ -11,14 +13,19 @@ fn with_frame() -> (Sketch, usize) {
     let mut sk = Sketch::new();
     let o = sk.point(10.0, 5.0, false, "o");
     let t = sk.point(14.0, 8.0, false, "t");
-    let f = sk.frame(o, t, "f");
+    let f = sk.plane(o, t, gcs_core::plane::Basis::page(), "f");
     (sk, f)
+}
+
+/// The datum half of the plane at `f`.
+fn frame(sk: &Sketch, f: usize) -> &gcs_core::model::FrameE {
+    &sk.planes[f].frame
 }
 
 #[test]
 fn the_rotor_is_seeded_from_the_chord() {
     let (sk, f) = with_frame();
-    let fr = &sk.frames[f];
+    let fr = frame(&sk, f);
     assert!((sk.params[fr.c as usize].value - 0.8).abs() < 1e-12);
     assert!((sk.params[fr.s as usize].value - 0.6).abs() < 1e-12);
     // one rotor unit is worth the chord's length — what `Param::scale` asks of a
@@ -46,11 +53,11 @@ fn a_frame_adds_no_freedom() {
 #[test]
 fn the_rotor_tracks_the_chord_through_a_solve() {
     let (mut sk, f) = with_frame();
-    let (o, t) = (sk.frames[f].origin as usize, sk.frames[f].toward as usize);
+    let (o, t) = (frame(&sk, f).origin as usize, frame(&sk, f).toward as usize);
     sk.fix_point(o, true);
     sk.fix_point(t, true);
     // start the rotor a quarter-turn wrong: the intrinsics are equations, not decoration
-    let (cp, sp) = (sk.frames[f].c as usize, sk.frames[f].s as usize);
+    let (cp, sp) = (frame(&sk, f).c as usize, frame(&sk, f).s as usize);
     sk.params[cp].value = 0.0;
     sk.params[sp].value = 1.0;
     let r = solve(&mut sk, SolveOpts::default());
@@ -62,14 +69,14 @@ fn the_rotor_tracks_the_chord_through_a_solve() {
 #[test]
 fn round_trips_through_json() {
     let (mut sk, f) = with_frame();
-    sk.frames[f].class = gcs_core::style::Classes::one("construction");
-    let (cp, sp) = (sk.frames[f].c as usize, sk.frames[f].s as usize);
+    sk.planes[f].frame.class = gcs_core::style::Classes::one("construction");
+    let (cp, sp) = (frame(&sk, f).c as usize, frame(&sk, f).s as usize);
     sk.params[cp].fixed = true;
     // an unsolved pose survives: the saved rotor wins over the recomputed one
     sk.params[sp].value = 0.25;
     let back = io::loads(&io::dumps(&sk, None)).unwrap();
-    assert_eq!(back.frames.len(), 1);
-    let bf = &back.frames[0];
+    assert_eq!(back.planes.len(), 1);
+    let bf = &back.planes[0].frame;
     assert!(bf.class.has("construction"));
     assert!(back.params[bf.c as usize].fixed);
     assert!(!back.params[bf.s as usize].fixed);
@@ -85,23 +92,23 @@ fn round_trips_through_json() {
 fn a_copy_keeps_the_frame_and_deletion_follows_its_points() {
     let (sk, f) = with_frame();
     let all = [
-        EntRef::point(sk.frames[f].origin as usize),
-        EntRef::point(sk.frames[f].toward as usize),
-        EntRef::frame(f),
+        EntRef::point(frame(&sk, f).origin as usize),
+        EntRef::point(frame(&sk, f).toward as usize),
+        EntRef::plane(f),
     ];
     let clip = io::copy(&sk, &all);
-    assert_eq!(clip.frames.len(), 1);
+    assert_eq!(clip.planes.len(), 1);
     assert_eq!(clip.constraints.len(), 2, "the graft's constructor re-mints the intrinsics");
-    let bf = &clip.frames[0];
+    let bf = &clip.planes[0].frame;
     assert_eq!(clip.params[bf.c as usize].value, 0.8);
     // a frame that lost a defining point is deleted whole
-    let cut = io::without(&sk, &[EntRef::point(sk.frames[f].origin as usize)], &[]);
-    assert_eq!(cut.frames.len(), 0);
+    let cut = io::without(&sk, &[EntRef::point(frame(&sk, f).origin as usize)], &[]);
+    assert_eq!(cut.planes.len(), 0);
     assert!(cut.constraints.is_empty());
 }
 
-/// A frame sorts last in `measure_order`, so every pair holding one reaches the swept arm with
-/// the frame as `b` — above the arms that would ask it for a centre and a radius it does not
+/// A datum sorts last in `measure_order`, so every pair holding one reaches the swept arm with
+/// the datum as `b` — above the arms that would ask it for a centre and a radius it does not
 /// have.  Measured at its origin, being a datum rather than a figure.
 #[test]
 fn every_pair_with_a_frame_measures_from_its_origin() {
@@ -112,14 +119,14 @@ fn every_pair_with_a_frame_measures_from_its_origin() {
     let f2 = {
         let a = sk.point(10.0, 25.0, false, "o2");
         let b = sk.point(11.0, 25.0, false, "t2");
-        sk.frame(a, b, "f2")
+        sk.plane(a, b, gcs_core::plane::Basis::page(), "f2")
     };
-    let fr = EntRef::frame(f);
+    let fr = EntRef::plane(f);
     // each is the distance from (10, 5) to the thing, and none of them panics
     assert!((distance_between(&sk, fr, EntRef::point(p)) - 5.0).abs() < 1e-12);
     assert!((distance_between(&sk, fr, EntRef::line(l)) - 5.0).abs() < 1e-12);
     assert!((distance_between(&sk, fr, EntRef::circle(ci)) - 3.0).abs() < 1e-12);
-    assert!((distance_between(&sk, fr, EntRef::frame(f2)) - 20.0).abs() < 1e-12);
+    assert!((distance_between(&sk, fr, EntRef::plane(f2)) - 20.0).abs() < 1e-12);
     // and the pair reads the same measured either way round
     assert_eq!(
         distance_between(&sk, EntRef::line(l), fr),
@@ -128,16 +135,16 @@ fn every_pair_with_a_frame_measures_from_its_origin() {
 }
 
 #[test]
-fn a_frame_is_never_picked() {
+fn its_points_outrank_it_and_its_chord_is_where_it_is_held() {
     let (sk, f) = with_frame();
-    let (ox, oy) = sk.point_xy(sk.frames[f].origin as usize);
-    // a click at the origin picks the point, not the frame standing on it
-    assert_eq!(pick(&sk, ox, oy, 0.5), Some(EntRef::point(sk.frames[f].origin as usize)));
-    // and the chord's midpoint is empty space: a frame draws nothing of its own
-    assert_eq!(pick(&sk, 12.0, 6.5, 0.5), None);
+    let (ox, oy) = sk.point_xy(frame(&sk, f).origin as usize);
+    // a click at the origin picks the point, not the datum standing on it
+    assert_eq!(pick(&sk, ox, oy, 0.5), Some(EntRef::point(frame(&sk, f).origin as usize)));
+    // and the chord's midpoint is the datum's glyph, which is where it is taken hold of
+    assert_eq!(pick(&sk, 12.0, 6.5, 0.5), Some(EntRef::plane(f)));
 }
 
-/* -- the frame in a trace block: bearings measured from the drawing, not the page ---------- */
+/* -- the datum in a trace block: bearings measured from the drawing, not the page ---------- */
 
 use gcs_core::program::elaborate;
 use gcs_core::syntax::parse;
@@ -147,9 +154,9 @@ use gcs_core::syntax::parse;
 /// the crank, with **no predicate and no signed row to choose between them**.  The seed alone
 /// picks the side, which is exactly the job issue #10 found it doing with page-fixed numbers:
 /// written `u + 53` the choice is right only while the datum is horizontal.  `f.angle` is the
-/// datum's own bearing, read off the frame's rotor, so the seed follows the drawing.
+/// datum's own bearing, read off the plane's rotor, so the seed follows the drawing.
 const ELBOW: &str = "\
-component elbow(o: point, datum: line, f: frame, u: Angle) {
+component elbow(o: point, datum: line, f: plane, u: Angle) {
   point t hint(x: o.x + 60 * cos(u + f.angle), y: o.y + 60 * sin(u + f.angle))
   point p hint(x: o.x + 50 * cos(u + f.angle + 53), y: o.y + 50 * sin(u + f.angle + 53))
   line swing(o, t)
@@ -162,7 +169,7 @@ component elbow(o: point, datum: line, f: frame, u: Angle) {
 point o hint(x: 0, y: 0)
 point q hint(x: -30, y: 51.9615242270663)
 line  datum(o, q) class construction
-frame f(origin: o, toward: q) class construction
+plane f(origin: o, toward: q) class construction
 
 curve path = elbow(o, datum, f, u: 30).p over u in (10, 80)
 
@@ -185,7 +192,7 @@ fn build(src: &str) -> gcs_core::program::Elaborated {
 }
 
 #[test]
-fn a_frame_relative_seed_follows_a_tilted_datum() {
+fn a_datum_relative_seed_follows_a_tilted_datum() {
     let mut e = build(ELBOW);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -207,7 +214,7 @@ fn a_frame_relative_seed_follows_a_tilted_datum() {
 /// the seeds rigidly and change nothing; struck from one, the seeded chirality of (o, t, p)
 /// flips, everything still elaborates and still solves — nothing *breaks* — and the trace comes
 /// back with the joint folded the other way.  This is the quiet failure the issue describes,
-/// and the reason a seed has to be able to name the frame.
+/// and the reason a seed has to be able to name the datum.
 #[test]
 fn a_page_fixed_seed_picks_the_mirror_elbow() {
     let mut e = build(&ELBOW.replace("u + f.angle + 53", "u + 53"));
@@ -231,9 +238,9 @@ fn a_page_fixed_seed_picks_the_mirror_elbow() {
 
 /// Rotating the datum carries the curve: the rotor is *solved* back into step — it is an
 /// unknown with equations, not a number something recomputes — and every contact's ∂C/∂θ
-/// includes the frame's columns, so the traced figure follows the drawing it is written over.
+/// includes the datum's columns, so the traced figure follows the drawing it is written over.
 #[test]
-fn turning_the_frame_carries_the_curve() {
+fn turning_the_datum_carries_the_curve() {
     let mut e = build(ELBOW);
     assert!(e.ok());
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -263,4 +270,15 @@ fn a_wrong_name_is_still_refused() {
         "{:?}",
         e.errors().map(|d| &d.message).collect::<Vec<_>>()
     );
+}
+
+/// The word itself is gone: a document written with it is told what to write instead, at the
+/// declaration and at a component's formal alike.
+#[test]
+fn the_word_frame_is_refused_with_the_spelling_it_became() {
+    let (_, errs) = parse("point o hint(x: 0, y: 0)\npoint q hint(x: 4, y: 0)\nframe f(origin: o, toward: q)\n");
+    assert_eq!(errs.len(), 1, "{errs:?}");
+    assert!(errs[0].message.contains("folded into `plane`"), "{}", errs[0].message);
+    let (_, errs) = parse("component c(f: frame) {\n  point p\n}\n");
+    assert!(errs.iter().any(|e| e.message.contains("`f: plane`")), "{errs:?}");
 }

@@ -36,7 +36,7 @@ fn all_constraints(seed: u32) -> Sketch {
     let (ec, em) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
     let el = sk.ellipse(ec, em, rng.uniform(1.0, 11.0), "el");
     let (fo, ft) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
-    let fr = sk.frame(fo, ft, "f");
+    let fr = sk.plane(fo, ft, gcs_core::plane::Basis::page(), "f");
     // two planes at random, the page's and one folded from it, with `p` and `q` as images on
     // them — so a projection's planes are inferred exactly as a document's would be
     let (po, pt1) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
@@ -103,8 +103,8 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::ellipse_curvature(&sk, EntRef::ellipse(el), ae),
         // the frame's own intrinsics were cleared with everything else below, so both are
         // restated here to be checked like any other rows
-        Constraint::frame_unit(EntRef::frame(fr)),
-        Constraint::frame_align(&sk, EntRef::frame(fr)),
+        Constraint::frame_unit(EntRef::plane(fr)),
+        Constraint::frame_align(&sk, EntRef::plane(fr)),
         Constraint::project(&sk, pe, qe).expect("two images on two planes that fold"),
         // every dimension again with its number written in terms of a free variable, which is
         // an unknown of the sketch rather than a constant — one more column, and (m, c) where

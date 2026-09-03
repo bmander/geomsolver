@@ -99,10 +99,10 @@ g: Gear(N: 30, m: 3)  // one wheel
 /// number inside a `hint(…)` is a seed, and every other number is not.
 #[test]
 fn a_seed_and_a_claim_are_told_apart() {
-    let src = "lo on e hint(u: 3)\ns on(t == 4) k\nparam w = 100";
+    let src = "lo on e hint(t: 3)\ns on(t == 4) k\nparam w = 100";
     assert_eq!(tint_of(src, "on e"), Some(Tint::Relation));
     assert_eq!(tint_of(src, "hint("), Some(Tint::Word));
-    assert_eq!(tint_of(src, "u:"), Some(Tint::Label));
+    assert_eq!(tint_of(src, "t: 3"), Some(Tint::Label));
     assert_eq!(tint_of(src, "3)"), Some(Tint::Seed));
     assert_eq!(tint_of(src, "== 4"), Some(Tint::Claim));
     assert_eq!(tint_of(src, "100"), Some(Tint::Num), "a param is not a seed");

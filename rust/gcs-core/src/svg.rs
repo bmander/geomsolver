@@ -238,8 +238,6 @@ fn entity(
         EntKind::Spline => poly(out, &crate::curve::tessellate(sk, i, unit), at, &ink()),
         // the polyline `render` already swept to size the page
         EntKind::Curve => poly(out, &polys[i], at, &ink()),
-        // a frame is a datum: it draws nothing, and its points are the click targets
-        EntKind::Frame => {}
         // a plane is a datum with a glyph: its chord, and a tick along the frame's own y-axis
         // saying which side the view's second coordinate grows to.  No name — a `Sketch` holds
         // no source names, so the label is the app's to draw.

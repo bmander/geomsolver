@@ -1010,7 +1010,7 @@ pub enum OpArg {
     /// One variant, because the word is the whole of the difference: a **pin** is a stated
     /// number the solve may not revise and a **seed** is where it begins (spec §4.3), and both
     /// are the same number read the same way — a literal, or an expression over the parameters
-    /// in scope (`hint(u: u0)` inside a component), worked out during expansion.  Which of the
+    /// in scope (`hint(t: t0)` inside a component), worked out during expansion.  Which of the
     /// two, and which of literal and expression, is `Arg`'s to say and not a second encoding
     /// here: this is `Arg::Seed`/`Arg::SeedExpr` with the key in front, so `assemble` hands the
     /// value straight on and `flatten` settles it through the one walk it already had.
@@ -1018,7 +1018,7 @@ pub enum OpArg {
     /// The key is a `Name` and carries **its own span** — the key is what an unknown-slot
     /// message is about, so the caret belongs on it and not on the value after it, which is the
     /// rule `kid_seed` and the declaration's own clause already keep.  It is kept at all because
-    /// a kind's slot is `t` on a spline and `u` on a curve, and neither the check in
+    /// a slot is named by the kind's spec (`t` on every contact, `r` on a frame's chord), and neither the check in
     /// `Written::assemble` nor the printer may guess which.
     Slot { key: Name, arg: Arg },
     /// the number, as written — `80`, `x = 7`, `h = w / 2`, `1' 3"`
@@ -1069,8 +1069,8 @@ impl Written {
     pub fn assemble(&self, kind: CKind) -> Result<Vec<Option<Arg>>, (Span, String)> {
         let spec = kind.spec();
         // a seed or a pin names the slot it fills, and a name the kind does not have is a typo
-        // rather than something to fill the first slot with: `on` owns `t` on a spline and `u`
-        // on a curve, so the wrong word here would silently pin the right slot at the wrong
+        // rather than something to fill the first slot with: filled by position, the wrong
+        // word here would silently pin the right slot at the wrong
         // number.  Checked before anything is assembled, so the message is about what was
         // written and not about what it came to.
         for a in &self.args {
@@ -1249,8 +1249,7 @@ pub fn kind_initial(k: EntKind) -> char {
         | EntKind::Circle
         | EntKind::Arc
         | EntKind::Spline
-        | EntKind::Ellipse
-        | EntKind::Frame => k.as_str().chars().next().expect("every kind name has a letter"),
+        | EntKind::Ellipse => k.as_str().chars().next().expect("every kind name has a letter"),
     }
 }
 
@@ -1887,7 +1886,7 @@ fn written_parts(args: &[OpArg]) -> (Vec<String>, Vec<String>) {
                 parts.push(s);
             }
             OpArg::Dim(t, _) => parts.insert(0, t.clone()),
-            // the slot's own name, as it was written: `t` on a spline and `u` on a curve.  The
+            // the slot's own name, as it was written — never guessed from the kind.  The
             // same `slot_text` `operator_text` reads it off the spec with, so the two printers
             // cannot come to spell one slot differently.
             OpArg::Slot { key, arg } => match slot_text(&key.text, arg) {
@@ -2297,11 +2296,12 @@ fn ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
-// `port` is retired and `ring` is not yet (bmander/geomsolver#47), and each is kept here only so
-// a document written with it is told what to write instead of reading the word as a name
-const OPENERS: [&str; 11] = [
+// `port` and `frame` are retired and `ring` is not yet (bmander/geomsolver#47), and each is kept
+// here only so a document written with it is told what to write instead of reading the word as
+// a name
+const OPENERS: [&str; 12] = [
     "claim", "component", "param", "port", "unit", "style", "branch", "repeat", "cycle", "ring",
-    "use",
+    "use", "frame",
 ];
 const BLOCKS: [&str; 2] = ["repeat", "cycle"];
 
@@ -3442,6 +3442,16 @@ impl<'a> P<'a> {
                     return None;
                 }
                 Some(StmtKind::Branch(Branch { key, value: v }))
+            }
+            "frame" => {
+                // folded into `plane` (bmander/geomsolver#47, item 6): a plane with no attitude
+                // written is the datum a frame was, on the page
+                self.fail(
+                    "`frame` is folded into `plane`: write `plane f(origin: o, toward: q)` — a \
+                     datum with no attitude written is a view of the page, and a formal \
+                     `f: plane` offers `f.angle` as `frame` did",
+                );
+                None
             }
             "port" => {
                 // retired (bmander/geomsolver#47): everything an instance makes is reached by
@@ -4615,7 +4625,13 @@ impl<'a> P<'a> {
                 let Some(ty) = Ty::parse(&tname.text) else {
                     self.errs.push(SynErr {
                         span: tname.span,
-                        message: format!("`{}` is not a type", tname.text),
+                        message: if tname.text.eq_ignore_ascii_case("frame") {
+                            "`frame` is folded into `plane`: a formal `f: plane` is the datum, \
+                             and offers `f.angle`"
+                                .to_string()
+                        } else {
+                            format!("`{}` is not a type", tname.text)
+                        },
                     });
                     return None;
                 };

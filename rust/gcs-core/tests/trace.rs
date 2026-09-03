@@ -90,7 +90,7 @@ fn the_taut_string_traces_the_involute() {
 /// perpendicular to the radius at the tangent point, as long as the arc unwound.
 #[test]
 fn a_point_lands_on_a_traced_curve() {
-    let src = format!("{DOC}point q hint(x: 28, y: 22)\nq on string hint(u: 30)\n");
+    let src = format!("{DOC}point q hint(x: 28, y: 22)\nq on string hint(t: 30)\n");
     let mut e = build(&src);
     assert!(e.ok());
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -119,7 +119,7 @@ fn a_point_lands_on_a_traced_curve() {
 /// checked at once.
 #[test]
 fn the_trace_jacobian_matches_a_finite_difference() {
-    let src = format!("{DOC}point q hint(x: 28, y: 22)\nq on string hint(u: 30)\n");
+    let src = format!("{DOC}point q hint(x: 28, y: 22)\nq on string hint(t: 30)\n");
     let e = build(&src);
     assert!(e.ok());
     fd_jacobian(&e.sketch, 1e-4);
@@ -131,7 +131,7 @@ fn the_trace_jacobian_matches_a_finite_difference() {
 #[test]
 fn moving_the_circle_carries_the_traced_curve() {
     let doc = DOC.replace("radius(20) base", "radius(26) base");
-    let src = format!("{doc}point q hint(x: 28, y: 22)\nq on string hint(u: 30)\n");
+    let src = format!("{doc}point q hint(x: 28, y: 22)\nq on string hint(t: 30)\n");
     let mut e = build(&src);
     assert!(e.ok());
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -324,7 +324,7 @@ radius(20) base
 ground o
 ground ax
 point q hint(x: 28, y: 22)
-q on w hint(u: 30)
+q on w hint(t: 30)
 ";
     let e = build(src);
     assert!(

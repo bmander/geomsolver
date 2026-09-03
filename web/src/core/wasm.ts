@@ -55,8 +55,6 @@ export interface Abi {
   gcs_sketch_arc_through(h: number, s: number, e: number, tx: number, ty: number, name: number, nameLen: number): number;
   gcs_sketch_ellipse(h: number, center: number, major: number, b: number,
                      name: number, nameLen: number): number;
-  gcs_sketch_frame(h: number, origin: number, toward: number,
-                   name: number, nameLen: number): number;
   gcs_sketch_plane(h: number, origin: number, toward: number, ux: number, uy: number,
                    uz: number, vx: number, vy: number, vz: number,
                    name: number, nameLen: number): number;

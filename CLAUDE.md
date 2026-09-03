@@ -481,9 +481,13 @@ Conventions:
   coordinates — and `cgraph` gives them a `virtual_line` in the ground x-axis's direction class,
   the same trick arc-endpoint tangency uses, so a levelled pair decomposes rather than falling to
   the numeric residue.
-- A **frame** (`frame f(origin: o, toward: q)`, spec §3.2 [0.6]) is a datum: the two points
-  alias, and the attitude is a **unit rotor** `(c, s)` — two owned scalars slaved to the chord by
-  two intrinsic constraints minted in `Sketch::frame` and nowhere else (the arc's bargain, since
+- **The datum is a `plane`** (`plane f(origin: o, toward: q)`, spec §3.2 [0.6]; issue #47,
+  item 6 folded `frame` into it — the two were one construct with the attitude optional, and a
+  plane with no attitude written is a view of the page, which is what a datum on the sheet is;
+  the parser keeps the word `frame` only to refuse it, at a declaration and at a formal).  The
+  two points alias, and the attitude is a **unit rotor** `(c, s)` — two owned scalars slaved to
+  the chord by two intrinsic constraints minted in `Sketch::plane` and nowhere else (the arc's
+  bargain, since
   intrinsics are never serialized): `frame_unit` is `c² + s² − 1`, **degree 0** (dimensionless,
   judged absolute — the `angle` kernel's rationale), and `frame_align` is `(t − o) − r·(c, s)`
   with the chord's length `r` a `Param` slot of its own — two rows, net one equation, and
@@ -495,18 +499,20 @@ Conventions:
   `f.angle` into `atan2(f.s, f.c)` (degrees) wherever the table holds the rotor — which is what
   lets a traced seed say `bearing: u + f.angle` and follow a tilted datum (issue #10;
   `tests/frame.rs` holds the mirror-elbow document that page-fixed seeds quietly get wrong).
-  A frame is also the shortest formal list a traced component can be written over — it *is*
+  A datum is also the shortest formal list a traced component can be written over — it *is*
   an origin, a second point and a bearing, so passing those beside it states one datum three
   times: the Peaucellier cell went from 20 variable-table columns to 12 by taking `(orbit, f)`
   where it had taken `(o, q, datum, orbit, f)`, which is what kept it under `tape::MAX_VARS`.  Raising that constant is the wrong reflex — `get`/`map`/
   `zip` zero a `[f64; MAX_VARS]` per operand, so its width is a cost every tape pays whatever it
-  reads, and 16 → 24 measured +7–14% on tapes as narrow as four variables.  A frame is in `primitives()`
-  (it round-trips, grafts, diagnoses), but it draws nothing and its pick distance is infinite —
-  its points are the click targets.  Both intrinsics are `unsupported` in `cgraph` for now, so a
-  document with a frame drags on the numeric path; the direction-class promotion is a follow-up.
-- A **`plane`** (Solvent §6.7) is a frame that is also a **view**: the same origin, toward point
-  and rotor (the same two intrinsics, minted by `Sketch::plane` through the halves `frame`
-  shares — `datum`/`slave`), plus a constant attitude in space, `plane::Basis` `(u, v)`, with
+  reads, and 16 → 24 measured +7–14% on tapes as narrow as four variables.  Both intrinsics
+  are `unsupported` in `cgraph` for now, so a document with a datum drags on the numeric path;
+  the direction-class promotion is a follow-up.  `FrameE` is the datum half of a `PlaneE`, and
+  `SpecKind::Plane` is what the two intrinsics take.  A document written before the fold loads:
+  `io::from_json` reads a `"frames"` table as planes with the page's attitude and never writes
+  one — the `"construction": true` bargain again.
+- A **`plane`** (Solvent §6.7) is also a **view**: the datum's origin, toward point and rotor
+  (the two intrinsics, minted by `Sketch::plane` through `datum`/`slave`), plus a constant
+  attitude in space, `plane::Basis` `(u, v)`, with
   `n = u × v` toward the viewer.  **Nothing three-dimensional is solved for**: the basis is
   document data like a spline's knots, resolved at elaboration (`program::plane_bases`, a
   memoised walk over the `from` chain — the page, `from: P, fold: θ` as `Basis::fold`, or
@@ -694,7 +700,8 @@ Conventions:
   `value_text` parses no expression, so `t == t0` inside a component pinned the contact at 0 with
   nothing reported; the key was thrown away, so one naming no slot at all filled whichever
   `Param` slot the settled kind had; and `write_written` guessed the name `t`, which is right on
-  a spline and wrong on a curve (`PointOnCurve`'s is `u`), so it disagreed with `operator_text`
+  a spline and was wrong on a curve (`PointOnCurve`'s was `u` until issue #47, item 6, made every
+  contact's `t`), so it disagreed with `operator_text`
   about one statement.  The value is **`syntax::Arg` and not a second encoding of it**: `assemble`
   hands it straight on, and `flatten::settle_arg` is the one walk that reads a component's
   parameters out of an argument — a statement carries its arguments twice, as the operator was

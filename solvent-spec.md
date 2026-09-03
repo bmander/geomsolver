@@ -75,8 +75,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 | `Point` | position in the plane | 2 |
 | `Line` | segment between two `Point`s; its infinite carrier is what constraints read **[0.2]** | 0 of its own (4 through its ends) |
 | `Circle` | center + radius | 3 |
-| `Frame` | origin + orientation | 3; **[0.6]** 0 beyond its two points as declared |
-| `Plane` | a `Frame` that is also a **view**: a plane in space, given as a constant orthonormal basis `(u, v)` **[0.10]** | 0 beyond its two points (§6.7) |
+| `Plane` | the datum: origin + orientation **[0.6]**, and a **view** — a plane in space, given as a constant orthonormal basis `(u, v)` **[0.10]**; one with no attitude written is the page's **[0.15]** | 0 beyond its two points (§6.7) |
 | `Path` | directed piecewise boundary curve | 0 (derived object) |
 
 **[0.2] `Line` was a 2-DOF undirected infinite line with a `.dir` field in 0.1.** It is now a segment between two points, and every constraint that reads a line reads the infinite carrier through those points — which is what `parallel`, `perpendicular`, `on` and `angle` mean by a line anyway.
@@ -91,13 +90,13 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 |---|---|---|
 | `Circle` | `.center` | `Point` |
 | `Circle` | `.r` | `Length` |
-| `Frame` | `.origin`, `.toward` | `Point` **[0.6]** |
-| `Frame` | `.c`, `.s` | `Scalar` **[0.6]** — the unit rotor |
-| `Frame` | `.angle` | `Angle` — derived, `atan2(s, c)`; readable in trace-block expressions **[0.6]** |
-| `Plane` | `.origin`, `.toward`, `.c`, `.s`, `.angle` | as `Frame` **[0.10]**; its basis `u`, `v` are constants of the declaration, not sub-entities |
+| `Plane` | `.origin`, `.toward` | `Point` **[0.6]** |
+| `Plane` | `.c`, `.s` | `Scalar` **[0.6]** — the unit rotor |
+| `Plane` | `.angle` | `Angle` — derived, `atan2(s, c)`; readable in trace-block expressions **[0.6]** |
+| `Plane` | its basis `u`, `v` | constants of the declaration, not sub-entities **[0.10]** |
 | `Line` | `.p1`, `.p2` | `Point` **[0.2]** |
 
-**[0.6] A frame's orientation is a unit rotor, not a stored angle.** `frame f(origin: o,
+**[0.6] A datum's orientation is a unit rotor, not a stored angle.** `plane f(origin: o,
 toward: q)` declares an origin (aliased), a second point it is pointed at (aliased), and two
 scalars `(c, s)` of its own, carrying two **intrinsic** constraints the declaration implies —
 `c² + s² = 1`, and `(toward − origin) = r·(c, s)` with the chord's length `r` an unknown the
@@ -106,8 +105,13 @@ diagnoses like any other) that adds **no** freedom beyond the two points it is s
 representation is the 2D form of the unit quaternion a 3D workplane will want: the eventual
 lift changes a component count, not the construct.  `.angle` is *derived* — implementations
 MUST NOT store it — and is what a trace-block expression reads to state a bearing relative to
-the frame rather than the page: `hint(at: c, bearing: u + f.angle)` (§6.5.1).  The 0.1–0.5 constructor
+the datum rather than the page: `hint(at: c, bearing: u + f.angle)` (§6.5.1).  The 0.1–0.5 constructor
 spelling `frame(center, ray(center, p))` is superseded by the field form; `ray` is dropped.
+**[0.15] `frame` is folded into `plane`**: the datum and the view were one construct with the
+attitude optional, so there is one kind, `plane`, and a plane with no attitude written is a datum
+with the page's — a view of the page, which is what a datum on the sheet is.  A formal `f: plane`
+offers `f.angle` as `f: frame` did.  An implementation keeps the word `frame` only to refuse it,
+naming the spelling.
 
 ### 3.3 Dimensional analysis and units **[0.7]**
 
@@ -352,7 +356,7 @@ curve NAME = REF over FORMAL in ( A, B )                    an instance's point
 curve NAME = Component(ARGS).REF over FORMAL in ( A, B )    an instance written in place
 ```
 
-`REF` names a point the component places — a declaration of its body or a nested instance's; a formal the component is written over does not move with the swept formal and is refused (**E103**). `FORMAL` is a numeric formal of that component, `Angle` or `Length` (**E040** otherwise); the interval's ends are expressions over the parameters in scope. A curve declares an entity and takes contacts like any other curve, each owning the curve's parameter — always spelled `u`, whatever the formal is called: `p on e hint(u: …)` says `p − C(u) = 0`, two residuals and one new unknown; `e tangent l` holds the line through `C(u)` along `C'(u)`, two residuals against the one unknown; `e curvature k` makes the circle the curve's osculating circle at `u`, three residuals against it. A tangency needs `C'` and its derivatives in the geometry — second order — and a curvature `C''` and `C'''`: a computed point supplies them exactly from its expressions, and a locus supplies `C'` exactly (the implicit function theorem) with its derivatives by difference, and no higher order at all, so a curvature stated against a traced curve is an error (**E103**). There is no separate curve family: 0.2's `curve NAME(FORMALS)(PARAM) = …` and 0.3's `trace POINT where { … }` are retired, and an implementation MUST refuse them with a message naming this form.
+`REF` names a point the component places — a declaration of its body or a nested instance's; a formal the component is written over does not move with the swept formal and is refused (**E103**). `FORMAL` is a numeric formal of that component, `Angle` or `Length` (**E040** otherwise); the interval's ends are expressions over the parameters in scope. A curve declares an entity and takes contacts like any other curve, each owning the curve's parameter — spelled `t`, as a spline's is, whatever the swept formal is called **[0.15]** (0.2–0.14 spelled it `u`, which an implementation SHOULD name when refusing the old key): `p on e hint(t: …)` says `p − C(t) = 0`, two residuals and one new unknown; `e tangent l` holds the line through `C(u)` along `C'(u)`, two residuals against the one unknown; `e curvature k` makes the circle the curve's osculating circle at `u`, three residuals against it. A tangency needs `C'` and its derivatives in the geometry — second order — and a curvature `C''` and `C'''`: a computed point supplies them exactly from its expressions, and a locus supplies `C'` exactly (the implicit function theorem) with its derivatives by difference, and no higher order at all, so a curvature stated against a traced curve is an error (**E103**). There is no separate curve family: 0.2's `curve NAME(FORMALS)(PARAM) = …` and 0.3's `trace POINT where { … }` are retired, and an implementation MUST refuse them with a message naming this form.
 
 **Two ways a component places the point.** A **computed** point, `point p = ( XEXPR, YEXPR )` **[0.13]** (`port p = …` in 0.12), gives the coordinates as expressions over the formals and the params; a component with one is drawn only as a curve, and an instance of it on the sheet is an error (**E103**), since nothing on the sheet holds a point to a formula. Any **other** point is placed by the body's statements — the locus form: `C(u)` is where the constraints put the point, given the formal's value and the geometry the component is written over. Traced, the body MUST determine its own coordinates — as many equations as coordinates of its own — or the curve is an error (**E103**): an under- or over-constrained locus is a curve that does not exist, and it must not elaborate quietly. Drawn, the same component may be closed from outside like any other.
 
@@ -428,7 +432,7 @@ Each desugared statement keeps an identity of its own and a span into the chain'
 
 A multiview drawing is several pictures of one object on one sheet, each on a stated plane in space, related by projection. The language states it the draughtsman's way — descriptive geometry — and **nothing three-dimensional is ever solved for**: a document stays planar, and what is added is a datum with an attitude, a membership, and one equation.
 
-**A `plane` is a `Frame` with an attitude.** `plane front(origin: o, toward: q)` declares an origin, a point it is turned toward and a unit rotor, exactly as `frame` does (§3.2 [0.6]) — that is where the view sits on the page and which way it is turned, and all of it is solved for as a frame's is. What it adds is a **basis** `(u, v)`, an orthonormal pair in space with `n = u × v` toward the viewer, which is a *constant* of the declaration: document data like a spline's knots, never a seed and never moved by a solve — which is why it stands in the brackets with the children (§6.2) and not in `hint(…)` (§4.3). It is written one of three ways:
+**A `plane` is the datum with an attitude.** `plane front(origin: o, toward: q)` declares an origin, a point it is turned toward and a unit rotor (§3.2 [0.6]) — that is where the view sits on the page and which way it is turned, and all of it is solved for as a frame's is. What it adds is a **basis** `(u, v)`, an orthonormal pair in space with `n = u × v` toward the viewer, which is a *constant* of the declaration: document data like a spline's knots, never a seed and never moved by a solve — which is why it stands in the brackets with the children (§6.2) and not in `hint(…)` (§4.3). It is written one of three ways:
 
 ```
 plane front(origin: o, toward: q)                                   // the page itself
@@ -1088,7 +1092,7 @@ decl           = entity_decl | param_decl | curve_def | instance_decl ;
 entity_decl    = ekw binder { "," binder }
                | ekw IDENT "=" expr
                | "point" IDENT "=" "(" expr "," expr ")" ;   (* a computed point, §6.5 [0.13] *)
-ekw            = "point" | "circle" | "line" | "frame" | "plane" | "ellipse" | "spline"
+ekw            = "point" | "circle" | "line" | "plane" | "ellipse" | "spline"
                | "curve" ;
 (* the trailing clauses are order-free: `hint(…)`, `knots […]`, `class …`, `in REF`.  A
    place — `hint(at: t)`, `hint(at: c, bearing: …)` — is the same clause with `at:` and

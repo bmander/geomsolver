@@ -61,8 +61,8 @@ curve path = cell.pen over u in (60, 115)
 
 point g1 hint(x: 80, y: 51)
 point g2 hint(x: 80, y: 114)
-g1 on(u == 65) path
-g2 on(u == 110) path
+g1 on(t == 65) path
+g2 on(t == 110) path
 line rail(g1, g2) class construction
 
 claim vertical rail

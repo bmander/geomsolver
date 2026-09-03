@@ -223,7 +223,7 @@ ellipse el in front
     read(&format!("{VIEWS}point a in top\nline l(a, o2) in top\n"));
     refused("point a in nope\n", "E101", "no such entity");
     refused("point a in l\nline l\n", "E040", "`in` names a plane");
-    misparses("frame f in top\n", "has none of its own");
+    misparses("plane f in top\n", "has none of its own");
     misparses("plane p in top\n", "has none of its own");
     misparses("point p in top in front\n", "already in a plane");
 }
@@ -416,7 +416,7 @@ fn an_in_block_refuses_what_it_cannot_mean() {
         "E060",
         "already in `front`",
     );
-    misparses("plane front\nin front { frame f }\n", "has none of its own");
+    misparses("plane front\nin front { plane f }\n", "has none of its own");
     misparses("plane front\nin front { point a in front }\n", "already in a plane");
     misparses("plane front\ncycle 2 { in front { point a } }\n", "stands at the top level");
     misparses("plane front\nin front { in front { point a } }\n", "stands at the top level");
@@ -554,7 +554,7 @@ t: Two(q) in front
     );
     // a datum inside is left alone: it has no points of its own to put on the plane
     let e = read(
-        "component D() {\n  frame f\n  point c hint(x: 1, y: 2)\n}\nplane front\nd1: D() in front\n",
+        "component D() {\n  plane f\n  point c hint(x: 1, y: 2)\n}\nplane front\nd1: D() in front\n",
     );
     let front = e.map.ent_named("front").unwrap().i();
     assert_eq!(e.sketch.plane_of(e.map.ent_named("d1.c").unwrap().i()), Some(front));

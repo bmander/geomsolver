@@ -177,7 +177,6 @@ fn the_document_uses_the_field_names() {
         ("circles", EntKind::Circle),
         ("arcs", EntKind::Arc),
         ("ellipses", EntKind::Ellipse),
-        ("frames", EntKind::Frame),
         ("planes", EntKind::Plane),
     ] {
         let Some(first) = doc.get(plural).and_then(|a| a.arr().first()) else { continue };
@@ -356,7 +355,6 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
         .map(|i| sk.point(60.0 + 10.0 * i as f64, 5.0 * i as f64, false, &format!("k{i}")))
         .collect();
     let sp = sk.spline(&ctrl).expect("four control points make a curve");
-    let fr = sk.frame(p, q, "f");
     // two planes, the page's and the top's, with `p` and `q` as images on them: what a
     // projection is inferred from
     let pa = sk.plane(r, s, gcs_core::plane::Basis::page(), "front");
@@ -375,7 +373,6 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
             SpecKind::Arc => Arg::Ent(EntRef::arc(a1)),
             SpecKind::Spline => Arg::Ent(EntRef::spline(sp)),
             SpecKind::Ellipse => Arg::Ent(EntRef::ellipse(el)),
-            SpecKind::Frame => Arg::Ent(EntRef::frame(fr)),
             SpecKind::Plane => Arg::Ent(EntRef::plane(pa)),
             SpecKind::Length => Arg::Num(12.0),
             SpecKind::Angle => Arg::Num(0.5),

@@ -59,7 +59,7 @@ KIND [NAME][(CHILD | hint(x: E, y: E), ...)] [hint(SCALAR: E, ...)] [knots [...]
      [class NAME...] [in REF]           an entity declaration; every part is optional (1.4)
 point NAME = (XEXPR, YEXPR)             a computed point, drawn only as a curve      (1.9)
 plane [NAME](origin: R, toward: R[, from: R, fold: E | , u: (E,E,E), v: (E,E,E)])
-                                        a view: a frame with an attitude in space   (1.13)
+                                        the datum, and a view with an attitude    (1.13)
 in REF { statement* }                   every declaration inside is drawn in that plane
 style .NAME { PROP: VALUE; ... }        what a class looks like                     (1.11)
 WORD[(ARGS)] REF  |  REF WORD[(ARGS)] REF
@@ -92,8 +92,7 @@ reaches into copy 0's instance `cyl`.
 | `arc` | `center`, `start`, `end` | `r` | `start -> end`, counter-clockwise |
 | `spline` | control points, all named | | |
 | `ellipse` | `center`, `major` | `b` (minor radius) | |
-| `frame` | `origin`, `toward` | `c`, `s` (unit rotor, never seeded by hand) | |
-| `plane` | `origin`, `toward` | `c`, `s`, plus a constant basis in space | |
+| `plane` | `origin`, `toward` | `c`, `s` (unit rotor, never seeded by hand), plus a constant basis in space | |
 | `curve` | its arguments | | |
 
 **Seeds.** Every scalar is seeded by name in the trailing clause: `point p hint(x: 0, y: 0)`,
@@ -136,9 +135,10 @@ start. Where the document names a `unit`, a geometry read is a length: write `pi
 `pin.x - 10`. A `param` may **not** read geometry; it feeds constraints, and a seed must never
 change what a document says.
 
-A **frame** is a datum: an origin, a point it is turned toward, and a unit rotor slaved to the
-chord between them. It draws nothing, is picked as nothing, and adds no freedom. Its use is
-`f.angle`, the bearing in degrees, which a traced component may read (1.9).
+A **plane** is the datum: an origin, a point it is turned toward, and a unit rotor slaved to the
+chord between them, drawn as a small datum glyph and adding no freedom. One with no attitude
+written is a view of the page (1.13). Its use on the sheet is `f.angle`, the bearing in degrees,
+which a traced component may read (1.9). There is no separate `frame`: the word is refused.
 
 ### 1.5 Constraints
 
@@ -184,7 +184,7 @@ orientation predicate. Swapping the lines or reversing one's endpoints changes t
 
 **A slot the constraint owns** (a contact's curve parameter) is normally omitted. Seed it with a
 trailing `p on s hint(t: 0.4)`; **pin** it with `p on(t == 0.4) s`, a stated number in the
-parentheses beside every other stated number. A spline's parameter is `t`; a curve's is `u`,
+parentheses beside every other stated number. A contact's parameter is `t` on a spline and on a curve alike,
 whatever its swept formal is called.
 
 **Tangency trap.** If the contact point is already held on the circle, state the tangency *at* that
@@ -294,7 +294,7 @@ component Rung(a: point, b: point, len: Length) {
 t0: Rung(l0, r0, len: 50)
 ```
 
-A formal is an entity kind (`point`, `line`, `circle`, `arc`, `frame`, `plane`, …) or a number
+A formal is an entity kind (`point`, `line`, `circle`, `arc`, `plane`, …) or a number
 type (`Length`, `Angle`, `Int`, `Scalar`). Passing an entity is **aliasing**, not a constraint: the
 formal and the actual are one entity, so a component boundary costs nothing. Arguments are given
 positionally or by label. A numeric formal left unbound is a free unknown of the drawing, named
@@ -337,9 +337,9 @@ A component's point is placed one of two ways:
   coordinates of its own.
 
 The swept formal may be an `Angle` or a `Length`; the point must be one the component places, not
-geometry it is written over. A formal `f: frame` offers `f.angle`, the frame's bearing in degrees:
+geometry it is written over. A formal `f: plane` offers `f.angle`, the datum's bearing in degrees:
 seeds written `hint(at: c, bearing: u + f.angle)` follow a tilted datum where page-fixed ones go
-stale. A frame
+stale. A plane
 is also usually the shortest formal list, since it carries an origin, a second point and a bearing;
 fewer entity formals mean cheaper curve evaluations.
 
@@ -404,7 +404,8 @@ per part.
 
 ### 1.13 Planes and views
 
-A `plane` is a frame that is also a view: it carries a constant attitude in space. A point says
+A `plane` is the datum, and a view: it carries a constant attitude in space, the page's where none
+is written. A point says
 which view it is drawn `in`, and `a project b` says two points are two images of one corner: their
 coordinates along the fold line the two views share agree, which is one equation. **Nothing
 three-dimensional is solved for.**
@@ -632,7 +633,7 @@ fix base.r
 An involute is a component with one computed point, and the curve is that point as `u` runs. The
 remaining freedom is the contact's own parameter, *how far along* `t` sits, which nothing here
 states; it is why a contact slides along a curve instead of breaking when the geometry beneath it
-moves. Seed it with `t on f hint(u: 30)` or pin it with `t on(u == 30) f` (which makes this DOF 0).
+moves. Seed it with `t on f hint(t: 30)` or pin it with `t on(t == 30) f` (which makes this DOF 0).
 
 ### 2.9 A curve stated as a locus: DOF 1, under
 

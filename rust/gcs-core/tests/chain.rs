@@ -1231,15 +1231,15 @@ fn a_slot_keeps_the_name_and_the_number_it_was_written_with() {
     // reported on the key, which is what it is about, and in the word the writer typed
     refuses_later(&format!("{SPLINE}a on s hint(bogus: 0.4)\n"), "`on` has no slot `bogus`");
 
-    // and the printer writes the name that was written.  `u` is the case: a curve's slot is not
-    // called `t`, so the retired hard-code printed `hint(t: …)` for a statement that said `u`.
-    for stated in ["p on flank hint(u: 20)", "p on(u == 20) flank"] {
+    // and the printer writes the name that was written, off the key and never off the kind: the
+    // retired hard-code printed `hint(t: …)` for a statement that said `u`, when a curve's slot
+    // was still called that (issue #47, item 6 made every contact's `t`)
+    for stated in ["p on flank hint(t: 20)", "p on(t == 20) flank"] {
         let src = format!("{CURVE}{stated}\n");
         let (mut prog, errs) = parse(&src);
         assert!(errs.is_empty(), "{stated} parses: {errs:?}");
         let text = gcs_core::syntax::render(&mut prog).to_string();
         assert!(text.contains(stated), "{stated} did not print back:\n{text}");
-        assert!(!text.contains("(t:") && !text.contains("t =="), "no guessed `t`:\n{text}");
     }
 }
 

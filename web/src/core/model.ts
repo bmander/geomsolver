@@ -15,12 +15,12 @@ import './constraints.js';
 export type Box = [number, number, number, number];
 
 export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline' | 'ellipse' | 'curve'
-  | 'frame' | 'plane';
+  | 'plane';
 // in kind-id order: `pick` decodes the core's answer by indexing this list
 export const KINDS: Kind[] =
-  ['point', 'line', 'circle', 'arc', 'spline', 'ellipse', 'curve', 'frame', 'plane'];
+  ['point', 'line', 'circle', 'arc', 'spline', 'ellipse', 'curve', 'plane'];
 export const KIND_ID: Record<Kind, number> =
-  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, ellipse: 5, curve: 6, frame: 7, plane: 8 };
+  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, ellipse: 5, curve: 6, plane: 7 };
 
 export class Param {
   constructor(readonly sketch: Sketch, readonly index: number) {}
@@ -376,11 +376,10 @@ export class Curve extends Styled {
   }
 }
 
-/** What a `frame` and a `plane` share: an origin, a point it is pointed at, and a unit rotor
- *  slaved to the chord between them by two intrinsic constraints — a datum other statements
- *  measure from, adding no freedom beyond its two points.  The split mirrors the core's own
- *  (`Sketch::frame_of`, `Sketch::datum`): every reader of a rotor takes both kinds, and the
- *  rotor's column layout is written once. */
+/** The datum half of a plane: an origin, a point it is pointed at, and a unit rotor slaved to
+ *  the chord between them by two intrinsic constraints — a datum other statements measure
+ *  from, adding no freedom beyond its two points.  The split mirrors the core's own
+ *  (`Sketch::frame_of`, `Sketch::datum`), and is where the rotor's column layout is written. */
 export abstract class Datum extends Styled {
   get origin(): Point {
     return this.children[0];
@@ -397,16 +396,12 @@ export abstract class Datum extends Styled {
   }
 }
 
-/** A datum other statements measure from; a trace block reads its bearing as `f.angle`. */
-export class Frame extends Datum {
-  readonly kind = 'frame' as const;
-}
-
-/** A view: a frame that also carries a constant attitude in space — an orthonormal basis
- *  `(u, v)`, with the viewer along `u × v`.  The frame is where the view sits on the page and
- *  may be turned like any other; the basis says which way the page is looking, and no solve
- *  moves it.  Points drawn *in* it (`Point.plane`) are images of space in that view, which is
- *  what a `project` between two of them relates. */
+/** The one datum kind: a view, carrying a constant attitude in space — an orthonormal basis
+ *  `(u, v)`, with the viewer along `u × v` — over the datum half above.  The datum is where the
+ *  view sits on the page and may be turned like any other, and a trace block reads its bearing
+ *  as `f.angle`; the basis says which way the page is looking, and no solve moves it.  Points
+ *  drawn *in* it (`Point.plane`) are images of space in that view, which is what a `project`
+ *  between two of them relates.  A datum with no attitude written is a view of the page. */
 export class Plane extends Datum {
   readonly kind = 'plane' as const;
 
@@ -435,11 +430,11 @@ export class Plane extends Datum {
   }
 }
 
-export type Primitive = Point | Line | Circle | Arc | Spline | Ellipse | Curve | Frame | Plane;
+export type Primitive = Point | Line | Circle | Arc | Spline | Ellipse | Curve | Plane;
 
 const CLASSES =
   { point: Point, line: Line, circle: Circle, arc: Arc, spline: Spline,
-    ellipse: Ellipse, curve: Curve, frame: Frame, plane: Plane } as const;
+    ellipse: Ellipse, curve: Curve, plane: Plane } as const;
 
 /** The CCW arc through three points: centre, radius, and the sweep that passes through the
  *  third point.  `swapped` is true when that sweep runs from the *second* given point. */
@@ -468,7 +463,7 @@ export class Sketch {
   private params_: Param[] = [];
   private ents: Record<Kind, Entity[]> =
     { point: [], line: [], circle: [], arc: [], spline: [], ellipse: [], curve: [],
-      frame: [], plane: [] };
+      plane: [] };
   private cons: Constraint[] = [];
   /** Constraint id → its proxy, so identity survives every round trip. */
   readonly byId = new Map<number, Constraint>();
@@ -565,14 +560,6 @@ export class Sketch {
     return this.ellipses[i];
   }
 
-  /** A frame at `origin` pointed at `toward`. */
-  frame(origin: Point, toward: Point, name = ''): Frame {
-    const i = withStr(name, (p, n) =>
-      core().gcs_sketch_frame(this.handle, origin.index, toward.index, p, n));
-    this.touch();     // the rotor's two intrinsic constraints came with it
-    return this.frames[i];
-  }
-
   /** A plane at `origin` pointed at `toward`, looking along `u × v`.  The core orthonormalises
    *  the basis and refuses one that spans no plane. */
   plane(origin: Point, toward: Point, u: readonly [number, number, number],
@@ -581,7 +568,7 @@ export class Sketch {
       core().gcs_sketch_plane(this.handle, origin.index, toward.index,
                               u[0], u[1], u[2], v[0], v[1], v[2], p, n));
     if (i < 0) throw new Error(lastError() || 'u and v do not span a plane');
-    this.touch();     // a plane is a frame, so its rotor's intrinsics came with it
+    this.touch();     // the rotor's two intrinsic constraints came with it
     return this.planes[i];
   }
 
@@ -700,10 +687,6 @@ export class Sketch {
     return this.list<Curve>('curve', this.counts()[8]);
   }
 
-  get frames(): Frame[] {
-    return this.list<Frame>('frame', this.counts()[9]);
-  }
-
   get planes(): Plane[] {
     return this.list<Plane>('plane', this.counts()[10]);
   }
@@ -729,14 +712,13 @@ export class Sketch {
       : kind === 'circle' ? this.circles : kind === 'spline' ? this.splines
       : kind === 'ellipse' ? this.ellipses
       : kind === 'curve' ? this.curves
-      : kind === 'frame' ? this.frames
       : kind === 'plane' ? this.planes : this.arcs) as Primitive[];
   }
 
   /** Every entity, in creation order per kind. */
   primitives(): Primitive[] {
     return [...this.points, ...this.lines, ...this.circles, ...this.arcs, ...this.splines,
-            ...this.ellipses, ...this.frames, ...this.planes];
+            ...this.ellipses, ...this.planes];
   }
 
   /** Constraints the user added (excludes intrinsic and soft/transient ones). */

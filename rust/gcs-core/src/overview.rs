@@ -255,7 +255,6 @@ pub fn drawable(sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
         EntKind::Curve => vec![sk.curve_polyline(i)],
         // a datum's glyph is already two segments of world geometry
         EntKind::Plane => crate::plane::glyph(sk, i, unit).iter().map(|(a, b)| vec![*a, *b]).collect(),
-        EntKind::Frame => Vec::new(),
     }
 }
 
@@ -310,9 +309,9 @@ pub fn scene(sk: &Sketch, unit: f64, az: f64, el: f64) -> Scene {
     }
     // every view's own geometry, standing on its plane
     for e in sk.drawn() {
-        // a point is a place, a frame draws nothing, and a plane's glyph is the sheet's way of
-        // showing a datum — in the box the pane says it
-        if matches!(e.kind, EntKind::Point | EntKind::Frame | EntKind::Plane) {
+        // a point is a place, and a plane's glyph is the sheet's way of showing a datum — in
+        // the box the pane says it
+        if matches!(e.kind, EntKind::Point | EntKind::Plane) {
             continue;
         }
         let plane = entity_view(sk, e, &views);
