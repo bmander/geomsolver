@@ -8,6 +8,7 @@
 /// The library, `(name, text)`.
 pub const MODULES: &[(&str, &str)] = &[
     ("std", include_str!("../../lib/std.sv")),
+    ("hardware", include_str!("../../lib/hardware.sv")),
     ("engine.dims", include_str!("../../examples/engine/dims.sv")),
     ("engine.parts", include_str!("../../examples/engine/parts.sv")),
     ("engine.valvetrain", include_str!("../../examples/engine/valvetrain.sv")),
@@ -21,6 +22,11 @@ pub const MODULES: &[(&str, &str)] = &[
     ("vtwin.parts", include_str!("../../examples/vtwin/parts.sv")),
     ("vtwin.frame", include_str!("../../examples/vtwin/frame.sv")),
     ("vtwin.crank", include_str!("../../examples/vtwin/crank.sv")),
+    ("vtwin.cylinder", include_str!("../../examples/vtwin/cylinder.sv")),
+    ("vtwin.piston", include_str!("../../examples/vtwin/piston.sv")),
+    ("vtwin.disc", include_str!("../../examples/vtwin/disc.sv")),
+    ("vtwin.flywheel", include_str!("../../examples/vtwin/flywheel.sv")),
+    ("vtwin.throttle", include_str!("../../examples/vtwin/throttle.sv")),
     ("vtwin.bank", include_str!("../../examples/vtwin/bank.sv")),
     ("vtwin.side_view", include_str!("../../examples/vtwin/side_view.sv")),
 ];

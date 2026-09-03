@@ -410,7 +410,8 @@ the implicit class `.point`, so `style .point { display: none }` hides the handl
 
 ```
 use engine.dims          // engine/dims.sv beside the document, else the library compiled in
-use std                  // the standard library: ThreeViews (1.13), Ellipse (1.9)
+use std                  // the standard library: ThreeViews (1.13), Ellipse (1.9), Polygon and Hex
+use hardware             // fasteners and fittings by name: hexbolt14_af, brg608_od, oring014_cs, …
 ```
 
 A module is a Solvent document read for its `component`s and its top-level `param`s; its own

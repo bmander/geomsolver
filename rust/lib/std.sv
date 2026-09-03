@@ -62,3 +62,40 @@ component Ellipse(f: plane, a: Length, b: Length, u: Angle) {
   point p = ( f.origin.x + a * cos(u) * cos(f.angle) - b * sin(u) * sin(f.angle),
               f.origin.y + a * cos(u) * sin(f.angle) + b * sin(u) * cos(f.angle) )
 }
+
+// A regular polygon: `n` vertices on a circle of radius `r` about `c`, the first at `phase`
+// counter-clockwise from the line `ref`'s direction, so the figure turns with whatever `ref`
+// belongs to — a part's axis, a crank arm.  Every vertex is `r` from the centre, each chord is
+// as long as the next, and the first edge is turned a fixed angle from `ref` (an edge lies
+// `90° + 180°/n` past its own vertex's bearing): `2n` statements for `2n` coordinates, with the
+// seeds walking the circle once so the winding is the one asked for.  Not "every edge at its
+// own angle": with every direction stated and every vertex on the circle, alternate vertices
+// can slide opposite ways along the circle to first order when `n` is even, and the diagnosis
+// reads that flex as a dependency.  The last chord's equality is left unstated — it is the
+// theorem the others imply.  The vertices are `v[i]` and the edges `e[i]`, `e[i]` running from
+// `v[i]` to `v[i + 1]`; a class on the instance dashes or hides the lot.
+//
+//   use std
+//   pocket: Hex(c, axis, af: 11.1, phase: 0deg) class hidden
+//   claim pocket.p.e[1] distance(11.1) pocket.p.e[4]      // across the flats
+component Polygon(c: point, ref: line, n: Int, r: Length, phase: Angle) {
+  cycle n as i {
+    point v hint(x: c.x + r * cos(atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x) + phase + i * 360deg / n),
+                 y: c.y + r * sin(atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x) + phase + i * 360deg / n))
+    c distance(r) v
+    line e(v, next.v)
+    repeat 1 - min(i, 1) {
+      ref angle(phase + 90deg + 180deg / n) e
+    }
+    repeat 1 - floor(i / (n - 1)) {
+      e equal e[i + 1]
+    }
+  }
+}
+
+// A hexagon by its width across the flats — a nut, a bolt's head, the pocket either sits in —
+// the first vertex at `phase` from `ref`, so `phase: 0deg` puts a corner along the reference
+// and `phase: 30deg` a flat square to it.
+component Hex(c: point, ref: line, af: Length, phase: Angle) {
+  p: Polygon(c, ref, n: 6, r: af / (2 * cos(30deg)), phase: phase)
+}
