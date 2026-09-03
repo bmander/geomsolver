@@ -250,7 +250,6 @@ pub fn drawable(sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
             let (a0, a1) = sk.arc_angles(i);
             vec![round(c, r, a0, a1 - a0, unit)]
         }
-        EntKind::Ellipse => vec![crate::ellipse::rim(sk, i)],
         EntKind::Spline => vec![crate::curve::tessellate(sk, i, unit)],
         EntKind::Curve => vec![sk.curve_polyline(i)],
         // a datum's glyph is already two segments of world geometry

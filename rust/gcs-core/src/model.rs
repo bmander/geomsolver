@@ -59,7 +59,6 @@ pub enum EntKind {
     Circle,
     Arc,
     Spline,
-    Ellipse,
     /// **The one datum kind** (issue #47, item 6: `frame` is folded into it).  An origin and an
     /// attitude other statements measure from: the attitude is a unit rotor — two scalars
     /// `(c, s)` held to `c² + s² = 1` by an intrinsic constraint, the 2D form of the quaternion
@@ -90,7 +89,6 @@ impl EntKind {
             EntKind::Circle => "circle",
             EntKind::Arc => "arc",
             EntKind::Spline => "spline",
-            EntKind::Ellipse => "ellipse",
             EntKind::Plane => "plane",
             EntKind::Curve => "curve",
         }
@@ -103,7 +101,6 @@ impl EntKind {
             "circle" => EntKind::Circle,
             "arc" => EntKind::Arc,
             "spline" => EntKind::Spline,
-            "ellipse" => EntKind::Ellipse,
             "plane" => EntKind::Plane,
             "curve" => EntKind::Curve,
             _ => return None,
@@ -125,7 +122,6 @@ impl EntKind {
             EntKind::Circle => &[("center", C), ("r", S)],
             EntKind::Arc => &[("center", C), ("start", C), ("end", C), ("r", S)],
             EntKind::Spline => &[("ctrl", L)],
-            EntKind::Ellipse => &[("center", C), ("major", C), ("b", S)],
             // a plane's attitude is not a field: a Scalar is a number a solve may write back,
             // and the basis is document data no solve moves
             EntKind::Plane => {
@@ -157,7 +153,6 @@ impl EntKind {
             EntKind::Point
             | EntKind::Circle
             | EntKind::Spline
-            | EntKind::Ellipse
             | EntKind::Plane
             | EntKind::Curve => None,
         }
@@ -182,7 +177,6 @@ impl EntKind {
             EntKind::Arc => {
                 [pt("center"), pt("start"), pt("end"), vec![format!("{n}.r")]].concat()
             }
-            EntKind::Ellipse => [pt("center"), pt("major"), vec![format!("{n}.b")]].concat(),
             EntKind::Plane => {
                 [pt("origin"), pt("toward"), vec![format!("{n}.c"), format!("{n}.s")]].concat()
             }
@@ -207,7 +201,7 @@ impl EntKind {
             | EntKind::Circle
             | EntKind::Arc
             | EntKind::Spline
-            | EntKind::Ellipse => true,
+            => true,
         }
     }
 
@@ -225,7 +219,6 @@ impl EntKind {
             | EntKind::Circle
             | EntKind::Arc
             | EntKind::Spline
-            | EntKind::Ellipse
             | EntKind::Curve => None,
         }
     }
@@ -274,9 +267,6 @@ impl EntRef {
     }
     pub fn spline(idx: usize) -> EntRef {
         EntRef::new(EntKind::Spline, idx)
-    }
-    pub fn ellipse(idx: usize) -> EntRef {
-        EntRef::new(EntKind::Ellipse, idx)
     }
     pub fn plane(idx: usize) -> EntRef {
         EntRef::new(EntKind::Plane, idx)
@@ -336,18 +326,6 @@ pub struct SplineE {
     pub ctrl: Vec<u32>,
     /// `ctrl.len() + curve::DEGREE + 1` non-decreasing values.
     pub knots: Vec<f64>,
-    pub class: Classes,
-}
-
-/// Centre, one end of the major axis, and a minor radius of its own.  Five numbers — exactly
-/// the 5 DOF an ellipse has — so unlike an arc it needs no intrinsic constraint.  The major
-/// point is a real rim point at the end of the long axis, so it drags, snaps and constrains
-/// like any other point; only the minor radius is the ellipse's own.
-#[derive(Clone, Debug)]
-pub struct EllipseE {
-    pub center: u32,
-    pub major: u32,
-    pub minor: u32,
     pub class: Classes,
 }
 
@@ -522,7 +500,6 @@ pub struct Sketch {
     pub circles: Vec<CircleE>,
     pub arcs: Vec<ArcE>,
     pub splines: Vec<SplineE>,
-    pub ellipses: Vec<EllipseE>,
     pub planes: Vec<PlaneE>,
     pub curves: Vec<CurveE>,
     /// The curve families this document defines.  Document state like `branches`: a curve
@@ -580,7 +557,6 @@ impl Sketch {
             EntKind::Circle => self.circles[e.i()].class.clone(),
             EntKind::Arc => self.arcs[e.i()].class.clone(),
             EntKind::Spline => self.splines[e.i()].class.clone(),
-            EntKind::Ellipse => self.ellipses[e.i()].class.clone(),
             EntKind::Plane => self.planes[e.i()].frame.class.clone(),
             EntKind::Curve => self.curves[e.i()].class.clone(),
         }
@@ -595,7 +571,6 @@ impl Sketch {
             EntKind::Circle => self.circles.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Arc => self.arcs.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Spline => self.splines.get_mut(e.i()).map(|x| &mut x.class),
-            EntKind::Ellipse => self.ellipses.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Plane => self.planes.get_mut(e.i()).map(|x| &mut x.frame.class),
             EntKind::Curve => self.curves.get_mut(e.i()).map(|x| &mut x.class),
         };
@@ -691,7 +666,6 @@ impl Sketch {
             EntKind::Point => self.point_params(e.i()).to_vec(),
             EntKind::Circle => vec![self.circles[e.i()].radius],
             EntKind::Arc => vec![self.arcs[e.i()].radius],
-            EntKind::Ellipse => vec![self.ellipses[e.i()].minor],
             // the rotor `(c, s)` is a unit vector — a direction, and scaling it would only
             // break `frame_unit`.  A frame's one length is `frame_align`'s chord, which is a
             // constraint's Param and is converted with the constraints.
@@ -824,18 +798,6 @@ impl Sketch {
         let centre = self.point(g.cx, g.cy, false, &format!("{name}.c"));
         let (a, b) = if g.swapped { (end, start) } else { (start, end) };
         Some(self.arc(centre, a, b, name))
-    }
-
-    /// An ellipse about `center` whose major axis ends at `major`, with minor radius `b`.
-    pub fn ellipse(&mut self, center: usize, major: usize, b: f64, name: &str) -> usize {
-        let bp = self.param(b, false, &format!("{name}.b"));
-        self.ellipses.push(EllipseE {
-            center: center as u32,
-            major: major as u32,
-            minor: bp as u32,
-            class: Classes::default(),
-        });
-        self.ellipses.len() - 1
     }
 
     /// A plane: a frame with a stated attitude in space (`plane::Basis`), and the same two
@@ -1155,12 +1117,11 @@ impl Sketch {
         v
     }
 
-    /// Centre point index of a circle, arc or ellipse.
+    /// Centre point index of a circle or an arc.
     pub fn round_center(&self, e: EntRef) -> usize {
         match e.kind {
             EntKind::Circle => self.circles[e.i()].center as usize,
             EntKind::Arc => self.arcs[e.i()].center as usize,
-            EntKind::Ellipse => self.ellipses[e.i()].center as usize,
             _ => panic!("not a round entity"),
         }
     }
@@ -1171,7 +1132,6 @@ impl Sketch {
         match e.kind {
             EntKind::Circle => self.circles[e.i()].radius as usize,
             EntKind::Arc => self.arcs[e.i()].radius as usize,
-            EntKind::Ellipse => self.ellipses[e.i()].minor as usize,
             _ => panic!("not a round entity"),
         }
     }
@@ -1211,17 +1171,6 @@ impl Sketch {
                 }
                 v
             }
-            EntKind::Ellipse => {
-                let el = &self.ellipses[e.i()];
-                let mut v = Vec::with_capacity(5);
-                for pi in [el.center, el.major] {
-                    let p = &self.points[pi as usize];
-                    v.push(p.x);
-                    v.push(p.y);
-                }
-                v.push(el.minor);
-                v
-            }
             EntKind::Plane => {
                 let f = self.frame_of(e);
                 let mut v = Vec::with_capacity(6);
@@ -1258,7 +1207,6 @@ impl Sketch {
             EntKind::Point => self.point_params(e.i()).to_vec(),
             EntKind::Circle => vec![self.circles[e.i()].radius],
             EntKind::Arc => vec![self.arcs[e.i()].radius],
-            EntKind::Ellipse => vec![self.ellipses[e.i()].minor],
             EntKind::Plane => {
                 let f = self.frame_of(e);
                 vec![f.c, f.s]
@@ -1289,10 +1237,6 @@ impl Sketch {
             EntKind::Spline => {
                 self.splines[e.i()].ctrl.iter().map(|&c| EntRef::point(c as usize)).collect()
             }
-            EntKind::Ellipse => {
-                let el = &self.ellipses[e.i()];
-                vec![EntRef::point(el.center as usize), EntRef::point(el.major as usize)]
-            }
             EntKind::Plane => {
                 let f = self.frame_of(e);
                 vec![EntRef::point(f.origin as usize), EntRef::point(f.toward as usize)]
@@ -1314,7 +1258,7 @@ impl Sketch {
         match e.kind {
             EntKind::Spline => crate::curve::MIN_CTRL,
             EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc
-            | EntKind::Ellipse | EntKind::Plane | EntKind::Curve => {
+            | EntKind::Plane | EntKind::Curve => {
                 children.len()
             }
         }
@@ -1326,12 +1270,11 @@ impl Sketch {
     pub fn topology_key(&self) -> String {
         use std::fmt::Write;
         let mut s = format!(
-            "{}|{}|{}|{}|{}|{}|",
+            "{}|{}|{}|{}|{}|",
             self.points.len(),
             self.lines.len(),
             self.circles.len(),
             self.arcs.len(),
-            self.ellipses.len(),
             self.planes.len()
         );
         for sp in &self.splines {
@@ -1506,7 +1449,6 @@ impl Sketch {
             EntKind::Circle => self.circles.len(),
             EntKind::Arc => self.arcs.len(),
             EntKind::Spline => self.splines.len(),
-            EntKind::Ellipse => self.ellipses.len(),
             EntKind::Plane => self.planes.len(),
             EntKind::Curve => self.curves.len(),
         }
@@ -1521,7 +1463,6 @@ impl Sketch {
             EntKind::Circle,
             EntKind::Arc,
             EntKind::Spline,
-            EntKind::Ellipse,
             EntKind::Plane,
         ] {
             for i in 0..self.count(kind) {
@@ -1643,7 +1584,6 @@ impl Sketch {
                 let r = self.params[c.radius as usize].value.abs();
                 (cx - r, cy - r, cx + r, cy + r)
             }
-            EntKind::Ellipse => crate::ellipse::bounds(self, e.i()),
             EntKind::Plane => {
                 let f = self.frame_of(e);
                 let (ax, ay) = self.point_xy(f.origin as usize);
@@ -1788,7 +1728,6 @@ fn point_to(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
             ((px - cx).hypot(py - cy) - sk.radius_value(e).abs()).abs()
         }
         EntKind::Spline => crate::curve::distance_to(sk, e.i(), px, py),
-        EntKind::Ellipse => crate::ellipse::distance_to(sk, e.i(), px, py),
         // a datum is not a figure: the place it stands at is its origin
         EntKind::Plane => {
             let (x, y) = sk.point_xy(sk.frame_of(e).origin as usize);
@@ -1838,7 +1777,7 @@ pub fn point_to_drawn(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
         }
         // the kinds whose drawn figure *is* the entity: a point, a whole ring or rim, and a
         // curve that `curve::distance_to` already keeps between its own knots
-        EntKind::Point | EntKind::Circle | EntKind::Spline | EntKind::Ellipse => {
+        EntKind::Point | EntKind::Circle | EntKind::Spline => {
             point_to(sk, px, py, e)
         }
         // a plane draws its chord as a datum glyph, and that is where it is taken hold of; its
@@ -1895,8 +1834,7 @@ fn measure_order(k: EntKind) -> u8 {
         EntKind::Line => 1,
         EntKind::Circle | EntKind::Arc => 2,
         EntKind::Spline => 3,
-        EntKind::Ellipse => 4,
-        EntKind::Curve => 5,
+        EntKind::Curve => 4,
         // last, so any pair with a datum in it puts the datum second and one arm catches it
         EntKind::Plane => 6,
     }
@@ -1940,7 +1878,6 @@ pub fn on_radius(cx: f64, cy: f64, tx: f64, ty: f64, r: f64) -> Option<(f64, f64
 fn swept(sk: &Sketch, e: EntRef) -> Vec<(f64, f64)> {
     match e.kind {
         EntKind::Spline => crate::curve::sample(sk, e.i(), 64),
-        EntKind::Ellipse => crate::ellipse::sample(sk, e.i(), 64),
         // a datum is not a figure: the one place it stands at
         EntKind::Plane => vec![sk.point_xy(sk.frame_of(e).origin as usize)],
         _ => Vec::new(),
@@ -1972,7 +1909,7 @@ pub fn distance_between(sk: &Sketch, first: EntRef, second: EntRef) -> f64 {
         // would ask a curve for a centre it does not have.
         _ if matches!(
             b.kind,
-            EntKind::Spline | EntKind::Ellipse | EntKind::Plane
+            EntKind::Spline | EntKind::Plane
         ) => swept(sk, b)
             .into_iter()
             .map(|(x, y)| point_to(sk, x, y, a))

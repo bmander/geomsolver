@@ -169,7 +169,6 @@ fn remap_early(
     circle_map: &[Option<usize>],
     arc_map: &[Option<usize>],
     spline_map: &[Option<usize>],
-    ellipse_map: &[Option<usize>],
     plane_map: &[Option<usize>],
     e: EntRef,
 ) -> Option<EntRef> {
@@ -179,7 +178,6 @@ fn remap_early(
         EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
         EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
         EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
-        EntKind::Ellipse => ellipse_map[e.i()].map(EntRef::ellipse),
         EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
         // a curve is never another curve's argument: nothing in the language says so
         EntKind::Curve => None,
@@ -247,19 +245,6 @@ pub fn to_json(sk: &Sketch) -> Json {
             ])
         })
         .collect();
-    let ellipses: Vec<Json> = sk
-        .ellipses
-        .iter()
-        .map(|e| {
-            object([
-                ("center", (e.center as i64).into()),
-                ("major", (e.major as i64).into()),
-                ("b", sk.params[e.minor as usize].value.into()),
-                ("fixed", sk.params[e.minor as usize].fixed.into()),
-                ("class", class_json(&e.class)),
-            ])
-        })
-        .collect();
     let planes: Vec<Json> = sk
         .planes
         .iter()
@@ -313,7 +298,6 @@ pub fn to_json(sk: &Sketch) -> Json {
         ("circles", Json::Arr(circles)),
         ("arcs", Json::Arr(arcs)),
         ("splines", Json::Arr(splines)),
-        ("ellipses", Json::Arr(ellipses)),
         ("planes", Json::Arr(planes)),
         ("constraints", Json::Arr(constraints)),
         ("branches", Json::Obj(branches)),
@@ -389,12 +373,15 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         })?;
         sk.splines[si].class = read_class(s);
     }
-    for e in d.get("ellipses").unwrap_or(&empty).arr() {
-        let g = |k: &str| index(e.get(k).map(|v| v.as_i64()).unwrap_or(0), np, k);
-        let ei = sk.ellipse(g("center")?, g("major")?, e.get("b").map(|v| v.as_f64()).unwrap_or(0.0), "");
-        let bp = sk.ellipses[ei].minor as usize;
-        sk.params[bp].fixed = e.get("fixed").map(|v| v.as_bool()).unwrap_or(false);
-        sk.ellipses[ei].class = read_class(e);
+    // an ellipse is a library component now (`use std`, `curve e = Ellipse(f, a: …, b: …).p
+    // over u in (0, 360)` — issue #47, item 4) and a sketch document cannot say so, so one that
+    // carries the old table is refused rather than read short
+    if d.get("ellipses").is_some_and(|a| !a.arr().is_empty()) {
+        return Err(
+            "this document holds an ellipse entity, which is a library component now: write \
+             it as `curve e = Ellipse(f, a: …, b: …).p over u in (0, 360)` under `use std`"
+                .to_string(),
+        );
     }
     // a `frame` from a document written before it was folded into `plane` (issue #47, item 6):
     // read as a plane with the page's attitude, which is what a datum is; never written
@@ -625,23 +612,6 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         spline_map[i] = Some(ni);
         made.push(EntRef::spline(ni));
     }
-    let mut ellipse_map: Vec<Option<usize>> = vec![None; src.ellipses.len()];
-    for i in 0..src.ellipses.len() {
-        if !keep(EntRef::ellipse(i)) {
-            continue;
-        }
-        let el = &src.ellipses[i];
-        let (Some(c), Some(m)) = (pt_index(el.center as usize), pt_index(el.major as usize))
-        else {
-            continue;
-        };
-        let ni = dst.ellipse(c, m, src.params[el.minor as usize].value, "");
-        let bp = dst.ellipses[ni].minor as usize;
-        dst.params[bp].fixed = src.params[el.minor as usize].fixed;
-        dst.ellipses[ni].class = el.class.clone();
-        ellipse_map[i] = Some(ni);
-        made.push(EntRef::ellipse(ni));
-    }
     let mut plane_map: Vec<Option<usize>> = vec![None; src.planes.len()];
     for i in 0..src.planes.len() {
         if !keep(EntRef::plane(i)) {
@@ -679,7 +649,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let mut whole = true;
         for &a in &cv.args {
             match remap_early(&pt_index, &line_map, &circle_map, &arc_map, &spline_map,
-                              &ellipse_map, &plane_map, a) {
+                              &plane_map, a) {
                 Some(r) => args.push(r),
                 None => whole = false,
             }
@@ -702,7 +672,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             .iter()
             .filter_map(|&(e, j)| {
                 remap_early(&pt_index, &line_map, &circle_map, &arc_map, &spline_map,
-                            &ellipse_map, &plane_map, e)
+                            &plane_map, e)
                     .map(|r| (r, j))
             })
             .collect();
@@ -725,7 +695,6 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
             EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
             EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
-            EntKind::Ellipse => ellipse_map[e.i()].map(EntRef::ellipse),
             EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
             EntKind::Curve => curve_map[e.i()].map(|i| EntRef::new(EntKind::Curve, i)),
         }

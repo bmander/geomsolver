@@ -13,13 +13,12 @@ import {
 import { core, lastError, onInit, takeJson, takeStr, withBuf, withJson, withStr } from './wasm.js';
 
 export type SpecKind =
-  | 'point' | 'line' | 'circle' | 'arc' | 'circle_or_arc' | 'spline' | 'ellipse'
+  | 'point' | 'line' | 'circle' | 'arc' | 'circle_or_arc' | 'spline'
   | 'curve' | 'plane' | 'length' | 'angle' | 'float' | 'int' | 'str' | 'bool'
   | 'param';
 
 export const ENTITY_KINDS: ReadonlySet<string> =
-  new Set(['point', 'line', 'circle', 'arc', 'circle_or_arc', 'spline', 'ellipse', 'curve',
-           'plane']);
+  new Set(['point', 'line', 'circle', 'arc', 'circle_or_arc', 'spline', 'curve', 'plane']);
 export const DIMENSION_KINDS: ReadonlySet<string> = new Set(['length', 'angle']);
 /** A hidden unknown the constraint owns — where along a curve a contact sits.  It reads as the
  *  number the solver currently has it at and cannot be written: nobody states a curve
@@ -376,9 +375,8 @@ export function initTypes(): Record<string, ConstraintCtor> {
     Angle, ParallelDistance, EqualLength, PointOnLine, PointLineDistance, PointOnCircle, Radius,
     EqualRadius, AnnularDistance, TangentLineCircle, TangentCircleCircle, TangentArcLine,
     TangentLineCircleAt, Symmetric, PointOnSpline, SplineTangentLine, SplineCurvature,
-    HorizontalPoints, VerticalPoints, HorizontalDistance, VerticalDistance, PointOnEllipse,
-    EllipseTangentLine, EllipseCurvature, PointOnCurve, CurveTangentLine, CurveCurvature,
-    Project,
+    HorizontalPoints, VerticalPoints, HorizontalDistance, VerticalDistance, PointOnCurve,
+    CurveTangentLine, CurveCurvature, Project,
   } = CONSTRAINT_TYPES);
   return CONSTRAINT_TYPES;
 }
@@ -414,9 +412,6 @@ export let HorizontalPoints: ConstraintCtor;
 export let VerticalPoints: ConstraintCtor;
 export let HorizontalDistance: ConstraintCtor;
 export let VerticalDistance: ConstraintCtor;
-export let PointOnEllipse: ConstraintCtor;
-export let EllipseTangentLine: ConstraintCtor;
-export let EllipseCurvature: ConstraintCtor;
 /** The three contacts with a curve written in the language: a point on it, a line tangent to
  *  it, a circle osculating it.  Each owns the curve's parameter, as a spline's contacts do. */
 export let PointOnCurve: ConstraintCtor;

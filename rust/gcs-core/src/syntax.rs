@@ -1248,8 +1248,7 @@ pub fn kind_initial(k: EntKind) -> char {
         | EntKind::Line
         | EntKind::Circle
         | EntKind::Arc
-        | EntKind::Spline
-        | EntKind::Ellipse => k.as_str().chars().next().expect("every kind name has a letter"),
+        | EntKind::Spline => k.as_str().chars().next().expect("every kind name has a letter"),
     }
 }
 
@@ -1450,7 +1449,7 @@ impl Program {
 
 /* -- printing ---------------------------------------------------------------------- */
 
-/// How wide the entity keyword column is: `ellipse`, the longest of the six, and a constant — so
+/// How wide the entity keyword column is: seven, once `ellipse`'s length, and a constant — so
 /// the aligned look never makes one edit reflow the whole file.
 const KW: usize = 7;
 
@@ -2296,12 +2295,12 @@ fn ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
-// `port` and `frame` are retired and `ring` is not yet (bmander/geomsolver#47), and each is kept
-// here only so a document written with it is told what to write instead of reading the word as
-// a name
-const OPENERS: [&str; 12] = [
+// `port`, `frame` and `ellipse` are retired and `ring` is not yet (bmander/geomsolver#47), and
+// each is kept here only so a document written with it is told what to write instead of reading
+// the word as a name
+const OPENERS: [&str; 13] = [
     "claim", "component", "param", "port", "unit", "style", "branch", "repeat", "cycle", "ring",
-    "use", "frame",
+    "use", "frame", "ellipse",
 ];
 const BLOCKS: [&str; 2] = ["repeat", "cycle"];
 
@@ -3442,6 +3441,17 @@ impl<'a> P<'a> {
                     return None;
                 }
                 Some(StmtKind::Branch(Branch { key, value: v }))
+            }
+            "ellipse" => {
+                // a library component now (bmander/geomsolver#47, item 4): a computed point on
+                // a datum, traced as a curve, whose contacts are the curve's
+                self.fail(
+                    "`ellipse` is a library component now: `use std`, then \
+                     `curve e = Ellipse(f, a: …, b: …).p over u in (0, 360)` over a datum \
+                     `plane f(origin: c, toward: m)` — `p on e`, `e tangent l` and \
+                     `e curvature k` are the curve's contacts",
+                );
+                None
             }
             "frame" => {
                 // folded into `plane` (bmander/geomsolver#47, item 6): a plane with no attitude

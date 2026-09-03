@@ -294,10 +294,11 @@ pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
             s.arcs.len(),
             s.constraints.len(),
             s.splines.len(),
-            s.ellipses.len(),
+            // slot 7 was the ellipses', until the ellipse became a library component
+            // (#47, item 4), and slot 9 the frames', until `frame` was folded into `plane`
+            0,
             s.curves.len(),
             // appended, never inserted: the positions above are what the bindings hard-code
-            // (slot 9 was the frames', until `frame` was folded into `plane` — #47, item 6)
             0,
             s.planes.len(),
         ];
@@ -353,21 +354,6 @@ pub unsafe extern "C" fn gcs_sketch_arc(
 ) -> i32 {
     guard(-1, move || {
         sk(h).arc(center as usize, start as usize, end as usize, as_str(name, name_len)) as i32
-    })
-}
-
-/// An ellipse about `center` whose major axis ends at `major`, with minor radius `b`.
-#[no_mangle]
-pub unsafe extern "C" fn gcs_sketch_ellipse(
-    h: *mut Sketch,
-    center: i32,
-    major: i32,
-    b: f64,
-    name: *const u8,
-    name_len: usize,
-) -> i32 {
-    guard(-1, move || {
-        sk(h).ellipse(center as usize, major as usize, b, as_str(name, name_len)) as i32
     })
 }
 
@@ -452,22 +438,6 @@ pub unsafe extern "C" fn gcs_point_set_plane(h: *mut Sketch, idx: i32, plane: i3
     })
 }
 
-/// The minor radius that puts the rim of the ellipse (centre c, major end m) through (tx, ty)
-/// — the ellipse tool's third click, and where a rim drag holds the rim to the cursor.
-/// Negative when centre and major end coincide, which names no axis.
-#[no_mangle]
-pub extern "C" fn gcs_ellipse_minor(
-    cx: f64,
-    cy: f64,
-    mx: f64,
-    my: f64,
-    tx: f64,
-    ty: f64,
-) -> f64 {
-    guard(-1.0, move || {
-        gcs_core::ellipse::minor_to(cx, cy, mx, my, tx, ty).unwrap_or(-1.0)
-    })
-}
 
 /// A cubic B-spline over `n` control points, with the clamped uniform knot vector; -1 when
 /// there are too few of them for a cubic.
@@ -792,11 +762,10 @@ fn kind_id(k: EntKind) -> i32 {
         EntKind::Circle => 2,
         EntKind::Arc => 3,
         EntKind::Spline => 4,
-        EntKind::Ellipse => 5,
-        EntKind::Curve => 6,
-        // 7 was the frame's, until it was folded into the plane (#47, item 6); the binding
-        // decodes an id by indexing its list, so the ids stay contiguous
-        EntKind::Plane => 7,
+        // the ids stay contiguous — the binding decodes one by indexing its list — so the
+        // ellipse's (5) and the frame's (7) were taken up when those kinds went (#47)
+        EntKind::Curve => 5,
+        EntKind::Plane => 6,
     }
 }
 
@@ -806,9 +775,8 @@ fn ent(kind: i32, idx: i32) -> EntRef {
         1 => EntKind::Line,
         2 => EntKind::Circle,
         3 => EntKind::Arc,
-        5 => EntKind::Ellipse,
-        6 => EntKind::Curve,
-        7 => EntKind::Plane,
+        5 => EntKind::Curve,
+        6 => EntKind::Plane,
         _ => EntKind::Spline,
     };
     EntRef::new(k, idx as usize)
@@ -850,11 +818,7 @@ pub unsafe extern "C" fn gcs_entity_points(
                 vec![a.center as usize, a.start as usize, a.end as usize]
             }
             4 => s.splines[idx as usize].ctrl.iter().map(|&c| c as usize).collect(),
-            5 => {
-                let e = &s.ellipses[idx as usize];
-                vec![e.center as usize, e.major as usize]
-            }
-            7 | 8 => {
+            6 => {
                 let f = s.frame_of(ent(kind, idx));
                 vec![f.origin as usize, f.toward as usize]
             }
@@ -867,11 +831,11 @@ pub unsafe extern "C" fn gcs_entity_points(
     })
 }
 
-/// The radius Param index of a circle or arc, or an ellipse's minor radius (-1 otherwise).
+/// The radius Param index of a circle or arc (-1 otherwise).
 #[no_mangle]
 pub unsafe extern "C" fn gcs_entity_radius_param(h: *mut Sketch, kind: i32, idx: i32) -> i32 {
     guard(-1, move || {
-        if kind != 2 && kind != 3 && kind != 5 {
+        if kind != 2 && kind != 3 {
             return -1;
         }
         sk(h).round_radius(ent(kind, idx)) as i32
@@ -930,7 +894,6 @@ pub unsafe extern "C" fn gcs_styles_json(h: *mut Sketch) -> *mut u8 {
             ("circle", of(EntKind::Circle)),
             ("arc", of(EntKind::Arc)),
             ("spline", of(EntKind::Spline)),
-            ("ellipse", of(EntKind::Ellipse)),
             ("plane", of(EntKind::Plane)),
             ("curve", of(EntKind::Curve)),
         ]))

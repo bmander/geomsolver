@@ -4,7 +4,7 @@
 import * as C from '../core/constraints.js';
 import { Constraint, ENTITY_KINDS } from '../core/constraints.js';
 import {
-  Arc, Circle, Curve, Ellipse, Line, Plane, Point, Spline, angleBetween, distanceBetween,
+  Arc, Circle, Curve, Line, Plane, Point, Spline, angleBetween, distanceBetween,
   signedPointToLine,
 } from '../core/model.js';
 import { view } from './shell.js';
@@ -45,7 +45,6 @@ const INCIDENCE: Simple[] = [
   // a curve is one more row, not a branch: `applySimple` fills the spec's slots by kind, and
   // the contact's hidden parameter is not an entity slot so it is left for the core to seed
   ['On curve', C.PointOnSpline],
-  ['On ellipse', C.PointOnEllipse],
   // a curve written in the language takes the same contact, owning its own parameter
   ['On curve', C.PointOnCurve],
 ];
@@ -55,7 +54,7 @@ const INCIDENCE: Simple[] = [
  * cannot drift apart. */
 export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
   { label: 'Coincident', key: 'i', onClick: () => cCoincident(),
-    title: 'Two points meet · a point on a line · a point on a circle, arc, curve or ellipse' },
+    title: 'Two points meet · a point on a line · a point on a circle, arc or curve' },
   { label: 'Dimension', key: 'd', onClick: () => cDimension(),
     title: 'Put a number on the selection, then place it and type · a length, a radius, an '
          + 'offset, a ring · on two points, above them is the run and beside them the rise '
@@ -67,8 +66,8 @@ export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
   ...SIMPLE.map((c): ToolbarButton => ({ label: c[0], key: c[2], onClick: () => applySimple(c) })),
   { label: 'Equal', key: 'e', onClick: () => cEqual() },
   { label: 'Tangent', key: 't', onClick: () => cTangent(),
-    title: 'A line or a circle tangent to a circle/arc · a line tangent to a curve or ellipse '
-         + '· a circle taking a curve\'s or an ellipse\'s own radius where it touches' },
+    title: 'A line or a circle tangent to a circle/arc · a line tangent to a curve '
+         + '· a circle taking a curve\'s own radius where it touches' },
   { label: 'Symmetric', key: '⇧q', onClick: () => cSymmetric() },
   { label: 'Project', key: 'j', onClick: () => cProject(),
     title: 'Two points, each drawn in a view, are images of one point in space: what they '
@@ -80,7 +79,7 @@ export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
 
 type Sel = {
   pts: Point[]; lines: Line[]; circles: (Circle | Arc)[]; splines: Spline[];
-  ellipses: Ellipse[]; curves: Curve[]; planes: Plane[];
+  curves: Curve[]; planes: Plane[];
 };
 type Bin = keyof Sel;
 
@@ -91,7 +90,6 @@ function sel(): Sel {
     lines: s.filter((e): e is Line => e instanceof Line),
     circles: s.filter((e): e is Circle | Arc => e instanceof Circle || e instanceof Arc),
     splines: s.filter((e): e is Spline => e instanceof Spline),
-    ellipses: s.filter((e): e is Ellipse => e instanceof Ellipse),
     curves: s.filter((e): e is Curve => e instanceof Curve),
     planes: s.filter((e): e is Plane => e instanceof Plane),
   };
@@ -103,16 +101,15 @@ function binOf(kind: string): Bin | null {
   if (kind === 'point') return 'pts';
   if (kind === 'line') return 'lines';
   if (kind === 'spline') return 'splines';
-  if (kind === 'ellipse') return 'ellipses';
   if (kind === 'curve') return 'curves';
   if (kind === 'plane') return 'planes';
   return ENTITY_KINDS.has(kind) ? 'circles' : null;   // a circle or an arc, whichever is picked
 }
 
-const BINS: Bin[] = ['pts', 'lines', 'circles', 'splines', 'ellipses', 'curves', 'planes'];
+const BINS: Bin[] = ['pts', 'lines', 'circles', 'splines', 'curves', 'planes'];
 const BIN_WORD: Record<Bin, string> = {
   pts: 'point(s)', lines: 'line(s)', circles: 'circle(s)/arc(s)', splines: 'spline(s)',
-  ellipses: 'ellipse(s)', curves: 'curve(s)', planes: 'plane(s)',
+  curves: 'curve(s)', planes: 'plane(s)',
 };
 
 /** How many of each bin a class wants — counted off its spec, the one statement of it. */
@@ -168,7 +165,7 @@ function applySimple([, cls]: Simple): void {
 function cCoincident(): void {
   const hit = INCIDENCE.find(([, cls]) => fits(cls));
   if (!need(!!hit,
-            'two points, a point and a line, or a point and a circle/arc/curve/ellipse')) return;
+            'two points, a point and a line, or a point and a circle/arc/curve')) return;
   applySimple(hit as Simple);
 }
 
@@ -314,15 +311,14 @@ function cSymmetric(): void {
 }
 
 function cTangent(): void {
-  const { lines, circles, splines, ellipses, curves } = sel();
+  const { lines, circles, splines, curves } = sel();
   /* The two parametric families take the same pair of contacts, for the same reasons, so they
    * are one table and not two blocks: against a line it is a tangency — one constraint owning
    * one parameter, since split in half it would be a point on the rim and a direction somewhere
    * else on it — and against a circle it is a curvature, which says not just the direction there
    * but how hard it turns, so the circle becomes that rim's own radius where it touches. */
-  const RIMS: [Spline[] | Ellipse[] | Curve[], C.ConstraintCtor, C.ConstraintCtor, string][] = [
+  const RIMS: [Spline[] | Curve[], C.ConstraintCtor, C.ConstraintCtor, string][] = [
     [splines, C.SplineTangentLine, C.SplineCurvature, 'a curve'],
-    [ellipses, C.EllipseTangentLine, C.EllipseCurvature, 'an ellipse'],
     // a curve written in the language: the same two contacts, over the definition's frame —
     // and against a traced curve the curvature is refused by the core, which says why
     [curves, C.CurveTangentLine, C.CurveCurvature, 'a curve'],

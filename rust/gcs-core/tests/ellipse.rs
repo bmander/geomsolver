@@ -1,216 +1,183 @@
-//! The ellipse as a drawing element: it saves, grafts, picks and takes a rim contact.
-use gcs_core::constraints::Constraint;
-use gcs_core::model::{pick, EntKind, EntRef, Sketch};
+//! The ellipse as a library component (issue #47, item 4): `Ellipse` in `std`, a computed point
+//! at eccentric angle `u` on a datum, traced as a curve — so `on`, `tangent` and `curvature`
+//! are the curve contacts, exact to third order, and there is no entity kind, no kernel and no
+//! `CKind` of its own.  Nothing below states the ellipse's equation to the solver; each answer
+//! is checked against the closed form it never saw.
+
+use gcs_core::constraints::CKind;
+use gcs_core::model::{pick, EntKind, EntRef};
+use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
-use gcs_core::{diagnose, ellipse, io};
 
-fn with_ellipse() -> (Sketch, usize) {
-    let mut sk = Sketch::new();
-    let c = sk.point(10.0, 5.0, false, "c");
-    let m = sk.point(18.0, 5.0, false, "m");
-    let e = sk.ellipse(c, m, 3.0, "e");
-    (sk, e)
+use crate::common::fd_jacobian;
+
+/// An ellipse of semi-axes 8 and 3 about (10, 5), its major axis along the page's x.
+const ELLIPSE: &str = "\
+use std
+point o hint(x: 10, y: 5)
+point q hint(x: 18, y: 5)
+plane f(origin: o, toward: q) class construction
+curve e = Ellipse(f, a: 8, b: 3).p over u in (0, 360)
+ground o
+ground q
+";
+
+fn build(src: &str) -> Elaborated {
+    let (prog, errs, linked) = gcs_core::library::parse_linked(src);
+    assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
+    assert!(linked.is_empty(), "{linked:?}");
+    let e = elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    e
 }
 
-/// In the ellipse's own frame the rim satisfies (x/a)² + (y/b)² = 1.
-fn on_rim(sk: &Sketch, e: usize, x: f64, y: f64) -> f64 {
-    let g = ellipse::geom(sk, e);
-    let (wx, wy) = (x - g.cx, y - g.cy);
-    let xx = (wx * g.ux + wy * g.uy) / g.a;
-    let yy = (g.ux * wy - g.uy * wx) / g.a;
-    (xx / g.a) * (xx / g.a) + (yy / g.b) * (yy / g.b) - 1.0
+/// The contact's parameter — the one curve contact's, not the datum's alignment, which owns a
+/// parameter of its own (the chord's length).
+fn param_of(e: &Elaborated) -> f64 {
+    let c = e
+        .sketch
+        .constraints
+        .iter()
+        .find(|c| matches!(c.kind, CKind::PointOnCurve | CKind::CurveTangentLine | CKind::CurveCurvature))
+        .unwrap();
+    e.sketch.params[c.aux_params()[0] as usize].value
 }
 
-#[test]
-fn round_trips_through_json() {
-    let (mut sk, e) = with_ellipse();
-    sk.ellipses[e].class = gcs_core::style::Classes::one("construction");
-    let bp = sk.ellipses[e].minor as usize;
-    sk.params[bp].fixed = true;
-    let p = sk.point(13.0, 7.0, false, "p");
-    sk.add(Constraint::point_on_ellipse(&sk, EntRef::point(p), EntRef::ellipse(e)));
-    let back = io::loads(&io::dumps(&sk, None)).unwrap();
-    assert_eq!(back.ellipses.len(), 1);
-    let be = &back.ellipses[0];
-    assert!(be.class.has("construction"));
-    assert_eq!(back.params[be.minor as usize].value, 3.0);
-    assert!(back.params[be.minor as usize].fixed);
-    assert_eq!(back.constraints.len(), 1);
-    assert_eq!(back.constraints[0].type_name(), "PointOnEllipse");
+fn at(e: &Elaborated, name: &str) -> (f64, f64) {
+    e.sketch.point_xy(e.map.ent_named(name).unwrap().i())
 }
 
-#[test]
-fn a_copy_keeps_the_ellipse_and_its_contact() {
-    let (mut sk, e) = with_ellipse();
-    let p = sk.point(13.0, 7.0, false, "p");
-    sk.add(Constraint::point_on_ellipse(&sk, EntRef::point(p), EntRef::ellipse(e)));
-    let clip = io::copy(&sk, &[EntRef::ellipse(e), EntRef::point(p)]);
-    assert_eq!(clip.ellipses.len(), 1);
-    assert_eq!(clip.constraints.len(), 1);
-    // deleting the centre takes the ellipse and the contact with it
-    let cut = io::without(&sk, &[EntRef::point(sk.ellipses[e].center as usize)], &[]);
-    assert_eq!(cut.ellipses.len(), 0);
-    assert_eq!(cut.constraints.len(), 0);
+/// (x/a)² + (y/b)² − 1 in the datum's own frame, at bearing `th` from the page.
+fn on_rim(x: f64, y: f64, cx: f64, cy: f64, th: f64, a: f64, b: f64) -> f64 {
+    let (wx, wy) = (x - cx, y - cy);
+    let xx = wx * th.cos() + wy * th.sin();
+    let yy = -wx * th.sin() + wy * th.cos();
+    (xx / a) * (xx / a) + (yy / b) * (yy / b) - 1.0
 }
 
-#[test]
-fn the_rim_is_picked_and_bounded() {
-    let (sk, e) = with_ellipse();
-    // the top of the rim is a minor radius above the centre
-    let hit = pick(&sk, 10.0, 8.05, 0.2).expect("the rim is within reach");
-    assert_eq!(hit, EntRef::ellipse(e));
-    assert!(pick(&sk, 12.0, 5.8, 0.2).is_none(), "the inside of an ellipse is empty space");
-    let (x0, y0, x1, y1) = sk.bounds(EntRef::ellipse(e));
-    assert!((x0 - 2.0).abs() < 1e-12 && (x1 - 18.0).abs() < 1e-12);
-    assert!((y0 - 2.0).abs() < 1e-12 && (y1 - 8.0).abs() < 1e-12);
+/// The point at eccentric angle `u` (degrees), and the rim's radius of curvature there.
+fn rim_at(u: f64, a: f64, b: f64) -> ((f64, f64), f64) {
+    let (s, c) = u.to_radians().sin_cos();
+    let rho = (a * a * s * s + b * b * c * c).powf(1.5) / (a * b);
+    ((10.0 + a * c, 5.0 + b * s), rho)
 }
 
 #[test]
-fn a_point_solves_onto_the_rim() {
-    let (mut sk, e) = with_ellipse();
-    sk.fix_point(sk.ellipses[e].center as usize, true);
-    sk.fix_point(sk.ellipses[e].major as usize, true);
-    let bp = sk.ellipses[e].minor as usize;
-    sk.params[bp].fixed = true;
-    let p = sk.point(11.0, 9.0, false, "p");
-    sk.add(Constraint::point_on_ellipse(&sk, EntRef::point(p), EntRef::ellipse(e)));
-    let r = solve(&mut sk, SolveOpts::default());
+fn a_point_solves_onto_the_rim_at_its_eccentric_angle() {
+    let mut e = build(&format!("{ELLIPSE}point p hint(x: 11, y: 9)\np on e hint(t: 80)\n"));
+    fd_jacobian(&e.sketch, 1e-5);
+    let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
-    let (x, y) = sk.point_xy(p);
-    assert!(on_rim(&sk, e, x, y).abs() < 1e-6, "left the rim by {}", on_rim(&sk, e, x, y));
-}
-
-#[test]
-fn a_bare_ellipse_has_its_five_dof() {
-    let (mut sk, _) = with_ellipse();
-    // the diagnosis needs an equation to look at; a rim contact spends the point's 2 less its 1
-    let p = sk.point(13.0, 7.0, false, "p");
-    sk.add(Constraint::point_on_ellipse(&sk, EntRef::point(p), EntRef::ellipse(0)));
-    let d = diagnose::diagnose(&mut sk, Default::default());
-    assert_eq!(d.dof, 6, "5 for the ellipse, net 1 for a point held to its rim");
-    assert_eq!(d.entity_state.get(&EntRef::ellipse(0)).map(|s| s.as_str()), Some("under"));
-}
-
-#[test]
-fn minor_to_puts_the_rim_through_the_target() {
-    let (mut sk, e) = with_ellipse();
-    let b = ellipse::minor_to(10.0, 5.0, 18.0, 5.0, 12.0, 7.5).unwrap();
-    let bp = sk.ellipses[e].minor as usize;
-    sk.params[bp].value = b;
-    assert!(on_rim(&sk, e, 12.0, 7.5).abs() < 1e-9);
-    // past the end of the major axis nothing reaches the target; the answer stays finite
-    assert!(ellipse::minor_to(10.0, 5.0, 18.0, 5.0, 19.0, 5.1).unwrap().is_finite());
-    assert!(ellipse::minor_to(10.0, 5.0, 10.0, 5.0, 12.0, 7.5).is_none());
+    let (x, y) = at(&e, "p");
+    assert!(on_rim(x, y, 10.0, 5.0, 0.0, 8.0, 3.0).abs() < 1e-6, "left the rim: {x}, {y}");
+    // the parameter is the eccentric angle, and the contact is the point at it
+    let t = param_of(&e);
+    let (want, _) = rim_at(t, 8.0, 3.0);
+    assert!((x - want.0).abs() < 1e-6 && (y - want.1).abs() < 1e-6, "{t}: {x}, {y}");
 }
 
 #[test]
 fn a_line_solves_tangent_to_the_rim() {
-    let (mut sk, e) = with_ellipse();
-    sk.fix_point(sk.ellipses[e].center as usize, true);
-    sk.fix_point(sk.ellipses[e].major as usize, true);
-    let bp = sk.ellipses[e].minor as usize;
-    sk.params[bp].fixed = true;
-    // a line above the ellipse, level; both endpoints free to fall onto the rim
-    let a = sk.point(4.0, 10.0, false, "a");
-    let b = sk.point(16.0, 10.0, false, "b");
-    let l = sk.line(a, b);
-    sk.add(Constraint::ellipse_tangent_line(&sk, EntRef::ellipse(e), EntRef::line(l)));
-    let r = solve(&mut sk, SolveOpts::default());
+    // a level line above the ellipse, one end grounded, the other 12 away and free to fall
+    let mut e = build(&format!(
+        "{ELLIPSE}point a hint(x: 4, y: 10)\npoint b hint(x: 16, y: 10)\nline l(a, b)\n\
+         ground a\na distance(12) b\ne tangent l hint(t: 90)\n"
+    ));
+    fd_jacobian(&e.sketch, 1e-5);
+    let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
-    // tangent: the whole rim is on one side of the line and just touches it
-    let (ax, ay) = sk.point_xy(a);
-    let (bx, by) = sk.point_xy(b);
-    let (dx, dy) = (bx - ax, by - ay);
+    let (a, b) = (at(&e, "a"), at(&e, "b"));
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
     let len = dx.hypot(dy);
-    let mut min_d: f64 = f64::INFINITY;
-    let mut max_d: f64 = f64::NEG_INFINITY;
-    for (x, y) in ellipse::sample(&sk, e, 256) {
-        let d = (dx * (y - ay) - dy * (x - ax)) / len;
-        min_d = min_d.min(d);
-        max_d = max_d.max(d);
+    // through the contact and along the rim's tangent there, in the closed form
+    let t = param_of(&e);
+    let ((px, py), _) = rim_at(t, 8.0, 3.0);
+    let (s, co) = t.to_radians().sin_cos();
+    let (tx, ty) = (-8.0 * s, 3.0 * co);
+    assert!((dx * ty - dy * tx).abs() < 1e-6 * len * tx.hypot(ty), "direction at u = {t}");
+    let off = ((px - a.0) * dy - (py - a.1) * dx).abs() / len;
+    assert!(off < 1e-6, "the contact point is {off} off the line");
+    // and touching from one side: every rim point's signed distance shares a sign
+    let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+    for k in 0..720 {
+        let ((x, y), _) = rim_at(0.5 * k as f64, 8.0, 3.0);
+        let d = (dx * (y - a.1) - dy * (x - a.0)) / len;
+        lo = lo.min(d);
+        hi = hi.max(d);
     }
-    // touching from one side: the signed distances all share a sign and the nearest is ~0
-    assert!(min_d.abs().min(max_d.abs()) < 1e-6, "gap {} .. {}", min_d, max_d);
-    assert!(min_d * max_d >= -1e-9, "the line crosses the rim: {} .. {}", min_d, max_d);
+    assert!(lo * hi >= -1e-9, "the line crosses the rim: {lo} .. {hi}");
 }
 
 #[test]
 fn a_circle_solves_onto_the_osculating_circle() {
-    let (mut sk, e) = with_ellipse();
-    sk.fix_point(sk.ellipses[e].center as usize, true);
-    sk.fix_point(sk.ellipses[e].major as usize, true);
-    let bp = sk.ellipses[e].minor as usize;
-    sk.params[bp].fixed = true;
-    // a circle near the major end, centre and radius free
-    let cc = sk.point(16.0, 5.5, false, "cc");
-    let ci = sk.circle(cc, 2.0, "c");
-    sk.add(Constraint::ellipse_curvature(&sk, EntRef::ellipse(e), EntRef::circle(ci)));
-    let r = solve(&mut sk, SolveOpts::default());
+    // a circle near the major end, centre and radius free: a computed point's frame is exact
+    // to third order, so the curvature is not refused as a traced curve's is
+    let mut e = build(&format!(
+        "{ELLIPSE}point k hint(x: 16, y: 5.5)\ncircle c(center: k) hint(r: 2)\n\
+         e curvature c hint(t: 10)\n"
+    ));
+    fd_jacobian(&e.sketch, 1e-5);
+    let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
-    // the circle is the rim's own: centre at the centre of curvature, radius the rim's radius
-    let t = sk.constraints[0].args[2].value(&sk);
-    let g = ellipse::geom(&sk, e);
-    let p = g.point_at(t);
-    let (d1, d2) = g.derivs(t);
-    let q = d1.0 * d1.0 + d1.1 * d1.1;
-    let turn = d1.0 * d2.1 - d1.1 * d2.0;
-    let want_r = q.powf(1.5) / turn.abs();
-    let want_c = (p.0 + (q / turn) * -d1.1, p.1 + (q / turn) * d1.0);
-    let (cx, cy) = sk.point_xy(cc);
-    assert!((cx - want_c.0).abs() < 1e-6 && (cy - want_c.1).abs() < 1e-6);
-    assert!((sk.radius_value(EntRef::circle(ci)).abs() - want_r).abs() < 1e-6);
+    let t = param_of(&e);
+    let ((px, py), rho) = rim_at(t, 8.0, 3.0);
+    let c = e.map.ent_named("c").unwrap();
+    let radius = e.sketch.params[e.sketch.circles[c.i()].radius as usize].value.abs();
+    assert!((radius - rho).abs() < 1e-6, "radius {radius} against ρ = {rho} at u = {t}");
+    // the centre of curvature: inward along the normal by ρ
+    let (s, co) = t.to_radians().sin_cos();
+    let (d1x, d1y) = (-8.0 * s, 3.0 * co);
+    let n = d1x.hypot(d1y);
+    let want = (px - rho * d1y / n, py + rho * d1x / n);
+    let k = at(&e, "k");
+    assert!((k.0 - want.0).abs() < 1e-6 && (k.1 - want.1).abs() < 1e-6, "{k:?} against {want:?}");
+}
+
+/// The rim stands on its datum: turn the datum and the ellipse turns with it, its contact
+/// solved back onto the turned rim.
+#[test]
+fn the_rim_turns_with_its_datum() {
+    let mut e = build(&format!("{ELLIPSE}point p hint(x: 11, y: 9)\np on e hint(t: 80)\n"));
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    // the datum swings to 90°: q goes from (18, 5) to (10, 13)
+    let q = e.map.ent_named("q").unwrap();
+    let ps = e.sketch.point_params(q.i());
+    e.sketch.params[ps[0] as usize].value = 10.0;
+    e.sketch.params[ps[1] as usize].value = 13.0;
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let (x, y) = at(&e, "p");
+    let th = std::f64::consts::FRAC_PI_2;
+    assert!(on_rim(x, y, 10.0, 5.0, th, 8.0, 3.0).abs() < 1e-6, "off the turned rim: {x}, {y}");
+    assert!(on_rim(x, y, 10.0, 5.0, 0.0, 8.0, 3.0).abs() > 1e-3, "the rim did not turn");
 }
 
 #[test]
-fn distance_is_measured_to_the_rim() {
-    let (sk, e) = with_ellipse();
-    let p = EntRef::point(0); // the centre point, 3 world units inside the rim at the top
-    let d = gcs_core::model::distance_between(&sk, p, EntRef::ellipse(e));
-    assert!((d - 3.0).abs() < 1e-9, "centre to rim is the minor radius, got {d}");
-    assert_eq!(sk.count(EntKind::Ellipse), 1);
+fn the_rim_is_picked_and_bounded() {
+    let e = build(ELLIPSE);
+    let cv = e.map.ent_named("e").unwrap();
+    assert_eq!(cv.kind, EntKind::Curve);
+    // the top of the rim is a minor radius above the centre
+    assert_eq!(pick(&e.sketch, 10.0, 8.02, 0.2), Some(cv));
+    assert!(pick(&e.sketch, 12.0, 5.8, 0.2).is_none(), "the inside of an ellipse is empty space");
+    let (x0, y0, x1, y1) = e.sketch.bounds(EntRef::new(EntKind::Curve, cv.i()));
+    assert!((x0 - 2.0).abs() < 1e-3 && (x1 - 18.0).abs() < 1e-3, "{x0} .. {x1}");
+    assert!((y0 - 2.0).abs() < 1e-3 && (y1 - 8.0).abs() < 1e-3, "{y0} .. {y1}");
 }
 
-/// A contact's parameter is scaled by what one unit of it is worth in world length, and that is
-/// read off the ellipse at *compile* time — not off the seed the Param kept from when the
-/// constraint was added.  Resize the ellipse and the next System must scale the t column by the
-/// new size, or a tangency that converges at one size stalls at ten times it.
+/// The axes are values the curve takes, stated or read from a `param` — a curve written in
+/// place is given every value, and a component of one computed point cannot be drawn as an
+/// instance whose formal is left free (nothing on the sheet holds a point to a formula).  So
+/// an axis left out is refused where the curve is written, naming the formal.
 #[test]
-fn a_rim_parameters_scale_is_a_fact_about_the_compile() {
-    let (mut sk, e) = with_ellipse();
-    let p = sk.point(11.0, 9.0, false, "p");
-    sk.add(Constraint::point_on_ellipse(&sk, EntRef::point(p), EntRef::ellipse(e)));
-    let t = sk.constraints[0].parametric_contact().expect("a rim contact").1;
-    let col = |sk: &Sketch| {
-        let sys = gcs_core::system::System::new(sk);
-        let i = sys.free.iter().position(|&f| f == t as i32).expect("t is free");
-        sys.col_scale[i]
-    };
-    let before = col(&sk);
-    // ten times the size, without touching the constraint the seed lives on
-    let (mx, my) = sk.point_xy(sk.ellipses[e].major as usize);
-    sk.params[sk.points[sk.ellipses[e].major as usize].x as usize].value = 10.0 * (mx - 10.0) + 10.0;
-    let _ = my;
-    sk.params[sk.ellipses[e].minor as usize].value = 30.0;
-    let after = col(&sk);
-    assert!(after > 5.0 * before, "scale stayed at the seed: {before} -> {after}");
-}
-
-/// Every pair whose second entity has to be *swept* to be measured goes through one arm, and
-/// that arm sits above the ones that reach for a centre and a radius.  A line against a curve
-/// used to fall past it into the round arm and ask a spline for a centre it does not have.
-#[test]
-fn a_swept_kind_is_measured_against_a_line() {
-    let (mut sk, e) = with_ellipse();
-    let a = sk.point(0.0, 30.0, false, "a");
-    let b = sk.point(40.0, 30.0, false, "b");
-    let l = EntRef::line(sk.line(a, b));
-    // the rim's top is at y = 8, so a level line at y = 30 is 22 away
-    let d = gcs_core::model::distance_between(&sk, l, EntRef::ellipse(e));
-    assert!((d - 22.0).abs() < 0.05, "line to rim, got {d}");
-    let ctrl: Vec<usize> = (0..4)
-        .map(|i| sk.point(4.0 * i as f64, 50.0 + 2.0 * (i % 2) as f64, false, "k"))
-        .collect();
-    let sp = EntRef::spline(sk.spline(&ctrl).expect("four control points make a cubic"));
-    let d = gcs_core::model::distance_between(&sk, l, sp);
-    assert!(d.is_finite() && d > 0.0, "line to curve, got {d}");
+fn an_axis_left_out_is_refused_by_name() {
+    let (prog, errs, _) = gcs_core::library::parse_linked(
+        "use std\npoint o hint(x: 10, y: 5)\npoint q hint(x: 18, y: 5)\n\
+         plane f(origin: o, toward: q)\ncurve e = Ellipse(f, a: 8).p over u in (0, 360)\n",
+    );
+    assert!(errs.is_empty());
+    let e = elaborate(&prog);
+    let m: Vec<String> = e.errors().map(|d| d.message.clone()).collect();
+    assert!(m.iter().any(|m| m.contains("`Ellipse` was not given `b`")), "{m:?}");
 }

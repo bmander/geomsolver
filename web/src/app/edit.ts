@@ -4,7 +4,7 @@
 import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
 import { Constraint, sameConstraint } from '../core/constraints.js';
-import { Arc, Circle, Ellipse, Line, Point, Spline } from '../core/model.js';
+import { Arc, Circle, Line, Point, Spline } from '../core/model.js';
 import { SolveResult } from '../core/system.js';
 import type { SketchView } from './view.js';
 
@@ -117,15 +117,14 @@ export function deleteSelected(v: SketchView): void {
   if (v.apply(v.doc.remove(v.selected), `deleted ${n} entities`)) v.onSelect();
 }
 
-/** Flip reference/normal on the selected lines, circles, arcs and ellipses. */
+/** Flip reference/normal on the selected lines, circles and arcs. */
 export function toggleConstructionSelected(v: SketchView): void {
   if (!v.mayEdit()) return;
   const ents = v.selected.filter(
-    (e): e is Line | Circle | Arc | Ellipse =>
-      e instanceof Line || e instanceof Circle || e instanceof Arc || e instanceof Ellipse,
+    (e): e is Line | Circle | Arc => e instanceof Line || e instanceof Circle || e instanceof Arc,
   );
   if (!ents.length) {
-    v.onStatus('select line(s), circle(s), arc(s) or ellipse(s) to toggle reference geometry');
+    v.onStatus('select line(s), circle(s) or arc(s) to toggle reference geometry');
     return;
   }
   v.pushUndo();

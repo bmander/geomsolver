@@ -33,8 +33,6 @@ fn all_constraints(seed: u32) -> Sketch {
     // six control points: three spans, so a contact is checked on an interior span too
     let ctrl: Vec<usize> = (0..6).map(|_| pt(&mut sk, &mut rng)).collect();
     let sp = sk.spline(&ctrl).unwrap();
-    let (ec, em) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
-    let el = sk.ellipse(ec, em, rng.uniform(1.0, 11.0), "el");
     let (fo, ft) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
     let fr = sk.plane(fo, ft, gcs_core::plane::Basis::page(), "f");
     // two planes at random, the page's and one folded from it, with `p` and `q` as images on
@@ -95,12 +93,6 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::spline_tangent_line(&sk, spe, le2),
         Constraint::spline_curvature(&sk, spe, ce1),
         Constraint::spline_curvature(&sk, spe, ae),
-        Constraint::point_on_ellipse(&sk, pe, EntRef::ellipse(el)),
-        Constraint::point_on_ellipse(&sk, qe, EntRef::ellipse(el)),
-        Constraint::ellipse_tangent_line(&sk, EntRef::ellipse(el), le1),
-        Constraint::ellipse_tangent_line(&sk, EntRef::ellipse(el), le2),
-        Constraint::ellipse_curvature(&sk, EntRef::ellipse(el), ce1),
-        Constraint::ellipse_curvature(&sk, EntRef::ellipse(el), ae),
         // the frame's own intrinsics were cleared with everything else below, so both are
         // restated here to be checked like any other rows
         Constraint::frame_unit(EntRef::plane(fr)),

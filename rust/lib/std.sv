@@ -43,3 +43,22 @@ component ThreeViews(o: point, right: Length, up: Length) {
   top_origin distance(0, along: y) qt
   plane top(origin: top_origin, toward: qt, from: front, fold: 0deg)
 }
+
+// An ellipse, as a curve: the point at eccentric angle `u` on the ellipse of semi-axes `a` and
+// `b` standing on the datum `f` — its centre at `f.origin`, its major axis along the datum's
+// bearing.  A computed point, so every contact is exact to third order: `p on e` holds a point
+// to the rim, `e tangent l` a line to it, `e curvature k` makes `k` the rim's osculating circle.
+//
+//   use std
+//   point o hint(x: 0, y: 0)
+//   point q hint(x: 40, y: 0)
+//   plane f(origin: o, toward: q)
+//   curve e = Ellipse(f, a: 40, b: 25).p over u in (0, 360)
+//
+// The axes are formals: leave one free and a dimension that reads the rim sizes it (issue #47,
+// item 4 — this replaces the entity kind the language once had, whose rim, tangent and
+// curvature were three kernels of their own).
+component Ellipse(f: plane, a: Length, b: Length, u: Angle) {
+  point p = ( f.origin.x + a * cos(u) * cos(f.angle) - b * sin(u) * sin(f.angle),
+              f.origin.y + a * cos(u) * sin(f.angle) + b * sin(u) * cos(f.angle) )
+}

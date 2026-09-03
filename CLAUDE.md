@@ -1186,6 +1186,18 @@ Conventions:
   every cluster a neighbour of every other.  `relation_bound` must stay an upper bound on the
   merge rank (an under-count loses a determined merge to the numeric fallback): validate a change
   by forcing the factorisation on every call and asserting `rank <= bound` across the cases.
+- **The ellipse is a library component** (issue #47, item 4): `Ellipse(f: plane, a, b, u)` in
+  `rust/lib/std.sv`, a computed point at eccentric angle `u` on a datum, traced as a curve — so
+  `p on e`, `e tangent l` and `e curvature k` are the curve contacts, exact to third order, and
+  the entity kind with its three kernels and three `CKind`s is gone from every exhaustive arm,
+  the FFI, the binding and the app (the ellipse *tool* went with it: a tool that writes a
+  `use std`, a datum and a curve statement is a follow-up).  The parser keeps the word only to
+  refuse it, naming the spelling; `io::from_json` refuses a document carrying the old
+  `"ellipses"` table rather than reading it short.  `tests/ellipse.rs` holds the rim, the
+  tangent and the osculating circle against the closed forms the document never states, and
+  the rim turning with its datum.  An axis is a value the curve takes — stated or a `param` —
+  since a curve written in place is given every value and a component of one computed point
+  cannot be drawn as an instance whose formal is left free.
 - **A curve is a point of a component, as one of its numeric formals runs** (Solvent §6.5).
   There is no curve family: `curve path = leg.toe over theta in (0, 360)` asks a *drawn*
   instance where one of its points goes as one of its formals runs, and

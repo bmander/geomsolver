@@ -131,7 +131,7 @@ fn every_constraint_type_is_printable() {
 #[test]
 fn every_constraint_name_survives_the_case_round_trip() {
     let words = [
-        "point", "line", "circle", "arc", "spline", "ellipse", "frame", "plane", "at", "knots",
+        "point", "line", "circle", "arc", "spline", "plane", "at", "knots",
         "class", "in",
         "ground", "fix", "ccw", "cw", "branch", "component", "port", "param", "ring", "repeat",
         "cycle", "path", "true", "false",
@@ -176,7 +176,6 @@ fn the_document_uses_the_field_names() {
         ("lines", EntKind::Line),
         ("circles", EntKind::Circle),
         ("arcs", EntKind::Arc),
-        ("ellipses", EntKind::Ellipse),
         ("planes", EntKind::Plane),
     ] {
         let Some(first) = doc.get(plural).and_then(|a| a.arr().first()) else { continue };
@@ -350,7 +349,6 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     let c3 = sk.circle(p, 5.0, "c3");
     let ac = sk.point(20.0, 20.0, false, "ac");
     let a1 = sk.arc(ac, r, s, "a1");
-    let el = sk.ellipse(r, s, 6.0, "el");
     let ctrl: Vec<usize> = (0..4)
         .map(|i| sk.point(60.0 + 10.0 * i as f64, 5.0 * i as f64, false, &format!("k{i}")))
         .collect();
@@ -372,7 +370,6 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
             SpecKind::Circle | SpecKind::CircleOrArc => Arg::Ent(EntRef::circle(c1)),
             SpecKind::Arc => Arg::Ent(EntRef::arc(a1)),
             SpecKind::Spline => Arg::Ent(EntRef::spline(sp)),
-            SpecKind::Ellipse => Arg::Ent(EntRef::ellipse(el)),
             SpecKind::Plane => Arg::Ent(EntRef::plane(pa)),
             SpecKind::Length => Arg::Num(12.0),
             SpecKind::Angle => Arg::Num(0.5),

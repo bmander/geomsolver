@@ -755,8 +755,6 @@ fn an_unwritten_radius_starts_off_zero_and_a_conflict_names_no_intrinsic() {
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let r = sk.params[sk.circles[0].radius as usize].value;
     assert!((r - 10.0).abs() < 1e-9, "r = {r}");
-    let e = read("point o hint(x: 0, y: 0)\npoint m hint(x: 30, y: 0)\nellipse e(center: o, major: m)\n");
-    assert!(e.sketch.params[e.sketch.ellipses[0].minor as usize].value > 0.0);
     // a written seed still wins, including a written 0
     let e = read("point c hint(x: 0, y: 0)\narc k(center: c) hint(r: 0)\n");
     assert_eq!(e.sketch.params[e.sketch.arcs[0].radius as usize].value, 0.0);

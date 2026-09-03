@@ -706,7 +706,6 @@ pub fn elaborate(p: &Program) -> Elaborated {
         EntKind::Circle,
         EntKind::Arc,
         EntKind::Spline,
-        EntKind::Ellipse,
         EntKind::Plane,
         EntKind::Curve,
     ] {
@@ -1832,7 +1831,7 @@ fn build(
     // `hint(r:)` could not solve at all, and a conflict elsewhere in the drawing was blamed on
     // the arc's own intrinsic, the first row a search from that pose could not satisfy (#45.6).
     // So a radius is *written or computed*, never defaulted: the constructor's geometric one for
-    // an arc, half the major axis for an ellipse, `UNSEEDED_RADIUS` for a circle and wherever the
+    // an arc, `UNSEEDED_RADIUS` for a circle and wherever the
     // geometry gives nothing.  A declaration lifted from a sketch has no spans and carries its
     // numbers, as for a point above.
     let wrote = |i: usize| {
@@ -1884,16 +1883,6 @@ fn build(
                     return None;
                 }
             }
-        }
-        EntKind::Ellipse => {
-            let b = if wrote(0) {
-                seed(0)
-            } else {
-                let (cx, cy) = sk.point_xy(kids[0]);
-                let (mx, my) = sk.point_xy(kids[1]);
-                nonzero(0.5 * (mx - cx).hypot(my - cy))
-            };
-            sk.ellipse(kids[0], kids[1], b, &show)
         }
         EntKind::Plane => {
             // `plane` adds the two intrinsics here and nowhere else, and computes a rotor from
@@ -2224,7 +2213,6 @@ fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {
         EntKind::Circle => sk.circles[e.i()].class = c,
         EntKind::Arc => sk.arcs[e.i()].class = c,
         EntKind::Spline => sk.splines[e.i()].class = c,
-        EntKind::Ellipse => sk.ellipses[e.i()].class = c,
         EntKind::Plane => sk.planes[e.i()].frame.class = c,
     }
 }

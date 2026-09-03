@@ -28,9 +28,6 @@ const MARGIN_PX: f64 = 24.0;
 /// must agree: `paint.ts`'s `strokeFor` holds the other copy.
 const PLAIN_PX: f64 = 1.8;
 
-/// Rim points for an ellipse.  A fixed count rather than `unit`-driven flatness: `ellipse.rs`
-/// has no tessellator of its own yet, and this is the sweep every other consumer of it uses.
-
 /// The ink for geometry a sheet says nothing about.  A drawing exported for print is black
 /// unless the document says otherwise — the per-kind palette the app paints with is the *app's*
 /// chrome, not the document's (spec §13.2).
@@ -228,12 +225,6 @@ fn entity(
             let r = sk.params[a.radius as usize].value.abs();
             let (a0, a1) = sk.arc_angles(i);
             arc_path(out, c, r, a0, a1, at, &ink());
-        }
-        EntKind::Ellipse => {
-            // sampled rather than written as an SVG ellipse: the rotation would be a second
-            // place the major axis's angle is worked out, and `ellipse.rs` already owns it —
-            // which is `ellipse::sample`, so the rim is walked there and not here
-            poly(out, &crate::ellipse::rim(sk, i), at, &ink());
         }
         EntKind::Spline => poly(out, &crate::curve::tessellate(sk, i, unit), at, &ink()),
         // the polyline `render` already swept to size the page

@@ -6,7 +6,7 @@ import * as dim from '../core/callout.js';
 import { Constraint } from '../core/constraints.js';
 import { PlanDrag } from '../core/decompose.js';
 import {
-  Arc, Box, Circle, Ellipse, Param, Point, Primitive, Spline, ellipseMinor,
+  Arc, Box, Circle, Param, Point, Primitive, Spline,
 } from '../core/model.js';
 import type { Item } from '../core/overview.js';
 import { RadiusDrag } from '../core/system.js';
@@ -361,12 +361,8 @@ export function radiusGesture(v: SketchView, drag: RadiusDrag): Gesture {
     move: (sp) => {
       const [wx, wy] = v.s2w(sp[0], sp[1]);
       const e = drag.circle;
-      // a circle's rim follows the cursor at its distance from the centre; an ellipse's by the
-      // minor radius that puts the rim through the cursor, which is the same question the tool's
-      // third click asked the core
-      const r = e instanceof Ellipse
-        ? ellipseMinor(...e.center.xy, ...e.major.xy, wx, wy) ?? Math.abs(e.minor.value)
-        : Math.hypot(wx - e.center.x.value, wy - e.center.y.value);
+      // a circle's rim follows the cursor at its distance from the centre
+      const r = Math.hypot(wx - e.center.x.value, wy - e.center.y.value);
       v.lastResult = drag.move(r);
       v.onDragFrame();
     },
@@ -513,13 +509,13 @@ export function canMove(v: SketchView, e: Primitive): boolean {
   return free.some((p) => v.movable!.set.has(p));
 }
 
-/** The one scalar a rim drag moves: a circle's or arc's radius, an ellipse's minor radius. */
-export function scalarOf(e: Circle | Arc | Ellipse): Param {
-  return e instanceof Ellipse ? e.minor : e.radius;
+/** The one scalar a rim drag moves: a circle's or arc's radius. */
+export function scalarOf(e: Circle | Arc): Param {
+  return e.radius;
 }
 
-/** A circle, arc or ellipse whose one scalar is free to follow the cursor. */
-export function isResizable(v: SketchView, e: Primitive | null): e is Circle | Arc | Ellipse {
-  return (e instanceof Circle || e instanceof Arc || e instanceof Ellipse)
+/** A circle or arc whose radius is free to follow the cursor. */
+export function isResizable(v: SketchView, e: Primitive | null): e is Circle | Arc {
+  return (e instanceof Circle || e instanceof Arc)
     && !scalarOf(e).fixed && (!v.diagnosis || v.staleDiagnosis || canMove(v, e));
 }

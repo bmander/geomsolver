@@ -61,7 +61,7 @@ export interface Place {
 
 export type Tool =
   'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit'
-  | 'ellipse' | 'plane';
+  | 'plane';
 
 /** What the plane tool is armed with: the name the statement is to be given, if any, and the
  *  attitude — as text, since the statement spells it and the core reads it.  Where the plane

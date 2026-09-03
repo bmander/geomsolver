@@ -2,7 +2,7 @@
  * A tool that makes geometry as it goes takes its undo snapshot on the first click of a run;
  * the fit tool makes nothing until it finishes and takes its own there. */
 import * as C from '../core/constraints.js';
-import { Plane, Point, distanceBetween, ellipseMinor, onRadius } from '../core/model.js';
+import { Plane, Point, distanceBetween, onRadius } from '../core/model.js';
 import { Attitude, Document, Edit } from '../core/program.js';
 import { PICK_PX } from './view.js';
 import type { Place, SketchView, Tool } from './view.js';
@@ -163,7 +163,7 @@ export function seedNamed(v: SketchView, name: string, x: number, y: number): vo
 
 /** Write a fresh plane with its two points where the gesture put them, then make it the view
  *  being drawn in.  The places go **into the statement** rather than into the points after
- *  the fact: a plane is a frame, and its rotor and the chord length its intrinsics read are
+ *  the fact: a plane is a datum, and its rotor and the chord length its intrinsics read are
  *  seeded from the chord when the statement is elaborated — moved afterwards, both would be
  *  stale and the solve would land the frame with `toward` on top of `origin`. */
 function placePlane(v: SketchView, a: [number, number], b: [number, number]): void {
@@ -303,25 +303,6 @@ export function toolClick(v: SketchView, sp: [number, number]): void {
       const [x, y] = v.s2w(sp[0], sp[1]);
       const c = v.pending[0];
       sk.circle(c, Math.hypot(x - c.x.value, y - c.y.value) || 1);
-      v.pending = [];
-    }
-  } else if (v.tool === 'ellipse') {
-    // centre, then the end of the major axis, then a click the rim must pass through.  That
-    // third click is construction input — the minor radius is what it produces — unless it
-    // landed on a real point, which the rim should then *stay* through.
-    if (v.pending.length < 2) {
-      const p = snapOrNew(v, sp);
-      if (!v.pending.length || p !== v.pending[0]) v.pending.push(p);
-    } else {
-      const [c, m] = v.pending;
-      const { at, on } = pickPlace(v, sp);
-      const b = ellipseMinor(...c.xy, ...m.xy, ...at);
-      if (b === null) {
-        v.onStatus('the centre and the major end are on top of each other');
-        return;                                    // keep the two points, let them try again
-      }
-      const el = sk.ellipse(c, m, b || 1);
-      if (on) sk.add(new C.PointOnEllipse(on, el));
       v.pending = [];
     }
   } else if (v.tool === 'arc3') {

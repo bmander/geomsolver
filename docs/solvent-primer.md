@@ -91,7 +91,6 @@ reaches into copy 0's instance `cyl`.
 | `circle` | `center` | `r` | |
 | `arc` | `center`, `start`, `end` | `r` | `start -> end`, counter-clockwise |
 | `spline` | control points, all named | | |
-| `ellipse` | `center`, `major` | `b` (minor radius) | |
 | `plane` | `origin`, `toward` | `c`, `s` (unit rotor, never seeded by hand), plus a constant basis in space | |
 | `curve` | its arguments | | |
 
@@ -156,12 +155,12 @@ fix c.r                             line1 tangent(side: -1) circle1
 
 | word | fixity | operands |
 |---|---|---|
-| `on` | infix | a point to a line, circle, arc, spline, ellipse or curve |
+| `on` | infix | a point to a line, circle, arc, spline or curve |
 | `distance` | infix | two points (`along: x` / `along: y` for the run and the rise, signed first to second); a point and a line (signed); two lines (a parallel gap); two concentric circles or arcs (the radial gap) |
 | `distance` | prefix | a line: the distance between its own ends |
-| `tangent` | infix | a line and a circle or arc (`at: p1` / `p2` for a tangency at that end; `side: ±1` picks the side); two circles or arcs (`external: true/false`); an arc and a line (`at: start` / `end`); a spline, an ellipse or a curve and a line |
+| `tangent` | infix | a line and a circle or arc (`at: p1` / `p2` for a tangency at that end; `side: ±1` picks the side); two circles or arcs (`external: true/false`); an arc and a line (`at: start` / `end`); a spline or a curve and a line |
 | `equal` | infix | two lines (length), or two circles or arcs (radius) |
-| `curvature` | infix | a spline, an ellipse or a curve and a circle or arc: the circle becomes the osculating circle there. Refused on a traced curve |
+| `curvature` | infix | a spline or a curve and a circle or arc: the circle becomes the osculating circle there. Refused on a traced curve |
 | `horizontal`, `vertical` | prefix / infix | a line, or a pair of points with no line drawn between them |
 | `angle` | infix | two lines; a bare number is degrees |
 | `radius` | prefix | a circle or an arc |
@@ -327,6 +326,12 @@ anchored at the drawing's own pose, so the component needs no seeds for the curv
 never drawn; the curve is the only thing made of it. Its anchor is the value it gives the swept
 formal, or the interval's start when it gives none.
 
+**The ellipse is one of these.** `use std` brings in `Ellipse(f: plane, a: Length, b: Length,
+u: Angle)`, a computed point at eccentric angle `u` on the datum `f`, and
+`curve e = Ellipse(f, a: 40, b: 25).p over u in (0, 360)` is the rim: `p on e`, `e tangent l`
+and `e curvature k` are the curve's contacts, exact to third order. There is no `ellipse`
+element; the word is refused with this spelling.
+
 A component's point is placed one of two ways:
 
 - **Computed**: `point p = (XEXPR, YEXPR)`, coordinates as expressions over the formals and
@@ -392,7 +397,7 @@ the implicit class `.point`, so `style .point { display: none }` hides the handl
 
 ```
 use engine.dims          // engine/dims.sv beside the document, else the library compiled in
-use std                  // the standard library: ThreeViews (1.13)
+use std                  // the standard library: ThreeViews (1.13), Ellipse (1.9)
 ```
 
 A module is a Solvent document read for its `component`s and its top-level `param`s; its own

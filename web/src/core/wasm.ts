@@ -53,8 +53,6 @@ export interface Abi {
   gcs_sketch_circle(h: number, center: number, r: number, name: number, nameLen: number): number;
   gcs_sketch_arc(h: number, c: number, s: number, e: number, name: number, nameLen: number): number;
   gcs_sketch_arc_through(h: number, s: number, e: number, tx: number, ty: number, name: number, nameLen: number): number;
-  gcs_sketch_ellipse(h: number, center: number, major: number, b: number,
-                     name: number, nameLen: number): number;
   gcs_sketch_plane(h: number, origin: number, toward: number, ux: number, uy: number,
                    uz: number, vx: number, vy: number, vz: number,
                    name: number, nameLen: number): number;
@@ -62,8 +60,6 @@ export interface Abi {
   gcs_plane_glyph(h: number, idx: number, unit: number, out: number): number;
   gcs_point_plane(h: number, idx: number): number;
   gcs_point_set_plane(h: number, idx: number, plane: number): number;
-  gcs_ellipse_minor(cx: number, cy: number, mx: number, my: number, tx: number,
-                    ty: number): number;
   gcs_sketch_spline(h: number, ctrl: number, n: number): number;
   gcs_sketch_spline_knots(h: number, ctrl: number, n: number, knots: number, nk: number): number;
   gcs_sketch_spline_through(h: number, pts: number, n: number, hold: number): number;

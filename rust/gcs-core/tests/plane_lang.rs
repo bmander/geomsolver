@@ -198,7 +198,6 @@ point k1 hint(x: 1, y: 0)
 point k2 hint(x: 2, y: 1)
 point k3 hint(x: 3, y: 0)
 spline s(k0, k1, k2, k3) in front
-ellipse el in front
 "
     ));
     let sk = &e.sketch;
@@ -212,7 +211,6 @@ ellipse el in front
     assert_eq!(on("c"), vec![Some(2)]);
     assert_eq!(on("k"), vec![Some(2); 3]);
     assert_eq!(on("s"), vec![Some(0); 4]);
-    assert_eq!(on("el"), vec![Some(0), Some(0)]);
     // a point named by a line in one plane and declared in another is one image on two planes
     refused(
         &format!("{VIEWS}point a in front\nline l(a, o) in top\n"),

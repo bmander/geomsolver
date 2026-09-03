@@ -2,7 +2,6 @@
  *
  *   tools     P point · L line · R rectangle · C circle · A arc (centre, start, end)
  *             3 arc through two ends and a point on it
- *             O ellipse (centre, major end, then a click the rim passes through)
  *   Esc       stop a DOF animation, then drop the tool's pending points, then put the tool
  *             down — Select is not a tool, it is what no tool being held looks like, so it
  *             is also where clicking the pressed toolbar button leaves you
@@ -76,7 +75,7 @@ view.onTool = (t) => {
 for (const [label, tool, key] of [
   ['Point', 'point', 'p'], ['Line', 'line', 'l'], ['Rect', 'rect', 'r'],
   ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
-  ['Ellipse', 'ellipse', 'o'], ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'],
+  ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'],
 ] as [string, Tool, string][]) {
   toolButtons.set(tool, addButton(barTools, {
     label, key, toggle: true, title: 'Click again to put the tool down and go back to selecting',
@@ -211,7 +210,7 @@ aboutBadge.addEventListener('click', () => void about());
 
 const TOOL_KEYS: Record<string, Tool> = {
   p: 'point', l: 'line', r: 'rect', c: 'circle', a: 'arc', 3: 'arc3', s: 'spline',
-  w: 'splinefit', o: 'ellipse',
+  w: 'splinefit',
 };
 /** Every accelerator in the app, read off the buttons and menu items themselves so there is
  *  one list and not two.  The token is the chip the control prints, lowercased: '⇧l', '⌘z'. */

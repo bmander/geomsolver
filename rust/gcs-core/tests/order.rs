@@ -96,7 +96,7 @@ fn shuffle(doc: &Json, seed: u32) -> Json {
 /// but a point's order is its *index*, and an index is what `decompose::branch_key` names a
 /// recorded root choice by and what `io::describe` calls the point.
 ///
-/// Only points move.  Lines, circles, arcs, splines and ellipses keep their own order, so any
+/// Only points move.  Lines, circles, arcs and splines keep their own order, so any
 /// difference is attributable to the renumbering alone.
 fn shuffle_points(doc: &Json, seed: u32) -> Json {
     let pts = doc.get("points").map(|p| p.arr()).unwrap_or(&[]);
@@ -181,9 +181,6 @@ fn shuffle_points(doc: &Json, seed: u32) -> Json {
                         v.arr().iter().map(|e| ent(e, &["center", "start", "end"])).collect(),
                     ),
                     "splines" => Json::Arr(v.arr().iter().map(|e| ent(e, &[])).collect()),
-                    "ellipses" => {
-                        Json::Arr(v.arr().iter().map(|e| ent(e, &["center", "major"])).collect())
-                    }
                     "constraints" => Json::Arr(v.arr().iter().map(con).collect()),
                     "branches" => branches(v),
                     _ => v.clone(),
@@ -260,9 +257,6 @@ fn geometry(sk: &Sketch) -> Vec<f64> {
     for a in &sk.arcs {
         v.push(sk.params[a.radius as usize].value);
     }
-    for e in &sk.ellipses {
-        v.push(sk.params[e.minor as usize].value);
-    }
     v
 }
 
@@ -286,9 +280,6 @@ fn param_names(sk: &Sketch) -> Vec<String> {
     }
     for (i, a) in sk.arcs.iter().enumerate() {
         names[a.radius as usize] = format!("a{i}.r");
-    }
-    for (i, e) in sk.ellipses.iter().enumerate() {
-        names[e.minor as usize] = format!("e{i}.b");
     }
     for c in &sk.constraints {
         for (n, p) in c.aux_params().iter().enumerate() {
