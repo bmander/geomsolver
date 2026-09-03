@@ -18,6 +18,7 @@
 
 use std::process::ExitCode;
 
+use gcs_core::constraints::SpecKind;
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::json::Json;
 use gcs_core::model::Sketch;
@@ -32,6 +33,8 @@ solventc — check a Solvent document
     solventc [OPTIONS] FILE...
 
     --json              structured output instead of the text report
+    --where NAME        where a name landed: its own numbers and everything under it
+                        (repeatable; the whole table in --json when none is given)
     --no-diagnose       solve only; skip the diagnosis
     --allow-unsolved    a document that does not solve is not a failure
     -o, --output PATH   write an SVG (one file, so one document)
@@ -52,6 +55,10 @@ struct Source {
 
 struct Opts {
     json: bool,
+    /// `--where NAME` — the names a reader asked about.  Empty asks about nothing in the text
+    /// report and about everything in `--json`, which is the difference between a terminal and
+    /// a file something else reads.
+    wanted: Vec<String>,
     no_diagnose: bool,
     allow_unsolved: bool,
     output: Option<String>,
@@ -62,7 +69,14 @@ struct Opts {
 
 impl Default for Opts {
     fn default() -> Opts {
-        Opts { json: false, no_diagnose: false, allow_unsolved: false, output: None, width: 800.0 }
+        Opts {
+            json: false,
+            wanted: Vec::new(),
+            no_diagnose: false,
+            allow_unsolved: false,
+            output: None,
+            width: 800.0,
+        }
     }
 }
 
@@ -83,6 +97,13 @@ fn main() -> ExitCode {
                 Some(w) if w.is_finite() && w > 0.0 => opts.width = w,
                 _ => {
                     eprintln!("solventc: --width needs a page width in pixels");
+                    return ExitCode::from(2);
+                }
+            },
+            "--where" => match args.next() {
+                Some(n) => opts.wanted.push(n),
+                None => {
+                    eprintln!("solventc: --where needs a name");
                     return ExitCode::from(2);
                 }
             },
@@ -174,7 +195,7 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         if !opts.json {
             println!("{}: did not elaborate", s.name);
         }
-        return (1, opts.json.then(|| doc_json(s, None, None, &e)));
+        return (1, opts.json.then(|| doc_json(s, None, None, &e, Json::Null)));
     }
 
     let mut sk = e.sketch.clone();
@@ -197,6 +218,18 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
                 println!("  note: {w}");
             }
         }
+        for q in &opts.wanted {
+            let rows = wanted(&sk, &e.map, std::slice::from_ref(q));
+            if rows.is_empty() {
+                println!("  where {q}: the source names nothing there");
+            }
+            for (n, v) in rows {
+                // a position is one of an entity's own numbers, which is `SpecKind::Scalar`
+                // exactly — so it is read to `READING_SIG` like every other number a person is
+                // shown, and converted by nothing: it is already in the units of the drawing
+                println!("  {n} = {}", io::reading(SpecKind::Scalar, v));
+            }
+        }
     }
     let mut code = if r.success || opts.allow_unsolved { 0 } else { 2 };
     if let Some(path) = &opts.output {
@@ -207,7 +240,20 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             code = 1;
         }
     }
-    (code, opts.json.then(|| doc_json(s, Some(&r), d.as_ref().map(|d| (&sk, d)), &e)))
+    let positions = opts.json.then(|| {
+        Json::Obj(
+            wanted(&sk, &e.map, &opts.wanted)
+                .into_iter()
+                .map(|(n, v)| (n, Json::Num(v)))
+                .collect(),
+        )
+    });
+    (
+        code,
+        opts.json.then(|| {
+            doc_json(s, Some(&r), d.as_ref().map(|d| (&sk, d)), &e, positions.unwrap_or(Json::Null))
+        }),
+    )
 }
 
 /// How many culprits a set prints before it says how many more there are.  A conflict on a truss
@@ -225,6 +271,26 @@ fn report_set(sk: &Sketch, map: &gcs_core::program::SourceMap, what: &str, ids: 
     if ids.len() > SHOW {
         println!("  {what}: … and {} more", ids.len() - SHOW);
     }
+}
+
+/// The rows of `report::positions` a reader asked for: a name matches its own numbers
+/// (`o` gives `o.x`, `o.y`) and everything written under it (`views` gives the whole view,
+/// `views.right_origin.x` gives the one number).  Three questions, one rule, since a scalar, an
+/// entity and an instance are all just names with dots in them.  Empty asks for everything.
+fn wanted(
+    sk: &Sketch,
+    map: &gcs_core::program::SourceMap,
+    names: &[String],
+) -> Vec<(String, f64)> {
+    let all = report::positions(sk, map);
+    if names.is_empty() {
+        return all;
+    }
+    all.into_iter()
+        .filter(|(n, _)| {
+            names.iter().any(|q| n == q || n.strip_prefix(q.as_str()).is_some_and(|r| r.starts_with('.')))
+        })
+        .collect()
 }
 
 /// `file:line:col: error[Exxx]: message`.
@@ -245,11 +311,14 @@ fn severity(s: Severity) -> &'static str {
     }
 }
 
+/// One document's report.  `positions` is where the names landed (`--where`, or all of them),
+/// and is `Null` for a document that never got as far as a drawing.
 fn doc_json(
     s: &Source,
     r: Option<&gcs_core::solve::SolveResult>,
     d: Option<(&Sketch, &gcs_core::diagnose::Diagnosis)>,
     e: &Elaborated,
+    positions: Json,
 ) -> Json {
     let diags: Vec<Json> = e
         .diags
@@ -270,5 +339,6 @@ fn doc_json(
         ("diagnostics", Json::Arr(diags)),
         ("solve", r.map(report::solve_result_json).unwrap_or(Json::Null)),
         ("diagnosis", d.map(|(sk, d)| report::diagnosis_json(sk, d)).unwrap_or(Json::Null)),
+        ("positions", positions),
     ])
 }

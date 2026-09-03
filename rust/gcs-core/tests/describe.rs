@@ -92,3 +92,63 @@ fn a_culprit_is_named_as_the_source_names_it() {
     // without a namer, the sketch's own labels
     assert_eq!(io::describe(&e.sketch.user_constraints()[0]), "horizontal L0");
 }
+
+/// **The report carries coordinates** (issue #48, item 3).  `report::positions` is the source
+/// map's names against the sketch's own numbers and nothing else: an anonymous child answers by
+/// the dotted path that *is* its name, a declaration inside an instance answers under the
+/// instance's prefix, and a formal is no second key — aliasing makes one entity of two names, so
+/// what the caller passed answers under the name it was declared with.
+#[test]
+fn the_report_says_where_a_name_landed() {
+    let e = read(
+        "unit mm\n\
+         component Arm(hub: point, tip: point) { hub distance(40) tip }\n\
+         point o hint(x: 0, y: 0)\n\
+         point t hint(x: 5, y: 40)\n\
+         ground o\n\
+         o vertical t\n\
+         a: Arm(o, t)\n\
+         circle c(center: o) hint(r: 25)\n\
+         radius(25) c\n\
+         line l(o, hint(x: 30, y: 0))\n\
+         horizontal l\n\
+         o distance(30) l.p2\n",
+    );
+    let mut sk = e.sketch;
+    assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
+    let p: std::collections::BTreeMap<String, f64> =
+        gcs_core::report::positions(&sk, &e.map).into_iter().collect();
+    let at = |n: &str| *p.get(n).unwrap_or_else(|| panic!("no `{n}` in {:?}", p.keys()));
+    assert_eq!((at("o.x"), at("o.y")), (0.0, 0.0));
+    // a circle's own number, and its centre under the child's name
+    assert!((at("c.r") - 25.0).abs() < 1e-9);
+    assert_eq!(at("c.center.x"), at("o.x"));
+    // the anonymous end of the line, by the path that is its name
+    assert!((at("l.p2.x") - 30.0).abs() < 1e-6 && at("l.p2.y").abs() < 1e-6);
+    // what the instance was given answers under its own name, and the arm placed it
+    assert!((at("t.y") - 40.0).abs() < 1e-6, "{}", at("t.y"));
+    assert!(!p.contains_key("a.hub.x"), "a formal is not a second key: {:?}", p.keys());
+    // a declaration *inside* the instance would answer under `a.`, and this one makes none
+    assert!(p.keys().all(|k| !k.starts_with("a.")), "{:?}", p.keys());
+}
+
+/// A datum reports the bearing it is turned to, not the rotor it is stored as.
+#[test]
+fn a_datum_reports_its_angle() {
+    let e = read(
+        "unit mm\n\
+         point o hint(x: 0, y: 0)\n\
+         point q hint(x: 5, y: 40)\n\
+         ground o\n\
+         o vertical q\n\
+         o distance(40) q\n\
+         plane v(origin: o, toward: q)\n",
+    );
+    let mut sk = e.sketch;
+    assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
+    let p: std::collections::BTreeMap<String, f64> =
+        gcs_core::report::positions(&sk, &e.map).into_iter().collect();
+    assert!((p["v.angle"] - 90.0).abs() < 1e-6, "{}", p["v.angle"]);
+    assert_eq!(p["v.origin.y"], 0.0);
+    assert!((p["v.toward.y"] - 40.0).abs() < 1e-6);
+}

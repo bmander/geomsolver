@@ -50,7 +50,13 @@ Currently: **Stage 5 done**, in **one** implementation —
   line is `diagnose::summary`, a culprit is `io::describe_with` (the core's wording over the
   `SourceMap`'s names — `corner distance(60) along`, never `P0`; the app reaches the same through
   `gcs_elab_describe`), `--json` is `report::*_json`, so it and the app cannot come to describe
-  one drawing differently.  Exit codes 0/1/2 are what
+  one drawing differently.  **Where a name landed is part of the report** (issue #48, item 3):
+  `report::positions` zips `EntKind::scalar_names` against `Sketch::entity_params` — one list
+  twice, as names and as parameters — so `hinge.x`, `base.r` and `view.angle` are the source map's
+  names against the sketch's numbers and nothing there learns what a circle is made of.  One walk,
+  two readers: `--where NAME` filters it for a terminal (a name matches its own numbers and
+  everything written under it) and `--json` publishes the whole table, narrowed by the same flag.
+  Exit codes 0/1/2 are what
   `Diag::severity` and `SolveResult::success` already say, given a process to say it to.  The
   seam an importer will need is there already — a `Source { name, text }` list in, a report per
   source out — because **the core takes text and has no filesystem**: it runs in wasm and must

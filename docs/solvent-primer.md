@@ -459,6 +459,7 @@ The standard library lays out the three views once (2.10).
 ```
 make solventc                     # once
 build/solventc drawing.sv         # parse, elaborate, solve, diagnose; --json for structure
+build/solventc drawing.sv --where hinge     # where a name landed
 ```
 
 Exit codes: 0 solved, 1 did not elaborate, 2 elaborated but did not solve. The text report gives
@@ -472,6 +473,13 @@ the parameter and equation counts, the **DOF**, and the culprit lines (`over:`, 
 | `over` | a dimension takes part in a consistent redundancy | remove one of the `over:` lines; editing one is the next conflict |
 | `conflict` | statements that cannot all hold | the `conflict:` lines are the *minimal* disagreeing set |
 | `unsolved` | the solver stopped short of a solution | usually a bad seed; reseed nearer the intended branch |
+
+**Where something landed** is `--where NAME`, which answers with the numbers under that name —
+its own if it is a point (`--where hinge` gives `hinge.x`, `hinge.y`), a whole assembly's if it is
+an instance (`--where views` gives every view's origin and bearing), one number if you name it
+(`--where hinge.x`). Under `--json` every name in the document answers, in a `positions` table,
+and `--where` narrows it. It is the question a reader without a picture asks most, and it beats
+writing a `claim` to see whether it is refuted.
 
 A redundancy among pure relations (a fourth `perpendicular` round a rectangle) is a theorem: listed
 as `implied:`, never an error. Two habits: **ground something**, since a figure with no `ground` is

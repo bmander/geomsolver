@@ -185,6 +185,51 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
     ])
 }
 
+/// **Where everything the source names has landed** (issue #48, item 3).
+///
+/// A report that says how many freedoms a drawing has and which statements fight, and never
+/// where anything *is*, leaves the one question a reader without a picture asks most — and
+/// answers it, if at all, by writing a claim and reading whether it is refuted.  The numbers are
+/// already here: this is a **serialisation**, not a reading.  `EntKind::scalar_names` spells an
+/// entity's scalars in `entity_params` order and `Sketch::entity_params` gives that same list as
+/// parameters, so the two zip and nothing here learns what a circle is made of; a kind that
+/// spells no scalars (a spline, a curve) contributes none, its control points being named points
+/// of their own.
+///
+/// Keyed by **every** name the source calls the thing (`SourceMap::names`) — a declaration, under
+/// the prefixes of the instance and the block copy it was elaborated in, which is the name a
+/// diagnostic already uses and a reader already writes.  A formal is not a second key: aliasing
+/// makes one entity of two names, so the entity answers under the name it was *declared* with,
+/// wherever the caller wrote it.  A plane's `.angle` is the one number here the sketch does not
+/// hold: it is derived from the rotor beside it exactly as `Tape::compile` derives it, because
+/// `f.angle` is what a reader asks for and `f.c` is not.
+///
+/// Sorted and deduplicated by name, so a report is stable and a reader can find a name in it.
+pub fn positions(sk: &Sketch, map: &crate::program::SourceMap) -> Vec<(String, f64)> {
+    let mut out: std::collections::BTreeMap<String, f64> = Default::default();
+    for (&e, names) in &map.names {
+        let params = sk.entity_params(e);
+        for n in names {
+            let Some(scalars) = e.kind.scalar_names(n) else { continue };
+            if scalars.len() != params.len() {
+                continue;
+            }
+            for (name, &p) in scalars.iter().zip(params.iter()) {
+                out.insert(name.clone(), sk.params[p as usize].value);
+            }
+            if e.kind == crate::model::EntKind::Plane {
+                let v = |i: usize| sk.params[params[i] as usize].value;
+                out.insert(format!("{n}.angle"), v(5).atan2(v(4)).to_degrees());
+            }
+        }
+    }
+    out.into_iter().collect()
+}
+
+pub fn positions_json(sk: &Sketch, map: &crate::program::SourceMap) -> Json {
+    Json::Obj(positions(sk, map).into_iter().map(|(n, v)| (n, Json::Num(v))).collect())
+}
+
 pub fn graph_json(g: &ConstraintGraph) -> Json {
     let edges: Vec<Json> = g
         .edges

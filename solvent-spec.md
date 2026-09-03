@@ -951,6 +951,8 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 
 Implementations SHOULD emit, on request, a degrees-of-freedom ledger: per alias class, its free DOF after definitional substitution; per constraint, its equation count; totals per component and for the model; gauge accounting. (§18.3 shows the gear's ledger.)
 
+**[0.17]** They SHOULD also emit, on request, **where each name landed**: the value of every scalar of every entity the source names, keyed by that name and the field (`hinge.x`, `base.r`, `view.angle`). A report that says how many freedoms a drawing has and which statements disagree, and never where anything *is*, leaves its reader to recover coordinates by stating a `claim` and reading whether it is refuted. The names and the numbers are both already in hand; this is a serialisation and imposes no analysis.
+
 ---
 
 ## 17. Deferred and open issues (non-normative)
