@@ -4,6 +4,7 @@
  * coordinates — this only maps them to the screen. */
 import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
+import { derived as derivedOf } from '../core/derived.js';
 import type { Pt, Seg } from '../core/callout.js';
 import type { Item, Part } from '../core/overview.js';
 import {
@@ -218,6 +219,8 @@ export function paint(v: SketchView): void {
       ctx.fill();
     }
   }
+  // the derived pictures sit with the geometry, under the callouts that dimension them
+  paintDerived(v);
   paintCallouts(v);
   // the traced picture's frame, over everything: dashed grey while it is scenery, since that
   // edge is the only part of it a press takes hold of and an affordance you cannot see is one
@@ -320,6 +323,36 @@ export function paintOverview(v: SketchView): void {
   ctx.globalAlpha = 1;
   stroke('solid', COL.point, 1);
   v.gesture?.paint?.(ctx);
+  ctx.restore();
+}
+
+/** The pictures the document asked of its solids (§6.11): `view(body) in right`, and sections.
+ *
+ *  One pass, and it owns no rule: the core lays the polylines out in world coordinates and
+ *  resolves the ink through the sheet, so what a hidden line looks like is a `style .hidden`
+ *  rule the document may override and this file has never heard of.  The same seam the callouts
+ *  sit on, which is what keeps the canvas and the SVG export one picture of one drawing. */
+export function paintDerived(v: SketchView): void {
+  const items = derivedOf(v.sketch, v.unit);
+  if (items.length === 0) return;
+  const ctx = v.ctx;
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  for (const d of items) {
+    if (d.pts.length < 2) continue;
+    ctx.strokeStyle = d.stroke.color ?? COL.line;
+    ctx.lineWidth = d.stroke.width ?? 1;
+    ctx.setLineDash(d.stroke.dash ?? []);
+    ctx.beginPath();
+    d.pts.forEach((p, i) => {
+      const [x, y] = v.w2s(p[0], p[1]);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
   ctx.restore();
 }
 

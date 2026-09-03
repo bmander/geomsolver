@@ -1,12 +1,18 @@
-// The cylinder alone: the part `vtwin.cylinder` designs, upright, in three views, with the
-// dimensions a printer needs.
+// The cylinder alone: the part `vtwin.cylinder` designs, upright, with the dimensions a printer
+// needs — **and the other two views are asked for, not drawn** (§6.11).
+//
+// The component is one section and the solid it is a section of.  This sheet says where to stand
+// and looks: two `view` statements, and every depth in them is the solid's own, so the side view
+// cannot disagree with the section about how thick the face wall is.  What used to be here was
+// sixty lines of `Slab` and `Box` rectangles re-tied by `project`, with the depths kept in step
+// by hand — which is the whole of issue #48, item 9.
 //
 // The assembly (`vtwin.sv`) draws this same component twice, each rocked to the crank and each
-// showing only its section; this sheet draws it once, at rest, in all three views, and turns on
-// the `detail` dimensions the assembly's sheet leaves hidden.  One definition, two drawings:
-// edit the part and both follow, and every dimension here is judged as a claim about the same
-// statements the engine runs on.  Bank A's cylinder is drawn; bank B's is the same part with
-// its face wall `fwB` thick, which is one number below.
+// showing only its section; this sheet draws it once, at rest, and turns on the `detail`
+// dimensions the assembly's sheet leaves hidden.  One definition, two drawings: edit the part
+// and both follow, and every dimension here is judged as a claim about the same statements the
+// engine runs on.  Bank A's cylinder is drawn; bank B's is the same part with its face wall
+// `fwB` thick, which is one number below.
 
 unit mm
 use std
@@ -17,11 +23,14 @@ use vtwin.cylinder
 point O hint(x: 0, y: 0) in views.front
 ground O
 views: ThreeViews(O, right: 80, up: 95)
-axes: Axes(O)
+axes: Axes(O) in views.front
 param fw = fwA          // the face wall: bank A's
 
-cyl: Cylinder(views.front, views.right, views.top, O, axes.ax, axes.ac, dir: 90deg, fw: fw,
-              o_s: views.right_origin, o_t: views.top_origin, draw_side: 1, draw_top: 1)
+cyl: Cylinder(views.front, O, axes.ax, axes.ac, dir: 90deg, fw: fw)
+
+// the other two views, derived from the solid the section is a section of
+view(cyl.body) in views.right
+view(cyl.body) in views.top
 
 // how it looks: the part's own dimensions, and nothing else
 style .dimension { display: none }

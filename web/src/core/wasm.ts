@@ -134,6 +134,8 @@ export interface Abi {
   gcs_describe(h: number, id: number): number;
   gcs_overview_json(h: number, unit: number, az: number, el: number): number;
   gcs_callouts_json(h: number, unit: number): number;
+  gcs_derived_json(h: number, unit: number): number;
+  gcs_solid_mesh(h: number, idx: number, unit: number, out: number, cap: number): number;
   gcs_callout_pick(h: number, unit: number, x: number, y: number, tolPx: number): number;
   gcs_callout_grab(h: number, id: number, unit: number, x: number, y: number,
                    out: number): number;

@@ -1807,6 +1807,10 @@ fn rewrite(
             if let Some(r) = d.attitude.plane_ref_mut() {
                 fix(r, bad);
             }
+            // a revolution's axis is a line of the body like any other name it writes
+            if let Some(r) = d.sweep.as_mut().and_then(|s| s.axis_ref_mut()) {
+                fix(r, bad);
+            }
             if let Some(crate::syntax::CurveSpec { target: CurveTarget::Drawn(r), .. }) =
                 d.curve.as_mut()
             {
@@ -1814,6 +1818,19 @@ fn rewrite(
             }
             if let Some(at) = d.seed_at.as_mut() {
                 fix(&mut at.what, bad);
+            }
+        }
+        // `bore through body` names two solids, and inside a component both wear the prefix
+        StmtKind::SolidRel(r) => {
+            fix(&mut r.what, bad);
+            fix(&mut r.body, bad);
+        }
+        // and a picture names the solid it is of and the view it is drawn in
+        StmtKind::Derived(d) => {
+            fix(&mut d.solid, bad);
+            fix(&mut d.plane, bad);
+            if let Some(at) = d.at.as_mut() {
+                fix(at, bad);
             }
         }
         StmtKind::Relation(rel) => {

@@ -549,6 +549,51 @@ pub fn overview_json(sk: &Sketch, unit: f64, az: f64, el: f64) -> Json {
     ])
 }
 
+/// **The pictures the document asked for** (§6.11), laid out and inked.
+///
+/// `overview_json`'s shape, and `callouts_json`'s bargain: heterogeneous records rather than a
+/// fixed-width block, one call for the whole sketch, and the *ink already resolved* — so the
+/// canvas strokes what it is handed and a document's own `style .hidden` rule reaches a derived
+/// view with nothing added on the far side of the ABI.
+pub fn derived_json(sk: &Sketch, unit: f64) -> Json {
+    let items: Vec<Json> = crate::hidden::layout(sk, unit)
+        .iter()
+        .map(|d| {
+            let mut o = object([
+                ("pts", Json::Arr(d.pts.iter().map(|&p| pt(p)).collect())),
+                ("of", Json::Int(d.of as i64)),
+                ("solid", Json::Str(d.solid.clone())),
+                ("path", Json::Str(d.path.clone())),
+                ("stroke", style_json(&d.style)),
+            ]);
+            // written only when set, the way a class is: a reader that does not care about
+            // hidden lines never has to know the word
+            if d.hidden {
+                o.set("hidden", Json::Bool(true));
+            }
+            if d.silhouette {
+                o.set("silhouette", Json::Bool(true));
+            }
+            o
+        })
+        .collect();
+    Json::Arr(items)
+}
+
+fn style_json(s: &crate::style::Style) -> Json {
+    let mut o = object([]);
+    if let Some(c) = &s.color {
+        o.set("color", Json::Str(c.clone()));
+    }
+    if let Some(w) = s.width {
+        o.set("width", Json::Num(w));
+    }
+    if let Some(d) = s.dash.as_ref().filter(|d| !d.is_empty()) {
+        o.set("dash", floats(d));
+    }
+    o
+}
+
 pub fn constraints_json(sk: &Sketch) -> Json {
     Json::Arr(sk.constraints.iter().map(|c| constraint_json(sk, c)).collect())
 }

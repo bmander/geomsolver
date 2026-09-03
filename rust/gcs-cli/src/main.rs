@@ -38,6 +38,8 @@ solventc — check a Solvent document
     --no-diagnose       solve only; skip the diagnosis
     --allow-unsolved    a document that does not solve is not a failure
     -o, --output PATH   write an SVG (one file, so one document)
+    --stl PATH          write a solid as binary STL (one file, so one document)
+    --solid NAME        which solid --stl writes; the only one, when there is only one
     --width PX          the SVG's page width in pixels (default 800)
     -h, --help          this
 
@@ -62,6 +64,10 @@ struct Opts {
     no_diagnose: bool,
     allow_unsolved: bool,
     output: Option<String>,
+    /// `--stl PATH` — the one output of a drawing that is not a picture, and the reason a
+    /// printer can be given a part at all.
+    stl: Option<String>,
+    solid: Option<String>,
     /// An SVG has no screen, so the export must choose a `unit` — the world length of one screen
     /// pixel, which every constant size goes through.  A page width fixes it.
     width: f64,
@@ -75,6 +81,8 @@ impl Default for Opts {
             no_diagnose: false,
             allow_unsolved: false,
             output: None,
+            stl: None,
+            solid: None,
             width: 800.0,
         }
     }
@@ -100,6 +108,20 @@ fn main() -> ExitCode {
                     return ExitCode::from(2);
                 }
             },
+            "--stl" => match args.next() {
+                Some(p) => opts.stl = Some(p),
+                None => {
+                    eprintln!("solventc: --stl needs a path");
+                    return ExitCode::from(2);
+                }
+            },
+            "--solid" => match args.next() {
+                Some(n) => opts.solid = Some(n),
+                None => {
+                    eprintln!("solventc: --solid needs a name");
+                    return ExitCode::from(2);
+                }
+            },
             "--where" => match args.next() {
                 Some(n) => opts.wanted.push(n),
                 None => {
@@ -120,6 +142,10 @@ fn main() -> ExitCode {
             }
             s => paths.push(s.to_string()),
         }
+    }
+    if opts.stl.is_some() && paths.len() != 1 {
+        eprintln!("solventc: --stl writes one file, so it takes one document");
+        return ExitCode::from(2);
     }
     if opts.output.is_some() && paths.len() != 1 {
         eprintln!("solventc: --output writes one file, so it takes one document");
@@ -240,6 +266,24 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             code = 1;
         }
     }
+    if let Some(path) = &opts.stl {
+        // the mesh is `gcs_core::mesh`'s for `svg`'s reason: a printer's file and a drawing are
+        // two readings of one boundary, and a second walk would be a second object
+        match pick_solid(&sk, opts.solid.as_deref()) {
+            Ok(i) => {
+                let pieces = sk.solid_boundary(i, gcs_core::solid::REPORT_UNIT);
+                let name = sk.solids[i].name.clone();
+                if let Err(err) = std::fs::write(path, gcs_core::mesh::stl(&pieces, &name)) {
+                    eprintln!("solventc: {path}: {err}");
+                    code = 1;
+                }
+            }
+            Err(m) => {
+                eprintln!("solventc: {m}");
+                code = 1;
+            }
+        }
+    }
     let positions = opts.json.then(|| {
         Json::Obj(
             wanted(&sk, &e.map, &opts.wanted)
@@ -308,6 +352,24 @@ fn severity(s: Severity) -> &'static str {
         Severity::Error => "error",
         Severity::Warning => "warning",
         Severity::Note => "note",
+    }
+}
+
+/// Which solid `--stl` writes.  Named, or the only one there is — a document with one part in it
+/// should not have to say which part.
+fn pick_solid(sk: &gcs_core::model::Sketch, name: Option<&str>) -> Result<usize, String> {
+    match name {
+        Some(n) => sk
+            .solids
+            .iter()
+            .position(|s| s.name == n)
+            .ok_or_else(|| format!("no solid called `{n}`")),
+        None if sk.solids.len() == 1 => Ok(0),
+        None if sk.solids.is_empty() => Err("this document has no solid to write".into()),
+        None => {
+            let names: Vec<&str> = sk.solids.iter().map(|s| s.name.as_str()).collect();
+            Err(format!("say which solid with --solid: {}", names.join(", ")))
+        }
     }
 }
 

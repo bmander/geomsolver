@@ -909,7 +909,13 @@ fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
     for st in stmts {
         match &mut st.kind {
             StmtKind::Decl(d) => {
-                if !d.kind.bears_points() {
+                // **a face and a solid are left alone, as a datum and a curve are**: they bear
+                // no points, but unlike those two they are written *over* the geometry the
+                // block just stamped, so a face inside `in swing { … }` is on the plane its
+                // edges are on and refusing it would put the design and the solid it is a
+                // section of in two different blocks
+                if d.kind.spatial() {
+                } else if !d.kind.bears_points() {
                     errs.push(SynErr {
                         span: st.span,
                         message: format!(

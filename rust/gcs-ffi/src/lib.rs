@@ -1382,6 +1382,34 @@ pub unsafe extern "C" fn gcs_overview_json(
     })
 }
 
+/// **The pictures the document asked for** (§6.11): every `view` and `section`, laid out in page
+/// coordinates with its ink resolved.  `unit` is the world length of one screen pixel, which is
+/// what refines a round surface to the zoom it is looked at.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_derived_json(h: *mut Sketch, unit: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || out_json(report::derived_json(sk(h), unit)))
+}
+
+/// A solid's mesh, as triangles: nine doubles each, in the boundary's own order.  Returns how
+/// many doubles were written, or -1 if the buffer is too small — `gcs_entity_params`' shape.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_mesh(
+    h: *mut Sketch,
+    idx: i32,
+    unit: f64,
+    out: *mut f64,
+    cap: i32,
+) -> i32 {
+    guard(-1, move || {
+        let t = gcs_core::mesh::triangles(&sk(h).solid_boundary(idx as usize, unit));
+        if t.len() > cap.max(0) as usize {
+            return -1;
+        }
+        std::ptr::copy_nonoverlapping(t.as_ptr(), out, t.len());
+        t.len() as i32
+    })
+}
+
 /// The dimension callouts for the whole sketch.  `unit` is the world length of one screen pixel;
 /// the layout is screen-constant through it.
 #[no_mangle]
