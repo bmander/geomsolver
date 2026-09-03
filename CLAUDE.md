@@ -12,7 +12,8 @@ for the spec when the question is what a rule ought to be.  Asked to work on the
 kernels, diagnosis, decomposition, the bindings, the app — the rest of this file is the contract,
 and `gcs-solver-program.md` is the staged program it is built to.
 
-Currently: **Stage 5 done**, in **one** implementation —
+Currently: **Stage 5 done, and Stage 7a/7b — solids** (issue #48, items 9 and 10), in **one**
+implementation —
 
 * **core** (`rust/gcs-core/`): the whole engine in Rust, no dependencies.  Model and constraints
   (`model.rs`, `constraints.rs`), vectorized kernels and the compile-to-plan `System`
@@ -21,7 +22,9 @@ Currently: **Stage 5 done**, in **one** implementation —
   decomposition into cached solve plans (`cgraph.rs`, `decompose.rs`), witness analysis
   (`witness.rs`), presentation (`style.rs`), drag/solution management (`solve.rs`,
   `homotopy.rs`), dimension callouts (`callout.rs`), dimension expressions (`expr.rs`),
-  parametric curves (`curve.rs`), the **Solvent** language the document is written in
+  parametric curves (`curve.rs`), **solids** — the term, its evaluation and what is drawn of it
+  (`solid.rs`, `csg.rs`, `mesh.rs`, `hidden.rs`) — the **Solvent** language the document is
+  written in
   (`syntax.rs`, `flatten.rs`, `program.rs`, `edit.rs`, `tape.rs`), JSON export
   (`io.rs`, `json.rs`) and the reference sketches
   (`examples.rs`, over the documents in `rust/examples/`).
@@ -61,6 +64,9 @@ Currently: **Stage 5 done**, in **one** implementation —
   seam an importer will need is there already — a `Source { name, text }` list in, a report per
   source out — because **the core takes text and has no filesystem**: it runs in wasm and must
   not learn how to open a file, so the thing with a working directory is this binary.
+  `--stl` writes a solid as binary STL through `gcs_core::mesh` — the one output of a drawing
+  that is not a picture, and the reason a printer can be given a part at all; `--solid` says
+  which, and a document with one part need not.
   `--output` writes an SVG through `gcs_core::svg`, in the core for the reason callout layout
   is — and the app's `File ▸ Export SVG` calls the same function, so the button and the command
   line are one picture of one drawing and not two.  An SVG has no screen, so the export
@@ -426,10 +432,13 @@ Conventions:
   over.  A binding changes only when the *surface* changes.  If you find
   yourself writing geometry or numerics in TypeScript, it belongs in Rust instead.
 - A new *entity* kind stops the build in the exhaustive `match e.kind` arms — `model.rs`
-  (`entity_params`, `children`, `count`, `bounds`, `distance_between`, `point_to_drawn`,
-  `class_of`, `set_class`),
-  `io::graft`'s remap and the FFI's `ent`/`kind_id`.  Give it an arm in each; `primitives()`
-  and `topology_key` are where it joins the document.
+  (`entity_params`, `own_params`, `own_length_params`, `children`, `min_children`, `count`,
+  `bounds`, `distance_between`, `point_to_drawn`, `class_of`, `set_class`, `spatial`), `io::graft`'s
+  remap, `overview::drawable`, `svg::entity`, `program`'s build and `set_class`,
+  `syntax::kind_initial` and the FFI's `ent`/`kind_id`.  Give it an arm in each; `primitives()`
+  and `topology_key` are where it joins the document.  A kind that is **evaluated rather than
+  drawn** answers `spatial()` and owns no parameter, which is the whole of how `Face` and `Solid`
+  sit in the same enum as a line without being on the sheet.
 - Every new constraint type = a vectorized kernel in `kernels.rs` (added to `KERNELS`; the
   registration order **is** the kernel id) declaring its `degree` — the power of length its
   residual carries, 1 for a signed distance and 2 for a squared one — a `CKind` variant in
@@ -954,6 +963,99 @@ Conventions:
 - Replays are warm-started on the current geometry (leaves re-derived each frame), so the root a
   sketch is on is "nearest the identity"; alternatives are applied by writing geometry, not by
   caching transforms.
+- **A solid is a term, and a verb is a noun that has not been given a name** (Solvent §6.9,
+  `solid.rs`; issue #48, items 9 and 10).  What makes a CAD feature tree imperative is not that it
+  is ordered but that it is *stateful*: step *n* acts on "the body as of step *n − 1*", an
+  anonymous thing, and names faces by the order they were made in.  Solvent names everything —
+  which is why `port` was retired — so a solid is its **stock, plus everything `on` it, minus
+  everything `through` it**, over primitives that are faces swept.  Both groups are *sets*, so
+  the statements filling them may be written anywhere in any order (P2), and the order that does
+  exist lives inside one term over names, exactly as it lives inside `h = w / 2`.  A design that
+  needs the other order (a pocket with a boss standing in it) **names the intermediate**, which
+  is honest: there are two things there.
+  **Nothing three-dimensional is ever solved for.**  `EntKind::Face` and `EntKind::Solid` own no
+  `Param` — `entity_params` returns nothing for either, so no column of the Jacobian is one —
+  and every extent is an `Extent`: the text a person wrote and the number the *flattener* settled
+  it to, the `fold:` bargain.  The strata run one way with no edge back: the sketch solves, the
+  depths are worked out, the terms are ordered (`solid::resolve`), the outputs are read.  No
+  `SpecKind` takes a face or a solid, so a 2D constraint cannot name one — the stratification is
+  a *type* fact rather than a rule anybody has to remember.  Built after every other kind
+  including `Curve` (`program::solids`), since a face is written over edges and a solid over
+  faces and solids.
+  **The kernel is the term and nothing is built or stored**: a view, a section, a volume, a mesh
+  and a clearance are all questions asked of `Csg` by classification (Requicha & Voelcker's
+  boundary evaluation), memoised against `solid::reads` — every scalar of every edge the term
+  reaches, each plane's pose and basis, every extent, and `unit` — which is `curve_polyline`'s
+  bargain.  There is no B-rep, which is why the crate still has no dependency, and STEP is
+  therefore deferred while STL is not.
+  Two findings are load-bearing and each is written where the rule is.  **The classifier must
+  read the facets the candidates are cut from**: classify against the true circle while cutting
+  facets and every facet centroid of a bore's wall sits inside the true bore by the sagitta, both
+  its samples read *outside*, and the wall silently vanishes.  And **a BSP prunes what a split
+  loop cannot** (`csg.rs`): cutting every facet by every plane that reaches it is exact on a
+  square hole, but the pieces go as the *square* of the facets — a block's cap against a
+  six-hundred-facet bore is the arrangement of six hundred lines, twenty-five thousand cells for
+  the six hundred the drawing needs.  Descending a tree, a piece wholly in front of a node is
+  decided and goes no further; same planes, same answer, and it stops asking once it knows.
+  There is **no coordinate snap grid**: a grid fine enough to leave the drawing's numbers alone
+  is finer than the noise it was meant to collapse, and one coarse enough to collapse the noise
+  moves every vertex (a block sixty across came out `72000.0036`).  What keeps the classifier out
+  of the gap is `EPS`, four orders coarser than the solve's own noise, and `same_plane`, which
+  reads two near-coincident planes as one and never splits a facet by its own plane.
+  `tests/solid.rs` is the gate and it checks against **arithmetic, not against a second kernel**:
+  a block is `w·h·d` exactly, a bore takes exactly the polygon it is faceted into, a flush bore
+  and one drilled past are one solid, a boss adds and the shared face is counted once, a
+  revolution is Pappus.  Two bugs only that could have caught: a prism's caps wound against their
+  declared normals (invisible wherever a cap sits on the origin and contributes no flux), and a
+  revolution's walls facing inward, which reads as a negative volume and nothing else.
+  `tests/solid_lang.rs` holds the language, `tests/derived.rs` the pictures.
+- **A face is one loop and a solid's faces are named by path** (§6.8).  A face is a closed loop of
+  edges the drawing already has, on the one plane every point of every edge agrees about — *read*
+  off the memberships and never written on the face, so a face inside `in swing { … }` is on the
+  plane the block stamped.  There are **no holes**: a hole is a solid `through` the body, and that
+  is the body rule saying it already, one construct fewer.  An `in` block leaves a face and a
+  solid alone the way it leaves a datum alone, but for a different reason — they bear no points,
+  *and* they are written over the geometry the block just stamped, so refusing them would put the
+  design and the solid it is a section of in two different blocks.
+  A boolean **never renames**, so the topological-naming problem every history-based kernel has
+  does not arise: `block.near`, `block.far`, `block.side_l` (a prism), `bore.axis`, `bore.start`
+  (a revolution), and a body's through its operands — `body.bore.wall`, `part.base.pocket.floor`.
+  A name whose face a boolean ate is a *fact the report carries* (its surviving area, or nothing),
+  never an error: the name was true of the operand and remains so.
+  E080 a face that is not a loop on one plane, E081 a revolution's axis, E082 a face a body no
+  longer has, E083 a stack that contradicts itself, E084 a section cut across its own view.
+- **`from:` says which plane a plane is derived from, and the clause beside it says how**
+  (§6.7).  `fold:` turns it; **`offset:` stands it off along the normal**, which is what a stack
+  of parts is written in.  0.10's rule that an omitted fold meant `fold: 0deg` is withdrawn — no
+  document in the corpus used it, and a plane naming another and folding nothing most plainly
+  says *the same plane, moved*.  `plane::Basis` therefore carries the point its origin stands at,
+  and **only along the normal**: the fold line is perpendicular to both normals, so `d·o = 0` and
+  `fold_line` — the whole of what `Project` reads — cannot see the move.  Every plane in every
+  document written before solids has `o = 0`, which is why no existing test changed.
+- **A part carries no views; a sheet asks for them** (§6.11, `hidden.rs`).  `view(body) in
+  views.right` and `section(body, at: swing) in views.front` are *outputs*: no `Int` draw flag, no
+  `repeat draw_side { … }`, no second copy of the geometry and no `project` to keep in step.
+  Three draughtsman's rules, each written where it is enforced.  **A corner is drawn and a
+  tessellation seam is not** — a `smooth` seam is drawn only where it is a *silhouette*, which is
+  the two lines a cylinder is drawn as and not the sixty-four its facets would give.  **What the
+  material covers is dashed, not dropped** — the eye's ray is classified against the term and the
+  piece carries `.hidden`, the class every part sheet already styles.  And **coincident page lines
+  are drawn once, visible winning** — which has to be an *interval* rule and not a segment one: a
+  block seen square on puts its far corners exactly behind its near ones and the two agree segment
+  for segment, but a cylinder's rim seen edge-on folds in half onto its own image and the visible
+  and hidden halves split at different places, so nothing matches end to end.  Every stroke is laid
+  on the line it belongs to, the visible stretches are unioned and the hidden are what is left
+  over; drawn any other way a solid outline gets a dashed one laid under it, which at a printer's
+  resolution reads as neither.
+  Everything comes back in **page coordinates** through `plane::on_page` (written beside
+  `in_view` for that function's own reason), so a derived view sits at its plane's own origin and
+  rotor — exactly where a hand-drawn one tied by `project` would, which is `tests/derived.rs`'s
+  strongest gate: extrude a face along its own normal, look at it square on, and the outline that
+  comes back is the outline that was drawn.  **The core projects and the front end strokes**, the
+  seam `callout.rs` sits on: `hidden::layout` resolves the ink through the sheet, `svg::render`
+  and `paint.ts` stroke what they are handed, and neither owns a line of 3D arithmetic or a rule
+  about what a hidden line looks like.  `rust/examples/vtwin/cylinder.sv` is the case: 144 lines
+  and 12 formals became 119 and 6, and its sheet went from 69 points and 50 lines to 30 and 22.
 - The **overview** (`overview.rs`) is the drawing folded back into the glass box it was unfolded
   from: each view standing on its own plane in space, and the object the views are *of*
   reconstructed between them.  **Nothing is solved for and nothing is stored** — a point drawn in
@@ -1004,6 +1106,11 @@ Conventions:
   opens over the drawing you came to make.  A drag orbits with the y inverted: the pointer pushes
   the box about as if it were held.  The scene is memoised against the drawing, the zoom and the
   orbit (`SketchView.scene`), because a pointer move asks for it twice and the box is read-only.
+  **Where the document has a solid, that is the object and there is nothing to reconstruct**:
+  the box shows the term's own edges, classified against the orbit's eye rather than against a
+  view's normal, so a box of a part shows what a part *is* and not what two pictures of it happen
+  to agree about.  The corner-and-edge walk is skipped outright then; it is what a drawing with
+  no solid in it can still be shown as — several views of an object nothing in the document names.
   The mode, the orbit and the hovered pane are *view state*, `underlay`'s rule: never saved,
   exported, solved or undone — and **the box exists only where there are views**: a document
   with no plane has nothing to fold, so a load or an edit that leaves none returns to the sheet

@@ -343,6 +343,47 @@ pub fn scene(sk: &Sketch, unit: f64, az: f64, el: f64) -> Scene {
             });
         }
     }
+    // **and the object itself.**  Where the document *has* a solid, that is the object and there
+    // is nothing to reconstruct: its edges are the term's own, classified against the orbit's eye
+    // rather than against a view's normal, so a box of a part shows what a part is and not what
+    // two pictures of it happen to agree about.  The wireframe below is what a drawing with no
+    // solid in it can still be shown as — several views of an object nothing in the document
+    // names — and it is skipped outright when a solid names one.
+    if !sk.solids.is_empty() {
+        let eye = eye(az, el);
+        let dir = [
+            eye.0[1] * eye.1[2] - eye.0[2] * eye.1[1],
+            eye.0[2] * eye.1[0] - eye.0[0] * eye.1[2],
+            eye.0[0] * eye.1[1] - eye.0[1] * eye.1[0],
+        ];
+        for (i, _) in sk.solids.iter().enumerate() {
+            let csg = crate::solid::resolve(sk, i, unit);
+            let eps = sk.extent() * crate::solid::EPS;
+            for e in sk.solid_edges(i, unit) {
+                if e.smooth {
+                    let (a, b) = (crate::plane::dot(e.na, dir), crate::plane::dot(e.nb, dir));
+                    if a * b > 0.0 || (a.abs() < 1e-12 && b.abs() < 1e-12) {
+                        continue;
+                    }
+                }
+                let m = [
+                    (e.a[0] + e.b[0]) / 2.0,
+                    (e.a[1] + e.b[1]) / 2.0,
+                    (e.a[2] + e.b[2]) / 2.0,
+                ];
+                if solid_hidden(&csg, m, dir, eps) {
+                    continue;
+                }
+                items.push(Item {
+                    of: None,
+                    in_plane: None,
+                    what: Part::Solid,
+                    pts: vec![flat(e.a), flat(e.b)],
+                });
+            }
+        }
+        return finish(items);
+    }
     // and the object itself.  **An edge is one that is seen as an edge in both views**: two
     // corners whose images are joined by a line in each of the two views that place them.  That
     // is what the pairing above leaves as the honest rule — a corner is placed by two views, so
@@ -390,6 +431,24 @@ pub fn scene(sk: &Sketch, unit: f64, az: f64, el: f64) -> Scene {
             });
         }
     }
+    finish(items)
+}
+
+/// Does the solid stand between this edge and the eye?  The orbit's own direction, so the box
+/// answers the question a view answers with its normal.
+fn solid_hidden(csg: &crate::solid::Csg, m: [f64; 3], dir: [f64; 3], eps: f64) -> bool {
+    let bb = csg.bbox();
+    if bb.is_empty() {
+        return false;
+    }
+    let reach = (0..3).fold(0.0f64, |a, i| a.max(bb.hi[i] - bb.lo[i])) * 2.0 + 1.0;
+    (1..=48).any(|k| {
+        let t = eps * 4.0 + reach * k as f64 / 48.0;
+        csg.inside([m[0] + t * dir[0], m[1] + t * dir[1], m[2] + t * dir[2]])
+    })
+}
+
+fn finish(items: Vec<Item>) -> Scene {
     let mut bounds = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
     for it in &items {
         for &p in &it.pts {
