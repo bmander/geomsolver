@@ -454,6 +454,7 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
         seed_at: None,
         seed_names: Vec::new(),
         attitude: Default::default(),
+        sweep: None,
         membership: Default::default(),
         list_span: Span::default(),
     };
@@ -553,6 +554,9 @@ fn add_entity_with(
         seed_at: None,
         seed_names: Vec::new(),
         attitude,
+        // a gesture never draws a solid: the sheet is where the drawing is, and a solid is
+        // written over what is drawn there
+        sweep: None,
         membership: Default::default(),
         list_span: Span::default(),
     };

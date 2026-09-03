@@ -223,6 +223,41 @@ pub fn positions(sk: &Sketch, map: &crate::program::SourceMap) -> Vec<(String, f
             }
         }
     }
+    // **and what a solid came to.**  The report is the reader's only picture of an object no
+    // view of the sheet shows whole, so it carries what a person would measure off it: how much
+    // material there is, the box it stands in, and where each of its faces is and how much of
+    // it survived — a bore that ate a cap leaves a name the document still writes and no area
+    // behind it, which is a fact and not an error.
+    //
+    // At `REPORT_UNIT`, never at the screen's: a volume is a property of the document, and one
+    // that changed with the zoom would be a number nobody could quote.
+    for (&e, names) in &map.names {
+        if e.kind != crate::model::EntKind::Solid {
+            continue;
+        }
+        let pieces = sk.solid_boundary(e.i(), crate::solid::REPORT_UNIT);
+        let b = crate::mesh::bounds(&pieces);
+        for n in names {
+            out.insert(format!("{n}.volume"), crate::mesh::volume(&pieces));
+            out.insert(format!("{n}.area"), crate::mesh::area(&pieces));
+            if !b.is_empty() {
+                for (k, axis) in ["x", "y", "z"].iter().enumerate() {
+                    out.insert(format!("{n}.bounds.{axis}0"), b.lo[k]);
+                    out.insert(format!("{n}.bounds.{axis}1"), b.hi[k]);
+                }
+            }
+            let mut faces: std::collections::BTreeMap<String, f64> = Default::default();
+            for p in &pieces {
+                *faces.entry(p.path.clone()).or_default() += p.area();
+            }
+            for (path, a) in faces {
+                // the path is already the solid's own name and the face's: written under the
+                // name this reader asked by, so `--where cyl` finds every one of them
+                let tail = path.split_once('.').map(|(_, t)| t).unwrap_or(&path);
+                out.insert(format!("{n}.{tail}.area"), a);
+            }
+        }
+    }
     out.into_iter().collect()
 }
 

@@ -157,11 +157,13 @@ fn a_fold_chain_gives_the_bases() {
     assert!(near(b(2).u, [0.0, 0.0, -1.0]) && near(b(2).v, [0.0, 1.0, 0.0]));
     let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
     assert!(near(b(3).u, [c, s, 0.0]) && near(b(3).v, [0.0, 0.0, -1.0]));
-    // a fold may read a parameter, and a plane may be declared before the one it folds from
+    // a fold may read a parameter, and a plane may be declared before the one it folds from.
+    // **`fold:` is written**: `from:` alone no longer means `fold: 0deg` — it says which plane
+    // this one is derived from, and the clause beside it says how (§6.7).
     let e = read("\
 param tilt = 30deg
 plane aux(from: top, fold: tilt)
-plane top(from: front)
+plane top(from: front, fold: 0deg)
 plane front
 ");
     assert!(near(e.sketch.planes[0].basis.u, [c, s, 0.0]));
@@ -180,7 +182,10 @@ fn attitude_refusals_carry_their_codes() {
     refused("unit mm\nplane a(from: b, fold: 3mm)\nplane b\n", "E103", "`fold` is Angle");
     misparses("plane a(fold: 30deg)\n", "say `from:` too");
     misparses("plane a(u: (1, 0, 0))\n", "both `u:` and `v:`");
-    misparses("plane a(from: b, u: (1, 0, 0), v: (0, 1, 0))\n", "not both");
+    misparses("plane a(from: b, u: (1, 0, 0), v: (0, 1, 0))\n", "not two of the three");
+    // `from:` with neither clause is a plane *stood off* another, and one with both is refused
+    misparses("plane a(from: b, fold: 0deg, offset: 5)\n", "not both");
+    misparses("plane a(offset: 5)\n", "say `from:` too");
     misparses("point p(from: b)\n", "has no attitude to give");
     misparses("plane a(from: b, from: c)\n", "given twice");
 }
@@ -310,7 +315,7 @@ fn reconcile_writes_membership_a_plane_and_a_projection() {
         &[],
         gcs_core::syntax::Attitude::From {
             plane: gcs_core::syntax::Ref::new("front"),
-            fold: Some(gcs_core::syntax::Arg::Dim { text: "30deg".into(), span: Default::default() }),
+            fold: gcs_core::syntax::Arg::Dim { text: "30deg".into(), span: Default::default() },
         },
         Some("aux"),
         &[(0.0, 0.0), (40.0, 0.0)],

@@ -21,7 +21,7 @@ use crate::curve;
 use crate::decompose;
 use crate::expr;
 use crate::io;
-use crate::model::{EntKind, EntRef, Field, Sketch};
+use crate::model::{EntKind, EntRef, Field, Sketch, Extent, Sense, SolidDef};
 use crate::rng::Rng;
 use crate::style::Classes;
 use crate::syntax::{
@@ -64,6 +64,16 @@ pub enum Code {
     E070,
     /// a component defined twice, across the document and its modules (§14.4)
     E071,
+    /// a face that is not a loop on one plane (§6.8)
+    E080,
+    /// a revolution's axis: not a line, or not in the face's own plane (§6.9)
+    E081,
+    /// a face of a body that the body no longer has (§6.9)
+    E082,
+    /// a stack that contradicts itself, or a placed plane placed twice or never (§6.10)
+    E083,
+    /// a section whose cutting plane is not parallel to the view it is drawn in (§6.11)
+    E084,
     /// syntax
     E100,
     /// no such name
@@ -97,6 +107,11 @@ impl Code {
             Code::E061 => "E061",
             Code::E070 => "E070",
             Code::E071 => "E071",
+            Code::E080 => "E080",
+            Code::E081 => "E081",
+            Code::E082 => "E082",
+            Code::E083 => "E083",
+            Code::E084 => "E084",
             Code::E100 => "E100",
             Code::E101 => "E101",
             Code::E102 => "E102",
@@ -850,6 +865,13 @@ pub fn elaborate(p: &Program) -> Elaborated {
         }
     }
 
+    // -- phase 3b: faces, then solids (§6.8, §6.9).  **After every other kind and after the
+    // constraints**, because a face is written over edges the drawing already has and a solid
+    // over faces and other solids; and *evaluated* rather than solved, because nothing about
+    // either is an unknown.  This is the stratification as a phase: everything above it is the
+    // drawing, everything below reads what the drawing came to.
+    solids(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+
     // -- phase 4: every expression against the whole document, once.  Per-statement evaluation
     // would be quadratic in the expression count and would make a dimension whose definition is
     // further down the file briefly a free variable — allocating an unknown the next pass retires.
@@ -1535,7 +1557,11 @@ fn plane_bases(
     done.into_iter().filter_map(|(k, b)| b.map(|b| (k, b))).collect()
 }
 
-fn basis_of<'a>(
+/// The plane a derived one is *derived from*, shared by the fold and the offset: both say "this
+/// one, turned or moved", and looking the parent up twice is two chances to disagree about what
+/// `from:` may name.
+fn parent_plane<'a>(
+    plane: &'a crate::syntax::Ref,
     key: &'a str,
     decls: &BTreeMap<&'a str, (&'a Stmt, &'a Decl)>,
     res: &Resolver,
@@ -1544,29 +1570,11 @@ fn basis_of<'a>(
     stack: &mut Vec<&'a str>,
     diags: &mut Vec<Diag>,
 ) -> Option<crate::plane::Basis> {
-    let &(st, d) = decls.get(key)?;
-    if let Some(b) = done.get(key) {
-        return *b;
-    }
+    let stmt = decls.get(key).map(|&(st, _)| st.id);
     let fail = |diags: &mut Vec<Diag>, code: Code, span: Span, message: String| {
-        diags.push(Diag { code, span, stmt: Some(st.id), message });
+        diags.push(Diag { code, span, stmt, message });
     };
-    // one number the attitude was written with, as the dimension its slot takes
-    // what a written number comes to, asked of the one function that answers it everywhere —
-    // an attitude is written in the same little language a dimension is, and read in the
-    // document's own units.  Nothing is in scope: a plane's fold is settled per copy by the
-    // flattener before this runs, so what arrives here is arithmetic over literals.
-    let number = |a: &Arg, want: crate::units::Dim, what: &str| -> Result<f64, String> {
-        let Arg::Dim { text, .. } = a else { return Err(format!("`{what}` is not a number")) };
-        let v = crate::flatten::value_aff(text, &BTreeMap::new(), units)
-            .map_err(|e| format!("`{text}`: {e}"))?;
-        v.dim.require(want, what)?;
-        Ok(v.c)
-    };
-    let basis = match &d.attitude {
-        Attitude::Page => Some(crate::plane::Basis::page()),
-        Attitude::From { plane, fold } => {
-            let parent = if !plane.path.is_empty() {
+            if !plane.path.is_empty() {
                 fail(diags, Code::E040, plane.span, "`from` names a plane, not a part of one".into());
                 None
             } else {
@@ -1610,19 +1618,70 @@ fn basis_of<'a>(
                         p
                     }
                 }
+            }
+        }
+
+fn basis_of<'a>(
+    key: &'a str,
+    decls: &BTreeMap<&'a str, (&'a Stmt, &'a Decl)>,
+    res: &Resolver,
+    units: crate::units::Units,
+    done: &mut BTreeMap<String, Option<crate::plane::Basis>>,
+    stack: &mut Vec<&'a str>,
+    diags: &mut Vec<Diag>,
+) -> Option<crate::plane::Basis> {
+    let &(st, d) = decls.get(key)?;
+    if let Some(b) = done.get(key) {
+        return *b;
+    }
+    let fail = |diags: &mut Vec<Diag>, code: Code, span: Span, message: String| {
+        diags.push(Diag { code, span, stmt: Some(st.id), message });
+    };
+    // one number the attitude was written with, as the dimension its slot takes
+    // what a written number comes to, asked of the one function that answers it everywhere —
+    // an attitude is written in the same little language a dimension is, and read in the
+    // document's own units.  Nothing is in scope: a plane's fold is settled per copy by the
+    // flattener before this runs, so what arrives here is arithmetic over literals.
+    let number = |a: &Arg, want: crate::units::Dim, what: &str| -> Result<f64, String> {
+        let Arg::Dim { text, .. } = a else { return Err(format!("`{what}` is not a number")) };
+        let v = crate::flatten::value_aff(text, &BTreeMap::new(), units)
+            .map_err(|e| format!("`{text}`: {e}"))?;
+        v.dim.require(want, what)?;
+        Ok(v.c)
+    };
+    let basis = match &d.attitude {
+        Attitude::Page => Some(crate::plane::Basis::page()),
+        Attitude::From { plane, fold } => {
+            let parent = parent_plane(plane, key, decls, res, units, done, stack, diags);
+            let theta = match number(fold, crate::units::Dim::ANGLE, "fold") {
+                Ok(deg) => Some(expr::to_arg_units(SpecKind::Angle, deg)),
+                Err(m) => {
+                    fail(diags, Code::E103, arg_span(fold).unwrap_or(st.span), m);
+                    None
+                }
             };
-            let theta = match fold {
+            match (parent, theta) {
+                (Some(p), Some(t)) => Some(p.fold(t)),
+                _ => None,
+            }
+        }
+        // **parallel, and that far along the normal** (§6.7).  Only along the normal: an offset
+        // in the plane would move the origin `project` measures both images from and put a
+        // constant in a residual that has none.
+        Attitude::Offset { plane, offset } => {
+            let parent = parent_plane(plane, key, decls, res, units, done, stack, diags);
+            let k = match offset {
                 None => Some(0.0),
-                Some(a) => match number(a, crate::units::Dim::ANGLE, "fold") {
-                    Ok(deg) => Some(expr::to_arg_units(SpecKind::Angle, deg)),
+                Some(a) => match number(a, crate::units::Dim::LENGTH, "offset") {
+                    Ok(v) => Some(v),
                     Err(m) => {
                         fail(diags, Code::E103, arg_span(a).unwrap_or(st.span), m);
                         None
                     }
                 },
             };
-            match (parent, theta) {
-                (Some(p), Some(t)) => Some(p.fold(t)),
+            match (parent, k) {
+                (Some(p), Some(k)) => Some(p.offset(k)),
                 _ => None,
             }
         }
@@ -1660,6 +1719,480 @@ fn basis_of<'a>(
 /// names.  After every kind is built, since the plane may be declared after the point; before
 /// any constraint, since `project` reads these.  A point two declarations put on two different
 /// planes is E060 — one image is on one plane.
+/// `boss on cyl`: an `on` whose two operands are both solids.  Asked of the *resolver*, which
+/// has known every declaration's kind since phase 1 — so the question is answered the same way
+/// before the solids are built and after.
+fn is_body_on(res: &Resolver, r: &Relation) -> bool {
+    let Some(w) = &r.poly else { return false };
+    if w.word.text != "on" || w.ops.len() != 2 {
+        return false;
+    }
+    w.ops
+        .iter()
+        .all(|o| res.lookup(o).map(|e| e.kind == EntKind::Solid).unwrap_or(false))
+}
+
+/// **Faces and solids** (§6.8, §6.9), in one walk over the body.
+///
+/// Faces first, since a solid is swept from one; then solids in the order they are written,
+/// which is enough — a term names solids, and `on`/`through` are folded in afterwards, so the
+/// only ordering a document could get wrong is a cycle, and that is E041 by the same words a
+/// plane folded from itself gets.
+fn solids(
+    sk: &mut Sketch,
+    res: &mut Resolver,
+    map: &mut SourceMap,
+    body: &[&Stmt],
+    skip: &BTreeSet<StmtId>,
+    diags: &mut Vec<Diag>,
+) {
+    let has = body.iter().any(|st| {
+        matches!(&st.kind, StmtKind::Decl(d) if d.kind.spatial()) && !skip.contains(&st.id)
+    });
+    if !has {
+        return;
+    }
+    // -- faces --------------------------------------------------------------
+    for st in body {
+        let StmtKind::Decl(d) = &st.kind else { continue };
+        if d.kind != EntKind::Face || skip.contains(&st.id) {
+            continue;
+        }
+        let name = d.name.key().text.clone();
+        match build_face(sk, res, d, st, diags) {
+            Some(i) => {
+                let e = EntRef::face(i);
+                map.bind(&name, e, d.name.named());
+                map.record(st, Made::Ent(e));
+            }
+            None => {
+                res_forget(res, &name);
+            }
+        }
+    }
+    // -- solids -------------------------------------------------------------
+    for st in body {
+        let StmtKind::Decl(d) = &st.kind else { continue };
+        if d.kind != EntKind::Solid || skip.contains(&st.id) {
+            continue;
+        }
+        let name = d.name.key().text.clone();
+        match build_solid(sk, res, d, st, diags) {
+            Some(i) => {
+                let e = EntRef::solid(i);
+                map.bind(&name, e, d.name.named());
+                map.record(st, Made::Ent(e));
+            }
+            None => {
+                res_forget(res, &name);
+            }
+        }
+    }
+    // -- the body rule --------------------------------------------------------
+    // `bore through cyl`, `boss on cyl`, folded into the body they name.  **Both are sets**, so
+    // the order this walk meets them in cannot matter, and a document may write them anywhere.
+    for st in body {
+        if skip.contains(&st.id) {
+            continue;
+        }
+        let (word, what, at, into) = match &st.kind {
+            StmtKind::SolidRel(r) => (r.word, &r.what, r.span, &r.body),
+            StmtKind::Relation(r) if is_body_on(res, r) => {
+                let w = r.poly.as_ref().expect("`is_body_on` read the operands");
+                (crate::syntax::BodyWord::On, &w.ops[0], st.span, &w.ops[1])
+            }
+            _ => continue,
+        };
+        let mut say = |span: Span, m: String| {
+            diags.push(Diag { code: Code::E080, span, stmt: Some(st.id), message: m });
+        };
+        let (Some(a), Some(b)) = (res.lookup(what), res.lookup(into)) else {
+            let miss = if res.lookup(what).is_none() { what } else { into };
+            diags.push(Diag {
+                code: Code::E101,
+                span: miss.span,
+                stmt: Some(st.id),
+                message: format!("no such entity: `{}`", miss.root.text),
+            });
+            continue;
+        };
+        if a.kind != EntKind::Solid || b.kind != EntKind::Solid {
+            let bad = if a.kind != EntKind::Solid { (what, a) } else { (into, b) };
+            say(
+                at,
+                format!(
+                    "`{}` relates solids, and `{}` is a {}",
+                    word.as_str(),
+                    bad.0.root.text,
+                    bad.1.kind.as_str()
+                ),
+            );
+            continue;
+        }
+        if a.idx == b.idx {
+            say(at, format!("`{}` is {} itself", into.root.text, word.as_str()));
+            continue;
+        }
+        let Some(sol) = sk.solids.get_mut(b.i()) else { continue };
+        match &mut sol.def {
+            SolidDef::Body { on, through, .. } => match word {
+                crate::syntax::BodyWord::On => on.push(a.idx),
+                crate::syntax::BodyWord::Through => through.push(a.idx),
+            },
+            _ => {
+                // a swept solid is what its brackets say; a body is what its statements say.
+                // Naming the first in the second would make one statement mean two things
+                say(
+                    at,
+                    format!(
+                        "`{}` is a face swept, and only a body takes features: give it a stock \
+                         (`solid {name}({name}_stock)`) and write them there",
+                        into.root.text,
+                        name = into.root.text
+                    ),
+                );
+            }
+        }
+    }
+    // **a body may not be made of itself** — the term walk would not terminate, and the
+    // document says something that is not about any object (§6.9)
+    for i in 0..sk.solids.len() {
+        if reaches(sk, i as u32, i as u32, 0) {
+            let name = sk.solids[i].name.clone();
+            let at = body
+                .iter()
+                .find(|st| matches!(&st.kind, StmtKind::Decl(d)
+                                    if d.kind == EntKind::Solid && d.name.key().text == name))
+                .map(|st| st.span)
+                .unwrap_or_default();
+            diags.push(Diag {
+                code: Code::E041,
+                span: at,
+                stmt: None,
+                message: format!("`{name}` is made of itself"),
+            });
+            // left standing but emptied, so nothing below it walks the cycle
+            sk.solids[i].def = SolidDef::Body { stock: i as u32, on: Vec::new(), through: Vec::new() };
+        }
+    }
+}
+
+/// Does `from` reach `goal` through its operands?  The guard on the term walk, and the one thing
+/// a document can write that has no object behind it.
+fn reaches(sk: &Sketch, from: u32, goal: u32, depth: usize) -> bool {
+    if depth > 64 {
+        return true;
+    }
+    sk.solids.get(from as usize).is_some_and(|s| {
+        s.operands().iter().any(|&o| o == goal || reaches(sk, o, goal, depth + 1))
+    })
+}
+
+/// A declaration that could not be built leaves its name unbound, so every reference to it is
+/// reported where the reference is — **and every later one of its kind moves down a slot**,
+/// since the vector it would have gone in is one shorter than phase 1 counted on.
+///
+/// The same shift phase 2 does for the drawn kinds, and it is not optional: a `stock` that
+/// failed to build left `body` resolving `stock` to solid 0, which is where `body` itself then
+/// landed — so a document with one mistake in it reported a second, that `body` is made of
+/// itself, which was never true.
+fn res_forget(res: &mut Resolver, name: &str) {
+    if let Some(gone) = res.of.remove(name) {
+        for e in res.of.values_mut() {
+            if e.kind == gone.kind && e.idx > gone.idx {
+                e.idx -= 1;
+            }
+        }
+    }
+}
+
+/// **A face is a closed loop of edges on one plane** (§6.8).
+///
+/// Both facts are checked here rather than in the kernel, because both are things a person got
+/// wrong in the text and both have a span to say it at: a loop that does not close, and edges
+/// whose points are in different views.
+fn build_face(
+    sk: &mut Sketch,
+    res: &Resolver,
+    d: &Decl,
+    st: &Stmt,
+    diags: &mut Vec<Diag>,
+) -> Option<usize> {
+    let mut fail = |span: Span, m: String| {
+        diags.push(Diag { code: Code::E080, span, stmt: Some(st.id), message: m });
+    };
+    let kids = d.children.first().map(Vec::as_slice).unwrap_or(&[]);
+    if kids.is_empty() {
+        fail(st.span, "a face is a loop of edges: `face f(ab, bc, cd, da)`".into());
+        return None;
+    }
+    let mut edges = Vec::with_capacity(kids.len());
+    let mut names = Vec::with_capacity(kids.len());
+    for k in kids {
+        let Kid::Ref(r) = k else {
+            fail(st.span, "a face names the edges it is bounded by; a seed places a point".into());
+            return None;
+        };
+        let Some(e) = res.lookup(r) else {
+            diags.push(Diag {
+                code: Code::E101,
+                span: r.span,
+                stmt: Some(st.id),
+                message: format!("no such entity: `{}`", r.root.text),
+            });
+            return None;
+        };
+        if !matches!(e.kind, EntKind::Line | EntKind::Arc | EntKind::Circle) {
+            fail(
+                r.span,
+                format!(
+                    "a face is bounded by lines, arcs and circles, and `{}` is a {}",
+                    r.root.text,
+                    e.kind.as_str()
+                ),
+            );
+            return None;
+        }
+        edges.push(e);
+        names.push(crate::syntax::ref_text(r));
+    }
+    // **a circle is a loop by itself, and may not stand in one**
+    if edges.iter().any(|e| e.kind == EntKind::Circle) && edges.len() > 1 {
+        fail(st.span, "a circle is a whole loop: it stands in a face by itself".into());
+        return None;
+    }
+    // **the loop closes**: consecutive edges share an end, and the last shares one with the
+    // first.  Checked by the *points*, which is aliasing and cannot be argued with
+    if edges.len() > 1 {
+        let ends: Vec<(u32, u32)> = match edges
+            .iter()
+            .map(|e| crate::model::edge_ends(sk, *e))
+            .collect::<Option<Vec<_>>>()
+        {
+            Some(v) => v,
+            None => {
+                fail(st.span, "a face's edges are lines and arcs, which have ends".into());
+                return None;
+            }
+        };
+        for i in 0..ends.len() {
+            let j = (i + 1) % ends.len();
+            let (a, b) = ends[i];
+            let (c, e) = ends[j];
+            if a != c && a != e && b != c && b != e {
+                fail(
+                    st.span,
+                    format!(
+                        "`{}` and `{}` share no point: a face is a loop, walked in order",
+                        names[i], names[j]
+                    ),
+                );
+                return None;
+            }
+        }
+    }
+    // **one plane**, read off the memberships and never written on the face
+    let mut plane: Option<Option<u32>> = None;
+    for (e, n) in edges.iter().zip(&names) {
+        for c in sk.children(*e).into_iter().chain([*e]) {
+            if c.kind != EntKind::Point {
+                continue;
+            }
+            let p = sk.plane_of(c.i()).map(|x| x as u32);
+            match plane {
+                None => plane = Some(p),
+                Some(q) if q == p => {}
+                Some(q) => {
+                    let say = |x: Option<u32>| match x {
+                        Some(i) => format!("view {i}"),
+                        None => "the page".to_string(),
+                    };
+                    fail(
+                        st.span,
+                        format!(
+                            "a face lies in one plane, and `{n}` is on {} where the loop is on {}",
+                            say(p),
+                            say(q)
+                        ),
+                    );
+                    return None;
+                }
+            }
+        }
+    }
+    let i = sk.face(edges, names, &d.name.key().text);
+    sk.faces[i].plane = plane.flatten();
+    sk.faces[i].class = d.class.clone();
+    Some(i)
+}
+
+/// **A solid is a face swept, or a term over other solids** (§6.9).
+fn build_solid(
+    sk: &mut Sketch,
+    res: &Resolver,
+    d: &Decl,
+    st: &Stmt,
+    diags: &mut Vec<Diag>,
+) -> Option<usize> {
+    let mut say = |code: Code, span: Span, m: String| {
+        diags.push(Diag { code, span, stmt: Some(st.id), message: m });
+    };
+    let kids = d.children.first().map(Vec::as_slice).unwrap_or(&[]);
+    let mut ops: Vec<EntRef> = Vec::new();
+    for k in kids {
+        let Kid::Ref(r) = k else {
+            say(Code::E080, st.span, "a solid is made of a face or of other solids".into());
+            return None;
+        };
+        let Some(e) = res.lookup(r) else {
+            say(Code::E101, r.span, format!("no such entity: `{}`", r.root.text));
+            return None;
+        };
+        ops.push(e);
+    }
+    let sweep = d.sweep.clone().unwrap_or(crate::syntax::Sweep::Body);
+    // every number a solid carries is settled here and is never an unknown — the `fold:` rule
+    let ext = |a: &crate::syntax::Arg, what: &str, dim: crate::units::Dim| -> Result<Extent, String> {
+        let crate::syntax::Arg::Dim { text, .. } = a else {
+            return Err(format!("`{what}` is not a number"));
+        };
+        let v = crate::flatten::value_aff(text, &BTreeMap::new(), sk.units)
+            .map_err(|e| format!("`{text}`: {e}"))?;
+        v.dim.require(dim, what)?;
+        Ok(Extent { text: text.trim().to_string(), value: v.c })
+    };
+    let def = match &sweep {
+        crate::syntax::Sweep::Prism { from, to } => {
+            let Some(face) = one_face(&ops, sk, st, &mut say) else { return None };
+            let (a, b) = match (
+                ext(from, "from", crate::units::Dim::LENGTH),
+                ext(to, "to", crate::units::Dim::LENGTH),
+            ) {
+                (Ok(a), Ok(b)) => (a, b),
+                (Err(m), _) | (_, Err(m)) => {
+                    say(Code::E103, st.span, m);
+                    return None;
+                }
+            };
+            if (a.value - b.value).abs() <= 0.0 {
+                say(Code::E080, st.span, "a prism swept nowhere is no solid".into());
+                return None;
+            }
+            SolidDef::Prism { face, from: a, to: b }
+        }
+        crate::syntax::Sweep::Revolve { axis, sweep, sense } => {
+            let Some(face) = one_face(&ops, sk, st, &mut say) else { return None };
+            let Some(ax) = res.lookup(axis) else {
+                say(Code::E101, axis.span, format!("no such entity: `{}`", axis.root.text));
+                return None;
+            };
+            if ax.kind != EntKind::Line {
+                say(
+                    Code::E081,
+                    axis.span,
+                    format!("a face turns about a line, and `{}` is a {}", axis.root.text,
+                            ax.kind.as_str()),
+                );
+                return None;
+            }
+            // **the axis lies in the face's own plane**: a line in another view names a
+            // direction this face knows nothing about
+            let fp = sk.faces[face as usize].plane;
+            for p in [sk.lines[ax.i()].p1, sk.lines[ax.i()].p2] {
+                if sk.plane_of(p as usize).map(|x| x as u32) != fp {
+                    say(
+                        Code::E081,
+                        axis.span,
+                        format!("`{}` is not in the face's own plane", axis.root.text),
+                    );
+                    return None;
+                }
+            }
+            let turn = match sweep {
+                None => Extent { text: String::new(), value: std::f64::consts::TAU },
+                Some(a) => match ext(a, "sweep", crate::units::Dim::ANGLE) {
+                    Ok(e) => Extent { text: e.text, value: e.value.to_radians() },
+                    Err(m) => {
+                        say(Code::E103, st.span, m);
+                        return None;
+                    }
+                },
+            };
+            // **a selector is a word, never a sign**: which way it turns is `sense:`
+            if turn.value <= 0.0 {
+                say(
+                    Code::E040,
+                    st.span,
+                    "a sweep is a magnitude: which way it turns is `sense: cw`".into(),
+                );
+                return None;
+            }
+            let sense = match sense {
+                crate::syntax::Sense::Cw => Sense::Cw,
+                crate::syntax::Sense::Ccw => Sense::Ccw,
+            };
+            SolidDef::Revolve { face, axis: ax.idx, sweep: turn, sense }
+        }
+        crate::syntax::Sweep::Body => {
+            let mut solids = Vec::new();
+            for (e, k) in ops.iter().zip(kids) {
+                if e.kind != EntKind::Solid {
+                    let at = match k {
+                        Kid::Ref(r) => r.span,
+                        _ => st.span,
+                    };
+                    say(
+                        Code::E080,
+                        at,
+                        format!("a body is made of solids, and this is a {}", e.kind.as_str()),
+                    );
+                    return None;
+                }
+                solids.push(e.idx);
+            }
+            let Some((stock, on)) = solids.split_first() else {
+                say(
+                    Code::E080,
+                    st.span,
+                    "a solid is a face swept (`from:`/`to:`, `depth:`, `about:`) or a body over \
+                     other solids"
+                        .into(),
+                );
+                return None;
+            };
+            SolidDef::Body { stock: *stock, on: on.to_vec(), through: Vec::new() }
+        }
+    };
+    let i = sk.solid(def, &d.name.key().text);
+    sk.solids[i].class = d.class.clone();
+    Some(i)
+}
+
+/// The one face a swept solid is written over.
+fn one_face(
+    ops: &[EntRef],
+    sk: &Sketch,
+    st: &Stmt,
+    say: &mut impl FnMut(Code, Span, String),
+) -> Option<u32> {
+    match ops.first() {
+        Some(e) if e.kind == EntKind::Face && ops.len() == 1 => Some(e.idx),
+        Some(e) if e.kind != EntKind::Face => {
+            say(
+                Code::E080,
+                st.span,
+                format!("a swept solid is written over a face, and this is a {}", e.kind.as_str()),
+            );
+            let _ = sk;
+            None
+        }
+        _ => {
+            say(Code::E080, st.span, "a swept solid is written over one face".into());
+            None
+        }
+    }
+}
+
 fn memberships(
     sk: &mut Sketch,
     res: &Resolver,
@@ -2359,6 +2892,14 @@ fn constrain(
     st: &Stmt,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
+    // **`on` between two solids is the body rule and not a constraint** (§6.9).  A word means
+    // the kinds of its operands, and this is that rule reaching one word further out: `p on c`
+    // holds a point to a circle, and `boss on cyl` says what a body is made of.  It is picked
+    // up by the solids phase, so nothing is added here — and nothing is *said* here either, or
+    // one statement would be reported twice.
+    if is_body_on(res, r) {
+        return None;
+    }
     // **The operator, settled.**  What a word means is the *kinds* of its operands — `on` is
     // five constraints, `distance` is six — and a name's kind is not known until here, so every
     // statement a document contains arrives as a word and its parentheses.  Settled before the
@@ -2835,6 +3376,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         seed_at: None,
         seed_names: Vec::new(),
         attitude: lift_attitude(sk, e),
+        sweep: None,
         membership: lift_plane(sk, e),
         list_span: Span::default(),
     }

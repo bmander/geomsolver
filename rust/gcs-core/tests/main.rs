@@ -53,6 +53,7 @@ mod row_scale;
 mod seeds;
 mod smoke;
 mod solid;
+mod solid_lang;
 mod style;
 mod tape;
 mod trace;

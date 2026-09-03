@@ -3020,9 +3020,12 @@ pub unsafe extern "C" fn gcs_elab_add_entity(
             let attitude = match att {
                 Some(a) if !matches!(a, Json::Null) => {
                     if let Some(from) = a.get("from") {
-                        Attitude::From {
-                            plane: Ref::new(from.as_str().to_string()),
-                            fold: a.get("fold").map(dim),
+                        // `from:` says which plane it is derived from; `fold:` turns it and
+                        // `offset:` stands it off along the normal (§6.7)
+                        let plane = Ref::new(from.as_str().to_string());
+                        match a.get("fold").map(dim) {
+                            Some(fold) => Attitude::From { plane, fold },
+                            None => Attitude::Offset { plane, offset: a.get("offset").map(dim) },
                         }
                     } else {
                         match (triple(a.get("u")), triple(a.get("v"))) {

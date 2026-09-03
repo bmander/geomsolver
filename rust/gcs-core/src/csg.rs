@@ -104,45 +104,6 @@ fn same_plane(n1: [f64; 3], d1: f64, n2: [f64; 3], d2: f64) -> bool {
     (d1 - d2).abs() < 1e-9 * (1.0 + d1.abs().max(d2.abs()))
 }
 
-/// Cut a convex polygon by a plane, returning the pieces on each side.  A plane that does not
-/// cross it returns it whole — the common case, and the reason this is cheap.
-fn split(pts: &[[f64; 3]], n: [f64; 3], d: f64, tol: f64) -> Vec<Vec<[f64; 3]>> {
-    let s: Vec<f64> = pts.iter().map(|p| plane::dot(n, *p) - d).collect();
-    if !(s.iter().any(|v| *v > tol) && s.iter().any(|v| *v < -tol)) {
-        return vec![pts.to_vec()];
-    }
-    let mut pos: Vec<[f64; 3]> = Vec::new();
-    let mut neg: Vec<[f64; 3]> = Vec::new();
-    for i in 0..pts.len() {
-        let j = (i + 1) % pts.len();
-        let (a, b) = (pts[i], pts[j]);
-        let (sa, sb) = (s[i], s[j]);
-        if sa >= -tol {
-            pos.push(a);
-        }
-        if sa <= tol {
-            neg.push(a);
-        }
-        if (sa > tol && sb < -tol) || (sa < -tol && sb > tol) {
-            let t = sa / (sa - sb);
-            let x = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), a[2] + t * (b[2] - a[2])];
-            pos.push(x);
-            neg.push(x);
-        }
-    }
-    let mut out = Vec::new();
-    for part in [pos, neg] {
-        if part.len() >= 3 {
-            out.push(part);
-        }
-    }
-    if out.is_empty() {
-        vec![pts.to_vec()]
-    } else {
-        out
-    }
-}
-
 /// `body.bore.wall`: the solid the primitive came from, and the drawn edge its facet was swept
 /// from.  A path and never an index — a boolean never renames, which is why the naming problem
 /// every history-based kernel has does not arise here.

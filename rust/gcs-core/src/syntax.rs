@@ -351,6 +351,16 @@ pub enum StmtKind {
     /// `style .construction { dash: 7 4 }` — what a class looks like.  Presentation, and the
     /// one statement that says nothing about what the drawing *is*.
     Style(StyleRule),
+    /// `bore through cyl`, `boss on cyl` — **the body rule** (§6.9): a solid is its stock, plus
+    /// everything `on` it, minus everything `through` it.  Both are *sets*, so these may be
+    /// written anywhere in any order, which is P2 and is exactly what a feature tree — folding a
+    /// sequence, each step reading the one before — cannot have.
+    ///
+    /// A Declaration and not a Constraint: it says what the right operand *is*, adds no
+    /// equation, and enters no solve.  `on` is written as an ordinary relation (a word means the
+    /// kinds of its operands, and `on` is already five constraints), and the elaborator reads it
+    /// as one of these when both operands turn out to be solids; `through` is a word of its own.
+    SolidRel(SolidRel),
     /// `unit mm` — what the document's numbers are in (spec §3.3).  A bare number in a `Length`
     /// slot is that unit, so every document keeps working with one added line; a document that
     /// says nothing is in **drawing units**, and everything still dimension-checks, you simply
@@ -370,6 +380,33 @@ pub struct StyleRule {
     pub style: Style,
     /// The property names as written, in order, so the printer says what the source said.
     pub props: Vec<String>,
+    pub span: Span,
+}
+
+/// Which side of the body rule a statement fills.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BodyWord {
+    /// `boss on cyl` — material.
+    On,
+    /// `bore through cyl` — a void.
+    Through,
+}
+
+impl BodyWord {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BodyWord::On => "on",
+            BodyWord::Through => "through",
+        }
+    }
+}
+
+/// `bore through cyl`: what it is, and the body it belongs to.
+#[derive(Clone, Debug)]
+pub struct SolidRel {
+    pub word: BodyWord,
+    pub what: Ref,
+    pub body: Ref,
     pub span: Span,
 }
 
@@ -717,6 +754,9 @@ pub struct Decl {
     pub seed_names: Vec<(String, String)>,
     /// A plane's attitude in space, as written (§6.7).  `Page` for every other kind.
     pub attitude: Attitude,
+    /// How a solid is swept (§6.9): a prism along the plane's normal, a revolution about a line
+    /// in it, or a body over other solids.  `None` for every other kind.
+    pub sweep: Option<Sweep>,
     /// The plane this declaration's points are on — `point a in top`, and for a line, a circle,
     /// an arc, a spline or an ellipse, every point it mints or names (§6.7).  Its span is at
     /// the end of the trailers, so an appended clause lands after `hint`/`class` and never
@@ -884,7 +924,16 @@ pub enum Attitude {
     Page,
     /// `from: front, fold: 30deg` — the plane perpendicular to `front` containing the direction
     /// at that bearing in it.  `fold` is an `Arg::Dim` (an Angle, as written); `None` is 0.
-    From { plane: Ref, fold: Option<Arg> },
+    From { plane: Ref, fold: Arg },
+    /// `from: front, offset: fwA + D / 2` — the plane **parallel** to `front`, that far along
+    /// its normal (§6.7).  A plane a solid stands on rather than a view of one object: the
+    /// views of a drawing share an origin, and a part standing a wall's thickness in front of
+    /// another does not.
+    ///
+    /// The offset is document data like the fold, so it stands in the brackets and is never an
+    /// unknown; and it is only ever along the *normal*, which is what keeps `project` intact —
+    /// the fold line is perpendicular to both normals, so it cannot see the move.
+    Offset { plane: Ref, offset: Option<Arg> },
     /// `u: (0.6, 0.8, 0), v: (0, 0, 1)` — six dimensionless `Arg::Dim`s.
     Basis { u: [Arg; 3], v: [Arg; 3] },
 }
@@ -894,14 +943,14 @@ impl Attitude {
     /// makes (`flatten::rewrite`, `edit::mentions`).
     pub fn plane_ref(&self) -> Option<&Ref> {
         match self {
-            Attitude::From { plane, .. } => Some(plane),
+            Attitude::From { plane, .. } | Attitude::Offset { plane, .. } => Some(plane),
             Attitude::Page | Attitude::Basis { .. } => None,
         }
     }
 
     pub fn plane_ref_mut(&mut self) -> Option<&mut Ref> {
         match self {
-            Attitude::From { plane, .. } => Some(plane),
+            Attitude::From { plane, .. } | Attitude::Offset { plane, .. } => Some(plane),
             Attitude::Page | Attitude::Basis { .. } => None,
         }
     }
@@ -911,9 +960,137 @@ impl Attitude {
     pub fn args_mut(&mut self) -> Vec<&mut Arg> {
         match self {
             Attitude::Page => Vec::new(),
-            Attitude::From { fold, .. } => fold.iter_mut().collect(),
+            Attitude::From { fold, .. } => vec![fold],
+            Attitude::Offset { offset, .. } => offset.iter_mut().collect(),
             Attitude::Basis { u, v } => u.iter_mut().chain(v.iter_mut()).collect(),
         }
+    }
+}
+
+/// **How a solid is swept** (§6.9), as the brackets said it.
+///
+/// The brackets after a name are what the thing is made of, and a solid is made of a face and
+/// the sweep that carries it.  Every number here is an *extent*: an expression over the
+/// parameters in scope, settled by the flattener and never an unknown — the `fold:` bargain,
+/// which is what "nothing three-dimensional is ever solved for" comes to at the grammar.
+#[derive(Clone, Debug)]
+pub enum Sweep {
+    /// `from: a, to: b` — signed ordinates along the plane's normal; `depth: d` is the
+    /// draughtsman's `from: -d, to: 0`, the material behind the face the view shows.
+    Prism { from: Arg, to: Arg },
+    /// `about: ax` — a full turn about a line in the face's own plane, or `sweep:` of one,
+    /// `sense: cw` the other way round.
+    Revolve { axis: Ref, sweep: Option<Arg>, sense: Sense },
+    /// `solid body(block)` — a stock, or a term: what it is made of is in the list, and the
+    /// `on`/`through` statements say the rest.
+    Body,
+}
+
+impl Sweep {
+    /// Every number it was written over, for the flattener to settle a component's parameters
+    /// into — the same walk `Attitude::args_mut` joins, and for the same reason: an extent is
+    /// written in the little language a dimension is, and a `param` is in scope for it.
+    pub fn args_mut(&mut self) -> Vec<&mut Arg> {
+        match self {
+            Sweep::Prism { from, to } => vec![from, to],
+            Sweep::Revolve { sweep, .. } => sweep.iter_mut().collect(),
+            Sweep::Body => Vec::new(),
+        }
+    }
+
+    /// The line a revolution turns about, for the walks that fix every reference a statement
+    /// makes.
+    pub fn axis_ref_mut(&mut self) -> Option<&mut Ref> {
+        match self {
+            Sweep::Revolve { axis, .. } => Some(axis),
+            Sweep::Prism { .. } | Sweep::Body => None,
+        }
+    }
+
+    pub fn axis_ref(&self) -> Option<&Ref> {
+        match self {
+            Sweep::Revolve { axis, .. } => Some(axis),
+            Sweep::Prism { .. } | Sweep::Body => None,
+        }
+    }
+}
+
+/// Which way a partial revolution turns.  **A word, never a sign** (§9.2): a negative sweep is
+/// refused where it is written, because `sweep(-90deg)` says nothing a reader can picture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Sense {
+    #[default]
+    Ccw,
+    Cw,
+}
+
+/// A solid's sweep arguments while the bracket list is being read.
+#[derive(Default)]
+struct SweepParts {
+    from: Option<Arg>,
+    to: Option<Arg>,
+    depth: Option<Arg>,
+    about: Option<Ref>,
+    sweep: Option<Arg>,
+    sense: Option<Sense>,
+}
+
+/// The labels a solid's brackets may carry beside the face or the operands.
+fn sweep_label(l: &str) -> bool {
+    matches!(l, "from" | "to" | "depth" | "about" | "sweep" | "sense")
+}
+
+/// What the sweep arguments a bracket list carried come to.  A solid is a prism, a revolution,
+/// or a body over other solids — and a mixture is none of the three.
+fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
+    let turn = p.sense.unwrap_or_default();
+    match (p.from, p.to, p.depth, p.about) {
+        (None, None, None, None) => {
+            if p.sweep.is_some() || p.sense.is_some() {
+                return Err("`sweep` and `sense` turn a face about an axis: say `about:` too"
+                    .into());
+            }
+            Ok(Sweep::Body)
+        }
+        (None, None, None, Some(axis)) => Ok(Sweep::Revolve { axis, sweep: p.sweep, sense: turn }),
+        (from, to, depth, None) => {
+            if p.sweep.is_some() || p.sense.is_some() {
+                return Err("`sweep` and `sense` turn a face about an axis, and this one is \
+                            swept along its normal"
+                    .into());
+            }
+            match (from, to, depth) {
+                (Some(from), Some(to), None) => Ok(Sweep::Prism { from, to }),
+                (None, None, Some(d)) => Ok(Sweep::Prism {
+                    // `depth: d` is the material *behind* the face the view shows
+                    from: Arg::Dim { text: format!("-({})", arg_text_of(&d)), span: arg_span_of(&d) },
+                    to: Arg::Dim { text: "0".into(), span: arg_span_of(&d) },
+                }),
+                (Some(_), None, None) | (None, Some(_), None) => {
+                    Err("a prism runs `from:` one ordinate `to:` another, or `depth:` behind the \
+                         face"
+                        .into())
+                }
+                _ => Err("a prism is `from:`/`to:` or `depth:`, not both".into()),
+            }
+        }
+        _ => Err("a solid is a face swept along its normal (`from:`/`to:`, `depth:`) or turned \
+                  about a line (`about:`), not both"
+            .into()),
+    }
+}
+
+fn arg_text_of(a: &Arg) -> String {
+    match a {
+        Arg::Dim { text, .. } => text.clone(),
+        other => format!("{other:?}"),
+    }
+}
+
+fn arg_span_of(a: &Arg) -> Span {
+    match a {
+        Arg::Dim { span, .. } => *span,
+        _ => Span::default(),
     }
 }
 
@@ -923,29 +1100,42 @@ impl Attitude {
 struct AttParts {
     from: Option<Ref>,
     fold: Option<Arg>,
+    offset: Option<Arg>,
     u: Option<[Arg; 3]>,
     v: Option<[Arg; 3]>,
 }
 
 /// The labels a plane's brackets may carry beside its children.
 fn attitude_label(l: &str) -> bool {
-    matches!(l, "from" | "fold" | "u" | "v")
+    matches!(l, "from" | "fold" | "u" | "v" | "offset")
 }
 
 /// What the attitude arguments a bracket list carried come to: the page when it carried none,
 /// a fold when it named a plane, a basis when it gave both vectors — and a complaint for the
 /// halves and the mixtures.
 fn attitude_of(p: AttParts) -> Result<Attitude, String> {
-    match (p.from, p.fold, p.u, p.v) {
-        (None, None, None, None) => Ok(Attitude::Page),
-        (Some(plane), fold, None, None) => Ok(Attitude::From { plane, fold }),
-        (None, None, Some(u), Some(v)) => Ok(Attitude::Basis { u, v }),
-        (None, Some(_), None, None) => Err("`fold` folds from a plane: say `from:` too".into()),
-        (None, None, Some(_), None) | (None, None, None, Some(_)) => {
+    match (p.from, p.fold, p.offset, p.u, p.v) {
+        (None, None, None, None, None) => Ok(Attitude::Page),
+        // **`from:` says which plane it is derived from; `fold:` and `offset:` say how.**  0.10
+        // read a bare `from:` as `fold: 0deg`, a default no document in the corpus ever used;
+        // a plane naming another and folding nothing most plainly says *the same plane, moved*,
+        // which is what a stack is written in (§6.10) and what one `against` states.
+        (Some(plane), Some(fold), None, None, None) => Ok(Attitude::From { plane, fold }),
+        (Some(plane), None, offset, None, None) => Ok(Attitude::Offset { plane, offset }),
+        (None, None, None, Some(u), Some(v)) => Ok(Attitude::Basis { u, v }),
+        (None, Some(_), _, None, None) => Err("`fold` folds from a plane: say `from:` too".into()),
+        (None, _, Some(_), None, None) => {
+            Err("`offset` stands a plane off another: say `from:` too".into())
+        }
+        (Some(_), Some(_), Some(_), _, _) => {
+            Err("a plane is folded from another (`fold:`) or stood off it (`offset:`), not both"
+                .into())
+        }
+        (None, None, None, Some(_), None) | (None, None, None, None, Some(_)) => {
             Err("a basis is both `u:` and `v:`".into())
         }
-        _ => Err("a plane is folded from another (`from:`, `fold:`) or given a basis \
-                  (`u:`, `v:`), not both"
+        _ => Err("a plane is folded from another (`from:`, `fold:`), stood off it (`offset:`) \
+                  or given a basis (`u:`, `v:`), not two of the three"
             .into()),
     }
 }
@@ -1556,6 +1746,13 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
         StmtKind::Decl(d) => write_decl(out, d),
         StmtKind::Relation(r) => write_relation(out, r),
         StmtKind::Branch(b) => out.push_str(&format!("branch({}, {})", b.key, b.value)),
+        StmtKind::SolidRel(r) => {
+            write_ref(out, &r.what);
+            out.push(' ');
+            out.push_str(r.word.as_str());
+            out.push(' ');
+            write_ref(out, &r.body);
+        }
         StmtKind::Instance(i) => {
             out.push_str(&format!("{}: ", i.name.text));
             write_instance_call(out, i);
@@ -1721,9 +1918,14 @@ fn attitude_parts(a: &Attitude) -> Vec<String> {
         Attitude::From { plane, fold } => {
             let mut s = String::from("from: ");
             write_ref(&mut s, plane);
+            vec![s, format!("fold: {}", dim(fold))]
+        }
+        Attitude::Offset { plane, offset } => {
+            let mut s = String::from("from: ");
+            write_ref(&mut s, plane);
             let mut parts = vec![s];
-            if let Some(f) = fold {
-                parts.push(format!("fold: {}", dim(f)));
+            if let Some(k) = offset {
+                parts.push(format!("offset: {}", dim(k)));
             }
             parts
         }
@@ -3580,6 +3782,24 @@ impl<'a> P<'a> {
                 r.claim = true;
                 Some(StmtKind::Relation(r))
             }
+            // `bore through cyl` — the body rule's own word, and the one statement whose shape
+            // is two names with a word between them that is not a constraint.  Read by a
+            // lookahead rather than by `relation()`, since `through` relates no geometry and
+            // has no residual to be settled into
+            _ if matches!(self.t.get(self.i + 1).map(|(t, _)| t),
+                          Some(Tok::Ident(w)) if w == "through") => {
+                let lo = self.here().lo as usize;
+                let what = self.refr()?;
+                self.i += 1; // `through`
+                let body = self.refr()?;
+                self.end_of_stmt();
+                Some(StmtKind::SolidRel(SolidRel {
+                    word: BodyWord::Through,
+                    what,
+                    body,
+                    span: Span::new(lo, self.prev_hi()),
+                }))
+            }
             // `t: Tooth(...)` — a name, a colon and a component
             _ if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P(':'))) => {
                 let name = self.ident()?;
@@ -4926,6 +5146,7 @@ impl<'a> P<'a> {
                 seed_at: None,
                 seed_names: Vec::new(),
                 attitude: Attitude::Page,
+                sweep: None,
                 membership: Membership::default(),
                 list_span: Span::default(),
             });
@@ -4967,6 +5188,7 @@ impl<'a> P<'a> {
                 seed_at: None,
                 seed_names: Vec::new(),
                 attitude: Attitude::Page,
+                sweep: None,
                 membership,
                 list_span: Span::new(end, end),
             });
@@ -4986,6 +5208,7 @@ impl<'a> P<'a> {
         let mut seed_text: Vec<Option<String>> = vec![None; scalars.len()];
         let mut seed_spans: Vec<Span> = vec![Span::default(); scalars.len()];
         let mut att = AttParts::default();
+        let mut swp = SweepParts::default();
         let name_end = self.prev_hi();
         let open = self.here().lo as usize;
         let mut list_span = Span::new(name_end, name_end);
@@ -4995,6 +5218,12 @@ impl<'a> P<'a> {
                 // `name:` labels a field; anything else is positional
                 let label = self.slot_label();
                 match label {
+                    // **a solid's sweep is what it is made of**, so it stands in the brackets
+                    // with the face — and it is read before the attitude's labels, since `from`
+                    // is a word both constructs use and only one of them is a plane
+                    Some(l) if kind == EntKind::Solid && sweep_label(&l) => {
+                        self.sweep_arg(&l, &mut swp)?;
+                    }
                     // a plane's attitude is what it is made of, so it stands in the brackets
                     // with the children — and no other kind has one to give
                     Some(l) if attitude_label(&l) => {
@@ -5063,6 +5292,18 @@ impl<'a> P<'a> {
                 self.fail(&format!("`{head}`: {m}"));
                 return None;
             }
+        };
+        let sweep = if kind == EntKind::Solid {
+            match sweep_of(swp) {
+                Ok(sw) => Some(sw),
+                Err(m) => {
+                    let head = head();
+                    self.fail(&format!("`{head}`: {m}"));
+                    return None;
+                }
+            }
+        } else {
+            None
         };
         // trailing clauses, in any order: `hint(…)`, `knots [...]`, `class …`, `in PLANE`.
         // Where a clause *would* go if it is not written is the point we are standing on now,
@@ -5210,9 +5451,56 @@ impl<'a> P<'a> {
             seed_at,
             seed_names: Vec::new(),
             attitude,
+            sweep,
             membership,
             list_span,
         })
+    }
+
+    /// One of a solid's sweep arguments, the label already eaten: `from: EXPR`, `to: EXPR`,
+    /// `depth: EXPR`, `about: REF`, `sweep: EXPR`, `sense: cw|ccw`.
+    fn sweep_arg(&mut self, label: &str, parts: &mut SweepParts) -> Option<()> {
+        let twice = |s: &mut Self| {
+            s.fail(&format!("`{label}` is given twice"));
+            None
+        };
+        match label {
+            "about" => {
+                if parts.about.is_some() {
+                    return twice(self);
+                }
+                parts.about = Some(self.refr()?);
+            }
+            // **a selector is a word, never a sign** (§9.2): `sense: cw`, not a negative sweep
+            "sense" => {
+                if parts.sense.is_some() {
+                    return twice(self);
+                }
+                let w = self.ident()?;
+                parts.sense = Some(match w.text.as_str() {
+                    "ccw" => Sense::Ccw,
+                    "cw" => Sense::Cw,
+                    other => {
+                        self.fail(&format!("`sense` is `cw` or `ccw`, not `{other}`"));
+                        return None;
+                    }
+                });
+            }
+            _ => {
+                let slot = match label {
+                    "from" => &mut parts.from,
+                    "to" => &mut parts.to,
+                    "depth" => &mut parts.depth,
+                    _ => &mut parts.sweep,
+                };
+                if slot.is_some() {
+                    return twice(self);
+                }
+                let (text, span) = self.expr_until(',')?;
+                *slot = Some(Arg::Dim { text, span });
+            }
+        }
+        Some(())
     }
 
     /// One of a plane's attitude arguments, the label already eaten: `from: REF`,
@@ -5235,6 +5523,13 @@ impl<'a> P<'a> {
                 }
                 let (text, span) = self.expr_until(',')?;
                 parts.fold = Some(Arg::Dim { text, span });
+            }
+            "offset" => {
+                if parts.offset.is_some() {
+                    return twice(self);
+                }
+                let (text, span) = self.expr_until(',')?;
+                parts.offset = Some(Arg::Dim { text, span });
             }
             _ => {
                 let slot = if label == "u" { &mut parts.u } else { &mut parts.v };
