@@ -2306,6 +2306,16 @@ fn settle(
     if let Some(k) = crate::constraints::gauge_op(word) {
         return Ok((k, w.assemble(k)?));
     }
+    // `along:` chooses the kind and fills no slot, so this is the only place its word can be
+    // checked — and unchecked, `along: z` came back as "`distance` does not relate a point to a
+    // point", a complaint about the operands for a mistake in the selector (issue #48, item 4)
+    if let Some(v) = w.sel("along") {
+        if !crate::constraints::ALONG.iter().any(|(n, _)| *n == v) {
+            let words: Vec<&str> = crate::constraints::ALONG.iter().map(|(n, _)| *n).collect();
+            let m = format!("`along` is {}, not `{v}`", crate::syntax::one_of(&words));
+            return Err((w.key_span("along").unwrap_or(w.word.span), m));
+        }
+    }
     let kinds: Vec<Option<EntKind>> = w.ops.iter().map(kind_of).collect();
     // a name that resolves to nothing is reported on the argument itself, where the message can
     // say which name it was; here it only means the word cannot be settled
@@ -2403,12 +2413,36 @@ fn constrain(
             args.push(ckind.default_arg(i));
             continue;
         };
+        // a selector's value has no span of its own, so a complaint about one is shown at the key
+        let where_ = |a: &Arg| {
+            arg_span(a)
+                .or_else(|| r.poly.as_ref().and_then(|w| w.key_span(name)))
+                .unwrap_or(st.span)
+        };
         match to_arg(sk, res, *kind, a) {
-            Ok(v) => args.push(v),
+            Ok(v) => {
+                // the word is one of the kind's own, or it is a typo: unchecked, anything that
+                // was not `start` silently meant `end` (issue #48, item 4)
+                if let (Some(words), CArg::Str(w)) = (ckind.words(i), &v) {
+                    if !words.contains(&w.as_str()) {
+                        diags.push(Diag {
+                            code: Code::E040,
+                            span: where_(a),
+                            stmt: Some(st.id),
+                            message: format!(
+                                "`{name}` is {}, not `{w}`",
+                                crate::syntax::one_of(words)
+                            ),
+                        });
+                        return None;
+                    }
+                }
+                args.push(v)
+            }
             Err(msg) => {
                 diags.push(Diag {
                     code: if msg.starts_with("no such") { Code::E101 } else { Code::E040 },
-                    span: arg_span(a).unwrap_or(st.span),
+                    span: where_(a),
                     stmt: Some(st.id),
                     message: format!("{}: {msg}", name),
                 });
@@ -2639,7 +2673,10 @@ fn apply_gauge(sk: &mut Sketch, res: &Resolver, r: &Relation, st: &Stmt, diags: 
                     }
                 }
             }
-            sk.branches.insert(decompose::branch_key(pts), if r.kind == CKind::Ccw { 1 } else { -1 });
+            // canonical, so the choice the document states and the one the plan replays are one
+            // record and not two that never meet (issue #48, item 4)
+            let (key, v) = decompose::branch_record(pts, r.kind == CKind::Ccw);
+            sk.branches.insert(key, v);
         }
         _ => unreachable!("{:?} is not a gauge", r.kind),
     }

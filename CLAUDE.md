@@ -178,6 +178,29 @@ Conventions:
   `engine/crankshaft.sv`, `engine/conrod.sv`), the castings included; the view modules hold only
   what the assembly adds (the bore axis, the pistons on it, the timing drive).  Instances inside a block copy are indexed like declarations
   (`cyl[0].small`: `copy_of` returns the copy's prefix and `lookup` reads the rest under it).
+- **A selector says what it means, or it is refused** (Solvent §9.2; issue #48, item 4).
+  `CKind::words(slot)` is the vocabulary a `Str` slot takes (`at: start|end`, `at: p1|p2`) and
+  `constraints::ALONG` is the one table `along:` is read by — the choice *and* the message, since
+  a second list is a second answer.  Three silences went with them: a key naming no slot was
+  dropped and the statement settled without it (`Written::assemble` checked only `Slot` keys), a
+  word outside a slot's set fell through `contact_point`'s `s == "start"` and silently meant the
+  other end, and `along: z` came back as "`distance` does not relate a point to a point" — an
+  error about the operands for a mistake in the selector.  All three are E040 **at the key**
+  (`Written::key_span`, since a selector's value carries no span of its own), and
+  `report::registry_json` publishes each slot's words so a front end offers what the core accepts.
+  `tests/refusals.rs` is the gate.
+- **A recorded root choice is one record of one triangle** (`decompose::branch_record`; issue #48,
+  item 4).  Three points can be named six ways, and `ccw(a, b, c)` ("c left of a→b") is the same
+  fact as `ccw(a, c, b)` with the sign turned — so a record is **canonical**: the point indices
+  ascending, the sign read against that order, and the sorting permutation's parity folded into
+  the sign.  Written in whichever order each writer used, the document's choice and the plan's
+  were two records that never met: `apply_gauge` wrote `ppp:a|b|c` and the plan looked up
+  `ppp:a|c|b` (`Step::stated` — it builds the corner as "y left of x→z"), so a document's `ccw`
+  matched no step and decided nothing, and a step's own choice lifted back into source named a
+  different triple.  Every writer goes through `branch_record` — the elaborator, the plan's
+  `branches`/`apply_branches`, `io::graft`, `Part::branches_out` — and `io::from_json`
+  **re-records** what it reads, so a document written before the rule migrates on load, the
+  `"construction": true` bargain again.  `tests/decompose.rs` and `tests/order.rs` are the gates.
 - **A name declared over a built-in is said** (Solvent §3.3, §5; `program::shadowing`, W112).
   `expr::eval` knows `expr::CONSTANTS` and `FUNCTIONS` before it knows the document and
   `flatten::substitute_with` knows only the document, so a `param`, a formal or a block's index

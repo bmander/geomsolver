@@ -236,3 +236,51 @@ fn a_non_ascii_character_in_a_statement_does_not_hang_the_lexer() {
     let (_, d) = read("// an em dash — in a comment\npoint p hint(x: 0, y: 0)\n");
     assert!(d.is_empty(), "{d:?}");
 }
+
+/// **A selector says what it means, or it is refused** (issue #48, item 4).
+///
+/// Three silences, all in the same handful of words: a key naming no slot was dropped and the
+/// statement settled without it; a word outside a slot's set fell through `contact_point`'s
+/// `s == "start"` and silently meant the *other* end; and `along: z` made `infix_op` return
+/// nothing, which the elaborator reported as a complaint about the operands' kinds — an error
+/// about something else, which is the whole shape of what this issue is about.
+#[test]
+fn a_selector_that_says_nothing_is_refused() {
+    const PAIR: &str = "unit mm\n\
+                        point a hint(x: 0, y: 0)\n\
+                        point b hint(x: 40, y: 10)\n\
+                        ground a\n";
+    // a key the word has no slot for: dropped in silence, and the statement stood
+    let (_, d) = read(&format!("{PAIR}a distance(40, sied: x) b\n"));
+    assert!(d.iter().any(|m| m == "E040: `distance` takes no `sied`"), "{d:?}");
+    // `along` fills no slot — it chooses the kind — so it is the one key checked by name
+    let (_, d) = read(&format!("{PAIR}a distance(40, along: z) b\n"));
+    assert!(d.iter().any(|m| m == "E040: `along` is `x` or `y`, not `z`"), "{d:?}");
+    assert!(read(&format!("{PAIR}a distance(40, along: x) b\n")).1.is_empty());
+
+    // a word outside the slot's own set: `banana` used to mean `end`, because nothing checked
+    const ARC: &str = "unit mm\n\
+                       point c hint(x: 0, y: 0)\n\
+                       point s hint(x: 12, y: 0)\n\
+                       point e hint(x: 0, y: 12)\n\
+                       arc k(c, s, e)\n\
+                       radius(12) k\n\
+                       point q hint(x: 40, y: 0)\n\
+                       line l(s, q)\n\
+                       ground c\n";
+    let (_, d) = read(&format!("{ARC}k tangent(at: banana) l\n"));
+    assert!(d.iter().any(|m| m == "E040: `at` is `start` or `end`, not `banana`"), "{d:?}");
+    for w in ["start", "end"] {
+        assert!(read(&format!("{ARC}k tangent(at: {w}) l\n")).1.is_empty(), "{w}");
+    }
+    // and the registry publishes the set, so a front end offers what the core accepts
+    let reg = gcs_core::report::registry_json();
+    let arc = reg.get("types").unwrap().arr().iter()
+        .find(|t| t.get("name").unwrap().as_str() == "TangentArcLine")
+        .expect("tangent_arc_line in the registry")
+        .clone();
+    let words = arc.get("words").unwrap().arr()[2].arr().iter()
+        .map(|w| w.as_str().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(words, ["start", "end"]);
+}

@@ -382,3 +382,42 @@ fn levelled_chains_decompose_separately_and_into_corners() {
     assert_eq!(one.steps.len(), 10);
     assert!(one.steps.iter().all(|s| s.ids.len() == 2));
 }
+
+/// **A recorded `ccw` replays as the triangle it names** (issue #48, item 4).
+///
+/// `ccw(a, b, c)` says `c` is to the left of the ray `a→b` — what `locus::holds` enforces inside a
+/// trace and what every example's comment says beside one.  It is recorded in `Sketch::branches`
+/// under the three points' key, and the plan reads that key back when it replays the construction
+/// that places `c`.  The two must mean the same thing by it: they are one number under one name,
+/// and a document that states which way its linkage is assembled has said nothing at all if the
+/// replay reads the sign the other way round.
+#[test]
+fn a_recorded_ccw_replays_as_the_triangle_it_names() {
+    let src = "unit mm\n\
+               point a hint(x: 0, y: 0)\n\
+               point b hint(x: 10, y: 0)\n\
+               point c hint(x: 5, y: -4)\n\
+               ground a\n\
+               ground b\n\
+               a distance(6) c\n\
+               b distance(6) c\n\
+               ccw(a, b, c)\n";
+    let (prog, errs) = gcs_core::syntax::parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let mut sk = e.sketch;
+    assert_eq!(sk.branches.len(), 1, "the statement recorded no root choice");
+    // seeded *below* the line, against the statement: the recorded root is what decides, and the
+    // solve must bring it round to the side the document names
+    assert!(sk.point_xy(2).1 < 0.0);
+    let mut ps = PlanSolver::new(&sk, true);
+    assert_eq!(ps.plan.apply_branches(&sk.branches), 1, "the plan and the document key it apart");
+    let r = ps.solve(&mut sk, 1e-9, true, Method::DogLeg);
+    assert!(r.success, "{r:?}");
+    let (ax, ay) = sk.point_xy(0);
+    let (bx, by) = sk.point_xy(1);
+    let (cx, cy) = sk.point_xy(2);
+    let cross = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    assert!(cross > 0.0, "`ccw(a, b, c)` put c on the right: cross {cross}, c at ({cx}, {cy})");
+}

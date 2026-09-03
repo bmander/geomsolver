@@ -491,7 +491,21 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
     }
     if let Some(Json::Obj(kv)) = d.get("branches") {
         for (k, v) in kv {
-            sk.branches.insert(k.clone(), v.as_i64() as i32);
+            let v = v.as_i64() as i32;
+            // a root choice is *one* record of a triangle, in ascending order with the sign read
+            // against it (`decompose::branch_record`) — so a key that names its three points in
+            // some other order is re-recorded here rather than kept as a second record nothing
+            // will look up.  Untrusted input, and a document written before the rule, come to the
+            // same thing: the `"construction": true` bargain again (issue #48, item 4).
+            match decompose::branch_key_points(k) {
+                Some(p) => {
+                    let (k, v) = decompose::branch_record(p, v >= 0);
+                    sk.branches.insert(k, v);
+                }
+                None => {
+                    sk.branches.insert(k.clone(), v);
+                }
+            }
         }
     }
     Ok(sk)
@@ -754,7 +768,10 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             Some(pts) => {
                 let mapped: Option<Vec<usize>> = pts.iter().map(|&p| pt_index(p)).collect();
                 if let Some(m) = mapped {
-                    dst.branches.insert(decompose::branch_key([m[0], m[1], m[2]]), v);
+                    // renumbering can reorder the three, and the sign is read against the key's
+                    // own order — so it is re-recorded rather than carried across
+                    let (k, v) = decompose::branch_record([m[0], m[1], m[2]], v >= 0);
+                    dst.branches.insert(k, v);
                 }
             }
         }
@@ -951,8 +968,10 @@ impl Part {
     pub fn branches_out(&self, b: &BTreeMap<String, i32>) -> BTreeMap<String, i32> {
         b.iter()
             .map(|(k, &v)| match decompose::branch_key_points(k) {
-                Some(p) => (decompose::branch_key([self.point_out(p[0]), self.point_out(p[1]),
-                                                   self.point_out(p[2])]), v),
+                Some(p) => decompose::branch_record(
+                    [self.point_out(p[0]), self.point_out(p[1]), self.point_out(p[2])],
+                    v >= 0,
+                ),
                 None => (k.clone(), v),
             })
             .collect()

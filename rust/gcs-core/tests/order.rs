@@ -692,7 +692,15 @@ fn placed_by_name(e: &gcs_core::program::Elaborated) -> Vec<String> {
     v
 }
 
-/// Every recorded root choice, as the names of the three points it orients.
+/// Every recorded root choice as the *fact* it states: the three points by name, in one order,
+/// and which way round they go.
+///
+/// A record is keyed by point **index**, ascending (`decompose::branch_record`), and an index is
+/// exactly what a reordering changes — so the same triangle comes back under a different
+/// permutation of the same three names, with the sign turned to match.  That is one fact written
+/// two ways, and the test is about the fact, so the names are put in one order here and the sign
+/// turned by the parity of doing it.  (Sorting the names rather than the indices is the only
+/// canonical order that survives a renumbering, which is the property this file measures.)
 fn branches_by_name(
     e: &gcs_core::program::Elaborated,
 ) -> std::collections::BTreeSet<(String, String, String, i32)> {
@@ -701,12 +709,15 @@ fn branches_by_name(
         .iter()
         .filter_map(|(k, &v)| {
             let p = decompose::branch_key_points(k)?;
-            Some((
+            let mut n = [
                 name_of(e, gcs_core::model::EntRef::point(p[0])),
                 name_of(e, gcs_core::model::EntRef::point(p[1])),
                 name_of(e, gcs_core::model::EntRef::point(p[2])),
-                v,
-            ))
+            ];
+            let odd = (n[0] > n[1]) as u8 + (n[1] > n[2]) as u8 + (n[0] > n[2]) as u8;
+            n.sort();
+            let v = if odd % 2 == 1 { -v } else { v };
+            Some((n[0].clone(), n[1].clone(), n[2].clone(), v))
         })
         .collect()
 }

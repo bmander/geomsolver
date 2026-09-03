@@ -157,6 +157,13 @@ pub const ALL_KINDS: [CKind; 35] = [
     CKind::Project,
 ];
 
+/// `along:` says which axis a run or a rise is measured on.  It is the one selector that fills no
+/// slot — it *chooses the kind* and is gone — so this table is the only place its words exist,
+/// read both by `infix_op` to make the choice and by the elaborator to say what was wrong with a
+/// word that is not one of them (issue #48, item 4).  A second list would be a second answer.
+pub const ALONG: [(&str, CKind); 2] =
+    [("x", CKind::HorizontalDistance), ("y", CKind::VerticalDistance)];
+
 /// What a written operator says, once its operands' kinds are known.
 ///
 /// **The one table that turns a word and a pair of kinds into a constraint.**  It is the inverse
@@ -185,11 +192,9 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
         "distance" => match (a, b) {
             // which of the three a pair of points means is `along:`, and the run and the rise
             // are signed from the first point to the second — so they do not commute
-            (Point, Point) => match sel("along").as_deref() {
+            (Point, Point) => match sel("along") {
                 None => CKind::Distance,
-                Some("x") => CKind::HorizontalDistance,
-                Some("y") => CKind::VerticalDistance,
-                Some(_) => return None,
+                Some(w) => ALONG.iter().find(|(n, _)| *n == w).map(|(_, k)| *k)?,
             },
             (Point, Line) => CKind::PointLineDistance,
             (Line, Line) => CKind::ParallelDistance,
@@ -689,6 +694,21 @@ impl CKind {
                 _ => Arg::Num(0.0),
             },
         }
+    }
+
+    /// The words a slot will take, where it takes a word rather than a number.
+    ///
+    /// `default_arg` above was the only place these ever appeared — as one default each, not as a
+    /// vocabulary — so nothing checked them: `tangent(at: banana)` was accepted and silently meant
+    /// `end`, because `contact_point` asks `s == "start"` and takes the other end when it is not
+    /// (issue #48, item 4).  A word outside the set is refused at the key, and the registry
+    /// publishes the set, so a front end offers what the core accepts rather than restating it.
+    pub fn words(self, i: usize) -> Option<&'static [&'static str]> {
+        Some(match (self, i) {
+            (CKind::TangentArcLine, 2) => &["start", "end"][..],
+            (CKind::TangentLineCircleAt, 2) => &["p1", "p2"][..],
+            _ => return None,
+        })
     }
 
     /// Arguments the core reads off the current geometry when the caller leaves them out: which

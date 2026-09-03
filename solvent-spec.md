@@ -523,7 +523,7 @@ fix c.r                             line1 tangent(side: -1) circle1
 What goes in the parentheses is a short list:
 
 - **the number**, which may be named or an expression exactly as elsewhere: `distance(80)`, `distance(x = 7)`, `distance(h = w / 2)`, `distance(1' 3")`;
-- **a selector** — `side: -1`, `at: start`, `external: true`, `along: x`;
+- **a selector** — `side: -1`, `at: start`, `external: true`, `along: x`. **[0.17]** A selector's *key* must be one the word has (a slot of the settled kind, or `along`, which chooses the kind and fills no slot), and its *value* must be one of the words that slot takes — both **E040**, at the key. Neither was checked through 0.16, and both failures were silent: a mistyped key was dropped and the statement settled without it, and a word outside the set fell through to whichever reading the implementation tested for last, so `at: banana` meant `end`. An implementation MUST publish each slot's vocabulary in its registry, so that a front end offers what the core accepts rather than keeping a second list;
 - **the third entity**, for `symmetry`;
 - **a pin**, `t == 0.4`, for a slot the constraint owns. Its *seed* is the trailing `hint(t: 0.4)` where every seed in the language is (§4.3).
 
@@ -788,6 +788,8 @@ This is P2 applied to the document rather than to the program text, and it is st
 - **an entity's index.** A recorded solution branch stored as a triple of point indices goes *inert* when the points are renumbered: the document still carries it, a reader still loads it, and fewer of them apply. Nothing reports anything.
 
 Both failures are silent, and both are invisible to any test that checks only the solution set — which is why 0.1 could assert P2 in the parser and lose it in the file format. Where a datum has no statement to ride on, it MUST name what it qualifies (an entity by name, a solution branch by the names of the points that orient it) rather than by index.
+
+**[0.17] A recorded solution branch is one record of one triangle.** Three points can be named six ways, and a chirality named in two of those orders is the same fact with the sign turned. An implementation MUST therefore record a branch **canonically** — one order of the three points, with the sign read against that order — and MUST normalise a record it reads into that form. Keyed by whichever order each writer happened to use, a document's stated orientation and the same choice as the implementation constructs it are two records that never meet: the stated one matches nothing and decides nothing, and the constructed one, written back out as a statement, names a different triple. Both are silent, which is this section's subject.
 
 **[0.7] A callout's placement stays here, and the sheet takes everything it shares.** Where a dimension's number sits on the page is presentation: delete every `at (t, r)` and the figure, the solve, the DOF count and the diagnosis are identical. It is nonetheless written on the constraint statement, and that is deliberate rather than a leak.
 

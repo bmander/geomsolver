@@ -1059,6 +1059,15 @@ impl Written {
         })
     }
 
+    /// Where a selector's key was written — what a diagnostic about its *value* points at, since
+    /// a value carries no span of its own (`Arg::Word` is a bare `String`).
+    pub fn key_span(&self, name: &str) -> Option<Span> {
+        self.args.iter().find_map(|a| match a {
+            OpArg::Named(n, _) if n.text == name => Some(n.span),
+            _ => None,
+        })
+    }
+
     /// The arguments a constraint of `kind` takes, in **spec order**, from what was written.
     ///
     /// The one place the operator form becomes the library's form, so the parser and the
@@ -1078,6 +1087,18 @@ impl Written {
             if !spec.iter().any(|(n, k)| k.is_param() && *n == key.text) {
                 let word = &self.word.text;
                 let m = format!("`{word}` has no slot `{}` to seed", key.text);
+                return Err((key.span, m));
+            }
+        }
+        // and a *selector* naming nothing was dropped in silence, which is the same mistake one
+        // layer down (issue #48, item 4): `a distance(80, sied: x) b` settled as a plain distance
+        // and the argument went nowhere.  `along` is the one key with no slot — it chose the kind
+        // and is gone — so it is named here rather than looked for in the spec.
+        for a in &self.args {
+            let OpArg::Named(key, _) = a else { continue };
+            if key.text != "along" && !spec.iter().any(|(n, _)| *n == key.text) {
+                let word = &self.word.text;
+                let m = format!("`{word}` takes no `{}`", key.text);
                 return Err((key.span, m));
             }
         }
@@ -1289,6 +1310,20 @@ pub fn camel(name: &str) -> String {
         }
     }
     out
+}
+
+/// `x` or `y`; `start`, `end` or `p1` — the words a key will take, as a reader reads a list.
+/// Every refusal that names a vocabulary comes through here, so two of them cannot punctuate the
+/// same list differently (issue #48, item 4).
+pub fn one_of(words: &[&str]) -> String {
+    match words {
+        [] => "nothing".to_string(),
+        [a] => format!("`{a}`"),
+        [rest @ .., last] => {
+            let head: Vec<String> = rest.iter().map(|w| format!("`{w}`")).collect();
+            format!("{} or `{last}`", head.join(", "))
+        }
+    }
 }
 
 /// A number as text: shortest round-trip, which is what a document needs.

@@ -67,20 +67,50 @@ impl Step {
         self.ids[0]
     }
 
+    /// The three points this step's chirality is a statement about, in the order the *statement*
+    /// names them: the plan builds the corner as "y left of x→z" (`merge_ppp`), so a step keyed
+    /// `(x, y, z)` states the triple `(x, z, y)`.  Everything that crosses to `Sketch::branches`
+    /// goes through here, so the plan's construction order stays the plan's business.
+    fn stated(&self, g: &ConstraintGraph) -> Option<[usize; 3]> {
+        self.ppp.map(|(x, y, z)| [g.point_index(x), g.point_index(z), g.point_index(y)])
+    }
+
     /// Document-stable identity of a closed-form construction (`None` for numeric merges).  Keyed
     /// by the sketch indices of the three points, not by compiled element indices, so it survives
     /// save/load and edits that renumber elements.
     pub fn key(&self, g: &ConstraintGraph) -> Option<String> {
-        self.ppp
-            .map(|(a, b, c)| branch_key([g.point_index(a), g.point_index(b), g.point_index(c)]))
+        self.stated(g).map(|t| branch_record(t, true).0)
     }
 }
 
 /// A recorded root choice is keyed by the three sketch points of its closed-form construction —
 /// document-stable identity, so a choice survives a recompile.  It names points, so anything that
-/// renumbers points has to carry the key with them: see `branch_key_points`.
+/// renumbers points has to carry the key with them: see `branch_key_points`.  The order is
+/// **ascending** and is `branch_record`'s to impose; this is only the spelling.
 pub fn branch_key(pts: [usize; 3]) -> String {
     format!("ppp:{}|{}|{}", pts[0], pts[1], pts[2])
+}
+
+/// **One triangle, one record** (issue #48, item 4).
+///
+/// A chirality is a statement about three points — `ccw(a, b, c)`, "c is left of the ray a→b" —
+/// and one triangle can be named six ways.  The document wrote `ppp:a|b|c` in the order the
+/// statement used and the plan wrote its own construction order, so the two were separate records
+/// of one choice **that never met**: a document's `ccw` matched no step of the plan and was inert
+/// against the replay, and a step's own choice lifted back into source came out as a statement
+/// about a different triple.  Neither failure said anything.
+///
+/// So a record is canonical: the points ascending, and the sign read against *that* order — `+1`
+/// is "the third is left of the first→second".  Sorting loses nothing, because the permutation's
+/// parity goes into the sign, and it makes the key a name for the set the way a key naming an
+/// identity has to be.  Every writer of `Sketch::branches` comes through here, and every reader
+/// takes the order the key is in.
+pub fn branch_record(pts: [usize; 3], ccw: bool) -> (String, i32) {
+    let mut sorted = pts;
+    sorted.sort_unstable();
+    let odd = (pts[0] > pts[1]) as u8 + (pts[1] > pts[2]) as u8 + (pts[0] > pts[2]) as u8;
+    let turned = if odd % 2 == 1 { !ccw } else { ccw };
+    (branch_key(sorted), if turned { 1 } else { -1 })
 }
 
 /// The three sketch points a branch key names, or `None` if the key is not one we wrote.
@@ -134,8 +164,9 @@ impl Plan {
     pub fn branches(&self) -> BTreeMap<String, i32> {
         let mut out = BTreeMap::new();
         for st in &self.steps {
-            if let (Some(k), Some(b)) = (st.key(&self.graph), st.branch) {
-                out.insert(k, b);
+            if let (Some(t), Some(b)) = (st.stated(&self.graph), st.branch) {
+                let (k, v) = branch_record(t, b > 0);
+                out.insert(k, v);
             }
         }
         out
@@ -143,14 +174,18 @@ impl Plan {
 
     /// Install recorded root choices (e.g. from a document); returns how many matched.
     pub fn apply_branches(&mut self, branches: &BTreeMap<String, i32>) -> usize {
-        let keys: Vec<Option<String>> = self.steps.iter().map(|s| s.key(&self.graph)).collect();
+        let stated: Vec<Option<[usize; 3]>> =
+            self.steps.iter().map(|s| s.stated(&self.graph)).collect();
         let mut n = 0;
-        for (i, k) in keys.into_iter().enumerate() {
-            if let Some(k) = k {
-                if let Some(&v) = branches.get(&k) {
-                    self.steps[i].branch = Some(if v >= 0 { 1 } else { -1 });
-                    n += 1;
-                }
+        for (i, t) in stated.into_iter().enumerate() {
+            let Some(t) = t else { continue };
+            // what this step would record turned counter-clockwise; the stored number is either
+            // that or its opposite, and which it is *is* the step's branch — so the parity of the
+            // key's own ordering is dealt with in one place and never reasoned about here
+            let (k, ccw) = branch_record(t, true);
+            if let Some(&v) = branches.get(&k) {
+                self.steps[i].branch = Some(if v == ccw { 1 } else { -1 });
+                n += 1;
             }
         }
         n
