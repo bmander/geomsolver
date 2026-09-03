@@ -1854,6 +1854,73 @@ fn solids(
             }
         }
     }
+    // -- the pictures the document asks for (§6.11) ---------------------------
+    for st in body {
+        let StmtKind::Derived(d) = &st.kind else { continue };
+        if skip.contains(&st.id) {
+            continue;
+        }
+        let mut say = |code: Code, span: Span, m: String| {
+            diags.push(Diag { code, span, stmt: Some(st.id), message: m });
+        };
+        let find = |r: &crate::syntax::Ref, want: EntKind| match res.lookup(r) {
+            Some(e) if e.kind == want => Ok(e.idx),
+            Some(e) => Err((
+                Code::E040,
+                r.span,
+                format!("a {} is asked of a {}, and `{}` is a {}",
+                        if want == EntKind::Solid { "picture" } else { "view" },
+                        want.as_str(), r.root.text, e.kind.as_str()),
+            )),
+            None => Err((Code::E101, r.span, format!("no such entity: `{}`", r.root.text))),
+        };
+        let solid = match find(&d.solid, EntKind::Solid) {
+            Ok(i) => i,
+            Err((c, sp, m)) => {
+                say(c, sp, m);
+                continue;
+            }
+        };
+        let plane = match find(&d.plane, EntKind::Plane) {
+            Ok(i) => i,
+            Err((c, sp, m)) => {
+                say(c, sp, m);
+                continue;
+            }
+        };
+        let at = match &d.at {
+            None => None,
+            Some(r) => match find(r, EntKind::Plane) {
+                Ok(i) => Some(i),
+                Err((c, sp, m)) => {
+                    say(c, sp, m);
+                    continue;
+                }
+            },
+        };
+        // **a section is drawn in a view parallel to the cut**, or the true shape it shows is
+        // not the shape it is a section of
+        if let Some(a) = at {
+            let (pa, pb) = (sk.planes[a as usize].basis, sk.planes[plane as usize].basis);
+            if crate::plane::fold_line(&pa, &pb).is_some() {
+                say(
+                    Code::E084,
+                    d.span,
+                    "a section is drawn in a view parallel to the plane it is cut at".into(),
+                );
+                continue;
+            }
+        }
+        sk.derived.push(crate::model::DerivedE {
+            solid,
+            plane: Some(plane),
+            at,
+            name: d.name.key().text.clone(),
+            class: d.class.clone(),
+        });
+        map.record(st, Made::Gauge);
+    }
+
     // **a body may not be made of itself** — the term walk would not terminate, and the
     // document says something that is not about any object (§6.9)
     for i in 0..sk.solids.len() {

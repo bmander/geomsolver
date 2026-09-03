@@ -51,8 +51,16 @@ pub fn render(sk: &Sketch, width_px: f64) -> String {
     let span = (geo.2 - geo.0).max(geo.3 - geo.1).max(1e-9);
     let unit = span / (width_px - 2.0 * MARGIN_PX).max(1.0);
     let cs = callout::layout(sk, unit);
+    // and the pictures the document asked for (§6.11): laid out here for the same reason a
+    // callout is, so the export and the canvas stroke one answer
+    let derived = crate::hidden::layout(sk, unit);
 
     let mut b = geo;
+    for d in &derived {
+        for p in &d.pts {
+            grow(&mut b, *p);
+        }
+    }
     for c in &cs {
         let segs = c.solid.iter().chain(&c.thin);
         for p in c.label.iter().copied().chain(segs.flat_map(|s| [s.0, s.1])) {
@@ -84,6 +92,12 @@ pub fn render(sk: &Sketch, width_px: f64) -> String {
         if sk.style_of(e).shown() {
             entity(&mut out, sk, e, unit, &at, &polys);
         }
+    }
+    // a derived view is geometry too, stroked in the ink the core resolved for it
+    for d in &derived {
+        out.push_str("<polyline points=\"");
+        points(&mut out, &d.pts, &at);
+        out.push_str(&format!("\"{}/>\n", stroke(&d.style)));
     }
     out.push_str("</g>\n");
     for c in &cs {

@@ -23,6 +23,7 @@ mod curve_of;
 mod curve;
 mod curvedef;
 mod decompose;
+mod derived;
 mod describe;
 mod diagnose;
 mod drag;

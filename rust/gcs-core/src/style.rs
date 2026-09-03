@@ -209,6 +209,13 @@ pub fn base() -> Sheet {
     // many statements share, and everything a callout shares is in these three rules.  What is
     // left on the statement is the one pair of numbers that is about that statement alone.
     s.insert("dimension".into(), rule(None, Some(1.0), Some("#0f6f7a")));
+    // **A derived picture's three classes** (§6.11).  A view of a solid is drawn in the ink the
+    // sheet gives them, and a document that already styles `.hidden` — every part sheet does —
+    // gets its dashes with nothing added.  Each states only what its class *adds*, the rule the
+    // whole cascade rests on: `.visible` is the plain outline and says nothing, so one
+    // `style .hidden { width: 2 }` cannot come out thick on half a drawing.
+    s.insert("hidden".into(), rule(Some(vec![4.0, 3.0]), None, Some("#7a7a7a")));
+    s.insert("section".into(), rule(None, Some(1.6), None));
     // a claimed dimension — the draughtsman's reference dimension, which `callout.rs` draws
     // parenthesised.  Lighter than a controlling one, because it does not control.
     //

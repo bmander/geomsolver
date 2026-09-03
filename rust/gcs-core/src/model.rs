@@ -504,6 +504,18 @@ pub struct FaceE {
     pub class: Classes,
 }
 
+/// A picture asked of a solid (§6.11): what of, cut where, drawn in which view.
+#[derive(Clone, Debug)]
+pub struct DerivedE {
+    pub solid: u32,
+    /// The plane it is drawn in; `None` is the page.
+    pub plane: Option<u32>,
+    /// A section's cutting plane.  `None` is a plain view.
+    pub at: Option<u32>,
+    pub name: String,
+    pub class: Classes,
+}
+
 /// A number a solid is swept or stood off by: the text a person wrote and what it came to.
 ///
 /// The `fold:` bargain exactly (`plane::Basis`): it is settled by the flattener over the
@@ -673,6 +685,10 @@ pub struct Sketch {
     /// the drawing is solved, since nothing about either is an unknown.
     pub faces: Vec<FaceE>,
     pub solids: Vec<SolidE>,
+    /// The pictures the document asks for (§6.11): `view(body) in right`, `section(body, at: mid)
+    /// in front`.  Not entities — nothing on the sheet is held to one, and no solve moves one —
+    /// but document state like `branches`, saved and grafted with everything else.
+    pub derived: Vec<DerivedE>,
     /// The curve families this document defines.  Document state like `branches`: a curve
     /// instance names one by index.
     pub curve_defs: Vec<CurveDef>,

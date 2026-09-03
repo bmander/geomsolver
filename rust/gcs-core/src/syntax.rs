@@ -361,6 +361,14 @@ pub enum StmtKind {
     /// kinds of its operands, and `on` is already five constraints), and the elaborator reads it
     /// as one of these when both operands turn out to be solids; `through` is a word of its own.
     SolidRel(SolidRel),
+    /// `view(cyl.body) in views.right`, `section(cyl.body, at: swing) in views.front` — **an
+    /// output, not a thing the document lays out** (§6.11).
+    ///
+    /// A part carries no views: it is a solid, and a sheet that wants a picture of it asks for
+    /// one.  What comes back is edges in that view's own page coordinates, drawn under the
+    /// implicit classes `.visible` and `.hidden`, so the sheet says what a hidden line looks
+    /// like the way it says what a dimension does.
+    Derived(DerivedDecl),
     /// `unit mm` — what the document's numbers are in (spec §3.3).  A bare number in a `Length`
     /// slot is that unit, so every document keeps working with one added line; a document that
     /// says nothing is in **drawing units**, and everything still dimension-checks, you simply
@@ -380,6 +388,20 @@ pub struct StyleRule {
     pub style: Style,
     /// The property names as written, in order, so the printer says what the source said.
     pub props: Vec<String>,
+    pub span: Span,
+}
+
+/// A picture asked of a solid (§6.11).
+#[derive(Clone, Debug)]
+pub struct DerivedDecl {
+    pub name: DeclName,
+    /// What it is a picture *of*.
+    pub solid: Ref,
+    /// The view it is drawn in.
+    pub plane: Ref,
+    /// A section's cutting plane; `None` for a plain view.
+    pub at: Option<Ref>,
+    pub class: Classes,
     pub span: Span,
 }
 
@@ -1746,6 +1768,24 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
         StmtKind::Decl(d) => write_decl(out, d),
         StmtKind::Relation(r) => write_relation(out, r),
         StmtKind::Branch(b) => out.push_str(&format!("branch({}, {})", b.key, b.value)),
+        StmtKind::Derived(d) => {
+            out.push_str(if d.at.is_some() { "section" } else { "view" });
+            if let Some(n) = d.name.written() {
+                out.push(' ');
+                out.push_str(&n.text);
+            }
+            out.push('(');
+            write_ref(out, &d.solid);
+            if let Some(at) = &d.at {
+                out.push_str(", at: ");
+                write_ref(out, at);
+            }
+            out.push_str(") in ");
+            write_ref(out, &d.plane);
+            if !d.class.is_empty() {
+                out.push_str(&format!(" class {}", d.class.0.join(" ")));
+            }
+        }
         StmtKind::SolidRel(r) => {
             write_ref(out, &r.what);
             out.push(' ');
@@ -2562,9 +2602,9 @@ fn ident_char(c: char) -> bool {
 // `port`, `frame` and `ellipse` are retired and `ring` is not yet (bmander/geomsolver#47), and
 // each is kept here only so a document written with it is told what to write instead of reading
 // the word as a name
-const OPENERS: [&str; 13] = [
+const OPENERS: [&str; 15] = [
     "claim", "component", "param", "port", "unit", "style", "branch", "repeat", "cycle", "ring",
-    "use", "frame", "ellipse",
+    "use", "frame", "ellipse", "view", "section",
 ];
 const BLOCKS: [&str; 2] = ["repeat", "cycle"];
 
@@ -3781,6 +3821,64 @@ impl<'a> P<'a> {
                 let mut r = self.relation()?;
                 r.claim = true;
                 Some(StmtKind::Relation(r))
+            }
+            // `view(cyl.body) in views.right` — a picture asked of a solid (§6.11).  The
+            // brackets are what it is a picture of, `in` is the trailer it already is
+            "view" | "section" => {
+                let lo = self.here().lo as usize;
+                let sect = w == "section";
+                self.i += 1;
+                let name = match self.peek() {
+                    Some(Tok::Ident(n)) if names_decl(n) => DeclName::Written(self.ident()?),
+                    _ => {
+                        let at = self.prev_hi();
+                        DeclName::Key(Name { text: format!("#a{at}"), span: Span::new(at, at) })
+                    }
+                };
+                if !self.want_p('(') {
+                    return None;
+                }
+                let solid = self.refr()?;
+                let mut at = None;
+                if self.eat_p(',') {
+                    let Some(l) = self.slot_label() else {
+                        self.fail("a section is cut `at:` a plane");
+                        return None;
+                    };
+                    if l != "at" {
+                        self.fail(&format!("`{l}` is not what a {w} takes; a section is cut `at:` a plane"));
+                        return None;
+                    }
+                    at = Some(self.refr()?);
+                }
+                if !self.want_p(')') {
+                    return None;
+                }
+                if sect && at.is_none() {
+                    self.fail("a section is cut at a plane: `section(body, at: mid) in front`");
+                    return None;
+                }
+                if !sect && at.is_some() {
+                    self.fail("`at:` cuts a section; a view of a solid takes none");
+                    return None;
+                }
+                if !self.peek_word("in") {
+                    self.fail("a picture is drawn in a view: `view(body) in views.right`");
+                    return None;
+                }
+                self.i += 1;
+                let plane = self.refr()?;
+                let end = self.prev_hi();
+                let (class, _) = self.class_clause(end);
+                self.end_of_stmt();
+                Some(StmtKind::Derived(DerivedDecl {
+                    name,
+                    solid,
+                    plane,
+                    at,
+                    class,
+                    span: Span::new(lo, self.prev_hi()),
+                }))
             }
             // `bore through cyl` — the body rule's own word, and the one statement whose shape
             // is two names with a word between them that is not a constraint.  Read by a

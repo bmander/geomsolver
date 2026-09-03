@@ -22,6 +22,7 @@ pub mod fdcheck;
 pub mod fixtures;
 pub mod flatten;
 pub mod graph;
+pub mod hidden;
 pub mod homotopy;
 pub mod io;
 pub mod json;
