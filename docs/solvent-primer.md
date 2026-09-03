@@ -248,6 +248,13 @@ A bare fraction with a unit is a division, not a fraction: `3/16"` is 3 divided 
 number. **There is no string literal**: `"` is the inch mark, and a word argument is written bare
 (`at: start`).
 
+**A built-in name cannot be declared over.** Every expression knows the constants and the
+functions before it knows the document, so a `param`, a component formal or a block's index named
+`tau`, `pi`, `min`, … does *not* shadow the built-in: substituting a text reads the declaration
+and working a number out reads the built-in, which is one name with two values (`param tau =
+35deg` handed to a `tau: Angle` formal arrives as a full turn). Naming a *dimension* that way is
+refused outright; the other three are **W112** at the declaration, and the fix is the rename.
+
 ### 1.7 Chains and repetition
 
 A chain writes a run of elements and the relations between them on one line.

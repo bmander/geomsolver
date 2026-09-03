@@ -98,8 +98,21 @@ pub const FUNCTIONS: &[(&str, usize, usize)] = &[
     ("hypot", 2, 2),
 ];
 
+/// What a name is built in *as*, for the two callers that have to say so — the refusal here and
+/// the shadowing warning in `program` — or `None` where the document is free to use it.  One
+/// table, since "is this built in" and "what is it" are the same question asked twice.
+pub fn builtin(name: &str) -> Option<&'static str> {
+    if CONSTANTS.iter().any(|&(n, _, _)| n == name) {
+        Some("a built-in constant")
+    } else if FUNCTIONS.iter().any(|&(n, _, _)| n == name) {
+        Some("a built-in function")
+    } else {
+        None
+    }
+}
+
 fn is_builtin(name: &str) -> bool {
-    CONSTANTS.iter().any(|&(n, _, _)| n == name) || FUNCTIONS.iter().any(|&(n, _, _)| n == name)
+    builtin(name).is_some()
 }
 
 /* -- syntax --------------------------------------------------------------------- */

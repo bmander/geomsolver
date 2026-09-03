@@ -183,3 +183,35 @@ fn a_param_may_not_read_a_free_variable() {
     let said = d.iter().any(|m| m.starts_with("E103") && m.contains("`s` is not a number here"));
     assert!(said, "{d:?}");
 }
+
+/// **A name declared over a built-in is said** (issue #48, item 2).  `param tau = 35deg` read
+/// 35° where the flattener substituted the text and a full turn where `expr::eval` worked a
+/// number out, so one name had two values and the lever it turned stood at 360° with nothing
+/// said.  W112 at every declaration of a number's name: a `param`, a formal, a block's index —
+/// a *named dimension* of a built-in name is refused where it is parsed, and stays refused.
+#[test]
+fn a_name_that_shadows_a_built_in_is_said() {
+    let w112 = |src: &str| -> Vec<String> {
+        read(src).1.into_iter().filter(|m| m.starts_with("W112")).collect()
+    };
+    let d = w112(&format!("param tau = 35deg\n{BASE}"));
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert!(d[0].contains("`tau`") && d[0].contains("a `param`"), "{d:?}");
+    // a formal, in a component nothing instantiates: the name is wrong wherever it is written
+    let d = w112("component Lever(o: point, tau: Angle) { point q hint(x: o.x + cos(tau)) }\n");
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert!(d[0].contains("a formal"), "{d:?}");
+    // a block's index
+    let d = w112(&format!("{BASE}cycle 3 as pi {{ point p hint(x: 10 * pi, y: 0) }}\n"));
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert!(d[0].contains("a block's index"), "{d:?}");
+    // a function's name is built in as much as a constant's
+    let d = w112(&format!("param min = 3\n{BASE}"));
+    assert!(d[0].contains("a built-in function"), "{d:?}");
+    // and every other name is a name: said once, at the declaration, and about nothing else
+    assert!(w112(&format!("param taut = 35deg\nparam pit = 2\n{BASE}")).is_empty());
+    // a named dimension is refused where it is parsed, and is not warned about twice
+    let (_, d) = read(&format!("{BASE}a distance(tau = 40) b\n"));
+    assert!(d.iter().any(|m| m.contains("`tau` is built in and cannot be defined")), "{d:?}");
+    assert!(d.iter().all(|m| !m.starts_with("W112")), "{d:?}");
+}

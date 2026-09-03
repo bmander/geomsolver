@@ -261,6 +261,7 @@ no one pose to record.
 - **[0.16]** A name in an expression that nothing in scope declares — no formal, no `param`, no named dimension of the body, the file or a `use`d module — is a **free variable of the instance** the body is elaborated as (`t1.w`, `t2.w`), the rule §6.5 applies to a formal left unbound. On the sheet the instance is the document, and the unknown is the document's. A component therefore cannot read the document it is drawn in by name, and a module's component cannot read the caller's at all. Inside a `cycle` or `repeat`, a name the block declares is each copy's own (a dimension named in a block is defined once per copy) and a name it does not declare is the enclosing body's, shared by every copy.
 - Inside `repeat`/`cycle`/`ring` blocks, the index binder (`as i`) and the pseudo-instances `next` / `prev` are in scope (§12).
 - There is no shadowing: a block binder that collides with an outer name is an error (**E002**).
+- **[0.17] A name that shadows a built-in is said.** The constants and functions of §3.3 (`pi`, `tau`, `turn`, `sin`, `min`, …) are known to every expression before the document is, so a `param`, a formal or a block binder of one of those names does *not* shadow it: a text carrying the name is substituted and reads the declaration, a number worked out reads the built-in, and the two answers differ silently — `param tau = 35deg` passed to a `tau: Angle` formal arrived as a full turn. A named dimension of a built-in name is an error where it is parsed; the other three declarations are a warning at the declaration (**W112**), because the drawing is not wrong, the name is. An implementation MUST say it once per declaration, whether or not the component is ever instantiated.
 
 ---
 
@@ -944,6 +945,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | W103 | rank deficiency spanned by rigid motions — "add ground/fix" |
 | W104 | under-constrained: report the number of residual DOF and, when computable, a basis of unconstrained motions attributed to source entities |
 | W105 | consistent redundancy: constraints dependent on others; report the dependent set with spans |
+| W112 | a `param`, formal or block binder declared over a built-in name (§3.3, §5) — the built-in is what an expression reads **[0.17]** |
 
 ### 16.3 DOF ledger
 

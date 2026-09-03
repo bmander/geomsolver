@@ -172,6 +172,17 @@ Conventions:
   `engine/crankshaft.sv`, `engine/conrod.sv`), the castings included; the view modules hold only
   what the assembly adds (the bore axis, the pistons on it, the timing drive).  Instances inside a block copy are indexed like declarations
   (`cyl[0].small`: `copy_of` returns the copy's prefix and `lookup` reads the rest under it).
+- **A name declared over a built-in is said** (Solvent §3.3, §5; `program::shadowing`, W112).
+  `expr::eval` knows `expr::CONSTANTS` and `FUNCTIONS` before it knows the document and
+  `flatten::substitute_with` knows only the document, so a `param`, a formal or a block's index
+  called `tau` does not shadow the constant — it reads 35° where a text is substituted and a full
+  turn where a number is worked out, which is how a lever came to stand at 360° with nothing said
+  (issue #48, item 2).  A *named dimension* of a built-in name is already refused where it is
+  parsed (`expr::parse_in`); the other three are the **warning**, since what is wrong is the name
+  and not the drawing.  Asked of the text, like every question about how a statement is written:
+  every component the program holds, instantiated or not, and every module's own body, each
+  declaration once.  `expr::builtin` is the one table — "is this built in" and "what is it" are
+  one question — and `tests/names.rs` is the gate.
 - **A call is the entities by position and the numbers by label** (Solvent §4.1,
   `flatten::check_call`).  `Cylinder(swing, side, top, piv, rod, across, dir: dir, fw: fw,
   o_s: o_s, o_t: o_t)`: an argument bound by position must fill an *entity* formal and must stand

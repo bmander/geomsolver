@@ -82,6 +82,8 @@ pub enum Code {
     W110,
     /// a free variable: which dimensions it ties together
     W111,
+    /// a declaration over a built-in name (§3.3, §5): the built-in is what an expression reads
+    W112,
 }
 
 impl Code {
@@ -104,12 +106,13 @@ impl Code {
             Code::E106 => "E106",
             Code::W110 => "W110",
             Code::W111 => "W111",
+            Code::W112 => "W112",
         }
     }
 
     pub fn severity(self) -> Severity {
         match self {
-            Code::W110 | Code::W111 => Severity::Warning,
+            Code::W110 | Code::W111 | Code::W112 => Severity::Warning,
             _ => Severity::Error,
         }
     }
@@ -564,6 +567,67 @@ fn spans(prog: &Program) -> BTreeMap<StmtId, Span> {
     out
 }
 
+/// **A declaration over a built-in name is said** (issue #48, item 2; §3.3, §5).
+///
+/// `param tau = 35deg` gave one name two numbers.  A *text* carrying `tau` is substituted by the
+/// flattener and read 35°; a number *worked out* by `expr::eval` read a full turn, the constants
+/// being known before the document is — so the lever the angle turned stood at 360° and nothing
+/// was said anywhere.  A named dimension of a built-in name is already refused where it is parsed
+/// (`expr::parse_in`); this is the other three ways a document declares a number, said at the
+/// **declaration**, which is the place a reader can act on and the one place that is written once
+/// however many times the name is read.
+///
+/// Warned and not refused, because the drawing is not wrong — the *name* is, and a document that
+/// has one wants renaming rather than rejecting.  It is a fact about the text, so it is asked of
+/// the text: every component the program holds, instantiated or not, and every module's own body,
+/// each declaration once.
+fn shadowing(p: &Program, diags: &mut Vec<Diag>) {
+    fn say(name: &Name, what: &str, stmt: Option<StmtId>, diags: &mut Vec<Diag>) {
+        let Some(kind) = expr::builtin(&name.text) else { return };
+        diags.push(Diag {
+            code: Code::W112,
+            span: name.span,
+            stmt,
+            message: format!(
+                "`{}` is {kind}, and {what} of that name does not shadow it — an expression \
+                 reads the built-in wherever a number is worked out (§3.3), so this name is \
+                 read two ways.  Rename it.",
+                name.text
+            ),
+        });
+    }
+    fn body(stmts: &[Stmt], diags: &mut Vec<Diag>) {
+        for st in stmts {
+            match &st.kind {
+                StmtKind::Param(d) => say(&d.name, "a `param`", Some(st.id), diags),
+                StmtKind::Block(b) => {
+                    if let Some(i) = &b.binder {
+                        say(i, "a block's index", Some(st.id), diags);
+                    }
+                    body(&b.body, diags);
+                }
+                _ => {}
+            }
+        }
+    }
+    // the root stands among the components, and a module's components with it; what a module's
+    // own body adds is its top-level params, which its components read (§6.3)
+    let mut said: Vec<Diag> = Vec::new();
+    for c in &p.components {
+        for f in &c.formals {
+            say(&f.name, "a formal", None, &mut said);
+        }
+        body(&c.body, &mut said);
+    }
+    for m in &p.modules {
+        body(&m.root.body, &mut said);
+    }
+    // in the order a reader meets them: the components come out of the program in link order,
+    // and a document is read down the page
+    said.sort_by_key(|d| d.span.lo);
+    diags.append(&mut said);
+}
+
 pub fn elaborate(p: &Program) -> Elaborated {
     let mut diags: Vec<Diag> = Vec::new();
     let mut map = SourceMap::default();
@@ -598,6 +662,9 @@ pub fn elaborate(p: &Program) -> Elaborated {
             }
         }
     }
+
+    // -- a name a document declares over a built-in is said, before anything reads either.
+    shadowing(p, &mut diags);
 
     // -- phase 1: names, in one pre-pass.  Indices come from declaration order within a kind,
     // which is `primitives()` order, which is the order phase 2 builds in.
