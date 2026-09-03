@@ -52,6 +52,7 @@ mod refusals;
 mod ring;
 mod row_scale;
 mod seeds;
+mod sheet;
 mod smoke;
 mod solid;
 mod solid_claim;

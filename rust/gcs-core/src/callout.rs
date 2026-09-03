@@ -251,8 +251,41 @@ pub fn layout(sk: &Sketch, unit: f64) -> Vec<Callout> {
             out.push(k);
         }
     }
+    // **and the dimensions a `dimensions(S) in P` asks the machine for** (§6.12).  They come
+    // through the same pen and the same lanes as everything a document states, which is the
+    // whole of what "laid out by the callout engine that already exists" means: a generated
+    // dimension stands off a stated one because neither knows the other is different.
+    //
+    // Their ids are *past* the constraint list, so nothing addresses one by a constraint's id —
+    // a generated dimension is not a statement and has no placement, no drag and no edit.
+    for (k, d) in crate::hidden::generated(sk, u) {
+        let id = GENERATED + k as u32;
+        let text = if d.round {
+            format!("⌀{}", crate::io::reading(crate::constraints::SpecKind::Length, d.value))
+        } else {
+            crate::io::reading(crate::constraints::SpecKind::Length, d.value)
+        };
+        let dir = crate::callout::unit(d.dir).unwrap_or((1.0, 0.0));
+        // an extent is measured between the corners it bounds and stood *off* the part; a
+        // diameter is taken across its own circle and stays there.  Which side is the side the
+        // part is not on — the outline's own centre says which
+        let n = perp(dir);
+        let away = if dot(n, sub(d.a, pen.hub)) >= 0.0 { 1.0 } else { -1.0 };
+        let base = if d.clear { away * pen.px(GEN_CLEAR_PX) } else { 0.0 };
+        let off = base + away * pen.lane(d.a, d.b, dir, mul(n, away), &text);
+        out.push(pen.linear(id, d.a, d.b, dir, (0.0, off), &text));
+    }
     out
 }
+
+/// Where a generated dimension's id starts.  Past any constraint a document could hold, so a
+/// front end that resolves an id back to a statement finds nothing there — which is the truth: a
+/// generated dimension is a *reading* of the drawing and not a statement in it.
+pub const GENERATED: u32 = 1 << 30;
+
+/// How far off the part a generated extent stands, in screen pixels — enough for the outline's
+/// own line weight and the label, and screen-constant like every other size here.
+const GEN_CLEAR_PX: f64 = 22.0;
 
 /* -- vectors ---------------------------------------------------------------- */
 

@@ -415,6 +415,9 @@ pub struct DerivedDecl {
     pub plane: Ref,
     /// A section's cutting plane; `None` for a plain view.
     pub at: Option<Ref>,
+    /// `dimensions(body) in views.right` — **the sheet as a report** (§6.12): the callouts a
+    /// machine can decide, laid out by the engine that lays out every other callout.
+    pub dims: bool,
     pub class: Classes,
     pub span: Span,
 }
@@ -1794,7 +1797,13 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
         StmtKind::Relation(r) => write_relation(out, r),
         StmtKind::Branch(b) => out.push_str(&format!("branch({}, {})", b.key, b.value)),
         StmtKind::Derived(d) => {
-            out.push_str(if d.at.is_some() { "section" } else { "view" });
+            out.push_str(if d.dims {
+                "dimensions"
+            } else if d.at.is_some() {
+                "section"
+            } else {
+                "view"
+            });
             if let Some(n) = d.name.written() {
                 out.push(' ');
                 out.push_str(&n.text);
@@ -2637,9 +2646,9 @@ fn ident_char(c: char) -> bool {
 // `port`, `frame` and `ellipse` are retired and `ring` is not yet (bmander/geomsolver#47), and
 // each is kept here only so a document written with it is told what to write instead of reading
 // the word as a name
-const OPENERS: [&str; 15] = [
+const OPENERS: [&str; 16] = [
     "claim", "component", "param", "port", "unit", "style", "branch", "repeat", "cycle", "ring",
-    "use", "frame", "ellipse", "view", "section",
+    "use", "frame", "ellipse", "view", "section", "dimensions",
 ];
 const BLOCKS: [&str; 2] = ["repeat", "cycle"];
 
@@ -3895,9 +3904,10 @@ impl<'a> P<'a> {
             }
             // `view(cyl.body) in views.right` — a picture asked of a solid (§6.11).  The
             // brackets are what it is a picture of, `in` is the trailer it already is
-            "view" | "section" => {
+            "view" | "section" | "dimensions" => {
                 let lo = self.here().lo as usize;
                 let sect = w == "section";
+                let dims = w == "dimensions";
                 self.i += 1;
                 let name = match self.peek() {
                     Some(Tok::Ident(n)) if names_decl(n) => DeclName::Written(self.ident()?),
@@ -3947,6 +3957,7 @@ impl<'a> P<'a> {
                     solid,
                     plane,
                     at,
+                    dims,
                     class,
                     span: Span::new(lo, self.prev_hi()),
                 }))

@@ -536,6 +536,8 @@ pub struct DerivedE {
     pub plane: Option<u32>,
     /// A section's cutting plane.  `None` is a plain view.
     pub at: Option<u32>,
+    /// A picture that is only its **dimensions** (§6.12): the sheet as a report.
+    pub dims: bool,
     pub name: String,
     pub class: Classes,
 }

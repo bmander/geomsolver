@@ -1009,6 +1009,20 @@ Conventions:
   declared normals (invisible wherever a cap sits on the origin and contributes no flux), and a
   revolution's walls facing inward, which reads as a negative volume and nothing else.
   `tests/solid_lang.rs` holds the language, `tests/derived.rs` the pictures.
+- **The sheet is a report** (Solvent §6.12, `hidden::generated`; issue #48, item 10).
+  `dimensions(body) in views.right` asks for the callouts that *follow from the object*: the
+  part's overall extents in that view, and the diameter of every round feature the view sees
+  square on.  They go through `callout::layout`'s own pen and lanes, which is the whole of what
+  "laid out by the engine that already exists" means — a generated dimension stands off a stated
+  one because neither knows the other is different — and their ids start at `callout::GENERATED`,
+  past any constraint, so a front end resolving one back to a statement finds nothing there.
+  That is the truth: it is a reading of the drawing, not a statement in it, and it reads the
+  *solved* pose.
+  **The boundary is the feature.**  What a machine can decide is what the object says; which
+  datum a stack is measured from, which fit is critical, what is a reference and what controls —
+  those are the design, and a machine that chose them would be guessing.  A sheet states the rest
+  as it always did.  `tests/sheet.rs` asserts both halves: the three it makes, and that it makes
+  no fourth.
 - **A claim about a solid is judged, and can never act** (Solvent §9.8, `clear.rs`; issue #48,
   items 6 and 7).  §9.7's bargain one stratum out: `disc clear(2mm) cyl`, `head fits(0.15mm)
   trap`, `piston inside bore` compile **no row**, so a solid claim cannot move geometry, take a

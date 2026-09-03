@@ -480,3 +480,135 @@ pub struct Drawn {
     pub style: crate::style::Style,
     pub pts: Vec<(f64, f64)>,
 }
+
+// -- the sheet as a report (§6.12) --------------------------------------------------------------
+
+/// **The dimensions a machine can decide**, for one `dimensions(S) in P` statement.
+///
+/// Issue #48, item 10: half the edits to every part sheet were `at (t, r)` placements, moving
+/// callouts off each other by trial and then rendering to see.  The human needs the picture; the
+/// machine should produce it.
+///
+/// What this generates, and it is worth being exact about the boundary: **the part's overall
+/// extents in the view, and the diameter of every round feature that view sees square on.**
+/// Those are the dimensions that follow from the object — a machine can read them off the solid
+/// and cannot get them wrong.  Which datum a stack is measured from, which fit is critical, what
+/// is a reference and what controls: those are the *design*, and a machine that guessed would be
+/// guessing.  A sheet says the rest as it always did, and this is what it no longer has to.
+///
+/// Nothing here is placed by hand: the figures come back with no placement, so
+/// `callout::layout`'s own lane assignment stands them off each other — the engine that already
+/// does this for every dimension a document states.
+pub fn generated(sk: &Sketch, unit: f64) -> Vec<(usize, Dim)> {
+    let mut out = Vec::new();
+    for (i, d) in sk.derived.iter().enumerate() {
+        if !d.dims {
+            continue;
+        }
+        let (basis, pose) = view_frame(sk, d.plane.map(|p| p as usize));
+        let strokes = view(sk, d.solid as usize, d.plane.map(|p| p as usize), unit);
+        // the box the part occupies, in the view's *own* axes, so an extent is measured the way
+        // the view is turned and not the way the page is
+        let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+        for s in &strokes {
+            for p in &s.pts {
+                let v = plane::in_view(pose.0, pose.1, pose.2, *p);
+                lo[0] = lo[0].min(v.0);
+                lo[1] = lo[1].min(v.1);
+                hi[0] = hi[0].max(v.0);
+                hi[1] = hi[1].max(v.1);
+            }
+        }
+        if !lo[0].is_finite() {
+            continue;
+        }
+        let page = |a: f64, b: f64| plane::on_page(pose.0, pose.1, pose.2, (a, b));
+        // One across and one up, each **measured between the corners it bounds and stood off the
+        // part** — a draughtsman does not draw an extent through the thing it measures, and the
+        // engine's lane assignment then stacks the next one further out again.
+        for (k, dir) in [(0usize, (1.0, 0.0)), (1, (0.0, 1.0))] {
+            if hi[k] - lo[k] <= 0.0 {
+                continue;
+            }
+            let (a, b) = if k == 0 {
+                (page(lo[0], lo[1]), page(hi[0], lo[1]))
+            } else {
+                (page(lo[0], lo[1]), page(lo[0], hi[1]))
+            };
+            let along = plane::on_page(pose.0, pose.1, (0.0, 0.0), dir);
+            out.push((i, Dim { a, b, dir: along, value: hi[k] - lo[k], round: false, clear: true }));
+        }
+        // and every round feature this view sees square on: a face that is one circle, whose
+        // plane looks at the eye.  A hole is a size a printer needs and a machine can read
+        let eye = basis.normal();
+        for f in reachable_faces(sk, d.solid) {
+            let Some(face) = sk.faces.get(f as usize) else { continue };
+            if face.edges.len() != 1 || face.edges[0].kind != crate::model::EntKind::Circle {
+                continue;
+            }
+            let fb = match face.plane {
+                Some(p) => sk.planes[p as usize].basis,
+                None => Basis::page(),
+            };
+            if plane::dot(fb.normal(), eye).abs() < 0.999_999 {
+                continue;   // seen edge-on or askew: it is not a circle in this view
+            }
+            let c = &sk.circles[face.edges[0].i()];
+            let r = sk.params[c.radius as usize].value.abs();
+            let ctr = sk.point_xy(c.center as usize);
+            // the centre in space, then in this view's page
+            let (cu, cv) = match face.plane {
+                Some(p) => {
+                    let fr = &sk.planes[p as usize].frame;
+                    plane::in_view(
+                        sk.params[fr.c as usize].value,
+                        sk.params[fr.s as usize].value,
+                        sk.point_xy(fr.origin as usize),
+                        ctr,
+                    )
+                }
+                None => ctr,
+            };
+            let x = fb.lift(cu, cv);
+            let (vu, vv) = basis.view_coords(x);
+            let (a, b) = (page(vu - r, vv), page(vu + r, vv));
+            out.push((i, Dim { a, b, dir: plane::on_page(pose.0, pose.1, (0.0, 0.0), (1.0, 0.0)),
+                               value: 2.0 * r, round: true, clear: false }));
+        }
+    }
+    out
+}
+
+/// One generated dimension, in page coordinates: what it measures between, along which direction,
+/// and what it comes to.
+#[derive(Clone, Debug)]
+pub struct Dim {
+    pub a: (f64, f64),
+    pub b: (f64, f64),
+    pub dir: (f64, f64),
+    pub value: f64,
+    /// A diameter rather than a length — drawn with the `⌀` a draughtsman writes.
+    pub round: bool,
+    /// Stand it off the part rather than drawing it through: what an extent wants and a
+    /// diameter, taken across its own circle, does not.
+    pub clear: bool,
+}
+
+/// Every face the term of a solid reaches, so a generated dimension can be about a feature and
+/// not only about the outline.
+fn reachable_faces(sk: &Sketch, si: u32) -> Vec<u32> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut stack = vec![si];
+    while let Some(s) = stack.pop() {
+        if !seen.insert(s) {
+            continue;
+        }
+        let Some(sol) = sk.solids.get(s as usize) else { continue };
+        if let Some(f) = sol.face() {
+            out.push(f);
+        }
+        stack.extend(sol.operands());
+    }
+    out
+}

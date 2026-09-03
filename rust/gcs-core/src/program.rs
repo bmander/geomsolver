@@ -2333,6 +2333,7 @@ fn solids(
             solid,
             plane: Some(plane),
             at,
+            dims: d.dims,
             name: d.name.key().text.clone(),
             class: d.class.clone(),
         });
