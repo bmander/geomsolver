@@ -68,6 +68,7 @@ solid NAME(SOLID)                       a body, made of a stock
 REF on REF  |  REF through REF          material added to, or taken from, a body    (1.14)
 view(SOLID) in REF                      a picture asked of a solid                  (1.14)
 section(SOLID, at: REF) in REF          the same, cut at a plane
+dimensions(SOLID) in REF                the callouts that follow from the object
 style .NAME { PROP: VALUE; ... }        what a class looks like                     (1.11)
 WORD[(ARGS)] REF  |  REF WORD[(ARGS)] REF
      [hint(SLOT: E, ...)] [class NAME...] [at (t, r)]
@@ -738,6 +739,29 @@ no statement at all. Written once it is **119 lines instead of 144** and its com
 **6 formals instead of 12**, and the sheet that draws it (`vtwin_cylinder.sv`) went from
 `147 params, 147 equations` to `69 params, 69 equations`, DOF 0 both ways: the two extra views cost
 the drawing nothing, being questions and not geometry.
+
+**And the dimensions, asked for too.** A sheet may ask the machine for the callouts that follow
+from the object:
+
+```
+dimensions(SOLID) in PLANE
+```
+
+It gives the part's **overall extents** in that view — one along each of the view's own axes,
+measured between the faces that bound them and stood clear of the outline — and the **diameter**
+of every round feature that view sees square on. Nothing is placed by hand: they go through the
+same layout engine every stated dimension goes through, so a generated dimension stands off a
+stated one because neither knows the other is different. Adding the line to the sheet above puts
+`60`, `40` and `⌀16` on the front view and `40` and `30` on the right, and the document says
+nothing about where any of them go.
+
+A generated dimension is a **reading of the drawing and not a statement in it**: it adds no
+equation, no unknown and no freedom, it cannot be dragged or edited, and it reads the *solved*
+pose — so it says what the part came to and follows an edit without being one.
+
+What it will not do is guess. Which datum a stack is measured from, which fit is critical, what
+is a reference and what controls the drawing are the design, and those a sheet still states the
+way it always did. This is only the part that was never a decision.
 
 **What is refused, and why.**
 

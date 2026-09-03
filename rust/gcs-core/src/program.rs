@@ -2440,7 +2440,12 @@ fn build_face(
             return None;
         }
         edges.push(e);
-        names.push(crate::syntax::ref_text(r));
+        // **the leaf, not the absolute name.**  By the time a face is built the flattener has
+        // rewritten `lid` into `cyl.lid`, and a face path is already prefixed by the solid it
+        // belongs to — so keeping the whole thing spells `cyl.body.block.cyl.lid`, saying
+        // "cylinder" twice about one face.  The leaf is what the source wrote.
+        let full = crate::syntax::ref_text(r);
+        names.push(full.rsplit('.').next().unwrap_or(&full).to_string());
     }
     // **a circle is a loop by itself, and may not stand in one**
     if edges.iter().any(|e| e.kind == EntKind::Circle) && edges.len() > 1 {
