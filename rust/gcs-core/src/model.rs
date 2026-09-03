@@ -718,6 +718,14 @@ pub struct Sketch {
     /// figures into one drag part or paint a sketch Over — the bargain §9.7 already struck for a
     /// 2D claim, one stratum further out.
     pub solid_claims: Vec<SolidClaim>,
+    /// The planes a **mate** places (§6.10): written `from: P` with neither `fold:` nor
+    /// `offset:`, they say which plane they are parallel to and leave where they stand to one
+    /// `against`.  Recorded here so the placement walk knows which offsets are its to write and
+    /// which the document already fixed — a plane that says `offset: 12mm` is not placed twice.
+    pub placed_planes: std::collections::BTreeSet<u32>,
+    /// What the document calls each plane, for the one diagnostic that has to say so — see
+    /// `plane_name`.
+    pub plane_names: BTreeMap<u32, String>,
     /// The curve families this document defines.  Document state like `branches`: a curve
     /// instance names one by index.
     pub curve_defs: Vec<CurveDef>,
@@ -1736,6 +1744,13 @@ impl Sketch {
     /// What the document calls a solid.
     pub fn solid_name(&self, i: usize) -> String {
         self.solids.get(i).map(|s| s.name.clone()).unwrap_or_default()
+    }
+
+    /// What the document calls a plane.  A plane carries no name of its own — the source map
+    /// holds those — so this is the label a *diagnostic* uses, and it is the one thing here that
+    /// would rather have had one.
+    pub fn plane_name(&self, i: usize) -> String {
+        self.plane_names.get(&(i as u32)).cloned().unwrap_or_else(|| format!("v{i}"))
     }
 
     /// **A solid's boundary**, remembered against everything it was computed from.

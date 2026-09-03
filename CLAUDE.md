@@ -1056,6 +1056,27 @@ Conventions:
   and **only along the normal**: the fold line is perpendicular to both normals, so `d·o = 0` and
   `fold_line` — the whole of what `Project` reads — cannot see the move.  Every plane in every
   document written before solids has `o = 0`, which is why no existing test changed.
+- **Where a part stands is what it bears against** (Solvent §6.10, `program::place`; issue #48,
+  item 8).  `cylB.block.far against plate.body.near` says the two faces touch, and the offset of
+  the plane cylinder B is drawn in *follows* — which is what `zA = fwA + D / 2` and the chain of
+  subtractions under it were, three files keeping one number in step by hand.  Two faces in
+  contact are at the same point along the normal they share, so `offset(P) = offset(Q) + ord(G) −
+  ord(F)`: one equation a statement, worked out in dependency order the way `expr::evaluate`
+  works out a dimension, and nothing here is solved for either.
+  **A mate is between the caps a sweep makes**: a side face is not at one ordinate — it runs the
+  whole depth — and a revolution's walls are not flat, so neither is something a stack can bear
+  on (E082, with the reason).  A *placed* plane is one written `from: P` with neither `fold:` nor
+  `offset:`, recorded in `Sketch::placed_planes` where the attitude as **written** is still in
+  hand; exactly one `against` places one, and none or two is E083.
+  The delta is computed **when the mate is applied and not when it is collected**: a washer
+  between two parts stands on the first before the second stands on it, and an offset worked out
+  up front reads a zero the walk was about to fill in.
+  `hardware.Groove` is item 5 in the same commit: the O-ring rule — 10–20% squeeze on the ring's
+  section, a groove a third wider than it — stated once in `hardware` and cut by a component that
+  reads it, so `dims.sv` derives `grooveb` and `groovew` where it used to type 12.9 and 2.4.
+  **A component contributes a `through` to a body it was handed**, which is the body rule being a
+  set and not a sequence: the feature owns the void it cuts.  `Loc` moved to `std` on the way,
+  having been written out in two project files.
 - **A part carries no views; a sheet asks for them** (§6.11, `hidden.rs`).  `view(body) in
   views.right` and `section(body, at: swing) in views.front` are *outputs*: no `Int` draw flag, no
   `repeat draw_side { … }`, no second copy of the geometry and no `project` to keep in step.

@@ -11,6 +11,7 @@
 use std
 
 // -- bolts, nuts and washers, 1/4"-20 ----------------------------------------------------------
+
 param hexbolt14_d = 6.35mm          // the shank
 param hexbolt14_af = 11.1mm         // the head, across flats (7/16")
 param hexbolt14_ac = 12.8mm         // and across corners
@@ -80,4 +81,42 @@ component Nut(c: point, ref: line, af: Length, bore: Length, phase: Angle) {
   hex: Hex(c, ref, af: af, phase: phase)
   circle hole(center: c) hint(r: bore / 2)
   radius(bore / 2) hole
+}
+
+// **A groove for an O-ring in a bore** (§6.9) — a feature that carries its own rule (issue #48,
+// item 5).
+//
+// The rule is the part an LLM gets wrong, and it is one line of arithmetic nobody should be
+// writing twice: a moving seal wants 10–20% squeeze on the ring's section, so the groove's
+// bottom is the bore less twice the squeezed section, and the groove is a third wider than the
+// section so the ring can roll rather than drag.  `hardware` states both numbers
+// (`oring_squeeze`, `oring_groove_w`); this reads them.  A design then says *a groove for a
+// #014* and the arithmetic is the library's.
+//
+//   use std
+//   use hardware
+//   g: Groove(body: pis, f: swing, o: crown, ax: axis, ac: across, dir: dir,
+//             r: D / 2, z: -groove, cs: oring014_cs)
+//
+// `body` is the solid the groove is cut out of, and the statement inside is what does it: a
+// component may contribute a `through` to a body it was handed, because the body rule is a set
+// and not a sequence.  The groove is turned about the bore's own axis, so what is written here
+// is its section: `w` wide at `z` down the axis, from the bore out to the squeezed diameter.
+component Groove(body: solid, f: plane, o: point, ax: line, ac: line, dir: Angle,
+                 r: Length, z: Length, cs: Length) {
+  param rb = r - (1 - oring_squeeze) * cs   // the groove's bottom, off the axis
+  param w = oring_groove_w * cs             // and how wide it is along the axis
+  in f {
+    g0: Loc(o, ax, ac, dir: dir, u: z, v: rb)
+    g1: Loc(o, ax, ac, dir: dir, u: z, v: r)
+    g2: Loc(o, ax, ac, dir: dir, u: z - w, v: r)
+    g3: Loc(o, ax, ac, dir: dir, u: z - w, v: rb)
+    line e0(g0.p, g1.p) class hidden -> line e1(g1.p, g2.p) class hidden ->
+      line e2(g2.p, g3.p) class hidden -> line e3(g3.p, g0.p) class gone -> close
+    face gf(e0, e1, e2, e3)
+    claim g0.p distance(w) g3.p class detail
+    claim g0.p distance(rb) ax class detail
+  }
+  solid groove(gf, about: ax)
+  groove through body
 }

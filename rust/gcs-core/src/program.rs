@@ -1846,6 +1846,233 @@ fn solid_claim(
     map.record(st, Made::Gauge);
 }
 
+/// **A stack: where a part stands is what it bears against** (§6.10).
+///
+/// `cylB.block.far against plate.body.near` says the two faces touch, and the offset of the
+/// plane cylinder B is drawn in follows.  What it replaces is `zA = fwA + D / 2` and the chain of
+/// subtractions under it — numbers a person kept in step by hand across three files.
+///
+/// Two faces in contact are at the same point along the normal they share, so
+/// `offset(P) = offset(Q) + ord(G) − ord(F)`: one equation per statement, worked out in
+/// dependency order the way `expr::evaluate` works out a dimension.  Nothing is solved for here
+/// either — an offset is arithmetic over numbers the document already fixed.
+fn place(
+    sk: &mut Sketch,
+    res: &Resolver,
+    body: &[&Stmt],
+    skip: &BTreeSet<StmtId>,
+    diags: &mut Vec<Diag>,
+) {
+    // every mate, resolved to (placed plane, datum plane, the offset it implies)
+    struct Mate {
+        stmt: StmtId,
+        span: Span,
+        placed: u32,
+        datum: u32,
+        /// The two faces' ordinates along their own planes' normals, and whether the normals
+        /// agree.  Kept **as ordinates** and not as a finished offset: the datum's own offset may
+        /// not be known yet — a washer between two parts stands on the first before the second
+        /// stands on it — and a delta worked out at collection time reads a zero the walk was
+        /// about to fill in.
+        ordf: f64,
+        ordg: f64,
+        dot: f64,
+    }
+    let mut mates: Vec<Mate> = Vec::new();
+    for st in body {
+        let StmtKind::SolidRel(r) = &st.kind else { continue };
+        if r.word != crate::syntax::BodyWord::Against || skip.contains(&st.id) {
+            continue;
+        }
+        let mut say = |code: Code, span: Span, m: String| {
+            diags.push(Diag { code, span, stmt: Some(st.id), message: m });
+        };
+        let face = |rf: &crate::syntax::Ref| -> Result<(u32, f64, f64), (Code, Span, String)> {
+            let Some(e) = res.lookup(rf) else {
+                return Err((
+                    Code::E101,
+                    rf.span,
+                    format!("no such entity: `{}`", rf.root.text),
+                ));
+            };
+            if e.kind != EntKind::Solid {
+                return Err((
+                    Code::E083,
+                    rf.span,
+                    format!("`against` mates faces of solids, and `{}` is a {}",
+                            rf.root.text, e.kind.as_str()),
+                ));
+            }
+            let path: Vec<String> = rf
+                .path
+                .iter()
+                .map(|seg| match seg {
+                    crate::syntax::Seg::Field(n) => n.text.clone(),
+                    other => format!("{other:?}"),
+                })
+                .collect();
+            face_ordinate(sk, e.idx, &path).ok_or_else(|| {
+                (
+                    Code::E082,
+                    rf.span,
+                    format!(
+                        "`{}` names no flat face of `{}` that a stack could bear on: a mate is \
+                         between the caps a sweep makes",
+                        path.join("."),
+                        rf.root.text
+                    ),
+                )
+            })
+        };
+        let (f, g) = match (face(&r.what), face(&r.body)) {
+            (Ok(f), Ok(g)) => (f, g),
+            (Err((c, sp, m)), _) | (_, Err((c, sp, m))) => {
+                say(c, sp, m);
+                continue;
+            }
+        };
+        let (pf, ordf, sf) = f;
+        let (pg, ordg, sg) = g;
+        let (bf, bg) = (sk.planes[pf as usize].basis, sk.planes[pg as usize].basis);
+        let _ = bg;
+        // **parallel, and facing each other**: two faces in contact share a normal and point
+        // opposite ways along it, which is what "against" means and what a stack needs
+        let dot = crate::plane::dot(bf.normal(), bg.normal());
+        if (dot.abs() - 1.0).abs() > 1e-9 {
+            say(Code::E083, r.span, "`against` mates parallel faces".into());
+            continue;
+        }
+        // each face's outward direction, as a sign along the *datum's* normal
+        let out_f = sf * dot;
+        if out_f * sg > 0.0 {
+            say(
+                Code::E083,
+                r.span,
+                "`against` mates faces that look at each other: these look the same way".into(),
+            );
+            continue;
+        }
+        mates.push(Mate { stmt: st.id, span: r.span, placed: pf, datum: pg, ordf, ordg, dot });
+    }
+    if mates.is_empty() && sk.placed_planes.is_empty() {
+        return;
+    }
+    // **one mate places one plane**: none and it stands nowhere, two and the document says two
+    // things about one number
+    let mut by_plane: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
+    for (i, m) in mates.iter().enumerate() {
+        by_plane.entry(m.placed).or_default().push(i);
+    }
+    for (p, ms) in &by_plane {
+        if ms.len() > 1 {
+            diags.push(Diag {
+                code: Code::E083,
+                span: mates[ms[1]].span,
+                stmt: Some(mates[ms[1]].stmt),
+                message: format!(
+                    "`{}` is placed twice: a plane stands where one thing bears on it",
+                    sk.plane_name(*p as usize)
+                ),
+            });
+        }
+        if !sk.placed_planes.contains(p) {
+            diags.push(Diag {
+                code: Code::E083,
+                span: mates[ms[0]].span,
+                stmt: Some(mates[ms[0]].stmt),
+                message: format!(
+                    "`{}` already says where it stands: a mate places a plane written \
+                     `from: … ` with no `fold:` and no `offset:`",
+                    sk.plane_name(*p as usize)
+                ),
+            });
+        }
+    }
+    for p in sk.placed_planes.clone() {
+        if !by_plane.contains_key(&p) {
+            diags.push(Diag {
+                code: Code::E083,
+                span: Span::default(),
+                stmt: None,
+                message: format!(
+                    "`{}` is a plane nothing places: write `offset:` or state one `against`",
+                    sk.plane_name(p as usize)
+                ),
+            });
+        }
+    }
+    // the offsets, in dependency order — a mate whose datum is itself placed waits for it
+    let mut done: BTreeSet<u32> = (0..sk.planes.len() as u32)
+        .filter(|p| !sk.placed_planes.contains(p))
+        .collect();
+    let mut left: Vec<usize> = (0..mates.len()).collect();
+    while !left.is_empty() {
+        let ready: Vec<usize> =
+            left.iter().copied().filter(|&i| done.contains(&mates[i].datum)).collect();
+        if ready.is_empty() {
+            for i in &left {
+                diags.push(Diag {
+                    code: Code::E041,
+                    span: mates[*i].span,
+                    stmt: Some(mates[*i].stmt),
+                    message: format!(
+                        "`{}` stands on what stands on it",
+                        sk.plane_name(mates[*i].placed as usize)
+                    ),
+                });
+            }
+            break;
+        }
+        for i in ready {
+            let m = &mates[i];
+            // f sits at `off(Pf) + ordf` along Pf's own normal; measured along Pg's that is
+            // `dot·(off(Pf) + ordf)`, and contact makes it equal to `off(Pg) + ordg` — read
+            // *now*, with the datum's own offset already written
+            let datum = sk.planes[m.datum as usize].basis.along_normal();
+            let want = (datum + m.ordg) * m.dot - m.ordf;
+            let b = sk.planes[m.placed as usize].basis;
+            sk.planes[m.placed as usize].basis = b.offset(want - b.along_normal());
+            done.insert(m.placed);
+            left.retain(|&k| k != i);
+        }
+    }
+}
+
+/// Where a named face of a solid sits along its plane's normal, and which way it looks: the
+/// plane, the ordinate, and +1 where the outward normal is the plane's own.
+///
+/// **A mate is between the caps a sweep makes.**  A side face is not at one ordinate — it runs
+/// the whole depth — and a revolution's walls are not flat, so neither is something a stack can
+/// bear on; naming one is E082, with the reason.
+fn face_ordinate(sk: &Sketch, solid: u32, path: &[String]) -> Option<(u32, f64, f64)> {
+    let s = sk.solids.get(solid as usize)?;
+    match &s.def {
+        SolidDef::Prism { face, from, to } => {
+            let last = path.last()?;
+            let (ord, sign) = match last.as_str() {
+                "near" => (to.value, 1.0),
+                "far" => (from.value, -1.0),
+                _ => return None,
+            };
+            Some((sk.faces.get(*face as usize)?.plane?, ord, sign))
+        }
+        SolidDef::Revolve { .. } => None,
+        SolidDef::Body { stock, on, through } => {
+            // a body's faces are its operands', reached through the operand that made them
+            let (head, rest) = path.split_first()?;
+            for &o in std::iter::once(stock).chain(on.iter()).chain(through.iter()) {
+                if sk.solids.get(o as usize).is_some_and(|x| &x.name == head
+                    || x.name.rsplit('.').next() == Some(head.as_str()))
+                {
+                    return face_ordinate(sk, o, rest);
+                }
+            }
+            // a body over one stock may be addressed without naming it, since there is one
+            face_ordinate(sk, *stock, path)
+        }
+    }
+}
+
 /// The interval a swept claim runs over: a free variable of the drawing, and where it goes.
 fn sweep_of_claim(
     sk: &Sketch,
@@ -1975,7 +2202,11 @@ fn solids(
             continue;
         }
         let (word, what, at, into) = match &st.kind {
-            StmtKind::SolidRel(r) => (r.word, &r.what, r.span, &r.body),
+            // `against` is not the body rule: it says where a part *stands*, and is read by the
+            // placement walk after every solid is built
+            StmtKind::SolidRel(r) if r.word != crate::syntax::BodyWord::Against => {
+                (r.word, &r.what, r.span, &r.body)
+            }
             StmtKind::Relation(r) if is_body_on(res, r) => {
                 let w = r.poly.as_ref().expect("`is_body_on` read the operands");
                 (crate::syntax::BodyWord::On, &w.ops[0], st.span, &w.ops[1])
@@ -2017,6 +2248,7 @@ fn solids(
             SolidDef::Body { on, through, .. } => match word {
                 crate::syntax::BodyWord::On => on.push(a.idx),
                 crate::syntax::BodyWord::Through => through.push(a.idx),
+                crate::syntax::BodyWord::Against => unreachable!("filtered above"),
             },
             _ => {
                 // a swept solid is what its brackets say; a body is what its statements say.
@@ -2033,6 +2265,13 @@ fn solids(
             }
         }
     }
+    // -- where the parts stand (§6.10) ----------------------------------------
+    // **After the solids and before anything evaluates them**: a face's ordinate along its
+    // plane's normal is the sweep's own number and does not depend on where the plane stands, so
+    // the walk can be done on the statements alone — and every reader below (a view, a mesh, a
+    // claim) resolves its term lazily and therefore sees the planes placed.
+    place(sk, res, body, skip, diags);
+
     // -- the pictures the document asks for (§6.11) ---------------------------
     for st in body {
         let StmtKind::Derived(d) = &st.kind else { continue };
@@ -2745,6 +2984,16 @@ fn build(
             // not built
             let basis = *bases.get(&d.name.key().text)?;
             let pi = sk.plane(kids[0], kids[1], basis, &show);
+            // **a plane written `from: P` with neither clause is one a mate places** (§6.10):
+            // it says which plane it is parallel to and leaves where it stands to one `against`.
+            // Recorded here, where the attitude as *written* is still in hand — after this the
+            // basis is a number and says nothing about how it was arrived at.
+            if matches!(&d.attitude, crate::syntax::Attitude::Offset { offset: None, .. }) {
+                sk.placed_planes.insert(pi as u32);
+            }
+            if let Some(n) = d.name.shown() {
+                sk.plane_names.insert(pi as u32, n.text.clone());
+            }
             let (c, s) = (seed(0), seed(1));
             if c != 0.0 || s != 0.0 {
                 let f = &sk.planes[pi].frame;

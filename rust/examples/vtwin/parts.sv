@@ -1,5 +1,6 @@
 // What every view draws with.
 
+use std
 use vtwin.dims
 
 // A point placed from `o` by two ordinates.
@@ -26,16 +27,10 @@ component Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
   o distance(y1, along: y) d
 }
 
-// A point in a *tilted* frame: `u` along the line `ax` from the point `org` on it, `v` across
-// it, with `ac` the line across `ax` through `org` and `dir` the bearing of `ax`.  `u` and `v`
-// are coordinates and are signed as coordinates are; the two distances are magnitudes, and the
-// seed — which is the point itself, worked out — is what says which side of each line it falls
-// on.  So a rocking cylinder is written in its own coordinates and turns whole with the crank.
-component Loc(org: point, ax: line, ac: line, dir: Angle, u: Length, v: Length) {
-  point p hint(x: org.x + u * cos(dir) - v * sin(dir), y: org.y + u * sin(dir) + v * cos(dir))
-  p distance(abs(v)) ax
-  p distance(abs(u)) ac
-}
+// `Loc` — a point in a tilted frame — moved to `std` (§6.9): it is a general helper and was
+// written out twice, here and in `engine.parts`, which is one drawing in two files the moment
+// one of them is edited.
+
 
 // A rectangle between `x0` and `x1` whose top and bottom are the heights of two points another
 // view placed — the side view's reading of a part the front view designs.

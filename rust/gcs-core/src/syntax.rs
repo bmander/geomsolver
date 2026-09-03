@@ -426,6 +426,10 @@ pub enum BodyWord {
     On,
     /// `bore through cyl` — a void.
     Through,
+    /// `cylB.block.far against plate.body.near` — **a stack** (§6.10): two faces in contact, so
+    /// where the left one's part stands is a *consequence* rather than a number somebody kept in
+    /// step by hand.  What `zA = fwA + D / 2` was.
+    Against,
 }
 
 impl BodyWord {
@@ -433,6 +437,7 @@ impl BodyWord {
         match self {
             BodyWord::On => "on",
             BodyWord::Through => "through",
+            BodyWord::Against => "against",
         }
     }
 }
@@ -3950,15 +3955,26 @@ impl<'a> P<'a> {
             // is two names with a word between them that is not a constraint.  Read by a
             // lookahead rather than by `relation()`, since `through` relates no geometry and
             // has no residual to be settled into
-            _ if matches!(self.t.get(self.i + 1).map(|(t, _)| t),
-                          Some(Tok::Ident(w)) if w == "through") => {
+            // **past the dotted path, not past one token**: a mate names a *face* of a solid
+            // (`cyl.block.far against plate.body.near`), so the word after the left operand is
+            // three tokens away and not one — the lookahead `past_ref` exists for
+            _ if self
+                .past_ref(self.i)
+                .and_then(|j| self.t.get(j))
+                .is_some_and(|(t, _)| matches!(t, Tok::Ident(w) if w == "through" || w == "against")) =>
+            {
                 let lo = self.here().lo as usize;
                 let what = self.refr()?;
-                self.i += 1; // `through`
+                let Some(Tok::Ident(w)) = self.peek().cloned() else {
+                    self.fail("a body statement is `X through B` or `F against G`");
+                    return None;
+                };
+                let word = if w == "through" { BodyWord::Through } else { BodyWord::Against };
+                self.i += 1;
                 let body = self.refr()?;
                 self.end_of_stmt();
                 Some(StmtKind::SolidRel(SolidRel {
-                    word: BodyWord::Through,
+                    word,
                     what,
                     body,
                     span: Span::new(lo, self.prev_hi()),

@@ -58,8 +58,11 @@ param reye = 6.5mm          // the rod's eye, outside: 3.3 of wall round the pin
 // 12.4 bore stretches 4% onto it, which keeps it seated.  The groove is a third wider than the
 // section, so the ring can roll a little rather than drag.
 param oring = oring014_cs
-param grooveb = 12.9mm      // the groove's bottom diameter: the bore less twice the squeezed section
-param groovew = 2.4mm       // the groove's width: `oring_groove_w` sections
+// **the rule, read rather than typed** (issue #48, item 5).  `hardware` states what a moving
+// seal wants and `hardware.Groove` cuts it; these two are the same arithmetic, written here for
+// the dimensions that quote them
+param grooveb = D - 2 * (1 - oring_squeeze) * oring    // 12.87: the bore less twice the squeezed section
+param groovew = oring_groove_w * oring                 // 2.403: the groove's width
 param groove = 4mm                       // the groove's top, below the crown
 
 // -- the ports ------------------------------------------------------------------------------
@@ -154,8 +157,8 @@ param levw = 4mm            // its width, and the hub's height off the boss
 param hubr = 4mm
 param throttle = 35deg      // the lever's angle off full open; 90 is shut
 param tor = oring010_cs     // a #010 O-ring (1/4" bore, 1/16" section)
-param torgb = 6.9mm         // its groove's bottom diameter, sized as the piston's is
-param torw = 2.4mm
+param torgb = 2 * rbar - 2 * (1 - oring_squeeze) * tor     // its groove's bottom, by the same rule
+param torw = oring_groove_w * tor
 param torz = 5.5mm          // the two seals' grooves, either side of the cross-hole
 param tback = 4mm           // the barrel runs this far past the boss's back
 param tretain = 1.5mm       // the retaining ring's groove, behind the boss's back face

@@ -48,9 +48,16 @@ pub const EPS: f64 = 1e-5;
 /// never splits a facet by its own plane.
 pub const SNAP: f64 = 1e-9;
 
-/// The faceting a *report* is computed at — a volume is a property of the document and not of
-/// the zoom, so it may not be asked at the screen's `unit` (§16.3).
-pub const REPORT_UNIT: f64 = 2e-4;
+/// The faceting a *report* is computed at.
+///
+/// A volume is a property of the document and not of the zoom, so it may not be asked at the
+/// screen's `unit` (§16.3) — and it need not be asked at the finest faceting either.  A round
+/// surface cut into `n` chords is under the true one by about `6.6/n²` of its volume, so this
+/// buys a report good to one part in ten thousand, which is four digits more than a drawing
+/// states.  Ten times finer costs eight times the facets and every boolean over them: the
+/// O-ring groove test ran ten seconds at `2e-4` and under two here, for a number that agreed to
+/// the digit either way.
+pub const REPORT_UNIT: f64 = 2e-3;
 
 /// A planar convex facet of a primitive's boundary, with its outward normal and the name the
 /// document reaches it by.
