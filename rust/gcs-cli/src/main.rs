@@ -240,6 +240,24 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             report_set(&sk, &e.map, "implied", &d.implied);
             report_set(&sk, &e.map, "claim refuted", &d.claims_violated);
             report_set(&sk, &e.map, "claim independent", &d.claims_consuming);
+            // the claims about solids, in the core's own words: what was asked, what was
+            // measured, and — for one the faceting cannot decide — that it could not
+            for v in &d.solid_claims {
+                let at = match v.worst {
+                    Some(w) => format!(", worst at {}", gcs_core::syntax::num(w)),
+                    None => String::new(),
+                };
+                let m = gcs_core::io::reading(SpecKind::Length, v.measured);
+                match v.holds {
+                    Some(true) => println!("  {} — holds, measured {m}{at}", v.text),
+                    Some(false) => println!("  {} — refuted, measured {m}{at}", v.text),
+                    None => println!(
+                        "  {} — undecided: measured {m}, and the faceting is good to {}{at}",
+                        v.text,
+                        gcs_core::io::reading(SpecKind::Length, v.tolerance)
+                    ),
+                }
+            }
             for w in &d.warnings {
                 println!("  note: {w}");
             }

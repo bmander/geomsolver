@@ -43,6 +43,10 @@ impl Piece {
     }
 
     pub fn bbox(&self) -> Box3 {
+        self.bbox_of()
+    }
+
+    pub fn bbox_of(&self) -> Box3 {
         let mut b = Box3::empty();
         for p in &self.pts {
             b.add(*p);

@@ -361,6 +361,10 @@ pub enum StmtKind {
     /// kinds of its operands, and `on` is already five constraints), and the elaborator reads it
     /// as one of these when both operands turn out to be solids; `through` is a word of its own.
     SolidRel(SolidRel),
+    /// `claim over crank.theta in (0deg, 360deg) { … }` — the claims in the body, judged as the
+    /// drawing runs along one of its own free variables (§9.8).  Structure-class: it says how the
+    /// claims inside it are judged and asserts nothing itself.
+    ClaimOver(ClaimOver),
     /// `view(cyl.body) in views.right`, `section(cyl.body, at: swing) in views.front` — **an
     /// output, not a thing the document lays out** (§6.11).
     ///
@@ -388,6 +392,16 @@ pub struct StyleRule {
     pub style: Style,
     /// The property names as written, in order, so the printer says what the source said.
     pub props: Vec<String>,
+    pub span: Span,
+}
+
+/// `claim over NAME in (a, b) { … }`.
+#[derive(Clone, Debug)]
+pub struct ClaimOver {
+    pub formal: Ref,
+    pub from: Arg,
+    pub to: Arg,
+    pub body: Vec<Stmt>,
     pub span: Span,
 }
 
@@ -1791,6 +1805,16 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             if !d.class.is_empty() {
                 out.push_str(&format!(" class {}", d.class.0.join(" ")));
             }
+        }
+        StmtKind::ClaimOver(c) => {
+            out.push_str("claim over ");
+            write_ref(out, &c.formal);
+            let txt = |a: &Arg| match a {
+                Arg::Dim { text, .. } => text.trim().to_string(),
+                other => format!("{other:?}"),
+            };
+            out.push_str(&format!(" in ({}, {})", txt(&c.from), txt(&c.to)));
+            out.push_str(" { … }");
         }
         StmtKind::SolidRel(r) => {
             write_ref(out, &r.what);
@@ -3819,6 +3843,42 @@ impl<'a> P<'a> {
                 );
                 self.skip_block();
                 None
+            }
+            // **`claim over crank.theta in (0deg, 360deg) { … }`** (§9.8): every claim in the
+            // body judged as the drawing runs along one of its own free variables, and the worst
+            // pose reported.  Every claim the language had until now is judged at one pose, and
+            // a fact about a *cycle* — a disc clearing a cylinder mouth, a port's timing — is
+            // not one of those.
+            "claim"
+                if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::Ident(w)) if w == "over") =>
+            {
+                let lo = self.here().lo as usize;
+                self.i += 2;
+                let formal = self.refr()?;
+                if !self.peek_word("in") {
+                    self.fail("a swept claim runs `over NAME in (from, to)`");
+                    return None;
+                }
+                self.i += 1;
+                if !self.want_p('(') {
+                    return None;
+                }
+                let (from, fs) = self.expr_until(',')?;
+                if !self.want_p(',') {
+                    return None;
+                }
+                let (to, ts) = self.expr_until(')')?;
+                if !self.want_p(')') {
+                    return None;
+                }
+                let (body, _) = self.braced_body(next_id)?;
+                Some(StmtKind::ClaimOver(ClaimOver {
+                    formal,
+                    from: Arg::Dim { text: from, span: fs },
+                    to: Arg::Dim { text: to, span: ts },
+                    body,
+                    span: Span::new(lo, self.prev_hi()),
+                }))
             }
             // `claim vertical(rail)` — a relation stated as expected to add no rank.  The colon
             // guard keeps an instance *named* claim (`claim: Tooth(…)`) an instance.

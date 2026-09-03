@@ -58,9 +58,16 @@ param NAME = EXPR                       a number worked out while elaborating
 KIND [NAME][(CHILD | hint(x: E, y: E), ...)] [hint(SCALAR: E, ...)] [knots [...]]
      [class NAME...] [in REF]           an entity declaration; every part is optional (1.4)
 point NAME = (XEXPR, YEXPR)             a computed point, drawn only as a curve      (1.9)
-plane [NAME](origin: R, toward: R[, from: R, fold: E | , u: (E,E,E), v: (E,E,E)])
+plane [NAME](origin: R, toward: R[, from: R, fold: E | , from: R, offset: E
+                                      | , u: (E,E,E), v: (E,E,E)])
                                         the datum, and a view with an attitude    (1.13)
 in REF { statement* }                   every declaration inside is drawn in that plane
+face NAME(EDGE, ...)                    a closed loop of edges, on one plane        (1.14)
+solid NAME(FACE, SWEEP...)              that face swept: depth:/from:/to:, about:   (1.14)
+solid NAME(SOLID)                       a body, made of a stock
+REF on REF  |  REF through REF          material added to, or taken from, a body    (1.14)
+view(SOLID) in REF                      a picture asked of a solid                  (1.14)
+section(SOLID, at: REF) in REF          the same, cut at a plane
 style .NAME { PROP: VALUE; ... }        what a class looks like                     (1.11)
 WORD[(ARGS)] REF  |  REF WORD[(ARGS)] REF
      [hint(SLOT: E, ...)] [class NAME...] [at (t, r)]
@@ -155,7 +162,7 @@ fix c.r                             line1 tangent(side: -1) circle1
 
 | word | fixity | operands |
 |---|---|---|
-| `on` | infix | a point to a line, circle, arc, spline or curve |
+| `on` | infix | a point to a line, circle, arc, spline or curve; between two **solids** it is not a constraint at all but the body rule (1.14) |
 | `distance` | infix | two points (`along: x` / `along: y` for the run and the rise, signed first to second, or `along: right \| left \| up \| down` to say the direction in a word); a point and a line, or two lines (a magnitude — `side: left \| right` pins which side, and without one the seed picks); two concentric circles or arcs (the radial gap) |
 | `distance` | prefix | a line: the distance between its own ends |
 | `tangent` | infix | a line and a circle or arc (`at: p1` / `p2` for a tangency at that end; `side: left \| right` says which side of the line the centre is); two circles or arcs (`external: true/false`); an arc and a line (`at: start` / `end`); a spline or a curve and a line |
@@ -472,7 +479,9 @@ three-dimensional is solved for.**
 `fold` is the bearing of the fold line in the parent view. From the page, `0deg` folds up the top
 view and `-90deg` the right view; the new view's second axis points away from the parent's viewer,
 so distance from the fold line is depth (third-angle projection). Any plane can be reached in two
-folds or given outright as `u: (…), v: (…)`.
+folds or given outright as `u: (…), v: (…)`. `from: P, offset: 12mm` with no `fold:` is a plane
+*moved* rather than turned, twelve along its parent's own normal: two parallel views share no fold
+line, so that is a stack rather than a projection, and it is where a section is cut (1.14).
 
 `in top { … }` writes the membership once for every declaration in the block, a `cycle`'s copies
 included; the statements are otherwise ordinary. An instance joins a view whole: `t: Tooth(…) in
@@ -482,12 +491,282 @@ views, so the whole design of a connecting rod is one module (`engine/conrod.sv`
 
 The standard library lays out the three views once (2.10).
 
-### 1.14 Checking your work
+### 1.14 Faces, solids and derived views
+
+A feature tree is imperative because it is a *history*: step *n* acts on the anonymous body as of
+step *n − 1*, and names faces by the order they were cut in. Solvent names everything, so **a solid
+is a term, never a step** — a face swept, or a stock plus everything `on` it minus everything
+`through` it — and the implementation finds the order the way it finds the order of `h = w / 2`.
+**The order lives inside a term and never between statements**, so `bore through body` may be
+written above the `solid body(…)` it belongs to or fifty lines below it and says the same thing.
+
+**Nothing three-dimensional is solved for.** A solid owns no parameter: every extent is an
+expression the elaborator works out, and the geometry it is swept from is the drawing, solved in 2D
+as it always was.
+
+**A face** is a closed loop of edges the drawing already has, on one plane — the plane its edges
+are drawn `in`, the page where nothing says otherwise.
+
+```
+unit mm
+point a hint(x: 0, y: 0)
+point b hint(x: 60, y: 0)
+point c hint(x: 60, y: 40)
+point d hint(x: 0, y: 40)
+
+horizontal line ab(a, b) ->
+vertical   line bc(b, c) ->
+horizontal line cd(c, d) ->
+vertical   line da(d, a) -> close
+
+a distance(60) b
+b distance(40) c
+ground a
+
+face sec(ab, bc, cd, da)
+solid block(sec, depth: 30mm)
+```
+
+```
+  6 params, 6 equations, structural rank 6; DOF 0; 2 rigid cluster(s) in the distance graph
+  block.volume = 72000
+```
+
+Six unknowns and six equations: the count is the rectangle's own, and the face and the solid added
+nothing to it. The edges are given in traversal order and each must share a point with the next; a
+**circle is a whole loop by itself**, so `face hole_f(hole)` is a face and a circle among lines is
+refused. A face has no inner loops, because a hole is not a hole in a face — it is a solid
+`through` the body.
+
+**A solid** is that face swept, one of two ways.
+
+A **prism** runs along the face's own normal. `depth: 30mm` is the draughtsman's reading — the
+material *behind* the face the view shows, which is `from: -30mm, to: 0mm` — and `from:`/`to:` are
+written out when the face is somewhere other than an end, as a boss standing off a floor is below.
+
+A **revolution** turns the face about a line **in the face's own plane**: `about: ax` is a full
+turn, `sweep: 90deg` is a quarter of one, and `sense: cw` turns it the other way.
+
+```
+unit mm
+point p0 hint(x: 10, y: 0)
+point p1 hint(x: 14, y: 0)
+point p2 hint(x: 14, y: 6)
+point p3 hint(x: 10, y: 6)
+
+horizontal line e0(p0, p1) ->
+vertical   line e1(p1, p2) ->
+horizontal line e2(p2, p3) ->
+vertical   line e3(p3, p0) -> close
+
+point q0 hint(x: 0, y: 0)
+point q1 hint(x: 0, y: 10)
+vertical line ax(q0, q1)
+ground q0
+q0 distance(10) q1
+q0 distance(10, along: x) p0
+q0 distance(0, along: y) p0
+p0 distance(4) p1
+p1 distance(6) p2
+
+face sec(e0, e1, e2, e3)
+solid ring(sec, about: ax)
+```
+
+```
+  10 params, 10 equations, structural rank 10; DOF 0; 2 components: DOF 0, 0; 3 rigid cluster(s) in the distance graph
+  ring.volume = 1809.55
+```
+
+Pappus, from the source: a 4 × 6 section whose centroid stands 12 from the axis is
+`2π · 12 · 24 = 1809.557`. Write `solid ring(sec, about: ax, sweep: 90deg)` and the report says
+`452.387`, a quarter of it, with `ring.start.area` and `ring.end.area` both 24 — the face itself,
+at each end of the turn. Round faces are read as fine polygons, so every volume here is exact to
+that faceting and not beyond it.
+
+**The body rule** is one sentence: a body is its **stock, plus everything `on` it, minus everything
+`through` it**. Add to the plate above:
+
+```
+point o hint(x: 30, y: 20)
+a distance(30, along: x) o
+a distance(20, along: y) o
+circle hole(center: o) hint(r: 5)
+radius(5) hole
+face hole_f(hole)
+
+solid stock(sec, depth: 30mm)
+solid bore(hole_f, depth: 30mm)
+solid body(stock)
+bore through body
+```
+
+```
+  9 params, 9 equations, structural rank 9; DOF 0; 3 components: DOF 0, 0, 0; 2 rigid cluster(s) in the distance graph
+  body.volume = 69643.8
+```
+
+`72000 − π · 5² · 30 = 69643.81`. Swap the last two lines — `bore through body` before the `solid
+body(stock)` it belongs to — and the number is the same, because both sides of the rule are *sets*
+and a set has no order.
+
+Being sets is also the one thing you have to write out. A boss standing in the floor of a pocket is
+**not** `pocket through body` and `boss on body`: that is stock ∪ boss − pocket, and the pocket eats
+the boss. Name the intermediate the feature tree would have left anonymous:
+
+```
+// the plate again, with `o` at its middle
+circle rim(center: o) hint(r: 15)
+circle stud(center: o) hint(r: 5)
+radius(15) rim
+radius(5) stud
+face rim_f(rim)
+face stud_f(stud)
+
+solid stock(sec, depth: 30mm)
+solid pocket(rim_f, depth: 10mm)
+solid boss(stud_f, from: -10mm, to: -4mm)
+
+solid shell(stock)
+pocket through shell
+
+solid body(shell)
+boss on body
+```
+
+`shell.volume` is `72000 − π · 15² · 10 ≈ 64931.5` and `body.volume` is that plus
+`π · 5² · 6 ≈ 65402.7`; written flat on one body it comes out 64931.5, the boss gone. The extra
+name is honest rather than a limitation: `shell` is exactly what a history calls "the body as of
+step 2", and this is the language letting you say it.
+
+**What the report says.** `--where body` is the reader's only picture of an object no view of the
+sheet shows whole: the volume, the surface area, the box it stands in, and each face's area under
+the name the document wrote it by — `near` and `far` for a prism's caps, `start`/`end` for a
+partial revolution, and otherwise the drawn edge that side was swept from.
+
+```
+$ build/solventc plate.sv --where body
+plate.sv: solved
+  9 params, 9 equations, structural rank 9; DOF 0; 3 components: DOF 0, 0, 0; 2 rigid cluster(s) in the distance graph
+  body.ab.area = 1800
+  body.area = 11585.4
+  body.bc.area = 1200
+  body.bounds.x0 = 0
+  body.bounds.x1 = 60
+  body.bounds.y0 = 0
+  body.bounds.y1 = 30
+  body.bounds.z0 = 0
+  body.bounds.z1 = 40
+  body.cd.area = 1800
+  body.da.area = 1200
+  body.far.area = 2321.46
+  body.hole.area = 942.474
+  body.near.area = 2321.46
+  body.volume = 69643.8
+```
+
+`body.hole.area` is `2π · 5 · 30`: the bore's wall, named by the circle it was swept from. A face
+a boolean ate leaves a name the document still writes and no area under it. `--stl PATH` writes one
+solid as binary STL for a printer; `--solid NAME` says which, and without it a document with more
+than one is told `say which solid with --solid: stock, bore, body`.
+
+**Views, derived.** *A part carries no views.* It is a solid, and a sheet that wants a picture asks
+for one:
+
+```
+view(SOLID) in PLANE
+section(SOLID, at: PLANE) in PLANE
+```
+
+```
+unit mm
+use std
+
+point a hint(x: 0, y: 0) in views.front
+ground a
+views: ThreeViews(a, right: 120, up: 80)
+
+in views.front {
+  point b hint(x: 60, y: 0)
+  point c hint(x: 60, y: 40)
+  point d hint(x: 0, y: 40)
+  point o hint(x: 30, y: 20)
+
+  horizontal line ab(a, b) ->
+  vertical   line bc(b, c) ->
+  horizontal line cd(c, d) ->
+  vertical   line da(d, a) -> close
+
+  circle hole(center: o) hint(r: 8)
+}
+
+a distance(60) b
+b distance(40) c
+a distance(30, along: x) o
+a distance(20, along: y) o
+radius(8) hole
+
+face sec(ab, bc, cd, da)
+face hole_f(hole)
+solid stock(sec, depth: 30mm)
+solid bore(hole_f, depth: 30mm)
+solid body(stock)
+bore through body
+
+plane mid(origin: a, toward: b, from: views.front, offset: -15mm)
+view(body) in views.right
+section(body, at: mid) in views.front
+```
+
+```
+  31 params, 31 equations, structural rank 31; DOF 0; 6 components: DOF 0, 0, 0, 0, 0, 0; 2 rigid cluster(s) in the distance graph
+  body.volume = 65968.2
+```
+
+The right view is not drawn and is not tied back by `project`: it is asked for, so the bore reads
+its own diameter there and cannot disagree with the front view about the depth. A **section is
+drawn in a view parallel to the plane it is cut at** (E084), or the true shape it shows is not the
+shape it is a section of. The strokes come back under the implicit classes `.visible`, `.hidden`
+and `.section`, styled the way everything else is (1.11) — `.hidden` ships dashed. A round surface
+is drawn by its silhouette and never by the facets it is classified against, so a cylinder seen
+from the side is two lines at every zoom.
+
+`vtwin/cylinder.sv` is the worked case: one section, and the solid it is a section of. The same
+part used to be written three times — the section, then the body redrawn in two more views as
+page-aligned rectangles re-tied by `project`, with every depth ordinate related to the section by
+no statement at all. Written once it is **119 lines instead of 144** and its component takes
+**6 formals instead of 12**, and the sheet that draws it (`vtwin_cylinder.sv`) went from
+`147 params, 147 equations` to `69 params, 69 equations`, DOF 0 both ways: the two extra views cost
+the drawing nothing, being questions and not geometry.
+
+**What is refused, and why.**
+
+| written | reported |
+|---|---|
+| `face bad(ab, zz, cd, da)` | E080 — "`zz` and `cd` share no point: a face is a loop, walked in order" |
+| `face bad(ab, hole)` | E080 — "a circle is a whole loop: it stands in a face by itself" |
+| `face bad(a, b)` | E080 — "a face is bounded by lines, arcs and circles, and `a` is a point" |
+| `solid bad(ab, depth: 3mm)` | E080 — "a swept solid is written over a face, and this is a line" |
+| `solid bad(sec)`, `sec` a face | E080 — "a body is made of solids, and this is a face" |
+| `solid bad(sec, from: 0mm, to: 0mm)` | E080 — "a prism swept nowhere is no solid" |
+| `solid bad(sec, about: ax, sweep: -90deg)` | E040 — "a sweep is a magnitude: which way it turns is `sense: cw`" |
+| `solid bad(sec, about: a)` | E081 — "a face turns about a line, and `a` is a point" |
+| `solid bad(sec, depth: 3mm, about: ax)` | E001 — "a solid is a face swept along its normal (`from:`/`to:`, `depth:`) or turned about a line (`about:`), not both" |
+| `x through y` and `y through x` | E041 — "`x` is made of itself" |
+| `h through s`, `s` a face swept | E080 — "`s` is a face swept, and only a body takes features: give it a stock (`solid s(s_stock)`) and write them there" |
+| `section(block, at: front) in side` | E084 — "a section is drawn in a view parallel to the plane it is cut at" |
+
+The `h through s` one carries the most: only a *body* takes features, so a face swept is a
+primitive and a body is the term over primitives, and the two are never the same name. The negative
+sweep is 1.5's rule again — which way is a word, not a sign.
+
+### 1.15 Checking your work
 
 ```
 make solventc                     # once
 build/solventc drawing.sv         # parse, elaborate, solve, diagnose; --json for structure
 build/solventc drawing.sv --where hinge     # where a name landed
+build/solventc drawing.sv --stl part.stl --solid body    # a solid, for a printer     (1.14)
 ```
 
 Exit codes: 0 solved, 1 did not elaborate, 2 elaborated but did not solve. The text report gives
@@ -821,5 +1100,6 @@ folded at the bearing of an inclined face.
    still move.
 
 The documents in `rust/examples/` are the worked corpus, each with a header saying what it is for.
-`rect_fillets.sv` is the best first read, `gear_trace.sv` the deepest, and `engine.sv` with its
-`engine/` modules the largest.
+`rect_fillets.sv` is the best first read, `gear_trace.sv` the deepest, `vtwin_cylinder.sv` over
+`vtwin/cylinder.sv` the one to read for solids (1.14), and `engine.sv` with its `engine/` modules
+the largest.

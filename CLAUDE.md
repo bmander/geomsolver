@@ -1009,6 +1009,30 @@ Conventions:
   declared normals (invisible wherever a cap sits on the origin and contributes no flux), and a
   revolution's walls facing inward, which reads as a negative volume and nothing else.
   `tests/solid_lang.rs` holds the language, `tests/derived.rs` the pictures.
+- **A claim about a solid is judged, and can never act** (Solvent §9.8, `clear.rs`; issue #48,
+  items 6 and 7).  §9.7's bargain one stratum out: `disc clear(2mm) cyl`, `head fits(0.15mm)
+  trap`, `piston inside bore` compile **no row**, so a solid claim cannot move geometry, take a
+  freedom or paint a sketch Over — checked by `tests/solid_claim.rs`, which adds two and asserts
+  the parameter count, the equation count and the DOF are all unchanged.  The three words are in
+  `constraints::OPERATORS` so a statement reads the way every other statement does, and they
+  settle to no `CKind` because a `CKind` is a thing with a kernel; `constraints::solid_word` is
+  where the word is read, asked before the spec is, the way `gauge_op` is.
+  **What a reader is owed is the measurement**, not a yes or no — `clear(4mm)` failing by a
+  millimetre and by a metre are different drawings — and the verdict carries the *sagitta* beside
+  it: the faceting is honest about being faceting, and a claim decided within it comes back
+  **undecided**, which is a third answer and not a failure.  The measurement is exact on the
+  faceted solids: the implicit min/max reading of a term is only a lower bound for a difference,
+  so it culls, and the answer is piece against piece with the boxes doing the work.
+  **`claim over crank.theta in (0deg, 360deg) { … }`** (item 6) judges its body as the drawing
+  runs along one of its own **free variables** — a `param` is a number the document already
+  fixed, and sweeping a constant is not a question — reporting the *worst* pose, since a fact
+  about a cycle is not a fact about one angle.  It is **sampling** at `SWEEP_STEPS` and says so.
+  Two orderings are load-bearing.  The claims are read in a pass of their own **after phase 4**,
+  because a free variable is what `expr::evaluate` allocates and a claim read beside the solids
+  would find `theta` declared nowhere.  And the interval is read **in the unknown's own units** —
+  `(0deg, 360deg)` is radians to the kernels and `(0mm, 20mm)` is a length unchanged — where
+  converting everything as an angle made a sweep of millimetres sixty times too small and
+  reported a claim that held over almost none of its interval.
 - **A face is one loop and a solid's faces are named by path** (§6.8).  A face is a closed loop of
   edges the drawing already has, on the one plane every point of every edge agrees about — *read*
   off the memberships and never written on the face, so a face inside `in swing { … }` is on the

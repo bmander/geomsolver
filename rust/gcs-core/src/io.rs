@@ -1098,6 +1098,26 @@ pub const READING_SIG: usize = 6;
 /// A stored number as a reader reads it: in the units they read (degrees for an angle), to
 /// `READING_SIG`.  Every place a constraint's number is turned into text for a person goes
 /// through here — the callout, the constraint list, the CLI's culprits.
+/// **A claim about two solids, in the core's own words** (§9.8).
+///
+/// `describe`'s rule one stratum out: what a front end shows is what the core says, so a
+/// constraint list, a terminal report and a program panel cannot spell one statement three ways.
+pub fn describe_solid_claim(sk: &crate::model::Sketch, c: &crate::model::SolidClaim) -> String {
+    let name = |i: u32| {
+        sk.solids.get(i as usize).map(|s| s.name.clone()).unwrap_or_else(|| format!("#{i}"))
+    };
+    let gap = if c.word.takes_gap() {
+        format!("({})", if c.gap.text.is_empty() { reading(SpecKind::Length, c.gap.value) } else { c.gap.text.clone() })
+    } else {
+        String::new()
+    };
+    let head = match &c.over {
+        None => String::new(),
+        Some(s) => format!("over {} in ({}, {}): ", s.name, crate::syntax::num(s.from), crate::syntax::num(s.to)),
+    };
+    format!("claim {head}{} {}{gap} {}", name(c.a), c.word.as_str(), name(c.b))
+}
+
 pub fn reading(kind: SpecKind, v: f64) -> String {
     fmt_g(expr::to_user_units(kind, v), READING_SIG)
 }

@@ -63,6 +63,94 @@ pub struct Component {
     pub dof: i64,
 }
 
+/// **Every claim the document makes about its solids, judged** (§9.8).
+///
+/// The end of the diagnosis, and the whole of what it costs: no system is compiled, no rank is
+/// taken, and nothing above this line can see the answer.  A claim about a solid is a question
+/// asked of the term at the pose the drawing stands in — or, swept, at each of a march of poses,
+/// reporting the **worst** one, since a fact about a cycle is not a fact about one angle.
+///
+/// How many poses is `SWEEP_STEPS`, and the verdict says so: this is *sampling*, and a claim that
+/// holds at every sample is a claim that held at every sample.  A swept claim is honest about
+/// that in the way a faceted one is honest about its sagitta.
+pub fn judge_solids(sk: &crate::model::Sketch) -> Vec<SolidVerdict> {
+    if sk.solid_claims.is_empty() {
+        return Vec::new();
+    }
+    let unit = crate::solid::REPORT_UNIT;
+    let mut out = Vec::with_capacity(sk.solid_claims.len());
+    for c in &sk.solid_claims {
+        let text = crate::io::describe_solid_claim(sk, c);
+        match &c.over {
+            None => {
+                let v = crate::clear::judge(sk, c.word, c.a as usize, c.b as usize, c.gap.value, unit);
+                out.push(SolidVerdict {
+                    stmt: c.stmt,
+                    text,
+                    measured: v.measured,
+                    tolerance: v.tolerance,
+                    holds: v.holds,
+                    worst: None,
+                });
+            }
+            Some(sw) => {
+                // the drawing walked along one of its own unknowns.  A scratch copy, because a
+                // claim may not move the drawing it is a claim about — which is P3's rule for a
+                // seed and §9.7's for a claim, said once more where it would be easiest to break
+                let Some(&p) = sk.free_vars.get(&sw.name) else { continue };
+                let mut worst: Option<(f64, crate::clear::Verdict)> = None;
+                for k in 0..=SWEEP_STEPS {
+                    let t = sw.from + (sw.to - sw.from) * k as f64 / SWEEP_STEPS as f64;
+                    let mut scratch = sk.clone();
+                    // already in the unknown's own units: `sweep_of_claim` converted an angle
+                    // where the document wrote one and left a length alone
+                    scratch.params[p as usize].value = t;
+                    scratch.params[p as usize].fixed = true;
+                    scratch.solid_cache.borrow_mut().clear();
+                    let _ = crate::solve::solve(&mut scratch, crate::solve::SolveOpts::default());
+                    let v = crate::clear::judge(
+                        &scratch, c.word, c.a as usize, c.b as usize, c.gap.value, unit,
+                    );
+                    if worst.as_ref().is_none_or(|(_, w)| v.measured < w.measured) {
+                        worst = Some((t, v));
+                    }
+                }
+                if let Some((t, v)) = worst {
+                    out.push(SolidVerdict {
+                        stmt: c.stmt,
+                        text,
+                        measured: v.measured,
+                        tolerance: v.tolerance,
+                        holds: v.holds,
+                        worst: Some(t),
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
+/// How many poses a swept claim is judged at.  Enough that a clearance minimum a degree wide is
+/// found, and few enough that a claim costs a second and not a minute.
+pub const SWEEP_STEPS: usize = 36;
+
+/// What one claim about two solids came to, and where it was written.
+#[derive(Clone, Debug)]
+pub struct SolidVerdict {
+    pub stmt: u32,
+    /// The claim as the document wrote it — `disc clear(2mm) cyl` — so a report says the
+    /// statement and not an index.
+    pub text: String,
+    /// What was measured: a distance, negative where two solids overlap.
+    pub measured: f64,
+    /// How far the faceting could be wrong.  A claim decided within this is `None`.
+    pub tolerance: f64,
+    pub holds: Option<bool>,
+    /// For a swept claim, the value of the free variable at the worst pose.
+    pub worst: Option<f64>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Diagnosis {
     /// Free parameters.
@@ -103,6 +191,11 @@ pub struct Diagnosis {
     pub claims_theorem: Vec<u32>,
     pub claims_violated: Vec<u32>,
     pub claims_consuming: Vec<u32>,
+    /// The claims about **solids**, judged (§9.8).  Kept apart from the three lists above
+    /// because the trichotomy does not apply: a solid claim compiles no row, so there is no rank
+    /// for it to consume and *consuming* has no meaning.  It holds, it is refuted, or the
+    /// faceting cannot tell — which is the honest third answer and not a failure.
+    pub solid_claims: Vec<SolidVerdict>,
     /// Parameters that can move *at the configuration diagnosed*.
     pub under_params: Vec<u32>,
     pub structural_under_params: Vec<u32>,
@@ -725,6 +818,10 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         claims_theorem,
         claims_violated,
         claims_consuming,
+        // **judged, at the very end, and never compiled.**  A solid claim reads the solved pose
+        // and the terms over it; it enters no system, so nothing above this line can see it and
+        // nothing it says can move a number.
+        solid_claims: judge_solids(sk),
         under_params,
         structural_under_params: structural_under,
         components,

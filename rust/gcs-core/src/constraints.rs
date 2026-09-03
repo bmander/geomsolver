@@ -295,11 +295,58 @@ pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
 /// table (`gauge_op`), so a class, a placement and the chain's lookahead treat them as any
 /// other word.  None of the four is a prefix word a chain can open a link with: `prefix_op`
 /// declines them, so `ground point p -> …` stays what it always was, no chain.
-pub const OPERATORS: [&str; 19] = [
+pub const OPERATORS: [&str; 22] = [
     "on", "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "angle",
     "radius", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
     "ground", "fix", "ccw", "cw",
+    // **the words that relate two solids** (§9.8).  They are operators so that a statement
+    // reads the way every other statement does; they settle to no `CKind` and compile no row,
+    // because a solid is evaluated after the drawing is solved and a claim about one is judged
+    // rather than enforced — `solid_claim` is where the word is read.
+    "clear", "inside", "fits",
 ];
+
+/// The words that relate two **solids**, and what each asks (§9.8).  A statement in one of them
+/// is a *claim*: judged at the pose, never solved for, and it can no more move geometry than a
+/// `project` claim can.
+///
+/// Kept beside `OPERATORS` rather than in `CKind`, because a `CKind` is a thing with a kernel and
+/// these have none.  Asked by `program::constrain` before the spec is read, the way `gauge_op` is.
+pub fn solid_word(w: &str) -> Option<SolidWord> {
+    Some(match w {
+        "clear" => SolidWord::Clear,
+        "inside" => SolidWord::Inside,
+        "fits" => SolidWord::Fits,
+        _ => return None,
+    })
+}
+
+/// What a claim about two solids asks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SolidWord {
+    /// `a clear(2mm) b` — disjoint, and no point of one nearer than that to the other.
+    Clear,
+    /// `a inside b` — every point of the left is a point of the right.
+    Inside,
+    /// `a fits(0.15mm) b` — inside, with that much to spare all round.
+    Fits,
+}
+
+impl SolidWord {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SolidWord::Clear => "clear",
+            SolidWord::Inside => "inside",
+            SolidWord::Fits => "fits",
+        }
+    }
+
+    /// Whether the word takes a distance in its parentheses.  `inside` asks about containment
+    /// and nothing else; the other two ask for room.
+    pub fn takes_gap(self) -> bool {
+        self != SolidWord::Inside
+    }
+}
 
 pub fn is_operator(w: &str) -> bool {
     OPERATORS.contains(&w)

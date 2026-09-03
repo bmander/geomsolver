@@ -163,6 +163,39 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
         ("claimsTheorem", ids(&d.claims_theorem)),
         ("claimsViolated", ids(&d.claims_violated)),
         ("claimsConsuming", ids(&d.claims_consuming)),
+        // the claims about solids, each with what was measured and how far the faceting could be
+        // wrong — there is no `consuming` here, since a solid claim compiles no row to consume
+        // rank with (§9.8)
+        (
+            "solidClaims",
+            Json::Arr(
+                d.solid_claims
+                    .iter()
+                    .map(|v| {
+                        let mut o = object([
+                            ("statement", Json::Str(v.text.clone())),
+                            ("measured", Json::Num(v.measured)),
+                            ("tolerance", Json::Num(v.tolerance)),
+                            (
+                                "verdict",
+                                Json::Str(
+                                    match v.holds {
+                                        Some(true) => "holds",
+                                        Some(false) => "refuted",
+                                        None => "undecided",
+                                    }
+                                    .to_string(),
+                                ),
+                            ),
+                        ]);
+                        if let Some(w) = v.worst {
+                            o.set("worst", Json::Num(w));
+                        }
+                        o
+                    })
+                    .collect(),
+            ),
+        ),
         ("underParams", ids(&d.under_params)),
         ("structuralUnderParams", ids(&d.structural_under_params)),
         ("components", Json::Arr(components)),

@@ -504,6 +504,30 @@ pub struct FaceE {
     pub class: Classes,
 }
 
+/// A claim about two solids (§9.8): `disc clear(2mm) cyl`, `head fits(0.15mm) trap`.
+#[derive(Clone, Debug)]
+pub struct SolidClaim {
+    pub word: crate::constraints::SolidWord,
+    pub a: u32,
+    pub b: u32,
+    /// The room it asks for; unused by `inside`, which asks about containment and nothing else.
+    pub gap: Extent,
+    /// **A claim over a sweep** (§9.8, issue #48 item 6): the free variable it is judged along
+    /// and the interval, in the units the kernels read.  `None` judges it at the pose the
+    /// drawing stands in, which is every claim the language had until now.
+    pub over: Option<Sweep>,
+    /// The statement it was written as, so a verdict is reported where the claim is.
+    pub stmt: u32,
+}
+
+/// The interval a claim is swept over: a free variable of the drawing, and where it runs.
+#[derive(Clone, Debug)]
+pub struct Sweep {
+    pub name: String,
+    pub from: f64,
+    pub to: f64,
+}
+
 /// A picture asked of a solid (§6.11): what of, cut where, drawn in which view.
 #[derive(Clone, Debug)]
 pub struct DerivedE {
@@ -689,6 +713,11 @@ pub struct Sketch {
     /// in front`.  Not entities — nothing on the sheet is held to one, and no solve moves one —
     /// but document state like `branches`, saved and grafted with everything else.
     pub derived: Vec<DerivedE>,
+    /// The claims the document makes about its solids (§9.8).  Judged at the end of a diagnosis
+    /// and never solved: a solid claim compiles no row, so it cannot move geometry, weld two
+    /// figures into one drag part or paint a sketch Over — the bargain §9.7 already struck for a
+    /// 2D claim, one stratum further out.
+    pub solid_claims: Vec<SolidClaim>,
     /// The curve families this document defines.  Document state like `branches`: a curve
     /// instance names one by index.
     pub curve_defs: Vec<CurveDef>,

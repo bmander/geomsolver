@@ -875,7 +875,11 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // -- phase 4: every expression against the whole document, once.  Per-statement evaluation
     // would be quadratic in the expression count and would make a dimension whose definition is
     // further down the file briefly a free variable — allocating an unknown the next pass retires.
-    for item in expr::evaluate(&mut sk) {
+    // the claims about solids read the free variables `evaluate` allocates, so they come after
+    // it — the one pass of the elaboration that is *below* the expressions
+    let post_expr = expr::evaluate(&mut sk);
+    solid_claims(&mut sk, &res, &mut map, &body, &skip, &mut diags);
+    for item in post_expr {
         let span = map.site_of_constraint(item.id).map(|s| s.span).unwrap_or_default();
         let stmt = map.site_of_constraint(item.id).map(|s| s.stmt);
         if let Some(err) = &item.error {
@@ -1719,6 +1723,181 @@ fn basis_of<'a>(
 /// names.  After every kind is built, since the plane may be declared after the point; before
 /// any constraint, since `project` reads these.  A point two declarations put on two different
 /// planes is E060 — one image is on one plane.
+/// One claim about two solids, plain or swept.
+/// **The claims the document makes about its solids** (§9.8), read after the expressions.
+///
+/// A pass of its own, and *after* phase 4, because a swept claim runs along a **free variable**
+/// and `expr::evaluate` is what allocates one: read alongside the solids it would find `theta`
+/// declared nowhere and refuse a claim the drawing is perfectly able to judge.
+fn solid_claims(
+    sk: &mut Sketch,
+    res: &Resolver,
+    map: &mut SourceMap,
+    body: &[&Stmt],
+    skip: &BTreeSet<StmtId>,
+    diags: &mut Vec<Diag>,
+) {
+    // A claim over a sweep is the *same* claims with an interval attached, so both forms go
+    // through one reader: the block says how its body is judged and asserts nothing itself.
+    for st in body {
+        match &st.kind {
+            StmtKind::Relation(_) => solid_claim(sk, res, st, None, map, skip, diags),
+            StmtKind::ClaimOver(c) if !skip.contains(&st.id) => {
+                let over = match sweep_of_claim(sk, res, c, st, diags) {
+                    Some(o) => o,
+                    None => continue,
+                };
+                for inner in &c.body {
+                    solid_claim(sk, res, inner, Some(&over), map, skip, diags);
+                }
+                map.record(st, Made::Gauge);
+            }
+            _ => {}
+        }
+    }
+
+}
+
+fn solid_claim(
+    sk: &mut Sketch,
+    res: &Resolver,
+    st: &Stmt,
+    over: Option<&crate::model::Sweep>,
+    map: &mut SourceMap,
+    skip: &BTreeSet<StmtId>,
+    diags: &mut Vec<Diag>,
+) {
+    let StmtKind::Relation(r) = &st.kind else { return };
+    if skip.contains(&st.id) {
+        return;
+    }
+    let Some(w) = &r.poly else { return };
+    let Some(word) = crate::constraints::solid_word(&w.word.text) else { return };
+    let mut say = |code: Code, span: Span, m: String| {
+        diags.push(Diag { code, span, stmt: Some(st.id), message: m });
+    };
+    // **it is a claim whether or not it says so.**  These words cannot act — there is no row for
+    // them — so a document that writes one without `claim` is saying the same thing, and refusing
+    // it would be a rule about spelling rather than about meaning.  Written *with* `claim` is the
+    // reading to prefer, and the printer spells it that way.
+    if w.ops.len() != 2 {
+        say(Code::E040, st.span, format!("`{}` relates two solids", word.as_str()));
+        return;
+    }
+    let mut ends = Vec::new();
+    for o in &w.ops {
+        match res.lookup(o) {
+            Some(e) if e.kind == EntKind::Solid => ends.push(e.idx),
+            Some(e) => {
+                say(
+                    Code::E040,
+                    o.span,
+                    format!(
+                        "`{}` relates solids, and `{}` is a {}",
+                        word.as_str(),
+                        o.root.text,
+                        e.kind.as_str()
+                    ),
+                );
+                return;
+            }
+            None => {
+                say(Code::E101, o.span, format!("no such entity: `{}`", o.root.text));
+                return;
+            }
+        }
+    }
+    let gap = if word.takes_gap() {
+        match w.args.iter().find_map(|a| match a {
+            crate::syntax::OpArg::Dim(text, span) => Some((text.clone(), *span)),
+            _ => None,
+        }) {
+            Some((text, span)) => {
+                match crate::flatten::value_aff(&text, &BTreeMap::new(), sk.units) {
+                    Ok(v) if v.dim.require(crate::units::Dim::LENGTH, word.as_str()).is_ok() => {
+                        Extent { text: text.trim().to_string(), value: v.c }
+                    }
+                    Ok(_) | Err(_) => {
+                        say(Code::E103, span, format!("`{}` asks for a length", word.as_str()));
+                        return;
+                    }
+                }
+            }
+            None => {
+                say(
+                    Code::E040,
+                    st.span,
+                    format!("`{}` asks for room: `{}(2mm)`", word.as_str(), word.as_str()),
+                );
+                return;
+            }
+        }
+    } else {
+        Extent { text: String::new(), value: 0.0 }
+    };
+    sk.solid_claims.push(crate::model::SolidClaim {
+        word,
+        a: ends[0],
+        b: ends[1],
+        gap,
+        over: over.cloned(),
+        stmt: st.id.0,
+    });
+    map.record(st, Made::Gauge);
+}
+
+/// The interval a swept claim runs over: a free variable of the drawing, and where it goes.
+fn sweep_of_claim(
+    sk: &Sketch,
+    res: &Resolver,
+    c: &crate::syntax::ClaimOver,
+    st: &Stmt,
+    diags: &mut Vec<Diag>,
+) -> Option<crate::model::Sweep> {
+    let mut say = |code: Code, span: Span, m: String| {
+        diags.push(Diag { code, span, stmt: Some(st.id), message: m });
+    };
+    let name = crate::syntax::ref_text(&c.formal);
+    // **a free variable, and nothing else**: a `param` is a number the document already fixed,
+    // and sweeping it would be sweeping a constant
+    if !sk.free_vars.contains_key(&name) {
+        if res.lookup(&c.formal).is_some() {
+            say(Code::E040, c.formal.span, format!("`{name}` is geometry, not a free variable"));
+        } else {
+            say(
+                Code::E040,
+                c.formal.span,
+                format!("`{name}` is not a free variable of this drawing: a swept claim runs \
+                         along an unknown the solver answers for"),
+            );
+        }
+        return None;
+    }
+    // **the interval is read in the unknown's own units**, which is what the dimensions reading
+    // it are written in: `(0deg, 360deg)` is radians to the kernels and `(0mm, 20mm)` is a
+    // length to them unchanged.  Converting everything as an angle put a sweep of millimetres
+    // sixty times too small and reported a claim that held over almost none of its interval.
+    let mut num = |a: &crate::syntax::Arg, what: &str| -> Option<f64> {
+        let crate::syntax::Arg::Dim { text, span } = a else { return None };
+        match crate::flatten::value_aff(text, &BTreeMap::new(), sk.units) {
+            Ok(v) if v.dim == crate::units::Dim::ANGLE => {
+                Some(crate::expr::to_arg_units(crate::constraints::SpecKind::Angle, v.c))
+            }
+            Ok(v) => Some(v.c),
+            Err(e) => {
+                diags.push(Diag {
+                    code: Code::E103,
+                    span: *span,
+                    stmt: Some(st.id),
+                    message: format!("`{what}`: {e}"),
+                });
+                None
+            }
+        }
+    };
+    Some(crate::model::Sweep { name, from: num(&c.from, "from")?, to: num(&c.to, "to")? })
+}
+
 /// `boss on cyl`: an `on` whose two operands are both solids.  Asked of the *resolver*, which
 /// has known every declaration's kind since phase 1 — so the question is answered the same way
 /// before the solids are built and after.
@@ -2965,6 +3144,12 @@ fn constrain(
     // up by the solids phase, so nothing is added here — and nothing is *said* here either, or
     // one statement would be reported twice.
     if is_body_on(res, r) {
+        return None;
+    }
+    // **a word that relates two solids is a claim, judged and never solved** (§9.8).  Picked up
+    // by the solids phase for the reason `on` is: nothing here has a kernel, and saying so twice
+    // would report one statement twice.
+    if r.poly.as_ref().is_some_and(|w| crate::constraints::solid_word(&w.word.text).is_some()) {
         return None;
     }
     // **The operator, settled.**  What a word means is the *kinds* of its operands — `on` is

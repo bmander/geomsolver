@@ -45,6 +45,8 @@ The `ring` construct asserts cyclic symmetry. Its solution set contains exactly 
 
 This draft specifies **planar (2D) geometry only**. The entity vocabulary, constraint library, and group actions are two-dimensional. Section 17 lists the known lifting questions for 3D. This draft also excludes curve entities beyond lines and circles (no involutes, splines, or conics); see §17.
 
+**[0.18] More precisely: the draft specifies planar geometry *solved*, with solids evaluated over it.** A document may say what object its drawing is of — a face is a region of a plane (§6.8), a solid is a face swept or a term over other solids (§6.9), and a view or a section of one is a picture the sheet asks for (§6.11) — and **nothing three-dimensional is ever an unknown**. A plane's attitude is a constant (§6.7), an extent is an expression (§6.9), and neither a face nor a solid owns a parameter, appears in a residual, or is reached by a constraint. The strata run one way and there is no edge back: the sketch solves, the extents are worked out, the terms are ordered, the outputs are read. So everything §15 says about a solver, and every count in §16.3's ledger, is unchanged by the presence of an object — which is the whole of what makes the addition affordable.
+
 ### 1.3 Conformance keywords
 
 MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked *non-normative* is explanatory.
@@ -54,7 +56,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `on`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it.
+- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `on`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `through` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. The six labels a solid's brackets take — `from`, `to`, `depth`, `about`, `sweep`, `sense` — and `offset` (§6.10) and `at` (§6.11) are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`param face = -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`.
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
 - **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . = -> ~`
@@ -77,6 +79,10 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 | `Circle` | center + radius | 3 |
 | `Plane` | the datum: origin + orientation **[0.6]**, and a **view** — a plane in space, given as a constant orthonormal basis `(u, v)` **[0.10]**; one with no attitude written is the page's **[0.15]** | 0 beyond its two points (§6.7) |
 | `Path` | directed piecewise boundary curve | 0 (derived object) |
+| `Face` | a closed loop of edges of one plane: a region swept **[0.18]** | 0 — it owns no parameter |
+| `Solid` | a face swept, or a term over other solids **[0.18]** | 0 — it owns no parameter |
+
+**[0.18] `Face` and `Solid` are evaluated after the solve, and are the only kinds that are.** Neither owns a coordinate, allocates an unknown, or contributes a residual; neither may be an argument of any constraint of §9.3, be dragged, be dimensioned, or be put on a plane with `in`. What each *is* is settled once the drawing has been solved and every extent worked out (§1.2, §6.9). A kind of this stratum therefore adds nothing to §16.3's ledger.
 
 **[0.2] `Line` was a 2-DOF undirected infinite line with a `.dir` field in 0.1.** It is now a segment between two points, and every constraint that reads a line reads the infinite carrier through those points — which is what `parallel`, `perpendicular`, `on` and `angle` mean by a line anyway.
 
@@ -94,7 +100,15 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 | `Plane` | `.c`, `.s` | `Scalar` **[0.6]** — the unit rotor |
 | `Plane` | `.angle` | `Angle` — derived, `atan2(s, c)`; readable in trace-block expressions **[0.6]** |
 | `Plane` | its basis `u`, `v` | constants of the declaration, not sub-entities **[0.10]** |
+| `Plane` | its offset along `n` | a constant of the declaration, not a sub-entity **[0.18]** (§6.10) |
 | `Line` | `.p1`, `.p2` | `Point` **[0.2]** |
+| `Face` | its edges | the entities it names, aliased — a face exposes no field of its own **[0.18]** |
+| `Solid` | `.near`, `.far` | a prism's two caps, at the higher and the lower ordinate **[0.18]** |
+| `Solid` | `.<edge>` | the side swept from the edge the source called `<edge>` **[0.18]** |
+| `Solid` | `.start`, `.end` | a partial revolution's two caps **[0.18]** |
+| `Solid` | `.volume`, `.area`, `.bounds.x0`… | what a report measures off it (§16.3) **[0.18]** |
+
+**[0.18] A solid's derived names are *paths*, and a path is not a sub-entity.** A face of a solid carries no coordinates, joins no alias class and takes no constraint: the path is what a report writes a number under (`block.side_l.area`) and what a derived picture labels a stroke with. Through a body the operand keeps its own name, so a face of `block` inside `body` is `body.block.near` — a path never renames, which is the naming problem every history-based kernel has and this one does not, because a boolean cannot renumber a name. The *sub-entities* a solid does have are the ones its declaration is written over: the face it is swept from, a revolution's axis line, and the solids of its term. Those are ordinary entities, and deleting one takes the solid with it.
 
 **[0.6] A datum's orientation is a unit rotor, not a stored angle.** `plane f(origin: o,
 toward: q)` declares an origin (aliased), a second point it is pointed at (aliased), and two
@@ -201,10 +215,10 @@ Every statement belongs to exactly one class. The classification is normative be
 
 | Class | Statements | Affects solution set? |
 |---|---|---|
-| **Declaration** | entity declarations, `param`, `curve` family definitions, instance declarations | introduces entities/aliases |
+| **Declaration** | entity declarations, `param`, `curve` family definitions, instance declarations, **[0.18]** the body rule (`on` and `through` over two solids, §6.9) | introduces entities/aliases |
 | **Constraint** | predicate calls, `==` equations, **pinned seeds (`==`, §4.3) [0.2]**, orientation predicates, arc-branch and tangency-side decorations, `ring` symmetry, gauge statements | **yes** |
 | **Seed** *(was Hint)* | the `hint` statement (§11), **and every seed written inline in a `hint(…)` clause (§4.3, §6.4) [0.2] [0.7]** | **no (P3)** |
-| **Structure** | `repeat`/`cycle` blocks, `path` declarations (net of their derived constraints, §10.4) | organizational |
+| **Structure** | `repeat`/`cycle` blocks, `path` declarations (net of their derived constraints, §10.4), **[0.18]** `view` and `section` (§6.11), which ask for a picture and declare nothing | organizational |
 
 ### 4.3 Seeds and pins: `hint(…)` and `==` **[0.2]** **[0.7]**
 
@@ -448,7 +462,7 @@ plane p(origin: o4, toward: q4, u: (0.6, 0.8, 0), v: (0, 0, 1))     // given out
 ```
 
 - With neither `from` nor a basis, the plane is **the page**: `u = (1, 0, 0)`, `v = (0, 0, 1)`, so `n = (0, −1, 0)` — the front view, the viewer standing at −y.
-- `from: P, fold: θ` **folds** the plane from `P` about the line at bearing `θ` in `P`: the new plane is perpendicular to `P` and contains that line, which is its `u` — `u = cos θ·u_P + sin θ·v_P` — and its `v = −n_P` points *away* from `P`'s viewer, so distance from the fold line in the new view is depth behind `P` (third-angle projection). `fold` is an `Angle`, and an omitted one is 0. From the page, `fold: 0deg` is the top view (`u = x`, `v = y`) and `fold: -90deg` the right view (`u = −z`, `v = y`), drawn with its frame turned −90° so z is up on the page. Two folds reach any plane; `P` may be declared after the plane that folds from it (P2), and a plane folded from itself, however indirectly, is **E041**. `from` names a plane and nothing else (**E040**, **E101**).
+- `from: P, fold: θ` **folds** the plane from `P` about the line at bearing `θ` in `P`: the new plane is perpendicular to `P` and contains that line, which is its `u` — `u = cos θ·u_P + sin θ·v_P` — and its `v = −n_P` points *away* from `P`'s viewer, so distance from the fold line in the new view is depth behind `P` (third-angle projection). `fold` is an `Angle`; **[0.18]** an omitted one was 0 through 0.17 and that default is **withdrawn** — a `from:` with no clause beside it is now the plane *moved* rather than the plane turned (§6.10), and a document that means the fold writes `fold: 0deg`. From the page, `fold: 0deg` is the top view (`u = x`, `v = y`) and `fold: -90deg` the right view (`u = −z`, `v = y`), drawn with its frame turned −90° so z is up on the page. Two folds reach any plane; `P` may be declared after the plane that folds from it (P2), and a plane folded from itself, however indirectly, is **E041**. `from` names a plane and nothing else (**E040**, **E101**).
 - `u:`, `v:` give the basis outright as two triples of dimensionless expressions. They are normalised, `v` is orthogonalised against `u`, and a pair spanning no plane is **E103**. Neither half alone, and not both a `from` and a basis, is a syntax error.
 
 An implementation MUST NOT make the attitude an unknown; a document that wants a view to follow the geometry writes the fold as an expression over its parameters.
@@ -466,6 +480,127 @@ An implementation MUST NOT make the attitude an unknown; a document that wants a
 **An instance joins a view whole.** `t: Tooth(…) in top` puts every point-bearing declaration the instance's expansion makes — through nested components and blocks — on the plane: the block's rule, over the statements one statement stands for. A datum or a curve inside is left alone, having no points of its own to put there. A point aliased in through an argument joins through any body declaration that names it, and one already on another plane is E060; an expansion given two planes — a clause of its own under an enclosing `in` — is refused. An instance inside an `in { … }` block takes the block's plane the same way.
 
 *Non-normative:* the front, top and right views of a part are then three planes — the page, `fold: 0deg`, `fold: -90deg` — with the part's corners drawn `in` each and tied across them by `project`; an auxiliary view folded at the bearing of an inclined face shows that face true-size, and its corners can be placed by projection alone. `rust/examples/bracket.sv` is the worked case.
+
+### 6.8 Faces **[0.18]**
+
+A **face** is a region of a plane: a closed loop of edges the document has already drawn.
+
+```
+face sec(mouth, side_r, lid, side_l)     // four lines, walked in order
+face hole_f(hole)                        // one circle, which is a loop by itself
+face bore_f(b_mouth, bore_r, b_head, b_axis)
+```
+
+A face is a **Declaration** (§4.2). It mints nothing and owns nothing — no coordinate, no unknown, no equation, no freedom — and its edges keep their own names: naming them is aliasing (P1), not constraint, so deleting an edge deletes the face. Its list is a `List` slot like a spline's control polygon, so there is no arity to conjure children from and a bare `face f` is refused (**E080**, the face's own code saying what a face is, where a bare `spline s` is §6.1's E103).
+
+**A face is one closed loop.** Consecutive edges — and the last with the first — MUST share an endpoint, and sharing is asked of the **points**, which is aliasing and cannot be argued with: two neighbours that share none are **E080** naming both. The loop is walked in the order it is written. A `circle` is a whole loop by itself and MUST stand alone in one (E080); an edge that is not a line, an arc or a circle is E080 at the edge.
+
+**A face has no holes, and the omission is the design.** There is no syntax for a second loop, because a hole in a part is a solid `through` the body (§6.9) and the body rule already says it. Written both ways, one drawing would state one hole twice, in two constructs an implementation would then have to keep in agreement — and P2 gives the body rule the better claim, since it holds however the statements are ordered.
+
+**A face lies in one plane, and does not say so.** Its plane is read off the **memberships** (§6.7) of every point of every edge; those MUST agree, and a dissenting edge is **E080** naming it and both planes. Nothing is written on the face itself. A face bears no points of its own, so an `in` clause on one is refused where it stands — but a face **inside** an `in … { }` block is left *unstamped* rather than refused, exactly as a plane and a curve are: a block stamps the geometry the face is written over, the face is on the plane its edges are on, and refusing it would put a design and the region taken from it in two different blocks.
+
+### 6.9 Solids **[0.18]**
+
+A **solid** is a face swept, or a term over other solids.
+
+```
+solid block(sec, from: face, to: back)         // a prism between two ordinates
+solid boss(boss_f, depth: 10mm)                // `depth: d` is `from: -d, to: 0`
+solid bore(bore_f, about: ax)                  // a full turn about a line in the face's plane
+solid lug(lug_f, about: ax, sweep: 90deg, sense: cw)
+solid body(block)                              // a body, whose stock is `block`
+bore through body                              //   ... less the bore
+boss on body                                   //   ... plus the boss
+```
+
+**The brackets are what the thing is made of** (§4.3, §6.2), so the sweep stands in them beside the face: `from:`, `to:`, `depth:`, `about:`, `sweep:` and `sense:` are labels of the constructor and are neither seeds nor constraints. A mixture of the two sweeps, a half-written prism (`from:` with no `to:`), `from:`/`to:` beside `depth:`, and `sweep:` or `sense:` with no `about:` are each refused where they are written, with the shapes a solid has.
+
+**Every extent is an expression, and MUST NOT be an unknown.** This is the `fold:` bargain of §6.7 exactly: a number in a solid's brackets is settled by the flattener over the parameters in scope — a `param`, a formal, a named dimension (§5) — and is then document data no solve moves, checked against its slot's dimension (`Length` for a prism's ordinates, `Angle` for a sweep; **E103** otherwise). A solid allocates no parameter, so P3's other half holds without a rule of its own: there is nothing here for a solve to rewrite.
+
+- **A prism** runs `from:` one signed ordinate `to:` another **along the face's own plane normal**. Those signs are arithmetic and not a convention (§9.2 **[0.17]**) — they are ordinates on an axis, and a document writes both. `depth: d` is the draughtsman's spelling of `from: -d, to: 0`, the material *behind* the face the view shows, and is therefore a **magnitude**. A prism swept nowhere (`from` equal to `to`) is **E080**.
+- **A revolution** turns a face about `about:` a line, which MUST be a line (**E081**) and MUST lie in the **face's own plane** (E081) — a line drawn in another view names a direction this face knows nothing about. `sweep:` is how far and is a **magnitude**, a full turn where the document writes none; **which way is a word, not a sign** (§9.2, §9.4): `sense: cw | ccw`, right-handed about the line's own `p1 → p2` unless `cw` is written, and a negative `sweep:` is **E040** at the value, in the words of the selector that replaces it.
+- **A body** names its **stock** in the brackets and takes its features from the `on` and `through` statements that name it. A solid whose brackets hold solids and no face is a body; one written over a face is not, and a feature written into a swept solid is E080 with the cause and the spelling that fixes it.
+
+**The body rule, and the whole of it.**
+
+> **A solid is its stock, plus everything `on` it, minus everything `through` it.**
+
+As a point set, with `on(s)` and `through(s)` the two **sets** of statements naming `s`, and `S(s)` its stock:
+
+```
+B(s) = ( S(s) ∪ ⋃ { B(x) : x on s } ) ∖ ⋃ { B(y) : y through s }
+```
+
+Union before difference, and neither group is ordered. `on` and `through` are Declaration-class (§4.2, §9.2): each says what its right operand *is*, contributes no residual, and enters no solve. A solid that reaches itself through its operands is **E041** — "made of itself", the words a plane folded from itself is refused in.
+
+**Why a term and not a feature tree.** A feature tree is imperative because it is *stateful*: step *n* acts on the anonymous body as of step *n−1*, and names faces by the order they were made in. Solvent names everything, so the order lives **inside the term**, over names, exactly as it lives inside `h = w / 2`; between statements there is none, which is P2. `bore through body` says what `body` is and may stand anywhere in the file — above the declaration it qualifies, below it, or in a component beside it — and moving it changes nothing.
+
+A design that wants the other order **names the intermediate**, and then there are two solids because there are two things:
+
+```
+solid recess(pocket)      // the pocket, less the boss standing in it
+boss through recess
+solid body(block)
+recess through body       // block − (pocket − boss), which the flat rule cannot spell
+```
+
+**A solid's faces are reached by path, never by index** (§3.2). A prism's caps are `.far` and `.near` — the lower and the higher of its two ordinates along the normal, so `depth: d` leaves `.near` the face the view shows — and each side is named by the edge it was swept from — the name the *source* wrote, so `block.side_l`. A revolution names its wall by the edge likewise and its caps `.start` and `.end` where the turn is partial. Through a body the operand keeps its own name (`body.block.near`). An implementation MUST NOT name a face by its position in anything: that is §13.1's rule, and a boolean is exactly the operation that would renumber one.
+
+What a report says about a solid (§16.3) is therefore `NAME.volume`, `NAME.area`, `NAME.bounds.{x,y,z}{0,1}`, and `PATH.area` for each of its faces that survived — a bore that ate a cap leaves a name the document still writes and no area behind it, which is a fact and not an error. Those numbers MUST be taken at a faceting the **document** fixes and never at the screen's: a volume that changed with the zoom is a number nobody could quote.
+
+**A solid stands on no plane.** It bears no points, so `in` on one is refused where it stands and an `in … { }` block leaves it alone (§6.8). It is not picked, dragged or dimensioned on the sheet, and it is evaluated after the drawing is solved (§1.2, §3.1).
+
+*Non-normative:* `rust/examples/vtwin/cylinder.sv` is the worked case — one section in the plane of swing, the body swept from it, and the bore, the port, the bolt hole and the head's slot four more solids `through` it. The part had been written three times, the same body redrawn in two more views as page-aligned rectangles re-tied by `project`, with every depth ordinate related to the section by no statement at all.
+
+### 6.10 Planes stood off **[0.18]**
+
+**`from:` says which plane a plane is derived from, and the clause beside it says how.** §6.7 gave `from:` one reading; it has two.
+
+```
+plane top(origin: o2, toward: q2, from: front, fold: 0deg)     // turned about a line in `front`
+plane back(origin: o,  toward: q,  from: front, offset: 12mm)  // moved along `front`'s normal
+plane same(origin: o,  toward: q,  from: front)                // moved by nothing
+```
+
+- `offset: k` stands the plane off the one it is derived from, `k` **along that plane's own normal**, with the same attitude. It is `Length`-dimensioned, and it is document data exactly as the fold and the basis are: never a seed, never an unknown, never moved by a solve. An omitted one is 0.
+- `fold:` and `offset:` in one declaration are refused where they are written, as `from:` beside a `u:`/`v:` basis already is. A plane folded from an offset plane stands where that plane stands: a fold turns about a line *in* the parent, so the two share an origin.
+
+**The withdrawal, and why.** Through 0.17 a bare `from:` read as `fold: 0deg`. That default is withdrawn. No document in the corpus ever used it, and a plane that names another and folds nothing most plainly says *the same plane, moved* — which is what a stack of parts is written in, and the reading the offset now gives it. A document that meant the top view MUST write `fold: 0deg`, which every such document already did.
+
+**An offset is along the normal, and only along it — which is why `project`'s residual is unchanged.** Let `d = (n_A × n_B)/|n_A × n_B|` be the fold line two views share (§6.7). It is perpendicular to both normals by construction, so a plane offset by `k` has its origin at `o = k·n` and
+
+`d · o = k (d · n) = 0`
+
+— the residual of §9.3 measures each image from its own plane's origin along `d`, and no term of it can see the move. An offset *within* the plane would move the origin both images are measured from and put a constant in a row that has none, which is why the language gives it no spelling.
+
+*Non-normative:* the views of one drawing are images of one object and share one origin, which is `o = 0` for every plane in every document written before there were solids. A part standing a wall's thickness in front of another does not share it, and `offset:` is where that thickness is stated once.
+
+### 6.11 Views and sections **[0.18]**
+
+A part carries no views. It is a solid, and a sheet that wants a picture of it **asks** for one:
+
+```
+view(cyl.body) in views.right                  // what that view sees of it
+view(cyl.body) in views.top
+section(body, at: front) in front              // cut at a plane, drawn in a view
+view detail(block) in side class heavy         // named, and classed, both optional
+```
+
+`view(S) in P` and `section(S, at: Q) in P` are **outputs, not entities**. Neither declares anything: no entity is minted, no name is bound, no constraint may relate to one, and deleting the statement removes the picture and nothing else. `S` MUST name a solid and `P` and `Q` MUST name planes (**E040** naming the kind that arrived, **E101** for a name nothing declares). The name before the brackets is optional and is carried for the report; a `class` clause after the view is the ordinary one (§13.2). `at:` cuts a section and a plain view takes none; a `section` with no `at:` is refused where it is written.
+
+**A section is drawn in a view parallel to the plane it is cut at**, or the true shape it shows is not the shape it is a section of; a cutting plane that shares a fold line with the view it is drawn in is **E084** at the statement.
+
+Every stroke comes back in the **page** coordinates of the plane it is drawn in — through that plane's own origin and rotor — so a derived picture sits on the sheet where its view sits, over the geometry drawn there.
+
+**Three drafting rules, and each is the whole of a convention.**
+
+1. **A corner is drawn and a tessellation seam is not.** A round surface is reduced to flats by the same sagitta rule the drawing's own arcs are drawn by, and the seams between those flats are not edges of the design. A seam is drawn only where it is a **silhouette** — where the surface turns away from the eye across it — so a cylinder is the two lines a draughtsman draws and not the sixty-four its facets would give, at every zoom.
+2. **What the material covers is dashed, not dropped.** A hidden line is a line. Visibility can change only at an apparent crossing or at an end, so each edge is cut at its crossings in the picture and each piece classified by the eye's ray from its middle; a piece the solid stands in front of is drawn under `.hidden`.
+3. **Coincident page lines are drawn once, and visible wins.** Where several strokes fall on one line of the page, what is seen is the union of the visible stretches and what is dashed is the union of the hidden stretches *less* that — so a hidden edge behind a visible one is not drawn twice and does not break it. Where a stretch is claimed by both a corner and a silhouette the corner wins, a corner being a fact about the object and a silhouette only about this view.
+
+**The classes are implicit** (§13.2): every stroke of a picture carries `.visible` or `.hidden`, a section's visible strokes carry `.section` beside `.visible`, and the statement's own classes are carried over those. So a sheet says what a hidden line looks like the way it says what a dimension does, and a document that already styles `.hidden` gets its dashes with nothing added.
+
+*Non-normative:* a picture is laid out in the implementation and stroked by the front end, the seam a dimension callout and a curve's tessellation already sit on — so an export and a canvas draw one answer, and neither owns a line of three-dimensional arithmetic. The gate is not that a derived view matches some pixels; it is that a view taken in the plane a face was drawn in gives back the outline that was drawn.
 
 ---
 
@@ -531,7 +666,8 @@ What goes in the parentheses is a short list:
 
 | word | fixity | operands → constraint |
 |---|---|---|
-| `on` | infix | (point, line \| circle \| arc \| spline \| curve) — **four** constraints |
+| `on` | infix | (point, line \| circle \| arc \| spline \| curve) — **four** constraints; **[0.18]** (solid, solid) — the body rule (§6.9), and no constraint at all |
+| `through` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
 | `distance` | infix | (p, p); +`along: x`/`y` for the run and the rise; (p, line); (line, line); (circle, circle) — **six** |
 | `distance` | prefix | on a line: the distance between its own ends |
 | `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line) — **five** |
@@ -554,6 +690,8 @@ The collapses are where the saving is: **`on` is five constraints, `distance` is
 **The surface word and the wire name are separate.** An export format's constraint identifier is unaffected by this section; the operator is information beside it.
 
 **`ccw` and `cw` keep a call.** Under the general rule they would be `a ccw(c) b`, which reorders three points that are symmetric: the predicate is about the *triangle*, not about a pair with a decoration. The call is a third fixity of the same table — every operand in the parentheses — and not a statement kind of its own. **[0.15]** The gauges and the orientation predicates are entries of the operator table like every other constraint: read by the one relation grammar, so a class, a placement and the chain's lookahead treat them as any other word, and settled by the word alone, since `fix c.r` names a number and `ccw(a, b, c)` has no operand outside its parentheses. They hold parameters or record a root choice rather than adding an equation, so a `claim` on one is refused (E040): a claim is judged by rank, and they add no row.
+
+**[0.18] The body rule is written in this grammar and is not a constraint.** `boss on cyl` and `bore through cyl` are **Declaration**-class (§4.2): each says what its right operand *is* (§6.9), contributes no residual, and takes no part in a solve, a decomposition or any partition of work. `on` is settled the way every word here is — by the kinds of its operands, one step further out than `p on c` — so nothing new is spelled for it; `through` relates no geometry and has no residual to be settled into, and is read by the word alone. Neither is in the constraint library of §9.3, and neither may be `claim`ed: a claim is judged by rank and these add no row, which is the rule already stated for the gauges. `claim a through b` is refused where it is written, `through` being no constraint word; a `claim` written on a body `on` asserts nothing, and an implementation SHOULD refuse it rather than accept a statement that says nothing (an implementation that instead drops the word MUST still apply the body rule, since the operands' kinds are what the statement means).
 
 A chain (§6.6) is the same grammar: a **lone infix statement is a one-joint chain**, and what a chain adds is the corner — which end two links meet at — that an operator between two names cannot know.
 
@@ -821,6 +959,15 @@ circle base(center: c) hint(r: Rb) class construction
 
 **[0.12] Three more places a class stands, and one more property.** A *relation* statement carries a class as a declaration does — `a distance(80) b class shown` — and a dimension's callout is drawn in `.dimension` (and `.reference` when it is a claim) under the classes its statement carries; on a relation that states no dimension a class is inert. An *instance* carries one — `t2: Throw(…) class phantom` — and every declaration **and relation** its expansion makes carries it *over* its own, the assembly's word being the later and stronger, the way `in` puts an instance in a view (§6.7). Every *point* is drawn under the implicit class `.point`, so a document may say that its handles are not part of the picture. The property `display: none` leaves what carries it out of the picture altogether — an entity is not drawn, a dimension is neither laid out nor picked — `display: inline` shows it again from a later class, since an absent property says nothing, and `display: geometry` draws what carries it and never dimensions it: an entity under it is shown and a dimension whose statement carries it is not, which is a phantom position. The idiom for a drawing dense with dimensions is `style .dimension { display: none }` and `class shown` on the few the sheet is to show. Nothing about the solve, the count or the diagnosis reads any of it.
 
+**[0.18] Three more implicit classes, for the pictures a document asks for.** Every stroke of a `view` or a `section` (§6.11) carries `.visible` or `.hidden` according to whether the material stands between it and the eye, a section's visible strokes carry `.section` beside `.visible`, and the classes the statement itself was written with are carried **over** those — the assembly's word being the later and stronger, as everywhere in this section. The base sheet says:
+
+```
+style .hidden  { dash: 4 3; color: #7a7a7a }
+style .section { width: 1.6 }
+```
+
+`.visible` has **no base rule**, and that is the cascade rule of this section rather than an omission: a visible stroke is the plain outline, so a rule stating a weight or an ink for it would beat a document's own `style .hidden { width: 2 }` on half the drawing. Each of the two rules that exist states only what its class *adds*, for the reason `.reference` does.
+
 - **A class goes on an entity declaration**, and nowhere else. Not on a component definition, not on an instance, not on a `cycle`. Those are all reasonable later and none of them is needed.
 - **A declaration MAY carry several classes**, space-separated. On a conflicting property the later one wins, so `class centerline heavy` is a centreline drawn thick — and *only* on the properties the later one states.
 - **`style` blocks sit at the top level.** An external sheet, shared across drawings, is the natural extension once there is more than one drawing to style; it is not specified here.
@@ -934,12 +1081,19 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E022 | nested `ring` (if unsupported) |
 | E030 | `fix` target has no determined value |
 | E040 | type mismatch within an alias class |
-| E041 | cyclic definitional dependency (a plane folded from itself, §6.7) |
+| E041 | cyclic definitional dependency (a plane folded from itself, §6.7; **[0.18]** a solid made of itself, §6.9) |
 | E050 | inconsistent system (no solution); report a minimal infeasible subset when computable |
 | E060 | a point put on two different planes (§6.7) **[0.10]** |
 | E061 | `project` refused: a point on no plane, both on one plane, or parallel planes (§6.7) **[0.10]** |
 | E070 | a `use` nothing resolves (§14.4) **[0.12]** |
 | E071 | a component defined twice, across the document and its modules (§14.4) **[0.12]** |
+| E080 | a face or a solid the model cannot build (§6.8, §6.9) **[0.18]**: a loop that does not close, an edge that is not a line, an arc or a circle, a circle standing *in* a loop rather than being one, edges in two planes, a swept solid written over anything but one face, a body made of what is not a solid, a prism swept nowhere, a feature written into a solid that is a face swept rather than a body |
+| E081 | a revolution's axis: not a line, or not in the face's own plane (§6.9) **[0.18]** |
+| E082 | a face of a body that the body no longer has (§6.9) **[0.18]** |
+| E083 | a stack that contradicts itself, or a placed plane placed twice or never (§6.10) **[0.18]** |
+| E084 | a section whose cutting plane is not parallel to the view it is drawn in (§6.11) **[0.18]** |
+
+**[0.18]** Two of the five are reserved: an implementation is required to have the codes and to use them for these conditions when it detects them, and the reference implementation raises E080, E081 and E084 today. A negative sweep and a picture asked of the wrong kind are **E040** by the rules those codes already state (a magnitude written with a sign, §9.2 **[0.17]**; a kind mismatch, §14.1), and an unresolved name in any of these statements is **E101**, so no new code is spent on either.
 
 ### 16.2 Warnings and lints
 
@@ -963,7 +1117,13 @@ Implementations SHOULD emit, on request, a degrees-of-freedom ledger: per alias 
 
 ## 17. Deferred and open issues (non-normative)
 
-1. **3D lift.** **[0.10]** Multiview drawing is settled *without* one — §6.7: a `plane` is a frame with a constant attitude, a point is `in` a view, and `project` is the one equation two images of a point share; nothing three-dimensional is solved for, no true length is measured, and a view's attitude is never an unknown. What remains open is the lift itself: `Frame` generalizes; `ring` generalizes to rotation about a line; the arc-branch rule needs a replacement (no global winding in 3D). Joint library grows (revolute gains an axis argument, add prismatic/cylindrical/spherical). Also deferred from §6.7: a solved-for fold (`fold: along l`).
+1. **3D lift.** **[0.10]** Multiview drawing is settled *without* one — §6.7: a `plane` is a frame with a constant attitude, a point is `in` a view, and `project` is the one equation two images of a point share; nothing three-dimensional is solved for, no true length is measured, and a view's attitude is never an unknown.
+
+   **[0.18] The object is settled too, and on the same terms.** A face is a region of a plane (§6.8), a solid is a face swept or a term over other solids (§6.9), a plane may be stood off another (§6.10), and a view or a section of a solid is a picture the sheet asks for (§6.11) — so a part is written once and every drawing of it is a question, with no depth kept in step by hand. The stratification is what makes it affordable and is the thing to preserve: **nothing three-dimensional is an unknown**, every extent is an expression, and a solid owns no parameter, so the solver contract of §15 and the ledger of §16.3 are untouched.
+
+   What remains open is the lift itself, and it is now a shorter list. **Lofts** — a solid between two faces on two planes, which is the one sweep the grammar does not have. **Fillets and chamfers**, which need a name for an *edge* rather than for a face: the spelling is reserved, `body.block.side_l.near` — the edge where two named faces of one solid meet, in the path vocabulary §6.9 already uses, so that a boolean cannot renumber one. A **rigid-body mate solver**: joints between two solids in space, at which point something three-dimensional does become an unknown and P4's decomposition question is asked again one stratum out. **Export of the object itself** (a boundary format such as STEP), as against the picture of it a view already exports. **Claims about solids** — clearance, interference, containment — and claims judged **over a sweep** of a free variable rather than at the pose the drawing stands in; both are §9.7's bargain one stratum further out, judged and never solved. Still open from before: `Frame` generalizes; the arc-branch rule needs a replacement (no global winding in 3D); the joint library grows (revolute gains an axis argument, add prismatic/cylindrical/spherical); and from §6.7, a solved-for fold (`fold: along l`).
+
+   **[0.18]** One item of the old list is answered by §6.9 rather than deferred: "`ring` generalizes to rotation about a line" is what `about:` does for a **sweep**, and it needed no group action to do it, because a revolution is one solid and not *N* congruent copies. `ring` itself is still the cyclic-symmetry question of §12.3 and is untouched by this — the reference implementation goes on refusing the word until it can hold its copies congruent. The two were only ever adjacent.
 2. ~~**Curve entities.**~~ **[0.2] Settled — see §6.5.** A curve is a *family declared in the document*, two expressions over the geometry it is drawn from, rather than an entity kind per curve. Involute, cycloid and trochoid are library code. What remains open is `tangent` against such a curve (one more order in the parameter, and what a *mating* gear needs) and the path grammar's slot for a curve segment.
 3. **Nested symmetry groups.** Semantics of `ring` in `ring` beyond the reject-or-elaborate rule of §12.6 (planetary sets are the motivating case: carrier symmetry ≠ sun symmetry).
 4. **Constraint strengths.** A Cassowary-style required/strong/weak hierarchy for graceful over-constraint. Interacts with P3 (a weak constraint changes the solution set; it is constraint-class) and with diagnostics (W105 becomes resolution, not warning).
@@ -1084,11 +1244,12 @@ use_decl       = "use" IDENT { "." IDENT } ;                         (* a module
 component      = "component" IDENT "(" [ params ] ")" "{" { statement } "}" ;
 params         = param { "," param } ;
 param          = IDENT ":" type ;
-type           = "Int" | "Scalar" | "Length" | "Angle"
-               | "Point" | "Line" | "Circle" | "Frame" | "Plane" | "Path" ;
+type           = "Int" | "Scalar" | "Length" | "Angle" | "Side"      (* §4.1 [0.17] *)
+               | "Point" | "Line" | "Circle" | "Plane" | "Path"
+               | "Face" | "Solid" ;    (* [0.18]; `Frame` was folded into `Plane` in 0.15 *)
 
 statement      = decl | constraint | hint | gauge | block | path_decl | style_rule
-               | unit_decl | frag | in_block ;
+               | unit_decl | frag | in_block | body_rel | derived_decl ;   (* [0.18] *)
 in_block       = "in" ref "{" { statement } "}" ;         (* membership, written once: §6.7 *)
 style_rule     = "style" "." IDENT "{" { IDENT ":" value { ";" } } "}" ;   (* §13.2; `display: none | inline` *)
 unit_decl      = "unit" IDENT ;                                           (* §3.3.2 *)
@@ -1104,11 +1265,12 @@ unit_suffix    = "mm" | "cm" | "m" | "km" | "in" | "ft" | "thou"
                | "\"" ;
 
 decl           = entity_decl | param_decl | curve_def | instance_decl ;
+(* face_decl and solid_decl below are entity_decls, spelled out for what their list holds *)
 entity_decl    = ekw binder { "," binder }
                | ekw IDENT "=" expr
                | "point" IDENT "=" "(" expr "," expr ")" ;   (* a computed point, §6.5 [0.13] *)
 ekw            = "point" | "circle" | "line" | "plane" | "spline"
-               | "curve" ;
+               | "curve" | "face" | "solid" ;                   (* §6.8, §6.9 [0.18] *)
 (* the trailing clauses are order-free: `hint(…)`, `knots […]`, `class …`, `in REF`.  A
    place — `hint(at: t)`, `hint(at: c, bearing: …)` — is the same clause with `at:` and
    `bearing:` for keys, §6.4 [0.14] *)
@@ -1122,15 +1284,40 @@ trailer        = hint_clause
 hint_clause    = "hint" "(" hint_item { "," hint_item } ")" ;   (* SEEDS, §4.3 *)
 hint_item      = IDENT ":" expr | "at" ":" ref | "bearing" ":" expr ;   (* a place, §6.4 [0.14] *)
 ctor_arg       = [ IDENT ":" ] ( ref | hint_clause )       (* what the thing is made of, §6.2 *)
-               | "from" ":" ref                            (* a plane folded from another, §6.7 *)
-               | "fold" ":" expr                           (* the fold, an Angle; 0 when omitted *)
-               | ( "u" | "v" ) ":" "(" expr "," expr "," expr ")" ;   (* a plane's basis, §6.7 *)
+               | "from" ":" ref                            (* which plane it is derived from, §6.7, §6.10 *)
+               | "fold" ":" expr                           (* the fold, an Angle, §6.7 *)
+               | "offset" ":" expr                         (* stood off along the normal, §6.10 [0.18] *)
+               | ( "u" | "v" ) ":" "(" expr "," expr "," expr ")"     (* a plane's basis, §6.7 *)
+               | sweep_arg ;                               (* how a solid is swept, §6.9 [0.18] *)
 
-(* a curve FAMILY, §6.5; an instance is an ordinary entity_decl *)
-curve_def      = "curve" IDENT "(" [ params ] ")" "(" IDENT ")"
-                 [ "over" "(" expr "," expr ")" ]
-                 "=" ( "(" expr "," expr ")"
-                     | "trace" IDENT [ "from" "(" expr ")" ] "where" "{" { stmt } "}" ) ;
+(* §6.9 [0.18]: the sweep stands in the brackets with the face, being what the solid is made
+   of; every extent is an expression and never an unknown.  `from:`/`to:` or `depth:` is a
+   prism, `about:` a revolution, and neither is a body. *)
+sweep_arg      = ( "from" | "to" | "depth" | "sweep" ) ":" expr
+               | "about" ":" ref
+               | "sense" ":" ( "cw" | "ccw" ) ;
+
+(* §6.8, §6.9 [0.18].  Both are ordinary entity_decls — `face` and `solid` are element
+   keywords — and are written out here for what their one list slot holds. *)
+face_decl      = "face" [ IDENT ] "(" ref { "," ref } ")" [ "class" IDENT { IDENT } ] ;
+solid_decl     = "solid" [ IDENT ] "(" term ")" [ "class" IDENT { IDENT } ] ;
+term           = ref { "," sweep_arg }                     (* a face swept *)
+               | ref { "," ref } ;                         (* a body: its stock, then solids *)
+body_rel       = ref ( "on" | "through" ) ref ;   (* the body rule, §6.9 — `on` is the ordinary
+                                                     infix word, read as this when both
+                                                     operands are solids; `through` is its own *)
+
+(* §6.11 [0.18]: a picture asked of a solid.  An output and not a declaration — nothing is
+   minted and the optional name binds nothing. *)
+derived_decl   = view_decl | section_decl ;
+view_decl      = "view" [ IDENT ] "(" ref ")" "in" ref [ "class" IDENT { IDENT } ] ;
+section_decl   = "section" [ IDENT ] "(" ref "," "at" ":" ref ")" "in" ref
+                 [ "class" IDENT { IDENT } ] ;
+
+(* a curve, §6.5 [0.11]: a point of a component as one of its numeric formals runs.  0.2's
+   family form and 0.3's `trace … where { … }` are retired and MUST NOT parse. *)
+curve_def      = "curve" IDENT "=" [ IDENT "(" [ args ] ")" "." ] ref
+                 "over" IDENT "in" "(" expr "," expr ")" ;
 param_decl     = "param" IDENT "=" expr ;
 instance_decl  = IDENT ":" IDENT "(" [ args ] ")" [ "in" ref ] [ "class" IDENT { IDENT } ] ;   (* §6.7, §13.2 *)
 args           = arg { "," arg } ;
@@ -1176,7 +1363,7 @@ addop          = "+" | "-" ;
 mulop          = "*" | "/" ;
 ```
 
-Parsing note: a statement beginning with an expression is disambiguated by the token following the first `ref`/`expr`: `==` → constraint; `->` or `~` → fragment; otherwise error. `ccw`/`cw` appear both as orientation keywords (after `:` in `path`) and as predicates; context disambiguates. **[0.2]** `curve NAME(` opens a family definition and `curve NAME =` an instance; the token after the name settles which.
+Parsing note: a statement beginning with an expression is disambiguated by the token following the first `ref`/`expr`: `==` → constraint; `->` or `~` → fragment; otherwise error. `ccw`/`cw` appear both as orientation keywords (after `:` in `path`) and as predicates; context disambiguates. **[0.2]** `curve NAME(` opens a family definition and `curve NAME =` an instance; the token after the name settles which. **[0.18]** `view` and `section` open a statement and are therefore not names; `through` is settled by a one-token lookahead past the first `ref`, since it relates no geometry and has no residual for the operator machinery to settle it into, while `on` needs none — it is an ordinary infix word whose meaning is the kinds of its operands (§9.2). Inside a solid's brackets a sweep label is read before an attitude label, `from` being a word both constructs use and only one of them a plane.
 
 **[0.2] Note on the trailing `==`.** After the `==` that follows a predicate's closing parenthesis, an implementation MAY take the rest of the logical line verbatim rather than tokenizing it, and hand that text to whatever evaluates dimension expressions. This is not laziness: `3 1/2` is three and a half and `31/2` is a division, and that rule belongs to one tokenizer. Two copies of it are two rules the moment one is edited. An `==` *inside* an argument list is the pin of §4.3 and is lexed normally; the two never meet. **[0.7]** A trailing `hint(…)` ends the verbatim region, since it is a clause of the statement and not part of the number.
 
