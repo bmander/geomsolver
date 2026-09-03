@@ -89,16 +89,16 @@ component Axes(o: point) {
 // `rout`, and the pocket the nut is trapped in, `nutin` out from the bore.  Written in the
 // frame (`ax`, `ac`) the screw's axis lies along.  Drawn on the part's sheet only.
 component Grub(o: point, ax: line, ac: line, dir: Angle, rin: Length, rout: Length) {
-  h0: Loc(o, ax, ac, dir, u: rin, v: grub / 2)
-  h1: Loc(o, ax, ac, dir, u: rout, v: grub / 2)
-  h2: Loc(o, ax, ac, dir, u: rin, v: -grub / 2)
-  h3: Loc(o, ax, ac, dir, u: rout, v: -grub / 2)
+  h0: Loc(o, ax, ac, dir: dir, u: rin, v: grub / 2)
+  h1: Loc(o, ax, ac, dir: dir, u: rout, v: grub / 2)
+  h2: Loc(o, ax, ac, dir: dir, u: rin, v: -grub / 2)
+  h3: Loc(o, ax, ac, dir: dir, u: rout, v: -grub / 2)
   line s0(h0.p, h1.p) class hidden detail
   line s1(h2.p, h3.p) class hidden detail
-  n0: Loc(o, ax, ac, dir, u: rin + nutin, v: nutaf / 2)
-  n1: Loc(o, ax, ac, dir, u: rin + nutin + nutT, v: nutaf / 2)
-  n2: Loc(o, ax, ac, dir, u: rin + nutin + nutT, v: -nutaf / 2)
-  n3: Loc(o, ax, ac, dir, u: rin + nutin, v: -nutaf / 2)
+  n0: Loc(o, ax, ac, dir: dir, u: rin + nutin, v: nutaf / 2)
+  n1: Loc(o, ax, ac, dir: dir, u: rin + nutin + nutT, v: nutaf / 2)
+  n2: Loc(o, ax, ac, dir: dir, u: rin + nutin + nutT, v: -nutaf / 2)
+  n3: Loc(o, ax, ac, dir: dir, u: rin + nutin, v: -nutaf / 2)
   line q0(n0.p, n1.p) class hidden detail
   line q1(n1.p, n2.p) class hidden detail
   line q2(n2.p, n3.p) class hidden detail

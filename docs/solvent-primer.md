@@ -306,9 +306,14 @@ t0: Rung(l0, r0, len: 50)
 
 A formal is an entity kind (`point`, `line`, `circle`, `arc`, `plane`, …) or a number
 type (`Length`, `Angle`, `Int`, `Scalar`). Passing an entity is **aliasing**, not a constraint: the
-formal and the actual are one entity, so a component boundary costs nothing. Arguments are given
-positionally or by label. A numeric formal left unbound is a free unknown of the drawing, named
-under the instance (`c.theta`), which is how a mechanism is drawn with its crank free (2.9.1).
+formal and the actual are one entity, so a component boundary costs nothing. **The entities are
+given by position, in order, and every number is given by label** — `Rung(l0, r0, len: 50)`, never
+`Rung(l0, r0, 50)`, and nothing positional after the first label. Position is a count, and a count
+is the one thing a reader of a long formal list cannot check: an argument written one place off
+binds to the formal beside the one it was meant for, and what comes back is a complaint about
+something else. Either mistake is **E004**, at the argument. A numeric formal left unbound is a
+free unknown of the drawing, named under the instance (`c.theta`), which is how a mechanism is
+drawn with its crank free (2.9.1).
 
 A file's top-level `param`s and named dimensions are in scope inside the components it defines,
 and so are the params of the modules it uses; a formal of the same name shadows either, and a

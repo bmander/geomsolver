@@ -29,17 +29,17 @@ component Cylinder(swing: plane, side: plane, top: plane, piv: point, ax: line, 
   // -- in the plane of swing: the section through the bore ------------------------------------
   in swing {
     // the body, mouth to head, written in the cylinder's own frame (`Loc`)
-    k_bl: Loc(piv, ax, ac, dir, u: cb - H, v: hw)
-    k_br: Loc(piv, ax, ac, dir, u: cb - H, v: -hw)
-    k_tr: Loc(piv, ax, ac, dir, u: ct - H, v: -hw)
-    k_tl: Loc(piv, ax, ac, dir, u: ct - H, v: hw)
+    k_bl: Loc(piv, ax, ac, dir: dir, u: cb - H, v: hw)
+    k_br: Loc(piv, ax, ac, dir: dir, u: cb - H, v: -hw)
+    k_tr: Loc(piv, ax, ac, dir: dir, u: ct - H, v: -hw)
+    k_tl: Loc(piv, ax, ac, dir: dir, u: ct - H, v: hw)
     line mouth(k_bl.p, k_br.p) -> line side_r(k_br.p, k_tr.p) -> line lid(k_tr.p, k_tl.p) ->
       line side_l(k_tl.p, k_bl.p) -> close
     // the bore
-    b_bl: Loc(piv, ax, ac, dir, u: cb - H, v: D / 2)
-    b_br: Loc(piv, ax, ac, dir, u: cb - H, v: -D / 2)
-    b_tr: Loc(piv, ax, ac, dir, u: head - H, v: -D / 2)
-    b_tl: Loc(piv, ax, ac, dir, u: head - H, v: D / 2)
+    b_bl: Loc(piv, ax, ac, dir: dir, u: cb - H, v: D / 2)
+    b_br: Loc(piv, ax, ac, dir: dir, u: cb - H, v: -D / 2)
+    b_tr: Loc(piv, ax, ac, dir: dir, u: head - H, v: -D / 2)
+    b_tl: Loc(piv, ax, ac, dir: dir, u: head - H, v: D / 2)
     line bore_l(b_bl.p, b_tl.p)
     line bore_r(b_br.p, b_tr.p)
     line hd(b_tl.p, b_tr.p)
@@ -49,20 +49,20 @@ component Cylinder(swing: plane, side: plane, top: plane, piv: point, ax: line, 
     // side in past the axis.  The slot only carries the tension: the shank is located by the
     // hole through the wall to the face, a fit it does not turn in, and the cylinder's attitude
     // by its face on the plate.
-    pt: Loc(piv, ax, ac, dir, u: a, v: 0mm)
+    pt: Loc(piv, ax, ac, dir: dir, u: a, v: 0mm)
     circle port(center: pt.p) hint(r: dport / 2) class hidden
     radius(dport / 2) port
     pkt: Hex(piv, ax, af: boltaf, phase: 90deg) class hidden
-    t0: Loc(piv, ax, ac, dir, u: trapw / 2, v: hw)
-    t1: Loc(piv, ax, ac, dir, u: trapw / 2, v: -trapd)
-    t2: Loc(piv, ax, ac, dir, u: -trapw / 2, v: -trapd)
-    t3: Loc(piv, ax, ac, dir, u: -trapw / 2, v: hw)
+    t0: Loc(piv, ax, ac, dir: dir, u: trapw / 2, v: hw)
+    t1: Loc(piv, ax, ac, dir: dir, u: trapw / 2, v: -trapd)
+    t2: Loc(piv, ax, ac, dir: dir, u: -trapw / 2, v: -trapd)
+    t3: Loc(piv, ax, ac, dir: dir, u: -trapw / 2, v: hw)
     line trap0(t0.p, t1.p) class hidden
     line trap1(t1.p, t2.p) class hidden
     line trap2(t2.p, t3.p) class hidden
     // two more points on the outline, for the walls to be measured to
-    m0: Loc(piv, ax, ac, dir, u: cb - H, v: 0mm)
-    h0: Loc(piv, ax, ac, dir, u: ct - H, v: D / 2)
+    m0: Loc(piv, ax, ac, dir: dir, u: cb - H, v: 0mm)
+    h0: Loc(piv, ax, ac, dir: dir, u: ct - H, v: D / 2)
     // the sizes a printer needs, all judged: every point above is already placed
     claim k_bl.p distance(ct - cb) k_tl.p class detail at (0, 12)
     claim b_br.p distance(head - cb) b_tr.p class detail at (0, -12)

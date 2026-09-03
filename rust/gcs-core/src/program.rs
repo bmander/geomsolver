@@ -48,6 +48,9 @@ pub enum Severity {
 pub enum Code {
     /// redeclaration within a body
     E001,
+    /// an argument a formal list would silently take for another: a positional one after a
+    /// labelled one, or a number given by position (§4.1)
+    E004,
     /// type mismatch within an alias class
     E040,
     /// a cyclic definitional dependency: a plane folded from itself (§6.7)
@@ -85,6 +88,7 @@ impl Code {
     pub fn as_str(self) -> &'static str {
         match self {
             Code::E001 => "E001",
+            Code::E004 => "E004",
             Code::E040 => "E040",
             Code::E041 => "E041",
             Code::E060 => "E060",

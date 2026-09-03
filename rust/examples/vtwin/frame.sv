@@ -150,7 +150,8 @@ component Frame(front: plane, side: plane, top: plane, o: point, ref: line, o_s:
 
   // the throttle in its bore, turned to the table's `throttle`; drawn along the axis only, its
   // other views being its own sheet's
-  thr: Throttle(front, side, top, tb.p, ref, throttle, o_s, o_t, draw_side: 0, draw_top: 0)
+  thr: Throttle(front, side, top, tb.p, ref,
+                phi: throttle, o_s: o_s, o_t: o_t, draw_side: 0, draw_top: 0)
 
   // -- from the side: the plate edge on, the foot and the boss behind it, everything drilled
   // from the face going in ------------------------------------------------------------------

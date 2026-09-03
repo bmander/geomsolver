@@ -172,6 +172,17 @@ Conventions:
   `engine/crankshaft.sv`, `engine/conrod.sv`), the castings included; the view modules hold only
   what the assembly adds (the bore axis, the pistons on it, the timing drive).  Instances inside a block copy are indexed like declarations
   (`cyl[0].small`: `copy_of` returns the copy's prefix and `lookup` reads the rest under it).
+- **A call is the entities by position and the numbers by label** (Solvent §4.1,
+  `flatten::check_call`).  `Cylinder(swing, side, top, piv, rod, across, dir: dir, fw: fw,
+  o_s: o_s, o_t: o_t)`: an argument bound by position must fill an *entity* formal and must stand
+  before every label, and either mistake is **E004** at the argument.  Position is a count, and a
+  count is the one thing a reader of a long formal list cannot check — an argument written a
+  place off lands on the formal beside the one it was meant for, and what comes back is a
+  complaint about something else entirely (issue #48, item 1: `views` "is not a number here",
+  `n` is Scalar and this is an Angle, a hex whose `phase` had arrived as its side count).  The
+  question is about the **text**, so it is asked of the text: once per written call, before
+  anything is bound, however many times the walk binds it — thirty copies of a `cycle` are one
+  mistake.  `tests/components.rs` is the gate.
 - **Modules** (Solvent §14.4, `modules.rs`, `library.rs`).  `use engine.parts` is parsed into
   `Program::uses`; `modules::link(prog, resolver)` resolves each once, transitively, parsing the
   module with `syntax::parse_from(text, base, first_id)` — **every span is one integer into one

@@ -191,6 +191,8 @@ component Name(p1: Type1, p2: Type2, ...) {
 
 Parameters are passed by name or position at instantiation. A parameter of entity type (`Point`, `Circle`, `Frame`, `Line`) is **bound by aliasing** (P1): the formal name and the actual argument denote the same entity. A parameter of value type (`Int`, `Scalar`, `Length`, `Angle`) is a compile-time or definitional value; it contributes no unknowns.
 
+**[0.17] Labels are mandatory past the entities.** An argument bound by position MUST bind a parameter of entity type, and MUST NOT be written after a labelled argument; both are **E004**, reported at the argument. So an instantiation is the entities it is written over, in order, and then every number by the name of the formal it fills — `Cylinder(swing, side, top, piv, rod, across, dir: dir, fw: fw, o_s: o_s, o_t: o_t)`. Position is a count, and a count is the one thing a reader of a long formal list cannot check: an argument written one place off binds to the formal beside the one it was meant for, which is a *different* mistake from the one it is then reported as — a `Length` complaining it is not an `Angle`, a hexagon's `phase` arriving as its side count, a plane arriving where a number was wanted. The rule costs the entities nothing, because their order is the one an assembly reads by, and it costs a number one word, which is the word that says which.
+
 ### 4.2 Statement classes
 
 Every statement belongs to exactly one class. The classification is normative because P3 depends on it.
@@ -913,6 +915,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E001 | redeclaration within a body |
 | E002 | block binder shadows outer name |
 | E003 | cyclic component instantiation |
+| E004 | a positional argument that binds a value parameter, or that follows a labelled one (§4.1) **[0.17]** |
 | E010 | undecorated `tangent` between circles |
 | E011 | closed path winding contradicts declared orientation |
 | E012 | ambiguous or conflicting path-fragment composition |

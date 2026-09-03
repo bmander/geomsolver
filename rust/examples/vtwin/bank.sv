@@ -41,8 +41,10 @@ component Bank(swing: plane, side: plane, top: plane, o: point, pin: point,
   }
 
   // the parts, in the plane of swing and rocked with the rod
-  cyl: Cylinder(swing, side, top, piv, rod, across, dir, fw, o_s, o_t, draw_side: 0, draw_top: 0)
-  pis: Piston(swing, side, top, crown, rod, dir, pin, o_s, o_t, draw_side: 0, draw_top: 0)
+  cyl: Cylinder(swing, side, top, piv, rod, across,
+                dir: dir, fw: fw, o_s: o_s, o_t: o_t, draw_side: 0, draw_top: 0)
+  pis: Piston(swing, side, top, crown, rod,
+              dir: dir, pin: pin, o_s: o_s, o_t: o_t, draw_side: 0, draw_top: 0)
 
   // the dimensions, on one bank
   repeat dim {

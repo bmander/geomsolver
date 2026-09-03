@@ -154,3 +154,67 @@ fn a_copy_inside_an_instance_is_indexed_from_outside() {
     refused("component L(n: Int) { repeat n { point p } }\nl: L(n: 2)\nground l.p[2]\n");
     refused("component L(n: Int) { repeat n { point p } }\nl: L(n: 2)\nground l.p[0][0]\n");
 }
+
+// **How a call is written** (issue #48, item 1; §4.1).  Positional binding is a count, and a
+// count is what a reader of a long formal list cannot see: an argument written one place off
+// lands on the formal beside the one it was meant for and is reported, if at all, as something
+// else entirely — `views` is not a number, `n` is Scalar and this is Angle.  So the count is
+// allowed only where the eye can check it: the entities, in order, before every label, and
+// every number by name.
+
+fn diags(src: &str) -> Vec<String> {
+    let (prog, errs) = gcs_core::syntax::parse(src);
+    assert!(errs.is_empty(), "does not parse: {errs:?}");
+    gcs_core::program::elaborate(&prog)
+        .diags
+        .iter()
+        .map(|d| format!("{}: {}", d.code.as_str(), d.message))
+        .collect()
+}
+
+const ARM: &str = "unit mm\n\
+                   component Arm(hub: point, tip: point, len: Length) {\n\
+                     hub distance(len) tip\n\
+                   }\n\
+                   point o hint(x: 0, y: 0)\n\
+                   point t hint(x: 10, y: 0)\n\
+                   ground o\n";
+
+#[test]
+fn a_number_is_given_by_label() {
+    let d = diags(&format!("{ARM}a: Arm(o, t, 40mm)\n"));
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert!(d[0].starts_with("E004") && d[0].contains("`len`"), "{d:?}");
+    // the entities stay positional; the number carries the formal's name
+    assert!(diags(&format!("{ARM}a: Arm(o, t, len: 40mm)\n")).is_empty());
+}
+
+/// The mistake itself: an argument after a label binds by a count the label has nothing to do
+/// with, so `Arm(hub: o, t)` gave `hub` two actuals and left `tip` unbound — silently, the
+/// drawing coming out with a length stated about a point nothing else placed.
+#[test]
+fn a_positional_argument_after_a_labelled_one_is_refused() {
+    let d = diags(&format!("{ARM}a: Arm(hub: o, t, len: 40mm)\n"));
+    assert!(d[0].starts_with("E004") && d[0].contains("`hub:`"), "{d:?}");
+    // and what the count did instead is the noise the refusal is for: `tip` was never bound
+    assert!(d.iter().any(|m| m.contains("no such entity: `tip`")), "{d:?}");
+    assert!(diags(&format!("{ARM}a: Arm(hub: o, tip: t, len: 40mm)\n")).is_empty());
+}
+
+/// The question is about the text, so it is asked of the text: once per written call, however
+/// many instances the walk makes of it.
+#[test]
+fn one_call_is_read_once_however_many_copies_it_makes() {
+    let d = diags(
+        "component Spoke(hub: point, phase: Angle) {\n\
+           point tip hint(x: 20 * cos(phase), y: 20 * sin(phase))\n\
+           hub distance(20) tip\n\
+         }\n\
+         point o hint(x: 0, y: 0)\n\
+         ground o\n\
+         cycle 4 as i { s: Spoke(o, i * 90deg) }\n",
+    );
+    let said: Vec<&String> = d.iter().filter(|m| m.starts_with("E004")).collect();
+    assert_eq!(said.len(), 1, "one line, one mistake: {d:?}");
+    assert!(said[0].contains("`phase`"), "{d:?}");
+}

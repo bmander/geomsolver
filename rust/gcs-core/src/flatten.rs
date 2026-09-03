@@ -189,6 +189,13 @@ struct Walk<'a> {
     module_vals: Vec<Option<BTreeMap<String, Aff>>>,
     errors: Vec<(Span, String)>,
     coded: Vec<(Code, Span, String)>,
+    /// Every call already read for how its arguments are written (`check_call`), by where it is
+    /// written.  The question is about the *text* — which formal a written argument lands on — so
+    /// it is asked once per call however many times the walk binds it: thirty copies of a `cycle`
+    /// are one mistake.  A call the core wrote itself (`edit::add_rectangle`'s instance, a curve's
+    /// arguments) carries no span and so is read at most once, which costs nothing: it labels
+    /// every number by construction.
+    called: BTreeSet<Span>,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -286,6 +293,7 @@ impl<'a> Walk<'a> {
             module_vals: vec![None; prog.modules.len()],
             errors: Vec::new(),
             coded: Vec::new(),
+            called: BTreeSet::new(),
         }
     }
 
@@ -980,6 +988,9 @@ impl<'a> Walk<'a> {
             );
             return None;
         };
+        if self.called.insert(inst.span) {
+            self.check_call(comp, inst);
+        }
         let sub_vals = self.bind(comp, inst, scope, vals);
         let key = format!("{}{}.", scope.prefix(), inst.name.text);
         self.instances.push(InstanceInfo {
@@ -995,6 +1006,48 @@ impl<'a> Walk<'a> {
             drawn,
         });
         Some((comp, sub_vals, key))
+    }
+
+    /// Refuse an argument a long formal list would silently take for another (§4.1).
+    ///
+    /// Positional binding is a count, and a count is exactly what a reader of a call cannot see:
+    /// four times in one drawing an argument written after a labelled one landed on the formal
+    /// beside the one it was meant for, and each time what came back was a complaint about
+    /// something else — `views` is not a number, `n` is Scalar and this is Angle, a hexagon whose
+    /// `phase` had arrived as its side count.  So the count is allowed only where the eye can
+    /// check it: **the entities, in order, before every label**, which is how an instance names
+    /// what it is written over — and every *number* carries the formal's name, which is the half
+    /// a long list gets wrong.  Neither refusal is about a value, so both are asked of the text
+    /// once, before anything is bound.
+    fn check_call(&mut self, comp: &Component, inst: &crate::syntax::Instance) {
+        use crate::syntax::Ty;
+        let mut labelled: Option<&str> = None;
+        let mut positional = 0usize;
+        for a in &inst.args {
+            if let Some(l) = &a.label {
+                labelled.get_or_insert(l.text.as_str());
+                continue;
+            }
+            let formal = comp.formals.get(positional);
+            positional += 1;
+            // past the end of the list is `bind`'s to report — it is no such parameter, whatever
+            // the argument is written as
+            let said = if let Some(prev) = labelled {
+                format!(
+                    "a positional argument after `{prev}:` — an instance gives the entities by \
+                     position, in order, and everything past the first label carries one too \
+                     (§4.1)"
+                )
+            } else if let Some(f) = formal.filter(|f| !matches!(f.ty, Ty::Ent(_))) {
+                format!(
+                    "`{0}` is a number, and a number is given by label: write `{0}: …` (§4.1)",
+                    f.name.text
+                )
+            } else {
+                continue;
+            };
+            self.coded.push((Code::E004, a.span, said));
+        }
     }
 
     /// Bind an instantiation's arguments to the component's formals.

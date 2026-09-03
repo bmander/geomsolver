@@ -25,16 +25,16 @@ component Piston(swing: plane, side: plane, top: plane, crown: point, rod: line,
     crownl perpendicular rod
     cL distance(pw) rod
     // each side's profile: down to the groove, in to its bottom, along it, out, on to the skirt
-    g0L: Loc(crown, rod, crownl, dir, u: -groove, v: pw)
-    g1L: Loc(crown, rod, crownl, dir, u: -groove, v: gb)
-    g2L: Loc(crown, rod, crownl, dir, u: -(groove + groovew), v: gb)
-    g3L: Loc(crown, rod, crownl, dir, u: -(groove + groovew), v: pw)
-    sL: Loc(crown, rod, crownl, dir, u: -ph, v: pw)
-    g0R: Loc(crown, rod, crownl, dir, u: -groove, v: -pw)
-    g1R: Loc(crown, rod, crownl, dir, u: -groove, v: -gb)
-    g2R: Loc(crown, rod, crownl, dir, u: -(groove + groovew), v: -gb)
-    g3R: Loc(crown, rod, crownl, dir, u: -(groove + groovew), v: -pw)
-    sR: Loc(crown, rod, crownl, dir, u: -ph, v: -pw)
+    g0L: Loc(crown, rod, crownl, dir: dir, u: -groove, v: pw)
+    g1L: Loc(crown, rod, crownl, dir: dir, u: -groove, v: gb)
+    g2L: Loc(crown, rod, crownl, dir: dir, u: -(groove + groovew), v: gb)
+    g3L: Loc(crown, rod, crownl, dir: dir, u: -(groove + groovew), v: pw)
+    sL: Loc(crown, rod, crownl, dir: dir, u: -ph, v: pw)
+    g0R: Loc(crown, rod, crownl, dir: dir, u: -groove, v: -pw)
+    g1R: Loc(crown, rod, crownl, dir: dir, u: -groove, v: -gb)
+    g2R: Loc(crown, rod, crownl, dir: dir, u: -(groove + groovew), v: -gb)
+    g3R: Loc(crown, rod, crownl, dir: dir, u: -(groove + groovew), v: -pw)
+    sR: Loc(crown, rod, crownl, dir: dir, u: -ph, v: -pw)
     line pL0(cL, g0L.p) -> line pL1(g0L.p, g1L.p) -> line pL2(g1L.p, g2L.p) ->
       line pL3(g2L.p, g3L.p) -> line pL4(g3L.p, sL.p)
     line pR0(cR, g0R.p) -> line pR1(g0R.p, g1R.p) -> line pR2(g1R.p, g2R.p) ->
@@ -61,7 +61,7 @@ component Piston(swing: plane, side: plane, top: plane, crown: point, rod: line,
     line fl(ra, rb)
     line fr(rc, rd)
     // the far end of the eye, which the side view reads
-    eb: Loc(crown, rod, crownl, dir, u: -(L + reye), v: 0mm)
+    eb: Loc(crown, rod, crownl, dir: dir, u: -(L + reye), v: 0mm)
     // the sizes a printer needs
     claim cL distance(2 * pw) cR class detail at (0, 8)
     claim cL distance(ph) sL.p class detail at (0, 12)
