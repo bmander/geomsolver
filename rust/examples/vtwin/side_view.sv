@@ -1,9 +1,10 @@
-// The side view: the engine seen from its right, across the crank axis.  The plate edge on with
-// the foot behind it; the crank train stacked along the shaft — the disc and the pin in front
-// of the plate with the two rods side by side on the pin, the two bearings in the boss behind
-// it, the flywheel behind that; a pivot stud with its spring and nut; the cylinders, each a slab
-// as deep as its body; and the inlet boss with the coupling, the passage, the throttle barrel
-// and the plenum in section.
+// The side view: what the assembly adds beyond its parts, seen from the engine's right, across
+// the crank axis.  The plate, the foot and the inlet are the frame part's own side view; here is
+// the crank train stacked along the shaft — the disc with the clevis pin's head pocketed in its
+// back, the two rod eyes on the pin's shank with a washer against the disc and one under the
+// hairpin cotter, the two bearings in the boss behind the plate, the flywheel behind that; a
+// pivot bolt's stack — its head trapped in the cylinder's face wall, the shank through the plate, the spring,
+// the washer and the nut behind; and the cylinders, each a slab as deep as its body.
 //
 // Page-x here is depth: the plate's front face is the origin's own x, and what stands in front
 // of it — the cylinders, the disc — lies to the left, toward the view it is projected from.
@@ -15,48 +16,44 @@ use vtwin.parts
 component SideView(o: point) {
   param mid = tp / 2
 
-  // -- the plate and the foot, the plate's top and bottom the front view's ---------------------
-  point ptop hint(x: o.x + mid, y: o.y + fy1)
-  o distance(mid, along: x) ptop
-  point pbot hint(x: o.x + mid, y: o.y + fy0)
-  o distance(mid, along: x) pbot
-  plate: Slab(o, x0: 0mm, x1: tp, top: ptop, bottom: pbot)
-  foot: Box(o, x0: tp, y0: fy0, x1: tp + footd, y1: fy0 + footh)
-  claim plate.a distance(tp) plate.b class shown
-  claim foot.a distance(footd) foot.b class shown
-
   // -- the crank train along the shaft ---------------------------------------------------------
-  bboss: Box(o, x0: tp, y0: -(rbrg + 3mm), x1: tp + boss, y1: rbrg + 3mm)
-  brg1: Box(o, x0: tp + 1mm, y0: -rbrg, x1: tp + 1mm + wbrg, y1: rbrg) class hidden
-  brg2: Box(o, x0: tp + 1mm + wbrg, y0: -rbrg, x1: tp + 1mm + 2 * wbrg, y1: rbrg) class hidden
+  brg1: Box(o, x0: tp + boss - brgpocket, y0: -rbrg, x1: tp + boss - brgpocket + wbrg, y1: rbrg) class hidden
+  brg2: Box(o, x0: tp + boss - brgpocket + wbrg, y0: -rbrg, x1: tp + boss - brgpocket + 2 * wbrg, y1: rbrg) class hidden
   shaft: Box(o, x0: -(zdisc + tdisc - 3mm), y0: -rshaft, x1: zfw + wfw + 2mm, y1: rshaft)
   disc: Box(o, x0: -(zdisc + tdisc), y0: -rdisc, x1: -zdisc, y1: rdisc)
   flywheel: Box(o, x0: zfw, y0: -rfw, x1: zfw + wfw, y1: rfw)
   claim flywheel.a distance(wfw) flywheel.b class shown
-  // the pin at the height the front view puts it, the two eyes on it
+  // the clevis pin at the height the front view puts it: its head in the disc's back, the two
+  // eyes on its shank, a washer each side of them, the cotter outboard
   point pin_s hint(x: o.x, y: o.y + R * cos(theta0))
   o distance(0, along: x) pin_s
-  pin: Box(pin_s, x0: -(zB + rw / 2 + 2mm), y0: -rpin, x1: -(zdisc + 2mm), y1: rpin)
+  head: Box(pin_s, x0: -(zdisc + pinpocket), y0: -pinhead / 2, x1: -(zdisc + pinpocket - pinheadH), y1: pinhead / 2) class hidden
+  pin: Box(pin_s, x0: -(zdisc + pinpocket + pingrip + 7mm), y0: -rpin, x1: -(zdisc + pinpocket), y1: rpin)
+  w1: Box(pin_s, x0: -(zA - rw / 2), y0: -reye, x1: -(zA - rw / 2 - wsh), y1: reye) class thin
   eyeA: Box(pin_s, x0: -(zA + rw / 2), y0: -reye, x1: -(zA - rw / 2), y1: reye)
   eyeB: Box(pin_s, x0: -(zB + rw / 2), y0: -reye, x1: -(zB - rw / 2), y1: reye)
+  w2: Box(pin_s, x0: -(zB + rw / 2 + wsh), y0: -reye, x1: -(zB + rw / 2), y1: reye) class thin
+  cotter: Box(pin_s, x0: -(zdisc + pinpocket + pingrip + 1mm), y0: -reye, x1: -(zdisc + pinpocket + pingrip), y1: reye) class thin
   claim eyeA.a distance(rw) eyeA.b class shown
 
-  // -- a pivot stud: threaded into the cylinder's face wall, through the plate, the spring and
-  // the nut behind pressing the cylinder's face to the plate.  Both pivots stand at one height
-  // here, so one stands for both. ---------------------------------------------------------------
+  // -- a pivot bolt's stack, at the pivots' one height ---------------------------------------
   point pv hint(x: o.x, y: o.y + H * cos(alphaR))
   o distance(0, along: x) pv
-  stud: Box(pv, x0: -(fwA - 1mm), y0: -rstud, x1: tp + 18mm, y1: rstud) class hidden
+  bhead: Box(pv, x0: -(trapz + boltH), y0: -boltaf / 2, x1: -trapz, y1: boltaf / 2) class hidden
+  bshank: Box(pv, x0: -trapz, y0: -rstud, x1: tp + spring + wsh + nutH + 2mm, y1: rstud) class hidden
   repeat 7 as i {
-    zz: At(pv, dx: tp + 2mm * i, dy: 4.5mm * (1 - 2 * (i - 2 * floor(i / 2))))
+    zz: At(pv, dx: tp + spring / 6 * i, dy: 4.5mm * (1 - 2 * (i - 2 * floor(i / 2))))
   }
   repeat 6 as i {
     line coil(zz[i].p, zz[i + 1].p) class thin
   }
-  nut: Box(pv, x0: tp + 12mm, y0: -5.5mm, x1: tp + 18mm, y1: 5.5mm)
+  wsh_s: Box(pv, x0: tp + spring, y0: -6.35mm, x1: tp + spring + wsh, y1: 6.35mm) class thin
+  nut: Box(pv, x0: tp + spring + wsh, y0: -boltaf / 2, x1: tp + spring + wsh + nutH, y1: boltaf / 2)
 
   // -- the cylinders: bank B nearest, bank A behind it, each between the heights of its highest
-  // and lowest corner in the front view ---------------------------------------------------------
+  // and lowest corner in the front view; and each one's bore, which is what shows the two
+  // cylinders are two parts — B's face wall is a rod thicker than A's, so its bore stands a rod
+  // further from the plate, over rod B where it rides the pin beside rod A -------------------
   point cyB_top hint(x: o.x - tcylB / 2, y: o.y + 60mm)
   point cyB_bot hint(x: o.x - tcylB / 2, y: o.y + 5mm)
   point cyA_top hint(x: o.x - tcylA / 2, y: o.y + 60mm)
@@ -67,20 +64,17 @@ component SideView(o: point) {
   o distance(-tcylA / 2, along: x) cyA_bot
   cylB: Slab(o, x0: -tcylB, x1: 0mm, top: cyB_top, bottom: cyB_bot)
   cylA: Slab(o, x0: -tcylA, x1: 0mm, top: cyA_top, bottom: cyA_bot) class hidden
+  point boB_top hint(x: o.x - zB, y: o.y + 55mm)
+  point boB_bot hint(x: o.x - zB, y: o.y + 8mm)
+  point boA_top hint(x: o.x - zA, y: o.y + 55mm)
+  point boA_bot hint(x: o.x - zA, y: o.y + 8mm)
+  o distance(-zB, along: x) boB_top
+  o distance(-zB, along: x) boB_bot
+  o distance(-zA, along: x) boA_top
+  o distance(-zA, along: x) boA_bot
+  boreB: Slab(o, x0: -(fwB + D), x1: -fwB, top: boB_top, bottom: boB_bot) class hidden
+  boreA: Slab(o, x0: -(fwA + D), x1: -fwA, top: boA_top, bottom: boA_bot) class hidden
   claim cylB.a distance(tcylB) cylB.b class shown
-
-  // -- the inlet, in section on the plate's mid-plane ------------------------------------------
-  boss: Box(o, x0: mid - bossz / 2, y0: fy1, x1: mid + bossz / 2, y1: bossh)
-  cpl_in: Box(o, x0: mid - cpl / 2, y0: bossh - cplin, x1: mid + cpl / 2, y1: bossh) class hidden
-  cpl_out: Box(o, x0: mid - cpl / 2, y0: bossh, x1: mid + cpl / 2, y1: bossh - cplin + cpll)
-  passage: Box(o, x0: mid - wch / 2, y0: rpl + wch / 2, x1: mid + wch / 2, y1: bossh - cplin) class hidden
-  plenum: Box(o, x0: mid - wch / 2, y0: rpl - wch / 2, x1: mid + wch / 2, y1: rpl + wch / 2) class hidden
-  point T_s hint(x: o.x + mid - bossz / 2 - 2mm, y: o.y + Ty)
-  o distance(mid - bossz / 2 - 2mm, along: x) T_s
-  barrel: Box(T_s, x0: 2mm, y0: -rbar, x1: 2mm + bossz, y1: rbar) class hidden
-  hub: Box(T_s, x0: -2mm, y0: -4mm, x1: 2mm, y1: 4mm)
-  point tip_s hint(x: o.x + mid - bossz / 2 - 2mm, y: o.y + Ty + lev)
-  o distance(mid - bossz / 2 - 2mm, along: x) tip_s
-  lever: Slab(o, x0: mid - bossz / 2 - 4mm, x1: mid - bossz / 2, top: tip_s, bottom: T_s) class lever
-  claim boss.a distance(bossz) boss.b class shown
+  claim boreA.b distance(fwA, along: x) cylA.b class shown at (0, -6)
+  claim boreB.b distance(fwB, along: x) cylB.b class shown at (0, 6)
 }

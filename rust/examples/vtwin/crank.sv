@@ -1,5 +1,5 @@
-// The crank train, seen along the axis: the shaft in its bearing behind the plate, the disc in
-// front of it with the pin pressed in `R` from the axis, and the eye both rods share on the pin.
+// The crank train, seen along the axis: the pin `R` from the axis on the disc (`vtwin.disc`),
+// and the arm from the axis to it.
 //
 // The pin's angle is the drawing's one degree of freedom.  `theta` is defined nowhere, so it is a
 // free variable — the instance's own unknown, `crank.theta` — and the arm's dimension reads it:
@@ -8,22 +8,20 @@
 
 use vtwin.dims
 use vtwin.parts
+use vtwin.disc
 
-component Crank(o: point, ref: line) {
-  point pin hint(x: o.x + R * sin(theta0), y: o.y + R * cos(theta0))
-  line arm(o, pin) class axis
-  o distance(R) pin class shown at (0, -26)
-  arm angle(theta) ref class shown at (0.35, 34)
-  circle path(center: o) hint(r: R) class phantom
-  radius(R) path
-  circle disc(center: o) hint(r: rdisc)
-  radius(rdisc) disc class shown at (-2.1, 32)
-  circle shaft(center: o) hint(r: rshaft) class hidden
-  radius(rshaft) shaft
-  circle brg(center: o) hint(r: rbrg) class hidden
-  radius(rbrg) brg
-  circle kp(center: pin) hint(r: rpin)
-  radius(rpin) kp
-  circle eye(center: pin) hint(r: reye)
-  radius(reye) eye
+component Crank(swing: plane, side: plane, top: plane, o: point, ref: line, o_s: point, o_t: point) {
+  in swing {
+    point pin hint(x: o.x + R * sin(theta0), y: o.y + R * cos(theta0))
+    line arm(o, pin) class axis
+    o distance(R) pin class shown at (0, -26)
+    arm angle(theta) ref class shown at (0.35, 34)
+    circle path(center: o) hint(r: R) class phantom
+    radius(R) path
+    // the clevis pin's end, seen on
+    circle kp(center: pin) hint(r: rpin)
+    radius(rpin) kp
+  }
+  disc: Disc(swing, side, top, o, pin, arm, dir: 90deg - theta0, o_s: o_s, o_t: o_t,
+             draw_side: 0, draw_top: 0)
 }

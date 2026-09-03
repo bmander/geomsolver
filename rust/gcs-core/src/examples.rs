@@ -180,6 +180,12 @@ pub fn example(name: &str) -> Option<Sketch> {
         "bracket" => bracket(),
         "engine" => engine(),
         "vtwin" => vtwin(),
+        "vtwin_cylinder" => vtwin_cylinder(),
+        "vtwin_plate" => vtwin_plate(),
+        "vtwin_piston" => vtwin_piston(),
+        "vtwin_disc" => vtwin_disc(),
+        "vtwin_flywheel" => vtwin_flywheel(),
+        "vtwin_throttle" => vtwin_throttle(),
         _ => return None,
     })
 }
@@ -197,13 +203,44 @@ pub fn vtwin() -> Sketch {
     document(VTWIN, "vtwin")
 }
 
+/// The V-twin's cylinder alone: the part `vtwin.cylinder` designs, upright in three views with
+/// the dimensions a printer needs — the same component the assembly draws twice, rocked.
+pub fn vtwin_cylinder() -> Sketch {
+    document(VTWIN_CYLINDER, "vtwin_cylinder")
+}
+
+/// The V-twin's frame plate alone: the part sheet.
+pub fn vtwin_plate() -> Sketch {
+    document(VTWIN_PLATE, "vtwin_plate")
+}
+
+/// The V-twin's piston and rod alone: the part sheet.
+pub fn vtwin_piston() -> Sketch {
+    document(VTWIN_PISTON, "vtwin_piston")
+}
+
+/// The V-twin's crank disc alone: the part sheet.
+pub fn vtwin_disc() -> Sketch {
+    document(VTWIN_DISC, "vtwin_disc")
+}
+
+/// The V-twin's flywheel alone: the part sheet.
+pub fn vtwin_flywheel() -> Sketch {
+    document(VTWIN_FLYWHEEL, "vtwin_flywheel")
+}
+
+/// The V-twin's throttle barrel alone: the part sheet.
+pub fn vtwin_throttle() -> Sketch {
+    document(VTWIN_THROTTLE, "vtwin_throttle")
+}
+
 /// An L-bracket in three views and an auxiliary view — descriptive geometry on one sheet.
 pub fn bracket() -> Sketch {
     document(BRACKET, "bracket")
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 29] = [
+pub const CASES: [(&str, &str, &str); 35] = [
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Square, one line round a cycle", "square", "`cycle 4 { line s -> perpendicular equal }` — the body ends mid-joint, so each side welds to the next copy's and the wrap closes the loop (issue #38); 1 DOF: it swings about its grounded corner"),
     ("Regular n-gon (component)", "ngon", "a parametric `Ngon(n, side)` component: corners on a circle, equal sides, the open-jointed cycle welding them round — pure relations, so the closure equality is implied rather than Over, and the seeds walk once round the circle to pick the convex winding no residual can state (1 DOF: it spins about its hub)"),
@@ -233,6 +270,12 @@ pub const CASES: [(&str, &str, &str); 29] = [
     ("L-bracket in three views", "bracket", "descriptive geometry on one sheet: front, top and right views as `plane`s, every corner tied across them by `project`, and an auxiliary view folded at the inclined face's own bearing that shows the face true-size — edit a dimension in the front view and the other three views follow"),
     ("Four-cylinder engine, three views", "engine", "a whole engine as modules, each part designed in one place and drawn in every view it shows in (`engine.block`, `engine.head`, `engine.crankshaft`, `engine.conrod`): the block with its bores, bulkheads and main bearings, the head on its gasket with the valves and camshafts in their bearings, the crankshaft with its flywheel, the rods, the pistons, and the timing belt over its pulleys — the end view owns the heights, the side view the lengths, and the plan is placed by projection from both.  Rigged as a four-stroke: `cycle` in `engine/dims.sv` is cylinder 1's angle in its 720° cycle, the firing order places the others, and the valve timing (intake and exhaust open/close, in crank degrees) sizes every cam lobe and lifts every valve — edit any of them and the section's valves and the side view's lobes follow"),
     ("V-twin air engine, two views", "vtwin", "an oscillating-cylinder (\"wobbler\") V-twin run on shop air, as modules: two printed cylinders rock on studs through one plate, their rods sharing a crank pin, and the rocking is the valve gear — a port in each cylinder's face sweeps across an intake and an exhaust port in the plate.  One bank is one component instanced twice, so the ports come out rotated rather than mirrored; the plenum inside the plate, the inlet boss with its 1/4\" NPT coupling and a rotary barrel throttle are the frame's; the side view's heights are all projected.  One DOF, and it is the crank angle: `crank.theta` is a free variable the arm's callout reads, so drag the pin and both cylinders rock, both pistons move, and the side view follows; `tau` in `vtwin/dims.sv` turns the throttle"),
+    ("V-twin cylinder, part sheet", "vtwin_cylinder", "the V-twin's cylinder alone: the same `vtwin.cylinder` component the assembly draws twice, rocked, here drawn once upright in three views with every dimension a printer needs — `class detail` dimensions the assembly's sheet leaves hidden.  One definition, two drawings: edit `vtwin/cylinder.sv` and both follow"),
+    ("V-twin frame plate, part sheet", "vtwin_plate", "the V-twin's frame plate alone, upright in three views with every dimension a printer needs: the ports and the pivots by radius and bearing from the crank axis, every hole and pocket, the plenum and the inlet in section.  The same `vtwin.frame` component the assembly draws"),
+    ("V-twin piston and rod, part sheet", "vtwin_piston", "the V-twin's piston and rod alone, upright in three views with every dimension a printer needs: the O-ring groove sized to a #014 ring, the eye and its hole for the clevis pin.  The same `vtwin.piston` component the assembly draws"),
+    ("V-twin crank disc, part sheet", "vtwin_disc", "the V-twin's crank disc alone, upright in three views with every dimension a printer needs: the shaft bore, the pin's hole and head pocket, the set screw with its trapped nut.  The same `vtwin.disc` component the assembly draws"),
+    ("V-twin flywheel, part sheet", "vtwin_flywheel", "the V-twin's flywheel alone, upright in three views with every dimension a printer needs: a plain disc on the shaft with a set screw in a trapped nut.  The same `vtwin.flywheel` component the assembly draws"),
+    ("V-twin throttle barrel, part sheet", "vtwin_throttle", "the V-twin's throttle barrel alone, upright in three views with every dimension a printer needs: the cross-hole, an O-ring groove either side of it and a retaining one behind the boss, the lever.  The same `vtwin.throttle` component the assembly draws"),
 ];
 
 /// A spur gear, written as a Solvent program rather than built here.
@@ -354,6 +397,12 @@ pub fn source(key: &str) -> Option<&'static str> {
         "bracket" => Some(BRACKET),
         "engine" => Some(ENGINE),
         "vtwin" => Some(VTWIN),
+        "vtwin_cylinder" => Some(VTWIN_CYLINDER),
+        "vtwin_plate" => Some(VTWIN_PLATE),
+        "vtwin_piston" => Some(VTWIN_PISTON),
+        "vtwin_disc" => Some(VTWIN_DISC),
+        "vtwin_flywheel" => Some(VTWIN_FLYWHEEL),
+        "vtwin_throttle" => Some(VTWIN_THROTTLE),
         _ => None,
     }
 }
@@ -362,6 +411,13 @@ pub fn source(key: &str) -> Option<&'static str> {
 pub const ENGINE: &str = include_str!("../../examples/engine.sv");
 /// The V-twin's document — its modules are the library's too.
 pub const VTWIN: &str = include_str!("../../examples/vtwin.sv");
+/// The V-twin cylinder's part sheet.
+pub const VTWIN_CYLINDER: &str = include_str!("../../examples/vtwin_cylinder.sv");
+pub const VTWIN_PLATE: &str = include_str!("../../examples/vtwin_plate.sv");
+pub const VTWIN_PISTON: &str = include_str!("../../examples/vtwin_piston.sv");
+pub const VTWIN_DISC: &str = include_str!("../../examples/vtwin_disc.sv");
+pub const VTWIN_FLYWHEEL: &str = include_str!("../../examples/vtwin_flywheel.sv");
+pub const VTWIN_THROTTLE: &str = include_str!("../../examples/vtwin_throttle.sv");
 
 pub const IMPOSSIBLE_TRIANGLE: &str = include_str!("../../examples/impossible_triangle.sv");
 pub const ALTITUDES: &str = include_str!("../../examples/altitudes.sv");
