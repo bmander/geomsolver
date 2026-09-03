@@ -531,7 +531,8 @@ What goes in the parentheses is a short list:
 | `radius` | prefix | a circle or an arc |
 | `coincident`, `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
-| `ground`, `fix` | prefix | the gauges (§13) |
+| `ground`, `fix` | prefix | the gauges (§13): a point, or one of an entity's own numbers by its field (`fix c.r`) |
+| `ccw`, `cw` | call | three points, all in the parentheses (§9.6) |
 
 The collapses are where the saving is: **`on` is five constraints, `distance` is six, `tangent` is six**, and `horizontal`/`vertical` are two each with the **fixity** doing the work — a line prefixed, a pair of points infixed, which is exactly the distinction the point-pair forms were added to draw. `angle` and `radius` keep their own words rather than folding into `distance`, because over two lines a length means a parallel distance and an angle means an angle, and nothing but the number's unit could separate them.
 
@@ -541,7 +542,7 @@ The collapses are where the saving is: **`on` is five constraints, `distance` is
 
 **The surface word and the wire name are separate.** An export format's constraint identifier is unaffected by this section; the operator is information beside it.
 
-**`ccw` and `cw` keep a call.** Under the general rule they would be `a ccw(c) b`, which reorders three points that are symmetric: the predicate is about the *triangle*, not about a pair with a decoration. They are the one exception, and it is made for the reader.
+**`ccw` and `cw` keep a call.** Under the general rule they would be `a ccw(c) b`, which reorders three points that are symmetric: the predicate is about the *triangle*, not about a pair with a decoration. The call is a third fixity of the same table — every operand in the parentheses — and not a statement kind of its own. **[0.15]** The gauges and the orientation predicates are entries of the operator table like every other constraint: read by the one relation grammar, so a class, a placement and the chain's lookahead treat them as any other word, and settled by the word alone, since `fix c.r` names a number and `ccw(a, b, c)` has no operand outside its parentheses. They hold parameters or record a root choice rather than adding an equation, so a `claim` on one is refused (E040): a claim is judged by rank, and they add no row.
 
 A chain (§6.6) is the same grammar: a **lone infix statement is a one-joint chain**, and what a chain adds is the corner — which end two links meet at — that an operator between two names cannot know.
 
@@ -1139,7 +1140,8 @@ path_expr      = ref seg ref { seg ref } ;
 seg            = "->" | "~" ref [ "rev" ] "~" ;
 
 hint           = "hint" ref hint_clause ;                  (* §11; unimplemented *)
-gauge          = "ground" "(" ref ")" | "fix" "(" expr ")" ;
+gauge          = "ground" ref | "fix" ref ;                 (* §9.2: prefix operators *)
+orientation    = orient "(" ref "," ref "," ref ")" ;      (* §9.2: a call *)
 
 block          = "repeat" expr [ "as" IDENT ] "{" { statement } "}"
                | "cycle"  expr [ "as" IDENT ] "{" { statement } "}"

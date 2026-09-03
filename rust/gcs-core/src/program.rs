@@ -25,8 +25,8 @@ use crate::model::{EntKind, EntRef, Field, Sketch};
 use crate::rng::Rng;
 use crate::style::Classes;
 use crate::syntax::{
-    entity_name, line_col, num, Arg, AtRef, Attitude, Decl, DeclName, Gauge, Kid, Name, Named,
-    Orient, Program, Ref, Relation, Seg, Span, Stmt, StmtId, StmtKind,
+    entity_name, line_col, num, Arg, AtRef, Attitude, Decl, DeclName, Kid, Name, Named,
+    Program, Ref, Relation, Seg, Span, Stmt, StmtId, StmtKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -781,13 +781,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
         }
     }
 
-    // -- phase 4: gauges
-    for st in &body {
-        let StmtKind::Gauge(g) = &st.kind else { continue };
-        gauge(&mut sk, &res, g, st, &mut diags);
-    }
-
-    // -- phase 5: every expression against the whole document, once.  Per-statement evaluation
+    // -- phase 4: every expression against the whole document, once.  Per-statement evaluation
     // would be quadratic in the expression count and would make a dimension whose definition is
     // further down the file briefly a free variable — allocating an unknown the next pass retires.
     for item in expr::evaluate(&mut sk) {
@@ -823,10 +817,11 @@ pub fn elaborate(p: &Program) -> Elaborated {
         }
     }
 
-    // -- phase 6: recorded root choices, by name
+    // -- phase 5: a root choice under a key no triple of points spells, kept verbatim
     for st in &body {
-        let StmtKind::Orient(o) = &st.kind else { continue };
-        orient(&mut sk, &res, o, st, &mut diags);
+        if let StmtKind::Branch(b) = &st.kind {
+            sk.branches.insert(b.key.clone(), b.value);
+        }
     }
 
     crate::modules::localize(p, &mut diags);
@@ -1115,42 +1110,6 @@ fn compile_trace(
     for st in body {
         let r = match &st.kind {
             StmtKind::Decl(_) => continue,
-            // `ccw(a, b, x)` — no residual: it selects among the discrete solution components,
-            // which is what a branch is, and it is how a block says one *as a fact* rather than
-            // as a place to start looking
-            StmtKind::Orient(o) => {
-                if o.pts.len() != 3 {
-                    return Err((st.span, "an orientation names three points".to_string()));
-                }
-                let mut cols = [0u32; 6];
-                for (k, rf) in o.pts.iter().enumerate() {
-                    let e = scope
-                        .get(&rf.root.text)
-                        .copied()
-                        .ok_or((rf.span, format!("no such entity: `{}`", rf.root.text)))?;
-                    let e = follow(&sk, e, &rf.path).map_err(|m| (rf.span, m))?;
-                    if e.kind != EntKind::Point {
-                        return Err((rf.span, "an orientation is about points".to_string()));
-                    }
-                    let ps = sk.point_params(e.i());
-                    for (j, &p) in ps.iter().enumerate() {
-                        let Some(&s) = slot.get(&p) else {
-                            return Err((st.span, "trace lowering lost a column".to_string()));
-                        };
-                        cols[2 * k + j] = s as u32;
-                    }
-                }
-                // the placed point is the one a violated predicate reflects, so it must be one
-                // the block actually places
-                if (cols[4] as usize) < n_outer {
-                    return Err((
-                        o.pts[2].span,
-                        "the third point must be one the block places".to_string(),
-                    ));
-                }
-                preds.push(Pred { ccw: o.ccw, cols });
-                continue;
-            }
             StmtKind::Relation(r) => r,
             _ => {
                 return Err((
@@ -1178,7 +1137,61 @@ fn compile_trace(
             }
             None => r,
         };
+        // `ccw(a, b, x)` — no residual: it selects among the discrete solution components,
+        // which is what a branch is, and it is how a block says one *as a fact* rather than
+        // as a place to start looking
+        if matches!(r.kind, CKind::Ccw | CKind::Cw) {
+            let pts: Vec<&Ref> = r
+                .args
+                .iter()
+                .filter_map(|a| match a {
+                    Some(Arg::Ref(rf)) => Some(rf),
+                    _ => None,
+                })
+                .collect();
+            if pts.len() != 3 {
+                return Err((st.span, "an orientation names three points".to_string()));
+            }
+            let mut cols = [0u32; 6];
+            for (k, rf) in pts.iter().enumerate() {
+                let e = scope
+                    .get(&rf.root.text)
+                    .copied()
+                    .ok_or((rf.span, format!("no such entity: `{}`", rf.root.text)))?;
+                let e = follow(&sk, e, &rf.path).map_err(|m| (rf.span, m))?;
+                if e.kind != EntKind::Point {
+                    return Err((rf.span, "an orientation is about points".to_string()));
+                }
+                let ps = sk.point_params(e.i());
+                for (j, &p) in ps.iter().enumerate() {
+                    let Some(&s) = slot.get(&p) else {
+                        return Err((st.span, "trace lowering lost a column".to_string()));
+                    };
+                    cols[2 * k + j] = s as u32;
+                }
+            }
+            // the placed point is the one a violated predicate reflects, so it must be one
+            // the block actually places
+            if (cols[4] as usize) < n_outer {
+                return Err((
+                    pts[2].span,
+                    "the third point must be one the block places".to_string(),
+                ));
+            }
+            preds.push(Pred { ccw: r.kind == CKind::Ccw, cols });
+            continue;
+        }
         let spec = r.kind.spec();
+        if r.kind.gauge() {
+            return Err((
+                st.span,
+                format!(
+                    "`{}` cannot appear in a trace block: a traced component holds declarations \
+                     and constraints only, and its unknowns are what it places",
+                    crate::syntax::snake(r.kind.name())
+                ),
+            ));
+        }
         if r.kind == CKind::DragTarget || spec.iter().any(|(_, k)| k.is_param()) {
             return Err((
                 st.span,
@@ -2240,6 +2253,12 @@ fn settle(
 ) -> Result<(CKind, Vec<Option<Arg>>), (Span, String)> {
     use crate::constraints::Fixity;
     let word = w.word.text.as_str();
+    // a gauge or an orientation is settled by its word alone: `fix c.r` names a number and not
+    // an entity, and `ccw(a, b, c)` has no operand outside its parentheses; what each operand
+    // must be is checked where the statement is applied, in the words the gauges always used
+    if let Some(k) = crate::constraints::gauge_op(word) {
+        return Ok((k, w.assemble(k)?));
+    }
     let kinds: Vec<Option<EntKind>> = w.ops.iter().map(kind_of).collect();
     // a name that resolves to nothing is reported on the argument itself, where the message can
     // say which name it was; here it only means the word cannot be settled
@@ -2265,6 +2284,8 @@ fn settle(
                 (w.word.span, m)
             })?
         }
+        // only a gauge word is written as a call, and those were settled above
+        Fixity::Call => return Err((w.word.span, format!("`{word}` is not a call"))),
     };
     Ok((kind, w.assemble(kind)?))
 }
@@ -2305,6 +2326,26 @@ fn constrain(
         }
     };
     let r = &Relation { kind: ckind, args: args_of.to_vec(), ..r.clone() };
+    // a gauge is applied, not added: it holds parameters or records a root choice, and there
+    // is no constraint for the map to know it by.  A claim on one is refused below the way any
+    // unclaimable kind is, so it is checked first.
+    if ckind.gauge() {
+        if r.claim {
+            diags.push(Diag {
+                code: Code::E040,
+                span: st.span,
+                stmt: Some(st.id),
+                message: format!(
+                    "`{}` is judged by nothing a claim can weigh: it holds a number or picks a \
+                     root, and adds no row for the diagnosis to rank",
+                    crate::syntax::snake(ckind.name())
+                ),
+            });
+            return None;
+        }
+        apply_gauge(sk, res, r, st, diags);
+        return None;
+    }
     let spec = ckind.spec();
     let mut args: Vec<CArg> = Vec::with_capacity(spec.len());
     let mut left_out = vec![false; spec.len()];
@@ -2473,93 +2514,88 @@ fn to_arg(sk: &Sketch, res: &Resolver, kind: SpecKind, a: &Arg) -> Result<CArg, 
     })
 }
 
-fn gauge(sk: &mut Sketch, res: &Resolver, g: &Gauge, st: &Stmt, diags: &mut Vec<Diag>) {
-    let (r, whole) = match g {
-        Gauge::Ground(r) => (r, true),
-        Gauge::Fix(r) => (r, false),
-    };
-    let Some(e) = res.lookup(r) else {
-        diags.push(Diag {
-            code: Code::E101,
-            span: r.span,
-            stmt: Some(st.id),
-            message: format!("no such entity: `{}`", r.root.text),
-        });
-        return;
-    };
-    let e = if whole { follow(sk, e, &r.path).unwrap_or(e) } else { e };
-    if whole {
-        if e.kind != EntKind::Point {
-            diags.push(Diag {
-                code: Code::E105,
-                span: st.span,
-                stmt: Some(st.id),
-                message: "ground pins a point; a scalar is pinned with fix".to_string(),
-            });
-            return;
-        }
-        sk.fix_point(e.i(), true);
-        return;
-    }
-    // `fix(c0.r)`: the entity's own scalar, named by the field it is.  The document stores one
-    // flag per scalar and nothing finer, so neither does this.
-    let field = match r.path.first() {
-        Some(Seg::Field(f)) => f.text.clone(),
-        _ => String::new(),
-    };
-    let own = sk.own_params(e);
-    let scalars: Vec<&str> = e
-        .kind
-        .fields()
+/// A gauge or an orientation predicate, **applied** (issue #47, item 5): written and settled as
+/// every other relation — an operator, a class, a placement — but holding parameters or
+/// recording a root choice instead of becoming a constraint the sketch holds, so `constrain`
+/// returns no id for it and the map never knows it.  The checks are the ones the two statement
+/// kinds always made, in their words.
+fn apply_gauge(sk: &mut Sketch, res: &Resolver, r: &Relation, st: &Stmt, diags: &mut Vec<Diag>) {
+    let refs: Vec<&Ref> = r
+        .args
         .iter()
-        .filter(|(_, f)| *f == Field::Scalar)
-        .map(|(n, _)| *n)
+        .filter_map(|a| match a {
+            Some(Arg::Ref(rf)) => Some(rf),
+            _ => None,
+        })
         .collect();
-    match scalars.iter().position(|&n| n == field) {
-        Some(i) if i < own.len() => sk.params[own[i] as usize].fixed = true,
-        _ => diags.push(Diag {
-            code: Code::E105,
-            span: st.span,
-            stmt: Some(st.id),
-            message: if scalars.is_empty() {
-                format!("a {} has no number of its own to fix", e.kind.as_str())
-            } else {
-                format!("a {} has {}, not `{field}`", e.kind.as_str(), scalars.join(" and "))
-            },
-        }),
-    }
-}
-
-fn orient(sk: &mut Sketch, res: &Resolver, o: &Orient, st: &Stmt, diags: &mut Vec<Diag>) {
-    if let Some((key, v)) = &o.raw {
-        sk.branches.insert(key.clone(), *v);
-        return;
-    }
-    let mut pts = [0usize; 3];
-    if o.pts.len() != 3 {
-        diags.push(Diag {
-            code: Code::E103,
-            span: st.span,
-            stmt: Some(st.id),
-            message: "an orientation names three points".to_string(),
-        });
-        return;
-    }
-    for (i, r) in o.pts.iter().enumerate() {
-        match res.lookup(r).and_then(|e| follow(sk, e, &r.path).ok()) {
-            Some(e) if e.kind == EntKind::Point => pts[i] = e.i(),
-            _ => {
-                diags.push(Diag {
-                    code: Code::E101,
-                    span: r.span,
-                    stmt: Some(st.id),
-                    message: format!("no such point: `{}`", r.root.text),
-                });
+    let mut bad = |code: Code, span: Span, message: String| {
+        diags.push(Diag { code, span, stmt: Some(st.id), message })
+    };
+    match r.kind {
+        CKind::Ground | CKind::Fix => {
+            let Some(rf) = refs.first().copied() else {
+                bad(Code::E103, st.span, format!("`{}` names what it pins", crate::syntax::snake(r.kind.name())));
+                return;
+            };
+            let Some(e) = res.lookup(rf) else {
+                bad(Code::E101, rf.span, format!("no such entity: `{}`", rf.root.text));
+                return;
+            };
+            if r.kind == CKind::Ground {
+                let e = follow(sk, e, &rf.path).unwrap_or(e);
+                if e.kind != EntKind::Point {
+                    bad(Code::E105, st.span, "ground pins a point; a scalar is pinned with fix".to_string());
+                    return;
+                }
+                sk.fix_point(e.i(), true);
                 return;
             }
+            // `fix c.r`: the entity's own scalar, named by the field it is.  The document
+            // stores one flag per scalar and nothing finer, so neither does this.
+            let field = match rf.path.first() {
+                Some(Seg::Field(f)) => f.text.clone(),
+                _ => String::new(),
+            };
+            let own = sk.own_params(e);
+            let scalars: Vec<&str> = e
+                .kind
+                .fields()
+                .iter()
+                .filter(|(_, f)| *f == Field::Scalar)
+                .map(|(n, _)| *n)
+                .collect();
+            match scalars.iter().position(|&n| n == field) {
+                Some(i) if i < own.len() => sk.params[own[i] as usize].fixed = true,
+                _ => bad(
+                    Code::E105,
+                    st.span,
+                    if scalars.is_empty() {
+                        format!("a {} has no number of its own to fix", e.kind.as_str())
+                    } else {
+                        format!("a {} has {}, not `{field}`", e.kind.as_str(), scalars.join(" and "))
+                    },
+                ),
+            }
         }
+        CKind::Ccw | CKind::Cw => {
+            if refs.len() != 3 {
+                bad(Code::E103, st.span, "an orientation names three points".to_string());
+                return;
+            }
+            let mut pts = [0usize; 3];
+            for (i, rf) in refs.iter().enumerate() {
+                match res.lookup(rf).and_then(|e| follow(sk, e, &rf.path).ok()) {
+                    Some(e) if e.kind == EntKind::Point => pts[i] = e.i(),
+                    _ => {
+                        bad(Code::E101, rf.span, format!("no such point: `{}`", rf.root.text));
+                        return;
+                    }
+                }
+            }
+            sk.branches.insert(decompose::branch_key(pts), if r.kind == CKind::Ccw { 1 } else { -1 });
+        }
+        _ => unreachable!("{:?} is not a gauge", r.kind),
     }
-    sk.branches.insert(decompose::branch_key(pts), if o.ccw { 1 } else { -1 });
 }
 
 /* -- the lift ---------------------------------------------------------------------- */
@@ -2594,7 +2630,7 @@ pub fn to_program(sk: &Sketch) -> Program {
     }
     for i in 0..sk.points.len() {
         if sk.point_fixed(i) {
-            p.push(StmtKind::Gauge(Gauge::Ground(Ref::new(entity_name(EntRef::point(i))))));
+            p.push(StmtKind::Relation(lift_gauge(&entity_name(EntRef::point(i)), None)));
         }
     }
     for e in sk.primitives() {
@@ -2612,21 +2648,20 @@ pub fn to_program(sk: &Sketch) -> Program {
         for (i, &pi) in own.iter().enumerate() {
             if sk.params[pi as usize].fixed {
                 let f = scalars.get(i).copied().unwrap_or("r");
-                p.push(StmtKind::Gauge(Gauge::Fix(Ref::field(entity_name(e), f))));
+                p.push(StmtKind::Relation(lift_gauge(&entity_name(e), Some(f))));
             }
         }
     }
     for (key, &v) in &sk.branches {
-        p.push(StmtKind::Orient(match decompose::branch_key_points(key) {
-            Some(t) => Orient {
-                ccw: v >= 0,
-                pts: t.iter().map(|&i| Ref::new(entity_name(EntRef::point(i)))).collect(),
-                raw: None,
-            },
+        p.push(match decompose::branch_key_points(key) {
+            Some(t) => StmtKind::Relation(built(
+                if v >= 0 { CKind::Ccw } else { CKind::Cw },
+                t.iter().map(|&i| Some(Arg::Ref(Ref::new(entity_name(EntRef::point(i)))))).collect(),
+            )),
             // a key that is not a triple of points has no name to travel under; it is kept
             // verbatim so a document never silently loses one
-            None => Orient { ccw: true, pts: Vec::new(), raw: Some((key.clone(), v)) },
-        }));
+            None => StmtKind::Branch(crate::syntax::Branch { key: key.clone(), value: v }),
+        });
     }
     crate::syntax::render(&mut p);
     p
@@ -2779,6 +2814,30 @@ pub(crate) fn plane_of_entity_by(
     let kids = sk.children(e);
     let first = at(kids.first()?.i())?;
     kids.iter().all(|k| at(k.i()) == Some(first)).then_some(first)
+}
+
+/// A `ground` or a `fix` statement, built: `ground p` for a point, `fix c.r` for one of an
+/// entity's own numbers.  What `to_program` writes for every held parameter and what
+/// `edit::reconcile` appends when the app holds one.
+pub(crate) fn lift_gauge(name: &str, field: Option<&str>) -> Relation {
+    match field {
+        None => built(CKind::Ground, vec![Some(Arg::Ref(Ref::new(name.to_string())))]),
+        Some(f) => built(CKind::Fix, vec![Some(Arg::Ref(Ref::field(name.to_string(), f)))]),
+    }
+}
+
+/// A relation somebody built rather than wrote: the kind and its arguments, and nothing else.
+fn built(kind: CKind, args: Vec<Option<Arg>>) -> Relation {
+    Relation {
+        kind,
+        args,
+        place: None,
+        place_span: Span::default(),
+        poly: None,
+        claim: false,
+        class: Default::default(),
+        class_span: Span::default(),
+    }
 }
 
 pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {

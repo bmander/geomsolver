@@ -1584,14 +1584,6 @@ fn rewrite(
                 }
             }
         }
-        StmtKind::Gauge(g) => match g {
-            crate::syntax::Gauge::Ground(r) | crate::syntax::Gauge::Fix(r) => fix(r, bad),
-        },
-        StmtKind::Orient(o) => {
-            for r in o.pts.iter_mut() {
-                fix(r, bad);
-            }
-        }
         _ => {}
     }
 }

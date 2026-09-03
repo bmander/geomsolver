@@ -31,6 +31,7 @@ mod ellipse;
 mod examples_sv;
 mod expr;
 mod frame;
+mod gauges;
 mod highlight;
 mod homotopy;
 mod io;

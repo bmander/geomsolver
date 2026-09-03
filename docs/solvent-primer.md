@@ -170,7 +170,7 @@ fix c.r                             line1 tangent(side: -1) circle1
 | `parallel`, `perpendicular` | infix | two lines |
 | `project` | infix | two points, each `in` a plane: two images of one point in space (1.13) |
 | `ground`, `fix` | prefix | pin both coordinates of a point, or one scalar |
-| `ccw(a, b, c)`, `cw(a, b, c)` | a call | the one exception: the predicate is about the triangle |
+| `ccw(a, b, c)`, `cw(a, b, c)` | a call | all three in the parentheses: the predicate is about the triangle |
 
 One word covers several constraints, told apart by the **kinds of its operands** (`on` is five,
 `distance` six, `tangent` six) or by **fixity** (`horizontal` on a line versus between two points).

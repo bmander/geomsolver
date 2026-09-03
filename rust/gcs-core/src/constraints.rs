@@ -83,6 +83,19 @@ pub enum CKind {
     /// parallel.  Not commutative: `same_args` swaps only the first two entity slots, so
     /// `b project a` reads as a second relation, which the diagnosis reports as implied.
     Project,
+    /// The **gauges** and the **orientation predicates** (spec §9.2, §9.6; issue #47, item 5):
+    /// statements written as every other constraint is — an operator, its operands, a class, a
+    /// placement — and settled through the same table, but **applied by the elaborator rather
+    /// than held by the model**: `ground` and `fix` mark parameters fixed, `ccw` and `cw` record
+    /// a root choice in `Sketch::branches`.  They own no kernel, add no row, and are in no
+    /// `Constraint` the sketch holds — so they are **not in `ALL_KINDS`**, the registry never
+    /// publishes them, and `CKind::gauge` is how every table that would otherwise reach for a
+    /// kernel tells them apart.  A `claim` on one is refused: a claim is judged by rank over
+    /// rows, and these have none.
+    Ground,
+    Fix,
+    Ccw,
+    Cw,
 }
 
 /// Which of a curve definition's kernels a kind runs through: the table holds these three per
@@ -274,18 +287,38 @@ pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
     })
 }
 
-/// Every word the language writes a **constraint** with (spec §9.1).
-///
-/// The gauges (`ground`, `fix`) and the orientation predicates (`ccw`, `cw`) are not here: they
-/// are statements of their own kinds, and a chain's joint may not be one.  `ground p1` is still
-/// a prefix operator to read, and it is read where the statement dispatcher knows it is one.
-pub const OPERATORS: [&str; 15] = [
+/// Every word the language writes a **constraint** with (spec §9.1) — the gauges and the
+/// orientation predicates among them, read by the one relation parser and settled by the one
+/// table (`gauge_op`), so a class, a placement and the chain's lookahead treat them as any
+/// other word.  None of the four is a prefix word a chain can open a link with: `prefix_op`
+/// declines them, so `ground point p -> …` stays what it always was, no chain.
+pub const OPERATORS: [&str; 19] = [
     "on", "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "angle",
     "radius", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
+    "ground", "fix", "ccw", "cw",
 ];
 
 pub fn is_operator(w: &str) -> bool {
     OPERATORS.contains(&w)
+}
+
+/// The gauges and the orientation predicates, by word: settled **before** the operands' kinds
+/// are asked, since `fix c.r` names a number and not an entity and `ccw(a, b, c)` has no
+/// operand outside its parentheses.  What each operand must be is checked where the statement
+/// is applied (`program::apply_gauge`), in the words the gauges always used.
+pub fn gauge_op(word: &str) -> Option<CKind> {
+    Some(match word {
+        "ground" => CKind::Ground,
+        "fix" => CKind::Fix,
+        "ccw" => CKind::Ccw,
+        "cw" => CKind::Cw,
+        _ => return None,
+    })
+}
+
+/// Whether a word is written as a call — every operand inside the parentheses.
+pub fn call_word(w: &str) -> bool {
+    matches!(gauge_op(w).map(CKind::operator), Some(Some((_, Fixity::Call))))
 }
 
 /// Where an operator stands to its operand(s) — see `CKind::operator`.
@@ -295,6 +328,9 @@ pub enum Fixity {
     Prefix,
     /// `p1 distance(80) p2`, `line1 tangent circle1`
     Infix,
+    /// `ccw(a, b, c)` — every operand in the parentheses, since the three are symmetric and an
+    /// order written around the word would say something the predicate does not
+    Call,
 }
 
 impl Fixity {
@@ -302,6 +338,7 @@ impl Fixity {
         match self {
             Fixity::Prefix => "prefix",
             Fixity::Infix => "infix",
+            Fixity::Call => "call",
         }
     }
 }
@@ -322,6 +359,10 @@ pub enum SpecKind {
     Frame,
     /// A plane and nothing else: `Project` reads its basis.
     Plane,
+    /// One of an entity's own numbers, named by its field — `c.r`, `p.x` — the operand of
+    /// `fix`.  Filled from a reference like an entity slot and resolved by the gauge's own
+    /// rule, never by `follow`, since a field is not a child.
+    Scalar,
     Length,
     Angle,
     Float,
@@ -358,6 +399,7 @@ impl SpecKind {
             | SpecKind::Curve
             | SpecKind::Frame
             | SpecKind::Plane
+            | SpecKind::Scalar
             | SpecKind::Float
             | SpecKind::Int
             | SpecKind::Str
@@ -382,6 +424,11 @@ impl SpecKind {
         )
     }
 
+    /// A slot a *reference* fills: an entity, or one of an entity's own numbers.
+    pub fn takes_ref(self) -> bool {
+        self.is_entity() || self == SpecKind::Scalar
+    }
+
     pub fn is_dimension(self) -> bool {
         matches!(self, SpecKind::Length | SpecKind::Angle)
     }
@@ -403,6 +450,7 @@ impl SpecKind {
             SpecKind::Curve => "curve",
             SpecKind::Frame => "frame",
             SpecKind::Plane => "plane",
+            SpecKind::Scalar => "scalar",
             SpecKind::Length => "length",
             SpecKind::Angle => "angle",
             SpecKind::Float => "float",
@@ -459,7 +507,17 @@ impl CKind {
             CKind::FrameUnit => "FrameUnit",
             CKind::FrameAlign => "FrameAlign",
             CKind::Project => "Project",
+            CKind::Ground => "Ground",
+            CKind::Fix => "Fix",
+            CKind::Ccw => "Ccw",
+            CKind::Cw => "Cw",
         }
+    }
+
+    /// A statement the elaborator applies rather than a constraint the model holds — see the
+    /// variants' note.  Asked wherever a table would otherwise reach for a kernel.
+    pub fn gauge(self) -> bool {
+        matches!(self, CKind::Ground | CKind::Fix | CKind::Ccw | CKind::Cw)
     }
 
     pub fn from_name(s: &str) -> Option<CKind> {
@@ -543,6 +601,11 @@ impl CKind {
             CKind::Project => {
                 &[("a", S::Point), ("b", S::Point), ("pa", S::Plane), ("pb", S::Plane)]
             }
+            CKind::Ground => &[("p", S::Point)],
+            // one of an entity's own numbers, named by its field: `fix c.r`
+            CKind::Fix => &[("x", S::Scalar)],
+            // the predicate is about the triangle, so all three stand in the parentheses
+            CKind::Ccw | CKind::Cw => &[("a", S::Point), ("b", S::Point), ("c", S::Point)],
         }
     }
 
@@ -590,7 +653,7 @@ impl CKind {
     /// this is new information beside it.  Matched exhaustively, so a new kind stops the build —
     /// the pattern `callout::pen` and `free_kernel` already use.
     pub fn operator(self) -> Option<(&'static str, Fixity)> {
-        use Fixity::{Infix, Prefix};
+        use Fixity::{Call, Infix, Prefix};
         Some(match self {
             // a point on something: five kinds, one word, told apart by the right operand
             CKind::PointOnLine
@@ -634,6 +697,12 @@ impl CKind {
             CKind::Symmetric => ("symmetry", Infix),
             // two operands; the plane slots behind them are inferred and never spelled
             CKind::Project => ("project", Infix),
+            // the gauges are prefix words like `horizontal`; the orientation predicates keep
+            // a call, since `a ccw(c) b` would reorder three points that are symmetric
+            CKind::Ground => ("ground", Prefix),
+            CKind::Fix => ("fix", Prefix),
+            CKind::Ccw => ("ccw", Call),
+            CKind::Cw => ("cw", Call),
             CKind::DragTarget | CKind::FrameUnit | CKind::FrameAlign => return None,
         })
     }
@@ -698,7 +767,7 @@ impl CKind {
     }
 
     pub fn claimable(self) -> bool {
-        !self.spec().iter().any(|(_, k)| k.is_param())
+        !self.gauge() && !self.spec().iter().any(|(_, k)| k.is_param())
     }
 
     /// The spec slots a contact on a parametric entity of kind `of` is made of: which argument
@@ -794,7 +863,11 @@ impl CKind {
             | CKind::FrameUnit
             | CKind::FrameAlign
             // a projection is a linear tie between two images: no contact, no double root
-            | CKind::Project => false,
+            | CKind::Project
+            | CKind::Ground
+            | CKind::Fix
+            | CKind::Ccw
+            | CKind::Cw => false,
         }
     }
 
@@ -869,6 +942,9 @@ impl CKind {
             CKind::FrameUnit => K::FrameUnit,
             CKind::FrameAlign => K::FrameAlign,
             CKind::Project => K::Project,
+            CKind::Ground | CKind::Fix | CKind::Ccw | CKind::Cw => {
+                panic!("{:?} is a gauge: applied by the elaborator, it has no kernel", self)
+            }
         }
     }
 
@@ -918,7 +994,11 @@ impl CKind {
             | CKind::VerticalPoints
             | CKind::FrameUnit
             | CKind::FrameAlign
-            | CKind::Project => return None,
+            | CKind::Project
+            | CKind::Ground
+            | CKind::Fix
+            | CKind::Ccw
+            | CKind::Cw => return None,
         })
     }
 }
@@ -1617,6 +1697,9 @@ impl Constraint {
                     [sk.point_params(f.origin as usize).to_vec(), vec![f.c, f.s]].concat()
                 };
                 [pt(0), pt(1), datum(2), datum(3)].concat()
+            }
+            CKind::Ground | CKind::Fix | CKind::Ccw | CKind::Cw => {
+                unreachable!("{:?} is a gauge and is never in a sketch", self.kind)
             }
         }
     }

@@ -85,6 +85,10 @@ macro_rules! undrawn {
             | CKind::FrameUnit
             | CKind::FrameAlign
             | CKind::Project
+            | CKind::Ground
+            | CKind::Fix
+            | CKind::Ccw
+            | CKind::Cw
     };
 }
 

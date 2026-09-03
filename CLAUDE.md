@@ -721,8 +721,22 @@ Conventions:
   one constraint three ways.  **The surface word and the wire name are separate**: the registry
   goes on publishing snake_case `name`, which the binding and the JSON export key on, and
   `operator`/`fixity`/`operands` are new information beside it — **the binding is untouched**.
-  `ccw`/`cw` keep a call: under the general rule they would be `a ccw(c) b`, which reorders three
-  points that are symmetric, and the predicate is about the *triangle*.
+  `ccw`/`cw` keep a call — `Fixity::Call`, every operand in the parentheses: under the general
+  rule they would be `a ccw(c) b`, which reorders three points that are symmetric, and the
+  predicate is about the *triangle*.
+  **The gauges and the orientation predicates are entries of the same table** (issue #47,
+  item 5): `CKind::Ground`, `Fix`, `Ccw`, `Cw`, read by the one relation parser (so a class, a
+  placement and the chain's lookahead treat them as any word) and settled by the word alone
+  (`constraints::gauge_op`, before the operands' kinds are asked — `fix c.r` names a number, a
+  `SpecKind::Scalar` slot, and `ccw(a, b, c)` has no operand outside its parentheses).  They
+  are **applied, not added**: `program::apply_gauge` marks the parameters fixed or records the
+  root choice, `constrain` returns no id, and no `Constraint` the sketch holds is one — so they
+  are not in `ALL_KINDS`, the registry never publishes them, the binding is untouched, and
+  `CKind::gauge` is the question every table that would reach for a kernel asks first.  A
+  `claim` on one is refused (E040): a claim is judged by rank, and a gauge adds no row.
+  `edit::reconcile` reads a held parameter's statement off the word (`gauge_key`) and appends
+  one built by `program::lift_gauge`; a root choice under a key no triple spells stays the
+  `branch(KEY, ±1)` statement (`StmtKind::Branch`).
   Operand order carries meaning now — `arc tangent line` is `TangentArcLine` and `line tangent
   circle` is `TangentLineCircle` — and a name that is also an element keyword can no longer lead
   a statement (`spline_follower.sv`'s spline is `cam`, not `curve`).

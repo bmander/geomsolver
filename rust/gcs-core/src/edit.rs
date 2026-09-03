@@ -777,14 +777,6 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                 }
             }
         }
-        StmtKind::Gauge(g) => match g {
-            syntax::Gauge::Ground(r) | syntax::Gauge::Fix(r) => look(r),
-        },
-        StmtKind::Orient(o) => {
-            for r in &o.pts {
-                look(r);
-            }
-        }
         _ => {}
     }
     hit
@@ -1336,13 +1328,13 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         .body
         .iter()
         .filter_map(|st| match &st.kind {
-            StmtKind::Gauge(g) => Some(gauge_key(g)),
+            StmtKind::Relation(r) => gauge_key(r),
             _ => None,
         })
         .collect();
     for st in prog.root().body.iter() {
-        let StmtKind::Gauge(g) = &st.kind else { continue };
-        let k = gauge_key(g);
+        let StmtKind::Relation(r) = &st.kind else { continue };
+        let Some(k) = gauge_key(r) else { continue };
         // only a name this elaboration made: a gauge over something a component made stays
         if e.map.ent_named(&k.0).is_none() {
             continue;   // a gauge over something a component made is the component's, not ours
@@ -1355,10 +1347,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         if held_was.contains(k) {
             continue;
         }
-        adds.push(StmtKind::Gauge(match &k.1 {
-            None => crate::syntax::Gauge::Ground(syntax::Ref::new(k.0.clone())),
-            Some(f) => crate::syntax::Gauge::Fix(syntax::Ref::field(k.0.clone(), f)),
-        }));
+        adds.push(StmtKind::Relation(crate::program::lift_gauge(&k.0, k.1.as_deref())));
         made.push(Made::Gauge);
     }
 
@@ -1434,16 +1423,26 @@ fn rename_children(
     }
 }
 
-/// What a gauge statement holds: a name, and a field when it is one scalar rather than a point.
-fn gauge_key(g: &crate::syntax::Gauge) -> (String, Option<String>) {
-    let r = match g {
-        crate::syntax::Gauge::Ground(r) | crate::syntax::Gauge::Fix(r) => r,
+/// What a `ground` or a `fix` statement holds — a name, and a field when it is one scalar
+/// rather than a point — and `None` for a relation that is neither.  Read off the word as it
+/// was written, or off the kind of one that was built (`program::lift_gauge`).
+fn gauge_key(r: &syntax::Relation) -> Option<(String, Option<String>)> {
+    use crate::constraints::CKind;
+    let (kind, rf) = match &r.poly {
+        Some(w) => (crate::constraints::gauge_op(&w.word.text)?, w.ops.first()?),
+        None => match r.args.first() {
+            Some(Some(syntax::Arg::Ref(rf))) => (r.kind, rf),
+            _ => return None,
+        },
     };
-    let field = match r.path.first() {
-        Some(crate::syntax::Seg::Field(n)) => Some(n.text.clone()),
+    if !matches!(kind, CKind::Ground | CKind::Fix) {
+        return None;
+    }
+    let field = match rf.path.first() {
+        Some(syntax::Seg::Field(n)) => Some(n.text.clone()),
         _ => None,
     };
-    (r.root.text.clone(), field)
+    Some((rf.root.text.clone(), field))
 }
 
 /// Everything the sketch itself holds fixed — the entity, and the field when it is one scalar

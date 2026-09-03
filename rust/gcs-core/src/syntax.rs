@@ -33,7 +33,7 @@
 //! That distinction is lexical, which is what makes "may a solve write this number?" a test
 //! rather than an analysis — see `edit::commit_seeds`.
 
-use crate::constraints::{is_operator, CKind, Fixity, SpecKind};
+use crate::constraints::{call_word, is_operator, CKind, Fixity, SpecKind};
 use crate::model::{EntKind, EntRef, Field};
 use crate::style::{Classes, Style};
 
@@ -332,10 +332,10 @@ impl From<Fall> for Chained {
 pub enum StmtKind {
     Decl(Decl),
     Relation(Relation),
-    Gauge(Gauge),
-    /// A recorded root choice.  Spec §9.6's orientation predicates are exactly this: they
-    /// contribute no equations and select among the discrete solution components.
-    Orient(Orient),
+    /// A recorded root choice under a key no triple of points spells — `branch(ppp:3|4|5, 1)`
+    /// — kept verbatim so a document never silently loses one.  A choice that *is* a triple is
+    /// written `ccw(a, b, c)`, a relation like any other (`CKind::Ccw`).
+    Branch(Branch),
     /// `t: Tooth(root, tip, slot: 360 / N)` — a component, elaborated in place.
     Instance(Instance),
     /// `param R = m * N / 2` — a number worked out while elaborating, never an unknown.
@@ -1002,7 +1002,7 @@ pub struct AtRef {
 pub enum OpArg {
     /// `side: -1`, `at: start`, `along: x`, `external: true`
     Named(Name, Arg),
-    /// the third entity, unlabelled: `a symmetry(l) b`
+    /// the third entity, unlabelled: `a symmetry(l) b` — or every operand of a call, `ccw(a, b, c)`
     Ent(Ref),
     /// A slot the constraint owns, **named as the spec names it** — `t == 0.4` in the
     /// parentheses, or `hint(t: 0.4)` after the operands.
@@ -1102,7 +1102,7 @@ impl Written {
         }));
         let mut next = ents.into_iter();
         for (i, (name, sk)) in spec.iter().enumerate() {
-            out[i] = if sk.is_entity() {
+            out[i] = if sk.takes_ref() {
                 next.next().map(Arg::Ref)
             } else if sk.is_param() {
                 self.args.iter().find_map(|a| match a {
@@ -1215,20 +1215,12 @@ pub enum Seg {
 
 /// `ground(p0)` pins both of a point's coordinates; `fix(c0.r)` pins one scalar.  Deliberately
 /// narrow: exactly what the document can already store, and no sugar that would not round-trip.
+/// `branch(KEY, ±1)` — a recorded root choice under a key `decompose::branch_key_points` could
+/// not read as a triple of points.
 #[derive(Clone, Debug)]
-pub enum Gauge {
-    Ground(Ref),
-    Fix(Ref),
-}
-
-/// `ccw(p0, p3, p7)` — a recorded root choice, named by its points rather than by their indices.
-#[derive(Clone, Debug)]
-pub struct Orient {
-    pub ccw: bool,
-    pub pts: Vec<Ref>,
-    /// A key `decompose::branch_key_points` could not read as a triple, kept verbatim so a
-    /// document never silently loses one.
-    pub raw: Option<(String, i32)>,
+pub struct Branch {
+    pub key: String,
+    pub value: i32,
 }
 
 /* -- names ------------------------------------------------------------------------- */
@@ -1517,16 +1509,7 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
     match k {
         StmtKind::Decl(d) => write_decl(out, d),
         StmtKind::Relation(r) => write_relation(out, r),
-        // the gauges are prefix operators like every other statement (spec §9.1)
-        StmtKind::Gauge(Gauge::Ground(r)) => {
-            out.push_str("ground ");
-            write_ref(out, r);
-        }
-        StmtKind::Gauge(Gauge::Fix(r)) => {
-            out.push_str("fix ");
-            write_ref(out, r);
-        }
-        StmtKind::Orient(o) => write_orient(out, o),
+        StmtKind::Branch(b) => out.push_str(&format!("branch({}, {})", b.key, b.value)),
         StmtKind::Instance(i) => {
             out.push_str(&format!("{}: ", i.name.text));
             write_instance_call(out, i);
@@ -1971,7 +1954,7 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         if sk.is_entity() && kind.infers_arg(i) {
             continue;
         }
-        if sk.is_entity() {
+        if sk.takes_ref() {
             ents.push(write_arg(name, *sk, a));
         } else if sk.is_param() {
             match slot_text(name, a) {
@@ -1986,8 +1969,9 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         }
     }
     // the third entity of `symmetry` goes in the parentheses with everything else that is not
-    // one of the two operands
-    while ents.len() > 2 {
+    // one of the two operands — and a call's operands all do
+    let outside = if fixity == Fixity::Call { 0 } else { 2 };
+    while ents.len() > outside {
         let extra = ents.pop().expect("more than two");
         parens.push(extra);
     }
@@ -2074,21 +2058,6 @@ fn dim_text(a: &Arg) -> String {
         Arg::Num(v) => num(*v),
         other => write_arg("", SpecKind::Length, other),
     }
-}
-
-fn write_orient(out: &mut String, o: &Orient) {
-    if let Some((key, v)) = &o.raw {
-        out.push_str(&format!("branch({key}, {v})"));
-        return;
-    }
-    out.push_str(if o.ccw { "ccw(" } else { "cw(" });
-    for (i, r) in o.pts.iter().enumerate() {
-        if i > 0 {
-            out.push_str(", ");
-        }
-        write_ref(out, r);
-    }
-    out.push(')');
 }
 
 fn write_ref(out: &mut String, r: &Ref) {
@@ -2315,8 +2284,6 @@ impl Tint {
  * (The kinds only one word opens — `component`, `param`, `port`, `branch` — are still a literal in
  * each place; a `match` on `&str` cannot be made exhaustive, so this is as far as the linkage
  * goes.) */
-const GAUGES: [&str; 2] = ["ground", "fix"];
-
 /// The words that open a statement of their own, so a name may never be one.  Written down here
 /// because an infix statement begins with a *name*, and a keyword followed by a word that
 /// happens to be an operator — `param radius = 50` — would otherwise read as one.
@@ -2332,11 +2299,10 @@ fn ident_char(c: char) -> bool {
 
 // `port` is retired and `ring` is not yet (bmander/geomsolver#47), and each is kept here only so
 // a document written with it is told what to write instead of reading the word as a name
-const OPENERS: [&str; 13] = [
+const OPENERS: [&str; 11] = [
     "claim", "component", "param", "port", "unit", "style", "branch", "repeat", "cycle", "ring",
-    "ground", "fix", "use",
+    "use",
 ];
-const ORIENTS: [&str; 2] = ["ccw", "cw"];
 const BLOCKS: [&str; 2] = ["repeat", "cycle"];
 
 /// Whether a word may stand between two links of a chain (spec §6.6).  `tangent` is the
@@ -2529,9 +2495,8 @@ fn tint_word(
             if BLOCKS.contains(&w) {
                 return (Some(Tint::Word), Next::Word);
             }
-            // the gauges and the orientations: statements the parser knows by name, which are
-            // relations in everything but where they are written down
-            if GAUGES.contains(&w) || ORIENTS.contains(&w) || w == "branch" {
+            // a raw branch: a statement the parser knows by name
+            if w == "branch" {
                 return (Some(Tint::Relation), Next::Word);
             }
             // `t: Tooth(…)` — a name, a colon and a component
@@ -2820,7 +2785,6 @@ pub fn is_name(s: &str) -> bool {
         && names_decl(s)
         && !MODIFIERS.contains(&s)
         && !OPENERS.contains(&s)
-        && !ORIENTS.contains(&s)
 }
 
 /// Whether a word may stand *after* a declaration — a trailing clause's own word, or a chain's
@@ -3452,30 +3416,6 @@ impl<'a> P<'a> {
             // operator, and under that rule these would be `a ccw(c) b` — which reorders three
             // points that are symmetric, since the predicate is about the *triangle* and not
             // about a pair with a decoration.  Spec §9.6 keeps the call for exactly that reason.
-            o if ORIENTS.contains(&o) => {
-                self.i += 1;
-                let ccw = w == "ccw";
-                if !self.want_p('(') {
-                    return None;
-                }
-                let mut pts = Vec::new();
-                while !self.eat_p(')') {
-                    pts.push(self.refr()?);
-                    if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
-                        self.fail("expected `,` or `)`");
-                        return None;
-                    }
-                }
-                Some(StmtKind::Orient(Orient { ccw, pts, raw: None }))
-            }
-            // the gauges are prefix operators like any other: `ground p1`, `fix c.r`
-            g if GAUGES.contains(&g) => {
-                self.i += 1;
-                let ground = w == "ground";
-                let r = self.refr()?;
-                self.end_of_stmt();
-                Some(StmtKind::Gauge(if ground { Gauge::Ground(r) } else { Gauge::Fix(r) }))
-            }
             "branch" => {
                 self.i += 1;
                 if !self.want_p('(') {
@@ -3501,7 +3441,7 @@ impl<'a> P<'a> {
                 if !self.want_p(')') {
                     return None;
                 }
-                Some(StmtKind::Orient(Orient { ccw: v >= 0, pts: Vec::new(), raw: Some((key, v)) }))
+                Some(StmtKind::Branch(Branch { key, value: v }))
             }
             "port" => {
                 // retired (bmander/geomsolver#47): everything an instance makes is reached by
@@ -5250,6 +5190,13 @@ impl<'a> P<'a> {
     fn relation(&mut self) -> Option<Relation> {
         let lo = self.here().lo as usize;
         let (word, fixity, ops, args) = match self.peek().cloned() {
+            // `ccw(a, b, c)`: every operand in the parentheses and none after them
+            Some(Tok::Ident(w)) if call_word(&w) => {
+                let word = Name { text: w, span: self.here() };
+                self.i += 1;
+                let args = self.op_args(&word.text)?;
+                (word, Fixity::Call, Vec::new(), args)
+            }
             Some(Tok::Ident(w)) if is_operator(&w) => {
                 let word = Name { text: w, span: self.here() };
                 self.i += 1;
@@ -5362,7 +5309,7 @@ impl<'a> P<'a> {
         if !self.eat_p('(') {
             return Some(Vec::new());
         }
-        let takes_entity = matches!(word, "symmetry" | "ccw" | "cw");
+        let takes_entity = word == "symmetry" || call_word(word);
         let mut out = Vec::new();
         while !self.eat_p(')') {
             match (self.peek().cloned(), self.t.get(self.i + 1).map(|(t, _)| t.clone())) {
