@@ -172,6 +172,12 @@ const MENUS: [string, (MenuItem | null)[]][] = [
     { label: 'Overview', key: '⌘b', onClick: () => view.setOverview(!view.overview),
       title: 'The views folded back into the glass box, with the object reconstructed between '
         + 'them — drag to orbit, wheel to zoom.  Read-only: a click lights an edge up' },
+    { label: 'Show solid', key: '⇧⌘b', onClick: () => {
+      view.setShowSolid(!view.showSolid);
+      if (!view.overview) view.setOverview(true);
+    },
+      title: 'Fill the object\u2019s surfaces in the overview, not only its edges — a document '
+        + 'with a `solid` in it has surfaces to show' },
     { label: 'Program', key: '⌘p', onClick: () => toggleProgramPanel(),
       title: 'The program this drawing is written as — edit it and the drawing follows' },
     { label: 'Re-place dimensions', onClick: () => {

@@ -66,6 +66,12 @@ pub struct Item {
     pub in_plane: Option<EntRef>,
     pub what: Part,
     pub pts: Vec<(f64, f64)>,
+    /// For a `Shell` face, how squarely it faces the light: 0 for edge-on, 1 for full on.
+    ///
+    /// A *number* and not a colour, because which is which is the front end's chrome and the
+    /// geometry is the core's — the same division `Part` itself draws.  `None` for everything
+    /// that is a line rather than a surface.
+    pub shade: Option<f64>,
 }
 
 /// What a scene item *is*, so the front end can ink the three kinds apart.
@@ -78,8 +84,12 @@ pub enum Part {
     /// A plane's own x and y at its origin — which way the view's coordinates run, which is the
     /// one thing a pane alone cannot say.
     Axis,
-    /// The object itself, reconstructed from the views.
+    /// The object itself: its edges, reconstructed from the views or read off the term.
     Solid,
+    /// **A face of the solid**, filled — what "show solid" asks for.  Back-facing surfaces are
+    /// dropped and the rest come **far first**, so a front end that paints them in the order it
+    /// is given gets the near ones over the far ones and needs no depth buffer.
+    Shell,
 }
 
 impl Part {
@@ -89,6 +99,7 @@ impl Part {
             Part::Face => "face",
             Part::Axis => "axis",
             Part::Solid => "solid",
+            Part::Shell => "shell",
         }
     }
 }
@@ -281,7 +292,16 @@ fn round(c: (f64, f64), r: f64, from: f64, sweep: f64, unit: f64) -> Vec<(f64, f
 /// `az` and `el` are the orbit, in radians: the direction the box is looked at from.  The
 /// projection is **orthographic** — a drawing is orthographic, and a perspective one would make
 /// the views it is folded from stop being the views.
+/// The scene, with the object shown as edges alone — what the box has always drawn.
 pub fn scene(sk: &Sketch, unit: f64, az: f64, el: f64) -> Scene {
+    scene_with(sk, unit, az, el, false)
+}
+
+/// The scene, `shaded` asking for the solid's **surfaces** as well as its edges (`Part::Shell`).
+///
+/// It is a *view* option and not document state — `underlay`'s rule, like the orbit itself: a
+/// drawing is the same drawing whether or not you are looking at it filled in.
+pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Scene {
     let (right, up) = eye(az, el);
     let flat = |p: [f64; 3]| (dot(p, right), dot(p, up));
     let mut items: Vec<Item> = Vec::new();
@@ -299,6 +319,7 @@ pub fn scene(sk: &Sketch, unit: f64, az: f64, el: f64) -> Scene {
             in_plane: of,
             what: Part::Face,
             pts: face(&basis, rect).into_iter().map(&flat).collect(),
+            shade: None,
         });
         for arm in axes(&basis, rect) {
             items.push(Item {
@@ -306,6 +327,7 @@ pub fn scene(sk: &Sketch, unit: f64, az: f64, el: f64) -> Scene {
                 in_plane: of,
                 what: Part::Axis,
                 pts: arm.into_iter().map(&flat).collect(),
+                shade: None,
             });
         }
     }
@@ -328,6 +350,7 @@ pub fn scene(sk: &Sketch, unit: f64, az: f64, el: f64) -> Scene {
                 in_plane: plane.map(EntRef::plane),
                 what: Part::Drawn,
                 pts: vec![end(l.p1), end(l.p2)],
+                shade: None,
             });
             continue;
         }
@@ -340,6 +363,7 @@ pub fn scene(sk: &Sketch, unit: f64, az: f64, el: f64) -> Scene {
                 in_plane: plane.map(EntRef::plane),
                 what: Part::Drawn,
                 pts: poly.into_iter().map(|p| flat(in_space(sk, plane, p))).collect(),
+                shade: None,
             });
         }
     }
@@ -350,13 +374,35 @@ pub fn scene(sk: &Sketch, unit: f64, az: f64, el: f64) -> Scene {
     // solid in it can still be shown as — several views of an object nothing in the document
     // names — and it is skipped outright when a solid names one.
     if !sk.solids.is_empty() {
+        // **the objects, and not the features they are made of.**  A document names `block`,
+        // `bore`, `passage` and `body`, and only the last of those is a thing: the rest are
+        // operands of it — a bore is a hole in a part and not a part beside it.  Shown whole
+        // they were each drawn as an object in its own right, hidden-line tested against
+        // themselves, which is why a bore appeared to float in front of the face it is drilled
+        // through.  A solid is the object exactly when nothing else is made of it.
+        let shown = objects(sk);
         let eye = eye(az, el);
         let dir = [
             eye.0[1] * eye.1[2] - eye.0[2] * eye.1[1],
             eye.0[2] * eye.1[0] - eye.0[0] * eye.1[2],
             eye.0[0] * eye.1[1] - eye.0[1] * eye.1[0],
         ];
-        for (i, _) in sk.solids.iter().enumerate() {
+        // **the surfaces first, so the edges land on top of them.**  Back-facing pieces are
+        // dropped — a closed solid never shows its inside — and the rest are handed over *far
+        // first*, so a front end that fills them in the order it is given gets the near ones
+        // over the far ones without a depth buffer.  A painter's ordering is exact for a convex
+        // part and very nearly right for anything a drawing describes; what makes it read
+        // correctly regardless is that the *edges* over it are hidden-line removed properly.
+        if shaded {
+            let mut all: Vec<crate::csg::Piece> = Vec::new();
+            for &i in &shown {
+                all.extend(sk.solid_boundary(i, unit));
+            }
+            for it in shell(&all, dir, &eye, flat) {
+                items.push(it);
+            }
+        }
+        for &i in &shown {
             let csg = crate::solid::resolve(sk, i, unit);
             let eps = sk.extent() * crate::solid::EPS;
             for e in sk.solid_edges(i, unit) {
@@ -379,6 +425,7 @@ pub fn scene(sk: &Sketch, unit: f64, az: f64, el: f64) -> Scene {
                     in_plane: None,
                     what: Part::Solid,
                     pts: vec![flat(e.a), flat(e.b)],
+                    shade: None,
                 });
             }
         }
@@ -428,6 +475,7 @@ pub fn scene(sk: &Sketch, unit: f64, az: f64, el: f64) -> Scene {
                 in_plane: None,
                 what: Part::Solid,
                 pts: vec![flat(c1.at), flat(c2.at)],
+                shade: None,
             });
         }
     }
@@ -511,6 +559,130 @@ fn axes(basis: &Basis, (x0, y0, x1, y1): Box2) -> [Vec<[f64; 3]>; 2] {
 /// `az` and elevation `el`.  Orthonormal, so the projection carries lengths faithfully in any
 /// plane facing the viewer — which is what makes the front view flatten to the sheet's own
 /// picture when the box is looked at square on.
+/// **The solids that are objects**: the ones nothing else is made of.
+///
+/// A part is written as a stock, the features cut out of it, and the body that is the term over
+/// them — four names for one thing plus three holes.  Only the body is an object, and the rule
+/// says so without the document having to: a solid named as another's operand is a *feature* of
+/// it.  A document that names none — every solid an operand of some other — has a cycle, which
+/// the elaborator has already refused, so the list is never empty when the solids are not.
+fn objects(sk: &Sketch) -> Vec<usize> {
+    let mut used = vec![false; sk.solids.len()];
+    for s in &sk.solids {
+        for o in s.operands() {
+            if let Some(u) = used.get_mut(o as usize) {
+                *u = true;
+            }
+        }
+    }
+    (0..sk.solids.len()).filter(|&i| !used[i]).collect()
+}
+
+/// **The surfaces of a solid, as this eye sees them.**
+///
+/// Two culls and then an ordering, and the first cull is the one that matters.  A closed solid
+/// never shows its inside, so a back-facing piece goes.  What is left still includes every
+/// *void's* wall — a bore is a hole, and the wall of a hole faces the eye from inside the
+/// material — and those must go too, or a part is drawn with its bores floating in front of the
+/// face they are drilled through.
+///
+/// Sorting by depth does not fix it, and it is worth saying why: a painter's order compares
+/// **centroids**, and a big front face has its centroid in the middle while a small piece behind
+/// it may sit nearer than that middle.  Ordering can only be right between polygons that do not
+/// overlap in the picture, which is exactly the case this is not.
+///
+/// So a piece is kept when **nothing stands between it and the eye** — a ray from its centroid,
+/// against every other piece of the boundary.  That is exact where a whole face is hidden, which
+/// is every void; a face *partly* covered is all-or-nothing, which the depth sort below then
+/// mostly settles, and which is the honest limit of a schematic without a depth buffer.
+fn shell(
+    all: &[crate::csg::Piece],
+    dir: [f64; 3],
+    eye: &([f64; 3], [f64; 3]),
+    flat: impl Fn([f64; 3]) -> (f64, f64),
+) -> Vec<Item> {
+    // depth along the eye, so a piece is only ever tested against what is nearer than it
+    let mut order: Vec<(f64, usize)> = all
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (crate::plane::dot(p.centroid(), dir), i))
+        .collect();
+    order.sort_by(|a, b| a.0.partial_cmp(&b.0).expect("a finite drawing"));
+    let planes: Vec<([f64; 3], f64)> =
+        all.iter().map(|p| (p.n, crate::plane::dot(p.n, p.pts[0]))).collect();
+    let mut out = Vec::new();
+    for (k, &(_, i)) in order.iter().enumerate() {
+        let p = &all[i];
+        if crate::plane::dot(p.n, dir) <= 0.0 {
+            continue;
+        }
+        let c = p.centroid();
+        // only the pieces in front of it can hide it, which the sort has already named
+        let hidden = order[k + 1..].iter().any(|&(_, j)| {
+            let (n, w) = planes[j];
+            let denom = crate::plane::dot(n, dir);
+            if denom.abs() < 1e-12 {
+                return false;
+            }
+            // in front of it, along the eye — the sort has already said `j` is nearer, so a
+            // hit behind the centroid is the far side of a piece and hides nothing
+            let t = (w - crate::plane::dot(n, c)) / denom;
+            if t <= 1e-9 {
+                return false;
+            }
+            let x = [c[0] + t * dir[0], c[1] + t * dir[1], c[2] + t * dir[2]];
+            in_outline(&all[j].pts, n, x)
+        });
+        if hidden {
+            continue;
+        }
+        out.push(Item {
+            of: None,
+            in_plane: None,
+            what: Part::Shell,
+            pts: p.pts.iter().map(|&q| flat(q)).collect(),
+            shade: Some(lambert(p.n, eye)),
+        });
+    }
+    out
+}
+
+/// Is `x`, already on the piece's plane, inside its outline?
+fn in_outline(pts: &[[f64; 3]], n: [f64; 3], x: [f64; 3]) -> bool {
+    for i in 0..pts.len() {
+        let a = pts[i];
+        let b = pts[(i + 1) % pts.len()];
+        let e = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let w = [x[0] - a[0], x[1] - a[1], x[2] - a[2]];
+        if crate::plane::dot(n, crate::plane::cross(e, w)) < 0.0 {
+            return false;
+        }
+    }
+    true
+}
+
+/// How squarely a surface faces the light, 0 to 1.
+///
+/// The light is a **headlight, tilted**: over the viewer's shoulder and a little up and to the
+/// left, which is where a draughtsman's light has come from since long before there were
+/// screens.  Straight down the eye would flatten every face that faces you into one tone and
+/// lose the corner between them, which is the whole thing a shaded picture is for.
+fn lambert(n: [f64; 3], eye: &([f64; 3], [f64; 3])) -> f64 {
+    let (right, up) = *eye;
+    let dir = [
+        right[1] * up[2] - right[2] * up[1],
+        right[2] * up[0] - right[0] * up[2],
+        right[0] * up[1] - right[1] * up[0],
+    ];
+    let l = [
+        dir[0] - 0.45 * right[0] + 0.35 * up[0],
+        dir[1] - 0.45 * right[1] + 0.35 * up[1],
+        dir[2] - 0.45 * right[2] + 0.35 * up[2],
+    ];
+    let l = crate::plane::unit(l).unwrap_or(dir);
+    crate::plane::dot(n, l).clamp(0.0, 1.0)
+}
+
 fn eye(az: f64, el: f64) -> ([f64; 3], [f64; 3]) {
     let (sa, ca) = az.sin_cos();
     let (se, ce) = el.sin_cos();

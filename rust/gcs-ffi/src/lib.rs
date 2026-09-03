@@ -1368,7 +1368,8 @@ pub unsafe extern "C" fn gcs_describe(h: *mut Sketch, id: i32) -> *mut u8 {
 
 /// The 3D overview: the glass box the views were unfolded from, and the object they are of,
 /// projected to 2D world coordinates.  `unit` is the world length of one screen pixel; `az` and
-/// `el` are the orbit in radians.  JSON for `gcs_callouts_json`'s reason — the scene is
+/// `el` are the orbit in radians; `shaded` asks for the solid's surfaces as well as its edges,
+/// back-face culled and handed over far first.  JSON for `gcs_callouts_json`'s reason — the scene is
 /// heterogeneous records, not a fixed-width block of numbers.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_overview_json(
@@ -1376,9 +1377,10 @@ pub unsafe extern "C" fn gcs_overview_json(
     unit: f64,
     az: f64,
     el: f64,
+    shaded: i32,
 ) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        out_json(report::overview_json(sk(h), unit, az, el))
+        out_json(report::overview_json(sk(h), unit, az, el, shaded != 0))
     })
 }
 

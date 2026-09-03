@@ -259,16 +259,33 @@ export class SketchView {
    *  so between edits nothing else can move under it; `afterEdit` and `swap` forget it. */
   scene(): Scene {
     const { az, el } = this.orbit;
+    const shaded = this.showSolid;
     const c = this.sceneCache;
-    if (c && c.sketch === this.sketch && c.unit === this.unit && c.az === az && c.el === el) {
+    if (c && c.sketch === this.sketch && c.unit === this.unit && c.az === az && c.el === el
+        && c.shaded === shaded) {
       return c.scene;
     }
-    const scene = overview(this.sketch, this.unit, az, el);
-    this.sceneCache = { sketch: this.sketch, unit: this.unit, az, el, scene };
+    const scene = overview(this.sketch, this.unit, az, el, shaded);
+    this.sceneCache = { sketch: this.sketch, unit: this.unit, az, el, shaded, scene };
     return scene;
   }
-  private sceneCache: { sketch: Sketch; unit: number; az: number; el: number; scene: Scene } | null
+  private sceneCache:
+    { sketch: Sketch; unit: number; az: number; el: number; shaded: boolean; scene: Scene } | null
     = null;
+
+  /** **Show the solid's surfaces in the box**, not only its edges.
+   *
+   *  View state, `underlay`'s rule and the orbit's: a drawing is the same drawing whether or not
+   *  you are looking at it filled in, so this is never saved, exported, solved or undone.  It
+   *  costs the boundary of every solid, which is why it is a choice and not the default. */
+  showSolid = false;
+
+  setShowSolid(on: boolean): void {
+    if (this.showSolid === on) return;
+    this.showSolid = on;
+    this.sceneCache = null;
+    this.draw();
+  }
 
   /** The entity a scene item is drawn from, where one is — the one decode of the wire's
    *  `kind`/`index` pair, so the painter and the picks read it one way. */

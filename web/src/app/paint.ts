@@ -321,6 +321,26 @@ export function paintOverview(v: SketchView): void {
     ctx.stroke();
   });
   ctx.globalAlpha = 1;
+  // **the object's surfaces, where the box was asked for them.**  Over the panes and the
+  // geometry standing on them and under its own edges, which is this file's own order: the
+  // scaffolding first and the thing the drawing is *of* over it.  They arrive back-face culled
+  // and far first, so filling them in the order they are given is the whole of the depth
+  // sorting.  The *tone* is this side's — the core says how squarely each face meets the light
+  // and the palette is chrome, the same division `Part` itself draws.
+  draw('shell', (it) => {
+    const t = it.shade ?? 0;
+    // a flat ramp from the shadow tone to the lit one — a plastic part, not a mirror
+    const g = Math.round(96 + 132 * t);
+    ctx.fillStyle = `rgb(${g}, ${g}, ${Math.round(g * 0.98 + 4)})`;
+    polyPath(v, it.pts);
+    ctx.closePath();
+    ctx.fill();
+    // a hairline of the same tone over each face closes the seams the fill leaves between
+    // neighbouring polygons, which otherwise read as a mesh nobody drew
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
   stroke('solid', COL.point, 1);
   v.gesture?.paint?.(ctx);
   ctx.restore();

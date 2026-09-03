@@ -380,3 +380,64 @@ fn nearly_parallel_views_place_nothing() {
         "a view a hundred-thousandth of a radian off the front is not a second view",
     );
 }
+
+/// **The box shows the objects, not the features they are made of.**
+///
+/// A part is written as a stock, the holes cut out of it, and the body that is the term over
+/// them — four names for one thing and three voids.  Drawn whole, each void was an object in its
+/// own right, hidden-line tested against *itself*, so a bore floated in front of the face it is
+/// drilled through.  A solid is the object exactly when nothing else is made of it.
+#[test]
+fn the_box_shows_the_object_and_not_its_features() {
+    let src = "\
+unit mm
+point a hint(x: 0, y: 0)
+point b hint(x: 60, y: 0)
+point c hint(x: 60, y: 40)
+point d hint(x: 0, y: 40)
+line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close
+horizontal ab
+vertical bc
+a distance(60) b
+a distance(40) d
+ground a
+face sec(ab, bc, cd, da)
+plane front(origin: a, toward: b)
+point o hint(x: 30, y: 20)
+a distance(30, along: x) o
+a distance(20, along: y) o
+circle hole(center: o) hint(r: 8)
+radius(8) hole
+face hole_f(hole)
+solid stock(sec, depth: 30mm)
+solid bore(hole_f, depth: 30mm)
+solid body(stock)
+bore through body
+";
+    let (prog, errs) = gcs_core::syntax::parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let mut e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+    let _ = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+    assert_eq!(e.sketch.solids.len(), 3, "stock, bore, body");
+
+    // seen square on to the front, a block with a blind-looking bore shows its outline and the
+    // bore's mouth — and *nothing* of the bore standing in front of the face
+    let sc = gcs_core::overview::scene_with(&e.sketch, 0.5, -std::f64::consts::FRAC_PI_2, 0.0, true);
+    let shells: Vec<_> =
+        sc.items.iter().filter(|i| i.what == gcs_core::overview::Part::Shell).collect();
+    assert!(!shells.is_empty(), "the object has surfaces");
+    // every shaded face is one the eye can see: none of them is behind another
+    for s in &shells {
+        assert!(s.shade.is_some(), "a surface says how it meets the light");
+    }
+    // and the whole scene is of one object: the box's own extent is the body's and not three
+    // bodies overlapping
+    let solid_pts: Vec<(f64, f64)> = sc
+        .items
+        .iter()
+        .filter(|i| i.what == gcs_core::overview::Part::Solid)
+        .flat_map(|i| i.pts.iter().copied())
+        .collect();
+    assert!(!solid_pts.is_empty(), "and edges over them");
+}

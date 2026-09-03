@@ -1165,7 +1165,23 @@ Conventions:
   opens over the drawing you came to make.  A drag orbits with the y inverted: the pointer pushes
   the box about as if it were held.  The scene is memoised against the drawing, the zoom and the
   orbit (`SketchView.scene`), because a pointer move asks for it twice and the box is read-only.
-  **Where the document has a solid, that is the object and there is nothing to reconstruct**:
+  **The box shows the objects, not the features they are made of** — a solid is the object exactly
+  when nothing else is made of it (`overview::objects`).  A part is a stock, the holes cut out of
+  it, and the body that is the term over them: four names for one thing and three voids, and
+  drawn whole each void was an object in its own right, hidden-line tested against *itself*, so a
+  bore floated in front of the face it is drilled through.
+  **`⇧⌘B` shows the solid's surfaces** as well as its edges (`Part::Shell`, `overview::shell`) —
+  view state like the orbit, never saved or undone, and a *choice* because it costs the boundary
+  of every object.  Back-facing pieces go, and then **a piece is kept when nothing stands between
+  it and the eye**, a ray from its centroid against every other piece.  Depth-sorting does not
+  do it and it is worth saying why: a painter's order compares *centroids*, and a big front face
+  has its centroid in the middle while a small piece behind it may sit nearer than that middle —
+  ordering is only ever right between polygons that do not overlap in the picture, which is
+  exactly the case this is not.  A face *partly* covered is still all-or-nothing, which is the
+  honest limit of a schematic with no depth buffer.  The core says how squarely each face meets
+  the light (`shade`, 0 to 1) and the palette is the front end's, the division `Part` already
+  draws.
+    **Where the document has a solid, that is the object and there is nothing to reconstruct**:
   the box shows the term's own edges, classified against the orbit's eye rather than against a
   view's normal, so a box of a part shows what a part *is* and not what two pictures of it happen
   to agree about.  The corner-and-edge walk is skipped outright then; it is what a drawing with

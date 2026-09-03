@@ -12,7 +12,7 @@ import { core, takeJson } from './wasm.js';
 /** What a scene item *is*, so a front end can ink them apart: a pane of the glass box, a plane's
  *  own axes at its origin, a view's geometry standing on its plane, or an edge of the
  *  reconstructed object. */
-export type Part = 'face' | 'axis' | 'drawn' | 'solid';
+export type Part = 'face' | 'axis' | 'drawn' | 'solid' | 'shell';
 
 export interface Item {
   part: Part;
@@ -28,6 +28,9 @@ export interface Item {
    *  what "go to the view I double-clicked" reads, so the app works out for itself which view a
    *  thing is in nowhere. */
   plane?: number;
+  /** For a `shell` face, how squarely it faces the light, 0 to 1 — a *number*, because which
+   *  tone that is is this side's chrome and the geometry is the core's.  Absent for a line. */
+  shade?: number;
 }
 
 export interface Scene {
@@ -39,6 +42,14 @@ export interface Scene {
 
 /** The scene as seen from the orbit (`az`, `el`), both in radians.  `unit` is the world length
  *  of one screen pixel, which is what refines a curve to the zoom it is being looked at. */
-export function overview(sk: Sketch, unit: number, az: number, el: number): Scene {
-  return takeJson<Scene>(core().gcs_overview_json(sk.handle, unit, az, el));
+/** `shaded` asks for the solid's surfaces as well as its edges: back-face culled, and **far
+ *  first**, so painting them in the order they arrive puts the near ones over the far ones. */
+export function overview(
+  sk: Sketch,
+  unit: number,
+  az: number,
+  el: number,
+  shaded = false,
+): Scene {
+  return takeJson<Scene>(core().gcs_overview_json(sk.handle, unit, az, el, shaded ? 1 : 0));
 }

@@ -75,6 +75,10 @@ export function options(): Promise<void> {
                 'Fold the views back into the glass box they were unfolded from, with the object '
               + 'reconstructed between them.  Drag to orbit, wheel to zoom; the drawing is '
               + 'read-only in there — a click lights an edge up and nothing edits');
+    addCheckbox(box, 'show solid', view.showSolid, (v) => { view.setShowSolid(v); },
+                'In the overview, fill the object\u2019s surfaces as well as drawing its edges. '
+              + 'Only a document with a `solid` in it has surfaces to show; it costs the boundary '
+              + 'of every one, which is why it is a choice');
     addSelect(box, 'method', [...METHODS], view.method, (m) => {
       view.method = m as Method;
       view.solveNow();

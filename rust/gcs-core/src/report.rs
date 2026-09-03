@@ -551,8 +551,8 @@ pub fn callouts_json(sk: &Sketch, unit: f64) -> Json {
 /// The 3D overview, projected to 2D world coordinates (`overview.rs`): the glass box the views
 /// were unfolded from, and the object they are of.  `unit` sizes what is screen-constant, `az`
 /// and `el` are the orbit in radians.
-pub fn overview_json(sk: &Sketch, unit: f64, az: f64, el: f64) -> Json {
-    let s = crate::overview::scene(sk, unit, az, el);
+pub fn overview_json(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Json {
+    let s = crate::overview::scene_with(sk, unit, az, el, shaded);
     let items: Vec<Json> = s
         .items
         .iter()
@@ -572,6 +572,12 @@ pub fn overview_json(sk: &Sketch, unit: f64, az: f64, el: f64) -> Json {
             // a second time which one an entity is drawn in
             if let Some(p) = it.in_plane {
                 o.set("plane", Json::Int(p.idx as i64));
+            }
+            // how squarely a surface faces the light — a number, since which tone that is is the
+            // front end's chrome.  Written only for a surface, the way a class is written only
+            // when it is set
+            if let Some(sh) = it.shade {
+                o.set("shade", Json::Num(sh));
             }
             o
         })
