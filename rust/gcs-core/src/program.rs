@@ -3393,6 +3393,20 @@ fn constrain(
     // up by the solids phase, so nothing is added here — and nothing is *said* here either, or
     // one statement would be reported twice.
     if is_body_on(res, r) {
+        // **a claim on the body rule is refused** (§9.7's rule, one stratum out): a claim is
+        // judged by rank and `on` between two solids adds none, so the word says nothing.  It is
+        // said *here* because this is where the claim flag is still in hand — the solids phase
+        // reads the statement again and would have to ask a second time.
+        if r.claim {
+            diags.push(Diag {
+                code: Code::E040,
+                span: st.span,
+                stmt: Some(st.id),
+                message: "`on` between two solids says what a body is made of, and a claim is \
+                          judged by rank: there is no row here to claim about"
+                    .to_string(),
+            });
+        }
         return None;
     }
     // **a word that relates two solids is a claim, judged and never solved** (§9.8).  Picked up

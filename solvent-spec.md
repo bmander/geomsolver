@@ -575,6 +575,22 @@ plane same(origin: o,  toward: q,  from: front)                // moved by nothi
 
 *Non-normative:* the views of one drawing are images of one object and share one origin, which is `o = 0` for every plane in every document written before there were solids. A part standing a wall's thickness in front of another does not share it, and `offset:` is where that thickness is stated once.
 
+**A mate places a plane, and then the offset is a consequence.**  A stack of parts is a chain of contacts, and stating each one's offset as a number is stating the same chain of subtractions in as many places as there are parts.
+
+```
+plane swingA(origin: O, toward: up, from: views.front)     // parallel, and placed by a mate
+cylA.block.far against plate.body.near
+washer.body.far against cylA.block.near
+```
+
+`F against G` says the two faces are **in contact**.  `F` and `G` each name a *face of a solid* by the path §6.9 gives it, and the statement is Declaration-class: it defines where the left face's plane stands and contributes no residual.  Operand order carries meaning — the left one is placed, the right is the datum.
+
+- The plane `F`'s solid is drawn in MUST be a **placed** plane: one written `from: P` with neither `fold:` nor `offset:`.  A plane the document already positioned is **E083**, as is one placed twice, and a placed plane that no mate places is **E083** for the opposite reason.
+- The two faces MUST be planar, parallel, and looking at each other — their outward normals opposite.  Each is **E083** at the statement.  A face at no single ordinate along its plane's normal (the side of a prism, the wall of a revolution) is nothing a stack can bear on: **E082**, naming it.
+- Two faces in contact are at the same point along the normal they share, which fixes one offset per statement.  The offsets are worked out in **dependency order** and a cycle is **E041**, the same words a plane folded from itself gets.
+
+*Non-normative:* what this replaces reads, in the drawing it was written for, `zA = fwA + D / 2` and `tdisc = zA - rw / 2 - wsh - zdisc`.  Those are true statements about the object; they are just not the ones the designer made, which were "cylinder B's face against the plate's front" and "a washer between the disc and rod A".
+
 ### 6.11 Views and sections **[0.18]**
 
 A part carries no views. It is a solid, and a sheet that wants a picture of it **asks** for one:
@@ -776,6 +792,41 @@ appear in no equation. A claim's dimension may be an expression, but MUST NOT bi
 variable, for the same reason.
 
 `claim` qualifies a single longhand relation statement; it does not enter chains (§6.6).
+
+### 9.8 Claims about solids **[0.18]**
+
+A claim is a statement judged and never solved (§9.7).  Everything §9.7 says of a claim about the drawing holds of a claim about the **object**, and the reason is one stratum out rather than new: a solid is evaluated after the drawing is solved, so a statement about one compiles no row and can no more act than a `claim a project b` can.
+
+Three words relate two solids.  Each is an operator like any other (§9.2), and each settles to no constraint kind, because a constraint kind is a thing with a kernel.
+
+| written | asks |
+|---|---|
+| `a clear(d) b` | `a` and `b` are disjoint, and no point of one is nearer than `d` to the other |
+| `a inside b` | every point of `a` is a point of `b` |
+| `a fits(d) b` | `a` is inside `b`, with no point of it nearer than `d` to `b`'s boundary |
+
+Both operands MUST name solids (**E040** naming the kind that arrived).  `clear` and `fits` take a `Length` in their parentheses and one written without it is **E040**; `inside` asks about containment and takes none.
+
+**A verdict is a measurement, not a yes or no**, and it carries its own uncertainty.  An implementation MUST report, for each such claim: what was measured — a distance, negative where the two overlap — and how far the answer could be wrong.  A claim decided within that margin is reported **undecided**, which is a third answer and not a failure.  Where an implementation evaluates a solid by reducing its round surfaces to flats (§6.9), the margin is the sagitta of that reduction, and a faceted solid lies inside the true one; an implementation that computes exactly reports a margin of zero.  Two claims that fail, one by a hair and one by a hand's breadth, are different drawings, and a reader is owed the difference.
+
+The trichotomy of §9.7 does **not** apply here.  *Consuming* asks whether enforcing a claim would take a freedom, and there is no rank to take: a solid claim holds, is refuted, or is undecided.
+
+**A claim over a sweep.**  Every claim in the language is judged at one pose, and a fact about a *cycle* — a disc clearing a cylinder's mouth all the way round, a port open through mid-stroke — is not one of those.
+
+```
+claim over crank.theta in (0deg, 360deg) {
+  crank.disc clear(1mm) bankA.cyl.body
+  bankA.pis.body inside bankA.cyl.bore
+}
+```
+
+`claim over NAME in (A, B) { … }` judges every claim in its body as the drawing runs along `NAME`, and reports the **worst** pose reached.  It is Structure-class: it says how the claims inside it are judged and asserts nothing itself.
+
+- `NAME` MUST be a **free variable** of the drawing (§5) — an unknown the solver answers for.  A `param` is a number the document already fixed and sweeping a constant is not a question; naming one, or naming geometry, is **E040**.
+- `A` and `B` are read in the units the free variable's readers are written in: an interval of an angle is an angle, and one of a length is a length.
+- An implementation MUST state that its answer is by **sampling**, and how many poses it took.  A claim that holds at every sample is a claim that held at every sample; a swept claim is honest about that in the way a faceted one is honest about its margin.
+
+*Non-normative:* the two together are what make a drawing's claims a test suite for the *object* rather than for one picture of it at one moment.  The loop an author works in — write, run, read the verdicts — needs the verdicts to be about the thing being made.
 
 ---
 
@@ -1121,7 +1172,7 @@ Implementations SHOULD emit, on request, a degrees-of-freedom ledger: per alias 
 
    **[0.18] The object is settled too, and on the same terms.** A face is a region of a plane (§6.8), a solid is a face swept or a term over other solids (§6.9), a plane may be stood off another (§6.10), and a view or a section of a solid is a picture the sheet asks for (§6.11) — so a part is written once and every drawing of it is a question, with no depth kept in step by hand. The stratification is what makes it affordable and is the thing to preserve: **nothing three-dimensional is an unknown**, every extent is an expression, and a solid owns no parameter, so the solver contract of §15 and the ledger of §16.3 are untouched.
 
-   What remains open is the lift itself, and it is now a shorter list. **Lofts** — a solid between two faces on two planes, which is the one sweep the grammar does not have. **Fillets and chamfers**, which need a name for an *edge* rather than for a face: the spelling is reserved, `body.block.side_l.near` — the edge where two named faces of one solid meet, in the path vocabulary §6.9 already uses, so that a boolean cannot renumber one. A **rigid-body mate solver**: joints between two solids in space, at which point something three-dimensional does become an unknown and P4's decomposition question is asked again one stratum out. **Export of the object itself** (a boundary format such as STEP), as against the picture of it a view already exports. **Claims about solids** — clearance, interference, containment — and claims judged **over a sweep** of a free variable rather than at the pose the drawing stands in; both are §9.7's bargain one stratum further out, judged and never solved. Still open from before: `Frame` generalizes; the arc-branch rule needs a replacement (no global winding in 3D); the joint library grows (revolute gains an axis argument, add prismatic/cylindrical/spherical); and from §6.7, a solved-for fold (`fold: along l`).
+   What remains open is the lift itself, and it is now a shorter list. **Lofts** — a solid between two faces on two planes, which is the one sweep the grammar does not have. **Fillets and chamfers**, which need a name for an *edge* rather than for a face: the spelling is reserved, `body.block.side_l.near` — the edge where two named faces of one solid meet, in the path vocabulary §6.9 already uses, so that a boolean cannot renumber one. A **rigid-body mate solver**: joints between two solids in space, at which point something three-dimensional does become an unknown and P4's decomposition question is asked again one stratum out. **Export of the object itself** (a boundary format such as STEP), as against the picture of it a view already exports. Still open from before: `Frame` generalizes; the arc-branch rule needs a replacement (no global winding in 3D); the joint library grows (revolute gains an axis argument, add prismatic/cylindrical/spherical); and from §6.7, a solved-for fold (`fold: along l`).
 
    **[0.18]** One item of the old list is answered by §6.9 rather than deferred: "`ring` generalizes to rotation about a line" is what `about:` does for a **sweep**, and it needed no group action to do it, because a revolution is one solid and not *N* congruent copies. `ring` itself is still the cyclic-symmetry question of §12.3 and is untouched by this — the reference implementation goes on refusing the word until it can hold its copies congruent. The two were only ever adjacent.
 2. ~~**Curve entities.**~~ **[0.2] Settled — see §6.5.** A curve is a *family declared in the document*, two expressions over the geometry it is drawn from, rather than an entity kind per curve. Involute, cycloid and trochoid are library code. What remains open is `tangent` against such a curve (one more order in the parameter, and what a *mating* gear needs) and the path grammar's slot for a curve segment.
@@ -1306,6 +1357,15 @@ term           = ref { "," sweep_arg }                     (* a face swept *)
 body_rel       = ref ( "on" | "through" ) ref ;   (* the body rule, §6.9 — `on` is the ordinary
                                                      infix word, read as this when both
                                                      operands are solids; `through` is its own *)
+
+(* §6.10 [0.18]: a stack.  The operands name *faces* of solids by the path §6.9 gives them, so
+   the word after the left one is past a dotted reference and not past one token. *)
+mate           = ref "against" ref ;
+
+(* §9.8 [0.18]: a claim about the object.  The three words are operators like any other, and a
+   sweep says how the claims in its body are judged. *)
+solid_claim    = [ "claim" ] ref ( "clear" "(" expr ")" | "fits" "(" expr ")" | "inside" ) ref ;
+claim_over     = "claim" "over" ref "in" "(" expr "," expr ")" "{" { solid_claim } "}" ;
 
 (* §6.11 [0.18]: a picture asked of a solid.  An output and not a declaration — nothing is
    minted and the optional name binds nothing. *)
