@@ -620,6 +620,25 @@ Every stroke comes back in the **page** coordinates of the plane it is drawn in 
 
 ---
 
+### 6.12 The sheet as a report **[0.18]**
+
+```
+dimensions(cyl.body) in views.right
+```
+
+`dimensions(S) in P` asks for the callouts that **follow from the object**, laid out by the same engine that lays out every dimension a document states. Like `view` and `section` it is an output: nothing is minted, no name is bound, and it adds no equation, no unknown and no freedom. A generated callout is a *reading* of the drawing, so an implementation MUST NOT let one be addressed as a statement — dragged, edited, given a placement, or resolved back to a constraint — and MUST read it off the **solved** pose, since what it says is what the geometry came to and not what a statement asked for.
+
+What it generates is deliberately bounded, and the boundary is the point:
+
+- the part's **overall extents** in that view, one along each of the view's own axes, measured between the faces that bound them and stood clear of the outline; and
+- the **diameter** of every round feature that view sees square on.
+
+An implementation MUST NOT invent more than that. Which datum a stack is measured from, which fit is critical, what is a reference and what controls the drawing — those are the design, and a machine that chose them would be guessing. A sheet states the rest as it always did; this is what it no longer has to.
+
+*Non-normative:* the complaint this answers is that half the edits to a part sheet were placements, moved off each other by trial and then rendered to see whether they had landed. A drawing's *author* needs the picture; nothing about producing it needs a person.
+
+---
+
 ## 7. Ports **[0.13]**
 
 **Retired.** Everything an instance makes is reachable by its dotted name — `inst.p` for a point of the body, `inst.sub.p` for a nested instance's, `inst.s[0].p1` for one inside a block's copy — so a port was a second name for a thing that already had one (bmander/geomsolver#47). Its three forms are written as what they were:
@@ -1369,8 +1388,10 @@ claim_over     = "claim" "over" ref "in" "(" expr "," expr ")" "{" { solid_claim
 
 (* §6.11 [0.18]: a picture asked of a solid.  An output and not a declaration — nothing is
    minted and the optional name binds nothing. *)
-derived_decl   = view_decl | section_decl ;
+derived_decl   = view_decl | section_decl | dims_decl ;
 view_decl      = "view" [ IDENT ] "(" ref ")" "in" ref [ "class" IDENT { IDENT } ] ;
+dims_decl      = "dimensions" [ IDENT ] "(" ref ")" "in" ref
+                 [ "class" IDENT { IDENT } ] ;             (* §6.12 [0.18] *)
 section_decl   = "section" [ IDENT ] "(" ref "," "at" ":" ref ")" "in" ref
                  [ "class" IDENT { IDENT } ] ;
 
