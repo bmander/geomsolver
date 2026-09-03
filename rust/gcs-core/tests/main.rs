@@ -39,6 +39,7 @@ mod jacobians;
 mod jansen;
 mod linalg;
 mod modules;
+mod names;
 mod open_joint;
 mod order;
 mod overview;

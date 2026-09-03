@@ -1064,6 +1064,26 @@ Conventions:
   kernel is homogeneous in length), and `io::paste` converts a figure between two documents that
   named different ones — `Sketch::rescale`, which is written out by kind because "is this
   parameter a length?" is not a question a `Param` can answer.
+- **A number's three names are one namespace** (issue #47, item 7; Solvent §5, §6.3).  A named
+  dimension (`a distance(w = 60) b`) declares `w` in its body exactly as `param w = 60` does:
+  `flatten::params` collects both as `Def`s and works them out in one dependency order, so a
+  `param` may read a named dimension, a second `w` of either kind is "declared twice", and
+  `pythagoras.sv`'s `distance(a = la)` is a param feeding a dimension whose name the sheet then
+  reads.  A named dimension is two things in scope — its **number** in `vals`, for a `param`,
+  a seed or a count, and its **name** in `Scope::graph` (written name → absolute name), for a
+  dimension's text — because a dimension reading it must keep the *name*, or the tie the
+  expression graph makes and the callout shows would be folded away.  `settle_text` is the one
+  pass over a dimension's text: a name in `graph` reads as its absolute name (`w` → `t1.w`),
+  a formal or a `param` as its number, and **a name nothing in scope declares as the
+  instance's own unknown** (`Scope::instance_prefix`: `t1.w`, the name an unbound formal
+  already gets — a block copy's prefix is skipped, so a `cycle` shares its body's unknowns),
+  which is what stops a component reading the document it is drawn in by writing a name the
+  document happens to define.  One pass, because a second would find a formal's name inside
+  the absolute name the first had just written — which is also why `substitute_with` reads a
+  dotted path as one word.  A name declared inside a block copy is `#3.0.w`, so the expression
+  lexer reads a `#`-led key as an identifier.  The file's named dimensions reach its components
+  through `Walk::file_graph` beside `file_vals`, formals shadowing both; a module's are numbers
+  only (`module_params`), its drawing never being elaborated.  `tests/names.rs` is the gate.
 - A name **nothing defines is a free variable** (`expr::Free`): an unknown of the sketch rather
   than an error, so the dimensions reading it are tied to each other and what they come to is
   left to the solver — one degree of freedom where two stated numbers would have been none.

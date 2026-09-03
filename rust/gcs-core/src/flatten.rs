@@ -70,6 +70,13 @@ struct Scope {
     /// The classes every enclosing instance was given (`t2: Throw(…) class phantom`), which
     /// every declaration emitted under them carries beneath its own (§13.2).
     in_class: crate::style::Classes,
+    /// The **named dimensions** in scope, by the name written to the absolute name the
+    /// expression graph resolves (`w` → `t1.w`).  A named dimension declares its name in its
+    /// body exactly as a `param` does (§6.3): its *number* is in `vals`, so a `param`, a seed
+    /// or a count may read it, and its *name* is here, so a dimension reading it keeps the
+    /// name — renamed to where the graph will find it — and the tie survives on the drawing.
+    /// Formals shadow the file's; a body's own shadow both.
+    graph: BTreeMap<String, String>,
 }
 
 impl Scope {
@@ -77,6 +84,29 @@ impl Scope {
     fn prefix(&self) -> &str {
         self.prefixes.first().map(String::as_str).unwrap_or("")
     }
+
+    /// The innermost *instance's* prefix — what a name nothing declares is put under.  A block
+    /// copy's prefix (`#3.0.`) is skipped: a `cycle` is a repetition of statements written in
+    /// the body around it, so a name none of them declares is that body's unknown, shared by
+    /// every copy, where an instance's is its own (`t1.w`, `t2.w`).
+    fn instance_prefix(&self) -> &str {
+        self.prefixes
+            .iter()
+            .map(String::as_str)
+            .find(|p| !is_copy_prefix(p))
+            .unwrap_or("")
+    }
+}
+
+/// Whether a prefix ends in a block copy's segments, `…#<statement>.<copy>.`.
+fn is_copy_prefix(p: &str) -> bool {
+    let mut segs = p.trim_end_matches('.').rsplit('.');
+    let copy = segs.next().unwrap_or("");
+    let block = segs.next().unwrap_or("");
+    !copy.is_empty()
+        && copy.bytes().all(|b| b.is_ascii_digit())
+        && block.starts_with('#')
+        && block[1..].bytes().all(|b| b.is_ascii_digit())
 }
 
 /// An instance's `in PLANE`, and where it was written — see `Scope::in_plane`.
@@ -151,6 +181,9 @@ struct Walk<'a> {
     /// (§6.3): the numbers a drawing is drawn from — a bore, a stroke — stated once at the top
     /// and not threaded through every formal list.  A formal of the same name shadows one.
     file_vals: BTreeMap<String, Aff>,
+    /// The file's top-level named dimensions, by written name to graph name — the same rule
+    /// as `file_vals`, for the half of a named dimension that is a name rather than a number.
+    file_graph: BTreeMap<String, String>,
     /// The same for each module linked in (§14.4): a module's components read the module's own
     /// top-level params, worked out once, the first time one of its components is bound.
     module_vals: Vec<Option<BTreeMap<String, Aff>>>,
@@ -184,7 +217,8 @@ pub fn expand_component(prog: &Program, comp: &Component, units: Units) -> Expan
     // root's to report, and `expand` does
     let mut file_vals: BTreeMap<String, Aff> = BTreeMap::new();
     let (ne, nc) = (w.errors.len(), w.coded.len());
-    w.params(&prog.root().body, &mut file_vals, &scope);
+    // as numbers only: a traced body is compiled to tapes, not read by the expression graph
+    w.params(&prog.root().body, &mut file_vals, &mut BTreeMap::new(), &scope);
     w.errors.truncate(ne);
     w.coded.truncate(nc);
     let mut vals: BTreeMap<String, Aff> = file_vals.clone();
@@ -211,6 +245,32 @@ fn free(name: String, ty: Ty) -> Aff {
     Aff { free: Some(name), m: 1.0, c: 0.0, dim: ty.dim() }
 }
 
+/// One definition of a body: a `param`, or a named dimension (`w = 60` inside an operator's
+/// parentheses), which declare a name the same way and are worked out together.
+struct Def {
+    name: String,
+    name_span: Span,
+    /// The text after the `=`.
+    text: String,
+    span: Span,
+    dim: bool,
+}
+
+/// The number a relation states, as written — the one unlabelled argument in its operator's
+/// parentheses (§9.1), wherever the statement happens to carry it.
+fn dim_text(rel: &crate::syntax::Relation) -> Option<(&str, Span)> {
+    if let Some(w) = &rel.poly {
+        return w.args.iter().find_map(|a| match a {
+            crate::syntax::OpArg::Dim(t, sp) => Some((t.as_str(), *sp)),
+            _ => None,
+        });
+    }
+    rel.args.iter().flatten().find_map(|a| match a {
+        crate::syntax::Arg::Dim { text, span } => Some((text.as_str(), *span)),
+        _ => None,
+    })
+}
+
 impl<'a> Walk<'a> {
     fn new(prog: &'a Program, units: Units, sym: Option<Sym>) -> Walk<'a> {
         Walk {
@@ -222,6 +282,7 @@ impl<'a> Walk<'a> {
             instances: Vec::new(),
             sym,
             file_vals: BTreeMap::new(),
+            file_graph: BTreeMap::new(),
             module_vals: vec![None; prog.modules.len()],
             errors: Vec::new(),
             coded: Vec::new(),
@@ -258,15 +319,43 @@ impl<'a> Walk<'a> {
         })
     }
 
-    /// A dimension's text, settled: the component's numbers written in, and the names that came
-    /// to text as well.
+    /// A dimension's text, settled: the component's numbers written in, the names that came to
+    /// text as well, and **every other name made absolute** — in one pass, since a second
+    /// would find the numbers' names inside the names it had just written.
+    ///
+    /// The text after the `=` is `expr.rs`'s language and is evaluated against the *document's*
+    /// named dimensions, by absolute name, so this is where a name written in a body is
+    /// resolved (§5): a named dimension in scope reads as the name the graph will find it
+    /// under (`w` → `t1.w`, the file's own `w` as `w`); a formal or a `param` reads as its
+    /// number; and a name nothing in scope declares is **an unknown of the instance** —
+    /// `t1.w`, as an unbound formal already is — so two instances of one component have two
+    /// unknowns, and a component cannot reach into the document it is drawn in by writing a
+    /// name that happens to be defined there.  On the sheet the prefix is empty and a bare
+    /// name is the document's own free variable, as it always was.
     fn settle_text(
         &self,
         text: &str,
         vals: &BTreeMap<String, Aff>,
         scope: &Scope,
     ) -> Result<String, String> {
-        settle(&self.subst_sym(text, vals, scope), vals, self.units)
+        let reads: BTreeSet<String> = expr::parse_in(text, self.units)
+            .map(|p| p.body.deps())
+            .unwrap_or_default();
+        let sym = self.sym.as_ref();
+        let own = scope.instance_prefix();
+        let sub = substitute_with(text, |w| {
+            scope
+                .graph
+                .get(w)
+                .cloned()
+                .or_else(|| of_vals(vals, self.units)(w))
+                .or_else(|| {
+                    let sym = sym?;
+                    scope.prefixes.iter().find_map(|p| sym.texts.get(&format!("{p}{w}")).cloned())
+                })
+                .or_else(|| (!own.is_empty() && reads.contains(w)).then(|| format!("{own}{w}")))
+        });
+        fold(&sub, text, self.units)
     }
 
     /// Keep a name as text — a value nothing here can work out, written in where it is read.
@@ -332,35 +421,76 @@ impl<'a> Walk<'a> {
         }
     }
 
-    /// Work out every `param` a body declares, before any statement of the body is walked.
+    /// Work out every `param` a body declares, before any statement of the body is walked —
+    /// and every **named dimension**, which declares its name in the body the same way
+    /// (§6.3, issue #47 item 7): `a distance(w = 60) b` says what `w` is as much as
+    /// `param w = 60` does, and both are read by everything in the body.
     ///
     /// A body is a set (spec P2): `param h = w / 2` may stand above `param w = 60`, so the
-    /// definitions are taken in *dependency* order and not in line order — a param is ready
-    /// when none of the names it reads is another param of this body still waiting, and the
+    /// definitions are taken in *dependency* order and not in line order — a definition is
+    /// ready when none of the names it reads is another of this body still waiting, and the
     /// ready ones are worked out until none is left.  What remains then reads itself, through
     /// however many others, which is the cyclic definitional dependency spec §11 names E041.
-    /// A second `param w` in one body is the E001 a second `point w` is, and the first stands
-    /// (#43.13); a param whose definition fails is reported once, where it is written, and the
-    /// params that read it are left unsaid rather than each repeating the cause (#45.1).
-    fn params(&mut self, body: &[Stmt], vals: &mut BTreeMap<String, Aff>, scope: &Scope) {
+    /// A second `w` in one body — a param or a dimension, either way — is the E001 a second
+    /// `point w` is, and the first stands (#43.13); a definition that fails is reported once,
+    /// where it is written, and the params that read it are left unsaid rather than each
+    /// repeating the cause (#45.1).
+    ///
+    /// A named dimension's number goes into `vals`, where a `param`, a seed or a count reads
+    /// it; its name goes into `graph`, where a dimension's text reads it — kept as a *name*,
+    /// so the expression graph ties the two dimensions and the tie survives on the drawing.  A
+    /// dimension whose number cannot be worked out here (`w = s`, over a free variable) is
+    /// still a name, and the graph will say what is wrong with its number.
+    fn params(
+        &mut self,
+        body: &[Stmt],
+        vals: &mut BTreeMap<String, Aff>,
+        graph: &mut BTreeMap<String, String>,
+        scope: &Scope,
+    ) {
         let prefix = scope.prefix().to_string();
-        let mut pending: Vec<&crate::syntax::ParamDecl> = Vec::new();
+        let mut pending: Vec<Def> = Vec::new();
         let mut here: BTreeSet<String> = BTreeSet::new();
         for st in body {
-            if let StmtKind::Param(pd) = &st.kind {
-                if !here.insert(pd.name.text.clone()) {
-                    self.err(pd.name.span, format!("`{}` is declared twice", pd.name.text));
-                    continue;
+            let d = match &st.kind {
+                StmtKind::Param(pd) => Def {
+                    name: pd.name.text.clone(),
+                    name_span: pd.name.span,
+                    text: pd.text.clone(),
+                    span: pd.span,
+                    dim: false,
+                },
+                StmtKind::Relation(rel) => {
+                    let Some((text, span)) = dim_text(rel) else { continue };
+                    let Some(name) = expr::parse_in(text, self.units).ok().and_then(|p| p.name)
+                    else {
+                        continue;
+                    };
+                    let rhs = text.split_once('=').map(|(_, r)| r.trim()).unwrap_or("");
+                    Def { name, name_span: span, text: rhs.to_string(), span, dim: true }
                 }
-                pending.push(pd);
+                _ => continue,
+            };
+            // a body's own definition shadows the file's: the name is this body's now.  A
+            // dimension's goes in even when it is the second `w` — the error is the one
+            // reported, and folding the first's number over the second's own name would
+            // report a stray `=` beside it
+            graph.remove(&d.name);
+            if d.dim {
+                graph.insert(d.name.clone(), format!("{prefix}{}", d.name));
             }
+            if !here.insert(d.name.clone()) {
+                self.err(d.name_span, format!("`{}` is declared twice", d.name));
+                continue;
+            }
+            pending.push(d);
         }
         // the names each definition reads; a text that does not parse reads nothing, and is
         // worked out at once so the parse error is the one reported
         let reads: Vec<BTreeSet<String>> = pending
             .iter()
-            .map(|pd| {
-                expr::parse_in(pd.text.trim(), self.units)
+            .map(|d| {
+                expr::parse_in(d.text.trim(), self.units)
                     .map(|p| p.body.deps())
                     .unwrap_or_default()
             })
@@ -369,43 +499,46 @@ impl<'a> Walk<'a> {
         let mut failed: BTreeSet<String> = BTreeSet::new();
         loop {
             let names: BTreeSet<&str> =
-                waiting.iter().map(|&i| pending[i].name.text.as_str()).collect();
+                waiting.iter().map(|&i| pending[i].name.as_str()).collect();
             let (ready, rest): (Vec<usize>, Vec<usize>) = waiting
                 .iter()
                 .partition(|&&i| !reads[i].iter().any(|n| names.contains(n.as_str())));
             if ready.is_empty() {
                 for i in rest {
-                    let pd = pending[i];
+                    let d = &pending[i];
                     let through = reads[i]
                         .iter()
-                        .find(|n| names.contains(n.as_str()) && **n != pd.name.text)
+                        .find(|n| names.contains(n.as_str()) && **n != d.name)
                         .map(|n| format!(", through `{n}`"))
                         .unwrap_or_default();
                     self.coded.push((
                         Code::E041,
-                        pd.span,
-                        format!("`{}` is defined in terms of itself{through}", pd.name.text),
+                        d.span,
+                        format!("`{}` is defined in terms of itself{through}", d.name),
                     ));
                 }
                 return;
             }
             for i in ready {
-                let pd = pending[i];
+                let d = &pending[i];
                 if reads[i].iter().any(|n| failed.contains(n)) {
-                    failed.insert(pd.name.text.clone());
-                    continue;   // the cause is already reported, at the param it reads
+                    failed.insert(d.name.clone());
+                    continue;   // the cause is already reported, at the definition it reads
                 }
-                match value_aff(&pd.text, vals, self.units) {
+                match value_aff(&d.text, vals, self.units) {
                     Ok(a) => {
-                        vals.insert(pd.name.text.clone(), a);
+                        vals.insert(d.name.clone(), a);
                     }
+                    // a dimension's number is the graph's to judge: it stays a name here
+                    Err(_) if d.dim => {}
                     // a text a curve's variables leave no value to — kept, in the symbolic
                     // mode; a mistake, on the sheet
                     Err(e) => {
-                        let abs = format!("{prefix}{}", pd.name.text);
-                        if !self.keep_text(abs, &pd.text, vals, scope) {
-                            self.err(pd.span, format!("`{}`: {e}", pd.name.text));
-                            failed.insert(pd.name.text.clone());
+                        let abs = format!("{prefix}{}", d.name);
+                        let (text, name, span) = (d.text.clone(), d.name.clone(), d.span);
+                        if !self.keep_text(abs, &text, vals, scope) {
+                            self.err(span, format!("`{name}`: {e}"));
+                            failed.insert(name);
                         }
                     }
                 }
@@ -438,18 +571,21 @@ impl<'a> Walk<'a> {
                 vals.entry(k).or_insert(v);
             }
         }
-        // every `param` of the body, whatever line it stands on — a body is a set (P2)
-        self.params(body, vals, scope);
+        // every `param` and named dimension of the body, whatever line it stands on — a body
+        // is a set (P2)
+        let mut graph = scope.graph.clone();
+        self.params(body, vals, &mut graph, scope);
         // and every component written in the file reads them (§14.4)
         if depth == 0 {
             self.file_vals = vals.clone();
+            self.file_graph = graph.clone();
         }
         // and with them the numbers in force are complete for every statement of the body:
         // the enclosing ones the caller passed and the body's own — so that is the table each
         // statement is emitted with, which is what an index (`p[n - 1]`) is read against.  The
         // root's scope arrived with an empty one, and a top-level index could read a literal
         // and not a `param` (#45.2).
-        let scope = &Scope { vals: vals.clone(), ..scope.clone() };
+        let scope = &Scope { vals: vals.clone(), graph, ..scope.clone() };
         for st in body {
             if self.out.len() >= MAX_FLAT {
                 self.err(st.span, format!("more than {MAX_FLAT} statements once expanded"));
@@ -530,6 +666,13 @@ impl<'a> Walk<'a> {
                         }
                         (None, q) => q.clone(),
                     };
+                    // the file's named dimensions, under the formals, as its params are (§6.3);
+                    // a module's own drawing is not drawn, so its are numbers and nothing more
+                    let mut graph = match comp.module {
+                        None => self.file_graph.clone(),
+                        Some(_) => BTreeMap::new(),
+                    };
+                    graph.retain(|k, _| !comp.formals.iter().any(|f| &f.name.text == k));
                     let mut sc = Scope {
                         prefixes: std::iter::once(key).chain(scope.prefixes.iter().cloned()).collect(),
                         cyc: None,
@@ -541,6 +684,7 @@ impl<'a> Walk<'a> {
                             c.0.extend(inst.class.0.iter().cloned());
                             c
                         },
+                        graph,
                     };
                     sc.cyc = scope.cyc.clone();
                     self.body(&comp.body, &sc, &mut sub_vals, path, depth + 1);
@@ -587,6 +731,7 @@ impl<'a> Walk<'a> {
                             vals: sub.clone(),
                             in_plane: scope.in_plane.clone(),
                             in_class: scope.in_class.clone(),
+                            graph: scope.graph.clone(),
                         };
                         let mut p2 = path.to_vec();
                         p2.push(k as u32);
@@ -961,7 +1106,7 @@ impl<'a> Walk<'a> {
         for (name, v) in self.used_params(&uses) {
             vals.insert(name, v);
         }
-        self.params(&body, &mut vals, &scope);
+        self.params(&body, &mut vals, &mut BTreeMap::new(), &scope);
         if let Some(slot) = self.module_vals.get_mut(k) {
             *slot = Some(vals.clone());
         }
@@ -1154,33 +1299,25 @@ pub(crate) fn value_aff(
         // an unknown the scope *bound* — a formal left unbound, a param over one — carries on;
         // a name nothing binds is the document's, and a component's numbers cannot read it
         (None, Some(n)) if !env.values().any(|b| b.free.as_deref() == Some(n)) => Err(format!(
-            "`{n}` is not a number here — a component's parameters are, and the document's \
-             dimensions are not"
+            "`{n}` is not a number here — nothing in scope gives it one"
         )),
         _ => Ok(a),
     }
 }
 
-/// A dimension's text with the enclosing component's parameters worked out.
-///
-/// The text after `==` is `expr.rs`'s language and is evaluated against the *document's* named
-/// dimensions — where a component's own parameters are not, and a name nothing defines is a free
-/// variable there.  So `sin(half / 2)` inside a `Tooth` would quietly become an unknown for the
-/// solver to answer rather than the number the component was given.  Substituting first is what
-/// keeps the two namespaces apart.
+/// A dimension's text with the names in scope written in (`sub`), folded.
 ///
 /// A text that comes out a plain number is replaced by it: the formula was about parameters the
 /// flat document no longer has, so printing it back would name things that are not there.  One
 /// that still reads a document name — `w / 2` — keeps its form, and the reader keeps their
 /// formula.
-fn settle(text: &str, vals: &BTreeMap<String, Aff>, units: Units) -> Result<String, String> {
-    let sub = substitute(text, vals, units);
+fn fold(sub: &str, text: &str, units: Units) -> Result<String, String> {
     // nothing of the component's in it: leave it exactly as written, so `h = w / 2` and `3 1/8`
     // reach the document with the form somebody typed
     if sub == text {
         return Ok(text.to_string());
     }
-    let p = expr::parse_in(&sub, units)?;
+    let p = expr::parse_in(sub, units)?;
     let env: BTreeMap<String, Aff> = BTreeMap::new();
     if let Ok(a) = expr::eval(&p.body, &env) {
         if let Some(v) = a.number() {
@@ -1193,7 +1330,7 @@ fn settle(text: &str, vals: &BTreeMap<String, Aff>, units: Units) -> Result<Stri
             }
         }
     }
-    Ok(sub)
+    Ok(sub.to_string())
 }
 
 /// Every identifier the environment knows, replaced by the number it stands for.
@@ -1325,11 +1462,28 @@ fn substitute_with(text: &str, of: impl Fn(&str) -> Option<String>) -> String {
     let mut out = String::with_capacity(text.len());
     let b: Vec<char> = text.chars().collect();
     let mut i = 0usize;
+    let ident = |c: char| c.is_alphanumeric() || c == '_';
     while i < b.len() {
-        if b[i].is_alphabetic() || b[i] == '_' {
+        // a word is what the expression lexer reads as one name: a dotted path is one word
+        // (`c.center.x`, `t1.w`), and so is a block copy's key (`#3.0.w`) — never its head
+        // alone, which is what let a second pass find a formal's name inside a name the first
+        // had just written
+        let key = b[i] == '#' && b.get(i + 1).is_some_and(|&c| ident(c));
+        if b[i].is_alphabetic() || b[i] == '_' || key {
             let from = i;
-            while i < b.len() && (b[i].is_alphanumeric() || b[i] == '_') {
+            if key {
                 i += 1;
+            }
+            loop {
+                while i < b.len() && ident(b[i]) {
+                    i += 1;
+                }
+                let dotted = i + 1 < b.len() && b[i] == '.' && ident(b[i + 1]);
+                if dotted && (key || !b[i + 1].is_ascii_digit()) {
+                    i += 1;
+                } else {
+                    break;
+                }
             }
             let word: String = b[from..i].iter().collect();
             match of(&word) {

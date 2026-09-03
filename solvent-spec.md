@@ -128,6 +128,8 @@ Implementations **MUST** check dimensions in expressions and constraints, and MU
 
 A **name** is worth a number, and where that number is *used* decides what it is: `w = 80` in a `Length` slot does not make `w` a length, since the same 80 may be a run, a rise or an angle. A unit on the literal (`w = 80mm`) says otherwise, and so does a component formal's declared type (§8) — which is what catches `param x = w + phi`.
 
+**[0.16] One namespace for a number's names.** A number is named three ways — `param w = 60`, a named dimension `distance(w = 60)`, and a bare `w` nothing defines, which is a free variable — and they resolve by one rule (§5): a definition, either kind, declares its name in the body it is written in; a name nothing in scope declares is an unknown of the *instance* the body is elaborated as. A `param` and a named dimension differ in where the number is edited (the source, or the drawing) and in nothing else: a `param` MAY read a named dimension, a second definition of a name in one body is **E001** whichever kinds the two are, and a `param` reading a free variable is an error, since nothing in scope gives the name a number.
+
 | function | |
 |---|---|
 | `sin`, `cos`, `tan` | `Angle → Scalar` |
@@ -252,8 +254,9 @@ no one pose to record.
 ## 5. Names, scope, and resolution
 
 - The scope of a name is the entire component body in which it is declared (P2). Forward reference is legal and idiomatic.
-- Redeclaration of a name within one body is an error (**E001**).
-- Instance members are accessed by dotted paths: `t.lead`, `g.hub.origin`.
+- Redeclaration of a name within one body is an error (**E001**). A `param` and a named dimension (§9.1) declare a name alike, so `param w` beside `distance(w = 60)` is E001.
+- Instance members are accessed by dotted paths: `t.lead`, `g.hub.origin` — a dimension named inside an instance included: `t.w`.
+- **[0.16]** A name in an expression that nothing in scope declares — no formal, no `param`, no named dimension of the body, the file or a `use`d module — is a **free variable of the instance** the body is elaborated as (`t1.w`, `t2.w`), the rule §6.5 applies to a formal left unbound. On the sheet the instance is the document, and the unknown is the document's. A component therefore cannot read the document it is drawn in by name, and a module's component cannot read the caller's at all. Inside a `cycle` or `repeat`, a name the block declares is each copy's own (a dimension named in a block is defined once per copy) and a name it does not declare is the enclosing body's, shared by every copy.
 - Inside `repeat`/`cycle`/`ring` blocks, the index binder (`as i`) and the pseudo-instances `next` / `prev` are in scope (§12).
 - There is no shadowing: a block binder that collides with an outer name is an error (**E002**).
 
@@ -317,7 +320,7 @@ param R = m * N / 2
 
 Introduces a named definitional value. `param` values are evaluated at elaboration time when all inputs are `Int`/literal, otherwise they are definitional scalars.
 
-**[0.12] A file's top-level `param`s are in scope in every component the file defines**, and in the file's root body — the numbers a drawing is drawn from, a bore and a stroke, stated once at the top rather than threaded through every formal list. A formal of the same name shadows one, since a component's interface must not break when a `param` of that name is added above it. The `param`s of a module the file `use`s (§14.4) are in the file's scope too, under its own. A `param` MUST NOT read geometry (`a.x`): a `param` feeds constraints, and a number read off a seed would make the solution set depend on where a solve began (P3); a *seed* may (§6.4).
+**[0.12] A file's top-level `param`s are in scope in every component the file defines**, and in the file's root body — the numbers a drawing is drawn from, a bore and a stroke, stated once at the top rather than threaded through every formal list. A formal of the same name shadows one, since a component's interface must not break when a `param` of that name is added above it. **[0.16]** The file's top-level *named dimensions* are in scope the same way, and a body's own definition shadows the file's; a module's named dimensions are numbers to the components that read them, its drawing not being drawn. The `param`s of a module the file `use`s (§14.4) are in the file's scope too, under its own. A `param` MUST NOT read geometry (`a.x`): a `param` feeds constraints, and a number read off a seed would make the solution set depend on where a solve began (P3); a *seed* may (§6.4).
 
 ### 6.4 Seeds written inline **[0.2]**
 

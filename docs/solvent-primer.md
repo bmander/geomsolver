@@ -205,9 +205,17 @@ a distance(w = 60) b            // states 60 and names it w
 c distance(w / 2) d             // reads it
 ```
 
+A named dimension **declares its name in the body it is written in**, exactly as `param w = 60`
+would: a `param`, a seed or a count may read its number (`param h = w / 2`), and a second `w` in
+the same body — a param or a dimension, either way — is declared twice (E001). The two differ
+only in where the number is edited: a `param` in the source, a named dimension on the drawing.
+
 A name nothing defines is a **free variable**: one unknown of the sketch, tying together every
 dimension that reads it (the CLI reports it as W111). The tie must be affine in one free name
 (`a`, `a / 2`, `2 * a + 5`); `a * a`, `sin(a)` and two free names in one dimension are errors.
+Inside a component the unknown is the **instance's own** — `t1.w`, `t2.w` — the same rule as a
+formal left unbound (1.8), so a component cannot reach into the document that draws it by
+writing a name the document happens to define.
 
 **Every number has a dimension, and it is checked.** There are two, length and angle. `*` and `/`
 derive them, `+` and `-` demand agreement, and what an expression comes to is checked against its
@@ -299,9 +307,11 @@ formal and the actual are one entity, so a component boundary costs nothing. Arg
 positionally or by label. A numeric formal left unbound is a free unknown of the drawing, named
 under the instance (`c.theta`), which is how a mechanism is drawn with its crank free (2.9.1).
 
-A file's top-level `param`s are in scope inside the components it defines, and so are those of
-the modules it uses; a formal of the same name shadows a param. Everything an instance makes is
-reachable by dotted name (`c.p`, `t0.e`, `five.s[0].p1`) — there is no export list, and passing
+A file's top-level `param`s and named dimensions are in scope inside the components it defines,
+and so are the params of the modules it uses; a formal of the same name shadows either, and a
+body's own definition shadows both. Everything an instance makes is
+reachable by dotted name (`c.p`, `t0.e`, `five.s[0].p1`, and a dimension named inside it as
+`t0.w`) — there is no export list, and passing
 one instance's entity to another as an argument makes the two one entity. (`port` is retired;
 a document that writes one is told what to write instead.)
 
@@ -509,7 +519,8 @@ p1 distance(w / 2) p2           // reads it: the height follows the width
 ```
 
 Edit the 60 and the height follows. A number stated once and read everywhere is the difference
-between a drawing and a picture of one.
+between a drawing and a picture of one. The name is declared in the body like a `param`'s, so
+`param h = w / 2` may read it too, and `hint(x: w)` may seed from it.
 
 ### 2.4 A free variable: DOF 1, under, on purpose
 
@@ -528,7 +539,9 @@ ground a
 ```
 
 `s` names an unknown. The two lengths must agree; nothing says what they are, so one freedom is
-left. Give `s` a value anywhere, or add a third constraint, and it closes.
+left. Give `s` a value anywhere, or add a third constraint, and it closes. Written inside a
+component, `s` is that instance's unknown (`t1.s`): two instances have two, as they would with a
+formal left unbound.
 
 ### 2.5 An arc, tangent to what it joins: DOF 0, well
 
