@@ -32,7 +32,7 @@ component ThreeViews(o: point, right: Length, up: Length) {
   o distance(right, along: x) right_origin
   o distance(0, along: y) right_origin
   right_origin distance(0, along: x) qr
-  right_origin distance(-40, along: y) qr
+  right_origin distance(40, along: down) qr
   plane right(origin: right_origin, toward: qr, from: front, fold: -90deg)
 
   point top_origin

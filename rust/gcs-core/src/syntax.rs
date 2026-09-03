@@ -223,6 +223,11 @@ pub enum Ty {
     Scalar,
     Length,
     Angle,
+    /// A side of a line — `left` or `right`, the words a statement pins a magnitude with (§9.2).
+    /// Not a number: a component that must place a point either side of an axis takes one of
+    /// these, where before it took a `Scalar` it multiplied by (issue #48, item 4), which put the
+    /// unreadable idiom inside every helper instead of at the statement.
+    Side,
     Ent(EntKind),
 }
 
@@ -236,6 +241,7 @@ impl Ty {
             "Scalar" => Ty::Scalar,
             "Length" => Ty::Length,
             "Angle" => Ty::Angle,
+            "Side" => Ty::Side,
             other => Ty::Ent(EntKind::parse(&other.to_lowercase())?),
         })
     }
@@ -248,7 +254,7 @@ impl Ty {
         match self {
             Ty::Length => crate::units::Dim::LENGTH,
             Ty::Angle => crate::units::Dim::ANGLE,
-            Ty::Int | Ty::Scalar | Ty::Ent(_) => crate::units::Dim::SCALAR,
+            Ty::Int | Ty::Scalar | Ty::Side | Ty::Ent(_) => crate::units::Dim::SCALAR,
         }
     }
 }
@@ -1130,7 +1136,10 @@ impl Written {
                     OpArg::Slot { key, arg } if key.text == *name => Some(arg.clone()),
                     _ => None,
                 })
-            } else if sk.is_dimension() && i + 1 == spec.len() {
+            } else if sk.is_dimension() {
+                // the number, wherever the dimension slot stands: a kind has at most one, so it
+                // is *the* number in the parentheses, and a selector may follow it in spec order
+                // (`distance(12, side: left)` — issue #48, item 4)
                 self.args.iter().find_map(|a| match a {
                     OpArg::Dim(t, sp) => Some(Arg::Dim { text: t.clone(), span: *sp }),
                     _ => None,
@@ -1974,17 +1983,28 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     let mut ents: Vec<String> = Vec::new();
     let mut parens: Vec<String> = Vec::new();
     let mut hints: Vec<String> = Vec::new();
-    // which of the three a pair of points means is not in the kind's name but in `along:`
-    match kind {
-        CKind::HorizontalDistance => parens.push("along: x".to_string()),
-        CKind::VerticalDistance => parens.push("along: y".to_string()),
-        _ => {}
+    // which of the three a pair of points means is not in the kind's name but in `along:`, so
+    // the axis is written back in whenever the slot itself says nothing — a run that names its
+    // direction (`along: left`) carries the word in the slot and writes it there like any other
+    let named_along = matches!(args.get(3).and_then(|a| a.as_ref()), Some(Arg::Word(w)) if !w.is_empty());
+    if !named_along {
+        match kind {
+            CKind::HorizontalDistance => parens.push("along: x".to_string()),
+            CKind::VerticalDistance => parens.push("along: y".to_string()),
+            _ => {}
+        }
     }
     for (i, (name, sk)) in spec.iter().enumerate() {
         let Some(a) = args.get(i).and_then(|a| a.as_ref()) else { continue };
         // an entity slot the core infers — a projection's planes — is never spelled: the
         // source writes two points, and a lifted statement carries what the core filled in
         if sk.is_entity() && kind.infers_arg(i) {
+            continue;
+        }
+        // a selector nobody wrote is not written: the empty word is what an omitted `side:` or
+        // `sense:` holds, and it says the type's own default — that both sides are solutions and
+        // the seed picks, or that the angle turns the way the language counts (issue #48, item 4)
+        if matches!(a, Arg::Word(w) if w.is_empty()) {
             continue;
         }
         if sk.takes_ref() {
@@ -1995,7 +2015,10 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
                 Some((false, t)) => hints.push(t),
                 None => {}
             }
-        } else if sk.is_dimension() && i + 1 == spec.len() {
+        } else if sk.is_dimension() {
+            // the number is written bare and first, wherever its slot stands: a kind has at most
+            // one dimension, so there is nothing for a reader to confuse it with, and a selector
+            // may sit after it in spec order (`distance(12, side: left)`)
             parens.insert(0, dim_text(a));
         } else {
             parens.push(write_arg(name, *sk, a));

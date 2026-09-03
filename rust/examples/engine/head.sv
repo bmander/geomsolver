@@ -33,7 +33,7 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
     o distance(deck + gasket, along: y) f_l
     o distance(deck + gasket, along: y) f_r
     f_l distance(2 * hw) f_r
-    o distance(-110, along: x) t_l
+    o distance(110, along: left) t_l
     o distance(deck + head, along: y) t_l class shown
     // the pent roof over the bore, from the face at the bore's edges up to the ridge
     r_l: At(o, dx: -D / 2, dy: deck + gasket)

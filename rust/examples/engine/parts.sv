@@ -60,10 +60,10 @@ component Piston(small: point, pin: Int) {
   r1.p2 on rs
   r2.p1 on ls
   r2.p2 on rs
-  cl distance(-6, along: y) r1.p1
-  cl distance(-6, along: y) r1.p2
-  cl distance(-12, along: y) r2.p1
-  cl distance(-12, along: y) r2.p2
+  cl distance(6, along: down) r1.p1
+  cl distance(6, along: down) r1.p2
+  cl distance(12, along: down) r2.p1
+  cl distance(12, along: down) r2.p2
 }
 
 // A point placed from `o` by two ordinates — the corner of an outline, a centre on a pitch.

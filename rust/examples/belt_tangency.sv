@@ -16,7 +16,7 @@
 // whole difficulty — but a document may still say it, and older ones do, which is why the case
 // is kept.
 //
-// `side: -1` says which way round the belt runs.  It is written out because a document that
+// `side: right` says which way round the belt runs.  It is written out because a document that
 // leaves it out gets a fixed default rather than a look at the drawing.
 
 point c1 hint(x: 0, y: 0)
@@ -33,8 +33,8 @@ radius(10) k1
 radius(10) k2
 p on k1
 q on k2
-belt tangent(side: -1) k1
-belt tangent(side: -1) k2
+belt tangent(side: right) k1
+belt tangent(side: right) k2
 
 ground c1
 ground c2

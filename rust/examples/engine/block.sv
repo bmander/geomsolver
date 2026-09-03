@@ -73,7 +73,7 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     point sp_r hint(x: o.x + 60mm, y: o.y + sump)
     line su_r(pr_r, sh_r.p) -> line ss_r(sh_r.p, sp_r) -> line sb(sp_r, sp_l) ->
       line ss_l(sp_l, sh_l.p) -> line su_l(sh_l.p, pr_l)
-    o distance(-60, along: x) sp_l
+    o distance(60, along: left) sp_l
     o distance(sump, along: y) sp_l
     o distance(60, along: x) sp_r
     sp_r distance(-sump, along: y) o class shown

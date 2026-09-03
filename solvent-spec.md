@@ -189,7 +189,9 @@ component Name(p1: Type1, p2: Type2, ...) {
 
 ### 4.1 Parameters
 
-Parameters are passed by name or position at instantiation. A parameter of entity type (`Point`, `Circle`, `Frame`, `Line`) is **bound by aliasing** (P1): the formal name and the actual argument denote the same entity. A parameter of value type (`Int`, `Scalar`, `Length`, `Angle`) is a compile-time or definitional value; it contributes no unknowns.
+Parameters are passed by name or position at instantiation. A parameter of entity type (`Point`, `Circle`, `Frame`, `Line`) is **bound by aliasing** (P1): the formal name and the actual argument denote the same entity. A parameter of value type (`Int`, `Scalar`, `Length`, `Angle`, **[0.17]** `Side`) is a compile-time or definitional value; it contributes no unknowns. A `Side` is one of the words `left` and `right` (§9.2) and is not a number: it may be passed on to another instance and written in a selector, and nothing else.
+
+**[0.17] Which way is a word, not a sign.** A distance measured **from a line** — a point to a line, a line to a line — is a **magnitude**: its solution set is *both* sides, and which one a solver finds is the seed's business (P3), as it is in every other sketcher. A negative one is an error (**E040**) wherever the number comes from, including a component's argument, since the kernel cannot tell one side from the other and the minus therefore said nothing a drawing could show. A statement that must pin a side writes the word — `p distance(12, side: left) ax`, left being of the line's own `p1 → p2` — and so does a tangency (`side: left | right`, which was `side: -1`). Where a sign is *arithmetic* rather than a convention — the run and the rise, signed from the first point to the second, and the directed angle of §9.4 — it stays a sign, because a component computes it from coordinates it is given; each gains the word that says the same thing in the open (`along: right | left | up | down`, `sense: cw | ccw`), and a document SHOULD prefer it. A component takes a side as a value of the type **`Side`** (`s: Side`, `side: s`), which is a word and not a number: encoded as ±1 it would put the unreadable idiom back one level down, inside every helper.
 
 **[0.17] Labels are mandatory past the entities.** An argument bound by position MUST bind a parameter of entity type, and MUST NOT be written after a labelled argument; both are **E004**, reported at the argument. So an instantiation is the entities it is written over, in order, and then every number by the name of the formal it fills — `Cylinder(swing, side, top, piv, rod, across, dir: dir, fw: fw, o_s: o_s, o_t: o_t)`. Position is a count, and a count is the one thing a reader of a long formal list cannot check: an argument written one place off binds to the formal beside the one it was meant for, which is a *different* mistake from the one it is then reported as — a `Length` complaining it is not an `Angle`, a hexagon's `phase` arriving as its side count, a plane arriving where a number was wanted. The rule costs the entities nothing, because their order is the one an assembly reads by, and it costs a number one word, which is the word that says which.
 
@@ -523,7 +525,7 @@ fix c.r                             line1 tangent(side: -1) circle1
 What goes in the parentheses is a short list:
 
 - **the number**, which may be named or an expression exactly as elsewhere: `distance(80)`, `distance(x = 7)`, `distance(h = w / 2)`, `distance(1' 3")`;
-- **a selector** — `side: -1`, `at: start`, `external: true`, `along: x`. **[0.17]** A selector's *key* must be one the word has (a slot of the settled kind, or `along`, which chooses the kind and fills no slot), and its *value* must be one of the words that slot takes — both **E040**, at the key. Neither was checked through 0.16, and both failures were silent: a mistyped key was dropped and the statement settled without it, and a word outside the set fell through to whichever reading the implementation tested for last, so `at: banana` meant `end`. An implementation MUST publish each slot's vocabulary in its registry, so that a front end offers what the core accepts rather than keeping a second list;
+- **a selector** — `side: left`, `at: start`, `external: true`, `along: x`. **[0.17]** A selector's *key* must be one the word has (a slot of the settled kind, or `along`, which chooses the kind and fills no slot), and its *value* must be one of the words that slot takes — both **E040**, at the key. Neither was checked through 0.16, and both failures were silent: a mistyped key was dropped and the statement settled without it, and a word outside the set fell through to whichever reading the implementation tested for last, so `at: banana` meant `end`. An implementation MUST publish each slot's vocabulary in its registry, so that a front end offers what the core accepts rather than keeping a second list;
 - **the third entity**, for `symmetry`;
 - **a pin**, `t == 0.4`, for a slot the constraint owns. Its *seed* is the trailing `hint(t: 0.4)` where every seed in the language is (§4.3).
 
@@ -570,7 +572,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `parallel(L1, L2)` | sin(L1.dir − L2.dir) | 1 | |
 | `perpendicular(L1, L2)` | cos(L1.dir − L2.dir) | 1 | |
 | `tangent(C1, C2)` | ‖c1−c2‖ − (r1 + r2) *or* ‖c1−c2‖ − \|r1 − r2\| | 1 | branch by decoration, §9.5 |
-| `tangent(C, L)` | dist(C.center, L) − C.r | 1 | |
+| `tangent(C, L)` | dist(C.center, L) − side·C.r | 1 | `side: left \| right` **[0.17]** |
 | `equal(e1, e2)` | e1 − e2 | 1 | any matching dimension |
 | `midpoint(m, a, b)` | m − (a+b)/2 | 2 | |
 | `ccw(a, b, c)` | (b−a) × (c−a) > 0 | 0 | inequality; selects a connected component |
@@ -584,6 +586,8 @@ Implementations MAY extend this library. Extensions MUST document residuals and 
 ### 9.4 Signed angles
 
 `angle(a, b, c)` is the signed turn at vertex `b` from ray `b→a` to ray `b→c`, positive counterclockwise, in (−π, π]. Equating it to an expression is a 1-equation constraint. Programs that need the unsigned angle write `abs(angle(...))`; implementations MUST warn (**W102**) that `abs` introduces a branch (two solution families) unless an orientation predicate elsewhere disambiguates.
+
+**[0.17]** `sense: cw` turns the number a statement writes: `l1 angle(30, sense: cw) l2` states −30° and is the spelling a drawing SHOULD use, the minus being a coin a reader cannot check. An implementation MUST draw the figure from the number the statement *makes* — the arc sweeping the way the label reads.
 
 `angle(L1, L2)` between two lines is likewise directed: `∠(dir(L1), dir(L2))`, the signed turn from `L1`'s direction (p1→p2) to `L2`'s, positive counterclockwise, in (−π, π] as everywhere else in this section. It is NOT a statement mod a half turn — the residual pins which side, so a bearing needs no orientation predicate beside it — and it is therefore sensitive to the order of the two lines and to the endpoint order each was declared with. Equating it to `e` compares the two mod 2π, so `e` may be written on any lap: 270° and −90° state the same thing, and an implementation MUST NOT treat a stated angle outside (−π, π] as an error.
 

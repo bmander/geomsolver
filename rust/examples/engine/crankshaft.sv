@@ -33,7 +33,7 @@ component Throw(o: point, axis: line, theta: Angle) {
   point pin hint(x: o.x + R * sin(theta), y: o.y + R * cos(theta))
   line arm(o, pin) class axis
   o distance(R) pin class shown
-  axis angle(-theta) arm
+  axis angle(theta, sense: cw) arm
   circle kp(center: pin) hint(r: rp)
   radius(rp) kp class shown
   // the eye: the arc of the far side, between the two flank tangents
@@ -46,8 +46,8 @@ component Throw(o: point, axis: line, theta: Angle) {
   point cr hint(x: o.x - rcw * sin(theta + asin(hcw / rcw)), y: o.y - rcw * cos(theta + asin(hcw / rcw)))
   arc rim(center: o, start: cl, end: cr) hint(r: rcw)
   radius(rcw) rim class shown
-  cl distance(hcw) arm
-  cr distance(-hcw) arm
+  cl distance(hcw, side: left) arm
+  cr distance(hcw, side: right) arm
   // the flanks, tangent to the eye where they leave it
   line fl(el, cl)
   line fr(er, cr)
@@ -67,10 +67,10 @@ component Throw(o: point, axis: line, theta: Angle) {
   point od hint(x: pin.x - rp * sin(theta) + oilr * cos(theta), y: pin.y - rp * cos(theta) - oilr * sin(theta))
   line oil_l(oa, ob) class hidden
   line oil_r(oc, od) class hidden
-  oa distance(oilr) arm
-  ob distance(oilr) arm
-  oc distance(-oilr) arm
-  od distance(-oilr) arm
+  oa distance(oilr, side: left) arm
+  ob distance(oilr, side: left) arm
+  oc distance(oilr, side: right) arm
+  od distance(oilr, side: right) arm
   ob on kp
   od on kp
   oa distance(rj) o

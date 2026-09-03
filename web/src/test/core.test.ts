@@ -892,13 +892,22 @@ test('point-line distance offsets a point from a line', () => {
   assert.ok(Math.abs(p.x.value - 4) < 1e-7);          // it slides only perpendicular
 });
 
-test('the sign of a point-line distance picks the side', () => {
+test('the word on a point-line distance picks the side', () => {
+  // the number is a magnitude and the side is a word (§9.2, issue #48 item 4): stated, the
+  // solve puts the point there; left out, both sides are solutions and the seed decides
   const sk = new Sketch();
   const base = sk.line(sk.point(0, 0, true), sk.point(10, 0, true));
   const p = sk.point(4, 9);
-  sk.add(new C.PointLineDistance(p, base, -3));
+  sk.add(new C.PointLineDistance(p, base, 3, 'right'));
   assert.ok(solve(sk).success);
   assert.ok(Math.abs(p.y.value + 3) < 1e-7);
+
+  const sk2 = new Sketch();
+  const b2 = sk2.line(sk2.point(0, 0, true), sk2.point(10, 0, true));
+  const q = sk2.point(4, 9);
+  sk2.add(new C.PointLineDistance(q, b2, 3));
+  assert.ok(solve(sk2).success);
+  assert.ok(Math.abs(q.y.value - 3) < 1e-7, 'seeded above, it stays above');
 });
 
 test('point-line distance measures to the infinite line', () => {
@@ -930,11 +939,11 @@ test('parallel distance does not itself make lines parallel', () => {
   assert.ok(Math.abs(d1[0] * d2[1] - d1[1] * d2[0]) > 1e-6);   // still skew
 });
 
-test('the sign of a parallel distance picks the side', () => {
+test('the word on a parallel distance picks the side', () => {
   const sk = new Sketch();
   const base = sk.line(sk.point(0, 0, true), sk.point(10, 0, true));
   const other = sk.line(sk.point(1, 3), sk.point(12, 9));
-  sk.add(new C.Parallel(base, other), new C.ParallelDistance(base, other, -5));
+  sk.add(new C.Parallel(base, other), new C.ParallelDistance(base, other, 5, 'right'));
   assert.ok(solve(sk).success);
   assert.ok(Math.abs(other.p1.y.value + 5) < 1e-7);
 });
@@ -1084,9 +1093,9 @@ test('every argument a proxy holds reaches the core', () => {
   const circle = sk.circle(sk.point(5, 3), 1);
   const t = new C.TangentLineCircle(line, circle);
   sk.add(t);
-  t.side = -1;
+  t.side = 'right';
   const stored = () => JSON.parse(io.dumps(sk)).constraints as { type: string; args: unknown[] }[];
-  assert.equal(stored()[0].args[2], -1);
+  assert.equal(stored()[0].args[2], 'right');
 
   const c2 = sk.circle(sk.point(30, 0), 2), c3 = sk.circle(sk.point(31, 0), 1);
   const tc = new C.TangentCircleCircle(c2, c3);
@@ -1168,7 +1177,7 @@ test('a tangency left open takes its branch from the geometry', () => {
   const t = new C.TangentLineCircle(line, circle);
   assert.equal(t.side, null);            // nothing decided before there is a sketch
   sk.add(t);
-  assert.equal(t.side, -1);
+  assert.equal(t.side, 'right');
 
   assert.ok(solve(sk).success);
   assert.ok(Math.abs(circle.center.y.value + 1) < 1e-6, `${circle.center.y.value}`);

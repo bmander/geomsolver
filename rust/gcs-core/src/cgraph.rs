@@ -83,6 +83,10 @@ pub enum EdgeVal {
     Zero,
     /// A live dimension: argument `arg` of constraint `cid`.
     Dim { cid: u32, arg: usize },
+    /// A distance measured *from a line*, which the cluster places on one side: the number the
+    /// statement makes, signed by the word where it pins a side and by the pose where it does
+    /// not (`Constraint::signed_gap`, §9.2).
+    Gap { cid: u32 },
     /// `sign` times the graph's known radius for that radius Param.
     Radius { param: u32, sign: f64 },
 }
@@ -217,6 +221,9 @@ impl ConstraintGraph {
             EdgeVal::Zero => 0.0,
             EdgeVal::Dim { cid, arg } => {
                 sk.constraint(cid).map(|c| c.args[arg].num()).unwrap_or(0.0)
+            }
+            EdgeVal::Gap { cid } => {
+                sk.constraint(cid).map(|c| c.signed_gap(sk)).unwrap_or(0.0)
             }
             EdgeVal::Radius { param, sign } => {
                 sign * self.known_radius.get(&param).copied().unwrap_or(0.0)
@@ -437,7 +444,7 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
                     kind: EdgeKind::Pl,
                     a,
                     b,
-                    value: EdgeVal::Dim { cid: c.id, arg: 2 },
+                    value: EdgeVal::Gap { cid: c.id },
                     source: Some(c.id),
                 });
             }
@@ -451,7 +458,7 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
                     kind: EdgeKind::Pl,
                     a,
                     b,
-                    value: EdgeVal::Dim { cid: c.id, arg: 2 },
+                    value: EdgeVal::Gap { cid: c.id },
                     source: Some(c.id),
                 });
             }
@@ -527,7 +534,7 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
                 // gives n·(c − a) = cross(d, c − a)/|d|, which is the kernel's residual)
                 let circle = c.args[1].ent();
                 let param = sk.round_radius(circle) as u32;
-                let side = c.args[2].num();
+                let side = c.side().unwrap_or(1.0);
                 let a = g.point_el(sk.round_center(circle));
                 let b = g.line_el(c.args[0].ent().i());
                 g.edges.push(Edge {

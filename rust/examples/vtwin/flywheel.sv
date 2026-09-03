@@ -18,7 +18,7 @@ component Flywheel(front: plane, side: plane, top: plane, o: point, ref: line,
     point se hint(x: o.x + rfw, y: o.y)
     line ssa(o, se) class gone
     o distance(rfw) se
-    ref angle(-90deg) ssa
+    ref angle(90deg, sense: cw) ssa
     gs: Grub(o, ssa, ref, dir: 0deg, rin: dhub / 2, rout: rfw)
   }
   repeat draw_side {

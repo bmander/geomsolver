@@ -2424,7 +2424,9 @@ fn constrain(
                 // the word is one of the kind's own, or it is a typo: unchecked, anything that
                 // was not `start` silently meant `end` (issue #48, item 4)
                 if let (Some(words), CArg::Str(w)) = (ckind.words(i), &v) {
-                    if !words.contains(&w.as_str()) {
+                    // the empty word is the slot's own default and says nothing — a selector
+                    // nobody wrote (issue #48, item 4), which the printers leave out again
+                    if !w.is_empty() && !words.contains(&w.as_str()) {
                         diags.push(Diag {
                             code: Code::E040,
                             span: where_(a),
@@ -2452,15 +2454,42 @@ fn constrain(
     }
     // a magnitude stated negative: the kernel would square the sign away and the drawing show
     // the positive, so the document and the drawing would disagree about what the thing is
+    // **A number that says which way is a word** (§9.2, issue #48 item 4).  Where the sign was a
+    // *convention about a side* — a distance measured from a line, which the kernel cannot tell
+    // one side of from the other — it is now `side: left`, and the number is a magnitude whose
+    // negative is refused below, whatever it was arrived at: a component handed `v: -hw` is
+    // caught at the call rather than quietly placed on the other side.  Where the sign is
+    // *arithmetic* — the run and the rise, measured from the first point to the second, and the
+    // directed angle — the word (`along: left`, `sense: cw`) is the spelling a drawing should
+    // use, and the minus stays legal, because there a component computes it: `dy` is a
+    // coordinate and `alphaL` is a bank leaning the other way, and by the time a statement is
+    // settled the flattener has folded both into a number that no longer says how it was
+    // written.
     if ckind.magnitude() {
         if let Some(i) = spec.iter().position(|(_, k)| *k == SpecKind::Length) {
-            if args[i].num() < 0.0 {
+            let v = args[i].num();
+            if v < 0.0 {
+                // where the type has a side to name, the minus was *saying* which side, and the
+                // word is where that belongs now (issue #48, item 4) — so the message names it
+                // rather than leaving a reader to guess what a positive would have meant
+                let fix = match ckind.side_words() {
+                    // the word that means what the minus meant — the one the table gives −1 — and
+                    // the key it is written under, which is `side` of a line and `along` the page
+                    Some((slot, table)) => format!(
+                        ", and which way is a word: write `{}({}, {}: {})`",
+                        ckind.operator().map(|(w, _)| w).unwrap_or("distance"),
+                        crate::syntax::num(-v),
+                        spec[slot].0,
+                        table.iter().find(|(_, s)| *s < 0.0).map(|(n, _)| *n).unwrap_or("")
+                    ),
+                    None => String::new(),
+                };
                 diags.push(Diag {
                     code: Code::E040,
                     span: r.args.get(i).and_then(|a| a.as_ref()).and_then(arg_span).unwrap_or(st.span),
                     stmt: Some(st.id),
                     message: format!(
-                        "a {} is a magnitude and cannot be negative",
+                        "a {} is a magnitude and cannot be negative{fix}",
                         crate::syntax::snake(ckind.name())
                     ),
                 });

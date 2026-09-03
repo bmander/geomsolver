@@ -26,14 +26,15 @@ component Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
   o distance(y1, along: y) d
 }
 
-// A point in a *tilted* frame: `u` along the line `ax` from the point `org` on it, `v` to the
-// left of it, with `ac` the line across `ax` through `org`, directed to the left, and `dir` the
-// bearing of `ax` for the seed.  Two signed point-to-line distances place it, so a rocking
-// cylinder is written in its own coordinates and turns whole when the crank does.
+// A point in a *tilted* frame: `u` along the line `ax` from the point `org` on it, `v` across
+// it, with `ac` the line across `ax` through `org` and `dir` the bearing of `ax`.  `u` and `v`
+// are coordinates and are signed as coordinates are; the two distances are magnitudes, and the
+// seed — which is the point itself, worked out — is what says which side of each line it falls
+// on.  So a rocking cylinder is written in its own coordinates and turns whole with the crank.
 component Loc(org: point, ax: line, ac: line, dir: Angle, u: Length, v: Length) {
   point p hint(x: org.x + u * cos(dir) - v * sin(dir), y: org.y + u * sin(dir) + v * cos(dir))
-  p distance(v) ax
-  p distance(-u) ac
+  p distance(abs(v)) ax
+  p distance(abs(u)) ac
 }
 
 // A rectangle between `x0` and `x1` whose top and bottom are the heights of two points another
@@ -80,7 +81,7 @@ component Axes(o: point) {
   o distance(40, along: y) up
   line ax(o, up) class axis
   point left hint(x: o.x - 10mm, y: o.y)
-  o distance(-10, along: x) left
+  o distance(10, along: left) left
   o distance(0, along: y) left
   line ac(o, left) class gone
 }

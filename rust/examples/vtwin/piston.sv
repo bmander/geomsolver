@@ -54,10 +54,10 @@ component Piston(swing: plane, side: plane, top: plane, crown: point, rod: line,
     rb on eye
     rc on skirt
     rd on eye
-    ra distance(rt / 2) rod
-    rb distance(rt / 2) rod
-    rc distance(-rt / 2) rod
-    rd distance(-rt / 2) rod
+    ra distance(rt / 2, side: left) rod
+    rb distance(rt / 2, side: left) rod
+    rc distance(rt / 2, side: right) rod
+    rd distance(rt / 2, side: right) rod
     line fl(ra, rb)
     line fr(rc, rd)
     // the far end of the eye, which the side view reads

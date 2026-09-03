@@ -255,7 +255,8 @@ fn a_selector_that_says_nothing_is_refused() {
     assert!(d.iter().any(|m| m == "E040: `distance` takes no `sied`"), "{d:?}");
     // `along` fills no slot — it chooses the kind — so it is the one key checked by name
     let (_, d) = read(&format!("{PAIR}a distance(40, along: z) b\n"));
-    assert!(d.iter().any(|m| m == "E040: `along` is `x` or `y`, not `z`"), "{d:?}");
+    let want = "E040: `along` is `x`, `y`, `right`, `left`, `up` or `down`, not `z`";
+    assert!(d.iter().any(|m| m == want), "{d:?}");
     assert!(read(&format!("{PAIR}a distance(40, along: x) b\n")).1.is_empty());
 
     // a word outside the slot's own set: `banana` used to mean `end`, because nothing checked
@@ -283,4 +284,113 @@ fn a_selector_that_says_nothing_is_refused() {
         .map(|w| w.as_str().to_string())
         .collect::<Vec<_>>();
     assert_eq!(words, ["start", "end"]);
+}
+
+/// **A distance from a line is a magnitude, and which side is a word** (issue #48, item 4).
+///
+/// The sign used to say the side, and no reader could check it: positive is left of the line's
+/// own `p1 → p2`, which is nowhere on the drawing.  Now the number is a magnitude — both sides
+/// are solutions, and the seed picks between them, which is what every other sketcher does and
+/// what P3 already says a seed may do — and `side:` is how a statement pins one.
+#[test]
+fn a_distance_from_a_line_is_a_magnitude() {
+    const AXIS: &str = "unit mm\n\
+                        point a hint(x: 0, y: 0)\n\
+                        point b hint(x: 40, y: 0)\n\
+                        line ax(a, b)\n\
+                        ground a\n\
+                        ground b\n";
+    let solved = |src: &str| {
+        let (e, d) = read(src);
+        assert!(d.is_empty(), "{d:?}");
+        let mut sk = e.sketch;
+        assert!(solve(&mut sk, SolveOpts::default()).success);
+        sk.point_xy(2).1
+    };
+    // seeded below, it stays below; seeded above, above.  One statement, two solutions, and the
+    // seed is what chooses — the drawing says where it was drawn
+    assert!((solved(&format!("{AXIS}point p hint(x: 10, y: -3)\np distance(12) ax\n")) + 12.0).abs() < 1e-6);
+    assert!((solved(&format!("{AXIS}point p hint(x: 10, y: 3)\np distance(12) ax\n")) - 12.0).abs() < 1e-6);
+    // pinned, the seed does not get a say
+    assert!((solved(&format!("{AXIS}point p hint(x: 10, y: 3)\np distance(12, side: right) ax\n")) + 12.0).abs() < 1e-6);
+    assert!((solved(&format!("{AXIS}point p hint(x: 10, y: -3)\np distance(12, side: left) ax\n")) - 12.0).abs() < 1e-6);
+
+    // and the minus is refused *by value*, so a component handed one is caught at the call
+    let (_, d) = read(&format!("{AXIS}point p hint(x: 10, y: 3)\np distance(-12) ax\n"));
+    let said = "E040: a point_line_distance is a magnitude and cannot be negative, and which \
+                way is a word: write `distance(12, side: right)`";
+    assert!(d.iter().any(|m| m == said), "{d:?}");
+    let (_, d) = read(&format!(
+        "{AXIS}component Off(o: point, ax: line, v: Length) {{\n\
+           point p hint(x: o.x, y: o.y + 20mm)\n\
+           p distance(v) ax\n\
+         }}\n\
+         f: Off(a, ax, v: -8mm)\n"
+    ));
+    assert!(d.iter().any(|m| m.contains("cannot be negative")), "{d:?}");
+}
+
+/// A side may be passed to a component, since a helper that places a point either side of an
+/// axis has to be told which — as a word, not as the ±1 it would otherwise multiply by, which is
+/// the unreadable idiom one level down.
+#[test]
+fn a_component_takes_a_side() {
+    const SRC: &str = "unit mm\n\
+                       component Off(o: point, ax: line, d: Length, s: Side) {\n\
+                         point p hint(x: o.x, y: o.y + 20mm)\n\
+                         p distance(d, side: s) ax\n\
+                       }\n\
+                       point a hint(x: 0, y: 0)\n\
+                       point b hint(x: 40, y: 0)\n\
+                       line ax(a, b)\n\
+                       ground a\n\
+                       ground b\n";
+    let at = |src: &str, i: usize| {
+        let (e, d) = read(src);
+        assert!(d.is_empty(), "{d:?}");
+        let mut sk = e.sketch;
+        assert!(solve(&mut sk, SolveOpts::default()).success);
+        sk.point_xy(i).1
+    };
+    let both = format!("{SRC}l: Off(a, ax, d: 12, s: left)\nr: Off(a, ax, d: 12, s: right)\n");
+    assert!((at(&both, 2) - 12.0).abs() < 1e-6);
+    assert!((at(&both, 3) + 12.0).abs() < 1e-6);
+    // a word that is not a side, and a number where a side was wanted
+    let (_, d) = read(&format!("{SRC}l: Off(a, ax, d: 12, s: sideways)\n"));
+    assert!(d.iter().any(|m| m.contains("`s` is a side: `left` or `right`, not `sideways`")), "{d:?}");
+    let (_, d) = read(&format!("{SRC}l: Off(a, ax, d: 12, s: 1)\n"));
+    assert!(d.iter().any(|m| m.contains("is a side")), "{d:?}");
+}
+
+/// The run, the rise and the angle keep their signs — there the sign is arithmetic, and a
+/// component computes it — but each gains the word that says the same thing in the open.
+#[test]
+fn a_direction_and_a_sense_are_words() {
+    const PAIR: &str = "unit mm\n\
+                        point a hint(x: 0, y: 0)\n\
+                        point b hint(x: 40, y: 10)\n\
+                        ground a\n";
+    let at = |src: &str| {
+        let (e, d) = read(src);
+        assert!(d.is_empty(), "{d:?}");
+        let mut sk = e.sketch;
+        assert!(solve(&mut sk, SolveOpts::default()).success);
+        sk.point_xy(1)
+    };
+    assert!((at(&format!("{PAIR}a distance(60, along: left) b\n")).0 + 60.0).abs() < 1e-6);
+    assert!((at(&format!("{PAIR}a distance(60, along: right) b\n")).0 - 60.0).abs() < 1e-6);
+    assert!((at(&format!("{PAIR}a distance(60, along: down) b\n")).1 + 60.0).abs() < 1e-6);
+    // `along: x` still means what it always meant, so an old document is untouched
+    assert!((at(&format!("{PAIR}a distance(-60, along: x) b\n")).0 + 60.0).abs() < 1e-6);
+
+    // and an angle: `sense: cw` is the minus, and the drawing shows what the statement makes
+    let lines = "unit mm\npoint o hint(x: 0, y: 0)\npoint p hint(x: 10, y: 0)\n\
+                 point q hint(x: 7, y: 7)\nline l1(o, p)\nline l2(o, q)\nground o\nground p\n";
+    let (e, d) = read(&format!("{lines}l1 angle(30, sense: cw) l2\n"));
+    assert!(d.is_empty(), "{d:?}");
+    let mut sk = e.sketch;
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let (x, y) = sk.point_xy(2);
+    assert!(y < 0.0 && (y.atan2(x).to_degrees() + 30.0).abs() < 1e-6, "({x}, {y})");
+    assert_eq!(gcs_core::io::dimension_text(&sk.user_constraints()[0]).as_deref(), Some("-30°"));
 }

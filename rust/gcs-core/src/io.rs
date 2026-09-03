@@ -105,7 +105,15 @@ fn arg_from_json(sk: &Sketch, kind: SpecKind, v: &Json) -> Result<Arg, String> {
         }
         SpecKind::Int => Arg::Int(v.as_i64()),
         SpecKind::Bool => Arg::Bool(v.as_bool()),
-        SpecKind::Str => Arg::Str(v.as_str().to_string()),
+        // a word slot given a number is a document written before the word existed — `side: -1`
+        // for a tangency, which is `side: right` now (issue #48, item 4).  The `"construction":
+        // true` bargain: read, never written.
+        SpecKind::Str => match v {
+            Json::Int(_) | Json::Num(_) => {
+                Arg::Str(crate::constraints::side_word(v.as_f64() as i64).to_string())
+            }
+            _ => Arg::Str(v.as_str().to_string()),
+        },
         // a hidden unknown arrives as its number, or `{"value", "pinned"}` when the document
         // said it was worked out rather than solved for; `Sketch::add` consumes both halves
         SpecKind::Param => Arg::Seed {
@@ -438,11 +446,13 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             .ok_or_else(|| format!("unknown constraint type: {name}"))?;
         let spec = kind.spec();
         let raw = c.get("args").unwrap_or(&empty).arr();
-        if raw.len() != spec.len() {
+        // fewer than the type has is a document written before a slot existed — `Constraint::new`
+        // fills the tail with the defaults, which is what the type meant without them
+        if raw.len() > spec.len() {
             return Err(format!("{name}: expected {} args, got {}", spec.len(), raw.len()));
         }
         let mut args = Vec::with_capacity(spec.len());
-        for (i, (_, k)) in spec.iter().enumerate() {
+        for (i, (_, k)) in spec.iter().enumerate().take(raw.len()) {
             // a slot the core infers may be left out — a projection's planes — and holds a
             // placeholder until `seed_omitted` fills it
             if kind.infers_arg(i) && omitted(raw.get(i)) {
@@ -1045,6 +1055,13 @@ fn as_written(kind: SpecKind, text: &str) -> String {
 /// constraint list — is where a formula prints both.
 pub fn dimension_text(c: &Constraint) -> Option<String> {
     let (i, _, kind) = c.dimensions().into_iter().next()?;
+    // a drawing shows the number the statement *makes*: an angle written `angle(a, sense: cw)`
+    // states −a, and the arc beside the label sweeps that way, so the two must agree (§9.4).  The
+    // side of a *distance* never reaches here — its figure is drawn on the side it names and its
+    // label is the magnitude, which is how a drawing has always dimensioned an offset.
+    if c.sense() < 0.0 {
+        return Some(arg_text(kind, &Arg::Num(-c.args[i].num())));
+    }
     Some(match &c.args[i] {
         Arg::Expr(e) => as_written(kind, &e.text),
         a => arg_text(kind, a),

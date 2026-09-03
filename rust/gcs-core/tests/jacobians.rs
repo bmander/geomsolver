@@ -55,6 +55,12 @@ fn all_constraints(seed: u32) -> Sketch {
         args.push(Arg::Expr(Expr::new(text, value)));
         Constraint::new(kind, args)
     };
+    // the same constraint with a side named — the signed kernel rather than the magnitude one
+    let sided = |mut c: Constraint, w: &str| {
+        let i = c.kind.side_slot().expect("a type with a side");
+        c.args[i] = Arg::Str(w.to_string());
+        c
+    };
     let cs = vec![
         Constraint::coincident(pe, qe),
         Constraint::distance(pe, qe, 3.0),
@@ -82,8 +88,18 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::TangentLineCircleAt, vec![e(le1), e(ce1), Arg::Str("p1".into())]),
         Constraint::new(CKind::TangentLineCircleAt, vec![e(le2), e(ce2), Arg::Str("p2".into())]),
         Constraint::new(CKind::Symmetric, vec![e(pe), e(qe), e(le1)]),
+        // a distance from a line, both ways it can be written: naming no side, which is the
+        // magnitude form (issue #48, item 4), and naming one, which is the signed form
         Constraint::new(CKind::ParallelDistance, vec![e(le1), e(le2), Arg::Num(4.0)]),
         Constraint::new(CKind::PointLineDistance, vec![e(pe), e(le1), Arg::Num(4.0)]),
+        Constraint::new(
+            CKind::ParallelDistance,
+            vec![e(le2), e(le1), Arg::Num(4.0), Arg::Str("right".into())],
+        ),
+        Constraint::new(
+            CKind::PointLineDistance,
+            vec![e(qe), e(le1), Arg::Num(4.0), Arg::Str("left".into())],
+        ),
         Constraint::new(CKind::AnnularDistance, vec![e(ce1), e(ae), Arg::Num(1.5)]),
         Constraint::new(CKind::HorizontalDistance, vec![e(pe), e(qe), Arg::Num(2.5)]),
         Constraint::new(CKind::VerticalDistance, vec![e(pe), e(qe), Arg::Num(-1.5)]),
@@ -107,6 +123,10 @@ fn all_constraints(seed: u32) -> Sketch {
         fx(CKind::Radius, vec![e(ce1)], "w", 2.0),
         fx(CKind::ParallelDistance, vec![e(le1), e(le2)], "x / 2", 4.0),
         fx(CKind::PointLineDistance, vec![e(pe), e(le1)], "y", 4.0),
+        // and their free twins with a side named, which is the fourth of the four kernels each
+        // of these two types now has: signed or magnitude, stated or shared
+        sided(fx(CKind::ParallelDistance, vec![e(le2), e(le1)], "s1", 4.0), "left"),
+        sided(fx(CKind::PointLineDistance, vec![e(qe), e(le1)], "s2", 4.0), "right"),
         fx(CKind::AnnularDistance, vec![e(ce1), e(ae)], "z + 1", 1.5),
         fx(CKind::HorizontalDistance, vec![e(pe), e(qe)], "g", 2.5),
         fx(CKind::VerticalDistance, vec![e(pe), e(qe)], "-k", -1.5),

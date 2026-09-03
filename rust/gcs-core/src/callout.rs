@@ -489,7 +489,9 @@ fn sweep_start(sk: &Sketch, e: EntRef) -> f64 {
 /// when there are none, which is the ordinary case.
 fn sweep_of(sk: &Sketch, c: &Constraint, e1: EntRef, e2: EntRef) -> f64 {
     let measured = angle_between(sk, e1, e2);
-    match c.args.get(2).map(|a| a.num()) {
+    // the number the statement *makes*, not the one it writes: `angle(30, sense: cw)` states −30,
+    // and a figure drawn from +30 would sweep the other way round from its own label (§9.4)
+    match c.args.get(2).map(|a| c.sense() * a.num()) {
         Some(theta) => theta - wrap(theta - measured),
         None => measured,
     }

@@ -249,16 +249,24 @@ function cDimension(): void {
  *  "gap" between converging lines pins one endpoint's offset and reads as arbitrary. */
 function cParallelDistance(l1: Line, l2: Line): void {
   const cur = signedPointToLine(l2.p1.x.value, l2.p1.y.value, l1);
-  dimension([new C.ParallelDistance(l1, l2, cur)]);
+  dimension([new C.ParallelDistance(l1, l2, Math.abs(cur), sideOf(cur))]);
 }
 
-/** A point and a line: dimension the point's perpendicular offset, signed so negating it moves
- *  the point across.  Measured to the infinite line — the foot may fall off the end of the
- *  segment, which is what a drawing means by "distance to this edge". */
+/** Which side of a line something drawn at this signed offset is on, in the core's own words
+ *  (§9.2).  A dimension the app writes says the side it was drawn on — a magnitude alone would
+ *  leave the next solve free to put it the other way. */
+function sideOf(signed: number): string {
+  return signed < 0 ? 'right' : 'left';
+}
+
+/** A point and a line: dimension the point's perpendicular offset, a magnitude with the side it
+ *  was drawn on named (§9.2).  Measured to the infinite line — the foot may fall off the end of
+ *  the segment, which is what a drawing means by "distance to this edge". */
 function cPointLineDistance(p: Point, line: Line): void {
   if (!need(line.length() > 0, 'a line with two distinct endpoints')) return;
   if (!need(p !== line.p1 && p !== line.p2, 'a point that is not an endpoint of the line')) return;
-  dimension([new C.PointLineDistance(p, line, signedPointToLine(p.x.value, p.y.value, line))]);
+  const cur = signedPointToLine(p.x.value, p.y.value, line);
+  dimension([new C.PointLineDistance(p, line, Math.abs(cur), sideOf(cur))]);
 }
 
 /** Two circles or arcs: dimension the annulus between them.  Like the parallel gap it sizes

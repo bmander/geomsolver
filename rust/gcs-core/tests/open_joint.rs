@@ -236,10 +236,8 @@ fn a_joint_dimension_reads_the_binder() {
         .user_constraints()
         .iter()
         .filter(|c| c.kind == CKind::Angle)
-        .filter_map(|c| match c.args.last() {
-            Some(gcs_core::constraints::Arg::Num(v)) => Some(v.to_degrees().round()),
-            _ => None,
-        })
+        // by name, not by position: a selector may follow the number in spec order now
+        .filter_map(|c| c.get_num("theta").map(|v| v.to_degrees().round()))
         .collect();
     angles.sort_by(f64::total_cmp);
     assert_eq!(angles, vec![60.0, 70.0, 80.0]);

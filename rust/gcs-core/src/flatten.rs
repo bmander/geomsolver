@@ -77,6 +77,11 @@ struct Scope {
     /// name — renamed to where the graph will find it — and the tie survives on the drawing.
     /// Formals shadow the file's; a body's own shadow both.
     graph: BTreeMap<String, String>,
+    /// The **sides** in force: a `Side` formal to the word it was given (`s` → `right`).  A side
+    /// is a word and not a number (§9.2), so it travels in a table of its own rather than as a
+    /// ±1 in `vals` — which is exactly the idiom issue #48's item 4 takes out of the helpers, and
+    /// putting it back one level down would leave `s * 90deg` writable inside a body.
+    sides: BTreeMap<String, String>,
 }
 
 impl Scope {
@@ -404,6 +409,15 @@ impl<'a> Walk<'a> {
                     Err(e) => self.err(*span, format!("`{text}`: {e}")),
                 }
             }
+            // a selector written with the name of a `Side` formal reads as the word the instance
+            // was given (§9.2): `side: s` inside the body, `Loc(…, s: right)` at the call.  A
+            // word naming no side in scope is left alone — it is one of the slot's own, and the
+            // elaborator checks it against the kind's vocabulary.
+            crate::syntax::Arg::Word(w) => {
+                if let Some(side) = scope.sides.get(w.as_str()) {
+                    *w = side.clone();
+                }
+            }
             _ => {}
         }
     }
@@ -638,7 +652,7 @@ impl<'a> Walk<'a> {
                         // an instance written in place is bound like any other and never
                         // drawn: the curve is the only thing made of it (§6.5)
                         if let CurveTarget::Anon(inst, point) = &c.target {
-                            if let Some((_, _, key)) = self.bind_instance(inst, scope, vals, false) {
+                            if let Some((_, _, _, key)) = self.bind_instance(inst, scope, vals, false) {
                                 c.of = Some(crate::syntax::CurveOf {
                                     instance: key,
                                     point: written(point),
@@ -657,7 +671,7 @@ impl<'a> Walk<'a> {
                 }
                 StmtKind::Param(_) => {}   // worked out above, before the walk
                 StmtKind::Instance(inst) => {
-                    let Some((comp, mut sub_vals, key)) = self.bind_instance(inst, scope, vals, true)
+                    let Some((comp, mut sub_vals, sides, key)) = self.bind_instance(inst, scope, vals, true)
                     else {
                         continue;
                     };
@@ -693,6 +707,9 @@ impl<'a> Walk<'a> {
                             c
                         },
                         graph,
+                        // the sides this instance was given, and no others: a component reads a
+                        // side by the name of its own formal, as it reads every other argument
+                        sides,
                     };
                     sc.cyc = scope.cyc.clone();
                     self.body(&comp.body, &sc, &mut sub_vals, path, depth + 1);
@@ -740,6 +757,7 @@ impl<'a> Walk<'a> {
                             in_plane: scope.in_plane.clone(),
                             in_class: scope.in_class.clone(),
                             graph: scope.graph.clone(),
+                            sides: scope.sides.clone(),
                         };
                         let mut p2 = path.to_vec();
                         p2.push(k as u32);
@@ -980,7 +998,7 @@ impl<'a> Walk<'a> {
         scope: &Scope,
         vals: &BTreeMap<String, Aff>,
         drawn: bool,
-    ) -> Option<(&'a Component, BTreeMap<String, Aff>, String)> {
+    ) -> Option<(&'a Component, BTreeMap<String, Aff>, BTreeMap<String, String>, String)> {
         let Some(comp) = self.prog.component(&inst.component.text) else {
             self.err(
                 inst.component.span,
@@ -991,7 +1009,7 @@ impl<'a> Walk<'a> {
         if self.called.insert(inst.span) {
             self.check_call(comp, inst);
         }
-        let sub_vals = self.bind(comp, inst, scope, vals);
+        let (sub_vals, sides) = self.bind(comp, inst, scope, vals);
         let key = format!("{}{}.", scope.prefix(), inst.name.text);
         self.instances.push(InstanceInfo {
             prefix: key.clone(),
@@ -1005,7 +1023,7 @@ impl<'a> Walk<'a> {
             values: sub_vals.clone(),
             drawn,
         });
-        Some((comp, sub_vals, key))
+        Some((comp, sub_vals, sides, key))
     }
 
     /// Refuse an argument a long formal list would silently take for another (§4.1).
@@ -1071,10 +1089,11 @@ impl<'a> Walk<'a> {
         inst: &crate::syntax::Instance,
         scope: &Scope,
         vals: &BTreeMap<String, Aff>,
-    ) -> BTreeMap<String, Aff> {
+    ) -> (BTreeMap<String, Aff>, BTreeMap<String, String>) {
         use crate::syntax::{InstVal, Ty};
         let prefix = scope.prefix().to_string();
         let mut sub: BTreeMap<String, Aff> = BTreeMap::new();
+        let mut sides: BTreeMap<String, String> = BTreeMap::new();
         let mut positional = 0usize;
         for a in &inst.args {
             let formal = match &a.label {
@@ -1102,6 +1121,22 @@ impl<'a> Walk<'a> {
                 (Ty::Ent(_), InstVal::Expr(t)) => {
                     self.err(a.span, format!("`{}` wants an entity, and `{t}` is a number", f.name.text))
                 }
+                // **a side is a word** (§9.2): `left`, `right`, or the name of a side the caller
+                // was given itself, which is how one is passed down a chain of components
+                (Ty::Side, v) => {
+                    let w = match v {
+                        InstVal::Ref(r) if r.path.is_empty() => r.root.text.clone(),
+                        InstVal::Ref(r) => r.root.text.clone(),
+                        InstVal::Expr(t) => t.clone(),
+                    };
+                    let w = scope.sides.get(&w).cloned().unwrap_or(w);
+                    if w == "left" || w == "right" {
+                        sides.insert(f.name.text.clone(), w);
+                    } else {
+                        let m = format!("`{}` is a side: `left` or `right`, not `{w}`", f.name.text);
+                        self.err(a.span, m);
+                    }
+                }
                 // A formal *declares* what its argument is — `phi: Angle`, `m: Length` — so the
                 // number it stands for carries that dimension through the component's body.
                 // This is where `param x = w + phi` is caught: nothing else in a component says
@@ -1123,7 +1158,10 @@ impl<'a> Walk<'a> {
         // a traced component the name is no column of the curve, which is how a nested
         // instance's unbound formal is reported rather than captured by an outer one's.
         for f in &comp.formals {
-            if matches!(f.ty, Ty::Ent(_)) || sub.contains_key(&f.name.text) {
+            // a side left unbound is not an unknown of the drawing: the *statement* it reaches
+            // says nothing about which side, which is the magnitude form and a solution set of
+            // both — so it is left out of the table and the body writes no side at all
+            if matches!(f.ty, Ty::Ent(_) | Ty::Side) || sub.contains_key(&f.name.text) {
                 continue;
             }
             let name = format!("{prefix}{}.{}", inst.name.text, f.name.text);
@@ -1137,7 +1175,7 @@ impl<'a> Walk<'a> {
         for (k, v) in file {
             sub.entry(k).or_insert(v);
         }
-        sub
+        (sub, sides)
     }
 
     /// A module's top-level `param`s, worked out once — in the module's own scope, which has no

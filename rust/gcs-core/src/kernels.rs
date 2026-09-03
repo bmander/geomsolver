@@ -51,9 +51,16 @@ pub enum K {
     FrameUnit,
     FrameAlign,
     Project,
+    // and the magnitude forms of the two distances measured *from a line*, which a statement
+    // that names no side compiles to: both sides are solutions and the seed picks (issue #48,
+    // item 4).  Each with its own free twin, since a magnitude may state a shared unknown too.
+    PointLineMagnitude,
+    PointLineMagnitudeFree,
+    ParallelMagnitude,
+    ParallelMagnitudeFree,
 }
 
-pub const N_KERNELS: usize = 37;
+pub const N_KERNELS: usize = 41;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -736,6 +743,112 @@ fn point_line_distance_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 6 * i;
         point_line_gap_jac(&v[o..], &mut j[o..o + 6]);
+    }
+}
+
+/* -- the magnitude forms ----------------------------------------------------
+ *
+ * **A distance from a line is a magnitude** (spec §9.2, issue #48, item 4): `p distance(12) l`
+ * says p is 12 from l and says nothing about which side, so *both* sides are solutions and the
+ * seed picks between them, which is what a seed is for (P3) and what every other sketcher does.
+ * The signed kernels above are what a statement that *pins* a side compiles to, the sign coming
+ * from the word rather than from a minus somebody had to work out.
+ *
+ * `|g| − d` and **not** the squared form `g² − d²` that `distance` uses between two points.
+ * Squared, the gradient is `2g·∂g` and vanishes where g does — and `distance(0)` from a line is
+ * an idiom a drawing writes (a point on the axis, `Loc(v: 0mm)` thirty times over in one
+ * cylinder), which squared is a double root with no gradient at all: rank deficient, reported
+ * over-constrained, a freedom that is not there.  The absolute value keeps the signed form's
+ * degree and conditioning — its Jacobian is `±∂g`, a unit-length row wherever the point is — at
+ * the price of a crease at g = 0, which is the boundary *between* the two sides and the one
+ * place a solve should not be walking through anyway.
+ */
+
+/// Which way the gap runs, as a multiplier: at exactly zero it counts as the left, so the
+/// gradient never vanishes and a point seeded on the line still knows which way to move.
+#[inline]
+fn side_of(g: f64) -> f64 {
+    if g < 0.0 {
+        -1.0
+    } else {
+        1.0
+    }
+}
+
+/// (px,py,ax,ay,bx,by), K = (d): |g| − d, g the perpendicular distance from p to the line.
+fn point_line_magnitude_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        r[i] = point_line_gap(&v[6 * i..]).abs() - k[i];
+    }
+}
+
+fn point_line_magnitude_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 6 * i;
+        let s = side_of(point_line_gap(&v[o..]));
+        point_line_gap_jac(&v[o..], &mut j[o..o + 6]);
+        for x in &mut j[o..o + 6] {
+            *x *= s;
+        }
+    }
+}
+
+/// (px,py,ax,ay,bx,by,a), K = (m,c): |g| − d, d = m*a + c
+fn point_line_magnitude_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 7 * i;
+        r[i] = point_line_gap(&v[o..]).abs() - free_dim(v, k, i, o + 6).0;
+    }
+}
+
+fn point_line_magnitude_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 7 * i;
+        let s = side_of(point_line_gap(&v[o..]));
+        point_line_gap_jac(&v[o..], &mut j[o..o + 6]);
+        for x in &mut j[o..o + 6] {
+            *x *= s;
+        }
+        j[o + 6] = -k[2 * i];
+    }
+}
+
+/// (a1x,a1y,b1x,b1y,a2x,a2y,b2x,b2y), K = (d): |g| − d, g the gap from l2's first endpoint to
+/// l1's infinite line.  It does NOT make them parallel, any more than the signed form does.
+fn parallel_magnitude_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        r[i] = parallel_gap(&v[8 * i..]).abs() - k[i];
+    }
+}
+
+fn parallel_magnitude_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 8 * i;
+        let s = side_of(parallel_gap(&v[o..]));
+        parallel_gap_jac(&v[o..], &mut j[o..o + 8]);
+        for x in &mut j[o..o + 8] {
+            *x *= s;
+        }
+    }
+}
+
+/// (a1x,a1y,b1x,b1y,a2x,a2y,b2x,b2y,a), K = (m,c): |g| − d, d = m*a + c
+fn parallel_magnitude_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        r[i] = parallel_gap(&v[o..]).abs() - free_dim(v, k, i, o + 8).0;
+    }
+}
+
+fn parallel_magnitude_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let o = 9 * i;
+        let s = side_of(parallel_gap(&v[o..]));
+        parallel_gap_jac(&v[o..], &mut j[o..o + 8]);
+        for x in &mut j[o..o + 8] {
+            *x *= s;
+        }
+        j[o + 8] = -k[2 * i];
     }
 }
 
@@ -1668,6 +1781,10 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "frame_unit", n_res: 1, n_par: 2, degree: 0, n_const: 0, res: frame_unit_res, jac: frame_unit_jac, const_jac: None },
     Kernel { name: "frame_align", n_res: 2, n_par: N_PAR_FRAME_ALIGN, degree: 1, n_const: 0, res: frame_align_res, jac: frame_align_jac, const_jac: None },
     Kernel { name: "project", n_res: 1, n_par: N_PAR_PROJECT, degree: 1, n_const: 4, res: project_res, jac: project_jac, const_jac: None },
+    Kernel { name: "point_line_magnitude", n_res: 1, n_par: 6, degree: 1, n_const: 1, res: point_line_magnitude_res, jac: point_line_magnitude_jac, const_jac: None },
+    Kernel { name: "point_line_magnitude_free", n_res: 1, n_par: 7, degree: 1, n_const: 2, res: point_line_magnitude_free_res, jac: point_line_magnitude_free_jac, const_jac: None },
+    Kernel { name: "parallel_magnitude", n_res: 1, n_par: 8, degree: 1, n_const: 1, res: parallel_magnitude_res, jac: parallel_magnitude_jac, const_jac: None },
+    Kernel { name: "parallel_magnitude_free", n_res: 1, n_par: 9, degree: 1, n_const: 2, res: parallel_magnitude_free_res, jac: parallel_magnitude_free_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

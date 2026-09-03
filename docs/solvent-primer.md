@@ -156,13 +156,13 @@ fix c.r                             line1 tangent(side: -1) circle1
 | word | fixity | operands |
 |---|---|---|
 | `on` | infix | a point to a line, circle, arc, spline or curve |
-| `distance` | infix | two points (`along: x` / `along: y` for the run and the rise, signed first to second); a point and a line (signed); two lines (a parallel gap); two concentric circles or arcs (the radial gap) |
+| `distance` | infix | two points (`along: x` / `along: y` for the run and the rise, signed first to second, or `along: right \| left \| up \| down` to say the direction in a word); a point and a line, or two lines (a magnitude — `side: left \| right` pins which side, and without one the seed picks); two concentric circles or arcs (the radial gap) |
 | `distance` | prefix | a line: the distance between its own ends |
-| `tangent` | infix | a line and a circle or arc (`at: p1` / `p2` for a tangency at that end; `side: ±1` picks the side); two circles or arcs (`external: true/false`); an arc and a line (`at: start` / `end`); a spline or a curve and a line |
+| `tangent` | infix | a line and a circle or arc (`at: p1` / `p2` for a tangency at that end; `side: left \| right` says which side of the line the centre is); two circles or arcs (`external: true/false`); an arc and a line (`at: start` / `end`); a spline or a curve and a line |
 | `equal` | infix | two lines (length), or two circles or arcs (radius) |
 | `curvature` | infix | a spline or a curve and a circle or arc: the circle becomes the osculating circle there. Refused on a traced curve |
 | `horizontal`, `vertical` | prefix / infix | a line, or a pair of points with no line drawn between them |
-| `angle` | infix | two lines; a bare number is degrees |
+| `angle` | infix | two lines; a bare number is degrees, and `sense: cw` turns it the other way |
 | `radius` | prefix | a circle or an arc |
 | `coincident`, `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
@@ -176,6 +176,34 @@ One word covers several constraints, told apart by the **kinds of its operands**
 
 **Operand order carries meaning.** `arc tangent line` is a tangency at the arc's end;
 `line tangent circle` is the ordinary one. `a distance(80, along: x) b` is signed from `a` to `b`.
+
+### Which way, in words
+
+Every direction in the language is a **word**, and the sign behind it is stated here once.
+
+| written | means |
+|---|---|
+| `p distance(12) ax` | `p` is 12 from the line — **either side**; the seed says which |
+| `p distance(12, side: left) ax` | to the **left of `ax`'s own direction**, `p1 → p2` |
+| `p distance(12, side: right) ax` | to its right |
+| `l1 distance(6, side: left) l2` | `l2`'s **`p1`** lies left of `l1` |
+| `a distance(60, along: x) b` | `b.x − a.x = 60`; `along: y` is the rise, first point to second |
+| `a distance(60, along: right) b` | the same, with the direction said: `left`, `up`, `down` too |
+| `l1 angle(30) l2` | 30° **counter-clockwise** from `l1`'s direction to `l2`'s |
+| `l1 angle(30, sense: cw) l2` | 30° clockwise — the same as `angle(-30)`, said in the open |
+| `l tangent(side: left) c` | the circle's centre lies left of `l` |
+| `ccw(a, b, c)` | `c` is left of the ray `a → b` |
+| `… at (t, r)` | a callout: `t` along the dimension from its middle, `r` across it — **positive to the left** of the direction it is measured along, and for a radius or an angle, `t` is an angle from the start and `r` a distance out from the centre |
+
+**A distance measured from a line is a magnitude**: a negative one is refused, and which side is
+`side:`. A component that must work either way up takes a `Side` formal (`s: Side`, called as
+`Part(…, s: right)`) and writes `side: s`. Where a side is *arithmetic* rather than a
+convention — `Loc(v: -hw)` passing a coordinate — write `abs(v)` and let the seed, which is the
+point worked out, say which side it falls on.
+
+The run, the rise and the angle keep their signs, because there the sign is arithmetic a
+component computes (`dy` is a coordinate; `alphaL` is a bank leaning the other way). The words
+are how a *drawing* should say it.
 
 **`angle` is directed**: the full-turn angle from `l1`'s direction (`p1` to `p2`) to `l2`'s,
 counter-clockwise positive. It pins which side, not just the tilt, so a bearing needs no

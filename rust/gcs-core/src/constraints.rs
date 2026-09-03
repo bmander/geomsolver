@@ -161,8 +161,15 @@ pub const ALL_KINDS: [CKind; 35] = [
 /// slot — it *chooses the kind* and is gone — so this table is the only place its words exist,
 /// read both by `infix_op` to make the choice and by the elaborator to say what was wrong with a
 /// word that is not one of them (issue #48, item 4).  A second list would be a second answer.
-pub const ALONG: [(&str, CKind); 2] =
-    [("x", CKind::HorizontalDistance), ("y", CKind::VerticalDistance)];
+pub const ALONG: [(&str, CKind); 6] = [
+    ("x", CKind::HorizontalDistance),
+    ("y", CKind::VerticalDistance),
+    // the same two kinds with the direction named outright, which is the sign said in a word
+    ("right", CKind::HorizontalDistance),
+    ("left", CKind::HorizontalDistance),
+    ("up", CKind::VerticalDistance),
+    ("down", CKind::VerticalDistance),
+];
 
 /// What a written operator says, once its operands' kinds are known.
 ///
@@ -523,24 +530,40 @@ impl CKind {
             // the run and the rise between two points: what a drawing dimensions when it wants
             // an ordinate rather than a length.  Signed from p to q, so the pair is not
             // commutative — swapping the points negates the number.
+            // the run and the rise: a magnitude, with `along` naming the axis (`x`, `y` — either
+            // way along it, the seed choosing) or the direction outright (`right`, `left`, `up`,
+            // `down`), which is the same statement the sign used to make (§9.2)
             CKind::HorizontalDistance | CKind::VerticalDistance => {
-                &[("p", S::Point), ("q", S::Point), ("d", S::Length)]
+                &[("p", S::Point), ("q", S::Point), ("d", S::Length), ("along", S::Str)]
             }
             CKind::Parallel | CKind::Perpendicular | CKind::EqualLength => {
                 &[("l1", S::Line), ("l2", S::Line)]
             }
-            CKind::Angle => &[("l1", S::Line), ("l2", S::Line), ("theta", S::Angle)],
-            CKind::ParallelDistance => &[("l1", S::Line), ("l2", S::Line), ("d", S::Length)],
+            // directed as it always was, counter-clockwise positive from `l1`'s direction; the
+            // `sense` word is how a drawing says clockwise without writing a minus (§9.4)
+            CKind::Angle => {
+                &[("l1", S::Line), ("l2", S::Line), ("theta", S::Angle), ("sense", S::Str)]
+            }
+            // the number is a magnitude, and `side` says which side of `l1` its second line lies
+            // on; omitted, both sides are solutions and the seed picks between them (§9.2)
+            CKind::ParallelDistance => {
+                &[("l1", S::Line), ("l2", S::Line), ("d", S::Length), ("side", S::Str)]
+            }
             CKind::PointOnLine => &[("p", S::Point), ("line", S::Line)],
-            CKind::PointLineDistance => &[("p", S::Point), ("line", S::Line), ("d", S::Length)],
+            CKind::PointLineDistance => {
+                &[("p", S::Point), ("line", S::Line), ("d", S::Length), ("side", S::Str)]
+            }
             CKind::PointOnCircle => &[("p", S::Point), ("circle", S::CircleOrArc)],
             CKind::Radius => &[("circle", S::CircleOrArc), ("r", S::Length)],
             CKind::EqualRadius => &[("c1", S::CircleOrArc), ("c2", S::CircleOrArc)],
             CKind::AnnularDistance => {
                 &[("c1", S::CircleOrArc), ("c2", S::CircleOrArc), ("d", S::Length)]
             }
+            // which side of the line the circle's centre is: the same two words a distance from
+            // a line uses, and for the same reason — `side: -1` was a coin only a rendering could
+            // check (§9.2, issue #48 item 4)
             CKind::TangentLineCircle => {
-                &[("line", S::Line), ("circle", S::CircleOrArc), ("side", S::Int)]
+                &[("line", S::Line), ("circle", S::CircleOrArc), ("side", S::Str)]
             }
             CKind::TangentCircleCircle => {
                 &[("c1", S::CircleOrArc), ("c2", S::CircleOrArc), ("external", S::Bool)]
@@ -686,7 +709,7 @@ impl CKind {
             (CKind::TangentCircleCircle, 2) => Arg::Bool(true),
             (CKind::TangentArcLine, 2) => Arg::Str("start".to_string()),
             (CKind::TangentLineCircleAt, 2) => Arg::Str("p1".to_string()),
-            (CKind::TangentLineCircle, 2) => Arg::Int(1),
+            (CKind::TangentLineCircle, 2) => Arg::Str("left".to_string()),
             _ => match self.spec()[i].1 {
                 SpecKind::Int => Arg::Int(0),
                 SpecKind::Bool => Arg::Bool(false),
@@ -707,6 +730,38 @@ impl CKind {
         Some(match (self, i) {
             (CKind::TangentArcLine, 2) => &["start", "end"][..],
             (CKind::TangentLineCircleAt, 2) => &["p1", "p2"][..],
+            // the directions of `side_words`, and — for the run and the rise — the *axis* word
+            // beside them, which names no direction: `along: x` is the magnitude form, either way
+            // along the page's x, and the seed picks (§9.2).  `every_direction_is_a_word` holds
+            // the two tables together.
+            (CKind::PointLineDistance, 3) | (CKind::ParallelDistance, 3) => &["left", "right"][..],
+            (CKind::TangentLineCircle, 2) => &["left", "right"][..],
+            (CKind::HorizontalDistance, 3) => &["x", "right", "left"][..],
+            (CKind::VerticalDistance, 3) => &["y", "up", "down"][..],
+            (CKind::Angle, 3) => &["ccw", "cw"][..],
+            _ => return None,
+        })
+    }
+
+    /// **The word that says which way, and the sign it stands for** (§9.2, issue #48 item 4).
+    ///
+    /// One table for the two questions a reader and a kernel ask of the same word: which words a
+    /// slot takes, and what each of them *means*.  `left` is +1 of a line, because the signed
+    /// distance is positive to the left of `p1 → p2`; `left` is −1 along the page, because the
+    /// run is measured from the first point to the second.  The two are opposite numbers and the
+    /// same English, which is exactly why the word is what a document writes and the sign is what
+    /// the kernel gets.  A word not in the table — `x`, `y`, or the empty word an omitted
+    /// selector holds — names *no* direction: the number is a magnitude, both ways are solutions,
+    /// and the seed picks.
+    pub fn side_words(self) -> Option<(usize, &'static [(&'static str, f64)])> {
+        Some(match self {
+            CKind::PointLineDistance | CKind::ParallelDistance => {
+                (3, &[("left", 1.0), ("right", -1.0)][..])
+            }
+            CKind::TangentLineCircle => (2, &[("left", 1.0), ("right", -1.0)][..]),
+            CKind::HorizontalDistance => (3, &[("right", 1.0), ("left", -1.0)][..]),
+            CKind::VerticalDistance => (3, &[("up", 1.0), ("down", -1.0)][..]),
+            CKind::Angle => (3, &[("ccw", 1.0), ("cw", -1.0)][..]),
             _ => return None,
         })
     }
@@ -748,8 +803,18 @@ impl CKind {
     /// magnitude's residual squares its sign away or draws its absolute value, so a negative
     /// literal in the source would quietly mean the positive and the drawing and the document
     /// would disagree about what the circle is (#43.12); it is refused where it is written.
+    /// **A magnitude is never negative**, and a negative one is refused where it is written.
+    ///
+    /// `Distance` and `Radius` square the sign away in the kernel, so a minus said nothing at all.
+    /// A distance *from a line* is a magnitude too now (issue #48, item 4): the sign used to say
+    /// which side, which is a word (`side: left`) — and left as a number it was a coin a reader
+    /// could only check by rendering.  Since a component's formals are substituted before this is
+    /// asked, `Loc(v: -hw)` is caught at the call and not silently turned into the other side.
     pub fn magnitude(self) -> bool {
-        matches!(self, CKind::Distance | CKind::Radius)
+        matches!(
+            self,
+            CKind::Distance | CKind::Radius | CKind::PointLineDistance | CKind::ParallelDistance
+        )
     }
 
     pub fn claimable(self) -> bool {
@@ -928,6 +993,27 @@ impl CKind {
     /// The match is exhaustive on purpose: a new type carrying a `Length` or an `Angle` stops
     /// the build here, and `every_dimension_can_be_written_free` checks the arm is the right
     /// one.  Everything that states no number says `None`, and can never be asked.
+    /// The kernel for this type when the statement names **no side**: the magnitude form, whose
+    /// solution set is both sides and whose branch the seed picks (issue #48, item 4).  `None`
+    /// for every type that has no side to name — asked only through `side_slot`, so a type
+    /// without one is never asked.
+    pub fn magnitude_kernel(self, free: bool) -> Option<K> {
+        Some(match (self, free) {
+            (CKind::PointLineDistance, false) => K::PointLineMagnitude,
+            (CKind::PointLineDistance, true) => K::PointLineMagnitudeFree,
+            (CKind::ParallelDistance, false) => K::ParallelMagnitude,
+            (CKind::ParallelDistance, true) => K::ParallelMagnitudeFree,
+            _ => return None,
+        })
+    }
+
+    /// The slot that says which side of a line the number is measured to, for the types that
+    /// have one — the *word* whose absence makes the number a magnitude.  One table, asked by the
+    /// kernel choice, by `consts_on`'s sign and by the elaborator's refusal of a negative.
+    pub fn side_slot(self) -> Option<usize> {
+        self.side_words().map(|(i, _)| i)
+    }
+
     pub fn free_kernel(self) -> Option<K> {
         Some(match self {
             CKind::Distance => K::DistanceFree,
@@ -1070,6 +1156,17 @@ pub struct Constraint {
     pub class: crate::style::Classes,
 }
 
+/// `+1` and `−1` as the words a statement writes them with — the one place the two meet, read by
+/// the constructor that infers a tangency's side from the geometry and by the document reader
+/// that finds a number where a word now stands (issue #48, item 4).
+pub fn side_word(sign: i64) -> &'static str {
+    if sign < 0 {
+        "right"
+    } else {
+        "left"
+    }
+}
+
 impl Constraint {
     /// Whether this constraint *acts* on the drawing — the one predicate behind "everything that
     /// must be satisfied".  A soft one is a transient the solve may miss; a claim is a question
@@ -1079,8 +1176,20 @@ impl Constraint {
         !self.soft && !self.claim
     }
 
+    /// A constraint of `kind` over the arguments given, **and the defaults for any the caller
+    /// stopped short of**.
+    ///
+    /// One rule, in the one place every builder goes through: a slot appended to a type — a
+    /// selector saying which side a magnitude is on (issue #48, item 4) — is a slot no existing
+    /// caller knew to fill, and its default is what the type already meant without it.  A caller
+    /// that gives *more* than the type has is a mistake, and still one.
     pub fn new(kind: CKind, args: Vec<Arg>) -> Constraint {
-        debug_assert_eq!(args.len(), kind.spec().len(), "{:?} arity", kind);
+        let spec = kind.spec();
+        debug_assert!(args.len() <= spec.len(), "{:?} arity", kind);
+        let mut args = args;
+        for i in args.len()..spec.len() {
+            args.push(kind.default_arg(i));
+        }
         Constraint {
             id: 0,
             kind,
@@ -1151,7 +1260,7 @@ impl Constraint {
         });
         Constraint::new(
             CKind::TangentLineCircle,
-            vec![Arg::Ent(line), Arg::Ent(circle), Arg::Int(s)],
+            vec![Arg::Ent(line), Arg::Ent(circle), Arg::Str(side_word(s).to_string())],
         )
     }
 
@@ -1256,10 +1365,61 @@ impl Constraint {
     /// Which kernel evaluates this constraint: its type's, or the free-variable twin when the
     /// number it states is an unknown rather than a constant.
     fn kernel(&self) -> K {
-        match self.free {
-            Some(_) => self.kind.free_kernel().expect("a dimension has a free kernel"),
-            None => self.kind.kernel(),
+        let free = self.free.is_some();
+        // a side left unsaid is the magnitude form: both sides are solutions, and where the solve
+        // lands among them is the seed's business (§9.2)
+        if self.side().is_none() {
+            if let Some(k) = self.kind.magnitude_kernel(free) {
+                return k;
+            }
         }
+        match free {
+            true => self.kind.free_kernel().expect("a dimension has a free kernel"),
+            false => self.kind.kernel(),
+        }
+    }
+
+    /// The number a *cluster* has to place this dimension at: what it states, signed.
+    ///
+    /// The cluster vocabulary is signed where the language is not: a PL edge places a point at
+    /// `n·p − c = v`, so it needs to know which side of the line to put it on.  Where the
+    /// statement pins a side, that is the answer; where it does not, both sides are solutions and
+    /// the one the drawing is *on* is the answer, because a plan moves a figure that already
+    /// satisfies its constraints rather than choosing among their solutions (§9.2).  Every other
+    /// type states its own number and reads it straight.
+    pub fn signed_gap(&self, sk: &Sketch) -> f64 {
+        let d = self.args[2].num();
+        let Some(_) = self.kind.side_slot() else { return d };
+        if let Some(s) = self.side() {
+            return s * d;
+        }
+        // the same reading each kernel takes: a point against its line, and for a pair of lines
+        // the second's first endpoint against the first
+        let (p, line) = match self.kind {
+            CKind::PointLineDistance => (self.args[0].ent().i(), self.args[1].ent().i()),
+            _ => (sk.lines[self.args[1].ent().i()].p1 as usize, self.args[0].ent().i()),
+        };
+        let (px, py) = sk.point_xy(p);
+        let now = crate::model::signed_point_to_line(sk, px, py, line);
+        if now < 0.0 {
+            -d
+        } else {
+            d
+        }
+    }
+
+    /// Which way an angle turns: `sense: cw` is the minus a drawing no longer writes (§9.4), and
+    /// an angle with no sense written turns the way the language counts, counter-clockwise.
+    pub fn sense(&self) -> f64 {
+        self.side().unwrap_or(1.0)
+    }
+
+    /// Which side the statement named, as the sign the signed kernel wants: `None` where it named
+    /// none, and where the type has no side to name.
+    pub fn side(&self) -> Option<f64> {
+        let (i, table) = self.kind.side_words()?;
+        let Arg::Str(w) = &self.args[i] else { return None };
+        table.iter().find(|(n, _)| n == w).map(|(_, s)| *s)
     }
 
     pub fn n_residuals(&self) -> usize {
@@ -1441,18 +1601,27 @@ impl Constraint {
             };
         }
         match self.kind {
-            CKind::Distance | CKind::HorizontalDistance | CKind::VerticalDistance => {
-                vec![self.args[2].num()]
+            CKind::Distance => vec![self.args[2].num()],
+            // signed from the first point to the second, and which way is the word: `along: left`
+            // is the minus a drawing used to write (§9.2)
+            CKind::HorizontalDistance | CKind::VerticalDistance => {
+                vec![self.side().unwrap_or(1.0) * self.args[2].num()]
             }
             CKind::DragTarget => {
                 vec![self.args[1].num(), self.args[2].num(), self.args[3].num()]
             }
-            CKind::Angle
-            | CKind::ParallelDistance
-            | CKind::PointLineDistance
-            | CKind::AnnularDistance => vec![self.args[2].num()],
+            // the number is a magnitude and the word is its sign: `side: right` is the same
+            // statement as the negative used to be, said in a word a reader can check (§9.2)
+            CKind::ParallelDistance | CKind::PointLineDistance => {
+                vec![self.side().unwrap_or(1.0) * self.args[2].num()]
+            }
+            // an angle is directed, so `sense: cw` turns the number it states rather than the
+            // reader having to write the minus (§9.4)
+            CKind::Angle => vec![self.sense() * self.args[2].num()],
+            CKind::AnnularDistance => vec![self.args[2].num()],
             CKind::Radius => vec![self.args[1].num()],
-            CKind::TangentLineCircle => vec![self.args[2].num()],
+            // the word times the radius: the centre stands off the line on the side it names
+            CKind::TangentLineCircle => vec![self.side().unwrap_or(1.0)],
             CKind::TangentCircleCircle => {
                 vec![if matches!(self.args[2], Arg::Bool(true)) { 1.0 } else { -1.0 }]
             }

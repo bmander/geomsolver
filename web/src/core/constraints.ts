@@ -32,6 +32,10 @@ interface TypeEntry {
   name: string;
   spec: [string, SpecKind][];
   defaults: unknown[];
+  /** The words each slot will take, per slot and `null` where it takes none — the core's own
+   *  vocabulary (`CKind::words`), published so a front end offers what the core accepts rather
+   *  than keeping a second list of it (issue #48, item 4). */
+  words: (string[] | null)[];
   soft: boolean;
   commutative: boolean;
   kernel: number;
@@ -335,6 +339,7 @@ function make(entry: TypeEntry): ConstraintCtor {
   Object.defineProperties(cls, {
     spec: { value: spec },
     defaults: { value: entry.defaults },
+    words: { value: entry.words ?? spec.map(() => null) },
     commutative: { value: entry.commutative },
     softByDefault: { value: entry.soft },
     kernelId: { value: entry.kernel },
@@ -430,6 +435,13 @@ onInit(() => {
  *  chain readable and needs no per-type declaration. */
 export function isType(c: Constraint | null | undefined, name: string): boolean {
   return !!c && c.typeName === name;
+}
+
+/** The words a constraint's slot takes, in the core's order — empty where it takes none. */
+export function wordsFor(c: Constraint, slot: string): string[] {
+  const i = c.spec.findIndex(([n]) => n === slot);
+  const words = (c.constructor as unknown as { words?: (string[] | null)[] }).words;
+  return (i < 0 ? null : words?.[i]) ?? [];
 }
 
 /** A constraint type by name — the generic path the toolbar applier and I/O use. */

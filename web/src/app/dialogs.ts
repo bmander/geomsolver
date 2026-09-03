@@ -143,7 +143,10 @@ export function flipBranch(): void {
   const c = currentConstraint;
   if (c && C.isType(c, 'TangentLineCircle')) {
     view.pushUndo();
-    c.setValue('side', -Number(c.side));
+    // the side is a word now (`left`, `right`, §9.2) — the core's vocabulary, read off the
+    // registry rather than restated here, so a flip is "the other one it takes"
+    const words = C.wordsFor(c, 'side');
+    c.setValue('side', words.find((w) => w !== c.side) ?? words[0]);
     view.afterEdit();
     toast(`flipped the tangency side of ${io.describe(c, view.doc)}`);
     return;

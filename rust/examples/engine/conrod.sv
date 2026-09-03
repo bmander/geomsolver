@@ -63,10 +63,10 @@ component ConRod(end: plane, side: plane, secv: plane,
       point csr hint(x: sm.x + (hS + rf), y: sm.y - 16.1mm)
       // (that the centre is `eB + rf` from the pin follows: the contact is on the ray, on the
       // eye and on the fillet, so it is not stated a second time)
-      cbl distance(hB + rf) cl
-      cbr distance(-(hB + rf)) cl
-      csl distance(hS + rf) cl
-      csr distance(-(hS + rf)) cl
+      cbl distance(hB + rf, side: left) cl
+      cbr distance(hB + rf, side: right) cl
+      csl distance(hS + rf, side: left) cl
+      csr distance(hS + rf, side: right) cl
       line rayBL(pin, cbl) class hidden
       line rayBR(pin, cbr) class hidden
       line raySL(sm, csl) class hidden
@@ -115,14 +115,14 @@ component ConRod(end: plane, side: plane, secv: plane,
       point br1 hint(x: pin.x + bolt, y: pin.y + rodd)
       line bolt_l(bl0, bl1) class hidden
       line bolt_r(br0, br1) class hidden
-      bl0 distance(bolt) cl
-      bl1 distance(bolt) cl
-      br0 distance(-bolt) cl
-      br1 distance(-bolt) cl
-      bl0 distance(-capd) parting
-      bl1 distance(rodd) parting
-      br0 distance(-capd) parting
-      br1 distance(rodd) parting
+      bl0 distance(bolt, side: left) cl
+      bl1 distance(bolt, side: left) cl
+      br0 distance(bolt, side: right) cl
+      br1 distance(bolt, side: right) cl
+      bl0 distance(capd, side: right) parting
+      bl1 distance(rodd, side: left) parting
+      br0 distance(capd, side: right) parting
+      br1 distance(rodd, side: left) parting
       claim bl0 distance(2 * bolt) br0 class shown
 
       // the oil passage, drilled from the big-end bore to the small-end bore
@@ -136,10 +136,10 @@ component ConRod(end: plane, side: plane, secv: plane,
       or0 on bigbore
       ol1 on smallbore
       or1 on smallbore
-      ol0 distance(oil) cl
-      ol1 distance(oil) cl
-      or0 distance(-oil) cl
-      or1 distance(-oil) cl
+      ol0 distance(oil, side: left) cl
+      ol1 distance(oil, side: left) cl
+      or0 distance(oil, side: right) cl
+      or1 distance(oil, side: right) cl
     }
   }
 

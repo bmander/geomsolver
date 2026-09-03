@@ -23,7 +23,7 @@ component Throttle(front: plane, side: plane, top: plane, c: point, ref: line, p
     point tip hint(x: c.x + lev * sin(phi), y: c.y + lev * cos(phi))
     line lever(c, tip) class lever
     c distance(lev) tip
-    ref angle(-phi) lever
+    ref angle(phi, sense: cw) lever
     circle knob(center: tip) hint(r: 2.5mm) class lever
     radius(2.5) knob
     circle hub(center: c) hint(r: hubr) class lever
@@ -38,10 +38,10 @@ component Throttle(front: plane, side: plane, top: plane, c: point, ref: line, p
     e1 on barrel
     e2 on barrel
     e3 on barrel
-    e0 distance(dhole / 2) lever
-    e1 distance(dhole / 2) lever
-    e2 distance(-dhole / 2) lever
-    e3 distance(-dhole / 2) lever
+    e0 distance(dhole / 2, side: left) lever
+    e1 distance(dhole / 2, side: left) lever
+    e2 distance(dhole / 2, side: right) lever
+    e3 distance(dhole / 2, side: right) lever
     line h0(e0, e1) class barrel
     line h1(e2, e3) class barrel
     claim radius(rbar) barrel class detail at (-2.4, 12)

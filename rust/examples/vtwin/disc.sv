@@ -28,7 +28,7 @@ component Disc(swing: plane, side: plane, top: plane, o: point, pin: point, arm:
     point se hint(x: o.x + rdisc * cos(dir - 90deg), y: o.y + rdisc * sin(dir - 90deg))
     line ssa(o, se) class gone
     o distance(rdisc) se
-    arm angle(-90deg) ssa
+    arm angle(90deg, sense: cw) ssa
     gs: Grub(o, ssa, arm, dir: dir - 90deg, rin: dhub / 2, rout: rdisc)
     claim radius(dhub / 2) bore class detail at (2.4, 12)
     claim radius(pinclr / 2) ph class detail at (0.8, 10)

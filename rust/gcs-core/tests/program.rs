@@ -146,22 +146,22 @@ fn every_constraint_name_survives_the_case_round_trip() {
     }
 }
 
-/// A dimension is the last argument of every type that has one, which is what lets `== …` be the
-/// whole rule.  A future type that breaks it must fail here rather than print something wrong.
+/// **A type states at most one number**, which is what lets it be written bare in the
+/// parentheses (`distance(80)`, `angle(30, sense: cw)`) with everything else labelled, and what
+/// lets `dimension_text` and `set_dimension` say "the dimension" without saying which.  It used
+/// to be *the last* argument as well, until a selector had to follow it in spec order — a slot
+/// appended where an older document's JSON would not miss it (issue #48, item 4).  A future type
+/// with two numbers must fail here rather than print something a reader cannot tell apart.
 #[test]
-fn every_dimension_is_the_last_argument() {
+fn a_type_states_at_most_one_dimension() {
     for kind in ALL_KINDS {
-        let spec = kind.spec();
-        for (i, (name, k)) in spec.iter().enumerate() {
-            if k.is_dimension() {
-                assert_eq!(
-                    i,
-                    spec.len() - 1,
-                    "{}: `{name}` is a dimension and is not last",
-                    kind.name()
-                );
-            }
-        }
+        let dims: Vec<&str> = kind
+            .spec()
+            .iter()
+            .filter(|(_, k)| k.is_dimension())
+            .map(|(n, _)| *n)
+            .collect();
+        assert!(dims.len() <= 1, "{}: two numbers, {dims:?}", kind.name());
     }
 }
 
@@ -866,3 +866,4 @@ fn a_seed_in_a_list_slot_is_refused() {
     let e = elaborate(&p);
     assert!(!e.ok(), "a nameless control point should not elaborate");
 }
+

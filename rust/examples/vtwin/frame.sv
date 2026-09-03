@@ -25,7 +25,7 @@ component Side(o: point, ref: line, alpha: Angle, dim: Int) {
   point piv hint(x: o.x + H * sin(alpha), y: o.y + H * cos(alpha))
   line axis(o, piv) class axis
   o distance(H) piv
-  ref angle(-alpha) axis
+  ref angle(alpha, sense: cw) axis
   circle bolt(center: piv) hint(r: studclr / 2) class hidden
   radius(studclr / 2) bolt
   ip: At(piv, dx: a * sin(alpha - beta), dy: a * cos(alpha - beta))
@@ -39,8 +39,8 @@ component Side(o: point, ref: line, alpha: Angle, dim: Int) {
   point s1 hint(x: piv.x + a * sin(alpha - swing - 6deg), y: piv.y + a * cos(alpha - swing - 6deg))
   arc sweep(center: piv, start: s0, end: s1) hint(r: a) class phantom
   radius(a) sweep
-  s0 distance(-a * sin(swing + 6deg)) axis
-  s1 distance(a * sin(swing + 6deg)) axis
+  s0 distance(a * sin(swing + 6deg), side: right) axis
+  s1 distance(a * sin(swing + 6deg), side: left) axis
   // the ports' radials from the crank axis: all four ports are `rpl` out, and these carry the
   // bearings the part sheet states them by
   line rad_i(o, ip.p) class gone
@@ -63,11 +63,11 @@ component Frame(front: plane, side: plane, top: plane, o: point, ref: line, o_s:
     l: Side(o, ref, alpha: alphaL, dim: 1)
     claim r.axis angle(V) l.axis class shown at (0.785, 34)
     claim rad_bR angle(alphaR) ref class detail at (0.4, 20)
-    claim ref angle(-alphaL) rad_bL class detail at (-0.4, 20)
+    claim ref angle(alphaL, sense: cw) rad_bL class detail at (-0.4, 20)
     claim r.rad_i angle(bR_i) ref class detail at (0.35, 26)
     claim r.rad_e angle(bR_e) ref class detail at (0.5, 32)
-    claim ref angle(-bL_i) l.rad_i class detail at (0.35, 26)
-    claim ref angle(-bL_e) l.rad_e class detail at (0.5, 32)
+    claim ref angle(bL_i, sense: cw) l.rad_i class detail at (0.35, 26)
+    claim ref angle(bL_e, sense: cw) l.rad_e class detail at (0.5, 32)
     line rad_bR(o, r.piv) class gone
     line rad_bL(o, l.piv) class gone
 

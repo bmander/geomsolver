@@ -178,6 +178,29 @@ Conventions:
   `engine/crankshaft.sv`, `engine/conrod.sv`), the castings included; the view modules hold only
   what the assembly adds (the bore axis, the pistons on it, the timing drive).  Instances inside a block copy are indexed like declarations
   (`cyl[0].small`: `copy_of` returns the copy's prefix and `lookup` reads the rest under it).
+- **Which way is a word, not a sign** (Solvent §9.2, §9.4; issue #48, item 4).  A distance
+  measured *from a line* (`PointLineDistance`, `ParallelDistance`) is a **magnitude**: its kernel
+  is `|g| − d` (`kernels::point_line_magnitude`, degree 1 — **not** the squared form, whose
+  gradient vanishes at `distance(0)`, an idiom a drawing writes thirty times in one cylinder),
+  both sides are solutions, and the seed picks between them, which is what P3 already says a seed
+  may do and what every other sketcher does.  `side: left|right` pins one, and then the *signed*
+  kernel runs with the word's sign — so a pinned statement costs no new kernel and an unpinned one
+  is the new one.  `CKind::side_words` is the one table of "the words a slot takes and what each
+  means as a sign": `left` is +1 of a line and −1 along the page, opposite numbers and the same
+  English, which is exactly why the word is what a document writes.  A negative magnitude is E040
+  **by value**, so `Loc(v: -hw)` is caught at the call; where a sign is *arithmetic* rather than a
+  convention (a coordinate a caller signs) a document writes `abs(v)` and lets the seed — the
+  point, worked out — say which side.  The run, the rise and the directed angle keep their signs
+  (a component computes those, and by settling time the flattener has folded the text into a
+  number that no longer says how it was written) and gain `along: right|left|up|down` and
+  `sense: cw|ccw` as the spelling a drawing should use.  `io::dimension_text` draws the number the
+  statement **makes**, so a `sense: cw` label and the arc beside it agree.  A component takes a
+  side as `Ty::Side` — a word in `Scope::sides`, never a ±1 in `vals`, since encoding it as a
+  number would put the unreadable idiom back inside every helper.  `cgraph`'s PL edge asks
+  `Constraint::signed_gap`, which is the word where one is pinned and the *pose* where none is,
+  because a plan moves a figure that already satisfies its constraints rather than choosing among
+  their solutions.  `tests/refusals.rs` is the gate, and the corpus is the proof: every drawing
+  renders byte-identical to before the change.
 - **A selector says what it means, or it is refused** (Solvent §9.2; issue #48, item 4).
   `CKind::words(slot)` is the vocabulary a `Str` slot takes (`at: start|end`, `at: p1|p2`) and
   `constraints::ALONG` is the one table `along:` is read by — the choice *and* the message, since
