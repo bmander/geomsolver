@@ -766,6 +766,8 @@ fn kind_id(k: EntKind) -> i32 {
         // ellipse's (5) and the frame's (7) were taken up when those kinds went (#47)
         EntKind::Curve => 5,
         EntKind::Plane => 6,
+        EntKind::Face => 7,
+        EntKind::Solid => 8,
     }
 }
 
@@ -777,6 +779,8 @@ fn ent(kind: i32, idx: i32) -> EntRef {
         3 => EntKind::Arc,
         5 => EntKind::Curve,
         6 => EntKind::Plane,
+        7 => EntKind::Face,
+        8 => EntKind::Solid,
         _ => EntKind::Spline,
     };
     EntRef::new(k, idx as usize)

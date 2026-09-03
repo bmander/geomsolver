@@ -79,6 +79,20 @@ pub enum EntKind {
     /// expressions plus whatever it reads — so it moves when its arguments do and never
     /// otherwise.  See `CurveDef`.
     Curve,
+    /// **A region of a plane**: a closed loop of edges the document already drew (Solvent §6.8).
+    /// It owns nothing — no coordinate, no class of its own beyond presentation — and aliases
+    /// its edges, so `sec.mouth` and `mouth` are one line.  What a solid is swept from.
+    Face,
+    /// **A solid** (Solvent §6.9): a face swept along its plane's normal or about a line in its
+    /// plane, or a term over other solids — its stock, plus everything `on` it, minus everything
+    /// `through` it.
+    ///
+    /// It is an entity because a document *names* it and reaches its faces by path
+    /// (`body.bore.axis`), and it is like `Curve` in owning no coordinates: it is the term plus
+    /// whatever the term reads.  **Nothing about a solid is ever solved for** — every extent is
+    /// an expression, evaluated after the drawing is solved, which is what keeps the whole
+    /// engine planar while the document describes an object.
+    Solid,
 }
 
 impl EntKind {
@@ -91,6 +105,8 @@ impl EntKind {
             EntKind::Spline => "spline",
             EntKind::Plane => "plane",
             EntKind::Curve => "curve",
+            EntKind::Face => "face",
+            EntKind::Solid => "solid",
         }
     }
 
@@ -103,6 +119,8 @@ impl EntKind {
             "spline" => EntKind::Spline,
             "plane" => EntKind::Plane,
             "curve" => EntKind::Curve,
+            "face" => EntKind::Face,
+            "solid" => EntKind::Solid,
             _ => return None,
         })
     }
@@ -130,6 +148,11 @@ impl EntKind {
             // as many arguments as its definition takes, and none of them need be points — the
             // first kind for which that is true
             EntKind::Curve => &[("args", L)],
+            // a loop of edges, as long as the loop is; the plane is read off their memberships
+            EntKind::Face => &[("edges", L)],
+            // what it is swept from or made of: a face, or the solids of a term.  Every number
+            // a solid carries is an *extent* — an expression, never a Scalar a solve writes back
+            EntKind::Solid => &[("of", L)],
         }
     }
 
@@ -154,7 +177,9 @@ impl EntKind {
             | EntKind::Circle
             | EntKind::Spline
             | EntKind::Plane
-            | EntKind::Curve => None,
+            | EntKind::Curve
+            | EntKind::Face
+            | EntKind::Solid => None,
         }
     }
 
@@ -180,7 +205,7 @@ impl EntKind {
             EntKind::Plane => {
                 [pt("origin"), pt("toward"), vec![format!("{n}.c"), format!("{n}.s")]].concat()
             }
-            EntKind::Spline | EntKind::Curve => return None,
+            EntKind::Spline | EntKind::Curve | EntKind::Face | EntKind::Solid => return None,
         })
     }
 
@@ -195,7 +220,9 @@ impl EntKind {
     /// read, and was silently stamped at the rest.
     pub fn bears_points(self) -> bool {
         match self {
-            EntKind::Plane | EntKind::Curve => false,
+            // a face bears none of its own: its edges carry the memberships, and the face is on
+            // the plane they agree about.  A solid is not on a plane at all.
+            EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid => false,
             EntKind::Point
             | EntKind::Line
             | EntKind::Circle
@@ -219,7 +246,28 @@ impl EntKind {
             | EntKind::Circle
             | EntKind::Arc
             | EntKind::Spline
-            | EntKind::Curve => None,
+            | EntKind::Curve
+            | EntKind::Face
+            | EntKind::Solid => None,
+        }
+    }
+
+    /// Whether an entity of this kind is **evaluated after the drawing is solved** rather than
+    /// drawn on the sheet — a face, a solid, and what is derived from them (Solvent §6.9).
+    ///
+    /// The stratification asked as a question, so no consumer writes the list itself: nothing
+    /// here owns a parameter, nothing here may be an argument of a 2D constraint, and nothing
+    /// here is picked, dragged or dimensioned on the sheet.
+    pub fn spatial(self) -> bool {
+        match self {
+            EntKind::Face | EntKind::Solid => true,
+            EntKind::Point
+            | EntKind::Line
+            | EntKind::Circle
+            | EntKind::Arc
+            | EntKind::Spline
+            | EntKind::Plane
+            | EntKind::Curve => false,
         }
     }
 
@@ -270,6 +318,12 @@ impl EntRef {
     }
     pub fn plane(idx: usize) -> EntRef {
         EntRef::new(EntKind::Plane, idx)
+    }
+    pub fn face(idx: usize) -> EntRef {
+        EntRef::new(EntKind::Face, idx)
+    }
+    pub fn solid(idx: usize) -> EntRef {
+        EntRef::new(EntKind::Solid, idx)
     }
     pub fn i(self) -> usize {
         self.idx as usize
@@ -426,6 +480,108 @@ pub struct CurveE {
     pub class: Classes,
 }
 
+/// **A region of a plane** (Solvent §6.8): a closed loop of edges the document already drew.
+///
+/// It mints nothing and owns nothing.  Its edges keep their own names and are reached through it
+/// (`sec.mouth`), and the plane is the one every point of every edge agrees about — read off the
+/// memberships, never written on the face, so a face inside `in swing { … }` is on the plane the
+/// block stamped.  A circle is a loop by itself; there are no holes, because a hole is a solid
+/// `through` the body and that is the body rule saying it already.
+#[derive(Clone, Debug)]
+pub struct FaceE {
+    /// The loop, in traversal order.  Lines, arcs and at most one circle standing alone.
+    pub edges: Vec<EntRef>,
+    /// What the document calls each edge, in the same order — the name the face swept from it
+    /// is reached by (`block.side_l`).  Kept beside the references because a solid's face path
+    /// is spelled out of the *source's* words, and an anonymous edge has none to spell.
+    pub edge_names: Vec<String>,
+    /// The plane its edges agree about; `None` is the page.
+    pub plane: Option<u32>,
+    /// What the document calls it.  A solid's faces are reached by *path* — `body.bore.wall` —
+    /// so unlike every other kind a face and a solid carry their own name: the path is the
+    /// naming mechanism, and a report that could not spell one would have nothing to say.
+    pub name: String,
+    pub class: Classes,
+}
+
+/// A number a solid is swept or stood off by: the text a person wrote and what it came to.
+///
+/// The `fold:` bargain exactly (`plane::Basis`): it is settled by the flattener over the
+/// parameters in scope and is **never an unknown**, so a solve moves it no more than it moves a
+/// spline's knots.  The text is kept because a drawing reads better for saying `fw + D / 2` than
+/// `18`, which is the same reason a dimension carries its expression.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Extent {
+    pub text: String,
+    pub value: f64,
+}
+
+impl Extent {
+    /// An extent nobody wrote: a caller building a solid in Rust, and what a gesture would
+    /// splice.  The text is the number, printed as the source printer prints one.
+    pub fn at(value: f64) -> Extent {
+        Extent { text: crate::syntax::num(value), value }
+    }
+}
+
+/// Which way a partial revolution turns — a word, never a sign (§9.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sense {
+    Ccw,
+    Cw,
+}
+
+/// **What a solid is** (Solvent §6.9).  Three forms and no fourth: a face swept two ways, and a
+/// body over other solids.
+#[derive(Clone, Debug)]
+pub enum SolidDef {
+    /// A face swept along its plane's normal, between two signed coordinates along it.  `from`
+    /// and `to` are ordinates and their signs are arithmetic; `depth: d` is the draughtsman's
+    /// spelling of `from: -d, to: 0`, the material behind the face the view shows.
+    Prism { face: u32, from: Extent, to: Extent },
+    /// A face swept about a line **in its own plane**, through `sweep` (a full turn where the
+    /// document writes none), right-handed about the line's own `p1 → p2` unless `sense: cw`.
+    Revolve { face: u32, axis: u32, sweep: Extent, sense: Sense },
+    /// **The body rule, and the whole of it**: its stock, plus everything `on` it, minus
+    /// everything `through` it.  Both are sets, so the statements that fill them may be written
+    /// anywhere in any order (P2) — which is what a feature tree, folding a *sequence*, is not.
+    /// A design needing the other order names the intermediate, and then there are two solids
+    /// because there are two things.
+    Body { stock: u32, on: Vec<u32>, through: Vec<u32> },
+}
+
+/// A solid, as the document names it.
+#[derive(Clone, Debug)]
+pub struct SolidE {
+    pub def: SolidDef,
+    /// What the document calls it — see `FaceE::name`.
+    pub name: String,
+    pub class: Classes,
+}
+
+impl SolidE {
+    /// The solids this one is written over — what the term walk orders by.
+    pub fn operands(&self) -> Vec<u32> {
+        match &self.def {
+            SolidDef::Prism { .. } | SolidDef::Revolve { .. } => Vec::new(),
+            SolidDef::Body { stock, on, through } => {
+                let mut v = vec![*stock];
+                v.extend(on.iter().copied());
+                v.extend(through.iter().copied());
+                v
+            }
+        }
+    }
+
+    /// The face it is swept from, if it is swept from one.
+    pub fn face(&self) -> Option<u32> {
+        match &self.def {
+            SolidDef::Prism { face, .. } | SolidDef::Revolve { face, .. } => Some(*face),
+            SolidDef::Body { .. } => None,
+        }
+    }
+}
+
 /// Where a curve's trace is anchored in the parameter: a number the instance gave the swept
 /// formal (or the interval's start, when it gave none), or the drawing's own unknown — a drawn
 /// instance that left the formal unbound made it one (`leg.theta`), and the anchor is wherever
@@ -442,6 +598,16 @@ pub enum Home {
 /// relies on (`p.len() == v.n_q`), for the three seams that assemble one.
 pub fn whole<T>(v: Vec<T>, n: usize) -> Vec<T> {
     if v.len() == n { v } else { Vec::new() }
+}
+
+/// The two ends of a drawn edge, as point indices — a line's `p1`/`p2`, an arc's `start`/`end`.
+/// `None` for a kind with no ends, which is what a face's loop may not be made of.
+pub fn edge_ends(sk: &Sketch, e: EntRef) -> Option<(u32, u32)> {
+    match e.kind {
+        EntKind::Line => Some((sk.lines.get(e.i())?.p1, sk.lines.get(e.i())?.p2)),
+        EntKind::Arc => Some((sk.arcs.get(e.i())?.start, sk.arcs.get(e.i())?.end)),
+        _ => None,
+    }
 }
 
 /// The CCW arc through three points.
@@ -502,6 +668,11 @@ pub struct Sketch {
     pub splines: Vec<SplineE>,
     pub planes: Vec<PlaneE>,
     pub curves: Vec<CurveE>,
+    /// The faces and solids the document names (§6.8, §6.9).  Built after every other kind,
+    /// since a face is written over edges and a solid over faces and solids; evaluated after
+    /// the drawing is solved, since nothing about either is an unknown.
+    pub faces: Vec<FaceE>,
+    pub solids: Vec<SolidE>,
     /// The curve families this document defines.  Document state like `branches`: a curve
     /// instance names one by index.
     pub curve_defs: Vec<CurveDef>,
@@ -524,6 +695,11 @@ pub struct Sketch {
     /// the gear, for a drawing that had not changed.  Interior, so `&self` readers share it; a
     /// cache and not state, since a miss recomputes what a hit remembers.
     pub polyline_cache: std::cell::RefCell<BTreeMap<usize, (Vec<f64>, Vec<(f64, f64)>)>>,
+    /// Each solid's evaluated boundary, remembered against everything it was computed from
+    /// (`solid::reads`).  `polyline_cache`'s bargain, for the same reason: a repaint asks every
+    /// derived view for its edges, and a boundary is a sweep of classifications over a drawing
+    /// that has not changed.
+    pub solid_cache: std::cell::RefCell<BTreeMap<(usize, crate::solid::Want), (Vec<f64>, crate::solid::Cached)>>,
     /// The document's style sheet: what each class looks like (`style.rs`).  Presentation, and
     /// nothing the core computes reads it — it is here because it is document state, saved and
     /// grafted with everything else, and because the core resolving it is what keeps two front
@@ -559,6 +735,8 @@ impl Sketch {
             EntKind::Spline => self.splines[e.i()].class.clone(),
             EntKind::Plane => self.planes[e.i()].frame.class.clone(),
             EntKind::Curve => self.curves[e.i()].class.clone(),
+            EntKind::Face => self.faces[e.i()].class.clone(),
+            EntKind::Solid => self.solids[e.i()].class.clone(),
         }
     }
 
@@ -573,6 +751,8 @@ impl Sketch {
             EntKind::Spline => self.splines.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Plane => self.planes.get_mut(e.i()).map(|x| &mut x.frame.class),
             EntKind::Curve => self.curves.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Face => self.faces.get_mut(e.i()).map(|x| &mut x.class),
+            EntKind::Solid => self.solids.get_mut(e.i()).map(|x| &mut x.class),
         };
         if let Some(c) = slot {
             c.set(name, on);
@@ -663,6 +843,7 @@ impl Sketch {
     /// documents in different units would leave that number unconverted.
     fn own_length_params(&self, e: EntRef) -> Vec<u32> {
         match e.kind {
+            EntKind::Face | EntKind::Solid => Vec::new(),
             EntKind::Point => self.point_params(e.i()).to_vec(),
             EntKind::Circle => vec![self.circles[e.i()].radius],
             EntKind::Arc => vec![self.arcs[e.i()].radius],
@@ -1143,6 +1324,9 @@ impl Sketch {
     /// Params of any primitive, in the model's canonical order.
     pub fn entity_params(&self, e: EntRef) -> Vec<u32> {
         match e.kind {
+            // the stratification, as a table entry: a face and a solid own no parameter, so
+            // nothing about either is ever a column of the Jacobian
+            EntKind::Face | EntKind::Solid => Vec::new(),
             EntKind::Point => self.point_params(e.i()).to_vec(),
             EntKind::Line => self.line_params(e.i()).to_vec(),
             EntKind::Circle => {
@@ -1212,8 +1396,14 @@ impl Sketch {
                 vec![f.c, f.s]
             }
             // a curve holds no number of its own: it is its expressions, and they read
-            // the geometry rather than owning any
-            EntKind::Line | EntKind::Spline | EntKind::Curve => Vec::new(),
+            // the geometry rather than owning any; a face and a solid own none for the same
+            // reason, one further out — every number of theirs is an extent, an expression the
+            // flattener settled, and no solve may write one back
+            EntKind::Line
+            | EntKind::Spline
+            | EntKind::Curve
+            | EntKind::Face
+            | EntKind::Solid => Vec::new(),
         }
     }
 
@@ -1221,6 +1411,23 @@ impl Sketch {
     pub fn children(&self, e: EntRef) -> Vec<EntRef> {
         match e.kind {
             EntKind::Point => Vec::new(),
+            // a face's children are the edges it aliases, so deleting one takes the face with
+            // it; a solid's are what its term is written over
+            EntKind::Face => self.faces[e.i()].edges.clone(),
+            EntKind::Solid => {
+                let s = &self.solids[e.i()];
+                let mut v: Vec<EntRef> = Vec::new();
+                match &s.def {
+                    SolidDef::Prism { face, .. } => v.push(EntRef::face(*face as usize)),
+                    SolidDef::Revolve { face, axis, .. } => {
+                        v.push(EntRef::face(*face as usize));
+                        v.push(EntRef::line(*axis as usize));
+                    }
+                    SolidDef::Body { .. } => {}
+                }
+                v.extend(s.operands().into_iter().map(|i| EntRef::solid(i as usize)));
+                v
+            }
             EntKind::Line => {
                 let l = &self.lines[e.i()];
                 vec![EntRef::point(l.p1 as usize), EntRef::point(l.p2 as usize)]
@@ -1257,8 +1464,10 @@ impl Sketch {
         // inherit the point-shaped answer and be deleted whole instead of shortened
         match e.kind {
             EntKind::Spline => crate::curve::MIN_CTRL,
+            // a face is a loop: lose one edge and it is not a loop, so it goes whole.  A solid
+            // is its term, and a term missing an operand is not that solid
             EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc
-            | EntKind::Plane | EntKind::Curve => {
+            | EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid => {
                 children.len()
             }
         }
@@ -1442,8 +1651,93 @@ impl Sketch {
         }
     }
 
+    // -- faces and solids (§6.8, §6.9) --------------------------------------
+
+    /// A face: a loop of edges the document already drew, on the plane they agree about.
+    ///
+    /// The plane is *read* rather than given, since a face has no points of its own to put
+    /// anywhere: it is the one every point of every edge is a member of, and the elaborator has
+    /// already refused a loop whose edges disagree (E080).
+    pub fn face(&mut self, edges: Vec<EntRef>, names: Vec<String>, name: &str) -> usize {
+        let plane = edges
+            .first()
+            .and_then(|e| self.children(*e).first().copied().or(Some(*e)))
+            .and_then(|p| (p.kind == EntKind::Point).then(|| self.plane_of(p.i())).flatten());
+        let plane = match plane {
+            Some(p) => Some(p),
+            None => edges.iter().find_map(|e| {
+                self.children(*e).iter().find_map(|c| {
+                    (c.kind == EntKind::Point).then(|| self.plane_of(c.i())).flatten()
+                })
+            }),
+        };
+        self.faces.push(FaceE {
+            edges,
+            edge_names: names,
+            plane: plane.map(|p| p as u32),
+            name: name.to_string(),
+            class: Classes::default(),
+        });
+        self.faces.len() - 1
+    }
+
+    /// A solid: a face swept, or a term over other solids.  It allocates no parameter, which is
+    /// the whole of what "nothing three-dimensional is ever solved for" comes to in code.
+    pub fn solid(&mut self, def: SolidDef, name: &str) -> usize {
+        self.solids.push(SolidE { def, name: name.to_string(), class: Classes::default() });
+        self.solids.len() - 1
+    }
+
+    /// What the document calls a solid.
+    pub fn solid_name(&self, i: usize) -> String {
+        self.solids.get(i).map(|s| s.name.clone()).unwrap_or_default()
+    }
+
+    /// **A solid's boundary**, remembered against everything it was computed from.
+    ///
+    /// `curve_polyline`'s bargain (`solid::reads`): a repaint asks every derived view for its
+    /// edges over a drawing that has not changed, and a boundary is a sweep of classifications.
+    pub fn solid_boundary(&self, i: usize, unit: f64) -> Vec<crate::csg::Piece> {
+        let key = crate::solid::reads(self, i, unit);
+        if let Some((k, crate::solid::Cached::Boundary(v))) =
+            self.solid_cache.borrow().get(&(i, crate::solid::Want::Boundary))
+        {
+            if *k == key {
+                return v.clone();
+            }
+        }
+        let csg = crate::solid::resolve(self, i, unit);
+        let v = crate::csg::boundary(&csg, self.extent() * crate::solid::EPS);
+        self.solid_cache.borrow_mut().insert(
+            (i, crate::solid::Want::Boundary),
+            (key, crate::solid::Cached::Boundary(v.clone())),
+        );
+        v
+    }
+
+    /// A solid's edges, as a view would draw them before visibility is decided.
+    pub fn solid_edges(&self, i: usize, unit: f64) -> Vec<crate::csg::Edge> {
+        let key = crate::solid::reads(self, i, unit);
+        if let Some((k, crate::solid::Cached::Edges(v))) =
+            self.solid_cache.borrow().get(&(i, crate::solid::Want::Edges))
+        {
+            if *k == key {
+                return v.clone();
+            }
+        }
+        let csg = crate::solid::resolve(self, i, unit);
+        let v = crate::csg::edges(&csg, self.extent() * crate::solid::EPS);
+        self.solid_cache.borrow_mut().insert(
+            (i, crate::solid::Want::Edges),
+            (key, crate::solid::Cached::Edges(v.clone())),
+        );
+        v
+    }
+
     pub fn count(&self, kind: EntKind) -> usize {
         match kind {
+            EntKind::Face => self.faces.len(),
+            EntKind::Solid => self.solids.len(),
             EntKind::Point => self.points.len(),
             EntKind::Line => self.lines.len(),
             EntKind::Circle => self.circles.len(),
@@ -1561,6 +1855,19 @@ impl Sketch {
 
     pub fn bounds(&self, e: EntRef) -> Box2 {
         match e.kind {
+            // a face is where its edges are; a solid is not on the sheet at all, and what is
+            // *drawn* of it is a derived view, which is geometry of its own
+            EntKind::Face => {
+                let mut b = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+                for c in self.faces[e.i()].edges.clone() {
+                    let q = self.bounds(c);
+                    b = (b.0.min(q.0), b.1.min(q.1), b.2.max(q.2), b.3.max(q.3));
+                }
+                b
+            }
+            EntKind::Solid => {
+                (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY)
+            }
             EntKind::Curve => {
                 let mut b = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
                 for (x, y) in self.curve_polyline(e.i()) {
@@ -1715,6 +2022,9 @@ pub fn signed_point_to_line(sk: &Sketch, px: f64, py: f64, line: usize) -> f64 {
 /// against.
 fn point_to(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
     match e.kind {
+        // never picked and never dimensioned: what a 2D statement may name is the drawing, and
+        // a face or a solid is evaluated after the drawing is solved (§6.9)
+        EntKind::Face | EntKind::Solid => f64::MAX,
         // a curve has no idealised form a dimension could mean beyond the curve itself, so this
         // measurement and `point_to_drawn`'s are the same one
         EntKind::Curve => polyline_distance(&sk.curve_polyline(e.i()), px, py),
@@ -1751,6 +2061,7 @@ fn point_to_line(sk: &Sketch, px: f64, py: f64, line: usize) -> f64 {
 /// line is infinite, an arc is the whole circle it lies on — which is not what a pointer hits.
 pub fn point_to_drawn(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
     match e.kind {
+        EntKind::Face | EntKind::Solid => f64::MAX,
         EntKind::Curve => polyline_distance(&sk.curve_polyline(e.i()), px, py),
         EntKind::Line => {
             let l = &sk.lines[e.i()];
@@ -1835,6 +2146,8 @@ fn measure_order(k: EntKind) -> u8 {
         EntKind::Circle | EntKind::Arc => 2,
         EntKind::Spline => 3,
         EntKind::Curve => 4,
+        // never measured against anything: a face and a solid are not on the sheet
+        EntKind::Face | EntKind::Solid => 5,
         // last, so any pair with a datum in it puts the datum second and one arm catches it
         EntKind::Plane => 6,
     }

@@ -33,9 +33,9 @@ component Valve(seat: point, axis: line, lift: Length, head: Length) {
   axis.p2 distance(rb + lift) fc
   point f1 hint(x: axis.p2.x - 15mm, y: axis.p2.y - rb)
   point f2 hint(x: axis.p2.x + 15mm, y: axis.p2.y - rb)
-  line face(f1, f2)
-  fc midpoint face
-  face perpendicular axis
+  line flat(f1, f2)
+  fc midpoint flat
+  flat perpendicular axis
   f1 distance(30) f2
   // the bucket under the face, 30 wide and 20 deep
   point b1 hint(x: axis.p2.x - 15mm, y: axis.p2.y - rb - 20mm)

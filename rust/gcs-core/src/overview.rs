@@ -232,6 +232,9 @@ fn entity_view(sk: &Sketch, e: EntRef, views: &[Option<usize>]) -> Option<usize>
 pub fn drawable(sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
     let i = e.i();
     match e.kind {
+        // nothing on the page: a face is the edges the document already drew, and what is drawn
+        // of a solid is a derived view, which is its own geometry
+        EntKind::Face | EntKind::Solid => Vec::new(),
         EntKind::Point => vec![vec![sk.point_xy(i)]],
         EntKind::Line => {
             let l = &sk.lines[i];

@@ -31,9 +31,9 @@ spline cam(k0, k1, k2, k3, k4, k5, k6)
 // the follower: a level face resting against the curve, touching wherever it must
 point f1 hint(x: 0, y: 8.666667)
 point f2 hint(x: 120, y: 8.666667)
-line  face(f1, f2)
-horizontal face
-cam tangent face
+line  flat(f1, f2)
+horizontal flat
+cam tangent flat
 
 // and a point riding on the curve, held off a grounded anchor above it
 point rider hint(x: 60, y: 8.666667)

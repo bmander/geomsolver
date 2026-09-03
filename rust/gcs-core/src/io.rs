@@ -187,8 +187,9 @@ fn remap_early(
         EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
         EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
         EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
-        // a curve is never another curve's argument: nothing in the language says so
-        EntKind::Curve => None,
+        // a curve is never another curve's argument: nothing in the language says so, and a
+        // face and a solid are built after every curve, so neither is one either
+        EntKind::Curve | EntKind::Face | EntKind::Solid => None,
     }
 }
 
@@ -712,6 +713,89 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         curve_map[i] = Some(dst.curves.len() - 1);
         made.push(EntRef::new(EntKind::Curve, dst.curves.len() - 1));
     }
+    // then faces, and then solids in the order they were written — a solid's operands are
+    // earlier solids, so one walk in document order fills every map it reads.  A face that lost
+    // an edge is not a loop and does not come; a solid that lost its face or an operand is not
+    // that solid, which is `whole`'s rule again.
+    let mut face_map: Vec<Option<usize>> = vec![None; src.faces.len()];
+    for (i, f) in src.faces.iter().enumerate() {
+        if !keep(EntRef::face(i)) {
+            continue;
+        }
+        let mut edges = Vec::with_capacity(f.edges.len());
+        let mut whole = true;
+        for &e in &f.edges {
+            match remap_early(&pt_index, &line_map, &circle_map, &arc_map, &spline_map,
+                              &plane_map, e) {
+                Some(r) => edges.push(r),
+                None => whole = false,
+            }
+        }
+        let plane = match f.plane {
+            Some(p) => match plane_map[p as usize] {
+                Some(n) => Some(n as u32),
+                None => {
+                    whole = false;
+                    None
+                }
+            },
+            None => None,
+        };
+        if !whole {
+            continue;
+        }
+        dst.faces.push(crate::model::FaceE {
+            edges,
+            edge_names: f.edge_names.clone(),
+            plane,
+            name: f.name.clone(),
+            class: f.class.clone(),
+        });
+        face_map[i] = Some(dst.faces.len() - 1);
+        made.push(EntRef::face(dst.faces.len() - 1));
+    }
+    let mut solid_map: Vec<Option<usize>> = vec![None; src.solids.len()];
+    for (i, so) in src.solids.iter().enumerate() {
+        if !keep(EntRef::solid(i)) {
+            continue;
+        }
+        let face = |f: u32| face_map[f as usize].map(|n| n as u32);
+        let sol = |s: &u32| solid_map[*s as usize].map(|n| n as u32);
+        let def = match &so.def {
+            crate::model::SolidDef::Prism { face: f, from, to } => match face(*f) {
+                Some(f) => crate::model::SolidDef::Prism {
+                    face: f,
+                    from: from.clone(),
+                    to: to.clone(),
+                },
+                None => continue,
+            },
+            crate::model::SolidDef::Revolve { face: f, axis, sweep, sense } => {
+                match (face(*f), line_map[*axis as usize]) {
+                    (Some(f), Some(a)) => crate::model::SolidDef::Revolve {
+                        face: f,
+                        axis: a as u32,
+                        sweep: sweep.clone(),
+                        sense: *sense,
+                    },
+                    _ => continue,
+                }
+            }
+            crate::model::SolidDef::Body { stock, on, through } => {
+                let Some(stock) = sol(stock) else { continue };
+                let on: Vec<u32> = on.iter().filter_map(sol).collect();
+                let through: Vec<u32> = through.iter().filter_map(sol).collect();
+                crate::model::SolidDef::Body { stock, on, through }
+            }
+        };
+        dst.solids.push(crate::model::SolidE {
+            def,
+            name: so.name.clone(),
+            class: so.class.clone(),
+        });
+        solid_map[i] = Some(dst.solids.len() - 1);
+        made.push(EntRef::solid(dst.solids.len() - 1));
+    }
     let remap = |e: EntRef| -> Option<EntRef> {
         match e.kind {
             EntKind::Point => pt_index(e.i()).map(EntRef::point),
@@ -721,6 +805,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
             EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
             EntKind::Curve => curve_map[e.i()].map(|i| EntRef::new(EntKind::Curve, i)),
+            EntKind::Face => face_map[e.i()].map(EntRef::face),
+            EntKind::Solid => solid_map[e.i()].map(EntRef::solid),
         }
     };
     let mut expr = false;

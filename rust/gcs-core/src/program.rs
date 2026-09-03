@@ -1910,6 +1910,9 @@ fn build(
     };
     let nonzero = |r: f64| if r.abs() > 1e-9 { r } else { UNSEEDED_RADIUS };
     let idx = match d.kind {
+        // built by their own phase, after every other kind: a face is written over edges and a
+        // solid over faces and solids, so neither can be minted by the walk that makes points
+        EntKind::Face | EntKind::Solid => return None,
         EntKind::Point if unseeded => {
             let (x, y) = scatter(sk.points.len());
             sk.point(x, y, false, &show)
@@ -2285,6 +2288,8 @@ fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {
         EntKind::Arc => sk.arcs[e.i()].class = c,
         EntKind::Spline => sk.splines[e.i()].class = c,
         EntKind::Plane => sk.planes[e.i()].frame.class = c,
+        EntKind::Face => sk.faces[e.i()].class = c,
+        EntKind::Solid => sk.solids[e.i()].class = c,
     }
 }
 

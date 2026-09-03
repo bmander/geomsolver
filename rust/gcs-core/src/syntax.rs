@@ -1274,6 +1274,10 @@ pub fn kind_initial(k: EntKind) -> char {
     match k {
         EntKind::Plane => 'v',
         EntKind::Curve => 'k',
+        // `face` and `solid` share an `s` with `spline`: a face's labels run `f0`, and a
+        // solid's `b0` — a *body*, since `s` is taken and a solid is what a body is
+        EntKind::Face => 'f',
+        EntKind::Solid => 'b',
         EntKind::Point
         | EntKind::Line
         | EntKind::Circle

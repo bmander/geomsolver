@@ -52,6 +52,7 @@ mod ring;
 mod row_scale;
 mod seeds;
 mod smoke;
+mod solid;
 mod style;
 mod tape;
 mod trace;

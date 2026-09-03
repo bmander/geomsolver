@@ -28,7 +28,7 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
     point f_r hint(x: o.x + hw, y: o.y + deck + gasket)
     point t_l hint(x: o.x - 110mm, y: o.y + deck + head)
     tr: At(o, dx: 110mm, dy: deck + head)
-    line face(f_l, f_r) -> line side_r(f_r, tr.p) -> line topline(tr.p, t_l) -> line side_l(t_l, f_l) -> close
+    line gasket(f_l, f_r) -> line side_r(f_r, tr.p) -> line topline(tr.p, t_l) -> line side_l(t_l, f_l) -> close
     o distance(-hw, along: x) f_l
     o distance(deck + gasket, along: y) f_l
     o distance(deck + gasket, along: y) f_r

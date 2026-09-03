@@ -8,15 +8,27 @@
 //! kernel is the one equation it comes to.
 //!
 //! An attitude is an orthonormal basis `(u, v)` of the plane with `n = u × v` toward the
-//! viewer.  The page is the front view: `u = x`, `v = z`, so `n = −y` and the viewer stands
-//! at −y looking in.  Every other plane is either *folded* from one — the draughtsman's
-//! construction, which reaches any plane in two folds — or given outright.
+//! viewer, and the point `o` in space its own origin stands at.  The page is the front view:
+//! `u = x`, `v = z`, so `n = −y` and the viewer stands at −y looking in.  Every other plane is
+//! either *folded* from one — the draughtsman's construction, which reaches any plane in two
+//! folds — *offset* along one's normal, or given outright.
+//!
+//! **`o` is what a stack is written in.**  A drawing's views are images of one object and share
+//! one origin, which is `o = 0` and every plane in every document written before solids; a
+//! *part* standing a wall's thickness in front of another is a plane parallel to it with `o`
+//! that far along the normal (Solvent §6.7, `offset:`).  The projector rule is unharmed, which
+//! is why the offset may only be along the normal: `d` is perpendicular to both normals, so
+//! `d·o = 0` and `fold_line` — the whole of what `Project` reads — cannot see it.
 
-/// An orthonormal basis of a plane in space; `u × v` points toward the viewer.
+/// An orthonormal basis of a plane in space, and where its origin stands; `u × v` points toward
+/// the viewer.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Basis {
     pub u: [f64; 3],
     pub v: [f64; 3],
+    /// Where this plane's own origin sits in space.  Zero for every view of one object — the
+    /// shared origin `project` is written against — and non-zero for a plane a solid stands on.
+    pub o: [f64; 3],
 }
 
 /// Normals closer to parallel than this share no fold line: a projection between the two
@@ -27,15 +39,15 @@ pub(crate) fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+pub(crate) fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 }
 
-fn norm(a: [f64; 3]) -> f64 {
+pub(crate) fn norm(a: [f64; 3]) -> f64 {
     dot(a, a).sqrt()
 }
 
-fn scaled(a: [f64; 3], k: f64) -> [f64; 3] {
+pub(crate) fn scaled(a: [f64; 3], k: f64) -> [f64; 3] {
     [a[0] * k, a[1] * k, a[2] * k]
 }
 
@@ -46,7 +58,7 @@ fn tidy(a: [f64; 3]) -> [f64; 3] {
     a.map(|x| if x.abs() < 1e-15 { 0.0 } else { x })
 }
 
-fn unit(a: [f64; 3]) -> Option<[f64; 3]> {
+pub(crate) fn unit(a: [f64; 3]) -> Option<[f64; 3]> {
     let n = norm(a);
     (n > PARALLEL_TOL && n.is_finite()).then(|| tidy(scaled(a, 1.0 / n)))
 }
@@ -54,7 +66,7 @@ fn unit(a: [f64; 3]) -> Option<[f64; 3]> {
 impl Basis {
     /// The page itself: the front view, `u = x`, `v = z`, viewer at −y.
     pub fn page() -> Basis {
-        Basis { u: [1.0, 0.0, 0.0], v: [0.0, 0.0, 1.0] }
+        Basis { u: [1.0, 0.0, 0.0], v: [0.0, 0.0, 1.0], o: [0.0; 3] }
     }
 
     /// The plane folded from this one about the line at bearing `theta` (radians) in it — the
@@ -72,7 +84,9 @@ impl Basis {
             c * self.u[2] + s * self.v[2],
         ];
         let v = scaled(self.normal(), -1.0);
-        Basis { u: tidy(u), v: tidy(v) }
+        // a fold turns about a line *in* this plane, so the folded plane passes through the same
+        // origin: a view folded from an offset one stands where that one does
+        Basis { u: tidy(u), v: tidy(v), o: self.o }
     }
 
     /// A basis given outright, orthonormalised: `u` is normalised and `v` is what is left of it
@@ -82,7 +96,24 @@ impl Basis {
         let u = unit(u)?;
         let along = dot(v, u);
         let v = unit([v[0] - along * u[0], v[1] - along * u[1], v[2] - along * u[2]])?;
-        Some(Basis { u, v })
+        Some(Basis { u, v, o: [0.0; 3] })
+    }
+
+    /// This plane moved `k` along its own normal — the same attitude, standing somewhere else.
+    ///
+    /// What `plane p(…, from: q, offset: k)` writes, and what a stack of parts is made of: the
+    /// face of one part against the face of another is two parallel planes a thickness apart
+    /// (Solvent §6.10).  Only along the normal, because an offset *in* the plane would move the
+    /// origin `project` measures both images from and put a constant in its residual.
+    pub fn offset(&self, k: f64) -> Basis {
+        let n = self.normal();
+        Basis { u: self.u, v: self.v, o: tidy([self.o[0] + k * n[0], self.o[1] + k * n[1], self.o[2] + k * n[2]]) }
+    }
+
+    /// How far this plane stands along its own normal from the shared origin.  Zero for a view;
+    /// what `.offset` reads on a plane a solid stands on.
+    pub fn along_normal(&self) -> f64 {
+        dot(self.o, self.normal())
     }
 
     /// `u × v`: toward the viewer.
@@ -93,15 +124,23 @@ impl Basis {
     /// Where a point drawn in this view sits **in space**: `a·u + b·v`, for the view
     /// coordinates `(a, b)` that `in_view` reads off the page.
     ///
-    /// Every plane's origin is the image of one shared origin in space — the convention
-    /// `project` is written against, and what lets its residual compare two views by one
-    /// number — so a view's origin is the origin, and this is the whole of the lift.
+    /// A view's origin is the image of one shared origin in space — the convention `project` is
+    /// written against, and what lets its residual compare two views by one number — so for
+    /// every view `o` is zero and this is `a·u + b·v`.  A plane offset along its normal carries
+    /// `o`, and a point drawn on it stands that far out.
     pub fn lift(&self, a: f64, b: f64) -> [f64; 3] {
         [
-            a * self.u[0] + b * self.v[0],
-            a * self.u[1] + b * self.v[1],
-            a * self.u[2] + b * self.v[2],
+            self.o[0] + a * self.u[0] + b * self.v[0],
+            self.o[1] + a * self.u[1] + b * self.v[1],
+            self.o[2] + a * self.u[2] + b * self.v[2],
         ]
+    }
+
+    /// The inverse of `lift` for a point *on* this plane: what the draughtsman would measure of
+    /// `x` on this view.  A point off the plane is read by its shadow along the normal.
+    pub fn view_coords(&self, x: [f64; 3]) -> (f64, f64) {
+        let d = [x[0] - self.o[0], x[1] - self.o[1], x[2] - self.o[2]];
+        (dot(d, self.u), dot(d, self.v))
     }
 }
 
@@ -115,6 +154,16 @@ impl Basis {
 pub fn in_view(c: f64, s: f64, o: (f64, f64), p: (f64, f64)) -> (f64, f64) {
     let (x, y) = (p.0 - o.0, p.1 - o.1);
     (c * x + s * y, -s * x + c * y)
+}
+
+/// Where a point of a view lands **on the page**: the inverse of `in_view`, `o + R(c, s)(a, b)`
+/// with `R(c, s)(x, y) = (c·x − s·y, s·x + c·y)`.
+///
+/// Written beside `in_view` and never anywhere else, for that function's own reason: a derived
+/// view puts its edges back on the sheet through this, and if the two ever disagreed the drawing
+/// and what is drawn over it would be pictures of different objects.
+pub fn on_page(c: f64, s: f64, o: (f64, f64), p: (f64, f64)) -> (f64, f64) {
+    (o.0 + c * p.0 - s * p.1, o.1 + s * p.0 + c * p.1)
 }
 
 /// The fold line two planes share, as a direction in each plane's own 2D coordinates:
