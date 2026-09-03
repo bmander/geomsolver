@@ -17,6 +17,12 @@ pub const MODULES: &[(&str, &str)] = &[
     ("engine.crankshaft", include_str!("../../examples/engine/crankshaft.sv")),
     ("engine.end_view", include_str!("../../examples/engine/end_view.sv")),
     ("engine.side_view", include_str!("../../examples/engine/side_view.sv")),
+    ("vtwin.dims", include_str!("../../examples/vtwin/dims.sv")),
+    ("vtwin.parts", include_str!("../../examples/vtwin/parts.sv")),
+    ("vtwin.frame", include_str!("../../examples/vtwin/frame.sv")),
+    ("vtwin.crank", include_str!("../../examples/vtwin/crank.sv")),
+    ("vtwin.bank", include_str!("../../examples/vtwin/bank.sv")),
+    ("vtwin.side_view", include_str!("../../examples/vtwin/side_view.sv")),
 ];
 
 /// A module's text by name, or `None` where the library has none.

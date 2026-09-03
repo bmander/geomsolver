@@ -40,6 +40,7 @@ const DOCS: &[(&str, Shape, i64, State)] = &[
     ("jansen", (8, 12, 1, 0), 1, State::Under),
     ("bracket", (31, 21, 0, 0), 0, State::Well),
     ("engine", (633, 467, 43, 11), 0, State::Well),
+    ("vtwin", (219, 177, 17, 4), 1, State::Under),
 ];
 
 #[test]

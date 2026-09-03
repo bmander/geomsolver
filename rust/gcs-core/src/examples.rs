@@ -179,6 +179,7 @@ pub fn example(name: &str) -> Option<Sketch> {
         "jansen" => jansen(),
         "bracket" => bracket(),
         "engine" => engine(),
+        "vtwin" => vtwin(),
         _ => return None,
     })
 }
@@ -189,13 +190,20 @@ pub fn engine() -> Sketch {
     document(ENGINE, "engine")
 }
 
+/// A V-twin oscillating-cylinder air engine in two views, written as modules: the frame, the
+/// crank train and one bank each a component designed in one place, the side view placed by
+/// projection from the view along the crank axis (§14.4, §6.7).
+pub fn vtwin() -> Sketch {
+    document(VTWIN, "vtwin")
+}
+
 /// An L-bracket in three views and an auxiliary view — descriptive geometry on one sheet.
 pub fn bracket() -> Sketch {
     document(BRACKET, "bracket")
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 28] = [
+pub const CASES: [(&str, &str, &str); 29] = [
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Square, one line round a cycle", "square", "`cycle 4 { line s -> perpendicular equal }` — the body ends mid-joint, so each side welds to the next copy's and the wrap closes the loop (issue #38); 1 DOF: it swings about its grounded corner"),
     ("Regular n-gon (component)", "ngon", "a parametric `Ngon(n, side)` component: corners on a circle, equal sides, the open-jointed cycle welding them round — pure relations, so the closure equality is implied rather than Over, and the seeds walk once round the circle to pick the convex winding no residual can state (1 DOF: it spins about its hub)"),
@@ -224,6 +232,7 @@ pub const CASES: [(&str, &str, &str); 28] = [
     ("Jansen's linkage", "jansen", "Theo Jansen's walking leg as one component: a crank at one fixed point drives two rigid triangles hinged on another, and nothing but rod lengths is stated — the ccw/cw lines pick each joint's pose.  Drawn with its crank angle unbound (1 DOF: drag `leg.pin` round its circle and the leg steps), and `path` is the same leg asked where its toe goes over a turn"),
     ("L-bracket in three views", "bracket", "descriptive geometry on one sheet: front, top and right views as `plane`s, every corner tied across them by `project`, and an auxiliary view folded at the inclined face's own bearing that shows the face true-size — edit a dimension in the front view and the other three views follow"),
     ("Four-cylinder engine, three views", "engine", "a whole engine as modules, each part designed in one place and drawn in every view it shows in (`engine.block`, `engine.head`, `engine.crankshaft`, `engine.conrod`): the block with its bores, bulkheads and main bearings, the head on its gasket with the valves and camshafts in their bearings, the crankshaft with its flywheel, the rods, the pistons, and the timing belt over its pulleys — the end view owns the heights, the side view the lengths, and the plan is placed by projection from both.  Rigged as a four-stroke: `cycle` in `engine/dims.sv` is cylinder 1's angle in its 720° cycle, the firing order places the others, and the valve timing (intake and exhaust open/close, in crank degrees) sizes every cam lobe and lifts every valve — edit any of them and the section's valves and the side view's lobes follow"),
+    ("V-twin air engine, two views", "vtwin", "an oscillating-cylinder (\"wobbler\") V-twin run on shop air, as modules: two printed cylinders rock on studs through one plate, their rods sharing a crank pin, and the rocking is the valve gear — a port in each cylinder's face sweeps across an intake and an exhaust port in the plate.  One bank is one component instanced twice, so the ports come out rotated rather than mirrored; the plenum inside the plate, the inlet boss with its 1/4\" NPT coupling and a rotary barrel throttle are the frame's; the side view's heights are all projected.  One DOF, and it is the crank angle: `crank.theta` is a free variable the arm's callout reads, so drag the pin and both cylinders rock, both pistons move, and the side view follows; `tau` in `vtwin/dims.sv` turns the throttle"),
 ];
 
 /// A spur gear, written as a Solvent program rather than built here.
@@ -344,12 +353,15 @@ pub fn source(key: &str) -> Option<&'static str> {
         "jansen" => Some(JANSEN),
         "bracket" => Some(BRACKET),
         "engine" => Some(ENGINE),
+        "vtwin" => Some(VTWIN),
         _ => None,
     }
 }
 
 /// The engine's document — its modules are the library's (`library::MODULES`).
 pub const ENGINE: &str = include_str!("../../examples/engine.sv");
+/// The V-twin's document — its modules are the library's too.
+pub const VTWIN: &str = include_str!("../../examples/vtwin.sv");
 
 pub const IMPOSSIBLE_TRIANGLE: &str = include_str!("../../examples/impossible_triangle.sv");
 pub const ALTITUDES: &str = include_str!("../../examples/altitudes.sv");
