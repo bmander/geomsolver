@@ -159,8 +159,10 @@ fn arc_path(
     // the radius in page units: the transform is a uniform scale, so a length converts like a
     // point does, and asking `at` twice is one place fewer for the scale to be written down
     let rr = (at((c.0 + r, c.1)).0 - at(c).0).abs();
+    // `fill="none"` on the path itself: a callout's arc is written outside the geometry's
+    // `<g fill="none">`, and an unfilled-looking arc a browser fills black is a sector
     out.push_str(&format!(
-        "<path d=\"M {} {} A {} {} 0 {large} {} {} {}\"{attrs}/>\n",
+        "<path d=\"M {} {} A {} {} 0 {large} {} {} {}\" fill=\"none\"{attrs}/>\n",
         n(s.0),
         n(s.1),
         n(rr),

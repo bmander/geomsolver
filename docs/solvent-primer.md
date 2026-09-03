@@ -241,6 +241,9 @@ l angle(45deg) m
 where it is *used* decides what it is: `w = 80` in a length slot does not make `w` a length, but
 `w = 80mm` does, as does a component formal declared `Length`.
 
+A bare fraction with a unit is a division, not a fraction: `3/16"` is 3 divided by 16 inches (a
+`Length^-1`), so a lone fractional inch is written `0.1875"` or as a mixed literal (`0 3/16"`).
+
 `pi` is dimensionless; `tau` and `turn` are one full turn. `floor`/`ceil`/`round` take a plain
 number. **There is no string literal**: `"` is the inch mark, and a word argument is written bare
 (`at: start`).
