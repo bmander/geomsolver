@@ -1,7 +1,7 @@
 /* What the whole front end holds in common: the page's elements, the one SketchView on it, and
  * which constraint has the keyboard focus.  The core is started here, before anything reads it —
  * a module that imports this one is guaranteed a solver and a sketch. */
-import * as examples from '../core/examples.js';
+import * as remote from './remote.js';
 import { Constraint } from '../core/constraints.js';
 import { Primitive, Sketch, expand } from '../core/model.js';
 import { initCore } from '../core/wasm.js';
@@ -44,21 +44,22 @@ await initCore();
  *  with the source somebody wrote — the gear's curve family, its components, the reasons in the
  *  comments — and lifting the drawing instead would open a hundred and twenty point declarations
  *  about the same shape.  One built by a function has no source and is lifted, which is the only
- *  place `examples.source` differs from `examples.build`. */
-function initialProgram(): string {
+ *  place `examples.source` differs from `examples.build`.  The server is asked first
+ *  (`remote.source`): with the dev server up, the case is the file on disk. */
+async function initialProgram(): Promise<string> {
   const url = new URL(location.href);
   const slug = url.searchParams.get('example') ?? /\/example\/([^/]+)\/?$/.exec(url.pathname)?.[1];
   if (slug) {
     try {
-      return examples.source(decodeURIComponent(slug));
+      return await remote.source(decodeURIComponent(slug));
     } catch (err) {
       setTimeout(() => toast(`no example “${slug}”: ${(err as Error).message}`, 12000), 0);
     }
   }
-  return examples.source('rect_fillets:100:60:10');
+  return remote.source('rect_fillets:100:60:10');
 }
 
-export const view = new SketchView(canvas, Document.read(initialProgram()));
+export const view = new SketchView(canvas, Document.read(await initialProgram()));
 export let currentConstraint: Constraint | null = null;
 
 /** What the shell tells the rest of the page when the focus moves.  Assigned by `main`, the way

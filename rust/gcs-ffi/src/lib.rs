@@ -2715,8 +2715,11 @@ pub unsafe extern "C" fn gcs_ppp_triangles(p: *mut PlanSolver, out: *mut i32) ->
 pub unsafe extern "C" fn gcs_program_elaborate(ptr: *const u8, len: usize) -> *mut Elaborated {
     guard(std::ptr::null_mut(), move || {
         let src = as_str(ptr, len);
-        // the browser has no filesystem, so a `use` resolves against the library compiled in
-        let (prog, errs, mut linked) = gcs_core::library::parse_linked(src);
+        // the browser has no filesystem, so a `use` resolves against what the host handed over
+        // (`gcs_module_set`) and then the library compiled in — the CLI's own order, beside the
+        // document first
+        let (mut prog, errs) = syntax::parse(src);
+        let mut linked = gcs_core::modules::link(&mut prog, &mut resolve_module);
         let mut e = program::elaborate(&prog);
         // the parser's complaints come first, in the order they were found: they are about the
         // text, and everything after them is about a text that was already wrong
@@ -2733,6 +2736,53 @@ pub unsafe extern "C" fn gcs_program_elaborate(ptr: *const u8, len: usize) -> *m
         all.append(&mut e.diags);
         e.diags = all;
         Box::into_raw(Box::new(e))
+    })
+}
+
+thread_local! {
+    /// Module texts the host has handed over.  `solventc` reads `engine.parts` as
+    /// `engine/parts.sv` beside the document and comes to the library second; a browser has no
+    /// beside unless its page has a server to ask, and this is where what it fetched goes.
+    /// Asked before the library, so a text the host supplies wins over the copy compiled in.
+    static HOST_MODULES: RefCell<BTreeMap<String, String>> = RefCell::new(BTreeMap::new());
+}
+
+/// Resolve a `use`: what the host handed over first, then the library compiled in.
+fn resolve_module(name: &str) -> Option<String> {
+    HOST_MODULES
+        .with(|m| m.borrow().get(name).cloned())
+        .or_else(|| gcs_core::library::resolve(name))
+}
+
+/// Hand the core a module's text under the name a `use` asks for (`engine.parts`).  Kept until
+/// `gcs_module_forget`; a second `set` under one name replaces the first.  Nothing already
+/// elaborated changes: an edit relinks from the texts it has (`program::reparse`), so the table
+/// is read only when a program is read whole.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_module_set(np: *const u8, nn: usize, tp: *const u8, tn: usize) {
+    guard((), move || {
+        let (name, text) = (as_str(np, nn).to_string(), as_str(tp, tn).to_string());
+        HOST_MODULES.with(|m| {
+            m.borrow_mut().insert(name, text);
+        });
+    })
+}
+
+/// Forget every module the host handed over: the next program read links against the library.
+#[no_mangle]
+pub extern "C" fn gcs_module_forget() {
+    guard((), || HOST_MODULES.with(|m| m.borrow_mut().clear()))
+}
+
+/// The module names a text `use`s, directly, as written: `["std", "engine.parts"]`.  A host
+/// with somewhere to fetch from asks this of the document, hands each text over with
+/// `gcs_module_set`, and asks it again of each text it fetched, since a module's own `use`s are
+/// followed too.  A parse error costs nothing here: the `use` lines that did parse are listed.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_program_uses(ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let (prog, _) = syntax::parse(as_str(ptr, len));
+        out_json(Json::Arr(prog.uses.iter().map(|u| Json::Str(u.name.clone())).collect()))
     })
 }
 

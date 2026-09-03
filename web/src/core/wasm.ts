@@ -32,6 +32,9 @@ export interface Abi {
   gcs_counts_len(): number;
   gcs_program_elaborate(p: number, n: number): number;
   gcs_program_highlight(p: number, n: number): number;
+  gcs_program_uses(p: number, n: number): number;
+  gcs_module_set(np: number, nn: number, tp: number, tn: number): void;
+  gcs_module_forget(): void;
   gcs_elab_free(h: number): void;
   gcs_elab_take_sketch(h: number): number;
   gcs_elab_text(h: number): number;

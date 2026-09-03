@@ -35,7 +35,14 @@ Currently: **Stage 5 done**, in **one** implementation —
   over handles, buffers for hot-path numbers, JSON for ragged results.  It contains no
   algorithm — and re-derives no number the report already carries (a motion's `movingParams` is
   the core's reading of its own velocities, not a threshold the binding picks), since two copies
-  of a rule are two rules the moment one of them is edited.
+  of a rule are two rules the moment one of them is edited.  **A `use` resolves against what
+  the host handed over, then the library**: the browser has no filesystem, so `gcs_module_set`
+  is its "beside the document" — `core/modules.ts` asks `gcs_program_uses` what a text uses,
+  fetches each through a function the app supplies, hands it over, and follows the fetched
+  texts' uses too; the linking itself stays the core's (`modules::link`, in the CLI's order).
+  The dev server serves `rust/examples/` as `examples/…` and `app/remote.ts` asks it first, so
+  with `npm run serve` up a case is the file on disk and an edit shows on refresh with no wasm
+  rebuilt; without a server nothing fetches and the compiled-in copy is read as before.
 * **CLI** (`rust/gcs-cli/`): `solventc`, which parses, elaborates, solves, diagnoses and reports
   on a document from a terminal — the first way to check a drawing without a browser, and where
   module resolution lives: `use engine.parts` is `engine/parts.sv` beside the document, then the

@@ -2,6 +2,7 @@
  * one item's whole behaviour, so the menu tables in `main` stay a list of names. */
 import * as C from '../core/constraints.js';
 import * as examples from '../core/examples.js';
+import * as remote from './remote.js';
 import * as io from '../core/io.js';
 import { applyAlternative, enumerateStep, isCurrent } from '../core/homotopy.js';
 import { Point } from '../core/model.js';
@@ -47,7 +48,7 @@ export async function openCase(): Promise<void> {
   const i = await askChoice('Open test case', 'The sketches the solver is exercised on:',
                             cases.map((c) => `${c.label} — ${c.description}`));
   if (i === null) return;
-  view.load(examples.source(cases[i].key));
+  view.load(await remote.source(cases[i].key));
   toast(`${cases[i].label} — ${cases[i].description}`, 12000);
 }
 

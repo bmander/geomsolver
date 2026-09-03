@@ -14,6 +14,7 @@ import { callouts, pairDimension } from '../core/callout.js';
 import { expressions } from '../core/expr.js';
 import * as graph from '../core/graph.js';
 import * as io from '../core/io.js';
+import * as modules from '../core/modules.js';
 import { PlanDrag, PlanSolver, buildGraph } from '../core/decompose.js';
 import {
   diagnose, distanceRigidity, minimalConflictSet, violatedConstraints,
@@ -2247,4 +2248,29 @@ test('a rectangle joins the view it is drawn in, whole', () => {
   assert.equal(d2.sketch.points.filter((p) => p.plane === front).length, 4);
   d.dispose();
   d2.dispose();
+});
+
+test('a module the host hands over resolves a use before the library', async () => {
+  const doc = 'use demo.parts\npoint o hint(x: 0, y: 0)\nground o\nr: Rung(o)\n';
+  const mod = 'component Rung(a: point) {\n  point b\n  line e(a, b)\n  horizontal e\n  a distance(10) b\n}\n';
+  assert.deepEqual(modules.uses(doc), ['demo.parts']);
+  assert.equal(modules.pathOf('demo.parts'), 'demo/parts.sv');
+  const unresolved = Document.read(doc);
+  assert.ok(unresolved.diagnostics.some((d) => d.code === 'E070'), 'nothing to link against');
+  unresolved.dispose();
+  // the host fetches: one name asked once, a module of the library (`std`) left to it
+  const asked: string[] = [];
+  const got = await modules.link('use std\n' + doc, async (p) => {
+    asked.push(p);
+    return p === 'demo/parts.sv' ? mod : null;
+  });
+  assert.deepEqual(got, ['demo.parts']);
+  assert.deepEqual(asked, ['std.sv', 'demo/parts.sv']);
+  const linked = Document.read(doc);
+  assert.ok(!linked.diagnostics.some((d) => d.code === 'E070'), 'the handed-over module links');
+  linked.dispose();
+  modules.forget();
+  const again = Document.read(doc);
+  assert.ok(again.diagnostics.some((d) => d.code === 'E070'), 'forgotten on request');
+  again.dispose();
 });
