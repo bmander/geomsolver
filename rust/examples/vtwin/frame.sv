@@ -1,15 +1,20 @@
-// The frame plate, designed in one place: one component, three views (§6.7).
+// The frame plate: **one section, and the solid it is a section of** (§6.9).
 //
-// Along the crank axis: the plate the cylinders rock against, with the shaft's hole, the two
-// pivot bolts' holes, the four ports and the exhaust passages drilled in from its edges; the
-// plenum inside it joining the two intake ports; and the inlet boss on its top edge, with the
+// Seen along the crank axis — which is how it is designed — the plate is the face the cylinders
+// rock against, with the shaft's hole, the two pivot bolts' holes, the four ports and the
+// exhaust vents out through its edges; the plenum inside it joining the two intake ports; the
+// foot it stands on and the bearing boss behind it; and the inlet boss on its top edge, with the
 // brass coupling for the air line's plug, the passage down to the plenum, and the throttle
-// (`vtwin.throttle`) across that passage.  From the side: the plate edge on with the foot and
-// the bearing boss behind it, the bearing pocket, the holes and the ports going in from the
-// face, the plenum and the passage in section.  From above: the plate, the foot, the bearing
-// boss, the inlet boss with the coupling's hole.  The assembly draws all three, since the plate
-// stands still; the part sheet draws them with the printer's dimensions on.  One printed part,
-// printed foot down.
+// (`vtwin.throttle`) across that passage.  Every one of those is this section swept along the
+// crank axis, and the two that are *not* — the coupling's hole and nothing else — is a turn
+// about a line lying in the page.
+//
+// It used to be written three times: this section, then the whole plate redrawn edge on as
+// eighteen `Box`es and again from above as eight more, tied back by seven projections, with
+// every ordinate along the crank axis — the plate's thickness, the foot's depth, the boss, the
+// bearing pocket, how far each port is drilled — kept in step by hand from the side view's own
+// origin.  They are now the `param z…` lines below, said once, and the views that show them are
+// asked for.  One printed part, printed foot down.
 
 use vtwin.dims
 use vtwin.parts
@@ -55,8 +60,7 @@ component Side(o: point, ref: line, alpha: Angle, dim: Int) {
   claim radius(dport / 2) intake class detail at (-1.2, 10)
 }
 
-component Frame(front: plane, side: plane, top: plane, o: point, ref: line, o_s: point, o_t: point,
-                draw_side: Int, draw_top: Int) {
+component Frame(front: plane, o: point, ref: line) {
   param mid = tp / 2
   in front {
     r: Side(o, ref, alpha: alphaR, dim: 0)
@@ -137,6 +141,66 @@ component Frame(front: plane, side: plane, top: plane, o: point, ref: line, o_s:
     radius(barbore / 2) tbore
     claim o distance(Ty, along: y) tb.p class detail at (0, 20)
     claim radius(barbore / 2) tbore class detail at (2.2, 10)
+
+    // -- what the solid is made of -----------------------------------------------------------
+    // Two things the plate has always had but only the *other* views drew, and which a body
+    // written from this one section must therefore say here: the foot it stands on, across the
+    // bottom edge and `footd` deep, and the bearing boss round the crank axis behind it.
+    ft: Box(o, x0: -fx, y0: fy0, x1: fx, y1: fy0 + footh) class hidden
+    circle bcirc(center: o) hint(r: rbrg + 3mm) class hidden
+    radius(rbrg + 3mm) bcirc
+    // the coupling's hole is round and its axis runs *up the page* — in this plane — so it is a
+    // turn, where every other hole here is drilled along the crank axis and is a sweep
+    cph0: At(o, dx: 0mm, dy: bossh - cplin)
+    cph1: At(o, dx: 0mm, dy: bossh)
+    cph2: At(o, dx: cplhole / 2, dy: bossh)
+    cph3: At(o, dx: cplhole / 2, dy: bossh - cplin)
+    line cph_a(cph0.p, cph1.p) class gone
+    line cph_b(cph1.p, cph2.p) class gone
+    line cph_c(cph2.p, cph3.p) class gone
+    line cph_d(cph3.p, cph0.p) class gone
+    line cpax(cph0.p, cph1.p) class gone
+    face cplh_f(cph_a, cph_b, cph_c, cph_d)
+    // the plenum: the channel between its two arcs, closed by a radial cap at each intake port
+    line pl_r(ci1, co1) class gone
+    line pl_l(co0, ci0) class gone
+    face plenum_f(ch_in, pl_r, ch_out, pl_l)
+    // each exhaust vent, `wch` square like the plenum and the passage it is a sibling of — the
+    // drawing has always carried it as a centreline, and a solid has to be told how wide a
+    // channel is.  It runs at the plate's mid-plane, which is where the port it drains ends.
+    vr0: At(r.ep.p, dx: 0mm, dy: wch / 2)
+    vr1: At(xr, dx: 0mm, dy: wch / 2)
+    vr2: At(xr, dx: 0mm, dy: -wch / 2)
+    vr3: At(r.ep.p, dx: 0mm, dy: -wch / 2)
+    line vr_a(vr0.p, vr1.p) class gone
+    line vr_b(vr1.p, vr2.p) class gone
+    line vr_c(vr2.p, vr3.p) class gone
+    line vr_d(vr3.p, vr0.p) class gone
+    face vent_r_f(vr_a, vr_b, vr_c, vr_d)
+    vl0: At(l.ep.p, dx: 0mm, dy: wch / 2)
+    vl1: At(xl, dx: 0mm, dy: wch / 2)
+    vl2: At(xl, dx: 0mm, dy: -wch / 2)
+    vl3: At(l.ep.p, dx: 0mm, dy: -wch / 2)
+    line vl_a(vl0.p, vl1.p) class gone
+    line vl_b(vl1.p, vl2.p) class gone
+    line vl_c(vl2.p, vl3.p) class gone
+    line vl_d(vl3.p, vl0.p) class gone
+    face vent_l_f(vl_a, vl_b, vl_c, vl_d)
+    // and the faces every sweep below is of
+    face plate_f(bottom, edge_r, cham_r, topline, cham_l, edge_l)
+    face foot_f(ft.ab, ft.bc, ft.cd, ft.da)
+    face bboss_f(bcirc)
+    face bpkt_f(bp)
+    face shaft_f(sh)
+    face iboss_f(boss.ab, boss.bc, boss.cd, boss.da)
+    face passage_f(passage.ab, passage.bc, passage.cd, passage.da)
+    face tbore_f(tbore)
+    face boltR_f(r.bolt)
+    face boltL_f(l.bolt)
+    face intakeR_f(r.intake)
+    face intakeL_f(l.intake)
+    face exhR_f(r.exhaust)
+    face exhL_f(l.exhaust)
   }
   param kin = (rpl - wch / 2) / rpl
   param kout = (rpl + wch / 2) / rpl
@@ -152,79 +216,63 @@ component Frame(front: plane, side: plane, top: plane, o: point, ref: line, o_s:
   // other views being its own sheet's
   thr: Throttle(front, tb.p, ref, phi: throttle)
 
-  // -- from the side: the plate edge on, the foot and the boss behind it, everything drilled
-  // from the face going in ------------------------------------------------------------------
-  repeat draw_side {
-    in side {
-      point ptop hint(x: o_s.x + mid, y: o_s.y + fy1)
-      point pbot hint(x: o_s.x + mid, y: o_s.y + fy0)
-      point pv_s hint(x: o_s.x + mid, y: o_s.y + H * cos(alphaR))
-      point ir_s hint(x: o_s.x + mid, y: o_s.y + H * cos(alphaR) + a * cos(alphaR - beta))
-      point il_s hint(x: o_s.x + mid, y: o_s.y + H * cos(alphaL) + a * cos(alphaL - beta))
-      point er_s hint(x: o_s.x + mid, y: o_s.y + ep_y_r)
-      point el_s hint(x: o_s.x + mid, y: o_s.y + ep_y_l)
-      o_s distance(mid, along: x) ptop
-      o_s distance(mid, along: x) pbot
-      o_s distance(mid, along: x) pv_s
-      o_s distance(mid, along: x) ir_s
-      o_s distance(mid, along: x) il_s
-      o_s distance(mid, along: x) er_s
-      o_s distance(mid, along: x) el_s
-      plate: Slab(o_s, x0: 0mm, x1: tp, top: ptop, bottom: pbot)
-      foot: Box(o_s, x0: tp, y0: fy0, x1: tp + footd, y1: fy0 + footh)
-      bboss: Box(o_s, x0: tp, y0: -(rbrg + 3mm), x1: tp + boss, y1: rbrg + 3mm)
-      bpkt: Box(o_s, x0: tp + boss - brgpocket, y0: -rbrg, x1: tp + boss, y1: rbrg) class hidden
-      shaft_s: Box(o_s, x0: 0mm, y0: -shafthole / 2, x1: tp + boss - brgpocket, y1: shafthole / 2) class hidden
-      bolt_s: Box(pv_s, x0: -mid, y0: -studclr / 2, x1: mid, y1: studclr / 2) class hidden
-      // the intake ports go in to the plenum, the exhausts to the mid-plane where their passages
-      // out through the edges meet them
-      irp: Box(ir_s, x0: -mid, y0: -dport / 2, x1: -mid + mid + wch / 2, y1: dport / 2) class hidden
-      ilp: Box(il_s, x0: -mid, y0: -dport / 2, x1: -mid + mid + wch / 2, y1: dport / 2) class hidden
-      erp: Box(er_s, x0: -mid, y0: -dport / 2, x1: 0mm, y1: dport / 2) class hidden
-      elp: Box(el_s, x0: -mid, y0: -dport / 2, x1: 0mm, y1: dport / 2) class hidden
-      plenum: Box(o_s, x0: mid - wch / 2, y0: rpl - wch / 2, x1: mid + wch / 2, y1: rpl + wch / 2) class hidden
-      passage_s: Box(o_s, x0: mid - wch / 2, y0: rpl + wch / 2, x1: mid + wch / 2, y1: bossh - cplin) class hidden
-      boss_s: Box(o_s, x0: mid - bossz / 2, y0: fy1, x1: mid + bossz / 2, y1: bossh)
-      cplh_s: Box(o_s, x0: mid - cplhole / 2, y0: bossh - cplin, x1: mid + cplhole / 2, y1: bossh) class hidden
-      cpl_s: Box(o_s, x0: mid - cpl / 2, y0: bossh, x1: mid + cpl / 2, y1: bossh - cplin + cpll)
-      tbore_s: Box(o_s, x0: mid - bossz / 2, y0: Ty - barbore / 2, x1: mid + bossz / 2, y1: Ty + barbore / 2) class hidden
-      claim plate.a distance(tp) plate.b class detail at (0, -8)
-      claim foot.a distance(footd) foot.b class detail at (0, -8)
-      claim foot.a distance(footh, along: y) foot.d class detail at (0, 6)
-      claim bboss.a distance(boss) bboss.b class detail at (0, -6)
-      claim bboss.a distance(2 * (rbrg + 3mm), along: y) bboss.d class detail at (0, -8)
-      claim bpkt.a distance(brgpocket) bpkt.b class detail at (0, 6)
-      claim boss_s.a distance(bossz) boss_s.b class detail at (0, 8)
-    }
-    p3.p project ptop
-    p0.p project pbot
-    r.piv project pv_s
-    r.ip.p project ir_s
-    l.ip.p project il_s
-    r.ep.p project er_s
-    l.ep.p project el_s
-  }
+  // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
+  // **The section is the plate's mid-plane**, and the plate says so itself: `tp` is "thick enough
+  // to carry the plenum on its mid-plane", the plenum, the passage, the exhaust vents, the inlet
+  // boss and the throttle's bore are all centred there, and the coupling's hole is a *turn* about
+  // a line lying in this plane — which puts it on the plane whatever else is written, exactly as
+  // the set screw does on the crank disc.  Drawn from the face instead, every one of those would
+  // have needed half a thickness added to it and the coupling's hole would have come out
+  // straddling the face.  So the zero is the middle, and the ordinates below are symmetric.
+  //
+  // These are the numbers the side view used to carry as `Box` ordinates measured from its own
+  // origin — the same numbers, said once, where the thing they measure is defined.
+  param zf = tp / 2                    // the face the cylinders rock against
+  param zb = -tp / 2                   // and the back
+  param zfoot = zb - footd
+  param zbb = zb - boss
+  param zpkt = zbb + brgpocket
+  param zshaft = zbb + brgpocket
+  param zch0 = -wch / 2
+  param zch1 = wch / 2
 
-  // -- from above: the plate's top edge with the boss on it, the foot and the bearing boss
-  // behind --------------------------------------------------------------------------------------
-  repeat draw_top {
-    in top {
-      point fl_t hint(x: o_t.x - fx, y: o_t.y + mid)
-      point fr_t hint(x: o_t.x + fx, y: o_t.y + mid)
-      o_t distance(mid, along: y) fl_t
-      o_t distance(mid, along: y) fr_t
-      plate_t: Wide(o_t, y0: 0mm, y1: tp, left: fl_t, right: fr_t)
-      foot_t: Wide(o_t, y0: tp, y1: tp + footd, left: fl_t, right: fr_t)
-      bboss_t: Box(o_t, x0: -(rbrg + 3mm), y0: tp, x1: rbrg + 3mm, y1: tp + boss)
-      boss_t: Box(o_t, x0: -bossw / 2, y0: mid - bossz / 2, x1: bossw / 2, y1: mid + bossz / 2)
-      cc_t: At(o_t, dx: 0mm, dy: mid)
-      circle cplh_t(center: cc_t.p) hint(r: cplhole / 2)
-      radius(cplhole / 2) cplh_t
-      tbore_t: Box(o_t, x0: -barbore / 2, y0: mid - bossz / 2, x1: barbore / 2, y1: mid + bossz / 2) class hidden
-      boltR_t: Box(o_t, x0: H * sin(alphaR) - studclr / 2, y0: 0mm, x1: H * sin(alphaR) + studclr / 2, y1: tp) class hidden
-      boltL_t: Box(o_t, x0: H * sin(alphaL) - studclr / 2, y0: 0mm, x1: H * sin(alphaL) + studclr / 2, y1: tp) class hidden
-    }
-    p0.p project fl_t
-    p1.p project fr_t
-  }
+  solid stock(plate_f, from: zb, to: zf)
+  solid foot(foot_f, from: zfoot, to: zb)
+  solid bboss(bboss_f, from: zbb, to: zb)
+  solid iboss(iboss_f, from: -bossz / 2, to: bossz / 2)
+  solid bpkt(bpkt_f, from: zbb, to: zpkt)
+  solid shaft(shaft_f, from: zshaft, to: zf)
+  solid boltR(boltR_f, from: zb, to: zf)
+  solid boltL(boltL_f, from: zb, to: zf)
+  // the intake ports run in as far as the plenum; the exhausts only to the mid-plane, where
+  // their vents out through the edges meet them
+  solid portRi(intakeR_f, from: zch0, to: zf)
+  solid portLi(intakeL_f, from: zch0, to: zf)
+  solid portRe(exhR_f, from: 0mm, to: zf)
+  solid portLe(exhL_f, from: 0mm, to: zf)
+  solid plenum(plenum_f, from: zch0, to: zch1)
+  solid passage_s(passage_f, from: zch0, to: zch1)
+  solid ventR(vent_r_f, from: zch0, to: zch1)
+  solid ventL(vent_l_f, from: zch0, to: zch1)
+  solid cplh(cplh_f, about: cpax)
+  solid tbore_s(tbore_f, from: -bossz / 2, to: bossz / 2)
+
+  solid body(stock)
+  foot on body
+  bboss on body
+  iboss on body
+  bpkt through body
+  shaft through body
+  boltR through body
+  boltL through body
+  portRi through body
+  portLi through body
+  portRe through body
+  portLe through body
+  plenum through body
+  passage_s through body
+  ventR through body
+  ventL through body
+  cplh through body
+  tbore_s through body
 }

@@ -1,7 +1,7 @@
-// The frame plate alone: the part `vtwin.frame` designs, in three views, with the dimensions
-// a printer needs — the ports and the pivots by radius and bearing from the crank axis, since
-// all four ports share one radius.  The assembly draws the same component with its dimensions
-// off and the engine on it.
+// The frame plate alone: the part `vtwin.frame` designs, with the dimensions a printer needs —
+// the ports and the pivots by radius and bearing from the crank axis, since all four ports share
+// one radius — **and the other two views are asked for, not drawn** (§6.11).  The assembly draws
+// the same component with its dimensions off and the engine on it.
 
 unit mm
 use std
@@ -12,9 +12,12 @@ use vtwin.frame
 point O hint(x: 0, y: 0) in views.front
 ground O
 views: ThreeViews(O, right: 260, up: 220)
-axes: Axes(O)
-plate: Frame(views.front, views.right, views.top, O, axes.ax, views.right_origin, views.top_origin,
-             draw_side: 1, draw_top: 1)
+axes: Axes(O) in views.front
+plate: Frame(views.front, O, axes.ax)
+
+// the other two views, derived from the solid the section is a section of
+view(plate.body) in views.right
+view(plate.body) in views.top
 
 // how it looks: the part's own dimensions, and nothing else
 style .dimension { display: none }

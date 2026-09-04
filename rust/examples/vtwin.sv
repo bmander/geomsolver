@@ -42,8 +42,7 @@ O distance(0, along: x) up
 O distance(40, along: y) up
 line ref(O, up) class gone
 
-plate: Frame(views.front, views.right, views.top, O, ref, views.right_origin, views.top_origin,
-             draw_side: 1, draw_top: 0)
+plate: Frame(views.front, O, ref)
 crank: Crank(views.front, O, ref)
 bankR: Bank(views.front, O, crank.pin, plate.r.piv, alpha: alphaR, fw: fwB, dim: 1)
 bankL: Bank(views.front, O, crank.pin, plate.l.piv, alpha: alphaL, fw: fwA, dim: 0)
