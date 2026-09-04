@@ -46,7 +46,19 @@ plate: Frame(views.front, O, ref)
 crank: Crank(views.front, O, ref)
 bankR: Bank(views.front, O, crank.pin, plate.r.piv, alpha: alphaR, fw: fwB, dim: 1)
 bankL: Bank(views.front, O, crank.pin, plate.l.piv, alpha: alphaL, fw: fwA, dim: 0)
-side: SideView(views.right_origin) in views.right
+// **the plate's side view is asked for, not drawn** (§6.11) — the part is a solid, so the
+// assembly's side view of it is a reading of that solid and cannot disagree with the front view
+// about how thick the plate is or how far the bearing boss stands off it
+view(plate.body) in views.right
+// what the *assembly* adds beyond its parts — the crank train along the shaft, a pivot bolt's
+// stack, the two cylinders edge on — is still drawn, being hardware no part designs.  Its
+// ordinates are measured from the plate's front face, which stands half a thickness in front of
+// the plate's own zero: the plate is sectioned on its mid-plane (`vtwin.frame`), and a solid's
+// derived view stands where its plane's origin is
+point so hint(x: -tp / 2, y: 0) in views.right
+views.right_origin distance(tp / 2, along: x) so
+views.right_origin distance(0, along: y) so       // the same height: the crank axis
+side: SideView(so) in views.right
 
 // the two views agree: every height the side view shows is the front view's
 crank.pin project side.pin_s             // the pin

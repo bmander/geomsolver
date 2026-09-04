@@ -40,7 +40,7 @@ const DOCS: &[(&str, Shape, i64, State)] = &[
     ("jansen", (8, 12, 1, 0), 1, State::Under),
     ("bracket", (31, 21, 0, 0), 0, State::Well),
     ("engine", (633, 467, 43, 11), 0, State::Well),
-    ("vtwin", (279, 255, 28, 4), 1, State::Under),
+    ("vtwin", (280, 255, 28, 4), 1, State::Under),
     ("vtwin_cylinder", (30, 22, 2, 0), 0, State::Well),
     ("vtwin_plate", (89, 77, 14, 4), 0, State::Well),
     ("vtwin_piston", (26, 21, 2, 0), 0, State::Well),
