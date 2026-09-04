@@ -810,6 +810,13 @@ pub struct Decl {
     /// empty span at the name's end when none was written.  `commit_seeds` replaces it rather
     /// than inserting a second list beside one that stated an attitude and no children.
     pub list_span: Span,
+    /// `face f(a, pL0, pL1, s0, -> close)` — **the face closes itself** (§6.8): a straight edge
+    /// from where the walk ends back to where it began.  The chain's own word, in the one other
+    /// place the language draws a loop, and `None` for every kind but a face.
+    ///
+    /// A marker rather than a `Kid`, because it fills no slot and names nothing: it says
+    /// something about the *loop*, which is what the brackets as a whole are.
+    pub close: Option<Span>,
 }
 
 /// Which plane a statement's points are drawn in, and **how the statement came by it** (§6.7).
@@ -2069,6 +2076,10 @@ pub(crate) fn decl_args(d: &Decl) -> String {
     }
     // a plane's attitude is what it is made of too, and no solve moves it
     parts.extend(attitude_parts(&d.attitude));
+    // and a face's loop seals last, where it was written (§6.8)
+    if d.close.is_some() {
+        parts.push("-> close".to_string());
+    }
     if parts.is_empty() {
         String::new()
     } else {
@@ -2914,7 +2925,9 @@ fn tint_word(
                 // `at_marker` is the far-side marker: `A -> equal -> B`
                 return (Some(Tint::Relation), Next::Word);
             }
-            if w == "close" && at_line_end {
+            // Chains close at a line end; inside a face's list it is the marker, not the
+            // closing bracket, that distinguishes `-> close` from an edge named `close`.
+            if w == "close" && (at_line_end || prev == Some(&Tok::Arrow)) {
                 return (Some(Tint::Word), Next::Word);
             }
             (None, Next::Word)
@@ -5340,6 +5353,7 @@ impl<'a> P<'a> {
                 sweep: None,
                 membership: Membership::default(),
                 list_span: Span::default(),
+                close: None,
             });
         }
         // `point p = (xexpr, yexpr)` — a computed point (§6.5).  The brackets after a name say
@@ -5382,6 +5396,7 @@ impl<'a> P<'a> {
                 sweep: None,
                 membership,
                 list_span: Span::new(end, end),
+                close: None,
             });
         }
         let mut children: Vec<Vec<Kid>> = Vec::new();
@@ -5400,12 +5415,38 @@ impl<'a> P<'a> {
         let mut seed_spans: Vec<Span> = vec![Span::default(); scalars.len()];
         let mut att = AttParts::default();
         let mut swp = SweepParts::default();
+        let mut close: Option<Span> = None;
         let name_end = self.prev_hi();
         let open = self.here().lo as usize;
         let mut list_span = Span::new(name_end, name_end);
         if self.eat_p('(') {
             let mut positional = 0usize;
             while !self.eat_p(')') {
+                // **a face closes itself** (§6.8): `-> close` seals the loop back to the first
+                // item with a straight edge, the chain's own word for the chain's own thing.
+                // It fills no slot, so it is read before the labels rather than among them.
+                if self.peek() == Some(&Tok::Arrow) {
+                    let lo = self.here().lo as usize;
+                    self.i += 1;
+                    if !self.eat_word("close") {
+                        self.fail("`->` in a list seals a face's loop: write `-> close`");
+                        return None;
+                    }
+                    if kind != EntKind::Face {
+                        self.fail(&format!(
+                            "`-> close` seals a face's loop, and a {} is not a loop",
+                            kind.as_str()
+                        ));
+                        return None;
+                    }
+                    close = Some(Span::new(lo, self.prev_hi()));
+                    self.eat_p(',');
+                    if self.peek() != Some(&Tok::P(')')) {
+                        self.fail("`-> close` seals the loop, so it is the last thing in the list");
+                        return None;
+                    }
+                    continue;
+                }
                 // `name:` labels a field; anything else is positional
                 let label = self.slot_label();
                 match label {
@@ -5645,6 +5686,7 @@ impl<'a> P<'a> {
             sweep,
             membership,
             list_span,
+            close,
         })
     }
 

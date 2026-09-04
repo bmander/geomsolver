@@ -159,6 +159,171 @@ solid ring(sec, about: ax)
     assert!((got - want).abs() < 2e-3 * want, "Pappus from the source: want ≈ {want}, got {got}");
 }
 
+/// **A face closes itself** (§6.8, issue #49 item 1): the same region, written with the corners
+/// it turns at instead of the construction lines between them.
+#[test]
+fn a_face_written_with_its_corners_is_the_face_written_with_its_edges() {
+    // `a` is a corner the loop goes straight to and straight on from; `bc` and `cd` are edges
+    // the drawing already has, and `-> close` seals the run back to `a`.  Two straight runs are
+    // minted — `a`→`b` and `d`→`a` — which is `ab` and `da` by another name.
+    let long = read(&format!("{RECT}solid block(sec, depth: 30mm)\n"));
+    let short = read(&format!(
+        "{RECT}face brief(a, bc, cd, -> close)\nsolid block(brief, depth: 30mm)\n"
+    ));
+    assert!((volume(&short, "block") - volume(&long, "block")).abs() < 1e-9);
+    assert!((volume(&short, "block") - 72000.0).abs() < 1e-6);
+    // the two runs are lines of the sketch like any other, and are the only new ones
+    assert_eq!(short.sketch.lines.len(), long.sketch.lines.len() + 2);
+    // **and nothing draws them.**  A closing run carries no design: it exists so that a region
+    // has a boundary, which is what the thirty-two hand-written `class gone` lines were saying.
+    let hidden = short
+        .sketch
+        .lines
+        .iter()
+        .filter(|l| !gcs_core::style::resolve(&short.sketch.sheet, &l.class).shown())
+        .count();
+    assert_eq!(hidden, 2, "a minted run is not on the sheet");
+    // a face of the solid is named for each, so the report can still spell every face
+    let p = gcs_core::report::positions(&short.sketch, &short.map);
+    let has = |n: &str| p.iter().any(|(k, _)| k == n);
+    assert!(has("block.close0.area") && has("block.close1.area"), "and each run names a face");
+    assert!(has("block.bc.area"), "beside the edges the source wrote");
+    // and the marker survives a print: the source is the document, so what is written must be
+    // what comes back
+    let (mut prog, _) = gcs_core::syntax::parse("face brief(a, bc, cd, -> close)\n");
+    let text = gcs_core::syntax::render(&mut prog).to_string();
+    assert_eq!(text.split_whitespace().collect::<Vec<_>>().join(" "),
+        "face brief(a, bc, cd, -> close)");
+}
+
+/// A loop of nothing but corners: the rectangle again, with no line drawn at all.
+#[test]
+fn a_face_may_be_written_as_its_corners_alone() {
+    let e = read(&format!("{RECT}face quad(a, b, c, d, -> close)\nsolid slab(quad, depth: 2mm)\n"));
+    assert!((volume(&e, "slab") - 4800.0).abs() < 1e-6, "{}", volume(&e, "slab"));
+}
+
+#[test]
+fn closing_lines_do_not_take_an_existing_edges_name() {
+    let e = read(&format!(
+        "{RECT}line close0(b, c)\nface brief(a, close0, cd, -> close)\n\
+         solid block(brief, depth: 2mm)\n"
+    ));
+    let positions = gcs_core::report::positions(&e.sketch, &e.map);
+    for (name, want) in [("close0", 80.0), ("close1", 120.0), ("close2", 80.0)] {
+        let key = format!("block.{name}.area");
+        let got = positions.iter().find(|(n, _)| *n == key).unwrap().1;
+        assert!((got - want).abs() < 1e-9, "{key}: expected {want}, got {got}");
+    }
+}
+
+/// `-> close` on a loop that already meets says something true, and mints nothing.
+#[test]
+fn a_loop_that_already_meets_may_still_say_it_closes() {
+    let plain = read(&format!("{RECT}solid block(sec, depth: 30mm)\n"));
+    let said = read(&format!(
+        "{RECT}face same(ab, bc, cd, da, -> close)\nsolid block(same, depth: 30mm)\n"
+    ));
+    assert_eq!(said.sketch.lines.len(), plain.sketch.lines.len(), "nothing to mint");
+    assert!((volume(&said, "block") - volume(&plain, "block")).abs() < 1e-9);
+    let circle = read(&format!("{RECT}{HOLE}face same(hole, -> close)\n"));
+    assert_eq!(circle.sketch.lines.len(), plain.sketch.lines.len());
+    assert_eq!(circle.sketch.faces.last().unwrap().edges.len(), 1);
+}
+
+#[test]
+fn a_mixed_faces_seed_writeback_changes_only_the_points() {
+    use gcs_core::edit::{self, Kind};
+
+    let src = format!("{RECT}face brief(a, bc, cd, -> close)\nsolid block(brief, depth: 2mm)\n");
+    let mut e = read(&src);
+    let mut sk = std::mem::take(&mut e.sketch);
+    let unchanged = edit::commit_seeds(&e, &sk, &e.program);
+    assert_eq!(unchanged.kind, Kind::None);
+    assert_eq!(unchanged.text, src);
+
+    let a = e.map.ent_named("a").unwrap();
+    let [x, _] = sk.point_params(a.i());
+    sk.params[x as usize].value = -5.0;
+    let want = src.replace("point a hint(x: 0, y: 0)", "point a hint(x: -5, y: 0)");
+    let moved = edit::commit_seeds(&e, &sk, &e.program);
+    assert_eq!(moved.kind, Kind::Numeric);
+    assert_eq!(moved.text, want);
+    let synced = edit::reconcile(&mut e, &sk);
+    assert!(synced.refused.is_none(), "{:?}", synced.refused);
+    assert_eq!(synced.text, want);
+    let back = read(&synced.text);
+    assert_eq!(back.sketch.lines.len(), sk.lines.len());
+    assert_eq!(back.sketch.point_xy(a.i()), (-5.0, 0.0));
+}
+
+#[test]
+fn closing_lines_stay_implicit_across_reconciliation_and_reload() {
+    use gcs_core::edit::{self, Kind};
+
+    for src in [
+        format!("{RECT}face quad(a, b, c, d, -> close) class region\n"),
+        "component Patch() {\npoint a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\n\
+         point c hint(x: 0, y: 40)\nface tri(a, b, c, -> close) class region\n}\n\
+         part: Patch()\n".to_string(),
+    ] {
+        let initial = read(&src).sketch.lines.len();
+        let mut text = src.clone();
+        for _ in 0..3 {
+            let mut e = read(&text);
+            let mut sk = std::mem::take(&mut e.sketch);
+            assert_eq!(sk.lines.len(), initial);
+            let unchanged = edit::reconcile(&mut e, &sk);
+            assert_eq!(unchanged.kind, Kind::None);
+            assert_eq!(unchanged.text, src);
+            text = unchanged.text;
+
+            // Accounting for generated lines must still let a newly drawn line get a
+            // declaration, and must not copy the children's class onto the face.
+            sk.line(0, 1);
+            let added = edit::reconcile(&mut e, &sk);
+            assert!(added.refused.is_none(), "{:?}", added.refused);
+            assert_eq!(added.names.len(), 1);
+            assert_eq!(read(&added.text).sketch.lines.len(), initial + 1);
+            assert!(!added.text.contains("class closure"), "{}", added.text);
+            assert_eq!(edit::reconcile(&mut e, &sk).kind, Kind::None);
+        }
+    }
+}
+
+#[test]
+fn a_face_must_leave_each_edge_where_the_next_item_starts() {
+    for walk in ["a, ab, a, c, -> close", "ab, a, c, a", "c, a, ab, a, -> close"] {
+        let src = format!("{RECT}face bad({walk})\n");
+        refused(&src, Code::E080, "along the walk");
+        let (p, _) = parse(&src);
+        let e = elaborate(&p);
+        assert_eq!(e.sketch.lines.len(), 4, "a refused face leaves no closing lines");
+        assert_eq!(e.sketch.faces.len(), 1, "only the original rectangle remains");
+    }
+    // A failure after minting some lines must also leave nothing for reconciliation to
+    // interpret as newly drawn geometry.
+    let (p, _) = parse(&format!("{RECT}face bad(a, c, d)\n"));
+    let e = elaborate(&p);
+    assert!(!e.ok());
+    assert_eq!(e.sketch.lines.len(), 4);
+}
+
+#[test]
+fn an_arc_and_its_chord_share_both_ends_and_still_form_a_loop() {
+    let src = "unit mm\npoint o hint(x: 0, y: 0)\npoint a hint(x: -5, y: 0)\n\
+               point b hint(x: 5, y: 0)\narc rim(center: o, start: a, end: b) hint(r: 5)\n\
+               line chord(a, b)\n";
+    let mut volumes = Vec::new();
+    for walk in ["rim, chord", "chord, rim", "a, rim, b, -> close", "b, rim, a, -> close"] {
+        let e = read(&format!("{src}face half({walk})\nsolid slab(half, depth: 2mm)\n"));
+        let v = volume(&e, "slab");
+        assert!((v - 25.0 * std::f64::consts::PI).abs() < 0.2, "{walk}: {v}");
+        volumes.push(v);
+    }
+    assert!(volumes.iter().all(|v| (v - volumes[0]).abs() < 1e-9));
+}
+
 #[test]
 fn what_is_written_wrong_is_refused_where_it_is_written() {
     // a loop that does not close
@@ -169,8 +334,20 @@ fn what_is_written_wrong_is_refused_where_it_is_written() {
     );
     // a circle standing in a loop rather than being one
     refused(&format!("{RECT}{HOLE}face bad(ab, hole)\n"), Code::E080, "a whole loop");
-    // a face of something that is not an edge
-    refused(&format!("{RECT}face bad(a, b)\n"), Code::E080, "bounded by lines");
+    // a face of something that is neither an edge nor a corner
+    refused(&format!("{RECT}face bad(sec)\n"), Code::E080, "bounded by lines");
+    // -- and the shorthand does not swallow a mistake (issue #49, item 1) --------------------
+    // a loop whose last item does not come back to its first says so, or says `-> close`
+    refused(&format!("{RECT}face bad(a, ab, bc)\n"), Code::E080, "`-> close`");
+    // an edge between two gaps has two readings and no statement choosing one
+    refused(&format!("{RECT}face bad(a, bc, d, -> close)\n"), Code::E080, "meets neither");
+    // a straight loop between two corners is a line drawn twice
+    refused(&format!("{RECT}face bad(a, b, -> close)\n"), Code::E080, "three corners");
+    // and one item is a loop only when it is a circle
+    refused(&format!("{RECT}face bad(ab)\n"), Code::E080, "not a loop by itself");
+    // `-> close` seals a loop, and only a face is one
+    refused(&format!("{RECT}line bad(a, -> close)\n"), Code::E100, "not a loop");
+    refused(&format!("{RECT}face bad(a, -> close, ab)\n"), Code::E100, "last thing in the list");
     // a swept solid over something that is not a face
     refused(&format!("{RECT}solid bad(ab, depth: 3mm)\n"), Code::E080, "written over a face");
     // a body made of what is not a solid

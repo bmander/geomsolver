@@ -2165,13 +2165,21 @@ fn solids(
             continue;
         }
         let name = d.name.key().text.clone();
+        let first_line = sk.lines.len();
         match build_face(sk, res, d, st, diags) {
             Some(i) => {
                 let e = EntRef::face(i);
                 map.bind(&name, e, d.name.named());
                 map.record(st, Made::Ent(e));
+                // The face made these lines.  Record them after their parent so source
+                // reconciliation does not mistake them for newly drawn geometry.
+                for li in first_line..sk.lines.len() {
+                    map.record(st, Made::Ent(EntRef::line(li)));
+                }
             }
             None => {
+                // A refused loop must not leave unowned closing lines in the sketch.
+                sk.lines.truncate(first_line);
                 res_forget(res, &name);
             }
         }
@@ -2392,11 +2400,10 @@ fn res_forget(res: &mut Resolver, name: &str) {
     }
 }
 
-/// **A face is a closed loop of edges on one plane** (§6.8).
-///
-/// Both facts are checked here rather than in the kernel, because both are things a person got
-/// wrong in the text and both have a span to say it at: a loop that does not close, and edges
-/// whose points are in different views.
+/// Build a face's ordered boundary on one plane (§6.8).
+/// Points introduce straight runs; existing edges take their direction from a neighbour
+/// they meet.  Only `-> close` permits a gap from the last item back to the first.  Generated
+/// lines carry `.closure`, hidden by the base sheet, and introduce no points or unknowns.
 fn build_face(
     sk: &mut Sketch,
     res: &Resolver,
@@ -2412,8 +2419,12 @@ fn build_face(
         fail(st.span, "a face is a loop of edges: `face f(ab, bc, cd, da)`".into());
         return None;
     }
-    let mut edges = Vec::with_capacity(kids.len());
-    let mut names = Vec::with_capacity(kids.len());
+    // what one item of the walk is: an edge, or a corner the loop goes straight to
+    struct Item {
+        entity: EntRef,
+        name: String,
+    }
+    let mut items: Vec<Item> = Vec::with_capacity(kids.len());
     for k in kids {
         let Kid::Ref(r) = k else {
             fail(st.span, "a face names the edges it is bounded by; a seed places a point".into());
@@ -2428,58 +2439,203 @@ fn build_face(
             });
             return None;
         };
-        if !matches!(e.kind, EntKind::Line | EntKind::Arc | EntKind::Circle) {
-            fail(
-                r.span,
-                format!(
-                    "a face is bounded by lines, arcs and circles, and `{}` is a {}",
-                    r.root.text,
-                    e.kind.as_str()
-                ),
-            );
-            return None;
-        }
-        edges.push(e);
         // **the leaf, not the absolute name.**  By the time a face is built the flattener has
         // rewritten `lid` into `cyl.lid`, and a face path is already prefixed by the solid it
         // belongs to — so keeping the whole thing spells `cyl.body.block.cyl.lid`, saying
         // "cylinder" twice about one face.  The leaf is what the source wrote.
         let full = crate::syntax::ref_text(r);
-        names.push(full.rsplit('.').next().unwrap_or(&full).to_string());
-    }
-    // **a circle is a loop by itself, and may not stand in one**
-    if edges.iter().any(|e| e.kind == EntKind::Circle) && edges.len() > 1 {
-        fail(st.span, "a circle is a whole loop: it stands in a face by itself".into());
-        return None;
-    }
-    // **the loop closes**: consecutive edges share an end, and the last shares one with the
-    // first.  Checked by the *points*, which is aliasing and cannot be argued with
-    if edges.len() > 1 {
-        let ends: Vec<(u32, u32)> = match edges
-            .iter()
-            .map(|e| crate::model::edge_ends(sk, *e))
-            .collect::<Option<Vec<_>>>()
-        {
-            Some(v) => v,
-            None => {
-                fail(st.span, "a face's edges are lines and arcs, which have ends".into());
-                return None;
+        let leaf = full.rsplit('.').next().unwrap_or(&full).to_string();
+        match e.kind {
+            EntKind::Line | EntKind::Arc | EntKind::Circle | EntKind::Point => {
+                items.push(Item { entity: e, name: leaf });
             }
-        };
-        for i in 0..ends.len() {
-            let j = (i + 1) % ends.len();
-            let (a, b) = ends[i];
-            let (c, e) = ends[j];
-            if a != c && a != e && b != c && b != e {
+            _ => {
                 fail(
-                    st.span,
+                    r.span,
                     format!(
-                        "`{}` and `{}` share no point: a face is a loop, walked in order",
-                        names[i], names[j]
+                        "a face is bounded by lines, arcs and circles and turns at points, and \
+                         `{}` is a {}",
+                        r.root.text,
+                        e.kind.as_str()
                     ),
                 );
                 return None;
             }
+        }
+    }
+    // **a circle is a loop by itself, and may not stand in one**
+    let lone_circle = items.len() == 1 && items[0].entity.kind == EntKind::Circle;
+    if !lone_circle && items.iter().any(|i| i.entity.kind == EntKind::Circle) {
+        fail(st.span, "a circle is a whole loop: it stands in a face by itself".into());
+        return None;
+    }
+    // **the ends of each item**, which is what says whether two neighbours already meet.  A
+    // point is both of its own.
+    let mut ends = Vec::with_capacity(items.len());
+    for it in items.iter().filter(|_| !lone_circle) {
+        let e = it.entity;
+        let pair = if e.kind == EntKind::Point {
+            Some((e.idx, e.idx))
+        } else {
+            crate::model::edge_ends(sk, e)
+        };
+        let Some(pair) = pair else {
+            fail(st.span, format!("`{}` has no ends: a face is a loop, walked in order", it.name));
+            return None;
+        };
+        ends.push(pair);
+    }
+    let n = items.len();
+    // **one item is a loop only when it is a circle** — said here, so that a lone point or a
+    // lone line is refused for what it is rather than as a gap between an item and itself
+    if n == 1 && !lone_circle {
+        fail(
+            st.span,
+            format!(
+                "`{}` is not a loop by itself: a face is a loop of edges and the corners \
+                 between them",
+                items[0].name
+            ),
+        );
+        return None;
+    }
+    let contains = |i: usize, p: u32| ends[i].0 == p || ends[i].1 == p;
+    // Whether each item shares an endpoint with its successor, including the wrap.
+    let meets: Vec<bool> = (0..ends.len())
+        .map(|i| contains((i + 1) % n, ends[i].0) || contains((i + 1) % n, ends[i].1))
+        .collect();
+    // An edge with no meeting neighbour has two unstated readings.  Refuse it before
+    // choosing directions, so inserting closing lines cannot choose a shape by accident.
+    let walked = ends.len();
+    for i in 0..walked {
+        if items[i].entity.kind != EntKind::Point
+            && !meets[(i + n - 1) % n]
+            && !meets[i]
+        {
+            fail(
+                st.span,
+                format!(
+                    "`{}` meets neither of its neighbours: a face is a loop, walked in order",
+                    items[i].name
+                ),
+            );
+            return None;
+        }
+    }
+    // Walk actual endpoints, not merely shared sets of endpoints.  Both ends can be shared
+    // (an arc and its chord), so try either direction of the first item; each later direction
+    // is fixed by the preceding exit or by the next neighbour when there is a gap.
+    let orient = |reverse_first: bool| -> Result<Vec<(u32, u32)>, usize> {
+        let mut walk: Vec<(u32, u32)> = Vec::with_capacity(walked);
+        for i in 0..walked {
+            let (a, b) = ends[i];
+            let prev = (i + n - 1) % n;
+            let next = (i + 1) % n;
+            let candidates = if i == 0 && reverse_first {
+                [(b, a), (a, b)]
+            } else {
+                [(a, b), (b, a)]
+            };
+            let (from, to) = candidates.into_iter().find(|&(from, to)| {
+                let arrives = !meets[prev]
+                    || if i == 0 { contains(prev, from) } else { walk[i - 1].1 == from };
+                let leaves = !meets[i] || contains(next, to);
+                arrives && leaves
+            }).ok_or(i)?;
+            walk.push((from, to));
+        }
+        if walked > 0 && meets[n - 1] && walk[n - 1].1 != walk[0].0 {
+            return Err(n - 1);
+        }
+        Ok(walk)
+    };
+    let walk = match orient(false).or_else(|_| orient(true)) {
+        Ok(walk) => walk,
+        Err(i) => {
+            fail(
+                st.span,
+                format!(
+                    "`{}` and its neighbours share no point along the walk: a face must \
+                     enter and leave each edge in order",
+                    items[i].name
+                ),
+            );
+            return None;
+        }
+    };
+    // -- the walk, and the straight runs it mints ------------------------------------------
+    let mut edges: Vec<EntRef> = Vec::with_capacity(n);
+    let mut names: Vec<String> = Vec::with_capacity(n);
+    let reserved: BTreeSet<&str> = items.iter()
+        .filter(|i| i.entity.kind != EntKind::Point)
+        .map(|i| i.name.as_str())
+        .collect();
+    let mut minted = 0usize;
+    for i in 0..n {
+        if items[i].entity.kind != EntKind::Point {
+            edges.push(items[i].entity);
+            names.push(items[i].name.clone());
+        }
+        if lone_circle {
+            continue;
+        }
+        let j = (i + 1) % n;
+        let (from, to) = (walk[i].1, walk[j].0);
+        if from == to {
+            continue;
+        }
+        // a gap.  The wrap is minted only where `-> close` says so, and an interior one only
+        // where a *point* is one of its sides
+        if j == 0 {
+            if d.close.is_none() {
+                fail(
+                    st.span,
+                    format!(
+                        "`{}` and `{}` share no point: a face is a loop, and one that does not \
+                         come back to where it started closes with `-> close`",
+                        items[i].name, items[j].name
+                    ),
+                );
+                return None;
+            }
+        } else if items[i].entity.kind != EntKind::Point
+            && items[j].entity.kind != EntKind::Point
+        {
+            fail(
+                st.span,
+                format!(
+                    "`{}` and `{}` share no point: a face is a loop, walked in order",
+                    items[i].name, items[j].name
+                ),
+            );
+            return None;
+        }
+        let li = sk.line(from as usize, to as usize);
+        sk.lines[li].class = Classes::one("closure");
+        edges.push(EntRef::line(li));
+        // A generated side must not merge with a named side in reports or face selection.
+        names.push(loop {
+            let name = format!("close{minted}");
+            minted += 1;
+            if !reserved.contains(name.as_str()) {
+                break name;
+            }
+        });
+    }
+    // **three corners, or a curve.**  A loop of straight runs between two points is a line
+    // drawn twice, and a face with no area is a solid with no volume — worth saying here,
+    // where there is a span, rather than letting the boundary evaluation quietly find nothing.
+    if !edges.iter().any(|e| matches!(e.kind, EntKind::Arc | EntKind::Circle)) {
+        let mut corners: Vec<u32> = edges
+            .iter()
+            .filter_map(|e| crate::model::edge_ends(sk, *e))
+            .flat_map(|(a, b)| [a, b])
+            .collect();
+        corners.sort_unstable();
+        corners.dedup();
+        if corners.len() < 3 {
+            fail(st.span, "a face is a loop, and a straight one needs three corners".into());
+            return None;
         }
     }
     // **one plane**, read off the memberships and never written on the face
@@ -3900,6 +4056,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         sweep: None,
         membership: lift_plane(sk, e),
         list_span: Span::default(),
+        close: None,
     }
 }
 

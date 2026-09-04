@@ -70,18 +70,14 @@ component Piston(swing: plane, crown: point, rod: line, dir: Angle, pin: point) 
     line fr(rc, rd)
     // -- what the solid is made of, and nothing a view reads ---------------------------------
     // The piston is the *left* profile turned about the rod: a revolution takes one side of its
-    // axis, and the right-hand one is drawn because the section shows it.  Three edges close the
-    // profile into a loop — out to the rim at the crown, in to the axis at the skirt, and back
-    // up the axis, which the turn sweeps into nothing.
+    // axis, and the right-hand one is drawn because the section shows it.  The loop turns at
+    // three corners nothing draws — out to the rim at the crown, in to the axis at the skirt,
+    // and back up the axis, which the turn sweeps into nothing — so it says the corners and
+    // lets the face close itself.
     s0: Loc(crown, rod, crownl, dir: dir, u: -ph, v: 0mm)
-    line p_top(crown, cL) class gone
-    line p_skirt(sL.p, s0.p) class gone
-    line p_axis(s0.p, crown) class gone
-    face pist_f(p_top, pL0, pL1, pL2, pL3, pL4, p_skirt, p_axis)
+    face pist_f(crown, pL0, pL1, pL2, pL3, pL4, s0.p, -> close)
     // the rod between its flanks, closed across the skirt and across the eye
-    line r_top(rc, ra) class gone
-    line r_end(rb, rd) class gone
-    face rod_f(fl, r_end, fr, r_top)
+    face rod_f(fl, rd, fr, ra)
     face eye_f(eye)
     face hole_f(hole)
     // the sizes a printer needs

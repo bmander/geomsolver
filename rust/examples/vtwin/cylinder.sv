@@ -59,10 +59,7 @@ component Cylinder(swing: plane, piv: point, ax: line, ac: line, dir: Angle, fw:
     line hd(b_tl.p, b_tr.p)
     m0: Loc(piv, ax, ac, dir: dir, u: cb - H, v: 0mm)
     hx: Loc(piv, ax, ac, dir: dir, u: head - H, v: 0mm)
-    line b_mouth(m0.p, b_br.p) class gone
-    line b_head(b_tr.p, hx.p) class gone
-    line b_axis(hx.p, m0.p) class gone
-    face bore_f(b_mouth, bore_r, b_head, b_axis)
+    face bore_f(m0.p, b_br.p, bore_r, hx.p, -> close)
     // the port, `a` up from the bolt: drilled from the face into the top of the bore, so seen
     // end on here; and the bolt's head, trapped in its slot in the face wall beside the bore — the
     // hex (`std`'s `Hex`) with its flats along the bore's axis, and the slot from the body's left
@@ -84,8 +81,7 @@ component Cylinder(swing: plane, piv: point, ax: line, ac: line, dir: Angle, fw:
     line trap0(t0.p, t1.p) class hidden
     line trap1(t1.p, t2.p) class hidden
     line trap2(t2.p, t3.p) class hidden
-    line trap3(t3.p, t0.p) class gone
-    face trap_f(trap0, trap1, trap2, trap3)
+    face trap_f(trap0, trap1, trap2, -> close)
     // one more point on the outline, for the head wall to be measured to
     h0: Loc(piv, ax, ac, dir: dir, u: ct - H, v: D / 2)
     // the sizes a printer needs, all judged: every point above is already placed

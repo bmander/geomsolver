@@ -102,8 +102,9 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
     let mut edits = Vec::new();
     for st in &prog.root().body {
         let StmtKind::Decl(d) = &st.kind else { continue };
-        // `hint(at: t)` names a *place*, and has no coordinates to write
-        if d.seed_at.is_some() {
+        // `hint(at: t)` names a *place*, and has no coordinates to write.  Faces and
+        // solids also own no seeds: their children are boundaries and operands, not points.
+        if d.seed_at.is_some() || d.kind.spatial() {
             continue;
         }
         // a declaration that could not be built made nothing, and has no pose to record
@@ -457,6 +458,7 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
         sweep: None,
         membership: Default::default(),
         list_span: Span::default(),
+        close: None,
     };
     append(prog, StmtKind::Decl(d), vec![name])
 }
@@ -559,6 +561,7 @@ fn add_entity_with(
         sweep: None,
         membership: Default::default(),
         list_span: Span::default(),
+        close: None,
     };
     append(prog, StmtKind::Decl(d), vec![name])
 }
@@ -1271,6 +1274,11 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
     for (r, site) in e.map.of_entity.iter() {
         if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
             continue;   // inside a component: one statement, many instances, no one class list
+        }
+        // A declaration's class belongs to its own entity, not to children it minted (a
+        // face's closing lines, for example, carry `.closure` independently of the face).
+        if e.map.ents_made_by(site.stmt).next() != Some(*r) {
+            continue;
         }
         let Some(d) = decl_of(prog, site) else { continue };
         let now = sk.class_of(*r);

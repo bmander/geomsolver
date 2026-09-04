@@ -200,6 +200,14 @@ horizontal p
     assert_eq!(tint_of(src, "horizontal"), Some(Tint::Relation));
 }
 
+#[test]
+fn a_faces_close_marker_is_distinct_from_an_edge_named_close() {
+    for src in ["face f(a, b, c, -> close)", "face f(a, b, c, -> close,)"] {
+        assert_eq!(tint_of(src, "close"), Some(Tint::Word), "{src}");
+    }
+    assert_eq!(tint_of("face f(ab, bc, close)", "close"), None);
+}
+
 /// A declaration's name is **optional** (issue #33), so the word after an element keyword is a
 /// name only when it could be one: a trailing clause's word or an operator there keeps its own
 /// reading — the reservation `names_decl` states, asked by the parser and the colouring alike —

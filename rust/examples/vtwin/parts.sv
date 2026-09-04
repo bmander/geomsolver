@@ -108,10 +108,7 @@ component Grub(o: point, ax: line, ac: line, dir: Angle, rin: Length, rout: Leng
   // and it is not part of the body; it comes back when a swept solid does (spec §17).
   a0: Loc(o, ax, ac, dir: dir, u: rin, v: 0mm)
   a1: Loc(o, ax, ac, dir: dir, u: rout, v: 0mm)
-  line s_in(a0.p, h0.p) class gone
-  line s_out(h1.p, a1.p) class gone
-  line s_axis(a1.p, a0.p) class gone
-  face bore_f(s_in, s0, s_out, s_axis)
+  face bore_f(a0.p, h0.p, s0, a1.p, -> close)
   solid bore(bore_f, about: ax)
   claim h0.p distance(grub) h2.p class detail at (0, 4)
   claim n0.p distance(nutT) n1.p class detail at (0, 8)

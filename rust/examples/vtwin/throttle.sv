@@ -74,20 +74,14 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle) {
     lv2: Loc(c, lever, hax, dir: 90deg - phi, u: lev, v: -levw / 2)
     lv3: Loc(c, lever, hax, dir: 90deg - phi, u: 0mm, v: -levw / 2)
     line lv_a(lv0.p, lv1.p) class lever
-    line lv_b(lv1.p, lv2.p) class gone
     line lv_c(lv2.p, lv3.p) class lever
-    line lv_d(lv3.p, lv0.p) class gone
-    face lever_f(lv_a, lv_b, lv_c, lv_d)
+    face lever_f(lv_a, lv2.p, lv_c, lv0.p)
     // the hole: half of its section, on one side of the axis it is turned about
     x0: Loc(c, hax, lever, dir: -phi, u: -rbar, v: 0mm)
     x1: Loc(c, hax, lever, dir: -phi, u: -rbar, v: dhole / 2)
     x2: Loc(c, hax, lever, dir: -phi, u: rbar, v: dhole / 2)
     x3: Loc(c, hax, lever, dir: -phi, u: rbar, v: 0mm)
-    line xh0(x0.p, x1.p) class gone
-    line xh1(x1.p, x2.p) class gone
-    line xh2(x2.p, x3.p) class gone
-    line xh3(x3.p, x0.p) class gone
-    face hole_f(xh0, xh1, xh2, xh3)
+    face hole_f(x0.p, x1.p, x2.p, x3.p, -> close)
     // an O-ring groove's core, the one circle the three of them share
     circle core(center: c) hint(r: torgb / 2) class hidden
     radius(torgb / 2) core

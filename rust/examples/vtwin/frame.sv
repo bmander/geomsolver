@@ -155,16 +155,10 @@ component Frame(front: plane, o: point, ref: line) {
     cph1: At(o, dx: 0mm, dy: bossh)
     cph2: At(o, dx: cplhole / 2, dy: bossh)
     cph3: At(o, dx: cplhole / 2, dy: bossh - cplin)
-    line cph_a(cph0.p, cph1.p) class gone
-    line cph_b(cph1.p, cph2.p) class gone
-    line cph_c(cph2.p, cph3.p) class gone
-    line cph_d(cph3.p, cph0.p) class gone
     line cpax(cph0.p, cph1.p) class gone
-    face cplh_f(cph_a, cph_b, cph_c, cph_d)
+    face cplh_f(cph0.p, cph1.p, cph2.p, cph3.p, -> close)
     // the plenum: the channel between its two arcs, closed by a radial cap at each intake port
-    line pl_r(ci1, co1) class gone
-    line pl_l(co0, ci0) class gone
-    face plenum_f(ch_in, pl_r, ch_out, pl_l)
+    face plenum_f(ch_in, co1, ch_out, ci0)
     // each exhaust vent, `wch` square like the plenum and the passage it is a sibling of — the
     // drawing has always carried it as a centreline, and a solid has to be told how wide a
     // channel is.  It runs at the plate's mid-plane, which is where the port it drains ends.
@@ -172,20 +166,12 @@ component Frame(front: plane, o: point, ref: line) {
     vr1: At(xr, dx: 0mm, dy: wch / 2)
     vr2: At(xr, dx: 0mm, dy: -wch / 2)
     vr3: At(r.ep.p, dx: 0mm, dy: -wch / 2)
-    line vr_a(vr0.p, vr1.p) class gone
-    line vr_b(vr1.p, vr2.p) class gone
-    line vr_c(vr2.p, vr3.p) class gone
-    line vr_d(vr3.p, vr0.p) class gone
-    face vent_r_f(vr_a, vr_b, vr_c, vr_d)
+    face vent_r_f(vr0.p, vr1.p, vr2.p, vr3.p, -> close)
     vl0: At(l.ep.p, dx: 0mm, dy: wch / 2)
     vl1: At(xl, dx: 0mm, dy: wch / 2)
     vl2: At(xl, dx: 0mm, dy: -wch / 2)
     vl3: At(l.ep.p, dx: 0mm, dy: -wch / 2)
-    line vl_a(vl0.p, vl1.p) class gone
-    line vl_b(vl1.p, vl2.p) class gone
-    line vl_c(vl2.p, vl3.p) class gone
-    line vl_d(vl3.p, vl0.p) class gone
-    face vent_l_f(vl_a, vl_b, vl_c, vl_d)
+    face vent_l_f(vl0.p, vl1.p, vl2.p, vl3.p, -> close)
     // and the faces every sweep below is of
     face plate_f(bottom, edge_r, cham_r, topline, cham_l, edge_l)
     face foot_f(ft.ab, ft.bc, ft.cd, ft.da)

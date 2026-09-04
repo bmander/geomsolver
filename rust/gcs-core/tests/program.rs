@@ -323,6 +323,7 @@ fn a_name_declared_twice_is_an_error() {
             sweep: None,
             membership: Default::default(),
             list_span: Default::default(),
+            close: None,
         }));
     }
     render(&mut p);

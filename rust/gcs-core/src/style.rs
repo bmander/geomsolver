@@ -233,6 +233,11 @@ pub fn base() -> Sheet {
     // line of the object.  The kind carries the class itself (`EntKind::implicit_class`), so a
     // document's own `style .plane` rule overrides this one without the declaration saying so.
     s.insert("plane".into(), rule(Some(vec![2.0, 3.0]), Some(0.75), Some("#8a8a8a")));
+    // A face's generated boundary is hidden unless the document overrides `.closure` (§6.8).
+    s.insert(
+        "closure".into(),
+        Style { dash: None, width: None, color: None, display: Some(Display::None) },
+    );
     s
 }
 

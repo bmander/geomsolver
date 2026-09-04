@@ -1147,6 +1147,29 @@ Conventions:
   never an error: the name was true of the operand and remains so.
   E080 a face that is not a loop on one plane, E081 a revolution's axis, E082 a face a body no
   longer has, E083 a stack that contradicts itself, E084 a section cut across its own view.
+- **A face closes itself** (§6.8, `program::build_face`; issue #49, item 1).  What the brackets
+  hold is a *walk*, and an item may be a **point**: a corner the walk goes straight to and
+  straight on from, with `-> close` — the chain's own word, in the other place the language draws
+  a loop — sealing the run back to the first item.  Where two neighbours do not already meet,
+  `build_face` mints the straight line between them, class `.closure`, which the base sheet hides.
+  Thirty-two of the V-twin's forty-two `class gone` lines were exactly that run written out by
+  hand: they carry no design, nothing draws them, and they exist because a region needs a
+  boundary — `face pist_f(crown, pL0, pL1, pL2, pL3, pL4, s0.p, -> close)` is one statement
+  where there were four, and `face hole_f(x0.p, x1.p, x2.p, x3.p, -> close)` one where there
+  were five.  **Every part sheet's SVG is byte-identical and every reported volume unchanged**,
+  which is the check: a minted run is the line the source used to declare, in the same place and
+  in the same direction, so it names a face of whatever is swept from the loop (`close0`,
+  `close1`, … in mint order, skipping existing edge names).
+  **The shorthand may not swallow a mistake**, and that is three rules.  An interior gap
+  between two *edges* is still E080 — a point in a list can mean nothing else, while two edges that do not meet are
+  edges listed out of order, and minting there would silently turn `face f(ab, cd, bc, da)` into
+  a bowtie.  And **an edge takes its direction from a neighbour it actually meets**, so one
+  standing between two gaps is refused: `face bad(a, bc, d, -> close)` walks `b`-first or
+  `c`-first and nothing there says which, which is why `bore_f` names the corner the wall starts
+  at (`face bore_f(m0.p, b_br.p, bore_r, hx.p, -> close)`) rather than leaving it to be guessed.
+  The wrap is minted only under `-> close`, so "the loop closes" stays something the source
+  states; `-> close` on a loop that already meets says something true and mints nothing.
+  `tests/solid_lang.rs` is the gate.
 - **`from:` says which plane a plane is derived from, and the clause beside it says how**
   (§6.7).  `fold:` turns it; **`offset:` stands it off along the normal**, which is what a stack
   of parts is written in.  0.10's rule that an omitted fold meant `fold: 0deg` is withdrawn — no

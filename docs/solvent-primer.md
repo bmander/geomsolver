@@ -539,6 +539,28 @@ nothing to it. The edges are given in traversal order and each must share a poin
 refused. A face has no inner loops, because a hole is not a hole in a face — it is a solid
 `through` the body.
 
+**A face closes itself.** The brackets hold a *walk*, and a **point** in the list is a corner the
+walk goes straight to and straight on from; `-> close` — the chain's own word — seals the run back
+to the first item. So the rectangle above needs no `ab` and no `da`:
+
+```
+face brief(a, bc, cd, -> close)
+```
+
+which mints exactly the two straight runs the source would otherwise have declared, in the two
+places the loop had a gap. A minted run is not on the sheet: it carries the class `.closure`, whose
+shipped rule is `display: none`, so say `style .closure { display: inline }` to see one. It still
+names a face of whatever is swept from the loop — `brief` swept gives `block.close0` and
+`block.close1` beside `block.bc`. The numbering skips names already used by the loop’s existing
+edges.
+
+Three things it will not do. The gap between the **last** item and the first is minted only where
+`-> close` says so, so "the loop closes" stays something the source states. And an interior gap
+between two *edges* is still refused: a point in a list can mean nothing else, but two edges that do not meet
+are edges listed out of order. For the same reason an edge standing between two gaps is refused —
+`face bad(a, bc, d, -> close)` could be walked `b`-first or `c`-first, and nothing there says
+which — so an edge takes its direction from a neighbour it actually meets.
+
 **A solid** is that face swept, one of two ways.
 
 A **prism** runs along the face's own normal. `depth: 30mm` is the draughtsman's reading — the

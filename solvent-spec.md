@@ -56,7 +56,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `on`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `through` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. The six labels a solid's brackets take — `from`, `to`, `depth`, `about`, `sweep`, `sense` — and `offset` (§6.10) and `at` (§6.11) are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`param face = -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`.
+- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `ground`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `on`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.19]** It is read the same way after `->` inside a `face`'s brackets (§6.8), which is the other place the language draws a loop. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `through` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. The six labels a solid's brackets take — `from`, `to`, `depth`, `about`, `sweep`, `sense` — and `offset` (§6.10) and `at` (§6.11) are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`param face = -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`.
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
 - **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . = -> ~`
@@ -483,7 +483,7 @@ An implementation MUST NOT make the attitude an unknown; a document that wants a
 
 ### 6.8 Faces **[0.18]**
 
-A **face** is a region of a plane: a closed loop of edges the document has already drawn.
+A **face** is a region of a plane: a closed loop of existing edges and straight runs between named corners.
 
 ```
 face sec(mouth, side_r, lid, side_l)     // four lines, walked in order
@@ -491,9 +491,20 @@ face hole_f(hole)                        // one circle, which is a loop by itsel
 face bore_f(b_mouth, bore_r, b_head, b_axis)
 ```
 
-A face is a **Declaration** (§4.2). It mints nothing and owns nothing — no coordinate, no unknown, no equation, no freedom — and its edges keep their own names: naming them is aliasing (P1), not constraint, so deleting an edge deletes the face. Its list is a `List` slot like a spline's control polygon, so there is no arity to conjure children from and a bare `face f` is refused (**E080**, the face's own code saying what a face is, where a bare `spline s` is §6.1's E103).
+A face is a **Declaration** (§4.2). It adds no coordinate, unknown, equation or freedom, and its existing edges keep their own names: naming them is aliasing (P1), not constraint, so deleting an edge deletes the face. Its list is a `List` slot like a spline's control polygon, so there is no arity to conjure children from and a bare `face f` is refused (**E080**, the face's own code saying what a face is, where a bare `spline s` is §6.1's E103).
 
-**A face is one closed loop.** Consecutive edges — and the last with the first — MUST share an endpoint, and sharing is asked of the **points**, which is aliasing and cannot be argued with: two neighbours that share none are **E080** naming both. The loop is walked in the order it is written. A `circle` is a whole loop by itself and MUST stand alone in one (E080); an edge that is not a line, an arc or a circle is E080 at the edge.
+**A face is one closed loop.** Consecutive edges — and the last with the first — MUST share an endpoint, and sharing is asked of the **points**, which is aliasing and cannot be argued with: two neighbours that share none are **E080** naming both. The loop is walked in the order it is written. A `circle` is a whole loop by itself and MUST stand alone in one (E080); an edge that is neither a line, an arc, a circle nor a point is E080 at the edge.
+
+**A face closes itself [0.19].** The list is a *walk*, and an item may be a **point** as well as an edge: a point is a corner the walk goes straight to and straight on from. Where two neighbours do not already share an endpoint the implementation MUST mint the straight run between them, from where the walk leaves one to where it enters the next; a run between two items standing at the same point is nothing and is not minted. The gap between the **last** item and the first is minted only where the list ends in the marker **`-> close`** — the chain's own word (§6.6), in the other place the language draws a loop — which MUST be the last thing in the brackets and is refused on any other kind. `-> close` on an already-closed loop, including a lone circle, mints nothing.
+
+```
+face pist_f(crown, pL0, pL1, pL2, pL3, pL4, s0.p, -> close)
+face quad(x0.p, x1.p, x2.p, x3.p, -> close)      // four corners, no line drawn at all
+```
+
+A minted run is an ordinary line of the drawing carrying the class **`.closure`**, whose shipped rule is `display: none` (§13.2): it bears no design, nothing drew it, and it exists so that a region has a boundary. It names a face of whatever is swept from the loop, as `close0`, `close1`, … in traversal order, skipping names already used by existing edges in the loop.
+
+Three restrictions keep the shorthand from swallowing a mistake. An interior gap between two **edges** is still E080: a point in a list can mean nothing else, while two edges that do not meet are edges listed out of order. And **an edge MUST meet at least one of its neighbours**, since that is what says which way it is walked — `face bad(a, bc, d, -> close)` has two readings and states neither, and is E080 naming the edge. A straight loop with fewer than three corners is E080 for the same reason a prism swept nowhere is.
 
 **A face has no holes, and the omission is the design.** There is no syntax for a second loop, because a hole in a part is a solid `through` the body (§6.9) and the body rule already says it. Written both ways, one drawing would state one hole twice, in two constructs an implementation would then have to keep in agreement — and P2 gives the body rule the better claim, since it holds however the statements are ordered.
 
@@ -1036,6 +1047,8 @@ style .hidden  { dash: 4 3; color: #7a7a7a }
 style .section { width: 1.6 }
 ```
 
+**[0.19] And one more, for the boundary a face closes itself with.** A straight run minted by a `face`'s own walk (§6.8) carries `.closure`, whose base rule is `display: none`: it bears no design, nothing drew it, and it exists so that a region has a boundary. A document that wants to see one says `style .closure { display: inline }`, as it would of any class.
+
 `.visible` has **no base rule**, and that is the cascade rule of this section rather than an omission: a visible stroke is the plain outline, so a rule stating a weight or an ink for it would beat a document's own `style .hidden { width: 2 }` on half the drawing. Each of the two rules that exist states only what its class *adds*, for the reason `.reference` does.
 
 - **A class goes on an entity declaration**, and nowhere else. Not on a component definition, not on an instance, not on a `cycle`. Those are all reasonable later and none of them is needed.
@@ -1157,7 +1170,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E061 | `project` refused: a point on no plane, both on one plane, or parallel planes (§6.7) **[0.10]** |
 | E070 | a `use` nothing resolves (§14.4) **[0.12]** |
 | E071 | a component defined twice, across the document and its modules (§14.4) **[0.12]** |
-| E080 | a face or a solid the model cannot build (§6.8, §6.9) **[0.18]**: a loop that does not close, an edge that is not a line, an arc or a circle, a circle standing *in* a loop rather than being one, edges in two planes, a swept solid written over anything but one face, a body made of what is not a solid, a prism swept nowhere, a feature written into a solid that is a face swept rather than a body |
+| E080 | a face or a solid the model cannot build (§6.8, §6.9) **[0.18]**: a loop that does not close, an edge that is not a line, an arc, a circle or a point, a circle standing *in* a loop rather than being one, **[0.19]** an edge that meets neither neighbour and so is walked two ways, a straight loop with fewer than three corners, edges in two planes, a swept solid written over anything but one face, a body made of what is not a solid, a prism swept nowhere, a feature written into a solid that is a face swept rather than a body |
 | E081 | a revolution's axis: not a line, or not in the face's own plane (§6.9) **[0.18]** |
 | E082 | a face of a body that the body no longer has (§6.9) **[0.18]** |
 | E083 | a stack that contradicts itself, or a placed plane placed twice or never (§6.10) **[0.18]** |
@@ -1369,7 +1382,8 @@ sweep_arg      = ( "from" | "to" | "depth" | "sweep" ) ":" expr
 
 (* §6.8, §6.9 [0.18].  Both are ordinary entity_decls — `face` and `solid` are element
    keywords — and are written out here for what their one list slot holds. *)
-face_decl      = "face" [ IDENT ] "(" ref { "," ref } ")" [ "class" IDENT { IDENT } ] ;
+face_decl      = "face" [ IDENT ] "(" ref { "," ref } [ "," "->" "close" ] ")"
+                 [ "class" IDENT { IDENT } ] ;   (* a ref is an edge or a corner, §6.8 [0.19] *)
 solid_decl     = "solid" [ IDENT ] "(" term ")" [ "class" IDENT { IDENT } ] ;
 term           = ref { "," sweep_arg }                     (* a face swept *)
                | ref { "," ref } ;                         (* a body: its stock, then solids *)
