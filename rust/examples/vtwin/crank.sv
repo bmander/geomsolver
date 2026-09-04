@@ -10,7 +10,7 @@ use vtwin.dims
 use vtwin.parts
 use vtwin.disc
 
-component Crank(swing: plane, side: plane, top: plane, o: point, ref: line, o_s: point, o_t: point) {
+component Crank(swing: plane, o: point, ref: line) {
   in swing {
     point pin hint(x: o.x + R * sin(theta0), y: o.y + R * cos(theta0))
     line arm(o, pin) class axis
@@ -22,6 +22,5 @@ component Crank(swing: plane, side: plane, top: plane, o: point, ref: line, o_s:
     circle kp(center: pin) hint(r: rpin)
     radius(rpin) kp
   }
-  disc: Disc(swing, side, top, o, pin, arm, dir: 90deg - theta0, o_s: o_s, o_t: o_t,
-             draw_side: 0, draw_top: 0)
+  disc: Disc(swing, o, pin, arm, dir: 90deg - theta0)
 }

@@ -99,6 +99,20 @@ component Grub(o: point, ax: line, ac: line, dir: Angle, rin: Length, rout: Leng
   line q1(n1.p, n2.p) class hidden detail
   line q2(n2.p, n3.p) class hidden detail
   line q3(n3.p, n0.p) class hidden detail
+  // **the screw's hole is a solid; its nut's pocket is not, and that is a limit of the language
+  // and not of the design.**  The hole is a turn of the half-section above about the screw's own
+  // line, which lies in this plane — `about:` takes exactly such a line.  The pocket is a *hex*
+  // prism about that same line, and neither sweep reaches it: `from:`/`to:` runs along the
+  // plane's normal and `about:` turns, so nothing here sweeps a section *along* a line lying in
+  // the plane.  So the pocket stays what it has always been, four hidden lines a printer reads,
+  // and it is not part of the body; it comes back when a swept solid does (spec §17).
+  a0: Loc(o, ax, ac, dir: dir, u: rin, v: 0mm)
+  a1: Loc(o, ax, ac, dir: dir, u: rout, v: 0mm)
+  line s_in(a0.p, h0.p) class gone
+  line s_out(h1.p, a1.p) class gone
+  line s_axis(a1.p, a0.p) class gone
+  face bore_f(s_in, s0, s_out, s_axis)
+  solid bore(bore_f, about: ax)
   claim h0.p distance(grub) h2.p class detail at (0, 4)
   claim n0.p distance(nutT) n1.p class detail at (0, 8)
   claim n0.p distance(nutaf) n3.p class detail at (0, -6)

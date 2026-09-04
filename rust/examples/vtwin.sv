@@ -44,11 +44,9 @@ line ref(O, up) class gone
 
 plate: Frame(views.front, views.right, views.top, O, ref, views.right_origin, views.top_origin,
              draw_side: 1, draw_top: 0)
-crank: Crank(views.front, views.right, views.top, O, ref, views.right_origin, views.top_origin)
-bankR: Bank(views.front, views.right, views.top, O, crank.pin, plate.r.piv, alpha: alphaR,
-            fw: fwB, o_s: views.right_origin, o_t: views.top_origin, dim: 1)
-bankL: Bank(views.front, views.right, views.top, O, crank.pin, plate.l.piv, alpha: alphaL,
-            fw: fwA, o_s: views.right_origin, o_t: views.top_origin, dim: 0)
+crank: Crank(views.front, O, ref)
+bankR: Bank(views.front, O, crank.pin, plate.r.piv, alpha: alphaR, fw: fwB, dim: 1)
+bankL: Bank(views.front, O, crank.pin, plate.l.piv, alpha: alphaL, fw: fwA, dim: 0)
 side: SideView(views.right_origin) in views.right
 
 // the two views agree: every height the side view shows is the front view's

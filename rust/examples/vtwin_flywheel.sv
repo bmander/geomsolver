@@ -12,8 +12,11 @@ point O hint(x: 0, y: 0) in views.front
 ground O
 views: ThreeViews(O, right: 110, up: 100)
 axes: Axes(O)
-fw: Flywheel(views.front, views.right, views.top, O, axes.ax,
-             o_s: views.right_origin, o_t: views.top_origin, draw_side: 1, draw_top: 1)
+fw: Flywheel(views.front, O, axes.ax)
+
+// the other two views, derived from the solid the section is a section of
+view(fw.body) in views.right
+view(fw.body) in views.top
 
 // how it looks: the part's own dimensions, and nothing else
 style .dimension { display: none }

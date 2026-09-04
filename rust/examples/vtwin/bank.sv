@@ -17,8 +17,8 @@ use vtwin.parts
 use vtwin.cylinder
 use vtwin.piston
 
-component Bank(swing: plane, side: plane, top: plane, o: point, pin: point,
-               piv: point, alpha: Angle, fw: Length, o_s: point, o_t: point, dim: Int) {
+component Bank(swing: plane, o: point, pin: point,
+               piv: point, alpha: Angle, fw: Length, dim: Int) {
   // where the cylinder points at the starting angle: from the pin through the pivot
   param px = R * sin(theta0)
   param py = R * cos(theta0)
@@ -42,8 +42,7 @@ component Bank(swing: plane, side: plane, top: plane, o: point, pin: point,
 
   // the parts, in the plane of swing and rocked with the rod
   cyl: Cylinder(swing, piv, rod, across, dir: dir, fw: fw)
-  pis: Piston(swing, side, top, crown, rod,
-              dir: dir, pin: pin, o_s: o_s, o_t: o_t, draw_side: 0, draw_top: 0)
+  pis: Piston(swing, crown, rod, dir: dir, pin: pin)
 
   // the dimensions, on one bank
   repeat dim {

@@ -1,9 +1,18 @@
-// The piston and its rod, one printed part, designed in one place: three views (§6.7).
+// The piston and its rod, one printed part: **one section, and the solid it is a section of**
+// (§6.9).
 //
-// In the plane of swing: the piston, `D` less a clearance, its crown square to the rod, the
-// O-ring groove below the crown and the skirt below that; the rod down to the eye about the
-// crank pin, with the hole the clevis pin's shank rides in.  From the side: the piston is round,
-// so it is as wide as it is across, and the rod and eye are `rw` thick.  From the crown: a disc.
+// The outline in the plane of swing is the design, and the part is what that outline *is*: the
+// piston is round, so its left-hand profile — crown, O-ring groove, skirt — turned about the
+// rod's own line is the piston, groove and all; the rod is its two flanks `rw` thick, the eye a
+// disc of the same thickness, and the clevis pin's hole a bore through both.  Nothing here says
+// how wide the piston is from the side, because nothing needs to: it is as wide as it is across
+// by construction, which is what a revolution means.
+//
+// It used to be written three times — this section, then the same body redrawn from the side as
+// `Slab`s and from the crown as a disc, tied back by six projections, with the groove's depth
+// stated twice and the eye's thickness in a place the section could not see.  The other views
+// are now asked for (`view(pis.body) in …`), so they cannot disagree with it.
+//
 // The assembly instances it once a bank, its crown `L` from the pin along a rod that passes
 // through the cylinder's pivot; the part sheet instances it once, upright.  The O-ring is a
 // #014 and the groove is sized to it in `dims.sv`.  Print it crown down.
@@ -11,8 +20,7 @@
 use vtwin.dims
 use vtwin.parts
 
-component Piston(swing: plane, side: plane, top: plane, crown: point, rod: line, dir: Angle,
-                 pin: point, o_s: point, o_t: point, draw_side: Int, draw_top: Int) {
+component Piston(swing: plane, crown: point, rod: line, dir: Angle, pin: point) {
   param pw = D / 2 - clr
   param gb = grooveb / 2
 
@@ -60,8 +68,22 @@ component Piston(swing: plane, side: plane, top: plane, crown: point, rod: line,
     rd distance(rt / 2, side: right) rod
     line fl(ra, rb)
     line fr(rc, rd)
-    // the far end of the eye, which the side view reads
-    eb: Loc(crown, rod, crownl, dir: dir, u: -(L + reye), v: 0mm)
+    // -- what the solid is made of, and nothing a view reads ---------------------------------
+    // The piston is the *left* profile turned about the rod: a revolution takes one side of its
+    // axis, and the right-hand one is drawn because the section shows it.  Three edges close the
+    // profile into a loop — out to the rim at the crown, in to the axis at the skirt, and back
+    // up the axis, which the turn sweeps into nothing.
+    s0: Loc(crown, rod, crownl, dir: dir, u: -ph, v: 0mm)
+    line p_top(crown, cL) class gone
+    line p_skirt(sL.p, s0.p) class gone
+    line p_axis(s0.p, crown) class gone
+    face pist_f(p_top, pL0, pL1, pL2, pL3, pL4, p_skirt, p_axis)
+    // the rod between its flanks, closed across the skirt and across the eye
+    line r_top(rc, ra) class gone
+    line r_end(rb, rd) class gone
+    face rod_f(fl, r_end, fr, r_top)
+    face eye_f(eye)
+    face hole_f(hole)
     // the sizes a printer needs
     claim cL distance(2 * pw) cR class detail at (0, 8)
     claim cL distance(ph) sL.p class detail at (0, 12)
@@ -74,42 +96,16 @@ component Piston(swing: plane, side: plane, top: plane, crown: point, rod: line,
     claim ra distance(rt) rc class detail at (0, -8)
   }
 
-  // -- from the side: round, so as wide as across; the rod `rw` thick -------------------------
-  repeat draw_side {
-    in side {
-      point crown_s hint(x: o_s.x, y: crown.y)
-      point g0_s hint(x: o_s.x, y: crown.y - groove)
-      point g2_s hint(x: o_s.x, y: crown.y - groove - groovew)
-      point skirt_s hint(x: o_s.x, y: crown.y - ph)
-      point pin_s hint(x: o_s.x, y: crown.y - L)
-      point eb_s hint(x: o_s.x, y: crown.y - L - reye)
-      o_s distance(0, along: x) crown_s
-      o_s distance(0, along: x) g0_s
-      o_s distance(0, along: x) g2_s
-      o_s distance(0, along: x) skirt_s
-      o_s distance(0, along: x) pin_s
-      o_s distance(0, along: x) eb_s
-      upper: Slab(o_s, x0: -pw, x1: pw, top: crown_s, bottom: g0_s)
-      grv: Slab(o_s, x0: -gb, x1: gb, top: g0_s, bottom: g2_s)
-      lower: Slab(o_s, x0: -pw, x1: pw, top: g2_s, bottom: skirt_s)
-      shank: Slab(o_s, x0: -rw / 2, x1: rw / 2, top: skirt_s, bottom: eb_s)
-      ph_s: Box(pin_s, x0: -rw / 2, y0: -pinclr / 2, x1: rw / 2, y1: pinclr / 2) class hidden
-      claim shank.a distance(rw) shank.b class detail at (0, -6)
-    }
-    crown project crown_s
-    g0L.p project g0_s
-    g2L.p project g2_s
-    sL.p project skirt_s
-    pin project pin_s
-    eb.p project eb_s
-  }
-
-  // -- from the crown: a disc, the rod's section under it ----------------------------------------
-  repeat draw_top {
-    in top {
-      circle disc(center: o_t) hint(r: pw)
-      radius(pw) disc
-      sec: Box(o_t, x0: -rt / 2, y0: -rw / 2, x1: rt / 2, y1: rw / 2) class hidden
-    }
-  }
+  // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
+  // The rod and the eye are half `rw` either side of the plane of swing, which is where the
+  // section is drawn and where the crank pin's washers hold it; the piston needs no such
+  // statement, being a turn about a line that lies in that plane.
+  solid pist(pist_f, about: rod)
+  solid shank(rod_f, from: -rw / 2, to: rw / 2)
+  solid boss(eye_f, from: -rw / 2, to: rw / 2)
+  solid pinhole(hole_f, from: -rw, to: rw)
+  solid body(pist)
+  shank on body
+  boss on body
+  pinhole through body
 }

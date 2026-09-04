@@ -11,9 +11,12 @@ use vtwin.throttle
 point O hint(x: 0, y: 0) in views.front
 ground O
 views: ThreeViews(O, right: 70, up: 55)
-axes: Axes(O)
-thr: Throttle(views.front, views.right, views.top, O, axes.ax, phi: 0deg,
-              o_s: views.right_origin, o_t: views.top_origin, draw_side: 1, draw_top: 1)
+axes: Axes(O) in views.front
+thr: Throttle(views.front, O, axes.ax, phi: 0deg)
+
+// the other two views, derived from the solid the section is a section of
+view(thr.body) in views.right
+view(thr.body) in views.top
 
 // how it looks: the part's own dimensions, and nothing else
 style .dimension { display: none }

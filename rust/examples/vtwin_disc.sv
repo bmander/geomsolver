@@ -1,6 +1,5 @@
-// The crank disc alone: the part `vtwin.disc` designs, the pin at the top, in three views,
-// with the dimensions a printer needs — the assembly draws the same component turned to the
-// crank.
+// The crank disc alone: the part `vtwin.disc` designs, the pin at the top, with the dimensions a
+// printer needs — **and the other two views are asked for, not drawn** (§6.11).
 
 unit mm
 use std
@@ -18,8 +17,11 @@ pin on axes.ax
 O distance(R) pin
 line arm(O, pin) class axis
 
-disc: Disc(views.front, views.right, views.top, O, pin, arm, dir: 90deg,
-           o_s: views.right_origin, o_t: views.top_origin, draw_side: 1, draw_top: 1)
+disc: Disc(views.front, O, pin, arm, dir: 90deg)
+
+// the other two views, derived from the solid the section is a section of
+view(disc.body) in views.right
+view(disc.body) in views.top
 
 // how it looks: the part's own dimensions, and nothing else
 style .dimension { display: none }
