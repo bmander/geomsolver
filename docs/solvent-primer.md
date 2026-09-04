@@ -740,6 +740,22 @@ no statement at all. Written once it is **119 lines instead of 144** and its com
 `147 params, 147 equations` to `69 params, 69 equations`, DOF 0 both ways: the two extra views cost
 the drawing nothing, being questions and not geometry.
 
+**Every part of that engine is now written this way** — `vtwin/piston.sv`, `disc.sv`,
+`flywheel.sv`, `throttle.sv` and the plate in `frame.sv` beside the cylinder — and what each one
+turned out to *be* is worth reading, because the shape of the statement follows from where the
+part's own axis lies relative to its section. The piston is a **turn**: its left-hand profile
+about the rod's line, which is why the view from the crown comes out a disc with nothing anywhere
+saying so. The disc, the flywheel and the throttle have their axis running *through* the section,
+so they are prisms, and only the features whose axis lies *in* it — a radial set screw, a
+cross-hole — are turns. The plate is both.
+
+One rule keeps falling out of that, and it is the thing to know before writing a part:
+**where a part's turned features are is where its section has to be.** A turn about a line lying
+in the section puts what it makes *on* that plane whatever else is written, so the crank disc is
+sectioned on its mid-plane because the set screw runs through it, and the plate on its mid-plane
+because the plenum, the boss, the vents and the coupling's hole are all centred there. Sectioned
+on a face instead, half of each of those would have been in fresh air.
+
 **And the dimensions, asked for too.** A sheet may ask the machine for the callouts that follow
 from the object:
 
