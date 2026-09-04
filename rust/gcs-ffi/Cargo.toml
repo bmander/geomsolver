@@ -13,3 +13,5 @@ name = "gcs"
 # target — the one thing `wasm32-unknown-unknown` cannot check, since it aborts.
 crate-type = ["cdylib", "staticlib", "rlib"]
 path = "src/lib.rs"
+# The native ABI is exercised by tests/, including its panic boundary.
+test = false

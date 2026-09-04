@@ -16,3 +16,5 @@ gcs-core = { path = "../gcs-core" }
 [[bin]]
 name = "solventc"
 path = "src/main.rs"
+# tests/cli.rs runs the real binary; there are no in-source unit tests.
+test = false

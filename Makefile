@@ -9,12 +9,16 @@
 UNAME := $(shell uname -s)
 EXT := $(if $(filter Darwin,$(UNAME)),.dylib,$(if $(filter Windows_NT,$(OS)),.dll,.so))
 CARGO := cargo
+# Inherit a parallel Make jobserver when present; otherwise overlap the two suites.
+# Set TEST_JOBS=1 to run them serially (GNU Make 3.81 does not retain -j1 in MAKEFLAGS).
+TEST_JOBS ?= $(if $(filter -j%,$(MAKEFLAGS)),,2)
 # `.sv` too, and `rust/examples/` with them: every case in the library is a Solvent document
 # compiled in with `include_str!`, so a document is source.  Left out of this list, editing one
 # rebuilt nothing — the tests read the file from disk and passed while the browser went on
 # running the case that was compiled in weeks ago.
 RUST_SRC := $(shell find rust/gcs-core/src rust/gcs-ffi/src rust/gcs-cli/src rust/examples rust/lib \
                         -name '*.rs' -o -name '*.sv')
+RUST_CONFIG := rust/Cargo.toml $(wildcard rust/*/Cargo.toml) rust/Cargo.lock rust/rust-toolchain.toml
 WASM_TARGET := wasm32-unknown-unknown
 # The native triple, named so the release artefacts can be asked for together (see `release`)
 # and so they then come out of one directory whether asked for together or alone.
@@ -25,32 +29,29 @@ RELEASE := $(CARGO) build --manifest-path rust/Cargo.toml --release -p gcs-ffi
 
 all: build/libgcs$(EXT)
 
-build/libgcs$(EXT): $(RUST_SRC) rust/gcs-core/Cargo.toml rust/gcs-ffi/Cargo.toml
+build/libgcs$(EXT): $(RUST_SRC) $(RUST_CONFIG)
 	@mkdir -p build
 	$(RELEASE) --target $(HOST)
 	cp rust/target/$(HOST)/release/libgcs$(EXT) $@
 
 solventc: build/solventc
 
-build/solventc: $(RUST_SRC) rust/gcs-cli/Cargo.toml
+build/solventc: $(RUST_SRC) $(RUST_CONFIG)
 	@mkdir -p build
 	$(CARGO) build --manifest-path rust/Cargo.toml --release -p gcs-cli --target $(HOST)
 	cp rust/target/$(HOST)/release/solventc $@
 
 wasm: web/src/wasm/gcs.wasm
 
-web/src/wasm/gcs.wasm: $(RUST_SRC) rust/gcs-core/Cargo.toml rust/gcs-ffi/Cargo.toml
+web/src/wasm/gcs.wasm: $(RUST_SRC) $(RUST_CONFIG)
 	@mkdir -p web/src/wasm
 	rustup target add $(WASM_TARGET)
 	$(RELEASE) --target $(WASM_TARGET)
 	cp rust/target/$(WASM_TARGET)/release/gcs.wasm $@
 
-# Both released artefacts from ONE cargo invocation.  Each is a fat-LTO link of the whole engine
-# with `codegen-units = 1`, which is one thread working for most of two minutes, and two
-# invocations cannot overlap — the second blocks on the build-directory lock — so `all` then
-# `wasm` is 116 s + 91 s where one job graph holding both is 106 s.  `test` asks for this first;
-# `all` and `wasm` then find their copies newer than every source and do nothing, and cargo's
-# own cache is shared either way, since the solo rules build into the same `--target` directory.
+# Both released artefacts in one Cargo job graph, sharing the cache used by the solo rules.
+# Separate concurrent Cargo invocations would just wait on the build-directory lock. The
+# release profile uses incremental ThinLTO; a small edit can reuse unchanged codegen units.
 release:
 	@mkdir -p build web/src/wasm
 	rustup target add $(WASM_TARGET)
@@ -58,7 +59,10 @@ release:
 	cp rust/target/$(HOST)/release/libgcs$(EXT) build/libgcs$(EXT)
 	cp rust/target/$(WASM_TARGET)/release/gcs.wasm web/src/wasm/gcs.wasm
 
-test: release test-rust test-web
+# Finish both release artefacts before starting either suite, including with `make -j`.
+# Then overlap the independent suites even for a plain `make test`.
+test: release
+	$(MAKE) $(if $(TEST_JOBS),-j$(TEST_JOBS)) test-rust test-web
 
 # A workspace `cargo test` already runs every member's `tests/`, so `gcs-ffi/tests/` and
 # `gcs-cli/tests/` come along: the panic boundary is the one thing only the native target can

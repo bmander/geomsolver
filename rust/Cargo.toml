@@ -4,8 +4,12 @@ members = ["gcs-core", "gcs-ffi", "gcs-cli"]
 
 [profile.release]
 opt-level = 3
-lto = true
-codegen-units = 1
+# Keep cross-crate optimisation, but let LLVM work on several units at once and reuse
+# unchanged units after an edit. Full LTO with one unit rebuilt both release targets
+# from scratch on every core edit (117 seconds for the release step alone).
+lto = "thin"
+codegen-units = 16
+incremental = true
 # not "abort": the FFI's `guard` turns a core panic into an error return.
 panic = "unwind"
 
@@ -16,13 +20,14 @@ panic = "unwind"
 # `make test`, for tests that run in 17 seconds.  `[profile.bench]` is no escape, since cargo
 # 1.57+ builds `cargo test --release` under `release` itself.  Inheriting `dev` keeps debug assertions on,
 # which the suite had never run with, and keeps the build incremental, so an edit to one file of
-# the core recompiles that and relinks the tests.  The cdylib, `solventc` and the wasm still
-# build under `release`.
+# the core recompiles that and relinks the tests. Level 2 keeps the numerical tests fast without
+# paying for level 3's extra optimisation passes. The cdylib, `solventc` and the wasm still
+# build under `release`. Measurements and reproduction: ../docs/build-performance.md.
 # No debuginfo, because on macOS it is kept "unpacked": every object file of every test crate is
 # left in `target/debug/deps` and nothing ever removes one, and a directory of 335,000 of them
 # made every test binary take five seconds to *launch* — 250 of the 275 seconds `cargo test`
 # ran for.  A failing test still says its file and line (that is the panic's, not the
 # debugger's); only a backtrace loses its line numbers.
 [profile.test]
-opt-level = 3
+opt-level = 2
 debug = 0

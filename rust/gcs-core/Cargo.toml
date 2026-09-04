@@ -19,6 +19,14 @@ nalgebra = { version = "0.35", default-features = false, features = ["std"] }
 [lib]
 name = "gcs_core"
 path = "src/lib.rs"
+# Tests live in the integration suite below; don't compile the engine again as an
+# empty unit-test executable. Documentation tests remain enabled.
+test = false
+
+[[bin]]
+name = "bench"
+path = "src/bin/bench.rs"
+test = false
 
 [[test]]
 name = "core"

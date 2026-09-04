@@ -1332,15 +1332,18 @@ Conventions:
   (`swap`) and ⌘B on one says why it stays, since shown in the box such a drawing is a tilted,
   read-only, empty-looking sheet on which every tool click silently does nothing.
 - Slow tests are gated by `#[ignore]` (cargo).
-- **Test time is measured, not guessed, and three findings decide the shape of `make test`**
-  (each with its numbers where the rule is written): `cargo test --release` fat-LTO-linked the
-  engine once per test binary (`rust/Cargo.toml`, `[profile.test]`); macOS assesses every fresh
-  executable on its first launch and keeps unpacked debuginfo objects forever in
-  `target/debug/deps`, so the core suite is one binary built without debuginfo
-  (`gcs-core/tests/main.rs`); and the two released links overlap only inside one cargo
-  invocation (`Makefile`, `release`).  A `target/debug/deps` that has grown to hundreds of
-  thousands of files makes every binary in it take seconds to launch — `cargo clean --profile
-  dev` is the cure, and `debug = 0` is what stops it recurring.
+- **Measure compile time and test time separately**; the measurements and reproduction are in
+  [`docs/build-performance.md`](docs/build-performance.md). `make test` still builds both release
+  artefacts and runs every integration suite and documentation test. Release builds use
+  incremental ThinLTO with 16 codegen units; the native test profile uses optimisation level 2,
+  debug assertions and no debuginfo. The core suite is one binary (`gcs-core/tests/main.rs`),
+  and the libraries and binaries have `test = false` because all their tests live in `tests/`;
+  adding an in-source unit test requires enabling that target's harness again. One Cargo
+  invocation builds both release targets, then Make overlaps the Rust and web suites. The
+  TypeScript cache lives inside `web/dist`, so removing the output also removes its cache.
+  macOS assesses every fresh executable on its first launch; a `target/debug/deps` with
+  hundreds of thousands of unpacked debuginfo objects also makes launches slow. Keep
+  `debug = 0`; `cargo clean --profile dev` clears an existing accumulation.
 - Benchmark on a quiet machine (`uptime`); this box often has a JVM indexer at 300% CPU.  The
   native half is `rust/gcs-core/src/bin/bench.rs` (`cargo run --release -p gcs-core --bin bench`)
   and the wasm half is `npm run bench`; `make bench` runs both.  Wall-clock medians and nothing
