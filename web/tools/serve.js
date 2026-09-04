@@ -33,7 +33,17 @@ const EXAMPLES = /^(?:.*)\/examples\/((?:[\w-]+\/)*[\w-]+\.sv)$/;
 
 const port = Number(process.env.PORT ?? 8123);
 createServer((req, res) => {
-  const url = new URL(req.url ?? '/', 'http://localhost');
+  // A request line is whatever reached the socket, and `new URL` throws on some of them — `//`
+  // is a protocol-relative URL with no host, which a stray probe or a browser extension will
+  // send.  Uncaught in a handler that is the whole server, one of those takes the server down
+  // and the page it was serving with it.
+  let url;
+  try {
+    url = new URL(req.url ?? '/', 'http://localhost');
+  } catch {
+    res.writeHead(400).end('bad request');
+    return;
+  }
   const m = EXAMPLE.exec(url.pathname);
   if (m) {
     res.writeHead(302, { location: `${m[1]}/?example=${m[2]}` }).end();
