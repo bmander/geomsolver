@@ -43,6 +43,7 @@
  * what the menus open, `lists` the constraints window and the status line, and `dimbox` the
  * number a dimension is edited in. */
 import * as io from '../core/io.js';
+import * as solids from '../core/mesh.js';
 import { CONSTRAINT_BUTTONS } from './commands.js';
 import {
   about, alternatives, doOpen, flipBranch, insertPlane, openCase, options, report,
@@ -115,6 +116,49 @@ function exportSvg(): void {
   toast('exported sketch.svg');
 }
 
+/** **The object, as a file.**
+ *
+ *  Two formats because they answer two questions.  glTF carries what the kernel knows — every
+ *  face of every object under the name the document gives it, and the normals that make a bore's
+ *  wall shade round — and is what a viewer opens.  STL carries triangles and nothing else, and
+ *  is what a printer takes.  Neither is a boundary representation, so neither is what a
+ *  machinist's STEP would be; that is a different thing and is not this.
+ *
+ *  What is exported is the document's **objects** — the solids nothing else is made of.  A bore
+ *  is a hole in a part, not a part beside it. */
+function exportSolid(kind: 'glb' | 'stl'): void {
+  const objs = solids.objects(view.sketch);
+  if (objs.length === 0) {
+    toast('this drawing has no solid — a `solid` statement makes one from a `face`');
+    return;
+  }
+  const stem = objs.length === 1 ? objs[0].name.replace(/[^\w.-]/g, '_') : 'solids';
+  if (kind === 'glb') {
+    // one scene holds every object, so glTF need not be told which part of an assembly to be
+    download(`${stem}.glb`, solids.glb(view.sketch));
+    toast(`exported ${stem}.glb — ${objs.length} object(s), every face named`);
+    return;
+  }
+  // an STL is a triangle soup with no grouping, so several objects go in one file as one soup
+  const parts = objs.map((o) => solids.stl(view.sketch, o.index));
+  download(`${stem}.stl`, parts.length === 1 ? parts[0] : joinStl(parts));
+  toast(`exported ${stem}.stl`);
+}
+
+/** Several binary STLs as one: the header of the first, the summed count, and every record. */
+function joinStl(parts: Uint8Array[]): Uint8Array {
+  const n = parts.reduce((a, p) => a + (new DataView(p.buffer, p.byteOffset).getUint32(80, true)), 0);
+  const out = new Uint8Array(84 + n * 50);
+  out.set(parts[0].subarray(0, 84));
+  new DataView(out.buffer).setUint32(80, n, true);
+  let at = 84;
+  for (const p of parts) {
+    out.set(p.subarray(84), at);
+    at += p.length - 84;
+  }
+  return out;
+}
+
 /** Put a picture behind the drawing to trace over.
  *
  *  It is **view state, not document state** — scenery, like the camera and the colouring, and
@@ -146,6 +190,12 @@ const MENUS: [string, (MenuItem | null)[]][] = [
     { label: 'Export SVG', onClick: exportSvg,
       title: 'The drawing as a scalable image, laid out by the core — the same figure `solventc '
         + '--output` writes' },
+    { label: 'Export solid (glTF)', onClick: () => exportSolid('glb'),
+      title: 'The object as a viewer opens it: every face a named node, in metres.  What '
+        + '`solventc --gltf` writes' },
+    { label: 'Export solid (STL)', onClick: () => exportSolid('stl'),
+      title: 'The object as a printer takes it: triangles, welded so every edge has its '
+        + 'partner.  What `solventc --stl` writes' },
     null,
     { label: 'Trace image…', onClick: () => void traceImage(),
       title: 'Put a picture behind the drawing to draw over.  It is scenery — not saved, not '

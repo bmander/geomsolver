@@ -39,6 +39,7 @@ solventc — check a Solvent document
     --allow-unsolved    a document that does not solve is not a failure
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
+    --gltf PATH         write a solid as binary glTF: every face a named node
     --solid NAME        which solid --stl writes; the only one, when there is only one
     --width PX          the SVG's page width in pixels (default 800)
     -h, --help          this
@@ -67,6 +68,8 @@ struct Opts {
     /// `--stl PATH` — the one output of a drawing that is not a picture, and the reason a
     /// printer can be given a part at all.
     stl: Option<String>,
+    /// `--gltf PATH` — the object as a viewer opens it, every face named.
+    gltf: Option<String>,
     solid: Option<String>,
     /// An SVG has no screen, so the export must choose a `unit` — the world length of one screen
     /// pixel, which every constant size goes through.  A page width fixes it.
@@ -82,6 +85,7 @@ impl Default for Opts {
             allow_unsolved: false,
             output: None,
             stl: None,
+            gltf: None,
             solid: None,
             width: 800.0,
         }
@@ -105,6 +109,13 @@ fn main() -> ExitCode {
                 Some(w) if w.is_finite() && w > 0.0 => opts.width = w,
                 _ => {
                     eprintln!("solventc: --width needs a page width in pixels");
+                    return ExitCode::from(2);
+                }
+            },
+            "--gltf" | "--glb" => match args.next() {
+                Some(p) => opts.gltf = Some(p),
+                None => {
+                    eprintln!("solventc: --gltf needs a path");
                     return ExitCode::from(2);
                 }
             },
@@ -142,6 +153,10 @@ fn main() -> ExitCode {
             }
             s => paths.push(s.to_string()),
         }
+    }
+    if opts.gltf.is_some() && paths.len() != 1 {
+        eprintln!("solventc: --gltf writes one file, so it takes one document");
+        return ExitCode::from(2);
     }
     if opts.stl.is_some() && paths.len() != 1 {
         eprintln!("solventc: --stl writes one file, so it takes one document");
@@ -300,6 +315,32 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             }
             Err(m) => {
                 eprintln!("solventc: {m}");
+                code = 1;
+            }
+        }
+    }
+    if let Some(path) = &opts.gltf {
+        // a named solid, or **every object the document has** — glTF holds a scene, so unlike an
+        // STL it need not be told which one part of an assembly to be
+        let which: Vec<usize> = match &opts.solid {
+            Some(_) => match pick_solid(&sk, opts.solid.as_deref()) {
+                Ok(i) => vec![i],
+                Err(m) => {
+                    eprintln!("solventc: {m}");
+                    code = 1;
+                    Vec::new()
+                }
+            },
+            None => gcs_core::overview::objects(&sk),
+        };
+        if which.is_empty() && opts.solid.is_none() {
+            eprintln!("solventc: this document has no solid to write");
+            code = 1;
+        } else if !which.is_empty() {
+            let unit = which.iter().map(|&i| gcs_core::solid::mesh_unit(&sk, i)).fold(f64::MAX, f64::min);
+            let bytes = gcs_core::gltf::glb(&sk, &which, unit);
+            if let Err(err) = std::fs::write(path, bytes) {
+                eprintln!("solventc: {path}: {err}");
                 code = 1;
             }
         }

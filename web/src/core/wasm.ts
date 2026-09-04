@@ -138,6 +138,9 @@ export interface Abi {
   gcs_solid_mesh(h: number, idx: number, unit: number, out: number, cap: number): number;
   gcs_solid_normals(h: number, idx: number, unit: number, out: number, cap: number): number;
   gcs_solid_faces_json(h: number, idx: number, unit: number): number;
+  gcs_solid_glb(h: number, idx: number, unit: number): number;
+  gcs_solid_objects_json(h: number): number;
+  gcs_solid_stl(h: number, idx: number, unit: number): number;
   gcs_callout_pick(h: number, unit: number, x: number, y: number, tolPx: number): number;
   gcs_callout_grab(h: number, id: number, unit: number, x: number, y: number,
                    out: number): number;
@@ -369,6 +372,18 @@ export function takeStr(handle: number): string {
   const n = c.gcs_str_len(handle);
   const p = c.gcs_str_ptr(handle);
   const out = n ? decoder.decode(u8().subarray(p, p + n)) : '';
+  c.gcs_str_free(handle);
+  return out;
+}
+
+/** Bytes out of the core, under the same handle a string uses — the convention was always
+ *  bytes, and only this side assumed they were characters.  What a `.glb` comes back as. */
+export function takeBytes(handle: number): Uint8Array {
+  if (!handle) return new Uint8Array(0);
+  const c = core();
+  const n = c.gcs_str_len(handle);
+  const p = c.gcs_str_ptr(handle);
+  const out = new Uint8Array(u8().subarray(p, p + n));   // copied: the heap may move
   c.gcs_str_free(handle);
   return out;
 }

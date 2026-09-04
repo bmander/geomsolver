@@ -289,12 +289,16 @@ const MIME: Record<string, string> = {
   json: 'application/json',
   svg: 'image/svg+xml',
   sv: 'text/plain',
+  glb: 'model/gltf-binary',
+  stl: 'model/stl',
 };
 
 /** Download a string as a file — the document as JSON, the source as `.sv`, the drawing
  *  as SVG. */
-export function download(name: string, text: string): void {
-  const blob = new Blob([text], { type: MIME[name.split('.').pop() ?? ''] ?? 'text/plain' });
+export function download(name: string, data: string | Uint8Array): void {
+  // bytes as readily as text: a `.glb` and a `.stl` are binary, and a Blob takes either
+  const part: BlobPart = typeof data === 'string' ? data : new Uint8Array(data);
+  const blob = new Blob([part], { type: MIME[name.split('.').pop() ?? ''] ?? 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

@@ -94,6 +94,18 @@ fn out_str(s: String) -> *mut u8 {
     }
 }
 
+/// Bytes out of the core, under the same length-prefixed handle a string uses — the convention
+/// was always bytes, and only the reader on the far side assumed they were characters.
+fn out_bytes(bytes: Vec<u8>) -> *mut u8 {
+    let total = 4 + bytes.len();
+    unsafe {
+        let p = alloc(layout(total));
+        (p as *mut u32).write_unaligned(bytes.len() as u32);
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), p.add(4), bytes.len());
+        p
+    }
+}
+
 fn out_json(v: Json) -> *mut u8 {
     out_str(v.dump(None))
 }
@@ -1457,6 +1469,58 @@ pub unsafe extern "C" fn gcs_solid_faces_json(h: *mut Sketch, idx: i32, unit: f6
                         o.set("smooth", gcs_core::json::Json::Bool(true));
                     }
                     o
+                })
+                .collect(),
+        ))
+    })
+}
+
+/// **A solid as a `.glb`**: binary glTF, every face of the object a named node, positions in
+/// metres where the document names a unit.  Returned as a length-prefixed byte buffer — the same
+/// handle a string comes back as, since that convention is bytes and not characters.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_glb(h: *mut Sketch, idx: i32, unit: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        // -1 asks for **every object** — the solids nothing else is made of, which is what a
+        // document's "export the solid" means when it holds an assembly
+        let s = sk(h);
+        let which: Vec<usize> =
+            if idx < 0 { gcs_core::overview::objects(s) } else { vec![idx as usize] };
+        let unit = if unit > 0.0 {
+            unit
+        } else {
+            which.iter().map(|&i| gcs_core::solid::mesh_unit(s, i)).fold(f64::MAX, f64::min)
+        };
+        out_bytes(gcs_core::gltf::glb(s, &which, unit))
+    })
+}
+
+/// **A solid as binary STL**: what a printer takes.  Welded, so every edge has its partner —
+/// the file a boundary evaluation does not give on its own.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_stl(h: *mut Sketch, idx: i32, unit: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let s = sk(h);
+        let i = idx.max(0) as usize;
+        let unit = if unit > 0.0 { unit } else { gcs_core::solid::mesh_unit(s, i) };
+        out_bytes(gcs_core::mesh::stl(&s.solid_boundary(i, unit), &s.solid_name(i)))
+    })
+}
+
+/// **The objects a document has**: the solids nothing else is made of, by name and index.  A
+/// bore is a hole in a part and not a part beside it, and this is the rule that says so.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_objects_json(h: *mut Sketch) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let s = sk(h);
+        out_json(Json::Arr(
+            gcs_core::overview::objects(s)
+                .into_iter()
+                .map(|i| {
+                    Json::Obj(vec![
+                        ("name".into(), Json::Str(s.solid_name(i))),
+                        ("index".into(), Json::Int(i as i64)),
+                    ])
                 })
                 .collect(),
         ))

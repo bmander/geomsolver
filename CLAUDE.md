@@ -1047,6 +1047,26 @@ Conventions:
   `(0deg, 360deg)` is radians to the kernels and `(0mm, 20mm)` is a length unchanged — where
   converting everything as an angle made a sweep of millimetres sixty times too small and
   reported a claim that held over almost none of its interval.
+- **A solid leaves as glTF, and that is the format this kernel's data already is** (`gltf.rs`).
+  STL carries triangles and nothing else — no face named, no unit recorded, the grouping thrown
+  away at the door.  STEP carries both and is a *boundary representation*, which this kernel
+  deliberately is not.  glTF is positions, normals and a named group per face, which is precisely
+  `mesh::Mesh`, so the mapping is nearly an identity — and its container is a twelve-byte header
+  and two chunks, one of them JSON that `json.rs` already writes, so it needs no ZIP and no
+  dependency where a `.3mf` would have wanted both.
+  **Every face of every object is a named node**, so a viewer's outliner is the document's own
+  tree of names — and the path is carried **twice**, as `name` for a person and in `extras` for a
+  program, because a loader may sanitise one: three.js strips the dots out of `body.bore.wall`,
+  its own animation paths being written with them, and passes `extras` through untouched as
+  `userData`.  Verified by loading the file in three.js, which is the only test of an
+  interchange format worth having.
+  **Metres, because the spec says so normatively**: a document naming `mm` is scaled on the way
+  out so a forty-millimetre part opens as one, with its own unit in `asset.extras` so the scaling
+  loses nothing; one naming no unit is written as it stands.  What is exported is the document's
+  *objects* (`overview::objects`, now public) — a bore is a hole in a part and not a part beside
+  it — and glTF holds a scene, so unlike an STL it need not be told which part of an assembly to
+  be.  `solventc --gltf`, `File ▸ Export solid (glTF)`, and `File ▸ Export solid (STL)` beside it
+  for a printer.
 - **A mesh is welded, and grouped by face** (`mesh.rs`) — the two things a boundary evaluation
   does not give on its own, and between them the whole of what a mesh was said to need a B-rep
   for.  A viewer and a slicer both take *triangles*; what they want of them is that the edges pair

@@ -566,7 +566,7 @@ fn axes(basis: &Basis, (x0, y0, x1, y1): Box2) -> [Vec<[f64; 3]>; 2] {
 /// says so without the document having to: a solid named as another's operand is a *feature* of
 /// it.  A document that names none — every solid an operand of some other — has a cycle, which
 /// the elaborator has already refused, so the list is never empty when the solids are not.
-fn objects(sk: &Sketch) -> Vec<usize> {
+pub fn objects(sk: &Sketch) -> Vec<usize> {
     let mut used = vec![false; sk.solids.len()];
     for s in &sk.solids {
         for o in s.operands() {

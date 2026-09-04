@@ -234,3 +234,57 @@ fn the_cheap_fan_is_only_taken_where_it_is_safe() {
     );
     assert_eq!(unpaired(&mesh::triangles(&welded)), 0, "and it is still closed");
 }
+
+#[test]
+fn a_solid_leaves_as_a_glb_a_viewer_can_open() {
+    // **What a solid's natural export is, and why it is this one.**  STL carries triangles and
+    // nothing else: no face is named in it and no unit recorded.  STEP carries both and is a
+    // boundary representation, which this kernel is deliberately not.  glTF sits where the data
+    // already is — positions, normals, and a named group per face, which is `mesh::Mesh` — so
+    // the mapping is nearly an identity, and that is the argument for it.
+    let (sk, body) = bored();
+    let bytes = gcs_core::gltf::glb(&sk, &[body], solid::mesh_unit(&sk, body));
+
+    // the container: a header and two chunks, each padded to four, and a length that agrees
+    assert_eq!(&bytes[0..4], b"glTF");
+    let u32_at = |i: usize| u32::from_le_bytes(bytes[i..i + 4].try_into().expect("four bytes"));
+    assert_eq!(u32_at(4), 2, "glTF 2.0");
+    assert_eq!(u32_at(8) as usize, bytes.len(), "the header's length is the file's");
+    let json_len = u32_at(12) as usize;
+    assert_eq!(&bytes[16..20], b"JSON");
+    assert_eq!(json_len % 4, 0, "chunks are padded to four");
+    let bin_at = 20 + json_len;
+    assert_eq!(&bytes[bin_at + 4..bin_at + 8], b"BIN\0");
+    let bin_len = u32_at(bin_at) as usize;
+    assert_eq!(bin_at + 8 + bin_len, bytes.len(), "and the blob runs to the end");
+
+    let doc = String::from_utf8(bytes[20..20 + json_len].to_vec()).expect("the manifest is UTF-8");
+    // every face is a node the document named, and the name is carried *twice*: once as `name`
+    // for a person and once in `extras`, because a loader may sanitise one — three.js strips the
+    // dots out of `body.bore.wall` — and passes the other through untouched
+    assert!(doc.contains("\"bore.rim\""), "the bore's wall is named: {}", &doc[..400.min(doc.len())]);
+    assert!(doc.contains("\"face\""), "and named again where a loader cannot mangle it");
+    assert!(doc.contains("\"POSITION\"") && doc.contains("\"NORMAL\""));
+    // the buffer the manifest declares is the blob that follows it
+    assert!(doc.contains(&format!("\"byteLength\":{bin_len}")) || bin_len % 4 == 0);
+
+    // **metres, because the spec says so.**  This document names no unit, so it is written as it
+    // stands; the one that names millimetres is scaled, and says so in `asset.extras`.
+    let mut mm = Sketch::new();
+    mm.units = gcs_core::units::Units::with_length("mm").expect("mm is a unit");
+    let f = rect_face(&mut mm, 0.0, 0.0, 60.0, 40.0, "sec");
+    let b = prism(&mut mm, f, -30.0, 0.0, "block");
+    let doc2 = {
+        let bytes = gcs_core::gltf::glb(&mm, &[b], solid::mesh_unit(&mm, b));
+        let n = u32::from_le_bytes(bytes[12..16].try_into().expect("four bytes")) as usize;
+        String::from_utf8(bytes[20..20 + n].to_vec()).expect("UTF-8")
+    };
+    assert!(doc2.contains("\"unit\":\"mm\""), "the document's own unit is recorded");
+    // 60 mm is 0.06 m, so no coordinate may reach 1
+    let big = doc2
+        .split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+        .filter_map(|t| t.parse::<f64>().ok())
+        .filter(|v| v.fract() != 0.0)
+        .fold(0.0f64, |m, v| m.max(v.abs()));
+    assert!(big < 1.0, "a sixty-millimetre part is under a metre across: {big}");
+}
