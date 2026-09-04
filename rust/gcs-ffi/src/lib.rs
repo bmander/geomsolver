@@ -1535,6 +1535,14 @@ pub unsafe extern "C" fn gcs_solid_mesh_unit(h: *mut Sketch, idx: i32) -> f64 {
     guard(0.0, move || gcs_core::solid::mesh_unit(sk(h), idx as usize))
 }
 
+/// **The overview in space**: the glass box's panes, axes and drawn geometry as 3D polylines,
+/// with no orbit applied.  A front end with a depth buffer takes this and the solids' meshes and
+/// does its own projecting; one without takes `gcs_overview_json`, which flattens.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_overview3d_json(h: *mut Sketch, unit: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || out_json(report::overview3d_json(sk(h), unit)))
+}
+
 /// The dimension callouts for the whole sketch.  `unit` is the world length of one screen pixel;
 /// the layout is screen-constant through it.
 #[no_mangle]

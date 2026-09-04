@@ -11,6 +11,10 @@ import { SketchView } from './view.js';
 import { toast } from './ui.js';
 
 export const canvas = document.getElementById('canvas') as HTMLCanvasElement;
+/** The glass box's own canvas: under the sketch's, deaf to the pointer, and only shown while the
+ *  overview is on.  It is a *second surface* and not a second app — every gesture still runs
+ *  against the one above it. */
+export const boxCanvas = document.getElementById('box') as HTMLCanvasElement;
 export const menubar = document.getElementById('menubar') as HTMLElement;
 export const aboutBadge = document.getElementById('about') as HTMLButtonElement;
 export const aboutDag = document.getElementById('about-dag') as HTMLTemplateElement;
@@ -59,7 +63,7 @@ async function initialProgram(): Promise<string> {
   return remote.source('rect_fillets:100:60:10');
 }
 
-export const view = new SketchView(canvas, Document.read(await initialProgram()));
+export const view = new SketchView(canvas, Document.read(await initialProgram()), boxCanvas);
 export let currentConstraint: Constraint | null = null;
 
 /** What the shell tells the rest of the page when the focus moves.  Assigned by `main`, the way

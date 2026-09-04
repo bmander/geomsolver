@@ -119,6 +119,16 @@ label.check { display: inline-flex; align-items: center; gap: 4px; cursor: point
 main { flex: 1; display: flex; min-height: 0; }
 #canvas-wrap { flex: 1; position: relative; min-width: 0; }
 canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+/* The glass box's own canvas, under the sketch's and deaf to the pointer, so every gesture
+   still reaches the one it always talked to and whatever a gesture draws lands over the box.
+   Both halves need saying.  The **stacking**: a positioned element paints above an in-flow one
+   whatever its z-index, so the sketch canvas is given a place in the order too, or the box
+   covers it.  And **`[hidden]`**: the `canvas` rule above sets `display` and outranks the one
+   the browser gives `[hidden]`, so without this the box goes on covering the sheet with an
+   empty frame after ⌘B has put it away. */
+#box { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+#box[hidden] { display: none; }
+#canvas { position: relative; z-index: 1; }
 canvas.select { cursor: default; }
 
 /* what holds the selected component: a small window over the drawing rather than a column

@@ -53,3 +53,19 @@ export function overview(
 ): Scene {
   return takeJson<Scene>(core().gcs_overview_json(sk.handle, unit, az, el, shaded ? 1 : 0));
 }
+
+/** One polyline of the scene **in space**, before any projection. */
+export interface Item3 extends Omit<Item, 'pts' | 'shade'> {
+  pts: [number, number, number][];
+}
+
+/** **The scene as it stands in space**, for a renderer with a camera of its own.
+ *
+ *  `overview` flattens because a 2D canvas must be handed something it can stroke; this hands
+ *  over the box itself.  Both come out of the same walk in the core, so the two are one scene
+ *  seen two ways.  Of the object it carries the **creases and nothing else**: a silhouette is a
+ *  fact about a viewpoint and this scene has none — the renderer owns the camera and turns it —
+ *  and its *surfaces* are a mesh rather than a polyline, which is `mesh()`. */
+export function overview3(sk: Sketch, unit: number): Item3[] {
+  return takeJson<Item3[]>(core().gcs_overview3d_json(sk.handle, unit));
+}

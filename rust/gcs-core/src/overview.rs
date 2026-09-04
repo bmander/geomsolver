@@ -297,6 +297,88 @@ pub fn scene(sk: &Sketch, unit: f64, az: f64, el: f64) -> Scene {
     scene_with(sk, unit, az, el, false)
 }
 
+/// One polyline of the scene **in space**, before any projection.
+#[derive(Clone, Debug)]
+pub struct Item3 {
+    pub of: Option<EntRef>,
+    pub in_plane: Option<EntRef>,
+    pub what: Part,
+    pub pts: Vec<[f64; 3]>,
+}
+
+/// **The scene as it stands in space**, for a front end that has a camera of its own.
+///
+/// `scene` flattens because a 2D canvas must be handed something it can stroke; a renderer with a
+/// depth buffer wants the box itself and will do its own projecting.  Both come out of the same
+/// helpers — `pane` is still the one rule for how far a view reaches, `drawable` still the one
+/// per-kind walk — so the two are one scene seen two ways and cannot come to disagree about what
+/// is in it.
+///
+/// The **solid is not here**: a mesh is not a polyline, and a renderer with a depth buffer wants
+/// `mesh::grouped` rather than the hidden-line edge set `scene` computes for a canvas that has no
+/// way to occlude anything.  That is the whole saving of doing this in 3D.
+pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
+    let mut items: Vec<Item3> = Vec::new();
+    let views = views(sk);
+    let least = sk.extent() * LEAST_SIDE;
+    for i in 0..sk.planes.len() {
+        let of = Some(EntRef::plane(i));
+        let basis = sk.planes[i].basis;
+        let rect = pane(sk, i, &views, least);
+        items.push(Item3 { of, in_plane: of, what: Part::Face, pts: face(&basis, rect) });
+        for arm in axes(&basis, rect) {
+            items.push(Item3 { of, in_plane: of, what: Part::Axis, pts: arm.to_vec() });
+        }
+    }
+    for e in sk.drawn() {
+        if matches!(e.kind, EntKind::Point | EntKind::Plane) {
+            continue;
+        }
+        let plane = entity_view(sk, e, &views);
+        let in_plane = plane.map(EntRef::plane);
+        // a line stands with each end where that end is — the same rule as on the flat path,
+        // and the reason a projector between two views belongs to neither
+        if e.kind == EntKind::Line {
+            let l = &sk.lines[e.i()];
+            let end = |q: u32| in_space(sk, views[q as usize], sk.point_xy(q as usize));
+            items.push(Item3 {
+                of: Some(e),
+                in_plane,
+                what: Part::Drawn,
+                pts: vec![end(l.p1), end(l.p2)],
+            });
+            continue;
+        }
+        for poly in drawable(sk, e, unit) {
+            if poly.len() < 2 {
+                continue;
+            }
+            items.push(Item3 {
+                of: Some(e),
+                in_plane,
+                what: Part::Drawn,
+                pts: poly.into_iter().map(|p| in_space(sk, plane, p)).collect(),
+            });
+        }
+    }
+    // **the object's creases, and none of its silhouettes.**  A silhouette is a fact about a
+    // viewpoint, and this scene has none: it is handed to a renderer that owns the camera and
+    // turns it as the pointer moves.  What draws the round of a cylinder there is the shading,
+    // which the flat path could not have and had to say in lines; what is left for a line to
+    // say is where the surface actually breaks.  So a `smooth` seam is dropped outright rather
+    // than tested against an eye direction, and no edge is hidden-line removed either — a depth
+    // buffer settles that per pixel, which is the whole of why this path exists.
+    for i in objects(sk) {
+        for e in sk.solid_edges(i, unit) {
+            if e.smooth {
+                continue;
+            }
+            items.push(Item3 { of: None, in_plane: None, what: Part::Solid, pts: vec![e.a, e.b] });
+        }
+    }
+    items
+}
+
 /// The scene, `shaded` asking for the solid's **surfaces** as well as its edges (`Part::Shell`).
 ///
 /// It is a *view* option and not document state — `underlay`'s rule, like the orbit itself: a

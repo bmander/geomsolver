@@ -133,6 +133,7 @@ export interface Abi {
   gcs_constraint_stating(h: number, p: number, n: number): number;
   gcs_describe(h: number, id: number): number;
   gcs_overview_json(h: number, unit: number, az: number, el: number, shaded: number): number;
+  gcs_overview3d_json(h: number, unit: number): number;
   gcs_callouts_json(h: number, unit: number): number;
   gcs_derived_json(h: number, unit: number): number;
   gcs_solid_mesh(h: number, idx: number, unit: number, out: number, cap: number): number;

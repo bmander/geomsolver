@@ -64,7 +64,7 @@ function strokeOf(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>,
 /** The app's own layer over the document's ink — selected, then highlighted — as a colour and
  *  the weight it adds, or null where the document's ink shows through.  The one statement of
  *  that order, read by the sheet's stroke and by the box's datum marks alike. */
-function chromeOf(sel: Set<Primitive>, hl: Set<Primitive>, ent: Primitive): [string, number] | null {
+export function chromeOf(sel: Set<Primitive>, hl: Set<Primitive>, ent: Primitive): [string, number] | null {
   if (sel.has(ent)) return [COL.sel, 1.5];
   if (hl.has(ent)) return [COL.highlight, 1];
   return null;
@@ -241,109 +241,25 @@ export function paint(v: SketchView): void {
   ctx.restore();
 }
 
-/** The overview: the sheet folded back into the glass box, with the object between the panes.
+/** The overview, drawn by three.js — see `box3d.ts`.
  *
- *  **Every polyline here is the core's**, already lifted onto its plane in space, orbited and
- *  flattened to 2D world coordinates by `overview.rs` — the same seam a callout's figure and a
- *  plane's glyph sit on — so this maps them to the screen with the ordinary camera and strokes
- *  what it is handed.  No vector arithmetic; `camera.ts` stays the whole of the app's algebra.
+ *  What used to be here was the box stroked onto this canvas, and it carried a hidden-surface
+ *  problem a 2D canvas cannot solve: ordering polygons by depth is only ever right between
+ *  polygons that do not overlap in the picture, which is exactly what a part with a bore in it is
+ *  not.  A depth buffer settles it per pixel.
  *
- *  What is deliberately *not* drawn: the callouts, the tool preview, the snap indicator, the
- *  traced picture and the page's own axes.  Every one of them is an annotation on a *sheet* —
- *  a number laid out in the plane of the page, a photograph taped behind it, the origin the
- *  layout is measured from — and means nothing once the sheet is standing on edge in space.
- *  The three parts of the scene go down in the order they occlude each other, since nothing here
- *  is hidden-line removed: the panes faintest and first, the views' own geometry on them, then
- *  the reconstructed object strongest and over everything, being what the drawing is *of*. */
+ *  **What did not move is the seam.**  The core still says what is in the box and where — it is
+ *  `overview::scene3d` and `mesh::grouped` rather than `overview::scene` now, but they come out of
+ *  the same walk — and every gesture still runs against the flattened projection, which is why
+ *  picking, hover and the double-click to go to a view needed no change at all. */
 export function paintOverview(v: SketchView): void {
-  const ctx = v.ctx;
-  ctx.save();
-  ctx.fillStyle = COL.bg;
-  ctx.fillRect(0, 0, v.width, v.height);
-  ctx.lineCap = 'round';
-  const sel = new Set(v.selected);
-  const hl = new Set(v.highlight);
-  const scene = v.scene();
-  // an item that names an entity is inked by the drawing's own rule, so selecting a line on the
-  // sheet lights it up in the box and picking it in the box lights it up on the sheet
-  const ink = (it: Item, base: string): [string, number] => {
-    const ent = v.entityOf(it);
-    if (!ent) return [base, 1.5];
-    // a Point carries no style and the core draws none into the scene, but the item's kind is
-    // whatever the core said it was: ask for the sheet only where there is one to ask for
-    return strokeOf(v, sel, hl, base, ent, 'style' in ent ? ent.style : undefined);
-  };
-  // a datum mark is not geometry and takes no state colour: `colorByState` would paint a view's
-  // axes the same green as everything standing on it, which is exactly the ink the mark has to
-  // read *against*.  Selection still shows, since that is about the view and not the drawing
-  const mark = (ent: Primitive | undefined): string =>
-    (ent && chromeOf(sel, hl, ent)?.[0]) ?? COL.plane;
-  const draw = (part: Part, fn: (it: Item) => void): void => {
-    for (const it of scene.items) if (it.part === part) fn(it);
-  };
-  // the panes: a wash of the plane's own ink with its outline over it, faint enough that the
-  // geometry standing on the far side of one still reads through it
-  draw('face', (it) => {
-    const [col] = ink(it, COL.plane);
-    // the one the pointer is on: its frame bolds, which is the affordance for the double-click
-    // that goes to it.  The wash is left alone — an area that lit up would say the interior is
-    // the target, and it is the edge that is
-    const on = v.planeOf(it) === v.hoverPlane;
-    polyPath(v, it.pts);
-    ctx.closePath();
-    ctx.globalAlpha = 0.05;
-    ctx.fillStyle = col;
-    ctx.fill();
-    ctx.globalAlpha = on ? 0.7 : 0.35;
-    ctx.strokeStyle = col;
-    ctx.lineWidth = on ? 2.5 : 1;
-    ctx.stroke();
-  });
-  ctx.globalAlpha = 1;
-  // a view's geometry and the object's edges are stroked the same way, the object a shade heavier
-  const stroke = (part: Part, base: string, extra = 0): void => draw(part, (it) => {
-    const [col, lw] = ink(it, base);
-    ctx.strokeStyle = col;
-    ctx.lineWidth = lw + extra;
-    polyPath(v, it.pts);
-    ctx.stroke();
-  });
-  stroke('drawn', COL.line);
-  // each pane's own x and y, crossing at its origin: which way that view's coordinates run, and
-  // where it measures them from.  Over the geometry, because it is the mark you read a pane by
-  // and the drawing standing on it would otherwise cover the crossing
-  ctx.globalAlpha = 0.75;
-  draw('axis', (it) => {
-    // the plane's own ink, as the sheet draws a datum's glyph in — the same mark, folded up
-    ctx.strokeStyle = mark(v.planeOf(it) ?? undefined);
-    ctx.lineWidth = 1.25;
-    polyPath(v, it.pts);
-    ctx.stroke();
-  });
-  ctx.globalAlpha = 1;
-  // **the object's surfaces, where the box was asked for them.**  Over the panes and the
-  // geometry standing on them and under its own edges, which is this file's own order: the
-  // scaffolding first and the thing the drawing is *of* over it.  They arrive back-face culled
-  // and far first, so filling them in the order they are given is the whole of the depth
-  // sorting.  The *tone* is this side's — the core says how squarely each face meets the light
-  // and the palette is chrome, the same division `Part` itself draws.
-  draw('shell', (it) => {
-    const t = it.shade ?? 0;
-    // a flat ramp from the shadow tone to the lit one — a plastic part, not a mirror
-    const g = Math.round(96 + 132 * t);
-    ctx.fillStyle = `rgb(${g}, ${g}, ${Math.round(g * 0.98 + 4)})`;
-    polyPath(v, it.pts);
-    ctx.closePath();
-    ctx.fill();
-    // a hairline of the same tone over each face closes the seams the fill leaves between
-    // neighbouring polygons, which otherwise read as a mesh nobody drew
-    ctx.strokeStyle = ctx.fillStyle;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  });
-  stroke('solid', COL.point, 1);
-  v.gesture?.paint?.(ctx);
-  ctx.restore();
+  // this canvas is the *upper* one now and must be see-through, or the sheet's last frame sits
+  // over the box.  Cleared and not filled: the ground is the box's, one canvas down
+  v.ctx.clearRect(0, 0, v.width, v.height);
+  v.box3d.paint(v);
+  // whatever the pointer is in the middle of still draws on the sheet's own canvas, which is
+  // the one over the box: the orbit paints nothing, but the seam should not be the reason
+  v.gesture?.paint?.(v.ctx);
 }
 
 /** The pictures the document asked of its solids (§6.11): `view(body) in right`, and sections.

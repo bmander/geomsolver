@@ -10,6 +10,7 @@
  *
  * Every mutation funnels through `afterEdit`, which re-solves (when auto-solve is on),
  * re-diagnoses and notifies the shell exactly once. */
+import { Box3D } from './box3d.js';
 import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
 import { Constraint } from '../core/constraints.js';
@@ -217,8 +218,10 @@ export class SketchView {
    *  left to write.  One flag rather than a subtle argument about termination. */
   private syncing = false;
 
-  constructor(readonly canvas: HTMLCanvasElement, doc: Document) {
+  constructor(readonly canvas: HTMLCanvasElement, doc: Document,
+              readonly boxCanvas: HTMLCanvasElement | null = null) {
     this.doc = doc;
+    this.box3d = new Box3D(boxCanvas);
     this.ctx = canvas.getContext('2d')!;
     bindEvents(this);
   }
@@ -255,48 +258,58 @@ export class SketchView {
 
   /** The scene the overview shows, as the core folds and projects it.  Remembered against the
    *  four things it is a function of — the drawing, the zoom and the two orbit angles — since a
-   *  pointer move asks for it twice (the hover pick, then the repaint) and the box is read-only,
-   *  so between edits nothing else can move under it; `afterEdit` and `swap` forget it. */
+   *  pointer move asks for it twice (the hover pick, then the fit) and the box is read-only, so
+   *  between edits nothing else can move under it; `afterEdit` and `swap` forget it.
+   *
+   *  **It is never asked shaded**, and no longer for painting either: three.js draws the box now,
+   *  and what this flattening is still for is the picking, the hover, the double-click that goes
+   *  to a view and the bounds `fit` reads.  None of those wants a surface — nothing on this
+   *  canvas is ever picked by an area — and a shaded scene costs the boundary of every solid. */
   scene(): Scene {
     const { az, el } = this.orbit;
-    const shaded = this.showSolid;
     const c = this.sceneCache;
-    if (c && c.sketch === this.sketch && c.unit === this.unit && c.az === az && c.el === el
-        && c.shaded === shaded) {
+    if (c && c.sketch === this.sketch && c.unit === this.unit && c.az === az && c.el === el) {
       return c.scene;
     }
-    const scene = overview(this.sketch, this.unit, az, el, shaded);
-    this.sceneCache = { sketch: this.sketch, unit: this.unit, az, el, shaded, scene };
+    const scene = overview(this.sketch, this.unit, az, el, false);
+    this.sceneCache = { sketch: this.sketch, unit: this.unit, az, el, scene };
     return scene;
   }
   private sceneCache:
-    { sketch: Sketch; unit: number; az: number; el: number; shaded: boolean; scene: Scene } | null
-    = null;
+    { sketch: Sketch; unit: number; az: number; el: number; scene: Scene } | null = null;
 
   /** **Show the solid's surfaces in the box**, not only its edges.
    *
    *  View state, `underlay`'s rule and the orbit's: a drawing is the same drawing whether or not
-   *  you are looking at it filled in, so this is never saved, exported, solved or undone.  It
-   *  costs the boundary of every solid, which is why it is a choice and not the default. */
-  showSolid = false;
+   *  you are looking at it filled in, so this is never saved, exported, solved or undone.
+   *
+   *  It is on by default, and it was not while the box was strokes on a flat canvas: there a
+   *  surface cost the boundary of every solid and a painter's order that is only very nearly
+   *  right.  A depth buffer settles the order per pixel and a mesh is uploaded once, so the
+   *  object may as well be shown as an object.  Off is still worth having — a wireframe is how
+   *  you see the far side of a part — and is what the toggle means. */
+  showSolid = true;
+
+  /** **The glass box's renderer.**  Built once and kept, because a WebGL context is a scarce
+   *  thing a browser hands out and dropping one per toggle would eventually get none. */
+  readonly box3d: Box3D;
 
   setShowSolid(on: boolean): void {
     if (this.showSolid === on) return;
     this.showSolid = on;
-    this.sceneCache = null;
-    this.draw();
+    this.draw();               // the flat scene does not carry it: the box's own build does
   }
 
   /** The entity a scene item is drawn from, where one is — the one decode of the wire's
    *  `kind`/`index` pair, so the painter and the picks read it one way. */
-  entityOf(it: Item): Primitive | undefined {
+  entityOf(it: Omit<Item, 'pts' | 'shade'>): Primitive | undefined {
     return it.kind !== undefined && it.index !== undefined
       ? this.doc.entityOf({ kind: it.kind, index: it.index }) : undefined;
   }
 
   /** The view a scene item belongs to, as a `Plane` — the other decode of the wire, for the
    *  double-click that goes to a view and the hover that bolds one. */
-  planeOf(it: Item): Plane | null {
+  planeOf(it: Omit<Item, 'pts' | 'shade'>): Plane | null {
     const p = it.plane !== undefined ? this.doc.entityOf({ kind: 'plane', index: it.plane }) : null;
     return p instanceof Plane ? p : null;
   }
@@ -860,6 +873,10 @@ export class SketchView {
     // box coordinates — and, the other way, an orbit would go on turning a sheet
     this.settle();
     this.overview = on;
+    // the box's canvas is only up while the box is: hidden it draws nothing, and the sketch's
+    // own canvas is the one the pointer has always talked to
+    if (this.boxCanvas) this.boxCanvas.hidden = !on;
+    if (!on) this.box3d.clear();
     this.hoverPlane = null;       // the pointer is over nothing until it moves again
     this.canvas.style.cursor = '';   // `hover` sets the box's hand inline, and the sheet's own is CSS
     this.onStatus(on ? 'the glass box — drag to orbit, wheel to zoom, double-click a view to draw '

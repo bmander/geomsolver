@@ -146,7 +146,7 @@ pub fn weld(pieces: &[Piece]) -> Vec<Piece> {
     };
     let mut cells: BTreeMap<[i64; 3], Vec<usize>> = BTreeMap::new();
     let mut verts: Vec<[f64; 3]> = Vec::new();
-    let mut canon = |p: [f64; 3], cells: &mut BTreeMap<[i64; 3], Vec<usize>>,
+    let canon = |p: [f64; 3], cells: &mut BTreeMap<[i64; 3], Vec<usize>>,
                      verts: &mut Vec<[f64; 3]>| -> usize {
         let k = key(p);
         for dx in -1..=1 {

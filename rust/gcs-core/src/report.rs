@@ -633,6 +633,35 @@ fn style_json(s: &crate::style::Style) -> Json {
     o
 }
 
+/// **The scene in space**, for a front end with a camera of its own — `overview_json`'s shape,
+/// with three numbers a point instead of two and no orbit applied, because the orbit is the
+/// renderer's now.
+pub fn overview3d_json(sk: &Sketch, unit: f64) -> Json {
+    let items: Vec<Json> = crate::overview::scene3d(sk, unit)
+        .iter()
+        .map(|it| {
+            let pts: Vec<Json> = it
+                .pts
+                .iter()
+                .map(|p| Json::Arr(p.iter().map(|&v| Json::Num(v)).collect()))
+                .collect();
+            let mut o = object([
+                ("part", Json::Str(it.what.as_str().to_string())),
+                ("pts", Json::Arr(pts)),
+            ]);
+            if let Some(e) = it.of {
+                o.set("kind", Json::Str(e.kind.as_str().to_string()));
+                o.set("index", Json::Int(e.idx as i64));
+            }
+            if let Some(p) = it.in_plane {
+                o.set("plane", Json::Int(p.idx as i64));
+            }
+            o
+        })
+        .collect();
+    Json::Arr(items)
+}
+
 pub fn constraints_json(sk: &Sketch) -> Json {
     Json::Arr(sk.constraints.iter().map(|c| constraint_json(sk, c)).collect())
 }

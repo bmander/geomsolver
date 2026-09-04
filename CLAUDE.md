@@ -124,6 +124,10 @@ nothing.  The bundle stands in for the entry module, so it is written *beside* i
 finds the core at `../wasm/gcs.wasm` relative to `import.meta.url`, which under bundling is the
 bundle's own URL, and a bundle written anywhere else would look for it somewhere else.  The
 node-only fallback imports in `wasm.ts` are left external; a browser never evaluates them.
+**three.js is the project's one runtime dependency** and the bundle carries it: 208 kB became
+1.3 MB, which is what a depth buffer for the glass box costs and is paid on the sheet too, since
+one bundle is what the page loads.  It is bundled rather than fetched from a CDN for the reason
+the wasm is beside the bundle — the app opens from a file as readily as from a server.
 
 Conventions:
 - **Every seed is written in one `hint(…)` clause, and nothing else is** (Solvent §4.3, §6.4):
@@ -1228,17 +1232,35 @@ Conventions:
   it, and the body that is the term over them: four names for one thing and three voids, and
   drawn whole each void was an object in its own right, hidden-line tested against *itself*, so a
   bore floated in front of the face it is drilled through.
-  **`⇧⌘B` shows the solid's surfaces** as well as its edges (`Part::Shell`, `overview::shell`) —
-  view state like the orbit, never saved or undone, and a *choice* because it costs the boundary
-  of every object.  Back-facing pieces go, and then **a piece is kept when nothing stands between
-  it and the eye**, a ray from its centroid against every other piece.  Depth-sorting does not
-  do it and it is worth saying why: a painter's order compares *centroids*, and a big front face
-  has its centroid in the middle while a small piece behind it may sit nearer than that middle —
-  ordering is only ever right between polygons that do not overlap in the picture, which is
-  exactly the case this is not.  A face *partly* covered is still all-or-nothing, which is the
-  honest limit of a schematic with no depth buffer.  The core says how squarely each face meets
-  the light (`shade`, 0 to 1) and the palette is the front end's, the division `Part` already
-  draws.
+  **The box is drawn by three.js** (`app/box3d.ts`), and it is the one place in the app where a
+  renderer of somebody else's is used.  The reason is a single problem the 2D canvas could not
+  solve: a painter's order compares *centroids*, and ordering is only ever right between polygons
+  that do not overlap in the picture — which a part with a bore through it is exactly not.  A
+  depth buffer settles it per pixel.  **The seam did not move**: the core still says what is in
+  the box and where (`overview::scene3d` — the same walk `scene` is, handing over the panes, their
+  axes and the views' geometry in *space* rather than flattened — and `mesh::grouped` for the
+  object), and this file turns that into three.js objects and works out no coordinate of its own.
+  Its camera is set from `v.orbit` and `v.camera` through the same `overview::eye` basis the core
+  flattens with, which is what keeps a click landing on the thing under the cursor; the WebGL
+  canvas sits *under* the 2D one with `pointer-events: none`, so **not one line of gesture code
+  changed** — the picking, the hover and the double-click still run against `overview::scene`'s
+  flat projection, which is now what that projection is *for* (and is never asked `shaded`).
+  Selection and the hovered pane are a **material write per frame** and never a rebuild, so a
+  pointer move never re-uploads a mesh; the ink rule itself is `paint.ts`'s `chromeOf`, so a line
+  picked on the sheet and the same line in the box light the same colour.
+  Of the object, `scene3d` carries the **creases and nothing else** — a `smooth` seam is dropped
+  outright rather than tested against an eye direction, because a silhouette is a fact about a
+  viewpoint and this scene has none: what draws the round of a cylinder here is the shading, and
+  what is left for a line to say is where the surface actually breaks.  Nothing is hidden-line
+  removed either.
+  **`⇧⌘B` shows the solid's surfaces** as well as its creases — view state like the orbit, never
+  saved or undone — and it is **on by default**, which it was not while the box was strokes on a
+  flat canvas: there a surface cost the boundary of every solid *and* the painter's order above.
+  Off is still worth having, a wireframe being how you see the far side of a part.  The flat
+  shaded path (`Part::Shell`, `overview::shell`, `Item.shade`) is still what `overview_json`
+  offers a front end without a depth buffer, and its rule is that **a piece is kept when nothing
+  stands between it and the eye**, a ray from its centroid against every other piece, with a face
+  *partly* covered still all-or-nothing — the honest limit of a schematic with no depth buffer.
     **Where the document has a solid, that is the object and there is nothing to reconstruct**:
   the box shows the term's own edges, classified against the orbit's eye rather than against a
   view's normal, so a box of a part shows what a part *is* and not what two pictures of it happen

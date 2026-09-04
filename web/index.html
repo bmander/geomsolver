@@ -18,6 +18,10 @@
   <div id="banner"><span id="banner-text"></span><button id="banner-select">Select culprits</button></div>
   <main>
     <div id="canvas-wrap">
+      <!-- the glass box, rendered by three.js.  Under the sketch canvas and taking no pointer
+           events: every gesture still runs against the 2D one, so the orbit, the picking and the
+           double-click to go to a view are untouched by there being a depth buffer now. -->
+      <canvas id="box" hidden></canvas>
       <canvas id="canvas"></canvas>
       <div id="loading">loading solver…</div>
       <div id="measure" aria-live="polite"></div>
