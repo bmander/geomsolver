@@ -39,6 +39,7 @@ mod io;
 mod jacobians;
 mod jansen;
 mod linalg;
+mod mesh;
 mod modules;
 mod names;
 mod open_joint;

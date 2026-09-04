@@ -751,6 +751,8 @@ pub enum Want {
     Boundary,
     /// The edges a view of it would draw, before visibility.
     Edges,
+    /// The welded, face-grouped mesh a printer and a viewer take.
+    Mesh,
 }
 
 /// What a `Want` came to, remembered against everything it was read from.
@@ -758,6 +760,7 @@ pub enum Want {
 pub enum Cached {
     Boundary(Vec<crate::csg::Piece>),
     Edges(Vec<crate::csg::Edge>),
+    Mesh(crate::mesh::Mesh),
 }
 
 /// **Every number a solid was built from**, in one flat vector — the memo key.

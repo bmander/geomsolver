@@ -136,6 +136,8 @@ export interface Abi {
   gcs_callouts_json(h: number, unit: number): number;
   gcs_derived_json(h: number, unit: number): number;
   gcs_solid_mesh(h: number, idx: number, unit: number, out: number, cap: number): number;
+  gcs_solid_normals(h: number, idx: number, unit: number, out: number, cap: number): number;
+  gcs_solid_faces_json(h: number, idx: number, unit: number): number;
   gcs_callout_pick(h: number, unit: number, x: number, y: number, tolPx: number): number;
   gcs_callout_grab(h: number, id: number, unit: number, x: number, y: number,
                    out: number): number;

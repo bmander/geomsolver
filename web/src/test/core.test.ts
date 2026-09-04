@@ -22,6 +22,7 @@ import {
 import { checkSketch } from '../core/fdcheck.js';
 import { enumerateStep } from '../core/homotopy.js';
 import { Plane, Point, Sketch, Spline } from '../core/model.js';
+import { mesh } from '../core/mesh.js';
 import { overview } from '../core/overview.js';
 import { Document, fromSketch, highlight } from '../core/program.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
@@ -1251,6 +1252,55 @@ test('every function the Abi interface declares is exported by the module', asyn
   assert.ok(names.length > 80, `expected the full API, found ${names.length}`);
   const m = core() as unknown as Record<string, unknown>;
   for (const n of names) assert.equal(typeof m[n], 'function', `${n} is declared but not exported`);
+});
+
+test('a solid crosses the ABI as a mesh a viewer can use', () => {
+  // **Item 2 of what a B-rep was wanted for, and what it actually needed.**  A viewer takes
+  // triangles, so what it wants of them is that they are grouped by the face the document names
+  // — click one and it says `body.bore.wall` — and that a round face carries normals that turn
+  // with it.  Both are in the buffers; this checks the *binding* reaches them, which is this
+  // layer's business and not the geometry, whose test is `gcs-core/tests/mesh.rs`.
+  const src = [
+    'unit mm',
+    'point a hint(x: 0, y: 0)', 'point b hint(x: 60, y: 0)',
+    'point c hint(x: 60, y: 40)', 'point d hint(x: 0, y: 40)',
+    'line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close',
+    'horizontal ab', 'vertical bc', 'a distance(60) b', 'a distance(40) d', 'ground a',
+    'face sec(ab, bc, cd, da)',
+    'point o hint(x: 30, y: 20)',
+    'a distance(30, along: x) o', 'a distance(20, along: y) o',
+    'circle hole(center: o) hint(r: 8)', 'radius(8) hole', 'face hole_f(hole)',
+    'solid stock(sec, depth: 30mm)', 'solid bore(hole_f, depth: 30mm)',
+    'solid body(stock)', 'bore through body', '',
+  ].join('\n');
+  const doc = Document.read(src);
+  assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
+  assert.ok(solve(doc.sketch).success);
+  // a viewer asks the document what solids it has; a solid is on no sheet and has no proxy
+  const solids = doc.solids();
+  assert.deepEqual(solids.map((x) => x.name), ['stock', 'bore', 'body']);
+  const body = solids.find((x) => x.name === 'body')!;
+  const m = mesh(doc.sketch, body.index, 2e-3);
+  assert.ok(m.positions.length > 0, 'triangles came across');
+  assert.equal(m.normals.length, m.positions.length, 'a normal a vertex');
+  // the faces tile the buffer, in order, and are named as the document names them
+  let at = 0;
+  for (const f of m.faces) { assert.equal(f.start, at); at += f.count; }
+  assert.equal(at * 9, m.positions.length, 'the faces cover the mesh');
+  // the names are the document's own: the prism is `stock`, and the bore's wall is the circle
+  // the face was written over
+  const paths = m.faces.map((f) => f.path);
+  assert.ok(paths.includes('bore.hole'), paths.join(', '));
+  assert.ok(paths.includes('stock.near'), paths.join(', '));
+  // a round face says so, and a flat one does not
+  const wall = m.faces.find((f) => f.path === 'bore.hole')!;
+  assert.equal(wall.smooth, true);
+  assert.ok(m.faces.some((f) => !f.smooth), 'and a block has flat faces');
+  // the normals are unit vectors — a viewer feeds these straight to a shader
+  for (let i = 0; i < Math.min(m.normals.length, 300); i += 3) {
+    const n = Math.hypot(m.normals[i], m.normals[i + 1], m.normals[i + 2]);
+    assert.ok(Math.abs(n - 1) < 1e-9, `normal ${i / 3} has length ${n}`);
+  }
 });
 
 test('the drawing exports as SVG, laid out by the core', () => {

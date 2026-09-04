@@ -1047,6 +1047,30 @@ Conventions:
   `(0deg, 360deg)` is radians to the kernels and `(0mm, 20mm)` is a length unchanged — where
   converting everything as an angle made a sweep of millimetres sixty times too small and
   reported a claim that held over almost none of its interval.
+- **A mesh is welded, and grouped by face** (`mesh.rs`) — the two things a boundary evaluation
+  does not give on its own, and between them the whole of what a mesh was said to need a B-rep
+  for.  A viewer and a slicer both take *triangles*; what they want of them is that the edges pair
+  up and that the triangles say which face they belong to.
+  **Welding** is a T-junction fix and not a vertex merge.  Neighbouring facets are cut by
+  different planes, so one leaves a vertex partway along an edge the other still spans whole —
+  and no amount of merging fixes that, since the neighbour has no vertex there to merge with.
+  `weld` finds the vertices lying on an edge's interior and puts them in it: the V-twin cylinder
+  went from 4,474 unpaired directed edges of 141,468 to **zero**, with the volume unchanged to
+  the digit.  Two sizes are independent and conflating them cost a hundredfold: a hash **cell**
+  need only be at least the weld tolerance, so it is sized to the object (`scale / 128`) while
+  the tolerance stays at `1e-9` — sized at the tolerance, an edge walked its own length in cells.
+  And `triangles` fans from the **centroid**, not from a vertex: a vertex fan covers every
+  boundary edge except the sub-edges of the two it stands on, which come out zero-area, and
+  dropping those (which a printer's validator wants) re-opens exactly the T-junctions the weld
+  had just closed.
+  **Grouping** is `mesh::grouped`: the same triangles in face-path order, with a normal per
+  vertex — the facet's own where the face is flat, and the average of the facets meeting there
+  where the face is `smooth`, so a bore's wall shades round and the rim where it meets a cap
+  stays a corner.  Across the ABI as **buffers plus a small table** (`gcs_solid_mesh`,
+  `gcs_solid_normals`, `gcs_solid_faces_json`), the division `gcs_entity_params` already draws;
+  all three read one memoised `Want::Mesh`.  `Document.solids()` names them, since a solid has no
+  proxy — it is on no sheet and owns no parameter.  `tests/mesh.rs` is the gate and asserts the
+  *before* as well as the after, so a weld that stopped working could not pass.
 - **A face is one loop and a solid's faces are named by path** (§6.8).  A face is a closed loop of
   edges the drawing already has, on the one plane every point of every edge agrees about — *read*
   off the memberships and never written on the face, so a face inside `in swing { … }` is on the

@@ -1392,8 +1392,13 @@ pub unsafe extern "C" fn gcs_derived_json(h: *mut Sketch, unit: f64) -> *mut u8 
     guard(std::ptr::null_mut(), move || out_json(report::derived_json(sk(h), unit)))
 }
 
-/// A solid's mesh, as triangles: nine doubles each, in the boundary's own order.  Returns how
-/// many doubles were written, or -1 if the buffer is too small — `gcs_entity_params`' shape.
+/// **A solid's mesh**: nine doubles a triangle, welded so every edge pairs up and ordered by the
+/// face each triangle belongs to.  Returns how many doubles were written, or -1 if the buffer is
+/// too small — `gcs_entity_params`' shape, because a mesh is tens of thousands of numbers all of
+/// one kind and JSON is for the ragged things.
+///
+/// `gcs_solid_normals` fills the matching normals and `gcs_solid_faces_json` says where each face
+/// starts; the three read one memoised answer, so asking for all three costs one walk.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_solid_mesh(
     h: *mut Sketch,
@@ -1403,12 +1408,58 @@ pub unsafe extern "C" fn gcs_solid_mesh(
     cap: i32,
 ) -> i32 {
     guard(-1, move || {
-        let t = gcs_core::mesh::triangles(&sk(h).solid_boundary(idx as usize, unit));
-        if t.len() > cap.max(0) as usize {
+        let m = sk(h).solid_mesh(idx as usize, unit);
+        if m.positions.len() > cap.max(0) as usize {
             return -1;
         }
-        std::ptr::copy_nonoverlapping(t.as_ptr(), out, t.len());
-        t.len() as i32
+        std::ptr::copy_nonoverlapping(m.positions.as_ptr(), out, m.positions.len());
+        m.positions.len() as i32
+    })
+}
+
+/// The normals of that mesh, one per vertex: a face's own where it is flat, and the average of
+/// the facets meeting there where it is round, so a bore's wall shades as one surface.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_normals(
+    h: *mut Sketch,
+    idx: i32,
+    unit: f64,
+    out: *mut f64,
+    cap: i32,
+) -> i32 {
+    guard(-1, move || {
+        let m = sk(h).solid_mesh(idx as usize, unit);
+        if m.normals.len() > cap.max(0) as usize {
+            return -1;
+        }
+        std::ptr::copy_nonoverlapping(m.normals.as_ptr(), out, m.normals.len());
+        m.normals.len() as i32
+    })
+}
+
+/// **The faces of that mesh**, as the document names them: `[{ "path", "start", "count",
+/// "smooth" }]`, where `start` and `count` are triangles.  A viewer selects and shades by these
+/// — `body.bore.wall` and not a triangle index.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_faces_json(h: *mut Sketch, idx: i32, unit: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let m = sk(h).solid_mesh(idx as usize, unit);
+        out_json(gcs_core::json::Json::Arr(
+            m.groups
+                .iter()
+                .map(|g| {
+                    let mut o = gcs_core::json::Json::Obj(vec![
+                        ("path".into(), gcs_core::json::Json::Str(g.path.clone())),
+                        ("start".into(), gcs_core::json::Json::Int(g.start as i64)),
+                        ("count".into(), gcs_core::json::Json::Int(g.count as i64)),
+                    ]);
+                    if g.smooth {
+                        o.set("smooth", gcs_core::json::Json::Bool(true));
+                    }
+                    o
+                })
+                .collect(),
+        ))
     })
 }
 

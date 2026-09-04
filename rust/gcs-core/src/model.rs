@@ -1777,6 +1777,27 @@ impl Sketch {
         v
     }
 
+    /// **A solid's mesh**: welded, so every edge pairs up, and grouped by the face the document
+    /// reaches it by.  What a printer takes and what a viewer takes, which are the same thing.
+    ///
+    /// Memoised beside the boundary it is made from, since welding is a real walk and a viewer
+    /// asks for the mesh whenever it redraws.
+    pub fn solid_mesh(&self, i: usize, unit: f64) -> crate::mesh::Mesh {
+        let key = crate::solid::reads(self, i, unit);
+        if let Some((k, crate::solid::Cached::Mesh(v))) =
+            self.solid_cache.borrow().get(&(i, crate::solid::Want::Mesh))
+        {
+            if *k == key {
+                return v.clone();
+            }
+        }
+        let v = crate::mesh::grouped(&self.solid_boundary(i, unit));
+        self.solid_cache
+            .borrow_mut()
+            .insert((i, crate::solid::Want::Mesh), (key, crate::solid::Cached::Mesh(v.clone())));
+        v
+    }
+
     /// A solid's edges, as a view would draw them before visibility is decided.
     pub fn solid_edges(&self, i: usize, unit: f64) -> Vec<crate::csg::Edge> {
         let key = crate::solid::reads(self, i, unit);

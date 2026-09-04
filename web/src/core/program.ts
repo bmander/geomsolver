@@ -173,6 +173,19 @@ export class Document {
     return this.byName.get(name);
   }
 
+  /** **The solids this document names**, in the order it names them.
+   *
+   *  Read off the source map rather than through a proxy, because a solid *has* no proxy: it is
+   *  not on the sheet, owns no parameter and is picked by nothing there (§6.9).  What a viewer
+   *  wants of one is its name and the index `mesh()` takes, and both are in the map already. */
+  solids(): { name: string; index: number }[] {
+    const out: { name: string; index: number }[] = [];
+    for (const e of this.map.entities) {
+      if (e.kind === 'solid' && e.name) out.push({ name: e.name, index: e.index });
+    }
+    return out;
+  }
+
   /** The entity a source-map entry stands for.  Every entry carries the kind and the index, so
    *  this resolves an **anonymous** element as readily as a named one — which `entity` cannot,
    *  there being no name to ask by.  Within one elaboration it is the lookup to use; only a
