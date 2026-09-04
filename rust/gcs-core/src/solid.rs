@@ -493,14 +493,20 @@ fn walk_edge(
                 (q.1 - c.1).atan2(q.0 - c.0)
             };
             let (a0, a1) = (ang(a.start), ang(a.end));
-            // an arc runs CCW from start to end; entered at `end` it is walked the other way
+            // **How far an arc goes is the arc's own fact; which way is the walk's.**  An arc
+            // runs CCW from start to end, and entered at `end` it is walked the other way — the
+            // *same* stretch of the circle backwards, never the complement of it.  Normalising
+            // `a0 - a1` instead gave `TAU - extent` there, so a face that happened to enter an
+            // arc by its end came out as the rest of the circle: the V-twin plate's plenum, a
+            // channel between two concentric arcs, closed as a bowtie of twelve times the area
+            // and meshed with seventy-six unpaired edges.
             let ccw = from == a.start;
-            let mut sweep = if ccw { a1 - a0 } else { a0 - a1 };
-            while sweep <= 0.0 {
-                sweep += std::f64::consts::TAU;
+            let mut extent = a1 - a0;
+            while extent <= 0.0 {
+                extent += std::f64::consts::TAU;
             }
             let start = if ccw { a0 } else { a1 };
-            let step = if ccw { sweep } else { -sweep };
+            let step = if ccw { extent } else { -extent };
             let ring = tessellate_arc(c, r, start, step, unit);
             for p in ring.iter().take(ring.len() - 1) {
                 pts.push(*p);

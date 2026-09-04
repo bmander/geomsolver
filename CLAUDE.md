@@ -1006,6 +1006,14 @@ Conventions:
   moves every vertex (a block sixty across came out `72000.0036`).  What keeps the classifier out
   of the gap is `EPS`, four orders coarser than the solve's own noise, and `same_plane`, which
   reads two near-coincident planes as one and never splits a facet by its own plane.
+  **A face is a loop and a loop is walked in order**, so an arc in one is entered by whichever end
+  the walk arrives at — and *how far* it goes is the arc's own fact while *which way* is the
+  walk's.  Entered by its `end` it is walked backwards over the same stretch of circle, never
+  forwards over the rest of it: normalising `a0 - a1` gave `TAU - extent` there, so a channel
+  between two concentric arcs — the V-twin plate's plenum, and the shape any annular duct is —
+  closed as a bowtie of twelve times its area and meshed with seventy-six unpaired edges.  No
+  drawing in the corpus had entered an arc by its end until a part was written as a solid, which
+  is the whole reason the migration found it.
   `tests/solid.rs` is the gate and it checks against **arithmetic, not against a second kernel**:
   a block is `w·h·d` exactly, a bore takes exactly the polygon it is faceted into, a flush bore
   and one drilled past are one solid, a boss adds and the shared face is counted once, a
@@ -1190,8 +1198,22 @@ Conventions:
   comes back is the outline that was drawn.  **The core projects and the front end strokes**, the
   seam `callout.rs` sits on: `hidden::layout` resolves the ink through the sheet, `svg::render`
   and `paint.ts` stroke what they are handed, and neither owns a line of 3D arithmetic or a rule
-  about what a hidden line looks like.  `rust/examples/vtwin/cylinder.sv` is the case: 144 lines
-  and 12 formals became 119 and 6, and its sheet went from 69 points and 50 lines to 30 and 22.
+  about what a hidden line looks like.  **Every part of the V-twin is written this way** — `vtwin/cylinder.sv`, `piston.sv`, `disc.sv`,
+  `flywheel.sv`, `throttle.sv` and the plate in `frame.sv` — one section and the solid it is a
+  section of, with the other two views asked for.  The cylinder went from 144 lines and 12 formals
+  to 119 and 6 and its sheet from 69 points and 50 lines to 30 and 22; the plate's sheet from 166
+  and 141 to 89 and 77, the piston's from 56 to 26, the disc's 59 to 20, the throttle's 63 to 22.
+  **Where a part's turned features are is where its section has to be**, and that is the one rule
+  the migration keeps teaching: a turn about a line lying in the section puts what it makes *on*
+  that plane whatever else is written, so the crank disc's section is its mid-plane because the
+  set screw runs through it, and the plate's is its mid-plane because the plenum, the boss, the
+  vents and the coupling's hole are all centred there — which `tp`'s own comment said before any
+  of this ("thick enough to carry the plenum on its mid-plane").
+  Two things do not survive the crossing and are named where they are: a **hex pocket about a
+  radial line** (the set screw's nut, `parts.Grub`) is neither a sweep along the plane's normal
+  nor a turn about a line in it, so it stays four hidden lines a printer reads; and a feature the
+  drawing carries as a *centreline* (the plate's exhaust vents) has to be told how wide it is,
+  which is `wch`, the channel width the plenum and the passage already use.
 - The **overview** (`overview.rs`) is the drawing folded back into the glass box it was unfolded
   from: each view standing on its own plane in space, and the object the views are *of*
   reconstructed between them.  **Nothing is solved for and nothing is stored** — a point drawn in
