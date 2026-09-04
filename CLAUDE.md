@@ -1059,10 +1059,12 @@ Conventions:
   the digit.  Two sizes are independent and conflating them cost a hundredfold: a hash **cell**
   need only be at least the weld tolerance, so it is sized to the object (`scale / 128`) while
   the tolerance stays at `1e-9` — sized at the tolerance, an edge walked its own length in cells.
-  And `triangles` fans from the **centroid**, not from a vertex: a vertex fan covers every
-  boundary edge except the sub-edges of the two it stands on, which come out zero-area, and
-  dropping those (which a printer's validator wants) re-opens exactly the T-junctions the weld
-  had just closed.
+  And `triangles` fans **from a corner where a piece has only corners, and from the centroid where
+  it does not**: a vertex fan covers every boundary edge except the sub-edges of the two it stands
+  on, which come out zero-area, and dropping those (which a printer's validator wants) re-opens
+  exactly the T-junctions the weld had just closed.  Most pieces the weld never touched, so the
+  test is per piece and is the condition itself — has this polygon a vertex that is not a corner?
+  Always fanning from the centroid cost 78% more triangles than the mesh needed.
   **Grouping** is `mesh::grouped`: the same triangles in face-path order, with a normal per
   vertex — the facet's own where the face is flat, and the average of the facets meeting there
   where the face is `smooth`, so a bore's wall shades round and the rim where it meets a cap
@@ -1071,6 +1073,18 @@ Conventions:
   all three read one memoised `Want::Mesh`.  `Document.solids()` names them, since a solid has no
   proxy — it is on no sheet and owns no parameter.  `tests/mesh.rs` is the gate and asserts the
   *before* as well as the after, so a weld that stopped working could not pass.
+- **A mesh is cut to the object and a volume to the report** (`solid::mesh_unit`, `MESH_SAGITTA`).
+  Two requirements, and giving them one number cost an order of magnitude: `REPORT_UNIT` is
+  chosen so a *volume* is good to one part in ten thousand, and a mesh inheriting it cut the
+  V-twin cylinder's 16 mm bore into 257 flats — a six ten-thousandths of a millimetre sagitta,
+  a hundred times under what a printer resolves — for 98,000 triangles where 8,000 are
+  indistinguishable.  A mesh is cut to a sagitta that fraction of the *solid's own diagonal*,
+  which is scale-free and so says the same thing in millimetres and in inches, and is asked of
+  the primitives' boxes rather than an evaluated boundary: paying for a fine boundary to decide
+  how fine a boundary to build is the tail wagging the dog.  The cylinder's STL went from
+  97,772 triangles and 2.3 MB to 8,092 and 395 KB, and from 3.1 s to 0.37 s, still with zero
+  unpaired edges.  `gcs_solid_mesh_unit` publishes the number so a viewer may take it or pass its
+  own.
 - **A face is one loop and a solid's faces are named by path** (§6.8).  A face is a closed loop of
   edges the drawing already has, on the one plane every point of every edge agrees about — *read*
   off the memberships and never written on the face, so a face inside `in swing { … }` is on the

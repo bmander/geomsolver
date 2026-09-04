@@ -1463,6 +1463,14 @@ pub unsafe extern "C" fn gcs_solid_faces_json(h: *mut Sketch, idx: i32, unit: f6
     })
 }
 
+/// **How finely a mesh of this solid should be cut**: `MESH_SAGITTA` of its own diagonal, as a
+/// `unit`.  A viewer that wants its own faceting passes its own; one that has no opinion passes
+/// this, and gets a mesh matched to the object rather than to a report's four digits.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_mesh_unit(h: *mut Sketch, idx: i32) -> f64 {
+    guard(0.0, move || gcs_core::solid::mesh_unit(sk(h), idx as usize))
+}
+
 /// The dimension callouts for the whole sketch.  `unit` is the world length of one screen pixel;
 /// the layout is screen-constant through it.
 #[no_mangle]

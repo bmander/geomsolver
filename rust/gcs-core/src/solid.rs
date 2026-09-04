@@ -59,6 +59,38 @@ pub const SNAP: f64 = 1e-9;
 /// the digit either way.
 pub const REPORT_UNIT: f64 = 2e-3;
 
+/// How fine a *mesh* of a solid is cut, as a fraction of the object's own diagonal.
+///
+/// **A volume and a mesh want different faceting, and giving them one number is a mistake that
+/// costs an order of magnitude.**  A volume is a number quoted to four digits, so `REPORT_UNIT`
+/// is chosen to be good to one part in ten thousand — and a mesh inheriting it cut the V-twin
+/// cylinder's 16 mm bore into 257 flats, a six ten-thousandths of a millimetre sagitta, for a
+/// part whose printer resolves a tenth of a millimetre and whose viewer resolves a pixel.  That
+/// is 98,000 triangles where 8,000 are indistinguishable.
+///
+/// So a mesh is cut to the **object** and not to the report: a sagitta this fraction of the
+/// solid's own diagonal, which is scale-free and therefore says the same thing whether a
+/// document is written in millimetres or in inches.
+pub const MESH_SAGITTA: f64 = 1e-4;
+
+/// The `unit` a mesh of this solid should be cut at — `MESH_SAGITTA` of its own diagonal, put
+/// back through `curve::flatness`, which is the one conversion between a tolerance and a `unit`.
+///
+/// Asked of the *solid's* bounds and not the sketch's: a part sheet's extent is the whole sheet,
+/// three views wide, and a part is not.
+pub fn mesh_unit(sk: &Sketch, i: usize) -> f64 {
+    // from the primitives' own boxes and not from an evaluated boundary: the answer only has to
+    // pick a faceting, and paying for a fine boundary to decide how fine a boundary to build
+    // would be the tail wagging the dog.  A coarse tessellation gives a box right to its own
+    // sagitta, which is far below anything this then rounds to.
+    let b = resolve(sk, i, REPORT_UNIT * 20.0).bbox();
+    if b.is_empty() {
+        return REPORT_UNIT;
+    }
+    let diag = (0..3).map(|k| (b.hi[k] - b.lo[k]).powi(2)).sum::<f64>().sqrt();
+    (diag * MESH_SAGITTA / crate::curve::FLATNESS_PX).max(REPORT_UNIT)
+}
+
 /// A planar convex facet of a primitive's boundary, with its outward normal and the name the
 /// document reaches it by.
 #[derive(Clone, Debug)]

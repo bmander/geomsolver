@@ -28,34 +28,73 @@ use std::collections::BTreeMap;
 /// The boundary as triangles, nine doubles each, in the pieces' own order — deterministic, since
 /// the boundary walk is.
 ///
-/// **A fan from the centroid**, which is exact because every piece is convex: the facets are
-/// triangles and quads, and cutting a convex polygon by a plane leaves convex polygons.
+/// A fan, which is exact because every piece is convex: the facets are triangles and quads, and
+/// cutting a convex polygon by a plane leaves convex polygons.
 ///
-/// From the *centroid* and not from the first vertex, and that is the whole of what makes a
-/// welded mesh close.  A fan from a vertex covers every boundary edge except the sub-edges of
-/// the two it stands on — those come out as zero-area triangles, and dropping them (which a
-/// printer's validator wants) takes the sub-edges with them and re-opens exactly the T-junctions
-/// the weld had just closed.  The centroid of a convex polygon is strictly inside it, so every
-/// boundary edge gets one triangle and none of them is degenerate.  It costs two triangles a
-/// piece.
+/// **From a corner where the piece has only corners, and from the centroid where it does not.**
+/// A vertex fan is the cheap and obvious one — `n − 2` triangles — and it covers every boundary
+/// edge *except* the sub-edges of the two edges its apex stands on.  Where the weld has inserted
+/// a vertex partway along one of those, the fan triangle over it is zero-area; dropping it (which
+/// a printer's validator wants) takes the sub-edge with it and re-opens exactly the T-junction
+/// the weld had just closed.  The centroid of a convex polygon is strictly inside it, so a
+/// centroid fan covers every boundary edge and none of its triangles is degenerate — at the cost
+/// of two more triangles.
+///
+/// So the test is per piece and is the condition itself: **has this polygon a vertex that is not
+/// a corner?**  Most have not — a quad the weld never touched is two triangles, as it always was
+/// — and the ones that have pay for what they need.
 pub fn triangles(pieces: &[Piece]) -> Vec<f64> {
     let mut out = Vec::new();
     for p in pieces {
-        if p.pts.len() < 3 {
-            continue;
-        }
-        let c = p.centroid();
-        for i in 0..p.pts.len() {
-            let (a, b) = (p.pts[i], p.pts[(i + 1) % p.pts.len()]);
-            if degenerate(c, a, b) {
-                continue;
-            }
-            for v in [c, a, b] {
+        fan(&p.pts, |a, b, c| {
+            for v in [a, b, c] {
                 out.extend(v);
             }
-        }
+        });
     }
     out
+}
+
+/// Every triangle of one piece, handed to `emit` in order.  The one triangulation, so a mesh, a
+/// volume and an STL cut a face the same way.
+fn fan(pts: &[[f64; 3]], mut emit: impl FnMut([f64; 3], [f64; 3], [f64; 3])) {
+    if pts.len() < 3 {
+        return;
+    }
+    if all_corners(pts) {
+        for i in 1..pts.len() - 1 {
+            if !degenerate(pts[0], pts[i], pts[i + 1]) {
+                emit(pts[0], pts[i], pts[i + 1]);
+            }
+        }
+        return;
+    }
+    let c = centroid(pts);
+    for i in 0..pts.len() {
+        let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+        if !degenerate(c, a, b) {
+            emit(c, a, b);
+        }
+    }
+}
+
+fn centroid(pts: &[[f64; 3]]) -> [f64; 3] {
+    let k = 1.0 / pts.len() as f64;
+    let mut c = [0.0; 3];
+    for p in pts {
+        for i in 0..3 {
+            c[i] += p[i] * k;
+        }
+    }
+    c
+}
+
+/// Is every vertex a true corner — no three in a row collinear?  Exactly the condition under
+/// which a vertex fan loses no boundary edge.
+fn all_corners(pts: &[[f64; 3]]) -> bool {
+    (0..pts.len()).all(|i| {
+        !degenerate(pts[(i + pts.len() - 1) % pts.len()], pts[i], pts[(i + 1) % pts.len()])
+    })
 }
 
 /// A triangle with no area — three collinear points, which a zero-length side would give.
@@ -333,27 +372,21 @@ pub fn grouped(pieces: &[Piece]) -> Mesh {
         }
         let start = mesh.positions.len() / 9;
         for p in &group {
-            if p.pts.len() < 3 {
-                continue;
-            }
-            let c = p.centroid();
-            for i in 0..p.pts.len() {
-                let (u, v) = (p.pts[i], p.pts[(i + 1) % p.pts.len()]);
-                if degenerate(c, u, v) {
-                    continue;
-                }
-                for w in [c, u, v] {
-                    mesh.positions.extend(w);
-                    // the centroid is interior to its own facet, so it takes the facet's normal
-                    // whatever the face is doing at its edges
-                    let n = if smooth && w != c {
-                        at.get(&key(w)).and_then(|a| plane::unit(*a)).unwrap_or(p.n)
+            // the same triangulation `triangles` uses, so a mesh and an STL cut a face alike
+            let inner = centroid(&p.pts);
+            fan(&p.pts, |u, v, w| {
+                for x in [u, v, w] {
+                    mesh.positions.extend(x);
+                    // a fan's own apex is interior to the facet where it is the centroid, so it
+                    // takes the facet's normal whatever the face is doing at its edges
+                    let n = if smooth && x != inner {
+                        at.get(&key(x)).and_then(|a| plane::unit(*a)).unwrap_or(p.n)
                     } else {
                         p.n
                     };
                     mesh.normals.extend(n);
                 }
-            }
+            });
         }
         let count = mesh.positions.len() / 9 - start;
         if count > 0 {

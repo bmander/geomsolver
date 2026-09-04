@@ -289,7 +289,9 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         // two readings of one boundary, and a second walk would be a second object
         match pick_solid(&sk, opts.solid.as_deref()) {
             Ok(i) => {
-                let pieces = sk.solid_boundary(i, gcs_core::solid::REPORT_UNIT);
+                // cut to the *object*, not to the report: a printer resolves a tenth of a
+                // millimetre and a volume is quoted to four digits, and those are not one number
+                let pieces = sk.solid_boundary(i, gcs_core::solid::mesh_unit(&sk, i));
                 let name = sk.solids[i].name.clone();
                 if let Err(err) = std::fs::write(path, gcs_core::mesh::stl(&pieces, &name)) {
                     eprintln!("solventc: {path}: {err}");

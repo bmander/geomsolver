@@ -175,3 +175,62 @@ fn a_round_face_shades_round_and_a_corner_stays_a_corner() {
         }
     }
 }
+
+#[test]
+fn a_mesh_is_cut_to_the_object_and_a_volume_to_the_report() {
+    // **Two requirements, and giving them one number costs an order of magnitude.**  A volume is
+    // quoted to four digits, so `REPORT_UNIT` is fine; a mesh is looked at and printed, and the
+    // V-twin cylinder's inherited that and came out at 98,000 triangles where 8,000 are
+    // indistinguishable — a bore cut into 257 flats, a sagitta a hundred times under what any
+    // printer resolves.
+    let (sk, body) = bored();
+    let mu = solid::mesh_unit(&sk, body);
+    assert!(mu > solid::REPORT_UNIT, "a mesh is cut coarser than a report: {mu}");
+
+    let fine = mesh::grouped(&sk.solid_boundary(body, solid::REPORT_UNIT)).positions.len() / 9;
+    let mesh_at = mesh::grouped(&sk.solid_boundary(body, mu));
+    let coarse = mesh_at.positions.len() / 9;
+    // how much cheaper depends on how round the part is — the V-twin's cylinder, with four
+    // holes in it, is twelve times cheaper; this block with one is three
+    assert!(coarse * 3 < fine, "and far cheaper for it: {coarse} against {fine}");
+    // still closed — the whole point of the weld, and the cheap fan must not cost it
+    assert_eq!(unpaired(&mesh_at.positions), 0, "a mesh cut to the object is closed too");
+
+    // and it is *scale-free*: the same part ten times bigger is cut into the same triangles, so
+    // a document in inches and one in millimetres get the same file
+    let mut big = Sketch::new();
+    let f = rect_face(&mut big, 0.0, 0.0, 600.0, 400.0, "sec");
+    let block = prism(&mut big, f, -300.0, 0.0, "block");
+    let bf = circle_face(&mut big, (300.0, 200.0), 80.0, "bore_f");
+    let bore = prism(&mut big, bf, -300.0, 0.0, "bore");
+    let b2 = big.solid(
+        SolidDef::Body { stock: block as u32, on: vec![], through: vec![bore as u32] },
+        "body",
+    );
+    let n2 = mesh::grouped(&big.solid_boundary(b2, solid::mesh_unit(&big, b2))).positions.len() / 9;
+    assert!(
+        (n2 as f64 - coarse as f64).abs() < coarse as f64 * 0.2,
+        "ten times the size is the same mesh: {n2} against {coarse}"
+    );
+}
+
+#[test]
+fn the_cheap_fan_is_only_taken_where_it_is_safe() {
+    // a piece the weld never touched has only corners and takes `n − 2` triangles; one it
+    // stitched has a vertex that is not a corner and takes `n`, because a vertex fan there would
+    // drop the sub-edge and re-open the T-junction.  Both are in this solid at once.
+    let (sk, body) = bored();
+    let pieces = sk.solid_boundary(body, solid::mesh_unit(&sk, body));
+    let welded = mesh::weld(&pieces);
+    let sides: usize = welded.iter().map(|p| p.pts.len()).sum();
+    let tris = mesh::triangles(&welded).len() / 9;
+    // between the two bounds: every piece a centroid fan would be `sides`, every piece a vertex
+    // fan would be `sides − 2·pieces`
+    assert!(tris < sides, "not every piece paid the centroid's price: {tris} of {sides}");
+    assert!(
+        tris > sides - 2 * welded.len(),
+        "and some did: {tris} against {}",
+        sides - 2 * welded.len()
+    );
+    assert_eq!(unpaired(&mesh::triangles(&welded)), 0, "and it is still closed");
+}
