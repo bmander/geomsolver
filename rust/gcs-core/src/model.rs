@@ -1755,11 +1755,26 @@ impl Sketch {
         self.plane_names.get(&(i as u32)).cloned().unwrap_or_else(|| format!("v{i}"))
     }
 
+    /// **How finely a solid is cut, and the one place a caller may decline to say.**
+    ///
+    /// A `unit` at or below zero means *the object's own scale* — `solid::mesh_unit`, a sagitta a
+    /// fixed fraction of the solid's diagonal, which is scale-free and so says the same thing in
+    /// millimetres and in inches.  It is the answer for anything that is not strokes on a page
+    /// being looked at: a file, a printer, and a scene handed to a renderer with a camera of its
+    /// own.  The rule lives here, at the one seam every evaluation goes through, because it was
+    /// written into two of the exports and not into the rest, and a caller that then asked for a
+    /// mesh at `0` got a *sagitta* of zero — an arc cut into an unbounded number of facets, which
+    /// is not a slow answer but no answer at all.
+    fn cut_unit(&self, i: usize, unit: f64) -> f64 {
+        if unit > 0.0 { unit } else { crate::solid::mesh_unit(self, i) }
+    }
+
     /// **A solid's boundary**, remembered against everything it was computed from.
     ///
     /// `curve_polyline`'s bargain (`solid::reads`): a repaint asks every derived view for its
     /// edges over a drawing that has not changed, and a boundary is a sweep of classifications.
     pub fn solid_boundary(&self, i: usize, unit: f64) -> Vec<crate::csg::Piece> {
+        let unit = self.cut_unit(i, unit);
         let key = crate::solid::reads(self, i, unit);
         if let Some((k, crate::solid::Cached::Boundary(v))) =
             self.solid_cache.borrow().get(&(i, crate::solid::Want::Boundary))
@@ -1783,6 +1798,7 @@ impl Sketch {
     /// Memoised beside the boundary it is made from, since welding is a real walk and a viewer
     /// asks for the mesh whenever it redraws.
     pub fn solid_mesh(&self, i: usize, unit: f64) -> crate::mesh::Mesh {
+        let unit = self.cut_unit(i, unit);
         let key = crate::solid::reads(self, i, unit);
         if let Some((k, crate::solid::Cached::Mesh(v))) =
             self.solid_cache.borrow().get(&(i, crate::solid::Want::Mesh))
@@ -1800,6 +1816,7 @@ impl Sketch {
 
     /// A solid's edges, as a view would draw them before visibility is decided.
     pub fn solid_edges(&self, i: usize, unit: f64) -> Vec<crate::csg::Edge> {
+        let unit = self.cut_unit(i, unit);
         let key = crate::solid::reads(self, i, unit);
         if let Some((k, crate::solid::Cached::Edges(v))) =
             self.solid_cache.borrow().get(&(i, crate::solid::Want::Edges))

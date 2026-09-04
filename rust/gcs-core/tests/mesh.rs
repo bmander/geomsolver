@@ -288,3 +288,35 @@ fn a_solid_leaves_as_a_glb_a_viewer_can_open() {
         .fold(0.0f64, |m, v| m.max(v.abs()));
     assert!(big < 1.0, "a sixty-millimetre part is under a metre across: {big}");
 }
+
+/// **A unit nobody states is the object's own, and never zero.**
+///
+/// "How finely" is a question a file, a printer and a 3D scene all have no opinion about — they
+/// are not a page being looked at — so `0` asks the core to choose, and `solid::mesh_unit` is the
+/// scale-free answer it chooses.  The rule was written into two of the exports and not into the
+/// evaluations under them, so a caller that asked for a *mesh* at `0` got a sagitta of zero: an
+/// arc cut into an unbounded number of facets, which is not a coarse answer or a slow one but no
+/// answer at all — it took the tab with it.  Asked here of every walk that reads a unit, since
+/// one of the three having the rule is exactly the state that was wrong.
+#[test]
+fn a_unit_nobody_states_is_the_objects_own() {
+    let mut sk = Sketch::new();
+    // a *round* solid, since a facet count only runs away where there is something to facet
+    let f = circle_face(&mut sk, (0.0, 0.0), 8.0, "rod_f");
+    let rev = prism(&mut sk, f, -30.0, 0.0, "rod");
+    let chosen = solid::mesh_unit(&sk, rev);
+    assert!(chosen > 0.0, "the object's own scale is a length");
+    for asked in [0.0, -1.0] {
+        assert_eq!(
+            sk.solid_mesh(rev, asked).positions.len(),
+            sk.solid_mesh(rev, chosen).positions.len(),
+            "a mesh asked for at {asked} is the mesh at the object's own scale",
+        );
+        assert_eq!(
+            sk.solid_edges(rev, asked).len(),
+            sk.solid_edges(rev, chosen).len(),
+            "and so are its edges, so the two share one boundary evaluation",
+        );
+        assert_eq!(sk.solid_boundary(rev, asked).len(), sk.solid_boundary(rev, chosen).len());
+    }
+}

@@ -1108,7 +1108,22 @@ Conventions:
   how fine a boundary to build is the tail wagging the dog.  The cylinder's STL went from
   97,772 triangles and 2.3 MB to 8,092 and 395 KB, and from 3.1 s to 0.37 s, still with zero
   unpaired edges.  `gcs_solid_mesh_unit` publishes the number so a viewer may take it or pass its
-  own.
+  own — and **a unit at or below zero *is* that choice**, resolved at the one seam every
+  evaluation goes through (`Sketch::cut_unit`, read by `solid_boundary`, `solid_edges` and
+  `solid_mesh`).  It had been written into `gcs_solid_glb` and `gcs_solid_stl` and nowhere else,
+  so a caller that asked for a *mesh* at 0 got a sagitta of zero — an arc cut into an unbounded
+  number of facets, which is not a coarse answer or a slow one but no answer at all: it took the
+  browser tab with it.  `tests/mesh.rs` asks it of all three walks, since one of the three having
+  the rule is exactly the state that was wrong.
+  **The glass box asks with 0, and that is why zooming is free.**  `unit` is the world length of
+  one screen pixel — the right refinement for strokes on a page being looked at, and the wrong
+  one for a scene handed to a renderer with a camera of its own.  Cut by it, every wheel tick
+  re-evaluated the term (158 ms for the V-twin cylinder's edges and 332 ms for its mesh,
+  natively, and finer without bound as you zoomed *in*, since a pixel is a smaller world length
+  the closer you get), while an orbit moved only the camera — which is exactly what one felt
+  like against the other.  `overview::scene3d` asks the same way (`SCENE_PX` for its drawn
+  polylines, `0` for the object's edges so they share the mesh's one evaluation), so nothing in
+  the box is a function of the zoom and `Box3D`'s rebuild key does not mention it.
 - **A face is one loop and a solid's faces are named by path** (§6.8).  A face is a closed loop of
   edges the drawing already has, on the one plane every point of every edge agrees about — *read*
   off the memberships and never written on the face, so a face inside `in swing { … }` is on the

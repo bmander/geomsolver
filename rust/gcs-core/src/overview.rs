@@ -52,6 +52,14 @@ const FACE_MARGIN: f64 = 0.15;
 /// drawing so it reads as a pane beside the others rather than as nothing at all.
 const LEAST_SIDE: f64 = 0.5;
 
+/// How many of its own widths across the box is refined for, when `scene3d` is asked for the
+/// object's own scale rather than the sheet's zoom.  It is a *drawing* is being cut into
+/// polylines, so the number that matters is how many pixels the box is looked at across, and a
+/// few hundred is the honest answer for a panel on a screen.  Scale-free — the same in
+/// millimetres and in inches — which is the whole point: refined this way, a zoom moves the
+/// camera and rebuilds nothing.
+const SCENE_PX: f64 = 800.0;
+
 /// One polyline of the scene, already projected to 2D, and what it came from.
 #[derive(Clone, Debug)]
 pub struct Item {
@@ -318,6 +326,14 @@ pub struct Item3 {
 /// `mesh::grouped` rather than the hidden-line edge set `scene` computes for a canvas that has no
 /// way to occlude anything.  That is the whole saving of doing this in 3D.
 pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
+    // **Nothing in the box follows the sheet's zoom.**  `unit` is the world length of one screen
+    // pixel, which is the right refinement for a drawing being looked at on a page — and this is
+    // not that: it is a scene handed to a renderer with a camera and a depth buffer of its own,
+    // which zooms by moving the camera.  Refined by `unit`, every wheel tick re-evaluated the
+    // term (158 ms for the V-twin cylinder's edges and 332 ms for its mesh, natively, and finer
+    // without bound as you zoomed in), while an orbit moved nothing.  So a caller says `0` and
+    // gets the scale-free rule `mesh_unit` already states for the mesh: refine to the object.
+    let unit = if unit > 0.0 { unit } else { (sk.extent() / SCENE_PX).max(crate::solid::REPORT_UNIT) };
     let mut items: Vec<Item3> = Vec::new();
     let views = views(sk);
     let least = sk.extent() * LEAST_SIDE;
@@ -368,8 +384,12 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
     // say is where the surface actually breaks.  So a `smooth` seam is dropped outright rather
     // than tested against an eye direction, and no edge is hidden-line removed either — a depth
     // buffer settles that per pixel, which is the whole of why this path exists.
+    //
     for i in objects(sk) {
-        for e in sk.solid_edges(i, unit) {
+        // `0`, so the edges are cut at the same `mesh_unit` the mesh is and the two share one
+        // boundary evaluation — the cache holds one answer per solid, so a second unit here
+        // would not be a second entry but the first one thrown away and recomputed
+        for e in sk.solid_edges(i, 0.0) {
             if e.smooth {
                 continue;
             }
@@ -487,7 +507,10 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
         for &i in &shown {
             let csg = crate::solid::resolve(sk, i, unit);
             let eps = sk.extent() * crate::solid::EPS;
-            for e in sk.solid_edges(i, unit) {
+            // `0`, so the edges are cut at the same `mesh_unit` the mesh is and the two share one
+        // boundary evaluation — the cache holds one answer per solid, so a second unit here
+        // would not be a second entry but the first one thrown away and recomputed
+        for e in sk.solid_edges(i, 0.0) {
                 if e.smooth {
                     let (a, b) = (crate::plane::dot(e.na, dir), crate::plane::dot(e.nb, dir));
                     if a * b > 0.0 || (a.abs() < 1e-12 && b.abs() < 1e-12) {

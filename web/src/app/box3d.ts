@@ -40,10 +40,10 @@ const INK = {
 
 /** What the scene was built from, so a repaint that changes nothing rebuilds nothing.  The box is
  *  read-only, so between edits only the camera moves — and rebuilding a mesh on every pointer
- *  move is the one way to make a depth buffer slower than the painter it replaced. */
+ *  move is the one way to make a depth buffer slower than the painter it replaced.  The zoom is
+ *  not in it either: the box is cut to the object rather than to the screen. */
 interface Built {
   sketch: unknown;
-  unit: number;
   solid: boolean;
 }
 
@@ -76,10 +76,14 @@ export class Box3D {
   paint(v: SketchView): void {
     const gl = this.start();
     if (!gl) return;
-    if (!this.built || this.built.sketch !== v.sketch || this.built.unit !== v.unit
-        || this.built.solid !== v.showSolid) {
+    // **The zoom is the camera's business and not the scene's**, which is why nothing here is a
+    // function of `v.unit`: the scene and the mesh are both asked for at the *object's* own scale
+    // (`0`), so a wheel tick moves the camera and rebuilds nothing.  Asked at the sheet's zoom
+    // this re-evaluated the whole term on every tick — and finer without bound as you zoomed in,
+    // since a screen pixel is a smaller world length the closer you get
+    if (!this.built || this.built.sketch !== v.sketch || this.built.solid !== v.showSolid) {
       this.build(v);
-      this.built = { sketch: v.sketch, unit: v.unit, solid: v.showSolid };
+      this.built = { sketch: v.sketch, solid: v.showSolid };
     }
     this.aim(v);
     this.chrome(v);
@@ -146,7 +150,7 @@ export class Box3D {
   /** The scene, from what the core says is in the box. */
   private build(v: SketchView): void {
     this.dispose();
-    const items = overview3(v.sketch, v.unit);
+    const items = overview3(v.sketch, 0);
     // the panes, translucent and double-sided: geometry on the far side of one must read through
     for (const it of items.filter((i) => i.part === 'face')) {
       const g = fanned(it.pts);
@@ -174,7 +178,11 @@ export class Box3D {
     // something to name.  The normals are the core's: averaged across a round face and flat
     // across a corner, so a bore's wall shades round with no smoothing pass here
     for (const o of objects(v.sketch)) {
-      const m = mesh(v.sketch, o.index, v.unit);
+      // **cut to the object and not to the zoom** — `0` asks the core for `solid::mesh_unit`,
+      // a sagitta a fixed fraction of the solid's own diagonal.  Handed `v.unit` this re-cut the
+      // whole boundary on every wheel tick, and finer without bound as you zoomed in: one tick
+      // on the V-twin cylinder locked the tab for the better part of a minute
+      const m = mesh(v.sketch, o.index, 0);
       for (const f of m.faces) {
         const from = f.start * 9;
         const to = from + f.count * 9;

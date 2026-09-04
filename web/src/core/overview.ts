@@ -65,7 +65,11 @@ export interface Item3 extends Omit<Item, 'pts' | 'shade'> {
  *  over the box itself.  Both come out of the same walk in the core, so the two are one scene
  *  seen two ways.  Of the object it carries the **creases and nothing else**: a silhouette is a
  *  fact about a viewpoint and this scene has none — the renderer owns the camera and turns it —
- *  and its *surfaces* are a mesh rather than a polyline, which is `mesh()`. */
+ *  and its *surfaces* are a mesh rather than a polyline, which is `mesh()`.
+ *
+ *  A `unit` of 0 asks for the **object's own scale** rather than the sheet's zoom, which is what
+ *  a scene handed to a renderer with its own camera wants: refined that way, zooming moves the
+ *  camera and re-evaluates nothing.  `mesh()` takes the same 0 for the same reason. */
 export function overview3(sk: Sketch, unit: number): Item3[] {
   return takeJson<Item3[]>(core().gcs_overview3d_json(sk.handle, unit));
 }
