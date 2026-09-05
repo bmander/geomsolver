@@ -323,9 +323,7 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             Ok(i) => {
                 // cut to the *object*, not to the report: a printer resolves a tenth of a
                 // millimetre and a volume is quoted to four digits, and those are not one number
-                let pieces = sk.solid_boundary(i, gcs_core::solid::mesh_unit(&sk, i));
-                let name = sk.solids[i].name.clone();
-                match gcs_core::mesh::checked_stl(&pieces, &name) {
+                match sk.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh).and_then(|s| s.stl()) {
                     Ok(bytes) => if let Err(err) = std::fs::write(path, bytes) {
                         eprintln!("solventc: {path}: {err}");
                         code = 1;
@@ -366,11 +364,11 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             eprintln!("solventc: this document has no solid to write");
             code = 1;
         } else if !which.is_empty() {
-            let unit = which.iter().map(|&i| gcs_core::solid::mesh_unit(&sk, i)).fold(f64::MAX, f64::min);
-            let bytes = gcs_core::gltf::glb(&sk, &which, unit);
-            if let Err(err) = std::fs::write(path, bytes) {
-                eprintln!("solventc: {path}: {err}");
-                code = 1;
+            match gcs_core::gltf::checked_glb(&sk, &which, gcs_core::solid::ApproximationPolicy::Mesh) {
+                Ok(bytes) => if let Err(err) = std::fs::write(path, bytes) {
+                    eprintln!("solventc: {path}: {err}"); code = 1;
+                },
+                Err(message) => { eprintln!("solventc: {message}"); code = 1; }
             }
         }
     }

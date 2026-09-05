@@ -766,7 +766,7 @@ pub struct Sketch {
     /// (`solid::reads`).  `polyline_cache`'s bargain, for the same reason: a repaint asks every
     /// derived view for its edges, and a boundary is a sweep of classifications over a drawing
     /// that has not changed.
-    pub solid_cache: std::cell::RefCell<BTreeMap<(usize, crate::solid::Want), (Vec<f64>, crate::solid::Cached)>>,
+    pub solid_cache: std::cell::RefCell<BTreeMap<(usize, (u8, u64)), (Vec<f64>, Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String>)>>,
     /// The document's style sheet: what each class looks like (`style.rs`).  Presentation, and
     /// nothing the core computes reads it — it is here because it is document state, saved and
     /// grafted with everything else, and because the core resolving it is what keeps two front
@@ -1767,83 +1767,42 @@ impl Sketch {
         self.plane_names.get(&(i as u32)).cloned().unwrap_or_else(|| format!("v{i}"))
     }
 
-    /// **How finely a solid is cut, and the one place a caller may decline to say.**
-    ///
-    /// A `unit` at or below zero means *the object's own scale* — `solid::mesh_unit`, a sagitta a
-    /// fixed fraction of the solid's diagonal, which is scale-free and so says the same thing in
-    /// millimetres and in inches.  It is the answer for anything that is not strokes on a page
-    /// being looked at: a file, a printer, and a scene handed to a renderer with a camera of its
-    /// own.  The rule lives here, at the one seam every evaluation goes through, because it was
-    /// written into two of the exports and not into the rest, and a caller that then asked for a
-    /// mesh at `0` got a *sagitta* of zero — an arc cut into an unbounded number of facets, which
-    /// is not a slow answer but no answer at all.
-    fn cut_unit(&self, i: usize, unit: f64) -> f64 {
-        if unit > 0.0 { unit } else { crate::solid::mesh_unit(self, i) }
+    /// Validate and evaluate the current pose with an explicit approximation policy.
+    /// Different policies coexist; changed geometry/placement discards all old policies.
+    pub fn evaluated_solid(
+        &self, i: usize, policy: crate::solid::ApproximationPolicy,
+    ) -> Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String> {
+        let key = crate::solid::reads(self, i, 0.0);
+        let slot = (i, policy.cache_key());
+        if let Some((old, value)) = self.solid_cache.borrow().get(&slot) {
+            if *old == key { return value.clone(); }
+        }
+        let value = crate::solid::EvaluatedSolid::evaluate(self, i, policy).map(std::rc::Rc::new);
+        let mut cache = self.solid_cache.borrow_mut();
+        cache.retain(|(index, _), (old, _)| *index != i || *old == key);
+        // Bound zoom-history memory without evicting report and mesh entries.
+        if cache.keys().filter(|(index, (kind, _))| *index == i && *kind == 2).count() >= 8 {
+            cache.retain(|(index, (kind, _)), _| *index != i || *kind != 2);
+        }
+        cache.insert(slot, (key, value.clone()));
+        value
     }
 
-    /// **A solid's boundary**, remembered against everything it was computed from.
-    ///
-    /// `curve_polyline`'s bargain (`solid::reads`): a repaint asks every derived view for its
-    /// edges over a drawing that has not changed, and a boundary is a sweep of classifications.
+    /// Compatibility output in world coordinates. New queries use `evaluated_solid` so
+    /// invalid geometry remains a diagnostic instead of an empty drawing.
     pub fn solid_boundary(&self, i: usize, unit: f64) -> Vec<crate::csg::Piece> {
-        let unit = self.cut_unit(i, unit);
-        let key = crate::solid::reads(self, i, unit);
-        if let Some((k, crate::solid::Cached::Boundary(v))) =
-            self.solid_cache.borrow().get(&(i, crate::solid::Want::Boundary))
-        {
-            if *k == key {
-                return v.clone();
-            }
-        }
-        let csg = crate::solid::resolve(self, i, unit);
-        let v = crate::csg::boundary(&csg, csg.epsilon());
-        self.solid_cache.borrow_mut().insert(
-            (i, crate::solid::Want::Boundary),
-            (key, crate::solid::Cached::Boundary(v.clone())),
-        );
-        v
+        self.evaluated_solid(i, crate::solid::ApproximationPolicy::from_unit(unit))
+            .map(|s| s.world_boundary()).unwrap_or_default()
     }
 
-    /// **A solid's mesh**: welded, so every edge pairs up, and grouped by the face the document
-    /// reaches it by.  What a printer takes and what a viewer takes, which are the same thing.
-    ///
-    /// Memoised beside the boundary it is made from, since welding is a real walk and a viewer
-    /// asks for the mesh whenever it redraws.
     pub fn solid_mesh(&self, i: usize, unit: f64) -> crate::mesh::Mesh {
-        let unit = self.cut_unit(i, unit);
-        let key = crate::solid::reads(self, i, unit);
-        if let Some((k, crate::solid::Cached::Mesh(v))) =
-            self.solid_cache.borrow().get(&(i, crate::solid::Want::Mesh))
-        {
-            if *k == key {
-                return v.clone();
-            }
-        }
-        let v = crate::mesh::grouped(&self.solid_boundary(i, unit));
-        self.solid_cache
-            .borrow_mut()
-            .insert((i, crate::solid::Want::Mesh), (key, crate::solid::Cached::Mesh(v.clone())));
-        v
+        self.evaluated_solid(i, crate::solid::ApproximationPolicy::from_unit(unit))
+            .map(|s| s.world_mesh()).unwrap_or_else(|_| crate::mesh::grouped(&[]))
     }
 
-    /// A solid's edges, as a view would draw them before visibility is decided.
     pub fn solid_edges(&self, i: usize, unit: f64) -> Vec<crate::csg::Edge> {
-        let unit = self.cut_unit(i, unit);
-        let key = crate::solid::reads(self, i, unit);
-        if let Some((k, crate::solid::Cached::Edges(v))) =
-            self.solid_cache.borrow().get(&(i, crate::solid::Want::Edges))
-        {
-            if *k == key {
-                return v.clone();
-            }
-        }
-        let csg = crate::solid::resolve(self, i, unit);
-        let v = crate::csg::edges(&csg, csg.epsilon());
-        self.solid_cache.borrow_mut().insert(
-            (i, crate::solid::Want::Edges),
-            (key, crate::solid::Cached::Edges(v.clone())),
-        );
-        v
+        self.evaluated_solid(i, crate::solid::ApproximationPolicy::from_unit(unit))
+            .map(|s| s.world_edges()).unwrap_or_default()
     }
 
     pub fn count(&self, kind: EntKind) -> usize {

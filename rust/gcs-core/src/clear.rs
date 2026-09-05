@@ -259,12 +259,28 @@ pub fn judge(
     gap: f64,
     unit: f64,
 ) -> Verdict {
+    let policy = solid::ApproximationPolicy::from_unit(unit);
+    let (Ok(a), Ok(b)) = (sk.evaluated_solid(a, policy), sk.evaluated_solid(b, policy)) else {
+        return Verdict { measured: f64::NAN, tolerance: f64::NAN, holds: None };
+    };
+    judge_evaluated(word, &a, &b, gap)
+}
+
+/// Both classifiers and boundaries are from validated evaluations; pairwise arithmetic is
+/// in A's local frame so translating the assembly does not change a collision or gap.
+pub fn judge_evaluated(
+    word: crate::constraints::SolidWord, a: &solid::EvaluatedSolid,
+    b: &solid::EvaluatedSolid, gap: f64,
+) -> Verdict {
     use crate::constraints::SolidWord as W;
-    let (pa, pb) = (sk.solid_boundary(a, unit), sk.solid_boundary(b, unit));
-    let (ca, cb) = (solid::resolve(sk, a, unit), solid::resolve(sk, b, unit));
-    let eps = ca.epsilon().min(cb.epsilon());
-    let curved = ca.prims.iter().chain(&cb.prims).any(|p| p.facets.iter().any(|f| f.smooth));
-    let facet_tol = if curved { 2.0 * sagitta(unit) } else { 0.0 };
+    let pa = a.boundary();
+    let ca = a.classifier();
+    let (cb, pb) = a.relative(b);
+    let eps = a.epsilon().min(b.epsilon());
+    let error = |s: &solid::EvaluatedSolid| {
+        if s.boundary().iter().any(|p| p.smooth) { s.sagitta() } else { 0.0 }
+    };
+    let facet_tol = error(a) + error(b);
     let compare = |measured: f64| {
         if facet_tol > 0.0 && (measured - gap).abs() <= facet_tol {
             None
@@ -274,11 +290,11 @@ pub fn judge(
     };
     match word {
         W::Clear => {
-            if let Some((measured, uncertainty)) = overlap(&ca, &cb, eps) {
+            if let Some((measured, uncertainty)) = overlap(ca, &cb, eps) {
                 let holds = if -measured - uncertainty > facet_tol { Some(false) } else { None };
                 Verdict { measured, tolerance: facet_tol + uncertainty, holds }
             } else {
-                let measured = boundary_gap(&pa, &pb);
+                let measured = boundary_gap(pa, &pb);
                 let holds = match compare(measured) {
                     Some(false) => Some(false),
                     _ if measured == 0.0 && facet_tol == 0.0 => Some(false),
@@ -289,8 +305,8 @@ pub fn judge(
             }
         }
         W::Fits => {
-            let inside = contained(&pa, &cb, eps);
-            let d = boundary_gap(&pa, &pb);
+            let inside = contained(pa, &cb, eps);
+            let d = boundary_gap(pa, &pb);
             Verdict {
                 measured: if inside { d } else { -d },
                 tolerance: facet_tol,
@@ -298,7 +314,7 @@ pub fn judge(
             }
         }
         W::Inside => {
-            let inside = contained(&pa, &cb, eps);
+            let inside = contained(pa, &cb, eps);
             Verdict {
                 measured: if inside { 1.0 } else { -1.0 },
                 tolerance: 0.0,

@@ -1420,11 +1420,18 @@ pub unsafe extern "C" fn gcs_solid_mesh(
     cap: i32,
 ) -> i32 {
     guard(-1, move || {
-        let m = sk(h).solid_mesh(idx as usize, unit);
+        let solid = match sk(h).evaluated_solid(idx as usize, gcs_core::solid::ApproximationPolicy::from_unit(unit)) {
+            Ok(s) => s,
+            Err(message) => { set_error(message); return -1; }
+        };
+        let m = solid.mesh();
         if m.positions.len() > cap.max(0) as usize {
             return -1;
         }
-        std::ptr::copy_nonoverlapping(m.positions.as_ptr(), out, m.positions.len());
+        let origin = solid.origin().0;
+        for (i, value) in m.positions.iter().enumerate() {
+            out.add(i).write(value + origin[i % 3]);
+        }
         m.positions.len() as i32
     })
 }
@@ -1440,7 +1447,11 @@ pub unsafe extern "C" fn gcs_solid_normals(
     cap: i32,
 ) -> i32 {
     guard(-1, move || {
-        let m = sk(h).solid_mesh(idx as usize, unit);
+        let solid = match sk(h).evaluated_solid(idx as usize, gcs_core::solid::ApproximationPolicy::from_unit(unit)) {
+            Ok(s) => s,
+            Err(message) => { set_error(message); return -1; }
+        };
+        let m = solid.mesh();
         if m.normals.len() > cap.max(0) as usize {
             return -1;
         }
@@ -1455,7 +1466,11 @@ pub unsafe extern "C" fn gcs_solid_normals(
 #[no_mangle]
 pub unsafe extern "C" fn gcs_solid_faces_json(h: *mut Sketch, idx: i32, unit: f64) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        let m = sk(h).solid_mesh(idx as usize, unit);
+        let solid = match sk(h).evaluated_solid(idx as usize, gcs_core::solid::ApproximationPolicy::from_unit(unit)) {
+            Ok(s) => s,
+            Err(message) => { set_error(message); return std::ptr::null_mut(); }
+        };
+        let m = solid.mesh();
         out_json(gcs_core::json::Json::Arr(
             m.groups
                 .iter()
@@ -1490,18 +1505,10 @@ pub unsafe extern "C" fn gcs_solid_glb(h: *mut Sketch, idx: i32, unit: f64) -> *
             set_error(message);
             return std::ptr::null_mut();
         }
-        for &i in &which {
-            if let Err(message) = gcs_core::solid::validate(s, i) {
-                set_error(message);
-                return std::ptr::null_mut();
-            }
+        match gcs_core::gltf::checked_glb(s, &which, gcs_core::solid::ApproximationPolicy::from_unit(unit)) {
+            Ok(bytes) => out_bytes(bytes),
+            Err(message) => { set_error(message); std::ptr::null_mut() }
         }
-        let unit = if unit > 0.0 {
-            unit
-        } else {
-            which.iter().map(|&i| gcs_core::solid::mesh_unit(s, i)).fold(f64::MAX, f64::min)
-        };
-        out_bytes(gcs_core::gltf::glb(s, &which, unit))
     })
 }
 
@@ -1516,12 +1523,7 @@ pub unsafe extern "C" fn gcs_solid_stl(h: *mut Sketch, idx: i32, unit: f64) -> *
             set_error(message);
             return std::ptr::null_mut();
         }
-        if let Err(message) = gcs_core::solid::validate(s, i) {
-            set_error(message);
-            return std::ptr::null_mut();
-        }
-        let unit = if unit > 0.0 { unit } else { gcs_core::solid::mesh_unit(s, i) };
-        match gcs_core::mesh::checked_stl(&s.solid_boundary(i, unit), &s.solid_name(i)) {
+        match s.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::from_unit(unit)).and_then(|s| s.stl()) {
             Ok(bytes) => out_bytes(bytes),
             Err(message) => { set_error(message); std::ptr::null_mut() }
         }
