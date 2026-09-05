@@ -37,9 +37,9 @@ fn claim(e: &program::Elaborated, word: SolidWord, gap: f64) -> clear::Verdict {
 fn crossing_bars_are_material_interference_even_without_contained_vertices() {
     let e = case("cross_clear");
     let v = claim(&e, SolidWord::Clear, 0.1);
-    assert_eq!(v.holds, Some(false));
-    close(v.measured, -1.0);
-    close(v.tolerance, 0.0);
+    assert_eq!(v.holds(), Some(false));
+    close(v.measured().unwrap(), -1.0);
+    close(v.tolerance().unwrap(), 0.0);
     // The answer is symmetric and ignores an unrelated point.
     let reversed = clear::judge(
         &e.sketch,
@@ -49,24 +49,24 @@ fn crossing_bars_are_material_interference_even_without_contained_vertices() {
         0.1,
         solid::REPORT_UNIT,
     );
-    close(reversed.measured, v.measured);
+    close(reversed.measured().unwrap(), v.measured().unwrap());
     let unrelated = read(
         &(source("cross_clear") + "point remote hint(x:1000000000,y:1000000000)\nground remote\n"),
     );
-    close(claim(&unrelated, SolidWord::Clear, 0.1).measured, -1.0);
-    close(claim(&case("cross_clear_control"), SolidWord::Clear, 0.1).measured, 2.0);
+    close(claim(&unrelated, SolidWord::Clear, 0.1).measured().unwrap(), -1.0);
+    close(claim(&case("cross_clear_control"), SolidWord::Clear, 0.1).measured().unwrap(), 2.0);
 }
 
 #[test]
 fn penetration_is_a_geometric_thickness_with_a_reported_error_bound() {
     let e = case("penetration_10");
     let v = claim(&e, SolidWord::Clear, 0.0);
-    close(v.measured, -5.0);
-    close(v.tolerance, 0.0);
-    assert_eq!(v.holds, Some(false));
+    close(v.measured().unwrap(), -5.0);
+    close(v.tolerance().unwrap(), 0.0);
+    assert_eq!(v.holds(), Some(false));
     let equal =
         read(&source("penetration_10").replace("x: 5,", "x: 0,").replace("x: 15,", "x: 10,"));
-    close(claim(&equal, SolidWord::Clear, 0.0).measured, -10.0);
+    close(claim(&equal, SolidWord::Clear, 0.0).measured().unwrap(), -10.0);
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn unrelated_points_do_not_change_boolean_boundaries_or_containment() {
         close(mesh::volume(&e.sketch.solid_boundary(si(&e, "result"), solid::REPORT_UNIT)), 928.0);
     }
     for name in ["containment_extent_0", "containment_extent_1000000000"] {
-        assert_eq!(claim(&case(name), SolidWord::Inside, 0.0).holds, Some(false));
+        assert_eq!(claim(&case(name), SolidWord::Inside, 0.0).holds(), Some(false));
     }
     // Also exercise a cache miss after unrelated geometry changes.
     let mut e = case("boolean_extent_0");
@@ -91,9 +91,9 @@ fn unrelated_points_do_not_change_boolean_boundaries_or_containment() {
 #[test]
 fn negative_gaps_cannot_override_inside_or_disjointness() {
     let e = case("negative_fits_outside");
-    assert_eq!(claim(&e, SolidWord::Fits, -2.0).holds, Some(false));
+    assert_eq!(claim(&e, SolidWord::Fits, -2.0).holds(), Some(false));
     let e = case("penetration_10");
-    assert_eq!(claim(&e, SolidWord::Clear, -100.0).holds, Some(false));
+    assert_eq!(claim(&e, SolidWord::Clear, -100.0).holds(), Some(false));
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn solid_claim_arguments_are_checked_instead_of_discarded() {
         assert!(e.errors().any(|d| d.code == program::Code::E040));
     }
     assert_eq!(
-        diagnose::judge_solids(&case("claim_no_arguments_control").sketch)[0].holds,
+        diagnose::judge_solids(&case("claim_no_arguments_control").sketch)[0].holds(),
         Some(true)
     );
 }
@@ -118,16 +118,16 @@ fn solid_claim_arguments_are_checked_instead_of_discarded() {
 fn failed_sweep_poses_are_disclosed_and_cannot_certify_clearance() {
     let e = case("sweep_impossible");
     let v = diagnose::judge_solids(&e.sketch).remove(0);
-    assert_eq!(v.samples, 37);
-    assert_eq!(v.failed_samples.len(), 37);
-    assert_eq!(v.holds, None);
-    assert!(v.measured.is_nan());
-    assert_eq!(v.worst, None);
+    assert_eq!(v.samples(), 37);
+    assert_eq!(v.failed_samples().len(), 37);
+    assert_eq!(v.holds(), None);
+    assert!(v.measured().is_none());
+    assert_eq!(v.worst(), None);
     let e = read(&source("sweep_impossible").replace("(2mm,3mm)", "(0.1mm,2mm)"));
     let v = diagnose::judge_solids(&e.sketch).remove(0);
-    assert!(!v.failed_samples.is_empty() && v.failed_samples.len() < 37);
-    assert_eq!(v.holds, None);
-    assert!(v.measured.is_finite());
+    assert!(!v.failed_samples().is_empty() && v.failed_samples().len() < 37);
+    assert_eq!(v.holds(), None);
+    assert!(v.measured().unwrap().is_finite());
 }
 
 #[test]
@@ -142,12 +142,12 @@ fn sweep_bounds_use_the_inferred_variable_dimension_and_user_units() {
         )
         .replace("(0.1mm,0.9mm)", "(10deg,30deg)");
     let e = read(&src);
-    let sweep = e.sketch.solid_claims[0].over.as_ref().unwrap();
-    close(sweep.from, 10.0);
-    close(sweep.to, 30.0);
+    let sweep = e.sketch.solid_claims[0].over().unwrap();
+    close(sweep.from(), 10.0);
+    close(sweep.to(), 30.0);
     let v = diagnose::judge_solids(&e.sketch).remove(0);
-    assert!(v.failed_samples.is_empty());
-    assert_eq!(v.holds, Some(true));
+    assert!(v.failed_samples().is_empty());
+    assert_eq!(v.holds(), Some(true));
 }
 
 #[test]
@@ -161,7 +161,7 @@ fn sampling_method_and_actual_attempt_count_are_serialized() {
     assert!(c.get("failedSamples").unwrap().arr().is_empty());
     let e = case("single_pose_control");
     let v = diagnose::judge_solids(&e.sketch).remove(0);
-    assert_eq!(v.samples, 0);
+    assert_eq!(v.samples(), 0);
 }
 
 #[test]
@@ -303,17 +303,17 @@ fn interference_checks_respect_voids_and_disconnected_material() {
     let src = source("boolean_extent_0") + &box_source("other", 3.0, 3.0, 1.0, 1.0, -5.5, -4.5);
     let e = read(&src);
     let v = claim(&e, SolidWord::Clear, 0.1);
-    assert_eq!(v.holds, Some(true));
-    close(v.measured, 0.5);
+    assert_eq!(v.holds(), Some(true));
+    close(v.measured().unwrap(), 0.5);
     let src = "unit mm\n".to_string()
         + &box_source("left", 0.0, 0.0, 1.0, 1.0, -1.0, 0.0)
         + &box_source("right", 8.0, 0.0, 1.0, 1.0, -1.0, 0.0)
         + "solid result(left)\nright on result\nsolid other(result)\n";
     let e = read(&src);
     let v = claim(&e, SolidWord::Clear, 0.0);
-    assert_eq!(v.holds, Some(false));
-    assert!((-v.measured - 1.0).abs() <= v.tolerance + 1e-7);
-    assert!(v.tolerance < 0.001, "{:?}", v);
+    assert_eq!(v.holds(), Some(false));
+    assert!((-v.measured().unwrap() - 1.0).abs() <= v.tolerance().unwrap() + 1e-7);
+    assert!(v.tolerance().unwrap() < 0.001, "{:?}", v);
 }
 
 #[test]
@@ -337,14 +337,14 @@ fn negative_clearance_cannot_certify_uncertain_round_surface_contact() {
         face af(ac)\nface bf(bc)\nsolid result(af,depth:1mm)\nsolid other(bf,depth:1mm)\n",
     );
     let v = claim(&e, SolidWord::Clear, -1.0);
-    assert!(v.measured.abs() <= v.tolerance, "{v:?}");
-    assert_eq!(v.holds, None, "faceting cannot establish disjointness at tangency");
-    assert_eq!(claim(&e, SolidWord::Clear, 1.0).holds, Some(false));
+    assert!(v.measured().unwrap().abs() <= v.tolerance().unwrap(), "{v:?}");
+    assert_eq!(v.holds(), None, "faceting cannot establish disjointness at tangency");
+    assert_eq!(claim(&e, SolidWord::Clear, 1.0).holds(), Some(false));
     let mut separated = e;
     let b = separated.map.ent_named("b").unwrap().i();
     let x = separated.sketch.points[b].x as usize;
     separated.sketch.params[x].value = 3.0;
-    assert_eq!(claim(&separated, SolidWord::Clear, -1.0).holds, Some(true));
+    assert_eq!(claim(&separated, SolidWord::Clear, -1.0).holds(), Some(true));
 }
 
 #[test]
@@ -363,14 +363,11 @@ fn named_profiles_preserve_sweep_cap_collision_diagnostics() {
 
 #[test]
 fn finite_sweep_endpoints_produce_finite_sample_values() {
-    let mut e = case("sweep_impossible");
-    let sw = e.sketch.solid_claims[0].over.as_mut().unwrap();
-    sw.from = -f64::MAX;
-    sw.to = f64::MAX;
+    let e = read(&source("sweep_impossible").replace("(2mm,3mm)", &format!("({}mm,{}mm)", -f64::MAX, f64::MAX)));
     let v = diagnose::judge_solids(&e.sketch).remove(0);
-    assert_eq!(v.samples, 37);
-    assert!(!v.failed_samples.is_empty());
-    assert!(v.failed_samples.iter().all(|x| x.is_finite()), "{:?}", v.failed_samples);
-    assert_eq!(v.failed_samples.first(), Some(&-f64::MAX));
-    assert_eq!(v.failed_samples.last(), Some(&f64::MAX));
+    assert_eq!(v.samples(), 37);
+    assert!(!v.failed_samples().is_empty());
+    assert!(v.failed_samples().iter().all(|x| x.is_finite()), "{:?}", v.failed_samples());
+    assert_eq!(v.failed_samples().first(), Some(&-f64::MAX));
+    assert_eq!(v.failed_samples().last(), Some(&f64::MAX));
 }

@@ -1104,18 +1104,40 @@ pub const READING_SIG: usize = 6;
 /// constraint list, a terminal report and a program panel cannot spell one statement three ways.
 pub fn describe_solid_claim(sk: &crate::model::Sketch, c: &crate::model::SolidClaim) -> String {
     let name = |i: u32| {
-        sk.solids.get(i as usize).map(|s| s.name.clone()).unwrap_or_else(|| format!("#{i}"))
+        sk.solids
+            .get(i as usize)
+            .map(|s| s.name.clone())
+            .unwrap_or_else(|| format!("#{i}"))
     };
-    let gap = if c.word.takes_gap() {
-        format!("({})", if c.gap.text.is_empty() { reading(SpecKind::Length, c.gap.value) } else { c.gap.text.clone() })
-    } else {
-        String::new()
-    };
+    let gap = c
+        .requirement
+        .gap()
+        .map(|gap| {
+            format!(
+                "({})",
+                if gap.text().is_empty() {
+                    reading(SpecKind::Length, gap.value())
+                } else {
+                    gap.text().to_string()
+                }
+            )
+        })
+        .unwrap_or_default();
     let head = match &c.over {
         None => String::new(),
-        Some(s) => format!("over {} in ({}, {}): ", s.name, crate::syntax::num(s.from), crate::syntax::num(s.to)),
+        Some(s) => format!(
+            "over {} in ({}, {}): ",
+            s.name,
+            crate::syntax::num(s.from),
+            crate::syntax::num(s.to)
+        ),
     };
-    format!("claim {head}{} {}{gap} {}", name(c.a), c.word.as_str(), name(c.b))
+    format!(
+        "claim {head}{} {}{gap} {}",
+        name(c.a),
+        c.requirement.word().as_str(),
+        name(c.b)
+    )
 }
 
 pub fn reading(kind: SpecKind, v: f64) -> String {

@@ -504,20 +504,102 @@ pub struct FaceE {
     pub class: Classes,
 }
 
-/// A claim about two solids (§9.8): `disc clear(2mm) cyl`, `head fits(0.15mm) trap`.
+/// A finite length in the drawing's user units.
+#[derive(Clone, Debug)]
+pub struct Length {
+    value: f64,
+    text: String,
+}
+impl Length {
+    pub fn new(value: f64) -> Result<Self, String> {
+        if !value.is_finite() {
+            return Err("claim gap must be a finite length".into());
+        }
+        Ok(Self {
+            value,
+            text: String::new(),
+        })
+    }
+    pub(crate) fn written(value: f64, text: String) -> Result<Self, String> {
+        Ok(Self {
+            text,
+            ..Self::new(value)?
+        })
+    }
+    pub fn value(&self) -> f64 {
+        self.value
+    }
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+/// Complete argument forms. An inside claim cannot carry a gap.
+#[derive(Clone, Debug)]
+pub enum SolidRequirement {
+    Inside,
+    Fits { gap: Length },
+    Clear { gap: Length },
+}
+impl SolidRequirement {
+    pub fn word(&self) -> crate::constraints::SolidWord {
+        use crate::constraints::SolidWord as W;
+        match self {
+            Self::Inside => W::Inside,
+            Self::Fits { .. } => W::Fits,
+            Self::Clear { .. } => W::Clear,
+        }
+    }
+    pub fn gap(&self) -> Option<&Length> {
+        match self {
+            Self::Inside => None,
+            Self::Fits { gap } | Self::Clear { gap } => Some(gap),
+        }
+    }
+    /// Checked adapter for callers of the former word/gap API.
+    pub(crate) fn from_word(word: crate::constraints::SolidWord, gap: f64) -> Result<Self, String> {
+        use crate::constraints::SolidWord as W;
+        match word {
+            W::Inside if gap == 0.0 => Ok(Self::Inside),
+            W::Inside => Err("inside takes no gap".into()),
+            W::Fits => Ok(Self::Fits {
+                gap: Length::new(gap)?,
+            }),
+            W::Clear => Ok(Self::Clear {
+                gap: Length::new(gap)?,
+            }),
+        }
+    }
+}
+
+/// A parsed, validated claim. Solid references and sweep dimensions are checked before creation.
+///
+/// ```compile_fail
+/// fn change_sweep(sw: &mut gcs_core::model::Sweep) {
+///     sw.from = f64::NAN;
+/// }
+/// ```
 #[derive(Clone, Debug)]
 pub struct SolidClaim {
-    pub word: crate::constraints::SolidWord,
-    pub a: u32,
-    pub b: u32,
-    /// The room it asks for; unused by `inside`, which asks about containment and nothing else.
-    pub gap: Extent,
-    /// **A claim over a sweep** (§9.8, issue #48 item 6): the free variable it is judged along
-    /// and the interval, in the units the kernels read.  `None` judges it at the pose the
-    /// drawing stands in, which is every claim the language had until now.
-    pub over: Option<Sweep>,
-    /// The statement it was written as, so a verdict is reported where the claim is.
-    pub stmt: u32,
+    pub(crate) requirement: SolidRequirement,
+    pub(crate) a: u32,
+    pub(crate) b: u32,
+    pub(crate) over: Option<Sweep>,
+    pub(crate) stmt: u32,
+}
+impl SolidClaim {
+    pub fn requirement(&self) -> &SolidRequirement {
+        &self.requirement
+    }
+    pub fn solids(&self) -> (u32, u32) {
+        (self.a, self.b)
+    }
+    pub fn over(&self) -> Option<&Sweep> {
+        self.over.as_ref()
+    }
+    pub fn stmt(&self) -> u32 {
+        self.stmt
+    }
 }
 
 /// A cap used for placement, checked for surviving material after the drawing solves.
@@ -532,9 +614,43 @@ pub struct SolidBearing {
 /// The interval a claim is swept over: a free variable of the drawing, and where it runs.
 #[derive(Clone, Debug)]
 pub struct Sweep {
-    pub name: String,
-    pub from: f64,
-    pub to: f64,
+    pub(crate) name: String,
+    pub(crate) from: f64,
+    pub(crate) to: f64,
+    pub(crate) dimension: crate::units::Dim,
+}
+impl Sweep {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn from(&self) -> f64 {
+        self.from
+    }
+    pub fn to(&self) -> f64 {
+        self.to
+    }
+    pub fn dimension(&self) -> crate::units::Dim {
+        self.dimension
+    }
+    /// Convex interpolation avoids overflowing the difference of opposite extreme endpoints.
+    pub fn sample(&self, index: usize, intervals: usize) -> Option<f64> {
+        if intervals == 0 || index > intervals {
+            return None;
+        }
+        if index == 0 {
+            return Some(self.from);
+        }
+        if index == intervals {
+            return Some(self.to);
+        }
+        let t = index as f64 / intervals as f64;
+        let value = if self.from.signum() == self.to.signum() {
+            self.from + (self.to - self.from) * t
+        } else {
+            self.from * (1.0 - t) + self.to * t
+        };
+        Some(value)
+    }
 }
 
 /// A picture asked of a solid (§6.11): what of, cut where, drawn in which view.

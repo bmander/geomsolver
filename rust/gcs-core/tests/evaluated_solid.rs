@@ -154,7 +154,7 @@ fn invalid_geometry_policy_and_cycles_return_diagnostics() {
     assert!(valid.volume() > 0.0); // old snapshot stays immutable
     assert!(gltf::checked_glb(&e.sketch, &[i], Policy::Mesh).is_err());
     assert_eq!(
-        clear::judge(&e.sketch, SolidWord::Inside, i, i, 0.0, 0.0).holds,
+        clear::judge(&e.sketch, SolidWord::Inside, i, i, 0.0, 0.0).holds(),
         None
     );
     e.sketch.solids[i].def = SolidDef::Body {
@@ -181,8 +181,8 @@ fn translation_keeps_local_geometry_collision_and_export_triangles() {
     assert_eq!(original.mesh().positions, moved.mesh().positions);
     assert_eq!(original.epsilon(), moved.epsilon());
     let after = clear::judge_evaluated(SolidWord::Clear, &moved, &moved, 0.0);
-    close(before.measured, after.measured);
-    assert_eq!(before.holds, after.holds);
+    close(before.measured().unwrap(), after.measured().unwrap());
+    assert_eq!(before.holds(), after.holds());
     let moved_glb = gltf::checked_glb(&e.sketch, &[i], Policy::Mesh).unwrap();
     let binary = |bytes: Vec<u8>| {
         let len = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
@@ -234,8 +234,8 @@ fn two_solid_queries_keep_relative_placement_under_translation() {
         e.sketch.params[p.y as usize].value -= 1e9;
     }
     let after = clear::judge(&e.sketch, SolidWord::Clear, a, b, 0.1, 0.0);
-    assert_eq!(after.holds, Some(false));
-    close(before.measured, after.measured);
+    assert_eq!(after.holds(), Some(false));
+    close(before.measured().unwrap(), after.measured().unwrap());
 }
 
 #[test]
@@ -337,8 +337,8 @@ fn planar_policy_does_not_inflate_curved_clearance_uncertainty() {
         .unwrap();
     let a = clear::judge_evaluated(SolidWord::Clear, &round, &fine, 1.0);
     let b = clear::judge_evaluated(SolidWord::Clear, &round, &coarse, 1.0);
-    assert_eq!(a.holds, Some(true));
-    assert_eq!(a.holds, b.holds);
-    assert_eq!(a.tolerance, b.tolerance);
-    close(a.measured, b.measured);
+    assert_eq!(a.holds(), Some(true));
+    assert_eq!(a.holds(), b.holds());
+    assert_eq!(a.tolerance().unwrap(), b.tolerance().unwrap());
+    close(a.measured().unwrap(), b.measured().unwrap());
 }

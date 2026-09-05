@@ -149,7 +149,7 @@ fn containment_tests_enclosed_voids_as_well_as_the_exterior() {
         let b = e.map.ent_named("shell").unwrap().i();
         assert_eq!(
             gcs_core::clear::judge(&e.sketch, SolidWord::Inside, a, b, 0.0, solid::REPORT_UNIT)
-                .holds,
+                .holds(),
             Some(!void)
         );
     }

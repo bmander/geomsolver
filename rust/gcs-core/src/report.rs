@@ -171,36 +171,7 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
             Json::Arr(
                 d.solid_claims
                     .iter()
-                    .map(|v| {
-                        let mut o = object([
-                            ("statement", Json::Str(v.text.clone())),
-                            ("measured", if v.measured.is_finite() { Json::Num(v.measured) } else { Json::Null }),
-                            ("tolerance", Json::Num(v.tolerance)),
-                            (
-                                "verdict",
-                                Json::Str(
-                                    match v.holds {
-                                        Some(true) => "holds",
-                                        Some(false) => "refuted",
-                                        None => "undecided",
-                                    }
-                                    .to_string(),
-                                ),
-                            ),
-                        ]);
-                        if v.samples > 0 {
-                            o.set("method", Json::Str("sampling".into()));
-                            o.set("samples", Json::Int(v.samples as i64));
-                            o.set(
-                                "failedSamples",
-                                Json::Arr(v.failed_samples.iter().map(|x| Json::Num(*x)).collect()),
-                            );
-                        }
-                        if let Some(w) = v.worst {
-                            o.set("worst", Json::Num(w));
-                        }
-                        o
-                    })
+                    .map(solid_claim_json)
                     .collect(),
             ),
         ),
@@ -834,4 +805,202 @@ pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String>
     c.claim = v.get("claim").map(|x| x.as_bool()).unwrap_or(false) && kind.claimable();
     c.intrinsic = v.get("intrinsic").map(|x| x.as_bool()).unwrap_or(false);
     Ok(c)
+}
+
+/// The same immutable claim result supplies terminal and JSON reports.
+pub fn solid_claim_text(v: &crate::diagnose::SolidVerdict) -> String {
+    use crate::diagnose::SolidOutcome;
+    let outcome = match v.outcome() {
+        SolidOutcome::SampledSuccess => "sampled success (continuous interval unproven)",
+        SolidOutcome::Holds => "holds",
+        SolidOutcome::Refuted => "refuted",
+        SolidOutcome::Indeterminate => "undecided",
+    };
+    let mut text = format!("{} — {outcome}", v.text());
+    if v.valid_samples().next().is_none() {
+        text += ": no solved valid poses";
+    }
+    if let Some(i) = v
+        .measurement()
+        .and_then(crate::clear::Measurement::interval)
+    {
+        text += &format!(
+            ", measured {} (interval [{}, {}])",
+            crate::syntax::num(i.midpoint()),
+            crate::syntax::num(i.lower()),
+            crate::syntax::num(i.upper())
+        );
+    }
+    if let Some(sw) = v.sweep() {
+        let unit = if sw.dimension() == crate::units::Dim::ANGLE {
+            "deg"
+        } else {
+            ""
+        };
+        text += &format!(
+            ", sampling {} poses ({} failed), {} in [{}{}, {}{}], {} valid",
+            v.samples(),
+            v.failures().count(),
+            sw.name(),
+            crate::syntax::num(sw.from()),
+            unit,
+            crate::syntax::num(sw.to()),
+            unit,
+            v.valid_samples().count()
+        );
+        if let Some(p) = v.worst() {
+            text += &format!(
+                ", {} at {}{}",
+                if v.counterexample().is_some() {
+                    "counterexample"
+                } else {
+                    "worst"
+                },
+                crate::syntax::num(p),
+                unit
+            );
+        }
+    }
+    // Every unresolved pose is disclosed, including failed solves and uncertain geometry.
+    for p in v.poses().iter().filter(|p| p.holds().is_none()) {
+        let reason = match p.evaluation() {
+            Err(reason) => reason.to_string(),
+            Ok(e) => match e.predicate() {
+                crate::clear::Predicate::Unresolved(reason) => reason.clone(),
+                _ => "requested spacing is within geometric uncertainty".into(),
+            },
+        };
+        let at = p
+            .parameter()
+            .map(|t| format!(" at {}", crate::syntax::num(t)))
+            .unwrap_or_default();
+        text += &format!("\n    unresolved{at}: {reason}");
+    }
+    text
+}
+
+fn solid_measurement_json(m: Option<&crate::clear::Measurement>) -> Json {
+    use crate::clear::Measurement;
+    match m {
+        Some(Measurement::Bounded(i)) => object([
+            ("kind", "bounded".into()),
+            ("lower", Json::Num(i.lower())),
+            ("upper", Json::Num(i.upper())),
+        ]),
+        Some(Measurement::Unbounded) => object([("kind", "unbounded".into())]),
+        None => object([("kind", "absent".into())]),
+    }
+}
+
+fn solid_pose_json(p: &crate::diagnose::SolidPose) -> Json {
+    let mut o = object([(
+        "parameter",
+        p.parameter().map(Json::Num).unwrap_or(Json::Null),
+    )]);
+    match p.evaluation() {
+        Err(reason) => {
+            o.set("status", "failed".into());
+            o.set("reason", reason.into());
+        }
+        Ok(e) => {
+            let predicate = e.predicate();
+            o.set("status", "valid".into());
+            o.set("measurement", solid_measurement_json(Some(e.measurement())));
+            o.set(
+                "verdict",
+                match e.holds() {
+                    Some(true) => "holds",
+                    Some(false) => "refuted",
+                    None => "undecided",
+                }
+                .into(),
+            );
+            let mut required = object([
+                ("kind", e.predicate_name().into()),
+                (
+                    "status",
+                    match predicate {
+                        crate::clear::Predicate::Satisfied => "satisfied",
+                        crate::clear::Predicate::Refuted => "refuted",
+                        crate::clear::Predicate::Unresolved(_) => "unresolved",
+                    }
+                    .into(),
+                ),
+            ]);
+            if let crate::clear::Predicate::Unresolved(reason) = predicate {
+                required.set("reason", reason.clone().into());
+            }
+            o.set("requiredPredicate", required);
+        }
+    }
+    o
+}
+
+pub fn solid_claim_json(v: &crate::diagnose::SolidVerdict) -> Json {
+    let mut o = object([
+        ("statement", v.text().into()),
+        ("text", solid_claim_text(v).into()),
+        (
+            "measured",
+            v.measured().map(Json::Num).unwrap_or(Json::Null),
+        ),
+        (
+            "tolerance",
+            v.tolerance().map(Json::Num).unwrap_or(Json::Null),
+        ),
+        ("measurement", solid_measurement_json(v.measurement())),
+        ("verdict", v.outcome().as_str().into()),
+        (
+            "method",
+            if v.sweep().is_some() {
+                "sampling"
+            } else {
+                "single-pose"
+            }
+            .into(),
+        ),
+        ("continuousProof", false.into()),
+        ("validSamples", Json::Int(v.valid_samples().count() as i64)),
+        (
+            "poses",
+            Json::Arr(v.poses().iter().map(solid_pose_json).collect()),
+        ),
+        (
+            "counterexample",
+            v.counterexample()
+                .map(solid_pose_json)
+                .unwrap_or(Json::Null),
+        ),
+    ]);
+    if let Some(sw) = v.sweep() {
+        o.set("samples", Json::Int(v.samples() as i64));
+        o.set(
+            "failedSamples",
+            Json::Arr(v.failed_samples().into_iter().map(Json::Num).collect()),
+        );
+        o.set(
+            "coverage",
+            object([
+                ("parameter", sw.name().into()),
+                ("from", Json::Num(sw.from())),
+                ("to", Json::Num(sw.to())),
+                ("dimension", sw.dimension().name().into()),
+                (
+                    "units",
+                    if sw.dimension() == crate::units::Dim::ANGLE {
+                        "degrees"
+                    } else {
+                        "user"
+                    }
+                    .into(),
+                ),
+                ("method", "uniform-inclusive".into()),
+                ("attempted", Json::Int(v.samples() as i64)),
+            ]),
+        );
+    }
+    if let Some(w) = v.worst() {
+        o.set("worst", Json::Num(w));
+    }
+    o
 }

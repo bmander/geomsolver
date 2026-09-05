@@ -162,7 +162,7 @@ fn issue51_sweep_reports_distinguish_sampling_from_failed_poses() {
     let fixtures =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../gcs-core/tests/fixtures/solid_issue51");
     for (case, failed, verdict) in
-        [("sampling_disclosure", 0, "holds"), ("sweep_impossible", 37, "undecided")]
+        [("sampling_disclosure", 0, "sampled-success"), ("sweep_impossible", 37, "undecided")]
     {
         let path = fixtures.join(format!("{case}.sv"));
         let text = run(&[path.to_str().unwrap()]);
@@ -172,6 +172,8 @@ fn issue51_sweep_reports_distinguish_sampling_from_failed_poses() {
         assert!(text.contains(&format!("({failed} failed)")), "{text}");
         if failed > 0 {
             assert!(text.contains("no solved valid poses"));
+            assert_eq!(text.matches("unresolved at").count(), failed);
+            assert_eq!(text.matches("solve failed:").count(), failed);
         }
         let out = run(&[path.to_str().unwrap(), "--json"]);
         assert!(out.status.success());
@@ -187,6 +189,13 @@ fn issue51_sweep_reports_distinguish_sampling_from_failed_poses() {
         assert_eq!(claim.get("failedSamples").unwrap().arr().len(), failed);
         if failed > 0 {
             assert_eq!(claim.get("measured"), Some(&gcs_core::json::Json::Null));
+            assert_eq!(claim.get("tolerance"), Some(&gcs_core::json::Json::Null));
+            assert_eq!(claim.get("counterexample"), Some(&gcs_core::json::Json::Null));
+            assert!(claim.get("worst").is_none());
+            let poses = claim.get("poses").unwrap().arr();
+            assert_eq!(poses.len(), failed);
+            assert!(poses.iter().all(|p| p.get("status").unwrap().as_str() == "failed"
+                && p.get("reason").unwrap().as_str().starts_with("solve failed:")));
         }
     }
 }

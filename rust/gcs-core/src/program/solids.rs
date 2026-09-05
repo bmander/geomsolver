@@ -112,21 +112,34 @@ fn solid_claim(
     skip: &BTreeSet<StmtId>,
     diags: &mut Vec<Diag>,
 ) {
-    let StmtKind::Relation(r) = &st.kind else { return };
+    let StmtKind::Relation(r) = &st.kind else {
+        return;
+    };
     if skip.contains(&st.id) {
         return;
     }
     let Some(w) = r.form.written() else { return };
-    let Some(word) = crate::constraints::solid_word(&w.word.text) else { return };
+    let Some(word) = crate::constraints::solid_word(&w.word.text) else {
+        return;
+    };
     let mut say = |code: Code, span: Span, m: String| {
-        diags.push(Diag { code, span, stmt: Some(st.id), message: m });
+        diags.push(Diag {
+            code,
+            span,
+            stmt: Some(st.id),
+            message: m,
+        });
     };
     // **it is a claim whether or not it says so.**  These words cannot act — there is no row for
     // them — so a document that writes one without `claim` is saying the same thing, and refusing
     // it would be a rule about spelling rather than about meaning.  Written *with* `claim` is the
     // reading to prefer, and the printer spells it that way.
     if w.ops.len() != 2 {
-        say(Code::E040, st.span, format!("`{}` relates two solids", word.as_str()));
+        say(
+            Code::E040,
+            st.span,
+            format!("`{}` relates two solids", word.as_str()),
+        );
         return;
     }
     let mut ends = Vec::new();
@@ -147,42 +160,76 @@ fn solid_claim(
                 return;
             }
             None => {
-                say(Code::E101, o.span, format!("no such entity: `{}`", o.root.text));
+                say(
+                    Code::E101,
+                    o.span,
+                    format!("no such entity: `{}`", o.root.text),
+                );
                 return;
             }
         }
     }
-    let gap = match (word.takes_gap(), w.args.as_slice()) {
-        (false, []) => Extent { text: String::new(), value: 0.0 },
+    use crate::model::{Length, SolidRequirement};
+    let requirement = match (word.takes_gap(), w.args.as_slice()) {
+        (false, []) => SolidRequirement::Inside,
         (true, [crate::syntax::OpArg::Dim(text, span)]) => {
             match crate::flatten::value_aff(text, &BTreeMap::new(), sk.units) {
-                Ok(v) if v.c.is_finite()
-                    && v.dim.require(crate::units::Dim::LENGTH, word.as_str()).is_ok() =>
+                Ok(v)
+                    if v.c.is_finite()
+                        && v.dim
+                            .require(crate::units::Dim::LENGTH, word.as_str())
+                            .is_ok() =>
                 {
-                    Extent { text: text.trim().to_string(), value: v.c }
+                    let gap = Length::written(v.c, text.trim().to_string()).unwrap();
+                    match word {
+                        crate::constraints::SolidWord::Fits => SolidRequirement::Fits { gap },
+                        crate::constraints::SolidWord::Clear => SolidRequirement::Clear { gap },
+                        _ => unreachable!(),
+                    }
                 }
                 _ => {
-                    say(Code::E103, *span, format!("`{}` asks for a finite length", word.as_str()));
+                    say(
+                        Code::E103,
+                        *span,
+                        format!("`{}` asks for a finite length", word.as_str()),
+                    );
                     return;
                 }
             }
         }
         (true, []) => {
-            say(Code::E040, st.span,
-                format!("`{}` asks for room: `{}(2mm)`", word.as_str(), word.as_str()));
+            say(
+                Code::E040,
+                st.span,
+                format!(
+                    "`{}` asks for room: `{}(2mm)`",
+                    word.as_str(),
+                    word.as_str()
+                ),
+            );
             return;
         }
         _ => {
-            say(Code::E040, st.span, format!("`{}` takes {}", word.as_str(),
-                if word.takes_gap() { "exactly one length argument" } else { "no arguments" }));
+            say(
+                Code::E040,
+                st.span,
+                format!(
+                    "`{}` takes {}",
+                    word.as_str(),
+                    if word.takes_gap() {
+                        "exactly one length argument"
+                    } else {
+                        "no arguments"
+                    }
+                ),
+            );
             return;
         }
     };
     sk.solid_claims.push(crate::model::SolidClaim {
-        word,
+        requirement,
         a: ends[0],
         b: ends[1],
-        gap,
         over: over.cloned(),
         stmt: st.id.0,
     });
@@ -479,14 +526,23 @@ fn sweep_of_claim(
     diags: &mut Vec<Diag>,
 ) -> Option<crate::model::Sweep> {
     let mut say = |code: Code, span: Span, m: String| {
-        diags.push(Diag { code, span, stmt: Some(st.id), message: m });
+        diags.push(Diag {
+            code,
+            span,
+            stmt: Some(st.id),
+            message: m,
+        });
     };
     let name = crate::syntax::ref_text(&c.formal);
     // **a free variable, and nothing else**: a `param` is a number the document already fixed,
     // and sweeping it would be sweeping a constant
     if !sk.free_vars.contains_key(&name) {
         if res.lookup(&c.formal).is_some() {
-            say(Code::E040, c.formal.span, format!("`{name}` is geometry, not a free variable"));
+            say(
+                Code::E040,
+                c.formal.span,
+                format!("`{name}` is geometry, not a free variable"),
+            );
         } else {
             say(
                 Code::E040,
@@ -504,12 +560,28 @@ fn sweep_of_claim(
     // degrees; its readers' affine coefficients own the radians conversion into kernels.
     // Check the inferred variable dimension before assigning either endpoint.
     let mut num = |a: &crate::syntax::Arg, what: &str| -> Option<f64> {
-        let crate::syntax::Arg::Dim { text, span } = a else { return None };
+        let crate::syntax::Arg::Dim { text, span } = a else {
+            say(
+                Code::E103,
+                st.span,
+                format!(
+                    "`{what}` for `{name}` must be a finite {}",
+                    dimension.name()
+                ),
+            );
+            return None;
+        };
         match crate::flatten::value_aff(text, &BTreeMap::new(), sk.units) {
             Ok(v) if v.c.is_finite() && v.dim.require(dimension, &name).is_ok() => Some(v.c),
             Ok(_) => {
-                say(Code::E103, *span,
-                    format!("`{what}` for `{name}` must be a finite {}", dimension.name()));
+                say(
+                    Code::E103,
+                    *span,
+                    format!(
+                        "`{what}` for `{name}` must be a finite {}",
+                        dimension.name()
+                    ),
+                );
                 None
             }
             Err(e) => {
@@ -519,7 +591,12 @@ fn sweep_of_claim(
         }
     };
     let (from, to) = (num(&c.from, "from")?, num(&c.to, "to")?);
-    Some(crate::model::Sweep { name, from, to })
+    Some(crate::model::Sweep {
+        name,
+        from,
+        to,
+        dimension,
+    })
 }
 
 /// `boss on cyl`: an `on` whose two operands are both solids.  Asked of the *resolver*, which

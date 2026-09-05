@@ -266,29 +266,7 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             // the claims about solids, in the core's own words: what was asked, what was
             // measured, and — for one the faceting cannot decide — that it could not
             for v in &d.solid_claims {
-                let sampling = if v.samples > 0 {
-                    format!(", sampling {} poses ({} failed)", v.samples, v.failed_samples.len())
-                } else {
-                    String::new()
-                };
-                if v.samples > 0 && v.failed_samples.len() == v.samples {
-                    println!("  {} — undecided: no solved valid poses{}", v.text, sampling);
-                    continue;
-                }
-                let at = match v.worst {
-                    Some(w) => format!(", worst at {}", gcs_core::syntax::num(w)),
-                    None => String::new(),
-                } + &sampling;
-                let m = gcs_core::io::reading(SpecKind::Length, v.measured);
-                match v.holds {
-                    Some(true) => println!("  {} — holds, measured {m}{at}", v.text),
-                    Some(false) => println!("  {} — refuted, measured {m}{at}", v.text),
-                    None => println!(
-                        "  {} — undecided: measured {m}, and the faceting is good to {}{at}",
-                        v.text,
-                        gcs_core::io::reading(SpecKind::Length, v.tolerance)
-                    ),
-                }
+                println!("  {}", gcs_core::report::solid_claim_text(v));
             }
             for w in &d.warnings {
                 println!("  note: {w}");

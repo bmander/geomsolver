@@ -53,12 +53,12 @@ fn a_clearance_is_measured_and_reported() {
                       block("B", 13.0, 0.0, 10.0, -5.0, 0.0));
     let v = verdicts(&read(&src));
     assert_eq!(v.len(), 2);
-    assert!((v[0].measured - 3.0).abs() < 1e-6, "three apart, and got {}", v[0].measured);
-    assert_eq!(v[0].holds, Some(true), "two of clearance holds");
-    assert_eq!(v[1].holds, Some(false), "four does not");
+    assert!((v[0].measured().unwrap() - 3.0).abs() < 1e-6, "three apart, and got {}", v[0].measured().unwrap());
+    assert_eq!(v[0].holds(), Some(true), "two of clearance holds");
+    assert_eq!(v[1].holds(), Some(false), "four does not");
     // **what a reader is owed is the measurement**, not a yes or no: `clear(4mm)` failing by a
     // millimetre and by a metre are different drawings
-    assert!((v[1].measured - 3.0).abs() < 1e-6);
+    assert!((v[1].measured().unwrap() - 3.0).abs() < 1e-6);
 }
 
 #[test]
@@ -74,10 +74,10 @@ fn containment_is_a_question_about_the_object() {
         block("B", 5.0, 5.0, 10.0, -7.0, -3.0)
     );
     let v = verdicts(&read(&src));
-    assert_eq!(v[0].holds, Some(true), "the small one is inside the big one");
-    assert_eq!(v[1].holds, Some(false), "and the big one is not inside the small one");
-    assert_eq!(v[2].holds, Some(true), "with a millimetre to spare all round");
-    assert_eq!(v[3].holds, Some(false), "but not four");
+    assert_eq!(v[0].holds(), Some(true), "the small one is inside the big one");
+    assert_eq!(v[1].holds(), Some(false), "and the big one is not inside the small one");
+    assert_eq!(v[2].holds(), Some(true), "with a millimetre to spare all round");
+    assert_eq!(v[3].holds(), Some(false), "but not four");
 }
 
 #[test]
@@ -129,18 +129,18 @@ claim arm clear(1mm) wall
     let v = verdicts(&e);
     assert_eq!(v.len(), 2, "the swept claim and the one judged at the pose");
     let swept = &v[0];
-    let worst = swept.worst.expect("a swept claim reports its worst pose");
+    let worst = swept.worst().expect("a swept claim reports its worst pose");
     assert!((worst - 40.0).abs() < 1.0, "least room at the far end of the travel: {worst}");
     // at `reach = 40` the arm's far face is at 44 and the wall starts at 50
-    assert!((swept.measured - 6.0).abs() < 0.2, "six of room at the worst pose: {}", swept.measured);
-    assert_eq!(swept.holds, Some(true), "which is still a millimetre clear");
+    assert!((swept.measured().unwrap() - 6.0).abs() < 0.2, "six of room at the worst pose: {}", swept.measured().unwrap());
+    assert_eq!(swept.holds(), Some(true), "which is still a millimetre clear");
     // **the sweep is what makes it a different question**: judged at the pose alone the same
     // claim measures the travel it happens to stand at, which is not what a reader asked
     assert!(
-        v[1].measured > swept.measured + 1.0,
+        v[1].measured().unwrap() > swept.measured().unwrap() + 1.0,
         "at rest it reads {} and over the travel {}",
-        v[1].measured,
-        swept.measured
+        v[1].measured().unwrap(),
+        swept.measured().unwrap()
     );
 }
 
