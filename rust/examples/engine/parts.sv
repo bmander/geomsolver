@@ -80,7 +80,7 @@ component Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
   point b hint(x: o.x + x1, y: o.y + y0)
   point c hint(x: o.x + x1, y: o.y + y1)
   point d hint(x: o.x + x0, y: o.y + y1)
-  line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close
+  profile = line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close
   o distance(x0, along: x) a
   o distance(y0, along: y) a
   o distance(x1, along: x) b

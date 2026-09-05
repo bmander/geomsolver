@@ -415,7 +415,7 @@ curve e = Unwind(base, datum, phase: a0).p over u in (u0, u1)
 
 ### 6.6 Chains **[0.4]**
 
-Sugar, and only sugar: a chain writes a run of declarations and the constraints *between* them in one ordered breath, and it elaborates to exactly the statements a person would otherwise write out. It is a parser construct — nothing downstream of the parser knows it exists.
+A chain writes a run of declarations and the constraints *between* them in one ordered breath. Its geometry and constraints elaborate to exactly the statements a person would otherwise write out. **[0.20]** An optional `NAME =` binds the resulting ordered traversal: an open chain, or a closed loop when the expression ends in `-> close`. Naming the traversal adds no coordinates or equations.
 
 ```
 horizontal line bottom(b1, b2) -> tangent
@@ -424,18 +424,50 @@ vertical line right(r1, r2) -> tangent close
 ```
 
 ```
-CHAIN  ::= LINK (JOINT LINK)* ["->" INFIX* "close"]
+CHAIN  ::= [NAME "="] LINK (JOINT LINK)* ["->" INFIX* "close"]
 LINK   ::= PREFIX* DECL | REF
 PREFIX ::= a constraint name whose spec is one entity slot     // horizontal, vertical
 JOINT  ::= "->" INFIX* ["->"] | INFIX+ ["->"]                  // at least one marker or word
 INFIX  ::= "tangent" | "equal" | a constraint name whose spec is two entity slots
 ```
 
+**A chain is a value you can name [0.20].**
+
+```solvent
+component Box(/* parameters */) {
+  // Points and dimensions are declared in this scope as usual.
+  profile = line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close
+}
+boss: Box(/* arguments */)
+solid iboss(boss.profile, depth: 8mm)
+```
+
+The binding is an ordinary name in the enclosing scope. A component may expose several named
+chains, reached through its instance (`boss.profile`); no name is special and no default is
+inferred. The individual declarations remain in that same scope (`boss.ab`), rather than moving
+under the traversal. Anonymous links are allowed: `profile = line -> line -> line -> close`.
+In a swept loop, anonymous links name their sides `edge0`, `edge1`, … in traversal order,
+skipping names already used by explicit links. Source offsets never become public side names.
+
+A named chain MUST traverse lines or arcs and MUST thread every adjacent pair with `->`;
+relations without a threaded joint can still form an unnamed chain of statements. Its links use
+all the existing prefix, joint, endpoint-aliasing and forward-reference rules. A named expression
+MUST finish before a block's closing brace; it cannot end in a joint awaiting the next copy.
+Bindings within repeated components and blocks are independent, just like their geometry.
+
+A named closed loop is usable directly wherever a sweep takes its section (§6.9), and is checked
+by the ordinary face rules (§6.8). The closure marker records topology, not geometric validity:
+planarity is checked during elaboration and the swept profile's geometric validity after solving,
+so a poor hint is not rejected as the final shape. An open chain is not a sweep section (**E080**).
+A `face` list may name either kind of traversal, expanding its links in place and in order;
+`face(trail, -> close)` explicitly closes an open chain using the face's existing closing rule.
+Naming a chain never closes an endpoint gap by itself.
+
 **[0.8] Threading is a statement, not an inference.** The `->` marker on a joint says the two links beside it share a boundary point, threaded left-to-right along the traversal below; its absence says they do not. `->` alone is the plain corner — this is what `to` said through 0.7, and `to` is retired into the marker. `-> INFIX` is a corner that also states the relation, at the point just threaded. `INFIX` alone is the relation and no corner: `a_br equal a_tr equal a_tl` says three arcs are the same size and nothing whatever about where they meet, and welding them would be an invention. Because each joint states its own threading, a chain may mix declarations and names freely — `line l1(a, b) perpendicular line l2(c, d)` declares two separate lines at a right angle, and `line l1(a, k.start) -> tangent k` extends a fresh contour onto geometry that is already there.
 
 - A **prefix** desugars to that constraint applied to the declaration it stands before: `horizontal line bottom(b1, b2)` is `line bottom(b1, b2)` plus `horizontal(bottom)`. Eligibility is registry-derived — one entity slot and nothing else — so a new unary constraint joins the grammar without the grammar changing.
 - **[0.8] A joint may state several relations.** `A -> equal angle(30deg) B` states both between the two links, at the corner the marker threads; each word desugars to a statement of its own, with its own identity and span. The marker may stand on either side of the words, or both — `A -> equal -> B` is the one joint `A -> equal B` is — and words with no marker state their relations and weld nothing. The words need no punctuation because fixity sorts them: a word is read at the joint until one opens the next link — an element keyword, or a prefix word standing before one — so in `-> tangent horizontal line b` the tangency is the corner's and the levelling is the link's. Deleting one relation splices its word out and leaves the rest standing; the whole joint deleted at once falls back to what a single word's deletion would be — the corner stays, or the statement breaks. A trailing placement (`at (t, r)`, §13.1) qualifies the line's **one** relation; a line stating several relations refuses it, there being no way to say which.
-- A **joint** stands between two links and says how they meet. Constraints return nothing, so a chain reads like a chained comparison, not an expression: each joint binds its two neighbours, and there is no precedence anywhere. `a equal b equal c` is therefore two statements, not three, and n operands give n−1 — the same rank as any other spanning set over the same elements, stated as a path rather than a star. An INFIX word is the two-argument counterpart of PREFIX, derived from the same registry: it desugars to that constraint over the pair, positionally, and MUST fit both — a word whose slots the pair cannot fill is an error, not a guess.
+- A **joint** stands between two links and says how they meet. Each joint constrains its two neighbours without changing which links the chain traverses; the optional binding names that traversal. Joint words have no operator precedence. `a equal b equal c` is therefore two statements, not three, and n operands give n−1 — the same rank as any other spanning set over the same elements, stated as a path rather than a star. An INFIX word is the two-argument counterpart of PREFIX, derived from the same registry: it desugars to that constraint over the pair, positionally, and MUST fit both — a word whose slots the pair cannot fill is an error, not a guess.
 - **[0.5]** `equal` is **polymorphic**: `equal_length` between lines, `equal_radius` between circles or arcs, and an error between one of each, since no constraint equates a length to a radius. Like `tangent` it is drafting vocabulary rather than a constraint name, so no registry lookup can resolve it — the pair it stands between does. Where a chain declares its elements the keywords settle it as the program is read; where a chain names them it cannot be settled until the names are resolved, since a name may be declared further down the body (P2) or come from a component, so the word travels to elaboration and is settled there. Both report the same error.
 - **Threading.** **[0.8]** A link a marker reaches is a line or an arc — an element with an entry and an exit, read left to right (`p1 → p2`; CCW, `start → end`); a kind with no boundary points — a circle — cannot be reached by a marker, though it may stand in a chain no marker touches. At each `->` the shared point may be named by one side, by both in agreement (two different names are an error), or — between two declarations — by nobody: the chain then mints it, the earlier-built side's boundary being an anonymous child with a name (its dotted path, §6.1), which fills the later side's slot. `line l1 -> line l2` is therefore two lines and three points, one shared. A link that only *names* an element offers no list to read or fill and no kind to read a boundary field off — so at a corner with one, the declared side MUST name the shared point, usually by the existing element's own child (`k.start`). An end no marker reaches is an implicit child like any other unwritten slot (§6.1).
 - `-> close` after the last link seals the loop: the last exit threads to the first entry, and a word beside the marker says how they meet there. A loop is a thread, so a `close` without the marker is an error.
@@ -491,7 +523,7 @@ face hole_f(hole)                        // one circle, which is a loop by itsel
 face bore_f(b_mouth, bore_r, b_head, b_axis)
 ```
 
-A face is a **Declaration** (§4.2). It adds no coordinate, unknown, equation or freedom, and its existing edges keep their own names: naming them is aliasing (P1), not constraint, so deleting an edge deletes the face. Its list is a `List` slot like a spline's control polygon, so there is no arity to conjure children from and a bare `face f` is refused (**E080**, the face's own code saying what a face is, where a bare `spline s` is §6.1's E103).
+A face is a **Declaration** (§4.2). It adds no coordinate, unknown, equation or freedom, and its existing edges keep their own names: naming them is aliasing (P1), not constraint, so deleting an edge deletes the face. A named chain (§6.6) in its list contributes its ordered edges. Its list is a `List` slot like a spline's control polygon, so there is no arity to conjure children from and a bare `face f` is refused (**E080**, the face's own code saying what a face is, where a bare `spline s` is §6.1's E103).
 
 **A face is one closed loop.** Consecutive edges — and the last with the first — MUST share an endpoint, and sharing is asked of the **points**, which is aliasing and cannot be argued with: two neighbours that share none are **E080** naming both. The loop is walked in the order it is written. A `circle` is a whole loop by itself and MUST stand alone in one (E080); an edge that is neither a line, an arc, a circle nor a point is E080 at the edge.
 
@@ -1337,11 +1369,13 @@ type           = "Int" | "Scalar" | "Length" | "Angle" | "Side"      (* §4.1 [0
                | "Point" | "Line" | "Circle" | "Plane" | "Path"
                | "Face" | "Solid" ;    (* [0.18]; `Frame` was folded into `Plane` in 0.15 *)
 
-statement      = decl | constraint | hint | gauge | block | path_decl | style_rule
+statement      = decl | constraint | hint | gauge | block | path_decl | style_rule | chain
                | unit_decl | frag | in_block | body_rel | derived_decl ;   (* [0.18] *)
 in_block       = "in" ref "{" { statement } "}" ;         (* membership, written once: §6.7 *)
 style_rule     = "style" "." IDENT "{" { IDENT ":" value { ";" } } "}" ;   (* §13.2; `display: none | inline` *)
 unit_decl      = "unit" IDENT ;                                           (* §3.3.2 *)
+chain          = [ IDENT "=" ] link { joint link } [ "->" { infix } "close" ] ;
+(* link, joint and infix follow §6.6; a named chain threads every joint, §6.6 [0.20]. *)
 
 (* §3.3.1: a number may carry a unit, and feet-and-inches is ONE literal — a space is what
    tells the readings apart, exactly as it does in a mixed fraction. *)

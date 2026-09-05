@@ -539,6 +539,26 @@ nothing to it. The edges are given in traversal order and each must share a poin
 refused. A face has no inner loops, because a hole is not a hole in a face — it is a solid
 `through` the body.
 
+**Name the chain where you draw it.** A contour can bind its whole traversal, so no second
+statement needs to list its edges again:
+
+```solvent
+profile = line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close
+solid block(profile, depth: 30mm)
+```
+
+With the rectangle's points and dimensions above, this gives the same volume, 72000, and adds
+no unknowns or equations. In a component the chain is a normal member:
+`solid iboss(boss.profile, depth: 8mm)`. The constituent edge is still `boss.ab`. The two `Box`
+helpers in the engine and V-twin libraries expose `profile` this way.
+
+`trail = line ab(a, b) -> line bc(b, c) -> line cd(c, d)` names an **open chain**. A sweep
+requires a closed loop, so use `face(trail, -> close)` to supply the missing closing edge, or
+finish the original chain with `-> line da(d, a) -> close`. Every joint in a named chain must
+carry `->`; its prefix and joint constraints work just as in an unnamed chain. Anonymous links
+also work: `profile = line -> line -> line -> close` names a triangle, whose dimensions and pose
+remain to be constrained. Named chains can stand in plane blocks and repeated components.
+
 **A face closes itself.** The brackets hold a *walk*, and a **point** in the list is a corner the
 walk goes straight to and straight on from; `-> close` — the chain's own word — seals the run back
 to the first item. So the rectangle above needs no `ab` and no `da`:

@@ -23,6 +23,11 @@ document and the core's compiled-in library (`library.rs`) resolves it in the br
 over the standard library's `std` (`rust/lib/std.sv`), whose `ThreeViews` lays out the three
 principal views from one grounded point.
 
+Named chains (issue #49.3, Solvent §6.6) bind `profile = line -> … -> close` as an ordinary
+component member. A closed loop is a sweep section (`solid body(part.profile, depth: 8mm)`);
+open chains can contribute their edges to `face(trail, -> close)`. Both retain the original
+edge identities. The V-twin frame's rectangle sweeps use the `Box` helpers' named profiles.
+
 The binding contains no algorithm.  It generates its constraint classes from the core's own
 registry, so a new constraint type appears in the browser with nothing to change on that side.
 The one place two implementations are still compared is

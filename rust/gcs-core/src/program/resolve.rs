@@ -15,6 +15,9 @@ pub(super) struct Resolver {
     /// only the declaration to ask).  `None` where a slot holds a seed or nothing, since the
     /// point it mints does not exist until the parent is built.
     pub(super) kids: BTreeMap<String, Vec<Option<Ref>>>,
+    /// Source-level traversals. Closed chains also resolve to faces; open chains can
+    /// contribute their edges to an explicitly closed face without inventing geometry here.
+    pub(super) chains: BTreeMap<String, crate::syntax::NamedChain>,
 }
 
 impl Resolver {

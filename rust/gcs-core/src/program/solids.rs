@@ -8,6 +8,72 @@ use crate::style::Classes;
 use crate::syntax::{Span, StmtId};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// A named closed traversal uses the existing face representation. Its joints have
+/// already shared endpoints, so face construction must not manufacture a closing edge.
+fn chain_face(c: &crate::syntax::NamedChain) -> Decl {
+    Decl {
+        kind: EntKind::Face, name: c.name.clone(),
+        children: vec![c.links.iter().cloned().map(Kid::Ref).collect()],
+        seed: Vec::new(), seed_text: Vec::new(), seed_spans: Vec::new(),
+        unseeded: false, seed_explicit: Vec::new(), closed: false, knots: None,
+        curve: None, computed: None, class: Classes::default(), seed_at: None,
+        seed_names: Vec::new(), attitude: crate::syntax::Attitude::Page,
+        sweep: None, membership: crate::syntax::Membership::default(),
+    }
+}
+
+fn validate_chain(
+    sk: &Sketch,
+    res: &Resolver,
+    c: &crate::syntax::NamedChain,
+    st: &Stmt,
+    diags: &mut Vec<Diag>,
+) -> bool {
+    let mut previous = None;
+    for r in &c.links {
+        let e = res.lookup(r).filter(|e| e.i() < sk.count(e.kind))
+            .and_then(|e| super::resolve::follow(sk, e, &r.path).ok());
+        let pair = e.filter(|e| matches!(e.kind, EntKind::Line | EntKind::Arc))
+            .and_then(|e| crate::model::edge_ends(sk, e));
+        let Some((start, end)) = pair else {
+            diags.push(Diag {
+                code: Code::E080, span: r.span, stmt: Some(st.id),
+                message: format!("a named chain traverses lines and arcs; `{}` is not one",
+                    crate::syntax::ref_text(r)),
+            });
+            return false;
+        };
+        if previous.is_some_and(|p| p != start) {
+            diags.push(Diag {
+                code: Code::E080, span: r.span, stmt: Some(st.id),
+                message: format!("`{}` does not share the preceding link's endpoint in chain `{}`",
+                    crate::syntax::ref_text(r), c.name.key().text),
+            });
+            return false;
+        }
+        previous = Some(end);
+    }
+    true
+}
+
+/// Expanded references keep the source's last field as the boundary's public name.
+fn boundary_name(r: &crate::syntax::Ref) -> &str {
+    match r.path.last() {
+        Some(crate::syntax::Seg::Field(n)) => &n.text,
+        _ => r.root.text.rsplit('.').next().unwrap_or(&r.root.text),
+    }
+}
+
+fn fresh_boundary_name(prefix: &str, next: &mut usize, reserved: &BTreeSet<&str>) -> String {
+    loop {
+        let name = format!("{prefix}{next}");
+        *next += 1;
+        if !reserved.contains(name.as_str()) {
+            return name;
+        }
+    }
+}
+
 /// Apply solid claims after body construction, preserving statement spans for diagnostics.
 pub(super) fn solid_claims(
     sk: &mut Sketch,
@@ -481,14 +547,33 @@ pub(super) fn solids(
     diags: &mut Vec<Diag>,
 ) {
     let has = body.iter().any(|st| {
-        matches!(&st.kind, StmtKind::Decl(d) if d.kind.spatial()) && !skip.contains(&st.id)
+        (matches!(&st.kind, StmtKind::Decl(d) if d.kind.spatial())
+            || matches!(&st.kind, StmtKind::Chain(_))) && !skip.contains(&st.id)
     });
     if !has {
         return;
     }
     // -- faces --------------------------------------------------------------
     for st in body {
-        let StmtKind::Decl(d) = &st.kind else { continue };
+        let chain_decl;
+        let d = match &st.kind {
+            StmtKind::Decl(d) => d.as_ref(),
+            StmtKind::Chain(c) if !skip.contains(&st.id) => {
+                if !validate_chain(sk, res, c, st, diags) {
+                    if c.closed {
+                        res_forget(res, &c.name.key().text);
+                    }
+                    continue;
+                }
+                if !c.closed {
+                    map.record(st, Made::Gauge);
+                    continue;
+                }
+                chain_decl = chain_face(c);
+                &chain_decl
+            }
+            _ => continue,
+        };
         if d.kind != EntKind::Face || skip.contains(&st.id) {
             continue;
         }
@@ -762,8 +847,25 @@ fn build_face(
     let mut fail = |span: Span, m: String| {
         diags.push(Diag { code: Code::E080, span, stmt: Some(stmt), message: m });
     };
-    let kids = d.children.first().map(Vec::as_slice).unwrap_or(&[]);
-    if kids.is_empty() {
+    let mut refs = Vec::new();
+    for k in d.children.first().into_iter().flatten() {
+        let Kid::Ref(r) = k else {
+            fail(span, "a face names the edges it is bounded by; a seed places a point".into());
+            return None;
+        };
+        let chain = res.chains.get(&r.root.text).filter(|_| r.path.is_empty());
+        let count = chain.map_or(1, |c| c.links.len());
+        if count > crate::flatten::MAX_FLAT.saturating_sub(refs.len()) {
+            fail(span, "a face expands to too many chain edges".into());
+            return None;
+        }
+        if let Some(c) = chain {
+            refs.extend(&c.links);
+        } else {
+            refs.push(r);
+        }
+    }
+    if refs.is_empty() {
         fail(span, "a face is a loop of edges: `face f(ab, bc, cd, da)`".into());
         return None;
     }
@@ -772,12 +874,10 @@ fn build_face(
         entity: EntRef,
         name: String,
     }
-    let mut items: Vec<Item> = Vec::with_capacity(kids.len());
-    for k in kids {
-        let Kid::Ref(r) = k else {
-            fail(span, "a face names the edges it is bounded by; a seed places a point".into());
-            return None;
-        };
+    let reserved: BTreeSet<&str> = refs.iter().map(|r| boundary_name(r)).collect();
+    let mut anonymous = 0;
+    let mut items: Vec<Item> = Vec::with_capacity(refs.len());
+    for r in &refs {
         let Some(e) = res.lookup(r) else {
             diags.push(Diag {
                 code: Code::E101,
@@ -791,11 +891,15 @@ fn build_face(
         // rewritten `lid` into `cyl.lid`, and a face path is already prefixed by the solid it
         // belongs to — so keeping the whole thing spells `cyl.body.block.cyl.lid`, saying
         // "cylinder" twice about one face.  The leaf is what the source wrote.
-        let full = crate::syntax::ref_text(r);
-        let leaf = full.rsplit('.').next().unwrap_or(&full).to_string();
+        let leaf = boundary_name(r);
+        let name = if leaf.starts_with('#') {
+            fresh_boundary_name("edge", &mut anonymous, &reserved)
+        } else {
+            leaf.to_string()
+        };
         match e.kind {
             EntKind::Line | EntKind::Arc | EntKind::Circle | EntKind::Point => {
-                items.push(Item { entity: e, name: leaf });
+                items.push(Item { entity: e, name });
             }
             _ => {
                 fail(
@@ -955,13 +1059,7 @@ fn build_face(
         sk.lines[li].class = Classes::one("closure");
         edges.push(EntRef::line(li));
         // A generated side must not merge with a named side in reports or face selection.
-        names.push(loop {
-            let name = format!("close{minted}");
-            minted += 1;
-            if !reserved.contains(name.as_str()) {
-                break name;
-            }
-        });
+        names.push(fresh_boundary_name("close", &mut minted, &reserved));
     }
     // **three corners, or a curve.**  A loop of straight runs between two points is a line
     // drawn twice, and a face with no area is a solid with no volume — worth saying here,
@@ -1026,8 +1124,25 @@ fn build_solid(
     let mut ops: Vec<EntRef> = Vec::new();
     for k in kids {
         let e = match k {
+            Kid::Ref(r) if !r.path.is_empty() && res.chains.contains_key(&r.root.text) => {
+                diags.push(Diag {
+                    code: Code::E080, span: r.span, stmt: Some(st.id),
+                    message: format!("`{}` names a chain, not a member of that chain; \
+                        its named links belong to the enclosing component", r.root.text),
+                });
+                return None;
+            }
             Kid::Face { decl: face, span } => {
                 EntRef::face(build_face(sk, res, face, st.id, *span, diags)?)
+            }
+            Kid::Ref(r) if res.chains.get(&r.root.text).is_some_and(|c| !c.closed) => {
+                diags.push(Diag {
+                    code: Code::E080, span: r.span, stmt: Some(st.id),
+                    message: format!("`{}` is an open chain: a sweep needs a closed loop; \
+                        finish the chain with `-> close` or write `face({}, -> close)`",
+                        r.root.text, r.root.text),
+                });
+                return None;
             }
             Kid::Ref(r) => match res.lookup(r) {
                 Some(e) => e,

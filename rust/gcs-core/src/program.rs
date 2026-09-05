@@ -170,20 +170,24 @@ pub fn elaborate(p: &Program) -> Elaborated {
     }
     sk.set_sheet(sheet);
     for st in &body {
-        let StmtKind::Decl(d) = &st.kind else { continue };
+        let (name, kind) = match &st.kind {
+            StmtKind::Decl(d) => (&d.name, d.kind),
+            StmtKind::Chain(c) => (&c.name, EntKind::Face),
+            _ => continue,
+        };
         // the *key*, which is resolution's question: an anonymous key is its own offset and a
         // copy's carries its prefix, so only a name the source wrote twice can actually collide
-        let key = &d.name.key().text;
+        let key = &name.key().text;
         if let Some(&was) = res.declared_at.get(key) {
             // …but the message shows what the source calls it, and spells the kind where it
             // calls it nothing, so a key cannot leak here even if that argument ever breaks
-            let who = d
-                .name
-                .shown()
-                .map_or_else(|| crate::syntax::decl_head(d.kind, &d.name), |n| n.text.clone());
+            let who = name.shown().map_or_else(
+                || crate::syntax::decl_head(kind, name),
+                |n| n.text.clone(),
+            );
             diags.push(Diag {
                 code: Code::E001,
-                span: d.name.span(),
+                span: name.span(),
                 stmt: Some(st.id),
                 message: format!(
                     "`{who}` is declared twice; the first is at line {}",
@@ -193,19 +197,24 @@ pub fn elaborate(p: &Program) -> Elaborated {
             skip.insert(st.id);
             continue; // the second, so every later reference still resolves to the first
         }
-        let n = count.entry(d.kind).or_insert(0);
-        res.of.insert(key.clone(), EntRef::new(d.kind, *n as usize));
-        res.declared_at.insert(key.clone(), d.name.span());
-        res.kids.insert(
-            key.clone(),
-            d.children
-                .iter()
-                .map(|g| match g.first() {
+        res.declared_at.insert(key.clone(), name.span());
+        if let StmtKind::Chain(c) = &st.kind {
+            res.chains.insert(key.clone(), c.clone());
+            if !c.closed {
+                continue; // an open traversal binds a name but allocates no face
+            }
+        }
+        let n = count.entry(kind).or_insert(0);
+        res.of.insert(key.clone(), EntRef::new(kind, *n as usize));
+        if let StmtKind::Decl(d) = &st.kind {
+            res.kids.insert(
+                key.clone(),
+                d.children.iter().map(|g| match g.first() {
                     Some(crate::ir::Kid::Ref(r)) if g.len() == 1 => Some(r.clone()),
                     _ => None,
-                })
-                .collect(),
-        );
+                }).collect(),
+            );
+        }
         *n += 1;
     }
 

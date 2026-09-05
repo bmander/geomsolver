@@ -203,9 +203,9 @@ component Frame(front: plane, o: point, ref: line) {
   param zch1 = wch / 2
 
   solid stock(face(bottom, edge_r, cham_r, topline, cham_l, edge_l), from: zb, to: zf)
-  solid foot(face(ft.ab, ft.bc, ft.cd, ft.da), from: zfoot, to: zb)
+  solid foot(ft.profile, from: zfoot, to: zb)
   solid bboss(face(bcirc), from: zbb, to: zb)
-  solid iboss(face(boss.ab, boss.bc, boss.cd, boss.da), from: -bossz / 2, to: bossz / 2)
+  solid iboss(boss.profile, from: -bossz / 2, to: bossz / 2)
   solid bpkt(face(bp), from: zbb, to: zpkt)
   solid shaft(face(sh), from: zshaft, to: zf)
   solid boltR(face(r.bolt), from: zb, to: zf)
@@ -218,7 +218,7 @@ component Frame(front: plane, o: point, ref: line) {
   solid portLe(face(l.exhaust), from: 0mm, to: zf)
   // the plenum: the channel between its two arcs, closed by a radial cap at each intake port
   solid plenum(face(ch_in, co1, ch_out, ci0), from: zch0, to: zch1)
-  solid passage_s(face(passage.ab, passage.bc, passage.cd, passage.da), from: zch0, to: zch1)
+  solid passage_s(passage.profile, from: zch0, to: zch1)
   solid ventR(face(vr0.p, vr1.p, vr2.p, vr3.p, -> close), from: zch0, to: zch1)
   solid ventL(face(vl0.p, vl1.p, vl2.p, vl3.p, -> close), from: zch0, to: zch1)
   solid cplh(face(cph0.p, cph1.p, cph2.p, cph3.p, -> close), about: cpax)

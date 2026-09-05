@@ -341,6 +341,7 @@ fn taken_names(prog: &Program) -> std::collections::BTreeSet<String> {
     prog.stmts()
         .filter_map(|s| match &s.kind {
             StmtKind::Decl(d) => Some(d.name.key().text.clone()),
+            StmtKind::Chain(c) => Some(c.name.key().text.clone()),
             _ => None,
         })
         .collect()
@@ -743,6 +744,11 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
         }
     };
     match &st.kind {
+        StmtKind::Chain(c) => {
+            for r in &c.links {
+                look(r);
+            }
+        }
         StmtKind::Decl(d) => {
             for g in &d.children {
                 for r in g.iter().filter_map(|k| k.as_ref()) {

@@ -521,3 +521,185 @@ plane back(origin: o, toward: q, from: front, offset: 12mm)
     // `constraints::validate` already refuses, and is why the row is unchanged
     assert!(gcs_core::plane::fold_line(&b(0), &b(1)).is_none());
 }
+
+// Issue #49.3: naming the traversal must not change the drawing it traverses.
+fn named_rect() -> String {
+    RECT.replace("line ab(a, b)", "profile = line ab(a, b)")
+        .replace("face sec(ab, bc, cd, da)\n", "")
+}
+
+#[test]
+fn named_chains_sweep_the_same_geometry_and_keep_edge_names() {
+    let old = read(&format!("{RECT}solid block(sec, depth: 8mm)\n"));
+    let src = format!("{}solid block(profile, depth: 8mm)\n", named_rect());
+    let new = read(&src);
+    assert_eq!(volume(&new, "block"), 19200.0);
+    assert_eq!(new.sketch.params.len(), old.sketch.params.len());
+    assert_eq!(new.sketch.constraints.len(), old.sketch.constraints.len());
+    assert_eq!(new.sketch.lines.len(), old.sketch.lines.len());
+    assert_eq!(new.sketch.faces.len(), old.sketch.faces.len());
+    assert_eq!(new.map.ent_named("ab"), old.map.ent_named("ab"));
+    let report = |e: &Elaborated| gcs_core::report::positions(&e.sketch, &e.map)
+        .into_iter().filter(|(n, _)| n.starts_with("block.")).collect::<Vec<_>>();
+    assert_eq!(report(&new), report(&old));
+    let written = gcs_core::edit::commit_seeds(&new, &new.sketch, &new.program);
+    assert!(written.text.contains("profile = line ab"), "{}", written.text);
+    assert_eq!(volume(&read(&written.text), "block"), volume(&new, "block"));
+    let no_change = gcs_core::edit::remove(&new, &new.program, &new.sketch,
+        &[new.map.ent_named("profile").unwrap()], &[]);
+    assert!(no_change.refused.is_some(), "deleting a group must not strand its edge readers");
+}
+
+#[test]
+fn named_chains_support_anonymous_links_and_constraint_words() {
+    let e = read("profile = distance(10) line -> equal line -> equal line -> close\n\
+                  solid block(profile, depth: 8)\n");
+    assert_eq!(e.sketch.points.len(), 3);
+    assert_eq!(e.sketch.lines.len(), 3);
+    assert_eq!(e.sketch.faces.len(), 1);
+    assert_eq!(e.sketch.user_constraints().len(), 3);
+    assert!(e.map.ent_named("profile").is_some());
+    let single = read("trail = line\n");
+    assert_eq!(single.sketch.lines.len(), 1);
+    assert_eq!(single.sketch.faces.len(), 0);
+    let edit = gcs_core::edit::remove(&single, &single.program, &single.sketch,
+        &[gcs_core::model::EntRef::line(0)], &[]);
+    assert!(edit.refused.is_some());
+}
+
+#[test]
+fn anonymous_chain_sides_have_stable_names_without_hiding_named_sides() {
+    let src = "point a hint(x: 0, y: 0)\npoint b hint(x: 10, y: 0)\n\
+        point c hint(x: 0, y: 10)\n\
+        profile = line(a, b) -> line edge0(b, c) -> line(c, a) -> close\n\
+        solid part(profile, depth: 8)\n";
+    let old = read(src);
+    let moved = read(&format!("// Moving source text must not rename surfaces.\n{src}"));
+    let report = |e: &Elaborated| gcs_core::report::positions(&e.sketch, &e.map)
+        .into_iter().filter(|(n, _)| n.starts_with("part.")).collect::<Vec<_>>();
+    let values = report(&old);
+    assert_eq!(values, report(&moved));
+    for side in ["edge0", "edge1", "edge2"] {
+        assert!(values.iter().any(|(n, _)| n == &format!("part.{side}.area")));
+    }
+    assert!(values.iter().all(|(n, _)| !n.contains('#')));
+    let named_area = values.iter().find(|(n, _)| n == "part.edge0.area").unwrap().1;
+    assert!((named_area - 200.0_f64.sqrt() * 8.0).abs() < 1e-8);
+}
+
+#[test]
+fn named_chains_are_component_members_and_resolve_forward_and_through_formals() {
+    let src = "unit mm\n\
+        component Shape() {\n\
+          point a hint(x: 0, y: 0)\npoint b hint(x: 10, y: 0)\n\
+          point c hint(x: 10, y: 20)\npoint d hint(x: 0, y: 20)\n\
+          profile = line ab(a, b) -> line bc(b, c) -> line cd(c, d) -> line da(d, a) -> close\n\
+        }\n\
+        component Slab(section: face, t: Length) {\nsolid body(section, depth: t)\n}\n\
+        solid first(s.profile, depth: 2mm)\n\
+        x: Slab(s.profile, t: 3mm)\n\
+        repeat 2 as i {\ncopy: Shape()\nsolid prism(copy.profile, depth: (i + 1) * 1mm)\n}\n\
+        solid selected(copy[1].profile, depth: 4mm)\n\
+        s: Shape()\n";
+    let e = read(src);
+    assert_eq!(e.sketch.faces.len(), 3);
+    assert_eq!(e.sketch.solids.len(), 5);
+    assert_eq!(volume(&e, "first"), 400.0);
+    assert_eq!(volume(&e, "x.body"), 600.0);
+    assert_eq!(volume(&e, "selected"), 800.0);
+    assert!(e.map.ent_named("s.ab").is_some());
+}
+
+#[test]
+fn named_open_chains_can_be_closed_explicitly_but_cannot_be_swept_directly() {
+    let src = named_rect().replace(" -> line da(d, a) -> close", "");
+    let e = read(&src);
+    assert_eq!(e.sketch.lines.len(), 3);
+    assert_eq!(e.sketch.faces.len(), 0);
+    refused(&format!("{src}solid bad(profile, depth: 8mm)\n"), Code::E080, "open chain");
+    refused(&format!("{src}face bad(profile)\n"), Code::E080, "share no point");
+    let e = read(&format!("{src}solid block(face(profile, -> close), depth: 8mm)\n"));
+    assert_eq!(e.sketch.lines.len(), 4);
+    assert_eq!(volume(&e, "block"), 19200.0);
+    let e = read(&format!("{src}face sec(profile, a)\nsolid block(sec, depth: 8mm)\n"));
+    assert_eq!(volume(&e, "block"), 19200.0);
+}
+
+#[test]
+fn named_chains_inherit_planes_and_revolve_with_arcs() {
+    let src = "unit mm\npoint o\npoint q hint(x: 10)\n\
+        plane front(origin: o, toward: q, u: (1, 0, 0), v: (0, 1, 0))\n\
+        plane back(origin: o, toward: q, from: front, offset: 12mm)\n\
+        in back {\npoint a hint(x: 0, y: -5)\npoint b hint(x: 0, y: 5)\n\
+          point c hint(x: 0, y: 0)\n\
+          profile = arc rim(center: c, start: a, end: b) hint(r: 5) -> line axis(b, a) -> close\n\
+          solid ball(profile, about: axis)\n}\n";
+    let e = read(src);
+    assert_eq!(e.sketch.faces[0].plane, Some(1));
+    // Reports integrate the faceted surface; the analytic sphere is an independent check.
+    let want = 4.0 / 3.0 * std::f64::consts::PI * 125.0;
+    assert!((volume(&e, "ball") / want - 1.0).abs() < 0.002,
+        "sphere volume: {} versus {want}", volume(&e, "ball"));
+    let old = src.replace("profile = ", "")
+        .replace("solid ball(profile,", "face sec(rim, axis)\nsolid ball(sec,");
+    assert_eq!(volume(&e, "ball"), volume(&read(&old), "ball"));
+    assert!(gcs_core::program::solid_diagnostics(&e.sketch, &e.map).is_empty());
+}
+
+#[test]
+fn named_chains_validate_names_links_and_plane_membership() {
+    refused("profile = circle\n", Code::E080, "lines and arcs");
+    refused("profile = line equal line\n", Code::E100, "every pair");
+    refused("component A() { profile = line -> }\na: A()\n",
+        Code::E100, "must finish");
+    refused("profile = line\npoint profile\n", Code::E001, "declared twice");
+    refused("point profile\nprofile = line\n", Code::E001, "declared twice");
+    refused("circle c\nprofile = c\n", Code::E080, "lines and arcs");
+    refused("profile = missing\n", Code::E101, "missing");
+    refused("point p\npoint q\n\
+        profile = line a(p, q) -> profile.nope -> line b(q, p) -> close\n",
+        Code::E080, "lines and arcs");
+    refused(&format!("{}solid bad(profile.typo, depth: 8mm)\n", named_rect()),
+        Code::E080, "not a member");
+    let src = named_rect();
+    let src = format!("plane v(origin: a, toward: b)\n{}", src)
+        .replace("point d hint(x: 0, y: 40)", "point d hint(x: 0, y: 40) in v");
+    refused(&src, Code::E080, "plane");
+}
+
+#[test]
+fn named_chain_source_is_retained_and_its_binding_is_highlighted() {
+    let src = "profile = line -> line -> line -> close\n";
+    let (mut p, errors) = parse(src);
+    assert!(errors.is_empty(), "{errors:?}");
+    assert_eq!(gcs_core::syntax::render_flat(&mut p).unwrap_err().construct, "named chains");
+    assert_eq!(p.text(), src);
+    let colors = gcs_core::syntax::highlight(src);
+    assert!(colors.iter().any(|(t, span)| *t == gcs_core::syntax::Tint::Def
+        && &src[span.lo as usize..span.hi as usize] == "profile"));
+}
+
+#[test]
+fn named_chain_syntax_errors_point_to_the_offending_joint() {
+    for (src, message, joint) in [
+        ("trail = line equal line\npoint unrelated\n", "every pair", "equal"),
+        ("component A() { trail = line -> }\npoint unrelated\n", "must finish", "->"),
+    ] {
+        let (_, errors) = parse(src);
+        let error = errors.iter().find(|e| e.message.contains(message)).unwrap();
+        assert_eq!(&src[error.span.lo as usize..error.span.hi as usize], joint);
+    }
+}
+
+#[test]
+fn a_refused_named_loop_does_not_misnumber_later_sections() {
+    let src = format!("broken = line -> line -> close\n{}\n\
+        solid block(profile, depth: 8mm)\n", named_rect());
+    let (p, errors) = parse(&src);
+    assert!(errors.is_empty(), "{errors:?}");
+    let e = elaborate(&p);
+    assert!(!e.ok());
+    assert_eq!(e.sketch.faces.len(), 1);
+    assert_eq!(e.sketch.solids.len(), 1);
+    assert_eq!(volume(&e, "block"), 19200.0);
+}

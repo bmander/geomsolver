@@ -27,6 +27,7 @@ pub struct Statement {
 #[derive(Clone, Debug)]
 pub enum Operation {
     Decl(Box<Decl>),
+    Chain(syntax::NamedChain),
     Relation(Relation),
     Branch(syntax::Branch),
     Style(syntax::StyleRule),
@@ -130,6 +131,7 @@ impl Statement {
     ) -> Result<Self, crate::program::Diag> {
         use syntax::StmtKind as S;
         let kind = match st.kind {
+            S::Chain(c) => Operation::Chain(c),
             S::Decl(d) => Operation::Decl(Box::new(d.into())),
             S::Relation(r) => Operation::Relation(Relation {
                 form: r.form, place: r.place, claim: r.claim, class: r.class,

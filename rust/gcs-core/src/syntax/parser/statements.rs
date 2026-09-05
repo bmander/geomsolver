@@ -353,14 +353,14 @@ impl<'a> P<'a> {
             return self.in_block(next_id, out);
         }
         let before = self.errs.len();
-        let got = if !self.chain_starts() {
+        let got = if self.named_chain_starts() || self.chain_starts() {
+            self.chain(next_id, out)
+        } else {
             let lo = self.here().lo as usize;
             let kind = self.stmt(next_id)?;
             let id = self.mint_stmt(next_id, Span::new(lo, self.prev_hi()))?;
             out.push(Stmt { id, kind, span: Span::new(lo, self.prev_hi()), chained: Chained::No });
             Some(())
-        } else {
-            self.chain(next_id, out)
         };
         // The name in a declaration is optional, and the words that may follow one are reserved
         // (§6.1) — so a statement that *named* a declaration with one of them no longer parses,

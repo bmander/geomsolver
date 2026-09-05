@@ -199,6 +199,9 @@ fn tint_word(
         }
         Next::Inst => (Some(Tint::Type), Next::Word),
         Next::Start => {
+            if super::is_name(w) && next == Some(&Tok::Eq) {
+                return (Some(Tint::Def), Next::Word);
+            }
             // `point p`, `component Gear(…)`, `curve involute(…)`, `param R = …`
             if EntKind::parse(w).is_some() {
                 return (Some(Tint::Word), after_kind(w));

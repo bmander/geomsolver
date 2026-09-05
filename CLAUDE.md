@@ -1147,6 +1147,15 @@ Conventions:
   never an error: the name was true of the operand and remains so.
   E080 a face that is not a loop on one plane, E081 a revolution's axis, E082 a face a body no
   longer has, E083 a stack that contradicts itself, E084 a section cut across its own view.
+- **A chain is a named traversal** (§6.6; issue #49, item 3). `profile = line -> … -> close`
+  records a `NamedChain` beside the usual desugared declarations and constraints. The flattener
+  scopes the binding and its links like ordinary component members; edges stay `boss.ab`, the
+  grouping is `boss.profile`. Closed traversals build ordinary faces and can be swept directly.
+  Open traversals retain their ordered references for `face(trail, -> close)` and are refused
+  as direct sweep sections. All geometry validation stays in the existing face/solid code.
+  Source edits preserve the expression; deleting its geometry is refused under the existing
+  chain rule. Canonical flat printing refuses named chains atomically and retains source,
+  as it does for components. `tests/solid_lang.rs` and the browser binding test cover this.
 - **A face closes itself** (§6.8, `program::build_face`; issue #49, item 1).  What the brackets
   hold is a *walk*, and an item may be a **point**: a corner the walk goes straight to and
   straight on from, with `-> close` — the chain's own word, in the other place the language draws

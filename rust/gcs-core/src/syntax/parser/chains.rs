@@ -138,6 +138,11 @@ fn boundary_ref(root: Name, kind: EntKind, slot: usize) -> Ref {
     }
 }
 impl<'a> P<'a> {
+    pub(super) fn named_chain_starts(&self) -> bool {
+        matches!(self.peek(), Some(Tok::Ident(w)) if crate::syntax::is_name(w))
+            && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::Eq))
+    }
+
     /// Whether what stands here opens a declaration — possibly a chain of them.
     pub(super) fn chain_starts(&self) -> bool {
         let Some(Tok::Ident(w)) = self.peek() else { return false };
@@ -210,6 +215,14 @@ impl<'a> P<'a> {
     /// `[prefix…] decl (joint [prefix…] decl)* [joint "close"]`.
     pub(super) fn chain(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
         let lo = self.here().lo as usize;
+        let name = if self.named_chain_starts() {
+            let name = self.ident()?;
+            self.i += 1;
+            self.skip_ends();
+            Some(name)
+        } else {
+            None
+        };
         let mut links = vec![self.link()?];
         let mut joints: Vec<Joint> = Vec::new();
         let mut close: Option<Joint> = None;
@@ -360,6 +373,25 @@ impl<'a> P<'a> {
             None => None,
         };
         let first = out.len();
+        let named = name.map(|name| crate::syntax::NamedChain {
+            name: crate::syntax::DeclName::Written(name),
+            links: links.iter().map(Link::entity).collect(),
+            closed: close.is_some(),
+        });
+        if named.is_some() {
+            if let Some(j) = &open {
+                self.errs.push(SynErr {
+                    span: j.span,
+                    message: "a named chain must finish before the block's closing brace".into(),
+                });
+            }
+            if let Some(j) = joints.iter().find(|j| !j.thread) {
+                self.errs.push(SynErr {
+                    span: j.span,
+                    message: "a named chain joins every pair of links with `->`".into(),
+                });
+            }
+        }
         self.desugar(links, joints, close, open.is_some(), whole, next_id, out);
         if let (Some(j), Some((fe, le, named))) = (open, ends) {
             self.open_finish(j, fe, le, named, &out[first..], next_id);
@@ -408,6 +440,17 @@ impl<'a> P<'a> {
             if let Some(w) = r.form.written_mut() {
                 w.args.extend(seeds);
             }
+        }
+        if let Some(chain) = named {
+            // A whole named expression, including a single anonymous link, cannot be
+            // deleted by taking out just its geometry and leaving `name =` behind.
+            for st in &mut out[first..] {
+                if matches!(st.kind, StmtKind::Decl(_)) && st.chained == Chained::No {
+                    st.chained = Chained::Link;
+                }
+            }
+            let id = self.mint_stmt(next_id, whole)?;
+            out.push(Stmt { id, kind: StmtKind::Chain(chain), span: whole, chained: Chained::Link });
         }
         Some(())
     }

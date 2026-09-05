@@ -86,6 +86,7 @@ pub fn write_stmt_to(out: &mut String, k: &StmtKind) -> Result<(), PrintError> {
 
 fn printable(k: &StmtKind) -> Result<(), PrintError> {
     match k {
+        StmtKind::Chain(_) => Err(PrintError { construct: "named chains" }),
         StmtKind::Block(_) => Err(PrintError { construct: "repeat and cycle blocks" }),
         StmtKind::ClaimOver(_) => Err(PrintError { construct: "claim-over bodies" }),
         _ => Ok(()),
@@ -153,7 +154,9 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             out.push_str(&parts.join("; "));
             out.push_str(" }");
         }
-        StmtKind::Block(_) | StmtKind::ClaimOver(_) => unreachable!("validated before printing"),
+        StmtKind::Block(_) | StmtKind::ClaimOver(_) | StmtKind::Chain(_) => {
+            unreachable!("validated before printing")
+        }
     }
 }
 

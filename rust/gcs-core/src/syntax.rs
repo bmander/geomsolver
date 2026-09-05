@@ -183,6 +183,8 @@ impl From<Fall> for Chained {
 #[derive(Clone, Debug)]
 pub enum StmtKind {
     Decl(Decl),
+    /// A named traversal of the geometry declared by a chain expression.
+    Chain(NamedChain),
     Relation(Relation),
     /// A recorded root choice under a key no triple of points spells — `branch(ppp:3|4|5, 1)`
     /// — kept verbatim so a document never silently loses one.  A choice that *is* a triple is
@@ -210,6 +212,15 @@ pub enum StmtKind {
     /// says nothing is in **drawing units**, and everything still dimension-checks, you simply
     /// cannot write `mm` because there is nothing to convert to.
     Unit(Name),
+}
+
+/// `profile = line -> line -> line -> close`. The links remain declarations of the
+/// enclosing scope; this value groups their traversal without copying their geometry.
+#[derive(Clone, Debug)]
+pub struct NamedChain {
+    pub name: DeclName,
+    pub links: Vec<Ref>,
+    pub closed: bool,
 }
 
 /// Resolved style properties, their written order, and the declaration span.

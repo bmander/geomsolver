@@ -1303,6 +1303,25 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
   }
 });
 
+test('a named component chain reaches the browser as the same swept mesh', () => {
+  const src = [
+    'unit mm', 'use vtwin.parts', 'point O hint(x: 0, y: 0)', 'ground O',
+    'boss: Box(O, x0: 0mm, y0: 0mm, x1: 10mm, y1: 20mm)',
+    'solid block(boss.profile, depth: 8mm)', '',
+  ].join('\n');
+  const doc = Document.read(src);
+  const old = Document.read(src.replace('boss.profile', 'face(boss.ab, boss.bc, boss.cd, boss.da)'));
+  for (const d of [doc, old]) {
+    assert.ok(d.ok, JSON.stringify(d.diagnostics));
+    assert.ok(solve(d.sketch).success);
+  }
+  assert.deepEqual(mesh(doc.sketch, doc.solids()[0].index, 2e-3),
+    mesh(old.sketch, old.solids()[0].index, 2e-3));
+  const bad = Document.read('trail = line -> line\nsolid bad(trail, depth: 8)\n');
+  assert.equal(bad.ok, false);
+  assert.ok(bad.diagnostics.some((d) => d.message.includes('open chain')));
+});
+
 test('invalid solid exports surface the cores geometry diagnostic', async () => {
   const { readFileSync } = await import('node:fs');
   for (const file of ['08-invalid_face_bowtie.sv', '09-invalid_revolve_crossing.sv']) {

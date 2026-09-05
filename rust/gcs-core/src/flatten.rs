@@ -601,6 +601,13 @@ impl<'a> Walk<'a> {
                 return;
             }
             match &st.kind {
+                StmtKind::Chain(chain) => {
+                    let mut chain = chain.clone();
+                    let abs = format!("{prefix}{}", chain.name.key().text);
+                    self.names.insert(abs.clone());
+                    chain.name = chain.name.prefixed(abs, scope.copies);
+                    self.emit(StmtKind::Chain(chain), st, scope, path);
+                }
                 StmtKind::Decl(d) => {
                     let abs = format!("{prefix}{}", d.name.key().text);
                     self.names.insert(abs.clone());
@@ -1790,6 +1797,11 @@ fn rewrite(
         None => bad.push((r.span, format!("no such entity: `{}`", written(r)))),
     };
     match k {
+        StmtKind::Chain(chain) => {
+            for r in &mut chain.links {
+                fix(r, bad);
+            }
+        }
         StmtKind::Decl(d) => {
             for g in &mut d.children {
                 for kid in g.iter_mut() {
