@@ -198,7 +198,7 @@ pub enum StmtKind {
     Block(Block),
     /// Parse a style block, retaining property spans for diagnostics.
     Style(StyleRule),
-    /// A body operation (§6.9): `through` subtracts, `on` unites, `with` intersects.
+    /// A body operation (§6.9): `cut` subtracts, `on` unites, `with` intersects.
     /// Relations are folded into the stock body after declarations are built.
     SolidRel(SolidRel),
     /// `claim over crank.theta in (0deg, 360deg) { … }` — the claims in the body, judged as the
@@ -265,9 +265,9 @@ pub struct DerivedDecl {
 pub enum BodyWord {
     /// `boss on cyl` — material.
     On,
-    /// A body operation (§6.9): `through` subtracts, `on` unites, `with` intersects.
+    /// A body operation (§6.9): `cut` subtracts, `on` unites, `with` intersects.
     /// Relations are folded into the stock body after declarations are built.
-    Through,
+    Cut,
     /// `cylB.block.far against plate.body.near` — **a stack** (§6.10): two faces in contact, so
     /// where the left one's part stands is a *consequence* rather than a number somebody kept in
     /// step by hand.  What `zA = fwA + D / 2` was.
@@ -278,13 +278,13 @@ impl BodyWord {
     pub fn as_str(self) -> &'static str {
         match self {
             BodyWord::On => "on",
-            BodyWord::Through => "through",
+            BodyWord::Cut => "cut",
             BodyWord::Against => "against",
         }
     }
 }
 
-/// A body operation (§6.9): `through` subtracts, `on` unites, `with` intersects.
+/// A body operation (§6.9): `cut` subtracts, `on` unites, `with` intersects.
 /// Relations are folded into the stock body after declarations are built.
 #[derive(Clone, Debug)]
 pub struct SolidRel {
@@ -762,11 +762,13 @@ pub enum Sweep {
     Prism { from: Arg, to: Arg },
     /// A positive magnitude, kept until elaboration can validate its evaluated expression.
     Depth { depth: Arg },
+    /// Span the target's stock and additions along the section normal.
+    Through { body: Ref },
     /// `about: ax` — a full turn about a line in the face's own plane, or `sweep:` of one,
     /// `sense: cw` the other way round.
     Revolve { axis: Ref, sweep: Option<Arg>, sense: Sense },
     /// `solid body(block)` — a stock, or a term: what it is made of is in the list, and the
-    /// `on`/`through` statements say the rest.
+    /// `on`/`cut` statements say the rest.
     Body,
 }
 
@@ -779,22 +781,23 @@ impl Sweep {
             Sweep::Prism { from, to } => vec![from, to],
             Sweep::Depth { depth } => vec![depth],
             Sweep::Revolve { sweep, .. } => sweep.iter_mut().collect(),
-            Sweep::Body => Vec::new(),
+            Sweep::Body | Sweep::Through { .. } => Vec::new(),
         }
     }
 
-    /// The line a revolution turns about, for the walks that fix every reference a statement
-    /// makes.
-    pub fn axis_ref_mut(&mut self) -> Option<&mut Ref> {
+    /// The revolution axis or through-extent target, for walks that rewrite references.
+    pub fn reference_mut(&mut self) -> Option<&mut Ref> {
         match self {
             Sweep::Revolve { axis, .. } => Some(axis),
+            Sweep::Through { body } => Some(body),
             Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body => None,
         }
     }
 
-    pub fn axis_ref(&self) -> Option<&Ref> {
+    pub fn reference(&self) -> Option<&Ref> {
         match self {
             Sweep::Revolve { axis, .. } => Some(axis),
+            Sweep::Through { body } => Some(body),
             Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body => None,
         }
     }

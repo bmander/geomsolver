@@ -166,7 +166,7 @@ impl EvaluatedSolid {
             let sol = &sk.solids[i];
             // Only a circular prism has the diameter of its source circle. A revolution of
             // a circular profile is a torus, not a bore of that diameter.
-            let SolidDef::Prism { face, .. } = sol.def else {
+            let (SolidDef::Prism { face, .. } | SolidDef::Through { face, .. }) = sol.def else {
                 continue;
             };
             if !curved.contains(sol.name.as_str()) {

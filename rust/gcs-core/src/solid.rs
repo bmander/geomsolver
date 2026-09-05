@@ -3,7 +3,7 @@
 //! A feature tree is imperative because it is *stateful*: step *n* acts on the anonymous "body
 //! as of step *n − 1*" and names faces by the order they were made in.  Solvent names
 //! everything, so a solid here is a **term** — its stock, plus everything `on` it, minus
-//! everything `through` it — over primitives that are faces swept.  The order lives inside the
+//! everything that `cut`s it — over primitives that are faces swept.  The order lives inside the
 //! term, over names, exactly as it lives inside `h = w / 2`; between statements there is no
 //! order at all, which is P2 and is what a feature tree cannot have.
 //!
@@ -526,13 +526,17 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 }
                 *face
             }
+            SolidDef::Through { face, .. } => {
+                pending.extend(evaluation_operands(sk, i)?.into_iter().rev().map(|o| (o as usize, false)));
+                *face
+            }
             SolidDef::Revolve { face, .. } => *face,
             SolidDef::Body { .. } => { pending.extend(s.operands().into_iter().rev().map(|o| (o as usize, false))); continue; }
         };
         let poly = face_poly(sk, face as usize, unit)
             .ok_or_else(|| fail("self-intersecting or degenerate profile: a face must bound a simple nonzero region"))?;
         let reserved: &[&str] = match &s.def {
-            SolidDef::Prism { .. } => &["near", "far"],
+            SolidDef::Prism { .. } | SolidDef::Through { .. } => &["near", "far"],
             SolidDef::Revolve { sweep, .. } if sweep.value < std::f64::consts::TAU - 1e-9 => {
                 &["start", "end"]
             }
@@ -948,6 +952,12 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
                 v.push(to.value);
                 face_reads(sk, *face, &mut v);
             }
+            SolidDef::Through { face, body } => {
+                v.extend([3.0, *body as f64]);
+                face_reads(sk, *face, &mut v);
+                // Read the material graph too, including changes to additions and placement.
+                stack.push(*body);
+            }
             SolidDef::Revolve { face, axis, sweep, sense } => {
                 v.extend([1.0, *axis as f64]);
                 v.push(sweep.value);
@@ -1007,8 +1017,39 @@ fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
     }
 }
 
+/// Primitive material sources for a target: stock and additions, recursively, never cuts.
+/// Keeping this walk separate allows a cutter to span the body it cuts without a cycle.
+pub(crate) fn material_sources(sk: &Sketch, target: u32) -> Result<Vec<u32>, String> {
+    let mut pending = vec![(target, false)];
+    let mut active = std::collections::BTreeSet::new();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out = Vec::new();
+    while let Some((i, ready)) = pending.pop() {
+        if seen.contains(&i) { continue; }
+        let sol = sk.solids.get(i as usize).ok_or_else(|| format!("no solid at index {i}"))?;
+        if ready { active.remove(&i); seen.insert(i); continue; }
+        if !active.insert(i) { return Err(format!("`{}`: cyclic material extents", sol.name)); }
+        pending.push((i, true));
+        if let SolidDef::Body { stock, on, .. } = &sol.def {
+            pending.extend(std::iter::once(stock).chain(on).rev().map(|&o| (o, false)));
+        } else {
+            out.push(i);
+        }
+    }
+    Ok(out)
+}
+
+/// Dependencies required to evaluate a solid, as distinct from its Boolean operands.
+pub(crate) fn evaluation_operands(sk: &Sketch, i: usize) -> Result<Vec<u32>, String> {
+    let s = sk.solids.get(i).ok_or_else(|| format!("no solid at index {i}"))?;
+    match s.def {
+        SolidDef::Through { body, .. } => material_sources(sk, body),
+        _ => Ok(s.operands()),
+    }
+}
+
 /// **Resolve a solid into primitives and a term.**  The term walk: a body is its stock, plus
-/// everything `on` it, minus everything `through` it, each operand resolved the same way.
+/// everything `on` it, minus everything that `cut`s it, each operand resolved the same way.
 ///
 /// The document's order is irrelevant and the *statement* order inside a body is too: both
 /// groups are sets. An explicit work stack accepts deep acyclic bodies and detects cycles in
@@ -1040,20 +1081,44 @@ fn resolve_at(sk: &Sketch, si: usize, unit: f64, origin: [f64; 3]) -> Csg {
     let mut active = std::collections::BTreeSet::new();
     while let Some((i, ready)) = pending.pop() {
         if names.contains_key(&i) { continue; }
-        let Some(s) = sk.solids.get(i as usize) else { continue };
+        if sk.solids.get(i as usize).is_none() { continue; }
         if ready {
             let term = build(sk, i, unit, origin, &mut prims, &names);
             names.insert(i, term);
             active.remove(&i);
         } else if active.insert(i) {
             pending.push((i, true));
-            pending.extend(s.operands().into_iter().rev().map(|o| (o, false)));
+            pending.extend(evaluation_operands(sk, i as usize).unwrap_or_default().into_iter().rev().map(|o| (o, false)));
         } else {
             names.insert(i, Term::Empty);
         }
     }
     let term = names.remove(&(si as u32)).unwrap_or(Term::Empty);
-    Csg { prims, term }
+    // Extent sources are evaluation inputs, not part of a standalone cutter's geometry.
+    // Preserve primitive order and avoid recursion for deeply nested terms.
+    let mut ids = vec![None; prims.len()];
+    let mut pending = vec![&term];
+    while let Some(t) = pending.pop() {
+        match t {
+            Term::Prim(i) => { ids[*i] = Some(0); }
+            Term::Union(a, b) | Term::Diff(a, b) => { pending.extend([a.as_ref(), b.as_ref()]); }
+            Term::Empty => {}
+        }
+    }
+    let mut kept = Vec::new();
+    for (i, p) in prims.into_iter().enumerate() {
+        if ids[i].is_some() { ids[i] = Some(kept.len()); kept.push(p); }
+    }
+    let mut term = term;
+    let mut pending = vec![&mut term];
+    while let Some(t) = pending.pop() {
+        match t {
+            Term::Prim(i) => { *i = ids[*i].expect("referenced primitive was retained"); }
+            Term::Union(a, b) | Term::Diff(a, b) => { pending.extend([a.as_mut(), b.as_mut()]); }
+            Term::Empty => {}
+        }
+    }
+    Csg { prims: kept, term }
 }
 
 /// The named route from a body to each primitive, relative to the requested solid.
@@ -1092,31 +1157,38 @@ fn build(
     let local = |mut p: FacePoly| {
         p.basis.o = std::array::from_fn(|k| p.basis.o[k] - origin[k]); p
     };
-    let t = match &sol.def {
-        SolidDef::Prism { face, from, to } => match face_poly(sk, *face as usize, unit).map(local)
-            .and_then(|p| prism(&p, from.value, to.value, &name))
-        {
-            Some(p) => {
-                prims.push(p);
-                Term::Prim(prims.len() - 1)
-            }
-            None => Term::Empty,
-        },
+    let built = match &sol.def {
+        SolidDef::Prism { face, from, to } => face_poly(sk, *face as usize, unit).map(local)
+            .and_then(|p| prism(&p, from.value, to.value, &name)),
+        SolidDef::Through { face, body } => {
+            face_poly(sk, *face as usize, unit).map(local).and_then(|p| {
+                let mut bounds = Box3::empty();
+                for i in material_sources(sk, *body).ok()? {
+                    let Term::Prim(pi) = names.get(&i)? else { return None };
+                    let b = prims[*pi].bbox;
+                    bounds.add(b.lo); bounds.add(b.hi);
+                }
+                if bounds.is_empty() { return None; }
+                let n = p.basis.normal();
+                // Project each axis interval; summing its extrema bounds the whole box.
+                let (lo, hi) = (0..3).fold((0.0, 0.0), |(lo, hi), k| {
+                    let a = n[k] * (bounds.lo[k] - p.basis.o[k]);
+                    let b = n[k] * (bounds.hi[k] - p.basis.o[k]);
+                    (lo + a.min(b), hi + a.max(b))
+                });
+                let diagonal = (0..3).map(|k| (bounds.hi[k] - bounds.lo[k]).powi(2)).sum::<f64>().sqrt();
+                let pad = diagonal * EPS * 4.0;
+                prism(&p, lo - pad, hi + pad, &name)
+            })
+        }
         SolidDef::Revolve { face, axis, sweep, sense } => {
-            let built = face_poly(sk, *face as usize, unit).map(local).and_then(|p| {
+            face_poly(sk, *face as usize, unit).map(local).and_then(|p| {
                 let l = sk.lines.get(*axis as usize)?;
                 let (c, s, o) = p.pose;
                 let a = plane::in_view(c, s, o, sk.point_xy(l.p1 as usize));
                 let b = plane::in_view(c, s, o, sk.point_xy(l.p2 as usize));
                 revolve(&p, (a, b), sweep.value, *sense, unit, &name)
-            });
-            match built {
-                Some(p) => {
-                    prims.push(p);
-                    Term::Prim(prims.len() - 1)
-                }
-                None => Term::Empty,
-            }
+            })
         }
         SolidDef::Body { stock, on, through } => {
             let operand = |i: &u32| names.get(i).cloned().unwrap_or(Term::Empty);
@@ -1127,8 +1199,11 @@ fn build(
             for b in through {
                 t = Term::Diff(Box::new(t), Box::new(operand(b)));
             }
-            t
+            return t;
         }
     };
-    t
+    match built {
+        Some(p) => { prims.push(p); Term::Prim(prims.len() - 1) }
+        None => Term::Empty,
+    }
 }

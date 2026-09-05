@@ -26,5 +26,5 @@ face bossf(bossfp0, bossfp1, bossfp2, bossfp3, -> close)
 solid boss(bossf, from: 1mm, to: 2mm)
 solid result(stock)
 boss on result
-plane cut(origin:o,toward:q,from:front,offset:0.5mm)
-section(result,at:cut) in front
+plane slice(origin:o,toward:q,from:front,offset:0.5mm)
+section(result,at:slice) in front

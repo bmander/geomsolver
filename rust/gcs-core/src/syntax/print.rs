@@ -277,6 +277,11 @@ fn attitude_parts(a: &Attitude) -> Vec<String> {
 fn sweep_parts(s: &Sweep) -> Vec<String> {
     match s {
         Sweep::Body => Vec::new(),
+        Sweep::Through { body } => {
+            let mut text = String::from("through: ");
+            write_ref(&mut text, body);
+            vec![text]
+        },
         Sweep::Prism { from, to } => vec![format!("from: {}", dim(from)), format!("to: {}", dim(to))],
         Sweep::Depth { depth } => vec![format!("depth: {}", dim(depth))],
         Sweep::Revolve { axis, sweep, sense } => {

@@ -194,7 +194,7 @@ fn invalid_geometry_and_invalid_legacy_arguments_have_explicit_failures() {
 #[test]
 fn empty_boundaries_are_explicitly_unbounded_and_cannot_certify() {
     let src = fixture()
-        .replace("claim over", "solid removed(result)\nresult through removed\nclaim over")
+        .replace("claim over", "solid removed(result)\nresult cut removed\nclaim over")
         .replace("{ result clear(1mm) other }", "{ removed clear(1mm) other }");
     let v = verdict(&src);
     assert_eq!(v.outcome(), SolidOutcome::Indeterminate);

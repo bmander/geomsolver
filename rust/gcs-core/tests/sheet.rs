@@ -54,7 +54,7 @@ face hole_f(hole)
 solid stock(sec, depth: 30mm)
 solid bore(hole_f, depth: 30mm)
 solid body(stock)
-bore through body
+bore cut body
 point p2 hint(x: 110, y: 0)
 point q2 hint(x: 150, y: 0)
 plane side(origin: p2, toward: q2, from: front, fold: -90deg)

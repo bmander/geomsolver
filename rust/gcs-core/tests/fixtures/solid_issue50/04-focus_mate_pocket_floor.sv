@@ -26,7 +26,7 @@ ground toolfp3
 face toolf(toolfp0, toolfp1, toolfp2, toolfp3, -> close)
 solid tool(toolf, from: -3mm, to: 0mm)
 solid body(stock)
-tool through body
+tool cut body
 point resultfp0 hint(x: 3, y: 3) in back
 ground resultfp0
 point resultfp1 hint(x: 5, y: 3) in back

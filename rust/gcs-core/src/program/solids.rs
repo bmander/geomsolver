@@ -489,7 +489,7 @@ fn face_ordinate(
                     format!("{}.{last}", s.name),
                 ));
             }
-            SolidDef::Revolve { .. } => return None,
+            SolidDef::Revolve { .. } | SolidDef::Through { .. } => return None,
             SolidDef::Body { stock, on, through } => {
                 // a body's faces are its operands', reached through the operand that made them
                 let (head, rest) = path.split_first()?;
@@ -701,7 +701,7 @@ pub(super) fn solids(
         }
     }
     // -- the body rule --------------------------------------------------------
-    // `bore through cyl`, `boss on cyl`, folded into the body they name.  **Both are sets**, so
+    // `bore cut cyl`, `boss on cyl`, folded into the body they name.  **Both are sets**, so
     // the order this walk meets them in cannot matter, and a document may write them anywhere.
     for st in body {
         if skip.contains(&st.id) {
@@ -753,7 +753,7 @@ pub(super) fn solids(
         match &mut sol.def {
             SolidDef::Body { on, through, .. } => match word {
                 crate::syntax::BodyWord::On => on.push(a.idx),
-                crate::syntax::BodyWord::Through => through.push(a.idx),
+                crate::syntax::BodyWord::Cut => through.push(a.idx),
                 crate::syntax::BodyWord::Against => unreachable!("filtered above"),
             },
             _ => {
@@ -883,8 +883,9 @@ fn reaches(sk: &Sketch, from: u32, goal: u32) -> bool {
     let mut seen = BTreeSet::new();
     while let Some(i) = pending.pop() {
         if !seen.insert(i) { continue; }
-        if let Some(s) = sk.solids.get(i as usize) {
-            for o in s.operands() {
+        if sk.solids.get(i as usize).is_some() {
+            let Ok(operands) = crate::solid::evaluation_operands(sk, i as usize) else { return true };
+            for o in operands {
                 if o == goal { return true; }
                 pending.push(o);
             }
@@ -1258,6 +1259,18 @@ fn build_solid(
             Ok(Extent { text: text.trim().to_string(), value: v.c })
         };
     let def = match sweep {
+        crate::syntax::Sweep::Through { body } => {
+            let face = one_face(&ops, st, &mut say)?;
+            let Some(target) = res.lookup(body) else {
+                say(Code::E101, body.span, format!("no such entity: `{}`", body.root.text));
+                return None;
+            };
+            if target.kind != EntKind::Solid {
+                say(Code::E080, body.span, "`through:` requires a solid target".into());
+                return None;
+            }
+            SolidDef::Through { face, body: target.idx }
+        }
         crate::syntax::Sweep::Depth { depth } => {
             let face = one_face(&ops, st, &mut say)?;
             let d = match ext(depth, "depth", crate::units::Dim::LENGTH) {

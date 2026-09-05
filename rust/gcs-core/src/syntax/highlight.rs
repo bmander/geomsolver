@@ -255,6 +255,9 @@ fn tint_word(
             if w == "in" && matches!(prev, Some(Tok::Num(_))) {
                 return (None, Next::Word);
             }
+            if w == "cut" && prev != Some(&Tok::P('.')) {
+                return (Some(Tint::Relation), Next::Word);
+            }
             if MODIFIERS.contains(&w) {
                 // `cycle N as i` — the binder is a name the block declares; `class a b` names
                 // classes until the clause ends

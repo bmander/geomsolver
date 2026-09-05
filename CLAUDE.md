@@ -972,7 +972,7 @@ Conventions:
   is ordered but that it is *stateful*: step *n* acts on "the body as of step *n − 1*", an
   anonymous thing, and names faces by the order they were made in.  Solvent names everything —
   which is why `port` was retired — so a solid is its **stock, plus everything `on` it, minus
-  everything `through` it**, over primitives that are faces swept.  Both groups are *sets*, so
+  everything that `cut`s it**, over primitives that are faces swept.  Both groups are *sets*, so
   the statements filling them may be written anywhere in any order (P2), and the order that does
   exist lives inside one term over names, exactly as it lives inside `h = w / 2`.  A design that
   needs the other order (a pocket with a boss standing in it) **names the intermediate**, which
@@ -1135,7 +1135,7 @@ Conventions:
 - **A face is one loop and a solid's faces are named by path** (§6.8).  A face is a closed loop of
   edges the drawing already has, on the one plane every point of every edge agrees about — *read*
   off the memberships and never written on the face, so a face inside `in swing { … }` is on the
-  plane the block stamped.  There are **no holes**: a hole is a solid `through` the body, and that
+  plane the block stamped.  There are **no holes**: a hole is a solid that `cut`s the body, and that
   is the body rule saying it already, one construct fewer.  An `in` block leaves a face and a
   solid alone the way it leaves a datum alone, but for a different reason — they bear no points,
   *and* they are written over the geometry the block just stamped, so refusing them would put the
@@ -1205,7 +1205,7 @@ Conventions:
   `hardware.Groove` is item 5 in the same commit: the O-ring rule — 10–20% squeeze on the ring's
   section, a groove a third wider than it — stated once in `hardware` and cut by a component that
   reads it, so `dims.sv` derives `grooveb` and `groovew` where it used to type 12.9 and 2.4.
-  **A component contributes a `through` to a body it was handed**, which is the body rule being a
+  **A component contributes a `cut` to a body it was handed**, which is the body rule being a
   set and not a sequence: the feature owns the void it cuts.  `Loc` moved to `std` on the way,
   having been written out in two project files.
 - **A part carries no views; a sheet asks for them** (§6.11, `hidden.rs`).  `view(body) in

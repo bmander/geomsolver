@@ -106,18 +106,18 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle) {
   solid core1(core_f, from: -torz - torw / 2, to: -torz + torw / 2)
   solid core2(core_f, from: zkeep - torw / 2, to: zkeep + torw / 2)
   solid groove0(ring0)
-  core0 through groove0
+  core0 cut groove0
   solid groove1(ring1)
-  core1 through groove1
+  core1 cut groove1
   solid groove2(ring2)
-  core2 through groove2
+  core2 cut groove2
 
   solid body(barrel_s)
   hub_s on body
   arm on body
   knob_s on body
-  cross through body
-  groove0 through body
-  groove1 through body
-  groove2 through body
+  cross cut body
+  groove0 cut body
+  groove1 cut body
+  groove2 cut body
 }

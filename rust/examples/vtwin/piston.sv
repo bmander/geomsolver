@@ -95,9 +95,9 @@ component Piston(swing: plane, crown: point, rod: line, dir: Angle, pin: point) 
   // the rod between its flanks, closed across the skirt and across the eye
   solid shank(face(fl, rd, fr, ra), from: -rw / 2, to: rw / 2)
   solid boss(face(eye), from: -rw / 2, to: rw / 2)
-  solid pinhole(face(hole), from: -rw, to: rw)
+  solid pinhole(face(hole), through: body)
   solid body(pist)
   shank on body
   boss on body
-  pinhole through body
+  pinhole cut body
 }

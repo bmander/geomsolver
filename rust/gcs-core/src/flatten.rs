@@ -1845,7 +1845,7 @@ fn rewrite(
                 fix(r, bad);
             }
             // a revolution's axis is a line of the body like any other name it writes
-            if let Some(r) = d.sweep.as_mut().and_then(|s| s.axis_ref_mut()) {
+            if let Some(r) = d.sweep.as_mut().and_then(|s| s.reference_mut()) {
                 fix(r, bad);
             }
             if let Some(crate::syntax::CurveSpec { target: CurveTarget::Drawn(r), .. }) =
@@ -1857,7 +1857,7 @@ fn rewrite(
                 fix(&mut at.what, bad);
             }
         }
-        // `bore through body` names two solids, and inside a component both wear the prefix
+        // `bore cut body` names two solids, and inside a component both wear the prefix
         StmtKind::SolidRel(r) => {
             fix(&mut r.what, bad);
             fix(&mut r.body, bad);

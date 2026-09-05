@@ -9,7 +9,7 @@ use crate::constraints::{Arg, CKind, Constraint, SpecKind};
 use crate::decompose;
 use crate::expr;
 use crate::json::{fmt_g, object, parse, Json};
-use crate::model::{expand, EntKind, EntRef, Sketch};
+use crate::model::{EntKind, EntRef, Sketch};
 use crate::style::Classes;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -713,10 +713,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         curve_map[i] = Some(dst.curves.len() - 1);
         made.push(EntRef::new(EntKind::Curve, dst.curves.len() - 1));
     }
-    // then faces, and then solids in the order they were written — a solid's operands are
-    // earlier solids, so one walk in document order fills every map it reads.  A face that lost
-    // an edge is not a loop and does not come; a solid that lost its face or an operand is not
-    // that solid, which is `whole`'s rule again.
+    // Faces must retain every edge. Solids must retain their geometry and every referenced
+    // solid; allocate the surviving graph before remapping its possibly forward references.
     let mut face_map: Vec<Option<usize>> = vec![None; src.faces.len()];
     for (i, f) in src.faces.iter().enumerate() {
         if !keep(EntRef::face(i)) {
@@ -754,38 +752,58 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         face_map[i] = Some(dst.faces.len() - 1);
         made.push(EntRef::face(dst.faces.len() - 1));
     }
-    let mut solid_map: Vec<Option<usize>> = vec![None; src.solids.len()];
+    // Allocate the retained graph before remapping it: extent targets and Boolean operands
+    // may be forward references, including a cutter referring to the body that subtracts it.
+    let mut retained: Vec<bool> = src.solids.iter().enumerate().map(|(i, s)| {
+        keep(EntRef::solid(i)) && s.face().is_none_or(|f| face_map[f as usize].is_some())
+            && match s.def {
+                crate::model::SolidDef::Revolve { axis, .. } => line_map[axis as usize].is_some(),
+                _ => true,
+            }
+    }).collect();
+    loop {
+        let mut changed = false;
+        for (i, s) in src.solids.iter().enumerate() {
+            let required = match s.def {
+                crate::model::SolidDef::Through { body, .. } => vec![body],
+                _ => s.operands(),
+            };
+            if retained[i] && required.iter().any(|&r| !retained[r as usize]) {
+                retained[i] = false; changed = true;
+            }
+        }
+        if !changed { break; }
+    }
+    let mut next_solid = dst.solids.len();
+    let solid_map: Vec<Option<usize>> = retained.iter().map(|&keep| {
+        if keep { let i = next_solid; next_solid += 1; Some(i) } else { None }
+    }).collect();
     for (i, so) in src.solids.iter().enumerate() {
-        if !keep(EntRef::solid(i)) {
+        if solid_map[i].is_none() {
             continue;
         }
-        let face = |f: u32| face_map[f as usize].map(|n| n as u32);
-        let sol = |s: &u32| solid_map[*s as usize].map(|n| n as u32);
+        // Retention above guarantees every reference exists. Do not silently discard an
+        // operand here: that would change the solid and invalidate the preallocated indices.
+        let face = |f: u32| face_map[f as usize].unwrap() as u32;
+        let sol = |s: &u32| solid_map[*s as usize].unwrap() as u32;
         let def = match &so.def {
-            crate::model::SolidDef::Prism { face: f, from, to } => match face(*f) {
-                Some(f) => crate::model::SolidDef::Prism {
-                    face: f,
-                    from: from.clone(),
-                    to: to.clone(),
-                },
-                None => continue,
-            },
+            crate::model::SolidDef::Prism { face: f, from, to } => {
+                crate::model::SolidDef::Prism { face: face(*f), from: from.clone(), to: to.clone() }
+            }
+            crate::model::SolidDef::Through { face: f, body } => {
+                crate::model::SolidDef::Through { face: face(*f), body: sol(body) }
+            }
             crate::model::SolidDef::Revolve { face: f, axis, sweep, sense } => {
-                match (face(*f), line_map[*axis as usize]) {
-                    (Some(f), Some(a)) => crate::model::SolidDef::Revolve {
-                        face: f,
-                        axis: a as u32,
-                        sweep: sweep.clone(),
-                        sense: *sense,
-                    },
-                    _ => continue,
+                crate::model::SolidDef::Revolve {
+                    face: face(*f), axis: line_map[*axis as usize].unwrap() as u32,
+                    sweep: sweep.clone(), sense: *sense,
                 }
             }
             crate::model::SolidDef::Body { stock, on, through } => {
-                let Some(stock) = sol(stock) else { continue };
-                let on: Vec<u32> = on.iter().filter_map(sol).collect();
-                let through: Vec<u32> = through.iter().filter_map(sol).collect();
-                crate::model::SolidDef::Body { stock, on, through }
+                crate::model::SolidDef::Body {
+                    stock: sol(stock), on: on.iter().map(sol).collect(),
+                    through: through.iter().map(sol).collect(),
+                }
             }
         };
         dst.solids.push(crate::model::SolidE {
@@ -793,7 +811,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             name: so.name.clone(),
             class: so.class.clone(),
         });
-        solid_map[i] = Some(dst.solids.len() - 1);
+        debug_assert_eq!(solid_map[i], Some(dst.solids.len() - 1));
         made.push(EntRef::solid(dst.solids.len() - 1));
     }
     let remap = |e: EntRef| -> Option<EntRef> {
@@ -899,7 +917,15 @@ pub fn without(sk: &Sketch, entities: &[EntRef], constraints: &[u32]) -> Sketch 
 /// everything else — so it goes through the same rule, and a constraint that survives a copy is
 /// exactly one that would have survived deleting the rest.
 pub fn copy(sk: &Sketch, entities: &[EntRef]) -> Sketch {
-    let keep: BTreeSet<EntRef> = expand(sk, entities).into_iter().collect();
+    let mut keep = BTreeSet::new();
+    let mut pending = entities.to_vec();
+    while let Some(e) = pending.pop() {
+        if !keep.insert(e) { continue; }
+        pending.extend(sk.children(e));
+        if e.kind == EntKind::Point {
+            if let Some(p) = sk.plane_of(e.i()) { pending.push(EntRef::plane(p)); }
+        }
+    }
     let drop: Vec<EntRef> = sk.primitives().into_iter().filter(|e| !keep.contains(e)).collect();
     without(sk, &drop, &[])
 }

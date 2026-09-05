@@ -103,8 +103,8 @@ component Cylinder(swing: plane, piv: point, ax: line, ac: line, dir: Angle, fw:
   solid hole(face(shank), from: face, to: face + trapz)
   solid trap(face(trap0, trap1, trap2, -> close), from: face + trapz, to: face + trapz + traph)
   solid body(block)
-  bore through body
-  passage through body
-  hole through body
-  trap through body
+  bore cut body
+  passage cut body
+  hole cut body
+  trap cut body
 }

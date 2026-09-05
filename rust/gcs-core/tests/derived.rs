@@ -73,8 +73,8 @@ fn projection_inputs_exclude_unrelated_geometry_and_include_solid_extents() {
 #[test]
 fn projection_inputs_follow_view_poses_and_cutting_planes() {
     let mut e = read(&format!("{RECT}{SIDE}solid block(sec, depth: 30mm)\n\
-        plane cut(origin: a, toward: b, from: front, offset: 10mm)\n\
-        view(block) in side\nsection(block, at: cut) in front\n"));
+        plane slice(origin: a, toward: b, from: front, offset: 10mm)\n\
+        view(block) in side\nsection(block, at: slice) in front\n"));
     let before = hidden::inputs(&e.sketch);
     let picture = gcs_core::report::derived_json(&e.sketch, UNIT);
     let origin = e.sketch.planes[1].frame.origin as usize;
@@ -134,7 +134,7 @@ fn a_bore_along_the_eye_is_two_hidden_lines_in_the_view_beside_it() {
          a distance(30, along: x) o\na distance(20, along: y) o\n\
          circle hole(center: o) hint(r: 8)\nradius(8) hole\nface hole_f(hole)\n\
          solid stock(sec, depth: 30mm)\nsolid bore(hole_f, depth: 30mm)\n\
-         solid body(stock)\nbore through body\nview(body) in side\n"
+         solid body(stock)\nbore cut body\nview(body) in side\n"
     );
     let e = read(&src);
     let v = strokes(&e);
@@ -179,7 +179,7 @@ fn a_section_shows_the_cut() {
          a distance(30, along: x) o\na distance(20, along: y) o\n\
          circle hole(center: o) hint(r: 8)\nradius(8) hole\nface hole_f(hole)\n\
          solid stock(sec, depth: 30mm)\nsolid bore(hole_f, depth: 30mm)\n\
-         solid body(stock)\nbore through body\nsection(body, at: front) in front\n"
+         solid body(stock)\nbore cut body\nsection(body, at: front) in front\n"
     );
     let e = read(&src);
     let v = strokes(&e);

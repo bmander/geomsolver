@@ -193,14 +193,14 @@ fn invalid_inline_sections_report_the_loop_and_leave_no_geometry() {
 
 #[test]
 fn the_body_rule_does_not_care_what_order_it_was_written_in() {
-    // P2 at the language: `bore through body` says what `body` *is*, wherever it stands
+    // P2 at the language: `bore cut body` says what `body` *is*, wherever it stands
     let after = format!(
         "{RECT}{HOLE}solid stock(sec, depth: 30mm)\nsolid bore(hole_f, depth: 30mm)\n\
-         solid body(stock)\nbore through body\n"
+         solid body(stock)\nbore cut body\n"
     );
     let before = format!(
         "{RECT}{HOLE}solid stock(sec, depth: 30mm)\nsolid bore(hole_f, depth: 30mm)\n\
-         bore through body\nsolid body(stock)\n"
+         bore cut body\nsolid body(stock)\n"
     );
     let (x, y) = (volume(&read(&after), "body"), volume(&read(&before), "body"));
     assert!((x - y).abs() < 1e-9, "one body, whichever order: {x} vs {y}");
@@ -482,13 +482,13 @@ fn what_is_written_wrong_is_refused_where_it_is_written() {
     refused(&format!("{RECT}solid bad(sec, about: a)\n"), Code::E081, "turns about a line");
     // a body made of itself
     refused(
-        &format!("{RECT}solid s(sec, depth: 3mm)\nsolid x(s)\nsolid y(x)\nx through y\ny through x\n"),
+        &format!("{RECT}solid s(sec, depth: 3mm)\nsolid x(s)\nsolid y(x)\nx cut y\ny cut x\n"),
         Code::E041,
         "made of itself",
     );
     // a feature written into a solid that is a face swept, not a body
     refused(
-        &format!("{RECT}{HOLE}solid s(sec, depth: 3mm)\nsolid h(hole_f, depth: 3mm)\nh through s\n"),
+        &format!("{RECT}{HOLE}solid s(sec, depth: 3mm)\nsolid h(hole_f, depth: 3mm)\nh cut s\n"),
         Code::E080,
         "only a body takes features",
     );
@@ -702,4 +702,150 @@ fn a_refused_named_loop_does_not_misnumber_later_sections() {
     assert_eq!(e.sketch.faces.len(), 1);
     assert_eq!(e.sketch.solids.len(), 1);
     assert_eq!(volume(&e, "block"), 19200.0);
+}
+
+#[test]
+fn through_extent_spans_additions_but_only_cut_subtracts() {
+    let src = format!("{RECT}{HOLE}\n\
+        solid stock(sec, depth: 10mm)\n\
+        solid boss(sec, from: 0mm, to: 5mm)\n\
+        solid body(stock)\nboss on body\n\
+        solid bore(hole_f, through: body)\n");
+    let uncut = read(&src);
+    assert_eq!(volume(&uncut, "body"), 36000.0);
+    let cut = read(&format!("{src}bore cut body\n"));
+    let explicit = read(&format!("{}bore cut body\n", src.replace("through: body", "from: -11mm, to: 6mm")));
+    assert!((volume(&cut, "body") - volume(&explicit, "body")).abs() < 1e-6);
+    let i = cut.map.ent_named("bore").unwrap().i();
+    let csg = gcs_core::solid::resolve(&cut.sketch, i, gcs_core::solid::REPORT_UNIT);
+    assert_eq!(csg.prims.len(), 1, "extent sources are not cutter geometry");
+    let b = csg.bbox();
+    assert!(b.lo[1] < -5.0 && b.hi[1] > 10.0);
+    assert!(b.lo[0] >= 25.0 - 1e-6 && b.hi[0] <= 35.0 + 1e-6);
+    let mut sk = cut.sketch.clone();
+    let boss = cut.map.ent_named("boss").unwrap().i();
+    let body = cut.map.ent_named("body").unwrap().i();
+    let before = sk.evaluated_solid(body, gcs_core::solid::ApproximationPolicy::Report).unwrap();
+    if let gcs_core::model::SolidDef::Prism { to, .. } = &mut sk.solids[boss].def {
+        to.value = 20.0;
+    }
+    let after = sk.evaluated_solid(body, gcs_core::solid::ApproximationPolicy::Report).unwrap();
+    assert!(after.volume() > before.volume(), "target edits invalidate the evaluated body");
+    let b = gcs_core::solid::resolve(&sk, i, gcs_core::solid::REPORT_UNIT).bbox();
+    assert!(b.lo[1] < -20.0, "the cutter follows target changes");
+}
+
+#[test]
+fn through_extent_is_order_independent_and_ignores_other_cutters() {
+    let declarations = [
+        "solid stock(sec, depth: 10mm)",
+        "solid body(stock)",
+        "solid bore(hole_f, through: body)",
+        "bore cut body",
+        "solid huge(hole_f, from: -1000mm, to: 1000mm)",
+        "huge cut body",
+    ];
+    let mut expected: Option<f64> = None;
+    for reverse in [false, true] {
+        let mut lines = declarations.to_vec();
+        if reverse { lines.reverse(); }
+        let src = format!("{RECT}{HOLE}{}\n", lines.join("\n"));
+        let e = read(&src);
+        let i = e.map.ent_named("bore").unwrap().i();
+        let b = gcs_core::solid::resolve(&e.sketch, i, gcs_core::solid::REPORT_UNIT).bbox();
+        assert!(b.lo[1] > -1.0 && b.hi[1] < 11.0, "cuts cannot inflate extent");
+        let v = volume(&e, "body");
+        if let Some(want) = expected { assert!((v - want).abs() < 1e-6); }
+        expected = Some(v);
+    }
+}
+
+#[test]
+fn through_targets_resolve_inside_components_and_round_trip() {
+    let src = format!("{RECT}{HOLE}\n\
+        component Drill(section: face, target: solid) {{\n\
+          solid tool(section, through: target)\ntool cut target\n}}\n\
+        d: Drill(hole_f, body)\nsolid body(stock)\nsolid stock(sec, depth: 10mm)\n");
+    let e = read(&src);
+    assert!(volume(&e, "body") < 24000.0);
+    let flat = format!("{RECT}{HOLE}solid stock(sec, depth: 10mm)\nsolid body(stock)\nsolid tool(hole_f, through: body)\ntool cut body\n");
+    let (mut p, _) = parse(&flat);
+    let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
+    assert!(printed.contains("through: body") && printed.contains("tool cut body"));
+    assert!((volume(&read(&printed), "body") - volume(&e, "body")).abs() < 1e-6);
+    let body = e.map.ent_named("body").unwrap();
+    let copied = gcs_core::io::copy(&e.sketch, &[body]);
+    assert_eq!(copied.solids.len(), e.sketch.solids.len());
+    let deleted = gcs_core::io::without(&e.sketch, &[e.map.ent_named("hole").unwrap()], &[]);
+    assert_eq!(deleted.solids.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), ["stock"],
+        "losing a cutter must remove dependent bodies, not silently fill their holes");
+    let i = copied.solids.iter().position(|s| s.name == "body").unwrap();
+    assert!((copied.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Report).unwrap().volume() - volume(&e, "body")).abs() < 1e-6);
+}
+
+#[test]
+fn through_extent_refuses_mixed_labels_bad_targets_and_real_cycles() {
+    for label in ["depth: 3mm", "from: 0mm, to: 3mm", "about: ab", "sweep: 90deg", "sense: cw"] {
+        refused(&format!("{RECT}solid s(sec, through: target, {label})\n"), Code::E100, "cannot be combined");
+    }
+    refused(&format!("{RECT}solid s(sec, through: a)\n"), Code::E080, "solid target");
+    refused(&format!("{RECT}solid s(sec, through: missing)\n"), Code::E101, "no such entity");
+    refused(&format!("{RECT}solid s(sec, through: s)\n"), Code::E041, "made of itself");
+    refused(&format!("{RECT}solid s(sec, through: body)\nsolid body(s)\n"), Code::E041, "made of itself");
+    refused(&format!("{RECT}solid stock(sec, depth: 10mm)\nsolid s(sec, through: body)\nsolid body(stock)\ns on body\n"), Code::E041, "made of itself");
+    refused(&format!("{RECT}solid a1(sec, through: b1)\nsolid b1(sec, through: a1)\n"), Code::E041, "made of itself");
+    refused(&format!("{RECT}solid stock(sec, depth: 10mm)\nsolid body(stock)\nstock through body\n"), Code::E100, "now `cut`");
+}
+
+#[test]
+fn through_extent_uses_the_cutters_normal_and_target_world_placement() {
+    let src = format!("unit mm\npoint origin hint(x: 0, y: 0)\npoint toward hint(x: 1, y: 0)\n\
+        plane front(origin: origin, toward: toward, u: (1, 0, 0), v: (0, 1, 0))\n\
+        plane side0(origin: origin, toward: toward, u: (1, 0, 0), v: (0, 0, 1))\n\
+        plane side(origin: origin, toward: toward, from: side0, offset: 80mm)\n\
+        in front {{\n{}\n}}\n\
+        in side {{\npoint hc hint(x: 30, y: -5)\ncircle h(center: hc) hint(r: 2)\nface hf(h)\n}}\n\
+        solid stock(sec, depth: 10mm)\nsolid body(stock)\n\
+        solid tool(hf, through: body)\ntool cut body\n", RECT.replace("unit mm\n", ""));
+    let mut e = read(&src);
+    let explicit = read(&src.replace("through: body", "from: -121mm, to: -79mm"));
+    let want = volume(&explicit, "body");
+    assert!(want < 24000.0 && want > 23000.0, "cut body volume: {want}");
+    assert!((volume(&e, "body") - want).abs() < 1e-6);
+    let tool = e.map.ent_named("tool").unwrap().i();
+    let body = e.map.ent_named("body").unwrap().i();
+    let a = e.sketch.evaluated_solid(tool, gcs_core::solid::ApproximationPolicy::Report).unwrap();
+    assert!(a.world_bounds().lo[1] < 0.0 && a.world_bounds().hi[1] > 40.0);
+    // A different placement of the target along the cutter normal changes its cached extent.
+    e.sketch.planes[0].basis.o[1] = 100.0;
+    let b = e.sketch.evaluated_solid(tool, gcs_core::solid::ApproximationPolicy::Report).unwrap();
+    assert!(!std::rc::Rc::ptr_eq(&a, &b));
+    assert!(b.world_bounds().lo[1] > 99.0 && b.world_bounds().hi[1] > 140.0);
+    assert!((volume(&e, "body") - want).abs() < 1e-6);
+    // Rotate both frames so the world box is no longer aligned with the extrusion axis.
+    let rotate = |v: [f64; 3]| {
+        let k = std::f64::consts::FRAC_1_SQRT_2;
+        [k * (v[0] - v[1]), k * (v[0] + v[1]), v[2]]
+    };
+    for p in &mut e.sketch.planes {
+        p.basis.u = rotate(p.basis.u);
+        p.basis.v = rotate(p.basis.v);
+        p.basis.o = rotate(p.basis.o);
+    }
+    assert!((volume(&e, "body") - want).abs() < 1e-6);
+    let copied = gcs_core::io::copy(&e.sketch, &[gcs_core::model::EntRef::solid(body)]);
+    let copied_body = copied.solids.iter().position(|s| s.name == "body")
+        .expect("copying a placed body must retain its planes and geometry");
+    assert!((copied.evaluated_solid(copied_body, gcs_core::solid::ApproximationPolicy::Report)
+        .unwrap().volume() - want).abs() < 1e-6);
+    let mesh = e.sketch.solid_mesh(body, 0.0);
+    assert!(!mesh.positions.is_empty());
+    let mut edges = std::collections::BTreeMap::new();
+    for t in mesh.positions.chunks_exact(9) {
+        let v: Vec<Vec<i64>> = t.chunks_exact(3).map(|p| p.iter().map(|x| (x * 1e6).round() as i64).collect()).collect();
+        for j in 0..3 { *edges.entry((v[j].clone(), v[(j + 1) % 3].clone())).or_insert(0) += 1; }
+    }
+    for ((a, b), count) in &edges {
+        assert_eq!(edges.get(&(b.clone(), a.clone())), Some(count), "mesh edges pair");
+    }
 }

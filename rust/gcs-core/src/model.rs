@@ -85,7 +85,7 @@ pub enum EntKind {
     Face,
     /// **A solid** (Solvent §6.9): a face swept along its plane's normal or about a line in its
     /// plane, or a term over other solids — its stock, plus everything `on` it, minus everything
-    /// `through` it.
+    /// that `cut`s it.
     ///
     /// It is an entity because a document *names* it and reaches its faces by path
     /// (`body.bore.axis`), and it is like `Curve` in owning no coordinates: it is the term plus
@@ -486,7 +486,7 @@ pub struct CurveE {
 /// (`sec.mouth`), and the plane is the one every point of every edge agrees about — read off the
 /// memberships, never written on the face, so a face inside `in swing { … }` is on the plane the
 /// block stamped.  A circle is a loop by itself; there are no holes, because a hole is a solid
-/// `through` the body and that is the body rule saying it already.
+/// that `cut`s the body and that is the body rule saying it already.
 #[derive(Clone, Debug)]
 pub struct FaceE {
     /// The loop, in traversal order.  Lines, arcs and at most one circle standing alone.
@@ -702,11 +702,13 @@ pub enum SolidDef {
     /// and `to` are ordinates and their signs are arithmetic; `depth: d` is the draughtsman's
     /// spelling of `from: -d, to: 0`, the material behind the face the view shows.
     Prism { face: u32, from: Extent, to: Extent },
+    /// A prism spanning the target's additive material, evaluated after solving.
+    Through { face: u32, body: u32 },
     /// A face swept about a line **in its own plane**, through `sweep` (a full turn where the
     /// document writes none), right-handed about the line's own `p1 → p2` unless `sense: cw`.
     Revolve { face: u32, axis: u32, sweep: Extent, sense: Sense },
     /// **The body rule, and the whole of it**: its stock, plus everything `on` it, minus
-    /// everything `through` it.  Both are sets, so the statements that fill them may be written
+    /// everything that `cut`s it.  Both are sets, so the statements that fill them may be written
     /// anywhere in any order (P2) — which is what a feature tree, folding a *sequence*, is not.
     /// A design needing the other order names the intermediate, and then there are two solids
     /// because there are two things.
@@ -723,10 +725,10 @@ pub struct SolidE {
 }
 
 impl SolidE {
-    /// The solids this one is written over — what the term walk orders by.
+    /// Boolean operands only; a through-extent target is a separate evaluation dependency.
     pub fn operands(&self) -> Vec<u32> {
         match &self.def {
-            SolidDef::Prism { .. } | SolidDef::Revolve { .. } => Vec::new(),
+            SolidDef::Prism { .. } | SolidDef::Revolve { .. } | SolidDef::Through { .. } => Vec::new(),
             SolidDef::Body { stock, on, through } => {
                 let mut v = vec![*stock];
                 v.extend(on.iter().copied());
@@ -739,7 +741,7 @@ impl SolidE {
     /// The face it is swept from, if it is swept from one.
     pub fn face(&self) -> Option<u32> {
         match &self.def {
-            SolidDef::Prism { face, .. } | SolidDef::Revolve { face, .. } => Some(*face),
+            SolidDef::Prism { face, .. } | SolidDef::Revolve { face, .. } | SolidDef::Through { face, .. } => Some(*face),
             SolidDef::Body { .. } => None,
         }
     }
@@ -1602,6 +1604,10 @@ impl Sketch {
                 let mut v: Vec<EntRef> = Vec::new();
                 match &s.def {
                     SolidDef::Prism { face, .. } => v.push(EntRef::face(*face as usize)),
+                    SolidDef::Through { face, body } => {
+                        v.push(EntRef::face(*face as usize));
+                        v.push(EntRef::solid(*body as usize));
+                    }
                     SolidDef::Revolve { face, axis, .. } => {
                         v.push(EntRef::face(*face as usize));
                         v.push(EntRef::line(*axis as usize));

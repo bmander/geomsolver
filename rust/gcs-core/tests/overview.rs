@@ -412,7 +412,7 @@ face hole_f(hole)
 solid stock(sec, depth: 30mm)
 solid bore(hole_f, depth: 30mm)
 solid body(stock)
-bore through body
+bore cut body
 ";
     let (prog, errs) = gcs_core::syntax::parse(src);
     assert!(errs.is_empty(), "{errs:?}");

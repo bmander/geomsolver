@@ -1270,8 +1270,8 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
     'point o hint(x: 30, y: 20)',
     'a distance(30, along: x) o', 'a distance(20, along: y) o',
     'circle hole(center: o) hint(r: 8)', 'radius(8) hole', 'face hole_f(hole)',
-    'solid stock(sec, depth: 30mm)', 'solid bore(hole_f, depth: 30mm)',
-    'solid body(stock)', 'bore through body', '',
+    'solid stock(sec, depth: 30mm)', 'solid bore(hole_f, through: body)',
+    'solid body(stock)', 'bore cut body', '',
   ].join('\n');
   const doc = Document.read(src);
   assert.ok(doc.ok, JSON.stringify(doc.diagnostics));

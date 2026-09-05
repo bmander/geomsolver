@@ -51,8 +51,8 @@ component Disc(swing: plane, o: point, pin: point, arm: line, dir: Angle) {
   solid pinhole(face(ph), from: -tdisc / 2, to: tdisc / 2)
   solid pinpkt(face(pkt), from: -tdisc / 2, to: -tdisc / 2 + pinpocket)
   solid body(plate)
-  hub through body
-  pinhole through body
-  pinpkt through body
-  gs.bore through body
+  hub cut body
+  pinhole cut body
+  pinpkt cut body
+  gs.bore cut body
 }

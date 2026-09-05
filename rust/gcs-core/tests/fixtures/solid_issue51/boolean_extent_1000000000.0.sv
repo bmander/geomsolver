@@ -20,6 +20,6 @@ ground toolfp3
 face toolf(toolfp0, toolfp1, toolfp2, toolfp3, -> close)
 solid tool(toolf, from: -6mm, to: -4mm)
 solid result(stock)
-tool through result
+tool cut result
 point irrelevant hint(x: 1000000000, y: 1000000000)
 ground irrelevant

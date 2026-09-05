@@ -20,7 +20,7 @@ ground voidfp3
 face voidf(voidfp0, voidfp1, voidfp2, voidfp3, -> close)
 solid void(voidf, from: -12mm, to: -8mm)
 solid shell(stock)
-void through shell
+void cut shell
 point resultfp0 hint(x: 4, y: 4)
 ground resultfp0
 point resultfp1 hint(x: 16, y: 4)

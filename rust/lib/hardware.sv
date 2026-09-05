@@ -118,5 +118,5 @@ component Groove(body: solid, f: plane, o: point, ax: line, ac: line, dir: Angle
     claim g0.p distance(rb) ax class detail
   }
   solid groove(gf, about: ax)
-  groove through body
+  groove cut body
 }

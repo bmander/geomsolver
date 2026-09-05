@@ -110,7 +110,7 @@ pub(super) fn opens_link(w: &str, next: Option<&str>) -> bool {
 /// An optional declaration name cannot consume an element keyword or trailing clause.
 /// `at` stays reserved so the retired seed spelling gets its diagnostic.
 pub(super) fn names_decl(w: &str) -> bool {
-    EntKind::parse(w).is_none() && !trails_decl(w) && w != "at"
+    EntKind::parse(w).is_none() && !trails_decl(w) && w != "at" && w != "cut"
 }
 
 /// A valid identifier that is not reserved by the grammar. Used by source edits

@@ -17,18 +17,26 @@ struct SweepParts {
     to: Option<Arg>,
     depth: Option<Arg>,
     about: Option<Ref>,
+    through: Option<Ref>,
     sweep: Option<Arg>,
     sense: Option<Sense>,
 }
 
 /// The labels a solid's brackets may carry beside the face or the operands.
 fn sweep_label(l: &str) -> bool {
-    matches!(l, "from" | "to" | "depth" | "about" | "sweep" | "sense")
+    matches!(l, "from" | "to" | "depth" | "about" | "sweep" | "sense" | "through")
 }
 
 /// What the sweep arguments a bracket list carried come to.  A solid is a prism, a revolution,
 /// or a body over other solids — and a mixture is none of the three.
 fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
+    if let Some(body) = p.through {
+        if p.from.is_some() || p.to.is_some() || p.depth.is_some() || p.about.is_some()
+            || p.sweep.is_some() || p.sense.is_some() {
+            return Err("`through:` cannot be combined with other sweep extents".into());
+        }
+        return Ok(Sweep::Through { body });
+    }
     let turn = p.sense.unwrap_or_default();
     match (p.from, p.to, p.depth, p.about) {
         (None, None, None, None) => {
@@ -530,6 +538,10 @@ impl<'a> P<'a> {
             None
         };
         match label {
+            "through" => {
+                if parts.through.is_some() { return twice(self); }
+                parts.through = Some(self.refr()?);
+            }
             "about" => {
                 if parts.about.is_some() {
                     return twice(self);

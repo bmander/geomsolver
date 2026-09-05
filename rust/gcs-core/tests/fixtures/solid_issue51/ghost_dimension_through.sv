@@ -21,5 +21,5 @@ radius(2mm) fc
 face f(fc)
 solid tool(f,depth:1mm)
 solid result(stock)
-tool through result
+tool cut result
 dimensions(result) in front

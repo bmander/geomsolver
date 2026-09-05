@@ -497,13 +497,14 @@ The standard library lays out the three views once (2.10).
 A feature tree is imperative because it is a *history*: step *n* acts on the anonymous body as of
 step *n − 1*, and names faces by the order they were cut in. Solvent names everything, so **a solid
 is a term, never a step** — a face swept, or a stock plus everything `on` it minus everything
-`through` it — and the implementation finds the order the way it finds the order of `h = w / 2`.
-**The order lives inside a term and never between statements**, so `bore through body` may be
+that `cut`s it — and the implementation finds the order the way it finds the order of `h = w / 2`.
+**The order lives inside a term and never between statements**, so `bore cut body` may be
 written above the `solid body(…)` it belongs to or fifty lines below it and says the same thing.
 
-**Nothing three-dimensional is solved for.** A solid owns no parameter: every extent is an
-expression the elaborator works out, and the geometry it is swept from is the drawing, solved in 2D
-as it always was.
+**Nothing three-dimensional is solved for.** A solid owns no parameter. Numeric extents are
+expressions the elaborator works out; a
+`through:` extent follows the target after solving. The geometry swept is the drawing, solved
+in 2D as it always was.
 
 **A face** is a closed loop of edges the drawing already has, on one plane — the plane its edges
 are drawn `in`, the page where nothing says otherwise.
@@ -537,7 +538,7 @@ Six unknowns and six equations: the count is the rectangle's own, and the face a
 nothing to it. The edges are given in traversal order and each must share a point with the next; a
 **circle is a whole loop by itself**, so `face hole_f(hole)` is a face and a circle among lines is
 refused. A face has no inner loops, because a hole is not a hole in a face — it is a solid
-`through` the body.
+that `cut`s the body.
 
 **Name the chain where you draw it.** A contour can bind its whole traversal, so no second
 statement needs to list its edges again:
@@ -643,7 +644,7 @@ at each end of the turn. Round faces are read as fine polygons, so every volume 
 that faceting and not beyond it.
 
 **The body rule** is one sentence: a body is its **stock, plus everything `on` it, minus everything
-`through` it**. Add to the plate above:
+that `cut`s it**. Add to the plate above:
 
 ```
 point o hint(x: 30, y: 20)
@@ -656,7 +657,7 @@ face hole_f(hole)
 solid stock(sec, depth: 30mm)
 solid bore(hole_f, depth: 30mm)
 solid body(stock)
-bore through body
+bore cut body
 ```
 
 ```
@@ -664,12 +665,27 @@ bore through body
   body.volume = 69643.8
 ```
 
-`72000 − π · 5² · 30 = 69643.81`. Swap the last two lines — `bore through body` before the `solid
+`72000 − π · 5² · 30 = 69643.81`. Swap the last two lines — `bore cut body` before the `solid
 body(stock)` it belongs to — and the number is the same, because both sides of the rule are *sets*
 and a set has no order.
 
+**Body-relative cutter extents.**
+
+Use `through:` to let a cutter span a part, and `cut` to subtract it:
+
+```solvent
+solid pinhole(face(hole), through: body)
+pinhole cut body
+```
+
+The extent includes the target's stock and additions in both directions along the section's
+normal, ignoring other cutters. It follows the solved geometry and placement. The constructor
+alone creates the cutter; the infix statement removes its material from the body. For a blind
+pocket, keep an explicit `depth:` or `from:`/`to:` extent and apply it with the same `cut` word.
+Old Boolean `X through B` statements are now written `X cut B`.
+
 Being sets is also the one thing you have to write out. A boss standing in the floor of a pocket is
-**not** `pocket through body` and `boss on body`: that is stock ∪ boss − pocket, and the pocket eats
+**not** `pocket cut body` and `boss on body`: that is stock ∪ boss − pocket, and the pocket eats
 the boss. Name the intermediate the feature tree would have left anonymous:
 
 ```
@@ -686,7 +702,7 @@ solid pocket(rim_f, depth: 10mm)
 solid boss(stud_f, from: -10mm, to: -4mm)
 
 solid shell(stock)
-pocket through shell
+pocket cut shell
 
 solid body(shell)
 boss on body
@@ -769,7 +785,7 @@ face hole_f(hole)
 solid stock(sec, depth: 30mm)
 solid bore(hole_f, depth: 30mm)
 solid body(stock)
-bore through body
+bore cut body
 
 plane mid(origin: a, toward: b, from: views.front, offset: -15mm)
 view(body) in views.right
@@ -849,11 +865,11 @@ way it always did. This is only the part that was never a decision.
 | `solid bad(sec, about: ax, sweep: -90deg)` | E040 — "a sweep is a magnitude: which way it turns is `sense: cw`" |
 | `solid bad(sec, about: a)` | E081 — "a face turns about a line, and `a` is a point" |
 | `solid bad(sec, depth: 3mm, about: ax)` | E001 — "a solid is a face swept along its normal (`from:`/`to:`, `depth:`) or turned about a line (`about:`), not both" |
-| `x through y` and `y through x` | E041 — "`x` is made of itself" |
-| `h through s`, `s` a face swept | E080 — "`s` is a face swept, and only a body takes features: give it a stock (`solid s(s_stock)`) and write them there" |
+| `x cut y` and `y cut x` | E041 — "`x` is made of itself" |
+| `h cut s`, `s` a face swept | E080 — "`s` is a face swept, and only a body takes features: give it a stock (`solid s(s_stock)`) and write them there" |
 | `section(block, at: front) in side` | E084 — "a section is drawn in a view parallel to the plane it is cut at" |
 
-The `h through s` one carries the most: only a *body* takes features, so a face swept is a
+The `h cut s` one carries the most: only a *body* takes features, so a face swept is a
 primitive and a body is the term over primitives, and the two are never the same name. The negative
 sweep is 1.5's rule again — which way is a word, not a sign.
 

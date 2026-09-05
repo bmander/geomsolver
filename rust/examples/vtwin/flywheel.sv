@@ -30,6 +30,6 @@ component Flywheel(front: plane, o: point, ref: line) {
   solid plate(face(rim), from: -wfw / 2, to: wfw / 2)
   solid hub(face(bore), from: -wfw / 2, to: wfw / 2)
   solid body(plate)
-  hub through body
-  gs.bore through body
+  hub cut body
+  gs.bore cut body
 }

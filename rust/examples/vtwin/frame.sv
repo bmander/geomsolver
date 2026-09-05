@@ -228,18 +228,18 @@ component Frame(front: plane, o: point, ref: line) {
   foot on body
   bboss on body
   iboss on body
-  bpkt through body
-  shaft through body
-  boltR through body
-  boltL through body
-  portRi through body
-  portLi through body
-  portRe through body
-  portLe through body
-  plenum through body
-  passage_s through body
-  ventR through body
-  ventL through body
-  cplh through body
-  tbore_s through body
+  bpkt cut body
+  shaft cut body
+  boltR cut body
+  boltL cut body
+  portRi cut body
+  portLi cut body
+  portRe cut body
+  portLe cut body
+  plenum cut body
+  passage_s cut body
+  ventR cut body
+  ventL cut body
+  cplh cut body
+  tbore_s cut body
 }

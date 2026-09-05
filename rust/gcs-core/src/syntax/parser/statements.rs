@@ -268,24 +268,28 @@ impl<'a> P<'a> {
                     span: Span::new(lo, self.prev_hi()),
                 }))
             }
-            // `bore through cyl` — the body rule's own word, and the one statement whose shape
+            // `bore cut cyl` — the body rule's own word, and the one statement whose shape
             // is two names with a word between them that is not a constraint.  Read by a
-            // lookahead rather than by `relation()`, since `through` relates no geometry and
+            // lookahead rather than by `relation()`, since `cut` relates no geometry and
             // has no residual to be settled into
             // **past the dotted path, not past one token**: a mate names a *face* of a solid
             // (`cyl.block.far against plate.body.near`), so the word after the left operand is
             // three tokens away and not one — the lookahead `past_ref` exists for
             _ if self.past_ref(self.i).and_then(|j| self.t.get(j)).is_some_and(
-                |(t, _)| matches!(t, Tok::Ident(w) if w == "through" || w == "against"),
+                |(t, _)| matches!(t, Tok::Ident(w) if w == "cut" || w == "through" || w == "against"),
             ) =>
             {
                 let lo = self.here().lo as usize;
                 let what = self.refr()?;
                 let Some(Tok::Ident(w)) = self.peek().cloned() else {
-                    self.fail("a body statement is `X through B` or `F against G`");
+                    self.fail("a body statement is `X cut B` or `F against G`");
                     return None;
                 };
-                let word = if w == "through" { BodyWord::Through } else { BodyWord::Against };
+                if w == "through" {
+                    self.fail("Boolean `through` is now `cut`: write `X cut B`; `through:` specifies a cutter's extent");
+                    return None;
+                }
+                let word = if w == "cut" { BodyWord::Cut } else { BodyWord::Against };
                 self.i += 1;
                 let body = self.refr()?;
                 self.end_of_stmt();

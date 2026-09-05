@@ -142,7 +142,7 @@ fn containment_tests_enclosed_voids_as_well_as_the_exterior() {
         let src = if void {
             source(7)
         } else {
-            source(7).replace("void through shell", "")
+            source(7).replace("void cut shell", "")
         };
         let e = read(&src);
         let a = e.map.ent_named("result").unwrap().i();
