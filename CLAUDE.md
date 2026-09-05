@@ -1230,7 +1230,22 @@ Conventions:
   comes back is the outline that was drawn.  **The core projects and the front end strokes**, the
   seam `callout.rs` sits on: `hidden::layout` resolves the ink through the sheet, `svg::render`
   and `paint.ts` stroke what they are handed, and neither owns a line of 3D arithmetic or a rule
-  about what a hidden line looks like.  **Every part of the V-twin is written this way** — `vtwin/cylinder.sv`, `piston.sv`, `disc.sv`,
+  about what a hidden line looks like.
+  **Moving the camera reuses the projected picture.** `app/derived.ts` keeps those page-coordinate
+  polylines against the sketch, the inputs of the projected solids and planes, and its style epoch.
+  `hidden::inputs` publishes those dependencies through a flat ABI buffer: unrelated coordinates
+  do not invalidate a picture. The display cache allows screen-scaled roundoff, compared against
+  the stored picture rather than the previous frame so small real moves accumulate. Exact input
+  comparisons mistook the stationary plate's ~1e-13 solver drift for motion, making a V-twin drag
+  spend ~800 ms projecting it beside a ~5 ms solve; dependency-aware reuse brings the whole frame
+  to ~11 ms. A pan only transforms the picture;
+  zooming out keeps the finer picture, and zooming in refines once redraws have rested for 150 ms.
+  Geometry changes refresh immediately, and `afterEdit` and `settle` clear both the picture and
+  its pending refinement, including edits to solid extents that move no coordinate. Exports
+  still ask the core directly at their output resolution. Reclassifying on every frame cost
+  the throttle sheet about 493 ms per pan and 1662 ms per zoom in Chrome; retaining the picture
+  made both about 1 ms. `app.test.ts` checks reuse, final refinement and edit/load invalidation.
+  **Every part of the V-twin is written this way** — `vtwin/cylinder.sv`, `piston.sv`, `disc.sv`,
   `flywheel.sv`, `throttle.sv` and the plate in `frame.sv` — one section and the solid it is a
   section of, with the other two views asked for.  The cylinder went from 144 lines and 12 formals
   to 119 and 6 and its sheet from 69 points and 50 lines to 30 and 22; the plate's sheet from 166

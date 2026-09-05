@@ -4,7 +4,6 @@
  * coordinates — this only maps them to the screen. */
 import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
-import { derived as derivedOf } from '../core/derived.js';
 import type { Pt, Seg } from '../core/callout.js';
 import type { Item, Part } from '../core/overview.js';
 import {
@@ -269,7 +268,7 @@ export function paintOverview(v: SketchView): void {
  *  rule the document may override and this file has never heard of.  The same seam the callouts
  *  sit on, which is what keeps the canvas and the SVG export one picture of one drawing. */
 export function paintDerived(v: SketchView): void {
-  const items = derivedOf(v.sketch, v.unit);
+  const items = v.derived.read(v.sketch, v.unit);
   if (items.length === 0) return;
   const ctx = v.ctx;
   ctx.save();

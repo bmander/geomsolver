@@ -22,6 +22,7 @@ import { Method, SolveResult, System } from '../core/system.js';
 import { Item, Scene, overview } from '../core/overview.js';
 import { Motion, WitnessReport, analyze } from '../core/witness.js';
 import { Camera } from './camera.js';
+import { DerivedDrawing } from './derived.js';
 import * as edit from './edit.js';
 import * as dimension from './dimension.js';
 import { abandonGesture, bindEvents } from './gesture.js';
@@ -214,6 +215,7 @@ export class SketchView {
   /** A gesture moved geometry, so the null space no longer describes the pose on screen. */
   staleDiagnosis = false;
   private frame = 0;
+  readonly derived = new DerivedDrawing(() => this.draw());
   /** A source sync is running: `swap` re-enters `afterEdit`, and the second pass has nothing
    *  left to write.  One flag rather than a subtle argument about termination. */
   private syncing = false;
@@ -324,6 +326,7 @@ export class SketchView {
     this.stopAnimation();             // first: it restores into the sketch it started on
     this.sceneCache = null;
     abandonGesture(this);             // dropped, not ended: `end` would commit into what follows
+    this.derived.clear();
     if (this.liveDim) this.endDimension(false);
     this.pending = [];
     this.pendingFit = [];
@@ -638,6 +641,7 @@ export class SketchView {
    *  the conflict search). */
   afterEdit(): SolveResult | null {
     this.sceneCache = null;
+    this.derived.clear();
     // A dimension still being laid down is being *said*, not solved, and the drawing holds
     // still under the number while somebody decides where to put it and which one it is: no
     // solve, and no re-diagnosis either — nothing changes colour, no banner appears and

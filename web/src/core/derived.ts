@@ -6,7 +6,7 @@
  * through the camera exactly as it maps a callout's figure, and no 3D arithmetic — and no rule
  * about what a hidden line looks like — exists above the ABI. */
 import { Sketch } from './model.js';
-import { core, takeJson } from './wasm.js';
+import { core, takeJson, withBuf } from './wasm.js';
 
 /** How a stroke is inked, resolved by the core's own style cascade — so a document's
  *  `style .hidden { … }` rule reaches a derived view with nothing added on this side. */
@@ -36,4 +36,14 @@ export interface Drawn {
  *  length of one screen pixel, which is what refines a round surface. */
 export function derived(sk: Sketch, unit: number): Drawn[] {
   return takeJson<Drawn[]>(core().gcs_derived_json(sk.handle, unit));
+}
+
+/** What those pictures depend on. The core walks their solids and planes; coordinates of
+ *  unrelated geometry do not force another projection during a drag. */
+export function derivedInputs(sk: Sketch, capacity = 128): Float64Array {
+  return withBuf(capacity, 8, (b) => {
+    const n = core().gcs_derived_inputs(sk.handle, b.ptr, capacity);
+    if (n < 0) throw new Error('could not read projection inputs');
+    return n > capacity ? derivedInputs(sk, n) : Float64Array.from(b.f64.subarray(0, n));
+  });
 }

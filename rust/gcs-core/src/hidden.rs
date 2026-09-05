@@ -25,7 +25,7 @@
 
 use crate::model::Sketch;
 use crate::plane::{self, Basis};
-use crate::solid::{ApproximationPolicy, LocalPoint, PageFrame};
+use crate::solid::{self, ApproximationPolicy, LocalPoint, PageFrame};
 
 /// One stroke of a derived picture, in page coordinates.
 #[derive(Clone, Debug)]
@@ -42,6 +42,27 @@ pub struct Stroke {
 
 /// How near two points must be, relative to the drawing, to be one point.
 const SAME: f64 = 1e-7;
+
+/// The numeric inputs of the document's projected pictures, excluding screen resolution.
+/// Unrelated sketch geometry must not invalidate a projection while it is dragged. Solid
+/// extents and viewing/cutting planes matter even when they move no sketch parameter.
+pub fn inputs(sk: &Sketch) -> Vec<f64> {
+    if sk.derived.is_empty() { return Vec::new(); }
+    let mut out = vec![sk.extent()]; // the visibility walk's tolerance
+    let frame = |out: &mut Vec<f64>, p: Option<u32>| {
+        let (basis, (c, s, o)) = view_frame(sk, p.map(|i| i as usize));
+        out.extend(basis.u);
+        out.extend(basis.v);
+        out.extend(basis.o);
+        out.extend([c, s, o.0, o.1]);
+    };
+    for d in &sk.derived {
+        out.extend(solid::reads(sk, d.solid as usize, 0.0));
+        frame(&mut out, d.plane);
+        if let Some(at) = d.at { frame(&mut out, Some(at)); }
+    }
+    out
+}
 
 /// **The edges of `si` as `plane` sees them.**
 ///

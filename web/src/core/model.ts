@@ -775,6 +775,11 @@ export class Sketch {
     return withStr(classes, (p, n) => takeJson<Style>(core().gcs_style_named(this.handle, p, n)));
   }
 
+  /** Changes to the sheet or entity classes, independent of geometry moving. */
+  get styleEpoch(): number {
+    return core().gcs_style_epoch(this.handle);
+  }
+
   /** Seeded Gaussian noise on every free parameter (warm starts, witness construction). */
   perturb(sigma: number, seed = 0): void {
     core().gcs_sketch_perturb(this.handle, sigma, seed >>> 0);

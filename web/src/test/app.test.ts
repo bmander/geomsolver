@@ -14,6 +14,7 @@ import { Plane, Point, Primitive, Sketch } from '../core/model.js';
 import { Document, fromSketch } from '../core/program.js';
 import type { Diagnosis } from '../core/diagnose.js';
 import { callouts } from '../core/callout.js';
+import { derived } from '../core/derived.js';
 import { PlanDrag } from '../core/decompose.js';
 import { solve } from '../core/system.js';
 import { DimAlt, SketchView } from '../app/view.js';
@@ -49,6 +50,137 @@ function viewOn(sk: Sketch): SketchView {
   view.autoSolve = false;
   return view;
 }
+
+const PROJECTED_CIRCLE = 'point o\npoint q hint(x: 10)\nplane front(origin: o, toward: q)\n'
+  + 'circle rim(center: o) hint(r: 10)\nsolid body(face(rim), depth: 8)\nview(body) in front\n';
+
+test('pan and zoom reuse derived geometry, then refine once the camera rests', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const v = new SketchView(fakeCanvas(), Document.read(PROJECTED_CIRCLE));
+  assert.ok(v.doc.ok, JSON.stringify(v.doc.diagnostics));
+  v.autoSolve = false;
+  const cv = v.canvas as ReturnType<typeof fakeCanvas>;
+  const first = v.derived.read(v.sketch, v.unit);
+  assert.ok(first.length);
+
+  cv.fire('pointerdown', pointer(400, 300, { button: 1 }));
+  cv.fire('pointermove', pointer(420, 310));
+  cv.fire('pointerup', pointer(420, 310));
+  assert.strictEqual(v.derived.read(v.sketch, v.unit), first, 'a pan only moves the camera');
+  for (let i = 0; i < 12; i++) {
+    cv.fire('wheel', { clientX: 400, clientY: 300, deltaY: -100, deltaMode: 0 });
+    t.mock.timers.tick(100);
+    assert.strictEqual(v.derived.read(v.sketch, v.unit), first,
+      'a wheel burst must not reclassify solid visibility on each tick');
+  }
+  t.mock.timers.tick(200);
+  const fine = v.derived.read(v.sketch, v.unit);
+  assert.notStrictEqual(fine, first);
+  assert.deepEqual(fine, derived(v.sketch, v.unit), 'the settled view has full screen precision');
+  assert.ok(fine.reduce((n, s) => n + s.pts.length, 0)
+    > first.reduce((n, s) => n + s.pts.length, 0), 'the close-up really refines the circle');
+  v.cam.zoomAt(400, 300, 0.1);
+  assert.strictEqual(v.derived.read(v.sketch, v.unit), fine, 'zooming out can keep finer curves');
+  t.mock.timers.tick(1000);
+  assert.strictEqual(v.derived.read(v.sketch, v.unit), fine);
+  v.derived.clear();
+  v.doc.dispose();
+});
+
+test('derived pictures follow geometry changes immediately and cancel pending refinements', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const v = new SketchView(fakeCanvas(), Document.read(PROJECTED_CIRCLE));
+  assert.ok(v.doc.ok, JSON.stringify(v.doc.diagnostics));
+  v.autoSolve = false;
+  const first = v.derived.read(v.sketch, v.unit);
+  v.cam.zoomAt(400, 300, 2);
+  assert.strictEqual(v.derived.read(v.sketch, v.unit), first);
+  v.sketch.circles[0].radius.value = 20;
+  const moved = v.derived.read(v.sketch, v.unit);
+  assert.notDeepEqual(moved, first);
+  assert.deepEqual(moved, derived(v.sketch, v.unit));
+  t.mock.timers.tick(1000);
+  assert.strictEqual(v.derived.read(v.sketch, v.unit), moved);
+
+  // The picture's style can change without moving any parameter.
+  const x = v.sketch.getX();
+  v.setProgram(PROJECTED_CIRCLE.replace('hint(r: 10)', 'hint(r: 20)').replace('view(body) in front',
+    'view(body) in front class red\nstyle .red { color: #ff0000 }'), false);
+  assert.deepEqual(v.sketch.getX(), x);
+  const next = v.derived.read(v.sketch, v.unit);
+  assert.ok(next.every(s => s.stroke.color === '#ff0000'));
+  v.cam.zoomAt(400, 300, 2);
+  v.derived.read(v.sketch, v.unit);
+  v.setProgram('point p\n', false);
+  t.mock.timers.tick(1000);
+  assert.deepEqual(v.derived.read(v.sketch, v.unit), [], 'no disposed sketch survives a load');
+  v.derived.clear();
+  v.doc.dispose();
+});
+
+test('changing a solid depth refreshes its projection even when no coordinate changes', () => {
+  const src = PROJECTED_CIRCLE.replace('view(body) in front',
+    'plane side(origin: o, toward: q, from: front, fold: -90deg)\nview(body) in side');
+  const v = new SketchView(fakeCanvas(), Document.read(src));
+  assert.ok(v.doc.ok, JSON.stringify(v.doc.diagnostics));
+  v.autoSolve = false;
+  const x = v.sketch.getX();
+  const first = v.derived.read(v.sketch, v.unit);
+  assert.ok(v.setProgram(src.replace('depth: 8', 'depth: 18'), false));
+  assert.deepEqual(v.sketch.getX(), x);
+  const next = v.derived.read(v.sketch, v.unit);
+  assert.notDeepEqual(next, first);
+  assert.deepEqual(next, derived(v.sketch, v.unit));
+  v.derived.clear();
+  v.doc.dispose();
+});
+
+test('dragging a constrained figure does not redraw unrelated solid projections', () => {
+  const src = PROJECTED_CIRCLE + 'point a hint(x: 2, y: 2)\npoint b hint(x: 4, y: 2)\n'
+    + 'horizontal line bar(a, b)\nground a\n';
+  const v = new SketchView(fakeCanvas(), Document.read(src));
+  assert.ok(v.doc.ok, JSON.stringify(v.doc.diagnostics));
+  v.autoSolve = false;
+  const cv = v.canvas as ReturnType<typeof fakeCanvas>;
+  const p = v.doc.entity('b') as Point;
+  const from = p.xy;
+  const at = v.w2s(...from);
+  const picture = v.derived.read(v.sketch, v.unit);
+  cv.fire('pointerdown', pointer(...at));
+  assert.equal(PlanDrag.live, 1);
+  for (let i = 1; i <= 8; i++) {
+    cv.fire('pointermove', pointer(at[0] + i, at[1] - i));
+    assert.ok(v.lastResult?.success);
+    assert.strictEqual(v.derived.read(v.sketch, v.unit), picture,
+      'a drag must not reclassify a solid that reads none of the moving coordinates');
+  }
+  assert.ok(p.x.value > from[0] + 0.5, 'the constrained point actually moved');
+  assert.ok(Math.abs(p.y.value - from[1]) < 1e-8, 'the horizontal constraint still holds');
+  assert.deepEqual(picture, derived(v.sketch, v.unit));
+  cv.fire('pointerup', pointer(at[0] + 8, at[1] - 8));
+  assert.equal(PlanDrag.live, 0);
+  v.derived.clear();
+  v.doc.dispose();
+});
+
+test('projection caching ignores solver roundoff but retains cumulative geometry changes', () => {
+  const v = new SketchView(fakeCanvas(), Document.read(PROJECTED_CIRCLE));
+  const picture = v.derived.read(v.sketch, v.unit);
+  const radius = v.sketch.circles[0].radius;
+  radius.value += 1e-13;
+  assert.strictEqual(v.derived.read(v.sketch, v.unit), picture,
+    'roundoff in a stationary constrained part must not rebuild its projected solid');
+  for (let i = 0; i < 100; i++) {
+    radius.value += 1e-9;
+    v.derived.read(v.sketch, v.unit);
+  }
+  assert.notStrictEqual(v.derived.read(v.sketch, v.unit), picture,
+    'small real steps must accumulate against the picture, not disappear frame by frame');
+  radius.value += 1;
+  assert.deepEqual(v.derived.read(v.sketch, v.unit), derived(v.sketch, v.unit));
+  v.derived.clear();
+  v.doc.dispose();
+});
 
 
 test('a second pointer does not take over a live drag', () => {

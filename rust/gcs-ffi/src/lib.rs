@@ -1404,6 +1404,17 @@ pub unsafe extern "C" fn gcs_derived_json(h: *mut Sketch, unit: f64) -> *mut u8 
     guard(std::ptr::null_mut(), move || out_json(report::derived_json(sk(h), unit)))
 }
 
+/// Numeric projection inputs, for retaining an unchanged picture during a drag. Returns the
+/// required number of doubles and writes as many as `cap` permits, like a curve polyline.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_derived_inputs(h: *mut Sketch, out: *mut f64, cap: i32) -> i32 {
+    guard(-1, move || {
+        let values = gcs_core::hidden::inputs(sk(h));
+        write(out, &values[..values.len().min(cap.max(0) as usize)]);
+        values.len() as i32
+    })
+}
+
 /// **A solid's mesh**: nine doubles a triangle, welded so every edge pairs up and ordered by the
 /// face each triangle belongs to.  Returns how many doubles were written, or -1 if the buffer is
 /// too small — `gcs_entity_params`' shape, because a mesh is tens of thousands of numbers all of

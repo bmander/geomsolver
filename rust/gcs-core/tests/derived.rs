@@ -51,6 +51,43 @@ p2 distance(0, along: y) q2
 
 const UNIT: f64 = 0.05;
 
+#[test]
+fn projection_inputs_exclude_unrelated_geometry_and_include_solid_extents() {
+    let mut e = read(&format!("{RECT}{SIDE}point stray hint(x: 20, y: 20)\n\
+        solid block(sec, depth: 30mm)\nview(block) in side\n"));
+    let original = hidden::inputs(&e.sketch);
+    let picture = gcs_core::report::derived_json(&e.sketch, UNIT);
+    let stray = e.map.ent_named("stray").unwrap().i();
+    let x = e.sketch.points[stray].x as usize;
+    e.sketch.params[x].value += 1.0;
+    assert_eq!(hidden::inputs(&e.sketch), original);
+    assert_eq!(gcs_core::report::derived_json(&e.sketch, UNIT), picture);
+
+    let gcs_core::model::SolidDef::Prism { to, .. } = &mut e.sketch.solids[0].def
+        else { panic!("the section is a prism") };
+    to.value += 5.0;
+    assert_ne!(hidden::inputs(&e.sketch), original);
+    assert_ne!(gcs_core::report::derived_json(&e.sketch, UNIT), picture);
+}
+
+#[test]
+fn projection_inputs_follow_view_poses_and_cutting_planes() {
+    let mut e = read(&format!("{RECT}{SIDE}solid block(sec, depth: 30mm)\n\
+        plane cut(origin: a, toward: b, from: front, offset: 10mm)\n\
+        view(block) in side\nsection(block, at: cut) in front\n"));
+    let before = hidden::inputs(&e.sketch);
+    let picture = gcs_core::report::derived_json(&e.sketch, UNIT);
+    let origin = e.sketch.planes[1].frame.origin as usize;
+    let x = e.sketch.points[origin].x as usize;
+    e.sketch.params[x].value += 5.0;
+    let moved = hidden::inputs(&e.sketch);
+    assert_ne!(moved, before);
+    assert_ne!(gcs_core::report::derived_json(&e.sketch, UNIT), picture);
+    // This is a spatial offset, not a parameter of the 2D drawing.
+    e.sketch.planes[2].basis.o[2] += 2.0;
+    assert_ne!(hidden::inputs(&e.sketch), moved);
+}
+
 fn strokes(e: &Elaborated) -> Vec<hidden::Drawn> {
     hidden::layout(&e.sketch, UNIT)
 }
