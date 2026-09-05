@@ -277,9 +277,10 @@ pub fn judge_evaluated(
     let ca = a.classifier();
     let (cb, pb) = a.relative(b);
     let eps = a.epsilon().min(b.epsilon());
-    let facet_tol = if a.boundary().iter().chain(b.boundary()).any(|p| p.smooth) {
-        a.sagitta() + b.sagitta()
-    } else { 0.0 };
+    let error = |s: &solid::EvaluatedSolid| {
+        if s.boundary().iter().any(|p| p.smooth) { s.sagitta() } else { 0.0 }
+    };
+    let facet_tol = error(a) + error(b);
     let compare = |measured: f64| {
         if facet_tol > 0.0 && (measured - gap).abs() <= facet_tol {
             None
@@ -289,11 +290,11 @@ pub fn judge_evaluated(
     };
     match word {
         W::Clear => {
-            if let Some((measured, uncertainty)) = overlap(&ca, &cb, eps) {
+            if let Some((measured, uncertainty)) = overlap(ca, &cb, eps) {
                 let holds = if -measured - uncertainty > facet_tol { Some(false) } else { None };
                 Verdict { measured, tolerance: facet_tol + uncertainty, holds }
             } else {
-                let measured = boundary_gap(&pa, &pb);
+                let measured = boundary_gap(pa, &pb);
                 let holds = match compare(measured) {
                     Some(false) => Some(false),
                     _ if measured == 0.0 && facet_tol == 0.0 => Some(false),
@@ -304,8 +305,8 @@ pub fn judge_evaluated(
             }
         }
         W::Fits => {
-            let inside = contained(&pa, &cb, eps);
-            let d = boundary_gap(&pa, &pb);
+            let inside = contained(pa, &cb, eps);
+            let d = boundary_gap(pa, &pb);
             Verdict {
                 measured: if inside { d } else { -d },
                 tolerance: facet_tol,
@@ -313,7 +314,7 @@ pub fn judge_evaluated(
             }
         }
         W::Inside => {
-            let inside = contained(&pa, &cb, eps);
+            let inside = contained(pa, &cb, eps);
             Verdict {
                 measured: if inside { 1.0 } else { -1.0 },
                 tolerance: 0.0,

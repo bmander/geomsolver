@@ -1424,11 +1424,14 @@ pub unsafe extern "C" fn gcs_solid_mesh(
             Ok(s) => s,
             Err(message) => { set_error(message); return -1; }
         };
-        let m = solid.world_mesh();
+        let m = solid.mesh();
         if m.positions.len() > cap.max(0) as usize {
             return -1;
         }
-        std::ptr::copy_nonoverlapping(m.positions.as_ptr(), out, m.positions.len());
+        let origin = solid.origin().0;
+        for (i, value) in m.positions.iter().enumerate() {
+            out.add(i).write(value + origin[i % 3]);
+        }
         m.positions.len() as i32
     })
 }
@@ -1448,7 +1451,7 @@ pub unsafe extern "C" fn gcs_solid_normals(
             Ok(s) => s,
             Err(message) => { set_error(message); return -1; }
         };
-        let m = solid.world_mesh();
+        let m = solid.mesh();
         if m.normals.len() > cap.max(0) as usize {
             return -1;
         }

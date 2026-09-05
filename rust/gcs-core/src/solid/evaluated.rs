@@ -100,40 +100,13 @@ impl EvaluatedSolid {
         si: usize,
         policy: ApproximationPolicy,
     ) -> Result<Self, String> {
-        // Check the graph before resolving: an invalid operand must never become empty material.
-        let mut pending = vec![(si, false)];
-        let (mut active, mut done) = (BTreeSet::new(), BTreeSet::new());
-        while let Some((i, ready)) = pending.pop() {
-            if done.contains(&i) {
-                continue;
-            }
-            let sol = sk
-                .solids
-                .get(i)
-                .ok_or_else(|| format!("no solid at index {i}"))?;
-            if ready {
-                active.remove(&i);
-                done.insert(i);
-            } else {
-                if !active.insert(i) {
-                    return Err(format!("`{}`: cyclic solid operands", sol.name));
-                }
-                pending.push((i, true));
-                pending.extend(
-                    sol.operands()
-                        .into_iter()
-                        .rev()
-                        .map(|o| (o as usize, false)),
-                );
-            }
-        }
         let unit = match policy {
             ApproximationPolicy::Report => REPORT_UNIT,
             ApproximationPolicy::Mesh => mesh_unit(sk, si),
             ApproximationPolicy::View { unit } if unit.is_finite() && unit > 0.0 => unit,
             _ => return Err("solid approximation requires a finite positive pixel length".into()),
         };
-        validate_at(sk, si, unit)?;
+        let operands = validate_at(sk, si, unit)?;
         let origin = WorldPoint(frame_origin(sk, si, unit));
         let csg = resolve_at(sk, si, unit, origin.0);
         let mut terms = vec![&csg.term];
@@ -166,8 +139,6 @@ impl EvaluatedSolid {
                 sk.solid_name(si)
             ));
         }
-        // Preserve f64 input precision, then perform all CSG arithmetic near the solid.
-
         let epsilon = csg.epsilon();
         if !epsilon.is_finite() || epsilon <= 0.0 {
             return Err("solid scale is not representable".into());
@@ -191,7 +162,7 @@ impl EvaluatedSolid {
             .map(|p| csg.prims[p.prim].of.as_str())
             .collect();
         let mut round = Vec::new();
-        for i in done {
+        for i in operands {
             let sol = &sk.solids[i];
             // Only a circular prism has the diameter of its source circle. A revolution of
             // a circular profile is a torus, not a bore of that diameter.
@@ -356,7 +327,7 @@ impl EvaluatedSolid {
         m
     }
     pub fn stl(&self) -> Result<Vec<u8>, String> {
-        mesh::checked_stl(&self.world_boundary(), &self.name)
+        mesh::placed_stl(self.mesh(), self.origin.0, &self.name)
     }
     pub(crate) fn classifier(&self) -> &Csg {
         &self.csg

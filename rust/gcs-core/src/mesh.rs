@@ -274,7 +274,12 @@ pub fn bounds(pieces: &[Piece]) -> Box3 {
 /// **Welded**, so the file a slicer gets is closed: every edge has its partner, which a boundary
 /// evaluation does not give on its own and which a strict validator refuses without.
 pub fn stl(pieces: &[Piece], name: &str) -> Vec<u8> {
-    let t = grouped(pieces).positions;
+    stl_triangles(&grouped(pieces).positions, [0.0; 3], name)
+}
+
+// Placement is applied only when encoding vertices. Never weld/triangulate rounded world
+// coordinates: that could discard collapsed triangles before the export can diagnose them.
+fn stl_triangles(t: &[f64], origin: [f64; 3], name: &str) -> Vec<u8> {
     let n = t.len() / 9;
     let mut out = Vec::with_capacity(84 + n * 50);
     let mut header = [0u8; 80];
@@ -295,8 +300,8 @@ pub fn stl(pieces: &[Piece], name: &str) -> Vec<u8> {
             out.extend((v as f32).to_le_bytes());
         }
         for v in [a, b, d] {
-            for x in v {
-                out.extend((x as f32).to_le_bytes());
+            for k in 0..3 {
+                out.extend(((v[k] + origin[k]) as f32).to_le_bytes());
             }
         }
         out.extend(0u16.to_le_bytes());
@@ -307,7 +312,14 @@ pub fn stl(pieces: &[Piece], name: &str) -> Vec<u8> {
 /// Refuse an export whose float32 coordinates collapse otherwise valid triangles.
 /// Geometry can be representable in the f64 model yet too small at its world position for STL.
 pub fn checked_stl(pieces: &[Piece], name: &str) -> Result<Vec<u8>, String> {
-    let bytes = stl(pieces, name);
+    check_stl(stl(pieces, name), name)
+}
+
+pub(crate) fn placed_stl(mesh: &Mesh, origin: [f64; 3], name: &str) -> Result<Vec<u8>, String> {
+    check_stl(stl_triangles(&mesh.positions, origin, name), name)
+}
+
+fn check_stl(bytes: Vec<u8>, name: &str) -> Result<Vec<u8>, String> {
     for triangle in bytes[84..].chunks_exact(50) {
         let mut v = [[0.0; 3]; 3];
         for i in 0..3 {

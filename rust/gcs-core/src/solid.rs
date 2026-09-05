@@ -505,15 +505,19 @@ pub fn face_poly(sk: &Sketch, fi: usize, unit: f64) -> Option<FacePoly> {
 /// Validate solved geometry, not the hint that existed before the constraint solve.
 /// Exporters and diagnostics share this check, including every operand of a body.
 pub fn validate(sk: &Sketch, si: usize) -> Result<(), String> {
-    validate_at(sk, si, REPORT_UNIT)
+    validate_at(sk, si, REPORT_UNIT).map(|_| ())
 }
 
-fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<(), String> {
-    let mut pending = vec![si];
+fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BTreeSet<usize>, String> {
+    let mut pending = vec![(si, false)];
     let mut seen = std::collections::BTreeSet::new();
-    while let Some(i) = pending.pop() {
-        if !seen.insert(i) { continue; }
+    let mut active = std::collections::BTreeSet::new();
+    while let Some((i, ready)) = pending.pop() {
+        if seen.contains(&i) { continue; }
         let s = sk.solids.get(i).ok_or_else(|| format!("no solid at index {i}"))?;
+        if ready { active.remove(&i); seen.insert(i); continue; }
+        if !active.insert(i) { return Err(format!("`{}`: cyclic solid operands", s.name)); }
+        pending.push((i, true));
         let fail = |why: &str| format!("`{}`: {why}", s.name);
         let face = match &s.def {
             SolidDef::Prism { face, from, to } => {
@@ -523,7 +527,7 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<(), String> {
                 *face
             }
             SolidDef::Revolve { face, .. } => *face,
-            SolidDef::Body { .. } => { pending.extend(s.operands().iter().map(|&o| o as usize)); continue; }
+            SolidDef::Body { .. } => { pending.extend(s.operands().into_iter().rev().map(|o| (o as usize, false))); continue; }
         };
         let poly = face_poly(sk, face as usize, unit)
             .ok_or_else(|| fail("self-intersecting or degenerate profile: a face must bound a simple nonzero region"))?;
@@ -557,7 +561,7 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<(), String> {
             }
         }
     }
-    Ok(())
+    Ok(seen)
 }
 
 pub fn bearing_errors(sk: &Sketch) -> Vec<(&crate::model::SolidBearing, String)> {
@@ -936,18 +940,16 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
         }
         let Some(sol) = sk.solids.get(s as usize) else { continue };
         v.push(s as f64);
-        // Include operation/operand identity and names: equal scalar values alone do not
-        // imply the same material or provenance. Length-prefix the structural encoding.
-        let structure = format!("{:?}", sol);
-        v.push(structure.len() as f64);
-        v.extend(structure.bytes().map(f64::from));
+        name_read(&sol.name, &mut v);
         match &sol.def {
             SolidDef::Prism { face, from, to } => {
+                v.push(0.0);
                 v.push(from.value);
                 v.push(to.value);
                 face_reads(sk, *face, &mut v);
             }
             SolidDef::Revolve { face, axis, sweep, sense } => {
+                v.extend([1.0, *axis as f64]);
                 v.push(sweep.value);
                 v.push(if *sense == Sense::Cw { -1.0 } else { 1.0 });
                 face_reads(sk, *face, &mut v);
@@ -959,22 +961,37 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
                     }
                 }
             }
-            SolidDef::Body { .. } => {}
+            SolidDef::Body { stock, on, through } => {
+                v.extend([2.0, *stock as f64, on.len() as f64]);
+                v.extend(on.iter().map(|&i| i as f64));
+                v.push(through.len() as f64);
+                v.extend(through.iter().map(|&i| i as f64));
+            }
         }
         stack.extend(sol.operands());
     }
     v
 }
 
+fn name_read(name: &str, v: &mut Vec<f64>) {
+    v.push(name.len() as f64);
+    v.extend(name.bytes().map(f64::from));
+}
+
 fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
+    v.push(fi as f64);
     let Some(f) = sk.faces.get(fi as usize) else { return };
-    let structure = format!("{:?}", f);
-    v.push(structure.len() as f64);
-    v.extend(structure.bytes().map(f64::from));
+    v.extend([f.plane.map_or(-1.0, |p| p as f64), f.edge_names.len() as f64]);
+    for name in &f.edge_names { name_read(name, v); }
+    v.push(f.edges.len() as f64);
     for e in &f.edges {
-        for p in sk.entity_params(*e) {
-            v.push(sk.params[p as usize].value);
-        }
+        v.extend([e.kind as u32 as f64, e.i() as f64]);
+        // Closure depends on point identity, even when points share coordinates/parameters.
+        let ends = crate::model::edge_ends(sk, *e);
+        v.extend(ends.map_or([-1.0; 2], |(a, b)| [a as f64, b as f64]));
+        let params = sk.entity_params(*e);
+        v.push(params.len() as f64);
+        v.extend(params.iter().map(|&p| sk.params[p as usize].value));
     }
     if let Some(p) = f.plane {
         if let Some(pl) = sk.planes.get(p as usize) {

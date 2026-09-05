@@ -43,13 +43,12 @@ pub fn glb(sk: &Sketch, solids: &[usize], unit: f64) -> Vec<u8> {
 /// triangles unrepresentable by glTF's float32 positions return a diagnostic.
 pub fn checked_glb(sk: &Sketch, solids: &[usize], policy: crate::solid::ApproximationPolicy) -> Result<Vec<u8>, String> {
     let values = solids.iter().map(|&i| sk.evaluated_solid(i, policy)).collect::<Result<Vec<_>, _>>()?;
-    let parts: Vec<_> = solids.iter().zip(&values).map(|(&i, s)| (sk.solid_name(i), s.mesh().clone())).collect();
-    let origins: Vec<_> = values.iter().map(|s| s.origin().0).collect();
+    let parts: Vec<_> = solids.iter().zip(&values).map(|(&i, s)| (sk.solid_name(i), s.mesh(), s.origin().0)).collect();
     let scale = sk.units.length.map(|(_, mm_per)| mm_per / 1000.0).unwrap_or(1.0);
-    if !scale.is_finite() || scale <= 0.0 || origins.iter().flatten().any(|x| !(x * scale).is_finite()) {
+    if !scale.is_finite() || scale <= 0.0 || parts.iter().flat_map(|(_, _, origin)| origin).any(|x| !(x * scale).is_finite()) {
         return Err("GLB placement or unit scale is not representable".into());
     }
-    for (name, m) in &parts {
+    for (name, m, _) in &parts {
         for t in m.positions.chunks_exact(9) {
             let v: [[f64; 3]; 3] = std::array::from_fn(|i| std::array::from_fn(|k| (t[i * 3 + k] * scale) as f32 as f64));
             if v.iter().flatten().any(|x| !x.is_finite()) || crate::mesh::degenerate(v[0], v[1], v[2]) {
@@ -57,7 +56,7 @@ pub fn checked_glb(sk: &Sketch, solids: &[usize], policy: crate::solid::Approxim
             }
         }
     }
-    let (json, bin) = build_placed(&parts, &origins, scale, sk.units.name());
+    let (json, bin) = build_placed(&parts, scale, sk.units.name());
     Ok(container(&json.dump(None), &bin))
 }
 
@@ -71,20 +70,21 @@ pub fn build(parts: &[(String, Mesh)], scale: f64, unit_name: Option<&str>) -> (
     for ((_, m), origin) in local.iter_mut().zip(&origins) {
         for (i, v) in m.positions.iter_mut().enumerate() { *v -= origin[i % 3]; }
     }
-    build_placed(&local, &origins, scale, unit_name)
+    let parts: Vec<_> = local.iter().zip(origins).map(|((name, m), origin)| (name.clone(), m, origin)).collect();
+    build_placed(&parts, scale, unit_name)
 }
 
-fn build_placed(parts: &[(String, Mesh)], origins: &[[f64; 3]], scale: f64, unit_name: Option<&str>) -> (Json, Vec<u8>) {
+fn build_placed(parts: &[(String, &Mesh, [f64; 3])], scale: f64, unit_name: Option<&str>) -> (Json, Vec<u8>) {
     let mut bin: Vec<u8> = Vec::new();
     let mut base: Vec<usize> = Vec::with_capacity(parts.len());
-    for (_, m) in parts {
+    for (_, m, _) in parts {
         base.push(bin.len());
         for v in &m.positions {
             bin.extend(((v * scale) as f32).to_le_bytes());
         }
     }
     let normals_at = bin.len();
-    for (_, m) in parts {
+    for (_, m, _) in parts {
         for v in &m.normals {
             bin.extend((*v as f32).to_le_bytes());
         }
@@ -113,7 +113,7 @@ fn build_placed(parts: &[(String, Mesh)], origins: &[[f64; 3]], scale: f64, unit
     let mut parents: Vec<Json> = Vec::new();
     let mut children: Vec<Json> = Vec::new();
     let n_parents = parts.len();
-    for (pi, (name, m)) in parts.iter().enumerate() {
+    for (pi, (name, m, origin)) in parts.iter().enumerate() {
         let mut kids: Vec<Json> = Vec::new();
         for g in &m.groups {
             let verts = g.count * 3;
@@ -182,7 +182,7 @@ fn build_placed(parts: &[(String, Mesh)], origins: &[[f64; 3]], scale: f64, unit
         parents.push(object(&[
             ("name", Json::Str(name.clone())),
             ("children", Json::Arr(kids)),
-            ("translation", floats(&origins[pi].map(|x| x * scale))),
+            ("translation", floats(&origin.map(|x| x * scale))),
             ("extras", object(&[("solid", Json::Str(name.clone()))])),
         ]));
     }

@@ -255,3 +255,90 @@ fn curved_mesh_policy_keeps_its_own_cost_and_glb_reports_precision_failure() {
         .unwrap_err()
         .contains("float32 GLB"));
 }
+
+#[test]
+fn cache_tracks_endpoint_identity_but_ignores_presentation() {
+    for shared_parameters in [false, true] {
+        let mut e = read(BOX);
+        let i = index(&e);
+        let before = e.sketch.evaluated_solid(i, Policy::Report).unwrap();
+        e.sketch.solids[i].class.0.push("selected".into());
+        let face = e.sketch.solids[i].face().unwrap() as usize;
+        e.sketch.faces[face].class.0.push("highlighted".into());
+        assert!(Rc::ptr_eq(
+            &before,
+            &e.sketch.evaluated_solid(i, Policy::Report).unwrap()
+        ));
+        let edge = e.sketch.faces[face].edges[0].i();
+        let p = e.sketch.lines[edge].p1 as usize;
+        let xy = e.sketch.point_xy(p);
+        let duplicate = if shared_parameters {
+            e.sketch.points.push(e.sketch.points[p].clone());
+            e.sketch.points.len() - 1
+        } else {
+            e.sketch.point(xy.0, xy.1, true, "duplicate")
+        };
+        e.sketch.lines[edge].p1 = duplicate as u32;
+        assert!(
+            e.sketch.evaluated_solid(i, Policy::Report).is_err(),
+            "rewiring the endpoint opens the loop even though its coordinates are unchanged"
+        );
+    }
+}
+
+#[test]
+fn validation_and_evaluation_agree_on_cycles_and_shared_operands() {
+    let mut e = read(BORE);
+    let i = index(&e);
+    let stock = e.map.ent_named("stock").unwrap().i();
+    // A shared operand is a DAG, not a cycle.
+    if let SolidDef::Body { on, .. } = &mut e.sketch.solids[i].def {
+        on.push(stock as u32);
+    }
+    assert!(gcs_core::solid::validate(&e.sketch, i).is_ok());
+    assert!(e.sketch.evaluated_solid(i, Policy::Report).is_ok());
+    e.sketch.solids[stock].def = SolidDef::Body {
+        stock: i as u32,
+        on: vec![],
+        through: vec![],
+    };
+    assert!(gcs_core::solid::validate(&e.sketch, i)
+        .unwrap_err()
+        .contains("cyclic"));
+    assert!(e
+        .sketch
+        .evaluated_solid(i, Policy::Report)
+        .unwrap_err()
+        .contains("cyclic"));
+}
+
+#[test]
+fn stl_rejects_world_coordinates_that_collapse_in_f64_before_encoding() {
+    let mut e = read(BOX);
+    e.sketch.planes[0].basis.o = [1e20; 3];
+    let solid = e.sketch.evaluated_solid(index(&e), Policy::Mesh).unwrap();
+    assert_eq!(solid.mesh().positions.len() / 9, 12);
+    assert!(
+        solid.stl().is_err(),
+        "STL must not silently discard triangles during world conversion"
+    );
+}
+
+#[test]
+fn planar_policy_does_not_inflate_curved_clearance_uncertainty() {
+    let e = read(BORE);
+    let stock = e.map.ent_named("stock").unwrap().i();
+    let tool = e.map.ent_named("tool").unwrap().i();
+    let round = e.sketch.evaluated_solid(tool, Policy::Report).unwrap();
+    let fine = e.sketch.evaluated_solid(stock, Policy::Report).unwrap();
+    let coarse = e
+        .sketch
+        .evaluated_solid(stock, Policy::View { unit: 100.0 })
+        .unwrap();
+    let a = clear::judge_evaluated(SolidWord::Clear, &round, &fine, 1.0);
+    let b = clear::judge_evaluated(SolidWord::Clear, &round, &coarse, 1.0);
+    assert_eq!(a.holds, Some(true));
+    assert_eq!(a.holds, b.holds);
+    assert_eq!(a.tolerance, b.tolerance);
+    close(a.measured, b.measured);
+}
