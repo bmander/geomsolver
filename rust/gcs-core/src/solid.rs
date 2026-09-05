@@ -331,12 +331,46 @@ pub struct FacePoly {
 }
 
 impl FacePoly {
+    /// A closed walk must bound a simple, nonzero region before it can be swept.
+    fn valid(&self) -> bool {
+        let pts = &self.pts;
+        let n = pts.len();
+        if n < 3 || pts.iter().any(|p| !p.0.is_finite() || !p.1.is_finite()) { return false; }
+        let scale = pts.iter().fold(0.0f64, |m, p| m.max((p.0 - pts[0].0).abs()).max((p.1 - pts[0].1).abs()));
+        let tol = scale * 1e-12;
+        let area_tol = tol * scale;
+        if self.area().abs() <= area_tol { return false; }
+        let cross = |a: (f64, f64), b: (f64, f64), c: (f64, f64)|
+            (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0);
+        for i in 0..n {
+            let (a, b, c) = (pts[i], pts[(i + 1) % n], pts[(i + 2) % n]);
+            if (b.0 - a.0).hypot(b.1 - a.1) <= tol { return false; }
+            // Collinear forward corners are valid; a retraced spike is not.
+            if cross(a, b, c).abs() <= area_tol
+                && (b.0 - a.0) * (c.0 - b.0) + (b.1 - a.1) * (c.1 - b.1) < 0.0
+            { return false; }
+            for j in i + 2..n {
+                if (j + 1) % n == i { continue; }
+                let (c, d) = (pts[j], pts[(j + 1) % n]);
+                if a.0.min(b.0) > c.0.max(d.0) + tol || c.0.min(d.0) > a.0.max(b.0) + tol
+                    || a.1.min(b.1) > c.1.max(d.1) + tol || c.1.min(d.1) > a.1.max(b.1) + tol
+                { continue; }
+                let same_side = |x: f64, y: f64| (x > area_tol && y > area_tol) || (x < -area_tol && y < -area_tol);
+                if !same_side(cross(a, b, c), cross(a, b, d))
+                    && !same_side(cross(c, d, a), cross(c, d, b))
+                { return false; }
+            }
+        }
+        true
+    }
+
     pub fn area(&self) -> f64 {
         let n = self.pts.len();
         let mut a = 0.0;
+        let Some(&(ox, oy)) = self.pts.first() else { return 0.0 };
         for i in 0..n {
-            let (x0, y0) = self.pts[i];
-            let (x1, y1) = self.pts[(i + 1) % n];
+            let (x0, y0) = (self.pts[i].0 - ox, self.pts[i].1 - oy);
+            let (x1, y1) = (self.pts[(i + 1) % n].0 - ox, self.pts[(i + 1) % n].1 - oy);
             a += x0 * y1 - x1 * y0;
         }
         a / 2.0
@@ -414,7 +448,8 @@ pub fn face_poly(sk: &Sketch, fi: usize, unit: f64) -> Option<FacePoly> {
             of.push((0, true));
         }
         let pts = pts.into_iter().map(view).collect();
-        return Some(tidy_poly(FacePoly { pts, of, names, basis, pose }).ccw());
+        let poly = tidy_poly(FacePoly { pts, of, names, basis, pose });
+        return poly.valid().then(|| poly.ccw());
     }
 
     // otherwise: every edge in traversal order, each starting where the last one ended
@@ -443,13 +478,65 @@ pub fn face_poly(sk: &Sketch, fi: usize, unit: f64) -> Option<FacePoly> {
         return None;
     }
     let pts = pts.into_iter().map(view).collect();
-    Some(tidy_poly(FacePoly { pts, of, names, basis, pose }).ccw())
+    let poly = tidy_poly(FacePoly { pts, of, names, basis, pose });
+    poly.valid().then(|| poly.ccw())
+}
+
+/// Validate solved geometry, not the hint that existed before the constraint solve.
+/// Exporters and diagnostics share this check, including every operand of a body.
+pub fn validate(sk: &Sketch, si: usize) -> Result<(), String> {
+    let mut pending = vec![si];
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(i) = pending.pop() {
+        if !seen.insert(i) { continue; }
+        let s = sk.solids.get(i).ok_or_else(|| format!("no solid at index {i}"))?;
+        let fail = |why: &str| format!("`{}`: {why}", s.name);
+        let face = match &s.def {
+            SolidDef::Prism { face, from, to } => {
+                if !from.value.is_finite() || !to.value.is_finite() || from.value == to.value {
+                    return Err(fail("a prism needs two distinct finite ordinates"));
+                }
+                *face
+            }
+            SolidDef::Revolve { face, .. } => *face,
+            SolidDef::Body { .. } => { pending.extend(s.operands().iter().map(|&o| o as usize)); continue; }
+        };
+        let poly = face_poly(sk, face as usize, REPORT_UNIT)
+            .ok_or_else(|| fail("self-intersecting or degenerate profile: a face must bound a simple nonzero region"))?;
+        if let SolidDef::Revolve { axis, sweep, .. } = &s.def {
+            if !sweep.value.is_finite() || sweep.value <= 0.0 {
+                return Err(fail("a revolution needs a finite positive sweep"));
+            }
+            let axis = sk.lines.get(*axis as usize).ok_or_else(|| fail("no revolution axis"))?;
+            let (c, s, o) = poly.pose;
+            let a = plane::in_view(c, s, o, sk.point_xy(axis.p1 as usize));
+            let b = plane::in_view(c, s, o, sk.point_xy(axis.p2 as usize));
+            let length = (b.0 - a.0).hypot(b.1 - a.1);
+            if !length.is_finite() || length <= 0.0 { return Err(fail("a revolution axis must have nonzero finite length")); }
+            let distances: Vec<_> = poly.pts.iter().map(|p|
+                (-(p.0 - a.0) * (b.1 - a.1) + (p.1 - a.1) * (b.0 - a.0)) / length).collect();
+            let tol = distances.iter().fold(0.0f64, |m, x| m.max(x.abs())) * SNAP;
+            if distances.iter().any(|&x| x > tol) && distances.iter().any(|&x| x < -tol) {
+                return Err(fail("the revolution axis crosses the profile"));
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn bearing_errors(sk: &Sketch) -> Vec<(&crate::model::SolidBearing, String)> {
+    sk.solid_bearings.iter().filter_map(|b| {
+        let exists = sk.solid_boundary(b.solid as usize, REPORT_UNIT).iter()
+            .any(|p| p.path == b.path && p.area() > 0.0);
+        (!exists).then(|| (b, format!("`{}` has no surviving face to bear on", b.path)))
+    }).collect()
 }
 
 /// A zero-length side is no side: two coincident vertices would give a facet with no normal and
 /// a seam with no direction.  Coordinates are left exactly as the solve found them.
 fn tidy_poly(mut f: FacePoly) -> FacePoly {
-    let scale = f.pts.iter().fold(1.0f64, |m, p| m.max(p.0.abs()).max(p.1.abs()));
+    let origin = f.pts[0];
+    let scale = f.pts.iter().fold(0.0f64, |m, p| m.max((p.0 - origin.0).abs()).max((p.1 - origin.1).abs()));
     let g = scale * SNAP;
     let mut pts = Vec::with_capacity(f.pts.len());
     let mut of = Vec::with_capacity(f.of.len());
@@ -526,7 +613,10 @@ fn walk_edge(
 /// rule, said here in page coordinates so the solid and the drawing round a corner alike.
 fn tessellate_arc(c: (f64, f64), r: f64, from: f64, sweep: f64, unit: f64) -> Vec<(f64, f64)> {
     let tol = crate::curve::flatness(unit);
-    let step = if r > tol { 2.0 * (1.0 - tol / r).acos() } else { std::f64::consts::TAU };
+    // Bound angular error too: below the absolute flatness a circle still needs a region,
+    // with the same relative area accuracy as a larger circular profile.
+    let step = (if r > tol { 2.0 * (1.0 - tol / r).acos() } else { std::f64::consts::TAU })
+        .min(std::f64::consts::TAU / 64.0);
     let n = ((sweep.abs() / step).ceil() as usize).clamp(2, 4096);
     (0..=n)
         .map(|k| {
@@ -538,8 +628,8 @@ fn tessellate_arc(c: (f64, f64), r: f64, from: f64, sweep: f64, unit: f64) -> Ve
 
 // -- sweeping ----------------------------------------------------------------------------------
 
-/// Ear clipping: a simple polygon as triangles, by index.  The one triangulation in the kernel,
-/// used for a prism's caps and a partial revolution's.
+/// Ear clipping: a simple polygon as triangles, by index, preserving its winding.  The one
+/// triangulation in the kernel, used for a prism's caps and a partial revolution's.
 fn ears(pts: &[(f64, f64)]) -> Vec<[usize; 3]> {
     let n = pts.len();
     if n < 3 {
@@ -548,6 +638,12 @@ fn ears(pts: &[(f64, f64)]) -> Vec<[usize; 3]> {
     let area2 = |a: (f64, f64), b: (f64, f64), c: (f64, f64)| {
         (b.0 - a.0) * (c.1 - a.1) - (c.0 - a.0) * (b.1 - a.1)
     };
+    // A revolution's meridian can have either winding, depending on which side of the axis
+    // the face lies. Test convexity and containment in that winding; keep the original index
+    // order so the caller can still orient each cap against the sweep.
+    let signed_area: f64 = (1..n - 1).map(|i| area2(pts[0], pts[i], pts[i + 1])).sum();
+    let winding = if signed_area < 0.0 { -1.0 } else { 1.0 };
+    let oriented_area = |a, b, c| winding * area2(a, b, c);
     let mut idx: Vec<usize> = (0..n).collect();
     let mut out = Vec::with_capacity(n.saturating_sub(2));
     let mut guard = 0;
@@ -557,7 +653,7 @@ fn ears(pts: &[(f64, f64)]) -> Vec<[usize; 3]> {
         for i in 0..m {
             let (ia, ib, ic) = (idx[(i + m - 1) % m], idx[i], idx[(i + 1) % m]);
             let (a, b, c) = (pts[ia], pts[ib], pts[ic]);
-            if area2(a, b, c) <= 0.0 {
+            if oriented_area(a, b, c) <= 0.0 {
                 continue;
             }
             let clear = idx.iter().all(|&k| {
@@ -565,7 +661,9 @@ fn ears(pts: &[(f64, f64)]) -> Vec<[usize; 3]> {
                     return true;
                 }
                 let p = pts[k];
-                !(area2(a, b, p) >= 0.0 && area2(b, c, p) >= 0.0 && area2(c, a, p) >= 0.0)
+                !(oriented_area(a, b, p) >= 0.0
+                    && oriented_area(b, c, p) >= 0.0
+                    && oriented_area(c, a, p) >= 0.0)
             });
             if clear {
                 out.push([ia, ib, ic]);
@@ -657,7 +755,7 @@ pub fn revolve(
     let across = |p: (f64, f64)| -(p.0 - a2.0) * dir2.1 + (p.1 - a2.1) * dir2.0;
     let along = |p: (f64, f64)| (p.0 - a2.0) * dir2.0 + (p.1 - a2.1) * dir2.1;
     let s: Vec<f64> = poly.pts.iter().map(|p| across(*p)).collect();
-    let scale = poly.pts.iter().fold(1.0f64, |m, p| m.max(p.0.abs()).max(p.1.abs()));
+    let scale = s.iter().fold(0.0f64, |m, x| m.max(x.abs()));
     let tol = scale * SNAP;
     if s.iter().any(|v| *v > tol) && s.iter().any(|v| *v < -tol) {
         return None; // the axis crosses the face: a double cover, refused
@@ -670,10 +768,7 @@ pub fn revolve(
     // the frame in space: W along the axis, P the in-plane perpendicular the face lies on, and
     // Q = W × P, which is ±n — right-handed about the axis's own p1 → p2
     let o3 = poly.basis.lift(a2.0, a2.1);
-    let w = {
-        let p1 = poly.basis.lift(b2.0, b2.1);
-        plane::unit([p1[0] - o3[0], p1[1] - o3[1], p1[2] - o3[2]])?
-    };
+    let w = std::array::from_fn(|k| dir2.0 * poly.basis.u[k] + dir2.1 * poly.basis.v[k]);
     let pdir = plane::scaled(plane::unit(plane::cross(poly.basis.normal(), w))?, sign);
     let qdir = plane::cross(w, pdir);
     let turn = if sense == Sense::Cw { -1.0 } else { 1.0 };
@@ -759,15 +854,22 @@ pub fn revolve(
 }
 
 fn facet_normal(pts: &[[f64; 3]]) -> Option<[f64; 3]> {
+    let acc = area_vector(pts);
+    let length = plane::norm(acc);
+    // This is an area vector, not a direction seed: a small valid face has a small vector.
+    (length > 0.0 && length.is_finite()).then(|| plane::scaled(acc, 1.0 / length))
+}
+
+/// Twice the oriented polygon area, computed relative to a vertex to avoid cancellation.
+pub(crate) fn area_vector(pts: &[[f64; 3]]) -> [f64; 3] {
     let mut acc = [0.0; 3];
-    for i in 0..pts.len() {
-        let a = pts[i];
-        let b = pts[(i + 1) % pts.len()];
-        acc[0] += a[1] * b[2] - a[2] * b[1];
-        acc[1] += a[2] * b[0] - a[0] * b[2];
-        acc[2] += a[0] * b[1] - a[1] * b[0];
+    if pts.len() < 3 { return acc; }
+    let local = |p: [f64; 3]| [p[0] - pts[0][0], p[1] - pts[0][1], p[2] - pts[0][2]];
+    for i in 1..pts.len() - 1 {
+        let cross = plane::cross(local(pts[i]), local(pts[i + 1]));
+        for k in 0..3 { acc[k] += cross[k]; }
     }
-    plane::unit(acc)
+    acc
 }
 
 fn finish(facets: Vec<Facet>, faces: Vec<String>, of: &str) -> Prim {
@@ -866,13 +968,52 @@ fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
 /// everything `on` it, minus everything `through` it, each operand resolved the same way.
 ///
 /// The document's order is irrelevant and the *statement* order inside a body is too: both
-/// groups are sets.  A cycle cannot reach here — the elaborator refuses it (E041) — so a depth
-/// guard is all that stands between this and a malformed sketch built by hand.
+/// groups are sets. An explicit work stack accepts deep acyclic bodies and detects cycles in
+/// sketches built directly through the model API as well as elaborated documents.
 pub fn resolve(sk: &Sketch, si: usize, unit: f64) -> Csg {
     let mut prims = Vec::new();
     let mut names = BTreeMap::new();
-    let term = build(sk, si as u32, unit, &mut prims, &mut names, 0);
+    let mut pending = vec![(si as u32, false)];
+    let mut active = std::collections::BTreeSet::new();
+    while let Some((i, ready)) = pending.pop() {
+        if names.contains_key(&i) { continue; }
+        let Some(s) = sk.solids.get(i as usize) else { continue };
+        if ready {
+            let term = build(sk, i, unit, &mut prims, &names);
+            names.insert(i, term);
+            active.remove(&i);
+        } else if active.insert(i) {
+            pending.push((i, true));
+            pending.extend(s.operands().into_iter().rev().map(|o| (o, false)));
+        } else {
+            names.insert(i, Term::Empty);
+        }
+    }
+    let term = names.remove(&(si as u32)).unwrap_or(Term::Empty);
     Csg { prims, term }
+}
+
+/// The named route from a body to each primitive, relative to the requested solid.
+pub(crate) fn operand_paths(sk: &Sketch, si: usize) -> BTreeMap<String, String> {
+    let mut paths = BTreeMap::new();
+    let mut pending = vec![(si as u32, String::new())];
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some((i, path)) = pending.pop() {
+        if !seen.insert(i) { continue; }
+        let Some(s) = sk.solids.get(i as usize) else { continue };
+        match &s.def {
+            SolidDef::Body { .. } => {
+                for o in s.operands().into_iter().rev() {
+                    let Some(operand) = sk.solids.get(o as usize) else { continue };
+                    let name = operand.name.rsplit('.').next().unwrap_or(&operand.name);
+                    let next = if path.is_empty() { name.to_string() } else { format!("{path}.{name}") };
+                    pending.push((o, next));
+                }
+            }
+            _ => { paths.insert(s.name.clone(), path); }
+        }
+    }
+    paths
 }
 
 fn build(
@@ -880,15 +1021,8 @@ fn build(
     si: u32,
     unit: f64,
     prims: &mut Vec<Prim>,
-    names: &mut BTreeMap<u32, Term>,
-    depth: usize,
+    names: &BTreeMap<u32, Term>,
 ) -> Term {
-    if depth > 64 {
-        return Term::Empty;
-    }
-    if let Some(t) = names.get(&si) {
-        return t.clone();
-    }
     let Some(sol) = sk.solids.get(si as usize) else { return Term::Empty };
     let name = sol.name.clone();
     let t = match &sol.def {
@@ -918,16 +1052,16 @@ fn build(
             }
         }
         SolidDef::Body { stock, on, through } => {
-            let mut t = build(sk, *stock, unit, prims, names, depth + 1);
+            let operand = |i: &u32| names.get(i).cloned().unwrap_or(Term::Empty);
+            let mut t = operand(stock);
             for a in on {
-                t = Term::Union(Box::new(t), Box::new(build(sk, *a, unit, prims, names, depth + 1)));
+                t = Term::Union(Box::new(t), Box::new(operand(a)));
             }
             for b in through {
-                t = Term::Diff(Box::new(t), Box::new(build(sk, *b, unit, prims, names, depth + 1)));
+                t = Term::Diff(Box::new(t), Box::new(operand(b)));
             }
             t
         }
     };
-    names.insert(si, t.clone());
     t
 }

@@ -241,6 +241,14 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
 
     let mut sk = e.sketch.clone();
     let r = solve(&mut sk, SolveOpts::default());
+    let invalid = gcs_core::program::solid_diagnostics(&sk, &e.map);
+    if !invalid.is_empty() {
+        if !opts.json {
+            for d in &invalid { say(s, d.span.lo, "error", d.code.as_str(), &d.message); }
+        }
+        e.diags.extend(invalid);
+        return (1, opts.json.then(|| doc_json(s, Some(&r), None, &e, Json::Null)));
+    }
     let d = (!opts.no_diagnose).then(|| diagnose(&mut sk, DiagnoseOptions::default()));
 
     if !opts.json {
@@ -308,9 +316,21 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
                 // millimetre and a volume is quoted to four digits, and those are not one number
                 let pieces = sk.solid_boundary(i, gcs_core::solid::mesh_unit(&sk, i));
                 let name = sk.solids[i].name.clone();
-                if let Err(err) = std::fs::write(path, gcs_core::mesh::stl(&pieces, &name)) {
-                    eprintln!("solventc: {path}: {err}");
-                    code = 1;
+                match gcs_core::mesh::checked_stl(&pieces, &name) {
+                    Ok(bytes) => if let Err(err) = std::fs::write(path, bytes) {
+                        eprintln!("solventc: {path}: {err}");
+                        code = 1;
+                    },
+                    Err(message) => {
+                        let site = e.map.site_of(gcs_core::model::EntRef::solid(i));
+                        e.diags.push(gcs_core::program::Diag {
+                            code: gcs_core::program::Code::E080,
+                            span: site.map(|s| s.span).unwrap_or_default(),
+                            stmt: site.map(|s| s.stmt), message: message.clone(),
+                        });
+                        if !opts.json { eprintln!("solventc: {message}"); }
+                        code = 1;
+                    }
                 }
             }
             Err(m) => {

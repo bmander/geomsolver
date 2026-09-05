@@ -128,7 +128,12 @@ pub fn weld(pieces: &[Piece]) -> Vec<Piece> {
     }
     let b = bounds(pieces);
     let scale = (0..3).fold(1.0f64, |m, i| m.max(b.hi[i] - b.lo[i]));
-    let tol = scale * WELD;
+    // A long thin solid still has small features across its short dimensions. A tolerance
+    // based only on its length can stitch nearby cap diagonals that never actually meet.
+    let feature = (0..3).map(|i| b.hi[i] - b.lo[i]).filter(|d| *d > 0.0)
+        .fold(scale, f64::min);
+    let coordinate = b.lo.iter().chain(&b.hi).fold(0.0f64, |m, v| m.max(v.abs()));
+    let tol = (feature * WELD).max(coordinate * f64::EPSILON * 4.0);
     // **The cell is not the tolerance.**  A cell only has to be *at least* `tol` across, so that
     // two vertices within `tol` always share a cell or a neighbouring one; how much bigger it is
     // is a cost trade and nothing else, since the answer comes from the distance test inside.
@@ -232,12 +237,16 @@ pub fn weld(pieces: &[Piece]) -> Vec<Piece> {
 /// comes out wrong rather than refusing, which is why the elaborator refuses one first.
 pub fn volume(pieces: &[Piece]) -> f64 {
     let t = triangles(pieces);
+    let origin = pieces.iter().find_map(|p| p.pts.first()).copied().unwrap_or([0.0; 3]);
+    let local = |p: &[f64]| [p[0] - origin[0], p[1] - origin[1], p[2] - origin[2]];
     let mut v = 0.0;
+    let mut correction = 0.0;
     for c in t.chunks_exact(9) {
-        let a = [c[0], c[1], c[2]];
-        let b = [c[3], c[4], c[5]];
-        let d = [c[6], c[7], c[8]];
-        v += plane::dot(a, plane::cross(b, d));
+        let term = plane::dot(local(&c[0..3]), plane::cross(local(&c[3..6]), local(&c[6..9])));
+        let adjusted = term - correction;
+        let next = v + adjusted;
+        correction = (next - v) - adjusted;
+        v = next;
     }
     v / 6.0
 }
@@ -293,6 +302,25 @@ pub fn stl(pieces: &[Piece], name: &str) -> Vec<u8> {
         out.extend(0u16.to_le_bytes());
     }
     out
+}
+
+/// Refuse an export whose float32 coordinates collapse otherwise valid triangles.
+/// Geometry can be representable in the f64 model yet too small at its world position for STL.
+pub fn checked_stl(pieces: &[Piece], name: &str) -> Result<Vec<u8>, String> {
+    let bytes = stl(pieces, name);
+    for triangle in bytes[84..].chunks_exact(50) {
+        let mut v = [[0.0; 3]; 3];
+        for i in 0..3 {
+            for k in 0..3 {
+                let offset = 12 + i * 12 + k * 4;
+                v[i][k] = f32::from_le_bytes(triangle[offset..offset + 4].try_into().unwrap()) as f64;
+            }
+        }
+        if v.iter().flatten().any(|x| !x.is_finite()) || degenerate(v[0], v[1], v[2]) {
+            return Err(format!("`{name}` cannot be represented at this position and scale by float32 STL coordinates; move the solid nearer the origin or change its export units"));
+        }
+    }
+    Ok(bytes)
 }
 
 // -- the mesh a viewer wants --------------------------------------------------------------------

@@ -54,17 +54,9 @@ impl Piece {
         b
     }
 
-    /// Twice the area, as a vector along the normal.
+    /// The unsigned area, evaluated in a local frame.
     pub fn area(&self) -> f64 {
-        let mut acc = [0.0; 3];
-        for i in 0..self.pts.len() {
-            let a = self.pts[i];
-            let b = self.pts[(i + 1) % self.pts.len()];
-            acc[0] += a[1] * b[2] - a[2] * b[1];
-            acc[1] += a[2] * b[0] - a[0] * b[2];
-            acc[2] += a[0] * b[1] - a[1] * b[0];
-        }
-        plane::norm(acc) / 2.0
+        plane::norm(crate::solid::area_vector(&self.pts)) / 2.0
     }
 }
 
@@ -360,7 +352,7 @@ fn difference(a: Vec<Poly>, b: Vec<Poly>, tol: f64) -> Vec<Poly> {
     na.all()
 }
 
-fn polys_of(csg: &Csg, t: &crate::solid::Term, tol: f64) -> Vec<Poly> {
+fn polys_of(csg: &Csg, t: &crate::solid::Term, tol: f64, origin: [f64; 3]) -> Vec<Poly> {
     use crate::solid::Term;
     match t {
         Term::Empty => Vec::new(),
@@ -369,21 +361,26 @@ fn polys_of(csg: &Csg, t: &crate::solid::Term, tol: f64) -> Vec<Poly> {
             prim
                 .facets
                 .iter()
-                .map(|f| Poly {
-                    pts: f.pts.clone(),
-                    n: f.n,
-                    w: f.offset(),
-                    path: path_of(prim, f),
-                    prim: *i,
-                    smooth: f.smooth,
+                .map(|f| {
+                    let pts: Vec<_> = f.pts.iter().map(|p| {
+                        [p[0] - origin[0], p[1] - origin[1], p[2] - origin[2]]
+                    }).collect();
+                    Poly {
+                        w: plane::dot(f.n, pts[0]),
+                        pts,
+                        n: f.n,
+                        path: path_of(prim, f),
+                        prim: *i,
+                        smooth: f.smooth,
+                    }
                 })
                 .collect()
         }
         Term::Union(a, b) => {
-            union(polys_of(csg, a, tol), polys_of(csg, b, tol), tol)
+            union(polys_of(csg, a, tol, origin), polys_of(csg, b, tol, origin), tol)
         }
         Term::Diff(a, b) => {
-            difference(polys_of(csg, a, tol), polys_of(csg, b, tol), tol)
+            difference(polys_of(csg, a, tol, origin), polys_of(csg, b, tol, origin), tol)
         }
     }
 }
@@ -391,17 +388,41 @@ fn polys_of(csg: &Csg, t: &crate::solid::Term, tol: f64) -> Vec<Poly> {
 /// **The boundary of a term**: the faces of the solid, each carrying the path the document
 /// reaches it by.
 pub fn boundary(csg: &Csg, eps: f64) -> Vec<Piece> {
-    let polys = polys_of(csg, &csg.term, eps * 1e-3);
+    // Split in a local frame. At large world coordinates even a facet's own vertices can
+    // fall off its rounded plane, so a BSP node repeatedly splits its first polygon forever.
+    let origin = csg.prims.iter().flat_map(|p| &p.facets)
+        .find_map(|f| f.pts.first()).copied().unwrap_or([0.0; 3]);
+    let polys = polys_of(csg, &csg.term, eps * 1e-3, origin);
     let mut out: Vec<Piece> = polys
         .into_iter()
         .filter(|p| p.pts.len() >= 3)
-        .map(|p| Piece { pts: p.pts, n: p.n, path: p.path, prim: p.prim, smooth: p.smooth })
+        .map(|p| Piece {
+            pts: p.pts.into_iter().map(|v| {
+                [v[0] + origin[0], v[1] + origin[1], v[2] + origin[2]]
+            }).collect(),
+            n: p.n, path: p.path, prim: p.prim, smooth: p.smooth,
+        })
         .collect();
     // a sliver with no area is no face: the cut leaves them wherever a plane grazes a corner,
     // and they carry no volume, no ink and no name anyone would ask for
     let big = out.iter().map(|p| p.area()).fold(0.0f64, f64::max);
     out.retain(|p| p.area() > big * 1e-12);
     out
+}
+
+/// Containment is the emptiness of A − B, including portions of B's voids enclosed by A.
+/// Sampling only A's exterior misses both enclosed cavities and unsampled boundary crossings.
+pub(crate) fn contains_boundary(b: &Csg, a: &[Piece], eps: f64) -> bool {
+    let origin = a.iter().find_map(|p| p.pts.first()).copied().unwrap_or([0.0; 3]);
+    let ap = a.iter().map(|p| {
+        let pts: Vec<_> = p.pts.iter().map(|v| {
+            [v[0] - origin[0], v[1] - origin[1], v[2] - origin[2]]
+        }).collect();
+        Poly { w: plane::dot(p.n, pts[0]), pts, n: p.n, path: p.path.clone(), prim: p.prim, smooth: p.smooth }
+    }).collect();
+    let tol = eps * 1e-3;
+    let remainder = difference(ap, polys_of(b, &b.term, tol, origin), tol);
+    !remainder.iter().any(|p| plane::norm(crate::solid::area_vector(&p.pts)) > tol * tol)
 }
 
 // -- the edges a view draws ---------------------------------------------------------------------

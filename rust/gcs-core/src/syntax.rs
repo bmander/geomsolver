@@ -747,9 +747,10 @@ impl Attitude {
 /// expressions until elaboration.
 #[derive(Clone, Debug)]
 pub enum Sweep {
-    /// `from: a, to: b` — signed ordinates along the plane's normal; `depth: d` is the
-    /// draughtsman's `from: -d, to: 0`, the material behind the face the view shows.
+    /// `from: a, to: b` — signed ordinates along the plane's normal.
     Prism { from: Arg, to: Arg },
+    /// A positive magnitude, kept until elaboration can validate its evaluated expression.
+    Depth { depth: Arg },
     /// `about: ax` — a full turn about a line in the face's own plane, or `sweep:` of one,
     /// `sense: cw` the other way round.
     Revolve { axis: Ref, sweep: Option<Arg>, sense: Sense },
@@ -765,6 +766,7 @@ impl Sweep {
     pub fn args_mut(&mut self) -> Vec<&mut Arg> {
         match self {
             Sweep::Prism { from, to } => vec![from, to],
+            Sweep::Depth { depth } => vec![depth],
             Sweep::Revolve { sweep, .. } => sweep.iter_mut().collect(),
             Sweep::Body => Vec::new(),
         }
@@ -775,14 +777,14 @@ impl Sweep {
     pub fn axis_ref_mut(&mut self) -> Option<&mut Ref> {
         match self {
             Sweep::Revolve { axis, .. } => Some(axis),
-            Sweep::Prism { .. } | Sweep::Body => None,
+            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body => None,
         }
     }
 
     pub fn axis_ref(&self) -> Option<&Ref> {
         match self {
             Sweep::Revolve { axis, .. } => Some(axis),
-            Sweep::Prism { .. } | Sweep::Body => None,
+            Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body => None,
         }
     }
 }

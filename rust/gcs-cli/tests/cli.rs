@@ -18,6 +18,37 @@ fn doc(name: &str) -> String {
     examples().join(name).to_string_lossy().into_owned()
 }
 
+#[test]
+fn issue_50_reductions_report_or_diagnose_instead_of_exporting_invalid_solids() {
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../gcs-core/tests/fixtures/solid_issue50");
+    let temp = std::env::temp_dir().join(format!("solventc-issue50-{}", std::process::id()));
+    std::fs::create_dir_all(&temp).unwrap();
+    for entry in std::fs::read_dir(fixtures).unwrap() {
+        let path = entry.unwrap().path();
+        let filename = path.file_name().unwrap().to_str().unwrap();
+        let item: usize = filename[..2].parse().unwrap();
+        let output = temp.join(format!("{item}.stl"));
+        let out = run(&[path.to_str().unwrap(), "--json", "--where", "result", "--solid", "result", "--stl", output.to_str().unwrap()]);
+        let json = gcs_core::json::parse(&String::from_utf8_lossy(&out.stdout)).unwrap();
+        let doc = &json.get("documents").unwrap().arr()[0];
+        let invalid = [2, 8, 9, 10, 12].contains(&item);
+        assert_eq!(out.status.code(), Some(if invalid { 1 } else { 0 }), "item {item}: {}", String::from_utf8_lossy(&out.stderr));
+        if invalid {
+            assert!(!doc.get("diagnostics").unwrap().arr().is_empty(), "item {item}");
+            assert!(!output.exists(), "item {item}: no misleading export");
+        } else {
+            assert!(output.metadata().unwrap().len() > 84, "item {item}: a nonempty STL");
+        }
+        if item == 2 {
+            assert!(String::from_utf8_lossy(&out.stdout).contains("float32 STL"));
+            let out = run(&[path.to_str().unwrap(), "--json", "--where", "result"]);
+            assert_eq!(out.status.code(), Some(0), "the f64 report succeeds without an STL export");
+            assert!(String::from_utf8_lossy(&out.stdout).contains("result.volume"));
+        }
+    }
+    std::fs::remove_dir_all(temp).unwrap();
+}
+
 /// **The library, checked from a terminal.**  Every document reports; the three deliberately
 /// unsatisfiable ones are the only nonzero exits, and `--allow-unsolved` makes those zero too.
 /// The under-constrained cases exit 0: they solve, they just have freedoms left.

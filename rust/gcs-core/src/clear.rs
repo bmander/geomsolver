@@ -99,22 +99,9 @@ fn overlap(
     hit.then_some(-deepest)
 }
 
-/// Is every point of `a` a point of `b`?  Containment, by the samples above: a boundary that
-/// leaves `b` anywhere leaves it at one of its own corners.
+/// Is every point of `a` a point of `b`? Evaluate A − B so an enclosed void is tested too.
 pub fn contained(a: &[Piece], b: &solid::Csg, eps: f64) -> bool {
-    a.iter().all(|p| {
-        p.pts.iter().enumerate().all(|(i, v)| {
-            let w = p.pts[(i + 1) % p.pts.len()];
-            let m = [(v[0] + w[0]) / 2.0, (v[1] + w[1]) / 2.0, (v[2] + w[2]) / 2.0];
-            [*v, m].iter().all(|x| {
-                b.inside([
-                    x[0] - eps * p.n[0],
-                    x[1] - eps * p.n[1],
-                    x[2] - eps * p.n[2],
-                ])
-            })
-        })
-    })
+    crate::csg::contains_boundary(b, a, eps)
 }
 
 fn grow(b: &Box3, k: f64) -> Box3 {

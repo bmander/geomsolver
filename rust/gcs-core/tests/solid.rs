@@ -176,6 +176,102 @@ fn a_revolution_is_pappus() {
 }
 
 #[test]
+fn partial_revolutions_keep_both_caps_on_either_side_of_the_axis() {
+    // Issue #50.1: the negative-x meridian was clockwise, so ear clipping emitted no caps.
+    // A translation exposes their missing volume contribution; a concave section also checks
+    // that clipping tests points inside ears with the correct orientation.
+    let rectangle = [(10.0, 0.0), (14.0, 0.0), (14.0, 6.0), (10.0, 6.0)];
+    let concave = [(10.0, 0.0), (14.0, 0.0), (14.0, 2.0), (12.0, 2.0), (12.0, 6.0), (10.0, 6.0)];
+    for (profile, area, radial_moment) in
+        [(&rectangle[..], 24.0, 288.0), (&concave[..], 16.0, 184.0)]
+    {
+        for side in [-1.0, 1.0] {
+            for (dx, dy) in [(0.0, 1.0), (0.0, -1.0), (1.0, 0.0), (-1.0, 0.0)] {
+                for sense in [Sense::Ccw, Sense::Cw] {
+                    for degrees in [90.0_f64, 270.0] {
+                        let mut origin_volume: Option<f64> = None;
+                        for shift in [0.0, 100.0] {
+                            let context = format!(
+                                "area={area}, side={side}, axis=({dx},{dy}), sense={sense:?}, sweep={degrees}, shift={shift}"
+                            );
+                            let mut sk = Sketch::new();
+                            let pts: Vec<_> = profile.iter()
+                                .map(|&(r, z)| {
+                                    (shift + side * r * dy + z * dx, shift - side * r * dx + z * dy)
+                                })
+                                .collect();
+                            let f = poly_face(&mut sk, &pts, "sec");
+                            let a = sk.point(shift, shift, true, "a");
+                            let b = sk.point(shift + 10.0 * dx, shift + 10.0 * dy, true, "b");
+                            let ax = sk.line(a, b);
+                            let sweep = degrees.to_radians();
+                            let si = sk.solid(
+                                SolidDef::Revolve {
+                                    face: f as u32,
+                                    axis: ax as u32,
+                                    sweep: Extent::at(sweep),
+                                    sense,
+                                },
+                                "result",
+                            );
+                            let boundary = sk.solid_boundary(si, UNIT);
+                            for cap in ["result.start", "result.end"] {
+                                let got: f64 = boundary.iter()
+                                    .filter(|p| p.path == cap).map(|p| p.area()).sum();
+                                assert!(
+                                    (got - area).abs() < 1e-8,
+                                    "{context}: {cap} area {got}, expected {area}"
+                                );
+                            }
+                            let got = mesh::volume(&boundary);
+                            let want = sweep * radial_moment;
+                            assert!(
+                                (got - want).abs() < want * 1e-4,
+                                "{context}: volume {got}, expected approximately {want}"
+                            );
+                            if let Some(before) = origin_volume {
+                                assert!(
+                                    (got - before).abs() < 1e-8,
+                                    "{context}: translation changed volume from {before} to {got}"
+                                );
+                            } else {
+                                origin_volume = Some(got);
+                            }
+                            assert_eq!(unpaired(&sk.solid_mesh(si, 0.0)), 0, "{context}: mesh closes");
+                            assert_stl_closed(
+                                &mesh::stl(&sk.solid_boundary(si, 0.0), "result"), &context,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Check the actual float32 export, including edge multiplicities, without rounding vertices.
+fn assert_stl_closed(bytes: &[u8], context: &str) {
+    let mut edges = std::collections::BTreeMap::new();
+    for triangle in bytes[84..].chunks_exact(50) {
+        let mut vertices = [[0u32; 3]; 3];
+        for (i, vertex) in vertices.iter_mut().enumerate() {
+            for (k, coordinate) in vertex.iter_mut().enumerate() {
+                let offset = 12 + i * 12 + k * 4;
+                let value = f32::from_le_bytes(triangle[offset..offset + 4].try_into().unwrap());
+                *coordinate = if value == 0.0 { 0 } else { value.to_bits() };
+            }
+        }
+        for i in 0..3 {
+            *edges.entry((vertices[i], vertices[(i + 1) % 3])).or_insert(0) += 1;
+        }
+    }
+    assert!(!edges.is_empty(), "{context}: nonempty STL");
+    for ((p, q), count) in &edges {
+        assert_eq!(edges.get(&(*q, *p)), Some(count), "{context}: STL edge has a matching reverse");
+    }
+}
+
+#[test]
 fn the_answer_does_not_depend_on_the_order_the_features_were_written() {
     // P2, checked in the kernel: both groups of the body rule are sets
     let build = |swap: bool| {

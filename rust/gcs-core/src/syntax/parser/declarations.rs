@@ -48,14 +48,7 @@ fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
             }
             match (from, to, depth) {
                 (Some(from), Some(to), None) => Ok(Sweep::Prism { from, to }),
-                (None, None, Some(d)) => Ok(Sweep::Prism {
-                    // `depth: d` is the material *behind* the face the view shows
-                    from: Arg::Dim {
-                        text: format!("-({})", arg_text_of(&d)),
-                        span: arg_span_of(&d),
-                    },
-                    to: Arg::Dim { text: "0".into(), span: arg_span_of(&d) },
-                }),
+                (None, None, Some(depth)) => Ok(Sweep::Depth { depth }),
                 (Some(_), None, None) | (None, Some(_), None) => {
                     Err("a prism runs `from:` one ordinate `to:` another, or `depth:` behind the \
                          face"
@@ -67,20 +60,6 @@ fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
         _ => Err("a solid is a face swept along its normal (`from:`/`to:`, `depth:`) or turned \
                   about a line (`about:`), not both"
             .into()),
-    }
-}
-
-fn arg_text_of(a: &Arg) -> String {
-    match a {
-        Arg::Dim { text, .. } => text.clone(),
-        other => format!("{other:?}"),
-    }
-}
-
-fn arg_span_of(a: &Arg) -> Span {
-    match a {
-        Arg::Dim { span, .. } => *span,
-        _ => Span::default(),
     }
 }
 

@@ -268,8 +268,12 @@ pub fn positions(sk: &Sketch, map: &crate::program::SourceMap) -> Vec<(String, f
         if e.kind != crate::model::EntKind::Solid {
             continue;
         }
+        if crate::solid::validate(sk, e.i()).is_err() { continue; }
         let pieces = sk.solid_boundary(e.i(), crate::solid::REPORT_UNIT);
         let b = crate::mesh::bounds(&pieces);
+        // Boundary pieces retain the primitive's absolute name. Recover the route through
+        // this body's operands instead of dropping the first segment of every primitive.
+        let paths = crate::solid::operand_paths(sk, e.i());
         for n in names {
             out.insert(format!("{n}.volume"), crate::mesh::volume(&pieces));
             out.insert(format!("{n}.area"), crate::mesh::area(&pieces));
@@ -281,12 +285,16 @@ pub fn positions(sk: &Sketch, map: &crate::program::SourceMap) -> Vec<(String, f
             }
             let mut faces: std::collections::BTreeMap<String, f64> = Default::default();
             for p in &pieces {
-                *faces.entry(p.path.clone()).or_default() += p.area();
+                if let Some((primitive, relative)) = paths.iter()
+                    .filter(|(primitive, _)| p.path.starts_with(&format!("{primitive}.")))
+                    .max_by_key(|(primitive, _)| primitive.len())
+                {
+                    let face = &p.path[primitive.len() + 1..];
+                    let tail = if relative.is_empty() { face.to_string() } else { format!("{relative}.{face}") };
+                    *faces.entry(tail).or_default() += p.area();
+                }
             }
-            for (path, a) in faces {
-                // the path is already the solid's own name and the face's: written under the
-                // name this reader asked by, so `--where cyl` finds every one of them
-                let tail = path.split_once('.').map(|(_, t)| t).unwrap_or(&path);
+            for (tail, a) in faces {
                 out.insert(format!("{n}.{tail}.area"), a);
             }
         }

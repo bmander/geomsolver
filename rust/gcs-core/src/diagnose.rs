@@ -450,6 +450,12 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
 
     // -- witness analysis (Stage 4), on demand --
     let mut warnings: Vec<String> = Vec::new();
+    for (i, s) in sk.solids.iter().enumerate() {
+        if !matches!(s.def, crate::model::SolidDef::Body { .. }) {
+            if let Err(message) = crate::solid::validate(sk, i) { warnings.push(message); }
+        }
+    }
+    warnings.extend(crate::solid::bearing_errors(sk).into_iter().map(|(_, message)| message));
     let mut wit: Option<WitnessReport> = None;
     if opts.witness && n_cols > 0 && sys.n_res > 0 {
         wit = Some(analyze_with(sk, sys, None, &over_set, RANK_TOL, 0));

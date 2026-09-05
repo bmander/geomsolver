@@ -148,6 +148,7 @@ fn place(
         ordf: f64,
         ordg: f64,
         dot: f64,
+        faces: [(u32, String); 2],
     }
     let mut mates: Vec<Mate> = Vec::new();
     for st in body {
@@ -158,7 +159,7 @@ fn place(
         let mut say = |code: Code, span: Span, m: String| {
             diags.push(Diag { code, span, stmt: Some(st.id), message: m });
         };
-        let face = |rf: &crate::syntax::Ref| -> Result<(u32, f64, f64), (Code, Span, String)> {
+        let face = |rf: &crate::syntax::Ref| -> Result<(u32, f64, f64, String, u32), (Code, Span, String)> {
             let Some(e) = res.lookup(rf) else {
                 return Err((Code::E101, rf.span, format!("no such entity: `{}`", rf.root.text)));
             };
@@ -181,7 +182,7 @@ fn place(
                     other => format!("{other:?}"),
                 })
                 .collect();
-            face_ordinate(sk, e.idx, &path).ok_or_else(|| {
+            face_ordinate(sk, e.idx, &path).map(|(p, o, s, path)| (p, o, s, path, e.idx)).ok_or_else(|| {
                 (
                     Code::E082,
                     rf.span,
@@ -201,8 +202,8 @@ fn place(
                 continue;
             }
         };
-        let (pf, ordf, sf) = f;
-        let (pg, ordg, sg) = g;
+        let (pf, ordf, sf, pathf, solidf) = f;
+        let (pg, ordg, sg, pathg, solidg) = g;
         let (bf, bg) = (sk.planes[pf as usize].basis, sk.planes[pg as usize].basis);
         let _ = bg;
         // **parallel, and facing each other**: two faces in contact share a normal and point
@@ -222,7 +223,10 @@ fn place(
             );
             continue;
         }
-        mates.push(Mate { stmt: st.id, span: r.span, placed: pf, datum: pg, ordf, ordg, dot });
+        mates.push(Mate {
+            stmt: st.id, span: r.span, placed: pf, datum: pg, ordf, ordg, dot,
+            faces: [(solidf, pathf), (solidg, pathg)],
+        });
     }
     if mates.is_empty() && sk.placed_planes.is_empty() {
         return;
@@ -271,14 +275,40 @@ fn place(
             });
         }
     }
-    // the offsets, in dependency order — a mate whose datum is itself placed waits for it
-    let mut done: BTreeSet<u32> =
-        (0..sk.planes.len() as u32).filter(|p| !sk.placed_planes.contains(p)).collect();
+    // Both derivations and mates are placement dependencies. A child offset (or fold) must
+    // inherit its parent's final origin, and a mate using that child must wait for it.
+    let mut derived = BTreeMap::new();
+    for st in body {
+        let StmtKind::Decl(d) = &st.kind else { continue };
+        if d.kind != EntKind::Plane || skip.contains(&st.id) { continue; }
+        let parent = match &d.attitude {
+            crate::syntax::Attitude::Offset { plane, .. } |
+            crate::syntax::Attitude::From { plane, .. } => plane,
+            _ => continue,
+        };
+        if let (Some(child), Some(parent)) = (res.of.get(&d.name.key().text), res.lookup(parent)) {
+            if !sk.placed_planes.contains(&child.idx) {
+                let cb = sk.planes[child.i()].basis;
+                let pb = sk.planes[parent.i()].basis;
+                derived.insert(child.idx, (parent.idx, [cb.o[0] - pb.o[0], cb.o[1] - pb.o[1], cb.o[2] - pb.o[2]]));
+            }
+        }
+    }
+    let mut done: BTreeSet<u32> = (0..sk.planes.len() as u32)
+        .filter(|p| !sk.placed_planes.contains(p) && !derived.contains_key(p)).collect();
     let mut left: Vec<usize> = (0..mates.len()).collect();
-    while !left.is_empty() {
+    while !left.is_empty() || !derived.is_empty() {
+        let children: Vec<_> = derived.iter().filter(|(_, (parent, _))| done.contains(parent))
+            .map(|(&child, &value)| (child, value)).collect();
+        for (child, (parent, delta)) in &children {
+            let origin = sk.planes[*parent as usize].basis.o;
+            sk.planes[*child as usize].basis.o = std::array::from_fn(|k| origin[k] + delta[k]);
+            done.insert(*child);
+            derived.remove(child);
+        }
         let ready: Vec<usize> =
             left.iter().copied().filter(|&i| done.contains(&mates[i].datum)).collect();
-        if ready.is_empty() {
+        if ready.is_empty() && children.is_empty() {
             for i in &left {
                 diags.push(Diag {
                     code: Code::E041,
@@ -305,35 +335,73 @@ fn place(
             left.retain(|&k| k != i);
         }
     }
+    // Keep the contact checks until after solving; a seed can have a vanished face which
+    // the final constraints restore, or the other way around.
+    for m in &mates {
+        for (solid, path) in &m.faces {
+            sk.solid_bearings.push(crate::model::SolidBearing {
+                solid: *solid, path: path.clone(), stmt: m.stmt.0, span: m.span,
+            });
+        }
+    }
 }
 
 /// Resolve a solid face to its plane, normal ordinate, and facing direction,
 /// including named faces reached through body operations.
-fn face_ordinate(sk: &Sketch, solid: u32, path: &[String]) -> Option<(u32, f64, f64)> {
-    let s = sk.solids.get(solid as usize)?;
-    match &s.def {
-        SolidDef::Prism { face, from, to } => {
-            let last = path.last()?;
-            let (ord, sign) = match last.as_str() {
-                "near" => (to.value, 1.0),
-                "far" => (from.value, -1.0),
-                _ => return None,
-            };
-            Some((sk.faces.get(*face as usize)?.plane?, ord, sign))
+fn face_ordinate(
+    sk: &Sketch,
+    mut solid: u32,
+    mut path: &[String],
+) -> Option<(u32, f64, f64, String)> {
+    let mut parity = 1.0;
+    let mut seen = BTreeSet::new();
+    loop {
+        if !seen.insert(solid) {
+            return None;
         }
-        SolidDef::Revolve { .. } => None,
-        SolidDef::Body { stock, on, through } => {
-            // a body's faces are its operands', reached through the operand that made them
-            let (head, rest) = path.split_first()?;
-            for &o in std::iter::once(stock).chain(on.iter()).chain(through.iter()) {
-                if sk.solids.get(o as usize).is_some_and(|x| {
-                    &x.name == head || x.name.rsplit('.').next() == Some(head.as_str())
-                }) {
-                    return face_ordinate(sk, o, rest);
+        let s = sk.solids.get(solid as usize)?;
+        match &s.def {
+            SolidDef::Prism { face, from, to } => {
+                if path.len() != 1 {
+                    return None;
+                }
+                let last = path.last()?;
+                let (ord, sign) = match last.as_str() {
+                    "near" => (from.value.max(to.value), 1.0),
+                    "far" => (from.value.min(to.value), -1.0),
+                    _ => return None,
+                };
+                return Some((
+                    sk.faces.get(*face as usize)?.plane?,
+                    ord,
+                    sign * parity,
+                    format!("{}.{last}", s.name),
+                ));
+            }
+            SolidDef::Revolve { .. } => return None,
+            SolidDef::Body { stock, on, through } => {
+                // a body's faces are its operands', reached through the operand that made them
+                let (head, rest) = path.split_first()?;
+                let operand =
+                    std::iter::once(stock).chain(on.iter()).chain(through.iter()).copied().find(
+                        |&o| {
+                            sk.solids.get(o as usize).is_some_and(|x| {
+                                &x.name == head || x.name.rsplit('.').next() == Some(head.as_str())
+                            })
+                        },
+                    );
+                if let Some(o) = operand {
+                    if through.contains(&o) {
+                        parity = -parity;
+                    }
+                    solid = o;
+                    path = rest;
+                } else if path.len() == 1 {
+                    solid = *stock;
+                } else {
+                    return None;
                 }
             }
-            // a body over one stock may be addressed without naming it, since there is one
-            face_ordinate(sk, *stock, path)
         }
     }
 }
@@ -615,7 +683,7 @@ pub(super) fn solids(
     // **a body may not be made of itself** — the term walk would not terminate, and the
     // document says something that is not about any object (§6.9)
     for i in 0..sk.solids.len() {
-        if reaches(sk, i as u32, i as u32, 0) {
+        if reaches(sk, i as u32, i as u32) {
             let name = sk.solids[i].name.clone();
             let at = body
                 .iter()
@@ -640,13 +708,19 @@ pub(super) fn solids(
 
 /// Does `from` reach `goal` through its operands?  The guard on the term walk, and the one thing
 /// a document can write that has no object behind it.
-fn reaches(sk: &Sketch, from: u32, goal: u32, depth: usize) -> bool {
-    if depth > 64 {
-        return true;
+fn reaches(sk: &Sketch, from: u32, goal: u32) -> bool {
+    let mut pending = vec![from];
+    let mut seen = BTreeSet::new();
+    while let Some(i) = pending.pop() {
+        if !seen.insert(i) { continue; }
+        if let Some(s) = sk.solids.get(i as usize) {
+            for o in s.operands() {
+                if o == goal { return true; }
+                pending.push(o);
+            }
+        }
     }
-    sk.solids
-        .get(from as usize)
-        .is_some_and(|s| s.operands().iter().any(|&o| o == goal || reaches(sk, o, goal, depth + 1)))
+    false
 }
 
 /// Unbind a failed declaration and names that resolve to the same entity, so later
@@ -961,9 +1035,27 @@ fn build_solid(
             let v = crate::flatten::value_aff(text, &BTreeMap::new(), sk.units)
                 .map_err(|e| format!("`{text}`: {e}"))?;
             v.dim.require(dim, what)?;
+            if !v.c.is_finite() { return Err(format!("`{what}` must be finite")); }
             Ok(Extent { text: text.trim().to_string(), value: v.c })
         };
     let def = match &sweep {
+        crate::syntax::Sweep::Depth { depth } => {
+            let face = one_face(&ops, sk, st, &mut say)?;
+            let d = match ext(depth, "depth", crate::units::Dim::LENGTH) {
+                Ok(d) => d,
+                Err(m) => { say(Code::E103, st.span, m); return None; }
+            };
+            if d.value <= 0.0 {
+                say(Code::E080, st.span,
+                    "depth is a positive magnitude; use signed `from:` / `to:` ordinates for direction".into());
+                return None;
+            }
+            SolidDef::Prism {
+                face,
+                from: Extent { text: format!("-({})", d.text), value: -d.value },
+                to: Extent::at(0.0),
+            }
+        }
         crate::syntax::Sweep::Prism { from, to } => {
             let Some(face) = one_face(&ops, sk, st, &mut say) else { return None };
             let (a, b) = match (

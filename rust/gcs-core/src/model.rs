@@ -520,6 +520,15 @@ pub struct SolidClaim {
     pub stmt: u32,
 }
 
+/// A cap used for placement, checked for surviving material after the drawing solves.
+#[derive(Clone, Debug)]
+pub struct SolidBearing {
+    pub solid: u32,
+    pub path: String,
+    pub stmt: u32,
+    pub span: crate::syntax::Span,
+}
+
 /// The interval a claim is swept over: a free variable of the drawing, and where it runs.
 #[derive(Clone, Debug)]
 pub struct Sweep {
@@ -720,6 +729,7 @@ pub struct Sketch {
     /// figures into one drag part or paint a sketch Over — the bargain §9.7 already struck for a
     /// 2D claim, one stratum further out.
     pub solid_claims: Vec<SolidClaim>,
+    pub solid_bearings: Vec<SolidBearing>,
     /// The planes a **mate** places (§6.10): written `from: P` with neither `fold:` nor
     /// `offset:`, they say which plane they are parallel to and leave where they stand to one
     /// `against`.  Recorded here so the placement walk knows which offsets are its to write and

@@ -10,7 +10,7 @@
  * `gcs_entity_params` already draws: tens of thousands of numbers all of one kind go in a
  * buffer, and the ragged small thing goes in JSON.  All three calls read one memoised answer. */
 import { Sketch } from './model.js';
-import { core, takeBytes, takeJson, withBuf } from './wasm.js';
+import { core, lastError, takeBytes, takeJson, withBuf } from './wasm.js';
 
 /** One face of the object, as a run of triangles into the mesh's buffers. */
 export interface Face {
@@ -67,12 +67,16 @@ export function objects(sk: Sketch): { name: string; index: number }[] {
  *  `idx` of −1 asks for every object, and a `unit` of 0 lets the core choose one suited to the
  *  object rather than to a report. */
 export function glb(sk: Sketch, idx = -1, unit = 0): Uint8Array {
-  return takeBytes(core().gcs_solid_glb(sk.handle, idx, unit));
+  const handle = core().gcs_solid_glb(sk.handle, idx, unit);
+  if (!handle) throw new Error(lastError());
+  return takeBytes(handle);
 }
 
 /** **One object as binary STL**: what a printer takes.  Welded, so every edge has its partner —
  *  which a boundary evaluation does not give on its own and a strict validator refuses without.
  *  An STL carries triangles and nothing else: no face is named in it and no unit recorded. */
 export function stl(sk: Sketch, idx: number, unit = 0): Uint8Array {
-  return takeBytes(core().gcs_solid_stl(sk.handle, idx, unit));
+  const handle = core().gcs_solid_stl(sk.handle, idx, unit);
+  if (!handle) throw new Error(lastError());
+  return takeBytes(handle);
 }

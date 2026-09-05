@@ -22,7 +22,7 @@ import {
 import { checkSketch } from '../core/fdcheck.js';
 import { enumerateStep } from '../core/homotopy.js';
 import { Plane, Point, Sketch, Spline } from '../core/model.js';
-import { mesh } from '../core/mesh.js';
+import { mesh, stl, glb } from '../core/mesh.js';
 import { overview } from '../core/overview.js';
 import { Document, fromSketch, highlight } from '../core/program.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
@@ -1300,6 +1300,19 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
   for (let i = 0; i < Math.min(m.normals.length, 300); i += 3) {
     const n = Math.hypot(m.normals[i], m.normals[i + 1], m.normals[i + 2]);
     assert.ok(Math.abs(n - 1) < 1e-9, `normal ${i / 3} has length ${n}`);
+  }
+});
+
+test('invalid solid exports surface the cores geometry diagnostic', async () => {
+  const { readFileSync } = await import('node:fs');
+  for (const file of ['08-invalid_face_bowtie.sv', '09-invalid_revolve_crossing.sv']) {
+    const src = readFileSync(new URL(`../../../rust/gcs-core/tests/fixtures/solid_issue50/${file}`, import.meta.url), 'utf8');
+    const doc = Document.read(src);
+    assert.ok(doc.ok, 'geometry is checked after the solve');
+    assert.ok(solve(doc.sketch).success);
+    assert.throws(() => stl(doc.sketch, 0), /profile|axis/);
+    assert.throws(() => glb(doc.sketch, 0), /profile|axis/);
+    doc.dispose();
   }
 });
 

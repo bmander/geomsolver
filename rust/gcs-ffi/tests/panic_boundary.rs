@@ -56,3 +56,22 @@ fn a_rejected_call_reports_why() {
         gcs_sketch_free(h);
     }
 }
+
+#[test]
+fn invalid_solid_exports_report_geometry_errors_without_panicking() {
+    for src in [
+        include_str!("../../gcs-core/tests/fixtures/solid_issue50/08-invalid_face_bowtie.sv"),
+        include_str!("../../gcs-core/tests/fixtures/solid_issue50/09-invalid_revolve_crossing.sv"),
+    ] {
+        unsafe {
+            let e = gcs_program_elaborate(src.as_ptr(), src.len());
+            let sk = gcs_elab_take_sketch(e);
+            assert!(gcs_solid_stl(sk, 0, 0.0).is_null());
+            assert!(!last_error().is_empty());
+            assert!(!last_error().contains("internal error"));
+            assert!(gcs_solid_glb(sk, 0, 0.0).is_null());
+            gcs_sketch_free(sk);
+            gcs_elab_free(e);
+        }
+    }
+}

@@ -59,6 +59,7 @@ mod smoke;
 mod solid;
 mod solid_claim;
 mod solid_lang;
+mod solid_regressions;
 mod stack;
 mod style;
 mod tape;

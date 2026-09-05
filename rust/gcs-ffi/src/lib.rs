@@ -1486,6 +1486,16 @@ pub unsafe extern "C" fn gcs_solid_glb(h: *mut Sketch, idx: i32, unit: f64) -> *
         let s = sk(h);
         let which: Vec<usize> =
             if idx < 0 { gcs_core::overview::objects(s) } else { vec![idx as usize] };
+        if let Some((_, message)) = gcs_core::solid::bearing_errors(s).into_iter().next() {
+            set_error(message);
+            return std::ptr::null_mut();
+        }
+        for &i in &which {
+            if let Err(message) = gcs_core::solid::validate(s, i) {
+                set_error(message);
+                return std::ptr::null_mut();
+            }
+        }
         let unit = if unit > 0.0 {
             unit
         } else {
@@ -1502,8 +1512,19 @@ pub unsafe extern "C" fn gcs_solid_stl(h: *mut Sketch, idx: i32, unit: f64) -> *
     guard(std::ptr::null_mut(), move || {
         let s = sk(h);
         let i = idx.max(0) as usize;
+        if let Some((_, message)) = gcs_core::solid::bearing_errors(s).into_iter().next() {
+            set_error(message);
+            return std::ptr::null_mut();
+        }
+        if let Err(message) = gcs_core::solid::validate(s, i) {
+            set_error(message);
+            return std::ptr::null_mut();
+        }
         let unit = if unit > 0.0 { unit } else { gcs_core::solid::mesh_unit(s, i) };
-        out_bytes(gcs_core::mesh::stl(&s.solid_boundary(i, unit), &s.solid_name(i)))
+        match gcs_core::mesh::checked_stl(&s.solid_boundary(i, unit), &s.solid_name(i)) {
+            Ok(bytes) => out_bytes(bytes),
+            Err(message) => { set_error(message); std::ptr::null_mut() }
+        }
     })
 }
 
