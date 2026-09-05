@@ -17,17 +17,10 @@ use crate::model::Sketch;
 use crate::plane;
 use crate::solid::{self, Box3};
 
-/// What a claim about two solids came to.
-#[derive(Clone, Debug)]
-pub struct Verdict {
-    /// Separation distance, or negative common-material thickness when they overlap.
-    pub measured: f64,
-    /// Measurement uncertainty: curved-faceting error plus any remaining overlap-search error.
-    pub tolerance: f64,
-    /// True where it holds, false where this drawing is a counterexample, `None` where the
-    /// faceting cannot tell.
-    pub holds: Option<bool>,
-}
+mod evidence;
+pub use evidence::{
+    GeometricEvidence, Interval, Measurement, Predicate, Verdict,
+};
 
 /// The distance between two boundaries: the least any piece of one comes to any piece of the
 /// other, and negative where the two overlap.
@@ -259,69 +252,121 @@ pub fn judge(
     gap: f64,
     unit: f64,
 ) -> Verdict {
-    let policy = solid::ApproximationPolicy::from_unit(unit);
-    let (Ok(a), Ok(b)) = (sk.evaluated_solid(a, policy), sk.evaluated_solid(b, policy)) else {
-        return Verdict { measured: f64::NAN, tolerance: f64::NAN, holds: None };
+    let requirement = match crate::model::SolidRequirement::from_word(word, gap) {
+        Ok(r) => r,
+        Err(reason) => return Verdict::failed(reason),
     };
-    judge_evaluated(word, &a, &b, gap)
+    evaluate(sk, &requirement, a, b, unit)
 }
 
-/// Both classifiers and boundaries are from validated evaluations; pairwise arithmetic is
-/// in A's local frame so translating the assembly does not change a collision or gap.
-pub fn judge_evaluated(
-    word: crate::constraints::SolidWord, a: &solid::EvaluatedSolid,
-    b: &solid::EvaluatedSolid, gap: f64,
+/// Evaluate a complete requirement using the shared validated-solid interface (#53).
+pub(crate) fn evaluate(
+    sk: &Sketch,
+    requirement: &crate::model::SolidRequirement,
+    a: usize,
+    b: usize,
+    unit: f64,
 ) -> Verdict {
-    use crate::constraints::SolidWord as W;
+    let policy = solid::ApproximationPolicy::from_unit(unit);
+    let pair = sk
+        .evaluated_solid(a, policy)
+        .and_then(|a| sk.evaluated_solid(b, policy).map(|b| (a, b)));
+    match pair {
+        Ok((a, b)) => evaluate_pair(requirement, &a, &b),
+        Err(reason) => Verdict::failed(reason),
+    }
+}
+
+/// Checked compatibility adapter. Invalid arguments cannot reach geometric evaluation.
+pub fn judge_evaluated(
+    word: crate::constraints::SolidWord,
+    a: &solid::EvaluatedSolid,
+    b: &solid::EvaluatedSolid,
+    gap: f64,
+) -> Verdict {
+    match crate::model::SolidRequirement::from_word(word, gap) {
+        Ok(requirement) => evaluate_pair(&requirement, a, b),
+        Err(reason) => Verdict::failed(reason),
+    }
+}
+
+/// Both classifiers and boundaries come from validated evaluations, in A's local frame.
+pub fn evaluate_pair(
+    requirement: &crate::model::SolidRequirement,
+    a: &solid::EvaluatedSolid,
+    b: &solid::EvaluatedSolid,
+) -> Verdict {
+    Verdict { evidence: measure_pair(requirement, a, b) }
+}
+
+fn measure_pair(
+    requirement: &crate::model::SolidRequirement,
+    a: &solid::EvaluatedSolid,
+    b: &solid::EvaluatedSolid,
+) -> Result<GeometricEvidence, String> {
+    use crate::model::SolidRequirement as R;
     let pa = a.boundary();
     let ca = a.classifier();
     let (cb, pb) = a.relative(b);
+    if pb
+        .iter()
+        .flat_map(|p| &p.pts)
+        .flatten()
+        .any(|x| !x.is_finite())
+    {
+        return Err("relative solid placement exceeds numerical precision".into());
+    }
     let eps = a.epsilon().min(b.epsilon());
     let error = |s: &solid::EvaluatedSolid| {
-        if s.boundary().iter().any(|p| p.smooth) { s.sagitta() } else { 0.0 }
+        if s.boundary().iter().any(|p| p.smooth) {
+            s.sagitta()
+        } else {
+            0.0
+        }
     };
     let facet_tol = error(a) + error(b);
-    let compare = |measured: f64| {
-        if facet_tol > 0.0 && (measured - gap).abs() <= facet_tol {
-            None
-        } else {
-            Some(measured >= gap)
+    if pa.is_empty() || pb.is_empty() {
+        return Ok(GeometricEvidence {
+            requirement: requirement.clone(),
+            predicate: Predicate::Unresolved("empty solid has no measurable boundary".into()),
+            measurement: Measurement::Unbounded,
+        });
+    }
+    let (status, interval) = match requirement {
+        R::Clear { .. } => {
+            let (value, error) =
+                overlap(ca, &cb, eps).unwrap_or_else(|| (boundary_gap(pa, &pb), 0.0));
+            let interval = Interval::around(value, facet_tol + error)?;
+            let status = if interval.lower() > 0.0 {
+                Predicate::Satisfied
+            } else if interval.upper() < 0.0
+                || (interval.lower() == 0.0 && interval.upper() == 0.0)
+            {
+                Predicate::Refuted
+            } else {
+                Predicate::Unresolved("disjointness is within geometric uncertainty".into())
+            };
+            (status, interval)
+        }
+        R::Inside | R::Fits { .. } => {
+            let inside = contained(pa, &cb, eps);
+            let distance = boundary_gap(pa, &pb);
+            let interval = Interval::around(if inside { distance } else { -distance }, facet_tol)?;
+            let status = if facet_tol > 0.0 && interval.lower() <= 0.0 && interval.upper() >= 0.0 {
+                Predicate::Unresolved("containment is within curved-faceting uncertainty".into())
+            } else if inside {
+                Predicate::Satisfied
+            } else {
+                Predicate::Refuted
+            };
+            (status, interval)
         }
     };
-    match word {
-        W::Clear => {
-            if let Some((measured, uncertainty)) = overlap(ca, &cb, eps) {
-                let holds = if -measured - uncertainty > facet_tol { Some(false) } else { None };
-                Verdict { measured, tolerance: facet_tol + uncertainty, holds }
-            } else {
-                let measured = boundary_gap(pa, &pb);
-                let holds = match compare(measured) {
-                    Some(false) => Some(false),
-                    _ if measured == 0.0 && facet_tol == 0.0 => Some(false),
-                    _ if measured <= facet_tol => None, // disjointness is still uncertain
-                    verdict => verdict,
-                };
-                Verdict { measured, tolerance: facet_tol, holds }
-            }
-        }
-        W::Fits => {
-            let inside = contained(pa, &cb, eps);
-            let d = boundary_gap(pa, &pb);
-            Verdict {
-                measured: if inside { d } else { -d },
-                tolerance: facet_tol,
-                holds: if inside { compare(d) } else { Some(false) },
-            }
-        }
-        W::Inside => {
-            let inside = contained(pa, &cb, eps);
-            Verdict {
-                measured: if inside { 1.0 } else { -1.0 },
-                tolerance: 0.0,
-                holds: Some(inside),
-            }
-        }
-    }
+    Ok(GeometricEvidence {
+        requirement: requirement.clone(),
+        predicate: status,
+        measurement: Measurement::Bounded(interval),
+    })
 }
 
 /// The least the two boundaries come to each other, ignoring which side of which they are on —

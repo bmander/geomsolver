@@ -59,6 +59,7 @@ mod sheet;
 mod smoke;
 mod solid;
 mod solid_claim;
+mod solid_evidence;
 mod solid_lang;
 mod solid_regressions;
 mod solid_issue51;
