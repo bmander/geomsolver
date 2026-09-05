@@ -75,19 +75,15 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle) {
     lv3: Loc(c, lever, hax, dir: 90deg - phi, u: 0mm, v: -levw / 2)
     line lv_a(lv0.p, lv1.p) class lever
     line lv_c(lv2.p, lv3.p) class lever
-    face lever_f(lv_a, lv2.p, lv_c, lv0.p)
     // the hole: half of its section, on one side of the axis it is turned about
     x0: Loc(c, hax, lever, dir: -phi, u: -rbar, v: 0mm)
     x1: Loc(c, hax, lever, dir: -phi, u: -rbar, v: dhole / 2)
     x2: Loc(c, hax, lever, dir: -phi, u: rbar, v: dhole / 2)
     x3: Loc(c, hax, lever, dir: -phi, u: rbar, v: 0mm)
-    face hole_f(x0.p, x1.p, x2.p, x3.p, -> close)
     // an O-ring groove's core, the one circle the three of them share
     circle core(center: c) hint(r: torgb / 2) class hidden
     radius(torgb / 2) core
     face barrel_f(barrel)
-    face hub_f(hub)
-    face knob_f(knob)
     face core_f(core)
   }
 
@@ -98,10 +94,10 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle) {
   param zback = -(bossz / 2 + tback)
   param zkeep = -(bossz / 2 + tretain)
   solid barrel_s(barrel_f, from: zback, to: bossz / 2)
-  solid hub_s(hub_f, from: bossz / 2, to: bossz / 2 + levw)
-  solid arm(lever_f, from: bossz / 2, to: bossz / 2 + levw)
-  solid knob_s(knob_f, from: bossz / 2, to: bossz / 2 + levw)
-  solid cross(hole_f, about: hax)
+  solid hub_s(face(hub), from: bossz / 2, to: bossz / 2 + levw)
+  solid arm(face(lv_a, lv2.p, lv_c, lv0.p), from: bossz / 2, to: bossz / 2 + levw)
+  solid knob_s(face(knob), from: bossz / 2, to: bossz / 2 + levw)
+  solid cross(face(x0.p, x1.p, x2.p, x3.p, -> close), about: hax)
   // each seal groove: the ring the barrel would have there, less the core that is left standing
   solid ring0(barrel_f, from: torz - torw / 2, to: torz + torw / 2)
   solid ring1(barrel_f, from: -torz - torw / 2, to: -torz + torw / 2)

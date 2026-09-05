@@ -201,7 +201,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
             d.children
                 .iter()
                 .map(|g| match g.first() {
-                    Some(crate::syntax::Kid::Ref(r)) if g.len() == 1 => Some(r.clone()),
+                    Some(crate::ir::Kid::Ref(r)) if g.len() == 1 => Some(r.clone()),
                     _ => None,
                 })
                 .collect(),

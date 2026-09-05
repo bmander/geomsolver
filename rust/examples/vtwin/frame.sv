@@ -156,9 +156,6 @@ component Frame(front: plane, o: point, ref: line) {
     cph2: At(o, dx: cplhole / 2, dy: bossh)
     cph3: At(o, dx: cplhole / 2, dy: bossh - cplin)
     line cpax(cph0.p, cph1.p) class gone
-    face cplh_f(cph0.p, cph1.p, cph2.p, cph3.p, -> close)
-    // the plenum: the channel between its two arcs, closed by a radial cap at each intake port
-    face plenum_f(ch_in, co1, ch_out, ci0)
     // each exhaust vent, `wch` square like the plenum and the passage it is a sibling of — the
     // drawing has always carried it as a centreline, and a solid has to be told how wide a
     // channel is.  It runs at the plate's mid-plane, which is where the port it drains ends.
@@ -166,27 +163,10 @@ component Frame(front: plane, o: point, ref: line) {
     vr1: At(xr, dx: 0mm, dy: wch / 2)
     vr2: At(xr, dx: 0mm, dy: -wch / 2)
     vr3: At(r.ep.p, dx: 0mm, dy: -wch / 2)
-    face vent_r_f(vr0.p, vr1.p, vr2.p, vr3.p, -> close)
     vl0: At(l.ep.p, dx: 0mm, dy: wch / 2)
     vl1: At(xl, dx: 0mm, dy: wch / 2)
     vl2: At(xl, dx: 0mm, dy: -wch / 2)
     vl3: At(l.ep.p, dx: 0mm, dy: -wch / 2)
-    face vent_l_f(vl0.p, vl1.p, vl2.p, vl3.p, -> close)
-    // and the faces every sweep below is of
-    face plate_f(bottom, edge_r, cham_r, topline, cham_l, edge_l)
-    face foot_f(ft.ab, ft.bc, ft.cd, ft.da)
-    face bboss_f(bcirc)
-    face bpkt_f(bp)
-    face shaft_f(sh)
-    face iboss_f(boss.ab, boss.bc, boss.cd, boss.da)
-    face passage_f(passage.ab, passage.bc, passage.cd, passage.da)
-    face tbore_f(tbore)
-    face boltR_f(r.bolt)
-    face boltL_f(l.bolt)
-    face intakeR_f(r.intake)
-    face intakeL_f(l.intake)
-    face exhR_f(r.exhaust)
-    face exhL_f(l.exhaust)
   }
   param kin = (rpl - wch / 2) / rpl
   param kout = (rpl + wch / 2) / rpl
@@ -222,26 +202,27 @@ component Frame(front: plane, o: point, ref: line) {
   param zch0 = -wch / 2
   param zch1 = wch / 2
 
-  solid stock(plate_f, from: zb, to: zf)
-  solid foot(foot_f, from: zfoot, to: zb)
-  solid bboss(bboss_f, from: zbb, to: zb)
-  solid iboss(iboss_f, from: -bossz / 2, to: bossz / 2)
-  solid bpkt(bpkt_f, from: zbb, to: zpkt)
-  solid shaft(shaft_f, from: zshaft, to: zf)
-  solid boltR(boltR_f, from: zb, to: zf)
-  solid boltL(boltL_f, from: zb, to: zf)
+  solid stock(face(bottom, edge_r, cham_r, topline, cham_l, edge_l), from: zb, to: zf)
+  solid foot(face(ft.ab, ft.bc, ft.cd, ft.da), from: zfoot, to: zb)
+  solid bboss(face(bcirc), from: zbb, to: zb)
+  solid iboss(face(boss.ab, boss.bc, boss.cd, boss.da), from: -bossz / 2, to: bossz / 2)
+  solid bpkt(face(bp), from: zbb, to: zpkt)
+  solid shaft(face(sh), from: zshaft, to: zf)
+  solid boltR(face(r.bolt), from: zb, to: zf)
+  solid boltL(face(l.bolt), from: zb, to: zf)
   // the intake ports run in as far as the plenum; the exhausts only to the mid-plane, where
   // their vents out through the edges meet them
-  solid portRi(intakeR_f, from: zch0, to: zf)
-  solid portLi(intakeL_f, from: zch0, to: zf)
-  solid portRe(exhR_f, from: 0mm, to: zf)
-  solid portLe(exhL_f, from: 0mm, to: zf)
-  solid plenum(plenum_f, from: zch0, to: zch1)
-  solid passage_s(passage_f, from: zch0, to: zch1)
-  solid ventR(vent_r_f, from: zch0, to: zch1)
-  solid ventL(vent_l_f, from: zch0, to: zch1)
-  solid cplh(cplh_f, about: cpax)
-  solid tbore_s(tbore_f, from: -bossz / 2, to: bossz / 2)
+  solid portRi(face(r.intake), from: zch0, to: zf)
+  solid portLi(face(l.intake), from: zch0, to: zf)
+  solid portRe(face(r.exhaust), from: 0mm, to: zf)
+  solid portLe(face(l.exhaust), from: 0mm, to: zf)
+  // the plenum: the channel between its two arcs, closed by a radial cap at each intake port
+  solid plenum(face(ch_in, co1, ch_out, ci0), from: zch0, to: zch1)
+  solid passage_s(face(passage.ab, passage.bc, passage.cd, passage.da), from: zch0, to: zch1)
+  solid ventR(face(vr0.p, vr1.p, vr2.p, vr3.p, -> close), from: zch0, to: zch1)
+  solid ventL(face(vl0.p, vl1.p, vl2.p, vl3.p, -> close), from: zch0, to: zch1)
+  solid cplh(face(cph0.p, cph1.p, cph2.p, cph3.p, -> close), about: cpax)
+  solid tbore_s(face(tbore), from: -bossz / 2, to: bossz / 2)
 
   solid body(stock)
   foot on body

@@ -2,10 +2,10 @@
 
 use super::resolve::Resolver;
 use super::{Code, Diag, Made, SourceMap};
-use crate::ir::{Decl, Operation as StmtKind, Relation, Statement as Stmt};
+use crate::ir::{Decl, Kid, Operation as StmtKind, Relation, Statement as Stmt};
 use crate::model::{EntKind, EntRef, Extent, Sense, Sketch, SolidDef};
 use crate::style::Classes;
-use crate::syntax::{Kid, Span, StmtId};
+use crate::syntax::{Span, StmtId};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Apply solid claims after body construction, preserving statement spans for diagnostics.
@@ -494,7 +494,7 @@ pub(super) fn solids(
         }
         let name = d.name.key().text.clone();
         let first_line = sk.lines.len();
-        match build_face(sk, res, d, st, diags) {
+        match build_face(sk, res, d, st.id, st.span, diags) {
             Some(i) => {
                 let e = EntRef::face(i);
                 map.bind(&name, e, d.name.named());
@@ -519,13 +519,25 @@ pub(super) fn solids(
             continue;
         }
         let name = d.name.key().text.clone();
+        let first_face = sk.faces.len();
+        let first_line = sk.lines.len();
         match build_solid(sk, res, d, st, diags) {
             Some(i) => {
                 let e = EntRef::solid(i);
                 map.bind(&name, e, d.name.named());
                 map.record(st, Made::Ent(e));
+                // The solid owns its inline section and that section's closing lines.
+                // Record the solid first, as source editing expects for every declaration.
+                for fi in first_face..sk.faces.len() {
+                    map.record(st, Made::Ent(EntRef::face(fi)));
+                }
+                for li in first_line..sk.lines.len() {
+                    map.record(st, Made::Ent(EntRef::line(li)));
+                }
             }
             None => {
+                sk.faces.truncate(first_face);
+                sk.lines.truncate(first_line);
                 res_forget(res, &name);
             }
         }
@@ -743,15 +755,16 @@ fn build_face(
     sk: &mut Sketch,
     res: &Resolver,
     d: &Decl,
-    st: &Stmt,
+    stmt: StmtId,
+    span: Span,
     diags: &mut Vec<Diag>,
 ) -> Option<usize> {
     let mut fail = |span: Span, m: String| {
-        diags.push(Diag { code: Code::E080, span, stmt: Some(st.id), message: m });
+        diags.push(Diag { code: Code::E080, span, stmt: Some(stmt), message: m });
     };
     let kids = d.children.first().map(Vec::as_slice).unwrap_or(&[]);
     if kids.is_empty() {
-        fail(st.span, "a face is a loop of edges: `face f(ab, bc, cd, da)`".into());
+        fail(span, "a face is a loop of edges: `face f(ab, bc, cd, da)`".into());
         return None;
     }
     // what one item of the walk is: an edge, or a corner the loop goes straight to
@@ -762,14 +775,14 @@ fn build_face(
     let mut items: Vec<Item> = Vec::with_capacity(kids.len());
     for k in kids {
         let Kid::Ref(r) = k else {
-            fail(st.span, "a face names the edges it is bounded by; a seed places a point".into());
+            fail(span, "a face names the edges it is bounded by; a seed places a point".into());
             return None;
         };
         let Some(e) = res.lookup(r) else {
             diags.push(Diag {
                 code: Code::E101,
                 span: r.span,
-                stmt: Some(st.id),
+                stmt: Some(stmt),
                 message: format!("no such entity: `{}`", r.root.text),
             });
             return None;
@@ -801,7 +814,7 @@ fn build_face(
     // **a circle is a loop by itself, and may not stand in one**
     let lone_circle = items.len() == 1 && items[0].entity.kind == EntKind::Circle;
     if !lone_circle && items.iter().any(|i| i.entity.kind == EntKind::Circle) {
-        fail(st.span, "a circle is a whole loop: it stands in a face by itself".into());
+        fail(span, "a circle is a whole loop: it stands in a face by itself".into());
         return None;
     }
     // **the ends of each item**, which is what says whether two neighbours already meet.  A
@@ -815,7 +828,7 @@ fn build_face(
             crate::model::edge_ends(sk, e)
         };
         let Some(pair) = pair else {
-            fail(st.span, format!("`{}` has no ends: a face is a loop, walked in order", it.name));
+            fail(span, format!("`{}` has no ends: a face is a loop, walked in order", it.name));
             return None;
         };
         ends.push(pair);
@@ -825,7 +838,7 @@ fn build_face(
     // lone line is refused for what it is rather than as a gap between an item and itself
     if n == 1 && !lone_circle {
         fail(
-            st.span,
+            span,
             format!(
                 "`{}` is not a loop by itself: a face is a loop of edges and the corners \
                  between them",
@@ -845,7 +858,7 @@ fn build_face(
     for i in 0..walked {
         if items[i].entity.kind != EntKind::Point && !meets[(i + n - 1) % n] && !meets[i] {
             fail(
-                st.span,
+                span,
                 format!(
                     "`{}` meets neither of its neighbours: a face is a loop, walked in order",
                     items[i].name
@@ -885,7 +898,7 @@ fn build_face(
         Ok(walk) => walk,
         Err(i) => {
             fail(
-                st.span,
+                span,
                 format!(
                     "`{}` and its neighbours share no point along the walk: a face must \
                      enter and leave each edge in order",
@@ -919,7 +932,7 @@ fn build_face(
         if j == 0 {
             if !d.closed {
                 fail(
-                    st.span,
+                    span,
                     format!(
                         "`{}` and `{}` share no point: a face is a loop, and one that does not \
                          come back to where it started closes with `-> close`",
@@ -930,7 +943,7 @@ fn build_face(
             }
         } else if items[i].entity.kind != EntKind::Point && items[j].entity.kind != EntKind::Point {
             fail(
-                st.span,
+                span,
                 format!(
                     "`{}` and `{}` share no point: a face is a loop, walked in order",
                     items[i].name, items[j].name
@@ -962,7 +975,7 @@ fn build_face(
         corners.sort_unstable();
         corners.dedup();
         if corners.len() < 3 {
-            fail(st.span, "a face is a loop, and a straight one needs three corners".into());
+            fail(span, "a face is a loop, and a straight one needs three corners".into());
             return None;
         }
     }
@@ -983,7 +996,7 @@ fn build_face(
                         None => "the page".to_string(),
                     };
                     fail(
-                        st.span,
+                        span,
                         format!(
                             "a face lies in one plane, and `{n}` is on {} where the loop is on {}",
                             say(p),
@@ -1009,23 +1022,41 @@ fn build_solid(
     st: &Stmt,
     diags: &mut Vec<Diag>,
 ) -> Option<usize> {
-    let mut say = |code: Code, span: Span, m: String| {
-        diags.push(Diag { code, span, stmt: Some(st.id), message: m });
-    };
     let kids = d.children.first().map(Vec::as_slice).unwrap_or(&[]);
     let mut ops: Vec<EntRef> = Vec::new();
     for k in kids {
-        let Kid::Ref(r) = k else {
-            say(Code::E080, st.span, "a solid is made of a face or of other solids".into());
-            return None;
-        };
-        let Some(e) = res.lookup(r) else {
-            say(Code::E101, r.span, format!("no such entity: `{}`", r.root.text));
-            return None;
+        let e = match k {
+            Kid::Face { decl: face, span } => {
+                EntRef::face(build_face(sk, res, face, st.id, *span, diags)?)
+            }
+            Kid::Ref(r) => match res.lookup(r) {
+                Some(e) => e,
+                None => {
+                    diags.push(Diag {
+                        code: Code::E101,
+                        span: r.span,
+                        stmt: Some(st.id),
+                        message: format!("no such entity: `{}`", r.root.text),
+                    });
+                    return None;
+                }
+            },
+            Kid::Hint(_) => {
+                diags.push(Diag {
+                    code: Code::E080,
+                    span: st.span,
+                    stmt: Some(st.id),
+                    message: "a solid is made of a face or of other solids".into(),
+                });
+                return None;
+            }
         };
         ops.push(e);
     }
-    let sweep = d.sweep.clone().unwrap_or(crate::syntax::Sweep::Body);
+    let mut say = |code: Code, span: Span, m: String| {
+        diags.push(Diag { code, span, stmt: Some(st.id), message: m });
+    };
+    let sweep = d.sweep.as_ref().unwrap_or(&crate::syntax::Sweep::Body);
     // every number a solid carries is settled here and is never an unknown — the `fold:` rule
     let ext =
         |a: &crate::syntax::Arg, what: &str, dim: crate::units::Dim| -> Result<Extent, String> {
@@ -1038,9 +1069,9 @@ fn build_solid(
             if !v.c.is_finite() { return Err(format!("`{what}` must be finite")); }
             Ok(Extent { text: text.trim().to_string(), value: v.c })
         };
-    let def = match &sweep {
+    let def = match sweep {
         crate::syntax::Sweep::Depth { depth } => {
-            let face = one_face(&ops, sk, st, &mut say)?;
+            let face = one_face(&ops, st, &mut say)?;
             let d = match ext(depth, "depth", crate::units::Dim::LENGTH) {
                 Ok(d) => d,
                 Err(m) => { say(Code::E103, st.span, m); return None; }
@@ -1057,7 +1088,7 @@ fn build_solid(
             }
         }
         crate::syntax::Sweep::Prism { from, to } => {
-            let Some(face) = one_face(&ops, sk, st, &mut say) else { return None };
+            let Some(face) = one_face(&ops, st, &mut say) else { return None };
             let (a, b) = match (
                 ext(from, "from", crate::units::Dim::LENGTH),
                 ext(to, "to", crate::units::Dim::LENGTH),
@@ -1075,7 +1106,7 @@ fn build_solid(
             SolidDef::Prism { face, from: a, to: b }
         }
         crate::syntax::Sweep::Revolve { axis, sweep, sense } => {
-            let Some(face) = one_face(&ops, sk, st, &mut say) else { return None };
+            let Some(face) = one_face(&ops, st, &mut say) else { return None };
             let Some(ax) = res.lookup(axis) else {
                 say(Code::E101, axis.span, format!("no such entity: `{}`", axis.root.text));
                 return None;
@@ -1168,7 +1199,6 @@ fn build_solid(
 /// The one face a swept solid is written over.
 fn one_face(
     ops: &[EntRef],
-    sk: &Sketch,
     st: &Stmt,
     say: &mut impl FnMut(Code, Span, String),
 ) -> Option<u32> {
@@ -1180,7 +1210,6 @@ fn one_face(
                 st.span,
                 format!("a swept solid is written over a face, and this is a {}", e.kind.as_str()),
             );
-            let _ = sk;
             None
         }
         _ => {

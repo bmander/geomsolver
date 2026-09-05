@@ -526,6 +526,12 @@ boss on body                                   //   ... plus the boss
 
 **The brackets are what the thing is made of** (§4.3, §6.2), so the sweep stands in them beside the face: `from:`, `to:`, `depth:`, `about:`, `sweep:` and `sense:` are labels of the constructor and are neither seeds nor constraints. A mixture of the two sweeps, a half-written prism (`from:` with no `to:`), `from:`/`to:` beside `depth:`, and `sweep:` or `sense:` with no `about:` are each refused where they are written, with the shapes a solid has.
 
+**A face may be written where it is used.** A swept solid MAY take an anonymous `face(…)` in place of a face reference. Its boundary follows every rule of §6.8, including points and `-> close`, and resolves names in the solid's enclosing scope. It introduces no public name and owns no unknown; the solid owns the section and any closing lines it generates. Both extrusion and revolution accept it. A sweep still takes exactly one face, and a body still takes solids. A section used by several sweeps can retain a named `face` declaration.
+
+```
+solid block(face(mouth, side_r, lid, side_l), from: face, to: back)
+```
+
 **Every extent is an expression, and MUST NOT be an unknown.** This is the `fold:` bargain of §6.7 exactly: a number in a solid's brackets is settled by the flattener over the parameters in scope — a `param`, a formal, a named dimension (§5) — and is then document data no solve moves, checked against its slot's dimension (`Length` for a prism's ordinates, `Angle` for a sweep; **E103** otherwise). A solid allocates no parameter, so P3's other half holds without a rule of its own: there is nothing here for a solve to rewrite.
 
 - **A prism** runs `from:` one signed ordinate `to:` another **along the face's own plane normal**. Those signs are arithmetic and not a convention (§9.2 **[0.17]**) — they are ordinates on an axis, and a document writes both. `depth: d` is the draughtsman's spelling of `from: -d, to: 0`, the material *behind* the face the view shows, and is therefore a **magnitude**. A prism swept nowhere (`from` equal to `to`) is **E080**.

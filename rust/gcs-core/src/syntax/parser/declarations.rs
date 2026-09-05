@@ -302,10 +302,21 @@ impl<'a> P<'a> {
                         return None;
                     }
                     _ => {
-                        // a slot carries a name or a seed, and nothing else says "anonymous":
-                        // an entity whose children are all unseeded writes no list at all
+                        // A slot names an entity, seeds a point, or holds a solid's inline
+                        // section. An entity whose children are all unseeded writes no list.
                         let kid = match self.eat_hint_clause() {
                             Some(lo) => Kid::Hint(self.kid_seed(lo)?),
+                            None if self.peek_word("face")
+                                && self.t.get(self.i + 1).map(|t| &t.0) == Some(&Tok::P('(')) =>
+                            {
+                                if kind != EntKind::Solid {
+                                    self.fail("an inline face is a solid's section: write `solid name(face(…), …)`");
+                                    return None;
+                                }
+                                self.i += 1;
+                                let decl = self.decl(EntKind::Face)?;
+                                Kid::Face { span: decl.list_span, decl: Box::new(decl) }
+                            }
                             None => Kid::Ref(self.refr()?),
                         };
                         let slot = match &label {

@@ -5,7 +5,7 @@ use crate::constraints::CKind;
 use crate::model::EntKind;
 use crate::style::Classes;
 use crate::syntax::{
-    self, Arg, AtRef, Attitude, CurveSpec, DeclName, Kid, Membership, Name, Ref, RelationForm,
+    self, Arg, AtRef, Attitude, CurveSpec, DeclName, Membership, Name, Ref, RelationForm,
     Span, StmtId, Sweep, Written,
 };
 
@@ -58,12 +58,22 @@ pub struct Decl {
     pub membership: Membership,
 }
 
+/// The same operands as syntax, with inline faces lowered to declarations of this stage.
+pub type Kid = syntax::Kid<Decl>;
+
 impl From<syntax::Decl> for Decl {
     fn from(d: syntax::Decl) -> Self {
         Self {
             kind: d.kind,
             name: d.name,
-            children: d.children,
+            children: d.children.into_iter().map(|g| {
+                g.into_iter().map(|k| match k {
+                    syntax::Kid::Ref(r) => Kid::Ref(r),
+                    syntax::Kid::Hint(s) => Kid::Hint(s),
+                    syntax::Kid::Face { decl, span } =>
+                        Kid::Face { decl: Box::new((*decl).into()), span },
+                }).collect()
+            }).collect(),
             seed_text: d.seed_text,
             unseeded: d.seed_at.is_none() && d.hint_span.is_some_and(|s| s.is_empty()),
             seed_explicit: (0..d.seed.len())

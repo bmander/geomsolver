@@ -3,7 +3,7 @@
 use super::names::write_ref;
 use super::{
     num, snake, Arg, Attitude, CurveSpec, CurveTarget, Decl, InstVal, Instance, Kid, KidSeed,
-    OpArg, Program, Ref, Relation, Span, StmtKind, Written,
+    OpArg, Program, Ref, Relation, Sense, Span, StmtKind, Sweep, Written,
 };
 use crate::constraints::{CKind, Fixity, SpecKind};
 use crate::model::{EntKind, Field};
@@ -239,13 +239,16 @@ fn write_decl(out: &mut String, d: &Decl) {
     }
 }
 
-/// A plane's attitude, as its bracket list spells it after the children: `from: front,
-/// fold: 30deg` or `u: (…), v: (…)`, each number as written.  Nothing for the page.
-fn attitude_parts(a: &Attitude) -> Vec<String> {
-    let dim = |a: &Arg| match a {
+/// A document expression, kept as written rather than converted to a seed.
+fn dim(a: &Arg) -> String {
+    match a {
         Arg::Dim { text, .. } => text.clone(),
         other => write_arg("", crate::constraints::SpecKind::Float, other),
-    };
+    }
+}
+
+/// A plane's attitude, as its bracket list spells it after the children.
+fn attitude_parts(a: &Attitude) -> Vec<String> {
     let triple = |t: &[Arg; 3]| format!("({}, {}, {})", dim(&t[0]), dim(&t[1]), dim(&t[2]));
     match a {
         Attitude::Page => Vec::new(),
@@ -267,6 +270,27 @@ fn attitude_parts(a: &Attitude) -> Vec<String> {
     }
 }
 
+/// Sweep arguments are document expressions, preserved through canonical printing.
+fn sweep_parts(s: &Sweep) -> Vec<String> {
+    match s {
+        Sweep::Body => Vec::new(),
+        Sweep::Prism { from, to } => vec![format!("from: {}", dim(from)), format!("to: {}", dim(to))],
+        Sweep::Depth { depth } => vec![format!("depth: {}", dim(depth))],
+        Sweep::Revolve { axis, sweep, sense } => {
+            let mut about = String::from("about: ");
+            write_ref(&mut about, axis);
+            let mut parts = vec![about];
+            if let Some(sweep) = sweep {
+                parts.push(format!("sweep: {}", dim(sweep)));
+            }
+            if *sense == Sense::Cw {
+                parts.push("sense: cw".into());
+            }
+            parts
+        }
+    }
+}
+
 /// One property of a style, as a `style` block writes it.
 fn style_prop_text(s: &Style, prop: &str) -> Option<String> {
     match prop {
@@ -279,8 +303,7 @@ fn style_prop_text(s: &Style, prop: &str) -> Option<String> {
 }
 
 /// `(center: p2)` — what a declaration says the thing is *made of*, or nothing when it names
-/// none of it.  A slot holds a name or a seed, and a seed is the same `hint(…)` clause it is
-/// everywhere else, one level down.
+/// none of it. A slot holds a name, a `hint(…)` seed, or a solid's inline face.
 pub(crate) fn decl_args(d: &Decl) -> String {
     // A *gap* in the slots forces labels on: an unlabelled child counts into its slot by
     // position, so where an earlier slot stands empty — a corner the writeback left for the
@@ -308,6 +331,7 @@ pub(crate) fn decl_args(d: &Decl) -> String {
                     match k {
                         Kid::Ref(r) => write_ref(&mut s, r),
                         Kid::Hint(k) => s.push_str(&kid_seed_text(k)),
+                        Kid::Face { decl, .. } => write_decl(&mut s, decl),
                     }
                     parts.push(s);
                 }
@@ -319,6 +343,9 @@ pub(crate) fn decl_args(d: &Decl) -> String {
     }
     // a plane's attitude is what it is made of too, and no solve moves it
     parts.extend(attitude_parts(&d.attitude));
+    if let Some(sweep) = &d.sweep {
+        parts.extend(sweep_parts(sweep));
+    }
     // and a face's loop seals last, where it was written (§6.8)
     if d.close.is_some() {
         parts.push("-> close".to_string());

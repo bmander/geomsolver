@@ -563,6 +563,21 @@ which — so an edge takes its direction from a neighbour it actually meets.
 
 **A solid** is that face swept, one of two ways.
 
+**A face may be written where it is used.** A section needed by one sweep can go directly in its
+brackets, without a separate name:
+
+```
+solid block(face(ab, bc, cd, da), depth: 30mm)
+// Or close the same section through its corners:
+solid brief(face(a, bc, cd, -> close), from: -30mm, to: 0mm)
+```
+
+Both have volume 72000, like the named section above. `face(…)` also works with `about:` for a
+revolution, and a circle stands alone in its loop: `solid bore(face(hole), depth: 30mm)`.
+Boundary names resolve in the surrounding component, and the section gets its plane from those
+boundaries. Keep a named face when several sweeps reuse it, as the throttle's `barrel_f` and
+`core_f` do in `vtwin/throttle.sv`.
+
 A **prism** runs along the face's own normal. `depth: 30mm` is the draughtsman's reading — the
 material *behind* the face the view shows, which is `from: -30mm, to: 0mm` — and `from:`/`to:` are
 written out when the face is somewhere other than an end, as a boss standing off a floor is below.

@@ -1794,8 +1794,18 @@ fn rewrite(
             for g in &mut d.children {
                 for kid in g.iter_mut() {
                     // a seeded slot names nothing, so there is nothing in it to rescope
-                    if let crate::syntax::Kid::Ref(r) = kid {
-                        fix(r, bad);
+                    match kid {
+                        crate::syntax::Kid::Ref(r) => fix(r, bad),
+                        crate::syntax::Kid::Face { decl: face, .. } => {
+                            // An inline section reads the same scope as its solid. Its loop
+                            // contains only references or seeds, never another section.
+                            for k in face.children.iter_mut().flatten() {
+                                if let crate::syntax::Kid::Ref(r) = k {
+                                    fix(r, bad);
+                                }
+                            }
+                        }
+                        crate::syntax::Kid::Hint(_) => {}
                     }
                 }
             }
