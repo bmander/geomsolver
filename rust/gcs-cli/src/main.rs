@@ -266,10 +266,19 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             // the claims about solids, in the core's own words: what was asked, what was
             // measured, and — for one the faceting cannot decide — that it could not
             for v in &d.solid_claims {
+                let sampling = if v.samples > 0 {
+                    format!(", sampling {} poses ({} failed)", v.samples, v.failed_samples.len())
+                } else {
+                    String::new()
+                };
+                if v.samples > 0 && v.failed_samples.len() == v.samples {
+                    println!("  {} — undecided: no solved valid poses{}", v.text, sampling);
+                    continue;
+                }
                 let at = match v.worst {
                     Some(w) => format!(", worst at {}", gcs_core::syntax::num(w)),
                     None => String::new(),
-                };
+                } + &sampling;
                 let m = gcs_core::io::reading(SpecKind::Length, v.measured);
                 match v.holds {
                     Some(true) => println!("  {} — holds, measured {m}{at}", v.text),
@@ -317,10 +326,12 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
                 let pieces = sk.solid_boundary(i, gcs_core::solid::mesh_unit(&sk, i));
                 let name = sk.solids[i].name.clone();
                 match gcs_core::mesh::checked_stl(&pieces, &name) {
-                    Ok(bytes) => if let Err(err) = std::fs::write(path, bytes) {
-                        eprintln!("solventc: {path}: {err}");
-                        code = 1;
-                    },
+                    Ok(bytes) => {
+                        if let Err(err) = std::fs::write(path, bytes) {
+                            eprintln!("solventc: {path}: {err}");
+                            code = 1;
+                        }
+                    }
                     Err(message) => {
                         let site = e.map.site_of(gcs_core::model::EntRef::solid(i));
                         e.diags.push(gcs_core::program::Diag {
@@ -402,11 +413,7 @@ fn report_set(sk: &Sketch, map: &gcs_core::program::SourceMap, what: &str, ids: 
 /// (`o` gives `o.x`, `o.y`) and everything written under it (`views` gives the whole view,
 /// `views.right_origin.x` gives the one number).  Three questions, one rule, since a scalar, an
 /// entity and an instance are all just names with dots in them.  Empty asks for everything.
-fn wanted(
-    sk: &Sketch,
-    map: &gcs_core::program::SourceMap,
-    names: &[String],
-) -> Vec<(String, f64)> {
+fn wanted(sk: &Sketch, map: &gcs_core::program::SourceMap, names: &[String]) -> Vec<(String, f64)> {
     let all = report::positions(sk, map);
     if names.is_empty() {
         return all;

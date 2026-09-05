@@ -352,6 +352,48 @@ fn difference(a: Vec<Poly>, b: Vec<Poly>, tol: f64) -> Vec<Poly> {
     na.all()
 }
 
+fn intersection(a: Vec<Poly>, b: Vec<Poly>, tol: f64) -> Vec<Poly> {
+    if a.is_empty() || b.is_empty() {
+        return Vec::new();
+    }
+    let mut na = Node::new(a, tol);
+    let mut nb = Node::new(b, tol);
+    na.invert();
+    nb.clip_to(&na, tol);
+    nb.invert();
+    na.clip_to(&nb, tol);
+    nb.clip_to(&na, tol);
+    na.build(nb.all(), tol);
+    na.invert();
+    na.all()
+}
+
+/// Common material, evaluated in one local frame. Boundary sampling cannot find all crossings.
+pub(crate) fn common_boundary(a: &Csg, b: &Csg, eps: f64) -> Vec<Piece> {
+    if !a.bbox().overlaps(&b.bbox()) {
+        return Vec::new();
+    }
+    let origin = a
+        .prims
+        .iter()
+        .flat_map(|p| &p.facets)
+        .find_map(|f| f.pts.first())
+        .copied()
+        .unwrap_or([0.0; 3]);
+    let tol = eps * 1e-3;
+    intersection(polys_of(a, &a.term, tol, origin), polys_of(b, &b.term, tol, origin), tol)
+        .into_iter()
+        .filter(|p| p.pts.len() >= 3)
+        .map(|p| Piece {
+            pts: p.pts.iter().map(|v| std::array::from_fn(|k| v[k] + origin[k])).collect(),
+            n: p.n,
+            path: p.path,
+            prim: p.prim,
+            smooth: p.smooth,
+        })
+        .collect()
+}
+
 fn polys_of(csg: &Csg, t: &crate::solid::Term, tol: f64, origin: [f64; 3]) -> Vec<Poly> {
     use crate::solid::Term;
     match t {
@@ -362,9 +404,11 @@ fn polys_of(csg: &Csg, t: &crate::solid::Term, tol: f64, origin: [f64; 3]) -> Ve
                 .facets
                 .iter()
                 .map(|f| {
-                    let pts: Vec<_> = f.pts.iter().map(|p| {
-                        [p[0] - origin[0], p[1] - origin[1], p[2] - origin[2]]
-                    }).collect();
+                    let pts: Vec<_> = f
+                        .pts
+                        .iter()
+                        .map(|p| [p[0] - origin[0], p[1] - origin[1], p[2] - origin[2]])
+                        .collect();
                     Poly {
                         w: plane::dot(f.n, pts[0]),
                         pts,
@@ -397,10 +441,15 @@ pub fn boundary(csg: &Csg, eps: f64) -> Vec<Piece> {
         .into_iter()
         .filter(|p| p.pts.len() >= 3)
         .map(|p| Piece {
-            pts: p.pts.into_iter().map(|v| {
-                [v[0] + origin[0], v[1] + origin[1], v[2] + origin[2]]
-            }).collect(),
-            n: p.n, path: p.path, prim: p.prim, smooth: p.smooth,
+            pts: p
+                .pts
+                .into_iter()
+                .map(|v| [v[0] + origin[0], v[1] + origin[1], v[2] + origin[2]])
+                .collect(),
+            n: p.n,
+            path: p.path,
+            prim: p.prim,
+            smooth: p.smooth,
         })
         .collect();
     // a sliver with no area is no face: the cut leaves them wherever a plane grazes a corner,
@@ -414,12 +463,24 @@ pub fn boundary(csg: &Csg, eps: f64) -> Vec<Piece> {
 /// Sampling only A's exterior misses both enclosed cavities and unsampled boundary crossings.
 pub(crate) fn contains_boundary(b: &Csg, a: &[Piece], eps: f64) -> bool {
     let origin = a.iter().find_map(|p| p.pts.first()).copied().unwrap_or([0.0; 3]);
-    let ap = a.iter().map(|p| {
-        let pts: Vec<_> = p.pts.iter().map(|v| {
-            [v[0] - origin[0], v[1] - origin[1], v[2] - origin[2]]
-        }).collect();
-        Poly { w: plane::dot(p.n, pts[0]), pts, n: p.n, path: p.path.clone(), prim: p.prim, smooth: p.smooth }
-    }).collect();
+    let ap = a
+        .iter()
+        .map(|p| {
+            let pts: Vec<_> = p
+                .pts
+                .iter()
+                .map(|v| [v[0] - origin[0], v[1] - origin[1], v[2] - origin[2]])
+                .collect();
+            Poly {
+                w: plane::dot(p.n, pts[0]),
+                pts,
+                n: p.n,
+                path: p.path.clone(),
+                prim: p.prim,
+                smooth: p.smooth,
+            }
+        })
+        .collect();
     let tol = eps * 1e-3;
     let remainder = difference(ap, polys_of(b, &b.term, tol, origin), tol);
     !remainder.iter().any(|p| plane::norm(crate::solid::area_vector(&p.pts)) > tol * tol)
@@ -484,9 +545,7 @@ pub fn edges(csg: &Csg, eps: f64) -> Vec<Edge> {
             if w[1] - w[0] < 1e-9 {
                 continue;
             }
-            let at = |t: f64| {
-                [e.a[0] + t * d[0], e.a[1] + t * d[1], e.a[2] + t * d[2]]
-            };
+            let at = |t: f64| [e.a[0] + t * d[0], e.a[1] + t * d[1], e.a[2] + t * d[2]];
             let m = at((w[0] + w[1]) / 2.0);
             if !on_boundary(csg, m, d, eps) {
                 continue;
@@ -557,14 +616,7 @@ fn seams(prim: &Prim, out: &mut Vec<Edge>) {
         // corner, and it is smooth if *either* facet says its sweep was one
         let flat = plane::dot(na, nb) > 0.999_999;
         let smooth = flat || (prim.facets[f1].smooth && prim.facets[f2].smooth);
-        out.push(Edge {
-            a,
-            b,
-            na,
-            nb,
-            smooth,
-            path: path_of(prim, &prim.facets[f1]),
-        });
+        out.push(Edge { a, b, na, nb, smooth, path: path_of(prim, &prim.facets[f1]) });
     }
 }
 

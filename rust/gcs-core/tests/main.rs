@@ -60,6 +60,7 @@ mod solid;
 mod solid_claim;
 mod solid_lang;
 mod solid_regressions;
+mod solid_issue51;
 mod stack;
 mod style;
 mod tape;

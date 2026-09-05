@@ -275,7 +275,9 @@ pub fn drawable(sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
         EntKind::Spline => vec![crate::curve::tessellate(sk, i, unit)],
         EntKind::Curve => vec![sk.curve_polyline(i)],
         // a datum's glyph is already two segments of world geometry
-        EntKind::Plane => crate::plane::glyph(sk, i, unit).iter().map(|(a, b)| vec![*a, *b]).collect(),
+        EntKind::Plane => {
+            crate::plane::glyph(sk, i, unit).iter().map(|(a, b)| vec![*a, *b]).collect()
+        }
     }
 }
 
@@ -506,7 +508,7 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
         }
         for &i in &shown {
             let csg = crate::solid::resolve(sk, i, unit);
-            let eps = sk.extent() * crate::solid::EPS;
+            let eps = csg.epsilon();
             // `0`, so the edges are cut at the same `mesh_unit` the mesh is and the two share one
         // boundary evaluation — the cache holds one answer per solid, so a second unit here
         // would not be a second entry but the first one thrown away and recomputed
@@ -517,12 +519,8 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
                         continue;
                     }
                 }
-                let m = [
-                    (e.a[0] + e.b[0]) / 2.0,
-                    (e.a[1] + e.b[1]) / 2.0,
-                    (e.a[2] + e.b[2]) / 2.0,
-                ];
-                if solid_hidden(&csg, m, dir, eps) {
+                let m = [(e.a[0] + e.b[0]) / 2.0, (e.a[1] + e.b[1]) / 2.0, (e.a[2] + e.b[2]) / 2.0];
+                if crate::hidden::behind(&csg, m, dir, eps, None) {
                     continue;
                 }
                 items.push(Item {
@@ -587,20 +585,6 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
     finish(items)
 }
 
-/// Does the solid stand between this edge and the eye?  The orbit's own direction, so the box
-/// answers the question a view answers with its normal.
-fn solid_hidden(csg: &crate::solid::Csg, m: [f64; 3], dir: [f64; 3], eps: f64) -> bool {
-    let bb = csg.bbox();
-    if bb.is_empty() {
-        return false;
-    }
-    let reach = (0..3).fold(0.0f64, |a, i| a.max(bb.hi[i] - bb.lo[i])) * 2.0 + 1.0;
-    (1..=48).any(|k| {
-        let t = eps * 4.0 + reach * k as f64 / 48.0;
-        csg.inside([m[0] + t * dir[0], m[1] + t * dir[1], m[2] + t * dir[2]])
-    })
-}
-
 fn finish(items: Vec<Item>) -> Scene {
     let mut bounds = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
     for it in &items {
@@ -654,10 +638,7 @@ fn face(basis: &Basis, (x0, y0, x1, y1): Box2) -> Vec<[f64; 3]> {
 /// the origin would be truer to a datum glyph and is what this was; at the size a box is looked
 /// at, it disappeared into whatever the view had drawn near its corner.
 fn axes(basis: &Basis, (x0, y0, x1, y1): Box2) -> [Vec<[f64; 3]>; 2] {
-    [
-        vec![basis.lift(x0, 0.0), basis.lift(x1, 0.0)],
-        vec![basis.lift(0.0, y0), basis.lift(0.0, y1)],
-    ]
+    [vec![basis.lift(x0, 0.0), basis.lift(x1, 0.0)], vec![basis.lift(0.0, y0), basis.lift(0.0, y1)]]
 }
 
 /// The screen axes of an orbit: where `right` and `up` point in space, looking from bearing

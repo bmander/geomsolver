@@ -49,11 +49,23 @@ const SAME: f64 = 1e-7;
 /// faceting of every round surface follows it, so a view drawn at one zoom is refined for that
 /// zoom and no finer.
 pub fn view(sk: &Sketch, si: usize, plane_i: Option<usize>, unit: f64) -> Vec<Stroke> {
+    view_clipped(sk, si, plane_i, unit, None, &[])
+}
+
+fn view_clipped(
+    sk: &Sketch,
+    si: usize,
+    plane_i: Option<usize>,
+    unit: f64,
+    cut: Option<Basis>,
+    section_edges: &[crate::csg::Edge],
+) -> Vec<Stroke> {
     let (basis, pose) = view_frame(sk, plane_i);
     let eye = basis.normal();
-    let edges = sk.solid_edges(si, unit);
+    let mut edges = sk.solid_edges(si, unit);
+    edges.extend_from_slice(section_edges);
     let csg = solid::resolve(sk, si, unit);
-    let eps = sk.extent() * solid::EPS;
+    let eps = csg.epsilon();
 
     // **which edges this view draws at all**: every corner, and a smooth seam only where the
     // surface turns away from the eye across it
@@ -68,7 +80,24 @@ pub fn view(sk: &Sketch, si: usize, plane_i: Option<usize>, unit: f64) -> Vec<St
                 continue;
             }
         }
-        drawn.push(((e.a, e.b), sil, e.path.clone()));
+        let (mut a, mut b) = (e.a, e.b);
+        if let Some(cut) = cut {
+            let height = |p: [f64; 3]| plane::dot(eye, std::array::from_fn(|k| p[k] - cut.o[k]));
+            let (ha, hb) = (height(a), height(b));
+            if ha > eps && hb > eps {
+                continue;
+            }
+            if (ha > eps) != (hb > eps) {
+                let t = ha / (ha - hb);
+                let at = std::array::from_fn(|k| a[k] + t * (b[k] - a[k]));
+                if ha > eps {
+                    a = at;
+                } else {
+                    b = at;
+                }
+            }
+        }
+        drawn.push(((a, b), sil, e.path.clone()));
     }
 
     // **split where one edge crosses another in the picture** (Appel): visibility can only
@@ -95,7 +124,8 @@ pub fn view(sk: &Sketch, si: usize, plane_i: Option<usize>, unit: f64) -> Vec<St
             }
             let at = |t: f64| [a[0] + t * d3[0], a[1] + t * d3[1], a[2] + t * d3[2]];
             let m = at((w[0] + w[1]) / 2.0);
-            let hidden = behind(&csg, m, eye, eps);
+            let limit = cut.map(|c| plane::dot(eye, std::array::from_fn(|k| c.o[k] - m[k])));
+            let hidden = behind(&csg, m, eye, eps, limit);
             let (p, q) = (at(w[0]), at(w[1]));
             out.push(Stroke {
                 pts: vec![on_page(&basis, pose, p), on_page(&basis, pose, q)],
@@ -118,10 +148,10 @@ pub fn section(
     unit: f64,
 ) -> Vec<Stroke> {
     let (cut, _) = view_frame(sk, at);
-    let (basis, pose) = view_frame(sk, plane_i);
+    let (basis, _) = view_frame(sk, plane_i);
     let csg = solid::resolve(sk, si, unit);
-    let eps = sk.extent() * solid::EPS;
-    let n = cut.normal();
+    let eps = csg.epsilon();
+    let n = basis.normal();
     let d = plane::dot(n, cut.o);
 
     // every boundary piece meets the cutting plane in a segment; a segment whose middle has
@@ -132,7 +162,7 @@ pub fn section(
             segs.push((a, b, p.path.clone()));
         }
     }
-    let mut out = Vec::new();
+    let mut section_edges = Vec::new();
     for (a, b, path) in segs {
         let m = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0];
         // a segment lying *in* the cut and bounding material is drawn; one the cut merely
@@ -145,18 +175,9 @@ pub fn section(
         if one == two {
             continue;
         }
-        out.push(Stroke {
-            pts: vec![on_page(&basis, pose, a), on_page(&basis, pose, b)],
-            hidden: false,
-            silhouette: false,
-            path,
-        });
+        section_edges.push(crate::csg::Edge { a, b, na: n, nb: across, smooth: false, path });
     }
-    // and what stands beyond the cut, as a view of it
-    for s in view(sk, si, plane_i, unit) {
-        out.push(s);
-    }
-    join(out)
+    view_clipped(sk, si, plane_i, unit, Some(cut), &section_edges)
 }
 
 /// The plane a picture is drawn in, and the pose that puts it on the page.  `None` is the page
@@ -185,21 +206,52 @@ fn step(p: [f64; 3], d: [f64; 3], k: f64) -> [f64; 3] {
 
 /// Does the solid stand between `m` and the eye?  Orthographic, so the eye's ray is a line along
 /// the view's own normal — the whole of what "hidden" means here.
-fn behind(csg: &solid::Csg, m: [f64; 3], eye: [f64; 3], eps: f64) -> bool {
-    let bb = csg.bbox();
-    if bb.is_empty() {
+pub(crate) fn behind(
+    csg: &solid::Csg,
+    m: [f64; 3],
+    eye: [f64; 3],
+    eps: f64,
+    limit: Option<f64>,
+) -> bool {
+    // Partition the ray at actual surface crossings. Material cannot change between two
+    // crossings; one interior test per interval is exact on the faceted term, even for a
+    // wall thinner than the old uniform sampling step. Clip those intervals at a section.
+    let bounds = csg.bbox();
+    if bounds.is_empty() {
         return false;
     }
-    let reach = (0..3).fold(0.0f64, |a, i| a.max(bb.hi[i] - bb.lo[i])) * 2.0 + 1.0;
-    // walked out along the ray, so a thin wall between the edge and the eye is not stepped over
-    let n = 64;
-    for k in 1..=n {
-        let t = eps * 4.0 + reach * k as f64 / n as f64;
-        if csg.inside(step(m, eye, t)) {
-            return true;
+    let far = (0..3)
+        .map(|k| eye[k] * (if eye[k] >= 0.0 { bounds.hi[k] } else { bounds.lo[k] } - m[k]))
+        .sum::<f64>();
+    let end = limit.unwrap_or(far + eps).min(far + eps);
+    if end <= eps {
+        return false;
+    }
+    let mut cuts = vec![eps, end];
+    for prim in &csg.prims {
+        for f in &prim.facets {
+            let denominator = plane::dot(f.n, eye);
+            if denominator.abs() <= 1e-12 {
+                continue;
+            }
+            let t = plane::dot(f.n, std::array::from_fn(|k| f.pts[0][k] - m[k])) / denominator;
+            if t <= eps || t >= end {
+                continue;
+            }
+            let x = step(m, eye, t);
+            if f.pts.iter().enumerate().all(|(i, a)| {
+                let b = f.pts[(i + 1) % f.pts.len()];
+                let edge = std::array::from_fn(|k| b[k] - a[k]);
+                plane::dot(f.n, plane::cross(edge, std::array::from_fn(|k| x[k] - a[k])))
+                    >= -eps * plane::norm(edge)
+            }) {
+                cuts.push(t);
+            }
         }
     }
-    false
+    cuts.sort_by(f64::total_cmp);
+    cuts.windows(2)
+        .any(|w| w[1] - w[0] > eps * 1e-3 && csg.inside(step(m, eye, (w[0] + w[1]) * 0.5)))
 }
 
 /// Where the segment `a→b` is crossed, in the picture, by `c→d`.  `None` when they miss, or are
@@ -226,7 +278,11 @@ fn meet_plane(pts: &[[f64; 3]], n: [f64; 3], d: f64) -> Option<([f64; 3], [f64; 
         let (sa, sb) = (plane::dot(n, a) - d, plane::dot(n, b) - d);
         if (sa > 0.0) != (sb > 0.0) && (sa - sb).abs() > 0.0 {
             let t = sa / (sa - sb);
-            hits.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), a[2] + t * (b[2] - a[2])]);
+            hits.push([
+                a[0] + t * (b[0] - a[0]),
+                a[1] + t * (b[1] - a[1]),
+                a[2] + t * (b[2] - a[2]),
+            ]);
         }
     }
     (hits.len() >= 2).then(|| (hits[0], hits[hits.len() - 1]))
@@ -281,11 +337,13 @@ fn overlay(v: Vec<Stroke>, tol: f64) -> Vec<Stroke> {
         }
         let ta = a.0 * d.0 + a.1 * d.1;
         let base = (a.0 - ta * d.0, a.1 - ta * d.1);
-        lines
-            .entry(k)
-            .or_insert_with(|| (d, base, Vec::new()))
-            .2
-            .push(Span { t0, t1, hidden: s.hidden, sil: s.silhouette, path: s.path });
+        lines.entry(k).or_insert_with(|| (d, base, Vec::new())).2.push(Span {
+            t0,
+            t1,
+            hidden: s.hidden,
+            sil: s.silhouette,
+            path: s.path,
+        });
     }
     let mut out = Vec::new();
     for (_, (d, base, spans)) in lines {
@@ -372,10 +430,15 @@ fn subtract(a: Vec<(f64, f64)>, b: &[(f64, f64)]) -> Vec<(f64, f64)> {
 /// Splitting at every apparent crossing is what makes visibility right and what leaves one drawn
 /// edge as a dozen segments; a reader sees a line, and a file that says so is a twelfth the size.
 fn join(mut v: Vec<Stroke>) -> Vec<Stroke> {
-    let scale = v
-        .iter()
-        .flat_map(|s| s.pts.iter())
-        .fold(1.0f64, |m, p| m.max(p.0.abs()).max(p.1.abs()));
+    let Some(origin) = v.first().and_then(|s| s.pts.first()).copied() else { return v };
+    for s in &mut v {
+        for p in &mut s.pts {
+            p.0 -= origin.0;
+            p.1 -= origin.1;
+        }
+    }
+    let scale =
+        v.iter().flat_map(|s| s.pts.iter()).fold(1.0f64, |m, p| m.max(p.0.abs()).max(p.1.abs()));
     let tol = scale * SAME;
     // an edge seen end-on is a point, and a point is not a line
     v.retain(|s| {
@@ -409,6 +472,12 @@ fn join(mut v: Vec<Stroke>) -> Vec<Stroke> {
             None => out.push(s),
         }
     }
+    for s in &mut out {
+        for p in &mut s.pts {
+            p.0 += origin.0;
+            p.1 += origin.1;
+        }
+    }
     out
 }
 
@@ -438,18 +507,16 @@ pub fn layout(sk: &Sketch, unit: f64) -> Vec<Drawn> {
     for (i, d) in sk.derived.iter().enumerate() {
         let strokes = match d.at {
             None => view(sk, d.solid as usize, d.plane.map(|p| p as usize), unit),
-            Some(at) => section(
-                sk,
-                d.solid as usize,
-                Some(at as usize),
-                d.plane.map(|p| p as usize),
-                unit,
-            ),
+            Some(at) => {
+                section(sk, d.solid as usize, Some(at as usize), d.plane.map(|p| p as usize), unit)
+            }
         };
         for s in strokes {
-            let mut class = crate::style::Classes(vec![
-                if s.hidden { "hidden".to_string() } else { "visible".to_string() },
-            ]);
+            let mut class = crate::style::Classes(vec![if s.hidden {
+                "hidden".to_string()
+            } else {
+                "visible".to_string()
+            }]);
             if d.at.is_some() && !s.hidden {
                 class.0.push("section".to_string());
             }
@@ -536,12 +603,25 @@ pub fn generated(sk: &Sketch, unit: f64) -> Vec<(usize, Dim)> {
                 (page(lo[0], lo[1]), page(lo[0], hi[1]))
             };
             let along = plane::on_page(pose.0, pose.1, (0.0, 0.0), dir);
-            out.push((i, Dim { a, b, dir: along, value: hi[k] - lo[k], round: false, clear: true }));
+            out.push((
+                i,
+                Dim { a, b, dir: along, value: hi[k] - lo[k], round: false, clear: true },
+            ));
         }
         // and every round feature this view sees square on: a face that is one circle, whose
         // plane looks at the eye.  A hole is a size a printer needs and a machine can read
         let eye = basis.normal();
-        for f in reachable_faces(sk, d.solid) {
+        let csg = solid::resolve(sk, d.solid as usize, unit);
+        let surviving: std::collections::BTreeSet<_> = sk
+            .solid_boundary(d.solid as usize, unit)
+            .iter()
+            .filter(|p| p.smooth && p.area() > 0.0)
+            .filter_map(|p| csg.prims.get(p.prim).map(|p| p.of.clone()))
+            .collect();
+        for (solid, f) in reachable_faces(sk, d.solid) {
+            if !surviving.contains(&sk.solids[solid as usize].name) {
+                continue;
+            }
             let Some(face) = sk.faces.get(f as usize) else { continue };
             if face.edges.len() != 1 || face.edges[0].kind != crate::model::EntKind::Circle {
                 continue;
@@ -572,8 +652,17 @@ pub fn generated(sk: &Sketch, unit: f64) -> Vec<(usize, Dim)> {
             let x = fb.lift(cu, cv);
             let (vu, vv) = basis.view_coords(x);
             let (a, b) = (page(vu - r, vv), page(vu + r, vv));
-            out.push((i, Dim { a, b, dir: plane::on_page(pose.0, pose.1, (0.0, 0.0), (1.0, 0.0)),
-                               value: 2.0 * r, round: true, clear: false }));
+            out.push((
+                i,
+                Dim {
+                    a,
+                    b,
+                    dir: plane::on_page(pose.0, pose.1, (0.0, 0.0), (1.0, 0.0)),
+                    value: 2.0 * r,
+                    round: true,
+                    clear: false,
+                },
+            ));
         }
     }
     out
@@ -596,7 +685,7 @@ pub struct Dim {
 
 /// Every face the term of a solid reaches, so a generated dimension can be about a feature and
 /// not only about the outline.
-fn reachable_faces(sk: &Sketch, si: u32) -> Vec<u32> {
+fn reachable_faces(sk: &Sketch, si: u32) -> Vec<(u32, u32)> {
     let mut out = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     let mut stack = vec![si];
@@ -606,7 +695,7 @@ fn reachable_faces(sk: &Sketch, si: u32) -> Vec<u32> {
         }
         let Some(sol) = sk.solids.get(s as usize) else { continue };
         if let Some(f) = sol.face() {
-            out.push(f);
+            out.push((s, f));
         }
         stack.extend(sol.operands());
     }

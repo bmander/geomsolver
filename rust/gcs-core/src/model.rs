@@ -142,9 +142,7 @@ impl EntKind {
             EntKind::Spline => &[("ctrl", L)],
             // a plane's attitude is not a field: a Scalar is a number a solve may write back,
             // and the basis is document data no solve moves
-            EntKind::Plane => {
-                &[("origin", C), ("toward", C), ("c", S), ("s", S)]
-            }
+            EntKind::Plane => &[("origin", C), ("toward", C), ("c", S), ("s", S)],
             // as many arguments as its definition takes, and none of them need be points — the
             // first kind for which that is true
             EntKind::Curve => &[("args", L)],
@@ -199,9 +197,7 @@ impl EntKind {
             EntKind::Point => vec![format!("{n}.x"), format!("{n}.y")],
             EntKind::Line => [pt("p1"), pt("p2")].concat(),
             EntKind::Circle => [pt("center"), vec![format!("{n}.r")]].concat(),
-            EntKind::Arc => {
-                [pt("center"), pt("start"), pt("end"), vec![format!("{n}.r")]].concat()
-            }
+            EntKind::Arc => [pt("center"), pt("start"), pt("end"), vec![format!("{n}.r")]].concat(),
             EntKind::Plane => {
                 [pt("origin"), pt("toward"), vec![format!("{n}.c"), format!("{n}.s")]].concat()
             }
@@ -223,12 +219,9 @@ impl EntKind {
             // a face bears none of its own: its edges carry the memberships, and the face is on
             // the plane they agree about.  A solid is not on a plane at all.
             EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid => false,
-            EntKind::Point
-            | EntKind::Line
-            | EntKind::Circle
-            | EntKind::Arc
-            | EntKind::Spline
-            => true,
+            EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline => {
+                true
+            }
         }
     }
 
@@ -754,6 +747,8 @@ pub struct Sketch {
     /// one the first time a name nothing defines is read and retires it when the last reader
     /// stops reading it, so nothing else in the document has to know they exist.
     pub free_vars: BTreeMap<String, u32>,
+    /// Physical dimensions inferred by expression evaluation, in user units (angles in degrees).
+    pub free_dimensions: BTreeMap<String, crate::units::Dim>,
     /// Each curve's polyline, remembered against everything it was computed from
     /// (`curve_polyline`).  A pick walks every drawn curve on every pointer move, and a traced
     /// curve's polyline is a march of `CURVE_STEPS` block solves — nine milliseconds a move on
@@ -1464,11 +1459,9 @@ impl Sketch {
             // the geometry rather than owning any; a face and a solid own none for the same
             // reason, one further out — every number of theirs is an extent, an expression the
             // flattener settled, and no solve may write one back
-            EntKind::Line
-            | EntKind::Spline
-            | EntKind::Curve
-            | EntKind::Face
-            | EntKind::Solid => Vec::new(),
+            EntKind::Line | EntKind::Spline | EntKind::Curve | EntKind::Face | EntKind::Solid => {
+                Vec::new()
+            }
         }
     }
 
@@ -1531,10 +1524,14 @@ impl Sketch {
             EntKind::Spline => crate::curve::MIN_CTRL,
             // a face is a loop: lose one edge and it is not a loop, so it goes whole.  A solid
             // is its term, and a term missing an operand is not that solid
-            EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc
-            | EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid => {
-                children.len()
-            }
+            EntKind::Point
+            | EntKind::Line
+            | EntKind::Circle
+            | EntKind::Arc
+            | EntKind::Plane
+            | EntKind::Curve
+            | EntKind::Face
+            | EntKind::Solid => children.len(),
         }
     }
 
@@ -1629,11 +1626,9 @@ impl Sketch {
         let cv = &self.curves[i];
         match &cv.home {
             Home::At(u) => *u,
-            Home::Free(n) => self
-                .free_vars
-                .get(n)
-                .map(|&p| self.params[p as usize].value)
-                .unwrap_or(cv.domain.0),
+            Home::Free(n) => {
+                self.free_vars.get(n).map(|&p| self.params[p as usize].value).unwrap_or(cv.domain.0)
+            }
         }
     }
 
@@ -1710,8 +1705,15 @@ impl Sketch {
             CurveBody::Trace(l) => MODEL_LOCUS.with(|s| {
                 let pose = self.curve_pose(i);
                 let anchor = crate::locus::Anchor { u: self.curve_home(i), pose: pose.as_deref() };
-                crate::locus::sweep(&l.flat, &self.curve_vars(i, a), a, b, CURVE_STEPS, anchor,
-                                    &mut s.borrow_mut())
+                crate::locus::sweep(
+                    &l.flat,
+                    &self.curve_vars(i, a),
+                    a,
+                    b,
+                    CURVE_STEPS,
+                    anchor,
+                    &mut s.borrow_mut(),
+                )
             }),
         }
     }
@@ -1794,7 +1796,7 @@ impl Sketch {
             }
         }
         let csg = crate::solid::resolve(self, i, unit);
-        let v = crate::csg::boundary(&csg, self.extent() * crate::solid::EPS);
+        let v = crate::csg::boundary(&csg, csg.epsilon());
         self.solid_cache.borrow_mut().insert(
             (i, crate::solid::Want::Boundary),
             (key, crate::solid::Cached::Boundary(v.clone())),
@@ -1836,11 +1838,10 @@ impl Sketch {
             }
         }
         let csg = crate::solid::resolve(self, i, unit);
-        let v = crate::csg::edges(&csg, self.extent() * crate::solid::EPS);
-        self.solid_cache.borrow_mut().insert(
-            (i, crate::solid::Want::Edges),
-            (key, crate::solid::Cached::Edges(v.clone())),
-        );
+        let v = crate::csg::edges(&csg, csg.epsilon());
+        self.solid_cache
+            .borrow_mut()
+            .insert((i, crate::solid::Want::Edges), (key, crate::solid::Cached::Edges(v.clone())));
         v
     }
 
@@ -1975,9 +1976,7 @@ impl Sketch {
                 }
                 b
             }
-            EntKind::Solid => {
-                (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY)
-            }
+            EntKind::Solid => (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
             EntKind::Curve => {
                 let mut b = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
                 for (x, y) in self.curve_polyline(e.i()) {
@@ -2198,9 +2197,7 @@ pub fn point_to_drawn(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
         }
         // the kinds whose drawn figure *is* the entity: a point, a whole ring or rim, and a
         // curve that `curve::distance_to` already keeps between its own knots
-        EntKind::Point | EntKind::Circle | EntKind::Spline => {
-            point_to(sk, px, py, e)
-        }
+        EntKind::Point | EntKind::Circle | EntKind::Spline => point_to(sk, px, py, e),
         // a plane draws its chord as a datum glyph, and that is where it is taken hold of; its
         // points still win a pick within tolerance, as every point does
         EntKind::Plane => {
@@ -2391,13 +2388,7 @@ pub fn orientation_xy(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64) -> f
 
 /// Continuation path from (x0, y0) to (x1, y1): waypoints no farther apart than `max_step`, so a
 /// solution tracks its branch instead of teleporting across it.  Always at least one point.
-pub fn increments(
-    x0: f64,
-    y0: f64,
-    x1: f64,
-    y1: f64,
-    max_step: f64,
-) -> Vec<(f64, f64)> {
+pub fn increments(x0: f64, y0: f64, x1: f64, y1: f64, max_step: f64) -> Vec<(f64, f64)> {
     let n = (((x1 - x0).hypot(y1 - y0) / max_step).ceil() as i64).max(1);
     (1..=n)
         .map(|i| {

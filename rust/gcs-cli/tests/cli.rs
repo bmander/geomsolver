@@ -28,7 +28,16 @@ fn issue_50_reductions_report_or_diagnose_instead_of_exporting_invalid_solids() 
         let filename = path.file_name().unwrap().to_str().unwrap();
         let item: usize = filename[..2].parse().unwrap();
         let output = temp.join(format!("{item}.stl"));
-        let out = run(&[path.to_str().unwrap(), "--json", "--where", "result", "--solid", "result", "--stl", output.to_str().unwrap()]);
+        let out = run(&[
+            path.to_str().unwrap(),
+            "--json",
+            "--where",
+            "result",
+            "--solid",
+            "result",
+            "--stl",
+            output.to_str().unwrap(),
+        ]);
         let json = gcs_core::json::parse(&String::from_utf8_lossy(&out.stdout)).unwrap();
         let doc = &json.get("documents").unwrap().arr()[0];
         let invalid = [2, 8, 9, 10, 12].contains(&item);
@@ -155,4 +164,60 @@ fn output_writes_an_svg() {
     // one file, so one document
     let two = run(&["--output", &out.to_string_lossy(), &doc("rect_fillets.sv"), &doc("truss.sv")]);
     assert_eq!(two.status.code(), Some(2));
+}
+
+#[test]
+fn issue51_sweep_reports_distinguish_sampling_from_failed_poses() {
+    let fixtures =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../gcs-core/tests/fixtures/solid_issue51");
+    for (case, failed, verdict) in
+        [("sampling_disclosure", 0, "holds"), ("sweep_impossible", 37, "undecided")]
+    {
+        let path = fixtures.join(format!("{case}.sv"));
+        let text = run(&[path.to_str().unwrap()]);
+        assert!(text.status.success());
+        let text = String::from_utf8(text.stdout).unwrap();
+        assert!(text.contains("sampling 37 poses"), "{text}");
+        assert!(text.contains(&format!("({failed} failed)")), "{text}");
+        if failed > 0 {
+            assert!(text.contains("no solved valid poses"));
+        }
+        let out = run(&[path.to_str().unwrap(), "--json"]);
+        assert!(out.status.success());
+        let doc = gcs_core::json::parse(&String::from_utf8(out.stdout).unwrap()).unwrap();
+        let claim = &doc.get("documents").unwrap().arr()[0]
+            .get("diagnosis")
+            .unwrap()
+            .get("solidClaims")
+            .unwrap()
+            .arr()[0];
+        assert_eq!(claim.get("verdict").unwrap().as_str(), verdict);
+        assert_eq!(claim.get("samples").unwrap().as_i64(), 37);
+        assert_eq!(claim.get("failedSamples").unwrap().arr().len(), failed);
+        if failed > 0 {
+            assert_eq!(claim.get("measured"), Some(&gcs_core::json::Json::Null));
+        }
+    }
+}
+
+#[test]
+fn issue51_invalid_claims_and_colliding_cap_names_are_diagnosed() {
+    let fixtures =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../gcs-core/tests/fixtures/solid_issue51");
+    for case in [
+        "arguments_inside(1mm)",
+        "arguments_clear(1mm,2mm)",
+        "sweep_dimensional_error",
+        "cap_collision",
+    ] {
+        let path = fixtures.join(format!("{case}.sv"));
+        let out = run(&[path.to_str().unwrap(), "--json"]);
+        assert_eq!(out.status.code(), Some(1), "{case}");
+        let doc = gcs_core::json::parse(&String::from_utf8(out.stdout).unwrap()).unwrap();
+        assert!(!doc.get("documents").unwrap().arr()[0]
+            .get("diagnostics")
+            .unwrap()
+            .arr()
+            .is_empty());
+    }
 }

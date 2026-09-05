@@ -214,6 +214,11 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
         }
     }
     retire_free(sk, &bound);
+    sk.free_dimensions = free_dim
+        .into_iter()
+        .filter(|(name, _)| bound.contains_key(name))
+        .map(|(name, (dim, _))| (name, dim))
+        .collect();
     // whatever never became ready is on a cycle, or downstream of one
     let stuck: Vec<usize> = (0..n).filter(|&i| indeg[i] > 0).collect();
     for &i in &stuck {

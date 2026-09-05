@@ -16,11 +16,11 @@ use crate::cgraph::coincident_classes;
 use crate::constraints::{same_constraint, CKind, Constraint};
 use crate::graph;
 use crate::linalg::{rank_and_nullspace, Mat};
-use crate::system::RANK_TOL;
 use crate::model::{EntRef, Sketch};
 use crate::newton::Method;
 use crate::solve::SolveOpts;
 use crate::system::System;
+use crate::system::RANK_TOL;
 use crate::witness::{analyze_with, movable_columns, screen, shaky_warning, WitnessReport};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -91,6 +91,8 @@ pub fn judge_solids(sk: &crate::model::Sketch) -> Vec<SolidVerdict> {
                     tolerance: v.tolerance,
                     holds: v.holds,
                     worst: None,
+                    samples: 0,
+                    failed_samples: Vec::new(),
                 });
             }
             Some(sw) => {
@@ -99,6 +101,8 @@ pub fn judge_solids(sk: &crate::model::Sketch) -> Vec<SolidVerdict> {
                 // seed and §9.7's for a claim, said once more where it would be easiest to break
                 let Some(&p) = sk.free_vars.get(&sw.name) else { continue };
                 let mut worst: Option<(f64, crate::clear::Verdict)> = None;
+                let mut failed_samples = Vec::new();
+                let mut holds = Some(true);
                 for k in 0..=SWEEP_STEPS {
                     let t = sw.from + (sw.to - sw.from) * k as f64 / SWEEP_STEPS as f64;
                     let mut scratch = sk.clone();
@@ -107,24 +111,40 @@ pub fn judge_solids(sk: &crate::model::Sketch) -> Vec<SolidVerdict> {
                     scratch.params[p as usize].value = t;
                     scratch.params[p as usize].fixed = true;
                     scratch.solid_cache.borrow_mut().clear();
-                    let _ = crate::solve::solve(&mut scratch, crate::solve::SolveOpts::default());
+                    let result =
+                        crate::solve::solve(&mut scratch, crate::solve::SolveOpts::default());
+                    if !result.success
+                        || crate::solid::validate(&scratch, c.a as usize).is_err()
+                        || crate::solid::validate(&scratch, c.b as usize).is_err()
+                    {
+                        failed_samples.push(t);
+                        if holds != Some(false) {
+                            holds = None;
+                        }
+                        continue;
+                    }
                     let v = crate::clear::judge(
                         &scratch, c.word, c.a as usize, c.b as usize, c.gap.value, unit,
                     );
+                    holds = match (holds, v.holds) {
+                        (Some(false), _) | (_, Some(false)) => Some(false),
+                        (None, _) | (_, None) => None,
+                        _ => Some(true),
+                    };
                     if worst.as_ref().is_none_or(|(_, w)| v.measured < w.measured) {
                         worst = Some((t, v));
                     }
                 }
-                if let Some((t, v)) = worst {
-                    out.push(SolidVerdict {
-                        stmt: c.stmt,
-                        text,
-                        measured: v.measured,
-                        tolerance: v.tolerance,
-                        holds: v.holds,
-                        worst: Some(t),
-                    });
-                }
+                out.push(SolidVerdict {
+                    stmt: c.stmt,
+                    text,
+                    measured: worst.as_ref().map(|(_, v)| v.measured).unwrap_or(f64::NAN),
+                    tolerance: worst.as_ref().map(|(_, v)| v.tolerance).unwrap_or(0.0),
+                    holds,
+                    worst: worst.map(|(t, _)| t),
+                    samples: SWEEP_STEPS + 1,
+                    failed_samples,
+                });
             }
         }
     }
@@ -149,6 +169,10 @@ pub struct SolidVerdict {
     pub holds: Option<bool>,
     /// For a swept claim, the value of the free variable at the worst pose.
     pub worst: Option<f64>,
+    /// Zero for a single pose; otherwise the number of attempted sample solves.
+    pub samples: usize,
+    /// Parameter values with no solved, valid geometry. These cannot certify a claim.
+    pub failed_samples: Vec<f64>,
 }
 
 #[derive(Clone, Debug)]
@@ -723,9 +747,8 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     // cannot both be true are dependent in W and carry no dimension, so W's reading files them
     // as `implied` — "consistent, nothing to fix" — beside the conflict that names them.  What
     // is violated, or found in the conflict set, is a surplus and is said so.
-    let contested = |c: &u32| {
-        violated.contains(c) || conflict_set.as_ref().is_some_and(|s| s.contains(c))
-    };
+    let contested =
+        |c: &u32| violated.contains(c) || conflict_set.as_ref().is_some_and(|s| s.contains(c));
     if implied.iter().any(contested) {
         let (moved, kept): (Vec<u32>, Vec<u32>) = implied.iter().copied().partition(|c| contested(c));
         implied = kept;

@@ -49,15 +49,25 @@ pub fn glb(sk: &Sketch, solids: &[usize], unit: f64) -> Vec<u8> {
 
 /// The manifest and the blob.  Split out so a test can read either without unpacking a file.
 pub fn build(parts: &[(String, Mesh)], scale: f64, unit_name: Option<&str>) -> (Json, Vec<u8>) {
-    // One blob, laid out as glTF wants it: every part's positions, then every part's normals,
-    // each a float32 triple per vertex — and a face is a **window** into them rather than a copy.
+    // Local positions preserve small features far from the world origin. Each solid's parent
+    // node carries its translation in metres. Faces remain windows into one shared buffer.
     // The two halves are the same length part for part, so one offset serves both accessors.
+    let origins: Vec<[f64; 3]> = parts
+        .iter()
+        .map(|(_, m)| {
+            if m.positions.len() >= 3 {
+                [m.positions[0], m.positions[1], m.positions[2]]
+            } else {
+                [0.0; 3]
+            }
+        })
+        .collect();
     let mut bin: Vec<u8> = Vec::new();
     let mut base: Vec<usize> = Vec::with_capacity(parts.len());
-    for (_, m) in parts {
+    for ((_, m), origin) in parts.iter().zip(&origins) {
         base.push(bin.len());
-        for v in &m.positions {
-            bin.extend(((*v * scale) as f32).to_le_bytes());
+        for (i, v) in m.positions.iter().enumerate() {
+            bin.extend((((v - origin[i % 3]) * scale) as f32).to_le_bytes());
         }
     }
     let normals_at = bin.len();
@@ -103,7 +113,8 @@ pub fn build(parts: &[(String, Mesh)], scale: f64, unit_name: Option<&str>) -> (
             for t in g.start..g.start + g.count {
                 for v in 0..3 {
                     for k in 0..3 {
-                        let x = m.positions[(t * 3 + v) * 3 + k] * scale;
+                        let x = ((m.positions[(t * 3 + v) * 3 + k] - origins[pi][k]) * scale) as f32
+                            as f64;
                         lo[k] = lo[k].min(x);
                         hi[k] = hi[k].max(x);
                     }
@@ -158,6 +169,7 @@ pub fn build(parts: &[(String, Mesh)], scale: f64, unit_name: Option<&str>) -> (
         parents.push(object(&[
             ("name", Json::Str(name.clone())),
             ("children", Json::Arr(kids)),
+            ("translation", floats(&origins[pi].map(|x| x * scale))),
             ("extras", object(&[("solid", Json::Str(name.clone()))])),
         ]));
     }
@@ -165,10 +177,8 @@ pub fn build(parts: &[(String, Mesh)], scale: f64, unit_name: Option<&str>) -> (
     let mut all = parents;
     all.extend(children);
 
-    let mut asset = object(&[
-        ("version", Json::Str("2.0".into())),
-        ("generator", Json::Str("solvent".into())),
-    ]);
+    let mut asset =
+        object(&[("version", Json::Str("2.0".into())), ("generator", Json::Str("solvent".into()))]);
     if let Some(u) = unit_name {
         // scaled to metres as the spec says, and the document's own unit recorded beside it so
         // the scaling loses nothing

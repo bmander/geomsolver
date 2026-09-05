@@ -29,8 +29,8 @@ use crate::model::{EntKind, EntRef, Sense, Sketch, SolidDef};
 use crate::plane::{self, Basis};
 use std::collections::BTreeMap;
 
-/// How far off a face a sample is pushed before it is classified, as a fraction of the drawing's
-/// extent.  Comfortably above `SNAP` so no sliver survives between the two, and comfortably
+/// How far off a face a sample is pushed before it is classified, as a fraction of the solid's
+/// smallest positive primitive dimension.  Comfortably above `SNAP` so no sliver survives between the two, and comfortably
 /// below any feature a person draws.
 pub const EPS: f64 = 1e-5;
 
@@ -199,6 +199,22 @@ pub struct Csg {
 }
 
 impl Csg {
+    /// Classification tolerance depends only on this term's primitives, never on sheet layout.
+    /// Use the smallest positive primitive dimension so a long thin part keeps its thin features.
+    pub fn epsilon(&self) -> f64 {
+        let feature = self
+            .prims
+            .iter()
+            .flat_map(|p| (0..3).map(move |k| p.bbox.hi[k] - p.bbox.lo[k]))
+            .filter(|d| *d > 0.0 && d.is_finite())
+            .fold(f64::INFINITY, f64::min);
+        if feature.is_finite() {
+            feature * EPS
+        } else {
+            EPS
+        }
+    }
+
     pub fn bbox(&self) -> Box3 {
         let mut b = Box3::empty();
         for p in &self.prims {
@@ -339,9 +355,12 @@ impl FacePoly {
         let scale = pts.iter().fold(0.0f64, |m, p| m.max((p.0 - pts[0].0).abs()).max((p.1 - pts[0].1).abs()));
         let tol = scale * 1e-12;
         let area_tol = tol * scale;
-        if self.area().abs() <= area_tol { return false; }
-        let cross = |a: (f64, f64), b: (f64, f64), c: (f64, f64)|
-            (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0);
+        if self.area().abs() <= area_tol {
+            return false;
+        }
+        let cross = |a: (f64, f64), b: (f64, f64), c: (f64, f64)| {
+            (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
+        };
         for i in 0..n {
             let (a, b, c) = (pts[i], pts[(i + 1) % n], pts[(i + 2) % n]);
             if (b.0 - a.0).hypot(b.1 - a.1) <= tol { return false; }
@@ -352,10 +371,16 @@ impl FacePoly {
             for j in i + 2..n {
                 if (j + 1) % n == i { continue; }
                 let (c, d) = (pts[j], pts[(j + 1) % n]);
-                if a.0.min(b.0) > c.0.max(d.0) + tol || c.0.min(d.0) > a.0.max(b.0) + tol
-                    || a.1.min(b.1) > c.1.max(d.1) + tol || c.1.min(d.1) > a.1.max(b.1) + tol
-                { continue; }
-                let same_side = |x: f64, y: f64| (x > area_tol && y > area_tol) || (x < -area_tol && y < -area_tol);
+                if a.0.min(b.0) > c.0.max(d.0) + tol
+                    || c.0.min(d.0) > a.0.max(b.0) + tol
+                    || a.1.min(b.1) > c.1.max(d.1) + tol
+                    || c.1.min(d.1) > a.1.max(b.1) + tol
+                {
+                    continue;
+                }
+                let same_side = |x: f64, y: f64| {
+                    (x > area_tol && y > area_tol) || (x < -area_tol && y < -area_tol)
+                };
                 if !same_side(cross(a, b, c), cross(a, b, d))
                     && !same_side(cross(c, d, a), cross(c, d, b))
                 { return false; }
@@ -503,6 +528,18 @@ pub fn validate(sk: &Sketch, si: usize) -> Result<(), String> {
         };
         let poly = face_poly(sk, face as usize, REPORT_UNIT)
             .ok_or_else(|| fail("self-intersecting or degenerate profile: a face must bound a simple nonzero region"))?;
+        let reserved: &[&str] = match &s.def {
+            SolidDef::Prism { .. } => &["near", "far"],
+            SolidDef::Revolve { sweep, .. } if sweep.value < std::f64::consts::TAU - 1e-9 => {
+                &["start", "end"]
+            }
+            _ => &[],
+        };
+        if let Some(name) = poly.names.iter().find(|n| reserved.contains(&n.as_str())) {
+            return Err(fail(&format!(
+                "edge `{name}` collides with a sweep cap; rename the source edge"
+            )));
+        }
         if let SolidDef::Revolve { axis, sweep, .. } = &s.def {
             if !sweep.value.is_finite() || sweep.value <= 0.0 {
                 return Err(fail("a revolution needs a finite positive sweep"));
@@ -783,8 +820,8 @@ pub fn revolve(
     // faceted about the axis by the same sagitta rule an arc is drawn by, on the widest radius
     let rmax = mer.iter().fold(0.0f64, |m, p| m.max(p.0));
     let tolf = crate::curve::flatness(unit);
-    let step =
-        if rmax > tolf { 2.0 * (1.0 - tolf / rmax).acos() } else { std::f64::consts::TAU };
+    let step = (if rmax > tolf { 2.0 * (1.0 - tolf / rmax).acos() } else { std::f64::consts::TAU })
+        .min(std::f64::consts::TAU / 64.0);
     let steps = ((sweep / step).ceil() as usize).clamp(3, 2048);
 
     let n = mer.len();
