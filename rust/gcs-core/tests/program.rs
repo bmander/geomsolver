@@ -12,7 +12,7 @@ use gcs_core::io;
 use gcs_core::model::{EntKind, EntRef, Field, Sketch};
 use gcs_core::program::{elaborate, to_program};
 use gcs_core::solve::{solve, SolveOpts};
-use gcs_core::syntax::{camel, render, snake};
+use gcs_core::syntax::{camel, render_flat, snake};
 
 fn cases() -> Vec<(&'static str, Sketch)> {
     let mut v: Vec<(&'static str, Sketch)> = examples::EXAMPLES
@@ -64,6 +64,16 @@ fn printing_is_a_fixed_point() {
         let twice = to_program(&elaborate(&to_program(&sk)).sketch).text().to_string();
         assert_eq!(twice, once, "{name}");
     }
+}
+
+#[test]
+fn flat_rendering_updates_utf8_statement_spans() {
+    let (mut p, errors) = gcs_core::syntax::parse("param café = 1\nparam z = 2");
+    assert!(errors.is_empty(), "{errors:?}");
+    assert_eq!(render_flat(&mut p).unwrap(), "param café = 1\nparam z = 2\n");
+    assert_eq!(p.root().span.slice(p.text()), p.text());
+    assert_eq!(p.root().body[0].span.slice(p.text()), "param café = 1");
+    assert_eq!(p.root().body[1].span.slice(p.text()), "param z = 2");
 }
 
 /// The elaborated parameter vector is the loaded one, parameter for parameter.
@@ -289,7 +299,7 @@ fn a_bad_name_is_a_diagnostic_with_a_span() {
             }
         }
     }
-    render(&mut p);
+    render_flat(&mut p).unwrap();
     let e = elaborate(&p);
     assert!(!e.ok(), "a dangling name is an error");
     let d = e.errors().next().unwrap();
@@ -326,7 +336,7 @@ fn a_name_declared_twice_is_an_error() {
             close: None,
         }));
     }
-    render(&mut p);
+    render_flat(&mut p).unwrap();
     let e = elaborate(&p);
     assert!(!e.ok());
     assert_eq!(e.errors().next().unwrap().code.as_str(), "E001");
@@ -843,7 +853,7 @@ fn an_anonymous_child_prints_back_anonymous() {
     let (p, errs) = gcs_core::syntax::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let mut out = String::new();
-    gcs_core::syntax::write_stmt_to(&mut out, &p.root().body[0].kind);
+    gcs_core::syntax::write_stmt_to(&mut out, &p.root().body[0].kind).unwrap();
     assert!(out.contains("hint(x: 0, y: 0)"), "{out}");
     assert!(out.contains("hint(x: 60, y: 20)"), "{out}");
     // and re-reading it is the same drawing

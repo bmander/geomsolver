@@ -78,7 +78,7 @@ fn a_computed_point_is_a_declaration() {
         .find(|c| c.name.as_ref().is_some_and(|n| n.text == "Ray"))
         .expect("the component");
     let mut out = String::new();
-    write_stmt_to(&mut out, &comp.body[0].kind);
+    write_stmt_to(&mut out, &comp.body[0].kind).unwrap();
     assert_eq!(out.split_whitespace().collect::<Vec<_>>().join(" "), "point p = (c.x + cos(u), c.y + sin(u))");
     // nothing on the sheet holds a point to a formula — neither written there nor drawn there
     refuses("point o hint(x: 0, y: 0)\npoint p = (o.x + 1, o.y)\n", "computed point");

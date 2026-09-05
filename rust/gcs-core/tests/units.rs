@@ -237,7 +237,7 @@ fn a_printed_program_keeps_the_unit_and_the_sheet() {
     ))
     .expect("elaborates");
     let mut p = gcs_core::program::to_program(&sk);
-    let text = gcs_core::syntax::render(&mut p).to_string();
+    let text = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
     assert!(text.contains("unit in"), "{text}");
     assert!(text.contains("style .construction { dash: 2 2 }"), "{text}");
     let back = read(&text).expect("reads back");
@@ -261,7 +261,7 @@ fn there_is_no_string_literal() {
         .expect("a raw branch key is bare");
     assert_eq!(sk.branches.get("other:0|1|2").copied(), Some(1));
     let mut p = gcs_core::program::to_program(&sk);
-    let text = gcs_core::syntax::render(&mut p).to_string();
+    let text = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
     assert!(text.contains("branch(other:0|1|2, 1)"), "{text}");
     // and a quote in a document is a unit mark, wherever it lands
     let (_, errs) = parse("unit mm\npoint a hint(x: 0, y: 0)\npoint b hint(x: 1, y: 0)\n\

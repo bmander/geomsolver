@@ -122,7 +122,7 @@ fn a_style_block_prints_back() {
     let (p, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let mut out = String::new();
-    gcs_core::syntax::write_stmt_to(&mut out, &p.root().body[0].kind);
+    gcs_core::syntax::write_stmt_to(&mut out, &p.root().body[0].kind).unwrap();
     assert_eq!(out, "style .centerline { dash: 12 3 2 3; width: 0.5; color: #888888 }");
 }
 
@@ -299,7 +299,7 @@ ground a
     let (prog, _) = gcs_core::syntax::parse(src);
     let mut out = String::new();
     let st = prog.root().body.iter().find(|s| matches!(&s.kind, gcs_core::syntax::StmtKind::Relation(r) if !r.class.is_empty())).unwrap();
-    gcs_core::syntax::write_stmt_to(&mut out, &st.kind);
+    gcs_core::syntax::write_stmt_to(&mut out, &st.kind).unwrap();
     assert!(out.contains("class shown"), "{out}");
 }
 

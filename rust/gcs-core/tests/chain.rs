@@ -1138,7 +1138,7 @@ fn the_operator_form_round_trips() {
         let src = examples::source(key).expect("its source");
         let a = read(src);
         let mut p = gcs_core::program::to_program(&a.sketch);
-        let text = gcs_core::syntax::render(&mut p).to_string();
+        let text = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
         let b = read(&text);
         assert_eq!(
             gcs_core::io::dumps(&a.sketch, Some(1)),
@@ -1236,9 +1236,10 @@ fn a_slot_keeps_the_name_and_the_number_it_was_written_with() {
     // was still called that (issue #47, item 6 made every contact's `t`)
     for stated in ["p on flank hint(t: 20)", "p on(t == 20) flank"] {
         let src = format!("{CURVE}{stated}\n");
-        let (mut prog, errs) = parse(&src);
+        let (prog, errs) = parse(&src);
         assert!(errs.is_empty(), "{stated} parses: {errs:?}");
-        let text = gcs_core::syntax::render(&mut prog).to_string();
+        let mut text = String::new();
+        gcs_core::syntax::write_stmt_to(&mut text, &prog.root().body.last().unwrap().kind).unwrap();
         assert!(text.contains(stated), "{stated} did not print back:\n{text}");
     }
 }

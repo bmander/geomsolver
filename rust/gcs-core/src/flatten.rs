@@ -15,12 +15,13 @@
 //! the rest, so an internal name has no spelling to keep valid.
 
 use crate::expr::{self, Aff};
-use crate::program::Code;
-use crate::units::Units;
+use crate::ir::PathStep;
+use crate::program::{Code, Diag};
 use crate::syntax::{
-    build_rank, under_root, BlockKind, Component, CurveTarget, Decl, Kid, Name,
-    OpenJoint, OpenNamed, OpenSide, Program, Ref, Seg, Span, Stmt, StmtKind, Ty,
+    build_rank, under_root, BlockKind, Component, CurveTarget, Decl, Kid, Name, OpenJoint,
+    OpenNamed, OpenSide, Program, Ref, Seg, Span, Stmt, StmtKind, Ty,
 };
+use crate::units::Units;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// How deep components and blocks may nest.  A document is untrusted input and
@@ -30,13 +31,6 @@ pub const MAX_DEPTH: usize = 32;
 /// How many statements an expansion may produce.  `repeat 1000000` is a program somebody can
 /// write; running out of memory is not the answer it should get.
 pub const MAX_FLAT: usize = 200_000;
-
-/// One elaborated-into-place statement, and what its names mean.
-pub struct Flat {
-    pub stmt: Stmt,
-    /// The instance path that reached it: which copy of which block, outermost first.
-    pub path: Vec<u32>,
-}
 
 /// What a `next` or a `prev` means where a statement stands.
 #[derive(Clone)]
@@ -95,11 +89,7 @@ impl Scope {
     /// the body around it, so a name none of them declares is that body's unknown, shared by
     /// every copy, where an instance's is its own (`t1.w`, `t2.w`).
     fn instance_prefix(&self) -> &str {
-        self.prefixes
-            .iter()
-            .map(String::as_str)
-            .find(|p| !is_copy_prefix(p))
-            .unwrap_or("")
+        self.prefixes.iter().map(String::as_str).find(|p| !is_copy_prefix(p)).unwrap_or("")
     }
 }
 
@@ -122,11 +112,8 @@ struct InPlane {
 }
 
 pub struct Expansion {
-    pub flat: Vec<Flat>,
-    pub errors: Vec<(Span, String)>,
-    /// Diagnostics that carry their own code (E041, a param defined in terms of itself), which
-    /// are not the "no such name" / "not a shape" pair the plain errors sort into.
-    pub coded: Vec<(Code, Span, String)>,
+    pub flat: Vec<crate::ir::Statement>,
+    pub diagnostics: Vec<Diag>,
     /// Every instance the walk bound, drawn or not — what a curve is a curve *of* (§6.5): the
     /// elaborator finds the instance a curve's point belongs to here, with the entities it was
     /// given resolved to absolute names and the numbers it was given worked out.
@@ -171,7 +158,7 @@ struct Walk<'a> {
     /// What the document's numbers are in — carried through the walk because every expression
     /// worked out here is worked out in them.
     units: Units,
-    out: Vec<(Stmt, Vec<u32>, Scope)>,
+    out: Vec<(Stmt, Vec<PathStep>, Scope)>,
     /// Every absolute name a declaration will make.  Collected as the walk goes and used to
     /// resolve references afterwards, so forward reference works — which spec P2 requires, since
     /// a body is a set and a set has no "before".
@@ -192,8 +179,7 @@ struct Walk<'a> {
     /// The same for each module linked in (§14.4): a module's components read the module's own
     /// top-level params, worked out once, the first time one of its components is bound.
     module_vals: Vec<Option<BTreeMap<String, Aff>>>,
-    errors: Vec<(Span, String)>,
-    coded: Vec<(Code, Span, String)>,
+    diagnostics: Vec<Diag>,
     /// Every call already read for how its arguments are written (`check_call`), by where it is
     /// written.  The question is about the *text* — which formal a written argument lands on — so
     /// it is asked once per call however many times the walk binds it: thirty copies of a `cycle`
@@ -228,11 +214,10 @@ pub fn expand_component(prog: &Program, comp: &Component, units: Units) -> Expan
     // the file's top-level params, which the body may read; what is wrong with them is the
     // root's to report, and `expand` does
     let mut file_vals: BTreeMap<String, Aff> = BTreeMap::new();
-    let (ne, nc) = (w.errors.len(), w.coded.len());
+    let nd = w.diagnostics.len();
     // as numbers only: a traced body is compiled to tapes, not read by the expression graph
     w.params(&prog.root().body, &mut file_vals, &mut BTreeMap::new(), &scope);
-    w.errors.truncate(ne);
-    w.coded.truncate(nc);
+    w.diagnostics.truncate(nd);
     let mut vals: BTreeMap<String, Aff> = file_vals.clone();
     w.file_vals = file_vals;
     for f in &comp.formals {
@@ -271,13 +256,13 @@ struct Def {
 /// The number a relation states, as written — the one unlabelled argument in its operator's
 /// parentheses (§9.1), wherever the statement happens to carry it.
 fn dim_text(rel: &crate::syntax::Relation) -> Option<(&str, Span)> {
-    if let Some(w) = &rel.poly {
+    if let Some(w) = rel.form.written() {
         return w.args.iter().find_map(|a| match a {
             crate::syntax::OpArg::Dim(t, sp) => Some((t.as_str(), *sp)),
             _ => None,
         });
     }
-    rel.args.iter().flatten().find_map(|a| match a {
+    rel.form.canonical_args().iter().flatten().find_map(|a| match a {
         crate::syntax::Arg::Dim { text, span } => Some((text.as_str(), *span)),
         _ => None,
     })
@@ -296,27 +281,24 @@ impl<'a> Walk<'a> {
             file_vals: BTreeMap::new(),
             file_graph: BTreeMap::new(),
             module_vals: vec![None; prog.modules.len()],
-            errors: Vec::new(),
-            coded: Vec::new(),
+            diagnostics: Vec::new(),
             called: BTreeSet::new(),
         }
     }
 
-    fn err(&mut self, span: Span, msg: impl Into<String>) {
-        if self.errors.len() < 200 {
-            self.errors.push((span, msg.into()));
+    fn err(&mut self, code: Code, span: Span, message: impl Into<String>) {
+        self.diagnostic(Diag { code, span, stmt: None, message: message.into() });
+    }
+
+    fn diagnostic(&mut self, diag: Diag) {
+        if self.diagnostics.len() < 200 {
+            self.diagnostics.push(diag);
         }
     }
 
     fn finish(mut self) -> Expansion {
         let (flat, aliases) = self.resolve();
-        Expansion {
-            flat,
-            errors: self.errors,
-            coded: self.coded,
-            instances: self.instances,
-            aliases,
-        }
+        Expansion { flat, diagnostics: self.diagnostics, instances: self.instances, aliases }
     }
 
     /// A text with what `substitute` writes in, and — in the symbolic mode — every name that
@@ -351,9 +333,8 @@ impl<'a> Walk<'a> {
         vals: &BTreeMap<String, Aff>,
         scope: &Scope,
     ) -> Result<String, String> {
-        let reads: BTreeSet<String> = expr::parse_in(text, self.units)
-            .map(|p| p.body.deps())
-            .unwrap_or_default();
+        let reads: BTreeSet<String> =
+            expr::parse_in(text, self.units).map(|p| p.body.deps()).unwrap_or_default();
         let sym = self.sym.as_ref();
         let own = scope.instance_prefix();
         let sub = substitute_with(text, |w| {
@@ -397,16 +378,21 @@ impl<'a> Walk<'a> {
     /// written and in spec order — and both halves are `syntax::Arg`.  Written twice, a new kind
     /// of argument gets settled in one of them and silently keeps the component's own names in
     /// the other.
-    fn settle_arg(&mut self, a: &mut crate::syntax::Arg, vals: &BTreeMap<String, Aff>, scope: &Scope) {
+    fn settle_arg(
+        &mut self,
+        a: &mut crate::syntax::Arg,
+        vals: &BTreeMap<String, Aff>,
+        scope: &Scope,
+    ) {
         match a {
             crate::syntax::Arg::Dim { text, span } => match self.settle_text(text, vals, scope) {
                 Ok(t) => *text = t,
-                Err(e) => self.err(*span, format!("`{text}`: {e}")),
+                Err(e) => self.err(Code::E103, *span, format!("`{text}`: {e}")),
             },
             crate::syntax::Arg::SeedExpr { text, pinned, span } => {
                 match value_of(text, vals, self.units) {
                     Ok(v) => *a = crate::syntax::Arg::Seed { value: v, pinned: *pinned },
-                    Err(e) => self.err(*span, format!("`{text}`: {e}")),
+                    Err(e) => self.err(Code::E103, *span, format!("`{text}`: {e}")),
                 }
             }
             // a selector written with the name of a `Side` formal reads as the word the instance
@@ -436,10 +422,10 @@ impl<'a> Walk<'a> {
         }
         let Some(p) = &scope.in_plane else { return };
         if !d.kind.bears_points() {
-            return;   // a datum's points are the datum's, and a curve is its expressions
+            return; // a datum's points are the datum's, and a curve is its expressions
         }
         if !d.membership.join(&p.plane, crate::syntax::Source::Instance) {
-            self.err(d.membership.span(), d.membership.cause().to_string());
+            self.err(Code::E103, d.membership.span(), d.membership.cause().to_string());
         }
     }
 
@@ -502,7 +488,7 @@ impl<'a> Walk<'a> {
                 graph.insert(d.name.clone(), format!("{prefix}{}", d.name));
             }
             if !here.insert(d.name.clone()) {
-                self.err(d.name_span, format!("`{}` is declared twice", d.name));
+                self.err(Code::E001, d.name_span, format!("`{}` is declared twice", d.name));
                 continue;
             }
             pending.push(d);
@@ -512,16 +498,13 @@ impl<'a> Walk<'a> {
         let reads: Vec<BTreeSet<String>> = pending
             .iter()
             .map(|d| {
-                expr::parse_in(d.text.trim(), self.units)
-                    .map(|p| p.body.deps())
-                    .unwrap_or_default()
+                expr::parse_in(d.text.trim(), self.units).map(|p| p.body.deps()).unwrap_or_default()
             })
             .collect();
         let mut waiting: Vec<usize> = (0..pending.len()).collect();
         let mut failed: BTreeSet<String> = BTreeSet::new();
         loop {
-            let names: BTreeSet<&str> =
-                waiting.iter().map(|&i| pending[i].name.as_str()).collect();
+            let names: BTreeSet<&str> = waiting.iter().map(|&i| pending[i].name.as_str()).collect();
             let (ready, rest): (Vec<usize>, Vec<usize>) = waiting
                 .iter()
                 .partition(|&&i| !reads[i].iter().any(|n| names.contains(n.as_str())));
@@ -533,11 +516,11 @@ impl<'a> Walk<'a> {
                         .find(|n| names.contains(n.as_str()) && **n != d.name)
                         .map(|n| format!(", through `{n}`"))
                         .unwrap_or_default();
-                    self.coded.push((
+                    self.err(
                         Code::E041,
                         d.span,
                         format!("`{}` is defined in terms of itself{through}", d.name),
-                    ));
+                    );
                 }
                 return;
             }
@@ -545,7 +528,7 @@ impl<'a> Walk<'a> {
                 let d = &pending[i];
                 if reads[i].iter().any(|n| failed.contains(n)) {
                     failed.insert(d.name.clone());
-                    continue;   // the cause is already reported, at the definition it reads
+                    continue; // the cause is already reported, at the definition it reads
                 }
                 match value_aff(&d.text, vals, self.units) {
                     Ok(a) => {
@@ -559,7 +542,7 @@ impl<'a> Walk<'a> {
                         let abs = format!("{prefix}{}", d.name);
                         let (text, name, span) = (d.text.clone(), d.name.clone(), d.span);
                         if !self.keep_text(abs, &text, vals, scope) {
-                            self.err(span, format!("`{name}`: {e}"));
+                            self.err(Code::E103, span, format!("`{name}`: {e}"));
                             failed.insert(name);
                         }
                     }
@@ -575,12 +558,12 @@ impl<'a> Walk<'a> {
         body: &[Stmt],
         scope: &Scope,
         vals: &mut BTreeMap<String, Aff>,
-        path: &[u32],
+        path: &[PathStep],
         depth: usize,
     ) {
         if depth > MAX_DEPTH {
             if let Some(st) = body.first() {
-                self.err(st.span, format!("nested more than {MAX_DEPTH} deep"));
+                self.err(Code::E103, st.span, format!("nested more than {MAX_DEPTH} deep"));
             }
             return;
         }
@@ -610,7 +593,11 @@ impl<'a> Walk<'a> {
         let scope = &Scope { vals: vals.clone(), graph, ..scope.clone() };
         for st in body {
             if self.out.len() >= MAX_FLAT {
-                self.err(st.span, format!("more than {MAX_FLAT} statements once expanded"));
+                self.err(
+                    Code::E103,
+                    st.span,
+                    format!("more than {MAX_FLAT} statements once expanded"),
+                );
                 return;
             }
             match &st.kind {
@@ -626,6 +613,7 @@ impl<'a> Walk<'a> {
                         if self.sym.is_none() {
                             let n = &d.name.key().text;
                             self.err(
+                                Code::E103,
                                 d.name.span(),
                                 format!(
                                     "`{n}` is a computed point, so its component is drawn only \
@@ -646,13 +634,15 @@ impl<'a> Walk<'a> {
                         for t in [&mut c.domain.0, &mut c.domain.1] {
                             match value_of(t, vals, self.units) {
                                 Ok(v) => *t = crate::syntax::num(v),
-                                Err(e) => self.err(st.span, format!("`{t}`: {e}")),
+                                Err(e) => self.err(Code::E103, st.span, format!("`{t}`: {e}")),
                             }
                         }
                         // an instance written in place is bound like any other and never
                         // drawn: the curve is the only thing made of it (§6.5)
                         if let CurveTarget::Anon(inst, point) = &c.target {
-                            if let Some((_, _, _, key)) = self.bind_instance(inst, scope, vals, false) {
+                            if let Some((_, _, _, key)) =
+                                self.bind_instance(inst, scope, vals, false)
+                            {
                                 c.of = Some(crate::syntax::CurveOf {
                                     instance: key,
                                     point: written(point),
@@ -675,9 +665,10 @@ impl<'a> Walk<'a> {
                     self.stamp_scope_plane(&mut d2, scope);
                     self.emit(StmtKind::Decl(d2), st, scope, path);
                 }
-                StmtKind::Param(_) => {}   // worked out above, before the walk
+                StmtKind::Param(_) => {} // worked out above, before the walk
                 StmtKind::Instance(inst) => {
-                    let Some((comp, mut sub_vals, sides, key)) = self.bind_instance(inst, scope, vals, true)
+                    let Some((comp, mut sub_vals, sides, key)) =
+                        self.bind_instance(inst, scope, vals, true)
                     else {
                         continue;
                     };
@@ -685,7 +676,7 @@ impl<'a> Walk<'a> {
                     // once is a plane given twice, which one statement may not do (§6.7)
                     let in_plane = match (inst.membership.plane(), &scope.in_plane) {
                         (Some(p), Some(_)) => {
-                            self.err(p.span, inst.membership.cause().to_string());
+                            self.err(Code::E103, p.span, inst.membership.cause().to_string());
                             scope.in_plane.clone()
                         }
                         // written here, in this scope: it resolves against these prefixes
@@ -702,7 +693,9 @@ impl<'a> Walk<'a> {
                     };
                     graph.retain(|k, _| !comp.formals.iter().any(|f| &f.name.text == k));
                     let mut sc = Scope {
-                        prefixes: std::iter::once(key).chain(scope.prefixes.iter().cloned()).collect(),
+                        prefixes: std::iter::once(key)
+                            .chain(scope.prefixes.iter().cloned())
+                            .collect(),
                         cyc: None,
                         copies: scope.copies,
                         vals: sub_vals.clone(),
@@ -718,17 +711,23 @@ impl<'a> Walk<'a> {
                         sides,
                     };
                     sc.cyc = scope.cyc.clone();
-                    self.body(&comp.body, &sc, &mut sub_vals, path, depth + 1);
+                    let mut instance_path = path.to_vec();
+                    instance_path.push(PathStep::Instance(st.id));
+                    self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1);
                 }
                 StmtKind::Block(b) => {
                     let n = match value_of(&b.count, vals, self.units) {
                         Ok(v) if v.is_finite() && v >= 0.0 => v.round() as usize,
                         Ok(v) => {
-                            self.err(b.span, format!("`{}` is {v}, which is not a count", b.count));
+                            self.err(
+                                Code::E103,
+                                b.span,
+                                format!("`{}` is {v}, which is not a count", b.count),
+                            );
                             continue;
                         }
                         Err(e) => {
-                            self.err(b.span, format!("`{}`: {e}", b.count));
+                            self.err(Code::E103, b.span, format!("`{}`: {e}", b.count));
                             continue;
                         }
                     };
@@ -736,7 +735,7 @@ impl<'a> Walk<'a> {
                         continue;
                     }
                     if n > MAX_FLAT {
-                        self.err(b.span, format!("{n} copies is more than {MAX_FLAT}"));
+                        self.err(Code::E103, b.span, format!("{n} copies is more than {MAX_FLAT}"));
                         continue;
                     }
                     let block_prefix = format!("{prefix}#{}.", st.id.0);
@@ -751,11 +750,7 @@ impl<'a> Walk<'a> {
                                 .chain(scope.prefixes.iter().cloned())
                                 .collect(),
                             // `next` and `prev` mean something only where the copies close
-                            cyc: b.kind.wraps().then(|| Cyc {
-                                prefix: block_prefix.clone(),
-                                k,
-                                n,
-                            }),
+                            cyc: b.kind.wraps().then(|| Cyc { prefix: block_prefix.clone(), k, n }),
                             // the prefix just built is the block's id, so every declaration
                             // below is a copy, however deep and through however many instances
                             copies: true,
@@ -766,7 +761,7 @@ impl<'a> Walk<'a> {
                             sides: scope.sides.clone(),
                         };
                         let mut p2 = path.to_vec();
-                        p2.push(k as u32);
+                        p2.push(PathStep::Copy { block: st.id, index: k as u32 });
                         let from = self.out.len();
                         self.body(&b.body, &sc, &mut sub, &p2, depth + 1);
                         // the trailing joint's relations, stated between this copy and the
@@ -796,12 +791,8 @@ impl<'a> Walk<'a> {
                 // do not exist in the flat document, so they are worked out here
                 StmtKind::Relation(rel) => {
                     let mut r2 = rel.clone();
-                    // the number and the seeds a relation carries are written in the component's
-                    // own parameters, which the flat document does not have.  A statement holds
-                    // them twice over — as written (`poly`, whose operator has not been settled
-                    // yet) and in spec order — but both are `syntax::Arg`, so both walks are the
-                    // same one and a new kind of argument is settled in one place.
-                    if let Some(w) = r2.poly.as_mut() {
+                    // Substitute component parameters in either relation representation.
+                    if let Some(w) = r2.form.written_mut() {
                         for a in w.args.iter_mut() {
                             match a {
                                 crate::syntax::OpArg::Slot { arg, .. } => {
@@ -813,14 +804,16 @@ impl<'a> Walk<'a> {
                                 crate::syntax::OpArg::Dim(text, span) => {
                                     match self.settle_text(text, vals, scope) {
                                         Ok(t) => *text = t,
-                                        Err(e) => self.err(*span, format!("`{text}`: {e}")),
+                                        Err(e) => {
+                                            self.err(Code::E103, *span, format!("`{text}`: {e}"))
+                                        }
                                     }
                                 }
                                 crate::syntax::OpArg::Ent(_) => {}
                             }
                         }
                     }
-                    for a in r2.args.iter_mut().flatten() {
+                    for a in r2.form.canonical_args_mut().iter_mut().flatten() {
                         self.settle_arg(a, vals, scope);
                     }
                     // the enclosing instances' classes, over the statement's own: a ghosted
@@ -840,7 +833,13 @@ impl<'a> Walk<'a> {
 
     /// A seed written as an expression is worked out here, against the parameters in scope,
     /// and is a number from now on.
-    fn settle_seeds(&mut self, d: &mut Decl, vals: &BTreeMap<String, Aff>, scope: &Scope, span: Span) {
+    fn settle_seeds(
+        &mut self,
+        d: &mut Decl,
+        vals: &BTreeMap<String, Aff>,
+        scope: &Scope,
+        span: Span,
+    ) {
         for i in 0..d.seed_text.len() {
             let Some(t) = d.seed_text[i].take() else { continue };
             if let Some(v) = self.settle_seed(t, &mut d.seed_text[i], vals, scope, span) {
@@ -901,7 +900,7 @@ impl<'a> Walk<'a> {
                 None
             }
             Err(e) => {
-                self.err(span, format!("`{t}`: {e}"));
+                self.err(Code::E103, span, format!("`{t}`: {e}"));
                 None
             }
         }
@@ -917,7 +916,7 @@ impl<'a> Walk<'a> {
     /// consumer that turns an id back into source — `Elaborated::retext`, `adopt`, `edit::remove`
     /// — would find nothing there.  The multiplicity that a fresh id used to hide is exactly what
     /// `commit_seeds` needs to see: an id reached more than once has no single pose to record.
-    fn emit(&mut self, kind: StmtKind, st: &Stmt, scope: &Scope, path: &[u32]) {
+    fn emit(&mut self, kind: StmtKind, st: &Stmt, scope: &Scope, path: &[PathStep]) {
         let stmt = Stmt { id: st.id, kind, span: st.span, chained: st.chained };
         self.out.push((stmt, path.to_vec(), scope.clone()));
     }
@@ -934,7 +933,14 @@ impl<'a> Walk<'a> {
     /// pair the next copy builds later, and at a cycle's wrap the first copy built long ago,
     /// so the seam is spelled `prev.…` looking back or `next.…` looking forward and no pair
     /// references a point that does not yet exist.
-    fn weld(&mut self, j: &OpenJoint, kind: BlockKind, block_prefix: &str, n: usize, ranges: &[(usize, usize)]) {
+    fn weld(
+        &mut self,
+        j: &OpenJoint,
+        kind: BlockKind,
+        block_prefix: &str,
+        n: usize,
+        ranges: &[(usize, usize)],
+    ) {
         let pairs = if kind.wraps() { n } else { n.saturating_sub(1) };
         for i in 0..pairs {
             let k = (i + 1) % n;
@@ -1007,6 +1013,7 @@ impl<'a> Walk<'a> {
     ) -> Option<(&'a Component, BTreeMap<String, Aff>, BTreeMap<String, String>, String)> {
         let Some(comp) = self.prog.component(&inst.component.text) else {
             self.err(
+                Code::E103,
                 inst.component.span,
                 format!("no component named `{}`", inst.component.text),
             );
@@ -1070,7 +1077,7 @@ impl<'a> Walk<'a> {
             } else {
                 continue;
             };
-            self.coded.push((Code::E004, a.span, said));
+            self.err(Code::E004, a.span, said);
         }
     }
 
@@ -1111,7 +1118,11 @@ impl<'a> Walk<'a> {
                 }
             };
             let Some(f) = formal else {
-                self.err(a.span, format!("`{}` has no such parameter", inst.component.text));
+                self.err(
+                    Code::E103,
+                    a.span,
+                    format!("`{}` has no such parameter", inst.component.text),
+                );
                 continue;
             };
             match (&f.ty, &a.value) {
@@ -1124,9 +1135,11 @@ impl<'a> Walk<'a> {
                         scope.clone(),
                     ));
                 }
-                (Ty::Ent(_), InstVal::Expr(t)) => {
-                    self.err(a.span, format!("`{}` wants an entity, and `{t}` is a number", f.name.text))
-                }
+                (Ty::Ent(_), InstVal::Expr(t)) => self.err(
+                    Code::E103,
+                    a.span,
+                    format!("`{}` wants an entity, and `{t}` is a number", f.name.text),
+                ),
                 // **a side is a word** (§9.2): `left`, `right`, or the name of a side the caller
                 // was given itself, which is how one is passed down a chain of components
                 (Ty::Side, v) => {
@@ -1139,8 +1152,9 @@ impl<'a> Walk<'a> {
                     if w == "left" || w == "right" {
                         sides.insert(f.name.text.clone(), w);
                     } else {
-                        let m = format!("`{}` is a side: `left` or `right`, not `{w}`", f.name.text);
-                        self.err(a.span, m);
+                        let m =
+                            format!("`{}` is a side: `left` or `right`, not `{w}`", f.name.text);
+                        self.err(Code::E103, a.span, m);
                     }
                 }
                 // A formal *declares* what its argument is — `phi: Angle`, `m: Length` — so the
@@ -1245,21 +1259,21 @@ impl<'a> Walk<'a> {
                 Ok(()) => {
                     sub.insert(f.name.text.clone(), a.as_dim(want));
                 }
-                Err(e) => self.err(span, e),
+                Err(e) => self.err(Code::E103, span, e),
             },
             // a text a curve's variables leave no value to — kept, in the symbolic mode,
             // under the name the formal has inside the instance; a mistake, on the sheet
             Err(e) => {
                 let abs = format!("{}{inst}.{}", scope.prefix(), f.name.text);
                 if !self.keep_text(abs, text, vals, scope) {
-                    self.err(span, format!("`{}`: {e}", f.name.text));
+                    self.err(Code::E103, span, format!("`{}`: {e}", f.name.text));
                 }
             }
         }
     }
 
     /// Turn every reference into the absolute name of what it denotes.
-    fn resolve(&mut self) -> (Vec<Flat>, BTreeMap<String, String>) {
+    fn resolve(&mut self) -> (Vec<crate::ir::Statement>, BTreeMap<String, String>) {
         // aliases first, and transitively: a formal bound to another instance's formal
         let mut alias: BTreeMap<String, String> = BTreeMap::new();
         for (abs, r, sc) in self.aliases.clone() {
@@ -1290,7 +1304,7 @@ impl<'a> Walk<'a> {
             }
         }
         let out = std::mem::take(&mut self.out);
-        let mut done: Vec<(Stmt, Vec<u32>)> = Vec::with_capacity(out.len());
+        let mut flat = Vec::with_capacity(out.len());
         for (mut st, path, sc) in out {
             let mut bad: Vec<(Span, String)> = Vec::new();
             rewrite(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad);
@@ -1303,7 +1317,7 @@ impl<'a> Walk<'a> {
             }
             let clean = bad.is_empty();
             for (span, msg) in bad {
-                self.err(span, msg);
+                self.err(Code::E101, span, msg);
             }
             // a curve of a drawn instance's point: the point's name is absolute now, and the
             // instance it belongs to is the innermost one whose component has the formal
@@ -1313,6 +1327,7 @@ impl<'a> Walk<'a> {
                     match self.owner_of(&abs, &c.swept.text) {
                         Some(of) => c.of = Some(of),
                         None => self.err(
+                            Code::E103,
                             r.span,
                             format!(
                                 "`{abs}` is not a point of an instance whose component has a \
@@ -1324,9 +1339,11 @@ impl<'a> Walk<'a> {
                     }
                 }
             }
-            done.push((st, path));
+            match crate::ir::Statement::lower(st, path) {
+                Ok(st) => flat.push(st),
+                Err(d) => self.diagnostic(d),
+            }
         }
-        let flat = done.into_iter().map(|(stmt, path)| Flat { stmt, path }).collect();
         (flat, alias)
     }
 
@@ -1350,7 +1367,6 @@ impl<'a> Walk<'a> {
                 point: abs[i.prefix.len()..].to_string(),
             })
     }
-
 }
 
 /// A number worked out while elaborating.
@@ -1395,9 +1411,9 @@ pub(crate) fn value_aff(
         (Some(v), _) if !v.is_finite() => Err(format!("comes to {v}")),
         // an unknown the scope *bound* — a formal left unbound, a param over one — carries on;
         // a name nothing binds is the document's, and a component's numbers cannot read it
-        (None, Some(n)) if !env.values().any(|b| b.free.as_deref() == Some(n)) => Err(format!(
-            "`{n}` is not a number here — nothing in scope gives it one"
-        )),
+        (None, Some(n)) if !env.values().any(|b| b.free.as_deref() == Some(n)) => {
+            Err(format!("`{n}` is not a number here — nothing in scope gives it one"))
+        }
         _ => Ok(a),
     }
 }
@@ -1595,8 +1611,6 @@ fn substitute_with(text: &str, of: impl Fn(&str) -> Option<String>) -> String {
     out
 }
 
-
-
 /// The absolute name `name` has inside copy `k` of whichever block declares it, under
 /// `container` — the dotted path written before the indexed name (`l.` for `l.p[1]`, nothing
 /// for `p[1]`), which is an instance the block was walked inside.
@@ -1766,7 +1780,8 @@ fn rewrite(
     units: Units,
     bad: &mut Vec<(Span, String)>,
 ) {
-    let fix = |r: &mut Ref, bad: &mut Vec<(Span, String)>| match lookup(r, sc, names, alias, units) {
+    let fix = |r: &mut Ref, bad: &mut Vec<(Span, String)>| match lookup(r, sc, names, alias, units)
+    {
         Some((abs, rest)) => {
             r.root = Name { text: abs, span: r.root.span };
             r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
@@ -1834,14 +1849,13 @@ fn rewrite(
             }
         }
         StmtKind::Relation(rel) => {
-            for a in rel.args.iter_mut().flatten() {
+            for a in rel.form.canonical_args_mut().iter_mut().flatten() {
                 if let crate::syntax::Arg::Ref(r) = a {
                     fix(r, bad);
                 }
             }
-            // an operator's operands are references like any other, and are the only ones a
-            // written statement has — `args` is the *settled* form, which does not exist yet
-            if let Some(w) = rel.poly.as_mut() {
+            // Written operators keep their operands outside the registry argument slots.
+            if let Some(w) = rel.form.written_mut() {
                 for r in w.ops.iter_mut() {
                     fix(r, bad);
                 }

@@ -133,7 +133,7 @@ claim a project b
     assert!(errs.is_empty(), "{errs:?}");
     let mut out = String::new();
     for st in &prog.root().body {
-        write_stmt_to(&mut out, &st.kind);
+        write_stmt_to(&mut out, &st.kind).unwrap();
         out.push('\n');
     }
     let squash = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -400,8 +400,8 @@ point b in front hint(x: 10, y: 5)
     assert_eq!(sk.user_constraints().iter().filter(|c| c.kind == CKind::Project).count(), 1);
     // the statements are the body's own, and none of them spells a clause it did not write
     let mut out = String::new();
-    for st in &e.program.root().body {
-        write_stmt_to(&mut out, &st.kind);
+    for st in e.program.stmts().filter(|s| !matches!(s.kind, gcs_core::syntax::StmtKind::Block(_))) {
+        write_stmt_to(&mut out, &st.kind).unwrap();
         out.push('\n');
     }
     assert_eq!(out.matches(" in ").count(), 1, "only b's own clause: {out}");
@@ -517,7 +517,7 @@ s2: Slot(x, w: 12)
     let (prog, errs) = parse("s1: Slot(x, w: 12) in top\n");
     assert!(errs.is_empty(), "{errs:?}");
     let mut out = String::new();
-    write_stmt_to(&mut out, &prog.root().body[0].kind);
+    write_stmt_to(&mut out, &prog.root().body[0].kind).unwrap();
     assert_eq!(out.trim(), "s1: Slot(x, w: 12) in top");
     // and inside an `in` block the instance takes the block's plane
     let e = read(&format!(

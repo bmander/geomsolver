@@ -363,7 +363,9 @@ fn next_name(taken: &mut std::collections::BTreeSet<String>, kind: EntKind) -> S
 fn append(prog: &Program, kind: StmtKind, names: Vec<String>) -> Edit {
     let (at, lead) = append_at(prog);
     let mut line = lead;
-    syntax::write_stmt_to(&mut line, &kind);
+    if let Err(e) = syntax::write_stmt_to(&mut line, &kind) {
+        return Edit::none(prog, Some(e.to_string()));
+    }
     Edit {
         text: splice(prog.text(), vec![Splice { at, with: line }]),
         kind: Kind::Structural,
@@ -427,7 +429,9 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
         class: Default::default(),
     };
     let mut line = String::new();
-    syntax::write_stmt_to(&mut line, &StmtKind::Instance(inst));
+    if let Err(e) = syntax::write_stmt_to(&mut line, &StmtKind::Instance(inst)) {
+        return Edit::none(prog, Some(e.to_string()));
+    }
     with.push_str(&line);
     Edit {
         text: splice(prog.text(), vec![Splice { at, with }]),
@@ -766,14 +770,13 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
             }
         }
         StmtKind::Relation(rel) => {
-            for a in rel.args.iter().flatten() {
+            for a in rel.form.canonical_args().iter().flatten() {
                 if let syntax::Arg::Ref(r) = a {
                     look(r);
                 }
             }
-            // what a *written* statement names: its operands, and a third entity in the
-            // parentheses.  `args` is the settled form and is empty until elaboration.
-            if let Some(w) = &rel.poly {
+            // Written operators name operands and may name another entity in parentheses.
+            if let Some(w) = rel.form.written() {
                 for r in w.ops.iter() {
                     look(r);
                 }
@@ -953,17 +956,16 @@ pub fn set_dimension(e: &Elaborated, prog: &Program, cid: u32, attr: &str, text:
     let StmtKind::Relation(rel) = &st.kind else { return Edit::none(prog, None) };
     // the number a statement states is the unlabelled thing in its operator's parentheses
     // (spec §9.1), which is where a *written* statement carries it
-    let dim = match &rel.poly {
-        Some(w) => w.args.iter().find_map(|a| match a {
+    let dim = match &rel.form {
+        syntax::RelationForm::Written(w) => w.args.iter().find_map(|a| match a {
             syntax::OpArg::Dim(text, span) => Some((*span, text.clone())),
             _ => None,
         }),
-        None => rel
-            .kind
+        syntax::RelationForm::Canonical { kind, args } => kind
             .spec()
             .iter()
             .position(|(n, _)| *n == attr)
-            .and_then(|i| rel.args.get(i).and_then(|a| a.as_ref()))
+            .and_then(|i| args.get(i).and_then(|a| a.as_ref()))
             .and_then(|a| match a {
                 syntax::Arg::Dim { span, text } => Some((*span, text.clone())),
                 _ => None,
@@ -1200,7 +1202,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         // children, which is where the path came from in the first place.  A `List` kind has no
         // dotted paths and mints no anonymous children either (`build` refuses with E103), which
         // is the same pairing `commit_seeds` spells out over its own slot walk.
-        let paths = crate::program::child_names(d, &name);
+        let paths = crate::program::child_names(d.kind, &name);
         let kids = sk.children(parent);
         for k in made_ents {
             if let Some(path) = kids.iter().position(|&c| c == k).and_then(|i| paths.get(i)) {
@@ -1244,7 +1246,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         }
         let mut rel = crate::program::lift_relation(sk, c);
         // a lift names entities positionally (`P3`); the document calls them what it calls them
-        for (a, ca) in rel.args.iter_mut().zip(c.args.iter()) {
+        for (a, ca) in rel.form.canonical_args_mut().iter_mut().zip(c.args.iter()) {
             if let (Some(syntax::Arg::Ref(r)), crate::constraints::Arg::Ent(er)) = (a, ca) {
                 *r = syntax::Ref::new(name_of(*er));
             }
@@ -1384,7 +1386,9 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             // the first joins what is already there the way `append` does; each one after it
             // starts a line of its own, or they would all run together on one
             line.push_str(if i == 0 { lead.as_str() } else { "\n" });
-            syntax::write_stmt_to(&mut line, k);
+            if let Err(e) = syntax::write_stmt_to(&mut line, k) {
+                return Edit::none(prog, Some(e.to_string()));
+            }
         }
         edits.push(Splice { at, with: line });
     }
@@ -1440,10 +1444,10 @@ fn rename_children(
 /// was written, or off the kind of one that was built (`program::lift_gauge`).
 fn gauge_key(r: &syntax::Relation) -> Option<(String, Option<String>)> {
     use crate::constraints::CKind;
-    let (kind, rf) = match &r.poly {
-        Some(w) => (crate::constraints::gauge_op(&w.word.text)?, w.ops.first()?),
-        None => match r.args.first() {
-            Some(Some(syntax::Arg::Ref(rf))) => (r.kind, rf),
+    let (kind, rf) = match &r.form {
+        syntax::RelationForm::Written(w) => (crate::constraints::gauge_op(&w.word.text)?, w.ops.first()?),
+        syntax::RelationForm::Canonical { kind, args } => match args.first() {
+            Some(Some(syntax::Arg::Ref(rf))) => (*kind, rf),
             _ => return None,
         },
     };

@@ -39,6 +39,7 @@ mod io;
 mod jacobians;
 mod jansen;
 mod linalg;
+mod language_pipeline;
 mod mesh;
 mod modules;
 mod names;

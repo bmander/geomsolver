@@ -191,7 +191,7 @@ fn a_face_written_with_its_corners_is_the_face_written_with_its_edges() {
     // and the marker survives a print: the source is the document, so what is written must be
     // what comes back
     let (mut prog, _) = gcs_core::syntax::parse("face brief(a, bc, cd, -> close)\n");
-    let text = gcs_core::syntax::render(&mut prog).to_string();
+    let text = gcs_core::syntax::render_flat(&mut prog).unwrap().to_string();
     assert_eq!(text.split_whitespace().collect::<Vec<_>>().join(" "),
         "face brief(a, bc, cd, -> close)");
 }

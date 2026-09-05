@@ -190,7 +190,7 @@ fn a_place_is_two_keys_of_the_seed_clause() {
         .iter()
         .map(|st| {
             let mut out = String::new();
-            gcs_core::syntax::write_stmt_to(&mut out, &st.kind);
+            gcs_core::syntax::write_stmt_to(&mut out, &st.kind).unwrap();
             // the printer pads the kind to a column; the clause is what is under test
             out.split_whitespace().collect::<Vec<_>>().join(" ")
         })

@@ -127,7 +127,7 @@ fn a_claim_travels_like_any_flag() {
     assert_eq!(kept.constraints.iter().filter(|c| c.claim).count(), 1);
     // and the lifted program prints the word back
     let mut p = gcs_core::program::to_program(&back);
-    let text = gcs_core::syntax::render(&mut p).to_string();
+    let text = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
     assert!(text.contains("claim l0 parallel l2"), "{text}");
     // a claim-free document dumps exactly as it always has
     let plain = drawn(RECT);

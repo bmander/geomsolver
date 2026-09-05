@@ -3273,11 +3273,9 @@ pub unsafe extern "C" fn gcs_elab_add_relation(
         out_edit(gcs_core::edit::add_relation(
             &(*h).program,
             gcs_core::syntax::Relation {
-                kind,
-                args,
+                form: gcs_core::syntax::RelationForm::Canonical { kind, args },
                 place: None,
                 place_span: gcs_core::syntax::Span::default(),
-                poly: None,
                 // the app states constraints; a claim is written in the program panel
                 claim: false,
                 class: Default::default(),

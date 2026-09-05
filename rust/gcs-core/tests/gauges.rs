@@ -90,7 +90,7 @@ fn the_refusals_keep_their_words() {
 fn lifted_and_coloured_as_relations() {
     let e = read(&format!("{TRI}ground a\nfix k.r\nccw(a, b, c)\n"));
     let mut p = gcs_core::program::to_program(&e.sketch);
-    let text = gcs_core::syntax::render(&mut p).to_string();
+    let text = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
     assert!(text.contains("ground p0"), "{text}");
     assert!(text.contains("fix c0.r"), "{text}");
     // the key canonicalises the triple's order and keeps its sense
