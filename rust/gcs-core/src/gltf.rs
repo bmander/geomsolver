@@ -177,8 +177,10 @@ pub fn build(parts: &[(String, Mesh)], scale: f64, unit_name: Option<&str>) -> (
     let mut all = parents;
     all.extend(children);
 
-    let mut asset =
-        object(&[("version", Json::Str("2.0".into())), ("generator", Json::Str("solvent".into()))]);
+    let mut asset = object(&[
+        ("version", Json::Str("2.0".into())),
+        ("generator", Json::Str("solvent".into())),
+    ]);
     if let Some(u) = unit_name {
         // scaled to metres as the spec says, and the document's own unit recorded beside it so
         // the scaling loses nothing

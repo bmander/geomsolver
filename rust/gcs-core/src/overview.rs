@@ -275,9 +275,7 @@ pub fn drawable(sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
         EntKind::Spline => vec![crate::curve::tessellate(sk, i, unit)],
         EntKind::Curve => vec![sk.curve_polyline(i)],
         // a datum's glyph is already two segments of world geometry
-        EntKind::Plane => {
-            crate::plane::glyph(sk, i, unit).iter().map(|(a, b)| vec![*a, *b]).collect()
-        }
+        EntKind::Plane => crate::plane::glyph(sk, i, unit).iter().map(|(a, b)| vec![*a, *b]).collect(),
     }
 }
 
@@ -638,7 +636,10 @@ fn face(basis: &Basis, (x0, y0, x1, y1): Box2) -> Vec<[f64; 3]> {
 /// the origin would be truer to a datum glyph and is what this was; at the size a box is looked
 /// at, it disappeared into whatever the view had drawn near its corner.
 fn axes(basis: &Basis, (x0, y0, x1, y1): Box2) -> [Vec<[f64; 3]>; 2] {
-    [vec![basis.lift(x0, 0.0), basis.lift(x1, 0.0)], vec![basis.lift(0.0, y0), basis.lift(0.0, y1)]]
+    [
+        vec![basis.lift(x0, 0.0), basis.lift(x1, 0.0)],
+        vec![basis.lift(0.0, y0), basis.lift(0.0, y1)],
+    ]
 }
 
 /// The screen axes of an orbit: where `right` and `up` point in space, looking from bearing

@@ -30,14 +30,7 @@ fn close(a: f64, b: f64) {
     assert!((a - b).abs() <= b.abs().max(1e-30) * 1e-7, "{a} != {b}");
 }
 fn claim(e: &program::Elaborated, word: SolidWord, gap: f64) -> clear::Verdict {
-    clear::judge(
-        &e.sketch,
-        word,
-        si(e, "result"),
-        si(e, "other"),
-        gap,
-        solid::REPORT_UNIT,
-    )
+    clear::judge(&e.sketch, word, si(e, "result"), si(e, "other"), gap, solid::REPORT_UNIT)
 }
 
 #[test]
@@ -61,10 +54,7 @@ fn crossing_bars_are_material_interference_even_without_contained_vertices() {
         &(source("cross_clear") + "point remote hint(x:1000000000,y:1000000000)\nground remote\n"),
     );
     close(claim(&unrelated, SolidWord::Clear, 0.1).measured, -1.0);
-    close(
-        claim(&case("cross_clear_control"), SolidWord::Clear, 0.1).measured,
-        2.0,
-    );
+    close(claim(&case("cross_clear_control"), SolidWord::Clear, 0.1).measured, 2.0);
 }
 
 #[test]
@@ -74,11 +64,8 @@ fn penetration_is_a_geometric_thickness_with_a_reported_error_bound() {
     close(v.measured, -5.0);
     close(v.tolerance, 0.0);
     assert_eq!(v.holds, Some(false));
-    let equal = read(
-        &source("penetration_10")
-            .replace("x: 5,", "x: 0,")
-            .replace("x: 15,", "x: 10,"),
-    );
+    let equal =
+        read(&source("penetration_10").replace("x: 5,", "x: 0,").replace("x: 15,", "x: 10,"));
     close(claim(&equal, SolidWord::Clear, 0.0).measured, -10.0);
 }
 
@@ -86,19 +73,10 @@ fn penetration_is_a_geometric_thickness_with_a_reported_error_bound() {
 fn unrelated_points_do_not_change_boolean_boundaries_or_containment() {
     for name in ["boolean_extent_0", "boolean_extent_1000000000.0"] {
         let e = case(name);
-        close(
-            mesh::volume(
-                &e.sketch
-                    .solid_boundary(si(&e, "result"), solid::REPORT_UNIT),
-            ),
-            928.0,
-        );
+        close(mesh::volume(&e.sketch.solid_boundary(si(&e, "result"), solid::REPORT_UNIT)), 928.0);
     }
     for name in ["containment_extent_0", "containment_extent_1000000000"] {
-        assert_eq!(
-            claim(&case(name), SolidWord::Inside, 0.0).holds,
-            Some(false)
-        );
+        assert_eq!(claim(&case(name), SolidWord::Inside, 0.0).holds, Some(false));
     }
     // Also exercise a cache miss after unrelated geometry changes.
     let mut e = case("boolean_extent_0");
@@ -155,14 +133,9 @@ fn failed_sweep_poses_are_disclosed_and_cannot_certify_clearance() {
 #[test]
 fn sweep_bounds_use_the_inferred_variable_dimension_and_user_units() {
     let (p, _) = syntax::parse(&source("sweep_dimensional_error"));
-    assert!(program::elaborate(&p)
-        .errors()
-        .any(|d| d.code == program::Code::E103));
+    assert!(program::elaborate(&p).errors().any(|d| d.code == program::Code::E103));
     let src = source("sweep_possible")
-        .replace(
-            "circle c(center:o)",
-            "point q hint(x:1,y:0)\nground q\ncircle c(center:o)",
-        )
+        .replace("circle c(center:o)", "point q hint(x:1,y:0)\nground q\ncircle c(center:o)")
         .replace(
             "o distance(reach,along:x) p",
             "line datum(o,q)\nline radial(o,p)\ndatum angle(reach) radial",
@@ -196,10 +169,7 @@ fn input_edge_names_cannot_steal_sweep_cap_names() {
     for name in ["near", "far"] {
         let e = read(&source("cap_collision").replace("near", name));
         let errors = program::solid_diagnostics(&e.sketch, &e.map);
-        assert!(
-            errors.iter().any(|d| d.message.contains("collides")),
-            "{errors:?}"
-        );
+        assert!(errors.iter().any(|d| d.message.contains("collides")), "{errors:?}");
     }
     let e = case("cap_collision_control");
     assert!(program::solid_diagnostics(&e.sketch, &e.map).is_empty());
@@ -212,15 +182,9 @@ fn input_edge_names_cannot_steal_sweep_cap_names() {
 #[test]
 fn tiny_revolutions_keep_relative_angular_accuracy() {
     let e = case("small_revolve_1e-06");
-    let got = mesh::volume(
-        &e.sketch
-            .solid_boundary(si(&e, "result"), solid::REPORT_UNIT),
-    );
+    let got = mesh::volume(&e.sketch.solid_boundary(si(&e, "result"), solid::REPORT_UNIT));
     let expected = std::f64::consts::TAU * 12.0 * 24.0 * 1e-18;
-    assert!(
-        (got / expected - 1.0).abs() < 0.002,
-        "{got} versus {expected}"
-    );
+    assert!((got / expected - 1.0).abs() < 0.002, "{got} versus {expected}");
     let m = e.sketch.solid_mesh(si(&e, "result"), solid::REPORT_UNIT);
     assert!(m.positions.len() / 9 > 100);
 }
@@ -230,10 +194,7 @@ fn a_thin_occluder_hides_the_same_edges_as_a_thick_one() {
     for name in ["hidden_thin_0.1", "hidden_thin_1"] {
         let e = case(name);
         let strokes = hidden::layout(&e.sketch, solid::REPORT_UNIT);
-        let boss: Vec<_> = strokes
-            .iter()
-            .filter(|s| s.path.starts_with("boss."))
-            .collect();
+        let boss: Vec<_> = strokes.iter().filter(|s| s.path.starts_with("boss.")).collect();
         assert_eq!(boss.len(), 4);
         assert!(boss.iter().all(|s| s.hidden));
     }
@@ -244,20 +205,8 @@ fn a_section_removes_geometry_in_front_and_keeps_geometry_behind() {
     for (name, expected) in [("section_0.5", 0), ("section_3", 4)] {
         let e = case(name);
         let strokes = hidden::layout(&e.sketch, solid::REPORT_UNIT);
-        assert_eq!(
-            strokes
-                .iter()
-                .filter(|s| s.path.starts_with("boss."))
-                .count(),
-            expected
-        );
-        assert_eq!(
-            strokes
-                .iter()
-                .filter(|s| s.path.starts_with("stock."))
-                .count(),
-            4
-        );
+        assert_eq!(strokes.iter().filter(|s| s.path.starts_with("boss.")).count(), expected);
+        assert_eq!(strokes.iter().filter(|s| s.path.starts_with("stock.")).count(), 4);
     }
 }
 
@@ -289,12 +238,7 @@ fn dimensions_only_describe_surviving_round_features() {
     }
     let e = read(&source("ghost_dimension_through").replace("x: 20, y: 20", "x: 5, y: 5"));
     let dims = hidden::generated(&e.sketch, solid::REPORT_UNIT);
-    assert_eq!(
-        dims.iter()
-            .filter(|(_, d)| d.round && d.value == 4.0)
-            .count(),
-        1
-    );
+    assert_eq!(dims.iter().filter(|(_, d)| d.round && d.value == 4.0).count(), 1);
 }
 
 #[test]
@@ -304,23 +248,14 @@ fn glb_preserves_local_triangles_and_world_placement_at_large_coordinates() {
         let i = si(&e, "result");
         let m = e.sketch.solid_mesh(i, solid::REPORT_UNIT);
         let (doc, bytes) = gltf::build(&[("result".into(), m.clone())], 0.001, Some("mm"));
-        let translation = doc.get("nodes").unwrap().arr()[0]
-            .get("translation")
-            .unwrap()
-            .arr();
-        let translation = [
-            translation[0].as_f64(),
-            translation[1].as_f64(),
-            translation[2].as_f64(),
-        ];
+        let translation = doc.get("nodes").unwrap().arr()[0].get("translation").unwrap().arr();
+        let translation =
+            [translation[0].as_f64(), translation[1].as_f64(), translation[2].as_f64()];
         let mut points = Vec::new();
         for i in 0..m.positions.len() / 3 {
             let p = std::array::from_fn::<_, 3, _>(|k| {
-                f32::from_le_bytes(
-                    bytes[(i * 3 + k) * 4..(i * 3 + k + 1) * 4]
-                        .try_into()
-                        .unwrap(),
-                ) as f64
+                f32::from_le_bytes(bytes[(i * 3 + k) * 4..(i * 3 + k + 1) * 4].try_into().unwrap())
+                    as f64
             });
             for k in 0..3 {
                 assert!((p[k] + translation[k] - m.positions[i * 3 + k] * 0.001).abs() < 1e-9);
@@ -330,11 +265,8 @@ fn glb_preserves_local_triangles_and_world_placement_at_large_coordinates() {
         for t in points.chunks_exact(3) {
             let a = std::array::from_fn::<_, 3, _>(|k| t[1][k] - t[0][k]);
             let b = std::array::from_fn::<_, 3, _>(|k| t[2][k] - t[0][k]);
-            let cross = [
-                a[1] * b[2] - a[2] * b[1],
-                a[2] * b[0] - a[0] * b[2],
-                a[0] * b[1] - a[1] * b[0],
-            ];
+            let cross =
+                [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
             assert!(cross.iter().any(|&x| x != 0.0));
         }
         for a in doc.get("accessors").unwrap().arr().iter().step_by(2) {
@@ -343,9 +275,7 @@ fn glb_preserves_local_triangles_and_world_placement_at_large_coordinates() {
             for k in 0..3 {
                 let vals = (0..count).map(|i| {
                     f32::from_le_bytes(
-                        bytes[off + i * 12 + k * 4..off + i * 12 + k * 4 + 4]
-                            .try_into()
-                            .unwrap(),
+                        bytes[off + i * 12 + k * 4..off + i * 12 + k * 4 + 4].try_into().unwrap(),
                     ) as f64
                 });
                 let min = vals.clone().fold(f64::INFINITY, f64::min);
@@ -359,10 +289,7 @@ fn glb_preserves_local_triangles_and_world_placement_at_large_coordinates() {
 
 fn box_source(name: &str, x: f64, y: f64, w: f64, h: f64, lo: f64, hi: f64) -> String {
     let mut src = String::new();
-    for (i, (x, y)) in [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
-        .into_iter()
-        .enumerate()
-    {
+    for (i, (x, y)) in [(x, y), (x + w, y), (x + w, y + h), (x, y + h)].into_iter().enumerate() {
         src += &format!("point {name}p{i} hint(x:{x},y:{y})\nground {name}p{i}\n");
     }
     src += &format!(
@@ -399,4 +326,51 @@ fn a_section_clips_crossing_edges_and_removes_occlusion_by_discarded_material() 
         assert_eq!(strokes.len(), count, "cut {cut}: {strokes:?}");
         assert!(strokes.iter().all(|s| !s.hidden));
     }
+}
+
+#[test]
+fn negative_clearance_cannot_certify_uncertain_round_surface_contact() {
+    let e = read(
+        "unit mm\n\
+        point a hint(x:0,y:0)\nground a\ncircle ac(center:a)\nradius(1mm) ac\n\
+        point b hint(x:2,y:0)\nground b\ncircle bc(center:b)\nradius(1mm) bc\n\
+        face af(ac)\nface bf(bc)\nsolid result(af,depth:1mm)\nsolid other(bf,depth:1mm)\n",
+    );
+    let v = claim(&e, SolidWord::Clear, -1.0);
+    assert!(v.measured.abs() <= v.tolerance, "{v:?}");
+    assert_eq!(v.holds, None, "faceting cannot establish disjointness at tangency");
+    assert_eq!(claim(&e, SolidWord::Clear, 1.0).holds, Some(false));
+    let mut separated = e;
+    let b = separated.map.ent_named("b").unwrap().i();
+    let x = separated.sketch.points[b].x as usize;
+    separated.sketch.params[x].value = 3.0;
+    assert_eq!(claim(&separated, SolidWord::Clear, -1.0).holds, Some(true));
+}
+
+#[test]
+fn named_profiles_preserve_sweep_cap_collision_diagnostics() {
+    let src = source("cap_collision")
+        .replace("line near(a,b)\nline right(b,c)\nline top(c,d)\nline left(d,a)\nface f(near,right,top,left)",
+            "f = line near(a,b) -> line right(b,c) -> line top(c,d) -> line left(d,a) -> close");
+    let e = read(&src);
+    assert!(program::solid_diagnostics(&e.sketch, &e.map)
+        .iter()
+        .any(|d| d.message.contains("collides")));
+    let e = read(&src.replace("near", "bottom"));
+    assert!(program::solid_diagnostics(&e.sketch, &e.map).is_empty());
+    close(mesh::volume(&e.sketch.solid_boundary(si(&e, "result"), solid::REPORT_UNIT)), 100.0);
+}
+
+#[test]
+fn finite_sweep_endpoints_produce_finite_sample_values() {
+    let mut e = case("sweep_impossible");
+    let sw = e.sketch.solid_claims[0].over.as_mut().unwrap();
+    sw.from = -f64::MAX;
+    sw.to = f64::MAX;
+    let v = diagnose::judge_solids(&e.sketch).remove(0);
+    assert_eq!(v.samples, 37);
+    assert!(!v.failed_samples.is_empty());
+    assert!(v.failed_samples.iter().all(|x| x.is_finite()), "{:?}", v.failed_samples);
+    assert_eq!(v.failed_samples.first(), Some(&-f64::MAX));
+    assert_eq!(v.failed_samples.last(), Some(&f64::MAX));
 }

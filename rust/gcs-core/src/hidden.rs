@@ -88,7 +88,7 @@ fn view_clipped(
                 continue;
             }
             if (ha > eps) != (hb > eps) {
-                let t = ha / (ha - hb);
+                let t = (ha / (ha - hb)).clamp(0.0, 1.0);
                 let at = std::array::from_fn(|k| a[k] + t * (b[k] - a[k]));
                 if ha > eps {
                     a = at;
@@ -156,14 +156,9 @@ pub fn section(
 
     // every boundary piece meets the cutting plane in a segment; a segment whose middle has
     // material on one side of it *within the plane* is an edge of the cut face
-    let mut segs: Vec<([f64; 3], [f64; 3], String)> = Vec::new();
-    for p in sk.solid_boundary(si, unit) {
-        if let Some((a, b)) = meet_plane(&p.pts, n, d) {
-            segs.push((a, b, p.path.clone()));
-        }
-    }
     let mut section_edges = Vec::new();
-    for (a, b, path) in segs {
+    for p in sk.solid_boundary(si, unit) {
+        let Some((a, b)) = meet_plane(&p.pts, n, d) else { continue };
         let m = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0];
         // a segment lying *in* the cut and bounding material is drawn; one the cut merely
         // grazes from outside is not
@@ -175,7 +170,7 @@ pub fn section(
         if one == two {
             continue;
         }
-        section_edges.push(crate::csg::Edge { a, b, na: n, nb: across, smooth: false, path });
+        section_edges.push(crate::csg::Edge { a, b, na: n, nb: across, smooth: false, path: p.path });
     }
     view_clipped(sk, si, plane_i, unit, Some(cut), &section_edges)
 }
@@ -278,11 +273,7 @@ fn meet_plane(pts: &[[f64; 3]], n: [f64; 3], d: f64) -> Option<([f64; 3], [f64; 
         let (sa, sb) = (plane::dot(n, a) - d, plane::dot(n, b) - d);
         if (sa > 0.0) != (sb > 0.0) && (sa - sb).abs() > 0.0 {
             let t = sa / (sa - sb);
-            hits.push([
-                a[0] + t * (b[0] - a[0]),
-                a[1] + t * (b[1] - a[1]),
-                a[2] + t * (b[2] - a[2]),
-            ]);
+            hits.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), a[2] + t * (b[2] - a[2])]);
         }
     }
     (hits.len() >= 2).then(|| (hits[0], hits[hits.len() - 1]))
@@ -337,13 +328,11 @@ fn overlay(v: Vec<Stroke>, tol: f64) -> Vec<Stroke> {
         }
         let ta = a.0 * d.0 + a.1 * d.1;
         let base = (a.0 - ta * d.0, a.1 - ta * d.1);
-        lines.entry(k).or_insert_with(|| (d, base, Vec::new())).2.push(Span {
-            t0,
-            t1,
-            hidden: s.hidden,
-            sil: s.silhouette,
-            path: s.path,
-        });
+        lines
+            .entry(k)
+            .or_insert_with(|| (d, base, Vec::new()))
+            .2
+            .push(Span { t0, t1, hidden: s.hidden, sil: s.silhouette, path: s.path });
     }
     let mut out = Vec::new();
     for (_, (d, base, spans)) in lines {
@@ -507,16 +496,18 @@ pub fn layout(sk: &Sketch, unit: f64) -> Vec<Drawn> {
     for (i, d) in sk.derived.iter().enumerate() {
         let strokes = match d.at {
             None => view(sk, d.solid as usize, d.plane.map(|p| p as usize), unit),
-            Some(at) => {
-                section(sk, d.solid as usize, Some(at as usize), d.plane.map(|p| p as usize), unit)
-            }
+            Some(at) => section(
+                sk,
+                d.solid as usize,
+                Some(at as usize),
+                d.plane.map(|p| p as usize),
+                unit,
+            ),
         };
         for s in strokes {
-            let mut class = crate::style::Classes(vec![if s.hidden {
-                "hidden".to_string()
-            } else {
-                "visible".to_string()
-            }]);
+            let mut class = crate::style::Classes(vec![
+                if s.hidden { "hidden".to_string() } else { "visible".to_string() },
+            ]);
             if d.at.is_some() && !s.hidden {
                 class.0.push("section".to_string());
             }
@@ -603,10 +594,7 @@ pub fn generated(sk: &Sketch, unit: f64) -> Vec<(usize, Dim)> {
                 (page(lo[0], lo[1]), page(lo[0], hi[1]))
             };
             let along = plane::on_page(pose.0, pose.1, (0.0, 0.0), dir);
-            out.push((
-                i,
-                Dim { a, b, dir: along, value: hi[k] - lo[k], round: false, clear: true },
-            ));
+            out.push((i, Dim { a, b, dir: along, value: hi[k] - lo[k], round: false, clear: true }));
         }
         // and every round feature this view sees square on: a face that is one circle, whose
         // plane looks at the eye.  A hole is a size a printer needs and a machine can read
@@ -616,10 +604,10 @@ pub fn generated(sk: &Sketch, unit: f64) -> Vec<(usize, Dim)> {
             .solid_boundary(d.solid as usize, unit)
             .iter()
             .filter(|p| p.smooth && p.area() > 0.0)
-            .filter_map(|p| csg.prims.get(p.prim).map(|p| p.of.clone()))
+            .filter_map(|p| csg.prims.get(p.prim).map(|p| p.of.as_str()))
             .collect();
         for (solid, f) in reachable_faces(sk, d.solid) {
-            if !surviving.contains(&sk.solids[solid as usize].name) {
+            if !surviving.contains(sk.solids[solid as usize].name.as_str()) {
                 continue;
             }
             let Some(face) = sk.faces.get(f as usize) else { continue };
@@ -652,17 +640,8 @@ pub fn generated(sk: &Sketch, unit: f64) -> Vec<(usize, Dim)> {
             let x = fb.lift(cu, cv);
             let (vu, vv) = basis.view_coords(x);
             let (a, b) = (page(vu - r, vv), page(vu + r, vv));
-            out.push((
-                i,
-                Dim {
-                    a,
-                    b,
-                    dir: plane::on_page(pose.0, pose.1, (0.0, 0.0), (1.0, 0.0)),
-                    value: 2.0 * r,
-                    round: true,
-                    clear: false,
-                },
-            ));
+            out.push((i, Dim { a, b, dir: plane::on_page(pose.0, pose.1, (0.0, 0.0), (1.0, 0.0)),
+                               value: 2.0 * r, round: true, clear: false }));
         }
     }
     out

@@ -152,59 +152,31 @@ fn solid_claim(
             }
         }
     }
-    if word.takes_gap() && w.args.is_empty() {
-        say(
-            Code::E040,
-            st.span,
-            format!("`{}` asks for room: `{}(2mm)`", word.as_str(), word.as_str()),
-        );
-        return;
-    }
-    let expected_args = usize::from(word.takes_gap());
-    if w.args.len() != expected_args
-        || w.args.iter().any(|a| !matches!(a, crate::syntax::OpArg::Dim(..)))
-    {
-        say(
-            Code::E040,
-            st.span,
-            format!(
-                "`{}` takes {}",
-                word.as_str(),
-                if word.takes_gap() { "exactly one length argument" } else { "no arguments" }
-            ),
-        );
-        return;
-    }
-    let gap = if word.takes_gap() {
-        match w.args.iter().find_map(|a| match a {
-            crate::syntax::OpArg::Dim(text, span) => Some((text.clone(), *span)),
-            _ => None,
-        }) {
-            Some((text, span)) => {
-                match crate::flatten::value_aff(&text, &BTreeMap::new(), sk.units) {
-                    Ok(v)
-                        if v.c.is_finite()
-                            && v.dim.require(crate::units::Dim::LENGTH, word.as_str()).is_ok() =>
-                    {
-                        Extent { text: text.trim().to_string(), value: v.c }
-                    }
-                    Ok(_) | Err(_) => {
-                        say(Code::E103, span, format!("`{}` asks for a length", word.as_str()));
-                        return;
-                    }
+    let gap = match (word.takes_gap(), w.args.as_slice()) {
+        (false, []) => Extent { text: String::new(), value: 0.0 },
+        (true, [crate::syntax::OpArg::Dim(text, span)]) => {
+            match crate::flatten::value_aff(text, &BTreeMap::new(), sk.units) {
+                Ok(v) if v.c.is_finite()
+                    && v.dim.require(crate::units::Dim::LENGTH, word.as_str()).is_ok() =>
+                {
+                    Extent { text: text.trim().to_string(), value: v.c }
+                }
+                _ => {
+                    say(Code::E103, *span, format!("`{}` asks for a finite length", word.as_str()));
+                    return;
                 }
             }
-            None => {
-                say(
-                    Code::E040,
-                    st.span,
-                    format!("`{}` asks for room: `{}(2mm)`", word.as_str(), word.as_str()),
-                );
-                return;
-            }
         }
-    } else {
-        Extent { text: String::new(), value: 0.0 }
+        (true, []) => {
+            say(Code::E040, st.span,
+                format!("`{}` asks for room: `{}(2mm)`", word.as_str(), word.as_str()));
+            return;
+        }
+        _ => {
+            say(Code::E040, st.span, format!("`{}` takes {}", word.as_str(),
+                if word.takes_gap() { "exactly one length argument" } else { "no arguments" }));
+            return;
+        }
     };
     sk.solid_claims.push(crate::model::SolidClaim {
         word,
@@ -382,10 +354,7 @@ fn place(
             if !sk.placed_planes.contains(&child.idx) {
                 let cb = sk.planes[child.i()].basis;
                 let pb = sk.planes[parent.i()].basis;
-                derived.insert(
-                    child.idx,
-                    (parent.idx, [cb.o[0] - pb.o[0], cb.o[1] - pb.o[1], cb.o[2] - pb.o[2]]),
-                );
+                derived.insert(child.idx, (parent.idx, [cb.o[0] - pb.o[0], cb.o[1] - pb.o[1], cb.o[2] - pb.o[2]]));
             }
         }
     }
@@ -539,21 +508,12 @@ fn sweep_of_claim(
         match crate::flatten::value_aff(text, &BTreeMap::new(), sk.units) {
             Ok(v) if v.c.is_finite() && v.dim.require(dimension, &name).is_ok() => Some(v.c),
             Ok(_) => {
-                diags.push(Diag {
-                    code: Code::E103,
-                    span: *span,
-                    stmt: Some(st.id),
-                    message: format!("`{what}` for `{name}` must be a finite {}", dimension.name()),
-                });
+                say(Code::E103, *span,
+                    format!("`{what}` for `{name}` must be a finite {}", dimension.name()));
                 None
             }
             Err(e) => {
-                diags.push(Diag {
-                    code: Code::E103,
-                    span: *span,
-                    stmt: Some(st.id),
-                    message: format!("`{what}`: {e}"),
-                });
+                say(Code::E103, *span, format!("`{what}`: {e}"));
                 None
             }
         }
@@ -1348,7 +1308,11 @@ fn build_solid(
 }
 
 /// The one face a swept solid is written over.
-fn one_face(ops: &[EntRef], st: &Stmt, say: &mut impl FnMut(Code, Span, String)) -> Option<u32> {
+fn one_face(
+    ops: &[EntRef],
+    st: &Stmt,
+    say: &mut impl FnMut(Code, Span, String),
+) -> Option<u32> {
     match ops.first() {
         Some(e) if e.kind == EntKind::Face && ops.len() == 1 => Some(e.idx),
         Some(e) if e.kind != EntKind::Face => {

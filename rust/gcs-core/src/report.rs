@@ -93,7 +93,10 @@ pub fn witness_json(sk: &Sketch, w: &WitnessReport) -> Json {
                 ("constraint", (d.constraint as i64).into()),
                 ("impliedBy", ids(&d.implied_by)),
                 ("theorem", d.theorem.into()),
-                ("describe", sk.constraint(d.constraint).map(describe).unwrap_or_default().into()),
+                (
+                    "describe",
+                    sk.constraint(d.constraint).map(describe).unwrap_or_default().into(),
+                ),
             ])
         })
         .collect();
@@ -205,7 +208,10 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
         ("structuralUnderParams", ids(&d.structural_under_params)),
         ("components", Json::Arr(components)),
         ("entityState", Json::Arr(entity_state)),
-        ("rigidClusters", Json::Arr(d.rigid_clusters.iter().map(|c| idx(c)).collect())),
+        (
+            "rigidClusters",
+            Json::Arr(d.rigid_clusters.iter().map(|c| idx(c)).collect()),
+        ),
         ("redundantDistances", ids(&d.redundant_distances)),
         ("violated", ids(&d.violated)),
         ("conflicts", d.conflicts.as_ref().map(|c| ids(c)).unwrap_or(Json::Null)),
@@ -337,12 +343,7 @@ pub fn graph_json(g: &ConstraintGraph) -> Json {
         ("nPoints", (g.n_points() as i64).into()),
         ("members", Json::Arr(g.members.iter().map(|m| idx(m)).collect())),
         ("lines", idx(&g.lines)),
-        (
-            "virtuals",
-            Json::Arr(
-                g.virtuals.iter().map(|&(a, b)| Json::Arr(vec![el_json(a), el_json(b)])).collect(),
-            ),
-        ),
+        ("virtuals", Json::Arr(g.virtuals.iter().map(|&(a, b)| Json::Arr(vec![el_json(a), el_json(b)])).collect())),
         ("edges", Json::Arr(edges)),
         ("dirs", Json::Arr(dirs)),
         ("unsupported", ids(&g.unsupported)),
@@ -404,7 +405,10 @@ pub fn alternatives_json(alts: &[Alternative]) -> Json {
                 object([
                     ("u", floats(&a.u)),
                     ("distance", a.distance.into()),
-                    ("location", a.location.map(|(x, y)| floats(&[x, y])).unwrap_or(Json::Null)),
+                    (
+                        "location",
+                        a.location.map(|(x, y)| floats(&[x, y])).unwrap_or(Json::Null),
+                    ),
                     ("isCurrent", a.is_current().into()),
                 ])
             })
@@ -722,12 +726,7 @@ pub fn registry_json() -> Json {
                 ("fixity", fixity),
                 // how many of the leading spec slots are the operator's *operands*; the rest is
                 // what goes in its parentheses
-                (
-                    "operands",
-                    Json::Int(
-                        k.spec().iter().take_while(|(_, s)| s.is_entity()).count().min(2) as i64
-                    ),
-                ),
+                ("operands", Json::Int(k.spec().iter().take_while(|(_, s)| s.is_entity()).count().min(2) as i64)),
                 ("spec", Json::Arr(spec)),
                 ("defaults", Json::Arr(defaults)),
                 ("words", Json::Arr(words)),
@@ -761,13 +760,10 @@ pub fn registry_json() -> Json {
         ("kernels", Json::Arr(kernels)),
         // what a front end needs to know about the curves without knowing the degree: how many
         // control points make one, so its tool and its messages cannot drift from `spline_with`
-        (
-            "curve",
-            object([
-                ("degree", (crate::curve::DEGREE as i64).into()),
-                ("minCtrl", (crate::curve::MIN_CTRL as i64).into()),
-            ]),
-        ),
+        ("curve", object([
+            ("degree", (crate::curve::DEGREE as i64).into()),
+            ("minCtrl", (crate::curve::MIN_CTRL as i64).into()),
+        ])),
     ])
 }
 

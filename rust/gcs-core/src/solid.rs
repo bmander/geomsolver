@@ -30,8 +30,8 @@ use crate::plane::{self, Basis};
 use std::collections::BTreeMap;
 
 /// How far off a face a sample is pushed before it is classified, as a fraction of the solid's
-/// smallest positive primitive dimension.  Comfortably above `SNAP` so no sliver survives between the two, and comfortably
-/// below any feature a person draws.
+/// smallest positive primitive dimension. Comfortably above `SNAP` so no sliver survives
+/// between the two, and comfortably below any feature a person draws.
 pub const EPS: f64 = 1e-5;
 
 /// How near two planes must be, relatively, to be *one* plane — and how short a side must be to
@@ -355,12 +355,9 @@ impl FacePoly {
         let scale = pts.iter().fold(0.0f64, |m, p| m.max((p.0 - pts[0].0).abs()).max((p.1 - pts[0].1).abs()));
         let tol = scale * 1e-12;
         let area_tol = tol * scale;
-        if self.area().abs() <= area_tol {
-            return false;
-        }
-        let cross = |a: (f64, f64), b: (f64, f64), c: (f64, f64)| {
-            (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
-        };
+        if self.area().abs() <= area_tol { return false; }
+        let cross = |a: (f64, f64), b: (f64, f64), c: (f64, f64)|
+            (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0);
         for i in 0..n {
             let (a, b, c) = (pts[i], pts[(i + 1) % n], pts[(i + 2) % n]);
             if (b.0 - a.0).hypot(b.1 - a.1) <= tol { return false; }
@@ -371,16 +368,10 @@ impl FacePoly {
             for j in i + 2..n {
                 if (j + 1) % n == i { continue; }
                 let (c, d) = (pts[j], pts[(j + 1) % n]);
-                if a.0.min(b.0) > c.0.max(d.0) + tol
-                    || c.0.min(d.0) > a.0.max(b.0) + tol
-                    || a.1.min(b.1) > c.1.max(d.1) + tol
-                    || c.1.min(d.1) > a.1.max(b.1) + tol
-                {
-                    continue;
-                }
-                let same_side = |x: f64, y: f64| {
-                    (x > area_tol && y > area_tol) || (x < -area_tol && y < -area_tol)
-                };
+                if a.0.min(b.0) > c.0.max(d.0) + tol || c.0.min(d.0) > a.0.max(b.0) + tol
+                    || a.1.min(b.1) > c.1.max(d.1) + tol || c.1.min(d.1) > a.1.max(b.1) + tol
+                { continue; }
+                let same_side = |x: f64, y: f64| (x > area_tol && y > area_tol) || (x < -area_tol && y < -area_tol);
                 if !same_side(cross(a, b, c), cross(a, b, d))
                     && !same_side(cross(c, d, a), cross(c, d, b))
                 { return false; }

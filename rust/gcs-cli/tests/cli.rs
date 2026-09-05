@@ -28,16 +28,7 @@ fn issue_50_reductions_report_or_diagnose_instead_of_exporting_invalid_solids() 
         let filename = path.file_name().unwrap().to_str().unwrap();
         let item: usize = filename[..2].parse().unwrap();
         let output = temp.join(format!("{item}.stl"));
-        let out = run(&[
-            path.to_str().unwrap(),
-            "--json",
-            "--where",
-            "result",
-            "--solid",
-            "result",
-            "--stl",
-            output.to_str().unwrap(),
-        ]);
+        let out = run(&[path.to_str().unwrap(), "--json", "--where", "result", "--solid", "result", "--stl", output.to_str().unwrap()]);
         let json = gcs_core::json::parse(&String::from_utf8_lossy(&out.stdout)).unwrap();
         let doc = &json.get("documents").unwrap().arr()[0];
         let invalid = [2, 8, 9, 10, 12].contains(&item);

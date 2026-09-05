@@ -35,25 +35,8 @@ pub struct Verdict {
 /// Culled by bounding box before anything is measured, which is what keeps a part with thirty
 /// features from paying for every pair of its faces.
 pub fn distance(a: &[Piece], b: &[Piece], acsg: &solid::Csg, bcsg: &solid::Csg, eps: f64) -> f64 {
-    // overlap first: a point of one inside the other is an interference, and no distance between
-    // boundaries would say so — two solids one inside the other have a positive gap
-    if let Some((d, _)) = overlap(a, b, acsg, bcsg, eps) {
-        return d;
-    }
-    let mut best = f64::INFINITY;
-    for p in a {
-        let pb = grow(&p.bbox_of(), best);
-        for q in b {
-            if !q.bbox_of().overlaps(&pb) {
-                continue;
-            }
-            let d = piece_gap(p, q);
-            if d < best {
-                best = d;
-            }
-        }
-    }
-    best
+    // Boundaries can be separated even when one solid contains the other.
+    overlap(acsg, bcsg, eps).map_or_else(|| boundary_gap(a, b), |(d, _)| d)
 }
 
 /// Negative common-material thickness: the diameter of the largest ball in A ∩ B.
@@ -61,8 +44,6 @@ pub fn distance(a: &[Piece], b: &[Piece], acsg: &solid::Csg, bcsg: &solid::Csg, 
 /// and crossings with no contained vertices. A Lipschitz branch-and-bound search supplies
 /// an explicit error interval when the common region is nonconvex or the work limit is hit.
 fn overlap(
-    _a: &[Piece],
-    _b: &[Piece],
     acsg: &solid::Csg,
     bcsg: &solid::Csg,
     eps: f64,
@@ -94,7 +75,6 @@ fn overlap(
             -d
         }
     };
-    #[derive(Clone)]
     struct Cell {
         lo: [f64; 3],
         hi: [f64; 3],
@@ -294,15 +274,16 @@ pub fn judge(
     };
     match word {
         W::Clear => {
-            if let Some((measured, uncertainty)) = overlap(&pa, &pb, &ca, &cb, eps) {
+            if let Some((measured, uncertainty)) = overlap(&ca, &cb, eps) {
                 let holds = if -measured - uncertainty > facet_tol { Some(false) } else { None };
                 Verdict { measured, tolerance: facet_tol + uncertainty, holds }
             } else {
                 let measured = boundary_gap(&pa, &pb);
-                let holds = if measured == 0.0 && facet_tol == 0.0 {
-                    Some(false)
-                } else {
-                    compare(measured)
+                let holds = match compare(measured) {
+                    Some(false) => Some(false),
+                    _ if measured == 0.0 && facet_tol == 0.0 => Some(false),
+                    _ if measured <= facet_tol => None, // disjointness is still uncertain
+                    verdict => verdict,
                 };
                 Verdict { measured, tolerance: facet_tol, holds }
             }

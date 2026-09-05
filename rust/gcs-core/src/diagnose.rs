@@ -104,10 +104,11 @@ pub fn judge_solids(sk: &crate::model::Sketch) -> Vec<SolidVerdict> {
                 let mut failed_samples = Vec::new();
                 let mut holds = Some(true);
                 for k in 0..=SWEEP_STEPS {
-                    let t = sw.from + (sw.to - sw.from) * k as f64 / SWEEP_STEPS as f64;
+                    let fraction = k as f64 / SWEEP_STEPS as f64;
+                    // A finite interval can have an overflowing endpoint difference.
+                    let t = sw.from * (1.0 - fraction) + sw.to * fraction;
                     let mut scratch = sk.clone();
-                    // already in the unknown's own units: `sweep_of_claim` converted an angle
-                    // where the document wrote one and left a length alone
+                    // Already in the unknown's user units, including degrees for angles.
                     scratch.params[p as usize].value = t;
                     scratch.params[p as usize].fixed = true;
                     scratch.solid_cache.borrow_mut().clear();
@@ -151,8 +152,7 @@ pub fn judge_solids(sk: &crate::model::Sketch) -> Vec<SolidVerdict> {
     out
 }
 
-/// How many poses a swept claim is judged at.  Enough that a clearance minimum a degree wide is
-/// found, and few enough that a claim costs a second and not a minute.
+/// Number of uniform intervals in a sampled sweep; both endpoints are included.
 pub const SWEEP_STEPS: usize = 36;
 
 /// What one claim about two solids came to, and where it was written.
@@ -164,7 +164,7 @@ pub struct SolidVerdict {
     pub text: String,
     /// What was measured: a distance, negative where two solids overlap.
     pub measured: f64,
-    /// How far the faceting could be wrong.  A claim decided within this is `None`.
+    /// Faceting uncertainty plus any remaining overlap-search error.
     pub tolerance: f64,
     pub holds: Option<bool>,
     /// For a swept claim, the value of the free variable at the worst pose.
@@ -747,8 +747,9 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     // cannot both be true are dependent in W and carry no dimension, so W's reading files them
     // as `implied` — "consistent, nothing to fix" — beside the conflict that names them.  What
     // is violated, or found in the conflict set, is a surplus and is said so.
-    let contested =
-        |c: &u32| violated.contains(c) || conflict_set.as_ref().is_some_and(|s| s.contains(c));
+    let contested = |c: &u32| {
+        violated.contains(c) || conflict_set.as_ref().is_some_and(|s| s.contains(c))
+    };
     if implied.iter().any(contested) {
         let (moved, kept): (Vec<u32>, Vec<u32>) = implied.iter().copied().partition(|c| contested(c));
         implied = kept;
