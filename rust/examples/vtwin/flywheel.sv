@@ -24,13 +24,11 @@ component Flywheel(front: plane, o: point, ref: line) {
     o distance(rfw) se
     ref angle(90deg, sense: cw) ssa
     gs: Grub(o, ssa, ref, dir: 0deg, rin: dhub / 2, rout: rfw)
-    face rim_f(rim)
-    face bore_f(bore)
   }
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
-  solid plate(rim_f, from: -wfw / 2, to: wfw / 2)
-  solid hub(bore_f, from: -wfw / 2, to: wfw / 2)
+  solid plate(face(rim), from: -wfw / 2, to: wfw / 2)
+  solid hub(face(bore), from: -wfw / 2, to: wfw / 2)
   solid body(plate)
   hub through body
   gs.bore through body

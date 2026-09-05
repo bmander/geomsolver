@@ -36,11 +36,6 @@ component Disc(swing: plane, o: point, pin: point, arm: line, dir: Angle) {
     claim radius(dhub / 2) bore class detail at (2.4, 12)
     claim radius(pinclr / 2) ph class detail at (0.8, 10)
     claim radius(pinpocketd / 2) pkt class detail at (1.4, 14)
-    // what the solid is swept from: each circle is a loop by itself
-    face rim_f(rim)
-    face bore_f(bore)
-    face ph_f(ph)
-    face pkt_f(pkt)
   }
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
@@ -50,10 +45,11 @@ component Disc(swing: plane, o: point, pin: point, arm: line, dir: Angle) {
   // face instead, half the hole would have been in fresh air.  So the material is half a
   // thickness either way, and the pin's head sits in a pocket `pinpocket` deep in the back —
   // the face toward the plate, which a view from the right sees on its own right.
-  solid plate(rim_f, from: -tdisc / 2, to: tdisc / 2)
-  solid hub(bore_f, from: -tdisc / 2, to: tdisc / 2)
-  solid pinhole(ph_f, from: -tdisc / 2, to: tdisc / 2)
-  solid pinpkt(pkt_f, from: -tdisc / 2, to: -tdisc / 2 + pinpocket)
+  // Each circle is a loop by itself.
+  solid plate(face(rim), from: -tdisc / 2, to: tdisc / 2)
+  solid hub(face(bore), from: -tdisc / 2, to: tdisc / 2)
+  solid pinhole(face(ph), from: -tdisc / 2, to: tdisc / 2)
+  solid pinpkt(face(pkt), from: -tdisc / 2, to: -tdisc / 2 + pinpocket)
   solid body(plate)
   hub through body
   pinhole through body

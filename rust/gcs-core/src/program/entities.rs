@@ -3,11 +3,11 @@
 use super::curves::build_curve;
 use super::resolve::{follow, follow_building, Resolver};
 use super::{Code, Diag};
-use crate::ir::{Decl, Statement as Stmt};
+use crate::ir::{Decl, Kid, Statement as Stmt};
 use crate::model::{EntKind, EntRef, Field, Sketch};
 use crate::rng::Rng;
 use crate::style::Classes;
-use crate::syntax::{AtRef, Kid, Name, Program, Seg, Span, StmtId};
+use crate::syntax::{AtRef, Name, Program, Seg, Span, StmtId};
 use crate::{curve, expr, io};
 use std::collections::BTreeMap;
 
@@ -121,6 +121,7 @@ pub(super) fn build(
         for kid in group {
             let r = match kid {
                 Kid::Ref(r) => r,
+                Kid::Face { .. } => return None, // only solids accept inline sections
                 Kid::Hint(seed) => {
                     // a list slot has no arity, so it has no dotted path to be named by, and a
                     // point nothing can name is a point nothing can constrain or drag

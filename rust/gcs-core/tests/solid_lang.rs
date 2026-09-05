@@ -94,6 +94,93 @@ fn an_extent_is_an_expression_and_never_an_unknown() {
 }
 
 #[test]
+fn inline_sections_have_the_same_geometry_and_reports_as_named_sections() {
+    for (boundary, sweep) in [
+        ("ab, bc, cd, da", "depth: 30mm"),
+        ("a, bc, cd, -> close", "from: face, to: back"),
+        ("hole", "depth: 30mm"),
+    ] {
+        let base = format!("{RECT}{HOLE}param face = -30mm\nparam back = 0mm\n");
+        let named = read(&format!("{base}face section({boundary})\nsolid block(section, {sweep})\n"));
+        let src = format!("{base}solid block(face({boundary}), {sweep})\n");
+        let inline = read(&src);
+        let report = |e: &Elaborated| gcs_core::report::positions(&e.sketch, &e.map)
+            .into_iter().filter(|(n, _)| n.starts_with("block.")).collect::<Vec<_>>();
+        assert_eq!(report(&inline), report(&named));
+        assert_eq!(inline.sketch.params.len(), named.sketch.params.len());
+        assert_eq!(inline.sketch.lines.len(), named.sketch.lines.len());
+        let section = gcs_core::model::EntRef::face(inline.sketch.faces.len() - 1);
+        assert!(inline.map.name_of(section).is_none(), "an inline section publishes no name");
+
+        let (mut p, _) = parse(&src);
+        let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
+        assert!(printed.contains(&format!("face({boundary})")), "{printed}");
+        assert_eq!(report(&read(&printed)), report(&inline));
+    }
+}
+
+#[test]
+fn inline_sections_resolve_component_formals_and_repeated_instances() {
+    let src = format!("{RECT}\n\
+        component Slab(a: Point, b: Point, c: Point, d: Point, t: Length) {{\n\
+          solid block(face(a, b, c, d, -> close), depth: t)\n\
+        }}\n\
+        first: Slab(a, b, c, d, t: 2mm)\n\
+        second: Slab(a, b, c, d, t: 3mm)\n\
+        repeat 2 as i {{\ncopy: Slab(a, b, c, d, t: (i + 1) * 1mm)\n}}\n");
+    let e = read(&src);
+    assert!((volume(&e, "first.block") - 4800.0).abs() < 1e-6);
+    assert!((volume(&e, "second.block") - 7200.0).abs() < 1e-6);
+    assert_eq!(e.sketch.faces.len(), 5);
+    assert_eq!(e.sketch.solids.len(), 4);
+    assert_eq!(e.sketch.lines.len(), 20);
+}
+
+#[test]
+fn inline_sections_inherit_the_boundary_plane_and_coexist_with_forward_faces() {
+    let src = "unit mm\npoint o\npoint q hint(x: 40)\n\
+        plane front(origin: o, toward: q, u: (1, 0, 0), v: (0, 1, 0))\n\
+        plane back(origin: o, toward: q, from: front, offset: 12mm)\n\
+        in back {\npoint a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\n\
+        point c hint(x: 60, y: 40)\npoint d hint(x: 0, y: 40)\n}\n\
+        solid slab(face(a, b, c, d, -> close), from: 0mm, to: 2mm)\n\
+        solid named(sec, from: 0mm, to: 2mm)\nface sec(a, b, c, d, -> close)\n";
+    let e = read(src);
+    assert!(e.sketch.faces.iter().all(|f| f.plane == Some(1)));
+    let p = gcs_core::report::positions(&e.sketch, &e.map);
+    assert!(p.iter().any(|(n, v)| n == "slab.bounds.z0" && (*v - 12.0).abs() < 1e-9));
+    assert_eq!(volume(&e, "slab"), volume(&e, "named"));
+    refused(&src.replace("point d hint(x: 0, y: 40)\n}", "}\npoint d hint(x: 0, y: 40)"),
+        Code::E080, "one plane");
+}
+
+#[test]
+fn invalid_inline_sections_report_the_loop_and_leave_no_geometry() {
+    for (boundary, sweep, needle) in [
+        ("a, b, -> close", "depth: 2mm", "three corners"),
+        ("a, bc, d, -> close", "depth: 2mm", "meets neither"),
+        ("a, b, c, d, -> close", "depth: 0mm", "swept nowhere"),
+        ("a, b, c, d, -> close", "", "made of solids"),
+        ("a, b, c, d, -> close", "sec, depth: 2mm", "over one face"),
+    ] {
+        let src = format!("{RECT}solid bad(face({boundary}), {sweep})\nsolid good(sec, depth: 2mm)\n");
+        refused(&src, Code::E080, needle);
+        let (p, _) = parse(&src);
+        let e = elaborate(&p);
+        assert_eq!(e.sketch.faces.len(), 1);
+        assert_eq!(e.sketch.lines.len(), 4);
+        assert!((volume(&e, "good") - 4800.0).abs() < 1e-6);
+        if needle == "three corners" {
+            let d = e.diags.iter().find(|d| d.message.contains(needle)).unwrap();
+            assert_eq!(d.span.slice(&src), "(a, b, -> close)");
+        }
+    }
+    refused(&format!("{RECT}solid bad(face(missing), depth: 2mm)\n"), Code::E101, "missing");
+    refused("face bad(face(a, b, c, -> close))\n", Code::E100, "a solid's section");
+    refused("solid bad(face(a, -> close, b), depth: 2mm)\n", Code::E100, "last thing");
+}
+
+#[test]
 fn the_body_rule_does_not_care_what_order_it_was_written_in() {
     // P2 at the language: `bore through body` says what `body` *is*, wherever it stands
     let after = format!(
@@ -157,6 +244,15 @@ solid ring(sec, about: ax)
     let want = std::f64::consts::TAU * 12.0 * 24.0;
     let got = volume(&e, "ring");
     assert!((got - want).abs() < 2e-3 * want, "Pappus from the source: want ≈ {want}, got {got}");
+    for sweep in ["", ", sweep: 90deg, sense: cw"] {
+        let named = src.replace("about: ax)", &format!("about: ax{sweep})"));
+        let inline = named.replace("face sec(e0, e1, e2, e3)\n", "")
+            .replace("solid ring(sec,", "solid ring(face(e0, e1, e2, e3),");
+        assert_eq!(volume(&read(&inline), "ring"), volume(&read(&named), "ring"));
+        let (mut p, _) = parse(&inline);
+        let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
+        assert_eq!(volume(&read(&printed), "ring"), volume(&read(&inline), "ring"));
+    }
 }
 
 /// **A face closes itself** (§6.8, issue #49 item 1): the same region, written with the corners
@@ -263,6 +359,12 @@ fn closing_lines_stay_implicit_across_reconciliation_and_reload() {
 
     for src in [
         format!("{RECT}face quad(a, b, c, d, -> close) class region\n"),
+        format!("{RECT}solid slab(face(a, b, c, d, -> close) class region, depth: 2mm) class part\n"),
+        format!(
+            "unit mm\ncomponent Patch() {{\n{}\
+             solid slab(face(a, bc, cd, -> close), depth: 2mm)\n}}\npart: Patch()\n",
+            RECT.trim_start_matches("unit mm\n"),
+        ),
         "component Patch() {\npoint a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\n\
          point c hint(x: 0, y: 40)\nface tri(a, b, c, -> close) class region\n}\n\
          part: Patch()\n".to_string(),

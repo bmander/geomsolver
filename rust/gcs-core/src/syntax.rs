@@ -796,22 +796,25 @@ pub enum Sense {
     Cw,
 }
 
-/// A named child or an anonymous point seed. Only chain desugaring may leave
-/// a partial child list; threading fills it before elaboration.
+/// A named child, an anonymous point seed, or a face written inside a solid. Only chain
+/// desugaring may leave a partial child list; threading fills it before elaboration.
+/// `D` is a syntax declaration here and an IR declaration after lowering.
 #[derive(Clone, Debug)]
-pub enum Kid {
+pub enum Kid<D = Decl> {
     /// `line l(a, b)` — the point is named, and named somewhere else.
     Ref(Ref),
     /// `line l(hint(x: 0, y: 0), …)` — an anonymous point, and where its solve begins.  The
     /// same clause as everywhere else in the language, one level down.
     Hint(KidSeed),
+    /// `solid block(face(a, b, c, -> close), depth: t)` — a private section.
+    Face { decl: Box<D>, span: Span },
 }
 
-impl Kid {
+impl<D> Kid<D> {
     pub fn as_ref(&self) -> Option<&Ref> {
         match self {
             Kid::Ref(r) => Some(r),
-            Kid::Hint(_) => None,
+            Kid::Hint(_) | Kid::Face { .. } => None,
         }
     }
 }

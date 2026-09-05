@@ -47,7 +47,6 @@ component Cylinder(swing: plane, piv: point, ax: line, ac: line, dir: Angle, fw:
     k_tl: Loc(piv, ax, ac, dir: dir, u: ct - H, v: hw)
     line mouth(k_bl.p, k_br.p) -> line side_r(k_br.p, k_tr.p) -> line lid(k_tr.p, k_tl.p) ->
       line side_l(k_tl.p, k_bl.p) -> close
-    face sec(mouth, side_r, lid, side_l)
     // the bore.  Both walls are drawn, because the section shows them; what is *turned* is the
     // half between the axis and one of them, since a revolution takes one side of its axis
     b_bl: Loc(piv, ax, ac, dir: dir, u: cb - H, v: D / 2)
@@ -59,7 +58,6 @@ component Cylinder(swing: plane, piv: point, ax: line, ac: line, dir: Angle, fw:
     line hd(b_tl.p, b_tr.p)
     m0: Loc(piv, ax, ac, dir: dir, u: cb - H, v: 0mm)
     hx: Loc(piv, ax, ac, dir: dir, u: head - H, v: 0mm)
-    face bore_f(m0.p, b_br.p, bore_r, hx.p, -> close)
     // the port, `a` up from the bolt: drilled from the face into the top of the bore, so seen
     // end on here; and the bolt's head, trapped in its slot in the face wall beside the bore — the
     // hex (`std`'s `Hex`) with its flats along the bore's axis, and the slot from the body's left
@@ -69,10 +67,8 @@ component Cylinder(swing: plane, piv: point, ax: line, ac: line, dir: Angle, fw:
     pt: Loc(piv, ax, ac, dir: dir, u: a, v: 0mm)
     circle port(center: pt.p) hint(r: dport / 2) class hidden
     radius(dport / 2) port
-    face port_f(port)
     circle shank(center: piv) hint(r: trapfit / 2) class hidden
     radius(trapfit / 2) shank
-    face shank_f(shank)
     pkt: Hex(piv, ax, af: boltaf, phase: 90deg) class hidden
     t0: Loc(piv, ax, ac, dir: dir, u: trapw / 2, v: hw)
     t1: Loc(piv, ax, ac, dir: dir, u: trapw / 2, v: -trapd)
@@ -81,7 +77,6 @@ component Cylinder(swing: plane, piv: point, ax: line, ac: line, dir: Angle, fw:
     line trap0(t0.p, t1.p) class hidden
     line trap1(t1.p, t2.p) class hidden
     line trap2(t2.p, t3.p) class hidden
-    face trap_f(trap0, trap1, trap2, -> close)
     // one more point on the outline, for the head wall to be measured to
     h0: Loc(piv, ax, ac, dir: dir, u: ct - H, v: D / 2)
     // the sizes a printer needs, all judged: every point above is already placed
@@ -102,11 +97,11 @@ component Cylinder(swing: plane, piv: point, ax: line, ac: line, dir: Angle, fw:
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
   // Every extent is an expression over the table above and no solve moves one; the order lives
   // inside the term and not between these statements, so they may be written in any order.
-  solid block(sec, from: face, to: back)
-  solid bore(bore_f, about: ax)
-  solid passage(port_f, from: face, to: 0mm)
-  solid hole(shank_f, from: face, to: face + trapz)
-  solid trap(trap_f, from: face + trapz, to: face + trapz + traph)
+  solid block(face(mouth, side_r, lid, side_l), from: face, to: back)
+  solid bore(face(m0.p, b_br.p, bore_r, hx.p, -> close), about: ax)
+  solid passage(face(port), from: face, to: 0mm)
+  solid hole(face(shank), from: face, to: face + trapz)
+  solid trap(face(trap0, trap1, trap2, -> close), from: face + trapz, to: face + trapz + traph)
   solid body(block)
   bore through body
   passage through body

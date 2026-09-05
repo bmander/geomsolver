@@ -75,11 +75,6 @@ component Piston(swing: plane, crown: point, rod: line, dir: Angle, pin: point) 
     // and back up the axis, which the turn sweeps into nothing — so it says the corners and
     // lets the face close itself.
     s0: Loc(crown, rod, crownl, dir: dir, u: -ph, v: 0mm)
-    face pist_f(crown, pL0, pL1, pL2, pL3, pL4, s0.p, -> close)
-    // the rod between its flanks, closed across the skirt and across the eye
-    face rod_f(fl, rd, fr, ra)
-    face eye_f(eye)
-    face hole_f(hole)
     // the sizes a printer needs
     claim cL distance(2 * pw) cR class detail at (0, 8)
     claim cL distance(ph) sL.p class detail at (0, 12)
@@ -96,10 +91,11 @@ component Piston(swing: plane, crown: point, rod: line, dir: Angle, pin: point) 
   // The rod and the eye are half `rw` either side of the plane of swing, which is where the
   // section is drawn and where the crank pin's washers hold it; the piston needs no such
   // statement, being a turn about a line that lies in that plane.
-  solid pist(pist_f, about: rod)
-  solid shank(rod_f, from: -rw / 2, to: rw / 2)
-  solid boss(eye_f, from: -rw / 2, to: rw / 2)
-  solid pinhole(hole_f, from: -rw, to: rw)
+  solid pist(face(crown, pL0, pL1, pL2, pL3, pL4, s0.p, -> close), about: rod)
+  // the rod between its flanks, closed across the skirt and across the eye
+  solid shank(face(fl, rd, fr, ra), from: -rw / 2, to: rw / 2)
+  solid boss(face(eye), from: -rw / 2, to: rw / 2)
+  solid pinhole(face(hole), from: -rw, to: rw)
   solid body(pist)
   shank on body
   boss on body
