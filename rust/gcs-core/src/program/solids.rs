@@ -64,6 +64,25 @@ fn boundary_name(r: &crate::syntax::Ref) -> &str {
     }
 }
 
+/// Turn a resolved hole reference back into a stable path within its containing scope.
+/// Expansion encodes a repeated name as `#<statement>.<copy>.<name>`; the public spelling
+/// is `name[copy]`, which does not change when an unrelated statement is inserted.
+fn boundary_path(name: &str, scope: Option<&str>) -> String {
+    let relative = scope.and_then(|p| name.strip_prefix(p)).unwrap_or(name);
+    let mut parts = relative.split('.');
+    let mut path = Vec::new();
+    while let Some(part) = parts.next() {
+        if part.strip_prefix('#').is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())) {
+            if let (Some(index), Some(name)) = (parts.next(), parts.next()) {
+                path.push(format!("{name}[{index}]"));
+            }
+        } else {
+            path.push(part.to_string());
+        }
+    }
+    path.join(".")
+}
+
 fn fresh_boundary_name(prefix: &str, next: &mut usize, reserved: &BTreeSet<&str>) -> String {
     loop {
         let name = format!("{prefix}{next}");
@@ -652,7 +671,7 @@ pub(super) fn solids(
         }
         let name = d.name.key().text.clone();
         let first_line = sk.lines.len();
-        match build_face(sk, res, d, st.id, st.span, diags) {
+        match build_face(sk, res, d, &d.name.key().text, st.id, st.span, diags) {
             Some(i) => {
                 let e = EntRef::face(i);
                 map.bind(&name, e, d.name.named());
@@ -910,19 +929,20 @@ fn res_forget(res: &mut Resolver, name: &str) {
 /// Points introduce straight runs; existing edges take their direction from a neighbour
 /// they meet.  Only `-> close` permits a gap from the last item back to the first.  Generated
 /// lines carry `.closure`, hidden by the base sheet, and introduce no points or unknowns.
-fn build_face(
+fn build_loop(
     sk: &mut Sketch,
     res: &Resolver,
-    d: &Decl,
+    kids: &[Kid],
+    closed: bool,
     stmt: StmtId,
     span: Span,
     diags: &mut Vec<Diag>,
-) -> Option<usize> {
+) -> Option<(crate::model::FaceLoop, Option<u32>)> {
     let mut fail = |span: Span, m: String| {
         diags.push(Diag { code: Code::E080, span, stmt: Some(stmt), message: m });
     };
     let mut refs = Vec::new();
-    for k in d.children.first().into_iter().flatten() {
+    for k in kids {
         let Kid::Ref(r) = k else {
             fail(span, "a face names the edges it is bounded by; a seed places a point".into());
             return None;
@@ -1108,7 +1128,7 @@ fn build_face(
         // a gap.  The wrap is minted only where `-> close` says so, and an interior one only
         // where a *point* is one of its sides
         if j == 0 {
-            if !d.closed {
+            if !closed {
                 fail(
                     span,
                     format!(
@@ -1180,8 +1200,59 @@ fn build_face(
             }
         }
     }
-    let i = sk.face(edges, names, &d.name.key().text);
-    sk.faces[i].plane = plane.flatten();
+    Some((crate::model::FaceLoop { edges, edge_names: names }, plane.flatten()))
+}
+
+/// Read each boundary without allocating intermediate faces. `owner` is the containing
+/// declaration's name, so inline and named sections use the same relative source paths.
+fn build_face(
+    sk: &mut Sketch,
+    res: &Resolver,
+    d: &Decl,
+    owner: &str,
+    stmt: StmtId,
+    span: Span,
+    diags: &mut Vec<Diag>,
+) -> Option<usize> {
+    let (outer, plane) = build_loop(sk, res,
+        d.children.first().map(Vec::as_slice).unwrap_or_default(), d.closed, stmt, span, diags)?;
+    let scope = owner.rsplit_once('.').map(|(p, _)| format!("{p}."));
+    let mut holes = Vec::new();
+    let mut used: BTreeSet<String> = outer.edge_names.iter().cloned().collect();
+    for kid in d.children.get(1).into_iter().flatten() {
+        let reference = match kid {
+            Kid::Ref(r) if r.path.is_empty() => {
+                let chain = res.chains.get(&r.root.text).is_some_and(|c| c.closed);
+                let circle = res.lookup(r).is_some_and(|e| e.kind == EntKind::Circle);
+                (chain || circle).then_some((r, chain))
+            }
+            _ => None,
+        };
+        let Some((r, chain)) = reference else {
+            diags.push(Diag { code: Code::E080, span, stmt: Some(stmt),
+                message: "a hole is a circle or named closed loop".into() });
+            return None;
+        };
+        let (mut hole, hole_plane) = build_loop(sk, res, std::slice::from_ref(kid), false, stmt, span, diags)?;
+        let prefix = boundary_path(&r.root.text, scope.as_deref());
+        for name in &mut hole.edge_names {
+            *name = if chain { format!("{prefix}.{name}") } else { prefix.clone() };
+        }
+        if hole_plane != plane {
+            diags.push(Diag { code: Code::E080, span: r.span, stmt: Some(stmt),
+                message: "a face and its holes must lie in one plane".into() });
+            return None;
+        }
+        if let Some(name) = hole.edge_names.iter().find(|n| !used.insert((*n).clone())) {
+            diags.push(Diag { code: Code::E080, span: r.span, stmt: Some(stmt),
+                message: format!("hole boundary name `{name}` collides with another boundary; rename the source edge") });
+            return None;
+        }
+        holes.push(hole);
+    }
+    let i = sk.face(outer.edges, outer.edge_names, &d.name.key().text);
+    sk.faces[i].holes = holes;
+    sk.faces[i].plane = plane;
     sk.faces[i].class = d.class.clone();
     Some(i)
 }
@@ -1207,7 +1278,7 @@ fn build_solid(
                 return None;
             }
             Kid::Face { decl: face, span } => {
-                EntRef::face(build_face(sk, res, face, st.id, *span, diags)?)
+                EntRef::face(build_face(sk, res, face, &d.name.key().text, st.id, *span, diags)?)
             }
             Kid::Ref(r) if res.chains.get(&r.root.text).is_some_and(|c| !c.closed) => {
                 diags.push(Diag {

@@ -26,6 +26,8 @@
 //! *outside*, and the wall would silently vanish.
 
 mod evaluated;
+mod section;
+use section::face_polys;
 pub use evaluated::{ApproximationPolicy, EvaluatedSolid, LocalPoint, WorldPoint, PagePoint, PageFrame, RoundFeature};
 
 use crate::model::{EntKind, EntRef, Sense, Sketch, SolidDef};
@@ -419,21 +421,25 @@ impl FacePoly {
     }
 }
 
-/// Read a face off the solved drawing: its loop, walked edge by edge, arcs and circles
+/// Read a face’s outer boundary off the solved drawing, walking its edges, arcs and circles
 /// tessellated by the sagitta rule the sheet itself is drawn by.
 ///
 /// `None` when the loop does not close or an edge is degenerate — the elaborator has already
 /// refused those (E080), so this is the runtime's own guard rather than a diagnosis.
 pub fn face_poly(sk: &Sketch, fi: usize, unit: f64) -> Option<FacePoly> {
     let f = sk.faces.get(fi)?;
-    if f.edges.is_empty() {
+    loop_poly(sk, &f.edges, &f.edge_names, f.plane, unit)
+}
+
+fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], plane: Option<u32>, unit: f64) -> Option<FacePoly> {
+    if edges.is_empty() {
         return None;
     }
-    let basis = match f.plane {
+    let basis = match plane {
         Some(p) => sk.planes.get(p as usize)?.basis,
         None => Basis::page(),
     };
-    let pose = match f.plane {
+    let pose = match plane {
         Some(p) => {
             let fr = &sk.planes.get(p as usize)?.frame;
             (
@@ -450,13 +456,13 @@ pub fn face_poly(sk: &Sketch, fi: usize, unit: f64) -> Option<FacePoly> {
     // plane from being read as if it were drawn on the page.
     let view = |p: (f64, f64)| plane::in_view(pose.0, pose.1, pose.2, p);
 
-    let names: Vec<String> = f.edge_names.clone();
+    let names = edge_names.to_vec();
     let mut pts: Vec<(f64, f64)> = Vec::new();
     let mut of: Vec<(usize, bool)> = Vec::new();
 
     // a circle standing alone is the whole loop
-    if f.edges.len() == 1 && f.edges[0].kind == EntKind::Circle {
-        let c = &sk.circles[f.edges[0].i()];
+    if edges.len() == 1 && edges[0].kind == EntKind::Circle {
+        let c = &sk.circles[edges[0].i()];
         let ctr = sk.point_xy(c.center as usize);
         let r = sk.params[c.radius as usize].value;
         if r.abs() <= 0.0 {
@@ -474,13 +480,13 @@ pub fn face_poly(sk: &Sketch, fi: usize, unit: f64) -> Option<FacePoly> {
 
     // otherwise: every edge in traversal order, each starting where the last one ended
     let mut at: Option<u32> = None;
-    for (i, e) in f.edges.iter().enumerate() {
+    for (i, e) in edges.iter().enumerate() {
         let (a, b) = crate::model::edge_ends(sk, *e)?;
         // which end this edge is entered by: the one the walk is standing on
         let (from, to) = match at {
             None => {
                 // the first edge is entered by whichever end the *last* edge shares
-                let (la, lb) = crate::model::edge_ends(sk, *f.edges.last()?)?;
+                let (la, lb) = crate::model::edge_ends(sk, *edges.last()?)?;
                 if a == la || a == lb {
                     (a, b)
                 } else {
@@ -533,8 +539,8 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
             SolidDef::Revolve { face, .. } => *face,
             SolidDef::Body { .. } => { pending.extend(s.operands().into_iter().rev().map(|o| (o as usize, false))); continue; }
         };
-        let poly = face_poly(sk, face as usize, unit)
-            .ok_or_else(|| fail("self-intersecting or degenerate profile: a face must bound a simple nonzero region"))?;
+        let polys = face_polys(sk, face as usize, unit).map_err(|m| fail(&m))?;
+        let poly = &polys[0];
         let reserved: &[&str] = match &s.def {
             SolidDef::Prism { .. } | SolidDef::Through { .. } => &["near", "far"],
             SolidDef::Revolve { sweep, .. } if sweep.value < std::f64::consts::TAU - 1e-9 => {
@@ -542,7 +548,7 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
             }
             _ => &[],
         };
-        if let Some(name) = poly.names.iter().find(|n| reserved.contains(&n.as_str())) {
+        if let Some(name) = polys.iter().flat_map(|p| &p.names).find(|n| reserved.contains(&n.as_str())) {
             return Err(fail(&format!(
                 "edge `{name}` collides with a sweep cap; rename the source edge"
             )));
@@ -991,17 +997,20 @@ fn name_read(name: &str, v: &mut Vec<f64>) {
 fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
     v.push(fi as f64);
     let Some(f) = sk.faces.get(fi as usize) else { return };
-    v.extend([f.plane.map_or(-1.0, |p| p as f64), f.edge_names.len() as f64]);
-    for name in &f.edge_names { name_read(name, v); }
-    v.push(f.edges.len() as f64);
-    for e in &f.edges {
-        v.extend([e.kind as u32 as f64, e.i() as f64]);
-        // Closure depends on point identity, even when points share coordinates/parameters.
-        let ends = crate::model::edge_ends(sk, *e);
-        v.extend(ends.map_or([-1.0; 2], |(a, b)| [a as f64, b as f64]));
-        let params = sk.entity_params(*e);
-        v.push(params.len() as f64);
-        v.extend(params.iter().map(|&p| sk.params[p as usize].value));
+    v.extend([f.plane.map_or(-1.0, |p| p as f64), f.holes.len() as f64]);
+    for (edges, edge_names) in f.boundaries() {
+        v.push(edge_names.len() as f64);
+        for name in edge_names { name_read(name, v); }
+        v.push(edges.len() as f64);
+        for e in edges {
+            v.extend([e.kind as u32 as f64, e.i() as f64]);
+            // Closure depends on point identity, even when points share coordinates/parameters.
+            let ends = crate::model::edge_ends(sk, *e);
+            v.extend(ends.map_or([-1.0; 2], |(a, b)| [a as f64, b as f64]));
+            let params = sk.entity_params(*e);
+            v.push(params.len() as f64);
+            v.extend(params.iter().map(|&p| sk.params[p as usize].value));
+        }
     }
     if let Some(p) = f.plane {
         if let Some(pl) = sk.planes.get(p as usize) {
@@ -1157,53 +1166,60 @@ fn build(
     let local = |mut p: FacePoly| {
         p.basis.o = std::array::from_fn(|k| p.basis.o[k] - origin[k]); p
     };
-    let built = match &sol.def {
-        SolidDef::Prism { face, from, to } => face_poly(sk, *face as usize, unit).map(local)
-            .and_then(|p| prism(&p, from.value, to.value, &name)),
-        SolidDef::Through { face, body } => {
-            face_poly(sk, *face as usize, unit).map(local).and_then(|p| {
-                let mut bounds = Box3::empty();
-                for i in material_sources(sk, *body).ok()? {
-                    let Term::Prim(pi) = names.get(&i)? else { return None };
-                    let b = prims[*pi].bbox;
-                    bounds.add(b.lo); bounds.add(b.hi);
-                }
-                if bounds.is_empty() { return None; }
-                let n = p.basis.normal();
-                // Project each axis interval; summing its extrema bounds the whole box.
-                let (lo, hi) = (0..3).fold((0.0, 0.0), |(lo, hi), k| {
-                    let a = n[k] * (bounds.lo[k] - p.basis.o[k]);
-                    let b = n[k] * (bounds.hi[k] - p.basis.o[k]);
-                    (lo + a.min(b), hi + a.max(b))
-                });
-                let diagonal = (0..3).map(|k| (bounds.hi[k] - bounds.lo[k]).powi(2)).sum::<f64>().sqrt();
-                let pad = diagonal * EPS * 4.0;
-                prism(&p, lo - pad, hi + pad, &name)
-            })
+    if let SolidDef::Body { stock, on, through } = &sol.def {
+        let operand = |i: &u32| names.get(i).cloned().unwrap_or(Term::Empty);
+        let mut t = operand(stock);
+        for a in on { t = Term::Union(Box::new(t), Box::new(operand(a))); }
+        for b in through { t = Term::Diff(Box::new(t), Box::new(operand(b))); }
+        return t;
+    }
+    let Some(face) = sol.face() else { return Term::Empty };
+    let Ok(polys) = face_polys(sk, face as usize, unit) else { return Term::Empty };
+    let through_extent = if let SolidDef::Through { body, .. } = sol.def {
+        let mut bounds = Box3::empty();
+        let Ok(sources) = material_sources(sk, body) else { return Term::Empty };
+        for i in sources {
+            let Some(mut t) = names.get(&i) else { return Term::Empty };
+            // Each material source is a sweep, possibly minus its section holes.
+            while let Term::Diff(outer, _) = t { t = outer; }
+            let Term::Prim(pi) = t else { return Term::Empty };
+            bounds.add(prims[*pi].bbox.lo);
+            bounds.add(prims[*pi].bbox.hi);
         }
-        SolidDef::Revolve { face, axis, sweep, sense } => {
-            face_poly(sk, *face as usize, unit).map(local).and_then(|p| {
-                let l = sk.lines.get(*axis as usize)?;
+        if bounds.is_empty() { return Term::Empty; }
+        let mut basis = polys[0].basis;
+        basis.o = std::array::from_fn(|k| basis.o[k] - origin[k]);
+        let n = basis.normal();
+        let (lo, hi) = (0..3).fold((0.0, 0.0), |(lo, hi), k| {
+            let a = n[k] * (bounds.lo[k] - basis.o[k]);
+            let b = n[k] * (bounds.hi[k] - basis.o[k]);
+            (lo + a.min(b), hi + a.max(b))
+        });
+        let diagonal = (0..3).map(|k| (bounds.hi[k] - bounds.lo[k]).powi(2)).sum::<f64>().sqrt();
+        let pad = diagonal * EPS * 4.0;
+        Some((lo - pad, hi + pad))
+    } else { None };
+    let mut term = Term::Empty;
+    for (i, p) in polys.into_iter().map(local).enumerate() {
+        let built = match &sol.def {
+            SolidDef::Prism { from, to, .. } => prism(&p, from.value, to.value, &name),
+            SolidDef::Through { .. } => {
+                let (lo, hi) = through_extent.expect("through extent was resolved before sweeping");
+                prism(&p, lo, hi, &name)
+            }
+            SolidDef::Revolve { axis, sweep, sense, .. } => {
+                let Some(l) = sk.lines.get(*axis as usize) else { return Term::Empty };
                 let (c, s, o) = p.pose;
                 let a = plane::in_view(c, s, o, sk.point_xy(l.p1 as usize));
                 let b = plane::in_view(c, s, o, sk.point_xy(l.p2 as usize));
                 revolve(&p, (a, b), sweep.value, *sense, unit, &name)
-            })
-        }
-        SolidDef::Body { stock, on, through } => {
-            let operand = |i: &u32| names.get(i).cloned().unwrap_or(Term::Empty);
-            let mut t = operand(stock);
-            for a in on {
-                t = Term::Union(Box::new(t), Box::new(operand(a)));
             }
-            for b in through {
-                t = Term::Diff(Box::new(t), Box::new(operand(b)));
-            }
-            return t;
-        }
-    };
-    match built {
-        Some(p) => { prims.push(p); Term::Prim(prims.len() - 1) }
-        None => Term::Empty,
+            SolidDef::Body { .. } => unreachable!(),
+        };
+        let Some(p) = built else { return Term::Empty };
+        prims.push(p);
+        let next = Term::Prim(prims.len() - 1);
+        term = if i == 0 { next } else { Term::Diff(Box::new(term), Box::new(next)) };
     }
+    term
 }

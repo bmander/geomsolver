@@ -515,7 +515,7 @@ An implementation MUST NOT make the attitude an unknown; a document that wants a
 
 ### 6.8 Faces **[0.18]**
 
-A **face** is a region of a plane: a closed loop of existing edges and straight runs between named corners.
+A **face** is a region of a plane: an outer loop of existing edges and straight runs between named corners, optionally containing holes.
 
 ```
 face sec(mouth, side_r, lid, side_l)     // four lines, walked in order
@@ -525,7 +525,7 @@ face bore_f(b_mouth, bore_r, b_head, b_axis)
 
 A face is a **Declaration** (§4.2). It adds no coordinate, unknown, equation or freedom, and its existing edges keep their own names: naming them is aliasing (P1), not constraint, so deleting an edge deletes the face. A named chain (§6.6) in its list contributes its ordered edges. Its list is a `List` slot like a spline's control polygon, so there is no arity to conjure children from and a bare `face f` is refused (**E080**, the face's own code saying what a face is, where a bare `spline s` is §6.1's E103).
 
-**A face is one closed loop.** Consecutive edges — and the last with the first — MUST share an endpoint, and sharing is asked of the **points**, which is aliasing and cannot be argued with: two neighbours that share none are **E080** naming both. The loop is walked in the order it is written. A `circle` is a whole loop by itself and MUST stand alone in one (E080); an edge that is neither a line, an arc, a circle nor a point is E080 at the edge.
+**A face has one closed outer loop.** Consecutive edges — and the last with the first — MUST share an endpoint, and sharing is asked of the **points**, which is aliasing and cannot be argued with: two neighbours that share none are **E080** naming both. The loop is walked in the order it is written. A `circle` is a whole loop by itself and MUST stand alone in one (E080); an edge that is neither a line, an arc, a circle nor a point is E080 at the edge.
 
 **A face closes itself [0.19].** The list is a *walk*, and an item may be a **point** as well as an edge: a point is a corner the walk goes straight to and straight on from. Where two neighbours do not already share an endpoint the implementation MUST mint the straight run between them, from where the walk leaves one to where it enters the next; a run between two items standing at the same point is nothing and is not minted. The gap between the **last** item and the first is minted only where the list ends in the marker **`-> close`** — the chain's own word (§6.6), in the other place the language draws a loop — which MUST be the last thing in the brackets and is refused on any other kind. `-> close` on an already-closed loop, including a lone circle, mints nothing.
 
@@ -538,7 +538,17 @@ A minted run is an ordinary line of the drawing carrying the class **`.closure`*
 
 Three restrictions keep the shorthand from swallowing a mistake. An interior gap between two **edges** is still E080: a point in a list can mean nothing else, while two edges that do not meet are edges listed out of order. And **an edge MUST meet at least one of its neighbours**, since that is what says which way it is walked — `face bad(a, bc, d, -> close)` has two readings and states neither, and is E080 naming the edge. A straight loop with fewer than three corners is E080 for the same reason a prism swept nowhere is.
 
-**A face has no holes, and the omission is the design.** There is no syntax for a second loop, because a hole in a part is a solid that `cut`s the body (§6.9) and the body rule already says it. Written both ways, one drawing would state one hole twice, in two constructs an implementation would then have to keep in agreement — and P2 gives the body rule the better claim, since it holds however the statements are ordered.
+**A face may have holes.** After its outer boundary, `holes:` introduces one or more circles or named closed loops, separated by commas. Each entry is a complete inner boundary; an open chain is refused (E080). All boundaries MUST lie in the same plane. After solving, every hole MUST be simple, nonzero and strictly inside the outer boundary, and holes MUST be mutually disjoint: touching, crossing, overlapping and nested holes are refused. Loop direction does not determine whether it is a hole; `holes:` does. The final `-> close`, when present, closes only the outer boundary.
+
+```solvent
+face annulus(barrel, holes: core)
+face perforated(outline, holes: bolt0, bolt1)
+solid groove(annulus, from: z, to: z + width)
+groove cut body
+solid duct(face(outline, holes: inner.profile), depth: length)
+```
+
+A section's holes travel through its entire sweep, including `depth:`, `from:`/`to:`, `through:` and full or partial revolutions. The declaration creates the swept region; applying it to another body remains a separate `cut` or `on` statement. A circular boundary names its wall by the circle’s path relative to the component containing the face (for example `duct.left.bore`). A hole supplied by a named loop qualifies its side names by that loop's path (for example `duct.inner.profile.wall`), relative to the component containing the face. References to repeated holes keep their indexed source paths (for example `duct.bore[0]`), without internal expansion IDs. Boundary names MUST be distinct; sweep cap names remain reserved. The source edges retain their identities, so holes do not require names derived from Boolean-generated topology.
 
 **A face lies in one plane, and does not say so.** Its plane is read off the **memberships** (§6.7) of every point of every edge; those MUST agree, and a dissenting edge is **E080** naming it and both planes. Nothing is written on the face itself. A face bears no points of its own, so an `in` clause on one is refused where it stands — but a face **inside** an `in … { }` block is left *unstamped* rather than refused, exactly as a plane and a curve are: a block stamps the geometry the face is written over, the face is on the plane its edges are on, and refusing it would put a design and the region taken from it in two different blocks.
 

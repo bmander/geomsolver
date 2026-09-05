@@ -397,7 +397,7 @@ fn an_arc_in_a_face_is_walked_the_way_the_arc_goes() {
 }
 
 /// Directed edges with no partner — a mesh a printer's validator refuses.
-fn unpaired(m: &mesh::Mesh) -> usize {
+pub(super) fn unpaired(m: &mesh::Mesh) -> usize {
     let mut edges = std::collections::BTreeMap::new();
     let key = |p: &[f64]| (0..3).map(|k| (p[k] * 1e6).round() as i64).collect::<Vec<_>>();
     for t in 0..m.positions.len() / 9 {

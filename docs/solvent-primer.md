@@ -62,7 +62,7 @@ plane [NAME](origin: R, toward: R[, from: R, fold: E | , from: R, offset: E
                                       | , u: (E,E,E), v: (E,E,E)])
                                         the datum, and a view with an attitude    (1.13)
 in REF { statement* }                   every declaration inside is drawn in that plane
-face NAME(EDGE, ...)                    a closed loop of edges, on one plane        (1.14)
+face NAME(EDGE, ..., holes: LOOP, ...)  a planar region with optional holes        (1.14)
 solid NAME(FACE, SWEEP...)              that face swept: depth:/from:/to:, about:   (1.14)
 solid NAME(SOLID)                       a body, made of a stock
 REF on REF  |  REF through REF          material added to, or taken from, a body    (1.14)
@@ -506,8 +506,22 @@ expressions the elaborator works out; a
 `through:` extent follows the target after solving. The geometry swept is the drawing, solved
 in 2D as it always was.
 
-**A face** is a closed loop of edges the drawing already has, on one plane — the plane its edges
+**A face** is a planar region bounded by edges the drawing already has — on the plane its edges
 are drawn `in`, the page where nothing says otherwise.
+
+A section may also have holes. Write its outer boundary first, then `holes:` with
+circles or named closed loops:
+
+```solvent
+face groove_section(barrel, holes: core)
+solid groove(groove_section, from: z, to: z + width)
+groove cut body
+```
+
+This sweeps the ring between `barrel` and `core`; `cut` then removes that ring from
+the body. Several holes use `holes: first, second`. They must lie strictly inside
+the outer boundary on the same plane, without touching or overlapping each other.
+The same section works with an extrusion or a revolution.
 
 ```
 unit mm

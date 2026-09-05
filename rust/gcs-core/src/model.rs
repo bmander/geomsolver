@@ -149,7 +149,7 @@ impl EntKind {
             // first kind for which that is true
             EntKind::Curve => &[("args", L)],
             // a loop of edges, as long as the loop is; the plane is read off their memberships
-            EntKind::Face => &[("edges", L)],
+            EntKind::Face => &[("edges", L), ("holes", L)],
             // what it is swept from or made of: a face, or the solids of a term.  Every number
             // a solid carries is an *extent* — an expression, never a Scalar a solve writes back
             EntKind::Solid => &[("of", L)],
@@ -480,13 +480,15 @@ pub struct CurveE {
     pub class: Classes,
 }
 
-/// **A region of a plane** (Solvent §6.8): a closed loop of edges the document already drew.
-///
-/// It mints nothing and owns nothing.  Its edges keep their own names and are reached through it
-/// (`sec.mouth`), and the plane is the one every point of every edge agrees about — read off the
-/// memberships, never written on the face, so a face inside `in swing { … }` is on the plane the
-/// block stamped.  A circle is a loop by itself; there are no holes, because a hole is a solid
-/// that `cut`s the body and that is the body rule saying it already.
+/// An inner boundary and the source names of its swept sides.
+#[derive(Clone, Debug)]
+pub struct FaceLoop {
+    pub edges: Vec<EntRef>,
+    pub edge_names: Vec<String>,
+}
+
+/// A planar region bounded by existing edges: one outer loop and optional holes.
+/// All boundaries inherit their plane from their points' memberships.
 #[derive(Clone, Debug)]
 pub struct FaceE {
     /// The loop, in traversal order.  Lines, arcs and at most one circle standing alone.
@@ -495,6 +497,8 @@ pub struct FaceE {
     /// is reached by (`block.side_l`).  Kept beside the references because a solid's face path
     /// is spelled out of the *source's* words, and an anonymous edge has none to spell.
     pub edge_names: Vec<String>,
+    /// Strictly contained, disjoint inner boundaries.
+    pub holes: Vec<FaceLoop>,
     /// The plane its edges agree about; `None` is the page.
     pub plane: Option<u32>,
     /// What the document calls it.  A solid's faces are reached by *path* — `body.bore.wall` —
@@ -502,6 +506,13 @@ pub struct FaceE {
     /// naming mechanism, and a report that could not spell one would have nothing to say.
     pub name: String,
     pub class: Classes,
+}
+
+impl FaceE {
+    pub fn boundaries(&self) -> impl Iterator<Item = (&[EntRef], &[String])> {
+        std::iter::once((self.edges.as_slice(), self.edge_names.as_slice()))
+            .chain(self.holes.iter().map(|h| (h.edges.as_slice(), h.edge_names.as_slice())))
+    }
 }
 
 /// A finite length in the drawing's user units.
@@ -1598,7 +1609,7 @@ impl Sketch {
             EntKind::Point => Vec::new(),
             // a face's children are the edges it aliases, so deleting one takes the face with
             // it; a solid's are what its term is written over
-            EntKind::Face => self.faces[e.i()].edges.clone(),
+            EntKind::Face => self.faces[e.i()].boundaries().flat_map(|(edges, _)| edges.iter().copied()).collect(),
             EntKind::Solid => {
                 let s = &self.solids[e.i()];
                 let mut v: Vec<EntRef> = Vec::new();
@@ -1863,6 +1874,7 @@ impl Sketch {
         self.faces.push(FaceE {
             edges,
             edge_names: names,
+            holes: Vec::new(),
             plane: plane.map(|p| p as u32),
             name: name.to_string(),
             class: Classes::default(),

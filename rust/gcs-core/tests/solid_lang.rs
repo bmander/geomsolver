@@ -849,3 +849,174 @@ fn through_extent_uses_the_cutters_normal_and_target_world_placement() {
         assert_eq!(edges.get(&(b.clone(), a.clone())), Some(count), "mesh edges pair");
     }
 }
+
+const ANNULUS: &str = "unit mm\npoint center hint(x: 0, y: 0)\ncircle outer(center: center) hint(r: 10)\ncircle inner(center: center) hint(r: 5)\nface section(outer, holes: inner)\n";
+
+#[test]
+fn section_holes_sweep_and_cut_with_source_face_names() {
+    use gcs_core::solid::{ApproximationPolicy::Report, WorldPoint};
+    let e = read(&format!("{ANNULUS}solid sleeve(section, depth: 3mm)\nsolid stock(face(outer), depth: 6mm)\nsolid body(stock)\nsleeve cut body\n"));
+    let ring = e.sketch.evaluated_solid(e.map.ent_named("sleeve").unwrap().i(), Report).unwrap();
+    assert!((ring.volume() - 225.0 * std::f64::consts::PI).abs() < 0.6);
+    assert!(!ring.contains_world(WorldPoint([0.0, 1.0, 0.0])));
+    assert!(ring.contains_world(WorldPoint([7.0, 1.0, 0.0])));
+    for name in ["sleeve.outer", "sleeve.inner", "sleeve.near", "sleeve.far"] {
+        assert!(ring.surviving_faces().contains(name), "{name}");
+    }
+    assert_eq!(ring.round_features().len(), 2);
+    assert_eq!(super::solid::unpaired(ring.mesh()), 0);
+    let body = e.sketch.evaluated_solid(e.map.ent_named("body").unwrap().i(), Report).unwrap();
+    assert!(body.contains_world(WorldPoint([0.0, 1.0, 0.0])), "the groove leaves the core standing");
+    assert!(!body.contains_world(WorldPoint([7.0, 1.0, 0.0])));
+}
+
+#[test]
+fn section_holes_round_trip_copy_delete_and_invalidate() {
+    use gcs_core::{model::EntRef, solid::ApproximationPolicy::Report};
+    let src = format!("{ANNULUS}solid sleeve(face(outer, holes: inner), from: 1mm, to: 4mm)\n");
+    let (mut p, _) = parse(&src);
+    let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
+    assert!(printed.contains("holes: inner"));
+    let mut e = read(&printed);
+    let i = e.map.ent_named("sleeve").unwrap().i();
+    let before = e.sketch.evaluated_solid(i, Report).unwrap();
+    let hole = e.map.ent_named("inner").unwrap();
+    let radius = e.sketch.circles[hole.i()].radius as usize;
+    e.sketch.params[radius].value = 6.0;
+    let after = e.sketch.evaluated_solid(i, Report).unwrap();
+    assert!(after.volume() < before.volume());
+    assert!(!std::rc::Rc::ptr_eq(&before, &after));
+    let copy = gcs_core::io::copy(&e.sketch, &[EntRef::solid(i)]);
+    assert!((copy.evaluated_solid(0, Report).unwrap().volume() - after.volume()).abs() < 1e-8);
+    let deleted = gcs_core::io::without(&e.sketch, &[hole], &[]);
+    assert!(deleted.faces.is_empty() && deleted.solids.is_empty());
+}
+
+#[test]
+fn section_holes_work_in_through_cutters_and_their_targets() {
+    let e = read(&format!("{ANNULUS}solid stock(section, depth: 8mm)\nsolid body(stock)\nsolid tool(face(outer, holes: inner), through: body)\ntool cut body\n"));
+    assert!(volume(&e, "body").abs() < 1e-8);
+    assert!(volume(&e, "tool") > volume(&e, "stock"));
+}
+
+#[test]
+fn section_holes_accept_multiple_component_loops_and_revolutions() {
+    // A section of area 2400 - 100 - 100 = 2200, with both holes at x=30.
+    // Revolving about the left edge gives 2*pi*30*2200 by Pappus's theorem.
+    let src = format!("{RECT}\ncomponent Hole(y: Length) {{\n\
+        point p hint(x: 25, y: y)\npoint q hint(x: 35, y: y)\n\
+        point r hint(x: 35, y: y + 10mm)\npoint s hint(x: 25, y: y + 10mm)\n\
+        profile = line a(p,q) -> line b(q,r) -> line c(r,s) -> line d(s,p) -> close\n}}\n\
+        h0: Hole(y: 5mm)\nh1: Hole(y: 25mm)\n\
+        face section(ab, bc, cd, da, holes: h0.profile, h1.profile)\n\
+        solid slab(section, depth: 3mm)\nsolid turned(section, about: da)\n\
+        solid quarter(section, about: da, sweep: 90deg)\n");
+    let e = read(&src);
+    let slab = e.sketch.evaluated_solid(e.map.ent_named("slab").unwrap().i(),
+        gcs_core::solid::ApproximationPolicy::Report).unwrap();
+    assert!((slab.volume() - 6600.0).abs() < 1e-7);
+    let expected = 2.0 * std::f64::consts::PI * 30.0 * 2200.0;
+    for (name, fraction) in [("turned", 1.0), ("quarter", 0.25)] {
+        let i = e.map.ent_named(name).unwrap().i();
+        let solid = e.sketch.evaluated_solid(i,
+            gcs_core::solid::ApproximationPolicy::View { unit: 0.1 }).unwrap();
+        assert!((solid.volume() / (expected * fraction) - 1.0).abs() < 0.005);
+        assert!(solid.surviving_faces().contains(&format!("{name}.h0.profile.a")));
+    }
+}
+
+#[test]
+fn section_holes_refuse_invalid_boundaries() {
+    use gcs_core::solid::ApproximationPolicy::Report;
+    for (x, r, extra, message) in [
+        (11, 2, "", "strictly inside"),
+        (9, 2, "", "strictly inside"),
+        (8, 2, "", "strictly inside"),
+        (0, 0, "", "degenerate hole"),
+        (0, 6, ", second", "disjoint"),
+        (4, 3, ", second", "disjoint"),
+        (7, 2, ", second", "disjoint"),
+    ] {
+        let src = format!("unit mm\npoint o hint(x: 0, y: 0)\npoint h hint(x: {x}, y: 0)\ncircle outer(center: o) hint(r: 10)\ncircle inner(center: h) hint(r: {r})\ncircle second(center: o) hint(r: 5)\nsolid sleeve(face(outer, holes: inner{extra}), depth: 3mm)\n");
+        let e = read(&src);
+        let err = e.sketch.evaluated_solid(0, Report).err().expect("invalid section must be refused");
+        assert!(err.contains(message), "{src}\n{err}");
+    }
+    refused(&format!("{ANNULUS}line bad(center, center)\nface badface(outer, holes: bad)\n"), Code::E080, "circle or named closed loop");
+    refused("unit mm\nplane other\npoint o\ncircle outer(center: o) hint(r: 10)\nin other { point h\ncircle inner(center: h) hint(r: 2) }\nface bad(outer, holes: inner)\n", Code::E080, "one plane");
+}
+
+#[test]
+fn section_holes_check_source_arc_and_line_tangencies_on_a_placed_plane() {
+    use gcs_core::solid::ApproximationPolicy::Report;
+    for (x, valid) in [(1, false), (2, true), (4, false)] {
+        let src = format!("unit mm\npoint o\npoint q hint(x: 10)\n\
+            plane front(origin: o, toward: q, u: (1, 0, 0), v: (0, 1, 0))\n\
+            plane back(origin: o, toward: q, from: front, offset: 12mm)\n\
+            in back {{\npoint c hint(x: 0, y: 0)\n\
+            point a hint(x: 0, y: -5)\npoint b hint(x: 0, y: 5)\n\
+            outline = arc rim(center: c, start: a, end: b) hint(r: 5) -> line side(b,a) -> close\n\
+            point h hint(x: {x}, y: 0)\ncircle inner(center: h) hint(r: 1)\n\
+            solid sleeve(face(outline, holes: inner), depth: 2mm)\n}}\n");
+        let e = read(&src);
+        let result = e.sketch.evaluated_solid(0, Report);
+        assert_eq!(result.is_ok(), valid, "x={x}: {:?}", result.as_ref().err());
+        if let Ok(solid) = result {
+            assert!((solid.volume() - 23.0 * std::f64::consts::PI).abs() < 0.1);
+            assert_eq!(super::solid::unpaired(solid.mesh()), 0);
+        }
+    }
+}
+
+#[test]
+fn section_holes_keep_component_paths_in_named_and_inline_sections() {
+    let e = read("unit mm\n\
+        component Bore(x: Length) {\npoint c hint(x: x, y: 0)\ncircle bore(center: c) hint(r: 1)\n}\n\
+        component Part() {\npoint o\ncircle outer(center: o) hint(r: 10)\n\
+        left: Bore(x: -3mm)\nright: Bore(x: 3mm)\n\
+        face section(outer, holes: left.bore, right.bore)\n\
+        solid named(section, depth: 2mm)\n\
+        solid inline(face(outer, holes: left.bore, right.bore), depth: 2mm)\n}\np: Part()\n");
+    for name in ["p.named", "p.inline"] {
+        let solid = e.sketch.evaluated_solid(e.map.ent_named(name).unwrap().i(),
+            gcs_core::solid::ApproximationPolicy::Report).unwrap();
+        for side in ["outer", "left.bore", "right.bore"] {
+            assert!(solid.surviving_faces().contains(&format!("{name}.{side}")), "{:?}", solid.surviving_faces());
+        }
+        assert!((solid.volume() - 196.0 * std::f64::consts::PI).abs() < 0.6);
+    }
+}
+
+#[test]
+fn section_holes_keep_repeat_paths_stable_when_statements_are_inserted() {
+    let source = "unit mm\npoint center\ncircle outer(center: center) hint(r: 10)\n\
+        repeat 2 as i {\npoint c hint(x: (i * 6 - 3) * 1mm, y: 0)\n\
+        circle bore(center: c) hint(r: 1)\n}\n\
+        solid sleeve(face(outer, holes: bore[0], bore[1]), depth: 2mm)\n";
+    for src in [source.to_string(), format!("point unrelated\n{source}")] {
+        let e = read(&src);
+        let solid = e.sketch.evaluated_solid(e.map.ent_named("sleeve").unwrap().i(),
+            gcs_core::solid::ApproximationPolicy::Report).unwrap();
+        for name in ["sleeve.outer", "sleeve.bore[0]", "sleeve.bore[1]"] {
+            assert!(solid.surviving_faces().contains(name), "{:?}", solid.surviving_faces());
+        }
+    }
+}
+
+#[test]
+fn section_holes_preserve_explicit_closure_winding_and_failed_face_cleanup() {
+    let (p, errors) = parse(&format!("{RECT}{HOLE}\n\
+        face bad(a,b,c,d, holes: ab, -> close)\n\
+        face good(d,c,b,a, holes: hole, -> close)\nsolid slab(good, depth: 2mm)\n"));
+    assert!(errors.is_empty());
+    let e = elaborate(&p);
+    assert!(e.diags.iter().any(|d| d.code == Code::E080));
+    assert_eq!(e.sketch.faces.len(), 3, "a failed face leaves no intermediate boundaries");
+    assert_eq!(e.sketch.lines.len(), 8, "only the good face retains its four closing edges");
+    let expected = (2400.0 - 25.0 * std::f64::consts::PI) * 2.0;
+    assert!((volume(&e, "slab") - expected).abs() < 0.1);
+    let src = format!("{RECT}{HOLE}\nsolid slab(face(a,b,c,d, holes: hole, -> close), depth: 2mm)\n");
+    let (mut p, _) = parse(&src);
+    let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
+    assert!((volume(&read(&printed), "slab") - volume(&e, "slab")).abs() < 1e-8);
+}

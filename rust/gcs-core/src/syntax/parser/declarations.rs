@@ -252,6 +252,7 @@ impl<'a> P<'a> {
         let mut list_span = Span::new(name_end, name_end);
         if self.eat_p('(') {
             let mut positional = 0usize;
+            let mut in_holes = false;
             while !self.eat_p(')') {
                 // **a face closes itself** (§6.8): `-> close` seals the loop back to the first
                 // item with a straight edge, the chain's own word for the chain's own thing.
@@ -280,6 +281,17 @@ impl<'a> P<'a> {
                 }
                 // `name:` labels a field; anything else is positional
                 let label = self.slot_label();
+                if kind == EntKind::Face {
+                    match label.as_deref() {
+                        Some("holes") => in_holes = true,
+                        Some("edges") if !in_holes => {},
+                        Some(_) => {
+                            self.fail("a face takes its outer edges, then `holes:` with circles or closed loops");
+                            return None;
+                        }
+                        None => {}
+                    }
+                }
                 match label {
                     // **a solid's sweep is what it is made of**, so it stands in the brackets
                     // with the face — and it is read before the attitude's labels, since `from`
@@ -327,20 +339,24 @@ impl<'a> P<'a> {
                             }
                             None => Kid::Ref(self.refr()?),
                         };
-                        let slot = match &label {
-                            Some(l) => fields
-                                .iter()
-                                .filter(|(_, f)| *f != Field::Scalar)
-                                .position(|(n, _)| n == l)
-                                .unwrap_or_else(|| positional.min(children.len() - 1)),
-                            None => {
-                                // a List field takes every positional argument from where it starts
-                                let n_named =
-                                    fields.iter().filter(|(_, f)| *f == Field::Child).count();
-                                if positional >= n_named && children.len() > n_named {
-                                    n_named
-                                } else {
-                                    positional.min(children.len().saturating_sub(1))
+                        let slot = if kind == EntKind::Face {
+                            usize::from(in_holes)
+                        } else {
+                            match &label {
+                                Some(l) => fields
+                                    .iter()
+                                    .filter(|(_, f)| *f != Field::Scalar)
+                                    .position(|(n, _)| n == l)
+                                    .unwrap_or_else(|| positional.min(children.len() - 1)),
+                                None => {
+                                    // a List field takes every positional argument from where it starts
+                                    let n_named =
+                                        fields.iter().filter(|(_, f)| *f == Field::Child).count();
+                                    if positional >= n_named && children.len() > n_named {
+                                        n_named
+                                    } else {
+                                        positional.min(children.len().saturating_sub(1))
+                                    }
                                 }
                             }
                         };

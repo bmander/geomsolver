@@ -159,7 +159,7 @@ impl EvaluatedSolid {
         let curved: BTreeSet<_> = boundary
             .iter()
             .filter(|p| p.smooth && p.area() > 0.0)
-            .map(|p| csg.prims[p.prim].of.as_str())
+            .map(|p| p.path.as_str())
             .collect();
         let mut round = Vec::new();
         for i in operands {
@@ -169,40 +169,40 @@ impl EvaluatedSolid {
             let (SolidDef::Prism { face, .. } | SolidDef::Through { face, .. }) = sol.def else {
                 continue;
             };
-            if !curved.contains(sol.name.as_str()) {
-                continue;
-            }
             let face = &sk.faces[face as usize];
-            if face.edges.len() != 1 || face.edges[0].kind != EntKind::Circle {
-                continue;
-            }
-            let circle = &sk.circles[face.edges[0].i()];
-            let (basis, pose) = match face.plane {
-                Some(p) => {
-                    let p = &sk.planes[p as usize];
-                    (
-                        p.basis,
-                        (
-                            sk.params[p.frame.c as usize].value,
-                            sk.params[p.frame.s as usize].value,
-                            sk.point_xy(p.frame.origin as usize),
-                        ),
-                    )
+            for (edges, names) in face.boundaries() {
+                if edges.len() != 1 || edges[0].kind != EntKind::Circle
+                    || !curved.contains(format!("{}.{}", sol.name, names[0]).as_str()) {
+                    continue;
                 }
-                None => (Basis::page(), (1.0, 0.0, (0.0, 0.0))),
-            };
-            let uv = plane::in_view(pose.0, pose.1, pose.2, sk.point_xy(circle.center as usize));
-            let local_basis = Basis {
-                o: std::array::from_fn(|k| basis.o[k] - origin.0[k]),
-                ..basis
-            };
-            let center = LocalPoint(local_basis.lift(uv.0, uv.1));
-            round.push(RoundFeature {
-                of: sol.name.clone(),
-                center,
-                normal: basis.normal(),
-                radius: sk.params[circle.radius as usize].value.abs(),
-            });
+                let circle = &sk.circles[edges[0].i()];
+                let (basis, pose) = match face.plane {
+                    Some(p) => {
+                        let p = &sk.planes[p as usize];
+                        (
+                            p.basis,
+                            (
+                                sk.params[p.frame.c as usize].value,
+                                sk.params[p.frame.s as usize].value,
+                                sk.point_xy(p.frame.origin as usize),
+                            ),
+                        )
+                    }
+                    None => (Basis::page(), (1.0, 0.0, (0.0, 0.0))),
+                };
+                let uv = plane::in_view(pose.0, pose.1, pose.2, sk.point_xy(circle.center as usize));
+                let local_basis = Basis {
+                    o: std::array::from_fn(|k| basis.o[k] - origin.0[k]),
+                    ..basis
+                };
+                let center = LocalPoint(local_basis.lift(uv.0, uv.1));
+                round.push(RoundFeature {
+                    of: sol.name.clone(),
+                    center,
+                    normal: basis.normal(),
+                    radius: sk.params[circle.radius as usize].value.abs(),
+                });
+            }
         }
         Ok(Self {
             name: sk.solid_name(si),

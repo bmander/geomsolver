@@ -729,6 +729,14 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                 None => whole = false,
             }
         }
+        let holes = f.holes.iter().map(|h| {
+            let edges = h.edges.iter().filter_map(|&e| {
+                let r = remap_early(&pt_index, &line_map, &circle_map, &arc_map, &spline_map, &plane_map, e);
+                if r.is_none() { whole = false; }
+                r
+            }).collect();
+            crate::model::FaceLoop { edges, edge_names: h.edge_names.clone() }
+        }).collect();
         let plane = match f.plane {
             Some(p) => match plane_map[p as usize] {
                 Some(n) => Some(n as u32),
@@ -745,6 +753,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         dst.faces.push(crate::model::FaceE {
             edges,
             edge_names: f.edge_names.clone(),
+            holes,
             plane,
             name: f.name.clone(),
             class: f.class.clone(),

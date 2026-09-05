@@ -7,9 +7,7 @@
 // it, which decides the shape of every statement below: the barrel, the hub, the lever and the
 // grooves are prisms along it, and the cross-hole, whose axis lies in the plane, is a turn.
 //
-// An O-ring groove is a ring less its core, so it is written as the two solids it is made of
-// with the ring named — `groove0` — exactly as §6.9 says a design that needs an order should:
-// there are two things there, and naming the intermediate is the honest way to say so.
+// Each O-ring groove sweeps the annular section between the barrel and its core.
 //
 // Along its axis: the hub proud of the boss's face, the body through the boss and `tback` past
 // it, the cross-hole at the boss's mid-plane, an O-ring groove either side of it sealing the
@@ -84,7 +82,7 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle) {
     circle core(center: c) hint(r: torgb / 2) class hidden
     radius(torgb / 2) core
     face barrel_f(barrel)
-    face core_f(core)
+    face groove_section(barrel, holes: core)
   }
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
@@ -98,19 +96,10 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle) {
   solid arm(face(lv_a, lv2.p, lv_c, lv0.p), from: bossz / 2, to: bossz / 2 + levw)
   solid knob_s(face(knob), from: bossz / 2, to: bossz / 2 + levw)
   solid cross(face(x0.p, x1.p, x2.p, x3.p, -> close), about: hax)
-  // each seal groove: the ring the barrel would have there, less the core that is left standing
-  solid ring0(barrel_f, from: torz - torw / 2, to: torz + torw / 2)
-  solid ring1(barrel_f, from: -torz - torw / 2, to: -torz + torw / 2)
-  solid ring2(barrel_f, from: zkeep - torw / 2, to: zkeep + torw / 2)
-  solid core0(core_f, from: torz - torw / 2, to: torz + torw / 2)
-  solid core1(core_f, from: -torz - torw / 2, to: -torz + torw / 2)
-  solid core2(core_f, from: zkeep - torw / 2, to: zkeep + torw / 2)
-  solid groove0(ring0)
-  core0 cut groove0
-  solid groove1(ring1)
-  core1 cut groove1
-  solid groove2(ring2)
-  core2 cut groove2
+  // Each seal groove uses the same annular section at a different depth.
+  solid groove0(groove_section, from: torz - torw / 2, to: torz + torw / 2)
+  solid groove1(groove_section, from: -torz - torw / 2, to: -torz + torw / 2)
+  solid groove2(groove_section, from: zkeep - torw / 2, to: zkeep + torw / 2)
 
   solid body(barrel_s)
   hub_s on body
