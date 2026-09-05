@@ -25,7 +25,7 @@
 
 use crate::model::Sketch;
 use crate::plane::{self, Basis};
-use crate::solid;
+use crate::solid::{ApproximationPolicy, LocalPoint, PageFrame};
 
 /// One stroke of a derived picture, in page coordinates.
 #[derive(Clone, Debug)]
@@ -60,12 +60,15 @@ fn view_clipped(
     cut: Option<Basis>,
     section_edges: &[crate::csg::Edge],
 ) -> Vec<Stroke> {
-    let (basis, pose) = view_frame(sk, plane_i);
+    let Ok(solid) = sk.evaluated_solid(si, ApproximationPolicy::from_unit(unit)) else { return Vec::new() };
+    let (world_basis, pose) = view_frame(sk, plane_i);
+    let page = PageFrame::new(world_basis, pose);
+    let basis = solid.local_basis(world_basis);
+    let cut = cut.map(|c| solid.local_basis(c));
     let eye = basis.normal();
-    let mut edges = sk.solid_edges(si, unit);
+    let mut edges = solid.edges().to_vec();
     edges.extend_from_slice(section_edges);
-    let csg = solid::resolve(sk, si, unit);
-    let eps = csg.epsilon();
+    let eps = solid.epsilon();
 
     // **which edges this view draws at all**: every corner, and a smooth seam only where the
     // surface turns away from the eye across it
@@ -125,10 +128,10 @@ fn view_clipped(
             let at = |t: f64| [a[0] + t * d3[0], a[1] + t * d3[1], a[2] + t * d3[2]];
             let m = at((w[0] + w[1]) / 2.0);
             let limit = cut.map(|c| plane::dot(eye, std::array::from_fn(|k| c.o[k] - m[k])));
-            let hidden = behind(&csg, m, eye, eps, limit);
+            let hidden = solid.occludes(LocalPoint(m), eye, limit);
             let (p, q) = (at(w[0]), at(w[1]));
             out.push(Stroke {
-                pts: vec![on_page(&basis, pose, p), on_page(&basis, pose, q)],
+                pts: vec![solid.to_page(LocalPoint(p), page).0, solid.to_page(LocalPoint(q), page).0],
                 hidden,
                 silhouette: *sil,
                 path: path.clone(),
@@ -149,15 +152,15 @@ pub fn section(
 ) -> Vec<Stroke> {
     let (cut, _) = view_frame(sk, at);
     let (basis, _) = view_frame(sk, plane_i);
-    let csg = solid::resolve(sk, si, unit);
-    let eps = csg.epsilon();
+    let Ok(solid) = sk.evaluated_solid(si, ApproximationPolicy::from_unit(unit)) else { return Vec::new() };
+    let eps = solid.epsilon();
     let n = basis.normal();
-    let d = plane::dot(n, cut.o);
+    let d = plane::dot(n, solid.local_basis(cut).o);
 
     // every boundary piece meets the cutting plane in a segment; a segment whose middle has
     // material on one side of it *within the plane* is an edge of the cut face
     let mut section_edges = Vec::new();
-    for p in sk.solid_boundary(si, unit) {
+    for p in solid.boundary() {
         let Some((a, b)) = meet_plane(&p.pts, n, d) else { continue };
         let m = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0];
         // a segment lying *in* the cut and bounding material is drawn; one the cut merely
@@ -165,12 +168,12 @@ pub fn section(
         let along = plane::unit([b[0] - a[0], b[1] - a[1], b[2] - a[2]]);
         let Some(along) = along else { continue };
         let across = plane::cross(n, along);
-        let one = csg.inside(step(m, across, eps));
-        let two = csg.inside(step(m, across, -eps));
+        let one = solid.contains(LocalPoint(step(m, across, eps)));
+        let two = solid.contains(LocalPoint(step(m, across, -eps)));
         if one == two {
             continue;
         }
-        section_edges.push(crate::csg::Edge { a, b, na: n, nb: across, smooth: false, path: p.path });
+        section_edges.push(crate::csg::Edge { a, b, na: n, nb: across, smooth: false, path: p.path.clone() });
     }
     view_clipped(sk, si, plane_i, unit, Some(cut), &section_edges)
 }
@@ -191,62 +194,8 @@ fn view_frame(sk: &Sketch, plane_i: Option<usize>) -> (Basis, (f64, f64, (f64, f
     }
 }
 
-fn on_page(b: &Basis, pose: (f64, f64, (f64, f64)), p: [f64; 3]) -> (f64, f64) {
-    plane::on_page(pose.0, pose.1, pose.2, b.view_coords(p))
-}
-
 fn step(p: [f64; 3], d: [f64; 3], k: f64) -> [f64; 3] {
     [p[0] + k * d[0], p[1] + k * d[1], p[2] + k * d[2]]
-}
-
-/// Does the solid stand between `m` and the eye?  Orthographic, so the eye's ray is a line along
-/// the view's own normal — the whole of what "hidden" means here.
-pub(crate) fn behind(
-    csg: &solid::Csg,
-    m: [f64; 3],
-    eye: [f64; 3],
-    eps: f64,
-    limit: Option<f64>,
-) -> bool {
-    // Partition the ray at actual surface crossings. Material cannot change between two
-    // crossings; one interior test per interval is exact on the faceted term, even for a
-    // wall thinner than the old uniform sampling step. Clip those intervals at a section.
-    let bounds = csg.bbox();
-    if bounds.is_empty() {
-        return false;
-    }
-    let far = (0..3)
-        .map(|k| eye[k] * (if eye[k] >= 0.0 { bounds.hi[k] } else { bounds.lo[k] } - m[k]))
-        .sum::<f64>();
-    let end = limit.unwrap_or(far + eps).min(far + eps);
-    if end <= eps {
-        return false;
-    }
-    let mut cuts = vec![eps, end];
-    for prim in &csg.prims {
-        for f in &prim.facets {
-            let denominator = plane::dot(f.n, eye);
-            if denominator.abs() <= 1e-12 {
-                continue;
-            }
-            let t = plane::dot(f.n, std::array::from_fn(|k| f.pts[0][k] - m[k])) / denominator;
-            if t <= eps || t >= end {
-                continue;
-            }
-            let x = step(m, eye, t);
-            if f.pts.iter().enumerate().all(|(i, a)| {
-                let b = f.pts[(i + 1) % f.pts.len()];
-                let edge = std::array::from_fn(|k| b[k] - a[k]);
-                plane::dot(f.n, plane::cross(edge, std::array::from_fn(|k| x[k] - a[k])))
-                    >= -eps * plane::norm(edge)
-            }) {
-                cuts.push(t);
-            }
-        }
-    }
-    cuts.sort_by(f64::total_cmp);
-    cuts.windows(2)
-        .any(|w| w[1] - w[0] > eps * 1e-3 && csg.inside(step(m, eye, (w[0] + w[1]) * 0.5)))
 }
 
 /// Where the segment `a→b` is crossed, in the picture, by `c→d`.  `None` when they miss, or are
@@ -564,18 +513,15 @@ pub fn generated(sk: &Sketch, unit: f64) -> Vec<(usize, Dim)> {
             continue;
         }
         let (basis, pose) = view_frame(sk, d.plane.map(|p| p as usize));
-        let strokes = view(sk, d.solid as usize, d.plane.map(|p| p as usize), unit);
+        let Ok(solid) = sk.evaluated_solid(d.solid as usize, ApproximationPolicy::from_unit(unit)) else { continue };
+        let local_basis = solid.local_basis(basis);
         // the box the part occupies, in the view's *own* axes, so an extent is measured the way
         // the view is turned and not the way the page is
         let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
-        for s in &strokes {
-            for p in &s.pts {
-                let v = plane::in_view(pose.0, pose.1, pose.2, *p);
-                lo[0] = lo[0].min(v.0);
-                lo[1] = lo[1].min(v.1);
-                hi[0] = hi[0].max(v.0);
-                hi[1] = hi[1].max(v.1);
-            }
+        for p in solid.boundary().iter().flat_map(|p| &p.pts) {
+            let v = local_basis.view_coords(*p);
+            lo[0] = lo[0].min(v.0); lo[1] = lo[1].min(v.1);
+            hi[0] = hi[0].max(v.0); hi[1] = hi[1].max(v.1);
         }
         if !lo[0].is_finite() {
             continue;
@@ -599,46 +545,10 @@ pub fn generated(sk: &Sketch, unit: f64) -> Vec<(usize, Dim)> {
         // and every round feature this view sees square on: a face that is one circle, whose
         // plane looks at the eye.  A hole is a size a printer needs and a machine can read
         let eye = basis.normal();
-        let csg = solid::resolve(sk, d.solid as usize, unit);
-        let surviving: std::collections::BTreeSet<_> = sk
-            .solid_boundary(d.solid as usize, unit)
-            .iter()
-            .filter(|p| p.smooth && p.area() > 0.0)
-            .filter_map(|p| csg.prims.get(p.prim).map(|p| p.of.as_str()))
-            .collect();
-        for (solid, f) in reachable_faces(sk, d.solid) {
-            if !surviving.contains(sk.solids[solid as usize].name.as_str()) {
-                continue;
-            }
-            let Some(face) = sk.faces.get(f as usize) else { continue };
-            if face.edges.len() != 1 || face.edges[0].kind != crate::model::EntKind::Circle {
-                continue;
-            }
-            let fb = match face.plane {
-                Some(p) => sk.planes[p as usize].basis,
-                None => Basis::page(),
-            };
-            if plane::dot(fb.normal(), eye).abs() < 0.999_999 {
-                continue;   // seen edge-on or askew: it is not a circle in this view
-            }
-            let c = &sk.circles[face.edges[0].i()];
-            let r = sk.params[c.radius as usize].value.abs();
-            let ctr = sk.point_xy(c.center as usize);
-            // the centre in space, then in this view's page
-            let (cu, cv) = match face.plane {
-                Some(p) => {
-                    let fr = &sk.planes[p as usize].frame;
-                    plane::in_view(
-                        sk.params[fr.c as usize].value,
-                        sk.params[fr.s as usize].value,
-                        sk.point_xy(fr.origin as usize),
-                        ctr,
-                    )
-                }
-                None => ctr,
-            };
-            let x = fb.lift(cu, cv);
-            let (vu, vv) = basis.view_coords(x);
+        for feature in solid.round_features() {
+            if plane::dot(feature.normal, eye).abs() < 0.999_999 { continue; }
+            let r = feature.radius;
+            let (vu, vv) = local_basis.view_coords(feature.center.0);
             let (a, b) = (page(vu - r, vv), page(vu + r, vv));
             out.push((i, Dim { a, b, dir: plane::on_page(pose.0, pose.1, (0.0, 0.0), (1.0, 0.0)),
                                value: 2.0 * r, round: true, clear: false }));
@@ -660,23 +570,4 @@ pub struct Dim {
     /// Stand it off the part rather than drawing it through: what an extent wants and a
     /// diameter, taken across its own circle, does not.
     pub clear: bool,
-}
-
-/// Every face the term of a solid reaches, so a generated dimension can be about a feature and
-/// not only about the outline.
-fn reachable_faces(sk: &Sketch, si: u32) -> Vec<(u32, u32)> {
-    let mut out = Vec::new();
-    let mut seen = std::collections::BTreeSet::new();
-    let mut stack = vec![si];
-    while let Some(s) = stack.pop() {
-        if !seen.insert(s) {
-            continue;
-        }
-        let Some(sol) = sk.solids.get(s as usize) else { continue };
-        if let Some(f) = sol.face() {
-            out.push((s, f));
-        }
-        stack.extend(sol.operands());
-    }
-    out
 }

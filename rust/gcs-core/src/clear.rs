@@ -259,12 +259,27 @@ pub fn judge(
     gap: f64,
     unit: f64,
 ) -> Verdict {
+    let policy = solid::ApproximationPolicy::from_unit(unit);
+    let (Ok(a), Ok(b)) = (sk.evaluated_solid(a, policy), sk.evaluated_solid(b, policy)) else {
+        return Verdict { measured: f64::NAN, tolerance: f64::NAN, holds: None };
+    };
+    judge_evaluated(word, &a, &b, gap)
+}
+
+/// Both classifiers and boundaries are from validated evaluations; pairwise arithmetic is
+/// in A's local frame so translating the assembly does not change a collision or gap.
+pub fn judge_evaluated(
+    word: crate::constraints::SolidWord, a: &solid::EvaluatedSolid,
+    b: &solid::EvaluatedSolid, gap: f64,
+) -> Verdict {
     use crate::constraints::SolidWord as W;
-    let (pa, pb) = (sk.solid_boundary(a, unit), sk.solid_boundary(b, unit));
-    let (ca, cb) = (solid::resolve(sk, a, unit), solid::resolve(sk, b, unit));
-    let eps = ca.epsilon().min(cb.epsilon());
-    let curved = ca.prims.iter().chain(&cb.prims).any(|p| p.facets.iter().any(|f| f.smooth));
-    let facet_tol = if curved { 2.0 * sagitta(unit) } else { 0.0 };
+    let pa = a.boundary();
+    let ca = a.classifier();
+    let (cb, pb) = a.relative(b);
+    let eps = a.epsilon().min(b.epsilon());
+    let facet_tol = if a.boundary().iter().chain(b.boundary()).any(|p| p.smooth) {
+        a.sagitta() + b.sagitta()
+    } else { 0.0 };
     let compare = |measured: f64| {
         if facet_tol > 0.0 && (measured - gap).abs() <= facet_tol {
             None

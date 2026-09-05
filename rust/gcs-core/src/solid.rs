@@ -12,10 +12,10 @@
 //! in 2D as it always was.  The strata run one way — the sketch solves, the depths are worked
 //! out, the terms are ordered, and the outputs are read — with no edge back.
 //!
-//! **The kernel is the term, and every output is a question asked of it.**  Nothing is built and
-//! nothing is stored: a view, a section, a mesh, a volume and a clearance are all
-//! *classification* against `Csg` (Requicha & Voelcker's boundary evaluation).  There is no
-//! B-rep, which is the reason the crate still has no dependency.
+//! **Consumers share a validated `EvaluatedSolid` for a solved pose and approximation policy.**
+//! It owns the local frame, CSG classifier, retained boundary and provenance, with lazy edges
+//! and mesh. The kernel remains classification against `Csg` (Requicha & Voelcker's boundary
+//! evaluation); no additional B-rep or replacement CSG engine is introduced.
 //!
 //! **One rule holds the whole thing together: the classifier reads the facets the candidates are
 //! cut from.**  A primitive is reduced to a closed polyhedron of planar convex facets — arcs and
@@ -24,6 +24,9 @@
 //! surface.  Classify exactly against the true circle instead, and every facet centroid of a
 //! bore's wall would lie inside the true bore by the sagitta, both its samples would read
 //! *outside*, and the wall would silently vanish.
+
+mod evaluated;
+pub use evaluated::{ApproximationPolicy, EvaluatedSolid, LocalPoint, WorldPoint, PagePoint, PageFrame, RoundFeature};
 
 use crate::model::{EntKind, EntRef, Sense, Sketch, SolidDef};
 use crate::plane::{self, Basis};
@@ -83,7 +86,8 @@ pub fn mesh_unit(sk: &Sketch, i: usize) -> f64 {
     // pick a faceting, and paying for a fine boundary to decide how fine a boundary to build
     // would be the tail wagging the dog.  A coarse tessellation gives a box right to its own
     // sagitta, which is far below anything this then rounds to.
-    let b = resolve(sk, i, REPORT_UNIT * 20.0).bbox();
+    let origin = frame_origin(sk, i, REPORT_UNIT * 20.0);
+    let b = resolve_at(sk, i, REPORT_UNIT * 20.0, origin).bbox();
     if b.is_empty() {
         return REPORT_UNIT;
     }
@@ -501,6 +505,10 @@ pub fn face_poly(sk: &Sketch, fi: usize, unit: f64) -> Option<FacePoly> {
 /// Validate solved geometry, not the hint that existed before the constraint solve.
 /// Exporters and diagnostics share this check, including every operand of a body.
 pub fn validate(sk: &Sketch, si: usize) -> Result<(), String> {
+    validate_at(sk, si, REPORT_UNIT)
+}
+
+fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<(), String> {
     let mut pending = vec![si];
     let mut seen = std::collections::BTreeSet::new();
     while let Some(i) = pending.pop() {
@@ -517,7 +525,7 @@ pub fn validate(sk: &Sketch, si: usize) -> Result<(), String> {
             SolidDef::Revolve { face, .. } => *face,
             SolidDef::Body { .. } => { pending.extend(s.operands().iter().map(|&o| o as usize)); continue; }
         };
-        let poly = face_poly(sk, face as usize, REPORT_UNIT)
+        let poly = face_poly(sk, face as usize, unit)
             .ok_or_else(|| fail("self-intersecting or degenerate profile: a face must bound a simple nonzero region"))?;
         let reserved: &[&str] = match &s.def {
             SolidDef::Prism { .. } => &["near", "far"],
@@ -554,8 +562,8 @@ pub fn validate(sk: &Sketch, si: usize) -> Result<(), String> {
 
 pub fn bearing_errors(sk: &Sketch) -> Vec<(&crate::model::SolidBearing, String)> {
     sk.solid_bearings.iter().filter_map(|b| {
-        let exists = sk.solid_boundary(b.solid as usize, REPORT_UNIT).iter()
-            .any(|p| p.path == b.path && p.area() > 0.0);
+        let exists = sk.evaluated_solid(b.solid as usize, ApproximationPolicy::Report)
+            .is_ok_and(|s| s.surviving_faces().contains(&b.path));
         (!exists).then(|| (b, format!("`{}` has no surviving face to bear on", b.path)))
     }).collect()
 }
@@ -912,25 +920,6 @@ fn finish(facets: Vec<Facet>, faces: Vec<String>, of: &str) -> Prim {
 
 // -- resolving a document's solids into terms ---------------------------------------------------
 
-/// What a caller wants of a solid, and what the cache is keyed by beside it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Want {
-    /// The boundary: the mesh, the volume, the bounds.
-    Boundary,
-    /// The edges a view of it would draw, before visibility.
-    Edges,
-    /// The welded, face-grouped mesh a printer and a viewer take.
-    Mesh,
-}
-
-/// What a `Want` came to, remembered against everything it was read from.
-#[derive(Clone, Debug)]
-pub enum Cached {
-    Boundary(Vec<crate::csg::Piece>),
-    Edges(Vec<crate::csg::Edge>),
-    Mesh(crate::mesh::Mesh),
-}
-
 /// **Every number a solid was built from**, in one flat vector — the memo key.
 ///
 /// `curve_polyline`'s bargain: a result is remembered against what it reads rather than
@@ -946,6 +935,12 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
             continue;
         }
         let Some(sol) = sk.solids.get(s as usize) else { continue };
+        v.push(s as f64);
+        // Include operation/operand identity and names: equal scalar values alone do not
+        // imply the same material or provenance. Length-prefix the structural encoding.
+        let structure = format!("{:?}", sol);
+        v.push(structure.len() as f64);
+        v.extend(structure.bytes().map(f64::from));
         match &sol.def {
             SolidDef::Prism { face, from, to } => {
                 v.push(from.value);
@@ -973,6 +968,9 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
 
 fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
     let Some(f) = sk.faces.get(fi as usize) else { return };
+    let structure = format!("{:?}", f);
+    v.push(structure.len() as f64);
+    v.extend(structure.bytes().map(f64::from));
     for e in &f.edges {
         for p in sk.entity_params(*e) {
             v.push(sk.params[p as usize].value);
@@ -999,6 +997,26 @@ fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
 /// groups are sets. An explicit work stack accepts deep acyclic bodies and detects cycles in
 /// sketches built directly through the model API as well as elaborated documents.
 pub fn resolve(sk: &Sketch, si: usize, unit: f64) -> Csg {
+    resolve_at(sk, si, unit, [0.0; 3])
+}
+
+// Choose a reachable source point before sweeping; never add a large world placement to
+// local triangles only to subtract it again. Page input precision is still bounded by f64.
+fn frame_origin(sk: &Sketch, si: usize, unit: f64) -> [f64; 3] {
+    let mut pending = vec![si];
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(i) = pending.pop() {
+        if !seen.insert(i) { continue; }
+        let Some(s) = sk.solids.get(i) else { continue };
+        if let Some(f) = s.face() {
+            if let Some(p) = face_poly(sk, f as usize, unit) { return p.lift(0); }
+        }
+        pending.extend(s.operands().into_iter().rev().map(|o| o as usize));
+    }
+    [0.0; 3]
+}
+
+fn resolve_at(sk: &Sketch, si: usize, unit: f64, origin: [f64; 3]) -> Csg {
     let mut prims = Vec::new();
     let mut names = BTreeMap::new();
     let mut pending = vec![(si as u32, false)];
@@ -1007,7 +1025,7 @@ pub fn resolve(sk: &Sketch, si: usize, unit: f64) -> Csg {
         if names.contains_key(&i) { continue; }
         let Some(s) = sk.solids.get(i as usize) else { continue };
         if ready {
-            let term = build(sk, i, unit, &mut prims, &names);
+            let term = build(sk, i, unit, origin, &mut prims, &names);
             names.insert(i, term);
             active.remove(&i);
         } else if active.insert(i) {
@@ -1048,13 +1066,17 @@ fn build(
     sk: &Sketch,
     si: u32,
     unit: f64,
+    origin: [f64; 3],
     prims: &mut Vec<Prim>,
     names: &BTreeMap<u32, Term>,
 ) -> Term {
     let Some(sol) = sk.solids.get(si as usize) else { return Term::Empty };
     let name = sol.name.clone();
+    let local = |mut p: FacePoly| {
+        p.basis.o = std::array::from_fn(|k| p.basis.o[k] - origin[k]); p
+    };
     let t = match &sol.def {
-        SolidDef::Prism { face, from, to } => match face_poly(sk, *face as usize, unit)
+        SolidDef::Prism { face, from, to } => match face_poly(sk, *face as usize, unit).map(local)
             .and_then(|p| prism(&p, from.value, to.value, &name))
         {
             Some(p) => {
@@ -1064,7 +1086,7 @@ fn build(
             None => Term::Empty,
         },
         SolidDef::Revolve { face, axis, sweep, sense } => {
-            let built = face_poly(sk, *face as usize, unit).and_then(|p| {
+            let built = face_poly(sk, *face as usize, unit).map(local).and_then(|p| {
                 let l = sk.lines.get(*axis as usize)?;
                 let (c, s, o) = p.pose;
                 let a = plane::in_view(c, s, o, sk.point_xy(l.p1 as usize));

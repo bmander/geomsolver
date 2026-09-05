@@ -36,38 +36,51 @@ const FLOAT: i64 = 5126;
 /// Which solids is the caller's: `overview::objects` is the rule the box uses (a solid is an
 /// object exactly when nothing else is made of it), and a caller that wants one names one.
 pub fn glb(sk: &Sketch, solids: &[usize], unit: f64) -> Vec<u8> {
-    let parts: Vec<(String, Mesh)> = solids
-        .iter()
-        .map(|&i| (sk.solid_name(i), sk.solid_mesh(i, unit)))
-        .collect();
-    // glTF is in metres; a document that names millimetres is scaled by that, and one that names
-    // no unit is left alone because there is nothing to convert from
-    let scale = sk.units.length.map(|(_, mm_per)| mm_per / 1000.0).unwrap_or(1.0);
-    let (json, bin) = build(&parts, scale, sk.units.name());
-    container(&json.dump(None), &bin)
+    checked_glb(sk, solids, crate::solid::ApproximationPolicy::from_unit(unit)).unwrap_or_default()
 }
 
-/// The manifest and the blob.  Split out so a test can read either without unpacking a file.
-pub fn build(parts: &[(String, Mesh)], scale: f64, unit_name: Option<&str>) -> (Json, Vec<u8>) {
-    // Local positions preserve small features far from the world origin. Each solid's parent
-    // node carries its translation in metres. Faces remain windows into one shared buffer.
-    // The two halves are the same length part for part, so one offset serves both accessors.
-    let origins: Vec<[f64; 3]> = parts
-        .iter()
-        .map(|(_, m)| {
-            if m.positions.len() >= 3 {
-                [m.positions[0], m.positions[1], m.positions[2]]
-            } else {
-                [0.0; 3]
+/// Export validated local meshes with their explicit world placements. Invalid geometry or
+/// triangles unrepresentable by glTF's float32 positions return a diagnostic.
+pub fn checked_glb(sk: &Sketch, solids: &[usize], policy: crate::solid::ApproximationPolicy) -> Result<Vec<u8>, String> {
+    let values = solids.iter().map(|&i| sk.evaluated_solid(i, policy)).collect::<Result<Vec<_>, _>>()?;
+    let parts: Vec<_> = solids.iter().zip(&values).map(|(&i, s)| (sk.solid_name(i), s.mesh().clone())).collect();
+    let origins: Vec<_> = values.iter().map(|s| s.origin().0).collect();
+    let scale = sk.units.length.map(|(_, mm_per)| mm_per / 1000.0).unwrap_or(1.0);
+    if !scale.is_finite() || scale <= 0.0 || origins.iter().flatten().any(|x| !(x * scale).is_finite()) {
+        return Err("GLB placement or unit scale is not representable".into());
+    }
+    for (name, m) in &parts {
+        for t in m.positions.chunks_exact(9) {
+            let v: [[f64; 3]; 3] = std::array::from_fn(|i| std::array::from_fn(|k| (t[i * 3 + k] * scale) as f32 as f64));
+            if v.iter().flatten().any(|x| !x.is_finite()) || crate::mesh::degenerate(v[0], v[1], v[2]) {
+                return Err(format!("`{name}` has local triangles that cannot be represented by float32 GLB coordinates"));
             }
-        })
-        .collect();
+        }
+    }
+    let (json, bin) = build_placed(&parts, &origins, scale, sk.units.name());
+    Ok(container(&json.dump(None), &bin))
+}
+
+/// Compatibility helper for a caller-owned world mesh. Production exports use evaluated
+/// local geometry directly, without a lossy round trip through world vertex positions.
+pub fn build(parts: &[(String, Mesh)], scale: f64, unit_name: Option<&str>) -> (Json, Vec<u8>) {
+    let origins: Vec<[f64; 3]> = parts.iter().map(|(_, m)| {
+        if m.positions.len() >= 3 { [m.positions[0], m.positions[1], m.positions[2]] } else { [0.0; 3] }
+    }).collect();
+    let mut local = parts.to_vec();
+    for ((_, m), origin) in local.iter_mut().zip(&origins) {
+        for (i, v) in m.positions.iter_mut().enumerate() { *v -= origin[i % 3]; }
+    }
+    build_placed(&local, &origins, scale, unit_name)
+}
+
+fn build_placed(parts: &[(String, Mesh)], origins: &[[f64; 3]], scale: f64, unit_name: Option<&str>) -> (Json, Vec<u8>) {
     let mut bin: Vec<u8> = Vec::new();
     let mut base: Vec<usize> = Vec::with_capacity(parts.len());
-    for ((_, m), origin) in parts.iter().zip(&origins) {
+    for (_, m) in parts {
         base.push(bin.len());
-        for (i, v) in m.positions.iter().enumerate() {
-            bin.extend((((v - origin[i % 3]) * scale) as f32).to_le_bytes());
+        for v in &m.positions {
+            bin.extend(((v * scale) as f32).to_le_bytes());
         }
     }
     let normals_at = bin.len();
@@ -113,7 +126,7 @@ pub fn build(parts: &[(String, Mesh)], scale: f64, unit_name: Option<&str>) -> (
             for t in g.start..g.start + g.count {
                 for v in 0..3 {
                     for k in 0..3 {
-                        let x = ((m.positions[(t * 3 + v) * 3 + k] - origins[pi][k]) * scale) as f32
+                        let x = (m.positions[(t * 3 + v) * 3 + k] * scale) as f32
                             as f64;
                         lo[k] = lo[k].min(x);
                         hi[k] = hi[k].max(x);

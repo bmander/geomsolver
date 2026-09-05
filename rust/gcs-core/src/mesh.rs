@@ -98,7 +98,7 @@ fn all_corners(pts: &[[f64; 3]]) -> bool {
 }
 
 /// A triangle with no area — three collinear points, which a zero-length side would give.
-fn degenerate(a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> bool {
+pub(crate) fn degenerate(a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> bool {
     let e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
     let e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
     let n = plane::norm(plane::cross(e1, e2));

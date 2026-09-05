@@ -386,10 +386,8 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
     // buffer settles that per pixel, which is the whole of why this path exists.
     //
     for i in objects(sk) {
-        // `0`, so the edges are cut at the same `mesh_unit` the mesh is and the two share one
-        // boundary evaluation — the cache holds one answer per solid, so a second unit here
-        // would not be a second entry but the first one thrown away and recomputed
-        for e in sk.solid_edges(i, 0.0) {
+        let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else { continue };
+        for e in solid.world_edges() {
             if e.smooth {
                 continue;
             }
@@ -498,19 +496,17 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
         if shaded {
             let mut all: Vec<crate::csg::Piece> = Vec::new();
             for &i in &shown {
-                all.extend(sk.solid_boundary(i, unit));
+                if let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) {
+                    all.extend(solid.world_boundary());
+                }
             }
             for it in shell(&all, dir, &eye, flat) {
                 items.push(it);
             }
         }
         for &i in &shown {
-            let csg = crate::solid::resolve(sk, i, unit);
-            let eps = csg.epsilon();
-            // `0`, so the edges are cut at the same `mesh_unit` the mesh is and the two share one
-        // boundary evaluation — the cache holds one answer per solid, so a second unit here
-        // would not be a second entry but the first one thrown away and recomputed
-        for e in sk.solid_edges(i, 0.0) {
+            let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else { continue };
+            for e in solid.edges() {
                 if e.smooth {
                     let (a, b) = (crate::plane::dot(e.na, dir), crate::plane::dot(e.nb, dir));
                     if a * b > 0.0 || (a.abs() < 1e-12 && b.abs() < 1e-12) {
@@ -518,14 +514,14 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
                     }
                 }
                 let m = [(e.a[0] + e.b[0]) / 2.0, (e.a[1] + e.b[1]) / 2.0, (e.a[2] + e.b[2]) / 2.0];
-                if crate::hidden::behind(&csg, m, dir, eps, None) {
+                if solid.occludes(crate::solid::LocalPoint(m), dir, None) {
                     continue;
                 }
                 items.push(Item {
                     of: None,
                     in_plane: None,
                     what: Part::Solid,
-                    pts: vec![flat(e.a), flat(e.b)],
+                    pts: vec![flat(solid.to_world(crate::solid::LocalPoint(e.a)).0), flat(solid.to_world(crate::solid::LocalPoint(e.b)).0)],
                     shade: None,
                 });
             }

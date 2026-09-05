@@ -276,15 +276,15 @@ pub fn positions(sk: &Sketch, map: &crate::program::SourceMap) -> Vec<(String, f
         if e.kind != crate::model::EntKind::Solid {
             continue;
         }
-        if crate::solid::validate(sk, e.i()).is_err() { continue; }
-        let pieces = sk.solid_boundary(e.i(), crate::solid::REPORT_UNIT);
-        let b = crate::mesh::bounds(&pieces);
+        let Ok(solid) = sk.evaluated_solid(e.i(), crate::solid::ApproximationPolicy::Report) else { continue };
+        let pieces = solid.boundary();
+        let b = solid.world_bounds();
         // Boundary pieces retain the primitive's absolute name. Recover the route through
         // this body's operands instead of dropping the first segment of every primitive.
-        let paths = crate::solid::operand_paths(sk, e.i());
+        let paths = solid.provenance_paths();
         for n in names {
-            out.insert(format!("{n}.volume"), crate::mesh::volume(&pieces));
-            out.insert(format!("{n}.area"), crate::mesh::area(&pieces));
+            out.insert(format!("{n}.volume"), solid.volume());
+            out.insert(format!("{n}.area"), solid.area());
             if !b.is_empty() {
                 for (k, axis) in ["x", "y", "z"].iter().enumerate() {
                     out.insert(format!("{n}.bounds.{axis}0"), b.lo[k]);
@@ -292,7 +292,7 @@ pub fn positions(sk: &Sketch, map: &crate::program::SourceMap) -> Vec<(String, f
                 }
             }
             let mut faces: std::collections::BTreeMap<String, f64> = Default::default();
-            for p in &pieces {
+            for p in pieces {
                 if let Some((primitive, relative)) = paths.iter()
                     .filter(|(primitive, _)| p.path.starts_with(&format!("{primitive}.")))
                     .max_by_key(|(primitive, _)| primitive.len())
