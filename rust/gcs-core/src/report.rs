@@ -174,7 +174,7 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
                     .map(|v| {
                         let mut o = object([
                             ("statement", Json::Str(v.text.clone())),
-                            ("measured", Json::Num(v.measured)),
+                            ("measured", if v.measured.is_finite() { Json::Num(v.measured) } else { Json::Null }),
                             ("tolerance", Json::Num(v.tolerance)),
                             (
                                 "verdict",
@@ -188,6 +188,14 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
                                 ),
                             ),
                         ]);
+                        if v.samples > 0 {
+                            o.set("method", Json::Str("sampling".into()));
+                            o.set("samples", Json::Int(v.samples as i64));
+                            o.set(
+                                "failedSamples",
+                                Json::Arr(v.failed_samples.iter().map(|x| Json::Num(*x)).collect()),
+                            );
+                        }
                         if let Some(w) = v.worst {
                             o.set("worst", Json::Num(w));
                         }

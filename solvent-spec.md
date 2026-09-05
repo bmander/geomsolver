@@ -877,6 +877,8 @@ Both operands MUST name solids (**E040** naming the kind that arrived).  `clear`
 
 **A verdict is a measurement, not a yes or no**, and it carries its own uncertainty.  An implementation MUST report, for each such claim: what was measured — a distance, negative where the two overlap — and how far the answer could be wrong.  A claim decided within that margin is reported **undecided**, which is a third answer and not a failure.  Where an implementation evaluates a solid by reducing its round surfaces to flats (§6.9), the margin is the sagitta of that reduction, and a faceted solid lies inside the true one; an implementation that computes exactly reports a margin of zero.  Two claims that fail, one by a hair and one by a hand's breadth, are different drawings, and a reader is owed the difference.
 
+*Implementation note:* the kernel measures interference as **common-material thickness**: the diameter of the largest ball contained in the intersection, reported with a negative sign. Thus two 10 mm cubes overlapping by 5 mm report −5 mm, and identical 10 mm cubes report −10 mm. A bounded spatial search includes its remaining measurement error in the reported uncertainty. This convention applies to disconnected and nonconvex intersections too; disjointness and containment remain required predicates, whatever sign is written for a gap.
+
 The trichotomy of §9.7 does **not** apply here.  *Consuming* asks whether enforcing a claim would take a freedom, and there is no rank to take: a solid claim holds, is refuted, or is undecided.
 
 **A claim over a sweep.**  Every claim in the language is judged at one pose, and a fact about a *cycle* — a disc clearing a cylinder's mouth all the way round, a port open through mid-stroke — is not one of those.
@@ -892,7 +894,7 @@ claim over crank.theta in (0deg, 360deg) {
 
 - `NAME` MUST be a **free variable** of the drawing (§5) — an unknown the solver answers for.  A `param` is a number the document already fixed and sweeping a constant is not a question; naming one, or naming geometry, is **E040**.
 - `A` and `B` are read in the units the free variable's readers are written in: an interval of an angle is an angle, and one of a length is a length.
-- An implementation MUST state that its answer is by **sampling**, and how many poses it took.  A claim that holds at every sample is a claim that held at every sample; a swept claim is honest about that in the way a faceted one is honest about its margin.
+- An implementation MUST state that its answer is by **sampling**, and how many poses it took. A pose that did not solve or produced invalid solid geometry cannot certify the claim; the report identifies those failed parameter values, and a sweep with unresolved poses cannot be reported as holding.  A claim that holds at every sample is a claim that held at every sample; a swept claim is honest about that in the way a faceted one is honest about its margin.
 
 *Non-normative:* the two together are what make a drawing's claims a test suite for the *object* rather than for one picture of it at one moment.  The loop an author works in — write, run, read the verdicts — needs the verdicts to be about the thing being made.
 

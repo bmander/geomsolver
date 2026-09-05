@@ -352,6 +352,48 @@ fn difference(a: Vec<Poly>, b: Vec<Poly>, tol: f64) -> Vec<Poly> {
     na.all()
 }
 
+fn intersection(a: Vec<Poly>, b: Vec<Poly>, tol: f64) -> Vec<Poly> {
+    if a.is_empty() || b.is_empty() {
+        return Vec::new();
+    }
+    let mut na = Node::new(a, tol);
+    let mut nb = Node::new(b, tol);
+    na.invert();
+    nb.clip_to(&na, tol);
+    nb.invert();
+    na.clip_to(&nb, tol);
+    nb.clip_to(&na, tol);
+    na.build(nb.all(), tol);
+    na.invert();
+    na.all()
+}
+
+/// Common material, evaluated in one local frame. Boundary sampling cannot find all crossings.
+pub(crate) fn common_boundary(a: &Csg, b: &Csg, eps: f64) -> Vec<Piece> {
+    if !a.bbox().overlaps(&b.bbox()) {
+        return Vec::new();
+    }
+    let origin = a
+        .prims
+        .iter()
+        .flat_map(|p| &p.facets)
+        .find_map(|f| f.pts.first())
+        .copied()
+        .unwrap_or([0.0; 3]);
+    let tol = eps * 1e-3;
+    intersection(polys_of(a, &a.term, tol, origin), polys_of(b, &b.term, tol, origin), tol)
+        .into_iter()
+        .filter(|p| p.pts.len() >= 3)
+        .map(|p| Piece {
+            pts: p.pts.iter().map(|v| std::array::from_fn(|k| v[k] + origin[k])).collect(),
+            n: p.n,
+            path: p.path,
+            prim: p.prim,
+            smooth: p.smooth,
+        })
+        .collect()
+}
+
 fn polys_of(csg: &Csg, t: &crate::solid::Term, tol: f64, origin: [f64; 3]) -> Vec<Poly> {
     use crate::solid::Term;
     match t {

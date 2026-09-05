@@ -152,33 +152,31 @@ fn solid_claim(
             }
         }
     }
-    let gap = if word.takes_gap() {
-        match w.args.iter().find_map(|a| match a {
-            crate::syntax::OpArg::Dim(text, span) => Some((text.clone(), *span)),
-            _ => None,
-        }) {
-            Some((text, span)) => {
-                match crate::flatten::value_aff(&text, &BTreeMap::new(), sk.units) {
-                    Ok(v) if v.dim.require(crate::units::Dim::LENGTH, word.as_str()).is_ok() => {
-                        Extent { text: text.trim().to_string(), value: v.c }
-                    }
-                    Ok(_) | Err(_) => {
-                        say(Code::E103, span, format!("`{}` asks for a length", word.as_str()));
-                        return;
-                    }
+    let gap = match (word.takes_gap(), w.args.as_slice()) {
+        (false, []) => Extent { text: String::new(), value: 0.0 },
+        (true, [crate::syntax::OpArg::Dim(text, span)]) => {
+            match crate::flatten::value_aff(text, &BTreeMap::new(), sk.units) {
+                Ok(v) if v.c.is_finite()
+                    && v.dim.require(crate::units::Dim::LENGTH, word.as_str()).is_ok() =>
+                {
+                    Extent { text: text.trim().to_string(), value: v.c }
+                }
+                _ => {
+                    say(Code::E103, *span, format!("`{}` asks for a finite length", word.as_str()));
+                    return;
                 }
             }
-            None => {
-                say(
-                    Code::E040,
-                    st.span,
-                    format!("`{}` asks for room: `{}(2mm)`", word.as_str(), word.as_str()),
-                );
-                return;
-            }
         }
-    } else {
-        Extent { text: String::new(), value: 0.0 }
+        (true, []) => {
+            say(Code::E040, st.span,
+                format!("`{}` asks for room: `{}(2mm)`", word.as_str(), word.as_str()));
+            return;
+        }
+        _ => {
+            say(Code::E040, st.span, format!("`{}` takes {}", word.as_str(),
+                if word.takes_gap() { "exactly one length argument" } else { "no arguments" }));
+            return;
+        }
     };
     sk.solid_claims.push(crate::model::SolidClaim {
         word,
@@ -501,29 +499,27 @@ fn sweep_of_claim(
         }
         return None;
     }
-    // **the interval is read in the unknown's own units**, which is what the dimensions reading
-    // it are written in: `(0deg, 360deg)` is radians to the kernels and `(0mm, 20mm)` is a
-    // length to them unchanged.  Converting everything as an angle put a sweep of millimetres
-    // sixty times too small and reported a claim that held over almost none of its interval.
+    let dimension = *sk.free_dimensions.get(&name)?;
+    // Free parameters are stored in user units. In particular, an angular unknown is in
+    // degrees; its readers' affine coefficients own the radians conversion into kernels.
+    // Check the inferred variable dimension before assigning either endpoint.
     let mut num = |a: &crate::syntax::Arg, what: &str| -> Option<f64> {
         let crate::syntax::Arg::Dim { text, span } = a else { return None };
         match crate::flatten::value_aff(text, &BTreeMap::new(), sk.units) {
-            Ok(v) if v.dim == crate::units::Dim::ANGLE => {
-                Some(crate::expr::to_arg_units(crate::constraints::SpecKind::Angle, v.c))
+            Ok(v) if v.c.is_finite() && v.dim.require(dimension, &name).is_ok() => Some(v.c),
+            Ok(_) => {
+                say(Code::E103, *span,
+                    format!("`{what}` for `{name}` must be a finite {}", dimension.name()));
+                None
             }
-            Ok(v) => Some(v.c),
             Err(e) => {
-                diags.push(Diag {
-                    code: Code::E103,
-                    span: *span,
-                    stmt: Some(st.id),
-                    message: format!("`{what}`: {e}"),
-                });
+                say(Code::E103, *span, format!("`{what}`: {e}"));
                 None
             }
         }
     };
-    Some(crate::model::Sweep { name, from: num(&c.from, "from")?, to: num(&c.to, "to")? })
+    let (from, to) = (num(&c.from, "from")?, num(&c.to, "to")?);
+    Some(crate::model::Sweep { name, from, to })
 }
 
 /// `boss on cyl`: an `on` whose two operands are both solids.  Asked of the *resolver*, which

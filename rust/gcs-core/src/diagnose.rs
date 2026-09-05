@@ -16,11 +16,11 @@ use crate::cgraph::coincident_classes;
 use crate::constraints::{same_constraint, CKind, Constraint};
 use crate::graph;
 use crate::linalg::{rank_and_nullspace, Mat};
-use crate::system::RANK_TOL;
 use crate::model::{EntRef, Sketch};
 use crate::newton::Method;
 use crate::solve::SolveOpts;
 use crate::system::System;
+use crate::system::RANK_TOL;
 use crate::witness::{analyze_with, movable_columns, screen, shaky_warning, WitnessReport};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -91,6 +91,8 @@ pub fn judge_solids(sk: &crate::model::Sketch) -> Vec<SolidVerdict> {
                     tolerance: v.tolerance,
                     holds: v.holds,
                     worst: None,
+                    samples: 0,
+                    failed_samples: Vec::new(),
                 });
             }
             Some(sw) => {
@@ -99,40 +101,58 @@ pub fn judge_solids(sk: &crate::model::Sketch) -> Vec<SolidVerdict> {
                 // seed and §9.7's for a claim, said once more where it would be easiest to break
                 let Some(&p) = sk.free_vars.get(&sw.name) else { continue };
                 let mut worst: Option<(f64, crate::clear::Verdict)> = None;
+                let mut failed_samples = Vec::new();
+                let mut holds = Some(true);
                 for k in 0..=SWEEP_STEPS {
-                    let t = sw.from + (sw.to - sw.from) * k as f64 / SWEEP_STEPS as f64;
+                    let fraction = k as f64 / SWEEP_STEPS as f64;
+                    // A finite interval can have an overflowing endpoint difference.
+                    let t = sw.from * (1.0 - fraction) + sw.to * fraction;
                     let mut scratch = sk.clone();
-                    // already in the unknown's own units: `sweep_of_claim` converted an angle
-                    // where the document wrote one and left a length alone
+                    // Already in the unknown's user units, including degrees for angles.
                     scratch.params[p as usize].value = t;
                     scratch.params[p as usize].fixed = true;
                     scratch.solid_cache.borrow_mut().clear();
-                    let _ = crate::solve::solve(&mut scratch, crate::solve::SolveOpts::default());
+                    let result =
+                        crate::solve::solve(&mut scratch, crate::solve::SolveOpts::default());
+                    if !result.success
+                        || crate::solid::validate(&scratch, c.a as usize).is_err()
+                        || crate::solid::validate(&scratch, c.b as usize).is_err()
+                    {
+                        failed_samples.push(t);
+                        if holds != Some(false) {
+                            holds = None;
+                        }
+                        continue;
+                    }
                     let v = crate::clear::judge(
                         &scratch, c.word, c.a as usize, c.b as usize, c.gap.value, unit,
                     );
+                    holds = match (holds, v.holds) {
+                        (Some(false), _) | (_, Some(false)) => Some(false),
+                        (None, _) | (_, None) => None,
+                        _ => Some(true),
+                    };
                     if worst.as_ref().is_none_or(|(_, w)| v.measured < w.measured) {
                         worst = Some((t, v));
                     }
                 }
-                if let Some((t, v)) = worst {
-                    out.push(SolidVerdict {
-                        stmt: c.stmt,
-                        text,
-                        measured: v.measured,
-                        tolerance: v.tolerance,
-                        holds: v.holds,
-                        worst: Some(t),
-                    });
-                }
+                out.push(SolidVerdict {
+                    stmt: c.stmt,
+                    text,
+                    measured: worst.as_ref().map(|(_, v)| v.measured).unwrap_or(f64::NAN),
+                    tolerance: worst.as_ref().map(|(_, v)| v.tolerance).unwrap_or(0.0),
+                    holds,
+                    worst: worst.map(|(t, _)| t),
+                    samples: SWEEP_STEPS + 1,
+                    failed_samples,
+                });
             }
         }
     }
     out
 }
 
-/// How many poses a swept claim is judged at.  Enough that a clearance minimum a degree wide is
-/// found, and few enough that a claim costs a second and not a minute.
+/// Number of uniform intervals in a sampled sweep; both endpoints are included.
 pub const SWEEP_STEPS: usize = 36;
 
 /// What one claim about two solids came to, and where it was written.
@@ -144,11 +164,15 @@ pub struct SolidVerdict {
     pub text: String,
     /// What was measured: a distance, negative where two solids overlap.
     pub measured: f64,
-    /// How far the faceting could be wrong.  A claim decided within this is `None`.
+    /// Faceting uncertainty plus any remaining overlap-search error.
     pub tolerance: f64,
     pub holds: Option<bool>,
     /// For a swept claim, the value of the free variable at the worst pose.
     pub worst: Option<f64>,
+    /// Zero for a single pose; otherwise the number of attempted sample solves.
+    pub samples: usize,
+    /// Parameter values with no solved, valid geometry. These cannot certify a claim.
+    pub failed_samples: Vec<f64>,
 }
 
 #[derive(Clone, Debug)]

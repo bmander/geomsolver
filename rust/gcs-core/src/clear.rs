@@ -7,13 +7,10 @@
 //! words are that, and they are **judged and never solved** — a claim about a solid can no more
 //! move geometry than a `project` claim can, because nothing three-dimensional is an unknown.
 //!
-//! **The measurement is exact on the faceted solids, and a bound on the true ones.**  The
-//! implicit reading of a term — `min`/`max` over its primitives — is only a *lower* bound for a
-//! difference, so it can prove a clearance holds and can never prove one fails; it is used here
-//! to skip the pairs that are obviously far apart.  The answer comes from the boundaries
-//! themselves, piece against piece, which *is* the distance between the two faceted solids.  What
-//! remains approximate is the faceting: a faceted arc lies inside the true one by the sagitta,
-//! so a verdict carries that as its uncertainty rather than pretending to be exact.
+//! Separation is the least boundary distance. Interference is measured as common-material
+//! thickness: the diameter of the largest ball in the evaluated intersection. This remains
+//! a meaningful length for identical, crossing and nonconvex bodies. Its bounded numerical
+//! search reports the remaining error, in addition to any curved-faceting uncertainty.
 
 use crate::csg::Piece;
 use crate::model::Sketch;
@@ -23,11 +20,9 @@ use crate::solid::{self, Box3};
 /// What a claim about two solids came to.
 #[derive(Clone, Debug)]
 pub struct Verdict {
-    /// The distance between them, negative where they overlap.
+    /// Separation distance, or negative common-material thickness when they overlap.
     pub measured: f64,
-    /// How far the faceting could be wrong — the sagitta of the coarsest round surface either
-    /// solid has.  A verdict nearer than this to its own threshold is *undecided*, which is the
-    /// honest answer and not a failure.
+    /// Measurement uncertainty: curved-faceting error plus any remaining overlap-search error.
     pub tolerance: f64,
     /// True where it holds, false where this drawing is a counterexample, `None` where the
     /// faceting cannot tell.
@@ -40,63 +35,102 @@ pub struct Verdict {
 /// Culled by bounding box before anything is measured, which is what keeps a part with thirty
 /// features from paying for every pair of its faces.
 pub fn distance(a: &[Piece], b: &[Piece], acsg: &solid::Csg, bcsg: &solid::Csg, eps: f64) -> f64 {
-    // overlap first: a point of one inside the other is an interference, and no distance between
-    // boundaries would say so — two solids one inside the other have a positive gap
-    if let Some(d) = overlap(a, b, acsg, bcsg, eps) {
-        return d;
-    }
-    let mut best = f64::INFINITY;
-    for p in a {
-        let pb = grow(&p.bbox_of(), best);
-        for q in b {
-            if !q.bbox_of().overlaps(&pb) {
-                continue;
-            }
-            let d = piece_gap(p, q);
-            if d < best {
-                best = d;
-            }
-        }
-    }
-    best
+    // Boundaries can be separated even when one solid contains the other.
+    overlap(acsg, bcsg, eps).map_or_else(|| boundary_gap(a, b), |(d, _)| d)
 }
 
-/// How far *into* each other they reach, as a negative number, or `None` when they are apart.
-///
-/// Every vertex of each boundary and the middle of every edge of it, classified against the
-/// other: the samples are the pieces' own corners rather than a grid, so nothing here is
-/// arbitrary and a solid that pokes through a face by a hair is found at the corner that did it.
+/// Negative common-material thickness: the diameter of the largest ball in A ∩ B.
+/// Unlike a pushed boundary sample, this is a geometric length, also for identical solids
+/// and crossings with no contained vertices. A Lipschitz branch-and-bound search supplies
+/// an explicit error interval when the common region is nonconvex or the work limit is hit.
 fn overlap(
-    a: &[Piece],
-    b: &[Piece],
     acsg: &solid::Csg,
     bcsg: &solid::Csg,
     eps: f64,
-) -> Option<f64> {
-    let mut deepest = 0.0f64;
-    let mut hit = false;
-    for (pieces, other) in [(a, bcsg), (b, acsg)] {
-        for p in pieces {
-            for i in 0..p.pts.len() {
-                let v = p.pts[i];
-                let w = p.pts[(i + 1) % p.pts.len()];
-                let m = [(v[0] + w[0]) / 2.0, (v[1] + w[1]) / 2.0, (v[2] + w[2]) / 2.0];
-                for x in [v, m] {
-                    // pushed *inward* off the surface, so touching is not overlapping
-                    let q = [
-                        x[0] - eps * p.n[0],
-                        x[1] - eps * p.n[1],
-                        x[2] - eps * p.n[2],
-                    ];
-                    if other.inside(q) {
-                        hit = true;
-                        deepest = deepest.max(eps);
-                    }
-                }
+) -> Option<(f64, f64)> {
+    let common = crate::csg::common_boundary(acsg, bcsg, eps);
+    if common.is_empty() || crate::mesh::volume(&common) <= crate::mesh::area(&common) * eps * 1e-3
+    {
+        return None;
+    }
+    let bounds = crate::mesh::bounds(&common);
+    let mut upper =
+        (0..3).map(|k| (bounds.hi[k] - bounds.lo[k]) * 0.5).fold(f64::INFINITY, f64::min);
+    // Supporting slabs bound every inscribed ball, whether or not the region is convex.
+    for piece in common.iter().step_by((common.len() / 48).max(1)) {
+        let origin = piece.pts[0];
+        let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+        for p in common.iter().flat_map(|p| &p.pts) {
+            let h = plane::dot(piece.n, std::array::from_fn(|k| p[k] - origin[k]));
+            lo = lo.min(h);
+            hi = hi.max(h);
+        }
+        upper = upper.min((hi - lo) * 0.5);
+    }
+    let signed = |x: [f64; 3]| {
+        let d = common.iter().map(|p| point_to_piece(x, p)).fold(f64::INFINITY, f64::min);
+        if acsg.inside(x) && bcsg.inside(x) {
+            d
+        } else {
+            -d
+        }
+    };
+    struct Cell {
+        lo: [f64; 3],
+        hi: [f64; 3],
+        upper: f64,
+    }
+    impl PartialEq for Cell {
+        fn eq(&self, b: &Self) -> bool {
+            self.upper == b.upper
+        }
+    }
+    impl Eq for Cell {}
+    impl PartialOrd for Cell {
+        fn partial_cmp(&self, b: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(b))
+        }
+    }
+    impl Ord for Cell {
+        fn cmp(&self, b: &Self) -> std::cmp::Ordering {
+            self.upper.total_cmp(&b.upper)
+        }
+    }
+    let center =
+        |lo: [f64; 3], hi: [f64; 3]| std::array::from_fn(|k| lo[k] + (hi[k] - lo[k]) * 0.5);
+    let mut lower = signed(center(bounds.lo, bounds.hi)).max(0.0).min(upper);
+    let tolerance = (upper * 1e-5).max(eps * 1e-3);
+    let mut cells = std::collections::BinaryHeap::new();
+    cells.push(Cell { lo: bounds.lo, hi: bounds.hi, upper });
+    for _ in 0..4096 {
+        let Some(cell) = cells.pop() else { break };
+        if cell.upper - lower <= tolerance {
+            cells.push(cell);
+            break;
+        }
+        let k = (0..3)
+            .max_by(|&a, &b| (cell.hi[a] - cell.lo[a]).total_cmp(&(cell.hi[b] - cell.lo[b])))
+            .unwrap();
+        let mid = center(cell.lo, cell.hi)[k];
+        for side in [false, true] {
+            let (mut lo, mut hi) = (cell.lo, cell.hi);
+            if side {
+                lo[k] = mid;
+            } else {
+                hi[k] = mid;
+            }
+            let value = signed(center(lo, hi));
+            lower = lower.max(value).min(upper);
+            let radius = plane::norm(std::array::from_fn(|k| (hi[k] - lo[k]) * 0.5));
+            let bound = (value + radius).min(upper);
+            if bound > lower {
+                cells.push(Cell { lo, hi, upper: bound });
             }
         }
     }
-    hit.then_some(-deepest)
+    let remaining = cells.peek().map(|c| c.upper).unwrap_or(lower).max(lower);
+    // Diameter lies in [2*lower, 2*remaining]; report its midpoint and half-width.
+    Some((-(lower + remaining), remaining - lower))
 }
 
 /// Is every point of `a` a point of `b`? Evaluate A − B so an enclosed void is tested too.
@@ -118,6 +152,19 @@ fn grow(b: &Box3, k: f64) -> Box3 {
 fn piece_gap(p: &Piece, q: &Piece) -> f64 {
     let mut best = f64::INFINITY;
     for (a, b) in [(p, q), (q, p)] {
+        for (i, v) in a.pts.iter().enumerate() {
+            let w = a.pts[(i + 1) % a.pts.len()];
+            let h = plane::dot(b.n, std::array::from_fn(|k| v[k] - b.pts[0][k]));
+            let end = plane::dot(b.n, std::array::from_fn(|k| w[k] - b.pts[0][k]));
+            if h * end < 0.0 {
+                let t = h / (h - end);
+                let x = std::array::from_fn(|k| v[k] + t * (w[k] - v[k]));
+                if point_to_piece(x, b) <= plane::norm(std::array::from_fn(|k| w[k] - v[k])) * 1e-12
+                {
+                    return 0.0;
+                }
+            }
+        }
         for v in &a.pts {
             best = best.min(point_to_piece(*v, b));
         }
@@ -213,32 +260,52 @@ pub fn judge(
     unit: f64,
 ) -> Verdict {
     use crate::constraints::SolidWord as W;
-    let eps = sk.extent() * solid::EPS;
     let (pa, pb) = (sk.solid_boundary(a, unit), sk.solid_boundary(b, unit));
     let (ca, cb) = (solid::resolve(sk, a, unit), solid::resolve(sk, b, unit));
-    let tol = sagitta(unit);
-    let (measured, want) = match word {
-        W::Clear => (distance(&pa, &pb, &ca, &cb, eps), gap),
+    let eps = ca.epsilon().min(cb.epsilon());
+    let curved = ca.prims.iter().chain(&cb.prims).any(|p| p.facets.iter().any(|f| f.smooth));
+    let facet_tol = if curved { 2.0 * sagitta(unit) } else { 0.0 };
+    let compare = |measured: f64| {
+        if facet_tol > 0.0 && (measured - gap).abs() <= facet_tol {
+            None
+        } else {
+            Some(measured >= gap)
+        }
+    };
+    match word {
+        W::Clear => {
+            if let Some((measured, uncertainty)) = overlap(&ca, &cb, eps) {
+                let holds = if -measured - uncertainty > facet_tol { Some(false) } else { None };
+                Verdict { measured, tolerance: facet_tol + uncertainty, holds }
+            } else {
+                let measured = boundary_gap(&pa, &pb);
+                let holds = match compare(measured) {
+                    Some(false) => Some(false),
+                    _ if measured == 0.0 && facet_tol == 0.0 => Some(false),
+                    _ if measured <= facet_tol => None, // disjointness is still uncertain
+                    verdict => verdict,
+                };
+                Verdict { measured, tolerance: facet_tol, holds }
+            }
+        }
         W::Fits => {
-            // inside, with room: the distance from the left's boundary to the right's, signed
-            // *positive* while it is contained
             let inside = contained(&pa, &cb, eps);
             let d = boundary_gap(&pa, &pb);
-            (if inside { d } else { -d }, gap)
+            Verdict {
+                measured: if inside { d } else { -d },
+                tolerance: facet_tol,
+                holds: if inside { compare(d) } else { Some(false) },
+            }
         }
         W::Inside => {
             let inside = contained(&pa, &cb, eps);
-            (if inside { 1.0 } else { -1.0 }, 0.0)
+            Verdict {
+                measured: if inside { 1.0 } else { -1.0 },
+                tolerance: 0.0,
+                holds: Some(inside),
+            }
         }
-    };
-    let holds = if word == W::Inside {
-        Some(measured > 0.0)
-    } else if (measured - want).abs() <= tol {
-        None
-    } else {
-        Some(measured >= want)
-    };
-    Verdict { measured, tolerance: tol, holds }
+    }
 }
 
 /// The least the two boundaries come to each other, ignoring which side of which they are on —

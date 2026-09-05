@@ -754,6 +754,8 @@ pub struct Sketch {
     /// one the first time a name nothing defines is read and retires it when the last reader
     /// stops reading it, so nothing else in the document has to know they exist.
     pub free_vars: BTreeMap<String, u32>,
+    /// Physical dimensions inferred by expression evaluation, in user units (angles in degrees).
+    pub free_dimensions: BTreeMap<String, crate::units::Dim>,
     /// Each curve's polyline, remembered against everything it was computed from
     /// (`curve_polyline`).  A pick walks every drawn curve on every pointer move, and a traced
     /// curve's polyline is a march of `CURVE_STEPS` block solves — nine milliseconds a move on
@@ -1794,7 +1796,7 @@ impl Sketch {
             }
         }
         let csg = crate::solid::resolve(self, i, unit);
-        let v = crate::csg::boundary(&csg, self.extent() * crate::solid::EPS);
+        let v = crate::csg::boundary(&csg, csg.epsilon());
         self.solid_cache.borrow_mut().insert(
             (i, crate::solid::Want::Boundary),
             (key, crate::solid::Cached::Boundary(v.clone())),
@@ -1836,7 +1838,7 @@ impl Sketch {
             }
         }
         let csg = crate::solid::resolve(self, i, unit);
-        let v = crate::csg::edges(&csg, self.extent() * crate::solid::EPS);
+        let v = crate::csg::edges(&csg, csg.epsilon());
         self.solid_cache.borrow_mut().insert(
             (i, crate::solid::Want::Edges),
             (key, crate::solid::Cached::Edges(v.clone())),
