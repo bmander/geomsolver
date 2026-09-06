@@ -84,6 +84,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 |---|---|---|
 | `Int` | compile-time integer (parameters, counts, indices) | — (elaboration-time) |
 | `Scalar` | dimensionless real | 1 |
+| `group` | named bundle of numeric values, geometry aliases, or nested groups (§8.1) | 0 of its own |
 | `Length` | real with length dimension | 1 |
 | `Angle` | real with angle dimension | 1 |
 | `Point` | position in the plane | 2 |
@@ -211,6 +212,13 @@ The file tools use the file's top-level statements as an anonymous root. A file 
 component definitions has an empty root: opening it does not implicitly instantiate its last
 definition. An instance statement at file scope supplies the arguments and draws that component.
 
+**[0.21] An instance name is optional.** `Part(args)` contributes the same statements as
+`part: Part(args)`, with an independent expansion for each call. Use the named form when
+constraints or drawing files need to refer to its members. An unnamed instance's internal keys
+MUST NOT be exposed as writable source names. Operator calls such as `ccw(a, b, c)` retain
+their existing meaning.
+
+
 ```
 component Name(p1: Type1, p2: Type2, ...) {
     <statements>
@@ -219,11 +227,15 @@ component Name(p1: Type1, p2: Type2, ...) {
 
 ### 4.1 Parameters
 
-Parameters are passed by name or position at instantiation. A parameter of entity type (`Point`, `Circle`, `Frame`, `Line`) is **bound by aliasing** (P1): the formal name and the actual argument denote the same entity. A parameter of value type (`Int`, `Scalar`, `Length`, `Angle`, **[0.17]** `Side`) is a compile-time or definitional value; it contributes no unknowns. A `Side` is one of the words `left` and `right` (§9.2) and is not a number: it may be passed on to another instance and written in a selector, and nothing else.
+Parameters are passed by name or position at instantiation. A parameter of entity type (`Point`, `Circle`, `Frame`, `Line`) is **bound by aliasing** (P1): the formal name and the actual argument denote the same entity. A parameter of value type (`Int`, `Scalar`, `Length`, `Angle`, **[0.17]** `Side`) is a compile-time or definitional value; it contributes no unknowns. A `group` formal bundles values and geometry references (§8.1). A `Side` is one of the words `left` and `right` (§9.2) and is not a number: it may be passed on to another instance and written in a selector, and nothing else.
 
 **[0.17] Which way is a word, not a sign.** A distance measured **from a line** — a point to a line, a line to a line — is a **magnitude**: its solution set is *both* sides, and which one a solver finds is the seed's business (P3), as it is in every other sketcher. A negative one is an error (**E040**) wherever the number comes from, including a component's argument, since the kernel cannot tell one side from the other and the minus therefore said nothing a drawing could show. A statement that must pin a side writes the word — `p distance(12, side: left) ax`, left being of the line's own `p1 → p2` — and so does a tangency (`side: left | right`, which was `side: -1`). Where a sign is *arithmetic* rather than a convention — the run and the rise, signed from the first point to the second, and the directed angle of §9.4 — it stays a sign, because a component computes it from coordinates it is given; each gains the word that says the same thing in the open (`along: right | left | up | down`, `sense: cw | ccw`), and a document SHOULD prefer it. A component takes a side as a value of the type **`Side`** (`s: Side`, `side: s`), which is a word and not a number: encoded as ±1 it would put the unreadable idiom back one level down, inside every helper.
 
-**[0.17] Labels are mandatory past the entities.** An argument bound by position MUST bind a parameter of entity type, and MUST NOT be written after a labelled argument; both are **E004**, reported at the argument. So an instantiation is the entities it is written over, in order, and then every number by the name of the formal it fills — `Cylinder(swing, side, top, piv, rod, across, dir: dir, fw: fw, o_s: o_s, o_t: o_t)`. Position is a count, and a count is the one thing a reader of a long formal list cannot check: an argument written one place off binds to the formal beside the one it was meant for, which is a *different* mistake from the one it is then reported as — a `Length` complaining it is not an `Angle`, a hexagon's `phase` arriving as its side count, a plane arriving where a number was wanted. The rule costs the entities nothing, because their order is the one an assembly reads by, and it costs a number one word, which is the word that says which.
+**Labels are mandatory for numbers and sides.** A positional argument MUST bind an entity
+or group formal and MUST precede every labelled argument; either violation is **E004**.
+An argument MUST NOT be supplied twice. For example, `Frame(layout, dims: vtwin_dims)` passes
+a layout positionally and a dimension group by label, while `Cylinder(std.up, fw: 12mm,
+dims: vtwin_dims)` labels the numeric face-wall thickness.
 
 ### 4.2 Statement classes
 
@@ -231,7 +243,7 @@ Every statement belongs to exactly one class. The classification is normative be
 
 | Class | Statements | Affects solution set? |
 |---|---|---|
-| **Declaration** | entity declarations, `param`, `curve` family definitions, instance declarations, **[0.18]** the body rule (`on` and `cut` over two solids, §6.9) | introduces entities/aliases |
+| **Declaration** | entity declarations, `param`, `group`, `curve` family definitions, instance declarations, **[0.18]** the body rule (`on` and `cut` over two solids, §6.9) | introduces entities/aliases |
 | **Constraint** | predicate calls, `==` equations, **pinned seeds (`==`, §4.3) [0.2]**, orientation predicates, arc-branch and tangency-side decorations, `ring` symmetry, gauge statements | **yes** |
 | **Seed** *(was Hint)* | the `hint` statement (§11), **and every seed written inline in a `hint(…)` clause (§4.3, §6.4) [0.2] [0.7]** | **no (P3)** |
 | **Structure** | `repeat`/`cycle` blocks, `path` declarations (net of their derived constraints, §10.4), **[0.18]** `view` and `section` (§6.11), which ask for a picture and declare nothing | organizational |
@@ -290,7 +302,8 @@ no one pose to record.
 - The scope of a name is the entire component body in which it is declared (P2). Forward reference is legal and idiomatic.
 - Redeclaration of a name within one body is an error (**E001**). A `param` and a named dimension (§9.1) declare a name alike, so `param w` beside `distance(w = 60)` is E001.
 - Instance members are accessed by dotted paths: `t.lead`, `g.hub.origin` — a dimension named inside an instance included: `t.w`.
-- **[0.16]** A name in an expression that nothing in scope declares — no formal, no `param`, no named dimension of the body, the file or a `use`d module — is a **free variable of the instance** the body is elaborated as (`t1.w`, `t2.w`), the rule §6.5 applies to a formal left unbound. On the sheet the instance is the document, and the unknown is the document's. A component therefore cannot read the document it is drawn in by name, and a module's component cannot read the caller's at all. Inside a `cycle` or `repeat`, a name the block declares is each copy's own (a dimension named in a block is defined once per copy) and a name it does not declare is the enclosing body's, shared by every copy.
+- **Components have closed model scope.** A body reads its formals and its own declarations. It may call visible component definitions and use built-in functions and constants, but cannot capture geometry, parameters, groups, or named dimensions from the root, an importing module, or an enclosing component. Pass those dependencies as arguments. This includes `std.front` and the other standard datums.
+- An undeclared numeric name is a **local free variable** of the instance (`t1.w`, `t2.w`). A reference to a known ambient value without an argument is an error, rather than an implicit capture. An explicitly declared numeric formal left unbound is also local. Inside a repetition, a name declared by the block belongs to each copy; other names resolve in the enclosing component. `next` and `prev` belong to the lexical cycle, and can be passed to a nested component as arguments.
 - Inside `repeat`/`cycle`/`ring` blocks, the index binder (`as i`) and the pseudo-instances `next` / `prev` are in scope (§12).
 - There is no shadowing: a block binder that collides with an outer name is an error (**E002**).
 - **[0.17] A name that shadows a built-in is said.** The constants and functions of §3.3 (`pi`, `tau`, `turn`, `sin`, `min`, …) are known to every expression before the document is, so a `param`, a formal or a block binder of one of those names does *not* shadow it: a text carrying the name is substituted and reads the declaration, a number worked out reads the built-in, and the two answers differ silently — `param tau = 35deg` passed to a `tau: Angle` formal arrived as a full turn. A named dimension of a built-in name is an error where it is parsed; the other three declarations are a warning at the declaration (**W112**), because the drawing is not wrong, the name is. An implementation MUST say it once per declaration, whether or not the component is ever instantiated.
@@ -355,7 +368,7 @@ param R = m * N / 2
 
 Introduces a named definitional value. `param` values are evaluated at elaboration time when all inputs are `Int`/literal, otherwise they are definitional scalars.
 
-**[0.12] A file's top-level `param`s are in scope in every component the file defines**, and in the file's root body — the numbers a drawing is drawn from, a bore and a stroke, stated once at the top rather than threaded through every formal list. A formal of the same name shadows one, since a component's interface must not break when a `param` of that name is added above it. **[0.16]** The file's top-level *named dimensions* are in scope the same way, and a body's own definition shadows the file's; a module's named dimensions are numbers to the components that read them, its drawing not being drawn. The `param`s of a module the file `use`s (§14.4) are in the file's scope too, under its own. A `param` MUST NOT read geometry (`a.x`): a `param` feeds constraints, and a number read off a seed would make the solution set depend on where a solve began (P3); a *seed* may (§6.4).
+A `param` is visible throughout the body that declares it and its repetition blocks. A file may import a module's top-level parameters and groups (§14.4) for use in its root body; a component receives external values through arguments (§8). A root definition may override an imported parameter for the root's own expressions. A `param` MUST NOT read geometry (`a.x`): a `param` feeds constraints, and a number read off a seed would make the solution set depend on where a solve began (P3); a *seed* may (§6.4).
 
 ### 6.4 Seeds written inline **[0.2]**
 
@@ -736,6 +749,41 @@ t: Tooth(root, tip, slot: tau/N)
 
 Instantiation elaborates the named component's body into the current scope with formals bound per §4.1. Instance elaboration is recursive; cyclic instantiation is an error (**E003**).
 
+### 8.1 Groups of arguments
+
+```solvent
+unit mm
+use std
+
+group sizes(length: 20mm)
+group layout(frame: std.front, origin: std.origin)
+
+component Bar(layout: group, dims: group) {
+  tip: Loc(layout.frame, u: dims.length, v: 0mm)
+  line axis(layout.origin, tip.p)
+}
+
+bar: Bar(layout, dims: sizes)
+```
+
+`group NAME(member: VALUE, …)` bundles named numeric values, entity references, and nested
+groups. Members are required to have labels; duplicate members and cyclic definitions are
+errors. Numeric members retain their dimensions. A group creates no geometry, solver variable,
+or constraint. Geometry members are aliases to existing geometry, including subentities and
+members of repeated instances; grouping does not copy or solve them separately.
+
+A `group` formal is required and accepts a group or a component instance. Passing an instance
+exposes its geometry by the same dotted paths available at the assembly site: `layout.origin`,
+`layout.bank[0].pivot`. Parameters inside the layout instance are local; use an explicit group
+for numeric values. Groups may be passed positionally before labels or by label. A component
+may forward a group or select a nested group for another call. A missing member is an error,
+not an implicit solver unknown. The component's uses determine the member types required;
+there is no nominal record type or new solve boundary.
+
+Curves compiled over a component still require fixed scalar or entity formals. A group has no
+fixed coordinate layout, so its needed members must be passed individually to a traced component.
+
+
 ---
 
 ## 9. Constraints
@@ -1113,7 +1161,28 @@ use engine.dims
 use engine.parts
 ```
 
-A **module** is a Solvent document read for its components. `use NAME` at the top level of a document — never inside a body — asks for one; `NAME` is a dotted path, and **what it resolves to is the host's question**: an implementation with a working directory resolves `engine.parts` to `engine/parts.sv` beside the document, one without a filesystem resolves it against whatever library it carries, and both fall through to the other in that order. The core takes text and never opens a file. A module contributes exactly its **component definitions** and its top-level **`param`s** (§6.3); its own loose statements — its drawing — are not drawn, so a document that is also a library (`gear.sv`) is a module as it stands. A module's own `use`s are followed the same way, each module linked once however many times it is asked for, so a diamond is one copy and a cycle terminates. A module a host cannot resolve is **E070**, at the `use`. Two definitions of one component name, wherever they come from, are **E071**, at the document's own definition when the clash is with one and otherwise at the `use` that brought the later module in; there is no shadowing (§5). A module's own errors — a parse error, a faulty `param` — are reported to a reader of the document *at the `use` that brought the module in*, with the module's name, line and column in front of the message, since that line is the one the document can edit.
+A **module** is a Solvent document read for its components. `use NAME` at the top level of a document — never inside a body — asks for one; `NAME` is a dotted path, and **what it resolves to is the host's question**: an implementation with a working directory resolves `engine.parts` to `engine/parts.sv` beside the document, one without a filesystem resolves it against whatever library it carries, and both fall through to the other in that order. The core takes text and never opens a file. A module contributes exactly its **component definitions** and its top-level **`param`s and groups** (§6.3), available at the importing root; its own loose statements — its drawing — are not drawn, so a document that is also a library (`gear.sv`) is a module as it stands. A module's own `use`s are followed the same way, each module linked once however many times it is asked for, so a diamond is one copy and a cycle terminates. A module a host cannot resolve is **E070**, at the `use`. Two definitions of one component name, wherever they come from, are **E071**, at the document's own definition when the clash is with one and otherwise at the `use` that brought the later module in; there is no shadowing (§5). A module's own errors — a parse error, a faulty `param` — are reported to a reader of the document *at the `use` that brought the module in*, with the module's name, line and column in front of the message, since that line is the one the document can edit.
+
+**[0.21] Standard datums.** `use std` makes `std.front`, `std.up`, and `std.origin`
+available. `std.front` is a fixed plane datum at page `(0, 0)`, with u right and v up.
+`std.up` has the same origin, with u up and v left. Their spatial attitude is the page's
+front plane. These datums are one shared expansion of `std`'s ordinary `StandardDatums`
+statements, materialized only when referenced; `use std` alone adds no geometry or freedom.
+An explicit root declaration or instance named `std` takes precedence over the standard binding.
+
+A datum argument does not assign membership. `Part(std.front, …)` draws unassigned geometry
+on the page, as any other unassigned geometry does; `Part(std.front, …) in std.front` assigns
+membership explicitly. With `vtwin_dims` imported from the dimension module, the upright cylinder preview can therefore be just:
+
+```solvent
+preview {
+  unit mm
+  cyl: Cylinder(std.up, fw: 12mm, dims: vtwin_dims)
+}
+```
+
+The name `cyl` is retained because the part drawing references `cyl.body`. For an unnamed
+preview, `Cylinder(std.front, fw: 12mm, dims: vtwin_dims)` is sufficient; its bore follows the datum's u axis.
 
 **[0.21] A component file may provide its own preview.** At most one `preview { … }`
 block may appear at file scope. Its body contains ordinary model statements, including units,
@@ -1380,7 +1449,7 @@ type           = "Int" | "Scalar" | "Length" | "Angle" | "Side"      (* §4.1 [0
                | "Face" | "Solid" ;    (* [0.18]; `Frame` was folded into `Plane` in 0.15 *)
 
 statement      = decl | constraint | hint | gauge | block | path_decl | chain
-               | unit_decl | frag | in_block | body_rel ;   (* [0.20]: presentation is .svd *)
+               | unit_decl | frag | in_block | body_rel ;
 in_block       = "in" ref "{" { statement } "}" ;         (* membership, written once: §6.7 *)
 unit_decl      = "unit" IDENT ;                                           (* §3.3.2 *)
 chain          = [ IDENT "=" ] link { joint link } [ "->" { infix } "close" ] ;
@@ -1454,7 +1523,7 @@ claim_over     = "claim" "over" ref "in" "(" expr "," expr ")" "{" { solid_claim
 curve_def      = "curve" IDENT "=" [ IDENT "(" [ args ] ")" "." ] ref
                  "over" IDENT "in" "(" expr "," expr ")" ;
 param_decl     = "param" IDENT "=" expr ;
-instance_decl  = IDENT ":" IDENT "(" [ args ] ")" [ "in" ref ] ;   (* §6.7, §13.2 *)
+instance_decl  = [ IDENT ":" ] IDENT "(" [ args ] ")" [ "in" ref ] ;   (* §4 [0.21], §6.7 *)
 args           = arg { "," arg } ;
 arg            = [ IDENT ":" ] expr ;
 

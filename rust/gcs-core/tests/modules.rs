@@ -1,6 +1,6 @@
 //! Modules (§14.4): `use NAME` at the top of a document, resolved by the host and linked by
 //! `modules::link` — a module's components join the document's, its top-level `param`s are read
-//! by its components and by the files that `use` it, and its own drawing is its own.
+//! by the root bodies of files that `use` it, and its own drawing is its own.
 
 use gcs_core::diagnose::{diagnose, DiagnoseOptions, State};
 use gcs_core::modules::{link, relink};
@@ -9,9 +9,9 @@ use gcs_core::syntax::parse;
 use std::collections::BTreeMap;
 
 const RUNG: &str = "\
-// a module: a param its component reads, and a drawing of its own that is not the document's
+// a module: a param the caller can pass, and a drawing of its own that is not the document's
 param len = 50
-component Rung(a: point, b: point) {
+component Rung(a: point, b: point, len: Length) {
   line e(a, b)
   horizontal e
   a distance(len) b
@@ -25,8 +25,8 @@ point l0 hint(x: 0, y: 0)
 point r0 hint(x: 50, y: 0)
 point l1 hint(x: 0, y: 20)
 point r1 hint(x: 50, y: 20)
-t0: Rung(l0, r0)
-t1: Rung(l1, r1)
+t0: Rung(l0, r0, len: len)
+t1: Rung(l1, r1, len: len)
 line stile(l0, l1)
 vertical stile
 l0 distance(len) l1
@@ -38,11 +38,11 @@ fn shelf() -> BTreeMap<&'static str, &'static str> {
     m.insert("lib.rung", RUNG);
     m.insert("lib.bad", "component Bad(a: point) {\n  line l(a,\n}\n");
     m.insert("lib.rung2", "use lib.rung\ncomponent Rung(a: point) { }\n");
-    m.insert("lib.diamond", "use lib.rung\ncomponent Step(a: point, b: point) { r: Rung(a, b) }\n");
+    m.insert("lib.diamond", "use lib.rung\ncomponent Step(a: point, b: point, len: Length) { r: Rung(a, b, len: len) }\n");
     m.insert("lib.loop_a", "use lib.loop_b\nparam pa = 1\ncomponent A(p: point) { }\n");
     m.insert("lib.loop_b", "use lib.loop_a\nparam pb = 2\ncomponent B(p: point) { }\n");
-    m.insert("lib.over", "use lib.rung\nparam twice = 2 * len\ncomponent Long(a: point, b: point) { a distance(twice) b }\n");
-    m.insert("lib.units", "param size = 10mm\ncomponent UnitLink(a: point, b: point) { a distance(size) b }\n");
+    m.insert("lib.over", "use lib.rung\nparam twice = 2 * len\ncomponent Long(a: point, b: point, twice: Length) { a distance(twice) b }\n");
+    m.insert("lib.units", "param size = 10mm\ncomponent UnitLink(a: point, b: point, size: Length) { a distance(size) b }\n");
     m
 }
 
@@ -177,7 +177,7 @@ fn a_modules_parse_error_is_shown_at_the_use_with_its_own_place() {
 
 #[test]
 fn a_diamond_links_once_and_a_cycle_ends() {
-    let (e, linked) = read("use lib.rung\nuse lib.diamond\npoint a\npoint b\ns: Step(a, b)\n");
+    let (e, linked) = read("use lib.rung\nuse lib.diamond\npoint a\npoint b\ns: Step(a, b, len: len)\n");
     assert!(linked.is_empty(), "{linked:?}");
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     assert_eq!(e.sketch.lines.len(), 1);
@@ -191,7 +191,7 @@ fn a_diamond_links_once_and_a_cycle_ends() {
 /// read every module's: the used come first, so `param twice = 2 * len` is 100 and not free.
 #[test]
 fn a_files_params_read_the_modules_it_uses() {
-    let (e, linked) = read("use lib.over\npoint a hint(x: 0, y: 0)\npoint b hint(x: 100, y: 0)\nl: Long(a, b)\nground a\nb distance(twice, along: y) a\n");
+    let (e, linked) = read("use lib.over\npoint a hint(x: 0, y: 0)\npoint b hint(x: 100, y: 0)\nl: Long(a, b, twice: twice)\nground a\nb distance(twice, along: y) a\n");
     assert!(linked.is_empty(), "{linked:?}");
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch.clone();

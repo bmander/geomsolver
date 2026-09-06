@@ -46,12 +46,17 @@ struct Cyc {
 #[derive(Clone, Default)]
 struct Scope {
     prefixes: Vec<String>,
+    closed: bool,
+    forbidden: BTreeSet<String>,
+    groups: BTreeSet<String>,
     cyc: Option<Cyc>,
     /// Whether a `cycle` or a `repeat` stands anywhere above: the prefix in force then carries a
     /// block's id (`#3.0.`) rather than an instance's name, and a declaration under it is one
     /// *copy* — shown and selected by, never written into a statement.  This walk is the only
     /// place that is known (`syntax::Named`, issue #39).
     copies: bool,
+    /// Members of an unnamed call have internal keys but no path another statement can write.
+    anonymous: bool,
     /// The numbers in force where the statement was written — the enclosing counts, params and
     /// block binders.  An index (`p[i + 1]`) is an expression over exactly these, and references
     /// are resolved in a later pass where the walk's own environment is gone, so it travels here.
@@ -69,7 +74,7 @@ struct Scope {
     /// body exactly as a `param` does (§6.3): its *number* is in `vals`, so a `param`, a seed
     /// or a count may read it, and its *name* is here, so a dimension reading it keeps the
     /// name — renamed to where the graph will find it — and the tie survives on the drawing.
-    /// Formals shadow the file's; a body's own shadow both.
+    /// Only definitions in the current component and its lexical blocks are visible.
     graph: BTreeMap<String, String>,
     /// The **sides** in force: a `Side` formal to the word it was given (`s` → `right`).  A side
     /// is a word and not a number (§9.2), so it travels in a table of its own rather than as a
@@ -109,6 +114,7 @@ fn is_copy_prefix(p: &str) -> bool {
 struct InPlane {
     plane: Ref,
     prefixes: Vec<String>,
+    closed: bool,
 }
 
 pub struct Expansion {
@@ -169,15 +175,9 @@ struct Walk<'a> {
     instances: Vec<InstanceInfo>,
     /// `Some` while a component is expanded over its formals as variables — see `Sym`.
     sym: Option<Sym>,
-    /// The file's top-level `param`s, which every component written in the file may read
-    /// (§6.3): the numbers a drawing is drawn from — a bore, a stroke — stated once at the top
-    /// and not threaded through every formal list.  A formal of the same name shadows one.
+    /// Root values, used to diagnose accidental capture by a closed component.
     file_vals: BTreeMap<String, Aff>,
-    /// The file's top-level named dimensions, by written name to graph name — the same rule
-    /// as `file_vals`, for the half of a named dimension that is a name rather than a number.
-    file_graph: BTreeMap<String, String>,
-    /// The same for each module linked in (§14.4): a module's components read the module's own
-    /// top-level params, worked out once, the first time one of its components is bound.
+    /// Module values exported to importing root bodies; component bodies receive arguments.
     module_vals: Vec<Option<BTreeMap<String, Aff>>>,
     diagnostics: Vec<Diag>,
     /// Every call already read for how its arguments are written (`check_call`), by where it is
@@ -187,6 +187,12 @@ struct Walk<'a> {
     /// arguments) carries no span and so is read at most once, which costs nothing: it labels
     /// every number by construction.
     called: BTreeSet<Span>,
+    /// The std library supplies these names; actual geometry is expanded only on demand.
+    standard_datums: bool,
+    needs_standard_datums: bool,
+    group_names: BTreeSet<String>,
+    group_bindings: Vec<(String, Span)>,
+    group_fields: Vec<(String, Span)>,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -215,19 +221,11 @@ pub fn expand(prog: &Program, units: Units) -> Expansion {
 /// done here and not again by the compile.
 pub fn expand_component(prog: &Program, comp: &Component, units: Units) -> Expansion {
     let mut w = Walk::new(prog, units, Some(Sym::default()));
-    let scope = Scope { prefixes: vec![String::new()], ..Scope::default() };
-    // the file's top-level params, which the body may read; what is wrong with them is the
-    // root's to report, and `expand` does
-    let mut file_vals: BTreeMap<String, Aff> = BTreeMap::new();
-    let nd = w.diagnostics.len();
-    // as numbers only: a traced body is compiled to tapes, not read by the expression graph
-    w.params(&prog.root().body, &mut file_vals, &mut BTreeMap::new(), &scope);
-    w.diagnostics.truncate(nd);
-    let mut vals: BTreeMap<String, Aff> = file_vals.clone();
-    w.file_vals = file_vals;
+    let scope = Scope { prefixes: vec![String::new()], closed: true, ..Scope::default() };
+    let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
     for f in &comp.formals {
         match f.ty {
-            Ty::Ent(_) => {
+            Ty::Ent(_) | Ty::Group => {
                 w.names.insert(f.name.text.clone());
             }
             // a variable of the curve: a free value named after itself, which the ordinary
@@ -256,6 +254,7 @@ struct Def {
     text: String,
     span: Span,
     dim: bool,
+    group_ref: bool,
 }
 
 /// The number a relation states, as written — the one unlabelled argument in its operator's
@@ -275,19 +274,37 @@ fn dim_text(rel: &crate::syntax::Relation) -> Option<(&str, Span)> {
 
 impl<'a> Walk<'a> {
     fn new(prog: &'a Program, units: Units, sym: Option<Sym>) -> Walk<'a> {
+        let standard = prog.component("StandardDatums").filter(|c|
+            c.module.is_some_and(|k| prog.modules[k].name == "std"));
+        let shadowed = prog.root().body.iter().any(|st| match &st.kind {
+            StmtKind::Instance(i) => i.name.text == "std",
+            StmtKind::Decl(d) => d.name.key().text == "std",
+            StmtKind::Group(g) => g.name.text == "std",
+            _ => false,
+        });
+        let standard_datums = sym.is_none() && standard.is_some() && !shadowed;
         Walk {
             prog,
             units,
             out: Vec::new(),
-            names: BTreeSet::new(),
+            names: if standard_datums {
+                standard.unwrap().body.iter().filter_map(|st| match &st.kind {
+                    StmtKind::Decl(d) => Some(format!("std.{}", d.name.key().text)),
+                    _ => None,
+                }).collect()
+            } else { BTreeSet::new() },
             aliases: Vec::new(),
             instances: Vec::new(),
             sym,
             file_vals: BTreeMap::new(),
-            file_graph: BTreeMap::new(),
             module_vals: vec![None; prog.modules.len()],
             diagnostics: Vec::new(),
             called: BTreeSet::new(),
+            standard_datums,
+            needs_standard_datums: false,
+            group_names: BTreeSet::new(),
+            group_bindings: Vec::new(),
+            group_fields: Vec::new(),
         }
     }
 
@@ -302,7 +319,19 @@ impl<'a> Walk<'a> {
     }
 
     fn finish(mut self) -> Expansion {
-        let (flat, aliases) = self.resolve();
+        let (mut flat, mut aliases) = self.resolve();
+        if self.standard_datums && self.needs_standard_datums {
+            // Keep the datums as ordinary library statements with their own source spans.
+            // They precede consumers for geometry building, but participate in the same solve.
+            let comp = self.prog.component("StandardDatums").unwrap();
+            let scope = Scope { prefixes: vec!["std.".into()], ..Scope::default() };
+            let mut vals = self.module_params(comp.module.unwrap());
+            self.body(&comp.body, &scope, &mut vals, &[], 1);
+            let (mut datums, resolved) = self.resolve();
+            datums.append(&mut flat);
+            flat = datums;
+            aliases = resolved;
+        }
         Expansion { flat, diagnostics: self.diagnostics, instances: self.instances, aliases }
     }
 
@@ -340,6 +369,14 @@ impl<'a> Walk<'a> {
     ) -> Result<String, String> {
         let reads: BTreeSet<String> =
             expr::parse_in(text, self.units).map(|p| p.body.deps()).unwrap_or_default();
+        for name in &reads {
+            if scope.forbidden.contains(name) && !vals.contains_key(name) && !scope.graph.contains_key(name) {
+                return Err(format!("`{name}` is outside this component; pass it as an argument"));
+            }
+            if name.split_once('.').is_some_and(|(head, _)| scope.groups.contains(head)) && !vals.contains_key(name) {
+                return Err(format!("no numeric member `{name}` in the group argument"));
+            }
+        }
         let sym = self.sym.as_ref();
         let own = scope.instance_prefix();
         let sub = substitute_with(text, |w| {
@@ -463,8 +500,34 @@ impl<'a> Walk<'a> {
     ) {
         let prefix = scope.prefix().to_string();
         let mut pending: Vec<Def> = Vec::new();
+        let mut references = Vec::new();
         let mut here: BTreeSet<String> = BTreeSet::new();
         for st in body {
+            if let StmtKind::Group(g) = &st.kind {
+                let abs = format!("{prefix}{}", g.name.text);
+                if !self.group_names.insert(abs.clone()) {
+                    self.err(Code::E001, g.name.span, format!("`{}` is declared twice", g.name.text));
+                }
+                self.names.insert(abs);
+                for field in &g.fields {
+                    let Some(label) = &field.label else { continue };
+                    let name = format!("{}.{}", g.name.text, label.text);
+                    if !here.insert(name.clone()) {
+                        self.err(Code::E001, label.span, format!("`{name}` is declared twice"));
+                        continue;
+                    }
+                    let text = match &field.value {
+                        crate::syntax::InstVal::Ref(r) => {
+                            references.push((name.clone(), r.clone()));
+                            written(r)
+                        }
+                        crate::syntax::InstVal::Expr(t) => t.clone(),
+                    };
+                    pending.push(Def { name, name_span: label.span, text, span: field.span,
+                        dim: false, group_ref: matches!(field.value, crate::syntax::InstVal::Ref(_)) });
+                }
+                continue;
+            }
             let d = match &st.kind {
                 StmtKind::Param(pd) => Def {
                     name: pd.name.text.clone(),
@@ -472,6 +535,7 @@ impl<'a> Walk<'a> {
                     text: pd.text.clone(),
                     span: pd.span,
                     dim: false,
+                    group_ref: false,
                 },
                 StmtKind::Relation(rel) => {
                     let Some((text, span)) = dim_text(rel) else { continue };
@@ -480,7 +544,7 @@ impl<'a> Walk<'a> {
                         continue;
                     };
                     let rhs = text.split_once('=').map(|(_, r)| r.trim()).unwrap_or("");
-                    Def { name, name_span: span, text: rhs.to_string(), span, dim: true }
+                    Def { name, name_span: span, text: rhs.to_string(), span, dim: true, group_ref: false }
                 }
                 _ => continue,
             };
@@ -498,6 +562,34 @@ impl<'a> Walk<'a> {
             }
             pending.push(d);
         }
+        // A nested group exposes the selected group's numeric members, including forward
+        // references. Keep ordinary dependency ordering for those members too.
+        for depth in 0..MAX_DEPTH {
+            let keys: BTreeSet<String> = vals.keys().cloned().chain(pending.iter().map(|d| d.name.clone())).collect();
+            let mut extra = Vec::new();
+            for d in &pending {
+                if !d.group_ref { continue; }
+                let start = format!("{}.", d.text);
+                for key in &keys {
+                    let Some(member) = key.strip_prefix(&start) else { continue };
+                    let name = format!("{}.{member}", d.name);
+                    if here.insert(name.clone()) {
+                        if depth + 1 == MAX_DEPTH || name.split('.').count() > MAX_DEPTH {
+                            self.err(Code::E041, d.span, "group nesting is cyclic or too deep");
+                            return;
+                        }
+                        if pending.len() + extra.len() >= MAX_FLAT {
+                            self.err(Code::E103, d.span, "group expansion is too large");
+                            return;
+                        }
+                        extra.push(Def { name, text: key.clone(), name_span: d.name_span,
+                            span: d.span, dim: false, group_ref: true });
+                    }
+                }
+            }
+            if extra.is_empty() { break; }
+            pending.extend(extra);
+        }
         // the names each definition reads; a text that does not parse reads nothing, and is
         // worked out at once so the parse error is the one reported
         let reads: Vec<BTreeSet<String>> = pending
@@ -509,6 +601,7 @@ impl<'a> Walk<'a> {
         let mut waiting: Vec<usize> = (0..pending.len()).collect();
         let mut failed: BTreeSet<String> = BTreeSet::new();
         loop {
+            if waiting.is_empty() { break; }
             let names: BTreeSet<&str> = waiting.iter().map(|&i| pending[i].name.as_str()).collect();
             let (ready, rest): (Vec<usize>, Vec<usize>) = waiting
                 .iter()
@@ -539,6 +632,8 @@ impl<'a> Walk<'a> {
                     Ok(a) => {
                         vals.insert(d.name.clone(), a);
                     }
+                    // References to geometry and groups bind as aliases, not numeric values.
+                    Err(_) if d.group_ref => {}
                     // a dimension's number is the graph's to judge: it stays a name here
                     Err(_) if d.dim => {}
                     // a text a curve's variables leave no value to — kept, in the symbolic
@@ -554,6 +649,12 @@ impl<'a> Walk<'a> {
                 }
             }
             waiting = rest;
+        }
+        for (name, reference) in references {
+            if vals.contains_key(&name) { continue; }
+            let abs = format!("{prefix}{name}");
+            self.group_fields.push((abs.clone(), reference.span));
+            self.aliases.push((abs, reference, Scope { vals: vals.clone(), ..scope.clone() }));
         }
     }
 
@@ -573,6 +674,26 @@ impl<'a> Walk<'a> {
             return;
         }
         let prefix = scope.prefix().to_string();
+        for st in body {
+            let StmtKind::Group(g) = &st.kind else { continue };
+            let name = &g.name.text;
+            let conflicts = body.iter().any(|other| match &other.kind {
+                StmtKind::Decl(d) => &d.name.key().text == name,
+                StmtKind::Param(p) => &p.name.text == name,
+                _ => false,
+            }) || vals.contains_key(name) || scope.groups.contains(name)
+                || self.aliases.iter().any(|(key, _, _)| key == &format!("{prefix}{name}"));
+            if conflicts {
+                self.err(Code::E001, g.name.span, format!("`{name}` is declared twice"));
+            }
+        }
+        for st in body {
+            if let StmtKind::Instance(inst) = &st.kind {
+                let name = format!("{prefix}{}", inst.name.text);
+                self.names.insert(name.clone());
+                self.group_names.insert(name);
+            }
+        }
         // the root's numbers are the file's: the params of every module the file `use`s come
         // first, so the file's own may read them (`param rB = rp + 1.5mm`) and shadow them
         if depth == 0 {
@@ -585,17 +706,21 @@ impl<'a> Walk<'a> {
         // is a set (P2)
         let mut graph = scope.graph.clone();
         self.params(body, vals, &mut graph, scope);
-        // and every component written in the file reads them (§14.4)
+        // Remember ambient numbers so accidental capture gets an explicit diagnostic.
         if depth == 0 {
             self.file_vals = vals.clone();
-            self.file_graph = graph.clone();
         }
         // and with them the numbers in force are complete for every statement of the body:
         // the enclosing ones the caller passed and the body's own — so that is the table each
         // statement is emitted with, which is what an index (`p[n - 1]`) is read against.  The
         // root's scope arrived with an empty one, and a top-level index could read a literal
         // and not a `param` (#45.2).
-        let scope = &Scope { vals: vals.clone(), graph, ..scope.clone() };
+        let mut groups = scope.groups.clone();
+        groups.extend(body.iter().filter_map(|st| match &st.kind {
+            StmtKind::Group(g) => Some(g.name.text.clone()),
+            _ => None,
+        }));
+        let scope = &Scope { vals: vals.clone(), graph, groups, ..scope.clone() };
         for st in body {
             if self.out.len() >= MAX_FLAT {
                 self.err(
@@ -611,6 +736,9 @@ impl<'a> Walk<'a> {
                     let abs = format!("{prefix}{}", chain.name.key().text);
                     self.names.insert(abs.clone());
                     chain.name = chain.name.prefixed(abs, scope.copies);
+                    if scope.anonymous {
+                        chain.name = crate::syntax::DeclName::Key(chain.name.key().clone());
+                    }
                     self.emit(StmtKind::Chain(chain), st, scope, path);
                 }
                 StmtKind::Decl(d) => {
@@ -618,6 +746,9 @@ impl<'a> Walk<'a> {
                     self.names.insert(abs.clone());
                     let mut d2 = d.clone();
                     d2.name = d.name.prefixed(abs, scope.copies);
+                    if scope.anonymous {
+                        d2.name = crate::syntax::DeclName::Key(d2.name.key().clone());
+                    }
                     // a computed point is made of expressions over the formals, which is a
                     // thing a curve can be and a drawing cannot: nothing on the sheet holds a
                     // point to a formula (§6.5)
@@ -677,7 +808,7 @@ impl<'a> Walk<'a> {
                     self.stamp_scope_plane(&mut d2, scope);
                     self.emit(StmtKind::Decl(d2), st, scope, path);
                 }
-                StmtKind::Param(_) => {} // worked out above, before the walk
+                StmtKind::Param(_) | StmtKind::Group(_) => {} // worked out above, before the walk
                 StmtKind::Instance(inst) => {
                     let Some((comp, mut sub_vals, sides, key)) =
                         self.bind_instance(inst, scope, vals, true)
@@ -693,23 +824,19 @@ impl<'a> Walk<'a> {
                         }
                         // written here, in this scope: it resolves against these prefixes
                         (Some(p), None) => {
-                            Some(InPlane { plane: p.clone(), prefixes: scope.prefixes.clone() })
+                            Some(InPlane { plane: p.clone(), prefixes: scope.prefixes.clone(), closed: scope.closed })
                         }
                         (None, q) => q.clone(),
                     };
-                    // the file's named dimensions, under the formals, as its params are (§6.3);
-                    // a module's own drawing is not drawn, so its are numbers and nothing more
-                    let mut graph = match comp.module {
-                        None => self.file_graph.clone(),
-                        Some(_) => BTreeMap::new(),
-                    };
-                    graph.retain(|k, _| !comp.formals.iter().any(|f| &f.name.text == k));
-                    let mut sc = Scope {
-                        prefixes: std::iter::once(key)
-                            .chain(scope.prefixes.iter().cloned())
-                            .collect(),
+                    let forbidden = scope.vals.keys().chain(self.file_vals.keys()).cloned().collect();
+                    let sc = Scope {
+                        prefixes: vec![key],
+                        closed: true,
+                        forbidden,
+                        groups: comp.formals.iter().filter(|f| f.ty == Ty::Group).map(|f| f.name.text.clone()).collect(),
                         cyc: None,
                         copies: scope.copies,
+                        anonymous: scope.anonymous || inst.name.text.starts_with('#'),
                         vals: sub_vals.clone(),
                         in_plane,
                         in_class: {
@@ -717,12 +844,11 @@ impl<'a> Walk<'a> {
                             c.0.extend(inst.class.0.iter().cloned());
                             c
                         },
-                        graph,
+                        graph: BTreeMap::new(),
                         // the sides this instance was given, and no others: a component reads a
                         // side by the name of its own formal, as it reads every other argument
                         sides,
                     };
-                    sc.cyc = scope.cyc.clone();
                     let mut instance_path = path.to_vec();
                     instance_path.push(PathStep::Instance(st.id));
                     self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1);
@@ -762,10 +888,14 @@ impl<'a> Walk<'a> {
                                 .chain(scope.prefixes.iter().cloned())
                                 .collect(),
                             // `next` and `prev` mean something only where the copies close
+                            closed: scope.closed,
+                            forbidden: scope.forbidden.clone(),
+                            groups: scope.groups.clone(),
                             cyc: b.kind.wraps().then(|| Cyc { prefix: block_prefix.clone(), k, n }),
                             // the prefix just built is the block's id, so every declaration
                             // below is a copy, however deep and through however many instances
                             copies: true,
+                            anonymous: scope.anonymous,
                             vals: sub.clone(),
                             in_plane: scope.in_plane.clone(),
                             in_class: scope.in_class.clone(),
@@ -1078,7 +1208,15 @@ impl<'a> Walk<'a> {
         use crate::syntax::Ty;
         let mut labelled: Option<&str> = None;
         let mut positional = 0usize;
+        let mut given = BTreeSet::new();
         for a in &inst.args {
+            let formal_name = a.label.as_ref().map(|l| l.text.as_str())
+                .or_else(|| comp.formals.get(positional).map(|f| f.name.text.as_str()));
+            if let Some(name) = formal_name.filter(|_| labelled.is_none() || a.label.is_some()) {
+                if !given.insert(name) {
+                    self.err(Code::E103, a.span, format!("argument `{name}` is given twice"));
+                }
+            }
             if let Some(l) = &a.label {
                 labelled.get_or_insert(l.text.as_str());
                 continue;
@@ -1093,7 +1231,7 @@ impl<'a> Walk<'a> {
                      position, in order, and everything past the first label carries one too \
                      (§4.1)"
                 )
-            } else if let Some(f) = formal.filter(|f| !matches!(f.ty, Ty::Ent(_))) {
+            } else if let Some(f) = formal.filter(|f| !matches!(f.ty, Ty::Ent(_) | Ty::Group)) {
                 format!(
                     "`{0}` is a number, and a number is given by label: write `{0}: …` (§4.1)",
                     f.name.text
@@ -1150,6 +1288,20 @@ impl<'a> Walk<'a> {
                 continue;
             };
             match (&f.ty, &a.value) {
+                (Ty::Group, InstVal::Ref(r)) => {
+                    let actual = written(r);
+                    let key = format!("{prefix}{}.{}", inst.name.text, f.name.text);
+                    self.aliases.push((key.clone(), r.clone(), scope.clone()));
+                    self.group_bindings.push((key, a.span));
+                    let start = format!("{actual}.");
+                    for (name, value) in vals {
+                        if let Some(member) = name.strip_prefix(&start) {
+                            sub.insert(format!("{}.{member}", f.name.text), value.clone());
+                        }
+                    }
+                }
+                (Ty::Group, InstVal::Expr(t)) => self.err(Code::E103, a.span,
+                    format!("`{}` wants a group or layout instance, not `{t}`", f.name.text)),
                 (Ty::Ent(_), InstVal::Ref(r)) => {
                     // recorded unresolved; the resolve pass turns it into an absolute name in the
                     // *caller's* scope, which is what makes it an alias rather than a copy
@@ -1189,7 +1341,7 @@ impl<'a> Walk<'a> {
                     self.bind_value(&mut sub, f, *ty, t, vals, scope, &inst.name.text, a.span)
                 }
                 (ty, InstVal::Ref(r)) => {
-                    let t = r.root.text.clone();
+                    let t = written(r);
                     self.bind_value(&mut sub, f, *ty, &t, vals, scope, &inst.name.text, a.span)
                 }
             }
@@ -1202,22 +1354,18 @@ impl<'a> Walk<'a> {
         // a traced component the name is no column of the curve, which is how a nested
         // instance's unbound formal is reported rather than captured by an outer one's.
         for f in &comp.formals {
+            if f.ty == Ty::Group && !inst.args.iter().enumerate().any(|(i, a)|
+                a.label.as_ref().map_or_else(|| comp.formals.get(i).is_some_and(|p| p.name.text == f.name.text), |l| l.text == f.name.text)) {
+                self.err(Code::E103, inst.span, format!("missing group argument `{}`", f.name.text));
+            }
             // a side left unbound is not an unknown of the drawing: the *statement* it reaches
             // says nothing about which side, which is the magnitude form and a solution set of
             // both — so it is left out of the table and the body writes no side at all
-            if matches!(f.ty, Ty::Ent(_) | Ty::Side) || sub.contains_key(&f.name.text) {
+            if matches!(f.ty, Ty::Ent(_) | Ty::Side | Ty::Group) || sub.contains_key(&f.name.text) {
                 continue;
             }
             let name = format!("{prefix}{}.{}", inst.name.text, f.name.text);
             sub.insert(f.name.text.clone(), free(name, f.ty));
-        }
-        // and under the formals, the numbers of the file the component was written in (§6.3)
-        let file = match comp.module {
-            None => self.file_vals.clone(),
-            Some(k) => self.module_params(k),
-        };
-        for (k, v) in file {
-            sub.entry(k).or_insert(v);
         }
         (sub, sides)
     }
@@ -1322,6 +1470,16 @@ impl<'a> Walk<'a> {
                 break;
             }
         }
+        for (key, span) in self.group_fields.clone() {
+            if !alias.contains_key(&key) {
+                self.err(Code::E103, span, format!("group member `{key}` names no value or geometry"));
+            }
+        }
+        for (key, span) in self.group_bindings.clone() {
+            if !alias.get(&key).is_some_and(|target| self.group_names.contains(target)) {
+                self.err(Code::E103, span, format!("`{key}` wants a group or layout instance"));
+            }
+        }
         // what each instance was given, now that the aliases its arguments made are absolute
         for info in self.instances.iter_mut() {
             for (formal, actual) in info.ents.iter_mut() {
@@ -1332,13 +1490,18 @@ impl<'a> Walk<'a> {
         let mut flat = Vec::with_capacity(out.len());
         for (mut st, path, sc) in out {
             let mut bad: Vec<(Span, String)> = Vec::new();
-            rewrite(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad);
+            rewrite(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad,
+                &mut self.needs_standard_datums);
             // a seed that reads geometry names it in the scope it was written in, and is read
             // on the sheet, where only absolute names mean anything — so it is rescoped as the
             // statement's references were.  Not in a trace block, whose kept texts are read
             // off the block's own variable table by the formals' names.
             if self.sym.is_none() {
                 rescope_seeds(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad);
+                if let StmtKind::Decl(d) = &st.kind {
+                    self.needs_standard_datums |= d.seed_names.iter().any(|(_, name)|
+                        name.starts_with("std."));
+                }
             }
             let clean = bad.is_empty();
             for (span, msg) in bad {
@@ -1384,7 +1547,7 @@ impl<'a> Walk<'a> {
             .into_iter()
             .find(|i| {
                 self.prog.component(&i.component).is_some_and(|c| {
-                    c.formals.iter().any(|f| f.name.text == swept && !matches!(f.ty, Ty::Ent(_)))
+                    c.formals.iter().any(|f| f.name.text == swept && !matches!(f.ty, Ty::Ent(_) | Ty::Group))
                 })
             })
             .map(|i| crate::syntax::CurveOf {
@@ -1457,13 +1620,18 @@ fn fold(sub: &str, text: &str, units: Units) -> Result<String, String> {
     }
     let p = expr::parse_in(sub, units)?;
     let env: BTreeMap<String, Aff> = BTreeMap::new();
-    if let Ok(a) = expr::eval(&p.body, &env) {
+    let evaluated = expr::eval(&p.body, &env);
+    if p.body.deps().is_empty() {
+        if let Err(e) = &evaluated { return Err(e.clone()); }
+    }
+    if let Ok(a) = evaluated {
         if let Some(v) = a.number() {
             if v.is_finite() {
                 // a definition keeps its name: it is the document's, not the component's
+                let value = a.dim.number_text(v, units);
                 return Ok(match &p.name {
-                    Some(n) => format!("{n} = {}", crate::syntax::num(v)),
-                    None => crate::syntax::num(v),
+                    Some(n) => format!("{n} = {value}"),
+                    None => value,
                 });
             }
         }
@@ -1489,14 +1657,7 @@ fn of_vals(vals: &BTreeMap<String, Aff>, units: Units) -> impl Fn(&str) -> Optio
         if let Some(v) = a.number() {
             // a number that knows what it is says so, or `phi + atan2(…)` would read a plain
             // number added to an angle once `phi: Angle` was written in as one
-            let suffix = if a.dim == crate::units::Dim::ANGLE {
-                "deg"
-            } else if a.dim == crate::units::Dim::LENGTH {
-                units.name().unwrap_or("")
-            } else {
-                ""
-            };
-            return Some(format!("({}{suffix})", crate::syntax::num(v)));
+            return Some(format!("({})", a.dim.number_text(v, units)));
         }
         let n = a.free.as_ref()?;
         Some(if a.m == 1.0 && a.c == 0.0 {
@@ -1742,8 +1903,17 @@ fn lookup(
             }
         }
         let leaf = segs.pop()?;
-        let container = segs.iter().map(|s| format!("{s}.")).collect::<String>();
-        let abs = copy_of(&container, leaf, k, sc, names)?;
+        let abs = if segs.is_empty() {
+            copy_of("", leaf, k, sc, names)?
+        } else {
+            // A layout argument may alias an instance whose body contains the repetition.
+            // Resolve that container in the caller's scope before selecting its copy.
+            let container = Ref { root: r.root.clone(), path: r.path[..at - 1].to_vec(), span: r.span };
+            let (root, rest) = lookup(&container, sc, names, alias, units)?;
+            let prefix = std::iter::once(root).chain(rest).collect::<Vec<_>>().join(".");
+            let scope = Scope { prefixes: vec![format!("{prefix}.")], ..sc.clone() };
+            copy_of("", leaf, k, &scope, names)?
+        };
         let rest: Vec<String> = r.path[at + 1..]
             .iter()
             .map(|s| match s {
@@ -1795,11 +1965,9 @@ fn lookup(
                 return alias_target(t, &rest, names, alias);
             }
         }
-        if names.contains(&cand) {
-            return Some((cand, rest));
-        }
-        if let Some(t) = alias.get(&cand) {
-            return alias_target(t, &rest, names, alias);
+        if !sc.closed {
+            if names.contains(&cand) { return Some((cand, rest)); }
+            if let Some(t) = alias.get(&cand) { return alias_target(t, &rest, names, alias); }
         }
     }
     None
@@ -1832,10 +2000,13 @@ fn rewrite(
     alias: &BTreeMap<String, String>,
     units: Units,
     bad: &mut Vec<(Span, String)>,
+    needs_standard_datums: &mut bool,
 ) {
+    let needed = std::cell::Cell::new(false);
     let fix = |r: &mut Ref, bad: &mut Vec<(Span, String)>| match lookup(r, sc, names, alias, units)
     {
         Some((abs, rest)) => {
+            needed.set(needed.get() || abs.starts_with("std."));
             r.root = Name { text: abs, span: r.root.span };
             r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
         }
@@ -1874,9 +2045,10 @@ fn rewrite(
             if let Some(r) = d.membership.plane_mut() {
                 match (&sc.in_plane, from_instance) {
                     (Some(ip), true) => {
-                        let outer = Scope { prefixes: ip.prefixes.clone(), ..sc.clone() };
+                        let outer = Scope { prefixes: ip.prefixes.clone(), closed: ip.closed, ..sc.clone() };
                         match lookup(r, &outer, names, alias, units) {
                             Some((abs, rest)) => {
+                                needed.set(needed.get() || abs.starts_with("std."));
                                 r.root = Name { text: abs, span: r.root.span };
                                 r.path =
                                     rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
@@ -1936,4 +2108,5 @@ fn rewrite(
         }
         _ => {}
     }
+    *needs_standard_datums |= needed.get();
 }

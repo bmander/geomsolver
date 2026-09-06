@@ -1022,6 +1022,46 @@ fn section_holes_preserve_explicit_closure_winding_and_failed_face_cleanup() {
 }
 
 #[test]
+fn vtwin_intake_passages_connect_without_opening_into_the_exhaust() {
+    use gcs_core::{clear, constraints::SolidWord, solid::{ApproximationPolicy, WorldPoint}};
+    let (p, errors, linked) = gcs_core::library::parse_linked(gcs_core::examples::VTWIN_PLATE);
+    assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}");
+    let mut e = elaborate(&p);
+    assert!(e.ok(), "{:?}", e.diags);
+    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+    let solid = |name: &str| e.sketch.evaluated_solid(
+        e.map.ent_named(&format!("plate.{name}")).unwrap().i(),
+        ApproximationPolicy::View { unit: 0.02 }).unwrap();
+    let intake = ["air.plenum", "air.feedL.body", "air.feedR.body", "inlet.passage_s", "portLi", "portRi"];
+    let exhaust = ["portLe", "portRe", "ventL.body", "ventR.body"];
+    for a in intake {
+        for b in exhaust {
+            let verdict = clear::judge_evaluated(SolidWord::Clear, &solid(a), &solid(b), 3.9);
+            assert_eq!(verdict.holds(), Some(true), "{a} versus {b}: {verdict:?}");
+        }
+    }
+
+    // Each radial feed overlaps its port and the plenum by a finite area.
+    // The inlet also reaches inside the arc, rather than merely touching its outside.
+    let point = |name: &str| e.sketch.point_xy(e.map.ent_named(&format!("plate.{name}")).unwrap().i());
+    let plenum = solid("air.plenum");
+    let outer = point("air.co1");
+    let rman = outer.0.hypot(outer.1) - 2.0;
+    for (bank, feed, port, side) in [("l", "air.feedL.body", "portLi", -1.0), ("r", "air.feedR.body", "portRi", 1.0)] {
+        let p = point(&format!("{bank}.ip.p"));
+        let radius = p.0.hypot(p.1);
+        let (c, s) = (p.0 / radius, p.1 / radius);
+        let shared = WorldPoint([c * (rman + 0.5) - s * side * 0.5, 0.0,
+            s * (rman + 0.5) + c * side * 0.5]);
+        assert!(plenum.contains_world(shared) && solid(feed).contains_world(shared), "{feed} meets plenum");
+        let shared = WorldPoint([p.0 - c * 0.5, 0.0, p.1 - s * 0.5]);
+        assert!(solid(feed).contains_world(shared) && solid(port).contains_world(shared), "{feed} meets port");
+    }
+    let shared = WorldPoint([0.0, 0.0, rman + 1.0]);
+    assert!(plenum.contains_world(shared) && solid("inlet.passage_s").contains_world(shared));
+}
+
+#[test]
 fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
     use gcs_core::{plane, solid::{ApproximationPolicy, WorldPoint}};
     for (phi, height, page_x, page_y, offset) in [(0, 0, 0, 0, 0), (35, 72, 100, -80, 7)] {
@@ -1032,7 +1072,7 @@ fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
             plane front(origin: O, toward: q, from: datum, offset: {offset}mm)\n\
             in front {{\nc: At(O, dx: 0mm, dy: {height}mm)\naxes: Axes(O)\n\
             circle core(center: c.p) hint(r: torgb / 2)\nradius(torgb / 2) core\n}}\n\
-            thr: Throttle(front, c.p, axes.ax, phi: {phi}deg)\n\
+            thr: Throttle(front, c.p, axes.ax, phi: {phi}deg, dims: vtwin_dims)\n\
             solid old_barrel(face(thr.barrel), from: -(bossz / 2 + tback), to: bossz / 2)\n\
             solid old_hub(face(thr.hub), from: bossz / 2, to: bossz / 2 + levw)\n\
             face groove_section(thr.barrel, holes: core)\n\

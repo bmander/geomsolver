@@ -10,17 +10,20 @@ robust dragging, packaged for the browser.
 
 `.sv` files specify geometry, constraints, solver hints, and assertions. `.svd` files import
 models and specify sheets, views, dimensions, and styles. Components group statements; they
-have no designated body. See [Solvent Drawing](docs/solvent-drawing.md).
+have no designated body. Their model inputs are explicit arguments; `group` bundles related
+dimensions or references to layout geometry without adding solver state. See [Solvent Drawing](docs/solvent-drawing.md).
 
 ```sh
-build/solventc rust/examples/vtwin/piston.sv
+build/solventc rust/examples/vtwin/components/piston.sv
 build/solventc rust/examples/vtwin/piston.svd --output piston.svg
 build/solventc drawing.svd --sheet assembly --output assembly.svg
 ```
 
 The browser's **File → Open drawing folder…** opens drawings with their model dependencies.
 A bare model still has an automatic editor preview. The six V-twin part sheets demonstrate
-paper layout independent of geometry.
+paper layout independent of geometry. Each part's component file includes a `preview { … }`
+setup using standard datums; the part sheet loads that preview, while `use` omits the preview
+setup.
 
 ## Implementation
 

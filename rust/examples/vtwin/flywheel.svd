@@ -1,5 +1,5 @@
 // Three projections of the solved part, arranged independently of its model.
-model m from "flywheel.sv"
+model m from "components/flywheel.sv"
 
 sheet part {
   size A4

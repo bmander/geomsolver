@@ -17,34 +17,34 @@
 use engine.dims
 use engine.parts
 
-// the rod's own dimensions
-param wB = pinlen - 4mm     // big end, along the crank axis: the pin less 2 of clearance a side
-param wS = 22mm             // small end, along the crank axis
-param rB = rp + 1.5mm       // big-end bore: the crank pin and a bearing shell
-param rS = rpin + 1mm       // small-end bore: the piston pin and a bush
-param eB = 30mm             // big-end eye, outside
-param eS = 16mm             // small-end eye, outside
-param hB = 12mm             // shank half-width where it leaves the big end…
-param hS = 9mm              // …and where it meets the small end
-param rf = 6mm              // fillet between shank and eye
-param bolt = 22mm           // cap bolt centres, off the rod's axis
-param capd = 26mm           // the bolt reaches this far into the cap…
-param rodd = 20mm           // …and this far into the rod
-param fl = 18mm             // I-section: flange width, the shank's thickness across the engine
-param ft = 4mm              // flange thickness
-param wt = 5mm              // web thickness
-param hM = (hB + hS) / 2    // the shank's half-width at mid-length, where the section is cut
-param oil = 1.5mm           // the oil passage, half its bore
-
 component ConRod(end: plane, side: plane, secv: plane,
                  pin: point, axis: line, pin_s: point, sm_s: point, at: point,
-                 draw_end: Int, draw_side: Int, draw_sec: Int) {
+                 draw_end: Int, draw_side: Int, draw_sec: Int, dims: group) {
+  // the rod's own dimensions
+  param wB = dims.pinlen - 4mm     // big end, along the crank axis: the pin less 2 of clearance a side
+  param wS = 22mm             // small end, along the crank axis
+  param rB = dims.rp + 1.5mm       // big-end bore: the crank pin and a bearing shell
+  param rS = dims.rpin + 1mm       // small-end bore: the piston pin and a bush
+  param eB = 30mm             // big-end eye, outside
+  param eS = 16mm             // small-end eye, outside
+  param hB = 12mm             // shank half-width where it leaves the big end…
+  param hS = 9mm              // …and where it meets the small end
+  param rf = 6mm              // fillet between shank and eye
+  param bolt = 22mm           // cap bolt centres, off the rod's axis
+  param capd = 26mm           // the bolt reaches this far into the cap…
+  param rodd = 20mm           // …and this far into the rod
+  param fl = 18mm             // I-section: flange width, the shank's thickness across the engine
+  param ft = 4mm              // flange thickness
+  param wt = 5mm              // web thickness
+  param hM = (hB + hS) / 2    // the shank's half-width at mid-length, where the section is cut
+  param oil = 1.5mm           // the oil passage, half its bore
+
   repeat draw_end {
     in end {
       // the small end rides the bore axis one rod length from the pin
-      point sm hint(x: pin.x, y: pin.y + L)
+      point sm hint(x: pin.x, y: pin.y + dims.L)
       sm on axis
-      pin distance(L) sm
+      pin distance(dims.L) sm
       line cl(pin, sm)
       circle bigbore(center: pin) hint(r: rB)
       radius(rB) bigbore

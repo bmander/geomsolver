@@ -1,5 +1,5 @@
 // Three projections of the solved part, arranged independently of its model.
-model m from "plate.sv"
+model m from "components/frame.sv"
 
 sheet part {
   size A4

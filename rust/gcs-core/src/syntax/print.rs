@@ -133,7 +133,9 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             write_ref(out, &r.body);
         }
         StmtKind::Instance(i) => {
-            out.push_str(&format!("{}: ", i.name.text));
+            if !i.name.text.starts_with('#') {
+                out.push_str(&format!("{}: ", i.name.text));
+            }
             write_instance_call(out, i);
             // only a clause this statement wrote — `Membership::written` is the one guard
             if let Some(p) = i.membership.written() {
@@ -146,6 +148,18 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             }
         }
         StmtKind::Param(p) => out.push_str(&format!("param {} = {}", p.name.text, p.text)),
+        StmtKind::Group(g) => {
+            out.push_str(&format!("group {}(", g.name.text));
+            for (i, f) in g.fields.iter().enumerate() {
+                if i > 0 { out.push_str(", "); }
+                if let Some(label) = &f.label { out.push_str(&format!("{}: ", label.text)); }
+                match &f.value {
+                    crate::syntax::InstVal::Ref(r) => write_ref(out, r),
+                    crate::syntax::InstVal::Expr(t) => out.push_str(t),
+                }
+            }
+            out.push(')');
+        }
         StmtKind::Unit(n) => out.push_str(&format!("unit {}", n.text)),
         StmtKind::Style(r) => {
             out.push_str(&format!("style .{} {{ ", r.name.text));

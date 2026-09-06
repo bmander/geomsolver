@@ -81,20 +81,20 @@ fn a_component_seeds_from_its_formals_geometry() {
 }
 
 #[test]
-fn a_component_reads_the_files_top_level_params() {
+fn a_component_receives_the_files_values_explicitly() {
     let e = read(
         "param w = 30\n\
-         component Bar(a: point) {\n\
+         component Bar(a: point, w: Length) {\n\
            param h = w / 2\n\
            point b hint(x: a.x + w, y: a.y + h)\n\
            line l(a, b)\n\
            a distance(w) b\n\
          }\n\
          point o hint(x: 0, y: 0)\n\
-         r: Bar(o)\n",
+         r: Bar(o, w: w)\n",
     );
     assert_eq!(xy(&e, "r.b"), (30.0, 15.0));
-    // a formal of the same name shadows the file's param
+    // the caller may choose a different value
     let e = read(
         "param w = 30\n\
          component Bar(a: point, w: Length) {\n\

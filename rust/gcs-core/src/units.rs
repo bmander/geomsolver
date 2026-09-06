@@ -101,6 +101,28 @@ impl Dim {
     pub const LENGTH: Dim = Dim { len: Rat::ONE, ang: Rat::ZERO };
     pub const ANGLE: Dim = Dim { len: Rat::ZERO, ang: Rat::ONE };
 
+    /// Spell an evaluated value without erasing its dimension during substitution.
+    pub(crate) fn number_text(self, value: f64, units: Units) -> String {
+        let number = crate::syntax::num(value);
+        if self.is_scalar() { return number; }
+        if self == Self::LENGTH { return format!("{number}{}", units.name().unwrap_or("")); }
+        if self == Self::ANGLE { return format!("{number}deg"); }
+        let mut text = number;
+        for (power, unit) in [(self.len, units.name()), (self.ang, Some("deg"))] {
+            let Some(unit) = unit.filter(|_| !power.is_zero()) else { continue };
+            let mut factor = format!("1{unit}");
+            // Fractional dimensions arise only through sqrt, so denominators are powers of 2.
+            let mut denominator = power.d;
+            while denominator > 1 {
+                factor = format!("sqrt({factor})");
+                denominator /= 2;
+            }
+            if power.n != 1 { factor = format!("({factor})^({})", power.n); }
+            text.push_str(&format!(" * {factor}"));
+        }
+        text
+    }
+
     pub fn is_scalar(self) -> bool {
         self.len.is_zero() && self.ang.is_zero()
     }

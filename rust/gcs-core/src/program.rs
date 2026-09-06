@@ -66,6 +66,7 @@ fn shadowing(p: &Program, diags: &mut Vec<Diag>) {
         for st in stmts {
             match &st.kind {
                 StmtKind::Param(d) => say(&d.name, "a `param`", Some(st.id), diags),
+                StmtKind::Group(d) => say(&d.name, "a `group`", Some(st.id), diags),
                 StmtKind::Block(b) => {
                     if let Some(i) = &b.binder {
                         say(i, "a block's index", Some(st.id), diags);
@@ -77,7 +78,7 @@ fn shadowing(p: &Program, diags: &mut Vec<Diag>) {
         }
     }
     // the root stands among the components, and a module's components with it; what a module's
-    // own body adds is its top-level params, which its components read (§6.3)
+    // own body adds is its exported top-level values (§6.3)
     let mut said: Vec<Diag> = Vec::new();
     for c in &p.components {
         for f in &c.formals {

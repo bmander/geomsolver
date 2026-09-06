@@ -90,23 +90,23 @@ component Nut(c: point, ref: line, af: Length, bore: Length, phase: Angle) {
 // writing twice: a moving seal wants 10–20% squeeze on the ring's section, so the groove's
 // bottom is the bore less twice the squeezed section, and the groove is a third wider than the
 // section so the ring can roll rather than drag.  `hardware` states both numbers
-// (`oring_squeeze`, `oring_groove_w`); this reads them.  A design then says *a groove for a
+// (`oring_squeeze`, `oring_groove_w`) in `seal_dims`, which the caller supplies.  A design then says *a groove for a
 // #014* and the arithmetic is the library's.
 //
 //   use std
 //   use hardware
 //   g: Groove(body: pis, f: axis_datum, r: D / 2,
-//             z: -groove, cs: oring014_cs) in swing
+//             z: -groove, cs: oring014_cs, seal: seal_dims) in swing
 //
 // `body` is the solid the groove is cut out of, and the statement inside is what does it: a
 // component may contribute a `through` to a body it was handed, because the body rule is a set
 // and not a sequence.  The groove is turned about the bore's own axis, so what is written here
 // is its section: `w` wide at `z` down the axis, from the bore out to the squeezed diameter.
 component Groove(body: solid, f: plane,
-                 r: Length, z: Length, cs: Length) {
+                 r: Length, z: Length, cs: Length, seal: group) {
   line ax(f.origin, f.toward)
-  param rb = r - (1 - oring_squeeze) * cs   // the groove's bottom, off the axis
-  param w = oring_groove_w * cs             // and how wide it is along the axis
+  param rb = r - (1 - seal.squeeze) * cs   // the groove's bottom, off the axis
+  param w = seal.width_factor * cs             // and how wide it is along the axis
   g0: Loc(f, u: z, v: rb)
   g1: Loc(f, u: z, v: r)
   g2: Loc(f, u: z - w, v: r)
@@ -119,3 +119,6 @@ component Groove(body: solid, f: plane,
   solid groove(gf, about: ax)
   groove cut body
 }
+
+// Caller-selected seal proportions, passed explicitly to Groove.
+group seal_dims(squeeze: oring_squeeze, width_factor: oring_groove_w)

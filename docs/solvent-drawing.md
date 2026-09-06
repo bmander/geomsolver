@@ -6,7 +6,7 @@ change a model's solution. A component remains a scope containing statements; it
 designated body or implicit geometric output.
 
 ```
-model part from "piston.sv"
+model part from "components/piston.sv"
 use "technical.svd"
 
 sheet piston {

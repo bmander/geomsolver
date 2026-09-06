@@ -5,6 +5,7 @@ import { initCore } from '../core/wasm.js';
 import * as drawings from '../core/drawing.js';
 import { Document } from '../core/program.js';
 import * as modules from '../core/modules.js';
+import { solve } from '../core/system.js';
 import { exampleCases } from '../app/example-catalog.js';
 import * as remote from '../app/remote.js';
 
@@ -14,6 +15,18 @@ const files: Record<string, string> = JSON.parse(packed);
 const staticFetch = async (path: string | URL | Request) =>
   new Response(String(path) === 'dist/examples/sources.json' ? packed : '',
     { status: String(path) === 'dist/examples/sources.json' ? 200 : 404 });
+
+test('a bare cylinder preview accepts a standard datum without placement boilerplate', () => {
+  const text = 'unit mm\nuse components.cylinder\npreview { Cylinder(std.front, fw: 12mm, dims: vtwin_dims) }\n';
+  const doc = Document.read(text);
+  try {
+    assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
+    assert.ok(solve(doc.sketch).success);
+    assert.ok(doc.map.entities.some((e) => e.kind === 'solid'));
+    assert.equal(doc.text, text);
+    assert.ok(doc.map.entities.every((e) => !e.name?.includes('#')));
+  } finally { doc.dispose(); }
+});
 
 test('menu examples open files or directories with one V-twin choice', async (t) => {
   t.mock.method(globalThis, 'fetch', staticFetch);
@@ -30,10 +43,10 @@ test('menu examples open files or directories with one V-twin choice', async (t)
   assert.ok(vtwin.files['vtwin/components/frame.sv']);
   for (const name of ['assembly', 'cylinder', 'plate', 'piston', 'disc', 'flywheel', 'throttle']) {
     assert.ok(vtwin.files[`vtwin/${name}.svd`]);
-    const model = name === 'cylinder' ? 'components/cylinder' : name;
+    const model = name === 'assembly' ? name : `components/${name === 'plate' ? 'frame' : name}`;
     assert.ok(vtwin.files[`vtwin/${model}.sv`]);
+    if (name !== 'assembly') assert.ok(!(`vtwin/${name}.sv` in vtwin.files));
   }
-  assert.ok(!('vtwin/cylinder.sv' in vtwin.files));
   assert.ok(!vtwin.files['engine.svd']);
 });
 
@@ -58,6 +71,22 @@ test('a component preview uses edited project dependencies when opened directly'
     const drawing = files['vtwin/cylinder.svd'];
     assert.ok(drawings.render(drawing, 'vtwin/cylinder.svd', edited).includes('<svg'));
   } finally { modules.forget(); }
+});
+
+test('every V-twin component preview opens and solves from the project files', () => {
+  for (const name of ['cylinder', 'piston', 'disc', 'flywheel', 'throttle', 'frame', 'bank', 'crank', 'side_view']) {
+    const path = `vtwin/components/${name}.sv`;
+    assert.ok(files[path].includes('\npreview {'), path);
+    modules.provideProject(path, files);
+    try {
+      const doc = Document.read(files[path]);
+      try {
+        assert.ok(doc.ok, `${path}: ${JSON.stringify(doc.diagnostics)}`);
+        assert.ok(solve(doc.sketch).success, path);
+        assert.ok(doc.map.entities.some((e) => e.kind === 'line'), path);
+      } finally { doc.dispose(); }
+    } finally { modules.forget(); }
+  }
 });
 
 test('live directory listings discover files added after the static build', async (t) => {

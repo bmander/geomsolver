@@ -413,11 +413,11 @@ pub const ENGINE: &str = include_str!("../../examples/engine.sv");
 pub const VTWIN: &str = include_str!("../../examples/vtwin/assembly.sv");
 /// The V-twin cylinder's part sheet.
 pub const VTWIN_CYLINDER: &str = include_str!("../../examples/vtwin/components/cylinder.sv");
-pub const VTWIN_PLATE: &str = include_str!("../../examples/vtwin/plate.sv");
-pub const VTWIN_PISTON: &str = include_str!("../../examples/vtwin/piston.sv");
-pub const VTWIN_DISC: &str = include_str!("../../examples/vtwin/disc.sv");
-pub const VTWIN_FLYWHEEL: &str = include_str!("../../examples/vtwin/flywheel.sv");
-pub const VTWIN_THROTTLE: &str = include_str!("../../examples/vtwin/throttle.sv");
+pub const VTWIN_PLATE: &str = include_str!("../../examples/vtwin/components/frame.sv");
+pub const VTWIN_PISTON: &str = include_str!("../../examples/vtwin/components/piston.sv");
+pub const VTWIN_DISC: &str = include_str!("../../examples/vtwin/components/disc.sv");
+pub const VTWIN_FLYWHEEL: &str = include_str!("../../examples/vtwin/components/flywheel.sv");
+pub const VTWIN_THROTTLE: &str = include_str!("../../examples/vtwin/components/throttle.sv");
 
 pub const IMPOSSIBLE_TRIANGLE: &str = include_str!("../../examples/impossible_triangle.sv");
 pub const ALTITUDES: &str = include_str!("../../examples/altitudes.sv");

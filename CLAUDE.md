@@ -14,7 +14,9 @@ Example choices update the URL; the `file` query parameter preserves the selecte
 Every parsed file has an anonymous root, even if empty; component definitions are not instances.
 An optional file-level `preview { … }` contributes ordinary root statements when opened as a
 model, including via `.svd`, and is omitted entirely on `use` (units and params included).
-The cylinder's setup lives in `vtwin/components/cylinder.sv`; there is no `vtwin/cylinder.sv`.
+Each V-twin part's setup lives in its component's `preview` block, including the plate in
+`vtwin/components/frame.sv`. The `.svd` part sheets load those files directly; only the assembly
+has a separate top-level `.sv` model.
 Source edits add geometry inside the preview and reusable definitions outside it. Hosts look
 for project modules beside the opened model and then in its ancestors before the library.
 `web/tools/copy-examples.js` packages example sources for static hosts; live files override them.
@@ -26,7 +28,23 @@ uses these and hints reading `f.c`/`f.s`; `f.angle` is also readable in hints. C
 still have no implicit frame. A caller supplies membership with `instance: Part(f) in view`
 when the component does not need to name multiple planes. Datum intrinsics are reseeded after
 geometric point hints settle. Component aliases retain subentity paths such as `f.origin`.
+`use std` provides lazy shared `std.front` (u right), `std.up` (u up), and `std.origin`,
+expanded from the library's `StandardDatums` only when referenced. Both datums are fixed at
+page zero, with no implied membership. Calls may omit `name:`; anonymous instance keys stay
+out of user-facing names. The cylinder preview keeps `cyl:` for its `.svd` references and uses
+`cyl: Cylinder(std.up, fw: fwA, dims: vtwin_dims)` with no explicit origin, ground, plane, or Axes setup.
 
+
+
+**Closed components:** model dependencies enter through arguments, including standard datums.
+Visible component definitions and built-in functions/constants remain callable. Component scopes
+contain only their own formals and declarations; repetitions share that lexical scope.
+`group dims(width: 20mm, origin: o)` bundles values and geometry aliases; `dims: group` is a
+required formal, usable positionally or by label. Groups nest, and a component instance may be
+passed as a layout group exposing its geometry. They add no solver state. Numeric member units
+survive substitution; missing members are errors. Curves still need fixed scalar/entity formals.
+The V-twin and inline-four examples pass `vtwin_dims` and `engine_dims` explicitly. Frame takes
+`Frame(layout, dims: vtwin_dims)`; its layout names the front datum, origin, and reference axis.
 
 A geometric constraint solver, and **Solvent**, the language a drawing in it is written as.
 
@@ -203,11 +221,10 @@ Conventions:
   `commit_seeds` never writes an expression back, so P3 holds.  The bearing of a sheet
   `hint(at: …)` is `substitute`d over the scope's numbers, which print **with their unit** (`of_vals`: an
   `Angle` as `(180deg)`, a `Length` as `(150mm)`), or `phi + atan2(…)` reads as a plain number
-  added to an angle.  A file's top-level `param`s are in scope in its components (`Walk::file_vals`,
-  under the formals in `bind`) and so are the params of the modules it `use`s
-  (`module_params`, memoised, cycle-safe) — the used modules' params are merged **before** a
-  file's own are worked out, so `param rB = rp + 1.5mm` reads the table.  `tests/seeds.rs` is
-  the gate.
+  added to an angle. Components are closed over their arguments: only their own parameters
+  and formals are available. `module_params` exports values to importing root bodies, where
+  they can be bundled in groups and passed explicitly. `tests/seeds.rs` and
+  `tests/closed_scopes.rs` are the gates.
 - **A part is one component carrying `in view { … }` blocks** (Solvent §6.7, `P::in_comp`): the
   block form is allowed inside a component body — the plane is a formal, and nothing the
   document deletes reaches the header — and still refused inside a root block.  With
@@ -292,7 +309,7 @@ Conventions:
   says which text an offset is in; `modules::localize` (run by `link` and by `elaborate`) shows a
   module's diagnostic at the `use` that brought it in (`Module::via`) with `name:line:col` in
   front of the message.  A module contributes its components (`Component::module` says which)
-  and its top-level params; its own drawing is not drawn.  **The core has no filesystem**: the
+  and its top-level params and groups to the importing root; its own drawing is not drawn.  **The core has no filesystem**: the
   resolver is the host's — `solventc` reads `engine.parts` as `engine/parts.sv` beside the
   document, then `library::resolve`; the FFI and `examples::document` use `library::parse_linked`,
   over `library::MODULES` (compiled in with `include_str!`, which is how the app opens the

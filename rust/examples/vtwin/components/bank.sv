@@ -17,26 +17,34 @@ use components.parts
 use components.cylinder
 use components.piston
 
-component Bank(pin: point, piv: point, fw: Length, dim: Int) {
+component Bank(pin: point, piv: point, fw: Length, dim: Int, dims: group) {
   // Start on the branch extending from the pin through the pivot.
-  point crown hint(x: pin.x + L * cos(atan2(piv.y - pin.y, piv.x - pin.x)),
-                   y: pin.y + L * sin(atan2(piv.y - pin.y, piv.x - pin.x)))
+  point crown hint(x: pin.x + dims.L * cos(atan2(piv.y - pin.y, piv.x - pin.x)),
+                   y: pin.y + dims.L * sin(atan2(piv.y - pin.y, piv.x - pin.x)))
   line rod(pin, crown)
   piv on rod
-  pin distance(L) crown
+  pin distance(dims.L) crown
 
   // Explicit moving datums: the cylinder points up from its pivot, the piston down
   // from its crown to the pin. Membership in the swing plane comes from the caller.
   plane cylinder_axes(origin: piv, toward: crown)
   plane piston_axes(origin: crown, toward: pin)
-  cyl: Cylinder(cylinder_axes, fw: fw)
-  pis: Piston(piston_axes)
+  cyl: Cylinder(cylinder_axes, fw: fw, dims: dims)
+  pis: Piston(piston_axes, dims: dims)
 
   // the dimensions, on one bank
   repeat dim {
-    claim cyl.b_tl.p distance(D) cyl.b_tr.p
-    claim pin distance(L) crown
-    claim cyl.k_bl.p distance(ct - cb) cyl.k_tl.p
-    claim pis.ra.p distance(rt) pis.rc.p
+    claim cyl.b_tl.p distance(dims.D) cyl.b_tr.p
+    claim pin distance(dims.L) crown
+    claim cyl.k_bl.p distance(dims.ct - dims.cb) cyl.k_tl.p
+    claim pis.ra.p distance(dims.rt) pis.rc.p
   }
+}
+
+// Open this file to preview bank B at the assembly's starting angle.
+preview {
+  unit mm
+  pin: Loc(std.up, u: R * cos(theta0), v: -R * sin(theta0))
+  pivot: Loc(std.up, u: H * cos(alphaR), v: -H * sin(alphaR))
+  bank: Bank(pin.p, pivot.p, fw: fwB, dim: 1, dims: vtwin_dims)
 }

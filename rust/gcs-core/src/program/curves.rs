@@ -26,6 +26,8 @@ fn compile_curve(
     let mut values = Vec::new();
     for fo in &comp.formals {
         match fo.ty {
+            Ty::Group => return Err((fo.span,
+                "a curve needs fixed scalar or entity formals; pass the group's members individually".into())),
             Ty::Ent(k) => {
                 let names = k.scalar_names(&fo.name.text).ok_or_else(|| {
                     (

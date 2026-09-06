@@ -193,7 +193,12 @@ pub(super) fn constrain(
     // written.
     if ckind.magnitude() {
         if let Some(i) = spec.iter().position(|(_, k)| *k == SpecKind::Length) {
-            let v = args[i].num();
+            let v = match &args[i] {
+                CArg::Expr(e) => expr::parse_in(&e.text, sk.units).ok()
+                    .and_then(|p| expr::eval(&p.body, &Default::default()).ok())
+                    .and_then(|a| a.number()).unwrap_or(args[i].num()),
+                a => a.num(),
+            };
             if v < 0.0 {
                 // where the type has a side to name, the minus was *saying* which side, and the
                 // word is where that belongs now (issue #48, item 4) — so the message names it

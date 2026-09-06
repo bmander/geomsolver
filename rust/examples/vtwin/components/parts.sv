@@ -79,18 +79,18 @@ component Axes(o: point) {
 // A set screw into the shaft: its clearance hole from the bore at `rin` out to the rim at
 // `rout`, and the pocket the nut is trapped in, `nutin` out from the bore.  Written in the
 // datum `f` along the screw's axis.  Drawn on the part's sheet only.
-component Grub(f: plane, rin: Length, rout: Length) {
+component Grub(f: plane, rin: Length, rout: Length, dims: group) {
   line ax(f.origin, f.toward)
-  h0: Loc(f, u: rin, v: grub / 2)
-  h1: Loc(f, u: rout, v: grub / 2)
-  h2: Loc(f, u: rin, v: -grub / 2)
-  h3: Loc(f, u: rout, v: -grub / 2)
+  h0: Loc(f, u: rin, v: dims.grub / 2)
+  h1: Loc(f, u: rout, v: dims.grub / 2)
+  h2: Loc(f, u: rin, v: -dims.grub / 2)
+  h3: Loc(f, u: rout, v: -dims.grub / 2)
   line s0(h0.p, h1.p)
   line s1(h2.p, h3.p)
-  n0: Loc(f, u: rin + nutin, v: nutaf / 2)
-  n1: Loc(f, u: rin + nutin + nutT, v: nutaf / 2)
-  n2: Loc(f, u: rin + nutin + nutT, v: -nutaf / 2)
-  n3: Loc(f, u: rin + nutin, v: -nutaf / 2)
+  n0: Loc(f, u: rin + dims.nutin, v: dims.nutaf / 2)
+  n1: Loc(f, u: rin + dims.nutin + dims.nutT, v: dims.nutaf / 2)
+  n2: Loc(f, u: rin + dims.nutin + dims.nutT, v: -dims.nutaf / 2)
+  n3: Loc(f, u: rin + dims.nutin, v: -dims.nutaf / 2)
   line q0(n0.p, n1.p)
   line q1(n1.p, n2.p)
   line q2(n2.p, n3.p)
@@ -106,7 +106,7 @@ component Grub(f: plane, rin: Length, rout: Length) {
   a1: Loc(f, u: rout, v: 0mm)
   face bore_f(a0.p, h0.p, s0, a1.p, -> close)
   solid bore(bore_f, about: ax)
-  claim h0.p distance(grub) h2.p
-  claim n0.p distance(nutT) n1.p
-  claim n0.p distance(nutaf) n3.p
+  claim h0.p distance(dims.grub) h2.p
+  claim n0.p distance(dims.nutT) n1.p
+  claim n0.p distance(dims.nutaf) n3.p
 }

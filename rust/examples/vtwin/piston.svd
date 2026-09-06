@@ -1,5 +1,5 @@
 // Three projections of the solved part, arranged independently of its model.
-model m from "piston.sv"
+model m from "components/piston.sv"
 
 sheet part {
   size A4

@@ -42,10 +42,11 @@ O distance(0, along: x) up
 O distance(40, along: y) up
 line ref(O, up)
 
-plate: Frame(views.front, O, ref)
-crank: Crank(O, ref) in views.front
-bankR: Bank(crank.pin, plate.r.piv, fw: fwB, dim: 1) in views.front
-bankL: Bank(crank.pin, plate.l.piv, fw: fwA, dim: 0) in views.front
+group layout(front: views.front, origin: O, axis: ref)
+plate: Frame(layout, dims: vtwin_dims)
+crank: Crank(O, ref, dims: vtwin_dims) in views.front
+bankR: Bank(crank.pin, plate.r.piv, fw: fwB, dim: 1, dims: vtwin_dims) in views.front
+bankL: Bank(crank.pin, plate.l.piv, fw: fwA, dim: 0, dims: vtwin_dims) in views.front
 // **the plate's side view is asked for, not drawn** (§6.11) — the part is a solid, so the
 // assembly's side view of it is a reading of that solid and cannot disagree with the front view
 // about how thick the plate is or how far the bearing boss stands off it
@@ -58,7 +59,7 @@ bankL: Bank(crank.pin, plate.l.piv, fw: fwA, dim: 0) in views.front
 point so hint(x: -tp / 2, y: 0) in views.right
 views.right_origin distance(tp / 2, along: x) so
 views.right_origin distance(0, along: y) so       // the same height: the crank axis
-side: SideView(so) in views.right
+side: SideView(so, dims: vtwin_dims) in views.right
 
 // the two views agree: every height the side view shows is the front view's
 crank.pin project side.pin_s             // the pin

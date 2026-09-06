@@ -418,6 +418,7 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
             StmtKind::Decl(d) => Some(d.name.key().text.as_str()),
             StmtKind::Instance(i) => Some(i.name.text.as_str()),
             StmtKind::Param(p) => Some(p.name.text.as_str()),
+            StmtKind::Group(g) => Some(g.name.text.as_str()),
             _ => None,
         })
         .collect();
@@ -755,6 +756,11 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
         }
     };
     match &st.kind {
+        StmtKind::Group(g) => {
+            for field in &g.fields {
+                if let syntax::InstVal::Ref(r) = &field.value { look(r); }
+            }
+        }
         StmtKind::Chain(c) => {
             for r in &c.links {
                 look(r);
@@ -1184,6 +1190,14 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             );
         }
         let Some(site) = e.map.of_entity.get(r) else { continue };
+        if site.path.0.iter().any(|step| match step {
+            crate::ir::PathStep::Instance(id) => matches!(prog.stmt(*id).map(|s| &s.kind),
+                Some(StmtKind::Instance(i)) if i.name.text.starts_with('#')),
+            _ => false,
+        }) {
+            return Edit::none(prog, Some(
+                "give the component call a name before referring to its geometry".into()));
+        }
         if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
             // Nothing calls it and there is no statement of the root's to put a name on: it is
             // anonymous inside a component or a block, so refuse now with the cause rather than

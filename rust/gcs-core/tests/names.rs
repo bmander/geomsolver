@@ -85,12 +85,12 @@ fn a_bare_name_in_a_component_is_the_instances_own_unknown() {
     assert_eq!(names(&e2), names(&e));
 }
 
-/// A file's named dimensions are in scope in the components it defines, as its params are.
+/// Named dimensions reach a component through an explicit numeric argument.
 #[test]
-fn a_component_reads_the_named_dimensions_of_its_own_file() {
+fn a_component_receives_a_named_dimension_as_an_argument() {
     let doc = format!(
-        "component T(p: point, q: point) {{ p distance(w / 2) q }}\n\
-         {BASE}a distance(w = 60) b\nt: T(b, c)\n"
+        "component T(p: point, q: point, w: Length) {{ p distance(w / 2) q }}\n\
+         {BASE}a distance(w = 60) b\nt: T(b, c, w: w)\n"
     );
     let (e, d) = read(&doc);
     assert!(d.is_empty(), "{d:?}");
@@ -103,7 +103,7 @@ fn a_component_reads_the_named_dimensions_of_its_own_file() {
 #[test]
 fn a_modules_component_does_not_read_the_callers_names() {
     let mut shelf: BTreeMap<&str, &str> = BTreeMap::new();
-    shelf.insert("lib.t", "component T(p: point, q: point) { p distance(w) q }\n");
+    shelf.insert("lib.t", "component T(p: point, q: point, w: Length) { p distance(w) q }\n");
     let src = format!("use lib.t\n{BASE}a distance(w = 60) b\nt: T(b, c)\n");
     let (mut prog, errs) = parse(&src);
     assert!(errs.is_empty(), "{errs:?}");

@@ -8,16 +8,16 @@ use engine.parts
 
 // A tangent cam about `c`, its nose `dn` out at `phi` from the line `ref`, measured
 // counter-clockwise: the base circle, the nose circle and the two flanks tangent to both.
-component Lobe(c: point, ref: line, phi: Angle, dn: Length) {
-  circle base(center: c) hint(r: rb)
-  radius(rb) base
+component Lobe(c: point, ref: line, phi: Angle, dn: Length, dims: group) {
+  circle base(center: c) hint(r: dims.rb)
+  radius(dims.rb) base
   point n hint(x: c.x + dn * cos(phi + atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x)),
                y: c.y + dn * sin(phi + atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x)))
   line spine(c, n)
   c distance(dn) n
   ref angle(phi) spine
-  circle nose(center: n) hint(r: rn)
-  radius(rn) nose
+  circle nose(center: n) hint(r: dims.rn)
+  radius(dims.rn) nose
   fl: Span(base, nose, side: 1)
   fr: Span(base, nose, side: -1)
 }
@@ -26,20 +26,20 @@ component Lobe(c: point, ref: line, phi: Angle, dn: Length) {
 // `lift` off its seat by the lobe: the flat follower face stands `rb + lift` from the cam's
 // centre, which is where the lobe's outline reaches at this moment (see `dims.sv`) — so the face
 // is tangent to whichever of base circle, flank or nose is under it, without saying which.
-component Valve(seat: point, axis: line, lift: Length, head: Length) {
+component Valve(seat: point, axis: line, lift: Length, head: Length, dims: group) {
   // the follower face: on the axis and square to it, `rb + lift` short of the cam's centre
-  point fc hint(x: axis.p2.x - (rb + lift) * (axis.p2.x - axis.p1.x) / stem, y: axis.p2.y - (rb + lift) * (axis.p2.y - axis.p1.y) / stem)
+  point fc hint(x: axis.p2.x - (dims.rb + lift) * (axis.p2.x - axis.p1.x) / dims.stem, y: axis.p2.y - (dims.rb + lift) * (axis.p2.y - axis.p1.y) / dims.stem)
   fc on axis
-  axis.p2 distance(rb + lift) fc
-  point f1 hint(x: axis.p2.x - 15mm, y: axis.p2.y - rb)
-  point f2 hint(x: axis.p2.x + 15mm, y: axis.p2.y - rb)
+  axis.p2 distance(dims.rb + lift) fc
+  point f1 hint(x: axis.p2.x - 15mm, y: axis.p2.y - dims.rb)
+  point f2 hint(x: axis.p2.x + 15mm, y: axis.p2.y - dims.rb)
   line flat(f1, f2)
   fc midpoint flat
   flat perpendicular axis
   f1 distance(30) f2
   // the bucket under the face, 30 wide and 20 deep
-  point b1 hint(x: axis.p2.x - 15mm, y: axis.p2.y - rb - 20mm)
-  point b2 hint(x: axis.p2.x + 15mm, y: axis.p2.y - rb - 20mm)
+  point b1 hint(x: axis.p2.x - 15mm, y: axis.p2.y - dims.rb - 20mm)
+  point b2 hint(x: axis.p2.x + 15mm, y: axis.p2.y - dims.rb - 20mm)
   line bl(f1, b1)
   line br(f2, b2)
   line bb(b1, b2)
@@ -50,7 +50,7 @@ component Valve(seat: point, axis: line, lift: Length, head: Length) {
   // the stem, `stem` down the axis to the head, which the lobe lifts off its seat or does not
   point hc hint(at: seat)
   hc on axis
-  hc distance(stem) fc
+  hc distance(dims.stem) fc
   line st(hc, fc)
   point h1 hint(x: seat.x - head / 2, y: seat.y)
   point h2 hint(x: seat.x + head / 2, y: seat.y)

@@ -1,5 +1,5 @@
 // Three projections of the solved part, arranged independently of its model.
-model m from "disc.sv"
+model m from "components/disc.sv"
 
 sheet part {
   size A4

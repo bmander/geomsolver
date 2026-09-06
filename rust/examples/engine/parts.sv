@@ -1,7 +1,7 @@
 // The reciprocating parts, as the end view and the side view each draw them.
 //
-// Every component reads the dimension table (`use engine.dims`), so a piston is `D` wide here and
-// `D` wide in every view, and none of these takes a number the table already states.
+// Components receive the shared dimension table as `dims`, so a piston is `dims.D` wide
+// in every view. The caller passes `engine_dims` from `engine.dims`.
 
 use engine.dims
 
@@ -21,41 +21,41 @@ component Span(k1: circle, k2: circle, side: Scalar) {
 // A connecting rod's *phantom* position, seen along the axis: the centreline and the two eyes,
 // the small end riding the bore axis one rod length from the pin.  The rod itself is the part
 // `engine.conrod` designs; this is the outline a draughtsman ghosts in for a second position.
-component Rod(pin: point, axis: line) {
-  point small hint(x: pin.x, y: pin.y + L)
+component Rod(pin: point, axis: line, dims: group) {
+  point small hint(x: pin.x, y: pin.y + dims.L)
   line cl(pin, small)
   small on axis
-  pin distance(L) small
-  circle big(center: pin) hint(r: rbig)
-  circle sm(center: small) hint(r: rsmall)
-  radius(rbig) big
-  radius(rsmall) sm
+  pin distance(dims.L) small
+  circle big(center: pin) hint(r: dims.rbig)
+  circle sm(center: small) hint(r: dims.rsmall)
+  radius(dims.rbig) big
+  radius(dims.rsmall) sm
 }
 
 // A piston: a rectangle about its small end, the crown `ch` above the pin, two rings under the
 // crown.  `pin` is drawn as a circle where the view looks along it and not where it does not,
 // which is the one difference between the end view's piston and the side view's.
-component Piston(small: point, pin: Int) {
-  param w = D - 0.5mm
-  point cl hint(x: small.x - w / 2, y: small.y + ch)
-  point cr hint(x: small.x + w / 2, y: small.y + ch)
-  point sl hint(x: small.x - w / 2, y: small.y + ch - ph)
-  point sr hint(x: small.x + w / 2, y: small.y + ch - ph)
+component Piston(small: point, pin: Int, dims: group) {
+  param w = dims.D - 0.5mm
+  point cl hint(x: small.x - w / 2, y: small.y + dims.ch)
+  point cr hint(x: small.x + w / 2, y: small.y + dims.ch)
+  point sl hint(x: small.x - w / 2, y: small.y + dims.ch - dims.ph)
+  point sr hint(x: small.x + w / 2, y: small.y + dims.ch - dims.ph)
   line crown(cl, cr) -> line rs(cr, sr) -> line skirt(sr, sl) -> line ls(sl, cl) -> close
   small distance(-w / 2, along: x) cl
-  small distance(ch, along: y) cl
+  small distance(dims.ch, along: y) cl
   small distance(w / 2, along: x) cr
-  small distance(ch, along: y) cr
+  small distance(dims.ch, along: y) cr
   small distance(-w / 2, along: x) sl
-  small distance(ch - ph, along: y) sl
+  small distance(dims.ch - dims.ph, along: y) sl
   small distance(w / 2, along: x) sr
-  small distance(ch - ph, along: y) sr
+  small distance(dims.ch - dims.ph, along: y) sr
   repeat pin {
-    circle k(center: small) hint(r: rpin)
-    radius(rpin) k
+    circle k(center: small) hint(r: dims.rpin)
+    radius(dims.rpin) k
   }
-  line r1(hint(x: small.x - w / 2, y: small.y + ch - 6mm), hint(x: small.x + w / 2, y: small.y + ch - 6mm))
-  line r2(hint(x: small.x - w / 2, y: small.y + ch - 12mm), hint(x: small.x + w / 2, y: small.y + ch - 12mm))
+  line r1(hint(x: small.x - w / 2, y: small.y + dims.ch - 6mm), hint(x: small.x + w / 2, y: small.y + dims.ch - 6mm))
+  line r2(hint(x: small.x - w / 2, y: small.y + dims.ch - 12mm), hint(x: small.x + w / 2, y: small.y + dims.ch - 12mm))
   r1.p1 on ls
   r1.p2 on rs
   r2.p1 on ls

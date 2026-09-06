@@ -83,6 +83,8 @@ pub enum Ty {
     /// these, where before it took a `Scalar` it multiplied by (issue #48, item 4), which put the
     /// unreadable idiom inside every helper instead of at the statement.
     Side,
+    /// A named bundle of values and geometry aliases, or a component's layout instance.
+    Group,
     Ent(EntKind),
 }
 
@@ -97,6 +99,7 @@ impl Ty {
             "Length" => Ty::Length,
             "Angle" => Ty::Angle,
             "Side" => Ty::Side,
+            "group" => Ty::Group,
             other => Ty::Ent(EntKind::parse(&other.to_lowercase())?),
         })
     }
@@ -109,7 +112,7 @@ impl Ty {
         match self {
             Ty::Length => crate::units::Dim::LENGTH,
             Ty::Angle => crate::units::Dim::ANGLE,
-            Ty::Int | Ty::Scalar | Ty::Side | Ty::Ent(_) => crate::units::Dim::SCALAR,
+            Ty::Int | Ty::Scalar | Ty::Side | Ty::Group | Ty::Ent(_) => crate::units::Dim::SCALAR,
         }
     }
 }
@@ -194,6 +197,8 @@ pub enum StmtKind {
     Instance(Instance),
     /// `param R = m * N / 2` — a number worked out while elaborating, never an unknown.
     Param(ParamDecl),
+    /// `group dims(bore: 16mm, axis: datum)` — named values, without new geometry.
+    Group(GroupDecl),
     /// `repeat`, `cycle` — see `Block`.
     Block(Block),
     /// Parse a style block, retaining property spans for diagnostics.
@@ -296,6 +301,7 @@ pub struct SolidRel {
 
 #[derive(Clone, Debug)]
 pub struct Instance {
+    /// A written instance name, or a private `#i…` key for an unnamed call.
     pub name: Name,
     pub component: Name,
     pub args: Vec<InstArg>,
@@ -330,6 +336,12 @@ pub struct ParamDecl {
     pub name: Name,
     pub text: String,
     pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub struct GroupDecl {
+    pub name: Name,
+    pub fields: Vec<InstArg>,
 }
 
 /// Repetition.  Two constructs and two meanings (spec §12): the third, `ring`, is refused by

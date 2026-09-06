@@ -23,19 +23,19 @@ point O hint(x: 0, y: 0)
 ground O
 views: ThreeViews(O, right: 620, up: 620)
 
-end: EndSection(views.right_origin) in views.right
-side: SideSection(O) in views.front
+end: EndSection(views.right_origin, dims: engine_dims) in views.right
+side: SideSection(O, dims: engine_dims) in views.front
 
 // the castings, each one part in its three views (`engine.block`, `engine.head`): the block
 // from the pan rail to the deck with its bores and main bearings, and the head standing on its
 // gasket with the valves and the camshafts in their bearings
-block: EngineBlock(views.right, views.front, views.top, views.right_origin, O, views.top_origin)
-head: CylinderHead(views.right, views.front, views.top, views.right_origin, O, views.top_origin)
+block: EngineBlock(views.right, views.front, views.top, views.right_origin, O, views.top_origin, dims: engine_dims)
+head: CylinderHead(views.right, views.front, views.top, views.right_origin, O, views.top_origin, dims: engine_dims)
 
 // the crankshaft, one part in both sections (`engine.crankshaft`): the throw of cylinder 1 and
 // a ghost of 2 and 3's in the end section, the whole shaft in the side section, every pin's
 // height carried across inside the part
-crank: Crankshaft(views.right, views.front, views.right_origin, end.bore, O, draw_end: 1, draw_side: 1)
+crank: Crankshaft(views.right, views.front, views.right_origin, end.bore, O, draw_end: 1, draw_side: 1, dims: engine_dims)
 
 // the connecting rods, one part drawn in the views it shows in (`engine.conrod`): rod 1 in the
 // end section and the side section both, with the shank's section A-A beside the plan; rods 2 to
@@ -44,18 +44,18 @@ crank: Crankshaft(views.right, views.front, views.right_origin, end.bore, O, dra
 point secA in views.top
 views.top_origin distance(back + 120mm, along: x) secA
 views.top_origin distance(0, along: y) secA
-rod1: ConRod(views.right, views.front, views.top, crank.t1[0].pin, end.bore, crank.pin_s[0], side.small[0], secA, draw_end: 1, draw_side: 1, draw_sec: 1)
-rod2: ConRod(views.right, views.front, views.top, crank.t2[0].pin, end.bore, crank.pin_s[1], side.small[1], secA, draw_end: 0, draw_side: 1, draw_sec: 0)
-rod3: ConRod(views.right, views.front, views.top, crank.t2[0].pin, end.bore, crank.pin_s[2], side.small[2], secA, draw_end: 0, draw_side: 1, draw_sec: 0)
-rod4: ConRod(views.right, views.front, views.top, crank.t1[0].pin, end.bore, crank.pin_s[3], side.small[3], secA, draw_end: 0, draw_side: 1, draw_sec: 0)
-ghost: Rod(crank.t2[0].pin, end.bore) in views.right
-piston1: Piston(rod1.sm[0], pin: 1) in views.right
+rod1: ConRod(views.right, views.front, views.top, crank.t1[0].pin, end.bore, crank.pin_s[0], side.small[0], secA, draw_end: 1, draw_side: 1, draw_sec: 1, dims: engine_dims)
+rod2: ConRod(views.right, views.front, views.top, crank.t2[0].pin, end.bore, crank.pin_s[1], side.small[1], secA, draw_end: 0, draw_side: 1, draw_sec: 0, dims: engine_dims)
+rod3: ConRod(views.right, views.front, views.top, crank.t2[0].pin, end.bore, crank.pin_s[2], side.small[2], secA, draw_end: 0, draw_side: 1, draw_sec: 0, dims: engine_dims)
+rod4: ConRod(views.right, views.front, views.top, crank.t1[0].pin, end.bore, crank.pin_s[3], side.small[3], secA, draw_end: 0, draw_side: 1, draw_sec: 0, dims: engine_dims)
+ghost: Rod(crank.t2[0].pin, end.bore, dims: engine_dims) in views.right
+piston1: Piston(rod1.sm[0], pin: 1, dims: engine_dims) in views.right
 ghost.small project side.small[1]
 ghost.small project side.small[2]
 rod1.sm[0] project side.small[3]
 
 // the timing drive, on the front of the engine in the end section and edge on in the side
-drive: Drive(views.right_origin, head.cam_i, head.cam_e) in views.right
-drive_s: DriveSide(O, head.cam) in views.front
+drive: Drive(views.right_origin, head.cam_i, head.cam_e, dims: engine_dims) in views.right
+drive_s: DriveSide(O, head.cam, dims: engine_dims) in views.front
 
 // how it looks: the dimensions the sheet shows, and nothing else

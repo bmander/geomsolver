@@ -206,7 +206,7 @@ fn tint_word(
             if EntKind::parse(w).is_some() {
                 return (Some(Tint::Word), after_kind(w));
             }
-            if matches!(w, "component" | "param" | "use") {
+            if matches!(w, "component" | "param" | "group" | "use") {
                 return (Some(Tint::Word), Next::Def);
             }
             // `style .construction { … }` — the class it names is the thing it declares
@@ -231,6 +231,9 @@ fn tint_word(
             // `t: Tooth(…)` — a name, a colon and a component
             if next == Some(&Tok::P(':')) {
                 return (Some(Tint::Def), Next::Inst);
+            }
+            if next == Some(&Tok::P('(')) && !is_operator(w) {
+                return (Some(Tint::Type), Next::Word);
             }
             // `claim vertical(rail)`: the word after it is a statement start again, so the
             // relation it qualifies is tinted exactly as it would be standing alone

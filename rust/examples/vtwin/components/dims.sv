@@ -1,4 +1,4 @@
-// The V-twin's dimension table: one module every view reads (§14.4).
+// The V-twin's dimension table, passed to components as `vtwin_dims`.
 //
 // A 90° V-twin *oscillating-cylinder* engine — a "wobbler" — run on shop air.  Each cylinder
 // rocks on a bolt through the frame plate; its piston rod is rigid to the piston and its eye
@@ -8,7 +8,7 @@
 // returns.  No valves, no timing, three moving parts a bank.
 //
 // Every number is stated here once, with its unit; `use components.dims` puts the table in scope for
-// whichever file draws from it, so a bore is `D` in every view.  Bank R's top dead centre is at
+// root code that draws from it; a component receives it as `dims.D`.  Bank R's top dead centre is at
 // crank angle `alphaR`, clockwise from top.  The parts are printed, with hardware-store metal
 // where a printed part would wear, leak or be loaded in tension: a 5/16" steel rod is the
 // crankshaft (7.94 mm — a press fit in a 608 skateboard bearing's 8 mm bore), a 1/4" clevis pin
@@ -138,13 +138,15 @@ param wfw = 12mm
 param zfw = tp + boss + 4mm // its near face, behind the plate's front face
 
 // -- the manifold and the throttle ----------------------------------------------------------
-// Both intake ports are one radius from the crank axis, so a plenum arc concentric with the
-// crank, inside the plate, joins them.  The inlet stands on the plate's top edge: a boss holding
+// The plenum runs inward of the ports, with short radial feeds to the two intakes. Keeping
+// it on the ports' radius would also join the left exhaust. The inlet stands on the plate's
+// top edge: a boss holding
 // the brass coupling, and across the passage between the coupling and the plenum a rotary barrel
 // throttle — a cross-drilled barrel that turns its hole out of line with the passage, an O-ring
 // either side of the hole to seal it in its bore, a third behind the boss to retain it, and its
 // lever on the front.
 param wch = 4mm             // the plenum channel, and the passage
+param rman = rpl - dport / 2 - wall - wch / 2  // plenum centreline, leaving wall to the exhaust
 param bossw = 24mm          // the inlet boss, across
 param bossz = 20mm          // and deep, centred on the plate's mid-plane
 param bossh = 98mm          // its top, above the crank axis
@@ -167,3 +169,29 @@ param cpll = npt14_cpl_l
 param cplin = 18mm          // how deep it is set into the boss
 param cplhole = 16.5mm      // the boss's hole for it, epoxied
 param cplbore = npt14_drill // its bore, near enough: the tap drill for 1/4" NPT
+
+// Explicit design inputs shared by the components.
+group vtwin_dims(
+  D: D, H: H, L: L, R: R, Ty: Ty,
+  V: V, a: a, alphaL: alphaL, alphaR: alphaR, barbore: barbore,
+  beta: beta, boltH: boltH, boltac: boltac, boltaf: boltaf, boss: boss,
+  bossh: bossh, bossw: bossw, bossz: bossz, brgpocket: brgpocket, cb: cb,
+  clr: clr, cpl: cpl, cplbore: cplbore, cplhole: cplhole, cplin: cplin,
+  cpll: cpll, ct: ct, dhole: dhole, dhub: dhub, dpin: dpin,
+  dport: dport, dshaft: dshaft, fch: fch, footd: footd, footh: footh,
+  fwA: fwA, fwB: fwB, fx: fx, fy0: fy0, fy1: fy1,
+  groove: groove, grooveb: grooveb, groovew: groovew, grub: grub, head: head,
+  hubr: hubr, hw: hw, lev: lev, levw: levw, mplug_body_d: mplug_body_d,
+  mplug_body_l: mplug_body_l, mplug_nose_d: mplug_nose_d, mplug_nose_l: mplug_nose_l, nutH: nutH, nutT: nutT,
+  nutac: nutac, nutaf: nutaf, nutin: nutin, oring: oring, ph: ph,
+  pinclr: pinclr, pingrip: pingrip, pinhead: pinhead, pinheadH: pinheadH, pinpocket: pinpocket,
+  pinpocketd: pinpocketd, rbar: rbar, rbrg: rbrg, rdisc: rdisc, reye: reye,
+  rfw: rfw, rman: rman, rpin: rpin, rpl: rpl, rshaft: rshaft,
+  rstud: rstud, rt: rt, rw: rw, shafthole: shafthole, spring: spring,
+  studclr: studclr, swing: swing, tback: tback, tcylA: tcylA, tcylB: tcylB,
+  tdisc: tdisc, theta0: theta0, throttle: throttle, tor: tor, torgb: torgb,
+  torw: torw, torz: torz, tp: tp, trapd: trapd, trapfit: trapfit,
+  traph: traph, trapw: trapw, trapz: trapz, tretain: tretain, wall: wall,
+  wbrg: wbrg, wch: wch, wfw: wfw, wsh: wsh, zA: zA,
+  zB: zB, zdisc: zdisc, zfw: zfw
+)

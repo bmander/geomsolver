@@ -22,63 +22,63 @@ sheet drawing {
   style m.plate.l.ep.p { display: none }
   style m.plate.l.s0 { display: none }
   style m.plate.l.s1 { display: none }
-  style m.plate.p0.p { display: none }
-  style m.plate.p1.p { display: none }
-  style m.plate.p2.p { display: none }
-  style m.plate.p3.p { display: none }
-  style m.plate.p4.p { display: none }
-  style m.plate.p5.p { display: none }
-  style m.plate.xr { display: none }
-  style m.plate.xl { display: none }
-  style m.plate.ci0 { display: none }
-  style m.plate.ci1 { display: none }
-  style m.plate.co0 { display: none }
-  style m.plate.co1 { display: none }
-  style m.plate.boss.a { display: none }
-  style m.plate.boss.b { display: none }
-  style m.plate.boss.c { display: none }
-  style m.plate.boss.d { display: none }
-  style m.plate.cpl_in.a { display: none }
-  style m.plate.cpl_in.b { display: none }
-  style m.plate.cpl_in.c { display: none }
-  style m.plate.cpl_in.d { display: none }
-  style m.plate.cpl_out.a { display: none }
-  style m.plate.cpl_out.b { display: none }
-  style m.plate.cpl_out.c { display: none }
-  style m.plate.cpl_out.d { display: none }
-  style m.plate.cplh.a { display: none }
-  style m.plate.cplh.b { display: none }
-  style m.plate.cplh.c { display: none }
-  style m.plate.cplh.d { display: none }
-  style m.plate.passage.a { display: none }
-  style m.plate.passage.b { display: none }
-  style m.plate.passage.c { display: none }
-  style m.plate.passage.d { display: none }
-  style m.plate.plug_body.a { display: none }
-  style m.plate.plug_body.b { display: none }
-  style m.plate.plug_body.c { display: none }
-  style m.plate.plug_body.d { display: none }
-  style m.plate.plug_nose.a { display: none }
-  style m.plate.plug_nose.b { display: none }
-  style m.plate.plug_nose.c { display: none }
-  style m.plate.plug_nose.d { display: none }
-  style m.plate.tb.p { display: none }
-  style m.plate.ft.a { display: none }
-  style m.plate.ft.b { display: none }
-  style m.plate.ft.c { display: none }
-  style m.plate.ft.d { display: none }
-  style m.plate.cph0.p { display: none }
-  style m.plate.cph1.p { display: none }
-  style m.plate.cph2.p { display: none }
-  style m.plate.cph3.p { display: none }
-  style m.plate.vr0.p { display: none }
-  style m.plate.vr1.p { display: none }
-  style m.plate.vr2.p { display: none }
-  style m.plate.vr3.p { display: none }
-  style m.plate.vl0.p { display: none }
-  style m.plate.vl1.p { display: none }
-  style m.plate.vl2.p { display: none }
-  style m.plate.vl3.p { display: none }
+  style m.plate.blank.p0.p { display: none }
+  style m.plate.blank.p1.p { display: none }
+  style m.plate.blank.p2.p { display: none }
+  style m.plate.blank.p3.p { display: none }
+  style m.plate.blank.p4.p { display: none }
+  style m.plate.blank.p5.p { display: none }
+  style m.plate.ventR.outlet { display: none }
+  style m.plate.ventL.outlet { display: none }
+  style m.plate.air.ci0 { display: none }
+  style m.plate.air.ci1 { display: none }
+  style m.plate.air.co0 { display: none }
+  style m.plate.air.co1 { display: none }
+  style m.plate.inlet.boss.a { display: none }
+  style m.plate.inlet.boss.b { display: none }
+  style m.plate.inlet.boss.c { display: none }
+  style m.plate.inlet.boss.d { display: none }
+  style m.plate.inlet.cpl_in.a { display: none }
+  style m.plate.inlet.cpl_in.b { display: none }
+  style m.plate.inlet.cpl_in.c { display: none }
+  style m.plate.inlet.cpl_in.d { display: none }
+  style m.plate.inlet.cpl_out.a { display: none }
+  style m.plate.inlet.cpl_out.b { display: none }
+  style m.plate.inlet.cpl_out.c { display: none }
+  style m.plate.inlet.cpl_out.d { display: none }
+  style m.plate.inlet.cplh.a { display: none }
+  style m.plate.inlet.cplh.b { display: none }
+  style m.plate.inlet.cplh.c { display: none }
+  style m.plate.inlet.cplh.d { display: none }
+  style m.plate.inlet.passage.a { display: none }
+  style m.plate.inlet.passage.b { display: none }
+  style m.plate.inlet.passage.c { display: none }
+  style m.plate.inlet.passage.d { display: none }
+  style m.plate.inlet.plug_body.a { display: none }
+  style m.plate.inlet.plug_body.b { display: none }
+  style m.plate.inlet.plug_body.c { display: none }
+  style m.plate.inlet.plug_body.d { display: none }
+  style m.plate.inlet.plug_nose.a { display: none }
+  style m.plate.inlet.plug_nose.b { display: none }
+  style m.plate.inlet.plug_nose.c { display: none }
+  style m.plate.inlet.plug_nose.d { display: none }
+  style m.plate.inlet.tb.p { display: none }
+  style m.plate.blank.ft.a { display: none }
+  style m.plate.blank.ft.b { display: none }
+  style m.plate.blank.ft.c { display: none }
+  style m.plate.blank.ft.d { display: none }
+  style m.plate.inlet.cph0.p { display: none }
+  style m.plate.inlet.cph1.p { display: none }
+  style m.plate.inlet.cplh.c { display: none }
+  style m.plate.inlet.cplh.b { display: none }
+  style m.plate.ventR.a.p { display: none }
+  style m.plate.ventR.b.p { display: none }
+  style m.plate.ventR.c.p { display: none }
+  style m.plate.ventR.d.p { display: none }
+  style m.plate.ventL.a.p { display: none }
+  style m.plate.ventL.b.p { display: none }
+  style m.plate.ventL.c.p { display: none }
+  style m.plate.ventL.d.p { display: none }
   style m.plate.thr.tip { display: none }
   style m.plate.thr.e0 { display: none }
   style m.plate.thr.e1 { display: none }
@@ -291,35 +291,33 @@ sheet drawing {
   style m.plate.l.axis { color: #888888; width: 0.5; dash: 14 3 2 3 }
   style m.plate.l.rad_i { display: none }
   style m.plate.l.rad_e { display: none }
-  style m.plate.rad_bR { display: none }
-  style m.plate.rad_bL { display: none }
-  style m.plate.exh_r { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.exh_l { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.cpl_in.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.cpl_in.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.cpl_in.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.cpl_in.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.cplh.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.cplh.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.cplh.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.cplh.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.passage.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.passage.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.passage.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.passage.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.plug_body.ab { color: #888888; width: 0.6; dash: 6 3; display: geometry }
-  style m.plate.plug_body.bc { color: #888888; width: 0.6; dash: 6 3; display: geometry }
-  style m.plate.plug_body.cd { color: #888888; width: 0.6; dash: 6 3; display: geometry }
-  style m.plate.plug_body.da { color: #888888; width: 0.6; dash: 6 3; display: geometry }
-  style m.plate.plug_nose.ab { color: #888888; width: 0.6; dash: 6 3; display: geometry }
-  style m.plate.plug_nose.bc { color: #888888; width: 0.6; dash: 6 3; display: geometry }
-  style m.plate.plug_nose.cd { color: #888888; width: 0.6; dash: 6 3; display: geometry }
-  style m.plate.plug_nose.da { color: #888888; width: 0.6; dash: 6 3; display: geometry }
-  style m.plate.ft.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.ft.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.ft.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.ft.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.cpax { display: none }
+  style m.plate.ventR.center { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.ventL.center { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.inlet.cpl_in.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.inlet.cpl_in.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.inlet.cpl_in.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.inlet.cpl_in.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.inlet.cplh.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.inlet.cplh.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.inlet.cplh.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.inlet.cplh.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.inlet.passage.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.inlet.passage.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.inlet.passage.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.inlet.passage.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.inlet.plug_body.ab { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.inlet.plug_body.bc { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.inlet.plug_body.cd { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.inlet.plug_body.da { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.inlet.plug_nose.ab { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.inlet.plug_nose.bc { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.inlet.plug_nose.cd { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.inlet.plug_nose.da { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.blank.ft.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.blank.ft.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.blank.ft.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.blank.ft.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.inlet.cpax { display: none }
   style m.plate.thr.lever { color: #2a7ab0; width: 1.4 }
   style m.plate.thr.h0 { width: 0.6; dash: 4 3 }
   style m.plate.thr.h1 { width: 0.6; dash: 4 3 }
@@ -414,10 +412,10 @@ sheet drawing {
   style m.plate.l.bolt { color: #7a7a7a; width: 0.6; dash: 4 3 }
   style m.plate.l.intake { color: #7a7a7a; width: 0.6; dash: 4 3 }
   style m.plate.l.exhaust { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.sh { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.bp { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.tbore { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.bcirc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.blank.sh { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.blank.bp { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.inlet.tbore { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.blank.bcirc { color: #7a7a7a; width: 0.6; dash: 4 3 }
   style m.plate.thr.barrel { width: 0.6; dash: 4 3 }
   style m.plate.thr.knob { color: #2a7ab0; width: 1.4 }
   style m.plate.thr.hub { color: #2a7ab0; width: 1.4 }
@@ -433,8 +431,8 @@ sheet drawing {
   style m.bankL.pis.hole { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
   style m.plate.r.sweep { color: #888888; width: 0.6; dash: 6 3; display: geometry }
   style m.plate.l.sweep { color: #888888; width: 0.6; dash: 6 3; display: geometry }
-  style m.plate.ch_in { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.plate.ch_out { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.air.ch_in { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.air.ch_out { color: #7a7a7a; width: 0.6; dash: 4 3 }
   style m.views.front { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }
   style m.views.right { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }
   style m.views.top { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }

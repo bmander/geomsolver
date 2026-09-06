@@ -587,14 +587,14 @@ fn removing_the_plane_takes_an_instances_clause() {
 #[test]
 fn every_copy_of_a_plane_gets_its_own_basis() {
     let e = read("\
-component V(a: Angle) {
+component V(base: plane, a: Angle) {
   point vo hint(x: 0, y: 0)
   point vq hint(x: 1, y: 0)
   plane v(origin: vo, toward: vq, from: base, fold: a)
 }
 plane base
-x1: V(a: 0deg)
-x2: V(a: 90deg)
+x1: V(base, a: 0deg)
+x2: V(base, a: 90deg)
 ");
     let near = |a: [f64; 3], c: [f64; 3]| (0..3).all(|i| (a[i] - c[i]).abs() < 1e-12);
     let b = |n: &str| e.sketch.planes[e.map.ent_named(n).unwrap().i()].basis;

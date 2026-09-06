@@ -13,20 +13,26 @@ use std
 use components.dims
 use components.parts
 
-component Flywheel(f: plane) {
-  circle rim(center: f.origin) hint(r: rfw)
-  radius(rfw) rim
-  circle bore(center: f.origin) hint(r: dhub / 2)
-  radius(dhub / 2) bore
-  se: Loc(f, u: 0mm, v: -rfw)
+component Flywheel(f: plane, dims: group) {
+  circle rim(center: f.origin) hint(r: dims.rfw)
+  radius(dims.rfw) rim
+  circle bore(center: f.origin) hint(r: dims.dhub / 2)
+  radius(dims.dhub / 2) bore
+  se: Loc(f, u: 0mm, v: -dims.rfw)
   line ssa(f.origin, se.p)
   plane screw_axes(origin: f.origin, toward: se.p)
-  gs: Grub(screw_axes, rin: dhub / 2, rout: rfw)
+  gs: Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rfw, dims: dims)
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
-  solid plate(face(rim), from: -wfw / 2, to: wfw / 2)
-  solid hub(face(bore), from: -wfw / 2, to: wfw / 2)
+  solid plate(face(rim), from: -dims.wfw / 2, to: dims.wfw / 2)
+  solid hub(face(bore), from: -dims.wfw / 2, to: dims.wfw / 2)
   solid body(plate)
   hub cut body
   gs.bore cut body
+}
+
+// Open this file to preview the flywheel; ../flywheel.svd arranges its three projections.
+preview {
+  unit mm
+  fw: Flywheel(std.up, dims: vtwin_dims)
 }

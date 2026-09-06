@@ -21,6 +21,72 @@ fn close(a: (f64, f64), b: (f64, f64)) {
 }
 
 #[test]
+fn standard_datums_are_shared_fixed_and_only_built_when_used() {
+    let unused = build("use std\npoint p\n");
+    assert_eq!(unused.sketch.points.len(), 1);
+    assert!(unused.sketch.planes.is_empty());
+    let explicit = build("use std\nstd: StandardDatums()\na: Loc(std.front, u: 3, v: 4)\n");
+    assert_eq!(explicit.sketch.planes.len(), 2, "an explicit std binding is not duplicated");
+    let mut e = build("unit mm\nuse std\n\
+        a: Loc(std.front, u: 3mm, v: 4mm)\n\
+        b: Loc(std.up, u: 3mm, v: 4mm)\n\
+        c: Loc(std.front, u: 6mm, v: 8mm)\n");
+    solved(&mut e.sketch);
+    assert_eq!(e.sketch.planes.len(), 2);
+    assert_eq!(e.sketch.points.len(), 6);
+    close(e.sketch.point_xy(e.map.ent_named("a.p").unwrap().i()), (3.0, 4.0));
+    close(e.sketch.point_xy(e.map.ent_named("b.p").unwrap().i()), (-4.0, 3.0));
+    assert_eq!(diagnose::diagnose(&mut e.sketch, Default::default()).dof, 0);
+    assert!((0..e.sketch.points.len()).all(|p| e.sketch.plane_of(p).is_none()));
+    let sk = e.sketch.clone();
+    let edit = gcs_core::edit::reconcile(&mut e, &sk);
+    assert_eq!(edit.kind, gcs_core::edit::Kind::None, "{}", edit.text);
+    assert!(!edit.text.contains("ground"), "library datums must not be copied into model source");
+}
+
+#[test]
+fn standard_datums_work_in_hints_children_and_explicit_membership() {
+    let mut e = build("unit mm\nuse std\n\
+        point a hint(x: std.up.origin.x + 1mm * std.up.c, y: std.up.origin.y + 1mm * std.up.s)\n\
+        ground a\nline axis(std.front.origin, std.front.toward)\n\
+        b: Loc(std.front, u: 2mm, v: 3mm) in std.front\n");
+    solved(&mut e.sketch);
+    close(e.sketch.point_xy(e.map.ent_named("a").unwrap().i()), (0.0, 1.0));
+    let front = e.map.ent_named("std.front").unwrap().i();
+    assert_eq!(e.sketch.plane_of(e.map.ent_named("b.p").unwrap().i()), Some(front));
+}
+
+#[test]
+fn unnamed_component_calls_keep_their_instances_distinct_and_source_intact() {
+    let src = "unit mm\nuse std\npreview {\n\
+        Loc(std.front, u: 3mm, v: 4mm)\nLoc(std.up, u: 3mm, v: 4mm)\n}\n";
+    let mut e = build(src);
+    solved(&mut e.sketch);
+    assert_eq!(e.sketch.points.len(), 5);
+    assert_eq!(diagnose::diagnose(&mut e.sketch, Default::default()).dof, 0);
+    assert!(e.map.names.values().flatten().all(|n| !n.contains('#')));
+    let instances: Vec<_> = e.program.root().body.iter().filter(|s|
+        matches!(s.kind, syntax::StmtKind::Instance(_))).collect();
+    assert_eq!(instances.len(), 2);
+    for st in instances {
+        let mut text = String::new();
+        syntax::write_stmt_to(&mut text, &st.kind).unwrap();
+        assert!(text.starts_with("Loc("), "{text}");
+        assert!(!text.contains('#'));
+    }
+    let sketch = e.sketch.clone();
+    let edit = gcs_core::edit::reconcile(&mut e, &sketch);
+    assert_eq!(edit.text, src);
+    e.sketch.add(gcs_core::constraints::Constraint::distance(
+        gcs_core::model::EntRef::point(3), gcs_core::model::EntRef::point(4), 5.0));
+    let sketch = e.sketch.clone();
+    let edit = gcs_core::edit::reconcile(&mut e, &sketch);
+    assert!(edit.refused.as_deref().is_some_and(|s| s.contains("component call")),
+        "{:?}: {}", edit.refused, edit.text);
+    assert_eq!(edit.text, src);
+}
+
+#[test]
 fn signed_coordinates_follow_a_moving_datum_even_from_the_wrong_quadrant() {
     let mut e = build("unit mm\npoint o hint(x: 10, y: 20)\npoint q hint(x: 14, y: 23)\nground o\nground q\nplane f(origin: o, toward: q)\npoint p hint(x: 100, y: -200)\np distance(-5mm, along: u) f\np distance(2mm, along: v) f\n");
     let p = e.map.ent_named("p").unwrap().i();

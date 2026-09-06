@@ -18,6 +18,7 @@ mod callout;
 mod chain;
 mod claim;
 mod components;
+mod closed_scopes;
 mod coordinates;
 mod computed_point;
 mod copies;

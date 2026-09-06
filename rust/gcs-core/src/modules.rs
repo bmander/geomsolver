@@ -7,8 +7,8 @@
 //! core (`library.rs`).  A module's own `use`s are followed the same way, once each, so a diamond
 //! is one copy and a cycle is not a hang.
 //!
-//! What a module contributes is exactly its component definitions, plus the top-level `param`s
-//! its components read (§6.3).  Its own drawing — whatever loose statements it holds — is its own
+//! What a module contributes is exactly its component definitions, plus the top-level parameters and groups
+//! available to the importing root (§6.3).  Its own drawing — whatever loose statements it holds — is its own
 //! and is not drawn here, so `gear.sv` is a module as it stands.  Two definitions of one component
 //! name, wherever they come from, are refused: there is no shadowing (§5).
 //!

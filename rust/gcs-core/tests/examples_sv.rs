@@ -40,12 +40,12 @@ const DOCS: &[(&str, Shape, i64, State)] = &[
     ("jansen", (8, 12, 1, 0), 1, State::Under),
     ("bracket", (31, 21, 0, 0), 0, State::Well),
     ("engine", (633, 467, 43, 11), 0, State::Well),
-    ("vtwin", (298, 279, 27, 4), 1, State::Under),
-    ("vtwin_cylinder", (25, 22, 2, 0), 0, State::Well),
-    ("vtwin_plate", (104, 97, 13, 4), 0, State::Well),
-    ("vtwin_piston", (21, 21, 2, 0), 0, State::Well),
-    ("vtwin_disc", (15, 12, 4, 0), 0, State::Well),
-    ("vtwin_flywheel", (14, 12, 2, 0), 0, State::Well),
+    ("vtwin", (304, 285, 27, 4), 1, State::Under),
+    ("vtwin_cylinder", (25, 21, 2, 0), 0, State::Well),
+    ("vtwin_plate", (110, 103, 13, 4), 0, State::Well),
+    ("vtwin_piston", (21, 20, 2, 0), 0, State::Well),
+    ("vtwin_disc", (15, 11, 4, 0), 0, State::Well),
+    ("vtwin_flywheel", (14, 11, 2, 0), 0, State::Well),
     ("vtwin_throttle", (37, 34, 3, 0), 0, State::Well),
 ];
 

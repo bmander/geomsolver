@@ -55,6 +55,16 @@ impl<'a> P<'a> {
             return None;
         };
         match w.as_str() {
+            "group" => {
+                self.i += 1;
+                let name = self.ident()?;
+                let fields = self.inst_args()?;
+                if fields.iter().any(|f| f.label.is_none()) {
+                    self.fail("every group member needs a name: `group dims(bore: 16mm)`");
+                    return None;
+                }
+                Some(StmtKind::Group(crate::syntax::GroupDecl { name, fields }))
+            }
             "unit" => {
                 self.i += 1;
                 Some(StmtKind::Unit(self.ident()?))
@@ -306,12 +316,19 @@ impl<'a> P<'a> {
                     span: Span::new(lo, self.prev_hi()),
                 }))
             }
-            // `t: Tooth(...)` — a name, a colon and a component
-            _ if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P(':'))) => {
-                let name = self.ident()?;
-                self.i += 1; // the colon
+            // A named instance, or a bare component call when no source name is needed.
+            _ if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P(':')))
+                || (matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('(')))
+                    && !crate::constraints::is_operator(&w)) => {
+                let lo = self.here().lo as usize;
+                let name = if matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P(':'))) {
+                    let name = self.ident()?;
+                    self.i += 1;
+                    name
+                } else {
+                    Name { text: format!("#i{lo}"), span: Span::new(lo, lo) }
+                };
                 let component = self.ident()?;
-                let lo = name.span.lo as usize;
                 let args = self.inst_args()?;
                 // the trailers an instance takes, in either order: `in top` — drawn in a view
                 // (§6.7) — and `class phantom` — every declaration it makes carries the class
@@ -693,16 +710,19 @@ impl<'a> P<'a> {
             }
             _ => None,
         };
-        // a bare name is an entity; anything with an operator in it is a value expression, and
-        // the two are told apart by what follows the first token rather than by a type
-        let bare = matches!(self.peek(), Some(Tok::Ident(_)))
-            && matches!(
-                self.t.get(self.i + 1).map(|(t, _)| t),
-                Some(Tok::P(',')) | Some(Tok::P(')')) | Some(Tok::P('.')) | Some(Tok::P('['))
-            );
+        // A whole dotted/indexed path is a reference; a path followed by arithmetic
+        // is an expression, e.g. `dims.bore / 2`.
+        let checkpoint = self.i;
+        let errors = self.errs.len();
+        let reference = if matches!(self.peek(), Some(Tok::Ident(_))) {
+            self.refr()
+        } else { None };
+        let bare = reference.is_some() && matches!(self.peek(), Some(Tok::P(',')) | Some(Tok::P(')')));
         let value = if bare {
-            InstVal::Ref(self.refr()?)
+            InstVal::Ref(reference.unwrap())
         } else {
+            self.i = checkpoint;
+            self.errs.truncate(errors);
             let from = self.here().lo as usize;
             let mut depth = 0i32;
             while !self.done() {

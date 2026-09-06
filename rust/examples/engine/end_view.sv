@@ -8,19 +8,19 @@ use engine.dims
 use engine.parts
 
 // The timing drive on the front of the engine: crank pulley, two cam pulleys, the belt over them.
-component Drive(o: point, cam_i: point, cam_e: point) {
-  circle pcrank(center: o) hint(r: rcp)
-  circle pcam_i(center: cam_i) hint(r: rcam)
-  circle pcam_e(center: cam_e) hint(r: rcam)
-  radius(rcp) pcrank
-  radius(rcam) pcam_i
-  radius(rcam) pcam_e
+component Drive(o: point, cam_i: point, cam_e: point, dims: group) {
+  circle pcrank(center: o) hint(r: dims.rcp)
+  circle pcam_i(center: cam_i) hint(r: dims.rcam)
+  circle pcam_e(center: cam_e) hint(r: dims.rcam)
+  radius(dims.rcp) pcrank
+  radius(dims.rcam) pcam_i
+  radius(dims.rcam) pcam_e
   b1: Span(pcrank, pcam_i, side: -1)
   b2: Span(pcam_i, pcam_e, side: -1)
   b3: Span(pcam_e, pcrank, side: -1)
 }
 
-component EndSection(o: point) {
-  top: At(o, dx: 0mm, dy: deck + 30mm)
+component EndSection(o: point, dims: group) {
+  top: At(o, dx: 0mm, dy: dims.deck + 30mm)
   line bore(o, top.p)
 }

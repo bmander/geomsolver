@@ -76,7 +76,7 @@ claim CONSTRAINT                        judged, never solved for                
 ground REF                              pin both coordinates of a point
 fix REF.FIELD                           pin one scalar: fix c.r
 ccw(a, b, c) | cw(a, b, c)              record a root choice; adds no equation
-NAME: Component(ARGS) [in REF]     an instance                      (1.8)
+[NAME:] Component(ARGS) [in REF]   an instance                      (1.8)
 component NAME(FORMALS) { statement* }  a definition
 repeat N [as i] { ... }                 N copies, unrelated
 cycle N [as i] { ... }                  N copies that close; `next` and `prev` are in scope
@@ -176,6 +176,23 @@ most one preview per file, at file scope. `vtwin/components/cylinder.sv` is a co
 `vtwin/cylinder.svd` takes its three views from that preview. Project imports are looked up
 beside the opened model and then in its ancestor directories, so the same `use` paths work
 when opening the component directly.
+
+`use std` supplies shared fixed datums without a setup block: `std.front` has u right and
+v up at `(0, 0)`; `std.up` has u up and v left at the same origin. They are ordinary library
+geometry, created once only when referenced. A short upright preview is:
+
+```sv
+preview {
+  unit mm
+  cyl: Cylinder(std.up, fw: 12mm, dims: vtwin_dims)
+}
+```
+
+`Cylinder(std.front, fw: 12mm, dims: vtwin_dims)` also works as an unnamed call. Its bore follows the datum's
+u axis, so use `std.up` for this cylinder's upright pose. Keep `cyl:` when a drawing or another
+statement references its members. The datum argument does not imply `in`: unassigned geometry
+stays on the page, or write `in std.front` to assign membership explicitly.
+
 
 
 Hints can read `f.c` and `f.s`, the dimensionless cosine and sine of its starting direction,
@@ -384,7 +401,7 @@ component Rung(a: point, b: point, len: Length) {
 t0: Rung(l0, r0, len: 50)
 ```
 
-A formal is an entity kind (`point`, `line`, `circle`, `arc`, `plane`, …) or a number
+A formal is a `group`, an entity kind (`point`, `line`, `circle`, `arc`, `plane`, …), or a number
 type (`Length`, `Angle`, `Int`, `Scalar`). Passing an entity is **aliasing**, not a constraint: the
 formal and the actual are one entity, so a component boundary costs nothing. **The entities are
 given by position, in order, and every number is given by label** — `Rung(l0, r0, len: 50)`, never
@@ -395,9 +412,34 @@ something else. Either mistake is **E004**, at the argument. A numeric formal le
 free unknown of the drawing, named under the instance (`c.theta`), which is how a mechanism is
 drawn with its crank free (2.9.1).
 
-A file's top-level `param`s and named dimensions are in scope inside the components it defines,
-and so are the params of the modules it uses; a formal of the same name shadows either, and a
-body's own definition shadows both. Everything an instance makes is
+A component reads its arguments and its own declarations. Root and module parameters,
+geometry, and standard datums must be passed in. Visible component definitions and built-in
+functions remain available. Repetition blocks share the enclosing component's local scope.
+
+Use a **group** to pass related dimensions or layout geometry together:
+
+```solvent
+unit mm
+use std
+
+group sizes(length: 20mm)
+group layout(frame: std.front, origin: std.origin)
+component Bar(layout: group, dims: group) {
+  tip: Loc(layout.frame, u: dims.length, v: 0mm)
+  line axis(layout.origin, tip.p)
+}
+bar: Bar(layout, dims: sizes)
+```
+
+Groups may contain numbers, geometry references, and other groups. Numeric members keep
+their units; geometry members alias existing geometry and add no constraints or solver state.
+A `group` argument may also be a component instance: passing a layout sketch lets the body
+refer to `layout.pivot` or `layout.bank[0].axis` in the same shared solve. Its local parameters
+are not exported; bundle dimensions in an explicit group. Groups must be supplied, and a
+missing member is an error. A traced component needs fixed scalar or entity formals; pass
+individual members when constructing a curve.
+
+Everything an instance makes is
 reachable by dotted name (`c.p`, `t0.e`, `five.s[0].p1`, and a dimension named inside it as
 `t0.w`) — there is no export list, and passing
 one instance's entity to another as an argument makes the two one entity. (`port` is retired;
@@ -481,7 +523,7 @@ use std                  // the standard library: ThreeViews (1.13), Ellipse (1.
 use hardware             // fasteners and fittings by name: hexbolt14_af, brg608_od, oring014_cs, …
 ```
 
-A module is a Solvent document read for its `component`s and its top-level `param`s; its own
+A module is a Solvent document read for its `component`s and its top-level `param`s and groups; its own
 drawing is not drawn, so `gear.sv` is a module as it stands. A module's own `use`s are followed,
 once each. No such module is E070, a component defined twice is E071, and a module's own error is
 reported at the `use` that brought it in. `rust/examples/engine.sv` is the worked case: a
@@ -779,7 +821,19 @@ solid as binary STL for a printer; `--solid NAME` says which, and without it the
 **Views, derived.** A `.svd` file selects solved model solids and projects them with its own
 viewing directions, positions, and scales. See [Solvent Drawing](solvent-drawing.md) and
 `rust/examples/vtwin/cylinder.svd`. The `preview` block in `vtwin/components/cylinder.sv` supplies the geometric datums
-and cylinder instance. The same file defines the component used by the assembly.
+and cylinder instance. The same file defines the component used by the assembly. The piston,
+disc, flywheel, throttle, and frame also have previews in their component files; their `.svd`
+sheets load those files directly. For example, the flywheel preview is simply:
+
+```sv
+preview {
+  unit mm
+  fw: Flywheel(std.up, dims: vtwin_dims)
+}
+```
+
+The disc and piston additionally place their pin at `R` or `L` from `std.origin`: those
+endpoints describe physical dimensions as well as a datum's direction.
 
 **Every part of that engine is now written this way** — `vtwin/components/piston.sv`, `disc.sv`,
 `flywheel.sv`, `throttle.sv` and the plate in `frame.sv` beside the cylinder — and what each one

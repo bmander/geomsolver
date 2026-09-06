@@ -3,45 +3,46 @@
 // added at the front, and the transverse passage is cut through the barrel afterward.
 // The end-on sketch remains the assembly drawing and carries the part's dimensions.
 
+use std
 use components.dims
 use components.parts
 
-component Throttle(front: plane, c: point, ref: line, phi: Angle) {
+component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
   plane lever_axes(origin: c, toward: tip)
   plane hole_axes(origin: c, toward: cx)
-  param hd = sqrt(rbar^2 - (dhole / 2)^2)
+  param hd = sqrt(dims.rbar^2 - (dims.dhole / 2)^2)
 
   in front {
-    circle barrel(center: c) hint(r: rbar)
-    radius(rbar) barrel
-    point tip hint(x: c.x + lev * sin(phi), y: c.y + lev * cos(phi))
+    circle barrel(center: c) hint(r: dims.rbar)
+    radius(dims.rbar) barrel
+    point tip hint(x: c.x + dims.lev * sin(phi), y: c.y + dims.lev * cos(phi))
     line lever(c, tip)
-    c distance(lev) tip
+    c distance(dims.lev) tip
     ref angle(phi, sense: cw) lever
     circle knob(center: tip) hint(r: 2.5mm)
     radius(2.5) knob
-    circle hub(center: c) hint(r: hubr)
-    radius(hubr) hub
+    circle hub(center: c) hint(r: dims.hubr)
+    radius(dims.hubr) hub
     claim lever angle(phi) ref
     // the cross-hole: two chords of the barrel, half a hole either side of the lever's line
-    point e0 hint(x: c.x - dhole / 2 * cos(phi) + hd * sin(phi), y: c.y + dhole / 2 * sin(phi) + hd * cos(phi))
-    point e1 hint(x: c.x - dhole / 2 * cos(phi) - hd * sin(phi), y: c.y + dhole / 2 * sin(phi) - hd * cos(phi))
-    point e2 hint(x: c.x + dhole / 2 * cos(phi) + hd * sin(phi), y: c.y - dhole / 2 * sin(phi) + hd * cos(phi))
-    point e3 hint(x: c.x + dhole / 2 * cos(phi) - hd * sin(phi), y: c.y - dhole / 2 * sin(phi) - hd * cos(phi))
+    point e0 hint(x: c.x - dims.dhole / 2 * cos(phi) + hd * sin(phi), y: c.y + dims.dhole / 2 * sin(phi) + hd * cos(phi))
+    point e1 hint(x: c.x - dims.dhole / 2 * cos(phi) - hd * sin(phi), y: c.y + dims.dhole / 2 * sin(phi) - hd * cos(phi))
+    point e2 hint(x: c.x + dims.dhole / 2 * cos(phi) + hd * sin(phi), y: c.y - dims.dhole / 2 * sin(phi) + hd * cos(phi))
+    point e3 hint(x: c.x + dims.dhole / 2 * cos(phi) - hd * sin(phi), y: c.y - dims.dhole / 2 * sin(phi) - hd * cos(phi))
     e0 on barrel
     e1 on barrel
     e2 on barrel
     e3 on barrel
-    e0 distance(dhole / 2, side: left) lever
-    e1 distance(dhole / 2, side: left) lever
-    e2 distance(dhole / 2, side: right) lever
-    e3 distance(dhole / 2, side: right) lever
+    e0 distance(dims.dhole / 2, side: left) lever
+    e1 distance(dims.dhole / 2, side: left) lever
+    e2 distance(dims.dhole / 2, side: right) lever
+    e3 distance(dims.dhole / 2, side: right) lever
     line h0(e0, e1)
     line h1(e2, e3)
-    claim radius(rbar) barrel
-    claim e0 distance(dhole) e2
-    claim c distance(lev) tip
-    claim radius(hubr) hub
+    claim radius(dims.rbar) barrel
+    claim e0 distance(dims.dhole) e2
+    claim c distance(dims.lev) tip
+    claim radius(dims.hubr) hub
 
     // -- what the solid is made of --------------------------------------------------------
     // **The lever's own frame**: its line, and one square to it through the barrel's centre.
@@ -49,23 +50,23 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle) {
     // `ref` is the sheet's own axis and is only square to the lever at full open.  That second
     // line is also the *cross-hole's axis*, since the hole runs across the lever: `h0` and `h1`
     // above are two chords parallel to the lever, half a hole either side of it.
-    point cx hint(x: c.x + rbar * cos(phi), y: c.y - rbar * sin(phi))
+    point cx hint(x: c.x + dims.rbar * cos(phi), y: c.y - dims.rbar * sin(phi))
     line hax(c, cx)
     hax perpendicular lever
-    c distance(rbar) cx
+    c distance(dims.rbar) cx
     // the lever, `levw` wide — the same number as its thickness — so `lever` stays the
     // centreline the angle is measured on and these two flanks are what the material is
-    lv0: Loc(lever_axes, u: 0mm, v: levw / 2)
-    lv1: Loc(lever_axes, u: lev, v: levw / 2)
-    lv2: Loc(lever_axes, u: lev, v: -levw / 2)
-    lv3: Loc(lever_axes, u: 0mm, v: -levw / 2)
+    lv0: Loc(lever_axes, u: 0mm, v: dims.levw / 2)
+    lv1: Loc(lever_axes, u: dims.lev, v: dims.levw / 2)
+    lv2: Loc(lever_axes, u: dims.lev, v: -dims.levw / 2)
+    lv3: Loc(lever_axes, u: 0mm, v: -dims.levw / 2)
     line lv_a(lv0.p, lv1.p)
     line lv_c(lv2.p, lv3.p)
     // the hole: half of its section, on one side of the axis it is turned about
-    x0: Loc(hole_axes, u: -rbar, v: 0mm)
-    x1: Loc(hole_axes, u: -rbar, v: dhole / 2)
-    x2: Loc(hole_axes, u: rbar, v: dhole / 2)
-    x3: Loc(hole_axes, u: rbar, v: 0mm)
+    x0: Loc(hole_axes, u: -dims.rbar, v: 0mm)
+    x1: Loc(hole_axes, u: -dims.rbar, v: dims.dhole / 2)
+    x2: Loc(hole_axes, u: dims.rbar, v: dims.dhole / 2)
+    x3: Loc(hole_axes, u: dims.rbar, v: 0mm)
   }
 
   // Both placements put c on the front view's vertical datum. The longitudinal
@@ -81,30 +82,30 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle) {
   // Share the front view's upright page frame: radius runs right, axial z down.
   plane longitudinal(origin: front.origin, toward: front.toward, from: front, fold: -90deg)
   line fold(front.origin, front.toward)
-  param zback = -(bossz / 2 + tback)
-  param zkeep = -(bossz / 2 + tretain)
+  param zback = -(dims.bossz / 2 + dims.tback)
+  param zkeep = -(dims.bossz / 2 + dims.tretain)
   in longitudinal {
     point section_center hint(x: front.origin.x - (c.y - front.origin.y), y: front.origin.y)
     section_center on fold
     section_center project c
     back_axis: At(section_center, dx: 0mm, dy: -zback)
-    back: At(section_center, dx: rbar, dy: -zback)
-    retain0: At(section_center, dx: rbar, dy: -zkeep + torw / 2)
-    retain1: At(section_center, dx: torgb / 2, dy: -zkeep + torw / 2)
-    retain2: At(section_center, dx: torgb / 2, dy: -zkeep - torw / 2)
-    retain3: At(section_center, dx: rbar, dy: -zkeep - torw / 2)
-    seal0: At(section_center, dx: rbar, dy: torz + torw / 2)
-    seal1: At(section_center, dx: torgb / 2, dy: torz + torw / 2)
-    seal2: At(section_center, dx: torgb / 2, dy: torz - torw / 2)
-    seal3: At(section_center, dx: rbar, dy: torz - torw / 2)
-    seal4: At(section_center, dx: rbar, dy: -torz + torw / 2)
-    seal5: At(section_center, dx: torgb / 2, dy: -torz + torw / 2)
-    seal6: At(section_center, dx: torgb / 2, dy: -torz - torw / 2)
-    seal7: At(section_center, dx: rbar, dy: -torz - torw / 2)
-    shoulder: At(section_center, dx: rbar, dy: -bossz / 2)
-    hub_back: At(section_center, dx: hubr, dy: -bossz / 2)
-    hub_front: At(section_center, dx: hubr, dy: -(bossz / 2 + levw))
-    front_axis: At(section_center, dx: 0mm, dy: -(bossz / 2 + levw))
+    back: At(section_center, dx: dims.rbar, dy: -zback)
+    retain0: At(section_center, dx: dims.rbar, dy: -zkeep + dims.torw / 2)
+    retain1: At(section_center, dx: dims.torgb / 2, dy: -zkeep + dims.torw / 2)
+    retain2: At(section_center, dx: dims.torgb / 2, dy: -zkeep - dims.torw / 2)
+    retain3: At(section_center, dx: dims.rbar, dy: -zkeep - dims.torw / 2)
+    seal0: At(section_center, dx: dims.rbar, dy: dims.torz + dims.torw / 2)
+    seal1: At(section_center, dx: dims.torgb / 2, dy: dims.torz + dims.torw / 2)
+    seal2: At(section_center, dx: dims.torgb / 2, dy: dims.torz - dims.torw / 2)
+    seal3: At(section_center, dx: dims.rbar, dy: dims.torz - dims.torw / 2)
+    seal4: At(section_center, dx: dims.rbar, dy: -dims.torz + dims.torw / 2)
+    seal5: At(section_center, dx: dims.torgb / 2, dy: -dims.torz + dims.torw / 2)
+    seal6: At(section_center, dx: dims.torgb / 2, dy: -dims.torz - dims.torw / 2)
+    seal7: At(section_center, dx: dims.rbar, dy: -dims.torz - dims.torw / 2)
+    shoulder: At(section_center, dx: dims.rbar, dy: -dims.bossz / 2)
+    hub_back: At(section_center, dx: dims.hubr, dy: -dims.bossz / 2)
+    hub_front: At(section_center, dx: dims.hubr, dy: -(dims.bossz / 2 + dims.levw))
+    front_axis: At(section_center, dx: 0mm, dy: -(dims.bossz / 2 + dims.levw))
     line axis(back_axis.p, front_axis.p)
     face profile(back_axis.p, back.p, retain0.p, retain1.p, retain2.p, retain3.p,
                  seal0.p, seal1.p, seal2.p, seal3.p, seal4.p, seal5.p, seal6.p, seal7.p,
@@ -112,11 +113,19 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle) {
   }
 
   solid turned(profile, about: axis)
-  solid arm(face(lv_a, lv2.p, lv_c, lv0.p), from: bossz / 2, to: bossz / 2 + levw)
-  solid knob_s(face(knob), from: bossz / 2, to: bossz / 2 + levw)
+  solid arm(face(lv_a, lv2.p, lv_c, lv0.p), from: dims.bossz / 2, to: dims.bossz / 2 + dims.levw)
+  solid knob_s(face(knob), from: dims.bossz / 2, to: dims.bossz / 2 + dims.levw)
   solid cross(face(x0.p, x1.p, x2.p, x3.p, -> close), about: hax)
   solid body(turned)
   arm on body
   knob_s on body
   cross cut body
+}
+
+// Open this file to preview the throttle fully open.
+// ../throttle.svd arranges three projections of this preview.
+preview {
+  unit mm
+  line ref(std.origin, std.up.toward) in std.front
+  thr: Throttle(std.front, std.origin, ref, phi: 0deg, dims: vtwin_dims)
 }

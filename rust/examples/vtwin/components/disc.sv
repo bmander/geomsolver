@@ -17,23 +17,23 @@ use std
 use components.dims
 use components.parts
 
-component Disc(f: plane) {
-  circle rim(center: f.origin) hint(r: rdisc)
-  radius(rdisc) rim
-  circle bore(center: f.origin) hint(r: dhub / 2)
-  radius(dhub / 2) bore
-  circle ph(center: f.toward) hint(r: pinclr / 2)
-  radius(pinclr / 2) ph
-  circle pkt(center: f.toward) hint(r: pinpocketd / 2)
-  radius(pinpocketd / 2) pkt
+component Disc(f: plane, dims: group) {
+  circle rim(center: f.origin) hint(r: dims.rdisc)
+  radius(dims.rdisc) rim
+  circle bore(center: f.origin) hint(r: dims.dhub / 2)
+  radius(dims.dhub / 2) bore
+  circle ph(center: f.toward) hint(r: dims.pinclr / 2)
+  radius(dims.pinclr / 2) ph
+  circle pkt(center: f.toward) hint(r: dims.pinpocketd / 2)
+  radius(dims.pinpocketd / 2) pkt
   // the set screw, square to the arm so its pocket stays clear of the pin's
-  se: Loc(f, u: 0mm, v: -rdisc)
+  se: Loc(f, u: 0mm, v: -dims.rdisc)
   line ssa(f.origin, se.p)
   plane screw_axes(origin: f.origin, toward: se.p)
-  gs: Grub(screw_axes, rin: dhub / 2, rout: rdisc)
-  claim radius(dhub / 2) bore
-  claim radius(pinclr / 2) ph
-  claim radius(pinpocketd / 2) pkt
+  gs: Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rdisc, dims: dims)
+  claim radius(dims.dhub / 2) bore
+  claim radius(dims.pinclr / 2) ph
+  claim radius(dims.pinpocketd / 2) pkt
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
   // **The section is the disc's mid-plane**, and it is the set screw that says so: its hole is a
@@ -43,13 +43,22 @@ component Disc(f: plane) {
   // thickness either way, and the pin's head sits in a pocket `pinpocket` deep in the back —
   // the face toward the plate, which a view from the right sees on its own right.
   // Each circle is a loop by itself.
-  solid plate(face(rim), from: -tdisc / 2, to: tdisc / 2)
-  solid hub(face(bore), from: -tdisc / 2, to: tdisc / 2)
-  solid pinhole(face(ph), from: -tdisc / 2, to: tdisc / 2)
-  solid pinpkt(face(pkt), from: -tdisc / 2, to: -tdisc / 2 + pinpocket)
+  solid plate(face(rim), from: -dims.tdisc / 2, to: dims.tdisc / 2)
+  solid hub(face(bore), from: -dims.tdisc / 2, to: dims.tdisc / 2)
+  solid pinhole(face(ph), from: -dims.tdisc / 2, to: dims.tdisc / 2)
+  solid pinpkt(face(pkt), from: -dims.tdisc / 2, to: -dims.tdisc / 2 + dims.pinpocket)
   solid body(plate)
   hub cut body
   pinhole cut body
   pinpkt cut body
   gs.bore cut body
+}
+
+// Open this file to preview the disc with the crank pin at the top.
+// ../disc.svd arranges three projections of this preview.
+preview {
+  unit mm
+  pin: Loc(std.up, u: R, v: 0mm)
+  plane disc_axes(origin: std.origin, toward: pin.p)
+  disc: Disc(disc_axes, dims: vtwin_dims)
 }
