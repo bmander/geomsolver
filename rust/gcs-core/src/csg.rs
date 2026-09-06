@@ -16,7 +16,7 @@
 //! ordered, so the answer does not depend on how the drawing was written down.
 
 use crate::plane;
-use crate::solid::{Box3, Csg, Facet, Prim};
+use crate::solid::{Box3, Csg, Facet, Prim, RayIndex};
 
 /// A face of the solid: a planar convex piece of some primitive's facet that survived
 /// classification, with its outward normal and the path the document reaches it by.
@@ -477,6 +477,11 @@ const RING: usize = 12;
 /// facets from different ones; each is cut where any other primitive's plane crosses it, and a
 /// piece survives where the material around it forms a wedge.
 pub fn edges(csg: &Csg, eps: f64) -> Vec<Edge> {
+    let indices: Vec<_> = csg.prims.iter().map(RayIndex::new).collect();
+    edges_indexed(csg, eps, &indices)
+}
+
+pub(crate) fn edges_indexed(csg: &Csg, eps: f64, indices: &[RayIndex]) -> Vec<Edge> {
     let planes: Vec<Vec<([f64; 3], f64, Box3)>> = csg.prims.iter().map(planes_of).collect();
     let mut cand: Vec<Edge> = Vec::new();
     for (i, prim) in csg.prims.iter().enumerate() {
@@ -530,7 +535,7 @@ pub fn edges(csg: &Csg, eps: f64) -> Vec<Edge> {
                 [e.a[0] + t * d[0], e.a[1] + t * d[1], e.a[2] + t * d[2]]
             };
             let m = at((w[0] + w[1]) / 2.0);
-            if !on_boundary(csg, m, d, eps) {
+            if !on_boundary(csg, indices, m, d, eps) {
                 continue;
             }
             out.push(Edge { a: at(w[0]), b: at(w[1]), ..e.clone() });
@@ -542,7 +547,7 @@ pub fn edges(csg: &Csg, eps: f64) -> Vec<Edge> {
 /// Is the material around this point a *wedge* — a corner of the solid — rather than a slab, a
 /// solid block or empty space?  Sampled on a ring perpendicular to the edge, counting the
 /// changes: two or more transitions is a surface passing through, none is interior or exterior.
-fn on_boundary(csg: &Csg, m: [f64; 3], along: [f64; 3], eps: f64) -> bool {
+fn on_boundary(csg: &Csg, indices: &[RayIndex], m: [f64; 3], along: [f64; 3], eps: f64) -> bool {
     let Some(w) = plane::unit(along) else { return false };
     let helper = if w[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
     let Some(p) = plane::unit(plane::cross(w, helper)) else { return false };
@@ -551,11 +556,11 @@ fn on_boundary(csg: &Csg, m: [f64; 3], along: [f64; 3], eps: f64) -> bool {
     for (k, slot) in ins.iter_mut().enumerate() {
         let a = std::f64::consts::TAU * k as f64 / RING as f64;
         let (s, c) = a.sin_cos();
-        *slot = csg.inside([
+        *slot = csg.inside_indexed([
             m[0] + eps * (c * p[0] + s * q[0]),
             m[1] + eps * (c * p[1] + s * q[1]),
             m[2] + eps * (c * p[2] + s * q[2]),
-        ]);
+        ], indices);
     }
     let changes = (0..RING).filter(|k| ins[*k] != ins[(k + 1) % RING]).count();
     changes >= 2

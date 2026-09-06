@@ -54,6 +54,30 @@ function viewOn(sk: Sketch): SketchView {
 const PROJECTED_CIRCLE = 'point o\npoint q hint(x: 10)\nplane front(origin: o, toward: q)\n'
   + 'circle rim(center: o) hint(r: 10)\nsolid body(face(rim), depth: 8)\nview(body) in front\n';
 
+test('startup resize defers projection until the sketch has been solved and fitted', (t) => {
+  const frames: FrameRequestCallback[] = [];
+  t.mock.method(globalThis, 'requestAnimationFrame', (fn: FrameRequestCallback) => {
+    frames.push(fn);
+    return frames.length;
+  });
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: { devicePixelRatio: 1 } });
+  t.after(() => {
+    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
+    else Reflect.deleteProperty(globalThis, 'window');
+  });
+  const v = new SketchView(fakeCanvas(), Document.read(PROJECTED_CIRCLE));
+  t.after(() => { v.derived.clear(); v.doc.dispose(); });
+  const read = t.mock.method(v.derived, 'read');
+  v.resize();
+  assert.equal(read.mock.callCount(), 0, 'no expensive projection of the unsolved sketch');
+  v.afterEdit();
+  v.fit();
+  assert.equal(frames.length, 1, 'resize, solve and fit share the first frame');
+  frames[0](0);
+  assert.ok(read.mock.callCount() > 0, 'the fitted drawing is painted');
+});
+
 test('pan and zoom reuse derived geometry, then refine once the camera rests', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const v = new SketchView(fakeCanvas(), Document.read(PROJECTED_CIRCLE));

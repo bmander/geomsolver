@@ -582,7 +582,7 @@ pub fn overview_json(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> 
 /// canvas strokes what it is handed and a document's own `style .hidden` rule reaches a derived
 /// view with nothing added on the far side of the ABI.
 pub fn derived_json(sk: &Sketch, unit: f64) -> Json {
-    let items: Vec<Json> = crate::hidden::layout(sk, unit)
+    let items: Vec<Json> = crate::renderer::layout(sk, unit)
         .iter()
         .map(|d| {
             let mut o = object([

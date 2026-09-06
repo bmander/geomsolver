@@ -258,7 +258,7 @@ pub fn layout(sk: &Sketch, unit: f64) -> Vec<Callout> {
     //
     // Their ids are *past* the constraint list, so nothing addresses one by a constraint's id —
     // a generated dimension is not a statement and has no placement, no drag and no edit.
-    for (k, d) in crate::hidden::generated(sk, u) {
+    for (k, d) in crate::renderer::generated(sk, u) {
         let id = GENERATED + k as u32;
         let text = if d.round {
             format!("⌀{}", crate::io::reading(crate::constraints::SpecKind::Length, d.value))

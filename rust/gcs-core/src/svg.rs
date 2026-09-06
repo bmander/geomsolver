@@ -53,7 +53,7 @@ pub fn render(sk: &Sketch, width_px: f64) -> String {
     let cs = callout::layout(sk, unit);
     // and the pictures the document asked for (§6.11): laid out here for the same reason a
     // callout is, so the export and the canvas stroke one answer
-    let derived = crate::hidden::layout(sk, unit);
+    let derived = crate::renderer::layout(sk, unit);
 
     let mut b = geo;
     for d in &derived {

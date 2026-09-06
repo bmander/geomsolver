@@ -109,3 +109,6 @@ After review, `make test`: 789 core tests passed, one existing ignored test; eig
 FFI tests, and doc tests passed; all 218 web tests passed. The run spent 59.92 s building native/WASM
 release artifacts, 74 s building Rust tests, and 12.92 s executing the core suite. Compilation and
 execution timings are separate from the cost probe above.
+
+Projected drawing and occlusion are owned by the [renderer](renderer.md), which borrows these
+immutable evaluations and shares their geometry caches.

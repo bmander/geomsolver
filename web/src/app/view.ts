@@ -782,7 +782,9 @@ export class SketchView {
     this.canvas.width = Math.round(this.width * dpr);
     this.canvas.height = Math.round(this.height * dpr);
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    paint(this);
+    // Coalesce resize with the solve and fit that follow it during startup. Painting
+    // synchronously here projects the unsolved solid, only to discard it immediately.
+    this.draw();
   }
 
   /** The dimension whose callout is under the cursor, if any.  Callouts are painted over the

@@ -51,6 +51,10 @@ impl PageFrame {
     pub fn new(basis: Basis, pose: (f64, f64, (f64, f64))) -> Self {
         Self { basis, pose }
     }
+    /// The world-space view plane, before its placement on the sheet.
+    pub fn basis(self) -> Basis {
+        self.basis
+    }
     pub fn project(self, p: WorldPoint) -> PagePoint {
         PagePoint(plane::on_page(
             self.pose.0,
@@ -92,6 +96,7 @@ pub struct EvaluatedSolid {
     round: Vec<RoundFeature>,
     edges: OnceCell<Vec<Edge>>,
     mesh: OnceCell<mesh::Mesh>,
+    ray_indices: OnceCell<Vec<RayIndex>>,
 }
 
 impl EvaluatedSolid {
@@ -218,6 +223,7 @@ impl EvaluatedSolid {
             round,
             edges: OnceCell::new(),
             mesh: OnceCell::new(),
+            ray_indices: OnceCell::new(),
         })
     }
     pub fn policy(&self) -> ApproximationPolicy {
@@ -279,7 +285,10 @@ impl EvaluatedSolid {
         }
     }
     pub fn contains(&self, p: LocalPoint) -> bool {
-        self.csg.inside(p.0)
+        self.csg.inside_indexed(p.0, self.ray_indices())
+    }
+    fn ray_indices(&self) -> &[RayIndex] {
+        self.ray_indices.get_or_init(|| self.csg.prims.iter().map(RayIndex::new).collect())
     }
     pub fn contains_world(&self, p: WorldPoint) -> bool {
         self.contains(self.to_local(p))
@@ -301,7 +310,7 @@ impl EvaluatedSolid {
     }
     pub fn edges(&self) -> &[Edge] {
         self.edges
-            .get_or_init(|| csg::edges(&self.csg, self.epsilon))
+            .get_or_init(|| csg::edges_indexed(&self.csg, self.epsilon, self.ray_indices()))
     }
     pub fn mesh(&self) -> &mesh::Mesh {
         self.mesh.get_or_init(|| mesh::grouped(&self.boundary))
@@ -339,56 +348,7 @@ impl EvaluatedSolid {
         translate_csg(&mut csg, delta);
         (csg, translate_pieces(&other.boundary, delta))
     }
-    /// Orthographic occlusion uses retained boundary crossings and the same material classifier.
-    /// A section's limit excludes all material on the discarded side.
-    pub fn occludes(&self, m: LocalPoint, eye: [f64; 3], limit: Option<f64>) -> bool {
-        let eps = self.epsilon;
-        if self.bounds.is_empty() {
-            return false;
-        }
-        let m = m.0;
-        let far = (0..3)
-            .map(|k| {
-                eye[k]
-                    * (if eye[k] >= 0.0 {
-                        self.bounds.hi[k]
-                    } else {
-                        self.bounds.lo[k]
-                    } - m[k])
-            })
-            .sum::<f64>();
-        let end = limit.unwrap_or(far + eps).min(far + eps);
-        if end <= eps {
-            return false;
-        }
-        let step = |t: f64| std::array::from_fn(|k| m[k] + t * eye[k]);
-        let mut cuts = vec![eps, end];
-        for f in &self.boundary {
-            let denominator = plane::dot(f.n, eye);
-            if denominator.abs() <= 1e-12 {
-                continue;
-            }
-            let t = plane::dot(f.n, std::array::from_fn(|k| f.pts[0][k] - m[k])) / denominator;
-            if t <= eps || t >= end {
-                continue;
-            }
-            let x = step(t);
-            if f.pts.iter().enumerate().all(|(i, a)| {
-                let b = f.pts[(i + 1) % f.pts.len()];
-                let edge = std::array::from_fn(|k| b[k] - a[k]);
-                plane::dot(
-                    f.n,
-                    plane::cross(edge, std::array::from_fn(|k| x[k] - a[k])),
-                ) >= -eps * plane::norm(edge)
-            }) {
-                cuts.push(t);
-            }
-        }
-        cuts.sort_by(f64::total_cmp);
-        cuts.windows(2).any(|w| {
-            w[1] - w[0] > eps * 1e-3 && self.contains(LocalPoint(step((w[0] + w[1]) * 0.5)))
-        })
-    }
+
 }
 fn translate_csg(csg: &mut Csg, delta: [f64; 3]) {
     for p in &mut csg.prims {

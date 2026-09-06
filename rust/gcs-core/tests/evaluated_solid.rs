@@ -342,3 +342,42 @@ fn planar_policy_does_not_inflate_curved_clearance_uncertainty() {
     assert_eq!(a.tolerance().unwrap(), b.tolerance().unwrap());
     close(a.measured().unwrap(), b.measured().unwrap());
 }
+
+#[test]
+fn indexed_containment_matches_exhaustive_rays_for_revolved_and_cut_solids() {
+    let mut throttle = gcs_core::examples::vtwin_throttle();
+    assert!(solve::solve(&mut throttle, Default::default()).success);
+    for sk in [throttle, read(BORE).sketch] {
+        for si in 0..sk.solids.len() {
+            for unit in [0.15, 0.4] {
+                let raw = gcs_core::solid::resolve(&sk, si, unit);
+                let indexed = sk.evaluated_solid(si, Policy::View { unit }).unwrap();
+                let bounds = raw.bbox();
+                let check = |p| assert_eq!(
+                    indexed.contains_world(WorldPoint(p)), raw.inside(p),
+                    "solid {} at {p:?}, unit {unit}", sk.solids[si].name,
+                );
+                // Exercise both interior and exterior rays, including cutters and cavities.
+                for i in 0..256 {
+                    check(std::array::from_fn(|k| {
+                        let fraction = (i as f64 * [0.618, 0.414, 0.732][k]).fract();
+                        bounds.lo[k] + (bounds.hi[k] - bounds.lo[k]) * (1.2 * fraction - 0.1)
+                    }));
+                }
+                // Probe both sides of faces, where incorrect culling could erase a wall.
+                for prim in &raw.prims {
+                    for face in prim.facets.iter().step_by((prim.facets.len() / 32).max(1)) {
+                        let center: [f64; 3] = std::array::from_fn(|k| {
+                            face.pts.iter().map(|p| p[k]).sum::<f64>() / face.pts.len() as f64
+                        });
+                        for sign in [-1.0, 1.0] {
+                            check(std::array::from_fn(|k| {
+                                center[k] + sign * indexed.epsilon() * face.n[k]
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

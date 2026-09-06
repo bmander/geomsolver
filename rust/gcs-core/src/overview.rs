@@ -506,6 +506,7 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
         }
         for &i in &shown {
             let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else { continue };
+            let renderer = crate::renderer::Renderer::prepare(&solid);
             for e in solid.edges() {
                 if e.smooth {
                     let (a, b) = (crate::plane::dot(e.na, dir), crate::plane::dot(e.nb, dir));
@@ -514,7 +515,7 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
                     }
                 }
                 let m = [(e.a[0] + e.b[0]) / 2.0, (e.a[1] + e.b[1]) / 2.0, (e.a[2] + e.b[2]) / 2.0];
-                if solid.occludes(crate::solid::LocalPoint(m), dir, None) {
+                if renderer.occludes(crate::solid::LocalPoint(m), dir, None) {
                     continue;
                 }
                 items.push(Item {

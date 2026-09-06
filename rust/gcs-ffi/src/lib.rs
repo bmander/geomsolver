@@ -1409,7 +1409,7 @@ pub unsafe extern "C" fn gcs_derived_json(h: *mut Sketch, unit: f64) -> *mut u8 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_derived_inputs(h: *mut Sketch, out: *mut f64, cap: i32) -> i32 {
     guard(-1, move || {
-        let values = gcs_core::hidden::inputs(sk(h));
+        let values = gcs_core::renderer::inputs(sk(h));
         write(out, &values[..values.len().min(cap.max(0) as usize)]);
         values.len() as i32
     })

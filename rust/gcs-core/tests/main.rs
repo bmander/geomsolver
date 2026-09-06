@@ -11,6 +11,7 @@
 
 mod common;
 mod evaluated_solid;
+mod renderer;
 
 mod anonymous;
 mod callout;

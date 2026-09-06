@@ -39,6 +39,7 @@ pub mod overview;
 pub mod plane;
 pub mod program;
 pub mod report;
+pub mod renderer;
 pub mod rng;
 pub mod solid;
 pub mod solve;

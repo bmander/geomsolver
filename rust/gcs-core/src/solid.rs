@@ -26,7 +26,9 @@
 //! *outside*, and the wall would silently vanish.
 
 mod evaluated;
+mod raycast;
 mod section;
+pub(crate) use raycast::RayIndex;
 use section::face_polys;
 pub use evaluated::{ApproximationPolicy, EvaluatedSolid, LocalPoint, WorldPoint, PagePoint, PageFrame, RoundFeature};
 
@@ -239,15 +241,19 @@ impl Csg {
     /// vertex is not perturbed away — the *direction* is, from a fixed table, so the answer
     /// stays deterministic (a jittered point would move the boundary instead of the question).
     pub fn inside(&self, p: [f64; 3]) -> bool {
-        self.eval(&self.term, p)
+        self.eval(&self.term, p, None)
     }
 
-    fn eval(&self, t: &Term, p: [f64; 3]) -> bool {
+    pub(crate) fn inside_indexed(&self, p: [f64; 3], indices: &[RayIndex]) -> bool {
+        self.eval(&self.term, p, Some(indices))
+    }
+
+    fn eval(&self, t: &Term, p: [f64; 3], indices: Option<&[RayIndex]>) -> bool {
         match t {
             Term::Empty => false,
-            Term::Prim(i) => in_prim(&self.prims[*i], p),
-            Term::Union(a, b) => self.eval(a, p) || self.eval(b, p),
-            Term::Diff(a, b) => self.eval(a, p) && !self.eval(b, p),
+            Term::Prim(i) => in_prim(&self.prims[*i], p, indices.map(|v| &v[*i])),
+            Term::Union(a, b) => self.eval(a, p, indices) || self.eval(b, p, indices),
+            Term::Diff(a, b) => self.eval(a, p, indices) && !self.eval(b, p, indices),
         }
     }
 }
@@ -261,12 +267,12 @@ const RAYS: [[f64; 3]; 4] = [
     [0.5773502691896258, 0.5773502691896258, -0.5773502691896258],
 ];
 
-fn in_prim(prim: &Prim, p: [f64; 3]) -> bool {
+fn in_prim(prim: &Prim, p: [f64; 3], index: Option<&RayIndex>) -> bool {
     if !prim.bbox.grown(1e-12).holds(p) {
         return false;
     }
     for d in RAYS {
-        if let Some(hits) = cast(prim, p, d) {
+        if let Some(hits) = cast(prim, p, d, index) {
             return hits % 2 == 1;
         }
     }
@@ -275,16 +281,17 @@ fn in_prim(prim: &Prim, p: [f64; 3]) -> bool {
 
 /// Crossings of the ray `p + t·d`, `t > 0`, with the primitive's facets.  `None` when the ray
 /// passes too near an edge for the count to be trusted — the caller tries another direction.
-fn cast(prim: &Prim, p: [f64; 3], d: [f64; 3]) -> Option<usize> {
+fn cast(prim: &Prim, p: [f64; 3], d: [f64; 3], index: Option<&RayIndex>) -> Option<usize> {
     let mut hits = 0usize;
-    for f in &prim.facets {
+    let mut visit = |i: usize| {
+        let f = &prim.facets[i];
         let denom = plane::dot(f.n, d);
         if denom.abs() < 1e-12 {
-            continue;
+            return Some(());
         }
         let t = (f.offset() - plane::dot(f.n, p)) / denom;
         if t <= 0.0 {
-            continue;
+            return Some(());
         }
         let x = [p[0] + t * d[0], p[1] + t * d[1], p[2] + t * d[2]];
         match in_facet(f, x) {
@@ -292,6 +299,12 @@ fn cast(prim: &Prim, p: [f64; 3], d: [f64; 3]) -> Option<usize> {
             Hit::Out => {}
             Hit::Edge => return None,
         }
+        Some(())
+    };
+    if let Some(index) = index {
+        index.visit(p, d, &mut visit)?;
+    } else {
+        for i in 0..prim.facets.len() { visit(i)?; }
     }
     Some(hits)
 }
