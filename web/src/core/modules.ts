@@ -7,7 +7,32 @@
  * follows the fetched texts' own `use`s the same way.  What the host has not got is left to the
  * library, so a document of the compiled-in kind links as it always did.  No resolution happens
  * here: the core links, and the same way it links for the CLI. */
-import { core, takeJson, withStr } from './wasm.js';
+import { core, takeJson, takeStr, withStr } from './wasm.js';
+
+/** The effective source, including modules supplied by the host and shared libraries. */
+export function source(name: string): string | null {
+  const p = withStr(name, (np, nn) => core().gcs_module_source(np, nn));
+  return p ? takeStr(p) : null;
+}
+
+export interface SourceFile { name: string; path: string; text: string }
+
+/** All imports reachable from a document, once each, in dependency traversal order. */
+export function related(text: string): SourceFile[] {
+  const files: SourceFile[] = [];
+  const seen = new Set<string>();
+  const queue = uses(text);
+  for (let i = 0; i < queue.length; i++) {
+    const name = queue[i];
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const text = source(name);
+    if (text === null) continue;
+    files.push({ name, path: pathOf(name), text });
+    queue.push(...uses(text));
+  }
+  return files;
+}
 
 /** The module names a text `use`s directly, as written (`engine.parts`). */
 export function uses(text: string): string[] {

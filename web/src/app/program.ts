@@ -15,6 +15,7 @@
  * every solve would take the line out from under the cursor. */
 import type { Mark } from './editor.js';
 import type { Diagnostic, SourceMap, SourceSpan } from '../core/program.js';
+import * as modules from '../core/modules.js';
 import { currentConstraint, pdiags, ped, ppanel, ppanelState, psplit, view } from './shell.js';
 import { toast } from './ui.js';
 
@@ -27,6 +28,51 @@ const ptext = ped.box;
 let shown = '';
 /** Somebody is editing: nothing overwrites the box until they are done with it. */
 let typed = false;
+
+const filePicker = document.getElementById('program-file') as HTMLSelectElement;
+const fileBar = document.getElementById('program-files') as HTMLElement;
+let activeFile = '';
+let filesFor: string | null = null;
+let files: modules.SourceFile[] = [];
+const positions = new Map<string, { start: number; end: number; top: number; left: number }>();
+
+function refreshFiles(): void {
+  if (filesFor === view.source) return;
+  filesFor = view.source;
+  files = modules.related(view.source);
+  if (!files.some((f) => f.name === activeFile)) activeFile = '';
+  filePicker.replaceChildren(new Option('Main drawing', ''),
+    ...files.map((f) => new Option(f.path, f.name)));
+  filePicker.value = activeFile;
+  fileBar.hidden = files.length === 0;
+}
+
+/** Browse an imported source without replacing the main drawing or its source map. */
+function selectFile(name: string): void {
+  if (name === activeFile) return;
+  if (typed && !applyProgram()) {
+    filePicker.value = activeFile;
+    return;
+  }
+  positions.set(activeFile, { start: ptext.selectionStart, end: ptext.selectionEnd,
+    top: ptext.scrollTop, left: ptext.scrollLeft });
+  activeFile = name;
+  filePicker.value = name;
+  shown = '';
+  refreshProgram();
+  const pos = positions.get(name);
+  ptext.setSelectionRange(pos?.start ?? 0, pos?.end ?? 0);
+  ptext.scrollTop = pos?.top ?? 0;
+  ptext.scrollLeft = pos?.left ?? 0;
+  ptext.dispatchEvent(new Event('scroll'));
+}
+
+export function resetProgramFiles(): void {
+  activeFile = '';
+  filesFor = null;
+  positions.clear();
+  revertProgram();
+}
 
 
 export function programPanelOpen(): boolean {
@@ -120,19 +166,22 @@ function setPanelWidth(px: number): void {
 /** Re-print, unless the panel is being typed in or already says this. */
 export function refreshProgram(): void {
   if (ppanel.hidden) return;
+  refreshFiles();
+  ptext.readOnly = activeFile !== '';
+  ptext.setAttribute('aria-label', activeFile ? modules.pathOf(activeFile) : 'Main drawing source');
   markStatement();              // the pick may have moved even where the text has not
   if (typed) {
     ppanel.classList.add('dirty');
     ppanelState.textContent = ' — edited, ⌘↵ to apply';
     return;
   }
-  const text = view.source;
+  const text = files.find((f) => f.name === activeFile)?.text ?? view.source;
   if (text === shown) return;
   shown = text;
-  ped.setText(text, marks());   // the spans moved with the text, so the marks move with them
+  ped.setText(text, activeFile ? [] : marks());
   ppanel.classList.remove('dirty');
-  ppanelState.textContent = '';
-  showDiags(view.doc.diagnostics);
+  ppanelState.textContent = activeFile ? ' — imported file, read only' : '';
+  showDiags(activeFile ? [] : view.doc.diagnostics);
 }
 
 /** Apply what is in the box.  One undo entry, one solve, one diagnosis — like every other edit.
@@ -140,6 +189,7 @@ export function refreshProgram(): void {
  *  A program that will not read leaves the drawing exactly as it was and says why: half a
  *  statement is not an instruction to delete anything. */
 export function applyProgram(): boolean {
+  if (activeFile) return false;
   const text = ptext.value;
   const undo = view.source;
   if (!view.setProgram(text, false)) return false;
@@ -248,7 +298,7 @@ function marks(): Mark[] {
  *  marking something nobody can read yet.  The gesture ends in `onChanged`, which comes back
  *  through here. */
 export function markStatement(): void {
-  if (ppanel.hidden || typed || view.gesture) return;
+  if (ppanel.hidden || activeFile || typed || view.gesture) return;
   ped.setMarks(marks());
 }
 
@@ -261,6 +311,8 @@ export function showStatementFor(): void {
   // the scroll is only for a box nobody is in: moving it under somebody who is typing would take
   // the line out from under their caret
   if (!where || ppanel.hidden || typed || view.gesture) return;
+  if (activeFile) selectFile('');
+  markStatement();
   if (document.activeElement !== ptext) ped.scrollToLine(lineAt(where.lo));
 }
 
@@ -276,7 +328,9 @@ function lineAt(off: number): number {
  *  the view never has to import the shell. */
 export function bindProgramPanel(): void {
   bindPartition();
+  filePicker.addEventListener('change', () => selectFile(filePicker.value));
   ptext.addEventListener('input', () => {
+    if (activeFile) return;
     typed = true;
     // colour what was just typed, not what the drawing came from: half a statement is still the
     // program somebody is looking at, and the core colours it as far as it goes
@@ -288,6 +342,7 @@ export function bindProgramPanel(): void {
     // every accelerator in `main` is already yielded inside a TEXTAREA, but a handler that did
     // not stop here would still reach the window listeners below it
     e.stopPropagation();
+    if (activeFile) return;
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       applyProgram();
@@ -303,6 +358,7 @@ export function bindProgramPanel(): void {
   });
   // a click in the text says which statement, and the drawing lights what it made
   ptext.addEventListener('click', () => {
+    if (activeFile) return;
     const off = ptext.selectionStart;
     // the innermost statement containing the caret: a statement inside a block is inside its
     // block's span, and the one that made something is the one a click there means

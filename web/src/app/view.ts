@@ -154,6 +154,8 @@ export class SketchView {
   /** The source changed — a structural edit, a seed writeback, an undo.  What the panel is
    *  wired to, and **never** `onDragFrame`: a drag writes the source once, when it is let go. */
   onProgram: () => void = () => {};
+  /** A different document was opened, so source navigation starts at its main file. */
+  onLoad: () => void = () => {};
   /** Per gesture frame: the sketch's structure and the constraint list are unchanged, so
    *  only the status line needs updating (a drag's numbers, a band's selection count). */
   onDragFrame: () => void = () => {};
@@ -354,7 +356,26 @@ export class SketchView {
       return;
     }
     if (!this.sketch.points.length) return;
-    this.cam.fitTo(this.sketch.drawnBounds(), this.width, this.height);
+    const bounds = [...this.sketch.drawnBounds()] as [number, number, number, number];
+    const grow = ([x, y]: readonly number[]): void => {
+      bounds[0] = Math.min(bounds[0], x); bounds[1] = Math.min(bounds[1], y);
+      bounds[2] = Math.max(bounds[2], x); bounds[3] = Math.max(bounds[3], y);
+    };
+    // A projected view can extend far beyond its plane's origin and toward point.
+    for (const stroke of this.derived.read(this.sketch, this.unit)) stroke.pts.forEach(grow);
+    for (const curve of this.sketch.curves) curve.polyline().forEach(grow);
+    this.cam.fitTo(bounds, this.width, this.height);
+    if (this.showDimensions) {
+      for (const c of dim.callouts(this.sketch, this.unit).items) {
+        c.label.forEach(grow);
+        for (const s of [...c.solid, ...c.thin]) s.forEach(grow);
+        for (const a of c.arcs) {
+          grow([a.c[0] - a.r, a.c[1] - a.r]);
+          grow([a.c[0] + a.r, a.c[1] + a.r]);
+        }
+      }
+      this.cam.fitTo(bounds, this.width, this.height);
+    }
     this.draw();
   }
 
@@ -383,6 +404,7 @@ export class SketchView {
       this.dropUndo();
       return false;
     }
+    this.onLoad();
     return true;
   }
 

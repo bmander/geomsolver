@@ -45,11 +45,11 @@ export function report(n: number, did: string): void {
 let cases: ReturnType<typeof examples.cases> | null = null;
 export async function openCase(): Promise<void> {
   cases ??= examples.cases();
-  const i = await askChoice('Open test case', 'The sketches the solver is exercised on:',
-                            cases.map((c) => `${c.label} — ${c.description}`));
-  if (i === null) return;
+  const i = await askChoice('Open examples', 'Choose a drawing to explore:',
+                            cases.map((c) => ({ title: c.label, description: c.description })), true);
+  if (i == null) return;
   view.load(await remote.source(cases[i].key));
-  toast(`${cases[i].label} — ${cases[i].description}`, 12000);
+  toast(cases[i].label);
 }
 
 /** Everything that changes how the solve runs, gathered behind one item.  The controls are

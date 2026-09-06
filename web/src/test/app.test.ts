@@ -1694,7 +1694,24 @@ test('a fit in the overview frames the scene, not the sheet', () => {
   // and back on the sheet the drawing is framed again
   view.setOverview(false);
   const d = view.sketch.drawnBounds();
-  const c = view.w2s((d[0] + d[2]) / 2, (d[1] + d[3]) / 2);
-  assert.ok(Math.abs(c[0] - view.width / 2) < 1e-6 && Math.abs(c[1] - view.height / 2) < 1e-6,
-            `the drawing is centred: ${c}`);
+  for (const p of [[d[0], d[1]], [d[2], d[3]]] as const) {
+    const [x, y] = view.w2s(...p);
+    assert.ok(x >= 0 && x <= view.width && y >= 0 && y <= view.height);
+  }
+});
+
+test('fit includes the throttle projected views and dimension labels', () => {
+  const view = docView(examples.source('vtwin_throttle'));
+  view.afterEdit();
+  view.fit();
+  const points = derived(view.sketch, view.unit).flatMap((s) => s.pts);
+  assert.ok(points.length > 0);
+  points.push(...callouts(view.sketch, view.unit).items.flatMap((c) => c.label));
+  for (const p of points) {
+    const [x, y] = view.w2s(...p);
+    assert.ok(x >= 10 && x <= view.width - 10 && y >= 10 && y <= view.height - 10,
+      `visible geometry must fit with a margin: ${x}, ${y}`);
+  }
+  view.derived.clear();
+  view.doc.dispose();
 });

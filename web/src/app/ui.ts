@@ -111,14 +111,44 @@ export function askFields(title: string, build: (body: HTMLElement) => void): Pr
 }
 
 /** Pick one of a list; resolves null on cancel. */
-export function askChoice(title: string, label: string, options: string[]): Promise<number | null> {
+export function askChoice(title: string, label: string,
+                          options: (string | { title: string; description: string })[],
+                          searchable = false): Promise<number | null> {
   return open<number | null>(title, (resolve) => {
     const p = document.createElement('p');
     p.textContent = label;
     const box = document.createElement('div');
     box.className = 'choices';
-    options.forEach((o, i) => box.append(button(o, () => resolve(i))));
-    modalBody.append(p, box);
+    const rows = options.map((o, i) => {
+      const row = button(typeof o === 'string' ? o : '', () => resolve(i));
+      if (typeof o !== 'string') {
+        row.className = 'described-choice';
+        const title = document.createElement('strong');
+        title.textContent = o.title;
+        const description = document.createElement('span');
+        description.textContent = o.description;
+        row.append(title, description);
+      }
+      box.append(row);
+      return row;
+    });
+    modalBody.append(p);
+    if (searchable) {
+      const search = document.createElement('input');
+      search.type = 'search';
+      search.placeholder = 'Search examples';
+      search.setAttribute('aria-label', 'Search examples');
+      const empty = document.createElement('p');
+      empty.textContent = 'No examples match your search.';
+      empty.hidden = true;
+      search.addEventListener('input', () => {
+        const query = search.value.trim().toLocaleLowerCase();
+        for (const row of rows) row.hidden = !row.textContent?.toLocaleLowerCase().includes(query);
+        empty.hidden = rows.some((r) => !r.hidden);
+      });
+      modalBody.append(search, empty);
+    }
+    modalBody.append(box);
     modalActions.append(button('Cancel', () => resolve(null)));
   });
 }

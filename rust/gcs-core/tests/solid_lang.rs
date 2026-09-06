@@ -1020,3 +1020,61 @@ fn section_holes_preserve_explicit_closure_winding_and_failed_face_cleanup() {
     let printed = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
     assert!((volume(&read(&printed), "slab") - volume(&e, "slab")).abs() < 1e-8);
 }
+
+#[test]
+fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
+    use gcs_core::{plane, solid::{ApproximationPolicy, WorldPoint}};
+    for (phi, height, page_x, page_y, offset) in [(0, 0, 0, 0, 0), (35, 72, 100, -80, 7)] {
+        let src = format!("unit mm\nuse vtwin.dims\nuse vtwin.parts\nuse vtwin.throttle\n\
+            point O hint(x: {page_x}, y: {page_y})\nground O\n\
+            point q hint(x: {}, y: {page_y})\nO distance(40mm, along: x) q\nO distance(0mm, along: y) q\n\
+            plane datum(origin: O, toward: q)\n\
+            plane front(origin: O, toward: q, from: datum, offset: {offset}mm)\n\
+            in front {{\nc: At(O, dx: 0mm, dy: {height}mm)\naxes: Axes(O)\n\
+            circle core(center: c.p) hint(r: torgb / 2)\nradius(torgb / 2) core\n}}\n\
+            thr: Throttle(front, c.p, axes.ax, phi: {phi}deg)\n\
+            solid old_barrel(face(thr.barrel), from: -(bossz / 2 + tback), to: bossz / 2)\n\
+            solid old_hub(face(thr.hub), from: bossz / 2, to: bossz / 2 + levw)\n\
+            face groove_section(thr.barrel, holes: core)\n\
+            solid groove0(groove_section, from: torz - torw / 2, to: torz + torw / 2)\n\
+            solid groove1(groove_section, from: -torz - torw / 2, to: -torz + torw / 2)\n\
+            solid groove2(groove_section, from: -(bossz / 2 + tretain) - torw / 2, to: -(bossz / 2 + tretain) + torw / 2)\n\
+            solid reference(old_barrel)\nold_hub on reference\nthr.arm on reference\nthr.knob_s on reference\n\
+            thr.cross cut reference\ngroove0 cut reference\ngroove1 cut reference\ngroove2 cut reference\n", page_x + 40);
+        let (p, errors, linked) = gcs_core::library::parse_linked(&src);
+        assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}");
+        let mut e = elaborate(&p);
+        assert!(e.ok(), "{:?}", e.diags);
+        assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+        let policy = ApproximationPolicy::View { unit: 0.02 };
+        let new = e.sketch.evaluated_solid(e.map.ent_named("thr.body").unwrap().i(), policy).unwrap();
+        let old = e.sketch.evaluated_solid(e.map.ent_named("reference").unwrap().i(), policy).unwrap();
+        assert!((new.volume() / old.volume() - 1.0).abs() < 0.002,
+            "phi={phi}: revolved {} versus extruded {}", new.volume(), old.volume());
+        let mesh = e.sketch.evaluated_solid(e.map.ent_named("thr.body").unwrap().i(), ApproximationPolicy::Mesh).unwrap();
+        assert_eq!(super::solid::unpaired(new.mesh()), 0, "phi={phi}: view mesh closes");
+        assert_eq!(super::solid::unpaired(mesh.mesh()), 0, "phi={phi}: export mesh closes");
+        let (a, b) = (new.world_bounds(), old.world_bounds());
+        for k in 0..3 {
+            assert!((a.lo[k] - b.lo[k]).abs() < 0.03 && (a.hi[k] - b.hi[k]).abs() < 0.03,
+                "phi={phi}: {a:?} versus {b:?}");
+        }
+        let front = &e.sketch.planes[e.map.ent_named("front").unwrap().i()];
+        let basis = front.basis;
+        let uv = plane::in_view(e.sketch.params[front.frame.c as usize].value,
+            e.sketch.params[front.frame.s as usize].value,
+            e.sketch.point_xy(front.frame.origin as usize),
+            e.sketch.point_xy(e.map.ent_named("c.p").unwrap().i()));
+        let normal = basis.normal();
+        for x in [-4.5, -3.0, 0.0, 3.0, 4.5] {
+            for y in [-4.5, -3.0, 0.0, 3.0, 4.5, 12.0, 22.0] {
+                for z in [-13.5, -11.5, -8.0, -5.5, 0.0, 5.5, 8.0, 12.0] {
+                    let p = basis.lift(uv.0 + x, uv.1 + y);
+                    let p = WorldPoint(std::array::from_fn(|k| p[k] + z * normal[k]));
+                    assert_eq!(new.contains_world(p), old.contains_world(p), "phi={phi}, {p:?}");
+                }
+            }
+        }
+        assert_eq!(e.sketch.solids.iter().filter(|s| s.name.starts_with("thr.")).count(), 5);
+    }
+}

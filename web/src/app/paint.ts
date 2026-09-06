@@ -172,6 +172,7 @@ export function paint(v: SketchView): void {
   for (const pl of sk.planes) {
     // one read: `style` crosses the ABI and comes back as JSON, and it is the same answer twice
     const st = pl.style;
+    if (st.hidden) continue;
     const [col, lw] = strokeFor(COL.plane, pl, st);
     // the figure is the core's, laid out at `unit` like a callout's: the chord, then the tick.
     // Nothing here derives it — the tick's direction is the frame's y-axis and its length is a

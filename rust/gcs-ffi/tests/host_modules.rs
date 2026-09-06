@@ -36,9 +36,12 @@ fn a_host_module_resolves_a_use_and_is_forgotten_on_request() {
         // nothing handed over, nothing in the library: E070 at the `use`
         assert!(report_of(doc).contains("E070"), "an unknown module is E070");
         gcs_module_set(name.as_ptr(), name.len(), module.as_ptr(), module.len());
+        assert_eq!(take(gcs_module_source(name.as_ptr(), name.len())), module);
+        assert!(take(gcs_module_source(b"std".as_ptr(), 3)).contains("component ThreeViews"));
         let r = report_of(doc);
         assert!(!r.contains("E070"), "the host's module resolves the use: {r}");
         gcs_module_forget();
+        assert!(gcs_module_source(name.as_ptr(), name.len()).is_null());
         assert!(report_of(doc).contains("E070"), "forgotten, the use is unresolved again");
     }
 }

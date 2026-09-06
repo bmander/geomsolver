@@ -51,7 +51,7 @@ import {
 } from './dialogs.js';
 import { threeViews } from './tools.js';
 import { editValue, onDimension } from './dimbox.js';
-import { bindProgramPanel, refreshProgram, showStatementFor, toggleProgramPanel } from './program.js';
+import { bindProgramPanel, refreshProgram, resetProgramFiles, showStatementFor, toggleProgramPanel } from './program.js';
 import { closePanel, openPanel, refresh, refreshPanel, refreshStatus } from './lists.js';
 import {
   aboutBadge, barConstraints, barTools, canvas, currentConstraint, focusConstraint, hooks, menubar,
@@ -184,7 +184,7 @@ const MENUS: [string, (MenuItem | null)[]][] = [
   ['File', [
     { label: 'New', onClick: () => view.newDocument() },
     { label: 'Open…', onClick: () => void doOpen() },
-    { label: 'Open test case…', onClick: () => void openCase() },
+    { label: 'Open examples…', onClick: () => void openCase() },
     null,
     { label: 'Save', onClick: () => download('sketch.json', io.dumps(view.sketch)) },
     { label: 'Export SVG', onClick: exportSvg,
@@ -337,11 +337,12 @@ view.onPicked = refreshPanel;
 // the source changed without the drawing's structure doing so — a drag wrote its seeds back, or a
 // number was spliced.  Never per frame: `onDragFrame` is the frame seam and this is not wired to it
 view.onProgram = () => { refreshProgram(); };
+view.onLoad = resetProgramFiles;
 view.onDragFrame = refreshStatus;
 view.onStatus = toast;
 hooks.focusChanged = showStatementFor;
 bindProgramPanel();
 new ResizeObserver(() => view.resize()).observe(canvas);
 view.resize();
-view.fit();
 view.afterEdit();
+view.fit();

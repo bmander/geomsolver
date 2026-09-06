@@ -1,21 +1,7 @@
-// The throttle barrel: **one section, and the solid it is a section of** (§6.9).
-//
-// The section is drawn along the barrel's own axis — the barrel, the cross-hole `phi` out of
-// line with the passage, the hub and the lever on the front — and every one of those is that
-// section swept along the axis, so the lengths that used to be written twice more from the side
-// and from above are written once here.  The axis runs *through* this plane rather than lying in
-// it, which decides the shape of every statement below: the barrel, the hub, the lever and the
-// grooves are prisms along it, and the cross-hole, whose axis lies in the plane, is a turn.
-//
-// Each O-ring groove sweeps the annular section between the barrel and its core.
-//
-// Along its axis: the hub proud of the boss's face, the body through the boss and `tback` past
-// it, the cross-hole at the boss's mid-plane, an O-ring groove either side of it sealing the
-// barrel in its bore, and a third groove behind the boss for the O-ring that retains it (a soft
-// circlip: it stands proud of the barrel and bears on the boss's back).  The assembly
-// draws it in the boss, turned to `phi`; the part sheet draws it upright, full open.  Its
-// outline is `class barrel`, so a sheet showing it inside the boss dashes it and its own sheet
-// draws it solid.  Print it lever down, or on its side.
+// The throttle's turned stock: one longitudinal half-profile, revolved about its axis.
+// The hub and three O-ring grooves are steps in that profile. The lever and knob are
+// added at the front, and the transverse passage is cut through the barrel afterward.
+// The end-on sketch remains the assembly drawing and carries the part's dimensions.
 
 use vtwin.dims
 use vtwin.parts
@@ -51,7 +37,7 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle) {
     line h0(e0, e1) class barrel
     line h1(e2, e3) class barrel
     claim radius(rbar) barrel class detail at (-2.4, 12)
-    claim e0 distance(dhole) e2 class detail at (0, 9)
+    claim e0 distance(dhole) e2 class detail at (0, 3)
     claim c distance(lev) tip class detail at (0, 8)
     claim radius(hubr) hub class detail at (2.6, 9)
 
@@ -78,35 +64,57 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle) {
     x1: Loc(c, hax, lever, dir: -phi, u: -rbar, v: dhole / 2)
     x2: Loc(c, hax, lever, dir: -phi, u: rbar, v: dhole / 2)
     x3: Loc(c, hax, lever, dir: -phi, u: rbar, v: 0mm)
-    // an O-ring groove's core, the one circle the three of them share
-    circle core(center: c) hint(r: torgb / 2) class hidden
-    radius(torgb / 2) core
-    face barrel_f(barrel)
-    face groove_section(barrel, holes: core)
   }
 
-  // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
-  // The axis runs from the hub, proud of the boss's face, back through the boss and `tback`
-  // past it; the cross-hole sits at the boss's mid-plane, which is this section's own zero and
-  // is where a turn about an in-plane line puts it with nothing said.
+  // Both placements put c on the front view's vertical datum. The longitudinal
+  // plane contains that datum and the barrel axis; projection carries c's height.
+  in front {
+    point datum_up hint(x: front.origin.x, y: front.origin.y + 1mm)
+    line datum(front.origin, datum_up) class gone
+    line front_u(front.origin, front.toward) class gone
+    datum perpendicular front_u
+    front.origin distance(1mm) datum_up
+    claim c on datum class gone
+  }
+  // Share the front view's upright page frame: radius runs right, axial z down.
+  plane longitudinal(origin: front.origin, toward: front.toward, from: front, fold: -90deg)
+  line fold(front.origin, front.toward) class gone
   param zback = -(bossz / 2 + tback)
   param zkeep = -(bossz / 2 + tretain)
-  solid barrel_s(barrel_f, from: zback, to: bossz / 2)
-  solid hub_s(face(hub), from: bossz / 2, to: bossz / 2 + levw)
+  in longitudinal {
+    point section_center hint(x: front.origin.x - (c.y - front.origin.y), y: front.origin.y) class gone
+    section_center on fold
+    section_center project c
+    back_axis: At(section_center, dx: 0mm, dy: -zback)
+    back: At(section_center, dx: rbar, dy: -zback)
+    retain0: At(section_center, dx: rbar, dy: -zkeep + torw / 2)
+    retain1: At(section_center, dx: torgb / 2, dy: -zkeep + torw / 2)
+    retain2: At(section_center, dx: torgb / 2, dy: -zkeep - torw / 2)
+    retain3: At(section_center, dx: rbar, dy: -zkeep - torw / 2)
+    seal0: At(section_center, dx: rbar, dy: torz + torw / 2)
+    seal1: At(section_center, dx: torgb / 2, dy: torz + torw / 2)
+    seal2: At(section_center, dx: torgb / 2, dy: torz - torw / 2)
+    seal3: At(section_center, dx: rbar, dy: torz - torw / 2)
+    seal4: At(section_center, dx: rbar, dy: -torz + torw / 2)
+    seal5: At(section_center, dx: torgb / 2, dy: -torz + torw / 2)
+    seal6: At(section_center, dx: torgb / 2, dy: -torz - torw / 2)
+    seal7: At(section_center, dx: rbar, dy: -torz - torw / 2)
+    shoulder: At(section_center, dx: rbar, dy: -bossz / 2)
+    hub_back: At(section_center, dx: hubr, dy: -bossz / 2)
+    hub_front: At(section_center, dx: hubr, dy: -(bossz / 2 + levw))
+    front_axis: At(section_center, dx: 0mm, dy: -(bossz / 2 + levw))
+    line axis(back_axis.p, front_axis.p) class gone
+    face profile(back_axis.p, back.p, retain0.p, retain1.p, retain2.p, retain3.p,
+                 seal0.p, seal1.p, seal2.p, seal3.p, seal4.p, seal5.p, seal6.p, seal7.p,
+                 shoulder.p, hub_back.p, hub_front.p, front_axis.p, axis)
+  }
+
+  solid turned(profile, about: axis)
   solid arm(face(lv_a, lv2.p, lv_c, lv0.p), from: bossz / 2, to: bossz / 2 + levw)
   solid knob_s(face(knob), from: bossz / 2, to: bossz / 2 + levw)
   solid cross(face(x0.p, x1.p, x2.p, x3.p, -> close), about: hax)
-  // Each seal groove uses the same annular section at a different depth.
-  solid groove0(groove_section, from: torz - torw / 2, to: torz + torw / 2)
-  solid groove1(groove_section, from: -torz - torw / 2, to: -torz + torw / 2)
-  solid groove2(groove_section, from: zkeep - torw / 2, to: zkeep + torw / 2)
-
-  solid body(barrel_s)
-  hub_s on body
+  solid body(turned)
   arm on body
   knob_s on body
   cross cut body
-  groove0 cut body
-  groove1 cut body
-  groove2 cut body
 }

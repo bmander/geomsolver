@@ -813,7 +813,12 @@ pub fn revolve(
     let flip = s.iter().any(|v| *v < -tol);
     let sign = if flip { -1.0 } else { 1.0 };
     // the meridian: (r, z) per vertex, r ≥ 0
-    let mer: Vec<(f64, f64)> = poly.pts.iter().map(|p| (sign * across(*p), along(*p))).collect();
+    // A solved point on the axis can miss it by roundoff. Collapse that radius using
+    // the same tolerance as the axis-side check, so it cannot mint a microscopic tube.
+    let mer: Vec<(f64, f64)> = poly.pts.iter().map(|p| {
+        let r = across(*p);
+        (if r.abs() <= tol { 0.0 } else { sign * r }, along(*p))
+    }).collect();
 
     // the frame in space: W along the axis, P the in-plane perpendicular the face lies on, and
     // Q = W × P, which is ±n — right-handed about the axis's own p1 → p2
@@ -859,7 +864,7 @@ pub fn revolve(
     let mut facets = Vec::new();
     for i in 0..n {
         let j = (i + 1) % n;
-        let (edge, smooth_in_plane) = poly.of[i];
+        let (edge, _) = poly.of[i];
         let (r0, z0) = mer[i];
         let (r1, z1) = mer[j];
         for k in 0..steps {
@@ -869,20 +874,17 @@ pub fn revolve(
             // the quad that faces *away* from the axis there is the one taken against the sweep.
             // Wound the other way the whole solid is inside out, which the divergence sum reports
             // as a negative volume and nothing else notices.
-            let quad = if mer_ccw {
+            let mut quad = if mer_ccw {
                 vec![at(r0, z0, p1), at(r1, z1, p1), at(r1, z1, p0), at(r0, z0, p0)]
             } else {
                 vec![at(r0, z0, p0), at(r1, z1, p0), at(r1, z1, p1), at(r0, z0, p1)]
             };
-            // a quad on a surface of revolution is not planar: two triangles, always
-            for tri in [[0usize, 1, 2], [0, 2, 3]] {
-                let pts: Vec<[f64; 3]> = tri.iter().map(|&t| quad[t]).collect();
-                let Some(nn) = facet_normal(&pts) else { continue };
-                // every seam around the sweep is a tessellation joint; a chord of a drawn arc
-                // is one too
-                facets.push(Facet { pts, n: nn, face: edge, smooth: true });
-            }
-            let _ = smooth_in_plane;
+            // The two angular chords are parallel, so a swept meridian segment is a
+            // planar trapezoid. On the axis it collapses to a triangle (or nothing).
+            quad.dedup();
+            if quad.first() == quad.last() { quad.pop(); }
+            let Some(nn) = facet_normal(&quad) else { continue };
+            facets.push(Facet { pts: quad, n: nn, face: edge, smooth: true });
         }
     }
     if !full {

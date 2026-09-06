@@ -408,3 +408,20 @@ pub(super) fn unpaired(m: &mesh::Mesh) -> usize {
     }
     edges.keys().filter(|(p, q)| !edges.contains_key(&(q.clone(), p.clone()))).count()
 }
+
+#[test]
+fn revolution_collapses_axis_roundoff_without_leaving_a_microscopic_tube() {
+    for error in [-1e-12, 0.0, 1e-12] {
+        let mut sk = Sketch::new();
+        let face = rect_face(&mut sk, error, 0.0, 5.0, 10.0, "profile");
+        let a = sk.point(0.0, 0.0, true, "a");
+        let b = sk.point(0.0, 10.0, true, "b");
+        let axis = sk.line(a, b);
+        let i = sk.solid(SolidDef::Revolve { face: face as u32, axis: axis as u32,
+            sweep: Extent::at(std::f64::consts::TAU), sense: Sense::Ccw }, "turned");
+        let solid = sk.evaluated_solid(i, solid::ApproximationPolicy::View { unit: 0.02 }).unwrap();
+        assert!(solid.contains_world(solid::WorldPoint([0.0, 0.0, 5.0])), "axis error={error}");
+        assert!(!solid.surviving_faces().contains("turned.e3"), "the axial edge sweeps no surface");
+        assert_eq!(unpaired(solid.mesh()), 0, "axis error={error}");
+    }
+}

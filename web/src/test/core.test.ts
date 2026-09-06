@@ -2365,3 +2365,22 @@ test('a module the host hands over resolves a use before the library', async () 
   assert.ok(again.diagnostics.some((d) => d.code === 'E070'), 'forgotten on request');
   again.dispose();
 });
+
+test('related files include transitive libraries and host overrides without duplicates or cycles', () => {
+  const a = 'use demo.b\nuse std\n';
+  const b = 'use demo.a\nuse hardware\nuse missing\n';
+  modules.provide('demo.a', a);
+  modules.provide('demo.b', b);
+  try {
+    const files = modules.related('use demo.a\nuse demo.b\n');
+    assert.deepEqual(files.map((f) => f.path), ['demo/a.sv', 'demo/b.sv', 'std.sv', 'hardware.sv']);
+    assert.equal(files[0].text, a);
+    assert.equal(files[1].text, b);
+    assert.ok(files[2].text.includes('component ThreeViews'));
+    assert.equal(modules.source('missing'), null);
+  } finally {
+    modules.forget();
+  }
+  assert.equal(modules.source('demo.a'), null);
+  assert.ok(modules.source('std')?.includes('component ThreeViews'));
+});

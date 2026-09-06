@@ -2953,6 +2953,15 @@ fn resolve_module(name: &str) -> Option<String> {
         .or_else(|| gcs_core::library::resolve(name))
 }
 
+/// The module text an elaboration would use: the host's copy, then the built-in library.
+/// Returns null for an unknown module; otherwise the caller owns the string block.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_module_source(ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        resolve_module(as_str(ptr, len)).map_or(std::ptr::null_mut(), out_str)
+    })
+}
+
 /// Hand the core a module's text under the name a `use` asks for (`engine.parts`).  Kept until
 /// `gcs_module_forget`; a second `set` under one name replaces the first.  Nothing already
 /// elaborated changes: an edit relinks from the texts it has (`program::reparse`), so the table
