@@ -15,7 +15,7 @@ use gcs_core::edit;
 use gcs_core::examples;
 use gcs_core::model::EntRef;
 use gcs_core::program::{elaborate, Elaborated};
-use gcs_core::syntax::{highlight, parse, Chained, Tint};
+use gcs_core::syntax::{highlight, parse_legacy as parse, Chained, Tint};
 
 /// The shipped fillet case as it was written *longhand* — the independent witness the chain
 /// spelling is held against.

@@ -168,8 +168,8 @@ component elbow(o: point, datum: line, f: plane, u: Angle) {
 
 point o hint(x: 0, y: 0)
 point q hint(x: -30, y: 51.9615242270663)
-line  datum(o, q) class construction
-plane f(origin: o, toward: q) class construction
+line  datum(o, q)
+plane f(origin: o, toward: q)
 
 curve path = elbow(o, datum, f, u: 30).p over u in (10, 80)
 

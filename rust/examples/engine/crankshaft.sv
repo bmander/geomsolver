@@ -31,21 +31,21 @@ param oilr = 2.5mm          // the oil passage, half its bore
 // which the side view reads.
 component Throw(o: point, axis: line, theta: Angle) {
   point pin hint(x: o.x + R * sin(theta), y: o.y + R * cos(theta))
-  line arm(o, pin) class axis
-  o distance(R) pin class shown
+  line arm(o, pin)
+  o distance(R) pin
   axis angle(theta, sense: cw) arm
   circle kp(center: pin) hint(r: rp)
-  radius(rp) kp class shown
+  radius(rp) kp
   // the eye: the arc of the far side, between the two flank tangents
   point el hint(x: pin.x - eP * cos(theta), y: pin.y + eP * sin(theta))
   point er hint(x: pin.x + eP * cos(theta), y: pin.y - eP * sin(theta))
   arc eye(center: pin, start: er, end: el) hint(r: eP)
-  radius(eP) eye class shown
+  radius(eP) eye
   // the rim: an arc about the axis on the far side from the pin, `hcw` either side of the arm
   point cl hint(x: o.x - rcw * sin(theta - asin(hcw / rcw)), y: o.y - rcw * cos(theta - asin(hcw / rcw)))
   point cr hint(x: o.x - rcw * sin(theta + asin(hcw / rcw)), y: o.y - rcw * cos(theta + asin(hcw / rcw)))
   arc rim(center: o, start: cl, end: cr) hint(r: rcw)
-  radius(rcw) rim class shown
+  radius(rcw) rim
   cl distance(hcw, side: left) arm
   cr distance(hcw, side: right) arm
   // the flanks, tangent to the eye where they leave it
@@ -65,8 +65,8 @@ component Throw(o: point, axis: line, theta: Angle) {
   point ob hint(x: pin.x - rp * sin(theta) - oilr * cos(theta), y: pin.y - rp * cos(theta) + oilr * sin(theta))
   point oc hint(x: o.x + rj * sin(theta) + oilr * cos(theta), y: o.y + rj * cos(theta) - oilr * sin(theta))
   point od hint(x: pin.x - rp * sin(theta) + oilr * cos(theta), y: pin.y - rp * cos(theta) - oilr * sin(theta))
-  line oil_l(oa, ob) class hidden
-  line oil_r(oc, od) class hidden
+  line oil_l(oa, ob)
+  line oil_r(oc, od)
   oa distance(oilr, side: left) arm
   ob distance(oilr, side: left) arm
   oc distance(oilr, side: right) arm
@@ -101,11 +101,11 @@ component Crankshaft(end: plane, side: plane, o: point, axis: line, o_s: point,
   repeat draw_end {
     in end {
       circle main(center: o) hint(r: rj)
-      radius(rj) main class shown
-      circle path(center: o) hint(r: R) class phantom
+      radius(rj) main
+      circle path(center: o) hint(r: R)
       radius(R) path
       t1: Throw(o, axis, theta: theta)
-      t2: Throw(o, axis, theta: theta + 180deg) class phantom
+      t2: Throw(o, axis, theta: theta + 180deg)
     }
   }
 
@@ -142,8 +142,8 @@ component Crankshaft(end: plane, side: plane, o: point, axis: line, o_s: point,
       seal: Box(o_s, x0: back - 25mm + wj / 2, y0: -rseal, x1: back + 8mm, y1: rseal)
       flange: Box(o_s, x0: back + 8mm, y0: -rflange, x1: back + 8mm + wflange, y1: rflange)
       flywheel: Box(o_s, x0: back + 8mm + wflange, y0: -rfw, x1: back + 8mm + wflange + wfw, y1: rfw)
-      claim journal[0].a distance(wj, along: x) journal[0].b class shown
-      claim pin[0].a distance(wpin, along: x) pin[0].b class shown
+      claim journal[0].a distance(wj, along: x) journal[0].b
+      claim pin[0].a distance(wpin, along: x) pin[0].b
     }
   }
 

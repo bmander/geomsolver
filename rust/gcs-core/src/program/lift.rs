@@ -20,17 +20,6 @@ pub fn to_program(sk: &Sketch) -> Program {
     if let Some(n) = sk.units.name() {
         p.push(StmtKind::Unit(Name::new(n)));
     }
-    // the style sheet, before the geometry it styles
-    for (name, style) in &sk.sheet {
-        p.push(StmtKind::Style(crate::syntax::StyleRule {
-            name: Name::new(name.clone()),
-            style: style.clone(),
-            // what this style states, asked of the style — a lifted rule has no source whose
-            // wording it could be keeping
-            props: style.stated().into_iter().map(|s| s.to_string()).collect(),
-            span: Span::default(),
-        }));
-    }
     for e in sk.primitives() {
         p.push(StmtKind::Decl(lift_decl(sk, e)));
     }
@@ -118,7 +107,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         curve: (e.kind == EntKind::Curve).then(|| lift_curve(sk, e.i())),
         computed: None,
         knots,
-        class: sk.class_of(e),
+        class: Default::default(),
         class_span: Span::default(),
         seed_at: None,
         seed_names: Vec::new(),
@@ -235,10 +224,10 @@ pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {
     }
     Relation {
         form: crate::syntax::RelationForm::Canonical { kind: c.kind, args },
-        place: sk.placements.get(&c.id).copied(),
+        place: None,
         place_span: Span::default(),
         claim: c.claim,
-        class: c.class.clone(),
+        class: Default::default(),
         class_span: Span::default(),
     }
 }

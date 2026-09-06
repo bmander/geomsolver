@@ -13,7 +13,7 @@ component Lobe(c: point, ref: line, phi: Angle, dn: Length) {
   radius(rb) base
   point n hint(x: c.x + dn * cos(phi + atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x)),
                y: c.y + dn * sin(phi + atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x)))
-  line spine(c, n) class axis
+  line spine(c, n)
   c distance(dn) n
   ref angle(phi) spine
   circle nose(center: n) hint(r: rn)

@@ -1,0 +1,7 @@
+model m from "truss50.sv"
+
+sheet drawing {
+  size A3
+  scale 0.1
+  sketch source(m) at (20mm, 180mm)
+}

@@ -47,6 +47,23 @@ impl SourceMap {
         self.by_name.get(n).copied()
     }
 
+    /// Resolve an externally authored path, including repeated members and entity fields.
+    /// The longest entity prefix wins; `line.p1` can refer to an unnamed endpoint.
+    pub fn entity_path(&self, sk: &Sketch, name: &str) -> Option<EntRef> {
+        if let Some(e) = self.ent_named(name) { return Some(e) }
+        let mut best = None;
+        for (key, &e) in &self.by_name {
+            let key = public_path(key);
+            if name == key { return Some(e) }
+            if let Some(fields) = name.strip_prefix(&format!("{key}.")) {
+                if best.as_ref().is_some_and(|(len, _)| *len >= key.len()) { continue }
+                let path = fields.split('.').map(|s| crate::syntax::Seg::Field(crate::syntax::Name::new(s))).collect::<Vec<_>>();
+                if let Ok(e) = super::resolve::follow(sk, e, &path) { best = Some((key.len(), e)); }
+            }
+        }
+        best.map(|(_, e)| e)
+    }
+
     pub fn made_by(&self, s: StmtId) -> &[Made] {
         self.made.get(&s).map(|v| v.as_slice()).unwrap_or(&[])
     }
@@ -104,6 +121,21 @@ impl SourceMap {
         }
         self.made.entry(st.id).or_default().push(what);
     }
+}
+
+/// Internal block identity is not part of a drawing reference. `#statement.copy.name`
+/// becomes `name[copy]`, which survives inserting or reordering unrelated statements.
+pub fn public_path(name: &str) -> String {
+    let mut parts = name.split('.');
+    let mut path = Vec::new();
+    while let Some(part) = parts.next() {
+        if part.strip_prefix('#').is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())) {
+            if let (Some(index), Some(name)) = (parts.next(), parts.next()) {
+                path.push(format!("{name}[{index}]"));
+            }
+        } else { path.push(part.to_string()); }
+    }
+    path.join(".")
 }
 
 /// A sketch, where each of its parts came from, and what was wrong with the program.

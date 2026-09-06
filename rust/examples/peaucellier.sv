@@ -40,8 +40,8 @@ component Cell(orbit: circle, datum: line, arm: Length, side: Length, u: Angle) 
 // places `q` too, so no dimension between the pivots is ever stated.
 point o hint(x: 0, y: 0)
 point q hint(x: crank, y: 0)
-line datum(o, q) class construction
-circle orbit(center: q) hint(r: crank) class construction
+line datum(o, q)
+circle orbit(center: q) hint(r: crank)
 
 horizontal datum
 radius(crank) orbit
@@ -63,7 +63,7 @@ point g1 hint(x: 80, y: 51)
 point g2 hint(x: 80, y: 114)
 g1 on(t == 65) path
 g2 on(t == 110) path
-line rail(g1, g2) class construction
+line rail(g1, g2)
 
 claim vertical rail
 

@@ -42,6 +42,7 @@ fn shelf() -> BTreeMap<&'static str, &'static str> {
     m.insert("lib.loop_a", "use lib.loop_b\nparam pa = 1\ncomponent A(p: point) { }\n");
     m.insert("lib.loop_b", "use lib.loop_a\nparam pb = 2\ncomponent B(p: point) { }\n");
     m.insert("lib.over", "use lib.rung\nparam twice = 2 * len\ncomponent Long(a: point, b: point) { a distance(twice) b }\n");
+    m.insert("lib.units", "param size = 10mm\ncomponent UnitLink(a: point, b: point) { a distance(size) b }\n");
     m
 }
 
@@ -51,6 +52,18 @@ fn read(src: &str) -> (Elaborated, Vec<gcs_core::program::Diag>) {
     let shelf = shelf();
     let linked = link(&mut prog, &mut |name| shelf.get(name).map(|t| t.to_string()));
     (elaborate(&prog), linked)
+}
+
+#[test]
+fn a_component_only_file_does_not_instantiate_its_last_definition() {
+    let src = "use lib.units\ncomponent Link(a: point, b: point, length: Length) { a distance(length) b }\n";
+    let (e, linked) = read(src);
+    assert!(linked.is_empty());
+    assert!(e.ok(), "{:?}", e.diags);
+    assert!(e.sketch.points.is_empty());
+    assert!(e.sketch.constraints.is_empty());
+    assert!(e.program.root().name.is_none());
+    assert_eq!(e.program.text(), src);
 }
 
 #[test]

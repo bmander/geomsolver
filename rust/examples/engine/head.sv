@@ -34,7 +34,7 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
     o distance(deck + gasket, along: y) f_r
     f_l distance(2 * hw) f_r
     o distance(110, along: left) t_l
-    o distance(deck + head, along: y) t_l class shown
+    o distance(deck + head, along: y) t_l
     // the pent roof over the bore, from the face at the bore's edges up to the ridge
     r_l: At(o, dx: -D / 2, dy: deck + gasket)
     r_r: At(o, dx: D / 2, dy: deck + gasket)
@@ -51,15 +51,15 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
     o distance(-vs, along: x) seat_e
     point cam_i hint(x: o.x + camx, y: o.y + camh + gasket)
     point cam_e hint(x: o.x - camx, y: o.y + camh + gasket)
-    line vaxis_i(seat_i, cam_i) class axis
-    line vaxis_e(seat_e, cam_e) class axis
+    line vaxis_i(seat_i, cam_i)
+    line vaxis_e(seat_e, cam_e)
     vaxis_i perpendicular roof_r
     vaxis_e perpendicular roof_l
     seat_i distance(stem + rb) cam_i
     seat_e distance(stem + rb) cam_e
     // the camshaft journals, hidden behind the lobes
-    circle j_i(center: cam_i) hint(r: rcamj) class hidden
-    circle j_e(center: cam_e) hint(r: rcamj) class hidden
+    circle j_i(center: cam_i) hint(r: rcamj)
+    circle j_e(center: cam_e) hint(r: rcamj)
     radius(rcamj) j_i
     radius(rcamj) j_e
     // where cylinder 1 is in its cycle says where each lobe points and how far each valve is
@@ -90,7 +90,7 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
     // the camshaft: the two shafts lie one behind the other here, one journal's outline
     point cam hint(x: o_s.x + front, y: o_s.y + camh + gasket)
     point camb hint(x: o_s.x + back, y: o_s.y + camh + gasket)
-    line camline(cam, camb) class axis
+    line camline(cam, camb)
     o_s distance(front, along: x) cam
     o_s distance(back, along: x) camb
     horizontal camline
@@ -156,8 +156,8 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
     point ce hint(x: o_t.x + front + 10mm, y: o_t.y - camx)
     point ci1 hint(x: o_t.x + back - 10mm, y: o_t.y + camx)
     point ce1 hint(x: o_t.x + back - 10mm, y: o_t.y - camx)
-    line cl_i(ci, ci1) class axis
-    line cl_e(ce, ce1) class axis
+    line cl_i(ci, ci1)
+    line cl_e(ce, ce1)
     o_t distance(front + 10mm, along: x) ci
     o_t distance(back - 10mm, along: x) ci1
     o_t distance(front + 10mm, along: x) ce

@@ -3,6 +3,7 @@
 import * as C from '../core/constraints.js';
 import * as examples from '../core/examples.js';
 import * as remote from './remote.js';
+import { openProject } from './program.js';
 import * as io from '../core/io.js';
 import { applyAlternative, enumerateStep, isCurrent } from '../core/homotopy.js';
 import { Point } from '../core/model.js';
@@ -48,8 +49,12 @@ export async function openCase(): Promise<void> {
   const i = await askChoice('Open examples', 'Choose a drawing to explore:',
                             cases.map((c) => ({ title: c.label, description: c.description })), true);
   if (i == null) return;
-  view.load(await remote.source(cases[i].key));
-  toast(cases[i].label);
+  await openExample(cases[i].key);
+}
+
+export async function openExample(key: string): Promise<void> {
+  try { openProject(await remote.drawing(key)); }
+  catch (e) { toast(`Could not open example: ${(e as Error).message}`); }
 }
 
 /** Everything that changes how the solve runs, gathered behind one item.  The controls are
@@ -66,11 +71,11 @@ export function options(): Promise<void> {
               + 'over the whole sketch');
     addCheckbox(box, 'colour by state', view.colorByState, (v) => { view.colorByState = v; view.draw(); },
                 'Paint each entity by what diagnosis makes of it');
-    addCheckbox(box, 'dimensions', view.showDimensions,
+    addCheckbox(box, 'inspect all constraint values', view.showDimensions,
                 (v) => { view.showDimensions = v; view.draw(); },
-                'Call out every dimensioned constraint on the drawing — click one to select it, '
-              + 'drag it where you want it, double-click to change its number.  Asking for a '
-              + 'dimension turns them back on: the number is edited where it is drawn');
+                'Show every model constraint value for inspection. Drawing annotations are '
+              + 'requested separately in .svd. Editing a value shows just that dimension; '
+              + 'opening another model turns this inspection overlay off.');
     addCheckbox(box, 'overview', view.overview, (v) => { view.setOverview(v); },
                 'Fold the views back into the glass box they were unfolded from, with the object '
               + 'reconstructed between them.  Drag to orbit, wheel to zoom; the drawing is '

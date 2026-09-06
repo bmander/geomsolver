@@ -15,6 +15,7 @@ import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
 import { Constraint } from '../core/constraints.js';
 import { PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
+import { preview } from '../core/derived.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
 import { Param, Plane, Point, Primitive, Sketch } from '../core/model.js';
 import { Attitude, Document, Edit, fromSketch } from '../core/program.js';
@@ -88,7 +89,8 @@ export class SketchView {
   usePlan = false;
   colorByState = true;
   /** Paint the dimensioned constraints on the drawing as callouts. */
-  showDimensions = true;
+  /** Opt-in inspection of all model constraint values, separate from authored .svd annotations. */
+  showDimensions = false;
   /** **The overview**: the sheet folded back into the glass box it was unfolded from, with the
    *  object reconstructed in the middle.  A mode on the same canvas rather than a second window,
    *  and *read-only* — orbit, pan and zoom; a click highlights and never edits, which
@@ -225,6 +227,7 @@ export class SketchView {
   constructor(readonly canvas: HTMLCanvasElement, doc: Document,
               readonly boxCanvas: HTMLCanvasElement | null = null) {
     this.doc = doc;
+    preview(this.doc.sketch);
     this.box3d = new Box3D(boxCanvas);
     this.ctx = canvas.getContext('2d')!;
     bindEvents(this);
@@ -346,17 +349,19 @@ export class SketchView {
   }
 
   fit(): void {
+    if (!this.sketch.points.length) return;
+    const bounds = [...this.sketch.drawnBounds()] as [number, number, number, number];
+    // Establish the new model's screen scale before tessellating any solid. The previous
+    // document may have been zoomed in arbitrarily far; projecting at that inherited scale
+    // can exhaust the browser before we ever get to fit the resulting picture.
+    this.cam.fitTo(bounds, this.width, this.height);
     // the box and the sheet have unrelated coordinates — a view's picture stands where its plane
     // is in space, not where it was laid out on the page — so the mode says which bounds to fit.
-    // `unit` reaches the scene only through how finely a curve is tessellated, so asking the
-    // camera we are about to move is honest enough and needs no second pass
     if (this.overview) {
       this.cam.fitTo(this.scene().bounds, this.width, this.height);
       this.draw();
       return;
     }
-    if (!this.sketch.points.length) return;
-    const bounds = [...this.sketch.drawnBounds()] as [number, number, number, number];
     const grow = ([x, y]: readonly number[]): void => {
       bounds[0] = Math.min(bounds[0], x); bounds[1] = Math.min(bounds[1], y);
       bounds[2] = Math.max(bounds[2], x); bounds[3] = Math.max(bounds[3], y);
@@ -390,6 +395,21 @@ export class SketchView {
     return this.reread(text, fit, false);
   }
 
+  /** Project navigation starts a separate edit history; undo must never cross file boundaries. */
+  openProjectFile(text: string): boolean {
+    const inspect = this.showDimensions;
+    this.showDimensions = false;
+    if (!this.reread(text, true, false)) {
+      this.showDimensions = inspect;
+      return false;
+    }
+    this.undoStack = [];
+    return true;
+  }
+
+  /** Finish transient interactions before showing a project's paper preview. */
+  pauseEditing(): void { this.settle(); }
+
   /** **A new document**, and the whole of what that means.  Every way of getting one — File ▸
    *  New, Open, a test case — comes through here, so the intention is spelled once: the
    *  outgoing document goes on the undo stack as one step (so a load is undoable, and ⌘Z after
@@ -400,7 +420,10 @@ export class SketchView {
    *  its own way and is not this. */
   load(text: string, fit = true): boolean {
     this.pushUndo();
+    const inspect = this.showDimensions;
+    this.showDimensions = false;
     if (!this.reread(text, fit, false)) {
+      this.showDimensions = inspect;
       this.dropUndo();
       return false;
     }
@@ -453,6 +476,7 @@ export class SketchView {
     const heldPlane = carry && this.plane ? this.doc.nameOf(this.plane) : undefined;
     const old = this.doc;
     this.doc = next;
+    preview(this.doc.sketch);
     // the mode survives a document change, being view state — but only while there is a box to
     // show: a new document, or an edit that took the last plane, is back on the sheet
     if (this.overview && !this.sketch.planes.length) this.setOverview(false);

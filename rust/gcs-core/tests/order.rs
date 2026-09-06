@@ -633,7 +633,7 @@ fn describe_does_not_depend_on_list_position() {
 /// Shuffle the statements of a program with a seeded permutation.  Declarations and statements
 /// alike: order is exactly what P2 says means nothing.
 fn shuffle_program(text: &str, seed: u32) -> String {
-    let (prog, errs) = gcs_core::syntax::parse(text);
+    let (prog, errs) = gcs_core::syntax::parse_legacy(text);
     assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
     let mut lines: Vec<String> = prog
         .root()
@@ -650,7 +650,7 @@ fn shuffle_program(text: &str, seed: u32) -> String {
 }
 
 fn elaborated(text: &str) -> gcs_core::program::Elaborated {
-    let (prog, errs) = gcs_core::syntax::parse(text);
+    let (prog, errs) = gcs_core::syntax::parse_legacy(text);
     assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
     gcs_core::program::elaborate(&prog)
 }
@@ -728,7 +728,7 @@ fn branches_by_name(
 /// (12, -4)`, the number and where it sits are one statement, so there is no key to go stale and
 /// no shuffle that can move a callout onto another dimension.
 #[test]
-fn a_placement_travels_in_the_statement() {
+fn model_reordering_does_not_serialize_presentation() {
     let mut checked = 0;
     for (name, mut sk) in cases() {
         furnish(&mut sk);
@@ -736,7 +736,8 @@ fn a_placement_travels_in_the_statement() {
             continue;
         }
         let text = gcs_core::program::dumps(&sk);
-        assert!(text.contains(" at ("), "{name}: no placement was printed");
+        assert!(!text.contains(" at ("), "{name}: model serialized a placement");
+        assert!(!text.contains("style "), "{name}: model serialized a stylesheet");
         let want = placed_by_name(&elaborated(&text));
         for seed in SEEDS {
             let got = placed_by_name(&elaborated(&shuffle_program(&text, seed)));

@@ -526,7 +526,11 @@ fn callout_json(k: &Callout) -> Json {
 /// any zoom; `font`, `arrow` and `barb` come back so the front end draws the text and the heads
 /// at exactly the size and shape the layout reserved for them.
 pub fn callouts_json(sk: &Sketch, unit: f64) -> Json {
-    let items: Vec<Json> = callout::layout(sk, unit).iter().map(callout_json).collect();
+    selected_callouts_json(sk, unit, None)
+}
+
+pub fn selected_callouts_json(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Json {
+    let items: Vec<Json> = callout::layout_selected(sk, unit, ids).iter().map(callout_json).collect();
     object([
         ("font", Json::Num(callout::FONT_PX)),
         ("arrow", Json::Num(callout::ARROW_PX)),

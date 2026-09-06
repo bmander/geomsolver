@@ -69,18 +69,7 @@ fn boundary_name(r: &crate::syntax::Ref) -> &str {
 /// is `name[copy]`, which does not change when an unrelated statement is inserted.
 fn boundary_path(name: &str, scope: Option<&str>) -> String {
     let relative = scope.and_then(|p| name.strip_prefix(p)).unwrap_or(name);
-    let mut parts = relative.split('.');
-    let mut path = Vec::new();
-    while let Some(part) = parts.next() {
-        if part.strip_prefix('#').is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())) {
-            if let (Some(index), Some(name)) = (parts.next(), parts.next()) {
-                path.push(format!("{name}[{index}]"));
-            }
-        } else {
-            path.push(part.to_string());
-        }
-    }
-    path.join(".")
+    super::public_path(relative)
 }
 
 fn fresh_boundary_name(prefix: &str, next: &mut usize, reserved: &BTreeSet<&str>) -> String {

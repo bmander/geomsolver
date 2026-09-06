@@ -1,6 +1,12 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.2 — August 2026**
+**Specification, Draft 0.20 — September 2026**
+
+**[0.20] Model/presentation split.** `.sv` specifies geometry, constraints, hints, and
+assertions. All presentation belongs in [Solvent Drawing (`.svd`)](docs/solvent-drawing.md).
+This supersedes earlier presentation clauses and examples, including `class`, `style`,
+`view`, `section`, `dimensions`, and callout `at (t, r)` in model source. Components remain
+scoped collections of statements and have no default geometric result.
 
 *Draft 0.2 amends 0.1 in seven places, from implementing 0.1 end to end (bmander/geomsolver#2).
 Marked **[0.2]** where they appear. In summary: the `=` / `==` seed mark (§4.3) that makes
@@ -194,6 +200,10 @@ A conversion written out — `* 180 / pi` — is `* 1rad`, and the `1rad` that r
 ## 4. Program structure
 
 A program is a set of component definitions. One component is designated the **root** (by tool invocation, not by language syntax); the elaborated model is the root's instance tree.
+
+The file tools use the file's top-level statements as an anonymous root. A file containing only
+component definitions has an empty root: opening it does not implicitly instantiate its last
+definition. An instance statement at file scope supplies the arguments and draws that component.
 
 ```
 component Name(p1: Type1, p2: Type2, ...) {
@@ -655,51 +665,17 @@ washer.body.far against cylA.block.near
 
 *Non-normative:* what this replaces reads, in the drawing it was written for, `zA = fwA + D / 2` and `tdisc = zA - rw / 2 - wsh - zdisc`.  Those are true statements about the object; they are just not the ones the designer made, which were "cylinder B's face against the plate's front" and "a washer between the disc and rod A".
 
-### 6.11 Views and sections **[0.18]**
+### 6.11 Views and sections **[0.20]**
 
-A part carries no views. It is a solid, and a sheet that wants a picture of it **asks** for one:
+Views and drawing sections belong in [Solvent Drawing](docs/solvent-drawing.md), not in
+model source. A model plane describes geometry. Viewing direction, page placement, and scale
+belong to the drawing. Removing a drawing leaves the complete model and solution unchanged.
 
-```
-view(cyl.body) in views.right                  // what that view sees of it
-view(cyl.body) in views.top
-section(body, at: front) in front              // cut at a plane, drawn in a view
-view detail(block) in side class heavy         // named, and classed, both optional
-```
+### 6.12 Dimensions as output **[0.20]**
 
-`view(S) in P` and `section(S, at: Q) in P` are **outputs, not entities**. Neither declares anything: no entity is minted, no name is bound, no constraint may relate to one, and deleting the statement removes the picture and nothing else. `S` MUST name a solid and `P` and `Q` MUST name planes (**E040** naming the kind that arrived, **E101** for a name nothing declares). The name before the brackets is optional and is carried for the report; a `class` clause after the view is the ordinary one (§13.2). `at:` cuts a section and a plain view takes none; a `section` with no `at:` is refused where it is written.
-
-**A section is drawn in a view parallel to the plane it is cut at**, or the true shape it shows is not the shape it is a section of; a cutting plane that shares a fold line with the view it is drawn in is **E084** at the statement.
-
-Every stroke comes back in the **page** coordinates of the plane it is drawn in — through that plane's own origin and rotor — so a derived picture sits on the sheet where its view sits, over the geometry drawn there.
-
-**Three drafting rules, and each is the whole of a convention.**
-
-1. **A corner is drawn and a tessellation seam is not.** A round surface is reduced to flats by the same sagitta rule the drawing's own arcs are drawn by, and the seams between those flats are not edges of the design. A seam is drawn only where it is a **silhouette** — where the surface turns away from the eye across it — so a cylinder is the two lines a draughtsman draws and not the sixty-four its facets would give, at every zoom.
-2. **What the material covers is dashed, not dropped.** A hidden line is a line. Visibility can change only at an apparent crossing or at an end, so each edge is cut at its crossings in the picture and each piece classified by the eye's ray from its middle; a piece the solid stands in front of is drawn under `.hidden`.
-3. **Coincident page lines are drawn once, and visible wins.** Where several strokes fall on one line of the page, what is seen is the union of the visible stretches and what is dashed is the union of the hidden stretches *less* that — so a hidden edge behind a visible one is not drawn twice and does not break it. Where a stretch is claimed by both a corner and a silhouette the corner wins, a corner being a fact about the object and a silhouette only about this view.
-
-**The classes are implicit** (§13.2): every stroke of a picture carries `.visible` or `.hidden`, a section's visible strokes carry `.section` beside `.visible`, and the statement's own classes are carried over those. So a sheet says what a hidden line looks like the way it says what a dimension does, and a document that already styles `.hidden` gets its dashes with nothing added.
-
-*Non-normative:* a picture is laid out in the implementation and stroked by the front end, the seam a dimension callout and a curve's tessellation already sit on — so an export and a canvas draw one answer, and neither owns a line of three-dimensional arithmetic. The gate is not that a derived view matches some pixels; it is that a view taken in the plane a face was drawn in gives back the outline that was drawn.
-
----
-
-### 6.12 The sheet as a report **[0.18]**
-
-```
-dimensions(cyl.body) in views.right
-```
-
-`dimensions(S) in P` asks for the callouts that **follow from the object**, laid out by the same engine that lays out every dimension a document states. Like `view` and `section` it is an output: nothing is minted, no name is bound, and it adds no equation, no unknown and no freedom. A generated callout is a *reading* of the drawing, so an implementation MUST NOT let one be addressed as a statement — dragged, edited, given a placement, or resolved back to a constraint — and MUST read it off the **solved** pose, since what it says is what the geometry came to and not what a statement asked for.
-
-What it generates is deliberately bounded, and the boundary is the point:
-
-- the part's **overall extents** in that view, one along each of the view's own axes, measured between the faces that bound them and stood clear of the outline; and
-- the **diameter** of every round feature that view sees square on.
-
-An implementation MUST NOT invent more than that. Which datum a stack is measured from, which fit is critical, what is a reference and what controls the drawing — those are the design, and a machine that chose them would be guessing. A sheet states the rest as it always did; this is what it no longer has to.
-
-*Non-normative:* the complaint this answers is that half the edits to a part sheet were placements, moved off each other by trial and then rendered to see whether they had landed. A drawing's *author* needs the picture; nothing about producing it needs a person.
+A model's dimensional constraints and assertions remain model statements. Selecting and
+placing their annotations, or requesting measurements of solved geometry, belongs in `.svd`.
+A drawing MUST NOT add model unknowns, equations, or branch choices.
 
 ---
 
@@ -1069,69 +1045,19 @@ Both failures are silent, and both are invisible to any test that checks only th
 
 **[0.17] A recorded solution branch is one record of one triangle.** Three points can be named six ways, and a chirality named in two of those orders is the same fact with the sign turned. An implementation MUST therefore record a branch **canonically** — one order of the three points, with the sign read against that order — and MUST normalise a record it reads into that form. Keyed by whichever order each writer happened to use, a document's stated orientation and the same choice as the implementation constructs it are two records that never meet: the stated one matches nothing and decides nothing, and the constructed one, written back out as a statement, names a different triple. Both are silent, which is this section's subject.
 
-**[0.7] A callout's placement stays here, and the sheet takes everything it shares.** Where a dimension's number sits on the page is presentation: delete every `at (t, r)` and the figure, the solve, the DOF count and the diagnosis are identical. It is nonetheless written on the constraint statement, and that is deliberate rather than a leak.
+**[0.20] Annotation placement is drawing state.** A `.svd` drawing identifies a named
+model dimension or measures named geometry. Model source MUST NOT serialize a callout's
+placement, and a drawing reference MUST NOT use a statement's position or an entity's internal
+index. Missing references MUST be diagnosed. Solver hints and recorded solution branches
+remain model state.
 
-The alternatives are worse in ways this section already names. Keying a placement by *position* or by *entity index* fails silently, which is what the section exists to forbid. A *selector* over the statement (`place distance(p0, p1) at (12, -4)`) is ambiguous by construction: a second length on the same pair is a state a document is allowed to be in, and reporting it as over-constrained naming both is the point, so a selector on type-and-arguments cannot always name one dimension. A *minted id* is a name with a machine's spelling, and it fails the first time somebody copies a block of text: two statements with one id and no reader able to tell which was meant. **Naming the dimension** (`distance(p0, p1) == 80 as d1` and a separate `place d1 at (12, -4)`) is the one alternative that satisfies both constraints — a name is identity, not appearance — and it costs every dimension anyone has ever dragged a name nobody asked for, minted by a second splice into the geometry statement.
+### 13.2 Presentation **[0.20]**
 
-So a placement stays on its statement, and orthogonality is achieved the other way round: **the sheet (§13.2) owns everything a callout *shares*** — the ink, the weight, the dash, and whatever else is added later — and the statement keeps the one pair of numbers that is about that statement alone and nothing else. A class is a rule many statements share; a placement is a fact about one, and that is exactly the difference between the two constructs.
-
-Whatever an implementation does, a placement whose dimension is gone MUST be gone with it: removed, or reported. Never silently inert while the document still carries it, which is the failure this section names.
-
-### 13.2 Presentation: classes and style sheets **[0.7]**
-
-> **A document says what the drawing *is*. How it *looks* is a separate statement, in a separate part of the file, and changing it is never an edit of the geometry.**
-
-A declaration carries a **class**; a `style` block says what a class looks like.
-
-```
-style .construction { dash: 7 4 }
-style .centerline   { dash: 12 3 2 3; width: 0.5; color: #888888 }
-style .heavy        { width: 2.5 }
-
-line   datum(center, anchor) class construction
-line   ab(a, b) class centerline heavy
-circle base(center: c) hint(r: Rb) class construction
-```
-
-**[0.12] Three more places a class stands, and one more property.** A *relation* statement carries a class as a declaration does — `a distance(80) b class shown` — and a dimension's callout is drawn in `.dimension` (and `.reference` when it is a claim) under the classes its statement carries; on a relation that states no dimension a class is inert. An *instance* carries one — `t2: Throw(…) class phantom` — and every declaration **and relation** its expansion makes carries it *over* its own, the assembly's word being the later and stronger, the way `in` puts an instance in a view (§6.7). Every *point* is drawn under the implicit class `.point`, so a document may say that its handles are not part of the picture. The property `display: none` leaves what carries it out of the picture altogether — an entity is not drawn, a dimension is neither laid out nor picked — `display: inline` shows it again from a later class, since an absent property says nothing, and `display: geometry` draws what carries it and never dimensions it: an entity under it is shown and a dimension whose statement carries it is not, which is a phantom position. The idiom for a drawing dense with dimensions is `style .dimension { display: none }` and `class shown` on the few the sheet is to show. Nothing about the solve, the count or the diagnosis reads any of it.
-
-**[0.18] Three more implicit classes, for the pictures a document asks for.** Every stroke of a `view` or a `section` (§6.11) carries `.visible` or `.hidden` according to whether the material stands between it and the eye, a section's visible strokes carry `.section` beside `.visible`, and the classes the statement itself was written with are carried **over** those — the assembly's word being the later and stronger, as everywhere in this section. The base sheet says:
-
-```
-style .hidden  { dash: 4 3; color: #7a7a7a }
-style .section { width: 1.6 }
-```
-
-**[0.19] And one more, for the boundary a face closes itself with.** A straight run minted by a `face`'s own walk (§6.8) carries `.closure`, whose base rule is `display: none`: it bears no design, nothing drew it, and it exists so that a region has a boundary. A document that wants to see one says `style .closure { display: inline }`, as it would of any class.
-
-`.visible` has **no base rule**, and that is the cascade rule of this section rather than an omission: a visible stroke is the plain outline, so a rule stating a weight or an ink for it would beat a document's own `style .hidden { width: 2 }` on half the drawing. Each of the two rules that exist states only what its class *adds*, for the reason `.reference` does.
-
-- **A class goes on an entity declaration**, and nowhere else. Not on a component definition, not on an instance, not on a `cycle`. Those are all reasonable later and none of them is needed.
-- **A declaration MAY carry several classes**, space-separated. On a conflicting property the later one wins, so `class centerline heavy` is a centreline drawn thick — and *only* on the properties the later one states.
-- **`style` blocks sit at the top level.** An external sheet, shared across drawings, is the natural extension once there is more than one drawing to style; it is not specified here.
-- **An unmatched class is not an error.** It simply has no rule, exactly as in CSS — which is also what makes paste work: a figure copied out of a document with a sheet keeps its class names and picks up whatever the destination says about them, or nothing.
-
-| property | value | |
-|---|---|---|
-| `dash` | a list of lengths | as `stroke-dasharray`; empty or absent is solid |
-| `width` | a length | stroke weight |
-| `color` | `#rrggbb` | stroke ink |
-
-**Lengths in a sheet are screen pixels**, not world units — the rule that already governs everything drawn at a constant size. A dashed line does not change its dash pattern when you zoom.
-
-**`construction` is retired as a keyword.** What it did is one rule in an **implicit base sheet** that an implementation ships and a document may override:
-
-```
-style .construction { dash: 7 4 }
-```
-
-A document that overrides `.construction` MUST change how it draws and nothing else: same solve, same DOF, same diagnosis.
-
-**The base sheet is a layer *under* the document's, not a rule interleaved between a declaration's classes.** A style resolves by cascading the whole base sheet over the empty style in written class order, then the whole document sheet over that, again in written class order. So what a document states beats what the implementation ships whichever class it happens to be written on — the rule CSS states between an author sheet and the user agent's — and a base rule may state only what its class *adds*, since anything it restates would override a document rule written on an earlier class.
-
-**No algorithm may consult a class.** This is the point of the section, and it is a normative constraint on implementations rather than on documents: presentation is read where a drawing is drawn and nowhere else. It is also why the *implementation* resolves the cascade rather than a front end — a callout's figure and a curve's tessellation are laid out in the same place for the same reason, so that two front ends draw one drawing alike.
-
-An export format MAY record a class list. It SHOULD go on reading whatever the format wrote before there were classes; `construction` in particular SHOULD load as the class of that name.
+Styles and presentation classes are defined in [Solvent Drawing](docs/solvent-drawing.md).
+Model source MUST reject presentation statements and clauses. A renderer may assign implicit
+roles such as hidden edges or closure lines without adding source-level classes to geometry.
+Model serialization and editor reconciliation MUST omit presentation state. An editor MAY
+provide an automatic preview for a model without a drawing file.
 
 ---
 
@@ -1386,10 +1312,9 @@ type           = "Int" | "Scalar" | "Length" | "Angle" | "Side"      (* §4.1 [0
                | "Point" | "Line" | "Circle" | "Plane" | "Path"
                | "Face" | "Solid" ;    (* [0.18]; `Frame` was folded into `Plane` in 0.15 *)
 
-statement      = decl | constraint | hint | gauge | block | path_decl | style_rule | chain
-               | unit_decl | frag | in_block | body_rel | derived_decl ;   (* [0.18] *)
+statement      = decl | constraint | hint | gauge | block | path_decl | chain
+               | unit_decl | frag | in_block | body_rel ;   (* [0.20]: presentation is .svd *)
 in_block       = "in" ref "{" { statement } "}" ;         (* membership, written once: §6.7 *)
-style_rule     = "style" "." IDENT "{" { IDENT ":" value { ";" } } "}" ;   (* §13.2; `display: none | inline` *)
 unit_decl      = "unit" IDENT ;                                           (* §3.3.2 *)
 chain          = [ IDENT "=" ] link { joint link } [ "->" { infix } "close" ] ;
 (* link, joint and infix follow §6.6; a named chain threads every joint, §6.6 [0.20]. *)
@@ -1411,7 +1336,7 @@ entity_decl    = ekw binder { "," binder }
                | "point" IDENT "=" "(" expr "," expr ")" ;   (* a computed point, §6.5 [0.13] *)
 ekw            = "point" | "circle" | "line" | "plane" | "spline"
                | "curve" | "face" | "solid" ;                   (* §6.8, §6.9 [0.18] *)
-(* the trailing clauses are order-free: `hint(…)`, `knots […]`, `class …`, `in REF`.  A
+(* the trailing clauses are order-free: `hint(…)`, `knots […]`, `in REF`.  A
    place — `hint(at: t)`, `hint(at: c, bearing: …)` — is the same clause with `at:` and
    `bearing:` for keys, §6.4 [0.14] *)
 binder         = IDENT [ "(" ctor_arg { "," ctor_arg } ")" ] { trailer } ;
@@ -1419,7 +1344,6 @@ binder         = IDENT [ "(" ctor_arg { "," ctor_arg } ")" ] { trailer } ;
    `l.p1`.  A slot is a name, a seed, or implicit; only an overfull list is E103. *)
 trailer        = hint_clause
                | "knots" "[" number { "," number } "]"
-               | "class" IDENT { IDENT }                   (* presentation, §13.2 *)
                | "in" ref ;                                (* membership of a plane, §6.7 *)
 hint_clause    = "hint" "(" hint_item { "," hint_item } ")" ;   (* SEEDS, §4.3 *)
 hint_item      = IDENT ":" expr | "at" ":" ref | "bearing" ":" expr ;   (* a place, §6.4 [0.14] *)
@@ -1439,9 +1363,8 @@ sweep_arg      = ( "from" | "to" | "depth" | "sweep" ) ":" expr
 
 (* §6.8, §6.9 [0.18].  Both are ordinary entity_decls — `face` and `solid` are element
    keywords — and are written out here for what their one list slot holds. *)
-face_decl      = "face" [ IDENT ] "(" ref { "," ref } [ "," "->" "close" ] ")"
-                 [ "class" IDENT { IDENT } ] ;   (* a ref is an edge or a corner, §6.8 [0.19] *)
-solid_decl     = "solid" [ IDENT ] "(" term ")" [ "class" IDENT { IDENT } ] ;
+face_decl      = "face" [ IDENT ] "(" ref { "," ref } [ "," "->" "close" ] ")" ;   (* a ref is an edge or a corner, §6.8 [0.19] *)
+solid_decl     = "solid" [ IDENT ] "(" term ")" ;
 term           = ref { "," sweep_arg }                     (* a face swept *)
                | ref { "," ref } ;                         (* a body: its stock, then solids *)
 body_rel       = ref ( "on" | "cut" ) ref ;   (* the body rule, §6.9 — `on` is the ordinary
@@ -1457,27 +1380,20 @@ mate           = ref "against" ref ;
 solid_claim    = [ "claim" ] ref ( "clear" "(" expr ")" | "fits" "(" expr ")" | "inside" ) ref ;
 claim_over     = "claim" "over" ref "in" "(" expr "," expr ")" "{" { solid_claim } "}" ;
 
-(* §6.11 [0.18]: a picture asked of a solid.  An output and not a declaration — nothing is
-   minted and the optional name binds nothing. *)
-derived_decl   = view_decl | section_decl | dims_decl ;
-view_decl      = "view" [ IDENT ] "(" ref ")" "in" ref [ "class" IDENT { IDENT } ] ;
-dims_decl      = "dimensions" [ IDENT ] "(" ref ")" "in" ref
-                 [ "class" IDENT { IDENT } ] ;             (* §6.12 [0.18] *)
-section_decl   = "section" [ IDENT ] "(" ref "," "at" ":" ref ")" "in" ref
-                 [ "class" IDENT { IDENT } ] ;
+(* [0.20]: solid views, sections, and annotation requests belong to .svd. *)
 
 (* a curve, §6.5 [0.11]: a point of a component as one of its numeric formals runs.  0.2's
    family form and 0.3's `trace … where { … }` are retired and MUST NOT parse. *)
 curve_def      = "curve" IDENT "=" [ IDENT "(" [ args ] ")" "." ] ref
                  "over" IDENT "in" "(" expr "," expr ")" ;
 param_decl     = "param" IDENT "=" expr ;
-instance_decl  = IDENT ":" IDENT "(" [ args ] ")" [ "in" ref ] [ "class" IDENT { IDENT } ] ;   (* §6.7, §13.2 *)
+instance_decl  = IDENT ":" IDENT "(" [ args ] ")" [ "in" ref ] ;   (* §6.7, §13.2 *)
 args           = arg { "," arg } ;
 arg            = [ IDENT ":" ] expr ;
 
 (* §9.2: every constraint is a prefix or an infix operator; `name(args…)` is retired. *)
 constraint     = [ "claim" ] ( prefix_form | infix_form )
-                 [ hint_clause ] [ "at" "(" number "," number ")" ] ;  (* §4.3, §13.1 *)
+                 [ hint_clause ] ;  (* §4.3; presentation placement belongs to .svd *)
 prefix_form    = IDENT [ op_args ] ref ;
 infix_form     = ref IDENT [ op_args ] ref ;
 op_args        = "(" op_arg { "," op_arg } ")" ;

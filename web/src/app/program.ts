@@ -16,8 +16,10 @@
 import type { Mark } from './editor.js';
 import type { Diagnostic, SourceMap, SourceSpan } from '../core/program.js';
 import * as modules from '../core/modules.js';
+import { info, type DrawingBundle } from '../core/drawing.js';
+import { drawingActive, pickDrawingFolder, renderDrawing, showDrawing } from './drawing.js';
 import { currentConstraint, pdiags, ped, ppanel, ppanelState, psplit, view } from './shell.js';
-import { toast } from './ui.js';
+import { download, toast } from './ui.js';
 
 /** The box somebody types in.  `app/editor.ts` owns the two layers and the colouring; this module
  *  owns what the text *means* — which document it came from and what applying it does. */
@@ -34,9 +36,12 @@ const fileBar = document.getElementById('program-files') as HTMLElement;
 let activeFile = '';
 let filesFor: string | null = null;
 let files: modules.SourceFile[] = [];
+let project: DrawingBundle | null = null;
+let switching = false;
 const positions = new Map<string, { start: number; end: number; top: number; left: number }>();
 
 function refreshFiles(): void {
+  if (project) return;
   if (filesFor === view.source) return;
   filesFor = view.source;
   files = modules.related(view.source);
@@ -47,15 +52,19 @@ function refreshFiles(): void {
   fileBar.hidden = files.length === 0;
 }
 
-/** Browse an imported source without replacing the main drawing or its source map. */
+/** Select a project file, or browse an import of a standalone model. */
 function selectFile(name: string): void {
   if (name === activeFile) return;
-  if (typed && !applyProgram()) {
+  if (typed && !applyProgram() && !project) {
     filePicker.value = activeFile;
     return;
   }
   positions.set(activeFile, { start: ptext.selectionStart, end: ptext.selectionEnd,
     top: ptext.scrollTop, left: ptext.scrollLeft });
+  if (project) {
+    if (!drawingActive() && !typed) project.files[activeFile] = view.source;
+    if (!activateProjectFile(name)) { filePicker.value = activeFile; return; }
+  }
   activeFile = name;
   filePicker.value = name;
   shown = '';
@@ -68,10 +77,97 @@ function selectFile(name: string): void {
 }
 
 export function resetProgramFiles(): void {
+  if (switching) return;
+  project = null;
+  showDrawing(null);
   activeFile = '';
   filesFor = null;
   positions.clear();
   revertProgram();
+}
+
+/** Both source kinds live in one project; the selected extension chooses the left-hand view. */
+export function openProject(bundle: DrawingBundle): void {
+  const names = Object.keys(bundle.files).filter((p) => /\.svd?$/.test(p)).sort();
+  const main = names.includes(bundle.source) ? bundle.source
+    : names.find((p) => p.endsWith('.svd'));
+  if (!main) { toast('This folder has no .svd drawings'); return; }
+  view.pauseEditing();
+  project = { source: main, files: { ...bundle.files } };
+  positions.clear();
+  activeFile = main;
+  filePicker.replaceChildren(new Option(main, main),
+    ...names.filter((p) => p !== main).map((p) => new Option(p, p)));
+  filePicker.value = main;
+  fileBar.hidden = false;
+  activateProjectFile(main);
+  revertProgram();
+}
+
+export async function openDrawing(): Promise<void> {
+  try {
+    const bundle = await pickDrawingFolder();
+    if (bundle) openProject(bundle);
+  } catch (e) { toast(`Could not read drawing folder: ${(e as Error).message}`); }
+}
+
+/** Save the selected source, including a draft that has not compiled yet. */
+export function saveProjectFile(): boolean {
+  if (!project) return false;
+  download(activeFile.split('/').pop()!, typed ? ptext.value : project.files[activeFile]);
+  return true;
+}
+
+/** Module names are relative to the root model, including when browsing one of its imports. */
+function provideProjectModules(path: string): void {
+  if (!project) return;
+  const sources = project.files;
+  const directory = (p: string) => p.slice(0, p.lastIndexOf('/') + 1);
+  const resolve = (p: string, from: string) =>
+    decodeURIComponent(new URL(p, `https://project.invalid/${from}`).pathname.slice(1));
+  let root = directory(path);
+  for (const [file, text] of Object.entries(sources)) {
+    if (!file.endsWith('.svd')) continue;
+    let models: string[];
+    try { models = info(text).models; } catch { continue; }
+    for (const model of models) {
+      const entry = resolve(model, file), base = directory(entry);
+      const seen = new Set<string>(), queue = [entry];
+      for (let i = 0; i < queue.length; i++) {
+        const next = queue[i];
+        if (seen.has(next)) continue;
+        seen.add(next);
+        if (next === path) { root = base; break; }
+        const source = sources[next];
+        if (source !== undefined) {
+          queue.push(...modules.uses(source).map((name) => base + modules.pathOf(name)));
+        }
+      }
+    }
+  }
+  modules.forget();
+  for (const [file, text] of Object.entries(sources)) {
+    if (file.startsWith(root) && file.endsWith('.sv')) {
+      modules.provide(file.slice(root.length, -3).replaceAll('/', '.'), text);
+    }
+  }
+}
+
+function activateProjectFile(name: string): boolean {
+  if (!project || !(name in project.files)) return false;
+  switching = true;
+  try {
+    if (name.endsWith('.svd')) {
+      view.pauseEditing();
+      showDrawing({ source: name, files: project.files });
+    } else {
+      provideProjectModules(name);
+      if (!view.openProjectFile(project.files[name])) return false;
+      showDrawing(null);
+    }
+    typed = false;
+    return true;
+  } finally { switching = false; }
 }
 
 
@@ -165,23 +261,28 @@ function setPanelWidth(px: number): void {
 
 /** Re-print, unless the panel is being typed in or already says this. */
 export function refreshProgram(): void {
+  if (switching) return;
+  if (project && !drawingActive() && !typed) project.files[activeFile] = view.source;
   if (ppanel.hidden) return;
   refreshFiles();
-  ptext.readOnly = activeFile !== '';
-  ptext.setAttribute('aria-label', activeFile ? modules.pathOf(activeFile) : 'Main drawing source');
+  const imported = !project && activeFile !== '';
+  ptext.readOnly = imported;
+  ptext.setAttribute('aria-label', project ? activeFile
+    : activeFile ? modules.pathOf(activeFile) : 'Main drawing source');
   markStatement();              // the pick may have moved even where the text has not
   if (typed) {
     ppanel.classList.add('dirty');
     ppanelState.textContent = ' — edited, ⌘↵ to apply';
     return;
   }
-  const text = files.find((f) => f.name === activeFile)?.text ?? view.source;
+  const text = project ? project.files[activeFile]
+    : files.find((f) => f.name === activeFile)?.text ?? view.source;
   if (text === shown) return;
   shown = text;
-  ped.setText(text, activeFile ? [] : marks());
+  ped.setText(text, imported || drawingActive() ? [] : marks());
   ppanel.classList.remove('dirty');
-  ppanelState.textContent = activeFile ? ' — imported file, read only' : '';
-  showDiags(activeFile ? [] : view.doc.diagnostics);
+  ppanelState.textContent = imported ? ' — imported file, read only' : '';
+  showDiags(imported || drawingActive() ? [] : view.doc.diagnostics);
 }
 
 /** Apply what is in the box.  One undo entry, one solve, one diagnosis — like every other edit.
@@ -189,8 +290,17 @@ export function refreshProgram(): void {
  *  A program that will not read leaves the drawing exactly as it was and says why: half a
  *  statement is not an instruction to delete anything. */
 export function applyProgram(): boolean {
-  if (activeFile) return false;
+  if (!project && activeFile) return false;
+  if (drawingActive() && !typed) return renderDrawing();
   const text = ptext.value;
+  if (project) project.files[activeFile] = text;
+  if (drawingActive()) {
+    typed = false;
+    shown = '';
+    const ok = renderDrawing();
+    refreshProgram();
+    return ok;
+  }
   const undo = view.source;
   if (!view.setProgram(text, false)) return false;
   showDiags(view.doc.diagnostics);
@@ -298,7 +408,7 @@ function marks(): Mark[] {
  *  marking something nobody can read yet.  The gesture ends in `onChanged`, which comes back
  *  through here. */
 export function markStatement(): void {
-  if (ppanel.hidden || activeFile || typed || view.gesture) return;
+  if (switching || drawingActive() || ppanel.hidden || (!project && activeFile) || typed || view.gesture) return;
   ped.setMarks(marks());
 }
 
@@ -306,12 +416,13 @@ export function markStatement(): void {
  *  under one.  Called from both funnels: `view.onSelect` for the drawing, `hooks.focusChanged`
  *  for a constraint, so picking either way says the same thing here. */
 export function showStatementFor(): void {
+  if (switching || drawingActive()) return;
   markStatement();
   const where = litSpan();
   // the scroll is only for a box nobody is in: moving it under somebody who is typing would take
   // the line out from under their caret
   if (!where || ppanel.hidden || typed || view.gesture) return;
-  if (activeFile) selectFile('');
+  if (!project && activeFile) selectFile('');
   markStatement();
   if (document.activeElement !== ptext) ped.scrollToLine(lineAt(where.lo));
 }
@@ -328,9 +439,10 @@ function lineAt(off: number): number {
  *  the view never has to import the shell. */
 export function bindProgramPanel(): void {
   bindPartition();
+  document.getElementById('drawing-render')!.addEventListener('click', () => applyProgram());
   filePicker.addEventListener('change', () => selectFile(filePicker.value));
   ptext.addEventListener('input', () => {
-    if (activeFile) return;
+    if (!project && activeFile) return;
     typed = true;
     // colour what was just typed, not what the drawing came from: half a statement is still the
     // program somebody is looking at, and the core colours it as far as it goes
@@ -342,7 +454,7 @@ export function bindProgramPanel(): void {
     // every accelerator in `main` is already yielded inside a TEXTAREA, but a handler that did
     // not stop here would still reach the window listeners below it
     e.stopPropagation();
-    if (activeFile) return;
+    if (!project && activeFile) return;
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       applyProgram();
@@ -358,7 +470,7 @@ export function bindProgramPanel(): void {
   });
   // a click in the text says which statement, and the drawing lights what it made
   ptext.addEventListener('click', () => {
-    if (activeFile) return;
+    if (drawingActive() || (!project && activeFile)) return;
     const off = ptext.selectionStart;
     // the innermost statement containing the caret: a statement inside a block is inside its
     // block's span, and the one that made something is the one a click there means

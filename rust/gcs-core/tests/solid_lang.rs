@@ -369,15 +369,15 @@ fn closing_lines_stay_implicit_across_reconciliation_and_reload() {
     use gcs_core::edit::{self, Kind};
 
     for src in [
-        format!("{RECT}face quad(a, b, c, d, -> close) class region\n"),
-        format!("{RECT}solid slab(face(a, b, c, d, -> close) class region, depth: 2mm) class part\n"),
+        format!("{RECT}face quad(a, b, c, d, -> close)\n"),
+        format!("{RECT}solid slab(face(a, b, c, d, -> close), depth: 2mm)\n"),
         format!(
             "unit mm\ncomponent Patch() {{\n{}\
              solid slab(face(a, bc, cd, -> close), depth: 2mm)\n}}\npart: Patch()\n",
             RECT.trim_start_matches("unit mm\n"),
         ),
         "component Patch() {\npoint a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\n\
-         point c hint(x: 0, y: 40)\nface tri(a, b, c, -> close) class region\n}\n\
+         point c hint(x: 0, y: 40)\nface tri(a, b, c, -> close)\n}\n\
          part: Patch()\n".to_string(),
     ] {
         let initial = read(&src).sketch.lines.len();

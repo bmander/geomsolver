@@ -38,4 +38,3 @@ repeat bays - 1 as i {
   line upper(t[i], t[i + 1])
   t[i] distance(span) t[i + 1]
 }
-

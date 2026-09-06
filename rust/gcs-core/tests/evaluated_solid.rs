@@ -11,15 +11,15 @@ use gcs_core::{
 use std::rc::Rc;
 
 fn read(source: &str) -> program::Elaborated {
-    let (p, errors) = syntax::parse(source);
+    let (p, errors) = syntax::parse_legacy(source);
     assert!(errors.is_empty(), "{errors:?}");
     let mut e = program::elaborate(&p);
     assert!(e.ok(), "{:?}", e.diags);
     assert!(solve::solve(&mut e.sketch, Default::default()).success);
     e
 }
-const BOX: &str = include_str!("fixtures/solid_issue51/view_layout_0.sv");
-const BORE: &str = include_str!("fixtures/solid_issue51/ghost_dimension_through.sv");
+const BOX: &str = include_str!("fixtures/solid_issue51/view_layout_0.legacy");
+const BORE: &str = include_str!("fixtures/solid_issue51/ghost_dimension_through.legacy");
 fn index(e: &program::Elaborated) -> usize {
     e.map.ent_named("result").unwrap().i()
 }

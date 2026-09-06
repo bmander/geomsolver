@@ -100,7 +100,7 @@ in right {
   horizontal line r1(Ar, A2r) -> vertical line r2(A2r, E2r) -> horizontal line r3(E2r, Er) ->
     vertical line r4(Er, Ar)
   horizontal line step_r(Cr, C2r)
-  horizontal line toe_r(Fr, F2r) class hidden
+  horizontal line toe_r(Fr, F2r)
   Ar vertical Cr
   A2r vertical C2r
   Ar vertical Fr
@@ -129,8 +129,6 @@ in aux {
   F2t project F2a
   E2t project E2a
 }
-
-style .hidden { dash: 3 3 }
 
 // `solventc` on this document: 58 params, 58 equations, structural rank 58, DOF 0 — every
 // view placed by the front's six dimensions and the top's one, and the auxiliary face coming

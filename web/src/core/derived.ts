@@ -8,6 +8,11 @@
 import { Sketch } from './model.js';
 import { core, takeJson, withBuf } from './wasm.js';
 
+/** Install an automatic editor preview; this never writes model source. */
+export function preview(sk: Sketch, plane = -1): void {
+  core().gcs_sketch_preview(sk.handle, plane);
+}
+
 /** How a stroke is inked, resolved by the core's own style cascade — so a document's
  *  `style .hidden { … }` rule reaches a derived view with nothing added on this side. */
 export interface Ink {

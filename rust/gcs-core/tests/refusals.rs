@@ -3,7 +3,7 @@
 
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
-use gcs_core::syntax::parse;
+use gcs_core::syntax::parse_legacy as parse;
 
 fn read(src: &str) -> (Elaborated, Vec<String>) {
     let (prog, errs) = parse(src);

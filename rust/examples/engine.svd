@@ -1,0 +1,158 @@
+// Presentation of engine.sv. Model geometry is independent of this drawing.
+model m from "engine.sv"
+
+sheet drawing {
+  size A3
+  sketch source(m) at (80mm, 180mm)
+  style m.O { display: none }
+  style m.views.qf { display: none }
+  style m.views.right_origin { display: none }
+  style m.views.qr { display: none }
+  style m.views.top_origin { display: none }
+  style m.views.qt { display: none }
+  style m.end.top.p { display: none }
+  style m.side.a0.p { display: none }
+  style m.side.a1.p { display: none }
+  style m.block.bl0 { display: none }
+  style m.block.br0 { display: none }
+  style m.block.bl1.p { display: none }
+  style m.block.br1.p { display: none }
+  style m.block.d_l { display: none }
+  style m.block.d_r { display: none }
+  style m.block.s_l.p { display: none }
+  style m.block.s_r.p { display: none }
+  style m.block.k_l.p { display: none }
+  style m.block.k_r.p { display: none }
+  style m.block.pr_l { display: none }
+  style m.block.pr_r { display: none }
+  style m.block.c_l { display: none }
+  style m.block.c_r { display: none }
+  style m.block.sh_l.p { display: none }
+  style m.block.sh_r.p { display: none }
+  style m.block.sp_l { display: none }
+  style m.block.sp_r { display: none }
+  style m.block.bfl { display: none }
+  style m.block.bfr { display: none }
+  style m.block.rfl { display: none }
+  style m.block.rfr { display: none }
+  style m.block.q_a { display: none }
+  style m.block.q_b { display: none }
+  style m.block.q_c { display: none }
+  style m.block.q_d { display: none }
+  style m.block.q_e { display: none }
+  style m.block.fl { display: none }
+  style m.block.fr { display: none }
+  style m.block.br { display: none }
+  style m.block.bl { display: none }
+  style m.head.f_l { display: none }
+  style m.head.f_r { display: none }
+  style m.head.t_l { display: none }
+  style m.head.tr.p { display: none }
+  style m.head.r_l.p { display: none }
+  style m.head.r_r.p { display: none }
+  style m.head.ridge.p { display: none }
+  style m.head.plug.a { display: none }
+  style m.head.plug.b { display: none }
+  style m.head.plug.c { display: none }
+  style m.head.plug.d { display: none }
+  style m.head.seat_i { display: none }
+  style m.head.seat_e { display: none }
+  style m.head.cam_i { display: none }
+  style m.head.cam_e { display: none }
+  style m.head.lobe_i.n { display: none }
+  style m.head.lobe_i.fl.a { display: none }
+  style m.head.lobe_i.fl.b { display: none }
+  style m.head.lobe_i.fr.a { display: none }
+  style m.head.lobe_i.fr.b { display: none }
+  style m.head.lobe_e.n { display: none }
+  style m.head.lobe_e.fl.a { display: none }
+  style m.head.lobe_e.fl.b { display: none }
+  style m.head.lobe_e.fr.a { display: none }
+  style m.head.lobe_e.fr.b { display: none }
+  style m.head.v_i.fc { display: none }
+  style m.head.v_i.f1 { display: none }
+  style m.head.v_i.f2 { display: none }
+  style m.head.v_i.b1 { display: none }
+  style m.head.v_i.b2 { display: none }
+  style m.head.v_i.hc { display: none }
+  style m.head.v_i.h1 { display: none }
+  style m.head.v_i.h2 { display: none }
+  style m.head.v_e.fc { display: none }
+  style m.head.v_e.f1 { display: none }
+  style m.head.v_e.f2 { display: none }
+  style m.head.v_e.b1 { display: none }
+  style m.head.v_e.b2 { display: none }
+  style m.head.v_e.hc { display: none }
+  style m.head.v_e.h1 { display: none }
+  style m.head.v_e.h2 { display: none }
+  style m.head.hfl { display: none }
+  style m.head.hfr { display: none }
+  style m.head.htl { display: none }
+  style m.head.htr { display: none }
+  style m.head.cam { display: none }
+  style m.head.camb { display: none }
+  style m.head.ju0 { display: none }
+  style m.head.ju1 { display: none }
+  style m.head.jd0 { display: none }
+  style m.head.jd1 { display: none }
+  style m.head.hfl_t { display: none }
+  style m.head.hfr_t { display: none }
+  style m.head.hbr_t { display: none }
+  style m.head.hbl_t { display: none }
+  style m.head.ci { display: none }
+  style m.head.ce { display: none }
+  style m.head.ci1 { display: none }
+  style m.head.ce1 { display: none }
+  style m.secA { display: none }
+  style m.ghost.small { display: none }
+  style m.piston1.cl { display: none }
+  style m.piston1.cr { display: none }
+  style m.piston1.sl { display: none }
+  style m.piston1.sr { display: none }
+  style m.drive.b1.a { display: none }
+  style m.drive.b1.b { display: none }
+  style m.drive.b2.a { display: none }
+  style m.drive.b2.b { display: none }
+  style m.drive.b3.a { display: none }
+  style m.drive.b3.b { display: none }
+  style m.drive_s.crankpulley.a { display: none }
+  style m.drive_s.crankpulley.b { display: none }
+  style m.drive_s.crankpulley.c { display: none }
+  style m.drive_s.crankpulley.d { display: none }
+  style m.drive_s.campulley.a { display: none }
+  style m.drive_s.campulley.b { display: none }
+  style m.drive_s.campulley.c { display: none }
+  style m.drive_s.campulley.d { display: none }
+  style m.piston1.r1.p1 { display: none }
+  style m.piston1.r1.p2 { display: none }
+  style m.piston1.r2.p1 { display: none }
+  style m.piston1.r2.p2 { display: none }
+  style m.end.bore { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.side.axisline { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.head.vaxis_i { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.head.vaxis_e { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.head.lobe_i.spine { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.head.lobe_e.spine { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.head.camline { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.head.cl_i { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.head.cl_e { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.ghost.cl { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.piston1.r1 { width: 0.6 }
+  style m.piston1.r2 { width: 0.6 }
+  style m.drive.b1.s { color: #2a7ab0; width: 1.2 }
+  style m.drive.b2.s { color: #2a7ab0; width: 1.2 }
+  style m.drive.b3.s { color: #2a7ab0; width: 1.2 }
+  style m.drive_s.beltf { color: #2a7ab0; width: 1.2 }
+  style m.drive_s.beltb { color: #2a7ab0; width: 1.2 }
+  style m.block.shell { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.head.j_i { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.head.j_e { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.ghost.big { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.ghost.sm { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.drive.pcrank { color: #2a7ab0; width: 1.2 }
+  style m.drive.pcam_i { color: #2a7ab0; width: 1.2 }
+  style m.drive.pcam_e { color: #2a7ab0; width: 1.2 }
+  style m.views.front { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }
+  style m.views.right { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }
+  style m.views.top { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }
+}

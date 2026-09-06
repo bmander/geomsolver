@@ -1,14 +1,12 @@
 /* What the whole front end holds in common: the page's elements, the one SketchView on it, and
  * which constraint has the keyboard focus.  The core is started here, before anything reads it —
  * a module that imports this one is guaranteed a solver and a sketch. */
-import * as remote from './remote.js';
 import { Constraint } from '../core/constraints.js';
-import { Primitive, Sketch, expand } from '../core/model.js';
+import { expand, type Primitive } from '../core/model.js';
 import { initCore } from '../core/wasm.js';
-import { Document, fromSketch, highlight } from '../core/program.js';
+import { Document, highlight } from '../core/program.js';
 import { CodeEditor } from './editor.js';
 import { SketchView } from './view.js';
-import { toast } from './ui.js';
 
 export const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 /** The glass box's own canvas: under the sketch's, deaf to the pointer, and only shown while the
@@ -40,30 +38,12 @@ export const footerEl = document.querySelector('footer') as HTMLElement;
 await initCore();
 (document.getElementById('loading') as HTMLElement).remove();
 
-/** The document the page opens on: the case named in the URL — `?example=pythagoras`, or an
- *  `…/example/<slug>` path the server handed to the page — else the default.  The slug is a case
- *  key, arguments and all (`truss:50`); one nothing answers to is said and the default shown.
- *
- *  A *program*, not a sketch, because that is what a document is: a case written as one comes
- *  with the source somebody wrote — the gear's curve family, its components, the reasons in the
- *  comments — and lifting the drawing instead would open a hundred and twenty point declarations
- *  about the same shape.  One built by a function has no source and is lifted, which is the only
- *  place `examples.source` differs from `examples.build`.  The server is asked first
- *  (`remote.source`): with the dev server up, the case is the file on disk. */
-async function initialProgram(): Promise<string> {
-  const url = new URL(location.href);
-  const slug = url.searchParams.get('example') ?? /\/example\/([^/]+)\/?$/.exec(url.pathname)?.[1];
-  if (slug) {
-    try {
-      return await remote.source(decodeURIComponent(slug));
-    } catch (err) {
-      setTimeout(() => toast(`no example “${slug}”: ${(err as Error).message}`, 12000), 0);
-    }
-  }
-  return remote.source('rect_fillets:100:60:10');
-}
-
-export const view = new SketchView(canvas, Document.read(await initialProgram()), boxCanvas);
+/** Example routes open an authored drawing after the shell is wired. The model editor
+ *  starts empty; opening an example never loads its assembly as the active document. */
+const url = new URL(location.href);
+export const initialExample = url.searchParams.get('example')
+  ?? /\/example\/([^/]+)\/?$/.exec(url.pathname)?.[1] ?? 'rect_fillets';
+export const view = new SketchView(canvas, Document.read(''), boxCanvas);
 export let currentConstraint: Constraint | null = null;
 
 /** What the shell tells the rest of the page when the focus moves.  Assigned by `main`, the way

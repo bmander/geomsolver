@@ -1,0 +1,7 @@
+// Presentation of truss.sv. Model geometry is independent of this drawing.
+model m from "truss.sv"
+
+sheet drawing {
+  size A3
+  sketch source(m) at (80mm, 180mm)
+}

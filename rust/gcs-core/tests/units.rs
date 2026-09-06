@@ -10,7 +10,7 @@ use gcs_core::examples;
 use gcs_core::io;
 use gcs_core::model::Sketch;
 use gcs_core::program::elaborate;
-use gcs_core::syntax::parse;
+use gcs_core::syntax::parse_legacy as parse;
 use gcs_core::units::{Dim, Units};
 
 fn read(src: &str) -> Result<Sketch, Vec<String>> {
@@ -231,7 +231,7 @@ fn a_unit_line_says_what_it_will_not_take() {
 /// A document's unit and its style sheet are printed back with the drawing they belong to: a
 /// round trip that dropped either would come back a different document.
 #[test]
-fn a_printed_program_keeps_the_unit_and_the_sheet() {
+fn a_printed_model_keeps_units_and_omits_the_sheet() {
     let sk = read(&format!(
         "unit in\nstyle .construction {{ dash: 2 2 }}\n{PAIR}a distance(2) b\n"
     ))
@@ -239,10 +239,10 @@ fn a_printed_program_keeps_the_unit_and_the_sheet() {
     let mut p = gcs_core::program::to_program(&sk);
     let text = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
     assert!(text.contains("unit in"), "{text}");
-    assert!(text.contains("style .construction { dash: 2 2 }"), "{text}");
+    assert!(!text.contains("style "), "{text}");
     let back = read(&text).expect("reads back");
     assert_eq!(back.units.name(), Some("in"));
-    assert_eq!(back.style_named("construction").dash, Some(vec![2.0, 2.0]));
+    assert!(back.sheet.is_empty());
 }
 
 /// The lexer has no string literal: a quote is the inch mark, and there is nothing else for one
@@ -405,7 +405,7 @@ fn a_unit_is_stated_once_and_only_in_the_root() {
 #[test]
 fn a_slot_mismatch_is_an_error_and_a_free_name_is_not() {
     let diag = |src: &str| -> Vec<(String, String)> {
-        let (prog, errs) = gcs_core::syntax::parse(src);
+        let (prog, errs) = gcs_core::syntax::parse_legacy(src);
         assert!(errs.is_empty(), "{errs:?}");
         let e = gcs_core::program::elaborate(&prog);
         e.diags.iter().map(|d| (d.code.as_str().to_string(), d.message.clone())).collect()

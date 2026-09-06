@@ -131,6 +131,24 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: 
 #canvas { position: relative; z-index: 1; }
 canvas.select { cursor: default; }
 
+#drawing-view { position: absolute; inset: 0; z-index: 2; display: flex;
+  flex-direction: column; padding: 16px; gap: 12px; background: var(--panel); }
+#drawing-view[hidden] { display: none; }
+.drawing-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+#drawing-viewport { position: relative; flex: 1; min-height: 0; overflow: hidden;
+  cursor: grab; touch-action: none; user-select: none; }
+#drawing-viewport.panning { cursor: grabbing; }
+#drawing-viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#drawing-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+  transform-origin: center; pointer-events: none; filter: drop-shadow(0 2px 3px #0002); }
+#drawing-zoom { min-width: 4ch; text-align: center; font-variant-numeric: tabular-nums; }
+#drawing-status { margin: 0; white-space: pre-wrap; }
+#drawing-status:empty { display: none; }
+.drawing-active #canvas, .drawing-active #box, .drawing-active #cpanel,
+.drawing-active #measure, .drawing-active #banner, .drawing-active #component,
+.drawing-active #stats { visibility: hidden; }
+.drawing-active #bar-tools, .drawing-active #bar-constraints { opacity: .35; }
+
 /* what holds the selected component: a small window over the drawing rather than a column
    beside it, so the page is the drawing.  It comes up where it was last put — its header is
    a handle — and only while something is picked, so it costs nothing when nothing is. */

@@ -13,10 +13,10 @@ use vtwin.disc
 component Crank(swing: plane, o: point, ref: line) {
   in swing {
     point pin hint(x: o.x + R * sin(theta0), y: o.y + R * cos(theta0))
-    line arm(o, pin) class axis
-    o distance(R) pin class shown at (0, -26)
-    arm angle(theta) ref class shown at (0.35, 34)
-    circle path(center: o) hint(r: R) class phantom
+    line arm(o, pin)
+    o distance(R) pin
+    arm angle(theta) ref
+    circle path(center: o) hint(r: R)
     radius(R) path
     // the clevis pin's end, seen on
     circle kp(center: pin) hint(r: rpin)

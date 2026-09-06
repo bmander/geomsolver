@@ -44,18 +44,20 @@
  * number a dimension is edited in. */
 import * as io from '../core/io.js';
 import * as solids from '../core/mesh.js';
+import { drawingActive, exportDrawingSvg } from './drawing.js';
 import { CONSTRAINT_BUTTONS } from './commands.js';
 import {
-  about, alternatives, doOpen, flipBranch, insertPlane, openCase, options, report,
+  about, alternatives, doOpen, flipBranch, insertPlane, openCase, openExample, options, report,
   reportSolve, showDiagnosis,
 } from './dialogs.js';
 import { threeViews } from './tools.js';
 import { editValue, onDimension } from './dimbox.js';
-import { bindProgramPanel, refreshProgram, resetProgramFiles, showStatementFor, toggleProgramPanel } from './program.js';
+import { bindProgramPanel, openDrawing, refreshProgram, resetProgramFiles, saveProjectFile,
+  showStatementFor, toggleProgramPanel } from './program.js';
 import { closePanel, openPanel, refresh, refreshPanel, refreshStatus } from './lists.js';
 import {
   aboutBadge, barConstraints, barTools, canvas, currentConstraint, focusConstraint, hooks, menubar,
-  view,
+  view, initialExample,
 } from './shell.js';
 import {
   MenuItem, ToolbarButton, addButton, addMenu, addSeparator, closeMenus, download, openImage,
@@ -112,6 +114,7 @@ for (const b of CONSTRAINT_BUTTONS) addButton(barConstraints, b);
  *  the core fits the whole figure to the page, so a file is the same whatever the pan and zoom
  *  happened to be when the button was pressed. */
 function exportSvg(): void {
+  if (drawingActive()) { exportDrawingSvg(); return; }
   download('sketch.svg', io.svg(view.sketch, view.width));
   toast('exported sketch.svg');
 }
@@ -184,9 +187,12 @@ const MENUS: [string, (MenuItem | null)[]][] = [
   ['File', [
     { label: 'New', onClick: () => view.newDocument() },
     { label: 'Open…', onClick: () => void doOpen() },
+    { label: 'Open drawing folder…', onClick: () => void openDrawing() },
     { label: 'Open examples…', onClick: () => void openCase() },
     null,
-    { label: 'Save', onClick: () => download('sketch.json', io.dumps(view.sketch)) },
+    { label: 'Save', onClick: () => {
+      if (!saveProjectFile()) download('sketch.json', io.dumps(view.sketch));
+    } },
     { label: 'Export SVG', onClick: exportSvg,
       title: 'The drawing as a scalable image, laid out by the core — the same figure `solventc '
         + '--output` writes' },
@@ -259,7 +265,20 @@ const MENUS: [string, (MenuItem | null)[]][] = [
     { label: 'Options…', onClick: () => void options() },
   ]],
 ];
-for (const [label, items] of MENUS) addMenu(menubar, label, items);
+for (const [label, items] of MENUS) {
+  // The file menu works in either view. Geometry commands need a selected model file.
+  const shared = new Set(['New', 'Open…', 'Open drawing folder…', 'Open examples…',
+    'Save', 'Export SVG', 'Program']);
+  for (const item of items) {
+    if (!item || shared.has(item.label)) continue;
+    const action = item.onClick;
+    item.onClick = () => {
+      if (drawingActive()) { toast('Select a .sv file to work on its geometry'); return; }
+      action();
+    };
+  }
+  addMenu(menubar, label, items);
+}
 aboutBadge.addEventListener('click', () => void about());
 
 /* -- keyboard ------------------------------------------------------------------- */
@@ -277,6 +296,13 @@ const ACTION_KEYS = new Map<string, () => void>(
 window.addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement | null;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+  if (drawingActive()) {
+    if (e.key === 'Escape') closeMenus();
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
+      e.preventDefault(); toggleProgramPanel();
+    }
+    return;
+  }
   if (e.metaKey || e.ctrlKey || e.altKey) {
     // ⌘C and ⌘X belong to the page while there is text selected in it: taking those would stop
     // anyone copying a constraint out of the list
@@ -346,3 +372,4 @@ new ResizeObserver(() => view.resize()).observe(canvas);
 view.resize();
 view.afterEdit();
 view.fit();
+await openExample(initialExample);

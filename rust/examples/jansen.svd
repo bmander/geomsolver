@@ -1,0 +1,10 @@
+// Presentation of jansen.sv. Model geometry is independent of this drawing.
+model m from "jansen.sv"
+
+sheet drawing {
+  size A3
+  sketch source(m) at (80mm, 180mm)
+  dimensions in source
+  style m.leg.datum { dash: 7 4 }
+  style m.leg.orbit { dash: 7 4 }
+}

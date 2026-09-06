@@ -31,9 +31,9 @@ component Leg(axle: point, pivot: point, theta: Angle) {
   param i = 49      // knee to toe
 
   // the crank on its circle, at angle theta from the pivot-to-axle line
-  circle orbit(center: axle) hint(r: m) class construction
+  circle orbit(center: axle) hint(r: m)
   radius(m) orbit
-  line datum(pivot, axle) class construction
+  line datum(pivot, axle)
   point pin hint(x: 15, y: 0)
   line crank(axle, pin)
   pin on orbit

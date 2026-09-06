@@ -226,7 +226,7 @@ component Involute(c: circle, phase: Angle, u: Angle) {
 }
 
 point  o hint(x: 0, y: 0)
-circle base(center: o) hint(r: 20) class construction
+circle base(center: o) hint(r: 20)
 curve  flank = Involute(base, phase: 0).p over u in (0, 60)
 
 point  p hint(x: 40, y: 40)

@@ -51,7 +51,7 @@ component Piston(swing: plane, crown: point, rod: line, dir: Angle, pin: point) 
     // the eye about the pin, and the hole the pin's shank rides in
     circle eye(center: pin) hint(r: reye)
     radius(reye) eye
-    circle hole(center: pin) hint(r: pinclr / 2) class hidden detail
+    circle hole(center: pin) hint(r: pinclr / 2)
     radius(pinclr / 2) hole
     // the rod's two flanks, from the skirt to the eye
     point ra hint(x: crown.x - ph * cos(dir) - rt / 2 * sin(dir), y: crown.y - ph * sin(dir) + rt / 2 * cos(dir))
@@ -76,15 +76,15 @@ component Piston(swing: plane, crown: point, rod: line, dir: Angle, pin: point) 
     // lets the face close itself.
     s0: Loc(crown, rod, crownl, dir: dir, u: -ph, v: 0mm)
     // the sizes a printer needs
-    claim cL distance(2 * pw) cR class detail at (0, 8)
-    claim cL distance(ph) sL.p class detail at (0, 12)
-    claim cL distance(groove) g0L.p class detail at (0, 6)
-    claim g1R.p distance(groovew) g2R.p class detail at (0, -8)
-    claim g1L.p distance(grooveb) g1R.p class detail at (0, -3)
-    claim crown distance(L) pin class detail at (0, 20)
-    claim radius(reye) eye class detail at (-2.4, 14)
-    claim radius(pinclr / 2) hole class detail at (-0.7, 16)
-    claim ra distance(rt) rc class detail at (0, -8)
+    claim cL distance(2 * pw) cR
+    claim cL distance(ph) sL.p
+    claim cL distance(groove) g0L.p
+    claim g1R.p distance(groovew) g2R.p
+    claim g1L.p distance(grooveb) g1R.p
+    claim crown distance(L) pin
+    claim radius(reye) eye
+    claim radius(pinclr / 2) hole
+    claim ra distance(rt) rc
   }
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------

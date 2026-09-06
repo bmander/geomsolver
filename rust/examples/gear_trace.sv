@@ -85,10 +85,10 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
 
   point center hint(x: 0, y: 0)
   point anchor hint(x: R, y: 0)
-  line  datum(center, anchor) class construction
-  circle base(center: center) hint(r: Rb) class construction
-  circle root(center: center) hint(r: Rr) class construction
-  circle tip(center: center) hint(r: Rt) class construction
+  line  datum(center, anchor)
+  circle base(center: center) hint(r: Rb)
+  circle root(center: center) hint(r: Rr)
+  circle tip(center: center) hint(r: Rt)
 
   radius(Rb) base
   radius(Rr) root

@@ -12,7 +12,7 @@ mod words;
 
 pub use highlight::{highlight, Tint};
 pub use names::{camel, entity_name, hidden, kind_initial, num, one_of, snake};
-pub use parser::{parse, parse_from, parse_with_limits, ParseLimits};
+pub use parser::{parse, parse_from, parse_legacy, parse_with_limits, ParseLimits};
 pub use print::{operator_text, render_flat, write_stmt_to, PrintError};
 pub use source::{line_col, Module, Name, Program, Span, StmtId, SynErr, Use, MAX_STMTS, MAX_TEXT};
 pub use words::{equal_kind, is_name};

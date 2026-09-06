@@ -16,6 +16,7 @@ const TYPES = {
   '.map': 'application/json',
   '.css': 'text/css; charset=utf-8',
   '.sv': 'text/plain; charset=utf-8',
+  '.svd': 'text/plain; charset=utf-8',
 };
 
 /** `…/example/<slug>` opens the sketcher on that case — `/example/pythagoras`, `/gcs/example/truss:50`
@@ -28,8 +29,8 @@ const EXAMPLE = /^(.*)\/example\/([^/]+)\/?$/;
  *  directory beside the document, which is where `solventc` looks first.  The app fetches a case
  *  and the modules it `use`s from here before falling back to the copies compiled into the core,
  *  so editing a document and refreshing the page shows the edit with no wasm rebuilt.  Read-only,
- *  `.sv` only, one word per path segment, so nothing above that directory can be named. */
-const EXAMPLES = /^(?:.*)\/examples\/((?:[\w-]+\/)*[\w-]+\.sv)$/;
+ *  `.sv` and `.svd` only, one word per path segment, so nothing above that directory can be named. */
+const EXAMPLES = /^(?:.*)\/examples\/((?:[\w-]+\/)*[\w-]+\.svd?)$/;
 
 const port = Number(process.env.PORT ?? 8123);
 createServer((req, res) => {

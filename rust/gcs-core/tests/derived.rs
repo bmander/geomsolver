@@ -8,7 +8,7 @@
 
 use gcs_core::hidden;
 use gcs_core::program::{elaborate, Elaborated};
-use gcs_core::syntax::parse;
+use gcs_core::syntax::parse_legacy as parse;
 
 fn read(src: &str) -> Elaborated {
     let (prog, errs) = parse(src);

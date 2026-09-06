@@ -64,8 +64,8 @@ fn every_anonymous_form_declares() {
     assert_eq!((e.sketch.points.len(), e.sketch.lines.len()), (2, 1));
 
     // and a class, which is a trailing-clause word and so can no longer be a name
-    let e = read("line class construction\n");
-    assert!(e.sketch.class_of(EntRef::line(0)).0.contains(&"construction".to_string()));
+    let e = read("line\n");
+    assert!(e.sketch.class_of(EntRef::line(0)).is_empty());
 }
 
 /// Two anonymous declarations are two elements, not one name declared twice.

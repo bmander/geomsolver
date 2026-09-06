@@ -16,11 +16,11 @@ use vtwin.parts
 component Flywheel(front: plane, o: point, ref: line) {
   in front {
     circle rim(center: o) hint(r: rfw)
-    radius(rfw) rim class detail at (-2.1, 44)
-    circle bore(center: o) hint(r: dhub / 2) class hidden detail
-    radius(dhub / 2) bore class detail at (2.4, 12)
+    radius(rfw) rim
+    circle bore(center: o) hint(r: dhub / 2)
+    radius(dhub / 2) bore
     point se hint(x: o.x + rfw, y: o.y)
-    line ssa(o, se) class gone
+    line ssa(o, se)
     o distance(rfw) se
     ref angle(90deg, sense: cw) ssa
     gs: Grub(o, ssa, ref, dir: 0deg, rin: dhub / 2, rout: rfw)

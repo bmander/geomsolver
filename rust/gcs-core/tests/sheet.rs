@@ -11,7 +11,7 @@
 
 use gcs_core::callout;
 use gcs_core::program::{elaborate, Elaborated};
-use gcs_core::syntax::parse;
+use gcs_core::syntax::parse_legacy as parse;
 
 /// Elaborated **and solved** — which is not a convenience here but the point: a generated
 /// dimension is a reading of the drawing, so it says what the geometry came to and not what a

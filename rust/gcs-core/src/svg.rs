@@ -187,7 +187,7 @@ fn arc_path(
     ));
 }
 
-fn entity(
+pub(crate) fn entity(
     out: &mut String,
     sk: &Sketch,
     e: EntRef,
@@ -267,7 +267,7 @@ fn entity(
     }
 }
 
-fn dimension(
+pub(crate) fn dimension(
     out: &mut String,
     sk: &Sketch,
     c: &Callout,

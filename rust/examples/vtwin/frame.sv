@@ -28,36 +28,36 @@ use vtwin.throttle
 // come out as mirror images: the engine is one bank turned a quarter turn, and its ports too.
 component Side(o: point, ref: line, alpha: Angle, dim: Int) {
   point piv hint(x: o.x + H * sin(alpha), y: o.y + H * cos(alpha))
-  line axis(o, piv) class axis
+  line axis(o, piv)
   o distance(H) piv
   ref angle(alpha, sense: cw) axis
-  circle bolt(center: piv) hint(r: studclr / 2) class hidden
+  circle bolt(center: piv) hint(r: studclr / 2)
   radius(studclr / 2) bolt
   ip: At(piv, dx: a * sin(alpha - beta), dy: a * cos(alpha - beta))
   ep: At(piv, dx: a * sin(alpha + beta), dy: a * cos(alpha + beta))
-  circle intake(center: ip.p) hint(r: dport / 2) class hidden
-  circle exhaust(center: ep.p) hint(r: dport / 2) class hidden
+  circle intake(center: ip.p) hint(r: dport / 2)
+  circle exhaust(center: ep.p) hint(r: dport / 2)
   radius(dport / 2) intake
   radius(dport / 2) exhaust
   // the sweep: the arc the cylinder's port travels, drawn a little past the rock either way
   point s0 hint(x: piv.x + a * sin(alpha + swing + 6deg), y: piv.y + a * cos(alpha + swing + 6deg))
   point s1 hint(x: piv.x + a * sin(alpha - swing - 6deg), y: piv.y + a * cos(alpha - swing - 6deg))
-  arc sweep(center: piv, start: s0, end: s1) hint(r: a) class phantom
+  arc sweep(center: piv, start: s0, end: s1) hint(r: a)
   radius(a) sweep
   s0 distance(a * sin(swing + 6deg), side: right) axis
   s1 distance(a * sin(swing + 6deg), side: left) axis
   // the ports' radials from the crank axis: all four ports are `rpl` out, and these carry the
   // bearings the part sheet states them by
-  line rad_i(o, ip.p) class gone
-  line rad_e(o, ep.p) class gone
+  line rad_i(o, ip.p)
+  line rad_e(o, ep.p)
   repeat dim {
-    claim o distance(H) piv class shown at (0, 40)
-    claim piv distance(a) ip.p class shown at (0, 22)
+    claim o distance(H) piv
+    claim piv distance(a) ip.p
   }
-  claim o distance(rpl) ip.p class detail at (0, 8)
-  claim o distance(rpl) ep.p class detail at (0, -8)
-  claim radius(studclr / 2) bolt class detail at (1.2, 12)
-  claim radius(dport / 2) intake class detail at (-1.2, 10)
+  claim o distance(rpl) ip.p
+  claim o distance(rpl) ep.p
+  claim radius(studclr / 2) bolt
+  claim radius(dport / 2) intake
 }
 
 component Frame(front: plane, o: point, ref: line) {
@@ -65,15 +65,15 @@ component Frame(front: plane, o: point, ref: line) {
   in front {
     r: Side(o, ref, alpha: alphaR, dim: 0)
     l: Side(o, ref, alpha: alphaL, dim: 1)
-    claim r.axis angle(V) l.axis class shown at (0.785, 34)
-    claim rad_bR angle(alphaR) ref class detail at (0.4, 20)
-    claim ref angle(alphaL, sense: cw) rad_bL class detail at (-0.4, 20)
-    claim r.rad_i angle(bR_i) ref class detail at (0.35, 26)
-    claim r.rad_e angle(bR_e) ref class detail at (0.5, 32)
-    claim ref angle(bL_i, sense: cw) l.rad_i class detail at (0.35, 26)
-    claim ref angle(bL_e, sense: cw) l.rad_e class detail at (0.5, 32)
-    line rad_bR(o, r.piv) class gone
-    line rad_bL(o, l.piv) class gone
+    claim r.axis angle(V) l.axis
+    claim rad_bR angle(alphaR) ref
+    claim ref angle(alphaL, sense: cw) rad_bL
+    claim r.rad_i angle(bR_i) ref
+    claim r.rad_e angle(bR_e) ref
+    claim ref angle(bL_i, sense: cw) l.rad_i
+    claim ref angle(bL_e, sense: cw) l.rad_e
+    line rad_bR(o, r.piv)
+    line rad_bL(o, l.piv)
 
     // the plate: a chamfered rectangle about the crank axis
     p0: At(o, dx: -fx, dy: fy0)
@@ -84,27 +84,27 @@ component Frame(front: plane, o: point, ref: line) {
     p5: At(o, dx: -fx, dy: fy1 - fch)
     line bottom(p0.p, p1.p) -> line edge_r(p1.p, p2.p) -> line cham_r(p2.p, p3.p) ->
       line topline(p3.p, p4.p) -> line cham_l(p4.p, p5.p) -> line edge_l(p5.p, p0.p) -> close
-    claim p0.p distance(2 * fx) p1.p class shown at (0, -10)
-    claim p1.p distance(fy1 - fy0, along: y) p3.p class shown at (0, -27)
-    claim p3.p distance(fch, along: x) p2.p class detail at (0, 8)
-    claim p2.p distance(fch, along: y) p3.p class detail at (0, 8)
+    claim p0.p distance(2 * fx) p1.p
+    claim p1.p distance(fy1 - fy0, along: y) p3.p
+    claim p3.p distance(fch, along: x) p2.p
+    claim p2.p distance(fch, along: y) p3.p
     // the shaft's hole, and the bearings' pocket behind
-    circle sh(center: o) hint(r: shafthole / 2) class hidden
+    circle sh(center: o) hint(r: shafthole / 2)
     radius(shafthole / 2) sh
-    circle bp(center: o) hint(r: rbrg) class hidden
+    circle bp(center: o) hint(r: rbrg)
     radius(rbrg) bp
-    claim radius(shafthole / 2) sh class detail at (-2.6, 22)
-    claim radius(rbrg) bp class detail at (-2.9, 30)
+    claim radius(shafthole / 2) sh
+    claim radius(rbrg) bp
 
     // the exhausts vent sideways: a passage from each exhaust port out through the nearest edge
     point xr hint(x: o.x + fx, y: ep_y_r)
     xr on edge_r
     r.ep.p distance(0, along: y) xr
-    line exh_r(r.ep.p, xr) class hidden
+    line exh_r(r.ep.p, xr)
     point xl hint(x: o.x - fx + 5mm, y: ep_y_l)
     xl on cham_l
     l.ep.p distance(0, along: y) xl
-    line exh_l(l.ep.p, xl) class hidden
+    line exh_l(l.ep.p, xl)
 
     // the plenum: a channel inside the plate, an arc about the crank axis from one intake port
     // to the other, since both are the same radius from it
@@ -112,42 +112,42 @@ component Frame(front: plane, o: point, ref: line) {
     point ci1 hint(x: o.x + (r.ip.p.x - o.x) * kin, y: o.y + (r.ip.p.y - o.y) * kin)
     point co0 hint(x: o.x + (l.ip.p.x - o.x) * kout, y: o.y + (l.ip.p.y - o.y) * kout)
     point co1 hint(x: o.x + (r.ip.p.x - o.x) * kout, y: o.y + (r.ip.p.y - o.y) * kout)
-    arc ch_in(center: o, start: ci1, end: ci0) hint(r: rpl - wch / 2) class hidden
-    arc ch_out(center: o, start: co1, end: co0) hint(r: rpl + wch / 2) class hidden
+    arc ch_in(center: o, start: ci1, end: ci0) hint(r: rpl - wch / 2)
+    arc ch_out(center: o, start: co1, end: co0) hint(r: rpl + wch / 2)
     radius(rpl - wch / 2) ch_in
     radius(rpl + wch / 2) ch_out
     ci0 on l.rad_i
     ci1 on r.rad_i
     co0 on l.rad_i
     co1 on r.rad_i
-    claim radius(rpl + wch / 2) ch_out class detail at (1.2, 14)
+    claim radius(rpl + wch / 2) ch_out
 
     // the inlet: the boss on the plate's top edge, the coupling set into it, the passage down
     // through the throttle to the plenum, and the plug that will click onto it, in phantom
     boss: Box(o, x0: -bossw / 2, y0: fy1, x1: bossw / 2, y1: bossh)
-    cpl_in: Box(o, x0: -cpl / 2, y0: bossh - cplin, x1: cpl / 2, y1: bossh) class hidden
+    cpl_in: Box(o, x0: -cpl / 2, y0: bossh - cplin, x1: cpl / 2, y1: bossh)
     cpl_out: Box(o, x0: -cpl / 2, y0: bossh, x1: cpl / 2, y1: bossh - cplin + cpll)
-    cplh: Box(o, x0: -cplhole / 2, y0: bossh - cplin, x1: cplhole / 2, y1: bossh) class hidden
-    passage: Box(o, x0: -wch / 2, y0: rpl + wch / 2, x1: wch / 2, y1: bossh - cplin) class hidden
-    plug_body: Box(o, x0: -mplug_body_d / 2, y0: bossh - cplin + cpll, x1: mplug_body_d / 2, y1: bossh - cplin + cpll + mplug_body_l) class phantom
-    plug_nose: Box(o, x0: -mplug_nose_d / 2, y0: bossh - cplin + cpll + mplug_body_l, x1: mplug_nose_d / 2, y1: bossh - cplin + cpll + mplug_body_l + mplug_nose_l) class phantom
-    claim boss.a distance(bossw) boss.b class detail at (0, -6)
-    claim boss.a distance(bossh - fy1, along: y) boss.d class detail at (0, 8)
-    claim cplh.a distance(cplhole) cplh.b class detail at (0, 6)
-    claim cplh.a distance(cplin, along: y) cplh.d class detail at (0, -6)
-    claim passage.a distance(wch) passage.b class detail at (0, -6)
+    cplh: Box(o, x0: -cplhole / 2, y0: bossh - cplin, x1: cplhole / 2, y1: bossh)
+    passage: Box(o, x0: -wch / 2, y0: rpl + wch / 2, x1: wch / 2, y1: bossh - cplin)
+    plug_body: Box(o, x0: -mplug_body_d / 2, y0: bossh - cplin + cpll, x1: mplug_body_d / 2, y1: bossh - cplin + cpll + mplug_body_l)
+    plug_nose: Box(o, x0: -mplug_nose_d / 2, y0: bossh - cplin + cpll + mplug_body_l, x1: mplug_nose_d / 2, y1: bossh - cplin + cpll + mplug_body_l + mplug_nose_l)
+    claim boss.a distance(bossw) boss.b
+    claim boss.a distance(bossh - fy1, along: y) boss.d
+    claim cplh.a distance(cplhole) cplh.b
+    claim cplh.a distance(cplin, along: y) cplh.d
+    claim passage.a distance(wch) passage.b
     tb: At(o, dx: 0mm, dy: Ty)
-    circle tbore(center: tb.p) hint(r: barbore / 2) class hidden
+    circle tbore(center: tb.p) hint(r: barbore / 2)
     radius(barbore / 2) tbore
-    claim o distance(Ty, along: y) tb.p class detail at (0, 20)
-    claim radius(barbore / 2) tbore class detail at (2.2, 10)
+    claim o distance(Ty, along: y) tb.p
+    claim radius(barbore / 2) tbore
 
     // -- what the solid is made of -----------------------------------------------------------
     // Two things the plate has always had but only the *other* views drew, and which a body
     // written from this one section must therefore say here: the foot it stands on, across the
     // bottom edge and `footd` deep, and the bearing boss round the crank axis behind it.
-    ft: Box(o, x0: -fx, y0: fy0, x1: fx, y1: fy0 + footh) class hidden
-    circle bcirc(center: o) hint(r: rbrg + 3mm) class hidden
+    ft: Box(o, x0: -fx, y0: fy0, x1: fx, y1: fy0 + footh)
+    circle bcirc(center: o) hint(r: rbrg + 3mm)
     radius(rbrg + 3mm) bcirc
     // the coupling's hole is round and its axis runs *up the page* — in this plane — so it is a
     // turn, where every other hole here is drilled along the crank axis and is a sweep
@@ -155,7 +155,7 @@ component Frame(front: plane, o: point, ref: line) {
     cph1: At(o, dx: 0mm, dy: bossh)
     cph2: At(o, dx: cplhole / 2, dy: bossh)
     cph3: At(o, dx: cplhole / 2, dy: bossh - cplin)
-    line cpax(cph0.p, cph1.p) class gone
+    line cpax(cph0.p, cph1.p)
     // each exhaust vent, `wch` square like the plenum and the passage it is a sibling of — the
     // drawing has always carried it as a centreline, and a solid has to be told how wide a
     // channel is.  It runs at the plate's mid-plane, which is where the port it drains ends.

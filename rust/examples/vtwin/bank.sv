@@ -29,13 +29,13 @@ component Bank(swing: plane, o: point, pin: point,
   in swing {
     // the rod: through the pivot, the crown `L` out from the pin
     point crown hint(x: pin.x + L * cos(dir), y: pin.y + L * sin(dir))
-    line rod(pin, crown) class axis
+    line rod(pin, crown)
     piv on rod
     pin distance(L) crown
 
     // the cylinder's own frame: the rod's line, and a line across it through the pivot
     point q hint(x: piv.x - 10mm * sin(dir), y: piv.y + 10mm * cos(dir))
-    line across(piv, q) class gone
+    line across(piv, q)
     q distance(10) rod
     across perpendicular rod
   }
@@ -46,9 +46,9 @@ component Bank(swing: plane, o: point, pin: point,
 
   // the dimensions, on one bank
   repeat dim {
-    claim cyl.b_tl.p distance(D) cyl.b_tr.p class shown at (0, 14)
-    claim pin distance(L) crown class shown at (0, -36)
-    claim cyl.k_bl.p distance(ct - cb) cyl.k_tl.p class shown at (0, -48)
-    claim pis.ra distance(rt) pis.rc class shown at (0, -20)
+    claim cyl.b_tl.p distance(D) cyl.b_tr.p
+    claim pin distance(L) crown
+    claim cyl.k_bl.p distance(ct - cb) cyl.k_tl.p
+    claim pis.ra distance(rt) pis.rc
   }
 }

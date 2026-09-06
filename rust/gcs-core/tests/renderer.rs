@@ -8,8 +8,8 @@ use gcs_core::{
 };
 
 fn document() -> program::Elaborated {
-    let source = include_str!("fixtures/solid_issue51/view_layout_0.sv");
-    let (p, errors) = syntax::parse(source);
+    let source = include_str!("fixtures/solid_issue51/view_layout_0.legacy");
+    let (p, errors) = syntax::parse_legacy(source);
     assert!(errors.is_empty());
     let mut e = program::elaborate(&p);
     assert!(e.ok());
@@ -157,6 +157,10 @@ fn spatial_visibility_matches_exhaustive_rays_near_faces_and_section_limits() {
 fn spatial_queries_skip_most_unrelated_geometry_in_the_throttle() {
     let mut sk = gcs_core::examples::vtwin_throttle();
     assert!(solve::solve(&mut sk, Default::default()).success);
+    // Presentation is supplied by the caller, independently of the example model.
+    let body = sk.solids.iter().position(|s| s.name.ends_with(".body")).unwrap();
+    sk.derived.push(gcs_core::model::DerivedE { solid: body as u32, plane: None,
+        at: None, dims: false, name: "front".into(), class: Default::default() });
     let (drawing, stats) = gcs_core::renderer::layout_with_stats(&sk, 0.15);
     assert!(!drawing.is_empty());
     assert!(stats.visibility_rays > 0);

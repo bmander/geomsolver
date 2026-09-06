@@ -1275,69 +1275,14 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         doomed.remove(&site.stmt);
     }
 
-    /* classes and gauges.  A `class` clause and a `ground` are neither an entity nor a
-     * constraint, so nothing above notices them: they are read off the sketch and compared
-     * against what the source says, statement by statement. */
+    // Presentation stays in the drawing/editor, never in model source.
     let mut flags: Vec<Splice> = Vec::new();
-    for (r, site) in e.map.of_entity.iter() {
-        if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
-            continue;   // inside a component: one statement, many instances, no one class list
-        }
-        // A declaration's class belongs to its own entity, not to children it minted (a
-        // face's closing lines, for example, carry `.closure` independently of the face).
-        if e.map.ents_made_by(site.stmt).next() != Some(*r) {
-            continue;
-        }
-        let Some(d) = decl_of(prog, site) else { continue };
-        let now = sk.class_of(*r);
-        if now == d.class {
-            continue;
-        }
-        // the whole clause, replaced where it stands — or written at the point the parser
-        // recorded for it, which is where it would have gone
-        let with = (!now.is_empty()).then(|| format!(" class {}", now.0.join(" ")));
-        flags.push(clause_splice(prog.text(), d.class_span, with));
-    }
     // memberships, worked out above and written now that every plane has a name: the clause
     // replaced where it stands, written where the parser said one would go, or taken out
     // with the space in front of it
     for (d, now) in memberships {
         let with = now.map(|p| format!(" in {}", name_of(EntRef::plane(p))));
         flags.push(clause_splice(prog.text(), d.membership.span(), with));
-    }
-    /* where a callout sits.  A placement is document state saved on the statement it qualifies
-     * (spec §13.1), so a callout dragged somewhere else is a source edit like any other — and
-     * one nothing above notices, since it makes no entity and no constraint.  Read off the
-     * sketch and compared with what the statement says, exactly as the construction word is. */
-    for (id, site) in e.map.of_constraint.iter() {
-        if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
-            continue;
-        }
-        let Some(st) = prog.stmt(site.stmt) else { continue };
-        let StmtKind::Relation(rel) = &st.kind else { continue };
-        let now = sk.placements.get(id).copied();
-        if now == rel.place {
-            continue;
-        }
-        match now {
-            // rewrite the two numbers where they stand, or write the whole clause at the
-            // spot the parser recorded for it — `place_span` as an empty span is where one
-            // *would* go, the `class_span` idiom.  A statement whose line offers no spot (it
-            // shares the line's relations, or the line ends in a declaration) records none,
-            // and the pose stays the layout's — the bargain `commit_seeds` strikes with a
-            // decl seeded by place.
-            // the one guard this clause has that the others do not: a line with no spot for a
-            // placement records `Span::default()`, and the pose stays the layout's
-            Some((t, r)) if rel.place_span != Span::default() => {
-                let with = format!(" at ({}, {})", num(t), num(r));
-                flags.push(clause_splice(prog.text(), rel.place_span, Some(with)));
-            }
-            // back where the layout would put it: the clause goes, and the space before it
-            None if !rel.place_span.is_empty() => {
-                flags.push(clause_splice(prog.text(), rel.place_span, None));
-            }
-            _ => {}
-        }
     }
     // `ground(p)` and `fix(c.r)`: a statement per held parameter, added and taken away — the
     // holds walked once, above, and named here now that there is a name for each

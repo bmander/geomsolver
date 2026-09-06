@@ -37,8 +37,8 @@ component unwind(c: circle, datum: line, phase: Angle, u: Angle) {
 
 point  o hint(x: 0, y: 0)
 point  ax hint(x: 1, y: 0)
-line   datum(o, ax) class construction
-circle base(center: o) hint(r: 20) class construction
+line   datum(o, ax)
+circle base(center: o) hint(r: 20)
 
 curve  formula = involute(base, phase: 0).p over u in (5, 60)
 curve  string = unwind(base, datum, phase: 0).p over u in (5, 60)
@@ -317,8 +317,8 @@ component involute(c: circle, datum: line, phase: Angle, u: Angle) {
 
 point  o hint(x: 0, y: 0)
 point  ax hint(x: 1, y: 0)
-line   datum(o, ax) class construction
-circle base(center: o) hint(r: 20) class construction
+line   datum(o, ax)
+circle base(center: o) hint(r: 20)
 curve  w = involute(base, datum, phase: 0).p over u in (5, 60)
 radius(20) base
 ground o
@@ -407,8 +407,8 @@ component limp(c: circle, datum: line, phase: Angle, u: Angle) {
 
 point  o hint(x: 0, y: 0)
 point  ax hint(x: 1, y: 0)
-line   datum(o, ax) class construction
-circle base(center: o) hint(r: 20) class construction
+line   datum(o, ax)
+circle base(center: o) hint(r: 20)
 curve  w = limp(base, datum, phase: 0).p over u in (5, 60)
 ";
     let e = build(src);
@@ -530,7 +530,7 @@ component rim(c: circle, datum: line, u: Angle) {
 }
 point  o hint(x: 2, y: 1)
 point  ax hint(x: 3, y: 1)
-line   datum(o, ax) class construction
+line   datum(o, ax)
 circle base(center: o) hint(r: 7)
 curve  w = rim(base, datum, u: 90).t over u in (10, 170)
 ";
@@ -633,7 +633,7 @@ component rim(c: circle, datum: line, u: Angle) {
     let doc = "\
 point  o hint(x: 2, y: 1)
 point  ax hint(x: 4, y: 2)
-line   datum(o, ax) class construction
+line   datum(o, ax)
 circle base(center: o) hint(r: 7)
 curve  w = rim(base, datum, u: 90).t over u in (10, 170)
 ";

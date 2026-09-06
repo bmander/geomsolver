@@ -4,6 +4,7 @@
  * interval — and the bugs worth a test here are the ones where a handle outlives what it was made
  * for. */
 import assert from 'node:assert/strict';
+import { preview } from '../core/derived.js';
 import test from 'node:test';
 
 import * as C from '../core/constraints.js';
@@ -25,6 +26,7 @@ import type { Bitmap } from '../app/underlay.js';
 import type { Item } from '../core/overview.js';
 import { initCore } from '../core/wasm.js';
 import { fakeCanvas, pointer } from './canvas.js';
+import { paintCallouts } from '../app/paint.js';
 
 // the view schedules its repaints; nothing is being looked at, so run them inline
 (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame ??=
@@ -48,12 +50,63 @@ function pinnedApex(): Sketch {
  *  compare identity against `view.sketch`. */
 function viewOn(sk: Sketch): SketchView {
   const view = new SketchView(fakeCanvas(), Document.read(fromSketch(sk)));
+  view.showDimensions = true;  // These gesture tests explicitly inspect constraint callouts.
   view.autoSolve = false;
   return view;
 }
 
 const PROJECTED_CIRCLE = 'point o\npoint q hint(x: 10)\nplane front(origin: o, toward: q)\n'
-  + 'circle rim(center: o) hint(r: 10)\nsolid body(face(rim), depth: 8)\nview(body) in front\n';
+  + 'circle rim(center: o) hint(r: 10)\nsolid body(face(rim), depth: 8)\n';
+
+test('project file navigation isolates undo and clears pending model interactions', (t) => {
+  const v = new SketchView(fakeCanvas(), Document.read('point a hint(x: 10)\n'));
+  t.after(() => { v.derived.clear(); v.doc.dispose(); });
+  v.pushUndo();
+  v.setProgram('point a hint(x: 20)\n');
+  v.setTool('line');
+  v.pending = [v.sketch.points[0]];
+  v.pauseEditing();
+  assert.equal(v.pending.length, 0);
+  let loads = 0;
+  v.onLoad = () => { loads++; };
+  const other = 'point b hint(x: 30)\n';
+  assert.equal(v.openProjectFile(other), true);
+  assert.equal(loads, 0, 'switching files must not reset the containing project');
+  v.undo();
+  assert.equal(v.source, other, 'undo cannot restore another file into this one');
+  v.pushUndo();
+  v.setProgram('point b hint(x: 40)\n');
+  v.undo();
+  assert.equal(v.source, other, 'edits within the new file remain undoable');
+});
+
+test('model previews annotate only the active dimension unless inspection is requested', (t) => {
+  t.mock.method(globalThis, 'requestAnimationFrame', () => 1);
+  const v = new SketchView(fakeCanvas(), Document.read(examples.source('rect_fillets')));
+  t.after(() => { v.derived.clear(); v.doc.dispose(); });
+  const painted: string[] = [];
+  v.ctx = new Proxy(v.ctx, { get: (target, key) => key === 'fillText'
+    ? (text: string) => painted.push(text) : Reflect.get(target, key) });
+  assert.equal(v.showDimensions, false);
+  paintCallouts(v);
+  assert.equal(painted.length, 0);
+
+  const all = callouts(v.sketch, v.unit).items;
+  assert.ok(all.length > 1);
+  const target = v.sketch.constraintById(all[0].id)!;
+  assert.ok(v.startDimension([target], false, null));
+  paintCallouts(v);
+  assert.deepEqual(painted, [all[0].text]);
+  assert.equal(v.showDimensions, false, 'editing does not enable the full overlay');
+  assert.deepEqual(callouts(v.sketch, v.unit, []).items, []);
+
+  v.showDimensions = true;
+  v.load(examples.source('square'));
+  assert.equal(v.showDimensions, false, 'inspection does not leak into another model');
+  painted.length = 0;
+  paintCallouts(v);
+  assert.equal(painted.length, 0);
+});
 
 test('startup resize defers projection until the sketch has been solved and fitted', (t) => {
   const frames: FrameRequestCallback[] = [];
@@ -82,6 +135,7 @@ test('startup resize defers projection until the sketch has been solved and fitt
 test('display detail bands keep camera fitting from triggering another projection', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const doc = Document.read(PROJECTED_CIRCLE);
+  preview(doc.sketch);
   let redraws = 0;
   const drawing = new DerivedDrawing(() => { redraws++; });
   t.after(() => { drawing.clear(); doc.dispose(); });
@@ -97,6 +151,21 @@ test('display detail bands keep camera fitting from triggering another projectio
     assert.ok(displayUnit(unit) <= unit, 'display quality meets the requested pixel tolerance');
     assert.ok(displayUnit(unit) * Math.SQRT2 >= unit * (1 - Number.EPSILON), 'extra detail is bounded');
   }
+});
+
+test('loading a solid replaces the previous camera zoom before requesting a projection', (t) => {
+  t.mock.method(globalThis, 'requestAnimationFrame', () => 1);
+  const v = new SketchView(fakeCanvas(), Document.read('point p hint(x: 0, y: 0)'));
+  t.after(() => { v.derived.clear(); v.doc.dispose(); });
+  v.cam.scale = 1e9;  // A close-up of the document being replaced.
+  const requested: number[] = [];
+  t.mock.method(v.derived, 'read', (_sk: Sketch, unit: number) => {
+    requested.push(unit);
+    assert.ok(unit > 0.001, `fit requested microscopic detail: ${unit}`);
+    return [];
+  });
+  v.load(PROJECTED_CIRCLE);
+  assert.ok(requested.length > 0);
 });
 
 test('pan and zoom reuse derived geometry, then refine once the camera rests', (t) => {
@@ -147,13 +216,6 @@ test('derived pictures follow geometry changes immediately and cancel pending re
   t.mock.timers.tick(1000);
   assert.strictEqual(v.derived.read(v.sketch, v.unit), moved);
 
-  // The picture's style can change without moving any parameter.
-  const x = v.sketch.getX();
-  v.setProgram(PROJECTED_CIRCLE.replace('hint(r: 10)', 'hint(r: 20)').replace('view(body) in front',
-    'view(body) in front class red\nstyle .red { color: #ff0000 }'), false);
-  assert.deepEqual(v.sketch.getX(), x);
-  const next = v.derived.read(v.sketch, v.unit);
-  assert.ok(next.every(s => s.stroke.color === '#ff0000'));
   v.cam.zoomAt(400, 300, 2);
   v.derived.read(v.sketch, v.unit);
   v.setProgram('point p\n', false);
@@ -164,14 +226,15 @@ test('derived pictures follow geometry changes immediately and cancel pending re
 });
 
 test('changing a solid depth refreshes its projection even when no coordinate changes', () => {
-  const src = PROJECTED_CIRCLE.replace('view(body) in front',
-    'plane side(origin: o, toward: q, from: front, fold: -90deg)\nview(body) in side');
+  const src = PROJECTED_CIRCLE + 'plane side(origin: o, toward: q, from: front, fold: -90deg)\n';
   const v = new SketchView(fakeCanvas(), Document.read(src));
   assert.ok(v.doc.ok, JSON.stringify(v.doc.diagnostics));
   v.autoSolve = false;
+  preview(v.sketch, 1);
   const x = v.sketch.getX();
   const first = v.derived.read(v.sketch, v.unit);
   assert.ok(v.setProgram(src.replace('depth: 8', 'depth: 18'), false));
+  preview(v.sketch, 1);
   assert.deepEqual(v.sketch.getX(), x);
   const next = v.derived.read(v.sketch, v.unit);
   assert.notDeepEqual(next, first);
@@ -454,13 +517,12 @@ test('re-placing puts a dragged callout back', () => {
   cv.fire('pointerup', pointer(ax, before - 60));
   assert.notEqual(dimY(view, view.sketch), before);
 
-  // the drag is document state, so it reached the source rather than living in the sketch alone
-  assert.ok(/at \(/.test(view.source), `the drag was written down: ${view.source}`);
-  const dragged = dimY(view, view.sketch);
-  view.setProgram(view.source, false);
-  assert.ok(Math.abs(dimY(view, view.sketch) - dragged) < 1e-9, 'and survives a re-elaboration');
+  // Preview placements are session state; .sv only records geometry.
+  assert.ok(!/at \(/.test(view.source), `no presentation in the model: ${view.source}`);
 
   view.resetCallouts();
+  assert.ok(Math.abs(dimY(view, view.sketch) - before) < 1e-9);
+  view.setProgram(view.source, false);
   assert.ok(Math.abs(dimY(view, view.sketch) - before) < 1e-9);
 
   // and undoing it keeps the drawing: the snapshot it takes is program text, so undo restores a
@@ -918,6 +980,7 @@ ground a
 
 function docView(text: string): SketchView {
   const view = new SketchView(fakeCanvas(), Document.read(text));
+  view.showDimensions = true;
   view.autoSolve = false;
   return view;
 }
@@ -1745,13 +1808,13 @@ test('a fit in the overview frames the scene, not the sheet', () => {
   }
 });
 
-test('fit includes the throttle projected views and dimension labels', () => {
+test('fit includes the bare throttle model automatic projection', () => {
   const view = docView(examples.source('vtwin_throttle'));
+  view.showDimensions = false;  // Authored dimension layouts now belong to its .svd sheet.
   view.afterEdit();
   view.fit();
   const points = derived(view.sketch, view.unit).flatMap((s) => s.pts);
   assert.ok(points.length > 0);
-  points.push(...callouts(view.sketch, view.unit).items.flatMap((c) => c.label));
   for (const p of points) {
     const [x, y] = view.w2s(...p);
     assert.ok(x >= 10 && x <= view.width - 10 && y >= 10 && y <= view.height - 10,

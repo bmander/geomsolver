@@ -6,6 +6,22 @@ robust dragging, packaged for the browser.
 
 **[Try the sketcher in your browser →](https://bmander.github.io/geomsolver/)**
 
+## Models and drawings
+
+`.sv` files specify geometry, constraints, solver hints, and assertions. `.svd` files import
+models and specify sheets, views, dimensions, and styles. Components group statements; they
+have no designated body. See [Solvent Drawing](docs/solvent-drawing.md).
+
+```sh
+build/solventc rust/examples/vtwin_piston.sv
+build/solventc rust/examples/vtwin_piston.svd --output piston.svg
+build/solventc drawing.svd --sheet assembly --output assembly.svg
+```
+
+The browser's **File → Open drawing folder…** opens drawings with their model dependencies.
+A bare model still has an automatic editor preview. The six V-twin part sheets demonstrate
+paper layout independent of geometry.
+
 ## Implementation
 
 The whole engine is one dependency-free Rust crate ([`rust/gcs-core/`](rust/gcs-core/)) behind a

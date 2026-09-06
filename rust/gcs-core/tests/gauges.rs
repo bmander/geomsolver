@@ -6,7 +6,7 @@
 
 use gcs_core::constraints::{gauge_op, is_operator, CKind, Fixity, ALL_KINDS};
 use gcs_core::program::{elaborate, Elaborated};
-use gcs_core::syntax::{highlight, parse, StmtKind, Tint};
+use gcs_core::syntax::{highlight, parse_legacy as parse, StmtKind, Tint};
 
 fn read(src: &str) -> Elaborated {
     let (prog, errs) = parse(src);

@@ -1,0 +1,8 @@
+// Presentation of rect_fillets.sv. Model geometry is independent of this drawing.
+model m from "rect_fillets.sv"
+
+sheet drawing {
+  size A3
+  sketch source(m) at (80mm, 180mm)
+  dimensions in source
+}

@@ -300,9 +300,10 @@ export function paintDerived(v: SketchView): void {
  *  every label clears the background behind itself: one dimension's number must not rub out
  *  the next one's line. */
 export function paintCallouts(v: SketchView): void {
-  if (!v.showDimensions) return;
+  if (!v.showDimensions && !v.liveDim) return;
   const ctx = v.ctx;
-  const cs = dim.callouts(v.sketch, v.unit);
+  const cs = dim.callouts(v.sketch, v.unit,
+    v.showDimensions ? undefined : v.liveDim!.targets.map((c) => c.id));
   const conflicts = new Set(v.diagnosis?.conflicts ?? []);
   const lit = v.litConstraint;
   /* A callout's *figure* is geometry, laid out by the core so every front end agrees where it

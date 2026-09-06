@@ -40,7 +40,7 @@ views: ThreeViews(O, right: 240, up: 150)
 point up hint(x: 0, y: 40) in views.front
 O distance(0, along: x) up
 O distance(40, along: y) up
-line ref(O, up) class gone
+line ref(O, up)
 
 plate: Frame(views.front, O, ref)
 crank: Crank(views.front, O, ref)
@@ -49,7 +49,7 @@ bankL: Bank(views.front, O, crank.pin, plate.l.piv, alpha: alphaL, fw: fwA, dim:
 // **the plate's side view is asked for, not drawn** (§6.11) — the part is a solid, so the
 // assembly's side view of it is a reading of that solid and cannot disagree with the front view
 // about how thick the plate is or how far the bearing boss stands off it
-view(plate.body) in views.right
+
 // what the *assembly* adds beyond its parts — the crank train along the shaft, a pivot bolt's
 // stack, the two cylinders edge on — is still drawn, being hardware no part designs.  Its
 // ordinates are measured from the plate's front face, which stands half a thickness in front of
@@ -73,15 +73,3 @@ bankL.cyl.b_tr.p project side.boA_top
 bankL.cyl.b_bl.p project side.boA_bot
 
 // how it looks
-style .dimension { display: none }
-style .shown { display: inline }
-style .detail { display: none }
-style .point { display: none }
-style .plane { display: none }
-style .gone { display: none }
-style .phantom { dash: 6 3; width: 0.6; color: #888888; display: geometry }
-style .thin { width: 0.6 }
-style .axis { dash: 14 3 2 3; width: 0.5; color: #888888 }
-style .hidden { dash: 4 3; width: 0.6 }
-style .barrel { dash: 4 3; width: 0.6 }
-style .lever { width: 1.4; color: #2a7ab0 }

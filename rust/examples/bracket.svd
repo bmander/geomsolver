@@ -1,0 +1,13 @@
+// Presentation of bracket.sv. Model geometry is independent of this drawing.
+model m from "bracket.sv"
+
+sheet drawing {
+  size A3
+  sketch source(m) at (80mm, 180mm)
+  dimensions in source
+  style m.toe_r { color: #7a7a7a; dash: 3 3 }
+  style m.front { color: #8a8a8a; width: 0.75; dash: 2 3 }
+  style m.top { color: #8a8a8a; width: 0.75; dash: 2 3 }
+  style m.right { color: #8a8a8a; width: 0.75; dash: 2 3 }
+  style m.aux { color: #8a8a8a; width: 0.75; dash: 2 3 }
+}

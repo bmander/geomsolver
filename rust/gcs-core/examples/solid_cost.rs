@@ -13,11 +13,12 @@ fn main() {
         ),
         (
             "bore",
-            include_str!("../tests/fixtures/solid_issue51/ghost_dimension_through.sv")
+            include_str!("../tests/fixtures/solid_issue51/ghost_dimension_through.legacy")
                 .replace("x: 20, y: 20", "x: 5, y: 5"),
         ),
     ] {
-        let (p, _) = syntax::parse(&source);
+        // The historical bore fixture includes retired presentation syntax.
+        let (p, _) = syntax::parse_legacy(&source);
         let mut e = program::elaborate(&p);
         assert!(e.ok());
         assert!(solve::solve(&mut e.sketch, Default::default()).success);

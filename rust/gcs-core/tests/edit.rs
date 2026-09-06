@@ -438,7 +438,7 @@ fn a_gauge_a_component_wrote_is_not_repeated() {
 /// A construction flag and a gauge are neither an entity nor a constraint, so nothing about the
 /// two counts notices them: they are read off the drawing and compared with what the source says.
 #[test]
-fn a_flag_and_a_gauge_are_spliced_too() {
+fn a_gauge_is_spliced_but_presentation_stays_out_of_model_source() {
     let prog = prog_of(DOC);
     let mut e = elaborate(&prog);
     assert!(e.ok());
@@ -449,14 +449,14 @@ fn a_flag_and_a_gauge_are_spliced_too() {
     e.sketch.fix_point(c.i(), true);
 
     let edit = reconciled(&mut e);
-    assert!(edit.text.contains("line bc(b, c) class construction"), "{}", edit.text);
+    assert!(!edit.text.contains("class construction"), "{}", edit.text);
     assert!(edit.text.contains("line ab(a, b)      // the base"), "the comment stayed");
     assert!(edit.text.contains("ground c"), "{}", edit.text);
     assert!(!edit.text.contains("ground a"), "the one that was let go is gone:\n{}", edit.text);
 
     let back = elaborate(&prog_of(&edit.text));
     assert!(back.ok(), "{:?}", back.errors().map(|d| &d.message).collect::<Vec<_>>());
-    assert!(back.sketch.lines[1].class.has("construction"));
+    assert!(!back.sketch.lines[1].class.has("construction"));
     assert!(back.sketch.point_fixed(2) && !back.sketch.point_fixed(0));
 
     // and taking the flag off again takes the word out, leaving the line as it was
@@ -522,35 +522,22 @@ fn a_second_gesture_beside_a_component_still_lands() {
 /// moving one has to reach the text — and as a splice of the two numbers, leaving the statement
 /// around them alone.  Reaching for it is `reconcile`, the same seam a construction word uses.
 #[test]
-fn a_dragged_callout_is_written_down() {
+fn a_dragged_callout_does_not_rewrite_the_model() {
     let src = "point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\na distance(60) b\n";
     let mut e = elaborate(&prog_of(src));
     let id = e.sketch.user_constraints()[0].id;
-
-    // dragged where the layout would not have put it
-    e.sketch.placements.insert(id, (12.0, -4.0));
-    let out = reconciled(&mut e);
-    assert!(out.text.contains("a distance(60) b at (12, -4)"), "{}", out.text);
-    assert!(out.text.contains("point a hint(x: 0, y: 0)"), "the rest of the file is untouched");
-
-    // dragged again: the two numbers are rewritten where they stand, not appended beside
-    e.sketch.placements.insert(id, (20.0, 8.0));
-    let out = reconciled(&mut e);
-    assert!(out.text.contains("a distance(60) b at (20, 8)"), "{}", out.text);
-    // `at (…)` is now the callout's alone: every seed in the language is in a `hint(…)` clause,
-    // and a placement is the one inert number that is not a seed (spec §6.4)
-    assert_eq!(out.text.matches(" at (").count(), 1, "the callout's, and nothing else's");
-
-    // and put back where the layout would place it, the clause goes with its space
+    for place in [(12.0, -4.0), (20.0, 8.0)] {
+        e.sketch.placements.insert(id, place);
+        assert_eq!(reconciled(&mut e).text, src);
+    }
     e.sketch.placements.remove(&id);
-    let out = reconciled(&mut e);
-    assert!(out.text.contains("a distance(60) b\n"), "{}", out.text);
+    assert_eq!(reconciled(&mut e).text, src);
 }
 
 /// A dimension that is its line's one relation takes the dragged callout's clause at the end
 /// of the line's statements, wherever the dimension fell among the links (§13.1).
 #[test]
-fn a_callout_on_a_chained_dimension_is_written_at_the_line_end() {
+fn a_chained_dimensions_placement_stays_out_of_model_source() {
     let src = "point p1 hint(x: 0, y: 0)\npoint p2 hint(x: 60, y: 0)\npoint p3 hint(x: 60, y: 40)\n\
                point p4 hint(x: 0, y: 40)\nline B(p3, p4)\nline a(p1, p2) angle(30deg) B\n";
     let mut e = elaborate(&prog_of(src));
@@ -558,11 +545,11 @@ fn a_callout_on_a_chained_dimension_is_written_at_the_line_end() {
     e.sketch.placements.insert(id, (2.0, 5.0));
     let out = reconciled(&mut e);
     assert!(out.refused.is_none(), "{:?}", out.refused);
-    assert!(out.text.contains("angle(30deg) B at (2, 5)"), "{}", out.text);
+    assert_eq!(out.text, src);
     // and read back, it is the angle's
     let again = elaborate(&prog_of(&out.text));
     let id = again.sketch.user_constraints().iter().find(|c| c.kind == CKind::Angle).unwrap().id;
-    assert_eq!(again.sketch.placements.get(&id).copied(), Some((2.0, 5.0)));
+    assert_eq!(again.sketch.placements.get(&id).copied(), None);
 }
 
 /// A dimension sharing its line with another relation has no spot a placement clause can
@@ -582,19 +569,9 @@ fn a_callout_on_a_run_dimension_is_left_to_the_layout() {
 /// The same, for a placement on a relation that states no number — the clause stands alone
 /// there, so it is written and removed on its own rather than after a `==`.
 #[test]
-fn a_placement_without_a_dimension_round_trips() {
-    let src = "point a hint(x: 0, y: 0)\npoint b hint(x: 60, y: 0)\nline l(a, b)\nhorizontal l at (3, 5)\n";
-    let mut e = elaborate(&prog_of(src));
-    let id = e.sketch.user_constraints().iter().find(|c| c.kind == CKind::Horizontal).unwrap().id;
-    assert_eq!(e.sketch.placements.get(&id).copied(), Some((3.0, 5.0)), "read as written");
-
-    e.sketch.placements.insert(id, (9.0, 1.0));
-    let out = reconciled(&mut e);
-    assert!(out.text.contains("horizontal l at (9, 1)"), "{}", out.text);
-
-    e.sketch.placements.remove(&id);
-    let out = reconciled(&mut e);
-    assert!(out.text.contains("horizontal l\n"), "{}", out.text);
+fn a_placement_on_a_relation_is_refused_in_model_source() {
+    let (_, errs) = parse("point a\npoint b\nline l(a,b)\nhorizontal l at (3,5)\n");
+    assert!(errs.iter().any(|e| e.message.contains(".svd")));
 }
 
 /// **A seed the document never wrote is recorded where the clause would have gone.**
@@ -706,8 +683,8 @@ fn a_drag_of_a_minted_child_writes_the_list() {
 fn a_written_argument_list_goes_on_the_name_and_is_spelled_once() {
     for (src, want) in [
         ("circle c hint(r: 25)\n", "circle c(center: hint(x: 3, y: 4)) hint(r: 25)"),
-        ("circle c class construction hint(r: 25)\n",
-         "circle c(center: hint(x: 3, y: 4)) class construction hint(r: 25)"),
+        ("circle c hint(r: 25)\n",
+         "circle c(center: hint(x: 3, y: 4)) hint(r: 25)"),
     ] {
         let mut e = elaborate(&prog_of(src));
         assert!(e.ok(), "{src}: {:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());

@@ -125,6 +125,21 @@ fn texts(ks: &[Callout]) -> Vec<&str> {
     ks.iter().map(|k| k.text.as_str()).collect()
 }
 
+#[test]
+fn selected_annotations_do_not_include_other_constraints_or_reserve_their_lanes() {
+    let sk = all_dimensions();
+    let before = io::to_json(&sk);
+    let id = sk.constraints[1].id;
+    assert!(gcs_core::callout::layout_selected(&sk, 1.0, Some(&[])).is_empty());
+    let chosen = gcs_core::callout::layout_selected(&sk, 1.0, Some(&[id]));
+    assert_eq!(chosen.len(), 1);
+    assert_eq!(chosen[0].id, id);
+    let mut alone = sk.clone();
+    alone.constraints.retain(|c| c.id == id);
+    assert_eq!(chosen[0].anchor, layout(&alone, 1.0)[0].anchor);
+    assert_eq!(before, io::to_json(&sk));
+}
+
 fn sk_kinds(sk: &Sketch) -> Vec<CKind> {
     sk.constraints.iter().map(|c| c.kind).collect()
 }

@@ -23,7 +23,7 @@ component Span(k1: circle, k2: circle, side: Scalar) {
 // `engine.conrod` designs; this is the outline a draughtsman ghosts in for a second position.
 component Rod(pin: point, axis: line) {
   point small hint(x: pin.x, y: pin.y + L)
-  line cl(pin, small) class axis
+  line cl(pin, small)
   small on axis
   pin distance(L) small
   circle big(center: pin) hint(r: rbig)
@@ -54,8 +54,8 @@ component Piston(small: point, pin: Int) {
     circle k(center: small) hint(r: rpin)
     radius(rpin) k
   }
-  line r1(hint(x: small.x - w / 2, y: small.y + ch - 6mm), hint(x: small.x + w / 2, y: small.y + ch - 6mm)) class thin
-  line r2(hint(x: small.x - w / 2, y: small.y + ch - 12mm), hint(x: small.x + w / 2, y: small.y + ch - 12mm)) class thin
+  line r1(hint(x: small.x - w / 2, y: small.y + ch - 6mm), hint(x: small.x + w / 2, y: small.y + ch - 6mm))
+  line r2(hint(x: small.x - w / 2, y: small.y + ch - 12mm), hint(x: small.x + w / 2, y: small.y + ch - 12mm))
   r1.p1 on ls
   r1.p2 on rs
   r2.p1 on ls

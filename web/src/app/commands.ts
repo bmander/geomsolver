@@ -191,7 +191,6 @@ function pairDim(kind: string, a: Point, b: Point): Constraint {
  *  written like a first, and what comes of it is the diagnosis's to say — see
  *  `edit::applyConstraints`. */
 export function dimension(cs: Constraint[], alt: DimAlt | null = null): void {
-  showCallouts();
   view.startDimension(cs, true, alt);
 }
 
@@ -200,16 +199,7 @@ export function dimension(cs: Constraint[], alt: DimAlt | null = null): void {
  *  the constraint list's double-click and a callout's both land there, and it is what checks
  *  there is a number to edit at all. */
 export function editDimension(c: Constraint): void {
-  showCallouts();
   view.startDimension([c], false, null);
-}
-
-/** A number is written where it is read, so there has to be somewhere to write it: asking for
- *  a dimension with the callouts turned off turns them back on rather than refusing. */
-function showCallouts(): void {
-  if (view.showDimensions) return;
-  view.showDimensions = true;
-  toast('dimensions turned back on — a number is edited on the drawing');
 }
 
 /** The one dimension button: what it puts a number on is the selection's business.  Two points

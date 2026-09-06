@@ -1,0 +1,10 @@
+// Presentation of gear.sv. Model geometry is independent of this drawing.
+model m from "gear.sv"
+
+sheet drawing {
+  size A3
+  sketch source(m) at (80mm, 180mm)
+  style m.g.base { dash: 7 4 }
+  style m.g.root { dash: 7 4 }
+  style m.g.tip { dash: 7 4 }
+}

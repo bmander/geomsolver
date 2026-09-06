@@ -7,31 +7,18 @@ use vtwin.dims
 use vtwin.parts
 use vtwin.disc
 
-point O hint(x: 0, y: 0) in views.front
+point O hint(x: 0, y: 0) in front
 ground O
-views: ThreeViews(O, right: 75, up: 65)
+point datum hint(x: 1, y: 0)
+ground datum
+plane front(origin: O, toward: datum)
 axes: Axes(O)
 // the pin is `R` up the axis
-point pin hint(x: 0, y: R) in views.front
+point pin hint(x: 0, y: R) in front
 pin on axes.ax
 O distance(R) pin
-line arm(O, pin) class axis
+line arm(O, pin)
 
-disc: Disc(views.front, O, pin, arm, dir: 90deg)
+disc: Disc(front, O, pin, arm, dir: 90deg)
 
-// the other two views, derived from the solid the section is a section of
-view(disc.body) in views.right
-view(disc.body) in views.top
-
-// how it looks: the part's own dimensions, and nothing else
-style .dimension { display: none }
-style .detail { display: inline }
-style .shown { display: inline }
-style .point { display: none }
-style .plane { display: none }
-style .gone { display: none }
-style .axis { dash: 14 3 2 3; width: 0.5; color: #888888 }
-style .hidden { dash: 4 3; width: 0.6 }
-style .phantom { dash: 6 3; width: 0.6; color: #888888; display: geometry }
-style .thin { width: 0.6 }
-style .lever { width: 1.4; color: #2a7ab0 }
+// Projections and dimensions: vtwin_disc.svd

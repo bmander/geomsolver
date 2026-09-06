@@ -194,6 +194,11 @@ struct Walk<'a> {
 pub fn expand(prog: &Program, units: Units) -> Expansion {
     let mut w = Walk::new(prog, units, None);
     let root = prog.root();
+    // A definitions-only file has nothing to expand. In particular, imported parameters must
+    // not be evaluated in a unit system that only an eventual instantiating model will supply.
+    if root.body.is_empty() {
+        return w.finish();
+    }
     let scope = Scope { prefixes: vec![String::new()], ..Scope::default() };
     let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
     w.body(&root.body, &scope, &mut vals, &[], 0);

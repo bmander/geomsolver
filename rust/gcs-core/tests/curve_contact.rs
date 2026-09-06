@@ -16,7 +16,7 @@ component Involute(c: circle, phase: Angle, u: Angle) {
              c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)) )
 }
 point  o hint(x: 0, y: 0)
-circle base(center: o) hint(r: 20) class construction
+circle base(center: o) hint(r: 20)
 curve  inv = Involute(base, phase: 0).p over u in (10, 90)
 radius(20) base
 ground o
@@ -36,8 +36,8 @@ component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
 }
 point  o hint(x: 0, y: 0)
 point  ax hint(x: 1, y: 0)
-line   datum(o, ax) class construction
-circle base(center: o) hint(r: 20) class construction
+line   datum(o, ax)
+circle base(center: o) hint(r: 20)
 curve  inv = Unwind(base, datum, phase: 0).p over u in (10, 90)
 radius(20) base
 ground o

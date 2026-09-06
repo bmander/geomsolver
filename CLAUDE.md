@@ -1,5 +1,18 @@
 # geomsolver
 
+**Model/drawing split (0.20):** `.sv` is geometry, constraints, hints, and assertions only.
+Presentation belongs in `.svd`; read [docs/solvent-drawing.md](docs/solvent-drawing.md).
+This supersedes the older presentation instructions below: do not write `class`, `style`,
+`view`, `section`, `dimensions`, or callout placements in model source. Renderer adapters
+retain presentation data internally, but model serialization and reconciliation omit it.
+The drawing compiler and renderer stay in the core; hosts supply source texts.
+Examples open their main `.svd` through `app/remote.ts`, including startup and URL routes.
+The right-hand project picker includes both source kinds: `.svd` shows the main paper preview,
+`.sv` the editable model canvas. `app/program.ts` keeps each file's source across switches.
+Every parsed file has an anonymous root, even if empty; component definitions are not instances.
+`web/tools/copy-examples.js` packages example sources for static hosts; live files override them.
+
+
 A geometric constraint solver, and **Solvent**, the language a drawing in it is written as.
 
 **Start here.** Asked to *draw* something — write or edit a sketch, add constraints, work out why

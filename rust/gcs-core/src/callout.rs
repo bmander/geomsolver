@@ -209,7 +209,8 @@ pub fn head(a: &Arrow, unit: f64) -> [P; 3] {
 /// the dimension's ink, and its own weight only where a sheet states one.  Written once because
 /// each front end that resolved it for itself came to a slightly different answer.
 pub fn ink(sk: &Sketch, c: &Callout) -> (crate::style::Style, crate::style::Style) {
-    let solid = sk.constraint(c.id).map(|k| style_of(sk, k)).unwrap_or_default();
+    let solid = sk.constraint(c.id).map(|k| style_of(sk, k))
+        .unwrap_or_else(|| sk.style_named("dimension"));
     let mut thin = sk.style_named("extension");
     thin.color = solid.color.clone();
     thin.width = thin.width.or(solid.width);
@@ -231,6 +232,12 @@ pub fn style_of(sk: &Sketch, c: &crate::constraints::Constraint) -> crate::style
 /// The drafting figure for every dimensioned constraint in the sketch, in world coordinates.
 /// `unit` is the world length of one screen pixel.
 pub fn layout(sk: &Sketch, unit: f64) -> Vec<Callout> {
+    layout_selected(sk, unit, None)
+}
+
+/// Lay out only requested constraint annotations. `None` explicitly requests the full
+/// inspection overlay; an empty selection draws nothing, including generated dimensions.
+pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callout> {
     let u = if unit.is_finite() && unit > 0.0 { unit } else { 1.0 };
     let (x0, y0, x1, y1) = sk.drawn_bounds();
     let mut pen = Pen {
@@ -244,13 +251,15 @@ pub fn layout(sk: &Sketch, unit: f64) -> Vec<Callout> {
     for c in &sk.constraints {
         // a drag target is a number, not a dimension, and an arc's own definition is not
         // something the drawing states twice
-        if c.soft || c.intrinsic || !style_of(sk, c).dimensioned() {
+        if ids.is_some_and(|ids| !ids.contains(&c.id))
+            || c.soft || c.intrinsic || !style_of(sk, c).dimensioned() {
             continue;
         }
         if let Some(k) = pen.one(c) {
             out.push(k);
         }
     }
+    if ids.is_some() { return out }
     // **and the dimensions a `dimensions(S) in P` asks the machine for** (§6.12).  They come
     // through the same pen and the same lanes as everything a document states, which is the
     // whole of what "laid out by the callout engine that already exists" means: a generated
@@ -282,6 +291,15 @@ pub fn layout(sk: &Sketch, unit: f64) -> Vec<Callout> {
 /// front end that resolves an id back to a statement finds nothing there — which is the truth: a
 /// generated dimension is a *reading* of the drawing and not a statement in it.
 pub const GENERATED: u32 = 1 << 30;
+
+/// A drawing-owned distance reading. No constraint or model parameter is created.
+pub fn measurement(sk: &Sketch, u: f64, a: P, b: P, value: f64, offset: f64) -> Option<Callout> {
+    let d = unit(sub(b, a))?;
+    let pen = Pen { sk, u, hub: ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0),
+        lanes: BTreeMap::new(), spins: BTreeMap::new() };
+    let text = crate::io::reading(crate::constraints::SpecKind::Length, value);
+    Some(pen.linear(GENERATED, a, b, d, (0.0, offset), &text))
+}
 
 /// How far off the part a generated extent stands, in screen pixels — enough for the outline's
 /// own line weight and the label, and screen-constant like every other size here.

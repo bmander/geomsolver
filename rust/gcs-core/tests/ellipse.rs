@@ -16,7 +16,7 @@ const ELLIPSE: &str = "\
 use std
 point o hint(x: 10, y: 5)
 point q hint(x: 18, y: 5)
-plane f(origin: o, toward: q) class construction
+plane f(origin: o, toward: q)
 curve e = Ellipse(f, a: 8, b: 3).p over u in (0, 360)
 ground o
 ground q

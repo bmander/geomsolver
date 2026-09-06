@@ -1,14 +1,9 @@
-/* A case's program, fresh from the server when there is one.
- *
- * The page is static files and needs no server.  But the dev server (`npm run serve`) also hands
- * out `rust/examples/` as `examples/…`, and a case read from there is the file on disk — so
- * editing a document and refreshing the page shows the edit with no wasm rebuilt, and a file that
- * is not in the case library at all opens by URL (`?example=<name>`).  The modules it `use`s come
- * the same way (`core/modules`), and anything the server has not got falls to the copies compiled
- * into the core — which is also what happens with no server at all, since then nothing fetches
- * and the caller reads the compiled-in case. */
+/* Authored example drawings, fresh from the demo server with packaged sources as the
+ * static-host fallback. The browser gathers texts; the core parses, solves, and renders. */
 import * as examples from '../core/examples.js';
 import * as modules from '../core/modules.js';
+import { info, type DrawingBundle } from '../core/drawing.js';
+import { fromSketch } from '../core/program.js';
 
 async function fetchText(path: string): Promise<string | null> {
   try {
@@ -25,12 +20,52 @@ function fileKey(key: string): boolean {
   return /^[\w-]+$/.test(key);
 }
 
-/** The case's program: the server's file when it has one — its modules handed to the core first —
- *  else the copy compiled into the core, linked against the library alone. */
-export async function source(key: string): Promise<string> {
-  const fresh = fileKey(key) ? await fetchText(`examples/${key}.sv`) : null;
-  modules.forget();
-  if (fresh === null) return examples.source(key);
-  await modules.link(fresh, (p) => fetchText(`examples/${p}`));
-  return fresh;
+/** Main authored drawing and the files it reads. Fresh files on the demo server override
+ *  the source bundle shipped with static builds. Geometry parsing stays in the core. */
+export async function drawing(key: string): Promise<DrawingBundle> {
+  const stem = key.split(':')[0];
+  if (!fileKey(stem)) throw new Error(`invalid example: ${key}`);
+  const packed = await fetchText('dist/examples/sources.json');
+  const fallback: Record<string, string> = packed === null ? {} : JSON.parse(packed);
+  const files: Record<string, string> = {};
+  const asked = new Set<string>();
+  const main = `${stem}.svd`;
+  const resolve = (path: string, from: string) =>
+    decodeURIComponent(new URL(path, `https://example.invalid/${from}`).pathname.slice(1));
+  const read = async (path: string): Promise<string | null> => {
+    if (asked.has(path)) return files[path] ?? null;
+    asked.add(path);
+    const text = await fetchText(`examples/${path}`) ?? fallback[path] ?? null;
+    if (text !== null) files[path] = text;
+    return text;
+  };
+  const model = async (path: string, root: string): Promise<void> => {
+    const text = await read(path);
+    if (text === null) return;  // The core can supply a standard library or diagnose a missing file.
+    for (const name of modules.uses(text)) {
+      const next = resolve(modules.pathOf(name), root);
+      if (!asked.has(next)) await model(next, root);
+    }
+  };
+  const visit = async (path: string): Promise<void> => {
+    const text = await read(path);
+    if (text === null) throw new Error(`cannot load example drawing: ${path}`);
+    const doc = info(text);
+    for (const imported of doc.imports) {
+      const next = resolve(imported, path);
+      if (!asked.has(next)) await visit(next);
+    }
+    for (const imported of doc.models) {
+      const next = resolve(imported, path);
+      if (key.includes(':') && path === main && next === `${stem}.sv`) {
+        const generated = examples.build(key);
+        try { files[next] = fromSketch(generated); }
+        finally { generated.dispose(); }
+        asked.add(next);
+      }
+      await model(next, next);
+    }
+  };
+  await visit(main);
+  return { source: main, files };
 }

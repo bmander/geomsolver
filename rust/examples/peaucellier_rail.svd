@@ -1,0 +1,11 @@
+// Presentation of peaucellier_rail.sv. Model geometry is independent of this drawing.
+model m from "peaucellier_rail.sv"
+
+sheet drawing {
+  size A3
+  sketch source(m) at (80mm, 180mm)
+  dimensions in source
+  style m.datum { dash: 7 4 }
+  style m.rail { dash: 7 4 }
+  style m.orbit { dash: 7 4 }
+}

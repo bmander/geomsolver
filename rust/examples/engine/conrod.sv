@@ -44,12 +44,12 @@ component ConRod(end: plane, side: plane, secv: plane,
       // the small end rides the bore axis one rod length from the pin
       point sm hint(x: pin.x, y: pin.y + L)
       sm on axis
-      pin distance(L) sm class shown
-      line cl(pin, sm) class axis
+      pin distance(L) sm
+      line cl(pin, sm)
       circle bigbore(center: pin) hint(r: rB)
-      radius(rB) bigbore class shown
+      radius(rB) bigbore
       circle smallbore(center: sm) hint(r: rS)
-      radius(rS) smallbore class shown
+      radius(rS) smallbore
 
       // the shank's two flanks, each filleted into both eyes.  A fillet is an arc whose centre
       // is a half-width plus a radius off the rod's axis; it meets the eye on the ray from the
@@ -67,10 +67,10 @@ component ConRod(end: plane, side: plane, secv: plane,
       cbr distance(hB + rf, side: right) cl
       csl distance(hS + rf, side: left) cl
       csr distance(hS + rf, side: right) cl
-      line rayBL(pin, cbl) class hidden
-      line rayBR(pin, cbr) class hidden
-      line raySL(sm, csl) class hidden
-      line raySR(sm, csr) class hidden
+      line rayBL(pin, cbl)
+      line rayBR(pin, cbr)
+      line raySL(sm, csl)
+      line raySR(sm, csr)
       point sbl hint(x: pin.x - 15mm, y: pin.y + 26mm)
       point sbr hint(x: pin.x + 15mm, y: pin.y + 26mm)
       point ssl hint(x: sm.x - 10.9mm, y: sm.y - 11.7mm)
@@ -99,7 +99,7 @@ component ConRod(end: plane, side: plane, secv: plane,
       flank_r tangent(at: p2) fsr
       arc eyeB(center: pin, start: sbl, end: sbr) hint(r: eB)
       arc eyeS(center: sm, start: ssr, end: ssl) hint(r: eS)
-      radius(eB) eyeB class shown
+      radius(eB) eyeB
       radius(eS) eyeS
 
       // the cap: a parting line through the pin square to the rod, and the two bolts through it
@@ -113,8 +113,8 @@ component ConRod(end: plane, side: plane, secv: plane,
       point bl1 hint(x: pin.x - bolt, y: pin.y + rodd)
       point br0 hint(x: pin.x + bolt, y: pin.y - capd)
       point br1 hint(x: pin.x + bolt, y: pin.y + rodd)
-      line bolt_l(bl0, bl1) class hidden
-      line bolt_r(br0, br1) class hidden
+      line bolt_l(bl0, bl1)
+      line bolt_r(br0, br1)
       bl0 distance(bolt, side: left) cl
       bl1 distance(bolt, side: left) cl
       br0 distance(bolt, side: right) cl
@@ -123,15 +123,15 @@ component ConRod(end: plane, side: plane, secv: plane,
       bl1 distance(rodd, side: left) parting
       br0 distance(capd, side: right) parting
       br1 distance(rodd, side: left) parting
-      claim bl0 distance(2 * bolt) br0 class shown
+      claim bl0 distance(2 * bolt) br0
 
       // the oil passage, drilled from the big-end bore to the small-end bore
       point ol0 hint(x: pin.x - oil, y: pin.y + rB)
       point ol1 hint(x: sm.x - oil, y: sm.y - rS)
       point or0 hint(x: pin.x + oil, y: pin.y + rB)
       point or1 hint(x: sm.x + oil, y: sm.y - rS)
-      line oil_l(ol0, ol1) class hidden
-      line oil_r(or0, or1) class hidden
+      line oil_l(ol0, ol1)
+      line oil_r(or0, or1)
       ol0 on bigbore
       or0 on bigbore
       ol1 on smallbore
@@ -154,13 +154,13 @@ component ConRod(end: plane, side: plane, secv: plane,
       pin_s distance(-wB / 2, along: x) ba
       pin_s distance(-eB, along: y) ba
       pin_s distance(-eB, along: y) bb
-      ba distance(wB) bb class shown
+      ba distance(wB) bb
       pa: At(pin_s, dx: -wB / 2, dy: 0mm)
       pb: At(pin_s, dx: wB / 2, dy: 0mm)
       line parting_s(pa.p, pb.p)
       b0: At(pin_s, dx: 0mm, dy: -capd)
       b1s: At(pin_s, dx: 0mm, dy: rodd)
-      line bolt_s(b0.p, b1s.p) class hidden
+      line bolt_s(b0.p, b1s.p)
       // the small end
       point sa hint(x: sm_s.x - wS / 2, y: sm_s.y - eS)
       point sb hint(x: sm_s.x + wS / 2, y: sm_s.y - eS)
@@ -170,7 +170,7 @@ component ConRod(end: plane, side: plane, secv: plane,
       sm_s distance(-wS / 2, along: x) sa
       sm_s distance(-eS, along: y) sa
       sm_s distance(-eS, along: y) sb
-      sa distance(wS) sb class shown
+      sa distance(wS) sb
       // the shank's flanges between them
       point ka hint(x: pin_s.x - fl / 2, y: pin_s.y + eB)
       point kb hint(x: pin_s.x + fl / 2, y: pin_s.y + eB)
@@ -181,7 +181,7 @@ component ConRod(end: plane, side: plane, secv: plane,
       pin_s distance(-fl / 2, along: x) ka
       pin_s distance(eB, along: y) ka
       pin_s distance(eB, along: y) kb
-      ka distance(fl) kb class shown
+      ka distance(fl) kb
       sm_s distance(fl / 2, along: x) kc
       sm_s distance(-eS, along: y) kc
       sm_s distance(-fl / 2, along: x) kd
@@ -213,13 +213,13 @@ component ConRod(end: plane, side: plane, secv: plane,
         line a5(q4.p, q5.p) -> line a6(q5.p, q6.p) -> line a7(q6.p, q7) -> line a8(q7, q8.p) ->
         line a9(q8.p, q9.p) -> line a10(q9.p, q10.p) -> line a11(q10.p, q11.p) -> line a12(q11.p, q0.p) -> close
       at distance(-hM, along: y) q1
-      q0.p distance(fl) q1 class shown
+      q0.p distance(fl) q1
       at distance(fl / 2, along: x) q2
-      q1 distance(ft, along: y) q2 class shown
+      q1 distance(ft, along: y) q2
       at distance(-hM + ft, along: y) q3
-      q10.p distance(wt) q3 class shown
+      q10.p distance(wt) q3
       at distance(-fl / 2, along: x) q7
-      q0.p distance(2 * hM, along: y) q7 class shown
+      q0.p distance(2 * hM, along: y) q7
     }
   }
 }

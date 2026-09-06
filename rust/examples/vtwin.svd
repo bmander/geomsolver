@@ -1,0 +1,432 @@
+// Presentation of vtwin.sv. Model geometry is independent of this drawing.
+model m from "vtwin.sv"
+
+sheet drawing {
+  size (420mm, 297mm)
+  sketch source(m) at (80mm, 180mm)
+  view v0(m.plate.body) from m.views.right at (320mm, 180mm)
+  style m.O { display: none }
+  style m.views.qf { display: none }
+  style m.views.right_origin { display: none }
+  style m.views.qr { display: none }
+  style m.views.top_origin { display: none }
+  style m.views.qt { display: none }
+  style m.up { display: none }
+  style m.plate.r.piv { display: none }
+  style m.plate.r.ip.p { display: none }
+  style m.plate.r.ep.p { display: none }
+  style m.plate.r.s0 { display: none }
+  style m.plate.r.s1 { display: none }
+  style m.plate.l.piv { display: none }
+  style m.plate.l.ip.p { display: none }
+  style m.plate.l.ep.p { display: none }
+  style m.plate.l.s0 { display: none }
+  style m.plate.l.s1 { display: none }
+  style m.plate.p0.p { display: none }
+  style m.plate.p1.p { display: none }
+  style m.plate.p2.p { display: none }
+  style m.plate.p3.p { display: none }
+  style m.plate.p4.p { display: none }
+  style m.plate.p5.p { display: none }
+  style m.plate.xr { display: none }
+  style m.plate.xl { display: none }
+  style m.plate.ci0 { display: none }
+  style m.plate.ci1 { display: none }
+  style m.plate.co0 { display: none }
+  style m.plate.co1 { display: none }
+  style m.plate.boss.a { display: none }
+  style m.plate.boss.b { display: none }
+  style m.plate.boss.c { display: none }
+  style m.plate.boss.d { display: none }
+  style m.plate.cpl_in.a { display: none }
+  style m.plate.cpl_in.b { display: none }
+  style m.plate.cpl_in.c { display: none }
+  style m.plate.cpl_in.d { display: none }
+  style m.plate.cpl_out.a { display: none }
+  style m.plate.cpl_out.b { display: none }
+  style m.plate.cpl_out.c { display: none }
+  style m.plate.cpl_out.d { display: none }
+  style m.plate.cplh.a { display: none }
+  style m.plate.cplh.b { display: none }
+  style m.plate.cplh.c { display: none }
+  style m.plate.cplh.d { display: none }
+  style m.plate.passage.a { display: none }
+  style m.plate.passage.b { display: none }
+  style m.plate.passage.c { display: none }
+  style m.plate.passage.d { display: none }
+  style m.plate.plug_body.a { display: none }
+  style m.plate.plug_body.b { display: none }
+  style m.plate.plug_body.c { display: none }
+  style m.plate.plug_body.d { display: none }
+  style m.plate.plug_nose.a { display: none }
+  style m.plate.plug_nose.b { display: none }
+  style m.plate.plug_nose.c { display: none }
+  style m.plate.plug_nose.d { display: none }
+  style m.plate.tb.p { display: none }
+  style m.plate.ft.a { display: none }
+  style m.plate.ft.b { display: none }
+  style m.plate.ft.c { display: none }
+  style m.plate.ft.d { display: none }
+  style m.plate.cph0.p { display: none }
+  style m.plate.cph1.p { display: none }
+  style m.plate.cph2.p { display: none }
+  style m.plate.cph3.p { display: none }
+  style m.plate.vr0.p { display: none }
+  style m.plate.vr1.p { display: none }
+  style m.plate.vr2.p { display: none }
+  style m.plate.vr3.p { display: none }
+  style m.plate.vl0.p { display: none }
+  style m.plate.vl1.p { display: none }
+  style m.plate.vl2.p { display: none }
+  style m.plate.vl3.p { display: none }
+  style m.plate.thr.tip { display: none }
+  style m.plate.thr.e0 { display: none }
+  style m.plate.thr.e1 { display: none }
+  style m.plate.thr.e2 { display: none }
+  style m.plate.thr.e3 { display: none }
+  style m.plate.thr.cx { display: none }
+  style m.plate.thr.lv0.p { display: none }
+  style m.plate.thr.lv1.p { display: none }
+  style m.plate.thr.lv2.p { display: none }
+  style m.plate.thr.lv3.p { display: none }
+  style m.plate.thr.x0.p { display: none }
+  style m.plate.thr.x1.p { display: none }
+  style m.plate.thr.x2.p { display: none }
+  style m.plate.thr.x3.p { display: none }
+  style m.plate.thr.datum_up { display: none }
+  style m.plate.thr.section_center { display: none }
+  style m.plate.thr.back_axis.p { display: none }
+  style m.plate.thr.back.p { display: none }
+  style m.plate.thr.retain0.p { display: none }
+  style m.plate.thr.retain1.p { display: none }
+  style m.plate.thr.retain2.p { display: none }
+  style m.plate.thr.retain3.p { display: none }
+  style m.plate.thr.seal0.p { display: none }
+  style m.plate.thr.seal1.p { display: none }
+  style m.plate.thr.seal2.p { display: none }
+  style m.plate.thr.seal3.p { display: none }
+  style m.plate.thr.seal4.p { display: none }
+  style m.plate.thr.seal5.p { display: none }
+  style m.plate.thr.seal6.p { display: none }
+  style m.plate.thr.seal7.p { display: none }
+  style m.plate.thr.shoulder.p { display: none }
+  style m.plate.thr.hub_back.p { display: none }
+  style m.plate.thr.hub_front.p { display: none }
+  style m.plate.thr.front_axis.p { display: none }
+  style m.crank.pin { display: none }
+  style m.crank.disc.se { display: none }
+  style m.crank.disc.gs.h0.p { display: none }
+  style m.crank.disc.gs.h1.p { display: none }
+  style m.crank.disc.gs.h2.p { display: none }
+  style m.crank.disc.gs.h3.p { display: none }
+  style m.crank.disc.gs.n0.p { display: none }
+  style m.crank.disc.gs.n1.p { display: none }
+  style m.crank.disc.gs.n2.p { display: none }
+  style m.crank.disc.gs.n3.p { display: none }
+  style m.crank.disc.gs.a0.p { display: none }
+  style m.crank.disc.gs.a1.p { display: none }
+  style m.bankR.crown { display: none }
+  style m.bankR.q { display: none }
+  style m.bankR.cyl.k_bl.p { display: none }
+  style m.bankR.cyl.k_br.p { display: none }
+  style m.bankR.cyl.k_tr.p { display: none }
+  style m.bankR.cyl.k_tl.p { display: none }
+  style m.bankR.cyl.b_bl.p { display: none }
+  style m.bankR.cyl.b_br.p { display: none }
+  style m.bankR.cyl.b_tr.p { display: none }
+  style m.bankR.cyl.b_tl.p { display: none }
+  style m.bankR.cyl.m0.p { display: none }
+  style m.bankR.cyl.hx.p { display: none }
+  style m.bankR.cyl.pt.p { display: none }
+  style m.bankR.cyl.t0.p { display: none }
+  style m.bankR.cyl.t1.p { display: none }
+  style m.bankR.cyl.t2.p { display: none }
+  style m.bankR.cyl.t3.p { display: none }
+  style m.bankR.cyl.h0.p { display: none }
+  style m.bankR.pis.cL { display: none }
+  style m.bankR.pis.cR { display: none }
+  style m.bankR.pis.g0L.p { display: none }
+  style m.bankR.pis.g1L.p { display: none }
+  style m.bankR.pis.g2L.p { display: none }
+  style m.bankR.pis.g3L.p { display: none }
+  style m.bankR.pis.sL.p { display: none }
+  style m.bankR.pis.g0R.p { display: none }
+  style m.bankR.pis.g1R.p { display: none }
+  style m.bankR.pis.g2R.p { display: none }
+  style m.bankR.pis.g3R.p { display: none }
+  style m.bankR.pis.sR.p { display: none }
+  style m.bankR.pis.ra { display: none }
+  style m.bankR.pis.rb { display: none }
+  style m.bankR.pis.rc { display: none }
+  style m.bankR.pis.rd { display: none }
+  style m.bankR.pis.s0.p { display: none }
+  style m.bankL.crown { display: none }
+  style m.bankL.q { display: none }
+  style m.bankL.cyl.k_bl.p { display: none }
+  style m.bankL.cyl.k_br.p { display: none }
+  style m.bankL.cyl.k_tr.p { display: none }
+  style m.bankL.cyl.k_tl.p { display: none }
+  style m.bankL.cyl.b_bl.p { display: none }
+  style m.bankL.cyl.b_br.p { display: none }
+  style m.bankL.cyl.b_tr.p { display: none }
+  style m.bankL.cyl.b_tl.p { display: none }
+  style m.bankL.cyl.m0.p { display: none }
+  style m.bankL.cyl.hx.p { display: none }
+  style m.bankL.cyl.pt.p { display: none }
+  style m.bankL.cyl.t0.p { display: none }
+  style m.bankL.cyl.t1.p { display: none }
+  style m.bankL.cyl.t2.p { display: none }
+  style m.bankL.cyl.t3.p { display: none }
+  style m.bankL.cyl.h0.p { display: none }
+  style m.bankL.pis.cL { display: none }
+  style m.bankL.pis.cR { display: none }
+  style m.bankL.pis.g0L.p { display: none }
+  style m.bankL.pis.g1L.p { display: none }
+  style m.bankL.pis.g2L.p { display: none }
+  style m.bankL.pis.g3L.p { display: none }
+  style m.bankL.pis.sL.p { display: none }
+  style m.bankL.pis.g0R.p { display: none }
+  style m.bankL.pis.g1R.p { display: none }
+  style m.bankL.pis.g2R.p { display: none }
+  style m.bankL.pis.g3R.p { display: none }
+  style m.bankL.pis.sR.p { display: none }
+  style m.bankL.pis.ra { display: none }
+  style m.bankL.pis.rb { display: none }
+  style m.bankL.pis.rc { display: none }
+  style m.bankL.pis.rd { display: none }
+  style m.bankL.pis.s0.p { display: none }
+  style m.so { display: none }
+  style m.side.brg1.a { display: none }
+  style m.side.brg1.b { display: none }
+  style m.side.brg1.c { display: none }
+  style m.side.brg1.d { display: none }
+  style m.side.brg2.a { display: none }
+  style m.side.brg2.b { display: none }
+  style m.side.brg2.c { display: none }
+  style m.side.brg2.d { display: none }
+  style m.side.shaft.a { display: none }
+  style m.side.shaft.b { display: none }
+  style m.side.shaft.c { display: none }
+  style m.side.shaft.d { display: none }
+  style m.side.disc.a { display: none }
+  style m.side.disc.b { display: none }
+  style m.side.disc.c { display: none }
+  style m.side.disc.d { display: none }
+  style m.side.flywheel.a { display: none }
+  style m.side.flywheel.b { display: none }
+  style m.side.flywheel.c { display: none }
+  style m.side.flywheel.d { display: none }
+  style m.side.pin_s { display: none }
+  style m.side.head.a { display: none }
+  style m.side.head.b { display: none }
+  style m.side.head.c { display: none }
+  style m.side.head.d { display: none }
+  style m.side.pin.a { display: none }
+  style m.side.pin.b { display: none }
+  style m.side.pin.c { display: none }
+  style m.side.pin.d { display: none }
+  style m.side.w1.a { display: none }
+  style m.side.w1.b { display: none }
+  style m.side.w1.c { display: none }
+  style m.side.w1.d { display: none }
+  style m.side.eyeA.a { display: none }
+  style m.side.eyeA.b { display: none }
+  style m.side.eyeA.c { display: none }
+  style m.side.eyeA.d { display: none }
+  style m.side.eyeB.a { display: none }
+  style m.side.eyeB.b { display: none }
+  style m.side.eyeB.c { display: none }
+  style m.side.eyeB.d { display: none }
+  style m.side.w2.a { display: none }
+  style m.side.w2.b { display: none }
+  style m.side.w2.c { display: none }
+  style m.side.w2.d { display: none }
+  style m.side.cotter.a { display: none }
+  style m.side.cotter.b { display: none }
+  style m.side.cotter.c { display: none }
+  style m.side.cotter.d { display: none }
+  style m.side.pv { display: none }
+  style m.side.bhead.a { display: none }
+  style m.side.bhead.b { display: none }
+  style m.side.bhead.c { display: none }
+  style m.side.bhead.d { display: none }
+  style m.side.bshank.a { display: none }
+  style m.side.bshank.b { display: none }
+  style m.side.bshank.c { display: none }
+  style m.side.bshank.d { display: none }
+  style m.side.wsh_s.a { display: none }
+  style m.side.wsh_s.b { display: none }
+  style m.side.wsh_s.c { display: none }
+  style m.side.wsh_s.d { display: none }
+  style m.side.nut.a { display: none }
+  style m.side.nut.b { display: none }
+  style m.side.nut.c { display: none }
+  style m.side.nut.d { display: none }
+  style m.side.cyB_top { display: none }
+  style m.side.cyB_bot { display: none }
+  style m.side.cyA_top { display: none }
+  style m.side.cyA_bot { display: none }
+  style m.side.cylB.a { display: none }
+  style m.side.cylB.b { display: none }
+  style m.side.cylB.c { display: none }
+  style m.side.cylB.d { display: none }
+  style m.side.cylA.a { display: none }
+  style m.side.cylA.b { display: none }
+  style m.side.cylA.c { display: none }
+  style m.side.cylA.d { display: none }
+  style m.side.boB_top { display: none }
+  style m.side.boB_bot { display: none }
+  style m.side.boA_top { display: none }
+  style m.side.boA_bot { display: none }
+  style m.side.boreB.a { display: none }
+  style m.side.boreB.b { display: none }
+  style m.side.boreB.c { display: none }
+  style m.side.boreB.d { display: none }
+  style m.side.boreA.a { display: none }
+  style m.side.boreA.b { display: none }
+  style m.side.boreA.c { display: none }
+  style m.side.boreA.d { display: none }
+  style m.ref { display: none }
+  style m.plate.r.axis { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.plate.r.rad_i { display: none }
+  style m.plate.r.rad_e { display: none }
+  style m.plate.l.axis { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.plate.l.rad_i { display: none }
+  style m.plate.l.rad_e { display: none }
+  style m.plate.rad_bR { display: none }
+  style m.plate.rad_bL { display: none }
+  style m.plate.exh_r { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.exh_l { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.cpl_in.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.cpl_in.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.cpl_in.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.cpl_in.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.cplh.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.cplh.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.cplh.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.cplh.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.passage.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.passage.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.passage.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.passage.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.plug_body.ab { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.plug_body.bc { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.plug_body.cd { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.plug_body.da { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.plug_nose.ab { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.plug_nose.bc { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.plug_nose.cd { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.plug_nose.da { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.ft.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.ft.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.ft.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.ft.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.cpax { display: none }
+  style m.plate.thr.lever { color: #2a7ab0; width: 1.4 }
+  style m.plate.thr.h0 { width: 0.6; dash: 4 3 }
+  style m.plate.thr.h1 { width: 0.6; dash: 4 3 }
+  style m.plate.thr.hax { display: none }
+  style m.plate.thr.lv_a { color: #2a7ab0; width: 1.4 }
+  style m.plate.thr.lv_c { color: #2a7ab0; width: 1.4 }
+  style m.plate.thr.datum { display: none }
+  style m.plate.thr.front_u { display: none }
+  style m.plate.thr.fold { display: none }
+  style m.plate.thr.axis { display: none }
+  style m.crank.arm { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.crank.disc.ssa { display: none }
+  style m.crank.disc.gs.s0 { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
+  style m.crank.disc.gs.s1 { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
+  style m.crank.disc.gs.q0 { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
+  style m.crank.disc.gs.q1 { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
+  style m.crank.disc.gs.q2 { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
+  style m.crank.disc.gs.q3 { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
+  style m.bankR.rod { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.bankR.across { display: none }
+  style m.bankR.cyl.trap0 { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.bankR.cyl.trap1 { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.bankR.cyl.trap2 { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.bankL.rod { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.bankL.across { display: none }
+  style m.bankL.cyl.trap0 { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.bankL.cyl.trap1 { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.bankL.cyl.trap2 { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.brg1.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.brg1.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.brg1.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.brg1.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.brg2.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.brg2.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.brg2.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.brg2.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.head.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.head.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.head.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.head.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.w1.ab { width: 0.6 }
+  style m.side.w1.bc { width: 0.6 }
+  style m.side.w1.cd { width: 0.6 }
+  style m.side.w1.da { width: 0.6 }
+  style m.side.w2.ab { width: 0.6 }
+  style m.side.w2.bc { width: 0.6 }
+  style m.side.w2.cd { width: 0.6 }
+  style m.side.w2.da { width: 0.6 }
+  style m.side.cotter.ab { width: 0.6 }
+  style m.side.cotter.bc { width: 0.6 }
+  style m.side.cotter.cd { width: 0.6 }
+  style m.side.cotter.da { width: 0.6 }
+  style m.side.bhead.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.bhead.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.bhead.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.bhead.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.bshank.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.bshank.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.bshank.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.bshank.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.wsh_s.ab { width: 0.6 }
+  style m.side.wsh_s.bc { width: 0.6 }
+  style m.side.wsh_s.cd { width: 0.6 }
+  style m.side.wsh_s.da { width: 0.6 }
+  style m.side.cylA.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.cylA.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.cylA.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.cylA.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.boreB.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.boreB.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.boreB.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.boreB.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.boreA.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.boreA.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.boreA.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.side.boreA.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.r.bolt { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.r.intake { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.r.exhaust { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.l.bolt { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.l.intake { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.l.exhaust { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.sh { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.bp { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.tbore { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.bcirc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.thr.barrel { width: 0.6; dash: 4 3 }
+  style m.plate.thr.knob { color: #2a7ab0; width: 1.4 }
+  style m.plate.thr.hub { color: #2a7ab0; width: 1.4 }
+  style m.crank.path { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.crank.disc.bore { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
+  style m.crank.disc.ph { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
+  style m.crank.disc.pkt { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
+  style m.bankR.cyl.port { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.bankR.cyl.shank { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.bankR.pis.hole { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
+  style m.bankL.cyl.port { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.bankL.cyl.shank { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.bankL.pis.hole { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
+  style m.plate.r.sweep { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.l.sweep { color: #888888; width: 0.6; dash: 6 3; display: geometry }
+  style m.plate.ch_in { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.plate.ch_out { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.views.front { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }
+  style m.views.right { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }
+  style m.views.top { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }
+  style m.plate.thr.longitudinal { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }
+}

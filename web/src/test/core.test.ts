@@ -1003,8 +1003,8 @@ test('a claimed callout takes the dimension rule and then its own', () => {
 
   const styled = Document.read(
     'style .dimension { color: #b00020; width: 2 }\npoint a hint(x: 0, y: 0)\n');
-  assert.equal(styled.sketch.styleNamed('dimension reference').color, '#b00020');
-  assert.equal(styled.sketch.styleNamed('dimension reference').width, 2);
+  assert.equal(styled.ok, false);
+  assert.ok(styled.diagnostics.some(d => d.message.includes('.svd')));
   styled.dispose();
 });
 

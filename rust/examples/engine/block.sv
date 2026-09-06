@@ -32,9 +32,9 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     line wall_l(bl0, bl1.p)
     line wall_r(br0, br1.p)
     o distance(-D / 2, along: x) bl0
-    o distance(deck, along: y) bl0 class shown
+    o distance(deck, along: y) bl0
     o distance(deck, along: y) br0
-    bl0 distance(D) br0 class shown
+    bl0 distance(D) br0
     // the outline: deck, walls, skirt, pan rail
     point d_l hint(x: o.x - hw, y: o.y + deck)
     point d_r hint(x: o.x + hw, y: o.y + deck)
@@ -50,14 +50,14 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     o distance(-hw, along: x) d_l
     o distance(deck, along: y) d_l
     o distance(deck, along: y) d_r
-    d_l distance(2 * hw) d_r class shown
+    d_l distance(2 * hw) d_r
     o distance(-kw, along: x) pr_l
     o distance(rail, along: y) pr_l
     o distance(rail, along: y) pr_r
-    pr_l distance(2 * kw) pr_r class shown
+    pr_l distance(2 * kw) pr_r
     // the main bearing behind the section: the shell round the journal, hidden, and the cap
     // below the parting line at the crank's axis
-    circle shell(center: o) hint(r: rmb) class hidden
+    circle shell(center: o) hint(r: rmb)
     radius(rmb) shell
     point c_l hint(x: o.x - (rmb + capd), y: o.y)
     point c_r hint(x: o.x + (rmb + capd), y: o.y)
@@ -76,7 +76,7 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     o distance(60, along: left) sp_l
     o distance(sump, along: y) sp_l
     o distance(60, along: x) sp_r
-    sp_r distance(-sump, along: y) o class shown
+    sp_r distance(-sump, along: y) o
   }
 
   // -- across the axis: the casting edge on -----------------------------------------------
@@ -94,7 +94,7 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     o_s distance(back, along: x) rfr
     horizontal dl
     horizontal rl
-    bfl distance(back - front) bfr class shown
+    bfl distance(back - front) bfr
     // the sump: shallow at the front, deep at the back
     point q_a hint(x: o_s.x + front + 15mm, y: o_s.y + rail)
     point q_b hint(x: o_s.x + front + 45mm, y: o_s.y + sump + 45mm)
@@ -134,7 +134,7 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
       jc: At(o_s, dx: front + 25mm + j * P, dy: 0mm)
       bearing: MainBearingSide(jc.p)
     }
-    claim ax[0].p distance(P) ax[1].p class shown
+    claim ax[0].p distance(P) ax[1].p
   }
 
   // -- from above: the deck and the bores -----------------------------------------------

@@ -65,33 +65,33 @@ component Cylinder(swing: plane, piv: point, ax: line, ac: line, dir: Angle, fw:
     // hole through the wall to the face, a fit it does not turn in, and the cylinder's attitude
     // by its face on the plate.
     pt: Loc(piv, ax, ac, dir: dir, u: a, v: 0mm)
-    circle port(center: pt.p) hint(r: dport / 2) class hidden
+    circle port(center: pt.p) hint(r: dport / 2)
     radius(dport / 2) port
-    circle shank(center: piv) hint(r: trapfit / 2) class hidden
+    circle shank(center: piv) hint(r: trapfit / 2)
     radius(trapfit / 2) shank
-    pkt: Hex(piv, ax, af: boltaf, phase: 90deg) class hidden
+    pkt: Hex(piv, ax, af: boltaf, phase: 90deg)
     t0: Loc(piv, ax, ac, dir: dir, u: trapw / 2, v: hw)
     t1: Loc(piv, ax, ac, dir: dir, u: trapw / 2, v: -trapd)
     t2: Loc(piv, ax, ac, dir: dir, u: -trapw / 2, v: -trapd)
     t3: Loc(piv, ax, ac, dir: dir, u: -trapw / 2, v: hw)
-    line trap0(t0.p, t1.p) class hidden
-    line trap1(t1.p, t2.p) class hidden
-    line trap2(t2.p, t3.p) class hidden
+    line trap0(t0.p, t1.p)
+    line trap1(t1.p, t2.p)
+    line trap2(t2.p, t3.p)
     // one more point on the outline, for the head wall to be measured to
     h0: Loc(piv, ax, ac, dir: dir, u: ct - H, v: D / 2)
     // the sizes a printer needs, all judged: every point above is already placed
-    claim k_bl.p distance(ct - cb) k_tl.p class detail at (0, 12)
-    claim b_br.p distance(head - cb) b_tr.p class detail at (0, -12)
-    claim b_tl.p distance(D) b_tr.p class detail at (0, 8)
-    claim k_tl.p distance(2 * hw) k_tr.p class detail at (0, 18)
-    claim piv distance(a) pt.p class detail at (0, 6)
-    claim m0.p distance(H - cb) piv class detail at (0, 6)
-    claim b_tl.p distance(wall) h0.p class detail at (0, 6)
-    claim k_tl.p distance(hw - D / 2) h0.p class detail at (0, 6)
-    claim radius(dport / 2) port class detail at (0.6, 9)
-    claim radius(trapfit / 2) shank class detail at (0.6, 5)
-    claim t0.p distance(trapw) t3.p class detail at (0, 6)
-    claim t1.p distance(hw + trapd) t0.p class detail at (0, -6)
+    claim k_bl.p distance(ct - cb) k_tl.p
+    claim b_br.p distance(head - cb) b_tr.p
+    claim b_tl.p distance(D) b_tr.p
+    claim k_tl.p distance(2 * hw) k_tr.p
+    claim piv distance(a) pt.p
+    claim m0.p distance(H - cb) piv
+    claim b_tl.p distance(wall) h0.p
+    claim k_tl.p distance(hw - D / 2) h0.p
+    claim radius(dport / 2) port
+    claim radius(trapfit / 2) shank
+    claim t0.p distance(trapw) t3.p
+    claim t1.p distance(hw + trapd) t0.p
   }
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------

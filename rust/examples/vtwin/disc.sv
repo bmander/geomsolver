@@ -20,22 +20,22 @@ use vtwin.parts
 component Disc(swing: plane, o: point, pin: point, arm: line, dir: Angle) {
   in swing {
     circle rim(center: o) hint(r: rdisc)
-    radius(rdisc) rim class shown at (-2.1, 32)
-    circle bore(center: o) hint(r: dhub / 2) class hidden detail
+    radius(rdisc) rim
+    circle bore(center: o) hint(r: dhub / 2)
     radius(dhub / 2) bore
-    circle ph(center: pin) hint(r: pinclr / 2) class hidden detail
+    circle ph(center: pin) hint(r: pinclr / 2)
     radius(pinclr / 2) ph
-    circle pkt(center: pin) hint(r: pinpocketd / 2) class hidden detail
+    circle pkt(center: pin) hint(r: pinpocketd / 2)
     radius(pinpocketd / 2) pkt
     // the set screw, square to the arm so its pocket stays clear of the pin's
     point se hint(x: o.x + rdisc * cos(dir - 90deg), y: o.y + rdisc * sin(dir - 90deg))
-    line ssa(o, se) class gone
+    line ssa(o, se)
     o distance(rdisc) se
     arm angle(90deg, sense: cw) ssa
     gs: Grub(o, ssa, arm, dir: dir - 90deg, rin: dhub / 2, rout: rdisc)
-    claim radius(dhub / 2) bore class detail at (2.4, 12)
-    claim radius(pinclr / 2) ph class detail at (0.8, 10)
-    claim radius(pinpocketd / 2) pkt class detail at (1.4, 14)
+    claim radius(dhub / 2) bore
+    claim radius(pinclr / 2) ph
+    claim radius(pinpocketd / 2) pkt
   }
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------

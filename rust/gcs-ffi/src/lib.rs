@@ -283,6 +283,49 @@ pub unsafe extern "C" fn gcs_sketch_svg(h: *mut Sketch, width_px: f64) -> *mut u
     guard(std::ptr::null_mut(), move || out_str(gcs_core::svg::render(sk(h), width_px)))
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_preview(h: *mut Sketch, plane: i32) {
+    guard((), move || gcs_core::drawing::preview(sk(h), (plane >= 0).then_some(plane as usize)))
+}
+
+/// Render a .svd document from a host-supplied text bundle. JSON input:
+/// {source, text, sheet?, files: {path: text}}. Result: {svg} or {error, offset}.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_drawing_svg(ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let request = as_json(ptr, len);
+        let text = request.get("text").map(Json::as_str).unwrap_or("");
+        let source = request.get("source").map(Json::as_str).unwrap_or("drawing.svd");
+        let sheet = request.get("sheet").filter(|s| matches!(s, Json::Str(_))).map(Json::as_str);
+        let result = gcs_core::drawing::compile(text, source, sheet, &mut |path, from| {
+            let name = gcs_core::drawing::relative_path(path, from);
+            request.get("files")?.get(&name).filter(|v| matches!(v, Json::Str(_)))
+                .map(|v| (name, v.as_str().to_string()))
+        });
+        let result = match result {
+            Ok(svg) => json::object([("svg", Json::Str(svg))]),
+            Err(e) => json::object([("error", Json::Str(e.message)), ("offset", Json::Int(e.span.lo as i64))]),
+        };
+        out_str(result.dump(None))
+    })
+}
+
+/// Inspect .svd imports and sheet names without loading or solving a model.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_drawing_info(ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let value = match gcs_core::drawing::parse(as_str(ptr, len)) {
+            Ok(d) => json::object([
+                ("models", Json::Arr(d.models.iter().map(|m| Json::Str(m.path.clone())).collect())),
+                ("imports", Json::Arr(d.imports.into_iter().map(Json::Str).collect())),
+                ("sheets", Json::Arr(d.sheets.into_iter().map(|s| Json::Str(s.name)).collect())),
+            ]),
+            Err(e) => json::object([("error", Json::Str(e.message))]),
+        };
+        out_str(value.dump(None))
+    })
+}
+
 /// How many integers `gcs_sketch_counts` writes.
 ///
 /// Asked rather than assumed: a binding that hard-codes the width writes past its buffer the day
@@ -1583,6 +1626,17 @@ pub unsafe extern "C" fn gcs_overview3d_json(h: *mut Sketch, unit: f64) -> *mut 
 pub unsafe extern "C" fn gcs_callouts_json(h: *mut Sketch, unit: f64) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
         out_json(report::callouts_json(sk(h), unit))
+    })
+}
+
+/// Explicit constraint annotations for a model editor's active dimension operation.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_selected_callouts_json(h: *mut Sketch, unit: f64,
+    ids: *const u32, count: usize) -> *mut u8
+{
+    guard(std::ptr::null_mut(), move || {
+        let ids = if count == 0 { &[] } else { std::slice::from_raw_parts(ids, count) };
+        out_json(report::selected_callouts_json(sk(h), unit, Some(ids)))
     })
 }
 

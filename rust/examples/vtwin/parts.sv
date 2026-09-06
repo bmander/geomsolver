@@ -31,7 +31,6 @@ component Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
 // written out twice, here and in `engine.parts`, which is one drawing in two files the moment
 // one of them is edited.
 
-
 // A rectangle between `x0` and `x1` whose top and bottom are the heights of two points another
 // view placed — the side view's reading of a part the front view designs.
 component Slab(o: point, x0: Length, x1: Length, top: point, bottom: point) {
@@ -74,11 +73,11 @@ component Axes(o: point) {
   point up hint(x: o.x, y: o.y + 40mm)
   o distance(0, along: x) up
   o distance(40, along: y) up
-  line ax(o, up) class axis
+  line ax(o, up)
   point left hint(x: o.x - 10mm, y: o.y)
   o distance(10, along: left) left
   o distance(0, along: y) left
-  line ac(o, left) class gone
+  line ac(o, left)
 }
 
 // A set screw into the shaft: its clearance hole from the bore at `rin` out to the rim at
@@ -89,16 +88,16 @@ component Grub(o: point, ax: line, ac: line, dir: Angle, rin: Length, rout: Leng
   h1: Loc(o, ax, ac, dir: dir, u: rout, v: grub / 2)
   h2: Loc(o, ax, ac, dir: dir, u: rin, v: -grub / 2)
   h3: Loc(o, ax, ac, dir: dir, u: rout, v: -grub / 2)
-  line s0(h0.p, h1.p) class hidden detail
-  line s1(h2.p, h3.p) class hidden detail
+  line s0(h0.p, h1.p)
+  line s1(h2.p, h3.p)
   n0: Loc(o, ax, ac, dir: dir, u: rin + nutin, v: nutaf / 2)
   n1: Loc(o, ax, ac, dir: dir, u: rin + nutin + nutT, v: nutaf / 2)
   n2: Loc(o, ax, ac, dir: dir, u: rin + nutin + nutT, v: -nutaf / 2)
   n3: Loc(o, ax, ac, dir: dir, u: rin + nutin, v: -nutaf / 2)
-  line q0(n0.p, n1.p) class hidden detail
-  line q1(n1.p, n2.p) class hidden detail
-  line q2(n2.p, n3.p) class hidden detail
-  line q3(n3.p, n0.p) class hidden detail
+  line q0(n0.p, n1.p)
+  line q1(n1.p, n2.p)
+  line q2(n2.p, n3.p)
+  line q3(n3.p, n0.p)
   // **the screw's hole is a solid; its nut's pocket is not, and that is a limit of the language
   // and not of the design.**  The hole is a turn of the half-section above about the screw's own
   // line, which lies in this plane — `about:` takes exactly such a line.  The pocket is a *hex*
@@ -110,7 +109,7 @@ component Grub(o: point, ax: line, ac: line, dir: Angle, rin: Length, rout: Leng
   a1: Loc(o, ax, ac, dir: dir, u: rout, v: 0mm)
   face bore_f(a0.p, h0.p, s0, a1.p, -> close)
   solid bore(bore_f, about: ax)
-  claim h0.p distance(grub) h2.p class detail at (0, 4)
-  claim n0.p distance(nutT) n1.p class detail at (0, 8)
-  claim n0.p distance(nutaf) n3.p class detail at (0, -6)
+  claim h0.p distance(grub) h2.p
+  claim n0.p distance(nutT) n1.p
+  claim n0.p distance(nutaf) n3.p
 }

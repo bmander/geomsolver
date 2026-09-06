@@ -1,5 +1,8 @@
 # Solvent: a primer for agents
 
+Models are `.sv` files; authored presentation is a separate [Solvent Drawing (`.svd`)](solvent-drawing.md).
+`class`, `style`, output requests, and callout placements are no longer model syntax.
+
 Solvent is the language a drawing in this project *is*. You do not place geometry; you declare
 entities and state what must be true of them, and the solver finds coordinates satisfying every
 statement at once. A sketch is a set of claims, not a sequence of drawing commands, so reordering
@@ -46,8 +49,7 @@ line ends with a chain joint (1.7).
 solve begins.** So `circle c(center: o) hint(r: 25)`, never `circle c(center: o, r: 25)`: the
 centre is structure and the radius is a guess.
 
-A callout placement, `a distance(80) b at (12, -4)`, keeps a bare `at`. It is inert too, but it
-records where a person dragged a dimension, and no solve touches it.
+Callout selection and placement belong in `.svd`, independently of model constraints.
 
 ### 1.3 Statement forms
 
@@ -56,7 +58,7 @@ use NAME[.NAME...]                      bring in a module's components and param
 unit NAME                               what the document's numbers are in          (1.6)
 param NAME = EXPR                       a number worked out while elaborating
 KIND [NAME][(CHILD | hint(x: E, y: E), ...)] [hint(SCALAR: E, ...)] [knots [...]]
-     [class NAME...] [in REF]           an entity declaration; every part is optional (1.4)
+     [in REF]           an entity declaration; every part is optional (1.4)
 point NAME = (XEXPR, YEXPR)             a computed point, drawn only as a curve      (1.9)
 plane [NAME](origin: R, toward: R[, from: R, fold: E | , from: R, offset: E
                                       | , u: (E,E,E), v: (E,E,E)])
@@ -66,18 +68,15 @@ face NAME(EDGE, ..., holes: LOOP, ...)  a planar region with optional holes     
 solid NAME(FACE, SWEEP...)              that face swept: depth:/from:/to:, about:   (1.14)
 solid NAME(SOLID)                       a body, made of a stock
 REF on REF  |  REF through REF          material added to, or taken from, a body    (1.14)
-view(SOLID) in REF                      a picture asked of a solid                  (1.14)
 section(SOLID, at: REF) in REF          the same, cut at a plane
-dimensions(SOLID) in REF                the callouts that follow from the object
-style .NAME { PROP: VALUE; ... }        what a class looks like                     (1.11)
 WORD[(ARGS)] REF  |  REF WORD[(ARGS)] REF
-     [hint(SLOT: E, ...)] [class NAME...] [at (t, r)]
+     [hint(SLOT: E, ...)]
                                         a constraint, prefix or infix               (1.5)
 claim CONSTRAINT                        judged, never solved for                    (1.10)
 ground REF                              pin both coordinates of a point
 fix REF.FIELD                           pin one scalar: fix c.r
 ccw(a, b, c) | cw(a, b, c)              record a root choice; adds no equation
-NAME: Component(ARGS) [in REF] [class NAME...]     an instance                      (1.8)
+NAME: Component(ARGS) [in REF]     an instance                      (1.8)
 component NAME(FORMALS) { statement* }  a definition
 repeat N [as i] { ... }                 N copies, unrelated
 cycle N [as i] { ... }                  N copies that close; `next` and `prev` are in scope
@@ -126,7 +125,7 @@ all of this: its control points must be declared points and every one must be na
 (`spline s(k0, k1, k2, k3)`), so `spline s` alone is an error.
 
 **The element's own name is optional too.** `line`, `line(p1, p2)`, `point hint(x: 3, y: 4)`,
-`arc(center: c)` and `line class construction` are all statements. The token after the kind
+`arc(center: c)` and `line` are all statements. The token after the kind
 keyword decides, so a word that may follow a declaration (an element keyword, a constraint word,
 `hint`, `knots`, `class`, `at`, `close`, `in`) cannot be a declaration's name. When the source
 must later reference an anonymous element (a constraint applied from the app, say), a name is
@@ -201,7 +200,6 @@ Every direction in the language is a **word**, and the sign behind it is stated 
 | `l1 angle(30, sense: cw) l2` | 30° clockwise — the same as `angle(-30)`, said in the open |
 | `l tangent(side: left) c` | the circle's centre lies left of `l` |
 | `ccw(a, b, c)` | `c` is left of the ray `a → b` |
-| `… at (t, r)` | a callout: `t` along the dimension from its middle, `r` across it — **positive to the left** of the direction it is measured along, and for a radius or an angle, `t` is an angle from the start and `r` a distance out from the centre |
 
 **A distance measured from a line is a magnitude**: a negative one is refused, and which side is
 `side:`. A component that must work either way up takes a `Side` formal (`s: Side`, called as
@@ -430,29 +428,11 @@ where the solve landed; enforcing it would have cost a freedom). Use it for the 
 drawn to illustrate: the altitudes concur, the traced path is straight. A claim may not own an
 unknown, so claiming a curve contact or binding a free variable in a claim is an error.
 
-### 1.11 Style
+### 1.11 Presentation
 
-What a drawing *is* and how it *looks* are separate statements. A declaration or relation carries
-a **class**; a `style` block says what a class looks like. Nothing in the solver reads one.
-
-```
-style .construction { dash: 7 4 }                      // shipped by default; a document may override
-style .centerline   { dash: 12 3 2 3; width: 0.5; color: #888888 }
-style .heavy        { width: 2.5 }
-style .dimension    { display: none }                  // no callouts...
-style .shown        { display: inline }                // ...except the ones that ask
-style .phantom      { dash: 6 3; display: geometry }   // drawn, never dimensioned
-
-line datum(o, q) class construction
-line ab(a, b) class centerline heavy                   // several classes cascade, later over earlier
-a distance(80) b class shown
-g: Throw(o, bore, theta: 220deg) class phantom         // reaches everything the instance makes
-```
-
-Properties: `dash`, `width`, `color`, `display: none | inline | geometry`. Lengths are screen
-pixels, so a dash pattern does not change when you zoom. An unmatched class is not an error. A
-class on an instance overrides the classes of the statements inside it. Every point is drawn under
-the implicit class `.point`, so `style .point { display: none }` hides the handles.
+Use a [Solvent Drawing](solvent-drawing.md) for styles, views, paper layout, and annotations.
+A model file contains no presentation clauses. A geometric dimension remains a constraint;
+its callout belongs to the drawing.
 
 ### 1.12 Modules
 
@@ -584,7 +564,7 @@ face brief(a, bc, cd, -> close)
 
 which mints exactly the two straight runs the source would otherwise have declared, in the two
 places the loop had a gap. A minted run is not on the sheet: it carries the class `.closure`, whose
-shipped rule is `display: none`, so say `style .closure { display: inline }` to see one. It still
+shipped rule is `display: none`, so a drawing may override `.closure` to see one. It still
 names a face of whatever is swept from the loop — `brief` swept gives `block.close0` and
 `block.close1` beside `block.bc`. The numbering skips names already used by the loop’s existing
 edges.
@@ -755,77 +735,12 @@ plate.sv: solved
 
 `body.hole.area` is `2π · 5 · 30`: the bore's wall, named by the circle it was swept from. A face
 a boolean ate leaves a name the document still writes and no area under it. `--stl PATH` writes one
-solid as binary STL for a printer; `--solid NAME` says which, and without it a document with more
-than one is told `say which solid with --solid: stock, bore, body`.
+solid as binary STL for a printer; `--solid NAME` says which, and without it the only Boolean root is selected automatically. Multiple roots require a selection.
 
-**Views, derived.** *A part carries no views.* It is a solid, and a sheet that wants a picture asks
-for one:
-
-```
-view(SOLID) in PLANE
-section(SOLID, at: PLANE) in PLANE
-```
-
-```
-unit mm
-use std
-
-point a hint(x: 0, y: 0) in views.front
-ground a
-views: ThreeViews(a, right: 120, up: 80)
-
-in views.front {
-  point b hint(x: 60, y: 0)
-  point c hint(x: 60, y: 40)
-  point d hint(x: 0, y: 40)
-  point o hint(x: 30, y: 20)
-
-  horizontal line ab(a, b) ->
-  vertical   line bc(b, c) ->
-  horizontal line cd(c, d) ->
-  vertical   line da(d, a) -> close
-
-  circle hole(center: o) hint(r: 8)
-}
-
-a distance(60) b
-b distance(40) c
-a distance(30, along: x) o
-a distance(20, along: y) o
-radius(8) hole
-
-face sec(ab, bc, cd, da)
-face hole_f(hole)
-solid stock(sec, depth: 30mm)
-solid bore(hole_f, depth: 30mm)
-solid body(stock)
-bore cut body
-
-plane mid(origin: a, toward: b, from: views.front, offset: -15mm)
-view(body) in views.right
-section(body, at: mid) in views.front
-```
-
-```
-  31 params, 31 equations, structural rank 31; DOF 0; 6 components: DOF 0, 0, 0, 0, 0, 0; 2 rigid cluster(s) in the distance graph
-  body.volume = 65968.2
-```
-
-The right view is not drawn and is not tied back by `project`: it is asked for, so the bore reads
-its own diameter there and cannot disagree with the front view about the depth. A **section is
-drawn in a view parallel to the plane it is cut at** (E084), or the true shape it shows is not the
-shape it is a section of. The strokes come back under the implicit classes `.visible`, `.hidden`
-and `.section`, styled the way everything else is (1.11) — `.hidden` ships dashed. A round surface
-is drawn by its silhouette and never by the facets it is classified against, so a cylinder seen
-from the side is two lines at every zoom.
-
-`vtwin/cylinder.sv` is the worked case: one section, and the solid it is a section of. The same
-part used to be written three times — the section, then the body redrawn in two more views as
-page-aligned rectangles re-tied by `project`, with every depth ordinate related to the section by
-no statement at all. Written once it is **119 lines instead of 144** and its component takes
-**6 formals instead of 12**, and the sheet that draws it (`vtwin_cylinder.sv`) went from
-`147 params, 147 equations` to `69 params, 69 equations`, DOF 0 both ways: the two extra views cost
-the drawing nothing, being questions and not geometry.
+**Views, derived.** A `.svd` file selects solved model solids and projects them with its own
+viewing directions, positions, and scales. See [Solvent Drawing](solvent-drawing.md) and
+`rust/examples/vtwin_cylinder.svd`. The model `vtwin_cylinder.sv` contains geometric datums
+and the cylinder instance, independently of its drawing.
 
 **Every part of that engine is now written this way** — `vtwin/piston.sv`, `disc.sv`,
 `flywheel.sv`, `throttle.sv` and the plate in `frame.sv` beside the cylinder — and what each one
@@ -847,7 +762,6 @@ on a face instead, half of each of those would have been in fresh air.
 from the object:
 
 ```
-dimensions(SOLID) in PLANE
 ```
 
 It gives the part's **overall extents** in that view — one along each of the view's own axes,
@@ -881,7 +795,6 @@ way it always did. This is only the part that was never a decision.
 | `solid bad(sec, depth: 3mm, about: ax)` | E001 — "a solid is a face swept along its normal (`from:`/`to:`, `depth:`) or turned about a line (`about:`), not both" |
 | `x cut y` and `y cut x` | E041 — "`x` is made of itself" |
 | `h cut s`, `s` a face swept | E080 — "`s` is a face swept, and only a body takes features: give it a stock (`solid s(s_stock)`) and write them there" |
-| `section(block, at: front) in side` | E084 — "a section is drawn in a view parallel to the plane it is cut at" |
 
 The `h cut s` one carries the most: only a *body* takes features, so a face swept is a
 primitive and a body is the term over primitives, and the two are never the same name. The negative

@@ -94,6 +94,9 @@ export interface Abi {
   gcs_entity_style(h: number, kind: number, idx: number): number;
   gcs_styles_json(h: number): number;
   gcs_sketch_svg(h: number, width: number): number;
+  gcs_sketch_preview(h: number, plane: number): void;
+  gcs_drawing_svg(ptr: number, len: number): number;
+  gcs_drawing_info(ptr: number, len: number): number;
   gcs_style_named(h: number, name: number, len: number): number;
   gcs_style_epoch(h: number): number;
   gcs_entity_bounds(h: number, kind: number, idx: number, out: number): void;
@@ -136,6 +139,7 @@ export interface Abi {
   gcs_overview_json(h: number, unit: number, az: number, el: number, shaded: number): number;
   gcs_overview3d_json(h: number, unit: number): number;
   gcs_callouts_json(h: number, unit: number): number;
+  gcs_selected_callouts_json(h: number, unit: number, ids: number, count: number): number;
   gcs_derived_json(h: number, unit: number): number;
   gcs_derived_inputs(h: number, out: number, cap: number): number;
   gcs_solid_mesh(h: number, idx: number, unit: number, out: number, cap: number): number;

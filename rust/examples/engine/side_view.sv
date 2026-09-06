@@ -10,14 +10,14 @@ use engine.parts
 component DriveSide(o: point, cam: point) {
   crankpulley: Box(o, x0: front - 55mm, y0: -rcp, x1: front - 30mm, y1: rcp)
   campulley: Box(cam, x0: -55mm, y0: -rcam, x1: -30mm, y1: rcam)
-  line beltf(crankpulley.d, campulley.a) class belt
-  line beltb(crankpulley.c, campulley.b) class belt
+  line beltf(crankpulley.d, campulley.a)
+  line beltb(crankpulley.c, campulley.b)
 }
 
 component SideSection(o: point) {
   a0: At(o, dx: front - 70mm, dy: 0mm)
   a1: At(o, dx: back + 60mm, dy: 0mm)
-  line axisline(a0.p, a1.p) class axis
+  line axisline(a0.p, a1.p)
   // the four pistons on the pitch, each at the height its rod's small end is given
   repeat 4 as i {
     ax: At(o, dx: front + 25mm + P / 2 + i * P, dy: 0mm)

@@ -8,12 +8,12 @@ fn source(name: &str) -> String {
     std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/solid_issue51")
-            .join(format!("{name}.sv")),
+            .join(if matches!(name, "view_layout_0" | "view_layout_100000000.0" | "ghost_dimension_none" | "ghost_dimension_through" | "hidden_thin_1" | "hidden_thin_0.1" | "section_3" | "section_0.5") { format!("{name}.legacy") } else { format!("{name}.sv") }),
     )
     .unwrap()
 }
 fn read(src: &str) -> program::Elaborated {
-    let (p, errors) = syntax::parse(src);
+    let (p, errors) = syntax::parse_legacy(src);
     assert!(errors.is_empty(), "{errors:?}");
     let mut e = program::elaborate(&p);
     assert!(e.ok(), "{:?}", e.diags);
@@ -103,7 +103,7 @@ fn solid_claim_arguments_are_checked_instead_of_discarded() {
         source("arguments_clear(1mm,2mm)"),
         source("arguments_clear(1mm,2mm)").replace("clear(1mm,2mm)", "fits(1mm,2mm)"),
     ] {
-        let (p, errors) = syntax::parse(&src);
+        let (p, errors) = syntax::parse_legacy(&src);
         assert!(errors.is_empty());
         let e = program::elaborate(&p);
         assert!(e.errors().any(|d| d.code == program::Code::E040));
@@ -132,7 +132,7 @@ fn failed_sweep_poses_are_disclosed_and_cannot_certify_clearance() {
 
 #[test]
 fn sweep_bounds_use_the_inferred_variable_dimension_and_user_units() {
-    let (p, _) = syntax::parse(&source("sweep_dimensional_error"));
+    let (p, _) = syntax::parse_legacy(&source("sweep_dimensional_error"));
     assert!(program::elaborate(&p).errors().any(|d| d.code == program::Code::E103));
     let src = source("sweep_possible")
         .replace("circle c(center:o)", "point q hint(x:1,y:0)\nground q\ncircle c(center:o)")

@@ -23,6 +23,22 @@
            double-click to go to a view are untouched by there being a depth buffer now. -->
       <canvas id="box" hidden></canvas>
       <canvas id="canvas"></canvas>
+      <section id="drawing-view" aria-label="Drawing view" hidden>
+        <div class="drawing-toolbar">
+          <label>Sheet <select id="drawing-sheet" aria-label="Sheet"></select></label>
+          <button id="drawing-render">Render</button>
+          <button id="drawing-zoom-out" aria-label="Zoom out">−</button>
+          <span id="drawing-zoom" aria-label="Drawing zoom">100%</span>
+          <button id="drawing-zoom-in" aria-label="Zoom in">+</button>
+          <button id="drawing-fit" title="Fit the sheet in the drawing view (0)">Fit sheet</button>
+          <button id="drawing-export">Export SVG</button>
+        </div>
+        <div id="drawing-viewport" tabindex="0" aria-label="Drawing preview"
+             title="Scroll to zoom; drag to pan. Keyboard: +/− zoom, arrow keys pan, 0 fits the sheet.">
+          <img id="drawing-image" alt="Drawing sheet" draggable="false">
+        </div>
+        <p id="drawing-status" role="status"></p>
+      </section>
       <div id="loading">loading solver…</div>
       <div id="measure" aria-live="polite"></div>
       <div id="cpanel" hidden>
@@ -35,7 +51,7 @@
     <aside id="ppanel">
       <h2>program<span id="ppanel-state"></span></h2>
       <label id="program-files" hidden>File
-        <select id="program-file" aria-label="Example file"></select>
+        <select id="program-file" aria-label="Project file"></select>
       </label>
       <!-- the two layers of the code box are `app/editor.ts`'s, and it builds them here -->
       <div id="pcode" class="code-host"></div>

@@ -1,0 +1,154 @@
+use gcs_core::{drawing, program, solve, syntax};
+use std::collections::BTreeMap;
+
+const MODEL: &str = "unit mm
+point o hint(x: 0, y: 0)
+ground o
+circle rim(center: o) hint(r: 10)
+radius(r = 10mm) rim
+solid stock(face(rim), depth: 4mm)
+solid body(stock)
+";
+
+fn solved() -> program::Elaborated {
+    let (p, errs) = syntax::parse(MODEL);
+    assert!(errs.is_empty(), "{errs:?}");
+    let mut e = program::elaborate(&p);
+    assert!(e.ok(), "{:?}", e.diags);
+    assert!(solve::solve(&mut e.sketch, solve::SolveOpts::default()).success);
+    e
+}
+
+#[test]
+fn sheets_read_one_model_without_changing_its_geometry_or_presentation() {
+    let e = solved();
+    let before = gcs_core::io::to_json(&e.sketch);
+    let models = BTreeMap::from([("m".into(), drawing::Model { sketch: &e.sketch, names: &e.map })]);
+    let doc = drawing::parse("model m from \"part.sv\"
+        sheet one { size A4 scale 2 view front(m.body) from front at (50mm, 60mm)
+          dimensions in front style .visible { color: #ff0000 } }
+        sheet two { size (100mm, 80mm) view top(m.body) from top at (20mm, 30mm)
+          style .visible { color: #0000ff } }").unwrap();
+    let a = drawing::render(&doc, &models, Some("one")).unwrap();
+    let b = drawing::render(&doc, &models, Some("two")).unwrap();
+    assert!(a.contains("width=\"210mm\"") && a.contains("#ff0000") && a.contains("<text"));
+    assert!(b.contains("width=\"100mm\"") && b.contains("#0000ff"));
+    assert_ne!(a, b);
+    assert_eq!(before, gcs_core::io::to_json(&e.sketch));
+    assert!(drawing::render(&doc, &models, None).is_err());
+}
+
+#[test]
+fn drawing_references_are_checked_and_cannot_be_model_statements() {
+    let e = solved();
+    let models = BTreeMap::from([("m".into(), drawing::Model { sketch: &e.sketch, names: &e.map })]);
+    for text in [
+        "sheet s { view a(m.missing) at (0,0) }",
+        "sheet s { view a(m.rim) at (0,0) }",
+        "sheet s { sketch a(m) at (0,0) dimension m.missing in a }",
+        "sheet s { sketch a(m) at (0,0) style m.missing { width: 2 } }",
+    ] {
+        assert!(drawing::render(&drawing::parse(text).unwrap(), &models, None).is_err(), "{text}");
+    }
+    for text in ["point p", "sheet s { point p }", "sheet s { scale 0 }",
+        "sheet s { view a(m.body) at (NaN,0) }", "model m from \"unfinished",
+        "sheet s { style .visible { color: red } }"] {
+        assert!(drawing::parse(text).is_err(), "{text}");
+    }
+}
+
+#[test]
+fn model_sources_refuse_presentation_but_keep_geometry_and_claims() {
+    for extra in ["style .hidden { width: 2 }", "view(body) in front",
+        "point a class hidden", "solid extra(face(rim) class hidden, depth: 2mm)",
+        "o distance(20) o at (1,2)"] {
+        let (_, errs) = syntax::parse(&format!("{MODEL}\n{extra}"));
+        assert!(errs.iter().any(|e| e.message.contains(".svd")), "{errs:?}");
+    }
+    let (_, errs) = syntax::parse(&format!("{MODEL}\nclaim radius(10mm) rim"));
+    assert!(errs.is_empty(), "{errs:?}");
+}
+
+#[test]
+fn named_dimensions_survive_statement_reordering() {
+    let e = solved();
+    let doc = drawing::parse("sheet s { sketch v(m) at (50,50) dimension m.r in v at (0,15) }").unwrap();
+    let models = BTreeMap::from([("m".into(), drawing::Model { sketch: &e.sketch, names: &e.map })]);
+    let a = drawing::render(&doc, &models, None).unwrap();
+    assert!(a.contains("<text"));
+    let text = MODEL.replace("radius(r = 10mm) rim\n", "") + "radius(r = 10mm) rim\n";
+    let (p, errs) = syntax::parse(&text); assert!(errs.is_empty());
+    let mut other = program::elaborate(&p);
+    assert!(solve::solve(&mut other.sketch, solve::SolveOpts::default()).success);
+    let models = BTreeMap::from([("m".into(), drawing::Model { sketch: &other.sketch, names: &other.map })]);
+    assert_eq!(a, drawing::render(&doc, &models, None).unwrap());
+}
+
+#[test]
+fn host_loading_is_relative_cached_and_cycle_checked() {
+    let mut reads = Vec::new();
+    let svg = drawing::compile("model m from \"part.sv\" use \"ink.svd\"
+        sheet s { view v(m.body) at (50,50) }", "drawing.svd", None, &mut |path, from| {
+            reads.push((path.to_string(), from.to_string()));
+            match path {
+                "part.sv" => Some((path.into(), MODEL.into())),
+                "ink.svd" => Some((path.into(), "style .visible { color: #123456 }".into())),
+                _ => None,
+            }
+        }).unwrap();
+    assert!(svg.contains("#123456"));
+    assert!(reads.contains(&("part.sv".into(), "drawing.svd".into())));
+    let err = drawing::compile("use \"loop.svd\"", "root.svd", None,
+        &mut |_, _| Some(("loop.svd".into(), "use \"loop.svd\"".into()))).unwrap_err();
+    assert!(err.message.contains("cycle"));
+}
+
+#[test]
+fn indexed_members_and_field_measurements_survive_reordering() {
+    let model = "unit mm
+repeat 3 as i {
+  point p hint(x: i * 10, y: 0)
+  ground p
+}
+line bar(p[0], p[2])
+";
+    let drawing = "model m from \"part.sv\" sheet s {
+        sketch v(m) at (30mm,40mm)
+        measure distance(m.bar.p1, m.p[2]) in v offset 8mm
+    }";
+    let render = |text: &str| drawing::compile(drawing, "drawing.svd", None,
+        &mut |_, _| Some(("part.sv".into(), text.into()))).unwrap();
+    let a = render(model);
+    assert!(a.contains(">20</text>"), "{a}");
+    assert_eq!(a, render(&("param unused = 7\n".to_string() + model)));
+}
+
+#[test]
+fn measurements_refuse_foreshortening_and_sections_check_the_cut_plane() {
+    let model = format!("{MODEL}point b hint(x: 0, y: 10)\nground b\n");
+    let compile = |text: &str| drawing::compile(text, "drawing.svd", None,
+        &mut |_, _| Some(("part.sv".into(), model.clone())));
+    let err = compile("model m from \"part.sv\" sheet s {
+        view v(m.body) from top at (30,40)
+        measure distance(m.o,m.b) in v
+    }").unwrap_err();
+    assert!(err.message.contains("foreshortens"), "{err:?}");
+    let err = compile("model m from \"part.sv\" sheet s {
+        section v(m.body) from front cut m.o at (30,40)
+    }").unwrap_err();
+    assert!(err.message.contains("not a model plane"), "{err:?}");
+}
+
+#[test]
+fn styles_can_show_one_point_and_hide_selected_dimensions() {
+    let e = solved();
+    let models = BTreeMap::from([("m".into(), drawing::Model { sketch: &e.sketch, names: &e.map })]);
+    let doc = drawing::parse("sheet s { sketch v(m) at (30,40)
+        dimension m.r in v
+        style m.o { display: inline; color: #ff0000 }
+        style .dimension { display: none }
+    }").unwrap();
+    let svg = drawing::render(&doc, &models, None).unwrap();
+    assert!(svg.contains("fill=\"#ff0000\""), "{svg}");
+    assert!(!svg.contains("<text"), "{svg}");
+}

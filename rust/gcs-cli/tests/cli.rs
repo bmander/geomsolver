@@ -19,6 +19,33 @@ fn doc(name: &str) -> String {
 }
 
 #[test]
+fn drawings_load_relative_files_select_sheets_and_refuse_broken_references() {
+    let dir = std::env::temp_dir().join(format!("solventc-drawing-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("sheets")).unwrap();
+    std::fs::write(dir.join("part.sv"), "unit mm\npoint a hint(x: 0,y: 0)\nground a\n\
+        point b hint(x: 20,y: 0)\nground b\nline bar(a,b)\n").unwrap();
+    std::fs::write(dir.join("ink.svd"), "style m.bar { color: #123456 }").unwrap();
+    let path = dir.join("sheets/part.svd");
+    let source = "model m from \"../part.sv\" use \"../ink.svd\"\n\
+        sheet a { sketch v(m) at (30,40) measure distance(m.bar.p1,m.b) in v }\n\
+        sheet b { size (100mm,80mm) sketch v(m) at (30,40) }";
+    std::fs::write(&path, source).unwrap();
+    let output = dir.join("part.svg");
+    let args = [path.to_str().unwrap(), "--sheet", "a", "--output", output.to_str().unwrap()];
+    let r = run(&args);
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+    let svg = std::fs::read_to_string(&output).unwrap();
+    assert!(svg.contains("#123456") && svg.contains(">20</text>"));
+    assert_eq!(run(&[path.to_str().unwrap()]).status.code(), Some(1));
+    std::fs::write(&path, source.replace("m.b)", "m.missing)")).unwrap();
+    let r = run(&args);
+    assert_eq!(r.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&r.stderr).contains("not a point"));
+    assert_eq!(std::fs::read_to_string(&output).unwrap(), svg, "failed compile preserves export");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn issue_50_reductions_report_or_diagnose_instead_of_exporting_invalid_solids() {
     let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../gcs-core/tests/fixtures/solid_issue50");
     let temp = std::env::temp_dir().join(format!("solventc-issue50-{}", std::process::id()));

@@ -67,9 +67,7 @@ pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>)
         }
         let k = prog.modules.len();
         let mut comps = mp.components;
-        // the module's root is last, as every program's is — where it has one: a file holding
-        // nothing loose has its last *component* standing there (`Program::root`), and that is
-        // a component to keep.  The root's params are kept; its drawing is not.
+        // The anonymous file root is last. Its params are kept; its geometry is not imported.
         let root = match comps.last() {
             Some(c) if c.name.is_none() => comps.pop().unwrap_or_default(),
             _ => Component::default(),

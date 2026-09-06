@@ -52,8 +52,14 @@ export interface Callouts {
 }
 
 /** Every dimension in the sketch, drawn.  `unit` is the world length of one screen pixel, which
- *  is what makes the stand-offs, arrowheads and characters come out the same size at any zoom. */
-export function callouts(sk: Sketch, unit: number): Callouts {
+ *  is what makes the stand-offs, arrowheads and characters come out the same size at any zoom.
+ *  `ids` requests only those constraint annotations, with no lanes reserved by other values.
+ *  Omit it only for the explicit all-constraints inspection overlay. */
+export function callouts(sk: Sketch, unit: number, ids?: readonly number[]): Callouts {
+  if (ids) return withBuf(ids.length, 4, (b) => {
+    b.set(ids);
+    return takeJson<Callouts>(core().gcs_selected_callouts_json(sk.handle, unit, b.ptr, ids.length));
+  });
   return takeJson<Callouts>(core().gcs_callouts_json(sk.handle, unit));
 }
 

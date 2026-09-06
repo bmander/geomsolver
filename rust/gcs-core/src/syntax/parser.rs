@@ -87,7 +87,7 @@ pub fn parse(src: &str) -> (Program, Vec<SynErr>) {
 
 /// Parse with explicit resource limits. Limits may be tightened, but not raised above defaults.
 pub fn parse_with_limits(src: &str, limits: ParseLimits) -> (Program, Vec<SynErr>) {
-    parse_at(src, 0, 0, limits)
+    model_only(parse_at(src, 0, 0, limits))
 }
 
 /// Read a text whose spans are to start at `base` and whose statements are numbered from
@@ -96,7 +96,42 @@ pub fn parse_with_limits(src: &str, limits: ParseLimits) -> (Program, Vec<SynErr
 /// it is read, which is what puts every span where it belongs at the cost of a scan over the
 /// padding; the `Program` keeps the text itself, unpadded.
 pub fn parse_from(src: &str, base: usize, first_id: u32) -> (Program, Vec<SynErr>) {
-    parse_at(src, base, first_id, ParseLimits::default())
+    model_only(parse_at(src, base, first_id, ParseLimits::default()))
+}
+
+/// Read retired mixed model/drawing syntax for explicit migration of historical documents.
+/// Hosts must use `parse` for .sv model files. This entry does not opt a model into presentation.
+pub fn parse_legacy(src: &str) -> (Program, Vec<SynErr>) {
+    parse_at(src, 0, 0, ParseLimits::default())
+}
+
+fn model_only((p, mut errs): (Program, Vec<SynErr>)) -> (Program, Vec<SynErr>) {
+    fn inline_classes(d: &crate::syntax::Decl, errs: &mut Vec<SynErr>) {
+        for kid in d.children.iter().flatten() {
+            if let crate::syntax::Kid::Face { decl, .. } = kid {
+                if !decl.class.is_empty() {
+                    errs.push(SynErr { span: decl.class_span,
+                        message: "presentation belongs in a Solvent Drawing (.svd) file".into() });
+                }
+                inline_classes(decl, errs);
+            }
+        }
+    }
+    for st in p.stmts() {
+        if let crate::syntax::StmtKind::Decl(d) = &st.kind { inline_classes(d, &mut errs); }
+        let span = match &st.kind {
+            crate::syntax::StmtKind::Style(_) | crate::syntax::StmtKind::Derived(_) => Some(st.span),
+            crate::syntax::StmtKind::Decl(d) if !d.class.is_empty() => Some(d.class_span),
+            crate::syntax::StmtKind::Relation(r) if !r.class.is_empty() => Some(r.class_span),
+            crate::syntax::StmtKind::Relation(r) if r.place.is_some() => Some(r.place_span),
+            crate::syntax::StmtKind::Instance(i) if !i.class.is_empty() => Some(i.span),
+            _ => None,
+        };
+        if let Some(span) = span {
+            errs.push(SynErr { span, message: "presentation belongs in a Solvent Drawing (.svd) file; .sv files specify geometry, constraints, and assertions".into() });
+        }
+    }
+    (p, errs)
 }
 
 fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Program, Vec<SynErr>) {
@@ -190,19 +225,16 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
     p.next_stmt = next_id;
     p.in_blocks = std::mem::take(&mut st.in_blocks);
     p.uses = uses;
-    // named components first, the anonymous root last — `Program::root` takes the last, and a
-    // program that declares components and nothing loose has its last component as the root
-    let anon_empty = body.is_empty();
+    // A file's root is its top-level statements, even when empty. A component definition is
+    // reusable source, not an implicit instance with missing arguments when opened on its own.
     p.components = comps;
-    if !anon_empty || p.components.is_empty() {
-        p.components.push(Component {
-            name: None,
-            formals: Vec::new(),
-            body,
-            span: Span::new(base, src.len()),
-            module: None,
-        });
-    }
+    p.components.push(Component {
+        name: None,
+        formals: Vec::new(),
+        body,
+        span: Span::new(base, src.len()),
+        module: None,
+    });
     let errs = std::mem::take(&mut st.errs);
     (p, errs)
 }

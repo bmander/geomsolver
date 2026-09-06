@@ -48,7 +48,7 @@ rod1: ConRod(views.right, views.front, views.top, crank.t1[0].pin, end.bore, cra
 rod2: ConRod(views.right, views.front, views.top, crank.t2[0].pin, end.bore, crank.pin_s[1], side.small[1], secA, draw_end: 0, draw_side: 1, draw_sec: 0)
 rod3: ConRod(views.right, views.front, views.top, crank.t2[0].pin, end.bore, crank.pin_s[2], side.small[2], secA, draw_end: 0, draw_side: 1, draw_sec: 0)
 rod4: ConRod(views.right, views.front, views.top, crank.t1[0].pin, end.bore, crank.pin_s[3], side.small[3], secA, draw_end: 0, draw_side: 1, draw_sec: 0)
-ghost: Rod(crank.t2[0].pin, end.bore) in views.right class phantom
+ghost: Rod(crank.t2[0].pin, end.bore) in views.right
 piston1: Piston(rod1.sm[0], pin: 1) in views.right
 ghost.small project side.small[1]
 ghost.small project side.small[2]
@@ -59,12 +59,3 @@ drive: Drive(views.right_origin, head.cam_i, head.cam_e) in views.right
 drive_s: DriveSide(O, head.cam) in views.front
 
 // how it looks: the dimensions the sheet shows, and nothing else
-style .dimension { display: none }
-style .shown { display: inline }
-style .point { display: none }
-style .phantom { dash: 6 3; width: 0.6; color: #888888; display: geometry }
-style .thin { width: 0.6 }
-style .belt { width: 1.2; color: #2a7ab0 }
-style .axis { dash: 14 3 2 3; width: 0.5; color: #888888 }
-style .hidden { dash: 4 3; width: 0.6 }
-style .plane { display: none }

@@ -16,6 +16,7 @@ pub mod constraints;
 pub mod curve;
 pub mod decompose;
 pub mod diagnose;
+pub mod drawing;
 pub mod edit;
 pub mod examples;
 pub mod expr;

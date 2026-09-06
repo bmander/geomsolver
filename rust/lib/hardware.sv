@@ -111,11 +111,11 @@ component Groove(body: solid, f: plane, o: point, ax: line, ac: line, dir: Angle
     g1: Loc(o, ax, ac, dir: dir, u: z, v: r)
     g2: Loc(o, ax, ac, dir: dir, u: z - w, v: r)
     g3: Loc(o, ax, ac, dir: dir, u: z - w, v: rb)
-    line e0(g0.p, g1.p) class hidden -> line e1(g1.p, g2.p) class hidden ->
-      line e2(g2.p, g3.p) class hidden -> line e3(g3.p, g0.p) class gone -> close
+    line e0(g0.p, g1.p)  -> line e1(g1.p, g2.p)  ->
+      line e2(g2.p, g3.p)  -> line e3(g3.p, g0.p)  -> close
     face gf(e0, e1, e2, e3)
-    claim g0.p distance(w) g3.p class detail
-    claim g0.p distance(rb) ax class detail
+    claim g0.p distance(w) g3.p
+    claim g0.p distance(rb) ax
   }
   solid groove(gf, about: ax)
   groove cut body

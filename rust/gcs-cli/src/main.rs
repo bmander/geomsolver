@@ -40,8 +40,9 @@ solventc — check a Solvent document
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
     --gltf PATH         write a solid as binary glTF: every face a named node
-    --solid NAME        which solid --stl writes; the only one, when there is only one
+    --solid NAME        which solid to export; defaults to the only Boolean root
     --width PX          the SVG's page width in pixels (default 800)
+    --sheet NAME        select a sheet in a .svd drawing (its page size sets SVG size)
     -h, --help          this
 
 Exit codes: 0 every document elaborated and solved; 1 a document failed to parse or
@@ -74,6 +75,7 @@ struct Opts {
     /// An SVG has no screen, so the export must choose a `unit` — the world length of one screen
     /// pixel, which every constant size goes through.  A page width fixes it.
     width: f64,
+    sheet: Option<String>,
 }
 
 impl Default for Opts {
@@ -88,6 +90,7 @@ impl Default for Opts {
             gltf: None,
             solid: None,
             width: 800.0,
+            sheet: None,
         }
     }
 }
@@ -98,6 +101,10 @@ fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
+            "--sheet" => match args.next() {
+                Some(n) => opts.sheet = Some(n),
+                None => { eprintln!("solventc: --sheet needs a name"); return ExitCode::from(2); }
+            },
             "--output" | "-o" => match args.next() {
                 Some(p) => opts.output = Some(p),
                 None => {
@@ -199,6 +206,9 @@ fn main() -> ExitCode {
 
 /// One document: its exit code, and its JSON report when one was asked for.
 fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
+    if std::path::Path::new(&s.name).extension().is_some_and(|e| e == "svd") {
+        return check_drawing(s, opts);
+    }
     let (mut prog, errs) = parse(&s.text);
     // `use engine.crank` is `engine/crank.sv` beside the document, and failing that the module
     // library compiled into the core — the one place a working directory enters the core's work
@@ -366,6 +376,38 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     )
 }
 
+fn check_drawing(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
+    let result = if opts.stl.is_some() || opts.gltf.is_some() || opts.solid.is_some() {
+        Err(gcs_core::drawing::Error { span: Default::default(),
+            message: "STL/glTF export selects geometry from a .sv model, not a .svd drawing".into() })
+    } else {
+        gcs_core::drawing::compile(&s.text, &s.name, opts.sheet.as_deref(), &mut |path, from| {
+            let base = std::path::Path::new(from).parent().unwrap_or(std::path::Path::new("."));
+            let p = base.join(path);
+            let text = std::fs::read_to_string(&p).ok()?;
+            Some((p.canonicalize().ok()?.to_string_lossy().into_owned(), text))
+        })
+    };
+    match result {
+        Ok(svg) => {
+            if let Some(path) = &opts.output {
+                if let Err(e) = std::fs::write(path, svg) {
+                    eprintln!("solventc: {path}: {e}"); return (1, None);
+                }
+            }
+            if !opts.json { println!("{}: drawing compiled", s.name); }
+            (0, opts.json.then(|| json::object([("file", Json::Str(s.name.clone())),
+                ("drawing", Json::Bool(true)), ("ok", Json::Bool(true))])))
+        }
+        Err(e) => {
+            if !opts.json { say(s, e.span.lo, "error", "D001", &e.message); }
+            (1, opts.json.then(|| json::object([("file", Json::Str(s.name.clone())),
+                ("drawing", Json::Bool(true)), ("ok", Json::Bool(false)),
+                ("error", Json::Str(e.message))])))
+        }
+    }
+}
+
 /// How many culprits a set prints before it says how many more there are.  A conflict on a truss
 /// can name every member of it; the wording is the core's, the paging is the terminal's.
 const SHOW: usize = 8;
@@ -430,10 +472,11 @@ fn pick_solid(sk: &gcs_core::model::Sketch, name: Option<&str>) -> Result<usize,
             .iter()
             .position(|s| s.name == n)
             .ok_or_else(|| format!("no solid called `{n}`")),
-        None if sk.solids.len() == 1 => Ok(0),
         None if sk.solids.is_empty() => Err("this document has no solid to write".into()),
         None => {
-            let names: Vec<&str> = sk.solids.iter().map(|s| s.name.as_str()).collect();
+            let roots = gcs_core::overview::objects(sk);
+            if roots.len() == 1 { return Ok(roots[0]); }
+            let names: Vec<&str> = roots.iter().map(|&i| sk.solids[i].name.as_str()).collect();
             Err(format!("say which solid with --solid: {}", names.join(", ")))
         }
     }
