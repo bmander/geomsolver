@@ -2,53 +2,90 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { initCore } from '../core/wasm.js';
-import * as examples from '../core/examples.js';
 import * as drawings from '../core/drawing.js';
+import { Document } from '../core/program.js';
+import * as modules from '../core/modules.js';
+import { exampleCases } from '../app/example-catalog.js';
 import * as remote from '../app/remote.js';
 
 await initCore();
 const packed = await readFile(new URL('../examples/sources.json', import.meta.url), 'utf8');
 const files: Record<string, string> = JSON.parse(packed);
+const staticFetch = async (path: string | URL | Request) =>
+  new Response(String(path) === 'dist/examples/sources.json' ? packed : '',
+    { status: String(path) === 'dist/examples/sources.json' ? 200 : 404 });
 
-test('every menu example has a main drawing and resolves through the static source bundle', async (t) => {
-  t.mock.method(globalThis, 'fetch', async (path: string | URL | Request) =>
-    new Response(String(path) === 'dist/examples/sources.json' ? packed : '',
-      { status: String(path) === 'dist/examples/sources.json' ? 200 : 404 }));
-  for (const example of examples.cases()) {
+test('menu examples open files or directories with one V-twin choice', async (t) => {
+  t.mock.method(globalThis, 'fetch', staticFetch);
+  const cases = exampleCases();
+  assert.equal(cases.filter((c) => c.key.startsWith('vtwin')).length, 1);
+  for (const example of cases) {
     const bundle = await remote.drawing(example.key);
-    assert.equal(bundle.source, `${example.key}.svd`);
-    const doc = drawings.info(bundle.files[bundle.source]);
-    assert.ok(doc.sheets.length, example.key);
-    for (const model of doc.models) assert.ok(bundle.files[model], `${example.key}: ${model}`);
+    const target = example.target;
+    assert.equal(bundle.source, target.kind === 'file' ? target.path : `${target.path}/${target.entry}`);
+    assert.ok(drawings.info(bundle.files[bundle.source]).sheets.length, example.key);
   }
   const vtwin = await remote.drawing('vtwin');
-  assert.ok(vtwin.files['vtwin/frame.sv']);
-  assert.ok(vtwin.files['vtwin/throttle.sv']);
-  assert.ok(!vtwin.files['engine.svd'], 'the bundle contains only this drawing and its dependencies');
+  assert.equal(vtwin.directory, 'vtwin');
+  assert.ok(vtwin.files['vtwin/components/frame.sv']);
+  for (const name of ['assembly', 'cylinder', 'plate', 'piston', 'disc', 'flywheel', 'throttle']) {
+    assert.ok(vtwin.files[`vtwin/${name}.svd`]);
+    assert.ok(vtwin.files[`vtwin/${name}.sv`]);
+  }
+  assert.ok(!vtwin.files['engine.svd']);
 });
 
-test('the demo server can override the main drawing and transitive model dependencies', async (t) => {
+test('live directory listings discover files added after the static build', async (t) => {
   const fresh: Record<string, string> = { ...files,
-    'vtwin.svd': 'model m from "vtwin.sv" sheet main { sketch v(m) at (20,30) }',
-    'vtwin/dims.sv': `${files['vtwin/dims.sv']}\n// fresh source\n`,
+    'vtwin/assembly.svd': 'model m from "assembly.sv" sheet main { sketch v(m) at (20,30) }',
+    'vtwin/components/dims.sv': `${files['vtwin/components/dims.sv']}\n// fresh source\n`,
+    'vtwin/extra.sv': 'point extra\n',
   };
   t.mock.method(globalThis, 'fetch', async (path: string | URL | Request) => {
     const key = String(path);
-    const text = key === 'dist/examples/sources.json' ? packed : fresh[key.replace(/^examples\//, '')];
+    const text = key === 'dist/examples/sources.json' ? packed
+      : key === 'examples/index.json' ? JSON.stringify(Object.keys(fresh))
+      : fresh[key.replace(/^examples\//, '')];
     return new Response(text ?? '', { status: text === undefined ? 404 : 200 });
   });
   const bundle = await remote.drawing('vtwin');
-  assert.equal(bundle.files['vtwin.svd'], fresh['vtwin.svd']);
-  assert.equal(bundle.files['vtwin/dims.sv'], fresh['vtwin/dims.sv']);
+  assert.equal(bundle.files['vtwin/assembly.svd'], fresh['vtwin/assembly.svd']);
+  assert.equal(bundle.files['vtwin/components/dims.sv'], fresh['vtwin/components/dims.sv']);
+  assert.equal(bundle.files['vtwin/extra.sv'], 'point extra\n');
 });
 
-test('parameterized example routes retain their generated model and authored drawing', async (t) => {
-  t.mock.method(globalThis, 'fetch', async (path: string | URL | Request) =>
-    new Response(String(path) === 'dist/examples/sources.json' ? packed : '',
-      { status: String(path) === 'dist/examples/sources.json' ? 200 : 404 }));
+test('file routes, old part links, and selected directory files resolve to the right source', async (t) => {
+  t.mock.method(globalThis, 'fetch', staticFetch);
+  const model = await remote.drawing('rect_fillets.sv');
+  assert.equal(model.directory, undefined);
+  const doc = Document.read(model.files[model.source]);
+  try { assert.ok(doc.ok); } finally { doc.dispose(); }
+  const old = await remote.drawing('vtwin_piston');
+  assert.equal(old.key, 'vtwin');
+  assert.equal(old.source, 'vtwin/piston.svd');
+  assert.equal((await remote.drawing('vtwin', 'vtwin/cylinder.svd')).source, 'vtwin/cylinder.svd');
+  assert.equal((await remote.drawing('vtwin', 'missing.sv')).source, 'vtwin/assembly.svd');
+  await assert.rejects(remote.drawing('../outside.sv'), /unknown example/);
+});
+
+test('parameterized file examples retain their generated models', async (t) => {
+  t.mock.method(globalThis, 'fetch', staticFetch);
   const bundle = await remote.drawing('rect_fillets:80:40:5');
-  assert.equal(bundle.source, 'rect_fillets.svd');
   const svg = drawings.render(bundle.files[bundle.source], bundle.source, bundle.files);
   assert.ok(svg.includes('>80</text>') && svg.includes('>40</text>'));
-  await assert.rejects(remote.drawing('does_not_exist'), /cannot load example drawing/);
+  await assert.rejects(remote.drawing('does_not_exist'), /unknown example/);
+});
+
+test('V-twin models resolve against their own directory without the compiled module library', async (t) => {
+  t.mock.method(globalThis, 'fetch', staticFetch);
+  const bundle = await remote.drawing('vtwin');
+  const text = bundle.files['vtwin/assembly.sv'];
+  modules.forget();
+  try {
+    const loaded = await modules.link(text, async (path) => bundle.files[`vtwin/${path}`] ?? null);
+    assert.ok(loaded.includes('components.frame'));
+    assert.ok(loaded.includes('components.dims'));
+    const doc = Document.read(text);
+    try { assert.ok(doc.ok, JSON.stringify(doc.diagnostics)); } finally { doc.dispose(); }
+  } finally { modules.forget(); }
 });

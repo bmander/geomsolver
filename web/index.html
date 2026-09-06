@@ -49,7 +49,18 @@
     <div id="psplit" role="separator" aria-orientation="vertical" tabindex="0"
          aria-label="Resize the program panel"></div>
     <aside id="ppanel">
+      <section id="project-pane" aria-label="Project directory" hidden>
+        <h2><button id="project-toggle" type="button" aria-expanded="true"
+                    aria-controls="project-tree" title="Collapse file explorer">
+          <svg class="project-disclosure" aria-hidden="true" viewBox="0 0 24 24">
+            <path d="m9 5 7 7-7 7"/>
+          </svg>
+          <span id="project-title">Project</span>
+        </button></h2>
+        <nav id="project-tree" aria-label="Project files"></nav>
+      </section>
       <h2>program<span id="ppanel-state"></span></h2>
+      <div id="program-name" hidden></div>
       <label id="program-files" hidden>File
         <select id="program-file" aria-label="Project file"></select>
       </label>

@@ -1,4 +1,4 @@
-// The crank train, seen along the axis: the pin `R` from the axis on the disc (`vtwin.disc`),
+// The crank train, seen along the axis: the pin `R` from the axis on the disc (`components.disc`),
 // and the arm from the axis to it.
 //
 // The pin's angle is the drawing's one degree of freedom.  `theta` is defined nowhere, so it is a
@@ -6,9 +6,9 @@
 // the callout shows whatever angle the crank is at, and dragging the pin turns it.  Everything
 // in both banks follows from where the pin is; `theta0` in the table is only where it starts.
 
-use vtwin.dims
-use vtwin.parts
-use vtwin.disc
+use components.dims
+use components.parts
+use components.disc
 
 component Crank(swing: plane, o: point, ref: line) {
   in swing {

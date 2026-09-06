@@ -13,8 +13,8 @@ models and specify sheets, views, dimensions, and styles. Components group state
 have no designated body. See [Solvent Drawing](docs/solvent-drawing.md).
 
 ```sh
-build/solventc rust/examples/vtwin_piston.sv
-build/solventc rust/examples/vtwin_piston.svd --output piston.svg
+build/solventc rust/examples/vtwin/piston.sv
+build/solventc rust/examples/vtwin/piston.svd --output piston.svg
 build/solventc drawing.svd --sheet assembly --output assembly.svg
 ```
 

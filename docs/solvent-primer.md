@@ -591,7 +591,7 @@ Both have volume 72000, like the named section above. `face(…)` also works wit
 revolution, and a circle stands alone in its loop: `solid bore(face(hole), depth: 30mm)`.
 Boundary names resolve in the surrounding component, and the section gets its plane from those
 boundaries. Keep a named face when several sweeps reuse it, as the throttle's `barrel_f` and
-`core_f` do in `vtwin/throttle.sv`.
+`core_f` do in `vtwin/components/throttle.sv`.
 
 A **prism** runs along the face's own normal. `depth: 30mm` is the draughtsman's reading — the
 material *behind* the face the view shows, which is `from: -30mm, to: 0mm` — and `from:`/`to:` are
@@ -739,10 +739,10 @@ solid as binary STL for a printer; `--solid NAME` says which, and without it the
 
 **Views, derived.** A `.svd` file selects solved model solids and projects them with its own
 viewing directions, positions, and scales. See [Solvent Drawing](solvent-drawing.md) and
-`rust/examples/vtwin_cylinder.svd`. The model `vtwin_cylinder.sv` contains geometric datums
+`rust/examples/vtwin/cylinder.svd`. The model `vtwin/cylinder.sv` contains geometric datums
 and the cylinder instance, independently of its drawing.
 
-**Every part of that engine is now written this way** — `vtwin/piston.sv`, `disc.sv`,
+**Every part of that engine is now written this way** — `vtwin/components/piston.sv`, `disc.sv`,
 `flywheel.sv`, `throttle.sv` and the plate in `frame.sv` beside the cylinder — and what each one
 turned out to *be* is worth reading, because the shape of the statement follows from where the
 part's own axis lies relative to its section. The piston is a **turn**: its left-hand profile
@@ -1140,6 +1140,6 @@ folded at the bearing of an inclined face.
    still move.
 
 The documents in `rust/examples/` are the worked corpus, each with a header saying what it is for.
-`rect_fillets.sv` is the best first read, `gear_trace.sv` the deepest, `vtwin_cylinder.sv` over
-`vtwin/cylinder.sv` the one to read for solids (1.14), and `engine.sv` with its `engine/` modules
+`rect_fillets.sv` is the best first read, `gear_trace.sv` the deepest, `vtwin/cylinder.sv` over
+`vtwin/components/cylinder.sv` the one to read for solids (1.14), and `engine.sv` with its `engine/` modules
 the largest.

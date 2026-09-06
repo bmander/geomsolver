@@ -7,7 +7,7 @@
 // and an exhaust port in the plate, so the cylinder is fed while it is driven and vents while it
 // returns.  No valves, no timing, three moving parts a bank.
 //
-// Every number is stated here once, with its unit; `use vtwin.dims` puts the table in scope for
+// Every number is stated here once, with its unit; `use components.dims` puts the table in scope for
 // whichever file draws from it, so a bore is `D` in every view.  Bank R's top dead centre is at
 // crank angle `alphaR`, clockwise from top.  The parts are printed, with hardware-store metal
 // where a printed part would wear, leak or be loaded in tension: a 5/16" steel rod is the

@@ -372,4 +372,9 @@ new ResizeObserver(() => view.resize()).observe(canvas);
 view.resize();
 view.afterEdit();
 view.fit();
-await openExample(initialExample);
+window.addEventListener('popstate', () => {
+  const url = new URL(location.href);
+  void openExample(url.searchParams.get('example') ?? 'rect_fillets', 'none',
+    url.searchParams.get('file') ?? undefined);
+});
+await openExample(initialExample, 'replace', new URL(location.href).searchParams.get('file') ?? undefined);

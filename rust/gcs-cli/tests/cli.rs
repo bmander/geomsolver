@@ -81,8 +81,8 @@ fn issue_50_reductions_report_or_diagnose_instead_of_exporting_invalid_solids() 
 /// The under-constrained cases exit 0: they solve, they just have freedoms left.
 #[test]
 fn the_whole_library_reports() {
-    let all: Vec<String> = std::fs::read_dir(examples())
-        .expect("the example documents")
+    let all: Vec<String> = [examples(), examples().join("vtwin")].into_iter()
+        .flat_map(|dir| std::fs::read_dir(dir).expect("the example documents"))
         .filter_map(|e| e.ok())
         .map(|e| e.path().to_string_lossy().into_owned())
         .filter(|p| p.ends_with(".sv"))

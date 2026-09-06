@@ -1,6 +1,6 @@
 /* Minimal static server for the sketcher: `npm run serve` then open the printed URL.
  * Nothing here is needed in production — the app is static files. */
-import { createReadStream, statSync } from 'node:fs';
+import { createReadStream, readdirSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize } from 'node:path';
 import { dirname } from 'node:path';
@@ -51,6 +51,21 @@ createServer((req, res) => {
     return;
   }
   const x = EXAMPLES.exec(url.pathname);
+  if (url.pathname.endsWith('/examples/index.json')) {
+    const base = join(root, '..', 'rust', 'examples');
+    const paths = [];
+    const collect = (path = '') => {
+      for (const entry of readdirSync(join(base, path), { withFileTypes: true })) {
+        const name = path ? `${path}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) collect(name);
+        else if (/\.svd?$/.test(name)) paths.push(name);
+      }
+    };
+    collect();
+    res.writeHead(200, { 'content-type': TYPES['.json'], 'cache-control': 'no-store' });
+    res.end(JSON.stringify(paths.sort()));
+    return;
+  }
   if (x) {
     const file = join(root, '..', 'rust', 'examples', x[1]);
     try {

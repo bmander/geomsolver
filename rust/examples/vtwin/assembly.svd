@@ -1,5 +1,5 @@
-// Presentation of vtwin.sv. Model geometry is independent of this drawing.
-model m from "vtwin.sv"
+// Presentation of assembly.sv. Model geometry is independent of this drawing.
+model m from "assembly.sv"
 
 sheet drawing {
   size (420mm, 297mm)

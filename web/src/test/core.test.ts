@@ -1305,7 +1305,7 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
 
 test('a named component chain reaches the browser as the same swept mesh', () => {
   const src = [
-    'unit mm', 'use vtwin.parts', 'point O hint(x: 0, y: 0)', 'ground O',
+    'unit mm', 'use components.parts', 'point O hint(x: 0, y: 0)', 'ground O',
     'boss: Box(O, x0: 0mm, y0: 0mm, x1: 10mm, y1: 20mm)',
     'solid block(boss.profile, depth: 8mm)', '',
   ].join('\n');

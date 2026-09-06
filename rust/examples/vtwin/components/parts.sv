@@ -1,7 +1,7 @@
 // What every view draws with.
 
 use std
-use vtwin.dims
+use components.dims
 
 // A point placed from `o` by two ordinates.
 component At(o: point, dx: Length, dy: Length) {

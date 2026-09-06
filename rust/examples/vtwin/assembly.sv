@@ -9,11 +9,11 @@
 // for the crank pin, a 1/4"-20 hex bolt, spring and nylon-insert nut for each pivot, an O-ring a
 // piston, three on the throttle, #8-32 set screws in trapped nuts on the disc and the flywheel.
 //
-// The dimension table is `vtwin.dims`.  Each part is a component of its own with its own three
-// views (`vtwin.cylinder`, `vtwin.piston`, `vtwin.disc`, `vtwin.flywheel`, `vtwin.throttle`,
-// and the plate, `vtwin.frame`): this sheet draws the plate in all of them, since it stands
+// The dimension table is `components.dims`.  Each part is a component of its own with its own three
+// views (`components.cylinder`, `components.piston`, `components.disc`, `components.flywheel`, `components.throttle`,
+// and the plate, `components.frame`): this sheet draws the plate in all of them, since it stands
 // still, and the moving parts in the plane of swing only; each part's own sheet
-// (`vtwin_cylinder.sv`, `vtwin_piston.sv`, …) draws it upright in all three with the
+// (`cylinder.sv`, `piston.sv`, …) draws it upright in all three with the
 // dimensions a printer needs — `class detail`, which this sheet leaves hidden.  The side view is
 // what the assembly adds beyond its parts, with every height projected from the view along the
 // axis.  The drawing has one degree of freedom and it is the crank angle: `crank.theta` is a
@@ -25,12 +25,12 @@
 
 unit mm
 use std
-use vtwin.dims
-use vtwin.parts
-use vtwin.frame
-use vtwin.crank
-use vtwin.bank
-use vtwin.side_view
+use components.dims
+use components.parts
+use components.frame
+use components.crank
+use components.bank
+use components.side_view
 
 // the page is the view along the crank axis, where the V is; the side view stands to its right,
 // its origin the crank axis on the plate's front face
@@ -53,7 +53,7 @@ bankL: Bank(views.front, O, crank.pin, plate.l.piv, alpha: alphaL, fw: fwA, dim:
 // what the *assembly* adds beyond its parts — the crank train along the shaft, a pivot bolt's
 // stack, the two cylinders edge on — is still drawn, being hardware no part designs.  Its
 // ordinates are measured from the plate's front face, which stands half a thickness in front of
-// the plate's own zero: the plate is sectioned on its mid-plane (`vtwin.frame`), and a solid's
+// the plate's own zero: the plate is sectioned on its mid-plane (`components.frame`), and a solid's
 // derived view stands where its plane's origin is
 point so hint(x: -tp / 2, y: 0) in views.right
 views.right_origin distance(tp / 2, along: x) so

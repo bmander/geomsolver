@@ -410,14 +410,14 @@ pub fn source(key: &str) -> Option<&'static str> {
 /// The engine's document — its modules are the library's (`library::MODULES`).
 pub const ENGINE: &str = include_str!("../../examples/engine.sv");
 /// The V-twin's document — its modules are the library's too.
-pub const VTWIN: &str = include_str!("../../examples/vtwin.sv");
+pub const VTWIN: &str = include_str!("../../examples/vtwin/assembly.sv");
 /// The V-twin cylinder's part sheet.
-pub const VTWIN_CYLINDER: &str = include_str!("../../examples/vtwin_cylinder.sv");
-pub const VTWIN_PLATE: &str = include_str!("../../examples/vtwin_plate.sv");
-pub const VTWIN_PISTON: &str = include_str!("../../examples/vtwin_piston.sv");
-pub const VTWIN_DISC: &str = include_str!("../../examples/vtwin_disc.sv");
-pub const VTWIN_FLYWHEEL: &str = include_str!("../../examples/vtwin_flywheel.sv");
-pub const VTWIN_THROTTLE: &str = include_str!("../../examples/vtwin_throttle.sv");
+pub const VTWIN_CYLINDER: &str = include_str!("../../examples/vtwin/cylinder.sv");
+pub const VTWIN_PLATE: &str = include_str!("../../examples/vtwin/plate.sv");
+pub const VTWIN_PISTON: &str = include_str!("../../examples/vtwin/piston.sv");
+pub const VTWIN_DISC: &str = include_str!("../../examples/vtwin/disc.sv");
+pub const VTWIN_FLYWHEEL: &str = include_str!("../../examples/vtwin/flywheel.sv");
+pub const VTWIN_THROTTLE: &str = include_str!("../../examples/vtwin/throttle.sv");
 
 pub const IMPOSSIBLE_TRIANGLE: &str = include_str!("../../examples/impossible_triangle.sv");
 pub const ALTITUDES: &str = include_str!("../../examples/altitudes.sv");

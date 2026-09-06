@@ -1,13 +1,13 @@
-// The frame plate alone: the part `vtwin.frame` designs, with the dimensions a printer needs —
+// The frame plate alone: the part `components.frame` designs, with the dimensions a printer needs —
 // the ports and the pivots by radius and bearing from the crank axis, since all four ports share
 // one radius — **and the other two views are asked for, not drawn** (§6.11).  The assembly draws
 // the same component with its dimensions off and the engine on it.
 
 unit mm
 use std
-use vtwin.dims
-use vtwin.parts
-use vtwin.frame
+use components.dims
+use components.parts
+use components.frame
 
 point O hint(x: 0, y: 0) in front
 ground O
@@ -17,4 +17,4 @@ plane front(origin: O, toward: datum)
 axes: Axes(O) in front
 plate: Frame(front, O, axes.ax)
 
-// Projections and dimensions: vtwin_plate.svd
+// Projections and dimensions: plate.svd

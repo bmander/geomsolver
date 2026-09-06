@@ -20,6 +20,7 @@ import { info, type DrawingBundle } from '../core/drawing.js';
 import { drawingActive, pickDrawingFolder, renderDrawing, showDrawing } from './drawing.js';
 import { currentConstraint, pdiags, ped, ppanel, ppanelState, psplit, view } from './shell.js';
 import { download, toast } from './ui.js';
+import { ProjectExplorer } from './project-explorer.js';
 
 /** The box somebody types in.  `app/editor.ts` owns the two layers and the colouring; this module
  *  owns what the text *means* — which document it came from and what applying it does. */
@@ -33,6 +34,11 @@ let typed = false;
 
 const filePicker = document.getElementById('program-file') as HTMLSelectElement;
 const fileBar = document.getElementById('program-files') as HTMLElement;
+const programName = document.getElementById('program-name')!;
+const explorer = new ProjectExplorer(document.getElementById('project-pane')!,
+  document.getElementById('project-tree')!, document.getElementById('project-title')!, selectFile);
+let directory: string | undefined;
+let onProjectFile: ((path: string) => void) | undefined;
 let activeFile = '';
 let filesFor: string | null = null;
 let files: modules.SourceFile[] = [];
@@ -67,6 +73,8 @@ function selectFile(name: string): void {
   }
   activeFile = name;
   filePicker.value = name;
+  explorer.select(name);
+  if (project) onProjectFile?.(name);
   shown = '';
   refreshProgram();
   const pos = positions.get(name);
@@ -79,6 +87,8 @@ function selectFile(name: string): void {
 export function resetProgramFiles(): void {
   if (switching) return;
   project = null;
+  directory = undefined; onProjectFile = undefined;
+  explorer.show([]); programName.hidden = true;
   showDrawing(null);
   activeFile = '';
   filesFor = null;
@@ -87,19 +97,23 @@ export function resetProgramFiles(): void {
 }
 
 /** Both source kinds live in one project; the selected extension chooses the left-hand view. */
-export function openProject(bundle: DrawingBundle): void {
+export function openProject(bundle: DrawingBundle, options: {
+  directory?: string; onSelect?: (path: string) => void;
+} = {}): void {
   const names = Object.keys(bundle.files).filter((p) => /\.svd?$/.test(p)).sort();
   const main = names.includes(bundle.source) ? bundle.source
-    : names.find((p) => p.endsWith('.svd'));
-  if (!main) { toast('This folder has no .svd drawings'); return; }
+    : names.find((p) => p.endsWith('.svd')) ?? names[0];
+  if (!main) { toast('This project has no .sv or .svd files'); return; }
   view.pauseEditing();
   project = { source: main, files: { ...bundle.files } };
+  directory = options.directory; onProjectFile = options.onSelect;
   positions.clear();
   activeFile = main;
   filePicker.replaceChildren(new Option(main, main),
     ...names.filter((p) => p !== main).map((p) => new Option(p, p)));
   filePicker.value = main;
-  fileBar.hidden = false;
+  fileBar.hidden = directory !== undefined;
+  explorer.show(names, directory); explorer.select(main);
   activateProjectFile(main);
   revertProgram();
 }
@@ -107,7 +121,7 @@ export function openProject(bundle: DrawingBundle): void {
 export async function openDrawing(): Promise<void> {
   try {
     const bundle = await pickDrawingFolder();
-    if (bundle) openProject(bundle);
+    if (bundle) openProject(bundle, { directory: '' });
   } catch (e) { toast(`Could not read drawing folder: ${(e as Error).message}`); }
 }
 
@@ -265,6 +279,8 @@ export function refreshProgram(): void {
   if (project && !drawingActive() && !typed) project.files[activeFile] = view.source;
   if (ppanel.hidden) return;
   refreshFiles();
+  programName.hidden = directory === undefined;
+  programName.textContent = activeFile;
   const imported = !project && activeFile !== '';
   ptext.readOnly = imported;
   ptext.setAttribute('aria-label', project ? activeFile

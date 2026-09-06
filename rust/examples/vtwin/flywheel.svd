@@ -1,11 +1,11 @@
 // Three projections of the solved part, arranged independently of its model.
-model m from "vtwin_plate.sv"
+model m from "flywheel.sv"
 
 sheet part {
   size A4
-  view front(m.plate.body) from front at (60mm, 150mm)
-  view right(m.plate.body) from right at (140mm, 150mm)
-  view top(m.plate.body) from top at (60mm, 65mm)
+  view front(m.fw.body) from front at (60mm, 150mm)
+  view right(m.fw.body) from right at (140mm, 150mm)
+  view top(m.fw.body) from top at (60mm, 65mm)
   dimensions in front
   dimensions in right
   style .hidden { dash: 4 3; color: #888888 }

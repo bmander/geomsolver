@@ -6,7 +6,7 @@ change a model's solution. A component remains a scope containing statements; it
 designated body or implicit geometric output.
 
 ```
-model part from "vtwin_piston.sv"
+model part from "piston.sv"
 use "technical.svd"
 
 sheet piston {
@@ -28,11 +28,12 @@ style .section { width: 2 }
 style .dimension { color: #000000 }
 ```
 
-Run `build/solventc rust/examples/vtwin_piston.svd --output piston.svg`. A drawing with several
+Run `build/solventc rust/examples/vtwin/piston.svd --output piston.svg`. A drawing with several
 sheets requires `--sheet NAME`. SVG width and height are physical paper dimensions. The
 browser's **File → Open drawing folder…** loads a local folder containing the drawing and
-its model files, with subdirectories preserved. The project file picker on the right lists
-both `.svd` and `.sv` files. Selecting a drawing shows its paper preview in the main workspace,
+its model files, with subdirectories preserved. Directory projects have an expandable file pane
+above the program editor, with its own scrolling and a draggable lower edge to resize it.
+The pane lists both `.svd` and `.sv` files. Selecting a drawing shows its paper preview in the main workspace,
 with sheet selection and SVG export; selecting a model shows the normal editable geometry view.
 The source panel edits the selected file. Edits stay with each file when switching, and drawings
 render from the updated model sources. **File → Save** downloads the selected source file.
@@ -41,8 +42,14 @@ and **Fit sheet** buttons also control the view. With the preview focused, arrow
 **+ / −** zoom, and **0** fits the sheet. Each drawing sheet remembers its view while switching
 files or rendering edits; exports retain the authored paper size and layout.
 
-**File → Open examples…**, the default startup example, and `?example=NAME` URLs open the
-example's main `.svd`, with its `.sv` assembly and imported modules available in the same picker.
+**File → Open examples…** lists file and directory entry points. V-twin is one directory example:
+`rust/examples/vtwin/` contains `assembly.svd`, the six part drawings, their `.sv` models, and
+shared definitions in `components/`. File examples open their named source, with dependencies
+available in the file picker. The entry points live in `web/src/app/example-catalog.ts`.
+Choosing an example updates `?example=NAME`; choosing a file adds `&file=PATH`, so refreshing or
+sharing the URL reopens it. Browser Back and Forward follow example selections. Old links such
+as `?example=vtwin_piston` open that part inside the V-twin directory. Explicit file URLs such as
+`?example=rect_fillets.sv` open the editable model directly.
 Example sources are included in the static web build;
 the local demo server supplies fresh files when available. Parameterized URLs such as
 `?example=rect_fillets:80:40:5` use the same drawing with the generated model parameters.

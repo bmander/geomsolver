@@ -6,9 +6,11 @@ This supersedes the older presentation instructions below: do not write `class`,
 `view`, `section`, `dimensions`, or callout placements in model source. Renderer adapters
 retain presentation data internally, but model serialization and reconciliation omit it.
 The drawing compiler and renderer stay in the core; hosts supply source texts.
-Examples open their main `.svd` through `app/remote.ts`, including startup and URL routes.
-The right-hand project picker includes both source kinds: `.svd` shows the main paper preview,
-`.sv` the editable model canvas. `app/program.ts` keeps each file's source across switches.
+Browser examples are file or directory entry points in `app/example-catalog.ts`, loaded through
+`app/remote.ts`. V-twin is one directory (`rust/examples/vtwin/`, shared modules in `components/`).
+Directory examples have a separate file pane above the source editor. `.svd` shows the paper
+preview, `.sv` the editable model canvas. `app/program.ts` keeps each file's source across switches.
+Example choices update the URL; the `file` query parameter preserves the selected project file.
 Every parsed file has an anonymous root, even if empty; component definitions are not instances.
 `web/tools/copy-examples.js` packages example sources for static hosts; live files override them.
 
@@ -1258,7 +1260,7 @@ Conventions:
   still ask the core directly at their output resolution. Reclassifying on every frame cost
   the throttle sheet about 493 ms per pan and 1662 ms per zoom in Chrome; retaining the picture
   made both about 1 ms. `app.test.ts` checks reuse, final refinement and edit/load invalidation.
-  **Every part of the V-twin is written this way** — `vtwin/cylinder.sv`, `piston.sv`, `disc.sv`,
+  **Every part of the V-twin is written this way** — `vtwin/components/cylinder.sv`, `piston.sv`, `disc.sv`,
   `flywheel.sv`, `throttle.sv` and the plate in `frame.sv` — one section and the solid it is a
   section of, with the other two views asked for.  The cylinder went from 144 lines and 12 formals
   to 119 and 6 and its sheet from 69 points and 50 lines to 30 and 22; the plate's sheet from 166

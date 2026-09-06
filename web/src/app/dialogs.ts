@@ -1,7 +1,7 @@
 /* What the menus open: the sheets, the reports and the two root-selection commands.  Each is
  * one item's whole behaviour, so the menu tables in `main` stay a list of names. */
 import * as C from '../core/constraints.js';
-import * as examples from '../core/examples.js';
+import { exampleCases } from './example-catalog.js';
 import * as remote from './remote.js';
 import { openProject } from './program.js';
 import * as io from '../core/io.js';
@@ -43,17 +43,36 @@ export function report(n: number, did: string): void {
 /** The reference sketches, each with the one line that says what it is there to show.  Asked
  *  for the first time the menu item is picked, so booting costs nothing for a list most
  *  sessions never open. */
-let cases: ReturnType<typeof examples.cases> | null = null;
+let cases: ReturnType<typeof exampleCases> | null = null;
 export async function openCase(): Promise<void> {
-  cases ??= examples.cases();
-  const i = await askChoice('Open examples', 'Choose a drawing to explore:',
-                            cases.map((c) => ({ title: c.label, description: c.description })), true);
+  cases ??= exampleCases();
+  const i = await askChoice('Open examples', 'Choose a file or directory to explore:',
+    cases.map((c) => ({ title: c.label,
+      description: `${c.target.path}${c.target.kind === 'directory' ? '/' : ''} — ${c.description}` })), true);
   if (i == null) return;
   await openExample(cases[i].key);
 }
 
-export async function openExample(key: string): Promise<void> {
-  try { openProject(await remote.drawing(key)); }
+let exampleRequest = 0;
+export async function openExample(key: string, navigation: 'push' | 'replace' | 'none' = 'push',
+  file?: string): Promise<void> {
+  const request = ++exampleRequest;
+  try {
+    const bundle = await remote.drawing(key, file);
+    if (request !== exampleRequest) return;
+    const updateUrl = (selected: string | undefined, method: 'push' | 'replace') => {
+      const url = new URL(location.href);
+      url.searchParams.set('example', bundle.key);
+      if (selected) url.searchParams.set('file', selected);
+      else url.searchParams.delete('file');
+      if (url.href !== location.href) history[method === 'push' ? 'pushState' : 'replaceState'](null, '', url);
+    };
+    openProject(bundle, { directory: bundle.directory,
+      onSelect: (path) => updateUrl(path, 'replace') });
+    if (navigation !== 'none') {
+      updateUrl(file || bundle.key !== key ? bundle.source : undefined, navigation);
+    }
+  }
   catch (e) { toast(`Could not open example: ${(e as Error).message}`); }
 }
 

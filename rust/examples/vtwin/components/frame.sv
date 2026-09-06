@@ -5,7 +5,7 @@
 // exhaust vents out through its edges; the plenum inside it joining the two intake ports; the
 // foot it stands on and the bearing boss behind it; and the inlet boss on its top edge, with the
 // brass coupling for the air line's plug, the passage down to the plenum, and the throttle
-// (`vtwin.throttle`) across that passage.  Every one of those is this section swept along the
+// (`components.throttle`) across that passage.  Every one of those is this section swept along the
 // crank axis, and the two that are *not* — the coupling's hole and nothing else — is a turn
 // about a line lying in the page.
 //
@@ -16,9 +16,9 @@
 // origin.  They are now the `param z…` lines below, said once, and the views that show them are
 // asked for.  One printed part, printed foot down.
 
-use vtwin.dims
-use vtwin.parts
-use vtwin.throttle
+use components.dims
+use components.parts
+use components.throttle
 
 // One bank's share of the plate: the pivot `H` up the bank axis with the bolt's hole, and the
 // two ports on the arc the cylinder's port sweeps — the intake counter-clockwise of the bank,

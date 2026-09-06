@@ -1025,7 +1025,7 @@ fn section_holes_preserve_explicit_closure_winding_and_failed_face_cleanup() {
 fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
     use gcs_core::{plane, solid::{ApproximationPolicy, WorldPoint}};
     for (phi, height, page_x, page_y, offset) in [(0, 0, 0, 0, 0), (35, 72, 100, -80, 7)] {
-        let src = format!("unit mm\nuse vtwin.dims\nuse vtwin.parts\nuse vtwin.throttle\n\
+        let src = format!("unit mm\nuse components.dims\nuse components.parts\nuse components.throttle\n\
             point O hint(x: {page_x}, y: {page_y})\nground O\n\
             point q hint(x: {}, y: {page_y})\nO distance(40mm, along: x) q\nO distance(0mm, along: y) q\n\
             plane datum(origin: O, toward: q)\n\

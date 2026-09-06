@@ -1,6 +1,6 @@
 // One bank, seen along the crank axis: the cylinder rocking on its pivot, sectioned through the
 // bore, with its piston on the rod whose eye rides the crank pin.  The cylinder and the piston
-// are the parts `vtwin.cylinder` and `vtwin.piston` design, drawn here in the plane of swing
+// are the parts `components.cylinder` and `components.piston` design, drawn here in the plane of swing
 // only; this file is the kinematics that places them.
 //
 // The kinematics is two statements.  The piston's crown is `L` from the pin, and the rod's line
@@ -12,10 +12,10 @@
 // table's starting angle, which is what keeps the solve on the branch with the cylinder over the
 // pin rather than folded back through the pivot.
 
-use vtwin.dims
-use vtwin.parts
-use vtwin.cylinder
-use vtwin.piston
+use components.dims
+use components.parts
+use components.cylinder
+use components.piston
 
 component Bank(swing: plane, o: point, pin: point,
                piv: point, alpha: Angle, fw: Length, dim: Int) {

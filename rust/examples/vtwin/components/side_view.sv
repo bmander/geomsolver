@@ -10,8 +10,8 @@
 // of it — the cylinders, the disc — lies to the left, toward the view it is projected from.
 // Every height the front view designs is projected, never restated.
 
-use vtwin.dims
-use vtwin.parts
+use components.dims
+use components.parts
 
 component SideView(o: point) {
   param mid = tp / 2

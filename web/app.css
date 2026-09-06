@@ -268,6 +268,38 @@ dialog input[type=search] {
   border-left: 1px solid var(--line); background: var(--panel);
 }
 #ppanel[hidden] { display: none; }
+#project-pane { flex: none; height: 230px; min-height: 90px; max-height: 45%;
+  display: flex; flex-direction: column; overflow: hidden; resize: vertical;
+  border-bottom: 1px solid var(--line); background: var(--bg); }
+#project-pane[hidden], #program-name[hidden] { display: none; }
+/* Override a height set by the resize handle only while folded; expanding restores it. */
+#project-pane.collapsed { height: auto !important; min-height: 0; resize: none; }
+#ppanel #project-pane h2 { padding: 0; }
+#project-toggle { display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 10px;
+  border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit;
+  text-transform: inherit; letter-spacing: inherit; text-align: left; cursor: pointer; }
+#project-toggle:hover { background: var(--accent-soft); }
+#project-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.project-disclosure { display: inline-block; flex: none; order: -1;
+  width: 2.4em; height: 1.44em; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+#project-toggle[aria-expanded="true"] .project-disclosure,
+#project-tree details[open] > summary > .project-disclosure { transform: rotate(90deg); }
+#project-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#project-tree { overflow: auto; flex: 1; min-height: 0; padding: 5px; font-size: 12px; }
+#project-tree[hidden] { display: none; }
+#project-tree summary { display: flex; align-items: center; gap: 6px; list-style: none;
+  padding: 4px 6px; cursor: pointer; color: var(--muted); }
+#project-tree summary::-webkit-details-marker { display: none; }
+.project-folder { padding-left: 14px; }
+.project-file { display: block; width: 100%; border: 0; border-radius: 3px;
+  background: transparent; color: var(--text); text-align: left; padding: 4px 8px;
+  font: inherit; white-space: nowrap; }
+.project-file::before { content: '◇'; margin-right: 7px; color: var(--muted); }
+.project-file.drawing-file::before { content: '▤'; }
+.project-file[aria-current] { background: var(--accent-soft); color: var(--accent); }
+#program-name { padding: 6px 10px; font: 12px var(--mono); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; border-bottom: 1px solid var(--line); }
 /* The partition.  `min-width`/`max-width` above are the whole of how far it may be dragged —
    `program.ts` reads them off the computed style rather than keeping its own pair, so the limit
    is stated once and in the place that already enforces it.  It is wider than it looks: the
