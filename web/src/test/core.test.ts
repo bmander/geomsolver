@@ -1832,6 +1832,21 @@ const near3 = (got: readonly number[], want: readonly number[], what: string): v
   }
 };
 
+test('signed datum coordinates cross the ABI and round-trip as ordinary constraints', () => {
+  const sk = new Sketch();
+  const f = sk.plane(sk.point(10, 20, true), sk.point(14, 23, true), [1, 0, 0], [0, 0, 1]);
+  const p = sk.point(100, -200);
+  sk.add(new C.CoordinateU(p, f, -5), new C.CoordinateV(p, f, 2));
+  assert.ok(solve(sk).success);
+  assert.ok(Math.hypot(p.x.value - 4.8, p.y.value - 18.6) < 1e-6);
+  const back = io.loads(io.dumps(sk));
+  assert.ok(back.constraints.some(c => c.typeName === 'CoordinateU'));
+  assert.ok(back.constraints.some(c => c.typeName === 'CoordinateV'));
+  assert.ok(allSatisfied(back));
+  sk.dispose();
+  back.dispose();
+});
+
 test('a plane is a datum with an attitude, and a point may be drawn in it', () => {
   const sk = new Sketch();
   const o = sk.point(10, 5);

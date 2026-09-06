@@ -34,6 +34,9 @@ impl std::error::Error for PrintError {}
 /// This is canonical export, not source formatting; use `Program::text` to retain source.
 /// Unsupported structure leaves the program unchanged.
 pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
+    if p.preview.is_some() {
+        return Err(PrintError { construct: "preview blocks" });
+    }
     if !p.uses.is_empty() || !p.modules.is_empty() {
         return Err(PrintError { construct: "imports" });
     }
@@ -536,6 +539,8 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         match kind {
             CKind::HorizontalDistance => parens.push("along: x".to_string()),
             CKind::VerticalDistance => parens.push("along: y".to_string()),
+            CKind::CoordinateU => parens.push("along: u".to_string()),
+            CKind::CoordinateV => parens.push("along: v".to_string()),
             _ => {}
         }
     }

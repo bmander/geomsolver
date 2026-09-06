@@ -319,6 +319,13 @@ fn decl_of<'a>(prog: &'a Program, site: &Site) -> Option<&'a Decl> {
 /// comment, and a drawing tool should not write past it.
 fn append_at(prog: &Program) -> (Span, String) {
     let root = prog.root();
+    if let Some(preview) = prog.preview {
+        if let Some(st) = root.body.iter().rev().find(|st| preview.contains(st.span.lo)) {
+            return (Span::new(st.span.hi as usize, st.span.hi as usize), "\n".into());
+        }
+        let close = preview.hi as usize - 1;
+        return (Span::new(close, close), "\n".into());
+    }
     match root.body.last() {
         Some(st) => (Span::new(st.span.hi as usize, st.span.hi as usize), "\n".to_string()),
         None => {
@@ -387,19 +394,22 @@ fn append(prog: &Program, kind: StmtKind, names: Vec<String>) -> Edit {
 pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edit {
     let (at, lead) = append_at(prog);
     let mut with = lead;
+    let mut edits = Vec::new();
     if !prog
         .components
         .iter()
         .any(|c| c.name.as_ref().is_some_and(|n| n.text == "Rectangle"))
     {
-        if at.lo > 0 {
-            with.push('\n'); // a blank line between the drawing and the definition
-        }
-        with.push_str(
-            "component Rectangle(w: Length, h: Length) {\n  distance(w) line l1 -> \
+        let definition = "component Rectangle(w: Length, h: Length) {\n  distance(w) line l1 -> \
              perpendicular distance(h) line l2 -> perpendicular line l3 -> perpendicular \
-             line l4 -> close\n}\n\n",
-        );
+             line l4 -> close\n}\n\n";
+        if let Some(preview) = prog.preview {
+            let start = preview.lo as usize;
+            edits.push(Splice { at: Span::new(start, start), with: definition.into() });
+        } else {
+            if at.lo > 0 { with.push('\n'); }
+            with.push_str(definition);
+        }
     }
     // a fresh instance name, past every name the document already binds
     let taken: std::collections::BTreeSet<&str> = prog
@@ -434,8 +444,9 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
         return Edit::none(prog, Some(e.to_string()));
     }
     with.push_str(&line);
+    edits.push(Splice { at, with });
     Edit {
-        text: splice(prog.text(), vec![Splice { at, with }]),
+        text: splice(prog.text(), edits),
         kind: Kind::Structural,
         names: vec![name],
         refused: None,

@@ -961,7 +961,7 @@ fn build_loop(
     let mut anonymous = 0;
     let mut items: Vec<Item> = Vec::with_capacity(refs.len());
     for r in &refs {
-        let Some(e) = res.lookup(r) else {
+        let Some(e) = res.lookup(r).and_then(|e| super::resolve::follow(sk, e, &r.path).ok()) else {
             diags.push(Diag {
                 code: Code::E101,
                 span: r.span,

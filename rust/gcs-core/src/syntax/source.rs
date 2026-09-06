@@ -84,6 +84,9 @@ pub struct Program {
     /// body at parse, so nothing but the header and the brace is the block's, and this is
     /// where `edit::remove` finds them when the plane goes.
     pub in_blocks: Vec<InBlock>,
+    /// Optional file-level `preview { … }`. Its statements join the root solve, but are
+    /// omitted when the file is imported. The span includes the keyword and braces.
+    pub preview: Option<Span>,
     /// `use engine.crank` — the modules the document asks for (§14.4), in written order.  What a
     /// name resolves to is the host's business (`modules::link`): the core takes text and has
     /// no filesystem.
@@ -126,6 +129,7 @@ impl Program {
             text: String::new(),
             components: vec![Component::default()],
             in_blocks: Vec::new(),
+            preview: None,
             uses: Vec::new(),
             modules: Vec::new(),
             next_stmt: 0,

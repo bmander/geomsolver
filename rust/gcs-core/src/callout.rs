@@ -431,11 +431,11 @@ pub fn frame(sk: &Sketch, c: &Constraint) -> Option<Frame> {
             let d = unit(sub(b, a))?;
             Some(Frame::Linear { o: mid(a, b), d, n: perp(d) })
         }
-        // a run or a rise is written in the page's frame, not the pair's: the number does not
-        // turn with the two points, which is the whole of what makes it a different dimension
-        CKind::HorizontalDistance | CKind::VerticalDistance => {
+        // An ordinate uses its stated axis: the page's for a run or rise, the
+        // datum's solved rotor for a local coordinate.
+        CKind::HorizontalDistance | CKind::VerticalDistance | CKind::CoordinateU | CKind::CoordinateV => {
             let (a, b) = ends(sk, c)?;
-            let d = axis_of(c.kind);
+            let d = dimension_axis(sk, c);
             Some(Frame::Linear { o: mid(a, b), d, n: perp(d) })
         }
         CKind::Radius | CKind::AnnularDistance => {
@@ -453,6 +453,17 @@ pub fn frame(sk: &Sketch, c: &Constraint) -> Option<Frame> {
 /// The direction a run or a rise is measured along: the page's own axes.
 fn axis_of(k: CKind) -> P {
     if k == CKind::VerticalDistance { (0.0, 1.0) } else { (1.0, 0.0) }
+}
+
+/// A datum ordinate follows its solved rotor; page ordinates keep the page axes.
+fn dimension_axis(sk: &Sketch, c: &Constraint) -> P {
+    if matches!(c.kind, CKind::CoordinateU | CKind::CoordinateV) {
+        let f = sk.frame_of(c.args[1].ent());
+        let d = (sk.params[f.c as usize].value, sk.params[f.s as usize].value);
+        if c.kind == CKind::CoordinateV { perp(d) } else { d }
+    } else {
+        axis_of(c.kind)
+    }
 }
 
 /// Which of the three dimensions between two points a callout dropped at `at` states.
@@ -490,6 +501,10 @@ fn ends(sk: &Sketch, c: &Constraint) -> Option<(P, P)> {
     match c.kind {
         CKind::Distance | CKind::HorizontalDistance | CKind::VerticalDistance => {
             Some((sk.point_xy(c.args[0].ent().i()), sk.point_xy(c.args[1].ent().i())))
+        }
+        CKind::CoordinateU | CKind::CoordinateV => {
+            let f = sk.frame_of(c.args[1].ent());
+            Some((sk.point_xy(f.origin as usize), sk.point_xy(c.args[0].ent().i())))
         }
         CKind::PointLineDistance => {
             let p = sk.point_xy(c.args[0].ent().i());
@@ -676,7 +691,7 @@ impl Pen<'_> {
     fn one(&mut self, c: &Constraint) -> Option<Callout> {
         match c.kind {
             CKind::Distance => self.distance(c),
-            CKind::HorizontalDistance | CKind::VerticalDistance => self.axis_distance(c),
+            CKind::HorizontalDistance | CKind::VerticalDistance | CKind::CoordinateU | CKind::CoordinateV => self.axis_distance(c),
             CKind::PointLineDistance => self.point_line(c),
             CKind::ParallelDistance => self.parallel(c),
             CKind::Radius => self.radius(c),
@@ -877,14 +892,14 @@ impl Pen<'_> {
         Some(self.aligned(c.id, a, b, place, &text))
     }
 
-    /// A run or a rise between two points: the dimension line lies along the page's own axis,
+    /// An ordinate between two points: the dimension line lies along its stated axis,
     /// the heads where the two points fall on it, and an extension line out to each of them from
     /// wherever it happens to be.  Left where it fell it stands off past the further of the two,
     /// so the figure clears the pair however the pair is turned.
     fn axis_distance(&mut self, c: &Constraint) -> Option<Callout> {
         let (a, b) = ends(self.sk, c)?;
         let text = claimed(c, dimension_text(c)?);
-        let d = axis_of(c.kind);
+        let d = dimension_axis(self.sk, c);
         let n = perp(d);
         let place = self.placed(c).unwrap_or_else(|| {
             let s = if dot(n, sub(mid(a, b), self.hub)) < 0.0 { -1.0 } else { 1.0 };

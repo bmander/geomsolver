@@ -22,6 +22,7 @@ point pin hint(x: 0, y: -L) in front
 pin on axes.ax
 O distance(L) pin
 
-pis: Piston(front, O, axes.ax, dir: 90deg, pin: pin)
+plane piston_axes(origin: O, toward: pin)
+pis: Piston(piston_axes) in front
 
 // Projections and dimensions: piston.svd

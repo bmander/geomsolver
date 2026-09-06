@@ -17,8 +17,8 @@ axes: Axes(O)
 point pin hint(x: 0, y: R) in front
 pin on axes.ax
 O distance(R) pin
-line arm(O, pin)
 
-disc: Disc(front, O, pin, arm, dir: 90deg)
+plane disc_axes(origin: O, toward: pin)
+disc: Disc(disc_axes) in front
 
 // Projections and dimensions: disc.svd

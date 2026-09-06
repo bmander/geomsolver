@@ -354,7 +354,7 @@ pub(super) enum Deferred {
 /// The seed a dotted name reads: `pin.x`, `k.center.y`, `base.r`, `e.b` — `dotted` as the
 /// flattener resolved it, its root the entity's absolute name, and the last segment the scalar by
 /// the kind's own `scalar_names`.
-fn seed_read(sk: &Sketch, res: &Resolver, dotted: &str) -> Result<f64, String> {
+fn seed_read(sk: &Sketch, res: &Resolver, dotted: &str) -> Result<(f64, crate::units::Dim), String> {
     let (path, scalar) =
         dotted.rsplit_once('.').ok_or_else(|| format!("`{dotted}` is not a number here"))?;
     // an entity's absolute name is dotted itself (`t1.pin` under an instance), so the entity is
@@ -366,6 +366,17 @@ fn seed_read(sk: &Sketch, res: &Resolver, dotted: &str) -> Result<f64, String> {
         .ok_or_else(|| format!("no such entity: `{}`", segs[0]))?;
     let fields: Vec<Seg> = fields.iter().map(|f| Seg::Field(Name::new(*f))).collect();
     let e = follow(sk, e, &fields)?;
+    // A datum's seed follows its defining points, including deferred hints already
+    // settled on them. Its stored rotor is refreshed after the deferred pass.
+    if e.kind == EntKind::Plane && matches!(scalar, "c" | "s" | "angle") {
+        let f = sk.frame_of(e);
+        let ((c, s), _) = sk.frame_chord(f.origin as usize, f.toward as usize);
+        return Ok(match scalar {
+            "c" => (c, crate::units::Dim::SCALAR),
+            "s" => (s, crate::units::Dim::SCALAR),
+            _ => (s.atan2(c).to_degrees(), crate::units::Dim::ANGLE),
+        });
+    }
     let names = e
         .kind
         .scalar_names(path)
@@ -378,7 +389,8 @@ fn seed_read(sk: &Sketch, res: &Resolver, dotted: &str) -> Result<f64, String> {
         )
     })?;
     let p = *sk.entity_params(e).get(at).ok_or_else(|| format!("`{dotted}` has no seed yet"))?;
-    Ok(sk.params[p as usize].value)
+    let dim = if sk.units.name().is_some() { crate::units::Dim::LENGTH } else { crate::units::Dim::SCALAR };
+    Ok((sk.params[p as usize].value, dim))
 }
 
 /// An expression over geometry's seeds, come to its number.  `names` is what each dotted name
@@ -391,18 +403,10 @@ fn seed_eval(
 ) -> Result<f64, String> {
     let p = expr::parse_in(text, sk.units)?;
     let mut env: BTreeMap<String, expr::Aff> = BTreeMap::new();
-    // a coordinate or a radius is a length, so it adds to `150mm` and not to a plain number —
-    // where the document names a unit.  Where it does not, no literal can be a length, so the
-    // read is the bare number everything else there is (§3.3).
-    let dim = if sk.units.name().is_some() {
-        crate::units::Dim::LENGTH
-    } else {
-        crate::units::Dim::SCALAR
-    };
     for dep in p.body.deps() {
         if dep.contains('.') {
             let abs = names.iter().find(|(w, _)| *w == dep).map(|(_, a)| a.as_str());
-            let v = seed_read(sk, res, abs.unwrap_or(&dep))?;
+            let (v, dim) = seed_read(sk, res, abs.unwrap_or(&dep))?;
             env.insert(dep.clone(), expr::Aff::of_dim(v, dim));
         }
     }

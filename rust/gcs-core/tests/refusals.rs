@@ -255,7 +255,7 @@ fn a_selector_that_says_nothing_is_refused() {
     assert!(d.iter().any(|m| m == "E040: `distance` takes no `sied`"), "{d:?}");
     // `along` fills no slot — it chooses the kind — so it is the one key checked by name
     let (_, d) = read(&format!("{PAIR}a distance(40, along: z) b\n"));
-    let want = "E040: `along` is `x`, `y`, `right`, `left`, `up` or `down`, not `z`";
+    let want = "E040: `along` is `x`, `y`, `u`, `v`, `right`, `left`, `up` or `down`, not `z`";
     assert!(d.iter().any(|m| m == want), "{d:?}");
     assert!(read(&format!("{PAIR}a distance(40, along: x) b\n")).1.is_empty());
 

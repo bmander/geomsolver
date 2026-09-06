@@ -7,6 +7,8 @@ use components.dims
 use components.parts
 
 component Throttle(front: plane, c: point, ref: line, phi: Angle) {
+  plane lever_axes(origin: c, toward: tip)
+  plane hole_axes(origin: c, toward: cx)
   param hd = sqrt(rbar^2 - (dhole / 2)^2)
 
   in front {
@@ -53,17 +55,17 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle) {
     c distance(rbar) cx
     // the lever, `levw` wide — the same number as its thickness — so `lever` stays the
     // centreline the angle is measured on and these two flanks are what the material is
-    lv0: Loc(c, lever, hax, dir: 90deg - phi, u: 0mm, v: levw / 2)
-    lv1: Loc(c, lever, hax, dir: 90deg - phi, u: lev, v: levw / 2)
-    lv2: Loc(c, lever, hax, dir: 90deg - phi, u: lev, v: -levw / 2)
-    lv3: Loc(c, lever, hax, dir: 90deg - phi, u: 0mm, v: -levw / 2)
+    lv0: Loc(lever_axes, u: 0mm, v: levw / 2)
+    lv1: Loc(lever_axes, u: lev, v: levw / 2)
+    lv2: Loc(lever_axes, u: lev, v: -levw / 2)
+    lv3: Loc(lever_axes, u: 0mm, v: -levw / 2)
     line lv_a(lv0.p, lv1.p)
     line lv_c(lv2.p, lv3.p)
     // the hole: half of its section, on one side of the axis it is turned about
-    x0: Loc(c, hax, lever, dir: -phi, u: -rbar, v: 0mm)
-    x1: Loc(c, hax, lever, dir: -phi, u: -rbar, v: dhole / 2)
-    x2: Loc(c, hax, lever, dir: -phi, u: rbar, v: dhole / 2)
-    x3: Loc(c, hax, lever, dir: -phi, u: rbar, v: 0mm)
+    x0: Loc(hole_axes, u: -rbar, v: 0mm)
+    x1: Loc(hole_axes, u: -rbar, v: dhole / 2)
+    x2: Loc(hole_axes, u: rbar, v: dhole / 2)
+    x3: Loc(hole_axes, u: rbar, v: 0mm)
   }
 
   // Both placements put c on the front view's vertical datum. The longitudinal

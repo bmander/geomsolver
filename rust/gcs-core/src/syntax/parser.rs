@@ -78,6 +78,7 @@ struct P<'a> {
     /// may stand there, over a plane the component was handed, where in a root block it may
     /// not — a header buried in a root statement's span is a splice no deletion could compose.
     in_comp: bool,
+    in_preview: bool,
 }
 
 /// Parse as much geometry as possible, reporting errors and resuming at statement terminators.
@@ -171,6 +172,7 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
         open: None,
         in_blocks: Vec::new(),
         in_comp: false,
+        in_preview: false,
     };
     let mut body: Vec<Stmt> = Vec::new();
     let mut comps: Vec<Component> = Vec::new();
@@ -187,6 +189,26 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
             }
             match st.component(&mut next_id) {
                 Some(c) => comps.push(c),
+                None => st.resync(),
+            }
+            continue;
+        }
+        if st.peek_word("preview") {
+            let lo = st.here().lo as usize;
+            if !st.take_statement(st.here()) { break; }
+            if p.preview.is_some() {
+                st.fail("a document has at most one `preview` block");
+            }
+            st.i += 1;
+            st.in_preview = true;
+            let got = st.braced_body(&mut next_id);
+            st.in_preview = false;
+            match got {
+                Some((preview, joint)) => {
+                    st.no_open_joint(joint, "a preview");
+                    p.preview = Some(Span::new(lo, st.prev_hi()));
+                    body.extend(preview);
+                }
                 None => st.resync(),
             }
             continue;

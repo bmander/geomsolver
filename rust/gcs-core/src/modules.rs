@@ -25,6 +25,14 @@ use std::collections::{BTreeSet, VecDeque};
 /// The most modules one document may link, transitively — the same kind of bound `MAX_STMTS` is.
 pub const MAX_MODULES: usize = 64;
 
+/// Candidate paths relative to a root model, nearest directory first. Looking in its
+/// ancestors lets a component opened directly keep the same project imports as its assembly.
+pub fn search_paths(name: &str, source: &str) -> Vec<String> {
+    let rel = format!("{}.sv", name.replace('.', "/"));
+    let depth = source.replace('\\', "/").split('/').count();
+    (0..depth).map(|n| format!("{}{rel}", "../".repeat(n))).collect()
+}
+
 /// Resolve every `use` in `prog` through `resolve`, and every `use` inside what it brings in.
 ///
 /// The modules' components join `prog.components` before the root.  Diagnostics come back as
@@ -68,10 +76,15 @@ pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>)
         let k = prog.modules.len();
         let mut comps = mp.components;
         // The anonymous file root is last. Its params are kept; its geometry is not imported.
-        let root = match comps.last() {
+        let mut root = match comps.last() {
             Some(c) if c.name.is_none() => comps.pop().unwrap_or_default(),
             _ => Component::default(),
         };
+        // A preview is only the file's own setup, including its units, params and dimensions.
+        // Keep ordinary module params, but never export numbers from the preview into callers.
+        if let Some(preview) = mp.preview {
+            root.body.retain(|st| !preview.contains(st.span.lo));
+        }
         for mut c in comps {
             c.module = Some(k);
             let Some(cname) = c.name.as_ref() else { continue };

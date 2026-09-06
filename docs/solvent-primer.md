@@ -144,7 +144,46 @@ change what a document says.
 A **plane** is the datum: an origin, a point it is turned toward, and a unit rotor slaved to the
 chord between them, drawn as a small datum glyph and adding no freedom. One with no attitude
 written is a view of the page (1.13). Its use on the sheet is `f.angle`, the bearing in degrees,
-which a traced component may read (1.9). There is no separate `frame`: the word is refused.
+which a traced component or a hint may read (1.9). There is no separate `frame`: the word is refused.
+
+Use a datum to state **signed local coordinates**. Its u axis points from `origin` to `toward`,
+and v points to the left of u:
+
+```sv
+point p
+p distance(20mm, along: u) f
+p distance(-3mm, along: v) f
+```
+
+Each ordinate is an ordinary constraint. Either can be zero, negative, or an unknown solved
+by other constraints. The datum can move in response to constraints on `p`, including constraints
+outside the component that declares it. `std` groups the two statements and useful hints:
+
+```sv
+use std
+corner: Loc(f, u: 20mm, v: -3mm) in front
+```
+
+Here `f` places the point and `front` identifies its plane independently. `in` on an instance
+passes membership through its nested components. A component that only forwards membership
+can omit a plane formal and let its caller supply `in front`. A component spanning several
+planes can still accept and name each plane explicitly. No component owns an implicit frame.
+
+A component file can end with `preview { … }`: put its sample datums, parameter values and
+instance there. Opening the file previews those statements in the ordinary solve. Importing
+its components with `use` omits the preview, including its parameters and units. There is at
+most one preview per file, at file scope. `vtwin/components/cylinder.sv` is a complete example;
+`vtwin/cylinder.svd` takes its three views from that preview. Project imports are looked up
+beside the opened model and then in its ancestor directories, so the same `use` paths work
+when opening the component directly.
+
+
+Hints can read `f.c` and `f.s`, the dimensionless cosine and sine of its starting direction,
+or `f.angle`. `Loc` uses these to seed its point. Its signed constraints determine the side of
+each axis; changing a hint cannot mirror the part while keeping those constraints satisfied.
+When a numeric formal is left unbound, hints use a provisional zero for it while its
+constraints retain the unknown. Thus `corner: Loc(f)` can have both coordinates solved
+by constraints elsewhere.
 
 ### 1.5 Constraints
 
@@ -163,7 +202,7 @@ fix c.r                             line1 tangent(side: -1) circle1
 | word | fixity | operands |
 |---|---|---|
 | `on` | infix | a point to a line, circle, arc, spline or curve; between two **solids** it is not a constraint at all but the body rule (1.14) |
-| `distance` | infix | two points (`along: x` / `along: y` for the run and the rise, signed first to second, or `along: right \| left \| up \| down` to say the direction in a word); a point and a line, or two lines (a magnitude — `side: left \| right` pins which side, and without one the seed picks); two concentric circles or arcs (the radial gap) |
+| `distance` | infix | two points (`along: x` / `along: y` for the run and the rise, signed first to second, or `along: right \| left \| up \| down` to say the direction in a word); a point and a line, or two lines (a magnitude — `side: left \| right` pins which side, and without one the seed picks); two concentric circles or arcs (the radial gap); a point and a datum (`along: u` / `along: v` for signed local ordinates) |
 | `distance` | prefix | a line: the distance between its own ends |
 | `tangent` | infix | a line and a circle or arc (`at: p1` / `p2` for a tangency at that end; `side: left \| right` says which side of the line the centre is); two circles or arcs (`external: true/false`); an arc and a line (`at: start` / `end`); a spline or a curve and a line |
 | `equal` | infix | two lines (length), or two circles or arcs (radius) |
@@ -204,8 +243,8 @@ Every direction in the language is a **word**, and the sign behind it is stated 
 **A distance measured from a line is a magnitude**: a negative one is refused, and which side is
 `side:`. A component that must work either way up takes a `Side` formal (`s: Side`, called as
 `Part(…, s: right)`) and writes `side: s`. Where a side is *arithmetic* rather than a
-convention — `Loc(v: -hw)` passing a coordinate — write `abs(v)` and let the seed, which is the
-point worked out, say which side it falls on.
+convention, use a signed datum ordinate (`p distance(v, along: v) f`). `Loc(f, u: …, v: …)`
+states both signed ordinates; its hints only choose a starting configuration.
 
 The run, the rise and the angle keep their signs, because there the sign is arithmetic a
 component computes (`dy` is a coordinate; `alphaL` is a bank leaning the other way). The words
@@ -739,8 +778,8 @@ solid as binary STL for a printer; `--solid NAME` says which, and without it the
 
 **Views, derived.** A `.svd` file selects solved model solids and projects them with its own
 viewing directions, positions, and scales. See [Solvent Drawing](solvent-drawing.md) and
-`rust/examples/vtwin/cylinder.svd`. The model `vtwin/cylinder.sv` contains geometric datums
-and the cylinder instance, independently of its drawing.
+`rust/examples/vtwin/cylinder.svd`. The `preview` block in `vtwin/components/cylinder.sv` supplies the geometric datums
+and cylinder instance. The same file defines the component used by the assembly.
 
 **Every part of that engine is now written this way** — `vtwin/components/piston.sv`, `disc.sv`,
 `flywheel.sv`, `throttle.sv` and the plate in `frame.sv` beside the cylinder — and what each one
@@ -1140,6 +1179,6 @@ folded at the bearing of an inclined face.
    still move.
 
 The documents in `rust/examples/` are the worked corpus, each with a header saying what it is for.
-`rect_fillets.sv` is the best first read, `gear_trace.sv` the deepest, `vtwin/cylinder.sv` over
+`rect_fillets.sv` is the best first read, `gear_trace.sv` the deepest,
 `vtwin/components/cylinder.sv` the one to read for solids (1.14), and `engine.sv` with its `engine/` modules
 the largest.

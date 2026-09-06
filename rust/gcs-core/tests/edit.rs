@@ -140,6 +140,45 @@ fn drawing_a_point_appends_one_statement() {
     assert_eq!(back.sketch.points.len(), 4);
 }
 
+#[test]
+fn drawing_into_a_preview_keeps_new_geometry_inside_it() {
+    for src in [
+        "component Part() {}\npreview {\n}\nparam tail = 1\n",
+        "preview {\npoint existing\n// keep this comment\n}\nparam tail = 1\n",
+    ] {
+        let e = edit::add_point(&prog_of(src), 12.5, -3.0);
+        let p = prog_of(&e.text);
+        let added = p.root().body.iter().find(|st| st.span.slice(p.text()).contains("12.5")).unwrap();
+        assert!(p.preview.unwrap().contains(added.span.lo), "{}", e.text);
+        assert!(elaborate(&p).ok());
+        assert!(e.text.ends_with("param tail = 1\n"));
+        let rect = edit::add_rectangle(&p, 30.0, 20.0, None);
+        let p = prog_of(&rect.text);
+        assert!(elaborate(&p).ok());
+        let definition = p.component("Rectangle").unwrap();
+        assert!(definition.span.hi <= p.preview.unwrap().lo);
+        let instance = p.root().body.iter().find(|st| matches!(st.kind,
+            gcs_core::syntax::StmtKind::Instance(_))).unwrap();
+        assert!(p.preview.unwrap().contains(instance.span.lo));
+    }
+}
+
+#[test]
+fn preview_gestures_keep_source_mappings_with_statements_after_the_block() {
+    let mut e = elaborate(&prog_of("preview {\npoint existing\n}\nparam tail = 1\n"));
+    e.sketch.point(200.0, 20.0, false, "");
+    let first = reconciled(&mut e);
+    assert_eq!(first.kind, Kind::Structural);
+    let added = e.map.ent_named("p0").expect("the drawn point has a source name");
+    let site = e.map.site_of(added).unwrap();
+    assert!(e.program.preview.unwrap().contains(site.span.lo));
+    assert!(site.span.slice(e.text()).starts_with("point"));
+    assert_eq!(reconciled(&mut e).kind, Kind::None);
+    let removed = edit::remove(&e, &e.program, &e.sketch, &[added], &[]);
+    assert!(removed.text.ends_with("param tail = 1\n"));
+    assert_eq!(elaborate(&prog_of(&removed.text)).sketch.points.len(), 1);
+}
+
 /// **The Rect tool writes a component, once, and instances after.**  The first rectangle
 /// brings the `Rectangle` definition with it — the chain of four lines welded at right
 /// angles — and every rectangle is one statement, `rN: Rectangle(w: …, h: …)`, each a rigid

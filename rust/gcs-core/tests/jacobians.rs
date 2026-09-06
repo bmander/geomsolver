@@ -62,6 +62,10 @@ fn all_constraints(seed: u32) -> Sketch {
         c
     };
     let cs = vec![
+        Constraint::new(CKind::CoordinateU, vec![e(pe), e(EntRef::plane(fr)), Arg::Num(-2.5)]),
+        Constraint::new(CKind::CoordinateV, vec![e(pe), e(EntRef::plane(fr)), Arg::Num(0.0)]),
+        fx(CKind::CoordinateU, vec![e(pe), e(EntRef::plane(fr))], "2 * local_u + 3", 4.0),
+        fx(CKind::CoordinateV, vec![e(pe), e(EntRef::plane(fr))], "-3 * local_v + 1", -2.0),
         Constraint::coincident(pe, qe),
         Constraint::distance(pe, qe, 3.0),
         Constraint::new(CKind::Midpoint, vec![e(pe), e(le1)]),

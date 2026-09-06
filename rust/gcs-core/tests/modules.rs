@@ -67,6 +67,62 @@ fn a_component_only_file_does_not_instantiate_its_last_definition() {
 }
 
 #[test]
+fn preview_solves_only_when_its_file_is_opened() {
+    let src = "param shared = 3mm\ncomponent Sample(size: Length) {\n\
+        circle c hint(r: size)\nradius(size) c\nground c.center\n}\n\
+        preview {\nunit cm\nparam preview_size = 7cm\n\
+        sample: Sample(size: preview_size)\n}\n";
+    let (p, errs) = parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    assert!(p.preview.is_some());
+    let mut e = elaborate(&p);
+    assert!(e.ok(), "{:?}", e.diags);
+    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+    assert_eq!(e.sketch.circles.len(), 1);
+    assert_eq!(e.program.text(), src);
+
+    // The caller can use the same setup names and different units. Neither the preview's
+    // geometry nor its params/named dimensions may become part of the importing document.
+    let (mut caller, errs) = parse("unit mm\nuse part\nparam preview_size = 11mm\n\
+        sample: Sample(size: preview_size + shared)\n");
+    assert!(errs.is_empty());
+    let linked = link(&mut caller, &mut |_| Some(src.into()));
+    assert!(linked.is_empty(), "{linked:?}");
+    let mut imported = elaborate(&caller);
+    assert!(imported.ok(), "{:?}", imported.diags);
+    assert!(gcs_core::solve::solve(&mut imported.sketch, Default::default()).success);
+    assert_eq!(imported.sketch.circles.len(), 1);
+    assert!(caller.modules[0].root.body.iter().all(|st| !matches!(st.kind,
+        gcs_core::syntax::StmtKind::Unit(_))));
+    let positions = gcs_core::report::positions(&imported.sketch, &imported.map);
+    assert!(positions.iter().any(|(n, v)| n == "sample.c.r" && (*v - 14.0).abs() < 1e-8));
+}
+
+#[test]
+fn preview_is_a_single_top_level_block() {
+    let runs = gcs_core::syntax::highlight("preview { point p }");
+    assert!(runs.iter().any(|(t, s)| s.lo == 0 && *t == gcs_core::syntax::Tint::Word));
+    for src in [
+        "preview {}\npreview {}",
+        "component Part() { preview {} }",
+        "preview { preview {} }",
+        "repeat 2 { preview {} }",
+        "preview { point p",
+        "preview { line -> }",
+    ] {
+        let (_, errs) = parse(src);
+        assert!(!errs.is_empty(), "accepted {src}");
+    }
+    let (mut p, errs) = parse("preview {\npoint o\npoint q\nplane f(origin: o, toward: q)\n\
+        in f { point p }\n}\n");
+    assert!(errs.is_empty(), "{errs:?}");
+    assert_eq!(p.in_blocks.len(), 1);
+    let before = p.text().to_string();
+    assert!(gcs_core::syntax::render_flat(&mut p).is_err());
+    assert_eq!(p.text(), before);
+}
+
+#[test]
 fn a_module_contributes_its_components_and_its_params() {
     let (e, linked) = read(LADDER);
     assert!(linked.is_empty(), "{linked:?}");

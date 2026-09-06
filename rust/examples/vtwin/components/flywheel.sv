@@ -13,18 +13,15 @@ use std
 use components.dims
 use components.parts
 
-component Flywheel(front: plane, o: point, ref: line) {
-  in front {
-    circle rim(center: o) hint(r: rfw)
-    radius(rfw) rim
-    circle bore(center: o) hint(r: dhub / 2)
-    radius(dhub / 2) bore
-    point se hint(x: o.x + rfw, y: o.y)
-    line ssa(o, se)
-    o distance(rfw) se
-    ref angle(90deg, sense: cw) ssa
-    gs: Grub(o, ssa, ref, dir: 0deg, rin: dhub / 2, rout: rfw)
-  }
+component Flywheel(f: plane) {
+  circle rim(center: f.origin) hint(r: rfw)
+  radius(rfw) rim
+  circle bore(center: f.origin) hint(r: dhub / 2)
+  radius(dhub / 2) bore
+  se: Loc(f, u: 0mm, v: -rfw)
+  line ssa(f.origin, se.p)
+  plane screw_axes(origin: f.origin, toward: se.p)
+  gs: Grub(screw_axes, rin: dhub / 2, rout: rfw)
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
   solid plate(face(rim), from: -wfw / 2, to: wfw / 2)

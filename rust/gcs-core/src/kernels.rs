@@ -58,9 +58,13 @@ pub enum K {
     PointLineMagnitudeFree,
     ParallelMagnitude,
     ParallelMagnitudeFree,
+    CoordinateU,
+    CoordinateV,
+    CoordinateUFree,
+    CoordinateVFree,
 }
 
-pub const N_KERNELS: usize = 41;
+pub const N_KERNELS: usize = 45;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -1743,6 +1747,29 @@ fn project_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
+// Signed coordinates. Columns: point.xy, origin.xy, rotor.cs, then an optional
+// free dimension. The datum is an ordinary participant in the same solve.
+fn coordinate_res<const V: bool, const FREE: bool>(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let width = if FREE { 7 } else { 6 };
+    for i in 0..n {
+        let o = i * width;
+        let (dx, dy, c, s) = (v[o] - v[o + 2], v[o + 1] - v[o + 3], v[o + 4], v[o + 5]);
+        let d = if FREE { free_dim(v, k, i, o + 6).0 } else { k[i] };
+        r[i] = if V { -s * dx + c * dy - d } else { c * dx + s * dy - d };
+    }
+}
+
+fn coordinate_jac<const V: bool, const FREE: bool>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let width = if FREE { 7 } else { 6 };
+    for i in 0..n {
+        let o = i * width;
+        let (dx, dy, c, s) = (v[o] - v[o + 2], v[o + 1] - v[o + 3], v[o + 4], v[o + 5]);
+        let row = if V { [-s, c, s, -c, dy, -dx] } else { [c, s, -c, -s, dx, dy] };
+        j[o..o + 6].copy_from_slice(&row);
+        if FREE { j[o + 6] = -k[2 * i]; }
+    }
+}
+
 pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "coincident", n_res: 2, n_par: 4, degree: 1, n_const: 0, res: coincident::res, jac: coincident::jac, const_jac: Some(coincident::J) },
     Kernel { name: "distance", n_res: 1, n_par: 4, degree: 2, n_const: 1, res: distance_res, jac: distance_jac, const_jac: None },
@@ -1785,6 +1812,10 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "point_line_magnitude_free", n_res: 1, n_par: 7, degree: 1, n_const: 2, res: point_line_magnitude_free_res, jac: point_line_magnitude_free_jac, const_jac: None },
     Kernel { name: "parallel_magnitude", n_res: 1, n_par: 8, degree: 1, n_const: 1, res: parallel_magnitude_res, jac: parallel_magnitude_jac, const_jac: None },
     Kernel { name: "parallel_magnitude_free", n_res: 1, n_par: 9, degree: 1, n_const: 2, res: parallel_magnitude_free_res, jac: parallel_magnitude_free_jac, const_jac: None },
+    Kernel { name: "coordinate_u", n_res: 1, n_par: 6, degree: 1, n_const: 1, res: coordinate_res::<false, false>, jac: coordinate_jac::<false, false>, const_jac: None },
+    Kernel { name: "coordinate_v", n_res: 1, n_par: 6, degree: 1, n_const: 1, res: coordinate_res::<true, false>, jac: coordinate_jac::<true, false>, const_jac: None },
+    Kernel { name: "coordinate_u_free", n_res: 1, n_par: 7, degree: 1, n_const: 2, res: coordinate_res::<false, true>, jac: coordinate_jac::<false, true>, const_jac: None },
+    Kernel { name: "coordinate_v_free", n_res: 1, n_par: 7, degree: 1, n_const: 2, res: coordinate_res::<true, true>, jac: coordinate_jac::<true, true>, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

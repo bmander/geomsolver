@@ -56,6 +56,10 @@ fn all_dimensions() -> Sketch {
         CKind::VerticalDistance,
         vec![Arg::Ent(EntRef::point(e)), Arg::Ent(EntRef::point(c)), Arg::Num(15.0)],
     ));
+    let f = sk.plane(a, c, gcs_core::plane::Basis::page(), "datum");
+    for kind in [CKind::CoordinateU, CKind::CoordinateV] {
+        sk.add(Constraint::new(kind, vec![Arg::Ent(EntRef::point(e)), Arg::Ent(EntRef::plane(f)), Arg::Num(12.0)]));
+    }
     sk
 }
 
@@ -111,7 +115,7 @@ fn every_dimension_is_drawn() {
 
     let sk = all_dimensions();
     let ks = layout(&sk, 1.0);
-    assert_eq!(ks.len(), sk.constraints.len(), "one callout per dimension");
+    assert_eq!(ks.len(), sk.user_constraints().len(), "one callout per dimension");
     for k in &ks {
         sane(k);
     }
@@ -141,7 +145,7 @@ fn selected_annotations_do_not_include_other_constraints_or_reserve_their_lanes(
 }
 
 fn sk_kinds(sk: &Sketch) -> Vec<CKind> {
-    sk.constraints.iter().map(|c| c.kind).collect()
+    sk.user_constraints().iter().map(|c| c.kind).collect()
 }
 
 #[test]
@@ -478,7 +482,7 @@ fn the_layout_survives_a_degenerate_unit() {
     let sk = all_dimensions();
     for unit in [0.0, -1.0, f64::NAN, f64::INFINITY] {
         let ks = layout(&sk, unit);
-        assert_eq!(ks.len(), sk.constraints.len(), "unit {unit}");
+        assert_eq!(ks.len(), sk.user_constraints().len(), "unit {unit}");
         for k in &ks {
             sane(k);
         }
@@ -560,7 +564,7 @@ fn a_deleted_dimension_takes_its_placement_with_it() {
 #[test]
 fn placements_survive_a_save() {
     let mut sk = all_dimensions();
-    let ids: Vec<u32> = sk.constraints.iter().map(|c| c.id).collect();
+    let ids: Vec<u32> = sk.user_constraints().iter().map(|c| c.id).collect();
     // move every one of them somewhere of its own
     for (i, &id) in ids.iter().enumerate() {
         let k = layout(&sk, 1.0).into_iter().find(|k| k.id == id).unwrap();

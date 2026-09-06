@@ -26,7 +26,8 @@ pub fn compile(
             let (mut p, errs) = crate::syntax::parse(&text);
             if let Some(e) = errs.first() { return Err(fail(e.message.clone())) }
             let errs = crate::modules::link(&mut p, &mut |name| {
-                load(&format!("{}.sv", name.replace('.', "/")), &path).map(|(_, t)| t)
+                crate::modules::search_paths(name, &path).iter()
+                    .find_map(|candidate| load(candidate, &path).map(|(_, t)| t))
                     .or_else(|| crate::library::resolve(name))
             });
             if let Some(e) = errs.iter().find(|e| e.severity() == crate::program::Severity::Error) {

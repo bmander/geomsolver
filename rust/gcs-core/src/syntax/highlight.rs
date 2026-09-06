@@ -221,7 +221,7 @@ fn tint_word(
             if w == "in" {
                 return (Some(Tint::Word), Next::Word);
             }
-            if BLOCKS.contains(&w) {
+            if w == "preview" || BLOCKS.contains(&w) {
                 return (Some(Tint::Word), Next::Word);
             }
             // a raw branch: a statement the parser knows by name

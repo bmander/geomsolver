@@ -17,26 +17,23 @@ use std
 use components.dims
 use components.parts
 
-component Disc(swing: plane, o: point, pin: point, arm: line, dir: Angle) {
-  in swing {
-    circle rim(center: o) hint(r: rdisc)
-    radius(rdisc) rim
-    circle bore(center: o) hint(r: dhub / 2)
-    radius(dhub / 2) bore
-    circle ph(center: pin) hint(r: pinclr / 2)
-    radius(pinclr / 2) ph
-    circle pkt(center: pin) hint(r: pinpocketd / 2)
-    radius(pinpocketd / 2) pkt
-    // the set screw, square to the arm so its pocket stays clear of the pin's
-    point se hint(x: o.x + rdisc * cos(dir - 90deg), y: o.y + rdisc * sin(dir - 90deg))
-    line ssa(o, se)
-    o distance(rdisc) se
-    arm angle(90deg, sense: cw) ssa
-    gs: Grub(o, ssa, arm, dir: dir - 90deg, rin: dhub / 2, rout: rdisc)
-    claim radius(dhub / 2) bore
-    claim radius(pinclr / 2) ph
-    claim radius(pinpocketd / 2) pkt
-  }
+component Disc(f: plane) {
+  circle rim(center: f.origin) hint(r: rdisc)
+  radius(rdisc) rim
+  circle bore(center: f.origin) hint(r: dhub / 2)
+  radius(dhub / 2) bore
+  circle ph(center: f.toward) hint(r: pinclr / 2)
+  radius(pinclr / 2) ph
+  circle pkt(center: f.toward) hint(r: pinpocketd / 2)
+  radius(pinpocketd / 2) pkt
+  // the set screw, square to the arm so its pocket stays clear of the pin's
+  se: Loc(f, u: 0mm, v: -rdisc)
+  line ssa(f.origin, se.p)
+  plane screw_axes(origin: f.origin, toward: se.p)
+  gs: Grub(screw_axes, rin: dhub / 2, rout: rdisc)
+  claim radius(dhub / 2) bore
+  claim radius(pinclr / 2) ph
+  claim radius(pinpocketd / 2) pkt
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
   // **The section is the disc's mid-plane**, and it is the set screw that says so: its hole is a

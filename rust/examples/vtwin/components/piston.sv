@@ -20,80 +20,73 @@
 use components.dims
 use components.parts
 
-component Piston(swing: plane, crown: point, rod: line, dir: Angle, pin: point) {
+component Piston(f: plane) {
+  // The datum runs down the rod, from crown to pin.
+  line rod(f.toward, f.origin)
   param pw = D / 2 - clr
   param gb = grooveb / 2
 
-  in swing {
-    // the crown, square to the rod
-    point cL hint(x: crown.x - pw * sin(dir), y: crown.y + pw * cos(dir))
-    point cR hint(x: crown.x + pw * sin(dir), y: crown.y - pw * cos(dir))
-    line crownl(cR, cL)
-    crown midpoint crownl
-    crownl perpendicular rod
-    cL distance(pw) rod
-    // each side's profile: down to the groove, in to its bottom, along it, out, on to the skirt
-    g0L: Loc(crown, rod, crownl, dir: dir, u: -groove, v: pw)
-    g1L: Loc(crown, rod, crownl, dir: dir, u: -groove, v: gb)
-    g2L: Loc(crown, rod, crownl, dir: dir, u: -(groove + groovew), v: gb)
-    g3L: Loc(crown, rod, crownl, dir: dir, u: -(groove + groovew), v: pw)
-    sL: Loc(crown, rod, crownl, dir: dir, u: -ph, v: pw)
-    g0R: Loc(crown, rod, crownl, dir: dir, u: -groove, v: -pw)
-    g1R: Loc(crown, rod, crownl, dir: dir, u: -groove, v: -gb)
-    g2R: Loc(crown, rod, crownl, dir: dir, u: -(groove + groovew), v: -gb)
-    g3R: Loc(crown, rod, crownl, dir: dir, u: -(groove + groovew), v: -pw)
-    sR: Loc(crown, rod, crownl, dir: dir, u: -ph, v: -pw)
-    line pL0(cL, g0L.p) -> line pL1(g0L.p, g1L.p) -> line pL2(g1L.p, g2L.p) ->
-      line pL3(g2L.p, g3L.p) -> line pL4(g3L.p, sL.p)
-    line pR0(cR, g0R.p) -> line pR1(g0R.p, g1R.p) -> line pR2(g1R.p, g2R.p) ->
-      line pR3(g2R.p, g3R.p) -> line pR4(g3R.p, sR.p)
-    line skirt(sL.p, sR.p)
-    // the eye about the pin, and the hole the pin's shank rides in
-    circle eye(center: pin) hint(r: reye)
-    radius(reye) eye
-    circle hole(center: pin) hint(r: pinclr / 2)
-    radius(pinclr / 2) hole
-    // the rod's two flanks, from the skirt to the eye
-    point ra hint(x: crown.x - ph * cos(dir) - rt / 2 * sin(dir), y: crown.y - ph * sin(dir) + rt / 2 * cos(dir))
-    point rb hint(x: pin.x + reye * cos(dir) - rt / 2 * sin(dir), y: pin.y + reye * sin(dir) + rt / 2 * cos(dir))
-    point rc hint(x: crown.x - ph * cos(dir) + rt / 2 * sin(dir), y: crown.y - ph * sin(dir) - rt / 2 * cos(dir))
-    point rd hint(x: pin.x + reye * cos(dir) + rt / 2 * sin(dir), y: pin.y + reye * sin(dir) - rt / 2 * cos(dir))
-    ra on skirt
-    rb on eye
-    rc on skirt
-    rd on eye
-    ra distance(rt / 2, side: left) rod
-    rb distance(rt / 2, side: left) rod
-    rc distance(rt / 2, side: right) rod
-    rd distance(rt / 2, side: right) rod
-    line fl(ra, rb)
-    line fr(rc, rd)
-    // -- what the solid is made of, and nothing a view reads ---------------------------------
-    // The piston is the *left* profile turned about the rod: a revolution takes one side of its
-    // axis, and the right-hand one is drawn because the section shows it.  The loop turns at
-    // three corners nothing draws — out to the rim at the crown, in to the axis at the skirt,
-    // and back up the axis, which the turn sweeps into nothing — so it says the corners and
-    // lets the face close itself.
-    s0: Loc(crown, rod, crownl, dir: dir, u: -ph, v: 0mm)
-    // the sizes a printer needs
-    claim cL distance(2 * pw) cR
-    claim cL distance(ph) sL.p
-    claim cL distance(groove) g0L.p
-    claim g1R.p distance(groovew) g2R.p
-    claim g1L.p distance(grooveb) g1R.p
-    claim crown distance(L) pin
-    claim radius(reye) eye
-    claim radius(pinclr / 2) hole
-    claim ra distance(rt) rc
-  }
+  // The crown is square to the datum, with its left and right stated explicitly.
+  cL: Loc(f, u: 0mm, v: -pw)
+  cR: Loc(f, u: 0mm, v: pw)
+  line crownl(cR.p, cL.p)
+  // each side's profile: down to the groove, in to its bottom, along it, out, on to the skirt
+  g0L: Loc(f, u: groove, v: -pw)
+  g1L: Loc(f, u: groove, v: -gb)
+  g2L: Loc(f, u: groove + groovew, v: -gb)
+  g3L: Loc(f, u: groove + groovew, v: -pw)
+  sL: Loc(f, u: ph, v: -pw)
+  g0R: Loc(f, u: groove, v: pw)
+  g1R: Loc(f, u: groove, v: gb)
+  g2R: Loc(f, u: groove + groovew, v: gb)
+  g3R: Loc(f, u: groove + groovew, v: pw)
+  sR: Loc(f, u: ph, v: pw)
+  line pL0(cL.p, g0L.p) -> line pL1(g0L.p, g1L.p) -> line pL2(g1L.p, g2L.p) ->
+    line pL3(g2L.p, g3L.p) -> line pL4(g3L.p, sL.p)
+  line pR0(cR.p, g0R.p) -> line pR1(g0R.p, g1R.p) -> line pR2(g1R.p, g2R.p) ->
+    line pR3(g2R.p, g3R.p) -> line pR4(g3R.p, sR.p)
+  line skirt(sL.p, sR.p)
+  // the eye about the pin, and the hole the pin's shank rides in
+  circle eye(center: f.toward) hint(r: reye)
+  radius(reye) eye
+  circle hole(center: f.toward) hint(r: pinclr / 2)
+  radius(pinclr / 2) hole
+  // the rod's two flanks, from the skirt to the eye
+  ra: Loc(f, u: ph, v: -rt / 2)
+  rc: Loc(f, u: ph, v: rt / 2)
+  point rb hint(at: eye, bearing: f.angle + 180deg)
+  point rd hint(at: eye, bearing: f.angle + 180deg)
+  rb on eye
+  rd on eye
+  rb distance(-rt / 2, along: v) f
+  rd distance(rt / 2, along: v) f
+  line fl(ra.p, rb)
+  line fr(rc.p, rd)
+  // -- what the solid is made of, and nothing a view reads ---------------------------------
+  // The piston is the *left* profile turned about the rod: a revolution takes one side of its
+  // axis, and the right-hand one is drawn because the section shows it.  The loop turns at
+  // three corners nothing draws — out to the rim at the crown, in to the axis at the skirt,
+  // and back up the axis, which the turn sweeps into nothing — so it says the corners and
+  // lets the face close itself.
+  s0: Loc(f, u: ph, v: 0mm)
+  // the sizes a printer needs
+  claim cL.p distance(2 * pw) cR.p
+  claim cL.p distance(ph) sL.p
+  claim cL.p distance(groove) g0L.p
+  claim g1R.p distance(groovew) g2R.p
+  claim g1L.p distance(grooveb) g1R.p
+  claim f.origin distance(L) f.toward
+  claim radius(reye) eye
+  claim radius(pinclr / 2) hole
+  claim ra.p distance(rt) rc.p
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------
   // The rod and the eye are half `rw` either side of the plane of swing, which is where the
   // section is drawn and where the crank pin's washers hold it; the piston needs no such
   // statement, being a turn about a line that lies in that plane.
-  solid pist(face(crown, pL0, pL1, pL2, pL3, pL4, s0.p, -> close), about: rod)
+  solid pist(face(f.origin, pL0, pL1, pL2, pL3, pL4, s0.p, -> close), about: rod)
   // the rod between its flanks, closed across the skirt and across the eye
-  solid shank(face(fl, rd, fr, ra), from: -rw / 2, to: rw / 2)
+  solid shank(face(fl, rd, fr, ra.p), from: -rw / 2, to: rw / 2)
   solid boss(face(eye), from: -rw / 2, to: rw / 2)
   solid pinhole(face(hole), through: body)
   solid body(pist)

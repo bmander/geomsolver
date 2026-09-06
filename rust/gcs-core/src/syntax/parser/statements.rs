@@ -64,6 +64,12 @@ impl<'a> P<'a> {
                 self.fail("a `use` stands at the top of a document, not inside a body");
                 None
             }
+            "preview" => {
+                self.fail("a `preview` stands at the top of a document, not inside a body");
+                self.i += 1;
+                let _ = self.braced_body(next_id);
+                None
+            }
             // **`ccw` and `cw` keep a call.**  Every other statement is a prefix or an infix
             // operator, and under that rule these would be `a ccw(c) b` — which reorders three
             // points that are symmetric, since the predicate is about the *triangle* and not
@@ -400,7 +406,7 @@ impl<'a> P<'a> {
         // the plane is a formal, and nothing the document deletes reaches the header; inside a
         // root block a header buried in another statement's span is a splice no deletion
         // could compose, so there the clause is written per declaration
-        let nested = self.in_body > 0;
+        let nested = self.in_body > u32::from(self.in_preview);
         if nested && !self.in_comp {
             self.fail(
                 "an `in` block stands at the top level or in a component; inside a block here, \
@@ -608,7 +614,7 @@ impl<'a> P<'a> {
     /// A braced body, and the open joint its last chain may have ended in — handed back rather
     /// than left in parser state, so every construct with a body is made to answer for a
     /// dangling joint: a block takes it, and anything else refuses it (`no_open_joint`).
-    fn braced_body(&mut self, next_id: &mut u32) -> Option<(Vec<Stmt>, Option<OpenJoint>)> {
+    pub(super) fn braced_body(&mut self, next_id: &mut u32) -> Option<(Vec<Stmt>, Option<OpenJoint>)> {
         self.skip_ends();
         if !self.want_p('{') {
             return None;
@@ -664,7 +670,7 @@ impl<'a> P<'a> {
 
     /// Refuse the open joint a body just handed up, where the construct around it has no next
     /// copy for the chain to continue onto.
-    fn no_open_joint(&mut self, joint: Option<OpenJoint>, what: &str) {
+    pub(super) fn no_open_joint(&mut self, joint: Option<OpenJoint>, what: &str) {
         if let Some(j) = joint {
             self.errs.push(SynErr {
                 span: j.span,

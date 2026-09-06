@@ -46,8 +46,12 @@ export async function drawing(key: string, selectedFile?: string): Promise<Examp
     const text = await read(path);
     if (text === null) return;  // The core can supply a standard library or diagnose a missing file.
     for (const name of modules.uses(text)) {
-      const next = resolve(modules.pathOf(name), root);
-      await model(next, root);
+      for (const next of modules.searchPaths(name, root)) {
+        if (await read(next) !== null) {
+          await model(next, root);
+          break;
+        }
+      }
     }
   };
   const visit = async (path: string): Promise<void> => {

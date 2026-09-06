@@ -852,6 +852,18 @@ impl<'a> Walk<'a> {
         scope: &Scope,
         span: Span,
     ) {
+        // An unbound numeric formal is a solver unknown, but a hint still needs a
+        // starting value. Read its provisional zero only in hints; constraints keep
+        // the symbolic value. Traced components retain their parameterized seeds.
+        let provisional;
+        let vals = if self.sym.is_none() && vals.values().any(|v| v.free.is_some()) {
+            provisional = vals.iter().map(|(name, value)| {
+                (name.clone(), Aff::of_dim(value.c, value.dim))
+            }).collect();
+            &provisional
+        } else {
+            vals
+        };
         for i in 0..d.seed_text.len() {
             let Some(t) = d.seed_text[i].take() else { continue };
             if let Some(v) = self.settle_seed(t, &mut d.seed_text[i], vals, scope, span) {
@@ -1289,8 +1301,8 @@ impl<'a> Walk<'a> {
         // aliases first, and transitively: a formal bound to another instance's formal
         let mut alias: BTreeMap<String, String> = BTreeMap::new();
         for (abs, r, sc) in self.aliases.clone() {
-            if let Some((target, _)) = lookup(&r, &sc, &self.names, &alias, self.units) {
-                alias.insert(abs, target);
+            if let Some((target, rest)) = lookup(&r, &sc, &self.names, &alias, self.units) {
+                alias.insert(abs, std::iter::once(target).chain(rest).collect::<Vec<_>>().join("."));
             }
         }
         for _ in 0..MAX_DEPTH {
@@ -1298,7 +1310,8 @@ impl<'a> Walk<'a> {
             let keys: Vec<String> = alias.keys().cloned().collect();
             for k in keys {
                 let v = alias[&k].clone();
-                if let Some(next) = alias.get(&v).cloned() {
+                if let Some((root, rest)) = alias_target(&v, &[], &self.names, &alias) {
+                    let next = std::iter::once(root).chain(rest).collect::<Vec<_>>().join(".");
                     if next != v {
                         alias.insert(k, next);
                         moved = true;
@@ -1666,6 +1679,34 @@ fn copy_of(
     found
 }
 
+/// An alias may denote a child (`f.origin`), including a child of another alias.
+/// Keep the field suffix while resolving its declared root; it is not a second entity.
+fn alias_target(
+    target: &str,
+    tail: &[String],
+    names: &BTreeSet<String>,
+    alias: &BTreeMap<String, String>,
+) -> Option<(String, Vec<String>)> {
+    let mut segs: Vec<String> = target.split('.').map(str::to_string).chain(tail.iter().cloned()).collect();
+    for _ in 0..MAX_DEPTH {
+        let mut replaced = false;
+        for take in (1..=segs.len()).rev() {
+            let key = segs[..take].join(".");
+            if names.contains(&key) {
+                return Some((key, segs[take..].to_vec()));
+            }
+            if let Some(next) = alias.get(&key) {
+                if next == &key { continue; }
+                segs = next.split('.').map(str::to_string).chain(segs[take..].iter().cloned()).collect();
+                replaced = true;
+                break;
+            }
+        }
+        if !replaced { return None; }
+    }
+    None
+}
+
 /// The absolute name a reference denotes, and whatever field path is left over.
 ///
 /// Greedy on the dotted name: `t.lead` is one name if something declared it, and `c0.center` is
@@ -1718,7 +1759,7 @@ fn lookup(
                 return Some((cand, rest[take..].to_vec()));
             }
             if let Some(t) = alias.get(&cand) {
-                return Some((t.clone(), rest[take..].to_vec()));
+                return alias_target(t, &rest[take..], names, alias);
             }
         }
         return Some((abs, rest));
@@ -1751,14 +1792,14 @@ fn lookup(
                 return Some((abs, rest));
             }
             if let Some(t) = alias.get(&abs) {
-                return Some((t.clone(), rest));
+                return alias_target(t, &rest, names, alias);
             }
         }
         if names.contains(&cand) {
             return Some((cand, rest));
         }
         if let Some(t) = alias.get(&cand) {
-            return Some((t.clone(), rest));
+            return alias_target(t, &rest, names, alias);
         }
     }
     None

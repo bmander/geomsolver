@@ -12,7 +12,20 @@ Directory examples have a separate file pane above the source editor. `.svd` sho
 preview, `.sv` the editable model canvas. `app/program.ts` keeps each file's source across switches.
 Example choices update the URL; the `file` query parameter preserves the selected project file.
 Every parsed file has an anonymous root, even if empty; component definitions are not instances.
+An optional file-level `preview { … }` contributes ordinary root statements when opened as a
+model, including via `.svd`, and is omitted entirely on `use` (units and params included).
+The cylinder's setup lives in `vtwin/components/cylinder.sv`; there is no `vtwin/cylinder.sv`.
+Source edits add geometry inside the preview and reusable definitions outside it. Hosts look
+for project modules beside the opened model and then in its ancestors before the library.
 `web/tools/copy-examples.js` packages example sources for static hosts; live files override them.
+
+
+**Datum coordinates (0.21):** `p distance(d, along: u) f` and `along: v` are signed
+ordinates relative to a plane's datum, independent of membership. `std.Loc(f, u: …, v: …)`
+uses these and hints reading `f.c`/`f.s`; `f.angle` is also readable in hints. Components
+still have no implicit frame. A caller supplies membership with `instance: Part(f) in view`
+when the component does not need to name multiple planes. Datum intrinsics are reseeded after
+geometric point hints settle. Component aliases retain subentity paths such as `f.origin`.
 
 
 A geometric constraint solver, and **Solvent**, the language a drawing in it is written as.
@@ -63,7 +76,7 @@ implementation —
   rebuilt; without a server nothing fetches and the compiled-in copy is read as before.
 * **CLI** (`rust/gcs-cli/`): `solventc`, which parses, elaborates, solves, diagnoses and reports
   on a document from a terminal — the first way to check a drawing without a browser, and where
-  module resolution lives: `use engine.parts` is `engine/parts.sv` beside the document, then the
+  module resolution lives: `use engine.parts` is `engine/parts.sv` beside the document or in an ancestor, then the
   library compiled into the core (`library::MODULES`).  It **invents no wording**: a per-document
   line is `diagnose::summary`, a culprit is `io::describe_with` (the core's wording over the
   `SourceMap`'s names — `corner distance(60) along`, never `P0`; the app reaches the same through

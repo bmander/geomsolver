@@ -19,6 +19,37 @@ fn doc(name: &str) -> String {
 }
 
 #[test]
+fn component_previews_resolve_project_imports_for_models_and_drawings() {
+    let dir = std::env::temp_dir().join(format!("solventc-preview-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("parts")).unwrap();
+    std::fs::write(dir.join("parts/dims.sv"), "param width = 20mm\n").unwrap();
+    let part = dir.join("parts/bar.sv");
+    std::fs::write(&part, "use parts.dims\ncomponent Bar(w: Length) {\n\
+        point a hint(x: 0, y: 0)\nground a\npoint b hint(x: w, y: 0)\nground b\n\
+        line edge(a, b)\n}\npreview {\nunit mm\ndemo: Bar(w: width)\n}\n").unwrap();
+    let args = [part.to_str().unwrap(), "--json", "--where", "demo.b.x"];
+    let result = run(&args);
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stdout));
+    assert!(String::from_utf8_lossy(&result.stdout).contains("\"demo.b.x\": 20"));
+
+    let sheet = dir.join("bar.svd");
+    let output = dir.join("bar.svg");
+    std::fs::write(&sheet, "model m from \"parts/bar.sv\"\n\
+        sheet part { sketch v(m) at (30,40) measure distance(m.demo.a,m.demo.b) in v }").unwrap();
+    let result = run(&[sheet.to_str().unwrap(), "--output", output.to_str().unwrap()]);
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    assert!(std::fs::read_to_string(output).unwrap().contains(">20</text>"));
+
+    // A nearer project definition wins over the ancestor's copy.
+    std::fs::create_dir_all(dir.join("parts/parts")).unwrap();
+    std::fs::write(dir.join("parts/parts/dims.sv"), "param width = 30mm\n").unwrap();
+    let result = run(&args);
+    assert!(result.status.success());
+    assert!(String::from_utf8_lossy(&result.stdout).contains("\"demo.b.x\": 30"));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn drawings_load_relative_files_select_sheets_and_refuse_broken_references() {
     let dir = std::env::temp_dir().join(format!("solventc-drawing-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("sheets")).unwrap();

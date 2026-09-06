@@ -16,7 +16,7 @@
 import type { Mark } from './editor.js';
 import type { Diagnostic, SourceMap, SourceSpan } from '../core/program.js';
 import * as modules from '../core/modules.js';
-import { info, type DrawingBundle } from '../core/drawing.js';
+import type { DrawingBundle } from '../core/drawing.js';
 import { drawingActive, pickDrawingFolder, renderDrawing, showDrawing } from './drawing.js';
 import { currentConstraint, pdiags, ped, ppanel, ppanelState, psplit, view } from './shell.js';
 import { download, toast } from './ui.js';
@@ -131,42 +131,6 @@ export function saveProjectFile(): boolean {
   download(activeFile.split('/').pop()!, typed ? ptext.value : project.files[activeFile]);
   return true;
 }
-
-/** Module names are relative to the root model, including when browsing one of its imports. */
-function provideProjectModules(path: string): void {
-  if (!project) return;
-  const sources = project.files;
-  const directory = (p: string) => p.slice(0, p.lastIndexOf('/') + 1);
-  const resolve = (p: string, from: string) =>
-    decodeURIComponent(new URL(p, `https://project.invalid/${from}`).pathname.slice(1));
-  let root = directory(path);
-  for (const [file, text] of Object.entries(sources)) {
-    if (!file.endsWith('.svd')) continue;
-    let models: string[];
-    try { models = info(text).models; } catch { continue; }
-    for (const model of models) {
-      const entry = resolve(model, file), base = directory(entry);
-      const seen = new Set<string>(), queue = [entry];
-      for (let i = 0; i < queue.length; i++) {
-        const next = queue[i];
-        if (seen.has(next)) continue;
-        seen.add(next);
-        if (next === path) { root = base; break; }
-        const source = sources[next];
-        if (source !== undefined) {
-          queue.push(...modules.uses(source).map((name) => base + modules.pathOf(name)));
-        }
-      }
-    }
-  }
-  modules.forget();
-  for (const [file, text] of Object.entries(sources)) {
-    if (file.startsWith(root) && file.endsWith('.sv')) {
-      modules.provide(file.slice(root.length, -3).replaceAll('/', '.'), text);
-    }
-  }
-}
-
 function activateProjectFile(name: string): boolean {
   if (!project || !(name in project.files)) return false;
   switching = true;
@@ -175,7 +139,7 @@ function activateProjectFile(name: string): boolean {
       view.pauseEditing();
       showDrawing({ source: name, files: project.files });
     } else {
-      provideProjectModules(name);
+      modules.provideProject(name, project.files);
       if (!view.openProjectFile(project.files[name])) return false;
       showDrawing(null);
     }
@@ -318,6 +282,7 @@ export function applyProgram(): boolean {
     return ok;
   }
   const undo = view.source;
+  if (project) modules.provideProject(activeFile, project.files);
   if (!view.setProgram(text, false)) return false;
   showDiags(view.doc.diagnostics);
   if (!view.doc.ok) {

@@ -67,33 +67,30 @@ component Wide(o: point, y0: Length, y1: Length, left: point, right: point) {
   o distance(y1, along: y) d
 }
 
-// A part sheet's frame: the part's axis up the page through `o`, and a line across it to the
-// left, which is what `Loc` writes a part in.
+// A part sheet's datum: the part's axis up the page through `o`.
 component Axes(o: point) {
   point up hint(x: o.x, y: o.y + 40mm)
   o distance(0, along: x) up
   o distance(40, along: y) up
   line ax(o, up)
-  point left hint(x: o.x - 10mm, y: o.y)
-  o distance(10, along: left) left
-  o distance(0, along: y) left
-  line ac(o, left)
+  plane f(origin: o, toward: up)
 }
 
 // A set screw into the shaft: its clearance hole from the bore at `rin` out to the rim at
 // `rout`, and the pocket the nut is trapped in, `nutin` out from the bore.  Written in the
-// frame (`ax`, `ac`) the screw's axis lies along.  Drawn on the part's sheet only.
-component Grub(o: point, ax: line, ac: line, dir: Angle, rin: Length, rout: Length) {
-  h0: Loc(o, ax, ac, dir: dir, u: rin, v: grub / 2)
-  h1: Loc(o, ax, ac, dir: dir, u: rout, v: grub / 2)
-  h2: Loc(o, ax, ac, dir: dir, u: rin, v: -grub / 2)
-  h3: Loc(o, ax, ac, dir: dir, u: rout, v: -grub / 2)
+// datum `f` along the screw's axis.  Drawn on the part's sheet only.
+component Grub(f: plane, rin: Length, rout: Length) {
+  line ax(f.origin, f.toward)
+  h0: Loc(f, u: rin, v: grub / 2)
+  h1: Loc(f, u: rout, v: grub / 2)
+  h2: Loc(f, u: rin, v: -grub / 2)
+  h3: Loc(f, u: rout, v: -grub / 2)
   line s0(h0.p, h1.p)
   line s1(h2.p, h3.p)
-  n0: Loc(o, ax, ac, dir: dir, u: rin + nutin, v: nutaf / 2)
-  n1: Loc(o, ax, ac, dir: dir, u: rin + nutin + nutT, v: nutaf / 2)
-  n2: Loc(o, ax, ac, dir: dir, u: rin + nutin + nutT, v: -nutaf / 2)
-  n3: Loc(o, ax, ac, dir: dir, u: rin + nutin, v: -nutaf / 2)
+  n0: Loc(f, u: rin + nutin, v: nutaf / 2)
+  n1: Loc(f, u: rin + nutin + nutT, v: nutaf / 2)
+  n2: Loc(f, u: rin + nutin + nutT, v: -nutaf / 2)
+  n3: Loc(f, u: rin + nutin, v: -nutaf / 2)
   line q0(n0.p, n1.p)
   line q1(n1.p, n2.p)
   line q2(n2.p, n3.p)
@@ -105,8 +102,8 @@ component Grub(o: point, ax: line, ac: line, dir: Angle, rin: Length, rout: Leng
   // plane's normal and `about:` turns, so nothing here sweeps a section *along* a line lying in
   // the plane.  So the pocket stays what it has always been, four hidden lines a printer reads,
   // and it is not part of the body; it comes back when a swept solid does (spec §17).
-  a0: Loc(o, ax, ac, dir: dir, u: rin, v: 0mm)
-  a1: Loc(o, ax, ac, dir: dir, u: rout, v: 0mm)
+  a0: Loc(f, u: rin, v: 0mm)
+  a1: Loc(f, u: rout, v: 0mm)
   face bore_f(a0.p, h0.p, s0, a1.p, -> close)
   solid bore(bore_f, about: ax)
   claim h0.p distance(grub) h2.p

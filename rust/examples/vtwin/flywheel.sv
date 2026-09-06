@@ -14,6 +14,6 @@ point datum hint(x: 1, y: 0)
 ground datum
 plane front(origin: O, toward: datum)
 axes: Axes(O)
-fw: Flywheel(front, O, axes.ax)
+fw: Flywheel(axes.f) in front
 
 // Projections and dimensions: flywheel.svd

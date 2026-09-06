@@ -10,17 +10,16 @@ use components.dims
 use components.parts
 use components.disc
 
-component Crank(swing: plane, o: point, ref: line) {
-  in swing {
-    point pin hint(x: o.x + R * sin(theta0), y: o.y + R * cos(theta0))
-    line arm(o, pin)
-    o distance(R) pin
-    arm angle(theta) ref
-    circle path(center: o) hint(r: R)
-    radius(R) path
-    // the clevis pin's end, seen on
-    circle kp(center: pin) hint(r: rpin)
-    radius(rpin) kp
-  }
-  disc: Disc(swing, o, pin, arm, dir: 90deg - theta0)
+component Crank(o: point, ref: line) {
+  point pin hint(x: o.x + R * sin(theta0), y: o.y + R * cos(theta0))
+  line arm(o, pin)
+  o distance(R) pin
+  arm angle(theta) ref
+  circle path(center: o) hint(r: R)
+  radius(R) path
+  // the clevis pin's end, seen on
+  circle kp(center: pin) hint(r: rpin)
+  radius(rpin) kp
+  plane disc_axes(origin: o, toward: pin)
+  disc: Disc(disc_axes)
 }

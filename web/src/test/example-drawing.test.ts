@@ -30,9 +30,34 @@ test('menu examples open files or directories with one V-twin choice', async (t)
   assert.ok(vtwin.files['vtwin/components/frame.sv']);
   for (const name of ['assembly', 'cylinder', 'plate', 'piston', 'disc', 'flywheel', 'throttle']) {
     assert.ok(vtwin.files[`vtwin/${name}.svd`]);
-    assert.ok(vtwin.files[`vtwin/${name}.sv`]);
+    const model = name === 'cylinder' ? 'components/cylinder' : name;
+    assert.ok(vtwin.files[`vtwin/${model}.sv`]);
   }
+  assert.ok(!('vtwin/cylinder.sv' in vtwin.files));
   assert.ok(!vtwin.files['engine.svd']);
+});
+
+test('a component preview uses edited project dependencies when opened directly', async (t) => {
+  t.mock.method(globalThis, 'fetch', staticFetch);
+  const path = 'vtwin/components/cylinder.sv';
+  const bundle = await remote.drawing(path);
+  assert.equal(bundle.source, path);
+  assert.ok(bundle.files['vtwin/components/dims.sv']);
+  const edited: Record<string, string> = { ...bundle.files,
+    'vtwin/components/dims.sv': bundle.files['vtwin/components/dims.sv'].replace(
+      'param fwA = 12mm', 'param fwA = 13mm'),
+  };
+  modules.provideProject(path, edited);
+  try {
+    assert.equal(modules.source('components.dims'), edited['vtwin/components/dims.sv']);
+    const doc = Document.read(edited[path]);
+    try {
+      assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
+      assert.ok(doc.text.includes('preview {'));
+    } finally { doc.dispose(); }
+    const drawing = files['vtwin/cylinder.svd'];
+    assert.ok(drawings.render(drawing, 'vtwin/cylinder.svd', edited).includes('<svg'));
+  } finally { modules.forget(); }
 });
 
 test('live directory listings discover files added after the static build', async (t) => {

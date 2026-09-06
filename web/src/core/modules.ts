@@ -54,6 +54,28 @@ export function pathOf(name: string): string {
   return name.split('.').join('/') + '.sv';
 }
 
+/** Project paths beside a root model, then its ancestors, nearest first. */
+export function searchPaths(name: string, root: string): string[] {
+  const directories = root.split('/').slice(0, -1);
+  return Array.from({ length: directories.length + 1 }, (_, i) =>
+    [...directories.slice(0, directories.length - i), pathOf(name)].join('/'));
+}
+
+/** Provide current project texts when opening a model or an individual component. */
+export function provideProject(root: string, files: Record<string, string>): void {
+  forget();
+  const seen = new Set<string>(), queue = uses(files[root] ?? '');
+  for (let i = 0; i < queue.length; i++) {
+    const name = queue[i];
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const path = searchPaths(name, root).find((candidate) => candidate in files);
+    if (path !== undefined) provide(name, files[path]);
+    const text = source(name);
+    if (text !== null) queue.push(...uses(text));
+  }
+}
+
 /** Fetch and hand over every module `text` reaches, through `fetchText(path)` — `null` for one
  *  the host has not got, which is then the library's.  Each name is asked for once, however many
  *  texts use it.  Returns the names handed over. */

@@ -13,7 +13,7 @@
 // views (`components.cylinder`, `components.piston`, `components.disc`, `components.flywheel`, `components.throttle`,
 // and the plate, `components.frame`): this sheet draws the plate in all of them, since it stands
 // still, and the moving parts in the plane of swing only; each part's own sheet
-// (`cylinder.sv`, `piston.sv`, …) draws it upright in all three with the
+// (`cylinder.svd`, `piston.svd`, …) draws it upright in all three with the
 // dimensions a printer needs — `class detail`, which this sheet leaves hidden.  The side view is
 // what the assembly adds beyond its parts, with every height projected from the view along the
 // axis.  The drawing has one degree of freedom and it is the crank angle: `crank.theta` is a
@@ -43,9 +43,9 @@ O distance(40, along: y) up
 line ref(O, up)
 
 plate: Frame(views.front, O, ref)
-crank: Crank(views.front, O, ref)
-bankR: Bank(views.front, O, crank.pin, plate.r.piv, alpha: alphaR, fw: fwB, dim: 1)
-bankL: Bank(views.front, O, crank.pin, plate.l.piv, alpha: alphaL, fw: fwA, dim: 0)
+crank: Crank(O, ref) in views.front
+bankR: Bank(crank.pin, plate.r.piv, fw: fwB, dim: 1) in views.front
+bankL: Bank(crank.pin, plate.l.piv, fw: fwA, dim: 0) in views.front
 // **the plate's side view is asked for, not drawn** (§6.11) — the part is a solid, so the
 // assembly's side view of it is a reading of that solid and cannot disagree with the front view
 // about how thick the plate is or how far the bearing boss stands off it

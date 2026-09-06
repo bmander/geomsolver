@@ -100,12 +100,11 @@ component Hex(c: point, ref: line, af: Length, phase: Angle) {
   p: Polygon(c, ref, n: 6, r: af / (2 * cos(30deg)), phase: phase)
 }
 
-// A point in a *tilted* frame, for the components above: `u` along the line `ax` from the point
-// `org` on it, `v` across it, with `ac` the line across `ax` through `org` and `dir` the bearing
-// of `ax`.  The seed — which is the point itself, worked out — is what says which side of each
-// line it falls on, so the two distances are magnitudes and the coordinates keep their signs.
-component Loc(org: point, ax: line, ac: line, dir: Angle, u: Length, v: Length) {
-  point p hint(x: org.x + u * cos(dir) - v * sin(dir), y: org.y + u * sin(dir) + v * cos(dir))
-  p distance(abs(v)) ax
-  p distance(abs(u)) ac
+// A point with signed coordinates in a datum. Both ordinates are ordinary constraints;
+// either may be left unknown. Plane membership is supplied independently with `in`.
+component Loc(f: plane, u: Length, v: Length) {
+  point p hint(x: f.origin.x + u * f.c - v * f.s,
+               y: f.origin.y + u * f.s + v * f.c)
+  p distance(u, along: u) f
+  p distance(v, along: v) f
 }

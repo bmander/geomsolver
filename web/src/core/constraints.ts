@@ -381,7 +381,7 @@ export function initTypes(): Record<string, ConstraintCtor> {
     EqualRadius, AnnularDistance, TangentLineCircle, TangentCircleCircle, TangentArcLine,
     TangentLineCircleAt, Symmetric, PointOnSpline, SplineTangentLine, SplineCurvature,
     HorizontalPoints, VerticalPoints, HorizontalDistance, VerticalDistance, PointOnCurve,
-    CurveTangentLine, CurveCurvature, Project,
+    CurveTangentLine, CurveCurvature, Project, CoordinateU, CoordinateV,
   } = CONSTRAINT_TYPES);
   return CONSTRAINT_TYPES;
 }
@@ -425,6 +425,9 @@ export let CurveCurvature: ConstraintCtor;
 /** `a project b`: two points are images of one point in space.  Its two plane slots are left
  *  out — the core reads them off the points' memberships, as it reads a tangency's side. */
 export let Project: ConstraintCtor;
+/** Signed point ordinates along a datum's u and v axes, independent of membership. */
+export let CoordinateU: ConstraintCtor;
+export let CoordinateV: ConstraintCtor;
 
 onInit(() => {
   initTypes();

@@ -197,7 +197,8 @@ horizontal e2
 face sec(e0, e1, e2, e3)
 solid blank(sec, about: ax)
 solid pis(blank)
-g: Groove(body: pis, f: f, o: o, ax: ax, ac: ac, dir: 90deg, r: 8mm, z: 15mm, cs: oring014_cs)
+plane groove_axes(origin: o, toward: ax.p2)
+g: Groove(body: pis, f: groove_axes, r: 8mm, z: 15mm, cs: oring014_cs) in f
 ";
     let (prog, errs, linked) = gcs_core::library::parse_linked(src);
     assert!(errs.is_empty() && linked.is_empty(), "{errs:?} {linked:?}");

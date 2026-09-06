@@ -210,12 +210,12 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         return check_drawing(s, opts);
     }
     let (mut prog, errs) = parse(&s.text);
-    // `use engine.crank` is `engine/crank.sv` beside the document, and failing that the module
-    // library compiled into the core — the one place a working directory enters the core's work
+    // Resolve beside the model, then its ancestors, then the compiled module library.
     let dir = std::path::Path::new(&s.name).parent().map(|d| d.to_path_buf()).unwrap_or_default();
     let mut resolve = |name: &str| -> Option<String> {
-        let rel = format!("{}.sv", name.replace('.', "/"));
-        std::fs::read_to_string(dir.join(rel)).ok().or_else(|| gcs_core::library::resolve(name))
+        gcs_core::modules::search_paths(name, &s.name).iter()
+            .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
+            .or_else(|| gcs_core::library::resolve(name))
     };
     let linked = gcs_core::modules::link(&mut prog, &mut resolve);
     let mut e = elaborate(&prog);

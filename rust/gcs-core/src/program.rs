@@ -294,6 +294,25 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // seeds named by geometry, once every entity has a seed to be read: in statement order, so
     // a seed that reads a seed read from a third is settled after both (§6.4)
     settle_deferred(&mut sk, &res, &deferred, &mut diags);
+    // Datums were constructed before geometry-dependent point hints settled. Refresh
+    // their intrinsic seeds from the final chord so a provisional chord cannot choose
+    // the opposite rotor branch for every coordinate written over it.
+    for i in 0..sk.planes.len() {
+        let f = &sk.planes[i].frame;
+        let (cp, sp) = (f.c as usize, f.s as usize);
+        let ((c, s), length) = sk.frame_chord(f.origin as usize, f.toward as usize);
+        sk.params[cp].value = c;
+        sk.params[sp].value = s;
+        sk.params[cp].scale = length;
+        sk.params[sp].scale = length;
+    }
+    for c in &sk.constraints {
+        if c.kind == crate::constraints::CKind::FrameAlign {
+            let f = sk.frame_of(c.args[0].ent());
+            let (_, length) = sk.frame_chord(f.origin as usize, f.toward as usize);
+            sk.params[c.args[1].param() as usize].value = length;
+        }
+    }
 
     // memberships, once every kind is built and before any constraint reads one: `point a in
     // top` names a plane built after the point, and `project` infers its planes from these

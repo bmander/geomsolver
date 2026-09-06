@@ -181,7 +181,9 @@ impl Elaborated {
     /// return false without changes if parsing fails or too few statements remain.
     pub fn adopt(&mut self, text: &str, made: &[Made]) -> bool {
         let Some(prog) = reparse(text, &self.program) else { return false };
-        let body = &prog.root().body;
+        let body: Vec<_> = prog.root().body.iter().filter(|st| {
+            prog.preview.is_none_or(|preview| preview.contains(st.span.lo))
+        }).collect();
         if body.len() < made.len() {
             return false;
         }

@@ -17,38 +17,26 @@ use components.parts
 use components.cylinder
 use components.piston
 
-component Bank(swing: plane, o: point, pin: point,
-               piv: point, alpha: Angle, fw: Length, dim: Int) {
-  // where the cylinder points at the starting angle: from the pin through the pivot
-  param px = R * sin(theta0)
-  param py = R * cos(theta0)
-  param vx = H * sin(alpha)
-  param vy = H * cos(alpha)
-  param dir = atan2(vy - py, vx - px)
+component Bank(pin: point, piv: point, fw: Length, dim: Int) {
+  // Start on the branch extending from the pin through the pivot.
+  point crown hint(x: pin.x + L * cos(atan2(piv.y - pin.y, piv.x - pin.x)),
+                   y: pin.y + L * sin(atan2(piv.y - pin.y, piv.x - pin.x)))
+  line rod(pin, crown)
+  piv on rod
+  pin distance(L) crown
 
-  in swing {
-    // the rod: through the pivot, the crown `L` out from the pin
-    point crown hint(x: pin.x + L * cos(dir), y: pin.y + L * sin(dir))
-    line rod(pin, crown)
-    piv on rod
-    pin distance(L) crown
-
-    // the cylinder's own frame: the rod's line, and a line across it through the pivot
-    point q hint(x: piv.x - 10mm * sin(dir), y: piv.y + 10mm * cos(dir))
-    line across(piv, q)
-    q distance(10) rod
-    across perpendicular rod
-  }
-
-  // the parts, in the plane of swing and rocked with the rod
-  cyl: Cylinder(swing, piv, rod, across, dir: dir, fw: fw)
-  pis: Piston(swing, crown, rod, dir: dir, pin: pin)
+  // Explicit moving datums: the cylinder points up from its pivot, the piston down
+  // from its crown to the pin. Membership in the swing plane comes from the caller.
+  plane cylinder_axes(origin: piv, toward: crown)
+  plane piston_axes(origin: crown, toward: pin)
+  cyl: Cylinder(cylinder_axes, fw: fw)
+  pis: Piston(piston_axes)
 
   // the dimensions, on one bank
   repeat dim {
     claim cyl.b_tl.p distance(D) cyl.b_tr.p
     claim pin distance(L) crown
     claim cyl.k_bl.p distance(ct - cb) cyl.k_tl.p
-    claim pis.ra distance(rt) pis.rc
+    claim pis.ra.p distance(rt) pis.rc.p
   }
 }

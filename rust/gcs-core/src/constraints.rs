@@ -80,6 +80,9 @@ pub enum CKind {
     /// parallel.  Not commutative: `same_args` swaps only the first two entity slots, so
     /// `b project a` reads as a second relation, which the diagnosis reports as implied.
     Project,
+    /// Signed ordinates of a point relative to a datum: u follows its rotor, v is left of it.
+    CoordinateU,
+    CoordinateV,
     /// The **gauges** and the **orientation predicates** (spec §9.2, §9.6; issue #47, item 5):
     /// statements written as every other constraint is — an operator, its operands, a class, a
     /// placement — and settled through the same table, but **applied by the elaborator rather
@@ -119,7 +122,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 35] = [
+pub const ALL_KINDS: [CKind; 37] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -155,15 +158,19 @@ pub const ALL_KINDS: [CKind; 35] = [
     CKind::FrameUnit,
     CKind::FrameAlign,
     CKind::Project,
+    CKind::CoordinateU,
+    CKind::CoordinateV,
 ];
 
 /// `along:` says which axis a run or a rise is measured on.  It is the one selector that fills no
 /// slot — it *chooses the kind* and is gone — so this table is the only place its words exist,
 /// read both by `infix_op` to make the choice and by the elaborator to say what was wrong with a
 /// word that is not one of them (issue #48, item 4).  A second list would be a second answer.
-pub const ALONG: [(&str, CKind); 6] = [
+pub const ALONG: [(&str, CKind); 8] = [
     ("x", CKind::HorizontalDistance),
     ("y", CKind::VerticalDistance),
+    ("u", CKind::CoordinateU),
+    ("v", CKind::CoordinateV),
     // the same two kinds with the direction named outright, which is the sign said in a word
     ("right", CKind::HorizontalDistance),
     ("left", CKind::HorizontalDistance),
@@ -186,8 +193,11 @@ pub const ALONG: [(&str, CKind); 6] = [
 /// cannot be made from the kinds alone.  `None` is "this word does not relate those two", which
 /// the caller reports with the kinds in it.
 pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option<String>) -> Option<CKind> {
-    use EntKind::{Arc, Circle, Curve, Line, Point, Spline};
+    use EntKind::{Arc, Circle, Curve, Line, Plane, Point, Spline};
     let round = |k: EntKind| matches!(k, Circle | Arc);
+    if matches!(sel("along").as_deref(), Some("u" | "v")) && (word != "distance" || (a, b) != (Point, Plane)) {
+        return None;
+    }
     Some(match word {
         "on" => match (a, b) {
             (Point, Line) => CKind::PointOnLine,
@@ -201,8 +211,9 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             // are signed from the first point to the second — so they do not commute
             (Point, Point) => match sel("along") {
                 None => CKind::Distance,
-                Some(w) => ALONG.iter().find(|(n, _)| *n == w).map(|(_, k)| *k)?,
+                Some(w) => ALONG.iter().find(|(n, k)| *n == w && matches!(k, CKind::HorizontalDistance | CKind::VerticalDistance)).map(|(_, k)| *k)?,
             },
+            (Point, Plane) => ALONG.iter().find(|(n, k)| Some(*n) == sel("along").as_deref() && matches!(k, CKind::CoordinateU | CKind::CoordinateV)).map(|(_, k)| *k)?,
             (Point, Line) => CKind::PointLineDistance,
             (Line, Line) => CKind::ParallelDistance,
             (x, y) if round(x) && round(y) => CKind::AnnularDistance,
@@ -544,6 +555,8 @@ impl CKind {
             CKind::FrameUnit => "FrameUnit",
             CKind::FrameAlign => "FrameAlign",
             CKind::Project => "Project",
+            CKind::CoordinateU => "CoordinateU",
+            CKind::CoordinateV => "CoordinateV",
             CKind::Ground => "Ground",
             CKind::Fix => "Fix",
             CKind::Ccw => "Ccw",
@@ -638,6 +651,7 @@ impl CKind {
             CKind::SplineCurvature => {
                 &[("spline", S::Spline), ("circle", S::CircleOrArc), ("t", S::Param)]
             }
+            CKind::CoordinateU | CKind::CoordinateV => &[("p", S::Point), ("frame", S::Plane), ("d", S::Length)],
             CKind::FrameUnit => &[("frame", S::Plane)],
             CKind::FrameAlign => &[("frame", S::Plane), ("r", S::Param)],
             // the two planes are real slots — so the drag part, the topology key, the graft
@@ -710,7 +724,9 @@ impl CKind {
             | CKind::VerticalDistance
             | CKind::PointLineDistance
             | CKind::ParallelDistance
-            | CKind::AnnularDistance => ("distance", Infix),
+            | CKind::AnnularDistance
+            | CKind::CoordinateU
+            | CKind::CoordinateV => ("distance", Infix),
             // touching: six kinds, told apart by the pair and by `at:`
             CKind::TangentLineCircle
             | CKind::TangentLineCircleAt
@@ -952,6 +968,8 @@ impl CKind {
             | CKind::FrameAlign
             // a projection is a linear tie between two images: no contact, no double root
             | CKind::Project
+            | CKind::CoordinateU
+            | CKind::CoordinateV
             | CKind::Ground
             | CKind::Fix
             | CKind::Ccw
@@ -1027,6 +1045,8 @@ impl CKind {
             CKind::FrameUnit => K::FrameUnit,
             CKind::FrameAlign => K::FrameAlign,
             CKind::Project => K::Project,
+            CKind::CoordinateU => K::CoordinateU,
+            CKind::CoordinateV => K::CoordinateV,
             CKind::Ground | CKind::Fix | CKind::Ccw | CKind::Cw => {
                 panic!("{:?} is a gauge: applied by the elaborator, it has no kernel", self)
             }
@@ -1071,6 +1091,8 @@ impl CKind {
             CKind::AnnularDistance => K::AnnularDistanceFree,
             CKind::HorizontalDistance => K::HorizontalDistanceFree,
             CKind::VerticalDistance => K::VerticalDistanceFree,
+            CKind::CoordinateU => K::CoordinateUFree,
+            CKind::CoordinateV => K::CoordinateVFree,
             CKind::Coincident
             | CKind::Midpoint
             | CKind::DragTarget
@@ -1648,7 +1670,7 @@ impl Constraint {
             };
         }
         match self.kind {
-            CKind::Distance => vec![self.args[2].num()],
+            CKind::Distance | CKind::CoordinateU | CKind::CoordinateV => vec![self.args[2].num()],
             // signed from the first point to the second, and which way is the word: `along: left`
             // is the minus a drawing used to write (§9.2)
             CKind::HorizontalDistance | CKind::VerticalDistance => {
@@ -1838,6 +1860,10 @@ impl Constraint {
             .concat(),
             // the rotor alone; and the chord's length, then the frame's six numbers in
             // `entity_params` order — the kernels' column layouts exactly
+            CKind::CoordinateU | CKind::CoordinateV => {
+                let f = sk.frame_of(e(1));
+                [pt(0), sk.point_params(f.origin as usize).to_vec(), vec![f.c, f.s]].concat()
+            }
             CKind::FrameUnit => sk.own_params(e(0)),
             CKind::FrameAlign => {
                 [vec![self.args[1].param()], sk.entity_params(e(0))].concat()

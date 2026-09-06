@@ -1,6 +1,12 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.20 — September 2026**
+**Specification, Draft 0.21 — September 2026**
+
+**[0.21] Explicit datum coordinates.** Signed ordinates use the existing distance operator:
+`p distance(u, along: u) f` and `p distance(v, along: v) f`, where `f` is a plane used
+as a datum. They are ordinary constraints in the shared solve. Components acquire no implicit
+origin, orientation, or geometric result. Plane membership remains independent (`inst: Part(f)
+in view`). `std.Loc(f: plane, u: Length, v: Length)` groups a point, its two ordinates, and hints.
 
 **[0.20] Model/presentation split.** `.sv` specifies geometry, constraints, hints, and
 assertions. All presentation belongs in [Solvent Drawing (`.svd`)](docs/solvent-drawing.md).
@@ -493,6 +499,33 @@ Each desugared statement keeps an identity of its own and a span into the chain'
 
 ### 6.7 Planes and projection **[0.10]**
 
+**[0.21] Coordinates relative to a datum.** For a point `p` and plane `f`,
+`p distance(d, along: u) f` states
+`f.c * (p.x - f.origin.x) + f.s * (p.y - f.origin.y) = d`.
+With `along: v` it states
+`-f.s * (p.x - f.origin.x) + f.c * (p.y - f.origin.y) = d`.
+The positive u axis follows `origin → toward`; positive v lies to its left. Each statement
+contributes one length-valued residual, owns no unknown, and accepts a signed length expression,
+including a free dimension. Zero is regular. Either ordinate may be stated independently;
+`claim` has its ordinary assertion meaning. The operands MUST be a point followed by a plane,
+and `along: u` or `along: v` is required for this pair. These selectors are not page axes.
+
+The datum's origin and rotor participate in the same solve as the point. Reading a datum for
+coordinates MUST NOT assign plane membership to either entity, transform incoming aliases,
+ground geometry, or create a component placement phase. A datum with existing defining points
+adds no freedom beyond those points. Its spatial attitude and offset do not enter these equations.
+Passing `f.origin` or `f.toward` to another component aliases that point, including through nested
+components; a face may likewise name such a point as a corner.
+
+A hint may read `f.c`, `f.s` (dimensionless), and `f.angle` (an Angle), as well as the datum's
+point coordinates. These read the starting chord, including geometric hints already settled on
+its points. A hint over an unbound numeric formal uses zero for that unknown's provisional
+value; an affine expression retains its constant offset. This substitution applies only to
+hints, never to constraints, and traced components retain parameterized hints.
+The datum's intrinsic seeds MUST be consistent with the final hinted chord before
+solving. Hints still select starting configurations only. In contrast to the former `Loc`
+helper's absolute distances, signed ordinates explicitly exclude reflections across either axis.
+
 A multiview drawing is several pictures of one object on one sheet, each on a stated plane in space, related by projection. The language states it the draughtsman's way — descriptive geometry — and **nothing three-dimensional is ever solved for**: a document stays planar, and what is added is a datum with an attitude, a membership, and one equation.
 
 **A `plane` is the datum with an attitude.** `plane front(origin: o, toward: q)` declares an origin, a point it is turned toward and a unit rotor (§3.2 [0.6]) — that is where the view sits on the page and which way it is turned, and all of it is solved for as a frame's is. What it adds is a **basis** `(u, v)`, an orthonormal pair in space with `n = u × v` toward the viewer, which is a *constant* of the declaration: document data like a spline's knots, never a seed and never moved by a solve — which is why it stands in the brackets with the children (§6.2) and not in `hint(…)` (§4.3). It is written one of three ways:
@@ -624,7 +657,7 @@ What a report says about a solid (§16.3) is therefore `NAME.volume`, `NAME.area
 
 **A solid stands on no plane.** It bears no points, so `in` on one is refused where it stands and an `in … { }` block leaves it alone (§6.8). It is not picked, dragged or dimensioned on the sheet, and it is evaluated after the drawing is solved (§1.2, §3.1).
 
-*Non-normative:* `rust/examples/vtwin/cylinder.sv` is the worked case — one section in the plane of swing, the body swept from it, and the bore, the port, the bolt hole and the head's slot four more solids that `cut` it. The part had been written three times, the same body redrawn in two more views as page-aligned rectangles re-tied by `project`, with every depth ordinate related to the section by no statement at all.
+*Non-normative:* `rust/examples/vtwin/components/cylinder.sv` is the worked case — one section in the plane of swing, the body swept from it, and the bore, the port, the bolt hole and the head's slot four more solids that `cut` it. The part had been written three times, the same body redrawn in two more views as page-aligned rectangles re-tied by `project`, with every depth ordinate related to the section by no statement at all.
 
 ### 6.10 Planes stood off **[0.18]**
 
@@ -743,7 +776,7 @@ What goes in the parentheses is a short list:
 |---|---|---|
 | `on` | infix | (point, line \| circle \| arc \| spline \| curve) — **four** constraints; **[0.18]** (solid, solid) — the body rule (§6.9), and no constraint at all |
 | `cut` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
-| `distance` | infix | (p, p); +`along: x`/`y` for the run and the rise; (p, line); (line, line); (circle, circle) — **six** |
+| `distance` | infix | (p, p); +`along: x`/`y` for the run and the rise; (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed local ordinates |
 | `distance` | prefix | on a line: the distance between its own ends |
 | `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line) — **five** |
 | `equal` | infix | (line, line) a length; (circle, circle) a radius |
@@ -1082,6 +1115,39 @@ use engine.parts
 
 A **module** is a Solvent document read for its components. `use NAME` at the top level of a document — never inside a body — asks for one; `NAME` is a dotted path, and **what it resolves to is the host's question**: an implementation with a working directory resolves `engine.parts` to `engine/parts.sv` beside the document, one without a filesystem resolves it against whatever library it carries, and both fall through to the other in that order. The core takes text and never opens a file. A module contributes exactly its **component definitions** and its top-level **`param`s** (§6.3); its own loose statements — its drawing — are not drawn, so a document that is also a library (`gear.sv`) is a module as it stands. A module's own `use`s are followed the same way, each module linked once however many times it is asked for, so a diamond is one copy and a cycle terminates. A module a host cannot resolve is **E070**, at the `use`. Two definitions of one component name, wherever they come from, are **E071**, at the document's own definition when the clash is with one and otherwise at the `use` that brought the later module in; there is no shadowing (§5). A module's own errors — a parse error, a faulty `param` — are reported to a reader of the document *at the `use` that brought the module in*, with the module's name, line and column in front of the message, since that line is the one the document can edit.
 
+**[0.21] A component file may provide its own preview.** At most one `preview { … }`
+block may appear at file scope. Its body contains ordinary model statements, including units,
+parameters, datums, instances and constraints:
+
+```solvent
+component Part(f: plane, width: Length) {
+  // the reusable design
+}
+
+preview {
+  unit mm
+  point o hint(x: 0, y: 0)
+  point q hint(x: 0, y: 40)
+  ground o
+  ground q
+  plane front(origin: o, toward: q)
+  part: Part(front, width: 20mm) in front
+}
+```
+
+When the file is opened as a model, including through a drawing's `model … from`, the preview's
+statements join the file's ordinary root body and solve together. A preview adds no namespace,
+implicit coordinate system, execution order, or separate solve. When the file is imported with
+`use`, the whole preview is omitted: its geometry, parameters, named dimensions and unit
+statement are not exported. Component definitions and imports remain at file scope; a preview
+cannot be nested. Presentation still belongs in `.svd` files. Source editing in a preview MUST
+preserve the block and place newly drawn geometry inside it.
+
+Hosts resolving files SHOULD try the model's directory and then its ancestor directories,
+nearest first, before falling back to the shared library. Thus opening
+`components/cylinder.sv` directly can resolve `use components.dims` from the same project as
+an assembly beside the `components` directory. All transitive imports use the same root model.
+
 *Non-normative:* an implementation may parse a module with its spans offset past everything linked before it, so that every span in a linked program is one integer into one virtual text and no consumer learns a second coordinate; a splice on the document then walks the root body alone, which no module span is ever in.
 
 ### 14.2 Kernel form
@@ -1303,7 +1369,8 @@ Square system, full rank at the hinted seed; one Newton basin per §12.4, lifted
 ## 19. Grammar (EBNF)
 
 ```ebnf
-program        = { use_decl } { component } ;
+program        = { use_decl | component | preview | statement } ;
+preview        = "preview" "{" { statement } "}" ;                  (* at most one, §14.4 *)
 use_decl       = "use" IDENT { "." IDENT } ;                         (* a module, §14.4 *)
 component      = "component" IDENT "(" [ params ] ")" "{" { statement } "}" ;
 params         = param { "," param } ;

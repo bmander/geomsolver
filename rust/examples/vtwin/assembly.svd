@@ -114,7 +114,7 @@ sheet drawing {
   style m.plate.thr.hub_front.p { display: none }
   style m.plate.thr.front_axis.p { display: none }
   style m.crank.pin { display: none }
-  style m.crank.disc.se { display: none }
+  style m.crank.disc.se.p { display: none }
   style m.crank.disc.gs.h0.p { display: none }
   style m.crank.disc.gs.h1.p { display: none }
   style m.crank.disc.gs.h2.p { display: none }
@@ -126,7 +126,6 @@ sheet drawing {
   style m.crank.disc.gs.a0.p { display: none }
   style m.crank.disc.gs.a1.p { display: none }
   style m.bankR.crown { display: none }
-  style m.bankR.q { display: none }
   style m.bankR.cyl.k_bl.p { display: none }
   style m.bankR.cyl.k_br.p { display: none }
   style m.bankR.cyl.k_tr.p { display: none }
@@ -143,8 +142,8 @@ sheet drawing {
   style m.bankR.cyl.t2.p { display: none }
   style m.bankR.cyl.t3.p { display: none }
   style m.bankR.cyl.h0.p { display: none }
-  style m.bankR.pis.cL { display: none }
-  style m.bankR.pis.cR { display: none }
+  style m.bankR.pis.cL.p { display: none }
+  style m.bankR.pis.cR.p { display: none }
   style m.bankR.pis.g0L.p { display: none }
   style m.bankR.pis.g1L.p { display: none }
   style m.bankR.pis.g2L.p { display: none }
@@ -155,13 +154,12 @@ sheet drawing {
   style m.bankR.pis.g2R.p { display: none }
   style m.bankR.pis.g3R.p { display: none }
   style m.bankR.pis.sR.p { display: none }
-  style m.bankR.pis.ra { display: none }
+  style m.bankR.pis.ra.p { display: none }
   style m.bankR.pis.rb { display: none }
-  style m.bankR.pis.rc { display: none }
+  style m.bankR.pis.rc.p { display: none }
   style m.bankR.pis.rd { display: none }
   style m.bankR.pis.s0.p { display: none }
   style m.bankL.crown { display: none }
-  style m.bankL.q { display: none }
   style m.bankL.cyl.k_bl.p { display: none }
   style m.bankL.cyl.k_br.p { display: none }
   style m.bankL.cyl.k_tr.p { display: none }
@@ -178,8 +176,8 @@ sheet drawing {
   style m.bankL.cyl.t2.p { display: none }
   style m.bankL.cyl.t3.p { display: none }
   style m.bankL.cyl.h0.p { display: none }
-  style m.bankL.pis.cL { display: none }
-  style m.bankL.pis.cR { display: none }
+  style m.bankL.pis.cL.p { display: none }
+  style m.bankL.pis.cR.p { display: none }
   style m.bankL.pis.g0L.p { display: none }
   style m.bankL.pis.g1L.p { display: none }
   style m.bankL.pis.g2L.p { display: none }
@@ -190,9 +188,9 @@ sheet drawing {
   style m.bankL.pis.g2R.p { display: none }
   style m.bankL.pis.g3R.p { display: none }
   style m.bankL.pis.sR.p { display: none }
-  style m.bankL.pis.ra { display: none }
+  style m.bankL.pis.ra.p { display: none }
   style m.bankL.pis.rb { display: none }
-  style m.bankL.pis.rc { display: none }
+  style m.bankL.pis.rc.p { display: none }
   style m.bankL.pis.rd { display: none }
   style m.bankL.pis.s0.p { display: none }
   style m.so { display: none }
@@ -334,6 +332,20 @@ sheet drawing {
   style m.plate.thr.axis { display: none }
   style m.crank.arm { color: #888888; width: 0.5; dash: 14 3 2 3 }
   style m.crank.disc.ssa { display: none }
+  // Datums place the geometry; the existing centerlines carry its presentation.
+  style m.crank.disc_axes { display: none }
+  style m.crank.disc.screw_axes { display: none }
+  style m.crank.disc.gs.ax { display: none }
+  style m.plate.thr.lever_axes { display: none }
+  style m.plate.thr.hole_axes { display: none }
+  style m.bankR.cylinder_axes { display: none }
+  style m.bankR.piston_axes { display: none }
+  style m.bankR.cyl.axis { display: none }
+  style m.bankR.pis.rod { display: none }
+  style m.bankL.cylinder_axes { display: none }
+  style m.bankL.piston_axes { display: none }
+  style m.bankL.cyl.axis { display: none }
+  style m.bankL.pis.rod { display: none }
   style m.crank.disc.gs.s0 { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
   style m.crank.disc.gs.s1 { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
   style m.crank.disc.gs.q0 { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
@@ -341,12 +353,10 @@ sheet drawing {
   style m.crank.disc.gs.q2 { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
   style m.crank.disc.gs.q3 { color: #7a7a7a; width: 0.6; dash: 4 3; display: none }
   style m.bankR.rod { color: #888888; width: 0.5; dash: 14 3 2 3 }
-  style m.bankR.across { display: none }
   style m.bankR.cyl.trap0 { color: #7a7a7a; width: 0.6; dash: 4 3 }
   style m.bankR.cyl.trap1 { color: #7a7a7a; width: 0.6; dash: 4 3 }
   style m.bankR.cyl.trap2 { color: #7a7a7a; width: 0.6; dash: 4 3 }
   style m.bankL.rod { color: #888888; width: 0.5; dash: 14 3 2 3 }
-  style m.bankL.across { display: none }
   style m.bankL.cyl.trap0 { color: #7a7a7a; width: 0.6; dash: 4 3 }
   style m.bankL.cyl.trap1 { color: #7a7a7a; width: 0.6; dash: 4 3 }
   style m.bankL.cyl.trap2 { color: #7a7a7a; width: 0.6; dash: 4 3 }

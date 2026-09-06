@@ -95,28 +95,27 @@ component Nut(c: point, ref: line, af: Length, bore: Length, phase: Angle) {
 //
 //   use std
 //   use hardware
-//   g: Groove(body: pis, f: swing, o: crown, ax: axis, ac: across, dir: dir,
-//             r: D / 2, z: -groove, cs: oring014_cs)
+//   g: Groove(body: pis, f: axis_datum, r: D / 2,
+//             z: -groove, cs: oring014_cs) in swing
 //
 // `body` is the solid the groove is cut out of, and the statement inside is what does it: a
 // component may contribute a `through` to a body it was handed, because the body rule is a set
 // and not a sequence.  The groove is turned about the bore's own axis, so what is written here
 // is its section: `w` wide at `z` down the axis, from the bore out to the squeezed diameter.
-component Groove(body: solid, f: plane, o: point, ax: line, ac: line, dir: Angle,
+component Groove(body: solid, f: plane,
                  r: Length, z: Length, cs: Length) {
+  line ax(f.origin, f.toward)
   param rb = r - (1 - oring_squeeze) * cs   // the groove's bottom, off the axis
   param w = oring_groove_w * cs             // and how wide it is along the axis
-  in f {
-    g0: Loc(o, ax, ac, dir: dir, u: z, v: rb)
-    g1: Loc(o, ax, ac, dir: dir, u: z, v: r)
-    g2: Loc(o, ax, ac, dir: dir, u: z - w, v: r)
-    g3: Loc(o, ax, ac, dir: dir, u: z - w, v: rb)
-    line e0(g0.p, g1.p)  -> line e1(g1.p, g2.p)  ->
-      line e2(g2.p, g3.p)  -> line e3(g3.p, g0.p)  -> close
-    face gf(e0, e1, e2, e3)
-    claim g0.p distance(w) g3.p
-    claim g0.p distance(rb) ax
-  }
+  g0: Loc(f, u: z, v: rb)
+  g1: Loc(f, u: z, v: r)
+  g2: Loc(f, u: z - w, v: r)
+  g3: Loc(f, u: z - w, v: rb)
+  line e0(g0.p, g1.p)  -> line e1(g1.p, g2.p)  ->
+    line e2(g2.p, g3.p)  -> line e3(g3.p, g0.p)  -> close
+  face gf(e0, e1, e2, e3)
+  claim g0.p distance(w) g3.p
+  claim g0.p distance(rb) ax
   solid groove(gf, about: ax)
   groove cut body
 }
