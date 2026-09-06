@@ -4,6 +4,14 @@ import { derived, derivedInputs } from '../core/derived.js';
 import type { Drawn } from '../core/derived.js';
 import type { Sketch } from '../core/model.js';
 
+/** Stable display detail levels, at least as fine as the requested pixel length. Half-octave
+ * bands limit extra refinement to sqrt(2) and let small camera-fit/zoom changes reuse geometry.
+ * Exporters continue to request their exact output tolerance directly from the core. */
+export function displayUnit(unit: number): number {
+  if (!(unit > 0) || !Number.isFinite(unit)) return unit;
+  return Math.min(unit, 2 ** (Math.floor(Math.log2(unit) * 2) / 2));
+}
+
 interface Cached {
   sketch: Sketch;
   inputs: Float64Array;
@@ -40,8 +48,9 @@ export class DerivedDrawing {
     const noise = Math.min(1, unit, c?.unit ?? unit) * 1e-6 / scale;
     if (!c || c.sketch !== sketch || c.style !== style || c.inputs.length !== inputs.length
         || inputs.some((v, i) => !(Math.abs(v - c.inputs[i]) <= noise))) {
-      const items = derived(sketch, unit);
-      this.cached = { sketch, inputs, style, unit, items };
+      const detail = displayUnit(unit);
+      const items = derived(sketch, detail);
+      this.cached = { sketch, inputs, style, unit: detail, items };
       return items;
     }
     // Zooming out can keep the finer picture indefinitely. Zooming in transforms the same

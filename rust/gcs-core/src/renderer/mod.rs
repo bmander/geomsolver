@@ -10,9 +10,12 @@ pub(crate) mod document;
 mod dimensions;
 mod projection;
 mod visibility;
+mod spatial;
 
 pub use dimensions::{generated, Dim};
-pub use document::{inputs, layout, section, view, Drawn};
+pub use document::{inputs, layout, layout_with_stats, section, view, Drawn};
+use std::cell::{Cell, OnceCell};
+use spatial::Bvh;
 use crate::{csg::Edge, plane::Basis, solid::{EvaluatedSolid, LocalPoint, PageFrame}};
 
 /// One projection and its placement on the page. `section` is a world-space cutting plane;
@@ -49,17 +52,31 @@ impl Drawing {
     }
 }
 
+/// Cumulative work since preparation, for comparing algorithms without timing assertions.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RenderStats {
+    pub visibility_rays: usize,
+    pub boundary_candidates: usize,
+    pub boundary_exhaustive: usize,
+    pub crossing_candidates: usize,
+    pub crossing_exhaustive: usize,
+}
+
 /// A prepared renderer borrows one immutable evaluated solid. The solid owns the shared
 /// geometry cache; changing a document produces a new snapshot, never mutating this one.
 /// All view-dependent work lives here, and no editor or document is needed to project it.
 pub struct Renderer<'a> {
     solid: &'a EvaluatedSolid,
     edges: &'a [Edge],
+    visibility: OnceCell<Bvh<3>>,
+    stats: Cell<RenderStats>,
 }
 impl<'a> Renderer<'a> {
     pub fn prepare(solid: &'a EvaluatedSolid) -> Self {
-        Self { solid, edges: solid.edges() }
+        Self { solid, edges: solid.edges(), visibility: OnceCell::new(), stats: Cell::default() }
     }
+
+    pub fn stats(&self) -> RenderStats { self.stats.get() }
 
     pub fn project(&self, view: View) -> Drawing {
         projection::project(self, view)

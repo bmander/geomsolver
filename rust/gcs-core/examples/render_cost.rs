@@ -26,6 +26,7 @@ fn main() {
         let ids: BTreeSet<_> = sk.derived.iter().map(|v| v.solid as usize).collect();
         let (mut evaluation, mut preparation, mut projection) = (Vec::new(), Vec::new(), Vec::new());
         let mut strokes = 0;
+        let mut stats = renderer::RenderStats::default();
         for _ in 0..3 {
             sk.solid_cache.borrow_mut().clear();
             let start = Instant::now();
@@ -37,11 +38,14 @@ fn main() {
             for solid in &solids { black_box(renderer::Renderer::prepare(solid)); }
             preparation.push(ms(start));
             let start = Instant::now();
-            let drawing = black_box(renderer::layout(&sk, unit));
+            let (drawing, counts) = black_box(renderer::layout_with_stats(&sk, unit));
+            stats = counts;
             projection.push(ms(start));
             strokes = drawing.len();
         }
         println!("{name}: evaluate {:.2} ms, prepare {:.2} ms, project {:.2} ms; {} views, {strokes} strokes",
             median(evaluation), median(preparation), median(projection), sk.derived.len());
+        println!("  boundary candidates {}/{}, crossing candidates {}/{}",
+            stats.boundary_candidates, stats.boundary_exhaustive, stats.crossing_candidates, stats.crossing_exhaustive);
     }
 }

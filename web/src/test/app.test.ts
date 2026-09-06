@@ -15,6 +15,7 @@ import { Document, fromSketch } from '../core/program.js';
 import type { Diagnosis } from '../core/diagnose.js';
 import { callouts } from '../core/callout.js';
 import { derived } from '../core/derived.js';
+import { DerivedDrawing, displayUnit } from '../app/derived.js';
 import { PlanDrag } from '../core/decompose.js';
 import { solve } from '../core/system.js';
 import { DimAlt, SketchView } from '../app/view.js';
@@ -78,6 +79,26 @@ test('startup resize defers projection until the sketch has been solved and fitt
   assert.ok(read.mock.callCount() > 0, 'the fitted drawing is painted');
 });
 
+test('display detail bands keep camera fitting from triggering another projection', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const doc = Document.read(PROJECTED_CIRCLE);
+  let redraws = 0;
+  const drawing = new DerivedDrawing(() => { redraws++; });
+  t.after(() => { drawing.clear(); doc.dispose(); });
+  const first = drawing.read(doc.sketch, 1 / 6);
+  assert.strictEqual(drawing.read(doc.sketch, 0.148), first);
+  t.mock.timers.tick(1000);
+  assert.equal(redraws, 0, 'the fitted camera already has sufficient detail');
+  assert.strictEqual(drawing.read(doc.sketch, 0.1), first, 'reuse through a zoom gesture');
+  t.mock.timers.tick(200);
+  assert.equal(redraws, 1, 'refine after crossing the retained detail level');
+  assert.notStrictEqual(drawing.read(doc.sketch, 0.1), first);
+  for (const unit of [1e-8, 0.01, 0.1, 0.125, 0.148, 1 / 6, 1, 37, 1e8]) {
+    assert.ok(displayUnit(unit) <= unit, 'display quality meets the requested pixel tolerance');
+    assert.ok(displayUnit(unit) * Math.SQRT2 >= unit * (1 - Number.EPSILON), 'extra detail is bounded');
+  }
+});
+
 test('pan and zoom reuse derived geometry, then refine once the camera rests', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const v = new SketchView(fakeCanvas(), Document.read(PROJECTED_CIRCLE));
@@ -100,7 +121,7 @@ test('pan and zoom reuse derived geometry, then refine once the camera rests', (
   t.mock.timers.tick(200);
   const fine = v.derived.read(v.sketch, v.unit);
   assert.notStrictEqual(fine, first);
-  assert.deepEqual(fine, derived(v.sketch, v.unit), 'the settled view has full screen precision');
+  assert.deepEqual(fine, derived(v.sketch, displayUnit(v.unit)), 'the settled view has full screen precision');
   assert.ok(fine.reduce((n, s) => n + s.pts.length, 0)
     > first.reduce((n, s) => n + s.pts.length, 0), 'the close-up really refines the circle');
   v.cam.zoomAt(400, 300, 0.1);
@@ -122,7 +143,7 @@ test('derived pictures follow geometry changes immediately and cancel pending re
   v.sketch.circles[0].radius.value = 20;
   const moved = v.derived.read(v.sketch, v.unit);
   assert.notDeepEqual(moved, first);
-  assert.deepEqual(moved, derived(v.sketch, v.unit));
+  assert.deepEqual(moved, derived(v.sketch, displayUnit(v.unit)));
   t.mock.timers.tick(1000);
   assert.strictEqual(v.derived.read(v.sketch, v.unit), moved);
 
@@ -154,7 +175,7 @@ test('changing a solid depth refreshes its projection even when no coordinate ch
   assert.deepEqual(v.sketch.getX(), x);
   const next = v.derived.read(v.sketch, v.unit);
   assert.notDeepEqual(next, first);
-  assert.deepEqual(next, derived(v.sketch, v.unit));
+  assert.deepEqual(next, derived(v.sketch, displayUnit(v.unit)));
   v.derived.clear();
   v.doc.dispose();
 });
@@ -180,7 +201,7 @@ test('dragging a constrained figure does not redraw unrelated solid projections'
   }
   assert.ok(p.x.value > from[0] + 0.5, 'the constrained point actually moved');
   assert.ok(Math.abs(p.y.value - from[1]) < 1e-8, 'the horizontal constraint still holds');
-  assert.deepEqual(picture, derived(v.sketch, v.unit));
+  assert.deepEqual(picture, derived(v.sketch, displayUnit(v.unit)));
   cv.fire('pointerup', pointer(at[0] + 8, at[1] - 8));
   assert.equal(PlanDrag.live, 0);
   v.derived.clear();
@@ -201,7 +222,7 @@ test('projection caching ignores solver roundoff but retains cumulative geometry
   assert.notStrictEqual(v.derived.read(v.sketch, v.unit), picture,
     'small real steps must accumulate against the picture, not disappear frame by frame');
   radius.value += 1;
-  assert.deepEqual(v.derived.read(v.sketch, v.unit), derived(v.sketch, v.unit));
+  assert.deepEqual(v.derived.read(v.sketch, v.unit), derived(v.sketch, displayUnit(v.unit)));
   v.derived.clear();
   v.doc.dispose();
 });

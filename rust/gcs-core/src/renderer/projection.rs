@@ -1,7 +1,7 @@
 //! Silhouettes, sections, visibility splitting and stroke joining for the polygon renderer.
 use crate::plane::{self, Basis};
 use crate::solid::{LocalPoint, PageFrame};
-use super::{Drawing, Renderer, Stroke, View};
+use super::{Drawing, Renderer, Stroke, View, spatial::{Bounds, Bvh}};
 
 /// How near two points must be, relative to the drawing, to be one point.
 const SAME: f64 = 1e-7;
@@ -58,19 +58,28 @@ fn view_clipped(renderer: &Renderer<'_>, page: PageFrame, cut: Option<Basis>, se
     // change at an apparent crossing or at an end, so between two of them a whole piece is seen
     // or a whole piece is not
     let flat = |p: [f64; 3]| basis.view_coords(p);
+    let projected: Vec<_> = drawn.iter().map(|((a, b), _, _)| (flat(*a), flat(*b))).collect();
+    let boxes: Vec<Bounds<2>> = projected.iter().map(|&(a, b)| {
+        let lo = [a.0.min(b.0), a.1.min(b.1)];
+        let hi = [a.0.max(b.0), a.1.max(b.1)];
+        let pad: [f64; 2] = std::array::from_fn(|k| {
+            (hi[k] - lo[k]) * 1e-9 + lo[k].abs().max(hi[k].abs()).max(1.0) * f64::EPSILON * 16.0
+        });
+        Bounds { lo: std::array::from_fn(|k| lo[k] - pad[k]), hi: std::array::from_fn(|k| hi[k] + pad[k]) }
+    }).collect();
+    let index = Bvh::new(boxes.iter().copied());
+    let mut candidates = 0;
     let mut out = Vec::new();
     for (i, ((a, b), sil, path)) in drawn.iter().enumerate() {
-        let (pa, pb) = (flat(*a), flat(*b));
+        let (pa, pb) = projected[i];
         let d3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
         let mut cuts = vec![0.0f64, 1.0];
-        for (j, ((c, d), _, _)) in drawn.iter().enumerate() {
-            if i == j {
-                continue;
-            }
-            if let Some(t) = cross(pa, pb, flat(*c), flat(*d)) {
-                cuts.push(t);
-            }
-        }
+        index.query_box(boxes[i], |j| {
+            if i == j { return; }
+            candidates += 1;
+            let (c, d) = projected[j];
+            if let Some(t) = cross(pa, pb, c, d) { cuts.push(t); }
+        });
         cuts.sort_by(|x, y| x.partial_cmp(y).expect("no NaN from a finite drawing"));
         for w in cuts.windows(2) {
             if w[1] - w[0] < 1e-9 {
@@ -89,6 +98,10 @@ fn view_clipped(renderer: &Renderer<'_>, page: PageFrame, cut: Option<Basis>, se
             });
         }
     }
+    let mut stats = renderer.stats.get();
+    stats.crossing_candidates += candidates;
+    stats.crossing_exhaustive += drawn.len() * drawn.len().saturating_sub(1);
+    renderer.stats.set(stats);
     join(out)
 }
 

@@ -2,7 +2,8 @@
 use crate::model::Sketch;
 use crate::plane::Basis;
 use crate::solid::{self, ApproximationPolicy, PageFrame};
-use super::{Renderer, Stroke, View};
+use super::{Renderer, RenderStats, Stroke, View};
+use std::collections::BTreeMap;
 
 /// The numeric inputs of the document's projected pictures, excluding screen resolution.
 /// Unrelated sketch geometry must not invalidate a projection while it is dragged. Solid
@@ -65,18 +66,28 @@ pub(crate) fn view_frame(sk: &Sketch, plane_i: Option<usize>) -> (Basis, (f64, f
 /// itself carries, so a sheet says what a hidden line looks like the way it says what a
 /// dimension does, and a document that already writes `style .hidden` gets it for free.
 pub fn layout(sk: &Sketch, unit: f64) -> Vec<Drawn> {
+    layout_with_stats(sk, unit).0
+}
+
+/// Render all document views, sharing each solid's prepared visibility index, with work counts.
+pub fn layout_with_stats(sk: &Sketch, unit: f64) -> (Vec<Drawn>, RenderStats) {
+    let mut solids = BTreeMap::new();
+    for d in &sk.derived {
+        solids.entry(d.solid).or_insert_with(|| {
+            sk.evaluated_solid(d.solid as usize, ApproximationPolicy::from_unit(unit))
+        });
+    }
+    let renderers: BTreeMap<_, _> = solids.iter().filter_map(|(&i, s)| {
+        s.as_ref().ok().map(|s| (i, Renderer::prepare(s)))
+    }).collect();
     let mut out = Vec::new();
     for (i, d) in sk.derived.iter().enumerate() {
-        let strokes = match d.at {
-            None => view(sk, d.solid as usize, d.plane.map(|p| p as usize), unit),
-            Some(at) => section(
-                sk,
-                d.solid as usize,
-                Some(at as usize),
-                d.plane.map(|p| p as usize),
-                unit,
-            ),
-        };
+        let Some(renderer) = renderers.get(&d.solid) else { continue };
+        let (basis, pose) = view_frame(sk, d.plane.map(|i| i as usize));
+        let strokes = renderer.project(View {
+            frame: PageFrame::new(basis, pose),
+            section: d.at.map(|i| view_frame(sk, Some(i as usize)).0),
+        }).strokes;
         for s in strokes {
             let mut class = crate::style::Classes(vec![
                 if s.hidden { "hidden".to_string() } else { "visible".to_string() },
@@ -96,7 +107,16 @@ pub fn layout(sk: &Sketch, unit: f64) -> Vec<Drawn> {
             });
         }
     }
-    out
+    let mut stats = RenderStats::default();
+    for renderer in renderers.values() {
+        let s = renderer.stats();
+        stats.visibility_rays += s.visibility_rays;
+        stats.boundary_candidates += s.boundary_candidates;
+        stats.boundary_exhaustive += s.boundary_exhaustive;
+        stats.crossing_candidates += s.crossing_candidates;
+        stats.crossing_exhaustive += s.crossing_exhaustive;
+    }
+    (out, stats)
 }
 
 /// One polyline of a derived picture, resolved: page coordinates and the ink to stroke it in.
