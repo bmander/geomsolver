@@ -3,9 +3,22 @@ import math
 import unittest
 
 import audit
+import inspect_components
 
 
 class AuditGeometryTests(unittest.TestCase):
+    def test_component_diagnostic_distinguishes_rounding_from_native_contact(self):
+        vertices = [(1, 0, 0), (1, 1, 0), (1, 0, 1),
+                    (1+2**-30, 0, 0), (2, 0, 0), (2, 1, 0)]
+        source = dict(vertices=vertices, triangles=[(0, 1, 2), (3, 4, 5)])
+        report = inspect_components.inspect(source)
+        self.assertEqual(len(report["indexed_components"]), 2)
+        self.assertEqual(report["coincident_vertices"]["native64"], [])
+        self.assertEqual(report["coincident_vertices"]["stl32"][0]["components"], [0, 1])
+        vertices[3] = vertices[0]
+        report = inspect_components.inspect(source)
+        self.assertEqual(report["coincident_vertices"]["native64"][0]["components"], [0, 1])
+
     def test_finite_triangle_distance(self):
         triangle = ((0, 0, 0), (1, 0, 0), (0, 1, 0))
         # Interior projection, outside the face, nearest vertex, and on-face.

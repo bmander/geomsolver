@@ -127,12 +127,14 @@ def audit(path, tolerance=.02):
               ("case", "backend", "depth", "extraction_seconds", "setup_seconds")}
     for key in ("grid_divisions", "edge_length", "vertex_tolerance", "point_queries",
                 "callback", "library_status", "min_feature", "max_err", "threads",
-                "postprocessing", "postprocessing_seconds", "pipeline_seconds"):
+                "postprocessing", "postprocessing_seconds", "pipeline_seconds", "cgal_repair"):
         if key in metadata:
             report[key] = metadata[key]
     report.update(file=str(path), sha256=hashlib.sha256(data).hexdigest(), triangles=count,
                   sampled_tolerance=tolerance, failures=[])
     failures = report["failures"]
+    if metadata.get("producer_failure", False):
+        failures.append("producer reported a failed repair")
     if metadata.get("library_status", "Error.NoError") != "Error.NoError":
         failures.append("producer reported a library error")
     if not count:

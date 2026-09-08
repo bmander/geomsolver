@@ -7,33 +7,20 @@ import argparse
 import importlib.metadata
 import json
 from pathlib import Path
-import struct
 import time
 
 import numpy as np
 import manifold3d
 
 import audit
+from candidate_io import read_stl
 from manifold_bench import encode
 
 
 def run(source, output, tolerance):
     started = time.perf_counter()
     data = source.read_bytes()
-    count = struct.unpack_from("<I", data, 80)[0]
-    if len(data) != 84+50*count:
-        raise ValueError("invalid STL length")
-    ids, vertices, triangles = {}, [], []
-    for i in range(count):
-        row = struct.unpack_from("<9f", data, 96+50*i)
-        face = []
-        for k in range(3):
-            p = row[3*k:3*k+3]
-            if p not in ids:
-                ids[p] = len(vertices)
-                vertices.append(p)
-            face.append(ids[p])
-        triangles.append(face)
+    vertices, triangles = read_stl(data)
     ratios = {x: x.as_integer_ratio() for v in vertices for x in v}
     exponent = max((d.bit_length()-1 for _, d in ratios.values()), default=0)
     scaled = {x: n << (exponent-d.bit_length()+1) for x, (n, d) in ratios.items()}
@@ -46,9 +33,8 @@ def run(source, output, tolerance):
         else:
             removed.append(i)
     status = None
-    if tolerance is not None:
-        if not kept:
-            raise ValueError("cleanup trial requires a nonempty input")
+    imported = tolerance is not None and bool(kept)
+    if imported:
         solid = manifold3d.Manifold(manifold3d.Mesh64(np.array(vertices, dtype=np.float64),
                                                      np.array(kept, dtype=np.uint64)))
         if tolerance > 0:
@@ -63,7 +49,7 @@ def run(source, output, tolerance):
                     pipeline_seconds=metadata["extraction_seconds"]+seconds,
                     postprocessing=dict(source=source.name, removed_zero_area_faces=removed,
                                         manifold_version=importlib.metadata.version("manifold3d"),
-                                        imported_into_manifold=tolerance is not None,
+                                        imported_into_manifold=imported,
                                         simplify_tolerance=tolerance))
     if status is not None:
         metadata["library_status"] = status

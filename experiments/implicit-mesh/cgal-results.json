@@ -1,0 +1,479 @@
+{
+  "date": "2026-09-08",
+  "CGAL_version": "6.1.2",
+  "CGAL_archive_sha256": "40411b97c5c64ddc1af1d153d57a39e424d21e947eef2b194fa05c5a8b002eea",
+  "algorithm": "experimental::autorefine_and_remove_self_intersections with Exact_predicates_exact_constructions_kernel",
+  "scope": "Exact native repair followed by independent encoded STL checks and sampled source checks. Not a general-purpose accepted extractor or gear validation.",
+  "pinch_diagnosis": {
+    "indexed_components": [
+      {
+        "triangles": 136,
+        "vertices": 70,
+        "signed_volume_approx": 0.0029984652205065567,
+        "bounds": [
+          [
+            -0.17770002782344818,
+            -0.10022211074829102,
+            -0.49376732110977173
+          ],
+          [
+            0.328125,
+            0.07386349886655807,
+            1.203125
+          ]
+        ]
+      },
+      {
+        "triangles": 4,
+        "vertices": 4,
+        "signed_volume_approx": 4.9710200281199404e-06,
+        "bounds": [
+          [
+            0.328125,
+            -0.11185241490602493,
+            1.203125
+          ],
+          [
+            0.3979702591896057,
+            -0.08894513547420502,
+            1.4419128894805908
+          ]
+        ]
+      }
+    ],
+    "coincident_vertices": {
+      "native64": [
+        {
+          "position": [
+            0.328125,
+            -0.08894513547420502,
+            1.203125
+          ],
+          "vertex_indices": [
+            69,
+            68
+          ],
+          "components": [
+            0,
+            1
+          ]
+        }
+      ],
+      "stl32": [
+        {
+          "position": [
+            0.328125,
+            -0.08894513547420502,
+            1.203125
+          ],
+          "vertex_indices": [
+            69,
+            68
+          ],
+          "components": [
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    "scope": "Indexed connectivity and coordinate coincidences only; not a solid certificate.",
+    "source": "rotated_tetrahedron-simplex-depth5-cleanup.json",
+    "source_sha256": "fdcb581ef8e2518d071a01e8f82f928775aaba1eeef2bcd8cbc8055b017462fb"
+  },
+  "reports": [
+    {
+      "case": "cube",
+      "backend": "libfive-c9e9734-simplex",
+      "depth": 5,
+      "extraction_seconds": 0.265641002,
+      "setup_seconds": 3.5689e-05,
+      "point_queries": null,
+      "library_status": "Error.NoError",
+      "min_feature": 0.078125,
+      "max_err": 1e-08,
+      "threads": 1,
+      "postprocessing": {
+        "source": "cube-simplex-depth5.stl",
+        "manifold_version": "3.5.3",
+        "imported_into_manifold": true,
+        "simplify_tolerance": 0.0002,
+        "removed_zero_area_face_count": 240,
+        "removed_face_indices_sha256": "5995fa8ce06b675d7bdd65804d87689a71a7c2a7445586b952f10da415e29300",
+        "raw_source_sha256": "6e64849ce6fc61a5eeaad6900102645057c9bcb5242fc83635bf9b084a89b344"
+      },
+      "postprocessing_seconds": 0.009581370977684855,
+      "pipeline_seconds": 1.3906448069765862,
+      "cgal_repair": {
+        "backend": "CGAL-6.1.2-exact-autorefine-remove",
+        "success": true,
+        "input_triangles": 12,
+        "input_closed": true,
+        "input_intersects": false,
+        "output_triangles": 12,
+        "output_closed": true,
+        "output_intersects_exact": false,
+        "repair_seconds": 0.000158203,
+        "scope": "Native exact checks only; rounded STL requires independent audit.",
+        "source": "cube-simplex-depth5-simplified.stl",
+        "source_sha256": "5ae88e6a4e1baedb56e61f6796eea652e30af44fceae1cbbda2534eb71df1d84",
+        "stage_wall_seconds": 1.1154224339989014
+      },
+      "file": "cube-simplex-depth5-simplified-repaired.stl",
+      "sha256": "2bd886521fd5b8820f892812375b9936477be8aa219d61b63b306a26dd1185dc",
+      "triangles": 12,
+      "sampled_tolerance": 0.02,
+      "failures": [],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 8,
+          "edges": 18,
+          "triangles": 12,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 8.000273469202067
+        }
+      ],
+      "candidate_pairs": 54,
+      "improper_intersection_count": 0,
+      "first_improper_intersections": [],
+      "sampled_source_deviation": 2.147356080855885e-05,
+      "landmark_distances": [
+        3.576321745268215e-07,
+        1.2397766112831938e-05,
+        1.2397766112831938e-05,
+        1.2397766113281252e-05,
+        1.2397766112831938e-05,
+        1.2397766113281252e-05,
+        1.2397766113281252e-05,
+        1.2397766113281252e-05
+      ],
+      "maximum_landmark_distance": 1.2397766113281252e-05,
+      "passes_sampled_checks": true
+    },
+    {
+      "case": "disconnected",
+      "backend": "libfive-c9e9734-simplex",
+      "depth": 5,
+      "extraction_seconds": 0.082757387,
+      "setup_seconds": 5.383e-06,
+      "point_queries": null,
+      "library_status": "Error.NotManifold",
+      "min_feature": 0.0625,
+      "max_err": 1e-08,
+      "threads": 1,
+      "postprocessing": {
+        "source": "disconnected-simplex-depth5.stl",
+        "manifold_version": "3.5.3",
+        "imported_into_manifold": true,
+        "simplify_tolerance": 0.0002,
+        "removed_zero_area_face_count": 1335,
+        "removed_face_indices_sha256": "e22b4168405c9b39925d9c935431794b0b3b15519a822dd1bdcdc31b343771bc",
+        "raw_source_sha256": "c58fba6c786a4862c3228b53c5c0e554fc8c5f3e2574c6391bac5c063361409c"
+      },
+      "postprocessing_seconds": 0.13014551397645846,
+      "pipeline_seconds": 0.21314059201800628,
+      "cgal_repair": {
+        "success": true,
+        "empty_input": true,
+        "repair_seconds": 0,
+        "source": "disconnected-simplex-depth5-simplified.stl",
+        "source_sha256": "346a806809cef59956525f523799ee93df73b97e399c3ce43bdec933ddf6f327",
+        "stage_wall_seconds": 0.00023769104154780507
+      },
+      "file": "disconnected-simplex-depth5-simplified-repaired.stl",
+      "sha256": "346a806809cef59956525f523799ee93df73b97e399c3ce43bdec933ddf6f327",
+      "triangles": 0,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "producer reported a library error",
+        "unexpected empty mesh or malformed empty STL"
+      ],
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_cube",
+      "backend": "libfive-c9e9734-simplex",
+      "depth": 5,
+      "extraction_seconds": 0.257582004,
+      "setup_seconds": 5.807e-06,
+      "point_queries": null,
+      "library_status": "Error.NotManifold",
+      "min_feature": 0.109375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "postprocessing": {
+        "source": "rotated_cube-simplex-depth5.stl",
+        "manifold_version": "3.5.3",
+        "imported_into_manifold": true,
+        "simplify_tolerance": 0.0002,
+        "removed_zero_area_face_count": 280,
+        "removed_face_indices_sha256": "1a7874eb35d5a7993cd6368e6e39c86e5144401bb9ba73d5f4f322dc4d41238f",
+        "raw_source_sha256": "12646bba5490f690dc0f47de6ae876468739c9bf9cb182451b3fe5129f6074b3"
+      },
+      "postprocessing_seconds": 0.20651122799608856,
+      "pipeline_seconds": 0.464318172009229,
+      "cgal_repair": {
+        "success": true,
+        "empty_input": true,
+        "repair_seconds": 0,
+        "source": "rotated_cube-simplex-depth5-simplified.stl",
+        "source_sha256": "346a806809cef59956525f523799ee93df73b97e399c3ce43bdec933ddf6f327",
+        "stage_wall_seconds": 0.00022494001314044
+      },
+      "file": "rotated_cube-simplex-depth5-simplified-repaired.stl",
+      "sha256": "346a806809cef59956525f523799ee93df73b97e399c3ce43bdec933ddf6f327",
+      "triangles": 0,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "producer reported a library error",
+        "unexpected empty mesh or malformed empty STL"
+      ],
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_tetrahedron",
+      "backend": "libfive-c9e9734-simplex",
+      "depth": 5,
+      "extraction_seconds": 0.030294894,
+      "setup_seconds": 7.799e-06,
+      "point_queries": null,
+      "library_status": "Error.NoError",
+      "min_feature": 0.109375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "postprocessing": {
+        "source": "rotated_tetrahedron-simplex-depth5.stl",
+        "manifold_version": "3.5.3",
+        "imported_into_manifold": true,
+        "simplify_tolerance": 0.0002,
+        "removed_zero_area_face_count": 24,
+        "removed_face_indices_sha256": "acd477a5a2b0a4cc28fd571241b92ecb069763c5bfcbd6e03f0ce46b68e29821",
+        "raw_source_sha256": "cd482cd4a6eeb42fe64545a9bc47e003fa389cc0ec98cca3ab49254bc1cf3cfc"
+      },
+      "postprocessing_seconds": 0.034025639994069934,
+      "pipeline_seconds": 0.10018762200274194,
+      "cgal_repair": {
+        "backend": "CGAL-6.1.2-exact-autorefine-remove",
+        "success": true,
+        "input_triangles": 182,
+        "input_closed": true,
+        "input_intersects": true,
+        "output_triangles": 182,
+        "output_closed": true,
+        "output_intersects_exact": false,
+        "repair_seconds": 0.009287859,
+        "scope": "Native exact checks only; rounded STL requires independent audit.",
+        "source": "rotated_tetrahedron-simplex-depth5-simplified.stl",
+        "source_sha256": "5cd1a705385c07a8cb35c8d299aaad6fa74165708741a5e68254eb7583d07e4c",
+        "stage_wall_seconds": 0.035867088008672
+      },
+      "file": "rotated_tetrahedron-simplex-depth5-simplified-repaired.stl",
+      "sha256": "b220b39690699bff9a80ca1f5275542694486a863924d36fe4044d23eb99e633",
+      "triangles": 182,
+      "sampled_tolerance": 0.02,
+      "failures": [],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 93,
+          "edges": 273,
+          "triangles": 182,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0030076566119983904
+        }
+      ],
+      "candidate_pairs": 1769,
+      "improper_intersection_count": 0,
+      "first_improper_intersections": [],
+      "sampled_source_deviation": 0.011837124538255483,
+      "landmark_distances": [
+        9.01448448256706e-09,
+        6.773052792322876e-07,
+        4.1560260538054825e-07,
+        2.5314412863331767e-06
+      ],
+      "maximum_landmark_distance": 2.5314412863331767e-06,
+      "passes_sampled_checks": true
+    },
+    {
+      "case": "spiky_tetrahedron",
+      "backend": "libfive-c9e9734-simplex",
+      "depth": 5,
+      "extraction_seconds": 0.026794568,
+      "setup_seconds": 2.5455e-05,
+      "point_queries": null,
+      "library_status": "Error.NotManifold",
+      "min_feature": 0.109375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "postprocessing": {
+        "source": "spiky_tetrahedron-simplex-depth5.stl",
+        "manifold_version": "3.5.3",
+        "imported_into_manifold": true,
+        "simplify_tolerance": 0.0002,
+        "removed_zero_area_face_count": 13,
+        "removed_face_indices_sha256": "62734e5f77660c8bae7540acc84c2f552dcc280a7775a28140a939032dec5123",
+        "raw_source_sha256": "5d80e63e061b201344a0b86fbaddc7b662cf2c4b389044c3fb5e9dfb1cfcc6c7"
+      },
+      "postprocessing_seconds": 0.00862892100121826,
+      "pipeline_seconds": 0.036190989024575834,
+      "cgal_repair": {
+        "success": true,
+        "empty_input": true,
+        "repair_seconds": 0,
+        "source": "spiky_tetrahedron-simplex-depth5-simplified.stl",
+        "source_sha256": "346a806809cef59956525f523799ee93df73b97e399c3ce43bdec933ddf6f327",
+        "stage_wall_seconds": 0.0007675000233575702
+      },
+      "file": "spiky_tetrahedron-simplex-depth5-simplified-repaired.stl",
+      "sha256": "346a806809cef59956525f523799ee93df73b97e399c3ce43bdec933ddf6f327",
+      "triangles": 0,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "producer reported a library error",
+        "unexpected empty mesh or malformed empty STL"
+      ],
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "thin_plate",
+      "backend": "libfive-c9e9734-simplex",
+      "depth": 5,
+      "extraction_seconds": 0.100700704,
+      "setup_seconds": 5.433e-06,
+      "point_queries": null,
+      "library_status": "Error.NotManifold",
+      "min_feature": 0.078125,
+      "max_err": 1e-08,
+      "threads": 1,
+      "postprocessing": {
+        "source": "thin_plate-simplex-depth5.stl",
+        "manifold_version": "3.5.3",
+        "imported_into_manifold": true,
+        "simplify_tolerance": 0.0002,
+        "removed_zero_area_face_count": 608,
+        "removed_face_indices_sha256": "a8457c52037c5ddb4ab2ff19abc66376d61691c17ed4d9bdd0c86a5cdd9c71ec",
+        "raw_source_sha256": "f79470c1c61bcefd0a4a097dc117edf80298dc2b113b7b03d8305eeeaad2c8dc"
+      },
+      "postprocessing_seconds": 0.1452941609895788,
+      "pipeline_seconds": 0.2462467439738513,
+      "cgal_repair": {
+        "success": true,
+        "empty_input": true,
+        "repair_seconds": 0,
+        "source": "thin_plate-simplex-depth5-simplified.stl",
+        "source_sha256": "346a806809cef59956525f523799ee93df73b97e399c3ce43bdec933ddf6f327",
+        "stage_wall_seconds": 0.00025187898427248
+      },
+      "file": "thin_plate-simplex-depth5-simplified-repaired.stl",
+      "sha256": "346a806809cef59956525f523799ee93df73b97e399c3ce43bdec933ddf6f327",
+      "triangles": 0,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "producer reported a library error",
+        "unexpected empty mesh or malformed empty STL"
+      ],
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "torus",
+      "backend": "libfive-c9e9734-simplex",
+      "depth": 5,
+      "extraction_seconds": 0.270599693,
+      "setup_seconds": 3.663e-06,
+      "point_queries": null,
+      "library_status": "Error.NotManifold",
+      "min_feature": 0.1875,
+      "max_err": 1e-08,
+      "threads": 1,
+      "postprocessing": {
+        "source": "torus-simplex-depth5.stl",
+        "manifold_version": "3.5.3",
+        "imported_into_manifold": true,
+        "simplify_tolerance": 0.0002,
+        "removed_zero_area_face_count": 14608,
+        "removed_face_indices_sha256": "5db4b7bb69fba62b565b0d229f6e7d8f0ad1472f6a9ceaed53cd866db9b83429",
+        "raw_source_sha256": "aa151a6a06dea101d0f338c7f0f5bc21d88b05ed6338e34b7856c56c08fe3b64"
+      },
+      "postprocessing_seconds": 0.4977573520154692,
+      "pipeline_seconds": 0.7686275320576131,
+      "cgal_repair": {
+        "success": true,
+        "empty_input": true,
+        "repair_seconds": 0,
+        "source": "torus-simplex-depth5-simplified.stl",
+        "source_sha256": "346a806809cef59956525f523799ee93df73b97e399c3ce43bdec933ddf6f327",
+        "stage_wall_seconds": 0.0002704870421439409
+      },
+      "file": "torus-simplex-depth5-simplified-repaired.stl",
+      "sha256": "346a806809cef59956525f523799ee93df73b97e399c3ce43bdec933ddf6f327",
+      "triangles": 0,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "producer reported a library error",
+        "unexpected empty mesh or malformed empty STL"
+      ],
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "zero_only",
+      "backend": "libfive-c9e9734-simplex",
+      "depth": 5,
+      "extraction_seconds": 0.273267621,
+      "setup_seconds": 4.283e-06,
+      "point_queries": null,
+      "min_feature": 0.078125,
+      "max_err": 1e-08,
+      "threads": 1,
+      "postprocessing": {
+        "source": "zero_only-simplex-depth5.stl",
+        "manifold_version": "3.5.3",
+        "imported_into_manifold": false,
+        "simplify_tolerance": 0.0002,
+        "removed_zero_area_face_count": 0,
+        "removed_face_indices_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "raw_source_sha256": "d368485f6797c210603568e375b48a45535fa0ae4f20eab4ebd89fbec1f4469b"
+      },
+      "postprocessing_seconds": 0.0006475340342149138,
+      "pipeline_seconds": 0.27412271802330457,
+      "cgal_repair": {
+        "success": true,
+        "empty_input": true,
+        "repair_seconds": 0,
+        "source": "zero_only-simplex-depth5-simplified.stl",
+        "source_sha256": "346a806809cef59956525f523799ee93df73b97e399c3ce43bdec933ddf6f327",
+        "stage_wall_seconds": 0.000207562989089638
+      },
+      "file": "zero_only-simplex-depth5-simplified-repaired.stl",
+      "sha256": "346a806809cef59956525f523799ee93df73b97e399c3ce43bdec933ddf6f327",
+      "triangles": 0,
+      "sampled_tolerance": 0.02,
+      "failures": [],
+      "passes_sampled_checks": true
+    }
+  ],
+  "native_failures": [
+    {
+      "source": "sphere-simplex-depth3-simplified.stl",
+      "source_sha256": "f1cf212b673bfb2430e46cf77ee2eb378ad0f3b7afd90f2091414c3e30f3ff94",
+      "returncode": 2,
+      "stdout": "",
+      "stderr": "CGAL error: assertion violation!\nExpression : insert_ok || mesh_to_vertex_to_node_id[&tm][target(h,tm)]==node_id\nFile       : /private/tmp/CGAL-6.1.2/include/CGAL/Polygon_mesh_processing/internal/Corefinement/Visitor.h\nLine       : 768\nExplanation: \nRefer to the bug-reporting instructions at https://www.cgal.org/bug_report.html\nCGAL ERROR: assertion violation!\nExpr: insert_ok || mesh_to_vertex_to_node_id[&tm][target(h,tm)]==node_id\nFile: /private/tmp/CGAL-6.1.2/include/CGAL/Polygon_mesh_processing/internal/Corefinement/Visitor.h\nLine: 768\n",
+      "stage_wall_seconds": 0.1487789109814912,
+      "status": "repair_failed_no_accepted_output"
+    }
+  ],
+  "deferred": [
+    {
+      "case": "sphere",
+      "depth": 5,
+      "triangles": 61090,
+      "extraction_seconds": 0.564998561,
+      "postprocessing_seconds": 1.2356482819886878,
+      "status": "CGAL and full audit deferred for 61090-face candidate; compute cost already exceeds sphere target"
+    }
+  ]
+}

@@ -11,8 +11,10 @@ several fixtures, but still loses rotated sharp/thin features and can emit degen
 The [libfive comparison](../experiments/implicit-mesh/LIBFIVE.md) now covers three native
 algorithms. Default dual contouring passes the rotated cube; simplex recovers the rotated
 tetrahedron's corners, but raw and cleaned candidates still fail embedding/topology checks.
-None is selected for production. The next bounded investigation is robust general boundary
-repair on that small candidate, followed by other rotations and thin solids before adoption.
+The [CGAL repair follow-up](../experiments/implicit-mesh/CGAL.md) gives a passing encoded
+rotated tetrahedron with retained corners, but the combined pipeline still refuses several
+other fixtures. None is selected for production. The next bounded investigation is
+topology-preserving preprocessing or soup-level refinement on the refused small candidates.
 
 ## Closest candidates
 
