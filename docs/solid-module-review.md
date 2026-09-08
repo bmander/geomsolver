@@ -31,6 +31,46 @@ Validation: `make test` passes after building release native and WASM artifacts:
 CLI, native FFI and doctest suites pass. The focused `generic_front` run also
 passes its ten enabled cases with the same three ignored acceptance cases.
 
+## Model and expansion follow-up
+
+The next mechanical pass starts from `3bee942` and splits the two largest core source
+files, keeping `model::…`, `Sketch` methods and `flatten::expand` / `expand_component`
+as the entry points. All child modules are private.
+
+| Former file | Before | After | Responsibilities |
+| --- | ---: | ---: | --- |
+| `src/model.rs` | 2,704 | 230 | Sketch storage, presentation and public re-exports |
+| `src/flatten.rs` | 2,192 | 322 | Expansion state, limits, entry points and diagnostics |
+
+`model/` separates entity metadata (`entities.rs`), spatial records and evaluated-solid
+access (`spatial.rs`), geometry/constraint construction (`construction.rs`), parameter
+ownership and scaling (`parameters.rs`), topology (`topology.rs`), curve sampling and
+its cache (`curves.rs`), solved geometry and bounds (`geometry.rs`), and measurement
+and picking (`measure.rs`). These modules range from 209 to 453 lines.
+
+`flatten/` separates scalar definitions and substitution (`values.rs`), source-order
+expansion and seed settling (`expand.rs`), argument and module binding (`bindings.rs`),
+and final alias/privacy resolution (`resolve.rs`). These modules range from 374 to
+563 lines. The public expansion result and lexical scope remain owned by the parent;
+helpers needed across phases have parent-only visibility. Scalar-definition bookkeeping
+is private to `values.rs`; curve scratch storage is private to `model/curves.rs`.
+
+A token audit compares all 202 function definitions, 37 structs and nine enums against
+the pre-refactor sources. Their signatures and bodies match after excluding comments,
+whitespace and the internal visibility changes needed by the extraction. The audit
+retains literal text, numeric constants, field order and arithmetic order. It supplements
+the existing regression suite; it does not establish numerical correctness.
+
+Validation: `make test` passes with release native and WASM artifacts built, 1,082 core
+tests passing (three existing ignored), 247 web tests, ten CLI tests, four native FFI
+tests and four doctests. The core run includes the separately checkpointed retained-vertex
+meshing experiment; no marcher algorithm changes are part of these mechanical splits.
+
+No entity metadata generator or shared field evaluator is introduced in this pass.
+The substantial architectural benefit is that parameter contracts, expression substitution,
+and final privacy enforcement each now have a distinct home. The opportunities below
+remain separate changes requiring their own behavioral validation.
+
 ## Architectural opportunities
 
 1. **Give discovery failures a common result type before runtime integration.**
@@ -55,15 +95,25 @@ passes its ten enabled cases with the same three ignored acceptance cases.
    The common support arithmetic already lives in `solid/field.rs`. Introducing a
    generic traversal solely to remove the remaining short matches is not justified yet.
 
-3. **Continue splitting by ownership where changes require it.**
-   `model.rs` (2,704 lines) is the next useful mechanical candidate: entity definitions
-   and metadata, construction, and solved geometry access have distinct roles.
-   `flatten.rs` (2,192 lines) mixes scope binding, expansion and scalar substitution.
-   Preserve canonical parameter order and diagnostics when extracting these. In
-   particular, `own_params`, `own_length_params` and `entity_params` are different
-   contracts: ownership, length scaling, and Jacobian order including child parameters.
-   A shared metadata table would need to express those distinctions before replacing
-   their exhaustive matches. File length alone is not a reason to introduce one.
+3. **Keep ownership metadata distinct from dependency order.**
+   The model split now gathers `own_params`, `own_length_params`, `entity_params`
+   and vector/scaling operations in `model/parameters.rs`. Their exhaustive matches
+   encode different contracts: ownership, length scaling, and Jacobian order including
+   child parameters. A shared metadata table would need to express those distinctions
+   before replacing the matches. Similarly, the repeated entity-kind matches in
+   construction, serialization and topology serve different purposes. Consolidating
+   them into one generic visitor would couple independent changes without yet removing
+   a demonstrated source of inconsistency.
+
+4. **Keep expansion phases explicit before changing their representation.**
+   `flatten/expand.rs` preserves source order and carries lexical scopes; `bindings.rs`
+   binds arguments; `values.rs` preserves dimensions and authored expression text;
+   `resolve.rs` checks aliases and private-member access before emitting flat IR.
+   This makes a future typed distinction between unresolved and resolved statements
+   tractable. Such a change should prove preservation of diagnostics, anonymous/cyclic
+   names and privacy rules; it is more than a mechanical refactor. Reference rewriting
+   and seed-text rescoping already use the same lookup policy, so a second resolver or
+   an untyped catch-all visitor would be a regression.
 
 ## Deliberate separation
 
