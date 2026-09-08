@@ -9,7 +9,9 @@ import time
 from candidate_io import read_stl
 
 
-def run(executable, source, output, round_cleanup=False):
+def run(executable, source, output, round_cleanup=False, local_epsilon=None):
+    if round_cleanup and local_epsilon is not None:
+        raise ValueError("local repair and post-repair rounding are separate experiments")
     metadata = json.loads(source.with_suffix(".json").read_text())
     data = source.read_bytes()
     _, faces = read_stl(data)
@@ -18,6 +20,8 @@ def run(executable, source, output, round_cleanup=False):
         command = [str(executable), str(source), str(output)]
         if round_cleanup:
             command.append("--round-cleanup")
+        if local_epsilon is not None:
+            command.append(str(local_epsilon))
         completed = subprocess.run(command,
                                    text=True, capture_output=True)
         if completed.returncode not in (0, 1):
@@ -48,8 +52,11 @@ if __name__ == "__main__":
     parser.add_argument("executable", type=Path)
     parser.add_argument("source", type=Path)
     parser.add_argument("output", type=Path)
-    parser.add_argument("--round-cleanup", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--round-cleanup", action="store_true")
+    mode.add_argument("--local-epsilon", type=float)
     args = parser.parse_args()
     if args.source.resolve() == args.output.resolve():
         parser.error("source must be retained; choose a different output path")
-    raise SystemExit(0 if run(args.executable, args.source, args.output, args.round_cleanup) else 1)
+    raise SystemExit(0 if run(args.executable, args.source, args.output,
+                             args.round_cleanup, args.local_epsilon) else 1)

@@ -59,6 +59,50 @@ they are not an in-process performance distribution.
 
 ## Reproduction
 
+### Local repair with input proximity
+
+CGAL's experimental `remove_self_intersections`, with `preserve_genus(true)` and a
+`polyhedral_envelope_epsilon` of 0.002, repairs **both** tetrahedron candidates after indexed
+cleanup and Manifold simplification at 0.0002. It uses the default seven-iteration limit.
+The resulting encoded STLs pass independent closedness, outward orientation, genus, exact
+intersection and sampled source checks:
+
+| Fixture | Triangles | Maximum sampled source deviation | Maximum corner miss |
+|---|---:|---:|---:|
+| Axis-aligned thin tetrahedron | 38 | 0.00289391 | 0.00982522 |
+| Rotated thin tetrahedron | 180 | 0.01183713 | 0.000002532 |
+
+The proximity constraint uses the input mesh, not the analytical fixture or supplied corner
+positions. At epsilon 0.0002 it refuses the axis-aligned intersections while retaining the
+body; 0.002 and 0.01 pass both fixtures. This resolves the axis-aligned body-loss failure of
+global autorepair without prescribing a tetrahedron-specific repair. It does not resolve
+the initial degenerate-face failures in the rotated cube, plate or disconnected spheres.
+
+Both passing pipelines were repeated from the original indexed producer JSON, including
+degenerate cleanup, simplification and local repair. Native local repair took about 2 ms
+and 5 ms respectively. Adding the previously measured extraction to repeated cleanup stages
+gave 88 ms and 101 ms; these sums exclude compilation/audit and are not simultaneous full
+pipeline measurements or a timing distribution. Initial process startup was substantially
+slower. Artifacts are in `/private/tmp/solvent-local-pipeline`;
+[`local-repair-results.json`](local-repair-results.json) records all six tolerance trials and
+both repeated pipelines. The default autorepair build was also rebuilt and its passing
+182-triangle rotated tetrahedron re-audited after sharing the driver.
+
+Build with `local` as the fifth argument to `cgal/build.sh`, using a distinct executable.
+After indexed cleanup and simplification:
+
+```sh
+python3 experiments/implicit-mesh/run_cgal.py /private/tmp/solvent-cgal-local-adaptive /private/tmp/solvent-local-pipeline/spiky_tetrahedron-simplified.stl /private/tmp/solvent-local-pipeline/spiky_tetrahedron-repaired.stl --local-epsilon .002
+python3 experiments/implicit-mesh/audit.py /private/tmp/solvent-local-pipeline/spiky_tetrahedron-repaired.stl
+```
+
+The helper now also refuses native output that remains self-intersecting, loses closedness,
+or turns a nonempty input into an empty mesh. These are necessary checks; the independent
+STL and source audit remains mandatory. A proximity constraint cannot repair an incorrect
+source definition or establish full surface coverage. No gear or runtime integration is
+accepted by these experiments. Implementation reference:
+[CGAL 6.1.2 local repair](https://github.com/CGAL/cgal/blob/v6.1.2/Polygon_mesh_processing/include/CGAL/Polygon_mesh_processing/repair_self_intersections.h).
+
 ### Indexed cleanup follow-up
 
 `run_indexed_cleanup.py` now carries the original producer indices into CGAL, retaining
@@ -79,9 +123,9 @@ stops on convergence or after four passes and does not convert those partial res
 The axis-aligned failure is not merely a serialization problem: the repaired output has
 lost the source apex and most of its extent. Rounding vertices within the indexed mesh and
 running degenerate cleanup after autorepair also failed. Dropping the remaining degenerate
-patches cannot recover the missing source surface. A local repair constrained to stay near
-the input surface is the next experiment; input proximity would still need independent
-source checks and cannot certify an initially incorrect extraction.
+patches cannot recover the missing source surface. This motivated the local repair above;
+input proximity still needs independent source checks and cannot certify an initially
+incorrect extraction.
 
 [`indexed-cleanup-results.json`](indexed-cleanup-results.json) records source hashes, native
 postconditions, final encoded bounds and audit outcomes. Native cleanup takes roughly

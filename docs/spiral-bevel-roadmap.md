@@ -112,6 +112,16 @@ checks but acquires three intersections after binary32 rounding; it is unaccepte
 Complete tetrahedron closure still fails. The cube and tetrahedron remain
 unaccepted; local feature recovery does not establish the small-solid discovery milestone.
 
+The subsequent [isolated external-mesher comparison](../experiments/implicit-mesh/README.md)
+tests Fidget, Manifold and libfive against the same independent small-solid checks. None
+has passed the full fixture set, and none is integrated with the continuous swept evaluator.
+A libfive/Manifold/CGAL sequence now produces a passing rotated thin tetrahedron, including
+exact encoded-STL embedding and sampled source checks. The
+[repair investigation](../experiments/implicit-mesh/CGAL.md) records failures on other sharp,
+thin and disconnected inputs; one native repair reports success while discarding most of
+the source body. This is an unresolved general boundary-extraction dependency, not completion
+of the gear or selection of a production backend.
+
 ## First experiment and decision gate
 
 The [continuous-volume experiment](continuous-volumes.md) records the initial pinion
