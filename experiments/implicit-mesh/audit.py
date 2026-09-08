@@ -126,7 +126,8 @@ def audit(path, tolerance=.02):
     report = {key: metadata[key] for key in
               ("case", "backend", "depth", "extraction_seconds", "setup_seconds")}
     for key in ("grid_divisions", "edge_length", "vertex_tolerance", "point_queries",
-                "callback", "library_status"):
+                "callback", "library_status", "min_feature", "max_err", "threads",
+                "postprocessing", "postprocessing_seconds", "pipeline_seconds"):
         if key in metadata:
             report[key] = metadata[key]
     report.update(file=str(path), sha256=hashlib.sha256(data).hexdigest(), triangles=count,

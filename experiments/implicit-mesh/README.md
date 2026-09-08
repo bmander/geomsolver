@@ -2,6 +2,8 @@
 
 The subsequent [Manifold LevelSet comparison](MANIFOLD.md) uses the same geometry and
 independent checks, and records scalar-query counts as well as output defects.
+The [native libfive comparison](LIBFIVE.md) tests three algorithms and an explicit,
+independently checked cleanup experiment on the rotated thin tetrahedron.
 
 Fidget 0.5.0, pinned with a lockfile, outside Solvent's shipped Rust workspace.
 This establishes a closed-form expression baseline. It does **not** adapt Solvent's

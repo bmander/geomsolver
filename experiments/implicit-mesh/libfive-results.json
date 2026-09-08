@@ -1,0 +1,1573 @@
+{
+  "date": "2026-09-08",
+  "libfive_revision": "c9e97343e0af998cd1696e85583eccba95532b96",
+  "libfive_modified": false,
+  "build": "AppleClang 17, Release, native architecture, Eigen 5.0.1, Boost 1.85.0, libpng 1.6.56",
+  "boost_archive_sha256": "7009fe1faa1697476bdc7027703a2badb84e849b7b0baad5086b087b971f8617",
+  "scope": "Single native serial extraction timings. Independent exact encoded mesh checks and sampled source geometry; no whole-boundary certificate. Some follow-ups overlap auditing. Postprocessing is explicit and timed separately.",
+  "reports": [
+    {
+      "case": "cube",
+      "backend": "libfive-c9e9734-dc",
+      "depth": 5,
+      "extraction_seconds": 0.032984,
+      "setup_seconds": 5.2554e-05,
+      "point_queries": null,
+      "min_feature": 0.078125,
+      "max_err": 1e-08,
+      "threads": 1,
+      "file": "cube-dc-depth5.stl",
+      "sha256": "6d64eec573ce5b2a07349ad04e56f3a984a538d5e572f343e672d00171a83199",
+      "triangles": 12,
+      "sampled_tolerance": 0.02,
+      "failures": [],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 8,
+          "edges": 18,
+          "triangles": 12,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 8.0
+        }
+      ],
+      "candidate_pairs": 54,
+      "improper_intersection_count": 0,
+      "first_improper_intersections": [],
+      "sampled_source_deviation": 0,
+      "landmark_distances": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "maximum_landmark_distance": 0.0,
+      "passes_sampled_checks": true
+    },
+    {
+      "case": "disconnected",
+      "backend": "libfive-c9e9734-dc",
+      "depth": 5,
+      "extraction_seconds": 0.005155737,
+      "setup_seconds": 1.0328e-05,
+      "point_queries": null,
+      "min_feature": 0.0625,
+      "max_err": 1e-08,
+      "threads": 1,
+      "file": "disconnected-dc-depth5.stl",
+      "sha256": "99cb067c7815f015ed66c3190ffb00dc9ba86f98d84aef8683b737d6eec86b3b",
+      "triangles": 880,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "unexpected volume orientation or genus",
+        "sampled source deviation or landmark coverage exceeds tolerance"
+      ],
+      "components": 2,
+      "topology": [
+        {
+          "vertices": 8,
+          "edges": 18,
+          "triangles": 12,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": -0.00025885952299709394
+        },
+        {
+          "vertices": 436,
+          "edges": 1302,
+          "triangles": 868,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.1142908873113093
+        }
+      ],
+      "candidate_pairs": 5597,
+      "improper_intersection_count": 0,
+      "first_improper_intersections": [],
+      "sampled_source_deviation": 0.1713743839429936,
+      "landmark_distances": [
+        7.419586181645066e-05,
+        3.6904215812649806e-05,
+        0.001030020486796097,
+        0.001030020486796097,
+        0.001030020486796097,
+        0.001030020486796097,
+        0.004285896309656685,
+        0.0649713750865828,
+        0.051861323395147034,
+        0.018612781199903845,
+        0.024985581392956074,
+        0.04931405867552004
+      ],
+      "maximum_landmark_distance": 0.0649713750865828,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_cube",
+      "backend": "libfive-c9e9734-dc",
+      "depth": 5,
+      "extraction_seconds": 0.033604457,
+      "setup_seconds": 8.708e-06,
+      "point_queries": null,
+      "min_feature": 0.109375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "file": "rotated_cube-dc-depth5.stl",
+      "sha256": "a2c070e96dcb22232f7023fd4527155155045d90bd07d7acde1e24d136f6512c",
+      "triangles": 2468,
+      "sampled_tolerance": 0.02,
+      "failures": [],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 1236,
+          "edges": 3702,
+          "triangles": 2468,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 8.000000359639017
+        }
+      ],
+      "candidate_pairs": 18168,
+      "improper_intersection_count": 0,
+      "first_improper_intersections": [],
+      "sampled_source_deviation": 1.6651424010055118e-07,
+      "landmark_distances": [
+        4.052224168823296e-08,
+        3.4078888930844284e-08,
+        2.6569631105518687e-08,
+        3.6751665701219273e-09,
+        3.6751665703718653e-09,
+        2.656963110483704e-08,
+        3.4078888930844284e-08,
+        4.052224168768163e-08
+      ],
+      "maximum_landmark_distance": 4.052224168823296e-08,
+      "passes_sampled_checks": true
+    },
+    {
+      "case": "rotated_cube",
+      "backend": "libfive-c9e9734-hybrid",
+      "depth": 3,
+      "extraction_seconds": 0.062329709,
+      "setup_seconds": 3.6767e-05,
+      "point_queries": null,
+      "min_feature": 0.4375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "file": "rotated_cube-hybrid-depth3.stl",
+      "sha256": "37237bf66d20fc3749557c29d3fe7a6757581b72ec4d8a1032ab77c67dcadc7c",
+      "triangles": 5800,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "exactly degenerate encoded triangle 26"
+      ],
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_cube",
+      "backend": "libfive-c9e9734-hybrid",
+      "depth": 5,
+      "extraction_seconds": 0.713434319,
+      "setup_seconds": 2.7983e-05,
+      "point_queries": null,
+      "min_feature": 0.109375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "file": "rotated_cube-hybrid-depth5.stl",
+      "sha256": "8ccf833da65ec7f57dab803199c8edc6fb3dbaadae17aac46227593d24690351",
+      "triangles": 106720,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "exactly degenerate encoded triangle 56"
+      ],
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_cube",
+      "backend": "libfive-c9e9734-simplex",
+      "depth": 3,
+      "extraction_seconds": 0.034243815,
+      "setup_seconds": 3.1931e-05,
+      "point_queries": null,
+      "min_feature": 0.4375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "postprocessing": {
+        "source": "rotated_cube-simplex-depth3.stl",
+        "removed_zero_area_faces": [
+          325,
+          369,
+          370,
+          371,
+          398,
+          399,
+          400,
+          401,
+          402,
+          403,
+          404,
+          405,
+          408,
+          409,
+          429,
+          432,
+          433,
+          434,
+          435,
+          468,
+          469,
+          479,
+          482,
+          486,
+          488,
+          501,
+          504,
+          847,
+          860,
+          863,
+          881,
+          891,
+          892,
+          893,
+          945,
+          946,
+          947,
+          948,
+          1065,
+          1093,
+          1139,
+          1168,
+          1169,
+          1170,
+          1183,
+          1496,
+          1497,
+          1498,
+          1499,
+          1536,
+          1537,
+          1538,
+          1539,
+          1552,
+          1553,
+          1563,
+          1564,
+          1565,
+          1572,
+          1589,
+          1884,
+          1888,
+          1889,
+          1982,
+          1998,
+          2024,
+          2028,
+          2029,
+          2068,
+          2069,
+          2070,
+          2071,
+          2072,
+          2073,
+          2088,
+          2089,
+          2090,
+          2091,
+          2136,
+          2137,
+          2138,
+          2346,
+          2347,
+          2348,
+          2349,
+          2500,
+          2501,
+          2502,
+          2700,
+          2759,
+          2783,
+          3486,
+          3487,
+          3488,
+          3489
+        ],
+        "manifold_version": "3.5.3",
+        "imported_into_manifold": false,
+        "simplify_tolerance": null
+      },
+      "postprocessing_seconds": 0.031887907010968775,
+      "pipeline_seconds": 0.06613172201096877,
+      "file": "rotated_cube-simplex-depth3-drop-zero.stl",
+      "sha256": "aceea87ac94ce45ceb49003aeab6e034b5f62c719287cd8a3f8b64f1d61e4e38",
+      "triangles": 3413,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "open or inconsistently oriented edge",
+        "improper encoded triangle intersections",
+        "sampled source deviation or landmark coverage exceeds tolerance"
+      ],
+      "components": 1,
+      "topology": [],
+      "candidate_pairs": 29705,
+      "improper_intersection_count": 211,
+      "first_improper_intersections": [
+        [
+          423,
+          429
+        ],
+        [
+          423,
+          433
+        ],
+        [
+          429,
+          434
+        ],
+        [
+          433,
+          434
+        ],
+        [
+          423,
+          449
+        ],
+        [
+          448,
+          449
+        ],
+        [
+          434,
+          449
+        ],
+        [
+          829,
+          832
+        ],
+        [
+          821,
+          833
+        ],
+        [
+          3383,
+          833
+        ],
+        [
+          832,
+          833
+        ],
+        [
+          821,
+          834
+        ],
+        [
+          3383,
+          834
+        ],
+        [
+          833,
+          835
+        ],
+        [
+          834,
+          835
+        ],
+        [
+          858,
+          942
+        ],
+        [
+          859,
+          942
+        ],
+        [
+          858,
+          943
+        ],
+        [
+          832,
+          943
+        ],
+        [
+          859,
+          943
+        ]
+      ],
+      "sampled_source_deviation": 0.03900090170942305,
+      "landmark_distances": [
+        1.4960430742663604e-07,
+        6.795690618547621e-07,
+        1.8001171758100253e-06,
+        2.463784541649833e-06,
+        2.463784541649833e-06,
+        1.8001171758100253e-06,
+        6.795690618523691e-07,
+        1.4960430743045e-07
+      ],
+      "maximum_landmark_distance": 2.463784541649833e-06,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_cube",
+      "backend": "libfive-c9e9734-simplex",
+      "depth": 3,
+      "extraction_seconds": 0.034243815,
+      "setup_seconds": 3.1931e-05,
+      "point_queries": null,
+      "min_feature": 0.4375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "file": "rotated_cube-simplex-depth3.stl",
+      "sha256": "61fcfc2d263823c57e409926a91f1343fd058f95d2f3479c11c4e592814d677c",
+      "triangles": 3508,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "exactly degenerate encoded triangle 325"
+      ],
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_cube",
+      "backend": "libfive-c9e9734-simplex",
+      "depth": 5,
+      "extraction_seconds": 0.405173985,
+      "setup_seconds": 2.9258e-05,
+      "point_queries": null,
+      "min_feature": 0.109375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "file": "rotated_cube-simplex-depth5.stl",
+      "sha256": "9cb41f0acee51cb428adf9888a5358cc62c0a87199ca39679246343ec29540fe",
+      "triangles": 26328,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "exactly degenerate encoded triangle 88"
+      ],
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_tetrahedron",
+      "backend": "libfive-c9e9734-dc",
+      "depth": 5,
+      "extraction_seconds": 0.002647898,
+      "setup_seconds": 1.1756e-05,
+      "point_queries": null,
+      "min_feature": 0.109375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "file": "rotated_tetrahedron-dc-depth5.stl",
+      "sha256": "4de96ab40ba739bc9f2a974636e7489ceff2a91ca29a8f509e1cb972a8a29263",
+      "triangles": 32,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "unexpected component count",
+        "sampled source deviation or landmark coverage exceeds tolerance"
+      ],
+      "components": 2,
+      "topology": [
+        {
+          "vertices": 12,
+          "edges": 30,
+          "triangles": 20,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0002624883281501383
+        },
+        {
+          "vertices": 8,
+          "edges": 18,
+          "triangles": 12,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 4.791690043401965e-05
+        }
+      ],
+      "candidate_pairs": 162,
+      "improper_intersection_count": 0,
+      "first_improper_intersections": [],
+      "sampled_source_deviation": 0.0293031428534602,
+      "landmark_distances": [
+        1.4651661637802693,
+        0.05044506363841623,
+        0.07482601176542733,
+        0.04855227118857968
+      ],
+      "maximum_landmark_distance": 1.4651661637802693,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_tetrahedron",
+      "backend": "libfive-c9e9734-hybrid",
+      "depth": 5,
+      "extraction_seconds": 0.076801028,
+      "setup_seconds": 2.9501e-05,
+      "point_queries": null,
+      "min_feature": 0.109375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "file": "rotated_tetrahedron-hybrid-depth5.stl",
+      "sha256": "c3dbc46005cc30a4112b1b81cb3d48a9e74c33cd180869783af48d648ef7d40e",
+      "triangles": 1496,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "exactly degenerate encoded triangle 47"
+      ],
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_tetrahedron",
+      "backend": "libfive-c9e9734-simplex",
+      "depth": 5,
+      "extraction_seconds": 0.042060403,
+      "setup_seconds": 3.0157e-05,
+      "point_queries": null,
+      "library_status": "Error.NoError",
+      "min_feature": 0.109375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "postprocessing": {
+        "source": "rotated_tetrahedron-simplex-depth5.stl",
+        "removed_zero_area_faces": [
+          408,
+          409,
+          410,
+          468,
+          500,
+          501,
+          514,
+          515,
+          516,
+          517,
+          518,
+          519,
+          1364,
+          1371,
+          1389,
+          1398,
+          1451,
+          1493,
+          1520,
+          1542,
+          1751,
+          1764,
+          1783,
+          1796
+        ],
+        "manifold_version": "3.5.3",
+        "imported_into_manifold": true,
+        "simplify_tolerance": 0.002
+      },
+      "postprocessing_seconds": 0.023978096956852823,
+      "pipeline_seconds": 0.06603849995685282,
+      "file": "rotated_tetrahedron-simplex-depth5-cleanup.stl",
+      "sha256": "ea4ee44d1c4a30ac89c2338f6b8c0d987115858025c0357073650a0c2b25e1a9",
+      "triangles": 140,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "nonmanifold vertex fan"
+      ],
+      "components": 1,
+      "topology": [],
+      "candidate_pairs": 1335,
+      "improper_intersection_count": 0,
+      "first_improper_intersections": [],
+      "sampled_source_deviation": 0.011837124538255483,
+      "landmark_distances": [
+        9.01448448363208e-09,
+        6.773052792322876e-07,
+        4.1560260538054825e-07,
+        2.5314412863331767e-06
+      ],
+      "maximum_landmark_distance": 2.5314412863331767e-06,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_tetrahedron",
+      "backend": "libfive-c9e9734-simplex",
+      "depth": 5,
+      "extraction_seconds": 0.042060403,
+      "setup_seconds": 3.0157e-05,
+      "point_queries": null,
+      "min_feature": 0.109375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "postprocessing": {
+        "source": "rotated_tetrahedron-simplex-depth5.stl",
+        "removed_zero_area_faces": [
+          408,
+          409,
+          410,
+          468,
+          500,
+          501,
+          514,
+          515,
+          516,
+          517,
+          518,
+          519,
+          1364,
+          1371,
+          1389,
+          1398,
+          1451,
+          1493,
+          1520,
+          1542,
+          1751,
+          1764,
+          1783,
+          1796
+        ],
+        "manifold_version": "3.5.3",
+        "imported_into_manifold": false,
+        "simplify_tolerance": null
+      },
+      "postprocessing_seconds": 0.01581388700287789,
+      "pipeline_seconds": 0.057874290002877894,
+      "file": "rotated_tetrahedron-simplex-depth5-drop-zero.stl",
+      "sha256": "1e8a651db635646de90b22d956d0e26cf6d3f86b67d4e823c3b67e15f1c9e4fc",
+      "triangles": 2288,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "improper encoded triangle intersections"
+      ],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 1146,
+          "edges": 3432,
+          "triangles": 2288,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0030076817563209892
+        }
+      ],
+      "candidate_pairs": 24334,
+      "improper_intersection_count": 193,
+      "first_improper_intersections": [
+        [
+          1731,
+          1989
+        ],
+        [
+          1731,
+          1994
+        ],
+        [
+          1989,
+          1995
+        ],
+        [
+          797,
+          1990
+        ],
+        [
+          1731,
+          1990
+        ],
+        [
+          1988,
+          1990
+        ],
+        [
+          1995,
+          1990
+        ],
+        [
+          797,
+          1993
+        ],
+        [
+          1731,
+          1993
+        ],
+        [
+          1988,
+          1993
+        ],
+        [
+          1989,
+          1993
+        ],
+        [
+          1995,
+          1993
+        ],
+        [
+          797,
+          1991
+        ],
+        [
+          1988,
+          1991
+        ],
+        [
+          1969,
+          1991
+        ],
+        [
+          797,
+          1992
+        ],
+        [
+          1988,
+          1992
+        ],
+        [
+          1989,
+          1992
+        ],
+        [
+          1990,
+          1992
+        ],
+        [
+          1968,
+          1970
+        ]
+      ],
+      "sampled_source_deviation": 0.0133942960964446,
+      "landmark_distances": [
+        9.012944102231723e-09,
+        6.773052792322876e-07,
+        4.1559617533037163e-07,
+        2.5314412863390708e-06
+      ],
+      "maximum_landmark_distance": 2.5314412863390708e-06,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_tetrahedron",
+      "backend": "libfive-c9e9734-simplex",
+      "depth": 5,
+      "extraction_seconds": 0.042060403,
+      "setup_seconds": 3.0157e-05,
+      "point_queries": null,
+      "library_status": "Error.NoError",
+      "min_feature": 0.109375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "postprocessing": {
+        "source": "rotated_tetrahedron-simplex-depth5.stl",
+        "removed_zero_area_faces": [
+          408,
+          409,
+          410,
+          468,
+          500,
+          501,
+          514,
+          515,
+          516,
+          517,
+          518,
+          519,
+          1364,
+          1371,
+          1389,
+          1398,
+          1451,
+          1493,
+          1520,
+          1542,
+          1751,
+          1764,
+          1783,
+          1796
+        ],
+        "manifold_version": "3.5.3",
+        "imported_into_manifold": true,
+        "simplify_tolerance": 0.0002
+      },
+      "postprocessing_seconds": 0.026110719016287476,
+      "pipeline_seconds": 0.06817112201628747,
+      "file": "rotated_tetrahedron-simplex-depth5-manifold-0.0002.stl",
+      "sha256": "5cd1a705385c07a8cb35c8d299aaad6fa74165708741a5e68254eb7583d07e4c",
+      "triangles": 182,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "improper encoded triangle intersections"
+      ],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 93,
+          "edges": 273,
+          "triangles": 182,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0030076566119914766
+        }
+      ],
+      "candidate_pairs": 1770,
+      "improper_intersection_count": 2,
+      "first_improper_intersections": [
+        [
+          29,
+          32
+        ],
+        [
+          32,
+          30
+        ]
+      ],
+      "sampled_source_deviation": 0.011837124538255483,
+      "landmark_distances": [
+        9.01448448256706e-09,
+        6.773052792322876e-07,
+        4.1560260538054825e-07,
+        2.5314412863331767e-06
+      ],
+      "maximum_landmark_distance": 2.5314412863331767e-06,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_tetrahedron",
+      "backend": "libfive-c9e9734-simplex",
+      "depth": 5,
+      "extraction_seconds": 0.042060403,
+      "setup_seconds": 3.0157e-05,
+      "point_queries": null,
+      "library_status": "Error.NoError",
+      "min_feature": 0.109375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "postprocessing": {
+        "source": "rotated_tetrahedron-simplex-depth5.stl",
+        "removed_zero_area_faces": [
+          408,
+          409,
+          410,
+          468,
+          500,
+          501,
+          514,
+          515,
+          516,
+          517,
+          518,
+          519,
+          1364,
+          1371,
+          1389,
+          1398,
+          1451,
+          1493,
+          1520,
+          1542,
+          1751,
+          1764,
+          1783,
+          1796
+        ],
+        "manifold_version": "3.5.3",
+        "imported_into_manifold": true,
+        "simplify_tolerance": 0.0
+      },
+      "postprocessing_seconds": 0.02234409295488149,
+      "pipeline_seconds": 0.06440449595488149,
+      "file": "rotated_tetrahedron-simplex-depth5-manifold-0.stl",
+      "sha256": "fb8b53d20c478518475f010c48a579df49e9e03ccc6d68a2f68fcae0366c1265",
+      "triangles": 2288,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "improper encoded triangle intersections"
+      ],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 1146,
+          "edges": 3432,
+          "triangles": 2288,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.003007681988674087
+        }
+      ],
+      "candidate_pairs": 24382,
+      "improper_intersection_count": 146,
+      "first_improper_intersections": [
+        [
+          591,
+          1626
+        ],
+        [
+          592,
+          1626
+        ],
+        [
+          591,
+          1636
+        ],
+        [
+          1626,
+          593
+        ],
+        [
+          1634,
+          593
+        ],
+        [
+          1635,
+          593
+        ],
+        [
+          1636,
+          593
+        ],
+        [
+          591,
+          594
+        ],
+        [
+          1626,
+          594
+        ],
+        [
+          1634,
+          594
+        ],
+        [
+          1635,
+          594
+        ],
+        [
+          1636,
+          594
+        ],
+        [
+          1634,
+          1629
+        ],
+        [
+          1635,
+          1629
+        ],
+        [
+          595,
+          1629
+        ],
+        [
+          591,
+          1630
+        ],
+        [
+          1634,
+          1630
+        ],
+        [
+          1635,
+          1630
+        ],
+        [
+          593,
+          1630
+        ],
+        [
+          1627,
+          597
+        ]
+      ],
+      "sampled_source_deviation": 0.0133942960964446,
+      "landmark_distances": [
+        9.012944102231723e-09,
+        6.773052792322876e-07,
+        4.1559617533037163e-07,
+        2.5314412863390708e-06
+      ],
+      "maximum_landmark_distance": 2.5314412863390708e-06,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_tetrahedron",
+      "backend": "libfive-c9e9734-simplex",
+      "depth": 5,
+      "extraction_seconds": 0.042060403,
+      "setup_seconds": 3.0157e-05,
+      "point_queries": null,
+      "min_feature": 0.109375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "file": "rotated_tetrahedron-simplex-depth5.stl",
+      "sha256": "5701f548c54b3329069492fe6f4189d6bf05d1694f0e976acff79be1018124e5",
+      "triangles": 2312,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "exactly degenerate encoded triangle 408"
+      ],
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "sphere",
+      "backend": "libfive-c9e9734-dc",
+      "depth": 5,
+      "extraction_seconds": 0.048777771,
+      "setup_seconds": 8.8442e-05,
+      "point_queries": null,
+      "min_feature": 0.078125,
+      "max_err": 1e-08,
+      "threads": 1,
+      "file": "sphere-dc-depth5.stl",
+      "sha256": "af808f248f5954d05bf39331c1123ac882b9cce921f132827ed95db564fa827c",
+      "triangles": 6108,
+      "sampled_tolerance": 0.02,
+      "failures": [],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 3056,
+          "edges": 9162,
+          "triangles": 6108,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 4.194774892773916
+        }
+      ],
+      "candidate_pairs": 39076,
+      "improper_intersection_count": 0,
+      "first_improper_intersections": [],
+      "sampled_source_deviation": 0.002143067234582574,
+      "landmark_distances": [
+        2.3245811462402344e-06,
+        2.3245811462402344e-06,
+        2.3245811462402344e-06,
+        2.3245811462402344e-06,
+        2.3245811462402344e-06,
+        2.3245811462402344e-06
+      ],
+      "maximum_landmark_distance": 2.3245811462402344e-06,
+      "passes_sampled_checks": true
+    },
+    {
+      "case": "spiky_tetrahedron",
+      "backend": "libfive-c9e9734-dc",
+      "depth": 5,
+      "extraction_seconds": 0.002387704,
+      "setup_seconds": 4.1789e-05,
+      "point_queries": null,
+      "min_feature": 0.109375,
+      "max_err": 1e-08,
+      "threads": 1,
+      "file": "spiky_tetrahedron-dc-depth5.stl",
+      "sha256": "ae86f4557185bd8883a0d9d3fe64c2556c24aea2e4151afbc23090f1dfa09645",
+      "triangles": 36,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "improper encoded triangle intersections",
+        "sampled source deviation or landmark coverage exceeds tolerance"
+      ],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 20,
+          "edges": 54,
+          "triangles": 36,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0031172235071796344
+        }
+      ],
+      "candidate_pairs": 281,
+      "improper_intersection_count": 29,
+      "first_improper_intersections": [
+        [
+          28,
+          30
+        ],
+        [
+          29,
+          30
+        ],
+        [
+          28,
+          31
+        ],
+        [
+          29,
+          31
+        ],
+        [
+          30,
+          4
+        ],
+        [
+          29,
+          11
+        ],
+        [
+          4,
+          11
+        ],
+        [
+          2,
+          8
+        ],
+        [
+          3,
+          8
+        ],
+        [
+          2,
+          9
+        ],
+        [
+          3,
+          9
+        ],
+        [
+          8,
+          0
+        ],
+        [
+          3,
+          6
+        ],
+        [
+          0,
+          6
+        ],
+        [
+          6,
+          1
+        ],
+        [
+          0,
+          7
+        ],
+        [
+          1,
+          7
+        ],
+        [
+          1,
+          18
+        ],
+        [
+          7,
+          19
+        ],
+        [
+          18,
+          19
+        ]
+      ],
+      "sampled_source_deviation": 0.001091848799410428,
+      "landmark_distances": [
+        0.07812374144355884,
+        2.9832481978441926e-08,
+        2.980986514601516e-08,
+        2.980986514601516e-08
+      ],
+      "maximum_landmark_distance": 0.07812374144355884,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "thin_plate",
+      "backend": "libfive-c9e9734-dc",
+      "depth": 5,
+      "extraction_seconds": 0.008644756,
+      "setup_seconds": 1.4732e-05,
+      "point_queries": null,
+      "min_feature": 0.078125,
+      "max_err": 1e-08,
+      "threads": 1,
+      "file": "thin_plate-dc-depth5.stl",
+      "sha256": "95b98cbf2dde6b3620dbb594a6c44b6989da34227530999ad7c7eb9c82829b9f",
+      "triangles": 1408,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "unexpected component count",
+        "sampled source deviation or landmark coverage exceeds tolerance"
+      ],
+      "components": 35,
+      "topology": [
+        {
+          "vertices": 30,
+          "edges": 84,
+          "triangles": 56,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0005297961429323744
+        },
+        {
+          "vertices": 8,
+          "edges": 18,
+          "triangles": 12,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 2.551992133524659e-05
+        },
+        {
+          "vertices": 44,
+          "edges": 126,
+          "triangles": 84,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0007190179056277818
+        },
+        {
+          "vertices": 30,
+          "edges": 84,
+          "triangles": 56,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0004850138825815091
+        },
+        {
+          "vertices": 11,
+          "edges": 27,
+          "triangles": 18,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 8.73444531318877e-05
+        },
+        {
+          "vertices": 8,
+          "edges": 18,
+          "triangles": 12,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 4.887847082154159e-05
+        },
+        {
+          "vertices": 24,
+          "edges": 66,
+          "triangles": 44,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0003710241416171313
+        },
+        {
+          "vertices": 39,
+          "edges": 111,
+          "triangles": 74,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0006391974746842998
+        },
+        {
+          "vertices": 12,
+          "edges": 30,
+          "triangles": 20,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 8.986861084064639e-05
+        },
+        {
+          "vertices": 12,
+          "edges": 30,
+          "triangles": 20,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 9.342602349702047e-05
+        },
+        {
+          "vertices": 32,
+          "edges": 90,
+          "triangles": 60,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0004862307826476742
+        },
+        {
+          "vertices": 32,
+          "edges": 90,
+          "triangles": 60,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00048621093193145594
+        },
+        {
+          "vertices": 28,
+          "edges": 78,
+          "triangles": 52,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00042320879965164915
+        },
+        {
+          "vertices": 12,
+          "edges": 30,
+          "triangles": 20,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 9.342620644194398e-05
+        },
+        {
+          "vertices": 28,
+          "edges": 78,
+          "triangles": 52,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00047239972617107447
+        },
+        {
+          "vertices": 28,
+          "edges": 78,
+          "triangles": 52,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00045475000621643266
+        },
+        {
+          "vertices": 12,
+          "edges": 30,
+          "triangles": 20,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00018311507818343656
+        },
+        {
+          "vertices": 32,
+          "edges": 90,
+          "triangles": 60,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00048621093193145594
+        },
+        {
+          "vertices": 32,
+          "edges": 90,
+          "triangles": 60,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0004862307826476742
+        },
+        {
+          "vertices": 39,
+          "edges": 111,
+          "triangles": 74,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0006391974746842998
+        },
+        {
+          "vertices": 12,
+          "edges": 30,
+          "triangles": 20,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00013293236508103343
+        },
+        {
+          "vertices": 12,
+          "edges": 30,
+          "triangles": 20,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00018311507818343658
+        },
+        {
+          "vertices": 12,
+          "edges": 30,
+          "triangles": 20,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00013293236508103335
+        },
+        {
+          "vertices": 28,
+          "edges": 78,
+          "triangles": 52,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0004723997261710744
+        },
+        {
+          "vertices": 44,
+          "edges": 126,
+          "triangles": 84,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0007190179058940136
+        },
+        {
+          "vertices": 28,
+          "edges": 78,
+          "triangles": 52,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00045475000621643266
+        },
+        {
+          "vertices": 28,
+          "edges": 78,
+          "triangles": 52,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0004232087988236833
+        },
+        {
+          "vertices": 12,
+          "edges": 30,
+          "triangles": 20,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 9.34262058375203e-05
+        },
+        {
+          "vertices": 8,
+          "edges": 18,
+          "triangles": 12,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 4.8878470821541587e-05
+        },
+        {
+          "vertices": 11,
+          "edges": 27,
+          "triangles": 18,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 8.734445311389032e-05
+        },
+        {
+          "vertices": 12,
+          "edges": 30,
+          "triangles": 20,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 8.986861084064642e-05
+        },
+        {
+          "vertices": 12,
+          "edges": 30,
+          "triangles": 20,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 9.342602349702049e-05
+        },
+        {
+          "vertices": 30,
+          "edges": 84,
+          "triangles": 56,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0005297961429323744
+        },
+        {
+          "vertices": 24,
+          "edges": 66,
+          "triangles": 44,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0003710241416171313
+        },
+        {
+          "vertices": 8,
+          "edges": 18,
+          "triangles": 12,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 2.5519921335246567e-05
+        }
+      ],
+      "candidate_pairs": 8873,
+      "improper_intersection_count": 0,
+      "first_improper_intersections": [],
+      "sampled_source_deviation": 0.01999999993966945,
+      "landmark_distances": [
+        0.08154382701389572,
+        0.04626488881267442,
+        0.04591076008331556,
+        0.08139150353405211,
+        0.08139150353405211,
+        0.04591076008331556,
+        0.04626488881267442,
+        0.08154382701389572
+      ],
+      "maximum_landmark_distance": 0.08154382701389572,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "torus",
+      "backend": "libfive-c9e9734-dc",
+      "depth": 5,
+      "extraction_seconds": 0.021624459,
+      "setup_seconds": 4.419e-06,
+      "point_queries": null,
+      "min_feature": 0.1875,
+      "max_err": 1e-08,
+      "threads": 1,
+      "file": "torus-dc-depth5.stl",
+      "sha256": "61f7f0f9e44b64fd3aa1a6b681806da99b35b3f065fba35965805474a3b9fb80",
+      "triangles": 4048,
+      "sampled_tolerance": 0.02,
+      "failures": [],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 2024,
+          "edges": 6072,
+          "triangles": 4048,
+          "euler": 0,
+          "genus": 1,
+          "signed_volume": 14.30693237855974
+        }
+      ],
+      "candidate_pairs": 25792,
+      "improper_intersection_count": 0,
+      "first_improper_intersections": [],
+      "sampled_source_deviation": 0.01330292240828701,
+      "landmark_distances": [
+        1.9645690918057568e-05,
+        0.0037203404832987655,
+        6.70909881592685e-05,
+        0.0037203404832987655,
+        0.0005234959472604581,
+        0.0050036372581634195,
+        0.0018685512647898328,
+        0.0050036372581634195,
+        1.9645690918057568e-05,
+        0.0037203404832987655,
+        6.70909881592685e-05,
+        0.0037203404832987655,
+        0.0005234959472604581,
+        0.0050036372581634195,
+        0.0018685512647898307,
+        0.0050036372581634195,
+        1.9645690918057568e-05,
+        0.0037203404832987664,
+        6.70909881592685e-05,
+        0.0037203404832987664,
+        0.0005234959472604528,
+        0.0050036372581634195,
+        0.001868551264789823,
+        0.0050036372581634195,
+        1.9645690918057568e-05,
+        0.0037203404832987664,
+        6.70909881592685e-05,
+        0.0037203404832987664,
+        0.0005234959472604528,
+        0.0050036372581634195,
+        0.0018685512647898242,
+        0.0050036372581634195
+      ],
+      "maximum_landmark_distance": 0.0050036372581634195,
+      "passes_sampled_checks": true
+    },
+    {
+      "case": "zero_only",
+      "backend": "libfive-c9e9734-dc",
+      "depth": 5,
+      "extraction_seconds": 0.008512517,
+      "setup_seconds": 6.119e-06,
+      "point_queries": null,
+      "min_feature": 0.078125,
+      "max_err": 1e-08,
+      "threads": 1,
+      "file": "zero_only-dc-depth5.stl",
+      "sha256": "d368485f6797c210603568e375b48a45535fa0ae4f20eab4ebd89fbec1f4469b",
+      "triangles": 0,
+      "sampled_tolerance": 0.02,
+      "failures": [],
+      "passes_sampled_checks": true
+    }
+  ]
+}

@@ -8,8 +8,11 @@ The Fidget comparison meets the speed target but exposes rotation-sensitive thin
 loss and encoded triangle intersections. A subsequent [Manifold comparison](../experiments/implicit-mesh/MANIFOLD.md)
 passes the sphere/cube target with Python callbacks and gives better embedded outputs on
 several fixtures, but still loses rotated sharp/thin features and can emit degenerate faces.
-Neither is selected for production. Adaptive discovery with interval information and
-automatic sharp features, including libfive's Oracle interface, is the next comparison.
+The [libfive comparison](../experiments/implicit-mesh/LIBFIVE.md) now covers three native
+algorithms. Default dual contouring passes the rotated cube; simplex recovers the rotated
+tetrahedron's corners, but raw and cleaned candidates still fail embedding/topology checks.
+None is selected for production. The next bounded investigation is robust general boundary
+repair on that small candidate, followed by other rotations and thin solids before adoption.
 
 ## Closest candidates
 

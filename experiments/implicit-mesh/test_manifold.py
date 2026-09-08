@@ -1,5 +1,8 @@
 """Run using the isolated manifold-requirements environment."""
 import unittest
+import json
+from pathlib import Path
+import tempfile
 
 import audit
 import manifold_fixtures as fixtures
@@ -41,6 +44,23 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(report["triangles"], 4)
         self.assertTrue(report["embedded"])
         self.assertAlmostEqual(report["signed_volume"], 1/6)
+
+    def test_zero_area_cleanup_preserves_source_and_closed_surface(self):
+        from postprocess_libfive import run
+        vertices = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)]
+        triangles = [(0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3), (0, 0, 1)]
+        encoded = encode(vertices, triangles)
+        with tempfile.TemporaryDirectory() as directory:
+            source, output = Path(directory)/"source.stl", Path(directory)/"output.stl"
+            source.write_bytes(encoded)
+            source.with_suffix(".json").write_text(json.dumps(dict(extraction_seconds=0)))
+            run(source, output, None)
+            self.assertEqual(source.read_bytes(), encoded)
+            report = audit.stl_embedding.check(output.read_bytes())
+            self.assertEqual(report["triangles"], 4)
+            self.assertEqual(report["signed_volume_exact"], "1/6")
+            metadata = json.loads(output.with_suffix(".json").read_text())
+            self.assertEqual(metadata["postprocessing"]["removed_zero_area_faces"], [4])
 
 
 if __name__ == "__main__":
