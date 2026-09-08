@@ -65,6 +65,13 @@ Project 5 integrates those contracts into Solvent. Project 6 supplies acceptance
 throughout and audits the final result. This is a work breakdown, not a request to develop
 six general-purpose systems before producing a gear.
 
+The first [surface-following experiment](implicit-meshing-methods.md#first-surface-following-experiment)
+now traces complete mean-radius contours of both members, using the full indexed material
+field to correct each vertex. The default 2 mm candidate target produces 96 pinion edges
+and 192 gear edges in approximately 4 and 16 seconds of tracing. This is one contour per
+member; extending the charts across the face width and establishing complete surface/error
+coverage remain the next extraction work. These results do not accept a final gear solid.
+
 ## First experiment and decision gate
 
 The [continuous-volume experiment](continuous-volumes.md) records the initial pinion

@@ -103,3 +103,59 @@ advance over the surface with locally chosen spacing, and refine edges by geomet
 Use the bounded evaluator to validate candidates and search for missed components. Develop
 the surface traversal and its acceptance procedure separately so that a costly exhaustive
 partition does not remain the only way to construct every candidate triangle.
+
+## First surface-following experiment
+
+`tests/envelope/paired/swept/member/walk.rs` now follows the tooth-facing contour on a
+spherical section of each complete member. It seeds from an existing analytic flank point,
+advances in azimuth using the preceding contour slope as a predictor, and corrects in polar
+angle using the complete indexed `MaterialField`. A narrow bracket around the predictor
+expands until it contains strict retained/exterior signs. Correction shrinks that bracket;
+ambiguous field values are not assigned a sign. The point query still uses the existing
+whole-roll evaluator, with a 0.0002 mm value tolerance and 20,000-evaluation sweep budget.
+
+Each output vertex is the midpoint of two strictly classified points. An outward-rounded
+distance to both endpoints bounds a ball containing the whole segment, and therefore an
+actual material boundary crossing. This establishes a vertex-to-boundary distance for the
+explicit field snapshot. It does not assume that field values are distances. The nominal
+spherical chart guides sampling; its rounded midpoint vertices need not lie exactly on
+the sphere. The periodic seam shares the same witness and vertex identity.
+
+The initial azimuthal spacing is a quarter tooth pitch. A separately corrected midpoint
+tests each candidate chord; edges subdivide when its deviation, including vertex bracket
+radii, exceeds the requested refinement target. This is an adaptive candidate criterion,
+not a bound for every point of the complete edge. The radial chart also does not yet prove
+unique crossings or discovery of other components. Those hypotheses must be checked or the
+chart must be split before using it as a complete surface representation.
+
+Reproduce the ordinary one-pitch regression and explicit full-contour experiment with:
+
+```sh
+cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core \
+  surface_following_tracks -- --nocapture
+SOLVENT_SURFACE_WALK_OUTPUT=/private/tmp/solvent-surface-walk.json \
+cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core \
+  surface_following_tracks -- --nocapture
+```
+
+The regression uses a 0.1 mm chord-refinement target and 0.005 mm vertex brackets. It needs
+9 edges for one pinion pitch and 10 for one gear pitch; sampled distances to the separate
+analytic contour are at most 0.00216 and 0.00239 mm respectively. This analytic comparison
+is a sampled sanity check, not an independent whole-contour error certificate.
+
+The full default-pair experiment uses a 2 mm refinement target and 0.1 mm vertex brackets:
+
+| Member | Closed contour edges | Field queries | Roll evaluations | Tracing time |
+| --- | ---: | ---: | ---: | ---: |
+| Pinion | 96 | 1,965 | 2,240,720 | 3.956 s |
+| Gear | 192 | 3,936 | 5,161,888 | 15.779 s |
+
+The largest accepted midpoint criteria are 0.731 and 0.813 mm. These timings cover one
+mean-radius contour per member, not a complete three-dimensional export or its validation.
+They were measured after compilation and exclude the subsequent analytic-reference check.
+The JSON retains the complete generating definitions, both sign witnesses for every vertex,
+vertex distance bounds, query counts and unfinished verification scope.
+
+The next step is to extend these surface charts across the face width with adaptive spacing,
+connect the end/back boundaries, and test a complete candidate mesh. Full-edge/surface error,
+chart completeness, source accuracy and mating verification remain required for acceptance.

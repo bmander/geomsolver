@@ -108,7 +108,7 @@ impl Pair {
         root
     }
 
-    fn rim_section(&self, member: usize, rho: f64, n: usize) -> Vec<V> {
+    pub(super) fn rim_section(&self, member: usize, rho: f64, n: usize) -> Vec<V> {
         self.rim_section_with_end(member,rho,n,None)
     }
 

@@ -2,6 +2,8 @@
 use super::*;
 use gcs_core::{solid::{SpatialField,MaterialField,MaterialEvaluator},motion::{Family,MotionBounds}};
 
+mod walk;
+
 fn axis(pair: &Pair,name: &str) -> ([f64;3],[f64;3]) {
     let sk = &pair.model.sketch;
     let line = &sk.lines[pair.model.map.ent_named(name).unwrap().i()];
