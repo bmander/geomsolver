@@ -1,6 +1,9 @@
 //! Frontier topology, candidate growth, collision guards and local repair.
 use super::*;
 
+#[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord)]
+pub(super) enum Refusal { DirectedEdge,Degenerate,Quality,Orientation,Clearance([usize;2]) }
+
 #[derive(Clone)]
 pub(super) struct Front {
     pub(super) vertices:Vec<Vertex>,
@@ -39,12 +42,17 @@ impl Front {
     }
 
     pub(super) fn legal(&self,t:[usize;3],new:Option<&Vertex>) -> bool {
-        if (0..3).any(|k| self.used.contains(&[t[k],t[(k+1)%3]])) { return false; }
+        self.refusal(t,new).is_none()
+    }
+
+    pub(super) fn refusal(&self,t:[usize;3],new:Option<&Vertex>) -> Option<Refusal> {
+        if (0..3).any(|k| self.used.contains(&[t[k],t[(k+1)%3]])) { return Some(Refusal::DirectedEdge); }
         let [a,b,c] = t.map(|i| if i == self.vertices.len() { new.unwrap() } else { &self.vertices[i] });
         let normal = cross(sub(b.p,a.p),sub(c.p,a.p));
-        let area = length(normal); if area < 1e-12 { return false; }
-        if !quality::acceptable([a,b,c]) || [a,b,c].iter().any(|v|
-            v.normals().iter().all(|&n| dot(normal,n) <= area*0.2)) { return false; }
+        let area = length(normal); if area < 1e-12 { return Some(Refusal::Degenerate); }
+        if !quality::acceptable([a,b,c]) { return Some(Refusal::Quality); }
+        if [a,b,c].iter().any(|v|
+            v.normals().iter().all(|&n| dot(normal,n) <= area*0.2)) { return Some(Refusal::Orientation); }
         // A front is a chordal approximation of a curved boundary. Requiring
         // literal 3D segment intersection misses approaching fronts. Exclude
         // other frontier edges from a shallow prism around this triangle.
@@ -87,9 +95,20 @@ impl Front {
                 if a < 0. { lo = lo.max(a/(a-b)); }
                 if b < 0. { hi = hi.min(a/(a-b)); }
             }
-            if hi-lo > 1e-9 { return false; }
+            if hi-lo > 1e-9 {
+                // Nearby faces of a thin solid can enter the same thick
+                // prism. Keep the proximity guard on compatible patches;
+                // for a different support, require interval separation of
+                // the actual encoded edge before allowing this candidate.
+                let [a,b] = e.map(|i| &self.vertices[i]);
+                let common:Vec<_> = a.normals().iter().copied().filter(|&u|
+                    b.normals().iter().any(|&v| dot(u,v) > 1.-1e-8)).collect();
+                if !common.is_empty() && common.iter().all(|&u| dot(u,n) < 0.95) &&
+                    clearance::separated_except_shared([p,q],points,e.map(|i| t.contains(&i))) { continue; }
+                return Some(Refusal::Clearance(e));
+            }
         }
-        true
+        None
     }
 
     pub(super) fn growth_normal(&self,[a,b]:[usize;2]) -> V {
@@ -116,6 +135,20 @@ impl Front {
         unit(add(va.n,vb.n))
     }
 
+    pub(super) fn candidate(&self,surface:&mut Surface,e:[usize;2]) -> Option<(Vertex,f64)> {
+        let [a,b] = e.map(|i| &self.vertices[i]);
+        let normal = self.growth_normal(e); let d = sub(b.p,a.p); let width = length(d);
+        let h = (a.size*0.5+b.size*0.5).max(width*0.6);
+        let height = (h*h-width*width*0.25).sqrt();
+        let guess = add(mul(add(a.p,b.p),0.5),mul(unit(cross(d,normal)),height));
+        let projected = surface.project(guess);
+        let feature = if projected.as_ref().is_none_or(|v| dot(v.n,normal) < 0.9) {
+            surface.feature_vertex(guess,h)
+        } else { None };
+        let candidate = feature.or(projected)?;
+        Some((candidate,h))
+    }
+
     pub(super) fn advance(&mut self,surface:&mut Surface) -> bool {
         let mut attempts = 0;
         while let Some(e) = self.queue.pop_front() {
@@ -123,15 +156,7 @@ impl Front {
             attempts += 1;
             if attempts > self.boundary.len() { self.queue.push_front(e); return false; }
             let [a,b] = e.map(|i| &self.vertices[i]);
-            let normal = self.growth_normal(e); let d = sub(b.p,a.p); let width = length(d);
-            let h = (a.size*0.5+b.size*0.5).max(width*0.6);
-            let height = (h*h-width*width*0.25).sqrt();
-            let guess = add(mul(add(a.p,b.p),0.5),mul(unit(cross(d,normal)),height));
-            let projected = surface.project(guess);
-            let feature = if projected.as_ref().is_none_or(|v| dot(v.n,normal) < 0.9) {
-                surface.feature_vertex(guess,h)
-            } else { None };
-            let Some(candidate) = feature.or(projected) else { self.queue.push_back(e); continue; };
+            let Some((candidate,h)) = self.candidate(surface,e) else { self.queue.push_back(e); continue; };
             let mut nearby:Vec<_> = self.vertices.iter().enumerate().filter(|(i,v)|
                 !e.contains(i) && length(sub(v.p,candidate.p)) < h*0.85 && dot(v.n,candidate.n) > 0.)
                 .map(|(i,v)| (length(sub(v.p,candidate.p)),i)).collect();

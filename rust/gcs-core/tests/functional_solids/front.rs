@@ -13,4 +13,5 @@ mod mesh;
 use mesh::Front;
 mod features;
 mod quality;
+mod clearance;
 mod cases;

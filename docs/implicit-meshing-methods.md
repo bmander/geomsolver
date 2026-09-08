@@ -438,7 +438,8 @@ feature labels, supplied curves or analytic branch planes reach the probe. Local
 tests now pass its separate incident normals into the advancing front. Right-angle and
 thin wedges, including rotated cases, cross onto the unoccupied face while retaining
 the common crease edge. The adjacent face's edges are excluded from thick clearance
-prisms only across a discovered, noncoplanar shared crease; other frontier fences remain.
+prisms across a discovered, noncoplanar shared crease. Further clearance handling for
+nearby distinct faces is described below.
 Front growth now requests a feature candidate when projection fails or the projected
 normal has dot product below 0.9 with the incoming growth normal. The feature candidate
 then passes the existing triangle legality and field-fit checks. Exact point/radius
@@ -451,6 +452,32 @@ right-angle and 20-degree material wedges, including rotation about an arbitrary
 These local runs use 14,826–35,922 point queries. They demonstrate automatic acquisition
 and crossing on these patches, not whole-solid closure. The cube still exhausts its
 query budget; repeated feature-query cost and unsuccessful front connections need work.
+
+### Clearance on nearby faces
+
+The workbench now reports directed-edge, degeneracy, quality, orientation and clearance
+refusals separately. `SOLVENT_FRONT_DIAG=1` prints candidate geometry and per-edge refusals
+after a run, including incomplete candidates; this does not export an accepted STL.
+The thin tetrahedron trace showed many field-fitting candidates blocked by an edge on
+another face inside the fixed thick clearance prism.
+
+Compatible patches retain the proximity guard. If the other edge's endpoints agree on
+support normals and every shared normal differs from the candidate face normal, a new
+interval predicate may prove the encoded edge misses the encoded triangle. It uses an
+outward-rounded plane determinant, encloses the possible plane-crossing parameter, and
+tests the enclosed intersection against the triangle sides. Uncertainty and arithmetic
+failure retain the guard. Declared shared vertices may be the entire intersection when
+the remaining edge is strictly off-plane; equal coordinates alone do not declare a shared
+vertex. The normal-based patch selection is heuristic, even though an accepted separation
+test encloses the encoded geometry. This is not a whole-mesh embedding certificate.
+
+Controls cover rotated nearby slab faces, overlapping fronts on the same face, undeclared
+contacts, declared shared simplices, and 625 plane crossings checked against exact integer
+inclusion tests. Sphere and torus results remain unchanged. The tetrahedron reaches 75
+triangles with 11 open edges, 254,183 point queries and about 1.41 s. A separate exact
+triangle-pair check after binary32 rounding finds no improper intersections among its
+482 candidate pairs; it is still an open, unaccepted mesh. Both whole-solid acceptance
+cases remain failing, including the cube's query-budget limit.
 
 ### Spiky tetrahedron stress case
 
@@ -507,8 +534,8 @@ crease steps that introduce another avoidable small angle. Whole-tetrahedron gro
 still stalled at eight triangles after the quality correction alone. The neighborhood
 shrinking change described above subsequently advances it to 40, still incomplete.
 
-The focused `generic_front` suite passes 15 enabled tests with two ignored acceptance
-cases. Explicit runs confirm the cube query-budget failure, tetrahedron closure failure
+The focused `generic_front` suite passes 19 enabled tests with two ignored acceptance
+cases. Explicit runs confirm the cube query-budget and tetrahedron closure failures,
 while the intrinsic-angle case now passes. Sphere and torus meshes retain their existing counts,
 witnesses and sampled error; the new feature heuristic has not established the final
 small-solid accuracy, coverage or latency milestone.

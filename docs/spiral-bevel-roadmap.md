@@ -103,8 +103,10 @@ sampling resolves the local apex/projection failure, including rotated/scaled an
 thinner cases. A shared quality policy now permits angles forced by recovered corner
 branches while rejecting avoidable slivers, passing rotated/scaled acute-corner controls.
 Shrinking a probe past a distant fitted intersection now recovers nearer creases and
-advances the tetrahedron front from 8 to 40 triangles, but it still has 30 open edges
-and takes about 1.50 s. Complete tetrahedron closure still fails. The cube and tetrahedron remain
+advances the tetrahedron front from 8 to 40 triangles. Interval separation checks for
+nearby distinct faces then reach 75 triangles, 11 open edges and about 1.41 s. An exact
+triangle-pair audit finds no improper intersections in this partial candidate after
+binary32 rounding, but complete tetrahedron closure still fails. The cube and tetrahedron remain
 unaccepted; local feature recovery does not establish the small-solid discovery milestone.
 
 ## First experiment and decision gate

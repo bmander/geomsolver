@@ -31,6 +31,18 @@ fn check_front(name:&str,field:MaterialField,genus:usize,distance:impl Fn(V)->f6
     eprintln!("generic front {name}: {} triangles, {} boundary edges, {} queries",front.triangles.len(),front.boundary.len(),surface.queries);
     eprintln!("generic front {name}: {} seed box queries",surface.box_queries);
     eprintln!("generic front {name}: {} local retriangulations",front.repairs);
+    if std::env::var_os("SOLVENT_FRONT_DIAG").is_some() {
+        eprintln!("front mesh: {{\"vertices\":{:?},\"triangles\":{:?}}}",
+            front.vertices.iter().map(|v| v.p).collect::<Vec<_>>(),front.triangles);
+        for &e in &front.boundary {
+            let Some((v,h)) = front.candidate(&mut surface,e) else { eprintln!("stalled edge {e:?}: no candidate"); continue; };
+            let t = [e[1],e[0],front.vertices.len()];
+            let refusal = front.refusal(t,Some(&v));
+            let fits = surface.fits([front.vertices[e[1]].p,front.vertices[e[0]].p,v.p]);
+            eprintln!("stalled edge {e:?}: {refusal:?}, fits {fits}, h {h}, features {:?}->{}, points {:?} -> {:?}",
+                e.map(|i| front.vertices[i].branches.len()),v.branches.len(),e.map(|i| front.vertices[i].p),v.p);
+        }
+    }
     assert!(front.boundary.is_empty(),"front stalled on {name}");
     let shell = gcs_core::topology::ClosedShell::from_triangles(front.vertices.len(),&front.triangles).unwrap();
     assert_eq!(shell.genus(),genus);
@@ -385,4 +397,75 @@ fn generic_front_local_probe_isolates_a_nearby_crease_from_a_distant_corner() {
     let expected = add(a,mul(direction,dot(sub(guess,a),direction)/dot(direction,direction)));
     let mut surface = Surface::new(field,0.02);
     verify_feature(&mut surface,guess,0.131,2,expected);
+}
+
+#[test]
+fn generic_front_clearance_requires_edge_triangle_separation() {
+    let triangle = [[0.,0.,0.],[1.,0.,0.],[0.,1.,0.]];
+    assert!(clearance::separated([[0.2,0.2,0.01],[0.4,0.2,0.01]],triangle));
+    assert!(clearance::separated([[2.,2.,-1.],[2.,2.,1.]],triangle));
+    assert!(!clearance::separated([[0.2,0.2,-1.],[0.2,0.2,1.]],triangle));
+    assert!(!clearance::separated([[0.2,0.2,0.],[0.4,0.2,0.]],triangle));
+    assert!(!clearance::separated([[0.,0.,-1.],[0.,0.,1.]],triangle));
+    assert!(!clearance::separated([[0.2,0.2,0.],[0.2,0.2,1.]],triangle));
+    // A crossing of the triangle's plane can lie beyond the segment.
+    assert!(clearance::separated([[0.2,0.2,1.],[0.2,0.2,2.]],triangle));
+}
+
+#[test]
+fn generic_front_clearance_matches_exact_integer_plane_crossings() {
+    let triangle = [[0.,0.,0.],[1.,0.,0.],[0.,1.,0.]];
+    // Every edge crosses z=0 halfway along its length. Twice the intersection
+    // coordinates are integers, giving an exact independent inclusion test.
+    for px in -2..=2 { for py in -2..=2 { for qx in -2..=2 { for qy in -2..=2 {
+        let x = px+qx; let y = py+qy;
+        let intersects = x >= 0 && y >= 0 && x+y <= 2;
+        let edge = [[px as f64,py as f64,-1.],[qx as f64,qy as f64,1.]];
+        assert_eq!(clearance::separated(edge,triangle),!intersects,"{edge:?}");
+    }}}}
+    assert!(!clearance::separated([[f64::NAN,0.,0.],[0.,0.,1.]],triangle));
+}
+
+#[test]
+fn generic_front_clearance_distinguishes_close_faces_from_overlapping_fronts() {
+    for rotation in [0.,0.47] {
+        let rotate = |p| rotate_fixture(p,rotation);
+        let mut field = MaterialField::from(SpatialField::from(RevolvedField::new(
+            F::disk([0.;2],2.).unwrap(),[0.;3],[0.,0.,1.]).unwrap()));
+        for sign in [-1.,1.] {
+            let half = SpatialField::from(RevolvedField::new(F::half_plane([0.;2],[0.,1.]).unwrap(),
+                rotate([sign*0.02,0.,0.]),rotate([sign,0.,0.])).unwrap());
+            field = field.intersection(half.into()).unwrap();
+        }
+        let mut surface = Surface::new(field,0.02);
+        let initial = [[0.02,-0.1,-0.1],[0.02,-0.1,0.1],[0.02,-0.3,0.]]
+            .map(|p| surface.project(rotate(p)).unwrap());
+        let mut front = Front::from_seed(&mut surface,initial);
+        let candidate = surface.project(rotate([0.02,0.1,0.])).unwrap();
+        assert!(front.clearance > 0.04,"fixture does not enter the original thick prism");
+        for (x,separate) in [(-0.02,true),(0.02,false)] {
+            let mut patch = [[x,-0.04,-0.02],[x,0.04,-0.02],[x,0.,0.04]];
+            if x < 0. { patch.swap(1,2); }
+            let patch = patch.map(|p| surface.project(rotate(p)).unwrap());
+            assert!(surface.fits(patch.each_ref().map(|v| v.p)));
+            let first = front.vertices.len(); front.vertices.extend(patch);
+            // Represent a second front arriving via the other side of the
+            // solid. No normals or feature tags are supplied by this fixture.
+            front.insert([first,first+1,first+2]);
+            let t = [1,0,front.vertices.len()];
+            assert_eq!(front.legal(t,Some(&candidate)),separate);
+            if !separate { assert!(matches!(front.refusal(t,Some(&candidate)),Some(mesh::Refusal::Clearance(_)))); }
+        }
+    }
+}
+
+#[test]
+fn generic_front_clearance_allows_only_declared_shared_simplex_contacts() {
+    let triangle = [[0.,0.,0.],[1.,0.,0.],[0.,1.,0.]];
+    let edge = [[0.,0.,0.],[0.,0.,1.]];
+    assert!(!clearance::separated(edge,triangle));
+    assert!(clearance::separated_except_shared(edge,triangle,[true,false]));
+    assert!(!clearance::separated_except_shared([[0.2,0.2,0.],[0.2,0.2,1.]],triangle,[true,false]));
+    assert!(!clearance::separated_except_shared([[0.,0.,0.],[0.2,0.2,0.]],triangle,[true,false]));
+    assert!(clearance::separated_except_shared([[0.,0.,0.],[1.,0.,0.]],triangle,[true;2]));
 }
