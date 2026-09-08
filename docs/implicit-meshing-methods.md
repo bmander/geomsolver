@@ -401,8 +401,11 @@ does not yet supply the final production mesher or a gear acceptance certificate
 
 `tests/functional_solids/front/features.rs` isolates candidate feature discovery from
 front connectivity. Its inputs are the same material evaluator, a trial point and a
-neighborhood radius. Four shrinking neighborhoods sample projected field points in
-fixed spatial directions. Locally unstable normals are discarded so a finite difference
+neighborhood radius. Four shrinking neighborhoods sample the field directly in
+fixed spatial directions. Samples need not project onto the surface: stable field
+gradients and residuals provide candidate zero-plane equations. This avoids losing
+branches when projection fails outside a thin material cone. Locally unstable normals
+are discarded so a finite difference
 straddling a crease does not invent an intermediate face. Distinct remaining normals
 provide tangent-plane equations. The existing rank-revealing minimum-norm least-squares
 solver positions their intersection relative to the query neighborhood; an edge keeps
@@ -414,8 +417,10 @@ axis, and the curved intersection of two spheres. Cube cases exercise both the c
 front tolerance and a finer tolerance. Smooth spheres with radii 1, 0.05 and 0.005, a
 flat cube face and a zero-only Boolean difference are negative controls. The initial
 probe took about 8–39 ms per local query. Adaptive differential probes and finer local
-projection increase that cost to roughly 23–170 ms in later serial runs; this is an
-unresolved efficiency issue. These timings are for a single local feature query,
+projection increased that cost to roughly 23–170 ms in later serial runs. Direct field
+sampling reduces it to roughly 17–112 ms across the current crease controls, with
+2,433–6,526 point queries. Repeated feature acquisition still needs efficiency work.
+These timings are for a single local feature query,
 **not** for a complete cube mesh.
 
 This is a sampling heuristic. Angular thresholds, finite differences, a finite number
@@ -441,11 +446,20 @@ for the translated case (one and 391 box queries respectively). It stops on the 
 interior point; this does not certify discovery of every component.
 
 The complete tetrahedron attempt still stalls: eight triangles, eight open frontier
-edges, about 22 ms. Local apex recovery also remains an explicit failing acceptance
-case: the projection/probe combination does not recover all incident branches reliably.
-Both tests are ignored by default and run with `--include-ignored`; no tetrahedron mesh
-is accepted or exported. Normal groups now supply separate tangent-plane equations,
-with residual correction and the free coordinate anchored to the original query. A
-feature-derived crossing direction is accepted only with strict field signs. These
-changes preserve the existing smooth and crease controls but do not solve the sharp apex.
-Algorithm changes pause here for the requested mechanical and architectural refactoring.
+edges, 1,771 point queries and about 15 ms in the latest check (22 ms in the baseline).
+This acceptance case stays ignored by default;
+no tetrahedron mesh is accepted or exported.
+
+After the mechanical refactor, a focused diagnosis found that projection rejected most
+spatial trial points before their branch normals could be used: the first neighborhood
+retained two samples from just one face. Sampling field gradients directly recovers all
+three apex branches. Their residual-corrected plane intersection passes strict two-sided
+field signs and the same shrinking-neighborhood checks. The enabled apex regression checks
+position, rank, outward normals and witnesses on centered and translated tetrahedra,
+rotations about an arbitrary axis, scales 0.1–10, and base circumradii 0.06 and 0.006
+before scaling. The transformed cases take about 21–48 ms and 2,481–4,603 point queries
+in a serial run. Cube and curved-crease controls still pass; smooth spheres, a flat face
+and zero-only cancellation still reject feature claims. These are local heuristic checks,
+not automatic feature acquisition during front growth or a whole-solid certificate.
+The focused `generic_front` suite passes 11 enabled tests with two ignored acceptance
+cases; explicitly running the ignored tetrahedron case confirms the closure failure.

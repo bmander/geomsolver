@@ -22,8 +22,9 @@ The workbench still compiles into the existing single core integration-test bina
 A token comparison against the checkpoint matches all 100 moved function definitions,
 ignoring whitespace/comments and the extra `super::` qualification required by a move.
 This is a mechanical audit, supplemented by the existing tests and native/WASM builds;
-it is not proof of numerical correctness. The cube, tetrahedron and apex acceptance
-failures remain explicitly ignored and unresolved.
+it is not proof of numerical correctness. At the refactor checkpoint, the cube,
+tetrahedron and apex acceptance failures were explicitly ignored and unresolved.
+Subsequent algorithm results are recorded in [the meshing workbench notes](implicit-meshing-methods.md).
 
 Validation: `make test` passes after building release native and WASM artifacts:
 1,066 core tests pass (four existing ignored cases), 247 web tests pass, and the

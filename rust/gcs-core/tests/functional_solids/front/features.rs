@@ -56,11 +56,14 @@ impl Surface {
             for x in -1_i32..=1 { for y in -1_i32..=1 { for z in -1_i32..=1 {
                 if x.abs()+y.abs()+z.abs() != 1 && x.abs()+y.abs()+z.abs() != 3 { continue; }
                 let direction = unit([x as f64,y as f64,z as f64]);
-                let Some((p,_,_,_)) = self.local_projection(add(center,mul(direction,radius))) else { continue; };
+                // Projection can fail outside a narrow material cone. Its
+                // stable field gradient can still supply a candidate plane;
+                // only the final intersection needs boundary witnesses.
+                let p = add(center,mul(direction,radius));
                 if let Some((n,magnitude)) = self.branch_normal(p,radius) {
-                    // A bracketed point still has a small field residual.
-                    // Remove its first-order plane offset before a poorly
-                    // conditioned sharp-tip fit amplifies that residual.
+                    // Linearize the field at this sample, including its
+                    // residual. For an affine branch this recovers the plane
+                    // even when the sample could not project onto material.
                     let [lo,hi] = self.query(p,true).bounds();
                     let corrected = sub(p,mul(n,(lo*0.5+hi*0.5)/magnitude));
                     samples.push((corrected,n));

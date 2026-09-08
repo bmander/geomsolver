@@ -112,7 +112,7 @@ fn generic_front_cache_reuses_work_without_changing_the_mesh() {
     eprintln!("generic front sphere: cache {} vs {} point queries",cached.queries,uncached.queries);
 }
 
-fn verify_feature(surface:&mut Surface,guess:V,radius:f64,rank:usize,expected:V) {
+fn verify_feature(surface:&mut Surface,guess:V,radius:f64,rank:usize,expected:V) -> features::Feature {
     let start = std::time::Instant::now();
     let feature = surface.local_feature(guess,radius).expect("feature was not discovered");
     eprintln!("local feature rank {rank}: {:?}, {} queries, {:?}",start.elapsed(),surface.queries,feature.p);
@@ -121,6 +121,7 @@ fn verify_feature(surface:&mut Surface,guess:V,radius:f64,rank:usize,expected:V)
     assert!(surface.value(feature.inside).bounds()[1] < 0.);
     assert!(surface.value(feature.outside).bounds()[0] > 0.);
     assert!(boundary_radius(feature.p,feature.inside,feature.outside) <= surface.point_tolerance);
+    feature
 }
 
 #[test]
@@ -215,15 +216,26 @@ fn spiky_tetrahedron() -> (MaterialField,[[V;3];4]) {
 }
 
 fn spiky_tetrahedron_at(shift:V) -> (MaterialField,[[V;3];4]) {
-    // Height 2, base circumradius 0.06: a much sharper apex than a regular
+    spiky_tetrahedron_in_frame(shift,1.,0.,0.06)
+}
+
+fn rotate_tetrahedron(p:V,angle:f64) -> V {
+    let axis = unit([1.,2.,3.]); let (s,c) = angle.sin_cos();
+    add(add(mul(p,c),mul(cross(axis,p),s)),mul(axis,dot(axis,p)*(1.-c)))
+}
+
+fn spiky_tetrahedron_in_frame(shift:V,scale:f64,angle:f64,radius:f64) -> (MaterialField,[[V;3];4]) {
+    // Default height 2, base circumradius 0.06: a sharper apex than a regular
     // tetrahedron. Face data constructs the field and independent test oracle;
     // it is never passed to the marcher or feature probe.
-    let points = [[0.,0.,1.5],[0.06,0.,-0.5],[-0.03,0.03*3_f64.sqrt(),-0.5],
-        [-0.03,-0.03*3_f64.sqrt(),-0.5]].map(|p| add(p,shift));
+    let points = [[0.,0.,1.5],[radius,0.,-0.5],[-radius*0.5,radius*0.5*3_f64.sqrt(),-0.5],
+        [-radius*0.5,-radius*0.5*3_f64.sqrt(),-0.5]]
+        .map(|p| add(mul(rotate_tetrahedron(p,angle),scale),shift));
+    assert!(points.iter().all(|&p| length(p) < 2.*scale),"fixture support clips the tetrahedron");
     let center = mul(points.into_iter().fold([0.;3],add),0.25);
     let faces = [[0,1,2],[0,2,3],[0,3,1],[1,3,2]].map(|t| t.map(|i| points[i]));
     let mut field = MaterialField::from(SpatialField::from(RevolvedField::new(
-        F::disk([0.;2],2.).unwrap(),[0.;3],[0.,0.,1.]).unwrap()));
+        F::disk([0.;2],2.*scale).unwrap(),[0.;3],[0.,0.,1.]).unwrap()));
     for [a,b,c] in faces {
         let mut n = unit(cross(sub(b,a),sub(c,a)));
         if dot(n,sub(center,a)) > 0. { n = mul(n,-1.); }
@@ -254,11 +266,21 @@ fn generic_front_spiky_tetrahedron() {
 }
 
 #[test]
-#[ignore = "Unmet acceptance case: local projection does not recover all incident apex branches"]
 fn generic_front_local_probe_recovers_a_spiky_tetrahedron_apex() {
-    let (field,_) = spiky_tetrahedron();
-    let mut surface = Surface::new(field,0.001);
-    verify_feature(&mut surface,[0.,0.,1.49],0.2,3,[0.,0.,1.5]);
+    let translated = [0.31,-0.27,0.12];
+    for (scale,angle,offset) in [(1.,0.,[0.;3]),(0.1,0.,translated),
+        (1.,0.47,translated),(10.,1.1,translated)] { for radius in [0.06,0.006] {
+        let shift = mul(offset,scale);
+        let (field,faces) = spiky_tetrahedron_in_frame(shift,scale,angle,radius);
+        let position = |z| add(mul(rotate_tetrahedron([0.,0.,z],angle),scale),shift);
+        let mut surface = Surface::new(field,scale*0.001);
+        let feature = verify_feature(&mut surface,position(1.49),scale*0.2,3,position(1.5));
+        assert_eq!(feature.normals.len(),3);
+        for [a,b,c] in faces.into_iter().take(3) {
+            let n = unit(cross(sub(b,a),sub(c,a)));
+            assert!(feature.normals.iter().any(|&m| dot(m,n) > 1.-1e-8));
+        }
+    }}
 }
 
 #[test]
