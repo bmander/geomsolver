@@ -238,6 +238,7 @@ fn assembled_boundaries_stay_outside_the_exact_mating_rim_at_sampled_mesh_phases
 fn both_flanks_have_overlapping_contact_windows_covering_a_full_tooth_period() {
     let pair = Pair::read([24,48],2.);
     let period = TAU/pair.teeth[0].hypot(pair.teeth[1]);
+    let mut cad_contacts = vec![];
     for side in 0..2 {
         let mut windows = vec![];
         for face in [0.9,0.95,1.,1.05,1.1] {
@@ -286,6 +287,14 @@ fn both_flanks_have_overlapping_contact_windows_covering_a_full_tooth_period() {
                 let pn = pair.body(0,phase).vector(pi.vector(a.contact.normal));
                 let gn = pair.body(1,phase).vector(gi.vector(b.contact.normal));
                 near(pn,gn.map(|v| -v),1e-8);
+                let local_positions = [p,g];
+                let local_normals = [pi.vector(a.contact.normal),gi.vector(b.contact.normal)];
+                let position = pair.body(0,phase).point(p);
+                let fraction = phase/period;
+                // At toe/heel and nearly at the tip an offset can cross a second
+                // boundary. Preserve those contacts for distance checks only.
+                let probe = face > 0.9 && face < 1.1 && j > 0 && j < 24;
+                cad_contacts.push(format!("{{\"side\":{side},\"face_fraction\":{face},\"sample\":{j},\"tooth_fraction\":{fraction},\"local_positions_mm\":{local_positions:?},\"local_normals\":{local_normals:?},\"world_position_mm\":{position:?},\"world_normal\":{pn:?},\"offset_probe\":{probe}}}"));
                 assert!(exact[0].clearance(p).abs() < 1e-7);
                 assert!(exact[1].clearance(g).abs() < 1e-7);
                 if j == 12 {
@@ -314,5 +323,9 @@ fn both_flanks_have_overlapping_contact_windows_covering_a_full_tooth_period() {
         }
         assert!(covered > period+1e-6,"side {side}: missing contact in windows {windows:?}");
         eprintln!("side {side} contact windows, crown radians: {windows:?}; period={period}");
+    }
+    if let Some(path) = std::env::var_os("SOLVENT_CAD_CONTACTS_OUTPUT") {
+        std::fs::write(path,format!("{{\"teeth\":{:?},\"module_mm\":{},\"mean_distance_mm\":{},\"crown_period_rad\":{period},\"scope\":\"Analytical nominal contact samples; CAD incidence and global interference unchecked\",\"contacts\":[{}]}}\n",
+            pair.teeth,pair.module,pair.rm,cad_contacts.join(","))).unwrap();
     }
 }

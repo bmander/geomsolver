@@ -127,8 +127,57 @@ python3 experiments/cad-backend/check_material.py /private/tmp/solvent-cad-probe
 
 For the adjacent-cut gate, omit `--full`; omit `--member` to process both members. To
 tessellate use `export_stl.py SOURCE.step OUTPUT.stl`, then independently check with
-`python3 rust/gcs-core/tests/verification/stl_embedding.py OUTPUT.stl`. Full pair assembly,
-contact/interference, continuous surface error and public Solvent integration remain.
+`python3 rust/gcs-core/tests/verification/stl_embedding.py OUTPUT.stl`. The assembly checks
+below use these exact full-member STEP files.
+
+## Assembly and contact follow-up
+
+`assembly.py` reads the actual full-member STEP files, verifies their hashes against the
+indexed-cut reports and binds both reports to the same source. A tooth-period fraction
+`f` rotates the pinion by `+2πf/24` and the gear by `−2πf/48` about their respective local
+z axes, then applies the documented shaft tilts about y. The shared apex is the origin;
+the shaft angle is 90 degrees. No extra half-tooth phase is added: the source's
+complementary crown profiles already specify the zero-backlash assembly phase.
+
+At tooth-period fractions 0, 0.25, 0.5, 0.75 and 1, Open CASCADE's intersection returns a
+valid result with no solids and zero integrated volume. The final fraction checks the
+index-period repeat. A negative control rotates only the gear an additional 0.001 radian:
+the kernel then finds three intersection solids totaling approximately 0.71536 mm³.
+These are kernel observations at five poses, not a bound on between-pose interference
+or overlap below the kernel's numerical resolution. The command measures and records
+interference; its exit status reports operation validity, not absence of overlap.
+
+The existing Rust contact-window test can now export its independent analytical contacts
+with `SOLVENT_CAD_CONTACTS_OUTPUT`. It covers both flanks, five spherical face stations and
+25 contact samples per station, including tooth indexing into a shared assembly period.
+`check_contacts.py` checks all 250 contact positions against both actual STEP shells.
+Shell distance is used deliberately: containment in a solid must not produce a spurious
+zero boundary distance. Independently recomputed assembly frames agree with the reference
+within 5.8e-14 mm. Maximum sampled boundary distances are 5.4e-7 mm for the pinion and
+2.2e-7 mm for the gear, against a 0.001 mm target. These very small residuals describe
+contact-position agreement, not the accuracy of the entire CAD surface or original solve.
+
+At 138 interior contact locations, the checker additionally classifies both solids at
+the same world-space points offset by ±0.001 mm along the analytical contact normal.
+All pairs have complementary material sides, reversing inside/outside across the contact.
+The toe/heel stations and nearly trimmed tip endpoints are retained for distance checks
+but excluded from offset checks because an offset can cross a second boundary there.
+This is 500 boundary-distance queries and 552 solid classifications; the nominal contact
+audit took about 62 seconds. [assembly-results.json](assembly-results.json) records the
+sampled evidence, source and STEP hashes. Whole-surface/material coverage, continuous
+interference, source-solve accuracy and public solid integration remain acceptance work.
+
+```sh
+SOLVENT_CAD_CONTACTS_OUTPUT=/private/tmp/solvent-cad-contacts.json cargo test --manifest-path rust/Cargo.toml both_flanks_have_overlapping_contact_windows_covering_a_full_tooth_period -- --nocapture
+/private/tmp/solvent-occt-env/bin/python experiments/cad-backend/assembly.py /private/tmp/solvent-cad-sections.json /private/tmp/solvent-cad-full-pinion/report.json /private/tmp/solvent-cad-full-gear/report.json /private/tmp/solvent-cad-assembly.json --fractions 0 0.25 0.5 0.75 1
+/private/tmp/solvent-occt-env/bin/python experiments/cad-backend/check_contacts.py /private/tmp/solvent-cad-sections.json /private/tmp/solvent-cad-full-pinion/report.json /private/tmp/solvent-cad-full-gear/report.json /private/tmp/solvent-cad-contacts.json /private/tmp/solvent-cad-contact-audit.json
+```
+
+Both scripts accept `--gear-offset 0.001` for the misphased control. Contact-check failures
+are persisted and return a nonzero exit status; never substitute a negative-control report
+for the nominal assembly evidence. This control fails the contact audit as intended, with
+a maximum gear boundary miss of 0.0481 mm and failures of both distance and complementary
+material-side checks.
 
 ## Initial trial reproduction
 

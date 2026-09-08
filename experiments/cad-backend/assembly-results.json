@@ -1,0 +1,130 @@
+{
+  "inputs": [
+    {
+      "member": 0,
+      "step_file": "/private/tmp/solvent-cad-full-pinion/member0-24-cuts.step",
+      "step_sha256": "47d750135b6b6c6c1cec232b496ddb792e03ff03d7ae4d9d1dececa4229f636e"
+    },
+    {
+      "member": 1,
+      "step_file": "/private/tmp/solvent-cad-full-gear/member1-48-cuts.step",
+      "step_sha256": "a4b010f3466603a57aa2b13a2f85d884eb1c9fa1032ca6a5dcbde7e8cfacddac"
+    }
+  ],
+  "source_sha256": "c11e8defe5dcd3d12d79f597c0ec5a4e9410794ec25597904a183863183724c9",
+  "nominal_intersections": [
+    {
+      "tooth_fraction": 0.0,
+      "seconds": 11.511780492030084,
+      "done": true,
+      "valid": true,
+      "solids": 0,
+      "volume_mm3": 0.0
+    },
+    {
+      "tooth_fraction": 0.25,
+      "seconds": 18.36228969396325,
+      "done": true,
+      "valid": true,
+      "solids": 0,
+      "volume_mm3": 0.0
+    },
+    {
+      "tooth_fraction": 0.5,
+      "seconds": 21.950947863981128,
+      "done": true,
+      "valid": true,
+      "solids": 0,
+      "volume_mm3": 0.0
+    },
+    {
+      "tooth_fraction": 0.75,
+      "seconds": 63.85576429095818,
+      "done": true,
+      "valid": true,
+      "solids": 0,
+      "volume_mm3": 0.0
+    },
+    {
+      "tooth_fraction": 1.0,
+      "seconds": 42.56615992099978,
+      "done": true,
+      "valid": true,
+      "solids": 0,
+      "volume_mm3": 0.0
+    }
+  ],
+  "intersection_evidence": [
+    {
+      "file": "/private/tmp/solvent-cad-assembly-zero.json",
+      "sha256": "c3f83cc227030932d909e4a65793687eac50864c40c7ae819b7a0329ed5df62e"
+    },
+    {
+      "file": "/private/tmp/solvent-cad-assembly-phases.json",
+      "sha256": "d7a1f645de583fd60397045522cc9b151efb608395ccc31b5ab0ddc38aeab259"
+    }
+  ],
+  "misphased_intersection": {
+    "gear_phase_offset_rad": 0.001,
+    "samples": [
+      {
+        "tooth_fraction": 0.0,
+        "seconds": 37.14169086498441,
+        "done": true,
+        "valid": true,
+        "solids": 3,
+        "volume_mm3": 0.7153575450549573
+      }
+    ],
+    "evidence": {
+      "file": "/private/tmp/solvent-cad-assembly-misphased.json",
+      "sha256": "9a177b3cdd827aae1ddf54045a8d07acbfbd20613a3a2b8dacb532117356b6bf"
+    }
+  },
+  "nominal_contacts": {
+    "contacts_sha256": "3eca08d763053df4c2cf1ba4f812f83403858e98cbbdf6ce859425bf649a22d7",
+    "gear_phase_offset_rad": 0.0,
+    "distance_target_mm": 0.001,
+    "offset_mm": 0.001,
+    "max_distance_mm": [
+      5.390608267788603e-07,
+      2.1229022269909352e-07
+    ],
+    "max_frame_error": 5.721861560622997e-14,
+    "scope": "Analytical contact positions and offset signs at listed samples; not a whole-surface or continuous-roll CAD certificate",
+    "seconds": 62.402077089005616,
+    "passes_sampled_checks": true,
+    "evidence": {
+      "file": "/private/tmp/solvent-cad-contact-audit.json",
+      "sha256": "d18a279beba8d59c85a5c340e156f48b4c8f3101c730ba6128de376591d51e15"
+    },
+    "contact_samples": 250,
+    "offset_contact_samples": 138,
+    "failures_by_reason": {}
+  },
+  "misphased_contacts": {
+    "contacts_sha256": "3eca08d763053df4c2cf1ba4f812f83403858e98cbbdf6ce859425bf649a22d7",
+    "gear_phase_offset_rad": 0.001,
+    "distance_target_mm": 0.001,
+    "offset_mm": 0.001,
+    "max_distance_mm": [
+      5.390608267788603e-07,
+      0.04810783682154812
+    ],
+    "max_frame_error": 5.721861560622997e-14,
+    "scope": "Analytical contact positions and offset signs at listed samples; not a whole-surface or continuous-roll CAD certificate",
+    "seconds": 34.89372197998455,
+    "passes_sampled_checks": false,
+    "evidence": {
+      "file": "/private/tmp/solvent-cad-contact-misphased.json",
+      "sha256": "c88bfd2fae8e0d3ae35b5cf203392cf2990bdc5e2cbcdb0b4534242c25b8534c"
+    },
+    "contact_samples": 250,
+    "offset_contact_samples": 138,
+    "failures_by_reason": {
+      "contact misses CAD boundary": 197,
+      "material sides are not complementary": 138
+    }
+  },
+  "scope": "Sampled CAD assembly/contact evidence and misphased controls; continuous interference, complete surface/material coverage and source accuracy remain unproved"
+}
