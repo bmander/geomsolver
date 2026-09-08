@@ -1,0 +1,38 @@
+{
+  "points": 40,
+  "indexed_sweep_witnesses": 1440,
+  "members": {
+    "pinion": {
+      "teeth": 24,
+      "points": 20
+    },
+    "gear": {
+      "teeth": 48,
+      "points": 20
+    }
+  },
+  "arithmetic": "outward rational intervals",
+  "scope": "point material signs for explicit binary64 geometry, using complete roll covers; tight minimum intervals, source error and whole-space/export guarantees not certified",
+  "independently_classified_points": 40,
+  "positive_roll_covers": 360,
+  "positive_roll_cells": 14564,
+  "minimum_retained_field_margin_mm": 0.004900000909316103,
+  "cad_probe_count": 40,
+  "maximum_coordinate_frame_difference_mm": 8.881784197001252e-16,
+  "probe_sha256": "ab501ce99f20094de69e46cf8d982d40cf095429f11ad41394f4c0ae32472b1e",
+  "cad_provenance": [
+    {
+      "member": 0,
+      "space_sha256": "94676270b1516fcc5bc8faef6a39299d8fc77a4278401070b5d658886f0ac00a",
+      "cut_sha256": "c18a9185bddab3422362b99a5fac73b590d04a615306e8b37c2004b750affccb",
+      "faces": 10
+    },
+    {
+      "member": 1,
+      "space_sha256": "2c3a03e889af6024584a03bd858674aa46576504d063c455b43e485d14759df7",
+      "cut_sha256": "c2049a3b89ccdba8a23b1b0785fbca6f4216cdc6bb5d25886ff3e621a73097c1",
+      "faces": 10
+    }
+  ],
+  "evidence_sha256": "0e6c7de680676c4847d2937067b9fbc6498775b691113ba17448153a2ee6534f"
+}

@@ -10,6 +10,15 @@ asset; completing its general-purpose mesher is no longer a prerequisite for thi
 export path. The historical extraction gates below remain applicable to that meshing work.
 Neither backend path has yet delivered the verified complete matched pair.
 
+The CAD trial now produces complete 24-cut pinion and 48-cut gear rim candidates, each
+passing kernel validity and STEP round-trip checks. Forty probes derived from the STEP
+surfaces agree with the continuous indexed material definition and pass the independent
+rational whole-roll audit; 480/960 rotated CAD probe classifications also pass. Both
+inspection STLs pass independent exact encoded topology and embedding checks. The next
+acceptance work is assembly-level contact/interference and complete surface-error/material
+coverage, followed by public Solvent solid integration. These successful candidate exports
+do not certify production accuracy or complete the matched-pair goal.
+
 The deliverable remains one fully specified, parametric matched pair from a documented
 generating system, independently verifiable and exportable at a stated geometric accuracy.
 Manufacturing planning remains separate. This document redirects the next investigation:

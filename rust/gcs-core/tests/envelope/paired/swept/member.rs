@@ -3,6 +3,7 @@ use super::*;
 use gcs_core::{solid::{SpatialField,MaterialField,MaterialEvaluator},motion::{Family,MotionBounds}};
 
 mod walk;
+mod cad;
 
 fn axis(pair: &Pair,name: &str) -> ([f64;3],[f64;3]) {
     let sk = &pair.model.sketch;

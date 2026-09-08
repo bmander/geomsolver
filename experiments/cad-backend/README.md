@@ -66,7 +66,71 @@ reported subtraction stage includes validity and adaptive volume evaluation: app
 5.8 and 7.2 seconds for those two candidates. This is evidence for the backend interface,
 not a guarantee that every indexed cut or parameter choice will succeed.
 
-## Reproduce
+## CAD material and indexed-cut follow-up
+
+`material_probes.py` reads the actual finer STEP tooth-space and single-cut blank exports.
+It samples the midpoint of each of ten faces, offsets 0.01 mm along both surface-normal
+directions, and records the cut blank's CAD classification. Tool closures at tip/toe/heel
+can correctly have both offsets outside the remaining material. The resulting 40 probes
+include flanks, fillets, root floors and closures for both members.
+
+The ignored Rust test `cad_export_material_probes_match_continuous_indexed_sweeps` transforms
+those positions into the solved model frame and evaluates the complete finite blank minus
+all continuous indexed generating sweeps. All 40 classifications agree, with every roll
+minimization converged. `check_material.py` binds the evidence to the exact input probe
+hash, labels, expectations and coordinate transform before invoking the independent
+rational checker. That audit passed 1,440 indexed attained witnesses and 360 full-roll
+positive covers comprising 14,564 cells. The minimum retained field margin is 0.0049000 mm;
+the independently recomputed frame differs by at most 8.9e-16 mm. See
+[material-results.json](material-results.json). The raw evidence remains in
+`/private/tmp/solvent-cad-material.json`; this proves these point signs, not whole-surface
+coverage, source-solve accuracy or contact correctness. The binding's rejection tests cover
+changed expectations, missing points, wrong frames, unresolved native queries and altered
+input hashes.
+
+`indexed_cuts.py` applies all selected rotated tools in one Boolean operation. Two adjacent
+cuts passed on both blanks, taking about nine seconds each for the Boolean stage. The full
+24-cut pinion then passed native validity, single-solid and STEP round-trip checks; its
+Boolean stage took 94.3 seconds. `check_indexed.py` checks actual STEP classifications at
+every rotated copy of the independently audited probes: all 480 pinion positions agree.
+This adds coverage around the circumference, not an independent full-roll proof at every
+rotated location. [indexed-results.json](indexed-results.json) records these observations.
+
+The complete 48-cut gear also passes native/STEP checks and all 960 rotated probe
+classifications. Its Boolean stage took 219.2 seconds. The final CAD volumes are
+9141.94525542 mm³ (pinion) and 20284.08432528 mm³ (gear), with STEP round-trip differences
+below 0.000003 mm³. These files are complete nominal rim candidates, still pending
+assembly-level contact/interference and whole-surface accuracy acceptance.
+
+The kernel tessellated the full pinion STEP into 26,988 triangles in about 0.6 seconds at
+0.05 mm linear and 0.2 rad angular settings. The actual binary STL passes the independent
+exact topology/embedding audit: closed, outward, genus one, no improper triangle
+intersections. The audit took about 24 seconds. Tessellation settings do not certify source
+error; the mesh volume differs from the CAD volume by about 0.15%. It is an inspection
+artifact, not a machining-accuracy mesh. Both full-pinion files are in
+`/private/tmp/solvent-cad-full-pinion`.
+
+The gear STL has 45,586 triangles and takes about 0.87 seconds to tessellate with the same
+settings. Its independent exact embedding audit also passes (approximately 27 seconds),
+with closed outward genus-one topology. Its mesh volume differs from the CAD volume by
+about 0.11%. Files are in `/private/tmp/solvent-cad-full-gear`. A rendering of the actual
+exported meshes in the documented zero-roll assembly frames is saved as
+`/private/tmp/solvent-cad-pair-preview.png`; it is visual inspection, not a contact test.
+
+```sh
+/private/tmp/solvent-occt-env/bin/python experiments/cad-backend/material_probes.py /private/tmp/solvent-cad-one-cut-checked /private/tmp/solvent-cad-probes.txt
+SOLVENT_CAD_PROBES_INPUT=/private/tmp/solvent-cad-probes.txt SOLVENT_CAD_MATERIAL_OUTPUT=/private/tmp/solvent-cad-material.json cargo test --manifest-path rust/Cargo.toml cad_export_material_probes_match_continuous_indexed_sweeps -- --ignored --nocapture
+python3 experiments/cad-backend/check_material.py /private/tmp/solvent-cad-probes.txt /private/tmp/solvent-cad-material.json /private/tmp/solvent-cad-material-audit.json
+/private/tmp/solvent-occt-env/bin/python experiments/cad-backend/indexed_cuts.py /private/tmp/solvent-cad-sections.json /private/tmp/solvent-cad-one-cut-checked /private/tmp/solvent-cad-full-pinion --full --member 0
+/private/tmp/solvent-occt-env/bin/python experiments/cad-backend/check_indexed.py /private/tmp/solvent-cad-probes.txt /private/tmp/solvent-cad-material-audit.json /private/tmp/solvent-cad-full-pinion/report.json /private/tmp/solvent-cad-full-pinion/material-audit.json
+```
+
+For the adjacent-cut gate, omit `--full`; omit `--member` to process both members. To
+tessellate use `export_stl.py SOURCE.step OUTPUT.stl`, then independently check with
+`python3 rust/gcs-core/tests/verification/stl_embedding.py OUTPUT.stl`. Full pair assembly,
+contact/interference, continuous surface error and public Solvent integration remain.
+
+## Initial trial reproduction
 
 The frozen Python environment uses `cadquery-ocp==7.9.3.1.1` (OCCT 7.9.3) on CPython 3.12,
 macOS x86-64. Its distribution also installs VTK and dependencies; they do not enter Solvent.

@@ -1,0 +1,172 @@
+{
+  "two_cuts": {
+    "results": [
+      {
+        "member": 0,
+        "cuts": 2,
+        "tool_sha256": "94676270b1516fcc5bc8faef6a39299d8fc77a4278401070b5d658886f0ac00a",
+        "failures": [],
+        "boolean_seconds": 9.009248479036614,
+        "valid": true,
+        "solids": 1,
+        "volume": 11797.570460767965,
+        "blank_volume": 12038.990933007157,
+        "step_file": "/private/tmp/solvent-cad-two-cuts/member0-2-cuts.step",
+        "step_sha256": "0c92fb1a5b0164613a5298fa2d1673c10c430f20b13a782df907a3e2389e5adf",
+        "roundtrip_valid": true,
+        "roundtrip_solids": 1,
+        "roundtrip_volume": 11797.570460779481,
+        "passes_local_checks": true
+      },
+      {
+        "member": 1,
+        "cuts": 2,
+        "tool_sha256": "2c3a03e889af6024584a03bd858674aa46576504d063c455b43e485d14759df7",
+        "failures": [],
+        "boolean_seconds": 9.392902727995533,
+        "valid": true,
+        "solids": 1,
+        "volume": 25672.39747944136,
+        "blank_volume": 25906.671964098503,
+        "step_file": "/private/tmp/solvent-cad-two-cuts/member1-2-cuts.step",
+        "step_sha256": "fea275212aa1d39af9247bd9a44901162a496ecca642188e14c4f7654159e02d",
+        "roundtrip_valid": true,
+        "roundtrip_solids": 1,
+        "roundtrip_volume": 25672.397479188596,
+        "passes_local_checks": true
+      }
+    ],
+    "source_sha256": "c11e8defe5dcd3d12d79f597c0ec5a4e9410794ec25597904a183863183724c9",
+    "scope": "Indexed CAD candidate and STEP checks only; complete surface and pair acceptance pending"
+  },
+  "pinion": {
+    "results": [
+      {
+        "member": 0,
+        "cuts": 24,
+        "tool_sha256": "94676270b1516fcc5bc8faef6a39299d8fc77a4278401070b5d658886f0ac00a",
+        "failures": [],
+        "boolean_seconds": 94.3131472550449,
+        "valid": true,
+        "solids": 1,
+        "volume": 9141.945255424698,
+        "blank_volume": 12038.990933007157,
+        "step_file": "/private/tmp/solvent-cad-full-pinion/member0-24-cuts.step",
+        "step_sha256": "47d750135b6b6c6c1cec232b496ddb792e03ff03d7ae4d9d1dececa4229f636e",
+        "roundtrip_valid": true,
+        "roundtrip_solids": 1,
+        "roundtrip_volume": 9141.945255304669,
+        "passes_local_checks": true
+      }
+    ],
+    "source_sha256": "c11e8defe5dcd3d12d79f597c0ec5a4e9410794ec25597904a183863183724c9",
+    "scope": "Indexed CAD candidate and STEP checks only; complete surface and pair acceptance pending"
+  },
+  "pinion_material": {
+    "results": [
+      {
+        "member": 0,
+        "teeth": 24,
+        "points": 480,
+        "failures": [],
+        "step_sha256": "47d750135b6b6c6c1cec232b496ddb792e03ff03d7ae4d9d1dececa4229f636e",
+        "passes": true
+      }
+    ],
+    "audit_sha256": "c5a34b7c5d053db30883e2b40a086f59cdedf2f8976c17e756b826b41d9fc564",
+    "scope": "CAD classifications at rotated copies of independently audited probes; not whole-boundary certification"
+  },
+  "pinion_mesh": {
+    "source_sha256": "47d750135b6b6c6c1cec232b496ddb792e03ff03d7ae4d9d1dececa4229f636e",
+    "stl_sha256": "58b111573e2c4c958ea3000f4b7b06047e5e0a9481225bebdc71e5008584284a",
+    "deflection_mm": 0.05,
+    "angular_deflection_rad": 0.2,
+    "tessellation_seconds": 0.5995041989954188,
+    "triangles": 26988,
+    "scope": "Unchecked CAD tessellation; settings are not a source-geometry accuracy certificate"
+  },
+  "pinion_embedding": {
+    "vertices": 13494,
+    "edges": 40482,
+    "triangles": 26988,
+    "euler": 0,
+    "genus": 1,
+    "signed_volume": 9155.64341242887,
+    "sha256": "58b111573e2c4c958ea3000f4b7b06047e5e0a9481225bebdc71e5008584284a",
+    "bytes": 1349484,
+    "coordinate_scale_exponent": 69,
+    "signed_volume_exact": "2228382118510289699038724743413682043/243388915243820045087367015432192",
+    "embedded": true,
+    "all_triangle_pairs": 364162578,
+    "exact_pair_tests": 310635,
+    "seconds": 23.924028909008484,
+    "scope": "exact embedding and outward orientation of this encoded closed mesh; source geometry, material coverage, surface deviation and mating not certified",
+    "stl_sha256": "58b111573e2c4c958ea3000f4b7b06047e5e0a9481225bebdc71e5008584284a",
+    "audit_seconds": 23.933485366986133
+  },
+  "gear": {
+    "results": [
+      {
+        "member": 1,
+        "cuts": 48,
+        "tool_sha256": "2c3a03e889af6024584a03bd858674aa46576504d063c455b43e485d14759df7",
+        "failures": [],
+        "boolean_seconds": 219.24080337700434,
+        "valid": true,
+        "solids": 1,
+        "volume": 20284.08432528059,
+        "blank_volume": 25906.671964098503,
+        "step_file": "/private/tmp/solvent-cad-full-gear/member1-48-cuts.step",
+        "step_sha256": "a4b010f3466603a57aa2b13a2f85d884eb1c9fa1032ca6a5dcbde7e8cfacddac",
+        "roundtrip_valid": true,
+        "roundtrip_solids": 1,
+        "roundtrip_volume": 20284.084322783234,
+        "passes_local_checks": true
+      }
+    ],
+    "source_sha256": "c11e8defe5dcd3d12d79f597c0ec5a4e9410794ec25597904a183863183724c9",
+    "scope": "Indexed CAD candidate and STEP checks only; complete surface and pair acceptance pending"
+  },
+  "gear_material": {
+    "results": [
+      {
+        "member": 1,
+        "teeth": 48,
+        "points": 960,
+        "failures": [],
+        "step_sha256": "a4b010f3466603a57aa2b13a2f85d884eb1c9fa1032ca6a5dcbde7e8cfacddac",
+        "passes": true
+      }
+    ],
+    "audit_sha256": "c5a34b7c5d053db30883e2b40a086f59cdedf2f8976c17e756b826b41d9fc564",
+    "scope": "CAD classifications at rotated copies of independently audited probes; not whole-boundary certification"
+  },
+  "gear_mesh": {
+    "source_sha256": "a4b010f3466603a57aa2b13a2f85d884eb1c9fa1032ca6a5dcbde7e8cfacddac",
+    "stl_sha256": "85399babbbf3a507b0c7c723f297b7d9a93c0a82d23cba305fb9cb09f7a566e5",
+    "deflection_mm": 0.05,
+    "angular_deflection_rad": 0.2,
+    "tessellation_seconds": 0.8658756240038201,
+    "triangles": 45586,
+    "scope": "Unchecked CAD tessellation; settings are not a source-geometry accuracy certificate"
+  },
+  "gear_embedding": {
+    "vertices": 22793,
+    "edges": 68379,
+    "triangles": 45586,
+    "euler": 0,
+    "genus": 1,
+    "signed_volume": 20307.267856378527,
+    "sha256": "85399babbbf3a507b0c7c723f297b7d9a93c0a82d23cba305fb9cb09f7a566e5",
+    "bytes": 2279384,
+    "coordinate_scale_exponent": 70,
+    "signed_volume_exact": "4942563895129664019086541160553619341/243388915243820045087367015432192",
+    "embedded": true,
+    "all_triangle_pairs": 1039018905,
+    "exact_pair_tests": 606999,
+    "seconds": 26.545492684002966,
+    "scope": "exact embedding and outward orientation of this encoded closed mesh; source geometry, material coverage, surface deviation and mating not certified",
+    "stl_sha256": "85399babbbf3a507b0c7c723f297b7d9a93c0a82d23cba305fb9cb09f7a566e5",
+    "audit_seconds": 26.555066878034268
+  }
+}
