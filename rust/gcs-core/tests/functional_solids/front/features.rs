@@ -98,6 +98,15 @@ impl Surface {
             let (delta,rank) = min_norm_solve(&matrix,&rhs,1e-10);
             if rank < 2 { return None; }
             let delta = [delta[0],delta[1],delta[2]];
+            // Least squares also returns a compromise for nonincident faces
+            // (for example both walls of a thin strip). That point can lie on
+            // another real boundary, so sign witnesses alone do not establish
+            // a common feature. Shrink around the current local point rather
+            // than moving the next neighborhood to an inconsistent fit.
+            if normals.iter().zip(&rhs).any(|(&n,&rhs)|
+                (dot(n,delta)-rhs).abs() > self.point_tolerance) {
+                previous = None; radius *= 0.25; continue;
+            }
             let proposed = add(guess,delta);
             if length(sub(proposed,center)) > radius {
                 // A wide neighborhood can see several sheets whose common

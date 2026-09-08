@@ -589,3 +589,23 @@ intersections does not establish source accuracy or whole-boundary coverage.
 The opt-in run passes all 22 enabled front tests while these two explicitly requested
 unmet acceptance cases continue to fail. Snapshot capture and STL inspection do not
 advance their acceptance status.
+
+
+### Consistent local feature fits
+
+A narrow wedge clipped by a nearby parallel back wall exposes another generic probe
+failure. Least squares can compromise between nonincident planes and place the fitted
+point on a different real boundary. Boundary sign witnesses alone cannot establish that
+all sampled branches meet there. The new probe check rejects a fit whose grouped-plane
+residual exceeds the point tolerance, then shrinks around the current local point without
+moving the neighborhood to the inconsistent fit. It remains a candidate heuristic.
+
+The new rotated-strip regression fails before this change and passes afterward. All
+23 enabled front tests pass, with two ignored acceptance cases. The explicit tetrahedron
+run remains incomplete: 84 triangles, ten open edges and 297,757 queries (1.76 s). Exact
+pair tests find no improper intersections in either the source binary64 geometry or its
+binary32 encoding, over 532 candidate pairs in each. More triangles and a passing local
+regression do not establish better whole-boundary recovery; the acceptance gate still fails.
+
+The next comparison is with external implicit meshers, as discussed in
+[the library review](implicit-library-review.md), before further custom front development.

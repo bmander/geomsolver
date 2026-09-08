@@ -401,6 +401,22 @@ fn generic_front_local_probe_isolates_a_nearby_crease_from_a_distant_corner() {
 }
 
 #[test]
+fn generic_front_local_probe_does_not_fit_nonincident_faces_as_one_feature() {
+    for angle in [0.,0.47] {
+        let rotate = |p| rotate_fixture(p,angle);
+        let field = wedge([rotate([1.,0.,0.]),rotate([0.,1.,0.])]);
+        // A nearby back wall is visible to the first two neighborhoods, but
+        // cannot meet the x=0 crease. Least squares must not move that crease
+        // halfway into the strip to compromise between incompatible planes.
+        let back = SpatialField::from(RevolvedField::new(
+            F::half_plane([0.;2],[0.,1.]).unwrap(),rotate([-0.06,0.,0.]),rotate([-1.,0.,0.])).unwrap());
+        let mut surface = Surface::new(field.intersection(back.into()).unwrap(),0.001);
+        let expected = rotate([0.,0.,0.2]);
+        verify_feature(&mut surface,expected,0.2,2,expected);
+    }
+}
+
+#[test]
 fn generic_front_clearance_requires_edge_triangle_separation() {
     let triangle = [[0.,0.,0.],[1.,0.,0.],[0.,1.,0.]];
     assert!(clearance::separated([[0.2,0.2,0.01],[0.4,0.2,0.01]],triangle));
