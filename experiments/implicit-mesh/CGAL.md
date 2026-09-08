@@ -163,3 +163,27 @@ verifier retains its own reader and exact predicates.
 
 Sources: [pinned experimental repair implementation](https://github.com/CGAL/cgal/blob/v6.1.2/Polygon_mesh_processing/include/CGAL/Polygon_mesh_processing/corefinement.h),
 [documented soup autorefinement and rounding parameters](https://doc.cgal.org/6.1.2/Polygon_mesh_processing/group__PMP__corefinement__grp.html).
+
+## Short-edge cleanup follow-up
+
+Indexed diagnostics show the remaining degenerate faces exist before STL rounding:
+collinear folds contain distinct nearby vertices. The degenerate helper now retains a
+`.indexed.json` diagnostic snapshot (original connectivity, constructed points rounded to
+binary64). Optional `run_indexed_cleanup.py --near-epsilon .0002` runs
+`remove_almost_degenerate_faces` initially on remaining degenerate faces, limiting collapsed
+edge lengths and flipped triangle heights to that value. Neighboring faces may change;
+these local limits are not a whole-surface displacement certificate.
+
+All three previously refused inputs reach zero native degenerate faces and retain closedness.
+The remaining pipeline, using simplification .0002 and local repair epsilon .002, still fails:
+
+- Rotated cube: 368 triangles, no exact intersections, sampled source deviation .0203018
+  exceeds the unchanged .02 tolerance.
+- Thin plate: 748 triangles, source samples pass, intersection repair remains incomplete.
+- Disconnected spheres: simplification returns 11,198 triangles, but the native repair
+  reader refuses the serialized mesh. No final candidate is accepted.
+
+See [near-cleanup-results.json](near-cleanup-results.json). These observations separate
+cleanup progress from final acceptance. They do not justify relaxing tolerances or adopting
+the pipeline. The short-edge operation uses the same CGAL repair-degeneracies header as
+exact cleanup; all original meshes and intermediate outputs are retained.

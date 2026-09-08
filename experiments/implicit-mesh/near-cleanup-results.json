@@ -1,0 +1,102 @@
+{
+  "scope": "Bounded-edge almost-degenerate cleanup trial; all three final candidates remain unaccepted.",
+  "artifacts": "/private/tmp/solvent-near-cleanup",
+  "results": [
+    {
+      "case": "rotated_cube",
+      "cleanup": {
+        "backend": "CGAL-6.1.2-remove-degenerate-faces",
+        "success": true,
+        "input_faces": 26328,
+        "input_degenerate": 280,
+        "input_closed": true,
+        "output_faces": 26042,
+        "near_epsilon": 0.0002,
+        "near_attempted": true,
+        "near_library_return": false,
+        "output_degenerate": 0,
+        "output_closed": true,
+        "cleanup_seconds": 0.064226131,
+        "passes": 2,
+        "library_returns": [
+          true,
+          true
+        ]
+      },
+      "audit": {
+        "sha256": "9c0145b43d62c5589abdd84e22512c7d1bfe633e423fbb08b49ff7b45cf09158",
+        "triangles": 368,
+        "failures": [
+          "sampled source deviation or landmark coverage exceeds tolerance"
+        ],
+        "sampled_source_deviation": 0.020301775447484127,
+        "maximum_landmark_distance": 0.010358032904507106,
+        "improper_intersection_count": 0
+      }
+    },
+    {
+      "case": "thin_plate",
+      "cleanup": {
+        "backend": "CGAL-6.1.2-remove-degenerate-faces",
+        "success": true,
+        "input_faces": 19364,
+        "input_degenerate": 608,
+        "input_closed": true,
+        "output_faces": 18764,
+        "near_epsilon": 0.0002,
+        "near_attempted": true,
+        "near_library_return": false,
+        "output_degenerate": 0,
+        "output_closed": true,
+        "cleanup_seconds": 0.045466237,
+        "passes": 2,
+        "library_returns": [
+          true,
+          true
+        ]
+      },
+      "audit": {
+        "sha256": "46b62ba6459318d9d2d7f898eaeab32beb2ef8216b2dc3d0b42fad9301a7b398",
+        "triangles": 748,
+        "failures": [
+          "producer reported a failed repair",
+          "improper encoded triangle intersections"
+        ],
+        "sampled_source_deviation": 0.012808010837167094,
+        "maximum_landmark_distance": 0.004076088912357722,
+        "improper_intersection_count": 90
+      }
+    },
+    {
+      "case": "disconnected",
+      "cleanup": {
+        "backend": "CGAL-6.1.2-remove-degenerate-faces",
+        "success": true,
+        "input_faces": 17884,
+        "input_degenerate": 1335,
+        "input_closed": true,
+        "output_faces": 16508,
+        "near_epsilon": 0.0002,
+        "near_attempted": true,
+        "near_library_return": false,
+        "output_degenerate": 0,
+        "output_closed": true,
+        "cleanup_seconds": 0.044684009,
+        "passes": 2,
+        "library_returns": [
+          true,
+          true
+        ]
+      },
+      "repair_failure": {
+        "source": "disconnected-simplified.stl",
+        "source_sha256": "d5d90b912c4d52a23720a667db7ce0dfc5771e01fa48c24acadff2d09cbe7709",
+        "returncode": 2,
+        "stdout": "",
+        "stderr": "input is not a readable triangle mesh\n",
+        "stage_wall_seconds": 0.07474784197984263,
+        "status": "repair_failed_no_accepted_output"
+      }
+    }
+  ]
+}

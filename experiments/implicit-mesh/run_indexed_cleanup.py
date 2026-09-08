@@ -19,7 +19,7 @@ def write_indexed(source, path):
             out.write("3 "+" ".join(map(str, face))+"\n")
 
 
-def run(executable, source, output):
+def run(executable, source, output, near_epsilon=None):
     if source.resolve() in (output.resolve(), output.with_suffix(".json").resolve(),
                             output.with_suffix(".input.off").resolve()):
         raise ValueError("choose a new output stem to preserve the source")
@@ -29,7 +29,10 @@ def run(executable, source, output):
     indexed = output.with_suffix(".input.off")
     write_indexed(metadata, indexed)
     started = time.perf_counter()
-    completed = subprocess.run([str(executable), str(indexed), str(output)],
+    command = [str(executable), str(indexed), str(output)]
+    if near_epsilon is not None:
+        command.append(str(near_epsilon))
+    completed = subprocess.run(command,
                                text=True, capture_output=True)
     seconds = time.perf_counter()-started
     if completed.returncode not in (0, 1):
@@ -55,7 +58,8 @@ if __name__ == "__main__":
     parser.add_argument("executable", type=Path)
     parser.add_argument("source", type=Path, help="producer JSON with original vertex indices")
     parser.add_argument("output", type=Path)
+    parser.add_argument("--near-epsilon", type=float)
     args = parser.parse_args()
     if args.source.resolve() == args.output.with_suffix(".json").resolve():
         parser.error("choose a new output stem to preserve the source")
-    raise SystemExit(0 if run(args.executable, args.source, args.output) else 1)
+    raise SystemExit(0 if run(args.executable, args.source, args.output, args.near_epsilon) else 1)

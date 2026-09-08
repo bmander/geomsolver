@@ -40,7 +40,15 @@ static size_t degenerates(const Mesh& mesh) {
 }
 int main(int argc, char** argv) {
     try {
-        if (argc != 3) throw std::invalid_argument("usage: solvent-cgal-degenerate INPUT.off OUTPUT.stl");
+        if (argc != 3 && argc != 4)
+            throw std::invalid_argument("usage: solvent-cgal-degenerate INPUT.off OUTPUT.stl [NEAR_EPSILON]");
+        double near_epsilon = 0;
+        if (argc == 4) {
+            size_t parsed = 0;
+            near_epsilon = std::stod(argv[3], &parsed);
+            if (parsed != std::string(argv[3]).size() || !std::isfinite(near_epsilon) || near_epsilon <= 0)
+                throw std::invalid_argument("near epsilon must be finite and positive");
+        }
         if (std::filesystem::weakly_canonical(argv[1]) == std::filesystem::weakly_canonical(argv[2]))
             throw std::invalid_argument("source must be retained");
         Mesh mesh = read_indexed(argv[1]);
@@ -55,16 +63,28 @@ int main(int argc, char** argv) {
             remaining = degenerates(mesh);
             if (remaining == previous && mesh.number_of_faces() == previous_faces) break;
         }
+        bool near_attempted = near_epsilon > 0 && remaining > 0, near_return = false;
+        if (near_attempted) {
+            std::vector<Mesh::Face_index> faces;
+            for (auto face : mesh.faces())
+                if (PMP::is_degenerate_triangle_face(face,mesh)) faces.push_back(face);
+            near_return = PMP::remove_almost_degenerate_faces(faces,mesh,
+                CGAL::parameters::collapse_length_threshold(near_epsilon)
+                    .flip_triangle_height_threshold(near_epsilon));
+        }
         const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
         const size_t degenerate_after = degenerates(mesh);
         const bool success = degenerate_after == 0 && (!closed_before || CGAL::is_closed(mesh));
         if (!CGAL::is_triangle_mesh(mesh)) throw std::runtime_error("cleanup produced non-triangular faces");
         write_stl(mesh,argv[2]);
+        write_indexed(mesh,std::string(argv[2])+".indexed.json");
         std::ofstream out(std::string(argv[2])+".cleanup.json");
         out << std::boolalpha << std::setprecision(17)
             << "{\"backend\":\"CGAL-6.1.2-remove-degenerate-faces\",\"success\":" << success
             << ",\"input_faces\":" << before << ",\"input_degenerate\":" << degenerate_before
             << ",\"input_closed\":" << closed_before << ",\"output_faces\":" << mesh.number_of_faces()
+            << ",\"near_epsilon\":" << near_epsilon << ",\"near_attempted\":" << near_attempted
+            << ",\"near_library_return\":" << near_return
             << ",\"output_degenerate\":" << degenerate_after
             << ",\"output_closed\":" << CGAL::is_closed(mesh) << ",\"cleanup_seconds\":" << seconds
             << ",\"passes\":" << library_returns.size() << ",\"library_returns\":[";
