@@ -1,0 +1,1547 @@
+{
+  "date": "2026-09-08",
+  "scope": "Exact encoded embedding and topology; sampled source checks only. Single timing samples, not a performance distribution.",
+  "reports": [
+    {
+      "case": "cube",
+      "backend": "fidget-0.5.0-vm",
+      "depth": 5,
+      "extraction_seconds": 0.031499475,
+      "setup_seconds": 7.3258e-05,
+      "file": "cube-depth5.stl",
+      "sha256": "03963efebb0111f4073d1b56ab0c8fccb4607f50c3402e603014cb9bf27be3ad",
+      "triangles": 512,
+      "sampled_tolerance": 0.02,
+      "failures": [],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 258,
+          "edges": 768,
+          "triangles": 512,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 7.999988065245931
+        }
+      ],
+      "candidate_pairs": 4696,
+      "improper_intersection_count": 0,
+      "first_improper_intersections": [],
+      "sampled_source_deviation": 1.1920928955078125e-06,
+      "landmark_distances": [
+        1.1920928955078124e-07,
+        1.0132790180248693e-06,
+        1.0132790180248268e-06,
+        1.6858738899956515e-06,
+        1.0728836438525774e-06,
+        1.4757416804952971e-06,
+        1.6858738899956515e-06,
+        1.998311831264521e-06
+      ],
+      "maximum_landmark_distance": 1.998311831264521e-06,
+      "passes_sampled_checks": true
+    },
+    {
+      "case": "disconnected",
+      "backend": "fidget-0.5.0-vm",
+      "depth": 5,
+      "extraction_seconds": 0.005246861,
+      "setup_seconds": 8.4482e-05,
+      "file": "disconnected-depth5.stl",
+      "sha256": "ed7c6c740c0cabf82c2b75b1e1a373401dc0c7a838ddbe9c03eb28570b10d922",
+      "triangles": 1744,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "unexpected volume orientation or genus",
+        "improper encoded triangle intersections",
+        "sampled source deviation or landmark coverage exceeds tolerance"
+      ],
+      "components": 2,
+      "topology": [
+        {
+          "vertices": 862,
+          "edges": 2580,
+          "triangles": 1720,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.1142918084475811
+        },
+        {
+          "vertices": 14,
+          "edges": 36,
+          "triangles": 24,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": -0.0002587502157051097
+        }
+      ],
+      "candidate_pairs": 13146,
+      "improper_intersection_count": 21,
+      "first_improper_intersections": [
+        [
+          1345,
+          1385
+        ],
+        [
+          1340,
+          1390
+        ],
+        [
+          612,
+          675
+        ],
+        [
+          969,
+          1028
+        ],
+        [
+          675,
+          613
+        ],
+        [
+          1028,
+          968
+        ],
+        [
+          1385,
+          1343
+        ],
+        [
+          1390,
+          1342
+        ],
+        [
+          674,
+          670
+        ],
+        [
+          674,
+          671
+        ],
+        [
+          1029,
+          1006
+        ],
+        [
+          1029,
+          1007
+        ],
+        [
+          1389,
+          1362
+        ],
+        [
+          1389,
+          1364
+        ],
+        [
+          1386,
+          1381
+        ],
+        [
+          1386,
+          1383
+        ],
+        [
+          1434,
+          1424
+        ],
+        [
+          1434,
+          1425
+        ],
+        [
+          1434,
+          1440
+        ],
+        [
+          1434,
+          1441
+        ]
+      ],
+      "sampled_source_deviation": 0.17137815350445426,
+      "landmark_distances": [
+        9.417533874955808e-07,
+        9.55164432492328e-07,
+        0.001037695042113587,
+        0.0010373973396177335,
+        0.0010377078121131113,
+        0.0010374729778299134,
+        0.004279785051737438,
+        0.017307934651652614,
+        0.036088991572773094,
+        0.018606468642072556,
+        0.02499964156562409,
+        0.041833456562281254
+      ],
+      "maximum_landmark_distance": 0.041833456562281254,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "disconnected",
+      "backend": "fidget-0.5.0-vm",
+      "depth": 7,
+      "extraction_seconds": 0.331270958,
+      "setup_seconds": 0.000397092,
+      "file": "disconnected-depth7.stl",
+      "sha256": "a66bd5dd5ae66d204294ae4b6c43c8b7ca70d7471c3a4d764ef5bd2db3b320aa",
+      "triangles": 8738,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "improper encoded triangle intersections"
+      ],
+      "components": 2,
+      "topology": [
+        {
+          "vertices": 4183,
+          "edges": 12543,
+          "triangles": 8362,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.11319003662348147
+        },
+        {
+          "vertices": 190,
+          "edges": 564,
+          "triangles": 376,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00018889872265509213
+        }
+      ],
+      "candidate_pairs": 68475,
+      "improper_intersection_count": 86,
+      "first_improper_intersections": [
+        [
+          3856,
+          3861
+        ],
+        [
+          5796,
+          5799
+        ],
+        [
+          2243,
+          2246
+        ],
+        [
+          2246,
+          2245
+        ],
+        [
+          5799,
+          5797
+        ],
+        [
+          3861,
+          3857
+        ],
+        [
+          4136,
+          4305
+        ],
+        [
+          4137,
+          4305
+        ],
+        [
+          6115,
+          6095
+        ],
+        [
+          6115,
+          6096
+        ],
+        [
+          6112,
+          6101
+        ],
+        [
+          6112,
+          6102
+        ],
+        [
+          2139,
+          2146
+        ],
+        [
+          6220,
+          6227
+        ],
+        [
+          6099,
+          6228
+        ],
+        [
+          6103,
+          6210
+        ],
+        [
+          6228,
+          6098
+        ],
+        [
+          6210,
+          6104
+        ],
+        [
+          2146,
+          2141
+        ],
+        [
+          6227,
+          6221
+        ]
+      ],
+      "sampled_source_deviation": 0.00280012322742805,
+      "landmark_distances": [
+        2.2646260872080274e-07,
+        2.3245811459071675e-07,
+        4.475660745073067e-05,
+        4.4810327944753276e-05,
+        4.441484913776771e-05,
+        4.4473762549255225e-05,
+        0.0008221520814302,
+        0.0008352988394426808,
+        0.0008526949621318545,
+        0.0008402000620835514,
+        1.3869804820434954e-05,
+        1.3718642287086242e-05
+      ],
+      "maximum_landmark_distance": 0.0008526949621318545,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_cube",
+      "backend": "fidget-0.5.0-vm",
+      "depth": 5,
+      "extraction_seconds": 0.033825833,
+      "setup_seconds": 7.6728e-05,
+      "file": "rotated_cube-depth5.stl",
+      "sha256": "6e93650b4e172c34717d0e18fc1d464d70a40295bbf84eb08bd30b571f27cbdb",
+      "triangles": 2666,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "improper encoded triangle intersections"
+      ],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 1335,
+          "edges": 3999,
+          "triangles": 2666,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 7.9999994410262225
+        }
+      ],
+      "candidate_pairs": 25896,
+      "improper_intersection_count": 66,
+      "first_improper_intersections": [
+        [
+          655,
+          664
+        ],
+        [
+          627,
+          631
+        ],
+        [
+          627,
+          640
+        ],
+        [
+          631,
+          625
+        ],
+        [
+          640,
+          625
+        ],
+        [
+          631,
+          628
+        ],
+        [
+          640,
+          628
+        ],
+        [
+          631,
+          624
+        ],
+        [
+          640,
+          624
+        ],
+        [
+          664,
+          656
+        ],
+        [
+          631,
+          636
+        ],
+        [
+          640,
+          636
+        ],
+        [
+          631,
+          620
+        ],
+        [
+          640,
+          620
+        ],
+        [
+          631,
+          621
+        ],
+        [
+          640,
+          621
+        ],
+        [
+          631,
+          639
+        ],
+        [
+          640,
+          639
+        ],
+        [
+          1900,
+          1905
+        ],
+        [
+          1905,
+          1898
+        ]
+      ],
+      "sampled_source_deviation": 1.8191130521927334e-06,
+      "landmark_distances": [
+        4.811032033075327e-07,
+        9.129457578205706e-07,
+        1.035000848495907e-06,
+        5.592728478050595e-07,
+        3.1990061382102925e-07,
+        1.2572453668609777e-06,
+        9.688148863114866e-07,
+        7.715094536882344e-07
+      ],
+      "maximum_landmark_distance": 1.2572453668609777e-06,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_tetrahedron",
+      "backend": "fidget-0.5.0-vm",
+      "depth": 5,
+      "extraction_seconds": 0.001015201,
+      "setup_seconds": 9.1905e-05,
+      "file": "rotated_tetrahedron-depth5.stl",
+      "sha256": "cead6411e4bcc17a37263d554c93c10e293a70027b768fe0bf51d2b47940cfa7",
+      "triangles": 64,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "unexpected component count",
+        "sampled source deviation or landmark coverage exceeds tolerance"
+      ],
+      "components": 2,
+      "topology": [
+        {
+          "vertices": 22,
+          "edges": 60,
+          "triangles": 40,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00040366548267547873
+        },
+        {
+          "vertices": 14,
+          "edges": 36,
+          "triangles": 24,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00014120129645757768
+        }
+      ],
+      "candidate_pairs": 428,
+      "improper_intersection_count": 0,
+      "first_improper_intersections": [],
+      "sampled_source_deviation": 0.02930282362745498,
+      "landmark_distances": [
+        1.4075291285234404,
+        0.05032567900951496,
+        0.07318932313442045,
+        0.04755995316513024
+      ],
+      "maximum_landmark_distance": 1.4075291285234404,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "rotated_tetrahedron",
+      "backend": "fidget-0.5.0-vm",
+      "depth": 7,
+      "extraction_seconds": 0.051541496,
+      "setup_seconds": 0.000497677,
+      "file": "rotated_tetrahedron-depth7.stl",
+      "sha256": "563ead2a297f99cb5536b3a80a2efe96049bf385d0155a231cdf25d281906e99",
+      "triangles": 1440,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "unexpected component count",
+        "improper encoded triangle intersections",
+        "sampled source deviation or landmark coverage exceeds tolerance"
+      ],
+      "components": 6,
+      "topology": [
+        {
+          "vertices": 588,
+          "edges": 1758,
+          "triangles": 1172,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0027773795242490994
+        },
+        {
+          "vertices": 24,
+          "edges": 66,
+          "triangles": 44,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 4.872946961619656e-05
+        },
+        {
+          "vertices": 62,
+          "edges": 180,
+          "triangles": 120,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00010217309589770353
+        },
+        {
+          "vertices": 14,
+          "edges": 36,
+          "triangles": 24,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 1.7224620366139193e-06
+        },
+        {
+          "vertices": 22,
+          "edges": 60,
+          "triangles": 40,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 6.82920198193778e-06
+        },
+        {
+          "vertices": 22,
+          "edges": 60,
+          "triangles": 40,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 5.586730047025125e-06
+        }
+      ],
+      "candidate_pairs": 12418,
+      "improper_intersection_count": 45,
+      "first_improper_intersections": [
+        [
+          317,
+          279
+        ],
+        [
+          317,
+          280
+        ],
+        [
+          314,
+          282
+        ],
+        [
+          314,
+          312
+        ],
+        [
+          280,
+          316
+        ],
+        [
+          282,
+          311
+        ],
+        [
+          378,
+          1193
+        ],
+        [
+          378,
+          1191
+        ],
+        [
+          378,
+          1192
+        ],
+        [
+          501,
+          518
+        ],
+        [
+          504,
+          518
+        ],
+        [
+          503,
+          518
+        ],
+        [
+          1161,
+          612
+        ],
+        [
+          595,
+          612
+        ],
+        [
+          605,
+          612
+        ],
+        [
+          1164,
+          1394
+        ],
+        [
+          1164,
+          1395
+        ],
+        [
+          1161,
+          1404
+        ],
+        [
+          1164,
+          1404
+        ],
+        [
+          1395,
+          1404
+        ]
+      ],
+      "sampled_source_deviation": 0.013597622656972605,
+      "landmark_distances": [
+        0.34004817715894564,
+        3.653820222763197e-07,
+        3.4750688531725174e-07,
+        0.020005756753535525
+      ],
+      "maximum_landmark_distance": 0.34004817715894564,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "sphere",
+      "backend": "fidget-0.5.0-vm",
+      "depth": 3,
+      "extraction_seconds": 0.010520263,
+      "setup_seconds": 0.000378044,
+      "file": "sphere-depth3.stl",
+      "sha256": "8cd4c8ed1b4f38cc8fcf267093e8b1e2ac8eef1f1b6f223c662d9709f875fe81",
+      "triangles": 888,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "sampled source deviation or landmark coverage exceeds tolerance"
+      ],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 446,
+          "edges": 1332,
+          "triangles": 888,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 4.277485579942022
+        }
+      ],
+      "candidate_pairs": 6633,
+      "improper_intersection_count": 0,
+      "first_improper_intersections": [],
+      "sampled_source_deviation": 0.027167532894822655,
+      "landmark_distances": [
+        0.0,
+        4.767073669086348e-06,
+        0.0,
+        4.767073673382974e-06,
+        0.0,
+        4.767073448053946e-06
+      ],
+      "maximum_landmark_distance": 4.767073673382974e-06,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "sphere",
+      "backend": "fidget-0.5.0-vm",
+      "depth": 4,
+      "extraction_seconds": 0.02295174,
+      "setup_seconds": 0.000438285,
+      "file": "sphere-depth4.stl",
+      "sha256": "b11de90228b9e8046542fa1ca2d37fcbfdde2fa535a61149aa58a11d3eb45bea",
+      "triangles": 3048,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "improper encoded triangle intersections"
+      ],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 1526,
+          "edges": 4572,
+          "triangles": 3048,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 4.215686274896444
+        }
+      ],
+      "candidate_pairs": 23706,
+      "improper_intersection_count": 78,
+      "first_improper_intersections": [
+        [
+          2936,
+          2968
+        ],
+        [
+          2939,
+          2968
+        ],
+        [
+          2937,
+          2968
+        ],
+        [
+          2698,
+          2729
+        ],
+        [
+          2699,
+          2729
+        ],
+        [
+          2696,
+          2729
+        ],
+        [
+          2064,
+          2134
+        ],
+        [
+          2069,
+          2133
+        ],
+        [
+          2134,
+          2065
+        ],
+        [
+          2133,
+          2068
+        ],
+        [
+          2733,
+          2708
+        ],
+        [
+          2733,
+          2710
+        ],
+        [
+          2733,
+          2711
+        ],
+        [
+          2974,
+          2949
+        ],
+        [
+          2974,
+          2950
+        ],
+        [
+          2974,
+          2951
+        ],
+        [
+          2516,
+          2541
+        ],
+        [
+          2565,
+          2590
+        ],
+        [
+          2555,
+          2584
+        ],
+        [
+          2603,
+          2635
+        ]
+      ],
+      "sampled_source_deviation": 0.008678413580322397,
+      "landmark_distances": [
+        2.3841855067335717e-06,
+        2.384185791015625e-06,
+        2.38418550497636e-06,
+        2.384185791015625e-06,
+        2.3841855014515916e-06,
+        2.384185791015625e-06
+      ],
+      "maximum_landmark_distance": 2.384185791015625e-06,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "sphere",
+      "backend": "fidget-0.5.0-vm",
+      "depth": 5,
+      "extraction_seconds": 0.037492724,
+      "setup_seconds": 8.5708e-05,
+      "file": "sphere-depth5.stl",
+      "sha256": "15029f9d42337c5daeb7cc6cb4e002be8724d047a04b58c965e23c731e168844",
+      "triangles": 12120,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "improper encoded triangle intersections"
+      ],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 6062,
+          "edges": 18180,
+          "triangles": 12120,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 4.19514694480241
+        }
+      ],
+      "candidate_pairs": 89962,
+      "improper_intersection_count": 48,
+      "first_improper_intersections": [
+        [
+          3274,
+          3304
+        ],
+        [
+          3276,
+          3304
+        ],
+        [
+          6010,
+          6035
+        ],
+        [
+          6011,
+          6035
+        ],
+        [
+          8426,
+          8455
+        ],
+        [
+          8427,
+          8455
+        ],
+        [
+          859,
+          888
+        ],
+        [
+          860,
+          888
+        ],
+        [
+          150,
+          180
+        ],
+        [
+          2916,
+          2947
+        ],
+        [
+          6334,
+          6362
+        ],
+        [
+          9100,
+          9121
+        ],
+        [
+          180,
+          149
+        ],
+        [
+          2947,
+          2917
+        ],
+        [
+          6362,
+          6333
+        ],
+        [
+          9121,
+          9101
+        ],
+        [
+          8767,
+          8778
+        ],
+        [
+          518,
+          528
+        ],
+        [
+          5669,
+          5684
+        ],
+        [
+          3614,
+          3622
+        ]
+      ],
+      "sampled_source_deviation": 0.0021431984938551363,
+      "landmark_distances": [
+        1.1920928941766237e-07,
+        1.1920928955078125e-06,
+        1.1920928941766204e-07,
+        1.1920928955078125e-06,
+        1.192092894176623e-07,
+        1.1920928955078125e-06
+      ],
+      "maximum_landmark_distance": 1.1920928955078125e-06,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "spiky_tetrahedron",
+      "backend": "fidget-0.5.0-vm",
+      "depth": 5,
+      "extraction_seconds": 0.001840953,
+      "setup_seconds": 9.8014e-05,
+      "file": "spiky_tetrahedron-depth5.stl",
+      "sha256": "884a2b162df1417cf0efa9a8ddc108fc126d2f989010cd9d70633b07cb1db3c2",
+      "triangles": 48,
+      "sampled_tolerance": 0.02,
+      "failures": [],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 26,
+          "edges": 72,
+          "triangles": 48,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0031170072515938115
+        }
+      ],
+      "candidate_pairs": 386,
+      "improper_intersection_count": 0,
+      "first_improper_intersections": [],
+      "sampled_source_deviation": 0.0007803303262551214,
+      "landmark_distances": [
+        1.1920928955078125e-06,
+        8.761813309026513e-07,
+        1.3465737283420078e-07,
+        6.556527749864972e-07
+      ],
+      "maximum_landmark_distance": 1.1920928955078125e-06,
+      "passes_sampled_checks": true
+    },
+    {
+      "case": "spiky_tetrahedron",
+      "backend": "fidget-0.5.0-vm",
+      "depth": 7,
+      "extraction_seconds": 0.046661306,
+      "setup_seconds": 0.0005046,
+      "file": "spiky_tetrahedron-depth7.stl",
+      "sha256": "eea28d12ec59c1ad49661be9e343828f63d7d0e963e4d5492af35a96f595e820",
+      "triangles": 292,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "improper encoded triangle intersections"
+      ],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 148,
+          "edges": 438,
+          "triangles": 292,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0031176648725138294
+        }
+      ],
+      "candidate_pairs": 6905,
+      "improper_intersection_count": 58,
+      "first_improper_intersections": [
+        [
+          42,
+          45
+        ],
+        [
+          43,
+          45
+        ],
+        [
+          42,
+          48
+        ],
+        [
+          45,
+          48
+        ],
+        [
+          46,
+          48
+        ],
+        [
+          46,
+          49
+        ],
+        [
+          51,
+          54
+        ],
+        [
+          54,
+          57
+        ],
+        [
+          66,
+          70
+        ],
+        [
+          76,
+          81
+        ],
+        [
+          76,
+          82
+        ],
+        [
+          66,
+          84
+        ],
+        [
+          90,
+          96
+        ],
+        [
+          88,
+          97
+        ],
+        [
+          75,
+          99
+        ],
+        [
+          81,
+          99
+        ],
+        [
+          82,
+          99
+        ],
+        [
+          96,
+          99
+        ],
+        [
+          146,
+          149
+        ],
+        [
+          118,
+          121
+        ]
+      ],
+      "sampled_source_deviation": 0.0002342422711611034,
+      "landmark_distances": [
+        3.5762786865234375e-07,
+        4.6103947244671014e-07,
+        1.9060085318720486e-08,
+        1.82965669613414e-07
+      ],
+      "maximum_landmark_distance": 4.6103947244671014e-07,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "thin_plate",
+      "backend": "fidget-0.5.0-vm",
+      "depth": 5,
+      "extraction_seconds": 0.01299784,
+      "setup_seconds": 6.0979e-05,
+      "file": "thin_plate-depth5.stl",
+      "sha256": "478b322798a6c6cac8734fc01aa408c1d185fd56afff01892453fb43fa9e0590",
+      "triangles": 2824,
+      "sampled_tolerance": 0.02,
+      "failures": [
+        "unexpected component count",
+        "improper encoded triangle intersections",
+        "sampled source deviation or landmark coverage exceeds tolerance"
+      ],
+      "components": 35,
+      "topology": [
+        {
+          "vertices": 57,
+          "edges": 165,
+          "triangles": 110,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0008393516869860447
+        },
+        {
+          "vertices": 14,
+          "edges": 36,
+          "triangles": 24,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 6.752010226974284e-05
+        },
+        {
+          "vertices": 86,
+          "edges": 252,
+          "triangles": 168,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0011658446674512042
+        },
+        {
+          "vertices": 60,
+          "edges": 174,
+          "triangles": 116,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0008102751927015665
+        },
+        {
+          "vertices": 21,
+          "edges": 57,
+          "triangles": 38,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0001928169502826666
+        },
+        {
+          "vertices": 14,
+          "edges": 36,
+          "triangles": 24,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00012210116565557482
+        },
+        {
+          "vertices": 46,
+          "edges": 132,
+          "triangles": 88,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0005970083575612991
+        },
+        {
+          "vertices": 76,
+          "edges": 222,
+          "triangles": 148,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.001008824159208418
+        },
+        {
+          "vertices": 22,
+          "edges": 60,
+          "triangles": 40,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00017045285585107155
+        },
+        {
+          "vertices": 22,
+          "edges": 60,
+          "triangles": 40,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00019632546070160579
+        },
+        {
+          "vertices": 62,
+          "edges": 180,
+          "triangles": 120,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0008064631369335107
+        },
+        {
+          "vertices": 62,
+          "edges": 180,
+          "triangles": 120,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0008063695119340513
+        },
+        {
+          "vertices": 54,
+          "edges": 156,
+          "triangles": 104,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0006622844818191213
+        },
+        {
+          "vertices": 22,
+          "edges": 60,
+          "triangles": 40,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00019632324946914346
+        },
+        {
+          "vertices": 58,
+          "edges": 168,
+          "triangles": 112,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0007926182102953238
+        },
+        {
+          "vertices": 52,
+          "edges": 150,
+          "triangles": 100,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.000729343648112963
+        },
+        {
+          "vertices": 22,
+          "edges": 60,
+          "triangles": 40,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00028899471393888543
+        },
+        {
+          "vertices": 62,
+          "edges": 180,
+          "triangles": 120,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0008063705521650764
+        },
+        {
+          "vertices": 62,
+          "edges": 180,
+          "triangles": 120,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0008064781485465087
+        },
+        {
+          "vertices": 76,
+          "edges": 222,
+          "triangles": 148,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0010088369444001511
+        },
+        {
+          "vertices": 21,
+          "edges": 57,
+          "triangles": 38,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00021252850115782932
+        },
+        {
+          "vertices": 22,
+          "edges": 60,
+          "triangles": 40,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00028898500151285447
+        },
+        {
+          "vertices": 21,
+          "edges": 57,
+          "triangles": 38,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0002125337596570888
+        },
+        {
+          "vertices": 58,
+          "edges": 168,
+          "triangles": 112,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0007926170998575203
+        },
+        {
+          "vertices": 86,
+          "edges": 252,
+          "triangles": 168,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0011658276806088285
+        },
+        {
+          "vertices": 52,
+          "edges": 150,
+          "triangles": 100,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0007293453881811781
+        },
+        {
+          "vertices": 54,
+          "edges": 156,
+          "triangles": 104,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0006622720675086913
+        },
+        {
+          "vertices": 22,
+          "edges": 60,
+          "triangles": 40,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00019632523044033217
+        },
+        {
+          "vertices": 14,
+          "edges": 36,
+          "triangles": 24,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00012209551248293856
+        },
+        {
+          "vertices": 21,
+          "edges": 57,
+          "triangles": 38,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00019282171352500715
+        },
+        {
+          "vertices": 22,
+          "edges": 60,
+          "triangles": 40,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.00017045576326236587
+        },
+        {
+          "vertices": 22,
+          "edges": 60,
+          "triangles": 40,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0001963203037262468
+        },
+        {
+          "vertices": 57,
+          "edges": 165,
+          "triangles": 110,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0008371379351534855
+        },
+        {
+          "vertices": 46,
+          "edges": 132,
+          "triangles": 88,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 0.0005970055638576566
+        },
+        {
+          "vertices": 14,
+          "edges": 36,
+          "triangles": 24,
+          "euler": 2,
+          "genus": 0,
+          "signed_volume": 6.751936339815552e-05
+        }
+      ],
+      "candidate_pairs": 21299,
+      "improper_intersection_count": 42,
+      "first_improper_intersections": [
+        [
+          641,
+          1061
+        ],
+        [
+          642,
+          1061
+        ],
+        [
+          1904,
+          1945
+        ],
+        [
+          1905,
+          1945
+        ],
+        [
+          828,
+          839
+        ],
+        [
+          829,
+          839
+        ],
+        [
+          795,
+          840
+        ],
+        [
+          2578,
+          2626
+        ],
+        [
+          2579,
+          2626
+        ],
+        [
+          2581,
+          2626
+        ],
+        [
+          840,
+          794
+        ],
+        [
+          1932,
+          1908
+        ],
+        [
+          1932,
+          1909
+        ],
+        [
+          122,
+          2453
+        ],
+        [
+          123,
+          2453
+        ],
+        [
+          2372,
+          180
+        ],
+        [
+          2373,
+          180
+        ],
+        [
+          2375,
+          180
+        ],
+        [
+          1951,
+          2530
+        ],
+        [
+          1952,
+          2530
+        ]
+      ],
+      "sampled_source_deviation": 0.019999997497557397,
+      "landmark_distances": [
+        0.08080214235568602,
+        0.04442644859008963,
+        0.04591084887764007,
+        0.07975354800370558,
+        0.07975272278564506,
+        0.04591124134725592,
+        0.04442649757560984,
+        0.08080283377606662
+      ],
+      "maximum_landmark_distance": 0.08080283377606662,
+      "passes_sampled_checks": false
+    },
+    {
+      "case": "torus",
+      "backend": "fidget-0.5.0-vm",
+      "depth": 5,
+      "extraction_seconds": 0.025173115,
+      "setup_seconds": 3.295e-05,
+      "file": "torus-depth5.stl",
+      "sha256": "d11df6b5321a2f881e0d1288e8ae60cc4d9b4e59ec4ec42ea8dbd4263741690d",
+      "triangles": 8080,
+      "sampled_tolerance": 0.02,
+      "failures": [],
+      "components": 1,
+      "topology": [
+        {
+          "vertices": 4040,
+          "edges": 12120,
+          "triangles": 8080,
+          "euler": 0,
+          "genus": 1,
+          "signed_volume": 14.320772040866705
+        }
+      ],
+      "candidate_pairs": 60140,
+      "improper_intersection_count": 0,
+      "first_improper_intersections": [],
+      "sampled_source_deviation": 0.013303250345933493,
+      "landmark_distances": [
+        9.536743172944284e-08,
+        0.0037094847460273496,
+        1.4305111588115596e-07,
+        0.003711234974379815,
+        0.0005250162164441572,
+        0.005325285051303298,
+        0.0018665220366813585,
+        0.005325489140688834,
+        9.536743172944284e-08,
+        0.003709455145691343,
+        1.430511158810496e-07,
+        0.0037112349743798146,
+        0.0005236676614931252,
+        0.005325307005084594,
+        0.0018673075618091779,
+        0.005325564064759146,
+        2.7656554521366262e-06,
+        0.003709509768654451,
+        2.8371810913974116e-06,
+        0.0037113487926919916,
+        0.0005229901986979299,
+        0.005325285051303298,
+        0.001869023626929887,
+        0.005325500115440802,
+        2.7656554506836153e-06,
+        0.0037095051908754206,
+        2.8371810913974116e-06,
+        0.0037113396385102127,
+        0.0005236676614931378,
+        0.005325317981457164,
+        0.001867312272761869,
+        0.005325500115440802
+      ],
+      "maximum_landmark_distance": 0.005325564064759146,
+      "passes_sampled_checks": true
+    },
+    {
+      "case": "zero_only",
+      "backend": "fidget-0.5.0-vm",
+      "depth": 5,
+      "extraction_seconds": 0.002908165,
+      "setup_seconds": 3.5128e-05,
+      "file": "zero_only-depth5.stl",
+      "sha256": "26f204b7693fbad03abc87273f7734aa23c7c41dbff8d30a3b5159522b181d80",
+      "triangles": 0,
+      "sampled_tolerance": 0.02,
+      "failures": [],
+      "passes_sampled_checks": true
+    }
+  ]
+}

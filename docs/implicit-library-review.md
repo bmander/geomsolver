@@ -1,9 +1,12 @@
 # External implicit meshing candidates
 
-Source review on 2026-09-08. No external mesher is integrated or benchmarked yet.
+Source review on 2026-09-08. An isolated Fidget 0.5.0 expression benchmark now exists in
+[`experiments/implicit-mesh`](../experiments/implicit-mesh/README.md); no external mesher
+is integrated into the shipped runtime.
 The current sphere/torus examples close; cube/tetrahedron acceptance remains unmet.
-The next useful step is an isolated comparison of third-party meshers against the same
-small fixtures and independent output checks before more custom-front work.
+The first comparison meets the speed target but exposes rotation-sensitive thin-feature
+loss and encoded triangle intersections. Compare another backend against these fixtures
+before selecting a production generator or returning to custom-front work.
 
 ## Closest candidates
 
