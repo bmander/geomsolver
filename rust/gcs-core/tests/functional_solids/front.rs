@@ -30,7 +30,13 @@ fn boundary_radius(center:V,inside:V,outside:V) -> f64 {
 }
 
 #[derive(Clone,Debug,PartialEq)]
-struct Vertex {p:V,n:V,size:f64,inside:V,outside:V,radius:f64}
+struct Vertex {p:V,n:V,size:f64,inside:V,outside:V,radius:f64,branches:Vec<V>}
+
+impl Vertex {
+    fn normals(&self) -> &[V] {
+        if self.branches.is_empty() { std::slice::from_ref(&self.n) } else { &self.branches }
+    }
+}
 
 struct Surface {
     field:MaterialEvaluator,
@@ -39,7 +45,8 @@ struct Surface {
     point_tolerance:f64,
     max_step:f64,
     queries:usize,
-    corrections:BTreeMap<[u64;3],Option<(V,V,V,V)>>,
+    box_queries:usize,
+    corrections:BTreeMap<([u64;3],u64),Option<(V,V,V,V)>>,
     projections:BTreeMap<[u64;3],Option<Vertex>>,
     cache:bool,
 }
@@ -50,7 +57,7 @@ impl Surface {
         let support = field.support_bounds().unwrap().expect("marching requires finite support");
         let span = support.map(|v| v.bounds()[1]-v.bounds()[0]);
         Self {field:field.evaluator(100000),support,accuracy,point_tolerance:accuracy*0.01,
-            max_step:length(span)/12.,queries:0,corrections:BTreeMap::new(),
+            max_step:length(span)/12.,queries:0,box_queries:0,corrections:BTreeMap::new(),
             projections:BTreeMap::new(),cache:true}
     }
 
@@ -74,12 +81,19 @@ impl Surface {
     }
 
     fn gradient_with_step(&mut self,p:V,h:f64) -> V {
+        self.gradient_measurement(p,h).0
+    }
+
+    fn gradient_measurement(&mut self,p:V,h:f64) -> (V,f64) {
         assert!(h.is_finite() && h > 0.);
-        std::array::from_fn(|k| {
+        let mut error = [0.;3];
+        let g = std::array::from_fn(|k| {
             let mut a = p; a[k] -= h; let mut b = p; b[k] += h;
             let a = self.query(a,true).bounds(); let b = self.query(b,true).bounds();
+            error[k] = ((b[1]-b[0])+(a[1]-a[0]))/(4.*h);
             ((b[0]+b[1])-(a[0]+a[1]))/(4.*h)
-        })
+        });
+        (g,length(error))
     }
 
     fn vertex(&mut self,p:V,n:V,inside:V,outside:V) -> Vertex {
@@ -94,7 +108,7 @@ impl Surface {
             if length(g) > 1e-12 { curvature = curvature.max(length(sub(unit(g),n))/probe); }
         }
         let size = (4.*self.accuracy/curvature.max(1e-12)).sqrt().min(self.max_step);
-        Vertex {p,n,size,inside,outside,radius}
+        Vertex {p,n,size,inside,outside,radius,branches:vec![]}
     }
 
     fn project(&mut self,guess:V) -> Option<Vertex> {
@@ -106,21 +120,25 @@ impl Surface {
     }
 
     fn correct(&mut self,guess:V) -> Option<(V,V,V,V)> {
+        self.correct_with_step(guess,self.accuracy*0.2)
+    }
+
+    fn correct_with_step(&mut self,guess:V,h:f64) -> Option<(V,V,V,V)> {
         // The field and accuracy controls are immutable during extraction.
         // Shared edge midpoints and retried frontier predictions can reuse the
         // exact same result, including failure. No spatial quantization.
-        let key = guess.map(f64::to_bits);
+        let key = (guess.map(f64::to_bits),h.to_bits());
         if let Some(result) = self.corrections.get(&key) { return *result; }
-        let result = self.correct_uncached(guess);
+        let result = self.correct_uncached(guess,h);
         if self.cache && self.corrections.len() < 16384 { self.corrections.insert(key,result); }
         result
     }
 
-    fn correct_uncached(&mut self,guess:V) -> Option<(V,V,V,V)> {
+    fn correct_uncached(&mut self,guess:V,h:f64) -> Option<(V,V,V,V)> {
         let mut p = guess;
         for _ in 0..20 {
-            let gradient = self.gradient(p); let magnitude = length(gradient);
-            if magnitude < 1e-10 { return None; }
+            let (gradient,error) = self.gradient_measurement(p,h); let magnitude = length(gradient);
+            if magnitude < 1e-10 || error > magnitude*0.01 { return None; }
             let n = mul(gradient,1./magnitude);
             let inside = sub(p,mul(n,self.point_tolerance*0.5));
             let outside = add(p,mul(n,self.point_tolerance*0.5));
@@ -143,20 +161,45 @@ impl Surface {
         true
     }
 
-    fn seed(&mut self) -> Vertex {
+    fn interior_seed(&mut self) -> Option<V> {
         fn halton(mut i:usize,base:usize) -> f64 {
             let mut f = 1.; let mut result = 0.;
             while i > 0 { f /= base as f64; result += f*(i%base) as f64; i /= base; }
             result
         }
-        let mut inside = None;
-        for i in 1..=4096 {
+        for i in 1..=64 {
             let p = std::array::from_fn(|k| {
                 let [a,b] = self.support[k].bounds(); a+(b-a)*halton(i,[2,3,5][k])
             });
-            if self.value(p).bounds()[1] < 0. { inside = Some(p); break; }
+            if self.value(p).bounds()[1] < 0. { return Some(p); }
         }
-        let mut a = inside.expect("seed discovery exhausted without a retained point");
+        // Thin retained volumes can fall between every point in a short stab
+        // sequence. Search only for an interior seed, pruning boxes whose
+        // field lower bound excludes strict material. This is not meshing the
+        // volume, nor a component-coverage claim after the first seed is found.
+        let mut queue = VecDeque::from([self.support]);
+        for _ in 0..4096 {
+            let Some(cell) = queue.pop_front() else { break; };
+            self.box_queries += 1;
+            let value = self.field.bounds_outside(cell,I::ZERO,Options {
+                value_tolerance:self.point_tolerance*0.01,max_evaluations:20000,
+            }).unwrap().value;
+            if value.bounds()[0] >= 0. { continue; }
+            let center = cell.map(|v| { let [a,b] = v.bounds(); a*0.5+b*0.5 });
+            if self.value(center).bounds()[1] < 0. { return Some(center); }
+            let span = cell.map(|v| { let [a,b] = v.bounds(); b-a });
+            let k = (0..3).max_by(|&a,&b| span[a].total_cmp(&span[b])).unwrap();
+            let [lo,hi] = cell[k].bounds(); let mid = center[k];
+            if !(lo < mid && mid < hi) { continue; }
+            let mut left = cell; left[k] = I::new(lo,mid).unwrap();
+            let mut right = cell; right[k] = I::new(mid,hi).unwrap();
+            queue.push_back(left); queue.push_back(right);
+        }
+        None
+    }
+
+    fn seed(&mut self) -> Vertex {
+        let mut a = self.interior_seed().expect("seed discovery exhausted without a retained point");
         let mut b = self.support.map(|v| v.bounds()[1]+self.max_step);
         assert!(self.value(b).bounds()[0] > 0.);
         for _ in 0..60 {
@@ -186,9 +229,14 @@ impl Front {
         let a = surface.seed(); let tangent = tangent(a.n); let side = cross(a.n,tangent);
         let b = surface.project(add(a.p,mul(tangent,a.size))).unwrap();
         let c = surface.project(add(a.p,mul(add(mul(tangent,0.5),mul(side,3_f64.sqrt()*0.5)),a.size))).unwrap();
+        Self::from_seed(surface,[a,b,c])
+    }
+
+    fn from_seed(surface:&mut Surface,[a,b,c]:[Vertex;3]) -> Self {
         assert!(surface.fits([a.p,b.p,c.p]),"seed triangle exceeds sampling tolerance");
         let mut result = Self {vertices:vec![a,b,c],triangles:vec![],used:BTreeSet::new(),
             boundary:BTreeSet::new(),queue:VecDeque::new(),clearance:surface.accuracy*3.,repairs:0};
+        assert!(result.legal([0,1,2],None),"seed triangle fails orientation or shape checks");
         result.insert([0,1,2]); result
     }
 
@@ -209,7 +257,8 @@ impl Front {
         let area = length(normal); if area < 1e-12 { return false; }
         let lengths = [length(sub(b.p,a.p)),length(sub(c.p,b.p)),length(sub(a.p,c.p))];
         let longest = lengths.into_iter().fold(0_f64,f64::max);
-        if area <= 0.12*longest*longest || [a,b,c].iter().any(|v| dot(normal,v.n) <= area*0.2) { return false; }
+        if area <= 0.12*longest*longest || [a,b,c].iter().any(|v|
+            v.normals().iter().all(|&n| dot(normal,n) <= area*0.2)) { return false; }
         // A front is a chordal approximation of a curved boundary. Requiring
         // literal 3D segment intersection misses approaching fronts. Exclude
         // other frontier edges from a shallow prism around this triangle.
@@ -224,8 +273,26 @@ impl Front {
         }
         planes.push((n,self.clearance-dot(n,a.p)));
         planes.push((mul(n,-1.),self.clearance+dot(n,a.p)));
+        let mut crease_neighbors = BTreeSet::new();
+        for k in 0..3 {
+            let (u,v) = (t[k],t[(k+1)%3]);
+            if u >= self.vertices.len() || v >= self.vertices.len() ||
+                self.vertices[u].branches.is_empty() || self.vertices[v].branches.is_empty() { continue; }
+            if let Some(old) = self.triangles.iter().find(|old|
+                (0..3).any(|j| old[j] == v && old[(j+1)%3] == u)) {
+                let [p,q,r] = old.map(|i| self.vertices[i].p);
+                let old_normal = cross(sub(q,p),sub(r,p));
+                if length(cross(normal,old_normal)) > area*length(old_normal)*1e-8 {
+                    // Distinct face planes sharing this crease meet along the
+                    // common edge. Their other edges enter each other's thick
+                    // clearance prisms near the crease, without crossing the
+                    // actual triangles. Keep fences for nonadjacent fronts.
+                    for j in 0..3 { crease_neighbors.insert([old[j],old[(j+1)%3]]); }
+                }
+            }
+        }
         for &e in &self.boundary {
-            if e.iter().all(|i| t.contains(i)) { continue; }
+            if e.iter().all(|i| t.contains(i)) || crease_neighbors.contains(&e) { continue; }
             let [p,q] = e.map(|i| self.vertices[i].p);
             let mut lo = 0_f64; let mut hi = 1_f64;
             for &(normal,offset) in &planes {
@@ -239,6 +306,30 @@ impl Front {
         true
     }
 
+    fn growth_normal(&self,[a,b]:[usize;2]) -> V {
+        let [va,vb] = [&self.vertices[a],&self.vertices[b]];
+        if !va.branches.is_empty() && !vb.branches.is_empty() {
+            // A discovered crease has more than one incident surface normal.
+            // Continue onto the unoccupied branch, rather than predicting in
+            // a tangent plane made from an average across the crease.
+            if let Some(t) = self.triangles.iter().find(|t|
+                (0..3).any(|k| t[k] == a && t[(k+1)%3] == b)) {
+                let [p,q,r] = t.map(|i| self.vertices[i].p);
+                let occupied = unit(cross(sub(q,p),sub(r,p)));
+                let mut choices = vec![];
+                for &n in &va.branches { for &m in &vb.branches {
+                    if dot(n,m) > 0.95 {
+                        let candidate = unit(add(n,m));
+                        if dot(candidate,occupied) < 0.95 { choices.push(candidate); }
+                    }
+                }}
+                choices.sort_by(|&n,&m| dot(n,occupied).total_cmp(&dot(m,occupied)));
+                if let Some(&n) = choices.first() { return n; }
+            }
+        }
+        unit(add(va.n,vb.n))
+    }
+
     fn advance(&mut self,surface:&mut Surface) -> bool {
         let mut attempts = 0;
         while let Some(e) = self.queue.pop_front() {
@@ -246,7 +337,7 @@ impl Front {
             attempts += 1;
             if attempts > self.boundary.len() { self.queue.push_front(e); return false; }
             let [a,b] = e.map(|i| &self.vertices[i]);
-            let normal = unit(add(a.n,b.n)); let d = sub(b.p,a.p); let width = length(d);
+            let normal = self.growth_normal(e); let d = sub(b.p,a.p); let width = length(d);
             let h = (a.size*0.5+b.size*0.5).max(width*0.6);
             let height = (h*h-width*width*0.25).sqrt();
             let guess = add(mul(add(a.p,b.p),0.5),mul(unit(cross(d,normal)),height));
@@ -416,6 +507,7 @@ fn check_front(name:&str,field:MaterialField,genus:usize,distance:impl Fn(V)->f6
     let elapsed = start.elapsed();
     eprintln!("generic front {name}: extraction {elapsed:?}");
     eprintln!("generic front {name}: {} triangles, {} boundary edges, {} queries",front.triangles.len(),front.boundary.len(),surface.queries);
+    eprintln!("generic front {name}: {} seed box queries",surface.box_queries);
     eprintln!("generic front {name}: {} local retriangulations",front.repairs);
     assert!(front.boundary.is_empty(),"front stalled on {name}");
     let shell = gcs_core::topology::ClosedShell::from_triangles(front.vertices.len(),&front.triangles).unwrap();
@@ -441,7 +533,7 @@ fn check_front(name:&str,field:MaterialField,genus:usize,distance:impl Fn(V)->f6
     assert!(deviation <= surface.accuracy,"candidate has excessive sampled deviation");
     // Timing gates are opt-in and run serially, outside the parallel core suite.
     // An open mesh has already failed above, regardless of elapsed time.
-    if name != "torus" {
+    if matches!(name,"sphere"|"cube") {
         if let Ok(limit) = std::env::var("SOLVENT_FRONT_MAX_MS") {
             let limit:f64 = limit.parse().expect("SOLVENT_FRONT_MAX_MS must be a positive number");
             assert!(limit.is_finite() && limit > 0.);

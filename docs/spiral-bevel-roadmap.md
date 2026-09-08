@@ -95,7 +95,11 @@ acceptance case. Keep high-precision gear runs out of this loop until the primit
 efficient and robust. Sphere timing alone does not establish that milestone.
 An isolated field-only feature probe now recovers local cube edges/corners (including
 rotated cases) and a curved Boolean crease while rejecting smooth-sphere controls.
-It is not yet connected to front growth; this does not resolve cube extraction.
+Local front-crossing tests now use its incident normals, but automatic feature acquisition
+during growth is missing. A narrow tetrahedron exposes additional apex/projection and
+closure failures; bounded seed search handles both centered and translated thin material.
+The cube and tetrahedron remain unaccepted. Algorithm work pauses for the requested
+mechanical and architectural refactoring before further geometry experiments.
 
 ## First experiment and decision gate
 

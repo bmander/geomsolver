@@ -378,7 +378,7 @@ SOLVENT_FRONT_MAX_MS=100 cargo test --manifest-path rust/Cargo.toml \
   -p gcs-core --test core generic_front -- --nocapture --test-threads=1
 ```
 
-Include the **currently failing cube** acceptance case explicitly:
+Include the **currently failing cube and spiky-tetrahedron** acceptance cases explicitly:
 
 ```sh
 SOLVENT_FRONT_MAX_MS=100 cargo test --manifest-path rust/Cargo.toml \
@@ -408,14 +408,40 @@ on the rank and normal groups. The candidate retains strict inside/outside witne
 Small tests recover cube edges and corners, including a cube rotated around an arbitrary
 axis, and the curved intersection of two spheres. Cube cases exercise both the current
 front tolerance and a finer tolerance. Smooth spheres with radii 1, 0.05 and 0.005, a
-flat cube face and a zero-only Boolean difference are negative controls. Initial local
-queries take about 8–39 ms each, with approximately 2,200–3,100 field point queries.
-These timings are for a single local feature query, **not** for a complete cube mesh.
+flat cube face and a zero-only Boolean difference are negative controls. The initial
+probe took about 8–39 ms per local query. Adaptive differential probes and finer local
+projection increase that cost to roughly 23–170 ms in later serial runs; this is an
+unresolved efficiency issue. These timings are for a single local feature query,
+**not** for a complete cube mesh.
 
 This is a sampling heuristic. Angular thresholds, finite differences, a finite number
 of neighborhoods and approximate tangent planes do not certify a true discontinuity,
 all nearby branches, feature completeness or error along a whole crease. No model
-feature labels, supplied curves or analytic branch planes reach the probe. It is not
-yet connected to the advancing front: the full cube remains incomplete. Next use these
-measurements to split and orient front patches at discovered transitions, while reducing
-repeated feature-query cost and preserving independent mesh validation.
+feature labels, supplied curves or analytic branch planes reach the probe. Local crossing
+tests now pass its separate incident normals into the advancing front. Right-angle and
+thin wedges, including rotated cases, cross onto the unoccupied face while retaining
+the common crease edge. The adjacent face's edges are excluded from thick clearance
+prisms only across a discovered, noncoplanar shared crease; other frontier fences remain.
+Automatic feature acquisition during growth is still missing, and the full cube remains
+incomplete. Reduce repeated feature-query cost before extending this to whole solids.
+
+### Spiky tetrahedron stress case
+
+The user requested a substantially spiky solid. The fixture is a tetrahedron of height
+2 and base circumradius 0.06, built solely as a bounded Boolean field. A translated
+copy prevents seed discovery from depending on the support box's center. The former
+4,096-point stab sequence missed the centered tetrahedron entirely. Seed discovery now
+tries 64 points and then performs a bounded box search, pruning certified nonnegative
+boxes. It finds strict interior points in about 1 ms for the centered case and 7.4 ms
+for the translated case (one and 391 box queries respectively). It stops on the first
+interior point; this does not certify discovery of every component.
+
+The complete tetrahedron attempt still stalls: eight triangles, eight open frontier
+edges, about 22 ms. Local apex recovery also remains an explicit failing acceptance
+case: the projection/probe combination does not recover all incident branches reliably.
+Both tests are ignored by default and run with `--include-ignored`; no tetrahedron mesh
+is accepted or exported. Normal groups now supply separate tangent-plane equations,
+with residual correction and the free coordinate anchored to the original query. A
+feature-derived crossing direction is accepted only with strict field signs. These
+changes preserve the existing smooth and crease controls but do not solve the sharp apex.
+Algorithm changes pause here for the requested mechanical and architectural refactoring.
