@@ -52,6 +52,31 @@ fn a_narrow_competing_minimum_cannot_be_discarded_between_samples() {
     assert_eq!(separated.status,Status::Separated);
     assert!(separated.value.contains(-0.001) && separated.value.bounds()[1] < 0.);
     assert!(separated.evaluations < found.evaluations);
+    // A previous local optimum is a sample hint, never a restricted search.
+    for seed in [0.2,0.9,0.71337] {
+        let hinted = minimum::enclose_with_sample(interval(0.,1.),field,options(),seed).unwrap();
+        assert_eq!(hinted.status,Status::Converged);
+        assert!(hinted.value.contains(-0.001) && hinted.value.bounds()[1] < 0.);
+    }
+}
+
+#[test]
+fn initial_samples_are_reevaluated_counted_and_validated() {
+    let field = |t: I| t.sub(point(0.37))?.square()?.sub(I::ONE);
+    let cold = minimum::enclose(interval(0.,1.),field,options()).unwrap();
+    let mut samples = vec![];
+    let hinted = minimum::enclose_with_sample(interval(0.,1.),|t| {
+        samples.push(t); field(t)
+    },Options {max_evaluations:4,..options()},0.37).unwrap();
+    assert_eq!(hinted.status,Status::Converged);
+    assert_eq!(hinted.evaluations,4); assert_eq!(samples.len(),4);
+    assert_eq!(samples[0],interval(0.,1.)); assert!(samples.contains(&point(0.37)));
+    assert!(hinted.value.contains(-1.)); assert!(hinted.evaluations < cold.evaluations);
+    for seed in [-0.1,1.1,f64::NAN,f64::INFINITY] {
+        assert_eq!(minimum::enclose_with_sample(interval(0.,1.),|_| -> Result<I,()> {
+            panic!("invalid hint must be refused before calling the oracle")
+        },options(),seed).unwrap_err(),minimum::Error::InvalidOptions);
+    }
 }
 
 #[test]

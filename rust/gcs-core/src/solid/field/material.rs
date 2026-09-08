@@ -70,7 +70,8 @@ impl MaterialField {
     /// Cloned swept operands share one capped pose cache, even under different
     /// fixed transforms. The cap applies per distinct swept node, not per copy.
     pub fn evaluator(&self,max_cached_poses_per_sweep: usize) -> MaterialEvaluator {
-        MaterialEvaluator {field:self.clone(),sweeps:HashMap::new(),max_cached_poses_per_sweep}
+        MaterialEvaluator {field:self.clone(),sweeps:HashMap::new(),max_cached_poses_per_sweep,
+            max_cached_witnesses_per_sweep:0}
     }
 }
 
@@ -99,12 +100,21 @@ pub struct MaterialEvaluator {
     field:MaterialField,
     sweeps:HashMap<usize,SweepEvaluator>,
     max_cached_poses_per_sweep:usize,
+    max_cached_witnesses_per_sweep:usize,
 }
 
 impl MaterialEvaluator {
     pub fn support_bounds(&self) -> Result<Option<V>,Error> { self.field.support_bounds() }
     pub fn cached_poses(&self) -> usize { self.sweeps.values().map(SweepEvaluator::cached_poses).sum() }
+    pub fn cached_witnesses(&self) -> usize { self.sweeps.values().map(SweepEvaluator::cached_witnesses).sum() }
     pub fn clear_cache(&mut self) { self.sweeps.values_mut().for_each(SweepEvaluator::clear_cache); }
+
+    /// Cache at most this many generating-parameter hints per distinct swept
+    /// node, shared by its indexed copies. Query boxes and bounds are not reused.
+    pub fn set_witness_cache_capacity(&mut self,capacity_per_sweep: usize) {
+        self.max_cached_witnesses_per_sweep = capacity_per_sweep;
+        self.sweeps.values_mut().for_each(|s| s.set_witness_cache_capacity(capacity_per_sweep));
+    }
 
     /// Options apply independently to each unique swept-node/input-box query.
     /// No Boolean branch is skipped, including on budget exhaustion. Strict
@@ -156,7 +166,11 @@ impl MaterialEvaluator {
             Node::Static(source) => source.bounds(p).map_err(SweepError::Oracle)?,
             Node::Swept(source) => {
                 let sweep = self.sweeps.entry(id)
-                    .or_insert_with(|| source.evaluator(self.max_cached_poses_per_sweep));
+                    .or_insert_with(|| {
+                        let mut sweep = source.evaluator(self.max_cached_poses_per_sweep);
+                        sweep.set_witness_cache_capacity(self.max_cached_witnesses_per_sweep);
+                        sweep
+                    });
                 let query = queries.len();
                 let minimum = sweep.evaluate(p,options,band,|d,b| observe(query,d,b))?;
                 queries.push(MaterialSweepQuery {point_box:p,domain:source.domain(),minimum,separation_band:band});

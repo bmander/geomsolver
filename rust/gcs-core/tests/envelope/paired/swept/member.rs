@@ -294,6 +294,31 @@ fn band_queries_classify_member_boxes_with_less_roll_refinement() {
 }
 
 #[test]
+fn nearby_roll_hints_preserve_pinion_classification_on_a_spatial_grid() {
+    let pair = Pair::read([24,48],2.);
+    let mut cold = Member::read(&pair,0); let mut warm = Member::read(&pair,0);
+    warm.field.set_witness_cache_capacity(256);
+    let options = Options {value_tolerance:0.0002,max_evaluations:20000};
+    let center = [34.576585140122586,-7.409268244311984,46.92536554730923];
+    let mut work = [0;2]; let mut signs = [0;3];
+    let start = std::time::Instant::now();
+    for i in 0..6 { for j in 0..6 { for k in 0..6 {
+        let p = point(std::array::from_fn(|a| center[a]+([i,j,k][a] as f64-2.5)*0.2));
+        let a = cold.field.bounds_outside(p,I::ZERO,options).unwrap();
+        let b = warm.field.bounds_outside(p,I::ZERO,options).unwrap();
+        let class = |v: I| if v.bounds()[1] < 0. { 0 } else if v.bounds()[0] > 0. { 1 } else { 2 };
+        assert_eq!(class(a.value),class(b.value),"spatial point {p:?}");
+        assert!(a.value.bounds()[0] <= b.value.bounds()[1] && b.value.bounds()[0] <= a.value.bounds()[1]);
+        signs[class(a.value)] += 1;
+        for (q,n) in [a,b].iter().zip(&mut work) { *n += q.sweeps.iter().map(|s| s.minimum.evaluations).sum::<usize>(); }
+    } } }
+    assert!(signs[0] > 0 && signs[1] > 0); assert_eq!(signs[2],0);
+    assert_eq!(cold.field.cached_witnesses(),0); assert_eq!(warm.field.cached_witnesses(),256);
+    eprintln!("pinion 216-point grid: evaluations cold {}, hinted {}; signs {signs:?}; elapsed {:?}",
+        work[0],work[1],start.elapsed());
+}
+
+#[test]
 fn functional_blanks_match_independent_spherical_and_conical_limits() {
     let pair = Pair::read([24,48],2.);
     for member in 0..2 {
