@@ -86,6 +86,13 @@ complete-member F-rep, with no separate analytic back/end meshes or prescribed a
 connectivity. The decomposition in the chart baseline must not carry into that mesher.
 These results do not accept a final gear solid.
 
+The immediate iteration gate is now [small-case discovery](implicit-meshing-methods.md#small-case-discovery-workbench-and-latency-target):
+complete sphere and cube extraction under 100 ms each, with compilation measured
+separately. The test-only general front closes a 414-triangle sphere in about 56 ms;
+cube sharp transitions and torus front closure remain explicit failing acceptance
+cases. Keep high-precision gear runs out of this loop until the primitive method is
+efficient and robust. Sphere timing alone does not establish that milestone.
+
 ## First experiment and decision gate
 
 The [continuous-volume experiment](continuous-volumes.md) records the initial pinion

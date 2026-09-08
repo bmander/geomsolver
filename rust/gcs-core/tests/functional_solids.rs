@@ -3,6 +3,7 @@ use gcs_core::{interval::{Error,Interval as I},solid::{PlanarField as F,Revolved
 mod sweeps;
 mod material;
 mod boundary;
+mod front;
 
 fn point<const N: usize>(p: [f64;N]) -> [I;N] { p.map(|v| I::point(v).unwrap()) }
 fn close(b: I,value: f64) {

@@ -319,3 +319,67 @@ evaluator or sampling procedure. Merely estimating one normal across a Boolean c
 would hide the feature the new mesher must preserve. Schreiner's supplied-feature-front
 extension is relevant background, but it is not authorization to introduce tooth-specific
 curves into this implementation.
+
+## Small-case discovery workbench and latency target
+
+Keep high-precision gear extraction out of the iteration loop until small cases work.
+The next target is **under 100 ms per complete sphere or cube extraction**, on the
+development machine with the existing optimized test profile. Measure from evaluator
+creation through seed discovery and front closure. Compilation, fixture construction,
+independent validation and file I/O are outside that interval. Report triangle count,
+point-query count, open frontier edges and accuracy alongside time; a fast incomplete
+mesh does not pass. Timing is an opt-in serial check, not a flaky parallel-suite assertion.
+
+`rust/gcs-core/tests/functional_solids/front.rs` is a test-only advancing-front
+experiment. A bounded search finds a strict material interior point; a bracket toward
+the exterior seeds tangent prediction and field correction. Local normal variation
+controls candidate spacing, with sample-to-boundary checks at each triangle's edge
+midpoints and centroid. Front connections and small discovered-loop fills determine
+connectivity. There are no supplied primitive charts or separately attached caps.
+Strict inside/outside witnesses reject zero-only Boolean loci as seeds. Exact-coordinate
+correction/projection caches reuse immutable field results, including failed attempts;
+they are bounded and do not quantize coordinates. A cached/uncached comparison checks
+that the sphere's vertices, witnesses and triangles remain identical.
+
+At tolerance 0.02, the radius-one sphere closes with 414 triangles, 36,909 point queries
+and 56–64 ms extraction time in local serial runs. Before reuse, the same geometry
+took about 162 ms and 106,560 queries (before adding the seed-triangle sample check).
+The maximum independently sampled triangle deviation is 0.019900. These samples and
+vertex witnesses do **not** certify whole-triangle error or complete material coverage.
+The separate exact embedding audit passes for the exported 414-triangle sphere
+(SHA-256 `3207dae5febfef179bc00b3572b51e7374b7b0c1676966f81a596956e876a5b5`),
+establishing an outward-oriented embedded closed mesh, not field coverage or accuracy.
+
+Two explicit acceptance tests remain ignored by default because they currently fail;
+they are neither passing regressions nor accepted meshes:
+
+- The side-two cube is constructed as six half-spaces intersecting a radius-two ball
+  that supplies finite support. The marcher only receives the complete material field.
+  It takes about 1.21 s, leaving 218 open edges on 1,146 triangles after 83,289 queries.
+  Generic sharp-edge discovery and reconstruction are missing; averaged finite
+  differences are insufficient. Before reuse this incomplete attempt took 7.78 s.
+- The major-radius-two, minor-radius-0.6 torus takes about 259 ms, leaving two skinny
+  triangular gaps on 1,896 triangles. Local retriangulation at front meetings is needed;
+  the shape threshold has not been relaxed just to make closure pass.
+
+Run the ordinary sphere, cache-equivalence and empty-material controls:
+
+```sh
+SOLVENT_FRONT_MAX_MS=100 cargo test --manifest-path rust/Cargo.toml \
+  -p gcs-core --test core generic_front -- --nocapture --test-threads=1
+```
+
+Run the **currently failing** acceptance cases explicitly:
+
+```sh
+SOLVENT_FRONT_MAX_MS=100 cargo test --manifest-path rust/Cargo.toml \
+  -p gcs-core --test core generic_front -- --include-ignored --nocapture --test-threads=1
+```
+
+`SOLVENT_FRONT_OUTPUT=/private/tmp/solvent-general-front` optionally exports only
+candidates that pass closure, topology, witness and sampled-error checks. The latency
+limit applies to sphere and cube, not the separate torus diagnostic. Repeat serial runs
+to assess timing variability; do not count compilation or a stalled front as discovery.
+Next resolve generic sharp transitions and front-band retriangulation on these fixtures,
+then expand to narrow grooves, nearby sheets and undiscovered components. This workbench
+does not yet supply the final production mesher or a gear acceptance certificate.
