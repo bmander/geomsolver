@@ -9,13 +9,16 @@ import time
 from candidate_io import read_stl
 
 
-def run(executable, source, output):
+def run(executable, source, output, round_cleanup=False):
     metadata = json.loads(source.with_suffix(".json").read_text())
     data = source.read_bytes()
     _, faces = read_stl(data)
     started = time.perf_counter()
     if faces:
-        completed = subprocess.run([str(executable), str(source), str(output)],
+        command = [str(executable), str(source), str(output)]
+        if round_cleanup:
+            command.append("--round-cleanup")
+        completed = subprocess.run(command,
                                    text=True, capture_output=True)
         if completed.returncode not in (0, 1):
             failure = dict(source=source.name, source_sha256=hashlib.sha256(data).hexdigest(),
@@ -45,7 +48,8 @@ if __name__ == "__main__":
     parser.add_argument("executable", type=Path)
     parser.add_argument("source", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--round-cleanup", action="store_true")
     args = parser.parse_args()
     if args.source.resolve() == args.output.resolve():
         parser.error("source must be retained; choose a different output path")
-    raise SystemExit(0 if run(args.executable, args.source, args.output) else 1)
+    raise SystemExit(0 if run(args.executable, args.source, args.output, args.round_cleanup) else 1)

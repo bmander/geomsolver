@@ -59,6 +59,43 @@ they are not an in-process performance distribution.
 
 ## Reproduction
 
+### Indexed cleanup follow-up
+
+`run_indexed_cleanup.py` now carries the original producer indices into CGAL, retaining
+separate vertices at coincident positions. Coordinates round-trip as binary64 before exact
+construction. `remove_degenerate_faces` can then alter connectivity instead of simply
+deleting zero-area triangles. The helper checks actual remaining degeneracies and closedness;
+the library returned true on several inputs with degenerate faces still present. Repetition
+stops on convergence or after four passes and does not convert those partial results to success.
+
+| Simplex depth-5 input | Degenerate faces before → after | Subsequent result |
+|---|---:|---|
+| Rotated tetrahedron | 24 → 0 | Simplification and exact repair again pass the independent STL audit |
+| Axis-aligned thin tetrahedron | 13 → 0 | Simplification succeeds; autorepair discards the main body and leaves eight flattened triangles near the base; encoded STL is rejected |
+| Rotated cube | 280 → 4 | Cleanup refused |
+| Thin plate | 608 → 2 | Cleanup refused |
+| Disconnected spheres | 1,335 → 9 | Cleanup refused |
+
+The axis-aligned failure is not merely a serialization problem: the repaired output has
+lost the source apex and most of its extent. Rounding vertices within the indexed mesh and
+running degenerate cleanup after autorepair also failed. Dropping the remaining degenerate
+patches cannot recover the missing source surface. A local repair constrained to stay near
+the input surface is the next experiment; input proximity would still need independent
+source checks and cannot certify an initially incorrect extraction.
+
+[`indexed-cleanup-results.json`](indexed-cleanup-results.json) records source hashes, native
+postconditions, final encoded bounds and audit outcomes. Native cleanup takes roughly
+1–26 ms on these inputs, excluding process and interchange overhead. These are individual
+observations, not performance distributions. Pipeline timing now preserves accumulated
+preceding stages instead of restarting at extraction time on each cleanup.
+
+Build the indexed helper with the same command below, adding `degenerate` after a distinct
+output executable path. Run `run_indexed_cleanup.py EXECUTABLE PRODUCER.json OUTPUT.stl`,
+then the existing simplification/repair/audit commands only if cleanup succeeds. The optional
+`run_cgal.py --round-cleanup` reproduces the unsuccessful post-repair rounding experiment.
+Thirteen focused Python tests pass, including index/coordinate preservation, protection of
+source metadata and accumulated pipeline timing.
+
 The isolated build uses the official `CGAL-6.1.2.tar.xz` release archive (SHA-256
 `40411b97c5c64ddc1af1d153d57a39e424d21e947eef2b194fa05c5a8b002eea`), previously downloaded
 Boost 1.85.0 headers, and locally installed GMP/MPFR. The helper compiles with `-O1` and

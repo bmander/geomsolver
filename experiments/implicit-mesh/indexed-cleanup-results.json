@@ -1,0 +1,169 @@
+{
+  "scope": "Indexed binary64 producer connectivity through CGAL degenerate-face removal; optional Manifold simplification and exact autorepair. No accepted general pipeline.",
+  "artifacts": "/private/tmp/solvent-topology-cleanup",
+  "simplify_tolerance": 0.0002,
+  "results": [
+    {
+      "case": "spiky_tetrahedron",
+      "cleanup": {
+        "backend": "CGAL-6.1.2-remove-degenerate-faces",
+        "success": true,
+        "input_faces": 1032,
+        "input_degenerate": 13,
+        "input_closed": true,
+        "output_faces": 1026,
+        "output_degenerate": 0,
+        "output_closed": true,
+        "cleanup_seconds": 0.002495672,
+        "passes": 1,
+        "library_returns": [
+          true
+        ]
+      },
+      "source_sha256": "64921f4f07a398b9f6bdb4ec55e4906449a623fd21b82f24c247b32e3d64b953",
+      "repair": {
+        "backend": "CGAL-6.1.2-exact-autorefine-remove",
+        "success": true,
+        "input_triangles": 38,
+        "input_closed": true,
+        "input_intersects": true,
+        "output_triangles": 8,
+        "output_closed": true,
+        "output_intersects_exact": false,
+        "repair_seconds": 0.004788183,
+        "scope": "Native exact checks only; rounded STL requires independent audit."
+      },
+      "audit": {
+        "sha256": "81574ac397bb0d5349026d0ddf89d1a07a8c99bf4d0ba33ce46ac1cf144dc6d0",
+        "triangles": 8,
+        "failures": [
+          "exactly degenerate encoded triangle 0"
+        ],
+        "passes_sampled_checks": false
+      },
+      "encoded_bounds": [
+        [
+          -0.02565816231071949,
+          -0.042292747646570206,
+          -0.49999967217445374
+        ],
+        [
+          -0.024417728185653687,
+          0.042292747646570206,
+          -0.49976861476898193
+        ]
+      ]
+    },
+    {
+      "case": "rotated_tetrahedron",
+      "cleanup": {
+        "backend": "CGAL-6.1.2-remove-degenerate-faces",
+        "success": true,
+        "input_faces": 2312,
+        "input_degenerate": 24,
+        "input_closed": true,
+        "output_faces": 2288,
+        "output_degenerate": 0,
+        "output_closed": true,
+        "cleanup_seconds": 0.0028892,
+        "passes": 1,
+        "library_returns": [
+          true
+        ]
+      },
+      "source_sha256": "9d2a0a0d607e7434d03d979fb0bde6ba9459c2821e601cb6a789d2d4f20ad80a",
+      "repair": {
+        "backend": "CGAL-6.1.2-exact-autorefine-remove",
+        "success": true,
+        "input_triangles": 182,
+        "input_closed": true,
+        "input_intersects": true,
+        "output_triangles": 182,
+        "output_closed": true,
+        "output_intersects_exact": false,
+        "repair_seconds": 0.009923115,
+        "scope": "Native exact checks only; rounded STL requires independent audit."
+      },
+      "audit": {
+        "sha256": "bd2233f64e69434e3ae307a5dc3adf4ec995f9a8f7cb039b57c4d1d6a7363972",
+        "triangles": 182,
+        "failures": [],
+        "passes_sampled_checks": true,
+        "sampled_source_deviation": 0.011837124538255483,
+        "maximum_landmark_distance": 2.5314412863331767e-06
+      },
+      "encoded_bounds": [
+        [
+          -0.17770002782344818,
+          -0.11185241490602493,
+          -0.49376732110977173
+        ],
+        [
+          0.3979702591896057,
+          0.07386349886655807,
+          1.4419128894805908
+        ]
+      ]
+    },
+    {
+      "case": "rotated_cube",
+      "cleanup": {
+        "backend": "CGAL-6.1.2-remove-degenerate-faces",
+        "success": false,
+        "input_faces": 26328,
+        "input_degenerate": 280,
+        "input_closed": true,
+        "output_faces": 26054,
+        "output_degenerate": 4,
+        "output_closed": true,
+        "cleanup_seconds": 0.063596888,
+        "passes": 2,
+        "library_returns": [
+          true,
+          true
+        ]
+      },
+      "source_sha256": "0ce8094aab028bae6f26909b2c44dae248a3636d4f5b43ec644a12ade139b54b"
+    },
+    {
+      "case": "thin_plate",
+      "cleanup": {
+        "backend": "CGAL-6.1.2-remove-degenerate-faces",
+        "success": false,
+        "input_faces": 19364,
+        "input_degenerate": 608,
+        "input_closed": true,
+        "output_faces": 18770,
+        "output_degenerate": 2,
+        "output_closed": true,
+        "cleanup_seconds": 0.058468907,
+        "passes": 2,
+        "library_returns": [
+          true,
+          true
+        ]
+      },
+      "source_sha256": "f24dad09dfee8d17a698808840b385e8e18932fa36b5da4c1b5eb788d60223fa"
+    },
+    {
+      "case": "disconnected",
+      "cleanup": {
+        "backend": "CGAL-6.1.2-remove-degenerate-faces",
+        "success": false,
+        "input_faces": 17884,
+        "input_degenerate": 1335,
+        "input_closed": true,
+        "output_faces": 16568,
+        "output_degenerate": 9,
+        "output_closed": true,
+        "cleanup_seconds": 0.070535567,
+        "passes": 2,
+        "library_returns": [
+          true,
+          true
+        ]
+      },
+      "source_sha256": "eab168c173f40985546d5275c4463597d87ce0dd0a690979f869040140457d61"
+    }
+  ]
+}

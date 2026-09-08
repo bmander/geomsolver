@@ -46,7 +46,7 @@ def run(source, output, tolerance):
     metadata = json.loads(source.with_suffix(".json").read_text())
     metadata.update(vertices=vertices, triangles=kept,
                     postprocessing_seconds=seconds,
-                    pipeline_seconds=metadata["extraction_seconds"]+seconds,
+                    pipeline_seconds=metadata.get("pipeline_seconds", metadata["extraction_seconds"])+seconds,
                     postprocessing=dict(source=source.name, removed_zero_area_faces=removed,
                                         manifold_version=importlib.metadata.version("manifold3d"),
                                         imported_into_manifold=imported,

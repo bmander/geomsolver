@@ -53,7 +53,8 @@ class BindingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source, output = Path(directory)/"source.stl", Path(directory)/"output.stl"
             source.write_bytes(encoded)
-            source.with_suffix(".json").write_text(json.dumps(dict(extraction_seconds=0)))
+            source.with_suffix(".json").write_text(json.dumps(dict(extraction_seconds=1,
+                                                                 pipeline_seconds=3)))
             run(source, output, None)
             self.assertEqual(source.read_bytes(), encoded)
             report = audit.stl_embedding.check(output.read_bytes())
@@ -61,6 +62,8 @@ class BindingTests(unittest.TestCase):
             self.assertEqual(report["signed_volume_exact"], "1/6")
             metadata = json.loads(output.with_suffix(".json").read_text())
             self.assertEqual(metadata["postprocessing"]["removed_zero_area_faces"], [4])
+            self.assertAlmostEqual(metadata["pipeline_seconds"],
+                                   3+metadata["postprocessing_seconds"])
 
 
 if __name__ == "__main__":
