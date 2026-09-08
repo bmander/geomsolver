@@ -36,6 +36,7 @@ fn under(name: &str, prefix: &str) -> bool {
     name == prefix || name.strip_prefix(prefix).is_some_and(|s| s.starts_with('.') || s.starts_with('['))
 }
 fn entities(model: Model<'_>, path: &str) -> Vec<EntRef> {
+    if model.names.is_private_path(path) { return Vec::new(); }
     if let Some(e) = model.names.entity_path(model.sketch, path) { return vec![e] }
     model.names.names.iter().filter(|(_, names)| path.is_empty() || names.iter().any(|n| under(&crate::program::public_path(n), path)))
         .map(|(&e, _)| e).collect()
@@ -48,6 +49,8 @@ fn basis(name: &str, models: &BTreeMap<String, Model<'_>>, span: Span) -> Result
         "left" => ([0., -1., 0.], [0., 0., 1.]),
         "top" => ([1., 0., 0.], [0., 1., 0.]),
         "bottom" => ([1., 0., 0.], [0., -1., 0.]),
+        "isometric" => return Ok(Basis::explicit([1., -1., 0.], [1., 1., 2.])
+            .expect("the built-in isometric axes span a plane")),
         _ => {
             let (_, path, model) = split(name, models, span)?;
             let e = model.names.entity_path(model.sketch, path).filter(|e| e.kind == EntKind::Plane)
@@ -110,6 +113,7 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
         let mut sk = model.sketch.clone();
         sk.derived.clear(); sk.placements.clear(); sk.sheet.clear();
         sk.sheet.insert("point".into(), Style { display: Some(Display::None), ..Style::default() });
+        sk.sheet.insert("construction".into(), Style { display: Some(Display::None), ..Style::default() });
         sk.sheet.insert("plane".into(), Style { display: Some(Display::None), ..Style::default() });
         sk.sheet.insert("_svd_unselected".into(), Style { display: Some(Display::None), ..Style::default() });
         for r in &rules {

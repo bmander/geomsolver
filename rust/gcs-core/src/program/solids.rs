@@ -12,13 +12,14 @@ use std::collections::{BTreeMap, BTreeSet};
 /// already shared endpoints, so face construction must not manufacture a closing edge.
 fn chain_face(c: &crate::syntax::NamedChain) -> Decl {
     Decl {
+        roles: c.annotations.roles,
         kind: EntKind::Face, name: c.name.clone(),
         children: vec![c.links.iter().cloned().map(Kid::Ref).collect()],
         seed: Vec::new(), seed_text: Vec::new(), seed_spans: Vec::new(),
         unseeded: false, seed_explicit: Vec::new(), closed: false, knots: None,
         curve: None, computed: None, class: Classes::default(), seed_at: None,
         seed_names: Vec::new(), attitude: crate::syntax::Attitude::Page,
-        sweep: None, membership: crate::syntax::Membership::default(),
+        sweep: None, motion: None, angular_span: None, membership: crate::syntax::Membership::default(),
     }
 }
 
@@ -491,13 +492,13 @@ fn face_ordinate(
                     _ => return None,
                 };
                 return Some((
-                    sk.faces.get(*face as usize)?.plane?,
+                    sk.faces.get(*face as usize)?.plane().ok()??,
                     ord,
                     sign * parity,
                     format!("{}.{last}", s.name),
                 ));
             }
-            SolidDef::Revolve { .. } | SolidDef::Through { .. } => return None,
+            SolidDef::Revolve { .. } | SolidDef::Through { .. } | SolidDef::Loft { .. } => return None,
             SolidDef::Body { stock, on, through } => {
                 // a body's faces are its operands', reached through the operand that made them
                 let (head, rest) = path.split_first()?;
@@ -655,7 +656,8 @@ pub(super) fn solids(
             }
             _ => continue,
         };
-        if d.kind != EntKind::Face || skip.contains(&st.id) {
+        if d.kind != EntKind::Face || skip.contains(&st.id)
+            || d.children.get(2).is_some_and(|g| !g.is_empty()) {
             continue;
         }
         let name = d.name.key().text.clone();
@@ -1203,6 +1205,11 @@ fn build_face(
     span: Span,
     diags: &mut Vec<Diag>,
 ) -> Option<usize> {
+    if d.children.get(2).is_some_and(|g| !g.is_empty()) {
+        diags.push(Diag {code:Code::E080,span,stmt:Some(stmt),
+            message:"a spatial face is not a planar sweep profile".into()});
+        return None;
+    }
     let (outer, plane) = build_loop(sk, res,
         d.children.first().map(Vec::as_slice).unwrap_or_default(), d.closed, stmt, span, diags)?;
     let scope = owner.rsplit_once('.').map(|(p, _)| format!("{p}."));
@@ -1241,7 +1248,7 @@ fn build_face(
     }
     let i = sk.face(outer.edges, outer.edge_names, &d.name.key().text);
     sk.faces[i].holes = holes;
-    sk.faces[i].plane = plane;
+    sk.faces[i].support = crate::model::FaceSupport::Plane(plane);
     sk.faces[i].class = d.class.clone();
     Some(i)
 }
@@ -1300,6 +1307,11 @@ fn build_solid(
                 return None;
             }
         };
+        if e.kind == EntKind::Face && sk.faces.get(e.i()).is_none_or(|f| f.plane().is_err()) {
+            diags.push(Diag {code:Code::E080,span:st.span,stmt:Some(st.id),
+                message:"a sweep needs a built planar profile; a spatial face cannot be swept".into()});
+            return None;
+        }
         ops.push(e);
     }
     let mut say = |code: Code, span: Span, m: String| {
@@ -1319,6 +1331,21 @@ fn build_solid(
             Ok(Extent { text: text.trim().to_string(), value: v.c })
         };
     let def = match sweep {
+        crate::syntax::Sweep::Along { guide } => {
+            if !(1..=2).contains(&ops.len()) || ops.iter().any(|e| e.kind != EntKind::Face) {
+                say(Code::E080, st.span, "`along:` requires one start face and an optional end face".into());
+                return None;
+            }
+            let Some(g) = res.lookup(guide).and_then(|e| super::resolve::follow(sk, e, &guide.path).ok()) else {
+                say(Code::E101, guide.span, "no such guide geometry".into());
+                return None;
+            };
+            if !matches!(g.kind, EntKind::Line | EntKind::Arc) {
+                say(Code::E081, guide.span, "`along:` requires a directed line or circular arc".into());
+                return None;
+            }
+            SolidDef::Loft { face: ops[0].idx, end: ops.get(1).map(|e| e.idx), guide: g }
+        }
         crate::syntax::Sweep::Through { body } => {
             let face = one_face(&ops, st, &mut say)?;
             let Some(target) = res.lookup(body) else {
@@ -1386,7 +1413,7 @@ fn build_solid(
             }
             // **the axis lies in the face's own plane**: a line in another view names a
             // direction this face knows nothing about
-            let fp = sk.faces[face as usize].plane;
+            let fp = sk.faces[face as usize].plane().ok()?;
             for p in [sk.lines[ax.i()].p1, sk.lines[ax.i()].p2] {
                 if sk.plane_of(p as usize).map(|x| x as u32) != fp {
                     say(

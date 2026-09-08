@@ -21,6 +21,7 @@ pub struct Site {
 /// on rebuild; retain statement IDs to carry selections across elaborations.
 #[derive(Clone, Debug, Default)]
 pub struct SourceMap {
+    pub(crate) private_names: BTreeMap<String, String>,
     pub of_entity: BTreeMap<EntRef, Site>,
     pub of_constraint: BTreeMap<u32, Site>,
     /// Display names, excluding anonymous resolution keys. `by_name` contains all keys;
@@ -49,7 +50,24 @@ impl SourceMap {
 
     /// Resolve an externally authored path, including repeated members and entity fields.
     /// The longest entity prefix wins; `line.p1` can refer to an unnamed endpoint.
+    pub fn is_private_path(&self, name: &str) -> bool {
+        self.private_names.keys().any(|p| {
+            let public = public_path(p);
+            [p.as_str(), public.as_str()].iter().any(|p| name == *p ||
+                name.strip_prefix(*p).is_some_and(|tail| tail.starts_with('.') || tail.starts_with('[')))
+        })
+    }
+
+    /// Root source may use its own private helpers, but cannot reach inside components.
+    pub(crate) fn private_from_root(&self, name: &str) -> Option<&String> {
+        self.private_names.iter().find_map(|(member, owner)| {
+            (!owner.is_empty() && (name == member ||
+                name.strip_prefix(member).is_some_and(|tail| tail.starts_with('.')))).then_some(member)
+        })
+    }
+
     pub fn entity_path(&self, sk: &Sketch, name: &str) -> Option<EntRef> {
+        if self.is_private_path(name) { return None; }
         if let Some(e) = self.ent_named(name) { return Some(e) }
         let mut best = None;
         for (key, &e) in &self.by_name {

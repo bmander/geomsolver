@@ -189,7 +189,7 @@ fn remap_early(
         EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
         // a curve is never another curve's argument: nothing in the language says so, and a
         // face and a solid are built after every curve, so neither is one either
-        EntKind::Curve | EntKind::Face | EntKind::Solid => None,
+        EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => None,
     }
 }
 
@@ -300,7 +300,7 @@ pub fn to_json(sk: &Sketch) -> Json {
         .collect();
     let branches: Vec<(String, Json)> =
         sk.branches.iter().map(|(k, &v)| (k.clone(), Json::Int(v as i64))).collect();
-    object([
+    let mut doc = object([
         ("version", Json::Int(1)),
         ("points", Json::Arr(points)),
         ("lines", Json::Arr(lines)),
@@ -312,7 +312,15 @@ pub fn to_json(sk: &Sketch) -> Json {
         ("branches", Json::Obj(branches)),
         // written only where the document named one: a drawing in drawing units says nothing
         ("unit", sk.units.name().map(|n| Json::Str(n.to_string())).unwrap_or(Json::Null)),
-    ])
+    ]);
+    let roles = sk.roles.iter().filter(|(e, _)| !e.kind.spatial() && e.kind != EntKind::Curve)
+        .map(|(&e, roles)| object([
+            ("entity", ref_json(e)),
+            ("construction", Json::Bool(roles.construction)),
+            ("centerline", Json::Bool(roles.centerline)),
+        ])).collect::<Vec<_>>();
+    if !roles.is_empty() { doc.set("roles", Json::Arr(roles)); }
+    doc
 }
 
 pub fn from_json(d: &Json) -> Result<Sketch, String> {
@@ -519,6 +527,17 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             }
         }
     }
+    for item in d.get("roles").unwrap_or(&empty).arr() {
+        let entity = item.get("entity").ok_or("geometry role needs an entity")?.arr();
+        if entity.len() != 2 { return Err("geometry role entity must be [kind, index]".into()); }
+        let kind = EntKind::parse(entity[0].as_str()).ok_or("unknown geometry role entity kind")?;
+        let e = EntRef::new(kind, index(entity[1].as_i64(), sk.count(kind), "role entity")?);
+        let roles = crate::semantics::GeometryRoles {
+            construction: item.get("construction").is_some_and(Json::as_bool),
+            centerline: item.get("centerline").is_some_and(Json::as_bool),
+        };
+        if roles != Default::default() { sk.roles.insert(e, roles); }
+    }
     Ok(sk)
 }
 
@@ -717,6 +736,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     // solid; allocate the surviving graph before remapping its possibly forward references.
     let mut face_map: Vec<Option<usize>> = vec![None; src.faces.len()];
     for (i, f) in src.faces.iter().enumerate() {
+        let Ok(profile_plane) = f.plane() else { continue; };
         if !keep(EntRef::face(i)) {
             continue;
         }
@@ -737,7 +757,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             }).collect();
             crate::model::FaceLoop { edges, edge_names: h.edge_names.clone() }
         }).collect();
-        let plane = match f.plane {
+        let plane = match profile_plane {
             Some(p) => match plane_map[p as usize] {
                 Some(n) => Some(n as u32),
                 None => {
@@ -754,7 +774,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             edges,
             edge_names: f.edge_names.clone(),
             holes,
-            plane,
+            support: crate::model::FaceSupport::Plane(plane),
             name: f.name.clone(),
             class: f.class.clone(),
         });
@@ -767,6 +787,12 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         keep(EntRef::solid(i)) && s.face().is_none_or(|f| face_map[f as usize].is_some())
             && match s.def {
                 crate::model::SolidDef::Revolve { axis, .. } => line_map[axis as usize].is_some(),
+                crate::model::SolidDef::Loft { end, guide, .. } =>
+                    end.is_none_or(|f| face_map[f as usize].is_some()) && match guide.kind {
+                        EntKind::Line => line_map[guide.i()].is_some(),
+                        EntKind::Arc => arc_map[guide.i()].is_some(),
+                        _ => false,
+                    },
                 _ => true,
             }
     }).collect();
@@ -796,6 +822,13 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let face = |f: u32| face_map[f as usize].unwrap() as u32;
         let sol = |s: &u32| solid_map[*s as usize].unwrap() as u32;
         let def = match &so.def {
+            crate::model::SolidDef::Loft { face: f, end, guide } => {
+                crate::model::SolidDef::Loft { face: face(*f), end: end.map(face), guide: match guide.kind {
+                    EntKind::Line => EntRef::line(line_map[guide.i()].unwrap()),
+                    EntKind::Arc => EntRef::arc(arc_map[guide.i()].unwrap()),
+                    _ => unreachable!(),
+                }}
+            }
             crate::model::SolidDef::Prism { face: f, from, to } => {
                 crate::model::SolidDef::Prism { face: face(*f), from: from.clone(), to: to.clone() }
             }
@@ -823,6 +856,155 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         debug_assert_eq!(solid_map[i], Some(dst.solids.len() - 1));
         made.push(EntRef::solid(dst.solids.len() - 1));
     }
+    let mut surface_map = vec![None;src.surfaces.len()];
+    for (i,s) in src.surfaces.iter().enumerate() {
+        if !keep(EntRef::new(EntKind::Surface,i)) { continue; }
+        let Some(solid) = solid_map[s.solid as usize] else { continue };
+        let edge = match s.edge.kind {
+            EntKind::Line => line_map[s.edge.i()].map(EntRef::line),
+            EntKind::Arc => arc_map[s.edge.i()].map(EntRef::arc),
+            EntKind::Circle => circle_map[s.edge.i()].map(EntRef::circle),
+            _ => None,
+        };
+        let Some(edge) = edge else { continue };
+        let next = dst.surfaces.len();
+        dst.surfaces.push(crate::model::SurfaceE {
+            solid:solid as u32,edge,span:s.span,name:s.name.clone(),class:s.class.clone(),
+        });
+        surface_map[i] = Some(next);
+        made.push(EntRef::new(EntKind::Surface,next));
+    }
+    let mut retained: Vec<bool> = src.motions.iter().enumerate().map(|(i,m)| {
+        keep(EntRef::new(EntKind::Motion,i)) && match m.def {
+            crate::model::MotionDef::Rotation {axis,..} => line_map[axis as usize].is_some(),
+            crate::model::MotionDef::Relative {..} => true,
+        }
+    }).collect();
+    loop {
+        let mut changed = false;
+        for (i,m) in src.motions.iter().enumerate() {
+            if let crate::model::MotionDef::Relative {source,observer} = m.def {
+                if retained[i] && (!retained[source as usize] || !retained[observer as usize]) {
+                    retained[i] = false; changed = true;
+                }
+            }
+        }
+        if !changed { break; }
+    }
+    let mut next_motion = dst.motions.len();
+    let motion_map: Vec<_> = retained.iter().map(|&keep| {
+        if keep { let i = next_motion; next_motion += 1; Some(i) } else { None }
+    }).collect();
+    for (i,m) in src.motions.iter().enumerate() {
+        let Some(next) = motion_map[i] else { continue; };
+        let def = match m.def {
+            crate::model::MotionDef::Rotation {axis,ratio,phase} =>
+                crate::model::MotionDef::Rotation {
+                    axis:line_map[axis as usize].unwrap() as u32,ratio,phase,
+                },
+            crate::model::MotionDef::Relative {source,observer} =>
+                crate::model::MotionDef::Relative {
+                    source:motion_map[source as usize].unwrap() as u32,
+                    observer:motion_map[observer as usize].unwrap() as u32,
+                },
+        };
+        dst.motions.push(crate::model::MotionE {def,name:m.name.clone(),class:m.class.clone()});
+        made.push(EntRef::new(EntKind::Motion,next));
+    }
+    let mut envelope_map = vec![None;src.envelopes.len()];
+    for (i,e) in src.envelopes.iter().enumerate() {
+        if !keep(EntRef::new(EntKind::Envelope,i)) { continue; }
+        let (Some(surface),Some(motion)) =
+            (surface_map[e.surface as usize],motion_map[e.motion as usize]) else { continue; };
+        let next = dst.envelopes.len();
+        dst.envelopes.push(crate::model::EnvelopeE {
+            surface:surface as u32,motion:motion as u32,roll:e.roll,
+            name:e.name.clone(),class:e.class.clone(),
+        });
+        envelope_map[i] = Some(next);
+        made.push(EntRef::new(EntKind::Envelope,next));
+    }
+    let mut patch_map = vec![None;src.patches.len()];
+    for (i,p) in src.patches.iter().enumerate() {
+        if !keep(EntRef::new(EntKind::Patch,i)) { continue; }
+        let source = match p.source.kind {
+            EntKind::Surface => surface_map[p.source.i()],
+            EntKind::Envelope => envelope_map[p.source.i()],
+            _ => None,
+        };
+        let inside = p.inside.iter().map(|&i| solid_map[i as usize].map(|i| i as u32))
+            .collect::<Option<Vec<_>>>();
+        let outside = p.outside.iter().map(|&i| solid_map[i as usize].map(|i| i as u32))
+            .collect::<Option<Vec<_>>>();
+        let (Some(source),Some(inside),Some(outside)) = (source,inside,outside) else { continue; };
+        let next = dst.patches.len();
+        dst.patches.push(crate::model::PatchE {source:EntRef::new(p.source.kind,source),
+            inside,outside,name:p.name.clone(),class:p.class.clone()});
+        patch_map[i] = Some(next);
+        made.push(EntRef::new(EntKind::Patch,next));
+    }
+    let mut seam_map = vec![None;src.seams.len()];
+    for (i,s) in src.seams.iter().enumerate() {
+        if !keep(EntRef::new(EntKind::Seam,i)) { continue; }
+        let operand = |e: EntRef| match e.kind {
+            EntKind::Surface => surface_map[e.i()].map(|i| EntRef::new(e.kind,i)),
+            EntKind::Envelope => envelope_map[e.i()].map(|i| EntRef::new(e.kind,i)),
+            EntKind::Patch => patch_map[e.i()].map(|i| EntRef::new(e.kind,i)),
+            _ => None,
+        };
+        let (Some(first),Some(second)) = (operand(s.first),operand(s.second)) else { continue; };
+        let next = dst.seams.len();
+        dst.seams.push(crate::model::SeamE {first,second,name:s.name.clone(),class:s.class.clone()});
+        seam_map[i] = Some(next);
+        made.push(EntRef::new(EntKind::Seam,next));
+    }
+    let mut vertex_map = vec![None;src.vertices.len()];
+    for (i,v) in src.vertices.iter().enumerate() {
+        if !keep(EntRef::new(EntKind::Vertex,i)) { continue; }
+        let (Some(first),Some(second)) = (seam_map[v.first as usize],seam_map[v.second as usize])
+            else { continue; };
+        let next = dst.vertices.len();
+        dst.vertices.push(crate::model::VertexE {first:first as u32,second:second as u32,
+            name:v.name.clone(),class:v.class.clone()});
+        vertex_map[i] = Some(next);
+        made.push(EntRef::new(EntKind::Vertex,next));
+    }
+    let mut edge_map = vec![None;src.edges.len()];
+    for (i,e) in src.edges.iter().enumerate() {
+        if !keep(EntRef::new(EntKind::Edge,i)) { continue; }
+        let (Some(seam),Some(start),Some(end),Some(along)) = (seam_map[e.seam as usize],
+            vertex_map[e.start as usize],vertex_map[e.end as usize],line_map[e.along as usize])
+            else { continue; };
+        let next = dst.edges.len();
+        dst.edges.push(crate::model::EdgeE {seam:seam as u32,start:start as u32,end:end as u32,
+            along:along as u32,name:e.name.clone(),class:e.class.clone()});
+        edge_map[i] = Some(next);
+        made.push(EntRef::new(EntKind::Edge,next));
+    }
+    // Spatial faces depend on generated supports and finite edges; copying them
+    // in the planar-profile phase would silently lose those late dependencies.
+    for (i,f) in src.faces.iter().enumerate() {
+        let Some(support) = f.on() else { continue; };
+        if !keep(EntRef::face(i)) || !f.holes.is_empty() { continue; }
+        let on = match support.kind {
+            EntKind::Surface => surface_map.get(support.i()).copied().flatten(),
+            EntKind::Envelope => envelope_map.get(support.i()).copied().flatten(),
+            EntKind::Patch => patch_map.get(support.i()).copied().flatten(),
+            _ => None,
+        };
+        let Some(on) = on else { continue; };
+        let edges = f.edges.iter().map(|e| {
+            if e.kind != EntKind::Edge { return None; }
+            edge_map.get(e.i()).copied().flatten().map(|i| EntRef::new(EntKind::Edge,i))
+        }).collect::<Option<Vec<_>>>();
+        let Some(edges) = edges else { continue; };
+        let next = dst.faces.len();
+        dst.faces.push(crate::model::FaceE {edges,edge_names:f.edge_names.clone(),holes:vec![],
+            support:crate::model::FaceSupport::Surface(EntRef::new(support.kind,on)),
+            name:f.name.clone(),class:f.class.clone()});
+        face_map[i] = Some(next);
+        made.push(EntRef::face(next));
+    }
     let remap = |e: EntRef| -> Option<EntRef> {
         match e.kind {
             EntKind::Point => pt_index(e.i()).map(EntRef::point),
@@ -834,8 +1016,18 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Curve => curve_map[e.i()].map(|i| EntRef::new(EntKind::Curve, i)),
             EntKind::Face => face_map[e.i()].map(EntRef::face),
             EntKind::Solid => solid_map[e.i()].map(EntRef::solid),
+            EntKind::Surface => surface_map[e.i()].map(|i| EntRef::new(EntKind::Surface,i)),
+            EntKind::Motion => motion_map[e.i()].map(|i| EntRef::new(EntKind::Motion,i)),
+            EntKind::Envelope => envelope_map[e.i()].map(|i| EntRef::new(EntKind::Envelope,i)),
+            EntKind::Patch => patch_map[e.i()].map(|i| EntRef::new(EntKind::Patch,i)),
+            EntKind::Seam => seam_map[e.i()].map(|i| EntRef::new(EntKind::Seam,i)),
+            EntKind::Vertex => vertex_map[e.i()].map(|i| EntRef::new(EntKind::Vertex,i)),
+            EntKind::Edge => edge_map[e.i()].map(|i| EntRef::new(EntKind::Edge,i)),
         }
     };
+    for (&e, &roles) in &src.roles {
+        if let Some(target) = remap(e) { dst.roles.insert(target, roles); }
+    }
     let mut expr = false;
     for c in src.user_constraints() {
         if drop_c.contains(&c.id) {
@@ -935,7 +1127,11 @@ pub fn copy(sk: &Sketch, entities: &[EntRef]) -> Sketch {
             if let Some(p) = sk.plane_of(e.i()) { pending.push(EntRef::plane(p)); }
         }
     }
-    let drop: Vec<EntRef> = sk.primitives().into_iter().filter(|e| !keep.contains(e)).collect();
+    let mut candidates = sk.primitives();
+    for kind in [EntKind::Curve,EntKind::Face,EntKind::Solid,EntKind::Surface,EntKind::Motion,EntKind::Envelope,EntKind::Patch,EntKind::Seam,EntKind::Vertex,EntKind::Edge] {
+        candidates.extend((0..sk.count(kind)).map(|i| EntRef::new(kind,i)));
+    }
+    let drop: Vec<EntRef> = candidates.into_iter().filter(|e| !keep.contains(e)).collect();
     without(sk, &drop, &[])
 }
 

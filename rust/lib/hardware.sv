@@ -107,18 +107,42 @@ component Groove(body: solid, f: plane,
   line ax(f.origin, f.toward)
   param rb = r - (1 - seal.squeeze) * cs   // the groove's bottom, off the axis
   param w = seal.width_factor * cs             // and how wide it is along the axis
-  g0: Loc(f, u: z, v: rb)
-  g1: Loc(f, u: z, v: r)
-  g2: Loc(f, u: z - w, v: r)
-  g3: Loc(f, u: z - w, v: rb)
-  line e0(g0.p, g1.p)  -> line e1(g1.p, g2.p)  ->
-    line e2(g2.p, g3.p)  -> line e3(g3.p, g0.p)  -> close
+  point g0 hint(x: f.origin.x + (z) * f.c - (rb) * f.s,
+                    y: f.origin.y + (z) * f.s + (rb) * f.c)
+  point g1 hint(x: f.origin.x + (z) * f.c - (r) * f.s,
+                    y: f.origin.y + (z) * f.s + (r) * f.c)
+  point g2 hint(x: f.origin.x + (z - w) * f.c - (r) * f.s,
+                    y: f.origin.y + (z - w) * f.s + (r) * f.c)
+  point g3 hint(x: f.origin.x + (z - w) * f.c - (rb) * f.s,
+                    y: f.origin.y + (z - w) * f.s + (rb) * f.c)
+  line e0(g0, g1)  -> line e1(g1, g2)  ->
+    line e2(g2, g3)  -> line e3(g3, g0)  -> close
   face gf(e0, e1, e2, e3)
-  claim g0.p distance(w) g3.p
-  claim g0.p distance(rb) ax
+  e0 perpendicular ax
+  e1 parallel ax
+  e2 perpendicular ax
+  e3 parallel ax
+  distance(r - rb) e0
+  distance(w) e1
+  g0 distance(rb, side: left) ax
+  g0 distance(z, along: u) f
+  claim g0 distance(w) g3
+  claim g0 distance(rb) ax
   solid groove(gf, about: ax)
   groove cut body
 }
 
 // Caller-selected seal proportions, passed explicitly to Groove.
 group seal_dims(squeeze: oring_squeeze, width_factor: oring_groove_w)
+
+// A circular through-hole pattern. The polygon supplies constrained centers, with
+// its edges private to this component. n >= 3, as for Polygon.
+component BoltPattern(body: solid, center: point, ref: line,
+                      n: Int, pitch_r: Length, hole_r: Length, phase: Angle) {
+  private construction layout: Polygon(center, ref, n: n, r: pitch_r, phase: phase)
+  repeat n as i {
+    radius(hole_r) circle hole(center: layout.v[i])
+    private solid drill(face(hole), through: body)
+    drill cut body
+  }
+}

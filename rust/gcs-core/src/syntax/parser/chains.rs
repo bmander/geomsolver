@@ -374,6 +374,7 @@ impl<'a> P<'a> {
         };
         let first = out.len();
         let named = name.map(|name| crate::syntax::NamedChain {
+            annotations: Default::default(),
             name: crate::syntax::DeclName::Written(name),
             links: links.iter().map(Link::entity).collect(),
             closed: close.is_some(),
@@ -477,9 +478,11 @@ impl<'a> P<'a> {
             }
             // a prefix word carries its own parentheses like any other operator:
             // `radius(25) circle base(center: c)`
-            let name = Name { text: w, span: self.here() };
+            let mut name = Name { text: w, span: self.here() };
             self.i += 1;
             let args = self.op_args(&name.text)?;
+            // Removing a unary constraint removes its argument list with its word.
+            name.span.hi = self.prev_hi() as u32;
             prefixes.push((name, args));
         };
         let lo = self.here().lo as usize;

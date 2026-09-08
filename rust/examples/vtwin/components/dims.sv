@@ -34,16 +34,12 @@ param theta0 = 180deg   // where the crank *starts*: a seed, read by nothing but
 param swing = asin(R / H)   // how far a cylinder rocks either side of its bank: 19.5°
 
 // -- the cylinder -----------------------------------------------------------------------------
+// Width and top follow bore plus wall; the mouth follows the skirt at bottom dead centre.
+// Cylinder computes those dimensions locally. The head is shared with the port layout.
 param wall = 4mm
-param hw = D / 2 + wall     // the body's half-width in the plane of swing
-param cb = 22mm             // the mouth of the bore, from the crank axis along the bank
 param head = R + L + 2mm    // the bore's closed end: the crown at top dead centre, and 2 to spare
-param ct = head + wall      // the body's top
-param fwA = 12mm            // bank A's face wall, the face to the bore: the pivot bolt's head sits
-                            // in a slot in it (`trapz`, `traph`), 3 of wall left to the bore
+param fwA = trapz + traph + 3mm  // bank A: bearing wall, head slot, then 3mm to the bore
 param fwB = fwA + rw        // bank B's is a rod thicker, so its rod rides the pin beside A's
-param tcylA = fwA + D + wall
-param tcylB = fwB + D + wall
 param zA = fwA + D / 2      // each rod's mid-plane, off the plate's face
 param zB = fwB + D / 2
 
@@ -58,11 +54,7 @@ param reye = 6.5mm          // the rod's eye, outside: 3.3 of wall round the pin
 // 12.4 bore stretches 4% onto it, which keeps it seated.  The groove is a third wider than the
 // section, so the ring can roll a little rather than drag.
 param oring = oring014_cs
-// **the rule, read rather than typed** (issue #48, item 5).  `hardware` states what a moving
-// seal wants and `hardware.Groove` cuts it; these two are the same arithmetic, written here for
-// the dimensions that quote them
-param grooveb = D - 2 * (1 - oring_squeeze) * oring    // 12.87: the bore less twice the squeezed section
-param groovew = oring_groove_w * oring                 // 2.403: the groove's width
+// Piston and throttle derive their grooves locally from their ring and `seal_dims`.
 param groove = 4mm                       // the groove's top, below the crown
 
 // -- the ports ------------------------------------------------------------------------------
@@ -87,9 +79,7 @@ param boltaf = hexbolt14_af         // its head, across flats — the slot is th
 param boltac = hexbolt14_ac         // and across corners: how far the slot must reach past the axis
 param boltH = hexbolt14_h           // the head's height
 param trapz = 4mm           // the face to the slot: the wall the head bears on
-param traph = 5mm           // the slot's height, the head and 0.6 to spare
-param trapw = boltaf + 0.3mm    // the slot's width: the head's flats, and a little
-param trapd = boltac / 2 + 0.3mm    // the slot runs this far past the axis, so the head centres on it
+param traph = boltH + 0.6mm  // the slot height follows the selected bolt head
 param trapfit = fit14       // the hole through the wall the shank is located by; the plate's is the running fit
 param studclr = clearance14         // the plate's hole for the shank: it is the pivot's bearing
 param wsh = washer14_t              // a 1/4" flat washer
@@ -113,7 +103,7 @@ param dshaft = rod516_d     // steel rod
 param rshaft = dshaft / 2
 param rbrg = brg608_od / 2  // 608 bearing: 22 outside, 8 bore, 7 wide — two, in the boss
 param wbrg = brg608_w
-param boss = 16mm           // the bearing boss behind the plate
+param boss = brgpocket + 1.5mm  // bearing pocket plus the material left against the plate
 param brgpocket = 2 * wbrg + 0.5mm   // the pocket the two sit in, from the boss's back
 param rdisc = 18mm          // the crank disc, in front of the plate, clear of the cylinder mouths
 param zdisc = 1.4mm         // its clearance off the plate's face
@@ -121,11 +111,10 @@ param tdisc = zA - rw / 2 - wsh - zdisc   // its thickness: rod A's near face, l
 param dpin = clevis14_d     // the crank pin: a 1/4" × 1-1/4" clevis pin, its head in a pocket in
                             // the disc's back, the rods on its shank, a hairpin cotter outboard
 param rpin = dpin / 2
-param pinclr = 6.5mm        // the hole for it, in the disc and in each eye
+param pinclr = dpin + 0.15mm  // diametral clearance in the disc and each rod eye
 param pinhead = clevis14_head_d     // the clevis pin's head
 param pinheadH = clevis14_head_t
-param pinpocket = 3mm       // the pocket in the disc's back the head sits in
-param pinpocketd = 10.2mm
+param pinpocket = pinheadH + 0.7mm  // clevis head plus recess clearance; shared with the side view
 param pingrip = clevis14_grip_114   // under the head to the cotter hole
 param dhub = 8mm            // the disc's and the flywheel's bore for the shaft
 param grub = screw832_clearance     // a #8-32 set screw's clearance hole, rim to bore
@@ -152,15 +141,11 @@ param bossz = 20mm          // and deep, centred on the plate's mid-plane
 param bossh = 98mm          // its top, above the crank axis
 param Ty = 72mm             // the throttle barrel's centre, above the crank axis
 param rbar = 5mm            // the barrel
-param barbore = 10.2mm      // its bore in the boss
-param dhole = wch           // its cross-hole
 param lev = 22mm            // the throttle lever
 param levw = 4mm            // its width, and the hub's height off the boss
 param hubr = 4mm
 param throttle = 35deg      // the lever's angle off full open; 90 is shut
 param tor = oring010_cs     // a #010 O-ring (1/4" bore, 1/16" section)
-param torgb = 2 * rbar - 2 * (1 - oring_squeeze) * tor     // its groove's bottom, by the same rule
-param torw = oring_groove_w * tor
 param torz = 5.5mm          // the two seals' grooves, either side of the cross-hole
 param tback = 4mm           // the barrel runs this far past the boss's back
 param tretain = 1.5mm       // the retaining ring's groove, behind the boss's back face
@@ -170,28 +155,26 @@ param cplin = 18mm          // how deep it is set into the boss
 param cplhole = 16.5mm      // the boss's hole for it, epoxied
 param cplbore = npt14_drill // its bore, near enough: the tap drill for 1/4" NPT
 
-// Explicit design inputs shared by the components.
+// Component inputs: shared dimensions, selected hardware, and seal proportions.
+// Each part derives its private sizes from these; extra root-only values stay above.
 group vtwin_dims(
   D: D, H: H, L: L, R: R, Ty: Ty,
-  V: V, a: a, alphaL: alphaL, alphaR: alphaR, barbore: barbore,
-  beta: beta, boltH: boltH, boltac: boltac, boltaf: boltaf, boss: boss,
-  bossh: bossh, bossw: bossw, bossz: bossz, brgpocket: brgpocket, cb: cb,
-  clr: clr, cpl: cpl, cplbore: cplbore, cplhole: cplhole, cplin: cplin,
-  cpll: cpll, ct: ct, dhole: dhole, dhub: dhub, dpin: dpin,
-  dport: dport, dshaft: dshaft, fch: fch, footd: footd, footh: footh,
-  fwA: fwA, fwB: fwB, fx: fx, fy0: fy0, fy1: fy1,
-  groove: groove, grooveb: grooveb, groovew: groovew, grub: grub, head: head,
-  hubr: hubr, hw: hw, lev: lev, levw: levw, mplug_body_d: mplug_body_d,
+  V: V, a: a, alphaL: alphaL, alphaR: alphaR, beta: beta,
+  boltH: boltH, boltac: boltac, boltaf: boltaf, boss: boss, bossh: bossh,
+  bossw: bossw, bossz: bossz, brgpocket: brgpocket, clr: clr, cpl: cpl,
+  cplhole: cplhole, cplin: cplin, cpll: cpll, dhub: dhub, dport: dport,
+  fch: fch, footd: footd, footh: footh, fwA: fwA, fwB: fwB,
+  fx: fx, fy0: fy0, fy1: fy1, groove: groove, grub: grub,
+  head: head, hubr: hubr, lev: lev, levw: levw, mplug_body_d: mplug_body_d,
   mplug_body_l: mplug_body_l, mplug_nose_d: mplug_nose_d, mplug_nose_l: mplug_nose_l, nutH: nutH, nutT: nutT,
-  nutac: nutac, nutaf: nutaf, nutin: nutin, oring: oring, ph: ph,
-  pinclr: pinclr, pingrip: pingrip, pinhead: pinhead, pinheadH: pinheadH, pinpocket: pinpocket,
-  pinpocketd: pinpocketd, rbar: rbar, rbrg: rbrg, rdisc: rdisc, reye: reye,
-  rfw: rfw, rman: rman, rpin: rpin, rpl: rpl, rshaft: rshaft,
-  rstud: rstud, rt: rt, rw: rw, shafthole: shafthole, spring: spring,
-  studclr: studclr, swing: swing, tback: tback, tcylA: tcylA, tcylB: tcylB,
-  tdisc: tdisc, theta0: theta0, throttle: throttle, tor: tor, torgb: torgb,
-  torw: torw, torz: torz, tp: tp, trapd: trapd, trapfit: trapfit,
-  traph: traph, trapw: trapw, trapz: trapz, tretain: tretain, wall: wall,
-  wbrg: wbrg, wch: wch, wfw: wfw, wsh: wsh, zA: zA,
-  zB: zB, zdisc: zdisc, zfw: zfw
+  nutaf: nutaf, nutin: nutin, oring: oring, ph: ph, pinclr: pinclr,
+  pingrip: pingrip, pinhead: pinhead, pinheadH: pinheadH, pinpocket: pinpocket, rbar: rbar,
+  rbrg: rbrg, rdisc: rdisc, reye: reye, rfw: rfw, rman: rman,
+  rpin: rpin, rpl: rpl, rshaft: rshaft, rstud: rstud, rt: rt,
+  rw: rw, seal: seal_dims, shafthole: shafthole, spring: spring, studclr: studclr,
+  swing: swing, tback: tback, tdisc: tdisc, theta0: theta0, throttle: throttle,
+  tor: tor, torz: torz, tp: tp, trapfit: trapfit, traph: traph,
+  trapz: trapz, tretain: tretain, wall: wall, wbrg: wbrg, wch: wch,
+  wfw: wfw, wsh: wsh, zA: zA, zB: zB, zdisc: zdisc,
+  zfw: zfw
 )

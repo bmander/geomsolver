@@ -26,7 +26,7 @@ fn groups_pass_units_and_geometry_without_copying_it() {
 #[test]
 fn nested_groups_forward_through_components_and_repetitions() {
     let e = solved("unit mm\nuse std\n\
-        component Inner(d: group) { Loc(d.frame, u: d.sizes.width, v: 0mm) }\n\
+        component Inner(d: group) {\npoint tip hint(x: d.frame.origin.x + d.sizes.width * d.frame.c, y: d.frame.origin.y + d.sizes.width * d.frame.s)\nline axis(d.frame.origin, d.frame.toward)\ntip on axis\nd.frame.origin distance(d.sizes.width) tip\n}\n\
         component Outer(d: group) { repeat 2 { Inner(d) } }\n\
         Outer(design)\ngroup design(frame: std.front, sizes: sizes)\n\
         group sizes(width: 12mm)\n");
@@ -110,14 +110,14 @@ fn groups_do_not_create_new_unknowns_or_hide_invalid_definitions() {
 #[test]
 fn nested_calls_receive_only_the_arguments_written_at_the_call() {
     assert!(!build(r#"
-component Inner() { line edge(p, next.p) }
+component Inner() { line border(p, next.p) }
 cycle 3 {
   point p
   part: Inner()
 }
 "#).ok());
     let e = solved(r#"
-component Inner(a: point, b: point) { line edge(a, b) }
+component Inner(a: point, b: point) { line border(a, b) }
 cycle 3 as i {
   point p hint(x: i * 20, y: 0)
   ground p
@@ -167,4 +167,27 @@ p: Part(dims)
 "#);
     let (x, _) = e.sketch.point_xy(e.map.ent_named("p.b").unwrap().i());
     assert!((x - 36.0).abs() < 1e-8, "{x}");
+}
+
+#[test]
+fn standard_centered_rectangle_has_dimensioned_sides_and_a_private_diagonal() {
+    let mut e = build("unit mm\nuse std\npoint c hint(x: 7mm, y: -3mm)\nground c\nr: CenteredRectangle(c, w: 20mm, h: 12mm)");
+    assert!(e.ok(), "{:?}", e.diags);
+    for i in 0..e.sketch.points.len() {
+        for (axis, param) in e.sketch.point_params(i).into_iter().enumerate() {
+            if !e.sketch.params[param as usize].fixed {
+                e.sketch.params[param as usize].value += 0.2 * ((i * 5 + axis) as f64).sin();
+            }
+        }
+    }
+    assert!(solve::solve(&mut e.sketch, Default::default()).success);
+    assert_eq!(diagnose::diagnose(&mut e.sketch, Default::default()).dof, 0);
+    for (name, expected) in [("r.a", (-3.0, -9.0)), ("r.c", (17.0, 3.0))] {
+        let actual = e.sketch.point_xy(e.map.ent_named(name).unwrap().i());
+        assert!((actual.0 - expected.0).abs() < 1e-7 && (actual.1 - expected.1).abs() < 1e-7, "{actual:?}");
+    }
+    assert!(e.map.entity_path(&e.sketch, "r.loop").is_some());
+    assert!(e.map.entity_path(&e.sketch, "r.diagonal").is_none());
+    assert!(e.sketch.roles_of(e.map.ent_named("r.diagonal").unwrap()).construction);
+    assert!(!e.sketch.roles_of(e.map.ent_named("c").unwrap()).construction);
 }

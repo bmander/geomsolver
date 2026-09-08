@@ -29,6 +29,44 @@ export interface Abi {
   gcs_sketch_to_json(h: number, indent: number): number;
   gcs_sketch_to_program(h: number): number;
   gcs_curve_polyline(h: number, idx: number, out: number, cap: number): number;
+  gcs_envelope_sample(h: number, idx: number, u: number, v: number, roll: number, out: number): number;
+  gcs_surface_domain(h: number, idx: number, out: number): number;
+  gcs_surface_profile_bounds(h: number, idx: number, uMin: number, uMax: number, out: number): number;
+  gcs_edge_sample(h: number, idx: number, endpoints: number, fraction: number,
+    positionTolerance: number, normalTolerance: number, axisTolerance: number,
+    normalVelocityTolerance: number, incidenceTolerance: number, trimTolerance: number,
+    maxIterations: number, out: number): number;
+  gcs_spatial_face_loop(h: number, idx: number, out: number, capacity: number): number;
+  gcs_face_boundary_sample(h: number, idx: number, edge: number, fraction: number,
+    vertices: number, vertexCount: number, positionTolerance: number, normalTolerance: number,
+    axisTolerance: number, normalVelocityTolerance: number, incidenceTolerance: number,
+    trimTolerance: number, maxIterations: number, out: number): number;
+  gcs_boundary_vertex_domain(h: number, idx: number, axisTolerance: number, out: number): number;
+  gcs_boundary_vertex_position(h: number, idx: number, u: number, v: number, roll: number,
+    axisTolerance: number, normalVelocityTolerance: number, incidenceTolerance: number,
+    trimTolerance: number, out: number): number;
+  gcs_junction_vertex_domain(h: number, idx: number, positionTolerance: number,
+    normalTolerance: number, axisTolerance: number, out: number): number;
+  gcs_junction_vertex_position(h: number, idx: number, u: number, v: number, roll: number,
+    positionTolerance: number, normalTolerance: number, axisTolerance: number,
+    normalVelocityTolerance: number, incidenceTolerance: number, trimTolerance: number, out: number): number;
+  gcs_boundary_seam_domain(h: number, idx: number, axisTolerance: number, out: number): number;
+  gcs_boundary_seam_sample(h: number, idx: number, u: number, v: number, roll: number,
+    axisTolerance: number, normalVelocityTolerance: number, incidenceTolerance: number,
+    trimTolerance: number, out: number): number;
+  gcs_seam_domain(h: number, idx: number, positionTolerance: number,
+    normalTolerance: number, axisTolerance: number, out: number): number;
+  gcs_seam_sample(h: number, idx: number, u: number, v: number, roll: number,
+    positionTolerance: number, normalTolerance: number, axisTolerance: number,
+    envelopeTolerance: number, trimTolerance: number, out: number): number;
+  gcs_envelope_domain(h: number, idx: number, out: number): number;
+  gcs_patch_surface_sample(h: number, idx: number, u: number, v: number,
+    axisTolerance: number, trimTolerance: number, out: number): number;
+  gcs_patch_envelope_sample(h: number, idx: number, u: number, v: number, roll: number,
+    axisTolerance: number, normalTolerance: number, trimTolerance: number, out: number): number;
+  gcs_motion_sample(h: number, idx: number, angle: number, x: number, y: number, z: number, out: number): number;
+  gcs_surface_project(h: number, idx: number, x: number, y: number, z: number, out: number): number;
+  gcs_surface_sample(h: number, idx: number, u: number, v: number, out: number): number;
   gcs_counts_len(): number;
   gcs_program_elaborate(p: number, n: number): number;
   gcs_program_highlight(p: number, n: number): number;

@@ -6,6 +6,42 @@ use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::system::System;
 
 #[test]
+fn stopping_and_hard_residual_acceptance_are_separate_contracts() {
+    let mut start = Sketch::new();
+    let o = start.point(0.,0.,true,"o");
+    let p = start.point(10.000001,0.,false,"p");
+    start.add(Constraint::distance(EntRef::point(o),EntRef::point(p),10.));
+    for method in [Method::DogLeg,Method::Lm] {
+        // Intentionally stop at a residual adequate for editing but inadequate for
+        // shared analytic boundaries. A successful numerical exit cannot override
+        // the caller's accuracy requirement.
+        let opts = SolveOpts {method,tol:1e-4,retry:false,..Default::default()};
+        let loose = solve(&mut start.clone(),opts);
+        let strict = solve(&mut start.clone(),SolveOpts {acceptance_tol:1e-12,..opts});
+        assert_eq!(loose.status,0,"{loose:?}");
+        assert_eq!(strict.status,0,"{strict:?}");
+        assert!(loose.success && !strict.success,"{loose:?} {strict:?}");
+        assert_eq!(loose.max_residual,strict.max_residual);
+        let accurate = solve(&mut start.clone(),SolveOpts {
+            method,acceptance_tol:1e-12,..Default::default()});
+        assert!(accurate.success && accurate.max_residual < 1e-12,"{accurate:?}");
+    }
+}
+
+#[test]
+fn invalid_acceptance_limits_fail_before_mutating_the_sketch() {
+    let mut sk = examples::rect_fillets(100.,60.,10.,0.);
+    sk.perturb(1.,0);
+    let before = sk.get_x();
+    for tolerance in [0.,-1.,f64::NAN,f64::INFINITY] {
+        let result = solve(&mut sk,SolveOpts {acceptance_tol:tolerance,..Default::default()});
+        assert!(!result.success && result.status < 0,"{result:?}");
+        assert_eq!(result.nfev,0);
+        assert_eq!(sk.get_x(),before);
+    }
+}
+
+#[test]
 fn examples_solve_from_a_perturbed_start() {
     for name in examples::EXAMPLES {
         for method in [Method::DogLeg, Method::Lm] {

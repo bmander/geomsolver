@@ -17,6 +17,8 @@ use crate::system::System;
 
 #[derive(Clone, Debug)]
 pub struct SolveResult {
+    /// Hard residuals satisfy the caller's acceptance tolerance. This is independent
+    /// of why the numerical iteration stopped (`status`).
     pub success: bool,
     pub status: i32,
     pub message: String,
@@ -56,8 +58,13 @@ impl SolveResult {
 pub struct SolveOpts {
     pub method: Method,
     /// The residual, in each row's own units (`System::row_scale`), below which the iteration
-    /// stops; "solved" is the fixed 1e-6 on the same measure.
+    /// stops. This is separate from the hard-row acceptance criterion below.
     pub tol: f64,
+    /// Finite positive hard-row residual limit for success and the DogLeg-to-LM retry.
+    /// Defaults to the interactive solver's 1e-6. Analytic geometry can require tighter
+    /// accuracy without choosing an optimizer or reimplementing the retry policy.
+    /// This scaled equation residual is not a bound on spatial position error.
+    pub acceptance_tol: f64,
     pub max_nfev: i32,
     pub writeback: bool,
     pub max_iter: i32,
@@ -78,6 +85,7 @@ impl Default for SolveOpts {
         SolveOpts {
             method: Method::DogLeg,
             tol: 1e-14,
+            acceptance_tol: 1e-6,
             max_nfev: 0,
             writeback: true,
             max_iter: 100,
@@ -102,6 +110,12 @@ impl System {
     /// This is the one place the rule lives, so every caller gets it — the one-shot `solve`, the
     /// plan solver's fallback and a front end that compiled a system for itself alike.
     pub fn solve(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
+        if !opts.acceptance_tol.is_finite() || opts.acceptance_tol <= 0. {
+            let mut result = SolveResult::plain(opts.method.as_str(),false,f64::INFINITY,0);
+            result.status = -1;
+            result.message = "acceptance tolerance must be finite and positive".into();
+            return result;
+        }
         // a curve family's contact has no span to walk off, but a domain to be clamped to
         let rehome =
             opts.rehome && opts.writeback && !(self.spans().is_empty() && sk.curves.is_empty());
@@ -208,7 +222,7 @@ impl System {
         let res = SolveResult {
             // relative, not absolute: a radius kernel's residual is a length and a distance
             // kernel's is a length squared, so one absolute threshold cannot judge both
-            success: info.status >= 0 && rel < 1e-6,
+            success: info.status >= 0 && rel < opts.acceptance_tol,
             status: info.status,
             message: newton::status_message(info.status).to_string(),
             residual_norm: n2.sqrt(),
@@ -260,6 +274,7 @@ const PAIRED: SolveOpts = SolveOpts { rehome: false, ..NO_REHOME };
 const NO_REHOME: SolveOpts = SolveOpts {
     method: Method::DogLeg,
     tol: 1e-14,
+    acceptance_tol: 1e-6,
     max_nfev: 0,
     writeback: true,
     max_iter: 100,

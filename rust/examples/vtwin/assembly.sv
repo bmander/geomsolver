@@ -56,21 +56,21 @@ bankL: Bank(crank.pin, plate.l.piv, fw: fwA, dim: 0, dims: vtwin_dims) in views.
 // ordinates are measured from the plate's front face, which stands half a thickness in front of
 // the plate's own zero: the plate is sectioned on its mid-plane (`components.frame`), and a solid's
 // derived view stands where its plane's origin is
-point so hint(x: -tp / 2, y: 0) in views.right
-views.right_origin distance(tp / 2, along: x) so
+point so hint(x: views.right_origin.x - tp / 2, y: 0) in views.right
+views.right_origin distance(-tp / 2, along: x) so
 views.right_origin distance(0, along: y) so       // the same height: the crank axis
 side: SideView(so, dims: vtwin_dims) in views.right
 
 // the two views agree: every height the side view shows is the front view's
 crank.pin project side.pin_s             // the pin
 plate.r.piv project side.pv              // a pivot
-bankR.cyl.k_tl.p project side.cyB_top    // bank R (bank B, the thicker) is nearest in the side view
-bankR.cyl.k_br.p project side.cyB_bot
-bankL.cyl.k_tr.p project side.cyA_top
-bankL.cyl.k_bl.p project side.cyA_bot
-bankR.cyl.b_tl.p project side.boB_top    // and each bore's, which is a rod further from the plate on B
-bankR.cyl.b_br.p project side.boB_bot
-bankL.cyl.b_tr.p project side.boA_top
-bankL.cyl.b_bl.p project side.boA_bot
+bankR.cyl.k_tl project side.cyB_top    // bank R (bank B, the thicker) is nearest in the side view
+bankR.cyl.k_br project side.cyB_bot
+bankL.cyl.k_tr project side.cyA_top
+bankL.cyl.k_bl project side.cyA_bot
+bankR.cyl.b_tl project side.boB_top    // and each bore's, which is a rod further from the plate on B
+bankR.cyl.b_br project side.boB_bot
+bankL.cyl.b_tr project side.boA_top
+bankL.cyl.b_bl project side.boA_bot
 
 // how it looks

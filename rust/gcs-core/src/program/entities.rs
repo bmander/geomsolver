@@ -236,7 +236,7 @@ pub(super) fn build(
     let idx = match d.kind {
         // built by their own phase, after every other kind: a face is written over edges and a
         // solid over faces and solids, so neither can be minted by the walk that makes points
-        EntKind::Face | EntKind::Solid => return None,
+        EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => return None,
         EntKind::Point if unseeded => {
             let (x, y) = scatter(sk.points.len());
             sk.point(x, y, false, &show)
@@ -497,5 +497,12 @@ fn set_class(sk: &mut Sketch, e: EntRef, c: Classes) {
         EntKind::Plane => sk.planes[e.i()].frame.class = c,
         EntKind::Face => sk.faces[e.i()].class = c,
         EntKind::Solid => sk.solids[e.i()].class = c,
+        EntKind::Surface => sk.surfaces[e.i()].class = c,
+        EntKind::Motion => sk.motions[e.i()].class = c,
+        EntKind::Envelope => sk.envelopes[e.i()].class = c,
+        EntKind::Patch => sk.patches[e.i()].class = c,
+        EntKind::Seam => sk.seams[e.i()].class = c,
+        EntKind::Vertex => sk.vertices[e.i()].class = c,
+        EntKind::Edge => sk.edges[e.i()].class = c,
     }
 }

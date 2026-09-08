@@ -21,7 +21,7 @@ use crate::constraints::{CKind, Fixity};
 use crate::model::EntKind;
 use crate::style::{Classes, Style};
 pub(crate) use names::{build_rank, decl_head, ref_text, under_root};
-pub(crate) use print::{decl_args, decl_tail, hint_clause, hint_xy};
+pub(crate) use print::{decl_args, hint_clause, hint_xy};
 
 /// A component point traced over a numeric formal, with domain endpoints kept as expressions.
 #[derive(Clone, Debug)]
@@ -223,6 +223,7 @@ pub enum StmtKind {
 /// enclosing scope; this value groups their traversal without copying their geometry.
 #[derive(Clone, Debug)]
 pub struct NamedChain {
+    pub annotations: crate::semantics::Annotations,
     pub name: DeclName,
     pub links: Vec<Ref>,
     pub closed: bool,
@@ -301,6 +302,7 @@ pub struct SolidRel {
 
 #[derive(Clone, Debug)]
 pub struct Instance {
+    pub annotations: crate::semantics::Annotations,
     /// A written instance name, or a private `#i…` key for an unnamed call.
     pub name: Name,
     pub component: Name,
@@ -552,6 +554,7 @@ impl DeclName {
 /// `spline s0(p3, p4, p5, p6) knots [...]`.
 #[derive(Clone, Debug)]
 pub struct Decl {
+    pub annotations: crate::semantics::Annotations,
     pub kind: EntKind,
     /// The name **and what it is** — see `DeclName`.  Written where it is known first-hand and
     /// nowhere else: the parser either took an identifier or declined to (minting a key), and
@@ -603,6 +606,9 @@ pub struct Decl {
     /// How a solid is swept (§6.9): a prism along the plane's normal, a revolution about a line
     /// in it, or a body over other solids.  `None` for every other kind.
     pub sweep: Option<Sweep>,
+    pub motion: Option<MotionSpec>,
+    /// A source surface's angular span or an envelope's roll interval.
+    pub angular_span: Option<AngularSpan>,
     /// The plane this declaration's points are on — `point a in top`, and for a line, a circle,
     /// an arc, a spline or an ellipse, every point it mints or names (§6.7).  Its span is at
     /// the end of the trailers, so an appended clause lands after `hint`/`class` and never
@@ -766,12 +772,44 @@ impl Attitude {
     }
 }
 
+/// A declared angular domain; it is data, not a solver unknown or hint.
+#[derive(Clone, Debug)]
+pub struct AngularSpan {
+    pub from: Arg,
+    pub to: Arg,
+}
+
+/// A rigid rotation or relative motion over one shared angular parameter.
+#[derive(Clone, Debug)]
+pub enum MotionSpec {
+    Rotation { axis: Ref, ratio: Option<Arg>, phase: Option<Arg> },
+    Relative { source: Ref, observer: Ref },
+}
+
+impl MotionSpec {
+    pub fn refs_mut(&mut self) -> Vec<&mut Ref> {
+        match self {
+            Self::Rotation {axis,..} => vec![axis],
+            Self::Relative {source,observer} => vec![source,observer],
+        }
+    }
+
+    pub fn args_mut(&mut self) -> Vec<&mut Arg> {
+        match self {
+            Self::Rotation {ratio,phase,..} => ratio.iter_mut().chain(phase.iter_mut()).collect(),
+            Self::Relative {..} => vec![],
+        }
+    }
+}
+
 /// A prism, revolution, or body operation (§6.9). Numeric arguments remain
 /// expressions until elaboration.
 #[derive(Clone, Debug)]
 pub enum Sweep {
     /// `from: a, to: b` — signed ordinates along the plane's normal.
     Prism { from: Arg, to: Arg },
+    /// One section repeated, or two sections interpolated, along a directed guide.
+    Along { guide: Ref },
     /// A positive magnitude, kept until elaboration can validate its evaluated expression.
     Depth { depth: Arg },
     /// Span the target's stock and additions along the section normal.
@@ -793,7 +831,7 @@ impl Sweep {
             Sweep::Prism { from, to } => vec![from, to],
             Sweep::Depth { depth } => vec![depth],
             Sweep::Revolve { sweep, .. } => sweep.iter_mut().collect(),
-            Sweep::Body | Sweep::Through { .. } => Vec::new(),
+            Sweep::Body | Sweep::Through { .. } | Sweep::Along { .. } => Vec::new(),
         }
     }
 
@@ -802,6 +840,7 @@ impl Sweep {
         match self {
             Sweep::Revolve { axis, .. } => Some(axis),
             Sweep::Through { body } => Some(body),
+            Sweep::Along { guide } => Some(guide),
             Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body => None,
         }
     }
@@ -810,6 +849,7 @@ impl Sweep {
         match self {
             Sweep::Revolve { axis, .. } => Some(axis),
             Sweep::Through { body } => Some(body),
+            Sweep::Along { guide } => Some(guide),
             Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body => None,
         }
     }

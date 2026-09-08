@@ -133,6 +133,7 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             write_ref(out, &r.body);
         }
         StmtKind::Instance(i) => {
+            i.annotations.write(out);
             if !i.name.text.starts_with('#') {
                 out.push_str(&format!("{}: ", i.name.text));
             }
@@ -221,6 +222,7 @@ fn write_curve_spec(out: &mut String, c: &CurveSpec) {
 }
 
 fn write_decl(out: &mut String, d: &Decl) {
+    d.annotations.write(out);
     let kw = d.kind.as_str();
     out.push_str(kw);
     // an anonymous declaration has no name to spell — its key is the elaboration's, not the
@@ -294,6 +296,11 @@ fn attitude_parts(a: &Attitude) -> Vec<String> {
 fn sweep_parts(s: &Sweep) -> Vec<String> {
     match s {
         Sweep::Body => Vec::new(),
+        Sweep::Along { guide } => {
+            let mut text = String::from("along: ");
+            write_ref(&mut text, guide);
+            vec![text]
+        },
         Sweep::Through { body } => {
             let mut text = String::from("through: ");
             write_ref(&mut text, body);
@@ -349,7 +356,8 @@ pub(crate) fn decl_args(d: &Decl) -> String {
                 child += 1;
                 for (i, k) in kids.iter().enumerate() {
                     let mut s = String::new();
-                    if (label && *field == Field::Child) || (d.kind == EntKind::Face && *name == "holes" && i == 0) {
+                    if (label && *field == Field::Child) || d.kind == EntKind::Patch
+                        || (d.kind == EntKind::Face && *name == "holes" && i == 0) {
                         s.push_str(name);
                         s.push_str(": ");
                     }
@@ -370,6 +378,24 @@ pub(crate) fn decl_args(d: &Decl) -> String {
     parts.extend(attitude_parts(&d.attitude));
     if let Some(sweep) = &d.sweep {
         parts.extend(sweep_parts(sweep));
+    }
+    if let Some(e) = &d.angular_span {
+        parts.push(format!("from: {}",dim(&e.from)));
+        parts.push(format!("to: {}",dim(&e.to)));
+    }
+    if let Some(motion) = &d.motion {
+        use super::MotionSpec;
+        match motion {
+            MotionSpec::Rotation {axis,ratio,phase} => {
+                parts.push(format!("about: {}",super::ref_text(axis)));
+                if let Some(a) = ratio { parts.push(format!("ratio: {}",dim(a))); }
+                if let Some(a) = phase { parts.push(format!("phase: {}",dim(a))); }
+            }
+            MotionSpec::Relative {source,observer} => {
+                parts.push(super::ref_text(source));
+                parts.push(format!("relative_to: {}",super::ref_text(observer)));
+            }
+        }
     }
     // and a face's loop seals last, where it was written (§6.8)
     if d.close.is_some() {

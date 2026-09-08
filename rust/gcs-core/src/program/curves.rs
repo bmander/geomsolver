@@ -51,6 +51,11 @@ fn compile_curve(
     if let Some(d) = ex.diagnostics.iter().find(|d| d.severity() == Severity::Error) {
         return Err((d.span, d.message.clone()));
     }
+    if let Some(member) = ex.private_names.keys().find(|member| {
+        point == member.as_str() || point.strip_prefix(member.as_str()).is_some_and(|tail| tail.starts_with('.'))
+    }) {
+        return Err((comp.span, format!("`{point}` names private member `{member}`")));
+    }
     let traced = ex.aliases.get(point).cloned().unwrap_or_else(|| point.to_string());
     if formals.iter().any(|(n, _)| *n == traced) {
         return Err((

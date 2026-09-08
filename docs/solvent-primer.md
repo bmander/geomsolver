@@ -67,6 +67,7 @@ in REF { statement* }                   every declaration inside is drawn in tha
 face NAME(EDGE, ..., holes: LOOP, ...)  a planar region with optional holes        (1.14)
 solid NAME(FACE, SWEEP...)              that face swept: depth:/from:/to:, about:   (1.14)
 solid NAME(SOLID)                       a body, made of a stock
+surface NAME(SOLID, edge: EDGE)         an exact analytic patch of a revolution
 REF on REF  |  REF through REF          material added to, or taken from, a body    (1.14)
 section(SOLID, at: REF) in REF          the same, cut at a plane
 WORD[(ARGS)] REF  |  REF WORD[(ARGS)] REF
@@ -157,17 +158,16 @@ p distance(-3mm, along: v) f
 
 Each ordinate is an ordinary constraint. Either can be zero, negative, or an unknown solved
 by other constraints. The datum can move in response to constraints on `p`, including constraints
-outside the component that declares it. `std` groups the two statements and useful hints:
+outside the component that declares it. Plane membership is independent: `point p in front`
+assigns membership, while a relation to `f` measures against that datum. `in` on a component
+instance passes membership through its nested components. No component owns an implicit frame.
 
-```sv
-use std
-corner: Loc(f, u: 20mm, v: -3mm) in front
-```
-
-Here `f` places the point and `front` identifies its plane independently. `in` on an instance
-passes membership through its nested components. A component that only forwards membership
-can omit a plane formal and let its caller supply `in front`. A component spanning several
-planes can still accept and name each plane explicitly. No component owns an implicit frame.
+**Model relationships, not a table of point coordinates.** A rectangle states perpendicular
+sides, width, height, and its position relative to a datum. A bolt pattern states a pitch circle
+and angular spacing. Use an ordinate when the design calls for a datum measurement, rather
+than assigning two ordinates to every corner. Coordinate-placement helpers are not part of the
+standard library. Hints may calculate useful starting coordinates; the constraints must still
+express the part's geometry independently of those hints.
 
 A component file can end with `preview { … }`: put its sample datums, parameter values and
 instance there. Opening the file previews those statements in the ordinary solve. Importing
@@ -196,11 +196,8 @@ stays on the page, or write `in std.front` to assign membership explicitly.
 
 
 Hints can read `f.c` and `f.s`, the dimensionless cosine and sine of its starting direction,
-or `f.angle`. `Loc` uses these to seed its point. Its signed constraints determine the side of
-each axis; changing a hint cannot mirror the part while keeping those constraints satisfied.
-When a numeric formal is left unbound, hints use a provisional zero for it while its
-constraints retain the unknown. Thus `corner: Loc(f)` can have both coordinates solved
-by constraints elsewhere.
+or `f.angle`. When a numeric formal is left unbound, hints use a provisional zero for it while
+constraints retain the unknown. This does not make a hint a constraint or fix the resulting point.
 
 ### 1.5 Constraints
 
@@ -260,8 +257,7 @@ Every direction in the language is a **word**, and the sign behind it is stated 
 **A distance measured from a line is a magnitude**: a negative one is refused, and which side is
 `side:`. A component that must work either way up takes a `Side` formal (`s: Side`, called as
 `Part(…, s: right)`) and writes `side: s`. Where a side is *arithmetic* rather than a
-convention, use a signed datum ordinate (`p distance(v, along: v) f`). `Loc(f, u: …, v: …)`
-states both signed ordinates; its hints only choose a starting configuration.
+convention, a signed datum ordinate (`p distance(v, along: v) f`) can state the measurement.
 
 The run, the rise and the angle keep their signs, because there the sign is arithmetic a
 component computes (`dy` is a coordinate; `alphaL` is a bank leaning the other way). The words
@@ -416,6 +412,43 @@ A component reads its arguments and its own declarations. Root and module parame
 geometry, and standard datums must be passed in. Visible component definitions and built-in
 functions remain available. Repetition blocks share the enclosing component's local scope.
 
+`use std` provides an axis-aligned rectangle centered on an existing point:
+
+```solvent
+outer: CenteredRectangle(center, w: 18mm, h: 18mm)
+inner: CenteredRectangle(center, w: 14mm, h: 14mm)
+face section(outer.loop, holes: inner.loop)
+```
+
+Its public `loop` is the rectangular boundary, and `a`, `b`, `c`, `d` are its corners.
+The diagonal that constrains its center is private construction geometry. Width and height
+are constrained dimensions; the coordinate hints only select the initial arrangement.
+
+Members are public by default. Prefix a helper declaration or instance with `private` to keep
+its name within the enclosing component. `construction` and `centerline` describe geometry's
+purpose independently of privacy. A supporting axis can carry both roles. The editor shows
+construction geometry; authored drawing sheets hide it unless a style reveals it.
+
+A reusable pattern can hide its polygon layout while exposing its holes:
+
+```solvent
+component BoltPattern(body: solid, center: point, ref: line,
+                      n: Int, pitch_r: Length, hole_r: Length, phase: Angle) {
+  private construction layout: Polygon(center, ref, n: n, r: pitch_r, phase: phase)
+  repeat n as i {
+    radius(hole_r) circle hole(center: layout.v[i])
+    private solid drill(face(hole), through: body)
+    drill cut body
+  }
+}
+```
+
+`use hardware` provides this component (`n >= 3`); see `rust/examples/solid_flange.sv`.
+Callers can reference `pattern.hole[0]`, but cannot name `pattern.layout` or `pattern.drill[0]`.
+The polygon's geometry is construction geometry; the holes and the caller's center and reference
+line retain their own roles. A component can pass a private entity explicitly to another component.
+Passing an entire layout does not grant access to private members inside it.
+
 Use a **group** to pass related dimensions or layout geometry together:
 
 ```solvent
@@ -425,8 +458,12 @@ use std
 group sizes(length: 20mm)
 group layout(frame: std.front, origin: std.origin)
 component Bar(layout: group, dims: group) {
-  tip: Loc(layout.frame, u: dims.length, v: 0mm)
-  line axis(layout.origin, tip.p)
+  point tip hint(x: layout.origin.x + dims.length * layout.frame.c,
+                 y: layout.origin.y + dims.length * layout.frame.s)
+  line reference(layout.frame.origin, layout.frame.toward)
+  line axis(layout.origin, tip)
+  axis parallel reference
+  distance(dims.length) axis
 }
 bar: Bar(layout, dims: sizes)
 ```
@@ -444,6 +481,13 @@ reachable by dotted name (`c.p`, `t0.e`, `five.s[0].p1`, and a dimension named i
 `t0.w`) — there is no export list, and passing
 one instance's entity to another as an argument makes the two one entity. (`port` is retired;
 a document that writes one is told what to write instead.)
+
+The V-twin example distinguishes shared design inputs from private derived dimensions.
+Its bore, throw, rod length, piston height, and wall thickness determine the cylinder mouth,
+width, and top. The head position stays shared because it also locates the ports. Hardware
+choices determine mating pockets and holes with explicit clearances; the bearing boss follows
+the bearing stack. Piston and throttle derive their grooves locally from the selected ring and
+`dims.seal`. Changing a source dimension therefore carries its dependent features with it.
 
 ### 1.9 Curves
 
@@ -657,7 +701,7 @@ are edges listed out of order. For the same reason an edge standing between two 
 `face bad(a, bc, d, -> close)` could be walked `b`-first or `c`-first, and nothing there says
 which — so an edge takes its direction from a neighbour it actually meets.
 
-**A solid** is that face swept, one of two ways.
+**A solid** is that face swept along its normal, along a guide, or about an axis.
 
 **A face may be written where it is used.** A section needed by one sweep can go directly in its
 brackets, without a separate name:
@@ -678,8 +722,163 @@ A **prism** runs along the face's own normal. `depth: 30mm` is the draughtsman's
 material *behind* the face the view shows, which is `from: -30mm, to: 0mm` — and `from:`/`to:` are
 written out when the face is somewhere other than an end, as a boss standing off a floor is below.
 
+A **guided sweep or loft** follows solved geometry:
+
+```
+solid duct(section, along: guide)
+solid reducer(inlet.profile, outlet.profile, along: guide)
+```
+
+The guide is a directed line or circular arc. The start section lies perpendicular to the
+start tangent; an explicit end section lies perpendicular to the end tangent at the other end.
+Omitting the end section repeats the start section. Along a line the section translates; along
+an arc it turns with the tangent. A loft interpolates between corresponding section boundaries
+in that moving frame. Holes pair in written order, and each pair of loops needs the same number
+of source edges. Side names come from the inlet; the caps are `start` and `end`.
+
+The `solid_elbow` example uses a constrained arc and one hollow `CenteredRectangle` section.
+`solid_loft` joins two hollow square components with a dimensioned line. Their lengths and
+shapes follow the guide and section relationships after solving.
+
 A **revolution** turns the face about a line **in the face's own plane**: `about: ax` is a full
 turn, `sweep: 90deg` is a quarter of one, and `sense: cw` turns it the other way.
+
+An **analytic surface** names one of that revolution's profile boundaries:
+
+```sv
+surface flank(crown, edge: rack.outer)
+surface root_transition(crown, edge: rack.outer_round)
+```
+
+The edge must be a line, circular arc or circle belonging to the unmodified revolution's
+profile. The surface follows solved dimensions and retains exact positions and tangents;
+it adds no unknowns and has no 2D drawing glyph. It can be public or private and passed through
+a `surface` component formal. `solid` and `edge` are its dependency fields. Evaluation uses
+normalized edge and revolution parameters, both from 0 to 1. Tangent orientation follows
+the declared traversal; it does not decide which side of the surface contains material.
+
+Write `from:` and `to:` angles to retain part of the generating revolution:
+
+```sv
+surface flank(crown, edge: rack.outer, from: 180deg, to: 360deg)
+```
+
+Angles follow the source's sweep direction. Both bounds must lie within that sweep. They
+restrict the original parameter range, so this half of a full revolution has `v` from 0.5
+to 1. Its parameters and tangent directions stay unchanged. Envelope evaluators inherit
+the declared span; a caller reads the domain instead of supplying its own branch limits.
+
+A **motion** describes how generating geometry moves relative to another rotating member:
+
+```sv
+motion crown(about: crown_axis)
+motion blank(about: blank_axis, ratio: 2, phase: 10deg)
+motion generating(crown, relative_to: blank)
+```
+
+All three use one shared angle. The first turns about the directed `crown_axis` line; the
+second turns about `blank_axis` through twice that angle plus 10 degrees. `generating` is
+the crown viewed in the rotating blank frame. Axes come from solved world geometry, and
+these declarations add no unknown coordinates. Defaults are ratio 1 and phase 0deg.
+A motion can be private or passed through a `motion` component formal. Core and browser
+evaluation use radians and return exact position and velocity per radian. A motion family
+does not move the sketch itself.
+
+Name its generated envelope with:
+
+```sv
+envelope flank(crown_flank, under: generating, from: -35deg, to: 35deg)
+```
+
+This describes the source surface's zero-normal-velocity locus over the stated roll interval.
+It adds no sketch unknowns. An evaluator can intersect that locus with two section equations;
+the core checks the envelope equation as well as those equations. An arbitrary transformed
+source point is not necessarily on the envelope. Private construction envelopes and public
+`envelope` formals follow the same component rules as surfaces and motions. Declaring the
+envelope does not choose a branch, designate material, or close a solid. The core can intersect
+an envelope with two named analytic boundary patches and checks that the result belongs to
+their finite domains. The spiral-bevel example uses ordinary components for its spherical
+toe/heel and conical tip/root/back boundaries.
+
+A spatial patch can state which material region retains a source surface or envelope:
+
+```sv
+patch bounded(flank, inside: tip_body, inside: heel_body,
+              outside: root_body, outside: toe_body)
+```
+
+Each condition names a solid and includes its boundary. All conditions must hold. The
+current analytic evaluator accepts full revolutions with line or circular profile edges,
+including holes. Its point queries use the curves themselves and explicit numerical
+tolerances. A patch still needs a selected branch and oriented boundary loops before it can
+participate in checked closed-solid assembly; those capabilities are the next step.
+
+Where two generated faces meet tangentially at a shared vertex of their source profile,
+name their common characteristic once:
+
+```sv
+seam flank_join(flank_region, transition_region)
+```
+
+The operands can be envelopes or trimmed patches of envelopes. They must share the source
+revolution, generating motion and one actual profile vertex. The evaluator checks tangency
+after solving and checks both faces when finding a seam point. This lets a flank and its
+root fillet refer to the same boundary geometry. Oriented uses of these curves in closed
+face loops are still needed for solid assembly.
+
+An envelope also meets a finite boundary surface along a named seam:
+
+```sv
+seam tip_edge(flank_region, tip.wall)
+seam toe_edge(flank_region, toe.wall)
+```
+
+Here the generated face comes first and a surface reference comes second. The evaluator
+checks both the envelope equation and incidence with the finite boundary, plus the face's
+material conditions. A tip cone or toe sphere therefore belongs in the model; the verifier
+can read these named edges instead of rebuilding their intersection equations.
+
+Name shared corners through their incident seams:
+
+```sv
+vertex tip_toe(tip_edge, toe_edge)
+vertex join_toe(flank_join, toe_edge)
+```
+
+The first form meets two finite boundaries on the same named generated face. The second
+meets a generating junction with a boundary on one of its faces. The core checks every
+defining face and its material conditions; a loose seam-coincidence tolerance cannot
+substitute for a tighter boundary-incidence check. A vertex owns no planar coordinates.
+Repeated uses share its declared identity, while separately declared coincident vertices
+remain distinct. Local evaluation and root finding do not yet choose a globally unique
+branch or assemble the surrounding faces into an analytic solid.
+
+Give a seam finite extent between those corners:
+
+```sv
+edge toe_span(toe_edge, from: join_toe, to: tip_toe, along: shaft_axis)
+```
+
+`along` supplies a geometric slicing direction. A fraction from zero to one selects a
+plane perpendicular to that line between the endpoint projections; the evaluator solves
+for the seam point in that plane. It checks actual curved geometry and reuses the named
+corners at the ends. The evaluator currently checks local slices, so global branch
+uniqueness, turning points and curve approximation bounds still need validation before
+analytic solid assembly.
+
+An ordered finite-edge loop can now name its analytic support:
+
+```sv
+face working(toe_span, tip_span, heel_span, join_span, on: flank_region)
+face transition(round_toe_span, join_span, round_heel_span, root_span, on: fillet_region)
+```
+
+Both faces share `join_span` and traverse it in opposite directions. Each edge must
+belong to the exact named support, and the loop closes through shared corner identities.
+The face reader maps boundary parameters into that support's chart and checks incidence.
+An `on:` face is spatial and cannot be extruded as a planar profile. These boundary
+declarations still need interior and closed-solid validation; see
+[Analytic face boundaries](analytic-face-boundaries.md).
 
 ```
 unit mm

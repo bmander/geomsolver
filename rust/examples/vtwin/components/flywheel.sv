@@ -18,9 +18,13 @@ component Flywheel(f: plane, dims: group) {
   radius(dims.rfw) rim
   circle bore(center: f.origin) hint(r: dims.dhub / 2)
   radius(dims.dhub / 2) bore
-  se: Loc(f, u: 0mm, v: -dims.rfw)
-  line ssa(f.origin, se.p)
-  plane screw_axes(origin: f.origin, toward: se.p)
+  point se hint(x: f.origin.x + (0mm) * f.c - (-dims.rfw) * f.s,
+                    y: f.origin.y + (0mm) * f.s + (-dims.rfw) * f.c)
+  line ssa(f.origin, se)
+  line reference(f.origin, f.toward)
+  se on rim
+  ssa perpendicular reference
+  plane screw_axes(origin: f.origin, toward: se)
   gs: Grub(screw_axes, rin: dims.dhub / 2, rout: dims.rfw, dims: dims)
 
   // -- the solid: the section's faces swept, and the body their one rule (§6.9) ----------------

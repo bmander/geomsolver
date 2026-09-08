@@ -7,3 +7,5 @@ web/dist/
 web/src/wasm/gcs.wasm
 # what tools/overlay.mjs generates for a run (kept only with --keep)
 web/tools/.overlay-*
+# Independent geometry-verification scripts generate Python bytecode locally.
+__pycache__/

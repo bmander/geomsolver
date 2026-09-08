@@ -872,7 +872,7 @@ impl CKind {
     /// A distance *from a line* is a magnitude too now (issue #48, item 4): the sign used to say
     /// which side, which is a word (`side: left`) — and left as a number it was a coin a reader
     /// could only check by rendering.  Since a component's formals are substituted before this is
-    /// asked, `Loc(v: -hw)` is caught at the call and not silently turned into the other side.
+    /// asked, `p distance(-hw) axis` is caught at the call and not silently turned into the other side.
     pub fn magnitude(self) -> bool {
         matches!(
             self,

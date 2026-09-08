@@ -39,6 +39,7 @@ pub enum Operation {
 
 #[derive(Clone, Debug)]
 pub struct Decl {
+    pub roles: crate::semantics::GeometryRoles,
     pub kind: EntKind,
     pub name: DeclName,
     pub children: Vec<Vec<Kid>>,
@@ -56,6 +57,8 @@ pub struct Decl {
     pub seed_names: Vec<(String, String)>,
     pub attitude: Attitude,
     pub sweep: Option<Sweep>,
+    pub motion: Option<syntax::MotionSpec>,
+    pub angular_span: Option<syntax::AngularSpan>,
     pub membership: Membership,
 }
 
@@ -65,6 +68,7 @@ pub type Kid = syntax::Kid<Decl>;
 impl From<syntax::Decl> for Decl {
     fn from(d: syntax::Decl) -> Self {
         Self {
+            roles: d.annotations.roles,
             kind: d.kind,
             name: d.name,
             children: d.children.into_iter().map(|g| {
@@ -93,6 +97,8 @@ impl From<syntax::Decl> for Decl {
             seed_names: d.seed_names,
             attitude: d.attitude,
             sweep: d.sweep,
+            motion: d.motion,
+            angular_span: d.angular_span,
             membership: d.membership,
         }
     }

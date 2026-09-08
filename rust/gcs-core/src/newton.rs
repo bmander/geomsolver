@@ -152,6 +152,10 @@ pub trait TrustRegion {
     fn j_mul(&mut self, v: &[f64], out: &mut [f64]);
     /// p <- the Gauss–Newton step solving J p ≈ −r (minimum norm where the path reports a rank).
     fn gn_step(&mut self, r: &[f64], g: &[f64], p: &mut [f64]);
+    /// Restrict a proposed step to a known domain before evaluating it. The default has
+    /// no bounds. Implementations must not increase the step norm; convergence still
+    /// requires the original residuals, including at a domain boundary.
+    fn restrict_step(&self, _z: &[f64], _p: &mut [f64]) {}
     /// Numerical rank of J, or -1 where the path does not produce one.
     fn rank(&self) -> i32 {
         -1
@@ -237,6 +241,7 @@ pub fn dogleg<T: TrustRegion + ?Sized>(
                 }
             }
         }
+        t.restrict_step(z, &mut p);
         let pnorm = norm(&p);
         if pnorm < tol.xtol * (1.0 + norm(z)) {
             status = 1;

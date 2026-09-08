@@ -353,6 +353,7 @@ impl<'a> P<'a> {
                 }
                 self.end_of_stmt();
                 Some(StmtKind::Instance(Instance {
+                    annotations: Default::default(),
                     name,
                     component,
                     args,
@@ -367,6 +368,55 @@ impl<'a> P<'a> {
 
     /// Parse a statement or desugar a chain, recovering at the next terminator on failure.
     pub(super) fn chain_or_one(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
+        let start = self.here();
+        let mut annotations = crate::semantics::Annotations::default();
+        let mut marked = false;
+        loop {
+            let slot = if self.peek_word("private") { &mut annotations.private }
+                else if self.peek_word("construction") { &mut annotations.roles.construction }
+                else if self.peek_word("centerline") { &mut annotations.roles.centerline }
+                else { break };
+            if *slot { self.fail("a geometry modifier may be stated only once"); return None; }
+            *slot = true;
+            marked = true;
+            self.i += 1;
+        }
+        if marked && self.peek_word("in") {
+            self.fail("put geometry modifiers on declarations or component instances inside the plane block");
+            return None;
+        }
+        let first = out.len();
+        let result = self.unannotated_chain_or_one(next_id, out);
+        if marked && result.is_some() {
+            let mut geometry = false;
+            for st in &mut out[first..] {
+                let slot = match &mut st.kind {
+                    StmtKind::Decl(d) => Some(&mut d.annotations),
+                    StmtKind::Instance(i) => Some(&mut i.annotations),
+                    StmtKind::Chain(c) => Some(&mut c.annotations),
+                    // A chain emits its constraints beside the geometry it declares.
+                    StmtKind::Relation(_) if st.chained != Chained::No => None,
+                    _ => {
+                        self.errs.push(SynErr { span: start,
+                            message: "geometry modifiers apply to declarations, chains, or component instances".into() });
+                        None
+                    }
+                };
+                if let Some(slot) = slot { *slot = annotations; geometry = true; }
+            }
+            if !geometry { self.errs.push(SynErr { span: start,
+                message: "a geometry modifier needs a declaration or component instance".into() }); }
+            // The modifier belongs to geometry, not a desugared unary constraint. Removing
+            // `radius(...)` from `construction radius(...) circle c` must retain the role.
+            if let Some(st) = out[first..].iter_mut().find(|st|
+                matches!(st.kind, StmtKind::Decl(_) | StmtKind::Instance(_) | StmtKind::Chain(_))) {
+                st.span.lo = start.lo;
+            }
+        }
+        result
+    }
+
+    fn unannotated_chain_or_one(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
         self.declined = None;
         // `in top { … }` before anything else: `in` opens no chain and no statement of any
         // other kind — the one look this could be confused with is an instance named `in`,
@@ -458,6 +508,7 @@ impl<'a> P<'a> {
             let point = self.refr()?;
             let at = lo;
             let inst = Instance {
+                annotations: Default::default(),
                 // a key the source cannot write, as an anonymous declaration's is
                 name: Name { text: format!("#c{at}"), span: Span::new(at, at) },
                 component,

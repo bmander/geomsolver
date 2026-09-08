@@ -21,6 +21,13 @@ pub fn kind_initial(k: EntKind) -> char {
         // solid's `b0` — a *body*, since `s` is taken and a solid is what a body is
         EntKind::Face => 'f',
         EntKind::Solid => 'b',
+        EntKind::Surface => 't',
+        EntKind::Motion => 'm',
+        EntKind::Envelope => 'e',
+        EntKind::Patch => 'h',
+        EntKind::Seam => 'j',
+        EntKind::Vertex => 'w',
+        EntKind::Edge => 'k',
         EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline => {
             k.as_str().chars().next().expect("every kind name has a letter")
         }

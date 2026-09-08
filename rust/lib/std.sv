@@ -58,6 +58,21 @@ component ThreeViews(o: point, right: Length, up: Length) {
   plane top(origin: top_origin, toward: qt, from: front, fold: 0deg)
 }
 
+// An axis-aligned rectangle about a supplied center. The public loop is a face boundary;
+// the diagonal only constrains the center and stays private construction geometry.
+component CenteredRectangle(center: point, w: Length, h: Length) {
+  point a hint(x: center.x - w / 2, y: center.y - h / 2)
+  point b hint(x: center.x + w / 2, y: center.y - h / 2)
+  point c hint(x: center.x + w / 2, y: center.y + h / 2)
+  point d hint(x: center.x - w / 2, y: center.y + h / 2)
+  loop = horizontal line ab(a, b) -> vertical line bc(b, c) ->
+         horizontal line cd(c, d) -> vertical line da(d, a) -> close
+  distance(w) ab
+  distance(h) bc
+  private construction line diagonal(a, c)
+  center midpoint diagonal
+}
+
 // An ellipse, as a curve: the point at eccentric angle `u` on the ellipse of semi-axes `a` and
 // `b` standing on the datum `f` — its centre at `f.origin`, its major axis along the datum's
 // bearing.  A computed point, so every contact is exact to third order: `p on e` holds a point
@@ -112,13 +127,4 @@ component Polygon(c: point, ref: line, n: Int, r: Length, phase: Angle) {
 // and `phase: 30deg` a flat square to it.
 component Hex(c: point, ref: line, af: Length, phase: Angle) {
   p: Polygon(c, ref, n: 6, r: af / (2 * cos(30deg)), phase: phase)
-}
-
-// A point with signed coordinates in a datum. Both ordinates are ordinary constraints;
-// either may be left unknown. Plane membership is supplied independently with `in`.
-component Loc(f: plane, u: Length, v: Length) {
-  point p hint(x: f.origin.x + u * f.c - v * f.s,
-               y: f.origin.y + u * f.s + v * f.c)
-  p distance(u, along: u) f
-  p distance(v, along: v) f
 }

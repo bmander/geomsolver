@@ -25,6 +25,25 @@ paper layout independent of geometry. Each part's component file includes a `pre
 setup using standard datums; the part sheet loads that preview, while `use` omits the preview
 setup.
 
+## Solid creation examples
+
+Open these in **File → Open examples…**, or compile their drawing sheets with
+`build/solventc rust/examples/solid_flange.svd --output flange.svg`.
+Each model has editable parameters near the top and a companion `.svd` with three solid views.
+Profiles use geometric constraints—dimensions, alignments, symmetry, and incidences—with
+coordinates confined to starting hints.
+
+| Example | Capabilities |
+| --- | --- |
+| [Mounting flange](rust/examples/solid_flange.sv) | Profiles with holes, depth and offset extrusions, union, repeated through cuts |
+| [V-belt pulley](rust/examples/solid_pulley.sv) | Full revolution of a stepped profile, revolved groove subtraction |
+| [Hollow duct elbow](rust/examples/solid_elbow.sv) | Hollow square profile swept along a constrained circular arc |
+| [Hollow reducer](rust/examples/solid_loft.sv) | Two hollow component sections lofted along a dimensioned line |
+| [Pocketed tray](rust/examples/solid_tray.sv) | Named contours, blind pocket, nested bodies, repeated annular bosses |
+
+Export any finished part with
+`build/solventc rust/examples/solid_flange.sv --solid body --stl flange.stl`.
+
 ## Implementation
 
 The whole engine is one dependency-free Rust crate ([`rust/gcs-core/`](rust/gcs-core/)) behind a

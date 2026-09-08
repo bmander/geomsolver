@@ -94,17 +94,22 @@ not copied into a solid view. Page position and scale come exclusively from the 
 
 ```
 view front(m.body) from front at (60mm, 150mm) scale 2
-view auxiliary(m.body) from m.datum at (150mm, 150mm)
+view iso(m.body) from isometric at (150mm, 150mm)
+view auxiliary(m.body) from m.datum at (150mm, 220mm)
 section cutaway(m.body) from front cut m.midplane at (60mm, 240mm)
 sketch construction(m.linkage) at (60mm, 100mm)
 ```
 
 A solid view names an explicit solid, including an intermediate or cutter when desired.
 It does not turn a component into a body. `from` accepts `front`, `back`, `right`, `left`,
-`top`, `bottom`, or a model plane path; omitted, it means `front`. Projection uses Solvent's
+`top`, `bottom`, `isometric`, or a model plane path; omitted, it means `front`. Projection uses Solvent's
 world axes: the front plane has horizontal X and vertical Z. A section additionally names
 a cutting plane and must be viewed parallel to it. Views retain source face paths, distinguish
 hidden edges, and suppress tessellation seams through the existing renderer.
+
+`isometric` is a drawing camera, with horizontal axis `(1, -1, 0)` and vertical axis
+`(1, 1, 2)`, both normalized. It needs no model point, ground constraint, or plane. Keep
+model planes for geometric relationships; choose presentation-only orientations in the drawing.
 
 A `sketch` presents the model's existing 2D coordinates. Its target can be a model alias, a
 component/member scope, or an individual entity. It has no arbitrary 3D viewing direction.
@@ -152,7 +157,7 @@ style m.linkage { display: none }
 ```
 
 Class selectors refer to renderer-provided roles, such as `.visible`, `.hidden`, `.section`,
-`.dimension`, `.reference`, `.point`, and `.closure`. Geometry selectors name an entity or a
+`.dimension`, `.reference`, `.point`, `.closure`, `.construction`, and `.centerline`. Geometry selectors name an entity or a
 component/member scope. Explicit geometry selectors must resolve; a misspelling is an error.
 Later rules override properties they state. Geometry-specific rules override implicit roles.
 
@@ -161,6 +166,19 @@ Properties are `color` (#RGB, #RRGGBB, or #RRGGBBAA), `width`, `dash`, and `disp
 solid stroke. Comments start with `//`; strings support escaped quotes, backslashes, and `\n`.
 Unknown statements, properties, invalid values, and duplicate model/sheet/view names are errors.
 
+Construction geometry is hidden by default on sheets and remains visible in the model editor.
+Centerlines use a long/short dash pattern. These roles come from semantic modifiers in `.sv`;
+a drawing chooses their appearance without changing their purpose:
+
+```
+style .construction { display: inline; color: #8a8a8a }
+style .centerline { dash: 12 3 2 3; width: 0.75 }
+```
+
+Private member names cannot be used as drawing paths, including style selectors. A sketch of the
+whole model or a public component can still show its private geometry through these role selectors.
+Privacy alone does not control display.
+
 ## Migrating existing source
 
 `.sv` rejects `view`, `section`, `dimensions`, `style`, `class` clauses, and callout placements.
@@ -168,7 +186,8 @@ Move output requests and styling to a drawing. Keep model planes needed by geome
 replacing page-spacing constructions with drawing positions. The six `vtwin_*.svd` part sheets
 demonstrate this separation; their models no longer instantiate `ThreeViews` for page layout.
 
-Model serialization and editor reconciliation omit styles, classes, and callout placements.
+Model serialization and editor reconciliation omit styles, classes, and callout placements,
+while preserving semantic geometry roles.
 The explicit `syntax::parse_legacy` reader remains for historical renderer/migration fixtures;
 it is not used to accept `.sv` source in the CLI or browser. Low-level rendering APIs retain
 their presentation structures as adapters, independently of the model language.

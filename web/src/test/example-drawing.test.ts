@@ -58,7 +58,7 @@ test('a component preview uses edited project dependencies when opened directly'
   assert.ok(bundle.files['vtwin/components/dims.sv']);
   const edited: Record<string, string> = { ...bundle.files,
     'vtwin/components/dims.sv': bundle.files['vtwin/components/dims.sv'].replace(
-      'param fwA = 12mm', 'param fwA = 13mm'),
+      'param fwA = trapz + traph + 3mm', 'param fwA = trapz + traph + 4mm'),
   };
   modules.provideProject(path, edited);
   try {

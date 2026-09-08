@@ -6,7 +6,8 @@
 `p distance(u, along: u) f` and `p distance(v, along: v) f`, where `f` is a plane used
 as a datum. They are ordinary constraints in the shared solve. Components acquire no implicit
 origin, orientation, or geometric result. Plane membership remains independent (`inst: Part(f)
-in view`). `std.Loc(f: plane, u: Length, v: Length)` groups a point, its two ordinates, and hints.
+in view`). The standard library has no coordinate-placement component; profiles are expressed
+through geometric relationships, with datum ordinates used for design measurements.
 
 **[0.20] Model/presentation split.** `.sv` specifies geometry, constraints, hints, and
 assertions. All presentation belongs in [Solvent Drawing (`.svd`)](docs/solvent-drawing.md).
@@ -92,10 +93,17 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 | `Circle` | center + radius | 3 |
 | `Plane` | the datum: origin + orientation **[0.6]**, and a **view** — a plane in space, given as a constant orthonormal basis `(u, v)` **[0.10]**; one with no attitude written is the page's **[0.15]** | 0 beyond its two points (§6.7) |
 | `Path` | directed piecewise boundary curve | 0 (derived object) |
-| `Face` | a closed loop of edges of one plane: a region swept **[0.18]** | 0 — it owns no parameter |
+| `Face` | a planar profile (§6.8) or an ordered boundary on an explicit spatial support (§6.20) | 0 — it owns no parameter |
 | `Solid` | a face swept, or a term over other solids **[0.18]** | 0 — it owns no parameter |
+| `Surface` | an analytic boundary patch read from a solid (§6.13) | 0 — it owns no parameter |
+| `Motion` | a rigid-motion family about solved geometry (§6.14) | 0 — it owns no parameter |
+| `Envelope` | the zero-normal-velocity locus of a moving surface (§6.15) | 0 — it owns no parameter |
+| `Patch` | a spatial region of a surface or envelope, selected by material sides (§6.16) | 0 — it owns no parameter |
+| `Seam` | a shared generating characteristic or envelope/boundary intersection (§6.17) | 0 — it owns no parameter |
+| `Vertex` | a named spatial corner at two seams (§6.18) | 0 — it owns no parameter |
+| `Edge` | a finite seam extent between named spatial vertices (§6.19) | 0 — it owns no parameter |
 
-**[0.18] `Face` and `Solid` are evaluated after the solve, and are the only kinds that are.** Neither owns a coordinate, allocates an unknown, or contributes a residual; neither may be an argument of any constraint of §9.3, be dragged, be dimensioned, or be put on a plane with `in`. What each *is* is settled once the drawing has been solved and every extent worked out (§1.2, §6.9). A kind of this stratum therefore adds nothing to §16.3's ledger.
+**`Face`, `Solid`, `Surface`, `Motion` and `Envelope` are evaluated after the solve.** None owns a coordinate, allocates an unknown, or contributes a planar residual; none may be an argument of a planar constraint of §9.3, be dragged, be dimensioned, or be put on a plane with `in`. What each *is* is settled once the drawing has been solved and every extent worked out (§1.2, §6.9). A kind of this stratum therefore adds nothing to §16.3's ledger.
 
 **[0.2] `Line` was a 2-DOF undirected infinite line with a `.dir` field in 0.1.** It is now a segment between two points, and every constraint that reads a line reads the infinite carrier through those points — which is what `parallel`, `perpendicular`, `on` and `angle` mean by a line anyway.
 
@@ -115,13 +123,13 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 | `Plane` | its basis `u`, `v` | constants of the declaration, not sub-entities **[0.10]** |
 | `Plane` | its offset along `n` | a constant of the declaration, not a sub-entity **[0.18]** (§6.10) |
 | `Line` | `.p1`, `.p2` | `Point` **[0.2]** |
-| `Face` | its edges | the entities it names, aliased — a face exposes no field of its own **[0.18]** |
+| `Face` | its edges; `on:` for a spatial support | aliased boundaries; `face.on` reaches a spatial support (§6.20) |
 | `Solid` | `.near`, `.far` | a prism's two caps, at the higher and the lower ordinate **[0.18]** |
 | `Solid` | `.<edge>` | the side swept from the edge the source called `<edge>` **[0.18]** |
 | `Solid` | `.start`, `.end` | a partial revolution's two caps **[0.18]** |
 | `Solid` | `.volume`, `.area`, `.bounds.x0`… | what a report measures off it (§16.3) **[0.18]** |
 
-**[0.18] A solid's derived names are *paths*, and a path is not a sub-entity.** A face of a solid carries no coordinates, joins no alias class and takes no constraint: the path is what a report writes a number under (`block.side_l.area`) and what a derived picture labels a stroke with. Through a body the operand keeps its own name, so a face of `block` inside `body` is `body.block.near` — a path never renames, which is the naming problem every history-based kernel has and this one does not, because a boolean cannot renumber a name. The *sub-entities* a solid does have are the ones its declaration is written over: the face it is swept from, a revolution's axis line, and the solids of its term. Those are ordinary entities, and deleting one takes the solid with it.
+**[0.18] A solid's derived names are *paths*, and a path is not a sub-entity.** A face of a solid carries no coordinates, joins no alias class and takes no constraint: the path is what a report writes a number under (`block.side_l.area`) and what a derived picture labels a stroke with. A guided loft/sweep has `.start` and `.end` caps and walls named by the start section’s source edges, including hole boundaries. Through a body the operand keeps its own name, so a face of `block` inside `body` is `body.block.near` — a path never renames, which is the naming problem every history-based kernel has and this one does not, because a boolean cannot renumber a name. The *sub-entities* a solid does have are the ones its declaration is written over: the face it is swept from, a revolution's axis line, and the solids of its term. Those are ordinary entities, and deleting one takes the solid with it.
 
 **[0.6] A datum's orientation is a unit rotor, not a stored angle.** `plane f(origin: o,
 toward: q)` declares an origin (aliased), a second point it is pointed at (aliased), and two
@@ -383,6 +391,11 @@ circle  c(center: o) hint(r: 25)
 
 These are seed-class (§4.2, §4.3) and semantically inert (P3). They are the primitive form; §11's `hint` statement remains, for the case it is actually good at.
 
+A driving radius dimension already records a circle or arc's radius. Editor writeback does not
+add an omitted `hint(r: …)` in that case; `radius(size) circle rim(center: o)` is sufficient.
+Authored hints remain editable, and free radii retain pose hints. A claimed radius or a radius
+expressed in terms of a free unknown does not determine that scalar for this purpose.
+
 **[0.7] One clause for every seed.** `hint(…)` joins the trailing-clause loop, so it is order-free against `knots` and `class` (§13.2) exactly as those two already are against each other. A constraint's own unknown is written the same way — `point_on_spline(p, s) hint(t: 0.4)` — and the *pin* stays in the argument list, `point_on_spline(p, s, t == 0.4)`: `hint` marks what a solve revises, and a pin is precisely what it does not.
 
 Two things that look like seeds and are not, and stay where they are. **`knots [...]`** is document data no solve moves. **A curve instance's values** — `curve e = involute(base, phase: 0)` — are numbers the family takes, not numbers the solve revises.
@@ -536,8 +549,8 @@ its points. A hint over an unbound numeric formal uses zero for that unknown's p
 value; an affine expression retains its constant offset. This substitution applies only to
 hints, never to constraints, and traced components retain parameterized hints.
 The datum's intrinsic seeds MUST be consistent with the final hinted chord before
-solving. Hints still select starting configurations only. In contrast to the former `Loc`
-helper's absolute distances, signed ordinates explicitly exclude reflections across either axis.
+solving. Hints still select starting configurations only. Signed ordinates explicitly exclude
+reflections across the axis being measured.
 
 A multiview drawing is several pictures of one object on one sheet, each on a stated plane in space, related by projection. The language states it the draughtsman's way — descriptive geometry — and **nothing three-dimensional is ever solved for**: a document stays planar, and what is added is a datum with an attitude, a membership, and one equation.
 
@@ -571,7 +584,7 @@ An implementation MUST NOT make the attitude an unknown; a document that wants a
 
 ### 6.8 Faces **[0.18]**
 
-A **face** is a region of a plane: an outer loop of existing edges and straight runs between named corners, optionally containing holes.
+A **planar face** is a region of a plane: an outer loop of existing edges and straight runs between named corners, optionally containing holes. An explicit `on:` support instead declares a spatial face boundary (§6.20); the planar rules below do not turn that support into a page plane.
 
 ```
 face sec(mouth, side_r, lid, side_l)     // four lines, walked in order
@@ -622,9 +635,9 @@ bore cut body                              //   ... less the bore
 boss on body                                   //   ... plus the boss
 ```
 
-**The brackets are what the thing is made of** (§4.3, §6.2), so the sweep stands in them beside the face: `from:`, `to:`, `depth:`, `through:`, `about:`, `sweep:` and `sense:` are labels of the constructor and are neither seeds nor constraints. A mixture of the two sweeps, a half-written prism (`from:` with no `to:`), `from:`/`to:` beside `depth:`, and `sweep:` or `sense:` with no `about:` are each refused where they are written, with the shapes a solid has.
+**The brackets are what the thing is made of** (§4.3, §6.2), so the sweep stands in them beside the face: `from:`, `to:`, `depth:`, `through:`, `along:`, `about:`, `sweep:` and `sense:` are labels of the constructor and are neither seeds nor constraints. A mixture of sweep forms, a half-written prism (`from:` with no `to:`), `from:`/`to:` beside `depth:`, and `sweep:` or `sense:` with no `about:` are each refused where they are written, with the shapes a solid has.
 
-**A face may be written where it is used.** A swept solid MAY take an anonymous `face(…)` in place of a face reference. Its boundary follows every rule of §6.8, including points and `-> close`, and resolves names in the solid's enclosing scope. It introduces no public name and owns no unknown; the solid owns the section and any closing lines it generates. Both extrusion and revolution accept it. A sweep still takes exactly one face, and a body still takes solids. A section used by several sweeps can retain a named `face` declaration.
+**A face may be written where it is used.** A swept solid MAY take an anonymous `face(…)` in place of a face reference. Its boundary follows every rule of §6.8, including points and `-> close`, and resolves names in the solid's enclosing scope. It introduces no public name and owns no unknown; the solid owns the section and any closing lines it generates. Every sweep form accepts it. An `along:` solid takes one or two faces; other sweeps take exactly one face, and a body takes solids. A section used by several sweeps can retain a named `face` declaration.
 
 ```
 solid block(face(mouth, side_r, lid, side_l), from: face, to: back)
@@ -634,6 +647,7 @@ solid block(face(mouth, side_r, lid, side_l), from: face, to: back)
 
 - **A prism** runs `from:` one signed ordinate `to:` another **along the face's own plane normal**. Those signs are arithmetic and not a convention (§9.2 **[0.17]**) — they are ordinates on an axis, and a document writes both. `depth: d` is the draughtsman's spelling of `from: -d, to: 0`, the material *behind* the face the view shows, and is therefore a **magnitude**. A prism swept nowhere (`from` equal to `to`) is **E080**.
 - **A through prism** is written `solid tool(section, through: target)`. Its target MUST be a solid (**E080**); it spans the target in both directions along the section's own plane normal. The extent is evaluated after the sketch is solved: recursively collect the target's stock and additions, ignoring all cuts, project a conservative bound of that material along the normal, and pad both ends outside the material at the kernel's tolerance. The target may be a swept solid or a body. Changes to its material geometry or placement change the extent; subtractive tools do not enlarge it. `through:` cannot be mixed with any other sweep label, and does not itself subtract anything. Apply the tool separately with `tool cut body`.
+- **A guided loft/sweep** is written `solid duct(section, along: guide)` or `solid transition(start_section, end_section, along: guide)`. The guide MUST be a directed line (`p1` to `p2`) or open circular arc (`start` to `end`, counter-clockwise in its own plane); other kinds are **E081**. The start section MUST lie in the plane through the guide start perpendicular to its tangent. An explicit end section MUST likewise lie at the guide end perpendicular to its tangent. These are checked after solving; the constructor does not reposition or constrain the sections. With one section, the end section is implicitly the transported start. A line transports by translation; an arc transports by rotation about its center and plane normal. With two sections, corresponding boundary points interpolate linearly in that transported frame. Sections must have equal numbers of holes, paired in written order, and corresponding loops must have equal numbers of source edges. Edges pair in counter-clockwise traversal order starting with the first source edge; circle/arc tessellation counts may differ. Whole circles pair by radial direction in the transported frame, independently of the end plane’s drawing axes. Crossed or collapsed sampled sections, intersecting holes, and sections touching or crossing the bend axis are refused. `along:` cannot be combined with any other sweep label. It owns no unknown: editing the guide or either section changes the evaluated solid.
 - **A revolution** turns a face about `about:` a line, which MUST be a line (**E081**) and MUST lie in the **face's own plane** (E081) — a line drawn in another view names a direction this face knows nothing about. `sweep:` is how far and is a **magnitude**, a full turn where the document writes none; **which way is a word, not a sign** (§9.2, §9.4): `sense: cw | ccw`, right-handed about the line's own `p1 → p2` unless `cw` is written, and a negative `sweep:` is **E040** at the value, in the words of the selector that replaces it.
 - **A body** names its **stock** in the brackets and takes its features from the `on` and `cut` statements that name it. A solid whose brackets hold solids and no face is a body; one written over a face is not, and a feature written into a swept solid is E080 with the cause and the spelling that fixes it.
 
@@ -664,7 +678,7 @@ solid body(block)
 recess cut body       // block − (pocket − boss), which the flat rule cannot spell
 ```
 
-**A solid's faces are reached by path, never by index** (§3.2). A prism's caps are `.far` and `.near`, the lower and the higher of its two ordinates along the normal, so `depth: d` leaves `.near` the face the view shows; each side is named by the edge it was swept from, in the name the *source* wrote (`block.side_l`). A revolution names its wall by the edge likewise and its caps `.start` and `.end` where the turn is partial. Through a body the operand keeps its own name (`body.block.near`). An implementation MUST NOT name a face by its position in anything: that is §13.1's rule, and a boolean is exactly the operation that would renumber one.
+**A solid's faces are reached by path, never by index** (§3.2). A prism's caps are `.far` and `.near`, the lower and the higher of its two ordinates along the normal, so `depth: d` leaves `.near` the face the view shows; each side is named by the edge it was swept from, in the name the *source* wrote (`block.side_l`). A revolution names its wall by the edge likewise and its caps `.start` and `.end` where the turn is partial. A guided loft/sweep has `.start` and `.end` caps and walls named by the start section’s source edges, including hole boundaries. Through a body the operand keeps its own name (`body.block.near`). An implementation MUST NOT name a face by its position in anything: that is §13.1's rule, and a boolean is exactly the operation that would renumber one.
 
 What a report says about a solid (§16.3) is therefore `NAME.volume`, `NAME.area`, `NAME.bounds.{x,y,z}{0,1}`, and `PATH.area` for each of its faces that survived — a bore that ate a cap leaves a name the document still writes and no area behind it, which is a fact and not an error. Those numbers MUST be taken at a faceting the **document** fixes and never at the screen's: a volume that changed with the zoom is a number nobody could quote.
 
@@ -723,7 +737,362 @@ A model's dimensional constraints and assertions remain model statements. Select
 placing their annotations, or requesting measurements of solved geometry, belongs in `.svd`.
 A drawing MUST NOT add model unknowns, equations, or branch choices.
 
+### 6.13 Analytic surfaces
+
+```
+surface flank(crown, edge: rack.outer)
+surface root_transition(crown, edge: rack.outer_round)
+```
+
+A `surface` names an analytic patch of an existing solid. Its arguments are `solid` and
+`edge`, in that order; labels may be written as with other constructors. The initial supported
+source is an unmodified revolution, with a line, circular arc or circle on its profile's
+outer or hole boundary. An unrelated edge, a modified body, or an unsupported source MUST
+be refused. This declaration does not create new coordinates or approximate the surface
+with a mesh.
+
+The normalized parameter `u` traverses the declared source edge from 0 to 1, and `v` traverses
+the declared revolution from 0 to 1, including its sweep angle and sense. Evaluation returns
+position and both first partial derivatives in world coordinates. Their cross product follows
+the edge and sweep directions; it MUST NOT be interpreted as an automatically outward material
+normal. Trim and material orientation remain separate properties.
+
+An optional pair of angular bounds selects a source span:
+
+```
+surface flank(crown, edge: rack.outer, from: 180deg, to: 360deg)
+```
+
+Both bounds are required when either is given. They are bound Angles measured from the
+source revolution's starting meridian, along its declared sense, and MUST satisfy
+`0deg <= from < to <= sweep`, using the source's effective sweep (at most one full turn).
+Omitting them retains the whole source sweep. They restrict
+the existing `v` domain to `[from / sweep, to / sweep]`; they do not renumber parameters,
+reverse tangents, or wrap an excluded point into another part of the surface. A clockwise
+revolution still uses positive angles measured along that clockwise sweep. Bounds and
+source dimensions may depend on component parameters.
+
+`RevolvedSurface::domain` and browser `surfaceDomain` expose the retained parameter bounds.
+Evaluation and finite-incidence projection MUST respect them. Envelopes inherit this source
+domain, exposed with their roll interval by `GeneratedEnvelope::domain` / `envelopeDomain`.
+This can select a generating semicircle without embedding chart bounds in an external
+verifier. It does not alone prove the regularity or connectedness of the resulting envelope.
+
+Surface references follow the current solved source geometry. An evaluated snapshot retains
+the state it was read from and MUST be read again after that state changes. A surface may be
+passed through a `surface` component formal, tagged as construction, or made private. Its
+`solid` and `edge` fields alias its dependencies. Deleting a dependency deletes its dependent
+surface; copying a surface carries its defining geometry.
+
+An incidence evaluator may use the continued meridian's line or circle equation for a
+line/arc/circle revolution whose meridian stays on one side of its axis. Its oriented residual
+is in length units, and its gradient follows the source tangent orientation. Near a regular
+interior point this is a signed normal distance; it is not a global minimum-distance claim.
+The continued equation alone does not establish incidence with the finite source patch.
+Evaluation also returns a point on the finite patch and the Euclidean error to that point.
+Only that error, compared with an explicit length tolerance, establishes bounded incidence.
+An axis-crossing meridian or a query with no unique normal is refused by this evaluator.
+
+This declaration provides named generating geometry. Motion families, envelopes and material
+trims are specified below; solids assembled from surface boundaries remain under development.
+
+### 6.14 Rigid motion families
+
+```
+motion crown(about: crown_axis)
+motion blank(about: blank_axis, ratio: 2, phase: 10deg)
+motion generating(crown, relative_to: blank)
+```
+
+A `motion` defines a family of rigid transformations over one shared angular parameter. It
+owns no solver unknowns and does not move the sketch. `about:` names a directed solved line
+in world space. Rotation is right handed about that line, through its first endpoint, by
+`phase + ratio * angle`. `ratio` is a bound scalar (default 1), and `phase` is a bound Angle
+(default 0deg). Reversing the line reverses the rotation. Axis geometry follows the current
+solved model; the plane's page placement is removed when lifting it into world space.
+
+`motion relative(source, relative_to: observer)` expresses the source motion in the moving
+observer's frame: `inverse(observer) * source`. `of:` may label `source`. Both dependencies
+read the same angular parameter. The derivative includes the observer's motion. This is a
+relationship between motions, not a sequence of commands that changes entity coordinates.
+
+Evaluation takes the shared angle in radians and returns an exact rigid pose and its first
+derivative per radian. A sampled source point returns world position and velocity per radian;
+velocity becomes velocity per second only after multiplying by an angular speed. Numeric
+arguments must be finite, and the solved axis must be nondegenerate. Cycles, missing motion
+references and dependency chains beyond 64 levels are errors. Forward references, `motion`
+component formals, privacy, and dependency-aware copy/delete are supported.
+
+These constant-ratio families provide relative generating kinematics. They do not yet specify
+arbitrary motion laws or an assembly-joint solver.
+
+### 6.15 Generated envelopes
+
+```
+envelope flank(crown_flank, under: generating, from: -35deg, to: 35deg)
+```
+
+An `envelope` is the implicit locus of a named `surface` under a named `motion` where the
+moving surface normal has zero component along its relative velocity:
+
+```
+F(u, v, roll) = normal(u, v, roll) · velocity(u, v, roll) = 0
+```
+
+The source parameters `u` and `v` remain in `[0,1]`. `from:` and `to:` are required bound
+Angles specifying a finite increasing interval of the shared motion parameter. They are
+part of the geometric domain, not solver seeds. The interval is evaluated in radians;
+`F` has units of length per radian. Argument labels `surface:` and `motion:` are accepted,
+with `under:` an alias for `motion:`. The `surface` and `motion` fields alias the dependencies.
+
+The declaration does not allocate coordinates or planar solver equations. It is an implicit
+surface, potentially with disconnected branches, singularities or no regular envelope.
+Evaluation of a trial `[u,v,roll]` returns its transformed position, oriented source normal,
+velocity and `F`. A trial with nonzero `F` MUST NOT be reported as a point on the envelope.
+The source normal orientation does not designate which side contains solid material.
+
+A local intersection adds two section equations and solves them together with `F = 0`.
+Numerical search bounds must lie within the declared domain. Equal bounds hold a parameter
+exactly; the remaining free Jacobian columns must have full rank, and every original
+residual must meet its tolerance. A search step may be limited to a domain boundary, but a
+boundary point that fails an equation MUST NOT be accepted. A converged local intersection
+does not establish uniqueness, global regularity, a material side, or solid closure.
+
+Two named analytic boundary patches may supply the section equations. Supporting equations
+can guide the iteration, but the result MUST meet the finite-patch incidence tolerance for
+each boundary as well. A point on a continued cone or sphere outside its declared edge or
+sweep interval MUST NOT be accepted merely because those supporting equations vanish.
+
+`envelope` component formals, forward dependency paths, privacy, semantic tags, and
+copy/delete dependencies follow ordinary component rules. A solved evaluator is a snapshot
+and must be read again after the source geometry changes. Envelopes are not drawing glyphs
+or completed solids. Declarative trim boundaries and closed solids assembled from bounded
+surfaces remain under development.
+
 ---
+
+### 6.16 Trimmed spatial patches
+
+```
+patch flank(generated, inside: tip_body, inside: heel_body,
+            outside: root_body, outside: toe_body)
+```
+
+A `patch` retains points of one named `surface` or `envelope` satisfying every material-side
+condition. Each clipping operand is a **solid**: `inside:` retains its material and boundary;
+`outside:` retains its exterior and boundary. All conditions intersect. The declaration
+requires at least one condition; each operand carries its own `inside:` or `outside:` label.
+The source may be positional or labelled `source:`. `.source` reaches that entity. The
+`inside` and `outside` fields are lists, not singular child paths.
+
+This is spatial geometry evaluated after solving, with no coordinates, hints or planar
+constraint rows. Components, formal aliases, privacy and construction semantics apply.
+Clipping does not replace the source parameter domain or the envelope equation. A patch may
+be disconnected, singular or contain several envelope branches; it does not by itself
+designate a topological disk, an outward normal, or a closed solid.
+
+The current analytic evaluator supports unmodified **full revolutions** with line, arc or
+circle profile boundaries and holes. Partial revolutions, lofts, prisms and Boolean bodies
+are refused as clipping operands. Membership uses analytic meridian ray crossings and finite
+curve distances, not the preview facets. Profile topology is checked by the existing solid
+validator, whose topology checks currently use faceted loops. This is not an interval proof
+of arbitrary analytic profile validity. Axis edges that disappear on full revolution are
+not material boundaries: a sphere's diameter is interior.
+
+`TrimmedPatch::named` reads a solved snapshot with an explicit absolute axis tolerance.
+`surface_at` checks a surface point against the trims. `envelope_at` additionally requires
+the normal-velocity equation within its explicit tolerance; arbitrary off-locus trials still
+use `GeneratedEnvelope::evaluate`. Both use an explicit boundary tolerance in model length
+units. `intersect` and `intersect_boundaries` solve on the untrimmed envelope and require the
+final result to pass all trims; an excluded local solution is refused, not silently replaced
+by another branch. Finite-boundary incidence checks remain in force. These floating-point
+checks do not certify a global error bound or closed-solid topology.
+
+### 6.17 Shared spatial seams
+
+```
+seam flank_join(flank_region, transition_region)
+seam root_join(transition_region, root_region)
+seam tip_edge(flank_region, tip.wall)
+```
+
+A `seam` names an implicit curve shared by generating faces, or by a generating face and
+a finite analytic boundary. `first:` and `second:` may label the operands; those fields
+alias the dependencies.
+
+With two generating operands, it names the characteristic shared at a tangent vertex of
+their generating profile. Each operand is an `envelope` or a `patch` whose source is an
+envelope. Both
+envelopes MUST name the same generating motion and source revolution. Their profile edges
+MUST have exactly one shared vertex identity. Coincident but separately named points do
+not establish this relationship, and two copies of the same edge do not define one junction.
+
+After solving, the seam evaluator checks coincident positions and a common tangent plane
+at the source vertex with explicit tolerances. The common revolution and rigid motion
+preserve this relationship over their shared domain. A corner with distinct tangent planes
+is refused. The angular domain is the intersection of both sources' retained spans and
+both envelopes' roll intervals; these intersections must have positive width.
+
+The characteristic is still implicit. Its chart is the first envelope's original `[u,v,roll]`,
+with `u` fixed at the shared vertex. `EnvelopeSeam::intersect` solves both envelope equations
+and one spatial section equation using the existing local solver. `SeamIntersectionOptions`
+and its seed contain only the actual unknowns `[v,roll]`; the shared endpoint cannot be freed
+by a search option. Both face equations use one normal-velocity tolerance, and the section
+has a separate tolerance in its own units. Returned residuals are the first and second
+envelope equations followed by the section equation. The final result must
+satisfy both envelopes and, when present, both patches' material trims. A rank-deficient
+section intersection is refused. Reading a seam does not certify global regularity,
+uniqueness or connectedness of its locus.
+
+`EnvelopeSeam::named` reads a solved snapshot. `SeamTolerance` specifies absolute model-length
+tolerances for the junction position and clipping-axis recognition, plus the difference
+between unit normals for tangent-plane agreement (either orientation is allowed). Point
+evaluation and intersections also take explicit normal-velocity and material-boundary
+tolerances. These are floating-point checks, not a certified world-space export error bound.
+The returned contact normal belongs to the first face, and its velocity is the generating
+motion's velocity, not a derivative along the seam curve.
+
+With an `envelope` (or patch of an envelope) first and a `surface` second, the seam names
+their intersection. The boundary must support the finite analytic incidence evaluator of
+§6.13. It need not share the generating motion, revolution or profile vertex. The operand
+order is significant: the seam retains the envelope's original `[u,v,roll]` chart, and all
+three parameters can vary. Two arbitrary surfaces or two unrelated envelopes are not
+supported by this form.
+
+`BoundarySeam::named` reads one generated-face snapshot with its material conditions and
+one boundary projector, using an explicit clipping-axis tolerance. `evaluate` requires
+the envelope equation, incidence with the finite boundary patch, and all material trims.
+`BoundarySeamTolerance` supplies separate normal-velocity, incidence and trim tolerances.
+`intersect` solves the envelope equation, boundary support equation and one spatial section
+with `IntersectionOptions`; its residuals and tolerances follow that order. It checks finite
+incidence at the retained root, so convergence on an undeclared support continuation is
+refused. Local rank checks reject a nonisolated section. Neither a snapshot nor a local root
+certifies global transversality, branch uniqueness, connectedness or closed-face topology.
+
+Seams own no solver coordinates and have no planar drawing glyph. Component formals, privacy,
+construction semantics, source printing and dependency-aware copy/delete apply. A seam
+provides shared boundary geometry; oriented face loops and checked closed-solid assembly
+remain separate work.
+
+### 6.18. Shared spatial vertices
+
+```sv
+vertex tip_toe(tip_edge, toe_edge)
+vertex join_toe(flank_join, toe_edge)
+```
+
+A `vertex` names the intersection of two distinct seams. Optional `first:` and `second:`
+labels name its operands. Two boundary seams must use the exact same named generating
+face and different boundary surfaces. Alternatively, one generating junction may meet
+one boundary seam whose generating face is exactly one of that junction's operands.
+The two seam operands may be reversed. Two generating junctions, unrelated faces and
+duplicate boundary surfaces are refused. Separate declarations retain separate identity,
+even if their evaluated coordinates coincide.
+
+`BoundaryVertex::named` owns one generating-face snapshot with its material conditions
+and two finite boundary evaluators. Its local solve checks the envelope and both boundary
+equations over the original `[u,v,roll]` chart, followed by finite incidence and material
+membership. `IntersectionOptions` residuals and tolerances follow that equation order.
+`JunctionVertex::named` owns one checked generating junction and one boundary evaluator.
+It uses `SeamTolerance` for the junction and `SeamIntersectionOptions` for its two unknowns
+`[v,roll]`; the first face's endpoint `u` is fixed structurally. Its residuals are the two
+envelope equations and boundary equation. Final acceptance checks both material trims and
+finite boundary incidence on the particular face named by the boundary seam. Coincidence
+within the seam tolerance does not transfer a finer incidence tolerance between faces.
+
+Both snapshot types provide `position` with explicit normal-velocity, finite-incidence and
+material-trim tolerances. Results use the canonical generating chart (the junction's first
+face for a junction vertex). A vertex has no unique face normal or generating velocity;
+its position accessor returns only three coordinates. Local solves check rank, but neither
+a declaration nor a local root certifies global uniqueness or regularity. Search bounds
+and seeds must select the intended root when there are multiple intersections.
+
+Vertices are spatial, have no planar solver coordinates or drawing glyph, and cannot be
+grounded as planar points. Component formals, privacy, construction roles, source printing
+and dependency-aware copy/delete follow ordinary entity rules. They establish shared
+corner identity; finite edge branches, oriented face loops and analytic solid assembly
+remain separate work.
+
+### 6.19. Finite spatial edges
+
+```sv
+edge tip_span(tip_edge, from: tip_toe, to: tip_heel, along: shaft_axis)
+edge toe_span(toe_edge, from: join_toe, to: tip_toe, along: shaft_axis)
+```
+
+An `edge` names a seam, two distinct spatial vertices, and a line defining its slicing
+direction. Its fields are `seam`, `from`, `to` and `along`, in that positional order.
+The endpoint vertices must be incident through declared identities. For two-boundary
+vertices, the edge's seam is one of the vertex's operands. At a generating junction,
+the same finite boundary also meets the junction's other face: an edge on that face is
+incident when it names that exact face and boundary surface. Coincident lookalikes do
+not establish this relationship.
+
+The `along` line is read in solved world coordinates and must be finite and nondegenerate.
+The endpoints must have distinct projections along it. Edge fraction `s` ranges from zero
+at `from` to one at `to`, and specifies the plane perpendicular to `along` at the linearly
+interpolated endpoint projection. It is not arc length. Reversing the line's direction
+preserves the slices; reversing the endpoint order reverses the fraction.
+
+`edge::SpatialEdge::named` reads an owned snapshot from the declaration, endpoint parameter
+witnesses and explicit `EdgeTolerance`. Witnesses use each vertex's canonical chart and
+are checked against its full defining geometry and material trims. The reader maps them
+into the edge seam's chart by face identity: a generating junction's two endpoint `u`
+coordinates need not agree. The snapshot retains one seam and the shared corner positions.
+`sample` solves the seam's original equations plus the spatial slicing equation through
+the existing intersection solver. It checks local rank, finite incidence and material
+trims in the interior, and preserves the exact stored endpoint positions checked by their
+full vertex definitions. It does not re-solve an endpoint with a potentially tangent
+slicing equation: a regular curve can have zero axial derivative at its endpoint.
+The returned parameters belong to the edge seam; its position has no unique face normal.
+
+This evaluator establishes checked local slices of a finite extent. It does not establish
+that every slice has exactly one root, that separate local solves stay on one connected
+branch, or that all intermediate slices are regular. Endpoint witnesses select local
+roots; they are numerical evaluation inputs, not planar coordinates or model hints.
+A branch with a turning point along the chosen line needs another chart or subdivision;
+rank-deficient requested interior slices are refused. Global branch validation and tolerance-controlled
+curve approximation remain required before these edges can bound a certified analytic solid.
+
+Edges own no solver coordinates and have no planar drawing glyph. Formals, private member
+geometry, construction roles, printing and dependency-aware copy/delete are ordinary entity
+semantics. A spatial edge is distinct from a planar line and cannot be grounded or used as
+a planar constraint operand. Oriented face uses are described in §6.20.
+
+### 6.20. Spatial face boundaries
+
+```sv
+face working(toe, tip, heel, join, on: flank_region)
+face transition(round_toe, join, round_heel, root, on: fillet_region)
+```
+
+An `on:` operand gives a face an explicit analytic support: a named surface, envelope
+or material patch. Every loop operand MUST be a distinct named spatial `edge`; its
+seam MUST name that exact support. Coincident but separately declared supports do not
+establish incidence. Consecutive edges MUST meet at the same spatial vertex identity,
+and the last MUST return to the first without revisiting another vertex. The written
+order determines directed edge uses; for a two-edge loop, the first edge's declared
+direction chooses between the two possible traversals. The current implementation
+accepts one loop and refuses holes, repeated edge uses and `-> close` on spatial faces.
+
+`face.on` reaches the support through an ordinary child reference. Faces retain their
+existing entity kind, own no solver coordinates, and follow ordinary component formals,
+privacy, construction roles and dependency-aware copy/delete. Spatial faces build after
+their finite edges. They are not planar sweep profiles: extrusion, revolution and loft
+MUST refuse them rather than infer a default plane.
+
+`spatial_face::SpatialFaceBoundary` reads an immutable support and finite boundary edges
+from canonical vertex witnesses and explicit `EdgeTolerance`. Sampling follows the
+directed use, retains the edge position and verifies incidence on this particular support.
+A generating junction maps its canonical first-face parameter to the second face when
+needed. The result contains xyz, this support's parameters and the finite incidence error.
+Envelope samples check the envelope equation and material conditions; surface samples
+use the finite projector. A coarse junction tolerance does not replace fine face incidence.
+
+A closed loop with valid support incidence is not yet proof of a disk interior, outward
+orientation, geometric embedding or a valid solid. Those checks remain separate, as do
+global branch selection and tolerance-controlled curve/surface export. In particular,
+two different named edges can retrace the same curve and enclose no area.
 
 ## 7. Ports **[0.13]**
 
@@ -759,8 +1128,12 @@ group sizes(length: 20mm)
 group layout(frame: std.front, origin: std.origin)
 
 component Bar(layout: group, dims: group) {
-  tip: Loc(layout.frame, u: dims.length, v: 0mm)
-  line axis(layout.origin, tip.p)
+  point tip hint(x: layout.origin.x + dims.length * layout.frame.c,
+                 y: layout.origin.y + dims.length * layout.frame.s)
+  line reference(layout.frame.origin, layout.frame.toward)
+  line axis(layout.origin, tip)
+  axis parallel reference
+  distance(dims.length) axis
 }
 
 bar: Bar(layout, dims: sizes)
@@ -1142,6 +1515,43 @@ provide an automatic preview for a model without a drawing file.
 
 ---
 
+### 13.3 Geometry roles and private members
+
+`private`, `construction`, and `centerline` are optional prefixes on geometry declarations,
+named chains, and component instances. They may be combined in any order, once each:
+
+```solvent
+private construction layout: Polygon(center, ref, n: n, r: pitch_r, phase: phase)
+construction centerline line axis(a, b)
+```
+
+Members are public unless marked `private`. A private name is accessible from the enclosing
+component's body and its repetition blocks. A private instance hides its member paths from
+outside that enclosing component. Its own body can still use its members. Private members of
+a nested component remain private to that nested component. Forward references obey the same
+access rules. An inaccessible member is **E101**, including in hints and component arguments.
+A root-level private name is local to that model and unavailable to `.svd` paths.
+
+Explicitly passing private geometry to another component grants access through that formal;
+it does not copy the geometry or change its original visibility. Passing an instance as a group
+grants its public interface, not access to private members inside it. Public geometry can expose
+its constituent entities (for example, `hole.center`) even when their declaration names are private.
+Privacy restricts names, not geometric identity, solver participation, or editor inspection.
+
+`construction` designates supporting geometry; `centerline` designates an axis or center path.
+They are independent roles, not arbitrary presentation classes. Both remain ordinary geometry
+for constraints and explicit face/solid construction. Neither adds parameters, residuals, or
+geometric relationships. Roles on an instance apply to geometry created inside its expansion,
+including unnamed children, but never to borrowed arguments. Referencing a construction point
+as a hole's center does not make the hole construction geometry. A modifier on a chain applies
+to its named traversal and declared links, not to links borrowed by reference.
+
+The editor displays supporting geometry. Authored sheets hide construction geometry by default
+and expose `.construction` and `.centerline` selectors for drawing styles. Centerlines default
+to a long/short dash pattern. Privacy alone does not hide geometry. Selecting a public component
+or the whole model can render its private geometry; a drawing cannot name a private member directly.
+Model source edits preserve these semantic annotations; flat geometry export preserves roles.
+
 ## 14. Elaboration semantics
 
 Elaboration lowers a program to the **kernel form** consumed by solvers. The pipeline is normative in effect, not in mechanism.
@@ -1287,7 +1697,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E070 | a `use` nothing resolves (§14.4) **[0.12]** |
 | E071 | a component defined twice, across the document and its modules (§14.4) **[0.12]** |
 | E080 | a face or a solid the model cannot build (§6.8, §6.9) **[0.18]**: a loop that does not close, an edge that is not a line, an arc, a circle or a point, a circle standing *in* a loop rather than being one, **[0.19]** an edge that meets neither neighbour and so is walked two ways, a straight loop with fewer than three corners, edges in two planes, a swept solid written over anything but one face, a body made of what is not a solid, a prism swept nowhere, a feature written into a solid that is a face swept rather than a body |
-| E081 | a revolution's axis: not a line, or not in the face's own plane (§6.9) **[0.18]** |
+| E081 | invalid revolution axis or guided sweep path (§6.9) **[0.18]** |
 | E082 | a face of a body that the body no longer has (§6.9) **[0.18]** |
 | E083 | a stack that contradicts itself, or a placed plane placed twice or never (§6.10) **[0.18]** |
 | E084 | a section whose cutting plane is not parallel to the view it is drawn in (§6.11) **[0.18]** |
@@ -1494,14 +1904,15 @@ ctor_arg       = [ IDENT ":" ] ( ref | hint_clause )       (* what the thing is 
    of; numeric extents are expressions and never unknowns. `through:` instead names a solid
    whose material bounds determine an extrusion after solving. `about:` is a revolution. *)
 sweep_arg      = ( "from" | "to" | "depth" | "sweep" ) ":" expr
-               | ( "about" | "through" ) ":" ref
+               | ( "about" | "through" | "along" ) ":" ref
                | "sense" ":" ( "cw" | "ccw" ) ;
 
 (* §6.8, §6.9 [0.18].  Both are ordinary entity_decls — `face` and `solid` are element
    keywords — and are written out here for what their one list slot holds. *)
-face_decl      = "face" [ IDENT ] "(" ref { "," ref } [ "," "->" "close" ] ")" ;   (* a ref is an edge or a corner, §6.8 [0.19] *)
+face_decl      = "face" [ IDENT ] "(" face_arg { "," face_arg } [ "," "->" "close" ] ")" ;
+face_arg       = ref | ("edges" | "holes" | "on") ":" ref ;  (* planar/spatial restrictions: §6.8, §6.20 *)
 solid_decl     = "solid" [ IDENT ] "(" term ")" ;
-term           = ref { "," sweep_arg }                     (* a face swept *)
+term           = ref [ "," ref ] { "," sweep_arg }                     (* a face swept *)
                | ref { "," ref } ;                         (* a body: its stock, then solids *)
 body_rel       = ref ( "on" | "cut" ) ref ;   (* the body rule, §6.9 — `on` is the ordinary
                                                      infix word, read as this when both

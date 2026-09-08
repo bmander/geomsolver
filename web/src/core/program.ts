@@ -186,6 +186,54 @@ export class Document {
     return out;
   }
 
+  /** Implicit generated surfaces; evaluate the defining equation with envelopeSample. */
+  envelopes(): { name: string; index: number }[] {
+    return this.map.entities.filter(e => e.kind === 'envelope' && e.name)
+      .map(e => ({ name: e.name!, index: e.index }));
+  }
+
+  /** Spatial regions selected by declarative material-side conditions. */
+  patches(): { name: string; index: number }[] {
+    return this.map.entities.filter(e => e.kind === 'patch' && e.name)
+      .map(e => ({ name: e.name!, index: e.index }));
+  }
+
+  /** Shared generating characteristics and envelope/boundary intersections. */
+  seams(): { name: string; index: number }[] {
+    return this.map.entities.filter(e => e.kind === 'seam' && e.name)
+      .map(e => ({ name: e.name!, index: e.index }));
+  }
+
+  /** Named spatial corners; they own no planar solver coordinates. */
+  vertices(): { name: string; index: number }[] {
+    return this.map.entities.filter(e => e.kind === 'vertex' && e.name)
+      .map(e => ({ name: e.name!, index: e.index }));
+  }
+
+  /** Finite seam extents between named spatial vertices. */
+  edges(): { name: string; index: number }[] {
+    return this.map.entities.filter(e => e.kind === 'edge' && e.name)
+      .map(e => ({ name: e.name!, index: e.index }));
+  }
+
+  /** Named faces, including planar profiles and spatial faces with an `on:` support. */
+  faces(): { name: string; index: number }[] {
+    return this.map.entities.filter(e => e.kind === 'face' && e.name)
+      .map(e => ({ name: e.name!, index: e.index }));
+  }
+
+  /** Named rigid motions, evaluated through motionSample in world coordinates. */
+  motions(): { name: string; index: number }[] {
+    return this.map.entities.filter(e => e.kind === 'motion' && e.name)
+      .map(e => ({ name: e.name!, index: e.index }));
+  }
+
+  /** Named analytic surfaces, evaluated through surfaceSample rather than a drawing proxy. */
+  surfaces(): { name: string; index: number }[] {
+    return this.map.entities.filter(e => e.kind === 'surface' && e.name)
+      .map(e => ({ name: e.name!, index: e.index }));
+  }
+
   /** The entity a source-map entry stands for.  Every entry carries the kind and the index, so
    *  this resolves an **anonymous** element as readily as a named one — which `entity` cannot,
    *  there being no name to ask by.  Within one elaboration it is the lookup to use; only a

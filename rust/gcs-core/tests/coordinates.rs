@@ -25,17 +25,17 @@ fn standard_datums_are_shared_fixed_and_only_built_when_used() {
     let unused = build("use std\npoint p\n");
     assert_eq!(unused.sketch.points.len(), 1);
     assert!(unused.sketch.planes.is_empty());
-    let explicit = build("use std\nstd: StandardDatums()\na: Loc(std.front, u: 3, v: 4)\n");
+    let explicit = build("use std\nstd: StandardDatums()\npoint a hint(x: 3, y: 4)\na distance(3, along: u) std.front\na distance(4, along: v) std.front\n");
     assert_eq!(explicit.sketch.planes.len(), 2, "an explicit std binding is not duplicated");
     let mut e = build("unit mm\nuse std\n\
-        a: Loc(std.front, u: 3mm, v: 4mm)\n\
-        b: Loc(std.up, u: 3mm, v: 4mm)\n\
-        c: Loc(std.front, u: 6mm, v: 8mm)\n");
+        point a hint(x: 3, y: 4)\na distance(3mm, along: u) std.front\na distance(4mm, along: v) std.front\n\
+        point b hint(x: -4, y: 3)\nb distance(3mm, along: u) std.up\nb distance(4mm, along: v) std.up\n\
+        point c hint(x: 6, y: 8)\nc distance(6mm, along: u) std.front\nc distance(8mm, along: v) std.front\n");
     solved(&mut e.sketch);
     assert_eq!(e.sketch.planes.len(), 2);
     assert_eq!(e.sketch.points.len(), 6);
-    close(e.sketch.point_xy(e.map.ent_named("a.p").unwrap().i()), (3.0, 4.0));
-    close(e.sketch.point_xy(e.map.ent_named("b.p").unwrap().i()), (-4.0, 3.0));
+    close(e.sketch.point_xy(e.map.ent_named("a").unwrap().i()), (3.0, 4.0));
+    close(e.sketch.point_xy(e.map.ent_named("b").unwrap().i()), (-4.0, 3.0));
     assert_eq!(diagnose::diagnose(&mut e.sketch, Default::default()).dof, 0);
     assert!((0..e.sketch.points.len()).all(|p| e.sketch.plane_of(p).is_none()));
     let sk = e.sketch.clone();
@@ -49,17 +49,19 @@ fn standard_datums_work_in_hints_children_and_explicit_membership() {
     let mut e = build("unit mm\nuse std\n\
         point a hint(x: std.up.origin.x + 1mm * std.up.c, y: std.up.origin.y + 1mm * std.up.s)\n\
         ground a\nline axis(std.front.origin, std.front.toward)\n\
-        b: Loc(std.front, u: 2mm, v: 3mm) in std.front\n");
+        point b in std.front\nb distance(2mm, along: u) std.front\nb distance(3mm, along: v) std.front\n");
     solved(&mut e.sketch);
     close(e.sketch.point_xy(e.map.ent_named("a").unwrap().i()), (0.0, 1.0));
     let front = e.map.ent_named("std.front").unwrap().i();
-    assert_eq!(e.sketch.plane_of(e.map.ent_named("b.p").unwrap().i()), Some(front));
+    assert_eq!(e.sketch.plane_of(e.map.ent_named("b").unwrap().i()), Some(front));
 }
 
 #[test]
 fn unnamed_component_calls_keep_their_instances_distinct_and_source_intact() {
-    let src = "unit mm\nuse std\npreview {\n\
-        Loc(std.front, u: 3mm, v: 4mm)\nLoc(std.up, u: 3mm, v: 4mm)\n}\n";
+    let src = "unit mm\nuse std\ncomponent Spoke(f: plane) {\n\
+        point tip hint(x: f.origin.x + 5mm * f.c, y: f.origin.y + 5mm * f.s)\n\
+        line axis(f.origin, f.toward)\ntip on axis\nf.origin distance(5mm) tip\n}\n\
+        preview {\nSpoke(std.front)\nSpoke(std.up)\n}\n";
     let mut e = build(src);
     solved(&mut e.sketch);
     assert_eq!(e.sketch.points.len(), 5);
@@ -71,7 +73,7 @@ fn unnamed_component_calls_keep_their_instances_distinct_and_source_intact() {
     for st in instances {
         let mut text = String::new();
         syntax::write_stmt_to(&mut text, &st.kind).unwrap();
-        assert!(text.starts_with("Loc("), "{text}");
+        assert!(text.starts_with("Spoke("), "{text}");
         assert!(!text.contains('#'));
     }
     let sketch = e.sketch.clone();
@@ -126,9 +128,9 @@ fn both_ordinates_can_be_solved_as_independent_dimensions() {
 }
 
 #[test]
-fn loc_seeds_read_the_datum_and_membership_passes_through_nested_instances() {
-    let mut e = build("unit mm\nuse std\ncomponent Part(f: plane) { p: Loc(f, u: -5mm, v: 2mm) }\npoint o hint(x: 10, y: 20)\npoint q hint(x: o.x + 4mm, y: o.y + 3mm)\nground o\nground q\nplane datum(origin: o, toward: q)\nplane view\ni: Part(datum) in view\n");
-    let p = e.map.ent_named("i.p.p").unwrap().i();
+fn datum_seeds_and_membership_pass_through_nested_instances() {
+    let mut e = build("unit mm\nuse std\ncomponent Probe(f: plane) {\npoint p hint(x: f.origin.x - 5mm * f.c - 2mm * f.s, y: f.origin.y - 5mm * f.s + 2mm * f.c)\np distance(-5mm, along: u) f\np distance(2mm, along: v) f\n}\ncomponent Part(f: plane) { probe: Probe(f) }\npoint o hint(x: 10, y: 20)\npoint q hint(x: o.x + 4mm, y: o.y + 3mm)\nground o\nground q\nplane datum(origin: o, toward: q)\nplane view\ni: Part(datum) in view\n");
+    let p = e.map.ent_named("i.probe.p").unwrap().i();
     close(e.sketch.point_xy(p), (4.8, 18.6));
     let view = e.map.ent_named("view").unwrap().i();
     assert_eq!(e.sketch.points[p].plane, Some(view as u32));
@@ -157,8 +159,8 @@ fn datum_axes_require_a_datum_and_lengths() {
 
 #[test]
 fn a_datum_child_remains_a_point_through_aliases_and_face_corners() {
-    let e = build("unit mm\ncomponent Inner(p: point) {\npoint q hint(x: p.x + 1mm, y: p.y + 2mm)\nline edge(p, q)\n}\ncomponent Outer(f: plane) {\ni: Inner(f.origin)\nface triangle(f.origin, i.q, f.toward, -> close)\n}\npoint o hint(x: 10, y: 20)\npoint t hint(x: 14, y: 23)\nplane f(origin: o, toward: t)\nx: Outer(f)\n");
-    let edge = &e.sketch.lines[e.map.ent_named("x.i.edge").unwrap().i()];
+    let e = build("unit mm\ncomponent Inner(p: point) {\npoint q hint(x: p.x + 1mm, y: p.y + 2mm)\nline border(p, q)\n}\ncomponent Outer(f: plane) {\ni: Inner(f.origin)\nface triangle(f.origin, i.q, f.toward, -> close)\n}\npoint o hint(x: 10, y: 20)\npoint t hint(x: 14, y: 23)\nplane f(origin: o, toward: t)\nx: Outer(f)\n");
+    let edge = &e.sketch.lines[e.map.ent_named("x.i.border").unwrap().i()];
     assert_eq!(edge.p1 as usize, e.map.ent_named("o").unwrap().i());
     close(e.sketch.point_xy(edge.p2 as usize), (11.0, 22.0));
     assert_eq!(e.sketch.points.len(), 3);
@@ -166,11 +168,11 @@ fn a_datum_child_remains_a_point_through_aliases_and_face_corners() {
 }
 
 #[test]
-fn loc_can_leave_both_coordinates_unknown() {
-    let mut e = build("unit mm\nuse std\npoint o hint(x: 10, y: 20)\npoint q hint(x: 14, y: 23)\nground o\nground q\nplane f(origin: o, toward: q)\ni: Loc(f)\npoint target hint(x: 4.8, y: 18.6)\nground target\ni.p coincident target\n");
-    solved(&mut e.sketch);
-    assert!((e.sketch.params[e.sketch.free_vars["i.u"] as usize].value + 5.0).abs() < 1e-6);
-    assert!((e.sketch.params[e.sketch.free_vars["i.v"] as usize].value - 2.0).abs() < 1e-6);
+fn coordinate_placement_is_not_a_standard_library_component() {
+    let (p, errors, linked) = library::parse_linked("use std\np: Loc(std.front, u: 3mm, v: 4mm)\n");
+    assert!(errors.is_empty() && linked.is_empty());
+    let e = program::elaborate(&p);
+    assert!(!e.ok(), "the removed placement helper must not remain callable");
 }
 
 #[test]
@@ -194,11 +196,104 @@ fn vtwin_datums_follow_a_complete_crank_turn() {
             let crown = (pin.0 + 46.0 * c, pin.1 + 46.0 * s);
             close(point(&e, &format!("{bank}.crown")), crown);
             // Cylinder mouth corner: eight below the pivot and twelve to its left.
-            close(point(&e, &format!("{bank}.cyl.k_bl.p")),
+            close(point(&e, &format!("{bank}.cyl.k_bl")),
                   (pivot.0 - 8.0 * c - 12.0 * s, pivot.1 - 8.0 * s + 12.0 * c));
             // The left flank starts fourteen down from the crown, 2.5 left of the rod.
-            close(point(&e, &format!("{bank}.pis.ra.p")),
+            close(point(&e, &format!("{bank}.pis.ra")),
                   (crown.0 - 14.0 * c - 2.5 * s, crown.1 - 14.0 * s + 2.5 * c));
         }
     }
+}
+
+// Edit the design or hardware module as the file pane does; callers keep passing the same group.
+fn vtwin_variant(src: &str, edits: &[(&str, &str, &str)]) -> program::Elaborated {
+    let (mut p, errors) = syntax::parse(src);
+    assert!(errors.is_empty(), "{errors:?}");
+    let linked = gcs_core::modules::link(&mut p, &mut |name| {
+        let mut text = library::resolve(name)?;
+        for &(module, before, after) in edits {
+            if name == module {
+                assert!(text.contains(before), "{module}: missing {before}");
+                text = text.replacen(before, after, 1);
+            }
+        }
+        Some(text)
+    });
+    assert!(linked.is_empty(), "{linked:?}");
+    let mut e = program::elaborate(&p);
+    assert!(e.ok(), "{:?}", e.diags);
+    solved(&mut e.sketch);
+    e
+}
+
+#[test]
+fn vtwin_cylinder_follows_piston_travel_and_wall_thickness() {
+    let src = "unit mm\nuse std\nuse components.bank\n\
+        point bottom_pin hint(x: 0mm, y: -R)\nstd.origin vertical bottom_pin\nstd.origin distance(R) bottom_pin\n\
+        point top_pin hint(x: 0mm, y: R)\nstd.origin vertical top_pin\nstd.origin distance(R) top_pin\n\
+        point pivot hint(x: 0mm, y: H)\nstd.origin vertical pivot\nstd.origin distance(H) pivot\n\
+        bottom: Bank(bottom_pin, pivot, fw: fwA, dim: 0, dims: vtwin_dims)\n\
+        top: Bank(top_pin, pivot, fw: fwA, dim: 0, dims: vtwin_dims)\n";
+    for (before, after, wall) in [
+        ("param R = 10mm", "param R = 12mm", 4.0),
+        ("param L = 46mm", "param L = 49mm", 4.0),
+        ("param ph = 14mm", "param ph = 16mm", 4.0),
+        ("param D = 16mm", "param D = 18mm", 4.0),
+        ("param wall = 4mm", "param wall = 5mm", 5.0),
+    ] {
+        let e = vtwin_variant(src, &[("components.dims", before, after)]);
+        let at = |name| e.sketch.point_xy(e.map.ent_named(name).unwrap().i());
+        // At the two ends of travel, the skirt meets the mouth and the crown clears the head.
+        close(at("bottom.pis.s0"), at("bottom.cyl.m0"));
+        let crown = at("top.crown");
+        close(at("top.cyl.hx"), (crown.0, crown.1 + 2.0));
+        let inner = at("top.cyl.b_tr");
+        close(at("top.cyl.k_tr"), (inner.0 + wall, inner.1 + wall));
+    }
+}
+
+#[test]
+fn vtwin_hardware_changes_update_pockets_bores_and_seal_grooves() {
+    let e = vtwin_variant(gcs_core::examples::source("vtwin").unwrap(), &[
+        ("hardware", "param hexbolt14_h = 4.4mm", "param hexbolt14_h = 5.4mm"),
+        ("hardware", "param brg608_w = 7mm", "param brg608_w = 8mm"),
+        ("hardware", "param clevis14_d = 6.35mm", "param clevis14_d = 6.85mm"),
+        ("hardware", "param clevis14_head_d = 9.7mm", "param clevis14_head_d = 10.7mm"),
+        ("hardware", "param clevis14_head_t = 2.3mm", "param clevis14_head_t = 3.3mm"),
+        ("hardware", "param oring014_cs = 1.78mm", "param oring014_cs = 2mm"),
+        ("hardware", "param oring010_cs = 1.78mm", "param oring010_cs = 2mm"),
+        ("components.dims", "param rbar = 5mm", "param rbar = 6mm"),
+    ]);
+    let at = |name| e.sketch.point_xy(e.map.ent_named(name).unwrap().i());
+    let radius = |name| e.sketch.radius_value(e.map.ent_named(name).unwrap());
+    let extent = |name| {
+        let solid = &e.sketch.solids[e.map.ent_named(name).unwrap().i()];
+        let gcs_core::model::SolidDef::Prism { from, to, .. } = &solid.def else { panic!("{name}") };
+        (from.value, to.value)
+    };
+    let near = |a: f64, b: f64| assert!((a - b).abs() < 1e-7, "{a} != {b}");
+
+    // The pivot head still fits its slot, with the original wall left between slot and bore.
+    let trap = extent("bankL.cyl.trap");
+    near(trap.1 - trap.0, 6.0);
+    near(trap.1, -11.0); // bore surface is at -8mm, with 3mm of material before it
+    let bearing = extent("plate.blank.bboss");
+    let bearing_pocket = extent("plate.blank.bpkt");
+    near(bearing.1 - bearing.0, 18.0);
+    near(bearing.1 - bearing_pocket.1, 1.5);
+    near(radius("crank.disc.ph"), 3.5);
+    near(radius("bankL.pis.hole"), 3.5);
+    // The clevis pocket follows the larger head in both the disc and the hardware side view.
+    near(radius("crank.disc.pkt"), 5.6);
+    let pocket = extent("crank.disc.pinpkt");
+    near(pocket.1 - pocket.0, 4.0);
+    near(at("side.disc.b").0 - at("side.head.a").0, 4.0);
+    // Barrel and inlet keep their 0.2mm diametral running clearance.
+    near(radius("plate.thr.barrel"), 6.0);
+    near(radius("plate.inlet.tbore") - radius("plate.thr.barrel"), 0.1);
+    // Both grooves follow the newly selected 2mm-section rings and the shared seal rule.
+    near(at("plate.thr.seal1.p").0 - at("plate.thr.section_center").0, 4.24);
+    near((at("plate.thr.seal1.p").1 - at("plate.thr.seal2.p").1).abs(), 2.7);
+    near((at("bankL.pis.g1R").0 - at("bankL.pis.g1L").0).hypot(
+        at("bankL.pis.g1R").1 - at("bankL.pis.g1L").1), 12.48);
 }

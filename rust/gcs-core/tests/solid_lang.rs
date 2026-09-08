@@ -157,7 +157,7 @@ fn inline_sections_inherit_the_boundary_plane_and_coexist_with_forward_faces() {
         solid slab(face(a, b, c, d, -> close), from: 0mm, to: 2mm)\n\
         solid named(sec, from: 0mm, to: 2mm)\nface sec(a, b, c, d, -> close)\n";
     let e = read(src);
-    assert!(e.sketch.faces.iter().all(|f| f.plane == Some(1)));
+    assert!(e.sketch.faces.iter().all(|f| f.plane() == Ok(Some(1))));
     let p = gcs_core::report::positions(&e.sketch, &e.map);
     assert!(p.iter().any(|(n, v)| n == "slab.bounds.z0" && (*v - 12.0).abs() < 1e-9));
     assert_eq!(volume(&e, "slab"), volume(&e, "named"));
@@ -635,7 +635,7 @@ fn named_chains_inherit_planes_and_revolve_with_arcs() {
           profile = arc rim(center: c, start: a, end: b) hint(r: 5) -> line axis(b, a) -> close\n\
           solid ball(profile, about: axis)\n}\n";
     let e = read(src);
-    assert_eq!(e.sketch.faces[0].plane, Some(1));
+    assert_eq!(e.sketch.faces[0].plane(), Ok(Some(1)));
     // Reports integrate the faceted surface; the analytic sphere is an independent check.
     let want = 4.0 / 3.0 * std::f64::consts::PI * 125.0;
     assert!((volume(&e, "ball") / want - 1.0).abs() < 0.002,
@@ -1066,6 +1066,8 @@ fn throttle_revolution_matches_the_extruded_design_in_both_placements() {
     use gcs_core::{plane, solid::{ApproximationPolicy, WorldPoint}};
     for (phi, height, page_x, page_y, offset) in [(0, 0, 0, 0, 0), (35, 72, 100, -80, 7)] {
         let src = format!("unit mm\nuse components.dims\nuse components.parts\nuse components.throttle\n\
+            param torgb = 2 * rbar - 2 * (1 - oring_squeeze) * tor\n\
+            param torw = oring_groove_w * tor\n\
             point O hint(x: {page_x}, y: {page_y})\nground O\n\
             point q hint(x: {}, y: {page_y})\nO distance(40mm, along: x) q\nO distance(0mm, along: y) q\n\
             plane datum(origin: O, toward: q)\n\

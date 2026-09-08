@@ -23,8 +23,9 @@ for project modules beside the opened model and then in its ancestors before the
 
 
 **Datum coordinates (0.21):** `p distance(d, along: u) f` and `along: v` are signed
-ordinates relative to a plane's datum, independent of membership. `std.Loc(f, u: …, v: …)`
-uses these and hints reading `f.c`/`f.s`; `f.angle` is also readable in hints. Components
+ordinates relative to a plane's datum, independent of membership. Hints can read `f.c`/`f.s`
+and `f.angle`. The standard library has no coordinate-placement helper: model contours with
+alignments, incidences, symmetry, and dimensions, rather than two ordinates for every corner. Components
 still have no implicit frame. A caller supplies membership with `instance: Part(f) in view`
 when the component does not need to name multiple planes. Datum intrinsics are reseeded after
 geometric point hints settle. Component aliases retain subentity paths such as `f.origin`.
@@ -45,6 +46,205 @@ passed as a layout group exposing its geometry. They add no solver state. Numeri
 survive substitution; missing members are errors. Curves still need fixed scalar/entity formals.
 The V-twin and inline-four examples pass `vtwin_dims` and `engine_dims` explicitly. Frame takes
 `Frame(layout, dims: vtwin_dims)`; its layout names the front datum, origin, and reference axis.
+
+**Analytic surface references:** `surface flank(crown, edge: rack.outer)` names a line/arc/circle
+patch of an unmodified revolution. It is spatial, owns no solver parameters, and is not a 2D
+drawing primitive. `solid::RevolvedSurface::named` reads its current solved geometry into an
+exact snapshot; re-read after model changes. Normalized `u` follows the source edge and `v`
+the declared revolution, so tangent orientation is not automatically an outward material
+normal. Surface formals, privacy, roles and copy/delete dependencies follow ordinary component
+rules. Browser access is `core/surface.ts`; the ABI returns position, `du`, `dv` in nine doubles.
+`RevolvedSurface::projector` / `SurfaceProjector::named` read an analytic incidence evaluator
+for one-sided line/circle meridians. `project` returns an oriented meridian residual, its
+normal, unbounded support parameters, a bounded patch point, and incidence error to that
+point. The residual is not a global distance and cannot certify membership in a finite patch;
+use incidence error. `surfaceProjection` exposes those values through `gcs_surface_project`.
+`line_on_sphere` returns every finite root of a straight meridian's sphere section.
+Optional `from:` / `to:` Angles select a source-revolution span along its declared sense.
+They restrict the original `v` chart without renumbering parameters or reversing normals.
+Read `RevolvedSurface::domain` / `GeneratedEnvelope::domain`; do not assume all named surfaces
+have the full [0,1] interval. Their browser counterparts are `surfaceDomain` / `envelopeDomain`.
+The spiral-bevel source declares the crown semicircles; its verifier reads those domains
+and starts local solves at their midpoint. Surface spans and envelope roll bounds share
+syntax/IR `AngularSpan`; neither is a hint or an additional solve unknown.
+**Named motions:** `motion turn(about: axis, ratio: 2, phase: 10deg)` and
+`motion relative(turn, relative_to: observer)` describe rigid families over a shared angle.
+`motion::evaluate` takes radians and returns the exact pose and derivative per radian, reading
+solved world axes through `Sketch::world_point`. Relative means observer inverse times source,
+including both derivatives. Motion is spatial, ABI kind 10, with no solver parameters or 2D
+glyph. Forward references, formals, privacy and copy/delete dependencies are supported;
+cycles and dependency depth over 64 are refused. Browser `core/motion.ts` samples position
+and velocity in six doubles. `motion::Family::read` retains a solved snapshot for repeated
+sampling; re-read after axis edits. Dependency height is checked even with cached subgraphs.
+
+**Named envelopes:** `envelope flank(source, under: generating, from: -35deg, to: 35deg)`
+binds a surface and motion over a finite increasing roll interval. It is an implicit
+zero-normal-velocity locus, spatial and parameter-free (ABI kind 11). `GeneratedEnvelope`
+reads solved surface/motion snapshots, evaluates a trial's contact data and residual, and
+intersects the locus with two section equations through the shared DogLeg loop. A nonzero
+trial residual is off the envelope; a local root is not a global regularity or material-side
+certificate. Bounds restrict the search and may fix parameters exactly. `TrustRegion` has a
+default no-op `restrict_step`; the envelope adapter limits steps to its box and still checks
+all original equations and rank. Browser `core/envelope.ts` returns position, normal, velocity
+and normal velocity in 10 doubles. Formals, privacy and copy/delete dependencies are ordinary
+component semantics. `GeneratedEnvelope::intersect_boundaries` solves against two analytic
+patches and checks their finite incidence errors at the result, refusing roots on undeclared
+continuations.
+
+**Trimmed spatial patches:** `patch flank(source, inside: tip, outside: root)` intersects
+material-side conditions on an existing surface or envelope. Repeat the label on every
+clipping solid. `patch::TrimmedPatch` is a solved snapshot with explicit axis, trim and
+envelope residual tolerances. Clipping currently accepts unmodified full revolutions with
+line/arc/circle profiles and holes. `solid::RevolvedRegion` evaluates analytic meridian
+membership and distance separately from the faceted CSG kernel; profile topology still
+uses the existing solid validator. Full-circle seams, arc shared vertices and disappearing
+axis edges need special care. Never turn a sphere's construction diameter into a wall.
+Intersection trials may leave the trim; the final root must satisfy it and the envelope
+equation. Browser `core/patch.ts` exposes checked surface and envelope samples; ABI kind 12.
+Patches do not yet select a connected branch, oriented face loop or closed surface-bounded solid.
+
+**Whole-interval geometry bounds:** `interval::Interval` has private finite endpoints and
+outward-rounded arithmetic, square and sqrt; division containing zero, overflow and invalid
+domains fail closed. `sin_cos` uses Taylor polynomials and explicit remainders on [-8,8],
+not platform libm accuracy or approximate argument reduction. `generating_profile_bounds`
+on a revolved-surface snapshot bounds its pre-revolution profile and du; browser access is
+`generatingProfileBounds`. Core `generating_profile_jet_bounds` also bounds duu without
+changing the first-order query's finite domain. The circular-crown verifier covers whole
+u/rho rectangles for sphere transversality, one continuous roll branch and a nonzero
+generated area factor, including fillet endpoints. Its standalone rational checker audits
+every margin, area-factor enclosure and exact cover. These establish nominal differential
+regularity, not source-solve error transfer, injectivity or interference. See `docs/interval-geometry.md`.
+
+**Geometry validation contracts:** see `docs/geometry-validation.md` for the failure categories.
+The spiral-bevel [roadmap](docs/spiral-bevel-roadmap.md) now investigates continuous volume
+subtraction before more manual cap/face assembly. `interval::minimum::enclose` refines a
+complete parameter interval using a caller-supplied enclosure oracle; unresolved budgets
+and resolution limits retain bounds, never guessed membership. Motion families expose an
+outward-rounded inverse-point speed bound for the mathematical solved motion. This does not
+bound floating-point pose evaluation or source-solve error. `Family::bounds` and its owned
+`MotionBounds` enclose mathematical poses and forward/inverse point boxes using interval
+axis normalization, trigonometry and relative-frame composition. Coefficients stay private;
+unsupported trig ranges fail. They do not certify the original nonlinear source solve.
+`solid::PlanarField` and `RevolvedField` define explicit analytic fields from half-planes,
+disks, Booleans and a revolution frame. Bounds use interval arithmetic; their material is
+closure({f<0}). Boolean fields remain one-Lipschitz but are not necessarily signed distances,
+and a zero value alone is not a material boundary (A minus A is the negative control).
+The pair experiment uses these fields with interval pose boxes, without an assumed
+evaluation-error band. Its coefficients are exact binary64 data extracted from the solved
+section; source-error transfer remains unproved. `docs/continuous-volumes.md` records the
+construction and independent rational audit of attained upper-bound witnesses. That audit
+does not certify global lower bounds or a finished gear solid/export.
+Indexing the full closed reference sections reveals a gear overcut from an inactive wall;
+`indexed_full_crown_union_exposes_neighboring_gear_overcut` preserves that rejected
+candidate. The replacement experiment intersects the two active one-sided fields after a
+crown-pitch rotation of the neighboring side; selected boundary/indexing checks pass.
+`SpatialField` now composes immutable revolved fields with fixed poses and Booleans; per-query
+memoization keys include node identity and the entire input box. Shared DAGs must not expand
+exponentially or conflate transformed coordinates. Spatial depth is bounded separately from
+planar leaf depth. The member workbench now subtracts every indexed sweep from each finite
+spherical/conical blank, including interval index transforms and budget-retaining box queries.
+This remains selected evidence, not whole-space verification or a public finished solid.
+Schema-5 member evidence now includes complete positive roll covers. The independent rational
+checker recomputes speed/field bounds and exact coverage, establishing selected point signs
+across every index and roll. It does not certify the tighter primary minimum intervals,
+source-error transfer, whole-space geometry or exported boundaries.
+`solid::SweptField` now owns a typed one-Lipschitz spatial source, a solved motion and a
+finite immutable roll domain. Its `SweepEvaluator` keeps a caller-capped pose cache and
+returns the interval refiner's enclosure/status for whole point boxes. Evidence observers
+receive raw oracle bounds but cannot define the geometry or prune the search. The gear
+workbench uses this core evaluator; do not reintroduce a separate callback-based oracle.
+`solid::MaterialField` composes static and swept operands with fixed poses and Booleans.
+Its evaluator owns complete-member cut arithmetic, retaining every distinct node/box sweep's
+domain, witness, enclosure and termination status. Budgets apply per sweep query; exhausted
+operands are never omitted. Query-local memoization includes the input box, while indexed
+clones of one sweep share its capped pose cache. Evidence observers index the returned
+sweep-query list; cached visits do not repeat evidence. An interval containing zero remains
+unresolved. This is a core snapshot capability, not yet an editable solid/export integration.
+`MaterialField::support_bounds` derives a conservative finite box for all material, or an
+explicit unknown. `MaterialEvaluator::boundary` uses that support, complete spatial cells,
+strict corner signs and two-sided spatial distance evidence before returning `FieldBoundary`.
+Never substitute an arbitrary crop, residual magnitude or same-sign corners for coverage.
+Ambiguous vertices, missing nearby mesh evidence, work limits and failed topology refuse
+extraction. The independent sphere checker audits the partition and both distance directions
+with rational inequalities. Read `docs/field-boundary-extraction.md` for scope and controls;
+this does not yet certify the whole gear, embedding, source accuracy or application export.
+`docs/implicit-meshing-methods.md` compares adaptive contouring, certified smooth-surface
+meshing and spacetime continuation. Keep the current extractor as a measured baseline;
+evaluate documented methods before extending uniform surface refinement further.
+`SolveOpts::acceptance_tol` controls both hard-row success and the existing DogLeg-to-LM retry;
+`tol` controls numerical stopping. Defaults retain interactive behavior. Analytic callers request
+accuracy instead of selecting an optimizer as a workaround, and still check geometric errors.
+`GeneratedEnvelope::evaluate` returns trials; `at` requires the envelope equation. Internal
+`EnvelopePatch` owns one source with its material conditions for standalone patches and seam
+operands. Do not reintroduce parallel untrimmed and trimmed copies of a generating face.
+Snapshot domains are private and returned by value; source edits require new snapshots.
+
+**Shared generating seams:** `seam join(flank, transition)` takes two envelopes or patches
+of envelopes. They must share one actual profile vertex, a source revolution and a named
+motion. `seam::EnvelopeSeam` snapshots them after solving, checks coincidence and tangent-plane
+agreement with explicit `SeamTolerance`, and intersects their angular domains. Its first-source
+u is fixed at the junction. `SeamIntersectionOptions` exposes only [v,roll]; `intersect` solves
+both envelope equations and one spatial section through the existing DogLeg adapter, using
+one normal-velocity tolerance for both faces. The final root checks both envelopes and both
+material trims. A seam is not a nearest-point weld or an arbitrary surface intersection.
+Local singular intersections are refused; global regularity and face-loop topology remain
+separate. Browser `core/seam.ts` exposes domain and checked contacts; ABI kind 13. Contacts
+carry the first face's normal and generating velocity, not the seam's curve derivative.
+
+**Envelope/boundary seams:** `seam tip_edge(flank_region, tip.wall)` names an envelope (or
+its material patch) intersected by a finite analytic surface. `seam::BoundarySeam` reads one
+`EnvelopePatch` and one `SurfaceProjector`; the first source's full [u,v,roll] domain stays
+available. Its section solve uses the existing intersection adapter with envelope, boundary
+support and section equations in that order, then checks finite incidence and material trims.
+This is a separate snapshot type from `EnvelopeSeam`: it has three possible unknowns and
+does not borrow the generating-junction tangency tolerances. Browser `boundarySeamDomain`
+and `boundarySeamSample` in `core/seam.ts` expose the checked snapshot through the same
+seam entity kind 13. Reading a seam does not assert a regular branch or an oriented face loop.
+
+**Shared spatial vertices:** `vertex corner(tip_edge,toe_edge)` meets two boundary seams on
+the same exact named generating face. A generating junction may also meet a boundary seam
+on either of its faces. Separate coincident declarations retain distinct identity. The
+`BoundaryVertex` snapshot owns one face and two boundaries; `JunctionVertex` owns one junction
+and one boundary. Their solve options expose three and two unknowns respectively. The latter
+checks finite incidence on the particular face named by the boundary seam; a coarser seam
+coincidence tolerance cannot transfer finer boundary membership. `position` returns only xyz,
+with no artificial corner normal. Domains are immutable snapshots; local solves check rank
+but do not certify global uniqueness. Formals, privacy and copy/delete are ordinary; ABI kind
+14, browser `core/vertex.ts`. Finite edge branches and analytic face assembly remain separate.
+
+**Finite spatial edges:** `edge extent(seam,from: a,to: b,along: axis)` names a finite
+axial slicing interval between spatial vertices. `edge::SpatialEdge::named` rechecks endpoint
+parameter witnesses and maps junction endpoint u into the correct incident-face chart.
+At a junction, a boundary on the other exact incident face shares the same corner through
+boundary identity; never infer this from proximity or require duplicate corners. The
+snapshot owns one seam, its endpoint positions and a solved world direction. `sample`
+solves the original equations through existing seam APIs, checks local rank/material/finite
+incidence in the interior, and reuses exact stored endpoints checked by their full vertex
+constraints. Do not re-solve a known endpoint with a potentially tangent slicing equation.
+Fraction means linear projection along the
+line, not arc length. Separate local samples are not a global branch certificate. No planar
+coordinates or glyph; ordinary formals/privacy/copy, ABI kind 15, browser `core/edge.ts`.
+
+**Checked shell topology:** `topology::ClosedShell` owns explicit edge endpoint identities and
+ordered directed uses in connected faces with boundary loops. Construction checks closure,
+two opposed uses per edge, one circular link per vertex, and face connectivity; periodic
+self-uses and annular faces are supported. This is separate from planar `FaceE`, and contains
+no coordinates or tolerance weld. `from_triangles` uses index identity. The gear workbench
+retains the checked shell before export; `mesh::stl_topology` then verifies the actual encoded
+float32 coordinates, identifying exact equals and normalizing signed zero. Neither topology
+check establishes geometric incidence, non-self-intersection, outward material orientation,
+or surface-deviation error. See `docs/shell-topology.md` before connecting analytic faces.
+
+**Spatial face boundaries:** `face working(toe,tip,heel,join,on: region)` binds an ordered
+finite-edge loop to an exact named surface/envelope/patch. `FaceSupport` distinguishes
+inherited planes from spatial supports; `FaceE::plane()` refuses the latter, never treating
+them as page profiles. Spatial faces build/copy after edges and keep `on` as an ordinary
+dependency. `spatial_face::SpatialFaceBoundary` reads canonical vertex witnesses, validates
+shared identity and maps junction parameters to this face's chart. Each sample preserves
+edge xyz and checks this support's finite incidence. Loops currently have no holes or
+repeated vertices/edges; geometry still needs an interior/embedding certificate before
+solid assembly. Browser `spatial-face.ts` marshals loop metadata and samples. See
+`docs/analytic-face-boundaries.md`; do not equate a closed boundary walk with a valid disk.
 
 A geometric constraint solver, and **Solvent**, the language a drawing in it is written as.
 
@@ -243,9 +443,8 @@ Conventions:
   is the new one.  `CKind::side_words` is the one table of "the words a slot takes and what each
   means as a sign": `left` is +1 of a line and −1 along the page, opposite numbers and the same
   English, which is exactly why the word is what a document writes.  A negative magnitude is E040
-  **by value**, so `Loc(v: -hw)` is caught at the call; where a sign is *arithmetic* rather than a
-  convention (a coordinate a caller signs) a document writes `abs(v)` and lets the seed — the
-  point, worked out — say which side.  The run, the rise and the directed angle keep their signs
+  **by value**, so `p distance(-hw) axis` is refused; where a sign is arithmetic rather than a
+  convention, use a signed datum ordinate for that measurement.  The run, the rise and the directed angle keep their signs
   (a component computes those, and by settling time the flattener has folded the text into a
   number that no longer says how it was written) and gain `along: right|left|up|down` and
   `sense: cw|ccw` as the spelling a drawing should use.  `io::dimension_text` draws the number the
@@ -1251,8 +1450,7 @@ Conventions:
   section, a groove a third wider than it — stated once in `hardware` and cut by a component that
   reads it, so `dims.sv` derives `grooveb` and `groovew` where it used to type 12.9 and 2.4.
   **A component contributes a `cut` to a body it was handed**, which is the body rule being a
-  set and not a sequence: the feature owns the void it cuts.  `Loc` moved to `std` on the way,
-  having been written out in two project files.
+  set and not a sequence: the feature owns the void it cuts.
 - **A part carries no views; a sheet asks for them** (§6.11, `hidden.rs`).  `view(body) in
   views.right` and `section(body, at: swing) in views.front` are *outputs*: no `Int` draw flag, no
   `repeat draw_side { … }`, no second copy of the geometry and no `project` to keep in step.

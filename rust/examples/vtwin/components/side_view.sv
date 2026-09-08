@@ -14,6 +14,8 @@ use components.dims
 use components.parts
 
 component SideView(o: point, dims: group) {
+  param tcylA = dims.fwA + dims.D + dims.wall
+  param tcylB = dims.fwB + dims.D + dims.wall
   param mid = dims.tp / 2
 
   // -- the crank train along the shaft ---------------------------------------------------------
@@ -54,16 +56,16 @@ component SideView(o: point, dims: group) {
   // and lowest corner in the front view; and each one's bore, which is what shows the two
   // cylinders are two parts — B's face wall is a rod thicker than A's, so its bore stands a rod
   // further from the plate, over rod B where it rides the pin beside rod A -------------------
-  point cyB_top hint(x: o.x - dims.tcylB / 2, y: o.y + 60mm)
-  point cyB_bot hint(x: o.x - dims.tcylB / 2, y: o.y + 5mm)
-  point cyA_top hint(x: o.x - dims.tcylA / 2, y: o.y + 60mm)
-  point cyA_bot hint(x: o.x - dims.tcylA / 2, y: o.y + 5mm)
-  o distance(-dims.tcylB / 2, along: x) cyB_top
-  o distance(-dims.tcylB / 2, along: x) cyB_bot
-  o distance(-dims.tcylA / 2, along: x) cyA_top
-  o distance(-dims.tcylA / 2, along: x) cyA_bot
-  cylB: Slab(o, x0: -dims.tcylB, x1: 0mm, top: cyB_top, bottom: cyB_bot)
-  cylA: Slab(o, x0: -dims.tcylA, x1: 0mm, top: cyA_top, bottom: cyA_bot)
+  point cyB_top hint(x: o.x - tcylB / 2, y: o.y + 60mm)
+  point cyB_bot hint(x: o.x - tcylB / 2, y: o.y + 5mm)
+  point cyA_top hint(x: o.x - tcylA / 2, y: o.y + 60mm)
+  point cyA_bot hint(x: o.x - tcylA / 2, y: o.y + 5mm)
+  o distance(-tcylB / 2, along: x) cyB_top
+  o distance(-tcylB / 2, along: x) cyB_bot
+  o distance(-tcylA / 2, along: x) cyA_top
+  o distance(-tcylA / 2, along: x) cyA_bot
+  cylB: Slab(o, x0: -tcylB, x1: 0mm, top: cyB_top, bottom: cyB_bot)
+  cylA: Slab(o, x0: -tcylA, x1: 0mm, top: cyA_top, bottom: cyA_bot)
   point boB_top hint(x: o.x - dims.zB, y: o.y + 55mm)
   point boB_bot hint(x: o.x - dims.zB, y: o.y + 8mm)
   point boA_top hint(x: o.x - dims.zA, y: o.y + 55mm)
@@ -74,7 +76,7 @@ component SideView(o: point, dims: group) {
   o distance(-dims.zA, along: x) boA_bot
   boreB: Slab(o, x0: -(dims.fwB + dims.D), x1: -dims.fwB, top: boB_top, bottom: boB_bot)
   boreA: Slab(o, x0: -(dims.fwA + dims.D), x1: -dims.fwA, top: boA_top, bottom: boA_bot)
-  claim cylB.a distance(dims.tcylB) cylB.b
+  claim cylB.a distance(tcylB) cylB.b
   claim boreA.b distance(dims.fwA, along: x) cylA.b
   claim boreB.b distance(dims.fwB, along: x) cylB.b
 }

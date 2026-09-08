@@ -4,7 +4,8 @@ model m from "assembly.sv"
 sheet drawing {
   size (420mm, 297mm)
   sketch source(m) at (80mm, 180mm)
-  view v0(m.plate.body) from m.views.right at (320mm, 180mm)
+  // Use upright paper axes; the folded model datum has a quarter-turn in its basis.
+  view v0(m.plate.body) from right at (320mm, 180mm)
   style m.O { display: none }
   style m.views.qf { display: none }
   style m.views.right_origin { display: none }
@@ -85,14 +86,14 @@ sheet drawing {
   style m.plate.thr.e2 { display: none }
   style m.plate.thr.e3 { display: none }
   style m.plate.thr.cx { display: none }
-  style m.plate.thr.lv0.p { display: none }
-  style m.plate.thr.lv1.p { display: none }
-  style m.plate.thr.lv2.p { display: none }
-  style m.plate.thr.lv3.p { display: none }
-  style m.plate.thr.x0.p { display: none }
-  style m.plate.thr.x1.p { display: none }
-  style m.plate.thr.x2.p { display: none }
-  style m.plate.thr.x3.p { display: none }
+  style m.plate.thr.lv0 { display: none }
+  style m.plate.thr.lv1 { display: none }
+  style m.plate.thr.lv2 { display: none }
+  style m.plate.thr.lv3 { display: none }
+  style m.plate.thr.x0 { display: none }
+  style m.plate.thr.x1 { display: none }
+  style m.plate.thr.x2 { display: none }
+  style m.plate.thr.x3 { display: none }
   style m.plate.thr.datum_up { display: none }
   style m.plate.thr.section_center { display: none }
   style m.plate.thr.back_axis.p { display: none }
@@ -114,85 +115,85 @@ sheet drawing {
   style m.plate.thr.hub_front.p { display: none }
   style m.plate.thr.front_axis.p { display: none }
   style m.crank.pin { display: none }
-  style m.crank.disc.se.p { display: none }
-  style m.crank.disc.gs.h0.p { display: none }
-  style m.crank.disc.gs.h1.p { display: none }
-  style m.crank.disc.gs.h2.p { display: none }
-  style m.crank.disc.gs.h3.p { display: none }
-  style m.crank.disc.gs.n0.p { display: none }
-  style m.crank.disc.gs.n1.p { display: none }
-  style m.crank.disc.gs.n2.p { display: none }
-  style m.crank.disc.gs.n3.p { display: none }
-  style m.crank.disc.gs.a0.p { display: none }
-  style m.crank.disc.gs.a1.p { display: none }
+  style m.crank.disc.se { display: none }
+  style m.crank.disc.gs.h0 { display: none }
+  style m.crank.disc.gs.h1 { display: none }
+  style m.crank.disc.gs.h2 { display: none }
+  style m.crank.disc.gs.h3 { display: none }
+  style m.crank.disc.gs.n0 { display: none }
+  style m.crank.disc.gs.n1 { display: none }
+  style m.crank.disc.gs.n2 { display: none }
+  style m.crank.disc.gs.n3 { display: none }
+  style m.crank.disc.gs.a0 { display: none }
+  style m.crank.disc.gs.a1 { display: none }
   style m.bankR.crown { display: none }
-  style m.bankR.cyl.k_bl.p { display: none }
-  style m.bankR.cyl.k_br.p { display: none }
-  style m.bankR.cyl.k_tr.p { display: none }
-  style m.bankR.cyl.k_tl.p { display: none }
-  style m.bankR.cyl.b_bl.p { display: none }
-  style m.bankR.cyl.b_br.p { display: none }
-  style m.bankR.cyl.b_tr.p { display: none }
-  style m.bankR.cyl.b_tl.p { display: none }
-  style m.bankR.cyl.m0.p { display: none }
-  style m.bankR.cyl.hx.p { display: none }
-  style m.bankR.cyl.pt.p { display: none }
-  style m.bankR.cyl.t0.p { display: none }
-  style m.bankR.cyl.t1.p { display: none }
-  style m.bankR.cyl.t2.p { display: none }
-  style m.bankR.cyl.t3.p { display: none }
-  style m.bankR.cyl.h0.p { display: none }
-  style m.bankR.pis.cL.p { display: none }
-  style m.bankR.pis.cR.p { display: none }
-  style m.bankR.pis.g0L.p { display: none }
-  style m.bankR.pis.g1L.p { display: none }
-  style m.bankR.pis.g2L.p { display: none }
-  style m.bankR.pis.g3L.p { display: none }
-  style m.bankR.pis.sL.p { display: none }
-  style m.bankR.pis.g0R.p { display: none }
-  style m.bankR.pis.g1R.p { display: none }
-  style m.bankR.pis.g2R.p { display: none }
-  style m.bankR.pis.g3R.p { display: none }
-  style m.bankR.pis.sR.p { display: none }
-  style m.bankR.pis.ra.p { display: none }
+  style m.bankR.cyl.k_bl { display: none }
+  style m.bankR.cyl.k_br { display: none }
+  style m.bankR.cyl.k_tr { display: none }
+  style m.bankR.cyl.k_tl { display: none }
+  style m.bankR.cyl.b_bl { display: none }
+  style m.bankR.cyl.b_br { display: none }
+  style m.bankR.cyl.b_tr { display: none }
+  style m.bankR.cyl.b_tl { display: none }
+  style m.bankR.cyl.m0 { display: none }
+  style m.bankR.cyl.hx { display: none }
+  style m.bankR.cyl.pt { display: none }
+  style m.bankR.cyl.t0 { display: none }
+  style m.bankR.cyl.t1 { display: none }
+  style m.bankR.cyl.t2 { display: none }
+  style m.bankR.cyl.t3 { display: none }
+  style m.bankR.cyl.h0 { display: none }
+  style m.bankR.pis.cL { display: none }
+  style m.bankR.pis.cR { display: none }
+  style m.bankR.pis.g0L { display: none }
+  style m.bankR.pis.g1L { display: none }
+  style m.bankR.pis.g2L { display: none }
+  style m.bankR.pis.g3L { display: none }
+  style m.bankR.pis.sL { display: none }
+  style m.bankR.pis.g0R { display: none }
+  style m.bankR.pis.g1R { display: none }
+  style m.bankR.pis.g2R { display: none }
+  style m.bankR.pis.g3R { display: none }
+  style m.bankR.pis.sR { display: none }
+  style m.bankR.pis.ra { display: none }
   style m.bankR.pis.rb { display: none }
-  style m.bankR.pis.rc.p { display: none }
+  style m.bankR.pis.rc { display: none }
   style m.bankR.pis.rd { display: none }
-  style m.bankR.pis.s0.p { display: none }
+  style m.bankR.pis.s0 { display: none }
   style m.bankL.crown { display: none }
-  style m.bankL.cyl.k_bl.p { display: none }
-  style m.bankL.cyl.k_br.p { display: none }
-  style m.bankL.cyl.k_tr.p { display: none }
-  style m.bankL.cyl.k_tl.p { display: none }
-  style m.bankL.cyl.b_bl.p { display: none }
-  style m.bankL.cyl.b_br.p { display: none }
-  style m.bankL.cyl.b_tr.p { display: none }
-  style m.bankL.cyl.b_tl.p { display: none }
-  style m.bankL.cyl.m0.p { display: none }
-  style m.bankL.cyl.hx.p { display: none }
-  style m.bankL.cyl.pt.p { display: none }
-  style m.bankL.cyl.t0.p { display: none }
-  style m.bankL.cyl.t1.p { display: none }
-  style m.bankL.cyl.t2.p { display: none }
-  style m.bankL.cyl.t3.p { display: none }
-  style m.bankL.cyl.h0.p { display: none }
-  style m.bankL.pis.cL.p { display: none }
-  style m.bankL.pis.cR.p { display: none }
-  style m.bankL.pis.g0L.p { display: none }
-  style m.bankL.pis.g1L.p { display: none }
-  style m.bankL.pis.g2L.p { display: none }
-  style m.bankL.pis.g3L.p { display: none }
-  style m.bankL.pis.sL.p { display: none }
-  style m.bankL.pis.g0R.p { display: none }
-  style m.bankL.pis.g1R.p { display: none }
-  style m.bankL.pis.g2R.p { display: none }
-  style m.bankL.pis.g3R.p { display: none }
-  style m.bankL.pis.sR.p { display: none }
-  style m.bankL.pis.ra.p { display: none }
+  style m.bankL.cyl.k_bl { display: none }
+  style m.bankL.cyl.k_br { display: none }
+  style m.bankL.cyl.k_tr { display: none }
+  style m.bankL.cyl.k_tl { display: none }
+  style m.bankL.cyl.b_bl { display: none }
+  style m.bankL.cyl.b_br { display: none }
+  style m.bankL.cyl.b_tr { display: none }
+  style m.bankL.cyl.b_tl { display: none }
+  style m.bankL.cyl.m0 { display: none }
+  style m.bankL.cyl.hx { display: none }
+  style m.bankL.cyl.pt { display: none }
+  style m.bankL.cyl.t0 { display: none }
+  style m.bankL.cyl.t1 { display: none }
+  style m.bankL.cyl.t2 { display: none }
+  style m.bankL.cyl.t3 { display: none }
+  style m.bankL.cyl.h0 { display: none }
+  style m.bankL.pis.cL { display: none }
+  style m.bankL.pis.cR { display: none }
+  style m.bankL.pis.g0L { display: none }
+  style m.bankL.pis.g1L { display: none }
+  style m.bankL.pis.g2L { display: none }
+  style m.bankL.pis.g3L { display: none }
+  style m.bankL.pis.sL { display: none }
+  style m.bankL.pis.g0R { display: none }
+  style m.bankL.pis.g1R { display: none }
+  style m.bankL.pis.g2R { display: none }
+  style m.bankL.pis.g3R { display: none }
+  style m.bankL.pis.sR { display: none }
+  style m.bankL.pis.ra { display: none }
   style m.bankL.pis.rb { display: none }
-  style m.bankL.pis.rc.p { display: none }
+  style m.bankL.pis.rc { display: none }
   style m.bankL.pis.rd { display: none }
-  style m.bankL.pis.s0.p { display: none }
+  style m.bankL.pis.s0 { display: none }
   style m.so { display: none }
   style m.side.brg1.a { display: none }
   style m.side.brg1.b { display: none }
@@ -334,6 +335,25 @@ sheet drawing {
   style m.crank.disc_axes { display: none }
   style m.crank.disc.screw_axes { display: none }
   style m.crank.disc.gs.ax { display: none }
+  // Construction edges used to constrain the profiles belong to the model, not this sheet.
+  style m.crank.disc.reference { display: none }
+  style m.crank.disc.gs.entry { display: none }
+  style m.crank.disc.gs.exit { display: none }
+  style m.plate.thr.lever_start { display: none }
+  style m.plate.thr.lever_end { display: none }
+  style m.plate.thr.entry { display: none }
+  style m.plate.thr.wall { display: none }
+  style m.plate.thr.exit { display: none }
+  style m.plate.air.feedR.axis { display: none }
+  style m.plate.air.feedR.ab { display: none }
+  style m.plate.air.feedR.bc { display: none }
+  style m.plate.air.feedR.cd { display: none }
+  style m.plate.air.feedR.da { display: none }
+  style m.plate.air.feedL.axis { display: none }
+  style m.plate.air.feedL.ab { display: none }
+  style m.plate.air.feedL.bc { display: none }
+  style m.plate.air.feedL.cd { display: none }
+  style m.plate.air.feedL.da { display: none }
   style m.plate.thr.lever_axes { display: none }
   style m.plate.thr.hole_axes { display: none }
   style m.bankR.cylinder_axes { display: none }

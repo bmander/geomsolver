@@ -154,6 +154,9 @@ pub fn jansen() -> Sketch {
 /// Build a named example.  `None` for an unknown name.
 pub fn example(name: &str) -> Option<Sketch> {
     Some(match name {
+        "solid_flange" | "solid_pulley" | "solid_elbow" | "solid_tray" | "solid_loft" => {
+            document(source(name)?, name)
+        }
         "rect_fillets" => rect_fillets(100.0, 60.0, 10.0, 0.0),
         "slotted_link" => slotted_link(80.0, 15.0, 6.0),
         "truss" => truss(8, 20.0, 15.0, true),
@@ -240,7 +243,12 @@ pub fn bracket() -> Sketch {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 35] = [
+pub const CASES: [(&str, &str, &str); 40] = [
+    ("Mounting flange · solids", "solid_flange", "Annular extrusions, an added hub, and a circular pattern of through holes; editable dimensions and three solid views."),
+    ("V-belt pulley · solids", "solid_pulley", "A full revolution of a stepped section, with a revolved V-groove cutter and a shaft bore."),
+    ("Hollow duct elbow · solids", "solid_elbow", "A hollow square section swept along a constrained circular arc; edit the guide angle, bend radius, or wall thickness."),
+    ("Hollow reducer · loft", "solid_loft", "Two hollow square component sections joined along a dimensioned line; change either size, the wall, or the length."),
+    ("Pocketed tray · solids", "solid_tray", "Named profile extrusions and nested Boolean bodies: cut a pocket, then add four annular standoffs while preserving the floor."),
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Square, one line round a cycle", "square", "`cycle 4 { line s -> perpendicular equal }` — the body ends mid-joint, so each side welds to the next copy's and the wrap closes the loop (issue #38); 1 DOF: it swings about its grounded corner"),
     ("Regular n-gon (component)", "ngon", "a parametric `Ngon(n, side)` component: corners on a circle, equal sides, the open-jointed cycle welding them round — pure relations, so the closure equality is implied rather than Over, and the seeds walk once round the circle to pick the convex winding no residual can state (1 DOF: it spins about its hub)"),
@@ -370,6 +378,11 @@ pub fn jitter(sk: &mut Sketch, amount: f64, seed: u32) {
 /// for a document to hold — which is why it lives in `fixtures` and not here.
 pub fn source(key: &str) -> Option<&'static str> {
     match key.split(':').next().unwrap_or("") {
+        "solid_flange" => Some(include_str!("../../examples/solid_flange.sv")),
+        "solid_pulley" => Some(include_str!("../../examples/solid_pulley.sv")),
+        "solid_elbow" => Some(include_str!("../../examples/solid_elbow.sv")),
+        "solid_tray" => Some(include_str!("../../examples/solid_tray.sv")),
+        "solid_loft" => Some(include_str!("../../examples/solid_loft.sv")),
         "gear" => Some(GEAR),
         "gear_trace" => Some(GEAR_TRACE),
         "impossible_triangle" => Some(IMPOSSIBLE_TRIANGLE),

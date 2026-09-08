@@ -26,7 +26,7 @@ fn component_previews_resolve_project_imports_for_models_and_drawings() {
     let part = dir.join("parts/bar.sv");
     std::fs::write(&part, "use parts.dims\ncomponent Bar(w: Length) {\n\
         point a hint(x: 0, y: 0)\nground a\npoint b hint(x: w, y: 0)\nground b\n\
-        line edge(a, b)\n}\npreview {\nunit mm\ndemo: Bar(w: width)\n}\n").unwrap();
+        line border(a, b)\n}\npreview {\nunit mm\ndemo: Bar(w: width)\n}\n").unwrap();
     let args = [part.to_str().unwrap(), "--json", "--where", "demo.b.x"];
     let result = run(&args);
     assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stdout));

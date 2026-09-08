@@ -26,8 +26,17 @@
 //! *outside*, and the wall would silently vanish.
 
 mod evaluated;
+mod field;
+pub use field::{PlanarField,RevolvedField,SpatialField,SweptField,SweepEvaluator,SweepError};
+pub use field::{MaterialField,MaterialEvaluator,MaterialBounds,MaterialSweepQuery};
+pub use field::{BoundaryOptions,BoundaryError,BoundaryStage,FieldBoundary,BoundaryCell,BoundaryPoint,BoundaryCrossing};
+pub use field::BoundaryComponent;
 mod raycast;
 mod section;
+mod loft;
+mod surface;
+pub use surface::{RegionLocation,RegionSample,RevolvedRegion,RevolvedSurface,
+    SurfaceProjection,SurfaceProjector};
 pub(crate) use raycast::RayIndex;
 use section::face_polys;
 pub use evaluated::{ApproximationPolicy, EvaluatedSolid, LocalPoint, WorldPoint, PagePoint, PageFrame, RoundFeature};
@@ -441,7 +450,7 @@ impl FacePoly {
 /// refused those (E080), so this is the runtime's own guard rather than a diagnosis.
 pub fn face_poly(sk: &Sketch, fi: usize, unit: f64) -> Option<FacePoly> {
     let f = sk.faces.get(fi)?;
-    loop_poly(sk, &f.edges, &f.edge_names, f.plane, unit)
+    loop_poly(sk, &f.edges, &f.edge_names, f.plane().ok()?, unit)
 }
 
 fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], plane: Option<u32>, unit: f64) -> Option<FacePoly> {
@@ -550,6 +559,10 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 *face
             }
             SolidDef::Revolve { face, .. } => *face,
+            SolidDef::Loft { face, end, guide } => {
+                loft::prepare(sk, *face, *end, *guide, unit).map_err(|m| fail(&m))?;
+                continue;
+            }
             SolidDef::Body { .. } => { pending.extend(s.operands().into_iter().rev().map(|o| (o as usize, false))); continue; }
         };
         let polys = face_polys(sk, face as usize, unit).map_err(|m| fail(&m))?;
@@ -967,6 +980,12 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
         v.push(s as f64);
         name_read(&sol.name, &mut v);
         match &sol.def {
+            SolidDef::Loft { face, end, guide } => {
+                v.extend([4.0, end.map_or(-1.0, |f| f as f64)]);
+                face_reads(sk, *face, &mut v);
+                if let Some(f) = end { face_reads(sk, *f, &mut v); }
+                loft::reads(sk, *guide, &mut v);
+            }
             SolidDef::Prism { face, from, to } => {
                 v.push(0.0);
                 v.push(from.value);
@@ -1012,7 +1031,14 @@ fn name_read(name: &str, v: &mut Vec<f64>) {
 fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
     v.push(fi as f64);
     let Some(f) = sk.faces.get(fi as usize) else { return };
-    v.extend([f.plane.map_or(-1.0, |p| p as f64), f.holes.len() as f64]);
+    let plane = match f.support {
+        crate::model::FaceSupport::Plane(p) => p,
+        crate::model::FaceSupport::Surface(s) => {
+            v.extend([-2.,s.kind as u32 as f64,s.idx as f64]);
+            return;
+        }
+    };
+    v.extend([plane.map_or(-1.0, |p| p as f64), f.holes.len() as f64]);
     for (edges, edge_names) in f.boundaries() {
         v.push(edge_names.len() as f64);
         for name in edge_names { name_read(name, v); }
@@ -1027,7 +1053,7 @@ fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
             v.extend(params.iter().map(|&p| sk.params[p as usize].value));
         }
     }
-    if let Some(p) = f.plane {
+    if let Some(p) = plane {
         if let Some(pl) = sk.planes.get(p as usize) {
             v.extend(pl.basis.u);
             v.extend(pl.basis.v);
@@ -1188,6 +1214,11 @@ fn build(
         for b in through { t = Term::Diff(Box::new(t), Box::new(operand(b))); }
         return t;
     }
+    if let SolidDef::Loft { face, end, guide } = sol.def {
+        let Ok(loft) = loft::prepare(sk, face, end, guide, unit) else { return Term::Empty };
+        prims.push(loft.primitive(origin, &name));
+        return Term::Prim(prims.len()-1);
+    }
     let Some(face) = sol.face() else { return Term::Empty };
     let Ok(polys) = face_polys(sk, face as usize, unit) else { return Term::Empty };
     let through_extent = if let SolidDef::Through { body, .. } = sol.def {
@@ -1229,7 +1260,7 @@ fn build(
                 let b = plane::in_view(c, s, o, sk.point_xy(l.p2 as usize));
                 revolve(&p, (a, b), sweep.value, *sense, unit, &name)
             }
-            SolidDef::Body { .. } => unreachable!(),
+            SolidDef::Body { .. } | SolidDef::Loft { .. } => unreachable!(),
         };
         let Some(p) = built else { return Term::Empty };
         prims.push(p);

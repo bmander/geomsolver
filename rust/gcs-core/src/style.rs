@@ -1,14 +1,9 @@
 //! Presentation: what a drawing *looks* like, which is a separate statement from what it **is**.
 //!
-//! A Solvent document says what the drawing is.  How it is presented is a class on a declaration
-//! and a `style` block that says what that class looks like — and **no algorithm in the core
-//! consults either**.  Nothing here reaches the model, the kernels, diagnosis or decomposition;
-//! it is read by `report` and stroked by a front end, and that is the whole of its reach.
-//!
-//! That is the point of it.  `construction` was a `bool` on seven entity structs, serialized,
-//! grafted, exported, published by the binding and given a toggle — all to reach one arm in
-//! `paint.ts`.  Each new look cost the same again.  A class is one string in the same places,
-//! once, and the count goes into the sheet instead.
+//! Model geometry has typed construction and centerline roles. The renderer exposes these
+//! as fixed selectors alongside entity kinds; authored `.svd` rules choose their ink.
+//! Arbitrary presentation classes remain an internal renderer and legacy JSON facility.
+//! Neither roles nor styles add solver parameters or constraints.
 //!
 //! **Lengths in a sheet are screen pixels**, never world units, which is the rule the codebase
 //! already follows for everything drawn at a constant size (callout figures go through `unit`
@@ -187,9 +182,8 @@ pub type Sheet = BTreeMap<String, Style>;
 
 /// The rules the implementation ships, which a document may override.
 ///
-/// `construction` is here and nowhere else.  It stopped being a word in the language when a
-/// class could say the same thing; what it *did* is one rule, and a document that wants
-/// reference geometry drawn some other way says so and changes nothing else about the drawing.
+/// Geometry roles expose fixed selectors here. Their default ink is presentation;
+/// their identity is stored independently on the sketch (`semantics::GeometryRoles`).
 pub fn base() -> Sheet {
     let mut s = Sheet::new();
     let rule = |dash: Option<Vec<f64>>, width: Option<f64>, color: Option<&str>| Style {
@@ -198,7 +192,7 @@ pub fn base() -> Sheet {
         color: color.map(str::to_string),
         display: None,
     };
-    // reference geometry.  What the retired `construction` keyword did, and the whole of it.
+    // Reference geometry remains visible in the editor; authored sheets hide it by default.
     s.insert("construction".into(), rule(Some(vec![7.0, 4.0]), None, None));
     // A dimension callout's ink, and nothing about its *figure*: the extension lines, the heads,
     // the label's box and the hit test are geometry, laid out by `callout.rs` in world units so
@@ -215,6 +209,7 @@ pub fn base() -> Sheet {
     // whole cascade rests on: `.visible` is the plain outline and says nothing, so one
     // `style .hidden { width: 2 }` cannot come out thick on half a drawing.
     s.insert("hidden".into(), rule(Some(vec![4.0, 3.0]), None, Some("#7a7a7a")));
+    s.insert("centerline".into(), rule(Some(vec![12.0, 3.0, 2.0, 3.0]), Some(0.75), Some("#718096")));
     s.insert("section".into(), rule(None, Some(1.6), None));
     // a claimed dimension — the draughtsman's reference dimension, which `callout.rs` draws
     // parenthesised.  Lighter than a controlling one, because it does not control.

@@ -6,7 +6,7 @@
 // The kinematics is two statements.  The piston's crown is `L` from the pin, and the rod's line
 // passes through the pivot — that is what an oscillating cylinder *is*: the rod cannot swing
 // relative to the cylinder, so the cylinder swings instead.  Every point of both parts is then
-// written in the cylinder's own frame (`Loc`: so far up the rod's line, so far across it), and
+// constrained to the cylinder's axis and to the other edges of its profile, and
 // the whole bank turns with the crank.  Nothing here reads the crank angle: the pin is wherever
 // the crank's freedom puts it.  Seeds start each point where the closed form puts it at the
 // table's starting angle, which is what keeps the solve on the branch with the cylinder over the
@@ -34,17 +34,25 @@ component Bank(pin: point, piv: point, fw: Length, dim: Int, dims: group) {
 
   // the dimensions, on one bank
   repeat dim {
-    claim cyl.b_tl.p distance(dims.D) cyl.b_tr.p
+    claim cyl.b_tl distance(dims.D) cyl.b_tr
     claim pin distance(dims.L) crown
-    claim cyl.k_bl.p distance(dims.ct - dims.cb) cyl.k_tl.p
-    claim pis.ra.p distance(dims.rt) pis.rc.p
+    claim pis.ra distance(dims.rt) pis.rc
   }
 }
 
 // Open this file to preview bank B at the assembly's starting angle.
 preview {
   unit mm
-  pin: Loc(std.up, u: R * cos(theta0), v: -R * sin(theta0))
-  pivot: Loc(std.up, u: H * cos(alphaR), v: -H * sin(alphaR))
-  bank: Bank(pin.p, pivot.p, fw: fwB, dim: 1, dims: vtwin_dims)
+  point pin hint(x: std.up.origin.x + (R * cos(theta0)) * std.up.c - (-R * sin(theta0)) * std.up.s,
+                    y: std.up.origin.y + (R * cos(theta0)) * std.up.s + (-R * sin(theta0)) * std.up.c)
+  point pivot hint(x: std.up.origin.x + (H * cos(alphaR)) * std.up.c - (-H * sin(alphaR)) * std.up.s,
+                    y: std.up.origin.y + (H * cos(alphaR)) * std.up.s + (-H * sin(alphaR)) * std.up.c)
+  bank: Bank(pin, pivot, fw: fwB, dim: 1, dims: vtwin_dims)
+  line reference(std.origin, std.up.toward)
+  line crank(std.origin, pin)
+  line bank_axis(std.origin, pivot)
+  std.origin distance(R) pin
+  std.origin distance(H) pivot
+  reference angle(theta0, sense: cw) crank
+  reference angle(alphaR, sense: cw) bank_axis
 }

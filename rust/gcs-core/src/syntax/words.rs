@@ -37,7 +37,7 @@ pub(super) fn joint_word(w: &str) -> bool {
 
 /// The words that shape a statement without naming anything — a modifier the parser eats where it
 /// stands.  `as` binds a name after it, which is why `highlight` treats that one specially.
-pub(super) const MODIFIERS: [&str; 7] = ["over", "as", "at", "hint", "class", "from", "in"];
+pub(super) const MODIFIERS: [&str; 10] = ["over", "as", "at", "hint", "class", "from", "in", "private", "construction", "centerline"];
 
 /// The words that may follow a declaration's own, so `class a b` knows where its list ends.
 /// A chain's joints are here too: `arc a(center: c) class construction tangent …` is one link.
@@ -111,7 +111,7 @@ pub(super) fn opens_link(w: &str, next: Option<&str>) -> bool {
 /// An optional declaration name cannot consume an element keyword or trailing clause.
 /// `at` stays reserved so the retired seed spelling gets its diagnostic.
 pub(super) fn names_decl(w: &str) -> bool {
-    EntKind::parse(w).is_none() && !trails_decl(w) && w != "at" && w != "cut"
+    EntKind::parse(w).is_none() && !trails_decl(w) && w != "at" && w != "cut" && !["private", "construction", "centerline"].contains(&w)
 }
 
 /// A valid identifier that is not reserved by the grammar. Used by source edits

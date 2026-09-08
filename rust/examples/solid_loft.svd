@@ -1,0 +1,15 @@
+model m from "solid_loft.sv"
+
+sheet reducer {
+  size (297mm, 210mm)
+  label "HOLLOW REDUCER" at (14mm, 18mm)
+  label "Two component sections / straight guide / matching inner and outer boundaries" at (14mm, 28mm)
+  label "INLET" at (40mm, 45mm)
+  label "PLAN" at (40mm, 120mm)
+  label "ISOMETRIC" at (175mm, 45mm)
+  view front(m.body) from front at (55mm, 77mm) scale 1.8
+  view plan(m.body) from top at (55mm, 172mm) scale 1.1
+  view iso(m.body) from isometric at (190mm, 100mm) scale 1.8
+  style .hidden { color: #a1aab4; dash: 3 3 }
+  label "Omit outlet.profile to sweep the inlet section unchanged." at (125mm, 192mm)
+}

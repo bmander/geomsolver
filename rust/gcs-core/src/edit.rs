@@ -89,7 +89,8 @@ fn splice(text: &str, mut edits: Vec<Splice>) -> String {
 /// rotor are seeds a person may perfectly well omit, and a solve moves them anyway.  There is
 /// then no span to splice, so the clause is written out whole at the point the parser recorded
 /// for it (`Decl::hint_span`) — one splice, and the statement around it untouched.  Leaving it
-/// alone instead would mean a drawing whose pose its source cannot express.
+/// alone instead would mean a drawing whose pose its source cannot express. A driving radius
+/// dimension already records that scalar, so it does not need an automatically added hint.
 ///
 /// `Kind::Numeric`, always: a seed is not a statement, so nothing recompiles.
 pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
@@ -99,6 +100,12 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
     // one made is `SourceMap::ents_made_by`, whose order — the declaration's own entity first,
     // then the children it minted — is what `reconcile` reads too, so neither the entity index
     // nor the find-by-kind that re-derived the parent is needed.
+    // A driving radius dimension already records the scalar. Keep hints for free radii
+    // and claims, which do not determine it, and preserve hints the author wrote explicitly.
+    let dimensioned_radii: std::collections::BTreeSet<EntRef> = sk.constraints.iter()
+        .filter(|c| c.kind == crate::constraints::CKind::Radius
+            && !c.claim && !c.soft && c.free.is_none())
+        .map(|c| c.args[0].ent()).collect();
     let mut edits = Vec::new();
     for st in &prog.root().body {
         let StmtKind::Decl(d) = &st.kind else { continue };
@@ -109,6 +116,8 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         }
         // a declaration that could not be built made nothing, and has no pose to record
         let Some(parent) = e.map.ents_made_by(st.id).next() else { continue };
+        let omit_radius = dimensioned_radii.contains(&parent)
+            && d.seed_spans.first().is_none_or(|span| span.is_empty());
         let kids = sk.children(parent);
         // the statement's slot for each child, in field order — the same order `sk.children`
         // hands them back in.  A slot may be empty (an implicit child), so for the per-slot
@@ -149,6 +158,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         let mut mine: Vec<Splice> = Vec::new();
         let mut missing = false;
         for (i, p) in sk.own_params(parent).iter().enumerate() {
+            if omit_radius { continue; }
             let v = sk.params[*p as usize].value;
             let text = d.seed_text.get(i).and_then(|t| t.as_ref());
             let (sp, miss) = one(v, text, d.seed_spans.get(i).copied().unwrap_or_default());
@@ -207,7 +217,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         }
         // the clause, as the pose the solve arrived at; empty when the kind owns no scalar at
         // all — a line's numbers are its two points', and they are written in the slots
-        let hint = syntax::hint_clause(d, &pose);
+        let hint = if omit_radius { String::new() } else { syntax::hint_clause(d, &pose) };
         // No slot of this list is the source's own text, so the list has to be written too —
         // a chain's thread fills slots with references written in *another* link, or written
         // nowhere at all, and neither is a list this statement can splice into.  It is spelled
@@ -246,7 +256,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             for g in d2.children.iter_mut() {
                 *g = filled.by_ref().take(g.len().max(1)).flatten().collect();
             }
-            (syntax::decl_args(&d2), syntax::decl_tail(&d2, &pose))
+            syntax::decl_args(&d2)
         });
         if list.is_none() && hint.is_empty() {
             // nothing to write here: what moved is in a slot the source wrote, and splices there
@@ -259,8 +269,9 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             // Both are missing and both would go at the same offset — the parser records the
             // clause's home just past the name when there is no clause — so they are written as
             // one edit.  Two insertions at one position would race for it.
-            Some((_, tail)) if at.is_empty() && d.list_span.is_empty() => {
-                edits.push(Splice { at, with: tail })
+            Some(args) if at.is_empty() && d.list_span.is_empty() => {
+                let with = if hint.is_empty() { args } else { format!("{args} {hint}") };
+                edits.push(Splice { at, with })
             }
             // The clause has a home of its own, and the *list* belongs to the name: written at
             // the clause's position it would land past whatever trailer stands between them,
@@ -268,7 +279,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             // *replaced* where one stands — a plane that wrote its attitude and no children
             // has a list none of whose slots is its own, and a second list beside the first
             // would be two — and inserted at the name's end where none does.
-            Some((args, _)) => {
+            Some(args) => {
                 edits.push(Splice { at: d.list_span, with: args });
                 if !hint.is_empty() {
                     let with = if at.is_empty() { format!(" {hint}") } else { hint };
@@ -430,6 +441,7 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
         span: Span::default(),
     };
     let inst = syntax::Instance {
+        annotations: Default::default(),
         name: syntax::Name::new(name.clone()),
         component: syntax::Name::new("Rectangle"),
         args: vec![arg("w", w), arg("h", h)],
@@ -457,6 +469,7 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
 pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
     let name = mint(prog, EntKind::Point);
     let d = Decl {
+        annotations: Default::default(),
         kind: EntKind::Point,
         name: syntax::DeclName::Written(syntax::Name::new(name.clone())),
         children: Vec::new(),
@@ -472,7 +485,7 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
         seed_at: None,
         seed_names: Vec::new(),
         attitude: Default::default(),
-        sweep: None,
+        sweep: None, motion: None, angular_span: None,
         membership: Default::default(),
         list_span: Span::default(),
         close: None,
@@ -558,6 +571,7 @@ fn add_entity_with(
     }
     let n_scalar = kind.fields().iter().filter(|(_, f)| *f == crate::model::Field::Scalar).count();
     let d = Decl {
+        annotations: Default::default(),
         kind,
         name: syntax::DeclName::Written(syntax::Name::new(name.clone())),
         children,
@@ -575,7 +589,7 @@ fn add_entity_with(
         attitude,
         // a gesture never draws a solid: the sheet is where the drawing is, and a solid is
         // written over what is drawn there
-        sweep: None,
+        sweep: None, motion: None, angular_span: None,
         membership: Default::default(),
         list_span: Span::default(),
         close: None,
@@ -776,6 +790,12 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
             // membership (`in …`) is a label the point survives losing, and is not counted
             if let Some(r) = d.attitude.plane_ref() {
                 look(r);
+            }
+            if let Some(motion) = &d.motion {
+                match motion {
+                    syntax::MotionSpec::Rotation {axis,..} => look(axis),
+                    syntax::MotionSpec::Relative {source,observer} => { look(source); look(observer); }
+                }
             }
             // a curve is a point of an instance, and goes with what it is written over: the
             // instance's point, or — written in place — the entities the instance was given
@@ -1170,6 +1190,10 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
     for r in &needed {
         if minted.contains_key(r) || renamed.contains_key(r) {
             continue; // new (its statement carries the name), or its statement already named
+        }
+        if let Some(member) = e.map.name_of(*r).and_then(|name| e.map.private_from_root(name)) {
+            return Edit::none(prog, Some(format!(
+                "`{member}` is private to its component; add the relation inside that component")));
         }
         if e.map.writable_name(*r).is_some() {
             continue; // the source already calls it something a statement may say

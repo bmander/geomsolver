@@ -181,7 +181,7 @@ impl EvaluatedSolid {
                     continue;
                 }
                 let circle = &sk.circles[edges[0].i()];
-                let (basis, pose) = match face.plane {
+                let (basis, pose) = match face.plane()? {
                     Some(p) => {
                         let p = &sk.planes[p as usize];
                         (

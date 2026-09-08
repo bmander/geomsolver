@@ -11,6 +11,14 @@ mod planes;
 mod relations;
 mod resolve;
 mod solids;
+mod surfaces;
+mod motions;
+mod envelopes;
+mod patches;
+mod seams;
+mod vertices;
+mod edges;
+mod spatial_faces;
 mod source_map;
 
 pub use diagnostics::{Code, Diag, Severity};
@@ -27,6 +35,27 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag
     diags.extend(crate::solid::bearing_errors(sk).into_iter().map(|(b, message)| Diag {
         code: Code::E082, span: b.span, stmt: Some(crate::syntax::StmtId(b.stmt)), message,
     }));
+    for i in 0..sk.surfaces.len() {
+        if let Err(message) = crate::solid::RevolvedSurface::named(sk,i) {
+            let site = map.site_of(crate::model::EntRef::new(crate::model::EntKind::Surface,i));
+            diags.push(Diag {code:Code::E080,span:site.map(|s| s.span).unwrap_or_default(),
+                stmt:site.map(|s| s.stmt),message});
+        }
+    }
+    for i in 0..sk.motions.len() {
+        if let Err(message) = crate::motion::evaluate(sk,i,0.) {
+            let site = map.site_of(crate::model::EntRef::new(crate::model::EntKind::Motion,i));
+            diags.push(Diag {code:Code::E080,span:site.map(|s| s.span).unwrap_or_default(),
+                stmt:site.map(|s| s.stmt),message});
+        }
+    }
+    for i in 0..sk.envelopes.len() {
+        if let Err(message) = crate::envelope::GeneratedEnvelope::named(sk,i) {
+            let site = map.site_of(crate::model::EntRef::new(crate::model::EntKind::Envelope,i));
+            diags.push(Diag {code:Code::E080,span:site.map(|s| s.span).unwrap_or_default(),
+                stmt:site.map(|s| s.stmt),message});
+        }
+    }
     diags
 }
 pub use lift::{dumps, to_program};
@@ -136,6 +165,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // -- phase 1: names, in one pre-pass.  Indices come from declaration order within a kind,
     // which is `primitives()` order, which is the order phase 2 builds in.
     let expansion = crate::flatten::expand(p, sk.units);
+    map.private_names = expansion.private_names.clone();
     diags.extend(expansion.diagnostics.iter().cloned());
     let mut res = Resolver::default();
     let mut count: BTreeMap<EntKind, u32> = BTreeMap::new();
@@ -206,7 +236,11 @@ pub fn elaborate(p: &Program) -> Elaborated {
             }
         }
         let n = count.entry(kind).or_insert(0);
-        res.of.insert(key.clone(), EntRef::new(kind, *n as usize));
+        // Spatial faces depend on edges of generated surfaces, after all planar
+        // profiles and primitive solids. Their indices are assigned in that phase.
+        let late_face = matches!(&st.kind, StmtKind::Decl(d)
+            if d.kind == EntKind::Face && d.children.get(2).is_some_and(|g| !g.is_empty()));
+        res.of.insert(key.clone(), EntRef::new(kind, if late_face { u32::MAX as usize } else { *n as usize }));
         if let StmtKind::Decl(d) = &st.kind {
             res.kids.insert(
                 key.clone(),
@@ -216,7 +250,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 }).collect(),
             );
         }
-        *n += 1;
+        if !late_face { *n += 1; }
     }
 
     // every plane's attitude, before any plane is built: a plane folded from another needs
@@ -336,6 +370,14 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // either is an unknown.  This is the stratification as a phase: everything above it is the
     // drawing, everything below reads what the drawing came to.
     solids(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+    surfaces::surfaces(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+    motions::motions(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+    envelopes::envelopes(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+    patches::patches(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+    seams::seams(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+    vertices::vertices(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+    edges::edges(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+    spatial_faces::faces(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
 
     // -- phase 4: every expression against the whole document, once.  Per-statement evaluation
     // would be quadratic in the expression count and would make a dimension whose definition is
@@ -379,6 +421,21 @@ pub fn elaborate(p: &Program) -> Elaborated {
         }
     }
 
+    // Roles follow creation provenance, including unnamed children. Referenced geometry
+    // belongs to its own declaration, even when a construction component borrows it.
+    let roles: BTreeMap<_, _> = body.iter().filter_map(|st| {
+        let roles = match &st.kind {
+            StmtKind::Decl(d) => d.roles,
+            StmtKind::Chain(c) => c.annotations.roles,
+            _ => return None,
+        };
+        (roles != Default::default()).then_some(((st.id, st.path.clone()), roles))
+    }).collect();
+    for (&entity, site) in &map.of_entity {
+        if let Some(&roles) = roles.get(&(site.stmt, site.path.0.clone())) {
+            sk.roles.insert(entity, roles);
+        }
+    }
     crate::modules::localize(p, &mut diags);
     Elaborated { sketch: sk, map, diags, program: p.clone(), taken: false }
 }

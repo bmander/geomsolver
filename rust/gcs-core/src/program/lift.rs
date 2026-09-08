@@ -97,6 +97,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         _ => None,
     };
     Decl {
+        annotations: crate::semantics::Annotations { roles: sk.roles_of(e), private: false },
         kind: e.kind,
         name: DeclName::Written(Name::new(entity_name(e))),
         children,
@@ -112,7 +113,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         seed_at: None,
         seed_names: Vec::new(),
         attitude: lift_attitude(sk, e),
-        sweep: None,
+        sweep: None, motion: None, angular_span: None,
         membership: lift_plane(sk, e),
         list_span: Span::default(),
         close: None,
@@ -149,6 +150,7 @@ fn lift_curve(sk: &Sketch, i: usize) -> crate::syntax::CurveSpec {
     CurveSpec {
         target: CurveTarget::Anon(
             Instance {
+                annotations: Default::default(),
                 name: Name::new("#c"),
                 component: Name::new(def.component.clone()),
                 args,

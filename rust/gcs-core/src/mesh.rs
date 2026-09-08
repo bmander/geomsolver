@@ -320,19 +320,48 @@ pub(crate) fn placed_stl(mesh: &Mesh, origin: [f64; 3], name: &str) -> Result<Ve
 }
 
 fn check_stl(bytes: Vec<u8>, name: &str) -> Result<Vec<u8>, String> {
-    for triangle in bytes[84..].chunks_exact(50) {
-        let mut v = [[0.0; 3]; 3];
-        for i in 0..3 {
-            for k in 0..3 {
-                let offset = 12 + i * 12 + k * 4;
-                v[i][k] = f32::from_le_bytes(triangle[offset..offset + 4].try_into().unwrap()) as f64;
-            }
-        }
+    for v in stl_points(&bytes)? {
         if v.iter().flatten().any(|x| !x.is_finite()) || degenerate(v[0], v[1], v[2]) {
             return Err(format!("`{name}` cannot be represented at this position and scale by float32 STL coordinates; move the solid nearer the origin or change its export units"));
         }
     }
     Ok(bytes)
+}
+
+fn stl_points(bytes: &[u8]) -> Result<impl Iterator<Item=[[f64;3];3]> + '_,String> {
+    if bytes.len() < 84 { return Err("incomplete binary STL header".into()); }
+    let count = u32::from_le_bytes(bytes[80..84].try_into().unwrap()) as usize;
+    let expected = count.checked_mul(50).and_then(|n| n.checked_add(84));
+    if expected != Some(bytes.len()) {
+        return Err("binary STL triangle count does not match its byte length".into());
+    }
+    Ok(bytes[84..].chunks_exact(50).map(|triangle| std::array::from_fn(|i|
+        std::array::from_fn(|k| {
+            let offset = 12+i*12+k*4;
+            f32::from_le_bytes(triangle[offset..offset+4].try_into().unwrap()) as f64
+        }))))
+}
+
+/// Reconstruct and validate the topology of the actual binary STL coordinates.
+/// Exactly equal encoded positions share one identity (+0 and -0 compare equal);
+/// no distance tolerance repairs the file. Also refuses nonfinite/degenerate triangles.
+/// This proves one closed oriented manifold, not geometric non-self-intersection
+/// or a bound on deviation from the original analytic surfaces.
+pub fn stl_topology(bytes: &[u8]) -> Result<crate::topology::ClosedShell,String> {
+    let mut vertices = std::collections::BTreeMap::new();
+    let mut triangles = vec![];
+    for p in stl_points(bytes)? {
+        if p.iter().flatten().any(|x| !x.is_finite()) || degenerate(p[0],p[1],p[2]) {
+            return Err("binary STL has a nonfinite or degenerate triangle".into());
+        }
+        triangles.push(p.map(|p| {
+            let key = p.map(|v| if v == 0. { 0 } else { (v as f32).to_bits() });
+            let next = vertices.len();
+            *vertices.entry(key).or_insert(next)
+        }));
+    }
+    crate::topology::ClosedShell::from_triangles(vertices.len(),&triangles)
+        .map_err(|e| format!("invalid binary STL shell topology: {e:?}"))
 }
 
 // -- the mesh a viewer wants --------------------------------------------------------------------

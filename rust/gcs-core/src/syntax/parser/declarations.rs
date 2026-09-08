@@ -18,18 +18,26 @@ struct SweepParts {
     depth: Option<Arg>,
     about: Option<Ref>,
     through: Option<Ref>,
+    along: Option<Ref>,
     sweep: Option<Arg>,
     sense: Option<Sense>,
 }
 
 /// The labels a solid's brackets may carry beside the face or the operands.
 fn sweep_label(l: &str) -> bool {
-    matches!(l, "from" | "to" | "depth" | "about" | "sweep" | "sense" | "through")
+    matches!(l, "from" | "to" | "depth" | "about" | "sweep" | "sense" | "through" | "along")
 }
 
 /// What the sweep arguments a bracket list carried come to.  A solid is a prism, a revolution,
 /// or a body over other solids — and a mixture is none of the three.
 fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
+    if let Some(guide) = p.along {
+        if p.from.is_some() || p.to.is_some() || p.depth.is_some() || p.about.is_some()
+            || p.through.is_some() || p.sweep.is_some() || p.sense.is_some() {
+            return Err("`along:` cannot be combined with other sweep extents".into());
+        }
+        return Ok(Sweep::Along { guide });
+    }
     if let Some(body) = p.through {
         if p.from.is_some() || p.to.is_some() || p.depth.is_some() || p.about.is_some()
             || p.sweep.is_some() || p.sense.is_some() {
@@ -146,6 +154,8 @@ impl<'a> P<'a> {
         // how an error spells this statement's head — computed at the failure, since every
         // declaration that parses would otherwise allocate a string nothing reads
         let head = || decl_head(kind, &name);
+        if kind == EntKind::Motion { return self.motion_decl(name); }
+        if kind == EntKind::Envelope { return self.envelope_decl(name); }
         // `curve path = leg.toe over theta in (0, 360)` — a point of a component, as one of its
         // numeric formals runs (§6.5).  The target is an instance's point, or an instance
         // written in place followed by the point's path.
@@ -166,6 +176,7 @@ impl<'a> P<'a> {
                 return None;
             }
             return Some(Decl {
+                annotations: Default::default(),
                 kind,
                 name,
                 children: Vec::new(),
@@ -181,7 +192,7 @@ impl<'a> P<'a> {
                 seed_at: None,
                 seed_names: Vec::new(),
                 attitude: Attitude::Page,
-                sweep: None,
+                sweep: None, motion: None, angular_span: None,
                 membership: Membership::default(),
                 list_span: Span::default(),
                 close: None,
@@ -209,6 +220,7 @@ impl<'a> P<'a> {
             let mut membership = Membership::default();
             membership.set_span(Span::new(end, end));
             return Some(Decl {
+                annotations: Default::default(),
                 kind,
                 name,
                 children: Vec::new(),
@@ -224,7 +236,7 @@ impl<'a> P<'a> {
                 seed_at: None,
                 seed_names: Vec::new(),
                 attitude: Attitude::Page,
-                sweep: None,
+                sweep: None, motion: None, angular_span: None,
                 membership,
                 list_span: Span::new(end, end),
                 close: None,
@@ -246,6 +258,8 @@ impl<'a> P<'a> {
         let mut seed_spans: Vec<Span> = vec![Span::default(); scalars.len()];
         let mut att = AttParts::default();
         let mut swp = SweepParts::default();
+        let mut surface_from = None;
+        let mut surface_to = None;
         let mut close: Option<Span> = None;
         let name_end = self.prev_hi();
         let open = self.here().lo as usize;
@@ -281,18 +295,40 @@ impl<'a> P<'a> {
                 }
                 // `name:` labels a field; anything else is positional
                 let label = self.slot_label();
+                if kind == EntKind::Edge && label.as_deref()
+                    .is_some_and(|s| !matches!(s,"seam" | "from" | "to" | "along")) {
+                    self.fail("an edge names its `seam:`, `from:`, `to:` and `along:` operands");
+                    return None;
+                }
+                if matches!(kind,EntKind::Seam | EntKind::Vertex)
+                    && label.as_deref().is_some_and(|s| s != "first" && s != "second") {
+                    self.fail("a seam or vertex names its `first:` and `second:` operands");
+                    return None;
+                }
+                if kind == EntKind::Patch && !matches!(label.as_deref(),
+                    Some("source" | "inside" | "outside")) && !(label.is_none() && positional == 0) {
+                    self.fail("a patch names its source, then labels each solid `inside:` or `outside:`");
+                    return None;
+                }
                 if kind == EntKind::Face {
                     match label.as_deref() {
                         Some("holes") => in_holes = true,
                         Some("edges") if !in_holes => {},
+                        Some("on") => {},
                         Some(_) => {
-                            self.fail("a face takes its outer edges, then `holes:` with circles or closed loops");
+                            self.fail("a face takes its edges, optional `holes:`, and `on:` for a spatial support");
                             return None;
                         }
                         None => {}
                     }
                 }
                 match label {
+                    Some(l) if kind == EntKind::Surface && (l == "from" || l == "to") => {
+                        let slot = if l == "from" { &mut surface_from } else { &mut surface_to };
+                        if slot.is_some() { self.fail("a surface bound is given twice"); return None; }
+                        let (text,span) = self.expr_until(',')?;
+                        *slot = Some(Arg::Dim {text,span});
+                    }
                     // **a solid's sweep is what it is made of**, so it stands in the brackets
                     // with the face — and it is read before the attitude's labels, since `from`
                     // is a word both constructs use and only one of them is a plane
@@ -301,7 +337,8 @@ impl<'a> P<'a> {
                     }
                     // a plane's attitude is what it is made of, so it stands in the brackets
                     // with the children — and no other kind has one to give
-                    Some(l) if attitude_label(&l) => {
+                    Some(l) if attitude_label(&l)
+                        && !fields.iter().any(|(name,field)| *name == l && *field == Field::Child) => {
                         if kind != EntKind::Plane {
                             self.fail(&format!(
                                 "`{l}` folds a plane, and a {} has no attitude to give",
@@ -340,7 +377,7 @@ impl<'a> P<'a> {
                             None => Kid::Ref(self.refr()?),
                         };
                         let slot = if kind == EntKind::Face {
-                            usize::from(in_holes)
+                            if label.as_deref() == Some("on") { 2 } else { usize::from(in_holes) }
                         } else {
                             match &label {
                                 Some(l) => fields
@@ -373,6 +410,11 @@ impl<'a> P<'a> {
             }
             list_span = Span::new(open, self.prev_hi());
         }
+        let angular_span = match (surface_from,surface_to) {
+            (None,None) => None,
+            (Some(from),Some(to)) => Some(crate::syntax::AngularSpan {from,to}),
+            _ => { self.fail("a surface span needs both `from:` and `to:` angles"); return None; }
+        };
         let attitude = match attitude_of(att) {
             Ok(a) => a,
             Err(m) => {
@@ -524,6 +566,7 @@ impl<'a> P<'a> {
             membership.set_span(Span::new(end, end));
         }
         Some(Decl {
+            annotations: Default::default(),
             kind,
             name,
             children,
@@ -540,6 +583,7 @@ impl<'a> P<'a> {
             seed_names: Vec::new(),
             attitude,
             sweep,
+            motion: None, angular_span,
             membership,
             list_span,
             close,
@@ -554,6 +598,10 @@ impl<'a> P<'a> {
             None
         };
         match label {
+            "along" => {
+                if parts.along.is_some() { return twice(self); }
+                parts.along = Some(self.refr()?);
+            }
             "through" => {
                 if parts.through.is_some() { return twice(self); }
                 parts.through = Some(self.refr()?);
@@ -655,6 +703,96 @@ impl<'a> P<'a> {
     }
 }
 impl<'a> P<'a> {
+    fn envelope_decl(&mut self, name: DeclName) -> Option<Decl> {
+        let start = self.here();
+        if !self.want_p('(') { return None; }
+        let mut surface = None; let mut motion = None;
+        let mut from = None; let mut to = None;
+        while !self.eat_p(')') {
+            let label = self.slot_label();
+            match label.as_deref() {
+                Some("surface") | Some("under") | Some("motion") | None => {
+                    let slot = match label.as_deref() {
+                        Some("surface") => &mut surface,
+                        Some("under") | Some("motion") => &mut motion,
+                        _ if surface.is_none() => &mut surface,
+                        _ => &mut motion,
+                    };
+                    if slot.is_some() { self.fail("an envelope argument is given twice"); return None; }
+                    *slot = Some(Kid::Ref(self.refr()?));
+                }
+                Some("from") | Some("to") => {
+                    let slot = if label.as_deref() == Some("from") { &mut from } else { &mut to };
+                    if slot.is_some() { self.fail("an envelope bound is given twice"); return None; }
+                    let (text,span) = self.expr_until(',')?;
+                    *slot = Some(Arg::Dim {text,span});
+                }
+                _ => { self.fail("an envelope takes a surface, `under:` a motion, `from:` and `to:` angles"); return None; }
+            }
+            if self.peek() != Some(&Tok::P(')')) && !self.want_p(',') { return None; }
+        }
+        let (Some(surface),Some(motion),Some(from),Some(to)) = (surface,motion,from,to) else {
+            self.fail("an envelope needs a surface, motion and two angular bounds"); return None;
+        };
+        let end = self.prev_hi();
+        let (class,class_span) = self.class_clause(end);
+        Some(Decl {
+            annotations:Default::default(),kind:EntKind::Envelope,name,
+            children:vec![vec![surface],vec![motion]],
+            seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,curve:None,
+            computed:None,class,class_span,seed_at:None,seed_names:vec![],attitude:Attitude::Page,
+            sweep:None,motion:None,angular_span:Some(crate::syntax::AngularSpan {from,to}),
+            membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,
+        })
+    }
+
+    fn motion_decl(&mut self, name: DeclName) -> Option<Decl> {
+        use crate::syntax::MotionSpec;
+        let start = self.here();
+        if !self.want_p('(') { return None; }
+        let mut axis = None; let mut source = None; let mut observer = None;
+        let mut ratio = None; let mut phase = None;
+        while !self.eat_p(')') {
+            let label = self.slot_label();
+            match label.as_deref() {
+                Some("about") | Some("relative_to") | Some("of") | None => {
+                    let slot = match label.as_deref() {
+                        Some("about") => &mut axis,
+                        Some("relative_to") => &mut observer,
+                        _ => &mut source,
+                    };
+                    if slot.is_some() { self.fail("a motion argument is given twice"); return None; }
+                    *slot = Some(self.refr()?);
+                }
+                Some("ratio") | Some("phase") => {
+                    let slot = if label.as_deref() == Some("ratio") { &mut ratio } else { &mut phase };
+                    if slot.is_some() { self.fail("a motion argument is given twice"); return None; }
+                    let (text,span) = self.expr_until(',')?;
+                    *slot = Some(Arg::Dim {text,span});
+                }
+                _ => { self.fail("a motion takes `about`, `ratio`, `phase`, or `of`, `relative_to`"); return None; }
+            }
+            if self.peek() != Some(&Tok::P(')')) && !self.want_p(',') { return None; }
+        }
+        let spec = match (axis,source,observer,ratio,phase) {
+            (Some(axis),None,None,ratio,phase) => MotionSpec::Rotation {axis,ratio,phase},
+            (None,Some(source),Some(observer),None,None) => MotionSpec::Relative {source,observer},
+            _ => {
+                self.fail("a motion is a rotation `about:` a line, or `of:` another motion `relative_to:` an observer");
+                return None;
+            }
+        };
+        let end = self.prev_hi();
+        let (class,class_span) = self.class_clause(end);
+        Some(Decl {
+            annotations:Default::default(),kind:EntKind::Motion,name,children:vec![vec![]],
+            seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,curve:None,
+            computed:None,class,class_span,seed_at:None,seed_names:vec![],attitude:Attitude::Page,
+            sweep:None,motion:Some(spec),angular_span:None,membership:Membership::default(),
+            list_span:Span::new(start.lo as usize,end),close:None,
+        })
+    }
+
     /// A `hint(…)` standing in a child slot, the opening paren already eaten.
     ///
     /// The same clause as everywhere else, so it is read by the same `hint_body`; what the keys

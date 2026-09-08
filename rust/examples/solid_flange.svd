@@ -1,0 +1,16 @@
+model m from "solid_flange.sv"
+
+sheet flange {
+  size (297mm, 210mm)
+  label "MOUNTING FLANGE" at (14mm, 18mm)
+  label "Annular profiles / added hub / repeated through cuts" at (14mm, 28mm)
+  label "FACE" at (42mm, 42mm)
+  label "SIDE" at (42mm, 134mm)
+  label "ISOMETRIC" at (175mm, 42mm)
+  view front(m.body) from front at (64mm, 90mm) scale 1.3
+  view side(m.body) from right at (64mm, 165mm) scale 0.85
+  view iso(m.body) from isometric at (205mm, 120mm) scale 1.8
+  dimensions in side
+  style .hidden { color: #a1aab4; dash: 3 3 }
+  label "Edit solid_flange.sv to change the hub and bolt pattern." at (145mm, 192mm)
+}

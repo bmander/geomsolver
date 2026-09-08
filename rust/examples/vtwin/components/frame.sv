@@ -83,11 +83,28 @@ component FrameBlank(o: point, dims: group) {
 // A radial feed from the inset plenum to an intake port. The datum points from
 // the crank axis to the port; the feed overlaps both cavities at its ends.
 component IntakePassage(f: plane, dims: group) {
-  a: Loc(f, u: dims.rman, v: -dims.wch / 2)
-  b: Loc(f, u: dims.rpl, v: -dims.wch / 2)
-  c: Loc(f, u: dims.rpl, v: dims.wch / 2)
-  d: Loc(f, u: dims.rman, v: dims.wch / 2)
-  solid body(face(a.p, b.p, c.p, d.p, -> close), from: -dims.wch / 2, to: dims.wch / 2)
+  line axis(f.origin, f.toward)
+  point a hint(x: f.origin.x + (dims.rman) * f.c - (-dims.wch / 2) * f.s,
+                    y: f.origin.y + (dims.rman) * f.s + (-dims.wch / 2) * f.c)
+  point b hint(x: f.origin.x + (dims.rpl) * f.c - (-dims.wch / 2) * f.s,
+                    y: f.origin.y + (dims.rpl) * f.s + (-dims.wch / 2) * f.c)
+  point c hint(x: f.origin.x + (dims.rpl) * f.c - (dims.wch / 2) * f.s,
+                    y: f.origin.y + (dims.rpl) * f.s + (dims.wch / 2) * f.c)
+  point d hint(x: f.origin.x + (dims.rman) * f.c - (dims.wch / 2) * f.s,
+                    y: f.origin.y + (dims.rman) * f.s + (dims.wch / 2) * f.c)
+  solid body(face(a, b, c, d, -> close), from: -dims.wch / 2, to: dims.wch / 2)
+  line ab(a, b)
+  line bc(b, c)
+  line cd(c, d)
+  line da(d, a)
+  ab parallel axis
+  bc perpendicular axis
+  cd parallel axis
+  da perpendicular axis
+  distance(dims.rpl - dims.rman) ab
+  distance(dims.wch) bc
+  a distance(dims.wch / 2, side: right) axis
+  a distance(dims.rman, along: u) f
 }
 
 // Inset plenum and radial intake feeds; rman leaves a wall beside the exhaust ports.
@@ -115,9 +132,9 @@ component IntakeManifold(o: point, right: line, left: line, dims: group) {
 }
 
 // A square exhaust passage from a port to its nearest plate edge.
-component ExhaustPassage(opening: point, edge: line, dims: group) {
-  point outlet hint(x: (edge.p1.x + edge.p2.x) / 2, y: opening.y)
-  outlet on edge
+component ExhaustPassage(opening: point, boundary: line, dims: group) {
+  point outlet hint(x: (boundary.p1.x + boundary.p2.x) / 2, y: opening.y)
+  outlet on boundary
   opening distance(0mm, along: y) outlet
   line center(opening, outlet)
   a: At(opening, dx: 0mm, dy: dims.wch / 2)
@@ -129,6 +146,7 @@ component ExhaustPassage(opening: point, edge: line, dims: group) {
 
 // Inlet boss, coupling, plug outline, and the passage through the throttle bore.
 component FrameInlet(o: point, dims: group) {
+  param barbore = 2 * dims.rbar + 0.2mm   // diametral running clearance
   param coupling_base = dims.bossh - dims.cplin
   param coupling_top = coupling_base + dims.cpll
   param plug_top = coupling_top + dims.mplug_body_l
@@ -145,10 +163,10 @@ component FrameInlet(o: point, dims: group) {
   claim cplh.a distance(dims.cplin, along: y) cplh.d
   claim passage.a distance(dims.wch) passage.b
   tb: At(o, dx: 0mm, dy: dims.Ty)
-  circle tbore(center: tb.p) hint(r: dims.barbore / 2)
-  radius(dims.barbore / 2) tbore
+  circle tbore(center: tb.p) hint(r: barbore / 2)
+  radius(barbore / 2) tbore
   claim o distance(dims.Ty, along: y) tb.p
-  claim radius(dims.barbore / 2) tbore
+  claim radius(barbore / 2) tbore
 
   // The coupling bore turns about an axis in the page; the other features are sweeps.
   cph0: At(o, dx: 0mm, dy: coupling_base)

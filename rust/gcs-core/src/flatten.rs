@@ -45,6 +45,10 @@ struct Cyc {
 /// instance's own prefix (`bind`), found by `lookup` through the prefixes like any other name.
 #[derive(Clone, Default)]
 struct Scope {
+    /// Lexical component, independent of temporary prefixes used for indexed lookup.
+    owner: String,
+    access: std::rc::Rc<BTreeMap<String, String>>,
+    in_roles: crate::semantics::GeometryRoles,
     prefixes: Vec<String>,
     closed: bool,
     forbidden: BTreeSet<String>,
@@ -112,12 +116,14 @@ fn is_copy_prefix(p: &str) -> bool {
 /// An instance's `in PLANE`, and where it was written — see `Scope::in_plane`.
 #[derive(Clone)]
 struct InPlane {
+    owner: String,
     plane: Ref,
     prefixes: Vec<String>,
     closed: bool,
 }
 
 pub struct Expansion {
+    pub private_names: BTreeMap<String, String>,
     pub flat: Vec<crate::ir::Statement>,
     pub diagnostics: Vec<Diag>,
     /// Every instance the walk bound, drawn or not — what a curve is a curve *of* (§6.5): the
@@ -160,6 +166,7 @@ struct Sym {
 }
 
 struct Walk<'a> {
+    private_names: BTreeMap<String, String>,
     prog: &'a Program,
     /// What the document's numbers are in — carried through the walk because every expression
     /// worked out here is worked out in them.
@@ -284,6 +291,7 @@ impl<'a> Walk<'a> {
         });
         let standard_datums = sym.is_none() && standard.is_some() && !shadowed;
         Walk {
+            private_names: BTreeMap::new(),
             prog,
             units,
             out: Vec::new(),
@@ -332,7 +340,7 @@ impl<'a> Walk<'a> {
             flat = datums;
             aliases = resolved;
         }
-        Expansion { flat, diagnostics: self.diagnostics, instances: self.instances, aliases }
+        Expansion { private_names: self.private_names, flat, diagnostics: self.diagnostics, instances: self.instances, aliases }
     }
 
     /// A text with what `substitute` writes in, and — in the symbolic mode — every name that
@@ -438,7 +446,7 @@ impl<'a> Walk<'a> {
                 }
             }
             // a selector written with the name of a `Side` formal reads as the word the instance
-            // was given (§9.2): `side: s` inside the body, `Loc(…, s: right)` at the call.  A
+            // was given (§9.2): `side: s` inside the body, `s: right` at the call.  A
             // word naming no side in scope is left alone — it is one of the slot's own, and the
             // elaborator checks it against the kind's vocabulary.
             crate::syntax::Arg::Word(w) => {
@@ -455,6 +463,7 @@ impl<'a> Walk<'a> {
     /// there — and a declaration that already says which plane (a clause of its own, on a
     /// plane the component declares) may not be told twice.
     fn stamp_scope_plane(&mut self, d: &mut Decl, scope: &Scope) {
+        d.annotations.roles = d.annotations.roles.union(scope.in_roles);
         // the instance's classes, over the declaration's own: what the assembly says of an
         // instance is the later and stronger word, so a phantom's centreline is a phantom's
         for c in &scope.in_class.0 {
@@ -691,6 +700,7 @@ impl<'a> Walk<'a> {
             if let StmtKind::Instance(inst) = &st.kind {
                 let name = format!("{prefix}{}", inst.name.text);
                 self.names.insert(name.clone());
+                if inst.annotations.private { self.private_names.insert(name.clone(), scope.owner.clone()); }
                 self.group_names.insert(name);
             }
         }
@@ -735,6 +745,8 @@ impl<'a> Walk<'a> {
                     let mut chain = chain.clone();
                     let abs = format!("{prefix}{}", chain.name.key().text);
                     self.names.insert(abs.clone());
+                    if chain.annotations.private { self.private_names.insert(abs.clone(), scope.owner.clone()); }
+                    chain.annotations.roles = chain.annotations.roles.union(scope.in_roles);
                     chain.name = chain.name.prefixed(abs, scope.copies);
                     if scope.anonymous {
                         chain.name = crate::syntax::DeclName::Key(chain.name.key().clone());
@@ -744,6 +756,7 @@ impl<'a> Walk<'a> {
                 StmtKind::Decl(d) => {
                     let abs = format!("{prefix}{}", d.name.key().text);
                     self.names.insert(abs.clone());
+                    if d.annotations.private { self.private_names.insert(abs.clone(), scope.owner.clone()); }
                     let mut d2 = d.clone();
                     d2.name = d.name.prefixed(abs, scope.copies);
                     if scope.anonymous {
@@ -805,6 +818,13 @@ impl<'a> Walk<'a> {
                             self.settle_arg(a, vals, scope);
                         }
                     }
+                    if let Some(e) = d2.angular_span.as_mut() {
+                        self.settle_arg(&mut e.from, vals, scope);
+                        self.settle_arg(&mut e.to, vals, scope);
+                    }
+                    if let Some(motion) = d2.motion.as_mut() {
+                        for a in motion.args_mut() { self.settle_arg(a, vals, scope); }
+                    }
                     self.stamp_scope_plane(&mut d2, scope);
                     self.emit(StmtKind::Decl(d2), st, scope, path);
                 }
@@ -824,12 +844,15 @@ impl<'a> Walk<'a> {
                         }
                         // written here, in this scope: it resolves against these prefixes
                         (Some(p), None) => {
-                            Some(InPlane { plane: p.clone(), prefixes: scope.prefixes.clone(), closed: scope.closed })
+                            Some(InPlane { owner: scope.owner.clone(), plane: p.clone(), prefixes: scope.prefixes.clone(), closed: scope.closed })
                         }
                         (None, q) => q.clone(),
                     };
                     let forbidden = scope.vals.keys().chain(self.file_vals.keys()).cloned().collect();
                     let sc = Scope {
+                        owner: key.clone(),
+                        access: scope.access.clone(),
+                        in_roles: scope.in_roles.union(inst.annotations.roles),
                         prefixes: vec![key],
                         closed: true,
                         forbidden,
@@ -884,6 +907,9 @@ impl<'a> Walk<'a> {
                             sub.insert(i.text.clone(), Aff::num(k as f64));
                         }
                         let sc = Scope {
+                            owner: scope.owner.clone(),
+                            access: scope.access.clone(),
+                            in_roles: scope.in_roles,
                             prefixes: std::iter::once(format!("{block_prefix}{k}."))
                                 .chain(scope.prefixes.iter().cloned())
                                 .collect(),
@@ -1446,10 +1472,13 @@ impl<'a> Walk<'a> {
 
     /// Turn every reference into the absolute name of what it denotes.
     fn resolve(&mut self) -> (Vec<crate::ir::Statement>, BTreeMap<String, String>) {
+        let access = std::rc::Rc::new(self.private_names.clone());
+        for (_, _, sc) in &mut self.out { sc.access = access.clone(); }
+        for (_, _, sc) in &mut self.aliases { sc.access = access.clone(); }
         // aliases first, and transitively: a formal bound to another instance's formal
         let mut alias: BTreeMap<String, String> = BTreeMap::new();
         for (abs, r, sc) in self.aliases.clone() {
-            if let Some((target, rest)) = lookup(&r, &sc, &self.names, &alias, self.units) {
+            if let Some((target, rest)) = lookup_raw(&r, &sc, &self.names, &alias, self.units) {
                 alias.insert(abs, std::iter::once(target).chain(rest).collect::<Vec<_>>().join("."));
             }
         }
@@ -1468,6 +1497,13 @@ impl<'a> Walk<'a> {
             }
             if !moved {
                 break;
+            }
+        }
+        for (_, r, sc) in self.aliases.clone() {
+            if let Some((target, _)) = lookup_raw(&r, &sc, &self.names, &alias, self.units) {
+                if let Some(member) = private_member(&r, &sc, &target, &alias) {
+                    self.err(Code::E101, r.span, format!("`{}` names private member `{member}`", written(&r)));
+                }
             }
         }
         for (key, span) in self.group_fields.clone() {
@@ -1752,7 +1788,7 @@ fn rescope_text(
                 full.push_str(scalar);
                 names.insert(dep.clone(), full);
             }
-            None => bad.push((span, format!("no such entity: `{}`", segs[0]))),
+            None => bad.push((span, missing_ref(&r, sc, names_seen, alias, units))),
         }
     }
 }
@@ -1873,7 +1909,7 @@ fn alias_target(
 /// Greedy on the dotted name: `t.lead` is one name if something declared it, and `c0.center` is
 /// the entity `c0` and its field `center`.  Which it is cannot be told from the spelling, only
 /// from what exists — so the longest match that names something wins.
-fn lookup(
+fn lookup_raw(
     r: &Ref,
     sc: &Scope,
     names: &BTreeSet<String>,
@@ -1909,7 +1945,7 @@ fn lookup(
             // A layout argument may alias an instance whose body contains the repetition.
             // Resolve that container in the caller's scope before selecting its copy.
             let container = Ref { root: r.root.clone(), path: r.path[..at - 1].to_vec(), span: r.span };
-            let (root, rest) = lookup(&container, sc, names, alias, units)?;
+            let (root, rest) = lookup_raw(&container, sc, names, alias, units)?;
             let prefix = std::iter::once(root).chain(rest).collect::<Vec<_>>().join(".");
             let scope = Scope { prefixes: vec![format!("{prefix}.")], ..sc.clone() };
             copy_of("", leaf, k, &scope, names)?
@@ -1973,6 +2009,47 @@ fn lookup(
     None
 }
 
+fn under_member(target: &str, member: &str) -> bool {
+    target == member || target.strip_prefix(member).is_some_and(|s| s.starts_with('.'))
+}
+
+/// Explicit entity arguments grant access to that entity. Passing a layout grants its
+/// public interface, not access to private members further inside it.
+fn private_member(r: &Ref, sc: &Scope, target: &str, alias: &BTreeMap<String, String>) -> Option<String> {
+    let mut paths = vec![r.root.text.clone()];
+    for seg in &r.path {
+        let Seg::Field(f) = seg else { break };
+        paths.push(format!("{}.{}", paths.last().unwrap(), f.text));
+    }
+    for member in std::iter::successors(Some(target), |name| name.rsplit_once('.').map(|(parent, _)| parent)) {
+        let Some(owner) = sc.access.get(member) else { continue };
+        if sc.owner == *owner || sc.owner.starts_with(&format!("{member}.")) { continue; }
+        let granted = paths.iter().any(|p| {
+            sc.prefixes.iter().map(String::as_str).chain((!sc.closed).then_some(""))
+                .any(|prefix| alias.get(&format!("{prefix}{p}"))
+                    .is_some_and(|actual| under_member(actual, member)))
+        });
+        if !granted { return Some(crate::program::public_path(member)); }
+    }
+    None
+}
+
+fn lookup(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTreeMap<String, String>, units: Units)
+    -> Option<(String, Vec<String>)>
+{
+    let found = lookup_raw(r, sc, names, alias, units)?;
+    private_member(r, sc, &found.0, alias).is_none().then_some(found)
+}
+
+fn missing_ref(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTreeMap<String, String>, units: Units) -> String {
+    if let Some((target, _)) = lookup_raw(r, sc, names, alias, units) {
+        if let Some(member) = private_member(r, sc, &target, alias) {
+            return format!("`{}` names private member `{member}`", written(r));
+        }
+    }
+    format!("no such entity: `{}`", written(r))
+}
+
 /// A reference spelled back the way the source wrote it, for a message about it.
 fn written_ref(r: &Ref) -> String {
     written(r)
@@ -2011,7 +2088,7 @@ fn rewrite(
             r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
         }
         // named as written, so an index that picked no copy says which one it was
-        None => bad.push((r.span, format!("no such entity: `{}`", written(r)))),
+        None => bad.push((r.span, missing_ref(r, sc, names, alias, units))),
     };
     match k {
         StmtKind::Chain(chain) => {
@@ -2045,7 +2122,7 @@ fn rewrite(
             if let Some(r) = d.membership.plane_mut() {
                 match (&sc.in_plane, from_instance) {
                     (Some(ip), true) => {
-                        let outer = Scope { prefixes: ip.prefixes.clone(), closed: ip.closed, ..sc.clone() };
+                        let outer = Scope { owner: ip.owner.clone(), prefixes: ip.prefixes.clone(), closed: ip.closed, ..sc.clone() };
                         match lookup(r, &outer, names, alias, units) {
                             Some((abs, rest)) => {
                                 needed.set(needed.get() || abs.starts_with("std."));
@@ -2053,7 +2130,7 @@ fn rewrite(
                                 r.path =
                                     rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
                             }
-                            None => bad.push((r.span, format!("no such entity: `{}`", written(r)))),
+                            None => bad.push((r.span, missing_ref(r, &outer, names, alias, units))),
                         }
                     }
                     _ => fix(r, bad),
@@ -2065,6 +2142,9 @@ fn rewrite(
             // a revolution's axis is a line of the body like any other name it writes
             if let Some(r) = d.sweep.as_mut().and_then(|s| s.reference_mut()) {
                 fix(r, bad);
+            }
+            if let Some(motion) = d.motion.as_mut() {
+                for r in motion.refs_mut() { fix(r, bad); }
             }
             if let Some(crate::syntax::CurveSpec { target: CurveTarget::Drawn(r), .. }) =
                 d.curve.as_mut()

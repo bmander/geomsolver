@@ -132,7 +132,8 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
         };
         // anything at all leaves the opening word behind; a name the statement is still owed
         // (`Def`, `Inst`) survives the punctuation in between, which is why only `Start` lapses
-        if at == Next::Start && !matches!(t, Tok::P('{') | Tok::P('}')) {
+        let modifier = matches!(t, Tok::Ident(w) if ["private", "construction", "centerline"].contains(&w.as_str()));
+        if at == Next::Start && !matches!(t, Tok::P('{') | Tok::P('}')) && !modifier {
             at = Next::Word;
         }
         // a declaration's name stands against its keyword or not at all — the name is optional,
@@ -199,6 +200,9 @@ fn tint_word(
         }
         Next::Inst => (Some(Tint::Type), Next::Word),
         Next::Start => {
+            if ["private", "construction", "centerline"].contains(&w) {
+                return (Some(Tint::Word), Next::Start);
+            }
             if super::is_name(w) && next == Some(&Tok::Eq) {
                 return (Some(Tint::Def), Next::Word);
             }

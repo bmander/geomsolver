@@ -763,3 +763,65 @@ fn a_slot_that_omits_a_coordinate_is_rewritten_whole() {
         out.text
     );
 }
+
+#[test]
+fn driving_radius_dimensions_do_not_acquire_redundant_hints() {
+    for source in [
+        "param size = 15\npoint o hint(x: 0,y: 0)\nground o\ncircle c(center: o)\nradius(size) c\n",
+        "param size = 15\npoint o hint(x: 0,y: 0)\nground o\nradius(size) circle c(center: o)\n",
+        "param size = 15\npoint o hint(x: 0,y: 0)\nground o\nradius(size) c\ncircle c(center: o)\n",
+    ] {
+        let mut e = elaborate(&prog_of(source));
+        assert!(e.ok(), "{:?}", e.diags);
+        assert!(solve(&mut e.sketch, Default::default()).success);
+        let out = edit::commit_seeds(&e, &e.sketch, &e.program);
+        assert!(!out.text.contains("hint(r:"), "{}", out.text);
+        let mut reloaded = elaborate(&prog_of(&out.text.replace("size = 15", "size = 32")));
+        assert!(solve(&mut reloaded.sketch, Default::default()).success);
+        assert!((reloaded.sketch.radius_value(EntRef::circle(0)) - 32.0).abs() < 1e-8);
+    }
+}
+
+#[test]
+fn dimensioned_radius_is_omitted_when_recording_an_unnamed_center() {
+    let mut e = elaborate(&prog_of("radius(12) circle c\n"));
+    assert!(e.ok(), "{:?}", e.diags);
+    assert!(solve(&mut e.sketch, Default::default()).success);
+    let [x, y] = e.sketch.point_params(0);
+    e.sketch.params[x as usize].value = 7.0;
+    e.sketch.params[y as usize].value = 9.0;
+    let out = edit::commit_seeds(&e, &e.sketch, &e.program);
+    assert!(!out.text.contains("hint(r:"), "{}", out.text);
+    let mut back = elaborate(&prog_of(&out.text));
+    assert!(back.ok(), "{:?}", back.diags);
+    assert_eq!(back.sketch.point_xy(0), (7.0, 9.0));
+    assert!(solve(&mut back.sketch, Default::default()).success);
+    assert!((back.sketch.radius_value(EntRef::circle(0)) - 12.0).abs() < 1e-8);
+}
+
+#[test]
+fn free_claimed_and_soft_radius_dimensions_keep_pose_hints() {
+    for (relation, soft) in [("radius(unknown) c", false), ("claim radius(12) c", false), ("radius(12) c", true)] {
+        let e = elaborate(&prog_of(&format!("point o hint(x: 0,y: 0)\ncircle c(center: o)\n{relation}")));
+        assert!(e.ok(), "{:?}", e.diags);
+        let mut moved = e.sketch.clone();
+        moved.constraints.iter_mut().find(|c| c.kind == CKind::Radius).unwrap().soft = soft;
+        let r = moved.circles[0].radius as usize;
+        moved.params[r].value = 12.5;
+        let out = edit::commit_seeds(&e, &moved, &e.program);
+        assert!(out.text.contains("hint(r: 12.5)"), "{}", out.text);
+    }
+}
+
+#[test]
+fn dimensioned_arcs_omit_new_radius_hints_but_authored_hints_are_preserved() {
+    let source = "point o hint(x: 0,y: 0)\npoint a hint(x: 12,y: 0)\npoint b hint(x: 0,y: 12)\narc bend(center: o, start: a, end: b)\nradius(12) bend\n";
+    let e = elaborate(&prog_of(source));
+    assert!(e.ok(), "{:?}", e.diags);
+    let out = edit::commit_seeds(&e, &e.sketch, &e.program);
+    assert!(!out.text.contains("hint(r:"), "{}", out.text);
+    let mut explicit = elaborate(&prog_of("point o hint(x: 0,y: 0)\ncircle c(center: o) hint(r: 10)\nradius(12) c"));
+    assert!(solve(&mut explicit.sketch, Default::default()).success);
+    let out = edit::commit_seeds(&explicit, &explicit.sketch, &explicit.program);
+    assert!(out.text.contains("hint(r:"), "{}", out.text);
+}

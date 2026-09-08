@@ -760,7 +760,7 @@ fn point_line_distance_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
  *
  * `|g| − d` and **not** the squared form `g² − d²` that `distance` uses between two points.
  * Squared, the gradient is `2g·∂g` and vanishes where g does — and `distance(0)` from a line is
- * an idiom a drawing writes (a point on the axis, `Loc(v: 0mm)` thirty times over in one
+ * an idiom a drawing writes (a point on the axis, repeated thirty times over in one
  * cylinder), which squared is a double root with no gradient at all: rank deficient, reported
  * over-constrained, a freedom that is not there.  The absolute value keeps the signed form's
  * degree and conditioning — its Jacobian is `±∂g`, a unit-length row wherever the point is — at

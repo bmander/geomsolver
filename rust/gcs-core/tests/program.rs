@@ -315,6 +315,7 @@ fn a_name_declared_twice_is_an_error() {
     let mut p = gcs_core::syntax::Program::new();
     for _ in 0..2 {
         p.push(gcs_core::syntax::StmtKind::Decl(gcs_core::syntax::Decl {
+            annotations: Default::default(),
             kind: EntKind::Point,
             name: gcs_core::syntax::DeclName::Written(gcs_core::syntax::Name::new("p0")),
             children: Vec::new(),
@@ -331,6 +332,7 @@ fn a_name_declared_twice_is_an_error() {
             seed_names: Vec::new(),
             attitude: Default::default(),
             sweep: None,
+            motion: None, angular_span: None,
             membership: Default::default(),
             list_span: Default::default(),
             close: None,

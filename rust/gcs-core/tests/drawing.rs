@@ -20,6 +20,38 @@ fn solved() -> program::Elaborated {
 }
 
 #[test]
+fn vtwin_paper_side_view_is_upright_and_meets_the_cylinders() {
+    let (p, errors, linked) = gcs_core::library::parse_linked(
+        gcs_core::examples::source("vtwin").unwrap());
+    assert!(errors.is_empty() && linked.is_empty(), "{errors:?} {linked:?}");
+    let mut e = program::elaborate(&p);
+    assert!(e.ok(), "{:?}", e.diags);
+    assert!(solve::solve(&mut e.sketch, Default::default()).success);
+    let doc = drawing::parse(include_str!("../../examples/vtwin/assembly.svd")).unwrap();
+    let sheet = &doc.sheets[0];
+    let source = sheet.views.iter().find(|v| v.sketch).unwrap();
+    let cylinder = e.sketch.point_xy(e.map.ent_named("side.cylB.b").unwrap().i());
+    let px_mm = 96.0 / 25.4;
+    let cylinder_back_x = (source.at.0 + cylinder.0 * source.scale.unwrap_or(sheet.scale)) * px_mm;
+    let models = BTreeMap::from([("m".into(), drawing::Model { sketch: &e.sketch, names: &e.map })]);
+    let svg = drawing::render(&doc, &models, None).unwrap();
+    let edge = svg.lines().find(|line| line.contains("data-path=\"plate.blank.stock.near\""))
+        .expect("the plate's front face must appear in the paper side view");
+    let points: Vec<(f64, f64)> = edge.split("points=\"").nth(1).unwrap()
+        .split('"').next().unwrap().split_whitespace().map(|p| {
+            let (x, y) = p.split_once(',').unwrap();
+            (x.parse().unwrap(), y.parse().unwrap())
+        }).collect();
+    // The projected plate face is vertical and shares the cylinders' back face.
+    // This catches both a quarter-turn projection and a reversed thickness offset.
+    assert!(points.iter().all(|p| (p.0 - cylinder_back_x).abs() < 1e-3),
+        "plate edge {points:?} does not meet cylinder back at {cylinder_back_x}");
+    let height = points.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max)
+        - points.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+    assert!(height > 10.0 * px_mm, "the plate must stand upright: {points:?}");
+}
+
+#[test]
 fn sheets_read_one_model_without_changing_its_geometry_or_presentation() {
     let e = solved();
     let before = gcs_core::io::to_json(&e.sketch);
@@ -151,4 +183,24 @@ fn styles_can_show_one_point_and_hide_selected_dimensions() {
     let svg = drawing::render(&doc, &models, None).unwrap();
     assert!(svg.contains("fill=\"#ff0000\""), "{svg}");
     assert!(!svg.contains("<text"), "{svg}");
+}
+
+#[test]
+fn isometric_camera_matches_the_old_helper_plane_without_model_geometry() {
+    let plain = solved();
+    let source = format!("{MODEL}\npoint iq hint(x: 1, y: 0)\nground iq\nplane iso(origin: o, toward: iq, u: (1, -1, 0), v: (1, 1, 2))");
+    let (p, errs) = syntax::parse(&source);
+    assert!(errs.is_empty(), "{errs:?}");
+    let mut with_helper = program::elaborate(&p);
+    assert!(with_helper.ok(), "{:?}", with_helper.diags);
+    assert!(solve::solve(&mut with_helper.sketch, Default::default()).success);
+    let render = |model: &program::Elaborated, from: &str| {
+        let doc = drawing::parse(&format!("sheet s {{ view v(m.body) from {from} at (50,50) }}")).unwrap();
+        let models = BTreeMap::from([("m".into(), drawing::Model { sketch: &model.sketch, names: &model.map })]);
+        drawing::render(&doc, &models, None).unwrap()
+    };
+    let before = gcs_core::io::dumps(&plain.sketch, None);
+    assert_eq!(render(&plain, "isometric"), render(&with_helper, "m.iso"));
+    assert_eq!(gcs_core::io::dumps(&plain.sketch, None), before);
+    assert!(plain.sketch.planes.is_empty());
 }
