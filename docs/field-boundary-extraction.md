@@ -190,6 +190,13 @@ The next extraction work must resolve these connections and improve fine-accurac
 Progress measurements also show substantial time in field evaluation during partitioning
 and corner classification; the wider witness search is not the only performance concern.
 
+The subsequent 2 mm run was deliberately stopped with its last progress report at 479,950
+visited cells and 1,365.8 s, still in partitioning. It did not produce a geometry acceptance
+or refusal result. The [method-selection record](implicit-meshing-methods.md) explains the
+unacceptable uniform-refinement cost and the rejected nearby-roll-hint experiment. The next
+candidate construction follows surface seeds and adaptive surface/edge refinement; the
+current exhaustive baseline must not be presented as a viable production export strategy.
+
 ## Validation checkpoint
 
 All 1,052 core tests pass (one existing test ignored), including extraction/support,

@@ -26,8 +26,7 @@ impl SweptField {
     /// Zero disables caching. Reaching the cap merely recomputes later poses;
     /// it cannot discard motion intervals or change the resulting enclosure.
     pub fn evaluator(&self,max_cached_poses: usize) -> SweepEvaluator {
-        SweepEvaluator {field:self.clone(),poses:BTreeMap::new(),max_cached_poses,
-            witnesses:vec![],next_witness:0,max_cached_witnesses:0}
+        SweepEvaluator {field:self.clone(),poses:BTreeMap::new(),max_cached_poses}
     }
 }
 
@@ -37,27 +36,12 @@ pub struct SweepEvaluator {
     field:SweptField,
     poses:BTreeMap<u64,MotionBounds>,
     max_cached_poses:usize,
-    witnesses:Vec<([f64;3],f64)>,
-    next_witness:usize,
-    max_cached_witnesses:usize,
 }
 
 impl SweepEvaluator {
     pub fn domain(&self) -> I { self.field.domain }
     pub fn cached_poses(&self) -> usize { self.poses.len() }
-    pub fn cached_witnesses(&self) -> usize { self.witnesses.len() }
-    pub fn clear_cache(&mut self) {
-        self.poses.clear(); self.witnesses.clear(); self.next_witness = 0;
-    }
-
-    /// Optional bounded reuse of nearby generating parameters. Only sample
-    /// locations are retained, never values or lower bounds. Every new query
-    /// re-evaluates the hint and covers the entire roll domain. Defaults to zero.
-    /// Changing capacity clears the previous hints, but retains motion poses.
-    pub fn set_witness_cache_capacity(&mut self,capacity: usize) {
-        self.max_cached_witnesses = capacity;
-        self.witnesses.clear(); self.next_witness = 0;
-    }
+    pub fn clear_cache(&mut self) { self.poses.clear(); }
 
     /// Enclose the swept field for every point in the input box. Options bound
     /// the complete roll search; termination status and uncertainty are retained.
@@ -88,13 +72,7 @@ impl SweepEvaluator {
         let farthest = p.map(|v| { let [a,b] = v.bounds(); a.abs().max(b.abs()) });
         let speed = self.field.motion.inverse_point_speed_bound(farthest)
             .and_then(I::point).map_err(minimum::Error::Oracle)?;
-        let center = p.map(|v| { let [a,b] = v.bounds(); a*0.5+b*0.5 });
-        // Approximate distances select a hint only; no spatial exclusion or
-        // claimed bound depends on this floating-point nearest-neighbor choice.
-        let distance = |q: [f64;3]| (q[0]-center[0]).hypot(q[1]-center[1]).hypot(q[2]-center[2]);
-        let initial = self.witnesses.iter().min_by(|a,b| distance(a.0).total_cmp(&distance(b.0)))
-            .map(|(_,t)| *t);
-        let result = minimum::refine(self.field.domain,|t| {
+        minimum::refine(self.field.domain,|t| {
             let [lo,hi] = t.bounds(); let mid = lo*0.5+hi*0.5;
             let key = mid.to_bits();
             let pose = if let Some(pose) = self.poses.get(&key) { *pose } else {
@@ -110,15 +88,6 @@ impl SweepEvaluator {
             let bound = value.add(I::new(-travel,travel)?)?;
             observe(t,bound);
             Ok::<_,Error>(bound)
-        },options,band,initial)?;
-        if self.max_cached_witnesses > 0 {
-            if self.witnesses.len() < self.max_cached_witnesses {
-                self.witnesses.push((center,result.witness));
-            } else {
-                self.witnesses[self.next_witness] = (center,result.witness);
-                self.next_witness = (self.next_witness+1)%self.max_cached_witnesses;
-            }
-        }
-        Ok(result)
+        },options,band)
     }
 }

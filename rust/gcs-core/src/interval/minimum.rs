@@ -69,15 +69,7 @@ fn overlap<E>(a: Interval,b: Interval) -> Result<Interval,Error<E>> {
 /// inconsistent or incorrect oracles cannot in general be detected by this routine.
 pub fn enclose<E>(domain: Interval,bound: impl FnMut(Interval) -> Result<Interval,E>,
     options: Options) -> Result<Minimum,Error<E>> {
-    refine(domain,bound,options,None,None)
-}
-
-/// Try a supplied parameter instead of the initial midpoint sample. It is only
-/// a search hint: the oracle re-evaluates it and the entire domain is still
-/// bounded and refined. A poor hint cannot exclude another minimum.
-pub fn enclose_with_sample<E>(domain: Interval,bound: impl FnMut(Interval) -> Result<Interval,E>,
-    options: Options,sample: f64) -> Result<Minimum,Error<E>> {
-    refine(domain,bound,options,None,Some(sample))
+    refine(domain,bound,options,None)
 }
 
 /// Refine until the value-width tolerance is reached, the entire minimum
@@ -86,16 +78,13 @@ pub fn enclose_with_sample<E>(domain: Interval,bound: impl FnMut(Interval) -> Re
 /// bound, never sampled signs alone. The retained enclosure remains valid.
 pub fn enclose_outside<E>(domain: Interval,bound: impl FnMut(Interval) -> Result<Interval,E>,
     options: Options,band: Interval) -> Result<Minimum,Error<E>> {
-    refine(domain,bound,options,Some(band),None)
+    refine(domain,bound,options,Some(band))
 }
 
 pub(crate) fn refine<E>(domain: Interval,mut bound: impl FnMut(Interval) -> Result<Interval,E>,
-    options: Options,band: Option<Interval>,initial_sample: Option<f64>) -> Result<Minimum,Error<E>> {
+    options: Options,band: Option<Interval>) -> Result<Minimum,Error<E>> {
     if !options.value_tolerance.is_finite() || options.value_tolerance <= 0.
-        || options.max_evaluations < 4
-        || initial_sample.is_some_and(|t| !t.is_finite() || !domain.contains(t)) {
-        return Err(Error::InvalidOptions);
-    }
+        || options.max_evaluations < 4 { return Err(Error::InvalidOptions); }
     let root = bound(domain).map_err(Error::Oracle)?;
     let mut evaluations = 1;
     let mut best = (f64::INFINITY,domain.bounds()[0]);
@@ -107,7 +96,7 @@ pub(crate) fn refine<E>(domain: Interval,mut bound: impl FnMut(Interval) -> Resu
         Ok(())
     };
     let [a,b] = domain.bounds();
-    for t in [a,initial_sample.unwrap_or_else(|| midpoint(domain)),b] { sample(t,root)?; }
+    for t in [a,midpoint(domain),b] { sample(t,root)?; }
     let mut cells = BinaryHeap::from([Cell {domain,value:root}]);
     loop {
         while cells.peek().is_some_and(|c| c.value.bounds()[0] >= best.0) { cells.pop(); }

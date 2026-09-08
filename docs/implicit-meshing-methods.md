@@ -11,6 +11,7 @@ patches. The final matched-pair requirements remain unchanged.
 
 | Method | What it supplies | What Solvent still needs to establish |
 | --- | --- | --- |
+| [Marching Triangles, Hilton et al. (1996)](https://openresearch.surrey.ac.uk/esploro/outputs/conferencePresentation/Marching-Triangles-Range-Image-Fusion-for/99513651502346) | Follows an implicit surface and builds a triangulation using a local three-dimensional Delaunay constraint. This is an established surface-based alternative to volumetric polygonization. | Supply reliable seeds and local surface projection; handle advancing-front closure, sharp features and discovery of other components. The surface-following strategy alone is not a complete-domain certificate. |
 | [Dual Contouring of Hermite Data, Ju et al. (2002)](https://www.cs.rice.edu/~jwarren/research/index.html) | Surface intersections and normals position vertices near sharp features; adaptive octrees reduce density in simple regions. | Finding the correct intersections and all features precedes contouring. A local quadratic fitting error is not our two-sided surface-distance certificate. |
 | [Manifold Dual Contouring, Schaefer, Ju and Warren (2007)](https://people.engr.tamu.edu/schaefer/research/dualsimp_tvcg.pdf) | Multiple components per cell and constrained vertex clustering retain manifold contours during adaptive simplification. | Preserving the sampled contour does not establish equivalence to the continuous material. Geometric self-intersections and missed thin features require separate handling. |
 | [Plantinga–Vegter (2004)](https://pure.rug.nl/ws/files/2952308/2004ProcGeomProcPlantinga.pdf) | Interval bounds on values and gradients drive balanced subdivision, with an isotopy proof for smooth bounded regular implicit surfaces. Isotopy preserves the embedding through continuous deformation. | Our min/max Boolean and swept fields are not globally smooth. Active-branch changes, sharp edges and zero-only sets do not automatically satisfy the paper's hypotheses. Using interval arithmetic alone does not inherit its theorem. |
@@ -54,10 +55,51 @@ The next comparative experiment should therefore separate:
 
 Use the actual isolated-pinion connection, a swept sphere/torus, sharp Boolean intersections,
 a hidden component and `A-A` as common fixtures. Compare field evaluations, runtime, memory,
-triangle count and acceptance evidence at the same spatial tolerance. Preserve the running
-2 mm pinion baseline to completion or explicit resource refusal; do not launch successively
-finer full-grid runs as the default next action.
+triangle count and acceptance evidence at the same spatial tolerance. The 2 mm baseline was
+stopped after the user identified its runtime as unacceptable; the results below supersede
+the earlier plan to run it to completion. Do not launch successively finer full-grid runs
+as the default next action.
 
 This is a method-selection checkpoint, not an assertion that a combined algorithm already
 has the cited guarantees. No external mesher has been integrated, and neither the functional
 pinion export nor the full gear pair has been accepted yet.
+
+## Rejected cost model and hint-cache experiment
+
+The 2 mm experiment's last progress report was 479,950 visited partition cells at 1,365.8 s.
+It had not reached triangulation. It was deliberately terminated, not rejected by a geometric
+check, and produced no accepted STL. The generating geometry was not changed.
+
+The tolerance is a requested final spatial bound, not a grid spacing. The baseline forces
+every meshed cell to the same finest level, whose diagonal is at most tolerance/4; dyadic
+rounding makes this pinion's spacing about 0.24 mm. Crossed-edge vertices are midpoints.
+Thus even broad smooth areas pay for fine grid cells instead of accurate surface fitting.
+In addition, each point query evaluates every indexed cutter, refining swept minima even
+where other operands already determine the material classification. These are deficiencies
+of this implementation, not evidence that F-rep extraction inherently takes tens of minutes.
+Triangle count should be measured against surface deviation and feature preservation, not
+inferred from the tolerance label or forced finest-grid spacing.
+
+Commit `03b45b2` preserves an opt-in experiment that reuses nearby roll parameters as initial
+samples. The oracle re-evaluates every hint and retains its complete roll cover. It passes
+torus, abrupt branch-change, competing-minimum and budget/observer checks. The pinion test
+uses a 6 x 6 x 6 grid with positions
+`p[a] = c[a] + (index[a] - 2.5) * 0.2`, where
+`c = (34.576585140122586, -7.409268244311984, 46.92536554730923)` mm. Both runs use band `[0,0]`,
+value tolerance 0.0002 mm and a 20,000-evaluation per-sweep budget; the warm run keeps at most
+256 parameter hints per swept node. Both establish 119 retained and 97 exterior points.
+Cold evaluation uses 314,792 roll queries; hint reuse uses 314,640, a reduction of only 0.0483%.
+The combined comparison takes about 1.66 s on the test machine. This is not an export timing.
+
+The following commit removes the experiment from the runtime: its effect on the real input
+does not justify another cache and public control. Preserve the negative result in history.
+Remembering a good attained minimum mainly helps upper bounds; proving that a retained point
+survives every generating roll still needs global lower bounds. This helps explain why
+parameter hints alone do not solve the pinion's evaluation cost.
+
+The next implementation should follow the user's seed / surface march / edge refinement
+outline. Seed from existing generating-geometry witnesses, project onto exposed material,
+advance over the surface with locally chosen spacing, and refine edges by geometric error.
+Use the bounded evaluator to validate candidates and search for missed components. Develop
+the surface traversal and its acceptance procedure separately so that a costly exhaustive
+partition does not remain the only way to construct every candidate triangle.

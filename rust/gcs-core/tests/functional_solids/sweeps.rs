@@ -82,35 +82,3 @@ fn fixed_sweep_domains_and_failures_remain_explicit() {
     assert_eq!(invalid.evaluator(0).bounds(p,options()).unwrap_err(),SweepError::Oracle(Error::OutsideDomain));
     assert_eq!(query.bounds(point([f64::MAX;3]),options()).unwrap_err(),SweepError::Oracle(Error::Overflow));
 }
-
-#[test]
-fn nearby_roll_hints_reduce_work_without_hiding_other_minima() {
-    let sweep = SweptField::new(sphere(),rotation(),I::new(-4.,4.).unwrap());
-    let mut cold = sweep.evaluator(64); let mut warm = sweep.evaluator(64);
-    warm.set_witness_cache_capacity(3);
-    let mut cold_work = 0; let mut warm_work = 0;
-    for angle in (0..32).map(|i| 0.7+i as f64*0.01) {
-        let p = point([3.*angle.cos(),3.*angle.sin(),0.]);
-        let a = cold.bounds_outside(p,I::ZERO,options()).unwrap();
-        let b = warm.bounds_outside(p,I::ZERO,options()).unwrap();
-        includes(a.value,-1.); includes(b.value,-1.);
-        assert!(a.value.bounds()[1] < 0. && b.value.bounds()[1] < 0.);
-        cold_work += a.evaluations; warm_work += b.evaluations;
-        assert!(warm.cached_witnesses() <= 3);
-    }
-    assert_eq!(warm.cached_witnesses(),3); assert_eq!(cold.cached_witnesses(),0);
-    assert!(warm_work < cold_work,"{warm_work} vs {cold_work}");
-    // Jump to the opposite side of the orbit. The remembered roll is wrong;
-    // the global refiner must still find the new generating minimum.
-    let p = point([-3.,0.,0.]); let mut observed = 0;
-    let found = warm.bounds_with_observer(p,options(),|_,_| observed += 1).unwrap();
-    includes(found.value,-1.); assert_eq!(found.status,Status::Converged);
-    assert_eq!(found.evaluations,observed);
-    assert!(found.witness.abs() > 3.);
-    assert_eq!(warm.bounds(p,Options {max_evaluations:3,..options()}).unwrap_err(),SweepError::InvalidOptions);
-    warm.clear_cache(); assert_eq!(warm.cached_poses(),0); assert_eq!(warm.cached_witnesses(),0);
-    warm.bounds(p,options()).unwrap(); assert_eq!(warm.cached_witnesses(),1);
-    warm.set_witness_cache_capacity(0); assert_eq!(warm.cached_witnesses(),0);
-    let a = cold.bounds(p,options()).unwrap(); let b = warm.bounds(p,options()).unwrap();
-    assert_eq!(a.value,b.value); assert_eq!(a.witness,b.witness); assert_eq!(a.evaluations,b.evaluations);
-}
