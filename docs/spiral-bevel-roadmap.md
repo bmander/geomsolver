@@ -1,5 +1,15 @@
 # Spiral bevel gears: subprojects and representation decision
 
+**Current backend decision:** evaluate a conventional CAD kernel before further investment
+in general F-rep boundary recovery. The user identified established industrial gear-to-CAD
+workflows as a likely reusable backend for Solvent's declarative frontend. The
+[Open CASCADE tooth-space trial](../experiments/cad-backend/README.md) now fits existing
+generated flank/fillet references, constructs candidate solids, subtracts them from exact
+blanks, and checks STEP round trips. The F-rep remains a material definition and verification
+asset; completing its general-purpose mesher is no longer a prerequisite for this alternative
+export path. The historical extraction gates below remain applicable to that meshing work.
+Neither backend path has yet delivered the verified complete matched pair.
+
 The deliverable remains one fully specified, parametric matched pair from a documented
 generating system, independently verifiable and exportable at a stated geometric accuracy.
 Manufacturing planning remains separate. This document redirects the next investigation:
