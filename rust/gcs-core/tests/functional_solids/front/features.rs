@@ -99,7 +99,12 @@ impl Surface {
             if rank < 2 { return None; }
             let delta = [delta[0],delta[1],delta[2]];
             let proposed = add(guess,delta);
-            if length(sub(proposed,center)) > radius { return None; }
+            if length(sub(proposed,center)) > radius {
+                // A wide neighborhood can see several sheets whose common
+                // intersection is distant. Shrink around the local surface
+                // point to isolate a nearer crease, within the same work cap.
+                previous = None; radius *= 0.25; continue;
+            }
             // A central-difference normal at a sharp tip need not point into
             // its material cone. Try a direction positive against every
             // recovered branch, and accept it only with strict field signs.
@@ -122,6 +127,6 @@ impl Surface {
             }
             center = p; previous = Some(candidate); radius *= 0.25;
         }
-        unreachable!()
+        None
     }
 }

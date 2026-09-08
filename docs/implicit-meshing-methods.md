@@ -412,6 +412,13 @@ provide tangent-plane equations. The existing rank-revealing minimum-norm least-
 solver positions their intersection relative to the query neighborhood; an edge keeps
 its unconstrained coordinate anchored there. The final two neighborhoods must agree
 on the rank and normal groups. The candidate retains strict inside/outside witnesses.
+If fitted branch planes intersect outside the current neighborhood, the probe now
+shrinks around its local surface point rather than immediately refusing. This stays
+within the same four-level cap and resets the previous-candidate comparison. A wide
+probe on the thin tetrahedron previously collected three sides and fitted their distant
+apex, missing a nearby two-face crease. A regression compares the recovered local
+point with the independent line projection: rank two, strict witnesses, about 23 ms
+and 3,124 point queries. Smooth-sphere controls still refuse feature claims.
 
 Small tests recover cube edges and corners, including a cube rotated around an arbitrary
 axis, and the curved intersection of two spheres. Cube cases exercise both the current
@@ -459,7 +466,10 @@ interior point; this does not certify discovery of every component.
 The complete tetrahedron attempt still stalls: eight triangles, eight open frontier
 edges. Before automatic feature probing it used 1,771 point queries and about 15 ms
 (22 ms in the baseline); with probing and its cache it uses 13,665 queries and about
-109 ms without making additional triangles.
+109 ms without making additional triangles. Allowing an oversized feature probe to
+shrink past a distant fitted intersection advances the front to 40 triangles and
+30 open edges, using 205,622 queries and about 1.50 s. It still does not close, and
+the extra growth costs substantially more work; this is not a latency success.
 This acceptance case stays ignored by default;
 no tetrahedron mesh is accepted or exported.
 
@@ -494,10 +504,10 @@ certificate or permission to change the source boundary.
 The enabled acceptance case covers rotated/scaled corners of about 2.98 and 0.298 degrees.
 It rejects reversed orientation, missing branch evidence at any vertex, and unequal
 crease steps that introduce another avoidable small angle. Whole-tetrahedron growth
-still stalls at eight triangles; the quality correction alone does not discover the
-crease points needed by that front.
+still stalled at eight triangles after the quality correction alone. The neighborhood
+shrinking change described above subsequently advances it to 40, still incomplete.
 
-The focused `generic_front` suite passes 14 enabled tests with two ignored acceptance
+The focused `generic_front` suite passes 15 enabled tests with two ignored acceptance
 cases. Explicit runs confirm the cube query-budget failure, tetrahedron closure failure
 while the intrinsic-angle case now passes. Sphere and torus meshes retain their existing counts,
 witnesses and sampled error; the new feature heuristic has not established the final

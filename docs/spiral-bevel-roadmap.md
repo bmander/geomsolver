@@ -102,7 +102,9 @@ tetrahedra. After the [mechanical refactor](solid-module-review.md), direct fiel
 sampling resolves the local apex/projection failure, including rotated/scaled and tenfold
 thinner cases. A shared quality policy now permits angles forced by recovered corner
 branches while rejecting avoidable slivers, passing rotated/scaled acute-corner controls.
-Complete tetrahedron closure still fails. The cube and tetrahedron remain
+Shrinking a probe past a distant fitted intersection now recovers nearer creases and
+advances the tetrahedron front from 8 to 40 triangles, but it still has 30 open edges
+and takes about 1.50 s. Complete tetrahedron closure still fails. The cube and tetrahedron remain
 unaccepted; local feature recovery does not establish the small-solid discovery milestone.
 
 ## First experiment and decision gate

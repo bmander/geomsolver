@@ -374,3 +374,15 @@ fn generic_front_retains_an_intrinsically_acute_corner() {
         assert!(!quality::acceptable([&vertices[0],&vertices[1],&shorter]));
     }}
 }
+
+#[test]
+fn generic_front_local_probe_isolates_a_nearby_crease_from_a_distant_corner() {
+    let (field,faces) = spiky_tetrahedron();
+    let [a,b,_] = faces[0]; let direction = sub(b,a);
+    // A wide probe sees all three sides of this thin body. Their common apex
+    // lies far outside the neighborhood; the nearer two-face crease is local.
+    let guess = [0.078,-0.078,0.108];
+    let expected = add(a,mul(direction,dot(sub(guess,a),direction)/dot(direction,direction)));
+    let mut surface = Surface::new(field,0.02);
+    verify_feature(&mut surface,guess,0.131,2,expected);
+}
