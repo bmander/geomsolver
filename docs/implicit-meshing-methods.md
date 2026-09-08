@@ -104,7 +104,15 @@ Use the bounded evaluator to validate candidates and search for missed component
 the surface traversal and its acceptance procedure separately so that a costly exhaustive
 partition does not remain the only way to construct every candidate triangle.
 
-## First surface-following experiment
+## Spherical contour and chart experiment
+
+**Method correction:** the full shell below is a structured spherical-chart mesh with
+local edge subdivision. It is not an advancing-front marching-triangles implementation.
+The one-dimensional contour does trace and correct neighboring points, but the shell
+starts with prescribed periodic connectivity and end rows. Earlier descriptions calling
+the shell "surface-following" overstated what was implemented. The user's inspection of
+the regular, rasp-like triangulation exposed this distinction and its missing feature
+sampling. The chart remains a measured candidate baseline, not the selected final mesher.
 
 `tests/envelope/paired/swept/member/walk.rs` now follows the tooth-facing contour on a
 spherical section of each complete member. It seeds from an existing analytic flank point,
@@ -241,3 +249,73 @@ Verification for this workbench change: 1,056 core tests passed, one ignored. Th
 schema-5 complete-member evidence is exactly equal after JSON decoding to the prior artifact;
 the full field definition and selected material checks are unchanged. Runtime core and
 native/WASM bindings are unchanged by this test-only extraction experiment.
+
+A subsequent [exact encoded-mesh audit](stl-embedding-verification.md) establishes that
+both coarse STLs are embedded, outward-oriented closed shells. It does not establish
+tooth-edge fidelity or distance to the intended material boundary.
+
+## Next method: general curvature-adaptive advancing front
+
+The user explicitly rules out tracking tooth tips or supplying gear-specific feature
+curves. The mesher must work on other geometries: its inputs are a field and accuracy
+controls, with geometry-independent query/projection capabilities. The gear is a test
+case, not a source of special meshing rules. Any feature discovery must come from local
+surface behavior and a general search, not names such as flank, tooth tip or root.
+
+The complete member already is an F-rep: its finite blank minus every indexed continuous
+swept cutter. The current chart extractor nevertheless treats its tooth-facing, back and
+end regions differently. The user explicitly rejects that decomposition in the next
+mesher. One algorithm must traverse the entire boundary of the full `MaterialField`,
+including all sharp/smooth transitions, without separate analytic caps/back surfaces or
+the end-clipping continuation used by the chart experiment. Front closure must emerge
+from traversal rather than an assumed annular connectivity. Internal evaluator optimizations
+may use the expression graph, but the mesher must not require geometry-specific regions.
+
+The user's proposed seed / outward growth / finer sampling at increasing curvature has
+direct precedents:
+
+- [Karkanis and Stewart (2001)](https://www.dgp.toronto.edu/public_user/JamesStewart/papers/cga01.pdf)
+  start a seed triangle and grow triangles with curvature-dependent size, followed by
+  gap filling. They assume a connected G1 surface and access to gradients. Their failure
+  discussion identifies rapid curvature changes and incompatible triangle sizes where
+  fronts meet. This is much closer to the requested march than the current chart mesh.
+- [Akkouche and Galin (2001)](https://www.ljll.fr/~frey/papers/scientific%20visualisation/Akkouche%20S.,%20Adaptive%20implicit%20surface%20polygonization%20using%20marching%20triangles.pdf)
+  develop adaptive marching triangles. Their conclusion leaves detection of gradient
+  discontinuities in Boolean implicit models as further work, so it does not by itself
+  solve this gear's creases.
+- [Schreiner et al. (2006), Direct (Re)Meshing](https://publications.sci.utah.edu/publications/SCITechReports/UUSCI-2006-013.pdf)
+  use a spatial sizing field to prepare the front for smaller features ahead, rather
+  than depending only on curvature at its current vertices. Section 3.3 resamples feature
+  curves and starts fronts along them, preserving boundaries and CSG intersection curves.
+  Curve and surface curvature share the sizing field. Their smoothness, projection,
+  sampling and front-connection limitations still need explicit treatment here.
+
+The implementation direction is now:
+
+1. Discover surface seeds through generic queries of the complete material field. No supplied tooth curves,
+   parameter-grid connectivity, or named analytic gear patches guide triangulation.
+2. Estimate local shape from projected samples and normal variation. Smooth regions use
+   curvature-dependent spacing; nonsmooth regions require general detection of incompatible
+   one-sided normals and local refinement/feature reconstruction. No globally averaged
+   normal may silently smooth a crease. High-curvature valleys need sampling even when
+   normals remain continuous. An edge-midpoint-only test can miss both kinds of feature.
+3. Build a sizing field that accounts for nearby curvature and surface separation before
+   the front reaches them. Curvature at the current point alone can miss a narrow valley
+   between probes; arbitrarily large steps on flat portions are not justified.
+4. Grow an actual frontier from discovered seed points: tangent-plane prediction,
+   projection onto exposed material, size/shape control, and explicit front meeting,
+   merging and closure. Do not preassign spherical lattice connectivity. A single seed
+   still does not establish discovery of every material component. The same traversal
+   crosses all boundary regions; no separately meshed end or back is attached afterward.
+5. Validate the same method on a sphere, torus, sharp Boolean intersection, rounded narrow
+   groove, nearby sheets and a hidden component, then on the gear field. Check feature
+   fidelity, triangle quality and convergence before producing another full pair.
+   Keep exact STL embedding checks and
+   whole-boundary coverage/error acceptance independent of candidate generation.
+
+The current field supplies bounded values, but not the smooth branch normals, curvature
+or reliable local projection assumed by these methods. Those contracts need a generic
+evaluator or sampling procedure. Merely estimating one normal across a Boolean crease
+would hide the feature the new mesher must preserve. Schreiner's supplied-feature-front
+extension is relevant background, but it is not authorization to introduce tooth-specific
+curves into this implementation.

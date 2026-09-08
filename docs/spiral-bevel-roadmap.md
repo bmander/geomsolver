@@ -65,7 +65,7 @@ Project 5 integrates those contracts into Solvent. Project 6 supplies acceptance
 throughout and audits the final result. This is a work breakdown, not a request to develop
 six general-purpose systems before producing a gear.
 
-The first [surface-following experiment](implicit-meshing-methods.md#first-surface-following-experiment)
+The first [spherical-contour experiment](implicit-meshing-methods.md#spherical-contour-and-chart-experiment)
 now traces complete mean-radius contours of both members, using the full indexed material
 field to correct each vertex. The default 2 mm candidate target produces 96 pinion edges
 and 192 gear edges in approximately 4 and 16 seconds of tracing. Its
@@ -74,9 +74,17 @@ spans the face width and source-derived end/back boundaries with adaptive confor
 triangles. At the same sampled target, the complete pinion candidate has 2,234 triangles
 and takes 25 seconds; the gear has 4,556 triangles and takes 97 seconds. Runtime and
 independent encoded-STL checks establish closed genus-one mesh topology. The surface chart
-still assumes unique polar crossings and an annular material boundary; complete coverage,
-whole-surface error, embedding and sharp-feature acceptance remain unproved. These results
-do not accept a final gear solid.
+still assumes unique polar crossings and an annular material boundary. A subsequent
+[exact STL audit](stl-embedding-verification.md) establishes embedding of these encoded
+meshes, but complete material coverage, whole-surface error and sharp-feature acceptance
+remain unproved. The full shell uses a structured chart, not an advancing-front march;
+its regular, rough tooth triangulation prompted the
+[general advancing-front direction](implicit-meshing-methods.md#next-method-general-curvature-adaptive-advancing-front).
+The user explicitly requires geometry-independent discovery/adaptation, with no supplied
+tooth-tip curves or gear-specific meshing rules. One marcher must traverse the existing
+complete-member F-rep, with no separate analytic back/end meshes or prescribed annular
+connectivity. The decomposition in the chart baseline must not carry into that mesher.
+These results do not accept a final gear solid.
 
 ## First experiment and decision gate
 

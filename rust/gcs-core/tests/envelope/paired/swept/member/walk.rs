@@ -1,4 +1,5 @@
-//! Surface-following experiment on the gear's spherical section charts.
+//! Contour tracing on spherical sections; the shell module uses a structured
+//! chart with edge refinement, not an advancing-front surface march.
 //! These contours are candidates, not a complete surface or topology certificate.
 use super::*;
 
