@@ -469,3 +469,37 @@ fn generic_front_clearance_allows_only_declared_shared_simplex_contacts() {
     assert!(!clearance::separated_except_shared([[0.,0.,0.],[0.2,0.2,0.]],triangle,[true,false]));
     assert!(clearance::separated_except_shared([[0.,0.,0.],[1.,0.,0.]],triangle,[true;2]));
 }
+
+#[test]
+fn generic_front_single_crease_endpoint_keeps_prediction_in_the_shared_face() {
+    for rotation in [0.,0.47] {
+        let rotate = |p| rotate_fixture(p,rotation);
+        let outward = [rotate([1.,0.,0.]),rotate([0.,1.,0.])];
+        let mut surface = Surface::new(wedge(outward),0.001);
+        let a = surface.feature_vertex(rotate([0.,0.,-0.1]),0.2).unwrap();
+        let b = surface.project(rotate([0.,-0.05,0.1])).unwrap();
+        let c = surface.project(rotate([0.,-0.2,0.])).unwrap();
+        assert_eq!(a.branches.len(),2);
+        assert!(b.branches.is_empty() && c.branches.is_empty());
+        let front = Front::from_seed(&mut surface,[a,b,c]);
+        for edge in [[0,1],[2,0]] {
+            assert!(dot(front.growth_normal(edge),outward[0]) > 1.-1e-8,
+                "prediction averaged a different incident face into this patch");
+        }
+    }
+}
+
+#[test]
+fn generic_front_triangle_interior_must_face_out_of_material() {
+    for rotation in [0.,0.47] {
+        let (field,faces) = spiky_tetrahedron_in_frame([0.;3],1.,rotation,0.06);
+        let [a,b,c] = faces[0];
+        // The vertices lie on two creases of one face. Opposite winding can
+        // otherwise borrow a different incident face's normal at each vertex.
+        let p = mul(add(a,b),0.5); let q = add(mul(a,0.25),mul(c,0.75));
+        let r = mul(add(a,c),0.5);
+        let mut surface = Surface::new(field,0.001);
+        assert!(surface.fits([p,q,r]));
+        assert!(!surface.fits([p,r,q]),"inward face passed the field-fit check");
+    }
+}

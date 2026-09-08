@@ -58,7 +58,7 @@ python3 rust/gcs-core/tests/verification/stl_embedding.py \
   /private/tmp/solvent-walk-pair/gear-candidate.stl
 ```
 
-Eight tests pass. Sixteen contact configurations cover crossings, coplanar overlaps,
+Nine tests pass. Sixteen contact configurations cover crossings, coplanar overlaps,
 point touches, partial shared segments, valid common simplices, and intersections extending
 beyond a common vertex. Every configuration is checked under both triangle orders,
 all vertex permutations and four invertible integer affine transforms. Other controls
@@ -66,6 +66,11 @@ include a topologically valid flattened tetrahedron, a folded octahedron with tr
 intersections, inward winding, float32 collapse, nonfinite/truncated input, tetrahedra at
 binary32's smallest subnormal and very large scales, and exhaustive comparison of the
 box sweep with all overlapping boxes in a deterministic random fixture.
+
+A reduced pair from an unaccepted advancing-front tetrahedron is disjoint beyond its
+shared simplex in binary64 but intersects improperly after binary32 encoding, without
+either triangle degenerating. The test checks both representations with exact integer
+predicates. Source-coordinate embedding alone does not certify an STL export.
 
 The two coarse chart candidates from commit `d76e21d` pass:
 

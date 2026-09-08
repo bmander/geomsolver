@@ -113,7 +113,7 @@ impl Front {
 
     pub(super) fn growth_normal(&self,[a,b]:[usize;2]) -> V {
         let [va,vb] = [&self.vertices[a],&self.vertices[b]];
-        if !va.branches.is_empty() && !vb.branches.is_empty() {
+        if !va.branches.is_empty() || !vb.branches.is_empty() {
             // A discovered crease has more than one incident surface normal.
             // Continue onto the unoccupied branch, rather than predicting in
             // a tangent plane made from an average across the crease.
@@ -121,15 +121,22 @@ impl Front {
                 (0..3).any(|k| t[k] == a && t[(k+1)%3] == b)) {
                 let [p,q,r] = t.map(|i| self.vertices[i].p);
                 let occupied = unit(cross(sub(q,p),sub(r,p)));
-                let mut choices = vec![];
-                for &n in &va.branches { for &m in &vb.branches {
+                let mut common = vec![];
+                for &n in va.normals() { for &m in vb.normals() {
                     if dot(n,m) > 0.95 {
-                        let candidate = unit(add(n,m));
-                        if dot(candidate,occupied) < 0.95 { choices.push(candidate); }
+                        common.push(unit(add(n,m)));
                     }
                 }}
-                choices.sort_by(|&n,&m| dot(n,occupied).total_cmp(&dot(m,occupied)));
-                if let Some(&n) = choices.first() { return n; }
+                if !va.branches.is_empty() && !vb.branches.is_empty() {
+                    let mut choices:Vec<_> = common.iter().copied().filter(|&n| dot(n,occupied) < 0.95).collect();
+                    choices.sort_by(|&n,&m| dot(n,occupied).total_cmp(&dot(m,occupied)));
+                    if let Some(&n) = choices.first() { return n; }
+                }
+                // An edge ending at a crease still advances in its shared
+                // face. Averaging that vertex's incident faces tilts the
+                // predictor away from the patch at the ordinary endpoint.
+                common.sort_by(|&n,&m| dot(m,occupied).total_cmp(&dot(n,occupied)));
+                if let Some(&n) = common.first() { return n; }
             }
         }
         unit(add(va.n,vb.n))

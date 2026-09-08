@@ -105,8 +105,11 @@ branches while rejecting avoidable slivers, passing rotated/scaled acute-corner 
 Shrinking a probe past a distant fitted intersection now recovers nearer creases and
 advances the tetrahedron front from 8 to 40 triangles. Interval separation checks for
 nearby distinct faces then reach 75 triangles, 11 open edges and about 1.41 s. An exact
-triangle-pair audit finds no improper intersections in this partial candidate after
-binary32 rounding, but complete tetrahedron closure still fails. The cube and tetrahedron remain
+triangle-pair audit finds no improper intersections in that partial candidate after
+binary32 rounding. Subsequent shared-face prediction and interior-orientation checks
+produce 77 triangles with 11 open edges. That candidate passes source-coordinate pair
+checks but acquires three intersections after binary32 rounding; it is unaccepted.
+Complete tetrahedron closure still fails. The cube and tetrahedron remain
 unaccepted; local feature recovery does not establish the small-solid discovery milestone.
 
 ## First experiment and decision gate

@@ -118,9 +118,21 @@ impl Surface {
     }
 
     pub(super) fn fits(&mut self,[a,b,c]:[V;3]) -> bool {
-        for sample in [mul(add(a,b),0.5),mul(add(b,c),0.5),mul(add(c,a),0.5),mul(add(add(a,b),c),1./3.)] {
-            let Some((_,_,inside,outside)) = self.correct(sample) else { return false; };
+        let normal = cross(sub(b,a),sub(c,a)); let area = length(normal);
+        if !area.is_finite() || area <= 1e-12 { return false; }
+        let normal = mul(normal,1./area);
+        let samples = [mul(add(a,b),0.5),mul(add(b,c),0.5),mul(add(c,a),0.5),mul(add(add(a,b),c),1./3.)];
+        for (i,sample) in samples.into_iter().enumerate() {
+            let Some((p,_,inside,outside)) = self.correct(sample) else { return false; };
             if boundary_radius(sample,inside,outside) > self.accuracy { return false; }
+            if i == 3 {
+                // Different incident normals at the vertices can each approve
+                // an inward triangle. Check orientation at its interior using
+                // actual material/exterior signs along the triangle normal.
+                let offset = mul(normal,self.point_tolerance);
+                if self.value(sub(p,offset)).bounds()[1] >= 0. ||
+                    self.value(add(p,offset)).bounds()[0] <= 0. { return false; }
+            }
         }
         true
     }

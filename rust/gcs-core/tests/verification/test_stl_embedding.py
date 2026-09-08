@@ -89,6 +89,25 @@ class ExactEmbeddingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'exactly degenerate'):
             audit.check(encode(points, TETRA))
 
+    def test_float32_rounding_can_introduce_an_intersection_without_collapse(self):
+        # Reduced from an unaccepted thin-tetrahedron front. The two faces
+        # have no improper intersection in binary64, but do after STL encoding.
+        points = [
+            (-0.008599389564634016, -0.014894579640023666, 0.9267073623577332),
+            (0.015019684450535295, 6.938893903907228e-18, 0.999343851648823),
+            (-0.00731342585889376, -0.012667225164992052, 1.0124382760737483),
+            (-0.00657828969376734, 0.011393931976511729, 1.0614473537488445),
+            (-0.006131576236209524, -0.010620201571596793, 1.0912282509193658),
+        ]
+        faces = [(0, 1, 2), (3, 0, 4)]
+        ratios = {x: x.as_integer_ratio() for p in points for x in p}
+        scale = max(d for _, d in ratios.values())
+        integer = {x: n*(scale//d) for x, (n, d) in ratios.items()}
+        source = [tuple(tuple(integer[x] for x in points[i]) for i in t) for t in faces]
+        self.assertFalse(audit.improper_intersection(*source))
+        encoded, _ = audit.read_triangles(encode(points, faces))
+        self.assertTrue(audit.improper_intersection(*encoded))
+
     def test_malformed_and_nonfinite_inputs_are_refused(self):
         data = encode(POINTS, TETRA)
         for bad in [data[:80], data[:-1], data+b'\0',

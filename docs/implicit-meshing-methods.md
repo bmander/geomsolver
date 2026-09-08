@@ -479,6 +479,22 @@ triangle-pair check after binary32 rounding finds no improper intersections amon
 482 candidate pairs; it is still an open, unaccepted mesh. Both whole-solid acceptance
 cases remain failing, including the cube's query-budget limit.
 
+The remaining trace exposed prediction and orientation issues. An edge with one crease
+endpoint now predicts using the face shared with its ordinary endpoint, rather than
+averaging that crease's incident faces. Rotated-wedge controls check both endpoint
+orders. Two feature endpoints can still select their unoccupied shared branch.
+The field-fit check also requires strict material/exterior signs along the triangle's
+normal at the projected centroid. Different incident normals at the vertices must not
+collectively approve an inward triangle. This is a local orientation check, not a
+whole-triangle error or embedding certificate.
+
+With those checks the tetrahedron produces 77 triangles, 11 open edges and 267,793
+point queries in about 1.66 s. The independent exact pair predicate finds no improper
+intersections in its binary64 coordinates, but finds three after binary32 rounding.
+A reduced two-face example is now a regression in the independent checker. This candidate
+is not accepted or exported. Encoding precision must be checked on actual output bytes;
+passing the source-coordinate intersection check cannot stand in for that audit.
+
 ### Spiky tetrahedron stress case
 
 The user requested a substantially spiky solid. The fixture is a tetrahedron of height
@@ -534,8 +550,9 @@ crease steps that introduce another avoidable small angle. Whole-tetrahedron gro
 still stalled at eight triangles after the quality correction alone. The neighborhood
 shrinking change described above subsequently advances it to 40, still incomplete.
 
-The focused `generic_front` suite passes 19 enabled tests with two ignored acceptance
+The focused `generic_front` suite passes 21 enabled tests with two ignored acceptance
 cases. Explicit runs confirm the cube query-budget and tetrahedron closure failures,
-while the intrinsic-angle case now passes. Sphere and torus meshes retain their existing counts,
-witnesses and sampled error; the new feature heuristic has not established the final
+while the intrinsic-angle case now passes. Sphere and torus meshes retain their existing
+geometry, witnesses and sampled error. The centroid orientation check increases their
+point-query counts to 37,737 and 164,225 respectively. The new feature heuristic has not established the final
 small-solid accuracy, coverage or latency milestone.
