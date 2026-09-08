@@ -2,7 +2,7 @@
 use super::*;
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord)]
-pub(super) enum Refusal { DirectedEdge,Degenerate,Quality,Orientation,Clearance([usize;2]) }
+pub(super) enum Refusal { DirectedEdge,Degenerate,Quality,Orientation,NearVertex(usize),Clearance([usize;2]) }
 
 #[derive(Clone)]
 pub(super) struct Front {
@@ -53,6 +53,12 @@ impl Front {
         if !quality::acceptable([a,b,c]) { return Some(Refusal::Quality); }
         if [a,b,c].iter().any(|v|
             v.normals().iter().all(|&n| dot(normal,n) <= area*0.2)) { return Some(Refusal::Orientation); }
+        for (i,v) in self.vertices.iter().enumerate() {
+            if t.contains(&i) { continue; }
+            if [(a,b),(b,c),(c,a)].iter().any(|&(a,b)| v.near_edge_interior(a,b)) {
+                return Some(Refusal::NearVertex(i));
+            }
+        }
         // A front is a chordal approximation of a curved boundary. Requiring
         // literal 3D segment intersection misses approaching fronts. Exclude
         // other frontier edges from a shallow prism around this triangle.

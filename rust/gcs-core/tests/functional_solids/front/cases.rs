@@ -503,3 +503,23 @@ fn generic_front_triangle_interior_must_face_out_of_material() {
         assert!(!surface.fits([p,r,q]),"inward face passed the field-fit check");
     }
 }
+
+#[test]
+fn generic_front_must_not_span_a_retained_crease_sample_through_a_tiny_gap() {
+    let mut surface = Surface::new(wedge([[1.,0.,0.],[0.,1.,0.]]),0.001);
+    let a = surface.feature_vertex([0.,0.,-0.2],0.2).unwrap();
+    let b = surface.feature_vertex([0.,0.,0.2],0.2).unwrap();
+    let c = surface.project([0.,-0.2,0.]).unwrap();
+    let mut front = Front::from_seed(&mut surface,[a,b,c]);
+    let mut middle = surface.feature_vertex([0.,0.,0.],0.2).unwrap();
+    // Model two independent discoveries that differ by much less than their
+    // boundary-witness radii. Exact coordinate inequality is not clearance.
+    middle.p[0] += 1e-12;
+    let index = front.vertices.len(); front.vertices.push(middle);
+    let other = surface.project([-0.2,0.,0.]).unwrap();
+    assert_eq!(front.refusal([1,0,front.vertices.len()],Some(&other)),Some(mesh::Refusal::NearVertex(index)));
+    let middle = &front.vertices[index];
+    assert!(middle.near_edge_interior(&front.vertices[0],&front.vertices[1]));
+    let mut distant = middle.clone(); distant.p[0] += surface.point_tolerance*10.;
+    assert!(!distant.near_edge_interior(&front.vertices[0],&front.vertices[1]));
+}

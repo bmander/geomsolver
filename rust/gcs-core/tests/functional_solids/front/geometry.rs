@@ -39,4 +39,18 @@ impl Vertex {
     pub(super) fn normals(&self) -> &[V] {
         if self.branches.is_empty() { std::slice::from_ref(&self.n) } else { &self.branches }
     }
+
+    pub(super) fn near_edge_interior(&self,a:&Vertex,b:&Vertex) -> bool {
+        // These witness radii bound proximity to material boundaries. A gap
+        // smaller than their combined uncertainty cannot justify spanning a
+        // retained sample without using its vertex in the edge connectivity.
+        let radius = self.radius+a.radius.max(b.radius);
+        if (0..3).any(|k| self.p[k] < a.p[k].min(b.p[k])-radius ||
+            self.p[k] > a.p[k].max(b.p[k])+radius) { return false; }
+        let edge = sub(b.p,a.p); let squared = dot(edge,edge);
+        if squared <= 0. { return false; }
+        let t = dot(sub(self.p,a.p),edge)/squared;
+        t > 0. && t < 1. && length(sub(self.p,add(a.p,mul(edge,t)))) <= radius &&
+            length(sub(self.p,a.p)) > radius && length(sub(self.p,b.p)) > radius
+    }
 }
