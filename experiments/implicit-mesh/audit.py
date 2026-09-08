@@ -125,9 +125,15 @@ def audit(path, tolerance=.02):
     count = struct.unpack_from("<I", data, 80)[0]
     report = {key: metadata[key] for key in
               ("case", "backend", "depth", "extraction_seconds", "setup_seconds")}
+    for key in ("grid_divisions", "edge_length", "vertex_tolerance", "point_queries",
+                "callback", "library_status"):
+        if key in metadata:
+            report[key] = metadata[key]
     report.update(file=str(path), sha256=hashlib.sha256(data).hexdigest(), triangles=count,
                   sampled_tolerance=tolerance, failures=[])
     failures = report["failures"]
+    if metadata.get("library_status", "Error.NoError") != "Error.NoError":
+        failures.append("producer reported a library error")
     if not count:
         if len(data) != 84 or name != "zero_only":
             failures.append("unexpected empty mesh or malformed empty STL")

@@ -4,9 +4,12 @@ Source review on 2026-09-08. An isolated Fidget 0.5.0 expression benchmark now e
 [`experiments/implicit-mesh`](../experiments/implicit-mesh/README.md); no external mesher
 is integrated into the shipped runtime.
 The current sphere/torus examples close; cube/tetrahedron acceptance remains unmet.
-The first comparison meets the speed target but exposes rotation-sensitive thin-feature
-loss and encoded triangle intersections. Compare another backend against these fixtures
-before selecting a production generator or returning to custom-front work.
+The Fidget comparison meets the speed target but exposes rotation-sensitive thin-feature
+loss and encoded triangle intersections. A subsequent [Manifold comparison](../experiments/implicit-mesh/MANIFOLD.md)
+passes the sphere/cube target with Python callbacks and gives better embedded outputs on
+several fixtures, but still loses rotated sharp/thin features and can emit degenerate faces.
+Neither is selected for production. Adaptive discovery with interval information and
+automatic sharp features, including libfive's Oracle interface, is the next comparison.
 
 ## Closest candidates
 

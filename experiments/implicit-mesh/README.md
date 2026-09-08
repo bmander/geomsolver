@@ -1,5 +1,8 @@
 # External implicit-mesher experiment
 
+The subsequent [Manifold LevelSet comparison](MANIFOLD.md) uses the same geometry and
+independent checks, and records scalar-query counts as well as output defects.
+
 Fidget 0.5.0, pinned with a lockfile, outside Solvent's shipped Rust workspace.
 This establishes a closed-form expression baseline. It does **not** adapt Solvent's
 continuous swept-volume evaluator or validate a gear. No runtime dependencies changed.
