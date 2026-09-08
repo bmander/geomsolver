@@ -25,7 +25,8 @@ fn cube_in_basis(basis:[V;3]) -> MaterialField {
 fn check_front(name:&str,field:MaterialField,genus:usize,distance:impl Fn(V)->f64) {
     let start = std::time::Instant::now();
     let mut surface = Surface::new(field,0.02);
-    let mut front = Front::start(&mut surface); front.grow(&mut surface);
+    let mut front = Front::start(&mut surface);
+    snapshot::grow(name,&mut front,&mut surface,start);
     let elapsed = start.elapsed();
     eprintln!("generic front {name}: extraction {elapsed:?}");
     eprintln!("generic front {name}: {} triangles, {} boundary edges, {} queries",front.triangles.len(),front.boundary.len(),surface.queries);

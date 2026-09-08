@@ -556,3 +556,36 @@ while the intrinsic-angle case now passes. Sphere and torus meshes retain their 
 geometry, witnesses and sampled error. The centroid orientation check increases their
 point-query counts to 37,737 and 164,225 respectively. The new feature heuristic has not established the final
 small-solid accuracy, coverage or latency milestone.
+
+
+### Incomplete inspection snapshots
+
+`SOLVENT_FRONT_SNAPSHOT=/private/tmp/solvent-cube-tetrahedron-preview` saves the
+retained vertices, triangles, open edges and extraction counters as JSON, independently
+of the accepted-output path. With this opt-in, growth panics are caught only long enough
+to save the current candidate and then resumed. Returning growth still runs the existing
+closure and accuracy assertions. The snapshot status is never an acceptance result.
+
+For example, run the two unmet acceptance cases with:
+
+```sh
+SOLVENT_FRONT_SNAPSHOT=/private/tmp/solvent-cube-tetrahedron-preview \
+cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core generic_front_ \
+  -- --ignored --nocapture --test-threads=1
+```
+
+This command intentionally fails while the cases remain unresolved. The diagnostic
+export requested for inspection encodes those triangles directly to binary STL,
+without welding, hole filling or moving vertices. Filenames contain `-incomplete`;
+they are not printable closed-solid exports.
+
+After the retained-vertex guard checkpoint, the cube snapshot has 871 triangles,
+173 open edges and reaches the million-query budget (11.54 s in this diagnostic run).
+The spiky tetrahedron has 78 triangles and eight open edges, at 267,344 queries
+(2.12 s). Exact checks of the binary32 STL find eight improperly intersecting cube
+triangle pairs and none for the tetrahedron. Both fail closed topology. Zero pair
+intersections does not establish source accuracy or whole-boundary coverage.
+
+The opt-in run passes all 22 enabled front tests while these two explicitly requested
+unmet acceptance cases continue to fail. Snapshot capture and STL inspection do not
+advance their acceptance status.
