@@ -476,17 +476,29 @@ and zero-only cancellation still reject feature claims. These are local heuristi
 not a whole-solid certificate. The incoming-patch test above exercises their integration
 with growth separately.
 
-An additional acceptance case isolates a conflicting quality rule. One tetrahedron face
+An additional acceptance case isolated a conflicting quality rule. One tetrahedron face
 has an intrinsic apex angle of about 2.98 degrees. The probe recovers that corner and two
 adjacent crease points, and their triangle passes the field-fit check, but the front's
-area/longest-edge-squared floor rejects it. A triangulation retaining the actual corner
+area/longest-edge-squared floor rejected it. A triangulation retaining the actual corner
 cannot make all incident angles larger than their sum. The six-degree minimum-angle
-acceptance check also conflicts with retaining this feature. Quality handling must
-distinguish angles forced by discovered geometry from avoidable slivers; merely
-subdividing cannot fix this case. The acceptance test remains ignored pending that change.
+acceptance check also conflicted with retaining this feature; merely subdividing cannot
+fix that conflict. A shared candidate quality policy now retains the ordinary area
+floor but permits an acute angle when both edges follow distinct discovered crease
+directions on the same incident face of a recovered corner. Both endpoints must retain
+the matching branch normals. Every small angle needs this evidence: one intrinsic corner
+cannot excuse a second sliver from unequal edge lengths. Growth, local retriangulation
+and final candidate checks use this policy; orientation, clearance and field-fit checks
+remain in force. The branch/alignment tests are heuristic evidence, not an exact source
+certificate or permission to change the source boundary.
 
-The focused `generic_front` suite passes 13 enabled tests with three ignored acceptance
+The enabled acceptance case covers rotated/scaled corners of about 2.98 and 0.298 degrees.
+It rejects reversed orientation, missing branch evidence at any vertex, and unequal
+crease steps that introduce another avoidable small angle. Whole-tetrahedron growth
+still stalls at eight triangles; the quality correction alone does not discover the
+crease points needed by that front.
+
+The focused `generic_front` suite passes 14 enabled tests with two ignored acceptance
 cases. Explicit runs confirm the cube query-budget failure, tetrahedron closure failure
-and intrinsic-angle rejection. Sphere and torus meshes retain their existing counts,
+while the intrinsic-angle case now passes. Sphere and torus meshes retain their existing counts,
 witnesses and sampled error; the new feature heuristic has not established the final
 small-solid accuracy, coverage or latency milestone.

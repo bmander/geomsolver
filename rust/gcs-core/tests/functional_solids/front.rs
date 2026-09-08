@@ -12,4 +12,5 @@ use field::Surface;
 mod mesh;
 use mesh::Front;
 mod features;
+mod quality;
 mod cases;

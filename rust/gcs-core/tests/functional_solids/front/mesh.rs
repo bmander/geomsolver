@@ -43,9 +43,7 @@ impl Front {
         let [a,b,c] = t.map(|i| if i == self.vertices.len() { new.unwrap() } else { &self.vertices[i] });
         let normal = cross(sub(b.p,a.p),sub(c.p,a.p));
         let area = length(normal); if area < 1e-12 { return false; }
-        let lengths = [length(sub(b.p,a.p)),length(sub(c.p,b.p)),length(sub(a.p,c.p))];
-        let longest = lengths.into_iter().fold(0_f64,f64::max);
-        if area <= 0.12*longest*longest || [a,b,c].iter().any(|v|
+        if !quality::acceptable([a,b,c]) || [a,b,c].iter().any(|v|
             v.normals().iter().all(|&n| dot(normal,n) <= area*0.2)) { return false; }
         // A front is a chordal approximation of a curved boundary. Requiring
         // literal 3D segment intersection misses approaching fronts. Exclude
@@ -222,11 +220,7 @@ impl Front {
                     let replacement = [[opposite,v,w],[opposite,w,u]];
                     // Reject unsuitable shapes before copying the front or
                     // spending any new field queries on this candidate.
-                    if replacement.iter().any(|t| {
-                        let [p,q,r] = t.map(|i| self.vertices[i].p);
-                        let longest = length(sub(p,q)).max(length(sub(q,r))).max(length(sub(r,p)));
-                        length(cross(sub(q,p),sub(r,p))) <= 0.12*longest*longest
-                    }) { continue; }
+                    if replacement.iter().any(|t| !quality::acceptable(t.map(|i| &self.vertices[i]))) { continue; }
                     let mut trial = self.clone(); trial.remove(index);
                     let mut accepted = true;
                     for t in replacement {

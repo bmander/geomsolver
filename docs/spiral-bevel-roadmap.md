@@ -100,8 +100,9 @@ incoming patch, including rotated cases. Whole-cube growth still exhausts its qu
 budget. Bounded seed search handles centered and translated thin
 tetrahedra. After the [mechanical refactor](solid-module-review.md), direct field-gradient
 sampling resolves the local apex/projection failure, including rotated/scaled and tenfold
-thinner cases. Complete tetrahedron closure still fails, and a separate acceptance case
-exposes a quality threshold incompatible with its intrinsic acute corner. The cube and tetrahedron remain
+thinner cases. A shared quality policy now permits angles forced by recovered corner
+branches while rejecting avoidable slivers, passing rotated/scaled acute-corner controls.
+Complete tetrahedron closure still fails. The cube and tetrahedron remain
 unaccepted; local feature recovery does not establish the small-solid discovery milestone.
 
 ## First experiment and decision gate

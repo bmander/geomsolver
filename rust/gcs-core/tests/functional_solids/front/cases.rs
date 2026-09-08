@@ -51,7 +51,8 @@ fn check_front(name:&str,field:MaterialField,genus:usize,distance:impl Fn(V)->f6
         }
     }
     eprintln!("generic front {name}: sampled triangle deviation {deviation}, minimum angle {} degrees",min_angle.to_degrees());
-    assert!(min_angle.to_degrees() > 6.,"candidate contains a sliver triangle");
+    assert!(front.triangles.iter().all(|t| quality::acceptable(t.map(|i| &front.vertices[i]))),
+        "candidate contains a sliver without an intrinsic corner");
     assert!(deviation <= surface.accuracy,"candidate has excessive sampled deviation");
     // Timing gates are opt-in and run serially, outside the parallel core suite.
     // An open mesh has already failed above, regardless of elapsed time.
@@ -343,21 +344,33 @@ fn generic_front_feature_cache_preserves_successes_failures_and_radius() {
 }
 
 #[test]
-#[ignore = "Unmet acceptance case: triangle quality floor rejects an intrinsic acute corner"]
 fn generic_front_retains_an_intrinsically_acute_corner() {
-    let (field,faces) = spiky_tetrahedron();
-    let [a,b,c] = faces[0];
-    let b = mul(add(a,b),0.5); let c = mul(add(a,c),0.5);
-    let u = sub(b,a); let v = sub(c,a);
-    let angle = length(cross(u,v)).atan2(dot(u,v)).to_degrees();
-    assert!(angle > 2.9 && angle < 3.1);
-    // A conforming triangulation cannot increase the sum of angles at this
-    // corner. Subdividing it only creates still smaller corner angles.
-    let mut surface = Surface::new(field,0.001);
-    let vertices = [surface.feature_vertex(a,0.2).unwrap(),
-        surface.feature_vertex(b,0.012).unwrap(),surface.feature_vertex(c,0.012).unwrap()];
-    assert_eq!(vertices[0].branches.len(),3);
-    assert!(vertices[1..].iter().all(|v| v.branches.len() == 2));
-    let front = Front::from_seed(&mut surface,vertices);
-    assert_eq!(front.triangles.len(),1);
+    for (scale,rotation) in [(0.1,0.),(1.,0.47),(10.,1.1)] { for radius in [0.06,0.006] {
+        let (field,faces) = spiky_tetrahedron_in_frame(mul([0.31,-0.27,0.12],scale),scale,rotation,radius);
+        let [a,b,c] = faces[0];
+        let b = mul(add(a,b),0.5); let c = mul(add(a,c),0.5);
+        let u = sub(b,a); let v = sub(c,a);
+        let angle = length(cross(u,v)).atan2(dot(u,v)).to_degrees();
+        assert!(angle > 0.29 && angle < 3.1);
+        // A conforming triangulation cannot increase the sum of angles at this
+        // corner. Subdividing it only creates still smaller corner angles.
+        let mut surface = Surface::new(field,scale*radius/60.);
+        let edge_radius = radius*scale*0.2;
+        let vertices = [surface.feature_vertex(a,scale*0.2).unwrap(),
+            surface.feature_vertex(b,edge_radius).unwrap(),surface.feature_vertex(c,edge_radius).unwrap()];
+        assert_eq!(vertices[0].branches.len(),3);
+        assert!(vertices[1..].iter().all(|v| v.branches.len() == 2));
+        let front = Front::from_seed(&mut surface,vertices.clone());
+        assert_eq!(front.triangles.len(),1);
+        assert!(!front.legal([0,2,1],None),"reversed acute triangle was accepted");
+        for k in 0..3 {
+            let mut unsupported = vertices.clone(); unsupported[k].branches.clear();
+            assert!(!quality::acceptable(unsupported.each_ref()),"missing incident branches were ignored");
+        }
+        // The same true corner must not excuse an avoidable second small
+        // angle caused by advancing unequal distances along its two creases.
+        let shorter = surface.feature_vertex(mul(add(a,c),0.5),edge_radius).unwrap();
+        assert!(surface.fits([a,b,shorter.p]));
+        assert!(!quality::acceptable([&vertices[0],&vertices[1],&shorter]));
+    }}
 }
