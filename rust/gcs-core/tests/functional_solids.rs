@@ -126,3 +126,86 @@ fn spatial_transforms_use_inverse_fixed_poses_and_refuse_invalid_angles() {
     assert!(sphere.clone().transformed(&family,f64::NAN).is_err());
     assert_eq!(sphere.transformed(&family,9.).unwrap_err(),Error::OutsideDomain);
 }
+
+#[test]
+fn axial_field_query_cost() {
+    let field = RevolvedField::new(F::half_plane([0.,0.],[0.,1.]).unwrap(),
+        [1.,2.,-1.],[1.,2.,2.]).unwrap();
+    let count = if std::env::var_os("SOLVENT_FIELD_BENCH").is_some() { 100_000 } else { 256 };
+    let start = std::time::Instant::now();
+    let mut sum = 0.;
+    for i in 0..count {
+        let p = std::hint::black_box(point([i as f64/64.,0.5,-0.25]));
+        sum += field.bounds(p).unwrap().bounds()[0];
+    }
+    eprintln!("axial field: {count} queries, {:?}, checksum {sum}",start.elapsed());
+    let n = count as f64; let expected = n*(n-1.)/384.-n*5./6.;
+    assert!((sum-expected).abs() < expected.abs().max(1.)*1e-12);
+}
+
+#[test]
+fn exact_coordinate_dependencies_skip_only_irrelevant_arithmetic() {
+    let wide = I::new(-1e200,1e200).unwrap();
+    for (through,normal,p) in [([f64::MAX,2.],[-0.,3.],[wide,I::new(3.,4.).unwrap()]),
+        ([2.,f64::MAX],[3.,0.],[I::new(3.,4.).unwrap(),wide])] {
+        let result = F::half_plane(through,normal).unwrap().bounds(p).unwrap();
+        assert!(result.contains(1.) && result.contains(2.));
+        assert!(result.bounds()[0] > 0.99 && result.bounds()[1] < 2.01);
+    }
+    let axial = F::half_plane([f64::MAX,2.],[0.,3.]).unwrap();
+    let revolution = RevolvedField::new(axial,[0.,0.,1.],[0.,0.,2.]).unwrap();
+    let result = revolution.bounds([wide,wide,I::new(4.,5.).unwrap()]).unwrap();
+    assert!(result.contains(1.) && result.contains(2.));
+    assert!(result.bounds()[0] > 0.99 && result.bounds()[1] < 2.01);
+    assert!(revolution.support_bounds().unwrap().is_none());
+
+    // Exact zero is special; a tiny nonzero radial coefficient cannot be
+    // discarded. Its planar value is significant at a sufficiently large x.
+    let almost_axial = F::half_plane([0.;2],[1e-100,1.]).unwrap();
+    let result = almost_axial.bounds(point([1e100,0.])).unwrap();
+    assert!(result.contains(1.) && result.bounds()[0] > 0.99);
+    let revolution = RevolvedField::new(almost_axial,[0.;3],[0.,0.,1.]).unwrap();
+    assert_eq!(revolution.bounds([wide,wide,I::ZERO]).unwrap_err(),Error::Overflow);
+    assert!(F::half_plane([f64::NAN,0.],[0.,1.]).is_err());
+}
+
+#[test]
+fn axial_dependency_propagates_through_booleans_without_dropping_radial_operands() {
+    let up = F::half_plane([0.,1.],[0.,1.]).unwrap();
+    let down = F::half_plane([0.,-1.],[0.,-1.]).unwrap();
+    let wide = I::new(-1e200,1e200).unwrap();
+    for (profile,expected) in [(up.clone().union(down.clone()).unwrap(),-1.5),
+        (up.clone().intersection(down.clone()).unwrap(),-0.5),
+        (up.clone().difference(down.clone()).unwrap(),1.5)] {
+        let field = RevolvedField::new(profile,[0.;3],[0.,0.,1.]).unwrap();
+        let result = field.bounds([wide,wide,I::point(0.5).unwrap()]).unwrap();
+        assert!(result.contains(expected));
+        assert!(result.bounds()[1]-result.bounds()[0] < 1e-12);
+    }
+    let radial = F::half_plane([1.,0.],[1.,0.]).unwrap();
+    for profile in [up.clone().union(radial.clone()).unwrap(),
+        up.clone().intersection(radial.clone()).unwrap(),up.difference(radial).unwrap()] {
+        let field = RevolvedField::new(profile,[0.;3],[0.,0.,1.]).unwrap();
+        assert_eq!(field.bounds([wide,wide,I::ZERO]).unwrap_err(),Error::Overflow);
+    }
+}
+
+#[test]
+fn rotated_axial_field_encloses_affine_box_extrema() {
+    // The exact normalization of (1,2,2) is division by 3. The extrema of
+    // this affine field on a box occur at the corners, independently of the
+    // revolution implementation and of the location of its unused radius.
+    let field = RevolvedField::new(F::half_plane([9.,0.5],[0.,7.]).unwrap(),
+        [1.,2.,-1.],[1.,2.,2.]).unwrap();
+    let box_ = [I::new(-2.,-1.).unwrap(),I::new(1.,4.).unwrap(),I::new(-0.5,0.5).unwrap()];
+    let result = field.bounds(box_).unwrap();
+    let mut lo = f64::INFINITY; let mut hi = f64::NEG_INFINITY;
+    for x in box_[0].bounds() { for y in box_[1].bounds() { for z in box_[2].bounds() {
+        let expected = ((x-1.)+2.*(y-2.)+2.*(z+1.))/3.-0.5;
+        assert!(result.contains(expected)); lo = lo.min(expected); hi = hi.max(expected);
+        let single = field.bounds(point([x,y,z])).unwrap();
+        assert!(single.contains(expected));
+        assert!(single.bounds()[1]-single.bounds()[0] < 1e-12);
+    }}}
+    assert!(result.bounds()[1]-result.bounds()[0] < hi-lo+1e-12);
+}

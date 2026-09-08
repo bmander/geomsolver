@@ -70,7 +70,7 @@ enum Node {
 /// preserve the Lipschitz bound but need not preserve exact signed distance.
 /// The coefficients enclose exact normalization of the supplied binary64 data.
 #[derive(Clone,Debug)]
-pub struct PlanarField { node:Node,depth:u8 }
+pub struct PlanarField { node:Node,depth:u8,uses:[bool;2] }
 
 impl PlanarField {
     // A disk about planar zero enclosing closure({f<0}), if derivable from the
@@ -91,20 +91,24 @@ impl PlanarField {
     }
     /// Material is on the negative side of the supplied outward normal.
     pub fn half_plane(through: [f64;2],normal: [f64;2]) -> Result<Self,Error> {
+        // Record exact source dependencies before interval normalization widens
+        // zero coefficients. A tiny nonzero coefficient still uses its axis.
+        let uses = normal.map(|n| n != 0.);
         let mut normal = point(normal)?; let length = norm(normal)?;
         for n in &mut normal { *n = n.div(length)?; }
-        Ok(Self {node:Node::HalfPlane {through:point(through)?,normal},depth:1})
+        Ok(Self {node:Node::HalfPlane {through:point(through)?,normal},depth:1,uses})
     }
 
     pub fn disk(center: [f64;2],radius: f64) -> Result<Self,Error> {
         if radius <= 0. { return Err(Error::OutsideDomain); }
-        Ok(Self {node:Node::Disk {center:point(center)?,radius:I::point(radius)?},depth:1})
+        Ok(Self {node:Node::Disk {center:point(center)?,radius:I::point(radius)?},depth:1,uses:[true;2]})
     }
 
     fn combine(self,other: Self,make: impl FnOnce(Box<Self>,Box<Self>)->Node) -> Result<Self,Error> {
         let depth = self.depth.max(other.depth)+1;
         if depth > 64 { return Err(Error::OutsideDomain); }
-        Ok(Self {node:make(Box::new(self),Box::new(other)),depth})
+        let uses = std::array::from_fn(|i| self.uses[i] || other.uses[i]);
+        Ok(Self {node:make(Box::new(self),Box::new(other)),depth,uses})
     }
     pub fn union(self,other: Self) -> Result<Self,Error> { self.combine(other,Node::Union) }
     pub fn intersection(self,other: Self) -> Result<Self,Error> { self.combine(other,Node::Intersection) }
@@ -113,8 +117,15 @@ impl PlanarField {
     /// Enclose the field over the complete point box; no sampling or libm calls.
     pub fn bounds(&self,p: P) -> Result<I,Error> {
         match &self.node {
-            Node::HalfPlane {through,normal} =>
-                p[0].sub(through[0])?.mul(normal[0])?.add(p[1].sub(through[1])?.mul(normal[1])?),
+            Node::HalfPlane {through,normal} => {
+                let term = |k:usize| p[k].sub(through[k])?.mul(normal[k]);
+                match self.uses {
+                    [true,true] => term(0)?.add(term(1)?),
+                    [true,false] => term(0),
+                    [false,true] => term(1),
+                    [false,false] => unreachable!("half-plane normalization rejects a zero normal"),
+                }
+            },
             Node::Disk {center,radius} => norm([p[0].sub(center[0])?,p[1].sub(center[1])?])?.sub(*radius),
             Node::Union(a,b) => Ok(min(a.bounds(p)?,b.bounds(p)?)),
             Node::Intersection(a,b) => Ok(max(a.bounds(p)?,b.bounds(p)?)),
@@ -151,6 +162,9 @@ impl RevolvedField {
     pub fn bounds(&self,p: V) -> Result<I,Error> {
         let mut q = [I::ZERO;3]; let mut z = I::ZERO;
         for i in 0..3 { q[i] = p[i].sub(self.origin[i])?; z = z.add(q[i].mul(self.axis[i])?)?; }
+        // Axial fields (including their Booleans) have no radial dependency.
+        // Avoid the radial projection/norm and its irrelevant overflow risk.
+        if !self.profile.uses[0] { return self.profile.bounds([I::ZERO,z]); }
         for i in 0..3 { q[i] = q[i].sub(z.mul(self.axis[i])?)?; }
         self.profile.bounds([norm(q)?,z])
     }

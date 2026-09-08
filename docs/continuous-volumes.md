@@ -40,6 +40,25 @@ an interval-normalized axis. All geometric coefficients are binary64 input data;
 normalization, arithmetic and square roots use outward intervals. Invalid coefficients,
 overflow and expression depth over 64 are refused.
 
+Planar fields retain exact coordinate dependencies from their binary64 source normals;
+Boolean nodes conservatively combine those dependencies. An exactly zero coefficient
+does not require evaluation of its coordinate term, and an axial-only revolved profile
+does not require a radial projection or norm. This avoids unnecessary work and irrelevant
+overflow without approximating nonzero coefficients. Dependencies are recorded before
+interval normalization, whose outward rounding can widen an exact zero coefficient.
+The field still encloses the mathematical normalization of the original source data;
+no approximate-zero threshold or sampling decides which coordinates to omit.
+
+Regression tests exercise unused-coordinate overflow, tiny nonzero radial coefficients,
+all three Boolean operations and affine extrema over rotated point boxes. A local
+`axial_field_query_cost` comparison took 39.65 ms before and 13.75 ms after this change
+for 100,000 queries in the optimized test profile. This is an isolated evaluator timing,
+not a whole-mesh speed or completion claim. Reproduce the diagnostic with
+`SOLVENT_FIELD_BENCH=1 cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core axial_field_query_cost -- --nocapture`.
+Validation after this change: 37 functional-solid tests pass with two ignored meshing
+acceptance cases. `make test` builds native and WASM release artifacts and passes 1,075
+core tests (three existing ignored cases), 247 web tests, CLI/FFI tests and doctests.
+
 For point p, the primitives are `dot(p-through,normal)/|normal|` and `|p-center|-radius`.
 Union uses min, intersection uses max, and difference uses `max(a,-b)`. Each primitive
 is one-Lipschitz; these scalar operations preserve that property. The map from world
