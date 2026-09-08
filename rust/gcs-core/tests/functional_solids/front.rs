@@ -165,6 +165,7 @@ impl Surface {
     }
 }
 
+#[derive(Clone)]
 struct Front {
     vertices:Vec<Vertex>,
     triangles:Vec<[usize;3]>,
@@ -172,6 +173,7 @@ struct Front {
     boundary:BTreeSet<[usize;2]>,
     queue:VecDeque<[usize;2]>,
     clearance:f64,
+    repairs:usize,
 }
 
 impl Front {
@@ -181,7 +183,7 @@ impl Front {
         let c = surface.project(add(a.p,mul(add(mul(tangent,0.5),mul(side,3_f64.sqrt()*0.5)),a.size))).unwrap();
         assert!(surface.fits([a.p,b.p,c.p]),"seed triangle exceeds sampling tolerance");
         let mut result = Self {vertices:vec![a,b,c],triangles:vec![],used:BTreeSet::new(),
-            boundary:BTreeSet::new(),queue:VecDeque::new(),clearance:surface.accuracy*3.};
+            boundary:BTreeSet::new(),queue:VecDeque::new(),clearance:surface.accuracy*3.,repairs:0};
         result.insert([0,1,2]); result
     }
 
@@ -296,9 +298,62 @@ impl Front {
                 }
                 ears.sort_by(|a,b| b.0.total_cmp(&a.0));
                 if let Some((_,t)) = ears.first() { self.insert(*t); }
-                else if !self.fill_gap(surface) { break; }
+                else if !self.fill_gap(surface) && !self.retriangulate_ear(surface) { break; }
             }
         }
+    }
+
+    fn remove(&mut self,index:usize) {
+        let t = self.triangles.swap_remove(index);
+        for k in 0..3 {
+            let e = [t[k],t[(k+1)%3]];
+            assert!(self.used.remove(&e));
+            if !self.boundary.remove(&e) {
+                let reverse = [e[1],e[0]];
+                assert!(self.used.contains(&reverse));
+                assert!(self.boundary.insert(reverse)); self.queue.push_back(reverse);
+            }
+        }
+    }
+
+    fn retriangulate_ear(&mut self,surface:&mut Surface) -> bool {
+        // A skinny gap need not become a skinny triangle. Combine an ear with
+        // one adjacent existing triangle, then replace their common diagonal.
+        // Stage the change: topology, orientation, quality, frontier clearance
+        // and field-fit checks must all pass before changing the live front.
+        for &[a,b] in &self.boundary {
+            for &[c,d] in &self.boundary {
+                if b != c || a == d { continue; }
+                let ear = [b,a,d];
+                for k in 0..3 {
+                    let [u,v,w] = [ear[k],ear[(k+1)%3],ear[(k+2)%3]];
+                    let Some((index,opposite)) = self.triangles.iter().enumerate().find_map(|(i,t)| {
+                        (0..3).find(|&j| t[j] == v && t[(j+1)%3] == u).map(|j| (i,t[(j+2)%3]))
+                    }) else { continue; };
+                    if opposite == w || self.used.contains(&[opposite,w]) || self.used.contains(&[w,opposite]) { continue; }
+                    let replacement = [[opposite,v,w],[opposite,w,u]];
+                    // Reject unsuitable shapes before copying the front or
+                    // spending any new field queries on this candidate.
+                    if replacement.iter().any(|t| {
+                        let [p,q,r] = t.map(|i| self.vertices[i].p);
+                        let longest = length(sub(p,q)).max(length(sub(q,r))).max(length(sub(r,p)));
+                        length(cross(sub(q,p),sub(r,p))) <= 0.12*longest*longest
+                    }) { continue; }
+                    let mut trial = self.clone(); trial.remove(index);
+                    let mut accepted = true;
+                    for t in replacement {
+                        if !trial.legal(t,None) || !surface.fits(t.map(|i| trial.vertices[i].p)) {
+                            accepted = false; break;
+                        }
+                        trial.insert(t);
+                    }
+                    if accepted {
+                        trial.repairs += 1; *self = trial; return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     fn fill_gap(&mut self,surface:&mut Surface) -> bool {
@@ -352,6 +407,7 @@ fn check_front(name:&str,field:MaterialField,genus:usize,distance:impl Fn(V)->f6
     let elapsed = start.elapsed();
     eprintln!("generic front {name}: extraction {elapsed:?}");
     eprintln!("generic front {name}: {} triangles, {} boundary edges, {} queries",front.triangles.len(),front.boundary.len(),surface.queries);
+    eprintln!("generic front {name}: {} local retriangulations",front.repairs);
     assert!(front.boundary.is_empty(),"front stalled on {name}");
     let shell = gcs_core::topology::ClosedShell::from_triangles(front.vertices.len(),&front.triangles).unwrap();
     assert_eq!(shell.genus(),genus);
@@ -360,13 +416,19 @@ fn check_front(name:&str,field:MaterialField,genus:usize,distance:impl Fn(V)->f6
         assert!(surface.value(v.inside).bounds()[1] < 0. && surface.value(v.outside).bounds()[0] > 0.);
     }
     let mut deviation = 0_f64;
+    let mut min_angle = std::f64::consts::PI;
     for t in &front.triangles {
         let [a,b,c] = t.map(|i| front.vertices[i].p);
+        for [p,q,r] in [[a,b,c],[b,c,a],[c,a,b]] {
+            let u = sub(q,p); let v = sub(r,p);
+            min_angle = min_angle.min(length(cross(u,v)).atan2(dot(u,v)));
+        }
         for p in [mul(add(a,b),0.5),mul(add(b,c),0.5),mul(add(c,a),0.5),mul(add(add(a,b),c),1./3.)] {
             deviation = deviation.max(distance(p));
         }
     }
-    eprintln!("generic front {name}: sampled triangle deviation {deviation}");
+    eprintln!("generic front {name}: sampled triangle deviation {deviation}, minimum angle {} degrees",min_angle.to_degrees());
+    assert!(min_angle.to_degrees() > 6.,"candidate contains a sliver triangle");
     assert!(deviation <= surface.accuracy,"candidate has excessive sampled deviation");
     // Timing gates are opt-in and run serially, outside the parallel core suite.
     // An open mesh has already failed above, regardless of elapsed time.
@@ -393,7 +455,6 @@ fn generic_front_sphere() {
 }
 
 #[test]
-#[ignore = "Unmet acceptance case: two skinny frontier gaps require local retriangulation"]
 fn generic_front_torus() {
     let torus = SpatialField::from(RevolvedField::new(F::disk([2.,0.],0.6).unwrap(),[0.;3],[0.,0.,1.]).unwrap()).into();
     check_front("torus",torus,1,|p| ((p[0].hypot(p[1])-2.).hypot(p[2])-0.6).abs());

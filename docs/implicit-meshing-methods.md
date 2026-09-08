@@ -350,26 +350,35 @@ The separate exact embedding audit passes for the exported 414-triangle sphere
 (SHA-256 `3207dae5febfef179bc00b3572b51e7374b7b0c1676966f81a596956e876a5b5`),
 establishing an outward-oriented embedded closed mesh, not field coverage or accuracy.
 
-Two explicit acceptance tests remain ignored by default because they currently fail;
-they are neither passing regressions nor accepted meshes:
+The major-radius-two, minor-radius-0.6 torus now closes with 1,898 triangles and 160,417
+point queries (227 ms in a local serial run). The original front left two skinny gaps.
+The repair combines a frontier ear with an adjacent triangle and replaces their shared
+diagonal; both replacement triangles must pass the existing orientation, shape,
+frontier-clearance and field-fit checks before the staged change is applied. Two such
+repairs close the torus without reducing the shape threshold or supplying a chart.
+Its minimum triangle angle is 10.45 degrees, sampled deviation is 0.019714, and the
+independent exact embedding check passes for the encoded STL (SHA-256
+`b11598747ae45b3625ce385fdb144c608ac9faabf21c49eaf03489d3ca11d6ce`). This torus case
+now runs in the ordinary suite. Local retriangulation remains a candidate heuristic;
+passing this case is not a general closure, coverage or accuracy proof.
 
-- The side-two cube is constructed as six half-spaces intersecting a radius-two ball
-  that supplies finite support. The marcher only receives the complete material field.
-  It takes about 1.21 s, leaving 218 open edges on 1,146 triangles after 83,289 queries.
-  Generic sharp-edge discovery and reconstruction are missing; averaged finite
-  differences are insufficient. Before reuse this incomplete attempt took 7.78 s.
-- The major-radius-two, minor-radius-0.6 torus takes about 259 ms, leaving two skinny
-  triangular gaps on 1,896 triangles. Local retriangulation at front meetings is needed;
-  the shape threshold has not been relaxed just to make closure pass.
+The side-two cube remains an explicit failing acceptance test, ignored by default.
+It is constructed as six half-spaces intersecting a radius-two ball that supplies finite
+support; the marcher only receives the complete material field. Local retriangulation
+reduces its open frontier from 218 to 125 edges, but still leaves an incomplete mesh:
+1,191 triangles, 86,633 queries, 33 repairs and about 1.51 s. Generic sharp-edge discovery
+and reconstruction are missing; averaged finite differences are insufficient. Before
+projection reuse and these repairs, the incomplete attempt took 7.78 s. It is neither
+a passing regression nor an accepted mesh.
 
-Run the ordinary sphere, cache-equivalence and empty-material controls:
+Run the ordinary sphere, torus, cache-equivalence and empty-material controls:
 
 ```sh
 SOLVENT_FRONT_MAX_MS=100 cargo test --manifest-path rust/Cargo.toml \
   -p gcs-core --test core generic_front -- --nocapture --test-threads=1
 ```
 
-Run the **currently failing** acceptance cases explicitly:
+Include the **currently failing cube** acceptance case explicitly:
 
 ```sh
 SOLVENT_FRONT_MAX_MS=100 cargo test --manifest-path rust/Cargo.toml \
@@ -380,6 +389,6 @@ SOLVENT_FRONT_MAX_MS=100 cargo test --manifest-path rust/Cargo.toml \
 candidates that pass closure, topology, witness and sampled-error checks. The latency
 limit applies to sphere and cube, not the separate torus diagnostic. Repeat serial runs
 to assess timing variability; do not count compilation or a stalled front as discovery.
-Next resolve generic sharp transitions and front-band retriangulation on these fixtures,
+Next resolve generic sharp transitions and extend front-band retriangulation on these fixtures,
 then expand to narrow grooves, nearby sheets and undiscovered components. This workbench
 does not yet supply the final production mesher or a gear acceptance certificate.

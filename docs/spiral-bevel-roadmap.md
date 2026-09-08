@@ -88,9 +88,10 @@ These results do not accept a final gear solid.
 
 The immediate iteration gate is now [small-case discovery](implicit-meshing-methods.md#small-case-discovery-workbench-and-latency-target):
 complete sphere and cube extraction under 100 ms each, with compilation measured
-separately. The test-only general front closes a 414-triangle sphere in about 56 ms;
-cube sharp transitions and torus front closure remain explicit failing acceptance
-cases. Keep high-precision gear runs out of this loop until the primitive method is
+separately. The test-only general front closes a 414-triangle sphere in about 56 ms.
+Local retriangulation now closes the 1,898-triangle torus (about 227 ms), with an
+independent exact embedding audit. Cube sharp transitions remain an explicit failing
+acceptance case. Keep high-precision gear runs out of this loop until the primitive method is
 efficient and robust. Sphere timing alone does not establish that milestone.
 
 ## First experiment and decision gate
