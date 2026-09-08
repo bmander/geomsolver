@@ -11,6 +11,7 @@ pub(super) struct Surface {
     pub(super) box_queries:usize,
     pub(super) corrections:BTreeMap<([u64;3],u64),Option<(V,V,V,V)>>,
     pub(super) projections:BTreeMap<[u64;3],Option<Vertex>>,
+    pub(super) features:BTreeMap<([u64;3],u64),Option<Vertex>>,
     pub(super) cache:bool,
 }
 
@@ -21,7 +22,7 @@ impl Surface {
         let span = support.map(|v| v.bounds()[1]-v.bounds()[0]);
         Self {field:field.evaluator(100000),support,accuracy,point_tolerance:accuracy*0.01,
             max_step:length(span)/12.,queries:0,box_queries:0,corrections:BTreeMap::new(),
-            projections:BTreeMap::new(),cache:true}
+            projections:BTreeMap::new(),features:BTreeMap::new(),cache:true}
     }
 
     pub(super) fn value(&mut self,p:V) -> I {

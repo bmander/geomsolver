@@ -95,11 +95,13 @@ acceptance case. Keep high-precision gear runs out of this loop until the primit
 efficient and robust. Sphere timing alone does not establish that milestone.
 An isolated field-only feature probe now recovers local cube edges/corners (including
 rotated cases) and a curved Boolean crease while rejecting smooth-sphere controls.
-Local front-crossing tests now use its incident normals, but automatic feature acquisition
-during growth is missing. Bounded seed search handles centered and translated thin
+Automatic feature acquisition now crosses right-angle and thin wedges from an ordinary
+incoming patch, including rotated cases. Whole-cube growth still exhausts its query
+budget. Bounded seed search handles centered and translated thin
 tetrahedra. After the [mechanical refactor](solid-module-review.md), direct field-gradient
 sampling resolves the local apex/projection failure, including rotated/scaled and tenfold
-thinner cases. Complete tetrahedron closure still fails. The cube and tetrahedron remain
+thinner cases. Complete tetrahedron closure still fails, and a separate acceptance case
+exposes a quality threshold incompatible with its intrinsic acute corner. The cube and tetrahedron remain
 unaccepted; local feature recovery does not establish the small-solid discovery milestone.
 
 ## First experiment and decision gate

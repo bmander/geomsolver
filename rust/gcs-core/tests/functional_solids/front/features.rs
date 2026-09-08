@@ -1,6 +1,6 @@
 //! Local field-only feature probes. These are candidate measurements, not a
-//! completeness or nonsmoothness proof. Local crossing tests pass their normal
-//! branches to the front; automatic feature acquisition during growth remains.
+//! completeness or nonsmoothness proof. Front predictions can request a probe
+//! after projection fails or turns sharply away from the incoming normal.
 use super::*;
 use gcs_core::linalg::{Mat,min_norm_solve};
 
@@ -13,6 +13,16 @@ impl Surface {
     }
 
     pub(super) fn feature_vertex(&mut self,guess:V,radius:f64) -> Option<Vertex> {
+        // An unchanged frontier can retry this exact neighborhood. Cache both
+        // success and refusal; a different radius must run its own probe.
+        let key = (guess.map(f64::to_bits),radius.to_bits());
+        if let Some(result) = self.features.get(&key) { return result.clone(); }
+        let result = self.feature_vertex_uncached(guess,radius);
+        if self.cache && self.features.len() < 16384 { self.features.insert(key,result.clone()); }
+        result
+    }
+
+    fn feature_vertex_uncached(&mut self,guess:V,radius:f64) -> Option<Vertex> {
         let feature = self.local_feature(guess,radius)?;
         let n = unit(feature.normals.iter().copied().fold([0.;3],add));
         let mut vertex = self.vertex(feature.p,n,feature.inside,feature.outside);

@@ -129,7 +129,11 @@ impl Front {
             let h = (a.size*0.5+b.size*0.5).max(width*0.6);
             let height = (h*h-width*width*0.25).sqrt();
             let guess = add(mul(add(a.p,b.p),0.5),mul(unit(cross(d,normal)),height));
-            let Some(candidate) = surface.project(guess) else { self.queue.push_back(e); continue; };
+            let projected = surface.project(guess);
+            let feature = if projected.as_ref().is_none_or(|v| dot(v.n,normal) < 0.9) {
+                surface.feature_vertex(guess,h)
+            } else { None };
+            let Some(candidate) = feature.or(projected) else { self.queue.push_back(e); continue; };
             let mut nearby:Vec<_> = self.vertices.iter().enumerate().filter(|(i,v)|
                 !e.contains(i) && length(sub(v.p,candidate.p)) < h*0.85 && dot(v.n,candidate.n) > 0.)
                 .map(|(i,v)| (length(sub(v.p,candidate.p)),i)).collect();

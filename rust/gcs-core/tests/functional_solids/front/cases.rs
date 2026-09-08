@@ -174,6 +174,17 @@ fn generic_front_local_probe_recovers_a_curved_boolean_crease() {
     verify_feature(&mut surface,p,0.2,2,p);
 }
 
+fn wedge(outward:[V;2]) -> MaterialField {
+    let mut field = MaterialField::from(SpatialField::from(RevolvedField::new(
+        F::disk([0.;2],2.).unwrap(),[0.;3],[0.,0.,1.]).unwrap()));
+    for n in outward {
+        let half = SpatialField::from(RevolvedField::new(
+            F::half_plane([0.;2],[0.,1.]).unwrap(),[0.;3],n).unwrap());
+        field = field.intersection(half.into()).unwrap();
+    }
+    field
+}
+
 #[test]
 fn generic_front_crosses_discovered_creases_without_averaging_their_faces() {
     for rotation in [0_f64,0.47] { for angle in [90_f64,160.] {
@@ -181,12 +192,7 @@ fn generic_front_crosses_discovered_creases_without_averaging_their_faces() {
         let rotate = |p| add(add(mul(p,c),mul(cross(axis,p),s)),mul(axis,dot(axis,p)*(1.-c)));
         let (s,c) = angle.to_radians().sin_cos();
         let outward = [rotate([1.,0.,0.]),rotate([c,s,0.])];
-        let mut field = MaterialField::from(SpatialField::from(RevolvedField::new(
-            F::disk([0.;2],2.).unwrap(),[0.;3],[0.,0.,1.]).unwrap()));
-        for n in outward {
-            let half = SpatialField::from(RevolvedField::new(F::half_plane([0.;2],[0.,1.]).unwrap(),[0.;3],n).unwrap());
-            field = field.intersection(half.into()).unwrap();
-        }
+        let field = wedge(outward);
         let mut surface = Surface::new(field,0.001);
         // Only the incoming patch is supplied by this local fixture. Its
         // feature points and incident normals are recovered from the field.
@@ -219,7 +225,7 @@ fn spiky_tetrahedron_at(shift:V) -> (MaterialField,[[V;3];4]) {
     spiky_tetrahedron_in_frame(shift,1.,0.,0.06)
 }
 
-fn rotate_tetrahedron(p:V,angle:f64) -> V {
+fn rotate_fixture(p:V,angle:f64) -> V {
     let axis = unit([1.,2.,3.]); let (s,c) = angle.sin_cos();
     add(add(mul(p,c),mul(cross(axis,p),s)),mul(axis,dot(axis,p)*(1.-c)))
 }
@@ -230,7 +236,7 @@ fn spiky_tetrahedron_in_frame(shift:V,scale:f64,angle:f64,radius:f64) -> (Materi
     // it is never passed to the marcher or feature probe.
     let points = [[0.,0.,1.5],[radius,0.,-0.5],[-radius*0.5,radius*0.5*3_f64.sqrt(),-0.5],
         [-radius*0.5,-radius*0.5*3_f64.sqrt(),-0.5]]
-        .map(|p| add(mul(rotate_tetrahedron(p,angle),scale),shift));
+        .map(|p| add(mul(rotate_fixture(p,angle),scale),shift));
     assert!(points.iter().all(|&p| length(p) < 2.*scale),"fixture support clips the tetrahedron");
     let center = mul(points.into_iter().fold([0.;3],add),0.25);
     let faces = [[0,1,2],[0,2,3],[0,3,1],[1,3,2]].map(|t| t.map(|i| points[i]));
@@ -272,7 +278,7 @@ fn generic_front_local_probe_recovers_a_spiky_tetrahedron_apex() {
         (1.,0.47,translated),(10.,1.1,translated)] { for radius in [0.06,0.006] {
         let shift = mul(offset,scale);
         let (field,faces) = spiky_tetrahedron_in_frame(shift,scale,angle,radius);
-        let position = |z| add(mul(rotate_tetrahedron([0.,0.,z],angle),scale),shift);
+        let position = |z| add(mul(rotate_fixture([0.,0.,z],angle),scale),shift);
         let mut surface = Surface::new(field,scale*0.001);
         let feature = verify_feature(&mut surface,position(1.49),scale*0.2,3,position(1.5));
         assert_eq!(feature.normals.len(),3);
@@ -294,4 +300,64 @@ fn generic_front_finds_thin_material_without_a_supplied_interior_point() {
         assert!(surface.value(p).bounds()[1] < 0.);
         assert!(surface.box_queries > 0,"fixture did not exercise bounded seed search");
     }
+}
+
+#[test]
+fn generic_front_discovers_a_crease_from_an_incoming_patch() {
+    for rotation in [0.,0.47] { for angle in [90_f64,160.] {
+        let rotate = |p| rotate_fixture(p,rotation);
+        let (s,c) = angle.to_radians().sin_cos();
+        let outward = [rotate([1.,0.,0.]),rotate([c,s,0.])];
+        let field = wedge(outward);
+        let mut surface = Surface::new(field,0.001);
+        let initial = [[0.,-0.05,-0.1],[0.,-0.05,0.1],[0.,-0.2,0.]]
+            .map(|p| surface.project(rotate(p)).unwrap());
+        assert!(initial.iter().all(|v| v.branches.is_empty()));
+        let mut front = Front::from_seed(&mut surface,initial);
+        for _ in 0..40 { if !front.advance(&mut surface) { break; } }
+        eprintln!("automatic crease {angle}, rotation {rotation}: {} triangles, {} features, {} queries",front.triangles.len(),
+            front.vertices.iter().filter(|v| !v.branches.is_empty()).count(),surface.queries);
+        assert!(front.vertices.iter().any(|v| v.branches.len() == 2),"crease was not discovered");
+        assert!(front.triangles.iter().any(|t| {
+            let [a,b,c] = t.map(|i| front.vertices[i].p);
+            dot(unit(cross(sub(b,a),sub(c,a))),outward[1]) > 0.9999
+        }),"front did not reach the outgoing face");
+    }}
+}
+
+#[test]
+fn generic_front_feature_cache_preserves_successes_failures_and_radius() {
+    let field = wedge([[1.,0.,0.],[0.,1.,0.]]);
+    let mut cached = Surface::new(field.clone(),0.001);
+    let mut uncached = Surface::new(field,0.001); uncached.cache = false;
+    for guess in [[0.,0.,0.],[0.,-0.5,0.]] { for radius in [0.2,0.1] {
+        let before = cached.queries;
+        let a = cached.feature_vertex(guess,radius);
+        assert!(cached.queries > before,"distinct radius did not evaluate a new neighborhood");
+        let before = cached.queries;
+        assert_eq!(cached.feature_vertex(guess,radius),a);
+        assert_eq!(cached.queries,before,"identical feature probe repeated field work");
+        assert_eq!(uncached.feature_vertex(guess,radius),a);
+        assert_eq!(a.is_some(),guess[1] == 0.);
+    }}
+}
+
+#[test]
+#[ignore = "Unmet acceptance case: triangle quality floor rejects an intrinsic acute corner"]
+fn generic_front_retains_an_intrinsically_acute_corner() {
+    let (field,faces) = spiky_tetrahedron();
+    let [a,b,c] = faces[0];
+    let b = mul(add(a,b),0.5); let c = mul(add(a,c),0.5);
+    let u = sub(b,a); let v = sub(c,a);
+    let angle = length(cross(u,v)).atan2(dot(u,v)).to_degrees();
+    assert!(angle > 2.9 && angle < 3.1);
+    // A conforming triangulation cannot increase the sum of angles at this
+    // corner. Subdividing it only creates still smaller corner angles.
+    let mut surface = Surface::new(field,0.001);
+    let vertices = [surface.feature_vertex(a,0.2).unwrap(),
+        surface.feature_vertex(b,0.012).unwrap(),surface.feature_vertex(c,0.012).unwrap()];
+    assert_eq!(vertices[0].branches.len(),3);
+    assert!(vertices[1..].iter().all(|v| v.branches.len() == 2));
+    let front = Front::from_seed(&mut surface,vertices);
+    assert_eq!(front.triangles.len(),1);
 }

@@ -369,11 +369,12 @@ passing this case is not a general closure, coverage or accuracy proof.
 The side-two cube remains an explicit failing acceptance test, ignored by default.
 It is constructed as six half-spaces intersecting a radius-two ball that supplies finite
 support; the marcher only receives the complete material field. Local retriangulation
-reduces its open frontier from 218 to 125 edges, but still leaves an incomplete mesh:
-1,191 triangles, 86,633 queries, 33 repairs and about 1.51 s. Generic sharp-edge discovery
-and reconstruction are missing; averaged finite differences are insufficient. Before
-projection reuse and these repairs, the incomplete attempt took 7.78 s. It is neither
-a passing regression nor an accepted mesh.
+reduced its open frontier from 218 to 125 edges, but still left an incomplete mesh:
+1,191 triangles, 86,633 queries, 33 repairs and about 1.51 s. The subsequent automatic
+feature-probe experiment exhausts the one-million-point-query budget before closing
+the cube, even with exact neighborhood caching. Sharp reconstruction and its query
+cost remain unresolved. Before projection reuse and these repairs, the incomplete
+attempt took 7.78 s. None of these cube attempts is an accepted mesh.
 
 Run the ordinary sphere, torus, cache-equivalence and empty-material controls:
 
@@ -431,8 +432,18 @@ tests now pass its separate incident normals into the advancing front. Right-ang
 thin wedges, including rotated cases, cross onto the unoccupied face while retaining
 the common crease edge. The adjacent face's edges are excluded from thick clearance
 prisms only across a discovered, noncoplanar shared crease; other frontier fences remain.
-Automatic feature acquisition during growth is still missing, and the full cube remains
-incomplete. Reduce repeated feature-query cost before extending this to whole solids.
+Front growth now requests a feature candidate when projection fails or the projected
+normal has dot product below 0.9 with the incoming growth normal. The feature candidate
+then passes the existing triangle legality and field-fit checks. Exact point/radius
+caching retains successes and failures, capped at 16,384 entries per immutable surface;
+the tests compare cached and uncached results and check distinct radii separately.
+
+An incoming-patch fixture starts with three ordinary surface points and no feature
+branches. Forty advances discover 5–7 crease vertices and reach the outgoing face on
+right-angle and 20-degree material wedges, including rotation about an arbitrary axis.
+These local runs use 14,826–35,922 point queries. They demonstrate automatic acquisition
+and crossing on these patches, not whole-solid closure. The cube still exhausts its
+query budget; repeated feature-query cost and unsuccessful front connections need work.
 
 ### Spiky tetrahedron stress case
 
@@ -446,7 +457,9 @@ for the translated case (one and 391 box queries respectively). It stops on the 
 interior point; this does not certify discovery of every component.
 
 The complete tetrahedron attempt still stalls: eight triangles, eight open frontier
-edges, 1,771 point queries and about 15 ms in the latest check (22 ms in the baseline).
+edges. Before automatic feature probing it used 1,771 point queries and about 15 ms
+(22 ms in the baseline); with probing and its cache it uses 13,665 queries and about
+109 ms without making additional triangles.
 This acceptance case stays ignored by default;
 no tetrahedron mesh is accepted or exported.
 
@@ -460,6 +473,20 @@ rotations about an arbitrary axis, scales 0.1–10, and base circumradii 0.06 an
 before scaling. The transformed cases take about 21–48 ms and 2,481–4,603 point queries
 in a serial run. Cube and curved-crease controls still pass; smooth spheres, a flat face
 and zero-only cancellation still reject feature claims. These are local heuristic checks,
-not automatic feature acquisition during front growth or a whole-solid certificate.
-The focused `generic_front` suite passes 11 enabled tests with two ignored acceptance
-cases; explicitly running the ignored tetrahedron case confirms the closure failure.
+not a whole-solid certificate. The incoming-patch test above exercises their integration
+with growth separately.
+
+An additional acceptance case isolates a conflicting quality rule. One tetrahedron face
+has an intrinsic apex angle of about 2.98 degrees. The probe recovers that corner and two
+adjacent crease points, and their triangle passes the field-fit check, but the front's
+area/longest-edge-squared floor rejects it. A triangulation retaining the actual corner
+cannot make all incident angles larger than their sum. The six-degree minimum-angle
+acceptance check also conflicts with retaining this feature. Quality handling must
+distinguish angles forced by discovered geometry from avoidable slivers; merely
+subdividing cannot fix this case. The acceptance test remains ignored pending that change.
+
+The focused `generic_front` suite passes 13 enabled tests with three ignored acceptance
+cases. Explicit runs confirm the cube query-budget failure, tetrahedron closure failure
+and intrinsic-angle rejection. Sphere and torus meshes retain their existing counts,
+witnesses and sampled error; the new feature heuristic has not established the final
+small-solid accuracy, coverage or latency milestone.
