@@ -38,8 +38,9 @@ exports/reimports both the tool space and the cut blank as STEP.
   STEP volume changes and is not used for these checks.
 
 These are local CAD checks, not full acceptance of a matched pair. Kernel validity is not
-an independent proof of embedding. Source checks are sampled, closure approximation error
-is not certified, and local envelope validity does not establish globally exposed material.
+an independent proof of embedding. The initial source checks are sampled; the subsequent
+closure-support audit below adds whole-patch bounds. Local envelope validity does not
+establish globally exposed material.
 The next gates are whole-sweep material comparison, robust blank clipping/indexed cuts,
 surface-error control, and independent pair/contact verification. The prototype does not
 implement an arbitrary moving-solid sweep API or integrate finished solid outputs in Solvent.
@@ -178,6 +179,16 @@ are persisted and return a nonzero exit status; never substitute a negative-cont
 for the nominal assembly evidence. This control fails the contact audit as intended, with
 a maximum gear boundary miss of 0.0481 mm and failures of both distance and complementary
 material-side checks.
+
+## Whole-patch closure accuracy
+
+The [independent rational support audit](SUPPORTS.md) now bounds all twelve tooth-space
+closure surfaces against their nominal spheres and cones across their entire parameter
+domains. All 3,072 Bézier patches pass the 0.001 mm target; the largest distance bound is
+8.2e-6 mm. Exact knot insertion and Bernstein polynomial bounds operate on coefficients
+extracted from the actual STEP files. This is a whole-patch result for closure support
+distance, with explicit limits concerning trimmed coverage, generated flanks, source
+accuracy and later indexed CAD operations. It does not establish full gear accuracy.
 
 ## Initial trial reproduction
 

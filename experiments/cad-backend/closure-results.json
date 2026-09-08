@@ -1,0 +1,125 @@
+{
+  "evidence_sha256": "87b8f9cc3a01587132ac68e77c8e7b8c93ee4f8594c19c985be7536aa86cf60a",
+  "inputs": [
+    {
+      "member": 0,
+      "step_file": "/private/tmp/solvent-cad-one-cut-checked/member0-space-16.step",
+      "step_sha256": "94676270b1516fcc5bc8faef6a39299d8fc77a4278401070b5d658886f0ac00a"
+    },
+    {
+      "member": 1,
+      "step_file": "/private/tmp/solvent-cad-one-cut-checked/member1-space-16.step",
+      "step_sha256": "2c3a03e889af6024584a03bd858674aa46576504d063c455b43e485d14759df7"
+    }
+  ],
+  "source_sha256": "c11e8defe5dcd3d12d79f597c0ec5a4e9410794ec25597904a183863183724c9",
+  "supports_sha256": "2d04f85d23d2652366cc8b53f476e7a37df48ba0b2a3767db86209eee6cf8877",
+  "target_mm": 0.001,
+  "faces": [
+    {
+      "member": 0,
+      "role": "root",
+      "bezier_patches": 256,
+      "bound_mm": 3.888319971102311e-06,
+      "passes": true,
+      "seconds": 2.2314901939826086
+    },
+    {
+      "member": 0,
+      "role": "tip",
+      "bezier_patches": 256,
+      "bound_mm": 6.245847083269223e-06,
+      "passes": true,
+      "seconds": 2.4452932899584994
+    },
+    {
+      "member": 0,
+      "role": "toe_round",
+      "bezier_patches": 256,
+      "bound_mm": 8.192713817528471e-06,
+      "passes": true,
+      "seconds": 2.001461419975385
+    },
+    {
+      "member": 0,
+      "role": "toe_flank",
+      "bezier_patches": 256,
+      "bound_mm": 1.0122985239150775e-06,
+      "passes": true,
+      "seconds": 1.953560166992247
+    },
+    {
+      "member": 0,
+      "role": "heel_round",
+      "bezier_patches": 256,
+      "bound_mm": 3.177166798188483e-06,
+      "passes": true,
+      "seconds": 1.9102708980208263
+    },
+    {
+      "member": 0,
+      "role": "heel_flank",
+      "bezier_patches": 256,
+      "bound_mm": 9.986050333362028e-07,
+      "passes": true,
+      "seconds": 1.8987275009858422
+    },
+    {
+      "member": 1,
+      "role": "root",
+      "bezier_patches": 256,
+      "bound_mm": 1.0931559293604602e-06,
+      "passes": true,
+      "seconds": 2.725073640991468
+    },
+    {
+      "member": 1,
+      "role": "tip",
+      "bezier_patches": 256,
+      "bound_mm": 1.3823481712674632e-06,
+      "passes": true,
+      "seconds": 2.330025327973999
+    },
+    {
+      "member": 1,
+      "role": "toe_round",
+      "bezier_patches": 256,
+      "bound_mm": 7.327895186149165e-07,
+      "passes": true,
+      "seconds": 1.94678264495451
+    },
+    {
+      "member": 1,
+      "role": "toe_flank",
+      "bezier_patches": 256,
+      "bound_mm": 9.292413981011695e-07,
+      "passes": true,
+      "seconds": 1.942616262997035
+    },
+    {
+      "member": 1,
+      "role": "heel_round",
+      "bezier_patches": 256,
+      "bound_mm": 3.8472472784492115e-07,
+      "passes": true,
+      "seconds": 1.9801766810123809
+    },
+    {
+      "member": 1,
+      "role": "heel_flank",
+      "bezier_patches": 256,
+      "bound_mm": 1.029214920598739e-06,
+      "passes": true,
+      "seconds": 2.347369286988396
+    }
+  ],
+  "complete_closure_coverage": true,
+  "scope": "Exact rational whole-parameter bounds for the extracted binary64 surfaces to infinite nominal supports; trimmed coverage, STEP reader conversion, source solve and generated flank/fillet errors are separate",
+  "passes_selected_bounds": true,
+  "evidence_file": "/private/tmp/solvent-cad-closure-bounds.json",
+  "report_sha256": "15348911ec96fd252c734d10329e92d0ef3c1d19f48124bea5afca3f9b87b78b",
+  "coefficient_file": "/private/tmp/solvent-cad-closure-coefficients.json",
+  "total_bezier_patches": 3072,
+  "maximum_bound_mm": 8.192713817528471e-06,
+  "bound_seconds": 25.712847314833198
+}

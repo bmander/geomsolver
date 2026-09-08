@@ -237,6 +237,30 @@ fn export_tooth_space_sections_for_cad_backend() {
         pair.module,pair.rm,members.join(","))).unwrap();
 }
 
+#[test]
+#[ignore = "exports solved closure supports for independent CAD surface bounds"]
+fn export_cad_boundary_supports() {
+    let path = std::env::var_os("SOLVENT_CAD_SUPPORTS_OUTPUT").expect("set output JSON path");
+    let pair = Pair::read([24,48],2.);
+    let radii = [0.9*pair.rm,1.1*pair.rm];
+    let mut members = vec![];
+    for member in 0..2 {
+        let local = |p| {
+            let p = pair.local_frame(member).point(p);
+            [p[0].hypot(p[1]),0.,p[2]]
+        };
+        let cones: Vec<Vec<V>> = pair.limits[member].iter().map(|s|
+            [0.,1.].iter().map(|&u| local(s.at(u,0.).unwrap().position)).collect()).collect();
+        let blank: Vec<Vec<V>> = radii.iter().map(|&rho| [2,0].iter().map(|&boundary| {
+            let hits = pair.limits[member][boundary].line_on_sphere([0.;3],rho,0.).unwrap();
+            assert_eq!(hits.len(),1);
+            local(hits[0].position)
+        }).collect()).collect();
+        members.push(format!("{{\"member\":{member},\"teeth\":{},\"cones_tip_root_back\":{cones:?},\"blank_meridian\":{blank:?}}}",pair.teeth[member]));
+    }
+    std::fs::write(path,format!("{{\"module_mm\":{},\"sphere_radii_mm\":{radii:?},\"members\":[{}],\"scope\":\"Exact binary64 nominal support coefficients extracted from the solved source; source-solve error is separate\"}}\n",pair.module,members.join(","))).unwrap();
+}
+
 impl Rim {
     fn pieces(&self, pose: Motion) -> Vec<Piece> {
         self.shell.faces().iter().enumerate().map(|(face,_)| {

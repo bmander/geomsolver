@@ -23,6 +23,13 @@ continuous interference and complete surface-error/material coverage remain acce
 followed by public Solvent solid integration. These successful candidate exports do not
 certify production accuracy or complete the matched-pair goal.
 
+The [closure-support audit](../experiments/cad-backend/SUPPORTS.md) now gives exact rational
+whole-parameter distance bounds for all twelve tooth-space closure B-splines. Across 3,072
+polynomial patches the largest bound to a nominal sphere/cone is 8.2e-6 mm, below the
+0.001 mm target. This closes the closure support-distance question for the extracted
+binary64 surfaces, not finite trimmed coverage, later Boolean/export error propagation,
+or generated flank/fillet accuracy. Those limits remain part of complete surface acceptance.
+
 The deliverable remains one fully specified, parametric matched pair from a documented
 generating system, independently verifiable and exportable at a stated geometric accuracy.
 Manufacturing planning remains separate. This document redirects the next investigation:
