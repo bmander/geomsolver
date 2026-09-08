@@ -114,12 +114,14 @@ expands until it contains strict retained/exterior signs. Correction shrinks tha
 ambiguous field values are not assigned a sign. The point query still uses the existing
 whole-roll evaluator, with a 0.0002 mm value tolerance and 20,000-evaluation sweep budget.
 
-Each output vertex is the midpoint of two strictly classified points. An outward-rounded
-distance to both endpoints bounds a ball containing the whole segment, and therefore an
-actual material boundary crossing. This establishes a vertex-to-boundary distance for the
-explicit field snapshot. It does not assume that field values are distances. The nominal
-spherical chart guides sampling; its rounded midpoint vertices need not lie exactly on
-the sphere. The periodic seam shares the same witness and vertex identity.
+Each output vertex is evaluated at the angular midpoint of two strictly classified points.
+An outward-rounded distance from that vertex to both endpoints bounds a ball containing
+the whole straight segment, and therefore an actual material boundary crossing. This
+establishes a vertex-to-boundary distance for the explicit field snapshot. It does not
+assume that field values are distances or that rounded chart coordinates lie exactly on
+the sphere. The periodic seam shares the same witness and vertex identity. The original
+contour experiment used Cartesian midpoints; angular midpoints keep the following shell's
+charts consistent without changing this enclosing-ball argument.
 
 The initial azimuthal spacing is a quarter tooth pitch. A separately corrected midpoint
 tests each candidate chord; edges subdivide when its deviation, including vertex bracket
@@ -138,7 +140,8 @@ cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core \
   surface_following_tracks -- --nocapture
 ```
 
-The regression uses a 0.1 mm chord-refinement target and 0.005 mm vertex brackets. It needs
+The regression uses a 0.1 mm chord-refinement target and 0.005 mm vertex brackets. The
+original measurement, before the shell predictor changes below, needed
 9 edges for one pinion pitch and 10 for one gear pitch; sampled distances to the separate
 analytic contour are at most 0.00216 and 0.00239 mm respectively. This analytic comparison
 is a sampled sanity check, not an independent whole-contour error certificate.
@@ -156,6 +159,85 @@ They were measured after compilation and exclude the subsequent analytic-referen
 The JSON retains the complete generating definitions, both sign witnesses for every vertex,
 vertex distance bounds, query counts and unfinished verification scope.
 
-The next step is to extend these surface charts across the face width with adaptive spacing,
-connect the end/back boundaries, and test a complete candidate mesh. Full-edge/surface error,
-chart completeness, source accuracy and mating verification remain required for acceptance.
+## Candidate shell experiment
+
+`tests/envelope/paired/swept/member/walk/shell.rs` extends the spherical chart across the
+face width. A periodic annular scaffold connects the tooth-facing surface, back cone and
+two spherical ends with shared vertex identities. Toe/heel radii and the back boundary
+come from the existing solved definition. Initially there are four azimuthal intervals
+per tooth and only the two end rows. No hand-authored tooth seam network defines material.
+
+At the end spheres the complete clipped field is zero throughout each cap, so it cannot
+give the strict polar-angle signs needed to locate the tooth/end intersection. The
+workbench therefore also evaluates the same tip/back slab minus all the same indexed
+sweeps, omitting only toe/heel spherical clipping. It corrects the tooth-facing chart in
+this continuation and intersects the chart with the prescribed end radii. This does not
+change the full member field or its serialized definition. The output explicitly labels
+its crossing evidence as continuation evidence; it is not a certificate for the clipped
+member's cap or end edge.
+
+Previously corrected points at the same tooth-relative azimuth provide the next polar
+angle predictor. Periodicity is used only to choose a guess: every new spatial point is
+classified against all indexed sweeps, with no copied sign or roll certificate. The
+initial search bracket has the requested vertex-distance scale and doubles until both
+strict signs are established.
+
+Every mesh edge gets a separately evaluated chart midpoint. The candidate indicator adds
+its distance to the straight edge and the crossing-radius allowances; an edge exceeding
+the target splits in both incident triangles. Requests propagate to the longest edge of
+each affected triangle before replacement. The 0/1/2/3-edge triangle split cases retain
+orientation and conformity, choosing the shorter remaining diagonal in a two-edge split.
+Unchanged edges reuse their midpoint samples. Limits are
+16 refinement rounds, 20,000 vertices and 50,000 full-field queries per member. Failure
+does not discard fragments or publish an accepted mesh.
+
+The first split rule hit its 16-round limit after 92 seconds on the pinion: it repeatedly
+created skinny triangles, with a long edge approaching the parameter interval [1/3,1]
+instead of shrinking, and a midpoint indicator remaining near 4 mm. Choosing a shorter
+diagonal alone did not solve it. A twisted annular fixture reproduces this failure cheaply.
+Longest-edge request propagation addresses that cause. This uses the established
+[longest-edge refinement principle](https://onlinelibrary.wiley.com/doi/abs/10.1002/nme.1620200412);
+our projection onto a curved chart and batch triangle splits do not inherit a planar
+refinement theorem or prove convergence for arbitrary fields.
+
+Analytic annular-cylinder and twisted-ridge fixtures check refinement, known volume,
+connected genus-one topology and encoded-STL topology. Actual pair construction is opt-in:
+
+```sh
+SOLVENT_SURFACE_SHELL_OUTPUT=/private/tmp/solvent-walk-pair \
+cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core \
+  export_surface_following_pair_candidates -- --nocapture
+```
+
+`SOLVENT_SURFACE_SHELL_TOLERANCE` selects the sampled refinement target in millimetres
+(default 2). Each member's candidate STL has an adjacent JSON with the complete original
+definition, chart parameters, mesh, continuation sign witnesses and cost measurements.
+Full-edge/surface error, chart uniqueness/completeness, geometric embedding, source
+accuracy and mating verification remain required for acceptance. The scaffold assumes
+an annular chart; passing its topology check cannot prove the material has that topology.
+
+The default 24:48, module-2 pair now completes at the 2 mm sampled target, with 0.1 mm
+crossing brackets:
+
+| Member | Triangles | Vertices | Refinement rounds | Field queries | Roll evaluations | Construction and STL checks |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Pinion | 2,234 | 1,117 | 2 | 8,134 | 12,753,188 | 25.131 s |
+| Gear | 4,556 | 2,278 | 3 | 15,490 | 29,389,788 | 97.033 s |
+
+The final maximum midpoint indicators are 1.287 and 1.331 mm. These are complete candidate
+shell timings after compilation, including runtime mesh/STL checks, but not whole-surface
+acceptance or the separate Python audit. The standalone `verification/stl_topology.py`
+also checks both encoded files: each has Euler characteristic zero, genus one and positive
+signed volume (9,082.5125 and 20,274.3613 mm3). Its malformed-shell self-tests pass. These
+topology checks do not check geometric self-intersections.
+
+Before using tooth-relative predictors, pinion construction took 62.655 s / 28,700 field
+queries / 35,014,484 roll evaluations for 2,242 triangles, and the gear exhausted its
+50,000-query limit. Predictor reuse reduced search work without raising that budget or
+copying evidence between indices. The rendered outputs are visibly coarse, especially at
+tooth edges. The 2 mm label remains a sampled refinement target, not a production tolerance.
+
+Verification for this workbench change: 1,056 core tests passed, one ignored. The regenerated
+schema-5 complete-member evidence is exactly equal after JSON decoding to the prior artifact;
+the full field definition and selected material checks are unchanged. Runtime core and
+native/WASM bindings are unchanged by this test-only extraction experiment.

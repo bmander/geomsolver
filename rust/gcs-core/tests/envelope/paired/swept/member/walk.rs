@@ -2,6 +2,8 @@
 //! These contours are candidates, not a complete surface or topology certificate.
 use super::*;
 
+mod shell;
+
 type V = [f64;3];
 
 fn distance(a: V,b: V) -> f64 { (a[0]-b[0]).hypot(a[1]-b[1]).hypot(a[2]-b[2]) }
@@ -29,14 +31,20 @@ struct Walk<'a> {
     chord_tolerance:f64,
     max_midpoint_deviation:f64,
     corrections:usize,
+    continue_through_ends:bool,
 }
 
 impl Walk<'_> {
+    fn position(&self,phi: f64,theta: f64) -> V {
+        let local = [self.rho*theta.sin()*phi.cos(),self.rho*theta.sin()*phi.sin(),self.rho*theta.cos()];
+        self.pair.local_frame(self.member).inverse().point(local)
+    }
+
     fn sample(&mut self,phi: f64,theta: f64) -> Sample {
         assert!(self.queries < 50000,"surface walk exhausted its query budget");
-        let local = [self.rho*theta.sin()*phi.cos(),self.rho*theta.sin()*phi.sin(),self.rho*theta.cos()];
-        let p = self.pair.local_frame(self.member).inverse().point(local);
-        let query = self.material.field.bounds_outside(point(p),I::ZERO,
+        let p = self.position(phi,theta);
+        let field = if self.continue_through_ends { &mut self.material.section } else { &mut self.material.field };
+        let query = field.bounds_outside(point(p),I::ZERO,
             Options {value_tolerance:0.0002,max_evaluations:20000}).unwrap();
         self.queries += 1;
         self.roll_evaluations += query.sweeps.iter().map(|q| q.minimum.evaluations).sum::<usize>();
@@ -53,7 +61,7 @@ impl Walk<'_> {
         let lo = delta+(-3.*mn/self.rho).asin();
         let hi = delta+(1.2*mn/self.rho).asin();
         let guess = guess.clamp(lo,hi);
-        let mut width = (0.1*self.pair.module/self.rho).max(self.point_tolerance/self.rho);
+        let mut width = self.point_tolerance/self.rho;
         let (mut a,mut b) = loop {
             let a = self.sample(phi,(guess-width).max(lo));
             let b = self.sample(phi,(guess+width).min(hi));
@@ -63,7 +71,7 @@ impl Walk<'_> {
             width *= 2.;
         };
         for _ in 0..40 {
-            let p: V = std::array::from_fn(|k| a.point[k]*0.5+b.point[k]*0.5);
+            let p = self.position(phi,a.theta*0.5+b.theta*0.5);
             let mut radius = 0_f64;
             for endpoint in [a.point,b.point] {
                 let mut squared = I::ZERO;
@@ -73,7 +81,7 @@ impl Walk<'_> {
                 radius = radius.max(I::new(squared.bounds()[0].max(0.),squared.bounds()[1]).unwrap().sqrt().unwrap().bounds()[1]);
             }
             // Continuity between strict signs establishes a real material
-            // boundary within this outward-rounded distance of the midpoint.
+            // boundary within this outward-rounded distance of the chart point.
             if radius <= self.point_tolerance {
                 return Crossing {phi,theta:a.theta*0.5+b.theta*0.5,point:p,inside:a,outside:b,radius};
             }
@@ -145,7 +153,7 @@ fn surface_following_tracks_indexed_pinion_and_gear_sections() {
     for member in 0..2 {
         let mut walk = Walk {pair:&pair,member,material:Member::read(&pair,member),rho:pair.rm,
             queries:0,roll_evaluations:0,point_tolerance:tolerance*0.05,chord_tolerance:tolerance,
-            max_midpoint_deviation:0.,corrections:0};
+            max_midpoint_deviation:0.,corrections:0,continue_through_ends:false};
         let start = std::time::Instant::now();
         let contour = walk.trace(full);
         let seconds = start.elapsed().as_secs_f64();

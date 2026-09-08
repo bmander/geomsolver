@@ -13,6 +13,12 @@ fn axis(pair: &Pair,name: &str) -> ([f64;3],[f64;3]) {
 }
 
 fn blank(pair: &Pair,member: usize) -> (SpatialField,String) {
+    let b = blank_parts(pair,member); (b.field,b.definition)
+}
+
+struct Blank {field:SpatialField,angular:SpatialField,definition:String,radii:[f64;2]}
+
+fn blank_parts(pair: &Pair,member: usize) -> Blank {
     let name = ["pinion","gear"][member];
     let (origin,axis) = axis(pair,&format!("pair.{name}_axis"));
     let length = axis[0].hypot(axis[1]).hypot(axis[2]);
@@ -36,17 +42,22 @@ fn blank(pair: &Pair,member: usize) -> (SpatialField,String) {
     assert!(radii[0] < radii[1]);
     let (tip,tip_def) = cone(0); let (back,back_def) = cone(2);
     let [toe,heel] = radii;
+    let angular = SpatialField::from(RevolvedField::new(tip.clone().difference(back.clone()).unwrap(),origin,axis).unwrap());
     let section = PlanarField::disk([0.;2],heel).unwrap()
         .difference(PlanarField::disk([0.;2],radii[0]).unwrap()).unwrap()
         .intersection(tip).unwrap().difference(back).unwrap();
     let profile = format!("{{\"difference\":[{{\"intersection\":[{{\"difference\":[{{\"disk\":{{\"center\":[0,0],\"radius\":{heel}}}}},{{\"disk\":{{\"center\":[0,0],\"radius\":{toe}}}}}]}},{tip_def}]}},{back_def}]}}");
-    (SpatialField::from(RevolvedField::new(section,origin,axis).unwrap()),
-        format!("{{\"origin\":{origin:?},\"axis\":{axis:?},\"profile\":{profile}}}"))
+    Blank {field:SpatialField::from(RevolvedField::new(section,origin,axis).unwrap()),angular,radii,
+        definition:format!("{{\"origin\":{origin:?},\"axis\":{axis:?},\"profile\":{profile}}}")}
 }
 
 struct Member {
     blank: SpatialField,
     field: MaterialEvaluator,
+    // Continuation of the same tooth-facing field through the spherical ends.
+    // Used only to locate candidate intersections with those end boundaries.
+    section: MaterialEvaluator,
+    radii: [f64;2],
     // Certificate schema lists every declared index, even when identical query
     // boxes share one core evaluation (notably at the apex).
     indices: Vec<MotionBounds>,
@@ -96,7 +107,7 @@ impl Member {
             Family::read(&sk,id).unwrap()
         }).collect();
         let patch = pair.patch(member,0,if member == 0 { "outer" } else { "inner" });
-        let (blank,blank_definition) = blank(pair,member);
+        let Blank {field:blank,angular,definition:blank_definition,radii} = blank_parts(pair,member);
         let motion_definition = functional_motion_definition(pair,member);
         let domain = pair.domain(&patch)[2];
         let teeth = pair.teeth[member] as usize;
@@ -105,8 +116,10 @@ impl Member {
             I::new(domain[0],domain[1]).unwrap()));
         let field = indices.iter().fold(MaterialField::from(blank.clone()),|field,index|
             field.difference(sweep.clone().transformed(index,0.).unwrap()).unwrap()).evaluator(1_000_000);
+        let section = indices.iter().fold(MaterialField::from(angular),|field,index|
+            field.difference(sweep.clone().transformed(index,0.).unwrap()).unwrap()).evaluator(1_000_000);
         let indices = indices.iter().map(|index| index.bounds(I::ZERO).unwrap()).collect();
-        Self {blank,field,indices,definition}
+        Self {blank,field,section,radii,indices,definition}
     }
 
     // Options apply to each indexed roll minimization. Every index contributes

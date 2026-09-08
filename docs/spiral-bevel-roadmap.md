@@ -68,9 +68,15 @@ six general-purpose systems before producing a gear.
 The first [surface-following experiment](implicit-meshing-methods.md#first-surface-following-experiment)
 now traces complete mean-radius contours of both members, using the full indexed material
 field to correct each vertex. The default 2 mm candidate target produces 96 pinion edges
-and 192 gear edges in approximately 4 and 16 seconds of tracing. This is one contour per
-member; extending the charts across the face width and establishing complete surface/error
-coverage remain the next extraction work. These results do not accept a final gear solid.
+and 192 gear edges in approximately 4 and 16 seconds of tracing. Its
+[candidate shell extension](implicit-meshing-methods.md#candidate-shell-experiment) now
+spans the face width and source-derived end/back boundaries with adaptive conforming
+triangles. At the same sampled target, the complete pinion candidate has 2,234 triangles
+and takes 25 seconds; the gear has 4,556 triangles and takes 97 seconds. Runtime and
+independent encoded-STL checks establish closed genus-one mesh topology. The surface chart
+still assumes unique polar crossings and an annular material boundary; complete coverage,
+whole-surface error, embedding and sharp-feature acceptance remain unproved. These results
+do not accept a final gear solid.
 
 ## First experiment and decision gate
 
