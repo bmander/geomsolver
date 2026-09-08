@@ -93,6 +93,9 @@ Local retriangulation now closes the 1,898-triangle torus (about 227 ms), with a
 independent exact embedding audit. Cube sharp transitions remain an explicit failing
 acceptance case. Keep high-precision gear runs out of this loop until the primitive method is
 efficient and robust. Sphere timing alone does not establish that milestone.
+An isolated field-only feature probe now recovers local cube edges/corners (including
+rotated cases) and a curved Boolean crease while rejecting smooth-sphere controls.
+It is not yet connected to front growth; this does not resolve cube extraction.
 
 ## First experiment and decision gate
 

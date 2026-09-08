@@ -4,6 +4,7 @@
 use super::*;
 use gcs_core::{interval::minimum::Options,solid::{MaterialField,MaterialEvaluator}};
 use std::collections::{BTreeMap,BTreeSet,VecDeque};
+mod features;
 
 type V = [f64;3];
 fn add(a:V,b:V) -> V { std::array::from_fn(|k| a[k]+b[k]) }
@@ -69,7 +70,11 @@ impl Surface {
     }
 
     fn gradient(&mut self,p:V) -> V {
-        let h = self.accuracy*0.2;
+        self.gradient_with_step(p,self.accuracy*0.2)
+    }
+
+    fn gradient_with_step(&mut self,p:V,h:f64) -> V {
+        assert!(h.is_finite() && h > 0.);
         std::array::from_fn(|k| {
             let mut a = p; a[k] -= h; let mut b = p; b[k] += h;
             let a = self.query(a,true).bounds(); let b = self.query(b,true).bounds();
@@ -388,12 +393,16 @@ fn sphere() -> MaterialField {
 }
 
 fn cube() -> MaterialField {
+    cube_in_basis([[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]])
+}
+
+fn cube_in_basis(basis:[V;3]) -> MaterialField {
     // The radius-two ball only supplies finite construction support; all six
     // half-spaces determine the cube. The marcher never sees the planes.
     let mut field = MaterialField::from(SpatialField::from(RevolvedField::new(
         F::disk([0.;2],2.).unwrap(),[0.;3],[0.,0.,1.]).unwrap()));
-    for k in 0..3 { for sign in [-1.,1.] {
-        let mut axis = [0.;3]; axis[k] = sign;
+    for direction in basis { for sign in [-1.,1.] {
+        let axis = mul(direction,sign);
         let half = RevolvedField::new(F::half_plane([0.,1.],[0.,1.]).unwrap(),[0.;3],axis).unwrap();
         field = field.intersection(SpatialField::from(half).into()).unwrap();
     }}

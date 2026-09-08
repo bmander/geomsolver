@@ -392,3 +392,30 @@ to assess timing variability; do not count compilation or a stalled front as dis
 Next resolve generic sharp transitions and extend front-band retriangulation on these fixtures,
 then expand to narrow grooves, nearby sheets and undiscovered components. This workbench
 does not yet supply the final production mesher or a gear acceptance certificate.
+
+### Local sharp-feature probe
+
+`tests/functional_solids/front/features.rs` isolates candidate feature discovery from
+front connectivity. Its inputs are the same material evaluator, a trial point and a
+neighborhood radius. Four shrinking neighborhoods sample projected field points in
+fixed spatial directions. Locally unstable normals are discarded so a finite difference
+straddling a crease does not invent an intermediate face. Distinct remaining normals
+provide tangent-plane equations. The existing rank-revealing minimum-norm least-squares
+solver positions their intersection relative to the query neighborhood; an edge keeps
+its unconstrained coordinate anchored there. The final two neighborhoods must agree
+on the rank and normal groups. The candidate retains strict inside/outside witnesses.
+
+Small tests recover cube edges and corners, including a cube rotated around an arbitrary
+axis, and the curved intersection of two spheres. Cube cases exercise both the current
+front tolerance and a finer tolerance. Smooth spheres with radii 1, 0.05 and 0.005, a
+flat cube face and a zero-only Boolean difference are negative controls. Initial local
+queries take about 8–39 ms each, with approximately 2,200–3,100 field point queries.
+These timings are for a single local feature query, **not** for a complete cube mesh.
+
+This is a sampling heuristic. Angular thresholds, finite differences, a finite number
+of neighborhoods and approximate tangent planes do not certify a true discontinuity,
+all nearby branches, feature completeness or error along a whole crease. No model
+feature labels, supplied curves or analytic branch planes reach the probe. It is not
+yet connected to the advancing front: the full cube remains incomplete. Next use these
+measurements to split and orient front patches at discovered transitions, while reducing
+repeated feature-query cost and preserving independent mesh validation.
