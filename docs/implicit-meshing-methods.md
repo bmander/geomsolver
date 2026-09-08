@@ -331,7 +331,11 @@ point-query count, open frontier edges and accuracy alongside time; a fast incom
 mesh does not pass. Timing is an opt-in serial check, not a flaky parallel-suite assertion.
 
 `rust/gcs-core/tests/functional_solids/front.rs` is a test-only advancing-front
-experiment. A bounded search finds a strict material interior point; a bracket toward
+experiment. Its private modules separate bounded queries and projection (`field.rs`),
+front topology and growth (`mesh.rs`), local feature discovery (`features.rs`), shared
+geometry (`geometry.rs`) and fixtures/acceptance checks (`cases.rs`). See the
+[module review](solid-module-review.md) for the behavior-preserving split and next boundaries.
+A bounded search finds a strict material interior point; a bracket toward
 the exterior seeds tangent prediction and field correction. Local normal variation
 controls candidate spacing, with sample-to-boundary checks at each triangle's edge
 midpoints and centroid. Front connections and small discovered-loop fills determine
