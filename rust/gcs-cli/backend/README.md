@@ -72,3 +72,23 @@ or global self-intersection trimming. See the [roadmap](../../../docs/spiral-bev
 This is an internal fitting primitive, exercised by integration tests; the CLI does not
 yet assemble continuous sweep solids. Chart boundaries, source trimming, sharp-edge sweeps,
 endpoint caps and global trimming remain necessary before enabling their STEP/STL export.
+
+`boundary.cpp` reads the actual topology of a constructed native solid, including edges
+made by Booleans. Its C interface first counts edges, then returns rows containing the edge
+handle, both incident face handles and explicit seam/pole flags. Edge queries return a
+position, unit curve tangent, two outward material normals and their measured face/curve
+incidence discrepancies in mm. Seams retain their two parameter curves; collapsed edges
+remain in the inventory and explicitly refuse tangent queries. Queries check face incidence
+and consistent curve parameters instead of projecting onto unrelated supporting surfaces.
+The shared session ownership and exception boundary live in `occt.hpp`.
+
+```sh
+cargo test --manifest-path rust/Cargo.toml -p gcs-cli --features occt --test native_boundary -- --nocapture
+```
+
+These tests use the CLI's ordinary recipe builder directly. Cube/hole checks cover edges
+created at the stock's ends by an overshooting cylindrical cutter and the hole's inward
+normals. Sphere/torus checks distinguish poles and periodic seams from creases. The actual
+pinion and gear cutters have 10 and 18 native edges; 84 sampled positions and material-side
+checks agree with the separate source field. This supplies source topology for sharp-edge
+sweeps; it does not yet select the exposed swept regions or assemble a swept solid.

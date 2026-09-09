@@ -28,9 +28,16 @@ fn v(r: &Json,key: &str) -> [f64;3] {
     std::array::from_fn(|i| a[i].as_f64())
 }
 
-struct Session(*mut c_void);
+pub(crate) struct Session(*mut c_void);
 impl Drop for Session { fn drop(&mut self) { unsafe { solvent_cad_free(self.0); } } }
 impl Session {
+    pub(crate) fn new() -> Result<Self,String> {
+        let context = unsafe { solvent_cad_new() };
+        if context.is_null() { Err("cannot allocate native CAD session".into()) }
+        else { Ok(Self(context)) }
+    }
+    #[cfg(test)]
+    pub(crate) fn as_ptr(&self) -> *mut c_void { self.0 }
     fn result(&self,id: c_int) -> Result<c_int,String> {
         if id < 0 {
             Err(unsafe { CStr::from_ptr(solvent_cad_error(self.0)) }.to_string_lossy().into_owned())
@@ -95,7 +102,7 @@ impl Session {
         }
         solid.ok_or("empty CAD profile".into())
     }
-    fn construct(&self,recipe: &Json) -> Result<c_int,String> {
+    pub(crate) fn construct(&self,recipe: &Json) -> Result<c_int,String> {
         let mut shapes = BTreeMap::new();
         for node in field(recipe,"nodes").arr() {
             let make = || -> Result<c_int,String> {
@@ -126,9 +133,7 @@ impl Session {
 /// A geometry or encoding failure cannot leave only half the requested pair updated.
 pub fn export(sk: &gcs_core::model::Sketch,solid: usize,step: Option<&str>,stl: Option<&str>) -> Result<(),String> {
     let recipe = gcs_core::solid::cad::recipe(sk,solid)?;
-    let context = unsafe { solvent_cad_new() };
-    if context.is_null() { return Err("cannot allocate native CAD session".into()); }
-    let session = Session(context);
+    let session = Session::new()?;
     let solid = session.construct(&recipe)?;
     let mut staged = Vec::new();
     let mut directories = Vec::new();

@@ -1,4 +1,5 @@
-// The C boundary owns all C++ objects and catches every kernel exception.
+// Native solid construction and export.
+#include "occt.hpp"
 #include <Approx_ParametrizationType.hxx>
 #include <GeomAPI_PointsToBSplineSurface.hxx>
 #include <Geom_BSplineSurface.hxx>
@@ -33,24 +34,6 @@
 #include <string>
 #include <vector>
 
-struct Cad {
-    std::vector<TopoDS_Shape> shapes;
-    std::string error;
-    int put(const TopoDS_Shape& shape) {
-        shapes.push_back(shape);
-        return static_cast<int>(shapes.size()-1);
-    }
-    TopoDS_Shape& at(int id) { return shapes.at(static_cast<size_t>(id)); }
-};
-
-template<class F> int guarded(Cad* cad, F fn) noexcept {
-    try { return fn(); }
-    catch (const Standard_Failure& e) { cad->error = e.GetMessageString(); }
-    catch (const std::exception& e) { cad->error = e.what(); }
-    catch (...) { cad->error = "unknown native CAD exception"; }
-    return -1;
-}
-
 static gp_Pnt point(const double* p) { return gp_Pnt(p[0],p[1],p[2]); }
 static gp_Dir direction(const double* p) { return gp_Dir(p[0],p[1],p[2]); }
 static gp_Vec vector(const double* p) { return gp_Vec(p[0],p[1],p[2]); }
@@ -59,7 +42,7 @@ static double volume(const TopoDS_Shape& shape) {
     BRepGProp::VolumeProperties(shape,props);
     return props.Mass();
 }
-static void validate(TopoDS_Shape& shape) {
+void validate(TopoDS_Shape& shape) {
     if (shape.IsNull() || !BRepCheck_Analyzer(shape).IsValid())
         throw std::runtime_error("native solid is invalid");
     if (shape.ShapeType() == TopAbs_SOLID) {

@@ -1,7 +1,10 @@
 //! Native candidate faces from the ordinary source-contact evaluator. No gear grids
 //! or Python host are involved; these checks do not claim a closed swept solid.
-use gcs_core::{envelope::Contact,program,solid::SweepContacts,syntax,solve};
+use gcs_core::{envelope::Contact,solid::SweepContacts};
 use std::{ffi::{c_void,c_int,c_char,CStr},path::Path};
+
+mod support;
+use support::read;
 
 extern "C" {
     fn solvent_cad_new() -> *mut c_void;
@@ -31,18 +34,6 @@ impl Cad {
         self.result(unsafe { solvent_cad_surface_point(self.0,id,u,v,p.as_mut_ptr()) })?;
         Ok(([p[0],p[1],p[2]],[p[3],p[4],p[5]]))
     }
-}
-fn read(source: &str,base: &Path) -> program::Elaborated {
-    let (mut p,errors) = syntax::parse(source); assert!(errors.is_empty(),"{errors:?}");
-    let errors = gcs_core::modules::link(&mut p,&mut |name| {
-        std::fs::read_to_string(base.join(format!("{name}.sv"))).ok()
-            .or_else(|| gcs_core::library::resolve(name))
-    });
-    assert!(errors.is_empty(),"{errors:?}");
-    let mut e = program::elaborate(&p); assert!(e.ok(),"{:?}",e.diags);
-    let result = solve::solve(&mut e.sketch,solve::SolveOpts {
-        tol:1e-16,acceptance_tol:1e-12,..Default::default()});
-    assert!(result.success,"{result:?}"); e
 }
 fn norm(p: [f64;3]) -> f64 { p[0].hypot(p[1]).hypot(p[2]) }
 fn distance(a: [f64;3],b: [f64;3]) -> f64 { norm(std::array::from_fn(|k| a[k]-b[k])) }

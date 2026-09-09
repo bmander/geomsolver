@@ -26,3 +26,8 @@ test = false
 name = "native_surfaces"
 path = "tests/native_surfaces.rs"
 required-features = ["occt"]
+
+[[test]]
+name = "native_boundary"
+path = "tests/native_boundary.rs"
+required-features = ["occt"]

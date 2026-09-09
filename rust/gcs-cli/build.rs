@@ -6,7 +6,9 @@ fn run(command: &mut Command) {
 }
 
 fn main() {
-    println!("cargo:rerun-if-changed=backend/occt.cpp");
+    for file in ["occt.cpp","boundary.cpp","occt.hpp"] {
+        println!("cargo:rerun-if-changed=backend/{file}");
+    }
     for name in ["OCCT_ROOT","CXX","AR"] { println!("cargo:rerun-if-env-changed={name}"); }
     if env::var_os("CARGO_FEATURE_OCCT").is_none() { return; }
     let target = env::var("TARGET").unwrap();
@@ -17,12 +19,16 @@ fn main() {
             .expect("install Open CASCADE development files or set OCCT_ROOT")
     });
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
-    let object = out.join("occt.o");
-    run(Command::new(env::var_os("CXX").unwrap_or_else(|| "c++".into()))
-        .args(["-std=c++17","-O2","-fPIC","-c","backend/occt.cpp","-o"])
-        .arg(&object).arg("-I").arg(root.join("include/opencascade")));
+    let mut objects = Vec::new();
+    for name in ["occt","boundary"] {
+        let object = out.join(format!("{name}.o"));
+        run(Command::new(env::var_os("CXX").unwrap_or_else(|| "c++".into()))
+            .args(["-std=c++17","-O2","-fPIC","-c"]).arg(format!("backend/{name}.cpp"))
+            .arg("-o").arg(&object).arg("-I").arg(root.join("include/opencascade")));
+        objects.push(object);
+    }
     run(Command::new(env::var_os("AR").unwrap_or_else(|| "ar".into()))
-        .arg("crs").arg(out.join("libsolvent_occt.a")).arg(object));
+        .arg("crs").arg(out.join("libsolvent_occt.a")).args(objects));
     println!("cargo:rustc-link-search=native={}",out.display());
     println!("cargo:rustc-link-lib=static=solvent_occt");
     println!("cargo:rustc-link-search=native={}",root.join("lib").display());

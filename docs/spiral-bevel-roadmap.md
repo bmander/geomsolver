@@ -144,6 +144,17 @@ original `(u,time)` chart folds: both old branches are covered, with observed wi
 position error about 0.0000016 mm and matching tangent planes. This resolves that local
 coordinate failure without claiming the full swept boundary is constructed or trimmed.
 
+The native bridge also reads the stationary cutter's actual trimmed edge/face incidence,
+including edges created by Booleans rather than declared profile edges alone. It returns
+edge positions, unit tangents and both outward incident-face normals, with measured
+curve/face discrepancies. Periodic seams and collapsed pole edges stay explicit; tangent
+queries at collapsed edges fail. A shared native session/exception header separates the
+topology reader from solid construction/export. Tests reuse the CLI's recipe builder:
+cube and cylindrical-hole cases check Boolean-created edges and material orientation,
+sphere/torus cases check poles and seams, and 84 samples on the actual cutters' 10/18
+edges agree with Solvent's independent source material field. These are source-boundary
+inputs for sharp-edge sweeping and trimming, not a completed swept-boundary arrangement.
+
 The acceptance work remains:
 
 1. **Reproduce the reference pair:** one command from recorded source and tooth-count/size
