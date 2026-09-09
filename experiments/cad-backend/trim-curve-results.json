@@ -1,0 +1,73 @@
+{
+  "verifier_commit": "a5d12d6",
+  "source_sha256": "c11e8defe5dcd3d12d79f597c0ec5a4e9410794ec25597904a183863183724c9",
+  "inputs": [
+    {
+      "member": 0,
+      "step_file": "/private/tmp/solvent-cad-full-pinion/member0-24-cuts.step",
+      "step_sha256": "47d750135b6b6c6c1cec232b496ddb792e03ff03d7ae4d9d1dececa4229f636e"
+    },
+    {
+      "member": 1,
+      "step_file": "/private/tmp/solvent-cad-full-gear/member1-48-cuts.step",
+      "step_sha256": "a4b010f3466603a57aa2b13a2f85d884eb1c9fa1032ca6a5dcbde7e8cfacddac"
+    }
+  ],
+  "edge_evidence": {
+    "file": "/private/tmp/solvent-cad-edges.json",
+    "sha256": "d8797bbb235c99167a6f62c959dab84b41228cf2e764b86d8e416ac59bfc33e1"
+  },
+  "audit": {
+    "file": "/private/tmp/solvent-cad-trim-curves.json",
+    "sha256": "9feef2de951a563b4d9da47c41cb98405fcf2b27ee1749181249e77eea2de400",
+    "seconds": 34.9648718329845
+  },
+  "individual_uv_injectivity": "verified",
+  "nonadjacent_uv_separation": "verified",
+  "complete_analytical_inventory": true,
+  "members": [
+    {
+      "member": 0,
+      "curves": 404,
+      "wires": 29,
+      "nonadjacent_pairs": 21516,
+      "tested_cells": 22568,
+      "exactly_closed_uv_corners": 193,
+      "maximum_absolute_uv_gap_exact": [
+        "233577652582928397444713607143491896008392733603214298798543831352801752466809467821849381646357779025074078650848880098076652294172403/119749810966660988905118931283228149853960890919001795993945022928035850318598051173772796894846686967112431892804316214558190043911944057082871808",
+        "734568315378722968090009560877537083130878566824447901423791256519176716160222060465918617714778448158184689729391911421613559230880777065895620181399/8426643813236590078632012297862122978170457334745269842071677951965333727378306012949521622594631621962912932407245469600480384246654625856757621999540488896512"
+      ],
+      "maximum_absolute_uv_gap_approx": [
+        1.9505471507421228e-12,
+        8.717210928327854e-11
+      ]
+    },
+    {
+      "member": 1,
+      "curves": 784,
+      "wires": 52,
+      "nonadjacent_pairs": 84488,
+      "tested_cells": 86826,
+      "exactly_closed_uv_corners": 381,
+      "maximum_absolute_uv_gap_exact": [
+        "563/562949953421312",
+        "305301806383965273981258977581844795629443954172454869638476038570448499987349687347991732401104470153987605720730109050684906575988824865385538735712083721/10524522678748444322997087456241179901082439875044215753031820246804590699511887204618322228368901758166893009796727783138784108098331727352501822517017575424000000000"
+      ],
+      "maximum_absolute_uv_gap_approx": [
+        1.000088900582341e-12,
+        2.9008613093726658e-11
+      ]
+    }
+  ],
+  "tests": {
+    "command": "python3 -m unittest discover -s experiments/cad-backend -p 'test_*.py'",
+    "passed": 42
+  },
+  "scope": "Individual pcurve injectivity, nonadjacent UV separation and raw UV endpoint differences; no adjacent-curve separation, periodic chart identification, corner repair, Jordan loop or surface embedding certificate",
+  "remaining": [
+    "Adjacent-curve separation and explicit treatment of nonzero UV corner gaps",
+    "Periodic chart identification and global surface embedding",
+    "Global swept-material coverage and continuous pair mating",
+    "Source-solve and STEP-reader accuracy transfer"
+  ]
+}
