@@ -7,6 +7,37 @@ extern "C" {
     fn solvent_cad_split_pcurves(cad: *mut c_void,face: c_int,edges: *const c_int,count: c_int) -> c_int;
 }
 impl Session {
+    /// Attach sufficiently sampled spatial contact points to a native face.
+    /// Endpoint seam aliases are reconciled only after spatial incidence checks.
+    /// Interior UV jumps over half a face span are refused: callers must refine
+    /// or split those curves. This does not bound the fit against the source law.
+    pub(crate) fn contact_edge(&self,face: c_int,points: &[[f64;3]],closed: bool,distance: f64) -> Result<c_int,String> {
+        if points.len() < 2 || points.len() > 4096 { return Err("contact edge requires 2..4096 samples".into()); }
+        let mut uv: Vec<_> = points.iter().map(|&p| self.face_parameters(face,p,distance)?
+            .map(|(uv,_)| uv).ok_or("contact sample does not lie on the native face".to_string()))
+            .collect::<Result<_,_>>()?;
+        if !closed {
+            let last = uv.len()-1;
+            for (index,neighbor) in [(0,1),(last,last-1)] { for axis in 0..2 {
+                let value = uv[index][axis];
+                if (value-uv[neighbor][axis]).abs() <= 0.5 { continue; }
+                let alias = if value < 1e-8 { 1. } else if value > 1.-1e-8 { 0. } else { continue; };
+                let mut alternative = uv[index]; alternative[axis] = alias;
+                if let Some(p) = self.face_point(face,alternative[0],alternative[1],1e-9)? {
+                    let q = points[index];
+                    if (p.position[0]-q[0]).hypot(p.position[1]-q[1]).hypot(p.position[2]-q[2]) <= distance {
+                        uv[index] = alternative;
+                    }
+                }
+            } }
+        }
+        let jump = |a: [f64;2],b: [f64;2]| (0..2).any(|k| (a[k]-b[k]).abs() > 0.5);
+        if uv.windows(2).any(|p| jump(p[0],p[1])) || (closed && jump(uv[0],uv[uv.len()-1])) {
+            return Err("contact curve crosses a face seam or needs more samples".into());
+        }
+        self.pcurve(face,&uv,closed,distance)
+    }
+
     pub(crate) fn edge_point(&self,edge: c_int,t: f64) -> Result<[f64;3],String> {
         let mut p = [0.;3];
         self.result(unsafe { solvent_cad_curve_point(self.0,edge,t,p.as_mut_ptr()) })?;

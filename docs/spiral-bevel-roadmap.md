@@ -325,8 +325,27 @@ evaluated rigid velocities; surface tests compare moments with Cartesian cross p
 The resulting fixed-time test, at 30,000 evaluated cells per endpoint, finds sampled
 native-boundary incidences on 1,035 starting/226 ending pinion charts and 111 starting/19
 ending gear charts. This includes alternate meridian charts at the ending positions.
-It is still candidate discovery: finite native trims, chart joins, global selection
-and closed swept-solid assembly remain required.
+It is still candidate discovery: finite native trims, complete chart joins, global
+selection and closed swept-solid assembly remain required.
+
+Fixed-time charts now join into continuous source-parameter intervals when they share
+the same patch, chart direction and analytic root. Touching or overlapping intervals
+merge without a proximity tolerance; every contributing chart and the complete original
+partition remain available. Positive gaps, chart-direction changes and source-patch
+boundaries stay separate. Evaluation uses the original analytic contact equation,
+not an interpolant across the chart samples. Sphere tests retain distinct roots and
+deliberately missing intervals, and check invariance under reordered discovery cells.
+
+A joined circle on a rotated sphere splits both native endpoint faces into the two
+independently known contact-plane regions. Spatial contact samples can now be attached
+to a native face with checked endpoint seam aliases; interior seam jumps are refused.
+The default pinion's 1,035 starting/226 ending charts join into 12/10 intervals; the
+gear's 410/46 charts join into 20/6. The sampled trim fixture connects starting intervals
+to six native pinion face splits and three gear face splits, with withheld source errors about 0.000157 mm
+for pinion and 0.000000101 mm for gear. Edges are collected per face before splitting:
+a face with a hole can require two cuts before it separates, covered by a small regression.
+Ending intervals still do not supply complete native cuts in this fixture. These results
+do not establish complete contour clipping, final material visibility or export accuracy.
 
 The fixture trace search samples either chart and brackets both source-domain endpoints
 and native trim crossings. An alternate chart is tried on faces without an existing

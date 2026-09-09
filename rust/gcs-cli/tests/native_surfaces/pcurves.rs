@@ -1,6 +1,39 @@
 use super::*;
 
 #[test]
+fn a_face_with_a_hole_needs_both_contact_edges_to_separate() {
+    let cad = Cad::new();
+    let face = cad.grid(4,|u,v| [2.*u-1.,2.*v-1.,0.]);
+    let circle: Vec<_> = (0..64).map(|i| {
+        let t = i as f64*std::f64::consts::TAU/64.;
+        [0.5+0.3*t.cos(),0.5+0.3*t.sin()]
+    }).collect();
+    let rim = cad.0.pcurve(face,&circle,true,1e-7).unwrap();
+    let ring = cad.faces(cad.0.split_pcurves(face,&[rim]).unwrap()).into_iter()
+        .find(|&f| cad.contains(f,0.95,0.5).unwrap() == 1).unwrap();
+    let left = cad.0.pcurve(ring,&[[0.,0.5],[0.2,0.5]],false,1e-7).unwrap();
+    let right = cad.0.pcurve(ring,&[[0.8,0.5],[1.,0.5]],false,1e-7).unwrap();
+    assert!(cad.0.split_pcurves(ring,&[left]).unwrap_err().contains("did not separate"));
+    let fragments = cad.faces(cad.0.split_pcurves(ring,&[left,right]).unwrap());
+    assert_eq!(fragments.len(),2);
+    let mut signs = Vec::new();
+    for fragment in fragments {
+        let mut sign = None;
+        let mut checks = 0;
+        for i in 0..13 { for j in 0..13 {
+            let (u,v) = ((i as f64+0.27)/13.,(j as f64+0.61)/13.);
+            if cad.contains(fragment,u,v).unwrap() != 1 { continue; }
+            let y = cad.at(fragment,u,v).unwrap().0[1];
+            if let Some(sign) = sign { assert_eq!(sign,y > 0.); } else { sign = Some(y > 0.); }
+            checks += 1;
+        } }
+        assert!(checks > 20);
+        signs.push(sign.unwrap());
+    }
+    assert!(signs.contains(&true) && signs.contains(&false));
+}
+
+#[test]
 fn native_pcurves_partition_open_and_closed_regions_without_rebuilding_supports() {
     let cad = Cad::new();
     for closed in [false,true] {
@@ -156,7 +189,7 @@ fn alternate_source_charts_split_native_endpoint_faces() {
 // Integration-fixture search only: locate sampled on-face runs, then bracket
 // their endpoints against native trims. This neither certifies that no narrow
 // run was missed nor replaces full endpoint contact-event tracing.
-fn clipped_test_traces(cad: &Cad,face: c_int,at: &impl Fn(f64)->Option<[f64;3]>) -> Result<Vec<Vec<[f64;2]>>,String> {
+pub(super) fn clipped_test_traces(cad: &Cad,face: c_int,at: &impl Fn(f64)->Option<[f64;3]>) -> Result<Vec<Vec<[f64;2]>>,String> {
     let project = |u| match at(u) {
         Some(p) => cad.0.face_parameters(face,p,1e-6).map(|p| p.map(|(uv,_)| uv)),
         None => Ok(None),

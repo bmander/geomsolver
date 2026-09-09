@@ -243,3 +243,17 @@ on 1,035 starting/226 ending pinion charts and 111 starting/19 ending gear chart
 Ending candidates include meridian charts. Source curves still need clipping, joining,
 global material selection and final assembly; chart counts and sampled incidences do
 not establish a closed sweep or its final accuracy.
+
+`SweepContacts::join_contact_curves` now merges overlapping/touching fixed-time charts
+of the same source patch, chart direction and analytic root. The complete cover and all
+contributing cell indices are retained, and positive gaps remain gaps. The original
+analytic branch evaluates each joined curve. Cross-direction, cross-patch and periodic
+range joins are still separate work.
+
+The Rust session's `contact_edge` projects spatial samples onto a native face, checks
+endpoint seam aliases against their actual spatial positions, and refuses interior UV
+jumps. A joined source circle splits both rotated-sphere caps into independently checked
+contact-plane regions. Joined starting intervals also reach native cuts on both default
+gear members through the sampled test trim locator. Ending intervals remain incomplete.
+All candidate edges for a face must be passed together: a single edge joining a hole to
+the outer boundary need not separate that face. A small regression checks this case.

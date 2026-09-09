@@ -163,10 +163,15 @@ fn fixed_time_discovery_keeps_both_gear_endpoint_domains() {
         let caps = cad.0.sweep_caps(&e.sketch,id).unwrap();
         assert!(sweep.cover_at(f64::NAN,ContactCoverOptions {max_depth:1,max_cells:1}).is_err());
         assert!(sweep.cover_at(sweep.domain()[1]+1.,ContactCoverOptions {max_depth:1,max_cells:1}).is_err());
+        let mut native_joined_cuts = 0;
         for cap in &caps.endpoints {
             let start = std::time::Instant::now();
             let cover = sweep.cover_at(cap.parameter,ContactCoverOptions {max_depth:20,max_cells:30000}).unwrap();
-            audit_domain(&sweep,&cover,[cap.parameter;2]);
+            let joined = sweep.join_contact_curves(cover,1e-10).unwrap();
+            let cover = &joined.cover;
+            audit_domain(&sweep,cover,[cap.parameter;2]);
+            eprintln!("{member} endpoint {}: {} joined intervals from {} charts",cap.parameter,joined.curves.len(),
+                joined.curves.iter().map(|c| c.cells.len()).sum::<usize>());
             let mut counts = [0;2];
             let mut incidence = 0;
             for cell in &cover.cells {
@@ -190,6 +195,11 @@ fn fixed_time_discovery_keeps_both_gear_endpoint_domains() {
             eprintln!("{member} endpoint {}: {} meridian/{} angular charts, {incidence} native incidence samples, {} cells, {} evaluations in {:?}",
                 cap.parameter,counts[0],counts[1],cover.cells.len(),cover.evaluations,start.elapsed());
             assert!(counts.iter().sum::<usize>() > 0 && incidence > 0);
+            if let Some((faces,pieces,error)) = super::curves::split_joined_intervals(&cad,&sweep,&joined,&cap.faces,cap.pose) {
+                eprintln!("{member} endpoint {}: {faces} native faces split from {pieces} contributing charts, withheld error {error:e} mm",cap.parameter);
+                assert!(pieces > 1);
+                native_joined_cuts += 1;
+            }
             // Direct roots found independently of the partition must never be
             // excluded, including roots at the two physical motion endpoints.
             for patch in 0..sweep.patches().len() { for v in [0.13,0.47,0.81] {
@@ -201,6 +211,7 @@ fn fixed_time_discovery_keeps_both_gear_endpoint_domains() {
                 }
             } }
         }
+        assert!(native_joined_cuts > 0,"{member}: joined intervals never reached native trimming");
     }
 }
 

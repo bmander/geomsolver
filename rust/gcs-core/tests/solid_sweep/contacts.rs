@@ -2,6 +2,7 @@ use super::*;
 use gcs_core::{envelope::{self,Motion,Error},solid::{SweepContacts,RevolvedSurface}};
 use std::f64::consts::PI;
 mod meridian;
+mod curves;
 
 fn swept(extra: &str) -> program::Elaborated {
     read(&format!("{SOURCE}\n{extra}\nsolid swept(tool,under: generating,from: -60deg,to: 60deg)\n"))
