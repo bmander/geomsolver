@@ -50,6 +50,16 @@ Install OCCT development files (for example, `brew install opencascade`) and bui
 runtime is involved; the Rust core and browser remain dependency-free. Current support covers line/circular profiles,
 extrusion, revolution, rigid motion placement, holes, additive bodies and cuts including `through:` cutters;
 along-guide lofts and generating-motion sweeps are not yet connected to this host.
+In a native build, `--stl` also uses OCCT. Request `--step part.step --stl part.stl`
+together to construct the native solid once and export both formats. Native STL coordinates
+are millimetres; its tessellator uses 0.01 mm absolute linear deflection and 0.2 rad angular
+control. These settings are not a bound on the complete exported geometry's error.
+Each native face must be meshed, and the encoded float32 STL must have closed, oriented,
+manifold shells before any requested output is replaced. Geometric export failures preserve
+both old files. Files are replaced individually after all checks; filesystem failures during
+replacement are not a transaction across multiple files.
+`--stl-backend mesh` explicitly selects the existing dependency-free mesh path, which is
+also the default in builds without OCCT. That path retains model-unit STL coordinates.
 
 The [indexed pattern](rust/examples/solid_indexed_pattern.sv) places a shared cutter
 using an ordinary component and a named motion. Both STL and native STEP support:
@@ -65,9 +75,9 @@ repeat teeth as i {
 The motion's ratio, phase and relative frame apply as usual. This is indexing; a continuous
 generating sweep still needs its own operation.
 
-Known mesh limitation: the six-hole indexed example currently leaves unpaired edges in
-the legacy STL triangulation. Its native STEP passes validity and volume checks; use that
-export for this example. The encoded-STL regression is retained in `solid_motion.rs`.
+The six-hole indexed example passes native STEP and encoded STL checks. Its legacy
+`--stl-backend mesh` triangulation still leaves unpaired edges; that separate regression
+is retained in `solid_motion.rs`.
 
 The [declarative bevel blank](rust/examples/spiral_bevel/blank.sv) uses the same export path:
 

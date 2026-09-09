@@ -9,13 +9,17 @@
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
 #include <BRepLib.hxx>
+#include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
+#include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
+#include <Poly_Triangulation.hxx>
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
 #include <Standard_Failure.hxx>
+#include <StlAPI_Writer.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
 #include <gp_Circ.hxx>
@@ -180,6 +184,26 @@ int solvent_cad_step(Cad* cad,int id,const char* path) noexcept {
         validate(imported);
         if (std::abs(volume(shape)-volume(imported)) > 1e-9+1e-7*std::abs(volume(shape)))
             throw std::runtime_error("STEP round trip changed solid volume");
+        return 0;
+    });
+}
+int solvent_cad_stl(Cad* cad,int id,const char* path) noexcept {
+    return guarded(cad,[&] {
+        auto& shape = cad->at(id);
+        validate(shape);
+        // Absolute millimetres, matching the native construction recipe. These
+        // are tessellator controls, not an end-to-end geometry error certificate.
+        BRepMesh_IncrementalMesh mesher(shape,0.01,false,0.2,false);
+        if (!mesher.IsDone()) throw std::runtime_error("native tessellation failed");
+        for (TopExp_Explorer it(shape,TopAbs_FACE); it.More(); it.Next()) {
+            TopLoc_Location location;
+            auto triangles = BRep_Tool::Triangulation(TopoDS::Face(it.Current()),location);
+            if (triangles.IsNull() || triangles->NbTriangles() == 0)
+                throw std::runtime_error("native tessellation omitted a face");
+        }
+        StlAPI_Writer writer;
+        writer.ASCIIMode() = false;
+        if (!writer.Write(shape,path)) throw std::runtime_error("STL write failed");
         return 0;
     });
 }

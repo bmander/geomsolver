@@ -33,9 +33,25 @@ including component through-cutters, use that path. `blank.sv` expresses the fin
 bevel rim through spherical and conical boundary components. Its STEP agrees with
 the experimental pinion blank under both directed native Boolean differences (no
 remaining solids); volumes agree within 5e-9 mm³. This is a construction comparison,
-not a new geometric error certificate. The next integration task is the generating
-removal and indexing operations, followed by connecting their evaluation to this host.
-Along-guide lofts and generating-motion sweeps remain explicitly unsupported by STEP.
+not a new geometric error certificate. Motion placement now supports indexing through
+`solid indexed(tool, under: indexing, at: i * 360deg / teeth)` in ordinary components.
+Native builds export both STEP and STL from that same solid, constructing once when both
+formats are requested. Encoded STL shell checks reject cracks, pinches and float32 collapse;
+all native faces must be meshed. Native STL uses millimetres and a 0.01 mm linear tessellation
+setting, not a complete error certificate. The six-hole example passes this native path;
+the legacy mesh backend's triangulation defect remains recorded separately.
+The next integration task is the continuous generating removal operation and its native
+boundary construction. Along-guide lofts and generating-motion sweeps remain unsupported
+by this native host. No union of sampled tool poses substitutes for a continuous sweep.
+
+The native indexed-pattern STL has 2,096 triangles and passes exact encoded shell checks;
+the legacy path produced 72,027 triangles with unpaired edges. The declarative bevel blank
+exports both formats in about 0.53 s on the current host, with 7,344 STL triangles and STEP
+volume 12038.990933011 mm³. Independent encoded-edge and volume checks pass. These are
+small integration checks, not completed tooth generation or a machining accuracy claim.
+The experimental `tooth_space.py` still takes tooth-specific solved grids and constructs
+its own closure surfaces. Moving those grids into the public compiler unchanged would
+preserve that bypass; the generating source and motion must determine the native boundary.
 
 The acceptance work remains:
 

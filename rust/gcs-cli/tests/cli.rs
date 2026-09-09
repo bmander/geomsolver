@@ -19,6 +19,31 @@ fn doc(name: &str) -> String {
 }
 
 #[test]
+fn unknown_stl_backend_is_refused() {
+    let output = run(&["--stl-backend","unknown"]);
+    assert_eq!(output.status.code(),Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("occt or mesh"));
+}
+
+#[cfg(not(feature="occt"))]
+#[test]
+fn explicit_native_stl_never_falls_back_when_occt_is_unavailable() {
+    let dir = std::env::temp_dir().join(format!("solventc-no-occt-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let model = dir.join("model.sv");
+    let output = dir.join("model.stl");
+    std::fs::write(&model,"unit mm\npoint o hint(x: 0,y: 0)\nground o\n\
+        circle c(center: o)\nradius(2) c\nsolid body(face(c), depth: 3)\n").unwrap();
+    std::fs::write(&output,"old STL").unwrap();
+    let result = run(&[model.to_str().unwrap(),"--stl",output.to_str().unwrap(),
+        "--stl-backend","occt","--no-diagnose"]);
+    assert_eq!(result.status.code(),Some(1));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("requires native OCCT support"));
+    assert_eq!(std::fs::read_to_string(output).unwrap(),"old STL");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn component_previews_resolve_project_imports_for_models_and_drawings() {
     let dir = std::env::temp_dir().join(format!("solventc-preview-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("parts")).unwrap();
@@ -86,7 +111,7 @@ fn issue_50_reductions_report_or_diagnose_instead_of_exporting_invalid_solids() 
         let filename = path.file_name().unwrap().to_str().unwrap();
         let item: usize = filename[..2].parse().unwrap();
         let output = temp.join(format!("{item}.stl"));
-        let out = run(&[path.to_str().unwrap(), "--json", "--where", "result", "--solid", "result", "--stl", output.to_str().unwrap()]);
+        let out = run(&[path.to_str().unwrap(), "--json", "--where", "result", "--solid", "result", "--stl-backend", "mesh", "--stl", output.to_str().unwrap()]);
         let json = gcs_core::json::parse(&String::from_utf8_lossy(&out.stdout)).unwrap();
         let doc = &json.get("documents").unwrap().arr()[0];
         let invalid = [2, 8, 9, 10, 12].contains(&item);

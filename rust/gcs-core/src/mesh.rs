@@ -348,6 +348,45 @@ fn stl_points(bytes: &[u8]) -> Result<impl Iterator<Item=[[f64;3];3]> + '_,Strin
 /// This proves one closed oriented manifold, not geometric non-self-intersection
 /// or a bound on deviation from the original analytic surfaces.
 pub fn stl_topology(bytes: &[u8]) -> Result<crate::topology::ClosedShell,String> {
+    let (vertices,triangles) = stl_indices(bytes)?;
+    crate::topology::ClosedShell::from_triangles(vertices,&triangles)
+        .map_err(|e| format!("invalid binary STL shell topology: {e:?}"))
+}
+
+/// Validate every connected shell of an encoded STL, including cavity walls and
+/// separate bodies. Connectivity uses exactly equal float32 positions; no repair
+/// or distance-based welding occurs. Touching vertex fans remain one component
+/// and must pass the manifold check. This does not check geometric intersection.
+pub fn stl_shells(bytes: &[u8]) -> Result<Vec<crate::topology::ClosedShell>,String> {
+    let (vertices,triangles) = stl_indices(bytes)?;
+    if triangles.is_empty() { return Err("binary STL has no triangles".into()); }
+    let mut incident = vec![Vec::new();vertices];
+    for (i,t) in triangles.iter().enumerate() {
+        for &v in t { incident[v].push(i); }
+    }
+    let mut seen = vec![false;triangles.len()];
+    let mut shells = Vec::new();
+    for start in 0..triangles.len() {
+        if seen[start] { continue; }
+        let mut pending = vec![start];
+        let mut local = BTreeMap::new();
+        let mut faces = Vec::new();
+        while let Some(i) = pending.pop() {
+            if seen[i] { continue; }
+            seen[i] = true;
+            faces.push(triangles[i].map(|v| {
+                pending.append(&mut incident[v]);
+                let next = local.len();
+                *local.entry(v).or_insert(next)
+            }));
+        }
+        shells.push(crate::topology::ClosedShell::from_triangles(local.len(),&faces)
+            .map_err(|e| format!("invalid binary STL shell topology: {e:?}"))?);
+    }
+    Ok(shells)
+}
+
+fn stl_indices(bytes: &[u8]) -> Result<(usize,Vec<[usize;3]>),String> {
     let mut vertices = std::collections::BTreeMap::new();
     let mut triangles = vec![];
     for p in stl_points(bytes)? {
@@ -360,8 +399,7 @@ pub fn stl_topology(bytes: &[u8]) -> Result<crate::topology::ClosedShell,String>
             *vertices.entry(key).or_insert(next)
         }));
     }
-    crate::topology::ClosedShell::from_triangles(vertices.len(),&triangles)
-        .map_err(|e| format!("invalid binary STL shell topology: {e:?}"))
+    Ok((vertices.len(),triangles))
 }
 
 // -- the mesh a viewer wants --------------------------------------------------------------------

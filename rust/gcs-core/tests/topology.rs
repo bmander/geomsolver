@@ -177,6 +177,28 @@ fn encoded_stl_topology_uses_exact_positions_and_normalizes_signed_zero() {
 }
 
 #[test]
+fn encoded_stl_shells_validate_separate_and_cavity_walls_without_hiding_pinches() {
+    let outer = [[0.,0.,0.],[4.,0.,0.],[0.,4.,0.],[0.,0.,4.]];
+    for inner in [outer.map(|p| p.map(|x| x+10.)),
+        outer.map(|p| p.map(|x| 0.25+x/8.))] {
+        let points: Vec<_> = outer.into_iter().chain(inner).collect();
+        let mut triangles = tetrahedron();
+        triangles.extend(tetrahedron().into_iter().map(|[a,b,c]| [a+4,c+4,b+4]));
+        let bytes = stl(&points,&triangles,true);
+        let shells = gcs_core::mesh::stl_shells(&bytes).unwrap();
+        assert_eq!(shells.len(),2);
+        assert!(shells.iter().all(|s| s.genus() == 0 && s.vertex_count() == 4));
+        assert!(gcs_core::mesh::stl_topology(&bytes).unwrap_err().contains("DisconnectedShell"));
+        let mut pinched = points;
+        pinched[4] = pinched[0];
+        assert!(gcs_core::mesh::stl_shells(&stl(&pinched,&triangles,false))
+            .unwrap_err().contains("NonManifoldVertex"));
+        assert!(gcs_core::mesh::stl_shells(&stl(&outer,&tetrahedron()[..3],false)).is_err());
+    }
+    assert!(gcs_core::mesh::stl_shells(&stl(&[],&[],false)).is_err());
+}
+
+#[test]
 fn float32_vertex_collisions_cannot_hide_behind_nondegenerate_triangles() {
     let triangles = torus(7);
     let mut points = vec![];

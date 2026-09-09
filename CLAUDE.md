@@ -87,6 +87,13 @@ The Rust core supplies analytic construction data; the CLI owns native shapes an
 kernel exceptions. STEP export supports profiles, extrusions, revolutions, placements and
 Booleans, validates a STEP round trip, and preserves the old output on failure. Along-guide
 lofts and continuous generating-motion sweeps remain unsupported by this native host.
+Native builds default `--stl` to OCCT too; `--stl-backend mesh` selects the legacy path.
+Requesting STEP and STL together builds once, stages and checks both, then replaces each file.
+Native coordinates are mm. STL uses 0.01 mm absolute deflection and 0.2 rad angular control;
+these are meshing settings, not an end-to-end error bound. Every CAD face must be meshed,
+and `mesh::stl_shells` checks all exactly encoded components, including cavities, without
+welding. Validation failure preserves all old outputs; renames are individually atomic,
+not a transaction across files. Legacy mesh defects must not be hidden by native-path tests.
 
 **Named envelopes:** `envelope flank(source, under: generating, from: -35deg, to: 35deg)`
 binds a surface and motion over a finite increasing roll interval. It is an implicit

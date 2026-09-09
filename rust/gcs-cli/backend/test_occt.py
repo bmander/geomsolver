@@ -1,5 +1,7 @@
 """Optional native integration tests: real Solvent source -> CLI -> STEP -> OCCT."""
 import math
+import struct
+from collections import Counter
 import os
 from pathlib import Path
 import subprocess
@@ -19,19 +21,40 @@ def volume(shape):
     BRepGProp.VolumeProperties_s(shape, props)
     return props.Mass()
 
+def check_stl(test, path, expected_volume):
+    data = path.read_bytes()
+    count = struct.unpack_from("<I", data, 80)[0]
+    test.assertGreater(count, 0)
+    test.assertEqual(len(data), 84+50*count)
+    edges, signed_volume = Counter(), 0.0
+    for offset in range(84, len(data), 50):
+        a, b, c = [struct.unpack_from("<fff", data, offset+12+12*j) for j in range(3)]
+        test.assertTrue(all(math.isfinite(x) for p in (a,b,c) for x in p))
+        cross = lambda a,b: (a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0])
+        normal = cross(tuple(b[i]-a[i] for i in range(3)), tuple(c[i]-a[i] for i in range(3)))
+        test.assertGreater(sum(x*x for x in normal), 0)
+        signed_volume += sum(a[i]*cross(b,c)[i] for i in range(3))/6
+        for p,q in [(a,b),(b,c),(c,a)]:
+            edges[p,q] += 1
+    test.assertTrue(all(n == 1 and edges[q,p] == 1 for (p,q),n in edges.items()))
+    test.assertAlmostEqual(signed_volume, expected_volume, delta=expected_volume*.005)
+    return count
+
 RUST = Path(__file__).resolve().parents[2]
 CLI = Path(os.environ.get("SOLVENTC", RUST/"target/debug/solventc"))
 
 
 class StepTests(unittest.TestCase):
-    def export(self, source, expected_volume, expected_bounds=None):
+    def export(self, source, expected_volume, expected_bounds=None, stl=False):
         with tempfile.TemporaryDirectory() as directory:
             model, step = Path(directory)/"model.sv", Path(directory)/"result.step"
             model.write_text(source)
             result = subprocess.run([str(CLI), str(model), "--step", str(step),
-                                     "--no-diagnose", "--json"], text=True, capture_output=True,
+                                     "--no-diagnose", "--json"] + (["--stl", str(Path(directory)/"result.stl")] if stl else []), text=True, capture_output=True,
                 env=dict(os.environ, SOLVENT_CAD_PYTHON="/no-python-subprocess-allowed"))
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            if stl:
+                check_stl(self, Path(directory)/"result.stl", expected_volume)
             # Kernel progress must not corrupt the CLI's structured output.
             import json
             json.loads(result.stdout)
@@ -57,15 +80,15 @@ class StepTests(unittest.TestCase):
             "plane p(origin: std.origin, toward: q, u: (0,1,0), v: (0,0,1))\n"
             "in p {\ncircle a(center: std.origin)\ncircle b(center: std.origin)\n"
             "radius(2) a\nradius(1) b\nsolid body(face(a, holes: b), depth: 3)\n}\n",
-            math.pi*9, [-3, -2, -2, 0, 2, 2])
+            math.pi*9, [-3, -2, -2, 0, 2, 2], stl=True)
 
     def test_circular_revolution_and_clockwise_partial_revolution(self):
         source = ("unit mm\npoint a hint(x: 0,y: 0)\nground a\n"
             "point b hint(x: 0,y: 1)\nground b\nline axis(a,b)\n"
             "point c hint(x: 10,y: 2)\nground c\ncircle ring(center: c)\n"
             "radius(2) ring\nsolid body(face(ring), about: axis%s)\n")
-        self.export(source % "", 80*math.pi**2, [-12, -12, 0, 12, 12, 4])
-        self.export(source % ", sweep: 90deg, sense: cw", 20*math.pi**2)
+        self.export(source % "", 80*math.pi**2, [-12, -12, 0, 12, 12, 4], stl=True)
+        self.export(source % ", sweep: 90deg, sense: cw", 20*math.pi**2, stl=True)
 
     def test_component_bolt_pattern_through_additive_body(self):
         # Run the actual example in place so its project modules resolve normally.
@@ -92,7 +115,53 @@ class StepTests(unittest.TestCase):
 
     def test_indexed_motion_component_reuses_one_through_cutter(self):
         self.export((RUST/"examples/solid_indexed_pattern.sv").read_text(),
-                    math.pi*(400-6*4)*5, [-20,-20,-5,20,20,0])
+                    math.pi*(400-6*4)*5, [-20,-20,-5,20,20,0], stl=True)
+
+    def test_native_stl_alone_uses_millimetres_and_checks_multiple_shells(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model, stl = Path(directory)/"model.sv", Path(directory)/"result.stl"
+            model.write_text("unit in\npoint a hint(x: 0,y: 0)\nground a\n"
+                "point b hint(x: 4,y: 0)\nground b\ncircle ca(center: a)\n"
+                "radius(1) ca\ncircle cb(center: b)\nradius(1) cb\n"
+                "solid first(face(ca), depth: 2)\nsolid second(face(cb), depth: 2)\n"
+                "solid body(first)\nsecond on body\n")
+            result = subprocess.run([str(CLI), str(model), "--stl", str(stl), "--no-diagnose"],
+                text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            check_stl(self, stl, 4*math.pi*25.4**3)
+
+    def test_failed_stl_encoding_preserves_both_requested_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model, step, stl = [Path(directory)/n for n in ("model.sv", "result.step", "result.stl")]
+            model.write_text("unit mm\npoint c hint(x: 1000000,y: 1000000)\nground c\n"
+                "circle profile(center: c)\nradius(0.01) profile\nsolid body(face(profile), depth: 0.01)\n")
+            step.write_text("old step")
+            stl.write_text("old stl")
+            result = subprocess.run([str(CLI), str(model), "--step", str(step), "--stl", str(stl),
+                "--no-diagnose"], text=True, capture_output=True)
+            self.assertEqual(result.returncode, 1, result.stdout+result.stderr)
+            self.assertIn("float32 STL validation failed", result.stderr)
+            self.assertEqual(step.read_text(), "old step")
+            self.assertEqual(stl.read_text(), "old stl")
+            self.assertFalse(list(Path(directory).glob(".solvent-cad-*")))
+
+    def test_native_stl_preserves_an_enclosed_cavity(self):
+        self.export("unit mm\npoint o hint(x: 0,y: 0)\nground o\n"
+            "circle rim(center: o)\nradius(3) rim\ncircle hole(center: o)\nradius(1) hole\n"
+            "solid stock(face(rim), depth: 6)\nsolid tool(face(hole), from: -4, to: -2)\n"
+            "solid body(stock)\ntool cut body\n", 52*math.pi, stl=True)
+
+    def test_step_and_stl_cannot_share_a_destination(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model, output = Path(directory)/"model.sv", Path(directory)/"result"
+            model.write_text("unit mm\npoint c hint(x: 0,y: 0)\nground c\n"
+                "circle profile(center: c)\nradius(2) profile\nsolid body(face(profile), depth: 3)\n")
+            output.write_text("old output")
+            result = subprocess.run([str(CLI), str(model), "--step", str(output), "--stl", str(output),
+                "--no-diagnose"], text=True, capture_output=True)
+            self.assertEqual(result.returncode, 1, result.stdout+result.stderr)
+            self.assertIn("distinct output paths", result.stderr)
+            self.assertEqual(output.read_text(), "old output")
 
     def test_unsupported_operation_preserves_existing_export(self):
         with tempfile.TemporaryDirectory() as directory:
