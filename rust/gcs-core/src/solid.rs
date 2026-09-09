@@ -54,7 +54,7 @@ pub use sweep_contacts::{ContactCover,ContactCoverOptions,ContactCell,ContactEvi
 pub use sweep_contacts::{ContactChart,ContactParameter};
 pub use surface::SurfaceBounds;
 pub use surface::{RegionLocation,RegionSample,RevolvedRegion,RevolvedSurface,
-    SurfaceProjection,SurfaceProjector,RevolvedContact};
+    SurfaceProjection,SurfaceProjector,RevolvedContact,MeridianContact};
 pub(crate) use raycast::RayIndex;
 use section::face_polys;
 pub use evaluated::{ApproximationPolicy, EvaluatedSolid, LocalPoint, WorldPoint, PagePoint, PageFrame, RoundFeature};

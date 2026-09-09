@@ -1,10 +1,8 @@
 // Curves on native faces, for contact cuts without tangent face intersections.
 #include "occt.hpp"
-#include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepClass_FaceClassifier.hxx>
-#include <BRepFeat_SplitShape.hxx>
 #include <BRepLib.hxx>
 #include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
@@ -148,29 +146,24 @@ int solvent_cad_pcurve(Cad* cad,int id,const double* points,int count,int closed
 }
 
 // All fragments are retained. No orientation/visibility selection is implied by
-// the splitter's left/right labels. Work on copied topology to preserve inputs.
+// the curve direction. The common splitter preserves inputs and constructs their
+// intersections with native trimming edges before rebuilding face wires.
 int solvent_cad_split_pcurves(Cad* cad,int id,const int* edges,int count) noexcept {
     return guarded(cad,[&] {
         if (!edges || count < 1 || count > 1024) throw std::runtime_error("split requires 1..1024 contact edges");
         const FaceChart chart(cad,id);
-        BRepBuilderAPI_Copy copy(chart.face,false,false);
-        const auto face = TopoDS::Face(copy.Shape());
-        BRepFeat_SplitShape split(face);
+        TopTools_ListOfShape tools;
         for (int i=0;i<count;++i) {
             const auto edge = TopoDS::Edge(cad->at(edges[i]));
             double a,b;
-            if (BRep_Tool::CurveOnSurface(edge,face,a,b).IsNull())
+            if (BRep_Tool::CurveOnSurface(edge,chart.face,a,b).IsNull())
                 throw std::runtime_error("contact edge is not attached to this face");
-            BRepBuilderAPI_Copy edge_copy(edge,false,false);
-            split.Add(TopoDS::Edge(edge_copy.Shape()),face);
+            tools.Append(edge);
         }
-        split.Build();
-        if (!split.IsDone()) throw std::runtime_error("native contact curve split failed");
-        const auto result = split.Shape();
+        const auto result = split_face(chart.face,tools);
         TopTools_IndexedMapOfShape faces;
         TopExp::MapShapes(result,TopAbs_FACE,faces);
-        if (faces.Extent() < 2 || !BRepCheck_Analyzer(result).IsValid())
-            throw std::runtime_error("contact curves did not produce a valid face partition");
+        if (faces.Extent() < 2) throw std::runtime_error("contact curves did not separate the face");
         return cad->put(result);
     });
 }

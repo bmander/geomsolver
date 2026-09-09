@@ -52,7 +52,7 @@ fn native_pcurves_partition_open_and_closed_regions_without_rebuilding_supports(
 }
 
 #[test]
-fn full_meridian_source_contacts_split_native_endpoint_faces() {
+fn alternate_source_charts_split_native_endpoint_faces() {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
     let e = read(&std::fs::read_to_string(base.join("gears.sv")).unwrap(),&base);
     let scale = e.sketch.units.length.unwrap().1;
@@ -61,32 +61,31 @@ fn full_meridian_source_contacts_split_native_endpoint_faces() {
         let id = e.map.ent_named(&format!("pair.{member}.removal")).unwrap().i();
         let sweep = SweepContacts::read(&e.sketch,id,1e-10/scale).unwrap();
         let caps = cad.0.sweep_caps(&e.sketch,id).unwrap();
-        let mut member_faces = 0;
         for cap in &caps.endpoints {
             let mut curves = std::collections::BTreeMap::<c_int,Vec<c_int>>::new();
             let mut unresolved_projections = 0;
             let mut stages = [0;4];
             let mut fit_error = 0_f64;
-            // Full-meridian isolated branches are sufficient for this integration
-            // check. Missing branches, poles and curves clipped by other source
-            // faces still need event/trim tracing before complete cap coverage.
+            // Try either exact source chart. Missing branches, poles and clipped
+            // curves still need full event/trim tracing before cap coverage.
+            for along_angle in [false,true] {
+            let existing: std::collections::BTreeSet<_> = curves.keys().copied().collect();
             for patch in 0..sweep.patches().len() { for branch in 0..2 {
-                let mut points = Vec::new();
-                for i in 0..=32 {
-                    let roots = match sweep.at(patch,i as f64/32.,cap.parameter,1e-10/scale) {
-                        Ok(roots) => roots,
-                        Err(_) => break,
-                    };
-                    let Some(root) = roots.into_iter().find(|r| r.branch == branch) else { break; };
-                    points.push(root.contact.position.map(|x| x*scale));
-                }
-                if points.len() != 33 { continue; }
+                let sample = |s| {
+                    if along_angle {
+                        sweep.at_angle(patch,s,cap.parameter,1e-10/scale).ok()?.into_iter()
+                            .find(|r| r.branch == branch).map(|r| r.contact.position.map(|x| x*scale))
+                    } else {
+                        sweep.at(patch,s,cap.parameter,1e-10/scale).ok()?.into_iter()
+                            .find(|r| r.branch == branch).map(|r| r.contact.position.map(|x| x*scale))
+                    }
+                };
+                if !(0..=32).any(|i| sample(i as f64/32.).is_some()) { continue; }
                 stages[0] += 1;
-                let at = |u| sweep.at(patch,u,cap.parameter,1e-10/scale).unwrap().into_iter()
-                    .find(|r| r.branch == branch).expect("a traced source branch disappeared")
-                    .contact.position.map(|x| x*scale);
+                let at = |s| sample(s).expect("a traced source branch disappeared");
                 for &face in &cap.faces {
-                    let traces = match clipped_test_traces(&cad,face,&at) {
+                    if existing.contains(&face) { continue; }
+                    let traces = match clipped_test_traces(&cad,face,&sample) {
                         Ok(traces) => traces,
                         Err(_) => { unresolved_projections += 1; continue; },
                     };
@@ -101,7 +100,7 @@ fn full_meridian_source_contacts_split_native_endpoint_faces() {
                                 let p = cad.0.edge_point(edge,(j as f64+0.37)/31.).unwrap();
                                 let source = cap.pose.inverse().point(p.map(|x| x/scale));
                                 let projection = projector.project(source).unwrap();
-                                let exact = at(projection.parameters[0]);
+                                let exact = at(projection.parameters[usize::from(along_angle)]);
                                 fit_error = fit_error.max(distance(p,exact));
                             }
                             curves.entry(face).or_default().push(edge);
@@ -111,11 +110,13 @@ fn full_meridian_source_contacts_split_native_endpoint_faces() {
                     }
                     }
                 }
-            } }
+            } } }
             let mut split_faces = 0;
             let mut checks = 0;
             for (face,edges) in curves {
-                let fragments = cad.0.faces(cad.0.split_pcurves(face,&edges).unwrap()).unwrap();
+                let partition = cad.0.split_pcurves(face,&edges).unwrap_or_else(|error|
+                    panic!("{member} endpoint {} face {face}, {} edges: {error}",cap.parameter,edges.len()));
+                let fragments = cad.0.faces(partition).unwrap();
                 let mut signs = vec![None;fragments.len()];
                 let mut points = Vec::new();
                 for probe in std::iter::once(face).chain(fragments.iter().copied()) {
@@ -144,28 +145,24 @@ fn full_meridian_source_contacts_split_native_endpoint_faces() {
                 split_faces += 1;
             }
             eprintln!("{member} endpoint {}: {split_faces} faces split on source contact curves, {checks} sign/membership checks, {unresolved_projections} unresolved candidate-face projections",cap.parameter);
-            eprintln!("full branches / on-face traces / unwrapped traces / clipped endpoints: {stages:?}");
+            eprintln!("sampled branches / on-face traces / unwrapped traces / interior endpoints: {stages:?}");
             eprintln!("withheld contact-edge error: {fit_error:e} mm");
             assert!(fit_error < 0.002,"{member}: native contact curve interpolation error {fit_error} mm");
-            if stages[0] == 0 {
-                // Contact branches can end at an interior meridian event. Keep
-                // this gap visible instead of fitting across the missing root.
-                assert_eq!(split_faces,0);
-                assert!((0..sweep.patches().len()).any(|patch|
-                    sweep.at(patch,0.5,cap.parameter,1e-10/scale).is_ok_and(|r| !r.is_empty())));
-            }
-            member_faces += split_faces;
+            assert!(split_faces > 0,"{member}: endpoint {} has no native contact splits",cap.parameter);
         }
-        assert!(member_faces > 0,"{member}: no endpoint contact curve reached native trimming");
     }
 }
 
 // Integration-fixture search only: locate sampled on-face runs, then bracket
 // their endpoints against native trims. This neither certifies that no narrow
 // run was missed nor replaces full endpoint contact-event tracing.
-fn clipped_test_traces(cad: &Cad,face: c_int,at: &impl Fn(f64)->[f64;3]) -> Result<Vec<Vec<[f64;2]>>,String> {
-    let project = |u| cad.0.face_parameters(face,at(u),1e-6).map(|p| p.map(|(uv,_)| uv));
-    let samples = (0..=32).map(|i| project(i as f64/32.)).collect::<Result<Vec<_>,_>>()?;
+fn clipped_test_traces(cad: &Cad,face: c_int,at: &impl Fn(f64)->Option<[f64;3]>) -> Result<Vec<Vec<[f64;2]>>,String> {
+    let project = |u| match at(u) {
+        Some(p) => cad.0.face_parameters(face,p,1e-6).map(|p| p.map(|(uv,_)| uv)),
+        None => Ok(None),
+    };
+    const SEEDS: usize = 32;
+    let samples = (0..=SEEDS).map(|i| project(i as f64/SEEDS as f64)).collect::<Result<Vec<_>,_>>()?;
     let endpoint = |mut inside: f64,mut outside: f64| -> Result<f64,String> {
         for _ in 0..52 {
             let mid = (inside+outside)*0.5;
@@ -188,9 +185,9 @@ fn clipped_test_traces(cad: &Cad,face: c_int,at: &impl Fn(f64)->[f64;3]) -> Resu
             if cad.0.face_point(face,p[0],p[1],1e-9)?.is_some_and(|p| !p.on_trim) { interior = true; }
         }
         if !interior { continue; }
-        let mut a = start as f64/32.; let mut b = end as f64/32.;
-        if start > 0 { a = endpoint(a,(start-1) as f64/32.)?; }
-        if end < 32 { b = endpoint(b,(end+1) as f64/32.)?; }
+        let mut a = start as f64/SEEDS as f64; let mut b = end as f64/SEEDS as f64;
+        if start > 0 { a = endpoint(a,(start-1) as f64/SEEDS as f64)?; }
+        if end < SEEDS { b = endpoint(b,(end+1) as f64/SEEDS as f64)?; }
         if a == b { continue; }
         let mut points = Vec::new();
         for j in 0..=32 {
@@ -198,6 +195,18 @@ fn clipped_test_traces(cad: &Cad,face: c_int,at: &impl Fn(f64)->[f64;3]) -> Resu
             let Some(p) = project(u)? else { return Err("fixture trace leaves its source face".into()); };
             points.push(p);
         }
+        // A full turn can project its first point onto the opposite copy of the
+        // native seam. Change only an endpoint representative, and only after
+        // checking that the alternative is the same on-face spatial point.
+        for (index,neighbor,s) in [(0,1,a),(32,31,b)] { for axis in 0..2 {
+            let value = points[index][axis];
+            if (value-points[neighbor][axis]).abs() <= 0.5 { continue; }
+            let alias = if value < 1e-8 { 1. } else if value > 1.-1e-8 { 0. } else { continue; };
+            let mut p = points[index]; p[axis] = alias;
+            if cad.0.face_point(face,p[0],p[1],1e-9)?.is_some_and(|q| at(s).is_some_and(|p| distance(q.position,p) < 1e-6)) {
+                points[index] = p;
+            }
+        } }
         result.push(points);
     }
     Ok(result)

@@ -200,16 +200,24 @@ are not connected to public sweep export yet.
 - `solvent_cad_pcurve` interpolates supplied face coordinates and constructs an attached
   spatial edge. Open endpoints must reach trims; closed input omits the duplicate final
   point. The spatial construction tolerance does not bound the original contact fit.
-- `solvent_cad_split_pcurves` uses OCCT's `BRepFeat_SplitShape` (linked through `TKFeat`)
-  to retain all face fragments on copied topology. Face/edge inputs remain reusable.
+- `solvent_cad_split_pcurves` shares the non-destructive `BRepAlgoAPI_Splitter` operation
+  used for face tools, retaining all source face fragments. Face/edge inputs remain
+  reusable; the bridge no longer needs `TKFeat`.
 - `solvent_cad_curve_point` evaluates the actual spatial edge for independent checks.
 
 Tests split an open parabola and a closed loop, checking face membership, preserved
 support geometry and withheld edge residuals. Source-computed contact branches split
-six pinion and four gear starting-endpoint faces, including clipping at the gear's
-existing Boolean trims. Across 1,816 sampled sign/membership checks, each tested fragment
-stays on one side of the normal-velocity contact equation. Withheld edge/source-contact
-errors are about 0.000157/0.000000101 mm. The fixture trace locator can miss narrow runs
-and does not continue branches through meridian turning points; neither ending endpoint
-is completed by this check. The primitive supplies native trimming for provided curves,
-not whole endpoint coverage, global visibility or a closed swept solid.
+six starting/three ending pinion faces and four starting/one ending gear faces, including
+clipping at existing Boolean trims. Across 2,644 sampled sign/membership checks, each
+tested fragment stays on one side of the normal-velocity contact equation. Maximum
+withheld edge/source-contact errors are about 0.000165/0.001526 mm for pinion/gear.
+
+The core's alternate meridian chart fixes revolution angle and solves the affine
+(line profile) or sinusoidal (circular profile) contact equation for profile position.
+It crosses a known sphere contact fold and is checked with both revolution senses,
+rigid placements and full circular meridians. The endpoint fixture tries either chart,
+brackets partial source runs and native trim crossings, and checks endpoint seam aliases
+by spatial incidence. It can still miss narrow runs and skips interior seam jumps;
+open traces ending inside a face remain refused. The new chart is not yet part of
+interval domain coverage. This supplies native trimming for provided curves, not
+whole endpoint coverage, global visibility or a closed swept solid.

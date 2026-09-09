@@ -75,6 +75,16 @@ impl SweepContacts {
         surface.contacts(u,self.motion.at(roll).map_err(|_| Error::NonFinite)?,tolerance)
     }
 
+    /// Fix revolution angle and solve for profile position. Meridian and ring
+    /// charts have separate algebraic branch labels; neither alone covers events.
+    pub fn at_angle(&self,patch: usize,v: f64,roll: f64,tolerance: f64)
+        -> Result<Vec<super::surface::MeridianContact>,Error> {
+        if !roll.is_finite() { return Err(Error::NonFinite); }
+        if roll < self.roll[0] || roll > self.roll[1] { return Err(Error::OutsideDomain); }
+        let surface = self.patches.get(patch).ok_or(Error::OutsideDomain)?;
+        surface.meridian_contacts(v,self.motion.at(roll).map_err(|_| Error::NonFinite)?,tolerance)
+    }
+
     /// Alternate chart: hold both source parameters and solve for motion times.
     /// This may cross a fold in the (u,time) chart without a surface singularity.
     /// Only single rotations and two relative rotations support the analytic

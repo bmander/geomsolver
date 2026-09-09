@@ -72,6 +72,28 @@ static int membership(const TopoDS_Face& face,const gp_Pnt2d& uv,double toleranc
     }
 }
 
+TopoDS_Shape split_face(const TopoDS_Face& face,const TopTools_ListOfShape& tools) {
+    if (!BRepCheck_Analyzer(face).IsValid()) throw std::runtime_error("invalid source face");
+    TopTools_ListOfShape objects;
+    objects.Append(face);
+    BRepAlgoAPI_Splitter split;
+    split.SetArguments(objects); split.SetTools(tools);
+    split.SetNonDestructive(true); split.SetRunParallel(false);
+    split.Build();
+    if (!split.IsDone() || split.HasErrors() || split.HasWarnings()) {
+        std::ostringstream message;
+        message << "native face split failed: ";
+        split.DumpErrors(message); split.DumpWarnings(message);
+        throw std::runtime_error(message.str());
+    }
+    const auto result = split.Shape();
+    TopTools_IndexedMapOfShape faces;
+    TopExp::MapShapes(result,TopAbs_FACE,faces);
+    if (faces.IsEmpty() || !BRepCheck_Analyzer(result).IsValid())
+        throw std::runtime_error("face split produced no valid faces");
+    return result;
+}
+
 extern "C" {
 // A regular contact chart, sampled in row-major (u, motion parameter) order.
 // This creates a candidate face only. Solid closure and trimming remain separate.
@@ -136,25 +158,10 @@ int solvent_cad_split_face(Cad* cad,int source,const int* tools,int count) noexc
     return guarded(cad,[&] {
         if (!tools || count < 1 || count > 1024)
             throw std::runtime_error("face split requires 1..1024 tool faces");
-        TopTools_ListOfShape objects,cutters;
-        objects.Append(valid_face(cad,source));
+        const auto face = valid_face(cad,source);
+        TopTools_ListOfShape cutters;
         for (int i=0;i<count;++i) cutters.Append(valid_face(cad,tools[i]));
-        BRepAlgoAPI_Splitter split;
-        split.SetArguments(objects); split.SetTools(cutters);
-        split.SetNonDestructive(true); split.SetRunParallel(false);
-        split.Build();
-        if (!split.IsDone() || split.HasErrors() || split.HasWarnings()) {
-            std::ostringstream message;
-            message << "candidate face split failed: ";
-            split.DumpErrors(message); split.DumpWarnings(message);
-            throw std::runtime_error(message.str());
-        }
-        const auto result = split.Shape();
-        TopTools_IndexedMapOfShape faces;
-        TopExp::MapShapes(result,TopAbs_FACE,faces);
-        if (faces.IsEmpty() || !BRepCheck_Analyzer(result).IsValid())
-            throw std::runtime_error("face split produced no valid faces");
-        return cad->put(result);
+        return cad->put(split_face(face,cutters));
     });
 }
 

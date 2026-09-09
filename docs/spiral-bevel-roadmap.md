@@ -275,25 +275,33 @@ it projects onto the support before classifying native trims, rather than treati
 a missing extremum in a fragment's parameter box as proof of non-incidence. Periodic
 representatives and tiny endpoint overshoots are normalized, with the resulting spatial
 distance remeasured. A UV interpolant is attached to the source surface and given a
-spatial edge by OCCT, then `BRepFeat_SplitShape` partitions copied face/edge topology.
+spatial edge by OCCT. A shared, non-destructive `BRepAlgoAPI_Splitter` operation now
+partitions native faces using either face tools or attached contact edges.
 All fragments remain available, without assigning visibility from left/right labels.
 This avoids finding a trim by intersecting two tangent fitted surfaces.
 
 Open-parabola and closed-loop fixtures check partition membership, unchanged supporting
 surfaces, edge reuse and withheld spatial-curve residuals. Declared endpoint contact
-branches now split six pinion faces and four gear faces at the starting position; the
-gear traces are bracketed at existing Boolean face trims. There are 1,816 sampled
-normal-velocity-sign/membership checks across original faces and their fragments.
-Withheld spatial-edge samples compared against the original source-contact equation
-have maximum errors about 0.000157 mm (pinion) and 0.000000101 mm (gear). These checks
-do not certify the entire interpolated curve or final export error.
+branches split six starting/three ending pinion faces and four starting/one ending gear
+faces. There are 2,644 sampled normal-velocity-sign/membership checks across original
+faces and their fragments. Withheld spatial-edge samples compared against the original
+source-contact equation have maximum errors about 0.000165 mm (pinion) and 0.001526 mm
+(gear). These checks do not certify the entire interpolated curve or final export error.
 
-The fixture trace search samples meridian branches and brackets native trim crossings;
-it is explicitly not a complete endpoint tracing algorithm. At the ending position,
-the pinion branches stop within the meridian, and the gear's available full branches
-do not reach this face-trimming path. Those endpoint regions remain unfinished.
-Turning-point continuation, seam/pole events, narrow clipped runs and global material
-selection still need handling before the new primitive can complete swept-solid assembly.
+The alternate exact contact chart fixes revolution angle and solves for profile position:
+normal velocity is affine for a line meridian and sinusoidal for a circular meridian.
+This crosses a fold of the earlier chart without fitting through missing roots. A sphere
+fixture checks a known contact plane across that fold; other tests cover line/round
+profiles, both revolution senses, rigid placements and both roots of a full circular
+meridian. Every returned root is checked against the original normal-velocity equation.
+This chart is not yet connected to the interval domain-cover algorithm.
+
+The fixture trace search samples either chart and brackets both source-domain endpoints
+and native trim crossings. An alternate chart is tried on faces without an existing
+curve; coincident endpoint seam representatives are reconciled by spatial incidence.
+This is explicitly not a complete endpoint tracing algorithm. Open curves ending in a
+face interior remain refused; narrow clipped runs, interior seam/pole events, overlapping
+charts and global material selection still need handling before swept-solid assembly.
 
 The acceptance work remains:
 

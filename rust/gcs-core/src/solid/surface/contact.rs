@@ -62,24 +62,34 @@ impl RevolvedSurface {
         let h = add(scale(center_velocity,nr),scale(plane::cross(self.axis,omega),radius*nz));
         let a = plane::dot(h,e); let b = plane::dot(h,f);
         let c = nz*plane::dot(center_velocity,self.axis);
-        let amplitude = a.hypot(b);
-        if ![a,b,c,amplitude].iter().all(|v| v.is_finite()) { return Err(Error::NonFinite); }
-        if c.abs() > amplitude+tolerance { return Ok(Vec::new()); }
-        if amplitude <= tolerance || (c.abs()-amplitude).abs() <= tolerance {
-            return Err(Error::Degenerate);
-        }
-        let phase = b.atan2(a); let spread = (-c/amplitude).acos();
         let mut roots = Vec::new();
-        for (branch,theta) in [phase-spread,phase+spread].into_iter().enumerate() {
-            let v = (theta*self.sweep.signum()).rem_euclid(TAU)/self.sweep.abs();
-            // The endpoint at 1 also represents the seam at 0 for a full turn.
-            let period = TAU/self.sweep.abs();
-            let Some(v) = [v,v-period,v+period].into_iter().find(|v|
-                *v >= self.v_domain[0] && *v <= self.v_domain[1]) else { continue };
+        for (branch,v) in sinusoid_roots(a,b,c,self.sweep,self.v_domain,tolerance)? {
             let contact = envelope::contact(self.at(u,v)?,motion)?;
             if contact.normal_velocity.abs() > tolerance { return Err(Error::NotConverged); }
             roots.push(RevolvedContact {branch,v,contact});
         }
         Ok(roots)
     }
+}
+
+/// Isolated roots on a normalized angular span; shared by the two source charts.
+pub(super) fn sinusoid_roots(a: f64,b: f64,c: f64,sweep: f64,domain: [f64;2],tolerance: f64)
+    -> Result<Vec<(usize,f64)>,Error> {
+    let amplitude = a.hypot(b);
+    if ![a,b,c,amplitude].iter().all(|v| v.is_finite()) { return Err(Error::NonFinite); }
+    if c.abs() > amplitude+tolerance { return Ok(Vec::new()); }
+    if amplitude <= tolerance || (c.abs()-amplitude).abs() <= tolerance {
+        return Err(Error::Degenerate);
+    }
+    let phase = b.atan2(a); let spread = (-c/amplitude).acos();
+    let mut roots = Vec::new();
+    for (branch,theta) in [phase-spread,phase+spread].into_iter().enumerate() {
+        let v = (theta*sweep.signum()).rem_euclid(TAU)/sweep.abs();
+        // The endpoint at 1 also represents the seam at 0 for a full turn.
+        let period = TAU/sweep.abs();
+        let Some(v) = [v,v-period,v+period].into_iter().find(|v|
+            *v >= domain[0] && *v <= domain[1]) else { continue };
+        roots.push((branch,v));
+    }
+    Ok(roots)
 }

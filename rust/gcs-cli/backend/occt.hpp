@@ -1,5 +1,7 @@
 #pragma once
 #include <TopoDS_Shape.hxx>
+#include <TopoDS_Face.hxx>
+#include <TopTools_ListOfShape.hxx>
 #include <Standard_Failure.hxx>
 #include <stdexcept>
 #include <string>
@@ -26,3 +28,5 @@ template<class F> int guarded(Cad* cad,F fn) noexcept {
 }
 
 void validate(TopoDS_Shape& shape);
+// Shared non-destructive face partitioning for face and attached-curve tools.
+TopoDS_Shape split_face(const TopoDS_Face& face,const TopTools_ListOfShape& tools);
