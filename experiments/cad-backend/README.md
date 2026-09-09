@@ -202,6 +202,13 @@ distortion is rejected. This completes nominal correspondence checks for the gen
 tooth-space supports. Trimmed coverage, source/export error transfer, global material and
 continuous mating checks remain open.
 
+The [finite-face and indexed-surface audit](INDEXED-SURFACES.md) verifies the full parameter
+rectangles of all twenty tooth-space faces and all 360 indexed B-spline faces. Every
+indexed support matches an exact tooth rotation of its bounded reference within 2.25e-11 mm
+across the entire domain. Combined nominal bounds remain below 0.001 mm after transfer to
+the actual indexed STEP candidates. Analytical blank faces, separate 3D edge consistency,
+source/reader accuracy and global material/mating remain separate checks.
+
 ## Initial trial reproduction
 
 The frozen Python environment uses `cadquery-ocp==7.9.3.1.1` (OCCT 7.9.3) on CPython 3.12,

@@ -44,6 +44,14 @@ rejected. Source/assembly error, finite trimmed coverage, STEP-reader conversion
 indexed operations and global material/mating acceptance remain. These completed nominal
 surface gates do not yet establish a finished production pair.
 
+The [finite-face and indexed-surface audit](../experiments/cad-backend/INDEXED-SURFACES.md)
+now verifies that all twenty tooth-space faces and all 360 indexed B-spline faces cover
+their complete bounded parameter rectangles. Exact coefficient comparison bounds every
+indexed support against an exact rotation of its original support within 2.25e-11 mm.
+Combined nominal accuracy remains below 0.001 mm on those indexed faces. Analytical blank
+faces and their trims, separate 3D edge consistency, source/reader error and global
+material/mating checks remain; this does not close the full-solid acceptance gate.
+
 The deliverable remains one fully specified, parametric matched pair from a documented
 generating system, independently verifiable and exportable at a stated geometric accuracy.
 Manufacturing planning remains separate. This document redirects the next investigation:
