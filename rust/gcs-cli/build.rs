@@ -6,7 +6,7 @@ fn run(command: &mut Command) {
 }
 
 fn main() {
-    for file in ["occt.cpp","boundary.cpp","surfaces.cpp","trims.cpp","occt.hpp"] {
+    for file in ["occt.cpp","boundary.cpp","surfaces.cpp","trims.cpp","cells.cpp","occt.hpp"] {
         println!("cargo:rerun-if-changed=backend/{file}");
     }
     for name in ["OCCT_ROOT","CXX","AR"] { println!("cargo:rerun-if-env-changed={name}"); }
@@ -20,7 +20,7 @@ fn main() {
     });
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let mut objects = Vec::new();
-    for name in ["occt","boundary","surfaces","trims"] {
+    for name in ["occt","boundary","surfaces","trims","cells"] {
         let object = out.join(format!("{name}.o"));
         run(Command::new(env::var_os("CXX").unwrap_or_else(|| "c++".into()))
             .args(["-std=c++17","-O2","-fPIC","-c"]).arg(format!("backend/{name}.cpp"))
@@ -32,7 +32,7 @@ fn main() {
     println!("cargo:rustc-link-search=native={}",out.display());
     println!("cargo:rustc-link-lib=static=solvent_occt");
     println!("cargo:rustc-link-search=native={}",root.join("lib").display());
-    for library in ["TKDESTEP","TKDESTL","TKMesh","TKXSBase","TKBO","TKBool","TKPrim","TKTopAlgo",
+    for library in ["TKDESTEP","TKDESTL","TKMesh","TKShHealing","TKXSBase","TKBO","TKBool","TKPrim","TKTopAlgo",
         "TKGeomAlgo","TKBRep","TKGeomBase","TKG3d","TKG2d","TKMath","TKernel"] {
         println!("cargo:rustc-link-lib=dylib={library}");
     }

@@ -165,8 +165,16 @@ int solvent_cad_step(Cad* cad,int id,const char* path) noexcept {
             throw std::runtime_error("STEP reimport failed");
         auto imported = reader.OneShape();
         validate(imported);
-        if (std::abs(volume(shape)-volume(imported)) > 1e-9+1e-7*std::abs(volume(shape)))
-            throw std::runtime_error("STEP round trip changed solid volume");
+        // A reader may move the boundary within the tolerance the shape itself
+        // carries, so the admissible volume change is that slack over the whole
+        // surface; an analytic solid at kernel precision keeps the strict ratio.
+        GProp_GProps surface;
+        BRepGProp::SurfaceProperties(shape,surface);
+        const double slack = BRep_Tool::MaxTolerance(shape,TopAbs_VERTEX)*surface.Mass();
+        const double change = std::abs(volume(shape)-volume(imported));
+        if (change > std::max(1e-9+1e-7*std::abs(volume(shape)),slack))
+            throw std::runtime_error("STEP round trip changed solid volume from "
+                +std::to_string(volume(shape))+" to "+std::to_string(volume(imported)));
         return 0;
     });
 }

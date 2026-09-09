@@ -13,6 +13,9 @@ mod trims;
 #[allow(dead_code)]
 #[path="native/traces.rs"]
 mod traces;
+#[allow(dead_code)]
+#[path="native/cells.rs"]
+pub(crate) mod cells;
 
 extern "C" {
     fn solvent_cad_new() -> *mut c_void;
