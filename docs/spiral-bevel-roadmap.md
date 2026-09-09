@@ -347,6 +347,33 @@ a face with a hole can require two cuts before it separates, covered by a small 
 Ending intervals still do not supply complete native cuts in this fixture. These results
 do not establish complete contour clipping, final material visibility or export accuracy.
 
+Alternate fixed-time charts now connect through enclosed shared roots. Interval Newton
+narrows a curve endpoint using its retained chart derivative. A destination curve must
+cover that entire root enclosure with charts whose dependent intervals contain the
+original free coordinate. Root uniqueness establishes the common branch without a
+spatial proximity weld; derivative signs establish the outgoing direction. Missing
+overlap, source-patch changes and periodic seam identification remain unresolved ends.
+
+The path tracer follows these transitions using original analytic curve segments. It
+stops at missing links and closes a loop only on returning to an already traversed,
+consistently oriented interval; closing overlap removes a duplicated prefix. Numeric
+handoff mismatch is checked separately from the root-identity argument and from any
+future spline fitting error. Each path is one candidate component, not a replacement
+for the complete retained source cover or the material-visibility calculation.
+
+`refine_contact_ends` spends an additional budget on unresolved partition cells touching
+unconnected endpoint root boxes. It reuses the ordinary interval discovery rules and
+retains all other cells, rather than extrapolating a fitted curve into the gap. A tilted
+sphere's remaining gap after 30,000 global evaluations closes with one additional
+targeted evaluation. Sphere fixtures at 15, 35 and 65 degrees check full-circle winding
+in both directions; the last retains explicit open parameter-seam endpoints.
+On the default cutters, 26 additional ending-pinion evaluations provide ten alternate
+chart transitions and paths of up to four analytic segments. Another 491 ending-gear
+evaluations provide two transitions and two-segment paths. Measured handoff mismatch
+stays below 0.000000000021 mm; this is not an end-to-end accuracy bound. Four additional
+starting-gear evaluations also enable a fourth native face split. Both ending-position
+contours still need remaining gaps/seams resolved and complete native trim clipping.
+
 The fixture trace search samples either chart and brackets both source-domain endpoints
 and native trim crossings. An alternate chart is tried on faces without an existing
 curve; coincident endpoint seam representatives are reconciled by spatial incidence.

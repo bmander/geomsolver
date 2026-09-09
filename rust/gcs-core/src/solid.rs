@@ -53,6 +53,8 @@ pub use sweep_contacts::{SweepContacts,TimedContact};
 pub use sweep_contacts::{ContactCover,ContactCoverOptions,ContactCell,ContactEvidence,ContactLimit,ContactCoverError};
 pub use sweep_contacts::{ContactChart,ContactParameter};
 pub use sweep_contacts::{ContactCurve,ContactCurves,ContactCurvePoint};
+pub use sweep_contacts::ContactTransition;
+pub use sweep_contacts::{ContactPath,ContactPathSegment};
 pub use surface::SurfaceBounds;
 pub use surface::{RegionLocation,RegionSample,RevolvedRegion,RevolvedSurface,
     SurfaceProjection,SurfaceProjector,RevolvedContact,MeridianContact};

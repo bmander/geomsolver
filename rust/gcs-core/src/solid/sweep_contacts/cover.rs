@@ -175,7 +175,39 @@ impl SweepContacts {
             pending.push(std::collections::VecDeque::from([
                 ([I::new(u[0],u[1])?,I::new(v[0],v[1])?,time],0_u8)]));
         }
-        let mut result = ContactCover {cells:Vec::new(),evaluations:0};
+        self.cover_pending(domain,options,pending,Vec::new())
+    }
+
+    /// Refine selected unresolved cells, preserving every other partition cell.
+    /// max_depth counts additional subdivisions and max_cells bounds additional
+    /// evaluations. The returned evaluation count includes the previous work.
+    pub(super) fn refine_cells(&self,cover: ContactCover,selected: &[usize],options: ContactCoverOptions)
+        -> Result<ContactCover,ContactCoverError> {
+        if options.max_depth > 48 || options.max_cells == 0 { return Err(ContactCoverError::InvalidOptions); }
+        let mut pending = vec![std::collections::VecDeque::new();self.patches.len()];
+        let selected: std::collections::BTreeSet<_> = selected.iter().copied().collect();
+        if selected.iter().any(|&i| i >= cover.cells.len()) { return Err(ContactCoverError::InvalidOptions); }
+        let mut retained = Vec::new();
+        let domain = cover.cells.first().map(|c| c.parameters[2].bounds()).unwrap_or(self.roll);
+        if domain[0] != domain[1] || cover.cells.iter().any(|c| c.parameters[2].bounds() != domain) {
+            return Err(ContactCoverError::InvalidOptions);
+        }
+        for (i,cell) in cover.cells.into_iter().enumerate() {
+            if selected.contains(&i) {
+                if cell.patch >= pending.len() || !matches!(cell.evidence,ContactEvidence::Unresolved {..}) {
+                    return Err(ContactCoverError::InvalidOptions);
+                }
+                pending[cell.patch].push_back((cell.parameters,0));
+            } else { retained.push(cell); }
+        }
+        let mut refined = self.cover_pending(domain,options,pending,retained)?;
+        refined.evaluations += cover.evaluations;
+        Ok(refined)
+    }
+
+    fn cover_pending(&self,domain: [f64;2],options: ContactCoverOptions,
+        mut pending: Vec<std::collections::VecDeque<([I;3],u8)>>,cells: Vec<ContactCell>) -> Result<ContactCover,ContactCoverError> {
+        let mut result = ContactCover {cells,evaluations:0};
         // Rotate among patches. Fixed-time curves use breadth-first subdivision
         // so a difficult branch cannot leave half a face unvisited. Full motion
         // uses depth-first refinement to reach regular surface charts early.

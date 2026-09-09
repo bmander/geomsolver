@@ -5,6 +5,10 @@ use std::{collections::BTreeSet,f64::consts::TAU};
 mod cover;
 mod curves;
 pub use curves::{ContactCurve,ContactCurves,ContactCurvePoint};
+mod transitions;
+pub use transitions::ContactTransition;
+mod paths;
+pub use paths::{ContactPath,ContactPathSegment};
 pub use cover::{ContactCover,ContactCoverOptions,ContactCell,ContactEvidence,ContactLimit,ContactCoverError,ContactChart,ContactParameter};
 
 /// Smooth-face contact candidates of a continuous sweep. This retains every

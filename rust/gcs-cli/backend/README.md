@@ -247,8 +247,8 @@ not establish a closed sweep or its final accuracy.
 `SweepContacts::join_contact_curves` now merges overlapping/touching fixed-time charts
 of the same source patch, chart direction and analytic root. The complete cover and all
 contributing cell indices are retained, and positive gaps remain gaps. The original
-analytic branch evaluates each joined curve. Cross-direction, cross-patch and periodic
-range joins are still separate work.
+analytic branch evaluates each joined curve. Cross-direction connections are described
+below; cross-patch and periodic range joins remain separate work.
 
 The Rust session's `contact_edge` projects spatial samples onto a native face, checks
 endpoint seam aliases against their actual spatial positions, and refuses interior UV
@@ -257,3 +257,20 @@ contact-plane regions. Joined starting intervals also reach native cuts on both 
 gear members through the sampled test trim locator. Ending intervals remain incomplete.
 All candidate edges for a face must be passed together: a single edge joining a hole to
 the outer boundary need not separate that face. A small regression checks this case.
+
+`contact_transitions` connects alternate chart directions using interval enclosures of
+the endpoint root and uniqueness in the destination charts. It requires full enclosure
+coverage and establishes outgoing direction from the contact derivatives. It does not
+join merely close spatial samples. `trace_contact_path` follows those connections as
+original analytic segments, stopping at unresolved ends or closing on an already
+traversed oriented interval. Its measured handoff error is separate from spline error.
+Periodic seam identification, source-patch joins and native contour clipping remain
+unfinished; a closed candidate path alone does not establish an exposed swept boundary.
+
+`refine_contact_ends` incrementally subdivides unresolved cells touching unconnected
+endpoint root enclosures, preserving the rest of the cover. Its budget counts additional
+evaluations and its depth counts additional subdivisions. The returned count includes
+previous work. Targeted refinement enables ten ending-pinion and two ending-gear chart
+transitions with 26 and 491 additional evaluations, respectively. The native fixture
+checks the refined partition and samples the resulting multi-chart paths; it still
+does not build complete ending-cap contours or closed swept solids.
