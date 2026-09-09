@@ -210,3 +210,24 @@ fn rotated_axial_field_encloses_affine_box_extrema() {
     }}}
     assert!(result.bounds()[1]-result.bounds()[0] < hi-lo+1e-12);
 }
+
+#[test]
+fn repeated_stock_subtraction_has_no_discarded_boundary_zeros() {
+    let sphere = |origin| SpatialField::from(RevolvedField::new(
+        F::disk([0.;2],2.).unwrap(),origin,[0.,0.,1.]).unwrap());
+    let a = sphere([0.;3]); let b = sphere([3.,0.,0.]);
+    let lens = a.clone().intersection(b.clone()).unwrap();
+    let double_cut = a.clone().difference(a.clone().difference(b).unwrap()).unwrap();
+    // This is on A's boundary, well outside the lens. A literal nested min/max
+    // expression yields zero here even though there is no material nearby.
+    assert!(double_cut.bounds(point([0.,0.,-2.])).unwrap().bounds()[0] > 1.6);
+    for x in -4..=10 { for z in -6..=6 {
+        let p = point([x as f64/2.,0.,z as f64/2.]);
+        assert_eq!(double_cut.bounds(p).unwrap(),lens.bounds(p).unwrap());
+    } }
+    // Similar but distinct operands must not trigger the identity.
+    let smaller = SpatialField::from(RevolvedField::new(
+        F::disk([0.;2],1.).unwrap(),[0.;3],[0.,0.,1.]).unwrap());
+    let other = a.difference(smaller.difference(sphere([3.,0.,0.])).unwrap()).unwrap();
+    assert!(other.bounds(point([-1.5,0.,0.])).unwrap().bounds()[1] < 0.);
+}

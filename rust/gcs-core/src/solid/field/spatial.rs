@@ -64,7 +64,17 @@ impl SpatialField {
     }
     pub fn union(self,other: Self) -> Result<Self,Error> { self.combine(other,Node::Union) }
     pub fn intersection(self,other: Self) -> Result<Self,Error> { self.combine(other,Node::Intersection) }
-    pub fn difference(self,other: Self) -> Result<Self,Error> { self.combine(other,Node::Difference) }
+    pub fn difference(self,other: Self) -> Result<Self,Error> {
+        // Regularized CSG identity A - (A - B) = A intersect B. The raw min/max
+        // expression leaves zeros on A's discarded boundary, arbitrarily far
+        // from the intersection. A subsequent sweep cannot separate those zeros
+        // from material. Only shared immutable nodes establish this identity;
+        // no sampled geometry or approximate coefficient comparison is involved.
+        if let Node::Difference(a,b) = other.node.as_ref() {
+            if Arc::ptr_eq(&self.node,&a.node) { return self.intersection(b.clone()); }
+        }
+        self.combine(other,Node::Difference)
+    }
 
     /// Enclose the field over the complete world-coordinate box. Transform
     /// nodes query their source through the inverse pose, including interval
