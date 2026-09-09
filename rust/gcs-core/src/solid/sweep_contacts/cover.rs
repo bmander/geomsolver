@@ -12,15 +12,36 @@ pub struct ContactCoverOptions {
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum ContactLimit { Depth, Budget, Resolution }
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum ContactParameter {
+    /// Normalized source revolution coordinate v, rather than an angle in radians.
+    Angle,
+    /// The shared generating-motion parameter (roll), rather than elapsed seconds.
+    Time,
+}
+impl ContactParameter {
+    pub fn index(self) -> usize { match self { Self::Angle => 1,Self::Time => 2 } }
+    pub fn free(self) -> [usize;2] { match self { Self::Angle => [0,2],Self::Time => [0,1] } }
+}
+#[derive(Clone,Copy,Debug)]
+pub struct ContactChart {
+    pub dependent: ContactParameter,
+    /// May extend beyond its partition cell, but stays within the source/motion
+    /// domain and contains the cell's dependent interval. Neighboring charts may
+    /// overlap. Every free parameter pair has exactly one root in this interval.
+    pub range: I,
+    pub ends: [I;2],
+    pub derivative: I,
+}
 #[derive(Clone,Copy,Debug)]
 pub enum ContactEvidence {
     /// The entire box excludes zero of the unnormalized contact equation.
     Excluded {value:I},
-    /// Every (u,v) in the box has exactly one contact time in its time interval:
-    /// the endpoint signs straddle and the time derivative never vanishes.
+    /// Every free parameter pair has exactly one dependent parameter value:
+    /// the endpoint signs straddle and its derivative never vanishes.
     /// The source normal is nonzero throughout. This does not prove the mapped
     /// envelope is regular, exposed, within source trims, or accurately fitted.
-    TemporalChart {ends:[I;2],derivative:I},
+    Chart(ContactChart),
     /// Includes possible source poles, chart folds and time-domain boundaries.
     /// A missing value means the cell was not evaluated before budget exhaustion.
     Unresolved {value:Option<I>,limit:ContactLimit},
@@ -45,6 +66,68 @@ pub enum ContactCoverError { InvalidOptions, Arithmetic(Error) }
 impl From<Error> for ContactCoverError { fn from(error: Error) -> Self { Self::Arithmetic(error) } }
 
 impl SweepContacts {
+    /// Sample a chart from this same solved snapshot. Inputs are normalized free
+    /// coordinates, in the order given by `ContactParameter::free`. A missing or
+    /// ambiguous root is an error; no branch is guessed from neighboring samples.
+    pub fn at_chart(&self,cell: &ContactCell,a: f64,b: f64,tolerance: f64)
+        -> Result<crate::envelope::Contact,String> {
+        if ![a,b].iter().all(|x| x.is_finite() && (0. ..=1.).contains(x)) {
+            return Err("chart coordinates must lie in [0,1]".into());
+        }
+        let ContactEvidence::Chart(chart) = cell.evidence else { return Err("contact cell is not a chart".into()); };
+        let surface = self.patches.get(cell.patch).ok_or("no such contact patch")?;
+        let [u,v] = surface.domain(); let full = [u,v,self.roll];
+        for (p,domain) in cell.parameters.iter().zip(full) {
+            let [a,b] = p.bounds();
+            if a < domain[0] || b > domain[1] { return Err("contact cell leaves the source domain".into()); }
+        }
+        let axis = chart.dependent.index(); let [lo,hi] = chart.range.bounds();
+        let [a0,b0] = cell.parameters[axis].bounds();
+        if lo < full[axis][0] || hi > full[axis][1] || lo > a0 || hi < b0 {
+            return Err("contact chart has an invalid dependent interval".into());
+        }
+        let free = chart.dependent.free();
+        let map = |axis: usize,s: f64| { let [a,b] = cell.parameters[axis].bounds(); (a+(b-a)*s).clamp(a,b) };
+        let (a,b) = (map(free[0],a),map(free[1],b));
+        let roots: Vec<_> = match chart.dependent {
+            ContactParameter::Time => self.at_source(cell.patch,a,b,tolerance)?.into_iter()
+                .filter(|c| chart.range.contains(c.root.time)).map(|c| c.contact).collect(),
+            ContactParameter::Angle => self.at(cell.patch,a,b,tolerance).map_err(|e| format!("{e:?}"))?.into_iter()
+                .filter(|c| chart.range.contains(c.v)).map(|c| c.contact).collect(),
+        };
+        if roots.len() != 1 { return Err(format!("contact chart has {} roots at its free coordinates",roots.len())); }
+        Ok(roots[0])
+    }
+
+    fn contact_chart(&self,patch: usize,mut parameters: [I;3],dependent: ContactParameter,range: I)
+        -> Result<Option<ContactChart>,Error> {
+        parameters[dependent.index()] = range;
+        let [u,v,time] = parameters;
+        let bounds = self.patches[patch].bounds(u,v)?;
+        if bounds.normal.iter().all(|x| x.contains(0.)) { return Ok(None); }
+        let equation = self.motion.normal_velocity_bounds(bounds.position,bounds.normal)?;
+        let derivative = match dependent {
+            ContactParameter::Time => equation.derivative(time)?,
+            ContactParameter::Angle => self.motion.normal_velocity_directional_bounds(bounds.position,bounds.normal,
+                bounds.dv,bounds.normal_dv)?.at(time)?,
+        };
+        if derivative.contains(0.) { return Ok(None); }
+        let [a,b] = range.bounds();
+        let mut ends = [I::ZERO;2];
+        for (i,endpoint) in [a,b].into_iter().enumerate() {
+            ends[i] = match dependent {
+                ContactParameter::Time => equation.at(I::point(endpoint)?)?,
+                ContactParameter::Angle => {
+                    let bounds = self.patches[patch].bounds(u,I::point(endpoint)?)?;
+                    self.motion.normal_velocity_bounds(bounds.position,bounds.normal)?.at(time)?
+                }
+            };
+        }
+        let opposite = |a: I,b: I| a.bounds()[1] < 0. && b.bounds()[0] > 0.;
+        Ok((opposite(ends[0],ends[1]) || opposite(ends[1],ends[0]))
+            .then_some(ContactChart {dependent,range,ends,derivative}))
+    }
+
     pub fn cover(&self,options: ContactCoverOptions) -> Result<ContactCover,ContactCoverError> {
         if options.max_depth > 48 || options.max_cells == 0 { return Err(ContactCoverError::InvalidOptions); }
         let mut pending = Vec::new();
@@ -54,8 +137,8 @@ impl SweepContacts {
             pending.push(vec![([I::new(u[0],u[1])?,I::new(v[0],v[1])?,time],0_u8)]);
         }
         let mut result = ContactCover {cells:Vec::new(),evaluations:0};
-        // Depth-first refinement reaches small charts promptly, while rotating
-        // among patches prevents one difficult face consuming every query.
+        // Reach small charts depth-first while rotating among patches, so one
+        // difficult face cannot consume the whole search budget.
         let mut cursor = 0;
         loop {
             let Some(offset) = (0..pending.len()).find(|i| !pending[(cursor+i)%pending.len()].is_empty()) else { break; };
@@ -76,15 +159,30 @@ impl SweepContacts {
                 continue;
             }
             let derivative = equation.derivative(time)?;
-            if !derivative.contains(0.) && surface.normal.iter().any(|x| !x.contains(0.)) {
-                let [a,b] = time.bounds();
-                let ends = [equation.at(I::point(a)?)?,equation.at(I::point(b)?)?];
-                let opposite = |a: I,b: I| a.bounds()[1] < 0. && b.bounds()[0] > 0.;
-                if opposite(ends[0],ends[1]) || opposite(ends[1],ends[0]) {
-                    result.cells.push(ContactCell {patch,parameters,
-                        evidence:ContactEvidence::TemporalChart {ends,derivative}});
-                    continue;
+            let angular = self.motion.normal_velocity_directional_bounds(surface.position,surface.normal,
+                surface.dv,surface.normal_dv)?.at(time)?;
+            let mut chart = None;
+            for dependent in [ContactParameter::Time,ContactParameter::Angle] {
+                if dependent == ContactParameter::Time && equation.is_time_independent() { continue; }
+                let slope = if dependent == ContactParameter::Time { derivative } else { angular };
+                if slope.contains(0.) || surface.normal.iter().all(|x| x.contains(0.)) { continue; }
+                let axis = dependent.index();
+                let range = parameters[axis];
+                chart = self.contact_chart(patch,parameters,dependent,range)?;
+                if chart.is_none() {
+                    // A root on an internal partition plane needs an overlapping
+                    // chart. Expansion never leaves the declared source/motion
+                    // domain; outer seams and endpoint events remain unresolved.
+                    let full = if axis == 2 { self.roll } else { self.patches[patch].domain()[axis] };
+                    let [a,b] = range.bounds(); let half = (b-a)*0.5;
+                    let expanded = I::new((a-half).max(full[0]),(b+half).min(full[1]))?;
+                    if expanded != range { chart = self.contact_chart(patch,parameters,dependent,expanded)?; }
                 }
+                if chart.is_some() { break; }
+            }
+            if let Some(chart) = chart {
+                result.cells.push(ContactCell {patch,parameters,evidence:ContactEvidence::Chart(chart)});
+                continue;
             }
             if depth == options.max_depth {
                 result.cells.push(unresolved(Some(value),ContactLimit::Depth)); continue;
@@ -96,7 +194,9 @@ impl SweepContacts {
             let [u,v] = self.patches[patch].domain();
             let original = [u,v,self.roll];
             let fraction = |axis: usize| {
-                if axis == 2 && (equation.is_time_independent() || !derivative.contains(0.)) { return 0.; }
+                if axis == 2 && equation.is_time_independent() { return 0.; }
+                if !derivative.contains(0.) { if axis == 2 { return 0.; } }
+                else if !angular.contains(0.) && axis == 1 { return 0.; }
                 let span = original[axis][1]-original[axis][0];
                 let [a,b] = parameters[axis].bounds();
                 if span > 0. { (b-a)/span } else { 0. }

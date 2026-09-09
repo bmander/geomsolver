@@ -39,6 +39,44 @@ impl NormalVelocityBounds {
         self.rate.mul(self.cosine.neg().mul(s)?.add(self.sine.mul(c)?)?)
     }
 }
+// Shared coefficient construction for the value and source directional derivatives.
+struct Frame {origin:V,axis:V,omega:V,offset:V,rate:I,phase:I,fixed_observer:bool}
+impl Frame {
+    fn read(family: &Family) -> Result<Self,Error> {
+        let (source,observer) = match *family.steps.last().expect("motion root") {
+            Step::Rotation {..} => (family.steps.last().unwrap(),None),
+            Step::Relative {source,observer} => (&family.steps[source],Some(&family.steps[observer])),
+        };
+        let Step::Rotation {origin,axis,ratio,phase} = *source else { return Err(Error::OutsideDomain); };
+        let (omega,offset) = match observer {
+            None => ([I::ZERO;3],[I::ZERO;3]),
+            Some(Step::Rotation {origin:other,axis,ratio,..}) =>
+                (scale(unit(*axis)?,I::point(*ratio)?)?,sub(point(origin)?,point(*other)?)?),
+            Some(_) => return Err(Error::OutsideDomain),
+        };
+        Ok(Self {origin:point(origin)?,axis:unit(axis)?,omega,offset,rate:I::point(ratio)?,phase:I::point(phase)?,
+            fixed_observer:observer.is_none() || matches!(observer,Some(Step::Rotation {ratio:0.,..}))})
+    }
+    fn coefficients(&self,position: V,n: V,vector: bool) -> Result<[I;3],Error> {
+        // A position derivative is a vector: origin/offset terms disappear.
+        let x = if vector { position } else { sub(position,self.origin)? };
+        let mut c = [self.rate.mul(dot(n,cross(self.axis,x)?)?)?,I::ZERO,I::ZERO];
+        if self.fixed_observer { return Ok(c); }
+        let mut subtract_rotation = |v,w| -> Result<(),Error> {
+            let parallel = scale(self.axis,dot(self.axis,w)?)?;
+            c[0] = c[0].sub(dot(v,parallel)?)?;
+            c[1] = c[1].sub(dot(v,sub(w,parallel)?)?)?;
+            c[2] = c[2].sub(dot(v,cross(self.axis,w)?)?)?;
+            Ok(())
+        };
+        subtract_rotation(self.omega,cross(x,n)?)?;
+        if !vector { subtract_rotation(cross(self.omega,self.offset)?,n)?; }
+        Ok(c)
+    }
+    fn equation(&self,c: [I;3]) -> NormalVelocityBounds {
+        NormalVelocityBounds {constant:c[0],cosine:c[1],sine:c[2],rate:self.rate,phase:self.phase}
+    }
+}
 impl Family {
     /// Bound the same rigid-motion identity as `normal_velocity`, using the
     /// complete position/normal boxes and outward-rounded axis normalization and
@@ -46,34 +84,20 @@ impl Family {
     /// by the source surface, including any correlations its construction retains.
     /// Unsupported nested relative motions return OutsideDomain.
     pub fn normal_velocity_bounds(&self,position: V,normal: V) -> Result<NormalVelocityBounds,Error> {
-        let (source,observer) = match *self.steps.last().expect("motion root") {
-            Step::Rotation {..} => (self.steps.last().unwrap(),None),
-            Step::Relative {source,observer} => (&self.steps[source],Some(&self.steps[observer])),
-        };
-        let Step::Rotation {origin,axis,ratio,phase} = *source else { return Err(Error::OutsideDomain); };
-        let axis = unit(axis)?;
-        let (omega,offset) = match observer {
-            None => ([I::ZERO;3],[I::ZERO;3]),
-            Some(Step::Rotation {origin:other,axis,ratio,..}) =>
-                (scale(unit(*axis)?,I::point(*ratio)?)?,sub(point(origin)?,point(*other)?)?),
-            Some(_) => return Err(Error::OutsideDomain),
-        };
-        let n = normal;
-        let x = sub(position,point(origin)?)?;
-        let mut coefficients = [I::point(ratio)?.mul(dot(n,cross(axis,x)?)?)?,I::ZERO,I::ZERO];
-        // A single fixed-axis rotation has a time-independent source contact
-        // equation. Preserve that exact dependency instead of widening 0 terms.
-        if observer.is_none() || matches!(observer,Some(Step::Rotation {ratio:0.,..})) {
-            return Ok(NormalVelocityBounds {constant:coefficients[0],cosine:I::ZERO,sine:I::ZERO,
-                rate:I::point(ratio)?,phase:I::point(phase)?});
-        }
-        for (v,w) in [(omega,cross(x,n)?),(cross(omega,offset)?,n)] {
-            let parallel = scale(axis,dot(axis,w)?)?;
-            coefficients[0] = coefficients[0].sub(dot(v,parallel)?)?;
-            coefficients[1] = coefficients[1].sub(dot(v,sub(w,parallel)?)?)?;
-            coefficients[2] = coefficients[2].sub(dot(v,cross(axis,w)?)?)?;
-        }
-        Ok(NormalVelocityBounds {constant:coefficients[0],cosine:coefficients[1],sine:coefficients[2],
-            rate:I::point(ratio)?,phase:I::point(phase)?})
+        let frame = Frame::read(self)?;
+        Ok(frame.equation(frame.coefficients(position,normal,false)?))
+    }
+
+    /// Derivative of the contact equation along a source parameter. Applies the
+    /// product rule to the position and unnormalized normal, including offset
+    /// motion axes. The result is still a sinusoid in motion time.
+    pub fn normal_velocity_directional_bounds(&self,position: V,normal: V,
+        position_derivative: V,normal_derivative: V) -> Result<NormalVelocityBounds,Error> {
+        let frame = Frame::read(self)?;
+        let a = frame.coefficients(position,normal_derivative,false)?;
+        let b = frame.coefficients(position_derivative,normal,true)?;
+        // Keep exact time independence when both derivative terms have it.
+        let add = |a: I,b: I| if a == I::ZERO && b == I::ZERO { Ok(I::ZERO) } else { a.add(b) };
+        Ok(frame.equation([add(a[0],b[0])?,add(a[1],b[1])?,add(a[2],b[2])?]))
     }
 }

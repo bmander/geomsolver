@@ -136,16 +136,26 @@ entire trim curve or the finished solid. All eight native surface tests take abo
 supplied intersecting faces; automatic candidate coverage, global sweep trimming and
 closed-solid assembly are still required by the public export path.
 
-`SweepContacts::cover` now supplies automatic temporal-chart candidates to the same
+`SweepContacts::cover` now supplies automatic time/angle chart candidates to the same
 fitting bridge. Interval source geometry and the relative-rotation contact equation
 partition every source face's complete parameter/time domain. Excluded cells have a
 strict nonzero equation bound; a chart has a nonzero source normal, opposite endpoint
-signs over its entire source box and a time derivative separated from zero. This proves
-one contact time per source parameter pair, not mapped-surface regularity or exposure.
+signs over its entire free-parameter box and a dependent derivative separated from zero.
+This proves one contact root per free pair, not mapped-surface regularity or exposure.
 Poles, folds, domain transitions and budget exhaustion stay explicitly unresolved.
-The current 30,000-query searches yield 1,356/412 temporal charts for pinion/gear in about
-0.81/0.55 s; all source faces receive work, and the unfinished domains are retained.
-Eight automatically selected charts are fitted and checked at withheld points. The
-sphere domain test takes about 33 ms and retains its two contact branches and poles;
-its time-independent contact equation still requires an angular chart. These timings
-exclude compilation and do not describe complete swept-solid export.
+Charts can overlap across internal partition boundaries while staying within the declared
+source/motion domains. `at_chart` evaluates either kind and refuses missing or ambiguous
+roots. Overlaps must still be reconciled before constructing a final face arrangement.
+At 30,000 evaluated cells per member, the pinion has 918 time/4 angular charts and the gear
+547 time/70 angular charts. The bounded search/audits take about 4.1/1.75 s; all source
+faces receive work and unfinished domains remain explicit. Sixteen selected gear charts
+are fitted and checked at withheld points. The isolated sphere coverage/fitting test
+takes about 69 ms, including four angular fits compared with the independent torus
+equation. Outer seams and poles remain unresolved. Timings exclude compilation and do
+not describe complete swept-solid export.
+
+The angular derivative uses a shared interval motion-coefficient implementation for
+both terms of the position/normal product rule. Trigonometric boxes now use a midpoint
+Taylor evaluation and angle-addition displacement bounds, retaining outward rounding
+and the existing supported angular domain. The independent rational checker passes
+1,841 arithmetic/trigonometric records, including sampled checks of whole-box bounds.

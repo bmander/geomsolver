@@ -10,6 +10,8 @@ pub struct SurfaceBounds {
     /// Unnormalized du cross dv over the underlying source points. Rotation
     /// covariance gives a tighter enclosure than crossing independent du/dv boxes.
     pub normal: [I;3],
+    /// Derivative of the unnormalized normal with respect to source v.
+    pub normal_dv: [I;3],
 }
 fn cross(a: [I;3],b: [I;3]) -> Result<[I;3],Error> {
     Ok([a[1].mul(b[2])?.sub(a[2].mul(b[1])?)?,
@@ -31,7 +33,10 @@ impl RevolvedSurface {
         for k in 0..3 { radial[k] = radial[k].sub(I::point(self.origin[k])?)?; }
         let mut tangent = cross(axis,radial)?;
         for x in &mut tangent { *x = x.mul(I::point(self.sweep)?)?; }
+        let normal = cross(du,tangent)?;
+        let mut normal_dv = cross(axis,normal)?;
+        for x in &mut normal_dv { *x = x.mul(I::point(self.sweep)?)?; }
         Ok(SurfaceBounds {position:rotation.point(p)?,du:rotation.vector(du)?,dv:rotation.vector(tangent)?,
-            normal:rotation.vector(cross(du,tangent)?)?})
+            normal:rotation.vector(normal)?,normal_dv:rotation.vector(normal_dv)?})
     }
 }

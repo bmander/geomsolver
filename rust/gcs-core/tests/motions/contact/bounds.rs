@@ -35,3 +35,31 @@ fn interval_contact_coefficients_cover_source_boxes_and_full_motion_intervals() 
         }
     } } }
 }
+
+#[test]
+fn source_directional_contact_bounds_include_both_product_rule_terms_and_offsets() {
+    let shifted = AXES.replace("point o hint(x: 0,y: 0)","point o hint(x: -1,y: 2)")
+        .replace("point x hint(x: 1,y: 0)","point x hint(x: 3,y: 1)");
+    let (s,c) = I::new(0.17,0.21).unwrap().sin_cos().unwrap();
+    let two = I::point(2.).unwrap(); let minus_two = I::point(-2.).unwrap();
+    let p = [I::ONE.add(c.mul(two).unwrap()).unwrap(),minus_two.add(s.mul(two).unwrap()).unwrap(),
+        I::new(0.67,0.71).unwrap()];
+    let n = [c,s,I::point(0.3).unwrap()];
+    let dp = [s.mul(minus_two).unwrap(),c.mul(two).unwrap(),I::ONE];
+    let dn = [s.neg(),c,I::ZERO];
+    for rate in [-2.,0.,0.7] { for observer in [-0.5,0.,3.] {
+        let motion = from_axes(&shifted,rate,observer,31.,-47.);
+        let equation = motion.normal_velocity_directional_bounds(p,n,dp,dn).unwrap();
+        let bound = equation.at(I::new(-0.8,0.7).unwrap()).unwrap();
+        for i in 0..=10 { for j in 0..=10 {
+            let v = 0.17+0.04*i as f64/10.; let t = -0.8+1.5*j as f64/10.;
+            let (s,c) = v.sin_cos();
+            let p = [1.+2.*c,-2.+2.*s,0.5+v]; let n = [c,s,0.3];
+            let dp = [-2.*s,2.*c,1.]; let dn = [-s,c,0.];
+            let m = motion.at(t).unwrap();
+            let vector_velocity: [f64;3] = std::array::from_fn(|k| m.velocity(dp)[k]-m.velocity([0.;3])[k]);
+            let expected = dot(m.vector(dn),m.velocity(p))+dot(m.vector(n),vector_velocity);
+            assert!(bound.contains(expected),"{rate} {observer}: {expected} vs {bound:?}");
+        } }
+    } }
+}

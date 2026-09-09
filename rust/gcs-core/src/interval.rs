@@ -63,6 +63,24 @@ impl Interval {
     pub fn sin_cos(self) -> Result<(Self,Self),Error> {
         let radius = self.lo.abs().max(self.hi.abs());
         if radius > 8. { return Err(Error::OutsideDomain); }
+        if self.lo != self.hi {
+            // Evaluate the Taylor polynomial at a point, then enclose the
+            // displacement with angle addition. Substituting a wide interval
+            // directly into every Taylor power loses the repeated dependence on
+            // x and becomes especially loose near the far end of this domain.
+            let mid = Self::point(self.lo*0.5+self.hi*0.5)?;
+            let (s,c) = mid.sin_cos()?;
+            let delta = self.sub(mid)?;
+            let r = delta.lo.abs().max(delta.hi.abs());
+            // |sin(delta)| <= min(|delta|,1), cos(delta) >= 1-delta^2/2.
+            let sd = Self::new(-r.min(1.),r.min(1.))?;
+            let lower_cos = Self::ONE.sub(Self::point(r)?.square()?.div(Self::point(2.)?)?)?.lo;
+            let cd = Self::new(lower_cos.max(-1.),1.)?;
+            let sine = s.mul(cd)?.add(c.mul(sd)?)?;
+            let cosine = c.mul(cd)?.sub(s.mul(sd)?)?;
+            let clip = |x: Self| Self::new(x.lo.max(-1.),x.hi.min(1.));
+            return Ok((clip(sine)?,clip(cosine)?));
+        }
         let x2 = self.square()?;
         let (mut sine,mut cosine) = (self,Self::ONE);
         let (mut st,mut ct) = (self,Self::ONE);

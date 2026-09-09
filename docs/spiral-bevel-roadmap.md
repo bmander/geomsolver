@@ -209,22 +209,36 @@ Automatic smooth contact-domain discovery now starts from every source patch's
 entire `(u,v,time)` box. Revolved-surface position, tangent and normal enclosures feed
 the interval version of the existing relative-rotation contact equation. A cell is
 discarded only when its complete equation enclosure excludes zero. Opposite endpoint
-signs over the entire source box, a nonzero time derivative throughout, and a nonzero
-source normal establish a unique contact time for each source parameter pair. Those
-cells supply temporal charts without hand-selected flank ranges. Source poles, chart
+signs over the entire free-parameter box, a nonzero derivative in the dependent parameter,
+and a nonzero source normal establish a unique contact root. The search can solve for
+motion time or source revolution angle without hand-selected flank ranges. Source poles, chart
 events and exhausted regions stay explicitly unresolved in the returned partition.
-This establishes a contact-time graph, not regularity or exposure of its mapped surface.
+This establishes a contact graph, not regularity or exposure of its mapped surface.
 
-The search refines source parameters after proving time monotonicity, and rotates work
-among source faces. A single fixed-axis rotation's contact equation is time independent;
-it needs an angular chart, and the search avoids redundant time subdivision. The sphere
-test partitions its source domain at the selected depth in about 33 ms while retaining
-both contact branches and poles. At a 30,000-cell evaluation limit per member, the current
-pair yields 1,356 pinion and 412 gear temporal charts in about 0.81/0.55 s. Every source
-face receives work and pending domains remain represented; those budgets do not finish
-the atlas. Eight automatically selected charts pass native fitting checks at withheld
-points. Full event handling, angular-chart coverage, material selection and closed native
-assembly are still necessary before enabling public continuous-sweep exports.
+The search refines free parameters after proving monotonicity and rotates work among
+source faces. A single fixed-axis rotation's time-independent equation now produces angular
+charts. Their derivative includes both position and normal changes, with shifted axes
+retained in the product rule. Charts may overlap across internal subdivision planes;
+their dependent intervals remain inside the declared source/motion domain and contain
+the corresponding partition interval. Outer seams, poles and endpoint events remain
+explicit. `SweepContacts::at_chart` evaluates either chart through the ordinary analytic
+root solver and refuses missing/ambiguous roots or non-chart cells.
+
+The isolated sphere domain/fitting test takes about 69 ms and fits four angular charts
+against the independent torus equation. At a 30,000-cell limit per member, the current
+pair produces 918 time/4 angular charts for the pinion and 547 time/70 angular charts for
+the gear, with bounded search/audit times about 4.1/1.75 s. Every source face receives work
+and pending domains remain represented; those budgets do not finish the atlas. Sixteen
+selected gear charts, using both parameterizations on both members, pass native fitting
+checks at withheld points. Full event/seam coverage, overlap reconciliation, material
+selection and closed native assembly remain necessary before public continuous-sweep export.
+
+Interval trigonometry now evaluates its Taylor polynomial at the box midpoint and bounds
+the remaining displacement by angle addition. This avoids the old dependency blow-up
+far from zero while retaining outward rounding and explicit Taylor remainders. A separate
+exact-rational checker passes 1,841 arithmetic/trigonometric records, including sampled
+point checks of the new whole-box bounds. This is numerical infrastructure validation,
+not a completed swept-boundary or final machining-error certificate.
 
 The acceptance work remains:
 

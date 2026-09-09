@@ -60,6 +60,19 @@ fn polynomial_trig_enclosures_cover_extrema_and_small_and_wide_intervals() {
 }
 
 #[test]
+fn narrow_trig_boxes_stay_tight_away_from_the_taylor_origin() {
+    for center in [-7.9,-6.28,-3.14,0.,3.14,6.28,7.9] {
+        let input = interval(center-0.001,center+0.001);
+        let (s,c) = input.sin_cos().unwrap();
+        for bound in [s,c] { assert!(bound.bounds()[1]-bound.bounds()[0] < 0.0021,"{input:?}: {bound:?}"); }
+        for i in 0..=40 {
+            let t = center-0.001+i as f64*0.002/40.;
+            assert!(s.contains(t.sin()) && c.contains(t.cos()));
+        }
+    }
+}
+
+#[test]
 fn interval_results_can_be_checked_with_independent_exact_rational_arithmetic() {
     let mut rows = String::new();
     let mut record = |op: &str,a: I,b: I,result: Result<I,Error>| {
@@ -89,6 +102,17 @@ fn interval_results_can_be_checked_with_independent_exact_rational_arithmetic() 
             }
         }
     }
+    // Check the new whole-box bounds at independently evaluated rational points,
+    // including intervals far from the Taylor origin. These sampled checks
+    // complement the angle-addition and displacement bounds used by the code.
+    for center in [-7.5,-6.25,-3.25,0.,3.25,6.25,7.5] { for radius in [0.001,0.01,0.5] {
+        let input = interval(center-radius,center+radius);
+        let (s,c) = input.sin_cos().unwrap();
+        for i in 0..=16 {
+            let x = point(center-radius+2.*radius*i as f64/16.);
+            record("sin",x,I::ZERO,Ok(s)); record("cos",x,I::ZERO,Ok(c));
+        }
+    } }
     if let Some(file) = std::env::var_os("SOLVENT_INTERVAL_OUTPUT") {
         std::fs::write(file,rows).unwrap();
     }
