@@ -1,0 +1,66 @@
+{
+  "verifier_commit": "b0cb277",
+  "source_sha256": "c11e8defe5dcd3d12d79f597c0ec5a4e9410794ec25597904a183863183724c9",
+  "inputs": [
+    {
+      "member": 0,
+      "step_file": "/private/tmp/solvent-cad-full-pinion/member0-24-cuts.step",
+      "step_sha256": "47d750135b6b6c6c1cec232b496ddb792e03ff03d7ae4d9d1dececa4229f636e"
+    },
+    {
+      "member": 1,
+      "step_file": "/private/tmp/solvent-cad-full-gear/member1-48-cuts.step",
+      "step_sha256": "a4b010f3466603a57aa2b13a2f85d884eb1c9fa1032ca6a5dcbde7e8cfacddac"
+    }
+  ],
+  "edge_evidence": {
+    "file": "/private/tmp/solvent-cad-edges.json",
+    "sha256": "d8797bbb235c99167a6f62c959dab84b41228cf2e764b86d8e416ac59bfc33e1"
+  },
+  "audit": {
+    "file": "/private/tmp/solvent-cad-spline-embedding.json",
+    "sha256": "cd6451a6f461f8c7036fb0ce6d62be7e0431180a0085cae01edd34f4a9d5aa85",
+    "seconds": 29.035072733997367
+  },
+  "analytical_audits": [
+    {
+      "file": "/private/tmp/solvent-cad-trim-loops.json",
+      "sha256": "8fc0a91e16f9c59ef138ff5f4be9728449ccee71e92f5c6735127e9e9c7b2a06",
+      "embedded_faces": 75
+    },
+    {
+      "file": "/private/tmp/solvent-cad-trim-seams.json",
+      "sha256": "8c42604a21db4382afa6be2dbe53d495484cdada71fad3c694c479f66aefe9ea",
+      "embedded_faces": 6
+    }
+  ],
+  "individual_spline_injectivity": "verified",
+  "spline_regularity": "verified",
+  "complete_indexed_splines": true,
+  "members": [
+    {
+      "member": 0,
+      "embedded_spline_faces": 120,
+      "balanced_projection_faces": 48,
+      "embedded_analytical_representatives": 29,
+      "total_individually_embedded_faces": 149
+    },
+    {
+      "member": 1,
+      "embedded_spline_faces": 240,
+      "balanced_projection_faces": 144,
+      "embedded_analytical_representatives": 52,
+      "total_individually_embedded_faces": 292
+    }
+  ],
+  "tests": {
+    "command": "python3 -m unittest discover -s experiments/cad-backend -p 'test_*.py'",
+    "passed": 61
+  },
+  "scope": "Injectivity and differential regularity of each actual indexed polynomial spline on its complete clamped rectangle, with checked finite rectangular trims. Inter-face embedding, common 3D topology realization, global material, continuous mating and source/reader accuracy remain separate.",
+  "remaining": [
+    "Inter-face embedding and common shared 3D topology realization",
+    "Global swept-material coverage and continuous pair mating",
+    "Source-solve and STEP-reader accuracy transfer"
+  ]
+}
