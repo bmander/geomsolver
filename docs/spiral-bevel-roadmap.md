@@ -26,6 +26,16 @@ The integration path is:
 4. Run the existing pair and alternate-configuration checks through the public path, then
    address the remaining acceptance gaps below.
 
+The first native path now exists: `solventc --step` sends a solved analytic solid DAG
+to an optional OCCT host. Ordinary extrusions, revolutions, holes and Boolean bodies,
+including component through-cutters, use that path. `blank.sv` expresses the finite
+bevel rim through spherical and conical boundary components. Its STEP agrees with
+the experimental pinion blank under both directed native Boolean differences (no
+remaining solids); volumes agree within 5e-9 mm³. This is a construction comparison,
+not a new geometric error certificate. The next integration task is the generating
+removal and indexing operations, followed by connecting their evaluation to this host.
+Along-guide lofts and generating-motion sweeps remain explicitly unsupported by STEP.
+
 The acceptance work remains:
 
 1. **Reproduce the reference pair:** one command from recorded source and tooth-count/size

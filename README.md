@@ -44,6 +44,23 @@ coordinates confined to starting hints.
 Export any finished part with
 `build/solventc rust/examples/solid_flange.sv --solid body --stl flange.stl`.
 
+`--step flange.step` uses an optional Open CASCADE host for analytic STEP output.
+Install `rust/gcs-cli/backend/requirements.txt` into a Python environment and set
+`SOLVENT_CAD_PYTHON` to that interpreter (otherwise `python3` is used). The Rust core
+and browser remain dependency-free. Current support covers line/circular profiles,
+extrusion, revolution, holes, additive bodies and cuts including `through:` cutters;
+along-guide lofts and generating-motion sweeps are not yet connected to this host.
+
+The [declarative bevel blank](rust/examples/spiral_bevel/blank.sv) uses the same export path:
+
+```sh
+build/solventc rust/examples/spiral_bevel/blank.sv --solid blank.body --step blank.step
+```
+
+STEP export requires a solved model with explicit length units, checks native validity
+and a STEP round trip, and preserves an existing output on failure. These are construction
+checks, not an end-to-end gear accuracy certificate.
+
 ## Implementation
 
 The whole engine is one dependency-free Rust crate ([`rust/gcs-core/`](rust/gcs-core/)) behind a

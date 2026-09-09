@@ -17,6 +17,7 @@
 //! that would have to be turned inside out later.
 
 use std::process::ExitCode;
+mod cad;
 
 use gcs_core::constraints::SpecKind;
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
@@ -39,6 +40,7 @@ solventc — check a Solvent document
     --allow-unsolved    a document that does not solve is not a failure
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
+    --step PATH         write an analytic STEP solid (requires cadquery-ocp in Python)
     --gltf PATH         write a solid as binary glTF: every face a named node
     --solid NAME        which solid to export; defaults to the only Boolean root
     --width PX          the SVG's page width in pixels (default 800)
@@ -69,6 +71,7 @@ struct Opts {
     /// `--stl PATH` — the one output of a drawing that is not a picture, and the reason a
     /// printer can be given a part at all.
     stl: Option<String>,
+    step: Option<String>,
     /// `--gltf PATH` — the object as a viewer opens it, every face named.
     gltf: Option<String>,
     solid: Option<String>,
@@ -87,6 +90,7 @@ impl Default for Opts {
             allow_unsolved: false,
             output: None,
             stl: None,
+            step: None,
             gltf: None,
             solid: None,
             width: 800.0,
@@ -101,6 +105,10 @@ fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
+            "--step" => match args.next() {
+                Some(p) => opts.step = Some(p),
+                None => { eprintln!("solventc: --step needs a path"); return ExitCode::from(2); }
+            },
             "--sheet" => match args.next() {
                 Some(n) => opts.sheet = Some(n),
                 None => { eprintln!("solventc: --sheet needs a name"); return ExitCode::from(2); }
@@ -165,8 +173,8 @@ fn main() -> ExitCode {
         eprintln!("solventc: --gltf writes one file, so it takes one document");
         return ExitCode::from(2);
     }
-    if opts.stl.is_some() && paths.len() != 1 {
-        eprintln!("solventc: --stl writes one file, so it takes one document");
+    if (opts.stl.is_some() || opts.step.is_some()) && paths.len() != 1 {
+        eprintln!("solventc: --stl/--step writes one file, so it takes one document");
         return ExitCode::from(2);
     }
     if opts.output.is_some() && paths.len() != 1 {
@@ -296,6 +304,16 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         }
     }
     let mut code = if r.success || opts.allow_unsolved { 0 } else { 2 };
+    if let Some(path) = &opts.step {
+        let result = if !r.success { Err("STEP export requires a solved model".into()) }
+            else { pick_solid(&sk,opts.solid.as_deref()).and_then(|i| cad::step(&sk,i,path)) };
+        if let Err(message) = result {
+            eprintln!("solventc: {message}");
+            e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
+                span:Default::default(),stmt:None,message});
+            code = 1;
+        }
+    }
     if let Some(path) = &opts.output {
         // the writer is `gcs_core::svg`, not this crate's: an "export SVG" button in the web app
         // must not be a second implementation, the same reason callout layout is in the core
@@ -377,9 +395,9 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
 }
 
 fn check_drawing(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
-    let result = if opts.stl.is_some() || opts.gltf.is_some() || opts.solid.is_some() {
+    let result = if opts.stl.is_some() || opts.step.is_some() || opts.gltf.is_some() || opts.solid.is_some() {
         Err(gcs_core::drawing::Error { span: Default::default(),
-            message: "STL/glTF export selects geometry from a .sv model, not a .svd drawing".into() })
+            message: "STL/STEP/glTF export selects geometry from a .sv model, not a .svd drawing".into() })
     } else {
         gcs_core::drawing::compile(&s.text, &s.name, opts.sheet.as_deref(), &mut |path, from| {
             let base = std::path::Path::new(from).parent().unwrap_or(std::path::Path::new("."));

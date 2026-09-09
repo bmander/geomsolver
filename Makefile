@@ -36,7 +36,7 @@ build/libgcs$(EXT): $(RUST_SRC) $(RUST_CONFIG)
 
 solventc: build/solventc
 
-build/solventc: $(RUST_SRC) $(RUST_CONFIG)
+build/solventc: $(RUST_SRC) $(RUST_CONFIG) rust/gcs-cli/backend/occt.py
 	@mkdir -p build
 	$(CARGO) build --manifest-path rust/Cargo.toml --release -p gcs-cli --target $(HOST)
 	cp rust/target/$(HOST)/release/solventc $@

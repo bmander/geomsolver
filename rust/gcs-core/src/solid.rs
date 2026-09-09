@@ -26,6 +26,7 @@
 //! *outside*, and the wall would silently vanish.
 
 mod evaluated;
+pub mod cad;
 mod profile;
 mod primitive;
 mod document;
