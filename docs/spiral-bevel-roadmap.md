@@ -89,6 +89,13 @@ most 1.01e-10 mm boundary displacement. All 81 analytical faces therefore have i
 embedded representatives. Shared 3D topology realization, inter-face embedding, global
 swept material, continuous mating and source/reader accuracy transfer still remain.
 
+The [whole-spline embedding audit](../experiments/cad-backend/SPLINE-EMBEDDING.md) now
+proves injectivity and regularity of all 360 indexed polynomial spline faces on their
+complete finite rectangles. A single strongly monotone projected map per face excludes
+global self-intersections as well as local folds. Together with the analytical-face
+representatives, all 441 faces have individual embedding evidence. Inter-face embedding
+and a consistent shared 3D realization remain unproved.
+
 The deliverable remains one fully specified, parametric matched pair from a documented
 generating system, independently verifiable and exportable at a stated geometric accuracy.
 Manufacturing planning remains separate. This document redirects the next investigation:

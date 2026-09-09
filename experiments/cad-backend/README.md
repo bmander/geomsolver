@@ -250,6 +250,11 @@ representative faces also pass a surface-chart injectivity check. The
 six faces, within 1.01e-10 mm of their original boundaries. Shared 3D topology realization,
 inter-face embedding and global solid/material acceptance remain open.
 
+The [whole-spline embedding audit](SPLINE-EMBEDDING.md) verifies injectivity and regularity
+for all 360 actual indexed spline faces using exact whole-domain Jacobian bounds under
+one fixed projection per face. Every face now has individual embedding evidence; fitting
+the different faces together as one globally embedded solid remains a separate gate.
+
 ## Why this route
 
 [HyGEARS](https://www.hygears.com/hygears_4.0-february2020_019.htm) documents STEP export using
