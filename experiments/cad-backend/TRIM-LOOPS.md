@@ -11,6 +11,10 @@ boundary. They do not claim that the raw STEP parameter curves have exactly coin
 endpoints, or that an arbitrary STEP reader constructs this representative. The input STEP
 files and their extracted curves remain unchanged.
 
+The subsequent [periodic-seam audit](TRIM-SEAMS.md) now supplies embedded annular
+representatives for all six seam faces. The historical results in this document preserve
+the earlier rational UV representatives and their narrower scope.
+
 ## Construction and displacement
 
 The [raw trim audit](TRIM-CURVES.md) records 614 nonzero UV corner gaps. For each ordered

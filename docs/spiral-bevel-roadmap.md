@@ -83,6 +83,12 @@ identification, and shared 3D topology realization and global embedding remain o
 This is a bounded representative of the tolerant STEP data, not an assertion that its
 raw parameter curves close exactly or that every reader uses the same representative.
 
+The [periodic-seam audit](../experiments/cad-backend/TRIM-SEAMS.md) now gives all six seam
+faces embedded annular representatives with exact full-revolution identification and at
+most 1.01e-10 mm boundary displacement. All 81 analytical faces therefore have individually
+embedded representatives. Shared 3D topology realization, inter-face embedding, global
+swept material, continuous mating and source/reader accuracy transfer still remain.
+
 The deliverable remains one fully specified, parametric matched pair from a documented
 generating system, independently verifiable and exportable at a stated geometric accuracy.
 Manufacturing planning remains separate. This document redirects the next investigation:

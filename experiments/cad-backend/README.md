@@ -245,8 +245,10 @@ all 1,188 analytical boundary curves and separation of all 106,004 non-neighbori
 It explicitly records tiny gaps at 614 UV corners. The subsequent
 [closed-representative audit](TRIM-LOOPS.md) gives all 81 analytical faces simple closed
 UV representatives within 6.78e-11 mm of their boundary curves on the surface. Seventy-five
-representative faces also pass a surface-chart injectivity check. The six periodic seam
-faces, shared 3D topology realization and global solid embedding remain open.
+representative faces also pass a surface-chart injectivity check. The
+[periodic-seam audit](TRIM-SEAMS.md) adds embedded annular representatives for the other
+six faces, within 1.01e-10 mm of their original boundaries. Shared 3D topology realization,
+inter-face embedding and global solid/material acceptance remain open.
 
 ## Why this route
 
