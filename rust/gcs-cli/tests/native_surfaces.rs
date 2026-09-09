@@ -10,6 +10,8 @@ use support::read;
 mod native;
 #[path="native_surfaces/trimming.rs"]
 mod trimming;
+#[path="native_surfaces/coverage.rs"]
+mod coverage;
 
 extern "C" {
     fn solvent_cad_error(cad: *mut c_void) -> *const c_char;

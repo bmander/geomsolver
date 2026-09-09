@@ -2,6 +2,8 @@
 use super::{SpatialField,RevolvedSurface,RevolvedContact};
 use crate::{envelope::{self,Contact,Error,Motion},model::{Sketch,SolidDef,EntKind},motion::Family};
 use std::{collections::BTreeSet,f64::consts::TAU};
+mod cover;
+pub use cover::{ContactCover,ContactCoverOptions,ContactCell,ContactEvidence,ContactLimit,ContactCoverError};
 
 /// Smooth-face contact candidates of a continuous sweep. This retains every
 /// source face, including faces hidden by source Booleans. Source material can

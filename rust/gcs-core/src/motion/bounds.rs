@@ -29,6 +29,7 @@ fn mm(a: M,b: M) -> Result<M,Error> {
 pub struct MotionBounds { r: M,p: V }
 
 impl MotionBounds {
+    pub fn vector(&self,vector: V) -> Result<V,Error> { mv(self.r,vector) }
     pub fn point(&self,point: V) -> Result<V,Error> {
         let q = mv(self.r,point)?;
         Ok([q[0].add(self.p[0])?,q[1].add(self.p[1])?,q[2].add(self.p[2])?])
@@ -40,7 +41,7 @@ impl MotionBounds {
         mv(transpose(self.r),sub(point,self.p)?)
     }
 
-    fn rotation(origin: [f64;3],axis: [f64;3],angle: I) -> Result<Self,Error> {
+    pub(crate) fn rotation(origin: [f64;3],axis: [f64;3],angle: I) -> Result<Self,Error> {
         let mut axis = vector(axis)?;
         let norm2 = axis[0].square()?.add(axis[1].square()?)?.add(axis[2].square()?)?;
         let norm = I::new(norm2.bounds()[0].max(0.),norm2.bounds()[1])?.sqrt()?;

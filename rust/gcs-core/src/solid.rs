@@ -50,6 +50,8 @@ mod loft;
 mod surface;
 mod sweep_contacts;
 pub use sweep_contacts::{SweepContacts,TimedContact};
+pub use sweep_contacts::{ContactCover,ContactCoverOptions,ContactCell,ContactEvidence,ContactLimit,ContactCoverError};
+pub use surface::SurfaceBounds;
 pub use surface::{RegionLocation,RegionSample,RevolvedRegion,RevolvedSurface,
     SurfaceProjection,SurfaceProjector,RevolvedContact};
 pub(crate) use raycast::RayIndex;

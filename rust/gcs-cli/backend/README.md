@@ -135,3 +135,17 @@ entire trim curve or the finished solid. All eight native surface tests take abo
 0.42 s on the current host, excluding compilation. The bridge constructs trims for
 supplied intersecting faces; automatic candidate coverage, global sweep trimming and
 closed-solid assembly are still required by the public export path.
+
+`SweepContacts::cover` now supplies automatic temporal-chart candidates to the same
+fitting bridge. Interval source geometry and the relative-rotation contact equation
+partition every source face's complete parameter/time domain. Excluded cells have a
+strict nonzero equation bound; a chart has a nonzero source normal, opposite endpoint
+signs over its entire source box and a time derivative separated from zero. This proves
+one contact time per source parameter pair, not mapped-surface regularity or exposure.
+Poles, folds, domain transitions and budget exhaustion stay explicitly unresolved.
+The current 30,000-query searches yield 1,356/412 temporal charts for pinion/gear in about
+0.81/0.55 s; all source faces receive work, and the unfinished domains are retained.
+Eight automatically selected charts are fitted and checked at withheld points. The
+sphere domain test takes about 33 ms and retains its two contact branches and poles;
+its time-independent contact equation still requires an angular chart. These timings
+exclude compilation and do not describe complete swept-solid export.

@@ -3,6 +3,8 @@
 //! Boundary trimming and outward orientation remain separate questions.
 mod contact;
 pub use contact::RevolvedContact;
+mod bounds;
+pub use bounds::SurfaceBounds;
 mod project;
 pub use project::{SurfaceProjection,SurfaceProjector};
 mod region;

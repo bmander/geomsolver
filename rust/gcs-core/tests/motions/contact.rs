@@ -1,6 +1,7 @@
 use super::*;
 use gcs_core::envelope::{self,Error,SurfacePoint};
 use std::f64::consts::PI;
+mod bounds;
 
 fn family(source_rate: f64,observer_rate: f64,source_phase: f64,observer_phase: f64) -> motion::Family {
     from_axes(AXES,source_rate,observer_rate,source_phase,observer_phase)

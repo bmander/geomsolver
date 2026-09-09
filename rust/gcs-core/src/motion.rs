@@ -2,7 +2,7 @@
 mod bounds;
 pub use bounds::MotionBounds;
 mod contact;
-pub use contact::{NormalVelocity,ContactTime};
+pub use contact::{NormalVelocity,ContactTime,NormalVelocityBounds};
 use crate::{envelope::Motion,model::{MotionDef,Sketch}};
 
 #[derive(Clone,Debug)]

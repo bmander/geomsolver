@@ -205,6 +205,27 @@ compilation. This supplies native trim construction for provided intersecting fa
 automatic chart coverage, intersections separating globally covered sweep regions,
 consistent final face selection and closed-solid assembly remain unfinished.
 
+Automatic smooth contact-domain discovery now starts from every source patch's
+entire `(u,v,time)` box. Revolved-surface position, tangent and normal enclosures feed
+the interval version of the existing relative-rotation contact equation. A cell is
+discarded only when its complete equation enclosure excludes zero. Opposite endpoint
+signs over the entire source box, a nonzero time derivative throughout, and a nonzero
+source normal establish a unique contact time for each source parameter pair. Those
+cells supply temporal charts without hand-selected flank ranges. Source poles, chart
+events and exhausted regions stay explicitly unresolved in the returned partition.
+This establishes a contact-time graph, not regularity or exposure of its mapped surface.
+
+The search refines source parameters after proving time monotonicity, and rotates work
+among source faces. A single fixed-axis rotation's contact equation is time independent;
+it needs an angular chart, and the search avoids redundant time subdivision. The sphere
+test partitions its source domain at the selected depth in about 33 ms while retaining
+both contact branches and poles. At a 30,000-cell evaluation limit per member, the current
+pair yields 1,356 pinion and 412 gear temporal charts in about 0.81/0.55 s. Every source
+face receives work and pending domains remain represented; those budgets do not finish
+the atlas. Eight automatically selected charts pass native fitting checks at withheld
+points. Full event handling, angular-chart coverage, material selection and closed native
+assembly are still necessary before enabling public continuous-sweep exports.
+
 The acceptance work remains:
 
 1. **Reproduce the reference pair:** one command from recorded source and tooth-count/size
