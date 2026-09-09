@@ -1,0 +1,64 @@
+{
+  "verifier_commit": "cc28f48",
+  "source_sha256": "c11e8defe5dcd3d12d79f597c0ec5a4e9410794ec25597904a183863183724c9",
+  "inputs": [
+    {
+      "member": 0,
+      "step_file": "/private/tmp/solvent-cad-full-pinion/member0-24-cuts.step",
+      "step_sha256": "47d750135b6b6c6c1cec232b496ddb792e03ff03d7ae4d9d1dececa4229f636e"
+    },
+    {
+      "member": 1,
+      "step_file": "/private/tmp/solvent-cad-full-gear/member1-48-cuts.step",
+      "step_sha256": "a4b010f3466603a57aa2b13a2f85d884eb1c9fa1032ca6a5dcbde7e8cfacddac"
+    }
+  ],
+  "vertex_evidence": {
+    "file": "/private/tmp/solvent-cad-vertices.json",
+    "sha256": "78428790671504d27bab331e908b5b48abea698123f14dae2e01a897203a358b"
+  },
+  "edge_evidence": {
+    "file": "/private/tmp/solvent-cad-edges.json",
+    "sha256": "d8797bbb235c99167a6f62c959dab84b41228cf2e764b86d8e416ac59bfc33e1"
+  },
+  "prior_separation": {
+    "file": "/private/tmp/solvent-cad-spline-separation.json",
+    "sha256": "81e625f744094b6a3171b9c4e987372bb5eac1f7363c2632eb58b88d6ad3b9df"
+  },
+  "audit": {
+    "file": "/private/tmp/solvent-cad-spline-joins.json",
+    "sha256": "ebba21cfca215ad9ff4381530b00c7fac68ce7723aa096b2dcd14abae546580e",
+    "seconds": 55.16464417800307
+  },
+  "consistent_embedded_spline_regions": "verified_per_member",
+  "complete_spline_join_inventory": true,
+  "members": [
+    {
+      "member": 0,
+      "consistent_spline_faces": 120,
+      "verified_joins": 96,
+      "maximum_face_displacement_mm": 7.750197126168117e-10,
+      "maximum_shared_edge_error_exact": "622704330627312057538846779015793877314875121476917/803469022129495137770981046170581301261101496891396417650688"
+    },
+    {
+      "member": 1,
+      "consistent_spline_faces": 240,
+      "verified_joins": 192,
+      "maximum_face_displacement_mm": 5.467395598310926e-10,
+      "maximum_shared_edge_error_exact": "878576598993997147215689805054112742565726415298839/1606938044258990275541962092341162602522202993782792835301376"
+    }
+  ],
+  "nonincident_pairs_preserved": 35532,
+  "minimum_remaining_separation_exact": "2923469614856412915591811317465713982892359897975144145179/803469022129495137770981046170581301261101496891396417650688",
+  "minimum_remaining_separation_mm_approx": 0.003638559215522857,
+  "tests": {
+    "command": "python3 -m unittest discover -s experiments/cad-backend -p 'test_*.py'",
+    "passed": 69
+  },
+  "scope": "One consistent embedded representative of the complete spline-face subcomplex: all intended spline joins and all nonincident spline separations. Analytical-face attachment, complete closed 3D topology, global material, continuous mating and source/reader accuracy remain separate.",
+  "remaining": [
+    "Analytical-face attachment and complete closed shared 3D topology",
+    "Global swept-material coverage and continuous pair mating",
+    "Source-solve and STEP-reader accuracy transfer"
+  ]
+}
