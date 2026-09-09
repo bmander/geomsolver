@@ -1,4 +1,4 @@
-"""Bind actual STEP fillet coefficients to the bounded common-crown reference."""
+"""Bind actual STEP generated-surface coefficients to the bounded common-crown reference."""
 import argparse
 import json
 import math
@@ -14,7 +14,9 @@ from material_probes import read
 from tooth_space import sides_for_space
 
 
-def run(source, references, spaces, output):
+def run(source, references, spaces, output, kind="fillet"):
+    if kind not in ("fillet", "flank"):
+        raise ValueError("unknown generated surface kind")
     data = json.loads(source.read_text())
     reference = json.loads(references.read_text())
     report = json.loads((spaces/"report.json").read_text())
@@ -38,7 +40,7 @@ def run(source, references, spaces, output):
             raise ValueError("expected ten tooth-space faces")
         selected = set()
         for side in range(2):
-            point = sides[side][8][8]
+            point = sides[side][8][8 if kind == "fillet" else 24]
             distances = []
             for s in surfaces:
                 u0, u1, v0, v1 = s.Bounds()
@@ -46,20 +48,21 @@ def run(source, references, spaces, output):
                 distances.append(math.dist(point, [p.X(), p.Y(), p.Z()]))
             index = min(range(len(surfaces)), key=distances.__getitem__)
             if index in selected or distances[index] > 1e-7:
-                raise ValueError("ambiguous or unmatched fillet")
+                raise ValueError("ambiguous or unmatched generated surface")
             selected.add(index)
             records.append(dict(member=m, side=side, face_index=index,
                                 surface=extract(surfaces[index]), match_error_mm=distances[index]))
         inputs.append(dict(member=m, step_file=str(path), step_sha256=digest(path)))
-    output.write_text(json.dumps(dict(inputs=inputs, source_file=str(source), source_sha256=digest(source),
+    output.write_text(json.dumps(dict(kind=kind, inputs=inputs, source_file=str(source), source_sha256=digest(source),
         references_file=str(references), references_sha256=digest(references), references=reference,
-        surfaces=records, scope="Actual STEP fillet coefficients; whole-patch fidelity not checked"))+"\n")
-    print(f"Extracted {len(records)} fillet surfaces", flush=True)
+        surfaces=records, scope="Actual STEP generated-surface coefficients; whole-patch fidelity not checked"))+"\n")
+    print(f"Extracted {len(records)} {kind} surfaces", flush=True)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("source", "references", "spaces", "output"):
         parser.add_argument(name, type=Path)
+    parser.add_argument("--kind", choices=("fillet", "flank"), default="fillet")
     args = parser.parse_args()
-    run(args.source, args.references, args.spaces, args.output)
+    run(args.source, args.references, args.spaces, args.output, args.kind)

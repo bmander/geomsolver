@@ -2,6 +2,33 @@
 use super::*;
 
 #[test]
+#[ignore = "exports bounded straight-flank references and solved tip cones"]
+fn export_cad_flank_references() {
+    use gcs_core::interval::Interval as I;
+    let path = std::env::var_os("SOLVENT_CAD_FLANKS_OUTPUT").expect("set output JSON path");
+    let pair = Pair::read([24,48],2.);
+    let mut records = vec![];
+    for member in 0..2 {
+        let tip: Vec<V> = [0.,1.].iter().map(|&u| {
+            let p = pair.local_frame(member).point(pair.limits[member][0].at(u,0.).unwrap().position);
+            [p[0].hypot(p[1]),0.,p[2]]
+        }).collect();
+        for side in 0..2 {
+            let name = if member == side { "outer" } else { "inner" };
+            let patch = pair.patch(member,side,name);
+            let [start,delta,second] = patch.generating_profile_jet_bounds(I::ZERO).unwrap();
+            assert!(second.iter().all(|v| v.bounds() == [0.,0.]));
+            let join = 1.-pair.seam(&patch,false).endpoint_parameters()[1];
+            let index_angle = if member == 1 && side == 1 { TAU/pair.teeth[1] } else { 0. };
+            records.push(format!("{{\"member\":{member},\"side\":{side},\"name\":\"{}\",\"start\":{:?},\"delta\":{:?},\"join_parameter\":{join},\"tip_meridian\":{tip:?},\"index_angle\":{index_angle},\"roll_domain\":{:?}}}",
+                patch.name,start.map(I::bounds),delta.map(I::bounds),pair.domain(&patch)[2]));
+        }
+    }
+    std::fs::write(path,format!("{{\"teeth\":{:?},\"module_mm\":{},\"rho_range\":{:?},\"crown_center\":{:?},\"flanks\":[{}],\"scope\":\"Enclosed solved straight meridians and nominal tip cones; source-solve and assembly error separate\"}}\n",
+        pair.teeth,pair.module,[0.9*pair.rm,1.1*pair.rm],pair.offset,records.join(","))).unwrap();
+}
+
+#[test]
 #[ignore = "exports bounded generating-meridian coefficients for CAD fillet accuracy"]
 fn export_cad_fillet_references() {
     use gcs_core::interval::Interval as I;

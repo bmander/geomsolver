@@ -35,8 +35,14 @@ whole-parameter correspondence within 0.001 mm for all four fillet support surfa
 the ideal common-crown references with enclosed solved coefficients. Exact cover checks
 accept every original Bézier rectangle; no cells remain unresolved. Quadratic Taylor bounds
 reduced each complete audit to 556–576 cell checks (81–86 seconds in concurrent runs).
-Working-flank accuracy, source/assembly error, trimmed coverage and global material/mating
-acceptance remain; this is another completed accuracy gate, not a finished production pair.
+The [working-flank audit](../experiments/cad-backend/FLANKS.md) now likewise bounds all four
+complete flank supports within 0.001 mm. A locally unique tip root and implicit derivatives
+through third order allow the same correspondence checker to cover the moving trim.
+The pinion sides each need 768 cell checks (about 86 seconds); the gear sides each need
+256 (about 30 seconds). All complete covers pass and an interior coefficient distortion is
+rejected. Source/assembly error, finite trimmed coverage, STEP-reader conversion, subsequent
+indexed operations and global material/mating acceptance remain. These completed nominal
+surface gates do not yet establish a finished production pair.
 
 The deliverable remains one fully specified, parametric matched pair from a documented
 generating system, independently verifiable and exportable at a stated geometric accuracy.

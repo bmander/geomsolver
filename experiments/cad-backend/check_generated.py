@@ -1,4 +1,4 @@
-"""Whole-patch Taylor correspondence bounds for the generated CAD fillets."""
+"""Whole-patch Taylor correspondence bounds for the generated CAD fillets and flanks."""
 import argparse
 from fractions import Fraction as F
 import hashlib
@@ -22,12 +22,13 @@ class CorrespondenceError(ValueError):
         super().__init__("center correspondence exceeds target")
 
 
-def error_bound(data, reference, patch):
+def error_bound(data, reference, patch, evaluator=None):
+    evaluator = evaluator or evaluate
     domain = patch["domain"]
     spans = [b-a for a, b in domain]
     h = [s/2 for s in spans]
-    center = evaluate(data, reference, *(Jet.variable(sum(d)/2, i) for i, d in enumerate(domain)))
-    box = evaluate(data, reference, *(Jet.variable(d, i, order=3) for i, d in enumerate(domain)))
+    center = evaluator(data, reference, *(Jet.variable(sum(d)/2, i) for i, d in enumerate(domain)))
+    box = evaluator(data, reference, *(Jet.variable(d, i, order=3) for i, d in enumerate(domain)))
     if any(p[3] != 1 for row in patch["poles"] for p in row):
         raise ValueError("Taylor checker currently requires polynomial CAD surfaces")
     errors, center_square = [], F(0)
@@ -55,10 +56,17 @@ def run(path, output, member=0, side=0, patch_limit=None, max_cells=128):
     if max_cells <= 0 or (patch_limit is not None and patch_limit <= 0):
         raise ValueError("expected positive work and patch limits")
     data = json.loads(path.read_text())
+    kind = data.get("kind", "fillet")
+    if kind not in ("fillet", "flank"):
+        raise ValueError("unknown generated surface kind")
+    if kind == "flank":
+        from crown_flank import check_samples as compare, evaluate as evaluator
+    else:
+        compare, evaluator = check_samples, evaluate
     expected = {(m, s) for m in (0, 1) for s in (0, 1)}
-    for records in (data["surfaces"], data["references"]["fillets"]):
+    for records in (data["surfaces"], data["references"][kind+"s"]):
         if len(records) != 4 or {(r["member"], r["side"]) for r in records} != expected:
-            raise ValueError("incomplete or duplicate fillet definitions")
+            raise ValueError("incomplete or duplicate generated surface definitions")
     for name in ("source", "references"):
         raw = Path(data[f"{name}_file"]).read_bytes()
         if hashlib.sha256(raw).hexdigest() != data[f"{name}_sha256"]:
@@ -71,8 +79,8 @@ def run(path, output, member=0, side=0, patch_limit=None, max_cells=128):
         if hashlib.sha256(Path(item["step_file"]).read_bytes()).hexdigest() != item["step_sha256"]:
             raise ValueError("changed STEP input")
     record, = [r for r in data["surfaces"] if (r["member"], r["side"]) == (member, side)]
-    reference, = [r for r in data["references"]["fillets"] if (r["member"], r["side"]) == (member, side)]
-    comparison = check_samples(data["references"], source, reference)
+    reference, = [r for r in data["references"][kind+"s"] if (r["member"], r["side"]) == (member, side)]
+    comparison = compare(data["references"], source, reference)
     if any(w != 1 for row in record["surface"]["weights"] for w in row):
         raise ValueError("Taylor checker currently requires polynomial CAD surfaces")
     pieces = list(patches(record["surface"]))
@@ -82,7 +90,7 @@ def run(path, output, member=0, side=0, patch_limit=None, max_cells=128):
     pending = list(reversed(list(enumerate(selected))))
     target = F("0.001")
     result = dict(evidence_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
-                  member=member, side=side, target_mm=.001, complete_surface=False, status="running",
+                  kind=kind, member=member, side=side, target_mm=.001, complete_surface=False, status="running",
                   initial_patches=len(pending), total_surface_patches=len(pieces),
                   source_sample_comparison_bound_mm=upper(comparison),
                   cells_tested=0, accepted=[], unresolved=[], refinement_refusals={}, violations=[],
@@ -92,7 +100,7 @@ def run(path, output, member=0, side=0, patch_limit=None, max_cells=128):
         original, patch = pending.pop()
         result["cells_tested"] += 1
         try:
-            bound = error_bound(data["references"], reference, patch)
+            bound = error_bound(data["references"], reference, patch, evaluator)
         except CorrespondenceError as error:
             result["violations"].append(dict(original_patch=original,
                 domain=[[str(x) for x in d] for d in patch["domain"]],

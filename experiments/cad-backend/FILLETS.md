@@ -1,5 +1,8 @@
 # Whole-domain generated-fillet correspondence
 
+The shared scripts are now `export_generated.py` and `check_generated.py`; the
+original full-fillet evidence was produced at commit `9e6e610` before those renames.
+
 The four generated root fillets have a direct parameter rectangle: spherical face-width
 fraction and generating-arc fraction. Unlike the working flanks, their parameter endpoint
 does not require a moving tip-trim solve. This audit compares the actual STEP fillet support
@@ -28,7 +31,7 @@ semicircle, nonzero divisors and declared roll domain on every accepted paramete
 The material definition remains the complete indexed swept subtraction. A local envelope
 correspondence bound does not by itself establish which parts remain exposed after all cuts.
 
-`export_fillets.py` reads the actual finer tooth-space STEP files and extracts their B-spline
+`export_generated.py` reads the actual finer tooth-space STEP files and extracts their B-spline
 degrees, knots, poles and weights. It matches the four fillet faces against the original
 source interpolation data and verifies accepted input hashes. The independent checker binds
 the source, reference and STEP hashes, and compares nine reference positions per fillet with
@@ -115,8 +118,8 @@ coefficient audit, not detection of tampering by the STEP reader.
 
 ```sh
 SOLVENT_CAD_FILLETS_OUTPUT=/private/tmp/solvent-cad-fillet-references.json cargo test --manifest-path rust/Cargo.toml export_cad_fillet_references -- --ignored --nocapture
-/private/tmp/solvent-occt-env/bin/python experiments/cad-backend/export_fillets.py /private/tmp/solvent-cad-sections.json /private/tmp/solvent-cad-fillet-references.json /private/tmp/solvent-cad-one-cut-checked /private/tmp/solvent-cad-fillet-coefficients.json
-python3 experiments/cad-backend/check_fillet.py /private/tmp/solvent-cad-fillet-coefficients.json /private/tmp/solvent-cad-fillet-bound-0-0.json --member 0 --side 0 --max-cells 8192
+/private/tmp/solvent-occt-env/bin/python experiments/cad-backend/export_generated.py /private/tmp/solvent-cad-sections.json /private/tmp/solvent-cad-fillet-references.json /private/tmp/solvent-cad-one-cut-checked /private/tmp/solvent-cad-fillet-coefficients.json
+python3 experiments/cad-backend/check_generated.py /private/tmp/solvent-cad-fillet-coefficients.json /private/tmp/solvent-cad-fillet-bound-0-0.json --member 0 --side 0 --max-cells 8192
 python3 -m unittest discover -s experiments/cad-backend -p 'test_*.py'
 ```
 

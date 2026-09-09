@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from bernstein import split_patch
-from check_fillet import CorrespondenceError, error_bound
+from check_generated import CorrespondenceError, error_bound
 from interval_jet import Jet, atan_point, sin_cos, f
 from interval_arithmetic import reference_trig
 
@@ -74,7 +74,7 @@ class Jets(unittest.TestCase):
             for i in range(3)])
         def reference(data, record, u, v):
             return [u, v, u*u+v*v]
-        with patch("check_fillet.evaluate", reference):
+        with patch("check_generated.evaluate", reference):
             self.assertLess(error_bound({}, {}, fixture), F(1, 10**40))
             children = [q for p in split_patch(fixture, 0) for q in split_patch(p, 1)]
             self.assertEqual(sum((p["domain"][0][1]-p["domain"][0][0])*
