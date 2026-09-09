@@ -1,0 +1,104 @@
+{
+  "verifier_commit": "bf26261",
+  "source_sha256": "c11e8defe5dcd3d12d79f597c0ec5a4e9410794ec25597904a183863183724c9",
+  "inputs": [
+    {
+      "member": 0,
+      "step_file": "/private/tmp/solvent-cad-full-pinion/member0-24-cuts.step",
+      "step_sha256": "47d750135b6b6c6c1cec232b496ddb792e03ff03d7ae4d9d1dececa4229f636e"
+    },
+    {
+      "member": 1,
+      "step_file": "/private/tmp/solvent-cad-full-gear/member1-48-cuts.step",
+      "step_sha256": "a4b010f3466603a57aa2b13a2f85d884eb1c9fa1032ca6a5dcbde7e8cfacddac"
+    }
+  ],
+  "edge_evidence": {
+    "file": "/private/tmp/solvent-cad-edges.json",
+    "sha256": "d8797bbb235c99167a6f62c959dab84b41228cf2e764b86d8e416ac59bfc33e1"
+  },
+  "audit": {
+    "file": "/private/tmp/solvent-cad-trim-loops.json",
+    "sha256": "8fc0a91e16f9c59ef138ff5f4be9728449ccee71e92f5c6735127e9e9c7b2a06",
+    "seconds": 23.405283391999546
+  },
+  "simple_closed_uv_representatives": "verified",
+  "bounded_surface_displacement": "verified",
+  "complete_analytical_inventory": true,
+  "target_displacement_mm": 1e-08,
+  "members": [
+    {
+      "member": 0,
+      "closed_uv_representatives": 29,
+      "embedded_representatives": 26,
+      "curve_pairs": 21920,
+      "tested_cells": 29260,
+      "maximum_displacement_bound_mm": 6.777312644212086e-11,
+      "seam_faces": [
+        {
+          "face_index": 0,
+          "kind": "sphere",
+          "edge_indices": [
+            146
+          ]
+        },
+        {
+          "face_index": 146,
+          "kind": "cone",
+          "edge_indices": [
+            441
+          ]
+        },
+        {
+          "face_index": 147,
+          "kind": "sphere",
+          "edge_indices": [
+            442
+          ]
+        }
+      ]
+    },
+    {
+      "member": 1,
+      "closed_uv_representatives": 52,
+      "embedded_representatives": 49,
+      "curve_pairs": 85272,
+      "tested_cells": 93593,
+      "maximum_displacement_bound_mm": 3.967807029259401e-11,
+      "seam_faces": [
+        {
+          "face_index": 0,
+          "kind": "sphere",
+          "edge_indices": [
+            290
+          ]
+        },
+        {
+          "face_index": 289,
+          "kind": "cone",
+          "edge_indices": [
+            872
+          ]
+        },
+        {
+          "face_index": 290,
+          "kind": "sphere",
+          "edge_indices": [
+            874
+          ]
+        }
+      ]
+    }
+  ],
+  "tests": {
+    "command": "python3 -m unittest discover -s experiments/cad-backend -p 'test_*.py'",
+    "passed": 48
+  },
+  "scope": "Existence of simple closed UV representatives within a bounded surface displacement. The raw STEP pcurves are not modified. Periodic chart identification, surface embedding, shared 3D topology realization, reader behavior, global material and mating are separate.",
+  "remaining": [
+    "Explicit identification of the six periodic seam faces",
+    "Shared 3D topology realization and global surface embedding",
+    "Global swept-material coverage and continuous pair mating",
+    "Source-solve and STEP-reader accuracy transfer"
+  ]
+}
