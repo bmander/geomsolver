@@ -62,6 +62,32 @@ Successful adaptive checks audit an exact, ordered cover from the original finit
 to end parameter. There is no floating conversion in the one-dimensional coverage check.
 Partial edge selections and interrupted/budget-limited runs cannot claim complete members.
 
+## Complete pair results
+
+Both complete member audits pass, with no unresolved intervals, violating centers or
+refinement refusals. [Recorded results](edge-results.json) retain input, verifier and raw
+report hashes, along with the endpoint and vertex-link evidence. A separate aggregation
+check confirms that every edge/side pair appears exactly once and rechecks all accepted
+one-dimensional parameter covers.
+
+| Member | Edge/face incidences | Adaptive cells checked | Maximum correspondence bound (mm) | Audit time (s) |
+|---|---:|---:|---:|---:|
+| Pinion | 886 | 16,321 | 1.997e-6 | 517.1 |
+| Gear | 1,748 | 26,310 | 2.000e-6 | 896.5 |
+
+The full audits ran as two concurrent processes. These are offline correspondence proofs;
+small selected-edge checks take fractions of a second to a few seconds, and the focused
+unit suite remains below one second. Initial experiments measured quadratic through
+quintic Taylor bounds; the cubic bound balances refinement against per-cell arithmetic.
+
+Adding each member's worst nominal face bound, edge bound and endpoint/vertex bound gives
+conservative distance chains of 0.000999090 mm for the pinion and 0.000975157 mm for the gear,
+still below 0.001 mm. This relates the nominal supports to the exported boundary
+representations; it does not prove global material exposure or geometric embedding.
+
+The distorted-edge control is rejected after one adaptive cell, with a proved center
+correspondence error greater than 0.00124995 mm.
+
 ## Controls and reproduction
 
 Small complete-edge trials pass on both members, including the pinion face with the largest
@@ -81,5 +107,31 @@ python3 -m unittest discover -s experiments/cad-backend -p 'test_*.py'
 
 The complete member runs are not accepted until their final reports say `status: verified`
 and `complete_selected_members: true`, and both member inventories are accounted for.
-Separate vertex geometry, analytical trim topology, source/reader error and global material
-and mating acceptance remain distinct tasks even after edge correspondence passes.
+Analytical trim geometry, source/reader error and global material and mating acceptance
+remain distinct tasks even after edge correspondence passes.
+
+## Endpoint geometry and combinatorial vertex links
+
+`export_vertices.py` reads all 876 actual topological vertices and associates both ends of
+every shared edge with their named vertices, respecting intrinsic edge-parameter direction.
+`check_vertices.py` evaluates each independent curve representation at both finite endpoints.
+All 2,634 endpoint distances are bounded by 1.56e-8 mm; all vertices are accounted for.
+The check includes closed edges whose two parameter endpoints name the same vertex.
+
+The oriented incidence data also reconstructs every face's ordered wire from its previously
+exported parameter curves. Each adjacent edge pair must meet at the same named vertex.
+For each vertex, face corners connect incident edge ends into a link graph. Every node must
+have degree two and the graph must be connected: one cycle. Reusing a vertex to join two
+otherwise closed shells would produce two disconnected cycles and is refused. All 441
+face wires close through their named vertices, and all 876 vertex links pass. These are
+combinatorial checks; they do not assert that the curved boundaries are geometrically simple
+or that the resulting surface is embedded.
+
+The full endpoint and link audit takes approximately 15 seconds. A vertex displaced by
+0.01 mm is rejected. Tests include an exact endpoint distance, the distinct ends of a closed
+edge, and two separate closed fans incorrectly sharing one vertex.
+
+```sh
+/private/tmp/solvent-occt-env/bin/python experiments/cad-backend/export_vertices.py /private/tmp/solvent-cad-edges.json /private/tmp/solvent-cad-vertices.json
+python3 experiments/cad-backend/check_vertices.py /private/tmp/solvent-cad-vertices.json /private/tmp/solvent-cad-vertex-audit.json
+```

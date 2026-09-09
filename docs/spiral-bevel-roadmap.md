@@ -60,6 +60,15 @@ polynomial extensions beyond imported knot endpoints. The audit takes approximat
 distance bounds below 0.001 mm. Separate 3D edge consistency, analytical trim topology,
 source/reader error and global material/mating coverage still remain.
 
+The [shared-edge and vertex audit](../experiments/cad-backend/EDGES.md) closes the next
+local boundary-consistency gates: all 2,634 edge/face incidences pass whole-interval
+correspondence within 2e-6 mm, and all edge endpoints agree with their 876 named vertices
+within 1.56e-8 mm. Every one of the 441 face wires closes through its vertex identities;
+each vertex has one connected link cycle. Conservative nominal-face/edge/vertex distance
+chains stay below 0.001 mm. Geometric trim simplicity and embedding, source/reader error,
+global material coverage and continuous mating remain separate; the pair is not yet
+production-accepted.
+
 The deliverable remains one fully specified, parametric matched pair from a documented
 generating system, independently verifiable and exportable at a stated geometric accuracy.
 Manufacturing planning remains separate. This document redirects the next investigation:

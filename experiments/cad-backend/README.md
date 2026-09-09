@@ -216,6 +216,13 @@ faces in the indexed pair therefore have nominal support-distance bounds below 0
 finite material coverage, separate 3D edge consistency, source/reader error and continuous
 mating still require their own evidence.
 
+The [shared-edge and vertex audit](EDGES.md) now verifies all 2,634 edge/face incidences
+throughout their finite intervals within 2e-6 mm. All 2,634 curve endpoints agree with
+876 named vertices within 1.56e-8 mm. Every face wire closes through those vertices, and
+every vertex has one connected incident link cycle. Conservative face/edge/vertex distance
+chains remain below 0.001 mm. Geometric trim simplicity and embedding, source/reader error,
+global material coverage and continuous mating remain acceptance work.
+
 ## Initial trial reproduction
 
 The frozen Python environment uses `cadquery-ocp==7.9.3.1.1` (OCCT 7.9.3) on CPython 3.12,

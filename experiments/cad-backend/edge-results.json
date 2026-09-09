@@ -1,0 +1,140 @@
+{
+  "status": "verified",
+  "source_sha256": "c11e8defe5dcd3d12d79f597c0ec5a4e9410794ec25597904a183863183724c9",
+  "inputs": [
+    {
+      "member": 0,
+      "step_file": "/private/tmp/solvent-cad-full-pinion/member0-24-cuts.step",
+      "step_sha256": "47d750135b6b6c6c1cec232b496ddb792e03ff03d7ae4d9d1dececa4229f636e"
+    },
+    {
+      "member": 1,
+      "step_file": "/private/tmp/solvent-cad-full-gear/member1-48-cuts.step",
+      "step_sha256": "a4b010f3466603a57aa2b13a2f85d884eb1c9fa1032ca6a5dcbde7e8cfacddac"
+    }
+  ],
+  "edge_evidence": {
+    "file": "/private/tmp/solvent-cad-edges.json",
+    "sha256": "d8797bbb235c99167a6f62c959dab84b41228cf2e764b86d8e416ac59bfc33e1"
+  },
+  "vertex_evidence": {
+    "file": "/private/tmp/solvent-cad-vertices.json",
+    "sha256": "78428790671504d27bab331e908b5b48abea698123f14dae2e01a897203a358b"
+  },
+  "edge_audits": [
+    {
+      "file": "/private/tmp/solvent-cad-edge-audit-0.json",
+      "sha256": "3d475d000c110e27b9042d48b95862846d4fa89cdde92689fe99466dcd506a35",
+      "member": 0,
+      "seconds": 517.0763506339863
+    },
+    {
+      "file": "/private/tmp/solvent-cad-edge-audit-1.json",
+      "sha256": "f1933e4000682214916ff33dd261b7b7e83f1a2240e87cf6a772ec23f580d6f3",
+      "member": 1,
+      "seconds": 896.500775618013
+    }
+  ],
+  "vertex_audit": {
+    "file": "/private/tmp/solvent-cad-vertex-audit.json",
+    "sha256": "3e49163f9058a8f3907a4b22ae708283b8a485f18be202f6cfbeb439db287a9a",
+    "seconds": 14.89602957596071
+  },
+  "nominal_face_bounds": [
+    {
+      "file": "experiments/cad-backend/indexed-surface-results.json",
+      "sha256": "96dc4087fbb472922f62b077d3163a1f7f415618e7ea8b3bfd5907e11f5c2008"
+    },
+    {
+      "file": "experiments/cad-backend/analytic-face-results.json",
+      "sha256": "9958bc9e2ebf1d483196c0ebd26f7dd0bc02f6714a7613ad5363ff8c37857266"
+    }
+  ],
+  "verifier_sha256": {
+    "experiments/cad-backend/check_edges.py": "e5e79a94144ce11a9e6d14ce50d30fac3fb43acce7086b02bfa0df26af257b69",
+    "experiments/cad-backend/edge_data.py": "662a9db09b304e9d7b8778fa1e5b8f913e98814e8cda736ec93483ff53706bbd",
+    "experiments/cad-backend/edge_geometry.py": "19d3f5f60ad7d9b5a1364b3286d9625994db397d35a106fc3fe3c8ac588f78fe",
+    "experiments/cad-backend/curve_jets.py": "721955ca290757341066bf0be3863e26dfae3ecad09b92471d2370bdb081cf4e",
+    "experiments/cad-backend/curve_taylor.py": "5e36cff23af421ccd2d6043fc89bade98add057bba18a99b62fa5059a4da704e",
+    "experiments/cad-backend/check_vertices.py": "f1a4fdc5ab52a4cd731d9bc4691bf3d3ac027e48923912e6207f449476af85dd",
+    "experiments/cad-backend/vertex_topology.py": "91ccd98a70d2c4adcd0b462171a5c3bbf8d21229dc5a499b2d61498d83d8144c",
+    "experiments/cad-backend/bernstein.py": "1200ab2af081ce7fd12f5e5f91d284f07f973d8431bbd65abd03de2313ae516a",
+    "experiments/cad-backend/interval_jet.py": "d50c7012f4764809c80570524c98b20743e8827b98f7862fdae0425b1fd9d7f2",
+    "experiments/cad-backend/check_face_domains.py": "bf20cb604cc996897c504c3622093ff070a1dc7568130a1700b7809da2b06382",
+    "experiments/cad-backend/check_supports.py": "efc660be6d5932470c2ae10b8c011fc4acd82ddfeb59dcd77781aa44c692a944",
+    "rust/gcs-core/tests/verification/crown_branches.py": "dc8a996e2c4b0d14aaaaa7b9d627a912179dea6f05770c01ba5bf9e193e22288",
+    "rust/gcs-core/tests/verification/interval_arithmetic.py": "c17675fcb3c1e13f516ad7b1cecc77f2eed5a31d46b2a1d69d6fd35fafbc23ef"
+  },
+  "exporter_sha256": {
+    "experiments/cad-backend/export_edges.py": "020bfebb4b8873049af20ad9e8b6a68254d67804543a2b31886bc55a2b8956b9",
+    "experiments/cad-backend/export_vertices.py": "a6213a1fe58c923e76c10d322c15d0def3226e5661d3411326a98729964261ed",
+    "experiments/cad-backend/export_analytic_faces.py": "92b8a3b3c4bfd828aca85b768f683c9df4560051c31db875050a68aea3d81377",
+    "experiments/cad-backend/export_face_domains.py": "cd5e1374e1333268dde5c1da96f963ba431127645e4f5a4ce23dc35c52f731bb",
+    "experiments/cad-backend/export_supports.py": "69eecfda9f413e154d58d1831f4fc6300d168326b4caa8f91d630bb94b82e902"
+  },
+  "results": [
+    {
+      "member": 0,
+      "shared_edges": 443,
+      "edge_face_incidences": 886,
+      "methods": {
+        "shared_elementary_functions": 113,
+        "cubic_taylor": 291,
+        "same_polynomial_basis": 482
+      },
+      "cells_tested": 16321,
+      "accepted_cells": 10913,
+      "refinement_refusals": {},
+      "maximum_edge_face_bound_mm": 1.9967705893831994e-06,
+      "vertices": 294,
+      "endpoints": 886,
+      "maximum_endpoint_vertex_bound_mm": 1.5518761468575564e-08,
+      "single_cycle_vertex_links": 294,
+      "conservative_nominal_face_edge_vertex_chain_bound_mm": 0.0009990897180609068
+    },
+    {
+      "member": 1,
+      "shared_edges": 874,
+      "edge_face_incidences": 1748,
+      "methods": {
+        "cubic_taylor": 581,
+        "same_polynomial_basis": 964,
+        "shared_elementary_functions": 203
+      },
+      "cells_tested": 26310,
+      "accepted_cells": 18243,
+      "refinement_refusals": {},
+      "maximum_edge_face_bound_mm": 1.9996160200853466e-06,
+      "vertices": 582,
+      "endpoints": 1748,
+      "maximum_endpoint_vertex_bound_mm": 3.8894696188338984e-09,
+      "single_cycle_vertex_links": 582,
+      "conservative_nominal_face_edge_vertex_chain_bound_mm": 0.0009751562330011337
+    }
+  ],
+  "closed_face_wires": 441,
+  "edge_negative_control": {
+    "file": "/private/tmp/solvent-cad-edge-negative.json",
+    "sha256": "325959e1a654cc84167a4f209af4379e37cc47c3cf1db1a28bc72851fd1e7e84",
+    "status": "unresolved_or_failed",
+    "witnesses": [
+      {
+        "domain": [
+          "0",
+          "1/16"
+        ],
+        "center_error_lower_bound_mm": 0.001249951519129694
+      }
+    ],
+    "mutation": "Move pinion edge 2 first pole by +0.01 mm in x"
+  },
+  "vertex_negative_control": {
+    "status": "rejected",
+    "reason": "endpoint misses its topological vertex",
+    "seconds": 1.066771513025742,
+    "file": "/private/tmp/solvent-cad-vertices-distorted.json",
+    "sha256": "41285e4a7d6f68a9b9ff9cc56b8784d2b8976a1be47c2cc72610023094c6381a",
+    "mutation": "Displace the first topological vertex by +0.01 mm in x"
+  },
+  "scope": "All finite shared-edge/face correspondences and endpoint/vertex incidences, plus combinatorial wire closure and single-cycle vertex links. Chain bounds relate nominal supports to these boundary representations; geometric trim simplicity, embedding, source/reader error and global material/mating remain separate."
+}
