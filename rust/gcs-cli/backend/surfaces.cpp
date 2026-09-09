@@ -95,9 +95,15 @@ TopoDS_Shape split_face(const TopoDS_Face& face,const TopTools_ListOfShape& tool
 }
 
 extern "C" {
+int solvent_cad_bspline_face_with(Cad* cad,const double* points,int nu,int nv,int parametrization) noexcept;
 // A regular contact chart, sampled in row-major (u, motion parameter) order.
 // This creates a candidate face only. Solid closure and trimming remain separate.
 int solvent_cad_bspline_face(Cad* cad,const double* points,int nu,int nv) noexcept {
+    return solvent_cad_bspline_face_with(cad,points,nu,nv,0);
+}
+// Parametrization 0 is uniform (isoparametric), 1 chord length, 2 centripetal.
+// Uniform parameters overshoot where sample spacing changes abruptly.
+int solvent_cad_bspline_face_with(Cad* cad,const double* points,int nu,int nv,int parametrization) noexcept {
     return guarded(cad,[&] {
         if (!points || nu < 2 || nv < 2 || nu > 512 || nv > 512)
             throw std::runtime_error("surface grid dimensions must lie in [2,512]");
@@ -109,7 +115,9 @@ int solvent_cad_bspline_face(Cad* cad,const double* points,int nu,int nv) noexce
             grid.SetValue(i+1,j+1,point(p));
         }
         GeomAPI_PointsToBSplineSurface fit;
-        fit.Interpolate(grid,Approx_IsoParametric,false);
+        const Approx_ParametrizationType type = parametrization == 1 ? Approx_ChordLength
+            : parametrization == 2 ? Approx_Centripetal : Approx_IsoParametric;
+        fit.Interpolate(grid,type,false);
         if (!fit.IsDone()) throw std::runtime_error("contact surface interpolation failed");
         BRepBuilderAPI_MakeFace face(fit.Surface(),1e-7);
         if (!face.IsDone() || !BRepCheck_Analyzer(face.Face()).IsValid())

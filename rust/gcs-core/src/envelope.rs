@@ -27,7 +27,7 @@ fn ma(a: M3, b: M3) -> M3 {
     std::array::from_fn(|i| add(a[i], b[i]))
 }
 fn length(a: V3) -> f64 { a[0].hypot(a[1]).hypot(a[2]) }
-fn normalized(a: V3) -> Option<V3> {
+pub(crate) fn normalized(a: V3) -> Option<V3> {
     let n = length(a);
     (n > 0.0 && n.is_finite()).then(|| a.map(|v| v/n))
 }

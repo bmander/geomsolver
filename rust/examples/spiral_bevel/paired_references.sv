@@ -48,9 +48,14 @@ component MatchedReferences(front: plane, back: plane,
     gear_axis_end distance(-mean_distance * sin(gear_angle), along: v) front
     private construction centerline line gear_axis(front.origin, gear_axis_end)
   }
+  // The spheres are drawn in the back plane so their revolution poles stand
+  // perpendicular to both shaft axes, outside both tip cones. A pole inside a
+  // cone's Boolean region leaves the kernel an open shell.
+  in back {
+    toe: SphericalBoundary(back, size: toe_distance)
+    heel: SphericalBoundary(back, size: heel_distance)
+  }
   in front {
-    toe: SphericalBoundary(front, size: toe_distance)
-    heel: SphericalBoundary(front, size: heel_distance)
     pinion_tip_boundary: ConeBoundary(front, pinion_axis, axis_bearing: pinion_angle,
       half_angle: pinion_angle, normal_offset: addendum,
       near: 0.5 * mean_distance, far: 1.5 * mean_distance)

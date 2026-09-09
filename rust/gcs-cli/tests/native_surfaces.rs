@@ -18,10 +18,13 @@ mod pcurves;
 mod curves;
 #[path="native_surfaces/cells.rs"]
 mod cells;
+#[path="native_surfaces/gear_cells.rs"]
+mod gear_cells;
 
 extern "C" {
     fn solvent_cad_error(cad: *mut c_void) -> *const c_char;
     fn solvent_cad_bspline_face(cad: *mut c_void,points: *const f64,nu: c_int,nv: c_int) -> c_int;
+    fn solvent_cad_bspline_face_with(cad: *mut c_void,points: *const f64,nu: c_int,nv: c_int,parametrization: c_int) -> c_int;
     fn solvent_cad_surface_point(cad: *mut c_void,id: c_int,u: f64,v: f64,output: *mut f64) -> c_int;
     fn solvent_cad_validate(cad: *mut c_void,id: c_int) -> c_int;
 }
@@ -37,6 +40,10 @@ impl Cad {
         assert_eq!(points.len(),nu*nv);
         assert!(nu <= 512 && nv <= 512);
         self.result(unsafe { solvent_cad_bspline_face(self.raw(),points.as_ptr().cast(),nu as c_int,nv as c_int) })
+    }
+    fn fit_with(&self,points: &[[f64;3]],nu: usize,nv: usize,parametrization: c_int) -> Result<c_int,String> {
+        assert_eq!(points.len(),nu*nv);
+        self.result(unsafe { solvent_cad_bspline_face_with(self.raw(),points.as_ptr().cast(),nu as c_int,nv as c_int,parametrization) })
     }
     fn at(&self,id: c_int,u: f64,v: f64) -> Result<([f64;3],[f64;3]),String> {
         let mut p = [0.;6];

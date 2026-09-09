@@ -3,12 +3,17 @@ use super::*;
 
 extern "C" {
     fn solvent_cad_split_solid(cad: *mut c_void,solid: c_int,tools: *const c_int,count: c_int) -> c_int;
+    fn solvent_cad_split_solid_fuzzy(cad: *mut c_void,solid: c_int,tools: *const c_int,count: c_int,fuzzy: f64) -> c_int;
     fn solvent_cad_solids(cad: *mut c_void,source: c_int,output: *mut c_int,capacity: c_int) -> c_int;
     fn solvent_cad_solid_sample(cad: *mut c_void,id: c_int,output: *mut f64) -> c_int;
+    fn solvent_cad_solid_samples(cad: *mut c_void,id: c_int,output: *mut f64,capacity: c_int,measure: c_int) -> c_int;
     fn solvent_cad_fuse(cad: *mut c_void,ids: *const c_int,count: c_int) -> c_int;
     fn solvent_cad_solid_contains(cad: *mut c_void,id: c_int,points: *const f64,count: c_int,tolerance: f64,
         output: *mut c_int) -> c_int;
     fn solvent_cad_volume(cad: *mut c_void,id: c_int,output: *mut f64) -> c_int;
+    fn solvent_cad_common(cad: *mut c_void,a: c_int,b: c_int) -> c_int;
+    fn solvent_cad_common_volume(cad: *mut c_void,a: c_int,b: c_int,output: *mut f64) -> c_int;
+    fn solvent_cad_place(cad: *mut c_void,source: c_int,matrix: *const f64) -> c_int;
     fn solvent_cad_tolerance(cad: *mut c_void,id: c_int,output: *mut f64) -> c_int;
 }
 
@@ -28,6 +33,9 @@ impl Session {
     pub(crate) fn split_solid(&self,solid: c_int,tools: &[c_int]) -> Result<c_int,String> {
         self.result(unsafe { solvent_cad_split_solid(self.0,solid,tools.as_ptr(),tools.len() as c_int) })
     }
+    pub(crate) fn split_solid_fuzzy(&self,solid: c_int,tools: &[c_int],fuzzy: f64) -> Result<c_int,String> {
+        self.result(unsafe { solvent_cad_split_solid_fuzzy(self.0,solid,tools.as_ptr(),tools.len() as c_int,fuzzy) })
+    }
     pub(crate) fn solids(&self,source: c_int) -> Result<Vec<c_int>,String> {
         let count = self.result(unsafe { solvent_cad_solids(self.0,source,std::ptr::null_mut(),0) })?;
         let mut ids = vec![-1;count as usize];
@@ -43,6 +51,14 @@ impl Session {
     pub(crate) fn cells(&self,partition: c_int) -> Result<Vec<Cell>,String> {
         self.solids(partition)?.into_iter().map(|s| self.cell(s)).collect()
     }
+    /// Up to `capacity` interior points of the cell with their measured distance
+    /// to its boundary, farthest first, measured on at most `measure` spread
+    /// candidates.
+    pub(crate) fn samples(&self,solid: c_int,capacity: usize,measure: usize) -> Result<Vec<([f64;3],f64)>,String> {
+        let mut data = vec![0.;4*capacity];
+        let count = self.result(unsafe { solvent_cad_solid_samples(self.0,solid,data.as_mut_ptr(),capacity as c_int,measure as c_int) })?;
+        Ok((0..count as usize).map(|i| ([data[4*i],data[4*i+1],data[4*i+2]],data[4*i+3])).collect())
+    }
     pub(crate) fn fuse(&self,ids: &[c_int]) -> Result<c_int,String> {
         self.result(unsafe { solvent_cad_fuse(self.0,ids.as_ptr(),ids.len() as c_int) })
     }
@@ -57,6 +73,20 @@ impl Session {
         let mut v = [0.];
         self.result(unsafe { solvent_cad_volume(self.0,solid,v.as_mut_ptr()) })?;
         Ok(v[0])
+    }
+    pub(crate) fn common(&self,a: c_int,b: c_int) -> Result<c_int,String> {
+        self.result(unsafe { solvent_cad_common(self.0,a,b) })
+    }
+    pub(crate) fn cut(&self,a: c_int,b: c_int) -> Result<c_int,String> { self.boolean(a,b,true) }
+    pub(crate) fn common_volume(&self,a: c_int,b: c_int) -> Result<f64,String> {
+        let mut v = [0.];
+        self.result(unsafe { solvent_cad_common_volume(self.0,a,b,v.as_mut_ptr()) })?;
+        Ok(v[0])
+    }
+    /// Place a copy of any shape at a model-unit pose.
+    pub(crate) fn place(&self,source: c_int,pose: gcs_core::envelope::Motion,scale: f64) -> Result<c_int,String> {
+        let matrix = gcs_core::solid::cad::placement_matrix(pose,scale);
+        self.result(unsafe { solvent_cad_place(self.0,source,matrix.as_ptr()) })
     }
     /// Maximum vertex, edge and face tolerances the kernel carries on the shape.
     pub(crate) fn tolerances(&self,solid: c_int) -> Result<[f64;3],String> {

@@ -26,6 +26,9 @@ component MatchedPair(front: plane, back: plane, pinion_teeth: Int, gear_teeth: 
     spiral_angle: spiral_angle, pressure_angle: pressure_angle)
   pinion: GeneratedMember(reference.pinion_design, reference.pinion_crown,
     teeth: pinion_teeth, roll_limit: 35deg)
+  // The generating roll must carry each cutter clear of its blank at both
+  // limits; the gear rolls slower against the crown and still overlaps its
+  // blank at 35 degrees, so its roll is declared longer.
   gear: GeneratedMember(reference.gear_design, reference.gear_space.body,
-    teeth: gear_teeth, roll_limit: 35deg)
+    teeth: gear_teeth, roll_limit: 45deg)
 }

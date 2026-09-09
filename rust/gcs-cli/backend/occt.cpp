@@ -8,6 +8,9 @@
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepCheck_Result.hxx>
+#include <BRepCheck_ListOfStatus.hxx>
+#include <sstream>
 #include <BRepGProp.hxx>
 #include <BRepLib.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
@@ -33,14 +36,37 @@
 static gp_Pnt point(const double* p) { return gp_Pnt(p[0],p[1],p[2]); }
 static gp_Dir direction(const double* p) { return gp_Dir(p[0],p[1],p[2]); }
 static gp_Vec vector(const double* p) { return gp_Vec(p[0],p[1],p[2]); }
+// Adaptive quadrature: the fixed rule is off by parts per thousand on spline faces.
 static double volume(const TopoDS_Shape& shape) {
     GProp_GProps props;
-    BRepGProp::VolumeProperties(shape,props);
+    BRepGProp::VolumeProperties(shape,props,1e-9,false,false);
     return props.Mass();
 }
+// Name the first invalid sub-shape and its statuses, so a failed construction
+// says which face, edge or vertex the kernel objects to.
+static std::string invalidity(const TopoDS_Shape& shape) {
+    BRepCheck_Analyzer analyzer(shape);
+    std::ostringstream message;
+    for (TopAbs_ShapeEnum kind: {TopAbs_SOLID,TopAbs_SHELL,TopAbs_FACE,TopAbs_WIRE,TopAbs_EDGE,TopAbs_VERTEX}) {
+        int index = 0;
+        for (TopExp_Explorer it(shape,kind); it.More(); it.Next(), ++index) {
+            const auto result = analyzer.Result(it.Current());
+            if (result.IsNull()) continue;
+            bool bad = false;
+            for (const auto status: result->Status()) if (status != BRepCheck_NoError) bad = true;
+            if (!bad) continue;
+            message << " " << (kind == TopAbs_SOLID ? "solid" : kind == TopAbs_SHELL ? "shell" : kind == TopAbs_FACE ? "face"
+                : kind == TopAbs_WIRE ? "wire" : kind == TopAbs_EDGE ? "edge" : "vertex") << " " << index << ":";
+            for (const auto status: result->Status()) if (status != BRepCheck_NoError) message << " " << int(status);
+            return message.str();
+        }
+    }
+    return message.str();
+}
 void validate(TopoDS_Shape& shape) {
-    if (shape.IsNull() || !BRepCheck_Analyzer(shape).IsValid())
-        throw std::runtime_error("native solid is invalid");
+    if (shape.IsNull()) throw std::runtime_error("native solid is null");
+    if (!BRepCheck_Analyzer(shape).IsValid())
+        throw std::runtime_error("native solid is invalid:"+invalidity(shape));
     if (shape.ShapeType() == TopAbs_SOLID) {
         auto solid = TopoDS::Solid(shape);
         if (!BRepLib::OrientClosedSolid(solid)) throw std::runtime_error("solid is open");
@@ -109,15 +135,25 @@ int solvent_cad_revolve(Cad* cad,int face,const double* origin,const double* axi
         return cad->put(shape);
     });
 }
+// Booleans run with a 1e-5 mm fuzzy tolerance: near-coincident intersections
+// (a wide tip cone against a blank sphere) otherwise leave an open shell.
 int solvent_cad_boolean(Cad* cad,int a,int b,int cut) noexcept {
     return guarded(cad,[&] {
+        TopTools_ListOfShape objects,tools;
+        objects.Append(cad->at(a)); tools.Append(cad->at(b));
         TopoDS_Shape result;
         if (cut) {
-            BRepAlgoAPI_Cut operation(cad->at(a),cad->at(b));
+            BRepAlgoAPI_Cut operation;
+            operation.SetArguments(objects); operation.SetTools(tools);
+            operation.SetFuzzyValue(1e-5); operation.SetRunParallel(false);
+            operation.Build();
             if (!operation.IsDone()) throw std::runtime_error("Boolean cut failed");
             result = operation.Shape();
         } else {
-            BRepAlgoAPI_Fuse operation(cad->at(a),cad->at(b));
+            BRepAlgoAPI_Fuse operation;
+            operation.SetArguments(objects); operation.SetTools(tools);
+            operation.SetFuzzyValue(1e-5); operation.SetRunParallel(false);
+            operation.Build();
             if (!operation.IsDone()) throw std::runtime_error("Boolean union failed");
             result = operation.Shape();
         }

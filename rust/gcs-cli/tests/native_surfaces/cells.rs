@@ -26,20 +26,41 @@ solid part(stock)
 removal.body cut part
 ";
 
-/// Classify every cell of a partition against the material field. A cell whose
-/// interior point has no ball certificate is unresolved and refuses the build.
-fn classify(cad: &Cad,partition: c_int,material: &mut gcs_core::solid::MaterialEvaluator)
+/// Classify every cell of a partition against the material field. A cell is
+/// judged at several interior points with measured boundary distances; every
+/// point needs a ball certificate within that distance and all must agree, so
+/// an unresolved point or a cell that a leaking sheet failed to separate
+/// refuses the build instead of guessing.
+pub(super) fn classify(cad: &Cad,partition: c_int,material: &mut gcs_core::solid::MaterialEvaluator)
     -> Result<(Vec<native::cells::Cell>,Vec<native::cells::Cell>),String> {
     let (mut kept,mut removed) = (Vec::new(),Vec::new());
     for cell in cad.0.cells(partition)? {
-        let distance = cell.margin.min(0.05);
-        let probe = material.probe(cell.point.map(|x| Interval::point(x).unwrap()),[1.,0.,0.],distance,
-            Options {value_tolerance:1e-5,max_evaluations:40000}).map_err(|e| format!("{e:?}"))?;
-        match probe.state {
-            ProbeState::InteriorBall => kept.push(cell),
-            ProbeState::ExteriorBall => removed.push(cell),
-            state => return Err(format!("cell at {:?} (margin {}, volume {}) is {state:?}",
-                cell.point,cell.margin,cell.volume)),
+        let samples = cad.0.samples(cell.solid,4,12)?;
+        if samples.is_empty() { return Err(format!("cell of volume {} has no interior sample",cell.volume)); }
+        let mut verdict = None;
+        for (point,boundary) in samples {
+            // A ball certificate only needs the field resolved to the probe
+            // distance, which stays inside the measured boundary distance.
+            let distance = (boundary*0.5).min(0.05);
+            if distance <= 1e-4 { continue; }
+            let probe = material.probe(point.map(|x| Interval::point(x).unwrap()),[1.,0.,0.],distance,
+                Options {value_tolerance:distance/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))?;
+            let inside = match probe.state {
+                ProbeState::InteriorBall => true,
+                ProbeState::ExteriorBall => false,
+                state => return Err(format!("cell at {point:?} (boundary distance {boundary}, volume {}) is {state:?}",cell.volume)),
+            };
+            match verdict {
+                None => verdict = Some(inside),
+                Some(previous) if previous != inside => return Err(format!(
+                    "cell of volume {} reads both material and removed: a sheet did not separate it",cell.volume)),
+                _ => {}
+            }
+        }
+        match verdict {
+            Some(true) => kept.push(cell),
+            Some(false) => removed.push(cell),
+            None => return Err(format!("cell of volume {} has no sample clear of its boundary",cell.volume)),
         }
     }
     Ok((kept,removed))

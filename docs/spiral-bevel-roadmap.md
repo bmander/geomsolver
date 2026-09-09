@@ -381,6 +381,57 @@ This is explicitly not a complete endpoint tracing algorithm. Open curves ending
 face interior remain refused; narrow clipped runs, interior seam/pole events, overlapping
 charts and global material selection still need handling before swept-solid assembly.
 
+**Arrangement and classification (2026-09-09).** A derisking experiment now builds the
+swept boundary the other way round: candidate sheets are constructed directly, the CAD
+kernel arranges them against the blank, and the declared material field decides which
+cells are material. `SweepContacts::at_source_over` evaluates the exact source-parameter
+contact chart over a caller-chosen motion interval; for the pinion every source point has
+at most one contact time within the declared roll, and the cutter at both roll limits has
+zero common volume with the blank, so the pinion needs no endpoint caps. One tooth space
+is one B-spline sheet: the five active profile patches (outer flank, round, tip, round,
+inner flank) sampled together along the profile, over a revolution band through the seam,
+with contact times chosen by continuity outward from the band centre and rows allocated
+by arc length under chord-length interpolation. Withheld exact contacts lie within about
+0.0024 mm of the fitted sheet. Native `cells.cpp` splits the blank by the 24 indexed
+sheets (OCCT Splitter, 93 s), samples a certified interior point per cell, and
+`MaterialEvaluator::probe` classifies each cell by a ball certificate (34 s for 25
+cells): one material cell and 24 congruent tooth spaces of 120.7088 mm³, so the pinion
+volume is the blank's 12038.991 mm³ minus exactly those spaces. Unresolved cells refuse
+the build. The united solid has 55 faces and carries a 38 µm vertex tolerance from the
+sheet/blank intersections. A sphere fixture with endpoint caps checks the same path
+against closed-form membership at withheld points. The atlas, transition and path
+machinery remains as verification; it is no longer the construction path.
+
+The gear member needed three model-level facts. Its blank's tip-cone Boolean left an
+open shell until Booleans and splits ran with a 1e-5 mm fuzzy tolerance, a stated cost
+far below the accuracy target; the toe and heel spheres are also now drawn in the back
+plane so their poles stand perpendicular to both shaft axes. Its cutter at the declared
+35-degree roll still overlapped the blank by 2.5 mm³ and only clears at 40 degrees, so
+the pair declares the gear's roll as 45 degrees: the generating motion must carry the
+cutter clear of the blank at both limits, and then no endpoint cap exists. Its cutter is
+two crowns sharing one tip plane, and their rounds cross near one end of the blank, so
+the space bottom is a flat strip that narrows to a crease. Two separate sheets meeting
+tangentially there fail the kernel's split (an unorientable fragment at every fuzzy
+value). The tooth space is therefore one tangent-continuous sheet per column: the
+neighbour's flank and round, then the bottom, then the outer crown's round and flank.
+Where the rounds are apart the bottom samples the shared tip plane's envelope radially
+between the junctions through the outer crown's tip chart; where they cross it samples
+the sharp edge's sweep, the fan of normals between the two rounds, through
+`SweepContacts::at_point_normal_over`. That sheet splits the gear blank into one
+material cell and one 117.137 mm³ space, and the kernel agrees with the declared field
+on both sides of all 345 sheet nodes inside the blank. Indexed 48 times, the sheets split
+the gear blank in 329 s into one material cell and 48 spaces congruent to 1.4e-7; the
+classified material fuses to 20284.110 mm³ with 99 faces and a 4.9 µm vertex tolerance,
+and exports STEP (round trip checked) and STL (encoded shell checked) in 97 s. Cell
+classification measures true boundary distances with the extrema solver: the classifier's
+tolerance test is not a distance, and one tooth space was first judged at a point only
+0.03 mm inside its bottom. Both members now export at `build/exports/solvent-pinion.*`
+and `solvent-gear.*`, from the declared source alone, through `tests/native_surfaces/
+gear_cells.rs`. Still open: turning that test path into the CLI's export of a body with
+swept cuts (the profile walk is chosen by hand per cutter there), the STEP round trip
+tolerance of spline-bounded solids, and the accuracy budget, which is deferred by
+decision until the pair's engagement checks run on these exports.
+
 The acceptance work remains:
 
 1. **Reproduce the reference pair:** one command from recorded source and tooth-count/size

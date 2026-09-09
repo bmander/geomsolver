@@ -97,9 +97,42 @@ impl SweepContacts {
     /// temporal reduction. Neither chart alone guarantees complete coverage.
     pub fn at_source(&self,patch: usize,u: f64,v: f64,tolerance: f64)
         -> Result<Vec<TimedContact>,String> {
+        self.at_source_over(patch,u,v,self.roll,tolerance)
+    }
+
+    /// Contact times of a point carrying a given unit normal, over a motion
+    /// interval. This is the sharp-edge sweep condition: a convex source edge
+    /// carries every normal between its incident faces', and each such normal
+    /// contacts where it is perpendicular to the point's velocity. The caller
+    /// supplies the normal; nothing here checks that the edge actually carries it.
+    pub fn at_point_normal_over(&self,position: [f64;3],normal: [f64;3],interval: [f64;2],tolerance: f64)
+        -> Result<Vec<TimedContact>,String> {
+        let n = envelope::normalized(normal).ok_or("degenerate normal")?;
+        let seed = if n[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] };
+        let du = envelope::normalized(crate::plane::cross(seed,n)).ok_or("degenerate normal")?;
+        let dv = crate::plane::cross(n,du);
+        let surface = envelope::SurfacePoint {position,du,dv};
+        let roots = self.motion.normal_velocity(surface)?.roots(interval,tolerance,4096)
+            .map_err(|e| format!("{e:?}"))?;
+        roots.into_iter().map(|root| {
+            let contact = envelope::contact(surface,self.motion.at(root.time)?)
+                .map_err(|e| format!("{e:?}"))?;
+            if contact.normal_velocity.abs() > tolerance {
+                return Err("point-normal contact failed the normal-velocity equation".into());
+            }
+            Ok(TimedContact {root,contact})
+        }).collect()
+    }
+
+    /// The same chart over a caller-supplied motion interval. Contacts outside the
+    /// declared roll lie on the envelope of a longer motion, not on this sweep's
+    /// boundary; a caller may use them as an extended candidate sheet only where a
+    /// separate material classification decides what is exposed.
+    pub fn at_source_over(&self,patch: usize,u: f64,v: f64,interval: [f64;2],tolerance: f64)
+        -> Result<Vec<TimedContact>,String> {
         let surface = self.patches.get(patch).ok_or("no such sweep patch")?.at(u,v)
             .map_err(|e| format!("{e:?}"))?;
-        let roots = self.motion.normal_velocity(surface)?.roots(self.roll,tolerance,4096)
+        let roots = self.motion.normal_velocity(surface)?.roots(interval,tolerance,4096)
             .map_err(|e| format!("{e:?}"))?;
         roots.into_iter().map(|root| {
             let contact = envelope::contact(surface,self.motion.at(root.time)?)
