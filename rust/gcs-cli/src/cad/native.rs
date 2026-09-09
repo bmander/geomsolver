@@ -7,6 +7,9 @@ use std::{collections::BTreeMap,ffi::{c_char,c_int,c_void,CStr,CString},path::Pa
 #[allow(dead_code)]
 #[path="native/sweep.rs"]
 mod sweep;
+#[allow(dead_code)]
+#[path="native/trims.rs"]
+mod trims;
 
 extern "C" {
     fn solvent_cad_new() -> *mut c_void;

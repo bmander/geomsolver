@@ -8,16 +8,16 @@ extern "C" {
     fn solvent_cad_face_contains(cad: *mut c_void,face: c_int,u: f64,v: f64,tolerance: f64) -> c_int;
 }
 impl Cad {
-    fn faces(&self,source: c_int) -> Vec<c_int> {
+    pub(super) fn faces(&self,source: c_int) -> Vec<c_int> {
         self.0.faces(source).unwrap()
     }
     fn split(&self,source: c_int,tools: &[c_int]) -> Result<c_int,String> {
         self.result(unsafe { solvent_cad_split_face(self.raw(),source,tools.as_ptr(),tools.len() as c_int) })
     }
-    fn contains(&self,face: c_int,u: f64,v: f64) -> Result<c_int,String> {
+    pub(super) fn contains(&self,face: c_int,u: f64,v: f64) -> Result<c_int,String> {
         self.result(unsafe { solvent_cad_face_contains(self.raw(),face,u,v,1e-9) })
     }
-    fn grid(&self,n: usize,at: impl Fn(f64,f64)->[f64;3]) -> c_int {
+    pub(super) fn grid(&self,n: usize,at: impl Fn(f64,f64)->[f64;3]) -> c_int {
         let points: Vec<_> = (0..=n).flat_map(|i| {
             let at = &at;
             (0..=n).map(move |j| at(i as f64/n as f64,j as f64/n as f64))

@@ -189,3 +189,27 @@ exposed sphere cap samples in about 4 ms per unit configuration. On the gear cut
 17 covered and 9 outward brackets with no unresolved samples. This checks selected
 points, not entire endpoint faces. Endpoint trimming and final exposed-face assembly
 are not connected to public sweep export yet.
+
+`trims.cpp` adds contact edges directly on native faces:
+
+- `solvent_cad_face_parameters` returns normalized finite-face coordinates and a
+  measured incidence distance in mm. It projects onto the supporting surface, handles
+  periodic representatives, then checks actual trims. Clamping a rounded endpoint
+  always remeasures the spatial distance. Projection failure remains an error;
+  this is not a globally continuous seam/pole parameterization.
+- `solvent_cad_pcurve` interpolates supplied face coordinates and constructs an attached
+  spatial edge. Open endpoints must reach trims; closed input omits the duplicate final
+  point. The spatial construction tolerance does not bound the original contact fit.
+- `solvent_cad_split_pcurves` uses OCCT's `BRepFeat_SplitShape` (linked through `TKFeat`)
+  to retain all face fragments on copied topology. Face/edge inputs remain reusable.
+- `solvent_cad_curve_point` evaluates the actual spatial edge for independent checks.
+
+Tests split an open parabola and a closed loop, checking face membership, preserved
+support geometry and withheld edge residuals. Source-computed contact branches split
+six pinion and four gear starting-endpoint faces, including clipping at the gear's
+existing Boolean trims. Across 1,816 sampled sign/membership checks, each tested fragment
+stays on one side of the normal-velocity contact equation. Withheld edge/source-contact
+errors are about 0.000157/0.000000101 mm. The fixture trace locator can miss narrow runs
+and does not continue branches through meridian turning points; neither ending endpoint
+is completed by this check. The primitive supplies native trimming for provided curves,
+not whole endpoint coverage, global visibility or a closed swept solid.

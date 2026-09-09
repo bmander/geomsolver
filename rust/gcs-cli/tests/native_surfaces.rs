@@ -12,6 +12,8 @@ mod native;
 mod trimming;
 #[path="native_surfaces/coverage.rs"]
 mod coverage;
+#[path="native_surfaces/pcurves.rs"]
+mod pcurves;
 
 extern "C" {
     fn solvent_cad_error(cad: *mut c_void) -> *const c_char;
