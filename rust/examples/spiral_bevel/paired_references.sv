@@ -3,6 +3,7 @@
 use std
 use reference
 use boundaries
+use cutters
 
 component MatchedReferences(front: plane, back: plane,
                             pinion_teeth: Int, gear_teeth: Int, mean_module: Length,
@@ -132,6 +133,23 @@ component MatchedReferences(front: plane, back: plane,
   construction solid pinion_crown(pinion.profile, about: crown_front_axis)
   construction solid gear_outer_crown(gear_outer.profile, about: crown_back_axis)
   construction solid gear_inner_crown(gear_inner.profile, about: crown_back_axis)
+  // Public construction inputs for the solid components. Indexing is one member
+  // angle; generating roll has the pitch-cone ratio and is a different motion.
+  motion pinion_index(about: pinion_axis)
+  motion gear_index(about: gear_axis)
+  motion crown_neighbor(about: front_axis, phase: -360deg / crown_teeth)
+  group pinion_design(heel: heel.wall.solid, toe: toe.wall.solid,
+    tip: pinion_tip_boundary.wall.solid, back: pinion_back_boundary.wall.solid,
+    generation: pinion_generation, indexing: pinion_index)
+  group gear_design(heel: heel.wall.solid, toe: toe.wall.solid,
+    tip: gear_tip_boundary.wall.solid, back: gear_back_boundary.wall.solid,
+    generation: gear_generation, indexing: gear_index)
+  // Inverse generating and neighbor motions rotate about the common apex.
+  // For any blank point, radial distance from the offset crown axis is at most
+  // |crown center| + heel radius. The extra module keeps this artificial cap clear.
+  construction gear_space: ComplementarySpace(crown_back, crown_back_axis,
+    gear_outer, gear_inner, crown_neighbor, radial_start: center_x,
+    radial_end: center_x + hypot(center_x, center_y) + heel_distance + mean_module)
   // Select the crown semicircle containing the intended tooth trace. Opposed view
   // axes express that same world-space half with opposite angular coordinates.
   surface pinion_outer(pinion_crown, pinion.outer, from: 180deg, to: 360deg)

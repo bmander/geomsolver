@@ -4,6 +4,7 @@ use super::*;
 use gcs_core::{solid::{RevolvedRegion,PlanarField,RevolvedField,SpatialField,SweptField,SweepEvaluator},interval::{Interval as I,minimum::{self,Options,Status}}};
 
 mod closure;
+mod source;
 mod member;
 
 #[derive(Clone,Copy)]

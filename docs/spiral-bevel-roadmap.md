@@ -40,8 +40,8 @@ formats are requested. Encoded STL shell checks reject cracks, pinches and float
 all native faces must be meshed. Native STL uses millimetres and a 0.01 mm linear tessellation
 setting, not a complete error certificate. The six-hole example passes this native path;
 the legacy mesh backend's triangulation defect remains recorded separately.
-The next integration task is the continuous generating removal operation and its native
-boundary construction. Along-guide lofts and generating-motion sweeps remain unsupported
+The continuous generating removal declaration is connected to material evaluation; its native
+boundary construction is the next integration task. Along-guide lofts and generating-motion sweeps remain unsupported
 by this native host. No union of sampled tool poses substitutes for a continuous sweep.
 
 The native indexed-pattern STL has 2,096 triangles and passes exact encoded shell checks;
@@ -66,6 +66,32 @@ Its component parameters, copy/delete graph and continuous material evaluation a
 Tests cover finite end caps and indexing one swept cutter through an ordinary component.
 Boundary export still refuses these graphs explicitly; native sweep-boundary construction
 remains ahead, so this is not yet public gear solid export.
+
+
+`rust/examples/spiral_bevel/gears.sv` now instantiates both complete material bodies through
+`MatchedPair`. `GeneratedMember` subtracts a continuous cutter sweep at each tooth index;
+its tooth count and module come from the ordinary configuration module. The gear cutter is
+built by the owning reference component, which passes its private datums explicitly to
+`ComplementarySpace`. Each active rounded flank is closed with ordinary lines, revolved,
+and intersected with the neighboring crown. The finite radial closure lies beyond the
+reachable blank under every apex-centered generating rotation. No private member access
+rule or gear-specific compiler operation is added.
+The source cutter is compared with the independently assembled active-flank fields at
+thousands of points in the reachable domain. Both complete source bodies match the separate
+member evaluator at 48 retained/removed probes across the 24:48, module 2 mm and 28:49,
+module 1.5 mm configurations, including distant tooth indices and blank ends. These are
+finite regression checks, not complete engagement or a supported-parameter-domain proof.
+Analytic profile ordering now follows shared source vertices instead of reconstructing
+arc junctions from trigonometry; this preserves topology in the presence of solve residuals
+without welding or replacing the analytic curves.
+
+The native cutter alone exports to `build/exports/solvent-gear-space.step` and `.stl`:
+STEP volume 1164.899457706113 mm³, 4,962 triangles, independently checked STEP validity
+and exact encoded STL edge pairing. This is the stationary generating cutter, not a gear.
+The integration exposed and fixed solid references capturing motion indices before the
+motion graph's dependency ordering was finalized. It also required the regularized CSG
+identity `A - (A - B) = A intersect B` for shared immutable field nodes; the raw field
+expression retained zeros on discarded boundaries and obstructed sweep separation.
 
 The acceptance work remains:
 

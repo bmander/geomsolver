@@ -29,6 +29,39 @@ struct Pair {
     faces: std::collections::BTreeMap<String,gcs_core::spatial_face::SpatialFaceBoundary>,
 }
 
+fn read_model(src: &str,teeth: [u32;2],module: f64) -> program::Elaborated {
+    let (mut p,errors) = syntax::parse(&src);
+    let link = modules::link(&mut p,&mut |name| match name {
+        "configuration" => Some(format!("param pinion_teeth = {}\nparam gear_teeth = {}\n\
+            param mean_module = {module}mm\n",teeth[0],teeth[1])),
+        "paired_references" => Some(include_str!("../../../examples/spiral_bevel/paired_references.sv").into()),
+        "matched_pair" => Some(include_str!("../../../examples/spiral_bevel/matched_pair.sv").into()),
+        "cutters" => Some(include_str!("../../../examples/spiral_bevel/cutters.sv").into()),
+        "reference" => Some(include_str!("../../../examples/spiral_bevel/reference.sv").into()),
+        "boundaries" => Some(include_str!("../../../examples/spiral_bevel/boundaries.sv").into()),
+        _ => library::resolve(name),
+    });
+    assert!(errors.is_empty() && link.is_empty(),"{errors:?} {link:?}");
+    let mut model = program::elaborate(&p);
+    assert!(model.ok(),"{:?}",model.diags);
+    for i in 0..model.sketch.points.len() {
+        for p in model.sketch.point_params(i) {
+            if !model.sketch.params[p as usize].fixed {
+                model.sketch.params[p as usize].value += module*0.001*(i as f64).sin();
+            }
+        }
+    }
+    // Shared analytic boundaries need tighter accuracy than interactive editing.
+    // The solver owns method selection and retry; geometry still checks its own
+    // position, normal and incidence errors independently of equation residuals.
+    let solved = solve::solve(&mut model.sketch,solve::SolveOpts {
+        tol:1e-16,acceptance_tol:1e-12,..Default::default()});
+    assert!(solved.success,
+        "teeth {teeth:?}, module {module}: {solved:?}");
+    assert_eq!(diagnose::diagnose(&mut model.sketch,Default::default()).dof,0);
+    model
+}
+
 impl Pair {
     // Only explicit CAD export entry points consume these overrides; ordinary
     // regression tests keep their declared configurations.
@@ -45,33 +78,7 @@ impl Pair {
 
     fn read(teeth: [u32;2], module: f64) -> Self {
         let src = include_str!("../../../examples/spiral_bevel/pair.sv");
-        let (mut p,errors) = syntax::parse(&src);
-        let link = modules::link(&mut p,&mut |name| match name {
-            "configuration" => Some(format!("param pinion_teeth = {}\nparam gear_teeth = {}\n\
-                param mean_module = {module}mm\n",teeth[0],teeth[1])),
-            "paired_references" => Some(include_str!("../../../examples/spiral_bevel/paired_references.sv").into()),
-            "reference" => Some(include_str!("../../../examples/spiral_bevel/reference.sv").into()),
-            "boundaries" => Some(include_str!("../../../examples/spiral_bevel/boundaries.sv").into()),
-            _ => library::resolve(name),
-        });
-        assert!(errors.is_empty() && link.is_empty(),"{errors:?} {link:?}");
-        let mut model = program::elaborate(&p);
-        assert!(model.ok(),"{:?}",model.diags);
-        for i in 0..model.sketch.points.len() {
-            for p in model.sketch.point_params(i) {
-                if !model.sketch.params[p as usize].fixed {
-                    model.sketch.params[p as usize].value += module*0.001*(i as f64).sin();
-                }
-            }
-        }
-        // Shared analytic boundaries need tighter accuracy than interactive editing.
-        // The solver owns method selection and retry; geometry still checks its own
-        // position, normal and incidence errors independently of equation residuals.
-        let solved = solve::solve(&mut model.sketch,solve::SolveOpts {
-            tol:1e-16,acceptance_tol:1e-12,..Default::default()});
-        assert!(solved.success,
-            "teeth {teeth:?}, module {module}: {solved:?}");
-        assert_eq!(diagnose::diagnose(&mut model.sketch,Default::default()).dof,0);
+        let model = read_model(src,teeth,module);
         let teeth = teeth.map(|n| n as f64);
         let delta = [teeth[0].atan2(teeth[1]),teeth[1].atan2(teeth[0])];
         let rm = module*teeth[0].hypot(teeth[1])/2.;
