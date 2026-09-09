@@ -10,6 +10,8 @@
 
 mod named;
 pub use named::GeneratedEnvelope;
+mod edge;
+pub use edge::{EdgePoint,edge_contact};
 
 use crate::plane::{cross, dot, scaled};
 

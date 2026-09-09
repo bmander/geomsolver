@@ -4,13 +4,15 @@
 #[path="../src/cad/native.rs"]
 mod native;
 mod support;
-use gcs_core::{interval::Interval,solid::{cad,SpatialField}};
+use gcs_core::{envelope::{self,EdgePoint},interval::Interval,motion::Family,solid::{cad,SpatialField}};
 use std::{ffi::{c_void,c_int,c_char,CStr},path::Path};
 
 extern "C" {
     fn solvent_cad_error(cad: *mut c_void) -> *const c_char;
     fn solvent_cad_boundary(cad: *mut c_void,source: c_int,rows: *mut c_int,capacity: c_int) -> c_int;
     fn solvent_cad_boundary_point(cad: *mut c_void,row: *const c_int,t: f64,output: *mut f64) -> c_int;
+    fn solvent_cad_bspline_face(cad: *mut c_void,points: *const f64,nu: c_int,nv: c_int) -> c_int;
+    fn solvent_cad_surface_point(cad: *mut c_void,id: c_int,u: f64,v: f64,output: *mut f64) -> c_int;
 }
 fn result(cad: &native::Session,value: c_int) -> Result<c_int,String> {
     if value < 0 { Err(unsafe { CStr::from_ptr(solvent_cad_error(cad.as_ptr())) }.to_string_lossy().into_owned()) }
@@ -23,15 +25,15 @@ fn boundary(cad: &native::Session,solid: c_int) -> Vec<[c_int;4]> {
     assert_eq!(result(cad,unsafe { solvent_cad_boundary(cad.as_ptr(),solid,rows.as_mut_ptr().cast(),count) }).unwrap(),count);
     rows
 }
-fn sample(cad: &native::Session,row: &[c_int;4],t: f64) -> Result<[f64;14],String> {
-    let mut values = [0.;14];
+fn sample(cad: &native::Session,row: &[c_int;4],t: f64) -> Result<[f64;15],String> {
+    let mut values = [0.;15];
     result(cad,unsafe { solvent_cad_boundary_point(cad.as_ptr(),row.as_ptr(),t,values.as_mut_ptr()) })?;
     Ok(values)
 }
-fn v(sample: &[f64;14],i: usize) -> [f64;3] { [sample[i],sample[i+1],sample[i+2]] }
+fn v(sample: &[f64;15],i: usize) -> [f64;3] { [sample[i],sample[i+1],sample[i+2]] }
 fn dot(a: [f64;3],b: [f64;3]) -> f64 { (0..3).map(|i| a[i]*b[i]).sum() }
 fn norm(p: [f64;3]) -> f64 { dot(p,p).sqrt() }
-fn frame(sample: &[f64;14]) {
+fn frame(sample: &[f64;15]) {
     let t = v(sample,3);
     assert!((norm(t)-1.).abs() < 1e-12);
     for i in [6,9] {
@@ -41,12 +43,71 @@ fn frame(sample: &[f64;14]) {
     }
     assert!(sample[12].max(sample[13]) < 1e-5,"edge incidence: {sample:?}");
 }
+fn edge(sample: &[f64;15]) -> EdgePoint {
+    EdgePoint {position:v(sample,0),tangent:v(sample,3),normals:[v(sample,6),v(sample,9)],dihedral:sample[14]}
+}
 const BOX: &str = "unit mm
 use std
 profile: CenteredRectangle(std.origin,w: 2mm,h: 2mm)
 solid stock(face(profile.loop),depth: 2mm)
 solid body(stock)
 ";
+
+#[test]
+fn a_blind_hole_has_a_concave_floor_edge() {
+    let e = support::read(&format!("{BOX}circle c(center: std.origin)\nradius(0.5mm) c\n\
+        solid drill(face(c),from: -1mm,to: 3mm)\ndrill cut body\n"),Path::new("."));
+    let cad = native::Session::new().unwrap();
+    let solid = cad.construct(&cad::recipe(&e.sketch,e.map.ent_named("body").unwrap().i()).unwrap()).unwrap();
+    let rows = boundary(&cad,solid);
+    let mut concave = 0;
+    for row in &rows {
+        let s = sample(&cad,row,0.37).unwrap();
+        if s[14] > 1e-6 {
+            assert!((s[14]-std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+            assert!((s[1]-1.).abs() < 1e-9 && (s[0].hypot(s[2])-0.5).abs() < 1e-9);
+            concave += 1;
+        }
+    }
+    assert_eq!(concave,1);
+}
+
+#[test]
+fn native_sharp_edge_sweeps_to_the_known_cylindrical_envelope() {
+    let e = support::read(&format!("{BOX}line axis(std.origin,std.up.toward)\nmotion spin(about: axis)\n"),Path::new("."));
+    let cad = native::Session::new().unwrap();
+    let solid = cad.construct(&cad::recipe(&e.sketch,e.map.ent_named("body").unwrap().i()).unwrap()).unwrap();
+    let motion = Family::read(&e.sketch,e.map.ent_named("spin").unwrap().i()).unwrap();
+    let rows = boundary(&cad,solid);
+    let row = rows.iter().find(|row| {
+        let s = sample(&cad,row,0.5).unwrap();
+        (s[0]-1.).abs() < 1e-9 && (s[1]-2.).abs() < 1e-9
+    }).unwrap();
+    let contact = |u: f64,t: f64| {
+        let s = sample(&cad,row,0.05+0.9*u).unwrap();
+        envelope::edge_contact(edge(&s),motion.at(-0.2+0.4*t).unwrap(),1e-6,1e-10).unwrap().unwrap()
+    };
+    let grid: Vec<_> = (0..=8).flat_map(|i| {
+        let contact = &contact;
+        (0..=16).map(move |j| contact(i as f64/8.,j as f64/16.).position)
+    }).collect();
+    let face = result(&cad,unsafe { solvent_cad_bspline_face(cad.as_ptr(),grid.as_ptr().cast(),9,17) }).unwrap();
+    let mut worst = 0_f64;
+    for i in 0..8 { for j in 0..16 {
+        let u = (i as f64+0.31)/8.; let t = (j as f64+0.67)/16.;
+        let exact = contact(u,t);
+        let radial = [exact.position[0]/5_f64.sqrt(),exact.position[1]/5_f64.sqrt(),0.];
+        assert!(dot(exact.normal,radial) > 1.-1e-12);
+        let mut fitted = [0.;6];
+        result(&cad,unsafe { solvent_cad_surface_point(cad.as_ptr(),face,u,t,fitted.as_mut_ptr()) }).unwrap();
+        let gap = norm(std::array::from_fn(|k| fitted[k]-exact.position[k]));
+        worst = worst.max(gap);
+        assert!(gap < 1e-6);
+        assert!((fitted[0].hypot(fitted[1])-5_f64.sqrt()).abs() < 1e-6);
+        assert!(dot([fitted[3],fitted[4],fitted[5]],radial).abs() > 1.-1e-8);
+    } }
+    eprintln!("native sharp-edge envelope: withheld position error {worst:e} mm");
+}
 
 #[test]
 fn trimmed_cube_and_hole_edges_have_material_normals() {
@@ -63,6 +124,8 @@ fn trimmed_cube_and_hole_edges_have_material_normals() {
             assert_eq!(row[3]&2,0);
             for t in [0.13,0.47,0.83] {
                 let s = sample(&cad,row,t).unwrap(); frame(&s);
+                let expected_angle = if row[3]&1 != 0 { 0. } else { -std::f64::consts::FRAC_PI_2 };
+                assert!((s[14]-expected_angle).abs() < 1e-9,"dihedral {}, row={row:?}",s[14]);
                 let p = v(&s,0); let center = [0.,1.,0.];
                 for i in [6,9] {
                     let n = v(&s,i);
@@ -130,12 +193,17 @@ fn native_cutter_edges_agree_with_the_independent_source_material() {
     let e = support::read(&std::fs::read_to_string(base.join("gears.sv")).unwrap(),&base);
     let cad = native::Session::new().unwrap();
     let scale = e.sketch.units.length.unwrap().1;
-    for name in ["pair.reference.pinion_crown","pair.reference.gear_space.body"] {
+    for (name,removal) in [("pair.reference.pinion_crown","pair.pinion.removal"),
+        ("pair.reference.gear_space.body","pair.gear.removal")] {
         let id = e.map.ent_named(name).unwrap().i();
         let field = SpatialField::read(&e.sketch,id,1e-10).unwrap();
         let solid = cad.construct(&cad::recipe(&e.sketch,id).unwrap()).unwrap();
         let rows = boundary(&cad,solid);
+        let removal = e.map.ent_named(removal).unwrap().i();
+        let gcs_core::model::SolidDef::Swept {motion,..} = e.sketch.solids[removal].def else { panic!() };
+        let motion = Family::read(&e.sketch,motion as usize).unwrap();
         let mut checked = 0;
+        let (mut active,mut local_checks) = (0,0);
         for row in &rows {
             if row[3]&2 != 0 { assert!(sample(&cad,row,0.5).is_err()); continue; }
             for t in [0.17,0.47,0.83] {
@@ -150,10 +218,35 @@ fn native_cutter_edges_agree_with_the_independent_source_material() {
                 assert!(boundary[0].abs().max(boundary[1].abs()) < 1e-5,"{name}: {boundary:?}");
                 assert!(value(-1e-3)[1] < 0.,"{name}: inward edge bisector");
                 assert!(value(1e-3)[0] > 0.,"{name}: outward edge bisector");
+                let edge = EdgePoint {position:p.map(|x| x/scale),..edge(&s)};
+                for time in [-0.3,0.,0.3] {
+                    let pose = motion.at(time).unwrap();
+                    let candidate = match envelope::edge_contact(edge,pose,1e-6,1e-10/scale) {
+                        Ok(c) => c,
+                        Err(envelope::Error::Degenerate) => continue,
+                        Err(error) => panic!("{name}, edge {row:?}, time {time}: {error:?}"),
+                    };
+                    if let Some(c) = candidate {
+                        active += 1;
+                        let velocities = edge.normals.map(|n| dot(pose.vector(n),c.velocity));
+                        // Stay away from the trim where a cone endpoint meets a
+                        // smooth-face contact. A strict straddle must be outside
+                        // the source at both nearby times, not locally covered.
+                        if velocities.iter().all(|v| v.abs()*scale > 0.01) {
+                            for dt in [-1e-4,1e-4] {
+                                let q = motion.at(time+dt).unwrap().inverse().point(c.position);
+                                let value = field.bounds(q.map(|v| Interval::point(v).unwrap())).unwrap().bounds();
+                                assert!(value[0] > 0.,"{name}, edge {row:?}, time {time}, dt {dt}: {value:?}");
+                                local_checks += 1;
+                            }
+                        }
+                    }
+                }
                 checked += 1;
             }
         }
-        eprintln!("{name}: {} native edges, {checked} boundary/material checks",rows.len());
+        eprintln!("{name}: {} native edges, {checked} boundary/material checks, {active} sharp contacts, {local_checks} local sweep checks",rows.len());
         assert!(checked >= 18);
+        assert!(active > 0 && local_checks > 0);
     }
 }

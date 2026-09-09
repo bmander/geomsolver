@@ -77,7 +77,9 @@ endpoint caps and global trimming remain necessary before enabling their STEP/ST
 made by Booleans. Its C interface first counts edges, then returns rows containing the edge
 handle, both incident face handles and explicit seam/pole flags. Edge queries return a
 position, unit curve tangent, two outward material normals and their measured face/curve
-incidence discrepancies in mm. Seams retain their two parameter curves; collapsed edges
+incidence discrepancies in mm, followed by the signed dihedral in radians (15 doubles).
+Negative dihedral is convex, positive is concave and zero is smooth. Its sign uses the
+oriented face boundary, not just the angle between two normals. Seams retain their two parameter curves; collapsed edges
 remain in the inventory and explicitly refuse tangent queries. Queries check face incidence
 and consistent curve parameters instead of projecting onto unrelated supporting surfaces.
 The shared session ownership and exception boundary live in `occt.hpp`.
@@ -92,3 +94,12 @@ normals. Sphere/torus checks distinguish poles and periodic seams from creases. 
 pinion and gear cutters have 10 and 18 native edges; 84 sampled positions and material-side
 checks agree with the separate source field. This supplies source topology for sharp-edge
 sweeps; it does not yet select the exposed swept regions or assemble a swept solid.
+
+`envelope::edge_contact` now supplies the local sharp-edge candidate test. It checks the
+convex outward normal cone against the motion velocity and returns the candidate's outward
+normal. Smooth/concave edges contribute no regular sharp-edge face; tangent motion and
+collapsed cones remain explicit degeneracies. A blind-hole regression checks the dihedral
+sign, and a rotating cube edge generates a native fitted cylindrical patch compared against
+the known cylinder. The actual gear cutters produce 17/37 sampled sharp contacts, with 106
+nearby-time source-material checks on strict interior cone contacts. These local checks
+do not establish visibility over the whole motion interval or a complete swept solid.

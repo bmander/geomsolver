@@ -155,6 +155,26 @@ sphere/torus cases check poles and seams, and 84 samples on the actual cutters' 
 edges agree with Solvent's independent source material field. These are source-boundary
 inputs for sharp-edge sweeping and trimming, not a completed swept-boundary arrangement.
 
+The boundary reader now measures signed dihedral using oriented face boundaries, so a
+convex cube edge, concave blind-hole floor edge and smooth periodic seam stay distinct.
+`envelope::edge_contact` implements the local normal-cone condition from the
+[sharp-feature sweep framework](https://arxiv.org/abs/1405.7457): for a convex edge, a
+nonnegative combination of incident outward normals must be perpendicular to velocity.
+It returns that candidate normal and moving position. Smooth and concave edges supply
+no regular sharp-edge face; collapsed cones, inconsistent incidence and tangent velocity
+on convex edges return explicit errors. This is an interior-time candidate test, with
+endpoint caps and global visibility still separate.
+
+Independent box/diagonal-translation and thin-wedge checks cover orientation, scale,
+inactive motion and degeneracies. A native rotating cube edge generates the known
+cylindrical envelope, with observed withheld fit error about 0.00000073 mm. On the actual
+pinion/gear cutters, 17/37 sampled sharp contacts pass the local test; 106 source-material
+checks at nearby times verify that strict interior-cone samples are locally exposed.
+An explicit rotating-box negative control retains a normal-cone candidate that another
+pose covers, so candidate eligibility cannot stand in for swept-material classification.
+Those samples do not certify full-interval visibility. Native candidate-domain coverage,
+global trimming and closed-solid assembly remain unfinished.
+
 The acceptance work remains:
 
 1. **Reproduce the reference pair:** one command from recorded source and tooth-count/size
