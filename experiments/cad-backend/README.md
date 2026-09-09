@@ -260,6 +260,11 @@ no common topological vertex, with a minimum whole-surface separation bound of 0
 The 288 incident spline pairs are explicitly inventoried for separate join checks. Pairs
 involving analytical faces and common 3D boundary realization remain unverified.
 
+The [spline-join audit](SPLINE-JOINS.md) now verifies all 288 intended joins using one
+consistent common-boundary representative per face. Maximum face movement is 7.76e-10 mm;
+all 35,532 nonincident separation bounds remain positive after that movement. Each member's
+spline region is now consistently embedded. Analytical-face attachment remains open.
+
 ## Why this route
 
 [HyGEARS](https://www.hygears.com/hygears_4.0-february2020_019.htm) documents STEP export using

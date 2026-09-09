@@ -102,6 +102,13 @@ separation bound of 0.00364 mm. The full check takes 35 seconds and only 48 pair
 subdivision. The 288 incident spline pairs remain explicitly unverified, as do pairs
 involving analytical faces and the common shared 3D boundary realization.
 
+The [spline-join audit](../experiments/cad-backend/SPLINE-JOINS.md) now constructs one
+consistent representative per spline face and proves all 288 intended joins as globally
+injective combined rectangles. Maximum face movement is 7.76e-10 mm; all 35,532 nonincident
+separation bounds survive the change. Each member's complete spline region is embedded
+with consistent shared curves. Analytical blank attachment and the closed 3D boundary,
+global material, continuous mating and source/reader accuracy remain open.
+
 The deliverable remains one fully specified, parametric matched pair from a documented
 generating system, independently verifiable and exportable at a stated geometric accuracy.
 Manufacturing planning remains separate. This document redirects the next investigation:
