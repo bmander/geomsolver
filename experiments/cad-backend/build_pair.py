@@ -62,6 +62,31 @@ def check_contacts(result, offset, negative=False):
         raise ValueError("nominal CAD contact check failed")
 
 
+def check_engagement(result, teeth, module):
+    if (result["teeth"] != teeth or result["module_mm"] != module
+            or not result["passes_sampled_checks"]):
+        raise ValueError("nominal engagement source or result mismatch")
+    levels = result["levels"]
+    if [(r["profile_subdivisions"], r["face_intervals"], r["phase_intervals"])
+            for r in levels] != [(8, 4, 16), (16, 8, 32), (32, 8, 64)]:
+        raise ValueError("missing engagement refinement levels")
+    for r in [*levels, result["wrong_phase"]]:
+        n, faces, phases = r["profile_subdivisions"], r["face_intervals"], r["phase_intervals"]
+        if ([p["tooth_fraction"] for p in r["phases"]]
+                != [i/max(phases, 1) for i in range(phases+1)]
+                or r["boundary_queries"] != 12*n*sum(teeth)*(faces+1)*(phases+1)):
+            raise ValueError("incomplete engagement sample coverage")
+        values = [p["minimum_signed_polar_clearance_mm"] for p in r["phases"]]
+        if not all(math.isfinite(x) for x in values) or min(values) != r["minimum_signed_polar_clearance_mm"]:
+            raise ValueError("invalid engagement minimum")
+    if any(r["gear_phase_offset_rad"] != 0 or r["minimum_signed_polar_clearance_mm"] <= -1e-8*module
+           for r in levels):
+        raise ValueError("nominal engagement interference")
+    wrong = result["wrong_phase"]
+    if wrong["gear_phase_offset_rad"] != .001 or wrong["minimum_signed_polar_clearance_mm"] >= -1e-4*module:
+        raise ValueError("nominal engagement negative control failed")
+
+
 class Workflow:
     def __init__(self, output, configuration):
         # Never mix a new run with a previous run's successful evidence.
@@ -131,6 +156,10 @@ class Workflow:
                 raise ValueError("exported source does not match requested parameters")
             self.export("contact-reference", "export_contact_windows_for_cad_backend",
                         "SOLVENT_CAD_CONTACTS_OUTPUT", contacts)
+            engagement = out/"engagement.json"
+            self.export("nominal-engagement", "export_engagement_scan_for_cad_backend",
+                        "SOLVENT_CAD_ENGAGEMENT_OUTPUT", engagement)
+            check_engagement(read(engagement), config["teeth"], config["mean_module_mm"])
             spaces = out/"spaces"
             self.python("tooth-spaces", "tooth_space.py", source, spaces, "--subdivisions", 16)
             reports = []
@@ -161,6 +190,7 @@ class Workflow:
             check_contacts(read(wrong_contacts), .001, negative=True)
             self.report.update(status="completed", checks=dict(
                 native_and_step="passed", encoded_stl_embedding="passed",
+                nominal_engagement_refinement="passed",
                 sampled_assembly="passed", sampled_contact="passed", wrong_phase_controls="passed"))
         except BaseException as error:
             self.report.update(status="failed", error=f"{type(error).__name__}: {error}")

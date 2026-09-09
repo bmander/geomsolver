@@ -16,7 +16,10 @@ python experiments/cad-backend/build_pair.py build/exports/pair-run --teeth 24 4
 The output directory must be new. The command exports configured Solvent reference samples
 and analytical contacts, fits the 16-subdivision tooth spaces against the 32-subdivision
 comparison grid, cuts all indexed spaces, exports both STEP/STL members, audits exact encoded
-STL topology/embedding, and checks five assembly phases and 250 contact positions. It also
+STL topology/embedding, and checks five CAD assembly phases and 250 contact positions. Before
+construction it also scans nominal engagement at three successive resolutions, up to 65
+phases and nine face-width stations, using the independent analytical material classifier.
+Both generated rim boundaries and back-cone section boundaries are sampled. It also
 requires the deliberate 0.001-radian gear phase error to produce overlap and missed contacts.
 Assembly reports include each member's 3-by-4 local-to-assembly transform (millimetres).
 The coarse 8-subdivision trial remains available through `tooth_space.py` without a grid
@@ -49,6 +52,24 @@ to 0.001 inch, both STEP solids were remeshed at 0.01 mm without repeating those
 The finer meshes also pass independent exact embedding checks. Their 101 centroid samples
 per member have maximum distances to STEP below 0.0071 mm; that is a sampled diagnostic,
 not a complete exported-geometry error bound. The result records the exact files/hashes.
+
+The nominal engagement scan can be rerun without CAD construction:
+
+```sh
+SOLVENT_CAD_ENGAGEMENT_OUTPUT=/tmp/engagement.json cargo test --manifest-path rust/Cargo.toml export_engagement_scan_for_cad_backend -- --ignored --nocapture
+```
+
+It uses the same tooth-count/module overrides as the other explicit exporters. The report
+records each phase's worst witness, sample counts, refinement levels, and a displaced-gear
+control. Its signed polar clearance classifies material; its magnitude is an arc along a
+spherical meridian, not normal penetration depth. Refinement supplies sampled evidence only;
+unsampled phases, face stations and toe/heel interiors remain outside its coverage.
+
+The default [engagement refinement result](engagement-results.json) passes all three levels
+in 81 seconds. The finest level checks 16,174,080 boundary positions across 65 phases and
+nine face-width stations; every sampled nominal material sign is outside or at contact
+within numerical tolerance. The wrong-phase control detects a negative signed polar
+clearance of -0.1573 mm (not a normal penetration depth).
 
 ## Input and construction
 

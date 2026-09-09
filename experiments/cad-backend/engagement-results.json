@@ -1,0 +1,70 @@
+{
+  "teeth": [
+    24.0,
+    48.0
+  ],
+  "module_mm": 2,
+  "mean_distance_mm": 53.665631459994955,
+  "scope": "Nominal boundary material signs on listed spherical stations and motion samples; no between-sample or CAD accuracy bound. Signed polar clearance is not normal penetration depth.",
+  "passes_sampled_checks": true,
+  "evidence": {
+    "file": "/Users/bmander/Documents/GitHub/geomsolver/build/exports/pair-001-inch/nominal-engagement.json",
+    "sha256": "c1dc486f2bf660e735fc43f2041222d597ddbefb35436a76c227f4643c87f4e1"
+  },
+  "source_files": {
+    "rust/examples/spiral_bevel/boundaries.sv": "2a980905fb5a66dc91d1ceee9304c6915f406f9de0e592d10b25c88c68e43ee2",
+    "rust/examples/spiral_bevel/paired_references.sv": "9e01241d1b9954d8955918c76e6f66a4d6ae945620481be04ccc99d2063e9301",
+    "rust/examples/spiral_bevel/reference.sv": "7aecba88dd4b59a3abdc3f0b3e05f34be1dd09d9de5b28d80a069f2d77d8e5af"
+  },
+  "levels": [
+    {
+      "profile_subdivisions": 8,
+      "face_intervals": 4,
+      "phase_intervals": 16,
+      "gear_phase_offset_rad": 0,
+      "boundary_queries": 587520,
+      "seconds": 4.080683973,
+      "minimum_signed_polar_clearance_mm": 9.278279835496283e-08
+    },
+    {
+      "profile_subdivisions": 16,
+      "face_intervals": 8,
+      "phase_intervals": 32,
+      "gear_phase_offset_rad": 0,
+      "boundary_queries": 4105728,
+      "seconds": 17.438694949,
+      "minimum_signed_polar_clearance_mm": 1.4645993245975757e-10
+    },
+    {
+      "profile_subdivisions": 32,
+      "face_intervals": 8,
+      "phase_intervals": 64,
+      "gear_phase_offset_rad": 0,
+      "boundary_queries": 16174080,
+      "seconds": 56.150465417,
+      "minimum_signed_polar_clearance_mm": 4.4866889402321033e-11
+    }
+  ],
+  "wrong_phase": {
+    "profile_subdivisions": 16,
+    "face_intervals": 4,
+    "phase_intervals": 0,
+    "gear_phase_offset_rad": 0.001,
+    "boundary_queries": 69120,
+    "seconds": 3.447547455,
+    "minimum_signed_polar_clearance_mm": -0.15727415765226033,
+    "phases": [
+      {
+        "tooth_fraction": 0,
+        "minimum_signed_polar_clearance_mm": -0.15727415765226033,
+        "member": 1,
+        "face_fraction": 0.9,
+        "local_point_mm": [
+          -43.71584640356995,
+          -4.101313251790988,
+          20.12222658728812
+        ]
+      }
+    ]
+  }
+}

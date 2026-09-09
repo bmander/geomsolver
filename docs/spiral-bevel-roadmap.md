@@ -32,6 +32,11 @@ The existing proof results below are retained evidence, not the current task ord
 construction, STEP/STL export, encoded mesh audit and sampled engagement checks. It records
 source/version provenance, both wrong-phase controls, and remaining acceptance gaps. This
 test-adapter workflow is a bridge to public integration, not the finished language interface.
+The first fresh workflow run reproduces both inspection meshes and passes its sampled CAD
+checks and wrong-phase controls. A separate nominal engagement refinement now reaches
+65 phases and nine face-width stations with no sampled interference, including back-cone
+boundaries. These checks remain sampled; the full-period contact and whole-geometry
+acceptance questions must retain their stated coverage limits.
 
 ## Backend and accumulated evidence
 

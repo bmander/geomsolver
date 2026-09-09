@@ -2,6 +2,8 @@
 //! This is a sampled check, not a certificate between stations or motion samples.
 use super::*;
 
+mod scan;
+
 struct Curve {
     patch: RevolvedSurface,
     range: [f64;2],
@@ -207,31 +209,9 @@ fn assembled_rim_sections_through_one_tooth_period() {
 #[test]
 fn assembled_boundaries_stay_outside_the_exact_mating_rim_at_sampled_mesh_phases() {
     let pair = Pair::read([24,48],2.);
-    let mut worst = (f64::INFINITY,0,0.,0.,[0.;3]);
-    for face in 0..=8 {
-        let rho = pair.rm*(0.9+0.025*face as f64);
-        let exact = [ExactSection::read(&pair,0,rho),ExactSection::read(&pair,1,rho)];
-        let samples = [Section::read(&pair,0,rho,32),Section::read(&pair,1,rho,32)];
-        for member in 0..2 {
-            // The independent boundary classifier must return the source rim's own
-            // generating points as its boundary, including tips and root connections.
-            for &p in &samples[member].points {
-                assert!((exact[member].outer(azimuth(p))-polar(p)).abs() < 1e-9);
-            }
-        }
-        for phase in 0..=32 {
-            let t = TAU/pair.teeth[0].hypot(pair.teeth[1])*phase as f64/32.;
-            for member in 0..2 {
-                let transform = pair.body(member,t).then(pair.body(1-member,t).inverse());
-                for &p in &samples[member].points {
-                    let gap = exact[1-member].clearance(transform.point(p));
-                    if gap < worst.0 { worst = (gap,member,rho,t,p); }
-                }
-            }
-        }
-    }
-    eprintln!("worst exact mating-rim clearance: {worst:?}");
-    assert!(worst.0 > -1e-8*pair.module,"sampled interference: {worst:?}");
+    let result = scan::run(&pair,32,8,32,0.);
+    eprintln!("worst exact mating-rim clearance: {}",result.minimum());
+    assert!(result.minimum() > -1e-8*pair.module,"sampled interference");
 }
 
 #[test]
