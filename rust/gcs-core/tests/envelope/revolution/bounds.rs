@@ -33,3 +33,61 @@ fn full_revolved_source_boxes_enclose_positions_tangents_and_poles() {
         }
     }
 }
+
+#[test]
+fn local_angular_charts_cross_only_full_revolution_seams() {
+    use gcs_core::model::{Sense,SolidDef};
+    let mut e = read();
+    let si = e.map.ent_named("crown").unwrap().i();
+    let placement = Motion::rotation([1.,2.,3.],0.7,0.).unwrap()
+        .then(Motion::translation([3.,-4.,2.],[0.;3]).unwrap());
+    for sense in [Sense::Cw,Sense::Ccw] {
+        let SolidDef::Revolve {sense:s,..} = &mut e.sketch.solids[si].def else { unreachable!() };
+        *s = sense;
+        let source = patch(&e,"outer_round").placed(placement);
+        assert!(source.is_periodic());
+        assert!(source.at(0.5,-0.1).is_err(),"ordinary source coordinates stay restricted");
+        for range in [[-0.2,0.2],[0.8,1.2]] {
+            let chart = source.angular_chart(range).unwrap();
+            let bounds = chart.bounds(I::new(0.3,0.7).unwrap(),I::new(range[0],range[1]).unwrap()).unwrap();
+            for u in [0.3,0.5,0.7] { for i in 0..=16 {
+                let v = range[0]+(range[1]-range[0])*i as f64/16.;
+                let p = chart.at(u,v).unwrap();
+                let q = source.at(u,v.rem_euclid(1.)).unwrap();
+                near(p.position,q.position,1e-12);
+                near(p.du,q.du,1e-12);
+                near(p.dv,q.dv,1e-12);
+                for (actual,b) in [(p.position,bounds.position),(p.du,bounds.du),(p.dv,bounds.dv)] {
+                    for k in 0..3 { assert!(b[k].contains(actual[k])); }
+                }
+            } }
+            // A rotating translation direction drives one isolated contact
+            // continuously across this seam. Its unwrapped coordinate must not
+            // jump to the other end of the canonical revolution interval.
+            let seam = if range[0] < 0. { 0. } else { 1. };
+            let sign = if sense == Sense::Cw { -1. } else { 1. };
+            for theta in [-0.2_f64,0.,0.2] {
+                let motion = Motion::translation([0.;3],placement.vector([theta.sin(),theta.cos(),0.])).unwrap();
+                let roots = chart.contacts(0.5,motion,1e-9).unwrap();
+                assert_eq!(roots.len(),1);
+                assert!((roots[0].v-(seam-theta/(sign*std::f64::consts::TAU))).abs() < 1e-12);
+                assert!(roots[0].contact.normal_velocity.abs() < 1e-9);
+                assert!(source.contacts(0.5,motion,1e-9).unwrap().iter().any(|q|
+                    q.contact.position.iter().zip(roots[0].contact.position).all(|(a,b)| (a-b).abs() < 1e-11)));
+            }
+        }
+        for range in [[-0.3,0.1],[0.9,1.3],[-0.2,1.2],[0.4,0.2],[f64::NAN,0.2]] {
+            assert!(source.angular_chart(range).is_err());
+        }
+        let restricted = source.angular_chart([0.2,0.8]).unwrap();
+        assert!(!restricted.is_periodic());
+        assert!(restricted.angular_chart([0.1,0.9]).is_err());
+    }
+    let SolidDef::Revolve {sweep,..} = &mut e.sketch.solids[si].def else { unreachable!() };
+    sweep.value = std::f64::consts::PI;
+    let partial = patch(&e,"outer_round");
+    assert!(!partial.is_periodic());
+    assert_eq!(partial.angular_chart_domain(),[0.,1.]);
+    assert!(partial.angular_chart([-0.1,0.1]).is_err());
+    assert!(partial.angular_chart([0.9,1.1]).is_err());
+}

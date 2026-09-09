@@ -170,6 +170,30 @@ impl RevolvedSurface {
     /// Original source parameters: an angular span restricts v without renumbering it.
     pub fn domain(&self) -> [[f64;2];2] { [[0.,1.],self.v_domain] }
 
+    /// Whether this snapshot retains an entire revolution, including both sides
+    /// of its coordinate seam. A restricted angular span is not periodic.
+    pub fn is_periodic(&self) -> bool {
+        self.sweep.abs() == std::f64::consts::TAU && self.v_domain == [0.,1.]
+    }
+
+    /// Allowed coordinates for a local angular chart. The quarter-turn overlap
+    /// keeps interval trigonometry within its supported [-8,8] radian domain.
+    /// This extends the coordinate chart, not the material or the motion domain.
+    pub fn angular_chart_domain(&self) -> [f64;2] {
+        if self.is_periodic() { [-0.25,1.25] } else { self.v_domain }
+    }
+
+    /// Restrict or locally continue the same angular parametrization across a
+    /// full revolution's seam. Evaluate unwrapped angles directly: interval
+    /// proofs do not assume that binary64 TAU gives exact periodic equality.
+    /// Identifying coincident seam geometry during B-rep assembly is separate.
+    pub fn angular_chart(&self,range: [f64;2]) -> Result<Self,Error> {
+        let [a,b] = range; let [lo,hi] = self.angular_chart_domain();
+        if !a.is_finite() || !b.is_finite() { return Err(Error::NonFinite); }
+        if a > b || a < lo || b > hi || b-a > 1. { return Err(Error::OutsideDomain); }
+        Ok(Self {v_domain:range,..self.clone()})
+    }
+
     pub fn at(&self, u: f64, v: f64) -> Result<SurfacePoint, Error> {
         if !u.is_finite() || !v.is_finite() { return Err(Error::NonFinite); }
         if !(0. ..=1.).contains(&u) || v < self.v_domain[0] || v > self.v_domain[1] {

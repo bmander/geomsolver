@@ -143,16 +143,23 @@ strict nonzero equation bound; a chart has a nonzero source normal, opposite end
 signs over its entire free-parameter box and a dependent derivative separated from zero.
 This proves one contact root per free pair, not mapped-surface regularity or exposure.
 Poles, folds, domain transitions and budget exhaustion stay explicitly unresolved.
-Charts can overlap across internal partition boundaries while staying within the declared
-source/motion domains. `at_chart` evaluates either kind and refuses missing or ambiguous
-roots. Overlaps must still be reconciled before constructing a final face arrangement.
-At 30,000 evaluated cells per member, the pinion has 918 time/4 angular charts and the gear
-547 time/70 angular charts. The bounded search/audits take about 4.1/1.75 s; all source
-faces receive work and unfinished domains remain explicit. Sixteen selected gear charts
-are fitted and checked at withheld points. The isolated sphere coverage/fitting test
-takes about 69 ms, including four angular fits compared with the independent torus
-equation. Outer seams and poles remain unresolved. Timings exclude compilation and do
-not describe complete swept-solid export.
+Charts can overlap across internal partition boundaries. Full revolutions also permit
+local continuation through the angular seam, limited to `[-0.25,1.25]` so interval
+trigonometry stays in its supported domain. Partial revolutions, restricted spans and
+motion intervals retain their physical boundaries. The source-domain partition remains
+unchanged. `at_chart` evaluates unwrapped angular coordinates and refuses missing or
+ambiguous roots; it does not assume exact periodic equality for binary64 TAU. When an
+extended chart loses its monotonicity bound, subdivision can refine the dependent
+coordinate as well. Overlaps and coincident seams must still be reconciled before
+constructing a final face arrangement.
+At 30,000 evaluated cells per member, the pinion has 845 time/82 angular charts and the gear
+222 time/186 angular charts, including 18/15 seam charts. Search/audits take about 5.2/2.1 s;
+all source faces receive work and unfinished domains remain explicit. Sixteen selected
+gear charts, including four seam charts per member, are fitted and checked at withheld
+points. The sphere coverage/fitting test takes about 0.1 s, including eight angular fits
+compared with the independent torus equation. Sampled regular contacts at both angular
+endpoints have charts, while poles remain unresolved. Timings exclude compilation and
+do not describe complete swept-solid export.
 
 The angular derivative uses a shared interval motion-coefficient implementation for
 both terms of the position/normal product rule. Trigonometric boxes now use a midpoint

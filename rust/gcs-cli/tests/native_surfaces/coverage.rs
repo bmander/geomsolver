@@ -18,7 +18,10 @@ fn audit_partition(sweep: &SweepContacts,cover: &ContactCover) {
             if let ContactEvidence::Chart(chart) = cell.evidence {
                 let axis = chart.dependent.index(); let [a,b] = chart.range.bounds();
                 let [lo,hi] = cell.parameters[axis].bounds();
-                assert!(a >= original[axis][0] && b <= original[axis][1] && a <= lo && b >= hi);
+                let allowed = if chart.dependent == ContactParameter::Angle {
+                    surface.angular_chart_domain()
+                } else { original[axis] };
+                assert!(a >= allowed[0] && b <= allowed[1] && a <= lo && b >= hi);
                 assert!(!chart.derivative.contains(0.));
                 let [a,b] = chart.ends.map(|i| i.bounds());
                 assert!((a[1] < 0. && b[0] > 0.) || (b[1] < 0. && a[0] > 0.));
@@ -62,8 +65,17 @@ fn complete_source_domain_keeps_unresolved_poles_and_exhausted_regions() {
             assert!(charts.len() >= 4,"time-independent contacts need angular charts");
             assert!(charts.iter().any(|(c,chart)| chart.range != c.parameters[chart.dependent.index()]),
                 "the torus contact on a subdivision boundary needs an overlapping chart");
+            let seam_charts: Vec<_> = charts.iter().filter(|(_,chart)| {
+                let [a,b] = chart.range.bounds(); a < 0. || b > 1.
+            }).collect();
+            assert!(seam_charts.len() >= 4,"the full revolution needs charts through its seam");
+            for u in [0.13,0.47,0.81] { for v in [0.,1.] {
+                assert!(seam_charts.iter().any(|(c,_)| c.parameters.iter().zip([u,v,0.]).all(|(b,x)| b.contains(x))),
+                    "regular seam contact must have a chart at {u}, {v}: {:?}",cover.cells.iter().filter(|c|
+                        c.parameters.iter().zip([u,v,0.]).all(|(b,x)| b.contains(x))).collect::<Vec<_>>());
+            } }
             let cad = Cad::new();
-            for (cell,chart) in charts.iter().take(4) {
+            for (cell,chart) in charts.iter().take(4).chain(seam_charts.into_iter().take(4)) {
                 assert_eq!(chart.dependent,ContactParameter::Angle);
                 assert!(sweep.at_chart(cell,f64::NAN,0.5,1e-10).is_err());
                 let points: Vec<_> = (0..=16).flat_map(|i| {
@@ -106,8 +118,14 @@ fn automatic_contact_charts_of_both_source_members_fit_natively() {
         let cover = sweep.cover(ContactCoverOptions {max_depth:21,max_cells:30000}).unwrap();
         audit_partition(&sweep,&cover);
         let charts: Vec<_> = cover.cells.iter().filter(|c| matches!(c.evidence,ContactEvidence::Chart(_))).collect();
+        let crosses_seam = |c: &gcs_core::solid::ContactCell| matches!(c.evidence,
+            ContactEvidence::Chart(chart) if chart.dependent == ContactParameter::Angle
+                && (chart.range.bounds()[0] < 0. || chart.range.bounds()[1] > 1.));
         eprintln!("{member}: {} charts, {} cells, {} evaluations in {:?}",charts.len(),cover.cells.len(),cover.evaluations,start.elapsed());
         assert!(!charts.is_empty());
+        let seams = charts.iter().filter(|c| crosses_seam(c)).count();
+        eprintln!("{member}: {seams} charts cross revolution seams");
+        assert!(seams > 0);
         for dependent in [ContactParameter::Time,ContactParameter::Angle] {
             let count = charts.iter().filter(|c| matches!(c.evidence,ContactEvidence::Chart(chart) if chart.dependent == dependent)).count();
             eprintln!("{member}: {count} {dependent:?} charts");
@@ -134,7 +152,10 @@ fn automatic_contact_charts_of_both_source_members_fit_natively() {
         }
         assert!(contacts > 30);
         for dependent in [ContactParameter::Time,ContactParameter::Angle] {
-        for cell in charts.iter().filter(|c| matches!(c.evidence,ContactEvidence::Chart(chart) if chart.dependent == dependent)).take(4) {
+        let mut selected: Vec<_> = charts.iter().filter(|c| matches!(c.evidence,ContactEvidence::Chart(chart)
+            if chart.dependent == dependent)).collect();
+        selected.sort_by_key(|c| !crosses_seam(c));
+        for cell in selected.into_iter().take(4) {
             let at = |a,b| sweep.at_chart(cell,a,b,1e-10).unwrap().position;
             let mut worst = f64::INFINITY;
             for n in [8,16,32] {

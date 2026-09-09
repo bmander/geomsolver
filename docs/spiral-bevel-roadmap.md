@@ -219,18 +219,26 @@ The search refines free parameters after proving monotonicity and rotates work a
 source faces. A single fixed-axis rotation's time-independent equation now produces angular
 charts. Their derivative includes both position and normal changes, with shifted axes
 retained in the product rule. Charts may overlap across internal subdivision planes;
-their dependent intervals remain inside the declared source/motion domain and contain
-the corresponding partition interval. Outer seams, poles and endpoint events remain
-explicit. `SweepContacts::at_chart` evaluates either chart through the ordinary analytic
-root solver and refuses missing/ambiguous roots or non-chart cells.
+their dependent intervals contain the corresponding partition interval. Full revolutions
+also allow local angular charts through their coordinate seam, in `[-0.25,1.25]`;
+partial revolutions, restricted spans and motion endpoints keep their declared limits.
+These charts evaluate unwrapped angles directly, without assuming exact periodic equality
+for binary64 TAU. The original source-domain partition is unchanged. If extension loses
+the derivative bound, subdivision can refine that coordinate instead of indefinitely
+refining only the free coordinates. `SweepContacts::at_chart` evaluates either chart
+through the ordinary analytic root solver and refuses missing/ambiguous roots or non-chart
+cells. Poles, endpoint events and unresolved chart regions remain explicit; coincident
+seam geometry still needs reconciliation during final B-rep assembly.
 
-The isolated sphere domain/fitting test takes about 69 ms and fits four angular charts
-against the independent torus equation. At a 30,000-cell limit per member, the current
-pair produces 918 time/4 angular charts for the pinion and 547 time/70 angular charts for
-the gear, with bounded search/audit times about 4.1/1.75 s. Every source face receives work
-and pending domains remain represented; those budgets do not finish the atlas. Sixteen
-selected gear charts, using both parameterizations on both members, pass native fitting
-checks at withheld points. Full event/seam coverage, overlap reconciliation, material
+The sphere domain/fitting test takes about 0.1 s and performs eight angular fits,
+including seam charts, against the independent torus equation. It retains 524 cells after
+1,047 evaluations at depth 10; sampled regular contacts at both angular endpoints have
+charts, while poles remain unresolved. At a 30,000-cell limit per member, the current
+pair produces 845 time/82 angular charts for the pinion and 222 time/186 angular charts for
+the gear, including 18/15 seam charts, with bounded search/audit times about 5.2/2.1 s.
+Every source face receives work and pending domains remain represented; those budgets do
+not finish the atlas. Sixteen selected gear charts, including four seam charts on each
+member, pass native fitting checks at withheld points. Full event/seam coverage, overlap reconciliation, material
 selection and closed native assembly remain necessary before public continuous-sweep export.
 
 Interval trigonometry now evaluates its Taylor polynomial at the box midpoint and bounds

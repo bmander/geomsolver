@@ -1,4 +1,4 @@
-//! Conservative source/contact domain partition and regular temporal charts.
+//! Conservative source/contact domain partition and regular angular/time charts.
 use super::SweepContacts;
 use crate::interval::{Interval as I,Error};
 
@@ -26,8 +26,9 @@ impl ContactParameter {
 #[derive(Clone,Copy,Debug)]
 pub struct ContactChart {
     pub dependent: ContactParameter,
-    /// May extend beyond its partition cell, but stays within the source/motion
-    /// domain and contains the cell's dependent interval. Neighboring charts may
+    /// May extend beyond its partition cell, including across a full revolution's
+    /// coordinate seam, but never beyond the declared motion or a partial source
+    /// revolution. Contains the cell's dependent interval. Neighboring charts may
     /// overlap. Every free parameter pair has exactly one root in this interval.
     pub range: I,
     pub ends: [I;2],
@@ -65,6 +66,12 @@ pub struct ContactCover {
 pub enum ContactCoverError { InvalidOptions, Arithmetic(Error) }
 impl From<Error> for ContactCoverError { fn from(error: Error) -> Self { Self::Arithmetic(error) } }
 
+enum ChartAttempt {
+    Unresolved,
+    Monotone,
+    Proven(ContactChart),
+}
+
 impl SweepContacts {
     /// Sample a chart from this same solved snapshot. Inputs are normalized free
     /// coordinates, in the order given by `ContactParameter::free`. A missing or
@@ -83,7 +90,10 @@ impl SweepContacts {
         }
         let axis = chart.dependent.index(); let [lo,hi] = chart.range.bounds();
         let [a0,b0] = cell.parameters[axis].bounds();
-        if lo < full[axis][0] || hi > full[axis][1] || lo > a0 || hi < b0 {
+        let allowed = if chart.dependent == ContactParameter::Angle {
+            surface.angular_chart_domain()
+        } else { full[axis] };
+        if lo < allowed[0] || hi > allowed[1] || lo > a0 || hi < b0 {
             return Err("contact chart has an invalid dependent interval".into());
         }
         let free = chart.dependent.free();
@@ -92,40 +102,44 @@ impl SweepContacts {
         let roots: Vec<_> = match chart.dependent {
             ContactParameter::Time => self.at_source(cell.patch,a,b,tolerance)?.into_iter()
                 .filter(|c| chart.range.contains(c.root.time)).map(|c| c.contact).collect(),
-            ContactParameter::Angle => self.at(cell.patch,a,b,tolerance).map_err(|e| format!("{e:?}"))?.into_iter()
-                .filter(|c| chart.range.contains(c.v)).map(|c| c.contact).collect(),
+            ContactParameter::Angle => surface.angular_chart(chart.range.bounds())
+                .map_err(|e| format!("{e:?}"))?
+                .contacts(a,self.motion.at(b)?,tolerance).map_err(|e| format!("{e:?}"))?.into_iter()
+                .map(|c| c.contact).collect(),
         };
         if roots.len() != 1 { return Err(format!("contact chart has {} roots at its free coordinates",roots.len())); }
         Ok(roots[0])
     }
 
     fn contact_chart(&self,patch: usize,mut parameters: [I;3],dependent: ContactParameter,range: I)
-        -> Result<Option<ContactChart>,Error> {
+        -> Result<ChartAttempt,Error> {
         parameters[dependent.index()] = range;
         let [u,v,time] = parameters;
-        let bounds = self.patches[patch].bounds(u,v)?;
-        if bounds.normal.iter().all(|x| x.contains(0.)) { return Ok(None); }
+        let surface = self.patches[patch].angular_chart(v.bounds()).map_err(|_| Error::OutsideDomain)?;
+        let bounds = surface.bounds(u,v)?;
+        if bounds.normal.iter().all(|x| x.contains(0.)) { return Ok(ChartAttempt::Unresolved); }
         let equation = self.motion.normal_velocity_bounds(bounds.position,bounds.normal)?;
         let derivative = match dependent {
             ContactParameter::Time => equation.derivative(time)?,
             ContactParameter::Angle => self.motion.normal_velocity_directional_bounds(bounds.position,bounds.normal,
                 bounds.dv,bounds.normal_dv)?.at(time)?,
         };
-        if derivative.contains(0.) { return Ok(None); }
+        if derivative.contains(0.) { return Ok(ChartAttempt::Unresolved); }
         let [a,b] = range.bounds();
         let mut ends = [I::ZERO;2];
         for (i,endpoint) in [a,b].into_iter().enumerate() {
             ends[i] = match dependent {
                 ContactParameter::Time => equation.at(I::point(endpoint)?)?,
                 ContactParameter::Angle => {
-                    let bounds = self.patches[patch].bounds(u,I::point(endpoint)?)?;
+                    let bounds = surface.bounds(u,I::point(endpoint)?)?;
                     self.motion.normal_velocity_bounds(bounds.position,bounds.normal)?.at(time)?
                 }
             };
         }
         let opposite = |a: I,b: I| a.bounds()[1] < 0. && b.bounds()[0] > 0.;
-        Ok((opposite(ends[0],ends[1]) || opposite(ends[1],ends[0]))
-            .then_some(ContactChart {dependent,range,ends,derivative}))
+        Ok(if opposite(ends[0],ends[1]) || opposite(ends[1],ends[0]) {
+            ChartAttempt::Proven(ContactChart {dependent,range,ends,derivative})
+        } else { ChartAttempt::Monotone })
     }
 
     pub fn cover(&self,options: ContactCoverOptions) -> Result<ContactCover,ContactCoverError> {
@@ -162,22 +176,29 @@ impl SweepContacts {
             let angular = self.motion.normal_velocity_directional_bounds(surface.position,surface.normal,
                 surface.dv,surface.normal_dv)?.at(time)?;
             let mut chart = None;
+            let mut monotone = [false,!angular.contains(0.),!derivative.contains(0.)];
             for dependent in [ContactParameter::Time,ContactParameter::Angle] {
                 if dependent == ContactParameter::Time && equation.is_time_independent() { continue; }
                 let slope = if dependent == ContactParameter::Time { derivative } else { angular };
                 if slope.contains(0.) || surface.normal.iter().all(|x| x.contains(0.)) { continue; }
                 let axis = dependent.index();
                 let range = parameters[axis];
-                chart = self.contact_chart(patch,parameters,dependent,range)?;
-                if chart.is_none() {
+                let mut attempt = self.contact_chart(patch,parameters,dependent,range)?;
+                if !matches!(attempt,ChartAttempt::Proven(_)) {
                     // A root on an internal partition plane needs an overlapping
-                    // chart. Expansion never leaves the declared source/motion
-                    // domain; outer seams and endpoint events remain unresolved.
-                    let full = if axis == 2 { self.roll } else { self.patches[patch].domain()[axis] };
+                    // chart. Full revolutions also permit local continuation
+                    // through their coordinate seam. Physical endpoints do not.
+                    let full = if axis == 2 { self.roll } else { self.patches[patch].angular_chart_domain() };
                     let [a,b] = range.bounds(); let half = (b-a)*0.5;
                     let expanded = I::new((a-half).max(full[0]),(b+half).min(full[1]))?;
-                    if expanded != range { chart = self.contact_chart(patch,parameters,dependent,expanded)?; }
+                    if expanded != range && (axis == 2 || expanded.bounds()[1]-expanded.bounds()[0] <= 1.) {
+                        attempt = self.contact_chart(patch,parameters,dependent,expanded)?;
+                    }
                 }
+                // Monotonicity of the original box alone cannot justify always
+                // refining free coordinates when the overlapping box loses it.
+                monotone[axis] = !matches!(attempt,ChartAttempt::Unresolved);
+                if let ChartAttempt::Proven(proven) = attempt { chart = Some(proven); }
                 if chart.is_some() { break; }
             }
             if let Some(chart) = chart {
@@ -195,8 +216,8 @@ impl SweepContacts {
             let original = [u,v,self.roll];
             let fraction = |axis: usize| {
                 if axis == 2 && equation.is_time_independent() { return 0.; }
-                if !derivative.contains(0.) { if axis == 2 { return 0.; } }
-                else if !angular.contains(0.) && axis == 1 { return 0.; }
+                if monotone[2] { if axis == 2 { return 0.; } }
+                else if monotone[1] && axis == 1 { return 0.; }
                 let span = original[axis][1]-original[axis][0];
                 let [a,b] = parameters[axis].bounds();
                 if span > 0. { (b-a)/span } else { 0. }
