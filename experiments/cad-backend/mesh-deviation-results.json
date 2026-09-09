@@ -1,0 +1,76 @@
+{
+  "scope": "Complete encoded triangle distance to supporting CAD surfaces; finite trim, reverse coverage and nominal-source error remain outside this bound",
+  "geometry_accuracy_target_mm": 0.0254,
+  "support_distance_budget_mm": 0.02,
+  "full_pair_audit_revision": "fad2f01",
+  "members": [
+    {
+      "member": "pinion",
+      "report": {
+        "file": "/Users/bmander/Documents/GitHub/geomsolver/build/exports/pair-001-inch/pinion-surface-bound.json",
+        "sha256": "453cb3d96e5263297cc0eba47e76d0f9e7b70a0b9081208bdc97bb468e4b6240"
+      },
+      "parameters": {
+        "file": "/private/tmp/solvent-pinion-mesh-parameters.json",
+        "sha256": "126494e7143213d7cba40432189c89b52f68186be13672ded40fbd43c347a71b"
+      },
+      "stl_sha256": "223e42ceccd5ec19116ba62058dfb0ed89433ec329876a3c7ff4a0d3d3fd5826",
+      "step_sha256": "85dc3dc57838f917a9931dfe0f82de34a103d7a911f8f6b0a3855bc749b90643",
+      "faces": 149,
+      "triangles": 81742,
+      "maximum_bound_mm": 0.019984392347866857,
+      "seconds": 254.45250895101344,
+      "passes": true
+    },
+    {
+      "member": "gear",
+      "report": {
+        "file": "/Users/bmander/Documents/GitHub/geomsolver/build/exports/pair-001-inch/gear-surface-bound.json",
+        "sha256": "6256c82c357933ffc496e9ef9b0522b0ea47437e2ad03920f3b7d4b9d373c30b"
+      },
+      "parameters": {
+        "file": "/private/tmp/solvent-gear-mesh-parameters.json",
+        "sha256": "7cabd7c55c93b8daa4feb76e00dba133774321b0425d264063f69ee0eaeac060"
+      },
+      "stl_sha256": "66d7f737715ec609d19b2affde6eba38892752da5c1d841c2dd02b7c25dbd6d0",
+      "step_sha256": "04f10b06810fa9631cb60e5b6c0e715ba6a66bc8b048e59ab18b8c7532da956b",
+      "faces": 292,
+      "triangles": 115556,
+      "maximum_bound_mm": 0.0199834659087872,
+      "seconds": 352.3591227190336,
+      "passes": true
+    }
+  ],
+  "small_cases": [
+    {
+      "name": "cube",
+      "report": {
+        "file": "/private/tmp/solvent-mesh-correspondence-small/cube-bound.json",
+        "sha256": "9c81d441be5c5faefad6750027467e827b3f65fbc4de909c6f2a95445fcbfe3a"
+      },
+      "triangles": 12,
+      "seconds": 0.0060013270121999085,
+      "maximum_bound_mm": 0.0
+    },
+    {
+      "name": "sphere",
+      "report": {
+        "file": "/private/tmp/solvent-mesh-correspondence-small/sphere-bound.json",
+        "sha256": "46200d12651b6d15a43428649b673128aa01263a6451966775831c3322cea79d"
+      },
+      "triangles": 5008,
+      "seconds": 2.4081005009938963,
+      "maximum_bound_mm": 0.007518733679221303
+    },
+    {
+      "name": "tooth-space",
+      "report": {
+        "file": "/private/tmp/solvent-mesh-correspondence-small/tooth-space-bound.json",
+        "sha256": "514d295031c9076a2e0a60f35a56c1a164a3a2d25a44d07c79b2abb7f6a9bb67"
+      },
+      "triangles": 3840,
+      "seconds": 9.018799062992912,
+      "maximum_bound_mm": 0.019968343830576305
+    }
+  ]
+}

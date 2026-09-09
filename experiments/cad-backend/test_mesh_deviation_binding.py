@@ -32,6 +32,12 @@ class MeshBindingTests(unittest.TestCase):
                     return run(source, output)
 
             self.assertTrue(check()["passes_surface_distance_bound"])
+            face["nodes"][1][0] = 2
+            refused = check()
+            self.assertFalse(refused["passes_surface_distance_bound"])
+            self.assertIsNone(refused["maximum_bound_mm"])
+            self.assertIsNone(refused["faces"][0]["bound_mm"])
+            face["nodes"][1][0] = 1
             face["triangles"] = [[0, 0, 2, 1]]
             with self.assertRaisesRegex(ValueError, "does not match"):
                 check()

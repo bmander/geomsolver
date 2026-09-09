@@ -37,6 +37,10 @@ checks and wrong-phase controls. A separate nominal engagement refinement now re
 65 phases and nine face-width stations with no sampled interference, including back-cone
 boundaries. These checks remain sampled; the full-period contact and whole-geometry
 acceptance questions must retain their stated coverage limits.
+The finer STL exports now also have complete triangle-to-support distance bounds below
+0.019985 mm, covering interiors as well as encoded vertices. Finite trimmed-face membership,
+reverse coverage and transfer to nominal generating geometry remain separate from this
+support-distance result; it is not yet the complete 0.0254 mm export-accuracy gate.
 
 ## Backend and accumulated evidence
 

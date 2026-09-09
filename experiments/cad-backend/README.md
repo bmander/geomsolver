@@ -71,6 +71,17 @@ nine face-width stations; every sampled nominal material sign is outside or at c
 within numerical tolerance. The wrong-phase control detects a negative signed polar
 clearance of -0.1573 mm (not a normal penetration depth).
 
+## Whole-triangle export check
+
+The [whole-triangle support-distance checker](MESH-DEVIATION.md) now bounds every
+triangle of the finer actual STL exports, including interiors and encoded vertex error.
+The complete [result](mesh-deviation-results.json) covers 81,742 pinion and 115,556 gear
+triangles with maximum bounds below 0.019985 mm against their associated supporting
+surfaces. The audits took 254/352 seconds in concurrent runs. This replaces centroid-only
+evidence for support distance, but finite trimmed-face coverage, reverse coverage and
+nominal generating-geometry accuracy remain separate requirements for the 0.0254 mm
+end-to-end target. It does not establish that target by itself.
+
 ## Input and construction
 
 The ignored Rust test `export_tooth_space_sections_for_cad_backend` reads and solves the

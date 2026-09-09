@@ -58,6 +58,8 @@ The projection's convergence is never accepted as an error bound. Each child's
 curvature bound covers its complete interior; the children cover the unchanged
 original triangle. Failure or exhaustion of the subdivision limit is a refusal.
 The piecewise witness maps need not provide a continuous reverse parameterization.
+On refusal, reported cell bounds describe the unresolved cells only. No whole-face
+or whole-mesh maximum is reported unless all of its triangles pass.
 
 ## Spheres and polar charts
 

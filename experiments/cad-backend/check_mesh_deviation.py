@@ -71,9 +71,9 @@ def run(source, output, tolerance=F(1, 50)):
             cells += bound["cells"]
             maximum = max(maximum, bound["bound"])
             if not bound["passes"]:
-                failures.append(dict(triangle=identifier, upper_mm=upper_float(bound["bound"])))
+                failures.append(dict(triangle=identifier, unresolved_cell_upper_mm=upper_float(bound["bound"])))
         row = dict(face_index=index, kind=face["surface"]["kind"], triangles=len(face["triangles"]),
-                   bound_mm=upper_float(maximum), cells=cells, failures=failures)
+                   bound_mm=None if failures else upper_float(maximum), cells=cells, failures=failures)
         result["faces"].append(row)
         evaluator.value.cache_clear()
         vertex_error.cache_clear()
@@ -82,9 +82,10 @@ def run(source, output, tolerance=F(1, 50)):
         print(json.dumps(row), flush=True)
     if len(seen) != count:
         raise ValueError("omitted encoded triangles")
+    passed = all(not r["failures"] for r in result["faces"])
     result.update(triangles=count, seconds=time.perf_counter()-started,
-                  maximum_bound_mm=max(r["bound_mm"] for r in result["faces"]),
-                  passes_surface_distance_bound=all(not r["failures"] for r in result["faces"]))
+                  maximum_bound_mm=max(r["bound_mm"] for r in result["faces"]) if passed else None,
+                  passes_surface_distance_bound=passed)
     output.write_text(json.dumps(result, indent=2)+"\n")
     return result
 
