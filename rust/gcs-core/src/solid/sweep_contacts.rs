@@ -1,6 +1,6 @@
 //! Candidate envelope faces read from an ordinary swept-solid definition.
 use super::{SpatialField,RevolvedSurface,RevolvedContact};
-use crate::{envelope::{Error,Motion},model::{Sketch,SolidDef,EntKind},motion::Family};
+use crate::{envelope::{self,Contact,Error,Motion},model::{Sketch,SolidDef,EntKind},motion::Family};
 use std::{collections::BTreeSet,f64::consts::TAU};
 
 /// Smooth-face contact candidates of a continuous sweep. This retains every
@@ -13,6 +13,12 @@ pub struct SweepContacts {
     patches: Vec<RevolvedSurface>,
     motion: Family,
     roll: [f64;2],
+}
+
+#[derive(Clone,Copy,Debug)]
+pub struct TimedContact {
+    pub root: crate::motion::ContactTime,
+    pub contact: Contact,
 }
 
 impl SweepContacts {
@@ -65,5 +71,25 @@ impl SweepContacts {
         if roll < self.roll[0] || roll > self.roll[1] { return Err(Error::OutsideDomain); }
         let surface = self.patches.get(patch).ok_or(Error::OutsideDomain)?;
         surface.contacts(u,self.motion.at(roll).map_err(|_| Error::NonFinite)?,tolerance)
+    }
+
+    /// Alternate chart: hold both source parameters and solve for motion times.
+    /// This may cross a fold in the (u,time) chart without a surface singularity.
+    /// Only single rotations and two relative rotations support the analytic
+    /// temporal reduction. Neither chart alone guarantees complete coverage.
+    pub fn at_source(&self,patch: usize,u: f64,v: f64,tolerance: f64)
+        -> Result<Vec<TimedContact>,String> {
+        let surface = self.patches.get(patch).ok_or("no such sweep patch")?.at(u,v)
+            .map_err(|e| format!("{e:?}"))?;
+        let roots = self.motion.normal_velocity(surface)?.roots(self.roll,tolerance,4096)
+            .map_err(|e| format!("{e:?}"))?;
+        roots.into_iter().map(|root| {
+            let contact = envelope::contact(surface,self.motion.at(root.time)?)
+                .map_err(|e| format!("{e:?}"))?;
+            if contact.normal_velocity.abs() > tolerance {
+                return Err("temporal contact failed the original normal-velocity equation".into());
+            }
+            Ok(TimedContact {root,contact})
+        }).collect()
     }
 }

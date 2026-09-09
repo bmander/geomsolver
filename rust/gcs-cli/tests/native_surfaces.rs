@@ -133,6 +133,50 @@ fn native_contact_faces_follow_the_declarative_pair_and_neighbor_motion() {
 }
 
 #[test]
+fn source_parameter_contact_chart_crosses_the_temporal_fold() {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let e = read(&std::fs::read_to_string(base.join("gears.sv")).unwrap(),&base);
+    let id = e.map.ent_named("pair.pinion.removal").unwrap().i();
+    let sweep = SweepContacts::read(&e.sketch,id,1e-10).unwrap();
+    let patch = sweep.patches().iter().position(|p| p.name.ends_with(".inner")).unwrap();
+    let sample = |u: f64,v: f64| {
+        let roots = sweep.at_source(patch,0.65+0.15*u,0.7+0.1*v,1e-10).unwrap();
+        assert_eq!(roots.len(),1,"the fixture must stay on one temporal branch");
+        roots[0]
+    };
+    // This source chart crosses the join of the two old (u,time) branches.
+    let mut branches = Vec::new();
+    for v in [0.,1.] {
+        let c = sample(0.5,v);
+        let roots = sweep.at(patch,0.725,c.root.time,1e-10).unwrap();
+        let branch = roots.iter().find(|r| (r.v-(0.7+0.1*v)).abs() < 1e-9).unwrap();
+        branches.push(branch.branch);
+    }
+    assert_ne!(branches[0],branches[1]);
+    assert!(sample(0.5,0.5).root.time > sample(0.5,0.).root.time);
+    assert!(sample(0.5,0.5).root.time > sample(0.5,1.).root.time);
+    assert!(sweep.at(patch,0.725,0.025,1e-10).unwrap().is_empty());
+    let cad = Cad::new();
+    let grid: Vec<_> = (0..=32).flat_map(|i| {
+        let sample = &sample;
+        (0..=32).map(move |j| sample(i as f64/32.,j as f64/32.).contact.position)
+    }).collect();
+    let id = cad.fit(&grid,33,33).unwrap();
+    let (mut error,mut normal_error) = (0_f64,0_f64);
+    for i in 0..32 { for j in 0..32 {
+        let u = (i as f64+0.37)/32.; let v = (j as f64+0.63)/32.;
+        let expected = sample(u,v).contact;
+        let (p,n) = cad.at(id,u,v).unwrap();
+        error = error.max(distance(p,expected.position));
+        let dot = (0..3).map(|k| n[k]*expected.normal[k]).sum::<f64>();
+        normal_error = normal_error.max((1.-dot.abs()).abs());
+    } }
+    assert!(error < 1e-5,"fold-crossing position error {error} mm");
+    assert!(normal_error < 1e-8,"fold-crossing tangent-plane error {normal_error}");
+    eprintln!("native face across the contact-chart fold: position error {error:e} mm, tangent-plane error {normal_error:e}");
+}
+
+#[test]
 fn native_sphere_sweep_faces_converge_to_an_independent_torus() {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
     let e = read(include_str!("../../examples/solid_generating_sweep.sv"),&base);

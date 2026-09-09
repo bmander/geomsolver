@@ -1,6 +1,8 @@
 //! Named rigid-motion families. Every node reads the same angular parameter in radians.
 mod bounds;
 pub use bounds::MotionBounds;
+mod contact;
+pub use contact::{NormalVelocity,ContactTime};
 use crate::{envelope::Motion,model::{MotionDef,Sketch}};
 
 #[derive(Clone,Debug)]

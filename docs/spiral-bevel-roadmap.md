@@ -126,6 +126,24 @@ case instead of interpolating across the missing domain. The bridge primitive is
 by tests only until source trimming, chart events and closed-solid assembly are connected.
 Public continuous-sweep STEP/STL export remains explicitly unsupported.
 
+An alternate contact chart now holds the source `(u,v)` parameters and solves for
+motion time. `Family::normal_velocity` reduces a rotation viewed from another fixed-axis
+rotation to a sinusoid in the source angle, including offset axes, signed rates and phase.
+`SweepContacts::at_source` enumerates isolated roots over the declared roll interval and
+checks each against the original differentiated motion. Constant-contact and near-double
+roots remain explicit degeneracies; nested relative motions are unsupported by this
+temporal reduction. Root enumeration has a finite budget and never returns a truncated set.
+This complements the original chart; it does not guarantee coverage or surface regularity.
+
+Both charts now reproduce the same 120 independently calculated crown characteristics,
+including the neighboring gear cutter. Tests compare the temporal coefficients and roots
+against direct matrix differentiation with offset/tilted axes, negative and zero rates,
+multiple windings, endpoint roots and observer phase changes. A native fitted face over
+source `(u,v)` = `[0.65,0.8] x [0.7,0.8]` crosses the pinion inner-flank join where the
+original `(u,time)` chart folds: both old branches are covered, with observed withheld
+position error about 0.0000016 mm and matching tangent planes. This resolves that local
+coordinate failure without claiming the full swept boundary is constructed or trimmed.
+
 The acceptance work remains:
 
 1. **Reproduce the reference pair:** one command from recorded source and tooth-count/size

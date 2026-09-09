@@ -90,17 +90,28 @@ fn source_contact_curves_reproduce_independent_crown_characteristics() {
                     }
                     let world = pair.local_frame(member).inverse().point(local);
                     let mut distance = f64::INFINITY;
+                    let mut temporal_match = false;
                     for i in 0..sweep.patches().len() {
                         match sweep.at(i,u,roll,module*1e-10) {
                             Ok(roots) => for root in roots {
                                 let p = root.contact.position;
-                                distance = distance.min((p[0]-world[0]).hypot(p[1]-world[1]).hypot(p[2]-world[2]));
+                                let gap = (p[0]-world[0]).hypot(p[1]-world[1]).hypot(p[2]-world[2]);
+                                distance = distance.min(gap);
+                                if gap < module*1e-8 {
+                                    let times = sweep.at_source(i,u,root.v,module*1e-10).unwrap();
+                                    temporal_match |= times.iter().any(|r| {
+                                        let p = r.contact.position;
+                                        (r.root.time-roll).abs() < 1e-8
+                                            && (p[0]-world[0]).hypot(p[1]-world[1]).hypot(p[2]-world[2]) < module*1e-8
+                                    });
+                                }
                             },
                             Err(gcs_core::envelope::Error::Degenerate) => {},
                             Err(error) => panic!("{name}: {error:?}"),
                         }
                     }
                     assert!(distance < module*1e-8,"{name} {edge} u={u}, rho={rho}: {distance}");
+                    assert!(temporal_match,"{name} {edge} u={u}, rho={rho}: temporal chart");
                     checked += 1;
                 } }
             }

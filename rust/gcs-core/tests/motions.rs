@@ -1,6 +1,7 @@
 use gcs_core::{io,model::{EntKind,MotionDef},motion,program,solve,syntax};
 
 mod bounds;
+mod contact;
 
 const AXES: &str = "unit mm
 point a hint(x: 2,y: 0)

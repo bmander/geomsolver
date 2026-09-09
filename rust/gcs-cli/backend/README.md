@@ -63,6 +63,12 @@ A former chart crossed a ring with no contacts; that missing ring remains a regr
 check. A separate orbiting-sphere fixture checks refinement and the independent torus
 equation. These sampled checks establish neither whole-domain coverage nor an error bound.
 
+The source evaluator also supplies a temporal chart for a rotation viewed from another
+fixed-axis rotation: hold cutter `(u,v)` and enumerate contact times. A native regression
+fits across the join of the earlier pinion chart's two branches, checking both positions
+and tangent planes. This is local chart continuation, not automatic domain partitioning
+or global self-intersection trimming. See the [roadmap](../../../docs/spiral-bevel-roadmap.md).
+
 This is an internal fitting primitive, exercised by integration tests; the CLI does not
 yet assemble continuous sweep solids. Chart boundaries, source trimming, sharp-edge sweeps,
 endpoint caps and global trimming remain necessary before enabling their STEP/STL export.
