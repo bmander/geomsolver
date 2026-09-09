@@ -1,0 +1,148 @@
+{
+  "inputs": [
+    {
+      "member": 0,
+      "step_file": "/private/tmp/solvent-cad-one-cut-checked/member0-space-16.step",
+      "step_sha256": "94676270b1516fcc5bc8faef6a39299d8fc77a4278401070b5d658886f0ac00a"
+    },
+    {
+      "member": 1,
+      "step_file": "/private/tmp/solvent-cad-one-cut-checked/member1-space-16.step",
+      "step_sha256": "2c3a03e889af6024584a03bd858674aa46576504d063c455b43e485d14759df7"
+    }
+  ],
+  "source_sha256": "c11e8defe5dcd3d12d79f597c0ec5a4e9410794ec25597904a183863183724c9",
+  "references_sha256": "e571b7efc1d07a61b5f540a679ea35e542ecd3130d96dfa4f1ede7d6df64635e",
+  "coefficient_file": "/private/tmp/solvent-cad-fillet-coefficients.json",
+  "coefficient_sha256": "a0f61a010e523393f40d0905796dd571215a24a9ac32d1ea1cd1d840d7cdee41",
+  "verifier_sha256": {
+    "experiments/cad-backend/bernstein.py": "1200ab2af081ce7fd12f5e5f91d284f07f973d8431bbd65abd03de2313ae516a",
+    "experiments/cad-backend/interval_jet.py": "d50c7012f4764809c80570524c98b20743e8827b98f7862fdae0425b1fd9d7f2",
+    "experiments/cad-backend/crown_fillet.py": "8d850296521c96192ed90b278d97df84a365e326f1c509f25ac40b99d652b1ee",
+    "experiments/cad-backend/check_fillet.py": "26bb62a7d02c272a099ec2702525bb1759befff6d42665d1b30f08362857fd78",
+    "experiments/cad-backend/check_supports.py": "efc660be6d5932470c2ae10b8c011fc4acd82ddfeb59dcd77781aa44c692a944",
+    "rust/gcs-core/tests/verification/crown_branches.py": "dc8a996e2c4b0d14aaaaa7b9d627a912179dea6f05770c01ba5bf9e193e22288",
+    "rust/gcs-core/tests/verification/interval_arithmetic.py": "c17675fcb3c1e13f516ad7b1cecc77f2eed5a31d46b2a1d69d6fd35fafbc23ef"
+  },
+  "results": [
+    {
+      "evidence_sha256": "a0f61a010e523393f40d0905796dd571215a24a9ac32d1ea1cd1d840d7cdee41",
+      "member": 0,
+      "side": 0,
+      "target_mm": 0.001,
+      "complete_surface": true,
+      "status": "verified",
+      "initial_patches": 256,
+      "total_surface_patches": 256,
+      "source_sample_comparison_bound_mm": 2.6386672069259615e-13,
+      "cells_tested": 576,
+      "refinement_refusals": {},
+      "violations": [],
+      "scope": "Taylor correspondence to ideal common-crown reference with enclosed solved coefficients; source solve, trim coverage and global material separate",
+      "seconds": 85.19155810802476,
+      "passes_selected_patches": true,
+      "accepted_cells": 416,
+      "maximum_bound_mm": 0.0009970774117190912,
+      "file": "/private/tmp/solvent-cad-fillet-bound-0-0.json",
+      "sha256": "ef5b1b383fa5d0d931578d6e99916d1ae4788c1b0ae18937b558d617ec3d1513"
+    },
+    {
+      "evidence_sha256": "a0f61a010e523393f40d0905796dd571215a24a9ac32d1ea1cd1d840d7cdee41",
+      "member": 0,
+      "side": 1,
+      "target_mm": 0.001,
+      "complete_surface": true,
+      "status": "verified",
+      "initial_patches": 256,
+      "total_surface_patches": 256,
+      "source_sample_comparison_bound_mm": 3.2579225849298157e-13,
+      "cells_tested": 556,
+      "refinement_refusals": {},
+      "violations": [],
+      "scope": "Taylor correspondence to ideal common-crown reference with enclosed solved coefficients; source solve, trim coverage and global material separate",
+      "seconds": 82.0704624549835,
+      "passes_selected_patches": true,
+      "accepted_cells": 406,
+      "maximum_bound_mm": 0.0009790560608103696,
+      "file": "/private/tmp/solvent-cad-fillet-bound-0-1.json",
+      "sha256": "eabcdbb6a71040cb2540459bd102453572fb8784e60749bfd5da124333c50ee1"
+    },
+    {
+      "evidence_sha256": "a0f61a010e523393f40d0905796dd571215a24a9ac32d1ea1cd1d840d7cdee41",
+      "member": 1,
+      "side": 0,
+      "target_mm": 0.001,
+      "complete_surface": true,
+      "status": "verified",
+      "initial_patches": 256,
+      "total_surface_patches": 256,
+      "source_sample_comparison_bound_mm": 3.572594848825505e-13,
+      "cells_tested": 556,
+      "refinement_refusals": {},
+      "violations": [],
+      "scope": "Taylor correspondence to ideal common-crown reference with enclosed solved coefficients; source solve, trim coverage and global material separate",
+      "seconds": 81.26181991398335,
+      "passes_selected_patches": true,
+      "accepted_cells": 406,
+      "maximum_bound_mm": 0.0009731527061644699,
+      "file": "/private/tmp/solvent-cad-fillet-bound-1-0.json",
+      "sha256": "44e605004c1deecc132424788f997d8d832631c57f24cfcd7a2914847a505be2"
+    },
+    {
+      "evidence_sha256": "a0f61a010e523393f40d0905796dd571215a24a9ac32d1ea1cd1d840d7cdee41",
+      "member": 1,
+      "side": 1,
+      "target_mm": 0.001,
+      "complete_surface": true,
+      "status": "verified",
+      "initial_patches": 256,
+      "total_surface_patches": 256,
+      "source_sample_comparison_bound_mm": 2.7011955638995817e-13,
+      "cells_tested": 576,
+      "refinement_refusals": {},
+      "violations": [],
+      "scope": "Taylor correspondence to ideal common-crown reference with enclosed solved coefficients; source solve, trim coverage and global material separate",
+      "seconds": 86.02073982503498,
+      "passes_selected_patches": true,
+      "accepted_cells": 416,
+      "maximum_bound_mm": 0.0009007932969528111,
+      "file": "/private/tmp/solvent-cad-fillet-bound-1-1.json",
+      "sha256": "44bb6f0269724e69efe7d48b5dc3760225e99e8d5885146c0b3443558145116f"
+    }
+  ],
+  "negative_control": {
+    "evidence_sha256": "221c1882b249da7111fe77e5fdb149b7d0c9e88cddefcd8ccb25294c15809c3f",
+    "member": 0,
+    "side": 0,
+    "target_mm": 0.001,
+    "complete_surface": false,
+    "status": "correspondence_failure",
+    "initial_patches": 1,
+    "total_surface_patches": 256,
+    "source_sample_comparison_bound_mm": 2.6386672069259615e-13,
+    "cells_tested": 1,
+    "refinement_refusals": {},
+    "violations": [
+      {
+        "original_patch": 0,
+        "domain": [
+          [
+            "0",
+            "1/16"
+          ],
+          [
+            "0",
+            "1/16"
+          ]
+        ],
+        "center_error_lower_bound_mm": 0.035257810998888174
+      }
+    ],
+    "scope": "Taylor correspondence to ideal common-crown reference with enclosed solved coefficients; source solve, trim coverage and global material separate",
+    "seconds": 0.07881644001463428,
+    "passes_selected_patches": false,
+    "file": "/private/tmp/solvent-cad-fillet-distorted-final-audit.json",
+    "sha256": "5e684a97e4f0a266ae3dd0fbde24fe0c22bd9e671a9210ed63b3eae5ad9ac288"
+  },
+  "scope": "Complete parameter correspondence bounds for four extracted tooth-space fillet supports. Working flanks, source/assembly accuracy, trimmed coverage, global swept material and later CAD operations remain separate."
+}

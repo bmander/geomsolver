@@ -3,6 +3,7 @@ use super::*;
 use gcs_core::{csg::Piece,mesh};
 
 mod interference;
+mod cad;
 
 type V = [f64;3];
 fn polar(p: V) -> f64 { p[0].hypot(p[1]).atan2(p[2]) }
@@ -188,77 +189,6 @@ impl Pair {
 struct Rim {
     points: Vec<V>,
     shell: gcs_core::topology::ClosedShell,
-}
-
-#[test]
-#[ignore = "exports solved tooth-space samples for the isolated CAD-kernel experiment"]
-fn export_tooth_space_sections_for_cad_backend() {
-    let path = std::env::var_os("SOLVENT_CAD_SECTIONS_OUTPUT").expect("set output JSON path");
-    let pair = Pair::read([24,48],2.);
-    let mut members = vec![];
-    for member in 0..2 {
-        let mut levels = vec![];
-        for n in [8,16,32] {
-            let sides: Vec<Vec<Vec<V>>> = (0..2).map(|side| (0..=n).map(|row| {
-                let rho = pair.rm*(0.9+0.2*row as f64/n as f64);
-                let name = if member == side { "outer" } else { "inner" };
-                let flank = pair.patch(member,side,name);
-                let round = pair.patch(member,side,&format!("{name}_round"));
-                let seam = pair.seam(&flank,false);
-                let join = seam.endpoint_parameters()[1];
-                let junction = pair.seam_at(member,seam,rho);
-                let tip = pair.tip(member,&flank,rho,junction.parameters);
-                // The cutter meridian is smooth through each patch. Axial height
-                // becomes singular at a tangent root and is a poor spline parameter.
-                let sample = |patch: &RevolvedSurface,u| {
-                    let reference = pair.analytic(member,patch,u,rho);
-                    let found = pair.at_seed(member,patch,u,rho,reference.parameters);
-                    near(found.contact.position,reference.contact.position,pair.module*1e-8);
-                    pair.check_trim(patch,found.parameters);
-                    found.contact.position
-                };
-                (0..=n).map(|i| sample(&round,1.-join+(2.*join-1.)*i as f64/n as f64))
-                    .chain((1..=n).map(|i| sample(&flank,1.-join+
-                        (tip.parameters[0]-(1.-join))*i as f64/n as f64))).collect()
-            }).collect()).collect();
-            levels.push(format!("{{\"subdivisions\":{n},\"sides\":{sides:?}}}"));
-        }
-        let blank: Vec<Vec<V>> = [0.9*pair.rm,1.1*pair.rm].iter().map(|&rho|
-            [2,0].iter().map(|&boundary| {
-                let hits = pair.limits[member][boundary].line_on_sphere([0.;3],rho,0.).unwrap();
-                assert_eq!(hits.len(),1);
-                let p = pair.local_frame(member).point(hits[0].position);
-                [p[0].hypot(p[1]),0.,p[2]]
-            }).collect()).collect();
-        members.push(format!("{{\"member\":{member},\"teeth\":{},\"blank_meridian\":{blank:?},\"levels\":[{}]}}",
-            pair.teeth[member],levels.join(",")));
-    }
-    std::fs::write(path,format!("{{\"scope\":\"Local generated envelopes; not a global material certificate\",\"module_mm\":{},\"mean_distance\":{},\"members\":[{}]}}\n",
-        pair.module,pair.rm,members.join(","))).unwrap();
-}
-
-#[test]
-#[ignore = "exports solved closure supports for independent CAD surface bounds"]
-fn export_cad_boundary_supports() {
-    let path = std::env::var_os("SOLVENT_CAD_SUPPORTS_OUTPUT").expect("set output JSON path");
-    let pair = Pair::read([24,48],2.);
-    let radii = [0.9*pair.rm,1.1*pair.rm];
-    let mut members = vec![];
-    for member in 0..2 {
-        let local = |p| {
-            let p = pair.local_frame(member).point(p);
-            [p[0].hypot(p[1]),0.,p[2]]
-        };
-        let cones: Vec<Vec<V>> = pair.limits[member].iter().map(|s|
-            [0.,1.].iter().map(|&u| local(s.at(u,0.).unwrap().position)).collect()).collect();
-        let blank: Vec<Vec<V>> = radii.iter().map(|&rho| [2,0].iter().map(|&boundary| {
-            let hits = pair.limits[member][boundary].line_on_sphere([0.;3],rho,0.).unwrap();
-            assert_eq!(hits.len(),1);
-            local(hits[0].position)
-        }).collect()).collect();
-        members.push(format!("{{\"member\":{member},\"teeth\":{},\"cones_tip_root_back\":{cones:?},\"blank_meridian\":{blank:?}}}",pair.teeth[member]));
-    }
-    std::fs::write(path,format!("{{\"module_mm\":{},\"sphere_radii_mm\":{radii:?},\"members\":[{}],\"scope\":\"Exact binary64 nominal support coefficients extracted from the solved source; source-solve error is separate\"}}\n",pair.module,members.join(","))).unwrap();
 }
 
 impl Rim {

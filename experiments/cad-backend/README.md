@@ -190,6 +190,13 @@ extracted from the actual STEP files. This is a whole-patch result for closure s
 distance, with explicit limits concerning trimmed coverage, generated flanks, source
 accuracy and later indexed CAD operations. It does not establish full gear accuracy.
 
+The [generated-fillet audit](FILLETS.md) also now bounds all four complete fillet support
+surfaces within 0.001 mm of their common-crown parameterizations. It uses quadratic Taylor
+bounds with interval third derivatives, exact Bernstein subdivision, and independent exact
+parameter-cover checks. Each full audit takes approximately 81–86 seconds in a concurrent
+four-member/side run; a deliberately distorted coefficient net is rejected after one cell.
+Working-flank accuracy and the remaining whole-solid checks are still open.
+
 ## Initial trial reproduction
 
 The frozen Python environment uses `cadquery-ocp==7.9.3.1.1` (OCCT 7.9.3) on CPython 3.12,

@@ -89,6 +89,44 @@ def bounds(net):
     return min(values), max(values)
 
 
+def derivative(net, axis, span):
+    if axis == 1:
+        return [list(row) for row in zip(*derivative(list(zip(*net)), 0, span))]
+    degree = len(net)-1
+    if degree == 0:
+        return [[F(0) for _ in net[0]]]
+    return [[degree*(b-a)/span for a, b in zip(left, right)] for left, right in zip(net, net[1:])]
+
+
+def midpoint(net):
+    m, n = len(net)-1, len(net[0])-1
+    return sum(value*F(comb(m, i)*comb(n, j), 2**(m+n))
+               for i, row in enumerate(net) for j, value in enumerate(row))
+
+
+def split_patch(patch, axis):
+    def curve(points):
+        left, right = [points[0]], [points[-1]]
+        while len(points) > 1:
+            points = [tuple((a+b)/2 for a, b in zip(p, q)) for p, q in zip(points, points[1:])]
+            left.append(points[0]); right.append(points[-1])
+        return left, right[::-1]
+    grid = patch["poles"]
+    lines = grid if axis == 1 else list(zip(*grid))
+    halves = [curve(list(line)) for line in lines]
+    output = []
+    low, high = patch["domain"][axis]
+    mid = (low+high)/2
+    for side in range(2):
+        poles = [h[side] for h in halves]
+        if axis == 0:
+            poles = [list(row) for row in zip(*poles)]
+        domain = [list(d) for d in patch["domain"]]
+        domain[axis] = [low, mid] if side == 0 else [mid, high]
+        output.append(dict(domain=domain, poles=poles))
+    return output
+
+
 def support_bound(grid, support):
     """Upper distance to the infinite support, from the Bernstein convex hull."""
     x, y, z, w = [coordinate(grid, i) for i in range(4)]

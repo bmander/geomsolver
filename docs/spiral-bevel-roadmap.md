@@ -30,6 +30,14 @@ polynomial patches the largest bound to a nominal sphere/cone is 8.2e-6 mm, belo
 binary64 surfaces, not finite trimmed coverage, later Boolean/export error propagation,
 or generated flank/fillet accuracy. Those limits remain part of complete surface acceptance.
 
+The [generated-fillet audit](../experiments/cad-backend/FILLETS.md) additionally establishes
+whole-parameter correspondence within 0.001 mm for all four fillet support surfaces against
+the ideal common-crown references with enclosed solved coefficients. Exact cover checks
+accept every original Bézier rectangle; no cells remain unresolved. Quadratic Taylor bounds
+reduced each complete audit to 556–576 cell checks (81–86 seconds in concurrent runs).
+Working-flank accuracy, source/assembly error, trimmed coverage and global material/mating
+acceptance remain; this is another completed accuracy gate, not a finished production pair.
+
 The deliverable remains one fully specified, parametric matched pair from a documented
 generating system, independently verifiable and exportable at a stated geometric accuracy.
 Manufacturing planning remains separate. This document redirects the next investigation:
