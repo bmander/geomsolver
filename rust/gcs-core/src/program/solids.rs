@@ -19,12 +19,14 @@ use build::build_solid;
 /// `boss on cyl`: an `on` whose two operands are both solids.  Asked of the *resolver*, which
 /// has known every declaration's kind since phase 1 — so the question is answered the same way
 /// before the solids are built and after.
-pub(super) fn is_body_on(res: &Resolver, r: &Relation) -> bool {
+pub(super) fn is_body_on(sk: &Sketch, res: &Resolver, r: &Relation) -> bool {
     let Some(w) = r.form.written() else { return false };
     if w.word.text != "on" || w.ops.len() != 2 {
         return false;
     }
-    w.ops.iter().all(|o| res.lookup(o).map(|e| e.kind == EntKind::Solid).unwrap_or(false))
+    w.ops.iter().all(|o| res.lookup(o)
+        .and_then(|e| super::resolve::follow_building(sk,res,e,o).ok())
+        .is_some_and(|e| e.kind == EntKind::Solid))
 }
 
 /// Build faces and solids in dependency order, then fold body operations into stock solids.
@@ -131,7 +133,7 @@ pub(super) fn solids(
             StmtKind::SolidRel(r) if r.word != crate::syntax::BodyWord::Against => {
                 (r.word, &r.what, r.span, &r.body)
             }
-            StmtKind::Relation(r) if is_body_on(res, r) => {
+            StmtKind::Relation(r) if is_body_on(sk, res, r) => {
                 let w = r.form.written().expect("`is_body_on` read the operands");
                 (crate::syntax::BodyWord::On, &w.ops[0], st.span, &w.ops[1])
             }
@@ -149,6 +151,12 @@ pub(super) fn solids(
                 message: format!("no such entity: `{}`", miss.root.text),
             });
             continue;
+        };
+        let resolved = super::resolve::follow_building(sk,res,a,what)
+            .and_then(|a| super::resolve::follow_building(sk,res,b,into).map(|b| (a,b)));
+        let (a,b) = match resolved {
+            Ok(pair) => pair,
+            Err(message) => { say(at,message); continue; }
         };
         if a.kind != EntKind::Solid || b.kind != EntKind::Solid {
             let bad = if a.kind != EntKind::Solid { (what, a) } else { (into, b) };

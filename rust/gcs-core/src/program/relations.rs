@@ -78,7 +78,7 @@ pub(super) fn constrain(
     // holds a point to a circle, and `boss on cyl` says what a body is made of.  It is picked
     // up by the solids phase, so nothing is added here — and nothing is *said* here either, or
     // one statement would be reported twice.
-    if is_body_on(res, r) {
+    if is_body_on(sk, res, r) {
         // **a claim on the body rule is refused** (§9.7's rule, one stratum out): a claim is
         // judged by rank and `on` between two solids adds none, so the word says nothing.  It is
         // said *here* because this is where the claim flag is still in hand — the solids phase

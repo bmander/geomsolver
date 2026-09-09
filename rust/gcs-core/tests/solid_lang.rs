@@ -62,6 +62,24 @@ radius(5) hole
 face hole_f(hole)
 ";
 
+#[test]
+fn solid_operands_follow_surface_children_before_surfaces_are_built() {
+    for statements in [
+        "solid body(side.solid)\nside.solid cut body\nside.solid on body\n",
+        "side.solid on body\nside.solid cut body\nsolid body(side.solid)\n",
+    ] {
+        let e = read(&format!("{statements}{RECT}\nline axis(a,d)\n\
+            solid stock(sec, about: axis)\nsurface side(stock, bc)\n"));
+        let stock = e.map.ent_named("stock").unwrap().idx;
+        let body = e.map.ent_named("body").unwrap().i();
+        let gcs_core::model::SolidDef::Body {stock:s,on,through} = &e.sketch.solids[body].def
+            else { panic!("expected body") };
+        assert_eq!(*s,stock);
+        assert_eq!(on,&vec![stock]);
+        assert_eq!(through,&vec![stock]);
+    }
+}
+
 fn volume(e: &gcs_core::program::Elaborated, name: &str) -> f64 {
     let key = format!("{name}.volume");
     gcs_core::report::positions(&e.sketch, &e.map)

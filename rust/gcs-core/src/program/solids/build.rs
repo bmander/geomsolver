@@ -33,14 +33,16 @@ pub(super) fn build_solid(
                 });
                 return None;
             }
-            Kid::Ref(r) => match res.lookup(r) {
-                Some(e) => e,
-                None => {
+            Kid::Ref(r) => match res.lookup(r).ok_or_else(||
+                format!("no such entity: `{}`",r.root.text))
+                .and_then(|e| super::super::resolve::follow_building(sk,res,e,r)) {
+                Ok(e) => e,
+                Err(message) => {
                     diags.push(Diag {
                         code: Code::E101,
                         span: r.span,
                         stmt: Some(st.id),
-                        message: format!("no such entity: `{}`", r.root.text),
+                        message,
                     });
                     return None;
                 }
