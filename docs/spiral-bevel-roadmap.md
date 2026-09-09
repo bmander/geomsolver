@@ -69,6 +69,12 @@ chains stay below 0.001 mm. Geometric trim simplicity and embedding, source/read
 global material coverage and continuous mating remain separate; the pair is not yet
 production-accepted.
 
+The [analytical trim-curve audit](../experiments/cad-backend/TRIM-CURVES.md) now proves
+individual UV injectivity for all 1,188 analytical trim curves and strict UV separation
+for all 106,004 non-neighboring pairs in their wires. It also records 614 small nonzero
+corner gaps without snapping them. Adjacent-curve separation, corner treatment and
+periodic chart identification remain necessary before claiming simple embedded trims.
+
 The deliverable remains one fully specified, parametric matched pair from a documented
 generating system, independently verifiable and exportable at a stated geometric accuracy.
 Manufacturing planning remains separate. This document redirects the next investigation:

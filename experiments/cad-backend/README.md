@@ -240,6 +240,11 @@ files are inspection candidates even when the report refuses them. Setup, compil
 sampling, kernel construction, Booleans and exchange have separate costs; no comprehensive
 end-to-end performance claim is made.
 
+The [analytical trim-curve audit](TRIM-CURVES.md) verifies individual UV injectivity of
+all 1,188 analytical boundary curves and separation of all 106,004 non-neighboring pairs.
+It explicitly records tiny gaps at 614 UV corners. Adjacent curves, corner treatment and
+periodic chart identifications remain open; these checks do not yet certify embedded trims.
+
 ## Why this route
 
 [HyGEARS](https://www.hygears.com/hygears_4.0-february2020_019.htm) documents STEP export using
