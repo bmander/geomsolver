@@ -152,3 +152,16 @@ fn unsupported_profile_and_sweep_forms_fail_explicitly() {
         face profile(a,b,c,d,e,-> close)\nsolid body(profile,about: axis)\n");
     assert!(SpatialField::read(&e.sketch,0,1e-10).unwrap_err().contains("convex"));
 }
+
+#[test]
+fn profile_connectivity_uses_shared_source_vertices_at_rounded_junctions() {
+    let mut e = read(include_str!("../../../examples/spiral_bevel/reference.sv"));
+    let crown = e.map.ent_named("crown").unwrap().i();
+    // A tiny radius residual must not change the topology of shared endpoints.
+    // The analytic field still uses the current radius, not a snapped curve.
+    for arc in &e.sketch.arcs {
+        e.sketch.params[arc.radius as usize].value += 2e-11;
+    }
+    let field = SpatialField::read(&e.sketch,crown,1e-10).unwrap();
+    assert!(field.bounds(point([42.,0.,0.])).unwrap().bounds()[1] < 0.);
+}

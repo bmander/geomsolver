@@ -7,6 +7,16 @@ fn delta(a: P,b: P) -> P { [a[0]-b[0],a[1]-b[1]] }
 fn failure(e: crate::interval::Error) -> String { format!("profile field: {e:?}") }
 
 impl Edge {
+    // Connectivity comes from the source vertices. Reconstructing a constrained
+    // arc endpoint with radius and trigonometry adds source-solve and rounding
+    // residuals; those must not turn one shared vertex into two separate ones.
+    fn endpoints(&self) -> [P;2] {
+        match *self {
+            Self::Line {a,b,..} => [a,b],
+            Self::Arc {sweep,ends,..} if sweep.abs() < TAU => ends,
+            Self::Arc {..} => [self.at(0.),self.at(1.)],
+        }
+    }
     fn reversed(mut self) -> Self {
         match &mut self {
             Self::Line {a,b,..} => std::mem::swap(a,b),
@@ -46,21 +56,25 @@ fn ordered(edges: &[Edge]) -> Result<Vec<Edge>,String> {
     if remaining.is_empty() { return Err("empty material profile".into()); }
     let mut out = vec![remaining.remove(0)];
     while !remaining.is_empty() {
-        let end = out.last().unwrap().at(1.);
+        let end = out.last().unwrap().endpoints()[1];
         let mut next = None;
         for (i,e) in remaining.iter().enumerate() {
-            for (t,reverse) in [(0.,false),(1.,true)] {
-                if distance(end,e.at(t)) <= tolerance {
+            for (p,reverse) in e.endpoints().into_iter().zip([false,true]) {
+                if distance(end,p) <= tolerance {
                     if next.is_some() { return Err("ambiguous material profile junction".into()); }
                     next = Some((i,reverse));
                 }
             }
         }
-        let (i,reverse) = next.ok_or("material profile endpoints do not meet")?;
+        let (i,reverse) = next.ok_or_else(|| {
+            let gap = remaining.iter().flat_map(|e| e.endpoints().map(|p| distance(end,p)))
+                .fold(f64::INFINITY,f64::min);
+            format!("material profile endpoints do not meet: gap {gap:e}, tolerance {tolerance:e}")
+        })?;
         let edge = remaining.remove(i);
         out.push(if reverse { edge.reversed() } else { edge });
     }
-    if distance(out[0].at(0.),out.last().unwrap().at(1.)) > tolerance {
+    if distance(out[0].endpoints()[0],out.last().unwrap().endpoints()[1]) > tolerance {
         return Err("material profile is not closed".into());
     }
     Ok(out)
