@@ -4,7 +4,29 @@
 
 The goal is one fully specified, independently verifiable, parametric matched pair from
 a documented generating system, expressed through Solvent and exported at stated accuracy.
-Manufacturing planning remains separate. The current order is:
+Manufacturing planning remains separate. **The active task is now Solvent integration.**
+The user explicitly reprioritized it after the inspection exports. Further mesh-distance,
+UV coverage and surface-attachment proofs are parked; the existing checks remain evidence
+with their original limitations. They should resume for a concrete acceptance failure,
+not displace frontend/backend integration.
+
+The integration path is:
+
+1. Use an ordinary, editable Solvent project for the configured generating geometry.
+   `rust/examples/spiral_bevel/pair.sv` imports `configuration.sv` and instantiates
+   `MatchedReferences`; the export adapter no longer rewrites the component's source text.
+   Each new workflow saves its actual linked sources under `solvent/` and checks them with
+   the normal `solventc` executable.
+2. Express the blank, generating removal and tooth indexing with general solid operations
+   in components. Carry those definitions across a backend interface instead of recognizing
+   gear names or importing precomputed coordinates. Reuse the existing motion and material
+   snapshot implementations.
+3. Connect native OCCT construction and STEP/STL output to that interface, replacing the
+   test-only section-export adapter. Check a small generic model before rebuilding both gears.
+4. Run the existing pair and alternate-configuration checks through the public path, then
+   address the remaining acceptance gaps below.
+
+The acceptance work remains:
 
 1. **Reproduce the reference pair:** one command from recorded source and tooth-count/size
    parameters to both members, assembly placement and a report. Use the existing 24:48 pair
@@ -21,7 +43,7 @@ Manufacturing planning remains separate. The current order is:
    operations produce both public solid outputs; multiple configurations pass the same
    checks and unsupported configurations receive useful diagnostics.
 
-The next milestone is a reproducible pair and engagement report. Independent verification
+The next milestone is public parametric Solvent solid construction and export. Independent verification
 means reproducible checks against independently implemented documented generating equations,
 with stated tolerances and visible unresolved results. Formal certification of every CAD
 operation is not automatically a prerequisite. Further analytical/spline attachment proofs

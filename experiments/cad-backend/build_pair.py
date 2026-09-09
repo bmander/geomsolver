@@ -148,8 +148,14 @@ class Workflow:
                 for p in sorted(directory.rglob("*")) if p.suffix in (".sv", ".py")}
             self.report["python"] = sys.version
             source, contacts = out/"sections.json", out/"contacts.json"
+            self.env["SOLVENT_CAD_MODEL_OUTPUT"] = str(out/"solvent")
             self.export("sections", "export_tooth_space_sections_for_cad_backend",
                         "SOLVENT_CAD_SECTIONS_OUTPUT", source)
+            model = out/"solvent/pair.sv"
+            self.stage("solvent-model", ["cargo", "run", "--manifest-path", ROOT/"rust/Cargo.toml",
+                                        "-p", "gcs-cli", "--", model, "--no-diagnose"])
+            self.report["model_sources"] = {
+                str(p.relative_to(out)): digest(p) for p in sorted((out/"solvent").rglob("*.sv"))}
             data = read(source)
             if ([m["teeth"] for m in data["members"]] != config["teeth"]
                     or data["module_mm"] != config["mean_module_mm"]):

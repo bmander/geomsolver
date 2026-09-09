@@ -44,12 +44,12 @@ impl Pair {
     }
 
     fn read(teeth: [u32;2], module: f64) -> Self {
-        let src = include_str!("../../../examples/spiral_bevel/paired_references.sv")
-            .replace("param pinion_teeth = 24",&format!("param pinion_teeth = {}",teeth[0]))
-            .replace("param gear_teeth = 48",&format!("param gear_teeth = {}",teeth[1]))
-            .replace("param mean_module = 2mm",&format!("param mean_module = {module}mm"));
+        let src = include_str!("../../../examples/spiral_bevel/pair.sv");
         let (mut p,errors) = syntax::parse(&src);
         let link = modules::link(&mut p,&mut |name| match name {
+            "configuration" => Some(format!("param pinion_teeth = {}\nparam gear_teeth = {}\n\
+                param mean_module = {module}mm\n",teeth[0],teeth[1])),
+            "paired_references" => Some(include_str!("../../../examples/spiral_bevel/paired_references.sv").into()),
             "reference" => Some(include_str!("../../../examples/spiral_bevel/reference.sv").into()),
             "boundaries" => Some(include_str!("../../../examples/spiral_bevel/boundaries.sv").into()),
             _ => library::resolve(name),

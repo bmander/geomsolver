@@ -69,6 +69,18 @@ fn export_cad_fillet_references() {
 fn export_tooth_space_sections_for_cad_backend() {
     let path = std::env::var_os("SOLVENT_CAD_SECTIONS_OUTPUT").expect("set output JSON path");
     let pair = Pair::read_cad_export();
+    // Save the actual linked source, including configured module arguments, so
+    // the ordinary CLI/editor can open exactly the model behind these samples.
+    if let Some(directory) = std::env::var_os("SOLVENT_CAD_MODEL_OUTPUT") {
+        let directory = std::path::PathBuf::from(directory);
+        std::fs::create_dir(&directory).expect("model output directory must be new");
+        std::fs::write(directory.join("pair.sv"),pair.model.program.text()).unwrap();
+        for module in &pair.model.program.modules {
+            let file = directory.join(format!("{}.sv",module.name.replace('.',"/")));
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file,&module.text).unwrap();
+        }
+    }
     let mut members = vec![];
     for member in 0..2 {
         let mut levels = vec![];

@@ -5,6 +5,25 @@ spiral-bevel pair. Solvent continues to define the geometry; a mature CAD kernel
 surface/solid topology, performs subtraction, and writes STEP. It does not require completing
 a general F-rep mesher first. No runtime dependency or language construct changes here.
 
+## Solvent integration in progress
+
+The editable generating model is `rust/examples/spiral_bevel/pair.sv`; tooth counts and
+mean module live in its imported `configuration.sv`. It uses ordinary components and
+module parameters. The CAD adapter now instantiates that project without replacing text
+inside the reference component. New `build_pair.py` runs save the actual linked project
+under `OUTPUT/solvent/`, record its hashes, and check it with the normal `solventc` CLI.
+Open `OUTPUT/solvent/pair.sv` to inspect the configured source behind an export.
+
+This is the source-integration step. Finished solid construction still uses the test-only
+section adapter and Python OCCT experiment; public Solvent solid outputs and STEP export
+remain the active work. Further mesh and attachment proofs are parked during this integration.
+
+The source transition was checked with `solventc` on the default project and a saved
+32:32/module-1 project. The existing boundary-seam regression passed all nine combinations
+of 24:48, 32:32 and 28:49 with modules 0.2, 2 and 25.4 mm. The alternate project's two
+16-subdivision tooth spaces, single cuts and STEP round trips passed their local checks.
+This did not rebuild the full indexed pair or rerun its engagement/accuracy audits.
+
 ## Reproducible inspection workflow
 
 From the repository root, use an interpreter with `requirements.txt` installed:
@@ -90,10 +109,11 @@ faces with curved trims and remain outside this finite-face result.
 
 ## Input and construction
 
-The ignored Rust test `export_tooth_space_sections_for_cad_backend` reads and solves the
-existing `paired_references.sv` (default 24:48 pair, module 2 mm). The explicit export entry
+The ignored Rust test `export_tooth_space_sections_for_cad_backend` reads and solves
+`pair.sv`, which imports `paired_references.sv` (default 24:48 pair, module 2 mm). The explicit export entry
 points accept `SOLVENT_CAD_PINION_TEETH`, `SOLVENT_CAD_GEAR_TEETH` and `SOLVENT_CAD_MODULE_MM`;
-ordinary regression tests retain their fixed configurations. It samples both generated
+these supply the imported `configuration` module's parameters through normal language
+elaboration. Ordinary regression tests retain their fixed configurations. It samples both generated
 flanks and root fillets at 8, 16 and 32 subdivisions in each patch direction. Numerical
 envelope samples are checked against the independent closed-form characteristic and the
 declared trims. Sampling follows the cutter meridian parameter within each patch and
