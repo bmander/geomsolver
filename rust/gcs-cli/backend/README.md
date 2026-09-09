@@ -38,6 +38,31 @@ SOLVENTC="$PWD/build/solventc" python -m unittest discover \
 The tests point the former Python-host variable at a nonexistent interpreter to catch
 any accidental subprocess fallback.
 
-Validated on Intel macOS with native OCCT 7.9.3: seven export/failure tests and the
-ten CLI tests pass. The FFI bevel-blank export also matches the former host's blank
+Validated on Intel macOS with native OCCT 7.9.3. The FFI bevel-blank export matches the former host's blank
 under both directed native Boolean differences (neither leaves a solid).
+
+The internal bridge also interpolates regular rectangular contact grids into native
+B-spline faces and evaluates their supporting surfaces. Grid rows/columns use uniform
+parameters; callers supply coordinates in mm. Surface queries return position and the
+unit `du cross dv` normal, without claiming material orientation or trim membership.
+Invalid dimensions, nonfinite points and kernel failures return diagnostics. Candidate
+faces cannot pass the final solid validator.
+
+Run the source-driven fitting checks with:
+
+```sh
+cargo test --manifest-path rust/Cargo.toml -p gcs-cli --features occt --test native_surfaces -- --nocapture
+```
+
+These tests read `gears.sv` through ordinary parsing, module resolution and solving,
+then pass contact points from the declared cutter sweeps directly to C++. No imported
+tooth grids or Python construction are involved. Sixteen flank/fillet candidate charts
+are checked at withheld points, with observed maximum position error about 0.00013 mm.
+The charts cover meridian parameters [0.05,0.95] and roll [-0.3,-0.2] radians only.
+A former chart crossed a ring with no contacts; that missing ring remains a regression
+check. A separate orbiting-sphere fixture checks refinement and the independent torus
+equation. These sampled checks establish neither whole-domain coverage nor an error bound.
+
+This is an internal fitting primitive, exercised by integration tests; the CLI does not
+yet assemble continuous sweep solids. Chart boundaries, source trimming, sharp-edge sweeps,
+endpoint caps and global trimming remain necessary before enabling their STEP/STL export.

@@ -103,7 +103,7 @@ an instantaneous rigid motion, `RevolvedSurface::contacts` solves the contact eq
 source angular spans, and reports stationary or near-double-root events explicitly.
 These are smooth-face candidates, not a finished swept solid: source-hidden portions,
 sharp-edge sweeps, endpoint caps, singular events and global self-intersections still
-need to be resolved before native surface fitting and solid assembly.
+need to be resolved before closed solid assembly.
 
 This follows the contact-set/B-rep decomposition described by
 [Adsul, Machchhar and Sohoni](https://arxiv.org/abs/1404.0119), with their
@@ -115,7 +115,16 @@ The source-derived candidates match 120 independent characteristic points on bot
 and fillets of both members, including the gear's phase-shifted neighboring cutter.
 Generic tests cover an orbiting sphere, compound rotation and translation, fixed source
 placements, periodic branch identity, angular restrictions and explicit degeneracies.
-The new stage has no native STEP/STL output yet.
+The native C++ bridge now interpolates regular candidate charts into B-spline faces.
+Its integration tests read the actual `gears.sv` material definitions, calculate contacts
+in Rust and fit sixteen flank/fillet charts in OCCT. The observed withheld-point error
+is about 0.00013 mm on meridian [0.05,0.95], roll [-0.3,-0.2] rad; tangent planes are also
+compared. An independent orbiting-sphere/torus check exercises refinement. These are
+partial regular charts, not full-domain or export-accuracy certificates. A rectangular
+chart near zero roll encountered a ring with no contacts; the regression retains that
+case instead of interpolating across the missing domain. The bridge primitive is used
+by tests only until source trimming, chart events and closed-solid assembly are connected.
+Public continuous-sweep STEP/STL export remains explicitly unsupported.
 
 The acceptance work remains:
 
