@@ -1,9 +1,5 @@
 // Native solid construction and export.
 #include "occt.hpp"
-#include <Approx_ParametrizationType.hxx>
-#include <GeomAPI_PointsToBSplineSurface.hxx>
-#include <Geom_BSplineSurface.hxx>
-#include <TColgp_Array2OfPnt.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepBndLib.hxx>
@@ -90,58 +86,6 @@ int solvent_cad_face(Cad* cad,const int* edges,int count) noexcept {
         BRepBuilderAPI_MakeFace face(wire.Wire(),true);
         if (!face.IsDone()) throw std::runtime_error("planar profile failed");
         return cad->put(face.Face());
-    });
-}
-// A regular contact chart, sampled in row-major (u, motion parameter) order.
-// This creates a candidate face only. Solid closure and trimming remain separate.
-int solvent_cad_bspline_face(Cad* cad,const double* points,int nu,int nv) noexcept {
-    return guarded(cad,[&] {
-        if (!points || nu < 2 || nv < 2 || nu > 512 || nv > 512)
-            throw std::runtime_error("surface grid dimensions must lie in [2,512]");
-        TColgp_Array2OfPnt grid(1,nu,1,nv);
-        for (int i=0;i<nu;++i) for (int j=0;j<nv;++j) {
-            const double* p = points+3*(i*nv+j);
-            if (!std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2]))
-                throw std::runtime_error("surface grid contains a nonfinite coordinate");
-            grid.SetValue(i+1,j+1,point(p));
-        }
-        GeomAPI_PointsToBSplineSurface fit;
-        fit.Interpolate(grid,Approx_IsoParametric,false);
-        if (!fit.IsDone()) throw std::runtime_error("contact surface interpolation failed");
-        BRepBuilderAPI_MakeFace face(fit.Surface(),1e-7);
-        if (!face.IsDone() || !BRepCheck_Analyzer(face.Face()).IsValid())
-            throw std::runtime_error("contact surface produced an invalid face");
-        return cad->put(face.Face());
-    });
-}
-// Evaluate the supporting surface, not membership in a trimmed face. Parameters
-// span its bounds; the normal follows du cross dv, not material orientation.
-int solvent_cad_surface_point(Cad* cad,int id,double u,double v,double* output) noexcept {
-    return guarded(cad,[&] {
-        if (!output || !std::isfinite(u) || !std::isfinite(v) || u < 0 || u > 1 || v < 0 || v > 1)
-            throw std::runtime_error("face query parameters must lie in [0,1]");
-        const auto face = TopoDS::Face(cad->at(id));
-        TopLoc_Location location;
-        auto surface = BRep_Tool::Surface(face,location);
-        if (surface.IsNull()) throw std::runtime_error("face has no surface");
-        double u0,u1,v0,v1;
-        surface->Bounds(u0,u1,v0,v1);
-        if (!std::isfinite(u0) || !std::isfinite(u1) || !std::isfinite(v0) || !std::isfinite(v1))
-            throw std::runtime_error("face query needs a finite surface domain");
-        gp_Pnt p;
-        gp_Vec du,dv;
-        surface->D1(u0+(u1-u0)*u,v0+(v1-v0)*v,p,du,dv);
-        p.Transform(location.Transformation());
-        du.Transform(location.Transformation()); dv.Transform(location.Transformation());
-        gp_Vec n = du.Crossed(dv);
-        if (n.SquareMagnitude() <= 0) throw std::runtime_error("singular face query");
-        n.Normalize();
-        for (int k=1;k<=3;++k) {
-            output[k-1] = p.Coord(k); output[k+2] = n.Coord(k);
-            if (!std::isfinite(output[k-1]) || !std::isfinite(output[k+2]))
-                throw std::runtime_error("nonfinite face query");
-        }
-        return 0;
     });
 }
 int solvent_cad_prism(Cad* cad,int face,const double* placement,const double* sweep) noexcept {

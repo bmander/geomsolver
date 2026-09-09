@@ -114,3 +114,24 @@ are rechecked through the static source evaluator. Generic tests cover swallowed
 caps, cut orientation, input boxes, phantom zeros and exhausted budgets. These are local
 material checks at a 0.01 mm offset; they do not yet trace native trim curves or establish
 unique crossings, complete surface coverage or the final export error.
+
+`surfaces.cpp` now owns fitting, supporting-surface queries and native face splitting.
+`solvent_cad_split_face` uses OCCT's
+[Splitter](https://dev.opencascade.org/doc/occt-7.7.0/refman/html/class_b_rep_algo_a_p_i___splitter.html)
+to construct intersection curves and return every fragment of one source face cut by
+other faces. It preserves inputs, excludes tool fragments and refuses kernel errors,
+warnings or invalid results. It adds no fuzzy tolerance or material selection.
+`solvent_cad_faces` enumerates the result; `solvent_cad_face_contains` distinguishes
+inside, outside and on-trim at the same normalized supporting-surface parameters used
+by `surface_point`. A fragment's UV bounding rectangle does not redefine the chart.
+
+Tests check a parabolic intersection against its equation, a spherical closed trim
+that creates both a disk and a face with a hole, and a swept-sphere chart cut by a plane
+whose fragments are probed against the complete resulting material. Both source gear
+members now have a local temporal chart split by the declared native toe sphere, with
+169 withheld partition samples each checked against the separate sphere field. Their
+observed local interpolation errors are about 0.0000023 mm; this does not bound the
+entire trim curve or the finished solid. All eight native surface tests take about
+0.42 s on the current host, excluding compilation. The bridge constructs trims for
+supplied intersecting faces; automatic candidate coverage, global sweep trimming and
+closed-solid assembly are still required by the public export path.

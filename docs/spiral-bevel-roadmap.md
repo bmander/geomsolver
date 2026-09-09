@@ -191,6 +191,20 @@ source solving and native cutter construction. Their 0.01 mm offset is a local p
 distance, not a certificate of exported gear accuracy. Tracing the boundaries between
 covered and exposed regions and constructing their native trim curves remain ahead.
 
+The bridge now delegates intersection-curve construction to OCCT's face Splitter.
+It keeps every source-face fragment and its original supporting-surface chart, with
+explicit native trim membership and diagnostics. Fitting and trimming live together in
+`surfaces.cpp`; tests share the same native session/recipe constructor as the CLI.
+Small checks cover a known parabolic split, a closed spherical trim with a holed face,
+and material probes on the fragments of a planar-cut swept-sphere chart. For both gear
+members, a regular source-parameter contact chart crossing the toe sphere is now split
+by that sphere constructed from the declared solid. Independent sphere-field checks at
+169 withheld points per member agree with fragment membership; observed local fit error
+is about 0.0000023 mm. The eight native surface tests finish in about 0.42 s, excluding
+compilation. This supplies native trim construction for provided intersecting faces;
+automatic chart coverage, intersections separating globally covered sweep regions,
+consistent final face selection and closed-solid assembly remain unfinished.
+
 The acceptance work remains:
 
 1. **Reproduce the reference pair:** one command from recorded source and tooth-count/size

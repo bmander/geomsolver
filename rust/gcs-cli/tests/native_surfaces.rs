@@ -5,33 +5,34 @@ use std::{ffi::{c_void,c_int,c_char,CStr},path::Path};
 
 mod support;
 use support::read;
+#[path="../src/cad/native.rs"]
+#[allow(dead_code)]
+mod native;
+#[path="native_surfaces/trimming.rs"]
+mod trimming;
 
 extern "C" {
-    fn solvent_cad_new() -> *mut c_void;
-    fn solvent_cad_free(cad: *mut c_void);
     fn solvent_cad_error(cad: *mut c_void) -> *const c_char;
     fn solvent_cad_bspline_face(cad: *mut c_void,points: *const f64,nu: c_int,nv: c_int) -> c_int;
     fn solvent_cad_surface_point(cad: *mut c_void,id: c_int,u: f64,v: f64,output: *mut f64) -> c_int;
     fn solvent_cad_validate(cad: *mut c_void,id: c_int) -> c_int;
 }
-struct Cad(*mut c_void);
-impl Drop for Cad { fn drop(&mut self) { unsafe { solvent_cad_free(self.0); } } }
+struct Cad(native::Session);
 impl Cad {
-    fn new() -> Self {
-        let p = unsafe { solvent_cad_new() }; assert!(!p.is_null()); Self(p)
-    }
+    fn new() -> Self { Self(native::Session::new().unwrap()) }
+    fn raw(&self) -> *mut c_void { self.0.as_ptr() }
     fn result(&self,id: c_int) -> Result<c_int,String> {
-        if id < 0 { Err(unsafe { CStr::from_ptr(solvent_cad_error(self.0)) }.to_string_lossy().into_owned()) }
+        if id < 0 { Err(unsafe { CStr::from_ptr(solvent_cad_error(self.raw())) }.to_string_lossy().into_owned()) }
         else { Ok(id) }
     }
     fn fit(&self,points: &[[f64;3]],nu: usize,nv: usize) -> Result<c_int,String> {
         assert_eq!(points.len(),nu*nv);
         assert!(nu <= 512 && nv <= 512);
-        self.result(unsafe { solvent_cad_bspline_face(self.0,points.as_ptr().cast(),nu as c_int,nv as c_int) })
+        self.result(unsafe { solvent_cad_bspline_face(self.raw(),points.as_ptr().cast(),nu as c_int,nv as c_int) })
     }
     fn at(&self,id: c_int,u: f64,v: f64) -> Result<([f64;3],[f64;3]),String> {
         let mut p = [0.;6];
-        self.result(unsafe { solvent_cad_surface_point(self.0,id,u,v,p.as_mut_ptr()) })?;
+        self.result(unsafe { solvent_cad_surface_point(self.raw(),id,u,v,p.as_mut_ptr()) })?;
         Ok(([p[0],p[1],p[2]],[p[3],p[4],p[5]]))
     }
 }
@@ -56,7 +57,7 @@ fn native_surface_interpolation_preserves_parameters_and_rejects_bad_data() {
     assert!(cad.fit(&bad,5,5).unwrap_err().contains("nonfinite"));
     assert!(cad.fit(&[[0.;3]],1,1).is_err());
     // A valid candidate face must never pass the final solid-export check.
-    assert!(cad.result(unsafe { solvent_cad_validate(cad.0,id) }).is_err());
+    assert!(cad.result(unsafe { solvent_cad_validate(cad.raw(),id) }).is_err());
 }
 
 fn check_chart(cad: &Cad,sweep: &SweepContacts,patch: usize,branch: usize,
