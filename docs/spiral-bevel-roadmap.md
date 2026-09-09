@@ -75,6 +75,14 @@ for all 106,004 non-neighboring pairs in their wires. It also records 614 small 
 corner gaps without snapping them. Adjacent-curve separation, corner treatment and
 periodic chart identification remain necessary before claiming simple embedded trims.
 
+The subsequent [closed-representative audit](../experiments/cad-backend/TRIM-LOOPS.md)
+constructs and proves simple closed UV loops for all 81 analytical faces, with at most
+6.78e-11 mm boundary displacement on their surfaces. Seventy-five representative face
+regions also have injective surface charts. Six periodic seam faces require explicit
+identification, and shared 3D topology realization and global embedding remain open.
+This is a bounded representative of the tolerant STEP data, not an assertion that its
+raw parameter curves close exactly or that every reader uses the same representative.
+
 The deliverable remains one fully specified, parametric matched pair from a documented
 generating system, independently verifiable and exportable at a stated geometric accuracy.
 Manufacturing planning remains separate. This document redirects the next investigation:

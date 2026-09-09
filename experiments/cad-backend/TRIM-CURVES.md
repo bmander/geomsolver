@@ -50,6 +50,10 @@ their shared corner, and periodic chart identifications. UV injectivity also doe
 that a periodic analytical surface maps the entire trimmed region injectively. Global
 material exposure and continuous pair mating remain separate acceptance requirements.
 
+The subsequent [closed-representative audit](TRIM-LOOPS.md) now provides an explicit
+bounded corner treatment and complete Jordan-loop checks for all 81 analytical faces.
+It preserves this report's raw, unsnapped curve data as the comparison reference.
+
 ## Reproduction
 
 Using the edge and referenced face inventories from [EDGES.md](EDGES.md):

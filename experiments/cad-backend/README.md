@@ -242,8 +242,11 @@ end-to-end performance claim is made.
 
 The [analytical trim-curve audit](TRIM-CURVES.md) verifies individual UV injectivity of
 all 1,188 analytical boundary curves and separation of all 106,004 non-neighboring pairs.
-It explicitly records tiny gaps at 614 UV corners. Adjacent curves, corner treatment and
-periodic chart identifications remain open; these checks do not yet certify embedded trims.
+It explicitly records tiny gaps at 614 UV corners. The subsequent
+[closed-representative audit](TRIM-LOOPS.md) gives all 81 analytical faces simple closed
+UV representatives within 6.78e-11 mm of their boundary curves on the surface. Seventy-five
+representative faces also pass a surface-chart injectivity check. The six periodic seam
+faces, shared 3D topology realization and global solid embedding remain open.
 
 ## Why this route
 
