@@ -91,17 +91,20 @@ class Polynomial:
             raise ValueError("whole-triangle Taylor bound requires a C1 surface")
         self.breaks = [sorted(set(k)) for k in knots]
         self.cells = {}
+        self.proposals = {}
         for patch in patches(record):
             domain = patch["domain"]
             spans = [b-a for a, b in domain]
             nets = [coordinate(patch["poles"], k) for k in range(3)]
+            first = [[derivative(net, k, spans[k]) for net in nets] for k in (0, 1)]
             hessian = []
             for i, j in [(0, 0), (0, 1), (1, 1)]:
-                boxes = [bounds(derivative(derivative(net, i, spans[i]), j, spans[j]))
-                         for net in nets]
+                boxes = [bounds(derivative(net, j, spans[j])) for net in first[i]]
                 hessian.append(norm_upper(boxes))
             index = tuple(self.breaks[k].index(domain[k][0]) for k in (0, 1))
             self.cells[index] = domain, nets, hessian
+            floating = lambda nets: [[[float(x) for x in row] for row in net] for net in nets]
+            self.proposals[index] = [[float(x) for x in p] for p in domain], floating(nets), [floating(p) for p in first]
 
     def indices(self, box):
         ranges = []
@@ -124,11 +127,10 @@ class Polynomial:
         cells = [self.cells[i][2] for i in self.indices(box)]
         return [max(c[k] for c in cells) for k in range(3)]
 
-    def tangents(self, uv):
-        domain, nets, _ = self.cells[self.indices([(x, x) for x in uv])[0]]
-        u, v = [(x-a)/(b-a) for x, (a, b) in zip(uv, domain)]
-        return [list(map(float, tensor_value(
-            [derivative(net, k, domain[k][1]-domain[k][0]) for net in nets], u, v))) for k in (0, 1)]
+    def proposal(self, uv, derivatives=True):
+        domain, nets, first = self.proposals[self.indices([(x, x) for x in uv])[0]]
+        u, v = [(float(x)-a)/(b-a) for x, (a, b) in zip(uv, domain)]
+        return tensor_value(nets, u, v), [tensor_value(p, u, v) for p in first] if derivatives else None
 
 
 class Analytical:
@@ -178,6 +180,9 @@ class Analytical:
                     [Taylor.variable(x, 1) if i == k else Taylor(x) for i, x in enumerate(uv)])]
                 for k in (0, 1)]
 
+    def proposal(self, uv, derivatives=True):
+        return [float((a+b)/2) for a, b in self.value(uv)], self.tangents(uv) if derivatives else None
+
 
 def surface(record):
     return Polynomial(record) if record["kind"] == "polynomial" else Analytical(record)
@@ -196,9 +201,8 @@ def projected_witness(evaluator, node):
     target = list(map(float, node[2:]))
     dot = lambda a, b: sum(x*y for x, y in zip(a, b))
     for _ in range(8):
-        value = [float((a+b)/2) for a, b in evaluator.value(uv)]
+        value, (u, v) = evaluator.proposal(uv)
         residual = [a-b for a, b in zip(target, value)]
-        u, v = evaluator.tangents(uv)
         aa, ab, bb = dot(u, u), dot(u, v), dot(v, v)
         determinant = aa*bb-ab*ab
         if determinant <= 0:
@@ -213,7 +217,7 @@ def projected_witness(evaluator, node):
             if isinstance(evaluator, Polynomial):
                 candidate = [max(float(k[0]), min(float(k[-1]), x)) for x, k in zip(candidate, evaluator.breaks)]
             candidate = tuple(map(F, candidate))
-            proposal = [float((a+b)/2) for a, b in evaluator.value(candidate)]
+            proposal, _ = evaluator.proposal(candidate, derivatives=False)
             if sum((a-b)**2 for a, b in zip(target, proposal)) < dot(residual, residual):
                 uv, improved = candidate, True
                 break

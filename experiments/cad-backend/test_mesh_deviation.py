@@ -40,6 +40,13 @@ class MeshDeviationTests(unittest.TestCase):
         self.assertGreaterEqual(bound, F(1, 80))
         self.assertLess(bound, F(1, 50))
 
+    def test_incorrect_fast_projection_cannot_hide_a_bulge(self):
+        curved = surface(self.bulge())
+        curved.proposal = lambda uv, derivatives=True: (
+            [float(uv[0]), float(uv[1]), 0.], [[1., 0., 0.], [0., 1., 0.]] if derivatives else None)
+        nodes = [[0, 0, 0, 0, 0], [1, 0, 1, 0, 0], [0, 1, 0, 1, 0]]
+        self.assertFalse(triangle_bound(curved, nodes, F(1, 10))["passes"])
+
     def test_rational_and_non_c1_splines_are_refused(self):
         record = self.bulge()
         record["weights"][1][1] = F(1, 2)
