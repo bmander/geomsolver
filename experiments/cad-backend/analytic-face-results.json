@@ -1,0 +1,88 @@
+{
+  "status": "verified",
+  "target_mm": 0.001,
+  "source_sha256": "c11e8defe5dcd3d12d79f597c0ec5a4e9410794ec25597904a183863183724c9",
+  "inputs": [
+    {
+      "member": 0,
+      "step_file": "/private/tmp/solvent-cad-full-pinion/member0-24-cuts.step",
+      "step_sha256": "47d750135b6b6c6c1cec232b496ddb792e03ff03d7ae4d9d1dececa4229f636e"
+    },
+    {
+      "member": 1,
+      "step_file": "/private/tmp/solvent-cad-full-gear/member1-48-cuts.step",
+      "step_sha256": "a4b010f3466603a57aa2b13a2f85d884eb1c9fa1032ca6a5dcbde7e8cfacddac"
+    }
+  ],
+  "evidence": {
+    "file": "/private/tmp/solvent-cad-analytic-faces.json",
+    "sha256": "a0a928cf688f448bdc65341a70a00b67b054cbbdadf5936ed7b66eb05ceaeac2"
+  },
+  "indexed": {
+    "file": "/private/tmp/solvent-cad-indexed-coefficients.json",
+    "sha256": "1058fb22a2f907a88631d5b6932a02bc01e137d71937eabb98216dea8130bce7"
+  },
+  "supports": {
+    "file": "/private/tmp/solvent-cad-supports.json",
+    "sha256": "2d04f85d23d2652366cc8b53f476e7a37df48ba0b2a3767db86209eee6cf8877"
+  },
+  "audit": {
+    "file": "/private/tmp/solvent-cad-analytic-face-audit.json",
+    "sha256": "29bd5b21260ac74e1e9d264bba34f7f49979a0313694a8b688fb8cf79a957605",
+    "seconds": 0.8467711700359359
+  },
+  "verifier_sha256": {
+    "experiments/cad-backend/check_analytic_faces.py": "f7d6c7284fe5b8e44b23302dea9c9ada80a9c42c044f4bdc2acf0b09bf536d05",
+    "experiments/cad-backend/parameter_bounds.py": "b8cfb6d5ed3f9a3583cdf9380e7fe153511949071651538a2459435c42c82e9d",
+    "experiments/cad-backend/check_face_domains.py": "bf20cb604cc996897c504c3622093ff070a1dc7568130a1700b7809da2b06382",
+    "experiments/cad-backend/check_supports.py": "efc660be6d5932470c2ae10b8c011fc4acd82ddfeb59dcd77781aa44c692a944",
+    "experiments/cad-backend/bernstein.py": "1200ab2af081ce7fd12f5e5f91d284f07f973d8431bbd65abd03de2313ae516a",
+    "experiments/cad-backend/interval_jet.py": "d50c7012f4764809c80570524c98b20743e8827b98f7862fdae0425b1fd9d7f2",
+    "rust/gcs-core/tests/verification/crown_branches.py": "dc8a996e2c4b0d14aaaaa7b9d627a912179dea6f05770c01ba5bf9e193e22288",
+    "rust/gcs-core/tests/verification/interval_arithmetic.py": "c17675fcb3c1e13f516ad7b1cecc77f2eed5a31d46b2a1d69d6fd35fafbc23ef"
+  },
+  "exporter_sha256": {
+    "experiments/cad-backend/export_analytic_faces.py": "92b8a3b3c4bfd828aca85b768f683c9df4560051c31db875050a68aea3d81377",
+    "experiments/cad-backend/export_face_domains.py": "cd5e1374e1333268dde5c1da96f963ba431127645e4f5a4ce23dc35c52f731bb",
+    "experiments/cad-backend/export_supports.py": "69eecfda9f413e154d58d1831f4fc6300d168326b4caa8f91d630bb94b82e902"
+  },
+  "results": [
+    {
+      "member": 0,
+      "analytical_faces": 29,
+      "roles": {
+        "toe": 1,
+        "tip": 26,
+        "back": 1,
+        "heel": 1
+      },
+      "parameter_curves": 404,
+      "polynomial_extensions": 2,
+      "maximum_bound_mm": 1.0954114184851509e-11,
+      "all_indexed_faces_with_nominal_support_bounds": 149
+    },
+    {
+      "member": 1,
+      "analytical_faces": 52,
+      "roles": {
+        "toe": 1,
+        "tip": 49,
+        "back": 1,
+        "heel": 1
+      },
+      "parameter_curves": 784,
+      "polynomial_extensions": 4,
+      "maximum_bound_mm": 1.3533443757729503e-12,
+      "all_indexed_faces_with_nominal_support_bounds": 292
+    }
+  ],
+  "negative_control": {
+    "status": "rejected",
+    "reason": "analytical face lacks a unique nominal support within target",
+    "seconds": 0.37005873903399333,
+    "file": "/private/tmp/solvent-cad-analytic-faces-distorted.json",
+    "sha256": "6508158fdb66df660b054b2d99de71b2c0f13a8801bfccf91ed71e09550c3172",
+    "mutation": "Increase the first spherical face radius by 0.01 mm"
+  },
+  "scope": "Complete analytical-support distance over the finite parameter slab enclosed by all trim curves. Bounded face-interior semantics are used; trim topology, separate 3D edges, source/reader error and global material/mating remain separate"
+}

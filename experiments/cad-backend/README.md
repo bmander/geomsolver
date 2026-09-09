@@ -209,6 +209,13 @@ across the entire domain. Combined nominal bounds remain below 0.001 mm after tr
 the actual indexed STEP candidates. Analytical blank faces, separate 3D edge consistency,
 source/reader accuracy and global material/mating remain separate checks.
 
+The [analytical-face audit](ANALYTICAL-FACES.md) now covers the remaining 81 sphere/cone
+faces, including finite parameter slabs from all 1,188 trim curves and six explicit
+polynomial end extensions. The largest nominal support bound is 1.10e-11 mm. All 441
+faces in the indexed pair therefore have nominal support-distance bounds below 0.001 mm;
+finite material coverage, separate 3D edge consistency, source/reader error and continuous
+mating still require their own evidence.
+
 ## Initial trial reproduction
 
 The frozen Python environment uses `cadquery-ocp==7.9.3.1.1` (OCCT 7.9.3) on CPython 3.12,

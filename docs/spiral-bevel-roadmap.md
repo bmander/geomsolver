@@ -52,6 +52,14 @@ Combined nominal accuracy remains below 0.001 mm on those indexed faces. Analyti
 faces and their trims, separate 3D edge consistency, source/reader error and global
 material/mating checks remain; this does not close the full-solid acceptance gate.
 
+The [analytical-face audit](../experiments/cad-backend/ANALYTICAL-FACES.md) additionally
+bounds all 81 remaining sphere/cone faces against their nominal blank supports within
+1.10e-11 mm. All 1,188 parameter curves contribute finite slab bounds, including six
+polynomial extensions beyond imported knot endpoints. The audit takes approximately
+0.85 seconds. With the earlier indexed B-splines, all 441 faces have nominal support
+distance bounds below 0.001 mm. Separate 3D edge consistency, analytical trim topology,
+source/reader error and global material/mating coverage still remain.
+
 The deliverable remains one fully specified, parametric matched pair from a documented
 generating system, independently verifiable and exportable at a stated geometric accuracy.
 Manufacturing planning remains separate. This document redirects the next investigation:
