@@ -72,8 +72,21 @@ repeat teeth as i {
 ```
 
 `at:` selects one pose of the motion; the source solid stays available for other instances.
-The motion's ratio, phase and relative frame apply as usual. This is indexing; a continuous
-generating sweep still needs its own operation.
+The motion's ratio, phase and relative frame apply as usual.
+
+A continuous generating operation has angular bounds instead of a single pose:
+
+```solvent
+solid removal(tool, under: generating, from: -30deg, to: 30deg)
+removal cut body
+```
+
+This syntax and its continuous material evaluator are implemented; native/mesh boundary
+export is still unsupported and fails explicitly. The
+[generating-sweep example](rust/examples/solid_generating_sweep.sv) exercises component
+arguments and finite end caps. Material evaluation currently accepts convex analytic
+full-revolution sources and their static Boolean/placement combinations. Sweeps can then
+be indexed or combined with other material; nested continuous sweeps are refused.
 
 The six-hole indexed example passes native STEP and encoded STL checks. Its legacy
 `--stl-backend mesh` triangulation still leaves unpaired edges; that separate regression

@@ -34,13 +34,14 @@ fn sweep_label(l: &str) -> bool {
 /// or a body over other solids — and a mixture is none of the three.
 fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
     if p.under.is_some() || p.at.is_some() {
-        if p.from.is_some() || p.to.is_some() || p.depth.is_some() || p.about.is_some()
-            || p.through.is_some() || p.along.is_some() || p.sweep.is_some() || p.sense.is_some() {
-            return Err("a motion placement uses `under:` and `at:`, without sweep extents".into());
+        if p.depth.is_some() || p.about.is_some() || p.through.is_some()
+            || p.along.is_some() || p.sweep.is_some() || p.sense.is_some() {
+            return Err("a named motion uses `at:` or angular `from:`/`to:`, without other sweep labels".into());
         }
-        return match (p.under,p.at) {
-            (Some(motion),Some(at)) => Ok(Sweep::Placed {motion,at}),
-            _ => Err("a motion placement needs both `under:` and `at:`".into()),
+        return match (p.under,p.at,p.from,p.to) {
+            (Some(motion),Some(at),None,None) => Ok(Sweep::Placed {motion,at}),
+            (Some(motion),None,Some(from),Some(to)) => Ok(Sweep::Swept {motion,from,to}),
+            _ => Err("a named motion needs `under:` and either `at:` or both `from:` and `to:`".into()),
         };
     }
     if let Some(guide) = p.along {

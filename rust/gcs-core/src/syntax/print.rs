@@ -295,6 +295,11 @@ fn attitude_parts(a: &Attitude) -> Vec<String> {
 /// Sweep arguments are document expressions, preserved through canonical printing.
 fn sweep_parts(s: &Sweep) -> Vec<String> {
     match s {
+        Sweep::Swept {motion,from,to} => {
+            let mut text = String::from("under: ");
+            write_ref(&mut text,motion);
+            vec![text,format!("from: {}",dim(from)),format!("to: {}",dim(to))]
+        }
         Sweep::Placed {motion,at} => {
             let mut text = String::from("under: ");
             write_ref(&mut text,motion);

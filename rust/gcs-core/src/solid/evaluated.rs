@@ -112,6 +112,9 @@ impl EvaluatedSolid {
             _ => return Err("solid approximation requires a finite positive pixel length".into()),
         };
         let operands = validate_at(sk, si, unit)?;
+        if operands.iter().any(|&i| matches!(sk.solids[i].def,SolidDef::Swept {..})) {
+            return Err("boundary evaluation for continuous motion sweeps is not yet supported".into());
+        }
         let origin = WorldPoint(frame_origin(sk, si, unit));
         let csg = resolve_at(sk, si, unit, origin.0);
         let mut terms = vec![&csg.term];

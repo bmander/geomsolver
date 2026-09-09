@@ -81,9 +81,9 @@ pub(super) fn build_solid(
             Ok(Extent { text: text.trim().to_string(), value: v.c })
         };
     let def = match sweep {
-        crate::syntax::Sweep::Placed { motion, at } => {
+        crate::syntax::Sweep::Placed { motion, .. } | crate::syntax::Sweep::Swept { motion, .. } => {
             if ops.len() != 1 || ops[0].kind != EntKind::Solid {
-                say(Code::E080,st.span,"a motion placement needs one source solid".into());
+                say(Code::E080,st.span,"a named motion needs one source solid".into());
                 return None;
             }
             let found = res.lookup(motion).and_then(|e|
@@ -92,11 +92,29 @@ pub(super) fn build_solid(
                 say(Code::E080,motion.span,"`under:` requires a named motion".into());
                 return None;
             };
-            let at = match ext(at,"at",crate::units::Dim::ANGLE) {
-                Ok(at) => Extent { text: at.text, value: at.value.to_radians() },
-                Err(message) => { say(Code::E103,st.span,message); return None; }
-            };
-            SolidDef::Placed {source:ops[0].idx,motion:m.idx,at}
+            let angle = |a,what| ext(a,what,crate::units::Dim::ANGLE)
+                .map(|e| Extent {text:e.text,value:e.value.to_radians()});
+            match sweep {
+                crate::syntax::Sweep::Placed {at,..} => {
+                    let at = match angle(at,"at") {
+                        Ok(at) => at,
+                        Err(message) => { say(Code::E103,st.span,message); return None; }
+                    };
+                    SolidDef::Placed {source:ops[0].idx,motion:m.idx,at}
+                }
+                crate::syntax::Sweep::Swept {from,to,..} => {
+                    let (from,to) = match (angle(from,"from"),angle(to,"to")) {
+                        (Ok(a),Ok(b)) if a.value < b.value => (a,b),
+                        (Ok(_),Ok(_)) => {
+                            say(Code::E080,st.span,"a continuous motion sweep needs increasing angular bounds; use `at:` for one pose".into());
+                            return None;
+                        }
+                        (Err(message),_) | (_,Err(message)) => { say(Code::E103,st.span,message); return None; }
+                    };
+                    SolidDef::Swept {source:ops[0].idx,motion:m.idx,from,to}
+                }
+                _ => unreachable!(),
+            }
         }
         crate::syntax::Sweep::Along { guide } => {
             if !(1..=2).contains(&ops.len()) || ops.iter().any(|e| e.kind != EntKind::Face) {

@@ -60,7 +60,7 @@ impl Sketch {
                 let s = &self.solids[e.i()];
                 let mut v: Vec<EntRef> = Vec::new();
                 match &s.def {
-                    SolidDef::Placed { motion, .. } => v.push(EntRef::new(EntKind::Motion,*motion as usize)),
+                    SolidDef::Placed { motion, .. } | SolidDef::Swept { motion, .. } => v.push(EntRef::new(EntKind::Motion,*motion as usize)),
                     SolidDef::Prism { face, .. } => v.push(EntRef::face(*face as usize)),
                     SolidDef::Loft { face, end, guide } => {
                         v.push(EntRef::face(*face as usize));

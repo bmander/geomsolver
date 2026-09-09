@@ -823,7 +823,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     let mut retained: Vec<bool> = src.solids.iter().enumerate().map(|(i, s)| {
         keep(EntRef::solid(i)) && s.face().is_none_or(|f| face_map[f as usize].is_some())
             && match s.def {
-                crate::model::SolidDef::Placed { motion, .. } => motion_map[motion as usize].is_some(),
+                crate::model::SolidDef::Placed { motion, .. } | crate::model::SolidDef::Swept { motion, .. } =>
+                    motion_map[motion as usize].is_some(),
                 crate::model::SolidDef::Revolve { axis, .. } => line_map[axis as usize].is_some(),
                 crate::model::SolidDef::Loft { end, guide, .. } =>
                     end.is_none_or(|f| face_map[f as usize].is_some()) && match guide.kind {
@@ -860,6 +861,10 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let face = |f: u32| face_map[f as usize].unwrap() as u32;
         let sol = |s: &u32| solid_map[*s as usize].unwrap() as u32;
         let def = match &so.def {
+            crate::model::SolidDef::Swept { source, motion, from, to } => {
+                crate::model::SolidDef::Swept {source:sol(source),
+                    motion:motion_map[*motion as usize].unwrap() as u32,from:from.clone(),to:to.clone()}
+            }
             crate::model::SolidDef::Placed { source, motion, at } => {
                 crate::model::SolidDef::Placed { source:sol(source),
                     motion:motion_map[*motion as usize].unwrap() as u32,at:at.clone() }

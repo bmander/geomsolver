@@ -179,7 +179,16 @@ holes are subtracted. Axis spines disappear, and finite support comes from an en
 Concave loops, prisms and partial revolutions remain explicit refusals on this field path.
 Snapshot construction uses floating-point solved curves and numeric convexity checks;
 interval evaluation does not certify that conversion or source-solve/axis-snapping error.
-The source-field bridge is not yet a public generating-sweep solid or native sweep export.
+**Continuous motion solids:** `solid removal(tool, under: generating, from: -30deg, to: 30deg)`
+uses finite increasing Angle bounds, converted to radians at elaboration. It means the union
+of material over the complete interval, not a sequence of posed meshes. `at:` and interval
+labels are exclusive. Formals, repeats, forward references, print/copy/delete and Boolean
+operands use the ordinary solid dependency graph. `MaterialField::read` retains static DAGs
+and promotes them when a sweep appears; placed/composed sweeps share immutable source nodes.
+Nested continuous sweeps are refused. Cache reads include the whole motion graph, since equal
+endpoint poses do not determine the swept material. Both mesh and native boundary exports
+currently reject every graph containing a sweep, preserving old output files; material
+support is not yet native sweep-boundary construction.
 `solid::MaterialField` composes static and swept operands with fixed poses and Booleans.
 Its evaluator owns complete-member cut arithmetic, retaining every distinct node/box sweep's
 domain, witness, enclosure and termination status. Budgets apply per sweep query; exhausted

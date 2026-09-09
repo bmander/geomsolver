@@ -21,6 +21,10 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
         v.push(s as f64);
         name_read(&sol.name, &mut v);
         match &sol.def {
+            SolidDef::Swept { source, motion, from, to } => {
+                v.extend([6.,*source as f64,*motion as f64,from.value,to.value]);
+                motion_reads(sk,*motion,&mut v);
+            }
             SolidDef::Placed { source, motion, at } => {
                 v.extend([5.,*source as f64,*motion as f64,at.value]);
                 match crate::motion::Family::read(sk,*motion as usize).and_then(|m| m.at(at.value)) {
@@ -114,6 +118,28 @@ fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
             let o = sk.point_xy(pl.frame.origin as usize);
             v.push(o.0);
             v.push(o.1);
+        }
+    }
+}
+
+fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
+    let mut pending = vec![motion];
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(i) = pending.pop() {
+        if !seen.insert(i) { continue; }
+        let Some(m) = sk.motions.get(i as usize) else { values.push(f64::NAN); continue; };
+        values.push(i as f64);
+        match m.def {
+            crate::model::MotionDef::Rotation {axis,ratio,phase} => {
+                values.extend([0.,axis as f64,ratio,phase]);
+                if let Some(axis) = sk.lines.get(axis as usize) {
+                    for p in [axis.p1,axis.p2] { values.extend(sk.world_point(p as usize)); }
+                } else { values.push(f64::NAN); }
+            }
+            crate::model::MotionDef::Relative {source,observer} => {
+                values.extend([1.,source as f64,observer as f64]);
+                pending.extend([observer,source]);
+            }
         }
     }
 }
@@ -375,7 +401,7 @@ fn build(
                 let b = plane::in_view(c, s, o, sk.point_xy(l.p2 as usize));
                 revolve(&p, (a, b), sweep.value, *sense, unit, &name)
             }
-            SolidDef::Body { .. } | SolidDef::Loft { .. } | SolidDef::Placed { .. } => unreachable!(),
+            SolidDef::Body { .. } | SolidDef::Loft { .. } | SolidDef::Placed { .. } | SolidDef::Swept { .. } => unreachable!(),
         };
         let Some(p) = built else { return Term::Empty };
         prims.push(p);

@@ -417,7 +417,7 @@ fn face_ordinate(
                 ));
             }
             SolidDef::Revolve { .. } | SolidDef::Through { .. } | SolidDef::Loft { .. }
-                | SolidDef::Placed { .. } => return None,
+                | SolidDef::Placed { .. } | SolidDef::Swept { .. } => return None,
             SolidDef::Body { stock, on, through } => {
                 // a body's faces are its operands', reached through the operand that made them
                 let (head, rest) = path.split_first()?;

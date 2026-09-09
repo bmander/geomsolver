@@ -174,6 +174,19 @@ class StepTests(unittest.TestCase):
             self.assertIn("along-guide lofts", result.stderr)
             self.assertEqual(step.read_text(), "existing export")
 
+    def test_continuous_sweep_refusal_preserves_both_exports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            step, stl = Path(directory)/"sweep.step", Path(directory)/"sweep.stl"
+            step.write_text("old step")
+            stl.write_text("old stl")
+            result = subprocess.run([str(CLI), str(RUST/"examples/solid_generating_sweep.sv"),
+                "--solid", "removal.body", "--step", str(step), "--stl", str(stl), "--no-diagnose"],
+                text=True, capture_output=True)
+            self.assertEqual(result.returncode, 1, result.stdout+result.stderr)
+            self.assertIn("native CAD boundary construction for continuous motion sweeps", result.stderr)
+            self.assertEqual(step.read_text(), "old step")
+            self.assertEqual(stl.read_text(), "old stl")
+
     def test_unitless_and_unsolved_models_do_not_replace_an_export(self):
         source = ("point o hint(x: 0,y: 0)\nground o\ncircle c(center: o)\n"
                   "radius(2) c\nsolid body(face(c), depth: 3)\n")

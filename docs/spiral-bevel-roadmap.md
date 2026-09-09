@@ -59,8 +59,13 @@ revolutions with convex line/arc profile loops, holes, Boolean bodies and motion
 crown and bevel blank need no name-specific coordinate adapter on this path. Source tests
 compare the crown against independent analytic membership and a sphere sweep against a
 closed-form torus. Concave profile loops, prisms and partial revolutions are still refused.
-These numerical conversion checks do not certify source-solve error. Sweep syntax and
-native boundary construction remain ahead; this is not yet public gear solid export.
+These numerical conversion checks do not certify source-solve error.
+The public declaration is now `solid removal(tool, under: generating, from: -30deg, to: 30deg)`.
+Its component parameters, copy/delete graph and continuous material evaluation are connected.
+`MaterialField::read` handles the full static/swept/placed Boolean graph without pose sampling.
+Tests cover finite end caps and indexing one swept cutter through an ordinary component.
+Boundary export still refuses these graphs explicitly; native sweep-boundary construction
+remains ahead, so this is not yet public gear solid export.
 
 The acceptance work remains:
 

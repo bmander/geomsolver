@@ -247,6 +247,8 @@ pub enum Sense {
 pub enum SolidDef {
     /// A rigid instance of another solid at one angle of a named motion family.
     Placed { source: u32, motion: u32, at: Extent },
+    /// Continuous material swept under a named motion; angular extents are radians.
+    Swept { source: u32, motion: u32, from: Extent, to: Extent },
     /// A face swept along its plane's normal, between two signed coordinates along it.  `from`
     /// and `to` are ordinates and their signs are arithmetic; `depth: d` is the draughtsman's
     /// spelling of `from: -d, to: 0`, the material behind the face the view shows.
@@ -352,7 +354,7 @@ impl SolidE {
     /// Boolean operands only; a through-extent target is a separate evaluation dependency.
     pub fn operands(&self) -> Vec<u32> {
         match &self.def {
-            SolidDef::Placed { source, .. } => vec![*source],
+            SolidDef::Placed { source, .. } | SolidDef::Swept { source, .. } => vec![*source],
             SolidDef::Prism { .. } | SolidDef::Revolve { .. } | SolidDef::Through { .. } | SolidDef::Loft { .. } => Vec::new(),
             SolidDef::Body { stock, on, through } => {
                 let mut v = vec![*stock];
@@ -367,7 +369,7 @@ impl SolidE {
     pub fn face(&self) -> Option<u32> {
         match &self.def {
             SolidDef::Prism { face, .. } | SolidDef::Revolve { face, .. } | SolidDef::Through { face, .. } | SolidDef::Loft { face, .. } => Some(*face),
-            SolidDef::Body { .. } | SolidDef::Placed { .. } => None,
+            SolidDef::Body { .. } | SolidDef::Placed { .. } | SolidDef::Swept { .. } => None,
         }
     }
 }

@@ -25,6 +25,8 @@ pub fn recipe(sk: &Sketch,root: usize) -> Result<Json,String> {
         }
         let solid = &sk.solids[i];
         let mut node = match &solid.def {
+            SolidDef::Swept {..} => return Err(format!(
+                "`{}`: native CAD boundary construction for continuous motion sweeps is not yet supported",solid.name)),
             SolidDef::Placed { source, motion, at } => {
                 let pose = crate::motion::Family::read(sk,*motion as usize)?.at(at.value)?;
                 let columns: [[f64;3];3] = std::array::from_fn(|i| {

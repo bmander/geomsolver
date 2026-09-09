@@ -385,6 +385,15 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
         pending.push((i, true));
         let fail = |why: &str| format!("`{}`: {why}", s.name);
         let face = match &s.def {
+            SolidDef::Swept { source, motion, from, to } => {
+                if !from.value.is_finite() || !to.value.is_finite() || from.value >= to.value {
+                    return Err(fail("a continuous motion sweep needs finite increasing angular bounds"));
+                }
+                let family = crate::motion::Family::read(sk,*motion as usize)?;
+                family.at(from.value)?; family.at(to.value)?;
+                pending.push((*source as usize,false));
+                continue;
+            }
             SolidDef::Placed { source, motion, at } => {
                 crate::motion::Family::read(sk,*motion as usize)?.at(at.value)?;
                 pending.push((*source as usize,false));
