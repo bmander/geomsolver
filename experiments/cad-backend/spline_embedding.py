@@ -19,7 +19,7 @@ def projection(surface):
             [(aa*y-ab*x)/determinant for x,y in zip(a,b)]]
 
 
-def jacobian_bounds(surface,rows):
+def polynomial_surface(surface):
     degrees = surface['degrees']
     knots = [[F(x) for x in k] for k in surface['knots']]
     grid = [[tuple(F(x) for x in p) for p in row] for row in surface['poles']]
@@ -34,6 +34,11 @@ def jacobian_bounds(surface,rows):
                 or k.count(k[0])!=d+1 or k.count(k[-1])!=d+1
                 or any(k.count(x)>d for x in set(k[1:-1]) if x not in (k[0],k[-1]))):
             raise ValueError('expected a continuous clamped spline basis')
+    return degrees,knots,grid
+
+
+def jacobian_bounds(surface,rows):
+    degrees,knots,grid = polynomial_surface(surface)
     derivatives = []
     for axis in (0,1):
         d,k = degrees[axis],knots[axis]

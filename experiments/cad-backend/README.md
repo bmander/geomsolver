@@ -255,6 +255,11 @@ for all 360 actual indexed spline faces using exact whole-domain Jacobian bounds
 one fixed projection per face. Every face now has individual embedding evidence; fitting
 the different faces together as one globally embedded solid remains a separate gate.
 
+The [spline-pair separation audit](SPLINE-SEPARATION.md) verifies all 35,532 pairs with
+no common topological vertex, with a minimum whole-surface separation bound of 0.00364 mm.
+The 288 incident spline pairs are explicitly inventoried for separate join checks. Pairs
+involving analytical faces and common 3D boundary realization remain unverified.
+
 ## Why this route
 
 [HyGEARS](https://www.hygears.com/hygears_4.0-february2020_019.htm) documents STEP export using

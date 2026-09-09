@@ -96,6 +96,12 @@ global self-intersections as well as local folds. Together with the analytical-f
 representatives, all 441 faces have individual embedding evidence. Inter-face embedding
 and a consistent shared 3D realization remain unproved.
 
+The [spline-pair separation audit](../experiments/cad-backend/SPLINE-SEPARATION.md) now
+proves all 35,532 nonincident spline-face pairs disjoint, with a conservative minimum
+separation bound of 0.00364 mm. The full check takes 35 seconds and only 48 pairs need
+subdivision. The 288 incident spline pairs remain explicitly unverified, as do pairs
+involving analytical faces and the common shared 3D boundary realization.
+
 The deliverable remains one fully specified, parametric matched pair from a documented
 generating system, independently verifiable and exportable at a stated geometric accuracy.
 Manufacturing planning remains separate. This document redirects the next investigation:
