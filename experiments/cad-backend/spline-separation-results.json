@@ -1,0 +1,73 @@
+{
+  "verifier_commit": "a08fd4f",
+  "source_sha256": "c11e8defe5dcd3d12d79f597c0ec5a4e9410794ec25597904a183863183724c9",
+  "inputs": [
+    {
+      "member": 0,
+      "step_file": "/private/tmp/solvent-cad-full-pinion/member0-24-cuts.step",
+      "step_sha256": "47d750135b6b6c6c1cec232b496ddb792e03ff03d7ae4d9d1dececa4229f636e"
+    },
+    {
+      "member": 1,
+      "step_file": "/private/tmp/solvent-cad-full-gear/member1-48-cuts.step",
+      "step_sha256": "a4b010f3466603a57aa2b13a2f85d884eb1c9fa1032ca6a5dcbde7e8cfacddac"
+    }
+  ],
+  "vertex_evidence": {
+    "file": "/private/tmp/solvent-cad-vertices.json",
+    "sha256": "78428790671504d27bab331e908b5b48abea698123f14dae2e01a897203a358b"
+  },
+  "edge_evidence": {
+    "file": "/private/tmp/solvent-cad-edges.json",
+    "sha256": "d8797bbb235c99167a6f62c959dab84b41228cf2e764b86d8e416ac59bfc33e1"
+  },
+  "vertex_audit": {
+    "file": "/private/tmp/solvent-cad-vertex-audit.json",
+    "sha256": "3e49163f9058a8f3907a4b22ae708283b8a485f18be202f6cfbeb439db287a9a"
+  },
+  "audit": {
+    "file": "/private/tmp/solvent-cad-spline-separation.json",
+    "sha256": "81e625f744094b6a3171b9c4e987372bb5eac1f7363c2632eb58b88d6ad3b9df",
+    "seconds": 34.95982439699583
+  },
+  "nonincident_spline_separation": "verified",
+  "complete_pair_inventory": true,
+  "members": [
+    {
+      "member": 0,
+      "verified_nonincident_pairs": 7044,
+      "unverified_incident_pairs": 96,
+      "methods": {
+        "support_planes": 472,
+        "world_bounds": 6572
+      },
+      "tested_cells": 7044,
+      "minimum_separation_lower_mm_exact": "5950981193097/281474976710656",
+      "minimum_separation_lower_mm_approx": 0.021142132287000237
+    },
+    {
+      "member": 1,
+      "verified_nonincident_pairs": 28488,
+      "unverified_incident_pairs": 192,
+      "methods": {
+        "subdivision": 48,
+        "support_planes": 988,
+        "world_bounds": 27452
+      },
+      "tested_cells": 29416,
+      "minimum_separation_lower_mm_exact": "512081794785/140737488355328",
+      "minimum_separation_lower_mm_approx": 0.003638559993994761
+    }
+  ],
+  "tests": {
+    "command": "python3 -m unittest discover -s experiments/cad-backend -p 'test_*.py'",
+    "passed": 65
+  },
+  "scope": "Whole-surface separation of every selected spline-face pair with no common topological vertex. Incident pairs are explicitly inventoried and remain unverified here. Analytical-face pairs, common 3D topology realization, global material, continuous mating and source/reader accuracy remain separate.",
+  "remaining": [
+    "Incident spline-face joins and pairs involving analytical faces",
+    "Common shared 3D topology realization",
+    "Global swept-material coverage and continuous pair mating",
+    "Source-solve and STEP-reader accuracy transfer"
+  ]
+}
