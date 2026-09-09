@@ -60,7 +60,10 @@ impl Frame {
     fn coefficients(&self,position: V,n: V,vector: bool) -> Result<[I;3],Error> {
         // A position derivative is a vector: origin/offset terms disappear.
         let x = if vector { position } else { sub(position,self.origin)? };
-        let mut c = [self.rate.mul(dot(n,cross(self.axis,x)?)?)?,I::ZERO,I::ZERO];
+        self.moment_coefficients(n,cross(x,n)?,vector)
+    }
+    fn moment_coefficients(&self,n: V,moment: V,vector: bool) -> Result<[I;3],Error> {
+        let mut c = [self.rate.mul(dot(self.axis,moment)?)?,I::ZERO,I::ZERO];
         if self.fixed_observer { return Ok(c); }
         let mut subtract_rotation = |v,w| -> Result<(),Error> {
             let parallel = scale(self.axis,dot(self.axis,w)?)?;
@@ -69,7 +72,7 @@ impl Frame {
             c[2] = c[2].sub(dot(v,cross(self.axis,w)?)?)?;
             Ok(())
         };
-        subtract_rotation(self.omega,cross(x,n)?)?;
+        subtract_rotation(self.omega,moment)?;
         if !vector { subtract_rotation(cross(self.omega,self.offset)?,n)?; }
         Ok(c)
     }
@@ -78,6 +81,16 @@ impl Frame {
     }
 }
 impl Family {
+    /// The rigid-motion contact equation is linear in the source normal and
+    /// position cross normal. A source can bound that moment before rotating,
+    /// avoiding the dependency loss of crossing separate world-coordinate boxes.
+    /// Passing both source derivatives gives the corresponding equation derivative.
+    pub fn normal_velocity_moment_bounds(&self,normal: V,position_cross_normal: V) -> Result<NormalVelocityBounds,Error> {
+        let frame = Frame::read(self)?;
+        let moment = sub(position_cross_normal,cross(frame.origin,normal)?)?;
+        Ok(frame.equation(frame.moment_coefficients(normal,moment,false)?))
+    }
+
     /// Bound the same rigid-motion identity as `normal_velocity`, using the
     /// complete position/normal boxes and outward-rounded axis normalization and
     /// arithmetic. The normal need not be unit length; its enclosure is supplied

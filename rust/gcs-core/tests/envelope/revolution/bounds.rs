@@ -26,6 +26,24 @@ fn full_revolved_source_boxes_enclose_positions_tangents_and_poles() {
                     let n = [p.du[1]*p.dv[2]-p.du[2]*p.dv[1],p.du[2]*p.dv[0]-p.du[0]*p.dv[2],p.du[0]*p.dv[1]-p.du[1]*p.dv[0]];
                     let dn = [axis[1]*n[2]-axis[2]*n[1],axis[2]*n[0]-axis[0]*n[2],axis[0]*n[1]-axis[1]*n[0]];
                     for k in 0..3 { assert!(b.normal_dv[k].contains(dn[k]*std::f64::consts::TAU)); }
+                    let cross = |a: [f64;3],b: [f64;3]| [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+                    let moment = cross(p.position,n);
+                    let dn = dn.map(|x| x*std::f64::consts::TAU);
+                    let a = cross(p.dv,n); let c = cross(p.position,dn);
+                    let norm = |v: [f64;3]| v[0].hypot(v[1]).hypot(v[2]);
+                    // The independent reference uses rounded Cartesian samples.
+                    // Its cross products can leave cancellation residues for an
+                    // exactly zero moment; allow a small term-scaled roundoff
+                    // band in this comparison, not in the production enclosures.
+                    let errors = [norm(p.position)*norm(n),norm(p.dv)*norm(n)+norm(p.position)*norm(dn)]
+                        .map(|s| 64.*f64::EPSILON*s);
+                    for k in 0..3 {
+                        for (actual,bound,error) in [(moment[k],b.moment[k],errors[0]),(a[k]+c[k],b.moment_dv[k],errors[1])] {
+                            let [lo,hi] = bound.bounds();
+                            assert!(actual >= lo-error && actual <= hi+error,
+                                "{name} u={u} v={v} axis={k}: {actual} vs {bound:?}, reference roundoff {error}");
+                        }
+                    }
                 } }
             }
             assert_eq!(surface.bounds(I::new(-0.1,0.).unwrap(),I::ZERO).unwrap_err(),IntervalError::OutsideDomain);

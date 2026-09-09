@@ -1,6 +1,96 @@
 use super::*;
 
 #[test]
+fn full_sphere_boxes_stay_tight_under_world_translation() {
+    use gcs_core::interval::Interval as I;
+    let e = swept("");
+    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
+    for offset in [[0.;3],[1000.,-2000.,3000.]] {
+        let surface = sweep.patches()[0].placed(Motion::translation(offset,[0.;3]).unwrap());
+        let bounds = surface.bounds(I::new(0.,1.).unwrap(),I::new(0.,1.).unwrap()).unwrap();
+        let center = [3.+offset[0],offset[1],offset[2]];
+        for k in 0..3 {
+            let [lo,hi] = bounds.position[k].bounds();
+            assert!(lo <= center[k]-1. && hi >= center[k]+1.);
+            assert!(hi-lo < 2.+1e-8,"axis {k}, offset {offset:?}: [{lo}, {hi}]");
+        }
+    }
+}
+
+#[test]
+fn contact_discovery_rejects_proven_regions_of_hidden_boolean_operands() {
+    use gcs_core::solid::{ContactCoverOptions,ContactEvidence};
+    for (center,operation,inside) in [(3.,"on",true),(7.,"cut",false)] {
+        let e = read(&format!("{SOURCE}\n\
+            point ci hint(x: {center},y: 0)\nground ci\n\
+            point ai hint(x: {center},y: -0.5)\nground ai\n\
+            point bi hint(x: {center},y: 0.5)\nground bi\n\
+            arc ri(center: ci,start: ai,end: bi)\nradius(0.5) ri\nline di(ai,bi)\n\
+            solid inner(face(ri,di),about: di)\nsolid combined(tool)\ninner {operation} combined\n\
+            solid swept(combined,under: generating,from: -60deg,to: 60deg)\n"));
+        let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
+        for fixed in [false,true] {
+            let options = ContactCoverOptions {max_depth:8,max_cells:5000};
+            let cover = if fixed { sweep.cover_at(0.,options) } else { sweep.cover(options) }.unwrap();
+            let mut rejected = 0;
+            for cell in &cover.cells {
+                let p = sweep.patches()[cell.patch].at(0.5,0.13).unwrap().position;
+                let small = ((p[0]-center).hypot(p[1]).hypot(p[2])-0.5).abs() < 1e-10;
+                if small {
+                    // Only strict field margins justify pruning; boxes whose
+                    // material classification is uncertain remain in the cover.
+                    if let ContactEvidence::OffSource {material} = cell.evidence {
+                        assert!(if inside { material.bounds()[1] < 0. } else { material.bounds()[0] > 0. });
+                        assert!(sweep.at_chart(cell,0.5,0.5,1e-10).is_err());
+                        rejected += 1;
+                    }
+                } else {
+                    assert!(!matches!(cell.evidence,ContactEvidence::OffSource {..}),
+                        "the unit sphere is the actual boundary: {cell:?}");
+                }
+            }
+            assert!(rejected > 0,"center={center}, operation={operation}, fixed={fixed}: {:?}",
+                sweep.source_material().bounds([center+0.5,0.,0.].map(|x| gcs_core::interval::Interval::point(x).unwrap())));
+        }
+    }
+}
+
+#[test]
+fn meridian_normal_derivative_bounds_enclose_the_independent_sphere_formula() {
+    use gcs_core::{interval::Interval as I,model::{Sense,SolidDef}};
+    let mut e = swept("");
+    let tool = e.map.ent_named("tool").unwrap().i();
+    let placement = Motion::rotation([1.,2.,3.],0.7,0.).unwrap()
+        .then(Motion::translation([3.,-4.,2.],[0.;3]).unwrap());
+    for (sense,sign) in [(Sense::Ccw,1.),(Sense::Cw,-1.)] {
+        let SolidDef::Revolve {sense:direction,..} = &mut e.sketch.solids[tool].def else { panic!() };
+        *direction = sense;
+        let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
+        for pose in [Motion::identity(),placement] {
+            let surface = sweep.patches()[0].placed(pose);
+            for (ur,vr) in [([0.,1.],[0.,1.]),([0.2,0.3],[0.13,0.17]),([0.4,0.6],[0.31,0.33])] {
+                let bounds = surface.bounds(I::new(ur[0],ur[1]).unwrap(),I::new(vr[0],vr[1]).unwrap()).unwrap();
+                for i in 0..=4 { for j in 0..=4 {
+                    let u = ur[0]+(ur[1]-ur[0])*i as f64/4.;
+                    let v = vr[0]+(vr[1]-vr[0])*j as f64/4.;
+                    let (s,c) = (PI*u).sin_cos(); let (sv,cv) = (sign*2.*PI*v).sin_cos();
+                    // Sphere radius 1: d/du (du cross dv), from its explicit
+                    // Cartesian parameterization. Placement rotates the vector.
+                    let k = sign*2.*PI.powi(3);
+                    let expected = pose.vector([-2.*k*s*c*cv,-2.*k*s*c*sv,k*(c*c-s*s)]);
+                    let center = pose.point([3.,0.,0.]);
+                    let moment_du = [center[1]*expected[2]-center[2]*expected[1],
+                        center[2]*expected[0]-center[0]*expected[2],center[0]*expected[1]-center[1]*expected[0]];
+                    for k in 0..3 { assert!(bounds.normal_du[k].contains(expected[k]),
+                        "u={u}, v={v}: {} outside {:?}",expected[k],bounds.normal_du[k]);
+                        assert!(bounds.moment_du[k].contains(moment_du[k])); }
+                } }
+            }
+        }
+    }
+}
+
+#[test]
 fn meridian_chart_crosses_a_sphere_contact_turn_without_a_missing_root() {
     let e = swept("");
     let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();

@@ -136,12 +136,15 @@ entire trim curve or the finished solid. All eight native surface tests take abo
 supplied intersecting faces; automatic candidate coverage, global sweep trimming and
 closed-solid assembly are still required by the public export path.
 
-`SweepContacts::cover` now supplies automatic time/angle chart candidates to the same
+`SweepContacts::cover` now supplies automatic time/angle/meridian chart candidates to the same
 fitting bridge. Interval source geometry and the relative-rotation contact equation
 partition every source face's complete parameter/time domain. Excluded cells have a
 strict nonzero equation bound; a chart has a nonzero source normal, opposite endpoint
 signs over its entire free-parameter box and a dependent derivative separated from zero.
-This proves one contact root per free pair, not mapped-surface regularity or exposure.
+`OffSource` cells have a strict material-field margin over their whole source position
+box, excluding regions of operands hidden by the cutter's Boolean construction. Uncertain
+material boxes remain candidates. Charts prove one contact root per free pair, not
+mapped-surface regularity or exposure.
 Poles, folds, domain transitions and budget exhaustion stay explicitly unresolved.
 Charts can overlap across internal partition boundaries. Full revolutions also permit
 local continuation through the angular seam, limited to `[-0.25,1.25]` so interval
@@ -152,16 +155,14 @@ ambiguous roots; it does not assume exact periodic equality for binary64 TAU. Wh
 extended chart loses its monotonicity bound, subdivision can refine the dependent
 coordinate as well. Overlaps and coincident seams must still be reconciled before
 constructing a final face arrangement.
-At 30,000 evaluated cells per member, the pinion has 845 time/82 angular charts and the gear
-222 time/186 angular charts, including 18/15 seam charts. Search/audits take about 5.2/2.1 s;
-all source faces receive work and unfinished domains remain explicit. Sixteen selected
-gear charts, including four seam charts per member, are fitted and checked at withheld
-points. The sphere coverage/fitting test takes about 0.1 s, including eight angular fits
-compared with the independent torus equation. Sampled regular contacts at both angular
-endpoints have charts, while poles remain unresolved. Timings exclude compilation and
-do not describe complete swept-solid export.
+At 30,000 evaluated cells per member, the pinion has 3,097 time/200 angular charts and
+the gear 788 time/319 angular/3 meridian charts, including 20/10 angular seam charts.
+All source faces receive work and unfinished domains remain explicit. Selected charts
+of every discovered type are fitted and checked at withheld points. Sphere fixtures
+compare angular and meridian fits with the independent torus equation, including a
+rotated profile requiring the third chart. Source poles remain unresolved.
 
-The angular derivative uses a shared interval motion-coefficient implementation for
+The two source derivatives use a shared interval motion-coefficient implementation for
 both terms of the position/normal product rule. Trigonometric boxes now use a midpoint
 Taylor evaluation and angle-addition displacement bounds, retaining outward rounding
 and the existing supported angular domain. The independent rational checker passes
@@ -218,6 +219,27 @@ It crosses a known sphere contact fold and is checked with both revolution sense
 rigid placements and full circular meridians. The endpoint fixture tries either chart,
 brackets partial source runs and native trim crossings, and checks endpoint seam aliases
 by spatial incidence. It can still miss narrow runs and skips interior seam jumps;
-open traces ending inside a face remain refused. The new chart is not yet part of
-interval domain coverage. This supplies native trimming for provided curves, not
+open traces ending inside a face remain refused. The chart now participates in
+interval domain coverage; complete trim coverage remains unfinished.
+`cover_at` discovers contact-curve charts over the complete source domain at one fixed
+motion parameter. Fixed-time subdivision is breadth-first, avoiding the earlier case
+where an entire half of a face remained unvisited; full motion retains depth-first
+refinement. Native tests sample along the returned curves because a narrow Boolean
+trim can miss a chart's midpoint. Source material bounds separately prune proven hidden
+operand regions. This supplies native trimming for provided curves, not
 whole endpoint coverage, global visibility or a closed swept solid.
+
+Revolution bounds rotate axis-relative coordinates before restoring the origin, and
+the interval Rodrigues matrix groups its cosine coefficient. These preserve algebraic
+correlations without changing the geometry or widening acceptance tolerances. A unit
+sphere keeps a 2 mm box width along every axis even after a large world translation.
+The contact equation also accepts the normal and `position cross normal` directly.
+Source moment bounds and their derivatives preserve the common revolution before
+motion evaluation; crossing independent position/normal boxes loses that correlation.
+Independent motion and surface tests check the same contact value and derivative.
+
+At 30,000 cells per endpoint, the native incidence check finds sampled boundary points
+on 1,035 starting/226 ending pinion charts and 111 starting/19 ending gear charts.
+Ending candidates include meridian charts. Source curves still need clipping, joining,
+global material selection and final assembly; chart counts and sampled incidences do
+not establish a closed sweep or its final accuracy.

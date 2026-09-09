@@ -49,11 +49,13 @@ impl MotionBounds {
         let [x,y,z] = axis;
         let k = [[I::ZERO,z.neg(),y],[z,I::ZERO,x.neg()],[y.neg(),x,I::ZERO]];
         let (s,c) = angle.sin_cos()?;
-        let one_minus_cos = I::ONE.sub(c)?;
         let mut r = [[I::ZERO;3];3];
         for i in 0..3 { for j in 0..3 {
-            r[i][j] = (if i == j { c } else { I::ZERO })
-                .add(one_minus_cos.mul(axis[i])?.mul(axis[j])?)?.add(s.mul(k[i][j])?)?;
+            // Group the coefficient of cos(theta). Using cos(theta) and
+            // 1-cos(theta) independently loses cancellation along the axis.
+            let parallel = axis[i].mul(axis[j])?;
+            let transverse = (if i == j { I::ONE } else { I::ZERO }).sub(parallel)?;
+            r[i][j] = parallel.add(c.mul(transverse)?)?.add(s.mul(k[i][j])?)?;
         } }
         let origin = vector(origin)?;
         Ok(Self {r,p:sub(origin,mv(r,origin)?)?})

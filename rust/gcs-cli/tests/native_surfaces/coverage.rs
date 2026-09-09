@@ -3,18 +3,23 @@ use super::*;
 use gcs_core::solid::{ContactCover,ContactCoverOptions,ContactEvidence,ContactLimit,ContactParameter};
 
 fn audit_partition(sweep: &SweepContacts,cover: &ContactCover) {
+    audit_domain(sweep,cover,sweep.domain());
+}
+
+fn audit_domain(sweep: &SweepContacts,cover: &ContactCover,time: [f64;2]) {
     for (patch,surface) in sweep.patches().iter().enumerate() {
         let [u,v] = surface.domain();
-        let original = [u,v,sweep.domain()];
+        let original = [u,v,time];
         let cells: Vec<_> = cover.cells.iter().filter(|c| c.patch == patch).collect();
         let mut volume = 0.;
         for cell in &cells {
             volume += cell.parameters.iter().zip(original).map(|(p,o)| {
                 let [a,b] = p.bounds();
                 assert!(a >= o[0] && b <= o[1]);
-                (b-a)/(o[1]-o[0])
+                if o[0] == o[1] { assert_eq!(a,b); 1. } else { (b-a)/(o[1]-o[0]) }
             }).product::<f64>();
             if let ContactEvidence::Excluded {value} = cell.evidence { assert!(!value.contains(0.)); }
+            if let ContactEvidence::OffSource {material} = cell.evidence { assert!(!material.contains(0.)); }
             if let ContactEvidence::Chart(chart) = cell.evidence {
                 let axis = chart.dependent.index(); let [a,b] = chart.range.bounds();
                 let [lo,hi] = cell.parameters[axis].bounds();
@@ -107,10 +112,104 @@ fn complete_source_domain_keeps_unresolved_poles_and_exhausted_regions() {
 }
 
 #[test]
+fn meridian_charts_discover_the_rotated_sphere_equator_and_fit_the_same_torus() {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    let source = include_str!("../../../examples/solid_generating_sweep.sv")
+        .replace("removal: GeneratingCut(tool,", "\
+line tilt_axis(std.origin, std.front.toward)\n\
+motion tilt(about: tilt_axis,phase: 90deg)\n\
+solid placed(tool,under: tilt,at: 0deg)\n\
+removal: GeneratingCut(placed,");
+    let e = read(&source,&base);
+    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("removal.body").unwrap().i(),1e-10).unwrap();
+    let start = std::time::Instant::now();
+    let cover = sweep.cover(ContactCoverOptions {max_depth:10,max_cells:10000}).unwrap();
+    audit_partition(&sweep,&cover);
+    let charts: Vec<_> = cover.cells.iter().filter(|c| matches!(c.evidence,
+        ContactEvidence::Chart(chart) if chart.dependent == ContactParameter::Meridian)).collect();
+    assert!(!charts.is_empty(),"the rotated sphere needs meridian charts");
+    for v in [0.,0.13,0.47,0.81,1.] {
+        assert!(charts.iter().any(|c| c.parameters.iter().zip([0.5,v,0.]).all(|(b,x)| b.contains(x))),
+            "the regular equator must have a chart at v={v}");
+    }
+    let cad = Cad::new();
+    for cell in charts.iter().take(4) {
+        let points: Vec<_> = (0..=16).flat_map(|i| {
+            let sweep = &sweep;
+            (0..=16).map(move |j| sweep.at_chart(cell,i as f64/16.,j as f64/16.,1e-10).unwrap().position)
+        }).collect();
+        let face = cad.fit(&points,17,17).unwrap();
+        for (a,b) in [(0.13,0.27),(0.63,0.81),(0.41,0.53)] {
+            let expected = sweep.at_chart(cell,a,b,1e-10).unwrap();
+            assert!(expected.normal_velocity.abs() < 1e-10);
+            let p = cad.at(face,a,b).unwrap().0;
+            assert!(((p[0].hypot(p[1])-3.).hypot(p[2])-1.).abs() < 0.002);
+            assert!(distance(p,expected.position) < 0.002);
+        }
+    }
+    for cell in &cover.cells { assert_eq!(cell.parameters[2].bounds(),sweep.domain()); }
+    eprintln!("rotated sphere: {} meridian charts, {} cells, {} evaluations and native fits in {:?}",
+        charts.len(),cover.cells.len(),cover.evaluations,start.elapsed());
+}
+
+#[test]
+fn fixed_time_discovery_keeps_both_gear_endpoint_domains() {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let e = read(&std::fs::read_to_string(base.join("gears.sv")).unwrap(),&base);
+    let cad = Cad::new();
+    for member in ["pinion","gear"] {
+        let id = e.map.ent_named(&format!("pair.{member}.removal")).unwrap().i();
+        let sweep = SweepContacts::read(&e.sketch,id,1e-10).unwrap();
+        let caps = cad.0.sweep_caps(&e.sketch,id).unwrap();
+        assert!(sweep.cover_at(f64::NAN,ContactCoverOptions {max_depth:1,max_cells:1}).is_err());
+        assert!(sweep.cover_at(sweep.domain()[1]+1.,ContactCoverOptions {max_depth:1,max_cells:1}).is_err());
+        for cap in &caps.endpoints {
+            let start = std::time::Instant::now();
+            let cover = sweep.cover_at(cap.parameter,ContactCoverOptions {max_depth:20,max_cells:30000}).unwrap();
+            audit_domain(&sweep,&cover,[cap.parameter;2]);
+            let mut counts = [0;2];
+            let mut incidence = 0;
+            for cell in &cover.cells {
+                assert_eq!(cell.parameters[2].bounds(),[cap.parameter;2]);
+                let ContactEvidence::Chart(chart) = cell.evidence else { continue; };
+                assert_ne!(chart.dependent,ContactParameter::Time);
+                counts[chart.dependent.index()] += 1;
+                let mut on_native = false;
+                for a in [0.,0.25,0.5,0.75,1.] {
+                    let contact = sweep.at_chart(cell,a,0.5,1e-10).unwrap();
+                    assert!(contact.normal_velocity.abs() < 1e-10);
+                    assert!(distance(contact.position,sweep.at_chart(cell,a,0.91,1e-10).unwrap().position) < 1e-12);
+                    // A source chart can cross a narrow Boolean trim without
+                    // its midpoint being on the native boundary. These samples
+                    // witness incidence, not complete trim coverage.
+                    if !on_native && cap.faces.iter().any(|&face| cad.0.face_parameters(face,contact.position,1e-6)
+                        .is_ok_and(|p| p.is_some())) { on_native = true; }
+                }
+                if on_native { incidence += 1; }
+            }
+            eprintln!("{member} endpoint {}: {} meridian/{} angular charts, {incidence} native incidence samples, {} cells, {} evaluations in {:?}",
+                cap.parameter,counts[0],counts[1],cover.cells.len(),cover.evaluations,start.elapsed());
+            assert!(counts.iter().sum::<usize>() > 0 && incidence > 0);
+            // Direct roots found independently of the partition must never be
+            // excluded, including roots at the two physical motion endpoints.
+            for patch in 0..sweep.patches().len() { for v in [0.13,0.47,0.81] {
+                let Ok(roots) = sweep.at_angle(patch,v,cap.parameter,1e-10) else { continue; };
+                for root in roots {
+                    assert!(cover.cells.iter().any(|c| c.patch == patch
+                        && !matches!(c.evidence,ContactEvidence::Excluded {..})
+                        && c.parameters.iter().zip([root.u,v,cap.parameter]).all(|(b,x)| b.contains(x))));
+                }
+            } }
+        }
+    }
+}
+
+#[test]
 fn automatic_contact_charts_of_both_source_members_fit_natively() {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
     let e = read(&std::fs::read_to_string(base.join("gears.sv")).unwrap(),&base);
     let cad = Cad::new();
+    let mut meridian_charts = 0;
     for member in ["pinion","gear"] {
         let id = e.map.ent_named(&format!("pair.{member}.removal")).unwrap().i();
         let sweep = SweepContacts::read(&e.sketch,id,1e-10).unwrap();
@@ -126,15 +225,21 @@ fn automatic_contact_charts_of_both_source_members_fit_natively() {
         let seams = charts.iter().filter(|c| crosses_seam(c)).count();
         eprintln!("{member}: {seams} charts cross revolution seams");
         assert!(seams > 0);
-        for dependent in [ContactParameter::Time,ContactParameter::Angle] {
+        for dependent in [ContactParameter::Time,ContactParameter::Angle,ContactParameter::Meridian] {
             let count = charts.iter().filter(|c| matches!(c.evidence,ContactEvidence::Chart(chart) if chart.dependent == dependent)).count();
             eprintln!("{member}: {count} {dependent:?} charts");
-            assert!(count > 0);
+            if dependent == ContactParameter::Meridian { meridian_charts += count; }
+            else { assert!(count > 0); }
         }
         let mut contacts = 0;
         for patch in 0..sweep.patches().len() {
-            assert!(cover.cells.iter().any(|c| c.patch == patch && !matches!(c.evidence,
-                ContactEvidence::Unresolved {value:None,..})),"every patch must receive work");
+            let [u,v] = sweep.patches()[patch].domain();
+            let initial = [u,v,sweep.domain()];
+            // A subdivided pending cell also witnesses parent evaluation. A
+            // breadth-first budget may leave every current leaf pending.
+            assert!(cover.cells.iter().any(|c| c.patch == patch && (!matches!(c.evidence,
+                ContactEvidence::Unresolved {value:None,..}) || c.parameters.map(|p| p.bounds()) != initial)),
+                "every patch must receive work");
             for u in [0.13,0.47,0.81] { for t in [-0.3,0.,0.3] {
                 let roots = match sweep.at(patch,u,t,1e-10) {
                     Ok(roots) => roots,
@@ -151,7 +256,7 @@ fn automatic_contact_charts_of_both_source_members_fit_natively() {
             } }
         }
         assert!(contacts > 30);
-        for dependent in [ContactParameter::Time,ContactParameter::Angle] {
+        for dependent in [ContactParameter::Time,ContactParameter::Angle,ContactParameter::Meridian] {
         let mut selected: Vec<_> = charts.iter().filter(|c| matches!(c.evidence,ContactEvidence::Chart(chart)
             if chart.dependent == dependent)).collect();
         selected.sort_by_key(|c| !crosses_seam(c));
@@ -171,4 +276,5 @@ fn automatic_contact_charts_of_both_source_members_fit_natively() {
             assert!(worst < 0.002,"{member}: automatic {dependent:?} chart fit error {worst}");
         } }
     }
+    assert!(meridian_charts > 0,"the pair must exercise automatic meridian fits");
 }
