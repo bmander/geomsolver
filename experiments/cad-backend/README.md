@@ -41,6 +41,15 @@ The Rust exporters still use the test adapter. Public Solvent solid integration,
 engagement/material coverage and end-to-end export accuracy remain on the
 [current roadmap](../../docs/spiral-bevel-roadmap.md#current-critical-path).
 
+The first fresh [workflow result](workflow-results.json) completed all existing checks and
+both wrong-phase controls in 626 seconds. Both original inspection STLs reproduced their
+earlier bytes. The cuts took 99 seconds for the pinion and 243 seconds for the gear, or
+117/277 seconds including validation and STEP round trips. After the accuracy target changed
+to 0.001 inch, both STEP solids were remeshed at 0.01 mm without repeating those cuts.
+The finer meshes also pass independent exact embedding checks. Their 101 centroid samples
+per member have maximum distances to STEP below 0.0071 mm; that is a sampled diagnostic,
+not a complete exported-geometry error bound. The result records the exact files/hashes.
+
 ## Input and construction
 
 The ignored Rust test `export_tooth_space_sections_for_cad_backend` reads and solves the

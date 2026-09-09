@@ -1,0 +1,165 @@
+{
+  "scope": "Reproduced inspection pair and finer STL checks; full goal acceptance remains incomplete",
+  "workflow_revision": "066719e0d0b1a8ff6c91735925c5f40f0a2188dc",
+  "workflow_report": {
+    "file": "/Users/bmander/Documents/GitHub/geomsolver/build/exports/pair-workflow-24-48/report.json",
+    "sha256": "09086914d3d7a11a53c70c368c8616433438d303478639ffbfb90ba7c8bd3c69"
+  },
+  "configuration": {
+    "teeth": [
+      24,
+      48
+    ],
+    "mean_module_mm": 2.0,
+    "stl_deflection_mm": 0.05,
+    "shaft_angle_deg": 90,
+    "spiral_angle_deg": 35,
+    "pressure_angle_deg": 20,
+    "nominal_backlash_mm": 0,
+    "generating_system": "documented complementary common-crown references",
+    "design_document": "docs/spiral-bevel-design.md"
+  },
+  "checks": {
+    "native_and_step": "passed",
+    "encoded_stl_embedding": "passed",
+    "sampled_assembly": "passed",
+    "sampled_contact": "passed",
+    "wrong_phase_controls": "passed"
+  },
+  "workflow_seconds": 626.2279154098942,
+  "members": [
+    {
+      "member": "pinion",
+      "step": {
+        "file": "/Users/bmander/Documents/GitHub/geomsolver/build/exports/pair-workflow-24-48/pinion/member0-24-cuts.step",
+        "sha256": "85dc3dc57838f917a9931dfe0f82de34a103d7a911f8f6b0a3855bc749b90643"
+      },
+      "boolean_seconds": 99.03447358502308,
+      "cut_stage_seconds": 117.35756992700044,
+      "volume_mm3": 9141.945255424698,
+      "finer_stl": {
+        "file": "/Users/bmander/Documents/GitHub/geomsolver/build/exports/pair-001-inch/pinion.stl",
+        "sha256": "223e42ceccd5ec19116ba62058dfb0ed89433ec329876a3c7ff4a0d3d3fd5826"
+      },
+      "mesh_settings": {
+        "source_sha256": "85dc3dc57838f917a9931dfe0f82de34a103d7a911f8f6b0a3855bc749b90643",
+        "stl_sha256": "223e42ceccd5ec19116ba62058dfb0ed89433ec329876a3c7ff4a0d3d3fd5826",
+        "deflection_mm": 0.01,
+        "angular_deflection_rad": 0.2,
+        "tessellation_seconds": 1.8922925629885867,
+        "triangles": 81742,
+        "scope": "Unchecked CAD tessellation; settings are not a source-geometry accuracy certificate"
+      },
+      "embedding_audit": {
+        "file": "/Users/bmander/Documents/GitHub/geomsolver/build/exports/pair-001-inch/pinion-audit.json",
+        "sha256": "a0e0d0102119519d623e1431c03002ed954303755740025c2bf300a9f045a67e"
+      },
+      "embedded": true,
+      "audit_seconds": 51.061653703975026,
+      "centroid_check": {
+        "file": "/Users/bmander/Documents/GitHub/geomsolver/build/exports/pair-001-inch/pinion-samples.json",
+        "sha256": "59fac256aab7e4ac87481d8c086406e797f914e2d580a044b2a3ff390295ea4f"
+      },
+      "centroid_samples": 101,
+      "max_sampled_distance_to_step_mm": 0.007028955620795834
+    },
+    {
+      "member": "gear",
+      "step": {
+        "file": "/Users/bmander/Documents/GitHub/geomsolver/build/exports/pair-workflow-24-48/gear/member1-48-cuts.step",
+        "sha256": "04f10b06810fa9631cb60e5b6c0e715ba6a66bc8b048e59ab18b8c7532da956b"
+      },
+      "boolean_seconds": 243.4000267420197,
+      "cut_stage_seconds": 277.21240993903484,
+      "volume_mm3": 20284.08432528059,
+      "finer_stl": {
+        "file": "/Users/bmander/Documents/GitHub/geomsolver/build/exports/pair-001-inch/gear.stl",
+        "sha256": "66d7f737715ec609d19b2affde6eba38892752da5c1d841c2dd02b7c25dbd6d0"
+      },
+      "mesh_settings": {
+        "source_sha256": "04f10b06810fa9631cb60e5b6c0e715ba6a66bc8b048e59ab18b8c7532da956b",
+        "stl_sha256": "66d7f737715ec609d19b2affde6eba38892752da5c1d841c2dd02b7c25dbd6d0",
+        "deflection_mm": 0.01,
+        "angular_deflection_rad": 0.2,
+        "tessellation_seconds": 2.4282379809883423,
+        "triangles": 115556,
+        "scope": "Unchecked CAD tessellation; settings are not a source-geometry accuracy certificate"
+      },
+      "embedding_audit": {
+        "file": "/Users/bmander/Documents/GitHub/geomsolver/build/exports/pair-001-inch/gear-audit.json",
+        "sha256": "3bcabb9c33e43a9e1e421d2213d4fbf71dd022c8b31fb219cb78083c02b3553a"
+      },
+      "embedded": true,
+      "audit_seconds": 71.54122186399763,
+      "centroid_check": {
+        "file": "/Users/bmander/Documents/GitHub/geomsolver/build/exports/pair-001-inch/gear-samples.json",
+        "sha256": "6d527c9f8023f05f8fe00f56328be8de74870228e7acbacb405845ad9573a22d"
+      },
+      "centroid_samples": 101,
+      "max_sampled_distance_to_step_mm": 0.0067614955031200805
+    }
+  ],
+  "engagement": {
+    "nominal_phases": [
+      {
+        "phase": 0.0,
+        "intersection_volume_mm3": 0.0
+      },
+      {
+        "phase": 0.25,
+        "intersection_volume_mm3": 0.0
+      },
+      {
+        "phase": 0.5,
+        "intersection_volume_mm3": 0.0
+      },
+      {
+        "phase": 0.75,
+        "intersection_volume_mm3": 0.0
+      },
+      {
+        "phase": 1.0,
+        "intersection_volume_mm3": 0.0
+      }
+    ],
+    "contacts": 250,
+    "max_contact_distances_mm": [
+      5.390608267788603e-07,
+      2.1229022269909352e-07
+    ],
+    "wrong_phase_rad": 0.001,
+    "wrong_phase_overlap_mm3": 0.7153575450549573,
+    "wrong_phase_contact_failures": 335
+  },
+  "accuracy": {
+    "target_inch": 0.001,
+    "target_mm": 0.0254,
+    "scope": "Finer mesh distances above are centroid samples against STEP, not a whole-mesh or nominal-geometry bound. The 0.01 mm deflection setting is not a certificate."
+  },
+  "alternate_configuration": {
+    "teeth": [
+      32,
+      32
+    ],
+    "module_mm": 1,
+    "scope": "Source/contact export and both 16-subdivision tooth-space/single-cut checks passed; no full indexed pair or mating acceptance claimed",
+    "source": {
+      "file": "/private/tmp/solvent-cad-configured-32-32-sections.json",
+      "sha256": "595ffe57357314f0ae116c99bdca3a0bcfc7d99a588c3b8f3b70983ae86dab86"
+    },
+    "contacts": {
+      "file": "/private/tmp/solvent-cad-configured-32-32-contacts.json",
+      "sha256": "32c30b51087696502bbaee3fdb264cd4a733f14992a062c3ed03d5ce37cf72f8"
+    },
+    "space_report": {
+      "file": "/private/tmp/solvent-cad-configured-32-32-spaces/report.json",
+      "sha256": "e20ed144b0f06e8df57059a65681ce5bc7a3d140255489eb72e6e06d974f9124"
+    }
+  },
+  "pending": [
+    "Global material coverage and interference between sampled assembly phases",
+    "End-to-end exported geometry accuracy, including fitting and tessellation",
+    "Supported parameter domain and explicit tooth thickness/backlash design",
+    "Ordinary Solvent solid outputs through the public application/export interface"
+  ]
+}
