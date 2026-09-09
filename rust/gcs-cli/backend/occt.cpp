@@ -137,6 +137,17 @@ int solvent_cad_boolean(Cad* cad,int a,int b,int cut) noexcept {
         return cad->put(result);
     });
 }
+int solvent_cad_transform(Cad* cad,int source,const double* matrix) noexcept {
+    return guarded(cad,[&] {
+        gp_Trsf pose;
+        pose.SetValues(matrix[0],matrix[1],matrix[2],matrix[3],
+            matrix[4],matrix[5],matrix[6],matrix[7],matrix[8],matrix[9],matrix[10],matrix[11]);
+        BRepBuilderAPI_Transform moved(cad->at(source),pose,true);
+        auto result = moved.Shape();
+        validate(result);
+        return cad->put(result);
+    });
+}
 int solvent_cad_bounds(Cad* cad,const int* ids,int count,double* bounds) noexcept {
     return guarded(cad,[&] {
         Bnd_Box box;

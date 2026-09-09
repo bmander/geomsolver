@@ -385,6 +385,11 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
         pending.push((i, true));
         let fail = |why: &str| format!("`{}`: {why}", s.name);
         let face = match &s.def {
+            SolidDef::Placed { source, motion, at } => {
+                crate::motion::Family::read(sk,*motion as usize)?.at(at.value)?;
+                pending.push((*source as usize,false));
+                continue;
+            }
             SolidDef::Prism { face, from, to } => {
                 if !from.value.is_finite() || !to.value.is_finite() || from.value == to.value {
                     return Err(fail("a prism needs two distinct finite ordinates"));

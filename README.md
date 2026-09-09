@@ -48,8 +48,26 @@ Export any finished part with
 Install OCCT development files (for example, `brew install opencascade`) and build with
 `make solventc OCCT=1`. Set `OCCT_ROOT` for a custom installation prefix. No Python
 runtime is involved; the Rust core and browser remain dependency-free. Current support covers line/circular profiles,
-extrusion, revolution, holes, additive bodies and cuts including `through:` cutters;
+extrusion, revolution, rigid motion placement, holes, additive bodies and cuts including `through:` cutters;
 along-guide lofts and generating-motion sweeps are not yet connected to this host.
+
+The [indexed pattern](rust/examples/solid_indexed_pattern.sv) places a shared cutter
+using an ordinary component and a named motion. Both STL and native STEP support:
+
+```solvent
+repeat teeth as i {
+  solid indexed(tool, under: indexing, at: i * 360deg / teeth)
+  indexed cut body
+}
+```
+
+`at:` selects one pose of the motion; the source solid stays available for other instances.
+The motion's ratio, phase and relative frame apply as usual. This is indexing; a continuous
+generating sweep still needs its own operation.
+
+Known mesh limitation: the six-hole indexed example currently leaves unpaired edges in
+the legacy STL triangulation. Its native STEP passes validity and volume checks; use that
+export for this example. The encoded-STL regression is retained in `solid_motion.rs`.
 
 The [declarative bevel blank](rust/examples/spiral_bevel/blank.sv) uses the same export path:
 

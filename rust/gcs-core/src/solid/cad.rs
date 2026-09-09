@@ -25,6 +25,20 @@ pub fn recipe(sk: &Sketch,root: usize) -> Result<Json,String> {
         }
         let solid = &sk.solids[i];
         let mut node = match &solid.def {
+            SolidDef::Placed { source, motion, at } => {
+                let pose = crate::motion::Family::read(sk,*motion as usize)?.at(at.value)?;
+                let columns: [[f64;3];3] = std::array::from_fn(|i| {
+                    let mut v = [0.;3]; v[i] = 1.; pose.vector(v)
+                });
+                let origin = pose.point([0.;3]);
+                let mut matrix = Vec::new();
+                for row in 0..3 {
+                    for column in &columns { matrix.push(column[row].into()); }
+                    matrix.push((origin[row]*scale).into());
+                }
+                object([("kind","placed".into()),("source",(*source).into()),
+                    ("matrix",Json::Arr(matrix))])
+            }
             SolidDef::Body {stock,on,through} => object([
                 ("kind","body".into()),("stock",(*stock).into()),
                 ("on",ids(on)),("cut",ids(through)),

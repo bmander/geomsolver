@@ -781,11 +781,49 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         face_map[i] = Some(dst.faces.len() - 1);
         made.push(EntRef::face(dst.faces.len() - 1));
     }
+    let mut retained: Vec<bool> = src.motions.iter().enumerate().map(|(i,m)| {
+        keep(EntRef::new(EntKind::Motion,i)) && match m.def {
+            crate::model::MotionDef::Rotation {axis,..} => line_map[axis as usize].is_some(),
+            crate::model::MotionDef::Relative {..} => true,
+        }
+    }).collect();
+    loop {
+        let mut changed = false;
+        for (i,m) in src.motions.iter().enumerate() {
+            if let crate::model::MotionDef::Relative {source,observer} = m.def {
+                if retained[i] && (!retained[source as usize] || !retained[observer as usize]) {
+                    retained[i] = false; changed = true;
+                }
+            }
+        }
+        if !changed { break; }
+    }
+    let mut next_motion = dst.motions.len();
+    let motion_map: Vec<_> = retained.iter().map(|&keep| {
+        if keep { let i = next_motion; next_motion += 1; Some(i) } else { None }
+    }).collect();
+    for (i,m) in src.motions.iter().enumerate() {
+        let Some(next) = motion_map[i] else { continue; };
+        let def = match m.def {
+            crate::model::MotionDef::Rotation {axis,ratio,phase} =>
+                crate::model::MotionDef::Rotation {
+                    axis:line_map[axis as usize].unwrap() as u32,ratio,phase,
+                },
+            crate::model::MotionDef::Relative {source,observer} =>
+                crate::model::MotionDef::Relative {
+                    source:motion_map[source as usize].unwrap() as u32,
+                    observer:motion_map[observer as usize].unwrap() as u32,
+                },
+        };
+        dst.motions.push(crate::model::MotionE {def,name:m.name.clone(),class:m.class.clone()});
+        made.push(EntRef::new(EntKind::Motion,next));
+    }
     // Allocate the retained graph before remapping it: extent targets and Boolean operands
     // may be forward references, including a cutter referring to the body that subtracts it.
     let mut retained: Vec<bool> = src.solids.iter().enumerate().map(|(i, s)| {
         keep(EntRef::solid(i)) && s.face().is_none_or(|f| face_map[f as usize].is_some())
             && match s.def {
+                crate::model::SolidDef::Placed { motion, .. } => motion_map[motion as usize].is_some(),
                 crate::model::SolidDef::Revolve { axis, .. } => line_map[axis as usize].is_some(),
                 crate::model::SolidDef::Loft { end, guide, .. } =>
                     end.is_none_or(|f| face_map[f as usize].is_some()) && match guide.kind {
@@ -822,6 +860,10 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let face = |f: u32| face_map[f as usize].unwrap() as u32;
         let sol = |s: &u32| solid_map[*s as usize].unwrap() as u32;
         let def = match &so.def {
+            crate::model::SolidDef::Placed { source, motion, at } => {
+                crate::model::SolidDef::Placed { source:sol(source),
+                    motion:motion_map[*motion as usize].unwrap() as u32,at:at.clone() }
+            }
             crate::model::SolidDef::Loft { face: f, end, guide } => {
                 crate::model::SolidDef::Loft { face: face(*f), end: end.map(face), guide: match guide.kind {
                     EntKind::Line => EntRef::line(line_map[guide.i()].unwrap()),
@@ -873,43 +915,6 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         });
         surface_map[i] = Some(next);
         made.push(EntRef::new(EntKind::Surface,next));
-    }
-    let mut retained: Vec<bool> = src.motions.iter().enumerate().map(|(i,m)| {
-        keep(EntRef::new(EntKind::Motion,i)) && match m.def {
-            crate::model::MotionDef::Rotation {axis,..} => line_map[axis as usize].is_some(),
-            crate::model::MotionDef::Relative {..} => true,
-        }
-    }).collect();
-    loop {
-        let mut changed = false;
-        for (i,m) in src.motions.iter().enumerate() {
-            if let crate::model::MotionDef::Relative {source,observer} = m.def {
-                if retained[i] && (!retained[source as usize] || !retained[observer as usize]) {
-                    retained[i] = false; changed = true;
-                }
-            }
-        }
-        if !changed { break; }
-    }
-    let mut next_motion = dst.motions.len();
-    let motion_map: Vec<_> = retained.iter().map(|&keep| {
-        if keep { let i = next_motion; next_motion += 1; Some(i) } else { None }
-    }).collect();
-    for (i,m) in src.motions.iter().enumerate() {
-        let Some(next) = motion_map[i] else { continue; };
-        let def = match m.def {
-            crate::model::MotionDef::Rotation {axis,ratio,phase} =>
-                crate::model::MotionDef::Rotation {
-                    axis:line_map[axis as usize].unwrap() as u32,ratio,phase,
-                },
-            crate::model::MotionDef::Relative {source,observer} =>
-                crate::model::MotionDef::Relative {
-                    source:motion_map[source as usize].unwrap() as u32,
-                    observer:motion_map[observer as usize].unwrap() as u32,
-                },
-        };
-        dst.motions.push(crate::model::MotionE {def,name:m.name.clone(),class:m.class.clone()});
-        made.push(EntRef::new(EntKind::Motion,next));
     }
     let mut envelope_map = vec![None;src.envelopes.len()];
     for (i,e) in src.envelopes.iter().enumerate() {

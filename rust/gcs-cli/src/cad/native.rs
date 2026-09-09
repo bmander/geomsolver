@@ -14,6 +14,7 @@ extern "C" {
     fn solvent_cad_revolve(cad: *mut c_void,face: c_int,at: *const f64,axis: *const f64,
         angle: f64) -> c_int;
     fn solvent_cad_boolean(cad: *mut c_void,a: c_int,b: c_int,cut: c_int) -> c_int;
+    fn solvent_cad_transform(cad: *mut c_void,source: c_int,matrix: *const f64) -> c_int;
     fn solvent_cad_bounds(cad: *mut c_void,ids: *const c_int,count: c_int,out: *mut f64) -> c_int;
     fn solvent_cad_validate(cad: *mut c_void,id: c_int) -> c_int;
     fn solvent_cad_step(cad: *mut c_void,id: c_int,path: *const c_char) -> c_int;
@@ -105,6 +106,10 @@ impl Session {
                         }
                     }
                     id
+                } else if field(node,"kind").as_str() == "placed" {
+                    let matrix: Vec<_> = field(node,"matrix").arr().iter().map(Json::as_f64).collect();
+                    self.result(unsafe { solvent_cad_transform(self.0,
+                        shapes[&field(node,"source").as_i64()],matrix.as_ptr()) })?
                 } else { self.primitive(node,&shapes)? };
                 self.result(unsafe { solvent_cad_validate(self.0,id) })?;
                 Ok(id)

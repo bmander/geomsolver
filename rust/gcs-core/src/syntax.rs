@@ -806,6 +806,8 @@ impl MotionSpec {
 /// expressions until elaboration.
 #[derive(Clone, Debug)]
 pub enum Sweep {
+    /// A solid placed at one angle of a named rigid motion.
+    Placed { motion: Ref, at: Arg },
     /// `from: a, to: b` — signed ordinates along the plane's normal.
     Prism { from: Arg, to: Arg },
     /// One section repeated, or two sections interpolated, along a directed guide.
@@ -828,6 +830,7 @@ impl Sweep {
     /// written in the little language a dimension is, and a `param` is in scope for it.
     pub fn args_mut(&mut self) -> Vec<&mut Arg> {
         match self {
+            Sweep::Placed { at, .. } => vec![at],
             Sweep::Prism { from, to } => vec![from, to],
             Sweep::Depth { depth } => vec![depth],
             Sweep::Revolve { sweep, .. } => sweep.iter_mut().collect(),
@@ -838,6 +841,7 @@ impl Sweep {
     /// The revolution axis or through-extent target, for walks that rewrite references.
     pub fn reference_mut(&mut self) -> Option<&mut Ref> {
         match self {
+            Sweep::Placed { motion, .. } => Some(motion),
             Sweep::Revolve { axis, .. } => Some(axis),
             Sweep::Through { body } => Some(body),
             Sweep::Along { guide } => Some(guide),
@@ -847,6 +851,7 @@ impl Sweep {
 
     pub fn reference(&self) -> Option<&Ref> {
         match self {
+            Sweep::Placed { motion, .. } => Some(motion),
             Sweep::Revolve { axis, .. } => Some(axis),
             Sweep::Through { body } => Some(body),
             Sweep::Along { guide } => Some(guide),

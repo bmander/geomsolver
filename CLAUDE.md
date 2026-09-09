@@ -77,6 +77,17 @@ cycles and dependency depth over 64 are refused. Browser `core/motion.ts` sample
 and velocity in six doubles. `motion::Family::read` retains a solved snapshot for repeated
 sampling; re-read after axis edits. Dependency height is checked even with cached subgraphs.
 
+**Solid placement:** `solid indexed(source, under: indexing, at: 90deg)` places one source
+solid at a named motion's pose. `at:` is a constant Angle, converted to radians at elaboration;
+it is neither a hint nor a sweep interval. Instances can be repeated, nested, and used as
+Boolean operands. Copy retains the source and transitive motion dependencies. The mesh cache
+reads the solved pose and source geometry; face provenance follows the placed instance.
+`make solventc OCCT=1` enables native STEP export through a C ABI wrapper around OCCT C++.
+The Rust core supplies analytic construction data; the CLI owns native shapes and catches
+kernel exceptions. STEP export supports profiles, extrusions, revolutions, placements and
+Booleans, validates a STEP round trip, and preserves the old output on failure. Along-guide
+lofts and continuous generating-motion sweeps remain unsupported by this native host.
+
 **Named envelopes:** `envelope flank(source, under: generating, from: -35deg, to: 35deg)`
 binds a surface and motion over a finite increasing roll interval. It is an implicit
 zero-normal-velocity locus, spatial and parameter-free (ABI kind 11). `GeneratedEnvelope`

@@ -13,6 +13,8 @@ use crate::syntax::{
 /// A solid's sweep arguments while the bracket list is being read.
 #[derive(Default)]
 struct SweepParts {
+    under: Option<Ref>,
+    at: Option<Arg>,
     from: Option<Arg>,
     to: Option<Arg>,
     depth: Option<Arg>,
@@ -25,12 +27,22 @@ struct SweepParts {
 
 /// The labels a solid's brackets may carry beside the face or the operands.
 fn sweep_label(l: &str) -> bool {
-    matches!(l, "from" | "to" | "depth" | "about" | "sweep" | "sense" | "through" | "along")
+    matches!(l, "from" | "to" | "depth" | "about" | "sweep" | "sense" | "through" | "along" | "under" | "at")
 }
 
 /// What the sweep arguments a bracket list carried come to.  A solid is a prism, a revolution,
 /// or a body over other solids — and a mixture is none of the three.
 fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
+    if p.under.is_some() || p.at.is_some() {
+        if p.from.is_some() || p.to.is_some() || p.depth.is_some() || p.about.is_some()
+            || p.through.is_some() || p.along.is_some() || p.sweep.is_some() || p.sense.is_some() {
+            return Err("a motion placement uses `under:` and `at:`, without sweep extents".into());
+        }
+        return match (p.under,p.at) {
+            (Some(motion),Some(at)) => Ok(Sweep::Placed {motion,at}),
+            _ => Err("a motion placement needs both `under:` and `at:`".into()),
+        };
+    }
     if let Some(guide) = p.along {
         if p.from.is_some() || p.to.is_some() || p.depth.is_some() || p.about.is_some()
             || p.through.is_some() || p.sweep.is_some() || p.sense.is_some() {
@@ -598,6 +610,10 @@ impl<'a> P<'a> {
             None
         };
         match label {
+            "under" => {
+                if parts.under.is_some() { return twice(self); }
+                parts.under = Some(self.refr()?);
+            }
             "along" => {
                 if parts.along.is_some() { return twice(self); }
                 parts.along = Some(self.refr()?);
@@ -629,6 +645,7 @@ impl<'a> P<'a> {
             }
             _ => {
                 let slot = match label {
+                    "at" => &mut parts.at,
                     "from" => &mut parts.from,
                     "to" => &mut parts.to,
                     "depth" => &mut parts.depth,

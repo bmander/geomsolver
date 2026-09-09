@@ -21,6 +21,16 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
         v.push(s as f64);
         name_read(&sol.name, &mut v);
         match &sol.def {
+            SolidDef::Placed { source, motion, at } => {
+                v.extend([5.,*source as f64,*motion as f64,at.value]);
+                match crate::motion::Family::read(sk,*motion as usize).and_then(|m| m.at(at.value)) {
+                    Ok(pose) => {
+                        v.extend(pose.point([0.;3]));
+                        for i in 0..3 { let mut p = [0.;3]; p[i] = 1.; v.extend(pose.vector(p)); }
+                    }
+                    Err(_) => v.push(f64::NAN),
+                }
+            }
             SolidDef::Loft { face, end, guide } => {
                 v.extend([4.0, end.map_or(-1.0, |f| f as f64)]);
                 face_reads(sk, *face, &mut v);
@@ -152,15 +162,21 @@ pub fn resolve(sk: &Sketch, si: usize, unit: f64) -> Csg {
 // Choose a reachable source point before sweeping; never add a large world placement to
 // local triangles only to subtract it again. Page input precision is still bounded by f64.
 pub(super) fn frame_origin(sk: &Sketch, si: usize, unit: f64) -> [f64; 3] {
-    let mut pending = vec![si];
+    let mut pending = vec![(si,crate::envelope::Motion::identity())];
     let mut seen = std::collections::BTreeSet::new();
-    while let Some(i) = pending.pop() {
+    while let Some((i,pose)) = pending.pop() {
         if !seen.insert(i) { continue; }
         let Some(s) = sk.solids.get(i) else { continue };
-        if let Some(f) = s.face() {
-            if let Some(p) = face_poly(sk, f as usize, unit) { return p.lift(0); }
+        if let SolidDef::Placed {source,motion,at} = &s.def {
+            if let Ok(local) = crate::motion::Family::read(sk,*motion as usize).and_then(|m| m.at(at.value)) {
+                pending.push((*source as usize,local.then(pose)));
+            }
+            continue;
         }
-        pending.extend(s.operands().into_iter().rev().map(|o| o as usize));
+        if let Some(f) = s.face() {
+            if let Some(p) = face_poly(sk, f as usize, unit) { return pose.point(p.lift(0)); }
+        }
+        pending.extend(s.operands().into_iter().rev().map(|o| (o as usize,pose)));
     }
     [0.0; 3]
 }
@@ -214,25 +230,47 @@ pub(super) fn resolve_at(sk: &Sketch, si: usize, unit: f64, origin: [f64; 3]) ->
 
 /// The named route from a body to each primitive, relative to the requested solid.
 pub(crate) fn operand_paths(sk: &Sketch, si: usize) -> BTreeMap<String, String> {
-    let mut paths = BTreeMap::new();
-    let mut pending = vec![(si as u32, String::new())];
+    let mut done: BTreeMap<u32,BTreeMap<String,String>> = BTreeMap::new();
+    let mut pending = vec![(si as u32,false)];
     let mut seen = std::collections::BTreeSet::new();
-    while let Some((i, path)) = pending.pop() {
-        if !seen.insert(i) { continue; }
+    while let Some((i,ready)) = pending.pop() {
+        if done.contains_key(&i) { continue; }
         let Some(s) = sk.solids.get(i as usize) else { continue };
+        if !ready {
+            if !seen.insert(i) { continue; }
+            pending.push((i,true));
+            pending.extend(s.operands().into_iter().rev().map(|o| (o,false)));
+            continue;
+        }
+        let mut paths = BTreeMap::new();
         match &s.def {
+            SolidDef::Placed {source,..} => {
+                if let Some(source) = done.get(source) {
+                    for path in source.values() {
+                        paths.insert(placed_name(&s.name,path),path.clone());
+                    }
+                }
+            }
             SolidDef::Body { .. } => {
                 for o in s.operands().into_iter().rev() {
                     let Some(operand) = sk.solids.get(o as usize) else { continue };
                     let name = operand.name.rsplit('.').next().unwrap_or(&operand.name);
-                    let next = if path.is_empty() { name.to_string() } else { format!("{path}.{name}") };
-                    pending.push((o, next));
+                    if let Some(source) = done.get(&o) {
+                        for (primitive,path) in source {
+                            paths.insert(primitive.clone(),placed_name(name,path));
+                        }
+                    }
                 }
             }
-            _ => { paths.insert(s.name.clone(), path); }
+            _ => { paths.insert(s.name.clone(),String::new()); }
         }
+        done.insert(i,paths);
     }
-    paths
+    done.remove(&(si as u32)).unwrap_or_default()
+}
+
+fn placed_name(name: &str,path: &str) -> String {
+    if path.is_empty() { name.to_string() } else { format!("{name}.{path}") }
 }
 
 fn build(
@@ -245,6 +283,36 @@ fn build(
 ) -> Term {
     let Some(sol) = sk.solids.get(si as usize) else { return Term::Empty };
     let name = sol.name.clone();
+    if let SolidDef::Placed {source,motion,at} = &sol.def {
+        let Ok(pose) = crate::motion::Family::read(sk,*motion as usize).and_then(|m| m.at(at.value))
+            else { return Term::Empty };
+        let paths = operand_paths(sk,*source as usize);
+        let Some(source) = names.get(source) else { return Term::Empty };
+        let mut term = source.clone();
+        let mut mapped = BTreeMap::new();
+        let mut pending = vec![&mut term];
+        while let Some(t) = pending.pop() {
+            match t {
+                Term::Prim(i) => {
+                    *i = *mapped.entry(*i).or_insert_with(|| {
+                        let p = &prims[*i];
+                        let facets = p.facets.iter().map(|f| Facet {
+                            pts:f.pts.iter().map(|&p| {
+                                let world = pose.point(std::array::from_fn(|k| p[k]+origin[k]));
+                                std::array::from_fn(|k| world[k]-origin[k])
+                            }).collect(),n:pose.vector(f.n),face:f.face,smooth:f.smooth,
+                        }).collect();
+                        let path = paths.get(&p.of).map(String::as_str).unwrap_or(&p.of);
+                        let copy = finish(facets,p.faces.clone(),&placed_name(&name,path));
+                        let next = prims.len(); prims.push(copy); next
+                    });
+                }
+                Term::Union(a,b) | Term::Diff(a,b) => pending.extend([a.as_mut(),b.as_mut()]),
+                Term::Empty => {}
+            }
+        }
+        return term;
+    }
     let local = |mut p: FacePoly| {
         p.basis.o = std::array::from_fn(|k| p.basis.o[k] - origin[k]); p
     };
@@ -266,12 +334,18 @@ fn build(
         let mut bounds = Box3::empty();
         let Ok(sources) = material_sources(sk, body) else { return Term::Empty };
         for i in sources {
-            let Some(mut t) = names.get(&i) else { return Term::Empty };
-            // Each material source is a sweep, possibly minus its section holes.
-            while let Term::Diff(outer, _) = t { t = outer; }
-            let Term::Prim(pi) = t else { return Term::Empty };
-            bounds.add(prims[*pi].bbox.lo);
-            bounds.add(prims[*pi].bbox.hi);
+            let Some(t) = names.get(&i) else { return Term::Empty };
+            // Placed composite sources can contain unions. Extents include only
+            // additive material; holes and other subtractions never enlarge them.
+            let mut pending = vec![t];
+            while let Some(t) = pending.pop() {
+                match t {
+                    Term::Prim(pi) => { bounds.add(prims[*pi].bbox.lo); bounds.add(prims[*pi].bbox.hi); }
+                    Term::Union(a,b) => pending.extend([a.as_ref(),b.as_ref()]),
+                    Term::Diff(a,_) => pending.push(a),
+                    Term::Empty => {}
+                }
+            }
         }
         if bounds.is_empty() { return Term::Empty; }
         let mut basis = polys[0].basis;
@@ -301,7 +375,7 @@ fn build(
                 let b = plane::in_view(c, s, o, sk.point_xy(l.p2 as usize));
                 revolve(&p, (a, b), sweep.value, *sense, unit, &name)
             }
-            SolidDef::Body { .. } | SolidDef::Loft { .. } => unreachable!(),
+            SolidDef::Body { .. } | SolidDef::Loft { .. } | SolidDef::Placed { .. } => unreachable!(),
         };
         let Some(p) = built else { return Term::Empty };
         prims.push(p);

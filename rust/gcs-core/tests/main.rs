@@ -76,6 +76,7 @@ mod solid_examples;
 mod geometry_semantics;
 mod solid_lang;
 mod loft;
+mod solid_motion;
 mod solid_regressions;
 mod solid_issue51;
 mod stack;

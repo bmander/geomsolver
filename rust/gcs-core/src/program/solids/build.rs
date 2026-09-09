@@ -81,6 +81,23 @@ pub(super) fn build_solid(
             Ok(Extent { text: text.trim().to_string(), value: v.c })
         };
     let def = match sweep {
+        crate::syntax::Sweep::Placed { motion, at } => {
+            if ops.len() != 1 || ops[0].kind != EntKind::Solid {
+                say(Code::E080,st.span,"a motion placement needs one source solid".into());
+                return None;
+            }
+            let found = res.lookup(motion).and_then(|e|
+                super::super::resolve::follow_building(sk,res,e,motion).ok());
+            let Some(m) = found.filter(|e| e.kind == EntKind::Motion) else {
+                say(Code::E080,motion.span,"`under:` requires a named motion".into());
+                return None;
+            };
+            let at = match ext(at,"at",crate::units::Dim::ANGLE) {
+                Ok(at) => Extent { text: at.text, value: at.value.to_radians() },
+                Err(message) => { say(Code::E103,st.span,message); return None; }
+            };
+            SolidDef::Placed {source:ops[0].idx,motion:m.idx,at}
+        }
         crate::syntax::Sweep::Along { guide } => {
             if !(1..=2).contains(&ops.len()) || ops.iter().any(|e| e.kind != EntKind::Face) {
                 say(Code::E080, st.span, "`along:` requires one start face and an optional end face".into());
