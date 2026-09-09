@@ -171,6 +171,15 @@ finite immutable roll domain. Its `SweepEvaluator` keeps a caller-capped pose ca
 returns the interval refiner's enclosure/status for whole point boxes. Evidence observers
 receive raw oracle bounds but cannot define the geometry or prune the search. The gear
 workbench uses this core evaluator; do not reintroduce a separate callback-based oracle.
+`SpatialField::read` reads ordinary full revolutions, Boolean bodies and motion placements;
+`SweptField::read` binds such a solid and a named motion directly from the solved sketch.
+`RevolvedRegion::field` reconstructs boundary order and checks convex turning before building
+line supports and finite circular-sector constraints. Each outer/hole loop must be convex;
+holes are subtracted. Axis spines disappear, and finite support comes from an enclosing disk.
+Concave loops, prisms and partial revolutions remain explicit refusals on this field path.
+Snapshot construction uses floating-point solved curves and numeric convexity checks;
+interval evaluation does not certify that conversion or source-solve/axis-snapping error.
+The source-field bridge is not yet a public generating-sweep solid or native sweep export.
 `solid::MaterialField` composes static and swept operands with fixed poses and Booleans.
 Its evaluator owns complete-member cut arithmetic, retaining every distinct node/box sweep's
 domain, witness, enclosure and termination status. Budgets apply per sweep query; exhausted

@@ -3,6 +3,7 @@
 //! These are explicit field constructions, not implicit conversions of mesh CSG.
 use crate::interval::{Error,Interval as I};
 mod spatial;
+mod document;
 pub use spatial::SpatialField;
 mod swept;
 pub use swept::{SweptField,SweepEvaluator,SweepError};

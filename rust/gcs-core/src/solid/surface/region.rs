@@ -3,6 +3,7 @@
 //! they mean. It does not silently substitute an analytic surface for a mesh face.
 use super::*;
 use std::f64::consts::{FRAC_PI_2,PI,TAU};
+mod field;
 
 type P = [f64;2];
 fn distance(a: P,b: P) -> f64 { (a[0]-b[0]).hypot(a[1]-b[1]) }

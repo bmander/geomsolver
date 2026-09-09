@@ -53,6 +53,15 @@ The experimental `tooth_space.py` still takes tooth-specific solved grids and co
 its own closure surfaces. Moving those grids into the public compiler unchanged would
 preserve that bypass; the generating source and motion must determine the native boundary.
 
+The source-to-material bridge now exists: `SpatialField::read` accepts ordinary full
+revolutions with convex line/arc profile loops, holes, Boolean bodies and motion placements.
+`SweptField::read` takes that solid and a named motion from the solved sketch. The rounded
+crown and bevel blank need no name-specific coordinate adapter on this path. Source tests
+compare the crown against independent analytic membership and a sphere sweep against a
+closed-form torus. Concave profile loops, prisms and partial revolutions are still refused.
+These numerical conversion checks do not certify source-solve error. Sweep syntax and
+native boundary construction remain ahead; this is not yet public gear solid export.
+
 The acceptance work remains:
 
 1. **Reproduce the reference pair:** one command from recorded source and tooth-count/size

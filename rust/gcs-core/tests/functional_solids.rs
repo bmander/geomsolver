@@ -4,6 +4,7 @@ mod sweeps;
 mod material;
 mod boundary;
 mod front;
+mod document;
 
 fn point<const N: usize>(p: [f64;N]) -> [I;N] { p.map(|v| I::point(v).unwrap()) }
 fn close(b: I,value: f64) {
