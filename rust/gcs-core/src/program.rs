@@ -369,9 +369,12 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // over faces and other solids; and *evaluated* rather than solved, because nothing about
     // either is an unknown.  This is the stratification as a phase: everything above it is the
     // drawing, everything below reads what the drawing came to.
+    // Motions depend on solved axes, and solids retain their motion indices.
+    // Resolve the motion graph before solids consume indices: dependency order
+    // may differ from the declaration order used by name preallocation.
+    motions::motions(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     solids(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     surfaces::surfaces(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
-    motions::motions(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     envelopes::envelopes(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     patches::patches(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     seams::seams(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);

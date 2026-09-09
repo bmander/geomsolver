@@ -121,3 +121,31 @@ fn malformed_placements_and_cycles_are_refused() {
             e.sketch.solids.iter().enumerate().any(|(i,_)| gcs_core::solid::validate(&e.sketch,i).is_err()),"{bad}");
     }
 }
+
+#[test]
+fn solids_bind_final_motion_indices_after_dependency_ordering() {
+    // Declaration order, alphabetical order and dependency order all differ.
+    // Each solid must retain its named motion, including through a formal.
+    let e = read(&format!("{SOURCE}\n\
+        motion z_turn(about: axis,phase: 90deg)\n\
+        motion a_relative(z_turn,relative_to: turn)\n\
+        component Copy(stock: solid,movement: motion) {{\n\
+          solid moved(stock,under: movement,at: 0deg)\n\
+          solid swept(stock,under: movement,from: -10deg,to: 10deg)\n\
+        }}\n\
+        copy: Copy(stock,a_relative)\n\
+        solid direct(stock,under: z_turn,at: 0deg)\n"));
+    use gcs_core::model::SolidDef;
+    for (name,expected) in [("copy.moved","a_relative"),("copy.swept","a_relative"),("direct","z_turn")] {
+        let s = &e.sketch.solids[e.map.ent_named(name).unwrap().i()];
+        let motion = match s.def {
+            SolidDef::Placed {motion,..} | SolidDef::Swept {motion,..} => motion,
+            _ => panic!("expected a motion operand"),
+        };
+        assert_eq!(motion as usize,e.map.ent_named(expected).unwrap().i(),"{name}");
+    }
+    for name in ["copy.moved","direct"] {
+        assert!(solid(&e,name).contains_world(WorldPoint([1.,2.,1.])));
+        assert!(!solid(&e,name).contains_world(WorldPoint([2.,-1.,1.])));
+    }
+}

@@ -113,6 +113,18 @@ class StepTests(unittest.TestCase):
             math.pi*(0.25*25.4)**2*(0.5*25.4),
             [0.5*25.4,0.75*25.4,-0.25*25.4,25.4,1.25*25.4,0.25*25.4])
 
+    def test_placement_binds_motion_after_dependency_ordering(self):
+        self.export("unit in\npoint a hint(x: 1,y: 0)\nground a\n"
+            "point b hint(x: 1,y: 1)\nground b\nline axis(a,b)\n"
+            "point c hint(x: 2,y: 0)\nground c\ncircle ring(center: c)\n"
+            "radius(0.25) ring\nsolid stock(face(ring), depth: 0.5)\n"
+            "motion z_turn(about: axis,phase: 90deg)\n"
+            "motion rest(about: axis)\nmotion a_relative(z_turn,relative_to: rest)\n"
+            "component Copy(body: solid,move: motion) {\n"
+            "solid result(body,under: move,at: 0deg)\n}\ncopy: Copy(stock,a_relative)\n",
+            math.pi*(0.25*25.4)**2*(0.5*25.4),
+            [0.5*25.4,0.75*25.4,-0.25*25.4,25.4,1.25*25.4,0.25*25.4], stl=True)
+
     def test_indexed_motion_component_reuses_one_through_cutter(self):
         self.export((RUST/"examples/solid_indexed_pattern.sv").read_text(),
                     math.pi*(400-6*4)*5, [-20,-20,-5,20,20,0], stl=True)
