@@ -189,20 +189,25 @@ Nested continuous sweeps are refused. Cache reads include the whole motion graph
 endpoint poses do not determine the swept material. Both mesh and native boundary exports
 currently reject every graph containing a sweep, preserving old output files; material
 support is not yet native sweep-boundary construction.
-**Swept boundaries by arrangement and classification (2026-09-09):** the working route to a
-swept solid is not the contact atlas but `tests/native_surfaces/{cells,gear_cells}.rs` over
-`backend/cells.cpp` and `native/cells.rs`: build one tangent-continuous tooth-space sheet from
-the cutter's exact contact charts (`SweepContacts::at_source_over` over a wider interval than
-declared, `at_point_normal_over` for a sharp-edge fan), index it by the declared motion, split
-the declared blank with the kernel (fuzzy 1e-5 mm), judge every cell by `MaterialEvaluator::
-probe` at interior points whose boundary distance is measured with the extrema solver (never the
-classifier's tolerance), refuse any unresolved or mixed cell, and fuse the material cells. Both
-members of `spiral_bevel/gears.sv` export STEP/STL this way; the profile walk is still chosen by
-hand per cutter in the test. The generating roll must carry the cutter clear of the blank at both
-limits (the gear declares 45deg), so no endpoint cap exists. Two sheets meeting tangentially
-cannot be split by the kernel; make them one sheet. `UnifySameDomain` widens tolerances on
-vertices shared with its input, so unify a copy. The atlas, transition and path code remains as
-verification. Read the roadmap's "Arrangement and classification" paragraphs first.
+**Swept boundaries by arrangement and classification (2026-09-09):** `solventc --step/--stl`
+builds a body with swept cuts in `rust/gcs-cli/src/cad/native/sweep_boundary.rs`, not from the
+contact atlas. `cad::recipe_static` gives the static blank and lists each swept cut with its
+composed pose; the native cutter is sectioned by meridian half-planes of its first revolution's
+axis (`backend/sections.cpp`), each section loop chained and oriented by signed area is the
+profile, sampled in augmented arc length (a convex corner's fan of normals is the sharp-edge
+sweep), and every sample's contact time is `SweepContacts::at_point_normal_over`. The band and
+walk come from where declared-roll contacts enter the blank, widened until the sheet's boundary
+is outside it. The sheet is indexed by the declared motion, the kernel splits the blank (fuzzy
+1e-5 mm), every cell is judged by `MaterialEvaluator::probe` at points whose boundary distance
+the extrema solver measured (never the classifier's tolerance), unresolved or mixed cells refuse,
+and the material cells fuse. The declared roll must carry the cutter clear of the blank at both
+limits (the gear declares 45deg) or the export refuses with the overlap; a cutter whose contact
+condition is motion-independent (the sphere fixture) is refused too. Two sheets meeting
+tangentially cannot be split by the kernel, which is why the profile is one walk.
+`UnifySameDomain` widens tolerances on vertices shared with its input, so unify a copy. The
+atlas, transition and path code remains as verification. Read the roadmap's "Arrangement and
+classification" paragraphs first; `tests/native_surfaces/gear_cells.rs` holds the recorded
+tooth-space volumes the generic construction must reproduce.
 `solid::MaterialField` composes static and swept operands with fixed poses and Booleans.
 Its evaluator owns complete-member cut arithmetic, retaining every distinct node/box sweep's
 domain, witness, enclosure and termination status. Budgets apply per sweep query; exhausted

@@ -16,6 +16,8 @@ mod traces;
 #[allow(dead_code)]
 #[path="native/cells.rs"]
 pub(crate) mod cells;
+#[path="native/sweep_boundary.rs"]
+pub(crate) mod sweep_boundary;
 
 extern "C" {
     fn solvent_cad_new() -> *mut c_void;
@@ -147,9 +149,8 @@ impl Session {
 /// Build once, stage and validate every requested format, then replace outputs.
 /// A geometry or encoding failure cannot leave only half the requested pair updated.
 pub fn export(sk: &gcs_core::model::Sketch,solid: usize,step: Option<&str>,stl: Option<&str>) -> Result<(),String> {
-    let recipe = gcs_core::solid::cad::recipe(sk,solid)?;
     let session = Session::new()?;
-    let solid = session.construct(&recipe)?;
+    let solid = sweep_boundary::construct_solid(&session,sk,solid)?;
     let mut staged = Vec::new();
     let mut directories = Vec::new();
     let result = (|| {

@@ -6,7 +6,7 @@ fn run(command: &mut Command) {
 }
 
 fn main() {
-    for file in ["occt.cpp","boundary.cpp","surfaces.cpp","trims.cpp","cells.cpp","occt.hpp"] {
+    for file in ["occt.cpp","boundary.cpp","surfaces.cpp","trims.cpp","cells.cpp","sections.cpp","occt.hpp"] {
         println!("cargo:rerun-if-changed=backend/{file}");
     }
     for name in ["OCCT_ROOT","CXX","AR"] { println!("cargo:rerun-if-env-changed={name}"); }
@@ -20,7 +20,7 @@ fn main() {
     });
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let mut objects = Vec::new();
-    for name in ["occt","boundary","surfaces","trims","cells"] {
+    for name in ["occt","boundary","surfaces","trims","cells","sections"] {
         let object = out.join(format!("{name}.o"));
         run(Command::new(env::var_os("CXX").unwrap_or_else(|| "c++".into()))
             .args(["-std=c++17","-O2","-fPIC","-c"]).arg(format!("backend/{name}.cpp"))

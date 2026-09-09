@@ -125,6 +125,35 @@ int solvent_cad_face_parameters(Cad* cad,int id,const double* point,double dista
     });
 }
 
+// The face's outward unit normal at the projection of a point onto its support,
+// with the projection's distance. No trim test: a point on a face's boundary
+// edge is on the face, whatever a classifier says within its tolerance.
+int solvent_cad_face_normal(Cad* cad,int id,const double* point,double* output) noexcept {
+    return guarded(cad,[&] {
+        if (!point || !output) throw std::runtime_error("normal query needs input and output buffers");
+        const FaceChart chart(cad,id);
+        gp_Pnt p(point[0],point[1],point[2]);
+        p.Transform(chart.location.Transformation().Inverted());
+        GeomAPI_ProjectPointOnSurf project(p,chart.surface,Precision::PConfusion());
+        if (!project.IsDone() || project.NbPoints() < 1) throw std::runtime_error("native face projection failed");
+        double a,b; project.LowerDistanceParameters(a,b);
+        if (chart.surface->IsUPeriodic()) { const double period = chart.surface->UPeriod(); a += std::round(((chart.a+chart.b)*0.5-a)/period)*period; }
+        if (chart.surface->IsVPeriodic()) { const double period = chart.surface->VPeriod(); b += std::round(((chart.c+chart.d)*0.5-b)/period)*period; }
+        gp_Pnt q; gp_Vec du,dv;
+        chart.surface->D1(a,b,q,du,dv);
+        gp_Vec n = du.Crossed(dv);
+        if (n.SquareMagnitude() <= 0) throw std::runtime_error("singular face normal");
+        n.Normalize();
+        if (chart.face.Orientation() == TopAbs_REVERSED) n.Reverse();
+        else if (chart.face.Orientation() != TopAbs_FORWARD) throw std::runtime_error("face has no boundary orientation");
+        n.Transform(chart.location.Transformation());
+        q.Transform(chart.location.Transformation());
+        for (int k=1;k<=3;++k) output[k-1] = n.Coord(k);
+        output[3] = q.Distance(gp_Pnt(point[0],point[1],point[2]));
+        return 0;
+    });
+}
+
 // Interpolate a curve in the face's finite UV chart and build its spatial edge.
 // UV fitting is not a certificate of the original contact curve's spatial error.
 // Closed input omits a duplicate final point; open endpoints must reach trims.

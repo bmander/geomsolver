@@ -1,0 +1,85 @@
+// Planar sections of a native solid, as the profile a swept boundary is built over.
+#include "occt.hpp"
+#include <BRepAlgoAPI_Section.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepCheck_Analyzer.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <BRep_Tool.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Edge.hxx>
+#include <TopoDS_Face.hxx>
+#include <gp_Ax3.hxx>
+#include <gp_Dir.hxx>
+#include <gp_Pln.hxx>
+#include <gp_Pnt.hxx>
+#include <gp_Vec.hxx>
+#include <cmath>
+#include <vector>
+
+extern "C" {
+// Section a solid by the plane through `origin` containing `axis`, keeping only
+// the edges on the half-plane whose in-plane direction is `side` (perpendicular
+// to the axis). Each row is [edge handle, face index]: the face the edge lies on
+// as its 1-based position in the solid's face enumeration (the order
+// solvent_cad_faces uses), which is stable across sections. Chaining the edges
+// into loops is the caller's. Count first with rows=null/capacity=0.
+int solvent_cad_section(Cad* cad,int solid,const double* origin,const double* axis,const double* side,
+    int* rows,int capacity) noexcept {
+    return guarded(cad,[&] {
+        if (!origin || !axis || !side) throw std::runtime_error("section needs an origin, axis and side");
+        const auto& shape = cad->at(solid);
+        if (shape.IsNull() || !BRepCheck_Analyzer(shape).IsValid())
+            throw std::runtime_error("section needs a valid solid");
+        const gp_Pnt o(origin[0],origin[1],origin[2]);
+        const gp_Dir a(axis[0],axis[1],axis[2]);
+        gp_Vec s(side[0],side[1],side[2]);
+        s -= gp_Vec(a)*s.Dot(gp_Vec(a));
+        if (s.Magnitude() <= 1e-12) throw std::runtime_error("section side must not lie along the axis");
+        const gp_Dir side_dir(s);
+        // The plane normal is perpendicular to both the axis and the side direction.
+        const gp_Pln plane(gp_Ax3(o,gp_Dir(gp_Vec(a).Crossed(gp_Vec(side_dir))),side_dir));
+        BRepAlgoAPI_Section section(shape,plane,false);
+        section.ComputePCurveOn1(false);
+        section.Approximation(false);
+        section.SetRunParallel(false);
+        section.Build();
+        if (!section.IsDone() || section.HasErrors()) throw std::runtime_error("plane section failed");
+        TopTools_IndexedMapOfShape faces;
+        TopExp::MapShapes(shape,TopAbs_FACE,faces);
+        std::vector<std::pair<TopoDS_Edge,int>> kept;
+        for (TopExp_Explorer it(section.Shape(),TopAbs_EDGE); it.More(); it.Next()) {
+            const auto edge = TopoDS::Edge(it.Current());
+            double t0,t1;
+            const auto curve = BRep_Tool::Curve(edge,t0,t1);
+            if (curve.IsNull()) throw std::runtime_error("section edge has no curve");
+            const gp_Pnt middle = curve->Value(0.5*(t0+t1));
+            if (gp_Vec(o,middle).Dot(gp_Vec(side_dir)) <= 0) continue;
+            TopoDS_Shape face;
+            int index = 0;
+            if (section.HasAncestorFaceOn1(edge,face)) index = faces.FindIndex(face);
+            if (!index) {
+                // A section edge lying on an existing edge (a seam in the plane)
+                // has no recorded ancestor; take the nearest face to its middle.
+                const auto vertex = BRepBuilderAPI_MakeVertex(middle).Vertex();
+                double best = 1e-6;
+                for (int f=1;f<=faces.Extent();++f) {
+                    BRepExtrema_DistShapeShape distance(vertex,faces(f));
+                    if (distance.IsDone() && distance.NbSolution() > 0 && distance.Value() < best) {
+                        best = distance.Value(); index = f;
+                    }
+                }
+                if (!index) throw std::runtime_error("section edge has no source face");
+            }
+            kept.emplace_back(edge,index);
+        }
+        const int count = static_cast<int>(kept.size());
+        if (!rows && capacity == 0) return count;
+        if (!rows || capacity < count) throw std::runtime_error("section buffer is too small");
+        for (int i=0;i<count;++i) { rows[2*i] = cad->put(kept[i].first); rows[2*i+1] = kept[i].second; }
+        return count;
+    });
+}
+}

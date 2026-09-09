@@ -4,8 +4,7 @@
 //! are united. The kernel arranges, the source decides, and no visibility or trim
 //! logic is written here.
 use super::*;
-use gcs_core::{interval::{Interval,minimum::Options},motion::Family,
-    solid::{cad,MaterialField,ProbeState}};
+use gcs_core::{motion::Family,solid::{cad,MaterialField}};
 use std::f64::consts::PI;
 
 const STOCK: &str = "
@@ -25,46 +24,6 @@ construction solid stock(face(e0, e1, e2, e3), about: e3)
 solid part(stock)
 removal.body cut part
 ";
-
-/// Classify every cell of a partition against the material field. A cell is
-/// judged at several interior points with measured boundary distances; every
-/// point needs a ball certificate within that distance and all must agree, so
-/// an unresolved point or a cell that a leaking sheet failed to separate
-/// refuses the build instead of guessing.
-pub(super) fn classify(cad: &Cad,partition: c_int,material: &mut gcs_core::solid::MaterialEvaluator)
-    -> Result<(Vec<native::cells::Cell>,Vec<native::cells::Cell>),String> {
-    let (mut kept,mut removed) = (Vec::new(),Vec::new());
-    for cell in cad.0.cells(partition)? {
-        let samples = cad.0.samples(cell.solid,4,12)?;
-        if samples.is_empty() { return Err(format!("cell of volume {} has no interior sample",cell.volume)); }
-        let mut verdict = None;
-        for (point,boundary) in samples {
-            // A ball certificate only needs the field resolved to the probe
-            // distance, which stays inside the measured boundary distance.
-            let distance = (boundary*0.5).min(0.05);
-            if distance <= 1e-4 { continue; }
-            let probe = material.probe(point.map(|x| Interval::point(x).unwrap()),[1.,0.,0.],distance,
-                Options {value_tolerance:distance/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))?;
-            let inside = match probe.state {
-                ProbeState::InteriorBall => true,
-                ProbeState::ExteriorBall => false,
-                state => return Err(format!("cell at {point:?} (boundary distance {boundary}, volume {}) is {state:?}",cell.volume)),
-            };
-            match verdict {
-                None => verdict = Some(inside),
-                Some(previous) if previous != inside => return Err(format!(
-                    "cell of volume {} reads both material and removed: a sheet did not separate it",cell.volume)),
-                _ => {}
-            }
-        }
-        match verdict {
-            Some(true) => kept.push(cell),
-            Some(false) => removed.push(cell),
-            None => return Err(format!("cell of volume {} has no sample clear of its boundary",cell.volume)),
-        }
-    }
-    Ok((kept,removed))
-}
 
 #[test]
 fn sphere_sweep_solid_from_sheets_caps_and_material_cells() {
@@ -131,7 +90,7 @@ fn sphere_sweep_solid_from_sheets_caps_and_material_cells() {
     let partition = cad.0.split_solid(stock,&tools).unwrap();
     let split_time = started.elapsed();
     let mut material = MaterialField::read(&e.sketch,part_id,1e-10).unwrap().evaluator(4096);
-    let (kept,removed) = classify(&cad,partition,&mut material).unwrap();
+    let (kept,removed) = native::sweep_boundary::classify(&cad.0,partition,&mut material).unwrap();
     eprintln!("split in {split_time:?}: {} material cells, {} removed cells",kept.len(),removed.len());
     for cell in kept.iter().chain(&removed) {
         eprintln!("  cell volume {:.6} margin {:.4} at {:?}",cell.volume,cell.margin,cell.point);

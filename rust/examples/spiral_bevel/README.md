@@ -9,9 +9,21 @@ build/solventc rust/examples/spiral_bevel/gears.sv --no-diagnose
 ```
 
 The public material bodies are `pair.pinion.body` and `pair.gear.body`. Each subtracts
-one continuous generating sweep at every tooth index. **Native boundary construction
-for those sweeps is still pending**, so exporting either full body currently reports
-an unsupported-operation error. The source is a mathematical zero-backlash, 90-degree
+one continuous generating sweep at every tooth index. Either exports as STEP and STL:
+
+```sh
+mkdir -p build/exports
+build/solventc rust/examples/spiral_bevel/gears.sv --no-diagnose --solid pair.pinion.body \
+  --step build/exports/solvent-pinion.step --stl build/exports/solvent-pinion.stl
+build/solventc rust/examples/spiral_bevel/gears.sv --no-diagnose --solid pair.gear.body \
+  --step build/exports/solvent-gear.step --stl build/exports/solvent-gear.stl
+```
+
+The pinion takes about six minutes and the gear about eleven on a laptop; progress is
+reported on stderr. The construction sections the declared cutter, fits its generating
+sheet from exact contacts, indexes it by the declared motion, splits the blank in the
+kernel and classifies every cell by the declared material field; see the roadmap for what
+that does and does not certify. The source is a mathematical zero-backlash, 90-degree
 common-crown construction, not a production acceptance result.
 
 The stationary gear-space cutter can already be inspected through the native backend:

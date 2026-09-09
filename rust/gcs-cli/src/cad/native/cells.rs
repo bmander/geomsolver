@@ -14,6 +14,10 @@ extern "C" {
     fn solvent_cad_common(cad: *mut c_void,a: c_int,b: c_int) -> c_int;
     fn solvent_cad_common_volume(cad: *mut c_void,a: c_int,b: c_int,output: *mut f64) -> c_int;
     fn solvent_cad_place(cad: *mut c_void,source: c_int,matrix: *const f64) -> c_int;
+    fn solvent_cad_bspline_face_with(cad: *mut c_void,points: *const f64,nu: c_int,nv: c_int,parametrization: c_int) -> c_int;
+    fn solvent_cad_section(cad: *mut c_void,solid: c_int,origin: *const f64,axis: *const f64,side: *const f64,
+        rows: *mut c_int,capacity: c_int) -> c_int;
+    fn solvent_cad_face_normal(cad: *mut c_void,face: c_int,point: *const f64,output: *mut f64) -> c_int;
     fn solvent_cad_tolerance(cad: *mut c_void,id: c_int,output: *mut f64) -> c_int;
 }
 
@@ -87,6 +91,29 @@ impl Session {
     pub(crate) fn place(&self,source: c_int,pose: gcs_core::envelope::Motion,scale: f64) -> Result<c_int,String> {
         let matrix = gcs_core::solid::cad::placement_matrix(pose,scale);
         self.result(unsafe { solvent_cad_place(self.0,source,matrix.as_ptr()) })
+    }
+    /// Interpolate a row-major grid of points as a B-spline face with chord-length
+    /// parameters, which keep uneven row spacing from overshooting.
+    pub(crate) fn fit_sheet(&self,points: &[[f64;3]],rows: usize,columns: usize) -> Result<c_int,String> {
+        if points.len() != rows*columns { return Err("sheet grid size mismatch".into()); }
+        self.result(unsafe { solvent_cad_bspline_face_with(self.0,points.as_ptr().cast(),rows as c_int,columns as c_int,1) })
+    }
+    /// Section a solid by the half-plane through `origin` containing `axis` on the
+    /// `side` direction: (edge handle, 1-based face index in `faces(solid)`)
+    /// pairs, unordered.
+    pub(crate) fn section(&self,solid: c_int,origin: [f64;3],axis: [f64;3],side: [f64;3]) -> Result<Vec<(c_int,c_int)>,String> {
+        let count = self.result(unsafe { solvent_cad_section(self.0,solid,origin.as_ptr(),axis.as_ptr(),side.as_ptr(),std::ptr::null_mut(),0) })?;
+        let mut rows = vec![-1;2*count as usize];
+        let actual = self.result(unsafe { solvent_cad_section(self.0,solid,origin.as_ptr(),axis.as_ptr(),side.as_ptr(),rows.as_mut_ptr(),count) })?;
+        if actual != count { return Err("section changed between count and retrieval".into()); }
+        Ok((0..count as usize).map(|i| (rows[2*i],rows[2*i+1])).collect())
+    }
+    /// Outward unit normal of a face at a point's projection onto its support,
+    /// and the projection distance; no trim test.
+    pub(crate) fn face_normal(&self,face: c_int,point: [f64;3]) -> Result<([f64;3],f64),String> {
+        let mut data = [0.;4];
+        self.result(unsafe { solvent_cad_face_normal(self.0,face,point.as_ptr(),data.as_mut_ptr()) })?;
+        Ok(([data[0],data[1],data[2]],data[3]))
     }
     /// Maximum vertex, edge and face tolerances the kernel carries on the shape.
     pub(crate) fn tolerances(&self,solid: c_int) -> Result<[f64;3],String> {

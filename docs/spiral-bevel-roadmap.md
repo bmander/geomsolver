@@ -426,11 +426,30 @@ and exports STEP (round trip checked) and STL (encoded shell checked) in 97 s. C
 classification measures true boundary distances with the extrema solver: the classifier's
 tolerance test is not a distance, and one tooth space was first judged at a point only
 0.03 mm inside its bottom. Both members now export at `build/exports/solvent-pinion.*`
-and `solvent-gear.*`, from the declared source alone, through `tests/native_surfaces/
-gear_cells.rs`. Still open: turning that test path into the CLI's export of a body with
-swept cuts (the profile walk is chosen by hand per cutter there), the STEP round trip
-tolerance of spline-bounded solids, and the accuracy budget, which is deferred by
-decision until the pair's engagement checks run on these exports.
+and `solvent-gear.*`, from the declared source alone.
+
+`solventc --step/--stl` now exports a body with swept cuts itself
+(`rust/gcs-cli/src/cad/native/sweep_boundary.rs`). The hand-chosen profile walk is gone:
+`cad::recipe_static` builds the body's static remainder as the blank and lists the swept
+cuts with their composed placement poses; the native cutter is sectioned by meridian
+half-planes of its first revolution's axis (`backend/sections.cpp`); each section loop,
+chained by endpoint identity and oriented by signed area, is the profile, sampled in
+augmented arc length (position length plus turning at convex corners, where the fan of
+normals is the sharp-edge sweep); every sample's contact time is the exact point-normal
+root. The band and walk come from where declared-roll contacts enter the blank, widened
+until the sheet's boundary lies outside it. The declared roll must carry the cutter clear
+of the blank at both limits, or the export refuses with the overlap. With no cutter-specific
+code, the generic sheet reproduces the recorded tooth spaces: pinion 120.7047 mm³
+(3.4e-5 relative), gear 117.1354 mm³ (1.6e-5), five profile faces found on each, and the
+kernel agrees with the field on both sides of every sheet node. The CLI exports take six minutes for the
+pinion (9142.079 mm³, 55 faces) and eleven for the gear (20284.173 mm³, 99 faces, 13 µm
+vertex tolerance). Withheld contact errors are 7.5 µm and 3.4 µm at the
+default 0.15/0.5 mm node spacing. Refused, with diagnostics: a cutter whose contact
+condition does not depend on the motion (a revolution about an axis parallel to the
+motion's, the sphere fixture), cutters that are not revolutions, additive sweeps, nested
+sweeps, and a roll that leaves the cutter in the blank. Still open: the accuracy budget and
+the pair's engagement checks on these exports, deferred by decision; classification time
+(the gear's 49 cells against 48 sweeps take about seven minutes).
 
 The acceptance work remains:
 
