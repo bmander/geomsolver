@@ -1,0 +1,100 @@
+{
+  "verifier_commit": "5835d4b",
+  "source_sha256": "c11e8defe5dcd3d12d79f597c0ec5a4e9410794ec25597904a183863183724c9",
+  "inputs": [
+    {
+      "member": 0,
+      "step_file": "/private/tmp/solvent-cad-full-pinion/member0-24-cuts.step",
+      "step_sha256": "47d750135b6b6c6c1cec232b496ddb792e03ff03d7ae4d9d1dececa4229f636e"
+    },
+    {
+      "member": 1,
+      "step_file": "/private/tmp/solvent-cad-full-gear/member1-48-cuts.step",
+      "step_sha256": "a4b010f3466603a57aa2b13a2f85d884eb1c9fa1032ca6a5dcbde7e8cfacddac"
+    }
+  ],
+  "edge_evidence": {
+    "file": "/private/tmp/solvent-cad-edges.json",
+    "sha256": "d8797bbb235c99167a6f62c959dab84b41228cf2e764b86d8e416ac59bfc33e1"
+  },
+  "audit": {
+    "file": "/private/tmp/solvent-cad-trim-seams.json",
+    "sha256": "8c42604a21db4382afa6be2dbe53d495484cdada71fad3c694c479f66aefe9ea",
+    "seconds": 19.014791993016843
+  },
+  "nonperiodic_audit": {
+    "file": "/private/tmp/solvent-cad-trim-loops.json",
+    "sha256": "8fc0a91e16f9c59ef138ff5f4be9728449ccee71e92f5c6735127e9e9c7b2a06",
+    "faces": 75
+  },
+  "embedded_annular_representatives": "verified",
+  "complete_analytical_seams": true,
+  "combined_embedded_analytical_representatives": 81,
+  "target_displacement_mm": 1e-08,
+  "faces": [
+    {
+      "member": 0,
+      "face_index": 0,
+      "kind": "sphere",
+      "seam_edge": 146,
+      "displacement_bound_mm": 1.0066420937655798e-10,
+      "pairs": 10878,
+      "tested_cells": 13918
+    },
+    {
+      "member": 0,
+      "face_index": 146,
+      "kind": "cone",
+      "seam_edge": 441,
+      "displacement_bound_mm": 2.685928417110697e-11,
+      "pairs": 6,
+      "tested_cells": 6
+    },
+    {
+      "member": 0,
+      "face_index": 147,
+      "kind": "sphere",
+      "seam_edge": 442,
+      "displacement_bound_mm": 6.647486441545046e-11,
+      "pairs": 10878,
+      "tested_cells": 13750
+    },
+    {
+      "member": 1,
+      "face_index": 0,
+      "kind": "sphere",
+      "seam_edge": 290,
+      "displacement_bound_mm": 5.80596036974127e-11,
+      "pairs": 42486,
+      "tested_cells": 44944
+    },
+    {
+      "member": 1,
+      "face_index": 289,
+      "kind": "cone",
+      "seam_edge": 872,
+      "displacement_bound_mm": 5.146017390394816e-11,
+      "pairs": 6,
+      "tested_cells": 6
+    },
+    {
+      "member": 1,
+      "face_index": 290,
+      "kind": "sphere",
+      "seam_edge": 874,
+      "displacement_bound_mm": 9.273729796394274e-11,
+      "pairs": 42486,
+      "tested_cells": 45249
+    }
+  ],
+  "tests": {
+    "command": "python3 -m unittest discover -s experiments/cad-backend -p 'test_*.py'",
+    "passed": 53
+  },
+  "scope": "Embedded annular representatives with exact periodic seam identification and bounded displacement from raw analytical STEP boundaries. Shared 3D topology realization, inter-face embedding, reader behavior, global swept material and continuous mating remain separate.",
+  "remaining": [
+    "Shared 3D topology realization and inter-face embedding",
+    "Global swept-material coverage and continuous pair mating",
+    "Source-solve and STEP-reader accuracy transfer"
+  ]
+}
