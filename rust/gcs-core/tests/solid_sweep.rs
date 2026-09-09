@@ -1,6 +1,8 @@
 use gcs_core::{io,model::{MotionDef,SolidDef},program,solid::{self,MaterialField},solve,syntax,
     interval::{Interval as I,minimum::{Options,Status}}};
 
+mod contacts;
+
 const SOURCE: &str = "unit mm
 point center hint(x: 3,y: 0)
 point a hint(x: 3,y: -1)

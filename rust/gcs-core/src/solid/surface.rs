@@ -1,6 +1,8 @@
 //! Exact generating patches of existing declarative solids. These retain the solved
 //! profile's lines and circles; no facets enter their position or derivative evaluation.
 //! Boundary trimming and outward orientation remain separate questions.
+mod contact;
+pub use contact::RevolvedContact;
 mod project;
 pub use project::{SurfaceProjection,SurfaceProjector};
 mod region;

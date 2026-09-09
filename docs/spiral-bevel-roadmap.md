@@ -93,6 +93,30 @@ motion graph's dependency ordering was finalized. It also required the regulariz
 identity `A - (A - B) = A intersect B` for shared immutable field nodes; the raw field
 expression retained zeros on discarded boundaries and obstructed sweep separation.
 
+
+The next boundary-construction stage is `solid::SweepContacts`: it reads the declared
+sweep, gathers the generating solid's revolved faces through Boolean and fixed-placement
+nodes, and retains the complete source material classifier. Shared faces are collected
+once per fixed pose; axis diameters contribute no surface. For a meridian station under
+an instantaneous rigid motion, `RevolvedSurface::contacts` solves the contact equation
+`A cos(theta) + B sin(theta) + C = 0` directly. It retains both regular branches, respects
+source angular spans, and reports stationary or near-double-root events explicitly.
+These are smooth-face candidates, not a finished swept solid: source-hidden portions,
+sharp-edge sweeps, endpoint caps, singular events and global self-intersections still
+need to be resolved before native surface fitting and solid assembly.
+
+This follows the contact-set/B-rep decomposition described by
+[Adsul, Machchhar and Sohoni](https://arxiv.org/abs/1404.0119), with their
+[sharp-feature extension](https://arxiv.org/abs/1405.7457) relevant to the cutter's Boolean
+edges. The direct trigonometric reduction here uses the existing analytic revolutions
+and exact first-order rigid-motion evaluator; it does not require a gear-specific
+meshing equation or a union of sampled tool poses.
+The source-derived candidates match 120 independent characteristic points on both flanks
+and fillets of both members, including the gear's phase-shifted neighboring cutter.
+Generic tests cover an orbiting sphere, compound rotation and translation, fixed source
+placements, periodic branch identity, angular restrictions and explicit degeneracies.
+The new stage has no native STEP/STL output yet.
+
 The acceptance work remains:
 
 1. **Reproduce the reference pair:** one command from recorded source and tooth-count/size

@@ -47,8 +47,10 @@ mod raycast;
 mod section;
 mod loft;
 mod surface;
+mod sweep_contacts;
+pub use sweep_contacts::SweepContacts;
 pub use surface::{RegionLocation,RegionSample,RevolvedRegion,RevolvedSurface,
-    SurfaceProjection,SurfaceProjector};
+    SurfaceProjection,SurfaceProjector,RevolvedContact};
 pub(crate) use raycast::RayIndex;
 use section::face_polys;
 pub use evaluated::{ApproximationPolicy, EvaluatedSolid, LocalPoint, WorldPoint, PagePoint, PageFrame, RoundFeature};

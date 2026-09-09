@@ -59,3 +59,52 @@ fn declarative_matched_pair_agrees_with_independent_member_material() {
         }
     }
 }
+
+#[test]
+fn source_contact_curves_reproduce_independent_crown_characteristics() {
+    use gcs_core::solid::SweepContacts;
+    let teeth = [24,48]; let module = 2.;
+    let pair = Pair::read(teeth,module);
+    let e = read_model(include_str!("../../../../../../examples/spiral_bevel/gears.sv"),teeth,module);
+    let mut checked = 0;
+    for member in 0..2 {
+        let name = ["pinion","gear"][member];
+        let id = e.map.ent_named(&format!("pair.{name}.removal")).unwrap().i();
+        let sweep = SweepContacts::read(&e.sketch,id,module*1e-10).unwrap();
+        assert_eq!(sweep.patches().len(),[6,9][member]);
+        for side in 0..2 {
+            let edge = if member == side { "outer" } else { "inner" };
+            for edge in [edge.to_string(),format!("{edge}_round")] {
+                let patch = pair.patch(member,side,&edge);
+                for u in [0.1,0.3,0.5,0.7,0.9] { for rho in [0.9*pair.rm,pair.rm,1.1*pair.rm] {
+                    let expected = pair.analytic(member,&patch,u,rho);
+                    let mut roll = expected.parameters[2];
+                    let mut local = expected.contact.position;
+                    if member == 1 && side == 1 {
+                        // R_body(theta) M(t+delta) = M(t) R_crown(delta).
+                        // The second active face belongs to the indexed neighbor.
+                        roll += TAU/pair.teeth[0].hypot(pair.teeth[1]);
+                        let theta = TAU/pair.teeth[1];
+                        local = [local[0]*theta.cos()-local[1]*theta.sin(),
+                            local[0]*theta.sin()+local[1]*theta.cos(),local[2]];
+                    }
+                    let world = pair.local_frame(member).inverse().point(local);
+                    let mut distance = f64::INFINITY;
+                    for i in 0..sweep.patches().len() {
+                        match sweep.at(i,u,roll,module*1e-10) {
+                            Ok(roots) => for root in roots {
+                                let p = root.contact.position;
+                                distance = distance.min((p[0]-world[0]).hypot(p[1]-world[1]).hypot(p[2]-world[2]));
+                            },
+                            Err(gcs_core::envelope::Error::Degenerate) => {},
+                            Err(error) => panic!("{name}: {error:?}"),
+                        }
+                    }
+                    assert!(distance < module*1e-8,"{name} {edge} u={u}, rho={rho}: {distance}");
+                    checked += 1;
+                } }
+            }
+        }
+    }
+    assert_eq!(checked,120);
+}
