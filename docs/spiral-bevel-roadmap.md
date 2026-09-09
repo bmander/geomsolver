@@ -13,8 +13,10 @@ Manufacturing planning remains separate. The current order is:
    with explicit coverage and wrong-phase controls. Sampled success is a baseline, not
    evidence about every intervening phase.
 3. **Verify actual export accuracy:** use one end-to-end budget for source solve, fitting,
-   Boolean/export conversion and tessellation. The 0.001 mm target remains provisional;
-   mesher settings and separate face bounds do not establish that combined accuracy.
+   Boolean/export conversion and tessellation. The user-selected target is **0.001 inch
+   (0.0254 mm)** for the complete exported geometry. Mesher settings and separate face
+   bounds do not establish that combined accuracy. Earlier 0.001 mm checks remain useful
+   tighter component checks; they are not the required end-to-end target.
 4. **Complete parametric Solvent integration:** ordinary components and general solid
    operations produce both public solid outputs; multiple configurations pass the same
    checks and unsupported configurations receive useful diagnostics.

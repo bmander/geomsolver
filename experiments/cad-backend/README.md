@@ -31,7 +31,12 @@ means traceable inputs and repeatable checks, not necessarily byte-identical STE
 Tooth counts and module are experimental overrides, not a declaration that every positive
 configuration is supported. Shaft angle 90 degrees, spiral angle 35 degrees, pressure angle
 20 degrees and zero nominal backlash remain fixed by the documented reference. The optional
-`--stl-deflection-mm` controls tessellation (default 0.05); it is not an accuracy certificate.
+`--stl-deflection-mm` controls tessellation (default 0.01); it is not an accuracy certificate.
+The end-to-end geometry target is **0.001 inch (0.0254 mm)**, selected to suit the user's
+machining requirements. The smaller tessellation setting leaves room for fitting and
+conversion error within that budget. Historical 0.001 mm surface/contact checks below
+remain tighter component checks; the earlier 0.05 mm inspection meshes are not accepted
+against the new end-to-end target.
 The Rust exporters still use the test adapter. Public Solvent solid integration, continuous
 engagement/material coverage and end-to-end export accuracy remain on the
 [current roadmap](../../docs/spiral-bevel-roadmap.md#current-critical-path).

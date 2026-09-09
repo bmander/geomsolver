@@ -12,7 +12,7 @@ from OCP.StlAPI import StlAPI_Writer
 from material_probes import read
 
 
-def run(source, output, deflection=.05):
+def run(source, output, deflection=.01):
     if not math.isfinite(deflection) or deflection <= 0:
         raise ValueError("deflection must be positive and finite")
     if source.resolve() == output.resolve():
@@ -41,6 +41,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
     parser.add_argument("output", type=Path)
-    parser.add_argument("--deflection", type=float, default=.05)
+    parser.add_argument("--deflection", type=float, default=.01)
     args = parser.parse_args()
     run(args.source, args.output, args.deflection)

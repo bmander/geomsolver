@@ -450,6 +450,11 @@ an external coordinate importer would bypass the language question rather than r
 
 ## Remaining gates
 
+The end-to-end exported geometry accuracy target is **0.001 inch (0.0254 mm)**, selected
+by the user for machining with approximately 0.002 inch repeatability. This is the total
+geometric error budget, including fitting and export; it does not specify backlash or
+replace engagement checks. Earlier 0.001 mm component checks remain tighter evidence.
+
 - Specify a full admissible parameter domain and the tooth thickness/backlash convention.
 - Establish both flanks, root transition, tooth tip, toe and heel boundaries and material
   sides; check regularity and trim the envelope's invalid branches.

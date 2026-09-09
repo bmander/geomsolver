@@ -176,12 +176,13 @@ def main():
     parser.add_argument("output", type=Path, help="new output directory (must not exist)")
     parser.add_argument("--teeth", type=int, nargs=2, default=[24, 48], metavar=("PINION", "GEAR"))
     parser.add_argument("--module-mm", type=float, default=2.)
-    parser.add_argument("--stl-deflection-mm", type=float, default=.05)
+    parser.add_argument("--stl-deflection-mm", type=float, default=.01)
     args = parser.parse_args()
     if (min(args.teeth) <= 0 or not all(math.isfinite(v) and v > 0
             for v in (args.module_mm, args.stl_deflection_mm))):
         parser.error("tooth counts, module and deflection must be positive and finite")
     config = dict(teeth=args.teeth, mean_module_mm=args.module_mm,
+                  geometry_accuracy_target_mm=.0254,
                   stl_deflection_mm=args.stl_deflection_mm, shaft_angle_deg=90,
                   spiral_angle_deg=35, pressure_angle_deg=20, nominal_backlash_mm=0,
                   generating_system="documented complementary common-crown references",
