@@ -4,6 +4,8 @@
 #[path="../src/cad/native.rs"]
 mod native;
 mod support;
+#[path="native_boundary/material.rs"]
+mod material;
 use gcs_core::{envelope::{self,EdgePoint},interval::Interval,motion::Family,solid::{cad,SpatialField}};
 use std::{ffi::{c_void,c_int,c_char,CStr},path::Path};
 

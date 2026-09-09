@@ -11,6 +11,11 @@ pub struct Options {
     /// Includes interval and point queries. At least four queries are required.
     pub max_evaluations: usize,
 }
+impl Options {
+    pub(crate) fn valid(self) -> bool {
+        self.value_tolerance.is_finite() && self.value_tolerance > 0. && self.max_evaluations >= 4
+    }
+}
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Status {
@@ -83,8 +88,7 @@ pub fn enclose_outside<E>(domain: Interval,bound: impl FnMut(Interval) -> Result
 
 pub(crate) fn refine<E>(domain: Interval,mut bound: impl FnMut(Interval) -> Result<Interval,E>,
     options: Options,band: Option<Interval>) -> Result<Minimum,Error<E>> {
-    if !options.value_tolerance.is_finite() || options.value_tolerance <= 0.
-        || options.max_evaluations < 4 { return Err(Error::InvalidOptions); }
+    if !options.valid() { return Err(Error::InvalidOptions); }
     let root = bound(domain).map_err(Error::Oracle)?;
     let mut evaluations = 1;
     let mut best = (f64::INFINITY,domain.bounds()[0]);

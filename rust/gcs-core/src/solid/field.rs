@@ -9,6 +9,8 @@ mod swept;
 pub use swept::{SweptField,SweepEvaluator,SweepError};
 mod material;
 pub use material::{MaterialField,MaterialEvaluator,MaterialBounds,MaterialSweepQuery};
+mod probe;
+pub use probe::{MaterialProbe,ProbeState};
 mod boundary;
 pub use boundary::{BoundaryOptions,BoundaryError,BoundaryStage,FieldBoundary,BoundaryCell,BoundaryPoint,BoundaryCrossing};
 pub use boundary::BoundaryComponent;

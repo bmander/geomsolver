@@ -175,6 +175,22 @@ pose covers, so candidate eligibility cannot stand in for swept-material classif
 Those samples do not certify full-interval visibility. Native candidate-domain coverage,
 global trimming and closed-solid assembly remain unfinished.
 
+`MaterialEvaluator::probe` now checks candidate point boxes against the entire material
+graph and declared motion intervals. Strict field margins certify interior/exterior balls;
+otherwise it checks outward-rounded offsets on both sides of the supplied direction.
+Opposite material signs bracket a boundary within the requested distance. They do not
+establish a unique crossing, the surface normal, topology or a whole-face error bound.
+Field zeros and exhausted or ambiguous searches remain unresolved.
+Generic sphere/torus checks cover finite caps swallowed by extended motion, Boolean-cut
+orientation, uncertain input boxes, phantom field zeros and budget exhaustion. At one
+station on every eligible native cutter edge and three roll times, the actual source pair
+produces 14 outward brackets and four covered candidates (all four on the gear). Every
+query covers the full declared sweep; a separate static-source evaluation confirms each
+covering witness. The 18 candidate checks take about two seconds together, including
+source solving and native cutter construction. Their 0.01 mm offset is a local probe
+distance, not a certificate of exported gear accuracy. Tracing the boundaries between
+covered and exposed regions and constructing their native trim curves remain ahead.
+
 The acceptance work remains:
 
 1. **Reproduce the reference pair:** one command from recorded source and tooth-count/size

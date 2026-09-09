@@ -2,6 +2,7 @@ use gcs_core::{interval::{Error,Interval as I},solid::{PlanarField as F,Revolved
 
 mod sweeps;
 mod material;
+mod probe;
 mod boundary;
 mod front;
 mod document;

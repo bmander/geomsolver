@@ -103,3 +103,14 @@ sign, and a rotating cube edge generates a native fitted cylindrical patch compa
 the known cylinder. The actual gear cutters produce 17/37 sampled sharp contacts, with 106
 nearby-time source-material checks on strict interior cone contacts. These local checks
 do not establish visibility over the whole motion interval or a complete swept solid.
+
+The native boundary tests also connect candidate positions/normals to
+`MaterialEvaluator::probe`, which checks the complete declared swept material. It returns
+strict interior/exterior ball margins or a bracket between opposite material signs at
+outward-rounded offsets. Uncertain results remain explicit. At one edge station and three
+roll times, the actual pinion/gear cutters yield 14 outward brackets and four candidates
+buried by another pose, in about two seconds including solve/construction. Covering witnesses
+are rechecked through the static source evaluator. Generic tests cover swallowed finite
+caps, cut orientation, input boxes, phantom zeros and exhausted budgets. These are local
+material checks at a 0.01 mm offset; they do not yet trace native trim curves or establish
+unique crossings, complete surface coverage or the final export error.
