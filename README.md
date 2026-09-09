@@ -44,10 +44,10 @@ coordinates confined to starting hints.
 Export any finished part with
 `build/solventc rust/examples/solid_flange.sv --solid body --stl flange.stl`.
 
-`--step flange.step` uses an optional Open CASCADE host for analytic STEP output.
-Install `rust/gcs-cli/backend/requirements.txt` into a Python environment and set
-`SOLVENT_CAD_PYTHON` to that interpreter (otherwise `python3` is used). The Rust core
-and browser remain dependency-free. Current support covers line/circular profiles,
+`--step flange.step` calls Open CASCADE through a native C++/C ABI bridge.
+Install OCCT development files (for example, `brew install opencascade`) and build with
+`make solventc OCCT=1`. Set `OCCT_ROOT` for a custom installation prefix. No Python
+runtime is involved; the Rust core and browser remain dependency-free. Current support covers line/circular profiles,
 extrusion, revolution, holes, additive bodies and cuts including `through:` cutters;
 along-guide lofts and generating-motion sweeps are not yet connected to this host.
 

@@ -3,17 +3,21 @@ import math
 import os
 from pathlib import Path
 import subprocess
-import sys
 import tempfile
 import unittest
 
 from OCP.Bnd import Bnd_Box
 from OCP.BRepBndLib import BRepBndLib
 from OCP.BRepCheck import BRepCheck_Analyzer
+from OCP.BRepGProp import BRepGProp
+from OCP.GProp import GProp_GProps
 from OCP.IFSelect import IFSelect_RetDone
 from OCP.STEPControl import STEPControl_Reader
 
-from occt import volume
+def volume(shape):
+    props = GProp_GProps()
+    BRepGProp.VolumeProperties_s(shape, props)
+    return props.Mass()
 
 RUST = Path(__file__).resolve().parents[2]
 CLI = Path(os.environ.get("SOLVENTC", RUST/"target/debug/solventc"))
@@ -26,7 +30,7 @@ class StepTests(unittest.TestCase):
             model.write_text(source)
             result = subprocess.run([str(CLI), str(model), "--step", str(step),
                                      "--no-diagnose", "--json"], text=True, capture_output=True,
-                env=dict(os.environ, SOLVENT_CAD_PYTHON=sys.executable))
+                env=dict(os.environ, SOLVENT_CAD_PYTHON="/no-python-subprocess-allowed"))
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             # Kernel progress must not corrupt the CLI's structured output.
             import json
@@ -69,7 +73,7 @@ class StepTests(unittest.TestCase):
             step = Path(directory)/"flange.step"
             result = subprocess.run([str(CLI), str(RUST/"examples/solid_flange.sv"),
                 "--step", str(step), "--solid", "body", "--no-diagnose"],
-                text=True, capture_output=True, env=dict(os.environ, SOLVENT_CAD_PYTHON=sys.executable))
+                text=True, capture_output=True, env=dict(os.environ, SOLVENT_CAD_PYTHON="/no-python-subprocess-allowed"))
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             reader = STEPControl_Reader()
             self.assertEqual(reader.ReadFile(str(step)), IFSelect_RetDone)
@@ -83,7 +87,7 @@ class StepTests(unittest.TestCase):
             step.write_text("existing export")
             result = subprocess.run([str(CLI), str(RUST/"examples/solid_elbow.sv"),
                 "--step", str(step), "--no-diagnose"], text=True, capture_output=True,
-                env=dict(os.environ, SOLVENT_CAD_PYTHON=sys.executable))
+                env=dict(os.environ, SOLVENT_CAD_PYTHON="/no-python-subprocess-allowed"))
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("along-guide lofts", result.stderr)
             self.assertEqual(step.read_text(), "existing export")
@@ -101,10 +105,23 @@ class StepTests(unittest.TestCase):
                 step.write_text("existing export")
                 result = subprocess.run([str(CLI), str(model), "--step", str(step),
                     "--allow-unsolved", "--no-diagnose"], text=True, capture_output=True,
-                    env=dict(os.environ, SOLVENT_CAD_PYTHON=sys.executable))
+                    env=dict(os.environ, SOLVENT_CAD_PYTHON="/no-python-subprocess-allowed"))
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(diagnostic, result.stderr)
                 self.assertEqual(step.read_text(), "existing export")
+
+    def test_native_exception_becomes_a_diagnostic_without_replacing_the_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model, step = Path(directory)/"model.sv", Path(directory)/"result.step"
+            model.write_text("unit mm\npoint o hint(x: 0,y: 0)\nground o\n"
+                "circle c(center: o)\nradius(2) c\nsolid stock(face(c), depth: 3)\n"
+                "solid body(stock)\nstock cut body\n")
+            step.write_text("existing export")
+            result = subprocess.run([str(CLI), str(model), "--step", str(step),
+                "--solid", "body", "--no-diagnose"], text=True, capture_output=True)
+            self.assertEqual(result.returncode, 1, result.stdout+result.stderr)
+            self.assertIn("operation produced no solid", result.stderr)
+            self.assertEqual(step.read_text(), "existing export")
 
 
 if __name__ == "__main__":

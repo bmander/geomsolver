@@ -26,8 +26,9 @@ The integration path is:
 4. Run the existing pair and alternate-configuration checks through the public path, then
    address the remaining acceptance gaps below.
 
-The first native path now exists: `solventc --step` sends a solved analytic solid DAG
-to an optional OCCT host. Ordinary extrusions, revolutions, holes and Boolean bodies,
+The first native path now exists: `solventc --step` evaluates a solved analytic solid DAG
+through a C ABI bridge to OCCT's C++ library. The CLI's optional `occt` feature links
+the native libraries directly; generation needs no Python process. Ordinary extrusions, revolutions, holes and Boolean bodies,
 including component through-cutters, use that path. `blank.sv` expresses the finite
 bevel rim through spherical and conical boundary components. Its STEP agrees with
 the experimental pinion blank under both directed native Boolean differences (no

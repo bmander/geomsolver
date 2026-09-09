@@ -40,7 +40,7 @@ solventc — check a Solvent document
     --allow-unsolved    a document that does not solve is not a failure
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
-    --step PATH         write an analytic STEP solid (requires cadquery-ocp in Python)
+    --step PATH         write an analytic STEP solid (requires a native OCCT build)
     --gltf PATH         write a solid as binary glTF: every face a named node
     --solid NAME        which solid to export; defaults to the only Boolean root
     --width PX          the SVG's page width in pixels (default 800)

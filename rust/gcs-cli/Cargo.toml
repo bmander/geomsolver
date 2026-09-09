@@ -10,6 +10,9 @@ description = "solventc: check a Solvent document from the command line."
 [dependencies]
 gcs-core = { path = "../gcs-core" }
 
+[features]
+occt = []
+
 [dev-dependencies]
 gcs-core = { path = "../gcs-core" }
 
