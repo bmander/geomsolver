@@ -13,13 +13,14 @@ import time
 
 from check_face_domains import rectangle
 from spline_embedding import polynomial_surface
+from mesh_parameter_coverage import cover
 
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def verify(parameters, trims):
+def verify(parameters, trims, coverage=False):
     faces = parameters["faces"]
     expected = list(range(len(faces)))
     if (not faces or [f["face_index"] for f in faces] != expected
@@ -43,7 +44,10 @@ def verify(parameters, trims):
             raise ValueError("empty spline-face mesh")
         if any(len(p) != 5 or any(not 0 <= F(x) <= 1 for x in p[:2]) for p in face["nodes"]):
             raise ValueError("mesh parameter vertex leaves the finite face")
-        verified.append(dict(face_index=face["face_index"], triangles=len(face["triangles"]), **domain))
+        row = dict(face_index=face["face_index"], triangles=len(face["triangles"]), **domain)
+        if coverage:
+            row.update(cover(face))
+        verified.append(row)
     if not verified:
         raise ValueError("no rectangular spline faces were checked")
     return dict(rectangular_faces=verified, unverified_face_indices=remaining,
@@ -64,7 +68,7 @@ def reference_identity(parameters, reference, member):
                 scope="Exact coefficient and natural-domain identity; prior reference error bounds are separate evidence")
 
 
-def run(source, output, reference=None, member=None):
+def run(source, output, reference=None, member=None, coverage=False):
     started = time.perf_counter()
     data = json.loads(source.read_text())
     parameters = Path(data["parameters_file"])
@@ -79,7 +83,8 @@ def run(source, output, reference=None, member=None):
     for role in ("source", "stl"):
         if digest(Path(model[f"{role}_file"])) != model[f"{role}_sha256"]:
             raise ValueError("changed STEP or STL input")
-    result = dict(status="verified_rectangular_domains", **verify(model, data),
+    result = dict(status="verified_rectangular_domains", **verify(model, data, coverage),
+                  complete_parameter_coverage=coverage,
                   input_sha256=digest(source), parameters_sha256=digest(parameters),
                   source_sha256=model["source_sha256"], stl_sha256=model["stl_sha256"],
                   seconds=time.perf_counter()-started,
@@ -103,5 +108,6 @@ if __name__ == "__main__":
     parser.add_argument("output", type=Path)
     parser.add_argument("--reference", type=Path)
     parser.add_argument("--member", type=int, choices=(0, 1))
+    parser.add_argument("--coverage", action="store_true", help="also verify complete original UV triangle coverage")
     args = parser.parse_args()
-    run(args.source, args.output, args.reference, args.member)
+    run(args.source, args.output, args.reference, args.member, args.coverage)
