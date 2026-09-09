@@ -5,10 +5,43 @@ spiral-bevel pair. Solvent continues to define the geometry; a mature CAD kernel
 surface/solid topology, performs subtraction, and writes STEP. It does not require completing
 a general F-rep mesher first. No runtime dependency or language construct changes here.
 
+## Reproducible inspection workflow
+
+From the repository root, use an interpreter with `requirements.txt` installed:
+
+```sh
+python experiments/cad-backend/build_pair.py build/exports/pair-run --teeth 24 48 --module-mm 2
+```
+
+The output directory must be new. The command exports configured Solvent reference samples
+and analytical contacts, fits the 16-subdivision tooth spaces against the 32-subdivision
+comparison grid, cuts all indexed spaces, exports both STEP/STL members, audits exact encoded
+STL topology/embedding, and checks five assembly phases and 250 contact positions. It also
+requires the deliberate 0.001-radian gear phase error to produce overlap and missed contacts.
+Assembly reports include each member's 3-by-4 local-to-assembly transform (millimetres).
+The coarse 8-subdivision trial remains available through `tooth_space.py` without a grid
+selection; its known pinion failure is not included in this baseline workflow.
+
+`report.json` records parameters, source hashes, Git revision/diff, dependency versions,
+per-stage logs/timing, artifact hashes and unresolved acceptance work. `status: completed`
+means the inspection workflow passed; `acceptance: incomplete` remains explicit. Existing
+artifacts are never silently reused. STEP headers may include timestamps, so reproducibility
+means traceable inputs and repeatable checks, not necessarily byte-identical STEP files.
+
+Tooth counts and module are experimental overrides, not a declaration that every positive
+configuration is supported. Shaft angle 90 degrees, spiral angle 35 degrees, pressure angle
+20 degrees and zero nominal backlash remain fixed by the documented reference. The optional
+`--stl-deflection-mm` controls tessellation (default 0.05); it is not an accuracy certificate.
+The Rust exporters still use the test adapter. Public Solvent solid integration, continuous
+engagement/material coverage and end-to-end export accuracy remain on the
+[current roadmap](../../docs/spiral-bevel-roadmap.md#current-critical-path).
+
 ## Input and construction
 
 The ignored Rust test `export_tooth_space_sections_for_cad_backend` reads and solves the
-existing `paired_references.sv` default 24:48 pair, module 2 mm. It samples both generated
+existing `paired_references.sv` (default 24:48 pair, module 2 mm). The explicit export entry
+points accept `SOLVENT_CAD_PINION_TEETH`, `SOLVENT_CAD_GEAR_TEETH` and `SOLVENT_CAD_MODULE_MM`;
+ordinary regression tests retain their fixed configurations. It samples both generated
 flanks and root fillets at 8, 16 and 32 subdivisions in each patch direction. Numerical
 envelope samples are checked against the independent closed-form characteristic and the
 declared trims. Sampling follows the cutter meridian parameter within each patch and
@@ -169,7 +202,7 @@ sampled evidence, source and STEP hashes. Whole-surface/material coverage, conti
 interference, source-solve accuracy and public solid integration remain acceptance work.
 
 ```sh
-SOLVENT_CAD_CONTACTS_OUTPUT=/private/tmp/solvent-cad-contacts.json cargo test --manifest-path rust/Cargo.toml both_flanks_have_overlapping_contact_windows_covering_a_full_tooth_period -- --nocapture
+SOLVENT_CAD_CONTACTS_OUTPUT=/private/tmp/solvent-cad-contacts.json cargo test --manifest-path rust/Cargo.toml export_contact_windows_for_cad_backend -- --ignored --nocapture
 /private/tmp/solvent-occt-env/bin/python experiments/cad-backend/assembly.py /private/tmp/solvent-cad-sections.json /private/tmp/solvent-cad-full-pinion/report.json /private/tmp/solvent-cad-full-gear/report.json /private/tmp/solvent-cad-assembly.json --fractions 0 0.25 0.5 0.75 1
 /private/tmp/solvent-occt-env/bin/python experiments/cad-backend/check_contacts.py /private/tmp/solvent-cad-sections.json /private/tmp/solvent-cad-full-pinion/report.json /private/tmp/solvent-cad-full-gear/report.json /private/tmp/solvent-cad-contacts.json /private/tmp/solvent-cad-contact-audit.json
 ```

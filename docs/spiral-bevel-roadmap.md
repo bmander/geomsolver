@@ -1,5 +1,38 @@
 # Spiral bevel gears: subprojects and representation decision
 
+## Current critical path
+
+The goal is one fully specified, independently verifiable, parametric matched pair from
+a documented generating system, expressed through Solvent and exported at stated accuracy.
+Manufacturing planning remains separate. The current order is:
+
+1. **Reproduce the reference pair:** one command from recorded source and tooth-count/size
+   parameters to both members, assembly placement and a report. Use the existing 24:48 pair
+   as the baseline; experimental parameter overrides do not establish a supported domain.
+2. **Verify engagement:** contact, material sides and interference across a tooth period,
+   with explicit coverage and wrong-phase controls. Sampled success is a baseline, not
+   evidence about every intervening phase.
+3. **Verify actual export accuracy:** use one end-to-end budget for source solve, fitting,
+   Boolean/export conversion and tessellation. The 0.001 mm target remains provisional;
+   mesher settings and separate face bounds do not establish that combined accuracy.
+4. **Complete parametric Solvent integration:** ordinary components and general solid
+   operations produce both public solid outputs; multiple configurations pass the same
+   checks and unsupported configurations receive useful diagnostics.
+
+The next milestone is a reproducible pair and engagement report. Independent verification
+means reproducible checks against independently implemented documented generating equations,
+with stated tolerances and visible unresolved results. Formal certification of every CAD
+operation is not automatically a prerequisite. Further analytical/spline attachment proofs
+and general F-rep meshing are parked unless a concrete gear acceptance failure requires them.
+The existing proof results below are retained evidence, not the current task ordering.
+
+`experiments/cad-backend/build_pair.py` connects the experimental source exporters, native
+construction, STEP/STL export, encoded mesh audit and sampled engagement checks. It records
+source/version provenance, both wrong-phase controls, and remaining acceptance gaps. This
+test-adapter workflow is a bridge to public integration, not the finished language interface.
+
+## Backend and accumulated evidence
+
 **Current backend decision:** evaluate a conventional CAD kernel before further investment
 in general F-rep boundary recovery. The user identified established industrial gear-to-CAD
 workflows as a likely reusable backend for Solvent's declarative frontend. The
@@ -111,12 +144,11 @@ global material, continuous mating and source/reader accuracy remain open.
 
 The deliverable remains one fully specified, parametric matched pair from a documented
 generating system, independently verifiable and exportable at a stated geometric accuracy.
-Manufacturing planning remains separate. This document redirects the next investigation:
-evaluate a solid defined by continuous generating volumes before extending manual assembly
-of analytic faces. Explicit fields, continuous sweeps and a first distance-bounded extractor
-now exist; a completed functional gear export does not. The
-[implicit meshing comparison](implicit-meshing-methods.md) directs the next extraction work
-toward documented adaptive and continuation methods, with independent acceptance evidence.
+Manufacturing planning remains separate. The earlier functional-solid investigation below
+provides the material definition and independent verification assets. Explicit fields,
+continuous sweeps and a first distance-bounded extractor exist; the current export path uses
+the CAD kernel. The [implicit meshing comparison](implicit-meshing-methods.md) records possible
+future extraction work, outside the current critical path.
 
 ## Solid definition
 
@@ -157,7 +189,7 @@ existing envelope implementation. That local equation is necessary, not sufficie
 roll value may put the same point inside the swept volume. This gives the current analytic
 tooth work a role as boundary witnesses and independent differential checks.
 
-## Separately reviewable subprojects
+## Earlier representation work breakdown (not the current execution order)
 
 | Subproject | Deliverable and completion evidence | Existing assets and missing work |
 | --- | --- | --- |

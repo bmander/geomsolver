@@ -30,6 +30,19 @@ struct Pair {
 }
 
 impl Pair {
+    // Only explicit CAD export entry points consume these overrides; ordinary
+    // regression tests keep their declared configurations.
+    fn read_cad_export() -> Self {
+        let integer = |name,default: u32| std::env::var(name).map(|s|
+            s.parse::<u32>().expect("CAD tooth count must be an integer")).unwrap_or(default);
+        let teeth = [integer("SOLVENT_CAD_PINION_TEETH",24),integer("SOLVENT_CAD_GEAR_TEETH",48)];
+        let module = std::env::var("SOLVENT_CAD_MODULE_MM").map(|s|
+            s.parse::<f64>().expect("CAD module must be a number")).unwrap_or(2.);
+        assert!(teeth.iter().all(|&n| n > 0) && module.is_finite() && module > 0.,
+            "CAD tooth counts and module must be positive and finite");
+        Self::read(teeth,module)
+    }
+
     fn read(teeth: [u32;2], module: f64) -> Self {
         let src = include_str!("../../../examples/spiral_bevel/paired_references.sv")
             .replace("param pinion_teeth = 24",&format!("param pinion_teeth = {}",teeth[0]))

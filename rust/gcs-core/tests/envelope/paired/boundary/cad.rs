@@ -68,7 +68,7 @@ fn export_cad_fillet_references() {
 #[ignore = "exports solved tooth-space samples for the isolated CAD-kernel experiment"]
 fn export_tooth_space_sections_for_cad_backend() {
     let path = std::env::var_os("SOLVENT_CAD_SECTIONS_OUTPUT").expect("set output JSON path");
-    let pair = Pair::read([24,48],2.);
+    let pair = Pair::read_cad_export();
     let mut members = vec![];
     for member in 0..2 {
         let mut levels = vec![];

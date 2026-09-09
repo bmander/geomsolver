@@ -19,6 +19,9 @@ from tooth_space import blank, count, roundtrip, volume
 
 def run(source, spaces, output, full=False, selected=None):
     data = json.loads(source.read_text())
+    space_report = json.loads((spaces/"report.json").read_text())
+    if space_report["source_sha256"] != hashlib.sha256(source.read_bytes()).hexdigest():
+        raise ValueError("tooth-space report uses a different source")
     output.mkdir(parents=True, exist_ok=True)
     results = []
     for member in data["members"]:
@@ -26,6 +29,11 @@ def run(source, spaces, output, full=False, selected=None):
         if selected is not None and index != selected:
             continue
         path = spaces/f"member{index}-space-16.step"
+        rows = [r for r in space_report["results"]
+                if r["member"] == index and r["subdivisions"] == 16]
+        if (len(rows) != 1 or not rows[0]["passes_local_checks"]
+                or rows[0]["step_sha256"] != hashlib.sha256(path.read_bytes()).hexdigest()):
+            raise ValueError("missing, rejected or changed tooth-space input")
         tool = read(path)
         if not BRepCheck_Analyzer(tool).IsValid():
             raise ValueError("invalid tooth-space input")

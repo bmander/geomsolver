@@ -79,6 +79,9 @@ def run(source, reports, output, fractions, gear_offset=0.):
         operation.SetTools(_shapes(placed[1:]))
         operation.Build()
         row = dict(tooth_fraction=fraction, seconds=time.perf_counter()-started,
+                   local_to_assembly=[[[pose(teeth, m, fraction, gear_offset).Value(i, j)
+                                        for j in range(1, 5)] for i in range(1, 4)]
+                                      for m in range(2)],
                    done=operation.IsDone())
         if operation.IsDone():
             common = operation.Shape()

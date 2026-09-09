@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
 import struct
 import time
@@ -12,6 +13,8 @@ from material_probes import read
 
 
 def run(source, output, deflection=.05):
+    if not math.isfinite(deflection) or deflection <= 0:
+        raise ValueError("deflection must be positive and finite")
     if source.resolve() == output.resolve():
         raise ValueError("preserve the source STEP file")
     shape = read(source)
@@ -38,5 +41,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--deflection", type=float, default=.05)
     args = parser.parse_args()
-    run(args.source, args.output)
+    run(args.source, args.output, args.deflection)

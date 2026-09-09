@@ -237,6 +237,17 @@ fn assembled_boundaries_stay_outside_the_exact_mating_rim_at_sampled_mesh_phases
 #[test]
 fn both_flanks_have_overlapping_contact_windows_covering_a_full_tooth_period() {
     let pair = Pair::read([24,48],2.);
+    contact_windows(&pair,None);
+}
+
+#[test]
+#[ignore = "exports configured analytical contacts for the CAD pair workflow"]
+fn export_contact_windows_for_cad_backend() {
+    let path = std::env::var_os("SOLVENT_CAD_CONTACTS_OUTPUT").expect("set output JSON path");
+    contact_windows(&Pair::read_cad_export(),Some(path));
+}
+
+fn contact_windows(pair: &Pair, output: Option<std::ffi::OsString>) {
     let period = TAU/pair.teeth[0].hypot(pair.teeth[1]);
     let mut cad_contacts = vec![];
     for side in 0..2 {
@@ -324,7 +335,7 @@ fn both_flanks_have_overlapping_contact_windows_covering_a_full_tooth_period() {
         assert!(covered > period+1e-6,"side {side}: missing contact in windows {windows:?}");
         eprintln!("side {side} contact windows, crown radians: {windows:?}; period={period}");
     }
-    if let Some(path) = std::env::var_os("SOLVENT_CAD_CONTACTS_OUTPUT") {
+    if let Some(path) = output {
         std::fs::write(path,format!("{{\"teeth\":{:?},\"module_mm\":{},\"mean_distance_mm\":{},\"crown_period_rad\":{period},\"scope\":\"Analytical nominal contact samples; CAD incidence and global interference unchecked\",\"contacts\":[{}]}}\n",
             pair.teeth,pair.module,pair.rm,cad_contacts.join(","))).unwrap();
     }

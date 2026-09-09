@@ -153,12 +153,16 @@ def build(member, level, fine, tolerance):
     return solid, result
 
 
-def run(source, directory, tolerance=1e-6):
+def run(source, directory, tolerance=1e-6, subdivisions=None):
     data = json.loads(source.read_text())
     directory.mkdir(parents=True, exist_ok=True)
     results = []
     for member in data["members"]:
-        for level, fine in zip(member["levels"], member["levels"][1:]):
+        levels = [(level, fine) for level, fine in zip(member["levels"], member["levels"][1:])
+                  if subdivisions is None or level["subdivisions"] == subdivisions]
+        if not levels:
+            raise ValueError("requested fitting grid or finer comparison grid missing")
+        for level, fine in levels:
             row = dict(member=member["member"], subdivisions=level["subdivisions"], failures=[])
             try:
                 solid, info = build(member, level, fine, tolerance)
@@ -199,12 +203,13 @@ def run(source, directory, tolerance=1e-6):
                   volume_integration_relative_target=1e-10,
                   scope="CAD topology and sampled local-envelope fidelity; global material and pair validation pending")
     (directory/"report.json").write_text(json.dumps(report, indent=2)+"\n")
-    return all(row["passes_local_checks"] for row in results)
+    return bool(results) and all(row["passes_local_checks"] for row in results)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--subdivisions", type=int)
     args = parser.parse_args()
-    raise SystemExit(0 if run(args.source, args.output) else 1)
+    raise SystemExit(0 if run(args.source, args.output, subdivisions=args.subdivisions) else 1)
