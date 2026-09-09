@@ -82,6 +82,12 @@ evidence for support distance, but finite trimmed-face coverage, reverse coverag
 nominal generating-geometry accuracy remain separate requirements for the 0.0254 mm
 end-to-end target. It does not establish that target by itself.
 
+The [finite spline-face check](MESH-DEVIATION.md#finite-rectangular-faces) now transfers
+those forward bounds to actual finite faces for all 178,793 triangles on the pair's
+360 polynomial faces. It verifies their complete rectangular trims and exact identity
+with the earlier reference coefficients. The other 18,505 triangles lie on analytical
+faces with curved trims and remain outside this finite-face result.
+
 ## Input and construction
 
 The ignored Rust test `export_tooth_space_sections_for_cad_backend` reads and solves the

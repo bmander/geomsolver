@@ -41,6 +41,11 @@ The finer STL exports now also have complete triangle-to-support distance bounds
 0.019985 mm, covering interiors as well as encoded vertices. Finite trimmed-face membership,
 reverse coverage and transfer to nominal generating geometry remain separate from this
 support-distance result; it is not yet the complete 0.0254 mm export-accuracy gate.
+Finite rectangular-domain checks now transfer the forward bounds to actual finite
+CAD faces for all 178,793 triangles on the 360 spline faces. Exact identity with
+the earlier reference coefficients is checked. The remaining 81 analytical faces
+(18,505 triangles), reverse coverage, and the prior nominal-reference checks' own
+source/material limitations remain outside that result.
 
 ## Backend and accumulated evidence
 

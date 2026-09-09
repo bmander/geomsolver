@@ -88,3 +88,37 @@ displaced encoded vertices, a polynomial whose corners are exact but whose
 interior bulges, sphere polar/seam cases, a chord through a sphere's centre, and
 unsupported rational/low-continuity splines. Native cube, sphere and tooth-space
 fixtures exercise actual STL binding before complete gear audits.
+
+## Finite rectangular faces
+
+The complete gear meshes have 360 polynomial faces whose natural domains are
+unit squares. `export_mesh_face_domains.py` rereads their actual STEP wires and
+requires exact coefficient identity with the mesh parameter input. The independent
+`check_mesh_face_domains.py` reuses the exact rectangle checker: each finite wire
+must cover all four sides once, close as a directed cycle, and have no holes.
+It also checks all original mesh parameter vertices against the same unit square.
+
+The triangle-bound evaluator refuses spline evaluation outside its natural knot
+domain, and clamps proposed witnesses to that domain. Convex combinations of
+accepted witnesses stay in the unit square. Consequently, for these faces, the
+already checked forward triangle-to-support distance is also a forward distance
+to the actual **finite face**. No distance report is trusted or recomputed by the
+domain checker: this implication combines two separately verified results bound
+to the identical mesh parameter input.
+
+```sh
+python experiments/cad-backend/export_mesh_face_domains.py mesh-parameters.json mesh-domains.json
+python3 experiments/cad-backend/check_mesh_face_domains.py mesh-domains.json domain-result.json
+```
+
+An optional `--reference indexed-coefficients.json --member 0` checks exact
+coefficient and natural-domain identity with an earlier indexed reference. It does
+not verify or enlarge any previous reference error claim. Reference reports retain
+their original source-solve, finite-coverage and material limitations.
+
+The [finite-domain result](mesh-face-domain-results.json) covers all 120 pinion
+spline faces (73,706 triangles) and 240 gear spline faces (105,087 triangles).
+The checks took 2.5/3.7 seconds including reference identity. All remaining 81 faces
+are explicitly listed as unverified here. A triangle-to-face bound is one-way:
+reverse face coverage, analytical curved trims and the remaining nominal-source
+error transfer still require separate treatment.

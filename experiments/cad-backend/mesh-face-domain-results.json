@@ -1,0 +1,152 @@
+{
+  "scope": "Forward mesh distance to finite rectangular CAD faces, combining separately verified support-distance and domain checks; analytical trims, reverse coverage, and nominal-source/material acceptance remain open",
+  "members": [
+    {
+      "member": "pinion",
+      "source_sha256": "85dc3dc57838f917a9931dfe0f82de34a103d7a911f8f6b0a3855bc749b90643",
+      "stl_sha256": "223e42ceccd5ec19116ba62058dfb0ed89433ec329876a3c7ff4a0d3d3fd5826",
+      "domain_evidence": {
+        "file": "/private/tmp/solvent-pinion-mesh-domains.json",
+        "sha256": "996564af955d5d551248303c4899fe3b8ba462bd0054e84f8a9e1c686fb5cd82"
+      },
+      "domain_report": {
+        "file": "/Users/bmander/Documents/GitHub/geomsolver/build/exports/pair-001-inch/pinion-face-domains.json",
+        "sha256": "9db5220a79ac83939925b3e08221cb4fc43529c39c88022748183a0032215bb4"
+      },
+      "support_report": {
+        "file": "/Users/bmander/Documents/GitHub/geomsolver/build/exports/pair-001-inch/pinion-surface-bound.json",
+        "sha256": "453cb3d96e5263297cc0eba47e76d0f9e7b70a0b9081208bdc97bb468e4b6240"
+      },
+      "finite_spline_faces": 120,
+      "finite_spline_triangles": 73706,
+      "maximum_forward_finite_face_bound_mm": 0.019984392347866857,
+      "unverified_face_indices": [
+        0,
+        1,
+        7,
+        13,
+        19,
+        25,
+        31,
+        37,
+        43,
+        49,
+        55,
+        61,
+        67,
+        73,
+        79,
+        85,
+        91,
+        97,
+        103,
+        109,
+        115,
+        121,
+        127,
+        133,
+        139,
+        145,
+        146,
+        147,
+        148
+      ],
+      "unverified_triangles": 8036,
+      "seconds": 2.5030313610332087,
+      "reference_identity": {
+        "file": "/private/tmp/solvent-cad-indexed-coefficients.json",
+        "sha256": "1058fb22a2f907a88631d5b6932a02bc01e137d71937eabb98216dea8130bce7",
+        "member": 0,
+        "identical_spline_faces": 120,
+        "scope": "Exact coefficient and natural-domain identity; prior reference error bounds are separate evidence"
+      }
+    },
+    {
+      "member": "gear",
+      "source_sha256": "04f10b06810fa9631cb60e5b6c0e715ba6a66bc8b048e59ab18b8c7532da956b",
+      "stl_sha256": "66d7f737715ec609d19b2affde6eba38892752da5c1d841c2dd02b7c25dbd6d0",
+      "domain_evidence": {
+        "file": "/private/tmp/solvent-gear-mesh-domains.json",
+        "sha256": "9fc80b30a03c0a97a4204a72023f0ddf90d8118021de7d861bba2bd841f8e550"
+      },
+      "domain_report": {
+        "file": "/Users/bmander/Documents/GitHub/geomsolver/build/exports/pair-001-inch/gear-face-domains.json",
+        "sha256": "30d111026c0f2cdaf7e0be4c7261306811f98f6fce06c607458cae278237d4ca"
+      },
+      "support_report": {
+        "file": "/Users/bmander/Documents/GitHub/geomsolver/build/exports/pair-001-inch/gear-surface-bound.json",
+        "sha256": "6256c82c357933ffc496e9ef9b0522b0ea47437e2ad03920f3b7d4b9d373c30b"
+      },
+      "finite_spline_faces": 240,
+      "finite_spline_triangles": 105087,
+      "maximum_forward_finite_face_bound_mm": 0.0199834659087872,
+      "unverified_face_indices": [
+        0,
+        5,
+        11,
+        17,
+        23,
+        29,
+        35,
+        41,
+        47,
+        53,
+        59,
+        65,
+        71,
+        77,
+        83,
+        89,
+        95,
+        101,
+        107,
+        113,
+        119,
+        125,
+        131,
+        137,
+        143,
+        149,
+        155,
+        161,
+        167,
+        173,
+        179,
+        185,
+        191,
+        197,
+        203,
+        209,
+        215,
+        221,
+        227,
+        233,
+        239,
+        245,
+        251,
+        257,
+        263,
+        269,
+        275,
+        281,
+        287,
+        289,
+        290,
+        291
+      ],
+      "unverified_triangles": 10469,
+      "seconds": 3.6904686930356547,
+      "reference_identity": {
+        "file": "/private/tmp/solvent-cad-indexed-coefficients.json",
+        "sha256": "1058fb22a2f907a88631d5b6932a02bc01e137d71937eabb98216dea8130bce7",
+        "member": 1,
+        "identical_spline_faces": 240,
+        "scope": "Exact coefficient and natural-domain identity; prior reference error bounds are separate evidence"
+      }
+    }
+  ],
+  "prior_reference_report": {
+    "file": "/Users/bmander/Documents/GitHub/geomsolver/experiments/cad-backend/indexed-surface-results.json",
+    "sha256": "96dc4087fbb472922f62b077d3163a1f7f415618e7ea8b3bfd5907e11f5c2008"
+  }
+}
