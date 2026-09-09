@@ -166,3 +166,26 @@ both terms of the position/normal product rule. Trigonometric boxes now use a mi
 Taylor evaluation and angle-addition displacement bounds, retaining outward rounding
 and the existing supported angular domain. The independent rational checker passes
 1,841 arithmetic/trigonometric records, including sampled checks of whole-box bounds.
+
+`native/sweep.rs` constructs finite sweep endpoint candidates from the declared static
+cutter recipe. One native source is copied under the two exact declared endpoint poses;
+both copies keep all native faces and trims. The placement matrix shares the ordinary
+placed-solid path, including conversion of translation into millimetres. These are
+candidate caps; retaining a complete cutter at an endpoint does not make every face
+part of the swept boundary.
+
+`solvent_cad_face_point` queries normalized coordinates in the native face's finite UV
+trim box. It reports outside (leaving the output untouched), inside or on-trim, with
+position and the face's oriented normal for retained points. It classifies holes rather
+than treating the UV box as a filled rectangle. This is a separate coordinate contract
+from `surface_point` and `face_contains`, which continue using the supporting surface's
+bounds for stable chart coordinates after splitting. Position/normal evaluation and trim
+classification now share internal implementations.
+
+Endpoint tests verify a drilled box, the generating sphere in mm/in, and both default
+gear cutters. The independent circular-arc distance check distinguishes covered from
+exposed sphere cap samples in about 4 ms per unit configuration. On the gear cutters,
+184 native/source position and normal checks pass; 26 whole-motion probes report
+17 covered and 9 outward brackets with no unresolved samples. This checks selected
+points, not entire endpoint faces. Endpoint trimming and final exposed-face assembly
+are not connected to public sweep export yet.

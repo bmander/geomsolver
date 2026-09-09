@@ -9,10 +9,7 @@ extern "C" {
 }
 impl Cad {
     fn faces(&self,source: c_int) -> Vec<c_int> {
-        let count = self.result(unsafe { solvent_cad_faces(self.raw(),source,std::ptr::null_mut(),0) }).unwrap();
-        let mut faces = vec![-1;count as usize];
-        assert_eq!(self.result(unsafe { solvent_cad_faces(self.raw(),source,faces.as_mut_ptr(),count) }).unwrap(),count);
-        faces
+        self.0.faces(source).unwrap()
     }
     fn split(&self,source: c_int,tools: &[c_int]) -> Result<c_int,String> {
         self.result(unsafe { solvent_cad_split_face(self.raw(),source,tools.as_ptr(),tools.len() as c_int) })

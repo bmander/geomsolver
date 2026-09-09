@@ -2,6 +2,12 @@ use gcs_core::json::Json;
 use std::{collections::BTreeMap,ffi::{c_char,c_int,c_void,CStr,CString},path::Path,
     sync::atomic::{AtomicU64,Ordering}};
 
+// Candidate construction is exercised independently until closed sweep assembly
+// connects it to export; candidates must never pass as completed sweep solids.
+#[allow(dead_code)]
+#[path="native/sweep.rs"]
+mod sweep;
+
 extern "C" {
     fn solvent_cad_new() -> *mut c_void;
     fn solvent_cad_free(cad: *mut c_void);

@@ -248,6 +248,27 @@ exact-rational checker passes 1,841 arithmetic/trigonometric records, including 
 point checks of the new whole-box bounds. This is numerical infrastructure validation,
 not a completed swept-boundary or final machining-error certificate.
 
+Finite-motion endpoint candidates now come directly from the declared native cutter.
+`Session::sweep_caps` constructs its static recipe once, places complete copies at the
+declared start/end parameters, and retains every native face, trim and orientation at
+both endpoints. The pose-to-millimetre matrix is shared with ordinary placed-solid
+construction. This accepts static prisms as well as revolutions and Boolean cutters;
+it performs no sampled union or fitted reconstruction of endpoint faces.
+
+A separate native face query uses each face's finite UV trim bounds, classifies holes
+and outside regions explicitly, and returns the face's oriented normal. The existing
+supporting-surface query keeps its original parameterization. Tests cover a drilled box,
+shifted relative-rotation gear cutters, and a finite sphere sweep in millimetres and
+inches. The sphere's independent distance-to-circular-arc calculation agrees with eight
+covered/eight exposed endpoint samples per unit configuration; construction plus those
+checks takes about 4 ms. For the default pair, 184 native endpoint/source field and normal
+checks pass. Whole-motion probes at 26 selected endpoint samples report four covered/six
+outward brackets for the pinion and thirteen covered/three outward brackets for the gear,
+with no unresolved results among those samples. These are point/local-neighborhood checks,
+not whole-face visibility. Endpoint contact-curve trimming, global face selection and
+closed assembly remain required; public continuous-sweep export still refuses incomplete
+boundary construction.
+
 The acceptance work remains:
 
 1. **Reproduce the reference pair:** one command from recorded source and tooth-count/size

@@ -6,6 +6,19 @@ use std::collections::BTreeSet;
 fn vector(v: [f64;3]) -> Json { Json::Arr(v.into_iter().map(Json::from).collect()) }
 fn ids(v: &[u32]) -> Json { Json::Arr(v.iter().copied().map(Json::from).collect()) }
 
+/// Row-major 3x4 native placement. Rotation is dimensionless; only the
+/// translation changes from model length units to millimetres.
+pub fn placement_matrix(pose: crate::envelope::Motion,scale: f64) -> [f64;12] {
+    let columns: [[f64;3];3] = std::array::from_fn(|i| {
+        let mut v = [0.;3]; v[i] = 1.; pose.vector(v)
+    });
+    let origin = pose.point([0.;3]);
+    std::array::from_fn(|i| {
+        let (row,column) = (i/4,i%4);
+        if column == 3 { origin[row]*scale } else { columns[column][row] }
+    })
+}
+
 /// An immutable, millimetre-valued DAG of the selected solid's current solved
 /// geometry. Unsupported operations fail before a host receives a partial recipe.
 /// Native construction must additionally validate its analytic profiles and solids.
@@ -29,15 +42,7 @@ pub fn recipe(sk: &Sketch,root: usize) -> Result<Json,String> {
                 "`{}`: native CAD boundary construction for continuous motion sweeps is not yet supported",solid.name)),
             SolidDef::Placed { source, motion, at } => {
                 let pose = crate::motion::Family::read(sk,*motion as usize)?.at(at.value)?;
-                let columns: [[f64;3];3] = std::array::from_fn(|i| {
-                    let mut v = [0.;3]; v[i] = 1.; pose.vector(v)
-                });
-                let origin = pose.point([0.;3]);
-                let mut matrix = Vec::new();
-                for row in 0..3 {
-                    for column in &columns { matrix.push(column[row].into()); }
-                    matrix.push((origin[row]*scale).into());
-                }
+                let matrix = placement_matrix(pose,scale).into_iter().map(Json::from).collect();
                 object([("kind","placed".into()),("source",(*source).into()),
                     ("matrix",Json::Arr(matrix))])
             }

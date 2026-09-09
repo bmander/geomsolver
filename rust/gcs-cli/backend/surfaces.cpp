@@ -9,6 +9,8 @@
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepClass_FaceClassifier.hxx>
 #include <BRep_Tool.hxx>
+#include <BRepTools.hxx>
+#include <Precision.hxx>
 #include <TopExp.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopoDS.hxx>
@@ -34,6 +36,40 @@ static TopoDS_Face valid_face(Cad* cad,int id) {
     if (face.IsNull() || !BRepCheck_Analyzer(face).IsValid())
         throw std::runtime_error("invalid candidate face");
     return face;
+}
+
+static void surface_sample(const TopoDS_Face& face,const gp_Pnt2d& uv,bool oriented,double* output) {
+    TopLoc_Location location;
+    auto surface = BRep_Tool::Surface(face,location);
+    if (surface.IsNull()) throw std::runtime_error("face has no surface");
+    gp_Pnt p;
+    gp_Vec du,dv;
+    surface->D1(uv.X(),uv.Y(),p,du,dv);
+    p.Transform(location.Transformation());
+    du.Transform(location.Transformation()); dv.Transform(location.Transformation());
+    gp_Vec n = du.Crossed(dv);
+    if (n.SquareMagnitude() <= 0) throw std::runtime_error("singular face query");
+    n.Normalize();
+    if (oriented) {
+        if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+        else if (face.Orientation() != TopAbs_FORWARD)
+            throw std::runtime_error("face has no boundary orientation");
+    }
+    for (int k=1;k<=3;++k) {
+        output[k-1] = p.Coord(k); output[k+2] = n.Coord(k);
+        if (!std::isfinite(output[k-1]) || !std::isfinite(output[k+2]))
+            throw std::runtime_error("nonfinite face query");
+    }
+}
+
+static int membership(const TopoDS_Face& face,const gp_Pnt2d& uv,double tolerance) {
+    BRepClass_FaceClassifier classify(face,uv,tolerance);
+    switch (classify.State()) {
+    case TopAbs_OUT: return 0;
+    case TopAbs_IN: return 1;
+    case TopAbs_ON: return 2;
+    default: throw std::runtime_error("native face classification is unresolved");
+    }
 }
 
 extern "C" {
@@ -65,23 +101,31 @@ int solvent_cad_surface_point(Cad* cad,int id,double u,double v,double* output) 
     return guarded(cad,[&] {
         if (!output) throw std::runtime_error("face query needs an output buffer");
         const auto face = TopoDS::Face(cad->at(id));
-        TopLoc_Location location;
-        auto surface = BRep_Tool::Surface(face,location);
-        const auto uv = parameter(surface,u,v);
-        gp_Pnt p;
-        gp_Vec du,dv;
-        surface->D1(uv.X(),uv.Y(),p,du,dv);
-        p.Transform(location.Transformation());
-        du.Transform(location.Transformation()); dv.Transform(location.Transformation());
-        gp_Vec n = du.Crossed(dv);
-        if (n.SquareMagnitude() <= 0) throw std::runtime_error("singular face query");
-        n.Normalize();
-        for (int k=1;k<=3;++k) {
-            output[k-1] = p.Coord(k); output[k+2] = n.Coord(k);
-            if (!std::isfinite(output[k-1]) || !std::isfinite(output[k+2]))
-                throw std::runtime_error("nonfinite face query");
-        }
+        surface_sample(face,parameter(BRep_Tool::Surface(face),u,v),false,output);
         return 0;
+    });
+}
+
+// Query the bounded native face, including trim membership and orientation.
+// Coordinates span this face's UV box, NOT the supporting-surface domain used
+// by surface_point. Holes/outside regions return 0 and leave output untouched.
+// Returns 1 inside or 2 on a trim, with position and oriented unit normal.
+int solvent_cad_face_point(Cad* cad,int id,double u,double v,double tolerance,double* output) noexcept {
+    return guarded(cad,[&] {
+        if (!output || !std::isfinite(tolerance) || tolerance <= 0)
+            throw std::runtime_error("face query needs an output buffer and positive tolerance");
+        if (!std::isfinite(u) || !std::isfinite(v) || u < 0 || u > 1 || v < 0 || v > 1)
+            throw std::runtime_error("face query parameters must lie in [0,1]");
+        const auto face = TopoDS::Face(cad->at(id));
+        double a,b,c,d;
+        BRepTools::UVBounds(face,a,b,c,d);
+        for (double x: {a,b,c,d}) if (!std::isfinite(x) || Precision::IsInfinite(x))
+            throw std::runtime_error("face query needs finite trim bounds");
+        if (a >= b || c >= d) throw std::runtime_error("degenerate face bounds");
+        const gp_Pnt2d uv(a+(b-a)*u,c+(d-c)*v);
+        const int state = membership(face,uv,tolerance);
+        if (state) surface_sample(face,uv,true,output);
+        return state;
     });
 }
 
@@ -137,13 +181,7 @@ int solvent_cad_face_contains(Cad* cad,int id,double u,double v,double tolerance
             throw std::runtime_error("face classification needs a positive tolerance");
         const auto face = TopoDS::Face(cad->at(id));
         const auto uv = parameter(BRep_Tool::Surface(face),u,v);
-        BRepClass_FaceClassifier classify(face,uv,tolerance);
-        switch (classify.State()) {
-        case TopAbs_OUT: return 0;
-        case TopAbs_IN: return 1;
-        case TopAbs_ON: return 2;
-        default: throw std::runtime_error("native face classification is unresolved");
-        }
+        return membership(face,uv,tolerance);
     });
 }
 }

@@ -6,6 +6,8 @@ mod native;
 mod support;
 #[path="native_boundary/material.rs"]
 mod material;
+#[path="native_boundary/caps.rs"]
+mod caps;
 use gcs_core::{envelope::{self,EdgePoint},interval::Interval,motion::Family,solid::{cad,SpatialField}};
 use std::{ffi::{c_void,c_int,c_char,CStr},path::Path};
 
