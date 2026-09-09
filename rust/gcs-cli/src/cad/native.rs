@@ -10,6 +10,9 @@ mod sweep;
 #[allow(dead_code)]
 #[path="native/trims.rs"]
 mod trims;
+#[allow(dead_code)]
+#[path="native/traces.rs"]
+mod traces;
 
 extern "C" {
     fn solvent_cad_new() -> *mut c_void;

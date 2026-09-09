@@ -96,6 +96,13 @@ fn alternate_contact_charts_connect_through_shared_root_enclosures() {
                 angle += (a[0]*b[1]-a[1]*b[0]).atan2(a[0]*b[0]+a[1]*b[1]);
             }
             assert!((angle.abs()-2.*PI).abs() < 1e-9,"the path must cover the circle exactly once: {angle}");
+            let seed = path.segments[path.segments.len()/2].curve;
+            let component = sweep.trace_contact_component(&joined,seed,1e-10,1e-8).unwrap();
+            let first = component.segments.first().unwrap(); let last = component.segments.last().unwrap();
+            let a = sweep.at_contact_curve(&joined.curves[first.curve],first.range[0],1e-10).unwrap().contact.position;
+            let b = sweep.at_contact_curve(&joined.curves[last.curve],last.range[1],1e-10).unwrap().contact.position;
+            assert!((0..3).all(|k| (a[k]-b[k]).abs() < 1e-9),"both ends of an interior seed must be traced");
+            assert_eq!(component.segments.iter().filter(|s| s.curve == seed).count(),1,"the seed interval must not be duplicated");
         }
     }
 }

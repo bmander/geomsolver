@@ -21,6 +21,24 @@ pub struct ContactPath {
 }
 
 impl SweepContacts {
+    /// Follow both ends of a seed interval to obtain its maximal covered path.
+    /// The seed is included once. A closed traversal already covers its loop;
+    /// otherwise reverse the backward traversal and append the forward one.
+    /// This still stops at unresolved links and does not identify periodic seams.
+    pub fn trace_contact_component(&self,joined: &ContactCurves,start: usize,
+        tolerance: f64,distance: f64) -> Result<ContactPath,String> {
+        let right = self.trace_contact_path(joined,start,true,tolerance,distance)?;
+        if right.closed { return Ok(right); }
+        let mut left = self.trace_contact_path(joined,start,false,tolerance,distance)?;
+        if left.closed { return Ok(left); }
+        left.segments.reverse();
+        for segment in &mut left.segments { segment.range.reverse(); }
+        left.segments.pop(); // The forward path includes this same seed interval.
+        left.segments.extend(right.segments);
+        left.join_error = left.join_error.max(right.join_error);
+        Ok(left)
+    }
+
     /// Trace one connected candidate from a joined curve's low/high end. A
     /// missing transition stops the path; it never extrapolates through a gap.
     /// A repeated oriented source interval closes a loop and removes any prefix

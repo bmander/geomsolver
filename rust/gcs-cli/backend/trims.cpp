@@ -45,6 +45,20 @@ static void tolerance(double value) {
 }
 
 extern "C" {
+// Only a full period across the finite face box supplies opposite seam aliases.
+// Spatial incidence is checked separately when a trace actually reaches them.
+int solvent_cad_face_seams(Cad* cad,int id,int* axes) noexcept {
+    return guarded(cad,[&] {
+        if (!axes) throw std::runtime_error("seam query needs an output buffer");
+        const FaceChart chart(cad,id);
+        axes[0] = chart.surface->IsUPeriodic() &&
+            std::abs(chart.b-chart.a-chart.surface->UPeriod()) <= Precision::PConfusion();
+        axes[1] = chart.surface->IsVPeriodic() &&
+            std::abs(chart.d-chart.c-chart.surface->VPeriod()) <= Precision::PConfusion();
+        return 0;
+    });
+}
+
 // Inspect the actual spatial curve carried by an edge (including its location),
 // with a normalized parameter over its finite range.
 int solvent_cad_curve_point(Cad* cad,int id,double t,double* output) noexcept {

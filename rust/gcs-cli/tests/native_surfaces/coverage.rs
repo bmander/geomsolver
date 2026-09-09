@@ -165,15 +165,23 @@ fn fixed_time_discovery_keeps_both_gear_endpoint_domains() {
         assert!(sweep.cover_at(sweep.domain()[1]+1.,ContactCoverOptions {max_depth:1,max_cells:1}).is_err());
         let mut native_joined_cuts = 0;
         let mut alternate_paths = 0;
+        let mut native_path_edges = 0;
         for cap in &caps.endpoints {
             let start = std::time::Instant::now();
             let cover = sweep.cover_at(cap.parameter,ContactCoverOptions {max_depth:20,max_cells:30000}).unwrap();
-            let joined = sweep.join_contact_curves(cover,1e-10).unwrap();
+            let mut joined = sweep.join_contact_curves(cover,1e-10).unwrap();
             let evaluations = joined.cover.evaluations;
-            let cover = sweep.refine_contact_ends(joined,ContactCoverOptions {max_depth:8,max_cells:2000}).unwrap();
-            eprintln!("{member} endpoint {}: {} targeted gap evaluations",cap.parameter,cover.evaluations-evaluations);
-            assert!(cover.evaluations-evaluations <= 2000);
-            let joined = sweep.join_contact_curves(cover,1e-10).unwrap();
+            for _ in 0..128 {
+                let before = joined.cover.evaluations;
+                let remaining = 32000-(before-evaluations);
+                if remaining == 0 { break; }
+                let cover = sweep.refine_contact_ends(joined,ContactCoverOptions {max_depth:8,max_cells:remaining.min(4000)}).unwrap();
+                let progress = cover.evaluations-before;
+                joined = sweep.join_contact_curves(cover,1e-10).unwrap();
+                if progress == 0 { break; }
+            }
+            eprintln!("{member} endpoint {}: {} targeted gap evaluations",cap.parameter,joined.cover.evaluations-evaluations);
+            assert!(joined.cover.evaluations-evaluations <= 32000);
             let cover = &joined.cover;
             audit_domain(&sweep,cover,[cap.parameter;2]);
             eprintln!("{member} endpoint {}: {} joined intervals from {} charts",cap.parameter,joined.curves.len(),
@@ -183,9 +191,9 @@ fn fixed_time_discovery_keeps_both_gear_endpoint_domains() {
                 transitions.iter().flatten().flatten().count());
             let mut segments = 0;
             let mut handoff_error = 0_f64;
-            for (curve,ends) in transitions.iter().enumerate() { for (end,link) in ends.iter().enumerate() {
+            for (curve,ends) in transitions.iter().enumerate() { for link in ends {
                 if link.is_none() { continue; }
-                let path = sweep.trace_contact_path(&joined,curve,end == 1,1e-10,1e-7).unwrap();
+                let path = sweep.trace_contact_component(&joined,curve,1e-10,1e-7).unwrap();
                 assert!(path.segments.len() > 1);
                 for segment in &path.segments { for fraction in [0.,0.17,0.43,0.81,1.] {
                     let s = segment.range[0]+(segment.range[1]-segment.range[0])*fraction;
@@ -194,6 +202,9 @@ fn fixed_time_discovery_keeps_both_gear_endpoint_domains() {
                 } }
                 segments = segments.max(path.segments.len());
                 handoff_error = handoff_error.max(path.join_error);
+                let (edges,error) = super::curves::attach_path(&cad,&sweep,&joined,&path,&cap.faces,cap.pose);
+                eprintln!("{member} endpoint {}: {edges} native multi-chart edges, fit error {error:e} mm",cap.parameter);
+                native_path_edges += edges;
                 alternate_paths += 1;
             } }
             eprintln!("{member} endpoint {}: up to {segments} analytic path segments, handoff error {handoff_error:e} mm",cap.parameter);
@@ -238,6 +249,7 @@ fn fixed_time_discovery_keeps_both_gear_endpoint_domains() {
         }
         assert!(native_joined_cuts > 0,"{member}: joined intervals never reached native trimming");
         assert!(alternate_paths >= 2,"{member}: ending contact paths must cross alternate charts");
+        assert!(native_path_edges > 0,"{member}: no multi-chart path reached native trimming");
     }
 }
 

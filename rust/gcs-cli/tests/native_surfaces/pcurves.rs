@@ -34,6 +34,22 @@ fn a_face_with_a_hole_needs_both_contact_edges_to_separate() {
 }
 
 #[test]
+fn native_trace_refuses_nonperiodic_jumps_and_false_closure() {
+    let cad = Cad::new();
+    let face = cad.grid(4,|u,v| [2.*u-1.,2.*v-1.,0.]);
+    assert_eq!(cad.0.face_seams(face).unwrap(),[false,false]);
+    let at = |s| Ok([2.*s-1.,0.,0.]);
+    assert!(cad.0.face_traces(face,&at,&[0.,1.],false,1e-7).unwrap_err().contains("nonperiodic"));
+    assert!(cad.0.face_traces(face,&at,&[0.,0.25,0.75,1.],true,1e-7).unwrap_err().contains("distinct spatial endpoints"));
+    let traces = cad.0.face_traces(face,&at,&[0.,0.25,0.75,1.],false,1e-7).unwrap();
+    assert_eq!(traces.len(),1);
+    let edge = cad.0.pcurve(face,&traces[0].points,false,1e-7).unwrap();
+    assert_eq!(cad.faces(cad.0.split_pcurves(face,&[edge]).unwrap()).len(),2);
+    let outside = |s| Ok([2.*s-1.,0.,1.]);
+    assert!(cad.0.face_traces(face,&outside,&[0.,0.5,1.],false,1e-7).is_err());
+}
+
+#[test]
 fn native_pcurves_partition_open_and_closed_regions_without_rebuilding_supports() {
     let cad = Cad::new();
     for closed in [false,true] {
@@ -190,6 +206,11 @@ fn alternate_source_charts_split_native_endpoint_faces() {
 // their endpoints against native trims. This neither certifies that no narrow
 // run was missed nor replaces full endpoint contact-event tracing.
 pub(super) fn clipped_test_traces(cad: &Cad,face: c_int,at: &impl Fn(f64)->Option<[f64;3]>) -> Result<Vec<Vec<[f64;2]>>,String> {
+    clipped_test_traces_at_resolution(cad,face,at,32)
+}
+
+pub(super) fn clipped_test_traces_at_resolution(cad: &Cad,face: c_int,at: &impl Fn(f64)->Option<[f64;3]>,count: usize)
+    -> Result<Vec<Vec<[f64;2]>>,String> {
     let project = |u| match at(u) {
         Some(p) => cad.0.face_parameters(face,p,1e-6).map(|p| p.map(|(uv,_)| uv)),
         None => Ok(None),
@@ -222,25 +243,10 @@ pub(super) fn clipped_test_traces(cad: &Cad,face: c_int,at: &impl Fn(f64)->Optio
         if start > 0 { a = endpoint(a,(start-1) as f64/SEEDS as f64)?; }
         if end < SEEDS { b = endpoint(b,(end+1) as f64/SEEDS as f64)?; }
         if a == b { continue; }
-        let mut points = Vec::new();
-        for j in 0..=32 {
-            let u = if j == 0 { a } else if j == 32 { b } else { a+(b-a)*j as f64/32. };
-            let Some(p) = project(u)? else { return Err("fixture trace leaves its source face".into()); };
-            points.push(p);
-        }
-        // A full turn can project its first point onto the opposite copy of the
-        // native seam. Change only an endpoint representative, and only after
-        // checking that the alternative is the same on-face spatial point.
-        for (index,neighbor,s) in [(0,1,a),(32,31,b)] { for axis in 0..2 {
-            let value = points[index][axis];
-            if (value-points[neighbor][axis]).abs() <= 0.5 { continue; }
-            let alias = if value < 1e-8 { 1. } else if value > 1.-1e-8 { 0. } else { continue; };
-            let mut p = points[index]; p[axis] = alias;
-            if cad.0.face_point(face,p[0],p[1],1e-9)?.is_some_and(|q| at(s).is_some_and(|p| distance(q.position,p) < 1e-6)) {
-                points[index] = p;
-            }
-        } }
-        result.push(points);
+        let seeds: Vec<_> = (0..=count).map(|j|
+            if j == 0 { a } else if j == count { b } else { a+(b-a)*j as f64/count as f64 }).collect();
+        let source = |s| at(s).ok_or("fixture trace leaves its source branch".into());
+        result.extend(cad.0.face_traces(face,&source,&seeds,false,1e-6)?.into_iter().map(|t| t.points));
     }
     Ok(result)
 }
