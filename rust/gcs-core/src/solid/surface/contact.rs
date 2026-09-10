@@ -37,6 +37,21 @@ impl RevolvedSurface {
         -> Result<Vec<RevolvedContact>,Error> {
         envelope::check_tolerance(tolerance)?;
         if tolerance == 0. { return Err(Error::InvalidOptions); }
+        let (a,b,c) = self.contact_coefficients(u,motion)?;
+        let mut roots = Vec::new();
+        for (branch,v) in sinusoid_roots(a,b,c,self.sweep,self.v_domain,tolerance)? {
+            let contact = envelope::contact(self.at(u,v)?,motion)?;
+            if contact.normal_velocity.abs() > tolerance { return Err(Error::NotConverged); }
+            roots.push(RevolvedContact {branch,v,contact});
+        }
+        Ok(roots)
+    }
+
+    /// The coefficients of the ring's contact equation `a cos + b sin + c = 0`
+    /// at meridian station `u` under the motion's instantaneous twist. A zero
+    /// amplitude with zero constant is a stationary ring, every point of which
+    /// is in contact.
+    pub fn contact_coefficients(&self,u: f64,motion: Motion) -> Result<(f64,f64,f64),Error> {
         // The coefficients use the original meridian even for a restricted span.
         let full = Self {v_domain:[0.,1.],..self.clone()};
         let s = full.at(u,0.)?;
@@ -60,16 +75,11 @@ impl RevolvedSurface {
             0.5*(columns[2][0]-columns[0][2]),0.5*(columns[0][1]-columns[1][0])];
         let center_velocity = velocity(add(self.origin,scale(self.axis,axial)));
         let h = add(scale(center_velocity,nr),scale(plane::cross(self.axis,omega),radius*nz));
-        let a = plane::dot(h,e); let b = plane::dot(h,f);
-        let c = nz*plane::dot(center_velocity,self.axis);
-        let mut roots = Vec::new();
-        for (branch,v) in sinusoid_roots(a,b,c,self.sweep,self.v_domain,tolerance)? {
-            let contact = envelope::contact(self.at(u,v)?,motion)?;
-            if contact.normal_velocity.abs() > tolerance { return Err(Error::NotConverged); }
-            roots.push(RevolvedContact {branch,v,contact});
-        }
-        Ok(roots)
+        Ok((plane::dot(h,e),plane::dot(h,f),nz*plane::dot(center_velocity,self.axis)))
     }
+
+    /// The revolution's unit axis direction.
+    pub fn axis_direction(&self) -> [f64;3] { self.axis }
 }
 
 /// Isolated roots on a normalized angular span; shared by the two source charts.

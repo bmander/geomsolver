@@ -13,6 +13,7 @@ CARGO := cargo
 # Set TEST_JOBS=1 to run them serially (GNU Make 3.81 does not retain -j1 in MAKEFLAGS).
 TEST_JOBS ?= $(if $(filter -j%,$(MAKEFLAGS)),,2)
 OCCT ?= 0
+MANIFOLD ?= 0
 # `.sv` too, and `rust/examples/` with them: every case in the library is a Solvent document
 # compiled in with `include_str!`, so a document is source.  Left out of this list, editing one
 # rebuilt nothing — the tests read the file from disk and passed while the browser went on
@@ -41,7 +42,7 @@ solventc: build/solventc
 # Cargo tracks the native feature as well as sources; ask it even when only OCCT changed.
 build/solventc: $(RUST_SRC) $(RUST_CONFIG) solventc-config
 	@mkdir -p build
-	$(CARGO) build --manifest-path rust/Cargo.toml --release -p gcs-cli --target $(HOST) $(if $(filter 1,$(OCCT)),--features occt,)
+	$(CARGO) build --manifest-path rust/Cargo.toml --release -p gcs-cli --target $(HOST) $(if $(filter 1,$(OCCT)),--features occt,) $(if $(filter 1,$(MANIFOLD)),--features manifold,)
 	cp rust/target/$(HOST)/release/solventc $@
 
 wasm: web/src/wasm/gcs.wasm

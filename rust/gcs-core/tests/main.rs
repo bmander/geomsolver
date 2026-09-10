@@ -78,6 +78,7 @@ mod solid_lang;
 mod loft;
 mod solid_motion;
 mod solid_sweep;
+mod sweep_candidates;
 mod solid_regressions;
 mod solid_issue51;
 mod stack;

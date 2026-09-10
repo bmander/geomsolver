@@ -9,7 +9,18 @@ fn main() {
     for file in ["occt.cpp","boundary.cpp","surfaces.cpp","trims.cpp","cells.cpp","sections.cpp","occt.hpp"] {
         println!("cargo:rerun-if-changed=backend/{file}");
     }
-    for name in ["OCCT_ROOT","CXX","AR"] { println!("cargo:rerun-if-env-changed={name}"); }
+    for name in ["OCCT_ROOT","MANIFOLD_ROOT","CXX","AR"] { println!("cargo:rerun-if-env-changed={name}"); }
+    if env::var_os("CARGO_FEATURE_MANIFOLD").is_some() {
+        // Manifold's C binding is a plain dynamic library; nothing is compiled here.
+        let root = env::var_os("MANIFOLD_ROOT").map(PathBuf::from).unwrap_or_else(|| {
+            ["/usr/local/opt/manifold","/opt/homebrew/opt/manifold","/usr"]
+                .into_iter().map(PathBuf::from).find(|p| p.join("include/manifold/manifoldc.h").is_file())
+                .expect("install the Manifold library (brew install manifold) or set MANIFOLD_ROOT")
+        });
+        println!("cargo:rustc-link-search=native={}",root.join("lib").display());
+        println!("cargo:rustc-link-lib=dylib=manifoldc");
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{}",root.join("lib").display());
+    }
     if env::var_os("CARGO_FEATURE_OCCT").is_none() { return; }
     let target = env::var("TARGET").unwrap();
     assert_eq!(target,env::var("HOST").unwrap(),"OCCT currently requires a native host build");

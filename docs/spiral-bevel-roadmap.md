@@ -448,8 +448,40 @@ default 0.15/0.5 mm node spacing. Refused, with diagnostics: a cutter whose cont
 condition does not depend on the motion (a revolution about an axis parallel to the
 motion's, the sphere fixture), cutters that are not revolutions, additive sweeps, nested
 sweeps, and a roll that leaves the cutter in the blank. Still open: the accuracy budget and
-the pair's engagement checks on these exports, deferred by decision; classification time
-(the gear's 49 cells against 48 sweeps take about seven minutes).
+the pair's engagement checks on these exports, deferred by decision.
+
+**Mesh arrangement (2026-09-09).** The interactive goal is a general swept removal: a tool
+solid, its trajectory through a body, and what it cuts out. Measured, a material probe
+against the whole gear body costs about 3 ms; the minutes were the kernel. `solventc --stl`
+now builds a body with swept cuts by mesh arrangement (`rust/gcs-cli/src/cad/mesh_sweep.rs`
+over the Manifold library's C API, an optional `manifold` feature beside `occt`; both are
+needed while the sheets still come from kernel sections). The static remainder's facet
+primitives and Boolean term (`solid::static_solid`) are evaluated in Manifold in 0.2 s,
+where the core's facet CSG took 100 s at mesh resolution; each sheet becomes a closed slab
+one micrometre thick, offset along its contact normals; the tool at both roll limits is an
+exact cap solid removed outright, so a plunging tool needs no special case; the remainder is
+split by all slabs, each cell is classified by one probe placed a quarter of its mean
+thickness inside (past the tessellation sagitta, where chordal facets of a subtracted round
+face lie outside the true surface), each thin wall piece by a coarse band test at its
+mid-surface, and material cells and hidden walls are united. The result is written as an
+indexed STL without the core writer's re-weld, which had folded edges; Manifold's own
+simplification is not applied since it can pinch a vertex. Pinion: 8 s wall, 9144.65 mm³
+(2.8e-4 above the kernel's, the blank's chordal tessellation); gear: 25 s, 20286.24 mm³
+(1.0e-4). Motions gained screws (`advance:` per turn) and translations (`along:`) with exact
+poses, interval bounds and speed bounds. A sweep whose tool-frame twist is constant (a
+rotation, translation or screw; `solid::constant_twist`) needs no kernel at all: its contact
+set is fixed, so `SweepContacts::characteristics` traces it once on the tool's revolved
+patches from the exact ring roots, finds stationary rings where the sinusoid's amplitude
+vanishes and its constant crosses zero, adds the sharp profile-vertex edges whose normal cone
+straddles the velocity, trims portions hidden inside a Boolean tool by the tool's own field,
+joins branches at poles and chains everything by endpoint identity; the sheet is that set
+carried along the motion. Closed forms check it: a sphere under a parallel rotation gives one
+great circle, under a translation its equator, and a plunging cylinder its two rims and
+nothing from its stationary wall. Through the whole mesh path a sphere sweeping past a bead
+carves the torus bite in 0.13 s and a cylinder plunging through a bead bores it in 0.4 s, each
+within 0.5 % of closed-form quadrature and agreeing at every withheld point. Relative rotations
+(the gears) still take their sheets from kernel sections; moving those to the same tracer is
+the remaining step to a kernel-free STL path.
 
 The acceptance work remains:
 

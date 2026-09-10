@@ -118,14 +118,20 @@ struct Anchor { face: c_int,fraction: f64 }
 /// mean distance from the axis for column spacing.
 struct Reach { stations: [f64;2],start: Anchor,end: Anchor,faces: usize,radius: f64 }
 
+/// A candidate sheet: contact positions on a row-major grid with the outward
+/// normal of the cutter at each contact, in native millimetres.
 #[derive(Debug)]
 pub(crate) struct Sheet {
     pub points: Vec<[f64;3]>,
+    pub normals: Vec<[f64;3]>,
     pub rows: usize,
     pub columns: usize,
-    /// Contacts at row midpoints of every column, withheld from the fit.
-    withheld: Vec<[f64;3]>,
+    /// Contacts at row midpoints of every column, withheld from any fit.
+    pub withheld: Vec<[f64;3]>,
 }
+
+/// Whether points lie inside the blank, in native millimetres.
+pub(crate) type Inside<'a> = &'a dyn Fn(&[[f64;3]]) -> Result<Vec<bool>,String>;
 
 /// The cutter as the section machinery needs it: the native solid, its faces in
 /// the stable enumeration the sections index, and its axis.
@@ -274,18 +280,23 @@ impl Session {
     /// `near`. Native millimetres in and out; the contact math runs in model units.
     fn contact(sweep: &SweepContacts,scale: f64,sample: Sample,interval: [f64;2],near: f64)
         -> Result<Option<([f64;3],f64)>,String> {
+        Ok(Self::contact_full(sweep,scale,sample,interval,near)?.map(|(p,_,t)| (p,t)))
+    }
+    /// Contact position, outward normal and time.
+    fn contact_full(sweep: &SweepContacts,scale: f64,sample: Sample,interval: [f64;2],near: f64)
+        -> Result<Option<([f64;3],[f64;3],f64)>,String> {
         let roots = sweep.at_point_normal_over(scaled(sample.position,1./scale),sample.normal,interval,1e-9)
             .map_err(|e| if e == "Degenerate" {
                 "a cutter point's contact condition does not depend on the motion (the cutter is a revolution \
                  about an axis parallel to the motion's); such sweeps are not supported by the section construction".to_string()
             } else { e })?;
         Ok(roots.iter().min_by(|x,y| (x.root.time-near).abs().total_cmp(&(y.root.time-near).abs()))
-            .map(|r| (scaled(r.contact.position,scale),r.root.time)))
+            .map(|r| (scaled(r.contact.position,scale),r.contact.normal,r.root.time)))
     }
 
     /// Find the stations and the profile walk whose declared-roll contacts lie
     /// inside the blank.
-    fn reach(&self,cutter: &Cutter,sweep: &SweepContacts,scale: f64,blank: c_int) -> Result<Reach,String> {
+    fn reach(&self,cutter: &Cutter,sweep: &SweepContacts,scale: f64,inside: Inside) -> Result<Reach,String> {
         let declared = sweep.domain();
         let stations = 96;
         let mut inside_stations = Vec::new();
@@ -305,10 +316,10 @@ impl Session {
                     if let Some((p,_)) = Self::contact(sweep,scale,sample,declared,0.)? { queries.push((s,sample,p)); }
                 }
                 if queries.is_empty() { continue; }
-                let states = self.solid_contains(blank,&queries.iter().map(|q| q.2).collect::<Vec<_>>(),1e-6)?;
+                let states = inside(&queries.iter().map(|q| q.2).collect::<Vec<_>>())?;
                 let mut any = false;
                 for ((s,sample,_),state) in queries.iter().zip(&states) {
-                    if *state != 1 { continue; }
+                    if !*state { continue; }
                     any = true;
                     let radial = sub(sample.position,cutter.origin);
                     radius_sum += norm(sub(radial,scaled(cutter.axis,dot(radial,cutter.axis)))); radius_count += 1;
@@ -378,7 +389,7 @@ impl Session {
         let span = hi-lo+2.*station_margin;
         let columns = ((span*reach.radius/COLUMN_SPACING).ceil() as usize).clamp(24,200);
         let wide = [-PI,PI];
-        let mut columns_data: Vec<Vec<([f64;3],f64)>> = Vec::with_capacity(columns);
+        let mut columns_data: Vec<Vec<([f64;3],[f64;3],f64)>> = Vec::with_capacity(columns);
         let mut withheld = Vec::new();
         let mut rows = 0;
         for c in 0..columns {
@@ -389,23 +400,24 @@ impl Session {
             let [s0,s1] = Self::range(profile,reach,margin)?;
             if c == 0 { rows = (((s1-s0)/ROW_SPACING).ceil() as usize).clamp(24,240); }
             let mut column = Vec::with_capacity(rows);
-            let mut near = columns_data.last().map(|previous| previous[0].1).unwrap_or(0.);
+            let mut near = columns_data.last().map(|previous| previous[0].2).unwrap_or(0.);
             for r in 0..rows {
                 let s = s0+(s1-s0)*r as f64/(rows-1) as f64;
-                let (p,time) = Self::contact(sweep,scale,self.sample(cutter,profile,s)?,wide,near)?
+                let (p,n,time) = Self::contact_full(sweep,scale,self.sample(cutter,profile,s)?,wide,near)?
                     .ok_or("a cutter point has no contact time under the motion")?;
                 if r % 3 == 1 && r+1 < rows {
                     let mid = self.sample(cutter,profile,s+(s1-s0)*0.5/(rows-1) as f64)?;
                     if let Some((q,_)) = Self::contact(sweep,scale,mid,wide,time)? { withheld.push(q); }
                 }
                 near = time;
-                column.push((p,time));
+                column.push((p,n,time));
             }
             columns_data.push(column);
         }
         let mut points = Vec::with_capacity(rows*columns);
-        for r in 0..rows { for column in &columns_data { points.push(column[r].0); } }
-        Ok(Sheet {points,rows,columns,withheld})
+        let mut normals = Vec::with_capacity(rows*columns);
+        for r in 0..rows { for column in &columns_data { points.push(column[r].0); normals.push(column[r].1); } }
+        Ok(Sheet {points,normals,rows,columns,withheld})
     }
 }
 
@@ -460,27 +472,19 @@ pub(crate) fn classify(session: &Session,partition: c_int,material: &mut Materia
     Ok((kept,removed))
 }
 
-/// The candidate sheet of one swept solid against a blank: fitted, with its
-/// boundary outside the blank. Exposed for tests of the construction itself.
-pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_int) -> Result<(c_int,Sheet,f64),String> {
-    let SolidDef::Swept {source,motion,from,to} = &sk.solids[swept].def else {
+/// The candidate sheet grid of one swept solid whose contacts enter the blank
+/// `inside` describes, widened until its boundary lies outside. Exposed for the
+/// mesh path and for tests of the construction itself.
+pub(crate) fn swept_sheet_grid(session: &Session,sk: &Sketch,swept: usize,inside: Inside) -> Result<Sheet,String> {
+    let SolidDef::Swept {source,..} = &sk.solids[swept].def else {
         return Err(format!("`{}` is not a continuous sweep",sk.solids[swept].name));
     };
     let scale = sk.units.length.ok_or("CAD construction requires an explicit length unit")?.1;
     let name = &sk.solids[swept].name;
     let cutter = session.cutter(sk,*source as usize)?;
     let sweep = SweepContacts::read(sk,swept,1e-10)?;
-    let family = Family::read(sk,*motion as usize)?;
-    for (label,limit) in [("start",from.value),("end",to.value)] {
-        let placed = session.place(cutter.solid,family.at(limit)?,scale)?;
-        let overlap = session.common_volume(placed,blank)?;
-        if overlap > 0. {
-            return Err(format!("`{name}`: the declared roll leaves the cutter inside the blank at its {label} \
-                ({:.1} degrees, {overlap:.3} mm³ overlap); declare a roll that carries it clear",limit.to_degrees()));
-        }
-    }
     let started = std::time::Instant::now();
-    let reach = session.reach(&cutter,&sweep,scale,blank)?;
+    let reach = session.reach(&cutter,&sweep,scale,inside)?;
     stage(&format!("`{name}`: contacts reach the blank over {:.1} degrees of stations and {} profile faces ({:?})",
         (reach.stations[1]-reach.stations[0]).to_degrees(),reach.faces,started.elapsed()));
     let (mut margin,mut station_margin) = (1.,(reach.stations[1]-reach.stations[0])*0.15);
@@ -490,17 +494,41 @@ pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_in
         for r in 0..sheet.rows { for c in 0..sheet.columns {
             if r == 0 || r+1 == sheet.rows || c == 0 || c+1 == sheet.columns { boundary.push(sheet.points[r*sheet.columns+c]); }
         } }
-        let inside = session.solid_contains(blank,&boundary,1e-6)?.iter().filter(|s| **s == 1).count();
-        if inside > 0 { margin *= 1.6; station_margin *= 1.6; continue; }
-        let face = session.fit_sheet(&sheet.points,sheet.rows,sheet.columns)?;
-        let mut error = 0_f64;
-        for p in &sheet.withheld {
-            error = error.max(session.face_parameters(face,*p,0.5)?.map(|(_,gap)| gap).unwrap_or(0.5));
-        }
-        stage(&format!("`{name}`: sheet {}x{}, withheld contact error {error:.2e} mm ({:?})",sheet.rows,sheet.columns,started.elapsed()));
-        return Ok((face,sheet,error));
+        if inside(&boundary)?.iter().any(|b| *b) { margin *= 1.6; station_margin *= 1.6; continue; }
+        stage(&format!("`{name}`: sheet {}x{} ({:?})",sheet.rows,sheet.columns,started.elapsed()));
+        return Ok(sheet);
     }
     Err(format!("`{name}`: the candidate sheet cannot be widened out of the blank"))
+}
+
+/// The candidate sheet of one swept solid against a native blank: the roll must
+/// carry the cutter clear of the blank at both limits (no caps on this path),
+/// and the grid is fitted as a native face with its withheld contact error.
+pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_int) -> Result<(c_int,Sheet,f64),String> {
+    let SolidDef::Swept {source,motion,from,to} = &sk.solids[swept].def else {
+        return Err(format!("`{}` is not a continuous sweep",sk.solids[swept].name));
+    };
+    let scale = sk.units.length.ok_or("CAD construction requires an explicit length unit")?.1;
+    let name = &sk.solids[swept].name;
+    let cutter = session.cutter(sk,*source as usize)?;
+    let family = Family::read(sk,*motion as usize)?;
+    for (label,limit) in [("start",from.value),("end",to.value)] {
+        let placed = session.place(cutter.solid,family.at(limit)?,scale)?;
+        let overlap = session.common_volume(placed,blank)?;
+        if overlap > 0. {
+            return Err(format!("`{name}`: the declared roll leaves the cutter inside the blank at its {label} \
+                ({:.1} degrees, {overlap:.3} mm³ overlap); declare a roll that carries it clear",limit.to_degrees()));
+        }
+    }
+    let inside = |points: &[[f64;3]]| Ok(session.solid_contains(blank,points,1e-6)?.into_iter().map(|s| s == 1).collect());
+    let sheet = swept_sheet_grid(session,sk,swept,&inside)?;
+    let face = session.fit_sheet(&sheet.points,sheet.rows,sheet.columns)?;
+    let mut error = 0_f64;
+    for p in &sheet.withheld {
+        error = error.max(session.face_parameters(face,*p,0.5)?.map(|(_,gap)| gap).unwrap_or(0.5));
+    }
+    stage(&format!("`{name}`: withheld contact error {error:.2e} mm"));
+    Ok((face,sheet,error))
 }
 
 /// Construct a body whose cuts include continuous sweeps. Returns the native

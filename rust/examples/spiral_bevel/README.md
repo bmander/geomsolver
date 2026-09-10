@@ -19,12 +19,13 @@ build/solventc rust/examples/spiral_bevel/gears.sv --no-diagnose --solid pair.ge
   --step build/exports/solvent-gear.step --stl build/exports/solvent-gear.stl
 ```
 
-The pinion takes about six minutes and the gear about eleven on a laptop; progress is
-reported on stderr. The construction sections the declared cutter, fits its generating
-sheet from exact contacts, indexes it by the declared motion, splits the blank in the
-kernel and classifies every cell by the declared material field; see the roadmap for what
-that does and does not certify. The source is a mathematical zero-backlash, 90-degree
-common-crown construction, not a production acceptance result.
+Built with `make solventc OCCT=1 MANIFOLD=1`, an STL takes about eight seconds for the
+pinion and twenty-five for the gear: the generating sheet comes from exact contacts on
+sections of the declared cutter, the blank and the sheets are arranged as meshes, and every
+cell is classified by the declared material field. STEP, or `--stl-backend occt`, takes the
+kernel path instead (six and eleven minutes). Progress is reported on stderr; see the
+roadmap for what each path does and does not certify. The source is a mathematical
+zero-backlash, 90-degree common-crown construction, not a production acceptance result.
 
 The stationary gear-space cutter can already be inspected through the native backend:
 

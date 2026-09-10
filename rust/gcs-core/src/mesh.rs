@@ -315,6 +315,19 @@ pub fn checked_stl(pieces: &[Piece], name: &str) -> Result<Vec<u8>, String> {
     check_stl(stl(pieces, name), name)
 }
 
+/// Binary STL of an already indexed, already manifold triangle list, written
+/// without any weld: a host that arranged the mesh itself keeps its own vertex
+/// identities. Coordinates are checked for float32 collapse as always.
+pub fn indexed_stl(vertices: &[[f64; 3]], triangles: &[[u32; 3]], name: &str) -> Result<Vec<u8>, String> {
+    let mut positions = Vec::with_capacity(triangles.len() * 9);
+    for t in triangles {
+        for &i in t {
+            positions.extend(vertices.get(i as usize).ok_or("STL triangle index out of range")?);
+        }
+    }
+    check_stl(stl_triangles(&positions, [0.0; 3], name), name)
+}
+
 pub(crate) fn placed_stl(mesh: &Mesh, origin: [f64; 3], name: &str) -> Result<Vec<u8>, String> {
     check_stl(stl_triangles(&mesh.positions, origin, name), name)
 }

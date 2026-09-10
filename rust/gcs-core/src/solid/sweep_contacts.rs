@@ -17,10 +17,14 @@ pub use cover::{ContactCover,ContactCoverOptions,ContactCell,ContactEvidence,Con
 /// global trimming must still be constructed before claiming a closed B-rep.
 #[derive(Clone,Debug)]
 pub struct SweepContacts {
-    source: SpatialField,
-    patches: Vec<RevolvedSurface>,
-    motion: Family,
-    roll: [f64;2],
+    pub(super) source: SpatialField,
+    pub(super) patches: Vec<RevolvedSurface>,
+    /// Patch indices of each revolved profile loop in loop order, so adjacent
+    /// patches and the profile vertices between them are known. Axis diameters
+    /// contribute no patch and leave a gap in the loop.
+    pub(super) loops: Vec<Vec<Option<usize>>>,
+    pub(super) motion: Family,
+    pub(super) roll: [f64;2],
 }
 
 #[derive(Clone,Copy,Debug)]
@@ -39,6 +43,7 @@ impl SweepContacts {
         let mut pending = vec![(*source as usize,Motion::identity())];
         let mut seen = BTreeSet::new();
         let mut patches = Vec::new();
+        let mut loops = Vec::new();
         while let Some((id,pose)) = pending.pop() {
             let columns: [[u64;3];4] = std::array::from_fn(|i| {
                 let p = if i == 3 { pose.point([0.;3]) } else {
@@ -48,17 +53,22 @@ impl SweepContacts {
             if !seen.insert((id,columns)) { continue; }
             match &sk.solids[id].def {
                 SolidDef::Revolve {face,..} => {
-                    for (edges,_) in sk.faces[*face as usize].boundaries() { for &edge in edges {
-                        let surface = RevolvedSurface::read(sk,id,edge)?.placed(pose);
-                        if edge.kind == EntKind::Line {
-                            let radius = |u| surface.at(u,0.).map(|p|
-                                p.dv[0].hypot(p.dv[1]).hypot(p.dv[2])/TAU);
-                            // A diameter on the axis disappears in a full revolution.
-                            if radius(0.).map_err(|e| format!("{e:?}"))? <= axis_tolerance
-                                && radius(1.).map_err(|e| format!("{e:?}"))? <= axis_tolerance { continue; }
+                    for (edges,_) in sk.faces[*face as usize].boundaries() {
+                        let mut order = Vec::with_capacity(edges.len());
+                        for &edge in edges {
+                            let surface = RevolvedSurface::read(sk,id,edge)?.placed(pose);
+                            if edge.kind == EntKind::Line {
+                                let radius = |u| surface.at(u,0.).map(|p|
+                                    p.dv[0].hypot(p.dv[1]).hypot(p.dv[2])/TAU);
+                                // A diameter on the axis disappears in a full revolution.
+                                if radius(0.).map_err(|e| format!("{e:?}"))? <= axis_tolerance
+                                    && radius(1.).map_err(|e| format!("{e:?}"))? <= axis_tolerance { order.push(None); continue; }
+                            }
+                            order.push(Some(patches.len()));
+                            patches.push(surface);
                         }
-                        patches.push(surface);
-                    } }
+                        loops.push(order);
+                    }
                 }
                 SolidDef::Placed {source,motion,at} => pending.push((*source as usize,
                     Family::read(sk,*motion as usize)?.at(at.value)?.then(pose))),
@@ -67,10 +77,12 @@ impl SweepContacts {
                 _ => return Err("contact construction requires static revolutions and Boolean operands".into()),
             }
         }
-        Ok(Self {source:source_field,patches,motion:Family::read(sk,*motion as usize)?,
+        Ok(Self {source:source_field,patches,loops,motion:Family::read(sk,*motion as usize)?,
             roll:[from.value,to.value]})
     }
     pub fn patches(&self) -> &[RevolvedSurface] { &self.patches }
+    pub fn loops(&self) -> &[Vec<Option<usize>>] { &self.loops }
+    pub fn motion(&self) -> &Family { &self.motion }
     pub fn source_material(&self) -> &SpatialField { &self.source }
     pub fn domain(&self) -> [f64;2] { self.roll }
     pub fn at(&self,patch: usize,u: f64,roll: f64,tolerance: f64)

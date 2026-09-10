@@ -41,7 +41,8 @@ solventc — check a Solvent document
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
     --step PATH         write an analytic STEP solid (requires a native OCCT build)
-    --stl-backend NAME  occt or mesh; defaults to occt when built with native support
+    --stl-backend NAME  occt, mesh or manifold; a body with swept cuts defaults to manifold
+                        (mesh arrangement) when built in, other solids to occt
     --gltf PATH         write a solid as binary glTF: every face a named node
     --solid NAME        which solid to export; defaults to the only Boolean root
     --width PX          the SVG's page width in pixels (default 800)
@@ -74,6 +75,8 @@ struct Opts {
     stl: Option<String>,
     step: Option<String>,
     native_stl: bool,
+    /// Bodies with swept cuts export STL by mesh arrangement when built in.
+    swept_mesh: bool,
     /// `--gltf PATH` — the object as a viewer opens it, every face named.
     gltf: Option<String>,
     solid: Option<String>,
@@ -94,6 +97,7 @@ impl Default for Opts {
             stl: None,
             step: None,
             native_stl: cfg!(feature="occt"),
+            swept_mesh: cfg!(all(feature="manifold",feature="occt")),
             gltf: None,
             solid: None,
             width: 800.0,
@@ -109,9 +113,10 @@ fn main() -> ExitCode {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--stl-backend" => match args.next().as_deref() {
-                Some("occt") => opts.native_stl = true,
-                Some("mesh") => opts.native_stl = false,
-                _ => { eprintln!("solventc: --stl-backend needs occt or mesh"); return ExitCode::from(2); }
+                Some("occt") => { opts.native_stl = true; opts.swept_mesh = false; }
+                Some("mesh") => { opts.native_stl = false; opts.swept_mesh = false; }
+                Some("manifold") => { opts.swept_mesh = true; }
+                _ => { eprintln!("solventc: --stl-backend needs occt, mesh or manifold"); return ExitCode::from(2); }
             },
             "--step" => match args.next() {
                 Some(p) => opts.step = Some(p),
@@ -312,10 +317,26 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         }
     }
     let mut code = if r.success || opts.allow_unsolved { 0 } else { 2 };
-    if opts.step.is_some() || (opts.stl.is_some() && opts.native_stl) {
+    // A body with swept cuts goes to the mesh arrangement when it is built in;
+    // the kernel path stays for STEP and for `--stl-backend occt`.
+    let mut stl = opts.stl.clone();
+    if let Some(path) = stl.clone().filter(|_| opts.swept_mesh && r.success) {
+        if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
+            if cad::swept_mesh_applies(&sk,i) {
+                if let Err(message) = cad::export_swept_stl(&sk,i,&path) {
+                    eprintln!("solventc: {message}");
+                    e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
+                        span:Default::default(),stmt:None,message});
+                    code = 1;
+                }
+                stl = None;
+            }
+        }
+    }
+    if opts.step.is_some() || (stl.is_some() && opts.native_stl) {
         let result = if !r.success { Err("native STEP/STL export requires a solved model".into()) }
             else { pick_solid(&sk,opts.solid.as_deref()).and_then(|i| cad::export(&sk,i,
-                opts.step.as_deref(),opts.stl.as_deref().filter(|_| opts.native_stl))) };
+                opts.step.as_deref(),stl.as_deref().filter(|_| opts.native_stl))) };
         if let Err(message) = result {
             eprintln!("solventc: {message}");
             e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
@@ -331,7 +352,7 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             code = 1;
         }
     }
-    if let Some(path) = opts.stl.as_ref().filter(|_| !opts.native_stl) {
+    if let Some(path) = stl.as_ref().filter(|_| !opts.native_stl) {
         // the mesh is `gcs_core::mesh`'s for `svg`'s reason: a printer's file and a drawing are
         // two readings of one boundary, and a second walk would be a second object
         match pick_solid(&sk, opts.solid.as_deref()) {
