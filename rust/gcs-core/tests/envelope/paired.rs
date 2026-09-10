@@ -32,8 +32,9 @@ struct Pair {
 fn read_model(src: &str,teeth: [u32;2],module: f64) -> program::Elaborated {
     let (mut p,errors) = syntax::parse(&src);
     let link = modules::link(&mut p,&mut |name| match name {
+        // The reference checks assume the common apex, so the offset is zero here.
         "configuration" => Some(format!("param pinion_teeth = {}\nparam gear_teeth = {}\n\
-            param mean_module = {module}mm\n",teeth[0],teeth[1])),
+            param mean_module = {module}mm\nparam axis_offset = 0mm\n",teeth[0],teeth[1])),
         "paired_references" => Some(include_str!("../../../examples/spiral_bevel/paired_references.sv").into()),
         "verification" => Some(include_str!("../../../examples/spiral_bevel/verification.sv").into()),
         "matched_pair" => Some(include_str!("../../../examples/spiral_bevel/matched_pair.sv").into()),

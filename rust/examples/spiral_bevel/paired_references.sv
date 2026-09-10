@@ -11,15 +11,15 @@ use cutters
 // The direction stands a positive, size-scaled span along u, which selects the
 // plane's rotor branch.
 component PlaneDatum(f: plane, span: Length) {
-  point origin
+  point origin hint(at: f.origin)
   point direction hint(x: span)
   origin coincident f.origin
   direction distance(span, along: u) f
   direction distance(0mm, along: v) f
 }
 
-component MatchedReferences(front: plane, pinion_teeth: Int, gear_teeth: Int,
-                            mean_module: Length, spiral_angle: Angle, pressure_angle: Angle) {
+component MatchedReferences(front: plane, pinion_teeth: Int, gear_teeth: Int, mean_module: Length,
+                            axis_offset: Length, spiral_angle: Angle, pressure_angle: Angle) {
   param pinion_angle = atan2(pinion_teeth, gear_teeth)
   param gear_angle = atan2(gear_teeth, pinion_teeth)
   param crown_teeth = hypot(pinion_teeth, gear_teeth)
@@ -59,18 +59,33 @@ component MatchedReferences(front: plane, pinion_teeth: Int, gear_teeth: Int,
     private construction centerline line front_axis(front.origin, hint(y: mean_distance))
     front_axis.p2 distance(0mm, along: u) front
     front_axis.p2 distance(mean_distance, along: v) front
-    construction centerline line pinion_axis(front.origin, hint(x: mean_distance))
-    pinion_axis.p2 distance(mean_distance * cos(pinion_angle), along: u) front
-    pinion_axis.p2 distance(mean_distance * sin(pinion_angle), along: v) front
-    construction centerline line gear_axis(front.origin, hint(x: mean_distance))
+    construction centerline line gear_axis(front.origin,
+      hint(x: mean_distance * cos(gear_angle), y: -mean_distance * sin(gear_angle)))
     gear_axis.p2 distance(mean_distance * cos(gear_angle), along: u) front
     gear_axis.p2 distance(-mean_distance * sin(gear_angle), along: v) front
-    pinion_tip_boundary: ConeBoundary(front, pinion_axis, axis_bearing: pinion_angle,
+  }
+  // The pinion axis and its cones stand in the front plane offset by the axis
+  // offset, along the common perpendicular of the two shafts. At zero the
+  // pinion is the bevel member with the common apex; otherwise its apex stands
+  // off the gear's and the generating roll is a screw about the crown, which
+  // the contact equation reads as any other motion. The pinion's pitch
+  // geometry is still the bevel member's, so the offset is for small values.
+  private pinion_datum: PlaneDatum(front, span: mean_distance)
+  private plane pinion_plane(origin: pinion_datum.origin, toward: pinion_datum.direction,
+                             from: front, offset: axis_offset)
+  in pinion_plane {
+    construction centerline line pinion_axis(pinion_datum.origin,
+      hint(x: mean_distance * cos(pinion_angle), y: mean_distance * sin(pinion_angle)))
+    pinion_axis.p2 distance(mean_distance * cos(pinion_angle), along: u) pinion_plane
+    pinion_axis.p2 distance(mean_distance * sin(pinion_angle), along: v) pinion_plane
+    pinion_tip_boundary: ConeBoundary(pinion_plane, pinion_axis, axis_bearing: pinion_angle,
       half_angle: pinion_angle, normal_offset: addendum, span: cone_span)
-    pinion_root_boundary: ConeBoundary(front, pinion_axis, axis_bearing: pinion_angle,
+    pinion_root_boundary: ConeBoundary(pinion_plane, pinion_axis, axis_bearing: pinion_angle,
       half_angle: pinion_angle, normal_offset: -root_depth, span: cone_span)
-    pinion_back_boundary: ConeBoundary(front, pinion_axis, axis_bearing: pinion_angle,
+    pinion_back_boundary: ConeBoundary(pinion_plane, pinion_axis, axis_bearing: pinion_angle,
       half_angle: pinion_angle, normal_offset: -rim_back_depth, span: cone_span)
+  }
+  in front {
     gear_tip_boundary: ConeBoundary(front, gear_axis, axis_bearing: -gear_angle,
       half_angle: gear_angle, normal_offset: addendum, span: cone_span)
     gear_root_boundary: ConeBoundary(front, gear_axis, axis_bearing: -gear_angle,
@@ -84,6 +99,15 @@ component MatchedReferences(front: plane, pinion_teeth: Int, gear_teeth: Int,
   in back {
     toe: SphericalBoundary(back, size: toe_distance)
     heel: SphericalBoundary(back, size: heel_distance)
+  }
+  // The pinion's ends are spheres about its own apex, so its blank is a body of
+  // revolution about its own axis at any offset; at zero they are the spheres above.
+  private pinion_back_datum: PlaneDatum(back, span: mean_distance)
+  private plane pinion_back(origin: pinion_back_datum.origin, toward: pinion_back_datum.direction,
+                            from: back, offset: -axis_offset)
+  in pinion_back {
+    pinion_toe: SphericalBoundary(pinion_back, size: toe_distance)
+    pinion_heel: SphericalBoundary(pinion_back, size: heel_distance)
   }
 
   // The crown traces have their own center, away from the pitch-cone apex. The
@@ -133,7 +157,7 @@ component MatchedReferences(front: plane, pinion_teeth: Int, gear_teeth: Int,
   motion pinion_index(about: pinion_axis)
   motion gear_index(about: gear_axis)
   motion crown_neighbor(about: front_axis, phase: -360deg / crown_teeth)
-  group pinion_design(heel: heel.wall.solid, toe: toe.wall.solid,
+  group pinion_design(heel: pinion_heel.wall.solid, toe: pinion_toe.wall.solid,
     tip: pinion_tip_boundary.wall.solid, root: pinion_root_boundary.wall.solid,
     back: pinion_back_boundary.wall.solid,
     generation: pinion_generation, indexing: pinion_index)

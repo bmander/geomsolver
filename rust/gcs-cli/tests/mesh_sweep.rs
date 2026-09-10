@@ -88,6 +88,13 @@ mod native;
 fn whole_member(member: &str,expected: f64) {
     let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
     let e = support::read(&std::fs::read_to_string(base.join("gears.sv")).unwrap(),&base);
+    let volume = member_volume(&e,member);
+    assert!((volume-expected).abs() < 1e-3*expected,"{member}: {volume} against {expected}");
+}
+
+/// One member through the mesh arrangement, its signed volume from the STL's own winding.
+#[cfg(feature="occt")]
+fn member_volume(e: &gcs_core::program::Elaborated,member: &str) -> f64 {
     let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
     let session = native::Session::new().unwrap();
     let scale = e.sketch.units.length.unwrap().1;
@@ -102,9 +109,27 @@ fn whole_member(member: &str,expected: f64) {
     let mut six = 0.;
     for t in &triangles { let [a,b,c] = t.map(|i| vertices[i as usize]); six += a[0]*(b[1]*c[2]-b[2]*c[1])-a[1]*(b[0]*c[2]-b[2]*c[0])+a[2]*(b[0]*c[1]-b[1]*c[0]); }
     let volume = six/6.;
-    eprintln!("{member}: {volume:.6} mm^3 against the kernel's {expected:.6} ({:.2e} relative), {} triangles, {} bytes in {:?}",
-        (volume-expected).abs()/expected,triangles.len(),bytes.len(),started.elapsed());
-    assert!((volume-expected).abs() < 1e-3*expected);
+    eprintln!("{member}: {volume:.6} mm^3, {} triangles, {} bytes in {:?}",triangles.len(),bytes.len(),started.elapsed());
+    volume
+}
+
+/// The pair as configured stands the pinion axis off the gear's: the pinion is
+/// still one crown tooth swept through its blank at every index. Its blank is a
+/// body of revolution about its own axis, so every placement of the sheet cuts,
+/// and the offset is what makes it a hypoid rather than a bevel member.
+#[cfg(feature="occt")]
+#[test]
+fn the_hypoid_pinion_exports_with_every_placement_cutting() {
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
+    let hypoid = support::read_as_configured(&source,&base);
+    let offset = hypoid.map.ent_named("pair.reference.pinion_axis").map(|l| {
+        let line = &hypoid.sketch.lines[l.i()]; hypoid.sketch.world_point(line.p1 as usize)[1].abs() }).unwrap();
+    assert!(offset > 1.,"the configured pair is a hypoid: axis offset {offset} mm");
+    let volume = member_volume(&hypoid,"pinion");
+    let bevel = member_volume(&support::read(&source,&base),"pinion");
+    eprintln!("hypoid pinion {volume:.3} mm^3, bevel pinion {bevel:.3} mm^3");
+    assert!((volume-bevel).abs() > 10.,"the offset changes the pinion: {volume} vs {bevel}");
 }
 
 #[cfg(feature="occt")]

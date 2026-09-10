@@ -80,6 +80,15 @@ operation is added. The analytic faces the generating-system checks read (surfac
 envelopes, regions, seams, vertices, edges, faces) live in `verification.sv`, instantiated
 by `pair.sv` and not by `gears.sv`; `paired_references.sv` holds only the blank boundaries,
 crown sections and motions the members are generated from.
+`configuration.sv` carries `axis_offset`; nonzero stands the pinion axis, its cones and its
+own toe/heel spheres in planes offset from the front and back along the shafts' common
+perpendicular, and the pinion's generating roll becomes a screw about the crown. Nothing in
+the sweep or arrangement changes. The mesh export now checks every placement of a sectioned
+sheet against the blank and refuses one whose boundary lies inside it, since a blank that is
+not symmetric about the placing axis would otherwise keep material silently; the pinion's own
+spheres are what make its blank symmetric about its own axis. The test readers zero the
+offset, since every recorded volume is the bevel pair's; one test exports the pair as
+configured.
 The source cutter is compared with the independently assembled active-flank fields at
 thousands of points in the reachable domain. Both complete source bodies match the separate
 member evaluator at 48 retained/removed probes across the 24:48, module 2 mm and 28:49,

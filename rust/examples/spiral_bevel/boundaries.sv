@@ -10,10 +10,13 @@ component ConeBoundary(f: plane, axis: line, axis_bearing: Angle, half_angle: An
   param bearing = axis_bearing - half_angle
   param near_axial = near * cos(half_angle) - normal_offset * sin(half_angle)
   param far_axial = far * cos(half_angle) - normal_offset * sin(half_angle)
-  private point a
-  private point b
-  private point p
-  private point q
+  // Seeded at their closed forms: the datum is at the page origin in every caller.
+  private point a hint(x: near_axial * cos(axis_bearing), y: near_axial * sin(axis_bearing))
+  private point b hint(x: far_axial * cos(axis_bearing), y: far_axial * sin(axis_bearing))
+  private point p hint(x: near * cos(bearing) + normal_offset * sin(bearing),
+                       y: near * sin(bearing) - normal_offset * cos(bearing))
+  private point q hint(x: far * cos(bearing) + normal_offset * sin(bearing),
+                       y: far * sin(bearing) - normal_offset * cos(bearing))
   a distance(near_axial * cos(axis_bearing), along: u) f
   a distance(near_axial * sin(axis_bearing), along: v) f
   b distance(far_axial * cos(axis_bearing), along: u) f

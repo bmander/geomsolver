@@ -8,9 +8,9 @@ component ReferenceFaces(refs: group) {
   // The generating roll the envelopes are verified over. The removal sweeps in
   // matched_pair.sv declare their own, longer for the gear.
   param roll_span = 35deg
-  pinion_tip_ends: EndCircles(refs.pinion_tip_boundary.wall, refs.toe.wall, refs.heel.wall)
-  pinion_root_ends: EndCircles(refs.pinion_root_boundary.wall, refs.toe.wall, refs.heel.wall)
-  pinion_back_ends: EndCircles(refs.pinion_back_boundary.wall, refs.toe.wall, refs.heel.wall)
+  pinion_tip_ends: EndCircles(refs.pinion_tip_boundary.wall, refs.pinion_toe.wall, refs.pinion_heel.wall)
+  pinion_root_ends: EndCircles(refs.pinion_root_boundary.wall, refs.pinion_toe.wall, refs.pinion_heel.wall)
+  pinion_back_ends: EndCircles(refs.pinion_back_boundary.wall, refs.pinion_toe.wall, refs.pinion_heel.wall)
   gear_tip_ends: EndCircles(refs.gear_tip_boundary.wall, refs.toe.wall, refs.heel.wall)
   gear_root_ends: EndCircles(refs.gear_root_boundary.wall, refs.toe.wall, refs.heel.wall)
   gear_back_ends: EndCircles(refs.gear_back_boundary.wall, refs.toe.wall, refs.heel.wall)
@@ -80,15 +80,15 @@ component ReferenceFaces(refs: group) {
   // Intersections with finite analytic boundaries belong to the model as well.
   // These seams retain the generated face's material conditions and source chart.
   seam pinion_outer_tip_edge(pinion_outer_region.bounded, refs.pinion_tip_boundary.wall)
-  seam pinion_outer_toe_edge(pinion_outer_region.bounded, refs.toe.wall)
-  seam pinion_outer_heel_edge(pinion_outer_region.bounded, refs.heel.wall)
-  seam pinion_outer_round_toe_edge(pinion_outer_round_region.bounded, refs.toe.wall)
-  seam pinion_outer_round_heel_edge(pinion_outer_round_region.bounded, refs.heel.wall)
+  seam pinion_outer_toe_edge(pinion_outer_region.bounded, refs.pinion_toe.wall)
+  seam pinion_outer_heel_edge(pinion_outer_region.bounded, refs.pinion_heel.wall)
+  seam pinion_outer_round_toe_edge(pinion_outer_round_region.bounded, refs.pinion_toe.wall)
+  seam pinion_outer_round_heel_edge(pinion_outer_round_region.bounded, refs.pinion_heel.wall)
   seam pinion_inner_tip_edge(pinion_inner_region.bounded, refs.pinion_tip_boundary.wall)
-  seam pinion_inner_toe_edge(pinion_inner_region.bounded, refs.toe.wall)
-  seam pinion_inner_heel_edge(pinion_inner_region.bounded, refs.heel.wall)
-  seam pinion_inner_round_toe_edge(pinion_inner_round_region.bounded, refs.toe.wall)
-  seam pinion_inner_round_heel_edge(pinion_inner_round_region.bounded, refs.heel.wall)
+  seam pinion_inner_toe_edge(pinion_inner_region.bounded, refs.pinion_toe.wall)
+  seam pinion_inner_heel_edge(pinion_inner_region.bounded, refs.pinion_heel.wall)
+  seam pinion_inner_round_toe_edge(pinion_inner_round_region.bounded, refs.pinion_toe.wall)
+  seam pinion_inner_round_heel_edge(pinion_inner_round_region.bounded, refs.pinion_heel.wall)
   seam gear_outer_inner_tip_edge(gear_outer_inner_region.bounded, refs.gear_tip_boundary.wall)
   seam gear_outer_inner_toe_edge(gear_outer_inner_region.bounded, refs.toe.wall)
   seam gear_outer_inner_heel_edge(gear_outer_inner_region.bounded, refs.heel.wall)

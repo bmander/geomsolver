@@ -188,7 +188,10 @@ be `cut` for now. `bound` is a body word like `cut`, so it is no declaration nam
 bevel blank is `heel` bounded by `tip`, and the gear cutter the outer crown bounded by its
 indexed neighbour; the `A − (A − B)` intermediate is gone. The analytic faces the generating
 checks read live in `spiral_bevel/verification.sv` (`ReferenceFaces(refs)`), instantiated by
-`pair.sv` only; `gears.sv` elaborates the design alone.
+`pair.sv` only; `gears.sv` elaborates the design alone. `configuration.sv`'s `axis_offset`
+stands the pinion axis, cones and its own end spheres in offset planes (a hypoid at nonzero);
+the mesh export refuses a sectioned sheet whose boundary a placement carries inside the blank,
+and the CLI test readers zero the offset because the recorded volumes are the bevel pair's.
 **Continuous motion solids:** `solid removal(tool, under: generating, from: -30deg, to: 30deg)`
 uses finite increasing Angle bounds, converted to radians at elaboration. It means the union
 of material over the complete interval, not a sequence of posed meshes. `at:` and interval

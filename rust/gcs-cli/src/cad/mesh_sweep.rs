@@ -85,6 +85,16 @@ pub fn solid_of(fixed: &solid::StaticSolid) -> Result<Solid,String> {
     evaluate(&fixed.csg.term,&prims)
 }
 
+/// The points on a sheet grid's open edges: every row's ends, and the first and
+/// last rows unless the rows close on themselves.
+fn boundary_points(grid: &SheetGrid) -> Vec<[f64;3]> {
+    let (rows,columns) = (grid.rows,grid.columns);
+    let at = |r: usize,c: usize| grid.points[r*columns+c];
+    let mut out: Vec<[f64;3]> = (0..rows).flat_map(|r| [at(r,0),at(r,columns-1)]).collect();
+    if !grid.closed_rows { out.extend((0..columns).flat_map(|c| [at(0,c),at(rows-1,c)])); }
+    out
+}
+
 /// A point inside the solid, `depth` behind its largest triangle, with that
 /// triangle's outward normal.
 pub fn interior_point(solid: &Solid,depth: f64) -> Result<[f64;3],String> {
@@ -161,13 +171,26 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
         let SolidDef::Swept {source,motion,from,to} = &sk.solids[swept].def else { unreachable!() };
         let started = std::time::Instant::now();
         let family = Family::read(sk,*motion as usize)?;
-        let grids = if solid::constant_twist(&family,[from.value,to.value],1e-9)? {
-            constant_twist_sheets(sk,swept,epsilon)?
-        } else { sheets(swept,&inside)? };
+        let twist = solid::constant_twist(&family,[from.value,to.value],1e-9)?;
+        let grids = if twist { constant_twist_sheets(sk,swept,epsilon)? } else { sheets(swept,&inside)? };
         let sheet_solids = grids.iter().map(|g| slab(g,epsilon)).collect::<Result<Vec<_>,_>>()?;
         let tool = solid_of(&solid::static_solid(sk,*source as usize,0)?)?;
         let ends = [family.at(from.value)?,family.at(to.value)?];
-        for cut in recipe.sweeps.iter().filter(|c| c.swept == swept) {
+        for (k,cut) in recipe.sweeps.iter().filter(|c| c.swept == swept).enumerate() {
+            // A sectioned sheet is widened until its boundary leaves the blank at
+            // the sweep's own pose. A placement carries it rigidly, and a blank that
+            // is not symmetric about the placing motion's axis can swallow its edge
+            // there, where a slab that ends inside the material separates nothing.
+            if !twist {
+                for grid in &grids {
+                    let edge: Vec<[f64;3]> = boundary_points(grid).iter().map(|&p| cut.pose.point(p)).collect();
+                    if inside(&edge)?.iter().any(|&i| i) {
+                        return Err(format!("`{}`: placement {k} of `{}` carries the generating sheet's boundary inside the blank; \
+                            the blank is not the same about that placement as about the sweep, so its cut would be incomplete",
+                            name,sk.solids[swept].name));
+                    }
+                }
+            }
             for sheet in &sheet_solids { slabs.push(sheet.placed(&cad::placement_matrix(cut.pose,1.))?); }
             for end in ends {
                 let placed = tool.placed(&cad::placement_matrix(end.then(cut.pose),1.))?;

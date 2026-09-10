@@ -5,8 +5,8 @@
 component FlankSection(f: plane, base: line, flank: line, corner: arc,
                        tip: line, limit: Length) {
   in f {
-    private point base_end
-    private point tip_end
+    private point base_end hint(x: limit, y: base.p1.y)
+    private point tip_end hint(x: limit, y: tip.p1.y)
     base_end on base
     tip_end on tip
     base_end distance(limit, along: u) f

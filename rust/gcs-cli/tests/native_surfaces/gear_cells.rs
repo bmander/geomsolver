@@ -9,12 +9,14 @@ use std::f64::consts::PI;
 
 /// Link the gear project with the member component also publishing its blank
 /// and a single unindexed space, for checks on one tooth without the others.
+/// The recorded volumes are the bevel pair's, so the axis offset reads as zero.
 pub(super) fn read_gears_with(base: &Path,rewrite: &mut dyn FnMut(&str,String) -> String) -> program::Elaborated {
     let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
     let (mut p,errors) = syntax::parse(&source); assert!(errors.is_empty(),"{errors:?}");
     let errors = gcs_core::modules::link(&mut p,&mut |name| {
         let text = std::fs::read_to_string(base.join(format!("{name}.sv"))).ok()
             .or_else(|| gcs_core::library::resolve(name))?;
+        let text = super::support::bevel(name,text);
         let text = if name == "matched_pair" {
             text.replace("  solid body(design.heel)\n","  solid body(design.heel)\n  construction solid blank(design.heel)\n  design.tip bound blank\n  design.toe cut blank\n  design.back cut blank\n  construction solid single(design.heel)\n  design.tip bound single\n  design.toe cut single\n  design.back cut single\n  removal cut single\n")
         } else { text };
