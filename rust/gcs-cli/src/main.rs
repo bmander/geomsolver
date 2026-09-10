@@ -46,12 +46,17 @@ solventc — check a Solvent document
     --gltf PATH         write a solid as binary glTF: every face a named node
     --solid NAME        which solid to export; defaults to the only Boolean root
     --width PX          the SVG's page width in pixels (default 800)
+    --verbose, -v       a line every few seconds from any stage that runs long
+    --verbose=2, -vv    also what a swept cut is made of: its sheets and their seams
     --sheet NAME        select a sheet in a .svd drawing (its page size sets SVG size)
     -h, --help          this
 
 Exit codes: 0 every document elaborated and solved; 1 a document failed to parse or
 elaborate; 2 a document elaborated but did not solve.
 ";
+
+/// How much a long stage says as it goes: 0 its stages only, 1 a line every few
+/// seconds, 2 the parts a construction is made of.
 
 /// One document, as the core sees it: a name to report against and the text itself.
 ///
@@ -170,6 +175,8 @@ fn main() -> ExitCode {
             },
             "--json" => opts.json = true,
             "--no-diagnose" => opts.no_diagnose = true,
+            "--verbose" | "-v" | "--verbose=1" => cad::mesh_sweep::VERBOSITY.store(1,std::sync::atomic::Ordering::Relaxed),
+            "--verbose=2" | "-vv" => cad::mesh_sweep::VERBOSITY.store(2,std::sync::atomic::Ordering::Relaxed),
             "--allow-unsolved" => opts.allow_unsolved = true,
             "-h" | "--help" => {
                 print!("{USAGE}");

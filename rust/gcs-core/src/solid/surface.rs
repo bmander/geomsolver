@@ -213,10 +213,15 @@ impl RevolvedSurface {
                     scale(add(scale(*a,-s),scale(*b,c)),*sweep))
             }
         };
-        let rotation = Motion::rotation(self.axis,v*self.sweep,self.sweep)?;
-        let r = sub(p,self.origin);
-        let result = SurfacePoint { position: add(self.origin,rotation.vector(r)),
-            du: rotation.vector(d),dv: rotation.velocity(r) };
+        // Rodrigues' rotation of the two vectors about the unit axis, and the
+        // angular velocity's cross product: what a pose would compute through
+        // two matrices, on a path evaluated many thousand times per trace.
+        let a = crate::envelope::normalized(self.axis).ok_or(Error::Degenerate)?;
+        let (s,c) = (v*self.sweep).sin_cos();
+        let cross = |x: V,y: V| [x[1]*y[2]-x[2]*y[1],x[2]*y[0]-x[0]*y[2],x[0]*y[1]-x[1]*y[0]];
+        let turned = |x: V| { let along = (a[0]*x[0]+a[1]*x[1]+a[2]*x[2])*(1.-c); add(add(scale(x,c),scale(cross(a,x),s)),scale(a,along)) };
+        let r = turned(sub(p,self.origin));
+        let result = SurfacePoint { position: add(self.origin,r),du: turned(d),dv: scale(cross(a,r),self.sweep) };
         if !result.position.iter().chain(&result.du).chain(&result.dv).all(|v| v.is_finite()) {
             return Err(Error::NonFinite);
         }

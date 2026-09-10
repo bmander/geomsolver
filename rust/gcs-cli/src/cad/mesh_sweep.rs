@@ -17,6 +17,25 @@ use gcs_core::{envelope,interval::{Interval,minimum::Options},mesh,model::{Sketc
     motion::Family,solid::{self,cad,MaterialField,ProbeState}};
 
 fn stage(message: &str) { eprintln!("solventc: {message}"); }
+
+/// A detail under `--verbose=2`: what a construction is made of.
+/// How much the export says as it goes: 0 the stages, 1 a drip every few
+/// seconds, 2 every sheet and column. Set by `solventc --verbose`.
+pub static VERBOSITY: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+pub fn verbosity() -> u8 { VERBOSITY.load(std::sync::atomic::Ordering::Relaxed) }
+fn detail(message: &str) { if verbosity() >= 2 { eprintln!("solventc:   {message}"); } }
+
+/// A steady drip under `--verbose`: a line at most every few seconds, so a
+/// stage that runs for minutes can be told from one that is wedged.
+fn tick(message: &str) {
+    use std::sync::Mutex;
+    static LAST: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+    if verbosity() < 1 { return; }
+    let mut last = LAST.lock().unwrap();
+    if last.is_some_and(|t| t.elapsed().as_secs_f64() < 3.) { return; }
+    *last = Some(std::time::Instant::now());
+    eprintln!("solventc:   {message}");
+}
 fn sub(a: [f64;3],b: [f64;3]) -> [f64;3] { std::array::from_fn(|k| a[k]-b[k]) }
 fn cross(a: [f64;3],b: [f64;3]) -> [f64;3] { [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]] }
 fn norm(a: [f64;3]) -> f64 { (a[0]*a[0]+a[1]*a[1]+a[2]*a[2]).sqrt() }
@@ -44,7 +63,7 @@ impl Occupancy {
     /// two cells, and never less than the length asked, since a sheet is kept
     /// or cropped column by column and a column must not step from beyond
     /// reach into the solid in one stride.
-    fn of(mesh: &Solid,inside: impl Fn([f64;3]) -> bool,resolution: usize,margin: f64) -> Result<Self,String> {
+    fn of(mesh: &Solid,resolution: usize,margin: f64) -> Result<Self,String> {
         let (vertices,triangles) = mesh.triangles()?;
         let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
         for p in &vertices { for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]); } }
@@ -57,13 +76,12 @@ impl Occupancy {
         let hi: [f64;3] = hi.map(|v| v+(reach as f64+1.)*cell);
         let dims: [usize;3] = std::array::from_fn(|k| ((hi[k]-lo[k])/cell).ceil() as usize+1);
         let index = |x: usize,y: usize,z: usize| (x*dims[1]+y)*dims[2]+z;
+        // Every cell a boundary triangle's box touches is occupied, and the
+        // rest of the blank is what a flood from the grid's own edge cannot
+        // reach: a closed surface's cells separate the outside from the inside
+        // for a six-connected walk, since a step between neighbouring centres
+        // that crosses the surface crosses it inside one of the two cells.
         let mut occupied = vec![false;dims[0]*dims[1]*dims[2]];
-        for x in 0..dims[0] { for y in 0..dims[1] { for z in 0..dims[2] {
-            let centre: [f64;3] = std::array::from_fn(|k| lo[k]+cell*([x,y,z][k] as f64+0.5));
-            occupied[index(x,y,z)] = inside(centre);
-        } } }
-        // and every cell a boundary triangle's box touches, so a wedge of the
-        // solid thinner than a cell is not missed between the centres
         for t in &triangles {
             let corners = t.map(|i| vertices[i as usize]);
             let range = |k: usize| {
@@ -72,6 +90,21 @@ impl Occupancy {
             };
             for x in range(0) { for y in range(1) { for z in range(2) { occupied[index(x,y,z)] = true; } } }
         }
+        let mut outside = vec![false;occupied.len()];
+        let mut pending = vec![(0usize,0usize,0usize)];
+        outside[0] = true;
+        while let Some((x,y,z)) = pending.pop() {
+            for (dx,dy,dz) in [(1i64,0i64,0i64),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)] {
+                let (nx,ny,nz) = (x as i64+dx,y as i64+dy,z as i64+dz);
+                if nx < 0 || ny < 0 || nz < 0 { continue; }
+                let (nx,ny,nz) = (nx as usize,ny as usize,nz as usize);
+                if nx >= dims[0] || ny >= dims[1] || nz >= dims[2] { continue; }
+                let i = index(nx,ny,nz);
+                if occupied[i] || outside[i] { continue; }
+                outside[i] = true; pending.push((nx,ny,nz));
+            }
+        }
+        for i in 0..occupied.len() { if !outside[i] { occupied[i] = true; } }
         // dilate by the reach, so a sheet is kept wherever it comes near
         let mut cells = occupied.clone();
         for x in 0..dims[0] { for y in 0..dims[1] { for z in 0..dims[2] {
@@ -169,7 +202,7 @@ impl Patch {
 
     /// The directed edges used by exactly one triangle: the patch's rim.
     fn boundary_edges(&self) -> Vec<(u32,u32)> {
-        let mut directed: std::collections::HashSet<(u32,u32)> = std::collections::HashSet::new();
+        let mut directed: std::collections::BTreeSet<(u32,u32)> = Default::default();
         for t in &self.triangles { for k in 0..3 { directed.insert((t[k],t[(k+1)%3])); } }
         directed.iter().copied().filter(|&(p,q)| !directed.contains(&(q,p))).collect()
     }
@@ -233,7 +266,7 @@ impl Patch {
 fn split_at_folds(patch: &Patch) -> Vec<Patch> {
     let normal = |t: &[u32;3]| { let [a,b,c] = t.map(|v| patch.vertices[v as usize]); cross(sub(b,a),sub(c,a)) };
     let normals: Vec<[f64;3]> = patch.triangles.iter().map(normal).collect();
-    let mut by_edge: std::collections::HashMap<(u32,u32),Vec<usize>> = Default::default();
+    let mut by_edge: std::collections::BTreeMap<(u32,u32),Vec<usize>> = Default::default();
     for (i,t) in patch.triangles.iter().enumerate() { for k in 0..3 { let (a,b) = (t[k],t[(k+1)%3]); by_edge.entry((a.min(b),a.max(b))).or_default().push(i); } }
     // union-find over triangles across unfolded edges
     let mut parent: Vec<usize> = (0..patch.triangles.len()).collect();
@@ -248,7 +281,7 @@ fn split_at_folds(patch: &Patch) -> Vec<Patch> {
     for i in 0..patch.triangles.len() { let r = find(&mut parent,i); groups.entry(r).or_default().push(i); }
     if groups.len() == 1 { return vec![patch.clone()]; }
     groups.values().map(|ts| {
-        let mut remap: std::collections::HashMap<u32,u32> = Default::default();
+        let mut remap: std::collections::BTreeMap<u32,u32> = Default::default();
         let mut vertices = Vec::new(); let mut normals = Vec::new(); let mut column = Vec::new();
         let triangles = ts.iter().map(|&i| patch.triangles[i].map(|v| *remap.entry(v).or_insert_with(|| {
             vertices.push(patch.vertices[v as usize]); normals.push(patch.normals[v as usize]); column.push(patch.column[v as usize]); (vertices.len()-1) as u32 }))).collect();
@@ -270,21 +303,24 @@ fn seam_ribbons(sheets: &[Patch],within: f64) -> Vec<Patch> {
         let vs = g.column_vertices(c);
         (vs.iter().map(|&v| g.vertices[v as usize]).collect(),vs.iter().map(|&v| g.normals[v as usize]).collect())
     };
-    let span = sheets.iter().flat_map(|g| g.times.iter().copied()).fold((f64::INFINITY,f64::NEG_INFINITY),|(lo,hi),t| (lo.min(t),hi.max(t)));
-    // a death and the birth beside it are bisected to their own events, and
-    // may differ by more than the bisection's resolution
-    let same = |a: f64,b: f64| (a-b).abs() <= 1e-4*(span.1-span.0).max(f64::MIN_POSITIVE);
+    // A death and the birth beside it are each bisected to their own event,
+    // and where the curve between them matches neither side the two lie up to
+    // a column step apart: a partner is a sheet ending within one step before
+    // this one begins, or beginning within one step after it ends.
+    let step = |g: &Patch| g.times.windows(2).map(|w| w[1]-w[0]).fold(0_f64,f64::max).max(f64::MIN_POSITIVE);
     let mut ribbons = Vec::new();
     for (i,g) in sheets.iter().enumerate() {
         let (first,last) = g.column_range();
         for (c,partner_end) in [(first,true),(last,false)] {
             let t = g.times[c as usize];
-            // the columns of other sheets that end (or begin) where this one begins (or ends)
             let partners: Vec<(Vec<[f64;3]>,Vec<[f64;3]>)> = sheets.iter().enumerate().filter(|(j,_)| *j != i)
                 .filter_map(|(_,h)| {
                     let (hf,hl) = h.column_range();
                     let pc = if partner_end { hl } else { hf };
-                    same(h.times[pc as usize],t).then(|| column(h,pc))
+                    let tp = h.times[pc as usize];
+                    let within = step(g).max(step(h))*1.001;
+                    let meets = if partner_end { tp <= t+1e-9 && t-tp <= within } else { tp >= t-1e-9 && tp-t <= within };
+                    meets.then(|| column(h,pc))
                 }).filter(|(p,_)| p.len() >= 2).collect();
             if partners.is_empty() { continue; }
             let (points,normals) = column(g,c);
@@ -366,7 +402,7 @@ pub fn slab_of(patch: &Patch,epsilon: f64) -> Result<Solid,String> {
     }
     let below = |i: u32| i+n as u32;
     let mut triangles = Vec::with_capacity(4*patch.triangles.len());
-    let mut directed: std::collections::HashSet<(u32,u32)> = std::collections::HashSet::new();
+    let mut directed: std::collections::BTreeSet<(u32,u32)> = Default::default();
     for t in &patch.triangles {
         triangles.push(*t);
         triangles.push([below(t[0]),below(t[2]),below(t[1])]);
@@ -450,9 +486,15 @@ pub fn constant_twist_sheets(sk: &Sketch,swept: usize,epsilon: f64,sagitta: f64)
 pub fn traced_sheets(sk: &Sketch,swept: usize,epsilon: f64,sagitta: f64,reach: &dyn Fn([f64;3]) -> bool) -> Result<Vec<Patch>,String> {
     let started = std::time::Instant::now();
     let sweep = solid::SweepContacts::read(sk,swept,1e-10)?;
-    let sheets = sweep.characteristic_sheets(COLUMN_SPACING,sagitta,2.*epsilon,1e-9,Some(reach))?;
+    let name = &sk.solids[swept].name;
+    stage(&format!("`{name}`: tool read, {} faces, {} creases ({:?})",sweep.faces().len(),sweep.creases().len(),started.elapsed()));
+    let sheets = sweep.characteristic_sheets(COLUMN_SPACING,sagitta,2.*epsilon,1e-9,Some(reach),&|step| tick(&format!("`{name}`: tracing, {step}")))?;
     stage(&format!("`{}`: traced {} sheets of {} points ({:?})",sk.solids[swept].name,sheets.len(),
         sheets.iter().map(|s| s.points.len()).sum::<usize>(),started.elapsed()));
+    for (i,s) in sheets.iter().enumerate() {
+        detail(&format!("sheet {i}: {} points, {} columns over {:.6}..{:.6}, {}",s.points.len(),s.times.len(),s.times[0],s.times[s.times.len()-1],
+            if s.closed { "closed" } else { "open" }));
+    }
     Ok(sheets.into_iter().map(Patch::from).collect())
 }
 
@@ -473,7 +515,9 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
     let blank_mesh = solid_of(&blank)?;
     stage(&format!("`{name}`: blank meshed, {} triangles, {:.6} mm³ ({:?})",blank_mesh.triangle_count(),
         blank_mesh.volume()*scale.powi(3),started.elapsed()));
-    let occupancy = Occupancy::of(&blank_mesh,|p| blank.contains(p.map(|v| v/scale)),64,2.*COLUMN_SPACING)?;
+    let started = std::time::Instant::now();
+    let occupancy = Occupancy::of(&blank_mesh,64,2.*COLUMN_SPACING)?;
+    stage(&format!("`{name}`: occupancy of the blank ({:?})",started.elapsed()));
     // Slab thickness: a micrometre in native millimetres, expressed in model units.
     let epsilon = 1e-3/scale;
     // Chordal facets of a subtracted round face lie outside the true surface by
@@ -514,6 +558,11 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
             let mut posed: Vec<Patch> = patches.iter().filter_map(|g| g.placed(cut.pose).cropped(&reach)).collect();
             let near = 4.*sagitta*scale+COLUMN_SPACING/20.;
             let ribbons = seam_ribbons(&posed,2.*near);
+            for (i,g) in posed.iter().enumerate() {
+                let (c0,c1) = g.column_range();
+                detail(&format!("placement {k}: sheet {i} kept columns {c0}..{c1} ({:.6}..{:.6}), {} vertices, {} triangles",g.times[c0 as usize],g.times[c1 as usize],g.vertices.len(),g.triangles.len()));
+            }
+            detail(&format!("placement {k}: {} seam ribbons of {} triangles",ribbons.len(),ribbons.iter().map(|r| r.triangles.len()).sum::<usize>()));
             posed.extend(ribbons);
             // Every rim point of a sheet must be outside the blank, inside an end
             // pose of the tool (removed outright), or on another candidate of the
@@ -536,13 +585,16 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
                 rim.sort(); rim.dedup();
                 let points: Vec<[f64;3]> = rim.iter().map(|&v| patch.vertices[v as usize]).collect();
                 let inside_blank = inside(&points)?;
-                for (p,&in_blank) in points.iter().zip(&inside_blank) {
+                for ((&v,p),&in_blank) in rim.iter().zip(&points).zip(&inside_blank) {
                     if !in_blank || in_cap(*p)? { continue; }
                     let attached = posed.iter().zip(&indices).enumerate().filter(|(j,_)| *j != i)
                         .any(|(_,(other,index))| other.distance_within(index,*p,near) <= near);
                     if !attached {
-                        return Err(format!("`{}`: placement {k} of `{}` leaves a sheet's edge loose inside the blank at {p:?}, \
-                            attached to no end pose or other candidate; its cut would be incomplete",name,sk.solids[swept].name));
+                        let (c0,c1) = patch.column_range();
+                        let c = patch.column[v as usize];
+                        return Err(format!("`{}`: placement {k} of `{}` leaves a sheet's edge loose inside the blank at {p:?} \
+                            (sheet {i}, column {c} of {c0}..{c1}, parameter {:.6}), attached to no end pose or other candidate; \
+                            its cut would be incomplete",name,sk.solids[swept].name,patch.times[c as usize]));
                     }
                 }
             }
@@ -558,27 +610,46 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
                 let placed = tool.placed(&cad::placement_matrix(end.then(cut.pose),1.))?;
                 caps.push(placed);
             }
+            tick(&format!("`{}`: placement {} of {placements}: {} sheets, {} triangles ({:?})",sk.solids[swept].name,k+1,
+                posed.len(),slabs[group_start..].iter().map(|s| s.triangle_count()).sum::<usize>(),started.elapsed()));
         }
         stage(&format!("`{}`: {sheet_count} sheets of {sheet_triangles} triangles over {placements} placements ({:?})",
             sk.solids[swept].name,started.elapsed()));
     }
     let started = std::time::Instant::now();
-    let cap_union = Solid::batch(&caps.iter().collect::<Vec<_>>(),true)?;
-    let body_mesh = blank_mesh.difference(&cap_union)?;
+    // Only the caps whose box meets the blank's are worth a Boolean: a roll
+    // that carries the cutter clear of the blank at both limits leaves none.
+    let bounds = |solid: &Solid| -> Result<([f64;3],[f64;3]),String> {
+        let (v,_) = solid.triangles()?;
+        Ok(v.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(lo,hi),p| (std::array::from_fn(|k| lo[k].min(p[k])),std::array::from_fn(|k| hi[k].max(p[k])))))
+    };
+    let (blank_lo,blank_hi) = bounds(&blank_mesh)?;
+    let mut near_caps: Vec<&Solid> = Vec::new();
+    for cap in &caps {
+        let (lo,hi) = bounds(cap)?;
+        if (0..3).all(|k| lo[k] <= blank_hi[k] && hi[k] >= blank_lo[k]) { near_caps.push(cap); }
+    }
+    let body_mesh = if near_caps.is_empty() { Solid::from_triangles(&blank_mesh.triangles()?.0,&blank_mesh.triangles()?.1)? } else {
+        blank_mesh.difference(&Solid::batch(&near_caps,true)?)?
+    };
     let removed = blank_mesh.volume()-body_mesh.volume();
     // One placement's slabs at a time: a union of every placement's slabs at
     // once is a Boolean over millions of overlapping triangles, where each
     // placement's union is small and the remainder only grows by its cut.
     let (mut walls,mut remainder): (Vec<Solid>,Solid) = (Vec::new(),body_mesh);
-    for group in &groups {
+    for (g,group) in groups.iter().enumerate() {
         if group.is_empty() { continue; }
         let union = Solid::batch(&slabs[group.clone()].iter().collect::<Vec<_>>(),true)?;
         let (w,r) = remainder.split(&union)?;
         walls.push(w); remainder = r;
+        tick(&format!("split by placement {} of {}: remainder {} triangles ({:?})",g+1,groups.len(),remainder.triangle_count(),started.elapsed()));
     }
-    let walls = Solid::batch(&walls.iter().collect::<Vec<_>>(),true)?;
     let cells = remainder.components()?;
-    let wall_pieces = walls.components()?;
+    tick(&format!("{} cells ({:?})",cells.len(),started.elapsed()));
+    // each placement's walls are their own pieces; a union across placements
+    // would only merge slabs that overlap, which the field judges alike
+    let mut wall_pieces: Vec<Solid> = Vec::new();
+    for w in &walls { wall_pieces.extend(w.components()?); }
     stage(&format!("caps removed {:.6} mm³; {} cells and {} wall pieces ({:?})",removed*scale.powi(3),cells.len(),wall_pieces.len(),started.elapsed()));
     let started = std::time::Instant::now();
     let mut material = MaterialField::read(sk,body,1e-10)?.evaluator(4096);
@@ -623,70 +694,125 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
     let started = std::time::Instant::now();
     let part = Solid::batch(&kept.iter().collect::<Vec<_>>(),true)?;
     stage(&format!("united the material: {:.6} mm³, {} triangles ({:?})",part.volume()*scale.powi(3),part.triangle_count(),started.elapsed()));
-    // The union is written as it comes: Manifold's own simplification pinches
-    // vertices of its own, and a solid that touches itself along an edge is
-    // refused by the STL shell check below with the edge named.
-    part.triangles()
+    // STL carries float32 coordinates, and the Boolean between nearly
+    // coincident slabs leaves features far below them: edges a few nanometres
+    // long, needles whose altitude is under a float32 step. Encoded, those are
+    // edges of no length and triangles of no area, which the kernel's own
+    // simplification takes out while keeping the mesh manifold; so the mesh
+    // is rounded to float32 first and simplified after, and what comes back
+    // is what the file will hold.
+    let (vertices,triangles) = part.triangles()?;
+    let rounded: Vec<[f64;3]> = vertices.iter().map(|v| v.map(|x| (x as f32) as f64)).collect();
+    let encoded = Solid::from_triangles(&rounded,&triangles)?.simplified(0.)?;
+    stage(&format!("encoded for float32: {:.6} mm³, {} triangles",encoded.volume()*scale.powi(3),encoded.triangle_count()));
+    encoded.triangles()
 }
 
-/// Vertices identified by their float32 encoding, and the triangles that survive
-/// the identification: STL carries no vertex identity, so a sliver between two
-/// coincident vertices is dropped rather than encoded as a degenerate facet,
-/// and a fin, two facets on one triple of vertices back to back (what a
-/// sliver of no thickness between two coincident candidates folds to), is
-/// dropped whole.
+/// The mesh prepared for float32 encoding: STL carries no vertex identity, so
+/// two vertices nearer than float32 resolves are one vertex once written, and a
+/// triangle collinear once written is no triangle. The Boolean between nearly
+/// coincident slabs leaves both, edges a few nanometres long and needles whose
+/// altitude is under a float32 step. Each is removed by a move that keeps a
+/// closed manifold closed: an edge shorter than the weld is collapsed only
+/// under the link condition (its ends share exactly the two vertices across
+/// the edge's two triangles), a needle is dropped and its neighbour across the
+/// long edge split at the needle's middle vertex (a T-junction resolved), and
+/// two vertices the encoding identifies that no edge joins are nudged apart
+/// along their own fans' normals, since a pinch is what the encoding would
+/// otherwise make of them. Welding by proximity alone folded strips into edges
+/// used three times.
 fn merged(vertices: &[[f64;3]],triangles: &[[u32;3]]) -> (Vec<[f64;3]>,Vec<[u32;3]>) {
-    // Vertices within a nanometre of one another are one vertex too: a
-    // Boolean between nearly coincident slabs leaves edges that short, which
-    // float32 may or may not fold together depending on where they fall.
-    let cell = 1e-6;
-    let mut index: std::collections::HashMap<[i64;3],Vec<u32>> = Default::default();
-    let mut merged: Vec<[f64;3]> = Vec::with_capacity(vertices.len());
-    let key = |v: &[f64;3]| v.map(|x| (x/cell).floor() as i64);
-    let remap: Vec<u32> = vertices.iter().map(|v| {
-        let k = key(v);
-        for dx in -1..=1 { for dy in -1..=1 { for dz in -1..=1 {
-            if let Some(near) = index.get(&[k[0]+dx,k[1]+dy,k[2]+dz]) {
-                for &i in near { if norm(sub(merged[i as usize],*v)) <= cell { return i; } }
-            }
-        } } }
-        merged.push(*v); let i = (merged.len()-1) as u32; index.entry(k).or_default().push(i); i
-    }).collect();
-    let kept: Vec<[u32;3]> = triangles.iter().map(|t| t.map(|i| remap[i as usize]))
-        .filter(|t| t[0] != t[1] && t[1] != t[2] && t[2] != t[0]).collect();
-    let mut uses: std::collections::HashMap<[u32;3],usize> = Default::default();
-    let key = |t: &[u32;3]| { let mut k = *t; k.sort(); k };
-    for t in &kept { *uses.entry(key(t)).or_default() += 1; }
-    let mut kept: Vec<[u32;3]> = kept.into_iter().filter(|t| uses[&key(t)] == 1).collect();
-    // A vertex whose triangles fall into several fans is a pinch: two parts
-    // of the solid touching at a point (where a contact loop divides, the
-    // sheets meet on one vertex). Each fan takes a copy of the vertex nudged
-    // one float32 step along the fan's own normal, so the shell encodes as
-    // two vertices a few nanometres apart rather than one non-manifold one.
-    let mut incident: Vec<Vec<usize>> = vec![Vec::new();merged.len()];
-    for (i,t) in kept.iter().enumerate() { for &v in t { incident[v as usize].push(i); } }
-    for v in 0..incident.len() {
-        let ts = incident[v].clone();
-        if ts.len() < 2 { continue; }
-        let mut group: Vec<usize> = (0..ts.len()).collect();
-        let other = |i: usize| -> Vec<u32> { kept[ts[i]].iter().copied().filter(|&w| w != v as u32).collect() };
-        for a in 0..ts.len() { for b in a+1..ts.len() {
-            if other(a).iter().any(|w| other(b).contains(w)) { let (ga,gb) = (group[a],group[b]); for g in group.iter_mut() { if *g == gb { *g = ga; } } }
+    let magnitude = vertices.iter().flatten().fold(1_f64,|m,x| m.max(x.abs()));
+    let weld = 4.*(magnitude as f32).abs() as f64*f32::EPSILON as f64;
+    let mut points: Vec<[f64;3]> = vertices.to_vec();
+    let mut kept: Vec<[u32;3]> = triangles.to_vec();
+    // Short edges, collapsed under the link condition. One pass collapses
+    // edges whose neighbourhoods are untouched by an earlier collapse of the
+    // same pass, and passes repeat until nothing collapses.
+    loop {
+        let n = points.len();
+        let mut neighbours: Vec<Vec<u32>> = vec![Vec::new();n];
+        let mut incident: Vec<Vec<usize>> = vec![Vec::new();n];
+        for (i,t) in kept.iter().enumerate() { for k in 0..3 {
+            let (a,b) = (t[k],t[(k+1)%3]);
+            neighbours[a as usize].push(b); neighbours[b as usize].push(a); incident[a as usize].push(i);
         } }
-        let mut fans: Vec<usize> = group.clone(); fans.sort(); fans.dedup();
-        if fans.len() < 2 { continue; }
-        for &fan in &fans[1..] {
-            let members: Vec<usize> = (0..ts.len()).filter(|&i| group[i] == fan).map(|i| ts[i]).collect();
-            let mut normal = [0.;3];
-            for &i in &members { let [a,b,c] = kept[i].map(|w| merged[w as usize]); let n = cross(sub(b,a),sub(c,a)); for k in 0..3 { normal[k] += n[k]; } }
-            let len = norm(normal); if len == 0. { continue; }
-            let p = merged[v];
-            let nudged: [f64;3] = std::array::from_fn(|k| { let step = ((p[k] as f32).abs().max(1e-30) as f64)*f32::EPSILON as f64*2.; p[k]+step*normal[k]/len });
-            merged.push(nudged); let copy = (merged.len()-1) as u32;
-            for &i in &members { for w in kept[i].iter_mut() { if *w == v as u32 { *w = copy; } } }
+        for list in neighbours.iter_mut() { list.sort(); list.dedup(); }
+        let mut remap: Vec<u32> = (0..n as u32).collect();
+        let mut dead = vec![false;kept.len()];
+        let mut touched = vec![false;n];
+        let mut collapsed = false;
+        for a in 0..n {
+            for &b in &neighbours[a] {
+                let b = b as usize;
+                if b <= a || touched[a] || touched[b] || norm(sub(points[a],points[b])) >= weld { continue; }
+                let shared: Vec<usize> = incident[a].iter().copied().filter(|&i| kept[i].contains(&(b as u32))).collect();
+                let common: Vec<u32> = neighbours[a].iter().copied().filter(|v| neighbours[b].contains(v)).collect();
+                let across = |i: usize| kept[i].iter().copied().find(|&v| v != a as u32 && v != b as u32).unwrap();
+                if shared.len() != 2 || common.len() != 2 || !shared.iter().all(|&i| common.contains(&across(i))) { continue; }
+                for &i in &shared { dead[i] = true; }
+                remap[b] = a as u32;
+                collapsed = true;
+                for &v in neighbours[a].iter().chain(&neighbours[b]) { touched[v as usize] = true; }
+                touched[a] = true; touched[b] = true;
+            }
+        }
+        if !collapsed { break; }
+        kept = kept.iter().enumerate().filter(|(i,_)| !dead[*i]).map(|(_,t)| t.map(|v| remap[v as usize])).collect();
+    }
+    // Needles: three vertices collinear once encoded, the middle one on the
+    // long edge, a T-junction with the neighbour across that edge.
+    for _ in 0..8 {
+        let encoded = |v: u32| points[v as usize].map(|x| (x as f32) as f64);
+        let needle = |t: &[u32;3]| -> Option<(u32,u32,u32)> {
+            let [a,b,c] = t.map(encoded);
+            if !mesh::degenerate(a,b,c) { return None; }
+            let mid = (0..3).max_by(|&i,&j| { let d = |k: usize| norm(sub([a,b,c][(k+1)%3],[a,b,c][(k+2)%3])); d(i).total_cmp(&d(j)) }).unwrap();
+            Some((t[(mid+1)%3],t[mid],t[(mid+2)%3]))
+        };
+        let needles: Vec<(usize,(u32,u32,u32))> = kept.iter().enumerate().filter_map(|(i,t)| needle(t).map(|n| (i,n))).collect();
+        if needles.is_empty() { break; }
+        let mut drop = vec![false;kept.len()];
+        let mut added: Vec<[u32;3]> = Vec::new();
+        for (i,(p,m,q)) in needles {
+            if drop[i] { continue; }
+            // the neighbour across the long edge q->p (the needle runs p->m->q on the other side)
+            let Some(j) = kept.iter().enumerate().position(|(j,t)| j != i && !drop[j] && (0..3).any(|k| t[k] == q && t[(k+1)%3] == p)) else { continue };
+            let t = kept[j];
+            let k = (0..3).find(|&k| t[k] == q && t[(k+1)%3] == p).unwrap();
+            let x = t[(k+2)%3];
+            drop[i] = true; drop[j] = true;
+            added.push([q,m,x]); added.push([m,p,x]);
+        }
+        kept = kept.into_iter().enumerate().filter(|(i,_)| !drop[*i]).map(|(_,t)| t).chain(added).collect();
+    }
+    // Vertices the encoding identifies that no edge joins: each but the first
+    // moves a few float32 steps along its own fan's normal.
+    let mut used = vec![false;points.len()];
+    for t in &kept { for &v in t { used[v as usize] = true; } }
+    let mut groups: std::collections::BTreeMap<[u32;3],Vec<u32>> = Default::default();
+    for (i,p) in points.iter().enumerate() { if used[i] { groups.entry(p.map(|x| (x as f32).to_bits())).or_default().push(i as u32); } }
+    let mut fan_normal: Vec<[f64;3]> = vec![[0.;3];points.len()];
+    for t in &kept {
+        let [a,b,c] = t.map(|v| points[v as usize]);
+        let n = cross(sub(b,a),sub(c,a));
+        for &v in t { for k in 0..3 { fan_normal[v as usize][k] += n[k]; } }
+    }
+    for group in groups.values().filter(|g| g.len() > 1) {
+        for (j,&v) in group.iter().enumerate().skip(1) {
+            let (n,p) = (fan_normal[v as usize],points[v as usize]);
+            let len = norm(n); if len == 0. { continue; }
+            points[v as usize] = std::array::from_fn(|k| {
+                let step = ((p[k] as f32).abs().max(1e-30) as f64)*f32::EPSILON as f64*2.*j as f64;
+                p[k]+step*n[k]/len
+            });
         }
     }
-    (merged,kept)
+    // unused vertices dropped
+    let mut compact: Vec<u32> = vec![u32::MAX;points.len()];
+    let mut vertices_out: Vec<[f64;3]> = Vec::new();
+    for (i,&u) in used.iter().enumerate() { if u { compact[i] = vertices_out.len() as u32; vertices_out.push(points[i]); } }
+    (vertices_out,kept.iter().map(|t| t.map(|v| compact[v as usize])).collect())
 }
 
 /// Binary STL of the indexed triangles through the core's checked writer, with

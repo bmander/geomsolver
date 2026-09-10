@@ -42,6 +42,7 @@ extern "C" {
     fn manifold_status(m: *mut ManifoldManifold) -> c_int;
     fn manifold_num_tri(m: *mut ManifoldManifold) -> usize;
     fn manifold_is_empty(m: *mut ManifoldManifold) -> c_int;
+    fn manifold_simplify(mem: *mut c_void,m: *mut ManifoldManifold,tolerance: f64) -> *mut ManifoldManifold;
 }
 
 const ADD: c_int = 0;
@@ -156,5 +157,10 @@ impl Solid {
     pub fn area(&self) -> f64 { unsafe { manifold_surface_area(self.0) } }
     #[allow(dead_code)]
     pub fn is_empty(&self) -> bool { unsafe { manifold_is_empty(self.0) != 0 } }
+    /// Remove vertices within `tolerance` of the surface they lie on, keeping
+    /// the mesh manifold: the way to drop features below an output's resolution.
+    pub fn simplified(&self,tolerance: f64) -> Result<Self,String> {
+        unsafe { Self::checked(manifold_simplify(manifold_alloc_manifold().cast(),self.0,tolerance),"simplify") }
+    }
     pub fn triangle_count(&self) -> usize { unsafe { manifold_num_tri(self.0) } }
 }

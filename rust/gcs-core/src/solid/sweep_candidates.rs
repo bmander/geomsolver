@@ -76,8 +76,14 @@ impl EdgeRef<'_> {
 }
 
 
-/// Each face's outward sign and the faces it is shadowed by.
-struct Signs { signs: Vec<f64>, shadows: Vec<Vec<usize>> }
+/// Each face's outward sign, the faces it is shadowed by, and the geometry
+/// of every edge's samples (the charted edges, then the creases): what the
+/// tracer reads at every parameter and none of which the pose changes.
+struct Signs { signs: Vec<f64>, shadows: Vec<Vec<usize>>, edge_points: Vec<Vec<Option<EdgePoint>>> }
+
+/// An edge point's geometry: its position and both faces' outward normals.
+#[derive(Clone,Copy)]
+struct EdgePoint { position: V3, normals: [V3;2] }
 
 /// A station root in the tool's frame: `(v, position, outward normal)`.
 type Root = (f64,V3,V3);
@@ -266,26 +272,25 @@ impl SweepContacts {
         for (index,face) in self.faces.iter().enumerate() {
             for c in self.contact_curves(face,signs.signs[index],&signs.shadows[index],pose,tolerance,scale)? { out.push((format!("face {index}"),c)); }
         }
-        for edge in &self.edges {
-            for c in self.edge_curves(EdgeRef::Charted(edge),&signs.signs,pose,tolerance,scale)? { out.push((format!("edge {:?}",edge.faces),c)); }
+        for (i,edge) in self.edges.iter().enumerate() {
+            for c in self.edge_curves(EdgeRef::Charted(edge),i,&signs,pose,tolerance,scale)? { out.push((format!("edge {:?}",edge.faces),c)); }
         }
-        for crease in &self.creases {
-            for c in self.edge_curves(EdgeRef::Crease(crease),&signs.signs,pose,tolerance,scale)? { out.push((format!("crease {:?}",crease.faces),c)); }
+        for (i,crease) in self.creases.iter().enumerate() {
+            for c in self.edge_curves(EdgeRef::Crease(crease),self.edges.len()+i,&signs,pose,tolerance,scale)? { out.push((format!("crease {:?}",crease.faces),c)); }
         }
         Ok(out)
     }
 
     fn characteristics_at(&self,pose: Motion,signs: &Signs,tolerance: f64,scale: f64) -> Result<Vec<Characteristic>,String> {
         let mut pieces: Vec<Characteristic> = Vec::new();
-        let Signs {signs,shadows} = signs;
         for (index,face) in self.faces.iter().enumerate() {
-            pieces.extend(self.contact_curves(face,signs[index],&shadows[index],pose,tolerance,scale)?);
+            pieces.extend(self.contact_curves(face,signs.signs[index],&signs.shadows[index],pose,tolerance,scale)?);
         }
-        for edge in &self.edges {
-            pieces.extend(self.edge_curves(EdgeRef::Charted(edge),signs,pose,tolerance,scale)?);
+        for (i,edge) in self.edges.iter().enumerate() {
+            pieces.extend(self.edge_curves(EdgeRef::Charted(edge),i,signs,pose,tolerance,scale)?);
         }
-        for crease in &self.creases {
-            pieces.extend(self.edge_curves(EdgeRef::Crease(crease),signs,pose,tolerance,scale)?);
+        for (i,crease) in self.creases.iter().enumerate() {
+            pieces.extend(self.edge_curves(EdgeRef::Crease(crease),self.edges.len()+i,signs,pose,tolerance,scale)?);
         }
         Ok(chain(self.trimmed(pieces,scale)?,JOIN*scale*10.))
     }
@@ -319,7 +324,34 @@ impl SweepContacts {
                 if coincident { shadows[j].push(i); }
             }
         }
-        Ok(Signs {signs,shadows})
+        let mut edge_points = Vec::new();
+        let refs = self.edges.iter().map(EdgeRef::Charted).chain(self.creases.iter().map(EdgeRef::Crease));
+        for edge in refs {
+            let samples = super::tool_faces::EDGE_SAMPLES;
+            edge_points.push((0..=samples).map(|i| self.edge_point(edge,&signs,i as f64/samples as f64,scale)).collect::<Result<_,_>>()?);
+        }
+        Ok(Signs {signs,shadows,edge_points})
+    }
+
+    /// An edge point's geometry, or none where the edge is off the tool's
+    /// boundary or concave, which contributes nothing.
+    fn edge_point(&self,edge: EdgeRef,signs: &[f64],t: f64,scale: f64) -> Result<Option<EdgePoint>,String> {
+        let [a,b] = edge.faces();
+        let (fa,fb) = (&self.faces[a],&self.faces[b]);
+        let ((ua,va),(ub,vb)) = match edge {
+            EdgeRef::Charted(e) => (e.charts[0].at(t,fa),e.charts[1].at(t,fb)),
+            EdgeRef::Crease(c) => match c.at(t,fa,fb) { Some(uv) => uv,None => return Ok(None) },
+        };
+        let sa = fa.at(ua,va).map_err(|e| format!("edge of faces {a} and {b} at {t}: {e:?}"))?;
+        let (_,na) = fa.normal(ua,va,signs[a]).map_err(|e| format!("edge normal on face {a} at {t} ({ua},{va}): {e:?}"))?;
+        let (_,nb) = fb.normal(ub,vb,signs[b]).map_err(|e| format!("edge normal on face {b} at {t} ({ub},{vb}): {e:?}"))?;
+        // Convex when the bisector leaves the tool; a smooth junction is
+        // convex enough, its fan being the one point both faces' strands end at.
+        let bisector = plane::unit(std::array::from_fn(|k| na[k]+nb[k])).unwrap_or(na);
+        let probe: V3 = std::array::from_fn(|k| sa.position[k]+bisector[k]*scale*1e-4);
+        let outside = self.source.value(probe) > 0.;
+        if !outside || self.hidden(sa.position,scale)? { return Ok(None); }
+        Ok(Some(EdgePoint {position:sa.position,normals:[na,nb]}))
     }
 
     /// Whether a point of a face's carrier is off the tool's boundary or on a
@@ -540,32 +572,16 @@ impl SweepContacts {
     /// straddles the velocity, each with the contact normal in that cone, as
     /// strands over the edge's samples with exact ends. A smooth or concave
     /// edge contributes nothing.
-    fn edge_strands(&self,edge: EdgeRef,signs: &[f64],motion: Motion,tolerance: f64,scale: f64)
+    fn edge_strands(&self,edge: EdgeRef,index: usize,signs: &Signs,motion: Motion,tolerance: f64,scale: f64)
         -> Result<Vec<Strand>,String> {
-        let [a,b] = edge.faces();
-        let (fa,fb) = (&self.faces[a],&self.faces[b]);
         let inverse = motion.inverse();
-        // An edge point: its position, both faces' outward normals there and
-        // each normal's velocity component. None where the edge is off the
-        // tool's boundary or concave, which contributes nothing.
+        // An edge point: its geometry and each normal's velocity component.
         struct Point { position: V3, normals: [V3;2], speeds: [f64;2] }
-        let at = |t: f64| -> Result<Option<Point>,String> {
-            let ((ua,va),(ub,vb)) = match edge {
-                EdgeRef::Charted(e) => (e.charts[0].at(t,fa),e.charts[1].at(t,fb)),
-                EdgeRef::Crease(c) => match c.at(t,fa,fb) { Some(uv) => uv,None => return Ok(None) },
-            };
-            let sa = fa.at(ua,va).map_err(|e| format!("edge of faces {a} and {b} at {t}: {e:?}"))?;
-            let (_,na) = fa.normal(ua,va,signs[a]).map_err(|e| format!("edge normal on face {a} at {t} ({ua},{va}): {e:?}"))?;
-            let (_,nb) = fb.normal(ub,vb,signs[b]).map_err(|e| format!("edge normal on face {b} at {t} ({ub},{vb}): {e:?}"))?;
-            // Convex when the bisector leaves the tool; a smooth junction is
-            // convex enough, its fan being the one point both faces' strands end at.
-            let bisector = plane::unit(std::array::from_fn(|k| na[k]+nb[k])).unwrap_or(na);
-            let probe: V3 = std::array::from_fn(|k| sa.position[k]+bisector[k]*scale*1e-4);
-            let outside = self.source.value(probe) > 0.;
-            if !outside || self.hidden(sa.position,scale)? { return Ok(None); }
-            let velocity = inverse.vector(motion.velocity(sa.position));
-            Ok(Some(Point {position:sa.position,normals:[na,nb],speeds:[plane::dot(na,velocity),plane::dot(nb,velocity)]}))
+        let moving = |g: EdgePoint| -> Point {
+            let velocity = inverse.vector(motion.velocity(g.position));
+            Point {position:g.position,normals:g.normals,speeds:[plane::dot(g.normals[0],velocity),plane::dot(g.normals[1],velocity)]}
         };
+        let at = |t: f64| -> Result<Option<Point>,String> { Ok(self.edge_point(edge,&signs.signs,t,scale)?.map(moving)) };
         // The fan holds a contact where the two normals' velocities differ in
         // strict sign, or one vanishes: the normal between them whose velocity
         // vanishes, or a stationary face's own. An edge both of whose faces
@@ -585,7 +601,7 @@ impl SweepContacts {
         let root = |k: usize,mut lo: f64,mut hi: f64,class_lo: i32| -> Result<Option<Root>,String> {
             let mut found: Option<Point> = None;
             let mut t = lo;
-            for _ in 0..50 {
+            for _ in 0..32 {
                 let mid = 0.5*(lo+hi);
                 let Some(p) = at(mid)? else { return Ok(None) };
                 if class(p.speeds[k]) == class_lo { lo = mid; } else { hi = mid; }
@@ -597,7 +613,7 @@ impl SweepContacts {
         // its boundary is bisected on that instead.
         let boundary = |inside: f64,outside: f64| -> Result<Option<Root>,String> {
             let (mut lo,mut hi,mut found) = (inside,outside,None);
-            for _ in 0..40 {
+            for _ in 0..32 {
                 let mid = 0.5*(lo+hi);
                 match at(mid)? {
                     Some(p) if in_fan(&p) => { found = Some((mid,p.position,fan_normal(&p))); lo = mid; }
@@ -607,7 +623,7 @@ impl SweepContacts {
             Ok(found)
         };
         let samples = super::tool_faces::EDGE_SAMPLES;
-        let points: Vec<Option<Point>> = (0..=samples).map(|i| at(i as f64/samples as f64)).collect::<Result<_,_>>()?;
+        let points: Vec<Option<Point>> = signs.edge_points[index].iter().map(|g| g.map(moving)).collect();
         let mut strands = Vec::new();
         let mut current: Option<Strand> = None;
         // A fan of no length (a smooth junction, where both faces' strands
@@ -662,9 +678,9 @@ impl SweepContacts {
         Ok(strands)
     }
 
-    fn edge_curves(&self,edge: EdgeRef,signs: &[f64],motion: Motion,tolerance: f64,scale: f64)
+    fn edge_curves(&self,edge: EdgeRef,index: usize,signs: &Signs,motion: Motion,tolerance: f64,scale: f64)
         -> Result<Vec<Characteristic>,String> {
-        Ok(self.edge_strands(edge,signs,motion,tolerance,scale)?.into_iter().map(Strand::into_characteristic).collect())
+        Ok(self.edge_strands(edge,index,signs,motion,tolerance,scale)?.into_iter().map(Strand::into_characteristic).collect())
     }
 
     /// The sheets of a sweep whose twist varies along the motion. At each of a
@@ -679,14 +695,25 @@ impl SweepContacts {
     /// strand resampled along its length to within `sagitta` of the traced
     /// points, its exact ends kept; columns are the parameters.
     pub fn characteristic_sheets(&self,spacing: f64,sagitta: f64,overrun: f64,tolerance: f64,
-        reach: Option<&dyn Fn(V3) -> bool>) -> Result<Vec<SweepPatch>,String> {
+        reach: Option<&dyn Fn(V3) -> bool>,progress: &dyn Fn(&str)) -> Result<Vec<SweepPatch>,String> {
         let scale = self.scale();
         let signs = self.signs(scale)?;
         let [from,to] = self.domain();
-        // The fastest material point over the domain sets the parameter step.
+        // The fastest material point over the domain sets the parameter step:
+        // of the points that come near the body at all, where the caller says
+        // what is near, since a cutter's far rim may run many times faster
+        // than the part of it that cuts.
         let mut speed: f64 = 1e-9;
         let extents: Vec<V3> = self.faces.iter().flat_map(|f| { let [_,d] = f.domain();
             (0..4).flat_map(move |i| (0..4).filter_map(move |j| f.at(i as f64/3.,d[0]+(d[1]-d[0])*j as f64/3.).ok().map(|s| s.position))) }).collect();
+        let extents: Vec<V3> = match reach {
+            Some(reach) => {
+                let poses = (0..=16).map(|i| self.motion.at(from+(to-from)*i as f64/16.)).collect::<Result<Vec<_>,_>>()?;
+                let near: Vec<V3> = extents.iter().copied().filter(|p| poses.iter().any(|pose| reach(pose.point(*p)))).collect();
+                if near.is_empty() { extents } else { near }
+            }
+            None => extents,
+        };
         for t in [from,0.5*(from+to),to] {
             let pose = self.motion.at(t)?;
             for p in &extents { speed = speed.max(norm(pose.velocity(*p))); }
@@ -716,7 +743,7 @@ impl SweepContacts {
         // one coarse step each way; a tool that reaches nowhere cuts nothing.
         let (t0,t1) = if reach.is_some() {
             let coarse = 32;
-            let reaching: Vec<bool> = (0..=coarse).map(|i| Ok::<_,String>(!curves_at(t0+(t1-t0)*i as f64/coarse as f64)?.is_empty())).collect::<Result<_,_>>()?;
+            let reaching: Vec<bool> = (0..=coarse).map(|i| { progress(&format!("reach {i} of {coarse}")); Ok::<_,String>(!curves_at(t0+(t1-t0)*i as f64/coarse as f64)?.is_empty()) }).collect::<Result<_,_>>()?;
             let Some(first) = reaching.iter().position(|r| *r) else { return Ok(Vec::new()) };
             let last = reaching.iter().rposition(|r| *r).unwrap();
             let step = (t1-t0)/coarse as f64;
@@ -724,74 +751,79 @@ impl SweepContacts {
         } else { (t0,t1) };
         let count = (((t1-t0)*speed/spacing).ceil() as usize).clamp(8,400);
         let count = self.columns_within_sagitta(&extents,[t0,t1],count+1,sagitta)?-1;
-        let mut times: Vec<f64> = (0..=count).map(|c| t0+(t1-t0)*c as f64/count as f64).collect();
+        let times: Vec<f64> = (0..=count).map(|c| t0+(t1-t0)*c as f64/count as f64).collect();
         // How far apart two curves are: the farthest any of a coarse sample of
         // either is from the other, so a curve that lost or gained a piece is
         // apart from what it was, and a closed curve is the same however it
-        // starts.
-        let apart = |a: &Characteristic,b: &Characteristic| -> f64 {
+        // starts. Only samples that reach the body count, where the caller
+        // says what reaches: the parameter step is sized by the speed of what
+        // reaches, and a curve's far ends, kept whole and cropped later, may
+        // run several steps between two parameters.
+        let apart = |a: &Characteristic,pose_a: Motion,b: &Characteristic,pose_b: Motion| -> f64 {
             if a.closed != b.closed { return f64::INFINITY; }
-            let to = |from: &Characteristic,onto: &Characteristic| -> f64 {
+            let to = |from: &Characteristic,pose: Motion,onto: &Characteristic| -> f64 {
                 let (samples,_) = resample(from,32);
+                let reaching: Vec<V3> = match reach {
+                    Some(reach) => samples.iter().copied().filter(|p| reach(pose.point(*p))).collect(),
+                    None => Vec::new(),
+                };
+                let samples = if reaching.is_empty() { &samples } else { &reaching };
                 let n = onto.points.len();
                 let segments = if onto.closed { n } else { n-1 };
                 samples.iter().map(|p| (0..segments).map(|k| segment_distance(*p,onto.points[k],onto.points[(k+1)%n])).fold(f64::INFINITY,f64::min))
                     .fold(0_f64,f64::max)
             };
-            to(a,b).max(to(b,a))
+            to(a,pose_a,b).max(to(b,pose_b,a))
         };
-        let continuation = |last: &Characteristic,candidates: &[Characteristic],used: &[bool]| -> Option<usize> {
-            candidates.iter().enumerate().filter(|(j,_)| !used[*j]).map(|(j,c)| (j,apart(last,c)))
-                .filter(|(_,d)| *d < 2.*spacing).min_by(|a,b| a.1.total_cmp(&b.1)).map(|(j,_)| j)
+        let continuation = |last: &Characteristic,t_last: f64,candidates: &[Characteristic],t: f64,used: &[bool]| -> Result<Option<usize>,String> {
+            let (pose_last,pose) = (self.motion.at(t_last)?,self.motion.at(t)?);
+            Ok(candidates.iter().enumerate().filter(|(j,_)| !used[*j]).map(|(j,c)| (j,apart(last,pose_last,c,pose)))
+                .filter(|(_,d)| *d < 2.*spacing).min_by(|a,b| a.1.total_cmp(&b.1)).map(|(j,_)| j))
         };
-        // The parameter of every birth and death, found by bisection between
-        // the two samples it happened between, joins the list.
-        let mut events: Vec<f64> = Vec::new();
-        let mut previous: Option<(f64,Vec<Characteristic>)> = None;
-        for &t in &times {
-            let curves = curves_at(t)?;
-            if let Some((t_prev,prev)) = &previous {
-                let mut used = vec![false;curves.len()];
-                for last in prev {
-                    match continuation(last,&curves,&used) {
-                        Some(j) => used[j] = true,
-                        None => {
-                            let (mut lo,mut hi) = (*t_prev,t);
-                            for _ in 0..20 {
-                                let mid = 0.5*(lo+hi);
-                                let mid_c = curves_at(mid)?;
-                                if continuation(last,&mid_c,&vec![false;mid_c.len()]).is_some() { lo = mid; } else { hi = mid; }
-                            }
-                            events.push(lo);
-                        }
-                    }
-                }
-                for (j,curve) in curves.iter().enumerate() {
-                    if used[j] { continue; }
-                    let (mut lo,mut hi) = (*t_prev,t);
-                    for _ in 0..20 {
-                        let mid = 0.5*(lo+hi);
-                        let mid_c = curves_at(mid)?;
-                        if continuation(curve,&mid_c,&vec![false;mid_c.len()]).is_some() { hi = mid; } else { lo = mid; }
-                    }
-                    events.push(hi);
-                }
-            }
-            previous = Some((t,curves));
+        // Every uniform parameter is traced once and kept as a column, and the
+        // list is refined between any two columns whose curves do not all
+        // continue from one to the next: a contact curve crosses the tool's
+        // surface at its own rate, not the material's the step was sized by,
+        // so what does not continue over a step often does over half of it.
+        // Where it still does not within a sixty-fourth of the uniform step,
+        // a few microns of travel, the curve is born or dies between the two
+        // columns and its strip begins or ends there.
+        let least = (t1-t0)/count as f64/64.;
+        let mut columns: Vec<(f64,Vec<Characteristic>)> = Vec::new();
+        for (k,&t) in times.iter().enumerate() {
+            progress(&format!("columns: parameter {} of {}",k+1,times.len()));
+            columns.push((t,curves_at(t)?));
         }
-        times.extend(events);
-        times.sort_by(f64::total_cmp);
-        times.dedup_by(|a,b| (*a-*b).abs() <= 1e-12*(t1-t0));
-        // Strips: every curve tracked across the whole parameter list.
+        let continues = |a: &(f64,Vec<Characteristic>),b: &(f64,Vec<Characteristic>)| -> Result<bool,String> {
+            let mut used = vec![false;b.1.len()];
+            for last in &a.1 {
+                match continuation(last,a.0,&b.1,b.0,&used)? { Some(j) => used[j] = true,None => return Ok(false) }
+            }
+            Ok(used.iter().all(|u| *u))
+        };
+        let mut pending: Vec<(f64,f64)> = times.windows(2).map(|w| (w[0],w[1])).collect();
+        let mut refined = 0;
+        while let Some((ta,tb)) = pending.pop() {
+            let at = |t: f64| columns.binary_search_by(|c| c.0.total_cmp(&t)).map_err(|_| format!("no column at {t}"));
+            let (ia,ib) = (at(ta)?,at(tb)?);
+            if tb-ta <= least || continues(&columns[ia],&columns[ib])? { continue; }
+            let mid = 0.5*(ta+tb);
+            refined += 1;
+            progress(&format!("columns: {refined} refined"));
+            let curves = curves_at(mid)?;
+            columns.insert(ia+1,(mid,curves));
+            pending.push((ta,mid)); pending.push((mid,tb));
+        }
+        // Strips: every curve tracked across the whole column list.
         struct Strip { columns: Vec<(f64,Characteristic)> }
         let mut strips: Vec<Strip> = Vec::new();
         let mut open: Vec<Strip> = Vec::new();
-        for &t in &times {
-            let curves = curves_at(t)?;
+        for (t,curves) in columns {
             let mut next: Vec<Strip> = Vec::new();
             let mut used = vec![false;curves.len()];
             for mut strip in open {
-                match continuation(&strip.columns.last().unwrap().1,&curves,&used) {
+                let (t_last,last) = strip.columns.last().unwrap();
+                match continuation(last,*t_last,&curves,t,&used)? {
                     Some(j) => { used[j] = true; strip.columns.push((t,curves[j].clone())); next.push(strip); }
                     None => strips.push(strip),
                 }
@@ -847,6 +879,10 @@ impl SweepContacts {
         }
         let mut sheets = Vec::new();
         for (times,oriented,closed) in emitted {
+            // Each column thinned to what the sagitta needs, its joints and
+            // ends kept: a straight contact line on a plane or a cone is its
+            // two ends, however many stations it was traced at.
+            let oriented: Vec<Characteristic> = oriented.iter().map(|c| simplified(c,sagitta)).collect();
             let mut points = Vec::new(); let mut normals = Vec::new(); let mut column = Vec::new();
             let mut triangles: Vec<[u32;3]> = Vec::new();
             let mut first_of: Vec<u32> = Vec::new();
@@ -971,6 +1007,33 @@ pub fn zip_polylines(a: &[V3],b: &[V3],closed: bool) -> Vec<[(bool,u32);3]> {
     }
     out.reverse();
     out
+}
+
+/// A curve with every point dropped that lies within `sagitta` of the chord
+/// between the kept points about it (Douglas and Peucker's walk, piece by
+/// piece between joints), so the ends and joints stay and a straight run is
+/// its two ends.
+fn simplified(c: &Characteristic,sagitta: f64) -> Characteristic {
+    let n = c.points.len();
+    if n <= 2 { return c.clone(); }
+    let mut keep = vec![false;n];
+    keep[0] = true; keep[n-1] = true;
+    for &j in &c.joints { if j < n { keep[j] = true; } }
+    fn refine(points: &[V3],keep: &mut Vec<bool>,a: usize,b: usize,sagitta: f64) {
+        if b <= a+1 { return; }
+        let (mut worst,mut at) = (0_f64,a);
+        for i in a+1..b { let d = segment_distance(points[i],points[a],points[b]); if d > worst { worst = d; at = i; } }
+        if worst > sagitta { keep[at] = true; refine(points,keep,a,at,sagitta); refine(points,keep,at,b,sagitta); }
+    }
+    let mut cuts: Vec<usize> = (0..n).filter(|&i| keep[i]).collect();
+    cuts.dedup();
+    for w in cuts.windows(2) { refine(&c.points,&mut keep,w[0],w[1],sagitta); }
+    if c.closed { refine(&c.points,&mut keep,*cuts.last().unwrap(),n-1,sagitta); }
+    let index: Vec<usize> = (0..n).filter(|&i| keep[i]).collect();
+    let position = |i: usize| index.iter().position(|&k| k == i).unwrap();
+    let mut joints: Vec<usize> = c.joints.iter().filter(|&&j| j < n && keep[j]).map(|&j| position(j)).collect();
+    joints.dedup();
+    Characteristic {points:index.iter().map(|&i| c.points[i]).collect(),normals:index.iter().map(|&i| c.normals[i]).collect(),closed:c.closed,joints}
 }
 
 /// The triangles between two consecutive curves of a strip, piece by piece:

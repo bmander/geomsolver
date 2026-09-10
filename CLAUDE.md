@@ -242,15 +242,29 @@ sequence of motion parameters the contact pieces of every face, edge and crease 
 traced (station roots followed by a step-halving march, fold ends exact, fans bracketed
 by the sign changes of both faces' normal velocities), trimmed to the tool's boundary
 (a face of one operand on another's carrier is `shadowed` and traced once), and chained
-at shared points, keeping `joints`. Strips link one parameter's curves to the next by a
-Hausdorff test; births and deaths are bisected. A strip is a `SweepPatch`: every column
+at shared points, keeping `joints`. Every edge's sample geometry (positions, normals,
+whether the point is on the tool's boundary) is computed once in `Signs`; a pose changes
+only the normal velocities. Strips link one parameter's curves to the next by a Hausdorff
+test over the samples that reach the blank, and the parameter list is refined between two
+columns whose curves do not all continue (a contact curve crosses the tool at its own rate,
+not the material's the step is sized by) until they do or the step is a sixty-fourth of
+the uniform one, which is then a birth or a death; every traced parameter is a column and
+none is traced twice. A strip is a `SweepPatch`: every column
 keeps its own traced points and consecutive columns are zipped piece by piece by dynamic
 programming on rung length (`zip_pieces`), never resampled to a grid, since rows matched
 by arc-length fraction shear and fold. The CLI crops patches to the blank's occupancy
 (dilated by the column spacing), closes seams between strips with zipped ribbons, cuts
 every patch along its folded edges before slabbing (one slab folded over itself is what
-Manifold cannot take), splits the blank one placement at a time, and welds nanometre
-vertices and opens vertex pinches by a float32 step before the STL shell check. The gate
+Manifold cannot take), splits the blank one placement at a time, rounds the material's
+vertices to float32 and lets Manifold's own simplification collapse the zero-length edges
+and needles that leaves (a Boolean between nearly coincident slabs leaves nanometre
+features float32 cannot hold), then collapses what remains under the link condition,
+splits needles at their T-junction and nudges non-adjacent vertices float32 identifies
+before the STL shell check (`merged`; welding by proximity alone folded strips into edges
+used three times). The blank's occupancy grid is rasterised from its mesh and flooded
+from outside, never probed by the field (that was 55 s of a 70 s run). Ordered containers
+only: hash iteration order in the slab walls made Manifold's output differ run to run,
+and one order lost the cut. `solventc --verbose` drips a line every three seconds. The gate
 is `one_*_space_through_the_tracer` in `tests/mesh_sweep.rs` (recorded volumes, one
 placement each); the whole members are `#[ignore]`d and run with `--ignored`. Read
 `SpatialField::value` for what may be judged in plain floating point: a face point on
