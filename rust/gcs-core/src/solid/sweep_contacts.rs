@@ -1,5 +1,5 @@
 //! Candidate envelope faces read from an ordinary swept-solid definition.
-use super::{SpatialField,RevolvedSurface,RevolvedContact};
+use super::{SpatialField,RevolvedSurface,RevolvedContact,ToolFace,ToolEdge,EdgeChart};
 use crate::{envelope::{self,Contact,Error,Motion},model::{Sketch,SolidDef,EntKind},motion::Family};
 use std::{collections::BTreeSet,f64::consts::TAU};
 mod cover;
@@ -23,6 +23,10 @@ pub struct SweepContacts {
     /// patches and the profile vertices between them are known. Axis diameters
     /// contribute no patch and leave a gap in the loop.
     pub(super) loops: Vec<Vec<Option<usize>>>,
+    /// The tool's boundary by surface family, and the edges between faces,
+    /// for the candidate tracer. Revolved faces are the patches above.
+    pub(super) faces: Vec<ToolFace>,
+    pub(super) edges: Vec<ToolEdge>,
     pub(super) motion: Family,
     pub(super) roll: [f64;2],
 }
@@ -77,9 +81,31 @@ impl SweepContacts {
                 _ => return Err("contact construction requires static revolutions and Boolean operands".into()),
             }
         }
-        Ok(Self {source:source_field,patches,loops,motion:Family::read(sk,*motion as usize)?,
+        // Every revolved patch is a face; adjacent patches of a loop that share a
+        // meridian end share the circle that end sweeps, an edge charted at that
+        // end on both.
+        let faces: Vec<ToolFace> = patches.iter().cloned().map(ToolFace::Revolved).collect();
+        let mut edges = Vec::new();
+        for profile in &loops {
+            let n = profile.len();
+            for k in 0..n {
+                let (Some(a),Some(b)) = (profile[k],profile[(k+1)%n]) else { continue; };
+                let ends = |p: &RevolvedSurface| -> Result<[[f64;3];2],String> {
+                    Ok([p.at(0.,0.).map_err(|e| format!("{e:?}"))?.position,p.at(1.,0.).map_err(|e| format!("{e:?}"))?.position])
+                };
+                let (ea,eb) = (ends(&patches[a])?,ends(&patches[b])?);
+                let scale = ea.iter().chain(&eb).map(|p| p[0].hypot(p[1]).hypot(p[2])).fold(1_f64,f64::max);
+                let close = |p: [f64;3],q: [f64;3]| (0..3).map(|k| (p[k]-q[k]).powi(2)).sum::<f64>().sqrt() < 1e-7*scale;
+                let Some((ua,ub)) = [(1.,0.),(1.,1.),(0.,0.),(0.,1.)].into_iter()
+                    .find(|&(ua,ub)| close(ea[ua as usize],eb[ub as usize])) else { continue; };
+                edges.push(ToolEdge {faces:[a,b],charts:[EdgeChart::FixedU(ua),EdgeChart::FixedU(ub)]});
+            }
+        }
+        Ok(Self {source:source_field,patches,loops,faces,edges,motion:Family::read(sk,*motion as usize)?,
             roll:[from.value,to.value]})
     }
+    pub fn faces(&self) -> &[ToolFace] { &self.faces }
+    pub fn edges(&self) -> &[ToolEdge] { &self.edges }
     pub fn patches(&self) -> &[RevolvedSurface] { &self.patches }
     pub fn loops(&self) -> &[Vec<Option<usize>>] { &self.loops }
     pub fn motion(&self) -> &Family { &self.motion }

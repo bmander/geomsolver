@@ -83,7 +83,7 @@ impl RevolvedSurface {
 }
 
 /// Isolated roots on a normalized angular span; shared by the two source charts.
-pub(super) fn sinusoid_roots(a: f64,b: f64,c: f64,sweep: f64,domain: [f64;2],tolerance: f64)
+pub(in crate::solid) fn sinusoid_roots(a: f64,b: f64,c: f64,sweep: f64,domain: [f64;2],tolerance: f64)
     -> Result<Vec<(usize,f64)>,Error> {
     let amplitude = a.hypot(b);
     if ![a,b,c,amplitude].iter().all(|v| v.is_finite()) { return Err(Error::NonFinite); }

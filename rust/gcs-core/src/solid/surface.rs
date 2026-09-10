@@ -1,7 +1,7 @@
 //! Exact generating patches of existing declarative solids. These retain the solved
 //! profile's lines and circles; no facets enter their position or derivative evaluation.
 //! Boundary trimming and outward orientation remain separate questions.
-mod contact;
+pub(super) mod contact;
 pub use contact::RevolvedContact;
 mod meridian_contacts;
 pub use meridian_contacts::MeridianContact;
@@ -174,6 +174,9 @@ impl RevolvedSurface {
 
     /// Whether this snapshot retains an entire revolution, including both sides
     /// of its coordinate seam. A restricted angular span is not periodic.
+    /// The signed revolution angle the `v` chart spans.
+    pub fn sweep(&self) -> f64 { self.sweep }
+
     pub fn is_periodic(&self) -> bool {
         self.sweep.abs() == std::f64::consts::TAU && self.v_domain == [0.,1.]
     }

@@ -116,3 +116,54 @@ fn a_plunging_cylinder_contributes_its_two_rims() {
     heights.sort_by(f64::total_cmp);
     assert!((heights[0]+1.).abs() < 1e-9 && (heights[1]-1.).abs() < 1e-9,"{heights:?}");
 }
+
+/// A cylinder turning about a perpendicular line through its centre: the wall
+/// contacts along the two meridians in the plane of the line and along the
+/// stationary ring through the centre, each cap along its diameter in that
+/// plane, and the rims contribute fans between. Every open piece ends exactly
+/// at one of the four rim vertices, where a fan meets the strands it bounds.
+#[test]
+fn a_tumbling_cylinder_chains_its_fans_to_its_strands_exactly() {
+    let e = read(&format!("{CYLINDER}private point hub hint(x: 3, y: 0)
+hub distance(3mm, along: u) std.front
+hub distance(0mm, along: v) std.front
+private point spoke hint(x: 5, y: 0)
+spoke distance(5mm, along: u) std.front
+spoke distance(0mm, along: v) std.front
+construction centerline line spin(hub, spoke)
+motion tumble(about: spin)
+solid swept(tool, under: tumble, from: -30deg, to: 30deg)
+"));
+    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
+    assert!(constant_twist(sweep.motion(),sweep.domain(),1e-9).unwrap());
+    let curves = sweep.characteristics(1e-9).unwrap();
+    // A fan's ends are found to the contact tolerance, so the vertices are met to 1e-5.
+    let rim = |p: [f64;3]| [[4.,0.,1.],[2.,0.,1.],[4.,0.,-1.],[2.,0.,-1.]].iter().any(|v| distance(p,*v) < 1e-5);
+    let (mut rings,mut open) = (0,0);
+    for c in &curves {
+        if c.closed {
+            // the stationary ring through the centre, or a loop the chain closed through rim vertices
+            let ring = c.points.iter().all(|p| p[2].abs() < 1e-9 && ((p[0]-3.).hypot(p[1])-1.).abs() < 1e-9);
+            if ring { rings += 1; } else { assert!(c.points.iter().filter(|p| rim(**p)).count() >= 1,"a closed loop off the rims"); }
+        } else {
+            open += 1;
+            let (first,last) = (c.points[0],*c.points.last().unwrap());
+            // the meridians end on the stationary ring; everything else on a rim vertex
+            let on_ring = |p: [f64;3]| p[2].abs() < 1e-6 && ((p[0]-3.).hypot(p[1])-1.).abs() < 1e-6;
+            assert!((rim(first) || on_ring(first)) && (rim(last) || on_ring(last)),"a piece ends off a vertex: {first:?} .. {last:?}");
+        }
+    }
+    assert_eq!(rings,1,"the stationary ring");
+    assert!(open+curves.len() > 1,"pieces: {}",curves.len());
+    // every wall point lies on one of the two meridians or the ring, every cap
+    // point on its diameter, and the fans on the rims
+    for c in &curves {
+        for p in &c.points {
+            let r = (p[0]-3.).hypot(p[1]);
+            let on_wall = (r-1.).abs() < 1e-6 && (p[1].abs() < 1e-6 || p[2].abs() < 1e-6);
+            let on_cap = (p[2].abs()-1.).abs() < 1e-6 && p[1].abs() < 1e-6;
+            let on_rim = (r-1.).abs() < 1e-6 && (p[2].abs()-1.).abs() < 1e-6;
+            assert!(on_wall || on_cap || on_rim,"{p:?}");
+        }
+    }
+}
