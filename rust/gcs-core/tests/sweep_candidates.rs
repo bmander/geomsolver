@@ -167,3 +167,53 @@ solid swept(tool, under: tumble, from: -30deg, to: 30deg)
         }
     }
 }
+
+const BOX: &str = "unit mm
+use std
+private point b0 hint(x: 2, y: -1)
+private point b1 hint(x: 4, y: -1)
+private point b2 hint(x: 4, y: 1)
+private point b3 hint(x: 2, y: 1)
+ground b0
+ground b1
+ground b2
+ground b3
+private line e0(b0, b1)
+private line e1(b1, b2)
+private line e2(b2, b3)
+private line e3(b3, b0)
+construction solid tool(face(e0, e1, e2, e3), from: 0mm, to: 3mm)
+private point r0 hint(x: 0, y: 0)
+private point r1 hint(x: 10, y: 0)
+ground r0
+ground r1
+construction centerline line rail(r0, r1)
+";
+
+/// A box translated along one of its edge directions: four faces are
+/// stationary and the two across the travel never contact, so the candidates
+/// are the edges round the leading and trailing faces, each a segment carrying
+/// the normal of the side it bounds. The page is x across and z up with depth
+/// along -y, so the box is x in [2,4], z in [-1,1], y in [-3,0].
+#[test]
+fn a_box_translated_along_x_contributes_the_edges_round_its_ends() {
+    let e = read(&format!("{BOX}motion feed(along: rail, advance: 10mm)\nsolid swept(tool, under: feed, from: 0deg, to: 360deg)\n"));
+    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
+    assert!(constant_twist(sweep.motion(),sweep.domain(),1e-9).unwrap());
+    assert_eq!(sweep.faces().len(),6);
+    assert_eq!(sweep.edges().len(),12);
+    let curves = sweep.characteristics(1e-9).unwrap();
+    for c in &curves {
+        for (p,n) in c.points.iter().zip(&c.normals) {
+            assert!((p[0]-2.).abs() < 1e-9 || (p[0]-4.).abs() < 1e-9,"off the ends: {p:?}");
+            // on the boundary of an end face, carrying that side's normal
+            let on_side = (p[2].abs()-1.).abs() < 1e-9 || p[1].abs() < 1e-9 || (p[1]+3.).abs() < 1e-9;
+            assert!(on_side,"{p:?}");
+            assert!(n[0].abs() < 1e-6,"a side normal has no x: {n:?} at {p:?}");
+        }
+    }
+    let total: f64 = curves.iter().map(|c| c.points.windows(2).map(|w| distance(w[0],w[1])).sum::<f64>()
+        + if c.closed { distance(c.points[0],*c.points.last().unwrap()) } else { 0. }).sum();
+    // two rectangles of 2 by 3, less nothing: 20 mm of edge, each edge once
+    assert!((total-20.).abs() < 1e-3,"edge length {total}: {:?}",curves.iter().map(|c| (c.points.len(),c.closed)).collect::<Vec<_>>());
+}

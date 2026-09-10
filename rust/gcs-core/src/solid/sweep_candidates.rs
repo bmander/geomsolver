@@ -102,8 +102,10 @@ impl SweepContacts {
     /// The sheets of a constant-twist sweep: each characteristic carried along
     /// the motion over the declared interval, plus `overrun` (a length) of travel
     /// beyond both ends into the tool's end poses, sampled about `spacing` apart
-    /// along the travel. Rows are the characteristic's points, columns the times.
-    pub fn carried_sheets(&self,spacing: f64,overrun: f64,tolerance: f64) -> Result<Vec<SweepSheet>,String> {
+    /// along the travel and closely enough that no point's path deviates from
+    /// the chord between columns by more than `sagitta`. Rows are the
+    /// characteristic's points, columns the times.
+    pub fn carried_sheets(&self,spacing: f64,sagitta: f64,overrun: f64,tolerance: f64) -> Result<Vec<SweepSheet>,String> {
         let [from,to] = self.domain();
         let curves = self.characteristics(tolerance)?;
         if curves.is_empty() { return Err("the tool has no contact curve under its motion".into()); }
@@ -113,7 +115,8 @@ impl SweepContacts {
             let start = motion.at(from)?;
             let speed = curve.points.iter().map(|p| norm(start.velocity(*p))).fold(0_f64,f64::max).max(1e-9);
             let (t0,t1) = (from-overrun/speed,to+overrun/speed);
-            let columns = (((t1-t0)*speed/spacing).ceil() as usize).clamp(2,400);
+            let mut columns = (((t1-t0)*speed/spacing).ceil() as usize).clamp(2,400);
+            columns = self.columns_within_sagitta(&curve.points,[t0,t1],columns,sagitta)?;
             let times: Vec<f64> = (0..columns).map(|c| t0+(t1-t0)*c as f64/(columns-1) as f64).collect();
             let poses = times.iter().map(|&t| motion.at(t)).collect::<Result<Vec<_>,_>>()?;
             let mut points = Vec::with_capacity(curve.points.len()*columns);
@@ -124,6 +127,30 @@ impl SweepContacts {
             sheets.push(SweepSheet {points,normals,times,rows:curve.points.len(),columns,closed_rows:curve.closed});
         }
         Ok(sheets)
+    }
+
+    /// The smallest column count, doubling from `columns`, at which no sampled
+    /// point's path between consecutive columns leaves the chord between them
+    /// by more than `sagitta`.
+    fn columns_within_sagitta(&self,points: &[V3],span: [f64;2],columns: usize,sagitta: f64) -> Result<usize,String> {
+        let motion = self.motion();
+        let sample: Vec<V3> = points.iter().step_by((points.len()/24).max(1)).copied().collect();
+        let mut columns = columns.max(2);
+        loop {
+            let step = (span[1]-span[0])/(columns-1) as f64;
+            let mut worst: f64 = 0.;
+            for c in 0..columns-1 {
+                let (a,m,b) = (span[0]+step*c as f64,span[0]+step*(c as f64+0.5),span[0]+step*(c+1) as f64);
+                let (pa,pm,pb) = (motion.at(a)?,motion.at(m)?,motion.at(b)?);
+                for p in &sample {
+                    let (qa,qm,qb) = (pa.point(*p),pm.point(*p),pb.point(*p));
+                    let chord: V3 = std::array::from_fn(|k| 0.5*(qa[k]+qb[k]));
+                    worst = worst.max(distance(qm,chord));
+                }
+            }
+            if worst <= sagitta || columns >= 4000 { return Ok(columns); }
+            columns *= 2;
+        }
     }
 
     /// The fixed contact curves of a constant-twist motion, chained: the
@@ -430,7 +457,7 @@ impl SweepContacts {
     /// its exact ends, columns the parameters; a strip's boundary is the
     /// exact locus of an end, a domain limit inside the caps, or the moment a
     /// strand was born or died.
-    pub fn characteristic_sheets(&self,spacing: f64,overrun: f64,tolerance: f64) -> Result<Vec<SweepSheet>,String> {
+    pub fn characteristic_sheets(&self,spacing: f64,sagitta: f64,overrun: f64,tolerance: f64) -> Result<Vec<SweepSheet>,String> {
         let scale = self.scale();
         let signs = self.signs(scale)?;
         let [from,to] = self.domain();
@@ -444,7 +471,10 @@ impl SweepContacts {
             } } }
         }
         let (t0,t1) = (from-overrun/speed,to+overrun/speed);
-        let count = (((t1-t0)*speed/spacing).ceil() as usize).clamp(8,400);
+        let mut count = (((t1-t0)*speed/spacing).ceil() as usize).clamp(8,400);
+        let extents: Vec<V3> = self.faces.iter().flat_map(|f| { let [_,d] = f.domain();
+            (0..4).flat_map(move |i| (0..4).filter_map(move |j| f.at(i as f64/3.,d[0]+(d[1]-d[0])*j as f64/3.).ok().map(|s| s.position))) }).collect();
+        count = self.columns_within_sagitta(&extents,[t0,t1],count+1,sagitta)?-1;
         let mut times: Vec<f64> = (0..=count).map(|c| t0+(t1-t0)*c as f64/count as f64).collect();
         let strands_at = |t: f64| -> Result<Vec<(usize,Strand)>,String> { self.strands_at(&signs,self.motion.at(t)?,tolerance,scale) };
         let signature = |strands: &[(usize,Strand)]| -> Vec<(usize,usize,usize,bool,bool)> {
@@ -561,32 +591,38 @@ fn chain(pieces: Vec<Characteristic>,tolerance: f64) -> Vec<Characteristic> {
     // A piece already closed (a stationary ring) is whole; other pieces may
     // end on it without joining it.
     let (mut result,mut pieces): (Vec<_>,Vec<_>) = pieces.into_iter().partition(|p| p.closed);
+    // Pieces join only at a vertex exactly two of their ends share: where more
+    // meet (a contact line and two fans at a tool vertex) the pieces stay
+    // separate, since threading them into one curve would carry a sheet through
+    // itself. The ends are counted once, before any joining.
+    let ends: Vec<V3> = pieces.iter().flat_map(|p| [p.points[0],*p.points.last().unwrap()]).collect();
+    let degree = |q: V3| ends.iter().filter(|e| distance(**e,q) < tolerance).count();
     while let Some(mut current) = pieces.pop() {
         loop {
             let tail = *current.points.last().unwrap();
             let head = current.points[0];
-            if current.points.len() > 2 && distance(tail,head) < tolerance {
+            if current.points.len() > 2 && distance(tail,head) < tolerance && degree(tail) == 2 {
                 current.points.pop(); current.normals.pop(); current.closed = true; break;
             }
             let mut joined = false;
             for i in 0..pieces.len() {
                 let (first,last) = (pieces[i].points[0],*pieces[i].points.last().unwrap());
-                if distance(first,tail) < tolerance {
+                if distance(first,tail) < tolerance && degree(tail) == 2 {
                     let piece = pieces.remove(i);
                     current.points.extend(piece.points.into_iter().skip(1)); current.normals.extend(piece.normals.into_iter().skip(1));
                     joined = true; break;
                 }
-                if distance(last,tail) < tolerance {
+                if distance(last,tail) < tolerance && degree(tail) == 2 {
                     let piece = pieces.remove(i);
                     current.points.extend(piece.points.into_iter().rev().skip(1)); current.normals.extend(piece.normals.into_iter().rev().skip(1));
                     joined = true; break;
                 }
-                if distance(last,head) < tolerance {
+                if distance(last,head) < tolerance && degree(head) == 2 {
                     let mut piece = pieces.remove(i);
                     piece.points.extend(current.points.into_iter().skip(1)); piece.normals.extend(current.normals.into_iter().skip(1));
                     current = piece; joined = true; break;
                 }
-                if distance(first,head) < tolerance {
+                if distance(first,head) < tolerance && degree(head) == 2 {
                     let piece = pieces.remove(i);
                     let mut points: Vec<V3> = piece.points.into_iter().rev().collect();
                     let mut normals: Vec<V3> = piece.normals.into_iter().rev().collect();

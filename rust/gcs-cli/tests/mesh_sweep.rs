@@ -189,22 +189,34 @@ removal cut part
 /// Volume and membership of a constructed body against a closed form over a
 /// box, with points within `skin` of the closed form's boundary skipped.
 fn check_closed_form(vertices: &[[f64;3]],triangles: &[[u32;3]],inside: &dyn Fn([f64;3]) -> f64,lo: [f64;3],hi: [f64;3],skin: f64) {
+    check_form(vertices,triangles,inside,lo,hi,skin,true)
+}
+
+/// Membership alone, for a form that is expensive to ask (a material field).
+fn check_membership(vertices: &[[f64;3]],triangles: &[[u32;3]],inside: &dyn Fn([f64;3]) -> f64,lo: [f64;3],hi: [f64;3],skin: f64) {
+    check_form(vertices,triangles,inside,lo,hi,skin,false)
+}
+
+fn check_form(vertices: &[[f64;3]],triangles: &[[u32;3]],inside: &dyn Fn([f64;3]) -> f64,lo: [f64;3],hi: [f64;3],skin: f64,quadrature: bool) {
     let mut six = 0.;
     for t in triangles { let [a,b,c] = t.map(|i| vertices[i as usize]); six += a[0]*(b[1]*c[2]-b[2]*c[1])-a[1]*(b[0]*c[2]-b[2]*c[0])+a[2]*(b[0]*c[1]-b[1]*c[0]); }
     let volume = six/6.;
-    let n = 120;
-    let mut count = 0_u64;
-    for i in 0..n { for j in 0..n { for k in 0..n {
-        let p: [f64;3] = std::array::from_fn(|a| lo[a]+(hi[a]-lo[a])*([i,j,k][a] as f64+0.5)/n as f64);
-        if inside(p) < 0. { count += 1; }
-    } } }
-    let estimate = count as f64/(n*n*n) as f64*(hi[0]-lo[0])*(hi[1]-lo[1])*(hi[2]-lo[2]);
-    eprintln!("volume {volume:.5} against closed-form quadrature {estimate:.5}");
-    assert!((volume-estimate).abs() < 0.01*estimate,"volume {volume} vs {estimate}");
+    if quadrature {
+        let n = 120;
+        let mut count = 0_u64;
+        for i in 0..n { for j in 0..n { for k in 0..n {
+            let p: [f64;3] = std::array::from_fn(|a| lo[a]+(hi[a]-lo[a])*([i,j,k][a] as f64+0.5)/n as f64);
+            if inside(p) < 0. { count += 1; }
+        } } }
+        let estimate = count as f64/(n*n*n) as f64*(hi[0]-lo[0])*(hi[1]-lo[1])*(hi[2]-lo[2]);
+        eprintln!("volume {volume:.5} against closed-form quadrature {estimate:.5}");
+        assert!((volume-estimate).abs() < 0.01*estimate,"volume {volume} vs {estimate}");
+    } else { eprintln!("volume {volume:.5}"); }
     let solid = manifold::Solid::from_triangles(vertices,triangles).unwrap();
     assert!((solid.volume()-volume).abs() < 1e-9);
     // Membership by ray parity against the mesh, at withheld points.
     let mut checked = 0;
+    let mut disagreements: Vec<([f64;3],f64)> = Vec::new();
     let m = 12;
     for i in 0..m { for j in 0..m { for k in 0..m {
         let p: [f64;3] = std::array::from_fn(|a| lo[a]+(hi[a]-lo[a])*([i,j,k][a] as f64+0.37)/m as f64);
@@ -224,10 +236,12 @@ fn check_closed_form(vertices: &[[f64;3]],triangles: &[[u32;3]],inside: &dyn Fn(
             let v = (d[0]*q[0]+d[1]*q[1]+d[2]*q[2])/det; if v < 0. || u+v > 1. { continue; }
             let t = (e2[0]*q[0]+e2[1]*q[1]+e2[2]*q[2])/det; if t > 0. { crossings += 1; }
         }
-        assert_eq!(crossings%2 == 1,f < 0.,"mesh and closed form disagree at {p:?}");
+        if (crossings%2 == 1) != (f < 0.) { disagreements.push((p,f)); }
         checked += 1;
     } } }
-    eprintln!("{checked} withheld points agree with the closed form");
+    eprintln!("{checked} withheld points checked against the form, {} disagree",disagreements.len());
+    for (p,f) in &disagreements { eprintln!("  disagree at {p:?}: form {f}"); }
+    assert!(disagreements.is_empty(),"{} of {checked} withheld points disagree with the form",disagreements.len());
     assert!(checked > 500);
 }
 
@@ -276,4 +290,91 @@ construction solid removal(tool, under: plunge, from: 0deg, to: 360deg)
     // so the bead, within |z| < 1, is bored by a cylinder of radius 1 about x=3.
     let inside = |p: [f64;3]| ((p[0]-3.8).hypot(p[1]).hypot(p[2])-1.).max(1.-(p[0]-3.).hypot(p[1]));
     check_closed_form(&vertices,&triangles,&inside,[2.8,-1.,-1.],[4.8,1.,1.],0.03);
+}
+
+const BOX_TOOL: &str = "unit mm
+use std
+construction centerline line spindle(std.origin, std.up.toward)
+private point b0 hint(x: 2, y: -1)
+private point b1 hint(x: 4, y: -1)
+private point b2 hint(x: 4, y: 1)
+private point b3 hint(x: 2, y: 1)
+ground b0
+ground b1
+ground b2
+ground b3
+private line e0(b0, b1)
+private line e1(b1, b2)
+private line e2(b2, b3)
+private line e3(b3, b0)
+construction solid tool(face(e0, e1, e2, e3), from: 0mm, to: 3mm)
+";
+
+/// A prism tool: a box translated along x through the bead. Every side of the
+/// box is stationary under the translation, so the candidates are the segments
+/// round its ends carried along; the bead loses the half the box passes
+/// through. The page is x across and z up with depth along -y, so the box is
+/// x in [2,4], z in [-1,1], y in [-3,0] and travels 10 along x.
+#[test]
+fn a_box_translated_through_a_bead_removes_a_half_space_of_it() {
+    let source = format!("{BOX_TOOL}private point r0 hint(x: 0, y: 0)
+private point r1 hint(x: 10, y: 0)
+ground r0
+ground r1
+construction centerline line rail(r0, r1)
+motion feed(along: rail, advance: 10mm)
+construction solid removal(tool, under: feed, from: 0deg, to: 360deg)
+{BEAD}");
+    let e = support::read(&source,std::path::Path::new("."));
+    let part = e.map.ent_named("part").unwrap().i();
+    let started = std::time::Instant::now();
+    let (vertices,triangles) = mesh_sweep::construct(&e.sketch,part,&|_,_| Err("no kernel sheets in this test".into())).unwrap();
+    eprintln!("box through bead in {:?}, {} triangles",started.elapsed(),triangles.len());
+    let inside = |p: [f64;3]| ((p[0]-3.8).hypot(p[1]).hypot(p[2])-1.).max(-p[1]);
+    check_closed_form(&vertices,&triangles,&inside,[2.8,-1.,-1.],[4.8,1.,1.],0.03);
+}
+
+/// A prism tool under a rotation: a triangular prism turning about an axis
+/// parallel to its extrusion and off to one side of it, through the bead. There is
+/// no closed form to hand, so the mesh is held to the declared material field
+/// itself at withheld points: its planar sides' contact lines and its edges'
+/// fans must bound exactly what the field says is removed.
+#[test]
+fn a_triangular_prism_turning_about_an_offset_axis_agrees_with_its_field() {
+    let source = format!("unit mm
+use std
+construction centerline line spindle(std.origin, std.up.toward)
+private point t0 hint(x: 3, y: -0.8)
+private point t1 hint(x: 4.5, y: 0)
+private point t2 hint(x: 3, y: 0.8)
+ground t0
+ground t1
+ground t2
+private line e0(t0, t1)
+private line e1(t1, t2)
+private line e2(t2, t0)
+construction solid tool(face(e0, e1, e2), from: -1.5mm, to: 1.5mm)
+private point a0 hint(x: 2.5, y: 0)
+a0 distance(2.5mm, along: u) std.front
+a0 distance(0mm, along: v) std.front
+private point a1 hint(x: 2.5, y: 5)
+a1 distance(2.5mm, along: u) std.front
+a1 distance(5mm, along: v) std.front
+construction centerline line pivot(a0, a1)
+motion turn(about: pivot)
+construction solid removal(tool, under: turn, from: -50deg, to: 50deg)
+{BEAD}");
+    let e = support::read(&source,std::path::Path::new("."));
+    let part = e.map.ent_named("part").unwrap().i();
+    let started = std::time::Instant::now();
+    let (vertices,triangles) = mesh_sweep::construct(&e.sketch,part,&|_,_| Err("no kernel sheets in this test".into())).unwrap();
+    eprintln!("turned prism through bead in {:?}, {} triangles",started.elapsed(),triangles.len());
+    let material = std::cell::RefCell::new(gcs_core::solid::MaterialField::read(&e.sketch,part,1e-10).unwrap().evaluator(4096));
+    let inside = |p: [f64;3]| {
+        let bounds = material.borrow_mut().bounds(p.map(|x| gcs_core::interval::Interval::point(x).unwrap()),
+            gcs_core::interval::minimum::Options {value_tolerance:0.005,max_evaluations:20000}).unwrap();
+        let [lo,hi] = bounds.value.bounds();
+        if hi < 0. { hi } else if lo > 0. { lo } else { 0. }
+    };
+    check_membership(&vertices,&triangles,&inside,[2.8,-1.,-1.],[4.8,1.,1.],0.03);
 }

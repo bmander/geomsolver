@@ -122,9 +122,9 @@ impl From<solid::SweepSheet> for SheetGrid {
 /// Sheets of a sweep whose tool-frame twist is constant: the core carries each
 /// characteristic along the motion, with two slabs' worth of overrun into the
 /// caps at both ends.
-pub fn constant_twist_sheets(sk: &Sketch,swept: usize,epsilon: f64) -> Result<Vec<SheetGrid>,String> {
+pub fn constant_twist_sheets(sk: &Sketch,swept: usize,epsilon: f64,sagitta: f64) -> Result<Vec<SheetGrid>,String> {
     let sweep = solid::SweepContacts::read(sk,swept,1e-10)?;
-    let sheets = sweep.carried_sheets(COLUMN_SPACING,2.*epsilon,1e-9)
+    let sheets = sweep.carried_sheets(COLUMN_SPACING,sagitta,2.*epsilon,1e-9)
         .map_err(|e| format!("`{}`: {e}",sk.solids[swept].name))?;
     Ok(sheets.into_iter().map(SheetGrid::from).collect())
 }
@@ -159,7 +159,14 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
         let started = std::time::Instant::now();
         let family = Family::read(sk,*motion as usize)?;
         let twist = solid::constant_twist(&family,[from.value,to.value],1e-9)?;
-        let grids = if twist { constant_twist_sheets(sk,swept,epsilon)? } else { sheets(swept,&inside)? };
+        let grids = if twist { constant_twist_sheets(sk,swept,epsilon,sagitta)? } else { sheets(swept,&inside)? };
+        if std::env::var_os("SOLVENT_TRACE_CELLS").is_some() {
+            for g in &grids {
+                let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+                for p in &g.points { for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]); } }
+                eprintln!("  sheet {}x{} closed {}: {lo:?} .. {hi:?}",g.rows,g.columns,g.closed_rows);
+            }
+        }
         let sheet_solids = grids.iter().map(|g| slab(g,epsilon)).collect::<Result<Vec<_>,_>>()?;
         let tool = solid_of(&solid::static_solid(sk,*source as usize,0)?)?;
         let ends = [family.at(from.value)?,family.at(to.value)?];
