@@ -1,5 +1,5 @@
 //! Immutable spatial composition of analytic material fields.
-use super::{min,max,union_support,intersection_support,Error,I,V,RevolvedField};
+use super::{min,max,union_support,intersection_support,Error,I,V,RevolvedField,ExtrudedField};
 use crate::motion::{Family,MotionBounds};
 use std::{collections::HashMap,sync::Arc};
 
@@ -8,6 +8,7 @@ type Cache = HashMap<(usize,[[u64;2];3]),I>;
 #[derive(Clone,Debug)]
 enum Node {
     Revolved(RevolvedField),
+    Extruded(ExtrudedField),
     Transformed {source:SpatialField,pose:MotionBounds},
     Union(SpatialField,SpatialField),
     Intersection(SpatialField,SpatialField),
@@ -17,12 +18,15 @@ enum Node {
 /// A continuous one-Lipschitz field in world coordinates. Material means
 /// closure({f<0}), not the entire zero set. Booleans need not remain distances.
 /// Clones share immutable geometry. Spatial expression depth is limited to 64;
-/// each revolved leaf also enforces the planar field's own depth limit.
+/// each revolved or extruded leaf also enforces the planar field's own depth limit.
 #[derive(Clone,Debug)]
 pub struct SpatialField {node:Arc<Node>,depth:u8}
 
 impl From<RevolvedField> for SpatialField {
     fn from(source: RevolvedField) -> Self { Self {node:Arc::new(Node::Revolved(source)),depth:1} }
+}
+impl From<ExtrudedField> for SpatialField {
+    fn from(source: ExtrudedField) -> Self { Self {node:Arc::new(Node::Extruded(source)),depth:1} }
 }
 
 impl SpatialField {
@@ -36,6 +40,7 @@ impl SpatialField {
         if let Some(value) = cache.get(&key) { return Ok(*value); }
         let value = match self.node.as_ref() {
             Node::Revolved(source) => source.support_bounds()?,
+            Node::Extruded(source) => source.support_bounds()?,
             Node::Transformed {source,pose} => source.support(cache)?.map(|b| pose.point(b)).transpose()?,
             Node::Union(a,b) => union_support(a.support(cache)?,b.support(cache)?),
             Node::Intersection(a,b) => intersection_support(a.support(cache)?,b.support(cache)?),
@@ -92,6 +97,7 @@ impl SpatialField {
         if let Some(value) = cache.get(&key) { return Ok(*value); }
         let value = match self.node.as_ref() {
             Node::Revolved(source) => source.bounds(p),
+            Node::Extruded(source) => source.bounds(p),
             Node::Transformed {source,pose} => source.evaluate(pose.inverse_point(p)?,cache),
             Node::Union(a,b) => Ok(min(a.evaluate(p,cache)?,b.evaluate(p,cache)?)),
             Node::Intersection(a,b) => Ok(max(a.evaluate(p,cache)?,b.evaluate(p,cache)?)),

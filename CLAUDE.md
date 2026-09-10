@@ -171,14 +171,20 @@ finite immutable roll domain. Its `SweepEvaluator` keeps a caller-capped pose ca
 returns the interval refiner's enclosure/status for whole point boxes. Evidence observers
 receive raw oracle bounds but cannot define the geometry or prune the search. The gear
 workbench uses this core evaluator; do not reintroduce a separate callback-based oracle.
-`SpatialField::read` reads ordinary full revolutions, Boolean bodies and motion placements;
-`SweptField::read` binds such a solid and a named motion directly from the solved sketch.
-`RevolvedRegion::field` reconstructs boundary order and checks convex turning before building
-line supports and finite circular-sector constraints. Its join tolerance is the larger of the
-conversion's roundoff and the axis tolerance the snapshot was read with, since an endpoint put
-on the axis moved by up to that and its neighbours still hold the solved point. Each outer/hole loop must be convex;
-holes are subtracted. Axis spines disappear, and finite support comes from an enclosing disk.
-Concave loops, prisms and partial revolutions remain explicit refusals on this field path.
+`SpatialField::read` reads ordinary prisms (`depth:`/`from:`/`to:` and `through:`), full
+revolutions, Boolean bodies and motion placements; `SweptField::read` binds such a solid and a
+named motion directly from the solved sketch. `solid::ExtrudedField` is the prism leaf: the
+profile's planar field intersected with a slab along the face's normal, in a frame
+Gram–Schmidt orthonormalized in interval arithmetic so the map is an isometry. A `through:`
+extent spans the material sources' `support_bounds` (unknown support refuses). Every profile
+loop goes through `PlanarField::from_loops` (`solid/field/profile.rs`, exact lines/arcs/
+circles in the plane's view coordinates, no tessellation): `ordered` reconstructs the walk (joining within the larger of the conversion's roundoff and the axis tolerance a revolved snapshot was read with, since an endpoint put on the axis moved by up to that),
+`turning` checks one full turn and reads convexity, a convex loop is the exact intersection
+of outward half-planes and finite circular sectors, and any other simple loop is
+`Node::Profile` — the signed boundary distance, with segment/arc distances enclosed over a
+box by intervals and the sign read by ray parity at the box centre only when the box clears
+every wall (otherwise `[-d, d]`). Holes are subtracted. Axis spines disappear, and finite
+support comes from an enclosing disk. Partial revolutions and lofts remain explicit refusals.
 Snapshot construction uses floating-point solved curves and numeric convexity checks;
 interval evaluation does not certify that conversion or source-solve/axis-snapping error.
 **The body rule's third side (0.22):** `tip bound body` keeps of a body what lies within `tip`:

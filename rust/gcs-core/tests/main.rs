@@ -37,6 +37,7 @@ mod envelope;
 mod surfaces;
 mod revolved_regions;
 mod functional_solids;
+mod extruded_fields;
 mod patches;
 mod seams;
 mod motions;

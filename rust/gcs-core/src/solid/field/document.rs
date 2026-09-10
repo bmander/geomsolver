@@ -1,7 +1,10 @@
 //! Immutable material snapshots of ordinary Solvent solid definitions.
-use super::{SpatialField,MaterialField,SweptField,I};
-use crate::{model::{Sketch,SolidDef},motion::Family,solid::RevolvedRegion,syntax::BodyWord};
+use super::{SpatialField,MaterialField,SweptField,ExtrudedField,PlanarField,I,V};
+use crate::model::{EntKind,Sketch,SolidDef};
+use crate::{motion::Family,plane::{self,Basis},syntax::BodyWord};
+use crate::solid::{surface::Edge,RevolvedRegion};
 use std::collections::BTreeMap;
+use std::f64::consts::TAU;
 
 #[derive(Clone)]
 enum Snapshot { Static(SpatialField), Swept(MaterialField) }
@@ -22,6 +25,9 @@ impl Snapshot {
             Self::Swept(f) => Self::Swept(f.transformed(under,at)?),
         })
     }
+    fn support_bounds(&self) -> Result<Option<V>,crate::interval::Error> {
+        match self { Self::Static(f) => f.support_bounds(),Self::Swept(f) => f.support_bounds() }
+    }
     fn combine(self,other: Self,word: BodyWord) -> Result<Self,crate::interval::Error> {
         Ok(match (self,other) {
             (Self::Static(a),Self::Static(b)) => Self::Static(match word {
@@ -41,6 +47,82 @@ impl Snapshot {
     }
 }
 
+/// A planar face's basis and its loops as exact lines, arcs and circles in the
+/// plane's own view coordinates: the same reading the faceted kernel tessellates
+/// from, without the tessellation. The outer loop comes first, then each hole.
+fn face_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> {
+    let f = sk.faces.get(face).ok_or("no such face")?;
+    let (basis,pose) = match f.plane()? {
+        Some(p) => {
+            let pl = sk.planes.get(p as usize).ok_or("no such plane")?;
+            (pl.basis,(sk.params[pl.frame.c as usize].value,sk.params[pl.frame.s as usize].value,
+                sk.point_xy(pl.frame.origin as usize)))
+        }
+        None => (Basis::page(),(1.,0.,(0.,0.))),
+    };
+    let view = |i: u32| {
+        let (a,b) = plane::in_view(pose.0,pose.1,pose.2,sk.point_xy(i as usize));
+        [a,b]
+    };
+    let loops = f.boundaries().map(|(edges,_)| edges.iter().map(|e| Ok(match e.kind {
+        EntKind::Line => {
+            let l = &sk.lines[e.i()];
+            Edge::Line {a:view(l.p1),b:view(l.p2),axis:false}
+        }
+        EntKind::Arc => {
+            let arc = &sk.arcs[e.i()];
+            let center = view(arc.center);
+            let ends = [view(arc.start),view(arc.end)];
+            let angle = |p: [f64;2]| (p[1]-center[1]).atan2(p[0]-center[0]);
+            let start = angle(ends[0]);
+            // An arc runs counter-clockwise from its start to its end.
+            let mut sweep = angle(ends[1])-start;
+            while sweep <= 0. { sweep += TAU; }
+            let radius = (ends[0][0]-center[0]).hypot(ends[0][1]-center[1]);
+            Edge::Arc {center,radius,start,sweep,ends}
+        }
+        EntKind::Circle => {
+            let c = &sk.circles[e.i()];
+            let center = view(c.center);
+            let radius = sk.params[c.radius as usize].value.abs();
+            Edge::Arc {center,radius,start:0.,sweep:TAU,ends:[[center[0]+radius,center[1]];2]}
+        }
+        _ => return Err("material fields read planar lines, arcs and circles as profile edges"
+            .to_string()),
+    })).collect::<Result<Vec<_>,String>>()).collect::<Result<Vec<_>,_>>()?;
+    Ok((basis,loops))
+}
+
+fn extruded(sk: &Sketch,face: usize,range: [f64;2]) -> Result<ExtrudedField,String> {
+    let (basis,loops) = face_loops(sk,face)?;
+    ExtrudedField::new(PlanarField::from_loops(&loops,0.)?,basis.o,basis.u,basis.v,range)
+        .map_err(|e| format!("material field: {e:?}"))
+}
+
+// The ordinates along a face's normal spanned by every material source's support:
+// where a through cut has to reach. Padded as the faceted kernel pads its own.
+fn through_range(basis: &Basis,supports: &[Option<V>]) -> Result<[f64;2],String> {
+    let mut lo = [f64::INFINITY;3]; let mut hi = [f64::NEG_INFINITY;3];
+    for support in supports {
+        let support = support.ok_or("a through extent needs every material source bounded")?;
+        for k in 0..3 {
+            lo[k] = lo[k].min(support[k].bounds()[0]); hi[k] = hi[k].max(support[k].bounds()[1]);
+        }
+    }
+    if lo.iter().any(|v| !v.is_finite()) {
+        return Err("a through extent needs a material source".into());
+    }
+    let n = basis.normal();
+    let (mut a,mut b) = (0_f64,0_f64);
+    for k in 0..3 {
+        let (p,q) = (n[k]*(lo[k]-basis.o[k]),n[k]*(hi[k]-basis.o[k]));
+        a += p.min(q); b += p.max(q);
+    }
+    let diagonal = (0..3).map(|k| (hi[k]-lo[k]).powi(2)).sum::<f64>().sqrt();
+    let pad = diagonal*crate::solid::EPS*4.;
+    Ok([a-pad,b+pad])
+}
+
 // Preserve static subgraphs as SpatialFields and promote only where a sweep
 // appears. Both public readers share dependency ordering, naming and refusals.
 fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String> {
@@ -52,7 +134,8 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
         let s = &sk.solids[i];
         if !ready {
             pending.push((i,true));
-            pending.extend(s.operands().into_iter().rev().map(|o| (o as usize,false)));
+            let operands = crate::solid::document::evaluation_operands(sk,i)?;
+            pending.extend(operands.into_iter().rev().map(|o| (o as usize,false)));
             continue;
         }
         let field = (|| {
@@ -60,6 +143,16 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
             let error = |e| format!("material field: {e:?}");
             Ok(match &s.def {
                 SolidDef::Revolve {..} => Snapshot::Static(RevolvedRegion::read(sk,i,axis_tolerance)?.field()?.into()),
+                SolidDef::Prism {face,from,to} =>
+                    Snapshot::Static(extruded(sk,*face as usize,[from.value,to.value])?.into()),
+                SolidDef::Through {face,..} => {
+                    let supports = crate::solid::document::evaluation_operands(sk,i)?.into_iter()
+                        .map(|o| get(o).support_bounds()).collect::<Result<Vec<_>,_>>()
+                        .map_err(error)?;
+                    let (basis,_) = face_loops(sk,*face as usize)?;
+                    let range = through_range(&basis,&supports)?;
+                    Snapshot::Static(extruded(sk,*face as usize,range)?.into())
+                }
                 SolidDef::Placed {source,motion,at} => get(*source)
                     .transformed(&Family::read(sk,*motion as usize)?,at.value).map_err(error)?,
                 SolidDef::Swept {source,motion,from,to} => Snapshot::Swept(SweptField::new(
@@ -72,7 +165,8 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                     for &i in bound { body = body.combine(get(i),BodyWord::Bound).map_err(error)?; }
                     body
                 }
-                _ => return Err("material fields currently require full revolutions, Boolean bodies or named motions".into()),
+                SolidDef::Loft {..} => return Err("material fields currently require prisms, \
+                    full revolutions, Boolean bodies or named motions".into()),
             })
         })().map_err(|e: String| format!("`{}`: {e}",s.name))?;
         done.insert(i,field);
@@ -81,7 +175,7 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
 }
 
 impl SpatialField {
-    /// Read full revolutions with convex analytic profile loops, their Boolean
+    /// Read prisms and full revolutions over analytic profile loops, their Boolean
     /// compositions and fixed motion instances. Unsupported sources fail rather
     /// than substituting a faceted shape. Values use the model's length units.
     pub fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {

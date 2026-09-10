@@ -138,19 +138,33 @@ fn declarative_bevel_blank_reads_without_gear_names_or_coordinate_adapters() {
 }
 
 #[test]
-fn unsupported_profile_and_sweep_forms_fail_explicitly() {
+fn partial_sweeps_fail_explicitly_while_prisms_and_concave_profiles_read() {
     let e = read(&SPHERE.replace("about: axis)","about: axis,sweep: 90deg)"));
     assert!(SpatialField::read(&e.sketch,0,1e-10).unwrap_err().contains("full revolution"));
-    let e = read(&SPHERE.replace("about: axis)","depth: 2)"));
-    assert!(SpatialField::read(&e.sketch,0,1e-10).is_err());
     assert!(SpatialField::read(&e.sketch,999,1e-10).is_err());
+    // The same half disc extruded 2 behind the page is a prism on x >= 3, y in [0, 2].
+    let e = read(&SPHERE.replace("about: axis)","depth: 2)"));
+    let half = SpatialField::read(&e.sketch,0,1e-10).unwrap();
+    for (p,inside) in [([3.5,1.,0.],true),([2.5,1.,0.],false),([3.5,3.,0.],false),([3.9,0.5,0.],true)] {
+        let got = half.bounds(point(p)).unwrap().bounds();
+        assert!(if inside { got[1] < 0. } else { got[0] > 0. },"{p:?}: {got:?}");
+    }
+    // A reflex corner is no longer refused: the loop reads as its signed boundary distance.
     let e = read("unit mm\npoint o hint(x: 0,y: 0)\npoint z hint(x: 0,y: 1)\n\
         ground o\nground z\nline axis(o,z)\n\
         point a hint(x: 1,y: 0)\npoint b hint(x: 4,y: 0)\npoint c hint(x: 4,y: 3)\n\
         point d hint(x: 2,y: 1)\npoint e hint(x: 1,y: 3)\n\
         ground a\nground b\nground c\nground d\nground e\n\
         face profile(a,b,c,d,e,-> close)\nsolid body(profile,about: axis)\n");
-    assert!(SpatialField::read(&e.sketch,0,1e-10).unwrap_err().contains("convex"));
+    let body = SpatialField::read(&e.sketch,0,1e-10).unwrap();
+    for (p,inside) in [([3.,0.,0.5],true),([0.,1.4,2.],true),([2.2,0.,2.],false),([0.5,0.,1.],false)] {
+        let got = body.bounds(point(p)).unwrap().bounds();
+        assert!(if inside { got[1] < 0. } else { got[0] > 0. },"{p:?}: {got:?}");
+    }
+    // In the notch the nearest wall is the slanted edge c-d, an exact distance.
+    let got = body.bounds(point([2.5,0.,2.])).unwrap().bounds();
+    assert!(got[0] <= 0.125_f64.sqrt() && got[1] >= 0.125_f64.sqrt() && got[1]-got[0] < 1e-9,"{got:?}");
+    assert!(body.support_bounds().unwrap().is_some());
 }
 
 #[test]
