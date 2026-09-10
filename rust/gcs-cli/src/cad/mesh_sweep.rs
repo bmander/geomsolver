@@ -113,33 +113,20 @@ pub fn interior_point(solid: &Solid,depth: f64) -> Result<[f64;3],String> {
     Ok(std::array::from_fn(|k| centroid[k]-depth*normal[k]))
 }
 
-/// Sheets of a sweep whose tool-frame twist is constant: each characteristic
-/// carried along the motion over the declared interval, plus a slab's worth of
-/// overrun into the caps at both ends.
+impl From<solid::SweepSheet> for SheetGrid {
+    fn from(s: solid::SweepSheet) -> Self {
+        SheetGrid {points:s.points,normals:s.normals,rows:s.rows,columns:s.columns,closed_rows:s.closed_rows}
+    }
+}
+
+/// Sheets of a sweep whose tool-frame twist is constant: the core carries each
+/// characteristic along the motion, with two slabs' worth of overrun into the
+/// caps at both ends.
 pub fn constant_twist_sheets(sk: &Sketch,swept: usize,epsilon: f64) -> Result<Vec<SheetGrid>,String> {
     let sweep = solid::SweepContacts::read(sk,swept,1e-10)?;
-    let [from,to] = sweep.domain();
-    let curves = sweep.characteristics(1e-9)?;
-    if curves.is_empty() { return Err(format!("`{}`: the tool has no contact curve under its motion",sk.solids[swept].name)); }
-    let motion = sweep.motion();
-    let mut sheets = Vec::with_capacity(curves.len());
-    for curve in curves {
-        let speed = curve.points.iter().map(|p| norm(motion.at(from).map(|m| m.velocity(*p)).unwrap_or([0.;3])))
-            .fold(0_f64,f64::max).max(1e-9);
-        let overrun = 2.*epsilon/speed;
-        let (t0,t1) = (from-overrun,to+overrun);
-        let columns = (((t1-t0)*speed/COLUMN_SPACING).ceil() as usize).clamp(2,400);
-        let mut points = Vec::with_capacity(curve.points.len()*columns);
-        let mut normals = Vec::with_capacity(curve.points.len()*columns);
-        for (p,n) in curve.points.iter().zip(&curve.normals) {
-            for c in 0..columns {
-                let pose = motion.at(t0+(t1-t0)*c as f64/(columns-1) as f64)?;
-                points.push(pose.point(*p)); normals.push(pose.vector(*n));
-            }
-        }
-        sheets.push(SheetGrid {points,normals,rows:curve.points.len(),columns,closed_rows:curve.closed});
-    }
-    Ok(sheets)
+    let sheets = sweep.carried_sheets(COLUMN_SPACING,2.*epsilon,1e-9)
+        .map_err(|e| format!("`{}`: {e}",sk.solids[swept].name))?;
+    Ok(sheets.into_iter().map(SheetGrid::from).collect())
 }
 
 /// Target node spacing along a sheet's band, model millimetres.

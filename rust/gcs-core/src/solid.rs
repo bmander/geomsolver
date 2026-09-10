@@ -39,7 +39,7 @@ pub use document::{reads,resolve};
 mod static_boundary;
 pub use static_boundary::{static_solid,indexed,primitive_triangles,StaticSolid};
 mod sweep_candidates;
-pub use sweep_candidates::{Characteristic,constant_twist};
+pub use sweep_candidates::{Characteristic,SweepSheet,constant_twist};
 pub(crate) use document::{evaluation_operands,operand_paths};
 use document::{frame_origin,resolve_at};
 mod field;

@@ -27,6 +27,20 @@ pub struct Characteristic {
     pub closed: bool,
 }
 
+/// A candidate boundary sheet of a sweep, in the body's frame: a row-major
+/// grid of contact positions with the tool's outward normal at each, and the
+/// motion parameter each column was taken at. `closed_rows` joins the last row
+/// back to the first, a tube.
+#[derive(Clone,Debug)]
+pub struct SweepSheet {
+    pub points: Vec<V3>,
+    pub normals: Vec<V3>,
+    pub times: Vec<f64>,
+    pub rows: usize,
+    pub columns: usize,
+    pub closed_rows: bool,
+}
+
 /// Whether the motion's tool-frame twist is constant over the domain, sampled
 /// at several parameters: the regime in which the contact set is fixed.
 pub fn constant_twist(motion: &crate::motion::Family,domain: [f64;2],tolerance: f64) -> Result<bool,String> {
@@ -65,6 +79,33 @@ impl SweepContacts {
     fn hidden(&self,p: V3,scale: f64) -> Result<bool,String> {
         let value = self.source.bounds(p.map(|x| Interval::point(x).unwrap())).map_err(|e| format!("{e:?}"))?;
         Ok(value.bounds()[1] < -scale*1e-6)
+    }
+
+    /// The sheets of a constant-twist sweep: each characteristic carried along
+    /// the motion over the declared interval, plus `overrun` (a length) of travel
+    /// beyond both ends into the tool's end poses, sampled about `spacing` apart
+    /// along the travel. Rows are the characteristic's points, columns the times.
+    pub fn carried_sheets(&self,spacing: f64,overrun: f64,tolerance: f64) -> Result<Vec<SweepSheet>,String> {
+        let [from,to] = self.domain();
+        let curves = self.characteristics(tolerance)?;
+        if curves.is_empty() { return Err("the tool has no contact curve under its motion".into()); }
+        let motion = self.motion();
+        let mut sheets = Vec::with_capacity(curves.len());
+        for curve in curves {
+            let start = motion.at(from)?;
+            let speed = curve.points.iter().map(|p| norm(start.velocity(*p))).fold(0_f64,f64::max).max(1e-9);
+            let (t0,t1) = (from-overrun/speed,to+overrun/speed);
+            let columns = (((t1-t0)*speed/spacing).ceil() as usize).clamp(2,400);
+            let times: Vec<f64> = (0..columns).map(|c| t0+(t1-t0)*c as f64/(columns-1) as f64).collect();
+            let poses = times.iter().map(|&t| motion.at(t)).collect::<Result<Vec<_>,_>>()?;
+            let mut points = Vec::with_capacity(curve.points.len()*columns);
+            let mut normals = Vec::with_capacity(curve.points.len()*columns);
+            for (p,n) in curve.points.iter().zip(&curve.normals) {
+                for pose in &poses { points.push(pose.point(*p)); normals.push(pose.vector(*n)); }
+            }
+            sheets.push(SweepSheet {points,normals,times,rows:curve.points.len(),columns,closed_rows:curve.closed});
+        }
+        Ok(sheets)
     }
 
     /// The fixed contact curves of a constant-twist motion, chained.
