@@ -24,10 +24,7 @@ component ComplementarySpace(f: plane, axis: line, outside: group, inside: group
   private construction solid outer_crown(outer.profile, about: axis)
   private construction solid inner_crown(inner.profile, about: axis)
   private construction solid neighbor(inner_crown, under: indexing, at: 0deg)
-  // outer_crown minus (outer_crown minus neighbor) is their intersection under the
-  // body rule; the field evaluator reads that pair as one intersection node.
-  private construction solid outside_neighbor(outer_crown)
-  neighbor cut outside_neighbor
+  // The space is the outer crown within its indexed neighbour.
   solid body(outer_crown)
-  outside_neighbor cut body
+  neighbor bound body
 }

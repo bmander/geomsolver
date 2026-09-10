@@ -179,6 +179,16 @@ holes are subtracted. Axis spines disappear, and finite support comes from an en
 Concave loops, prisms and partial revolutions remain explicit refusals on this field path.
 Snapshot construction uses floating-point solved curves and numeric convexity checks;
 interval evaluation does not certify that conversion or source-solve/axis-snapping error.
+**The body rule's third side (0.22):** `tip bound body` keeps of a body what lies within `tip`:
+a solid is its stock, plus everything `on` it, minus everything that `cut`s it, within everything
+that `bound`s it. `SolidDef::Body` carries `bound` beside `through`; `Term::Inter` is the term;
+the facet kernel, the fields, the CAD recipe (`"bound"`, OCCT `BRepAlgoAPI_Common`) and the
+Manifold path all evaluate it. Union first; `cut` and `bound` commute. A swept solid may only
+be `cut` for now. `bound` is a body word like `cut`, so it is no declaration name. The spiral
+bevel blank is `heel` bounded by `tip`, and the gear cutter the outer crown bounded by its
+indexed neighbour; the `A − (A − B)` intermediate is gone. The analytic faces the generating
+checks read live in `spiral_bevel/verification.sv` (`ReferenceFaces(refs)`), instantiated by
+`pair.sv` only; `gears.sv` elaborates the design alone.
 **Continuous motion solids:** `solid removal(tool, under: generating, from: -30deg, to: 30deg)`
 uses finite increasing Angle bounds, converted to radians at elaboration. It means the union
 of material over the complete interval, not a sequence of posed meshes. `at:` and interval

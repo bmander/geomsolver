@@ -54,7 +54,7 @@ fn bored() -> (Sketch, usize) {
     let bf = circle_face(&mut sk, (30.0, 20.0), 8.0, "bore_f");
     let bore = prism(&mut sk, bf, -30.0, 0.0, "bore");
     let body = sk.solid(
-        SolidDef::Body { stock: block as u32, on: vec![], through: vec![bore as u32] },
+        SolidDef::Body { stock: block as u32, on: vec![], through: vec![bore as u32], bound: vec![] },
         "body",
     );
     (sk, body)
@@ -204,7 +204,7 @@ fn a_mesh_is_cut_to_the_object_and_a_volume_to_the_report() {
     let bf = circle_face(&mut big, (300.0, 200.0), 80.0, "bore_f");
     let bore = prism(&mut big, bf, -300.0, 0.0, "bore");
     let b2 = big.solid(
-        SolidDef::Body { stock: block as u32, on: vec![], through: vec![bore as u32] },
+        SolidDef::Body { stock: block as u32, on: vec![], through: vec![bore as u32], bound: vec![] },
         "body",
     );
     let n2 = mesh::grouped(&big.solid_boundary(b2, solid::mesh_unit(&big, b2))).positions.len() / 9;

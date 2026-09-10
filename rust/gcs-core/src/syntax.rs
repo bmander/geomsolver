@@ -271,9 +271,12 @@ pub struct DerivedDecl {
 pub enum BodyWord {
     /// `boss on cyl` — material.
     On,
-    /// A body operation (§6.9): `cut` subtracts, `on` unites, `with` intersects.
-    /// Relations are folded into the stock body after declarations are built.
+    /// `bore cut cyl` — the body rule's subtraction (§6.9). Relations are folded into
+    /// the stock body after declarations are built.
     Cut,
+    /// `tip bound cyl` — the body rule's intersection: the body keeps what lies within
+    /// every solid that bounds it.
+    Bound,
     /// `cylB.block.far against plate.body.near` — **a stack** (§6.10): two faces in contact, so
     /// where the left one's part stands is a *consequence* rather than a number somebody kept in
     /// step by hand.  What `zA = fwA + D / 2` was.
@@ -285,12 +288,13 @@ impl BodyWord {
         match self {
             BodyWord::On => "on",
             BodyWord::Cut => "cut",
+            BodyWord::Bound => "bound",
             BodyWord::Against => "against",
         }
     }
 }
 
-/// A body operation (§6.9): `cut` subtracts, `on` unites, `with` intersects.
+/// A body operation (§6.9): `cut` subtracts, `on` unites, `bound` intersects.
 /// Relations are folded into the stock body after declarations are built.
 #[derive(Clone, Debug)]
 pub struct SolidRel {

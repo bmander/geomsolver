@@ -66,11 +66,13 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
                     }
                 }
             }
-            SolidDef::Body { stock, on, through } => {
+            SolidDef::Body { stock, on, through, bound } => {
                 v.extend([2.0, *stock as f64, on.len() as f64]);
                 v.extend(on.iter().map(|&i| i as f64));
                 v.push(through.len() as f64);
                 v.extend(through.iter().map(|&i| i as f64));
+                v.push(bound.len() as f64);
+                v.extend(bound.iter().map(|&i| i as f64));
             }
         }
         stack.extend(sol.operands());
@@ -240,7 +242,7 @@ pub(super) fn resolve_at(sk: &Sketch, si: usize, unit: f64, origin: [f64; 3]) ->
     while let Some(t) = pending.pop() {
         match t {
             Term::Prim(i) => { ids[*i] = Some(0); }
-            Term::Union(a, b) | Term::Diff(a, b) => { pending.extend([a.as_ref(), b.as_ref()]); }
+            Term::Union(a, b) | Term::Diff(a, b) | Term::Inter(a, b) => { pending.extend([a.as_ref(), b.as_ref()]); }
             Term::Empty => {}
         }
     }
@@ -253,7 +255,7 @@ pub(super) fn resolve_at(sk: &Sketch, si: usize, unit: f64, origin: [f64; 3]) ->
     while let Some(t) = pending.pop() {
         match t {
             Term::Prim(i) => { *i = ids[*i].expect("referenced primitive was retained"); }
-            Term::Union(a, b) | Term::Diff(a, b) => { pending.extend([a.as_mut(), b.as_mut()]); }
+            Term::Union(a, b) | Term::Diff(a, b) | Term::Inter(a, b) => { pending.extend([a.as_mut(), b.as_mut()]); }
             Term::Empty => {}
         }
     }
@@ -339,7 +341,7 @@ fn build(
                         let next = prims.len(); prims.push(copy); next
                     });
                 }
-                Term::Union(a,b) | Term::Diff(a,b) => pending.extend([a.as_mut(),b.as_mut()]),
+                Term::Union(a,b) | Term::Diff(a,b) | Term::Inter(a,b) => pending.extend([a.as_mut(),b.as_mut()]),
                 Term::Empty => {}
             }
         }
@@ -348,11 +350,12 @@ fn build(
     let local = |mut p: FacePoly| {
         p.basis.o = std::array::from_fn(|k| p.basis.o[k] - origin[k]); p
     };
-    if let SolidDef::Body { stock, on, through } = &sol.def {
+    if let SolidDef::Body { stock, on, through, bound } = &sol.def {
         let operand = |i: &u32| names.get(i).cloned().unwrap_or(Term::Empty);
         let mut t = operand(stock);
         for a in on { t = Term::Union(Box::new(t), Box::new(operand(a))); }
         for b in through { t = Term::Diff(Box::new(t), Box::new(operand(b))); }
+        for c in bound { t = Term::Inter(Box::new(t), Box::new(operand(c))); }
         return t;
     }
     if let SolidDef::Loft { face, end, guide } = sol.def {
@@ -374,7 +377,7 @@ fn build(
                 match t {
                     Term::Prim(pi) => { bounds.add(prims[*pi].bbox.lo); bounds.add(prims[*pi].bbox.hi); }
                     Term::Union(a,b) => pending.extend([a.as_ref(),b.as_ref()]),
-                    Term::Diff(a,_) => pending.push(a),
+                    Term::Diff(a,_) | Term::Inter(a,_) => pending.push(a),
                     Term::Empty => {}
                 }
             }

@@ -73,9 +73,13 @@ remains ahead, so this is not yet public gear solid export.
 its tooth count and module come from the ordinary configuration module. The gear cutter is
 built by the owning reference component, which passes its private datums explicitly to
 `ComplementarySpace`. Each active rounded flank is closed with ordinary lines, revolved,
-and intersected with the neighboring crown. The finite radial closure lies beyond the
-reachable blank under every apex-centered generating rotation. No private member access
-rule or gear-specific compiler operation is added.
+and bounded by the neighboring crown (`neighbor bound body`, the body rule's intersection,
+spec 0.22). The finite radial closure lies beyond the reachable blank under every
+apex-centered generating rotation. No private member access rule or gear-specific compiler
+operation is added. The analytic faces the generating-system checks read (surfaces,
+envelopes, regions, seams, vertices, edges, faces) live in `verification.sv`, instantiated
+by `pair.sv` and not by `gears.sv`; `paired_references.sv` holds only the blank boundaries,
+crown sections and motions the members are generated from.
 The source cutter is compared with the independently assembled active-flank fields at
 thousands of points in the reachable domain. Both complete source bodies match the separate
 member evaluator at 48 retained/removed probes across the 24:48, module 2 mm and 28:49,

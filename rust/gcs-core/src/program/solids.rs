@@ -177,9 +177,10 @@ pub(super) fn solids(
         }
         let Some(sol) = sk.solids.get_mut(b.i()) else { continue };
         match &mut sol.def {
-            SolidDef::Body { on, through, .. } => match word {
+            SolidDef::Body { on, through, bound, .. } => match word {
                 crate::syntax::BodyWord::On => on.push(a.idx),
                 crate::syntax::BodyWord::Cut => through.push(a.idx),
+                crate::syntax::BodyWord::Bound => bound.push(a.idx),
                 crate::syntax::BodyWord::Against => unreachable!("filtered above"),
             },
             _ => {
@@ -297,7 +298,7 @@ pub(super) fn solids(
             });
             // left standing but emptied, so nothing below it walks the cycle
             sk.solids[i].def =
-                SolidDef::Body { stock: i as u32, on: Vec::new(), through: Vec::new() };
+                SolidDef::Body { stock: i as u32, on: Vec::new(), through: Vec::new(), bound: Vec::new() };
         }
     }
 }

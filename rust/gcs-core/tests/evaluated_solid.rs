@@ -161,6 +161,7 @@ fn invalid_geometry_policy_and_cycles_return_diagnostics() {
         stock: i as u32,
         on: vec![],
         through: vec![],
+        bound: vec![],
     };
     assert!(e
         .sketch
@@ -301,6 +302,7 @@ fn validation_and_evaluation_agree_on_cycles_and_shared_operands() {
         stock: i as u32,
         on: vec![],
         through: vec![],
+        bound: vec![],
     };
     assert!(gcs_core::solid::validate(&e.sketch, i)
         .unwrap_err()

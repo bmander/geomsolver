@@ -127,7 +127,7 @@ impl EvaluatedSolid {
                     ))
                 }
                 Term::Prim(_) => {}
-                Term::Union(a, b) | Term::Diff(a, b) => {
+                Term::Union(a, b) | Term::Diff(a, b) | Term::Inter(a, b) => {
                     terms.push(a);
                     terms.push(b);
                 }

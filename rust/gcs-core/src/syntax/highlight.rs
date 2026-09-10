@@ -262,7 +262,7 @@ fn tint_word(
             if w == "in" && matches!(prev, Some(Tok::Num(_))) {
                 return (None, Next::Word);
             }
-            if w == "cut" && prev != Some(&Tok::P('.')) {
+            if (w == "cut" || w == "bound") && prev != Some(&Tok::P('.')) {
                 return (Some(Tint::Relation), Next::Word);
             }
             if MODIFIERS.contains(&w) {

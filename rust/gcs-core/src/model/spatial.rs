@@ -261,11 +261,13 @@ pub enum SolidDef {
     /// document writes none), right-handed about the line's own `p1 → p2` unless `sense: cw`.
     Revolve { face: u32, axis: u32, sweep: Extent, sense: Sense },
     /// **The body rule, and the whole of it**: its stock, plus everything `on` it, minus
-    /// everything that `cut`s it.  Both are sets, so the statements that fill them may be written
-    /// anywhere in any order (P2) — which is what a feature tree, folding a *sequence*, is not.
-    /// A design needing the other order names the intermediate, and then there are two solids
-    /// because there are two things.
-    Body { stock: u32, on: Vec<u32>, through: Vec<u32> },
+    /// everything that `cut`s it, within everything that `bound`s it.  All three are sets, so
+    /// the statements that fill them may be written anywhere in any order (P2) — which is what
+    /// a feature tree, folding a *sequence*, is not.  Difference and intersection commute, so
+    /// the last two need no order between them; union comes first.  A design needing the
+    /// other order names the intermediate, and then there are two solids because there are
+    /// two things.
+    Body { stock: u32, on: Vec<u32>, through: Vec<u32>, bound: Vec<u32> },
 }
 
 /// A solid, as the document names it.
@@ -360,10 +362,11 @@ impl SolidE {
         match &self.def {
             SolidDef::Placed { source, .. } | SolidDef::Swept { source, .. } => vec![*source],
             SolidDef::Prism { .. } | SolidDef::Revolve { .. } | SolidDef::Through { .. } | SolidDef::Loft { .. } => Vec::new(),
-            SolidDef::Body { stock, on, through } => {
+            SolidDef::Body { stock, on, through, bound } => {
                 let mut v = vec![*stock];
                 v.extend(on.iter().copied());
                 v.extend(through.iter().copied());
+                v.extend(bound.iter().copied());
                 v
             }
         }

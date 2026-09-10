@@ -1,12 +1,9 @@
 use paired_references
 
 component GeneratedMember(design: group, tool: solid, teeth: Int, roll_limit: Angle) {
-  // heel minus (heel minus tip) is the rim within the tip cone; the first cut
-  // on the body, which the field evaluator reads as one intersection.
-  private construction solid outside_tip(design.heel)
-  design.tip cut outside_tip
+  // The blank: the heel sphere within the tip cone, less the toe and the back.
   solid body(design.heel)
-  outside_tip cut body
+  design.tip bound body
   design.toe cut body
   design.back cut body
 

@@ -602,7 +602,8 @@ The standard library lays out the three views once (2.10).
 A feature tree is imperative because it is a *history*: step *n* acts on the anonymous body as of
 step *n − 1*, and names faces by the order they were cut in. Solvent names everything, so **a solid
 is a term, never a step** — a face swept, or a stock plus everything `on` it minus everything
-that `cut`s it — and the implementation finds the order the way it finds the order of `h = w / 2`.
+that `cut`s it within everything that `bound`s it — and the implementation finds the order the way
+it finds the order of `h = w / 2`.
 **The order lives inside a term and never between statements**, so `bore cut body` may be
 written above the `solid body(…)` it belongs to or fifty lines below it and says the same thing.
 
@@ -968,6 +969,19 @@ normal, ignoring other cutters. It follows the solved geometry and placement. Th
 alone creates the cutter; the infix statement removes its material from the body. For a blind
 pocket, keep an explicit `depth:` or `from:`/`to:` extent and apply it with the same `cut` word.
 Old Boolean `X through B` statements are now written `X cut B`.
+
+**`bound` keeps what lies within.** The third side of the body rule is the intersection:
+`tip bound body` keeps of the body only what is inside `tip`. A rim is a sphere within a cone,
+which is one statement rather than `heel − (heel − tip)` through a named intermediate:
+
+```solvent
+solid body(heel)
+tip bound body
+toe cut body
+```
+
+Difference and intersection commute, so `cut` and `bound` statements need no order between them;
+union comes first, as before.
 
 Being sets is also the one thing you have to write out. A boss standing in the floor of a pocket is
 **not** `pocket cut body` and `boss on body`: that is stock ∪ boss − pocket, and the pocket eats

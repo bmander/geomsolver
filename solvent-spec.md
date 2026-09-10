@@ -1,6 +1,13 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.21 — September 2026**
+**Specification, Draft 0.22 — September 2026**
+
+**[0.22] The body rule gains its third side.** `tip bound body` keeps of a body what lies
+within `tip`: a solid is its stock, plus everything `on` it, minus everything that `cut`s it,
+within everything that `bound`s it (§6.9). Union comes first; difference and intersection commute,
+so the `cut` and `bound` sets need no order between them. Like `on` and `cut` it is
+Declaration-class and contributes no residual. It replaces the `A − (A − B)` idiom through a
+named intermediate, which was the only spelling of an intersection until now.
 
 **[0.21] Explicit datum coordinates.** Signed ordinates use the existing distance operator:
 `p distance(u, along: u) f` and `p distance(v, along: v) f`, where `f` is a plane used
@@ -251,7 +258,7 @@ Every statement belongs to exactly one class. The classification is normative be
 
 | Class | Statements | Affects solution set? |
 |---|---|---|
-| **Declaration** | entity declarations, `param`, `group`, `curve` family definitions, instance declarations, **[0.18]** the body rule (`on` and `cut` over two solids, §6.9) | introduces entities/aliases |
+| **Declaration** | entity declarations, `param`, `group`, `curve` family definitions, instance declarations, **[0.18]** the body rule (`on`, `cut` and `bound` over two solids, §6.9) | introduces entities/aliases |
 | **Constraint** | predicate calls, `==` equations, **pinned seeds (`==`, §4.3) [0.2]**, orientation predicates, arc-branch and tangency-side decorations, `ring` symmetry, gauge statements | **yes** |
 | **Seed** *(was Hint)* | the `hint` statement (§11), **and every seed written inline in a `hint(…)` clause (§4.3, §6.4) [0.2] [0.7]** | **no (P3)** |
 | **Structure** | `repeat`/`cycle` blocks, `path` declarations (net of their derived constraints, §10.4), **[0.18]** `view` and `section` (§6.11), which ask for a picture and declare nothing | organizational |
@@ -649,19 +656,19 @@ solid block(face(mouth, side_r, lid, side_l), from: face, to: back)
 - **A through prism** is written `solid tool(section, through: target)`. Its target MUST be a solid (**E080**); it spans the target in both directions along the section's own plane normal. The extent is evaluated after the sketch is solved: recursively collect the target's stock and additions, ignoring all cuts, project a conservative bound of that material along the normal, and pad both ends outside the material at the kernel's tolerance. The target may be a swept solid or a body. Changes to its material geometry or placement change the extent; subtractive tools do not enlarge it. `through:` cannot be mixed with any other sweep label, and does not itself subtract anything. Apply the tool separately with `tool cut body`.
 - **A guided loft/sweep** is written `solid duct(section, along: guide)` or `solid transition(start_section, end_section, along: guide)`. The guide MUST be a directed line (`p1` to `p2`) or open circular arc (`start` to `end`, counter-clockwise in its own plane); other kinds are **E081**. The start section MUST lie in the plane through the guide start perpendicular to its tangent. An explicit end section MUST likewise lie at the guide end perpendicular to its tangent. These are checked after solving; the constructor does not reposition or constrain the sections. With one section, the end section is implicitly the transported start. A line transports by translation; an arc transports by rotation about its center and plane normal. With two sections, corresponding boundary points interpolate linearly in that transported frame. Sections must have equal numbers of holes, paired in written order, and corresponding loops must have equal numbers of source edges. Edges pair in counter-clockwise traversal order starting with the first source edge; circle/arc tessellation counts may differ. Whole circles pair by radial direction in the transported frame, independently of the end plane’s drawing axes. Crossed or collapsed sampled sections, intersecting holes, and sections touching or crossing the bend axis are refused. `along:` cannot be combined with any other sweep label. It owns no unknown: editing the guide or either section changes the evaluated solid.
 - **A revolution** turns a face about `about:` a line, which MUST be a line (**E081**) and MUST lie in the **face's own plane** (E081) — a line drawn in another view names a direction this face knows nothing about. `sweep:` is how far and is a **magnitude**, a full turn where the document writes none; **which way is a word, not a sign** (§9.2, §9.4): `sense: cw | ccw`, right-handed about the line's own `p1 → p2` unless `cw` is written, and a negative `sweep:` is **E040** at the value, in the words of the selector that replaces it.
-- **A body** names its **stock** in the brackets and takes its features from the `on` and `cut` statements that name it. A solid whose brackets hold solids and no face is a body; one written over a face is not, and a feature written into a swept solid is E080 with the cause and the spelling that fixes it.
+- **A body** names its **stock** in the brackets and takes its features from the `on`, `cut` and **[0.22]** `bound` statements that name it. A solid whose brackets hold solids and no face is a body; one written over a face is not, and a feature written into a swept solid is E080 with the cause and the spelling that fixes it.
 
 **The body rule, and the whole of it.**
 
-> **A solid is its stock, plus everything `on` it, minus everything that `cut`s it.**
+> **A solid is its stock, plus everything `on` it, minus everything that `cut`s it, within everything that `bound`s it.**
 
-As a point set, with `on(s)` and `cut(s)` the two **sets** of statements naming `s`, and `S(s)` its stock:
+As a point set, with `on(s)`, `cut(s)` and **[0.22]** `bound(s)` the three **sets** of statements naming `s`, and `S(s)` its stock:
 
 ```
-B(s) = ( S(s) ∪ ⋃ { B(x) : x on s } ) ∖ ⋃ { B(y) : y cut s }
+B(s) = ( S(s) ∪ ⋃ { B(x) : x on s } ) ∖ ⋃ { B(y) : y cut s } ∩ ⋂ { B(z) : z bound s }
 ```
 
-Union before difference, and neither group is ordered. `on` and `cut` are Declaration-class (§4.2, §9.2): each says what its right operand *is*, contributes no residual, and enters no solve. A solid that reaches itself through its operands is **E041** — "made of itself", the words a plane folded from itself is refused in.
+Union first, and none of the three groups is ordered; difference and intersection commute, so the last two need no order between them either. `tip bound blank` keeps of the blank what lies within the tip cone, which is what a rim inside a cone is, and what `blank ∖ (blank ∖ tip)` used to spell in two statements and an intermediate. `on`, `cut` and `bound` are Declaration-class (§4.2, §9.2): each says what its right operand *is*, contributes no residual, and enters no solve. A solid that reaches itself through its operands is **E041** — "made of itself", the words a plane folded from itself is refused in.
 
 **Extent dependencies are separate from Boolean operands.** A through prism reads only the target's additive material sources for its bounds; it does not read the target's final Boolean result. Therefore `solid tool(section, through: body)` together with `tool cut body` is valid and unordered. Genuine material/extent cycles, such as using that tool as the body's stock or adding it `on` the same body, are **E041**. A cutter remains a finite named solid with its own reports and faces. Its padded caps are numerical extent boundaries, not design datums for `against` placement.
 
@@ -1220,7 +1227,7 @@ The collapses are where the saving is: **`on` is five constraints, `distance` is
 
 **`ccw` and `cw` keep a call.** Under the general rule they would be `a ccw(c) b`, which reorders three points that are symmetric: the predicate is about the *triangle*, not about a pair with a decoration. The call is a third fixity of the same table — every operand in the parentheses — and not a statement kind of its own. **[0.15]** The gauges and the orientation predicates are entries of the operator table like every other constraint: read by the one relation grammar, so a class, a placement and the chain's lookahead treat them as any other word, and settled by the word alone, since `fix c.r` names a number and `ccw(a, b, c)` has no operand outside its parentheses. They hold parameters or record a root choice rather than adding an equation, so a `claim` on one is refused (E040): a claim is judged by rank, and they add no row.
 
-**[0.18] The body rule is written in this grammar and is not a constraint.** `boss on cyl` and `bore cut cyl` are **Declaration**-class (§4.2): each says what its right operand *is* (§6.9), contributes no residual, and takes no part in a solve, a decomposition or any partition of work. `on` is settled the way every word here is — by the kinds of its operands, one step further out than `p on c` — so nothing new is spelled for it; `cut` relates no geometry and has no residual to be settled into, and is read by the word alone. Neither is in the constraint library of §9.3, and neither may be `claim`ed: a claim is judged by rank and these add no row, which is the rule already stated for the gauges. `claim a cut b` is refused where it is written, `cut` being no constraint word; a `claim` written on a body `on` asserts nothing, and an implementation SHOULD refuse it rather than accept a statement that says nothing (an implementation that instead drops the word MUST still apply the body rule, since the operands' kinds are what the statement means).
+**[0.18] The body rule is written in this grammar and is not a constraint.** `boss on cyl`, `bore cut cyl` and **[0.22]** `tip bound cyl` are **Declaration**-class (§4.2): each says what its right operand *is* (§6.9), contributes no residual, and takes no part in a solve, a decomposition or any partition of work. `on` is settled the way every word here is — by the kinds of its operands, one step further out than `p on c` — so nothing new is spelled for it; `cut` relates no geometry and has no residual to be settled into, and is read by the word alone. Neither is in the constraint library of §9.3, and neither may be `claim`ed: a claim is judged by rank and these add no row, which is the rule already stated for the gauges. `claim a cut b` is refused where it is written, `cut` being no constraint word; a `claim` written on a body `on` asserts nothing, and an implementation SHOULD refuse it rather than accept a statement that says nothing (an implementation that instead drops the word MUST still apply the body rule, since the operands' kinds are what the statement means).
 
 A chain (§6.6) is the same grammar: a **lone infix statement is a one-joint chain**, and what a chain adds is the corner — which end two links meet at — that an operator between two names cannot know.
 
@@ -1914,9 +1921,10 @@ face_arg       = ref | ("edges" | "holes" | "on") ":" ref ;  (* planar/spatial r
 solid_decl     = "solid" [ IDENT ] "(" term ")" ;
 term           = ref [ "," ref ] { "," sweep_arg }                     (* a face swept *)
                | ref { "," ref } ;                         (* a body: its stock, then solids *)
-body_rel       = ref ( "on" | "cut" ) ref ;   (* the body rule, §6.9 — `on` is the ordinary
-                                                     infix word, read as this when both
-                                                     operands are solids; `cut` is its own *)
+body_rel       = ref ( "on" | "cut" | "bound" ) ref ;   (* the body rule, §6.9 — `on` is the
+                                                     ordinary infix word, read as this when both
+                                                     operands are solids; `cut` and `bound` [0.22]
+                                                     are its own *)
 
 (* §6.10 [0.18]: a stack.  The operands name *faces* of solids by the path §6.9 gives them, so
    the word after the left one is past a dotted reference and not past one token. *)

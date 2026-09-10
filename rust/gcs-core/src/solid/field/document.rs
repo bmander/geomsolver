@@ -1,6 +1,6 @@
 //! Immutable material snapshots of ordinary Solvent solid definitions.
 use super::{SpatialField,MaterialField,SweptField,I};
-use crate::{model::{Sketch,SolidDef},motion::Family,solid::RevolvedRegion};
+use crate::{model::{Sketch,SolidDef},motion::Family,solid::RevolvedRegion,syntax::BodyWord};
 use std::collections::BTreeMap;
 
 #[derive(Clone)]
@@ -22,12 +22,20 @@ impl Snapshot {
             Self::Swept(f) => Self::Swept(f.transformed(under,at)?),
         })
     }
-    fn combine(self,other: Self,cut: bool) -> Result<Self,crate::interval::Error> {
+    fn combine(self,other: Self,word: BodyWord) -> Result<Self,crate::interval::Error> {
         Ok(match (self,other) {
-            (Self::Static(a),Self::Static(b)) => Self::Static(if cut { a.difference(b)? } else { a.union(b)? }),
+            (Self::Static(a),Self::Static(b)) => Self::Static(match word {
+                BodyWord::On => a.union(b)?,
+                BodyWord::Cut => a.difference(b)?,
+                _ => a.intersection(b)?,
+            }),
             (a,b) => {
                 let (a,b) = (a.material(),b.material());
-                Self::Swept(if cut { a.difference(b)? } else { a.union(b)? })
+                Self::Swept(match word {
+                    BodyWord::On => a.union(b)?,
+                    BodyWord::Cut => a.difference(b)?,
+                    _ => a.intersection(b)?,
+                })
             }
         })
     }
@@ -57,10 +65,11 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                 SolidDef::Swept {source,motion,from,to} => Snapshot::Swept(SweptField::new(
                     get(*source).static_field()?,Family::read(sk,*motion as usize)?,
                     I::new(from.value,to.value).map_err(error)?).into()),
-                SolidDef::Body {stock,on,through} => {
+                SolidDef::Body {stock,on,through,bound} => {
                     let mut body = get(*stock);
-                    for &i in on { body = body.combine(get(i),false).map_err(error)?; }
-                    for &i in through { body = body.combine(get(i),true).map_err(error)?; }
+                    for &i in on { body = body.combine(get(i),BodyWord::On).map_err(error)?; }
+                    for &i in through { body = body.combine(get(i),BodyWord::Cut).map_err(error)?; }
+                    for &i in bound { body = body.combine(get(i),BodyWord::Bound).map_err(error)?; }
                     body
                 }
                 _ => return Err("material fields currently require full revolutions, Boolean bodies or named motions".into()),

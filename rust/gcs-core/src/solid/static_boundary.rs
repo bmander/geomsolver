@@ -39,6 +39,7 @@ fn prune(term: Term,omitted: &mut usize) -> Term {
         Term::Union(a,b) | Term::Diff(a,b) if matches!(*b,Term::Empty) => { *omitted += 1; prune(*a,omitted) }
         Term::Union(a,b) => Term::Union(Box::new(prune(*a,omitted)),Box::new(prune(*b,omitted))),
         Term::Diff(a,b) => Term::Diff(Box::new(prune(*a,omitted)),Box::new(prune(*b,omitted))),
+        Term::Inter(a,b) => Term::Inter(Box::new(prune(*a,omitted)),Box::new(prune(*b,omitted))),
         other => other,
     }
 }
@@ -61,7 +62,7 @@ pub fn static_solid(sk: &Sketch,root: usize,expected_sweeps: usize) -> Result<St
         match term {
             Term::Empty => return Err(format!("`{name}`: an operand could not be evaluated at this approximation")),
             Term::Prim(_) => {}
-            Term::Union(a,b) | Term::Diff(a,b) => { terms.push(a); terms.push(b); }
+            Term::Union(a,b) | Term::Diff(a,b) | Term::Inter(a,b) => { terms.push(a); terms.push(b); }
         }
     }
     if csg.prims.is_empty() || csg.prims.iter().any(|p| p.facets.is_empty()

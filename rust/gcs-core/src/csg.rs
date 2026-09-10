@@ -424,6 +424,9 @@ fn polys_of(csg: &Csg, t: &crate::solid::Term, tol: f64, origin: [f64; 3]) -> Ve
         Term::Diff(a, b) => {
             difference(polys_of(csg, a, tol, origin), polys_of(csg, b, tol, origin), tol)
         }
+        Term::Inter(a, b) => {
+            intersection(polys_of(csg, a, tol, origin), polys_of(csg, b, tol, origin), tol)
+        }
     }
 }
 

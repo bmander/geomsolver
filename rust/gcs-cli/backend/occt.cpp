@@ -1,5 +1,6 @@
 // Native solid construction and export.
 #include "occt.hpp"
+#include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepBndLib.hxx>
@@ -137,17 +138,25 @@ int solvent_cad_revolve(Cad* cad,int face,const double* origin,const double* axi
 }
 // Booleans run with a 1e-5 mm fuzzy tolerance: near-coincident intersections
 // (a wide tip cone against a blank sphere) otherwise leave an open shell.
-int solvent_cad_boolean(Cad* cad,int a,int b,int cut) noexcept {
+// `operation`: 0 fuses, 1 cuts, 2 keeps what the two share.
+int solvent_cad_boolean(Cad* cad,int a,int b,int operation_kind) noexcept {
     return guarded(cad,[&] {
         TopTools_ListOfShape objects,tools;
         objects.Append(cad->at(a)); tools.Append(cad->at(b));
         TopoDS_Shape result;
-        if (cut) {
+        if (operation_kind == 1) {
             BRepAlgoAPI_Cut operation;
             operation.SetArguments(objects); operation.SetTools(tools);
             operation.SetFuzzyValue(1e-5); operation.SetRunParallel(false);
             operation.Build();
             if (!operation.IsDone()) throw std::runtime_error("Boolean cut failed");
+            result = operation.Shape();
+        } else if (operation_kind == 2) {
+            BRepAlgoAPI_Common operation;
+            operation.SetArguments(objects); operation.SetTools(tools);
+            operation.SetFuzzyValue(1e-5); operation.SetRunParallel(false);
+            operation.Build();
+            if (!operation.IsDone()) throw std::runtime_error("Boolean intersection failed");
             result = operation.Shape();
         } else {
             BRepAlgoAPI_Fuse operation;

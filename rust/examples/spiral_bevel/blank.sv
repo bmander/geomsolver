@@ -16,12 +16,8 @@ component BevelBlank(f: plane, pitch_angle: Angle,
     private back: ConeBoundary(f, shaft, axis_bearing: 90deg, half_angle: pitch_angle,
       normal_offset: -4 * normal_module, span: cone_span)
   }
-  // heel minus (heel minus tip) is heel within tip; written first so the field
-  // evaluator reads it as one intersection.
-  private construction solid outside_tip(heel.wall.solid)
-  tip.wall.solid cut outside_tip
   solid body(heel.wall.solid)
-  outside_tip cut body
+  tip.wall.solid bound body
   toe.wall.solid cut body
   back.wall.solid cut body
 }

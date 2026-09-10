@@ -30,7 +30,7 @@ extern "C" {
     fn solvent_cad_prism(cad: *mut c_void,face: c_int,at: *const f64,by: *const f64) -> c_int;
     fn solvent_cad_revolve(cad: *mut c_void,face: c_int,at: *const f64,axis: *const f64,
         angle: f64) -> c_int;
-    fn solvent_cad_boolean(cad: *mut c_void,a: c_int,b: c_int,cut: c_int) -> c_int;
+    fn solvent_cad_boolean(cad: *mut c_void,a: c_int,b: c_int,operation: c_int) -> c_int;
     fn solvent_cad_transform(cad: *mut c_void,source: c_int,matrix: *const f64) -> c_int;
     fn solvent_cad_bounds(cad: *mut c_void,ids: *const c_int,count: c_int,out: *mut f64) -> c_int;
     fn solvent_cad_validate(cad: *mut c_void,id: c_int) -> c_int;
@@ -60,8 +60,11 @@ impl Session {
             Err(unsafe { CStr::from_ptr(solvent_cad_error(self.0)) }.to_string_lossy().into_owned())
         } else { Ok(id) }
     }
-    fn boolean(&self,a: c_int,b: c_int,cut: bool) -> Result<c_int,String> {
-        self.result(unsafe { solvent_cad_boolean(self.0,a,b,i32::from(cut)) })
+    /// `operation`: the body rule's word, `on` fusing, `cut` subtracting and
+    /// `bound` keeping what the two share.
+    fn boolean(&self,a: c_int,b: c_int,operation: &str) -> Result<c_int,String> {
+        let kind = match operation { "on" => 0,"cut" => 1,"bound" => 2,_ => return Err(format!("unknown body operation `{operation}`")) };
+        self.result(unsafe { solvent_cad_boolean(self.0,a,b,kind) })
     }
     fn face(&self,edges: &Json) -> Result<c_int,String> {
         let mut ids = Vec::new();
@@ -115,7 +118,7 @@ impl Session {
                     n.map(|x| x*(end-start)).as_ptr()) }
             };
             let id = self.result(id)?;
-            solid = Some(match solid { None => id,Some(outer) => self.boolean(outer,id,true)? });
+            solid = Some(match solid { None => id,Some(outer) => self.boolean(outer,id,"cut")? });
         }
         solid.ok_or("empty CAD profile".into())
     }
@@ -125,9 +128,9 @@ impl Session {
             let make = || -> Result<c_int,String> {
                 let id = if field(node,"kind").as_str() == "body" {
                     let mut id = shapes[&field(node,"stock").as_i64()];
-                    for (operation,cut) in [("on",false),("cut",true)] {
+                    for operation in ["on","cut","bound"] {
                         for operand in field(node,operation).arr() {
-                            id = self.boolean(id,shapes[&operand.as_i64()],cut)?;
+                            id = self.boolean(id,shapes[&operand.as_i64()],operation)?;
                         }
                     }
                     id

@@ -231,6 +231,7 @@ fn acyclic_body_nesting_has_no_fake_cycle_or_empty_term_limit() {
                 stock: last as u32,
                 on: vec![],
                 through: vec![],
+                bound: vec![],
             },
             &format!("wrap{i}"),
         );

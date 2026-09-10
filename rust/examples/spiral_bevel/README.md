@@ -38,7 +38,7 @@ build/solventc rust/examples/spiral_bevel/gears.sv --no-diagnose \
 
 Create the output directory first if it does not exist. The explicit CLI selector can
 inspect private construction geometry; it does not grant access from other source
-components. `pair.sv` retains the separate reference-surface entry point used by the
-independent generating-system checks. See [the roadmap](../../../docs/spiral-bevel-roadmap.md)
+components. `pair.sv` is the entry point the independent generating-system checks read: the
+reference geometry plus the analytic faces `verification.sv` declares over it. See [the roadmap](../../../docs/spiral-bevel-roadmap.md)
 for the generating-system evidence and the outstanding 0.0254 mm export-accuracy and
 engagement checks.

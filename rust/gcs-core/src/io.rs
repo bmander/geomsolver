@@ -893,10 +893,11 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     sweep: sweep.clone(), sense: *sense,
                 }
             }
-            crate::model::SolidDef::Body { stock, on, through } => {
+            crate::model::SolidDef::Body { stock, on, through, bound } => {
                 crate::model::SolidDef::Body {
                     stock: sol(stock), on: on.iter().map(sol).collect(),
                     through: through.iter().map(sol).collect(),
+                    bound: bound.iter().map(sol).collect(),
                 }
             }
         };

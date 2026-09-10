@@ -292,20 +292,20 @@ impl<'a> P<'a> {
             // (`cyl.block.far against plate.body.near`), so the word after the left operand is
             // three tokens away and not one — the lookahead `past_ref` exists for
             _ if self.past_ref(self.i).and_then(|j| self.t.get(j)).is_some_and(
-                |(t, _)| matches!(t, Tok::Ident(w) if w == "cut" || w == "through" || w == "against"),
+                |(t, _)| matches!(t, Tok::Ident(w) if w == "cut" || w == "bound" || w == "through" || w == "against"),
             ) =>
             {
                 let lo = self.here().lo as usize;
                 let what = self.refr()?;
                 let Some(Tok::Ident(w)) = self.peek().cloned() else {
-                    self.fail("a body statement is `X cut B` or `F against G`");
+                    self.fail("a body statement is `X cut B`, `X bound B` or `F against G`");
                     return None;
                 };
                 if w == "through" {
                     self.fail("Boolean `through` is now `cut`: write `X cut B`; `through:` specifies a cutter's extent");
                     return None;
                 }
-                let word = if w == "cut" { BodyWord::Cut } else { BodyWord::Against };
+                let word = match w.as_str() { "cut" => BodyWord::Cut, "bound" => BodyWord::Bound, _ => BodyWord::Against };
                 self.i += 1;
                 let body = self.refr()?;
                 self.end_of_stmt();

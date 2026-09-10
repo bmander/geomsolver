@@ -228,6 +228,8 @@ pub enum Term {
     Prim(usize),
     Union(Box<Term>, Box<Term>),
     Diff(Box<Term>, Box<Term>),
+    /// What two operands share: the `bound` side of the body rule (§6.9).
+    Inter(Box<Term>, Box<Term>),
     /// A term nothing could be built for — a face that would not close, a degenerate sweep.
     /// Classifies as empty, so an output is missing rather than wrong.
     Empty,
@@ -288,6 +290,7 @@ impl Csg {
             Term::Prim(i) => in_prim(&self.prims[*i], p, indices.map(|v| &v[*i])),
             Term::Union(a, b) => self.eval(a, p, indices) || self.eval(b, p, indices),
             Term::Diff(a, b) => self.eval(a, p, indices) && !self.eval(b, p, indices),
+            Term::Inter(a, b) => self.eval(a, p, indices) && self.eval(b, p, indices),
         }
     }
 }

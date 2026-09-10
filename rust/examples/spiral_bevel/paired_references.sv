@@ -1,5 +1,7 @@
-// Mathematical reference surfaces for a zero-backlash, 90-degree matched pair.
-// These are construction solids, not the finished gears or machining tools.
+// Mathematical reference geometry for a zero-backlash, 90-degree matched pair:
+// the blank boundaries, the crown sections and the motions that generate each
+// member. These are construction solids, not the finished gears or machining
+// tools. verification.sv declares the analytic faces the checks read.
 use std
 use reference
 use boundaries
@@ -44,9 +46,6 @@ component MatchedReferences(front: plane, pinion_teeth: Int, gear_teeth: Int,
   param heel_distance = mean_distance + face_width / 2
   param addendum = normal_module
   param rim_back_depth = 4 * normal_module
-  // The generating roll the envelopes are verified over. The removal sweeps in
-  // matched_pair.sv declare their own, longer for the gear.
-  param roll_span = 35deg
 
   // The back plane is the front with its normal reversed.
   private back_datum: PlaneDatum(front, span: mean_distance)
@@ -60,10 +59,10 @@ component MatchedReferences(front: plane, pinion_teeth: Int, gear_teeth: Int,
     private construction centerline line front_axis(front.origin, hint(y: mean_distance))
     front_axis.p2 distance(0mm, along: u) front
     front_axis.p2 distance(mean_distance, along: v) front
-    private construction centerline line pinion_axis(front.origin, hint(x: mean_distance))
+    construction centerline line pinion_axis(front.origin, hint(x: mean_distance))
     pinion_axis.p2 distance(mean_distance * cos(pinion_angle), along: u) front
     pinion_axis.p2 distance(mean_distance * sin(pinion_angle), along: v) front
-    private construction centerline line gear_axis(front.origin, hint(x: mean_distance))
+    construction centerline line gear_axis(front.origin, hint(x: mean_distance))
     gear_axis.p2 distance(mean_distance * cos(gear_angle), along: u) front
     gear_axis.p2 distance(-mean_distance * sin(gear_angle), along: v) front
     pinion_tip_boundary: ConeBoundary(front, pinion_axis, axis_bearing: pinion_angle,
@@ -86,12 +85,6 @@ component MatchedReferences(front: plane, pinion_teeth: Int, gear_teeth: Int,
     toe: SphericalBoundary(back, size: toe_distance)
     heel: SphericalBoundary(back, size: heel_distance)
   }
-  pinion_tip_ends: EndCircles(pinion_tip_boundary.wall, toe.wall, heel.wall)
-  pinion_root_ends: EndCircles(pinion_root_boundary.wall, toe.wall, heel.wall)
-  pinion_back_ends: EndCircles(pinion_back_boundary.wall, toe.wall, heel.wall)
-  gear_tip_ends: EndCircles(gear_tip_boundary.wall, toe.wall, heel.wall)
-  gear_root_ends: EndCircles(gear_root_boundary.wall, toe.wall, heel.wall)
-  gear_back_ends: EndCircles(gear_back_boundary.wall, toe.wall, heel.wall)
 
   // The crown traces have their own center, away from the pitch-cone apex. The
   // offset planes locate that center in depth; ordinate constraints locate it in x.
@@ -136,7 +129,7 @@ component MatchedReferences(front: plane, pinion_teeth: Int, gear_teeth: Int,
   construction solid gear_inner_crown(gear_inner.profile, about: crown_back_axis)
   // Public construction inputs for the solid components. Indexing is one member
   // angle; generating roll has the pitch-cone ratio and is a different motion.
-  // The root cone bounds only the verified tooth regions below.
+  // The root cone bounds only the tooth regions verification.sv declares.
   motion pinion_index(about: pinion_axis)
   motion gear_index(about: gear_axis)
   motion crown_neighbor(about: front_axis, phase: -360deg / crown_teeth)
@@ -154,185 +147,4 @@ component MatchedReferences(front: plane, pinion_teeth: Int, gear_teeth: Int,
   construction gear_space: ComplementarySpace(crown_back, crown_back_axis,
     gear_outer, gear_inner, crown_neighbor, radial_start: center_x,
     radial_end: center_x + hypot(center_x, center_y) + heel_distance + mean_module)
-  // Select the crown semicircle containing the intended tooth trace. Opposed view
-  // axes express that same world-space half with opposite angular coordinates.
-  surface pinion_outer(pinion_crown, pinion.outer, from: 180deg, to: 360deg)
-  surface pinion_outer_round(pinion_crown, pinion.outer_round, from: 180deg, to: 360deg)
-  surface pinion_inner(pinion_crown, pinion.inner, from: 180deg, to: 360deg)
-  surface pinion_inner_round(pinion_crown, pinion.inner_round, from: 180deg, to: 360deg)
-  surface pinion_tip(pinion_crown, pinion.tip, from: 180deg, to: 360deg)
-  surface gear_outer_inner(gear_outer_crown, gear_outer.inner, from: 0deg, to: 180deg)
-  surface gear_outer_inner_round(gear_outer_crown, gear_outer.inner_round, from: 0deg, to: 180deg)
-  surface gear_outer_tip(gear_outer_crown, gear_outer.tip, from: 0deg, to: 180deg)
-  surface gear_inner_outer(gear_inner_crown, gear_inner.outer, from: 0deg, to: 180deg)
-  surface gear_inner_outer_round(gear_inner_crown, gear_inner.outer_round, from: 0deg, to: 180deg)
-  surface gear_inner_tip(gear_inner_crown, gear_inner.tip, from: 0deg, to: 180deg)
-
-  // Implicit generated surfaces. The face and material boundaries are defined separately.
-  envelope pinion_outer_envelope(pinion_outer, under: pinion_generation,
-    from: -roll_span, to: roll_span)
-  envelope pinion_outer_round_envelope(pinion_outer_round, under: pinion_generation,
-    from: -roll_span, to: roll_span)
-  envelope pinion_inner_envelope(pinion_inner, under: pinion_generation,
-    from: -roll_span, to: roll_span)
-  envelope pinion_inner_round_envelope(pinion_inner_round, under: pinion_generation,
-    from: -roll_span, to: roll_span)
-  envelope pinion_tip_envelope(pinion_tip, under: pinion_generation,
-    from: -roll_span, to: roll_span)
-  envelope gear_outer_inner_envelope(gear_outer_inner, under: gear_generation,
-    from: -roll_span, to: roll_span)
-  envelope gear_outer_inner_round_envelope(gear_outer_inner_round, under: gear_generation,
-    from: -roll_span, to: roll_span)
-  envelope gear_outer_tip_envelope(gear_outer_tip, under: gear_generation,
-    from: -roll_span, to: roll_span)
-  envelope gear_inner_outer_envelope(gear_inner_outer, under: gear_generation,
-    from: -roll_span, to: roll_span)
-  envelope gear_inner_outer_round_envelope(gear_inner_outer_round, under: gear_generation,
-    from: -roll_span, to: roll_span)
-  envelope gear_inner_tip_envelope(gear_inner_tip, under: gear_generation,
-    from: -roll_span, to: roll_span)
-
-  // Each tooth surface states its material region through ordinary components.
-  pinion_outer_region: ToothRegion(pinion_outer_envelope, limits: pinion_design)
-  pinion_outer_round_region: ToothRegion(pinion_outer_round_envelope, limits: pinion_design)
-  pinion_inner_region: ToothRegion(pinion_inner_envelope, limits: pinion_design)
-  pinion_inner_round_region: ToothRegion(pinion_inner_round_envelope, limits: pinion_design)
-  pinion_tip_region: ToothRegion(pinion_tip_envelope, limits: pinion_design)
-  gear_outer_inner_region: ToothRegion(gear_outer_inner_envelope, limits: gear_design)
-  gear_outer_inner_round_region: ToothRegion(gear_outer_inner_round_envelope, limits: gear_design)
-  gear_outer_tip_region: ToothRegion(gear_outer_tip_envelope, limits: gear_design)
-  gear_inner_outer_region: ToothRegion(gear_inner_outer_envelope, limits: gear_design)
-  gear_inner_outer_round_region: ToothRegion(gear_inner_outer_round_envelope, limits: gear_design)
-  gear_inner_tip_region: ToothRegion(gear_inner_tip_envelope, limits: gear_design)
-
-  // Shared characteristics at the tangent generating-profile vertices. Both faces
-  // refer to one curve, including their common toe/heel and material limits.
-  seam pinion_outer_join(pinion_outer_region.bounded, pinion_outer_round_region.bounded)
-  seam pinion_outer_root_join(pinion_outer_round_region.bounded, pinion_tip_region.bounded)
-  seam pinion_inner_join(pinion_inner_region.bounded, pinion_inner_round_region.bounded)
-  seam pinion_inner_root_join(pinion_inner_round_region.bounded, pinion_tip_region.bounded)
-  seam gear_outer_inner_join(gear_outer_inner_region.bounded, gear_outer_inner_round_region.bounded)
-  seam gear_outer_inner_root_join(gear_outer_inner_round_region.bounded, gear_outer_tip_region.bounded)
-  seam gear_inner_outer_join(gear_inner_outer_region.bounded, gear_inner_outer_round_region.bounded)
-  seam gear_inner_outer_root_join(gear_inner_outer_round_region.bounded, gear_inner_tip_region.bounded)
-
-  // Intersections with finite analytic boundaries belong to the model as well.
-  // These seams retain the generated face's material conditions and source chart.
-  seam pinion_outer_tip_edge(pinion_outer_region.bounded, pinion_tip_boundary.wall)
-  seam pinion_outer_toe_edge(pinion_outer_region.bounded, toe.wall)
-  seam pinion_outer_heel_edge(pinion_outer_region.bounded, heel.wall)
-  seam pinion_outer_round_toe_edge(pinion_outer_round_region.bounded, toe.wall)
-  seam pinion_outer_round_heel_edge(pinion_outer_round_region.bounded, heel.wall)
-  seam pinion_inner_tip_edge(pinion_inner_region.bounded, pinion_tip_boundary.wall)
-  seam pinion_inner_toe_edge(pinion_inner_region.bounded, toe.wall)
-  seam pinion_inner_heel_edge(pinion_inner_region.bounded, heel.wall)
-  seam pinion_inner_round_toe_edge(pinion_inner_round_region.bounded, toe.wall)
-  seam pinion_inner_round_heel_edge(pinion_inner_round_region.bounded, heel.wall)
-  seam gear_outer_inner_tip_edge(gear_outer_inner_region.bounded, gear_tip_boundary.wall)
-  seam gear_outer_inner_toe_edge(gear_outer_inner_region.bounded, toe.wall)
-  seam gear_outer_inner_heel_edge(gear_outer_inner_region.bounded, heel.wall)
-  seam gear_outer_inner_round_toe_edge(gear_outer_inner_round_region.bounded, toe.wall)
-  seam gear_outer_inner_round_heel_edge(gear_outer_inner_round_region.bounded, heel.wall)
-  seam gear_inner_outer_tip_edge(gear_inner_outer_region.bounded, gear_tip_boundary.wall)
-  seam gear_inner_outer_toe_edge(gear_inner_outer_region.bounded, toe.wall)
-  seam gear_inner_outer_heel_edge(gear_inner_outer_region.bounded, heel.wall)
-  seam gear_inner_outer_round_toe_edge(gear_inner_outer_round_region.bounded, toe.wall)
-  seam gear_inner_outer_round_heel_edge(gear_inner_outer_round_region.bounded, heel.wall)
-
-  // Shared corner identities. The adjacent face loops can reuse these vertices.
-  // The two supported forms meet finite boundary seams or a generating junction.
-  vertex pinion_outer_tip_toe(pinion_outer_tip_edge, pinion_outer_toe_edge)
-  vertex pinion_outer_join_toe(pinion_outer_join, pinion_outer_toe_edge)
-  vertex pinion_outer_root_toe(pinion_outer_root_join, pinion_outer_round_toe_edge)
-  vertex pinion_outer_tip_heel(pinion_outer_tip_edge, pinion_outer_heel_edge)
-  vertex pinion_outer_join_heel(pinion_outer_join, pinion_outer_heel_edge)
-  vertex pinion_outer_root_heel(pinion_outer_root_join, pinion_outer_round_heel_edge)
-  vertex pinion_inner_tip_toe(pinion_inner_tip_edge, pinion_inner_toe_edge)
-  vertex pinion_inner_join_toe(pinion_inner_join, pinion_inner_toe_edge)
-  vertex pinion_inner_root_toe(pinion_inner_root_join, pinion_inner_round_toe_edge)
-  vertex pinion_inner_tip_heel(pinion_inner_tip_edge, pinion_inner_heel_edge)
-  vertex pinion_inner_join_heel(pinion_inner_join, pinion_inner_heel_edge)
-  vertex pinion_inner_root_heel(pinion_inner_root_join, pinion_inner_round_heel_edge)
-  vertex gear_outer_inner_tip_toe(gear_outer_inner_tip_edge, gear_outer_inner_toe_edge)
-  vertex gear_outer_inner_join_toe(gear_outer_inner_join, gear_outer_inner_toe_edge)
-  vertex gear_outer_inner_root_toe(gear_outer_inner_root_join, gear_outer_inner_round_toe_edge)
-  vertex gear_outer_inner_tip_heel(gear_outer_inner_tip_edge, gear_outer_inner_heel_edge)
-  vertex gear_outer_inner_join_heel(gear_outer_inner_join, gear_outer_inner_heel_edge)
-  vertex gear_outer_inner_root_heel(gear_outer_inner_root_join, gear_outer_inner_round_heel_edge)
-  vertex gear_inner_outer_tip_toe(gear_inner_outer_tip_edge, gear_inner_outer_toe_edge)
-  vertex gear_inner_outer_join_toe(gear_inner_outer_join, gear_inner_outer_toe_edge)
-  vertex gear_inner_outer_root_toe(gear_inner_outer_root_join, gear_inner_outer_round_toe_edge)
-  vertex gear_inner_outer_tip_heel(gear_inner_outer_tip_edge, gear_inner_outer_heel_edge)
-  vertex gear_inner_outer_join_heel(gear_inner_outer_join, gear_inner_outer_heel_edge)
-  vertex gear_inner_outer_root_heel(gear_inner_outer_root_join, gear_inner_outer_round_heel_edge)
-  // Finite boundary extents share corner identity and use axial sections.
-  edge pinion_outer_tip_span(pinion_outer_tip_edge, from: pinion_outer_tip_toe,
-      to: pinion_outer_tip_heel, along: pinion_axis)
-  edge pinion_outer_join_span(pinion_outer_join, from: pinion_outer_join_toe,
-      to: pinion_outer_join_heel, along: pinion_axis)
-  edge pinion_outer_root_span(pinion_outer_root_join, from: pinion_outer_root_toe,
-      to: pinion_outer_root_heel, along: pinion_axis)
-  edge pinion_outer_toe_span(pinion_outer_toe_edge, from: pinion_outer_join_toe,
-      to: pinion_outer_tip_toe, along: pinion_axis)
-  edge pinion_outer_round_toe_span(pinion_outer_round_toe_edge, from: pinion_outer_root_toe,
-      to: pinion_outer_join_toe, along: pinion_axis)
-  edge pinion_outer_heel_span(pinion_outer_heel_edge, from: pinion_outer_join_heel,
-      to: pinion_outer_tip_heel, along: pinion_axis)
-  edge pinion_outer_round_heel_span(pinion_outer_round_heel_edge, from: pinion_outer_root_heel,
-      to: pinion_outer_join_heel, along: pinion_axis)
-  edge pinion_inner_tip_span(pinion_inner_tip_edge, from: pinion_inner_tip_toe,
-      to: pinion_inner_tip_heel, along: pinion_axis)
-  edge pinion_inner_join_span(pinion_inner_join, from: pinion_inner_join_toe,
-      to: pinion_inner_join_heel, along: pinion_axis)
-  edge pinion_inner_root_span(pinion_inner_root_join, from: pinion_inner_root_toe,
-      to: pinion_inner_root_heel, along: pinion_axis)
-  edge pinion_inner_toe_span(pinion_inner_toe_edge, from: pinion_inner_join_toe,
-      to: pinion_inner_tip_toe, along: pinion_axis)
-  edge pinion_inner_round_toe_span(pinion_inner_round_toe_edge, from: pinion_inner_root_toe,
-      to: pinion_inner_join_toe, along: pinion_axis)
-  edge pinion_inner_heel_span(pinion_inner_heel_edge, from: pinion_inner_join_heel,
-      to: pinion_inner_tip_heel, along: pinion_axis)
-  edge pinion_inner_round_heel_span(pinion_inner_round_heel_edge, from: pinion_inner_root_heel,
-      to: pinion_inner_join_heel, along: pinion_axis)
-  edge gear_outer_inner_tip_span(gear_outer_inner_tip_edge, from: gear_outer_inner_tip_toe,
-      to: gear_outer_inner_tip_heel, along: gear_axis)
-  edge gear_outer_inner_join_span(gear_outer_inner_join, from: gear_outer_inner_join_toe,
-      to: gear_outer_inner_join_heel, along: gear_axis)
-  edge gear_outer_inner_root_span(gear_outer_inner_root_join, from: gear_outer_inner_root_toe,
-      to: gear_outer_inner_root_heel, along: gear_axis)
-  edge gear_outer_inner_toe_span(gear_outer_inner_toe_edge, from: gear_outer_inner_join_toe,
-      to: gear_outer_inner_tip_toe, along: gear_axis)
-  edge gear_outer_inner_round_toe_span(gear_outer_inner_round_toe_edge, from: gear_outer_inner_root_toe,
-      to: gear_outer_inner_join_toe, along: gear_axis)
-  edge gear_outer_inner_heel_span(gear_outer_inner_heel_edge, from: gear_outer_inner_join_heel,
-      to: gear_outer_inner_tip_heel, along: gear_axis)
-  edge gear_outer_inner_round_heel_span(gear_outer_inner_round_heel_edge, from: gear_outer_inner_root_heel,
-      to: gear_outer_inner_join_heel, along: gear_axis)
-  edge gear_inner_outer_tip_span(gear_inner_outer_tip_edge, from: gear_inner_outer_tip_toe,
-      to: gear_inner_outer_tip_heel, along: gear_axis)
-  edge gear_inner_outer_join_span(gear_inner_outer_join, from: gear_inner_outer_join_toe,
-      to: gear_inner_outer_join_heel, along: gear_axis)
-  edge gear_inner_outer_root_span(gear_inner_outer_root_join, from: gear_inner_outer_root_toe,
-      to: gear_inner_outer_root_heel, along: gear_axis)
-  edge gear_inner_outer_toe_span(gear_inner_outer_toe_edge, from: gear_inner_outer_join_toe,
-      to: gear_inner_outer_tip_toe, along: gear_axis)
-  edge gear_inner_outer_round_toe_span(gear_inner_outer_round_toe_edge, from: gear_inner_outer_root_toe,
-      to: gear_inner_outer_join_toe, along: gear_axis)
-  edge gear_inner_outer_heel_span(gear_inner_outer_heel_edge, from: gear_inner_outer_join_heel,
-      to: gear_inner_outer_tip_heel, along: gear_axis)
-  edge gear_inner_outer_round_heel_span(gear_inner_outer_round_heel_edge, from: gear_inner_outer_root_heel,
-      to: gear_inner_outer_join_heel, along: gear_axis)
-  pinion_outer_faces: ToothSideFaces(pinion_outer_region.bounded, pinion_outer_round_region.bounded,
-      pinion_outer_tip_span, pinion_outer_join_span, pinion_outer_root_span,
-      pinion_outer_toe_span, pinion_outer_heel_span, pinion_outer_round_toe_span, pinion_outer_round_heel_span)
-  pinion_inner_faces: ToothSideFaces(pinion_inner_region.bounded, pinion_inner_round_region.bounded,
-      pinion_inner_tip_span, pinion_inner_join_span, pinion_inner_root_span,
-      pinion_inner_toe_span, pinion_inner_heel_span, pinion_inner_round_toe_span, pinion_inner_round_heel_span)
-  gear_outer_inner_faces: ToothSideFaces(gear_outer_inner_region.bounded, gear_outer_inner_round_region.bounded,
-      gear_outer_inner_tip_span, gear_outer_inner_join_span, gear_outer_inner_root_span,
-      gear_outer_inner_toe_span, gear_outer_inner_heel_span, gear_outer_inner_round_toe_span, gear_outer_inner_round_heel_span)
-  gear_inner_outer_faces: ToothSideFaces(gear_inner_outer_region.bounded, gear_inner_outer_round_region.bounded,
-      gear_inner_outer_tip_span, gear_inner_outer_join_span, gear_inner_outer_root_span,
-      gear_inner_outer_toe_span, gear_inner_outer_heel_span, gear_inner_outer_round_toe_span, gear_inner_outer_round_heel_span)
 }
-

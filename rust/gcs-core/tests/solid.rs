@@ -79,7 +79,7 @@ fn a_bore_takes_exactly_the_polygon_it_is_faceted_into() {
     let bf = circle_face(&mut sk, (30.0, 20.0), 5.0, "bore_f");
     let bore = prism(&mut sk, bf, -30.0, 0.0, "bore");
     let body = sk.solid(
-        SolidDef::Body { stock: block as u32, on: vec![], through: vec![bore as u32] },
+        SolidDef::Body { stock: block as u32, on: vec![], through: vec![bore as u32], bound: vec![] },
         "body",
     );
     let want = (60.0 * 40.0 - facet_area(5.0, UNIT)) * 30.0;
@@ -99,7 +99,7 @@ fn a_flush_bore_and_one_drilled_past_are_the_same_solid() {
         let bf = circle_face(&mut sk, (30.0, 20.0), 5.0, "bore_f");
         let bore = prism(&mut sk, bf, -depth, 0.0, "bore");
         let body = sk.solid(
-            SolidDef::Body { stock: block as u32, on: vec![], through: vec![bore as u32] },
+            SolidDef::Body { stock: block as u32, on: vec![], through: vec![bore as u32], bound: vec![] },
             "body",
         );
         let b = sk.solid_boundary(body, UNIT);
@@ -124,7 +124,7 @@ fn a_boss_adds_and_the_shared_face_is_counted_once() {
     let bf = rect_face(&mut sk, 20.0, 10.0, 40.0, 30.0, "boss_f");
     let boss = prism(&mut sk, bf, 0.0, 10.0, "boss");
     let body = sk.solid(
-        SolidDef::Body { stock: block as u32, on: vec![boss as u32], through: vec![] },
+        SolidDef::Body { stock: block as u32, on: vec![boss as u32], through: vec![], bound: vec![] },
         "body",
     );
     let want = 60.0 * 40.0 * 30.0 + 20.0 * 20.0 * 10.0;
@@ -285,7 +285,7 @@ fn the_answer_does_not_depend_on_the_order_the_features_were_written() {
         let through =
             if swap { vec![b2 as u32, b1 as u32] } else { vec![b1 as u32, b2 as u32] };
         let body =
-            sk.solid(SolidDef::Body { stock: block as u32, on: vec![], through }, "body");
+            sk.solid(SolidDef::Body { stock: block as u32, on: vec![], through, bound: vec![] }, "body");
         sk.solid_boundary(body, UNIT)
     };
     // the same *solid* either way round — the two groups of the body rule are sets, so the

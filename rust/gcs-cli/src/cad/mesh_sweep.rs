@@ -78,6 +78,7 @@ pub fn solid_of(fixed: &solid::StaticSolid) -> Result<Solid,String> {
             }
             solid::Term::Union(a,b) => evaluate(a,prims)?.union(&evaluate(b,prims)?)?,
             solid::Term::Diff(a,b) => evaluate(a,prims)?.difference(&evaluate(b,prims)?)?,
+            solid::Term::Inter(a,b) => evaluate(a,prims)?.intersection(&evaluate(b,prims)?)?,
             solid::Term::Empty => return Err("an empty operand cannot be meshed".into()),
         })
     }

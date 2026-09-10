@@ -261,7 +261,7 @@ pub(super) fn build_solid(
                 );
                 return None;
             };
-            SolidDef::Body { stock: *stock, on: on.to_vec(), through: Vec::new() }
+            SolidDef::Body { stock: *stock, on: on.to_vec(), through: Vec::new(), bound: Vec::new() }
         }
     };
     let i = sk.solid(def, &d.name.key().text);

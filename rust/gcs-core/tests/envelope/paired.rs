@@ -35,6 +35,7 @@ fn read_model(src: &str,teeth: [u32;2],module: f64) -> program::Elaborated {
         "configuration" => Some(format!("param pinion_teeth = {}\nparam gear_teeth = {}\n\
             param mean_module = {module}mm\n",teeth[0],teeth[1])),
         "paired_references" => Some(include_str!("../../../examples/spiral_bevel/paired_references.sv").into()),
+        "verification" => Some(include_str!("../../../examples/spiral_bevel/verification.sv").into()),
         "matched_pair" => Some(include_str!("../../../examples/spiral_bevel/matched_pair.sv").into()),
         "cutters" => Some(include_str!("../../../examples/spiral_bevel/cutters.sv").into()),
         "reference" => Some(include_str!("../../../examples/spiral_bevel/reference.sv").into()),
@@ -156,7 +157,7 @@ impl Pair {
             else if side == 0 { "gear_outer" } else { "gear_inner" };
         let map = &self.model.map;
         RevolvedSurface::named(&self.model.sketch,
-            map.ent_named(&format!("pair.{rack}_{edge}")).unwrap().i()).unwrap()
+            map.ent_named(&format!("faces.{rack}_{edge}")).unwrap().i()).unwrap()
     }
 
     fn body(&self, member: usize, t: f64) -> Motion {

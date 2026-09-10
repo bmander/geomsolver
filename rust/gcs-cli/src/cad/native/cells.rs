@@ -81,7 +81,7 @@ impl Session {
     pub(crate) fn common(&self,a: c_int,b: c_int) -> Result<c_int,String> {
         self.result(unsafe { solvent_cad_common(self.0,a,b) })
     }
-    pub(crate) fn cut(&self,a: c_int,b: c_int) -> Result<c_int,String> { self.boolean(a,b,true) }
+    pub(crate) fn cut(&self,a: c_int,b: c_int) -> Result<c_int,String> { self.boolean(a,b,"cut") }
     pub(crate) fn common_volume(&self,a: c_int,b: c_int) -> Result<f64,String> {
         let mut v = [0.];
         self.result(unsafe { solvent_cad_common_volume(self.0,a,b,v.as_mut_ptr()) })?;

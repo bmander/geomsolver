@@ -90,12 +90,12 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
         let mut dependencies = super::evaluation_operands(sk,i)?;
         // The static remainder of a body: its swept cuts are listed, not built.
         let mut kept_cuts = None;
-        if static_only { if let SolidDef::Body {stock,on,through} = &sk.solids[i].def {
+        if static_only { if let SolidDef::Body {stock,on,through,bound} = &sk.solids[i].def {
             if contains_sweep(sk,*stock as usize) {
                 return Err(format!("`{}`: a body's stock may not contain a continuous sweep",sk.solids[i].name));
             }
-            if let Some(&o) = on.iter().find(|&&o| contains_sweep(sk,o as usize)) {
-                return Err(format!("`{}`: adding swept material to a body is not yet supported (`{}`)",
+            if let Some(&o) = on.iter().chain(bound).find(|&&o| contains_sweep(sk,o as usize)) {
+                return Err(format!("`{}`: only a `cut` may hold swept material for now (`{}`)",
                     sk.solids[i].name,sk.solids[o as usize].name));
             }
             let mut kept = Vec::new();
@@ -119,9 +119,9 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
         let mut node = match &solid.def {
             SolidDef::Swept {..} => return Err(format!(
                 "`{}`: native CAD boundary construction for continuous motion sweeps is not yet supported",solid.name)),
-            SolidDef::Body {stock,on,through} if kept_cuts.is_some() => object([
+            SolidDef::Body {stock,on,through,bound} if kept_cuts.is_some() => object([
                 ("kind","body".into()),("stock",(*stock).into()),
-                ("on",ids(on)),("cut",ids(kept_cuts.as_deref().unwrap_or(through))),
+                ("on",ids(on)),("cut",ids(kept_cuts.as_deref().unwrap_or(through))),("bound",ids(bound)),
             ]),
             SolidDef::Placed { source, motion, at } => {
                 let pose = crate::motion::Family::read(sk,*motion as usize)?.at(at.value)?;
@@ -129,9 +129,9 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 object([("kind","placed".into()),("source",(*source).into()),
                     ("matrix",Json::Arr(matrix))])
             }
-            SolidDef::Body {stock,on,through} => object([
+            SolidDef::Body {stock,on,through,bound} => object([
                 ("kind","body".into()),("stock",(*stock).into()),
-                ("on",ids(on)),("cut",ids(through)),
+                ("on",ids(on)),("cut",ids(through)),("bound",ids(bound)),
             ]),
             SolidDef::Prism {face,from,to} => object([
                 ("kind","prism".into()),("profile",profile(sk,*face as usize,scale)?),

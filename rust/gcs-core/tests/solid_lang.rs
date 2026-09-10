@@ -72,7 +72,7 @@ fn solid_operands_follow_surface_children_before_surfaces_are_built() {
             solid stock(sec, about: axis)\nsurface side(stock, bc)\n"));
         let stock = e.map.ent_named("stock").unwrap().idx;
         let body = e.map.ent_named("body").unwrap().i();
-        let gcs_core::model::SolidDef::Body {stock:s,on,through} = &e.sketch.solids[body].def
+        let gcs_core::model::SolidDef::Body {stock:s,on,through,..} = &e.sketch.solids[body].def
             else { panic!("expected body") };
         assert_eq!(*s,stock);
         assert_eq!(on,&vec![stock]);
@@ -223,6 +223,37 @@ fn the_body_rule_does_not_care_what_order_it_was_written_in() {
     let (x, y) = (volume(&read(&after), "body"), volume(&read(&before), "body"));
     assert!((x - y).abs() < 1e-9, "one body, whichever order: {x} vs {y}");
     assert!(x < 72000.0 && x > 69000.0, "and the bore came out of it: {x}");
+}
+
+#[test]
+fn a_body_keeps_what_lies_within_everything_that_bounds_it() {
+    // `bound` is the body rule's third side: the block within the bore is the bore's own
+    // polygon (what `cut` takes out of it), and it is a set like the other two
+    let stock = format!("{RECT}{HOLE}solid stock(sec, depth: 30mm)\nsolid bore(hole_f, depth: 30mm)\n");
+    let within = volume(&read(&format!("{stock}solid body(stock)\nbore bound body\n")), "body");
+    let before = volume(&read(&format!("{stock}bore bound body\nsolid body(stock)\n")), "body");
+    let cut = volume(&read(&format!("{stock}solid body(stock)\nbore cut body\n")), "body");
+    assert!((within - before).abs() < 1e-9, "one body, whichever order: {within} vs {before}");
+    assert!((within + cut - 72000.0).abs() < 1e-6, "within plus cut is the stock: {within} + {cut}");
+    assert!(within > 2300.0 && within < 2400.0, "the bore's own polygon: {within}");
+    // difference and intersection commute, so a body bounded and cut is the same either way
+    let both = format!(
+        "{RECT}{HOLE}point q hint(x: 30, y: 20)\na distance(30, along: x) q\na distance(20, along: y) q\n\
+         circle wide(center: q) hint(r: 15)\nradius(15) wide\nface wide_f(wide)\n\
+         solid stock(sec, depth: 30mm)\nsolid bore(hole_f, depth: 30mm)\nsolid disc(wide_f, depth: 30mm)\n\
+         solid body(stock)\ndisc bound body\nbore cut body\n"
+    );
+    let disc = volume(&read(&both), "body");
+    let annulus = volume(&read(&format!("{RECT}{HOLE}point q hint(x: 30, y: 20)\na distance(30, along: x) q\n\
+         a distance(20, along: y) q\ncircle wide(center: q) hint(r: 15)\nradius(15) wide\nface wide_f(wide)\n\
+         solid bore(hole_f, depth: 30mm)\nsolid disc(wide_f, depth: 30mm)\nsolid body(disc)\nbore cut body\n")), "body");
+    assert!((disc - annulus).abs() < 1e-6, "bounded then cut is the annulus: {disc} vs {annulus}");
+    refused(
+        &format!("{RECT}solid s(sec, depth: 3mm)\nsolid x(s)\nsolid y(x)\nx bound y\ny bound x\n"),
+        Code::E041,
+        "made of itself",
+    );
+    refused(&format!("{RECT}solid s(sec, depth: 3mm)\nsolid x(s)\nx bound x\n"), Code::E080, "is bound itself");
 }
 
 #[test]

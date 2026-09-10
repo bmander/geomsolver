@@ -418,11 +418,11 @@ fn face_ordinate(
             }
             SolidDef::Revolve { .. } | SolidDef::Through { .. } | SolidDef::Loft { .. }
                 | SolidDef::Placed { .. } | SolidDef::Swept { .. } => return None,
-            SolidDef::Body { stock, on, through } => {
+            SolidDef::Body { stock, on, through, bound } => {
                 // a body's faces are its operands', reached through the operand that made them
                 let (head, rest) = path.split_first()?;
                 let operand =
-                    std::iter::once(stock).chain(on.iter()).chain(through.iter()).copied().find(
+                    std::iter::once(stock).chain(on.iter()).chain(through.iter()).chain(bound.iter()).copied().find(
                         |&o| {
                             sk.solids.get(o as usize).is_some_and(|x| {
                                 &x.name == head || x.name.rsplit('.').next() == Some(head.as_str())
