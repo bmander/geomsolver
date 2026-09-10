@@ -768,35 +768,42 @@ impl<'a> P<'a> {
         use crate::syntax::MotionSpec;
         let start = self.here();
         if !self.want_p('(') { return None; }
-        let mut axis = None; let mut source = None; let mut observer = None;
-        let mut ratio = None; let mut phase = None;
+        let mut axis = None; let mut along = None; let mut source = None; let mut observer = None;
+        let mut ratio = None; let mut phase = None; let mut advance = None;
         while !self.eat_p(')') {
             let label = self.slot_label();
             match label.as_deref() {
-                Some("about") | Some("relative_to") | Some("of") | None => {
+                Some("about") | Some("along") | Some("relative_to") | Some("of") | None => {
                     let slot = match label.as_deref() {
                         Some("about") => &mut axis,
+                        Some("along") => &mut along,
                         Some("relative_to") => &mut observer,
                         _ => &mut source,
                     };
                     if slot.is_some() { self.fail("a motion argument is given twice"); return None; }
                     *slot = Some(self.refr()?);
                 }
-                Some("ratio") | Some("phase") => {
-                    let slot = if label.as_deref() == Some("ratio") { &mut ratio } else { &mut phase };
+                Some("ratio") | Some("phase") | Some("advance") => {
+                    let slot = match label.as_deref() {
+                        Some("ratio") => &mut ratio,
+                        Some("phase") => &mut phase,
+                        _ => &mut advance,
+                    };
                     if slot.is_some() { self.fail("a motion argument is given twice"); return None; }
                     let (text,span) = self.expr_until(',')?;
                     *slot = Some(Arg::Dim {text,span});
                 }
-                _ => { self.fail("a motion takes `about`, `ratio`, `phase`, or `of`, `relative_to`"); return None; }
+                _ => { self.fail("a motion takes `about`, `ratio`, `phase`, `advance`; `along`, `advance`; or `of`, `relative_to`"); return None; }
             }
             if self.peek() != Some(&Tok::P(')')) && !self.want_p(',') { return None; }
         }
-        let spec = match (axis,source,observer,ratio,phase) {
-            (Some(axis),None,None,ratio,phase) => MotionSpec::Rotation {axis,ratio,phase},
-            (None,Some(source),Some(observer),None,None) => MotionSpec::Relative {source,observer},
+        let spec = match (axis,along,source,observer,ratio,phase,advance) {
+            (Some(axis),None,None,None,ratio,phase,advance) => MotionSpec::Rotation {axis,ratio,phase,advance},
+            (None,Some(axis),None,None,None,None,Some(advance)) => MotionSpec::Translation {axis,advance},
+            (None,None,Some(source),Some(observer),None,None,None) => MotionSpec::Relative {source,observer},
             _ => {
-                self.fail("a motion is a rotation `about:` a line, or `of:` another motion `relative_to:` an observer");
+                self.fail("a motion is a rotation `about:` a line (with `advance:` for a screw), a translation \
+                    `along:` a line by `advance:` per turn, or `of:` another motion `relative_to:` an observer");
                 return None;
             }
         };

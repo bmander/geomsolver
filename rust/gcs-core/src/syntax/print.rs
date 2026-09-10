@@ -396,10 +396,15 @@ pub(crate) fn decl_args(d: &Decl) -> String {
     if let Some(motion) = &d.motion {
         use super::MotionSpec;
         match motion {
-            MotionSpec::Rotation {axis,ratio,phase} => {
+            MotionSpec::Rotation {axis,ratio,phase,advance} => {
                 parts.push(format!("about: {}",super::ref_text(axis)));
                 if let Some(a) = ratio { parts.push(format!("ratio: {}",dim(a))); }
                 if let Some(a) = phase { parts.push(format!("phase: {}",dim(a))); }
+                if let Some(a) = advance { parts.push(format!("advance: {}",dim(a))); }
+            }
+            MotionSpec::Translation {axis,advance} => {
+                parts.push(format!("along: {}",super::ref_text(axis)));
+                parts.push(format!("advance: {}",dim(advance)));
             }
             MotionSpec::Relative {source,observer} => {
                 parts.push(super::ref_text(source));

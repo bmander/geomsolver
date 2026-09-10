@@ -61,6 +61,25 @@ impl MotionBounds {
         Ok(Self {r,p:sub(origin,mv(r,origin)?)?})
     }
 
+    /// Advance along a unit axis by `advance` per turn over an angle interval.
+    fn advanced(self,axis: [f64;3],advance: f64,angle: I) -> Result<Self,Error> {
+        if advance == 0. { return Ok(self); }
+        let mut axis = vector(axis)?;
+        let norm2 = axis[0].square()?.add(axis[1].square()?)?.add(axis[2].square()?)?;
+        let norm = I::new(norm2.bounds()[0].max(0.),norm2.bounds()[1])?.sqrt()?;
+        for a in &mut axis { *a = a.div(norm)?; }
+        let distance = I::point(advance)?.mul(angle)?.div(I::point(std::f64::consts::TAU)?)?;
+        let mut p = self.p;
+        for k in 0..3 { p[k] = p[k].add(axis[k].mul(distance)?)?; }
+        Ok(Self {r:self.r,p})
+    }
+
+    fn identity() -> Self {
+        let mut r = [[I::ZERO;3];3];
+        for i in 0..3 { r[i][i] = I::ONE; }
+        Self {r,p:[I::ZERO;3]}
+    }
+
     fn relative(source: Self,observer: Self) -> Result<Self,Error> {
         let inverse_rotation = transpose(observer.r);
         Ok(Self {r:mm(inverse_rotation,source.r)?,
@@ -78,8 +97,9 @@ impl Family {
         let mut values = Vec::with_capacity(self.steps.len());
         for step in &self.steps {
             let value = match *step {
-                Step::Rotation {origin,axis,ratio,phase} => MotionBounds::rotation(origin,axis,
-                    I::point(phase)?.add(I::point(ratio)?.mul(angle)?)?)?,
+                Step::Rotation {origin,axis,ratio,phase,advance} => MotionBounds::rotation(origin,axis,
+                    I::point(phase)?.add(I::point(ratio)?.mul(angle)?)?)?.advanced(axis,advance,angle)?,
+                Step::Translation {axis,advance} => MotionBounds::identity().advanced(axis,advance,angle)?,
                 Step::Relative {source,observer} => MotionBounds::relative(values[source],values[observer])?,
             };
             values.push(value);

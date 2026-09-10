@@ -783,7 +783,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     }
     let mut retained: Vec<bool> = src.motions.iter().enumerate().map(|(i,m)| {
         keep(EntRef::new(EntKind::Motion,i)) && match m.def {
-            crate::model::MotionDef::Rotation {axis,..} => line_map[axis as usize].is_some(),
+            crate::model::MotionDef::Rotation {axis,..} | crate::model::MotionDef::Translation {axis,..} =>
+                line_map[axis as usize].is_some(),
             crate::model::MotionDef::Relative {..} => true,
         }
     }).collect();
@@ -805,9 +806,13 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     for (i,m) in src.motions.iter().enumerate() {
         let Some(next) = motion_map[i] else { continue; };
         let def = match m.def {
-            crate::model::MotionDef::Rotation {axis,ratio,phase} =>
+            crate::model::MotionDef::Rotation {axis,ratio,phase,advance} =>
                 crate::model::MotionDef::Rotation {
-                    axis:line_map[axis as usize].unwrap() as u32,ratio,phase,
+                    axis:line_map[axis as usize].unwrap() as u32,ratio,phase,advance,
+                },
+            crate::model::MotionDef::Translation {axis,advance} =>
+                crate::model::MotionDef::Translation {
+                    axis:line_map[axis as usize].unwrap() as u32,advance,
                 },
             crate::model::MotionDef::Relative {source,observer} =>
                 crate::model::MotionDef::Relative {

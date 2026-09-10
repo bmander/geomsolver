@@ -46,11 +46,12 @@ impl Frame {
         let (source,observer) = match *family.steps.last().expect("motion root") {
             Step::Rotation {..} => (family.steps.last().unwrap(),None),
             Step::Relative {source,observer} => (&family.steps[source],Some(&family.steps[observer])),
+            Step::Translation {..} => return Err(Error::OutsideDomain),
         };
-        let Step::Rotation {origin,axis,ratio,phase} = *source else { return Err(Error::OutsideDomain); };
+        let Step::Rotation {origin,axis,ratio,phase,advance:0.} = *source else { return Err(Error::OutsideDomain); };
         let (omega,offset) = match observer {
             None => ([I::ZERO;3],[I::ZERO;3]),
-            Some(Step::Rotation {origin:other,axis,ratio,..}) =>
+            Some(Step::Rotation {origin:other,axis,ratio,advance:0.,..}) =>
                 (scale(unit(*axis)?,I::point(*ratio)?)?,sub(point(origin)?,point(*other)?)?),
             Some(_) => return Err(Error::OutsideDomain),
         };

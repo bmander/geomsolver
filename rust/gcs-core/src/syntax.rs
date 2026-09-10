@@ -779,24 +779,28 @@ pub struct AngularSpan {
     pub to: Arg,
 }
 
-/// A rigid rotation or relative motion over one shared angular parameter.
+/// A rigid rotation (a screw with `advance:`), a translation, or a relative
+/// motion, over one shared angular parameter.
 #[derive(Clone, Debug)]
 pub enum MotionSpec {
-    Rotation { axis: Ref, ratio: Option<Arg>, phase: Option<Arg> },
+    Rotation { axis: Ref, ratio: Option<Arg>, phase: Option<Arg>, advance: Option<Arg> },
+    Translation { axis: Ref, advance: Arg },
     Relative { source: Ref, observer: Ref },
 }
 
 impl MotionSpec {
     pub fn refs_mut(&mut self) -> Vec<&mut Ref> {
         match self {
-            Self::Rotation {axis,..} => vec![axis],
+            Self::Rotation {axis,..} | Self::Translation {axis,..} => vec![axis],
             Self::Relative {source,observer} => vec![source,observer],
         }
     }
 
     pub fn args_mut(&mut self) -> Vec<&mut Arg> {
         match self {
-            Self::Rotation {ratio,phase,..} => ratio.iter_mut().chain(phase.iter_mut()).collect(),
+            Self::Rotation {ratio,phase,advance,..} =>
+                ratio.iter_mut().chain(phase.iter_mut()).chain(advance.iter_mut()).collect(),
+            Self::Translation {advance,..} => vec![advance],
             Self::Relative {..} => vec![],
         }
     }

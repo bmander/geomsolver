@@ -255,7 +255,7 @@ fn functional_motion_definition(pair: &Pair,member: usize) -> String {
     let member_name = ["pinion","gear"][member];
     let rotation = |name: &str| {
         let id = pair.model.map.ent_named(name).unwrap().i();
-        let gcs_core::model::MotionDef::Rotation {axis,ratio,phase} = pair.model.sketch.motions[id].def else { panic!() };
+        let gcs_core::model::MotionDef::Rotation {axis,ratio,phase,..} = pair.model.sketch.motions[id].def else { panic!() };
         let axis = &pair.model.sketch.lines[axis as usize];
         let origin = pair.model.sketch.world_point(axis.p1 as usize);
         let end = pair.model.sketch.world_point(axis.p2 as usize);

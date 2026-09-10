@@ -41,7 +41,7 @@ fn inverse_motion_speed_bounds_cover_offset_axes_and_shared_relative_graphs() {
     for name in ["turn","observer","relative","nested"] {
         let family = motion::Family::read(&e.sketch,e.map.ent_named(name).unwrap().i()).unwrap();
         for p in [[0.;3],[0.,3.,4.],[3.,1.,4.],[-20.,30.,-5.]] {
-            let upper = family.inverse_point_speed_bound(p).unwrap();
+            let upper = family.inverse_point_speed_bound(p,gcs_core::interval::Interval::new(-50.,50.).unwrap()).unwrap();
             for t in [-20.,-1.,0.,0.7,50.] {
                 let v = family.at(t).unwrap().inverse().velocity(p);
                 assert!(v[0].hypot(v[1]).hypot(v[2]) <= upper);
@@ -51,8 +51,8 @@ fn inverse_motion_speed_bounds_cover_offset_axes_and_shared_relative_graphs() {
                 assert!(upper >= 15. && upper < 15.+1e-10);
             }
         }
-        assert!(family.inverse_point_speed_bound([f64::NAN,0.,0.]).is_err());
-        assert!(family.inverse_point_speed_bound([f64::MAX;3]).is_err());
+        assert!(family.inverse_point_speed_bound([f64::NAN,0.,0.],gcs_core::interval::Interval::new(-50.,50.).unwrap()).is_err());
+        assert!(family.inverse_point_speed_bound([f64::MAX;3],gcs_core::interval::Interval::new(-50.,50.).unwrap()).is_err());
     }
 }
 
@@ -208,4 +208,68 @@ fn cached_motion_dependencies_do_not_bypass_the_depth_limit() {
     let e = build(&src);
     assert!(e.errors().any(|d| d.message.contains("64 levels")),"{:?}",e.diags);
     assert_eq!(e.sketch.motions.len(),64);
+}
+
+/// A screw advances along its axis by `advance` per turn; a translation moves
+/// without turning. Poses, derivatives, interval bounds and the speed bound
+/// are checked against closed forms.
+#[test]
+fn screws_and_translations_follow_their_closed_forms() {
+    use gcs_core::interval::Interval as I;
+    let e = solved(&format!("{AXES}\n\
+        motion tap(about: axis,ratio: 2,phase: 30deg,advance: 3mm)\n\
+        motion feed(along: other,advance: 10mm)\n\
+        motion relative(tap,relative_to: feed)\n"));
+    let tap = motion::Family::read(&e.sketch,e.map.ent_named("tap").unwrap().i()).unwrap();
+    let feed = motion::Family::read(&e.sketch,e.map.ent_named("feed").unwrap().i()).unwrap();
+    let relative = motion::Family::read(&e.sketch,e.map.ent_named("relative").unwrap().i()).unwrap();
+    let (axis_a,axis_b) = ([e.sketch.lines[0].p1,e.sketch.lines[0].p2],[e.sketch.lines[1].p1,e.sketch.lines[1].p2]);
+    let direction = |ends: [u32;2]| -> [f64;3] {
+        let a = e.sketch.world_point(ends[0] as usize); let b = e.sketch.world_point(ends[1] as usize);
+        let d: [f64;3] = std::array::from_fn(|k| b[k]-a[k]); let n = d[0].hypot(d[1]).hypot(d[2]); d.map(|v| v/n)
+    };
+    let (da,db) = (direction(axis_a),direction(axis_b));
+    let origin = e.sketch.world_point(axis_a[0] as usize);
+    for t in [-2.,0.,0.4,3.] {
+        // The screw: the pure rotation's pose, then a slide of advance*t/tau along the axis.
+        let pose = tap.at(t).unwrap();
+        let turn = gcs_core::envelope::Motion::rotation(da,30_f64.to_radians()+2.*t,2.).unwrap();
+        let slide = 3.*t/std::f64::consts::TAU;
+        for p in [[0.;3],[1.,2.,3.],[-4.,0.5,2.]] {
+            let q = pose.point(p);
+            let r: [f64;3] = std::array::from_fn(|k| p[k]-origin[k]);
+            let turned = turn.point(r);
+            let expected: [f64;3] = std::array::from_fn(|k| turned[k]+origin[k]+da[k]*slide);
+            assert!((0..3).all(|k| (q[k]-expected[k]).abs() < 1e-12));
+            let v = pose.velocity(p);
+            let expected_v: [f64;3] = { let w = turn.velocity(r); std::array::from_fn(|k| w[k]+da[k]*3./std::f64::consts::TAU) };
+            assert!((0..3).all(|k| (v[k]-expected_v[k]).abs() < 1e-12));
+            let moved = feed.at(t).unwrap();
+            let f = moved.point(p);
+            assert!((0..3).all(|k| (f[k]-(p[k]+db[k]*10.*t/std::f64::consts::TAU)).abs() < 1e-12));
+            let fv = moved.velocity(p);
+            assert!((0..3).all(|k| (fv[k]-db[k]*10./std::f64::consts::TAU).abs() < 1e-12));
+        }
+    }
+    // Interval bounds contain the exact poses; the speed bound holds for the
+    // inverse motion over the domain, including the relative composition.
+    let domain = I::new(-2.,3.).unwrap();
+    for family in [&tap,&feed,&relative] {
+        let bounds = family.bounds(domain).unwrap();
+        for p in [[0.;3],[1.,2.,3.],[-4.,0.5,2.]] {
+            let upper = family.inverse_point_speed_bound(p,domain).unwrap();
+            let boxed = bounds.point(p.map(|x| I::point(x).unwrap())).unwrap();
+            for i in 0..=20 {
+                let t = -2.+5.*i as f64/20.;
+                let q = family.at(t).unwrap().point(p);
+                assert!((0..3).all(|k| { let [lo,hi] = boxed[k].bounds(); lo <= q[k] && q[k] <= hi }),"{} pose outside its bounds",family.name);
+                let v = family.at(t).unwrap().inverse().velocity(p);
+                assert!(v[0].hypot(v[1]).hypot(v[2]) <= upper,"{} speed {} exceeds bound {upper}",family.name,v[0].hypot(v[1]).hypot(v[2]));
+            }
+        }
+    }
+    // The sinusoidal contact reduction is for pure rotations only.
+    let surface = gcs_core::envelope::SurfacePoint {position:[1.,2.,3.],du:[1.,0.,0.],dv:[0.,1.,0.]};
+    assert!(tap.normal_velocity(surface).is_err());
+    assert!(feed.normal_velocity(surface).is_err());
 }

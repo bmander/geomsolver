@@ -42,7 +42,7 @@ impl Builder<'_> {
         let (st,d) = self.decls[name];
         let result = (|| {
             let def = match d.motion.as_ref().ok_or("a motion needs its defining relationship")? {
-                MotionSpec::Rotation {axis,ratio,phase} => {
+                MotionSpec::Rotation {axis,ratio,phase,advance} => {
                     let e = self.res.lookup(axis)
                         .ok_or_else(|| format!("no such motion axis: `{}`",axis.root.text))?;
                     let e = follow_building(self.sk,self.res,e,axis)?;
@@ -51,14 +51,25 @@ impl Builder<'_> {
                     }
                     MotionDef::Rotation {axis:e.idx,
                         ratio:self.number(ratio,1.,Dim::SCALAR,"ratio")?,
-                        phase:self.number(phase,0.,Dim::ANGLE,"phase")?.to_radians()}
+                        phase:self.number(phase,0.,Dim::ANGLE,"phase")?.to_radians(),
+                        advance:self.number(advance,0.,Dim::LENGTH,"advance")?}
+                }
+                MotionSpec::Translation {axis,advance} => {
+                    let e = self.res.lookup(axis)
+                        .ok_or_else(|| format!("no such motion axis: `{}`",axis.root.text))?;
+                    let e = follow_building(self.sk,self.res,e,axis)?;
+                    if e.kind != EntKind::Line || e.i() >= self.sk.lines.len() {
+                        return Err("a motion translates along a directed line".into());
+                    }
+                    MotionDef::Translation {axis:e.idx,
+                        advance:self.number(&Some(advance.clone()),0.,Dim::LENGTH,"advance")?}
                 }
                 MotionSpec::Relative {source,observer} => MotionDef::Relative {
                     source:self.dependency(source)? as u32,observer:self.dependency(observer)? as u32,
                 },
             };
             let height = match def {
-                MotionDef::Rotation {..} => 1,
+                MotionDef::Rotation {..} | MotionDef::Translation {..} => 1,
                 MotionDef::Relative {source,observer} =>
                     1+self.heights[source as usize].max(self.heights[observer as usize]),
             };

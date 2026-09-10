@@ -130,8 +130,14 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
         let Some(m) = sk.motions.get(i as usize) else { values.push(f64::NAN); continue; };
         values.push(i as f64);
         match m.def {
-            crate::model::MotionDef::Rotation {axis,ratio,phase} => {
-                values.extend([0.,axis as f64,ratio,phase]);
+            crate::model::MotionDef::Rotation {axis,ratio,phase,advance} => {
+                values.extend([0.,axis as f64,ratio,phase,advance]);
+                if let Some(axis) = sk.lines.get(axis as usize) {
+                    for p in [axis.p1,axis.p2] { values.extend(sk.world_point(p as usize)); }
+                } else { values.push(f64::NAN); }
+            }
+            crate::model::MotionDef::Translation {axis,advance} => {
+                values.extend([2.,axis as f64,advance]);
                 if let Some(axis) = sk.lines.get(axis as usize) {
                     for p in [axis.p1,axis.p2] { values.extend(sk.world_point(p as usize)); }
                 } else { values.push(f64::NAN); }

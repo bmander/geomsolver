@@ -40,17 +40,19 @@ impl Family {
         let (source,observer) = match *self.steps.last().expect("motion root") {
             Step::Rotation {..} => (self.steps.last().unwrap(),None),
             Step::Relative {source,observer} => (&self.steps[source],Some(&self.steps[observer])),
+            Step::Translation {..} => return Err("temporal contacts require a rotation or two relative rotations".into()),
         };
-        let Step::Rotation {origin,axis,ratio,phase} = *source else {
-            return Err("temporal contacts require a rotation or two relative rotations".into());
+        // A screw's translation adds a term linear in the angle, not a harmonic.
+        let Step::Rotation {origin,axis,ratio,phase,advance:0.} = *source else {
+            return Err("temporal contacts require a rotation or two relative rotations without advance".into());
         };
         let length = |v: [f64;3]| v[0].hypot(v[1]).hypot(v[2]);
         let axis = axis.map(|v| v/length(axis));
         let (omega,offset) = match observer {
             None => ([0.;3],[0.;3]),
-            Some(Step::Rotation {origin:other,axis,ratio,..}) =>
+            Some(Step::Rotation {origin:other,axis,ratio,advance:0.,..}) =>
                 (axis.map(|v| v/length(*axis)*ratio),std::array::from_fn(|k| origin[k]-other[k])),
-            Some(_) => return Err("temporal contacts require a rotation or two relative rotations".into()),
+            Some(_) => return Err("temporal contacts require a rotation or two relative rotations without advance".into()),
         };
         let n = envelope::contact(surface,Motion::identity()).map_err(|e| format!("{e:?}"))?.normal;
         let x = std::array::from_fn(|k| surface.position[k]-origin[k]);

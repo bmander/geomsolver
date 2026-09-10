@@ -793,7 +793,7 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
             }
             if let Some(motion) = &d.motion {
                 match motion {
-                    syntax::MotionSpec::Rotation {axis,..} => look(axis),
+                    syntax::MotionSpec::Rotation {axis,..} | syntax::MotionSpec::Translation {axis,..} => look(axis),
                     syntax::MotionSpec::Relative {source,observer} => { look(source); look(observer); }
                 }
             }

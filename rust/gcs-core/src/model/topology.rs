@@ -45,7 +45,7 @@ impl Sketch {
                     EntRef::new(EntKind::Motion,v.motion as usize)]
             }
             EntKind::Motion => match self.motions[e.i()].def {
-                MotionDef::Rotation {axis,..} => vec![EntRef::line(axis as usize)],
+                MotionDef::Rotation {axis,..} | MotionDef::Translation {axis,..} => vec![EntRef::line(axis as usize)],
                 MotionDef::Relative {source,observer} => [source,observer].map(|i| EntRef::new(EntKind::Motion,i as usize)).to_vec(),
             },
             EntKind::Surface => {

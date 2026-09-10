@@ -780,6 +780,17 @@ All three use one shared angle. The first turns about the directed `crown_axis` 
 second turns about `blank_axis` through twice that angle plus 10 degrees. `generating` is
 the crown viewed in the rotating blank frame. Axes come from solved world geometry, and
 these declarations add no unknown coordinates. Defaults are ratio 1 and phase 0deg.
+
+Two more kinds share the same angle. A rotation with `advance:` is a **screw**: it also
+slides along its axis by that length every full turn, which is a tap or a helical mill.
+A **translation** slides `along:` a directed line by `advance:` per turn without turning,
+which is a plunge or a feed; a plunge of 20mm is then one turn of the parameter.
+
+```sv
+motion tap(about: hole_axis, advance: 1.5mm)
+motion plunge(along: spindle, advance: 20mm)
+```
+
 A motion can be private or passed through a `motion` component formal. Core and browser
 evaluation use radians and return exact position and velocity per radian. A motion family
 does not move the sketch itself.

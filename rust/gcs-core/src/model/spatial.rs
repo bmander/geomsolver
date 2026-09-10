@@ -337,9 +337,13 @@ pub struct SurfaceE {
     pub class: Classes,
 }
 
+/// One shared angular parameter drives every kind. `advance` is a length (model
+/// units) travelled along the axis per full turn of that parameter: zero makes a
+/// rotation, nonzero a screw, and a translation moves without turning.
 #[derive(Clone, Debug)]
 pub enum MotionDef {
-    Rotation { axis: u32, ratio: f64, phase: f64 },
+    Rotation { axis: u32, ratio: f64, phase: f64, advance: f64 },
+    Translation { axis: u32, advance: f64 },
     Relative { source: u32, observer: u32 },
 }
 
