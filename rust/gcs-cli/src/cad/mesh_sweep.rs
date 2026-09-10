@@ -105,18 +105,26 @@ impl Occupancy {
             }
         }
         for i in 0..occupied.len() { if !outside[i] { occupied[i] = true; } }
-        // dilate by the reach, so a sheet is kept wherever it comes near
-        let mut cells = occupied.clone();
-        for x in 0..dims[0] { for y in 0..dims[1] { for z in 0..dims[2] {
-            if occupied[index(x,y,z)] {
-                for dx in -reach..=reach { for dy in -reach..=reach { for dz in -reach..=reach {
-                    let (nx,ny,nz) = (x as i64+dx,y as i64+dy,z as i64+dz);
-                    if nx < 0 || ny < 0 || nz < 0 { continue; }
-                    let (nx,ny,nz) = (nx as usize,ny as usize,nz as usize);
-                    if nx < dims[0] && ny < dims[1] && nz < dims[2] { cells[index(nx,ny,nz)] = true; }
-                } } }
-            }
-        } } }
+        // dilate by the reach, so a sheet is kept wherever it comes near: a
+        // box dilation, one sliding window per axis in turn, since the cube
+        // of neighbours per cell was the whole cost of a small blank with a
+        // margin many cells wide
+        let mut cells = occupied;
+        let reach = reach as usize;
+        for axis in 0..3 {
+            let stride = match axis { 0 => dims[1]*dims[2],1 => dims[2],_ => 1 };
+            let length = dims[axis];
+            let mut line = vec![false;length];
+            let mut prefix = vec![0usize;length+1];
+            for x in 0..if axis == 0 { 1 } else { dims[0] } { for y in 0..if axis == 1 { 1 } else { dims[1] } { for z in 0..if axis == 2 { 1 } else { dims[2] } {
+                let base = index(x,y,z);
+                for i in 0..length { line[i] = cells[base+i*stride]; prefix[i+1] = prefix[i]+line[i] as usize; }
+                for i in 0..length {
+                    let (a,b) = (i.saturating_sub(reach),(i+reach+1).min(length));
+                    cells[base+i*stride] = prefix[b] > prefix[a];
+                }
+            } } }
+        }
         Ok(Self {lo,cell,dims,cells})
     }
 
