@@ -7,6 +7,7 @@
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <Precision.hxx>
 #include <gp_Trsf.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
@@ -100,10 +101,9 @@ int solvent_cad_solids(Cad* cad,int source,int* output,int capacity) noexcept {
     });
 }
 
-// A point strictly inside the solid, with the classifier tolerance at which it
-// still reads inside (a lower bound on its distance from the boundary), and the
-// volume. The search is a bounded deterministic grid; a thin cell may return a
-// small margin, and the caller decides whether that suffices for its field query.
+// The cell's volume and one interior point (the centroid when it is inside,
+// else the first interior point of a coarse grid). The margin slot is always
+// zero: distance to the boundary is measured by solvent_cad_solid_samples.
 int solvent_cad_solid_sample(Cad* cad,int id,double* output) noexcept {
     return guarded(cad,[&] {
         if (!output) throw std::runtime_error("solid sample needs an output buffer");
@@ -120,27 +120,19 @@ int solvent_cad_solid_sample(Cad* cad,int id,double* output) noexcept {
         box.Get(x0,y0,z0,x1,y1,z1);
         const double diagonal = std::hypot(std::hypot(x1-x0,y1-y0),z1-z0);
         BRepClass3d_SolidClassifier classify(shape);
-        const auto inside = [&](const gp_Pnt& p,double margin) {
-            classify.Perform(p,margin);
+        const auto inside = [&](const gp_Pnt& p) {
+            classify.Perform(p,diagonal*1e-6);
             return classify.State() == TopAbs_IN;
         };
-        const int n = 9;
-        for (double fraction: {0.1,0.05,0.02,0.01,0.005,0.002,0.001,0.0002}) {
-            const double margin = fraction*diagonal;
-            const gp_Pnt centroid = props.CentreOfMass();
-            if (inside(centroid,margin)) {
-                output[0] = centroid.X(); output[1] = centroid.Y(); output[2] = centroid.Z();
-                output[3] = margin; output[4] = v;
-                return 0;
-            }
-            for (int i=0;i<n;++i) for (int j=0;j<n;++j) for (int k=0;k<n;++k) {
-                const gp_Pnt p(x0+(x1-x0)*(i+0.5)/n,y0+(y1-y0)*(j+0.5)/n,z0+(z1-z0)*(k+0.5)/n);
-                if (inside(p,margin)) {
-                    output[0] = p.X(); output[1] = p.Y(); output[2] = p.Z();
-                    output[3] = margin; output[4] = v;
-                    return 0;
-                }
-            }
+        const auto write = [&](const gp_Pnt& p) {
+            output[0] = p.X(); output[1] = p.Y(); output[2] = p.Z(); output[3] = 0.; output[4] = v;
+            return 0;
+        };
+        if (inside(props.CentreOfMass())) return write(props.CentreOfMass());
+        const int n = 5;
+        for (int i=0;i<n;++i) for (int j=0;j<n;++j) for (int k=0;k<n;++k) {
+            const gp_Pnt p(x0+(x1-x0)*(i+0.5)/n,y0+(y1-y0)*(j+0.5)/n,z0+(z1-z0)*(k+0.5)/n);
+            if (inside(p)) return write(p);
         }
         throw std::runtime_error("no interior sample point found in cell");
     });
@@ -165,34 +157,32 @@ int solvent_cad_solid_samples(Cad* cad,int id,double* output,int capacity,int me
         BRepBndLib::Add(shape,box,false);
         double x0,y0,z0,x1,y1,z1;
         box.Get(x0,y0,z0,x1,y1,z1);
-        const double diagonal = std::hypot(std::hypot(x1-x0,y1-y0),z1-z0);
         BRepClass3d_SolidClassifier classify(shape);
         std::vector<gp_Pnt> inside;
         const auto consider = [&](const gp_Pnt& p) {
-            classify.Perform(p,diagonal*1e-6);
+            if (static_cast<int>(inside.size()) >= measure) return;
+            classify.Perform(p,Precision::Confusion());
             if (classify.State() == TopAbs_IN) inside.push_back(p);
         };
         consider(props.CentreOfMass());
-        const int n = 7;
-        for (int i=0;i<n;++i) for (int j=0;j<n;++j) for (int k=0;k<n;++k)
-            consider(gp_Pnt(x0+(x1-x0)*(i+0.5)/n,y0+(y1-y0)*(j+0.5)/n,z0+(z1-z0)*(k+0.5)/n));
-        if (inside.empty()) return 0;
-        // Distance to the boundary is the least distance to any face; against
-        // the solid itself an interior point would measure zero.
-        TopTools_IndexedMapOfShape faces;
-        TopExp::MapShapes(shape,TopAbs_FACE,faces);
-        std::vector<std::pair<double,gp_Pnt>> measured;
-        const int count = std::min<int>(measure,static_cast<int>(inside.size()));
-        for (int i=0;i<count;++i) {
-            const gp_Pnt& p = inside[static_cast<size_t>(i)*inside.size()/count];
-            const auto vertex = BRepBuilderAPI_MakeVertex(p).Vertex();
-            double least = std::numeric_limits<double>::infinity();
-            for (int f=1;f<=faces.Extent();++f) {
-                BRepExtrema_DistShapeShape distance(vertex,faces(f));
-                if (!distance.IsDone() || distance.NbSolution() < 1) continue;
-                least = std::min(least,distance.Value());
+        // A coarse grid visited in a spread order, so early candidates are far apart.
+        const int n = 5;
+        for (int pass=0;pass<2 && static_cast<int>(inside.size()) < measure;++pass)
+            for (int i=0;i<n;++i) for (int j=0;j<n;++j) for (int k=0;k<n;++k) {
+                if (((i+j+k)&1) != pass) continue;
+                consider(gp_Pnt(x0+(x1-x0)*(i+0.5)/n,y0+(y1-y0)*(j+0.5)/n,z0+(z1-z0)*(k+0.5)/n));
             }
-            if (std::isfinite(least)) measured.emplace_back(least,p);
+        if (inside.empty()) return 0;
+        // Distance to the boundary against the whole shell at once: the extrema
+        // solver culls faces by bounding box, where a face-by-face loop does not.
+        TopoDS_Shape boundary;
+        for (TopExp_Explorer it(shape,TopAbs_SHELL); it.More(); it.Next()) { boundary = it.Current(); break; }
+        if (boundary.IsNull()) throw std::runtime_error("cell has no shell");
+        std::vector<std::pair<double,gp_Pnt>> measured;
+        for (const auto& p: inside) {
+            BRepExtrema_DistShapeShape distance(BRepBuilderAPI_MakeVertex(p).Vertex(),boundary);
+            if (!distance.IsDone() || distance.NbSolution() < 1) continue;
+            measured.emplace_back(distance.Value(),p);
         }
         std::sort(measured.begin(),measured.end(),[](const auto& a,const auto& b) { return a.first > b.first; });
         int written = 0;

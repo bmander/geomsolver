@@ -184,3 +184,30 @@ fn whole_pinion_through_the_generic_construction() { whole_member("pinion",9141.
 #[test]
 #[ignore = "about eleven minutes: builds and exports the whole gear to a temporary directory"]
 fn whole_gear_through_the_generic_construction() { whole_member("gear",20284.109756); }
+
+#[test]
+#[ignore = "measurement: cost of one material probe against the whole gear body field"]
+fn measure_gear_probe_cost() {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let e = read_gears(&base);
+    let body_id = e.map.ent_named("pair.gear.body").unwrap().i();
+    let single_id = e.map.ent_named("pair.gear.single").unwrap().i();
+    let points = [("tooth space",[53.78966032067442,-2.8070521623123743,0.09038416472908987]),
+        ("material",[-11.929242531843038,-39.35479647066296,-36.23791869602705])];
+    for (label,id) in [("single",single_id),("body",body_id)] {
+        let mut material = gcs_core::solid::MaterialField::read(&e.sketch,id,1e-10).unwrap().evaluator(4096);
+        for (what,p) in points {
+            for distance in [0.05,0.0125] {
+                let started = std::time::Instant::now();
+                let probe = material.probe(p.map(|x| Interval::point(x).unwrap()),[1.,0.,0.],distance,
+                    gcs_core::interval::minimum::Options {value_tolerance:distance/4.,max_evaluations:40000}).unwrap();
+                let evaluations: usize = probe.center.sweeps.iter().map(|q| q.minimum.evaluations).sum();
+                let sides: usize = probe.sides.iter().flatten().map(|b| b.sweeps.iter().map(|q| q.minimum.evaluations).sum::<usize>()).sum();
+                let mut statuses = std::collections::BTreeMap::new();
+                for q in &probe.center.sweeps { *statuses.entry(format!("{:?}",q.minimum.status)).or_insert(0) += 1; }
+                eprintln!("{label} field, {what} point, distance {distance}: {:?} in {:?}; {} sweep queries, {evaluations} centre + {sides} side evaluations, {statuses:?}, cached poses {}",
+                    probe.state,started.elapsed(),probe.center.sweeps.len(),material.cached_poses());
+            }
+        }
+    }
+}
