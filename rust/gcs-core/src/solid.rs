@@ -39,7 +39,7 @@ pub use document::{reads,resolve};
 mod static_boundary;
 pub use static_boundary::{static_solid,indexed,primitive_triangles,StaticSolid};
 mod tool_faces;
-pub use tool_faces::{ToolFace,ToolEdge,EdgeChart,StationEquation};
+pub use tool_faces::{ToolFace,ToolEdge,EdgeChart,StationEquation,PlanarFace,PlanarLoop,PlanarEdge,ExtrudedFace};
 mod sweep_candidates;
 pub use sweep_candidates::{Characteristic,SweepSheet,constant_twist};
 pub(crate) use document::{evaluation_operands,operand_paths};

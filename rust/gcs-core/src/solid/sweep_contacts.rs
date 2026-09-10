@@ -48,6 +48,8 @@ impl SweepContacts {
         let mut seen = BTreeSet::new();
         let mut patches = Vec::new();
         let mut loops = Vec::new();
+        let mut faces: Vec<ToolFace> = Vec::new();
+        let mut edges: Vec<ToolEdge> = Vec::new();
         while let Some((id,pose)) = pending.pop() {
             let columns: [[u64;3];4] = std::array::from_fn(|i| {
                 let p = if i == 3 { pose.point([0.;3]) } else {
@@ -74,18 +76,24 @@ impl SweepContacts {
                         loops.push(order);
                     }
                 }
+                SolidDef::Prism {..} => {
+                    let (prism_faces,prism_edges) = super::tool_faces::prism_faces(sk,id)?;
+                    let first = faces.len();
+                    faces.extend(prism_faces.iter().map(|f| f.placed(pose)));
+                    edges.extend(prism_edges.into_iter().map(|e| ToolEdge {faces:e.faces.map(|i| i+first),charts:e.charts}));
+                }
                 SolidDef::Placed {source,motion,at} => pending.push((*source as usize,
                     Family::read(sk,*motion as usize)?.at(at.value)?.then(pose))),
                 SolidDef::Body {..} => pending.extend(sk.solids[id].operands().into_iter()
                     .rev().map(|id| (id as usize,pose))),
-                _ => return Err("contact construction requires static revolutions and Boolean operands".into()),
+                _ => return Err("contact construction requires static revolutions, prisms and Boolean operands".into()),
             }
         }
         // Every revolved patch is a face; adjacent patches of a loop that share a
         // meridian end share the circle that end sweeps, an edge charted at that
         // end on both.
-        let faces: Vec<ToolFace> = patches.iter().cloned().map(ToolFace::Revolved).collect();
-        let mut edges = Vec::new();
+        let first_revolved = faces.len();
+        faces.extend(patches.iter().cloned().map(ToolFace::Revolved));
         for profile in &loops {
             let n = profile.len();
             for k in 0..n {
@@ -98,7 +106,7 @@ impl SweepContacts {
                 let close = |p: [f64;3],q: [f64;3]| (0..3).map(|k| (p[k]-q[k]).powi(2)).sum::<f64>().sqrt() < 1e-7*scale;
                 let Some((ua,ub)) = [(1.,0.),(1.,1.),(0.,0.),(0.,1.)].into_iter()
                     .find(|&(ua,ub)| close(ea[ua as usize],eb[ub as usize])) else { continue; };
-                edges.push(ToolEdge {faces:[a,b],charts:[EdgeChart::FixedU(ua),EdgeChart::FixedU(ub)]});
+                edges.push(ToolEdge {faces:[first_revolved+a,first_revolved+b],charts:[EdgeChart::FixedU(ua),EdgeChart::FixedU(ub)]});
             }
         }
         Ok(Self {source:source_field,patches,loops,faces,edges,motion:Family::read(sk,*motion as usize)?,
