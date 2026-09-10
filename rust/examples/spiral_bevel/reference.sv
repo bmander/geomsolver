@@ -3,9 +3,14 @@
 // for the bevel-pair design, not a specification of a physical cutting tool.
 use std
 
-component RoundedRackSection(f: plane, pitch_radius: Length, width: Length,
-                            tip_height: Length, base_depth: Length,
-                            pressure: Angle, tip_radius: Length) {
+// `section` bundles width, tip_height, base_depth, pressure and tip_radius; the
+// pitch radius is the one number that differs between sections of one pair.
+component RoundedRackSection(f: plane, pitch_radius: Length, section: group) {
+  param width = section.width
+  param tip_height = section.tip_height
+  param base_depth = section.base_depth
+  param pressure = section.pressure
+  param tip_radius = section.tip_radius
   private construction line datum(f.origin, f.toward)
   private point center hint(x: pitch_radius, y: 0)
   center distance(pitch_radius, along: u) f
@@ -53,12 +58,11 @@ preview {
   param mean_module = 2mm
   param mean_cone_distance = mean_module * hypot(pinion_teeth, gear_teeth) / 2
   param reference_radius = 0.8 * mean_cone_distance
-  // Preliminary normal-section proportions; the pair's final tooth-thickness and
-  // backlash rule is still being established. These are not manufacturing allowances.
-  rack: RoundedRackSection(std.front, pitch_radius: reference_radius,
-                          width: 1.3 * mean_module, tip_height: mean_module,
-                          base_depth: mean_module, pressure: 20deg,
-                          tip_radius: 0.3 * mean_module)
+  // Preview proportions only; the matched pair derives its section width from the
+  // crown traces (paired_references.sv). These are not manufacturing allowances.
+  group section(width: 1.3 * mean_module, tip_height: mean_module,
+                base_depth: mean_module, pressure: 20deg, tip_radius: 0.3 * mean_module)
+  rack: RoundedRackSection(std.front, pitch_radius: reference_radius, section: section)
   construction centerline line axis(std.origin, std.up.toward)
   solid crown(rack.profile, about: axis)
   surface outer(crown, rack.outer)

@@ -1,8 +1,12 @@
 // Analytic boundary components. These are nominal geometry, independent of manufacture.
 
 component ConeBoundary(f: plane, axis: line, axis_bearing: Angle, half_angle: Angle,
-                       normal_offset: Length, near: Length, far: Length) {
+                       normal_offset: Length, span: group) {
   // The meridian is parallel to the pitch-cone generator and offset along its normal.
+  // The revolution is about the member's own axis line, so the cone is coaxial with
+  // the motions declared about that line; `axis_bearing` is where that line points.
+  param near = span.near
+  param far = span.far
   param bearing = axis_bearing - half_angle
   param near_axial = near * cos(half_angle) - normal_offset * sin(half_angle)
   param far_axial = far * cos(half_angle) - normal_offset * sin(half_angle)
@@ -40,8 +44,9 @@ component SphericalBoundary(f: plane, size: Length) {
 
 // A surface region is the common part of these material-side conditions. Its generating
 // envelope keeps its own parameter domain; branch selection and solid closure are separate.
-component ToothRegion(source: envelope, tip: solid, root: solid, toe: solid, heel: solid) {
-  patch bounded(source, inside: tip, inside: heel, outside: root, outside: toe)
+component ToothRegion(source: envelope, limits: group) {
+  patch bounded(source, inside: limits.tip, inside: limits.heel,
+                outside: limits.root, outside: limits.toe)
 }
 
 // Exact end intersections share their supporting surfaces with the tooth boundaries.

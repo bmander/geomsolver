@@ -340,9 +340,10 @@ Keep gear knowledge in components. The reusable language capabilities needed are
 4. **Material regions implemented; topology in progress:** tip, root, back, toe and heel
    boundary surfaces are declared in the source. Core intersections use their analytic
    equations and check finite incidence. The ordinary `ToothRegion` component now declares
-   `patch bounded(source, inside: tip, inside: heel, outside: root, outside: toe)` for all
-   eleven generated patches. Operands are the boundary components' closed carrier solids,
-   reached through their public surface references. These conditions intersect and include
+   `patch bounded(source, inside: limits.tip, inside: limits.heel, outside: limits.root,
+   outside: limits.toe)` for all eleven generated patches, over each member's design group.
+   Operands are the boundary components' closed carrier solids, reached through their
+   public surface references. These conditions intersect and include
    their boundaries. Rim samples on flanks and root transitions must satisfy the named
    patch as well as the envelope equation. The remaining work verifies the retained branches,
    defines oriented boundary loops, and assembles a closed solid with stable face names.

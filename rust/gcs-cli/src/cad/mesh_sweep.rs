@@ -226,16 +226,34 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
     if kept.is_empty() { return Err("no cell of the blank is material".into()); }
     let started = std::time::Instant::now();
     let part = Solid::batch(&kept.iter().collect::<Vec<_>>(),true)?;
-    // The union is written as it comes: Manifold's own simplification can pinch
-    // a vertex, which the STL shell check refuses, and float32 identity of the
-    // raw output has held at gear scale.
     stage(&format!("united the material: {:.6} mm³, {} triangles ({:?})",part.volume()*scale.powi(3),part.triangle_count(),started.elapsed()));
+    // The union is written as it comes: Manifold's own simplification pinches
+    // vertices of its own, and a solid that touches itself along an edge is
+    // refused by the STL shell check below with the edge named.
     part.triangles()
 }
 
+/// Vertices identified by their float32 encoding, and the triangles that survive
+/// the identification: STL carries no vertex identity, so a sliver between two
+/// coincident vertices is dropped rather than encoded as a degenerate facet.
+fn merged(vertices: &[[f64;3]],triangles: &[[u32;3]]) -> (Vec<[f64;3]>,Vec<[u32;3]>) {
+    let mut index: std::collections::HashMap<[u32;3],u32> = Default::default();
+    let mut merged: Vec<[f64;3]> = Vec::with_capacity(vertices.len());
+    let remap: Vec<u32> = vertices.iter().map(|v| *index.entry(v.map(|x| (x as f32).to_bits())).or_insert_with(|| {
+        merged.push(*v); (merged.len()-1) as u32 })).collect();
+    let kept = triangles.iter().map(|t| t.map(|i| remap[i as usize]))
+        .filter(|t| t[0] != t[1] && t[1] != t[2] && t[2] != t[0]).collect();
+    (merged,kept)
+}
+
 /// Binary STL of the indexed triangles through the core's checked writer, with
-/// the encoded shell topology verified.
+/// the encoded shell topology verified. STL carries no vertex identity, so
+/// vertices the encoding identifies are merged first and the triangles that
+/// collapse under the merge (a sliver between two coincident vertices) dropped;
+/// a genuine pinch, three faces on one segment, still refuses.
 pub fn stl(vertices: &[[f64;3]],triangles: &[[u32;3]],name: &str) -> Result<Vec<u8>,String> {
+    let (vertices,triangles) = merged(vertices,triangles);
+    let (vertices,triangles) = (&vertices[..],&triangles[..]);
     let bytes = mesh::indexed_stl(vertices,triangles,name)?;
     if let Err(e) = mesh::stl_shells(&bytes) {
         // Distinct vertices that float32 identifies, and the shortest edges.
@@ -248,8 +266,15 @@ pub fn stl(vertices: &[[f64;3]],triangles: &[[u32;3]],name: &str) -> Result<Vec<
             let (a,b) = (vertices[t[k] as usize],vertices[t[(k+1)%3] as usize]);
             shortest = shortest.min(((a[0]-b[0]).powi(2)+(a[1]-b[1]).powi(2)+(a[2]-b[2]).powi(2)).sqrt());
         } }
-        return Err(format!("mesh STL validation failed: {e}; {} float32-identified vertex groups, e.g. {}; shortest edge {shortest:e}",
-            by_key.values().filter(|v| v.len() > 1).count(),merged.join(" | ")));
+        let mut uses: std::collections::HashMap<(u32,u32),Vec<usize>> = Default::default();
+        for (i,t) in triangles.iter().enumerate() { for k in 0..3 {
+            let (a,b) = (t[k],t[(k+1)%3]); uses.entry((a.min(b),a.max(b))).or_default().push(i);
+        } }
+        let mut bad: Vec<String> = uses.iter().filter(|(_,v)| v.len() != 2).take(4).map(|((a,b),v)| format!("edge {:?}-{:?} used by {}",
+            vertices[*a as usize],vertices[*b as usize],v.iter().map(|&i| format!("{:?}",triangles[i].map(|j| vertices[j as usize]))).collect::<Vec<_>>().join(", "))).collect();
+        bad.sort();
+        return Err(format!("mesh STL validation failed: {e}; {} float32-identified vertex groups, e.g. {}; shortest edge {shortest:e}; {}",
+            by_key.values().filter(|v| v.len() > 1).count(),merged.join(" | "),bad.join("\n")));
     }
     Ok(bytes)
 }
