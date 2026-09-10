@@ -130,6 +130,9 @@ pub struct RevolvedRegion {
     origin: V,
     axis: V,
     loops: Vec<Vec<Edge>>,
+    /// The axis tolerance the snapshot was read with: an endpoint put on the axis
+    /// moved by up to this, so its neighbours join it within the same distance.
+    axis_tolerance: f64,
 }
 
 impl RevolvedRegion {
@@ -194,7 +197,7 @@ impl RevolvedRegion {
                 }
             }
         }
-        Ok(Self {origin,axis,loops})
+        Ok(Self {origin,axis,loops,axis_tolerance})
     }
 
     /// Classify using an explicit boundary band in model length units. Axis edges

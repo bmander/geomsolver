@@ -7,6 +7,6 @@ use paired_references
 use verification
 
 pair: MatchedReferences(std.front, pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
-                        mean_module: mean_module, axis_offset: axis_offset,
+                        mean_module: mean_module, offset_angle: offset_angle,
   spiral_angle: 35deg, pressure_angle: 20deg)
 faces: ReferenceFaces(pair)

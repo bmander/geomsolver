@@ -174,7 +174,9 @@ workbench uses this core evaluator; do not reintroduce a separate callback-based
 `SpatialField::read` reads ordinary full revolutions, Boolean bodies and motion placements;
 `SweptField::read` binds such a solid and a named motion directly from the solved sketch.
 `RevolvedRegion::field` reconstructs boundary order and checks convex turning before building
-line supports and finite circular-sector constraints. Each outer/hole loop must be convex;
+line supports and finite circular-sector constraints. Its join tolerance is the larger of the
+conversion's roundoff and the axis tolerance the snapshot was read with, since an endpoint put
+on the axis moved by up to that and its neighbours still hold the solved point. Each outer/hole loop must be convex;
 holes are subtracted. Axis spines disappear, and finite support comes from an enclosing disk.
 Concave loops, prisms and partial revolutions remain explicit refusals on this field path.
 Snapshot construction uses floating-point solved curves and numeric convexity checks;
@@ -188,8 +190,10 @@ be `cut` for now. `bound` is a body word like `cut`, so it is no declaration nam
 bevel blank is `heel` bounded by `tip`, and the gear cutter the outer crown bounded by its
 indexed neighbour; the `A − (A − B)` intermediate is gone. The analytic faces the generating
 checks read live in `spiral_bevel/verification.sv` (`ReferenceFaces(refs)`), instantiated by
-`pair.sv` only; `gears.sv` elaborates the design alone. `configuration.sv`'s `axis_offset`
-stands the pinion axis, cones and its own end spheres in offset planes (a hypoid at nonzero);
+`pair.sv` only; `gears.sv` elaborates the design alone. `configuration.sv`'s `offset_angle`
+turns the pinion about the crown normal at the mean point and enlarges it by the spiral-angle
+cosine ratio (a hypoid at nonzero), its cones and end spheres about its own apex in a turned,
+stood-off explicit-basis plane; `ConeBoundary`/`SphericalBoundary` take the apex as a point;
 the mesh export refuses a sectioned sheet whose boundary a placement carries inside the blank,
 and the CLI test readers zero the offset because the recorded volumes are the bevel pair's.
 **Continuous motion solids:** `solid removal(tool, under: generating, from: -30deg, to: 30deg)`

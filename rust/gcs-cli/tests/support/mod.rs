@@ -2,7 +2,7 @@ use gcs_core::{program,syntax,solve};
 use std::path::Path;
 
 /// The bevel pair: every recorded number in these suites was taken with the
-/// pinion axis through the common apex, so the configured axis offset reads as
+/// pinion axis through the common apex, so the configured offset angle reads as
 /// zero here.
 pub fn read(source: &str,base: &Path) -> program::Elaborated {
     read_with(source,base,&mut |_,text| text)
@@ -21,11 +21,11 @@ pub fn read_as_configured(source: &str,base: &Path) -> program::Elaborated {
     assert!(result.success,"{result:?}"); e
 }
 
-/// The module rewrite that zeroes the configured axis offset.
+/// The module rewrite that zeroes the configured offset angle.
 pub fn bevel(name: &str,text: String) -> String {
     if name != "configuration" { return text; }
-    text.lines().filter(|l| !l.trim_start().starts_with("param axis_offset")).map(|l| format!("{l}\n")).collect::<String>()
-        + "param axis_offset = 0mm\n"
+    text.lines().filter(|l| !l.trim_start().starts_with("param offset_angle")).map(|l| format!("{l}\n")).collect::<String>()
+        + "param offset_angle = 0deg\n"
 }
 
 /// Read with a module text rewrite, for tests recording evidence about a

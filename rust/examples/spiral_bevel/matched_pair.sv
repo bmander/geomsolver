@@ -18,9 +18,9 @@ component GeneratedMember(design: group, tool: solid, teeth: Int, roll_limit: An
 
 // Mathematical zero-backlash, 90-degree common-crown pair.
 component MatchedPair(front: plane, pinion_teeth: Int, gear_teeth: Int, mean_module: Length,
-                      axis_offset: Length, spiral_angle: Angle, pressure_angle: Angle) {
+                      offset_angle: Angle, spiral_angle: Angle, pressure_angle: Angle) {
   private reference: MatchedReferences(front, pinion_teeth: pinion_teeth,
-    gear_teeth: gear_teeth, mean_module: mean_module, axis_offset: axis_offset,
+    gear_teeth: gear_teeth, mean_module: mean_module, offset_angle: offset_angle,
     spiral_angle: spiral_angle, pressure_angle: pressure_angle)
   pinion: GeneratedMember(reference.pinion_design, reference.pinion_crown,
     teeth: pinion_teeth, roll_limit: 35deg)

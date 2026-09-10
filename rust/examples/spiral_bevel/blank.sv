@@ -9,11 +9,11 @@ component BevelBlank(f: plane, pitch_angle: Angle,
     private construction centerline line shaft(f.origin, hint(y: mean_distance))
     shaft.p2 distance(0mm, along: u) f
     shaft.p2 distance(mean_distance, along: v) f
-    private toe: SphericalBoundary(f, size: 0.9 * mean_distance)
-    private heel: SphericalBoundary(f, size: 1.1 * mean_distance)
-    private tip: ConeBoundary(f, shaft, axis_bearing: 90deg, half_angle: pitch_angle,
+    private toe: SphericalBoundary(f, f.origin, size: 0.9 * mean_distance)
+    private heel: SphericalBoundary(f, f.origin, size: 1.1 * mean_distance)
+    private tip: ConeBoundary(f, f.origin, shaft, axis_bearing: 90deg, half_angle: pitch_angle,
       normal_offset: normal_module, span: cone_span)
-    private back: ConeBoundary(f, shaft, axis_bearing: 90deg, half_angle: pitch_angle,
+    private back: ConeBoundary(f, f.origin, shaft, axis_bearing: 90deg, half_angle: pitch_angle,
       normal_offset: -4 * normal_module, span: cone_span)
   }
   solid body(heel.wall.solid)

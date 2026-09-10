@@ -80,10 +80,12 @@ operation is added. The analytic faces the generating-system checks read (surfac
 envelopes, regions, seams, vertices, edges, faces) live in `verification.sv`, instantiated
 by `pair.sv` and not by `gears.sv`; `paired_references.sv` holds only the blank boundaries,
 crown sections and motions the members are generated from.
-`configuration.sv` carries `axis_offset`; nonzero stands the pinion axis, its cones and its
-own toe/heel spheres in planes offset from the front and back along the shafts' common
-perpendicular, and the pinion's generating roll becomes a screw about the crown. Nothing in
-the sweep or arrangement changes. The mesh export now checks every placement of a sectioned
+`configuration.sv` carries `offset_angle`; nonzero turns the pinion about the crown's normal
+at the mean point (an explicit-basis plane stood off to pass through that point), enlarges it
+by `cos(spiral) / cos(spiral + offset)` so the tooth-count ratio holds there, and stands its
+cones and its own toe/heel spheres about its own apex in that plane; the pinion's generating
+roll becomes a screw about the crown. The boundary components take the apex as a point.
+Nothing in the sweep or arrangement changes. The mesh export now checks every placement of a sectioned
 sheet against the blank and refuses one whose boundary lies inside it, since a blank that is
 not symmetric about the placing axis would otherwise keep material silently; the pinion's own
 spheres are what make its blank symmetric about its own axis. The test readers zero the

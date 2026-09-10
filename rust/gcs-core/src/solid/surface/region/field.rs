@@ -46,12 +46,15 @@ impl Edge {
 
 /// Boundary order and individual edge direction need not match a face's written
 /// operand order. Reconstruct one loop before checking turning and convexity.
-fn ordered(edges: &[Edge]) -> Result<Vec<Edge>,String> {
+/// `axis_tolerance` is the distance an endpoint recognized as on the axis was
+/// moved by, so the edges sharing that point join within it as well as within
+/// the roundoff of the conversion.
+fn ordered(edges: &[Edge],axis_tolerance: f64) -> Result<Vec<Edge>,String> {
     let scale = edges.iter().map(|e| match *e {
         Edge::Line {a,b,..} => a[0].hypot(a[1]).max(b[0].hypot(b[1])),
         Edge::Arc {center,radius,..} => center[0].hypot(center[1])+radius,
     }).fold(0_f64,f64::max);
-    let tolerance = scale*f64::EPSILON*128.;
+    let tolerance = (scale*f64::EPSILON*128.).max(axis_tolerance);
     let mut remaining = edges.to_vec();
     if remaining.is_empty() { return Err("empty material profile".into()); }
     let mut out = vec![remaining.remove(0)];
@@ -80,8 +83,8 @@ fn ordered(edges: &[Edge]) -> Result<Vec<Edge>,String> {
     Ok(out)
 }
 
-fn profile(edges: &[Edge]) -> Result<PlanarField,String> {
-    let edges = ordered(edges)?;
+fn profile(edges: &[Edge],axis_tolerance: f64) -> Result<PlanarField,String> {
+    let edges = ordered(edges,axis_tolerance)?;
     let area = edges.iter().map(Edge::area_twice).sum::<f64>();
     if !area.is_finite() || area == 0. { return Err("degenerate material profile".into()); }
     let direction = area.signum();
@@ -148,8 +151,8 @@ impl RevolvedRegion {
     /// are separate from interval evaluation and are not certified by this conversion.
     pub fn field(&self) -> Result<RevolvedField,String> {
         let mut loops = self.loops.iter();
-        let mut field = profile(loops.next().ok_or("empty material profile")?)?;
-        for hole in loops { field = field.difference(profile(hole)?).map_err(failure)?; }
+        let mut field = profile(loops.next().ok_or("empty material profile")?,self.axis_tolerance)?;
+        for hole in loops { field = field.difference(profile(hole,self.axis_tolerance)?).map_err(failure)?; }
         RevolvedField::new(field,self.origin,self.axis).map_err(failure)
     }
 }

@@ -1,12 +1,14 @@
 # Spiral bevel source examples
 
-`configuration.sv` sets the tooth counts, the mean module and the axis offset: zero is a
-bevel pair with a common apex, anything else stands the pinion axis off the gear axis along
-their common perpendicular and the pair is a hypoid. The pinion is still one crown tooth swept
-through its blank at every index; the generating roll about the offset axis is a screw, which
-the contact equation reads like any other motion. The pinion's pitch geometry is the bevel
-member's, so the offset is meant for small values. `gears.sv` instantiates the matched pair
-using ordinary components, named motions, revolutions and repeated cuts:
+`configuration.sv` sets the tooth counts, the mean module and the offset angle: zero is a
+bevel pair with a common apex; anything else slides the pinion around the crown by that angle,
+turning its axis about the crown's normal at the mean point, and the pair is a hypoid whose
+axes stand about `mean_distance * sin(offset_angle)` apart. The pinion sees the tooth trace at
+`spiral_angle + offset_angle` and is enlarged by the ratio of the cosines so the tooth-count
+ratio holds at the mean point. It is still one crown tooth swept through its blank at every
+index; the generating roll about the turned axis is a screw, which the contact equation reads
+like any other motion. `gears.sv` instantiates the matched pair using ordinary components,
+named motions, revolutions and repeated cuts:
 
 ```sh
 make solventc OCCT=1

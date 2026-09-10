@@ -113,19 +113,32 @@ fn member_volume(e: &gcs_core::program::Elaborated,member: &str) -> f64 {
     volume
 }
 
-/// The pair as configured stands the pinion axis off the gear's: the pinion is
-/// still one crown tooth swept through its blank at every index. Its blank is a
-/// body of revolution about its own axis, so every placement of the sheet cuts,
-/// and the offset is what makes it a hypoid rather than a bevel member.
+/// The pair as configured slides the pinion around the crown by the offset
+/// angle: its axis turns about the crown normal at the mean point and no longer
+/// meets the gear's, by about the mean cone distance times the sine of the
+/// angle. The pinion is still one crown tooth swept through its blank at every
+/// index; its blank is a body of revolution about its own axis, so every
+/// placement of the sheet cuts.
 #[cfg(feature="occt")]
 #[test]
 fn the_hypoid_pinion_exports_with_every_placement_cutting() {
     let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
     let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
     let hypoid = support::read_as_configured(&source,&base);
-    let offset = hypoid.map.ent_named("pair.reference.pinion_axis").map(|l| {
-        let line = &hypoid.sketch.lines[l.i()]; hypoid.sketch.world_point(line.p1 as usize)[1].abs() }).unwrap();
-    assert!(offset > 1.,"the configured pair is a hypoid: axis offset {offset} mm");
+    let axis = |name: &str| {
+        let line = &hypoid.sketch.lines[hypoid.map.ent_named(name).unwrap().i()];
+        let (a,b) = (hypoid.sketch.world_point(line.p1 as usize),hypoid.sketch.world_point(line.p2 as usize));
+        let d: [f64;3] = std::array::from_fn(|k| b[k]-a[k]); let l = d.iter().map(|x| x*x).sum::<f64>().sqrt();
+        (a,d.map(|x| x/l))
+    };
+    let ((a1,d1),(a2,d2)) = (axis("pair.reference.pinion_axis"),axis("pair.reference.gear_axis"));
+    let n = [d1[1]*d2[2]-d1[2]*d2[1],d1[2]*d2[0]-d1[0]*d2[2],d1[0]*d2[1]-d1[1]*d2[0]];
+    let nl = n.iter().map(|x| x*x).sum::<f64>().sqrt();
+    let offset = (0..3).map(|k| (a1[k]-a2[k])*n[k]).sum::<f64>().abs()/nl;
+    let mean_distance = 2.*(24f64).hypot(48.)/2.;
+    let expected = mean_distance*(6f64).to_radians().sin();
+    eprintln!("axis offset {offset:.3} mm against mean_distance * sin(6deg) = {expected:.3}");
+    assert!((offset-expected).abs() < 0.1*expected,"the configured pair is a hypoid: axis offset {offset} mm");
     let volume = member_volume(&hypoid,"pinion");
     let bevel = member_volume(&support::read(&source,&base),"pinion");
     eprintln!("hypoid pinion {volume:.3} mm^3, bevel pinion {bevel:.3} mm^3");
