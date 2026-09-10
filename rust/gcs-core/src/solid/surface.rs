@@ -11,6 +11,7 @@ mod project;
 pub use project::{SurfaceProjection,SurfaceProjector};
 mod region;
 pub use region::{RegionLocation,RegionSample,RevolvedRegion};
+pub(crate) use region::Edge;
 
 use crate::envelope::{Error, Motion, SurfacePoint};
 use crate::model::{EntKind, EntRef, Sense, Sketch, SolidDef};

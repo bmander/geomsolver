@@ -2,6 +2,7 @@
 //! set is closure({x | f(x)<0}); a zero value alone is not a boundary certificate.
 //! These are explicit field constructions, not implicit conversions of mesh CSG.
 use crate::interval::{Error,Interval as I};
+mod profile;
 mod spatial;
 mod document;
 pub use spatial::SpatialField;
@@ -66,6 +67,8 @@ enum Node {
     Union(Box<PlanarField>,Box<PlanarField>),
     Intersection(Box<PlanarField>,Box<PlanarField>),
     Difference(Box<PlanarField>,Box<PlanarField>),
+    /// A simple loop of lines and arcs as its signed boundary distance.
+    Profile(profile::Profile),
 }
 
 /// A continuous, one-Lipschitz scalar field in planar coordinates. Negative
@@ -90,6 +93,7 @@ impl PlanarField {
                 (Some(a),Some(b)) => Some(a.min(b)), (a,b) => a.or(b),
             },
             Node::Difference(a,_) => a.radius_bound()?,
+            Node::Profile(profile) => Some(profile.reach()),
         })
     }
     /// Material is on the negative side of the supplied outward normal.
@@ -133,6 +137,7 @@ impl PlanarField {
             Node::Union(a,b) => Ok(min(a.bounds(p)?,b.bounds(p)?)),
             Node::Intersection(a,b) => Ok(max(a.bounds(p)?,b.bounds(p)?)),
             Node::Difference(a,b) => Ok(max(a.bounds(p)?,b.bounds(p)?.neg())),
+            Node::Profile(profile) => profile.bounds(p),
         }
     }
 }
@@ -170,5 +175,58 @@ impl RevolvedField {
         if !self.profile.uses[0] { return self.profile.bounds([I::ZERO,z]); }
         for i in 0..3 { q[i] = q[i].sub(z.mul(self.axis[i])?)?; }
         self.profile.bounds([norm(q)?,z])
+    }
+}
+
+/// Extrude an explicit planar field between two ordinates along the normal of
+/// an orthonormal frame `(u, v, u x v)` about an origin. Gram-Schmidt runs in
+/// interval arithmetic, so the enclosed mathematical frame is exactly
+/// orthonormal, its coordinate map an isometry, and the field one-Lipschitz in
+/// world coordinates: the prism is the profile intersected with the slab.
+#[derive(Clone,Debug)]
+pub struct ExtrudedField { profile:PlanarField,origin:V,frame:[V;3],range:I }
+
+impl ExtrudedField {
+    /// `range` holds the two ordinates in either order; a zero thickness is refused.
+    pub fn new(profile: PlanarField,origin: [f64;3],u: [f64;3],v: [f64;3],range: [f64;2])
+        -> Result<Self,Error> {
+        if range[0] == range[1] { return Err(Error::OutsideDomain); }
+        let range = I::new(range[0].min(range[1]),range[0].max(range[1]))?;
+        let dot = |a: V,b: V| (0..3).try_fold(I::ZERO,|s,i| a[i].mul(b[i]).and_then(|t| s.add(t)));
+        let unit = |mut a: V| -> Result<V,Error> {
+            let length = norm(a)?;
+            for x in &mut a { *x = x.div(length)?; }
+            Ok(a)
+        };
+        let u = unit(point(u)?)?;
+        let mut v = point(v)?; let shear = dot(v,u)?;
+        for i in 0..3 { v[i] = v[i].sub(shear.mul(u[i])?)?; }
+        let v = unit(v)?;
+        let n = [u[1].mul(v[2])?.sub(u[2].mul(v[1])?)?,u[2].mul(v[0])?.sub(u[0].mul(v[2])?)?,
+            u[0].mul(v[1])?.sub(u[1].mul(v[0])?)?];
+        Ok(Self {profile,origin:point(origin)?,frame:[u,v,n],range})
+    }
+
+    /// A finite world box enclosing all regularized material, when the profile
+    /// construction gives one; `None` is an unknown support, not unboundedness.
+    pub fn support_bounds(&self) -> Result<Option<V>,Error> {
+        let Some(radius) = self.profile.radius_bound()? else { return Ok(None); };
+        let disk = I::new(-radius,radius)?;
+        let mut result = self.origin;
+        // |a u_k + b v_k| <= sqrt(a^2 + b^2) for orthonormal u, v.
+        for k in 0..3 { result[k] = result[k].add(disk)?.add(self.range.mul(self.frame[2][k])?)?; }
+        Ok(Some(result))
+    }
+
+    pub fn bounds(&self,p: V) -> Result<I,Error> {
+        let mut q = [I::ZERO;3];
+        for i in 0..3 { q[i] = p[i].sub(self.origin[i])?; }
+        let mut c = [I::ZERO;3];
+        for (k,axis) in self.frame.iter().enumerate() {
+            for i in 0..3 { c[k] = c[k].add(q[i].mul(axis[i])?)?; }
+        }
+        let [lo,hi] = self.range.bounds();
+        let slab = max(I::point(lo)?.sub(c[2])?,c[2].sub(I::point(hi)?)?);
+        Ok(max(self.profile.bounds([c[0],c[1]])?,slab))
     }
 }

@@ -3,19 +3,22 @@
 //! they mean. It does not silently substitute an analytic surface for a mesh face.
 use super::*;
 use std::f64::consts::{FRAC_PI_2,PI,TAU};
-mod field;
 
 type P = [f64;2];
 fn distance(a: P,b: P) -> f64 { (a[0]-b[0]).hypot(a[1]-b[1]) }
 
+/// One analytic profile edge in planar coordinates: a revolved meridian's
+/// (radius, height), or a prism section's plane view coordinates. An arc's
+/// `ends` are the exact source vertices, `ends[0]` at `start`; a full circle
+/// has `sweep` of one turn and no seam.
 #[derive(Clone,Debug)]
-enum Edge {
+pub(crate) enum Edge {
     Line {a:P,b:P,axis:bool},
     Arc {center:P,radius:f64,start:f64,sweep:f64,ends:[P;2]},
 }
 
 impl Edge {
-    fn at(&self,t: f64) -> P {
+    pub(crate) fn at(&self,t: f64) -> P {
         match *self {
             Self::Line {a,b,..} => std::array::from_fn(|i| a[i]+t*(b[i]-a[i])),
             Self::Arc {center,radius,start,sweep,..} => {
@@ -51,7 +54,7 @@ impl Edge {
 
     // The closest point on an analytic finite meridian. Rotation is unrestricted,
     // so this is also the distance to its revolved surface in cylindrical space.
-    fn distance(&self,p: P) -> f64 {
+    pub(crate) fn distance(&self,p: P) -> f64 {
         match *self {
             Self::Line {a,b,axis} => {
                 // An axis edge disappears in a full revolution; it is not a wall.
@@ -74,7 +77,7 @@ impl Edge {
 
     // Half-open horizontal ray crossings. Split arcs at their vertical extrema
     // analytically, so tangent rays and shared endpoints do not get counted twice.
-    fn crossings(&self,p: P) -> usize {
+    pub(crate) fn crossings(&self,p: P) -> usize {
         match *self {
             Self::Line {a,b,..} => usize::from((a[1] > p[1]) != (b[1] > p[1])
                 && p[0] < a[0]+(p[1]-a[1])*(b[0]-a[0])/(b[1]-a[1])),
@@ -127,9 +130,9 @@ pub struct RegionSample {
 /// use analytic curves and have no tessellation setting. Hole interiors are voids.
 #[derive(Clone,Debug)]
 pub struct RevolvedRegion {
-    origin: V,
-    axis: V,
-    loops: Vec<Vec<Edge>>,
+    pub(crate) origin: V,
+    pub(crate) axis: V,
+    pub(crate) loops: Vec<Vec<Edge>>,
 }
 
 impl RevolvedRegion {
