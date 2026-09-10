@@ -23,7 +23,7 @@ pub fn export_swept_stl(sk: &gcs_core::model::Sketch,solid: usize,path: &str) ->
         let sheets = |swept: usize,inside: &dyn Fn(&[[f64;3]]) -> Result<Vec<bool>,String>| {
             let sheet = native::sweep_boundary::swept_sheet_grid(&session,sk,swept,inside)?;
             Ok(vec![mesh_sweep::SheetGrid {points:sheet.points.iter().map(|p| p.map(|v| v/scale)).collect(),
-                normals:sheet.normals.clone(),rows:sheet.rows,columns:sheet.columns,closed_rows:false}])
+                normals:sheet.normals.clone(),times:(0..sheet.columns).map(|c| c as f64).collect(),rows:sheet.rows,columns:sheet.columns,closed_rows:false}])
         };
         let (vertices,triangles) = mesh_sweep::construct(sk,solid,&sheets)?;
         let bytes = mesh_sweep::stl(&vertices,&triangles,&sk.solids[solid].name)?;

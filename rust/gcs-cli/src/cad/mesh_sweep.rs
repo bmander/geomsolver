@@ -13,7 +13,7 @@
 //! united. No trimming or visibility is computed here; an unresolved or mixed
 //! cell refuses the build.
 use super::manifold::Solid;
-use gcs_core::{interval::{Interval,minimum::Options},mesh,model::{Sketch,SolidDef},
+use gcs_core::{envelope,interval::{Interval,minimum::Options},mesh,model::{Sketch,SolidDef},
     motion::Family,solid::{self,cad,MaterialField,ProbeState}};
 
 fn stage(message: &str) { eprintln!("solventc: {message}"); }
@@ -24,38 +24,364 @@ fn norm(a: [f64;3]) -> f64 { (a[0]*a[0]+a[1]*a[1]+a[2]*a[2]).sqrt() }
 /// A candidate sheet in model units: a row-major grid of contact positions with
 /// the cutter's outward normal at each. `closed_rows` joins the last row back
 /// to the first, a tube.
-pub struct SheetGrid { pub points: Vec<[f64;3]>,pub normals: Vec<[f64;3]>,pub rows: usize,pub columns: usize,pub closed_rows: bool }
+#[derive(Clone)]
+pub struct SheetGrid { pub points: Vec<[f64;3]>,pub normals: Vec<[f64;3]>,pub times: Vec<f64>,pub rows: usize,pub columns: usize,pub closed_rows: bool }
+
+impl SheetGrid {
+    fn at(&self,r: usize,c: usize) -> [f64;3] { self.points[r*self.columns+c] }
+
+
+}
+
+/// A coarse occupancy of a solid: the cells of a cubic grid over its box whose
+/// centres are inside it, or that a boundary triangle touches, or that lie
+/// within the reach of one that is, so a query answers whether a point is
+/// near the material.
+struct Occupancy { lo: [f64;3], cell: f64, dims: [usize;3], cells: Vec<bool> }
+
+impl Occupancy {
+    /// `margin` is how far beyond the solid a point still reaches: at least
+    /// two cells, and never less than the length asked, since a sheet is kept
+    /// or cropped column by column and a column must not step from beyond
+    /// reach into the solid in one stride.
+    fn of(mesh: &Solid,inside: impl Fn([f64;3]) -> bool,resolution: usize,margin: f64) -> Result<Self,String> {
+        let (vertices,triangles) = mesh.triangles()?;
+        let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+        for p in &vertices { for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]); } }
+        let cell = (0..3).map(|k| hi[k]-lo[k]).fold(0_f64,f64::max)/resolution as f64;
+        if !(cell > 0.) { return Err("an empty blank".into()); }
+        let reach = ((margin/cell).ceil() as i64).max(2);
+        // The grid extends past the blank by the dilation, so a point kept for
+        // being near the material is never cut off by the grid's own edge.
+        let lo: [f64;3] = lo.map(|v| v-(reach as f64+1.)*cell);
+        let hi: [f64;3] = hi.map(|v| v+(reach as f64+1.)*cell);
+        let dims: [usize;3] = std::array::from_fn(|k| ((hi[k]-lo[k])/cell).ceil() as usize+1);
+        let index = |x: usize,y: usize,z: usize| (x*dims[1]+y)*dims[2]+z;
+        let mut occupied = vec![false;dims[0]*dims[1]*dims[2]];
+        for x in 0..dims[0] { for y in 0..dims[1] { for z in 0..dims[2] {
+            let centre: [f64;3] = std::array::from_fn(|k| lo[k]+cell*([x,y,z][k] as f64+0.5));
+            occupied[index(x,y,z)] = inside(centre);
+        } } }
+        // and every cell a boundary triangle's box touches, so a wedge of the
+        // solid thinner than a cell is not missed between the centres
+        for t in &triangles {
+            let corners = t.map(|i| vertices[i as usize]);
+            let range = |k: usize| {
+                let (a,b) = (corners.iter().map(|p| p[k]).fold(f64::INFINITY,f64::min),corners.iter().map(|p| p[k]).fold(f64::NEG_INFINITY,f64::max));
+                (((a-lo[k])/cell).floor().max(0.) as usize)..=(((b-lo[k])/cell).floor().max(0.) as usize).min(dims[k]-1)
+            };
+            for x in range(0) { for y in range(1) { for z in range(2) { occupied[index(x,y,z)] = true; } } }
+        }
+        // dilate by the reach, so a sheet is kept wherever it comes near
+        let mut cells = occupied.clone();
+        for x in 0..dims[0] { for y in 0..dims[1] { for z in 0..dims[2] {
+            if occupied[index(x,y,z)] {
+                for dx in -reach..=reach { for dy in -reach..=reach { for dz in -reach..=reach {
+                    let (nx,ny,nz) = (x as i64+dx,y as i64+dy,z as i64+dz);
+                    if nx < 0 || ny < 0 || nz < 0 { continue; }
+                    let (nx,ny,nz) = (nx as usize,ny as usize,nz as usize);
+                    if nx < dims[0] && ny < dims[1] && nz < dims[2] { cells[index(nx,ny,nz)] = true; }
+                } } }
+            }
+        } } }
+        Ok(Self {lo,cell,dims,cells})
+    }
+
+    fn reaches(&self,p: [f64;3]) -> bool {
+        let mut i = [0usize;3];
+        for k in 0..3 {
+            let v = ((p[k]-self.lo[k])/self.cell).floor();
+            if v < 0. || v >= self.dims[k] as f64 { return false; }
+            i[k] = v as usize;
+        }
+        self.cells[(i[0]*self.dims[1]+i[1])*self.dims[2]+i[2]]
+    }
+}
+
+fn point_triangle_distance(p: [f64;3],a: [f64;3],b: [f64;3],c: [f64;3]) -> f64 {
+    // Ericson's closest point on a triangle
+    let (ab,ac,ap) = (sub(b,a),sub(c,a),sub(p,a));
+    let dot = |x: [f64;3],y: [f64;3]| x[0]*y[0]+x[1]*y[1]+x[2]*y[2];
+    let (d1,d2) = (dot(ab,ap),dot(ac,ap));
+    if d1 <= 0. && d2 <= 0. { return norm(ap); }
+    let bp = sub(p,b); let (d3,d4) = (dot(ab,bp),dot(ac,bp));
+    if d3 >= 0. && d4 <= d3 { return norm(bp); }
+    let vc = d1*d4-d3*d2;
+    if vc <= 0. && d1 >= 0. && d3 <= 0. { let v = d1/(d1-d3); return norm(sub(p,std::array::from_fn(|k| a[k]+v*ab[k]))); }
+    let cp = sub(p,c); let (d5,d6) = (dot(ab,cp),dot(ac,cp));
+    if d6 >= 0. && d5 <= d6 { return norm(cp); }
+    let vb = d5*d2-d1*d6;
+    if vb <= 0. && d2 >= 0. && d6 <= 0. { let w = d2/(d2-d6); return norm(sub(p,std::array::from_fn(|k| a[k]+w*ac[k]))); }
+    let va = d3*d6-d5*d4;
+    if va <= 0. && d4-d3 >= 0. && d5-d6 >= 0. { let w = (d4-d3)/((d4-d3)+(d5-d6)); return norm(sub(p,std::array::from_fn(|k| b[k]+w*(c[k]-b[k])))); }
+    let denom = 1./(va+vb+vc); let (v,w) = (vb*denom,vc*denom);
+    norm(sub(p,std::array::from_fn(|k| a[k]+ab[k]*v+ac[k]*w)))
+}
+
+
+/// A candidate sheet as triangles with a normal at each vertex, in model
+/// units: what the core's zipped patches, a grid's quads and a seam ribbon
+/// all are. Vertices come column by column in order along each column's
+/// curve; `column[v]` says which, and `times` the motion parameter of each
+/// column, so the seams between sheets can be found and closed.
+#[derive(Clone)]
+pub struct Patch { pub vertices: Vec<[f64;3]>, pub normals: Vec<[f64;3]>, pub triangles: Vec<[u32;3]>, pub column: Vec<u32>, pub times: Vec<f64> }
+
+impl SheetGrid {
+    /// The grid as triangles, two per quad, its columns kept.
+    pub fn patch(&self) -> Patch {
+        let (rows,columns) = (self.rows,self.columns);
+        // vertices column by column
+        let mut vertices = Vec::with_capacity(rows*columns); let mut normals = Vec::with_capacity(rows*columns); let mut column = Vec::with_capacity(rows*columns);
+        for c in 0..columns { for r in 0..rows { vertices.push(self.at(r,c)); normals.push(self.normals[r*columns+c]); column.push(c as u32); } }
+        let at = |r: usize,c: usize| (c*rows+r%rows) as u32;
+        let row_spans = if self.closed_rows { rows } else { rows-1 };
+        let mut triangles = Vec::with_capacity(2*row_spans*(columns-1));
+        for r in 0..row_spans { for c in 0..columns-1 {
+            let (a,b,d,e) = (at(r,c),at(r,c+1),at(r+1,c),at(r+1,c+1));
+            triangles.push([a,b,e]); triangles.push([a,e,d]);
+        } }
+        Patch {vertices,normals,triangles,column,times:self.times.clone()}
+    }
+}
+
+impl From<solid::SweepPatch> for Patch {
+    fn from(s: solid::SweepPatch) -> Self { Patch {vertices:s.points,normals:s.normals,triangles:s.triangles,column:s.column,times:s.times} }
+}
+
+/// Triangles of a patch by the cells of a cubic grid their boxes reach.
+pub struct PatchIndex { cell: f64, buckets: std::collections::HashMap<[i64;3],Vec<usize>> }
+
+impl Patch {
+    /// The patch carried by a rigid pose.
+    pub fn placed(&self,pose: envelope::Motion) -> Self {
+        Patch {vertices:self.vertices.iter().map(|p| pose.point(*p)).collect(),
+            normals:self.normals.iter().map(|n| pose.vector(*n)).collect(),triangles:self.triangles.clone(),column:self.column.clone(),times:self.times.clone()}
+    }
+
+    /// The vertices of one column, in order along its curve.
+    fn column_vertices(&self,c: u32) -> Vec<u32> { (0..self.vertices.len() as u32).filter(|&v| self.column[v as usize] == c).collect() }
+
+    /// The first and last columns present.
+    fn column_range(&self) -> (u32,u32) {
+        self.column.iter().fold((u32::MAX,0),|(lo,hi),&c| (lo.min(c),hi.max(c)))
+    }
+
+    /// The directed edges used by exactly one triangle: the patch's rim.
+    fn boundary_edges(&self) -> Vec<(u32,u32)> {
+        let mut directed: std::collections::HashSet<(u32,u32)> = std::collections::HashSet::new();
+        for t in &self.triangles { for k in 0..3 { directed.insert((t[k],t[(k+1)%3])); } }
+        directed.iter().copied().filter(|&(p,q)| !directed.contains(&(q,p))).collect()
+    }
+
+    /// The part of the patch that reaches `keep`: every triangle with a vertex
+    /// that does, and the ring of triangles round those, so what the crop
+    /// leaves as a rim lies beyond `keep`, away from the body. Vertices no
+    /// kept triangle uses are dropped.
+    pub fn cropped(&self,keep: &dyn Fn(&[f64;3]) -> bool) -> Option<Patch> {
+        let reaching: Vec<bool> = self.vertices.iter().map(|p| keep(p)).collect();
+        let mut kept: Vec<bool> = self.triangles.iter().map(|t| t.iter().any(|&v| reaching[v as usize])).collect();
+        if !kept.iter().any(|k| *k) { return None; }
+        let mut touched = vec![false;self.vertices.len()];
+        for (t,k) in self.triangles.iter().zip(&kept) { if *k { for &v in t { touched[v as usize] = true; } } }
+        for (t,k) in self.triangles.iter().zip(kept.iter_mut()) { if t.iter().any(|&v| touched[v as usize]) { *k = true; } }
+        let mut used = vec![false;self.vertices.len()];
+        for (t,k) in self.triangles.iter().zip(&kept) { if *k { for &v in t { used[v as usize] = true; } } }
+        let mut remap = vec![u32::MAX;self.vertices.len()];
+        let mut vertices = Vec::new(); let mut normals = Vec::new(); let mut column = Vec::new();
+        for (v,p) in self.vertices.iter().enumerate() {
+            if used[v] { remap[v] = vertices.len() as u32; vertices.push(*p); normals.push(self.normals[v]); column.push(self.column[v]); }
+        }
+        let triangles = self.triangles.iter().zip(&kept).filter(|(_,k)| **k).map(|(t,_)| t.map(|v| remap[v as usize])).collect();
+        Some(Patch {vertices,normals,triangles,column,times:self.times.clone()})
+    }
+
+    pub fn index(&self,cell: f64) -> PatchIndex {
+        let mut buckets: std::collections::HashMap<[i64;3],Vec<usize>> = Default::default();
+        let key = |p: [f64;3]| p.map(|v| (v/cell).floor() as i64);
+        for (i,t) in self.triangles.iter().enumerate() {
+            let corners = t.map(|v| self.vertices[v as usize]);
+            let (lo,hi) = (key(std::array::from_fn(|k| corners.iter().map(|q| q[k]).fold(f64::INFINITY,f64::min))),
+                key(std::array::from_fn(|k| corners.iter().map(|q| q[k]).fold(f64::NEG_INFINITY,f64::max))));
+            for x in lo[0]..=hi[0] { for y in lo[1]..=hi[1] { for z in lo[2]..=hi[2] { buckets.entry([x,y,z]).or_default().push(i); } } }
+        }
+        PatchIndex {cell,buckets}
+    }
+
+    /// The distance from `p` to the patch within `within`, or more than that
+    /// if none of it is that close.
+    pub fn distance_within(&self,index: &PatchIndex,p: [f64;3],within: f64) -> f64 {
+        let key = |v: f64| (v/index.cell).floor() as i64;
+        let (lo,hi) = (p.map(|v| key(v-within)),p.map(|v| key(v+within)));
+        let mut best = f64::INFINITY;
+        for x in lo[0]..=hi[0] { for y in lo[1]..=hi[1] { for z in lo[2]..=hi[2] {
+            let Some(triangles) = index.buckets.get(&[x,y,z]) else { continue; };
+            for &i in triangles {
+                let [a,b,c] = self.triangles[i].map(|v| self.vertices[v as usize]);
+                best = best.min(point_triangle_distance(p,a,b,c));
+            }
+        } } }
+        best
+    }
+}
+
+/// A patch cut along its folds into pieces: where two triangles on one edge
+/// face opposite ways the sheet doubles back on itself (the two branches of
+/// a contact curve meeting at a fold), and one slab of it would overlap
+/// itself, which no Boolean can take; two slabs that share the fold line
+/// are an ordinary union. Every piece keeps the fold's vertices.
+fn split_at_folds(patch: &Patch) -> Vec<Patch> {
+    let normal = |t: &[u32;3]| { let [a,b,c] = t.map(|v| patch.vertices[v as usize]); cross(sub(b,a),sub(c,a)) };
+    let normals: Vec<[f64;3]> = patch.triangles.iter().map(normal).collect();
+    let mut by_edge: std::collections::HashMap<(u32,u32),Vec<usize>> = Default::default();
+    for (i,t) in patch.triangles.iter().enumerate() { for k in 0..3 { let (a,b) = (t[k],t[(k+1)%3]); by_edge.entry((a.min(b),a.max(b))).or_default().push(i); } }
+    // union-find over triangles across unfolded edges
+    let mut parent: Vec<usize> = (0..patch.triangles.len()).collect();
+    fn find(parent: &mut Vec<usize>,i: usize) -> usize { let mut r = i; while parent[r] != r { r = parent[r]; } let mut j = i; while parent[j] != r { let n = parent[j]; parent[j] = r; j = n; } r }
+    for ts in by_edge.values() {
+        if ts.len() != 2 { continue; }
+        let (n1,n2) = (normals[ts[0]],normals[ts[1]]);
+        let folded = n1[0]*n2[0]+n1[1]*n2[1]+n1[2]*n2[2] < 0. && norm(n1)*norm(n2) > 1e-24;
+        if !folded { let (a,b) = (find(&mut parent,ts[0]),find(&mut parent,ts[1])); parent[a] = b; }
+    }
+    let mut groups: std::collections::BTreeMap<usize,Vec<usize>> = Default::default();
+    for i in 0..patch.triangles.len() { let r = find(&mut parent,i); groups.entry(r).or_default().push(i); }
+    if groups.len() == 1 { return vec![patch.clone()]; }
+    groups.values().map(|ts| {
+        let mut remap: std::collections::HashMap<u32,u32> = Default::default();
+        let mut vertices = Vec::new(); let mut normals = Vec::new(); let mut column = Vec::new();
+        let triangles = ts.iter().map(|&i| patch.triangles[i].map(|v| *remap.entry(v).or_insert_with(|| {
+            vertices.push(patch.vertices[v as usize]); normals.push(patch.normals[v as usize]); column.push(patch.column[v as usize]); (vertices.len()-1) as u32 }))).collect();
+        Patch {vertices,normals,triangles,column,times:patch.times.clone()}
+    }).collect()
+}
+
+/// The ribbons that close the seams between sheets. Where one strip ends and
+/// another begins at one parameter, their end columns are one curve (or a
+/// curve and the pieces it became) traced twice, and differ by up to the
+/// tracer's own resolution: far more than a slab's thickness. Each end
+/// column is zipped to the columns that meet it there: every vertex of it is
+/// projected onto the nearest of them, and the run of vertices landing on one
+/// partner is triangulated against the partner's own vertices between the
+/// first and last projection, so the ribbon's edges are exactly segments of
+/// both polylines and it closes the seam without a chord of its own.
+fn seam_ribbons(sheets: &[Patch],within: f64) -> Vec<Patch> {
+    let column = |g: &Patch,c: u32| -> (Vec<[f64;3]>,Vec<[f64;3]>) {
+        let vs = g.column_vertices(c);
+        (vs.iter().map(|&v| g.vertices[v as usize]).collect(),vs.iter().map(|&v| g.normals[v as usize]).collect())
+    };
+    let span = sheets.iter().flat_map(|g| g.times.iter().copied()).fold((f64::INFINITY,f64::NEG_INFINITY),|(lo,hi),t| (lo.min(t),hi.max(t)));
+    // a death and the birth beside it are bisected to their own events, and
+    // may differ by more than the bisection's resolution
+    let same = |a: f64,b: f64| (a-b).abs() <= 1e-4*(span.1-span.0).max(f64::MIN_POSITIVE);
+    let mut ribbons = Vec::new();
+    for (i,g) in sheets.iter().enumerate() {
+        let (first,last) = g.column_range();
+        for (c,partner_end) in [(first,true),(last,false)] {
+            let t = g.times[c as usize];
+            // the columns of other sheets that end (or begin) where this one begins (or ends)
+            let partners: Vec<(Vec<[f64;3]>,Vec<[f64;3]>)> = sheets.iter().enumerate().filter(|(j,_)| *j != i)
+                .filter_map(|(_,h)| {
+                    let (hf,hl) = h.column_range();
+                    let pc = if partner_end { hl } else { hf };
+                    same(h.times[pc as usize],t).then(|| column(h,pc))
+                }).filter(|(p,_)| p.len() >= 2).collect();
+            if partners.is_empty() { continue; }
+            let (points,normals) = column(g,c);
+            if points.len() < 2 { continue; }
+            // (partner, segment, fraction) of the nearest point of any partner
+            let nearest = |p: [f64;3]| -> Option<(usize,usize,f64)> {
+                let mut best: Option<(f64,(usize,usize,f64))> = None;
+                for (pi,(line,_)) in partners.iter().enumerate() {
+                    for k in 0..line.len()-1 {
+                        let (a,b) = (line[k],line[k+1]);
+                        let ab = sub(b,a); let ap = sub(p,a);
+                        let l2 = norm(ab).powi(2);
+                        let f = if l2 > 0. { (ab[0]*ap[0]+ab[1]*ap[1]+ab[2]*ap[2])/l2 } else { 0. }.clamp(0.,1.);
+                        let q: [f64;3] = std::array::from_fn(|k| a[k]+f*ab[k]);
+                        let d = norm(sub(p,q));
+                        if best.map_or(true,|(bd,_)| d < bd) { best = Some((d,(pi,k,f))); }
+                    }
+                }
+                best.filter(|(d,_)| *d <= within).map(|(_,q)| q)
+            };
+            let projected: Vec<Option<(usize,usize,f64)>> = points.iter().map(|p| nearest(*p)).collect();
+            // runs of consecutive rows landing on one partner
+            let mut start = 0;
+            while start < points.len() {
+                let Some((pi,_,_)) = projected[start] else { start += 1; continue; };
+                let mut end = start;
+                while end+1 < points.len() && projected[end+1].is_some_and(|(q,_,_)| q == pi) { end += 1; }
+                if end > start {
+                    let (line,line_normals) = &partners[pi];
+                    let mut s: Vec<f64> = (start..=end).map(|r| { let (_,k,f) = projected[r].unwrap(); k as f64+f }).collect();
+                    let reversed = s[s.len()-1] < s[0];
+                    let mut d_points: Vec<[f64;3]> = points[start..=end].to_vec();
+                    let mut d_normals: Vec<[f64;3]> = normals[start..=end].to_vec();
+                    if reversed { d_points.reverse(); d_normals.reverse(); s.reverse(); }
+                    for r in 1..s.len() { if s[r] < s[r-1] { s[r] = s[r-1]; } }
+                    let at = |x: f64| -> ([f64;3],[f64;3]) {
+                        let k = (x.floor() as usize).min(line.len()-2); let f = x-k as f64;
+                        (std::array::from_fn(|j| line[k][j]+f*(line[k+1][j]-line[k][j])),std::array::from_fn(|j| line_normals[k][j]+f*(line_normals[k+1][j]-line_normals[k][j])))
+                    };
+                    // the partner's vertices strictly between the two end projections, with those ends
+                    let mut b_params: Vec<f64> = vec![s[0]];
+                    let mut k = s[0].floor()+1.;
+                    while k < s[s.len()-1] { b_params.push(k); k += 1.; }
+                    b_params.push(s[s.len()-1]);
+                    let b_points: Vec<([f64;3],[f64;3])> = b_params.iter().map(|&x| at(x)).collect();
+                    let mut vertices: Vec<[f64;3]> = d_points.clone(); let mut vnormals = d_normals.clone();
+                    let db = vertices.len() as u32;
+                    for (p,nrm) in &b_points { vertices.push(*p); vnormals.push(*nrm); }
+                    let b_only: Vec<[f64;3]> = b_points.iter().map(|q| q.0).collect();
+                    let mut triangles: Vec<[u32;3]> = solid::zip_polylines(&d_points,&b_only,false).into_iter()
+                        .map(|t| t.map(|(on_b,k)| if on_b { db+k } else { k })).collect();
+                    let degenerate = |t: &[u32;3]| { let [a,b,c] = t.map(|k| vertices[k as usize]); norm(cross(sub(b,a),sub(c,a))) < 1e-18 };
+                    triangles.retain(|t| !degenerate(t));
+                    if !triangles.is_empty() {
+                        let column = vec![0;vertices.len()];
+                        ribbons.push(Patch {vertices,normals:vnormals,triangles,column,times:vec![t]});
+                    }
+                }
+                start = end+1;
+            }
+        }
+    }
+    ribbons
+}
 
 /// A closed slab of thickness `epsilon` centred on the sheet.
-pub fn slab(sheet: &SheetGrid,epsilon: f64) -> Result<Solid,String> {
-    let (rows,columns) = (sheet.rows,sheet.columns);
-    let n = rows*columns;
+#[allow(dead_code)]
+pub fn slab(sheet: &SheetGrid,epsilon: f64) -> Result<Solid,String> { slab_of(&sheet.patch(),epsilon) }
+
+/// A closed slab of thickness `epsilon` centred on a patch: the patch offset
+/// either way along its normals, and a wall along every boundary edge.
+pub fn slab_of(patch: &Patch,epsilon: f64) -> Result<Solid,String> {
+    let n = patch.vertices.len();
     let mut vertices = Vec::with_capacity(2*n);
     for side in [1.,-1.] {
-        for (p,normal) in sheet.points.iter().zip(&sheet.normals) {
+        for (p,normal) in patch.vertices.iter().zip(&patch.normals) {
             vertices.push(std::array::from_fn(|k| p[k]+side*0.5*epsilon*normal[k]));
         }
     }
-    let at = |r: usize,c: usize,top: bool| (if top { 0 } else { n }+(r%rows)*columns+c) as u32;
-    let row_spans = if sheet.closed_rows { rows } else { rows-1 };
-    let mut triangles = Vec::with_capacity(4*row_spans*(columns-1)+4*(rows+columns)*2);
-    for r in 0..row_spans { for c in 0..columns-1 {
-        let (a,b,d,e) = (at(r,c,true),at(r,c+1,true),at(r+1,c,true),at(r+1,c+1,true));
-        triangles.push([a,b,e]); triangles.push([a,e,d]);
-        let (a,b,d,e) = (at(r,c,false),at(r,c+1,false),at(r+1,c,false),at(r+1,c+1,false));
-        triangles.push([a,e,b]); triangles.push([a,d,e]);
-    } }
-    // Side walls: for each directed boundary edge p->q of the top surface, the
-    // wall quad carries q->p on top and p'->q' below, so every edge pairs. A
-    // tube has walls only along its two end columns.
-    let mut wall = |p: u32,q: u32| { let (pb,qb) = (p+n as u32,q+n as u32); triangles.push([q,p,pb]); triangles.push([q,pb,qb]); };
-    if !sheet.closed_rows {
-        for c in 0..columns-1 { wall(at(0,c,true),at(0,c+1,true)); wall(at(rows-1,c+1,true),at(rows-1,c,true)); }
+    let below = |i: u32| i+n as u32;
+    let mut triangles = Vec::with_capacity(4*patch.triangles.len());
+    let mut directed: std::collections::HashSet<(u32,u32)> = std::collections::HashSet::new();
+    for t in &patch.triangles {
+        triangles.push(*t);
+        triangles.push([below(t[0]),below(t[2]),below(t[1])]);
+        for k in 0..3 { directed.insert((t[k],t[(k+1)%3])); }
     }
-    for r in 0..row_spans { wall(at(r,columns-1,true),at(r+1,columns-1,true)); wall(at(r+1,0,true),at(r,0,true)); }
+    // Side walls: for each directed boundary edge p->q of the top surface (one
+    // with no opposite), the wall quad carries q->p on top and p'->q' below,
+    // so every edge pairs.
+    for &(p,q) in &directed {
+        if directed.contains(&(q,p)) { continue; }
+        triangles.push([q,p,below(p)]); triangles.push([q,below(p),below(q)]);
+    }
     let solid = Solid::from_triangles(&vertices,&triangles)?;
     if solid.volume() < 0. {
-        // The grid's orientation is the sheet's; wind the other way if the
+        // The patch's orientation is the sheet's; wind the other way if the
         // offset side turned out to be inward.
         let flipped: Vec<[u32;3]> = triangles.iter().map(|t| [t[0],t[2],t[1]]).collect();
         return Solid::from_triangles(&vertices,&flipped);
@@ -85,16 +411,6 @@ pub fn solid_of(fixed: &solid::StaticSolid) -> Result<Solid,String> {
     evaluate(&fixed.csg.term,&prims)
 }
 
-/// The points on a sheet grid's open edges: every row's ends, and the first and
-/// last rows unless the rows close on themselves.
-fn boundary_points(grid: &SheetGrid) -> Vec<[f64;3]> {
-    let (rows,columns) = (grid.rows,grid.columns);
-    let at = |r: usize,c: usize| grid.points[r*columns+c];
-    let mut out: Vec<[f64;3]> = (0..rows).flat_map(|r| [at(r,0),at(r,columns-1)]).collect();
-    if !grid.closed_rows { out.extend((0..columns).flat_map(|c| [at(0,c),at(rows-1,c)])); }
-    out
-}
-
 /// A point inside the solid, `depth` behind its largest triangle, with that
 /// triangle's outward normal.
 pub fn interior_point(solid: &Solid,depth: f64) -> Result<[f64;3],String> {
@@ -115,22 +431,34 @@ pub fn interior_point(solid: &Solid,depth: f64) -> Result<[f64;3],String> {
 
 impl From<solid::SweepSheet> for SheetGrid {
     fn from(s: solid::SweepSheet) -> Self {
-        SheetGrid {points:s.points,normals:s.normals,rows:s.rows,columns:s.columns,closed_rows:s.closed_rows}
+        SheetGrid {points:s.points,normals:s.normals,times:s.times,rows:s.rows,columns:s.columns,closed_rows:s.closed_rows}
     }
 }
 
 /// Sheets of a sweep whose tool-frame twist is constant: the core carries each
 /// characteristic along the motion, with two slabs' worth of overrun into the
 /// caps at both ends.
-pub fn constant_twist_sheets(sk: &Sketch,swept: usize,epsilon: f64,sagitta: f64) -> Result<Vec<SheetGrid>,String> {
+pub fn constant_twist_sheets(sk: &Sketch,swept: usize,epsilon: f64,sagitta: f64) -> Result<Vec<Patch>,String> {
     let sweep = solid::SweepContacts::read(sk,swept,1e-10)?;
     let sheets = sweep.carried_sheets(COLUMN_SPACING,sagitta,2.*epsilon,1e-9)
         .map_err(|e| format!("`{}`: {e}",sk.solids[swept].name))?;
-    Ok(sheets.into_iter().map(SheetGrid::from).collect())
+    Ok(sheets.into_iter().map(|s| SheetGrid::from(s).patch()).collect())
+}
+
+/// Sheets of a sweep whose tool-frame twist varies: the core's contact curves
+/// at a sequence of motion parameters, linked into strips and zipped.
+pub fn traced_sheets(sk: &Sketch,swept: usize,epsilon: f64,sagitta: f64,reach: &dyn Fn([f64;3]) -> bool) -> Result<Vec<Patch>,String> {
+    let started = std::time::Instant::now();
+    let sweep = solid::SweepContacts::read(sk,swept,1e-10)?;
+    let sheets = sweep.characteristic_sheets(COLUMN_SPACING,sagitta,2.*epsilon,1e-9,Some(reach))?;
+    stage(&format!("`{}`: traced {} sheets of {} points ({:?})",sk.solids[swept].name,sheets.len(),
+        sheets.iter().map(|s| s.points.len()).sum::<usize>(),started.elapsed()));
+    Ok(sheets.into_iter().map(Patch::from).collect())
 }
 
 /// Target node spacing along a sheet's band, model millimetres.
 const COLUMN_SPACING: f64 = 0.5;
+
 
 /// The body as indexed triangles in model units. `sheets` supplies the
 /// candidate sheets of a sweep that is not constant-twist, given a containment
@@ -145,6 +473,7 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
     let blank_mesh = solid_of(&blank)?;
     stage(&format!("`{name}`: blank meshed, {} triangles, {:.6} mm³ ({:?})",blank_mesh.triangle_count(),
         blank_mesh.volume()*scale.powi(3),started.elapsed()));
+    let occupancy = Occupancy::of(&blank_mesh,|p| blank.contains(p.map(|v| v/scale)),64,2.*COLUMN_SPACING)?;
     // Slab thickness: a micrometre in native millimetres, expressed in model units.
     let epsilon = 1e-3/scale;
     // Chordal facets of a subtracted round face lie outside the true surface by
@@ -154,53 +483,100 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
     let mut distinct: Vec<usize> = recipe.sweeps.iter().map(|s| s.swept).collect();
     distinct.sort(); distinct.dedup();
     let (mut slabs,mut caps) = (Vec::new(),Vec::new());
+    // the slabs of each placement, split from the blank one placement at a time
+    let mut groups: Vec<std::ops::Range<usize>> = Vec::new();
     for swept in distinct {
         let SolidDef::Swept {source,motion,from,to} = &sk.solids[swept].def else { unreachable!() };
         let started = std::time::Instant::now();
         let family = Family::read(sk,*motion as usize)?;
         let twist = solid::constant_twist(&family,[from.value,to.value],1e-9)?;
-        let grids = if twist { constant_twist_sheets(sk,swept,epsilon,sagitta)? } else { sheets(swept,&inside)? };
-        if std::env::var_os("SOLVENT_TRACE_CELLS").is_some() {
-            for g in &grids {
-                let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
-                for p in &g.points { for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]); } }
-                eprintln!("  sheet {}x{} closed {}: {lo:?} .. {hi:?}",g.rows,g.columns,g.closed_rows);
+        let patches = if twist { constant_twist_sheets(sk,swept,epsilon,sagitta)? } else {
+            // What matters is what any placement of the sweep carries into the
+            // blank: the blank's neighbourhood pulled back through every placement.
+            let placed_reach = |p: [f64;3]| recipe.sweeps.iter().filter(|c| c.swept == swept)
+                .any(|c| occupancy.reaches(c.pose.point(p)));
+            match traced_sheets(sk,swept,epsilon,sagitta,&placed_reach) {
+                Ok(patches) => patches,
+                Err(e) => { stage(&format!("`{}`: tracer declined ({e}); sectioning the cutter instead",sk.solids[swept].name)); sheets(swept,&inside)?.iter().map(SheetGrid::patch).collect() }
             }
-        }
-        let sheet_solids = grids.iter().map(|g| slab(g,epsilon)).collect::<Result<Vec<_>,_>>()?;
+        };
         let tool = solid_of(&solid::static_solid(sk,*source as usize,0)?)?;
         let ends = [family.at(from.value)?,family.at(to.value)?];
+        let source_field = solid::SpatialField::read(sk,*source as usize,1e-10)?;
+        // A sheet is cropped to what reaches the blank's neighbourhood and one
+        // ring of triangles more, so what a crop leaves as a rim lies outside
+        // the blank. The neighbourhood is a coarse occupancy of the blank,
+        // dilated by two cells.
+        let reach = |p: &[f64;3]| occupancy.reaches(*p);
+        let placements = recipe.sweeps.iter().filter(|c| c.swept == swept).count();
+        let (mut sheet_count,mut sheet_triangles) = (0,0);
         for (k,cut) in recipe.sweeps.iter().filter(|c| c.swept == swept).enumerate() {
-            // A sectioned sheet is widened until its boundary leaves the blank at
-            // the sweep's own pose. A placement carries it rigidly, and a blank that
-            // is not symmetric about the placing motion's axis can swallow its edge
-            // there, where a slab that ends inside the material separates nothing.
-            if !twist {
-                for grid in &grids {
-                    let edge: Vec<[f64;3]> = boundary_points(grid).iter().map(|&p| cut.pose.point(p)).collect();
-                    if inside(&edge)?.iter().any(|&i| i) {
-                        return Err(format!("`{}`: placement {k} of `{}` carries the generating sheet's boundary inside the blank; \
-                            the blank is not the same about that placement as about the sweep, so its cut would be incomplete",
-                            name,sk.solids[swept].name));
+            let mut posed: Vec<Patch> = patches.iter().filter_map(|g| g.placed(cut.pose).cropped(&reach)).collect();
+            let near = 4.*sagitta*scale+COLUMN_SPACING/20.;
+            let ribbons = seam_ribbons(&posed,2.*near);
+            posed.extend(ribbons);
+            // Every rim point of a sheet must be outside the blank, inside an end
+            // pose of the tool (removed outright), or on another candidate of the
+            // same sweep; otherwise the arrangement would leave the sheet's edge
+            // loose inside the material and the cut incomplete.
+            let cap_poses: Vec<envelope::Motion> = ends.iter().map(|end| end.then(cut.pose).inverse()).collect();
+            // A sheet runs two slabs' worth past each end pose, tangent to the
+            // tool there, so its rim lies on the cap to within the slab.
+            let in_cap = |p: [f64;3]| -> Result<bool,String> {
+                for inverse in &cap_poses {
+                    let q = inverse.point(p.map(|v| v/scale));
+                    let value = source_field.bounds(q.map(|x| Interval::point(x).unwrap())).map_err(|e| format!("{e:?}"))?;
+                    if value.bounds()[0] <= epsilon { return Ok(true); }
+                }
+                Ok(false)
+            };
+            let indices: Vec<PatchIndex> = posed.iter().map(|g| g.index(COLUMN_SPACING)).collect();
+            for (i,patch) in posed.iter().enumerate() {
+                let mut rim: Vec<u32> = patch.boundary_edges().into_iter().flat_map(|(p,q)| [p,q]).collect();
+                rim.sort(); rim.dedup();
+                let points: Vec<[f64;3]> = rim.iter().map(|&v| patch.vertices[v as usize]).collect();
+                let inside_blank = inside(&points)?;
+                for (p,&in_blank) in points.iter().zip(&inside_blank) {
+                    if !in_blank || in_cap(*p)? { continue; }
+                    let attached = posed.iter().zip(&indices).enumerate().filter(|(j,_)| *j != i)
+                        .any(|(_,(other,index))| other.distance_within(index,*p,near) <= near);
+                    if !attached {
+                        return Err(format!("`{}`: placement {k} of `{}` leaves a sheet's edge loose inside the blank at {p:?}, \
+                            attached to no end pose or other candidate; its cut would be incomplete",name,sk.solids[swept].name));
                     }
                 }
             }
-            for sheet in &sheet_solids { slabs.push(sheet.placed(&cad::placement_matrix(cut.pose,1.))?); }
+            let group_start = slabs.len();
+            let posed: Vec<Patch> = posed.iter().flat_map(split_at_folds).collect();
+            for patch in &posed {
+                let sheet = slab_of(patch,epsilon)?;
+                sheet_count += 1; sheet_triangles += sheet.triangle_count();
+                slabs.push(sheet);
+            }
+            groups.push(group_start..slabs.len());
             for end in ends {
                 let placed = tool.placed(&cad::placement_matrix(end.then(cut.pose),1.))?;
                 caps.push(placed);
             }
         }
-        stage(&format!("`{}`: {} sheets of {} triangles, {} placements ({:?})",sk.solids[swept].name,sheet_solids.len(),
-            sheet_solids.iter().map(|s| s.triangle_count()).sum::<usize>(),
-            recipe.sweeps.iter().filter(|c| c.swept == swept).count(),started.elapsed()));
+        stage(&format!("`{}`: {sheet_count} sheets of {sheet_triangles} triangles over {placements} placements ({:?})",
+            sk.solids[swept].name,started.elapsed()));
     }
     let started = std::time::Instant::now();
     let cap_union = Solid::batch(&caps.iter().collect::<Vec<_>>(),true)?;
     let body_mesh = blank_mesh.difference(&cap_union)?;
     let removed = blank_mesh.volume()-body_mesh.volume();
-    let slab_union = Solid::batch(&slabs.iter().collect::<Vec<_>>(),true)?;
-    let (walls,remainder) = body_mesh.split(&slab_union)?;
+    // One placement's slabs at a time: a union of every placement's slabs at
+    // once is a Boolean over millions of overlapping triangles, where each
+    // placement's union is small and the remainder only grows by its cut.
+    let (mut walls,mut remainder): (Vec<Solid>,Solid) = (Vec::new(),body_mesh);
+    for group in &groups {
+        if group.is_empty() { continue; }
+        let union = Solid::batch(&slabs[group.clone()].iter().collect::<Vec<_>>(),true)?;
+        let (w,r) = remainder.split(&union)?;
+        walls.push(w); remainder = r;
+    }
+    let walls = Solid::batch(&walls.iter().collect::<Vec<_>>(),true)?;
     let cells = remainder.components()?;
     let wall_pieces = walls.components()?;
     stage(&format!("caps removed {:.6} mm³; {} cells and {} wall pieces ({:?})",removed*scale.powi(3),cells.len(),wall_pieces.len(),started.elapsed()));
@@ -208,7 +584,11 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
     let mut material = MaterialField::read(sk,body,1e-10)?.evaluator(4096);
     let mut kept: Vec<Solid> = Vec::new();
     let (mut removed_cells,mut hidden_walls) = (0,0);
+    let (mut slivers,mut sliver_volume) = (0,0.);
     for cell in cells {
+        // A sliver between two nearly coincident candidates holds no material
+        // worth a probe and offers nowhere to put one.
+        if cell.volume() < 1e-4/scale.powi(3) { slivers += 1; sliver_volume += cell.volume(); continue; }
         // A point deep inside the cell: a quarter of its mean thickness, but at
         // least past the tessellation sagitta and the slab. The swept field
         // resolves far faster away from the envelope than beside it.
@@ -218,9 +598,6 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
         let distance = (depth/3.).max(1.5*epsilon);
         let probe = material.probe(p.map(|x| Interval::point(x).unwrap()),[1.,0.,0.],distance,
             Options {value_tolerance:distance/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))?;
-        if std::env::var_os("SOLVENT_TRACE_CELLS").is_some() {
-            eprintln!("  cell {:.6} mm³ at {p:?}: {:?}, field {:?}",cell.volume()*scale.powi(3),probe.state,probe.center.value.bounds());
-        }
         match probe.state {
             ProbeState::InteriorBall => kept.push(cell),
             ProbeState::ExteriorBall => removed_cells += 1,
@@ -239,6 +616,7 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
             Options {value_tolerance:hidden_depth/2.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))?;
         if bounds.value.bounds()[1] < -hidden_depth { kept.push(wall); hidden_walls += 1; }
     }
+    if slivers > 0 { stage(&format!("dropped {slivers} sliver cells of {:.9} mm³",sliver_volume*scale.powi(3))); }
     stage(&format!("classified {} material cells, {removed_cells} removed cells ({cells_time:?}), {hidden_walls} hidden walls ({:?})",
         kept.len(),started.elapsed()));
     if kept.is_empty() { return Err("no cell of the blank is material".into()); }
@@ -253,14 +631,61 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
 
 /// Vertices identified by their float32 encoding, and the triangles that survive
 /// the identification: STL carries no vertex identity, so a sliver between two
-/// coincident vertices is dropped rather than encoded as a degenerate facet.
+/// coincident vertices is dropped rather than encoded as a degenerate facet,
+/// and a fin, two facets on one triple of vertices back to back (what a
+/// sliver of no thickness between two coincident candidates folds to), is
+/// dropped whole.
 fn merged(vertices: &[[f64;3]],triangles: &[[u32;3]]) -> (Vec<[f64;3]>,Vec<[u32;3]>) {
-    let mut index: std::collections::HashMap<[u32;3],u32> = Default::default();
+    // Vertices within a nanometre of one another are one vertex too: a
+    // Boolean between nearly coincident slabs leaves edges that short, which
+    // float32 may or may not fold together depending on where they fall.
+    let cell = 1e-6;
+    let mut index: std::collections::HashMap<[i64;3],Vec<u32>> = Default::default();
     let mut merged: Vec<[f64;3]> = Vec::with_capacity(vertices.len());
-    let remap: Vec<u32> = vertices.iter().map(|v| *index.entry(v.map(|x| (x as f32).to_bits())).or_insert_with(|| {
-        merged.push(*v); (merged.len()-1) as u32 })).collect();
-    let kept = triangles.iter().map(|t| t.map(|i| remap[i as usize]))
+    let key = |v: &[f64;3]| v.map(|x| (x/cell).floor() as i64);
+    let remap: Vec<u32> = vertices.iter().map(|v| {
+        let k = key(v);
+        for dx in -1..=1 { for dy in -1..=1 { for dz in -1..=1 {
+            if let Some(near) = index.get(&[k[0]+dx,k[1]+dy,k[2]+dz]) {
+                for &i in near { if norm(sub(merged[i as usize],*v)) <= cell { return i; } }
+            }
+        } } }
+        merged.push(*v); let i = (merged.len()-1) as u32; index.entry(k).or_default().push(i); i
+    }).collect();
+    let kept: Vec<[u32;3]> = triangles.iter().map(|t| t.map(|i| remap[i as usize]))
         .filter(|t| t[0] != t[1] && t[1] != t[2] && t[2] != t[0]).collect();
+    let mut uses: std::collections::HashMap<[u32;3],usize> = Default::default();
+    let key = |t: &[u32;3]| { let mut k = *t; k.sort(); k };
+    for t in &kept { *uses.entry(key(t)).or_default() += 1; }
+    let mut kept: Vec<[u32;3]> = kept.into_iter().filter(|t| uses[&key(t)] == 1).collect();
+    // A vertex whose triangles fall into several fans is a pinch: two parts
+    // of the solid touching at a point (where a contact loop divides, the
+    // sheets meet on one vertex). Each fan takes a copy of the vertex nudged
+    // one float32 step along the fan's own normal, so the shell encodes as
+    // two vertices a few nanometres apart rather than one non-manifold one.
+    let mut incident: Vec<Vec<usize>> = vec![Vec::new();merged.len()];
+    for (i,t) in kept.iter().enumerate() { for &v in t { incident[v as usize].push(i); } }
+    for v in 0..incident.len() {
+        let ts = incident[v].clone();
+        if ts.len() < 2 { continue; }
+        let mut group: Vec<usize> = (0..ts.len()).collect();
+        let other = |i: usize| -> Vec<u32> { kept[ts[i]].iter().copied().filter(|&w| w != v as u32).collect() };
+        for a in 0..ts.len() { for b in a+1..ts.len() {
+            if other(a).iter().any(|w| other(b).contains(w)) { let (ga,gb) = (group[a],group[b]); for g in group.iter_mut() { if *g == gb { *g = ga; } } }
+        } }
+        let mut fans: Vec<usize> = group.clone(); fans.sort(); fans.dedup();
+        if fans.len() < 2 { continue; }
+        for &fan in &fans[1..] {
+            let members: Vec<usize> = (0..ts.len()).filter(|&i| group[i] == fan).map(|i| ts[i]).collect();
+            let mut normal = [0.;3];
+            for &i in &members { let [a,b,c] = kept[i].map(|w| merged[w as usize]); let n = cross(sub(b,a),sub(c,a)); for k in 0..3 { normal[k] += n[k]; } }
+            let len = norm(normal); if len == 0. { continue; }
+            let p = merged[v];
+            let nudged: [f64;3] = std::array::from_fn(|k| { let step = ((p[k] as f32).abs().max(1e-30) as f64)*f32::EPSILON as f64*2.; p[k]+step*normal[k]/len });
+            merged.push(nudged); let copy = (merged.len()-1) as u32;
+            for &i in &members { for w in kept[i].iter_mut() { if *w == v as u32 { *w = copy; } } }
+        }
+    }
     (merged,kept)
 }
 
@@ -291,8 +716,23 @@ pub fn stl(vertices: &[[f64;3]],triangles: &[[u32;3]],name: &str) -> Result<Vec<
         let mut bad: Vec<String> = uses.iter().filter(|(_,v)| v.len() != 2).take(4).map(|((a,b),v)| format!("edge {:?}-{:?} used by {}",
             vertices[*a as usize],vertices[*b as usize],v.iter().map(|&i| format!("{:?}",triangles[i].map(|j| vertices[j as usize]))).collect::<Vec<_>>().join(", "))).collect();
         bad.sort();
-        return Err(format!("mesh STL validation failed: {e}; {} float32-identified vertex groups, e.g. {}; shortest edge {shortest:e}; {}",
-            by_key.values().filter(|v| v.len() > 1).count(),merged.join(" | "),bad.join("\n")));
+        // vertices whose incident triangles fall into more than one fan: pinches
+        let mut incident: Vec<Vec<usize>> = vec![Vec::new();vertices.len()];
+        for (i,t) in triangles.iter().enumerate() { for &v in t { incident[v as usize].push(i); } }
+        let mut pinches: Vec<String> = Vec::new();
+        for (v,ts) in incident.iter().enumerate() {
+            if ts.len() < 2 { continue; }
+            // fans: triangles linked when they share an edge at v
+            let mut group: Vec<usize> = (0..ts.len()).collect();
+            let other = |i: usize| -> Vec<u32> { triangles[ts[i]].iter().copied().filter(|&w| w != v as u32).collect() };
+            for a in 0..ts.len() { for b in a+1..ts.len() {
+                if other(a).iter().any(|w| other(b).contains(w)) { let (ga,gb) = (group[a],group[b]); for g in group.iter_mut() { if *g == gb { *g = ga; } } }
+            } }
+            let mut fans: Vec<usize> = group.clone(); fans.sort(); fans.dedup();
+            if fans.len() > 1 && pinches.len() < 4 { pinches.push(format!("vertex {:?} with {} fans over {} triangles",vertices[v],fans.len(),ts.len())); }
+        }
+        return Err(format!("mesh STL validation failed: {e}; {} float32-identified vertex groups, e.g. {}; shortest edge {shortest:e}; {}; {}",
+            by_key.values().filter(|v| v.len() > 1).count(),merged.join(" | "),bad.join("\n"),pinches.join("; ")));
     }
     Ok(bytes)
 }

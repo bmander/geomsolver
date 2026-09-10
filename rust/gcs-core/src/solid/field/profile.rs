@@ -259,6 +259,13 @@ impl Profile {
     }
     pub(super) fn reach(&self) -> f64 { self.reach }
 
+    /// The signed boundary distance at a point, in plain floating point.
+    pub(super) fn value(&self,p: P) -> f64 {
+        let nearest = self.edges.iter().map(|e| e.distance(p)).fold(f64::INFINITY,f64::min);
+        let inside = self.edges.iter().map(|e| e.crossings(p)).sum::<usize>()%2 == 1;
+        if inside { -nearest } else { nearest }
+    }
+
     pub(super) fn bounds(&self,p: [I;2]) -> Result<I,Error> {
         let mut nearest: Option<I> = None;
         for wall in &self.walls {

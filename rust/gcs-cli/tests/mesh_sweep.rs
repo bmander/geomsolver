@@ -51,7 +51,7 @@ fn a_slab_of_a_flat_grid_is_a_closed_box() {
     let (rows,columns) = (4,6);
     let mut points = Vec::new(); let mut normals = Vec::new();
     for r in 0..rows { for c in 0..columns { points.push([c as f64,r as f64,0.]); normals.push([0.,0.,1.]); } }
-    let grid = mesh_sweep::SheetGrid {points,normals,rows,columns,closed_rows:false};
+    let grid = mesh_sweep::SheetGrid {points,normals,times:(0..columns).map(|c| c as f64).collect(),rows,columns,closed_rows:false};
     let slab = mesh_sweep::slab(&grid,0.01).unwrap();
     assert!((slab.volume()-5.*3.*0.01).abs() < 1e-12,"{}",slab.volume());
 }
@@ -101,7 +101,7 @@ fn member_volume(e: &gcs_core::program::Elaborated,member: &str) -> f64 {
     let sheets = |swept: usize,inside: &dyn Fn(&[[f64;3]]) -> Result<Vec<bool>,String>| {
         let sheet = native::sweep_boundary::swept_sheet_grid(&session,&e.sketch,swept,inside)?;
         Ok(vec![mesh_sweep::SheetGrid {points:sheet.points.iter().map(|p| p.map(|v| v/scale)).collect(),
-            normals:sheet.normals.clone(),rows:sheet.rows,columns:sheet.columns,closed_rows:false}])
+            normals:sheet.normals.clone(),times:(0..sheet.columns).map(|c| c as f64).collect(),rows:sheet.rows,columns:sheet.columns,closed_rows:false}])
     };
     let started = std::time::Instant::now();
     let (vertices,triangles) = mesh_sweep::construct(&e.sketch,body,&sheets).unwrap();
@@ -121,6 +121,7 @@ fn member_volume(e: &gcs_core::program::Elaborated,member: &str) -> f64 {
 /// placement of the sheet cuts.
 #[cfg(feature="occt")]
 #[test]
+#[ignore]
 fn the_hypoid_pinion_exports_with_every_placement_cutting() {
     let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
     let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
@@ -145,13 +146,43 @@ fn the_hypoid_pinion_exports_with_every_placement_cutting() {
     assert!((volume-bevel).abs() > 10.,"the offset changes the pinion: {volume} vs {bevel}");
 }
 
+/// Whole members are minutes each; `cargo test -- --ignored` runs them.
 #[cfg(feature="occt")]
 #[test]
+#[ignore]
 fn the_pinion_exports_through_the_mesh_path() { whole_member("pinion",9142.079); }
 
 #[cfg(feature="occt")]
 #[test]
+#[ignore]
 fn the_gear_exports_through_the_mesh_path() { whole_member("gear",20284.173); }
+
+/// One tooth space of a member: the pair with `repeat teeth` read as one
+/// placement, `configured` keeping the offset angle or reading it as zero.
+/// The volumes are this construction's own, recorded once it agreed with the
+/// sectioned kernel construction to a tenth of a cubic millimetre; a lost or
+/// leaking space is a hundred times that.
+#[cfg(feature="occt")]
+fn single_space(member: &str,configured: bool,expected: f64) {
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
+    let mut one = |name: &str,text: String| if name == "matched_pair" { text.replace("repeat teeth as i {","repeat 1 as i {") } else { text };
+    let e = if configured { support::read_configured_with(&source,&base,&mut one) } else { support::read_with(&source,&base,&mut one) };
+    let volume = member_volume(&e,member);
+    assert!((volume-expected).abs() < 1.,"{member}: {volume} against {expected}");
+}
+
+#[cfg(feature="occt")]
+#[test]
+fn one_hypoid_pinion_space_through_the_tracer() { single_space("pinion",true,13028.897); }
+
+#[cfg(feature="occt")]
+#[test]
+fn one_bevel_pinion_space_through_the_tracer() { single_space("pinion",false,11906.847); }
+
+#[cfg(feature="occt")]
+#[test]
+fn one_gear_space_through_the_tracer() { single_space("gear",true,25775.875); }
 
 const SPHERE_TOOL: &str = "unit mm
 use std

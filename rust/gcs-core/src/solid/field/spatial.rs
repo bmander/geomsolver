@@ -84,17 +84,51 @@ impl SpatialField {
     /// Enclose the field over the complete world-coordinate box. Transform
     /// nodes query their source through the inverse pose, including interval
     /// axis normalization, trigonometry and all coordinate arithmetic.
-    pub fn bounds(&self,p: V) -> Result<I,Error> {
-        self.evaluate(p,&mut Cache::new())
+    /// The field at a point in plain floating point, from the midpoints of
+    /// every enclosed coefficient and pose: a reading for tests against a
+    /// tolerance far wider than the enclosures' widths (is this point of a
+    /// face on the tool's boundary, which side of it is material), never an
+    /// interval claim. Shared nodes are simply evaluated again.
+    pub fn value(&self,p: [f64;3]) -> f64 {
+        match self.node.as_ref() {
+            Node::Revolved(source) => source.value(p),
+            Node::Extruded(source) => source.value(p),
+            Node::Transformed {source,pose} => source.value(pose.inverse_point_mid(p)),
+            Node::Union(a,b) => a.value(p).min(b.value(p)),
+            Node::Intersection(a,b) => a.value(p).max(b.value(p)),
+            Node::Difference(a,b) => a.value(p).max(-b.value(p)),
+        }
     }
 
-    fn evaluate(&self,p: V,cache: &mut Cache) -> Result<I,Error> {
+    pub fn bounds(&self,p: V) -> Result<I,Error> {
+        // A tree that shares no node needs no memo: the memo is a hash of the
+        // whole box per node, which costs about what a leaf does, and most
+        // tools are a handful of leaves under a Boolean or two.
+        if self.shares_nodes() { self.evaluate(p,&mut Some(Cache::new())) } else { self.evaluate(p,&mut None) }
+    }
+
+    /// Whether any node is reached by more than one path.
+    fn shares_nodes(&self) -> bool {
+        fn walk(f: &SpatialField,seen: &mut Vec<usize>) -> bool {
+            let key = Arc::as_ptr(&f.node) as usize;
+            if seen.contains(&key) { return true; }
+            seen.push(key);
+            match f.node.as_ref() {
+                Node::Revolved(_) | Node::Extruded(_) => false,
+                Node::Transformed {source,..} => walk(source,seen),
+                Node::Union(a,b) | Node::Intersection(a,b) | Node::Difference(a,b) => walk(a,seen) || walk(b,seen),
+            }
+        }
+        walk(self,&mut Vec::new())
+    }
+
+    fn evaluate(&self,p: V,cache: &mut Option<Cache>) -> Result<I,Error> {
         // Shared Boolean subexpressions must not expand exponentially. Identity
         // is valid for this one query, whose immutable root owns all nodes.
         // The box is part of the key: transforms can query the same source at
         // different coordinates. No cache survives a bounds call or source edit.
         let key = (Arc::as_ptr(&self.node) as usize,p.map(|v| v.bounds().map(f64::to_bits)));
-        if let Some(value) = cache.get(&key) { return Ok(*value); }
+        if let Some(cache) = cache { if let Some(value) = cache.get(&key) { return Ok(*value); } }
         let value = match self.node.as_ref() {
             Node::Revolved(source) => source.bounds(p),
             Node::Extruded(source) => source.bounds(p),
@@ -103,7 +137,7 @@ impl SpatialField {
             Node::Intersection(a,b) => Ok(max(a.evaluate(p,cache)?,b.evaluate(p,cache)?)),
             Node::Difference(a,b) => Ok(max(a.evaluate(p,cache)?,b.evaluate(p,cache)?.neg())),
         }?;
-        cache.insert(key,value);
+        if let Some(cache) = cache { cache.insert(key,value); }
         Ok(value)
     }
 }

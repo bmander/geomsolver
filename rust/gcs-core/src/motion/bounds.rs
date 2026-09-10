@@ -35,6 +35,16 @@ impl MotionBounds {
         Ok([q[0].add(self.p[0])?,q[1].add(self.p[1])?,q[2].add(self.p[2])?])
     }
 
+    /// The inverse pose applied to a point in plain floating point, from
+    /// the midpoints of the enclosed matrix: for evaluations whose answer is
+    /// checked against a tolerance far wider than the enclosure, never for
+    /// an interval claim.
+    pub fn inverse_point_mid(&self,point: [f64;3]) -> [f64;3] {
+        let mid = |x: I| { let [lo,hi] = x.bounds(); 0.5*(lo+hi) };
+        let q: [f64;3] = std::array::from_fn(|k| point[k]-mid(self.p[k]));
+        std::array::from_fn(|k| (0..3).map(|i| mid(self.r[i][k])*q[i]).sum())
+    }
+
     pub fn inverse_point(&self,point: V) -> Result<V,Error> {
         // Every underlying rotation is orthogonal. Transpose its enclosure; do
         // not numerically invert an interval matrix or assume independent entries.

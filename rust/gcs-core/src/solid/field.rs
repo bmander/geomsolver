@@ -121,6 +121,21 @@ impl PlanarField {
     pub fn intersection(self,other: Self) -> Result<Self,Error> { self.combine(other,Node::Intersection) }
     pub fn difference(self,other: Self) -> Result<Self,Error> { self.combine(other,Node::Difference) }
 
+    /// The field at a point in plain floating point, from the midpoints of
+    /// the enclosed coefficients: a reading to compare against a tolerance
+    /// far wider than the enclosure's own width, never an interval claim.
+    pub fn value(&self,p: [f64;2]) -> f64 {
+        let mid = |x: I| { let [lo,hi] = x.bounds(); 0.5*(lo+hi) };
+        match &self.node {
+            Node::HalfPlane {through,normal} => (p[0]-mid(through[0]))*mid(normal[0])+(p[1]-mid(through[1]))*mid(normal[1]),
+            Node::Disk {center,radius} => (p[0]-mid(center[0])).hypot(p[1]-mid(center[1]))-mid(*radius),
+            Node::Union(a,b) => a.value(p).min(b.value(p)),
+            Node::Intersection(a,b) => a.value(p).max(b.value(p)),
+            Node::Difference(a,b) => a.value(p).max(-b.value(p)),
+            Node::Profile(profile) => profile.value(p),
+        }
+    }
+
     /// Enclose the field over the complete point box; no sampling or libm calls.
     pub fn bounds(&self,p: P) -> Result<I,Error> {
         match &self.node {
@@ -165,6 +180,17 @@ impl RevolvedField {
         let mut axis = point(axis)?; let length = norm(axis)?;
         for a in &mut axis { *a = a.div(length)?; }
         Ok(Self {profile,origin:point(origin)?,axis})
+    }
+
+    /// The field at a point in plain floating point; see `PlanarField::value`.
+    pub fn value(&self,p: [f64;3]) -> f64 {
+        let mid = |x: I| { let [lo,hi] = x.bounds(); 0.5*(lo+hi) };
+        let q: [f64;3] = std::array::from_fn(|i| p[i]-mid(self.origin[i]));
+        let axis: [f64;3] = self.axis.map(mid);
+        let z = q[0]*axis[0]+q[1]*axis[1]+q[2]*axis[2];
+        if !self.profile.uses[0] { return self.profile.value([0.,z]); }
+        let radial: [f64;3] = std::array::from_fn(|i| q[i]-z*axis[i]);
+        self.profile.value([(radial[0]*radial[0]+radial[1]*radial[1]+radial[2]*radial[2]).sqrt(),z])
     }
 
     pub fn bounds(&self,p: V) -> Result<I,Error> {
@@ -216,6 +242,15 @@ impl ExtrudedField {
         // |a u_k + b v_k| <= sqrt(a^2 + b^2) for orthonormal u, v.
         for k in 0..3 { result[k] = result[k].add(disk)?.add(self.range.mul(self.frame[2][k])?)?; }
         Ok(Some(result))
+    }
+
+    /// The field at a point in plain floating point; see `PlanarField::value`.
+    pub fn value(&self,p: [f64;3]) -> f64 {
+        let mid = |x: I| { let [lo,hi] = x.bounds(); 0.5*(lo+hi) };
+        let q: [f64;3] = std::array::from_fn(|i| p[i]-mid(self.origin[i]));
+        let c: [f64;3] = std::array::from_fn(|k| (0..3).map(|i| q[i]*mid(self.frame[k][i])).sum());
+        let [lo,hi] = self.range.bounds();
+        self.profile.value([c[0],c[1]]).max((lo-c[2]).max(c[2]-hi))
     }
 
     pub fn bounds(&self,p: V) -> Result<I,Error> {

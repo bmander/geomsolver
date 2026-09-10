@@ -231,6 +231,30 @@ tangentially cannot be split by the kernel, which is why the profile is one walk
 atlas, transition and path code remains as verification. Read the roadmap's "Arrangement and
 classification" paragraphs first; `tests/native_surfaces/gear_cells.rs` holds the recorded
 tooth-space volumes the generic construction must reproduce.
+**Traced sheets for any tool under any motion (2026-09-10):** the mesh arrangement
+(`gcs-cli/src/cad/mesh_sweep.rs`) now takes its candidate sheets from the core's own
+tracer, `SweepContacts::characteristic_sheets`, and the OCCT sectioning is only the
+fallback when the tracer declines. A tool is its faces by family (`solid::tool_faces`:
+revolved, planar, extruded), the charted edges between them, and the Boolean creases
+traced across faces of different operands (`Crease`, marching squares on one face's
+chart against the other's carrier `implicit`, every crossing bisected). At each of a
+sequence of motion parameters the contact pieces of every face, edge and crease are
+traced (station roots followed by a step-halving march, fold ends exact, fans bracketed
+by the sign changes of both faces' normal velocities), trimmed to the tool's boundary
+(a face of one operand on another's carrier is `shadowed` and traced once), and chained
+at shared points, keeping `joints`. Strips link one parameter's curves to the next by a
+Hausdorff test; births and deaths are bisected. A strip is a `SweepPatch`: every column
+keeps its own traced points and consecutive columns are zipped piece by piece by dynamic
+programming on rung length (`zip_pieces`), never resampled to a grid, since rows matched
+by arc-length fraction shear and fold. The CLI crops patches to the blank's occupancy
+(dilated by the column spacing), closes seams between strips with zipped ribbons, cuts
+every patch along its folded edges before slabbing (one slab folded over itself is what
+Manifold cannot take), splits the blank one placement at a time, and welds nanometre
+vertices and opens vertex pinches by a float32 step before the STL shell check. The gate
+is `one_*_space_through_the_tracer` in `tests/mesh_sweep.rs` (recorded volumes, one
+placement each); the whole members are `#[ignore]`d and run with `--ignored`. Read
+`SpatialField::value` for what may be judged in plain floating point: a face point on
+the boundary, a probe's side, never an interval claim.
 `solid::MaterialField` composes static and swept operands with fixed poses and Booleans.
 Its evaluator owns complete-member cut arithmetic, retaining every distinct node/box sweep's
 domain, witness, enclosure and termination status. Budgets apply per sweep query; exhausted

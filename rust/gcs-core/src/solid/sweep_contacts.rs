@@ -1,5 +1,5 @@
 //! Candidate envelope faces read from an ordinary swept-solid definition.
-use super::{SpatialField,RevolvedSurface,RevolvedContact,ToolFace,ToolEdge,EdgeChart};
+use super::{SpatialField,RevolvedSurface,RevolvedContact,ToolFace,ToolEdge,EdgeChart,tool_faces::{self,Crease}};
 use crate::{envelope::{self,Contact,Error,Motion},model::{Sketch,SolidDef,EntKind},motion::Family};
 use std::{collections::BTreeSet,f64::consts::TAU};
 mod cover;
@@ -27,6 +27,10 @@ pub struct SweepContacts {
     /// for the candidate tracer. Revolved faces are the patches above.
     pub(super) faces: Vec<ToolFace>,
     pub(super) edges: Vec<ToolEdge>,
+    /// Where faces of different operands cross: the edges the Boolean makes.
+    pub(super) creases: Vec<Crease>,
+    /// Which placed operand of the tool's Boolean each face belongs to.
+    pub(super) operands: Vec<usize>,
     pub(super) motion: Family,
     pub(super) roll: [f64;2],
 }
@@ -50,6 +54,11 @@ impl SweepContacts {
         let mut loops = Vec::new();
         let mut faces: Vec<ToolFace> = Vec::new();
         let mut edges: Vec<ToolEdge> = Vec::new();
+        // which placed operand each face and patch belongs to, so the creases
+        // between operands are traced and the joints within one are not
+        let mut face_operand: Vec<usize> = Vec::new();
+        let mut patch_operand: Vec<usize> = Vec::new();
+        let mut operands = 0;
         while let Some((id,pose)) = pending.pop() {
             let columns: [[u64;3];4] = std::array::from_fn(|i| {
                 let p = if i == 3 { pose.point([0.;3]) } else {
@@ -57,6 +66,7 @@ impl SweepContacts {
                 }; p.map(f64::to_bits)
             });
             if !seen.insert((id,columns)) { continue; }
+            let operand = operands; operands += 1;
             match &sk.solids[id].def {
                 SolidDef::Revolve {face,..} => {
                     for (edges,_) in sk.faces[*face as usize].boundaries() {
@@ -71,7 +81,7 @@ impl SweepContacts {
                                     && radius(1.).map_err(|e| format!("{e:?}"))? <= axis_tolerance { order.push(None); continue; }
                             }
                             order.push(Some(patches.len()));
-                            patches.push(surface);
+                            patches.push(surface); patch_operand.push(operand);
                         }
                         loops.push(order);
                     }
@@ -80,6 +90,7 @@ impl SweepContacts {
                     let (prism_faces,prism_edges) = super::tool_faces::prism_faces(sk,id)?;
                     let first = faces.len();
                     faces.extend(prism_faces.iter().map(|f| f.placed(pose)));
+                    face_operand.extend(std::iter::repeat(operand).take(prism_faces.len()));
                     edges.extend(prism_edges.into_iter().map(|e| ToolEdge {faces:e.faces.map(|i| i+first),charts:e.charts}));
                 }
                 SolidDef::Placed {source,motion,at} => pending.push((*source as usize,
@@ -94,6 +105,7 @@ impl SweepContacts {
         // end on both.
         let first_revolved = faces.len();
         faces.extend(patches.iter().cloned().map(ToolFace::Revolved));
+        face_operand.extend(patch_operand);
         for profile in &loops {
             let n = profile.len();
             for k in 0..n {
@@ -109,11 +121,20 @@ impl SweepContacts {
                 edges.push(ToolEdge {faces:[first_revolved+a,first_revolved+b],charts:[EdgeChart::FixedU(ua),EdgeChart::FixedU(ub)]});
             }
         }
-        Ok(Self {source:source_field,patches,loops,faces,edges,motion:Family::read(sk,*motion as usize)?,
+        // The creases: every pair of faces of different operands, traced on
+        // the first face's chart.
+        let scale = faces.iter().map(|f| f.at(0.5,f.domain()[1][0]).map(|s| s.position.iter().map(|x| x*x).sum::<f64>().sqrt()).unwrap_or(0.)).fold(1_f64,f64::max);
+        let mut creases = Vec::new();
+        for i in 0..faces.len() { for j in i+1..faces.len() {
+            if face_operand[i] == face_operand[j] { continue; }
+            for samples in tool_faces::creases(&faces[i],&faces[j],scale) { creases.push(Crease::new([i,j],samples,&faces[i],&faces[j])); }
+        } }
+        Ok(Self {source:source_field,patches,loops,faces,edges,creases,operands:face_operand,motion:Family::read(sk,*motion as usize)?,
             roll:[from.value,to.value]})
     }
     pub fn faces(&self) -> &[ToolFace] { &self.faces }
     pub fn edges(&self) -> &[ToolEdge] { &self.edges }
+    pub fn creases(&self) -> &[Crease] { &self.creases }
     pub fn patches(&self) -> &[RevolvedSurface] { &self.patches }
     pub fn loops(&self) -> &[Vec<Option<usize>>] { &self.loops }
     pub fn motion(&self) -> &Family { &self.motion }

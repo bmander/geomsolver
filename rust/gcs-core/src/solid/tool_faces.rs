@@ -157,6 +157,18 @@ impl StationEquation {
         }
     }
 
+    /// The `v` at which the equation's two roots meet when its constant
+    /// reaches its amplitude: the fold, the choice among periodic images being
+    /// the one nearest `near_v` within the domain. An affine station has none.
+    pub fn fold(&self,near_v: f64) -> Option<f64> {
+        let Self::Sinusoid {a,b,c,sweep,domain} = *self else { return None };
+        let theta = b.atan2(a)+if c > 0. { std::f64::consts::PI } else { 0. };
+        let period = std::f64::consts::TAU/sweep.abs();
+        let v = (theta*sweep.signum()).rem_euclid(std::f64::consts::TAU)/sweep.abs();
+        [v,v-period,v+period].into_iter().filter(|v| *v >= domain[0] && *v <= domain[1])
+            .min_by(|x,y| (x-near_v).abs().total_cmp(&(y-near_v).abs()))
+    }
+
     /// Isolated roots as `(branch, v)`.
     pub fn roots(&self,tolerance: f64) -> Result<Vec<(usize,f64)>,Error> {
         match *self {
@@ -265,6 +277,59 @@ impl ToolFace {
         }
     }
 
+    /// The carrier's implicit function at `p`: zero on the plane, cylinder or
+    /// surface of revolution the face lies in, with one sign on each side.
+    pub fn implicit(&self,p: V3) -> Option<f64> {
+        match self {
+            Self::Revolved(s) => s.implicit(p),
+            Self::Planar(f) => Some(dot(cross(f.u,f.v),sub(p,f.origin))),
+            Self::Extruded(f) => {
+                let q = sub(p,f.center);
+                let radial = sub(q,scaled(f.direction,dot(q,f.direction)));
+                Some(crate::plane::norm(radial)-f.radius)
+            }
+        }
+    }
+
+    /// The period of the `v` chart where it wraps: a full revolution or circle.
+    pub fn v_turn(&self) -> Option<f64> {
+        match self {
+            Self::Revolved(s) => s.is_periodic().then_some(1.),
+            Self::Extruded(f) => ((f.sweep.abs()-std::f64::consts::TAU).abs() < 1e-12).then_some(1.),
+            Self::Planar(_) => None,
+        }
+    }
+
+    /// The face's parameters at a point of its carrier, `None` where the
+    /// point is off the face proper.
+    pub fn parameters(&self,p: V3) -> Option<(f64,f64)> {
+        let [[u0,u1],[v0,v1]] = self.domain();
+        let (u,mut v) = match self {
+            Self::Revolved(s) => s.parameters(p)?,
+            Self::Planar(f) => {
+                let q = sub(p,f.origin);
+                let (lo,hi) = (f.outer.lo,f.outer.hi);
+                ((dot(q,f.u)-lo[0])/(hi[0]-lo[0]),(dot(q,f.v)-lo[1])/(hi[1]-lo[1]))
+            }
+            Self::Extruded(f) => {
+                let q = sub(p,f.center);
+                let h = dot(q,f.direction);
+                let radial = sub(q,scaled(f.direction,h));
+                let angle = dot(radial,f.b).atan2(dot(radial,f.a));
+                let turn = std::f64::consts::TAU/f.sweep.abs();
+                ((h-f.span[0])/(f.span[1]-f.span[0]),((angle-f.start)/f.sweep).rem_euclid(turn))
+            }
+        };
+        if let Self::Extruded(f) = self {
+            let turn = std::f64::consts::TAU/f.sweep.abs();
+            if v > v1 && v-turn >= v0-1e-9 { v -= turn; }
+        }
+        let slack = 1e-9;
+        if !(u0-slack..=u1+slack).contains(&u) || !(v0-slack..=v1+slack).contains(&v) { return None; }
+        let (u,v) = (u.clamp(u0,u1),v.clamp(v0,v1));
+        self.contains(u,v).then_some((u,v))
+    }
+
     /// A point inside the face away from its boundary, for probing its side.
     pub fn interior(&self) -> Result<(f64,f64),Error> {
         match self {
@@ -337,6 +402,193 @@ impl EdgeChart {
             _ => unreachable!("a fixed chart has no planar edge"),
         }
     }
+}
+
+/// A crease: the curve along which the carriers of two faces of different
+/// operands of the tool's Boolean cross, traced on the first face's chart as
+/// closely sampled points of both carriers. Nothing here says which side of
+/// the crease is material: the fan tracer probes the tool's field for that.
+#[derive(Clone,Debug)]
+pub struct Crease {
+    pub faces: [usize;2],
+    /// Positions with the first face's `(u, v)`, in order along the crease;
+    /// a closed crease repeats its first sample last.
+    pub samples: Vec<(V3,(f64,f64))>,
+    /// Both faces' parameters at the `EDGE_SAMPLES + 1` fractions the fan
+    /// tracer walks, found once: the tracer asks for them at every motion
+    /// parameter, and each is a bisection onto the second carrier.
+    pub walked: Vec<Option<((f64,f64),(f64,f64))>>,
+}
+
+/// The samples an edge's fan is traced at, per unit of its parameter.
+pub const EDGE_SAMPLES: usize = 384;
+
+impl Crease {
+    /// A crease over its samples, with the tracer's walk found once.
+    pub fn new(faces: [usize;2],samples: Vec<(V3,(f64,f64))>,a: &ToolFace,b: &ToolFace) -> Self {
+        let mut crease = Self {faces,samples,walked:Vec::new()};
+        crease.walked = (0..=EDGE_SAMPLES).map(|i| crease.solve(i as f64/EDGE_SAMPLES as f64,a,b)).collect();
+        crease
+    }
+
+    /// The crease point at fraction `t` of its samples, from the walk where
+    /// `t` is one of its fractions and solved otherwise.
+    pub fn at(&self,t: f64,a: &ToolFace,b: &ToolFace) -> Option<((f64,f64),(f64,f64))> {
+        let scaled = t*EDGE_SAMPLES as f64;
+        let i = scaled.round();
+        if (scaled-i).abs() < 1e-9 && i >= 0. && (i as usize) < self.walked.len() { return self.walked[i as usize]; }
+        self.solve(t,a,b)
+    }
+
+    /// The crease point at fraction `t` of its samples: the first face's
+    /// parameters interpolated between the two nearest samples, then moved
+    /// across the crease in the chart until the second carrier is met exactly,
+    /// with the second face's parameters read at that point. `None` where the
+    /// point leaves either face proper.
+    fn solve(&self,t: f64,a: &ToolFace,b: &ToolFace) -> Option<((f64,f64),(f64,f64))> {
+        let n = self.samples.len();
+        if n < 2 { return None; }
+        let x = t.clamp(0.,1.)*(n-1) as f64;
+        let k = (x.floor() as usize).min(n-2);
+        let f = x-k as f64;
+        let (_,(u0,v0)) = self.samples[k];
+        let (_,(u1,v1)) = self.samples[k+1];
+        let mut dv = v1-v0;
+        if let Some(turn) = a.v_turn() { if dv.abs() > 0.5*turn { dv -= turn*dv.signum(); } }
+        let (du,dv) = (u1-u0,dv);
+        let [[u_lo,u_hi],[v_lo,v_hi]] = a.domain();
+        let wrap = |v: f64| match a.v_turn() { Some(turn) => v_lo+(v-v_lo).rem_euclid(turn),None => v };
+        let (u,v) = (u0+f*du,wrap(v0+f*dv));
+        let h = du.hypot(dv);
+        let perp = (-dv/h,du/h);
+        let g = |s: f64| -> Option<f64> {
+            let (pu,pv) = (u+s*perp.0,wrap(v+s*perp.1));
+            if !(u_lo..=u_hi).contains(&pu) || !(v_lo..=v_hi).contains(&pv) { return None; }
+            b.implicit(a.at(pu,pv).ok()?.position)
+        };
+        let mut best = (u,v);
+        if let (Some(gm),Some(gp)) = (g(-h),g(h)) {
+            if (gm < 0.) != (gp < 0.) {
+                let (mut lo,mut hi,mut g_lo) = (-h,h,gm);
+                for _ in 0..50 {
+                    let mid = 0.5*(lo+hi);
+                    let Some(gmid) = g(mid) else { break };
+                    if (gmid < 0.) == (g_lo < 0.) { lo = mid; g_lo = gmid; } else { hi = mid; }
+                }
+                let s = 0.5*(lo+hi);
+                best = (u+s*perp.0,wrap(v+s*perp.1));
+            }
+        }
+        if !a.contains(best.0,best.1) { return None; }
+        let p = a.at(best.0,best.1).ok()?.position;
+        Some((best,b.parameters(p)?))
+    }
+
+    /// The direction along the crease at fraction `t`.
+    pub fn tangent(&self,t: f64) -> V3 {
+        let n = self.samples.len();
+        let x = t.clamp(0.,1.)*(n-1) as f64;
+        let k = (x.floor() as usize).min(n-2);
+        sub(self.samples[k+1].0,self.samples[k].0)
+    }
+}
+
+/// The creases of face `b`'s carrier over face `a`: marching squares over
+/// `a`'s parameter grid on the sign of `b`'s implicit function, every
+/// crossing bisected along its grid edge onto the carrier, kept where both
+/// faces proper hold it, and the segments chained by the grid edges they
+/// share. `scale` is the tool's extent, for the tolerance below which the
+/// carriers are read as coincident rather than crossing.
+pub fn creases(a: &ToolFace,b: &ToolFace,scale: f64) -> Vec<Vec<(V3,(f64,f64))>> {
+    use std::collections::BTreeMap;
+    let [[u0,u1],[v0,v1]] = a.domain();
+    let (nu,nv) = match a { ToolFace::Planar(_) => (96,96),_ => (96,384) };
+    let uv = |i: usize,j: usize| (u0+(u1-u0)*i as f64/nu as f64,v0+(v1-v0)*j as f64/nv as f64);
+    let value = |u: f64,v: f64| a.at(u,v).ok().and_then(|s| b.implicit(s.position));
+    let g: Vec<f64> = (0..=nu).flat_map(|i| (0..=nv).map(move |j| { let (u,v) = uv(i,j); value(u,v).unwrap_or(f64::NAN) })).collect();
+    // a value within the carriers' agreement is read as nonnegative, so two
+    // coincident carriers cross nowhere
+    let negative = |x: f64| x < -1e-9*scale;
+    let node = |i: usize,j: usize| g[i*(nv+1)+j];
+    let crossing = |(i0,j0): (usize,usize),(i1,j1): (usize,usize)| -> Option<(V3,(f64,f64))> {
+        let (g0,g1) = (node(i0,j0),node(i1,j1));
+        if !(g0.is_finite() && g1.is_finite()) || negative(g0) == negative(g1) { return None; }
+        let (mut lo,mut hi,mut g_lo) = (uv(i0,j0),uv(i1,j1),g0);
+        for _ in 0..50 {
+            let mid = (0.5*(lo.0+hi.0),0.5*(lo.1+hi.1));
+            let Some(gm) = value(mid.0,mid.1) else { return None };
+            if negative(gm) == negative(g_lo) { lo = mid; g_lo = gm; } else { hi = mid; }
+        }
+        let (u,v) = (0.5*(lo.0+hi.0),0.5*(lo.1+hi.1));
+        if !a.contains(u,v) { return None; }
+        let p = a.at(u,v).ok()?.position;
+        b.parameters(p)?;
+        Some((p,(u,v)))
+    };
+    // grid edges keyed so that neighbouring cells share a crossing: 0 along u
+    // from node (i, j) to (i + 1, j), 1 along v from (i, j) to (i, j + 1)
+    type Key = (u8,usize,usize);
+    let mut crossings: BTreeMap<Key,(V3,(f64,f64))> = BTreeMap::new();
+    let mut segments: Vec<[Key;2]> = Vec::new();
+    for i in 0..nu { for j in 0..nv {
+        let keys = [(0,i,j),(1,i+1,j),(0,i,j+1),(1,i,j)];
+        let ends = [((i,j),(i+1,j)),((i+1,j),(i+1,j+1)),((i,j+1),(i+1,j+1)),((i,j),(i,j+1))];
+        let mut present: Vec<Key> = Vec::new();
+        for (key,(p,q)) in keys.into_iter().zip(ends) {
+            if !crossings.contains_key(&key) { if let Some(c) = crossing(p,q) { crossings.insert(key,c); } }
+            if crossings.contains_key(&key) { present.push(key); }
+        }
+        match present.len() {
+            2 => segments.push([present[0],present[1]]),
+            4 => {
+                // a saddle: pair each crossing with the neighbour on the side
+                // the centre's sign puts it, so the two curves do not cross
+                let (u,v) = uv(i,j); let (u2,v2) = uv(i+1,j+1);
+                let centre = value(0.5*(u+u2),0.5*(v+v2)).unwrap_or(0.);
+                let corner = node(i,j);
+                if negative(centre) == negative(corner) {
+                    segments.push([keys[0],keys[1]]); segments.push([keys[2],keys[3]]);
+                } else {
+                    segments.push([keys[3],keys[0]]); segments.push([keys[1],keys[2]]);
+                }
+            }
+            _ => {}
+        }
+    } }
+    // chain the segments by shared keys into polylines
+    let mut incident: BTreeMap<Key,Vec<usize>> = BTreeMap::new();
+    for (s,seg) in segments.iter().enumerate() { for k in seg { incident.entry(*k).or_default().push(s); } }
+    let mut used = vec![false;segments.len()];
+    let mut out = Vec::new();
+    // from a segment and one of its keys, the keys reached by walking the
+    // other way until a free end or the loop closes
+    let walk = |from: usize,mut key: Key,used: &mut Vec<bool>| -> Vec<Key> {
+        let mut keys = vec![key]; let mut s = from;
+        loop {
+            used[s] = true;
+            let [p,q] = segments[s];
+            key = if p == key { q } else { p };
+            keys.push(key);
+            let Some(next) = incident[&key].iter().copied().find(|&n| !used[n]) else { break };
+            s = next;
+        }
+        keys
+    };
+    for start in 0..segments.len() {
+        if used[start] { continue; }
+        let [k0,k1] = segments[start];
+        let forward = walk(start,k0,&mut used);
+        let keys: Vec<Key> = if forward.len() > 2 && *forward.last().unwrap() == k0 { forward } else {
+            used[start] = false;
+            let mut backward = walk(start,k1,&mut used);
+            backward.reverse();
+            backward.extend(forward.into_iter().skip(2));
+            backward
+        };
+        let samples: Vec<(V3,(f64,f64))> = keys.iter().map(|k| crossings[k]).collect();
+        if samples.len() >= 2 { out.push(samples); }
+    }
+    out
 }
 
 /// A boundary curve shared by two faces, charted on each so both incident

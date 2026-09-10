@@ -217,3 +217,66 @@ fn a_box_translated_along_x_contributes_the_edges_round_its_ends() {
     // two rectangles of 2 by 3, less nothing: 20 mm of edge, each edge once
     assert!((total-20.).abs() < 1e-3,"edge length {total}: {:?}",curves.iter().map(|c| (c.points.len(),c.closed)).collect::<Vec<_>>());
 }
+
+/// Two closed polylines zip into a closed band: every edge of it paired, and
+/// every vertex of both rings used.
+#[test]
+fn zipping_two_rings_gives_a_closed_band() {
+    let ring = |r: f64,n: usize,phase: f64| -> Vec<[f64;3]> { (0..n).map(|i| { let a = phase+std::f64::consts::TAU*i as f64/n as f64; [r*a.cos(),r*a.sin(),0.] }).collect() };
+    let (a,b) = (ring(1.,40,0.),ring(1.2,53,0.3));
+    let triangles = gcs_core::solid::zip_polylines(&a,&b,true);
+    assert_eq!(triangles.len(),40+53,"{} triangles",triangles.len());
+    let mut directed: std::collections::HashMap<((bool,u32),(bool,u32)),usize> = Default::default();
+    for t in &triangles { for k in 0..3 { *directed.entry((t[k],t[(k+1)%3])).or_default() += 1; } }
+    for (&(p,q),&n) in &directed {
+        assert_eq!(n,1,"edge {p:?}->{q:?} used {n} times");
+        let opposite = directed.get(&(q,p)).copied().unwrap_or(0);
+        let rung = p.0 != q.0;
+        assert!(if rung { opposite == 1 } else { opposite == 0 },"edge {p:?}->{q:?}: opposite used {opposite} times");
+    }
+    let used: std::collections::HashSet<(bool,u32)> = triangles.iter().flatten().copied().collect();
+    assert_eq!(used.len(),40+53);
+}
+
+const TRIANGLE_PRISM: &str = "unit mm
+use std
+construction centerline line spindle(std.origin, std.up.toward)
+private point t0 hint(x: 3, y: -0.8)
+private point t1 hint(x: 4.5, y: 0)
+private point t2 hint(x: 3, y: 0.8)
+ground t0
+ground t1
+ground t2
+private line e0(t0, t1)
+private line e1(t1, t2)
+private line e2(t2, t0)
+construction solid tool(face(e0, e1, e2), from: -1.5mm, to: 1.5mm)
+private point a0 hint(x: 2.5, y: 0)
+a0 distance(2.5mm, along: u) std.front
+a0 distance(0mm, along: v) std.front
+private point a1 hint(x: 2.5, y: 5)
+a1 distance(2.5mm, along: u) std.front
+a1 distance(5mm, along: v) std.front
+construction centerline line pivot(a0, a1)
+motion turn(about: pivot)
+solid swept(tool, under: turn, from: -50deg, to: 50deg)
+";
+
+/// A prism turning about an axis beside it: at every parameter the contact
+/// pieces chain into closed loops, since the boundary between the advancing
+/// and receding parts of a closed surface is closed.
+#[test]
+fn a_turning_prisms_contact_pieces_close_at_every_parameter() {
+    let e = read(TRIANGLE_PRISM);
+    let sweep = SweepContacts::read(&e.sketch,e.map.ent_named("swept").unwrap().i(),1e-10).unwrap();
+    for t in [-0.8,-0.3,0.0,0.3,0.5,0.8] {
+        let pieces = sweep.pieces_at(t,1e-9).unwrap();
+        let summary: Vec<String> = pieces.iter().map(|(s,c)| format!("{s}: {} pts {:?}..{:?}",c.points.len(),c.points[0].map(|v| (v*1e3).round()/1e3),c.points.last().unwrap().map(|v| (v*1e3).round()/1e3))).collect();
+        // every piece end must be shared with another piece's end
+        let ends: Vec<[f64;3]> = pieces.iter().filter(|(_,c)| !c.closed).flat_map(|(_,c)| [c.points[0],*c.points.last().unwrap()]).collect();
+        for (i,p) in ends.iter().enumerate() {
+            let shared = ends.iter().enumerate().any(|(j,q)| j != i && distance(*p,*q) < 1e-6);
+            assert!(shared,"at {t}: loose end {p:?}\n{}",summary.join("\n"));
+        }
+    }
+}
