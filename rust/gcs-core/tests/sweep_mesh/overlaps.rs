@@ -1,9 +1,30 @@
-//! Coverage of one triangle by tiles of the same surface: what the overlap
-//! drop asks of every triangle of a later source.
-use gcs_core::solid::swept_boundary::covered_by;
+//! Coverage of one triangle by a sheet of tiles on the same surface: what
+//! the overlap clip asks of every triangle of a later source.
+use gcs_core::solid::swept_boundary::{covered_by as covered_by_sheet,uncovered as uncovered_by_sheet};
 use std::f64::consts::PI;
 
 type V3 = [f64;3];
+
+/// The boundary edges of a set of tiles, each with its tile.
+fn outline(tiles: &[[V3;3]]) -> Vec<([V3;3],V3,V3)> {
+    let key = |p: V3| p.map(|x| (x*1e9).round() as i64);
+    let mut uses: std::collections::BTreeMap<([i64;3],[i64;3]),(usize,usize,usize)> = Default::default();
+    for (i,t) in tiles.iter().enumerate() { for k in 0..3 {
+        let (a,b) = (key(t[k]),key(t[(k+1)%3]));
+        let e = uses.entry((a.min(b),a.max(b))).or_insert((0,i,k)); e.0 += 1;
+    } }
+    uses.values().filter(|(n,_,_)| *n == 1).map(|&(_,i,k)| (tiles[i],tiles[i][k],tiles[i][(k+1)%3])).collect()
+}
+
+fn covered_by(t: [V3;3],tiles: impl Iterator<Item = [V3;3]>,tolerance: f64) -> bool {
+    let tiles: Vec<[V3;3]> = tiles.collect();
+    covered_by_sheet(t,&tiles,&outline(&tiles),tolerance)
+}
+
+fn uncovered(t: [V3;3],tiles: impl Iterator<Item = [V3;3]>,tolerance: f64) -> Option<Vec<[V3;3]>> {
+    let tiles: Vec<[V3;3]> = tiles.collect();
+    uncovered_by_sheet(t,&tiles,&outline(&tiles),tolerance)
+}
 
 #[test]
 fn a_triangle_inside_one_tile_is_covered() {
@@ -67,4 +88,15 @@ fn a_wall_sliver_is_covered_by_the_coarser_wall_tiles() {
         }
     }
     assert!(covered_by(t,tiles.into_iter(),0.04));
+}
+
+#[test]
+fn a_triangle_half_outside_the_tiles_keeps_its_outer_half() {
+    let t = [[0.5,0.5,0.],[1.5,0.5,0.],[1.,0.8,0.]];
+    let tiles = [[[0.,0.,0.],[1.,0.,0.],[0.,1.,0.]],[[1.,0.,0.],[1.,1.,0.],[0.,1.,0.]]];
+    let left = uncovered(t,tiles.into_iter(),0.04).expect("touched");
+    let area: f64 = left.iter().map(|[a,b,c]| ((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])).abs()/2.).sum();
+    // the whole triangle is 0.15; its part at x > 1 is a triangle of base 0.5 and height 0.3... cut at x = 1
+    assert!((area-0.075).abs() < 1e-9,"area left {area}");
+    assert!(left.iter().all(|tri| tri.iter().all(|p| p[0] >= 1.-1e-9)));
 }

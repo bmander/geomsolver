@@ -28,7 +28,7 @@ pub(super) fn area2(p: &[P2]) -> f64 {
 
 /// A convex polygon split by a directed line: the parts to its left and to
 /// its right, points within `eps` of the line belonging to both.
-fn cut(p: &[P2],d: &[f64],eps: f64) -> (Vec<P2>,Vec<P2>) {
+pub(super) fn cut(p: &[P2],d: &[f64],eps: f64) -> (Vec<P2>,Vec<P2>) {
     let n = p.len();
     let (mut left,mut right) = (Vec::new(),Vec::new());
     for i in 0..n {
@@ -82,6 +82,16 @@ pub(super) fn clip(p: Vec<P2>,f: &[P2],eps: f64,slack: f64,area_eps: f64,out: &m
 /// each one's vertices lie within `tolerance` of the other's plane. Returns
 /// the mesh and how many triangles the union replaced.
 pub fn planar_union(mesh: &KeptMesh,tolerance: f64) -> (KeptMesh,usize) {
+    // union first, trim second: a foot is read off the triangles standing
+    // on the plane, and a folded ribbon's own triangles say nothing
+    // reliable about which way they face until the union has flattened them
+    let (unioned,replaced) = pass(mesh,tolerance,false);
+    (pass(&unioned,tolerance,true).0,replaced)
+}
+
+/// One pass over the planes: the union of each group's triangles, and with
+/// `trim` their trimming at the feet of the sheets standing on the plane.
+fn pass(mesh: &KeptMesh,tolerance: f64,trim: bool) -> (KeptMesh,usize) {
     let normal = |t: &[u32;3]| -> Option<(V3,f64)> {
         let [a,b,c] = t.map(|v| mesh.vertices[v as usize]);
         let n = cross(sub(b,a),sub(c,a)); let l = norm(n);
@@ -98,6 +108,13 @@ pub fn planar_union(mesh: &KeptMesh,tolerance: f64) -> (KeptMesh,usize) {
         let weighted = { let [a,b,c] = corners; cross(sub(b,a),sub(c,a)) };
         let g = groups.iter().position(|(gn,gd,_,_)| dot(n,*gn).abs() >= 1.-1e-6 && corners.iter().all(|p| (dot(*gn,*p)-gd).abs() <= tolerance) && (d*dot(n,*gn).signum()-gd).abs() <= tolerance);
         match g { Some(g) => { groups[g].2.push(i); groups[g].3 = add(groups[g].3,weighted); },None => groups.push((n,d,vec![i],weighted)) }
+    }
+    // the side each triangle faces: its group's majority where it has one
+    // (a folded ribbon's own winding is not to be trusted), else its own
+    let mut facing_of: Vec<Option<V3>> = vec![None;mesh.triangles.len()];
+    for (_,_,members,facing) in &groups {
+        let l = norm(*facing);
+        if l > 0. { for &i in members { facing_of[i] = Some(facing.map(|x| x/l)); } }
     }
     let mut out = KeptMesh {vertices:mesh.vertices.clone(),triangles:Vec::new(),sheet:Vec::new()};
     let mut replaced = 0;
@@ -138,6 +155,74 @@ pub fn planar_union(mesh: &KeptMesh,tolerance: f64) -> (KeptMesh,usize) {
             for p in pieces { let b = bbox(&p); fragments.push((p,sheet,b)); }
         }
         replaced += members.len();
+        // The plane's region ends where another sheet stands on it: every
+        // edge of a triangle outside the group with both ends in the plane
+        // is that sheet's foot, and the region lies to one side of it within
+        // the edge's own span. Which side is read off the region itself: the
+        // side holding the greater part of its area there is the region,
+        // and what lies on the other side is an overhang (a ribbon's chord
+        // dipping past a wall's row) and goes. No crease of a solid has a
+        // sheet standing in the middle of a plane's region, so a foot with
+        // comparable area on both sides is left alone.
+        let in_group: std::collections::BTreeSet<usize> = members.iter().copied().collect();
+        let mut feet: Vec<(P2,P2)> = Vec::new();
+        for (i,t) in mesh.triangles.iter().enumerate() {
+            if !trim || in_group.contains(&i) { continue; }
+            let Some(m) = facing_of[i].or_else(|| normal(t).map(|(m,_)| m)) else { continue };
+            if dot(m,*n).abs() > 0.995 { continue; }
+            let corners = t.map(|v| mesh.vertices[v as usize]);
+            for k in 0..3 {
+                let (a,b) = (corners[k],corners[(k+1)%3]);
+                if (dot(*n,sub(a,origin))).abs() > tolerance || (dot(*n,sub(b,origin))).abs() > tolerance { continue; }
+                feet.push((to2(t[k]),to2(t[(k+1)%3])));
+            }
+        }
+        // the part of a polygon beyond the line through a, b (on the side
+        // of o) and alongside the edge, as pieces
+        let beside = |poly: &Vec<P2>,a: P2,b: P2,o: (f64,f64),eps: f64| -> Vec<Vec<P2>> {
+            let (ex,ey) = (b.1-a.1,b.2-a.2);
+            let len = (ex*ex+ey*ey).sqrt();
+            let (tx,ty) = (ex/len,ey/len);
+            let d: Vec<f64> = poly.iter().map(|p| (p.1-a.1)*o.0+(p.2-a.2)*o.1).collect();
+            let (beyond,_) = cut(poly,&d,eps);
+            if beyond.len() < 3 { return Vec::new(); }
+            let d: Vec<f64> = beyond.iter().map(|p| (p.1-a.1)*tx+(p.2-a.2)*ty).collect();
+            let (past_a,_) = cut(&beyond,&d,eps);
+            if past_a.len() < 3 { return Vec::new(); }
+            let d: Vec<f64> = past_a.iter().map(|p| (p.1-b.1)*tx+(p.2-b.2)*ty).collect();
+            let (_,alongside) = cut(&past_a,&d,eps);
+            if alongside.len() < 3 { Vec::new() } else { vec![alongside] }
+        };
+        for (a,b) in &feet {
+            let (ex,ey) = (b.1-a.1,b.2-a.2);
+            let len = (ex*ex+ey*ey).sqrt();
+            if !(len > 0.) { continue; }
+            let o = (-ey/len,ex/len);
+            let side = |o: (f64,f64)| -> f64 { fragments.iter().map(|(p,_,_)| beside(p,*a,*b,o,eps).iter().map(|q| area2(q)).sum::<f64>()).sum::<f64>() };
+            let (left,right) = (side(o),side((-o.0,-o.1)));
+            let (small,large) = (left.min(right),left.max(right));
+            if !(small > area_eps) || small > 0.25*large { continue; }
+            let away = if left < right { o } else { (-o.0,-o.1) };
+            let (ex,ey) = (b.1-a.1,b.2-a.2);
+            let (tx,ty) = (ex/len,ey/len);
+            let mut trimmed = Vec::new();
+            for (poly,sheet,_) in fragments {
+                // beyond the foot's line, on the side away from the region
+                let d: Vec<f64> = poly.iter().map(|p| (p.1-a.1)*away.0+(p.2-a.2)*away.1).collect();
+                let (beyond,within) = cut(&poly,&d,eps);
+                if within.len() >= 3 && area2(&within) > area_eps { let bb = bbox(&within); trimmed.push((within,sheet,bb)); }
+                if beyond.len() < 3 || area2(&beyond) <= area_eps { continue; }
+                // of that, only the part alongside the edge itself goes
+                let d: Vec<f64> = beyond.iter().map(|p| (p.1-a.1)*tx+(p.2-a.2)*ty).collect();
+                let (past_a,before_a) = cut(&beyond,&d,eps);
+                if before_a.len() >= 3 && area2(&before_a) > area_eps { let bb = bbox(&before_a); trimmed.push((before_a,sheet,bb)); }
+                if past_a.len() < 3 || area2(&past_a) <= area_eps { continue; }
+                let d: Vec<f64> = past_a.iter().map(|p| (p.1-b.1)*tx+(p.2-b.2)*ty).collect();
+                let (past_b,_alongside) = cut(&past_a,&d,eps);
+                if past_b.len() >= 3 && area2(&past_b) > area_eps { let bb = bbox(&past_b); trimmed.push((past_b,sheet,bb)); }
+            }
+            fragments = trimmed;
+        }
         // fragments to triangles, new corners shared where they coincide
         let mut fresh: std::collections::BTreeMap<(i64,i64),u32> = Default::default();
         let quantum = eps;

@@ -74,3 +74,84 @@ private line e1(t1, t2)
 private line e2(t2, t0)
 construction solid tool(face(e0, e1, e2), from: -1.5mm, to: 1.5mm)
 ";
+
+/// A lens: the unit sphere at (3, 0, 0) bounded by the unit sphere at
+/// (3.8, 0, 0), a convex crease circle of radius 0.917 in the plane x = 3.4.
+pub const LENS: &str = "unit mm
+use std
+construction centerline line spindle(std.origin, std.up.toward)
+private point center
+center distance(3mm, along: u) std.front
+center distance(0mm, along: v) std.front
+private point bottom hint(x: 3, y: -1)
+private point top hint(x: 3, y: 1)
+private line diameter(bottom, top)
+center midpoint diameter
+diameter parallel spindle
+distance(2mm) diameter
+private arc meridian(center: center, start: bottom, end: top)
+radius(1mm) meridian
+construction solid stock(face(meridian, diameter), about: diameter)
+construction solid tool(stock)
+private point center2
+center2 distance(3.8mm, along: u) std.front
+center2 distance(0mm, along: v) std.front
+private point bottom2 hint(x: 3.8, y: -1)
+private point top2 hint(x: 3.8, y: 1)
+private line diameter2(bottom2, top2)
+center2 midpoint diameter2
+diameter2 parallel spindle
+distance(2mm) diameter2
+private arc meridian2(center: center2, start: bottom2, end: top2)
+radius(1mm) meridian2
+construction solid other(face(meridian2, diameter2), about: diameter2)
+other bound tool
+";
+
+/// A dumbbell along z: a bar of radius 0.25 from z = -1 to 1 about the
+/// vertical through (3, 0), with balls of radius 0.5 at z = -1 and 1
+/// (two concave crease circles where the bar enters each ball).
+pub const DUMBBELL: &str = "unit mm
+use std
+construction centerline line spindle(std.origin, std.up.toward)
+private point c0 hint(x: 3, y: -1)
+private point c1 hint(x: 3.25, y: -1)
+private point c2 hint(x: 3.25, y: 1)
+private point c3 hint(x: 3, y: 1)
+ground c0
+ground c1
+ground c2
+ground c3
+private line bottom(c0, c1)
+private line wall(c1, c2)
+private line top(c2, c3)
+private line axis(c3, c0)
+construction solid bar(face(bottom, wall, top, axis), about: axis)
+construction solid tool(bar)
+private point ca hint(x: 3, y: 1)
+ca distance(3mm, along: u) std.front
+ca distance(1mm, along: v) std.front
+private point ba hint(x: 3, y: 0.5)
+private point ta hint(x: 3, y: 1.5)
+private line da(ba, ta)
+ca midpoint da
+da parallel spindle
+distance(1mm) da
+private arc ma(center: ca, start: ba, end: ta)
+radius(0.5mm) ma
+construction solid ball_a(face(ma, da), about: da)
+ball_a on tool
+private point cb hint(x: 3, y: -1)
+cb distance(3mm, along: u) std.front
+cb distance(-1mm, along: v) std.front
+private point bb hint(x: 3, y: -1.5)
+private point tb hint(x: 3, y: -0.5)
+private line db(bb, tb)
+cb midpoint db
+db parallel spindle
+distance(1mm) db
+private arc mb(center: cb, start: bb, end: tb)
+radius(0.5mm) mb
+construction solid ball_b(face(mb, db), about: db)
+ball_b on tool
+";

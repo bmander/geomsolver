@@ -34,6 +34,9 @@ pub struct Certificate {
     pub least_used: f64,
     /// How many triangles needed a halved distance.
     pub halved: usize,
+    /// How many slivers were certified by the boundary passing within the
+    /// least distance of their centroid.
+    pub slivers: usize,
     pub certified: usize,
     /// Triangles on material or exterior thinner than the least probe
     /// distance: their vertices were bracketed, and at the least distance one
@@ -59,13 +62,29 @@ pub fn triangle_normal(a: V3,b: V3,c: V3) -> Option<V3> {
 
 /// Certify every triangle of an indexed mesh whose winding faces outward, at
 /// probe distance `d`, halving the distance down to `least` for a triangle
-/// whose material or exterior is thinner than that.
+/// whose material or exterior is thinner than that. A sliver, with no
+/// altitude above `least`, has no normal worth probing along: it lies
+/// within `least` of the segment its corners span, and is certified where
+/// the field reads the boundary within `least` of its centroid.
 pub fn certify(judge: &mut FieldJudge,vertices: &[V3],triangles: &[[u32;3]],d: f64,least: f64) -> Result<Certificate,JudgeError> {
     let mut out = Certificate {probe_distance:d,least_used:d,..Default::default()};
+    let distance = |p: V3,q: V3| (0..3).map(|k| (p[k]-q[k]).powi(2)).sum::<f64>().sqrt();
     for (i,t) in triangles.iter().enumerate() {
         let [a,b,c] = t.map(|v| vertices[v as usize]);
         let centroid: V3 = std::array::from_fn(|k| (a[k]+b[k]+c[k])/3.);
         let Some(n) = triangle_normal(a,b,c) else { out.failures.push((i,centroid,Failure::Degenerate)); continue };
+        let altitude = {
+            let (u,w) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]);
+            let cr = [u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]];
+            (cr[0]*cr[0]+cr[1]*cr[1]+cr[2]*cr[2]).sqrt()/distance(a,b).max(distance(b,c)).max(distance(c,a))
+        };
+        if altitude < least {
+            match judge.sign(centroid)?.0 {
+                Sign::Near {within} if within <= least => { out.certified += 1; out.slivers += 1; }
+                other => { out.thin.push((i,centroid,Failure::InsideNotMaterial(other))); }
+            }
+            continue;
+        }
         let mut probe = d;
         loop {
             let (inside,outside) = judge.sides(centroid,n,probe)?;

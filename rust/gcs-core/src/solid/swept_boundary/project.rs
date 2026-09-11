@@ -41,6 +41,71 @@ impl Labelled {
     }
 }
 
+/// Which way each triangle of a sheet faces: `true` where its winding's
+/// normal is the outward one. The winding is carried across shared edges
+/// (a zipped strip is one orientable surface however its quads were cut)
+/// but not across a fold, where the two triangles' normals oppose (a
+/// generator through a fixed point of the motion sweeps a bowtie whose
+/// halves face opposite ways), and each connected run takes the side its
+/// stored normals favour in sum. A triangle's own three stored normals
+/// cannot decide it: at a fan point the tracer stores one end of the fan,
+/// and a sliver on two such points reads the wrong way by that end alone.
+pub fn orientation(sheet: &SweepPatch) -> Vec<bool> {
+    let n = sheet.triangles.len();
+    let mut owner: std::collections::BTreeMap<(u32,u32),Vec<(usize,bool)>> = Default::default();
+    for (i,t) in sheet.triangles.iter().enumerate() { for k in 0..3 { let (a,b) = (t[k],t[(k+1)%3]); owner.entry((a.min(b),a.max(b))).or_default().push((i,a < b)); } }
+    let normal = |i: usize| -> Option<V3> {
+        let [a,b,c] = sheet.triangles[i].map(|v| sheet.points[v as usize]);
+        let (u,w) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]);
+        let n = [u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]];
+        let len = (n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
+        (len > 0.).then(|| n.map(|x| x/len))
+    };
+    let mut flip: Vec<Option<bool>> = vec![None;n];
+    for start in 0..n {
+        if flip[start].is_some() { continue; }
+        // one run: flipped relative to the start, carried across edges
+        let mut run = vec![start];
+        flip[start] = Some(false);
+        let mut k = 0;
+        while k < run.len() {
+            let i = run[k]; k += 1;
+            let t = sheet.triangles[i];
+            for e in 0..3 {
+                let (a,b) = (t[e],t[(e+1)%3]);
+                let Some(list) = owner.get(&(a.min(b),a.max(b))) else { continue };
+                if list.len() != 2 { continue; }
+                for &(j,forward) in list {
+                    if j == i || flip[j].is_some() { continue; }
+                    // neighbours agree when they walk the shared edge opposite ways
+                    let same = forward != (a < b);
+                    let (Some(ni),Some(nj)) = (normal(i),normal(j)) else { continue };
+                    let d = ni[0]*nj[0]+ni[1]*nj[1]+ni[2]*nj[2];
+                    // a fold: carried across, the neighbour would face away
+                    if (if same { d } else { -d }) <= 0. { continue; }
+                    flip[j] = Some(flip[i].unwrap() != !same);
+                    run.push(j);
+                }
+            }
+        }
+        // the run faces the way its stored normals say, weighted by area
+        let mut vote = 0.;
+        for &i in &run {
+            let Some(m) = normal(i) else { continue };
+            let [a,b,c] = sheet.triangles[i].map(|v| sheet.points[v as usize]);
+            let (u,w) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]);
+            let cr = [u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]];
+            let area = (cr[0]*cr[0]+cr[1]*cr[1]+cr[2]*cr[2]).sqrt();
+            let stored: V3 = std::array::from_fn(|k| sheet.triangles[i].iter().map(|&v| sheet.normals[v as usize][k]).sum());
+            let sign = if flip[i].unwrap() { -1. } else { 1. };
+            vote += sign*area*(m[0]*stored[0]+m[1]*stored[1]+m[2]*stored[2]);
+        }
+        let outward_is_unflipped = vote >= 0.;
+        for &i in &run { let f = flip[i].unwrap(); flip[i] = Some(if outward_is_unflipped { f } else { !f }); }
+    }
+    flip.into_iter().map(|f| !f.unwrap_or(false)).collect()
+}
+
 /// The direction each vertex of each sheet is judged along: the normalised
 /// sum of the normals of every triangle, on any sheet, incident on the
 /// vertex's position, each weighted by the triangle's angle at the vertex
@@ -58,16 +123,16 @@ pub fn directions(sheets: &[SweepPatch],weld: f64) -> Vec<Vec<V3>> {
     // the summed triangle normals per (sheet, vertex)
     let mut sums: Vec<Vec<V3>> = sheets.iter().map(|s| vec![[0.;3];s.points.len()]).collect();
     for (s,sheet) in sheets.iter().enumerate() {
-        for t in &sheet.triangles {
+        let faces = orientation(sheet);
+        for (i,t) in sheet.triangles.iter().enumerate() {
             let [a,b,c] = t.map(|v| sheet.points[v as usize]);
             let (u,w) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]);
             let mut n = [u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]];
             let len = (n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
             if !(len > 0.) { continue; }
             n = n.map(|x| x/len);
-            // the sheet's own normals say which side is out; the winding does not
-            let stored: V3 = std::array::from_fn(|k| t.iter().map(|&v| sheet.normals[v as usize][k]).sum());
-            if n[0]*stored[0]+n[1]*stored[1]+n[2]*stored[2] < 0. { n = n.map(|x| -x); }
+            // the sheet says which side is out; the winding alone does not
+            if !faces[i] { n = n.map(|x| -x); }
             for k in 0..3 {
                 let (p,q,r) = (sheet.points[t[k] as usize],sheet.points[t[(k+1)%3] as usize],sheet.points[t[(k+2)%3] as usize]);
                 let (e1,e2) = ([q[0]-p[0],q[1]-p[1],q[2]-p[2]],[r[0]-p[0],r[1]-p[1],r[2]-p[2]]);
@@ -100,8 +165,17 @@ pub fn directions(sheets: &[SweepPatch],weld: f64) -> Vec<Vec<V3>> {
 /// `epsilon` is the vertex tolerance, `reach` how far along the direction the
 /// boundary is looked for before a vertex is labelled inner or positive.
 pub fn label_sheets(judge: &mut FieldJudge,sheets: &[SweepPatch],epsilon: f64,reach: f64) -> Result<Vec<Labelled>,JudgeError> {
+    label_sheets_from(judge,sheets,epsilon,reach,sheets.len())
+}
+
+/// `label_sheets` with the patches from `own_normals_from` on judged along
+/// their own stored normals instead: a cap's normals come from the whole
+/// tool's mesh, dropped facets included, and are its outward directions
+/// everywhere, where the sum over the kept facets and the sheets meeting
+/// there can be outvoted at a tool edge by a sliver's neighbours.
+pub fn label_sheets_from(judge: &mut FieldJudge,sheets: &[SweepPatch],epsilon: f64,reach: f64,own_normals_from: usize) -> Result<Vec<Labelled>,JudgeError> {
     let directions = directions(sheets,1e-9*epsilon.max(1.));
-    sheets.iter().zip(&directions).map(|(sheet,m)| label_patch(judge,sheet,m,epsilon,reach)).collect()
+    sheets.iter().zip(&directions).enumerate().map(|(i,(sheet,m))| label_patch(judge,sheet,if i >= own_normals_from { &sheet.normals } else { m },epsilon,reach)).collect()
 }
 
 /// Judge every vertex of one sheet along the given directions.

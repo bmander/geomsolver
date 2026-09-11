@@ -61,86 +61,234 @@ pub fn centroid_kept(judge: &mut super::judge::FieldJudge,mesh: &KeptMesh,sagitt
     Ok((keep,inside,outside))
 }
 
-/// Whether the triangle `t` is covered by `tiles` lying on the same surface:
-/// the tiles facing its way (within about twenty-five degrees) whose planes
-/// pass within `tolerance` of its centroid are projected onto its plane and
-/// clipped from it, and it is covered when nothing is left. Tiles of one
-/// tessellation share their edges, so their footprints leave no cracks
-/// between them; but the triangle's own corners lie on the surface, beyond
-/// the chords of a coarser tessellation, and land a whisker outside their
-/// footprints (the tile's sagitta times the sine of the angle between the
-/// two normals), so every footprint is grown by an eighth of the tolerance.
-/// A tile that merely touches the triangle's edge takes nothing from it.
-pub fn covered_by(t: [V3;3],tiles: impl Iterator<Item = [V3;3]>,tolerance: f64) -> bool {
+/// What a covering sheet leaves of the triangle `t`: `tiles` are the
+/// sheet's triangles near it and `outline` the sheet's boundary edges near
+/// it (each with the tile on it). The tiles facing its way (within about
+/// twenty-five degrees) whose planes pass within `tolerance` of it where
+/// the two overlap (at the middle of the tile's footprint on it: a coarse
+/// chord of a curved surface is a sagitta off it at its own middle and
+/// further at its ends, and the overlap with a neighbour is at an end)
+/// are the sheet where it lies on this one; the triangle is cut,
+/// in its own plane, along every outline edge of such a tile that crosses
+/// it, and of the pieces those whose centroid some such tile's footprint
+/// holds are covered and go. `None` when no tile was tangent to it (it
+/// stays as it is), otherwise the convex pieces left, possibly none. The
+/// pieces' new corners are put onto the outline's edges themselves (they
+/// lie on their lines in this plane, within the two sheets' distance of
+/// them), so the seam is the covering sheet's own edges, for the stitch's
+/// split to share; no tile is grown and nothing is cut where no edge runs.
+pub fn uncovered(t: [V3;3],tiles: &[[V3;3]],outline: &[([V3;3],V3,V3)],tolerance: f64) -> Option<Vec<[V3;3]>> {
     use super::certify::triangle_normal;
-    use super::planar::{P2,area2,clip,overlap};
-    let Some(n) = triangle_normal(t[0],t[1],t[2]) else { return true };
+    use super::planar::{P2,area2,cut};
+    let Some(n) = triangle_normal(t[0],t[1],t[2]) else { return Some(Vec::new()) };
     let least = (0..3).min_by(|&a,&b| n[a].abs().total_cmp(&n[b].abs())).unwrap();
     let mut axis = [0.;3]; axis[least] = 1.;
     let u = { let c = [n[1]*axis[2]-n[2]*axis[1],n[2]*axis[0]-n[0]*axis[2],n[0]*axis[1]-n[1]*axis[0]]; let l = (c[0]*c[0]+c[1]*c[1]+c[2]*c[2]).sqrt(); c.map(|x| x/l) };
     let v = [n[1]*u[2]-n[2]*u[1],n[2]*u[0]-n[0]*u[2],n[0]*u[1]-n[1]*u[0]];
     let origin = t[0];
     let to2 = |p: V3| -> P2 { let r = [p[0]-origin[0],p[1]-origin[1],p[2]-origin[2]]; (None,r[0]*u[0]+r[1]*u[1]+r[2]*u[2],r[0]*v[0]+r[1]*v[1]+r[2]*v[2]) };
-    let mut own: Vec<P2> = t.iter().map(|p| to2(*p)).collect();
+    let mut own: Vec<P2> = t.iter().enumerate().map(|(k,p)| { let q = to2(*p); (Some(k as u32),q.1,q.2) }).collect();
     if area2(&own) < 0. { own.reverse(); }
     let scale = own.iter().map(|p| p.1.abs().max(p.2.abs())).fold(0_f64,f64::max).max(f64::MIN_POSITIVE);
     let (eps,area_eps) = (1e-9*scale,1e-14*scale*scale);
-    let centroid: V3 = std::array::from_fn(|k| (t[0][k]+t[1][k]+t[2][k])/3.);
-    let mut pieces = vec![own];
-    for tile in tiles {
-        let Some(m) = triangle_normal(tile[0],tile[1],tile[2]) else { continue };
-        if m[0]*n[0]+m[1]*n[1]+m[2]*n[2] < 0.9 { continue; }
-        if ((centroid[0]-tile[0][0])*m[0]+(centroid[1]-tile[0][1])*m[1]+(centroid[2]-tile[0][2])*m[2]).abs() > tolerance { continue; }
-        let mut footprint: Vec<P2> = tile.iter().map(|p| to2(*p)).collect();
-        if area2(&footprint) < 0. { footprint.reverse(); }
-        if area2(&footprint) <= area_eps { continue; }
+    let tangent = |tile: &[V3;3]| -> bool {
+        let Some(m) = triangle_normal(tile[0],tile[1],tile[2]) else { return false };
+        if m[0]*n[0]+m[1]*n[1]+m[2]*n[2] < 0.9 { return false; }
+        // the tile's footprint on this plane, clipped to the triangle
+        let mut f: Vec<P2> = tile.iter().map(|p| to2(*p)).collect();
+        if area2(&f) < 0. { f.reverse(); }
+        if area2(&f) <= area_eps { return false; }
+        let mut rest = f;
+        for k in 0..3 {
+            let (a,b) = (own[k],own[(k+1)%3]);
+            let (ex,ey) = (b.1-a.1,b.2-a.2);
+            let len = (ex*ex+ey*ey).sqrt();
+            if !(len > 0.) { continue; }
+            let d: Vec<f64> = rest.iter().map(|v| ((v.1-a.1)*(-ey)+(v.2-a.2)*ex)/len).collect();
+            let (inside,_) = cut(&rest,&d,eps);
+            if inside.len() < 3 || area2(&inside) <= area_eps { return false; }
+            rest = inside;
+        }
+        let c = (rest.iter().map(|p| p.1).sum::<f64>()/rest.len() as f64,rest.iter().map(|p| p.2).sum::<f64>()/rest.len() as f64);
+        let at: V3 = std::array::from_fn(|k| origin[k]+c.0*u[k]+c.1*v[k]);
+        ((at[0]-tile[0][0])*m[0]+(at[1]-tile[0][1])*m[1]+(at[2]-tile[0][2])*m[2]).abs() <= tolerance
+    };
+    let footprints: Vec<Vec<P2>> = tiles.iter().filter(|tile| tangent(tile)).map(|tile| {
+        let mut f: Vec<P2> = tile.iter().map(|p| to2(*p)).collect();
+        if area2(&f) < 0. { f.reverse(); }
+        f
+    }).filter(|f| area2(f) > area_eps).collect();
+    if footprints.is_empty() { return None; }
+    // cut along every outline edge of a tangent tile that crosses the triangle
+    let mut pieces = vec![own.clone()];
+    for (tile,a,b) in outline {
+        if !tangent(tile) { continue; }
+        let (pa,pb) = (to2(*a),to2(*b));
+        let (ex,ey) = (pb.1-pa.1,pb.2-pa.2);
+        let len = (ex*ex+ey*ey).sqrt();
+        if !(len > 0.) { continue; }
+        let (nx,ny) = (-ey/len,ex/len);
+        // does the segment cross the triangle: some corner on each side of
+        // its line, and the crossing within the segment's own span
+        let d: Vec<f64> = pieces.iter().flatten().map(|p| (p.1-pa.1)*nx+(p.2-pa.2)*ny).collect();
+        if !(d.iter().any(|x| *x > eps) && d.iter().any(|x| *x < -eps)) { continue; }
+        let along: Vec<f64> = pieces.iter().flatten().map(|p| ((p.1-pa.1)*ex+(p.2-pa.2)*ey)/len).collect();
+        if along.iter().all(|s| *s < -eps) || along.iter().all(|s| *s > len+eps) { continue; }
         let mut next = Vec::new();
-        for piece in pieces { if overlap(&piece,&footprint,eps) { clip(piece,&footprint,eps,tolerance/8.,area_eps,&mut next); } else { next.push(piece); } }
+        for piece in pieces {
+            let d: Vec<f64> = piece.iter().map(|p| (p.1-pa.1)*nx+(p.2-pa.2)*ny).collect();
+            let (left,right) = cut(&piece,&d,eps);
+            for side in [left,right] { if side.len() >= 3 && area2(&side) > area_eps { next.push(side); } }
+        }
         pieces = next;
-        if pieces.is_empty() { return true; }
     }
-    false
+    // a piece whose centroid a footprint holds is covered
+    let inside = |c: (f64,f64),f: &Vec<P2>| -> bool {
+        (0..f.len()).all(|k| { let (a,b) = (f[k],f[(k+1)%f.len()]); (b.1-a.1)*(c.1-a.2)-(b.2-a.2)*(c.0-a.1) >= -eps })
+    };
+    // a corner the cuts made lies on an outline edge's line in this plane;
+    // it is put onto the edge itself, so the seam is that edge exactly
+    let lift = |p: &P2| -> V3 {
+        let q: V3 = std::array::from_fn(|k| origin[k]+p.1*u[k]+p.2*v[k]);
+        if p.0.is_some() { return q; }
+        let mut best: Option<(f64,V3)> = None;
+        for (tile,a,b) in outline {
+            if !tangent(tile) { continue; }
+            let d = [b[0]-a[0],b[1]-a[1],b[2]-a[2]]; let w = [q[0]-a[0],q[1]-a[1],q[2]-a[2]];
+            let l = d[0]*d[0]+d[1]*d[1]+d[2]*d[2];
+            let f = if l > 0. { ((w[0]*d[0]+w[1]*d[1]+w[2]*d[2])/l).clamp(0.,1.) } else { 0. };
+            let on = [a[0]+f*d[0],a[1]+f*d[1],a[2]+f*d[2]];
+            let dist = (0..3).map(|k| (q[k]-on[k]).powi(2)).sum::<f64>().sqrt();
+            if dist <= tolerance && best.map_or(true,|(x,_)| dist < x) { best = Some((dist,on)); }
+        }
+        best.map_or(q,|(_,on)| on)
+    };
+    let mut out = Vec::new();
+    let mut left_any = false;
+    for piece in pieces {
+        let c = (piece.iter().map(|p| p.1).sum::<f64>()/piece.len() as f64,piece.iter().map(|p| p.2).sum::<f64>()/piece.len() as f64);
+        if footprints.iter().any(|f| inside(c,f)) { continue; }
+        left_any = true;
+        // the corners lifted, and a corner the cuts made put within an
+        // eighth of the tolerance of another corner is that corner; the
+        // triangle's own corners are never merged (a sliver of the sheet is
+        // still the sheet), an own corner taking the place of a made one
+        let mut lifted: Vec<(V3,bool)> = Vec::new();
+        for p in &piece {
+            let q = lift(p);
+            let own = p.0.is_some();
+            let near = lifted.iter().position(|(r,_)| (0..3).map(|k| (r[k]-q[k]).powi(2)).sum::<f64>().sqrt() <= tolerance/8.);
+            match near {
+                Some(k) if !lifted[k].1 => { if own { lifted[k] = (q,true); } }
+                Some(_) if !own => {}
+                _ => lifted.push((q,own)),
+            }
+        }
+        let lifted: Vec<V3> = lifted.into_iter().map(|(q,_)| q).collect();
+        for k in 1..lifted.len().saturating_sub(1) {
+            let (a,b,c) = (lifted[0],lifted[k],lifted[k+1]);
+            // a piece turned over or stood up by the snap was a sliver
+            // thinner than the snap, and goes; the hole it leaves is a
+            // triangle's, filled later
+            let Some(m) = triangle_normal(a,b,c) else { continue };
+            if m[0]*n[0]+m[1]*n[1]+m[2]*n[2] < 0.5 { continue; }
+            out.push([a,b,c]);
+        }
+    }
+    let _ = left_any;
+    Some(out)
 }
 
-/// Kept triangles of a later sheet that earlier sheets cover are dropped:
-/// two sources can generate one piece of the boundary (a tool's leading
-/// and trailing edges sweeping the same face of the sweep, the two rims of
-/// a plunged cylinder sweeping one wall, a grazing face of the tool at an
-/// end pose on the sheet its own edges sweep), and the field, rightly, keeps
-/// both. Covered is `covered_by` over every earlier sheet's triangles within
-/// the tolerance of the triangle's box; nearness alone would eat a cap's
-/// facets beside the seam where its sheet is tangent to them, and a planar
-/// sliver beside a perpendicular wall. Returns, per triangle, whether it
-/// stays.
-pub fn without_overlaps(mesh: &KeptMesh,tolerance: f64) -> Vec<bool> {
+/// Whether the triangle `t` is covered by the sheet of `tiles` with the
+/// boundary `outline`: `uncovered` leaves nothing of it.
+pub fn covered_by(t: [V3;3],tiles: &[[V3;3]],outline: &[([V3;3],V3,V3)],tolerance: f64) -> bool {
+    uncovered(t,tiles,outline,tolerance).is_some_and(|left| left.is_empty())
+}
+
+/// Kept triangles of a later sheet that earlier sheets cover are clipped to
+/// what they leave: two sources can generate one piece of the boundary (a
+/// tool's leading and trailing edges sweeping the same face of the sweep,
+/// the two rims of a plunged cylinder sweeping one wall, a grazing face of
+/// the tool at an end pose on the sheet its own edges sweep, the two corner
+/// paths of a turning prism's caps sweeping one surface of revolution over
+/// overlapping arcs), and the field, rightly, keeps both. Each earlier
+/// sheet in turn is applied through `uncovered`, with its triangles and its
+/// own boundary edges near the triangle: a triangle wholly covered goes,
+/// one partly covered is replaced by the pieces left, in its own plane.
+/// Nearness alone would eat a cap's facets beside the seam where its sheet
+/// is tangent to them, and a planar sliver beside a perpendicular wall.
+/// Returns the mesh and how many triangles were clipped or dropped.
+pub fn clip_overlaps(mesh: &KeptMesh,tolerance: f64) -> (KeptMesh,usize) {
     let cell = (tolerance*8.).max(f64::MIN_POSITIVE);
     let key = |p: V3| p.map(|x| (x/cell).floor() as i64);
-    // triangles by sheet, bucketed by their boxes
-    let mut buckets: std::collections::BTreeMap<(u32,[i64;3]),Vec<usize>> = Default::default();
-    let boxes: Vec<([i64;3],[i64;3])> = mesh.triangles.iter().map(|t| {
-        let corners = t.map(|v| mesh.vertices[v as usize]);
+    let box_of = |corners: &[V3]| -> ([i64;3],[i64;3]) {
         (key(std::array::from_fn(|k| corners.iter().map(|q| q[k]).fold(f64::INFINITY,f64::min))),
             key(std::array::from_fn(|k| corners.iter().map(|q| q[k]).fold(f64::NEG_INFINITY,f64::max))))
-    }).collect();
-    for (i,(lo,hi)) in boxes.iter().enumerate() {
-        for x in lo[0]..=hi[0] { for y in lo[1]..=hi[1] { for z in lo[2]..=hi[2] { buckets.entry((mesh.sheet[i],[x,y,z])).or_default().push(i); } } }
+    };
+    // each sheet's triangles and boundary edges, bucketed by their boxes
+    let mut tile_buckets: std::collections::BTreeMap<(u32,[i64;3]),Vec<usize>> = Default::default();
+    let mut edge_buckets: std::collections::BTreeMap<(u32,[i64;3]),Vec<(usize,u32,u32)>> = Default::default();
+    let mut uses: std::collections::BTreeMap<(u32,u32,u32),(usize,usize)> = Default::default(); // (sheet, a, b) -> (count, a triangle)
+    for (i,t) in mesh.triangles.iter().enumerate() {
+        let corners = t.map(|v| mesh.vertices[v as usize]);
+        let (lo,hi) = box_of(&corners);
+        for x in lo[0]..=hi[0] { for y in lo[1]..=hi[1] { for z in lo[2]..=hi[2] { tile_buckets.entry((mesh.sheet[i],[x,y,z])).or_default().push(i); } } }
+        for k in 0..3 { let (a,b) = (t[k],t[(k+1)%3]); let e = uses.entry((mesh.sheet[i],a.min(b),a.max(b))).or_insert((0,i)); e.0 += 1; }
+    }
+    for (&(s,a,b),&(count,i)) in &uses {
+        if count != 1 { continue; }
+        let (lo,hi) = box_of(&[mesh.vertices[a as usize],mesh.vertices[b as usize]]);
+        for x in lo[0]..=hi[0] { for y in lo[1]..=hi[1] { for z in lo[2]..=hi[2] { edge_buckets.entry((s,[x,y,z])).or_default().push((i,a,b)); } } }
     }
     let sheets: std::collections::BTreeSet<u32> = mesh.sheet.iter().copied().collect();
-    let mut keep = vec![true;mesh.triangles.len()];
+    let mut out = KeptMesh {vertices:mesh.vertices.clone(),triangles:Vec::new(),sheet:Vec::new()};
+    let mut changed = 0;
     for (i,t) in mesh.triangles.iter().enumerate() {
         let mine = mesh.sheet[i];
-        let (lo,hi) = boxes[i];
-        let mut seen: std::collections::BTreeSet<usize> = Default::default();
-        let mut tiles: Vec<[V3;3]> = Vec::new();
+        let corners = t.map(|v| mesh.vertices[v as usize]);
+        // the triangle's pieces so far, applied to by each earlier sheet in turn
+        let mut pieces: Vec<[V3;3]> = vec![corners];
+        let mut touched = false;
         for &earlier in sheets.iter().filter(|&&s| s < mine) {
-            for x in lo[0]-1..=hi[0]+1 { for y in lo[1]-1..=hi[1]+1 { for z in lo[2]-1..=hi[2]+1 {
-                let Some(list) = buckets.get(&(earlier,[x,y,z])) else { continue };
-                for &j in list { if seen.insert(j) { tiles.push(mesh.triangles[j].map(|w| mesh.vertices[w as usize])); } }
-            } } }
+            let mut next = Vec::new();
+            for piece in pieces {
+                let (lo,hi) = box_of(&piece);
+                let mut seen: std::collections::BTreeSet<usize> = Default::default();
+                let mut tiles: Vec<[V3;3]> = Vec::new();
+                let mut outline: Vec<([V3;3],V3,V3)> = Vec::new();
+                let mut seen_edges: std::collections::BTreeSet<(u32,u32)> = Default::default();
+                for x in lo[0]-1..=hi[0]+1 { for y in lo[1]-1..=hi[1]+1 { for z in lo[2]-1..=hi[2]+1 {
+                    if let Some(list) = tile_buckets.get(&(earlier,[x,y,z])) { for &j in list { if seen.insert(j) { tiles.push(mesh.triangles[j].map(|w| mesh.vertices[w as usize])); } } }
+                    if let Some(list) = edge_buckets.get(&(earlier,[x,y,z])) { for &(j,a,b) in list { if seen_edges.insert((a,b)) { outline.push((mesh.triangles[j].map(|w| mesh.vertices[w as usize]),mesh.vertices[a as usize],mesh.vertices[b as usize])); } } }
+                } } }
+                match if tiles.is_empty() { None } else { uncovered(piece,&tiles,&outline,tolerance) } {
+                    None => next.push(piece),
+                    Some(left) => { touched = true; next.extend(left); }
+                }
+            }
+            pieces = next;
         }
-        if !tiles.is_empty() && covered_by(t.map(|v| mesh.vertices[v as usize]),tiles.into_iter(),tolerance) { keep[i] = false; }
+        if !touched { out.triangles.push(*t); out.sheet.push(mine); continue; }
+        changed += 1;
+        for tri in pieces {
+            let idx: [u32;3] = std::array::from_fn(|k| {
+                // a piece's corner at the triangle's own corner is that corner
+                if let Some(&v) = t.iter().find(|&&v| { let q = mesh.vertices[v as usize]; (0..3).map(|d| (q[d]-tri[k][d]).powi(2)).sum::<f64>().sqrt() <= 1e-9*(1.+q.iter().map(|x| x.abs()).fold(0.,f64::max)) }) { v }
+                else { out.vertices.push(tri[k]); (out.vertices.len()-1) as u32 }
+            });
+            if idx[0] == idx[1] || idx[1] == idx[2] || idx[2] == idx[0] { continue; }
+            out.triangles.push(idx); out.sheet.push(mine);
+        }
     }
-    keep
+    (out,changed)
+}
+
+/// `clip_overlaps` as a keep list: whether each triangle stays whole. A
+/// triangle clipped or dropped reads as not kept.
+pub fn without_overlaps(mesh: &KeptMesh,tolerance: f64) -> Vec<bool> {
+    let (out,_) = clip_overlaps(mesh,tolerance);
+    let kept: std::collections::BTreeSet<[u32;3]> = out.triangles.iter().copied().collect();
+    mesh.triangles.iter().map(|t| kept.contains(t)).collect()
 }
 
 impl KeptMesh {

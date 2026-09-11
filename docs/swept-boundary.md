@@ -218,6 +218,117 @@ shared line and one a whisker off it) and `overlaps.rs` (coverage of a triangle 
 inside one, across two sharing an edge, half outside, merely touching, facing the other
 way, off the surface, and a wall sliver against a coarser wall).
 
+## Milestone 4: sheets that cross, and what closing them took
+
+Where one sheet turns inner across another, the kept parts of the two must meet along
+their crease, and nothing here trusts a traced crease: every crease vertex is found by the
+field. `clip_sheets` (`crease.rs`) clips each sheet at its label transitions: a mixed edge
+(one end on, one off; on means `Kept`, never `Moved`, since a vertex the judge moved by
+0.03 is on the other branch's side of the crease and put the rim there) is bisected on the
+field to the vertex tolerance, the clipped triangles are wound outward, and the rim edges
+are chained into `Rim`s, dropping rims that run along a sheet's own edges and snapping
+crease points within four tolerances of the on vertex onto it (so no sliver thinner than
+that is left for the stitch). A cap's corners are judged differently from a sheet's: a
+cap vertex on a tool edge is on the boundary by one face or the other and its label says
+nothing about which, so a cap triangle's corners are judged eight tolerances in from the
+corner along the triangle's plane toward its centroid, where the face itself speaks, and
+a mixed cap edge is bisected twice with pulls of five and three tolerances (never past
+the triangle's height) and the crossing extrapolated to the edge. Caps are refined to the
+column spacing first (`CutMesh::refine`): a planar face is two facets however large, and a
+crease crossing it would be invisible to the labels at its corners. Two rims that lie
+along one crease are merged by `merge_creases`: rim vertices of different sheets within
+one and a half sagittas are aliased, and the rim edges alone are T-split to four
+tolerances, since the rims coincide only in part and pairing them whole failed.
+
+What the crease cases then taught, each written where the rule is:
+
+- **Which way a triangle faces is carried across the sheet, not read off its corners.**
+  A zipped strip's quads come out cut either way, and at a fan point the tracer stores
+  one end of the fan, so a sliver on two such points read the wrong way by its own three
+  stored normals (the tumbling cylinder's rim sweeps, 15 folded slivers a sheet).
+  `orientation` (`project.rs`) carries the winding across shared edges, stopping at a
+  fold where the neighbour would face away (a generator through a fixed point of the
+  motion sweeps a bowtie whose halves face opposite ways), and each run takes the side its
+  stored normals favour in area-weighted sum; `directions` and `clip_sheets` both read it.
+- **Coplanar overhangs are trimmed by their feet.** A ribbon chord dipping past the r = 0.5
+  wall left planar slivers overhanging it. `planar_union` is two passes, the union then a
+  trim: a foot is an edge of a non-group triangle standing on the plane, and of the
+  fragments beyond its line within the edge's strip, the side with at most a quarter of
+  the other's area is trimmed (a convexity rule from the far vertex read the wall from the
+  wrong side, and a folded ribbon's own feet faced the wrong way until the union had
+  flattened it).
+- **Curved coverage is clipped along the covering sheet's own outline, never grown.**
+  Two corner tubes of the turning prism sweep one surface of revolution over overlapping
+  arcs; `uncovered` cuts a later triangle, in its own plane, along the outline edges of the
+  earlier sheet's tangent tiles, drops the pieces whose centroid a tile's footprint holds,
+  and puts the pieces' new corners onto the outline edges themselves so the seam is the
+  earlier sheet's edge exactly, for the split to share. A tile is tangent when its plane
+  passes within two sagittas of the triangle *where the two overlap* (the middle of the
+  tile's footprint clipped to the triangle): a coarse chord of a cone spanning 17° was 0.043
+  off the tile's plane at its own centroid and 0.018 at the overlap, and judged by the
+  centroid it stayed whole and overlapped. A piece the snap turns over or stands up (its
+  normal more than 60° from the triangle's) was a sliver thinner than the snap and goes;
+  the triangle's own corners are never merged, even an eighth of a tolerance apart (a
+  sliver of the sheet is still the sheet: merging them ate the turned cylinder's rim
+  slivers and left saw-tooth loops of 84 vertices round each cap).
+- **The tolerant T-junction split may not lay a triangle over one already there.** In a
+  plane both sheets cover, a vertex of one a whisker past the other's edge has a sliver of
+  its own reaching back to that edge; splitting the edge at the vertex, within the
+  tolerance, covered the sliver twice and the fill afterwards used an edge three times.
+  `split_where` refuses a split whose new triangles overlap, in area, a triangle on the
+  vertex in their plane (`lies_over`).
+- **The cap cut walks in the column's own normals and snaps to the nearer end.** The
+  mesh's normal at a column point on a crease of the tool leans into the other face, and
+  the walk snapping a crossing to the farther of two near ends stepped onto a vertex
+  beside the true one with nothing ahead of it (the dumbbell's bar generator, cut from its
+  crease).
+- **Slivers are certified where the boundary passes within the least probe distance of
+  their centroid** (`Certificate::slivers`): a sliver has no altitude to probe along, and
+  lies within that distance of the segment its corners span.
+- **Vertices merge into the more connected of the pair, at an eighth of a sagitta.** A
+  merge at half a sagitta folded slivers and broke the turned cylinder's seams; merging
+  into the vertex with more triangles kept the box's exact corners (72.000000).
+- **The rim zip fills three- and four-vertex loops, pairs loops within the column spacing,
+  zips slits (loops turning back at exactly two corners) and lays each band triangle by
+  its own loop edge**, not once per band.
+
+The reference for a turned section is a ring quadrature, since the closed form of a
+turned rectangle (or lens) is one arc per circle only where the region is convex toward
+the pivot, which a lens is not: `turned_area` samples each circle about the pivot,
+grows what it meets by the turn, and integrates.
+
+| case | triangles | volume | reference | run |
+|---|---|---|---|---|
+| triangular prism section turned ±50° about (2.5, 0) | 1436 | 11.111 | 11.168 (−0.5%) | 2.3 s |
+| lens of two unit spheres 0.8 apart turned ±60° about the spindle | 2786 | 12.837 | 13.099 (−2.0%) | 5.6 s |
+
+Both close as `ClosedShell`s with every triangle certified. The eight milestone-3 cases
+stay green through it all, several of them the reason for a rule above.
+
+Three of the milestone's five cases are written and run in seconds but do not close, each
+`#[ignore]`d with its evidence in `creases.rs`, and the plan's contingency (A2) applies:
+the tracer fixes of milestone 5 lead.
+
+- **Tumbling cylinder** (radius 1, height 2, tumbled ±30° about the line through its
+  centre). The stationary ring sweeps a sphere of radius 1 that lies inside every pose of
+  the cylinder, so the whole sheet is inner except along the two fixed points of the axis
+  where the depth is second order: within a quarter sagitta over a patch a fifth wide,
+  which the labels keep and clip raggedly. The generators through the fixed points sweep
+  planar bowties (their halves face opposite ways, and the zip's quads cross at the
+  point). The rims' sweeps fold where a rim's tangent runs along its velocity, the fold
+  double-covering one surface of revolution. Nine loops and a few dozen refused triangles
+  remain after 4 s.
+- **Box turned 30° about the axis through its end face's centre.** The end faces' edges
+  sweep in their own plane, and a segment turning in its plane folds at its envelope arc
+  (consecutive columns cross a tenth of a unit from the tangency); the planar union is the
+  right region but its slivers along the arc are thinner than the split's tolerance, and
+  the split and the zip lay fills over them. One refused triangle and one two-vertex loop
+  remain; the volume is within a percent of the quadrature.
+- **Dumbbell translated 4 along x.** The Boolean tool's mesh is forty-five thousand facets,
+  the bar's wall shredded by the balls' facet planes, so the caps take most of a minute and
+  their slivers leave four loops at the crease junctions. This is project 2's problem, the
+  Boolean meshes, and is noted for it.
+
 ## Refusals
 
 Every refusal names its element. So far: `ReversedNormal { point, direction }` (material
@@ -227,7 +338,9 @@ certificate in milestone 2.
 
 ## Next
 
-Milestone 4: trim, creases and ribbons on the cases where sheets cross (tumbling cylinder,
-turning prism, box at 30°, lens, dumbbell). Then the remaining ★ closed-form cases (box about
-an axis through its face centre 360°, ring prism, bored bead, cylinder screw, diagonal box),
-the `sweep_cases!` table harness with `forms.rs`, and the tracer fixes. See the plan.
+Milestone 5, the tracer: folds where a contact curve's tangent runs along its velocity
+(the tumbling cylinder's rims, the turned box's planar edges), strips through a fixed
+point, dual stationing and strip closedness; then the three ignored cases above, the
+remaining ★ closed-form cases (box about an axis through its face centre 360°, ring prism,
+bored bead, cylinder screw, diagonal box), the `sweep_cases!` table harness with
+`forms.rs`, and gap fill (milestone 6). See the plan.

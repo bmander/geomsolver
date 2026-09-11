@@ -161,11 +161,13 @@ impl CutMesh {
     /// takes its end when within the snap of it. Only facets the walk enters
     /// are looked at, so a face round a corner, folded into the projection,
     /// cannot offer a crossing of its own. Records every chain edge as a cut.
-    fn connect(&mut self,u: u32,w: u32) -> Result<(),String> {
+    fn connect(&mut self,u: u32,w: u32,nu: V3,nw: V3) -> Result<(),String> {
         if u == w { return Ok(()); }
         if self.share_facet(u,w) { self.cuts.insert((u.min(w),u.max(w))); return Ok(()); }
         let (pu,pw) = (self.vertices[u as usize],self.vertices[w as usize]);
-        let n = normalised(add(normalised(self.vertex_normal(u)).unwrap_or([0.;3]),normalised(self.vertex_normal(w)).unwrap_or([0.;3]))).ok_or("no normal at a column point")?;
+        // the chord's own normals give the projection: the mesh's at a
+        // column point on a crease of the tool lean into the other face
+        let n = normalised(add(normalised(nu).unwrap_or([0.;3]),normalised(nw).unwrap_or([0.;3]))).ok_or("no normal at a column point")?;
         let d = sub(pw,pu);
         let du = normalised(sub(d,scale(n,dot(d,n)))).ok_or("column points coincide in projection")?;
         let dv = cross(n,du);
@@ -196,7 +198,11 @@ impl CutMesh {
             let Some((t,a,b,s)) = step else { return Err(format!("the cut from {pu:?} to {pw:?} leaves the tool's mesh at {:?}",self.vertices[current as usize])) };
             let (pa,pb) = (self.vertices[a as usize],self.vertices[b as usize]);
             let p = add(pa,scale(sub(pb,pa),s));
-            let next = if norm(sub(p,pa)) <= self.vertex_tolerance { a } else if norm(sub(p,pb)) <= self.vertex_tolerance { b } else { self.split_edge(a,b,p) };
+            // the nearer end within the snap, or a new vertex: taking the
+            // farther of two near ends walked off the plane onto a vertex
+            // beside the true one, with nothing ahead of it
+            let (da,db) = (norm(sub(p,pa)),norm(sub(p,pb)));
+            let next = if da.min(db) <= self.vertex_tolerance { if da <= db { a } else { b } } else { self.split_edge(a,b,p) };
             if next == w { chain.push(w); break; }
             chain.push(next); current = next; along = t;
         }
@@ -209,11 +215,31 @@ impl CutMesh {
         Ok(())
     }
 
+    /// Split every edge longer than `longest` at its midpoint, longest
+    /// first, until none is: a planar face is two facets however large, and
+    /// a crease crossing it would be invisible to the labels at its corners.
+    pub fn refine(&mut self,longest: f64) {
+        loop {
+            let mut worst: Option<(f64,u32,u32)> = None;
+            for t in &self.triangles { for k in 0..3 {
+                let (a,b) = (t[k],t[(k+1)%3]);
+                let l = norm(sub(self.vertices[a as usize],self.vertices[b as usize]));
+                if l > longest && worst.map_or(true,|(w,_,_)| l > w) { worst = Some((l,a.min(b),a.max(b))); }
+            } }
+            let Some((_,a,b)) = worst else { break };
+            let mid = scale(add(self.vertices[a as usize],self.vertices[b as usize]),0.5);
+            self.split_edge(a,b,mid);
+        }
+    }
+
     /// Cut along a polyline on the surface.
-    pub fn cut_along(&mut self,line: &[V3],closed: bool) -> Result<(),String> {
-        let ids: Vec<u32> = line.iter().map(|p| self.insert(*p)).collect::<Result<_,_>>()?;
-        for k in 0..ids.len().saturating_sub(1) { self.connect(ids[k],ids[k+1])?; }
-        if closed && ids.len() > 2 { self.connect(ids[ids.len()-1],ids[0])?; }
+    pub fn cut_along(&mut self,line: &[(V3,V3)],closed: bool) -> Result<(),String> {
+        let ids: Vec<u32> = line.iter().map(|(p,_)| self.insert(*p)).collect::<Result<_,_>>()?;
+        let mut normals: Vec<V3> = line.iter().map(|(_,n)| *n).collect();
+        // a point given no normal takes the mesh's
+        for (k,n) in normals.iter_mut().enumerate() { if normalised(*n).is_none() { *n = self.vertex_normal(ids[k]); } }
+        for k in 0..ids.len().saturating_sub(1) { self.connect(ids[k],ids[k+1],normals[k],normals[k+1])?; }
+        if closed && ids.len() > 2 { self.connect(ids[ids.len()-1],ids[0],normals[ids.len()-1],normals[0])?; }
         Ok(())
     }
 
@@ -243,8 +269,10 @@ pub struct CapComponent { pub facets: usize,pub extreme: f64,pub kept: bool }
 /// tool's mesh; `snap` is how near a column point or a crossing must come to
 /// a mesh vertex to be it (a quarter of the sagitta serves: what it moves is
 /// well within the certificate's probe, and no sliver thinner than it is
-/// left for the stitch).
-pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f64) -> Result<([SweepPatch;2],[Vec<CapComponent>;2]),String> {
+/// left for the stitch); no facet edge is left longer than `longest` (the
+/// column spacing serves), so the labels at a cap's corners see what the
+/// labels at a sheet's corners see.
+pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f64,longest: f64) -> Result<([SweepPatch;2],[Vec<CapComponent>;2]),String> {
     let SolidDef::Swept {source,motion,from,to} = &sk.solids[swept].def else { return Err("not a continuous sweep".into()) };
     let unit = sagitta/crate::curve::FLATNESS_PX;
     let tool = static_solid_at_unit(sk,*source as usize,unit,0)?;
@@ -256,12 +284,13 @@ pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f6
     for (end,t) in [(End::From,from.value),(End::To,to.value)] {
         let pose = family.at(t).map_err(|e| format!("{e:?}"))?;
         let mut mesh = CutMesh {vertices:vertices.iter().map(|p| pose.point(*p)).collect(),triangles:triangles.clone(),cuts:Default::default(),vertex_tolerance:snap,sagitta};
+        mesh.refine(longest);
         // the contact curves on the tool at this instant
         for s in sheets {
             let (c,at) = match end { End::From => (0,s.times.first().copied()),End::To => ((s.times.len().saturating_sub(1)) as u32,s.times.last().copied()) };
             let Some(at) = at else { continue };
             if (at-t).abs() > time_tolerance { continue; }
-            let line: Vec<V3> = s.column_vertices(c).into_iter().map(|v| s.points[v as usize]).collect();
+            let line: Vec<(V3,V3)> = s.column_vertices(c).into_iter().map(|v| (s.points[v as usize],s.normals[v as usize])).collect();
             if line.len() < 2 { continue; }
             mesh.cut_along(&line,s.closed)?;
         }

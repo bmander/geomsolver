@@ -58,3 +58,17 @@ motion feed(along: rail, advance: {advance_mm}mm)
 pub fn swept(motion: &str,from_deg: f64,to_deg: f64) -> String {
     format!("solid swept(tool, under: {motion}, from: {from_deg}deg, to: {to_deg}deg)\n")
 }
+
+/// A turn about the line through the page points (u0, v0) and (u1, v1)
+/// (page u is world x, page v is world z).
+pub fn turn_about(u0: f64,v0: f64,u1: f64,v1: f64) -> String {
+    format!("private point h0 hint(x: {u0}, y: {v0})
+h0 distance({u0}mm, along: u) std.front
+h0 distance({v0}mm, along: v) std.front
+private point h1 hint(x: {u1}, y: {v1})
+h1 distance({u1}mm, along: u) std.front
+h1 distance({v1}mm, along: v) std.front
+construction centerline line hinge(h0, h1)
+motion turn(about: hinge)
+")
+}

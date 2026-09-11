@@ -317,6 +317,21 @@ resolves T-junctions to one and a half sagittas under four fold guards, `directi
 weights normals by angle, `deep_sign` gives `centroid_kept` its band while `sign_beyond`
 stays strict for the certificate. `tests/sweep_mesh/{closed,pieces,overlaps}.rs` are the
 gates; a sweep case must run in seconds, and anything longer prints progress.
+**Milestone 4 (2026-09-11):** sheets that cross are clipped at their label transitions
+by the field (`clip_sheets`, Kept-only bisection; a cap's corners judged in from the corner
+along its own plane, since a cap vertex on a tool edge belongs to either face) and the rims
+merged (`merge_creases`); the turning prism and the lens close and certify, and the eight
+milestone-3 cases stay green. The rules that took: a triangle faces the way its sheet does
+(`orientation` carries the winding across shared edges, stopping at a fold, since a fan
+point's stored normal is one end of the fan), coplanar overhangs are trimmed by their feet
+(`planar_union`'s second pass), curved coverage is clipped along the covering sheet's own
+outline with tangency judged where the two overlap (`uncovered`), a tolerant T-junction
+split may not lay a triangle over one already there (`lies_over`), and the cap cut walks in
+the column's own normals. `creases.rs` is the gate; its tumbling cylinder, turned box and
+dumbbell are `#[ignore]`d with their evidence (folds where a contact curve runs along its
+velocity, bowtie sectors through fixed points, a second-order-deep sphere, a Boolean mesh of
+45 000 facets) and lead into milestone 5 and project 2. `docs/swept-boundary.md` has the
+table and the lessons.
 `solid::MaterialField` composes static and swept operands with fixed poses and Booleans.
 Its evaluator owns complete-member cut arithmetic, retaining every distinct node/box sweep's
 domain, witness, enclosure and termination status. Budgets apply per sweep query; exhausted
