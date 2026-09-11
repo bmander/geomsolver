@@ -1,15 +1,12 @@
 //! Milestone 3: sheets and caps stitched into a closed shell, certified, and
 //! its volume against a closed form nothing in the construction knows.
 use super::{harness::{self,V3},motions,tools};
-use gcs_core::solid::{MaterialField,swept_boundary::{FieldJudge,KeptMesh,boundary_loops,caps,certify,kept_triangles,label_sheets,retained,rim_zip,seeds,weld,without_overlaps}};
+use gcs_core::solid::{MaterialField,swept_boundary::{FieldJudge,KeptMesh,boundary_loops,caps,certify,kept_triangles,label_sheets,planar_union,retained,rim_zip,seeds,weld,without_overlaps}};
 use gcs_core::topology::ClosedShell;
 use std::f64::consts::PI;
 
 const SPACING: f64 = 0.5;
 const SAGITTA: f64 = 0.02;
-const EPSILON: f64 = SAGITTA/4.;
-const REACH: f64 = SAGITTA;
-const PROBE: f64 = 2.*SAGITTA;
 
 /// Divergence-theorem volume of an outward-wound indexed mesh.
 fn volume(mesh: &KeptMesh) -> f64 {
@@ -21,25 +18,73 @@ fn volume(mesh: &KeptMesh) -> f64 {
     six/6.
 }
 
+/// How many edges two triangles walk the same way (an orientation flip)
+/// and how many are used once or more than twice, printed at a stage.
+fn stage(mesh: &KeptMesh,label: &str) {
+    if std::env::var("SOLVENT_SHEETS").is_err() { return; }
+    let mut uses: std::collections::BTreeMap<(u32,u32),(usize,usize)> = Default::default();
+    for t in &mesh.triangles { for k in 0..3 { let (a,b) = (t[k],t[(k+1)%3]); let e = uses.entry((a.min(b),a.max(b))).or_default(); if a < b { e.0 += 1; } else { e.1 += 1; } } }
+    let same = uses.values().filter(|(f,b)| *f >= 2 || *b >= 2).count();
+    let odd = uses.values().filter(|(f,b)| f+b != 2).count();
+    eprintln!("  {label}: {} triangles, {} edges walked twice the same way, {} edges not used twice",mesh.triangles.len(),same,odd);
+}
+
 /// Seeds and caps judged, kept, welded, rims zipped, certified: the shell.
-fn closed_shell(source: &str) -> (KeptMesh,gcs_core::solid::swept_boundary::Certificate) {
+fn closed_shell(source: &str) -> (KeptMesh,gcs_core::solid::swept_boundary::Certificate) { closed_shell_at(source,SAGITTA) }
+
+/// The shell at a sagitta of the case's own (a coarser one for a tool whose
+/// field never depends on the roll, where every query refines the whole
+/// interval).
+fn closed_shell_at(source: &str,sagitta: f64) -> (KeptMesh,gcs_core::solid::swept_boundary::Certificate) {
     let e = harness::read(source);
     let swept = harness::solid(&e,"swept");
     let started = std::time::Instant::now();
-    let (_,mut sheets) = seeds(&e.sketch,swept,SPACING,SAGITTA,&|_| {}).unwrap();
-    let [start,end] = caps(&e.sketch,swept,SAGITTA).unwrap();
+    let (epsilon,reach,probe) = (sagitta/4.,sagitta,2.*sagitta);
+    let (_,mut sheets) = seeds(&e.sketch,swept,SPACING,sagitta,&|_| {}).unwrap();
+    let ([start,end],components) = caps(&e.sketch,swept,&sheets,sagitta,sagitta/4.).unwrap();
+    if std::env::var("SOLVENT_SHEETS").is_ok() { for (k,c) in components.iter().enumerate() { eprintln!("  cap {k} components: {:?}",c.iter().map(|c| format!("{} facets {:+.2}{}",c.facets,c.extreme,if c.kept { " kept" } else { "" })).collect::<Vec<_>>()); } }
     eprintln!("{} sheets of {} points, caps of {} and {} triangles ({:?})",sheets.len(),sheets.iter().map(|s| s.points.len()).sum::<usize>(),
         start.triangles.len(),end.triangles.len(),started.elapsed());
+    if std::env::var("SOLVENT_SHEETS").is_ok() {
+        for (i,s) in sheets.iter().enumerate() {
+            let (lo,hi) = s.points.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(lo,hi),p| (std::array::from_fn(|k| lo[k].min(p[k])),std::array::from_fn(|k| hi[k].max(p[k]))));
+            eprintln!("  sheet {i}: {} points, {} columns, closed {}, box {:?}..{:?}",s.points.len(),s.times.len(),s.closed,lo.map(|x| (x*1e3).round()/1e3),hi.map(|x| (x*1e3).round()/1e3));
+        }
+    }
     sheets.push(start); sheets.push(end);
     let field = MaterialField::read(&e.sketch,swept,1e-10).unwrap();
-    let mut judge = FieldJudge::new(field,EPSILON/2.,4000,1000,4096);
-    let labelled = label_sheets(&mut judge,&sheets,EPSILON,REACH).unwrap();
+    let mut judge = FieldJudge::new(field,epsilon/2.,4000,1000,4096);
+    let labelled = label_sheets(&mut judge,&sheets,epsilon,reach).unwrap();
     let mesh = kept_triangles(&sheets,&labelled);
-    let keep = without_overlaps(&mesh,2.*EPSILON);
+    if std::env::var("SOLVENT_SHEETS").is_ok() {
+        use gcs_core::solid::swept_boundary::Label;
+        for (i,(l,s)) in labelled.iter().zip(&sheets).enumerate() {
+            let kept = mesh.sheet.iter().filter(|x| **x == i as u32).count();
+            eprintln!("  sheet {i}: {} of {} triangles kept; labels kept {} moved {} inner {} positive {} unresolved {}",kept,s.triangles.len(),l.count(Label::Kept),l.count(Label::Moved),l.count(Label::Inner),l.count(Label::Positive),l.count(Label::Unresolved));
+            for (v,r,enc) in l.unresolved.iter().take(3) { eprintln!("    unresolved at {:?} along {:?} offset {r:.4} enclosure {enc:?}",l.points[*v].map(|x| (x*1e3).round()/1e3),l.directions[*v].map(|x| (x*1e3).round()/1e3)); }
+            for (v,lab) in l.labels.iter().enumerate().filter(|(_,l)| matches!(l,Label::Inner | Label::Positive)).take(3) { eprintln!("    {lab:?} at {:?} along {:?}",l.points[v].map(|x| (x*1e3).round()/1e3),l.directions[v].map(|x| (x*1e3).round()/1e3)); }
+        }
+    }
+    let (keep,inside,outside) = gcs_core::solid::swept_boundary::centroid_kept(&mut judge,&mesh,sagitta).unwrap();
+    if std::env::var("SOLVENT_SHEETS").is_ok() {
+        let mut by_sheet: std::collections::BTreeMap<u32,Vec<V3>> = Default::default();
+        for (i,t) in mesh.triangles.iter().enumerate().filter(|(i,_)| !keep[*i]) {
+            let [a,b,c] = t.map(|v| mesh.vertices[v as usize]);
+            by_sheet.entry(mesh.sheet[i]).or_default().push(std::array::from_fn(|k| ((a[k]+b[k]+c[k])/3.*1e3).round()/1e3));
+        }
+        for (s,cs) in &by_sheet { eprintln!("  dropped from sheet {s}: {} triangles, e.g. {:?}",cs.len(),&cs[..cs.len().min(6)]); }
+    }
+    let mesh = retained(&mesh,&keep);
+    stage(&mesh,"kept");
+    let (mesh,replaced) = planar_union(&mesh,1e-7);
+    stage(&mesh,"unioned");
+    let keep = without_overlaps(&mesh,2.*sagitta);
     let dropped = keep.iter().filter(|k| !**k).count();
     let mut mesh = retained(&mesh,&keep);
-    weld(&mut mesh,1e-9);
-    eprintln!("{dropped} overlapping triangles dropped");
+    stage(&mesh,"without overlaps");
+    weld(&mut mesh,1e-7);
+    stage(&mesh,"welded");
+    eprintln!("{inside} triangles dropped as interior, {outside} as exterior, {replaced} unioned in their planes, {dropped} as overlapping");
     let loops = boundary_loops(&mesh.triangles);
     for (i,l) in loops.iter().enumerate() {
         let mut sorted = l.clone(); sorted.sort(); sorted.dedup();
@@ -55,23 +100,43 @@ fn closed_shell(source: &str) -> (KeptMesh,gcs_core::solid::swept_boundary::Cert
         eprintln!("  zip of loops 0 and 1: {} triangles, loop edges used more than once: {:?}",zip.len(),multi);
     }
     let before = loops.len();
-    let (pairs,unpaired) = rim_zip(&mut mesh,4.*SPACING,2.*SAGITTA,EPSILON);
+    gcs_core::solid::swept_boundary::split_at_vertices(&mut mesh,1.5*sagitta);
+    stage(&mesh,"split");
+    if std::env::var("SOLVENT_SHEETS").is_ok() {
+        for (i,l) in boundary_loops(&mesh.triangles).iter().enumerate() {
+            let pts: Vec<V3> = l.iter().map(|&v| mesh.vertices[v as usize]).collect();
+            let (lo,hi) = pts.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(lo,hi),p| (std::array::from_fn(|k| lo[k].min(p[k])),std::array::from_fn(|k| hi[k].max(p[k]))));
+            let mut sheets: std::collections::BTreeSet<u32> = Default::default();
+            for (i,t) in mesh.triangles.iter().enumerate() { if t.iter().filter(|v| l.contains(v)).count() >= 2 { sheets.insert(mesh.sheet[i]); } }
+            eprintln!("  after split, loop {i}: {} vertices, box {:?}..{:?}, bordered by sheets {:?}",l.len(),lo.map(|x| (x*1e3).round()/1e3),hi.map(|x| (x*1e3).round()/1e3),sheets);
+            if l.len() <= 12 {
+                eprintln!("    {:?}",pts.iter().map(|p| p.map(|x| (x*1e3).round()/1e3)).collect::<Vec<_>>());
+                for (i,t) in mesh.triangles.iter().enumerate() { if t.iter().filter(|v| l.contains(v)).count() >= 2 { eprintln!("      triangle {i} (sheet {}) {:?}",mesh.sheet[i],t.map(|v| mesh.vertices[v as usize].map(|x| (x*1e3).round()/1e3))); } }
+            }
+        }
+    }
+    let (pairs,unpaired) = rim_zip(&mut mesh,4.*SPACING,1.5*sagitta);
+    stage(&mesh,"zipped");
     eprintln!("welded: {} vertices, {} triangles, {} boundary loops; {pairs} rims zipped, {} loops left",mesh.vertices.len(),mesh.triangles.len(),before,unpaired.len());
     for (k,l) in unpaired.iter().enumerate() {
         let pts: Vec<V3> = l.iter().map(|&v| mesh.vertices[v as usize]).collect();
         let (lo,hi) = pts.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(lo,hi),p| (std::array::from_fn(|k| lo[k].min(p[k])),std::array::from_fn(|k| hi[k].max(p[k]))));
-        eprintln!("  unpaired loop {k}: {} vertices, box {:?}..{:?}",l.len(),lo.map(|x| (x*1e3).round()/1e3),hi.map(|x| (x*1e3).round()/1e3));
+        let mut sheets: std::collections::BTreeSet<u32> = Default::default();
+        for (i,t) in mesh.triangles.iter().enumerate() { if t.iter().filter(|v| l.contains(v)).count() >= 2 { sheets.insert(mesh.sheet[i]); } }
+        eprintln!("  unpaired loop {k}: {} vertices, box {:?}..{:?}, bordered by sheets {:?}",l.len(),lo.map(|x| (x*1e3).round()/1e3),hi.map(|x| (x*1e3).round()/1e3),sheets);
+        if std::env::var("SOLVENT_SHEETS").is_ok() { eprintln!("    {:?}",pts.iter().map(|p| p.map(|x| (x*1e3).round()/1e3)).collect::<Vec<_>>()); }
     }
-    let certificate = certify(&mut judge,&mesh.vertices,&mesh.triangles,PROBE,2.*EPSILON).unwrap();
+    let certificate = certify(&mut judge,&mesh.vertices,&mesh.triangles,probe,2.*epsilon).unwrap();
     eprintln!("certified {} of {} triangles, {} thin, {} failed; volume {:.5}; {} ({:?})",certificate.certified,mesh.triangles.len(),
         certificate.thin.len(),certificate.failures.len(),volume(&mesh),judge.stats.report(),started.elapsed());
     let sampler = super::labels::Sampler::new(&e,swept);
     for (i,c,f) in certificate.failures.iter().take(5) {
         let [a,b,cc] = mesh.triangles[*i].map(|v| mesh.vertices[v as usize]);
+        if std::env::var("SOLVENT_SHEETS").is_ok() { eprintln!("    corners {:?}",[a,b,cc].map(|p| p.map(|x| (x*1e6).round()/1e6))); }
         let n = gcs_core::solid::swept_boundary::certify::triangle_normal(a,b,cc).unwrap_or([0.;3]);
         let at = |r: f64| -> V3 { std::array::from_fn(|k| c[k]+r*n[k]) };
         eprintln!("  triangle {i} at {c:?} normal {:?} from {}: {f:?}; sampled field inside {:+.4} outside {:+.4}",n.map(|x| (x*1e3).round()/1e3),
-            if mesh.sheet[*i] == u32::MAX { "a zip".into() } else { format!("sheet {}",mesh.sheet[*i]) },sampler.least(at(-PROBE)).0,sampler.least(at(PROBE)).0);
+            if mesh.sheet[*i] == u32::MAX { "a zip".into() } else { format!("sheet {}",mesh.sheet[*i]) },sampler.least(at(-probe)).0,sampler.least(at(probe)).0);
     }
     if let Err(e) = closed(&mesh) {
         let mut uses: std::collections::BTreeMap<(u32,u32),Vec<usize>> = Default::default();
@@ -136,4 +201,67 @@ fn a_sphere_turned_about_the_spindle_sweeps_a_torus_segment_with_spherical_ends(
     // inscribed polygons (about 1.3 sagittas per unit of the smallest radius,
     // the tube's, 1) and its seams chamfer a column's width; it never exceeds it
     assert!(v <= expected*(1.+1e-3) && v >= expected*(1.-3.*SAGITTA/1.),"volume {v} against {expected}");
+}
+
+/// A round case: at most three sagittas per unit of the least radius below
+/// its closed form, never above.
+fn round(v: f64,expected: f64,least_radius: f64) {
+    assert!(v <= expected*(1.+1e-3) && v >= expected*(1.-3.*SAGITTA/least_radius),"volume {v} against {expected}");
+}
+
+#[test]
+fn a_sphere_turned_about_its_own_centre_sweeps_only_itself() {
+    // the field never depends on the roll, so every query refines the whole
+    // interval: a coarser sagitta keeps the case to seconds
+    let sagitta = 0.05;
+    let source = format!("{}{}{}",tools::SPHERE,motions::TURN_OWN_AXIS,motions::swept("turn",-60.,60.));
+    let (mesh,certificate) = closed_shell_at(&source,sagitta);
+    assert!(certificate.is_complete(),"{} triangles failed",certificate.failures.len());
+    closed(&mesh).unwrap();
+    let (v,expected) = (volume(&mesh),4.*PI/3.);
+    assert!(v <= expected*(1.+1e-3) && v >= expected*(1.-3.*sagitta),"volume {v} against {expected}");
+}
+
+#[test]
+fn a_cylinder_turned_about_the_spindle_sweeps_a_ring_sector_with_round_ends() {
+    // radius 1 about x = 3, height 2, turned 120° about world z: the tool
+    // plus the sector swept by every circle about the axis, r from 2 to 4
+    let source = format!("{}{}{}",tools::CYLINDER,motions::TURN_SPINDLE,motions::swept("turn",-60.,60.));
+    let (mesh,certificate) = closed_shell(&source);
+    assert!(certificate.is_complete(),"{} triangles failed",certificate.failures.len());
+    closed(&mesh).unwrap();
+    round(volume(&mesh),2.*PI+(2.*PI/3.)*2.*(16.-4.)/2.,1.);
+}
+
+#[test]
+fn a_triangular_prism_translated_along_x_sweeps_exactly() {
+    // the prism's section across x: y in [-0.8, 0.8], z in [-1.5, 1.5]
+    let source = format!("{}{}{}",tools::TRIANGLE_PRISM,motions::slide_x(10.),motions::swept("feed",0.,360.));
+    let (mesh,certificate) = closed_shell(&source);
+    assert!(certificate.is_complete(),"{} triangles failed",certificate.failures.len());
+    closed(&mesh).unwrap();
+    let expected = 0.5*1.5*1.6*3.+10.*1.6*3.;
+    let v = volume(&mesh);
+    assert!((v-expected).abs() <= 1e-9*expected,"volume {v} against {expected}");
+}
+
+#[test]
+fn a_sphere_translated_along_the_spindle_sweeps_a_capsule() {
+    let source = format!("{}{}{}",tools::SPHERE,motions::slide_z(10.),motions::swept("feed",0.,360.));
+    let (mesh,certificate) = closed_shell(&source);
+    assert!(certificate.is_complete(),"{} triangles failed",certificate.failures.len());
+    closed(&mesh).unwrap();
+    round(volume(&mesh),4.*PI/3.+10.*PI,1.);
+}
+
+#[test]
+fn a_negative_advance_sweeps_the_other_way() {
+    // the capsule again, travelling down: its centre line runs from z = 0 to z = -10
+    let source = format!("{}{}{}",tools::SPHERE,motions::slide_z(-10.),motions::swept("feed",0.,360.));
+    let (mesh,certificate) = closed_shell(&source);
+    assert!(certificate.is_complete(),"{} triangles failed",certificate.failures.len());
+    closed(&mesh).unwrap();
+    round(volume(&mesh),4.*PI/3.+10.*PI,1.);
+    let (lo,hi) = mesh.vertices.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(lo,hi),p| (lo.min(p[2]),hi.max(p[2])));
+    assert!((lo+11.).abs() < 0.05 && (hi-1.).abs() < 0.05,"z extent {lo}..{hi}");
 }

@@ -301,6 +301,22 @@ on the axis refining the whole roll. Milestone 1 evidence and the refusals are i
 literal in a `sweep_cases!` table once the harness lands, three tiers of independent truth:
 closed forms, sampled membership through `Family::at`, the field last). The old arrangement
 stays until project 2 consumes `SweptBoundary`; do not extend it.
+**Milestones 2 and 3 (2026-09-11):** every triangle is certified by `sides` (material `d`
+inside, exterior `d` outside along its normal, halving to `2ε` for thin material, `Reversed`
+refused), and eight closed-form cases close as `ClosedShell`s with every triangle certified
+(box, prism, plunged and turned cylinder, torus segment, capsule both ways, sphere about its
+own centre). Three lessons are the design. **The field cannot cut a cap**: the sweep is only
+quadratically deep past a contact curve, so `caps` cuts the tool's mesh along every sheet's
+end column (`CutMesh`: column points put in as vertices, chords walked facet by facet with
+every crossed edge split, components judged by their most decisive normal velocity), and the
+rim is the column itself. **Coplanar coverage is unioned, never dropped**: `planar_union`
+clips each plane's triangles by the fragments already placed. **Covered means covered**:
+`without_overlaps` clips a later triangle by the earlier tiles tangent to it in its own
+plane (`covered_by`); nearness ate a cap's facets beside its seam. `split_at_vertices`
+resolves T-junctions to one and a half sagittas under four fold guards, `directions`
+weights normals by angle, `deep_sign` gives `centroid_kept` its band while `sign_beyond`
+stays strict for the certificate. `tests/sweep_mesh/{closed,pieces,overlaps}.rs` are the
+gates; a sweep case must run in seconds, and anything longer prints progress.
 `solid::MaterialField` composes static and swept operands with fixed poses and Booleans.
 Its evaluator owns complete-member cut arithmetic, retaining every distinct node/box sweep's
 domain, witness, enclosure and termination status. Budgets apply per sweep query; exhausted

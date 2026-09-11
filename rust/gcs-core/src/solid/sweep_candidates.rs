@@ -980,7 +980,8 @@ impl SweepContacts {
             }
             sheets.push(SweepPatch {points,normals,triangles,column,times,closed});
         }
-        if sheets.is_empty() { return Err("the tool has no contact curve under its motion".into()); }
+        // a tool with no contact curve under its motion (a sphere about its
+        // own centre) sweeps only itself: no sheets, and the caps are its whole boundary
         Ok(sheets)
     }
 

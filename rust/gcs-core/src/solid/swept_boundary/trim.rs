@@ -38,64 +38,107 @@ pub fn kept_triangles(sheets: &[SweepPatch],labelled: &[Labelled]) -> KeptMesh {
     out
 }
 
-/// Kept triangles of a later sheet lying on an earlier sheet's kept surface
-/// are dropped: two sources can generate one piece of the boundary (a tool's
-/// leading and trailing edges sweeping the same face of the sweep, the two
-/// rims of a plunged cylinder sweeping one wall), and the field, rightly,
-/// keeps both. A triangle is on another sheet where its three vertices and
-/// its centroid each lie within `tolerance` of that sheet's kept triangles.
-/// Returns, per triangle of the mesh, whether it stays.
-pub fn without_overlaps(mesh: &KeptMesh,tolerance: f64) -> Vec<bool> {
+/// Drop every triangle whose centroid the field reads material or exterior
+/// by more than twice `sagitta` (an inscribed triangle's centroid is inside
+/// by up to a sagitta and is boundary; facets cut at the sagitta sit on it). A triangle's three vertices can all lie on
+/// the boundary while its interior does not: a box's front face at the
+/// start of its translation has its corners on the sweep's side faces and
+/// its interior millimetres inside the sweep. Returns, per triangle, whether
+/// it stays, and how many were dropped inside and outside.
+pub fn centroid_kept(judge: &mut super::judge::FieldJudge,mesh: &KeptMesh,sagitta: f64) -> Result<(Vec<bool>,usize,usize),super::judge::JudgeError> {
+    use super::judge::Sign;
+    let mut keep = vec![true;mesh.triangles.len()];
+    let (mut inside,mut outside) = (0,0);
+    for (i,t) in mesh.triangles.iter().enumerate() {
+        let [a,b,c] = t.map(|v| mesh.vertices[v as usize]);
+        let centroid: V3 = std::array::from_fn(|k| (a[k]+b[k]+c[k])/3.);
+        match judge.deep_sign(centroid,2.*sagitta)?.0 {
+            Sign::Material => { keep[i] = false; inside += 1; }
+            Sign::Exterior => { keep[i] = false; outside += 1; }
+            _ => {}
+        }
+    }
+    Ok((keep,inside,outside))
+}
+
+/// Whether the triangle `t` is covered by `tiles` lying on the same surface:
+/// the tiles facing its way (within about twenty-five degrees) whose planes
+/// pass within `tolerance` of its centroid are projected onto its plane and
+/// clipped from it, and it is covered when nothing is left. Tiles of one
+/// tessellation share their edges, so their footprints leave no cracks
+/// between them; but the triangle's own corners lie on the surface, beyond
+/// the chords of a coarser tessellation, and land a whisker outside their
+/// footprints (the tile's sagitta times the sine of the angle between the
+/// two normals), so every footprint is grown by an eighth of the tolerance.
+/// A tile that merely touches the triangle's edge takes nothing from it.
+pub fn covered_by(t: [V3;3],tiles: impl Iterator<Item = [V3;3]>,tolerance: f64) -> bool {
     use super::certify::triangle_normal;
+    use super::planar::{P2,area2,clip,overlap};
+    let Some(n) = triangle_normal(t[0],t[1],t[2]) else { return true };
+    let least = (0..3).min_by(|&a,&b| n[a].abs().total_cmp(&n[b].abs())).unwrap();
+    let mut axis = [0.;3]; axis[least] = 1.;
+    let u = { let c = [n[1]*axis[2]-n[2]*axis[1],n[2]*axis[0]-n[0]*axis[2],n[0]*axis[1]-n[1]*axis[0]]; let l = (c[0]*c[0]+c[1]*c[1]+c[2]*c[2]).sqrt(); c.map(|x| x/l) };
+    let v = [n[1]*u[2]-n[2]*u[1],n[2]*u[0]-n[0]*u[2],n[0]*u[1]-n[1]*u[0]];
+    let origin = t[0];
+    let to2 = |p: V3| -> P2 { let r = [p[0]-origin[0],p[1]-origin[1],p[2]-origin[2]]; (None,r[0]*u[0]+r[1]*u[1]+r[2]*u[2],r[0]*v[0]+r[1]*v[1]+r[2]*v[2]) };
+    let mut own: Vec<P2> = t.iter().map(|p| to2(*p)).collect();
+    if area2(&own) < 0. { own.reverse(); }
+    let scale = own.iter().map(|p| p.1.abs().max(p.2.abs())).fold(0_f64,f64::max).max(f64::MIN_POSITIVE);
+    let (eps,area_eps) = (1e-9*scale,1e-14*scale*scale);
+    let centroid: V3 = std::array::from_fn(|k| (t[0][k]+t[1][k]+t[2][k])/3.);
+    let mut pieces = vec![own];
+    for tile in tiles {
+        let Some(m) = triangle_normal(tile[0],tile[1],tile[2]) else { continue };
+        if m[0]*n[0]+m[1]*n[1]+m[2]*n[2] < 0.9 { continue; }
+        if ((centroid[0]-tile[0][0])*m[0]+(centroid[1]-tile[0][1])*m[1]+(centroid[2]-tile[0][2])*m[2]).abs() > tolerance { continue; }
+        let mut footprint: Vec<P2> = tile.iter().map(|p| to2(*p)).collect();
+        if area2(&footprint) < 0. { footprint.reverse(); }
+        if area2(&footprint) <= area_eps { continue; }
+        let mut next = Vec::new();
+        for piece in pieces { if overlap(&piece,&footprint,eps) { clip(piece,&footprint,eps,tolerance/8.,area_eps,&mut next); } else { next.push(piece); } }
+        pieces = next;
+        if pieces.is_empty() { return true; }
+    }
+    false
+}
+
+/// Kept triangles of a later sheet that earlier sheets cover are dropped:
+/// two sources can generate one piece of the boundary (a tool's leading
+/// and trailing edges sweeping the same face of the sweep, the two rims of
+/// a plunged cylinder sweeping one wall, a grazing face of the tool at an
+/// end pose on the sheet its own edges sweep), and the field, rightly, keeps
+/// both. Covered is `covered_by` over every earlier sheet's triangles within
+/// the tolerance of the triangle's box; nearness alone would eat a cap's
+/// facets beside the seam where its sheet is tangent to them, and a planar
+/// sliver beside a perpendicular wall. Returns, per triangle, whether it
+/// stays.
+pub fn without_overlaps(mesh: &KeptMesh,tolerance: f64) -> Vec<bool> {
     let cell = (tolerance*8.).max(f64::MIN_POSITIVE);
     let key = |p: V3| p.map(|x| (x/cell).floor() as i64);
     // triangles by sheet, bucketed by their boxes
     let mut buckets: std::collections::BTreeMap<(u32,[i64;3]),Vec<usize>> = Default::default();
-    for (i,t) in mesh.triangles.iter().enumerate() {
+    let boxes: Vec<([i64;3],[i64;3])> = mesh.triangles.iter().map(|t| {
         let corners = t.map(|v| mesh.vertices[v as usize]);
-        let (lo,hi) = (key(std::array::from_fn(|k| corners.iter().map(|q| q[k]).fold(f64::INFINITY,f64::min))),
-            key(std::array::from_fn(|k| corners.iter().map(|q| q[k]).fold(f64::NEG_INFINITY,f64::max))));
+        (key(std::array::from_fn(|k| corners.iter().map(|q| q[k]).fold(f64::INFINITY,f64::min))),
+            key(std::array::from_fn(|k| corners.iter().map(|q| q[k]).fold(f64::NEG_INFINITY,f64::max))))
+    }).collect();
+    for (i,(lo,hi)) in boxes.iter().enumerate() {
         for x in lo[0]..=hi[0] { for y in lo[1]..=hi[1] { for z in lo[2]..=hi[2] { buckets.entry((mesh.sheet[i],[x,y,z])).or_default().push(i); } } }
     }
-    let distance_to = |p: V3,i: usize| -> f64 {
-        let [a,b,c] = mesh.triangles[i].map(|v| mesh.vertices[v as usize]);
-        // Ericson's closest point on a triangle
-        let sub = |x: V3,y: V3| -> V3 { [x[0]-y[0],x[1]-y[1],x[2]-y[2]] };
-        let dot = |x: V3,y: V3| x[0]*y[0]+x[1]*y[1]+x[2]*y[2];
-        let len = |x: V3| dot(x,x).sqrt();
-        let (ab,ac,ap) = (sub(b,a),sub(c,a),sub(p,a));
-        let (d1,d2) = (dot(ab,ap),dot(ac,ap));
-        if d1 <= 0. && d2 <= 0. { return len(ap); }
-        let bp = sub(p,b); let (d3,d4) = (dot(ab,bp),dot(ac,bp));
-        if d3 >= 0. && d4 <= d3 { return len(bp); }
-        let vc = d1*d4-d3*d2;
-        if vc <= 0. && d1 >= 0. && d3 <= 0. { let v = d1/(d1-d3); return len(sub(p,[a[0]+v*ab[0],a[1]+v*ab[1],a[2]+v*ab[2]])); }
-        let cp = sub(p,c); let (d5,d6) = (dot(ab,cp),dot(ac,cp));
-        if d6 >= 0. && d5 <= d6 { return len(cp); }
-        let vb = d5*d2-d1*d6;
-        if vb <= 0. && d2 >= 0. && d6 <= 0. { let w = d2/(d2-d6); return len(sub(p,[a[0]+w*ac[0],a[1]+w*ac[1],a[2]+w*ac[2]])); }
-        let va = d3*d6-d5*d4;
-        if va <= 0. && d4-d3 >= 0. && d5-d6 >= 0. { let w = (d4-d3)/((d4-d3)+(d5-d6)); return len(sub(p,[b[0]+w*(c[0]-b[0]),b[1]+w*(c[1]-b[1]),b[2]+w*(c[2]-b[2])])); }
-        let denom = 1./(va+vb+vc); let (v,w) = (vb*denom,vc*denom);
-        len(sub(p,[a[0]+v*ab[0]+w*ac[0],a[1]+v*ab[1]+w*ac[1],a[2]+v*ab[2]+w*ac[2]]))
-    };
-    let near_sheet = |p: V3,sheet: u32| -> bool {
-        let k = key(p);
-        for x in k[0]-1..=k[0]+1 { for y in k[1]-1..=k[1]+1 { for z in k[2]-1..=k[2]+1 {
-            if let Some(list) = buckets.get(&(sheet,[x,y,z])) { for &i in list { if distance_to(p,i) <= tolerance { return true; } } }
-        } } }
-        false
-    };
     let sheets: std::collections::BTreeSet<u32> = mesh.sheet.iter().copied().collect();
     let mut keep = vec![true;mesh.triangles.len()];
     for (i,t) in mesh.triangles.iter().enumerate() {
         let mine = mesh.sheet[i];
-        let corners = t.map(|v| mesh.vertices[v as usize]);
-        let centroid: V3 = std::array::from_fn(|k| (corners[0][k]+corners[1][k]+corners[2][k])/3.);
-        if triangle_normal(corners[0],corners[1],corners[2]).is_none() { keep[i] = false; continue; }
+        let (lo,hi) = boxes[i];
+        let mut seen: std::collections::BTreeSet<usize> = Default::default();
+        let mut tiles: Vec<[V3;3]> = Vec::new();
         for &earlier in sheets.iter().filter(|&&s| s < mine) {
-            if corners.iter().chain(std::iter::once(&centroid)).all(|p| near_sheet(*p,earlier)) { keep[i] = false; break; }
+            for x in lo[0]-1..=hi[0]+1 { for y in lo[1]-1..=hi[1]+1 { for z in lo[2]-1..=hi[2]+1 {
+                let Some(list) = buckets.get(&(earlier,[x,y,z])) else { continue };
+                for &j in list { if seen.insert(j) { tiles.push(mesh.triangles[j].map(|w| mesh.vertices[w as usize])); } }
+            } } }
         }
+        if !tiles.is_empty() && covered_by(t.map(|v| mesh.vertices[v as usize]),tiles.into_iter(),tolerance) { keep[i] = false; }
     }
     keep
 }

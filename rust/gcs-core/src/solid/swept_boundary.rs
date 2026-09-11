@@ -17,14 +17,16 @@ pub mod trim;
 pub mod certify;
 pub mod caps;
 pub mod stitch;
+pub mod planar;
 
-pub use caps::{End,caps};
+pub use caps::{CapComponent,CutMesh,End,Region,caps,closest_on_triangle};
 pub use certify::{Certificate,Failure,certify};
+pub use planar::planar_union;
 pub use stitch::{rim_zip,split_at_vertices,weld,zip_loops};
 pub use judge::{FieldJudge,JudgeError,Projection,QueryStats,Sign};
 pub use project::{Label,Labelled,directions,label_patch,label_sheets};
 pub use seeds::seeds;
-pub use trim::{KeptMesh,boundary_loops,kept_triangles,retained,without_overlaps};
+pub use trim::{KeptMesh,boundary_loops,centroid_kept,covered_by,kept_triangles,retained,without_overlaps};
 
 /// Controls of the construction. Lengths are in the model's own units.
 #[derive(Clone,Copy,Debug)]

@@ -126,6 +126,18 @@ impl FieldJudge {
     /// the search stops as soon as the enclosure clears the band.
     pub fn sign_beyond(&mut self,p: V3,band: f64) -> Result<(Sign,[f64;2]),JudgeError> { self.query(p,band,self.far,false) }
 
+    /// The sign at a point deeper than `depth`: material only when the
+    /// enclosure lies below `-depth`, exterior only above `depth`, and
+    /// otherwise near, whatever the enclosure's width.
+    pub fn deep_sign(&mut self,p: V3,depth: f64) -> Result<(Sign,[f64;2]),JudgeError> {
+        let (sign,[lo,hi]) = self.query(p,depth,self.far,false)?;
+        Ok(match sign {
+            Sign::Material if hi >= -depth => (Sign::Near {within:lo.abs().max(hi.abs())},[lo,hi]),
+            Sign::Exterior if lo <= depth => (Sign::Near {within:lo.abs().max(hi.abs())},[lo,hi]),
+            s => (s,[lo,hi]),
+        })
+    }
+
     /// Project a point onto the boundary along `m` (the outward direction):
     /// kept where the field brackets the boundary within `epsilon` of it,
     /// moved where the bracket is found within `reach` on one side, `Inner`

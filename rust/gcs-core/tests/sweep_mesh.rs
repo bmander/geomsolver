@@ -9,3 +9,5 @@ mod motions;
 mod labels;
 mod certificate;
 mod closed;
+mod overlaps;
+mod pieces;

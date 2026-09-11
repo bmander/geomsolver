@@ -43,10 +43,12 @@ impl Labelled {
 
 /// The direction each vertex of each sheet is judged along: the normalised
 /// sum of the normals of every triangle, on any sheet, incident on the
-/// vertex's position. On a smooth sheet that is the sheet's normal; where
-/// sheets meet at a tool edge or corner it is the bisector, which enters the
-/// material where one face's own normal runs along the other face. Positions
-/// are identified within `weld`.
+/// vertex's position, each weighted by the triangle's angle at the vertex
+/// (so a fan of slivers on one face does not outvote the face beside it).
+/// On a smooth sheet that is the sheet's normal; where sheets meet at a tool
+/// edge or corner it is the bisector, which enters the material where one
+/// face's own normal runs along the other face. Positions are identified
+/// within `weld`.
 pub fn directions(sheets: &[SweepPatch],weld: f64) -> Vec<Vec<V3>> {
     let cell = weld.max(f64::MIN_POSITIVE)*4.;
     let key = |p: V3| p.map(|x| (x/cell).floor() as i64);
@@ -60,10 +62,19 @@ pub fn directions(sheets: &[SweepPatch],weld: f64) -> Vec<Vec<V3>> {
             let [a,b,c] = t.map(|v| sheet.points[v as usize]);
             let (u,w) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]);
             let mut n = [u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]];
+            let len = (n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
+            if !(len > 0.) { continue; }
+            n = n.map(|x| x/len);
             // the sheet's own normals say which side is out; the winding does not
             let stored: V3 = std::array::from_fn(|k| t.iter().map(|&v| sheet.normals[v as usize][k]).sum());
             if n[0]*stored[0]+n[1]*stored[1]+n[2]*stored[2] < 0. { n = n.map(|x| -x); }
-            for &v in t { for k in 0..3 { sums[s][v as usize][k] += n[k]; } }
+            for k in 0..3 {
+                let (p,q,r) = (sheet.points[t[k] as usize],sheet.points[t[(k+1)%3] as usize],sheet.points[t[(k+2)%3] as usize]);
+                let (e1,e2) = ([q[0]-p[0],q[1]-p[1],q[2]-p[2]],[r[0]-p[0],r[1]-p[1],r[2]-p[2]]);
+                let (l1,l2) = ((e1[0]*e1[0]+e1[1]*e1[1]+e1[2]*e1[2]).sqrt(),(e2[0]*e2[0]+e2[1]*e2[1]+e2[2]*e2[2]).sqrt());
+                let angle = if l1 > 0. && l2 > 0. { ((e1[0]*e2[0]+e1[1]*e2[1]+e1[2]*e2[2])/(l1*l2)).clamp(-1.,1.).acos() } else { 0. };
+                for j in 0..3 { sums[s][t[k] as usize][j] += angle*n[j]; }
+            }
         }
     }
     // each vertex takes the sum over every vertex within the weld of it

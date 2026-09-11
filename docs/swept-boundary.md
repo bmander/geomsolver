@@ -116,46 +116,107 @@ costs 0.5 ms on these cases.
 
 ## Milestone 3: caps, stitch, closed shells
 
-`caps` (`caps.rs`) tessellates the tool to the construction's sagitta through the core's
-welded indexed mesh (`static_solid_at_unit`, `indexed`), poses it at each end of the roll,
-and keeps each facet by the sign of its normal velocity at its centroid: receding at the
-start, advancing at the end. The cap's rim is therefore ragged to a facet about the contact
-curve; the field judges its vertices like any sheet's. This is a shortcut past the plan's
-slab decomposition, which can replace it if exactness at the rim ever demands.
+The first attempt kept cap facets by the field's depth at their vertices and centroids,
+and it cannot work: the sweep is only quadratically deep just past a contact curve (a
+cylinder wall turned about a spindle at radius 3 is 0.0072 deep one facet past the contact
+generator, 0.029 two facets past), so any facet a chord past the curve reads boundary to
+any tolerance the judge can afford, the cap's rim comes out ragged across the sheet's
+exact end column, and the zip between them folds. What the field cannot cut, the tracer's
+column can: it is the contact curve itself, on the tool, at that instant.
 
-`without_overlaps` (`trim.rs`) drops a later sheet's kept triangles lying on an earlier
-sheet's kept surface: a tool's leading and trailing edges sweep the same face of the sweep,
-a plunged cylinder's two rims sweep one wall, and the field rightly keeps both.
+`caps` (`caps.rs`) therefore tessellates the tool through the core's welded indexed mesh
+(`static_solid_at_unit`, `indexed`), poses it at each end of the roll, and **cuts it along
+every sheet's end column** with `CutMesh`: each column point is put into the mesh as a
+vertex (on the facet, edge or vertex it lies on, by the nearest point of the nearest
+facet, since the perpendicular projections of surface points onto a convex facet mesh
+leave gaps at the edges; a vertex within a quarter sagitta moves onto the point), and
+consecutive points are joined by walking facet by facet along the chord's projection in
+the plane of the two ends' normals, every facet edge the chord crosses split at the
+crossing. Only facets the walk enters are looked at, so a face round a corner, folded into
+the projection, cannot offer a crossing of its own. The chain of cut edges parts the mesh
+into components; each is judged by its most decisively signed facet's normal velocity
+(`|n·v|/|v| ≥ 0.25`; a tessellation angle of 0.4 rad at this sagitta puts facet normals
+0.2 rad off): receding components are kept at the start, advancing at the end, and a
+component signed neither way (a face parallel to a translation, a face square to a turn's
+axis, a sphere about its own centre) is kept at both, for the coverage drop or the planar
+union to take one copy of. `caps` reports its components (`CapComponent`: facets, extreme,
+kept), so a test can say what a cap must be made of. The rim is then the column chord for
+chord, save the crossing vertices the cut put on the chords, which the stitch's tolerant
+split puts into the sheet's edges too.
 
-The stitch (`stitch.rs`): `weld` identifies coincident vertices; `split_at_vertices`
-resolves T-junctions at exact coincidence (a thousandth of the vertex tolerance: two runs
-along one tool edge walked out on one sheet and back on the other); `rim_zip` pairs each
-boundary loop with the nearest loop within four column spacings and zips them
-(`zip_loops`): two loops of a seam between outward pieces run opposite ways, so the second
-loop's direction is chosen by total rung length (crossed rungs are longer), loops sharing
-vertices (a tessellation vertex on the contact curve, the sphere's poles) are zipped arc by
-arc between the shared vertices with each arc of the second loop chosen by proximity, and
-the band is flipped as a whole by whether its first loop edge runs with the mesh's. Two
-loops within twice the sagitta are one curve sampled twice (a cap's rim on the tool's sharp
-edge against the sheet's column): the sparser loop's own band is peeled from its sheet and
-the next column zipped instead, since a band between coincident loops doubles the surface.
+`planar_union` (`planar.rs`): a face grazing the sweep is generated many times over (a
+turned cylinder's top by each half of its rim, by the whole face and by both caps), each
+source triangulating one planar region differently, and no rule dropping whole triangles
+can leave such a region covered once with a boundary its neighbours can join. So every
+plane's triangles (grouped by unsigned plane within `1e-7`, facing their area-weighted
+majority) are unioned exactly: each triangle is clipped by the fragments already placed
+(separating-axis test first, then successive half-plane cuts, so only what actually
+overlaps is fragmented) and only what they do not cover is kept, every fragment a convex
+polygon fanned into triangles. Input vertices keep their identities; new corners are shared
+where they coincide.
+
+`without_overlaps` (`trim.rs`) drops a later sheet's triangle that earlier sheets **cover**
+(`covered_by`): the earlier triangles facing its way within about 25° whose planes pass
+within the tolerance of its centroid are projected onto its plane and clipped from it, and
+only a triangle with nothing left is covered. Nearness was the first rule and it eats two
+things a cut cap has: its facets beside the seam, where the sheet is tangent to them, and a
+planar sliver beside a perpendicular wall. Tiles of one tessellation share their edges, so
+their footprints leave no cracks; the triangle's own corners lie on the surface beyond a
+coarser tessellation's chords and land a whisker outside their footprints, so every
+footprint is grown by an eighth of the tolerance. Curved partial overlaps between two
+tracer sheets with different tessellations are not handled; the cases so far share theirs.
+
+`centroid_kept` drops a triangle whose centroid the field reads deeper than two sagittas
+(`FieldJudge::deep_sign`: material only below `−depth`, exterior only above, otherwise near
+whatever the enclosure's width; `sign_beyond` keeps its strict semantics for the
+certificate's `sides`). `directions` weights each incident triangle's normal by its angle
+at the vertex, so a fan of slivers on one face (the cut's fans at a prism's apex) does not
+outvote the face beside it: unweighted, an apex read `(0.56, 0.2, 0.8)` and its inward
+probe fell outside the lower slanted face.
+
+The stitch (`stitch.rs`): `weld` identifies coincident vertices (`1e-7`);
+`split_at_vertices` resolves T-junctions to a tolerance of one and a half sagittas, since
+two samplings of one curve hold each other's vertices within a sagitta of their chords (a
+cap's rim on the tool's edge against the sheet's column, a planar fragment's corner on its
+neighbour's edge, a cut's crossing on the sheet's chord): a boundary vertex within the
+tolerance of a boundary edge's interior splits the triangle on it at the vertex, which
+stays where it is. Four guards keep a split from folding: the vertex must lie within a
+quarter of the triangle's height over the edge, within a quarter of its distance along the
+edge from either end (a vertex a whisker from the edge's start but as far from its line
+folds the first triangle), the two triangles made must face the way the one did, and
+neither new edge may already be walked that way by another triangle. `rim_zip` then pairs
+each remaining boundary loop with the nearest loop within four column spacings and zips
+them (`zip_loops`, as in milestone 2's description), and zips across every loop left that
+turns back on itself at exactly two corners (a slit); the coincident-loop peel is gone.
 `boundary_loops` walks each loop round the vertex fan, so loops sharing a vertex stay two.
 
-Evidence (`tests/sweep_mesh/closed.rs`, same tolerances, `d = 40 µm`): each case a closed
-shell (`ClosedShell::from_triangles`), every triangle certified, none thin, the volume
-against a closed form the construction never sees. An inscribed mesh's columns are
-inscribed polygons (about 1.3 sagittas per unit of the smallest radius) and its seams
-chamfer a column's width, so a round case is allowed three sagittas per unit radius below
-its closed form and never above it; a polyhedral case must match to 1e-9.
+Evidence (`tests/sweep_mesh/closed.rs`, `s = 0.02`, `ε = s/4`, `d = 2s`, spacing 0.5): each
+case a closed shell (`ClosedShell::from_triangles`), every triangle certified, none thin,
+the volume against a closed form the construction never sees. An inscribed mesh falls short
+of a round solid (its columns are inscribed polygons, about 1.3 sagittas per unit of the
+smallest radius), so a round case is allowed three sagittas per unit radius below its
+closed form and never above it; a polyhedral case must match to 1e-9.
 
 | case | triangles | volume | closed form | run |
 |---|---|---|---|---|
-| sphere turned ±60°: torus segment with spherical ends | 4640 | 23.399 | 23.928 (−2.2%) | 2.0 s |
-| cylinder plunged 6 along its axis | 766 | 24.541 | 25.133 (−2.4%) | 3.0 s |
-| box translated 10 along x | 1260 | 72.000000 | 72 | 9.7 s |
+| box 2×3×2 translated 10 along x | 1260 | 72.000000 | 72 | 9.8 s |
+| triangular prism translated 10 along x | 1120 | 51.600000 | 51.6 | 5.7 s |
+| cylinder plunged 6 along its axis | 950 | 24.509 | 25.133 (−2.5%) | 3.1 s |
+| cylinder r 1 at 3 turned ±60° about the spindle | 1492 | 31.342 | 31.416 (−0.2%) | 5.5 s |
+| sphere at 3 turned ±60°: torus segment, spherical ends | 4993 | 23.384 | 23.928 (−2.3%) | 3.1 s |
+| sphere translated 10 along z: capsule (both ways) | 5174 | 34.818 | 35.605 (−2.2%) | 2.6 s |
+| sphere turned ±60° about its own centre (s = 0.05) | 3968 | 4.172 | 4.189 (−0.4%) | 19 s |
 
-The box's time is its 2100 near queries at 1.3 ms: a translation of a face parallel to
-itself is the flat-minimum case for the roll refinement.
+The translated cases' time is their near queries at 0.9 ms: a face parallel to its motion
+is the flat-minimum case for the roll refinement. The sphere about its own centre is the
+worst of it, a field that never depends on the roll, so every query refines the whole
+interval (7 million roll evaluations for 24 thousand queries); it runs at a coarser
+sagitta to stay in seconds. The pieces have their own gates: `tests/sweep_mesh/pieces.rs`
+(the union of doubled and overlapping squares, a belt cut round a cube parting it in two,
+an open cut parting nothing, a point off the mesh refused by name, a T-junction on a
+shared line and one a whisker off it) and `overlaps.rs` (coverage of a triangle by tiles:
+inside one, across two sharing an edge, half outside, merely touching, facing the other
+way, off the surface, and a wall sliver against a coarser wall).
 
 ## Refusals
 
@@ -166,5 +227,7 @@ certificate in milestone 2.
 
 ## Next
 
-Milestone 2: the triangle certificate (`c ± d·n` with `d = 2·sagitta`) and the closure audit
-on open sheets. Milestone 3: caps and welds, the closed-form cases. See the plan for the rest.
+Milestone 4: trim, creases and ribbons on the cases where sheets cross (tumbling cylinder,
+turning prism, box at 30°, lens, dumbbell). Then the remaining ★ closed-form cases (box about
+an axis through its face centre 360°, ring prism, bored bead, cylinder screw, diagonal box),
+the `sweep_cases!` table harness with `forms.rs`, and the tracer fixes. See the plan.

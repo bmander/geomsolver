@@ -53,62 +53,27 @@ fn apart(a: &[V3],b: &[V3]) -> f64 {
 
 /// Zip every boundary loop to the nearest other loop within `within` of it
 /// (both ways), each pair once, the new triangles wound against the edges
-/// they close. Two loops within `coincident` of each other are one curve
-/// sampled twice (a cap's rim on the tool's sharp edge, and the sheet's end
-/// column on the same edge): a band between them would double the surface
-/// beside it, so the band of triangles at the second loop is peeled off and
-/// the loop it leaves is zipped instead. Returns the pairs zipped and the
+/// they close; then every loop left that doubles back on itself (a cap's
+/// ragged rim walked out and the sheet's column walked back, joined at
+/// their ends) is zipped across, arc to arc. Two runs along one curve
+/// sampled twice (a cap's rim on the tool's edge and the sheet's column on
+/// the same edge) are first made one by `split_at_vertices` within `split`,
+/// so no band is ever laid between them. Returns the pairs zipped and the
 /// loops left unpaired.
-pub fn rim_zip(mesh: &mut KeptMesh,within: f64,coincident: f64,vertex: f64) -> (usize,Vec<Vec<u32>>) {
-    // a T-junction is exact coincidence (two runs along one tool edge), a
-    // thousandth of the vertex tolerance; a vertex merely near another loop's
-    // chord is the coincident-rim case below, not a junction
-    split_at_vertices(mesh,vertex*1e-3);
-    let mut loops = boundary_loops(&mesh.triangles);
+pub fn rim_zip(mesh: &mut KeptMesh,within: f64,split: f64) -> (usize,Vec<Vec<u32>>) {
+    split_at_vertices(mesh,split);
+    let loops = boundary_loops(&mesh.triangles);
     // the directed boundary edges as the mesh walks them
     let mut boundary: std::collections::BTreeSet<(u32,u32)> = Default::default();
     for l in &loops { for k in 0..l.len() { boundary.insert((l[k],l[(k+1)%l.len()])); } }
-    let mut points: Vec<Vec<V3>> = loops.iter().map(|l| l.iter().map(|&v| mesh.vertices[v as usize]).collect()).collect();
+    let points: Vec<Vec<V3>> = loops.iter().map(|l| l.iter().map(|&v| mesh.vertices[v as usize]).collect()).collect();
     let mut paired = vec![false;loops.len()];
     let mut pairs = 0;
-    for i in 0..loops.len() {
-        if paired[i] || loops[i].len() < 2 { continue; }
-        let best = (0..loops.len()).filter(|&j| j != i && !paired[j] && loops[j].len() >= 2)
-            .map(|j| (apart(&points[i],&points[j]),j)).filter(|(d,_)| *d <= within).min_by(|a,b| a.0.total_cmp(&b.0));
-        let Some((d,j)) = best else { continue };
-        paired[i] = true; paired[j] = true; pairs += 1;
-        // the coincident pair's sparser loop is the one peeled, the denser
-        // kept: a sheet's column against a cap's rim on the same edge
-        let (i,j) = if d <= coincident && loops[i].len() < loops[j].len() { (j,i) } else { (i,j) };
-        if d <= coincident {
-            // peel the band at loop j: every triangle of the loop's own sheet
-            // on one of its vertices (a vertex the two loops share also
-            // carries the other sheet's triangles, which stay)
-            let on: std::collections::BTreeSet<u32> = loops[j].iter().copied().collect();
-            let mut owner: std::collections::BTreeMap<(u32,u32),usize> = Default::default();
-            for (k,t) in mesh.triangles.iter().enumerate() { for e in 0..3 { owner.insert((t[e],t[(e+1)%3]),k); } }
-            let mut sheets_of_j: std::collections::BTreeMap<u32,usize> = Default::default();
-            for k in 0..loops[j].len() { if let Some(&t) = owner.get(&(loops[j][k],loops[j][(k+1)%loops[j].len()])) { *sheets_of_j.entry(mesh.sheet[t]).or_default() += 1; } }
-            let peeled = sheets_of_j.into_iter().max_by_key(|(_,n)| *n).map(|(s,_)| s).unwrap_or(u32::MAX);
-            let mut keep = Vec::with_capacity(mesh.triangles.len());
-            let mut sheet = Vec::with_capacity(mesh.sheet.len());
-            for (t,s) in mesh.triangles.iter().zip(&mesh.sheet) { if !(*s == peeled && t.iter().any(|v| on.contains(v))) { keep.push(*t); sheet.push(*s); } }
-            mesh.triangles = keep; mesh.sheet = sheet;
-            // the loop the peel leaves: the new boundary loop nearest loop i
-            let fresh = boundary_loops(&mesh.triangles);
-            let known: std::collections::BTreeSet<Vec<u32>> = loops.iter().enumerate().filter(|(k,_)| *k != j).map(|(_,l)| l.clone()).collect();
-            let candidates: Vec<Vec<u32>> = fresh.into_iter().filter(|l| !known.contains(l)).collect();
-            let Some(next) = candidates.into_iter().map(|l| { let p: Vec<V3> = l.iter().map(|&v| mesh.vertices[v as usize]).collect(); (apart(&points[i],&p),l) })
-                .min_by(|a,b| a.0.total_cmp(&b.0)).map(|(_,l)| l) else { paired[j] = false; continue };
-            for k in 0..next.len() { boundary.insert((next[k],next[(k+1)%next.len()])); }
-            points[j] = next.iter().map(|&v| mesh.vertices[v as usize]).collect();
-            loops[j] = next;
-        }
-        let band = zip_loops(&loops[i],&loops[j],&mesh.vertices);
+    let lay = |mesh: &mut KeptMesh,on_a: &[u32],band: Vec<[u32;3]>| {
         // the band is one strip, so one of its loop edges says whether it
         // walks the mesh's edges the way they already run, which a seam
         // must not
-        let on_a: std::collections::BTreeSet<u32> = loops[i].iter().copied().collect();
+        let on_a: std::collections::BTreeSet<u32> = on_a.iter().copied().collect();
         let flip = band.iter().find_map(|t| (0..3).find_map(|k| {
             let (p,q) = (t[k],t[(k+1)%3]);
             if on_a.contains(&p) && on_a.contains(&q) { Some(boundary.contains(&(p,q))) } else { None }
@@ -124,6 +89,38 @@ pub fn rim_zip(mesh: &mut KeptMesh,within: f64,coincident: f64,vertex: f64) -> (
             if area2 <= 1e-12*(distance(p,q)*distance(p,r)).max(f64::MIN_POSITIVE) { continue; }
             mesh.triangles.push(tri); mesh.sheet.push(u32::MAX);
         }
+    };
+    for i in 0..loops.len() {
+        if paired[i] || loops[i].len() < 2 { continue; }
+        let best = (0..loops.len()).filter(|&j| j != i && !paired[j] && loops[j].len() >= 2)
+            .map(|j| (apart(&points[i],&points[j]),j)).filter(|(d,_)| *d <= within).min_by(|a,b| a.0.total_cmp(&b.0));
+        let Some((_,j)) = best else { continue };
+        paired[i] = true; paired[j] = true; pairs += 1;
+        let band = zip_loops(&loops[i],&loops[j],&mesh.vertices);
+        lay(mesh,&loops[i],band);
+    }
+    // slits: a loop turning back on itself at exactly two corners, its two
+    // arcs alongside each other
+    for i in 0..loops.len() {
+        if paired[i] || loops[i].len() < 4 { continue; }
+        let (l,p) = (&loops[i],&points[i]);
+        let n = l.len();
+        let corners: Vec<usize> = (0..n).filter(|&k| {
+            let (a,b,c) = (p[(k+n-1)%n],p[k],p[(k+1)%n]);
+            let (u,w) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-b[0],c[1]-b[1],c[2]-b[2]]);
+            let (lu,lw) = (distance(a,b),distance(b,c));
+            lu > 0. && lw > 0. && (u[0]*w[0]+u[1]*w[1]+u[2]*w[2])/(lu*lw) < -0.5
+        }).collect();
+        if corners.len() != 2 { continue; }
+        let (c0,c1) = (corners[0],corners[1]);
+        let arc_a: Vec<u32> = (c0..=c1).map(|k| l[k]).collect();
+        let arc_b: Vec<u32> = (c1..=c0+n).map(|k| l[k%n]).rev().collect();
+        let pts = |arc: &[u32]| arc.iter().map(|&v| mesh.vertices[v as usize]).collect::<Vec<_>>();
+        let (pa,pb) = (pts(&arc_a),pts(&arc_b));
+        if apart(&pa,&pb) > within { continue; }
+        let band: Vec<[u32;3]> = zip_polylines(&pa,&pb,false).into_iter().map(|t| t.map(|(on_b,k)| if on_b { arc_b[k as usize] } else { arc_a[k as usize] })).collect();
+        paired[i] = true; pairs += 1;
+        lay(mesh,&arc_a,band);
     }
     let unpaired: Vec<Vec<u32>> = loops.into_iter().zip(paired).filter(|(_,p)| !p).map(|(l,_)| l).collect();
     (pairs,unpaired)
@@ -190,14 +187,16 @@ pub fn zip_loops(a: &[u32],b: &[u32],vertices: &[V3]) -> Vec<[u32;3]> {
 }
 
 /// Resolve the T-junctions between boundary edges: a boundary vertex lying
-/// within `tolerance` (the vertex tolerance: this is exact coincidence, not
-/// proximity) of the interior of a boundary edge it does not end splits the
-/// triangle on that edge in two at the vertex, so two runs along one line (a
-/// translated box's trailing column and its leading band's cut, both on the
-/// tool's edge, walked out along one and back along the other) come to
-/// share exact edges there, where a band between them would be zero-area.
+/// within `tolerance` of the interior of a boundary edge it does not end
+/// splits the triangle on that edge in two at the vertex (which stays where
+/// it is), so two runs along one curve sampled twice (a cap's rim on the
+/// tool's edge and a sheet's column on the same edge, a planar fragment's
+/// corner on its neighbour's edge) come to share every vertex and every edge
+/// between them, where a band between them would be zero-area or a fold.
+/// With the tolerance a sagitta or so, either sampling's chords hold the
+/// other's vertices.
 pub fn split_at_vertices(mesh: &mut KeptMesh,tolerance: f64) {
-    for _ in 0..8 {
+    for _ in 0..64 {
         let loops = boundary_loops(&mesh.triangles);
         let mut owner: std::collections::BTreeMap<(u32,u32),usize> = Default::default();
         for (i,t) in mesh.triangles.iter().enumerate() { for k in 0..3 { owner.insert((t[k],t[(k+1)%3]),i); } }
@@ -208,23 +207,50 @@ pub fn split_at_vertices(mesh: &mut KeptMesh,tolerance: f64) {
             let (a,b) = (l[k],l[(k+1)%l.len()]);
             let Some(&t) = owner.get(&(a,b)) else { continue };
             if used.contains(&t) { continue; }
+            let own = mesh.triangles[t];
             let (pa,pb) = (mesh.vertices[a as usize],mesh.vertices[b as usize]);
             let d = [pb[0]-pa[0],pb[1]-pa[1],pb[2]-pa[2]];
             let l2 = d[0]*d[0]+d[1]*d[1]+d[2]*d[2];
             if l2 <= 0. { continue; }
+            // the triangle's height over this edge: a vertex farther off the
+            // edge than a quarter of it would fold the split (a pole's fan of
+            // slivers, each vertex a whisker from its neighbours' edges)
+            let height = {
+                let c = own.iter().copied().find(|&v| v != a && v != b).map(|v| mesh.vertices[v as usize]).unwrap_or(pa);
+                let w = [c[0]-pa[0],c[1]-pa[1],c[2]-pa[2]];
+                let f = (w[0]*d[0]+w[1]*d[1]+w[2]*d[2])/l2;
+                distance(c,[pa[0]+f*d[0],pa[1]+f*d[1],pa[2]+f*d[2]])
+            };
             // the vertex nearest the middle of the edge, of another loop
             let mut best: Option<(f64,u32)> = None;
             for &v in &boundary_vertices {
-                if v == a || v == b { continue; }
+                if own.contains(&v) { continue; }
                 let p = mesh.vertices[v as usize];
                 let w = [p[0]-pa[0],p[1]-pa[1],p[2]-pa[2]];
                 let f = (w[0]*d[0]+w[1]*d[1]+w[2]*d[2])/l2;
                 if f <= 0. || f >= 1. { continue; }
                 let foot = [pa[0]+f*d[0],pa[1]+f*d[1],pa[2]+f*d[2]];
                 let off = distance(p,foot);
-                if off <= tolerance && distance(p,pa) > tolerance && distance(p,pb) > tolerance && best.map_or(true,|(g,_)| (f-0.5).abs() < (g-0.5).abs()) { best = Some((f,v)); }
+                // a vertex at an end is that end (welded already, or as
+                // near as makes no triangle); one merely near it splits
+                // and it must lie along the edge, not beside an end: a
+                // vertex a whisker from the edge's start but as far from
+                // its line folds the split's first triangle
+                let along = f.min(1.-f)*l2.sqrt();
+                if off <= tolerance && off <= height/4. && off <= along/4. && best.map_or(true,|(g,_)| (f-0.5).abs() < (g-0.5).abs()) { best = Some((f,v)); }
             }
-            if let Some((_,v)) = best { split.push((t,a,b,v)); used.insert(t); }
+            // the split must leave two triangles facing the way the one did,
+            // along edges no triangle already walks that way
+            if let Some((_,v)) = best {
+                if owner.contains_key(&(a,v)) || owner.contains_key(&(v,b)) { continue; }
+                let c = own.iter().copied().find(|&x| x != a && x != b).unwrap_or(a);
+                let (pc,pv) = (mesh.vertices[c as usize],mesh.vertices[v as usize]);
+                let normal = |p: V3,q: V3,r: V3| -> V3 { let (u,w) = ([q[0]-p[0],q[1]-p[1],q[2]-p[2]],[r[0]-p[0],r[1]-p[1],r[2]-p[2]]); [u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]] };
+                let (n0,n1,n2) = (normal(pa,pb,pc),normal(pa,pv,pc),normal(pv,pb,pc));
+                let dot = |x: V3,y: V3| x[0]*y[0]+x[1]*y[1]+x[2]*y[2];
+                let least = 1e-6*dot(n0,n0).sqrt();
+                if dot(n0,n1) > least*dot(n1,n1).sqrt() && dot(n0,n2) > least*dot(n2,n2).sqrt() && dot(n1,n1).sqrt() > least && dot(n2,n2).sqrt() > least { split.push((t,a,b,v)); used.insert(t); }
+            }
         } }
         if split.is_empty() { break; }
         for (t,a,b,v) in split {
