@@ -150,6 +150,11 @@ pub fn rim_zip(mesh: &mut KeptMesh,within: f64,split: f64) -> (usize,Vec<Vec<u32
     let gap = |i: usize,j: usize| -> f64 { let ((a0,a1),(b0,b1)) = (boxes[i],boxes[j]); (0..3).map(|k| (b0[k]-a1[k]).max(a0[k]-b1[k]).max(0.).powi(2)).sum::<f64>().sqrt() };
     let mut paired = vec![false;loops.len()];
     let mut pairs = 0;
+    // A loop that visits a vertex twice is pinched there (slits touching at a corner, where the
+    // walk round a fan that is no disc breaks off), and a two-vertex walk is a fragment of one:
+    // neither bounds a hole a band can close, and zipped they lay bands over triangles already
+    // there. They are left unpaired, to be refused.
+    let simple = |l: &Vec<u32>| l.len() >= 3 && { let mut s = l.clone(); s.sort_unstable(); s.windows(2).all(|w| w[0] != w[1]) };
     let lay = |mesh: &mut KeptMesh,_on_a: &[u32],band: Vec<[u32;3]>| {
         // every band triangle has an edge along a loop, and a seam must walk
         // it against the way the mesh already does; each triangle is turned
@@ -171,15 +176,15 @@ pub fn rim_zip(mesh: &mut KeptMesh,within: f64,split: f64) -> (usize,Vec<Vec<u32
     // a loop of three or four vertices is a hole the size of a triangle,
     // never a seam: it is filled outright, fanned against its own walk
     for i in 0..loops.len() {
-        if paired[i] || loops[i].len() < 3 || loops[i].len() > 4 { continue; }
+        if paired[i] || !simple(&loops[i]) || loops[i].len() > 4 { continue; }
         let l = &loops[i];
         let fan: Vec<[u32;3]> = (1..l.len()-1).map(|k| [l[0],l[k+1],l[k]]).collect();
         paired[i] = true; pairs += 1;
         lay(mesh,l,fan);
     }
     for i in 0..loops.len() {
-        if paired[i] || loops[i].len() < 2 { continue; }
-        let candidates: Vec<(f64,usize)> = (0..loops.len()).filter(|&j| j != i && !paired[j] && loops[j].len() >= 2 && gap(i,j) <= within*(1.+1e-9))
+        if paired[i] || !simple(&loops[i]) { continue; }
+        let candidates: Vec<(f64,usize)> = (0..loops.len()).filter(|&j| j != i && !paired[j] && simple(&loops[j]) && gap(i,j) <= within*(1.+1e-9))
             .map(|j| (apart(&points[i],&points[j]),j)).filter(|(d,_)| *d <= within).collect();
         // the nearest, a loop within rounding of it and before it taken instead
         let least = candidates.iter().map(|c| c.0).fold(f64::INFINITY,f64::min);
@@ -192,7 +197,7 @@ pub fn rim_zip(mesh: &mut KeptMesh,within: f64,split: f64) -> (usize,Vec<Vec<u32
     // slits: a loop turning back on itself at exactly two corners, its two
     // arcs alongside each other
     for i in 0..loops.len() {
-        if paired[i] || loops[i].len() < 4 { continue; }
+        if paired[i] || loops[i].len() < 4 || !simple(&loops[i]) { continue; }
         let (l,p) = (&loops[i],&points[i]);
         let n = l.len();
         let corners: Vec<usize> = (0..n).filter(|&k| {

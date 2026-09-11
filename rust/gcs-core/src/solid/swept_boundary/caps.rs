@@ -341,7 +341,9 @@ pub struct Cap {
 /// left for the stitch); no facet edge is left longer than `longest` (the
 /// column spacing serves), so the labels at a cap's corners see what the
 /// labels at a sheet's corners see. The caps are the start's, then the end's.
-pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f64,longest: f64)
+/// `grazing` are the planes (a point and the outward normal) the regions cover, whose facets are
+/// the regions' to place.
+pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f64,longest: f64,grazing: &[(V3,V3)])
     -> Result<[Cap;2],String> {
     let SolidDef::Swept {source,motion,from,to} = &sk.solids[swept].def else { return Err("not a continuous sweep".into()) };
     let unit = sagitta/crate::curve::FLATNESS_PX;
@@ -362,6 +364,21 @@ pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f6
             let line: Vec<(V3,V3)> = s.column_vertices(c).into_iter().map(|v| (s.points[v as usize],s.normals[v as usize])).collect();
             if line.len() < 2 { continue; }
             mesh.cut_along(&line,s.closed)?;
+        }
+        // The facets of a grazing face, and the edges between them and the rest as cuts: the
+        // region that face sweeps holds them at both ends of the roll, and a component must not
+        // reach through them to be judged by a normal velocity that is not its own.
+        let in_plane = |i: usize| -> bool {
+            let Some(facet) = mesh.facet_normal(i) else { return false };
+            grazing.iter().any(|&(o,n)| dot(facet,n).abs() > 1.-1e-6
+                && mesh.triangles[i].iter().all(|&v| dot(sub(mesh.vertices[v as usize],o),n).abs() <= snap))
+        };
+        let left: Vec<bool> = (0..mesh.triangles.len()).map(in_plane).collect();
+        if left.iter().any(|x| *x) {
+            let mut by_edge: std::collections::BTreeMap<(u32,u32),Vec<usize>> = Default::default();
+            for (i,t) in mesh.triangles.iter().enumerate() { for k in 0..3 { let (a,b) = (t[k],t[(k+1)%3]); by_edge.entry((a.min(b),a.max(b))).or_default().push(i); } }
+            let edges: Vec<(u32,u32)> = by_edge.into_iter().filter(|(_,f)| f.len() == 2 && left[f[0]] != left[f[1]]).map(|(e,_)| e).collect();
+            for e in edges { mesh.cuts.insert(e); }
         }
         let inverse = pose.inverse();
         // the normal velocity of each facet, relative to its speed
@@ -405,6 +422,7 @@ pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f6
         }
         for i in 0..mesh.triangles.len() {
             let Some(_) = mesh.facet_normal(i) else { continue };
+            if left[i] { continue; }
             let e = extreme[&component[i]];
             if !(e.abs() < decisive || e.signum() == wanted) { continue; }
             patch.triangles.push(mesh.triangles[i].map(|v| {

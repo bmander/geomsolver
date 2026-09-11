@@ -30,7 +30,7 @@ const REACH: f64 = SAGITTA;
 fn judge_and_label(source: &str,name: &str) -> (Vec<SweepPatch>,Vec<Labelled>,FieldJudge) {
     let e = harness::read(source);
     let swept = harness::solid(&e,name);
-    let (_,sheets) = seeds(&e.sketch,swept,SPACING,SAGITTA,&|_| {}).unwrap();
+    let (_,sheets,_) = seeds(&e.sketch,swept,SPACING,SAGITTA,&|_| {}).unwrap();
     let field = MaterialField::read(&e.sketch,swept,1e-10).unwrap();
     let mut judge = FieldJudge::new(field,EPSILON/2.,4000,1000,4096);
     let started = std::time::Instant::now();

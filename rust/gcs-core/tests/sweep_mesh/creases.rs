@@ -1,7 +1,7 @@
 //! Milestone 4: sheets that cross. Where one sheet turns inner across
 //! another, the kept parts must meet along the crease between them, and the
 //! shell must still close and certify.
-use super::{closed::{closed,closed_shell_at,volume},harness::{self,V3},motions,tools};
+use super::{closed::{closed,closed_shell_at,shell_at,volume},harness::{self,V3},motions,tools};
 use gcs_core::{model::SolidDef,motion::Family};
 
 const SAGITTA: f64 = 0.02;
@@ -188,14 +188,15 @@ fn export_milestone_4_cases() {
     for (name,source) in &cases {
         eprintln!("== {name}");
         std::fs::write(dir.join(format!("{name}.sv")),source).unwrap();
-        let (mesh,certificate) = closed_shell_at(source,SAGITTA);
+        let (mesh,certificate) = shell_at(source,SAGITTA);
         let mesh = mesh.compact();
+        let verdict = match &certificate { Ok(c) => format!("{} failed certificate",c.failures.len()),Err(e) => format!("refused {e:?}") };
         // written unchecked: an open case's slivers may collapse in float32,
         // and a person looking at it wants them there, counted
         let (bytes,collapsed) = stl(&mesh.vertices,&mesh.triangles,name);
         std::fs::write(dir.join(format!("{name}.stl")),bytes).unwrap();
         let shell = match closed(&mesh) { Ok(()) => "closed".to_string(),Err(e) => format!("open ({e})") };
-        summary.push(format!("{name}: {} triangles ({collapsed} collapse in float32), {shell}, {} failed certificate, volume {:.4}",mesh.triangles.len(),certificate.failures.len(),volume(&mesh)));
+        summary.push(format!("{name}: {} triangles ({collapsed} collapse in float32), {shell}, {verdict}, volume {:.4}",mesh.triangles.len(),volume(&mesh)));
     }
     eprintln!("written to {}",dir.display());
     for line in &summary { eprintln!("  {line}"); }
@@ -233,7 +234,7 @@ fn seeds_moved_below_every_tolerance_leave_the_mesh_as_it_was() {
         let e = harness::read(&source);
         let swept = harness::solid(&e,"swept");
         let options = SweptBoundaryOptions {sagitta:SAGITTA,spacing:0.5,..Default::default()};
-        let (_,sheets) = seeds(&e.sketch,swept,options.spacing,options.sagitta,&|_| {}).unwrap();
+        let (_,sheets,_) = seeds(&e.sketch,swept,options.spacing,options.sagitta,&|_| {}).unwrap();
         let mut moved = sheets.clone();
         let mut k = 0_f64;
         for s in &mut moved { for p in &mut s.points { k += 1.; *p = [p[0]+1e-12*(1.7*k).sin(),p[1]+1e-12*(2.3*k).cos(),p[2]+1e-12*(3.1*k+1.).sin()]; } }
@@ -259,6 +260,7 @@ fn seeds_moved_below_every_tolerance_leave_every_milestone_4_case_as_it_was() {
         let mesh = |m: &KeptMesh| Print::Mesh(m.triangles.clone(),m.sheet.clone(),m.vertices.clone());
         match stage {
             Stage::Seeded {..} => ("seeded",Print::Codes(vec![])),
+            Stage::Grazed {regions} => ("grazed",Print::Mesh(regions.iter().flat_map(|g| g.patch.triangles.clone()).collect(),vec![],regions.iter().flat_map(|g| g.patch.points.clone()).collect())),
             Stage::Capped {caps} => ("capped",Print::Mesh(caps.iter().flat_map(|c| c.patch.triangles.clone()).collect(),vec![],caps.iter().flat_map(|c| c.patch.points.clone()).collect())),
             Stage::Labelled {labelled,..} => ("labelled",Print::Codes(labelled.iter().flat_map(|l| l.labels.iter().map(|x| *x as u64)).collect())),
             Stage::Clipped {mesh:m,..} => ("clipped",mesh(m)),
@@ -314,11 +316,12 @@ fn seeds_moved_below_every_tolerance_leave_every_milestone_4_case_as_it_was() {
         let e = harness::read(&source);
         let swept = harness::solid(&e,"swept");
         let options = SweptBoundaryOptions {sagitta:SAGITTA,spacing:0.5,..Default::default()};
-        let (_,sheets) = seeds(&e.sketch,swept,options.spacing,options.sagitta,&|_| {}).unwrap();
-        let run = |sheets| -> Result<Vec<(&'static str,Print)>,String> {
+        let (_,sheets,_) = seeds(&e.sketch,swept,options.spacing,options.sagitta,&|_| {}).unwrap();
+        // every stage's print up to the end or the refusal, and the refusal
+        let run = |sheets| -> Result<(Vec<(&'static str,Print)>,Option<String>),String> {
             let mut prints = Vec::new();
-            construct_from(&e.sketch,swept,&options,sheets,&mut |s,_| prints.push(print(&s))).map_err(|e| format!("{e:?}"))?;
-            Ok(prints)
+            let refused = construct_from(&e.sketch,swept,&options,sheets,&mut |s,_| prints.push(print(&s))).err().map(|e| format!("{e:?}"));
+            Ok((prints,refused))
         };
         let traced = run(sheets.clone());
         for phase in [0.,1.] {
@@ -326,7 +329,8 @@ fn seeds_moved_below_every_tolerance_leave_every_milestone_4_case_as_it_was() {
             let mut k = 0_f64;
             for s in &mut moved { for p in &mut s.points { k += 1.; *p = [p[0]+1e-12*(1.7*k+phase).sin(),p[1]+1e-12*(2.3*k+phase).cos(),p[2]+1e-12*(3.1*k+1.+phase).sin()]; } }
             let verdict = match (&traced,run(moved)) {
-                (Ok(a),Ok(b)) => a.iter().zip(&b).find_map(|((stage,x),(_,y))| differ(x,y).map(|d| format!("first differs at {stage}: {d}"))),
+                (Ok((a,ra)),Ok((b,rb))) => a.iter().zip(&b).find_map(|((stage,x),(_,y))| differ(x,y).map(|d| format!("first differs at {stage}: {d}")))
+                    .or_else(|| (a.len() != b.len() || *ra != rb).then(|| format!("refused otherwise: {ra:?} against {rb:?}"))),
                 (a,b) => Some(format!("refused: traced {:?}, moved {:?}",a.as_ref().err(),b.err())),
             };
             eprintln!("{name} (phase {phase}): {}",verdict.as_deref().unwrap_or("as it was"));

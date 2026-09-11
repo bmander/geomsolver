@@ -33,6 +33,10 @@ pub struct SweepContacts {
     pub(super) operands: Vec<usize>,
     pub(super) motion: Family,
     pub(super) roll: [f64;2],
+    /// Faces left to something else: a grazing planar face, whose plane the motion carries
+    /// within itself, is swept exactly in that plane instead (`swept_boundary::grazing`), and
+    /// the fans of its edges would lie in the same plane, folded.
+    pub(super) left: Vec<usize>,
 }
 
 #[derive(Clone,Copy,Debug)]
@@ -130,7 +134,7 @@ impl SweepContacts {
             for samples in tool_faces::creases(&faces[i],&faces[j],scale) { creases.push(Crease::new([i,j],samples,&faces[i],&faces[j])); }
         } }
         Ok(Self {source:source_field,patches,loops,faces,edges,creases,operands:face_operand,motion:Family::read(sk,*motion as usize)?,
-            roll:[from.value,to.value]})
+            roll:[from.value,to.value],left:Vec::new()})
     }
     pub fn faces(&self) -> &[ToolFace] { &self.faces }
     pub fn edges(&self) -> &[ToolEdge] { &self.edges }
@@ -140,6 +144,8 @@ impl SweepContacts {
     pub fn motion(&self) -> &Family { &self.motion }
     pub fn source_material(&self) -> &SpatialField { &self.source }
     pub fn domain(&self) -> [f64;2] { self.roll }
+    /// Trace nothing of these faces or of the edges on them.
+    pub fn leave_faces(&mut self,faces: Vec<usize>) { self.left = faces; }
     pub fn at(&self,patch: usize,u: f64,roll: f64,tolerance: f64)
         -> Result<Vec<RevolvedContact>,Error> {
         if !roll.is_finite() { return Err(Error::NonFinite); }

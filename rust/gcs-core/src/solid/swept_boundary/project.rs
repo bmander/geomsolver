@@ -164,7 +164,8 @@ pub fn label_sheets(judge: &mut FieldJudge,sheets: &[SweepPatch],epsilon: f64,re
     sheets.iter().zip(&directions).map(|(sheet,m)| label_patch(judge,sheet,m,epsilon,reach)).collect()
 }
 
-/// Every vertex of every seed of a construction judged: a cap's along the tool's own normals
+/// Every vertex of every seed of a construction judged: a cap's and a region's along their own
+/// normals
 /// (its summed normal across the seeds can run along one face at a tool edge while the vertex
 /// lies on another), a traced sheet's along `directions`.
 pub fn label_seeds(judge: &mut FieldJudge,seeds: &[super::Seed],epsilon: f64,reach: f64) -> Result<Vec<Labelled>,JudgeError> {
@@ -172,7 +173,7 @@ pub fn label_seeds(judge: &mut FieldJudge,seeds: &[super::Seed],epsilon: f64,rea
     let directions = directions_of(&patches,1e-9*epsilon.max(1.));
     seeds.iter().zip(&directions).map(|(seed,m)| {
         let sheet = seed.patch();
-        label_patch(judge,sheet,if matches!(seed,super::Seed::Cap(_)) { &sheet.normals } else { m },epsilon,reach)
+        label_patch(judge,sheet,if matches!(seed,super::Seed::Cap(_) | super::Seed::Grazing(_)) { &sheet.normals } else { m },epsilon,reach)
     }).collect()
 }
 

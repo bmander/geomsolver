@@ -1,7 +1,7 @@
 //! Milestone 3: sheets and caps stitched into a closed shell, certified, and
 //! its volume against a closed form nothing in the construction knows.
 use super::{harness::{self,V3},motions,tools};
-use gcs_core::solid::swept_boundary::{Certificate,KeptMesh,Label,QueryStats,Stage,SweptBoundaryOptions,boundary_loops,construct};
+use gcs_core::solid::swept_boundary::{Certificate,ConstructError,KeptMesh,Label,QueryStats,Stage,SweptBoundaryOptions,boundary_loops,construct};
 use gcs_core::topology::ClosedShell;
 use std::collections::{BTreeMap,BTreeSet};
 use std::f64::consts::PI;
@@ -134,6 +134,12 @@ impl Report<'_> {
                     } }
                 } }
             }
+            Stage::Grazed {regions} => {
+                self.clock.lap("grazing");
+                if !regions.is_empty() {
+                    eprintln!("{} grazing faces swept in their own planes: {:?}",regions.len(),regions.iter().map(|g| format!("face {} of {} triangles",g.face.face,g.patch.triangles.len())).collect::<Vec<_>>());
+                }
+            }
             Stage::Capped {caps} => {
                 self.clock.lap("caps");
                 if d.sheets { for (k,c) in caps.iter().enumerate() { eprintln!("  cap {k} components: {:?}",c.components.iter().map(|c| format!("{} facets {:+.2}{}",c.facets,c.extreme,if c.kept { " kept" } else { "" })).collect::<Vec<_>>()); } }
@@ -251,6 +257,13 @@ fn closed_shell(source: &str) -> (KeptMesh,Certificate) { closed_shell_at(source
 /// field never depends on the roll, where every query refines the whole
 /// interval).
 pub(super) fn closed_shell_at(source: &str,sagitta: f64) -> (KeptMesh,Certificate) {
+    let (mesh,certificate) = shell_at(source,sagitta);
+    (mesh,certificate.unwrap_or_else(|e| panic!("construction refused: {e:?}")))
+}
+
+/// The shell, or the construction's refusal with the mesh as the zip left it (empty when it
+/// refused before the zip), for a case that does not close yet.
+pub(super) fn shell_at(source: &str,sagitta: f64) -> (KeptMesh,Result<Certificate,ConstructError>) {
     let diagnostics = Diagnostics::from_env();
     let mut clock = Clock::new();
     let e = harness::read(source);
@@ -258,7 +271,15 @@ pub(super) fn closed_shell_at(source: &str,sagitta: f64) -> (KeptMesh,Certificat
     clock.lap("read");
     let options = SweptBoundaryOptions {sagitta,spacing:SPACING,..Default::default()};
     let mut report = Report {diagnostics:&diagnostics,clock,started:Instant::now(),sheets:0,points:0,labels:Vec::new(),dropped:[0;4],loops:0};
-    let built = construct(&e.sketch,swept,&options,&|_| {},&mut |stage,stats| report.see(stage,stats)).unwrap_or_else(|e| panic!("construction refused: {e:?}"));
+    let mut zipped: Option<KeptMesh> = None;
+    let built = construct(&e.sketch,swept,&options,&|_| {},&mut |stage,stats| {
+        if let Stage::Zipped {mesh,..} = &stage { zipped = Some((*mesh).clone()); }
+        report.see(stage,stats)
+    });
+    let built = match built {
+        Ok(built) => built,
+        Err(e) => { eprintln!("refused: {e:?}"); return (zipped.unwrap_or_default(),Err(e)); }
+    };
     let (mesh,certificate) = (built.mesh,built.certificate);
     let probe = options.probe_distance();
     let sampler = super::labels::Sampler::new(&e,swept);
@@ -286,7 +307,7 @@ pub(super) fn closed_shell_at(source: &str,sagitta: f64) -> (KeptMesh,Certificat
     let mut kinds: BTreeMap<String,usize> = Default::default();
     for (i,_,f) in &certificate.thin { *kinds.entry(format!("{f:?} from {}",if mesh.sheet[*i] == u32::MAX { "a zip".to_string() } else { format!("sheet {}",mesh.sheet[*i]) })).or_default() += 1; }
     if !kinds.is_empty() { eprintln!("  thin: {kinds:?}"); }
-    (mesh,certificate)
+    (mesh,Ok(certificate))
 }
 
 pub(super) fn closed(mesh: &KeptMesh) -> Result<(),String> {

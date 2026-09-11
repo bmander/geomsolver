@@ -3,6 +3,7 @@ mod bounds;
 pub use bounds::MotionBounds;
 mod contact;
 pub use contact::{NormalVelocity,ContactTime,NormalVelocityBounds};
+
 use crate::{envelope::Motion,model::{MotionDef,Sketch}};
 
 /// `advance` is the length travelled along the unit axis per full turn of the
@@ -17,6 +18,16 @@ enum Step {
 fn unit(axis: [f64;3]) -> Option<[f64;3]> {
     let n = axis[0].hypot(axis[1]).hypot(axis[2]);
     (n > 0. && n.is_finite()).then(|| axis.map(|v| v/n))
+}
+
+/// How a motion carries a plane it leaves where it is: a turn about an axis square to it, or a
+/// slide along it. Rates are per radian of the shared parameter, from whatever pose is read.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub enum PlaneRigid {
+    /// About the axis through `centre` along `axis` (a unit vector), `rate` radians per radian.
+    Turn { centre: [f64;3], axis: [f64;3], rate: f64 },
+    /// By `velocity` per radian, which lies in the plane.
+    Slide { velocity: [f64;3] },
 }
 
 /// A snapshot of a named rigid-motion graph and its solved world axes. Re-read after
@@ -126,6 +137,34 @@ impl Family {
         }
         let root = self.steps.len()-1;
         Ok(speed(self,&own,&image,root,point,false)?.bounds()[1])
+    }
+
+    /// How this motion carries the plane through `point` with unit `normal`, when it carries it
+    /// within itself: a rotation whose axis is square to the plane and does not screw along it,
+    /// or a translation along it. Every other motion (a screw, a relative motion, a graph of
+    /// several steps) leaves the plane, and is none: a plane a motion does not preserve has no
+    /// such reading.
+    pub fn in_plane(&self,normal: [f64;3],point: [f64;3]) -> Option<PlaneRigid> {
+        let dot = |a: [f64;3],b: [f64;3]| a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+        let cross = |a: [f64;3],b: [f64;3]| [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+        let normal = unit(normal)?;
+        match *self.steps.as_slice() {
+            [Step::Rotation {origin,axis,ratio,phase:_,advance}] => {
+                let axis = unit(axis)?;
+                let skew = cross(axis,normal);
+                if advance != 0. || skew[0].hypot(skew[1]).hypot(skew[2]) > 1e-9 || ratio == 0. { return None; }
+                // the plane turns about where its axis meets it
+                let along = dot([point[0]-origin[0],point[1]-origin[1],point[2]-origin[2]],axis);
+                Some(PlaneRigid::Turn {centre:std::array::from_fn(|k| origin[k]+along*axis[k]),axis,rate:ratio})
+            }
+            [Step::Translation {axis,advance}] => {
+                let axis = unit(axis)?;
+                if dot(axis,normal).abs() > 1e-9 || advance == 0. { return None; }
+                let rate = advance/std::f64::consts::TAU;
+                Some(PlaneRigid::Slide {velocity:axis.map(|x| x*rate)})
+            }
+            _ => None,
+        }
     }
 
     pub fn read(sk: &Sketch, index: usize) -> Result<Self,String> {

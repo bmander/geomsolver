@@ -1,7 +1,7 @@
 //! Milestone 2: every kept triangle certified by the field a probe distance
 //! inside and outside it, and the closure audit of what the labels leave.
 use super::{harness,motions,tools};
-use gcs_core::solid::{MaterialField,swept_boundary::{FieldJudge,boundary_loops,certify,kept_triangles,label_sheets,seeds}};
+use gcs_core::solid::{MaterialField,swept_boundary::{FieldJudge,boundary_loops,certify,grazing_seeds,kept_triangles,label_sheets,seeds}};
 
 const SPACING: f64 = 0.5;
 const SAGITTA: f64 = 0.02;
@@ -9,11 +9,17 @@ const EPSILON: f64 = SAGITTA/4.;
 const REACH: f64 = SAGITTA;
 const PROBE: f64 = 2.*SAGITTA;
 
-/// Seeds judged, kept triangles certified, boundary loops counted.
+/// Seeds judged, kept triangles certified, boundary loops counted. The seeds are the traced
+/// sheets and the regions of the faces the motion carries within their own planes, which is
+/// what covers the sides of a box sliding along one of them.
 fn certified(source: &str) -> (gcs_core::solid::swept_boundary::KeptMesh,gcs_core::solid::swept_boundary::Certificate,Vec<Vec<u32>>) {
     let e = harness::read(source);
     let swept = harness::solid(&e,"swept");
-    let (_,sheets) = seeds(&e.sketch,swept,SPACING,SAGITTA,&|_| {}).unwrap();
+    let (sweep,mut sheets,faces) = seeds(&e.sketch,swept,SPACING,SAGITTA,&|_| {}).unwrap();
+    let mut times: Vec<f64> = sheets.iter().flat_map(|s| s.times.iter().copied()).collect();
+    times.sort_by(f64::total_cmp); times.dedup();
+    if times.is_empty() { times = sweep.domain().to_vec(); }
+    sheets.extend(grazing_seeds(&faces,&times,sweep.domain(),SAGITTA,SPACING).unwrap().into_iter().map(|g| g.patch));
     let field = MaterialField::read(&e.sketch,swept,1e-10).unwrap();
     let mut judge = FieldJudge::new(field,EPSILON/2.,4000,1000,4096);
     let labelled = label_sheets(&mut judge,&sheets,EPSILON,REACH).unwrap();

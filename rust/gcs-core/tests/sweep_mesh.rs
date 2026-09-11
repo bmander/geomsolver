@@ -12,3 +12,4 @@ mod closed;
 mod overlaps;
 mod pieces;
 mod creases;
+mod grazing;

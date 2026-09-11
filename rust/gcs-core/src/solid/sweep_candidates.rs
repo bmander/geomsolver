@@ -188,6 +188,23 @@ impl SweepContacts {
         Ok(1.)
     }
 
+    /// A face's outward sign, and whether the face is on the tool's boundary at all: a face of a
+    /// Boolean operand may lie inside the tool or beyond what bounds it, and contributes nothing.
+    pub fn face_outward(&self,face: usize) -> Result<Option<f64>,String> {
+        let scale = self.scale();
+        let f = self.faces.get(face).ok_or("no such face")?;
+        let [[u0,u1],[v0,v1]] = f.domain();
+        let mut on = false;
+        for i in 1..8 { for j in 1..8 {
+            let (u,v) = (u0+(u1-u0)*i as f64/8.,v0+(v1-v0)*j as f64/8.);
+            if !f.contains(u,v) { continue; }
+            let Ok(s) = f.at(u,v) else { continue };
+            if !self.hidden(s.position,scale)? { on = true; }
+        } }
+        if !on { return Ok(None); }
+        Ok(Some(self.outward_sign(f,scale)?))
+    }
+
     /// Whether a point of a face's carrier is off the tool's boundary: inside
     /// the tool, under another operand, or outside it, beyond the operand it
     /// is bounded by.
@@ -572,6 +589,9 @@ impl SweepContacts {
     /// edge contributes nothing.
     fn edge_strands(&self,edge: EdgeRef,index: usize,signs: &Signs,motion: Motion,tolerance: f64,scale: f64)
         -> Result<Vec<Strand>,String> {
+        // an edge of a face the region sweeps: its fan lies in that face's plane, which the
+        // region covers
+        if edge.faces().iter().any(|f| self.left.contains(f)) { return Ok(Vec::new()); }
         let inverse = motion.inverse();
         // An edge point: its geometry and each normal's velocity component.
         struct Point { position: V3, normals: [V3;2], speeds: [f64;2] }
