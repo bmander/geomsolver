@@ -67,10 +67,8 @@ impl SweepEvaluator {
 
     pub(super) fn evaluate(&mut self,p: V,options: Options,band: Option<I>,mut observe: impl FnMut(I,I))
         -> Result<Minimum,SweepError> {
-        // The motion speed estimate depends only on radius from world zero.
-        // This corner bounds that radius for every point of the input box.
-        let farthest = p.map(|v| { let [a,b] = v.bounds(); a.abs().max(b.abs()) });
-        let speed = self.field.motion.inverse_point_speed_bound(farthest,self.field.domain)
+        // The motion's speed bound over the whole input box.
+        let speed = self.field.motion.inverse_point_speed_bound_over(p,self.field.domain)
             .and_then(I::point).map_err(minimum::Error::Oracle)?;
         minimum::refine(self.field.domain,|t| {
             let [lo,hi] = t.bounds(); let mid = lo*0.5+hi*0.5;

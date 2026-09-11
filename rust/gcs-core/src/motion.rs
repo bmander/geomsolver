@@ -35,47 +35,97 @@ impl Family {
     /// why the domain is an input.
     pub fn inverse_point_speed_bound(&self,point: [f64;3],domain: crate::interval::Interval)
         -> Result<f64,crate::interval::Error> {
+        use crate::interval::Interval as I;
+        let point = [I::point(point[0])?,I::point(point[1])?,I::point(point[2])?];
+        self.inverse_point_speed_bound_over(point,domain)
+    }
+
+    /// The same bound over a whole point box, per step: a rotation or screw
+    /// moves a point at `|ratio| · distance(point, axis) + |advance|/τ`, the
+    /// same forward and inverse; a relative motion `observer⁻¹ ∘ source` moves
+    /// it at most as fast as the source moves it plus as fast as the observer
+    /// moves the source's image, and its inverse the other way round, the
+    /// images enclosed by each step's interval pose over the whole domain. A
+    /// point on an axis does not move and resolves at once; the earlier bound
+    /// from the point's radius about the world origin left such a point
+    /// refining the whole roll, and read hundreds of millimetres per radian
+    /// on a gear cutter whose contact moves at tens.
+    pub fn inverse_point_speed_bound_over(&self,point: [crate::interval::Interval;3],domain: crate::interval::Interval)
+        -> Result<f64,crate::interval::Error> {
         use crate::interval::{Error,Interval as I};
-        // A transform sends |x| to at most |x|+a and a moving point's speed to
-        // at most |x'|+b*|x|+c. Keep both senses of every DAG node, avoiding
-        // exponential expansion of shared relative motions.
-        type Bound = [I;3];
-        fn then(x: Bound,y: Bound) -> Result<Bound,Error> {
-            Ok([x[0].add(y[0])?,x[1].add(y[1])?,x[2].add(y[2])?.add(y[1].mul(x[0])?)?])
-        }
-        // Outward addition can place a sum of exact zeros infinitesimally below
-        // zero, so norms accumulate squares with an explicit nonnegative range.
-        let norm = |p: [f64;3]| -> Result<I,Error> {
-            let sum = p.into_iter().try_fold(I::ZERO,|s,x| s.add(I::point(x)?.square()?))?;
-            I::new(sum.bounds()[0].max(0.),sum.bounds()[1])?.sqrt()
+        let tau = I::point(std::f64::consts::TAU)?;
+        let reach = { let [lo,hi] = domain.bounds(); I::point(lo.abs().max(hi.abs()))? };
+        // the box's foot on a step's axis and its farthest distance from it
+        let about = |origin: [f64;3],axis: [f64;3],b: [I;3]| -> Result<([I;3],I),Error> {
+            let a = unit(axis).ok_or(Error::InvalidBounds)?;
+            let d: [I;3] = [b[0].sub(I::point(origin[0])?)?,b[1].sub(I::point(origin[1])?)?,b[2].sub(I::point(origin[2])?)?];
+            let along = d[0].mul(I::point(a[0])?)?.add(d[1].mul(I::point(a[1])?)?)?.add(d[2].mul(I::point(a[2])?)?)?;
+            let square = d[0].square()?.add(d[1].square()?)?.add(d[2].square()?)?.sub(along.square()?)?;
+            let radius = I::new(square.bounds()[0].max(0.),square.bounds()[1].max(0.))?.sqrt()?;
+            let foot: [I;3] = [I::point(origin[0])?.add(along.mul(I::point(a[0])?)?)?,I::point(origin[1])?.add(along.mul(I::point(a[1])?)?)?,
+                I::point(origin[2])?.add(along.mul(I::point(a[2])?)?)?];
+            Ok((foot,radius))
         };
-        let reach = {
-            let [lo,hi] = domain.bounds();
-            I::point(lo.abs().max(hi.abs()))?
-        };
-        let per_radian = |advance: f64| -> Result<I,Error> {
-            I::point(advance.abs())?.div(I::point(std::f64::consts::TAU)?)
-        };
-        let mut bounds: Vec<[Bound;2]> = Vec::with_capacity(self.steps.len());
-        for step in &self.steps {
-            bounds.push(match *step {
-                Step::Rotation {origin,ratio,advance,..} => {
-                    let r = norm(origin)?; let w = I::point(ratio.abs())?;
-                    let v = per_radian(advance)?;
-                    let b = [I::point(2.)?.mul(r)?.add(v.mul(reach)?)?,w,w.mul(r)?.add(v)?];
-                    [b,b]
+        // a step's own speed on a box, the same forward and inverse
+        let own = |step: &Step,b: [I;3]| -> Result<I,Error> {
+            match *step {
+                Step::Rotation {origin,axis,ratio,advance,..} => {
+                    let (_,radius) = about(origin,axis,b)?;
+                    I::point(ratio.abs())?.mul(radius)?.add(I::point(advance.abs())?.div(tau)?)
                 }
-                Step::Translation {advance,..} => {
-                    let v = per_radian(advance)?;
-                    let b = [v.mul(reach)?,I::ZERO,v];
-                    [b,b]
+                Step::Translation {advance,..} => I::point(advance.abs())?.div(tau),
+                Step::Relative {..} => unreachable!("composed below"),
+            }
+        };
+        // where a step carries a box over the whole domain, forward or
+        // inverse: within the box's farthest distance of its foot on the
+        // axis, and the advance's reach along it; no angle enters, so no
+        // interval trigonometry limits the domain
+        let image = |step: &Step,b: [I;3]| -> Result<[I;3],Error> {
+            match *step {
+                Step::Rotation {origin,axis,advance,..} => {
+                    let a = unit(axis).ok_or(Error::InvalidBounds)?;
+                    let (foot,radius) = about(origin,axis,b)?;
+                    let slide = I::point(advance.abs())?.div(tau)?.mul(reach)?;
+                    let spread = radius.add(slide)?;
+                    let _ = a;
+                    Ok([foot[0].add(I::new(-spread.bounds()[1],spread.bounds()[1])?)?,foot[1].add(I::new(-spread.bounds()[1],spread.bounds()[1])?)?,
+                        foot[2].add(I::new(-spread.bounds()[1],spread.bounds()[1])?)?])
                 }
-                Step::Relative {source,observer} => [then(bounds[source][0],bounds[observer][1])?,
-                    then(bounds[observer][0],bounds[source][1])?],
-            });
+                Step::Translation {axis,advance} => {
+                    let a = unit(axis).ok_or(Error::InvalidBounds)?;
+                    let slide = I::point(advance.abs())?.div(tau)?.mul(reach)?.bounds()[1];
+                    Ok([b[0].add(I::new(-slide*a[0].abs(),slide*a[0].abs())?)?,b[1].add(I::new(-slide*a[1].abs(),slide*a[1].abs())?)?,
+                        b[2].add(I::new(-slide*a[2].abs(),slide*a[2].abs())?)?])
+                }
+                Step::Relative {..} => unreachable!("composed below"),
+            }
+        };
+        fn image_of(family: &Family,image: &dyn Fn(&Step,[I;3]) -> Result<[I;3],Error>,i: usize,b: [I;3],forward: bool) -> Result<[I;3],Error> {
+            match family.steps[i] {
+                Step::Relative {source,observer} => {
+                    // forward: x ↦ O⁻¹(S x); inverse: x ↦ S⁻¹(O x)
+                    let (first,second) = if forward { (source,observer) } else { (observer,source) };
+                    let moved = image_of(family,image,first,b,true)?;
+                    image_of(family,image,second,moved,false)
+                }
+                ref step => image(step,b),
+            }
         }
-        let [_,b,c] = bounds.last().expect("a motion family has a root")[1];
-        Ok(b.mul(norm(point)?)?.add(c)?.bounds()[1])
+        fn speed(family: &Family,own: &dyn Fn(&Step,[I;3]) -> Result<I,Error>,image: &dyn Fn(&Step,[I;3]) -> Result<[I;3],Error>,
+            i: usize,b: [I;3],forward: bool) -> Result<I,Error> {
+            match family.steps[i] {
+                Step::Relative {source,observer} => {
+                    let (first,second) = if forward { (source,observer) } else { (observer,source) };
+                    let moved = speed(family,own,image,first,b,true)?;
+                    let carried = image_of(family,image,first,b,true)?;
+                    moved.add(speed(family,own,image,second,carried,false)?)
+                }
+                ref step => own(step,b),
+            }
+        }
+        let root = self.steps.len()-1;
+        Ok(speed(self,&own,&image,root,point,false)?.bounds()[1])
     }
 
     pub fn read(sk: &Sketch, index: usize) -> Result<Self,String> {

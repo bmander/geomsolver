@@ -279,6 +279,28 @@ is `one_*_space_through_the_tracer` in `tests/mesh_sweep.rs` (recorded volumes, 
 placement each); the whole members are `#[ignore]`d and run with `--ignored`. Read
 `SpatialField::value` for what may be judged in plain floating point: a face point on
 the boundary, a probe's side, never an interval claim.
+**The certified swept boundary (2026-09-10, project 1 of two prerequisites):** the hypoid
+pinion at 15° to 45° showed the mesh arrangement passing its recorded-volume and STL-shell
+gates while a field probe (points 0.1 mm inside and outside every triangle) found 19% to
+37% of the surface wrong; the user stopped that goal and set two prerequisites, each a
+large project on a unit-test foundation: a solid as the spacetime sweep of any tool, then
+reliable meshes from Booleans. `solid/swept_boundary` is the first: a closed mesh of the
+swept material alone, every vertex and triangle judged by `SweptField`, the traced sheets
+only seeds. Two facts carry it: a strict sign change brackets the boundary, and a converged
+enclosure containing zero puts the boundary within its width (`Sign::Near`), the field being
+one-Lipschitz; nothing else is inferred, and an enclosure stopped by budget is `Unresolved`,
+never a sign. `FieldJudge` counts and times every query; `project` keeps a vertex on a
+two-query bracket, widens by doubling and bisects otherwise, and labels `Inner` (a branch the
+sweep covers at another time) or `Positive`. A vertex is judged along the normalised sum of
+its incident triangle normals across all sheets (`directions`): one face's own normal at a
+tool edge runs tangent to the other face and reads zero forever. The evaluator's speed bound
+for one rotation or screw is now the box's distance from the axis
+(`Family::inverse_point_speed_bound_over`); the radius about the world origin left a point
+on the axis refining the whole roll. Milestone 1 evidence and the refusals are in
+`docs/swept-boundary.md`; the test foundation is `tests/sweep_mesh/` (a case is one struct
+literal in a `sweep_cases!` table once the harness lands, three tiers of independent truth:
+closed forms, sampled membership through `Family::at`, the field last). The old arrangement
+stays until project 2 consumes `SweptBoundary`; do not extend it.
 `solid::MaterialField` composes static and swept operands with fixed poses and Booleans.
 Its evaluator owns complete-member cut arithmetic, retaining every distinct node/box sweep's
 domain, witness, enclosure and termination status. Budgets apply per sweep query; exhausted

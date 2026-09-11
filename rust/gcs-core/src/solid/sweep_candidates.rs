@@ -784,7 +784,9 @@ impl SweepContacts {
         } else { (t0,t1) };
         let count = (((t1-t0)*speed/spacing).ceil() as usize).clamp(8,400);
         let count = self.columns_within_sagitta(&extents,[t0,t1],count+1,sagitta)?-1;
-        let times: Vec<f64> = (0..=count).map(|c| t0+(t1-t0)*c as f64/count as f64).collect();
+        let mut times: Vec<f64> = (0..=count).map(|c| t0+(t1-t0)*c as f64/count as f64).collect();
+        // the ends exactly: a cap is built on the contact curve at the end pose
+        times[0] = t0; times[count] = t1;
         // How far apart two curves are: the farthest any of a coarse sample of
         // either is from the other, so a curve that lost or gained a piece is
         // apart from what it was, and a closed curve is the same however it
