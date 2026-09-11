@@ -600,16 +600,25 @@ impl SweepContacts {
         // The exact parameter between two edge points where face `k`'s normal
         // velocity changes sign, and the point there with that face's normal:
         // where that face's own strand ends, so the two meet exactly.
-        let root = |k: usize,mut lo: f64,mut hi: f64,class_lo: i32| -> Result<Option<Root>,String> {
-            let mut found: Option<Point> = None;
-            let mut t = lo;
-            for _ in 0..32 {
-                let mid = 0.5*(lo+hi);
-                let Some(p) = at(mid)? else { return Ok(None) };
-                if class(p.speeds[k]) == class_lo { lo = mid; } else { hi = mid; }
-                t = mid; found = Some(p);
-            }
-            Ok(found.map(|p| (t,p.position,p.normals[k])))
+        // The change of class is the speed crossing the edge of the band it
+        // leaves (or, leaving the band, the edge it leaves by): a root of the
+        // speed less that threshold, found by regula falsi to the width 32
+        // bisections reached, in a handful of edge points instead of 32.
+        let root = |k: usize,lo: f64,hi: f64,speed_lo: f64,speed_hi: f64| -> Result<Option<Root>,String> {
+            let threshold = match class(speed_lo) { 1 => tolerance,-1 => -tolerance,_ => if class(speed_hi) == 1 { tolerance } else { -tolerance } };
+            let (h_lo,h_hi) = (speed_lo-threshold,speed_hi-threshold);
+            let t = if h_hi == 0. { hi } else if h_lo == 0. { lo } else {
+                let (mut off,mut failed) = (false,None);
+                let t = super::tool_faces::bracketed_root(|t| match at(t) {
+                    Ok(Some(p)) => Some(p.speeds[k]-threshold),
+                    Ok(None) => { off = true; None },
+                    Err(e) => { failed = Some(e); None },
+                },lo,h_lo,hi,h_hi,(hi-lo)*2f64.powi(-32));
+                if let Some(e) = failed { return Err(e); }
+                if off { return Ok(None); }
+                t
+            };
+            Ok(at(t)?.map(|p| (t,p.position,p.normals[k])))
         };
         // Where a fan runs into a part of the edge that contributes nothing,
         // its boundary is bisected on that instead.
@@ -670,7 +679,7 @@ impl SweepContacts {
                     let mut events: Vec<Root> = Vec::new();
                     for k in 0..2 {
                         if class(p.speeds[k]) != class(q.speeds[k]) {
-                            if let Some(r) = root(k,t,t1,class(p.speeds[k]))? { events.push(r); }
+                            if let Some(r) = root(k,t,t1,p.speeds[k],q.speeds[k])? { events.push(r); }
                         }
                     }
                     events.sort_by(|x,y| x.0.total_cmp(&y.0));

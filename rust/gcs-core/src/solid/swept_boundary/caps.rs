@@ -17,7 +17,7 @@
 //! stitch's tolerant split puts into the sheet's edges too.
 use crate::model::{Sketch,SolidDef};
 use crate::motion::Family;
-use crate::solid::{SweepPatch,indexed,static_solid_at_unit};
+use crate::solid::{SweepPatch,indexed_faces,static_solid_at_unit};
 
 type V3 = [f64;3];
 
@@ -61,6 +61,8 @@ pub fn closest_on_triangle(p: V3,a: V3,b: V3,c: V3) -> (V3,Region) {
 pub struct CutMesh {
     pub vertices: Vec<V3>,
     pub triangles: Vec<[u32;3]>,
+    /// The tool face each facet lies on; the pieces of a split facet keep it.
+    pub faces: Vec<u32>,
     /// Vertex pairs the cuts run along.
     pub cuts: std::collections::BTreeSet<(u32,u32)>,
     /// Snap: a point this close to a vertex is that vertex (which moves to
@@ -125,9 +127,9 @@ impl CutMesh {
             let Some(k) = (0..3).find(|&k| (tri[k] == a && tri[(k+1)%3] == b) || (tri[k] == b && tri[(k+1)%3] == a)) else { continue };
             let (x,y,c) = (tri[k],tri[(k+1)%3],tri[(k+2)%3]);
             self.triangles[t] = [x,v,c];
-            fresh.push([v,y,c]);
+            fresh.push(([v,y,c],self.faces[t]));
         }
-        self.triangles.extend(fresh);
+        for (tri,face) in fresh { self.triangles.push(tri); self.faces.push(face); }
         v
     }
 
@@ -139,6 +141,8 @@ impl CutMesh {
         self.triangles[t] = [a,b,v];
         self.triangles.push([b,c,v]);
         self.triangles.push([c,a,v]);
+        let face = self.faces[t];
+        self.faces.push(face); self.faces.push(face);
         v
     }
 
@@ -271,19 +275,23 @@ pub struct CapComponent { pub facets: usize,pub extreme: f64,pub kept: bool }
 /// well within the certificate's probe, and no sliver thinner than it is
 /// left for the stitch); no facet edge is left longer than `longest` (the
 /// column spacing serves), so the labels at a cap's corners see what the
-/// labels at a sheet's corners see.
-pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f64,longest: f64) -> Result<([SweepPatch;2],[Vec<CapComponent>;2]),String> {
+/// labels at a sheet's corners see. With each cap come its vertices that lie
+/// on an edge of the tool (their facets lie on more than one of the tool's
+/// faces), where a vertex's own label cannot say which face it speaks for.
+pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f64,longest: f64)
+    -> Result<([SweepPatch;2],[Vec<CapComponent>;2],[Vec<bool>;2]),String> {
     let SolidDef::Swept {source,motion,from,to} = &sk.solids[swept].def else { return Err("not a continuous sweep".into()) };
     let unit = sagitta/crate::curve::FLATNESS_PX;
     let tool = static_solid_at_unit(sk,*source as usize,unit,0)?;
-    let (vertices,triangles) = indexed(&tool.boundary()?);
+    let (vertices,triangles,faces) = indexed_faces(&tool.boundary()?);
     let family = Family::read(sk,*motion as usize)?;
     let time_tolerance = 1e-9*(to.value-from.value).abs().max(1.);
     let mut out = Vec::with_capacity(2);
     let mut reports = Vec::with_capacity(2);
+    let mut edges = Vec::with_capacity(2);
     for (end,t) in [(End::From,from.value),(End::To,to.value)] {
         let pose = family.at(t).map_err(|e| format!("{e:?}"))?;
-        let mut mesh = CutMesh {vertices:vertices.iter().map(|p| pose.point(*p)).collect(),triangles:triangles.clone(),cuts:Default::default(),vertex_tolerance:snap,sagitta};
+        let mut mesh = CutMesh {vertices:vertices.iter().map(|p| pose.point(*p)).collect(),triangles:triangles.clone(),faces:faces.clone(),cuts:Default::default(),vertex_tolerance:snap,sagitta};
         mesh.refine(longest);
         // the contact curves on the tool at this instant
         for s in sheets {
@@ -316,8 +324,24 @@ pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f6
         }
         reports.push(report.into_values().collect::<Vec<_>>());
         let mut patch = SweepPatch {points:Vec::new(),normals:Vec::new(),triangles:Vec::new(),column:Vec::new(),times:vec![t],closed:false};
+        // a vertex on a tool edge: its facets lie on more than one face
+        let mut first = vec![u32::MAX;mesh.vertices.len()];
+        let mut on_edge = vec![false;mesh.vertices.len()];
+        for (tri,&face) in mesh.triangles.iter().zip(&mesh.faces) {
+            for &v in tri {
+                let f = &mut first[v as usize];
+                if *f == u32::MAX { *f = face; } else if *f != face { on_edge[v as usize] = true; }
+            }
+        }
+        let mut edge = Vec::new();
         let mut remap: Vec<u32> = vec![u32::MAX;mesh.vertices.len()];
-        let normals: Vec<V3> = (0..mesh.vertices.len() as u32).map(|v| mesh.vertex_normal(v)).collect();
+        // every vertex's summed facet normal in one pass, each facet's added in the order
+        // `vertex_normal` adds them
+        let mut normals: Vec<V3> = vec![[0.;3];mesh.vertices.len()];
+        for (t,tri) in mesh.triangles.iter().enumerate() {
+            let Some(f) = mesh.facet_normal(t) else { continue };
+            for &v in tri { normals[v as usize] = add(normals[v as usize],f); }
+        }
         for i in 0..mesh.triangles.len() {
             let Some(_) = mesh.facet_normal(i) else { continue };
             let e = extreme[&component[i]];
@@ -328,11 +352,13 @@ pub fn caps(sk: &Sketch,swept: usize,sheets: &[SweepPatch],sagitta: f64,snap: f6
                     patch.points.push(mesh.vertices[v as usize]);
                     patch.normals.push(normalised(normals[v as usize]).unwrap_or([0.;3]));
                     patch.column.push(0);
+                    edge.push(on_edge[v as usize]);
                 }
                 remap[v as usize]
             }));
         }
         out.push(patch);
+        edges.push(edge);
     }
-    Ok(([out.remove(0),out.remove(0)],[reports.remove(0),reports.remove(0)]))
+    Ok(([out.remove(0),out.remove(0)],[reports.remove(0),reports.remove(0)],[edges.remove(0),edges.remove(0)]))
 }

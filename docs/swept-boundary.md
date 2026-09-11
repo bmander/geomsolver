@@ -329,6 +329,70 @@ the tracer fixes of milestone 5 lead.
   their slivers leave four loops at the crease junctions. This is project 2's problem, the
   Boolean meshes, and is noted for it.
 
+## Cost (2026-09-11)
+
+The target is WASM on one core, so the work is total cycles and complexity classes, never
+threads. Every change was checked by exporting the five milestone-4 cases' STLs
+(`export_milestone_4_cases` with `SOLVENT_EXPORT`) and comparing them byte for byte with a
+baseline: identical, except for the one change that moves traced points (below). Measured on
+the turned lens, the Boolean tool among the milestone-4 cases:
+
+| stage | before | after |
+|---|---|---|
+| seeds (the tracer) | 261 ms | 92 ms |
+| caps (tool tessellation) | 6.3 s | 68 ms |
+| labels | 378 ms | 180 ms |
+| clip | 982 ms | 85 ms |
+| kept and certificate | 1.35 s | 0.29 s |
+| planar union | 122 ms | 25 ms |
+| whole case | 9.3 s | 0.83 s |
+
+The dumbbell, 35 000 triangles, went from 52 s to 10 s. What changed, by what it fixed:
+
+- **The BSP** (`csg.rs`). A convex solid's tree is a chain as deep as the solid has facets
+  (every other facet lies behind each facet's plane), so building and clipping were quadratic,
+  and the recursive walks overflowed the stack on a finely cut sphere. The walks are loops over
+  an explicit stack, a polygon is moved rather than cloned and classified once per level, and a
+  large batch goes down a chain with bounding spheres over it (`Balls`, `build_spine`,
+  `clip_spine`): a node's plane asks only the polygons whose spheres reach it, the rest being
+  strictly on the side the batch goes on. At a branch the batch goes on along the side most of
+  it takes and the rest leaves as a batch of its own, so no polygon is gathered into new spheres
+  more than a logarithm of times; `clip_to` clips a whole tree's polygons as one tagged batch.
+  About n log n for a convex operand, the same splits in the same order.
+- **Roll refinement** (`swept.rs`, `minimum.rs`). A roll cell and its midpoint sample are the
+  source at one pose, so the midpoint's value serves both, which halves the source evaluations.
+  `deep_sign` stops once its enclosure lies strictly inside the band (`Status::Contained`), where
+  the refiner's nested enclosures can only stay; a sweep reached through fixed poses alone may
+  stop so, never an operand of a Boolean.
+- **Cap corners** (`crease.rs`, `caps.rs`). Each triangle of the tool mesh carries its face
+  through `CutMesh`, and `caps` names the cap vertices whose facets lie on more than one face.
+  Only there, or where a vertex is not kept, is a corner judged in from the corner; inside a face
+  the vertex's own label speaks. The queries go with the caps' edges, not their area: 12 252 near
+  queries on the lens became 2 094.
+- **Kept and certificate** (`trim.rs`, `judge.rs`). A triangle whose certificate probes read
+  material inside and exterior outside cannot have its centroid deeper than the probe distance
+  (the field is one-Lipschitz), which is all the deep sign could say, so the kept stage asks the
+  probes first, of the triangles the certificate probes, and the judge remembers every band
+  query: the certificate re-asks nothing of a triangle the stitch left alone.
+- **Planar union** (`planar.rs`). Groups are indexed by normal, and a group's feet are gathered
+  from a flat cell table within its own diagonal of its box: a foot farther away cannot cross it
+  with area on both sides, and the region only shrinks. Quadratic to about linear.
+- **Caps and the vertex merge** (`caps.rs`, `stitch.rs`). A cap's vertex normals are summed in
+  one pass, and the merge's counts, flip checks and relabels read incidence built once a round.
+- **The tracer** (`tool_faces.rs`, `sweep_candidates.rs`). Crease points and the events where a
+  normal velocity changes sign are found by regula falsi with the Illinois fix, a handful of steps
+  where bisection took 50 and 32. This moves traced points by at most 2e-12, and the stitch
+  amplifies that into different valid meshes: the turning prism still closes and certifies with
+  its volume unchanged, while the two open cases' failures moved (the tumbling cylinder from 28
+  to 40, the turned box from 1 to 4). That sensitivity belongs to the end-game, for milestone 5.
+
+What is left on the lens is two thirds field queries: linear in the elements, a logarithm of
+roll cells each, about 1.6 µs a roll evaluation in outward-rounded interval arithmetic. A
+gradient-based roll bound would make the cells per query logarithmic in the tolerance where the
+Lipschitz bound's grow as its inverse square root, but at today's tolerance it would about halve
+the evaluations at twice the cost each. The dumbbell's planar union (2.5 s) and the T-junction
+split (every boundary vertex against every boundary edge, per round) still hold quadratic parts.
+
 ## Refusals
 
 Every refusal names its element. So far: `ReversedNormal { point, direction }` (material

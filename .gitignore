@@ -9,3 +9,5 @@ web/src/wasm/gcs.wasm
 web/tools/.overlay-*
 # Independent geometry-verification scripts generate Python bytecode locally.
 __pycache__/
+# STL exports written beside example documents (e.g. swept_boundary/) are generated
+rust/examples/**/*.stl

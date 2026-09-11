@@ -3,7 +3,7 @@ use super::{min,max,union_support,intersection_support,Error,I,V,SpatialField,Sw
 use crate::{interval::minimum::{Minimum,Options},motion::{Family,MotionBounds}};
 use std::{collections::HashMap,sync::Arc};
 
-type QueryCache = HashMap<(usize,[[u64;2];3],Option<[u64;2]>),I>;
+type QueryCache = HashMap<(usize,[[u64;2];3],Option<[u64;2]>,bool),I>;
 
 #[derive(Clone,Debug)]
 enum Node {
@@ -126,7 +126,17 @@ impl MaterialEvaluator {
     /// contract as `bounds_with_observer`. The observer cannot affect stopping.
     pub fn bounds_outside_with_observer(&mut self,p: V,band: I,options: Options,
         observe: impl FnMut(usize,I,I)) -> Result<MaterialBounds,SweepError> {
-        self.query(p,options,Some(band),observe)
+        self.query(p,options,Some(band),false,observe)
+    }
+
+    /// `bounds_outside`, and a sweep reached from the root through fixed poses
+    /// alone may also stop once its enclosure lies strictly inside the band:
+    /// its enclosure is the root's, so which side of the band the value lies
+    /// on is then decided. Across a Boolean an operand inside the band decides
+    /// nothing about the composite, and there every leaf refines as
+    /// `bounds_outside` would.
+    pub fn bounds_deciding(&mut self,p: V,band: I,options: Options) -> Result<MaterialBounds,SweepError> {
+        self.query(p,options,Some(band),true,|_,_,_| {})
     }
 
     /// The first observer argument indexes the returned `sweeps` vector. The
@@ -135,22 +145,22 @@ impl MaterialEvaluator {
     /// must be discarded; no successful material result is returned.
     pub fn bounds_with_observer(&mut self,p: V,options: Options,observe: impl FnMut(usize,I,I))
         -> Result<MaterialBounds,SweepError> {
-        self.query(p,options,None,observe)
+        self.query(p,options,None,false,observe)
     }
 
-    fn query(&mut self,p: V,options: Options,band: Option<I>,mut observe: impl FnMut(usize,I,I))
+    fn query(&mut self,p: V,options: Options,band: Option<I>,contain: bool,mut observe: impl FnMut(usize,I,I))
         -> Result<MaterialBounds,SweepError> {
         let mut queries = vec![];
         let root = self.field.clone();
-        let value = self.evaluate(&root,p,options,band,&mut HashMap::new(),&mut queries,&mut observe)?;
+        let value = self.evaluate(&root,p,options,band,contain,&mut HashMap::new(),&mut queries,&mut observe)?;
         Ok(MaterialBounds {value,sweeps:queries})
     }
 
-    fn evaluate(&mut self,field: &MaterialField,p: V,options: Options,band: Option<I>,
+    fn evaluate(&mut self,field: &MaterialField,p: V,options: Options,band: Option<I>,contain: bool,
         cache: &mut QueryCache,queries: &mut Vec<MaterialSweepQuery>,
         observe: &mut impl FnMut(usize,I,I)) -> Result<I,SweepError> {
         let id = Arc::as_ptr(&field.node) as usize;
-        let key = (id,p.map(|v| v.bounds().map(f64::to_bits)),band.map(|b| b.bounds().map(f64::to_bits)));
+        let key = (id,p.map(|v| v.bounds().map(f64::to_bits)),band.map(|b| b.bounds().map(f64::to_bits)),contain);
         if let Some(value) = cache.get(&key) { return Ok(*value); }
         let value = match field.node.as_ref() {
             Node::Static(source) => source.bounds(p).map_err(SweepError::Oracle)?,
@@ -158,18 +168,19 @@ impl MaterialEvaluator {
                 let sweep = self.sweeps.entry(id)
                     .or_insert_with(|| source.evaluator(self.max_cached_poses_per_sweep));
                 let query = queries.len();
-                let minimum = sweep.evaluate(p,options,band,|d,b| observe(query,d,b))?;
+                let minimum = sweep.evaluate(p,options,band,contain,|d,b| observe(query,d,b))?;
                 queries.push(MaterialSweepQuery {point_box:p,domain:source.domain(),minimum,separation_band:band});
                 minimum.value
             },
+            // a fixed pose moves the point, not the value: containment survives it
             Node::Transformed {source,pose} => self.evaluate(source,
-                pose.inverse_point(p).map_err(SweepError::Oracle)?,options,band,cache,queries,observe)?,
-            Node::Union(a,b) => min(self.evaluate(a,p,options,band,cache,queries,observe)?,
-                self.evaluate(b,p,options,band,cache,queries,observe)?),
-            Node::Intersection(a,b) => max(self.evaluate(a,p,options,band,cache,queries,observe)?,
-                self.evaluate(b,p,options,band,cache,queries,observe)?),
-            Node::Difference(a,b) => max(self.evaluate(a,p,options,band,cache,queries,observe)?,
-                self.evaluate(b,p,options,band.map(I::neg),cache,queries,observe)?.neg()),
+                pose.inverse_point(p).map_err(SweepError::Oracle)?,options,band,contain,cache,queries,observe)?,
+            Node::Union(a,b) => min(self.evaluate(a,p,options,band,false,cache,queries,observe)?,
+                self.evaluate(b,p,options,band,false,cache,queries,observe)?),
+            Node::Intersection(a,b) => max(self.evaluate(a,p,options,band,false,cache,queries,observe)?,
+                self.evaluate(b,p,options,band,false,cache,queries,observe)?),
+            Node::Difference(a,b) => max(self.evaluate(a,p,options,band,false,cache,queries,observe)?,
+                self.evaluate(b,p,options,band.map(I::neg),false,cache,queries,observe)?.neg()),
         };
         cache.insert(key,value);
         Ok(value)

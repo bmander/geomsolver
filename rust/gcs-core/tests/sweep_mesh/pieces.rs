@@ -65,7 +65,7 @@ fn cube() -> (Vec<V3>,Vec<[u32;3]>) {
 #[test]
 fn a_cut_round_a_cube_at_half_height_leaves_two_components_that_close() {
     let (vertices,triangles) = cube();
-    let mut mesh = CutMesh {vertices,triangles,cuts:Default::default(),vertex_tolerance:1e-3,sagitta:1e-2};
+    let mut mesh = CutMesh {faces:vec![0;triangles.len()],vertices,triangles,cuts:Default::default(),vertex_tolerance:1e-3,sagitta:1e-2};
     // the points and no normals: the mesh's own serve
     let belt: Vec<(V3,V3)> = vec![[0.,0.,0.5],[1.,0.,0.5],[1.,1.,0.5],[0.,1.,0.5]].into_iter().map(|p| (p,[0.;3])).collect();
     mesh.cut_along(&belt,true).unwrap();
@@ -85,7 +85,7 @@ fn a_cut_round_a_cube_at_half_height_leaves_two_components_that_close() {
 #[test]
 fn a_cut_along_an_open_line_across_one_face_parts_nothing() {
     let (vertices,triangles) = cube();
-    let mut mesh = CutMesh {vertices,triangles,cuts:Default::default(),vertex_tolerance:1e-3,sagitta:1e-2};
+    let mut mesh = CutMesh {faces:vec![0;triangles.len()],vertices,triangles,cuts:Default::default(),vertex_tolerance:1e-3,sagitta:1e-2};
     mesh.cut_along(&[([0.25,0.,0.5],[0.;3]),([0.75,0.,0.5],[0.;3])],false).unwrap();
     let distinct: std::collections::BTreeSet<usize> = mesh.components().into_iter().collect();
     assert_eq!(distinct.len(),1);
@@ -95,7 +95,7 @@ fn a_cut_along_an_open_line_across_one_face_parts_nothing() {
 #[test]
 fn a_column_point_off_the_mesh_is_refused_by_name() {
     let (vertices,triangles) = cube();
-    let mut mesh = CutMesh {vertices,triangles,cuts:Default::default(),vertex_tolerance:1e-3,sagitta:1e-2};
+    let mut mesh = CutMesh {faces:vec![0;triangles.len()],vertices,triangles,cuts:Default::default(),vertex_tolerance:1e-3,sagitta:1e-2};
     let err = mesh.cut_along(&[([0.5,0.5,0.5],[0.;3]),([0.5,0.5,2.],[0.;3])],false).unwrap_err();
     assert!(err.contains("off the tool's mesh"),"{err}");
 }

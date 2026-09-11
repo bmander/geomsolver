@@ -60,6 +60,23 @@ fn dump(mesh: &KeptMesh,path: &str) {
     std::fs::write(path,text).unwrap();
 }
 
+/// Wall time per pipeline stage, printed as one line at the end of a case.
+struct Clock { last: std::time::Instant,laps: Vec<(&'static str,std::time::Duration,String)>,queries: [usize;3] }
+impl Clock {
+    fn new() -> Clock { Clock {last:std::time::Instant::now(),laps:Vec::new(),queries:[0;3]} }
+    fn lap(&mut self,stage: &'static str) { let now = std::time::Instant::now(); self.laps.push((stage,now-self.last,String::new())); self.last = now; }
+    /// A lap that asked the field, with the near and far queries and roll
+    /// evaluations it made.
+    fn judged(&mut self,stage: &'static str,stats: &gcs_core::solid::swept_boundary::QueryStats) {
+        self.lap(stage);
+        let now = [stats.near,stats.far,stats.roll_evaluations];
+        let d: [usize;3] = std::array::from_fn(|k| now[k]-self.queries[k]);
+        self.queries = now;
+        self.laps.last_mut().unwrap().2 = format!(" ({} near, {} far, {} rolls)",d[0],d[1],d[2]);
+    }
+    fn report(&self) -> String { self.laps.iter().map(|(s,d,q)| format!("{s} {:.0} ms{q}",d.as_secs_f64()*1e3)).collect::<Vec<_>>().join(", ") }
+}
+
 /// Seeds and caps judged, kept, welded, rims zipped, certified: the shell.
 fn closed_shell(source: &str) -> (KeptMesh,gcs_core::solid::swept_boundary::Certificate) { closed_shell_at(source,SAGITTA) }
 
@@ -67,12 +84,16 @@ fn closed_shell(source: &str) -> (KeptMesh,gcs_core::solid::swept_boundary::Cert
 /// field never depends on the roll, where every query refines the whole
 /// interval).
 pub(super) fn closed_shell_at(source: &str,sagitta: f64) -> (KeptMesh,gcs_core::solid::swept_boundary::Certificate) {
+    let mut clock = Clock::new();
     let e = harness::read(source);
     let swept = harness::solid(&e,"swept");
+    clock.lap("read");
     let started = std::time::Instant::now();
     let (epsilon,reach,probe) = (sagitta/4.,sagitta,2.*sagitta);
     let (_,mut sheets) = seeds(&e.sketch,swept,SPACING,sagitta,&|_| {}).unwrap();
-    let ([start,end],components) = caps(&e.sketch,swept,&sheets,sagitta,sagitta/4.,SPACING).unwrap();
+    clock.lap("seeds");
+    let ([start,end],components,[start_edges,end_edges]) = caps(&e.sketch,swept,&sheets,sagitta,sagitta/4.,SPACING).unwrap();
+    clock.lap("caps");
     if std::env::var("SOLVENT_SHEETS").is_ok() { for (k,c) in components.iter().enumerate() { eprintln!("  cap {k} components: {:?}",c.iter().map(|c| format!("{} facets {:+.2}{}",c.facets,c.extreme,if c.kept { " kept" } else { "" })).collect::<Vec<_>>()); } }
     eprintln!("{} sheets of {} points, caps of {} and {} triangles ({:?})",sheets.len(),sheets.iter().map(|s| s.points.len()).sum::<usize>(),
         start.triangles.len(),end.triangles.len(),started.elapsed());
@@ -92,8 +113,14 @@ pub(super) fn closed_shell_at(source: &str,sagitta: f64) -> (KeptMesh,gcs_core::
     let field = MaterialField::read(&e.sketch,swept,1e-10).unwrap();
     let mut judge = FieldJudge::new(field,epsilon/2.,4000,1000,4096);
     let labelled = gcs_core::solid::swept_boundary::label_sheets_from(&mut judge,&sheets,epsilon,reach,sheets.len()-2).unwrap();
-    let (mut mesh,rims) = clip_sheets(&mut judge,&sheets,&labelled,epsilon,reach,sheets.len()-2).unwrap();
+    clock.judged("labels",&judge.stats);
+    // traced sheets decide by their vertex labels; each cap names its tool-edge vertices
+    let mut corners: Vec<Vec<bool>> = vec![Vec::new();sheets.len()-2];
+    corners.push(start_edges); corners.push(end_edges);
+    let (mut mesh,rims) = clip_sheets(&mut judge,&sheets,&labelled,epsilon,reach,&corners).unwrap();
+    clock.judged("clip",&judge.stats);
     let (welded_rims,split_rims) = merge_creases(&mut mesh,&rims,1.5*sagitta,4.*epsilon);
+    clock.lap("merge");
     eprintln!("{} rims clipped; {welded_rims} rim vertices welded, {split_rims} rim edges split",rims.len());
     if std::env::var("SOLVENT_SHEETS").is_ok() {
         for r in &rims { let p: Vec<V3> = r.vertices.iter().map(|&v| mesh.vertices[v as usize]).collect(); let (lo,hi) = p.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(lo,hi),p| (std::array::from_fn(|k| lo[k].min(p[k])),std::array::from_fn(|k| hi[k].max(p[k])))); eprintln!("  rim on sheet {}: {} vertices, closed {}, box {:?}..{:?}",r.sheet,r.vertices.len(),r.closed,lo.map(|x| (x*1e3).round()/1e3),hi.map(|x| (x*1e3).round()/1e3));
@@ -109,6 +136,7 @@ pub(super) fn closed_shell_at(source: &str,sagitta: f64) -> (KeptMesh,gcs_core::
         }
     }
     let (keep,inside,outside) = gcs_core::solid::swept_boundary::centroid_kept(&mut judge,&mesh,sagitta).unwrap();
+    clock.judged("kept",&judge.stats);
     if std::env::var("SOLVENT_SHEETS").is_ok() {
         let mut by_sheet: std::collections::BTreeMap<u32,Vec<V3>> = Default::default();
         for (i,t) in mesh.triangles.iter().enumerate().filter(|(i,_)| !keep[*i]) {
@@ -120,12 +148,15 @@ pub(super) fn closed_shell_at(source: &str,sagitta: f64) -> (KeptMesh,gcs_core::
     let mesh = retained(&mesh,&keep);
     stage(&mesh,"kept");
     let (mesh,replaced) = planar_union(&mesh,1e-7);
+    clock.lap("union");
     stage(&mesh,"unioned");
     let (mut mesh,dropped) = clip_overlaps(&mesh,2.*sagitta);
+    clock.lap("overlaps");
     stage(&mesh,"without overlaps");
     weld(&mut mesh,1e-7);
     let collapsed = gcs_core::solid::swept_boundary::collapse_short_edges(&mut mesh,epsilon/2.);
     let doubled = gcs_core::solid::swept_boundary::drop_doubled_slivers(&mut mesh,2.*epsilon);
+    clock.lap("weld");
     if std::env::var("SOLVENT_SHEETS").is_ok() { eprintln!("  {collapsed} vertex pairs within half a sagitta merged, {doubled} doubled slivers dropped"); }
     stage(&mesh,"welded");
     eprintln!("{inside} triangles dropped as interior, {outside} as exterior, {replaced} unioned in their planes, {dropped} as overlapping");
@@ -134,7 +165,7 @@ pub(super) fn closed_shell_at(source: &str,sagitta: f64) -> (KeptMesh,gcs_core::
         let mut sorted = l.clone(); sorted.sort(); sorted.dedup();
         eprintln!("  loop {i}: {} vertices, {} distinct, first {:?}",l.len(),sorted.len(),mesh.vertices[l[0] as usize]);
     }
-    if loops.len() >= 2 {
+    if loops.len() >= 2 && std::env::var("SOLVENT_SHEETS").is_ok() {
         let pts = |l: &Vec<u32>| l.iter().map(|&v| mesh.vertices[v as usize]).collect::<Vec<_>>();
         let (a,b) = (pts(&loops[0]),pts(&loops[1]));
         let zip = gcs_core::solid::zip_polylines(&a,&b,true);
@@ -144,7 +175,9 @@ pub(super) fn closed_shell_at(source: &str,sagitta: f64) -> (KeptMesh,gcs_core::
         eprintln!("  zip of loops 0 and 1: {} triangles, loop edges used more than once: {:?}",zip.len(),multi);
     }
     let before = loops.len();
+    clock.lap("audit");
     gcs_core::solid::swept_boundary::split_at_vertices(&mut mesh,2.*sagitta);
+    clock.lap("split");
     stage(&mesh,"split");
     if std::env::var("SOLVENT_SHEETS").is_ok() {
         for (i,l) in boundary_loops(&mesh.triangles).iter().enumerate() {
@@ -160,6 +193,7 @@ pub(super) fn closed_shell_at(source: &str,sagitta: f64) -> (KeptMesh,gcs_core::
         }
     }
     let (pairs,unpaired) = rim_zip(&mut mesh,SPACING,2.*sagitta);
+    clock.lap("zip");
     stage(&mesh,"zipped");
     eprintln!("welded: {} vertices, {} triangles, {} boundary loops; {pairs} rims zipped, {} loops left",mesh.vertices.len(),mesh.triangles.len(),before,unpaired.len());
     for (k,l) in unpaired.iter().enumerate() {
@@ -178,7 +212,10 @@ pub(super) fn closed_shell_at(source: &str,sagitta: f64) -> (KeptMesh,gcs_core::
         }
     }
     if let Ok(path) = std::env::var("SOLVENT_DUMP") { dump(&mesh,&path); }
+    clock.lap("audit");
     let certificate = certify(&mut judge,&mesh.vertices,&mesh.triangles,probe,2.*epsilon).unwrap();
+    clock.judged("certify",&judge.stats);
+    eprintln!("stage times: {}",clock.report());
     eprintln!("certified {} of {} triangles ({} slivers by their centroid), {} thin, {} failed; volume {:.5}; {} ({:?})",certificate.certified,mesh.triangles.len(),certificate.slivers,
         certificate.thin.len(),certificate.failures.len(),volume(&mesh),judge.stats.report(),started.elapsed());
     let sampler = super::labels::Sampler::new(&e,swept);

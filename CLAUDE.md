@@ -332,6 +332,17 @@ dumbbell are `#[ignore]`d with their evidence (folds where a contact curve runs 
 velocity, bowtie sectors through fixed points, a second-order-deep sphere, a Boolean mesh of
 45 000 facets) and lead into milestone 5 and project 2. `docs/swept-boundary.md` has the
 table and the lessons.
+**Swept boundary cost (2026-09-11):** the target is WASM on one core, so the work is cycles and
+complexity classes, never threads, each change checked by exporting the milestone-4 STLs
+byte for byte against a baseline (`export_milestone_4_cases`, `SOLVENT_EXPORT`). The turned
+lens went from 9.3 s to 0.83 s and the dumbbell from 52 s to 10 s. The BSP in `csg.rs` walks
+by explicit stack (a convex solid's tree is a chain as deep as its facets) and sends a batch
+down a chain with bounding spheres (`Balls`, `build_spine`, `clip_spine`), about n log n where
+it was quadratic; a roll cell's midpoint value serves its sample; `deep_sign` stops once its
+enclosure is inside the band (`Status::Contained`, never across a Boolean); cap corners are
+judged in from the corner only at tool-edge vertices; the kept stage asks the certificate's
+probes, which the judge remembers. The tracer's crease points and events are regula falsi; the
+stitch turns their 2e-12 moves into different valid meshes, a fragility for milestone 5.
 `solid::MaterialField` composes static and swept operands with fixed poses and Booleans.
 Its evaluator owns complete-member cut arithmetic, retaining every distinct node/box sweep's
 domain, witness, enclosure and termination status. Budgets apply per sweep query; exhausted

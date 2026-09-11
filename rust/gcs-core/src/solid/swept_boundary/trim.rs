@@ -52,6 +52,19 @@ pub fn centroid_kept(judge: &mut super::judge::FieldJudge,mesh: &KeptMesh,sagitt
     for (i,t) in mesh.triangles.iter().enumerate() {
         let [a,b,c] = t.map(|v| mesh.vertices[v as usize]);
         let centroid: V3 = std::array::from_fn(|k| (a[k]+b[k]+c[k])/3.);
+        // Material two sagittas inside and exterior as far outside, along the triangle's own
+        // outward normal (the certificate's first probes, which the judge keeps for it): the
+        // field being one-Lipschitz, the centroid is then neither material nor exterior deeper
+        // than that, which is all the deep sign could have said against the triangle. Asked
+        // only of a triangle the certificate will probe so: one with an altitude of at least
+        // its least probe distance, half a sagitta (a sliver it judges at the centroid).
+        if let Some(n) = super::certify::triangle_normal(a,b,c) {
+            let length = |p: V3,q: V3| ((p[0]-q[0]).powi(2)+(p[1]-q[1]).powi(2)+(p[2]-q[2]).powi(2)).sqrt();
+            let (u,w) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]);
+            let area2 = length([u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]],[0.;3]);
+            let longest = length(a,b).max(length(b,c)).max(length(c,a));
+            if area2/longest >= sagitta/2. && judge.sides(centroid,n,2.*sagitta)? == (Sign::Material,Sign::Exterior) { continue; }
+        }
         match judge.deep_sign(centroid,2.*sagitta)?.0 {
             Sign::Material => { keep[i] = false; inside += 1; }
             Sign::Exterior => { keep[i] = false; outside += 1; }

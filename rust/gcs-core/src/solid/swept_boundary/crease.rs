@@ -26,26 +26,38 @@ pub struct Rim { pub sheet: usize,pub vertices: Vec<u32>,pub closed: bool }
 /// The kept triangles of every sheet, each triangle with an inner corner
 /// clipped at the crease points bisected on its mixed edges (the last
 /// boundary point found along the edge, within `epsilon`), wound outward.
-/// Returns the mesh and the rims the clipping made, chained per sheet.
-pub fn clip_sheets(judge: &mut FieldJudge,sheets: &[SweepPatch],labelled: &[Labelled],epsilon: f64,reach: f64,per_corner_from: usize) -> Result<(KeptMesh,Vec<Rim>),JudgeError> {
+/// `corners` is per sheet: empty for a sheet whose vertex labels decide
+/// (a traced sheet), and for a cap the vertices on an edge of the tool (see
+/// `caps`), whose labels do not. Returns the mesh and the rims the clipping
+/// made, chained per sheet.
+pub fn clip_sheets(judge: &mut FieldJudge,sheets: &[SweepPatch],labelled: &[Labelled],epsilon: f64,reach: f64,corners: &[Vec<bool>]) -> Result<(KeptMesh,Vec<Rim>),JudgeError> {
     use super::certify::triangle_normal;
     let mut out = KeptMesh::default();
     let mut rims = Vec::new();
     for (s,(sheet,l)) in sheets.iter().zip(labelled).enumerate() {
         let base = out.vertices.len() as u32;
         out.vertices.extend_from_slice(&l.points);
-        let per_corner = s >= per_corner_from;
+        let edge = corners.get(s).map_or(&[][..],|c| &c[..]);
+        let per_corner = !edge.is_empty();
         // A cap's vertex on a tool edge is on the boundary by one face or
         // the other, and its label says nothing about which: the face beside
         // a crease that crosses the edge reads on at both ends of the
         // crossing. So a cap's corners are judged a sagitta in from the
         // corner along the triangle's own plane, where the face itself
         // speaks, and a crease is bisected along the edge the same way in.
+        // Inside a face the vertex's own label speaks for the face: a
+        // triangle there with every vertex kept is kept whole, unasked, so
+        // the corners judged go with the tool's edges and the creases
+        // crossing the cap, not with the cap's area.
         let pull = 8.*epsilon;
         let mut corner_on: std::collections::BTreeMap<(usize,usize),bool> = Default::default();
         let faces = super::project::orientation(sheet);
         if per_corner {
             for (i,t) in sheet.triangles.iter().enumerate() {
+                if t.iter().all(|&v| !edge[v as usize] && l.labels[v as usize] == Label::Kept) {
+                    for k in 0..3 { corner_on.insert((i,k),true); }
+                    continue;
+                }
                 let [a,b,c] = t.map(|v| l.points[v as usize]);
                 let Some(mut n) = triangle_normal(a,b,c) else { continue };
                 if !faces[i] { n = n.map(|x| -x); }

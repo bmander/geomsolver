@@ -19,14 +19,16 @@ enum Node {
 /// closure({f<0}), not the entire zero set. Booleans need not remain distances.
 /// Clones share immutable geometry. Spatial expression depth is limited to 64;
 /// each revolved or extruded leaf also enforces the planar field's own depth limit.
+/// Whether any node is reached by more than one path is decided once, when the
+/// node is made: `bounds` is asked it on every roll of every sweep query.
 #[derive(Clone,Debug)]
-pub struct SpatialField {node:Arc<Node>,depth:u8}
+pub struct SpatialField {node:Arc<Node>,depth:u8,shares:bool}
 
 impl From<RevolvedField> for SpatialField {
-    fn from(source: RevolvedField) -> Self { Self {node:Arc::new(Node::Revolved(source)),depth:1} }
+    fn from(source: RevolvedField) -> Self { Self {node:Arc::new(Node::Revolved(source)),depth:1,shares:false} }
 }
 impl From<ExtrudedField> for SpatialField {
-    fn from(source: ExtrudedField) -> Self { Self {node:Arc::new(Node::Extruded(source)),depth:1} }
+    fn from(source: ExtrudedField) -> Self { Self {node:Arc::new(Node::Extruded(source)),depth:1,shares:false} }
 }
 
 impl SpatialField {
@@ -51,7 +53,9 @@ impl SpatialField {
     }
     fn node(node: Node,depth: u8) -> Result<Self,Error> {
         if depth > 64 { return Err(Error::OutsideDomain); }
-        Ok(Self {node:Arc::new(node),depth})
+        let mut field = Self {node:Arc::new(node),depth,shares:false};
+        field.shares = field.shares_nodes();
+        Ok(field)
     }
 
     /// Apply one fixed pose of the supplied solved motion. A point parameter
@@ -104,7 +108,7 @@ impl SpatialField {
         // A tree that shares no node needs no memo: the memo is a hash of the
         // whole box per node, which costs about what a leaf does, and most
         // tools are a handful of leaves under a Boolean or two.
-        if self.shares_nodes() { self.evaluate(p,&mut Some(Cache::new())) } else { self.evaluate(p,&mut None) }
+        if self.shares { self.evaluate(p,&mut Some(Cache::new())) } else { self.evaluate(p,&mut None) }
     }
 
     /// Whether any node is reached by more than one path.

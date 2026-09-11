@@ -54,7 +54,7 @@ impl SweepEvaluator {
     /// field-value band. `Separated` retains bounds and an attained witness;
     /// it does not claim convergence to the value-width tolerance.
     pub fn bounds_outside(&mut self,p: V,band: I,options: Options) -> Result<Minimum,SweepError> {
-        self.evaluate(p,options,Some(band),|_,_| {})
+        self.evaluate(p,options,Some(band),false,|_,_| {})
     }
 
     /// Observe raw interval-oracle enclosures, e.g. to extract independently
@@ -62,23 +62,36 @@ impl SweepEvaluator {
     /// or pruning decisions; it cannot change the oracle's mathematical result.
     pub fn bounds_with_observer(&mut self,p: V,options: Options,observe: impl FnMut(I,I))
         -> Result<Minimum,SweepError> {
-        self.evaluate(p,options,None,observe)
+        self.evaluate(p,options,None,false,observe)
     }
 
-    pub(super) fn evaluate(&mut self,p: V,options: Options,band: Option<I>,mut observe: impl FnMut(I,I))
+    /// With `contain`, the search also stops once the enclosure lies strictly
+    /// inside `band` (`Status::Contained`).
+    pub(super) fn evaluate(&mut self,p: V,options: Options,band: Option<I>,contain: bool,mut observe: impl FnMut(I,I))
         -> Result<Minimum,SweepError> {
         // The motion's speed bound over the whole input box.
         let speed = self.field.motion.inverse_point_speed_bound_over(p,self.field.domain)
             .and_then(I::point).map_err(minimum::Error::Oracle)?;
-        minimum::refine(self.field.domain,|t| {
+        // The refiner bounds a new cell and then samples the cell's midpoint,
+        // and both are the source at the pose of that one midpoint: the last
+        // midpoint's value is kept, and only the travel differs.
+        let mut last: Option<(u64,I)> = None;
+        minimum::search(self.field.domain,|t| {
             let [lo,hi] = t.bounds(); let mid = lo*0.5+hi*0.5;
             let key = mid.to_bits();
-            let pose = if let Some(pose) = self.poses.get(&key) { *pose } else {
-                let pose = self.field.motion.bounds(I::point(mid)?)?;
-                if self.poses.len() < self.max_cached_poses { self.poses.insert(key,pose); }
-                pose
+            let value = match last {
+                Some((k,value)) if k == key => value,
+                _ => {
+                    let pose = if let Some(pose) = self.poses.get(&key) { *pose } else {
+                        let pose = self.field.motion.bounds(I::point(mid)?)?;
+                        if self.poses.len() < self.max_cached_poses { self.poses.insert(key,pose); }
+                        pose
+                    };
+                    let value = self.field.source.bounds(pose.inverse_point(p)?)?;
+                    last = Some((key,value));
+                    value
+                }
             };
-            let value = self.field.source.bounds(pose.inverse_point(p)?)?;
             let dt = t.sub(I::point(mid)?)?.bounds();
             let travel = speed.mul(I::point(dt[0].abs().max(dt[1].abs()))?)?.bounds()[1];
             // SpatialField's constructors establish the one-Lipschitz contract.
@@ -86,6 +99,6 @@ impl SweepEvaluator {
             let bound = value.add(I::new(-travel,travel)?)?;
             observe(t,bound);
             Ok::<_,Error>(bound)
-        },options,band)
+        },options,band,contain)
     }
 }

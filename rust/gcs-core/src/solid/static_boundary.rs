@@ -80,20 +80,30 @@ pub fn static_solid_at_unit(sk: &Sketch,root: usize,unit: f64,expected_sweeps: u
 /// An indexed triangle mesh of welded pieces: vertices shared by exact
 /// coordinate identity after the weld and T-junction stitch.
 pub fn indexed(pieces: &[Piece]) -> (Vec<[f64;3]>,Vec<[u32;3]>) {
+    let (vertices,triangles,_) = indexed_faces(pieces);
+    (vertices,triangles)
+}
+
+/// `indexed`, with the face each triangle lies on: its index among the
+/// mesh's faces (the pieces' paths, in the order `mesh::grouped` takes them).
+pub fn indexed_faces(pieces: &[Piece]) -> (Vec<[f64;3]>,Vec<[u32;3]>,Vec<u32>) {
     let grouped = mesh::grouped(pieces);
     let mut vertices: Vec<[f64;3]> = Vec::new();
     let mut index: std::collections::HashMap<[u64;3],u32> = std::collections::HashMap::new();
     let mut triangles = Vec::with_capacity(grouped.positions.len()/9);
-    for triangle in grouped.positions.chunks_exact(9) {
+    let mut faces = Vec::with_capacity(grouped.positions.len()/9);
+    let mut group = 0;
+    for (i,triangle) in grouped.positions.chunks_exact(9).enumerate() {
+        while grouped.groups.get(group).is_some_and(|g| g.start+g.count <= i) { group += 1; }
         let mut ids = [0u32;3];
         for (k,id) in ids.iter_mut().enumerate() {
             let p = [triangle[3*k],triangle[3*k+1],triangle[3*k+2]];
             let key = p.map(|v| if v == 0. { 0f64.to_bits() } else { v.to_bits() });
             *id = *index.entry(key).or_insert_with(|| { vertices.push(p); (vertices.len()-1) as u32 });
         }
-        if ids[0] != ids[1] && ids[1] != ids[2] && ids[0] != ids[2] { triangles.push(ids); }
+        if ids[0] != ids[1] && ids[1] != ids[2] && ids[0] != ids[2] { triangles.push(ids); faces.push(group as u32); }
     }
-    (vertices,triangles)
+    (vertices,triangles,faces)
 }
 
 /// A primitive's facets as an indexed triangle mesh in world coordinates:

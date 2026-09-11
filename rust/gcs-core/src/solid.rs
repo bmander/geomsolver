@@ -37,7 +37,7 @@ pub(crate) use primitive::area_vector;
 use primitive::{facet_normal,finish};
 pub use document::{reads,resolve};
 mod static_boundary;
-pub use static_boundary::{static_solid,indexed,primitive_triangles,StaticSolid,static_solid_at_unit};
+pub use static_boundary::{static_solid,indexed,indexed_faces,primitive_triangles,StaticSolid,static_solid_at_unit};
 mod tool_faces;
 pub use tool_faces::{ToolFace,ToolEdge,EdgeChart,Crease,StationEquation,PlanarFace,PlanarLoop,PlanarEdge,ExtrudedFace};
 mod sweep_candidates;

@@ -78,6 +78,10 @@ pub struct FieldJudge {
     near: Options,
     far: Options,
     pub stats: QueryStats,
+    /// Every `sign_beyond` asked so far, by point and band: the trim asks a triangle's
+    /// certificate probes first, and the certificate asks them again of every triangle the
+    /// stitch left as it was. A query's answer depends on nothing but its point and options.
+    beyond: std::collections::HashMap<([u64;3],u64),(Sign,[f64;2])>,
 }
 
 impl FieldJudge {
@@ -89,15 +93,17 @@ impl FieldJudge {
             near: Options {value_tolerance:tolerance,max_evaluations:near_budget.max(4)},
             far: Options {value_tolerance:tolerance,max_evaluations:far_budget.max(4)},
             stats: QueryStats::default(),
+            beyond: Default::default(),
         }
     }
 
-    fn query(&mut self,p: V3,band: f64,options: Options,near: bool) -> Result<(Sign,[f64;2]),JudgeError> {
+    fn query(&mut self,p: V3,band: f64,options: Options,near: bool,decide: bool) -> Result<(Sign,[f64;2]),JudgeError> {
         let started = Instant::now();
         let point = p.map(|x| I::point(x).map_err(|e| JudgeError::Field(format!("{e:?}")))).into_iter().collect::<Result<Vec<_>,_>>()?;
         let point: [I;3] = [point[0],point[1],point[2]];
         let band = I::new(-band,band).map_err(|e| JudgeError::Field(format!("{e:?}")))?;
-        let bounds = self.evaluator.bounds_outside(point,band,options).map_err(|e| JudgeError::Field(format!("{e:?}")))?;
+        let bounds = if decide { self.evaluator.bounds_deciding(point,band,options) } else { self.evaluator.bounds_outside(point,band,options) }
+            .map_err(|e| JudgeError::Field(format!("{e:?}")))?;
         let elapsed = started.elapsed();
         self.stats.roll_evaluations += bounds.sweeps.iter().map(|q| q.minimum.evaluations).sum::<usize>();
         if near {
@@ -120,17 +126,25 @@ impl FieldJudge {
     }
 
     /// The strict sign at a point, resolved as finely as a near query may.
-    pub fn sign(&mut self,p: V3) -> Result<(Sign,[f64;2]),JudgeError> { self.query(p,0.,self.near,true) }
+    pub fn sign(&mut self,p: V3) -> Result<(Sign,[f64;2]),JudgeError> { self.query(p,0.,self.near,true,false) }
 
     /// The strict sign at a point expected at least `band` from the boundary:
     /// the search stops as soon as the enclosure clears the band.
-    pub fn sign_beyond(&mut self,p: V3,band: f64) -> Result<(Sign,[f64;2]),JudgeError> { self.query(p,band,self.far,false) }
+    pub fn sign_beyond(&mut self,p: V3,band: f64) -> Result<(Sign,[f64;2]),JudgeError> {
+        let key = (p.map(f64::to_bits),band.to_bits());
+        if let Some(&answer) = self.beyond.get(&key) { return Ok(answer); }
+        let answer = self.query(p,band,self.far,false,false)?;
+        self.beyond.insert(key,answer);
+        Ok(answer)
+    }
 
     /// The sign at a point deeper than `depth`: material only when the
     /// enclosure lies below `-depth`, exterior only above `depth`, and
-    /// otherwise near, whatever the enclosure's width.
+    /// otherwise near, whatever the enclosure's width. The search stops as
+    /// soon as that is decided, inside the band as well as outside it: a
+    /// point on the boundary no longer refines to the full value tolerance.
     pub fn deep_sign(&mut self,p: V3,depth: f64) -> Result<(Sign,[f64;2]),JudgeError> {
-        let (sign,[lo,hi]) = self.query(p,depth,self.far,false)?;
+        let (sign,[lo,hi]) = self.query(p,depth,self.far,false,true)?;
         Ok(match sign {
             Sign::Material if hi >= -depth => (Sign::Near {within:lo.abs().max(hi.abs())},[lo,hi]),
             Sign::Exterior if lo <= depth => (Sign::Near {within:lo.abs().max(hi.abs())},[lo,hi]),

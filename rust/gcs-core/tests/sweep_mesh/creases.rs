@@ -6,6 +6,14 @@ use gcs_core::{model::SolidDef,motion::Family};
 
 const SAGITTA: f64 = 0.02;
 
+// Each case's document: the tool, its motion and the sweep, one source
+// shared by the case's test and the export below.
+fn turning_prism() -> String { format!("{}{}{}",tools::TRIANGLE_PRISM,motions::TURN_OFFSET,motions::swept("turn",-50.,50.)) }
+fn tumbling_cylinder() -> String { format!("{}{}{}",tools::CYLINDER,motions::TUMBLE,motions::swept("turn",-30.,30.)) }
+fn turned_box() -> String { format!("{}{}{}",tools::BOX,motions::turn_about(4.,-1.5,5.,-1.5),motions::swept("turn",0.,30.)) }
+fn turned_lens() -> String { format!("{}{}{}",tools::LENS,motions::TURN_SPINDLE,motions::swept("turn",-60.,60.)) }
+fn sliding_dumbbell() -> String { format!("{}{}{}",tools::DUMBBELL,motions::slide_x(4.),motions::swept("feed",0.,360.)) }
+
 /// The swept volume by sampled membership: a midpoint grid over the box,
 /// each point material when the tool's closed-form membership holds at any
 /// of `poses` parameters. Uses only `Family::at`, never the field.
@@ -50,7 +58,7 @@ fn a_turning_prism_closes_along_its_creases() {
     // the prism's section (3, -0.8), (4.5, 0), (3, 0.8) (in x and z) extruded
     // 3 along y, turned 100° about the vertical through (2.5, 0): at each
     // height its section is a rectangle, swept by ring quadrature
-    let source = format!("{}{}{}",tools::TRIANGLE_PRISM,motions::TURN_OFFSET,motions::swept("turn",-50.,50.));
+    let source = turning_prism();
     let (mesh,certificate) = closed_shell_at(&source,SAGITTA);
     assert!(certificate.is_complete(),"{} triangles failed",certificate.failures.len());
     closed(&mesh).unwrap();
@@ -79,7 +87,7 @@ fn a_turning_prism_closes_along_its_creases() {
 fn a_tumbling_cylinder_closes_along_its_creases() {
     // radius 1, height 2 about the vertical through (3, 0), tumbled ±30°
     // about the horizontal line through its centre
-    let source = format!("{}{}{}",tools::CYLINDER,motions::TUMBLE,motions::swept("turn",-30.,30.));
+    let source = tumbling_cylinder();
     let (mesh,certificate) = closed_shell_at(&source,SAGITTA);
     assert!(certificate.is_complete(),"{} triangles failed",certificate.failures.len());
     closed(&mesh).unwrap();
@@ -102,7 +110,7 @@ fn a_box_turned_about_its_face_centre_closes_along_its_creases() {
     // the 2 x 3 x 2 box turned 30° about the axis through the centre of its
     // x = 4 face along x: a 2 x 3 rectangle turned about its own centre
     // (the corners' arcs cross the faces and the faces turn inner), times 2
-    let source = format!("{}{}{}",tools::BOX,motions::turn_about(4.,-1.5,5.,-1.5),motions::swept("turn",0.,30.));
+    let source = turned_box();
     let (mesh,certificate) = closed_shell_at(&source,SAGITTA);
     assert!(certificate.is_complete(),"{} triangles failed",certificate.failures.len());
     closed(&mesh).unwrap();
@@ -116,7 +124,7 @@ fn a_box_turned_about_its_face_centre_closes_along_its_creases() {
 fn a_lens_turned_about_the_spindle_closes_along_its_crease() {
     // the lens of two unit spheres 0.8 apart, turned ±60° about the spindle:
     // its convex crease circle sweeps a fan
-    let source = format!("{}{}{}",tools::LENS,motions::TURN_SPINDLE,motions::swept("turn",-60.,60.));
+    let source = turned_lens();
     let (mesh,certificate) = closed_shell_at(&source,SAGITTA);
     assert!(certificate.is_complete(),"{} triangles failed",certificate.failures.len());
     closed(&mesh).unwrap();
@@ -149,7 +157,7 @@ fn a_dumbbell_translated_along_x_closes_along_its_creases() {
     // balls of radius 0.5 on a bar of radius 0.25, advanced 4 along x: the
     // two concave crease circles sweep, and every line along x meets the
     // tool in one segment
-    let source = format!("{}{}{}",tools::DUMBBELL,motions::slide_x(4.),motions::swept("feed",0.,360.));
+    let source = sliding_dumbbell();
     let (mesh,certificate) = closed_shell_at(&source,SAGITTA);
     assert!(certificate.is_complete(),"{} triangles failed",certificate.failures.len());
     closed(&mesh).unwrap();
@@ -158,4 +166,59 @@ fn a_dumbbell_translated_along_x_closes_along_its_creases() {
     let v = volume(&mesh);
     eprintln!("dumbbell: volume {v:.4}, sampled {expected:.4}");
     assert!((v-expected).abs() <= 0.03*expected,"volume {v} against sampled {expected}");
+}
+
+/// Every milestone-4 case written out for a person to look at: its Solvent
+/// document and the swept boundary the pipeline makes of it, as binary STL,
+/// into `SOLVENT_EXPORT` (default `rust/examples/swept_boundary`). The mesh is written whether or not it closed; a line per case says
+/// which did. The dumbbell takes most of a minute, the rest seconds each.
+#[test]
+#[ignore]
+fn export_milestone_4_cases() {
+    let dir = std::path::PathBuf::from(std::env::var("SOLVENT_EXPORT").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"),"/../examples/swept_boundary").into()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let cases: [(&str,String); 5] = [
+        ("turning_prism",turning_prism()),
+        ("turned_lens",turned_lens()),
+        ("tumbling_cylinder",tumbling_cylinder()),
+        ("turned_box",turned_box()),
+        ("sliding_dumbbell",sliding_dumbbell()),
+    ];
+    let mut summary = Vec::new();
+    for (name,source) in &cases {
+        eprintln!("== {name}");
+        std::fs::write(dir.join(format!("{name}.sv")),source).unwrap();
+        let (mesh,certificate) = closed_shell_at(source,SAGITTA);
+        let mesh = mesh.compact();
+        // written unchecked: an open case's slivers may collapse in float32,
+        // and a person looking at it wants them there, counted
+        let (bytes,collapsed) = stl(&mesh.vertices,&mesh.triangles,name);
+        std::fs::write(dir.join(format!("{name}.stl")),bytes).unwrap();
+        let shell = match closed(&mesh) { Ok(()) => "closed".to_string(),Err(e) => format!("open ({e})") };
+        summary.push(format!("{name}: {} triangles ({collapsed} collapse in float32), {shell}, {} failed certificate, volume {:.4}",mesh.triangles.len(),certificate.failures.len(),volume(&mesh)));
+    }
+    eprintln!("written to {}",dir.display());
+    for line in &summary { eprintln!("  {line}"); }
+}
+
+/// Binary STL of an indexed mesh as it stands, with how many of its
+/// triangles float32 coordinates reduce to no area.
+fn stl(vertices: &[V3],triangles: &[[u32;3]],name: &str) -> (Vec<u8>,usize) {
+    let mut out = Vec::with_capacity(84+triangles.len()*50);
+    let mut header = [0u8;80];
+    for (i,b) in format!("solvent {name}").bytes().take(79).enumerate() { header[i] = b; }
+    out.extend(header);
+    out.extend((triangles.len() as u32).to_le_bytes());
+    let mut collapsed = 0;
+    for t in triangles {
+        let [a,b,c] = t.map(|v| vertices[v as usize].map(|x| x as f32));
+        let (u,w) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]);
+        let n = [u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]];
+        let len = (n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
+        if !(len > 0.) { collapsed += 1; }
+        for x in if len > 0. { n.map(|x| x/len) } else { [0.;3] } { out.extend(x.to_le_bytes()); }
+        for p in [a,b,c] { for x in p { out.extend(x.to_le_bytes()); } }
+        out.extend(0u16.to_le_bytes());
+    }
+    (out,collapsed)
 }

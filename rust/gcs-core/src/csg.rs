@@ -133,15 +133,16 @@ struct Poly {
     path: String,
     prim: usize,
     smooth: bool,
+    /// Which node of its tree the polygon came from, while `clip_to` clips a tree's polygons
+    /// as one batch; its pieces keep it.
+    tag: u32,
 }
 
 impl Poly {
-    fn flipped(&self) -> Poly {
-        let mut p = self.clone();
-        p.pts.reverse();
-        p.n = plane::scaled(p.n, -1.0);
-        p.w = -p.w;
-        p
+    fn flip(&mut self) {
+        self.pts.reverse();
+        self.n = plane::scaled(self.n, -1.0);
+        self.w = -self.w;
     }
 }
 
@@ -150,69 +151,93 @@ impl Poly {
 const FRONT: u8 = 1;
 const BACK: u8 = 2;
 
-fn cut(poly: &Poly, n: [f64; 3], w: f64, tol: f64) -> (Vec<Poly>, Vec<Poly>, Vec<Poly>, Vec<Poly>) {
-    let (mut cf, mut cb, mut fr, mut bk) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+/// Which side of a plane a polygon lies on: on it (facing the plane's way or not), wholly in
+/// front, wholly behind, or across it.
+#[derive(Clone, Copy)]
+enum Side {
+    Coplanar(bool),
+    Front,
+    Back,
+    Spanning,
+}
+
+fn side(poly: &Poly, n: [f64; 3], w: f64, tol: f64) -> Side {
     let mut kind = 0u8;
-    let types: Vec<u8> = poly
-        .pts
-        .iter()
-        .map(|p| {
-            let t = plane::dot(n, *p) - w;
-            let k = if t < -tol {
-                BACK
-            } else if t > tol {
-                FRONT
-            } else {
-                0
-            };
-            kind |= k;
-            k
-        })
-        .collect();
-    match kind {
-        0 => {
-            if plane::dot(n, poly.n) > 0.0 {
-                cf.push(poly.clone())
-            } else {
-                cb.push(poly.clone())
-            }
-        }
-        FRONT => fr.push(poly.clone()),
-        BACK => bk.push(poly.clone()),
-        _ => {
-            let (mut f, mut b) = (Vec::new(), Vec::new());
-            for i in 0..poly.pts.len() {
-                let j = (i + 1) % poly.pts.len();
-                let (ti, tj) = (types[i], types[j]);
-                let (vi, vj) = (poly.pts[i], poly.pts[j]);
-                if ti != BACK {
-                    f.push(vi);
-                }
-                if ti != FRONT {
-                    b.push(vi);
-                }
-                if (ti | tj) == (FRONT | BACK) {
-                    let di = plane::dot(n, vi) - w;
-                    let dj = plane::dot(n, vj) - w;
-                    let t = di / (di - dj);
-                    let x = [
-                        vi[0] + t * (vj[0] - vi[0]),
-                        vi[1] + t * (vj[1] - vi[1]),
-                        vi[2] + t * (vj[2] - vi[2]),
-                    ];
-                    f.push(x);
-                    b.push(x);
-                }
-            }
-            if f.len() >= 3 {
-                fr.push(Poly { pts: f, ..poly.clone() });
-            }
-            if b.len() >= 3 {
-                bk.push(Poly { pts: b, ..poly.clone() });
-            }
+    for p in &poly.pts {
+        let t = plane::dot(n, *p) - w;
+        if t < -tol {
+            kind |= BACK;
+        } else if t > tol {
+            kind |= FRONT;
         }
     }
-    (cf, cb, fr, bk)
+    match kind {
+        0 => Side::Coplanar(plane::dot(n, poly.n) > 0.0),
+        FRONT => Side::Front,
+        BACK => Side::Back,
+        _ => Side::Spanning,
+    }
+}
+
+/// Whether no polygon of a batch spans the plane and the ones off it all lie on one side:
+/// `Some(true)` in front, `Some(false)` behind (or every polygon on the plane), `None` when
+/// some polygon spans it or some lie on each side.
+fn one_side(sides: &[Side]) -> Option<bool> {
+    let (mut front, mut back) = (false, false);
+    for s in sides {
+        match s {
+            Side::Coplanar(_) => {}
+            Side::Front => front = true,
+            Side::Back => back = true,
+            Side::Spanning => return None,
+        }
+        if front && back {
+            return None;
+        }
+    }
+    Some(front)
+}
+
+/// A spanning polygon cut in two by the plane: the part in front and the part behind, either
+/// dropped when the cut leaves it fewer than three vertices.
+fn split(poly: Poly, n: [f64; 3], w: f64, tol: f64) -> (Option<Poly>, Option<Poly>) {
+    let kind = |p: [f64; 3]| {
+        let t = plane::dot(n, p) - w;
+        if t < -tol {
+            BACK
+        } else if t > tol {
+            FRONT
+        } else {
+            0
+        }
+    };
+    let (mut f, mut b) = (Vec::new(), Vec::new());
+    for i in 0..poly.pts.len() {
+        let j = (i + 1) % poly.pts.len();
+        let (vi, vj) = (poly.pts[i], poly.pts[j]);
+        let (ti, tj) = (kind(vi), kind(vj));
+        if ti != BACK {
+            f.push(vi);
+        }
+        if ti != FRONT {
+            b.push(vi);
+        }
+        if (ti | tj) == (FRONT | BACK) {
+            let di = plane::dot(n, vi) - w;
+            let dj = plane::dot(n, vj) - w;
+            let t = di / (di - dj);
+            let x = [
+                vi[0] + t * (vj[0] - vi[0]),
+                vi[1] + t * (vj[1] - vi[1]),
+                vi[2] + t * (vj[2] - vi[2]),
+            ];
+            f.push(x);
+            b.push(x);
+        }
+    }
+    let front = (f.len() >= 3).then(|| Poly { pts: f, path: poly.path.clone(), ..poly });
+    let back = (b.len() >= 3).then(|| Poly { pts: b, ..poly });
+    (front, back)
 }
 
 #[derive(Debug, Default)]
@@ -223,6 +248,11 @@ struct Node {
     polys: Vec<Poly>,
 }
 
+// Every walk over the tree is a loop over an explicit stack, never a recursion: a convex
+// solid's tree is a chain as deep as the solid has facets (every other facet lies behind each
+// facet's plane), so a finely cut sphere is thousands of levels, and a recursive walk ran out
+// of stack on one.
+
 impl Node {
     fn new(polys: Vec<Poly>, tol: f64) -> Node {
         let mut n = Node::default();
@@ -231,89 +261,516 @@ impl Node {
     }
 
     fn build(&mut self, polys: Vec<Poly>, tol: f64) {
-        if polys.is_empty() {
-            return;
-        }
-        if self.plane.is_none() {
-            self.plane = Some((polys[0].n, polys[0].w));
-        }
-        let (n, w) = self.plane.expect("just set");
-        let (mut fr, mut bk) = (Vec::new(), Vec::new());
-        for p in &polys {
-            let (cf, cb, f, b) = cut(p, n, w, tol);
-            self.polys.extend(cf);
-            self.polys.extend(cb);
-            fr.extend(f);
-            bk.extend(b);
-        }
-        if !fr.is_empty() {
-            self.front.get_or_insert_with(Default::default).build(fr, tol);
-        }
-        if !bk.is_empty() {
-            self.back.get_or_insert_with(Default::default).build(bk, tol);
+        let mut work: Vec<(&mut Node, Vec<Poly>)> = vec![(self, polys)];
+        // each polygon is classified once per level, into one buffer the whole build reuses
+        let mut sides: Vec<Side> = Vec::new();
+        while let Some((node, polys)) = work.pop() {
+            if polys.is_empty() {
+                continue;
+            }
+            if polys.len() >= SPINE {
+                build_spine(node, polys, tol, &mut work);
+                continue;
+            }
+            if node.plane.is_none() {
+                node.plane = Some((polys[0].n, polys[0].w));
+            }
+            let (n, w) = node.plane.expect("just set");
+            sides.clear();
+            sides.extend(polys.iter().map(|p| side(p, n, w, tol)));
+            let (fr, bk) = match one_side(&sides) {
+                // a chain's usual step: the node keeps its own plane's polygons and the rest go
+                // on as the batch they came in, in order, without a new allocation
+                Some(front) => {
+                    let mut rest = polys;
+                    let mut at = sides.iter();
+                    node.polys.extend(rest.extract_if(.., |_| matches!(at.next(), Some(Side::Coplanar(_)))));
+                    if front { (rest, Vec::new()) } else { (Vec::new(), rest) }
+                }
+                None => {
+                    let (mut fr, mut bk) = (Vec::new(), Vec::new());
+                    // every polygon moves to where it belongs: one that is not cut is never copied
+                    for (p, s) in polys.into_iter().zip(sides.iter().copied()) {
+                        match s {
+                            Side::Coplanar(_) => node.polys.push(p),
+                            Side::Front => fr.push(p),
+                            Side::Back => bk.push(p),
+                            Side::Spanning => {
+                                let (f, b) = split(p, n, w, tol);
+                                fr.extend(f);
+                                bk.extend(b);
+                            }
+                        }
+                    }
+                    (fr, bk)
+                }
+            };
+            let Node { front, back, .. } = node;
+            if !bk.is_empty() {
+                work.push((back.get_or_insert_with(Default::default), bk));
+            }
+            if !fr.is_empty() {
+                work.push((front.get_or_insert_with(Default::default), fr));
+            }
         }
     }
 
-    /// The parts of `polys` that lie **outside** this solid.
+    /// The parts of `polys` that lie **outside** this solid, in the order a front-first walk
+    /// of the tree reaches them.
     fn clip(&self, polys: Vec<Poly>, tol: f64) -> Vec<Poly> {
-        let Some((n, w)) = self.plane else { return polys };
-        let (mut fr, mut bk) = (Vec::new(), Vec::new());
-        for p in &polys {
-            let (cf, cb, f, b) = cut(p, n, w, tol);
-            fr.extend(cf);
-            fr.extend(f);
-            bk.extend(cb);
-            bk.extend(b);
+        let mut out = Vec::new();
+        let mut work: Vec<Item> = vec![Item::Plain(self, polys)];
+        let mut sides: Vec<Side> = Vec::new();
+        while let Some(item) = work.pop() {
+            let (node, polys) = match item {
+                Item::Spine(node, sp) => {
+                    clip_spine(node, sp, tol, &mut out, &mut work);
+                    continue;
+                }
+                Item::Plain(node, polys) => (node, polys),
+            };
+            let Some((n, w)) = node.plane else {
+                out.extend(polys);
+                continue;
+            };
+            if polys.is_empty() {
+                continue;
+            }
+            if polys.len() >= SPINE {
+                clip_spine(node, Spine::new(polys), tol, &mut out, &mut work);
+                continue;
+            }
+            // a batch wholly on one side (coplanar pieces going the way they face) goes on
+            // whole: descending a chain, that is every level but the last
+            sides.clear();
+            sides.extend(polys.iter().map(|p| side(p, n, w, tol)));
+            let faces = |s: &Side| matches!(s, Side::Coplanar(true) | Side::Front);
+            let backs = |s: &Side| matches!(s, Side::Coplanar(false) | Side::Back);
+            let (fr, bk) = match () {
+                _ if sides.iter().all(faces) => (polys, Vec::new()),
+                _ if sides.iter().all(backs) => (Vec::new(), polys),
+                _ => {
+                    let (mut fr, mut bk) = (Vec::new(), Vec::new());
+                    for (p, s) in polys.into_iter().zip(sides.iter().copied()) {
+                        match s {
+                            Side::Coplanar(true) | Side::Front => fr.push(p),
+                            Side::Coplanar(false) | Side::Back => bk.push(p),
+                            Side::Spanning => {
+                                let (f, b) = split(p, n, w, tol);
+                                fr.extend(f);
+                                bk.extend(b);
+                            }
+                        }
+                    }
+                    (fr, bk)
+                }
+            };
+            // nothing behind the deepest plane is outside the solid, so the walk stops there —
+            // the pruning the flat loop could not do
+            if let Some(b) = &node.back {
+                if !bk.is_empty() {
+                    work.push(Item::Plain(b, bk));
+                }
+            }
+            // what lies in front is finished before what lies behind, so the front's pieces
+            // leave first
+            match &node.front {
+                Some(f) => work.push(Item::Plain(f, fr)),
+                None => out.extend(fr),
+            }
         }
-        let mut fr = match &self.front {
-            Some(f) => f.clip(fr, tol),
-            None => fr,
-        };
-        // nothing behind the deepest plane is outside the solid, so the walk stops there — the
-        // pruning the flat loop could not do
-        let bk = match &self.back {
-            Some(b) => b.clip(bk, tol),
-            None => Vec::new(),
-        };
-        fr.extend(bk);
-        fr
+        out
     }
 
+    /// Every polygon of this tree clipped to `other`, as one batch tagged by the node it came
+    /// from in a fixed walk: what `other` keeps of a polygon owes nothing to the rest of its
+    /// batch, and a node's own pieces come out in the order a clip of its polygons alone gives
+    /// them, so one batch down `other`'s chains does the work of a walk per node.
     fn clip_to(&mut self, other: &Node, tol: f64) {
-        self.polys = other.clip(std::mem::take(&mut self.polys), tol);
-        if let Some(f) = self.front.as_mut() {
-            f.clip_to(other, tol);
+        let mut batch = Vec::new();
+        let mut nodes = 0u32;
+        let mut work: Vec<&mut Node> = vec![&mut *self];
+        while let Some(node) = work.pop() {
+            for mut p in std::mem::take(&mut node.polys) {
+                p.tag = nodes;
+                batch.push(p);
+            }
+            nodes += 1;
+            let Node { front, back, .. } = node;
+            if let Some(b) = back.as_deref_mut() {
+                work.push(b);
+            }
+            if let Some(f) = front.as_deref_mut() {
+                work.push(f);
+            }
         }
-        if let Some(b) = self.back.as_mut() {
-            b.clip_to(other, tol);
+        let mut pieces: Vec<Vec<Poly>> = (0..nodes).map(|_| Vec::new()).collect();
+        for p in other.clip(batch, tol) {
+            let at = p.tag as usize;
+            pieces[at].push(p);
+        }
+        let mut at = 0;
+        let mut work: Vec<&mut Node> = vec![self];
+        while let Some(node) = work.pop() {
+            node.polys = std::mem::take(&mut pieces[at]);
+            at += 1;
+            let Node { front, back, .. } = node;
+            if let Some(b) = back.as_deref_mut() {
+                work.push(b);
+            }
+            if let Some(f) = front.as_deref_mut() {
+                work.push(f);
+            }
         }
     }
 
     fn invert(&mut self) {
-        for p in self.polys.iter_mut() {
-            *p = p.flipped();
+        let mut work: Vec<&mut Node> = vec![self];
+        while let Some(node) = work.pop() {
+            for p in node.polys.iter_mut() {
+                p.flip();
+            }
+            if let Some((n, w)) = node.plane {
+                node.plane = Some((plane::scaled(n, -1.0), -w));
+            }
+            std::mem::swap(&mut node.front, &mut node.back);
+            let Node { front, back, .. } = node;
+            if let Some(b) = back.as_deref_mut() {
+                work.push(b);
+            }
+            if let Some(f) = front.as_deref_mut() {
+                work.push(f);
+            }
         }
-        if let Some((n, w)) = self.plane {
-            self.plane = Some((plane::scaled(n, -1.0), -w));
-        }
-        if let Some(f) = self.front.as_mut() {
-            f.invert();
-        }
-        if let Some(b) = self.back.as_mut() {
-            b.invert();
-        }
-        std::mem::swap(&mut self.front, &mut self.back);
     }
 
+    /// Every polygon in the tree, each node's before its front subtree's before its back's.
     fn all(&self) -> Vec<Poly> {
-        let mut v = self.polys.clone();
-        if let Some(f) = &self.front {
-            v.extend(f.all());
-        }
-        if let Some(b) = &self.back {
-            v.extend(b.all());
+        let mut v = Vec::new();
+        let mut work: Vec<&Node> = vec![self];
+        while let Some(node) = work.pop() {
+            v.extend(node.polys.iter().cloned());
+            if let Some(b) = &node.back {
+                work.push(b);
+            }
+            if let Some(f) = &node.front {
+                work.push(f);
+            }
         }
         v
+    }
+}
+
+/// A batch this large goes down a chain of the tree as `build_spine` and `clip_spine` walk it;
+/// below it the plain step is cheaper than the spheres.
+const SPINE: usize = 32;
+
+/// Bounding spheres over a batch of polygons, in a tree of median splits: which of the batch
+/// might be anything but strictly on one side of a plane, found without asking the rest.
+struct Balls {
+    balls: Vec<Ball>,
+    order: Vec<usize>,
+}
+
+struct Ball {
+    center: [f64; 3],
+    radius: f64,
+    lo: usize,
+    hi: usize,
+    kids: Option<(usize, usize)>,
+}
+
+impl Balls {
+    fn new(polys: &[Option<Poly>]) -> Balls {
+        let centroids: Vec<[f64; 3]> = polys
+            .iter()
+            .map(|p| {
+                let p = p.as_ref().expect("a fresh batch");
+                let k = 1.0 / p.pts.len() as f64;
+                let mut c = [0.0; 3];
+                for v in &p.pts {
+                    for i in 0..3 {
+                        c[i] += v[i] * k;
+                    }
+                }
+                c
+            })
+            .collect();
+        let mut out = Balls { balls: Vec::new(), order: (0..polys.len()).collect() };
+        out.split(polys, &centroids, 0, polys.len());
+        out
+    }
+
+    fn split(&mut self, polys: &[Option<Poly>], centroids: &[[f64; 3]], lo: usize, hi: usize) -> usize {
+        let (mut min, mut max) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+        for &i in &self.order[lo..hi] {
+            for v in &polys[i].as_ref().expect("a fresh batch").pts {
+                for k in 0..3 {
+                    min[k] = min[k].min(v[k]);
+                    max[k] = max[k].max(v[k]);
+                }
+            }
+        }
+        let center: [f64; 3] = std::array::from_fn(|k| 0.5 * (min[k] + max[k]));
+        let mut radius = 0.0f64;
+        for &i in &self.order[lo..hi] {
+            for v in &polys[i].as_ref().expect("a fresh batch").pts {
+                radius = radius.max(plane::norm([v[0] - center[0], v[1] - center[1], v[2] - center[2]]));
+            }
+        }
+        let at = self.balls.len();
+        self.balls.push(Ball { center, radius: radius * (1.0 + 1e-12), lo, hi, kids: None });
+        if hi - lo > 4 {
+            // the longest axis of the centroids' box, split at its median
+            let (mut cmin, mut cmax) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+            for &i in &self.order[lo..hi] {
+                for k in 0..3 {
+                    cmin[k] = cmin[k].min(centroids[i][k]);
+                    cmax[k] = cmax[k].max(centroids[i][k]);
+                }
+            }
+            let axis = (0..3).max_by(|&a, &b| (cmax[a] - cmin[a]).total_cmp(&(cmax[b] - cmin[b]))).unwrap_or(0);
+            let mid = (lo + hi) / 2;
+            self.order[lo..hi].select_nth_unstable_by(mid - lo, |&a, &b| {
+                centroids[a][axis].total_cmp(&centroids[b][axis]).then(a.cmp(&b))
+            });
+            let left = self.split(polys, centroids, lo, mid);
+            let right = self.split(polys, centroids, mid, hi);
+            self.balls[at].kids = Some((left, right));
+        }
+        at
+    }
+
+    /// Every live polygon of which some vertex may lie within `tol` of the plane `m·x = e` or
+    /// behind it; the rest lie strictly in front of it, beyond `tol`, and need no test.
+    fn reaching(&self, polys: &[Option<Poly>], m: [f64; 3], e: f64, tol: f64, out: &mut Vec<usize>) {
+        let mut stack = vec![0];
+        while let Some(b) = stack.pop() {
+            let ball = &self.balls[b];
+            let s = plane::dot(m, ball.center) - e;
+            // a margin far above the rounding of the per-vertex test the ball stands in for
+            let slack = 1e-12 * (e.abs() + plane::norm(ball.center) + ball.radius);
+            if s - ball.radius - slack > tol {
+                continue;
+            }
+            match ball.kids {
+                Some((l, r)) => {
+                    stack.push(l);
+                    stack.push(r);
+                }
+                None => out.extend(self.order[ball.lo..ball.hi].iter().copied().filter(|&i| polys[i].is_some())),
+            }
+        }
+    }
+}
+
+/// A batch on its way down a tree: its polygons (each slot emptied as the polygon leaves), the
+/// spheres over them, how many are left, the first still there, and the side it last went on.
+struct Spine {
+    polys: Vec<Option<Poly>>,
+    balls: Balls,
+    remaining: usize,
+    first: usize,
+    reached: Vec<usize>,
+    forward: bool,
+}
+
+impl Spine {
+    fn new(batch: Vec<Poly>) -> Spine {
+        let polys: Vec<Option<Poly>> = batch.into_iter().map(Some).collect();
+        let balls = Balls::new(&polys);
+        Spine { remaining: polys.len(), polys, balls, first: 0, reached: Vec::new(), forward: false }
+    }
+
+    /// Into `reached`, in batch order: the live polygons not strictly on the side of the plane
+    /// the batch is to go on, the only ones that side's step has to classify.
+    fn reach(&mut self, pn: [f64; 3], w: f64, forward: bool, tol: f64) {
+        let (m, e) = if forward { (pn, w) } else { (plane::scaled(pn, -1.0), -w) };
+        self.reached.clear();
+        self.balls.reaching(&self.polys, m, e, tol, &mut self.reached);
+        self.reached.sort_unstable();
+    }
+
+    /// At a node where the batch could go on either way: the side it went on last, unless more
+    /// than half of it reaches the plane from there. The smaller part is what leaves as a batch
+    /// of its own, so no polygon is gathered into new spheres more than a logarithm of times.
+    fn choose(&mut self, pn: [f64; 3], w: f64, tol: f64) -> bool {
+        let first = self.forward;
+        self.reach(pn, w, first, tol);
+        let side = if 2 * self.reached.len() <= self.remaining {
+            first
+        } else {
+            self.reach(pn, w, !first, tol);
+            !first
+        };
+        self.forward = side;
+        side
+    }
+
+    fn take(&mut self, i: usize) -> Poly {
+        self.remaining -= 1;
+        self.polys[i].take().expect("a live polygon")
+    }
+
+    fn first_live(&mut self) -> &Poly {
+        while self.polys[self.first].is_none() {
+            self.first += 1;
+        }
+        self.polys[self.first].as_ref().expect("a live polygon")
+    }
+
+    fn rest(self) -> Vec<Poly> {
+        self.polys.into_iter().flatten().collect()
+    }
+}
+
+/// A build down the tree from `node`: at every node the batch goes on along one side, and what
+/// goes to the other leaves as a work item of its own, in order (the subtrees build
+/// independently). The polygons reaching a node's plane are found by `Balls` and classified as
+/// the plain step classifies them; the rest lie strictly on the side the batch goes on, where
+/// the plain step would have put them. A convex solid's tree is one chain, so its build asks
+/// each plane about its neighbours only, not about every polygon left.
+fn build_spine<'a>(mut node: &'a mut Node, batch: Vec<Poly>, tol: f64, work: &mut Vec<(&'a mut Node, Vec<Poly>)>) {
+    let mut sp = Spine::new(batch);
+    loop {
+        if sp.remaining == 0 {
+            return;
+        }
+        if node.plane.is_none() {
+            let p = sp.first_live();
+            node.plane = Some((p.n, p.w));
+        }
+        let (pn, w) = node.plane.expect("just set");
+        let forward = sp.choose(pn, w, tol);
+        let mut leaving = Vec::new();
+        let reached = std::mem::take(&mut sp.reached);
+        for &i in &reached {
+            match side(sp.polys[i].as_ref().expect("live"), pn, w, tol) {
+                Side::Coplanar(_) => node.polys.push(sp.take(i)),
+                Side::Front if !forward => leaving.push(sp.take(i)),
+                Side::Back if forward => leaving.push(sp.take(i)),
+                Side::Front | Side::Back => {}
+                Side::Spanning => {
+                    let (f, b) = split(sp.take(i), pn, w, tol);
+                    let (stays, leaves) = if forward { (f, b) } else { (b, f) };
+                    leaving.extend(leaves);
+                    if let Some(q) = stays {
+                        sp.polys[i] = Some(q);
+                        sp.remaining += 1;
+                    }
+                }
+            }
+        }
+        sp.reached = reached;
+        let Node { front, back, .. } = node;
+        let (on, off) = if forward { (front, back) } else { (back, front) };
+        if !leaving.is_empty() {
+            work.push((off.get_or_insert_with(Default::default), leaving));
+        }
+        if sp.remaining == 0 {
+            return;
+        }
+        node = on.get_or_insert_with(Default::default);
+    }
+}
+
+/// A step of `clip`'s walk: a batch at a node, plain or with its spheres.
+enum Item<'a> {
+    Plain(&'a Node, Vec<Poly>),
+    Spine(&'a Node, Spine),
+}
+
+/// A clip down the tree from `node`: where the node has one child the batch goes on along it
+/// and a polygon leaving by the other side leaves the solid (in front, kept) or its inside
+/// (behind, dropped); at a node with both, it goes on along the side most of it takes, the rest
+/// leaving as a batch of its own, and the front's pieces still come out before the back's (a
+/// batch going on behind waits on the stack under the one sent in front). Classified as
+/// `build_spine` finds them.
+fn clip_spine<'a>(mut node: &'a Node, mut sp: Spine, tol: f64, out: &mut Vec<Poly>, work: &mut Vec<Item<'a>>) {
+    loop {
+        if sp.remaining == 0 {
+            return;
+        }
+        let Some((pn, w)) = node.plane else {
+            out.extend(sp.rest());
+            return;
+        };
+        let (forward, next, branch) = match (&node.front, &node.back) {
+            (Some(f), Some(b)) => {
+                let forward = sp.choose(pn, w, tol);
+                (forward, if forward { &**f } else { &**b }, true)
+            }
+            (Some(f), None) => {
+                sp.forward = true;
+                sp.reach(pn, w, true, tol);
+                (true, &**f, false)
+            }
+            (None, Some(b)) => {
+                sp.forward = false;
+                sp.reach(pn, w, false, tol);
+                (false, &**b, false)
+            }
+            (None, None) => {
+                // a leaf: everything leaves, in front kept and behind dropped
+                for p in sp.rest() {
+                    match side(&p, pn, w, tol) {
+                        Side::Coplanar(true) | Side::Front => out.push(p),
+                        Side::Coplanar(false) | Side::Back => {}
+                        Side::Spanning => out.extend(split(p, pn, w, tol).0),
+                    }
+                }
+                return;
+            }
+        };
+        // what leaves by the other side: kept or dropped with no child there, a batch for the
+        // child with one
+        let mut leaving = Vec::new();
+        let reached = std::mem::take(&mut sp.reached);
+        for &i in &reached {
+            let s = side(sp.polys[i].as_ref().expect("live"), pn, w, tol);
+            match s {
+                Side::Spanning => {
+                    let (f, b) = split(sp.take(i), pn, w, tol);
+                    let (stays, leaves) = if forward { (f, b) } else { (b, f) };
+                    leaving.extend(leaves);
+                    if let Some(q) = stays {
+                        sp.polys[i] = Some(q);
+                        sp.remaining += 1;
+                    }
+                }
+                _ if matches!(s, Side::Coplanar(true) | Side::Front) == forward => {}
+                _ => leaving.push(sp.take(i)),
+            }
+        }
+        sp.reached = reached;
+        if !branch {
+            if !forward {
+                out.extend(leaving);
+            }
+            node = next;
+            continue;
+        }
+        let (front, back) = (node.front.as_deref().expect("a branch"), node.back.as_deref().expect("a branch"));
+        if forward {
+            // the front goes on here and now; the back waits its turn
+            work.push(Item::Plain(back, leaving));
+            node = front;
+        } else {
+            work.push(Item::Spine(back, sp));
+            work.push(Item::Plain(front, leaving));
+            return;
+        }
+    }
+}
+
+impl Drop for Node {
+    /// Taken apart one level at a time: the derived drop recurses down the chain.
+    fn drop(&mut self) {
+        let mut work: Vec<Box<Node>> = self.front.take().into_iter().chain(self.back.take()).collect();
+        while let Some(mut node) = work.pop() {
+            work.extend(node.front.take());
+            work.extend(node.back.take());
+        }
     }
 }
 
@@ -414,6 +871,7 @@ fn polys_of(csg: &Csg, t: &crate::solid::Term, tol: f64, origin: [f64; 3]) -> Ve
                         path: path_of(prim, f),
                         prim: *i,
                         smooth: f.smooth,
+                        tag: 0,
                     }
                 })
                 .collect()
@@ -463,7 +921,7 @@ pub(crate) fn contains_boundary(b: &Csg, a: &[Piece], eps: f64) -> bool {
         let pts: Vec<_> = p.pts.iter().map(|v| {
             [v[0] - origin[0], v[1] - origin[1], v[2] - origin[2]]
         }).collect();
-        Poly { w: plane::dot(p.n, pts[0]), pts, n: p.n, path: p.path.clone(), prim: p.prim, smooth: p.smooth }
+        Poly { w: plane::dot(p.n, pts[0]), pts, n: p.n, path: p.path.clone(), prim: p.prim, smooth: p.smooth, tag: 0 }
     }).collect();
     let tol = eps * 1e-3;
     let remainder = difference(ap, polys_of(b, &b.term, tol, origin), tol);

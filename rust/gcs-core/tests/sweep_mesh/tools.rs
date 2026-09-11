@@ -88,7 +88,6 @@ private point top hint(x: 3, y: 1)
 private line diameter(bottom, top)
 center midpoint diameter
 diameter parallel spindle
-distance(2mm) diameter
 private arc meridian(center: center, start: bottom, end: top)
 radius(1mm) meridian
 construction solid stock(face(meridian, diameter), about: diameter)
@@ -101,7 +100,6 @@ private point top2 hint(x: 3.8, y: 1)
 private line diameter2(bottom2, top2)
 center2 midpoint diameter2
 diameter2 parallel spindle
-distance(2mm) diameter2
 private arc meridian2(center: center2, start: bottom2, end: top2)
 radius(1mm) meridian2
 construction solid other(face(meridian2, diameter2), about: diameter2)
@@ -136,7 +134,6 @@ private point ta hint(x: 3, y: 1.5)
 private line da(ba, ta)
 ca midpoint da
 da parallel spindle
-distance(1mm) da
 private arc ma(center: ca, start: ba, end: ta)
 radius(0.5mm) ma
 construction solid ball_a(face(ma, da), about: da)
@@ -149,7 +146,6 @@ private point tb hint(x: 3, y: -0.5)
 private line db(bb, tb)
 cb midpoint db
 db parallel spindle
-distance(1mm) db
 private arc mb(center: cb, start: bb, end: tb)
 radius(0.5mm) mb
 construction solid ball_b(face(mb, db), about: db)

@@ -23,6 +23,10 @@ pub enum Status {
     /// The complete minimum enclosure lies strictly outside the requested band.
     /// This does not assert the value-width tolerance was reached.
     Separated,
+    /// The complete minimum enclosure lies strictly inside the requested band,
+    /// for a caller that asked to stop there: which side of the band the value
+    /// lies on is decided, and refining further could only narrow it inside.
+    Contained,
     BudgetExhausted,
     ResolutionLimit,
 }
@@ -86,8 +90,17 @@ pub fn enclose_outside<E>(domain: Interval,bound: impl FnMut(Interval) -> Result
     refine(domain,bound,options,Some(band))
 }
 
-pub(crate) fn refine<E>(domain: Interval,mut bound: impl FnMut(Interval) -> Result<Interval,E>,
+pub(crate) fn refine<E>(domain: Interval,bound: impl FnMut(Interval) -> Result<Interval,E>,
     options: Options,band: Option<Interval>) -> Result<Minimum,Error<E>> {
+    search(domain,bound,options,band,false)
+}
+
+/// `refine`, and with `contain` also stopping as soon as the enclosure lies
+/// strictly inside `band`. The enclosures a search reports are nested (a
+/// cell's value is intersected with its parent's, and the attained upper
+/// bound only falls), so a contained enclosure is where the value stays.
+pub(crate) fn search<E>(domain: Interval,mut bound: impl FnMut(Interval) -> Result<Interval,E>,
+    options: Options,band: Option<Interval>,contain: bool) -> Result<Minimum,Error<E>> {
     if !options.valid() { return Err(Error::InvalidOptions); }
     let root = bound(domain).map_err(Error::Oracle)?;
     let mut evaluations = 1;
@@ -112,6 +125,9 @@ pub(crate) fn refine<E>(domain: Interval,mut bound: impl FnMut(Interval) -> Resu
         }
         if band.is_some_and(|b| best.0 < b.bounds()[0] || lower > b.bounds()[1]) {
             return Ok(result(Status::Separated));
+        }
+        if contain && band.is_some_and(|b| lower > b.bounds()[0] && best.0 < b.bounds()[1]) {
+            return Ok(result(Status::Contained));
         }
         if options.max_evaluations-evaluations < 4 {
             return Ok(result(Status::BudgetExhausted));

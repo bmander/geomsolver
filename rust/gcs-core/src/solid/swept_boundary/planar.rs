@@ -102,12 +102,32 @@ fn pass(mesh: &KeptMesh,tolerance: f64,trim: bool) -> (KeptMesh,usize) {
     // cannot turn a plane over
     let mut groups: Vec<(V3,f64,Vec<usize>,V3)> = Vec::new();
     let mut loose: Vec<usize> = Vec::new();
+    // Groups indexed by their normal on a grid coarser than the match: two
+    // normals within the 1e-6 of a match differ by under 1.5e-3 in every
+    // component, so a matching group is in a cell next to the triangle's
+    // normal or to its reverse. Of the groups found there, the first made is
+    // taken, as a scan of every group would: a curved sheet is a group per
+    // triangle, and that scan was quadratic.
+    let cell = 2e-3;
+    let key = |n: V3| n.map(|x| (x/cell).floor() as i64);
+    let mut index: std::collections::HashMap<[i64;3],Vec<usize>> = Default::default();
     for (i,t) in mesh.triangles.iter().enumerate() {
         let Some((n,d)) = normal(t) else { loose.push(i); continue };
         let corners = t.map(|v| mesh.vertices[v as usize]);
         let weighted = { let [a,b,c] = corners; cross(sub(b,a),sub(c,a)) };
-        let g = groups.iter().position(|(gn,gd,_,_)| dot(n,*gn).abs() >= 1.-1e-6 && corners.iter().all(|p| (dot(*gn,*p)-gd).abs() <= tolerance) && (d*dot(n,*gn).signum()-gd).abs() <= tolerance);
-        match g { Some(g) => { groups[g].2.push(i); groups[g].3 = add(groups[g].3,weighted); },None => groups.push((n,d,vec![i],weighted)) }
+        let matches = |(gn,gd,_,_): &(V3,f64,Vec<usize>,V3)| dot(n,*gn).abs() >= 1.-1e-6 && corners.iter().all(|p| (dot(*gn,*p)-gd).abs() <= tolerance) && (d*dot(n,*gn).signum()-gd).abs() <= tolerance;
+        let mut g: Option<usize> = None;
+        for sign in [1.,-1.] {
+            let k = key(n.map(|x| sign*x));
+            for dx in -1..=1 { for dy in -1..=1 { for dz in -1..=1 {
+                let Some(list) = index.get(&[k[0]+dx,k[1]+dy,k[2]+dz]) else { continue };
+                for &c in list { if g.is_none_or(|g| c < g) && matches(&groups[c]) { g = Some(c); } }
+            } } }
+        }
+        match g {
+            Some(g) => { groups[g].2.push(i); groups[g].3 = add(groups[g].3,weighted); },
+            None => { index.entry(key(n)).or_default().push(groups.len()); groups.push((n,d,vec![i],weighted)); }
+        }
     }
     // the side each triangle faces: its group's majority where it has one
     // (a folded ribbon's own winding is not to be trusted), else its own
@@ -116,6 +136,46 @@ fn pass(mesh: &KeptMesh,tolerance: f64,trim: bool) -> (KeptMesh,usize) {
         let l = norm(*facing);
         if l > 0. { for &i in members { facing_of[i] = Some(facing.map(|x| x/l)); } }
     }
+    // Triangles by the grid cells their boxes cover, for the trim's feet: a
+    // foot matters only where its line crosses the region (area on both
+    // sides of it within its span), and the region only shrinks as it is
+    // trimmed, so every foot that matters has a point within the region's
+    // own diagonal of the region's box. The rest are passed over as the
+    // scan of every triangle passed over them.
+    let boxes: Vec<(V3,V3)> = mesh.triangles.iter().map(|t| {
+        let c = t.map(|v| mesh.vertices[v as usize]);
+        (std::array::from_fn(|k| c[0][k].min(c[1][k]).min(c[2][k])),std::array::from_fn(|k| c[0][k].max(c[1][k]).max(c[2][k])))
+    }).collect();
+    let (lo,hi) = boxes.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(lo,hi),(a,b)| (std::array::from_fn(|k| lo[k].min(a[k])),std::array::from_fn(|k| hi[k].max(b[k]))));
+    // One flat table, cells about a triangle's size (widened while there would be more cells
+    // than a few per triangle): a cell's triangles are a run of `listed` from `starts`.
+    let count = mesh.triangles.len();
+    let size = boxes.iter().map(|(a,b)| (0..3).map(|k| b[k]-a[k]).fold(0.,f64::max)).sum::<f64>()/count.max(1) as f64;
+    let mut cell = if size.is_finite() && size > 0. { size } else { 1. };
+    let dims = |cell: f64| -> [usize;3] { std::array::from_fn(|k| (((hi[k]-lo[k])/cell).floor().max(0.) as usize).saturating_add(1)) };
+    while { let d = dims(cell); d[0].saturating_mul(d[1]).saturating_mul(d[2]) > 8*count+64 } { cell *= 1.5; }
+    let d = dims(cell);
+    let at = |p: V3| -> [usize;3] { std::array::from_fn(|k| (((p[k]-lo[k])/cell).floor().max(0.) as usize).min(d[k]-1)) };
+    let index = |c: [usize;3]| (c[0]*d[1]+c[1])*d[2]+c[2];
+    let mut starts = vec![0usize;d[0]*d[1]*d[2]+1];
+    let mut listed: Vec<usize> = Vec::new();
+    if trim {
+        for (a,b) in &boxes {
+            let (ka,kb) = (at(*a),at(*b));
+            for x in ka[0]..=kb[0] { for y in ka[1]..=kb[1] { for z in ka[2]..=kb[2] { starts[index([x,y,z])+1] += 1; } } }
+        }
+        for c in 1..starts.len() { starts[c] += starts[c-1]; }
+        let mut fill = starts.clone();
+        listed = vec![0;starts[starts.len()-1]];
+        for (i,(a,b)) in boxes.iter().enumerate() {
+            let (ka,kb) = (at(*a),at(*b));
+            for x in ka[0]..=kb[0] { for y in ka[1]..=kb[1] { for z in ka[2]..=kb[2] { let c = index([x,y,z]); listed[fill[c]] = i; fill[c] += 1; } } }
+        }
+    }
+    // the last group each triangle was gathered for, so one reached through several cells is
+    // taken once
+    let mut stamp = vec![u32::MAX;count];
+    let mut query = 0u32;
     let mut out = KeptMesh {vertices:mesh.vertices.clone(),triangles:Vec::new(),sheet:Vec::new()};
     let mut replaced = 0;
     for &i in &loose { out.triangles.push(mesh.triangles[i]); out.sheet.push(mesh.sheet[i]); }
@@ -166,8 +226,34 @@ fn pass(mesh: &KeptMesh,tolerance: f64,trim: bool) -> (KeptMesh,usize) {
         // comparable area on both sides is left alone.
         let in_group: std::collections::BTreeSet<usize> = members.iter().copied().collect();
         let mut feet: Vec<(P2,P2)> = Vec::new();
-        for (i,t) in mesh.triangles.iter().enumerate() {
-            if !trim || in_group.contains(&i) { continue; }
+        let mut near: Vec<usize> = Vec::new();
+        if trim {
+            let (glo,ghi) = members.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(lo,hi),&i| (std::array::from_fn(|k| lo[k].min(boxes[i].0[k])),std::array::from_fn(|k| hi[k].max(boxes[i].1[k]))));
+            let reach = norm(sub(ghi,glo))+tolerance;
+            let (qa,qb) = (glo.map(|x| x-reach),ghi.map(|x| x+reach));
+            let (ka,kb) = (at(qa),at(qb));
+            let cells = (0..3).map(|k| kb[k]-ka[k]+1).product::<usize>();
+            if cells > count {
+                // a region as wide as the mesh (a planar face) reaches every
+                // triangle, and the plain scan is the cheaper walk
+                near.extend(0..count);
+            } else {
+                query += 1;
+                for x in ka[0]..=kb[0] { for y in ka[1]..=kb[1] { for z in ka[2]..=kb[2] {
+                    let c = index([x,y,z]);
+                    for &i in &listed[starts[c]..starts[c+1]] {
+                        if stamp[i] == query { continue; }
+                        stamp[i] = query;
+                        let (a,b) = boxes[i];
+                        if (0..3).all(|k| a[k] <= qb[k] && b[k] >= qa[k]) { near.push(i); }
+                    }
+                } } }
+                near.sort_unstable();
+            }
+        }
+        for &i in &near {
+            let t = &mesh.triangles[i];
+            if in_group.contains(&i) { continue; }
             let Some(m) = facing_of[i].or_else(|| normal(t).map(|(m,_)| m)) else { continue };
             if dot(m,*n).abs() > 0.995 { continue; }
             let corners = t.map(|v| mesh.vertices[v as usize]);

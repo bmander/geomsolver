@@ -73,6 +73,14 @@ pub fn collapse_short_edges(mesh: &mut KeptMesh,shortest: f64) -> usize {
         if pairs.is_empty() { break; }
         pairs.sort_by(|p,q| p.0.total_cmp(&q.0).then(p.1.cmp(&q.1)).then(p.2.cmp(&q.2)));
         pairs.dedup();
+        // Which triangles each vertex is on, at the round's start. A merge relabels only its
+        // absorbed vertex's triangles, and a vertex a merge has touched takes no further part
+        // in the round, so an untouched vertex's triangles are still these (the degenerate
+        // ones a merge makes go only at the round's end, and are counted as before).
+        let mut on: Vec<Vec<usize>> = vec![Vec::new();mesh.vertices.len()];
+        for (t,tri) in mesh.triangles.iter().enumerate() {
+            for k in 0..3 { if !tri[..k].contains(&tri[k]) { on[tri[k] as usize].push(t); } }
+        }
         let mut done_any = false;
         let mut touched: std::collections::BTreeSet<u32> = Default::default();
         for (_,a,b) in pairs {
@@ -81,11 +89,12 @@ pub fn collapse_short_edges(mesh: &mut KeptMesh,shortest: f64) -> usize {
             // the pair meets at the vertex with more triangles on it, the
             // more constrained of the two: a polyhedral case keeps its
             // exact corners, and a crease point moves onto the column
-            let count = |v: u32| mesh.triangles.iter().filter(|t| t.contains(&v)).count();
+            let count = |v: u32| on[v as usize].len();
             let (a,b) = if count(b) > count(a) { (b,a) } else { (a,b) };
             let mid: V3 = mesh.vertices[a as usize];
             let mut ok = true;
-            for t in &mesh.triangles {
+            for &i in on[a as usize].iter().chain(&on[b as usize]) {
+                let t = &mesh.triangles[i];
                 let on_a = t.contains(&a); let on_b = t.contains(&b);
                 if !(on_a || on_b) || (on_a && on_b) { continue; }
                 let before = t.map(|v| mesh.vertices[v as usize]);
@@ -97,7 +106,7 @@ pub fn collapse_short_edges(mesh: &mut KeptMesh,shortest: f64) -> usize {
             }
             if !ok { continue; }
             mesh.vertices[a as usize] = mid;
-            for t in mesh.triangles.iter_mut() { for v in t.iter_mut() { if *v == b { *v = a; } } }
+            for &i in &on[b as usize] { for v in mesh.triangles[i].iter_mut() { if *v == b { *v = a; } } }
             touched.insert(a); touched.insert(b);
             collapsed += 1; done_any = true;
         }
