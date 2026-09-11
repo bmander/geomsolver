@@ -154,7 +154,11 @@ impl Sweep {
             if i+1 == m { b += TAU; }
             if b-a > 0. && self.inside(self.point(rho,0.5*(a+b))) { cells.push((p,q,a+self.lo,b+self.hi)); }
         }
-        cells.sort_by(|x,y| x.2.total_cmp(&y.2));
+        cells.sort_by(|x,y| x.2.total_cmp(&y.2).then(x.3.total_cmp(&y.3)));
+        // Sorted by their starts, intervals merge with the one before while they overlap it. An
+        // interval inside another keeps that one's end, which is why the end is taken by
+        // comparison and not from the later interval: two cells that overlap and are left as two
+        // would both claim the stretch they share, and its edges would be walked twice over.
         let merge = |cells: Vec<Cell>| -> Vec<Cell> {
             let mut out: Vec<Cell> = Vec::new();
             for c in cells { match out.last_mut() { Some(l) if c.2 <= l.3 => if c.3 > l.3 { l.1 = c.1; l.3 = c.3; },_ => out.push(c) } }
@@ -217,6 +221,28 @@ impl Sweep {
         out
     }
 
+    /// The strip's cells' intervals on one of the rows it shares with the strip beyond, made to
+    /// partition it: cells that are apart in the middle of a strip may overlap at its end, where
+    /// the gap between them closes (a row every circle about the pivot lies inside the face
+    /// within). Two cells meshing one stretch would walk its edges twice over, so the stretch is
+    /// halved between them.
+    fn share(&self,cells: &[Cell],rho: f64) -> Vec<(f64,f64)> {
+        let mut out: Vec<(f64,f64)> = cells.iter().map(|&c| self.interval(c,rho)).collect();
+        let mut order: Vec<usize> = (0..out.len()).collect();
+        order.sort_by(|&i,&j| out[i].0.total_cmp(&out[j].0));
+        for w in order.windows(2) {
+            let (i,j) = (w[0],w[1]);
+            if out[i].1 > out[j].0 { let mid = 0.5*(out[i].1+out[j].0); out[i].1 = mid; out[j].0 = mid; }
+        }
+        if self.turn && order.len() > 1 {
+            // and round the circle, where the last reaches into the first
+            let (i,j) = (order[order.len()-1],order[0]);
+            if out[i].1 > out[j].0+TAU { let mid = 0.5*(out[i].1+out[j].0+TAU); out[i].1 = mid; out[j].0 = mid-TAU; }
+        }
+        for c in out.iter_mut() { if c.1 < c.0 { c.1 = c.0; } }
+        out
+    }
+
     /// A cell's interval on the row at `rho`, kept continuous with its interval `reference` at
     /// the middle of its strip.
     fn interval(&self,cell: Cell,rho: f64) -> (f64,f64) {
@@ -240,7 +266,7 @@ impl Sweep {
         let snap = self.snap();
         // the strips: their cells (by the middle row) and their rows, refined until every cell's
         // two curves are within the sagitta of their chords and no row is a spacing from the next
-        struct Strip { full: bool, cells: Vec<Cell>, rows: Vec<f64> }
+        struct Strip { full: bool, cells: Vec<Cell>, rows: Vec<f64>, ends: [Vec<(f64,f64)>;2] }
         let mut strips: Vec<Strip> = Vec::new();
         for w in critical.windows(2) {
             let (a,b) = (w[0],w[1]);
@@ -260,7 +286,8 @@ impl Sweep {
             }
             inner.sort_by(f64::total_cmp);
             rows.extend(inner);
-            strips.push(Strip {full,cells,rows});
+            let ends = [self.share(&cells,rows[0]),self.share(&cells,*rows.last().unwrap())];
+            strips.push(Strip {full,cells,rows,ends});
         }
         // the critical rows' samples, shared by the strips on either side: every cell's ends, the
         // images of the vertices, feet and extremes on the row, and fill between them
@@ -271,7 +298,7 @@ impl Sweep {
             for (r,end) in [(s.rows[0],0),(*s.rows.last().unwrap(),1)] {
                 let k = index(r).ok_or("a strip ends off a critical row")?;
                 if s.full { touching[k].push((0.,TAU,true)); }
-                for &c in &s.cells { let (a,b) = self.interval(c,r); touching[k].push((a,b,false)); let _ = end; }
+                for &(a,b) in &s.ends[end] { touching[k].push((a,b,false)); }
             }
         }
         // per critical row: its samples as (along, vertex), in order along each covered stretch
@@ -344,12 +371,17 @@ impl Sweep {
         // each cell's rows, zipped
         let row_index = |r: f64| -> u32 { index(r).unwrap_or(critical.len()) as u32 };
         for s in &strips {
-            let cells: Vec<Option<Cell>> = if s.full { vec![None] } else { s.cells.iter().map(|&c| Some(c)).collect() };
-            for cell in cells {
+            let cells: Vec<(Option<usize>,Option<Cell>)> = if s.full { vec![(None,None)] } else { s.cells.iter().enumerate().map(|(i,&c)| (Some(i),Some(c))).collect() };
+            for (which,cell) in cells {
                 let last = s.rows.len()-1;
                 let mut previous: Option<Vec<u32>> = None;
                 for (j,&r) in s.rows.iter().enumerate() {
-                    let (a,b) = match cell { Some(c) => self.interval(c,r),None => (0.,TAU) };
+                    let ends = if j == 0 { Some(0) } else if j == last { Some(1) } else { None };
+                    let (a,b) = match (cell,ends,which) {
+                        (Some(_),Some(e),Some(i)) => s.ends[e][i],
+                        (Some(c),_,_) => self.interval(c,r),
+                        (None,_,_) => (0.,TAU),
+                    };
                     let closed = cell.is_none();
                     let ids: Vec<u32> = if j == 0 || j == last {
                         let k = index(r).ok_or("a strip ends off a critical row")?;

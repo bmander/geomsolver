@@ -24,6 +24,19 @@ fn loops(r: &Region) -> usize {
         assert!((q[0]-p[0])*(s[1]-p[1])-(q[1]-p[1])*(s[0]-p[0]) > 0.,"a triangle {t:?} is not counter-clockwise");
         for k in 0..3 { let (a,b) = (t[k],t[(k+1)%3]); *uses.entry((a.min(b),a.max(b))).or_default() += 1; }
     }
+    // no vertex is claimed by two triangles walking one edge the same way: two cells of a row
+    // that overlap instead of merging would each mesh the stretch they share
+    let mut walks: std::collections::BTreeMap<(u32,u32),usize> = Default::default();
+    for t in &r.triangles { for k in 0..3 { *walks.entry((t[k],t[(k+1)%3])).or_default() += 1; } }
+    if let Some((&(a,b),&n)) = walks.iter().find(|(_,&n)| n > 1) {
+        panic!("the edge {a}{:?}->{b}{:?} is walked {n} times",r.points[a as usize],r.points[b as usize]);
+    }
+    // no triangle flat enough for the construction to read as degenerate and drop: such a
+    // triangle leaves a hole in the region whose boundary no zip can close
+    for t in &r.triangles {
+        let [p,q,s] = t.map(|v| { let x = r.points[v as usize]; [x[0],x[1],0.] });
+        assert!(!gcs_core::space::degenerate(p,q,s),"the triangle {t:?} at {p:?} {q:?} {s:?} is degenerate");
+    }
     if let Some((&(a,b),&n)) = uses.iter().find(|(_,&n)| n > 2) {
         let on: Vec<[u32;3]> = r.triangles.iter().filter(|t| t.contains(&a) && t.contains(&b)).copied().collect();
         panic!("the edge {a}-{b} at {:?} (rows {},{}) and {:?} is used {n} times, by {on:?}",r.points[a as usize],r.row[a as usize],r.row[b as usize],r.points[b as usize]);
@@ -230,4 +243,16 @@ fn the_turned_box_traces_nothing_in_its_grazing_planes() {
             }
         }
     }
+}
+
+#[test]
+fn the_turned_boxs_own_end_face_sweeps_a_sound_region() {
+    // the face the turned box grazes at: y in [-1, 1], z in [-3, 0] about its centre, 30 degrees,
+    // at the construction's own sagitta and spacing, with the tracer's nine columns as poses
+    let alpha = 30_f64.to_radians();
+    let poses: Vec<f64> = (0..9).map(|k| alpha*k as f64/8.).collect();
+    let r = swept_region(&rect(-1.,-3.,1.,0.),&[],PlaneMotion::Turn {pivot:[0.,-1.5],sweep:alpha},0.02,0.5,&poses).unwrap();
+    assert_eq!(loops(&r),1);
+    // it holds the face at both ends, so its area is at least the face's
+    assert!(area(&r) > 6.,"area {}",area(&r));
 }

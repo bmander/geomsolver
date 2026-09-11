@@ -20,11 +20,12 @@ impl Seed {
     pub fn patch(&self) -> &SweepPatch {
         match self { Seed::Traced(p) => p,Seed::Cap(c) => &c.patch,Seed::Grazing(g) => &g.patch }
     }
-    /// The vertices whose own label cannot speak for the face they are on — a cap's on an edge of
-    /// the tool, a region's on its rim — where the corner is judged in from instead; none for a
-    /// traced sheet, whose vertex labels decide.
+    /// A cap's vertices on an edge of the tool, where a vertex's own label cannot say which face
+    /// it speaks for and the corner is judged in from instead. A traced sheet's labels decide,
+    /// and so do a region's: its rim is the swept boundary there exactly, by construction, with
+    /// nothing about it for a corner to be in doubt over.
     pub fn tool_edges(&self) -> Option<&[bool]> {
-        match self { Seed::Traced(_) => None,Seed::Cap(c) => Some(&c.tool_edges),Seed::Grazing(g) => Some(&g.rim) }
+        match self { Seed::Traced(_) | Seed::Grazing(_) => None,Seed::Cap(c) => Some(&c.tool_edges) }
     }
 }
 

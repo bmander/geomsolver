@@ -98,14 +98,12 @@ fn a_tumbling_cylinder_closes_along_its_creases() {
     assert!((v-expected).abs() <= 0.03*expected,"volume {v} against sampled {expected}");
 }
 
-/// Not closed yet: the end faces' edges sweep in their own plane, and a
-/// segment turning in its plane folds at its envelope arc (consecutive
-/// columns cross), so the planar union is right but its slivers along the
-/// arc are thinner than the split's tolerance, and the split and the zip
-/// lay fills over them. One refused triangle and one two-vertex loop are
-/// left; the volume is within a percent.
+/// Milestone 5a: the end faces are square to the turn's axis, so the motion carries them within
+/// their own planes and `n·v` is zero over the whole of them. Each is swept exactly in its plane
+/// (`swept_boundary::grazing`) rather than traced: the tracer emitted the bands their edges sweep
+/// in that plane, folded where a segment turning in its plane crosses its earlier positions, and
+/// the slivers those left along the envelope arc pinched the rims the zip then closed wrongly.
 #[test]
-#[ignore]
 fn a_box_turned_about_its_face_centre_closes_along_its_creases() {
     // the 2 x 3 x 2 box turned 30° about the axis through the centre of its
     // x = 4 face along x: a 2 x 3 rectangle turned about its own centre
@@ -230,7 +228,7 @@ fn stl(vertices: &[V3],triangles: &[[u32;3]],name: &str) -> (Vec<u8>,usize) {
 #[test]
 fn seeds_moved_below_every_tolerance_leave_the_mesh_as_it_was() {
     use gcs_core::solid::swept_boundary::{SweptBoundaryOptions,construct_from,seeds};
-    for source in [turning_prism(),turned_lens()] {
+    for source in [turning_prism(),turned_lens(),turned_box()] {
         let e = harness::read(&source);
         let swept = harness::solid(&e,"swept");
         let options = SweptBoundaryOptions {sagitta:SAGITTA,spacing:0.5,..Default::default()};
