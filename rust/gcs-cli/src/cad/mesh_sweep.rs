@@ -39,6 +39,7 @@ fn tick(message: &str) {
 fn sub(a: [f64;3],b: [f64;3]) -> [f64;3] { std::array::from_fn(|k| a[k]-b[k]) }
 fn cross(a: [f64;3],b: [f64;3]) -> [f64;3] { [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]] }
 fn norm(a: [f64;3]) -> f64 { (a[0]*a[0]+a[1]*a[1]+a[2]*a[2]).sqrt() }
+fn dot(a: [f64;3],b: [f64;3]) -> f64 { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
 
 /// A candidate sheet in model units: a row-major grid of contact positions with
 /// the cutter's outward normal at each. `closed_rows` joins the last row back
@@ -206,6 +207,30 @@ impl Patch {
     /// The first and last columns present.
     fn column_range(&self) -> (u32,u32) {
         self.column.iter().fold((u32::MAX,0),|(lo,hi),&c| (lo.min(c),hi.max(c)))
+    }
+
+    /// A pair of non-adjacent triangles that cross, if any: a slab of such a
+    /// patch overlaps itself, which the kernel's Booleans cannot take.
+    fn self_intersection(&self) -> Option<(usize,usize)> {
+        let index = self.index(COLUMN_SPACING);
+        let corners = |t: usize| self.triangles[t].map(|v| self.vertices[v as usize]);
+        for a in 0..self.triangles.len() {
+            let ca = corners(a);
+            let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+            for p in &ca { for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]); } }
+            let mut candidates: Vec<usize> = Vec::new();
+            let key = |p: [f64;3]| p.map(|x| (x/index.cell).floor() as i64);
+            let (klo,khi) = (key(lo),key(hi));
+            for x in klo[0]..=khi[0] { for y in klo[1]..=khi[1] { for z in klo[2]..=khi[2] {
+                if let Some(ts) = index.buckets.get(&[x,y,z]) { candidates.extend(ts.iter().copied()); }
+            } } }
+            candidates.sort(); candidates.dedup();
+            for b in candidates {
+                if b <= a || self.triangles[a].iter().any(|v| self.triangles[b].contains(v)) { continue; }
+                if triangles_cross(ca,corners(b)) { return Some((a,b)); }
+            }
+        }
+        None
     }
 
     /// The directed edges used by exactly one triangle: the patch's rim.
@@ -433,6 +458,134 @@ pub fn slab_of(patch: &Patch,epsilon: f64) -> Result<Solid,String> {
     Ok(solid)
 }
 
+/// Whether two triangles with no shared vertex cross: an edge of either
+/// passes through the other's interior.
+fn triangles_cross(a: [[f64;3];3],b: [[f64;3];3]) -> bool {
+    let through = |p: [f64;3],q: [f64;3],t: [[f64;3];3]| -> bool {
+        let n = cross(sub(t[1],t[0]),sub(t[2],t[0]));
+        let (dp,dq) = (dot(sub(p,t[0]),n),dot(sub(q,t[0]),n));
+        if dp*dq >= 0. { return false; }
+        let f = dp/(dp-dq);
+        let x: [f64;3] = std::array::from_fn(|k| p[k]+f*(q[k]-p[k]));
+        (0..3).all(|k| dot(cross(sub(t[(k+1)%3],t[k]),sub(x,t[k])),n) > 0.)
+    };
+    (0..3).any(|k| through(a[k],a[(k+1)%3],b) || through(b[k],b[(k+1)%3],a))
+}
+
+/// Whether a triangle overlaps an axis-aligned box (Akenine-Möller).
+fn triangle_meets_box(tri: [[f64;3];3],centre: [f64;3],half: f64) -> bool {
+    let v: Vec<[f64;3]> = tri.iter().map(|p| sub(*p,centre)).collect();
+    for k in 0..3 {
+        let (lo,hi) = v.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(lo,hi),p| (lo.min(p[k]),hi.max(p[k])));
+        if lo > half || hi < -half { return false; }
+    }
+    let edges = [sub(v[1],v[0]),sub(v[2],v[1]),sub(v[0],v[2])];
+    let axes = [[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]];
+    for e in &edges { for a in &axes {
+        let axis = cross(*a,*e);
+        let r = half*(axis[0].abs()+axis[1].abs()+axis[2].abs());
+        let ps: Vec<f64> = v.iter().map(|p| p[0]*axis[0]+p[1]*axis[1]+p[2]*axis[2]).collect();
+        let (lo,hi) = ps.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(lo,hi),x| (lo.min(*x),hi.max(*x)));
+        if lo > r || hi < -r { return false; }
+    } }
+    let n = cross(edges[0],edges[1]);
+    let r = half*(n[0].abs()+n[1].abs()+n[2].abs());
+    let d = n[0]*v[0][0]+n[1]*v[0][1]+n[2]*v[0][2];
+    d.abs() <= r
+}
+
+/// A leak search, `SOLVENT_FIND_LEAK=<voxel mm>`: over the box of one
+/// placement's slab union, a six-connected flood on a voxel grid from the
+/// voxels the tool removes at mid roll, blocked by every triangle of the union,
+/// the caps and the blank, until it reaches a voxel the field calls material:
+/// the path there is where the sheets fail to enclose the cut. Nothing is
+/// found on a sound placement; the report is the whole result.
+fn find_leak(blockers: &[&Solid],removed: &dyn Fn([f64;3]) -> bool,material: &mut dyn FnMut([f64;3]) -> Result<bool,String>,
+    voxel: f64) -> Result<(),String> {
+    let (uv,ut) = blockers[0].triangles()?;
+    let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+    for p in &uv { for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]); } }
+    let lo = lo.map(|x| x-2.*voxel); let hi = hi.map(|x| x+2.*voxel);
+    let dims: [usize;3] = std::array::from_fn(|k| ((hi[k]-lo[k])/voxel).ceil() as usize+1);
+    let index = |i: [usize;3]| (i[0]*dims[1]+i[1])*dims[2]+i[2];
+    let centre = |i: [usize;3]| -> [f64;3] { std::array::from_fn(|k| lo[k]+voxel*(i[k] as f64+0.5)) };
+    let mut blocked = vec![false;dims[0]*dims[1]*dims[2]];
+    let mut count = 0;
+    for (b,solid) in blockers.iter().enumerate() {
+        let (v,t) = if b == 0 { (uv.clone(),ut.clone()) } else { solid.triangles()? };
+        for tri in &t {
+            let corners = tri.map(|i| v[i as usize]);
+            let range = |k: usize| {
+                let (a,b) = (corners.iter().map(|p| p[k]).fold(f64::INFINITY,f64::min),corners.iter().map(|p| p[k]).fold(f64::NEG_INFINITY,f64::max));
+                if b < lo[k] || a > hi[k] { return 1..=0; }
+                (((a-lo[k])/voxel).floor().max(0.) as usize)..=(((b-lo[k])/voxel).floor().max(0.) as usize).min(dims[k]-1)
+            };
+            for x in range(0) { for y in range(1) { for z in range(2) {
+                let i = [x,y,z];
+                if !blocked[index(i)] && triangle_meets_box(corners,centre(i),0.5*voxel) { blocked[index(i)] = true; count += 1; }
+            } } }
+        }
+    }
+    // Only the blank's inside is searched: ray parity against the blank's
+    // own triangles along every z column of the grid.
+    let (bv,bt) = blockers[1].triangles()?;
+    let mut inside = vec![false;blocked.len()];
+    for x in 0..dims[0] { for y in 0..dims[1] {
+        let (px,py) = (lo[0]+voxel*(x as f64+0.5),lo[1]+voxel*(y as f64+0.5));
+        let mut crossings: Vec<f64> = Vec::new();
+        for tri in &bt {
+            let [a,b,c] = tri.map(|i| bv[i as usize]);
+            // 2D barycentric test in xy, then the z of the plane there
+            let d = (b[0]-a[0])*(c[1]-a[1])-(c[0]-a[0])*(b[1]-a[1]);
+            if d.abs() < 1e-300 { continue; }
+            let u = ((px-a[0])*(c[1]-a[1])-(c[0]-a[0])*(py-a[1]))/d;
+            let v = ((b[0]-a[0])*(py-a[1])-(px-a[0])*(b[1]-a[1]))/d;
+            if u < 0. || v < 0. || u+v > 1. { continue; }
+            crossings.push(a[2]+u*(b[2]-a[2])+v*(c[2]-a[2]));
+        }
+        crossings.sort_by(f64::total_cmp);
+        for z in 0..dims[2] {
+            let pz = lo[2]+voxel*(z as f64+0.5);
+            let below = crossings.iter().filter(|&&c| c < pz).count();
+            inside[index([x,y,z])] = below % 2 == 1;
+        }
+    } }
+    stage(&format!("leak search: {:?} voxels of {voxel} mm, {count} blocked, {} inside the blank",dims,inside.iter().filter(|i| **i).count()));
+    let mut parent: Vec<u32> = vec![u32::MAX;blocked.len()];
+    let mut pending: std::collections::VecDeque<[usize;3]> = Default::default();
+    let mut seeds = 0;
+    for x in 0..dims[0] { for y in 0..dims[1] { for z in 0..dims[2] {
+        let i = [x,y,z];
+        if !blocked[index(i)] && inside[index(i)] && removed(centre(i)) { parent[index(i)] = index(i) as u32; pending.push_back(i); seeds += 1; }
+    } } }
+    stage(&format!("leak search: {seeds} seed voxels removed at mid roll"));
+    let mut reached = 0usize;
+    while let Some(i) = pending.pop_front() {
+        reached += 1;
+        if reached % 500 == 0 || pending.is_empty() {
+            let p = centre(i);
+            if material(p)? {
+                let mut path = vec![p];
+                let mut j = index(i);
+                while parent[j] as usize != j { j = parent[j] as usize; let c = [j/(dims[1]*dims[2]),(j/dims[2])%dims[1],j%dims[2]]; path.push(centre(c)); }
+                stage(&format!("LEAK: the flood reached material at {p:?} after {reached} voxels, {} steps from a removed seed at {:?}",path.len(),path[path.len()-1]));
+                let step = (path.len()/20).max(1);
+                for (k,q) in path.iter().enumerate() { if k % step == 0 || k+10 >= path.len() || k < 10 { stage(&format!("  path {k}: {q:?}")); } }
+                return Ok(());
+            }
+        }
+        for (dx,dy,dz) in [(1i64,0i64,0i64),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)] {
+            let n = [i[0] as i64+dx,i[1] as i64+dy,i[2] as i64+dz];
+            if n.iter().any(|&c| c < 0) || (0..3).any(|k| n[k] as usize >= dims[k]) { continue; }
+            let n = n.map(|c| c as usize);
+            if blocked[index(n)] || !inside[index(n)] || parent[index(n)] != u32::MAX { continue; }
+            parent[index(n)] = index(i) as u32; pending.push_back(n);
+        }
+    }
+    stage(&format!("leak search: the flood stayed enclosed, {reached} voxels"));
+    Ok(())
+}
+
 /// Evaluate a static solid's Boolean term with Manifold over its primitives.
 pub fn solid_of(fixed: &solid::StaticSolid) -> Result<Solid,String> {
     let mut prims: Vec<Option<Solid>> = Vec::with_capacity(fixed.csg.prims.len());
@@ -537,6 +690,8 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
     let (mut slabs,mut caps) = (Vec::new(),Vec::new());
     // the slabs of each placement, split from the blank one placement at a time
     let mut groups: Vec<std::ops::Range<usize>> = Vec::new();
+    // what each placement removes at mid roll, for the leak search
+    let mut removed_by: Vec<Box<dyn Fn([f64;3]) -> bool>> = Vec::new();
     for swept in distinct {
         let SolidDef::Swept {source,motion,from,to} = &sk.solids[swept].def else { unreachable!() };
         let started = std::time::Instant::now();
@@ -572,6 +727,24 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
             }
             detail(&format!("placement {k}: {} seam ribbons of {} triangles",ribbons.len(),ribbons.iter().map(|r| r.triangles.len()).sum::<usize>()));
             posed.extend(ribbons);
+            if std::env::var("SOLVENT_SELF_INTERSECT").is_ok() {
+                for (i,g) in posed.iter().enumerate() {
+                    if let Some((a,b)) = g.self_intersection() {
+                        stage(&format!("placement {k}: sheet {i} crosses itself: triangles {a} (columns {:?}) and {b} (columns {:?}) at {:?}",
+                            g.triangles[a].map(|v| g.column[v as usize]),g.triangles[b].map(|v| g.column[v as usize]),g.vertices[g.triangles[a][0] as usize]));
+                        let (c0,c1) = g.column_range();
+                        stage(&format!("  columns {c0}..{c1}, times {:?}",&g.times));
+                        let mut cs: Vec<u32> = g.triangles[a].iter().chain(&g.triangles[b]).map(|&v| g.column[v as usize]).collect();
+                        cs.sort(); cs.dedup();
+                        for c in cs {
+                            let vs = g.column_vertices(c);
+                            stage(&format!("  column {c}: {} vertices",vs.len()));
+                            for v in vs { stage(&format!("    {v}: {:?} n {:?}",g.vertices[v as usize],g.normals[v as usize])); }
+                        }
+                        for t in [a,b] { stage(&format!("  triangle {t}: {:?}",g.triangles[t])); }
+                    }
+                }
+            }
             // Every rim point of a sheet must be outside the blank, inside an end
             // pose of the tool (removed outright), or on another candidate of the
             // same sweep; otherwise the arrangement would leave the sheet's edge
@@ -614,6 +787,9 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
                 slabs.push(sheet);
             }
             groups.push(group_start..slabs.len());
+            let mid_inverse = family.at(0.5*(from.value+to.value))?.then(cut.pose).inverse();
+            let (field,margin) = (source_field.clone(),0.05/scale);
+            removed_by.push(Box::new(move |p: [f64;3]| field.value(mid_inverse.point(p.map(|v| v/scale))) < -margin));
             for end in ends {
                 let placed = tool.placed(&cad::placement_matrix(end.then(cut.pose),1.))?;
                 caps.push(placed);
@@ -647,8 +823,24 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
     let (mut walls,mut remainder): (Vec<Solid>,Solid) = (Vec::new(),body_mesh);
     for (g,group) in groups.iter().enumerate() {
         if group.is_empty() { continue; }
+        let lap = std::time::Instant::now();
         let union = Solid::batch(&slabs[group.clone()].iter().collect::<Vec<_>>(),true)?;
+        let united = lap.elapsed();
+        if let Some(voxel) = std::env::var("SOLVENT_FIND_LEAK").ok().and_then(|v| v.parse::<f64>().ok()) {
+            let mut material = MaterialField::read(sk,body,1e-10)?.evaluator(4096);
+            let mut is_material = |p: [f64;3]| -> Result<bool,String> {
+                let d = 0.3/scale;
+                let probe = material.probe(p.map(|x| Interval::point(x/scale).unwrap()),[1.,0.,0.],d,
+                    Options {value_tolerance:d/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))?;
+                Ok(matches!(probe.state,ProbeState::InteriorBall))
+            };
+            let mut blockers: Vec<&Solid> = vec![&union,&blank_mesh];
+            blockers.extend(near_caps.iter().copied());
+            find_leak(&blockers,&*removed_by[g],&mut is_material,voxel)?;
+        }
         let (w,r) = remainder.split(&union)?;
+        detail(&format!("placement {}: {} slabs of {} triangles united to {} ({united:?}), split of {} triangles ({:?})",g+1,group.len(),
+            slabs[group.clone()].iter().map(|s| s.triangle_count()).sum::<usize>(),union.triangle_count(),remainder.triangle_count(),lap.elapsed()-united));
         walls.push(w); remainder = r;
         tick(&format!("split by placement {} of {}: remainder {} triangles ({:?})",g+1,groups.len(),remainder.triangle_count(),started.elapsed()));
     }

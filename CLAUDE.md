@@ -264,7 +264,17 @@ before the STL shell check (`merged`; welding by proximity alone folded strips i
 used three times). The blank's occupancy grid is rasterised from its mesh and flooded
 from outside, never probed by the field (that was 55 s of a 70 s run). Ordered containers
 only: hash iteration order in the slab walls made Manifold's output differ run to run,
-and one order lost the cut. `solventc --verbose` drips a line every three seconds. The gate
+and one order lost the cut. `solventc --verbose` drips a line every three seconds. A column
+is simplified within the sagitta but never to a segment longer than the column spacing: a
+straight run on a plane reduced to its two ends left the zip a twisted quad to split by one
+diagonal, which poked through the hairpin's other arm, and that self-crossing slab lost
+gear space 29 whole. Two diagnostics stay in the tree: `SOLVENT_SELF_INTERSECT=1` reports
+every posed sheet that crosses itself with the columns and vertices involved, and
+`SOLVENT_FIND_LEAK=0.05` floods a voxel grid inside the blank from what the tool removes
+at mid roll, blocked by the slab union, the caps and the blank, and prints the path to any
+material it reaches. A lost space is found by exporting each placement alone (rewrite the
+member's `repeat` to `repeat 1 as i` with `at: (i + k) * 360deg / teeth`), three seconds
+each. The gate
 is `one_*_space_through_the_tracer` in `tests/mesh_sweep.rs` (recorded volumes, one
 placement each); the whole members are `#[ignore]`d and run with `--ignored`. Read
 `SpatialField::value` for what may be judged in plain floating point: a face point on

@@ -882,7 +882,7 @@ impl SweepContacts {
             // Each column thinned to what the sagitta needs, its joints and
             // ends kept: a straight contact line on a plane or a cone is its
             // two ends, however many stations it was traced at.
-            let oriented: Vec<Characteristic> = oriented.iter().map(|c| simplified(c,sagitta)).collect();
+            let oriented: Vec<Characteristic> = oriented.iter().map(|c| simplified(c,sagitta,spacing)).collect();
             let mut points = Vec::new(); let mut normals = Vec::new(); let mut column = Vec::new();
             let mut triangles: Vec<[u32;3]> = Vec::new();
             let mut first_of: Vec<u32> = Vec::new();
@@ -1013,22 +1013,30 @@ pub fn zip_polylines(a: &[V3],b: &[V3],closed: bool) -> Vec<[(bool,u32);3]> {
 /// between the kept points about it (Douglas and Peucker's walk, piece by
 /// piece between joints), so the ends and joints stay and a straight run is
 /// its two ends.
-fn simplified(c: &Characteristic,sagitta: f64) -> Characteristic {
+fn simplified(c: &Characteristic,sagitta: f64,longest: f64) -> Characteristic {
     let n = c.points.len();
     if n <= 2 { return c.clone(); }
     let mut keep = vec![false;n];
     keep[0] = true; keep[n-1] = true;
     for &j in &c.joints { if j < n { keep[j] = true; } }
-    fn refine(points: &[V3],keep: &mut Vec<bool>,a: usize,b: usize,sagitta: f64) {
+    // Within the sagitta, and no segment longer than `longest`: a straight
+    // run on a plane reduced to its two ends is a rung's length of freedom
+    // the zip between columns does not have, and a hairpin's long twisted
+    // quad split by one diagonal pokes through the arm beside it.
+    fn refine(points: &[V3],keep: &mut Vec<bool>,a: usize,b: usize,sagitta: f64,longest: f64) {
         if b <= a+1 { return; }
         let (mut worst,mut at) = (0_f64,a);
         for i in a+1..b { let d = segment_distance(points[i],points[a],points[b]); if d > worst { worst = d; at = i; } }
-        if worst > sagitta { keep[at] = true; refine(points,keep,a,at,sagitta); refine(points,keep,at,b,sagitta); }
+        if worst <= sagitta {
+            if distance(points[a],points[b]) <= longest { return; }
+            at = (a+b)/2;
+        }
+        keep[at] = true; refine(points,keep,a,at,sagitta,longest); refine(points,keep,at,b,sagitta,longest);
     }
     let mut cuts: Vec<usize> = (0..n).filter(|&i| keep[i]).collect();
     cuts.dedup();
-    for w in cuts.windows(2) { refine(&c.points,&mut keep,w[0],w[1],sagitta); }
-    if c.closed { refine(&c.points,&mut keep,*cuts.last().unwrap(),n-1,sagitta); }
+    for w in cuts.windows(2) { refine(&c.points,&mut keep,w[0],w[1],sagitta,longest); }
+    if c.closed { refine(&c.points,&mut keep,*cuts.last().unwrap(),n-1,sagitta,longest); }
     let index: Vec<usize> = (0..n).filter(|&i| keep[i]).collect();
     let position = |i: usize| index.iter().position(|&k| k == i).unwrap();
     let mut joints: Vec<usize> = c.joints.iter().filter(|&&j| j < n && keep[j]).map(|&j| position(j)).collect();
