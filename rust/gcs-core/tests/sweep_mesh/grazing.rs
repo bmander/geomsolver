@@ -337,3 +337,59 @@ fn the_thin_plates_contact_shatters_at_two_parameters() {
         eprintln!("== t {k}/64: {}",at(t));
     }
 }
+
+/// The tilted cylinder's contact curves near the band where its cap's rim has no counterpart on
+/// any traced sheet: which curves pass there, at which parameters, and how near they come.
+#[test]
+#[ignore]
+fn the_tilted_cylinders_curves_near_its_unpaired_band() {
+    use gcs_core::solid::SweepContacts;
+    let source = format!("{}{}{}",tools::tilted_cylinder(30.),motions::TURN_SPINDLE,motions::swept("turn",-60.,60.));
+    let e = harness::read(&source);
+    let swept = harness::solid(&e,"swept");
+    let sweep = SweepContacts::read(&e.sketch,swept,1e-10).unwrap();
+    let [from,to] = sweep.domain();
+    // the middle of the band the cap's rim runs through, in world coordinates
+    let target = [1.09,-2.47,1.34];
+    let steps = 40;
+    for i in 0..=steps {
+        let t = from+(to-from)*i as f64/steps as f64;
+        let pose = sweep.motion().at(t).unwrap();
+        let curves = sweep.characteristics_over(t,1e-9).unwrap_or_default();
+        let mut best: Vec<String> = Vec::new();
+        for (k,c) in curves.iter().enumerate() {
+            let d = c.points.iter().map(|p| { let q = pose.point(*p); (0..3).map(|j| (q[j]-target[j]).powi(2)).sum::<f64>().sqrt() }).fold(f64::INFINITY,f64::min);
+            if d < 0.25 { best.push(format!("curve {k} ({} points, closed {}) at {d:.4}",c.points.len(),c.closed)); }
+        }
+        if !best.is_empty() { eprintln!("NEAR t {:+.4} ({i}/{steps}): {}",t,best.join("; ")); }
+    }
+}
+
+/// Whether the cap contains the sheets' end columns by identity, as the caps are meant to: the
+/// sheet's first column beside the cap's own vertices, in the band where the tilted cylinder's
+/// rims fail to pair.
+#[test]
+#[ignore]
+fn the_tilted_cylinders_cap_against_its_end_column() {
+    use gcs_core::solid::swept_boundary::{SweptBoundaryOptions,caps,seeds};
+    let source = format!("{}{}{}",tools::tilted_cylinder(30.),motions::TURN_SPINDLE,motions::swept("turn",-60.,60.));
+    let e = harness::read(&source);
+    let swept = harness::solid(&e,"swept");
+    let options = SweptBoundaryOptions {sagitta:0.02,spacing:0.5,..Default::default()};
+    let (_,sheets,_) = seeds(&e.sketch,swept,options.spacing,options.sagitta,&|_| {}).unwrap();
+    let caps = caps(&e.sketch,swept,&sheets,options.sagitta,options.snap(),options.spacing,&[]).unwrap();
+    let target = [1.09,-2.47,1.34];
+    let near = |p: [f64;3]| (0..3).map(|k| (p[k]-target[k]).powi(2)).sum::<f64>().sqrt() < 0.3;
+    for (i,s) in sheets.iter().enumerate() {
+        let first: Vec<[f64;3]> = s.column_vertices(0).into_iter().map(|v| s.points[v as usize]).filter(|p| near(*p)).collect();
+        if !first.is_empty() { eprintln!("COLUMN sheet {i}: {} of its first column in the band, e.g. {:?}",first.len(),first.iter().take(3).map(|p| p.map(|x| (x*1e4).round()/1e4)).collect::<Vec<_>>()); }
+    }
+    for (k,c) in caps.iter().enumerate() {
+        let mine: Vec<[f64;3]> = c.patch.points.iter().copied().filter(|p| near(*p)).collect();
+        eprintln!("CAP {k} ({:?}): {} vertices in the band, e.g. {:?}",c.end,mine.len(),mine.iter().take(4).map(|p| p.map(|x| (x*1e4).round()/1e4)).collect::<Vec<_>>());
+        // how near each cap vertex in the band comes to any sheet's first column
+        let columns: Vec<[f64;3]> = sheets.iter().flat_map(|s| s.column_vertices(0).into_iter().map(|v| s.points[v as usize])).collect();
+        let worst = mine.iter().map(|p| columns.iter().map(|q| (0..3).map(|j| (p[j]-q[j]).powi(2)).sum::<f64>().sqrt()).fold(f64::INFINITY,f64::min)).fold(0_f64,f64::max);
+        eprintln!("CAP {k}: the farthest of those from any first column is {worst:.6}");
+    }
+}
