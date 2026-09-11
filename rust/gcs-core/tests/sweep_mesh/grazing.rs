@@ -256,3 +256,84 @@ fn the_turned_boxs_own_end_face_sweeps_a_sound_region() {
     // it holds the face at both ends, so its area is at least the face's
     assert!(area(&r) > 6.,"area {}",area(&r));
 }
+
+// --- milestone 5b: the cases the tracer's closedness and stationing are judged by ---
+
+/// What a case's construction comes to, for a case that does not close yet.
+fn outcome(source: &str) -> String {
+    match super::closed::shell_at(source,0.02) {
+        (mesh,Ok(c)) => format!("{} triangles, {} certified, {} thin, {} failed",mesh.triangles.len(),c.certified,c.thin.len(),c.failures.len()),
+        (mesh,Err(e)) => format!("{} triangles, refused {e:?}",mesh.triangles.len()),
+    }
+}
+
+#[test]
+#[ignore]
+fn the_milestone_5b_cases_as_they_stand() {
+    for (name,source) in [
+        ("tilted cylinder 30",format!("{}{}{}",tools::tilted_cylinder(30.),motions::TURN_SPINDLE,motions::swept("turn",-60.,60.))),
+        ("tilted cylinder 85",format!("{}{}{}",tools::tilted_cylinder(85.),motions::TURN_SPINDLE,motions::swept("turn",-60.,60.))),
+        ("tilted cylinder 5, slid",format!("{}{}{}",tools::tilted_cylinder(5.),motions::slide_x(6.),motions::swept("feed",0.,360.))),
+        ("thin plate under a roll",format!("{}{}{}",tools::thin_plate(0.1),motions::roll(1.05),motions::swept("turn",0.,120.))),
+        ("box turned a whole turn",format!("{}{}{}",tools::BOX,motions::turn_about(4.,-1.5,5.,-1.5),motions::swept("turn",0.,360.))),
+    ] {
+        eprintln!("== {name}: {}",outcome(&source));
+    }
+}
+
+/// How often a contact curve's closedness flips between neighbouring parameters: the tracer
+/// refuses to continue a curve across such a flip (`apart` is infinite when `closed` differs),
+/// so the strip is cut there and a one-column strip is dropped altogether.
+#[test]
+#[ignore]
+fn closedness_flickers_between_parameters() {
+    use gcs_core::solid::SweepContacts;
+    for (name,source) in [
+        ("tilted cylinder 30",format!("{}{}{}",tools::tilted_cylinder(30.),motions::TURN_SPINDLE,motions::swept("turn",-60.,60.))),
+        ("tilted cylinder 85",format!("{}{}{}",tools::tilted_cylinder(85.),motions::TURN_SPINDLE,motions::swept("turn",-60.,60.))),
+        ("thin plate under a roll",format!("{}{}{}",tools::thin_plate(0.1),motions::roll(1.05),motions::swept("turn",0.,120.))),
+        ("tumbling cylinder",format!("{}{}{}",tools::CYLINDER,motions::TUMBLE,motions::swept("turn",-30.,30.))),
+    ] {
+        let e = harness::read(&source);
+        let swept = harness::solid(&e,"swept");
+        let sweep = SweepContacts::read(&e.sketch,swept,1e-10).unwrap();
+        let [from,to] = sweep.domain();
+        let steps = 64;
+        let mut counts: Vec<(usize,usize)> = Vec::new(); // curves, closed ones
+        for i in 0..=steps {
+            let t = from+(to-from)*i as f64/steps as f64;
+            let curves = sweep.characteristics_over(t,1e-9).unwrap_or_default();
+            counts.push((curves.len(),curves.iter().filter(|c| c.closed).count()));
+        }
+        let flips = counts.windows(2).filter(|w| w[0] != w[1]).count();
+        eprintln!("== {name}: {flips} changes over {steps} steps; (curves, closed) {:?}",counts);
+    }
+}
+
+/// Where the thin plate's contact shatters: the curves at parameters either side of the two
+/// places its single closed loop becomes several open pieces, with their lengths and ends.
+#[test]
+#[ignore]
+fn the_thin_plates_contact_shatters_at_two_parameters() {
+    use gcs_core::solid::SweepContacts;
+    let source = format!("{}{}{}",tools::thin_plate(0.1),motions::roll(1.05),motions::swept("turn",0.,120.));
+    let e = harness::read(&source);
+    let swept = harness::solid(&e,"swept");
+    let sweep = SweepContacts::read(&e.sketch,swept,1e-10).unwrap();
+    let [from,to] = sweep.domain();
+    let at = |t: f64| -> String {
+        let curves = sweep.characteristics_over(t,1e-9).unwrap_or_default();
+        let ends = |c: &gcs_core::solid::Characteristic| { let p = c.points.first().copied().unwrap_or([0.;3]); let q = c.points.last().copied().unwrap_or([0.;3]); format!("{:?}..{:?}",p.map(|x| (x*1e2).round()/1e2),q.map(|x| (x*1e2).round()/1e2)) };
+        format!("{} curves: {:?}",curves.len(),curves.iter().map(|c| format!("{} points, closed {}, {}",c.points.len(),c.closed,ends(c))).collect::<Vec<_>>())
+    };
+    // the first parameter, and either side of it
+    for k in [0.,0.25,0.5,1.,2.] {
+        let t = from+(to-from)*k/64.;
+        eprintln!("== t {k}/64: {}",at(t));
+    }
+    // and the interior shatter at 46/64
+    for k in [45.,45.5,46.,46.5,47.] {
+        let t = from+(to-from)*k/64.;
+        eprintln!("== t {k}/64: {}",at(t));
+    }
+}

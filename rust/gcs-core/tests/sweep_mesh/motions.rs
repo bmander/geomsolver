@@ -72,3 +72,20 @@ construction centerline line hinge(h0, h1)
 motion turn(about: hinge)
 ")
 }
+
+/// A roll: the tool turned about the vertical through (3, 0) at `ratio` turns per turn of an
+/// observer turning about the spindle, so the two are near enough to beat against each other and
+/// a contact loop flickers open and closed.
+pub fn roll(ratio: f64) -> String {
+    format!("private point hub hint(x: 3, y: 0)
+hub distance(3mm, along: u) std.front
+hub distance(0mm, along: v) std.front
+private point hub_up hint(x: 3, y: 5)
+hub_up distance(3mm, along: u) std.front
+hub_up distance(5mm, along: v) std.front
+construction centerline line own(hub, hub_up)
+private motion spin(about: own, ratio: {ratio})
+private motion observer(about: spindle)
+motion turn(spin, relative_to: observer)
+")
+}

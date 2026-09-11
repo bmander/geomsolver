@@ -270,9 +270,15 @@ impl SweepContacts {
     /// contact curves of every face, the fans of every edge, trimmed where the
     /// tool's own field hides them, joined by endpoint identity.
     pub fn characteristics(&self,tolerance: f64) -> Result<Vec<Characteristic>,String> {
+        self.characteristics_over(self.roll[0],tolerance)
+    }
+
+    /// The contact curves at one parameter of the motion, trimmed and chained as the strips read
+    /// them: what a curve is at that instant, and whether it closes.
+    pub fn characteristics_over(&self,t: f64,tolerance: f64) -> Result<Vec<Characteristic>,String> {
         let scale = self.scale();
         let signs = self.signs(scale)?;
-        self.characteristics_at(self.motion.at(self.roll[0])?,&signs,tolerance,scale)
+        self.characteristics_at(self.motion.at(t)?,&signs,tolerance,scale)
     }
 
     /// The contact curves of every face and edge under one instantaneous

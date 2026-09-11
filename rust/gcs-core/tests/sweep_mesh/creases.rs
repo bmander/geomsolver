@@ -337,3 +337,22 @@ fn seeds_moved_below_every_tolerance_leave_every_milestone_4_case_as_it_was() {
     }
     assert!(failed.is_empty(),"{failed:?}");
 }
+
+/// Milestone 5b: the box turned a whole turn about the axis through its end face's centre. Its
+/// end faces graze, so each is swept in its own plane, and the sweep is the solid of revolution
+/// the section makes: every circle about the axis within the section's own reach.
+#[test]
+#[ignore]
+fn a_box_turned_a_whole_turn_sweeps_a_ring() {
+    let source = format!("{}{}{}",tools::BOX,motions::turn_about(4.,-1.5,5.,-1.5),motions::swept("turn",0.,360.));
+    let (mesh,certificate) = closed_shell_at(&source,SAGITTA);
+    assert!(certificate.is_complete(),"{} triangles failed",certificate.failures.len());
+    closed(&mesh).unwrap();
+    // the 2 x 3 section turned right round its centre: a disc of the section's own half-diagonal,
+    // less the disc its nearest edge leaves, 2 deep along the axis
+    let (half_width,half_height) = (1_f64,1.5_f64);
+    let expected = std::f64::consts::PI*(half_width*half_width+half_height*half_height)*2.;
+    let v = volume(&mesh);
+    eprintln!("box turned a whole turn: volume {v:.4}, expected {expected:.4}");
+    assert!(v <= expected*(1.+1e-3) && v >= expected*(1.-3.*SAGITTA/half_width),"volume {v} against {expected}");
+}

@@ -151,3 +151,63 @@ radius(0.5mm) mb
 construction solid ball_b(face(mb, db), about: db)
 ball_b on tool
 ";
+
+/// A cylinder of radius 1 and height 2 whose axis is tilted `degrees` from the vertical in the
+/// page, its middle at (3, 0): the outer branch of its contact switches between the rim and a
+/// generator as it turns, and its strands run nearly along the stations.
+pub fn tilted_cylinder(degrees: f64) -> String {
+    let (s,c) = degrees.to_radians().sin_cos();
+    // the axis' ends, and the rim corners a radius out from each, square to the axis
+    let (ax,ay) = (3.-s,-c);
+    let (bx,by) = (3.+s,c);
+    format!("unit mm
+use std
+construction centerline line spindle(std.origin, std.up.toward)
+private point a0 hint(x: {ax}, y: {ay})
+a0 distance({ax}mm, along: u) std.front
+a0 distance({ay}mm, along: v) std.front
+private point a1 hint(x: {a1x}, y: {a1y})
+a1 distance({a1x}mm, along: u) std.front
+a1 distance({a1y}mm, along: v) std.front
+private point a2 hint(x: {a2x}, y: {a2y})
+a2 distance({a2x}mm, along: u) std.front
+a2 distance({a2y}mm, along: v) std.front
+private point a3 hint(x: {bx}, y: {by})
+a3 distance({bx}mm, along: u) std.front
+a3 distance({by}mm, along: v) std.front
+private line bottom(a0, a1)
+private line wall(a1, a2)
+private line top(a2, a3)
+private line axis(a3, a0)
+construction solid tool(face(bottom, wall, top, axis), about: axis)
+",ax=ax,ay=ay,bx=bx,by=by,a1x=ax+c,a1y=ay-s,a2x=bx+c,a2y=by-s)
+}
+
+/// A plate 2 wide, `thick` thick and 2 deep, standing at (3, 0) tilted 20 degrees in the page: a
+/// thin tool whose contact loop is small and flickers open and closed.
+pub fn thin_plate(thick: f64) -> String {
+    let (s,c) = 20_f64.to_radians().sin_cos();
+    let corner = |u: f64,v: f64| (3.+u*c-v*s,u*s+v*c);
+    let (p0,p1,p2,p3) = (corner(-1.,-thick/2.),corner(1.,-thick/2.),corner(1.,thick/2.),corner(-1.,thick/2.));
+    format!("unit mm
+use std
+construction centerline line spindle(std.origin, std.up.toward)
+private point q0 hint(x: {x0}, y: {y0})
+q0 distance({x0}mm, along: u) std.front
+q0 distance({y0}mm, along: v) std.front
+private point q1 hint(x: {x1}, y: {y1})
+q1 distance({x1}mm, along: u) std.front
+q1 distance({y1}mm, along: v) std.front
+private point q2 hint(x: {x2}, y: {y2})
+q2 distance({x2}mm, along: u) std.front
+q2 distance({y2}mm, along: v) std.front
+private point q3 hint(x: {x3}, y: {y3})
+q3 distance({x3}mm, along: u) std.front
+q3 distance({y3}mm, along: v) std.front
+private line f0(q0, q1)
+private line f1(q1, q2)
+private line f2(q2, q3)
+private line f3(q3, q0)
+construction solid tool(face(f0, f1, f2, f3), from: -1mm, to: 1mm)
+",x0=p0.0,y0=p0.1,x1=p1.0,y1=p1.1,x2=p2.0,y2=p2.1,x3=p3.0,y3=p3.1)
+}
