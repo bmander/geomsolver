@@ -233,6 +233,16 @@ impl Patch {
         None
     }
 
+    /// The triangles whose columns all lie within `lo..=hi`, reindexed.
+    fn columns_within(&self,lo: u32,hi: u32) -> Patch {
+        let mut remap: std::collections::BTreeMap<u32,u32> = Default::default();
+        let mut vertices = Vec::new(); let mut normals = Vec::new(); let mut column = Vec::new();
+        let triangles = self.triangles.iter().filter(|t| t.iter().all(|&v| (lo..=hi).contains(&self.column[v as usize])))
+            .map(|t| t.map(|v| *remap.entry(v).or_insert_with(|| {
+                vertices.push(self.vertices[v as usize]); normals.push(self.normals[v as usize]); column.push(self.column[v as usize]); (vertices.len()-1) as u32 }))).collect();
+        Patch {vertices,normals,triangles,column,times:self.times.clone()}
+    }
+
     /// The directed edges used by exactly one triangle: the patch's rim.
     fn boundary_edges(&self) -> Vec<(u32,u32)> {
         let mut directed: std::collections::BTreeSet<(u32,u32)> = Default::default();
@@ -296,6 +306,29 @@ impl Patch {
 /// a contact curve meeting at a fold), and one slab of it would overlap
 /// itself, which no Boolean can take; two slabs that share the fold line
 /// are an ordinary union. Every piece keeps the fold's vertices.
+/// The patch cut, at columns, into pieces none of which crosses itself: the
+/// envelope's own branches cross (the sheet swept later passes through what
+/// was swept earlier), and one slab of a self-crossing patch overlaps itself
+/// where two slabs that cross are an ordinary union. The cut is at the first
+/// column of the later of two crossing bands, so even adjacent bands part;
+/// two triangles of one band that cross cannot be parted this way and are
+/// left, reported under `SOLVENT_SELF_INTERSECT`.
+fn split_at_crossings(patch: &Patch) -> Vec<Patch> {
+    let Some((a,b)) = patch.self_intersection() else { return vec![patch.clone()] };
+    let band = |t: usize| patch.triangles[t].iter().map(|&v| patch.column[v as usize]).fold((u32::MAX,0),|(lo,hi),c| (lo.min(c),hi.max(c)));
+    let (ba,bb) = (band(a),band(b));
+    if ba == bb { return vec![patch.clone()]; }
+    let cut = ba.0.max(bb.0);
+    let (c0,c1) = patch.column_range();
+    if cut <= c0 || cut >= c1 { return vec![patch.clone()]; }
+    let mut pieces = Vec::new();
+    for (lo,hi) in [(c0,cut),(cut,c1)] {
+        let piece = patch.columns_within(lo,hi);
+        if !piece.triangles.is_empty() { pieces.extend(split_at_crossings(&piece)); }
+    }
+    pieces
+}
+
 fn split_at_folds(patch: &Patch) -> Vec<Patch> {
     let normal = |t: &[u32;3]| { let [a,b,c] = t.map(|v| patch.vertices[v as usize]); cross(sub(b,a),sub(c,a)) };
     let normals: Vec<[f64;3]> = patch.triangles.iter().map(normal).collect();
@@ -684,6 +717,7 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
     // Chordal facets of a subtracted round face lie outside the true surface by
     // up to the tessellation sagitta, so a cell is judged deeper than that.
     let sagitta = blank.unit*gcs_core::curve::FLATNESS_PX;
+    detail(&format!("`{name}`: sagitta {:.3e} mm, slab {:.3e} mm",sagitta*scale,epsilon*scale));
     let inside = |points: &[[f64;3]]| -> Result<Vec<bool>,String> { Ok(points.iter().map(|p| blank.contains(p.map(|v| v/scale))).collect()) };
     let mut distinct: Vec<usize> = recipe.sweeps.iter().map(|s| s.swept).collect();
     distinct.sort(); distinct.dedup();
@@ -780,7 +814,7 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
                 }
             }
             let group_start = slabs.len();
-            let posed: Vec<Patch> = posed.iter().flat_map(split_at_folds).collect();
+            let posed: Vec<Patch> = posed.iter().flat_map(split_at_folds).flat_map(|g| split_at_crossings(&g)).collect();
             for patch in &posed {
                 let sheet = slab_of(patch,epsilon)?;
                 sheet_count += 1; sheet_triangles += sheet.triangle_count();
@@ -859,20 +893,36 @@ pub fn construct(sk: &Sketch,body: usize,sheets: &dyn Fn(usize,&dyn Fn(&[[f64;3]
     for cell in cells {
         // A sliver between two nearly coincident candidates holds no material
         // worth a probe and offers nowhere to put one.
-        if cell.volume() < 1e-4/scale.powi(3) { slivers += 1; sliver_volume += cell.volume(); continue; }
-        // A point deep inside the cell: a quarter of its mean thickness, but at
-        // least past the tessellation sagitta and the slab. The swept field
-        // resolves far faster away from the envelope than beside it.
+        // A cell thinner than a few slabs lies between two candidates that
+        // nearly coincide (two branches of an envelope tangent to each other)
+        // and is at the resolution of the arrangement itself; the field
+        // cannot resolve a point that close to the envelope either way.
         let thickness = 2.*cell.volume()/cell.area().max(f64::MIN_POSITIVE);
-        let depth = (0.25*thickness).clamp(3.*sagitta+3.*epsilon,0.5/scale);
+        if cell.volume() < 1e-4/scale.powi(3) || thickness < 4.*epsilon { slivers += 1; sliver_volume += cell.volume(); continue; }
+        // A point deep inside the cell: a quarter of its mean thickness, never
+        // more than half a millimetre in, and never past the slab. A lower
+        // bound of a few sagittas put the probe outside a thin cell outright.
+        // The swept field resolves far faster away from the envelope than
+        // beside it.
+        let depth = (0.25*thickness).clamp(1.5*epsilon,0.5/scale);
         let p = interior_point(&cell,depth)?;
-        let distance = (depth/3.).max(1.5*epsilon);
+        let distance = (depth/3.).max(0.5*epsilon);
         let probe = material.probe(p.map(|x| Interval::point(x).unwrap()),[1.,0.,0.],distance,
             Options {value_tolerance:distance/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))?;
         match probe.state {
-            ProbeState::InteriorBall => kept.push(cell),
+            ProbeState::InteriorBall => {
+                detail(&format!("material cell of {:.6} mm³, mean thickness {:.3e} mm, {} triangles, probed at {p:?}",cell.volume()*scale.powi(3),thickness*scale,cell.triangle_count()));
+                kept.push(cell)
+            }
             ProbeState::ExteriorBall => removed_cells += 1,
-            state => return Err(format!("the material at {p:?}, inside a cell of {:.6} mm³, is {state:?}",cell.volume()*scale.powi(3))),
+            // A lamina under a twentieth of a millimetre thick between two
+            // branches of the envelope, which the field cannot tell the side
+            // of at that depth, is dropped with the slivers and counted.
+            state if thickness < 0.05/scale => {
+                detail(&format!("dropped an unresolved cell of {:.6} mm³, mean thickness {:.3e} mm ({state:?} at {p:?})",cell.volume()*scale.powi(3),thickness*scale));
+                slivers += 1; sliver_volume += cell.volume();
+            }
+            state => return Err(format!("the material at {p:?}, inside a cell of {:.6} mm³ and mean thickness {:.3e} mm, is {state:?}",cell.volume()*scale.powi(3),thickness*scale)),
         }
     }
     let cells_time = started.elapsed();
@@ -986,6 +1036,38 @@ fn merged(vertices: &[[f64;3]],triangles: &[[u32;3]]) -> (Vec<[f64;3]>,Vec<[u32;
         }
         kept = kept.into_iter().enumerate().filter(|(i,_)| !drop[*i]).map(|(_,t)| t).chain(added).collect();
     }
+    // A fin, one triple of vertices carrying two triangles back to back, is
+    // a flap of no volume the kernel's simplification leaves where a sliver
+    // folded to nothing; it goes whole.
+    let mut uses: std::collections::BTreeMap<[u32;3],usize> = Default::default();
+    let sorted = |t: &[u32;3]| { let mut k = *t; k.sort(); k };
+    for t in &kept { *uses.entry(sorted(t)).or_default() += 1; }
+    kept.retain(|t| uses[&sorted(t)] == 1);
+    // A vertex whose triangles fall into several fans is a pinch, two parts
+    // of the solid touching at a point, which the kernel's union allows and
+    // a closed shell does not: each fan but the first takes its own copy.
+    let mut incident: Vec<Vec<usize>> = vec![Vec::new();points.len()];
+    for (i,t) in kept.iter().enumerate() { for &v in t { incident[v as usize].push(i); } }
+    for v in 0..incident.len() {
+        let ts = &incident[v];
+        if ts.len() < 2 { continue; }
+        let mut group: Vec<usize> = (0..ts.len()).collect();
+        let others = |i: usize| -> Vec<u32> { kept[ts[i]].iter().copied().filter(|&w| w != v as u32).collect() };
+        for a in 0..ts.len() { for b in a+1..ts.len() {
+            if others(a).iter().any(|w| others(b).contains(w)) { let (ga,gb) = (group[a],group[b]); for g in group.iter_mut() { if *g == gb { *g = ga; } } }
+        } }
+        let mut fans: Vec<usize> = group.clone(); fans.sort(); fans.dedup();
+        for (j,&fan) in fans.iter().enumerate().skip(1) {
+            let members: Vec<usize> = (0..ts.len()).filter(|&i| group[i] == fan).map(|i| ts[i]).collect();
+            let mut normal = [0.;3];
+            for &i in &members { let [a,b,c] = kept[i].map(|w| points[w as usize]); let n = cross(sub(b,a),sub(c,a)); for k in 0..3 { normal[k] += n[k]; } }
+            let len = norm(normal); if len == 0. { continue; }
+            let p = points[v];
+            let nudged: [f64;3] = std::array::from_fn(|k| { let step = ((p[k] as f32).abs().max(1e-30) as f64)*f32::EPSILON as f64*2.*j as f64; p[k]+step*normal[k]/len });
+            points.push(nudged); let copy = (points.len()-1) as u32;
+            for &i in &members { for w in kept[i].iter_mut() { if *w == v as u32 { *w = copy; } } }
+        }
+    }
     // Vertices the encoding identifies that no edge joins: each but the first
     // moves a few float32 steps along its own fan's normal.
     let mut used = vec![false;points.len()];
@@ -999,6 +1081,13 @@ fn merged(vertices: &[[f64;3]],triangles: &[[u32;3]]) -> (Vec<[f64;3]>,Vec<[u32;
         for &v in t { for k in 0..3 { fan_normal[v as usize][k] += n[k]; } }
     }
     for group in groups.values().filter(|g| g.len() > 1) {
+        if std::env::var("SOLVENT_WELD_DEBUG").is_ok() {
+            for &v in group {
+                let ts: Vec<usize> = kept.iter().enumerate().filter(|(_,t)| t.contains(&v)).map(|(i,_)| i).collect();
+                eprintln!("identified vertex {v} at {:?}: {} triangles, fan normal length {:.3e}",points[v as usize],ts.len(),norm(fan_normal[v as usize]));
+                for i in ts { let t = kept[i]; eprintln!("   triangle {i}: {:?} at {:?}",t,t.map(|w| points[w as usize].map(|x| (x*1e5).round()/1e5))); }
+            }
+        }
         for (j,&v) in group.iter().enumerate().skip(1) {
             let (n,p) = (fan_normal[v as usize],points[v as usize]);
             let len = norm(n); if len == 0. { continue; }
@@ -1021,6 +1110,16 @@ fn merged(vertices: &[[f64;3]],triangles: &[[u32;3]]) -> (Vec<[f64;3]>,Vec<[u32;
 /// collapse under the merge (a sliver between two coincident vertices) dropped;
 /// a genuine pinch, three faces on one segment, still refuses.
 pub fn stl(vertices: &[[f64;3]],triangles: &[[u32;3]],name: &str) -> Result<Vec<u8>,String> {
+    // `SOLVENT_DUMP_MESH=<path>` keeps the mesh as it came from the kernel,
+    // so the weld and the shell check can be rerun on it in a second.
+    if let Ok(path) = std::env::var("SOLVENT_DUMP_MESH") {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(vertices.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&(triangles.len() as u64).to_le_bytes());
+        for v in vertices { for x in v { bytes.extend_from_slice(&x.to_le_bytes()); } }
+        for t in triangles { for i in t { bytes.extend_from_slice(&i.to_le_bytes()); } }
+        std::fs::write(&path,bytes).map_err(|e| format!("{path}: {e}"))?;
+    }
     let (vertices,triangles) = merged(vertices,triangles);
     let (vertices,triangles) = (&vertices[..],&triangles[..]);
     let bytes = mesh::indexed_stl(vertices,triangles,name)?;

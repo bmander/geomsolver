@@ -176,6 +176,182 @@ fn single_space(member: &str,configured: bool,expected: f64) {
 #[test]
 fn one_hypoid_pinion_space_through_the_tracer() { single_space("pinion",true,13028.897); }
 
+/// One pinion space at the offset angle `SOLVENT_INSPECT_OFFSET` (degrees),
+/// its boundary checked against the material field: a point a tenth of a
+/// millimetre inside the mesh must not be exterior by the field, nor one
+/// outside interior. No closed form gives a hypoid's volume, and this is the
+/// check that the sheets enclose what the field says is cut.
+#[cfg(feature="occt")]
+#[test]
+#[ignore]
+fn a_hypoid_pinion_space_agrees_with_its_field() {
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
+    let offset: f64 = std::env::var("SOLVENT_INSPECT_OFFSET").ok().and_then(|v| v.parse().ok()).unwrap_or(20.);
+    // `SOLVENT_INSPECT_NOCUT=1`: the blank alone, to see what its own
+    // faceting contributes to the disagreements
+    let nocut = std::env::var("SOLVENT_INSPECT_NOCUT").is_ok();
+    let mut one = |name: &str,text: String| match name {
+        "matched_pair" => { let t = text.replace("repeat teeth as i {","repeat 1 as i {"); if nocut { t.replace("    indexed cut body\n","") } else { t } },
+        "configuration" => text.replace("param offset_angle = 6deg",&format!("param offset_angle = {offset}deg")),
+        _ => text,
+    };
+    let e = support::read_configured_with(&source,&base,&mut one);
+    let body = e.map.ent_named("pair.pinion.body").unwrap().i();
+    let scale = e.sketch.units.length.unwrap().1;
+    let (vertices,triangles) = mesh_sweep::construct(&e.sketch,body,&|_,_| Err("no kernel sheets in this test".into())).unwrap();
+    mesh_sweep::stl(&vertices,&triangles,"pinion").unwrap();
+    let mut material = gcs_core::solid::MaterialField::read(&e.sketch,body,1e-10).unwrap().evaluator(4096);
+    let (mut checked,mut unresolved) = (0,0);
+    let mut disagreements: Vec<([f64;3],bool,[f64;2])> = Vec::new();
+    let step = (triangles.len()/400).max(1);
+    for t in triangles.iter().step_by(step) {
+        let [a,b,c] = t.map(|i| vertices[i as usize]);
+        let n = [(b[1]-a[1])*(c[2]-a[2])-(b[2]-a[2])*(c[1]-a[1]),(b[2]-a[2])*(c[0]-a[0])-(b[0]-a[0])*(c[2]-a[2]),(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])];
+        let len = (n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
+        if len < 1e-6 { continue; }
+        let centroid: [f64;3] = std::array::from_fn(|k| (a[k]+b[k]+c[k])/3.);
+        for (side,inside) in [(-0.1,true),(0.1,false)] {
+            let p: [f64;3] = std::array::from_fn(|k| centroid[k]+side*n[k]/len);
+            let bounds = material.bounds(p.map(|x| gcs_core::interval::Interval::point(x/scale).unwrap()),
+                gcs_core::interval::minimum::Options {value_tolerance:0.02/scale,max_evaluations:20000}).unwrap();
+            let [lo,hi] = bounds.value.bounds();
+            checked += 1;
+            if lo <= 0. && hi >= 0. { unresolved += 1; continue; }
+            if (inside && lo > 0.) || (!inside && hi < 0.) { disagreements.push((p,inside,[lo,hi])); }
+        }
+    }
+    eprintln!("offset {offset}: {checked} points checked, {unresolved} unresolved, {} disagreements",disagreements.len());
+    let d3 = |a: [f64;3],b: [f64;3]| ((a[0]-b[0]).powi(2)+(a[1]-b[1]).powi(2)+(a[2]-b[2]).powi(2)).sqrt();
+    for (p,inside,b) in disagreements.iter().take(20) {
+        eprintln!("  {p:?} is {} the mesh, field {b:?}",if *inside { "inside" } else { "outside" });
+        if std::env::var("SOLVENT_INSPECT_TRIANGLES").is_err() { continue; }
+        // the nearest triangle by centroid, its vertices and the field at each
+        let (_,t) = triangles.iter().map(|t| { let [a,b,c] = t.map(|i| vertices[i as usize]); (d3(std::array::from_fn(|k| (a[k]+b[k]+c[k])/3.),*p),t) })
+            .fold((f64::INFINITY,&triangles[0]),|m,x| if x.0 < m.0 { x } else { m });
+        for &i in t {
+            let v = vertices[i as usize];
+            let bounds = material.bounds(v.map(|x| gcs_core::interval::Interval::point(x/scale).unwrap()),
+                gcs_core::interval::minimum::Options {value_tolerance:0.005/scale,max_evaluations:40000}).unwrap();
+            eprintln!("    vertex {i} {:?}: field {:?}",v.map(|x| (x*1e4).round()/1e4),bounds.value.bounds().map(|x| (x*scale*1e5).round()/1e5));
+        }
+    }
+    assert!(disagreements.is_empty());
+}
+
+/// The weld and shell check rerun on a mesh dumped by `SOLVENT_DUMP_MESH`:
+/// `SOLVENT_MESH=<path>`.
+#[test]
+#[ignore]
+fn weld_a_dumped_mesh() {
+    let path = std::env::var("SOLVENT_MESH").unwrap();
+    let bytes = std::fs::read(&path).unwrap();
+    let u64_at = |o: usize| u64::from_le_bytes(bytes[o..o+8].try_into().unwrap()) as usize;
+    let (nv,nt) = (u64_at(0),u64_at(8));
+    let vertices: Vec<[f64;3]> = (0..nv).map(|i| std::array::from_fn(|k| f64::from_le_bytes(bytes[16+(3*i+k)*8..16+(3*i+k)*8+8].try_into().unwrap()))).collect();
+    let base = 16+nv*24;
+    let triangles: Vec<[u32;3]> = (0..nt).map(|i| std::array::from_fn(|k| u32::from_le_bytes(bytes[base+(3*i+k)*4..base+(3*i+k)*4+4].try_into().unwrap()))).collect();
+    eprintln!("{nv} vertices, {nt} triangles");
+    match mesh_sweep::stl(&vertices,&triangles,"dumped") {
+        Ok(bytes) => eprintln!("shell ok, {} bytes",bytes.len()),
+        Err(e) => panic!("{e}"),
+    }
+}
+
+/// The tracer's untrimmed pieces at one parameter, for inspection:
+/// `SOLVENT_INSPECT_OFFSET=<degrees> SOLVENT_INSPECT_T=<parameter>`, with
+/// every pair of pieces that lie on one another named.
+#[cfg(feature="occt")]
+#[test]
+#[ignore]
+fn inspect_pieces_at_a_parameter() {
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel");
+    let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
+    let offset: f64 = std::env::var("SOLVENT_INSPECT_OFFSET").ok().and_then(|v| v.parse().ok()).unwrap_or(6.);
+    let t: f64 = std::env::var("SOLVENT_INSPECT_T").ok().and_then(|v| v.parse().ok()).unwrap_or(0.);
+    let member = std::env::var("SOLVENT_INSPECT_MEMBER").unwrap_or("pinion".into());
+    let mut one = |name: &str,text: String| match name {
+        "matched_pair" => text.replace("repeat teeth as i {","repeat 1 as i {"),
+        "configuration" => text.replace("param offset_angle = 6deg",&format!("param offset_angle = {offset}deg")),
+        _ => text,
+    };
+    let e = support::read_configured_with(&source,&base,&mut one);
+    let removal = e.map.ent_named(&format!("pair.{member}.removal")).unwrap().i();
+    let sweep = gcs_core::solid::SweepContacts::read(&e.sketch,removal,1e-10).unwrap();
+    // `SOLVENT_INSPECT_NEAR=x,y,z`: over the roll, which pieces pass within
+    // half a millimetre of a world point, and when
+    if let Ok(near) = std::env::var("SOLVENT_INSPECT_NEAR") {
+        let target: Vec<f64> = near.split(',').map(|v| v.trim().parse().unwrap()).collect();
+        let target = [target[0],target[1],target[2]];
+        let gcs_core::model::SolidDef::Swept {motion,from,to,..} = &e.sketch.solids[removal].def else { panic!("not a sweep") };
+        let family = gcs_core::motion::Family::read(&e.sketch,*motion as usize).unwrap();
+        let d3 = |a: [f64;3],b: [f64;3]| ((a[0]-b[0]).powi(2)+(a[1]-b[1]).powi(2)+(a[2]-b[2]).powi(2)).sqrt();
+        let radius: f64 = std::env::var("SOLVENT_INSPECT_RADIUS").ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
+        let window: Option<(f64,f64)> = std::env::var("SOLVENT_INSPECT_WINDOW").ok().map(|w| { let v: Vec<f64> = w.split(',').map(|x| x.trim().parse().unwrap()).collect(); (v[0],v[1]) });
+        let (t0,t1) = window.unwrap_or((from.value,to.value));
+        let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
+        let scale = e.sketch.units.length.unwrap().1;
+        let mut material = gcs_core::solid::MaterialField::read(&e.sketch,body,1e-10).unwrap().evaluator(4096);
+        let mut field_at = |p: [f64;3]| -> [f64;2] {
+            material.bounds(p.map(|x| gcs_core::interval::Interval::point(x/scale).unwrap()),
+                gcs_core::interval::minimum::Options {value_tolerance:0.005/scale,max_evaluations:40000}).unwrap().value.bounds().map(|x| x*scale)
+        };
+        let steps: usize = std::env::var("SOLVENT_INSPECT_STEPS").ok().and_then(|v| v.parse().ok()).unwrap_or(400);
+        for k in 0..=steps {
+            let t = t0+(t1-t0)*k as f64/steps as f64;
+            let pose = family.at(t).unwrap();
+            for (source,c) in sweep.pieces_at(t,1e-9).unwrap() {
+                let (d,i) = c.points.iter().enumerate().map(|(i,p)| (d3(pose.point(*p),target),i)).fold((f64::INFINITY,0),|m,x| if x.0 < m.0 { x } else { m });
+                if d < radius {
+                    let world = pose.point(c.points[i]);
+                    eprintln!("t {t:.5}: {source} within {d:.4} at point {i} of {} (world {:?}), field there {:?}",c.points.len(),world.map(|x| (x*1e4).round()/1e4),field_at(world).map(|x| (x*1e5).round()/1e5));
+                    if std::env::var("SOLVENT_INSPECT_WHOLE").is_ok() {
+                        for (j,p) in c.points.iter().enumerate() {
+                            let w = pose.point(*p);
+                            if d3(w,target) > 3. { continue; }
+                            eprintln!("    point {j}: tool {:?} world {:?} normal {:?} field {:?}",p.map(|x| (x*1e4).round()/1e4),w.map(|x| (x*1e4).round()/1e4),c.normals[j].map(|x| (x*1e3).round()/1e3),field_at(w).map(|x| (x*1e5).round()/1e5));
+                        }
+                    }
+                }
+            }
+        }
+        return;
+    }
+    let pieces = sweep.pieces_at(t,1e-9).unwrap();
+    let dist = |a: [f64;3],b: [f64;3]| ((a[0]-b[0]).powi(2)+(a[1]-b[1]).powi(2)+(a[2]-b[2]).powi(2)).sqrt();
+    let length = |c: &gcs_core::solid::Characteristic| c.points.windows(2).map(|w| dist(w[0],w[1])).sum::<f64>();
+    // what the tool's own field hides: a point off its boundary
+    let gcs_core::model::SolidDef::Swept {source,..} = &e.sketch.solids[removal].def else { panic!("not a sweep") };
+    let field = gcs_core::solid::SpatialField::read(&e.sketch,*source as usize,1e-10).unwrap();
+    let scale = pieces.iter().flat_map(|(_,c)| c.points.iter()).map(|p| dist(*p,[0.;3])).fold(1_f64,f64::max);
+    for (i,(source,c)) in pieces.iter().enumerate() {
+        let hidden: Vec<(usize,f64)> = c.points.iter().enumerate().map(|(k,p)| (k,field.value(*p))).filter(|(_,v)| v.abs() > scale*1e-9).collect();
+        eprintln!("piece {i}: {source}: {} points, length {:.4}, closed {}, from {:?} to {:?}, {} hidden{}",c.points.len(),length(c),c.closed,
+            c.points[0].map(|x| (x*1e4).round()/1e4),c.points[c.points.len()-1].map(|x| (x*1e4).round()/1e4),hidden.len(),
+            hidden.first().map(|(k,v)| format!(" (first at {k}, field {v:.3e})")).unwrap_or_default());
+    }
+    // every piece end's gap to the nearest end of any other piece
+    let ends: Vec<(usize,[f64;3])> = pieces.iter().enumerate().flat_map(|(i,(_,c))| [(i,c.points[0]),(i,c.points[c.points.len()-1])]).collect();
+    for (i,p) in &ends {
+        let (gap,j) = ends.iter().filter(|(j,_)| j != i).map(|(j,q)| (dist(*p,*q),*j)).fold((f64::INFINITY,0),|m,x| if x.0 < m.0 { x } else { m });
+        if gap > 1e-9 { eprintln!("piece {i} ({}) end {:?} is {gap:.3e} from its nearest, piece {j} ({})",pieces[*i].0,p.map(|x| (x*1e4).round()/1e4),pieces[j].0); }
+    }
+    // pieces lying on one another: every sample of one within 1e-4 of the other
+    let onto = |a: &gcs_core::solid::Characteristic,b: &gcs_core::solid::Characteristic| -> f64 {
+        a.points.iter().step_by((a.points.len()/16).max(1)).map(|p| b.points.windows(2).map(|w| {
+            let ab = [w[1][0]-w[0][0],w[1][1]-w[0][1],w[1][2]-w[0][2]]; let ap = [p[0]-w[0][0],p[1]-w[0][1],p[2]-w[0][2]];
+            let l2 = ab[0]*ab[0]+ab[1]*ab[1]+ab[2]*ab[2];
+            let f = if l2 > 0. { ((ab[0]*ap[0]+ab[1]*ap[1]+ab[2]*ap[2])/l2).clamp(0.,1.) } else { 0. };
+            dist(*p,[w[0][0]+f*ab[0],w[0][1]+f*ab[1],w[0][2]+f*ab[2]])
+        }).fold(f64::INFINITY,f64::min)).fold(0_f64,f64::max)
+    };
+    for i in 0..pieces.len() { for j in 0..pieces.len() {
+        if i == j || pieces[i].1.points.len() < 2 || pieces[j].1.points.len() < 2 { continue; }
+        let d = onto(&pieces[i].1,&pieces[j].1);
+        if d < 1e-3 { eprintln!("piece {i} ({}) lies on piece {j} ({}) within {d:.2e}",pieces[i].0,pieces[j].0); }
+    } }
+}
+
 #[cfg(feature="occt")]
 #[test]
 fn one_bevel_pinion_space_through_the_tracer() { single_space("pinion",false,11906.847); }

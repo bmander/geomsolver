@@ -17,6 +17,8 @@ type V3 = [f64;3];
 fn sub(a: V3,b: V3) -> V3 { std::array::from_fn(|k| a[k]-b[k]) }
 fn norm(a: V3) -> f64 { plane::dot(a,a).sqrt() }
 fn distance(a: V3,b: V3) -> f64 { norm(sub(a,b)) }
+fn add(a: V3,b: V3) -> V3 { std::array::from_fn(|k| a[k]+b[k]) }
+fn scale(a: V3,s: f64) -> V3 { a.map(|x| x*s) }
 
 /// A polyline of contact positions with outward tool normals, in the tool's
 /// own frame. `closed` means the last point joins the first. `joints` are
@@ -624,6 +626,18 @@ impl SweepContacts {
         };
         let samples = super::tool_faces::EDGE_SAMPLES;
         let points: Vec<Option<Point>> = signs.edge_points[index].iter().map(|g| g.map(moving)).collect();
+        if std::env::var("SOLVENT_FAN_DEBUG").is_ok() {
+            let [a,b] = edge.faces();
+            let mut last: Option<(i32,i32,bool)> = None;
+            for (i,p) in points.iter().enumerate() {
+                let state = p.as_ref().map(|p| (class(p.speeds[0]),class(p.speeds[1]),in_fan(p)));
+                if state != last.map(Some).unwrap_or(None) || i == 0 || i == samples {
+                    match p { Some(p) => eprintln!("edge [{a}, {b}] sample {i}: speeds {:.3e} {:.3e} classes {:?} fan {} at {:?}",p.speeds[0],p.speeds[1],(class(p.speeds[0]),class(p.speeds[1])),in_fan(p),p.position.map(|x| (x*1e4).round()/1e4)),
+                        None => eprintln!("edge [{a}, {b}] sample {i}: off") }
+                }
+                last = state;
+            }
+        }
         let mut strands = Vec::new();
         let mut current: Option<Strand> = None;
         // A fan of no length (a smooth junction, where both faces' strands
@@ -660,9 +674,28 @@ impl SweepContacts {
                         }
                     }
                     events.sort_by(|x,y| x.0.total_cmp(&y.0));
-                    for r in events {
-                        close(&mut current,Some(r),&mut strands);
-                        current = Some(Strand {roots:Vec::new(),head:Some(r),tail:None});
+                    // The stretches between the events: each is in the fan or
+                    // not as its midpoint says, and only one that is holds a
+                    // strand. With both faces' velocities changing sign between
+                    // two samples, the stretch between the two roots is in the
+                    // fan or out of it by which root comes first, and cutting
+                    // at every event and starting afresh after each made a
+                    // two-point strand of it either way: a spurious fan piece
+                    // that met the faces' strands in a junction of three.
+                    if !events.is_empty() {
+                        let mut bounds: Vec<(f64,Option<Root>)> = vec![(t,None)];
+                        bounds.extend(events.iter().map(|r| (r.0,Some(*r))));
+                        bounds.push((t1,None));
+                        for w in bounds.windows(2) {
+                            let ((ta,ra),(tb,rb)) = (w[0],w[1]);
+                            let within = match at(0.5*(ta+tb))? { Some(m) => in_fan(&m),None => false };
+                            if within {
+                                if current.is_none() { current = Some(Strand {roots:Vec::new(),head:ra,tail:None}); }
+                                if rb.is_some() { close(&mut current,rb,&mut strands); }
+                            } else {
+                                close(&mut current,ra,&mut strands);
+                            }
+                        }
                     }
                     if !in_fan(q) { close(&mut current,None,&mut strands); }
                 }
@@ -801,17 +834,62 @@ impl SweepContacts {
             }
             Ok(used.iter().all(|u| *u))
         };
+        // Whether the sheet zipped between two columns is within the sagitta
+        // of the sheet itself, judged at the parameter between them: every
+        // curve there, posed, against the zip of its two neighbours. A contact
+        // curve slides across a curved face between one column and the next,
+        // and the ruled band between the two cuts the corner of that face by
+        // more than the sagitta wherever it slides fast, however well the
+        // curves continue; the midpoint's curves are then kept as a column.
+        let flat_between = |a: &(f64,Vec<Characteristic>),b: &(f64,Vec<Characteristic>),mid: &(f64,Vec<Characteristic>)| -> Result<bool,String> {
+            let (pa,pb,pm) = (self.motion.at(a.0)?,self.motion.at(b.0)?,self.motion.at(mid.0)?);
+            let mut used = vec![false;b.1.len()];
+            let mut used_mid = vec![false;mid.1.len()];
+            for last in &a.1 {
+                let Some(j) = continuation(last,a.0,&b.1,b.0,&used)? else { continue };
+                used[j] = true;
+                // a curve of the midpoint that continues neither is a change
+                // between the columns, which is a reason to keep the midpoint
+                let Some(k) = continuation(last,a.0,&mid.1,mid.0,&used_mid)? else { return Ok(false) };
+                used_mid[k] = true;
+                let next = &b.1[j];
+                // the zip's triangles, posed, in buckets a column spacing wide
+                let point = |x: (bool,u32)| if x.0 { pb.point(next.points[x.1 as usize]) } else { pa.point(last.points[x.1 as usize]) };
+                let triangles: Vec<[V3;3]> = zip_pieces(last,next).into_iter().map(|t| t.map(point)).collect();
+                let cell = spacing.max(1e-9);
+                let key = |p: V3| p.map(|x| (x/cell).floor() as i64);
+                let mut buckets: std::collections::BTreeMap<[i64;3],Vec<usize>> = Default::default();
+                for (i,t) in triangles.iter().enumerate() {
+                    let (lo,hi) = (key(std::array::from_fn(|k| t.iter().map(|q| q[k]).fold(f64::INFINITY,f64::min))),
+                        key(std::array::from_fn(|k| t.iter().map(|q| q[k]).fold(f64::NEG_INFINITY,f64::max))));
+                    for x in lo[0]..=hi[0] { for y in lo[1]..=hi[1] { for z in lo[2]..=hi[2] { buckets.entry([x,y,z]).or_default().push(i); } } }
+                }
+                for p in &mid.1[k].points {
+                    let p = pm.point(*p);
+                    if let Some(reach) = reach { if !reach(p) { continue; } }
+                    let c = key(p);
+                    let mut d = f64::INFINITY;
+                    for x in c[0]-1..=c[0]+1 { for y in c[1]-1..=c[1]+1 { for z in c[2]-1..=c[2]+1 {
+                        if let Some(ts) = buckets.get(&[x,y,z]) { for &i in ts { d = d.min(triangle_distance(p,triangles[i])); } }
+                    } } }
+                    if d > sagitta { return Ok(false); }
+                }
+            }
+            if !used_mid.iter().all(|u| *u) { return Ok(false); }
+            Ok(true)
+        };
         let mut pending: Vec<(f64,f64)> = times.windows(2).map(|w| (w[0],w[1])).collect();
         let mut refined = 0;
         while let Some((ta,tb)) = pending.pop() {
             let at = |t: f64| columns.binary_search_by(|c| c.0.total_cmp(&t)).map_err(|_| format!("no column at {t}"));
             let (ia,ib) = (at(ta)?,at(tb)?);
-            if tb-ta <= least || continues(&columns[ia],&columns[ib])? { continue; }
+            if tb-ta <= least { continue; }
             let mid = 0.5*(ta+tb);
+            let curves = (mid,curves_at(mid)?);
+            if continues(&columns[ia],&columns[ib])? && flat_between(&columns[ia],&columns[ib],&curves)? { continue; }
             refined += 1;
             progress(&format!("columns: {refined} refined"));
-            let curves = curves_at(mid)?;
-            columns.insert(ia+1,(mid,curves));
+            columns.insert(ia+1,curves);
             pending.push((ta,mid)); pending.push((mid,tb));
         }
         // Strips: every curve tracked across the whole column list.
@@ -948,6 +1026,28 @@ fn resample(c: &Characteristic,rows: usize) -> (Vec<V3>,Vec<V3>) {
     (points,normals)
 }
 
+
+/// The distance from a point to a triangle (Ericson's closest point).
+fn triangle_distance(p: V3,[a,b,c]: [V3;3]) -> f64 {
+    let (ab,ac,ap) = (sub(b,a),sub(c,a),sub(p,a));
+    let (d1,d2) = (plane::dot(ab,ap),plane::dot(ac,ap));
+    if d1 <= 0. && d2 <= 0. { return distance(p,a); }
+    let bp = sub(p,b);
+    let (d3,d4) = (plane::dot(ab,bp),plane::dot(ac,bp));
+    if d3 >= 0. && d4 <= d3 { return distance(p,b); }
+    let vc = d1*d4-d3*d2;
+    if vc <= 0. && d1 >= 0. && d3 <= 0. { let v = d1/(d1-d3); return distance(p,add(a,scale(ab,v))); }
+    let cp = sub(p,c);
+    let (d5,d6) = (plane::dot(ab,cp),plane::dot(ac,cp));
+    if d6 >= 0. && d5 <= d6 { return distance(p,c); }
+    let vb = d5*d2-d1*d6;
+    if vb <= 0. && d2 >= 0. && d6 <= 0. { let w = d2/(d2-d6); return distance(p,add(a,scale(ac,w))); }
+    let va = d3*d6-d5*d4;
+    if va <= 0. && d4-d3 >= 0. && d5-d6 >= 0. { let w = (d4-d3)/((d4-d3)+(d5-d6)); return distance(p,add(b,scale(sub(c,b),w))); }
+    let denom = 1./(va+vb+vc);
+    let (v,w) = (vb*denom,vc*denom);
+    distance(p,add(a,add(scale(ab,v),scale(ac,w))))
+}
 
 fn segment_distance(p: V3,a: V3,b: V3) -> f64 {
     let ab = sub(b,a); let ap = sub(p,a);
