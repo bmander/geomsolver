@@ -7,3 +7,4 @@ mod harness;
 mod tools;
 mod motions;
 mod labels;
+mod certificate;

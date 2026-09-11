@@ -13,10 +13,14 @@
 pub mod judge;
 pub mod seeds;
 pub mod project;
+pub mod trim;
+pub mod certify;
 
+pub use certify::{Certificate,Failure,certify};
 pub use judge::{FieldJudge,JudgeError,Projection,QueryStats,Sign};
 pub use project::{Label,Labelled,directions,label_patch,label_sheets};
 pub use seeds::seeds;
+pub use trim::{KeptMesh,boundary_loops,kept_triangles};
 
 /// Controls of the construction. Lengths are in the model's own units.
 #[derive(Clone,Copy,Debug)]

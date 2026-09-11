@@ -89,6 +89,31 @@ What is not yet judged: an end column's vertices on a tool edge are judged along
 side alone until the caps exist (milestone 3), so they are the only vertices the tests allow
 to be positive or unresolved.
 
+## Milestone 2: the triangle certificate and the closure audit
+
+`kept_triangles` (`trim.rs`) takes every triangle all of whose vertices were kept or moved,
+at the judged positions, wound so its normal agrees with its vertices' judged directions.
+`certify` (`certify.rs`) probes each triangle's centroid `d` inside and outside along its
+normal, `d = 2·sagitta`, and needs material inside and exterior outside. Material or exterior
+thinner than `d` halves the distance down to `2ε`; a triangle that still cannot be certified
+there is recorded as `thin` (its vertices were bracketed and one side still reads the
+boundary or the material beyond a gap), which is not a failure but a stated limit, while
+exterior inside and material outside at the least distance is `Reversed`, a failure.
+`boundary_loops` chains the edges used once into loops: the closure audit's input.
+
+Evidence (`tests/sweep_mesh/certificate.rs`, same tolerances as milestone 1, `d = 40 µm`):
+
+| case | kept triangles | certified | thin | failed | boundary loops |
+|---|---|---|---|---|---|
+| sphere turned ±60° (torus tube) | 578 | 578 | 0 | 0 | 2 (the open ends) |
+| box translated 10 mm along x | 2000 | 2000 | 0 | 0 | 4 (one per side band) |
+| cylinder tumbling ±30° | 681 | 649 | 32 | 0 | 65 (inner turns unstitched) |
+
+The cylinder's thin triangles lie by its tumble axis, where consecutive positions of the
+wall leave a scissor-thin exterior under 10 µm wide; its 65 loops are the inner turns the
+labels cut out, which milestone 4 trims and seams. A far query (band half the probe wide)
+costs 0.5 ms on these cases.
+
 ## Refusals
 
 Every refusal names its element. So far: `ReversedNormal { point, direction }` (material
